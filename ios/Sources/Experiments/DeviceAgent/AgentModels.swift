@@ -113,6 +113,8 @@ struct AgentBrowserReplayEvent: Identifiable, Equatable, Codable {
     var detail: String?
     var pageText: String?
     var elements: [String]?
+    var headings: [String]?
+    var listItems: [String]?
 
     init(
         id: UUID = UUID(),
@@ -122,7 +124,9 @@ struct AgentBrowserReplayEvent: Identifiable, Equatable, Codable {
         title: String? = nil,
         detail: String? = nil,
         pageText: String? = nil,
-        elements: [String]? = nil
+        elements: [String]? = nil,
+        headings: [String]? = nil,
+        listItems: [String]? = nil
     ) {
         self.id = id
         self.date = date
@@ -132,6 +136,8 @@ struct AgentBrowserReplayEvent: Identifiable, Equatable, Codable {
         self.detail = detail
         self.pageText = pageText
         self.elements = elements
+        self.headings = headings
+        self.listItems = listItems
     }
 }
 

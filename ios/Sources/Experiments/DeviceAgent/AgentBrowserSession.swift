@@ -73,7 +73,9 @@ final class AgentBrowserSession: NSObject, ObservableObject {
             url: parsed?.url ?? url?.absoluteString,
             title: parsed?.title ?? title,
             pageText: parsed?.text,
-            elements: parsed?.elements
+            elements: parsed?.elements,
+            headings: parsed?.headings,
+            listItems: parsed?.listItems
         )
         return formatted
     }
@@ -131,7 +133,9 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         url: String? = nil,
         title: String? = nil,
         pageText: String? = nil,
-        elements: [String]? = nil
+        elements: [String]? = nil,
+        headings: [String]? = nil,
+        listItems: [String]? = nil
     ) {
         replay.append(
             AgentBrowserReplayEvent(
@@ -140,7 +144,9 @@ final class AgentBrowserSession: NSObject, ObservableObject {
                 title: title,
                 detail: detail,
                 pageText: pageText,
-                elements: elements
+                elements: elements,
+                headings: headings,
+                listItems: listItems
             )
         )
         if replay.count > maxReplayEvents {
@@ -158,13 +164,17 @@ final class AgentBrowserSession: NSObject, ObservableObject {
     // MARK: - Internals
 
     private func ensureBridge() async throws {
-        let ready = try await evaluate("typeof window.__deviceAgent === 'object' ? '1' : '0'")
+        let ready = try await evaluate(
+            "(window.__deviceAgent && window.__deviceAgent.__version === 2) ? '1' : '0'"
+        )
         if ready.trimmingCharacters(in: .whitespacesAndNewlines) == "1" {
             return
         }
-        // SPA navigations or CSP-odd pages: inject once more.
+        // SPA navigations or older bridge: inject / upgrade.
         _ = try await evaluate(Self.bridgeJavaScript + "\n'ok'")
-        let again = try await evaluate("typeof window.__deviceAgent === 'object' ? '1' : '0'")
+        let again = try await evaluate(
+            "(window.__deviceAgent && window.__deviceAgent.__version === 2) ? '1' : '0'"
+        )
         guard again.trimmingCharacters(in: .whitespacesAndNewlines) == "1" else {
             throw AgentToolError.unavailable("In-app browser bridge is not available on this page.")
         }
@@ -229,6 +239,8 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         var url: String
         var elements: [String]
         var text: String
+        var headings: [String]
+        var listItems: [String]
     }
 
     nonisolated static func parseSnapshotJSON(_ raw: String) -> ParsedSnapshot? {
@@ -241,7 +253,9 @@ final class AgentBrowserSession: NSObject, ObservableObject {
             title: json["title"] as? String ?? "",
             url: json["url"] as? String ?? "",
             elements: json["elements"] as? [String] ?? [],
-            text: json["text"] as? String ?? ""
+            text: json["text"] as? String ?? "",
+            headings: json["headings"] as? [String] ?? [],
+            listItems: json["listItems"] as? [String] ?? []
         )
     }
 
@@ -255,6 +269,14 @@ final class AgentBrowserSession: NSObject, ObservableObject {
             "elements (\(parsed.elements.count)):",
         ]
         lines.append(contentsOf: parsed.elements)
+        if !parsed.headings.isEmpty {
+            lines.append("headings:")
+            lines.append(contentsOf: parsed.headings.map { "- \($0)" })
+        }
+        if !parsed.listItems.isEmpty {
+            lines.append("listItems:")
+            lines.append(contentsOf: parsed.listItems.map { "- \($0)" })
+        }
         if !parsed.text.isEmpty {
             lines.append("text:")
             lines.append(parsed.text)
@@ -262,25 +284,32 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         return lines.joined(separator: "\n")
     }
 
-    /// Pull short bullets from scraped page text for the chat transcript.
+    /// Bullets built only from scraped page content (headings / lists / main text) — never chat.
     nonisolated static func pageFindingsText(
         title: String,
         url: String,
         pageText: String,
+        headings: [String] = [],
+        listItems: [String] = [],
         limit: Int = 8
     ) -> String {
-        let bullets = pageFindingsBullets(from: pageText, limit: limit)
+        let bullets = pageFindingsBullets(
+            headings: headings,
+            listItems: listItems,
+            pageText: pageText,
+            limit: limit
+        )
         var lines: [String] = []
         let heading = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !heading.isEmpty {
-            lines.append("Page · \(heading)")
+            lines.append("From the page · \(heading)")
         } else if !url.isEmpty {
-            lines.append("Page · \(url)")
+            lines.append("From the page · \(url)")
         } else {
-            lines.append("Page")
+            lines.append("From the page")
         }
         if bullets.isEmpty {
-            lines.append("• (No readable text scraped — try another page or a follow-up click.)")
+            lines.append("• (No readable page content scraped — try another page or click into the content.)")
         } else {
             lines.append(contentsOf: bullets.map { "• \($0)" })
         }
@@ -288,36 +317,69 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         return lines.joined(separator: "\n")
     }
 
-    nonisolated static func pageFindingsBullets(from text: String, limit: Int = 8) -> [String] {
-        let normalized = text
+    nonisolated static func pageFindingsBullets(
+        headings: [String] = [],
+        listItems: [String] = [],
+        pageText: String,
+        limit: Int = 8
+    ) -> [String] {
+        var out: [String] = []
+
+        func appendCandidate(_ raw: String) {
+            let chunk = raw
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard chunk.count >= 8, chunk.count <= 160 else { return }
+            let lower = chunk.lowercased()
+            if isChromeNoise(lower) { return }
+            let key = String(lower.prefix(36))
+            if out.contains(where: { $0.lowercased().hasPrefix(key) }) { return }
+            out.append(chunk)
+        }
+
+        for heading in headings {
+            appendCandidate(heading)
+            if out.count >= limit { return out }
+        }
+        for item in listItems {
+            appendCandidate(item)
+            if out.count >= limit { return out }
+        }
+
+        // Fallback: sentences from main page text only (already preferred over full-document scrape).
+        let normalized = pageText
             .replacingOccurrences(of: "\r", with: "\n")
             .replacingOccurrences(of: #"\t+"#, with: " ", options: .regularExpression)
         var chunks = normalized
             .components(separatedBy: CharacterSet(charactersIn: "\n•|"))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0.count >= 20 && $0.count <= 160 }
-
+            .filter { $0.count >= 24 && $0.count <= 160 }
         if chunks.count < 3 {
             chunks = normalized
                 .components(separatedBy: ". ")
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { $0.count >= 20 && $0.count <= 160 }
+                .filter { $0.count >= 24 && $0.count <= 160 }
                 .map { $0.hasSuffix(".") ? $0 : "\($0)." }
         }
-
-        var out: [String] = []
         for chunk in chunks {
-            let key = String(chunk.prefix(36)).lowercased()
-            if out.contains(where: { $0.lowercased().hasPrefix(key) }) { continue }
-            // Skip common chrome / cookie noise.
-            let lower = chunk.lowercased()
-            if lower.contains("cookie") || lower.contains("accept all") || lower.contains("sign in") {
-                continue
-            }
-            out.append(chunk)
+            appendCandidate(chunk)
             if out.count >= limit { break }
         }
         return out
+    }
+
+    nonisolated static func isChromeNoise(_ lower: String) -> Bool {
+        let needles = [
+            "cookie", "accept all", "sign in", "log in", "subscribe", "newsletter",
+            "privacy policy", "terms of use", "advertisement", "skip to", "menu",
+            "enable javascript", "all rights reserved",
+        ]
+        return needles.contains { lower.contains($0) }
+    }
+
+    /// Back-compat helper used by older tests.
+    nonisolated static func pageFindingsBullets(from text: String, limit: Int = 8) -> [String] {
+        pageFindingsBullets(headings: [], listItems: [], pageText: text, limit: limit)
     }
 
     nonisolated static func requireOK(_ raw: String, action: String) throws -> String {
@@ -336,7 +398,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
     /// Injected into every main-frame document. Exposes snapshot/click/type with stable refs.
     nonisolated static let bridgeJavaScript: String = #"""
     (function () {
-      if (window.__deviceAgent && window.__deviceAgent.__version === 1) return;
+      if (window.__deviceAgent && window.__deviceAgent.__version === 2) return;
       var refs = new Map();
       var next = 1;
 
@@ -349,6 +411,10 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         return true;
       }
 
+      function cleanText(value) {
+        return String(value || '').replace(/\s+/g, ' ').trim();
+      }
+
       function labelOf(el) {
         var t = el.getAttribute('aria-label')
           || el.getAttribute('title')
@@ -357,7 +423,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
           || el.getAttribute('name')
           || (el.value != null && String(el.value))
           || (el.innerText || el.textContent || '');
-        return String(t).replace(/\s+/g, ' ').trim().slice(0, 90);
+        return cleanText(t).slice(0, 90);
       }
 
       function kindOf(el) {
@@ -373,8 +439,12 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         return tag || 'node';
       }
 
+      function mainRoot() {
+        return document.querySelector('main, article, [role="main"], #content, .content') || document.body;
+      }
+
       window.__deviceAgent = {
-        __version: 1,
+        __version: 2,
         reset: function () { refs.clear(); next = 1; },
         snapshot: function (maxChars) {
           this.reset();
@@ -387,15 +457,40 @@ final class AgentBrowserSession: NSObject, ObservableObject {
             refs.set(ref, el);
             elements.push('[' + ref + '] ' + kindOf(el) + ' "' + labelOf(el).replace(/"/g, '\\"') + '"');
           }
+
+          var root = mainRoot();
+          var headings = [];
+          try {
+            var hs = Array.prototype.slice.call((root || document).querySelectorAll('h1,h2,h3'));
+            for (var hi = 0; hi < hs.length && headings.length < 12; hi++) {
+              if (!visible(hs[hi])) continue;
+              var ht = cleanText(hs[hi].innerText || hs[hi].textContent || '');
+              if (ht.length >= 3 && ht.length <= 120) headings.push(ht);
+            }
+          } catch (e1) {}
+
+          var listItems = [];
+          try {
+            var lis = Array.prototype.slice.call((root || document).querySelectorAll('li'));
+            for (var li = 0; li < lis.length && listItems.length < 24; li++) {
+              if (!visible(lis[li])) continue;
+              var lt = cleanText(lis[li].innerText || lis[li].textContent || '');
+              if (lt.length >= 12 && lt.length <= 140) listItems.push(lt);
+            }
+          } catch (e2) {}
+
           var bodyText = '';
           try {
-            bodyText = (document.body && (document.body.innerText || document.body.textContent) || '')
-              .replace(/\s+/g, ' ').trim().slice(0, maxChars || 3500);
-          } catch (e) {}
+            bodyText = cleanText((root && (root.innerText || root.textContent)) || '')
+              .slice(0, maxChars || 3500);
+          } catch (e3) {}
+
           return JSON.stringify({
             title: document.title || '',
             url: location.href || '',
             elements: elements,
+            headings: headings,
+            listItems: listItems,
             text: bodyText
           });
         },

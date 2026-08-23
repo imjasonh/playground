@@ -131,7 +131,8 @@ final class AgentRuntime: ObservableObject {
         For calendar, SMS, and email drafts, tools will ask the user to confirm.
         Prefer listAttachments / readTextAttachment for files the user shared.
         Use the in-app browser for web questions: browserOpen (only if no useful page is open) → browserSnapshot → optional browserClick / browserType → browserSnapshot again.
-        After scraping, answer the user with short bullet points of the relevant facts. Keep the same browser tab for follow-ups unless they ask for a different site.
+        Your final reply must be short bullet points that summarize the current web page content relevant to the user question (schedules, scores, names, dates, facts from the page).
+        Do not summarize the chat transcript. Prefer the snapshot headings, list items, and page text. Keep the same browser tab for follow-ups unless they ask for a different site.
         Use openURL only when the user wants Safari or another system handler.
         Keep final answers short. Mode is \(context.mode.title).
         """
@@ -211,7 +212,9 @@ final class AgentRuntime: ObservableObject {
         let findings = AgentBrowserSession.pageFindingsText(
             title: title,
             url: url,
-            pageText: pageText
+            pageText: pageText,
+            headings: event?.headings ?? [],
+            listItems: event?.listItems ?? []
         )
         transcript.append(
             AgentTranscriptEntry(

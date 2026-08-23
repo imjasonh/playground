@@ -192,11 +192,22 @@ final class DeviceAgentTests: XCTestCase {
         let findings = AgentBrowserSession.pageFindingsText(
             title: "NFL Schedule",
             url: "https://www.espn.com/nfl/schedule",
-            pageText: "Week 1 opens Thursday. Divisional races tighten by December."
+            pageText: "Random filler that should rank below headings.",
+            headings: ["NFL Schedule"],
+            listItems: ["Week 1: Chiefs vs Ravens", "Week 2: Bills at Jets"]
         )
-        XCTAssertTrue(findings.contains("Page · NFL Schedule"))
-        XCTAssertTrue(findings.contains("• "))
+        XCTAssertTrue(findings.contains("From the page · NFL Schedule"))
+        XCTAssertTrue(findings.contains("Week 1: Chiefs vs Ravens"))
         XCTAssertTrue(findings.contains("follow-up"))
+        // Headings / list items from the page beat generic body text.
+        let headingFirst = AgentBrowserSession.pageFindingsBullets(
+            headings: ["Standings"],
+            listItems: ["AFC East leaders"],
+            pageText: "This long body sentence should not displace the heading bullets from the page content itself.",
+            limit: 3
+        )
+        XCTAssertEqual(headingFirst.first, "Standings")
+        XCTAssertTrue(headingFirst.contains("AFC East leaders"))
 
         let runtime = AgentRuntime()
         runtime.context.browser.record(
