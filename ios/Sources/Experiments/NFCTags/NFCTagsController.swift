@@ -2,14 +2,15 @@ import Combine
 @preconcurrency import CoreNFC
 import Foundation
 
-/// Drives Core NFC NDEF read and write sessions for the NFC Tags experiment.
+/// Drives Core NFC tag sessions for the NFC Tags experiment.
 ///
-/// Uses `NFCNDEFReaderSession` (not `NFCTagReaderSession`) so the session only
-/// needs the Tag Reading entitlement and `NFCReaderUsageDescription`. Tag Reader
-/// polling options like FeliCa require extra Info.plist keys and otherwise fail
-/// immediately with "Missing required entitlement". Blank NTAG / Type 2 tags
-/// still surface via empty-NDEF handling (error 403) plus optional UID when the
-/// tag also conforms to a hardware protocol.
+/// Uses `NFCTagReaderSession` (not NDEF-only discovery) so blank NTAG / Type 2
+/// tags still surface UID and family the way apps like NFC Tools do. NDEF
+/// read/write runs through the tag's `NFCNDEFTag` interface after connect.
+///
+/// Broad polling (ISO 14443 / 15693 / FeliCa) needs matching Info.plist keys:
+/// `iso7816.select-identifiers` and `felica.systemcodes`. Without those, Core
+/// NFC invalidates the session with "Missing required entitlement".
 @MainActor
 final class NFCTagsController: NSObject, ObservableObject {
     enum Mode: String {
@@ -23,11 +24,11 @@ final class NFCTagsController: NSObject, ObservableObject {
     @Published var lastReadSummary = ""
     @Published var isSessionActive = false
 
-    private var readerSession: NFCNDEFReaderSession?
+    private var tagSession: NFCTagReaderSession?
     private var pendingWriteMessage: NFCNDEFMessage?
 
     var isNFCAvailable: Bool {
-        NFCNDEFReaderSession.readingAvailable
+        NFCTagReaderSession.readingAvailable
     }
 
     func startRead() {
@@ -57,8 +58,8 @@ final class NFCTagsController: NSObject, ObservableObject {
     }
 
     func cancelSession() {
-        readerSession?.invalidate()
-        readerSession = nil
+        tagSession?.invalidate()
+        tagSession = nil
         pendingWriteMessage = nil
         isSessionActive = false
     }
@@ -69,15 +70,19 @@ final class NFCTagsController: NSObject, ObservableObject {
         // Drop any prior session before starting. Its invalidate callback must
         // not clear the new session; see didInvalidateWithError.
         cancelSession()
-        // invalidateAfterFirstRead must be false so connect + write can run
-        // after detection.
-        let session = NFCNDEFReaderSession(
+        // NFCTagReaderSession's initializer is failable (nil when NFC is
+        // unavailable, e.g. Simulator). Poll all tag families NFC Tools-style;
+        // Info.plist must list FeliCa system codes and ISO 7816 AIDs.
+        guard let session = NFCTagReaderSession(
+            pollingOption: [.iso14443, .iso15693, .iso18092],
             delegate: self,
-            queue: nil,
-            invalidateAfterFirstRead: false
-        )
+            queue: nil
+        ) else {
+            statusMessage = "NFC is not available on this device or the Simulator."
+            return
+        }
         session.alertMessage = alertMessage
-        readerSession = session
+        tagSession = session
         isSessionActive = true
         statusMessage = alertMessage
         session.begin()
@@ -114,47 +119,71 @@ final class NFCTagsController: NSObject, ObservableObject {
         }
     }
 
-    private func finish(session: NFCNDEFReaderSession, alert: String) {
+    private func finish(session: NFCTagReaderSession, alert: String) {
         statusMessage = alert
         session.alertMessage = alert
         session.invalidate()
     }
 
-    private func clearSessionIfCurrent(_ session: NFCNDEFReaderSession) {
-        guard session === readerSession else { return }
-        readerSession = nil
+    private func clearSessionIfCurrent(_ session: NFCTagReaderSession) {
+        guard session === tagSession else { return }
+        tagSession = nil
         pendingWriteMessage = nil
         isSessionActive = false
     }
+}
 
-    /// Best-effort chip identity when the NDEF tag also exposes a hardware protocol.
-    private func identity(for tag: NFCNDEFTag) -> (uid: String?, family: String?) {
-        if let miFare = tag as? NFCMiFareTag {
-            return (NFCTagScanFormatter.uidHex(miFare.identifier), "ISO 14443 (NTAG / MiFare)")
-        }
-        if let iso15693 = tag as? NFCISO15693Tag {
-            return (NFCTagScanFormatter.uidHex(iso15693.identifier), "ISO 15693")
-        }
-        if let feliCa = tag as? NFCFeliCaTag {
-            return (NFCTagScanFormatter.uidHex(feliCa.currentIDm), "FeliCa")
-        }
-        if let iso7816 = tag as? NFCISO7816Tag {
+// MARK: - Detected tag identity
+
+private struct DetectedNFCTag {
+    var ndefTag: NFCNDEFTag
+    var uid: String?
+    var family: String
+}
+
+extension NFCTagsController {
+    private func describe(_ tag: NFCTag) -> DetectedNFCTag? {
+        switch tag {
+        case .miFare(let miFare):
+            return DetectedNFCTag(
+                ndefTag: miFare,
+                uid: NFCTagScanFormatter.uidHex(miFare.identifier),
+                family: "ISO 14443 (NTAG / MiFare)"
+            )
+        case .feliCa(let feliCa):
+            return DetectedNFCTag(
+                ndefTag: feliCa,
+                uid: NFCTagScanFormatter.uidHex(feliCa.currentIDm),
+                family: "FeliCa"
+            )
+        case .iso15693(let iso15693):
+            return DetectedNFCTag(
+                ndefTag: iso15693,
+                uid: NFCTagScanFormatter.uidHex(iso15693.identifier),
+                family: "ISO 15693"
+            )
+        case .iso7816(let iso7816):
             let uid = iso7816.identifier.isEmpty
                 ? nil
                 : NFCTagScanFormatter.uidHex(iso7816.identifier)
-            return (uid, "ISO 7816")
+            return DetectedNFCTag(
+                ndefTag: iso7816,
+                uid: uid,
+                family: "ISO 7816"
+            )
+        @unknown default:
+            return nil
         }
-        return (nil, nil)
     }
 }
 
-// MARK: - NFCNDEFReaderSessionDelegate
+// MARK: - NFCTagReaderSessionDelegate
 
-extension NFCTagsController: NFCNDEFReaderSessionDelegate {
-    nonisolated func readerSessionDidBecomeActive(_ session: NFCNDEFReaderSession) {}
+extension NFCTagsController: NFCTagReaderSessionDelegate {
+    nonisolated func tagReaderSessionDidBecomeActive(_ session: NFCTagReaderSession) {}
 
-    nonisolated func readerSession(
-        _ session: NFCNDEFReaderSession,
+    nonisolated func tagReaderSession(
+        _ session: NFCTagReaderSession,
         didInvalidateWithError error: Error
     ) {
         Task { @MainActor in
@@ -178,33 +207,17 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
         }
     }
 
-    nonisolated func readerSession(
-        _ session: NFCNDEFReaderSession,
-        didDetectNDEFs messages: [NFCNDEFMessage]
-    ) {
-        // Prefer didDetect tags for connect / write. This path covers older
-        // read-only discovery when tags are already NDEF-formatted.
-        Task { @MainActor in
-            guard session === self.readerSession else { return }
-            guard self.pendingWriteMessage == nil else { return }
-            let records = messages.flatMap { self.decode($0) }
-            self.lastReadSummary = NFCNDEFCodec.summary(for: records)
-            let alert = "Read \(records.count) record\(records.count == 1 ? "" : "s")."
-            self.finish(session: session, alert: alert)
-        }
-    }
-
-    nonisolated func readerSession(
-        _ session: NFCNDEFReaderSession,
-        didDetect tags: [NFCNDEFTag]
+    nonisolated func tagReaderSession(
+        _ session: NFCTagReaderSession,
+        didDetect tags: [NFCTag]
     ) {
         Task { @MainActor in
-            guard session === self.readerSession else { return }
+            guard session === self.tagSession else { return }
             self.handleDetectedTags(tags, session: session)
         }
     }
 
-    private func handleDetectedTags(_ tags: [NFCNDEFTag], session: NFCNDEFReaderSession) {
+    private func handleDetectedTags(_ tags: [NFCTag], session: NFCTagReaderSession) {
         guard let tag = tags.first else { return }
         if tags.count > 1 {
             session.alertMessage = "More than one tag detected. Remove extras and try again."
@@ -214,7 +227,7 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
 
         session.connect(to: tag) { [weak self] error in
             Task { @MainActor in
-                guard let self, session === self.readerSession else { return }
+                guard let self, session === self.tagSession else { return }
                 if let error {
                     self.finish(
                         session: session,
@@ -222,20 +235,23 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
                     )
                     return
                 }
+                guard let detected = self.describe(tag) else {
+                    self.finish(session: session, alert: "Unsupported tag type.")
+                    return
+                }
                 if let writeMessage = self.pendingWriteMessage {
-                    self.write(writeMessage, to: tag, session: session)
+                    self.write(writeMessage, to: detected, session: session)
                 } else {
-                    self.read(from: tag, session: session)
+                    self.read(from: detected, session: session)
                 }
             }
         }
     }
 
-    private func read(from tag: NFCNDEFTag, session: NFCNDEFReaderSession) {
-        let identity = identity(for: tag)
-        tag.queryNDEFStatus { [weak self] status, capacity, error in
+    private func read(from detected: DetectedNFCTag, session: NFCTagReaderSession) {
+        detected.ndefTag.queryNDEFStatus { [weak self] status, capacity, error in
             Task { @MainActor in
-                guard let self, session === self.readerSession else { return }
+                guard let self, session === self.tagSession else { return }
                 if let error {
                     self.finish(
                         session: session,
@@ -246,21 +262,20 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
                 switch status {
                 case .notSupported:
                     self.lastReadSummary = NFCTagScanFormatter.nonNDEFSummary(
-                        uid: identity.uid,
-                        family: identity.family
+                        uid: detected.uid,
+                        family: detected.family
                     )
                     self.finish(session: session, alert: "Tag has no NDEF message.")
                 case .readOnly, .readWrite:
-                    tag.readNDEF { message, readError in
+                    detected.ndefTag.readNDEF { message, readError in
                         Task { @MainActor in
-                            guard session === self.readerSession else { return }
+                            guard session === self.tagSession else { return }
                             self.handleReadNDEF(
                                 message: message,
                                 readError: readError,
                                 writable: status == .readWrite,
                                 capacity: capacity,
-                                uid: identity.uid,
-                                family: identity.family,
+                                detected: detected,
                                 session: session
                             )
                         }
@@ -277,9 +292,8 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
         readError: Error?,
         writable: Bool,
         capacity: Int,
-        uid: String?,
-        family: String?,
-        session: NFCNDEFReaderSession
+        detected: DetectedNFCTag,
+        session: NFCTagReaderSession
     ) {
         if let readError {
             let nsError = readError as NSError
@@ -289,8 +303,7 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
                 presentBlankTag(
                     writable: writable,
                     capacity: capacity,
-                    uid: uid,
-                    family: family,
+                    detected: detected,
                     session: session
                 )
                 return
@@ -306,8 +319,7 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
             presentBlankTag(
                 writable: writable,
                 capacity: capacity,
-                uid: uid,
-                family: family,
+                detected: detected,
                 session: session
             )
             return
@@ -318,8 +330,7 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
             presentBlankTag(
                 writable: writable,
                 capacity: capacity,
-                uid: uid,
-                family: family,
+                detected: detected,
                 session: session
             )
             return
@@ -328,8 +339,8 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
         let body = NFCNDEFCodec.summary(for: records)
         lastReadSummary = NFCTagScanFormatter.recordsSummary(
             body,
-            uid: uid,
-            family: family
+            uid: detected.uid,
+            family: detected.family
         )
         let alert = "Read \(records.count) record\(records.count == 1 ? "" : "s")."
         finish(session: session, alert: alert)
@@ -338,27 +349,26 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
     private func presentBlankTag(
         writable: Bool,
         capacity: Int,
-        uid: String?,
-        family: String?,
-        session: NFCNDEFReaderSession
+        detected: DetectedNFCTag,
+        session: NFCTagReaderSession
     ) {
         lastReadSummary = NFCTagScanFormatter.blankTagSummary(
             writable: writable,
             capacity: capacity,
-            uid: uid,
-            family: family
+            uid: detected.uid,
+            family: detected.family
         )
         finish(session: session, alert: "Blank NDEF tag.")
     }
 
     private func write(
         _ message: NFCNDEFMessage,
-        to tag: NFCNDEFTag,
-        session: NFCNDEFReaderSession
+        to detected: DetectedNFCTag,
+        session: NFCTagReaderSession
     ) {
-        tag.queryNDEFStatus { [weak self] status, capacity, error in
+        detected.ndefTag.queryNDEFStatus { [weak self] status, capacity, error in
             Task { @MainActor in
-                guard let self, session === self.readerSession else { return }
+                guard let self, session === self.tagSession else { return }
                 if let error {
                     self.finish(
                         session: session,
@@ -383,9 +393,9 @@ extension NFCTagsController: NFCNDEFReaderSessionDelegate {
                         )
                         return
                     }
-                    tag.writeNDEF(message) { writeError in
+                    detected.ndefTag.writeNDEF(message) { writeError in
                         Task { @MainActor in
-                            guard session === self.readerSession else { return }
+                            guard session === self.tagSession else { return }
                             if let writeError {
                                 self.finish(
                                     session: session,

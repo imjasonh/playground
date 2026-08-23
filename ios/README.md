@@ -216,22 +216,24 @@ on a TrueDepth front camera — not wired here yet.
 
 ### NFC Tags
 
-Read and write NDEF text or URL records with Core NFC (`NFCNDEFReaderSession`).
-Blank NTAG / Type 2 tags (no NDEF message yet) count as a successful read
-instead of the old "does not contain any NDEF message" failure; use Write to
-store a Text or URI record. When the tag also exposes a hardware protocol
-(MiFare / ISO 15693 / …), the last-read summary includes UID and family.
+Read and write NDEF text or URL records with Core NFC (`NFCTagReaderSession`),
+including blank NTAG / Type 2 tags (UID + family, empty NDEF instead of an
+error). Write stores a Text or URI record on writable tags.
 
-Uses `NFCNDEFReaderSession` rather than `NFCTagReaderSession` so the session
-only needs the NFC Tag Reading App ID capability
-(`com.apple.developer.nfc.readersession.formats`) and
-`NFCReaderUsageDescription`. Tag Reader polling options such as FeliCa need
-extra Info.plist keys and otherwise fail immediately with "Missing required
-entitlement". That entitlement change on the host Bundle ID needs
-`needs-ios-bootstrap` so match refreshes the App Store profile after merge.
+Polls ISO 14443, ISO 15693, and FeliCa so chip-level discovery matches apps
+like NFC Tools. That needs the NFC Tag Reading App ID capability
+(`com.apple.developer.nfc.readersession.formats` = `TAG`),
+`NFCReaderUsageDescription`, plus Info.plist lists for
+`iso7816.select-identifiers` and `felica.systemcodes`. Without those lists,
+Core NFC fails immediately with "Missing required entitlement". The App ID
+capability change needs `needs-ios-bootstrap`; the Info.plist lists do not.
 Simulator opens the UI but cannot scan; use a physical iPhone. The screen
 shows the CFBundleVersion build number so TestFlight installs are easy to
 confirm.
+
+Today the UI covers NDEF text/URL read/write and blank-tag identity. Broader
+NFC Tools features (raw pages, lock bits, more record types) can build on the
+same Tag Reader session.
 
 ## Adding an experiment
 
