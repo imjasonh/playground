@@ -137,7 +137,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         let waiters = loadWaiters
         loadWaiters.removeAll()
         for waiter in waiters {
-            waiter.resume()
+            waiter.resume(returning: ())
         }
     }
 
@@ -153,7 +153,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         }
     }
 
-    static func jsString(_ value: String) -> String {
+    nonisolated static func jsString(_ value: String) -> String {
         let escaped = value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "'", with: "\\'")
@@ -162,7 +162,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         return "'\(escaped)'"
     }
 
-    static func formatSnapshotPayload(_ raw: String) -> String {
+    nonisolated static func formatSnapshotPayload(_ raw: String) -> String {
         guard let data = raw.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
@@ -185,7 +185,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         return lines.joined(separator: "\n")
     }
 
-    static func requireOK(_ raw: String, action: String) throws -> String {
+    nonisolated static func requireOK(_ raw: String, action: String) throws -> String {
         guard let data = raw.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
@@ -199,7 +199,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
     }
 
     /// Injected into every main-frame document. Exposes snapshot/click/type with stable refs.
-    static let bridgeJavaScript: String = #"""
+    nonisolated static let bridgeJavaScript: String = #"""
     (function () {
       if (window.__deviceAgent && window.__deviceAgent.__version === 1) return;
       var refs = new Map();
