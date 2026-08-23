@@ -92,7 +92,15 @@ final class AgentRuntime: ObservableObject {
         append(.user, text: trimmed, sourceNote: source)
 
         do {
+            #if canImport(FoundationModels)
+            if #available(iOS 26.0, *) {
+                try await runFoundationModels(prompt: trimmed)
+            } else {
+                append(.system, text: modelStatusText)
+            }
+            #else
             try await runFoundationModels(prompt: trimmed)
+            #endif
         } catch {
             append(.assistant, text: error.localizedDescription)
         }

@@ -33,7 +33,7 @@ final class DeviceAgentTests: XCTestCase {
     }
 
     @MainActor
-    func testSendWhileUnavailableDoesNotRunTools() async {
+    func testSendWhileUnavailableDoesNotRunTools() async throws {
         let runtime = AgentRuntime()
         runtime.refreshModelStatus()
         XCTAssertFalse(runtime.isModelAvailable)
@@ -48,6 +48,7 @@ final class DeviceAgentTests: XCTestCase {
         })
     }
 
+    @MainActor
     func testDeepLinkParsesPrompt() {
         let url = URL(string: "playground://device-agent?prompt=hello%20world&voice=1&mode=browse")!
         let inbox = AgentInbox.shared
@@ -59,6 +60,7 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertEqual(run?.source, .deepLink)
     }
 
+    @MainActor
     func testOpenURLIgnoresOtherSchemes() {
         let url = URL(string: "https://example.com")!
         XCTAssertFalse(AgentInbox.shared.handleOpenURL(url))

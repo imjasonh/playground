@@ -199,7 +199,13 @@ struct DeviceAgentView: View {
     }
 
     private var modePicker: some View {
-        Picker("Mode", selection: $runtime.context.mode) {
+        Picker(
+            "Mode",
+            selection: Binding(
+                get: { runtime.context.mode },
+                set: { runtime.context.mode = $0 }
+            )
+        ) {
             ForEach(AgentMode.allCases) { mode in
                 Text(mode.title).tag(mode)
             }

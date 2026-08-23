@@ -27,7 +27,12 @@ final class AgentToolContext: ObservableObject {
         self.permissions = AgentPermissionGate.shared
     }
 
-    init(inbox: AgentInbox, permissions: AgentPermissionGate = AgentPermissionGate.shared) {
+    init(inbox: AgentInbox) {
+        self.inbox = inbox
+        self.permissions = AgentPermissionGate.shared
+    }
+
+    init(inbox: AgentInbox, permissions: AgentPermissionGate) {
         self.inbox = inbox
         self.permissions = permissions
     }

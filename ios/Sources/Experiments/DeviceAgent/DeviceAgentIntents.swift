@@ -118,25 +118,24 @@ struct AskDeviceAgentIntent: AppIntent {
 }
 
 struct DeviceAgentShortcuts: AppShortcutsProvider {
+    @AppShortcutsBuilder
     static var appShortcuts: [AppShortcut] {
-        [
-            AppShortcut(
-                intent: RunDeviceAgentIntent(),
-                phrases: [
-                    "Run Device Agent in \(.applicationName)",
-                    "Ask \(.applicationName) Device Agent",
-                ],
-                shortTitle: "Device Agent",
-                systemImageName: "cpu"
-            ),
-            AppShortcut(
-                intent: AskDeviceAgentIntent(),
-                phrases: [
-                    "Ask Device Agent in \(.applicationName)",
-                ],
-                shortTitle: "Ask Agent",
-                systemImageName: "text.bubble"
-            ),
-        ]
+        AppShortcut(
+            intent: RunDeviceAgentIntent(),
+            phrases: [
+                "Run Device Agent in \(.applicationName)",
+                "Ask \(.applicationName) Device Agent",
+            ],
+            shortTitle: "Device Agent",
+            systemImageName: "cpu"
+        )
+        AppShortcut(
+            intent: AskDeviceAgentIntent(),
+            phrases: [
+                "Ask Device Agent in \(.applicationName)",
+            ],
+            shortTitle: "Ask Agent",
+            systemImageName: "text.bubble"
+        )
     }
 }
