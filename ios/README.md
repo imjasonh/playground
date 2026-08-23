@@ -117,7 +117,12 @@ Maps, calendar with confirm, SMS/Mail drafts with confirm, inbox files, bundled
 Demo Mail web page). Permissions are requested **only when a tool needs them**.
 
 - **Chat + tool transcript** in the experiment UI; Observe / Act / Browse modes
+  (Observe = read-only tools; Act = calendar/SMS/Mail drafts with confirm; Browse
+  = same tool set as Observe with in-app browser focus)
 - **Voice input** (mic + speech, just-in-time) → editable text → same agent loop
+- **Export conversation** — share a JSON dump of the transcript (including hidden
+  tool args/results) for debugging
+- Chat shows `Invoking <tool>…` only; raw tool I/O stays in the dump
 - **Shortcuts / App Intents / Siri:** “Run Device Agent”, “Ask Device Agent”, and
   “Check Device Agent watches” (for Automations); App Shortcut phrases + in-app
   Siri tips
@@ -128,6 +133,9 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
 - **Files:** attach in-app, pass from Shortcuts, or Open-in / document types into
   the app inbox (a Share Extension appex is intentionally not included yet —
   that needs a new Bundle ID + signing bootstrap)
+- **In-app browser:** `browserOpen` loads real http(s) URLs; injected JS bridge
+  supports `browserSnapshot` / `browserClick` / `browserType` / `browserBack` so
+  the model can drive pages and read content back
 
 When Apple Intelligence / Foundation Models is available (iOS 26+ device), the
 on-device model chooses tools. If Apple Intelligence is off, the UI offers a

@@ -117,7 +117,6 @@ final class AgentRuntime: ObservableObject {
 
         let tools = makeFoundationTools()
         let session = LanguageModelSession(tools: tools, instructions: instructions)
-        append(.system, text: "Foundation Model session started with \(tools.count) tools.")
         let response = try await session.respond(to: prompt)
         let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
         append(.assistant, text: text.isEmpty ? "(Empty model response.)" : text)
@@ -130,7 +129,9 @@ final class AgentRuntime: ObservableObject {
         Use tools to act on the phone. Request only what you need.
         For calendar, SMS, and email drafts, tools will ask the user to confirm.
         Prefer listAttachments / readTextAttachment for files the user shared.
-        Use browserLoadDemo for the bundled Demo Mail page — do not invent Gmail automation.
+        Use browserOpen for real http(s) URLs in the in-app web view.
+        To drive a page: browserOpen → browserSnapshot → browserClick / browserType (use refs like 1, 2 from the snapshot) → browserSnapshot again.
+        Use openURL only when the user wants Safari or another system handler.
         Keep final answers short. Mode is \(context.mode.title).
         """
     }
@@ -145,8 +146,12 @@ final class AgentRuntime: ObservableObject {
             SearchContactsFMTool(runtime: self),
             GetLocationFMTool(runtime: self),
             OpenMapsFMTool(runtime: self),
-            BrowserLoadDemoFMTool(runtime: self),
+            BrowserOpenFMTool(runtime: self),
             BrowserReadFMTool(runtime: self),
+            BrowserSnapshotFMTool(runtime: self),
+            BrowserClickFMTool(runtime: self),
+            BrowserTypeFMTool(runtime: self),
+            BrowserBackFMTool(runtime: self),
         ]
         if context.mode == .act {
             tools.append(CreateEventFMTool(runtime: self))
@@ -161,20 +166,23 @@ final class AgentRuntime: ObservableObject {
     }
     #endif
 
-    func appendToolCall(name: String, summary: String) {
+    func appendToolCall(name: String, arguments: String) {
+        let detail = arguments.trimmingCharacters(in: .whitespacesAndNewlines)
         transcript.append(
             AgentTranscriptEntry(
-                kind: .toolCall(name: name, summary: summary),
-                text: "→ \(name) \(summary)".trimmingCharacters(in: .whitespaces)
+                kind: .toolCall(name: name),
+                text: "Invoking \(name)…",
+                debugDetail: detail.isEmpty ? nil : detail
             )
         )
     }
 
-    func appendToolResult(name: String, summary: String) {
+    func appendToolResult(name: String, result: String) {
         transcript.append(
             AgentTranscriptEntry(
-                kind: .toolResult(name: name, summary: summary),
-                text: "← \(name): \(summary)"
+                kind: .toolResult(name: name),
+                text: "",
+                debugDetail: result
             )
         )
     }
@@ -186,6 +194,44 @@ final class AgentRuntime: ObservableObject {
                 text: domain.prePrompt
             )
         )
+    }
+
+    /// JSON dump of the full transcript (including hidden tool results) for debugging.
+    func makeConversationDump() -> AgentConversationDump {
+        AgentConversationDump(
+            exportedAt: Date(),
+            mode: context.mode.rawValue,
+            modelGate: modelGate.title,
+            modelAvailable: isModelAvailable,
+            entries: transcript.map { entry in
+                AgentConversationDumpEntry(
+                    id: entry.id.uuidString,
+                    date: entry.date,
+                    kind: entry.kindLabel,
+                    toolName: entry.toolName,
+                    displayText: entry.text,
+                    debugDetail: entry.debugDetail
+                )
+            },
+            toolLog: context.lastToolLog.map {
+                AgentConversationDumpToolLog(name: $0.name, detail: $0.detail)
+            }
+        )
+    }
+
+    func conversationDumpJSONData() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(makeConversationDump())
+    }
+
+    func writeConversationDumpFile() throws -> URL {
+        let data = try conversationDumpJSONData()
+        let name = "device-agent-\(ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")).json"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try data.write(to: url, options: .atomic)
+        return url
     }
 
     private func appendSystem(_ text: String) {
@@ -215,12 +261,12 @@ private enum AgentFMToolBridge {
             guard let runtime else {
                 throw AgentToolError.unavailable("Device Agent runtime is gone.")
             }
-            runtime.appendToolCall(name: name, summary: summary)
+            runtime.appendToolCall(name: name, arguments: summary)
             if let permission {
                 runtime.appendPermission(permission)
             }
             let result = try await work(runtime.context)
-            runtime.appendToolResult(name: name, summary: String(result.prefix(200)))
+            runtime.appendToolResult(name: name, result: result)
             return result
         }.value
     }
@@ -447,20 +493,20 @@ struct DraftEmailFMTool: Tool {
 }
 
 @available(iOS 26.0, *)
-struct BrowserLoadDemoFMTool: Tool {
+struct BrowserOpenFMTool: Tool {
     weak var runtime: AgentRuntime?
-    let name = "browserLoadDemo"
-    let description = "Load the bundled Demo Mail HTML page into the in-app web view."
+    let name = "browserOpen"
+    let description = "Load a real http(s) URL in the in-app web view (not Safari). Then call browserSnapshot."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Unused; pass an empty string")
-        var note: String
+        @Guide(description: "Absolute http or https URL")
+        var url: String
     }
 
     func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name) { context in
-            AgentToolExecutor.browserLoadDemo(context: context)
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.url) { context in
+            try await AgentToolExecutor.browserOpen(context: context, urlString: arguments.url)
         }
     }
 }
@@ -469,7 +515,7 @@ struct BrowserLoadDemoFMTool: Tool {
 struct BrowserReadFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserRead"
-    let description = "Read the current in-app browser title and URL."
+    let description = "Read the current in-app browser title, URL, and loading state."
 
     @Generable
     struct Arguments {
@@ -480,6 +526,92 @@ struct BrowserReadFMTool: Tool {
     func call(arguments: Arguments) async throws -> String {
         try await AgentFMToolBridge.run(runtime, name: name) { context in
             AgentToolExecutor.browserRead(context: context)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserSnapshotFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserSnapshot"
+    let description = "Read interactive elements (with numeric refs) and visible text from the in-app browser. Call before click/type."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Max visible text characters to return (default 3500)")
+        var maxTextChars: Double
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        let maxChars = arguments.maxTextChars > 0 ? arguments.maxTextChars : 3500
+        return try await AgentFMToolBridge.run(runtime, name: name, summary: "max=\(Int(maxChars))") { context in
+            try await AgentToolExecutor.browserSnapshot(context: context, maxTextChars: maxChars)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserClickFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserClick"
+    let description = "Click an element by ref from the latest browserSnapshot (for example \"3\")."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Numeric ref from browserSnapshot")
+        var ref: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.ref) { context in
+            try await AgentToolExecutor.browserClick(context: context, ref: arguments.ref)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserTypeFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserType"
+    let description = "Type into an input/textarea by ref from browserSnapshot. Set submit true to press Enter / submit the form."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Numeric ref from browserSnapshot")
+        var ref: String
+        @Guide(description: "Text to enter")
+        var text: String
+        @Guide(description: "If true, submit the form or press Enter after typing")
+        var submit: Bool
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.ref) { context in
+            try await AgentToolExecutor.browserType(
+                context: context,
+                ref: arguments.ref,
+                text: arguments.text,
+                submit: arguments.submit
+            )
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserBackFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserBack"
+    let description = "Go back in the in-app browser history."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Unused; pass an empty string")
+        var note: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name) { context in
+            try await AgentToolExecutor.browserBack(context: context)
         }
     }
 }

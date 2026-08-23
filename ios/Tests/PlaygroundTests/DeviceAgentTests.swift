@@ -132,4 +132,90 @@ final class DeviceAgentTests: XCTestCase {
         watch.isPaused = true
         XCTAssertFalse(watch.isDue(at: now))
     }
+
+    @MainActor
+    func testConversationDumpIncludesHiddenToolResults() throws {
+        let runtime = AgentRuntime()
+        runtime.appendToolCall(name: "searchContacts", arguments: "Mom")
+        runtime.appendToolResult(name: "searchContacts", result: "Mom <mom@example.com>")
+
+        let visible = runtime.transcript.filter(\.isVisibleInChat)
+        XCTAssertEqual(
+            visible.count,
+            runtime.transcript.filter { entry in
+                if case .toolResult = entry.kind { return false }
+                return true
+            }.count
+        )
+        XCTAssertTrue(visible.contains { entry in
+            if case .toolCall(let name) = entry.kind {
+                return name == "searchContacts" && entry.text == "Invoking searchContacts…"
+            }
+            return false
+        })
+        XCTAssertFalse(visible.contains { entry in
+            if case .toolResult = entry.kind { return true }
+            return false
+        })
+        // Help text may already be in the transcript; ensure a toolCall is visible and a toolResult is not.
+        XCTAssertTrue(runtime.transcript.contains { entry in
+            if case .toolResult = entry.kind { return !entry.isVisibleInChat }
+            return false
+        })
+
+        let dump = runtime.makeConversationDump()
+        XCTAssertEqual(dump.entries.count, runtime.transcript.count)
+        let result = try XCTUnwrap(dump.entries.first { $0.kind == "toolResult" })
+        XCTAssertEqual(result.debugDetail, "Mom <mom@example.com>")
+        let data = try runtime.conversationDumpJSONData()
+        XCTAssertFalse(data.isEmpty)
+        let url = try runtime.writeConversationDumpFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @MainActor
+    func testBrowserOpenRejectsNonHTTP() async {
+        let context = AgentToolContext()
+        do {
+            _ = try await AgentToolExecutor.browserOpen(context: context, urlString: "file:///tmp/x.html")
+            XCTFail("Expected file URL to be rejected")
+        } catch {
+            // expected
+        }
+        do {
+            _ = try await AgentToolExecutor.browserOpen(context: context, urlString: "not a url")
+            XCTFail("Expected invalid URL to be rejected")
+        } catch {
+            // expected
+        }
+    }
+
+    func testBrowserSnapshotFormattingAndJSEscape() {
+        let raw = """
+        {"title":"Example","url":"https://example.com/","elements":["[1] link \\"Home\\"","[2] textbox \\"Search\\""],"text":"Welcome"}
+        """
+        let formatted = AgentBrowserSession.formatSnapshotPayload(raw)
+        XCTAssertTrue(formatted.contains("title: Example"))
+        XCTAssertTrue(formatted.contains("url: https://example.com/"))
+        XCTAssertTrue(formatted.contains("[1] link"))
+        XCTAssertTrue(formatted.contains("text:"))
+        XCTAssertTrue(formatted.contains("Welcome"))
+
+        XCTAssertEqual(AgentBrowserSession.jsString("a'b"), "'a\\'b'")
+        XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("__deviceAgent"))
+        XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("snapshot"))
+    }
+
+    @MainActor
+    func testBrowserRequireOKParsesFailure() {
+        XCTAssertThrowsError(try AgentBrowserSession.requireOK(
+            #"{"ok":false,"error":"unknown ref 9"}"#,
+            action: "click"
+        ))
+        XCTAssertEqual(
+            try AgentBrowserSession.requireOK(#"{"ok":true}"#, action: "click"),
+            "click ok"
+        )
+    }
 }

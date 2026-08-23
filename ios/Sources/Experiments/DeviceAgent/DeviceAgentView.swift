@@ -18,6 +18,8 @@ struct DeviceAgentView: View {
     @State private var showMail = false
     @State private var voiceMode = false
     @State private var showWatches = false
+    @State private var exportShareURL: URL?
+    @State private var exportError: String?
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -68,6 +70,18 @@ struct DeviceAgentView: View {
             if url != nil {
                 showBrowser = true
                 runtime.context.mode = runtime.context.mode == .observe ? .browse : runtime.context.mode
+            }
+        }
+        .onChange(of: runtime.context.browser.url) { url in
+            if url != nil {
+                showBrowser = true
+                runtime.context.browserURL = url
+                runtime.context.mode = runtime.context.mode == .observe ? .browse : runtime.context.mode
+            }
+        }
+        .onChange(of: runtime.context.browser.title) { title in
+            if !title.isEmpty {
+                runtime.context.browserTitle = title
             }
         }
         .onChange(of: runtime.context.pendingSMS) { draft in
@@ -121,6 +135,44 @@ struct DeviceAgentView: View {
             NavigationStack {
                 DeviceAgentWatchesView(store: watches)
             }
+        }
+        .sheet(isPresented: Binding(
+            get: { exportShareURL != nil },
+            set: { if !$0 { exportShareURL = nil } }
+        )) {
+            if let exportShareURL {
+                NavigationStack {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Share this JSON dump to debug tool calls and model replies. It includes hidden tool results.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        ShareLink(item: exportShareURL) {
+                            Label("Share JSON", systemImage: "square.and.arrow.up")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("deviceAgentExportShareLink")
+                        Spacer()
+                    }
+                    .padding()
+                    .navigationTitle("Export conversation")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Done") { self.exportShareURL = nil }
+                        }
+                    }
+                }
+                .presentationDetents([.medium])
+            }
+        }
+        .alert("Export failed", isPresented: Binding(
+            get: { exportError != nil },
+            set: { if !$0 { exportError = nil } }
+        )) {
+            Button("OK", role: .cancel) { exportError = nil }
+        } message: {
+            Text(exportError ?? "")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("deviceAgentRoot")
@@ -193,6 +245,13 @@ struct DeviceAgentView: View {
                     .accessibilityIdentifier("deviceAgentModelStatus")
                 Spacer()
                 Button {
+                    exportConversation()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("Export conversation")
+                .accessibilityIdentifier("deviceAgentExportButton")
+                Button {
                     showWatches = true
                 } label: {
                     Label("Watches", systemImage: "clock.arrow.2.circlepath")
@@ -237,32 +296,38 @@ struct DeviceAgentView: View {
     }
 
     private var modePicker: some View {
-        Picker(
-            "Mode",
-            selection: Binding(
-                get: { runtime.context.mode },
-                set: { runtime.context.mode = $0 }
-            )
-        ) {
-            ForEach(AgentMode.allCases) { mode in
-                Text(mode.title).tag(mode)
+        VStack(alignment: .leading, spacing: 6) {
+            Picker(
+                "Mode",
+                selection: Binding(
+                    get: { runtime.context.mode },
+                    set: { runtime.context.mode = $0 }
+                )
+            ) {
+                ForEach(AgentMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
             }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("deviceAgentModePicker")
+            .onChange(of: runtime.context.mode) { mode in
+                runtime.transcript.append(
+                    AgentTranscriptEntry(kind: .system, text: "Mode → \(mode.title): \(mode.detail)")
+                )
+            }
+            Text(runtime.context.mode.detail)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("deviceAgentModeDetail")
         }
-        .pickerStyle(.segmented)
         .padding(.horizontal)
-        .accessibilityIdentifier("deviceAgentModePicker")
-        .onChange(of: runtime.context.mode) { mode in
-            runtime.transcript.append(
-                AgentTranscriptEntry(kind: .system, text: "Mode → \(mode.title): \(mode.detail)")
-            )
-        }
     }
 
     private var transcriptList: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(runtime.transcript) { entry in
+                    ForEach(runtime.transcript.filter(\.isVisibleInChat)) { entry in
                         transcriptRow(entry)
                             .id(entry.id)
                     }
@@ -270,7 +335,7 @@ struct DeviceAgentView: View {
                 .padding()
             }
             .onChange(of: runtime.transcript.count) { _ in
-                if let last = runtime.transcript.last?.id {
+                if let last = runtime.transcript.last(where: \.isVisibleInChat)?.id {
                     withAnimation {
                         proxy.scrollTo(last, anchor: .bottom)
                     }
@@ -312,16 +377,33 @@ struct DeviceAgentView: View {
     private var browserPane: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(runtime.context.browserTitle.isEmpty ? "Browser" : runtime.context.browserTitle)
+                Text(runtime.context.browser.title.isEmpty
+                    ? (runtime.context.browserTitle.isEmpty ? "Browser" : runtime.context.browserTitle)
+                    : runtime.context.browser.title)
                     .font(.caption.weight(.semibold))
+                    .lineLimit(1)
                 Spacer()
+                if runtime.context.browser.isLoading {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                }
                 Button("Close") { showBrowser = false }
                     .font(.caption)
             }
             .padding(.horizontal)
             .padding(.vertical, 6)
-            AgentBrowserPane(url: runtime.context.browserURL)
-                .background(Color(.secondarySystemBackground))
+            if runtime.context.browser.url == nil && runtime.context.browserURL == nil {
+                Text("Ask Device Agent to open an http(s) URL. It can snapshot, click, and type in this pane.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(.secondarySystemBackground))
+            } else {
+                AgentBrowserPane(session: runtime.context.browser)
+                    .background(Color(.secondarySystemBackground))
+            }
         }
         .accessibilityIdentifier("deviceAgentBrowser")
     }
@@ -384,9 +466,6 @@ struct DeviceAgentView: View {
 
                 Button {
                     showBrowser.toggle()
-                    if showBrowser && runtime.context.browserURL == nil {
-                        _ = AgentToolExecutor.browserLoadDemo(context: runtime.context)
-                    }
                 } label: {
                     Image(systemName: "globe")
                 }
@@ -412,6 +491,14 @@ struct DeviceAgentView: View {
         .background(.bar)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("deviceAgentComposer")
+    }
+
+    private func exportConversation() {
+        do {
+            exportShareURL = try runtime.writeConversationDumpFile()
+        } catch {
+            exportError = error.localizedDescription
+        }
     }
 
     private func sendDraft() {
