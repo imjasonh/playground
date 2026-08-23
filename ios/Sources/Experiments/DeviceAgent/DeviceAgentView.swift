@@ -160,6 +160,7 @@ struct DeviceAgentView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("deviceAgentUnavailable")
     }
 
@@ -357,6 +358,7 @@ struct DeviceAgentView: View {
                 TextField("Ask Device Agent…", text: $draft, axis: .vertical)
                     .lineLimit(1...4)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityLabel("Ask Device Agent")
                     .accessibilityIdentifier("deviceAgentPromptField")
 
                 Button {
@@ -371,6 +373,8 @@ struct DeviceAgentView: View {
         }
         .padding()
         .background(.bar)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("deviceAgentComposer")
     }
 
     private func sendDraft() {

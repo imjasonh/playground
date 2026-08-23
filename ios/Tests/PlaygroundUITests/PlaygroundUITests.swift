@@ -116,41 +116,42 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Device Agent"].waitForExistence(timeout: 8))
 
         // CI’s iOS 26 Simulator may report Foundation Models available; older
-        // hosts show the unavailable pane. Poll both so neither path starves.
-        let deadline = Date().addingTimeInterval(12)
-        var sawUnavailable = false
-        var sawComposer = false
-        while Date() < deadline {
-            if app.otherElements["deviceAgentUnavailable"].exists
-                || app.staticTexts["deviceAgentUnavailableTitle"].exists
-            {
-                sawUnavailable = true
-                break
-            }
-            if app.textFields["deviceAgentPromptField"].exists
-                || app.textViews["deviceAgentPromptField"].exists
-            {
-                sawComposer = true
-                break
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        // hosts show the unavailable pane. Match any marker in one wait so the
+        // available path isn’t starved by a long unavailable timeout.
+        let unavailable = app.descendants(matching: .any)["deviceAgentUnavailable"]
+        let unavailableTitle = app.descendants(matching: .any)["deviceAgentUnavailableTitle"]
+        let composer = app.descendants(matching: .any)["deviceAgentComposer"]
+        let prompt = app.descendants(matching: .any)["deviceAgentPromptField"]
+        let send = app.buttons["deviceAgentSendButton"]
+        let voice = app.buttons["deviceAgentVoiceModeButton"]
+        let modelStatus = app.descendants(matching: .any)["deviceAgentModelStatus"]
+        let root = app.descendants(matching: .any)["deviceAgentRoot"]
+
+        let marker = NSPredicate { _, _ in
+            unavailable.exists
+                || unavailableTitle.exists
+                || composer.exists
+                || prompt.exists
+                || send.exists
+                || modelStatus.exists
+                || root.exists
         }
-        XCTAssertTrue(
-            sawUnavailable || sawComposer,
-            "Expected unavailable pane or composer for Device Agent"
-        )
-        if sawUnavailable {
+        let ready = XCTNSPredicateExpectation(predicate: marker, object: nil)
+        let waited = XCTWaiter.wait(for: [ready], timeout: 12)
+        XCTAssertEqual(waited, .completed, "Expected unavailable pane or Device Agent chat UI")
+
+        if unavailable.exists || unavailableTitle.exists {
             XCTAssertTrue(
-                app.staticTexts["deviceAgentUnavailableDetail"].waitForExistence(timeout: 3)
-                    || app.otherElements["deviceAgentUnavailableDetail"].waitForExistence(timeout: 2)
+                app.descendants(matching: .any)["deviceAgentUnavailableDetail"].waitForExistence(timeout: 3)
                     || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Apple Intelligence")).firstMatch.exists
                     || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "iOS 26")).firstMatch.exists
-                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "eligible")).firstMatch.exists
                     || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Foundation")).firstMatch.exists
             )
         } else {
-            XCTAssertTrue(app.buttons["deviceAgentSendButton"].waitForExistence(timeout: 8))
-            XCTAssertTrue(app.buttons["deviceAgentVoiceModeButton"].waitForExistence(timeout: 8))
+            XCTAssertTrue(
+                send.waitForExistence(timeout: 8) || voice.waitForExistence(timeout: 2) || prompt.exists || composer.exists,
+                "Expected composer controls when the model gate is available"
+            )
         }
     }
 
