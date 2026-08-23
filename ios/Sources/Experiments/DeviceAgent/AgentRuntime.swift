@@ -105,20 +105,20 @@ final class AgentRuntime: ObservableObject {
     @available(iOS 26.0, *)
     private func makeFoundationTools() -> [any Tool] {
         var tools: [any Tool] = [
-            ListAttachmentsFMTool(context: context, runtime: self),
-            ReadTextAttachmentFMTool(context: context, runtime: self),
+            ListAttachmentsFMTool(runtime: self),
+            ReadTextAttachmentFMTool(runtime: self),
             GetDateTimeFMTool(runtime: self),
             OpenURLFMTool(runtime: self),
-            SearchContactsFMTool(context: context, runtime: self),
-            GetLocationFMTool(context: context, runtime: self),
+            SearchContactsFMTool(runtime: self),
+            GetLocationFMTool(runtime: self),
             OpenMapsFMTool(runtime: self),
-            BrowserLoadDemoFMTool(context: context, runtime: self),
-            BrowserReadFMTool(context: context, runtime: self),
+            BrowserLoadDemoFMTool(runtime: self),
+            BrowserReadFMTool(runtime: self),
         ]
         if context.mode == .act {
-            tools.append(CreateEventFMTool(context: context, runtime: self))
-            tools.append(DraftSMSFMTool(context: context, runtime: self))
-            tools.append(DraftEmailFMTool(context: context, runtime: self))
+            tools.append(CreateEventFMTool(runtime: self))
+            tools.append(DraftSMSFMTool(runtime: self))
+            tools.append(DraftEmailFMTool(runtime: self))
         }
         return tools
     }
@@ -168,11 +168,33 @@ final class AgentRuntime: ObservableObject {
     }
 }
 
-
 #if canImport(FoundationModels)
 @available(iOS 26.0, *)
+private enum AgentFMToolBridge {
+    static func run(
+        _ runtime: AgentRuntime?,
+        name: String,
+        summary: String = "",
+        permission: AgentPermissionDomain? = nil,
+        work: @MainActor (AgentToolContext) async throws -> String
+    ) async throws -> String {
+        try await Task { @MainActor in
+            guard let runtime else {
+                throw AgentToolError.unavailable("Device Agent runtime is gone.")
+            }
+            runtime.appendToolCall(name: name, summary: summary)
+            if let permission {
+                runtime.appendPermission(permission)
+            }
+            let result = try await work(runtime.context)
+            runtime.appendToolResult(name: name, summary: String(result.prefix(200)))
+            return result
+        }.value
+    }
+}
+
+@available(iOS 26.0, *)
 struct ListAttachmentsFMTool: Tool {
-    let context: AgentToolContext
     weak var runtime: AgentRuntime?
     let name = "listAttachments"
     let description = "List files in the Device Agent inbox (from Shortcuts or in-app attach)."
@@ -184,18 +206,14 @@ struct ListAttachmentsFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: "")
-            let result = AgentToolExecutor.listAttachments(context: context)
-            runtime?.appendToolResult(name: name, summary: String(result.prefix(200)))
-            return result
+        try await AgentFMToolBridge.run(runtime, name: name) { context in
+            AgentToolExecutor.listAttachments(context: context)
         }
     }
 }
 
 @available(iOS 26.0, *)
 struct ReadTextAttachmentFMTool: Tool {
-    let context: AgentToolContext
     weak var runtime: AgentRuntime?
     let name = "readTextAttachment"
     let description = "Read a text attachment by filename substring or id prefix."
@@ -207,14 +225,11 @@ struct ReadTextAttachmentFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        try await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: arguments.filenameQuery)
-            let result = try AgentToolExecutor.readTextAttachment(
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.filenameQuery) { context in
+            try AgentToolExecutor.readTextAttachment(
                 context: context,
                 filenameQuery: arguments.filenameQuery
             )
-            runtime?.appendToolResult(name: name, summary: String(result.prefix(200)))
-            return result
         }
     }
 }
@@ -232,11 +247,8 @@ struct GetDateTimeFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: "")
-            let result = AgentToolExecutor.getCurrentDateTime()
-            runtime?.appendToolResult(name: name, summary: result)
-            return result
+        try await AgentFMToolBridge.run(runtime, name: name) { _ in
+            AgentToolExecutor.getCurrentDateTime()
         }
     }
 }
@@ -253,18 +265,14 @@ struct OpenURLFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        try await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: arguments.url)
-            let result = try AgentToolExecutor.openURL(arguments.url)
-            runtime?.appendToolResult(name: name, summary: result)
-            return result
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.url) { _ in
+            try AgentToolExecutor.openURL(arguments.url)
         }
     }
 }
 
 @available(iOS 26.0, *)
 struct SearchContactsFMTool: Tool {
-    let context: AgentToolContext
     weak var runtime: AgentRuntime?
     let name = "searchContacts"
     let description = "Search device Contacts by name. Requests Contacts permission just-in-time."
@@ -275,21 +283,19 @@ struct SearchContactsFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: arguments.query)
-            runtime?.appendPermission(.contacts)
+        try await AgentFMToolBridge.run(
+            runtime,
+            name: name,
+            summary: arguments.query,
+            permission: .contacts
+        ) { context in
+            try await AgentToolExecutor.searchContacts(context: context, query: arguments.query)
         }
-        let result = try await AgentToolExecutor.searchContacts(context: context, query: arguments.query)
-        await MainActor.run {
-            runtime?.appendToolResult(name: name, summary: String(result.prefix(200)))
-        }
-        return result
     }
 }
 
 @available(iOS 26.0, *)
 struct GetLocationFMTool: Tool {
-    let context: AgentToolContext
     weak var runtime: AgentRuntime?
     let name = "getCurrentLocation"
     let description = "Get the current GPS location. Requests Location permission just-in-time."
@@ -301,15 +307,13 @@ struct GetLocationFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: "")
-            runtime?.appendPermission(.location)
+        try await AgentFMToolBridge.run(
+            runtime,
+            name: name,
+            permission: .location
+        ) { context in
+            try await AgentToolExecutor.getCurrentLocation(context: context)
         }
-        let result = try await AgentToolExecutor.getCurrentLocation(context: context)
-        await MainActor.run {
-            runtime?.appendToolResult(name: name, summary: String(result.prefix(200)))
-        }
-        return result
     }
 }
 
@@ -325,18 +329,14 @@ struct OpenMapsFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        try await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: arguments.query)
-            let result = try AgentToolExecutor.openMapsDirections(query: arguments.query)
-            runtime?.appendToolResult(name: name, summary: result)
-            return result
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.query) { _ in
+            try AgentToolExecutor.openMapsDirections(query: arguments.query)
         }
     }
 }
 
 @available(iOS 26.0, *)
 struct CreateEventFMTool: Tool {
-    let context: AgentToolContext
     weak var runtime: AgentRuntime?
     let name = "createCalendarEvent"
     let description = "Create a calendar event after user confirmation. hoursFromNow defaults to 2."
@@ -349,26 +349,24 @@ struct CreateEventFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: arguments.title)
-            runtime?.appendPermission(.calendars)
+        try await AgentFMToolBridge.run(
+            runtime,
+            name: name,
+            summary: arguments.title,
+            permission: .calendars
+        ) { context in
+            try await AgentToolExecutor.createCalendarEvent(
+                context: context,
+                title: arguments.title,
+                notes: arguments.notes,
+                hoursFromNow: arguments.hoursFromNow
+            )
         }
-        let result = try await AgentToolExecutor.createCalendarEvent(
-            context: context,
-            title: arguments.title,
-            notes: arguments.notes,
-            hoursFromNow: arguments.hoursFromNow
-        )
-        await MainActor.run {
-            runtime?.appendToolResult(name: name, summary: result)
-        }
-        return result
     }
 }
 
 @available(iOS 26.0, *)
 struct DraftSMSFMTool: Tool {
-    let context: AgentToolContext
     weak var runtime: AgentRuntime?
     let name = "draftSMS"
     let description = "Open an SMS/iMessage draft after confirmation. recipients is a comma-separated phone list."
@@ -380,24 +378,18 @@ struct DraftSMSFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: arguments.recipients)
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.recipients) { context in
+            try await AgentToolExecutor.draftSMS(
+                context: context,
+                recipients: arguments.recipients,
+                body: arguments.body
+            )
         }
-        let result = try await AgentToolExecutor.draftSMS(
-            context: context,
-            recipients: arguments.recipients,
-            body: arguments.body
-        )
-        await MainActor.run {
-            runtime?.appendToolResult(name: name, summary: result)
-        }
-        return result
     }
 }
 
 @available(iOS 26.0, *)
 struct DraftEmailFMTool: Tool {
-    let context: AgentToolContext
     weak var runtime: AgentRuntime?
     let name = "draftEmail"
     let description = "Open a Mail draft after confirmation."
@@ -410,25 +402,19 @@ struct DraftEmailFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: arguments.to)
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.to) { context in
+            try await AgentToolExecutor.draftEmail(
+                context: context,
+                to: arguments.to,
+                subject: arguments.subject,
+                body: arguments.body
+            )
         }
-        let result = try await AgentToolExecutor.draftEmail(
-            context: context,
-            to: arguments.to,
-            subject: arguments.subject,
-            body: arguments.body
-        )
-        await MainActor.run {
-            runtime?.appendToolResult(name: name, summary: result)
-        }
-        return result
     }
 }
 
 @available(iOS 26.0, *)
 struct BrowserLoadDemoFMTool: Tool {
-    let context: AgentToolContext
     weak var runtime: AgentRuntime?
     let name = "browserLoadDemo"
     let description = "Load the bundled Demo Mail HTML page into the in-app web view."
@@ -440,18 +426,14 @@ struct BrowserLoadDemoFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: "")
-            let result = AgentToolExecutor.browserLoadDemo(context: context)
-            runtime?.appendToolResult(name: name, summary: result)
-            return result
+        try await AgentFMToolBridge.run(runtime, name: name) { context in
+            AgentToolExecutor.browserLoadDemo(context: context)
         }
     }
 }
 
 @available(iOS 26.0, *)
 struct BrowserReadFMTool: Tool {
-    let context: AgentToolContext
     weak var runtime: AgentRuntime?
     let name = "browserRead"
     let description = "Read the current in-app browser title and URL."
@@ -463,11 +445,8 @@ struct BrowserReadFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await MainActor.run {
-            runtime?.appendToolCall(name: name, summary: "")
-            let result = AgentToolExecutor.browserRead(context: context)
-            runtime?.appendToolResult(name: name, summary: result)
-            return result
+        try await AgentFMToolBridge.run(runtime, name: name) { context in
+            AgentToolExecutor.browserRead(context: context)
         }
     }
 }

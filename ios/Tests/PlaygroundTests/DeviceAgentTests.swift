@@ -62,7 +62,9 @@ final class DeviceAgentTests: XCTestCase {
         let text = try String(contentsOf: url, encoding: .utf8)
         XCTAssertEqual(text, "hello agent")
 
-        let listed = AgentToolExecutor.listAttachments(context: AgentToolContext(inbox: inbox))
+        let listed = AgentToolExecutor.listAttachments(
+            context: AgentToolContext(inbox: inbox)
+        )
         XCTAssertTrue(listed.contains("note.txt"))
     }
 
