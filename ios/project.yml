@@ -111,19 +111,11 @@ targets:
         # when polling ISO 7816 / FeliCa families; missing entries invalidate the
         # session with "Missing required entitlement". No signing bootstrap.
         com.apple.developer.nfc.readersession.iso7816.select-identifiers:
-          # NFC Forum Type 4 NDEF Tag Application
+          # NFC Forum Type 4 NDEF Tag Application only. Do not add a catch-all
+          # AID (e.g. 00000000000000): that can SELECT the wrong application and
+          # make Type 2 NTAG write/read look successful while storing nothing.
           - D2760000850100
           - D2760000850101
-          # Common ISO 7816 / smart-card AIDs (passports, payment, transit)
-          - A0000002471001
-          - A0000000031010
-          - A000000003101001
-          - A0000000041010
-          - A0000000042010
-          - A00000006510
-          - A0000001510000
-          - 325041592E5359532E4444463031
-          - 00000000000000
         com.apple.developer.nfc.readersession.felica.systemcodes:
           # Discrete FeliCa system codes only (no 0xFF wildcards). Covers common
           # transit / mobile FeliCa systems so .iso18092 polling can start.

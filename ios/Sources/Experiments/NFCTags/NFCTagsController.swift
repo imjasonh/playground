@@ -203,6 +203,14 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
             if benign.contains(nsError.code) {
                 return
             }
+            // invalidate() after a successful finish() can still deliver a
+            // non-benign error; keep the success / blank-tag status.
+            if self.statusMessage.hasPrefix("Wrote ")
+                || self.statusMessage.hasPrefix("Read ")
+                || self.statusMessage.hasPrefix("Blank ")
+            {
+                return
+            }
             self.statusMessage = error.localizedDescription
         }
     }
@@ -403,16 +411,71 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                                 )
                                 return
                             }
-                            self.pendingWriteMessage = nil
-                            self.finish(
-                                session: session,
-                                alert: "Wrote NDEF message (\(length) bytes)."
+                            // Core NFC can report write success on blank Type 2
+                            // tags without persisting. Confirm with a read-back
+                            // before claiming success.
+                            self.verifyWrite(
+                                message,
+                                on: detected,
+                                session: session
                             )
                         }
                     }
                 @unknown default:
                     self.finish(session: session, alert: "Unknown NDEF status.")
                 }
+            }
+        }
+    }
+
+    /// Reads the tag after writeNDEF and only then reports success.
+    private func verifyWrite(
+        _ written: NFCNDEFMessage,
+        on detected: DetectedNFCTag,
+        session: NFCTagReaderSession
+    ) {
+        detected.ndefTag.readNDEF { message, readError in
+            Task { @MainActor in
+                guard session === self.tagSession else { return }
+                if let readError {
+                    let nsError = readError as NSError
+                    let emptyNDEF = nsError.domain == NFCReaderError.errorDomain
+                        && NFCTagScanFormatter.isEmptyNDEFErrorCode(nsError.code)
+                    if emptyNDEF {
+                        self.finish(
+                            session: session,
+                            alert: "Write reported success, but the tag is still blank. "
+                                + "Try again, or format the tag once with NFC Tools."
+                        )
+                        return
+                    }
+                    self.finish(
+                        session: session,
+                        alert: "Wrote, but could not verify: \(readError.localizedDescription)"
+                    )
+                    return
+                }
+                guard let message, !message.records.isEmpty else {
+                    self.finish(
+                        session: session,
+                        alert: "Write reported success, but the tag is still blank. "
+                            + "Try again, or format the tag once with NFC Tools."
+                    )
+                    return
+                }
+                self.pendingWriteMessage = nil
+                let records = self.decode(message)
+                let body = NFCNDEFCodec.summary(for: records)
+                self.lastReadSummary = NFCTagScanFormatter.recordsSummary(
+                    body,
+                    uid: detected.uid,
+                    family: detected.family
+                )
+                let length = written.length
+                self.finish(
+                    session: session,
+                    alert: "Wrote and verified NDEF message (\(length) bytes)."
+                )
             }
         }
     }
