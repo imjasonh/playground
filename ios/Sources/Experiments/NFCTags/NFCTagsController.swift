@@ -741,7 +741,7 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                         completion(.failure(error))
                         return
                     }
-                    guard let response, response.count >= 16 else {
+                    guard response.count >= 16 else {
                         completion(
                             .failure(
                                 NSError(
