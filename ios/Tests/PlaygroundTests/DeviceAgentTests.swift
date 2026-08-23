@@ -140,7 +140,13 @@ final class DeviceAgentTests: XCTestCase {
         runtime.appendToolResult(name: "searchContacts", result: "Mom <mom@example.com>")
 
         let visible = runtime.transcript.filter(\.isVisibleInChat)
-        XCTAssertEqual(visible.count, runtime.transcript.filter { $0.kind != .toolResult }.count)
+        XCTAssertEqual(
+            visible.count,
+            runtime.transcript.filter { entry in
+                if case .toolResult = entry.kind { return false }
+                return true
+            }.count
+        )
         XCTAssertTrue(visible.contains { entry in
             if case .toolCall(let name) = entry.kind {
                 return name == "searchContacts" && entry.text == "Invoking searchContacts…"
@@ -149,6 +155,11 @@ final class DeviceAgentTests: XCTestCase {
         })
         XCTAssertFalse(visible.contains { entry in
             if case .toolResult = entry.kind { return true }
+            return false
+        })
+        // Help text may already be in the transcript; ensure a toolCall is visible and a toolResult is not.
+        XCTAssertTrue(runtime.transcript.contains { entry in
+            if case .toolResult = entry.kind { return !entry.isVisibleInChat }
             return false
         })
 
