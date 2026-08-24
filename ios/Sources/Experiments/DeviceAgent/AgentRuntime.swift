@@ -249,7 +249,7 @@ final class AgentRuntime: ObservableObject {
 
     private func pageExtractionInput(fromSnapshotResult result: String) -> AgentPageExtractor.Input {
         let event = context.browser.replay.last(where: { $0.action == "snapshot" })
-        let title = event?.title ?? context.browser.title ?? ""
+        let title = event?.title ?? context.browser.title
         let url = event?.url ?? context.browser.url?.absoluteString ?? ""
         let pageText: String
         if let stored = event?.pageText, !stored.isEmpty {

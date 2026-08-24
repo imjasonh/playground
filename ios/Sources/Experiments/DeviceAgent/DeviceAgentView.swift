@@ -153,11 +153,11 @@ struct DeviceAgentView: View {
             if let exportShareURL {
                 NavigationStack {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("Share this JSON dump to debug tool calls and model replies. It includes hidden tool results.")
+                        Text("Share this ZIP (JSONL inside) to debug tool calls, browser replay, and AFM page-extraction failures.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                         ShareLink(item: exportShareURL) {
-                            Label("Share JSON", systemImage: "square.and.arrow.up")
+                            Label("Share ZIP", systemImage: "square.and.arrow.up")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)

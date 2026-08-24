@@ -137,12 +137,13 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
   supports `browserSnapshot` / `browserClick` / `browserType` / `browserBack`.
   After each snapshot, Foundation Models guided generation extracts
   question-relevant **From the page** bullets into chat. If extraction fails,
-  the tool fails with a visible error (no heuristic substitute). Successful
-  bullets are also appended to the tool result as `extractedFindings` for the
-  agent turn. The tab stays open for follow-ups.
+  the tool fails with a visible error (no heuristic substitute). Diagnostics
+  (prompt, page text, headings, raw model bullets, error code) are stored for
+  export. Successful bullets are also appended to the tool result as
+  `extractedFindings` for the agent turn. The tab stays open for follow-ups.
   Structured browser replay (actions + scraped text, no screenshots) is included
-  in the conversation JSON export. With the browser open, the composer collapses
-  to an Ask follow-up control so the keyboard stays out of the way.
+  in the conversation `.jsonl.zip` export. With the browser open, the composer
+  collapses to an Ask follow-up control so the keyboard stays out of the way.
 
 When Apple Intelligence / Foundation Models is available (iOS 26+ device), the
 on-device model chooses tools. If Apple Intelligence is off, the UI offers a
