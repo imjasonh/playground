@@ -131,22 +131,17 @@ final class DoomFaceTests: XCTestCase {
         XCTAssertNil(DoomFaceGIFExporter.makeGIF(captures: captures))
     }
 
-    func testComposeStampsCapturesOverGreyscale() throws {
+    func testComposeStampsCapturesOverGreyscale() {
         let size = DoomFaceSheetLayout.sheetSize
-        let color = solidImage(color: .red, size: size)
         let grey = solidImage(color: .darkGray, size: size)
         let face = solidImage(color: .green, size: DoomFaceSheetLayout.faceSize)
         let slot = DoomFaceSlot(health: 0, expression: .lookCenter)
-        let composed = try XCTUnwrap(
-            DoomFaceCompositor.compose(
-                greyscaleTemplate: grey,
-                colorTemplate: color,
-                captures: [slot: face]
-            )
+        let composed = DoomFaceCompositor.compose(
+            greyscaleTemplate: grey,
+            captures: [slot: face]
         )
         XCTAssertEqual(composed.size, size)
         let rect = DoomFaceSheetLayout.rect(for: slot)
-        // Sample center of the stamped cell — should be green-ish, not grey.
         let sample = pixelColor(composed, at: CGPoint(x: rect.midX, y: rect.midY))
         XCTAssertGreaterThan(sample.g, 0.6)
         XCTAssertLessThan(sample.r, 0.35)

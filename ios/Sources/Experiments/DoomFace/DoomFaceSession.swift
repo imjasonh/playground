@@ -4,7 +4,6 @@ import CoreImage
 import UIKit
 import Vision
 
-/// Front-camera ARKit face session: live preview, blend-shape matching, face crops.
 final class DoomFaceSession: NSObject, ObservableObject {
     enum RunState: Equatable {
         case idle
@@ -16,29 +15,24 @@ final class DoomFaceSession: NSObject, ObservableObject {
     }
 
     @Published private(set) var runState: RunState = .idle
-    @Published private(set) var statusMessage = "Mimic a doom face — hold it to stamp your mug on the sheet."
+    @Published private(set) var statusMessage = "Hold a doom face to stamp it on the sheet."
     @Published private(set) var previewImage: UIImage?
     @Published private(set) var liveExpression: DoomFaceExpression?
     @Published private(set) var holdProgress: Double = 0
     @Published private(set) var captures: [DoomFaceSlot: UIImage] = [:]
     @Published private(set) var sheetImage: UIImage?
-    @Published private(set) var lastMatchedSlot: DoomFaceSlot?
-    @Published private(set) var captureFlash = false
 
     private let session = ARSession()
     private let sessionQueue = DispatchQueue(label: "doom-face.session")
-    private let previewContext = CIContext(options: [.useSoftwareRenderer: false])
+    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
     private var holdTracker = DoomFaceMatcher.HoldTracker()
-    private var colorTemplate: UIImage?
     private var greyTemplate: UIImage?
     private var lastPreviewTime: TimeInterval = 0
-    private let previewInterval: TimeInterval = 1.0 / 20.0
 
     override init() {
         super.init()
         session.delegate = self
         if let template = DoomFaceCompositor.loadTemplate() {
-            colorTemplate = template
             greyTemplate = DoomFaceCompositor.greyscaleTemplate(from: template) ?? template
             sheetImage = greyTemplate
         }
@@ -58,7 +52,7 @@ final class DoomFaceSession: NSObject, ObservableObject {
 
         guard ARFaceTrackingConfiguration.isSupported else {
             runState = .unsupported
-            statusMessage = "Face tracking needs a TrueDepth front camera (Simulator can’t do this)."
+            statusMessage = "Needs a TrueDepth front camera. Simulator can't track a face."
             return
         }
 
@@ -89,27 +83,21 @@ final class DoomFaceSession: NSObject, ObservableObject {
 
     func resetCaptures() {
         captures = [:]
-        lastMatchedSlot = nil
         holdTracker.reset()
         sheetImage = greyTemplate
-        statusMessage = "Sheet cleared — make a face."
+        statusMessage = "Sheet cleared."
     }
 
     func exportGIFURL() throws -> URL {
         try DoomFaceGIFExporter.writeTemporaryGIF(captures: captures)
     }
 
-    // MARK: - Session
-
     private func runSession() {
         let configuration = ARFaceTrackingConfiguration()
-        configuration.isLightEstimationEnabled = true
-        if ARFaceTrackingConfiguration.supportedNumberOfTrackedFaces > 0 {
-            configuration.maximumNumberOfTrackedFaces = 1
-        }
+        configuration.maximumNumberOfTrackedFaces = 1
         session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         runState = .running
-        statusMessage = "Look left, grin, open wide — hold each face to capture."
+        statusMessage = "Look left, grin, or open wide. Hold it."
     }
 
     private static func requestCameraAccess() async -> Bool {
@@ -123,11 +111,9 @@ final class DoomFaceSession: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Frame handling
-
     private func handle(frame: ARFrame) {
         let now = frame.timestamp
-        if now - lastPreviewTime >= previewInterval {
+        if now - lastPreviewTime >= 0.05 {
             lastPreviewTime = now
             if let preview = makePreview(from: frame.capturedImage) {
                 DispatchQueue.main.async { self.previewImage = preview }
@@ -145,18 +131,13 @@ final class DoomFaceSession: NSObject, ObservableObject {
             return
         }
 
-        let sample = Self.blendSample(from: faceAnchor)
-        let expression = DoomFaceMatcher.match(sample)
-        let progressBefore = holdTracker.progress(
-            for: expression,
-            now: Date(),
-            holdDuration: DoomFaceMatcher.holdDuration
-        )
-        let held = holdTracker.update(expression, now: Date())
+        let expression = DoomFaceMatcher.match(Self.blendSample(from: faceAnchor))
+        let progress = holdTracker.progress(for: expression)
+        let held = holdTracker.update(expression)
 
         DispatchQueue.main.async {
             self.liveExpression = expression
-            self.holdProgress = held != nil ? 1 : progressBefore
+            self.holdProgress = held != nil ? 1 : progress
         }
 
         if let held {
@@ -168,14 +149,14 @@ final class DoomFaceSession: NSObject, ObservableObject {
         let filled = Set(captures.keys)
         guard let slot = DoomFaceSheetLayout.nextEmptySlot(for: expression, filled: filled) else {
             DispatchQueue.main.async {
-                self.statusMessage = "\(expression.displayName) is full on the sheet."
+                self.statusMessage = "\(expression.displayName) is already full."
             }
             return
         }
 
-        guard let cropped = Self.cropFace(from: pixelBuffer) else {
+        guard let cropped = cropFace(from: pixelBuffer) else {
             DispatchQueue.main.async {
-                self.statusMessage = "Couldn’t crop that face — try again."
+                self.statusMessage = "Couldn't crop that face. Try again."
             }
             return
         }
@@ -183,41 +164,25 @@ final class DoomFaceSession: NSObject, ObservableObject {
         let fitted = DoomFaceCompositor.fitFace(cropped)
         DispatchQueue.main.async {
             self.captures[slot] = fitted
-            self.lastMatchedSlot = slot
             self.rebuildSheet()
-            self.flashCapture()
             if let health = slot.health {
-                self.statusMessage = "Captured \(expression.displayName) — health row \(health + 1)."
+                self.statusMessage = "\(expression.displayName), health row \(health + 1)."
             } else {
-                self.statusMessage = "Captured \(expression.displayName)."
+                self.statusMessage = "\(expression.displayName)."
             }
         }
     }
 
     private func rebuildSheet() {
-        guard let grey = greyTemplate, let color = colorTemplate else { return }
-        sheetImage = DoomFaceCompositor.compose(
-            greyscaleTemplate: grey,
-            colorTemplate: color,
-            captures: captures
-        )
-    }
-
-    private func flashCapture() {
-        captureFlash = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.captureFlash = false
-        }
+        guard let grey = greyTemplate else { return }
+        sheetImage = DoomFaceCompositor.compose(greyscaleTemplate: grey, captures: captures)
     }
 
     private func makePreview(from pixelBuffer: CVPixelBuffer) -> UIImage? {
-        var image = CIImage(cvPixelBuffer: pixelBuffer)
-        image = image.oriented(.leftMirrored)
-        guard let cgImage = previewContext.createCGImage(image, from: image.extent) else { return nil }
+        let image = CIImage(cvPixelBuffer: pixelBuffer).oriented(.leftMirrored)
+        guard let cgImage = ciContext.createCGImage(image, from: image.extent) else { return nil }
         return UIImage(cgImage: cgImage)
     }
-
-    // MARK: - Geometry helpers
 
     private static func blendSample(from anchor: ARFaceAnchor) -> DoomFaceBlendSample {
         let b = anchor.blendShapes
@@ -225,21 +190,11 @@ final class DoomFaceSession: NSObject, ObservableObject {
             Double(b[key]?.floatValue ?? 0)
         }
 
-        let lookOutL = value(.eyeLookOutLeft)
-        let lookInL = value(.eyeLookInLeft)
-        let lookOutR = value(.eyeLookOutRight)
-        let lookInR = value(.eyeLookInRight)
-
-        let lookLeft = (lookOutL + lookInR) / 2
-        let lookRight = (lookOutR + lookInL) / 2
-        let lookUp = (value(.eyeLookUpLeft) + value(.eyeLookUpRight)) / 2
-        let lookDown = (value(.eyeLookDownLeft) + value(.eyeLookDownRight)) / 2
-
         return DoomFaceBlendSample(
-            lookLeft: lookLeft,
-            lookRight: lookRight,
-            lookUp: lookUp,
-            lookDown: lookDown,
+            lookLeft: (value(.eyeLookOutLeft) + value(.eyeLookInRight)) / 2,
+            lookRight: (value(.eyeLookOutRight) + value(.eyeLookInLeft)) / 2,
+            lookUp: (value(.eyeLookUpLeft) + value(.eyeLookUpRight)) / 2,
+            lookDown: (value(.eyeLookDownLeft) + value(.eyeLookDownRight)) / 2,
             jawOpen: value(.jawOpen),
             smile: max(value(.mouthSmileLeft), value(.mouthSmileRight)),
             browDown: max(value(.browDownLeft), value(.browDownRight)),
@@ -248,8 +203,7 @@ final class DoomFaceSession: NSObject, ObservableObject {
         )
     }
 
-    /// Crops the dominant face from the front-camera buffer (upright, mirrored).
-    private static func cropFace(from pixelBuffer: CVPixelBuffer) -> UIImage? {
+    private func cropFace(from pixelBuffer: CVPixelBuffer) -> UIImage? {
         var image = CIImage(cvPixelBuffer: pixelBuffer).oriented(.leftMirrored)
         let extent = image.extent
         guard extent.width > 0, extent.height > 0 else { return nil }
@@ -259,19 +213,16 @@ final class DoomFaceSession: NSObject, ObservableObject {
         try? handler.perform([request])
 
         let faceBox: CGRect
-        if let observation = request.results?.first {
-            // Vision boxes are bottom-left origin, normalized.
-            let box = observation.boundingBox
+        if let box = request.results?.first?.boundingBox {
             let padded = box.insetBy(dx: -box.width * 0.12, dy: -box.height * 0.18)
-            let clamped = padded.intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+                .intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
             faceBox = CGRect(
-                x: extent.minX + clamped.minX * extent.width,
-                y: extent.minY + clamped.minY * extent.height,
-                width: clamped.width * extent.width,
-                height: clamped.height * extent.height
+                x: extent.minX + padded.minX * extent.width,
+                y: extent.minY + padded.minY * extent.height,
+                width: padded.width * extent.width,
+                height: padded.height * extent.height
             ).integral
         } else {
-            // Fallback: center square.
             let side = min(extent.width, extent.height) * 0.55
             faceBox = CGRect(
                 x: extent.midX - side / 2,
@@ -286,9 +237,7 @@ final class DoomFaceSession: NSObject, ObservableObject {
             translationX: -image.extent.origin.x,
             y: -image.extent.origin.y
         ))
-
-        let context = CIContext(options: [.useSoftwareRenderer: false])
-        guard let cgImage = context.createCGImage(image, from: image.extent) else { return nil }
+        guard let cgImage = ciContext.createCGImage(image, from: image.extent) else { return nil }
         return UIImage(cgImage: cgImage)
     }
 }

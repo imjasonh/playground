@@ -1,25 +1,26 @@
 import SwiftUI
 import UIKit
 
-/// Square front-camera stage on top, doom face sheet below, export when ready.
 struct DoomFaceView: View {
     @StateObject private var session = DoomFaceSession()
-    @State private var sharePayload: SharePayload?
+    @State private var shareURL: ShareURL?
     @State private var exportError: String?
 
     var body: some View {
-        VStack(spacing: 0) {
-            cameraStage
-            sheetStage
+        VStack(spacing: 12) {
+            camera
+            sheet
             controls
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .background(Color(red: 0.12, green: 0.02, blue: 0.02))
         .navigationTitle("Doom Face")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { session.start() }
         .onDisappear { session.stop() }
-        .sheet(item: $sharePayload) { payload in
-            ShareSheet(items: [payload.url])
+        .sheet(item: $shareURL) { item in
+            ShareSheet(items: [item.url])
         }
         .alert("Export failed", isPresented: Binding(
             get: { exportError != nil },
@@ -31,120 +32,66 @@ struct DoomFaceView: View {
         }
     }
 
-    // MARK: - Camera
-
-    private var cameraStage: some View {
-        GeometryReader { geo in
-            let side = min(geo.size.width, geo.size.height)
-            ZStack {
-                Color.black
-                Group {
-                    if let image = session.previewImage {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: side, height: side)
-                            .clipped()
-                            .accessibilityIdentifier("doomFacePreview")
-                    } else {
-                        placeholder
-                            .frame(width: side, height: side)
-                    }
-                }
-                .clipShape(Rectangle())
-                .overlay {
-                    Rectangle()
-                        .strokeBorder(Color.white.opacity(0.35), lineWidth: 1)
-                }
-                .overlay(alignment: .bottom) {
-                    expressionBanner
-                }
-                .overlay {
-                    if session.captureFlash {
-                        Color.white.opacity(0.35)
-                            .allowsHitTesting(false)
-                    }
+    private var camera: some View {
+        Color.black
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                if let image = session.previewImage {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .accessibilityIdentifier("doomFacePreview")
+                } else {
+                    Text(placeholderText)
+                        .font(.footnote)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.white.opacity(0.7))
+                        .padding()
+                        .accessibilityIdentifier("doomFacePlaceholder")
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-    }
-
-    private var placeholder: some View {
-        ZStack {
-            Color(white: 0.08)
-            VStack(spacing: 10) {
-                Image(systemName: "face.dashed")
-                    .font(.system(size: 36))
-                    .foregroundStyle(.white.opacity(0.55))
-                Text(placeholderText)
-                    .font(.footnote)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.white.opacity(0.7))
-                    .padding(.horizontal, 24)
+            .clipped()
+            .overlay(alignment: .bottom) {
+                VStack(spacing: 4) {
+                    if let expression = session.liveExpression {
+                        Text(expression.displayName)
+                            .font(.caption.weight(.semibold))
+                        ProgressView(value: session.holdProgress)
+                            .tint(.orange)
+                            .frame(width: 120)
+                            .accessibilityIdentifier("doomFaceHoldProgress")
+                    }
+                    Text(session.statusMessage)
+                        .font(.caption2)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("doomFaceStatusMessage")
+                }
+                .foregroundStyle(.white)
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .background(.black.opacity(0.45))
             }
-        }
-        .accessibilityIdentifier("doomFacePlaceholder")
     }
 
     private var placeholderText: String {
         switch session.runState {
-        case .unsupported:
+        case .unsupported, .failed:
             return session.statusMessage
         case .permissionDenied:
             return "Camera access is required. Enable it in Settings."
         case .requestingPermission:
             return "Requesting camera…"
-        case .failed(let message):
-            return message
         default:
             return "Starting front camera…"
         }
     }
 
-    private var expressionBanner: some View {
-        VStack(spacing: 6) {
-            if let expression = session.liveExpression {
-                Text(expression.displayName)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                ProgressView(value: session.holdProgress)
-                    .tint(.orange)
-                    .frame(width: 120)
-                    .opacity(session.holdProgress > 0 ? 1 : 0.35)
-                    .accessibilityIdentifier("doomFaceHoldProgress")
-            }
-            Text(session.statusMessage)
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.85))
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 10)
-                .accessibilityIdentifier("doomFaceStatusMessage")
-        }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity)
-        .background(Color.black.opacity(0.45))
-    }
-
-    // MARK: - Sheet
-
-    private var sheetStage: some View {
-        VStack(spacing: 6) {
-            HStack {
-                Text("Face sheet")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.9))
-                Spacer()
-                Text("\(session.filledCount)/\(session.totalSlots)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.white.opacity(0.65))
-                    .accessibilityIdentifier("doomFaceFillCount")
-            }
-            .padding(.horizontal, 16)
+    private var sheet: some View {
+        VStack(alignment: .trailing, spacing: 4) {
+            Text("\(session.filledCount)/\(session.totalSlots)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.white.opacity(0.65))
+                .accessibilityIdentifier("doomFaceFillCount")
 
             Group {
                 if let sheet = session.sheetImage {
@@ -158,50 +105,16 @@ struct DoomFaceView: View {
                         .aspectRatio(640.0 / 396.0, contentMode: .fit)
                 }
             }
-            .padding(.horizontal, 12)
-            .overlay {
-                if let slot = session.lastMatchedSlot, session.captureFlash {
-                    GeometryReader { geo in
-                        let rect = highlightedRect(for: slot, in: geo.size)
-                        Rectangle()
-                            .stroke(Color.orange, lineWidth: 2)
-                            .frame(width: rect.width, height: rect.height)
-                            .position(x: rect.midX, y: rect.midY)
-                    }
-                    .padding(.horizontal, 12)
-                    .allowsHitTesting(false)
-                }
-            }
         }
-        .padding(.top, 12)
         .frame(maxHeight: .infinity)
     }
-
-    private func highlightedRect(for slot: DoomFaceSlot, in size: CGSize) -> CGRect {
-        let sheet = DoomFaceSheetLayout.sheetSize
-        let cell = DoomFaceSheetLayout.rect(for: slot)
-        let scale = min(size.width / sheet.width, size.height / sheet.height)
-        let drawSize = CGSize(width: sheet.width * scale, height: sheet.height * scale)
-        let origin = CGPoint(
-            x: (size.width - drawSize.width) / 2,
-            y: (size.height - drawSize.height) / 2
-        )
-        return CGRect(
-            x: origin.x + cell.minX * scale,
-            y: origin.y + cell.minY * scale,
-            width: cell.width * scale,
-            height: cell.height * scale
-        )
-    }
-
-    // MARK: - Controls
 
     private var controls: some View {
         HStack(spacing: 12) {
             Button {
                 session.resetCaptures()
             } label: {
-                Label("Reset", systemImage: "trash")
+                Text("Reset")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
@@ -210,9 +123,13 @@ struct DoomFaceView: View {
             .accessibilityIdentifier("doomFaceReset")
 
             Button {
-                exportGIF()
+                do {
+                    shareURL = ShareURL(url: try session.exportGIFURL())
+                } catch {
+                    exportError = error.localizedDescription
+                }
             } label: {
-                Label("Export GIF", systemImage: "square.and.arrow.up")
+                Text("Export GIF")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -220,23 +137,10 @@ struct DoomFaceView: View {
             .disabled(!session.canExportGIF)
             .accessibilityIdentifier("doomFaceExport")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
-
-    private func exportGIF() {
-        do {
-            let url = try session.exportGIFURL()
-            sharePayload = SharePayload(url: url)
-        } catch {
-            exportError = error.localizedDescription
-        }
     }
 }
 
-// MARK: - Share helpers
-
-private struct SharePayload: Identifiable {
+private struct ShareURL: Identifiable {
     let id = UUID()
     let url: URL
 }
