@@ -168,15 +168,22 @@ final class DeviceAgentTests: XCTestCase {
         let result = try XCTUnwrap(dump.entries.first { $0.kind == "toolResult" })
         XCTAssertEqual(result.debugDetail, "Mom <mom@example.com>")
         XCTAssertEqual(dump.browserReplay, runtime.context.browser.replay)
-        let data = try runtime.conversationDumpJSONData()
-        XCTAssertFalse(data.isEmpty)
+        XCTAssertEqual(dump.extractionDiagnostics, runtime.extractionDiagnostics)
+        let jsonl = try runtime.conversationDumpJSONLData()
+        XCTAssertFalse(jsonl.isEmpty)
+        let jsonlText = try XCTUnwrap(String(data: jsonl, encoding: .utf8))
+        XCTAssertTrue(jsonlText.contains(#""type":"meta""#))
+        XCTAssertTrue(jsonlText.contains(#""type":"entry""#))
+        let zip = try runtime.conversationDumpZipData()
+        XCTAssertEqual(Array(zip.prefix(4)), [0x50, 0x4b, 0x03, 0x04])
         let url = try runtime.writeConversationDumpFile()
         defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(url.lastPathComponent.hasSuffix(".jsonl.zip"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     }
 
     @MainActor
-    func testPageFindingsBulletsAndReplayRecording() async {
+    func testPageFindingsBulletsAndReplayRecording() async throws {
         let bullets = AgentBrowserSession.pageFindingsBullets(
             from: """
             NFL Schedule 2026
@@ -267,7 +274,10 @@ final class DeviceAgentTests: XCTestCase {
     @MainActor
     func testPageExtractionFailureIsVisibleAndThrows() async {
         AgentPageExtractor.testExtractionOverride = { _ in
-            throw AgentPageExtractor.ExtractionError.emptyFindings
+            throw AgentPageExtractor.Failure(
+                error: .emptyFindings(rawBulletCount: 2),
+                rawModelBullets: [" ", "ok"]
+            )
         }
         defer { AgentPageExtractor.testExtractionOverride = nil }
 
@@ -276,9 +286,11 @@ final class DeviceAgentTests: XCTestCase {
         runtime.context.browser.record(
             action: "snapshot",
             detail: "0 elements",
-            url: "https://example.com",
+            url: "https://example.com/nfl",
             title: "Example",
-            pageText: "Nav only"
+            pageText: "Nav only",
+            headings: ["NFL"],
+            listItems: ["Week 1"]
         )
 
         do {
@@ -293,7 +305,24 @@ final class DeviceAgentTests: XCTestCase {
 
         let failureCard = runtime.transcript.first { $0.kind == .pageFindings }?.text ?? ""
         XCTAssertTrue(failureCard.contains("Page extraction failed"))
-        XCTAssertTrue(failureCard.contains("no page findings") || failureCard.lowercased().contains("failed"))
+        XCTAssertTrue(failureCard.contains("Export the conversation ZIP"))
+        XCTAssertEqual(runtime.extractionDiagnostics.count, 1)
+        let diagnostic = try XCTUnwrap(runtime.extractionDiagnostics.first)
+        XCTAssertEqual(diagnostic.errorCode, "emptyFindings")
+        XCTAssertEqual(diagnostic.userQuestion, "What games are on?")
+        XCTAssertEqual(diagnostic.url, "https://example.com/nfl")
+        XCTAssertEqual(diagnostic.headings, ["NFL"])
+        XCTAssertTrue(diagnostic.prompt.contains("User question:"))
+        XCTAssertEqual(diagnostic.rawModelBullets, [" ", "ok"])
+        XCTAssertNotNil(diagnostic.rawSnapshotPrefix)
+
+        let dump = runtime.makeConversationDump()
+        XCTAssertEqual(dump.extractionDiagnostics.count, 1)
+        let jsonl = try runtime.conversationDumpJSONLData()
+        let text = try XCTUnwrap(String(data: jsonl, encoding: .utf8))
+        XCTAssertTrue(text.contains(#""type":"extractionDiagnostic""#))
+        XCTAssertTrue(text.contains("emptyFindings"))
+        XCTAssertTrue(text.contains("What games are on?"))
     }
 
     @MainActor

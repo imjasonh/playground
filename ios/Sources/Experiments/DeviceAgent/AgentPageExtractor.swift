@@ -18,27 +18,44 @@ enum AgentPageExtractor {
 
     enum ExtractionError: Error, LocalizedError, Equatable {
         case modelUnavailable
-        case emptyFindings
+        case emptyFindings(rawBulletCount: Int)
         case modelFailed(String)
+
+        var code: String {
+            switch self {
+            case .modelUnavailable: return "modelUnavailable"
+            case .emptyFindings: return "emptyFindings"
+            case .modelFailed: return "modelFailed"
+            }
+        }
 
         var errorDescription: String? {
             switch self {
             case .modelUnavailable:
                 return "Foundation Models isn’t available to extract page findings."
-            case .emptyFindings:
-                return "Foundation Models returned no page findings."
+            case .emptyFindings(let count):
+                return "Foundation Models returned no usable page findings (raw bullets: \(count))."
             case .modelFailed(let message):
                 return "Foundation Models page extraction failed: \(message)"
             }
         }
     }
 
-    /// Test hook: when set, skips the live model. Return bullets or throw via Result.
+    /// Failed extraction with the raw model output when available (for dump diagnostics).
+    struct Failure: Error, LocalizedError {
+        var error: ExtractionError
+        var rawModelBullets: [String]?
+
+        var errorDescription: String? { error.errorDescription }
+        var code: String { error.code }
+    }
+
+    /// Test hook: when set, skips the live model. Return bullets or throw.
     static var testExtractionOverride: ((Input) throws -> [String])?
 
     static func extract(from input: Input) async throws -> [String] {
         if let override = testExtractionOverride {
-            return sanitizeBullets(try override(input))
+            return try sanitizeBullets(try override(input))
         }
 
         #if canImport(FoundationModels)
@@ -46,7 +63,7 @@ enum AgentPageExtractor {
             return try await foundationModelBullets(from: input)
         }
         #endif
-        throw ExtractionError.modelUnavailable
+        throw Failure(error: .modelUnavailable)
     }
 
     static func formatFindings(title: String, url: String, bullets: [String]) -> String {
@@ -75,6 +92,7 @@ enum AgentPageExtractor {
             lines.append("Page extraction failed")
         }
         lines.append(error.localizedDescription)
+        lines.append("Export the conversation ZIP for diagnostics.")
         return lines.joined(separator: "\n")
     }
 
@@ -92,7 +110,12 @@ enum AgentPageExtractor {
             out.append(chunk)
             if out.count >= limit { break }
         }
-        guard !out.isEmpty else { throw ExtractionError.emptyFindings }
+        guard !out.isEmpty else {
+            throw Failure(
+                error: .emptyFindings(rawBulletCount: bullets.count),
+                rawModelBullets: bullets
+            )
+        }
         return out
     }
 
@@ -124,6 +147,16 @@ enum AgentPageExtractor {
         return sections.joined(separator: "\n")
     }
 
+    static func unpackError(_ error: Error) -> (code: String, message: String, rawBullets: [String]?) {
+        if let failure = error as? Failure {
+            return (failure.code, failure.localizedDescription, failure.rawModelBullets)
+        }
+        if let extraction = error as? ExtractionError {
+            return (extraction.code, extraction.localizedDescription, nil)
+        }
+        return ("modelFailed", error.localizedDescription, nil)
+    }
+
     #if canImport(FoundationModels)
     @available(iOS 26.0, *)
     @Generable
@@ -136,7 +169,7 @@ enum AgentPageExtractor {
     private static func foundationModelBullets(from input: Input) async throws -> [String] {
         let model = SystemLanguageModel.default
         guard model.isAvailable else {
-            throw ExtractionError.modelUnavailable
+            throw Failure(error: .modelUnavailable)
         }
 
         let session = LanguageModelSession(instructions: """
@@ -149,10 +182,10 @@ enum AgentPageExtractor {
         do {
             let response = try await session.respond(to: prompt, generating: ModelFindings.self)
             return try sanitizeBullets(response.content.bullets)
-        } catch let error as ExtractionError {
-            throw error
+        } catch let failure as Failure {
+            throw failure
         } catch {
-            throw ExtractionError.modelFailed(error.localizedDescription)
+            throw Failure(error: .modelFailed(error.localizedDescription))
         }
     }
     #endif

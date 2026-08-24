@@ -151,6 +151,61 @@ struct AgentConversationDump: Codable, Equatable {
     var toolLog: [AgentConversationDumpToolLog]
     /// Ordered browser actions for playback / debugging (open, snapshot, click, type, back).
     var browserReplay: [AgentBrowserReplayEvent]
+    /// Foundation Models page-extraction failures (inputs + error) for iteration.
+    var extractionDiagnostics: [AgentPageExtractionDiagnostic]
+}
+
+/// One failed AFM page-extraction attempt — enough to reproduce / improve prompts.
+struct AgentPageExtractionDiagnostic: Codable, Equatable, Identifiable {
+    var id: UUID
+    var date: Date
+    var errorCode: String
+    var errorMessage: String
+    var userQuestion: String
+    var title: String
+    var url: String
+    var headings: [String]
+    var listItems: [String]
+    var pageText: String
+    var prompt: String
+    var modelGate: String
+    var modelAvailable: Bool
+    var rawSnapshotPrefix: String?
+    var rawModelBullets: [String]?
+
+    init(
+        id: UUID = UUID(),
+        date: Date = Date(),
+        errorCode: String,
+        errorMessage: String,
+        userQuestion: String,
+        title: String,
+        url: String,
+        headings: [String],
+        listItems: [String],
+        pageText: String,
+        prompt: String,
+        modelGate: String,
+        modelAvailable: Bool,
+        rawSnapshotPrefix: String? = nil,
+        rawModelBullets: [String]? = nil
+    ) {
+        self.id = id
+        self.date = date
+        self.errorCode = errorCode
+        self.errorMessage = errorMessage
+        self.userQuestion = userQuestion
+        self.title = title
+        self.url = url
+        self.headings = headings
+        self.listItems = listItems
+        self.pageText = pageText
+        self.prompt = prompt
+        self.modelGate = modelGate
+        self.modelAvailable = modelAvailable
+        self.rawSnapshotPrefix = rawSnapshotPrefix
+        self.rawModelBullets = rawModelBullets
+    }
 }
 
 struct AgentConversationDumpEntry: Codable, Equatable {
