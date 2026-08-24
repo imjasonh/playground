@@ -52,6 +52,10 @@ final class ExperimentCatalogTests: XCTestCase {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "local-lens" })
     }
 
+    func testIncludesDoomFace() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "doom-face" })
+    }
+
     func testIncludesNFCTags() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "nfc-tags" })
     }

@@ -55,6 +55,7 @@ enum ExperimentCatalog {
         LocalLensExperiment.experiment,
         VoxelWorldExperiment.experiment,
         WigglecamExperiment.experiment,
+        DoomFaceExperiment.experiment,
         NFCTagsExperiment.experiment,
     ]
 }
