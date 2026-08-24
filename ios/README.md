@@ -120,8 +120,8 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
   (Observe = read-only tools; Act = calendar/SMS/Mail drafts with confirm; Browse
   = same tool set as Observe with in-app browser focus)
 - **Voice input** (mic + speech, just-in-time) → editable text → same agent loop
-- **Export conversation** — share a JSON dump of the transcript (including hidden
-  tool args/results) for debugging
+- **Export conversation** — share a `.jsonl.zip` of the transcript (including
+  hidden tool args/results), browser replay, and AFM extraction diagnostics
 - Chat shows `Invoking <tool>…` only; raw tool I/O stays in the dump
 - **Shortcuts / App Intents / Siri:** “Run Device Agent”, “Ask Device Agent”, and
   “Check Device Agent watches” (for Automations); App Shortcut phrases + in-app

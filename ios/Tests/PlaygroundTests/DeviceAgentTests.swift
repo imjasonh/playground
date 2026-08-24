@@ -272,7 +272,7 @@ final class DeviceAgentTests: XCTestCase {
     }
 
     @MainActor
-    func testPageExtractionFailureIsVisibleAndThrows() async {
+    func testPageExtractionFailureIsVisibleAndThrows() async throws {
         AgentPageExtractor.testExtractionOverride = { _ in
             throw AgentPageExtractor.Failure(
                 error: .emptyFindings(rawBulletCount: 2),
