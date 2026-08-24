@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 import MessageUI
 import AppIntents
+import UIKit
 
 /// Chat + tool transcript + optional in-app browser for Device Agent.
 struct DeviceAgentView: View {
@@ -20,30 +21,41 @@ struct DeviceAgentView: View {
     @State private var showWatches = false
     @State private var exportShareURL: URL?
     @State private var exportError: String?
+    @FocusState private var promptFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         VStack(spacing: 0) {
             if runtime.isModelAvailable {
                 statusBar
-                modePicker
+                if !(showBrowser && promptFocused) {
+                    modePicker
+                }
                 transcriptList
+                    .frame(maxHeight: showBrowser ? 220 : .infinity)
                 if showBrowser {
                     browserPane
-                        .frame(height: 220)
+                        .frame(minHeight: 280)
+                        .layoutPriority(1)
                         .transition(.move(edge: .bottom))
                 }
-                if voiceMode {
+                if voiceMode && !showBrowser {
                     voiceBar
                 }
-                composer
+                if showBrowser && !promptFocused {
+                    followUpBar
+                } else {
+                    composer
+                }
             } else {
                 unavailablePane
             }
         }
         .animation(.easeInOut(duration: 0.2), value: showBrowser)
         .animation(.easeInOut(duration: 0.2), value: voiceMode)
+        .animation(.easeInOut(duration: 0.2), value: promptFocused)
         .animation(.easeInOut(duration: 0.2), value: runtime.isModelAvailable)
+        .scrollDismissesKeyboard(.interactively)
         .onAppear {
             runtime.refreshModelStatus()
             if runtime.isModelAvailable {
@@ -68,15 +80,13 @@ struct DeviceAgentView: View {
         }
         .onChange(of: runtime.context.browserURL) { url in
             if url != nil {
-                showBrowser = true
-                runtime.context.mode = runtime.context.mode == .observe ? .browse : runtime.context.mode
+                openBrowserPane()
             }
         }
         .onChange(of: runtime.context.browser.url) { url in
             if url != nil {
-                showBrowser = true
+                openBrowserPane()
                 runtime.context.browserURL = url
-                runtime.context.mode = runtime.context.mode == .observe ? .browse : runtime.context.mode
             }
         }
         .onChange(of: runtime.context.browser.title) { title in
@@ -143,11 +153,11 @@ struct DeviceAgentView: View {
             if let exportShareURL {
                 NavigationStack {
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("Share this JSON dump to debug tool calls and model replies. It includes hidden tool results.")
+                        Text("Share this ZIP (JSONL inside) to debug tool calls, browser replay, and AFM page-extraction failures.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                         ShareLink(item: exportShareURL) {
-                            Label("Share JSON", systemImage: "square.and.arrow.up")
+                            Label("Share ZIP", systemImage: "square.and.arrow.up")
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
@@ -371,12 +381,13 @@ struct DeviceAgentView: View {
         case .system: return ("System", .secondary)
         case .permission: return ("Permission", .orange)
         case .confirmation: return ("Confirm", .red)
+        case .pageFindings: return ("Page", .teal)
         }
     }
 
     private var browserPane: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 10) {
                 Text(runtime.context.browser.title.isEmpty
                     ? (runtime.context.browserTitle.isEmpty ? "Browser" : runtime.context.browserTitle)
                     : runtime.context.browser.title)
@@ -387,13 +398,23 @@ struct DeviceAgentView: View {
                     ProgressView()
                         .scaleEffect(0.7)
                 }
-                Button("Close") { showBrowser = false }
-                    .font(.caption)
+                if promptFocused {
+                    Button("Hide keyboard") {
+                        dismissKeyboard()
+                    }
+                    .font(.caption.weight(.semibold))
+                    .accessibilityIdentifier("deviceAgentHideKeyboard")
+                }
+                Button("Close") {
+                    dismissKeyboard()
+                    showBrowser = false
+                }
+                .font(.caption)
             }
             .padding(.horizontal)
             .padding(.vertical, 6)
             if runtime.context.browser.url == nil && runtime.context.browserURL == nil {
-                Text("Ask Device Agent to open an http(s) URL. It can snapshot, click, and type in this pane.")
+                Text("Ask Device Agent to open an http(s) URL. Scraped bullets show up in the chat; the tab stays open for follow-ups.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -403,9 +424,34 @@ struct DeviceAgentView: View {
             } else {
                 AgentBrowserPane(session: runtime.context.browser)
                     .background(Color(.secondarySystemBackground))
+                    .simultaneousGesture(
+                        TapGesture().onEnded { dismissKeyboard() }
+                    )
             }
         }
         .accessibilityIdentifier("deviceAgentBrowser")
+    }
+
+    private var followUpBar: some View {
+        Button {
+            promptFocused = true
+        } label: {
+            HStack {
+                Image(systemName: "text.bubble")
+                Text("Ask a follow-up about this page…")
+                Spacer()
+            }
+            .font(.body)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(.bar)
+        .accessibilityIdentifier("deviceAgentFollowUpBar")
     }
 
     private var voiceBar: some View {
@@ -465,7 +511,12 @@ struct DeviceAgentView: View {
                 .accessibilityIdentifier("deviceAgentVoiceModeButton")
 
                 Button {
-                    showBrowser.toggle()
+                    if showBrowser {
+                        dismissKeyboard()
+                        showBrowser = false
+                    } else {
+                        openBrowserPane()
+                    }
                 } label: {
                     Image(systemName: "globe")
                 }
@@ -474,8 +525,16 @@ struct DeviceAgentView: View {
                 TextField("Ask Device Agent…", text: $draft, axis: .vertical)
                     .lineLimit(1...4)
                     .textFieldStyle(.roundedBorder)
+                    .focused($promptFocused)
                     .accessibilityLabel("Ask Device Agent")
                     .accessibilityIdentifier("deviceAgentPromptField")
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button("Done") { dismissKeyboard() }
+                                .accessibilityIdentifier("deviceAgentKeyboardDone")
+                        }
+                    }
 
                 Button {
                     sendDraft()
@@ -491,6 +550,26 @@ struct DeviceAgentView: View {
         .background(.bar)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("deviceAgentComposer")
+    }
+
+    private func openBrowserPane() {
+        showBrowser = true
+        if runtime.context.mode == .observe {
+            runtime.context.mode = .browse
+        }
+        dismissKeyboard()
+        voiceMode = false
+        voice.stop()
+    }
+
+    private func dismissKeyboard() {
+        promptFocused = false
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
     }
 
     private func exportConversation() {

@@ -120,8 +120,8 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
   (Observe = read-only tools; Act = calendar/SMS/Mail drafts with confirm; Browse
   = same tool set as Observe with in-app browser focus)
 - **Voice input** (mic + speech, just-in-time) → editable text → same agent loop
-- **Export conversation** — share a JSON dump of the transcript (including hidden
-  tool args/results) for debugging
+- **Export conversation** — share a `.jsonl.zip` of the transcript (including
+  hidden tool args/results), browser replay, and AFM extraction diagnostics
 - Chat shows `Invoking <tool>…` only; raw tool I/O stays in the dump
 - **Shortcuts / App Intents / Siri:** “Run Device Agent”, “Ask Device Agent”, and
   “Check Device Agent watches” (for Automations); App Shortcut phrases + in-app
@@ -134,8 +134,16 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
   the app inbox (a Share Extension appex is intentionally not included yet —
   that needs a new Bundle ID + signing bootstrap)
 - **In-app browser:** `browserOpen` loads real http(s) URLs; injected JS bridge
-  supports `browserSnapshot` / `browserClick` / `browserType` / `browserBack` so
-  the model can drive pages and read content back
+  supports `browserSnapshot` / `browserClick` / `browserType` / `browserBack`.
+  After each snapshot, Foundation Models guided generation extracts
+  question-relevant **From the page** bullets into chat. If extraction fails,
+  the tool fails with a visible error (no heuristic substitute). Diagnostics
+  (prompt, page text, headings, raw model bullets, error code) are stored for
+  export. Successful bullets are also appended to the tool result as
+  `extractedFindings` for the agent turn. The tab stays open for follow-ups.
+  Structured browser replay (actions + scraped text, no screenshots) is included
+  in the conversation `.jsonl.zip` export. With the browser open, the composer
+  collapses to an Ask follow-up control so the keyboard stays out of the way.
 
 When Apple Intelligence / Foundation Models is available (iOS 26+ device), the
 on-device model chooses tools. If Apple Intelligence is off, the UI offers a
@@ -143,6 +151,11 @@ button that opens Settings (Apple Intelligence & Siri when the deep link works).
 If the model is still downloading, it shows progress plus **Check again**.
 Unsupported hardware / older OS / Simulator get a plain unavailable pane. There
 is no keyword-planner fallback.
+
+If page extraction quality is weak for a domain, a next step is Apple’s
+Foundation Models **adapter** toolkit (LoRA). Adapters ship as small packages
+and must be retrained when Apple updates the base system model — not wired up
+in this experiment yet.
 
 ### T9 Keyboard
 

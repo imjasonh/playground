@@ -15,6 +15,11 @@ final class AgentRuntime: ObservableObject {
     var isModelAvailable: Bool { modelGate.isAvailable }
     var modelStatusText: String { modelGate.detail }
 
+    /// Latest user prompt — used to keep page findings relevant to the question.
+    var lastUserPrompt: String = ""
+    /// AFM page-extraction failures recorded for conversation export / iteration.
+    private(set) var extractionDiagnostics: [AgentPageExtractionDiagnostic] = []
+
     let context: AgentToolContext
 
     init(context: AgentToolContext? = nil) {
@@ -70,6 +75,8 @@ final class AgentRuntime: ObservableObject {
 
     func clearTranscript() {
         transcript.removeAll()
+        extractionDiagnostics.removeAll()
+        context.browser.clearReplay()
         if isModelAvailable {
             appendSystem(AgentToolExecutor.helpText(mode: context.mode))
         }
@@ -89,6 +96,7 @@ final class AgentRuntime: ObservableObject {
         isRunning = true
         defer { isRunning = false }
 
+        lastUserPrompt = trimmed
         append(.user, text: trimmed, sourceNote: source)
 
         do {
@@ -129,8 +137,10 @@ final class AgentRuntime: ObservableObject {
         Use tools to act on the phone. Request only what you need.
         For calendar, SMS, and email drafts, tools will ask the user to confirm.
         Prefer listAttachments / readTextAttachment for files the user shared.
-        Use browserOpen for real http(s) URLs in the in-app web view.
-        To drive a page: browserOpen → browserSnapshot → browserClick / browserType (use refs like 1, 2 from the snapshot) → browserSnapshot again.
+        Use the in-app browser for web questions: browserOpen (only if no useful page is open) → browserSnapshot → optional browserClick / browserType → browserSnapshot again.
+        browserSnapshot returns raw scrape plus extractedFindings (Foundation Model bullets from the page). Prefer those bullets for your answer; dig with click/type only if needed.
+        Your final reply must be short bullet points from the page that answer the user question. Do not summarize the chat transcript.
+        Keep the same browser tab for follow-ups unless they ask for a different site.
         Use openURL only when the user wants Safari or another system handler.
         Keep final answers short. Mode is \(context.mode.title).
         """
@@ -187,6 +197,118 @@ final class AgentRuntime: ObservableObject {
         )
     }
 
+    /// Logs the tool result, runs Foundation Model extraction for snapshots, and returns
+    /// an enriched payload the agent session can use (raw scrape + extractedFindings).
+    /// Snapshot extraction failures are visible in chat and fail the tool call (no heuristic fallback).
+    func appendToolResultAndEnrich(name: String, result: String) async throws -> String {
+        appendToolResult(name: name, result: result)
+        guard name == "browserSnapshot" else { return result }
+
+        let input = pageExtractionInput(fromSnapshotResult: result)
+        let title = input.title
+        let url = input.url
+
+        do {
+            let bullets = try await AgentPageExtractor.extract(from: input)
+            let findings = AgentPageExtractor.formatFindings(title: title, url: url, bullets: bullets)
+            transcript.append(
+                AgentTranscriptEntry(
+                    kind: .pageFindings,
+                    text: findings,
+                    debugDetail: bullets.joined(separator: "\n")
+                )
+            )
+            let extracted = bullets.map { "• \($0)" }.joined(separator: "\n")
+            return """
+            \(result)
+
+            extractedFindings (relevant to user question):
+            \(extracted)
+            """
+        } catch {
+            let diagnostic = recordExtractionFailure(
+                input: input,
+                rawSnapshot: result,
+                error: error
+            )
+            let failure = AgentPageExtractor.formatExtractionFailure(
+                title: title,
+                url: url,
+                error: error
+            )
+            transcript.append(
+                AgentTranscriptEntry(
+                    kind: .pageFindings,
+                    text: failure,
+                    debugDetail: diagnosticDebugDetail(diagnostic)
+                )
+            )
+            throw AgentToolError.unavailable(error.localizedDescription)
+        }
+    }
+
+    private func pageExtractionInput(fromSnapshotResult result: String) -> AgentPageExtractor.Input {
+        let event = context.browser.replay.last(where: { $0.action == "snapshot" })
+        let title = event?.title ?? context.browser.title
+        let url = event?.url ?? context.browser.url?.absoluteString ?? ""
+        let pageText: String
+        if let stored = event?.pageText, !stored.isEmpty {
+            pageText = stored
+        } else if let range = result.range(of: "text:\n") {
+            pageText = String(result[range.upperBound...])
+        } else {
+            pageText = ""
+        }
+        return AgentPageExtractor.Input(
+            userQuestion: lastUserPrompt,
+            title: title,
+            url: url,
+            headings: event?.headings ?? [],
+            listItems: event?.listItems ?? [],
+            pageText: pageText
+        )
+    }
+
+    @discardableResult
+    private func recordExtractionFailure(
+        input: AgentPageExtractor.Input,
+        rawSnapshot: String,
+        error: Error
+    ) -> AgentPageExtractionDiagnostic {
+        let unpacked = AgentPageExtractor.unpackError(error)
+        let diagnostic = AgentPageExtractionDiagnostic(
+            errorCode: unpacked.code,
+            errorMessage: unpacked.message,
+            userQuestion: input.userQuestion,
+            title: input.title,
+            url: input.url,
+            headings: input.headings,
+            listItems: input.listItems,
+            pageText: String(input.pageText.prefix(8_000)),
+            prompt: AgentPageExtractor.buildPrompt(from: input),
+            modelGate: modelGate.title,
+            modelAvailable: isModelAvailable,
+            rawSnapshotPrefix: String(rawSnapshot.prefix(6_000)),
+            rawModelBullets: unpacked.rawBullets
+        )
+        extractionDiagnostics.append(diagnostic)
+        if extractionDiagnostics.count > 40 {
+            extractionDiagnostics.removeFirst(extractionDiagnostics.count - 40)
+        }
+        return diagnostic
+    }
+
+    private func diagnosticDebugDetail(_ diagnostic: AgentPageExtractionDiagnostic) -> String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        if let data = try? encoder.encode(diagnostic),
+           let text = String(data: data, encoding: .utf8) {
+            return text
+        }
+        return diagnostic.errorMessage
+    }
+
     func appendPermission(_ domain: AgentPermissionDomain) {
         transcript.append(
             AgentTranscriptEntry(
@@ -215,20 +337,25 @@ final class AgentRuntime: ObservableObject {
             },
             toolLog: context.lastToolLog.map {
                 AgentConversationDumpToolLog(name: $0.name, detail: $0.detail)
-            }
+            },
+            browserReplay: context.browser.replay,
+            extractionDiagnostics: extractionDiagnostics
         )
     }
 
-    func conversationDumpJSONData() throws -> Data {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(makeConversationDump())
+    func conversationDumpJSONLData() throws -> Data {
+        try AgentConversationExporter.jsonlData(for: makeConversationDump())
     }
 
+    func conversationDumpZipData() throws -> Data {
+        try AgentConversationExporter.zipData(for: makeConversationDump())
+    }
+
+    /// Writes a `.jsonl.zip` suitable for sharing / attaching in chat.
     func writeConversationDumpFile() throws -> URL {
-        let data = try conversationDumpJSONData()
-        let name = "device-agent-\(ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")).json"
+        let dump = makeConversationDump()
+        let data = try AgentConversationExporter.zipData(for: dump)
+        let name = AgentConversationExporter.filenameForZip(at: dump.exportedAt)
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         try data.write(to: url, options: .atomic)
         return url
@@ -266,8 +393,7 @@ private enum AgentFMToolBridge {
                 runtime.appendPermission(permission)
             }
             let result = try await work(runtime.context)
-            runtime.appendToolResult(name: name, result: result)
-            return result
+            return try await runtime.appendToolResultAndEnrich(name: name, result: result)
         }.value
     }
 }

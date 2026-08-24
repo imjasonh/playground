@@ -3,6 +3,20 @@ import XCTest
 
 final class DeviceAgentTests: XCTestCase {
     @MainActor
+    override func setUp() async throws {
+        try await super.setUp()
+        AgentBrowserSession.shared.clearReplay()
+        AgentPageExtractor.testExtractionOverride = nil
+    }
+
+    @MainActor
+    override func tearDown() async throws {
+        AgentPageExtractor.testExtractionOverride = nil
+        AgentBrowserSession.shared.clearReplay()
+        try await super.tearDown()
+    }
+
+    @MainActor
     func testRuntimeReportsModelGate() {
         let runtime = AgentRuntime()
         runtime.refreshModelStatus()
@@ -167,11 +181,162 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertEqual(dump.entries.count, runtime.transcript.count)
         let result = try XCTUnwrap(dump.entries.first { $0.kind == "toolResult" })
         XCTAssertEqual(result.debugDetail, "Mom <mom@example.com>")
-        let data = try runtime.conversationDumpJSONData()
-        XCTAssertFalse(data.isEmpty)
+        XCTAssertEqual(dump.browserReplay, runtime.context.browser.replay)
+        XCTAssertEqual(dump.extractionDiagnostics, runtime.extractionDiagnostics)
+        let jsonl = try runtime.conversationDumpJSONLData()
+        XCTAssertFalse(jsonl.isEmpty)
+        let jsonlText = try XCTUnwrap(String(data: jsonl, encoding: .utf8))
+        XCTAssertTrue(jsonlText.contains(#""type":"meta""#))
+        XCTAssertTrue(jsonlText.contains(#""type":"entry""#))
+        let zip = try runtime.conversationDumpZipData()
+        XCTAssertEqual(Array(zip.prefix(4)), [0x50, 0x4b, 0x03, 0x04])
         let url = try runtime.writeConversationDumpFile()
         defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertTrue(url.lastPathComponent.hasSuffix(".jsonl.zip"))
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    }
+
+    @MainActor
+    func testPageFindingsBulletsAndReplayRecording() async throws {
+        let bullets = AgentBrowserSession.pageFindingsBullets(
+            from: """
+            NFL Schedule 2026
+            Week 1 opens with the kickoff game on Thursday night.
+            Cookie settings Accept all
+            Standings update after each Sunday slate.
+            """,
+            limit: 5
+        )
+        XCTAssertFalse(bullets.isEmpty)
+        XCTAssertFalse(bullets.contains(where: { $0.lowercased().contains("cookie") }))
+
+        let findings = AgentBrowserSession.pageFindingsText(
+            title: "NFL Schedule",
+            url: "https://www.espn.com/nfl/schedule",
+            pageText: "Random filler that should rank below headings.",
+            headings: ["NFL Schedule"],
+            listItems: ["Week 1: Chiefs vs Ravens", "Week 2: Bills at Jets"]
+        )
+        XCTAssertTrue(findings.contains("From the page · NFL Schedule"))
+        XCTAssertTrue(findings.contains("Week 1: Chiefs vs Ravens"))
+        XCTAssertTrue(findings.contains("follow-up"))
+
+        let headingFirst = AgentBrowserSession.pageFindingsBullets(
+            headings: ["Standings"],
+            listItems: ["AFC East leaders"],
+            pageText: "This long body sentence should not displace the heading bullets from the page content itself.",
+            limit: 3
+        )
+        XCTAssertEqual(headingFirst.first, "Standings")
+        XCTAssertTrue(headingFirst.contains("AFC East leaders"))
+
+        let prompt = AgentPageExtractor.buildPrompt(
+            from: AgentPageExtractor.Input(
+                userQuestion: "What's on the NFL schedule?",
+                title: "NFL Schedule",
+                url: "https://www.espn.com/nfl/schedule",
+                headings: ["Week 1"],
+                listItems: ["Chiefs vs Ravens"],
+                pageText: "Thursday night kickoff"
+            )
+        )
+        XCTAssertTrue(prompt.contains("User question:"))
+        XCTAssertTrue(prompt.contains("NFL schedule"))
+        XCTAssertTrue(prompt.contains("Chiefs vs Ravens"))
+
+        AgentPageExtractor.testExtractionOverride = { input in
+            XCTAssertEqual(input.userQuestion, "Summarize this schedule")
+            return ["Week 1: Chiefs vs Ravens", "Week 2: Bills at Jets"]
+        }
+        defer { AgentPageExtractor.testExtractionOverride = nil }
+
+        let runtime = AgentRuntime()
+        runtime.lastUserPrompt = "Summarize this schedule"
+        runtime.context.browser.record(
+            action: "open",
+            detail: "https://example.com",
+            url: "https://example.com",
+            title: "Example"
+        )
+        runtime.context.browser.record(
+            action: "snapshot",
+            detail: "2 elements",
+            url: "https://example.com",
+            title: "Example",
+            pageText: "Hello from the page with enough text to become a bullet point here.",
+            elements: [#"[1] link "Home""#],
+            headings: ["Example"],
+            listItems: ["Hello from the page"]
+        )
+        let enriched = try await runtime.appendToolResultAndEnrich(
+            name: "browserSnapshot",
+            result: "title: Example\nurl: https://example.com\ntext:\nHello from the page with enough text to become a bullet point here."
+        )
+        XCTAssertTrue(runtime.transcript.contains { $0.kind == .pageFindings })
+        let pageCard = runtime.transcript.first { $0.kind == .pageFindings }?.text ?? ""
+        XCTAssertTrue(pageCard.contains("From the page"))
+        XCTAssertTrue(pageCard.contains("Week 1: Chiefs vs Ravens"))
+        XCTAssertTrue(enriched.contains("extractedFindings"))
+        XCTAssertTrue(enriched.contains("Week 1: Chiefs vs Ravens"))
+        let dump = runtime.makeConversationDump()
+        XCTAssertEqual(dump.browserReplay.count, 2)
+        XCTAssertEqual(dump.browserReplay.first?.action, "open")
+        XCTAssertEqual(dump.browserReplay.last?.action, "snapshot")
+        XCTAssertEqual(dump.browserReplay.last?.pageText?.contains("Hello from the page"), true)
+    }
+
+    @MainActor
+    func testPageExtractionFailureIsVisibleAndThrows() async throws {
+        AgentPageExtractor.testExtractionOverride = { _ in
+            throw AgentPageExtractor.Failure(
+                error: .emptyFindings(rawBulletCount: 2),
+                rawModelBullets: [" ", "ok"]
+            )
+        }
+        defer { AgentPageExtractor.testExtractionOverride = nil }
+
+        let runtime = AgentRuntime()
+        runtime.lastUserPrompt = "What games are on?"
+        runtime.context.browser.record(
+            action: "snapshot",
+            detail: "0 elements",
+            url: "https://example.com/nfl",
+            title: "Example",
+            pageText: "Nav only",
+            headings: ["NFL"],
+            listItems: ["Week 1"]
+        )
+
+        do {
+            _ = try await runtime.appendToolResultAndEnrich(
+                name: "browserSnapshot",
+                result: "title: Example\ntext:\nNav only"
+            )
+            XCTFail("Expected page extraction to fail the tool")
+        } catch {
+            // expected
+        }
+
+        let failureCard = runtime.transcript.first { $0.kind == .pageFindings }?.text ?? ""
+        XCTAssertTrue(failureCard.contains("Page extraction failed"))
+        XCTAssertTrue(failureCard.contains("Export the conversation ZIP"))
+        XCTAssertEqual(runtime.extractionDiagnostics.count, 1)
+        let diagnostic = try XCTUnwrap(runtime.extractionDiagnostics.first)
+        XCTAssertEqual(diagnostic.errorCode, "emptyFindings")
+        XCTAssertEqual(diagnostic.userQuestion, "What games are on?")
+        XCTAssertEqual(diagnostic.url, "https://example.com/nfl")
+        XCTAssertEqual(diagnostic.headings, ["NFL"])
+        XCTAssertTrue(diagnostic.prompt.contains("User question:"))
+        XCTAssertEqual(diagnostic.rawModelBullets, [" ", "ok"])
+        XCTAssertNotNil(diagnostic.rawSnapshotPrefix)
+
+        let dump = runtime.makeConversationDump()
+        XCTAssertEqual(dump.extractionDiagnostics.count, 1)
+        let jsonl = try runtime.conversationDumpJSONLData()
+        let text = try XCTUnwrap(String(data: jsonl, encoding: .utf8))
+        XCTAssertTrue(text.contains(#""type":"extractionDiagnostic""#))
+        XCTAssertTrue(text.contains("emptyFindings"))
+        XCTAssertTrue(text.contains("What games are on?"))
     }
 
     @MainActor
