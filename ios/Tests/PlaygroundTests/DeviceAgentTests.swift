@@ -3,6 +3,20 @@ import XCTest
 
 final class DeviceAgentTests: XCTestCase {
     @MainActor
+    override func setUp() async throws {
+        try await super.setUp()
+        AgentBrowserSession.shared.clearReplay()
+        AgentPageExtractor.testExtractionOverride = nil
+    }
+
+    @MainActor
+    override func tearDown() async throws {
+        AgentPageExtractor.testExtractionOverride = nil
+        AgentBrowserSession.shared.clearReplay()
+        try await super.tearDown()
+    }
+
+    @MainActor
     func testRuntimeReportsModelGate() {
         let runtime = AgentRuntime()
         runtime.refreshModelStatus()
