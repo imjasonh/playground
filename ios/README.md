@@ -54,6 +54,7 @@ ios/
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
+| `doom-face` | Doom Face | In-app; front-camera TrueDepth face tracking stamps your mug onto doomguy’s status-bar sheet and exports a GIF |
 | `nfc-tags` | NFC Tags | In-app Core NFC tag read/write (NDEF text/URL, blank NTAGs); needs NFC Tag Reading capability bootstrap |
 
 ### Ride Monitor
@@ -261,6 +262,20 @@ in portrait and landscape through aspect-fill. Needs camera permission
 bootstrap). Simulator opens the UI but has no camera; use a physical device to
 see live labels. True gaze / attention tracking would need ARKit face tracking
 on a TrueDepth front camera — not wired here yet.
+
+### Doom Face
+
+Front-camera **TrueDepth** face tracking (`ARFaceTrackingConfiguration`) matches
+your blend shapes to doomguy’s status-bar faces. Hold a look, grin, open mouth,
+or scowl for about half a second and the app crops your face into that cell on
+the sheet. Unmatched cells stay grey; matched cells fill in with your photo.
+
+Layout is a square camera preview on top and the sprite sheet underneath, with
+Reset and **Export GIF**. The GIF prefers the classic idle look cycle (left →
+center → right → center) for the health row with the most look faces filled;
+otherwise it walks every captured cell in sheet order. Extends the existing
+`NSCameraUsageDescription` — no new Bundle ID or signing bootstrap. Needs a
+TrueDepth iPhone; Simulator opens the UI but cannot track a face.
 
 ### NFC Tags
 
