@@ -136,9 +136,10 @@ Demo Mail web page). Permissions are requested **only when a tool needs them**.
 - **In-app browser:** `browserOpen` loads real http(s) URLs; injected JS bridge
   supports `browserSnapshot` / `browserClick` / `browserType` / `browserBack`.
   After each snapshot, Foundation Models guided generation extracts
-  question-relevant **From the page** bullets into chat (heuristic fallback if
-  the model call fails). The same bullets are appended to the tool result as
-  `extractedFindings` for the agent turn. The tab stays open for follow-ups.
+  question-relevant **From the page** bullets into chat. If extraction fails,
+  the tool fails with a visible error (no heuristic substitute). Successful
+  bullets are also appended to the tool result as `extractedFindings` for the
+  agent turn. The tab stays open for follow-ups.
   Structured browser replay (actions + scraped text, no screenshots) is included
   in the conversation JSON export. With the browser open, the composer collapses
   to an Ask follow-up control so the keyboard stays out of the way.

@@ -196,32 +196,50 @@ final class AgentRuntime: ObservableObject {
 
     /// Logs the tool result, runs Foundation Model extraction for snapshots, and returns
     /// an enriched payload the agent session can use (raw scrape + extractedFindings).
-    func appendToolResultAndEnrich(name: String, result: String) async -> String {
+    /// Snapshot extraction failures are visible in chat and fail the tool call (no heuristic fallback).
+    func appendToolResultAndEnrich(name: String, result: String) async throws -> String {
         appendToolResult(name: name, result: result)
         guard name == "browserSnapshot" else { return result }
-        let bullets = await extractPageFindingsBullets(fromSnapshotResult: result)
+
         let event = context.browser.replay.last(where: { $0.action == "snapshot" })
         let title = event?.title ?? context.browser.title ?? ""
         let url = event?.url ?? context.browser.url?.absoluteString ?? ""
-        let findings = AgentPageExtractor.formatFindings(title: title, url: url, bullets: bullets)
-        transcript.append(
-            AgentTranscriptEntry(
-                kind: .pageFindings,
-                text: findings,
-                debugDetail: bullets.joined(separator: "\n")
-            )
-        )
-        guard !bullets.isEmpty else { return result }
-        let extracted = bullets.map { "• \($0)" }.joined(separator: "\n")
-        return """
-        \(result)
 
-        extractedFindings (relevant to user question):
-        \(extracted)
-        """
+        do {
+            let bullets = try await extractPageFindingsBullets(fromSnapshotResult: result)
+            let findings = AgentPageExtractor.formatFindings(title: title, url: url, bullets: bullets)
+            transcript.append(
+                AgentTranscriptEntry(
+                    kind: .pageFindings,
+                    text: findings,
+                    debugDetail: bullets.joined(separator: "\n")
+                )
+            )
+            let extracted = bullets.map { "• \($0)" }.joined(separator: "\n")
+            return """
+            \(result)
+
+            extractedFindings (relevant to user question):
+            \(extracted)
+            """
+        } catch {
+            let failure = AgentPageExtractor.formatExtractionFailure(
+                title: title,
+                url: url,
+                error: error
+            )
+            transcript.append(
+                AgentTranscriptEntry(
+                    kind: .pageFindings,
+                    text: failure,
+                    debugDetail: error.localizedDescription
+                )
+            )
+            throw AgentToolError.unavailable(error.localizedDescription)
+        }
     }
 
-    private func extractPageFindingsBullets(fromSnapshotResult result: String) async -> [String] {
+    private func extractPageFindingsBullets(fromSnapshotResult result: String) async throws -> [String] {
         let event = context.browser.replay.last(where: { $0.action == "snapshot" })
         let title = event?.title ?? context.browser.title ?? ""
         let url = event?.url ?? context.browser.url?.absoluteString ?? ""
@@ -233,7 +251,7 @@ final class AgentRuntime: ObservableObject {
         } else {
             pageText = ""
         }
-        return await AgentPageExtractor.extract(
+        return try await AgentPageExtractor.extract(
             from: AgentPageExtractor.Input(
                 userQuestion: lastUserPrompt,
                 title: title,
@@ -325,7 +343,7 @@ private enum AgentFMToolBridge {
                 runtime.appendPermission(permission)
             }
             let result = try await work(runtime.context)
-            return await runtime.appendToolResultAndEnrich(name: name, result: result)
+            return try await runtime.appendToolResultAndEnrich(name: name, result: result)
         }.value
     }
 }

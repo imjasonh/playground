@@ -199,7 +199,7 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertTrue(findings.contains("From the page · NFL Schedule"))
         XCTAssertTrue(findings.contains("Week 1: Chiefs vs Ravens"))
         XCTAssertTrue(findings.contains("follow-up"))
-        // Headings / list items from the page beat generic body text.
+
         let headingFirst = AgentBrowserSession.pageFindingsBullets(
             headings: ["Standings"],
             listItems: ["AFC East leaders"],
@@ -223,11 +223,11 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertTrue(prompt.contains("NFL schedule"))
         XCTAssertTrue(prompt.contains("Chiefs vs Ravens"))
 
-        AgentPageExtractor.testBulletsOverride = { input in
+        AgentPageExtractor.testExtractionOverride = { input in
             XCTAssertEqual(input.userQuestion, "Summarize this schedule")
             return ["Week 1: Chiefs vs Ravens", "Week 2: Bills at Jets"]
         }
-        defer { AgentPageExtractor.testBulletsOverride = nil }
+        defer { AgentPageExtractor.testExtractionOverride = nil }
 
         let runtime = AgentRuntime()
         runtime.lastUserPrompt = "Summarize this schedule"
@@ -247,7 +247,7 @@ final class DeviceAgentTests: XCTestCase {
             headings: ["Example"],
             listItems: ["Hello from the page"]
         )
-        let enriched = await runtime.appendToolResultAndEnrich(
+        let enriched = try await runtime.appendToolResultAndEnrich(
             name: "browserSnapshot",
             result: "title: Example\nurl: https://example.com\ntext:\nHello from the page with enough text to become a bullet point here."
         )
@@ -262,6 +262,38 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertEqual(dump.browserReplay.first?.action, "open")
         XCTAssertEqual(dump.browserReplay.last?.action, "snapshot")
         XCTAssertEqual(dump.browserReplay.last?.pageText?.contains("Hello from the page"), true)
+    }
+
+    @MainActor
+    func testPageExtractionFailureIsVisibleAndThrows() async {
+        AgentPageExtractor.testExtractionOverride = { _ in
+            throw AgentPageExtractor.ExtractionError.emptyFindings
+        }
+        defer { AgentPageExtractor.testExtractionOverride = nil }
+
+        let runtime = AgentRuntime()
+        runtime.lastUserPrompt = "What games are on?"
+        runtime.context.browser.record(
+            action: "snapshot",
+            detail: "0 elements",
+            url: "https://example.com",
+            title: "Example",
+            pageText: "Nav only"
+        )
+
+        do {
+            _ = try await runtime.appendToolResultAndEnrich(
+                name: "browserSnapshot",
+                result: "title: Example\ntext:\nNav only"
+            )
+            XCTFail("Expected page extraction to fail the tool")
+        } catch {
+            // expected
+        }
+
+        let failureCard = runtime.transcript.first { $0.kind == .pageFindings }?.text ?? ""
+        XCTAssertTrue(failureCard.contains("Page extraction failed"))
+        XCTAssertTrue(failureCard.contains("no page findings") || failureCard.lowercased().contains("failed"))
     }
 
     @MainActor
