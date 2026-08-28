@@ -162,7 +162,7 @@ pack when needed. Requires `"confirm": true`.
   "confirm": true,              // required guard
   "budget_usd": 0.10,           // hard spend cap (default 0.10, max 5.00)
   "duration_secs": 20,          // per-stage wall time (default 20, max 120)
-  "shards": 1,                  // split concurrency across in-process partitions
+  "shards": 1,                  // split concurrency across isolates (same repo)
   "stages": [                   // optional; default = writer ramp 1..48 then 64 readers
     { "writers": 8, "readers": 0 },
     { "writers": 0, "readers": 64 }
@@ -236,23 +236,23 @@ Phone-friendly HTML load test. Open this URL in a browser:
 
 * without `run=1` — landing page with **cost budget** and **peak writers**
   controls, then a **Run** button (JS fetch + live seconds timer);
-* with `?run=1` — runs immediately into a disposable repo and prints the
+* with `?run=1` — runs immediately into **one** disposable repo and prints the
   report (peak pushes/s, pulls/s, $/op, budget status, per-stage table).
 
 Stages are derived from peak writers: warm-up (`peak/3`) → peak writers →
-`2×peak` readers. Defaults stay light (`budget=0.05`, `duration=4`,
-`peak=6`) so one isolate stays under Workers subrequest/memory limits; peak
-is capped at 24. Heavier ramps belong on `POST /api/<repo>/loadtest`.
+`2×peak` readers. Each writer owns its own branch (`refs/heads/load/wN`);
+disjoint-branch pushes merge-apply without conflicting. Defaults:
+`budget=0.10`, `duration=4`, `peak=8` (capped at 48).
 
 **Auth:** production requires the Worker secret `LOADTEST_TOKEN`. Pass it as
 `?token=…`, or as the `X-Loadtest-Token` header. Without a matching token the
 run returns 401 (HTML error page for GET). If the secret is unset, loadtests
 return 503.
 
-Optional query: `budget` (USD, default `0.05`, max `5`), `peak` (writers,
-default `6`, max `24`), `duration` (seconds per stage, default `4`). Bookmark
+Optional query: `budget` (USD, default `0.10`, max `5`), `peak` (writers,
+default `8`, max `48`), `duration` (seconds per stage, default `4`). Bookmark
 `https://git.<account>.workers.dev/loadtest?token=…` and adjust the form, or
-`…/loadtest?run=1&budget=0.25&peak=12&token=…` for one-tap.
+`…/loadtest?run=1&budget=0.10&peak=8&token=…` for one-tap.
 
 Any other unmatched path is `404`.
 

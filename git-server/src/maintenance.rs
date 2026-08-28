@@ -62,7 +62,7 @@ use crate::repo::{delete_filelog, load_filelog, write_sharded_filelog, FileLogSe
 /// least this many packs, schedule a bounded repack. Shared by the Worker
 /// `wait_until` hook and the in-process loadtest harness (which has no
 /// `wait_until`, so it runs the same check after each timed push).
-pub const AUTO_REPACK_TRIGGER_PACKS: usize = 8;
+pub const AUTO_REPACK_TRIGGER_PACKS: usize = 4;
 
 /// Per-run consolidation budgets, sized so one run always fits a single
 /// Workers invocation regardless of repo size.

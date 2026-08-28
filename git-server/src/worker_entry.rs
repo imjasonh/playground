@@ -474,6 +474,53 @@ fn request_nonce() -> String {
     format!("{ms:x}-{r:x}")
 }
 
+/// HTTP self-fetch for coordinated loadtest shards (same repo, fresh isolates).
+struct WorkerLoadtestFanout {
+    origin: String,
+    token: Option<String>,
+}
+
+#[async_trait(?Send)]
+impl crate::loadtest::LoadtestFanout for WorkerLoadtestFanout {
+    async fn post_loadtest(
+        &self,
+        repo: &str,
+        req: crate::loadtest::LoadTestRequest,
+    ) -> Result<crate::loadtest::LoadTestReport, String> {
+        let url = format!("{}/api/{}/loadtest", self.origin, repo);
+        let body = serde_json::to_vec(&req).map_err(|e| e.to_string())?;
+        let mut init = RequestInit::new();
+        init.with_method(Method::Post);
+        init.with_body(Some(worker::wasm_bindgen::JsValue::from(
+            worker::js_sys::Uint8Array::from(body.as_slice()),
+        )));
+        let headers = worker::Headers::new();
+        headers
+            .set("content-type", "application/json")
+            .map_err(|e| e.to_string())?;
+        if let Some(t) = &self.token {
+            headers
+                .set("X-Loadtest-Token", t)
+                .map_err(|e| e.to_string())?;
+        }
+        init.with_headers(headers);
+        let request = Request::new_with_init(&url, &init).map_err(|e| e.to_string())?;
+        let mut resp = worker::Fetch::Request(request)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        let status = resp.status_code();
+        let text = resp.text().await.map_err(|e| e.to_string())?;
+        if !(200..300).contains(&status) {
+            return Err(format!(
+                "shard HTTP {status}: {}",
+                text.chars().take(300).collect::<String>()
+            ));
+        }
+        serde_json::from_str(&text).map_err(|e| format!("bad shard JSON: {e}"))
+    }
+}
+
 /// Self-triggering maintenance: after an accepted push, if the repo has at
 /// least [`crate::maintenance::AUTO_REPACK_TRIGGER_PACKS`] packs, a bounded
 /// repack runs in the background of the same invocation (`ctx.wait_until`).
@@ -517,11 +564,21 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
     let url = req.url()?;
     let path = url.path().to_string();
     let query = url.query().map(|q| q.to_string());
+    let origin = format!("{}://{}", url.scheme(), url.host_str().unwrap_or(""));
     let method = req.method().to_string();
     let git_protocol = req.headers().get("Git-Protocol").ok().flatten();
     let content_encoding = req.headers().get("Content-Encoding").ok().flatten();
     let cf_ray = req.headers().get("cf-ray").ok().flatten();
     let loadtest_token = req.headers().get("X-Loadtest-Token").ok().flatten();
+
+    // Self-fetch fan-out so multi-shard loadtests (same repo) land on
+    // separate isolates — useful for probing the per-repo ceiling past
+    // one-isolate CPU.
+    let fanout = std::rc::Rc::new(WorkerLoadtestFanout {
+        origin,
+        token: server.loadtest_token.clone(),
+    });
+    server = server.with_loadtest_fanout(fanout);
 
     let span_name = if path.contains("git-receive-pack") {
         "git.receive_pack"

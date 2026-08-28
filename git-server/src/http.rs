@@ -162,6 +162,8 @@ pub struct GitHttp {
     /// When true (Worker), a missing [`Self::loadtest_token`] rejects
     /// loadtests with 503 instead of running open.
     pub loadtest_auth_required: bool,
+    /// Optional HTTP self-fetch for multi-shard loadtests (same repo).
+    pub loadtest_fanout: Option<std::rc::Rc<dyn crate::loadtest::LoadtestFanout>>,
 }
 
 impl GitHttp {
@@ -172,6 +174,7 @@ impl GitHttp {
             push_limit_bytes: DEFAULT_PUSH_LIMIT_BYTES,
             loadtest_token: None,
             loadtest_auth_required: false,
+            loadtest_fanout: None,
         }
     }
 
@@ -189,6 +192,15 @@ impl GitHttp {
     /// Worker: require a token, but the secret is not configured yet.
     pub fn with_loadtest_auth_required(mut self) -> GitHttp {
         self.loadtest_auth_required = true;
+        self
+    }
+
+    /// Attach a self-fetch fan-out (Worker only).
+    pub fn with_loadtest_fanout(
+        mut self,
+        fanout: std::rc::Rc<dyn crate::loadtest::LoadtestFanout>,
+    ) -> GitHttp {
+        self.loadtest_fanout = Some(fanout);
         self
     }
 }
@@ -537,7 +549,7 @@ impl GitHttp {
             Err(e) => return Response::error(400, &e),
         };
 
-        let http = self.nested_http();
+        let http = self.coordinator_http();
         let report = match crate::loadtest::execute(&http, repo_name, &cfg).await {
             Ok(r) => r,
             Err(e) => return Response::error(500, &e),
@@ -550,10 +562,10 @@ impl GitHttp {
     }
 
     /// `GET /loadtest` — phone-friendly HTML. Without `run=1`, shows a
-    /// landing page with budget + peak-load controls. With `run=1`, runs a
-    /// budget-capped load test into a disposable repo and prints the report.
-    /// Query knobs: `budget`, `peak` (max writers; readers = 2×), `duration`
-    /// (seconds per stage), `token` (required when auth is on).
+    /// landing page with budget / peak controls. With `run=1`, runs a
+    /// budget-capped load test into one disposable repo and prints the report.
+    /// Query knobs: `budget`, `peak` (concurrent writers, each on its own
+    /// branch), `duration` (seconds per stage), `token`.
     async fn phone_loadtest(&self, req: &Request<'_>) -> Response {
         let query = req.query;
         let budget = query_param(query, "budget")
@@ -609,7 +621,7 @@ impl GitHttp {
                 );
             }
         };
-        let http = self.nested_http();
+        let http = self.coordinator_http();
         match crate::loadtest::execute(&http, &repo, &cfg).await {
             Ok(report) => Response::ok(
                 "text/html; charset=utf-8",
@@ -622,12 +634,13 @@ impl GitHttp {
         }
     }
 
-    fn nested_http(&self) -> GitHttp {
+    /// Keep shard fan-out so multi-isolate single-repo runs can self-fetch.
+    fn coordinator_http(&self) -> GitHttp {
         let mut http = GitHttp::new(self.store.clone(), self.states.clone())
             .with_push_limit(self.push_limit_bytes);
-        // Nested protocol calls never hit loadtest routes; keep auth off.
         http.loadtest_auth_required = false;
         http.loadtest_token = None;
+        http.loadtest_fanout = self.loadtest_fanout.clone();
         http
     }
 

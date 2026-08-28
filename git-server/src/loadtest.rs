@@ -59,7 +59,7 @@ const SEED_BLOB_BYTES: usize = 256;
 const WRITE_BLOB_BYTES: usize = 128;
 
 /// Request body for `POST /api/<repo>/loadtest`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LoadTestRequest {
     /// Must be `true`. Guards against accidental triggers.
     pub confirm: bool,
@@ -75,8 +75,9 @@ pub struct LoadTestRequest {
     #[serde(default)]
     pub stages: Option<Vec<StageSpec>>,
     /// How many Worker shards to fan the offered load across. `1` (default)
-    /// runs everything in this isolate; `>1` is only meaningful on the
-    /// Worker (self-fetch). Native runs ignore values above 1.
+    /// runs everything in this isolate; `>1` self-fetches shard POSTs when a
+    /// [`LoadtestFanout`] is configured (Worker), otherwise partitions
+    /// in-process. All shards hit the **same** repo (per-repo ceiling).
     #[serde(default)]
     pub shards: Option<u32>,
     /// Internal: this invocation is one shard of a coordinated run. Shards
@@ -116,6 +117,8 @@ pub struct LoadTestConfig {
     pub tip: Option<Oid>,
     pub shard_index: u32,
 }
+
+pub const MAX_SHARDS: u32 = 32;
 
 impl LoadTestRequest {
     /// Validate and clamp into a [`LoadTestConfig`].
@@ -164,16 +167,31 @@ impl LoadTestRequest {
             budget_usd: budget,
             duration_ms: duration_secs * 1000,
             stages,
-            shards: self.shards.unwrap_or(1).max(1),
+            shards: self.shards.unwrap_or(1).clamp(1, MAX_SHARDS),
             shard: self.shard,
             tip,
             shard_index: self.shard_index.unwrap_or(0),
         })
     }
+
+    /// Rebuild a request body for a nested shard POST.
+    pub fn from_config(cfg: &LoadTestConfig, tip: Option<&str>) -> LoadTestRequest {
+        LoadTestRequest {
+            confirm: true,
+            budget_usd: Some(cfg.budget_usd),
+            duration_secs: Some((cfg.duration_ms / 1000).max(1)),
+            stages: Some(cfg.stages.clone()),
+            shards: Some(cfg.shards),
+            shard: cfg.shard,
+            tip: tip.map(str::to_string),
+            shard_index: Some(cfg.shard_index),
+            token: None,
+        }
+    }
 }
 
 /// Mean underlying-op cost for one class of operation (push or pull).
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OpCostSummary {
     pub samples: u64,
     pub mean_r2_class_a: f64,
@@ -225,7 +243,7 @@ impl OpTotals {
 }
 
 /// One stage's measured goodput and costs.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StageReport {
     pub writers: u32,
     pub readers: u32,
@@ -242,7 +260,7 @@ pub struct StageReport {
 }
 
 /// Final load-test report (JSON response body).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadTestReport {
     pub repo: String,
     pub tip: String,
@@ -942,7 +960,7 @@ fn noise(len: usize, mut seed: u64) -> Vec<u8> {
     out
 }
 
-/// Merge shard reports into one coordinator report (same tip/budget).
+/// Merge shard reports into one coordinator report (same repo).
 pub fn merge_shard_reports(
     repo: &str,
     tip: &str,
@@ -1071,6 +1089,18 @@ pub fn merge_shard_reports(
     }
 }
 
+/// Fan-out hook for multi-isolate shard POSTs against **one** repo. The Worker
+/// implements this with `Fetch` to the same origin so each shard runs on a
+/// fresh isolate (helps find the per-repo ceiling past one-isolate CPU).
+#[async_trait(?Send)]
+pub trait LoadtestFanout {
+    async fn post_loadtest(
+        &self,
+        repo: &str,
+        req: LoadTestRequest,
+    ) -> Result<LoadTestReport, String>;
+}
+
 /// Convenience: run an in-process load test against a store pair.
 pub async fn run_in_process(
     store: Rc<dyn Store>,
@@ -1090,6 +1120,9 @@ pub async fn execute(
     cfg: &LoadTestConfig,
 ) -> Result<LoadTestReport, String> {
     if cfg.shards > 1 && !cfg.shard {
+        if let Some(fanout) = http.loadtest_fanout.as_ref() {
+            return run_sharded_fanout(http, fanout.as_ref(), repo, cfg).await;
+        }
         return run_sharded_inprocess(
             GitHttp::new(http.store.clone(), http.states.clone())
                 .with_push_limit(http.push_limit_bytes),
@@ -1106,6 +1139,65 @@ pub async fn execute(
     run_loadtest(repo, &driver, cfg).await
 }
 
+/// HTTP self-fetch sharding: each shard POST is a separate Worker invocation
+/// against the same repo.
+async fn run_sharded_fanout(
+    http: &GitHttp,
+    fanout: &dyn LoadtestFanout,
+    repo: &str,
+    cfg: &LoadTestConfig,
+) -> Result<LoadTestReport, String> {
+    let n = cfg.shards.max(1);
+    // Seed once in this isolate, then hand the tip to every shard.
+    let seed_driver = InProcessDriver::new(
+        GitHttp::new(http.store.clone(), http.states.clone())
+            .with_push_limit(http.push_limit_bytes),
+        repo,
+    );
+    let tip = seed_driver.ensure_seeded(cfg.tip).await?;
+    let tip_hex = tip.to_hex();
+    let budget_each = (cfg.budget_usd / n as f64).max(0.0001);
+
+    let mut futs = Vec::with_capacity(n as usize);
+    for i in 0..n {
+        let mut shard_cfg = cfg.clone();
+        shard_cfg.shard = true;
+        shard_cfg.shards = 1;
+        shard_cfg.tip = Some(tip);
+        shard_cfg.shard_index = i;
+        shard_cfg.budget_usd = budget_each;
+        shard_cfg.stages = cfg
+            .stages
+            .iter()
+            .enumerate()
+            .map(|(si, st)| {
+                let writers = st.writers / n + if i == 0 { st.writers % n } else { 0 };
+                let readers = st.readers / n + if i == 0 { st.readers % n } else { 0 };
+                let _ = si;
+                StageSpec { writers, readers }
+            })
+            .filter(|st| st.writers > 0 || st.readers > 0)
+            .collect();
+        if shard_cfg.stages.is_empty() {
+            continue;
+        }
+        let req = LoadTestRequest::from_config(&shard_cfg, Some(&tip_hex));
+        futs.push(fanout.post_loadtest(repo, req));
+    }
+    let results = join_all(futs).await;
+    let mut parts = Vec::with_capacity(results.len());
+    for r in results {
+        parts.push(r?);
+    }
+    Ok(merge_shard_reports(
+        repo,
+        &tip_hex,
+        cfg.budget_usd,
+        n,
+        &parts,
+    ))
+}
+
 /// Constant-time-ish compare for the loadtest shared secret.
 pub fn token_matches(provided: &str, expected: &str) -> bool {
     if provided.len() != expected.len() {
@@ -1118,13 +1210,13 @@ pub fn token_matches(provided: &str, expected: &str) -> bool {
         == 0
 }
 
-/// Phone UI defaults. Kept small so one isolate stays under Workers
-/// subrequest/memory walls (a prior 32w/64r ramp threw Error 1101).
-pub const PHONE_DEFAULT_BUDGET_USD: f64 = 0.05;
+/// Phone UI defaults. Measures **one** disposable repo (Workers
+/// subrequest/memory walls keep peak concurrency modest).
+pub const PHONE_DEFAULT_BUDGET_USD: f64 = 0.10;
 pub const PHONE_DEFAULT_DURATION_SECS: u64 = 4;
-/// Peak writers in the write ramp; read stage uses `2 × peak` readers.
-pub const PHONE_DEFAULT_PEAK: u32 = 6;
-pub const PHONE_MAX_PEAK: u32 = 24;
+/// Peak writers in the write ramp; read stage uses `2 × peak`.
+pub const PHONE_DEFAULT_PEAK: u32 = 8;
+pub const PHONE_MAX_PEAK: u32 = 48;
 
 /// Clamp a phone peak-writers value into the safe range.
 pub fn clamp_phone_peak(peak: u32) -> u32 {
@@ -1173,9 +1265,7 @@ pub fn phone_repo_name() -> String {
     format!("lt{}", ms % 1_000_000_000)
 }
 
-/// Landing page: budget + peak-load controls, then Run. Click builds
-/// `?run=1…` via fetch so the page can show a live timer instead of a blank
-/// browser spinner (and surface Worker errors as text).
+/// Landing page: budget + peak controls, then Run (one disposable repo).
 pub fn html_landing(budget_usd: f64, duration_secs: u64, peak: u32, token: Option<&str>) -> String {
     let token_js = token.map(js_string_escape).unwrap_or_default();
     let has_token = token.is_some();
@@ -1244,15 +1334,15 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
 <body>
 <main>
   <h1>git loadtest</h1>
-  <p>Push/pull load against this Worker.<br>
-  No mid-run updates — the timer is all you get until the report.</p>
+  <p>Push/pull load against <strong>one</strong> disposable repo on this Worker.<br>
+  Concurrent writers use separate branches (merge-apply).</p>
   {token_hint}
   <div class="fields">
     <label>Cost budget (USD)
       <input id="budget" type="number" inputmode="decimal" min="0.01" max="5" step="0.01" value="{budget_usd:.2}">
     </label>
     <label>Peak writers
-      <span class="detail">Warm-up → peak writers → 2× readers. Max {max_peak}.</span>
+      <span class="detail">Warm-up → peak → 2× readers. Max {max_peak}. Each writer owns a branch.</span>
       <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
     </label>
   </div>
@@ -1281,7 +1371,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     var warm = Math.max(1, Math.floor(peak / 3));
     var readers = Math.max(1, peak * 2);
     var expect = duration * 3 + 5;
-    plan.textContent = warm + "w → " + peak + "w → " + readers + "r · " + duration + "s × 3 · ~" + expect + "s";
+    plan.textContent = warm + "w → " + peak + "w → " + readers +
+      "r · " + duration + "s × 3 · ~" + expect + "s";
   }}
   peakEl.addEventListener("input", updatePlan);
   function runUrl() {{
@@ -1317,7 +1408,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         clearInterval(tick);
         status.className = "err";
         status.textContent = "Request failed: " + (e && e.message ? e.message : e) +
-          "\\nThe Worker may have hit a limit (try a lower peak).";
+          "\\nTry a lower peak.";
         btn.disabled = false;
       }});
   }});
@@ -1889,7 +1980,7 @@ mod tests {
             // Op-count regression guard (MemStore has ~0ms backends so ms/QPS
             // are not comparable to production).
             assert!(
-                report.cost_per_push.mean_r2_class_b < 18.0,
+                report.cost_per_push.mean_r2_class_b < 12.0,
                 "push R2B too high: {}",
                 report.cost_per_push.mean_r2_class_b
             );
