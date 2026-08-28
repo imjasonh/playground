@@ -818,6 +818,26 @@ impl InProcessDriver {
         };
         Ok((status, bytes, metrics))
     }
+
+    async fn maybe_repack_inner(&self) -> Result<(), String> {
+        let repo = crate::repo::Repo {
+            store: self.http.store.as_ref(),
+            states: self.http.states.as_ref(),
+            name: &self.repo,
+        };
+        let packs = match repo.load_state().await {
+            Ok(loaded) => loaded.state.packs.len(),
+            Err(_) => return Ok(()),
+        };
+        if packs < crate::maintenance::AUTO_REPACK_TRIGGER_PACKS {
+            return Ok(());
+        }
+        match crate::maintenance::repack(&repo, &self.nonce()).await {
+            Ok(_) => Ok(()),
+            // Busy / lost-race are expected under concurrent writers.
+            Err(_) => Ok(()),
+        }
+    }
 }
 
 #[async_trait(?Send)]
@@ -900,23 +920,12 @@ impl LoadDriver for InProcessDriver {
     }
 
     async fn maybe_repack(&self) -> Result<(), String> {
-        let repo = crate::repo::Repo {
-            store: self.http.store.as_ref(),
-            states: self.http.states.as_ref(),
-            name: &self.repo,
-        };
-        let packs = match repo.load_state().await {
-            Ok(loaded) => loaded.state.packs.len(),
-            Err(_) => return Ok(()),
-        };
-        if packs < crate::maintenance::AUTO_REPACK_TRIGGER_PACKS {
-            return Ok(());
-        }
-        match crate::maintenance::repack(&repo, &self.nonce()).await {
-            Ok(_) => Ok(()),
-            // Busy / lost-race are expected under concurrent writers.
-            Err(_) => Ok(()),
-        }
+        // Detached metrics frame: concurrent writers share one isolate, and
+        // without this the stack-top sibling would absorb our DO/R2 counts.
+        crate::metrics::begin_detached();
+        let result = self.maybe_repack_inner().await;
+        crate::metrics::discard();
+        result
     }
 }
 
@@ -1645,6 +1654,41 @@ mod tests {
     }
 
     #[test]
+    fn push_reuses_odb_instead_of_reloading_indexes() {
+        block_on(async {
+            let store = Rc::new(MemStore::new()) as Rc<dyn Store>;
+            let states = Rc::new(MemStateStore::new()) as Rc<dyn StateStore>;
+            let http = GitHttp::new(store, states);
+            let driver = InProcessDriver::new(http, "lt-odb-reuse");
+            let mut tip = driver.ensure_seeded(None).await.expect("seed");
+            // Accumulate packs without auto-repack so a naive second open
+            // would pay ~2× Class B index reads.
+            for i in 0..5u64 {
+                let (oid, pack) = build_writer_pack(tip, 0, i);
+                let body = build_push_body(tip, oid, "refs/heads/main", &pack);
+                let a = driver.push(body).await.expect("push");
+                assert_eq!(a.outcome, AttemptOutcome::Ok, "{a:?}");
+                tip = oid;
+            }
+            let (oid, pack) = build_writer_pack(tip, 0, 5);
+            let body = build_push_body(tip, oid, "refs/heads/main", &pack);
+            let a = driver.push(body).await.expect("push");
+            assert_eq!(a.outcome, AttemptOutcome::Ok);
+            // Prior packs (seed+5) opened once; pre-fix also reloaded them.
+            assert!(
+                a.metrics.r2_class_b < 20,
+                "expected single index load pass, got R2B={}",
+                a.metrics.r2_class_b
+            );
+            assert_eq!(
+                a.metrics.do_requests, 2,
+                "expected load+apply DO only, got {}",
+                a.metrics.do_requests
+            );
+        });
+    }
+
+    #[test]
     fn loadtest_auto_repack_keeps_pack_count_bounded() {
         block_on(async {
             let store = Rc::new(MemStore::new()) as Rc<dyn Store>;
@@ -1696,9 +1740,10 @@ mod tests {
                 "packs={packs} drifted far past trigger={trigger}"
             );
             // Accurate per-push op counts (nested metrics stack): DO load+apply.
+            // Detached auto-repack must not leak onto these samples.
             assert!(
-                report.cost_per_push.mean_do >= 1.5,
-                "mean_do={} (metrics stack regression?)",
+                (1.5..=2.5).contains(&report.cost_per_push.mean_do),
+                "mean_do={} (metrics stack / detach regression?)",
                 report.cost_per_push.mean_do
             );
         });
@@ -1737,6 +1782,30 @@ mod tests {
                 report.budget_limited || report.total_cost_usd > 0.0,
                 "{report:?}"
             );
+        });
+    }
+
+    #[test]
+    fn phone_shaped_push_op_counts_stay_low() {
+        block_on(async {
+            let store = Rc::new(MemStore::new()) as Rc<dyn Store>;
+            let states = Rc::new(MemStateStore::new()) as Rc<dyn StateStore>;
+            let report = run_in_process(store, states, "lt-bench-phone", phone_request(0.05, 4))
+                .await
+                .expect("loadtest");
+            // Op-count regression guard (MemStore has ~0ms backends so ms/QPS
+            // are not comparable to production).
+            assert!(
+                report.cost_per_push.mean_r2_class_b < 18.0,
+                "push R2B too high: {}",
+                report.cost_per_push.mean_r2_class_b
+            );
+            assert!(
+                (1.5..=2.5).contains(&report.cost_per_push.mean_do),
+                "push DO {}",
+                report.cost_per_push.mean_do
+            );
+            assert!(report.cost_per_pull.samples > 0);
         });
     }
 

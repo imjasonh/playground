@@ -585,14 +585,16 @@ impl<'a> Repo<'a> {
         state: RepoState,
         now_ms: i64,
     ) -> Result<PushOutcome, String> {
-        let old_odb = self.odb(&state).await?;
+        let mut odb = self.odb(&state).await?;
 
-        // Resolve + index the new pack (if the push carried one).
-        let new_pack: Option<(PackMeta, PackIndex)> = match &ingested {
+        // Resolve + index the new pack (if the push carried one). Append the
+        // in-memory index onto `odb` — do not reopen every prior pack index
+        // from R2 (that was ~P Class B reads for no new information).
+        let new_pack: Option<PackMeta> = match &ingested {
             Some((pack_id, scanned)) => {
                 let _t = crate::timing::Phase::start("push: resolve+index");
                 let key = pack_key(self.name, pack_id);
-                let records = resolve_pack(self.store, &key, scanned, &OdbBases(&old_odb)).await?;
+                let records = resolve_pack(self.store, &key, scanned, &OdbBases(&odb)).await?;
                 let index = PackIndex::new(records);
                 self.store
                     .put(&index_key(self.name, pack_id), index.to_bytes())
@@ -603,17 +605,11 @@ impl<'a> Repo<'a> {
                     bytes: scanned.total_len,
                     objects: scanned.entries.len() as u64,
                 };
-                Some((meta, index))
+                odb.push_pack(self.name, pack_id.clone(), index);
+                Some(meta)
             }
             None => None,
         };
-
-        // Odb view including the new pack, for validation + index building.
-        let mut pack_ids = state.pack_ids();
-        if let Some((meta, _)) = &new_pack {
-            pack_ids.push(meta.id.clone());
-        }
-        let odb = Odb::open(self.store, self.name, &pack_ids).await?;
 
         // Validate each command Worker-side, where the odb is: connectivity
         // (cheap tier — the target must exist, and if it is a commit its
@@ -664,11 +660,9 @@ impl<'a> Repo<'a> {
         // import) is sharded immediately so the read APIs are fast right
         // away rather than only after the next maintenance merge.
         let mut filelog_id = None;
-        if let Some((meta, index)) = &new_pack {
+        if let Some(meta) = &new_pack {
             let _t = crate::timing::Phase::start("push: filelog build");
-            let segment = self
-                .build_filelog_segment(&odb, &old_odb, index, &state)
-                .await?;
+            let segment = self.build_filelog_segment(&odb, &meta.id, &state).await?;
             if !segment.records.is_empty() {
                 let bytes = segment.to_bytes();
                 if bytes.len() > 2 * FILELOG_SHARD_TARGET_BYTES {
@@ -687,7 +681,7 @@ impl<'a> Repo<'a> {
         // freshness; the pack/filelog appends commute with racing pushes.
         let delta = PushDelta {
             ref_updates: updates.iter().map(|(_, u)| u.clone()).collect(),
-            new_pack: new_pack.as_ref().map(|(meta, _)| meta.clone()),
+            new_pack: new_pack.clone(),
             filelog: filelog_id,
             last_push_ms: now_ms,
         };
@@ -706,19 +700,29 @@ impl<'a> Repo<'a> {
     }
 
     /// Diff each new commit against its first parent, producing file-log
-    /// records with prev-pointers.
+    /// records with prev-pointers. `new_pack_id` is the pack just appended to
+    /// `odb`; commits that already lived in an older pack are skipped.
     async fn build_filelog_segment(
         &self,
         odb: &Odb<'_>,
-        old_odb: &Odb<'_>,
-        new_index: &PackIndex,
+        new_pack_id: &str,
         state: &RepoState,
     ) -> Result<FileLogSegment, String> {
+        let candidate_oids: Vec<(Oid, ObjType)> = {
+            let new_index = odb
+                .pack_index(new_pack_id)
+                .ok_or_else(|| format!("new pack {new_pack_id} not open"))?;
+            new_index
+                .records
+                .iter()
+                .map(|r| (r.oid, r.final_type))
+                .collect()
+        };
         // New commits: commit-typed entries of this pack not already stored.
         let mut new_commits: Vec<Oid> = Vec::new();
-        for rec in &new_index.records {
-            if rec.final_type == ObjType::Commit && !old_odb.contains(rec.oid) {
-                new_commits.push(rec.oid);
+        for (oid, ty) in candidate_oids {
+            if ty == ObjType::Commit && !odb.contains_excluding(oid, new_pack_id) {
+                new_commits.push(oid);
             }
         }
         if new_commits.is_empty() {
