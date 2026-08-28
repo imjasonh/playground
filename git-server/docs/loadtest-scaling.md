@@ -525,6 +525,10 @@ curl -sS -X POST "https://git.imjasonh.workers.dev/api/lt-$(date +%s)/loadtest" 
         {"writers":8,"readers":0},{"writers":32,"readers":0},
         {"writers":0,"readers":64}]}' | jq .
 
+# From a phone (HTML report):
+#   https://git.imjasonh.workers.dev/loadtest          — button, then run
+#   https://git.imjasonh.workers.dev/loadtest?run=1    — one tap
+
 # Helper (same defaults; set GIT_SERVER_URL):
 GIT_SERVER_URL=https://git.imjasonh.workers.dev ./scripts/loadtest-remote.sh
 ```

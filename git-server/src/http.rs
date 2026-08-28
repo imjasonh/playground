@@ -15,6 +15,7 @@
 //! | `GET /api/<repo>/blame/<refish>/<path>` | JSON line-level blame |
 //! | `POST /api/<repo>/repack` | run pack consolidation now |
 //! | `POST /api/<repo>/loadtest` | budget-capped push/pull load test |
+//! | `GET /loadtest` | phone-friendly HTML loadtest (use `?run=1` to start) |
 
 use crate::protocol::{self, BodyStream, BufferedBody};
 use crate::refs::StateStore;
@@ -242,6 +243,7 @@ impl GitHttp {
             ["api", repo, "loadtest"] if req.method == "POST" && valid_repo_name(repo) => {
                 self.api_loadtest(strip_git(repo), body).await
             }
+            ["loadtest"] if req.method == "GET" => self.phone_loadtest(req.query).await,
             ["api", rest @ ..] => self.handle_api(req, rest, nonce).await,
             [repo, "info", "refs"] if req.method == "GET" => {
                 self.info_refs(req, strip_git(repo)).await
@@ -465,22 +467,63 @@ impl GitHttp {
         let http = GitHttp::new(self.store.clone(), self.states.clone())
             .with_push_limit(self.push_limit_bytes);
 
-        let report = if cfg.shards > 1 && !cfg.shard {
-            match crate::loadtest::run_sharded_inprocess(http, repo_name, &cfg).await {
-                Ok(r) => r,
-                Err(e) => return Response::error(500, &e),
-            }
-        } else {
-            let driver = crate::loadtest::InProcessDriver::new(http, repo_name);
-            match crate::loadtest::run_loadtest(repo_name, &driver, &cfg).await {
-                Ok(r) => r,
-                Err(e) => return Response::error(500, &e),
-            }
+        let report = match crate::loadtest::execute(&http, repo_name, &cfg).await {
+            Ok(r) => r,
+            Err(e) => return Response::error(500, &e),
         };
 
         match serde_json::to_vec_pretty(&report) {
             Ok(bytes) => Response::ok("application/json", bytes),
             Err(e) => Response::error(500, &e.to_string()),
+        }
+    }
+
+    /// `GET /loadtest` — phone-friendly HTML. Without `run=1`, shows a
+    /// one-button landing page. With `run=1`, runs a $0.10 (default) load
+    /// test into a disposable repo and prints the report. Query knobs:
+    /// `budget`, `duration` (seconds).
+    async fn phone_loadtest(&self, query: Option<&str>) -> Response {
+        let budget = query_param(query, "budget")
+            .and_then(|s| s.parse::<f64>().ok())
+            .unwrap_or(crate::loadtest::DEFAULT_BUDGET_USD)
+            .clamp(0.01, crate::loadtest::MAX_BUDGET_USD);
+        let duration = query_param(query, "duration")
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(10)
+            .clamp(1, crate::loadtest::MAX_DURATION_SECS);
+
+        let run = query_param(query, "run")
+            .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if !run {
+            return Response::ok(
+                "text/html; charset=utf-8",
+                crate::loadtest::html_landing(budget, duration).into_bytes(),
+            );
+        }
+
+        let repo = crate::loadtest::phone_repo_name();
+        let req = crate::loadtest::phone_request(budget, duration);
+        let cfg = match req.into_config() {
+            Ok(c) => c,
+            Err(e) => {
+                return Response::ok(
+                    "text/html; charset=utf-8",
+                    format!("<pre>bad config: {e}</pre>").into_bytes(),
+                );
+            }
+        };
+        let http = GitHttp::new(self.store.clone(), self.states.clone())
+            .with_push_limit(self.push_limit_bytes);
+        match crate::loadtest::execute(&http, &repo, &cfg).await {
+            Ok(report) => Response::ok(
+                "text/html; charset=utf-8",
+                crate::loadtest::html_report(&report).into_bytes(),
+            ),
+            Err(e) => Response::ok(
+                "text/html; charset=utf-8",
+                format!("<pre>loadtest failed: {e}</pre>").into_bytes(),
+            ),
         }
     }
 

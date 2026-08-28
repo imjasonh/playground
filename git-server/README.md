@@ -105,6 +105,9 @@ GIT_SERVER_URL=https://git.example.workers.dev ./scripts/bench-remote.sh
 # In-Worker load test: peak pushes/s + pulls/s, $/op, budget-capped.
 # See docs/loadtest-scaling.md → "In-Worker loadtest".
 GIT_SERVER_URL=https://git.example.workers.dev ./scripts/loadtest-remote.sh
+
+# Or from a phone: open /loadtest (button) or /loadtest?run=1 (one tap).
+# https://git.example.workers.dev/loadtest?run=1
 ```
 
 The integration tests start a localhost HTTP server backed by in-memory

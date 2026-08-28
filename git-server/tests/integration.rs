@@ -1243,3 +1243,22 @@ fn api_loadtest_reports_peaks_and_costs() {
     );
     assert_eq!(status, 400, "{}", String::from_utf8_lossy(&resp));
 }
+
+/// Phone URL: landing page, then `?run=1` prints an HTML report.
+#[test]
+fn phone_loadtest_html() {
+    let server = TestServer::start();
+
+    let (status, body) = server.get("/loadtest");
+    assert_eq!(status, 200);
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("Run $0.10 load test"), "{html}");
+    assert!(html.contains("?run=1"), "{html}");
+
+    let (status, body) = server.get("/loadtest?run=1&budget=0.05&duration=2");
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("peak pushes/s"), "{html}");
+    assert!(html.contains("peak pulls/s"), "{html}");
+    assert!(html.contains("Cost per push"), "{html}");
+}

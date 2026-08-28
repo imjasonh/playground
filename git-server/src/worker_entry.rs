@@ -512,7 +512,7 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
         "git.receive_pack"
     } else if path.contains("git-upload-pack") {
         "git.upload_pack"
-    } else if path.ends_with("/loadtest") {
+    } else if path == "/loadtest" || path.ends_with("/loadtest") {
         "git.loadtest"
     } else if path.starts_with("/api/") {
         "git.api"

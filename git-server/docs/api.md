@@ -223,7 +223,21 @@ conflict with repack). See [`design.md` → Repacking](design.md).
 ## Root
 
 ### `GET /`
-Plain-text banner identifying the service. Any other unmatched path is `404`.
+Plain-text banner identifying the service.
+
+### `GET /loadtest`
+Phone-friendly HTML load test. Open this URL in a browser:
+
+* without query params — landing page with one big **Run $0.10 load test**
+  button;
+* with `?run=1` — runs immediately into a disposable repo and prints the
+  report (peak pushes/s, pulls/s, $/op, budget status, per-stage table).
+
+Optional query: `budget` (USD, default `0.10`, max `5`), `duration` (seconds
+per stage, default `10`). Bookmark
+`https://git.<account>.workers.dev/loadtest?run=1` for one-tap from a phone.
+
+Any other unmatched path is `404`.
 
 ---
 
