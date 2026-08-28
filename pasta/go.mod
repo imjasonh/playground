@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	cuelang.org/go v0.17.1
-	github.com/andybalholm/brotli v1.2.2
+	github.com/andybalholm/brotli v1.2.3
 	github.com/tetratelabs/wazero v1.12.0
 	golang.org/x/mod v0.40.0
 	golang.org/x/sync v0.22.0
