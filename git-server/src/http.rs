@@ -562,10 +562,11 @@ impl GitHttp {
     }
 
     /// `GET /loadtest` — phone-friendly HTML. Without `run=1`, shows a
-    /// landing page with budget / peak controls. With `run=1`, runs a
+    /// landing page with budget / peak / shards controls. With `run=1`, runs a
     /// budget-capped load test into one disposable repo and prints the report.
     /// Query knobs: `budget`, `peak` (concurrent writers, each on its own
-    /// branch), `duration` (seconds per stage), `token`.
+    /// branch), `shards` (Worker isolates for the same repo), `duration`
+    /// (seconds per stage), `token`.
     async fn phone_loadtest(&self, req: &Request<'_>) -> Response {
         let query = req.query;
         let budget = query_param(query, "budget")
@@ -580,6 +581,10 @@ impl GitHttp {
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(crate::loadtest::PHONE_DEFAULT_PEAK);
         let peak = crate::loadtest::clamp_phone_peak(peak);
+        let shards = query_param(query, "shards")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(crate::loadtest::PHONE_DEFAULT_SHARDS);
+        let shards = crate::loadtest::clamp_phone_shards(shards);
         let token = req
             .loadtest_token
             .or(query_param(query, "token"))
@@ -592,7 +597,7 @@ impl GitHttp {
         if !run {
             return Response::ok(
                 "text/html; charset=utf-8",
-                crate::loadtest::html_landing(budget, duration, peak, token).into_bytes(),
+                crate::loadtest::html_landing(budget, duration, peak, shards, token).into_bytes(),
             );
         }
         if let Some(deny) = self.loadtest_auth_error(token) {
@@ -611,7 +616,7 @@ impl GitHttp {
         }
 
         let repo = crate::loadtest::phone_repo_name();
-        let phone_req = crate::loadtest::phone_request(budget, duration, peak);
+        let phone_req = crate::loadtest::phone_request(budget, duration, peak, shards);
         let cfg = match phone_req.into_config() {
             Ok(c) => c,
             Err(e) => {

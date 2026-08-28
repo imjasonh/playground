@@ -534,9 +534,9 @@ curl -sS -X POST "https://git.imjasonh.workers.dev/api/lt-$(date +%s)/loadtest" 
 
 # From a phone (HTML report; requires LOADTEST_TOKEN):
 #   https://git.imjasonh.workers.dev/loadtest?token=…              — form + run
-#   https://git.imjasonh.workers.dev/loadtest?run=1&peak=8&budget=0.10&token=…
-# Defaults: $0.10, peak 8 writers on one disposable repo, 4s × 3 stages.
-# Peak QPS is per-repo (writers land on separate branches via merge-apply).
+#   https://git.imjasonh.workers.dev/loadtest?run=1&peak=8&shards=4&budget=0.10&token=…
+# Defaults: $0.10, peak 8 writers, 4 isolate shards, one disposable repo, 4s × 3.
+# Peak QPS is per-repo. Raise `shards` to fan writers across isolates (same DO).
 
 # Helper (same defaults; set GIT_SERVER_URL + LOADTEST_TOKEN):
 GIT_SERVER_URL=https://git.imjasonh.workers.dev \
@@ -561,7 +561,8 @@ What the report answers:
 `shards` > 1 splits offered concurrency across Worker self-fetch POSTs when a
 fan-out is configured (else in-process partitions with unique writer branch
 namespaces). All shards hit the **same** repo — that is how to probe the
-per-repo ceiling past one-isolate CPU (~2 pushes/s exclusive).
+per-repo ceiling past one-isolate CPU. The phone UI exposes `shards` (default
+4, max 32).
 
 Push/pull cost notes that show up in these numbers: one `Odb` open per push
 (new pack index attached in memory), concurrent index loads, an isolate-local
