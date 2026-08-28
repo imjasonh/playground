@@ -475,13 +475,12 @@ fn request_nonce() -> String {
 }
 
 /// Self-triggering maintenance: after an accepted push, if the repo has at
-/// least this many packs, a bounded repack runs in the background of the
-/// same invocation (`ctx.wait_until`). The maintenance lease collapses
-/// concurrent triggers to one runner, so under a push burst exactly one
-/// repack folds the backlog while the rest skip cheaply. Overridable with
-/// the `REPACK_TRIGGER_PACKS` var; `0` disables the trigger (cron and the
-/// on-demand API remain).
-const DEFAULT_REPACK_TRIGGER_PACKS: usize = 8;
+/// least [`crate::maintenance::AUTO_REPACK_TRIGGER_PACKS`] packs, a bounded
+/// repack runs in the background of the same invocation (`ctx.wait_until`).
+/// The maintenance lease collapses concurrent triggers to one runner, so
+/// under a push burst exactly one repack folds the backlog while the rest
+/// skip cheaply. Overridable with the `REPACK_TRIGGER_PACKS` var; `0`
+/// disables the trigger (cron and the on-demand API remain).
 
 #[event(fetch)]
 async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response> {
@@ -657,7 +656,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
                 .var("REPACK_TRIGGER_PACKS")
                 .ok()
                 .and_then(|v| v.to_string().trim().parse::<usize>().ok())
-                .unwrap_or(DEFAULT_REPACK_TRIGGER_PACKS);
+                .unwrap_or(crate::maintenance::AUTO_REPACK_TRIGGER_PACKS);
             if trigger > 0 {
                 let env2 = env.clone();
                 let repo_name = repo.to_string();

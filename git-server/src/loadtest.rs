@@ -181,6 +181,7 @@ pub struct OpCostSummary {
     pub mean_do: f64,
     pub mean_kv: f64,
     pub mean_cost_usd: f64,
+    /// Mean backend-await milliseconds (R2/DO/KV), not isolate wall time.
     pub mean_ms: f64,
 }
 
@@ -289,7 +290,11 @@ pub struct AttemptMetrics {
     pub do_requests: u64,
     pub kv_ops: u64,
     pub cost_usd: f64,
+    /// Time awaiting backends (R2/DO/KV). Used for mean latency so concurrent
+    /// writers on one isolate do not inflate the number with event-loop wait.
     pub ms: f64,
+    /// Wall clock for the nested `handle()` call (includes sibling scheduling).
+    pub wall_ms: f64,
 }
 
 impl AttemptMetrics {
@@ -300,7 +305,8 @@ impl AttemptMetrics {
             do_requests: m.do_requests,
             kv_ops: m.kv_ops,
             cost_usd: m.cost_usd(),
-            ms: total_ms,
+            ms: m.backend_ms,
+            wall_ms: total_ms,
         }
     }
 }
@@ -311,9 +317,16 @@ pub fn parse_server_timing(header: &str) -> AttemptMetrics {
     for part in header.split(',') {
         let part = part.trim();
         let name = part.split(';').next().unwrap_or("").trim();
-        if name == "total" {
+        if name == "backend" {
             if let Some(dur) = timing_dur(part) {
                 m.ms = dur;
+            }
+        } else if name == "total" {
+            if let Some(dur) = timing_dur(part) {
+                m.wall_ms = dur;
+                if m.ms == 0.0 {
+                    m.ms = dur;
+                }
             }
         } else if name == "r2a" {
             m.r2_class_a = timing_desc_u64(part);
@@ -373,6 +386,14 @@ pub trait LoadDriver {
 
     /// Protocol-v2 fetch for `want`.
     async fn pull(&self, want: Oid) -> Result<AttemptResult, String>;
+
+    /// Mirror production's post-push auto-repack: if live packs ≥
+    /// [`crate::maintenance::AUTO_REPACK_TRIGGER_PACKS`], run a bounded
+    /// repack. Called *after* a timed push so maintenance does not inflate
+    /// attempt latency (same idea as Worker `wait_until`).
+    async fn maybe_repack(&self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// Shared spend counter: attempts check before starting and record after.
@@ -564,6 +585,8 @@ async fn writer_loop(
                 if a.outcome == AttemptOutcome::Ok {
                     tip = new_oid;
                     a.new_tip = Some(new_oid);
+                    // Outside the timed push — matches Worker wait_until.
+                    let _ = driver.maybe_repack().await;
                 }
                 // Conflicts still spent server work; count their cost too
                 // (already in metrics when the server processed them).
@@ -833,8 +856,11 @@ impl LoadDriver for InProcessDriver {
         let path = format!("/{}/git-receive-pack", self.repo);
         let start = metrics::now_ms();
         let (status, resp, mut m) = self.call("POST", &path, body, None).await?;
+        if m.wall_ms == 0.0 {
+            m.wall_ms = metrics::now_ms() - start;
+        }
         if m.ms == 0.0 {
-            m.ms = metrics::now_ms() - start;
+            m.ms = m.wall_ms;
         }
         let outcome = if status != 200 {
             AttemptOutcome::Err
@@ -854,8 +880,11 @@ impl LoadDriver for InProcessDriver {
         let body = build_fetch_body(want);
         let start = metrics::now_ms();
         let (status, resp, mut m) = self.call("POST", &path, body, Some("version=2")).await?;
+        if m.wall_ms == 0.0 {
+            m.wall_ms = metrics::now_ms() - start;
+        }
         if m.ms == 0.0 {
-            m.ms = metrics::now_ms() - start;
+            m.ms = m.wall_ms;
         }
         let outcome = if status == 200 && !resp.is_empty() {
             AttemptOutcome::Ok
@@ -868,6 +897,26 @@ impl LoadDriver for InProcessDriver {
             metrics: m,
             new_tip: None,
         })
+    }
+
+    async fn maybe_repack(&self) -> Result<(), String> {
+        let repo = crate::repo::Repo {
+            store: self.http.store.as_ref(),
+            states: self.http.states.as_ref(),
+            name: &self.repo,
+        };
+        let packs = match repo.load_state().await {
+            Ok(loaded) => loaded.state.packs.len(),
+            Err(_) => return Ok(()),
+        };
+        if packs < crate::maintenance::AUTO_REPACK_TRIGGER_PACKS {
+            return Ok(());
+        }
+        match crate::maintenance::repack(&repo, &self.nonce()).await {
+            Ok(_) => Ok(()),
+            // Busy / lost-race are expected under concurrent writers.
+            Err(_) => Ok(()),
+        }
     }
 }
 
@@ -1335,9 +1384,9 @@ a.again {{
     <div class="card"><div class="label">peak pulls/s</div><div class="val">{peak_r:.1}</div></div>
   </div>
   <h2>Cost per push</h2>
-  <p class="ops">{push_n} samples · mean ${push_usd:.6} · R2A {push_a:.1} · R2B {push_b:.1} · DO {push_do:.1} · {push_ms:.0} ms</p>
+  <p class="ops">{push_n} samples · mean ${push_usd:.6} · R2A {push_a:.1} · R2B {push_b:.1} · DO {push_do:.1} · {push_ms:.0} ms backend</p>
   <h2>Cost per pull</h2>
-  <p class="ops">{pull_n} samples · mean ${pull_usd:.6} · R2A {pull_a:.1} · R2B {pull_b:.1} · DO {pull_do:.1} · {pull_ms:.0} ms</p>
+  <p class="ops">{pull_n} samples · mean ${pull_usd:.6} · R2A {pull_a:.1} · R2B {pull_b:.1} · DO {pull_do:.1} · {pull_ms:.0} ms backend</p>
   <h2>Stages</h2>
   <table>
     <thead><tr><th>load</th><th>push/s</th><th>pull/s</th><th>ok p/r</th><th>err p/r</th><th>$</th></tr></thead>
@@ -1475,7 +1524,8 @@ mod tests {
         let h = "total;dur=12.5, backend;dur=8.0, r2a;desc=\"2\", r2b;desc=\"7\", \
                  do;desc=\"1\", kv;desc=\"0\", cost;desc=\"9.270u$\"";
         let m = parse_server_timing(h);
-        assert!((m.ms - 12.5).abs() < 1e-9);
+        assert!((m.ms - 8.0).abs() < 1e-9, "mean latency uses backend dur");
+        assert!((m.wall_ms - 12.5).abs() < 1e-9);
         assert_eq!(m.r2_class_a, 2);
         assert_eq!(m.r2_class_b, 7);
         assert_eq!(m.do_requests, 1);
@@ -1591,6 +1641,66 @@ mod tests {
             if report.cost_per_pull.samples > 0 {
                 assert!(report.peak_pulls_per_sec > 0.0);
             }
+        });
+    }
+
+    #[test]
+    fn loadtest_auto_repack_keeps_pack_count_bounded() {
+        block_on(async {
+            let store = Rc::new(MemStore::new()) as Rc<dyn Store>;
+            let states = Rc::new(MemStateStore::new()) as Rc<dyn StateStore>;
+            let report = run_in_process(
+                store.clone(),
+                states.clone(),
+                "lt-repack",
+                LoadTestRequest {
+                    confirm: true,
+                    budget_usd: Some(1.0),
+                    duration_secs: Some(3),
+                    stages: Some(vec![
+                        StageSpec {
+                            writers: 8,
+                            readers: 0,
+                        },
+                        StageSpec {
+                            writers: 16,
+                            readers: 0,
+                        },
+                    ]),
+                    shards: Some(1),
+                    shard: false,
+                    tip: None,
+                    shard_index: None,
+                    token: None,
+                },
+            )
+            .await
+            .expect("loadtest");
+            assert!(report.cost_per_push.samples > 0, "{report:?}");
+            // Without harness auto-repack, ~seed+samples packs. With it,
+            // live packs stay near the trigger threshold.
+            let repo = crate::repo::Repo {
+                store: store.as_ref(),
+                states: states.as_ref(),
+                name: "lt-repack",
+            };
+            let packs = repo.load_state().await.expect("state").state.packs.len();
+            let trigger = crate::maintenance::AUTO_REPACK_TRIGGER_PACKS;
+            assert!(
+                packs < report.cost_per_push.samples as usize,
+                "expected auto-repack to fold packs; packs={packs} samples={}",
+                report.cost_per_push.samples
+            );
+            assert!(
+                packs <= trigger + 16,
+                "packs={packs} drifted far past trigger={trigger}"
+            );
+            // Accurate per-push op counts (nested metrics stack): DO load+apply.
+            assert!(
+                report.cost_per_push.mean_do >= 1.5,
+                "mean_do={} (metrics stack regression?)",
+                report.cost_per_push.mean_do
+            );
         });
     }
 
