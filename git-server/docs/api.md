@@ -188,7 +188,7 @@ Response:
     "mean_do": 2.0,
     "mean_kv": 1.0,
     "mean_cost_usd": 0.00003,
-    "mean_ms": 180.0
+    "mean_ms": 180.0          // mean backend-await ms (R2/DO/KV), not isolate wall
   },
   "cost_per_pull": { "samples": 800, "mean_r2_class_a": 0, "mean_r2_class_b": 5,
                      "mean_do": 1, "mean_kv": 0, "mean_cost_usd": 0.000002, "mean_ms": 40.0 },
@@ -199,7 +199,11 @@ Response:
 ```
 
 Each synthetic push/pull is a normal request on the hot path, so Workers
-Traces and the structured `{"evt":"req",…}` logs cover the load. When
+Traces and the structured `{"evt":"req",…}` logs cover the load. The
+in-process harness mirrors production auto-repack after accepted pushes
+(so pack count does not climb without bound and inflate R2B) and attributes
+`mean_ms` from backend awaits so concurrent writers on one isolate do not
+queue into each other's latency. When
 `budget_limited` is true, the peak QPS fields are still the best observed
 before the cap stopped the run. Auth: same `LOADTEST_TOKEN` as
 [`GET /loadtest`](#get-loadtest) (`token` JSON field, `?token=`, or

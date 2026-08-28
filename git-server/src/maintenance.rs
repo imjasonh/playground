@@ -58,6 +58,12 @@ use crate::pack::TYPE_REF_DELTA;
 use crate::refs::{PackMeta, RepackSwap, RepoState};
 use crate::repo::{delete_filelog, load_filelog, write_sharded_filelog, FileLogSegment, Repo};
 
+/// Self-trigger threshold: after an accepted push leaves the repo with at
+/// least this many packs, schedule a bounded repack. Shared by the Worker
+/// `wait_until` hook and the in-process loadtest harness (which has no
+/// `wait_until`, so it runs the same check after each timed push).
+pub const AUTO_REPACK_TRIGGER_PACKS: usize = 8;
+
 /// Per-run consolidation budgets, sized so one run always fits a single
 /// Workers invocation regardless of repo size.
 #[derive(Debug, Clone, Copy)]

@@ -515,7 +515,10 @@ for the server-side phase breakdown.
 The laptop harness above saturates the client before the server. To dial past
 that, the Worker exposes `POST /api/<repo>/loadtest` (see
 [`api.md`](api.md)): concurrent synthetic push and shallow-fetch loops run
-*inside* the isolate against the same handlers production uses.
+*inside* the isolate against the same handlers production uses. The harness
+also runs the same post-push auto-repack check as the Worker `wait_until`
+hook (nested pushes have no `wait_until`), and reports `mean_ms` as
+backend-await time so sibling writers do not inflate latency.
 
 ```bash
 # Against a deployment (use a disposable repo name):

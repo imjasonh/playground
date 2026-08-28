@@ -59,7 +59,11 @@ pub struct Metrics {
 }
 
 thread_local! {
-    static ACTIVE: RefCell<Option<Metrics>> = const { RefCell::new(None) };
+    /// Stack of in-flight collectors. Nested / concurrent `handle()` calls
+    /// on one isolate (the in-Worker loadtest) push a fresh frame so they
+    /// do not clobber each other; [`begin`] / [`take`] are paired per
+    /// request.
+    static ACTIVE: RefCell<Vec<Metrics>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Milliseconds on a monotonic-enough clock for both targets.
@@ -77,27 +81,32 @@ pub fn now_ms() -> f64 {
     }
 }
 
-/// Start collecting for the current request (resets any previous state).
+/// Start collecting for the current request (pushes a fresh frame).
 pub fn begin() {
-    ACTIVE.with(|a| *a.borrow_mut() = Some(Metrics::default()));
-    crate::trace::clear_ray();
+    ACTIVE.with(|a| {
+        let mut stack = a.borrow_mut();
+        if stack.is_empty() {
+            crate::trace::clear_ray();
+        }
+        stack.push(Metrics::default());
+    });
 }
 
-/// Stop collecting and return the totals (None if `begin` was never called).
+/// Stop collecting and return this request's totals (pops the frame).
 pub fn take() -> Option<Metrics> {
-    ACTIVE.with(|a| a.borrow_mut().take())
+    ACTIVE.with(|a| a.borrow_mut().pop())
 }
 
 /// Clone the in-progress totals without ending collection. Used to emit a
 /// Server-Timing-style summary on the git side-band while the HTTP header
 /// still needs the final [`take`] at request end.
 pub fn snapshot() -> Option<Metrics> {
-    ACTIVE.with(|a| a.borrow().clone())
+    ACTIVE.with(|a| a.borrow().last().cloned())
 }
 
 fn with_active(f: impl FnOnce(&mut Metrics)) {
     ACTIVE.with(|a| {
-        if let Some(m) = a.borrow_mut().as_mut() {
+        if let Some(m) = a.borrow_mut().last_mut() {
             f(m);
         }
     });
@@ -254,6 +263,25 @@ impl Drop for BackendTimer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nested_begin_preserves_outer_frame() {
+        begin();
+        backend(Op::R2ClassA, 1.0);
+        begin();
+        backend(Op::R2ClassB, 2.0);
+        backend(Op::DoRequest, 3.0);
+        let inner = take().unwrap();
+        assert_eq!(inner.r2_class_b, 1);
+        assert_eq!(inner.do_requests, 1);
+        assert_eq!(inner.r2_class_a, 0);
+        backend(Op::Kv, 0.5);
+        let outer = take().unwrap();
+        assert_eq!(outer.r2_class_a, 1);
+        assert_eq!(outer.kv_ops, 1);
+        assert_eq!(outer.r2_class_b, 0);
+        assert!(take().is_none());
+    }
 
     #[test]
     fn collects_and_takes() {
