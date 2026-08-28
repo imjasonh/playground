@@ -7,7 +7,7 @@ require (
 	charm.land/log/v2 v2.0.0
 	charm.land/ssh v0.4.3
 	charm.land/wish/v2 v2.0.3
-	cloud.google.com/go/storage v1.65.1
+	cloud.google.com/go/storage v1.66.0
 	github.com/charmbracelet/colorprofile v0.4.3
 	golang.org/x/crypto v0.55.0
 	k8s.io/api v0.37.0
