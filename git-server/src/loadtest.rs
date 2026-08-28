@@ -1225,9 +1225,11 @@ pub fn html_report(report: &LoadTestReport, token: Option<&str>) -> String {
         let rps = s.pulls_per_sec;
         let ok_p = s.push_ok;
         let ok_r = s.pull_ok;
+        let err_p = s.push_err + s.push_conflict;
+        let err_r = s.pull_err;
         let cost = s.stage_cost_usd;
         stages.push_str(&format!(
-            "<tr><td>{w}w/{r}r</td><td>{pps:.1}</td><td>{rps:.1}</td><td>{ok_p}/{ok_r}</td><td>${cost:.4}</td></tr>\n"
+            "<tr><td>{w}w/{r}r</td><td>{pps:.1}</td><td>{rps:.1}</td><td>{ok_p}/{ok_r}</td><td>{err_p}/{err_r}</td><td>${cost:.4}</td></tr>\n"
         ));
     }
     let push = &report.cost_per_push;
@@ -1238,6 +1240,23 @@ pub fn html_report(report: &LoadTestReport, token: Option<&str>) -> String {
     let budget = report.budget_usd;
     let peak_p = report.peak_pushes_per_sec;
     let peak_r = report.peak_pulls_per_sec;
+    let pull_note = if peak_r == 0.0
+        && report
+            .stages
+            .iter()
+            .any(|s| s.readers > 0 && s.pull_ok + s.pull_err > 0)
+    {
+        let errs: u64 = report.stages.iter().map(|s| s.pull_err).sum();
+        format!(
+            "<p class=\"meta\" style=\"color:var(--warn)\">No successful pulls ({errs} errors). \
+             Usually the read stage was too wide for one isolate — retry after the lighter phone defaults deploy.</p>"
+        )
+    } else if peak_r == 0.0 && report.stages.iter().any(|s| s.readers > 0) {
+        "<p class=\"meta\" style=\"color:var(--warn)\">Read stage produced no pull attempts (check duration / budget).</p>"
+            .into()
+    } else {
+        String::new()
+    };
     let push_n = push.samples;
     let push_usd = push.mean_cost_usd;
     let push_a = push.mean_r2_class_a;
@@ -1310,6 +1329,7 @@ a.again {{
 <div class="wrap">
   <h1>loadtest {limited}</h1>
   <p class="meta">repo <code>{repo}</code> · wall {wall:.1}s · spend ${spent:.4} / ${budget:.2}</p>
+  {pull_note}
   <div class="grid">
     <div class="card"><div class="label">peak pushes/s</div><div class="val">{peak_p:.1}</div></div>
     <div class="card"><div class="label">peak pulls/s</div><div class="val">{peak_r:.1}</div></div>
@@ -1320,7 +1340,7 @@ a.again {{
   <p class="ops">{pull_n} samples · mean ${pull_usd:.6} · R2A {pull_a:.1} · R2B {pull_b:.1} · DO {pull_do:.1} · {pull_ms:.0} ms</p>
   <h2>Stages</h2>
   <table>
-    <thead><tr><th>load</th><th>push/s</th><th>pull/s</th><th>ok p/r</th><th>$</th></tr></thead>
+    <thead><tr><th>load</th><th>push/s</th><th>pull/s</th><th>ok p/r</th><th>err p/r</th><th>$</th></tr></thead>
     <tbody>
 {stages}    </tbody>
   </table>
@@ -1469,6 +1489,57 @@ mod tests {
         assert!(pack.starts_with(b"PACK"));
         let body = build_push_body(Oid::ZERO, oid, "refs/heads/main", &pack);
         assert!(body.len() > pack.len());
+    }
+
+    #[test]
+    fn pull_stage_after_many_writes_has_ok_pulls() {
+        block_on(async {
+            let store = Rc::new(MemStore::new()) as Rc<dyn Store>;
+            let states = Rc::new(MemStateStore::new()) as Rc<dyn StateStore>;
+            let report = run_in_process(
+                store,
+                states,
+                "lt-pulls",
+                LoadTestRequest {
+                    confirm: true,
+                    budget_usd: Some(0.5),
+                    duration_secs: Some(2),
+                    stages: Some(vec![
+                        StageSpec {
+                            writers: 8,
+                            readers: 0,
+                        },
+                        StageSpec {
+                            writers: 16,
+                            readers: 0,
+                        },
+                        StageSpec {
+                            writers: 0,
+                            readers: 16,
+                        },
+                    ]),
+                    shards: Some(1),
+                    shard: false,
+                    tip: None,
+                    shard_index: None,
+                    token: None,
+                },
+            )
+            .await
+            .expect("loadtest");
+            let last = report.stages.last().expect("stage");
+            eprintln!(
+                "report: peak_pull={} pull_samples={} last={:?}",
+                report.peak_pulls_per_sec, report.cost_per_pull.samples, last
+            );
+            assert!(last.readers > 0);
+            assert!(
+                last.pull_ok > 0,
+                "expected successful pulls after writes; pull_ok={} pull_err={} report={report:?}",
+                last.pull_ok,
+                last.pull_err
+            );
+        });
     }
 
     #[test]
