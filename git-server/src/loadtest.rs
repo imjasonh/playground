@@ -1122,28 +1122,43 @@ pub fn token_matches(provided: &str, expected: &str) -> bool {
 /// subrequest/memory walls (a prior 32w/64r ramp threw Error 1101).
 pub const PHONE_DEFAULT_BUDGET_USD: f64 = 0.05;
 pub const PHONE_DEFAULT_DURATION_SECS: u64 = 4;
+/// Peak writers in the write ramp; read stage uses `2 × peak` readers.
+pub const PHONE_DEFAULT_PEAK: u32 = 6;
+pub const PHONE_MAX_PEAK: u32 = 24;
 
-/// Phone-friendly defaults: short stages, low concurrency, finishes before
-/// a mobile browser or the isolate gives up.
-pub fn phone_request(budget_usd: f64, duration_secs: u64) -> LoadTestRequest {
+/// Clamp a phone peak-writers value into the safe range.
+pub fn clamp_phone_peak(peak: u32) -> u32 {
+    peak.clamp(1, PHONE_MAX_PEAK)
+}
+
+/// Phone stages from a peak writer count: warm-up → peak writers → 2× readers.
+pub fn phone_stages(peak: u32) -> Vec<StageSpec> {
+    let peak = clamp_phone_peak(peak);
+    let warm = (peak / 3).max(1);
+    let readers = peak.saturating_mul(2).max(1);
+    vec![
+        StageSpec {
+            writers: warm,
+            readers: 0,
+        },
+        StageSpec {
+            writers: peak,
+            readers: 0,
+        },
+        StageSpec {
+            writers: 0,
+            readers,
+        },
+    ]
+}
+
+/// Phone-friendly request: short stages scaled by `peak` writers.
+pub fn phone_request(budget_usd: f64, duration_secs: u64, peak: u32) -> LoadTestRequest {
     LoadTestRequest {
         confirm: true,
         budget_usd: Some(budget_usd),
         duration_secs: Some(duration_secs),
-        stages: Some(vec![
-            StageSpec {
-                writers: 2,
-                readers: 0,
-            },
-            StageSpec {
-                writers: 6,
-                readers: 0,
-            },
-            StageSpec {
-                writers: 0,
-                readers: 12,
-            },
-        ]),
+        stages: Some(phone_stages(peak)),
         shards: Some(1),
         shard: false,
         tip: None,
@@ -1158,22 +1173,24 @@ pub fn phone_repo_name() -> String {
     format!("lt{}", ms % 1_000_000_000)
 }
 
-/// Landing page: one button. Click runs `?run=1` via fetch so the page can
-/// show a live timer instead of a blank browser spinner (and surface Worker
-/// errors as text instead of a bare connection timeout).
-pub fn html_landing(budget_usd: f64, duration_secs: u64, token: Option<&str>) -> String {
-    let token_q = token
-        .map(|t| format!("&token={}", js_string_escape(t)))
-        .unwrap_or_default();
-    let run_url = format!("/loadtest?run=1&budget={budget_usd}&duration={duration_secs}{token_q}");
-    let token_hint = if token.is_some() {
+/// Landing page: budget + peak-load controls, then Run. Click builds
+/// `?run=1…` via fetch so the page can show a live timer instead of a blank
+/// browser spinner (and surface Worker errors as text).
+pub fn html_landing(budget_usd: f64, duration_secs: u64, peak: u32, token: Option<&str>) -> String {
+    let token_js = token.map(js_string_escape).unwrap_or_default();
+    let has_token = token.is_some();
+    let token_hint = if has_token {
         String::new()
     } else {
         "<p class=\"hint\">Add <code>?token=…</code> to the URL (required in production).</p>"
             .into()
     };
-    // ~3 stages × duration, plus seed; shown as an expectation only.
+    let peak = clamp_phone_peak(peak);
+    let stages = phone_stages(peak);
+    let warm = stages[0].writers;
+    let readers = stages[2].readers;
     let expect_secs = duration_secs.saturating_mul(3).saturating_add(5);
+    let max_peak = PHONE_MAX_PEAK;
     format!(
         r##"<!doctype html>
 <html lang="en">
@@ -1187,6 +1204,7 @@ pub fn html_landing(budget_usd: f64, duration_secs: u64, token: Option<&str>) ->
 <style>
 :root {{
   --bg: #0f1419; --fg: #e7ecf1; --muted: #8b9aab; --accent: #3dd68c; --warn: #f5a524;
+  --field: #1a222c; --line: #2a3542;
 }}
 * {{ box-sizing: border-box; }}
 body {{
@@ -1198,6 +1216,19 @@ main {{ width: min(28rem, 100%); text-align: center; }}
 h1 {{ font-size: 1.75rem; font-weight: 700; margin: 0 0 0.5rem; letter-spacing: -0.02em; }}
 p {{ color: var(--muted); margin: 0 0 1.25rem; }}
 p.hint {{ font-size: 0.95rem; }}
+p.plan {{ font-size: 0.95rem; margin-top: 0.75rem; }}
+.fields {{
+  display: grid; gap: 0.85rem; text-align: left; margin: 0 0 1.25rem;
+}}
+label {{
+  display: grid; gap: 0.35rem; font-size: 0.95rem; color: var(--muted); font-weight: 600;
+}}
+label span.detail {{ font-weight: 400; color: var(--muted); }}
+input[type="number"] {{
+  width: 100%; padding: 0.75rem 0.85rem; border: 1px solid var(--line);
+  border-radius: 0.6rem; background: var(--field); color: var(--fg);
+  font: inherit; font-family: "Source Code Pro", ui-monospace, monospace;
+}}
 button.run {{
   display: block; width: 100%; padding: 1.15rem 1.25rem; border: 0; cursor: pointer;
   background: var(--accent); color: #062016; font: inherit; font-weight: 700;
@@ -1214,17 +1245,54 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
 <main>
   <h1>git loadtest</h1>
   <p>Push/pull load against this Worker.<br>
-  Cap <code>${budget_usd:.2}</code> · {duration_secs}s × 3 stages · ~{expect_secs}s total.<br>
-  No mid-run updates — the timer below is all you get until the report.</p>
+  No mid-run updates — the timer is all you get until the report.</p>
   {token_hint}
-  <button class="run" id="run" type="button">Run ${budget_usd:.2} load test</button>
+  <div class="fields">
+    <label>Cost budget (USD)
+      <input id="budget" type="number" inputmode="decimal" min="0.01" max="5" step="0.01" value="{budget_usd:.2}">
+    </label>
+    <label>Peak writers
+      <span class="detail">Warm-up → peak writers → 2× readers. Max {max_peak}.</span>
+      <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
+    </label>
+  </div>
+  <p class="plan" id="plan">{warm}w → {peak}w → {readers}r · {duration_secs}s × 3 · ~{expect_secs}s</p>
+  <button class="run" id="run" type="button">Run load test</button>
   <p id="status" aria-live="polite"></p>
 </main>
 <script>
 (function () {{
   var btn = document.getElementById("run");
   var status = document.getElementById("status");
-  var url = "{run_url}";
+  var budgetEl = document.getElementById("budget");
+  var peakEl = document.getElementById("peak");
+  var plan = document.getElementById("plan");
+  var duration = {duration_secs};
+  var token = "{token_js}";
+  var maxPeak = {max_peak};
+  function clampPeak(p) {{
+    p = Math.floor(Number(p) || 1);
+    if (p < 1) p = 1;
+    if (p > maxPeak) p = maxPeak;
+    return p;
+  }}
+  function updatePlan() {{
+    var peak = clampPeak(peakEl.value);
+    var warm = Math.max(1, Math.floor(peak / 3));
+    var readers = Math.max(1, peak * 2);
+    var expect = duration * 3 + 5;
+    plan.textContent = warm + "w → " + peak + "w → " + readers + "r · " + duration + "s × 3 · ~" + expect + "s";
+  }}
+  peakEl.addEventListener("input", updatePlan);
+  function runUrl() {{
+    var budget = Number(budgetEl.value);
+    if (!(budget > 0)) budget = {budget_usd:.2};
+    var peak = clampPeak(peakEl.value);
+    var q = "/loadtest?run=1&budget=" + encodeURIComponent(budget.toFixed(2)) +
+      "&duration=" + duration + "&peak=" + peak;
+    if (token) q += "&token=" + encodeURIComponent(token);
+    return q;
+  }}
   btn.addEventListener("click", function () {{
     btn.disabled = true;
     var t0 = Date.now();
@@ -1233,7 +1301,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     var tick = setInterval(function () {{
       status.textContent = "Running… " + Math.floor((Date.now() - t0) / 1000) + "s";
     }}, 250);
-    fetch(url, {{ credentials: "same-origin", headers: {{ "Accept": "text/html" }} }})
+    fetch(runUrl(), {{ credentials: "same-origin", headers: {{ "Accept": "text/html" }} }})
       .then(function (res) {{ return res.text().then(function (t) {{ return {{ ok: res.ok, status: res.status, text: t }}; }}); }})
       .then(function (r) {{
         clearInterval(tick);
@@ -1249,10 +1317,11 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         clearInterval(tick);
         status.className = "err";
         status.textContent = "Request failed: " + (e && e.message ? e.message : e) +
-          "\\nThe Worker may have hit a limit (try again; defaults are light).";
+          "\\nThe Worker may have hit a limit (try a lower peak).";
         btn.disabled = false;
       }});
   }});
+  updatePlan();
 }})();
 </script>
 </body>
@@ -1262,7 +1331,12 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
 }
 
 /// HTML results page for a completed run (phone-readable).
-pub fn html_report(report: &LoadTestReport, token: Option<&str>) -> String {
+pub fn html_report(
+    report: &LoadTestReport,
+    token: Option<&str>,
+    peak: u32,
+    duration_secs: u64,
+) -> String {
     let limited = if report.budget_limited {
         r#"<span class="badge warn">budget-limited</span>"#
     } else {
@@ -1271,9 +1345,10 @@ pub fn html_report(report: &LoadTestReport, token: Option<&str>) -> String {
     let token_q = token
         .map(|t| format!("&amp;token={}", html_escape(t)))
         .unwrap_or_default();
+    let peak = clamp_phone_peak(peak);
     let again_href = format!(
-        "/loadtest?budget={}&amp;duration={}{token_q}",
-        report.budget_usd, PHONE_DEFAULT_DURATION_SECS
+        "/loadtest?budget={:.2}&amp;duration={duration_secs}&amp;peak={peak}{token_q}",
+        report.budget_usd
     );
     let mut stages = String::new();
     for s in &report.stages {
@@ -1508,6 +1583,19 @@ mod tests {
     use crate::refs::MemStateStore;
     use crate::storage::MemStore;
     use futures::executor::block_on;
+
+    #[test]
+    fn phone_stages_scale_with_peak() {
+        let s = phone_stages(6);
+        assert_eq!(s[0].writers, 2);
+        assert_eq!(s[1].writers, 6);
+        assert_eq!(s[2].readers, 12);
+        let s = phone_stages(12);
+        assert_eq!(s[0].writers, 4);
+        assert_eq!(s[1].writers, 12);
+        assert_eq!(s[2].readers, 24);
+        assert_eq!(clamp_phone_peak(100), PHONE_MAX_PEAK);
+    }
 
     #[test]
     fn request_requires_confirm() {
@@ -1790,9 +1878,14 @@ mod tests {
         block_on(async {
             let store = Rc::new(MemStore::new()) as Rc<dyn Store>;
             let states = Rc::new(MemStateStore::new()) as Rc<dyn StateStore>;
-            let report = run_in_process(store, states, "lt-bench-phone", phone_request(0.05, 4))
-                .await
-                .expect("loadtest");
+            let report = run_in_process(
+                store,
+                states,
+                "lt-bench-phone",
+                phone_request(0.05, 4, PHONE_DEFAULT_PEAK),
+            )
+            .await
+            .expect("loadtest");
             // Op-count regression guard (MemStore has ~0ms backends so ms/QPS
             // are not comparable to production).
             assert!(
