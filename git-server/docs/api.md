@@ -162,8 +162,7 @@ pack when needed. Requires `"confirm": true`.
   "confirm": true,              // required guard
   "budget_usd": 0.10,           // hard spend cap (default 0.10, max 5.00)
   "duration_secs": 20,          // per-stage wall time (default 20, max 120)
-  "shards": 1,                  // split concurrency (HTTP self-fetch on Worker)
-  "repos": 1,                   // parallel disposable repos (own DO each; QPS sums)
+  "shards": 1,                  // split concurrency across isolates (same repo)
   "stages": [                   // optional; default = writer ramp 1..48 then 64 readers
     { "writers": 8, "readers": 0 },
     { "writers": 0, "readers": 64 }
@@ -195,8 +194,7 @@ Response:
                      "mean_do": 1, "mean_kv": 0, "mean_cost_usd": 0.000002, "mean_ms": 40.0 },
   "stages": [ /* per-stage goodput + costs */ ],
   "duration_ms": 45000,
-  "shards": 1,
-  "repos": 1
+  "shards": 1
 }
 ```
 
@@ -236,29 +234,25 @@ Plain-text banner identifying the service.
 ### `GET /loadtest`
 Phone-friendly HTML load test. Open this URL in a browser:
 
-* without `run=1` — landing page with **cost budget**, **peak writers (per
-  repo)**, and **parallel repos** controls, then a **Run** button (JS fetch +
-  live seconds timer);
-* with `?run=1` — runs immediately into disposable repo(s) and prints the
+* without `run=1` — landing page with **cost budget** and **peak writers**
+  controls, then a **Run** button (JS fetch + live seconds timer);
+* with `?run=1` — runs immediately into **one** disposable repo and prints the
   report (peak pushes/s, pulls/s, $/op, budget status, per-stage table).
 
-Stages are derived from peak writers **per repo**: warm-up (`peak/3`) → peak
-writers → `2×peak` readers. Parallel repos (`repos`) each get that stage plan
-and their own Durable Object; on the Worker the coordinator self-fetches so
-lanes land on separate isolates. Aggregate QPS is the sum across repos.
-Defaults: `budget=0.25`, `duration=4`, `peak=4`, `repos=32` (capped at 96
-repos / 24 peak). For a single-repo probe use `repos=1`.
+Stages are derived from peak writers: warm-up (`peak/3`) → peak writers →
+`2×peak` readers. Each writer owns its own branch (`refs/heads/load/wN`);
+disjoint-branch pushes merge-apply without conflicting. Defaults:
+`budget=0.10`, `duration=4`, `peak=8` (capped at 48).
 
 **Auth:** production requires the Worker secret `LOADTEST_TOKEN`. Pass it as
 `?token=…`, or as the `X-Loadtest-Token` header. Without a matching token the
 run returns 401 (HTML error page for GET). If the secret is unset, loadtests
 return 503.
 
-Optional query: `budget` (USD, default `0.25`, max `5`), `peak` (writers per
-repo, default `4`, max `24`), `repos` (parallel DOs, default `32`, max `96`),
-`duration` (seconds per stage, default `4`). Bookmark
+Optional query: `budget` (USD, default `0.10`, max `5`), `peak` (writers,
+default `8`, max `48`), `duration` (seconds per stage, default `4`). Bookmark
 `https://git.<account>.workers.dev/loadtest?token=…` and adjust the form, or
-`…/loadtest?run=1&budget=0.25&peak=4&repos=32&token=…` for one-tap.
+`…/loadtest?run=1&budget=0.10&peak=8&token=…` for one-tap.
 
 Any other unmatched path is `404`.
 

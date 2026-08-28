@@ -474,7 +474,7 @@ fn request_nonce() -> String {
     format!("{ms:x}-{r:x}")
 }
 
-/// HTTP self-fetch for coordinated loadtest shards / multi-repo lanes.
+/// HTTP self-fetch for coordinated loadtest shards (same repo, fresh isolates).
 struct WorkerLoadtestFanout {
     origin: String,
     token: Option<String>,
@@ -571,8 +571,9 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
     let cf_ray = req.headers().get("cf-ray").ok().flatten();
     let loadtest_token = req.headers().get("X-Loadtest-Token").ok().flatten();
 
-    // Self-fetch fan-out so multi-repo / multi-shard loadtests land on
-    // separate isolates (each with its own DO for multi-repo).
+    // Self-fetch fan-out so multi-shard loadtests (same repo) land on
+    // separate isolates — useful for probing the per-repo ceiling past
+    // one-isolate CPU.
     let fanout = std::rc::Rc::new(WorkerLoadtestFanout {
         origin,
         token: server.loadtest_token.clone(),

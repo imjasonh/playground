@@ -162,7 +162,7 @@ pub struct GitHttp {
     /// When true (Worker), a missing [`Self::loadtest_token`] rejects
     /// loadtests with 503 instead of running open.
     pub loadtest_auth_required: bool,
-    /// Optional HTTP self-fetch for multi-repo / multi-shard loadtests.
+    /// Optional HTTP self-fetch for multi-shard loadtests (same repo).
     pub loadtest_fanout: Option<std::rc::Rc<dyn crate::loadtest::LoadtestFanout>>,
 }
 
@@ -562,10 +562,10 @@ impl GitHttp {
     }
 
     /// `GET /loadtest` — phone-friendly HTML. Without `run=1`, shows a
-    /// landing page with budget / peak / repos controls. With `run=1`, runs a
-    /// budget-capped load test into disposable repo(s) and prints the report.
-    /// Query knobs: `budget`, `peak` (writers per repo), `repos` (parallel
-    /// DOs), `duration` (seconds per stage), `token`.
+    /// landing page with budget / peak controls. With `run=1`, runs a
+    /// budget-capped load test into one disposable repo and prints the report.
+    /// Query knobs: `budget`, `peak` (concurrent writers, each on its own
+    /// branch), `duration` (seconds per stage), `token`.
     async fn phone_loadtest(&self, req: &Request<'_>) -> Response {
         let query = req.query;
         let budget = query_param(query, "budget")
@@ -580,10 +580,6 @@ impl GitHttp {
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(crate::loadtest::PHONE_DEFAULT_PEAK);
         let peak = crate::loadtest::clamp_phone_peak(peak);
-        let repos = query_param(query, "repos")
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(crate::loadtest::PHONE_DEFAULT_REPOS);
-        let repos = crate::loadtest::clamp_phone_repos(repos);
         let token = req
             .loadtest_token
             .or(query_param(query, "token"))
@@ -596,7 +592,7 @@ impl GitHttp {
         if !run {
             return Response::ok(
                 "text/html; charset=utf-8",
-                crate::loadtest::html_landing(budget, duration, peak, repos, token).into_bytes(),
+                crate::loadtest::html_landing(budget, duration, peak, token).into_bytes(),
             );
         }
         if let Some(deny) = self.loadtest_auth_error(token) {
@@ -615,7 +611,7 @@ impl GitHttp {
         }
 
         let repo = crate::loadtest::phone_repo_name();
-        let phone_req = crate::loadtest::phone_request(budget, duration, peak, repos);
+        let phone_req = crate::loadtest::phone_request(budget, duration, peak);
         let cfg = match phone_req.into_config() {
             Ok(c) => c,
             Err(e) => {
@@ -638,7 +634,7 @@ impl GitHttp {
         }
     }
 
-    /// Keep fan-out so multi-repo / multi-shard runs can self-fetch.
+    /// Keep shard fan-out so multi-isolate single-repo runs can self-fetch.
     fn coordinator_http(&self) -> GitHttp {
         let mut http = GitHttp::new(self.store.clone(), self.states.clone())
             .with_push_limit(self.push_limit_bytes);
