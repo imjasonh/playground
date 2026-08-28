@@ -550,9 +550,10 @@ impl GitHttp {
     }
 
     /// `GET /loadtest` — phone-friendly HTML. Without `run=1`, shows a
-    /// one-button landing page. With `run=1`, runs a light budget-capped
-    /// load test into a disposable repo and prints the report. Query knobs:
-    /// `budget`, `duration` (seconds), `token` (required when auth is on).
+    /// landing page with budget + peak-load controls. With `run=1`, runs a
+    /// budget-capped load test into a disposable repo and prints the report.
+    /// Query knobs: `budget`, `peak` (max writers; readers = 2×), `duration`
+    /// (seconds per stage), `token` (required when auth is on).
     async fn phone_loadtest(&self, req: &Request<'_>) -> Response {
         let query = req.query;
         let budget = query_param(query, "budget")
@@ -563,6 +564,10 @@ impl GitHttp {
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(crate::loadtest::PHONE_DEFAULT_DURATION_SECS)
             .clamp(1, crate::loadtest::MAX_DURATION_SECS);
+        let peak = query_param(query, "peak")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(crate::loadtest::PHONE_DEFAULT_PEAK);
+        let peak = crate::loadtest::clamp_phone_peak(peak);
         let token = req
             .loadtest_token
             .or(query_param(query, "token"))
@@ -575,7 +580,7 @@ impl GitHttp {
         if !run {
             return Response::ok(
                 "text/html; charset=utf-8",
-                crate::loadtest::html_landing(budget, duration, token).into_bytes(),
+                crate::loadtest::html_landing(budget, duration, peak, token).into_bytes(),
             );
         }
         if let Some(deny) = self.loadtest_auth_error(token) {
@@ -594,7 +599,7 @@ impl GitHttp {
         }
 
         let repo = crate::loadtest::phone_repo_name();
-        let phone_req = crate::loadtest::phone_request(budget, duration);
+        let phone_req = crate::loadtest::phone_request(budget, duration, peak);
         let cfg = match phone_req.into_config() {
             Ok(c) => c,
             Err(e) => {
@@ -608,7 +613,7 @@ impl GitHttp {
         match crate::loadtest::execute(&http, &repo, &cfg).await {
             Ok(report) => Response::ok(
                 "text/html; charset=utf-8",
-                crate::loadtest::html_report(&report, token).into_bytes(),
+                crate::loadtest::html_report(&report, token, peak, duration).into_bytes(),
             ),
             Err(e) => Response::ok(
                 "text/html; charset=utf-8",

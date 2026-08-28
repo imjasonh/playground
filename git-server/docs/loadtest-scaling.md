@@ -533,9 +533,9 @@ curl -sS -X POST "https://git.imjasonh.workers.dev/api/lt-$(date +%s)/loadtest" 
         {"writers":0,"readers":64}]}' | jq .
 
 # From a phone (HTML report; requires LOADTEST_TOKEN):
-#   https://git.imjasonh.workers.dev/loadtest?token=…              — button + timer
-#   https://git.imjasonh.workers.dev/loadtest?run=1&token=…        — one tap
-# Phone defaults are light (~15s, ≤6 writers) so the isolate does not 1101.
+#   https://git.imjasonh.workers.dev/loadtest?token=…              — form + run
+#   https://git.imjasonh.workers.dev/loadtest?run=1&peak=12&budget=0.25&token=…
+# Defaults: $0.05, peak 6 writers (→ 12 readers), 4s × 3 stages.
 
 # Helper (same defaults; set GIT_SERVER_URL + LOADTEST_TOKEN):
 GIT_SERVER_URL=https://git.imjasonh.workers.dev \
