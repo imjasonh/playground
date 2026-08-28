@@ -201,7 +201,9 @@ Response:
 Each synthetic push/pull is a normal request on the hot path, so Workers
 Traces and the structured `{"evt":"req",…}` logs cover the load. When
 `budget_limited` is true, the peak QPS fields are still the best observed
-before the cap stopped the run. See [`loadtest-scaling.md`](loadtest-scaling.md)
+before the cap stopped the run. Auth: same `LOADTEST_TOKEN` as
+[`GET /loadtest`](#get-loadtest) (`token` JSON field, `?token=`, or
+`X-Loadtest-Token`). See [`loadtest-scaling.md`](loadtest-scaling.md)
 → "In-Worker loadtest".
 
 ### `POST /api/<repo>/repack`
@@ -223,13 +225,34 @@ conflict with repack). See [`design.md` → Repacking](design.md).
 ## Root
 
 ### `GET /`
-Plain-text banner identifying the service. Any other unmatched path is `404`.
+Plain-text banner identifying the service.
+
+### `GET /loadtest`
+Phone-friendly HTML load test. Open this URL in a browser:
+
+* without query params — landing page with one big **Run $0.10 load test**
+  button;
+* with `?run=1` — runs immediately into a disposable repo and prints the
+  report (peak pushes/s, pulls/s, $/op, budget status, per-stage table).
+
+**Auth:** production requires the Worker secret `LOADTEST_TOKEN`. Pass it as
+`?token=…`, or as the `X-Loadtest-Token` header. Without a matching token the
+run returns 401 (HTML error page for GET). If the secret is unset, loadtests
+return 503.
+
+Optional query: `budget` (USD, default `0.10`, max `5`), `duration` (seconds
+per stage, default `10`). Bookmark
+`https://git.<account>.workers.dev/loadtest?run=1&token=…` for one-tap from a
+phone.
+
+Any other unmatched path is `404`.
 
 ---
 
 ## Not yet supported
 
-* Authentication / authorization.
+* Authentication / authorization on git smart-HTTP and most `/api/…`
+  routes (loadtest endpoints are gated by `LOADTEST_TOKEN` — see above).
 * Date-based shallow (`--shallow-since` / `deepen-since`, `deepen-not`) —
   rejected in-band. (Depth-based shallow and partial clone `--filter` *are*
   supported.)

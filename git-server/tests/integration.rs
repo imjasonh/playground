@@ -1243,3 +1243,113 @@ fn api_loadtest_reports_peaks_and_costs() {
     );
     assert_eq!(status, 400, "{}", String::from_utf8_lossy(&resp));
 }
+
+/// Phone URL: landing page, then `?run=1` prints an HTML report.
+#[test]
+fn phone_loadtest_html() {
+    let server = TestServer::start();
+
+    let (status, body) = server.get("/loadtest");
+    assert_eq!(status, 200);
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("Run $0.10 load test"), "{html}");
+    assert!(html.contains("?run=1"), "{html}");
+
+    let (status, body) = server.get("/loadtest?run=1&budget=0.05&duration=2");
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
+    let html = String::from_utf8_lossy(&body);
+    assert!(html.contains("peak pushes/s"), "{html}");
+    assert!(html.contains("peak pulls/s"), "{html}");
+    assert!(html.contains("Cost per push"), "{html}");
+}
+
+/// With auth configured, missing/wrong tokens are rejected; the right one runs.
+#[test]
+fn loadtest_requires_token_when_configured() {
+    use git_server::http::GitHttp;
+    use git_server::refs::MemStateStore;
+    use git_server::storage::MemStore;
+    use std::rc::Rc;
+
+    // TestServer leaves auth off (native tests). Production Worker always
+    // requires LOADTEST_TOKEN.
+    let server = TestServer::start();
+    let (status, body) = server.get("/loadtest?run=1&budget=0.01&duration=1");
+    assert_eq!(status, 200, "open test server still allows unauthed runs");
+    assert!(
+        String::from_utf8_lossy(&body).contains("peak pushes/s")
+            || String::from_utf8_lossy(&body).contains("loadtest"),
+        "{}",
+        String::from_utf8_lossy(&body)
+    );
+
+    let store = MemStore::new();
+    let states = MemStateStore::new();
+    let http = GitHttp::new(Rc::new(store), Rc::new(states)).with_loadtest_token("s3cret");
+    let deny = http_loadtest_get(&http, "/loadtest?run=1&budget=0.01&duration=1", None);
+    assert_eq!(deny.0, 200); // HTML error page
+    assert!(
+        deny.1.contains("Missing or invalid") || deny.1.contains("token"),
+        "{}",
+        deny.1
+    );
+    let ok = http_loadtest_get(
+        &http,
+        "/loadtest?run=1&budget=0.01&duration=1&token=s3cret",
+        None,
+    );
+    assert!(ok.1.contains("peak pushes/s"), "{}", ok.1);
+
+    let bad_header = http_loadtest_get(
+        &http,
+        "/loadtest?run=1&budget=0.01&duration=1",
+        Some("nope"),
+    );
+    assert!(
+        bad_header.1.contains("Missing or invalid") || bad_header.1.contains("token"),
+        "{}",
+        bad_header.1
+    );
+    let good_header = http_loadtest_get(
+        &http,
+        "/loadtest?run=1&budget=0.01&duration=1",
+        Some("s3cret"),
+    );
+    assert!(good_header.1.contains("peak pushes/s"), "{}", good_header.1);
+}
+
+fn http_loadtest_get(
+    http: &git_server::http::GitHttp,
+    path_and_query: &str,
+    header_token: Option<&str>,
+) -> (u16, String) {
+    use futures::executor::block_on;
+    use git_server::http::Request as GitRequest;
+    use git_server::protocol::BodyStream;
+    use std::collections::VecDeque;
+
+    struct Empty;
+    #[async_trait::async_trait(?Send)]
+    impl BodyStream for Empty {
+        async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
+            Ok(None)
+        }
+    }
+    let _ = VecDeque::<u8>::new();
+    let (path, query) = path_and_query
+        .split_once('?')
+        .map(|(p, q)| (p, Some(q)))
+        .unwrap_or((path_and_query, None));
+    let req = GitRequest {
+        method: "GET",
+        path,
+        query,
+        git_protocol: None,
+        content_encoding: None,
+        cf_ray: None,
+        loadtest_token: header_token,
+    };
+    let resp = block_on(http.handle(&req, &mut Empty, "t"));
+    let body = block_on(resp.body.into_bytes()).unwrap_or_default();
+    (resp.status, String::from_utf8_lossy(&body).into_owned())
+}

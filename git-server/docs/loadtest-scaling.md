@@ -521,12 +521,25 @@ that, the Worker exposes `POST /api/<repo>/loadtest` (see
 # Against a deployment (use a disposable repo name):
 curl -sS -X POST "https://git.imjasonh.workers.dev/api/lt-$(date +%s)/loadtest" \
   -H 'content-type: application/json' \
+  -H "X-Loadtest-Token: $LOADTEST_TOKEN" \
   -d '{"confirm":true,"budget_usd":0.25,"duration_secs":15,"stages":[
         {"writers":8,"readers":0},{"writers":32,"readers":0},
         {"writers":0,"readers":64}]}' | jq .
 
-# Helper (same defaults; set GIT_SERVER_URL):
-GIT_SERVER_URL=https://git.imjasonh.workers.dev ./scripts/loadtest-remote.sh
+# From a phone (HTML report; requires LOADTEST_TOKEN):
+#   https://git.imjasonh.workers.dev/loadtest?token=…              — button
+#   https://git.imjasonh.workers.dev/loadtest?run=1&token=…        — one tap
+
+# Helper (same defaults; set GIT_SERVER_URL + LOADTEST_TOKEN):
+GIT_SERVER_URL=https://git.imjasonh.workers.dev \
+  LOADTEST_TOKEN=… ./scripts/loadtest-remote.sh
+```
+
+Set the secret once (do not commit the value):
+
+```bash
+cd git-server
+echo -n 'YOUR_TOKEN' | npx wrangler secret put LOADTEST_TOKEN
 ```
 
 What the report answers:

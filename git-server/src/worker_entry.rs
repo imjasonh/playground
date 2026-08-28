@@ -499,6 +499,21 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
     {
         server = server.with_push_limit(limit);
     }
+    // Loadtest routes require LOADTEST_TOKEN (Workers secret). Fail closed
+    // when unset so an open Worker can't be burned by strangers.
+    match env.secret("LOADTEST_TOKEN") {
+        Ok(s) => {
+            let t = s.to_string();
+            if t.is_empty() {
+                server = server.with_loadtest_auth_required();
+            } else {
+                server = server.with_loadtest_token(t);
+            }
+        }
+        Err(_) => {
+            server = server.with_loadtest_auth_required();
+        }
+    }
 
     let url = req.url()?;
     let path = url.path().to_string();
@@ -507,12 +522,13 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
     let git_protocol = req.headers().get("Git-Protocol").ok().flatten();
     let content_encoding = req.headers().get("Content-Encoding").ok().flatten();
     let cf_ray = req.headers().get("cf-ray").ok().flatten();
+    let loadtest_token = req.headers().get("X-Loadtest-Token").ok().flatten();
 
     let span_name = if path.contains("git-receive-pack") {
         "git.receive_pack"
     } else if path.contains("git-upload-pack") {
         "git.upload_pack"
-    } else if path.ends_with("/loadtest") {
+    } else if path == "/loadtest" || path.ends_with("/loadtest") {
         "git.loadtest"
     } else if path.starts_with("/api/") {
         "git.api"
@@ -543,6 +559,7 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
             git_protocol,
             content_encoding,
             cf_ray,
+            loadtest_token,
         })
         .await
     })
@@ -560,6 +577,7 @@ struct FetchCtx {
     git_protocol: Option<String>,
     content_encoding: Option<String>,
     cf_ray: Option<String>,
+    loadtest_token: Option<String>,
 }
 
 async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
@@ -574,6 +592,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
         git_protocol,
         content_encoding,
         cf_ray,
+        loadtest_token,
     } = ctx;
 
     // Buffer loadtest JSON so the router can parse it (small body).
@@ -599,6 +618,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
         git_protocol: git_protocol.as_deref(),
         content_encoding: content_encoding.as_deref(),
         cf_ray: cf_ray.as_deref(),
+        loadtest_token: loadtest_token.as_deref(),
     };
 
     let nonce = request_nonce();

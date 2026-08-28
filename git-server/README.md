@@ -105,6 +105,9 @@ GIT_SERVER_URL=https://git.example.workers.dev ./scripts/bench-remote.sh
 # In-Worker load test: peak pushes/s + pulls/s, $/op, budget-capped.
 # See docs/loadtest-scaling.md → "In-Worker loadtest".
 GIT_SERVER_URL=https://git.example.workers.dev ./scripts/loadtest-remote.sh
+
+# Or from a phone: /loadtest?token=… (button) or /loadtest?run=1&token=… (one tap).
+# Set the Worker secret first: echo -n '…' | npx wrangler secret put LOADTEST_TOKEN
 ```
 
 The integration tests start a localhost HTTP server backed by in-memory

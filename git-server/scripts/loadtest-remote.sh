@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Kick an in-Worker load test and print the JSON report.
 #
-#   GIT_SERVER_URL=https://git.<account>.workers.dev ./scripts/loadtest-remote.sh
+#   GIT_SERVER_URL=https://git.<account>.workers.dev \
+#   LOADTEST_TOKEN=… ./scripts/loadtest-remote.sh
 #
 # Tunables (env):
+#   LOADTEST_TOKEN        required in production (Worker secret)
 #   BUDGET_USD=0.25       hard spend cap (marginal R2/DO/KV)
 #   DURATION_SECS=15      per-stage wall time
 #   SHARDS=1              in-process concurrency partitions
@@ -16,6 +18,10 @@ cd "$(dirname "$0")/.."
 
 if [ -z "${GIT_SERVER_URL:-}" ]; then
   echo "set GIT_SERVER_URL to a deployed (or wrangler-dev) git-server" >&2
+  exit 1
+fi
+if [ -z "${LOADTEST_TOKEN:-}" ]; then
+  echo "set LOADTEST_TOKEN (must match the Worker secret)" >&2
   exit 1
 fi
 
@@ -31,6 +37,7 @@ BODY=$(cat <<EOF
   "budget_usd": $BUDGET_USD,
   "duration_secs": $DURATION_SECS,
   "shards": $SHARDS,
+  "token": "$LOADTEST_TOKEN",
   "stages": [
     {"writers": 8, "readers": 0},
     {"writers": 32, "readers": 0},
@@ -47,6 +54,7 @@ echo
 
 curl -sS -X POST "$URL" \
   -H 'content-type: application/json' \
+  -H "X-Loadtest-Token: $LOADTEST_TOKEN" \
   -d "$BODY" | if command -v jq >/dev/null; then jq .; else cat; fi
 
 echo

@@ -90,6 +90,10 @@ pub struct LoadTestRequest {
     /// Shard index (for unique writer branch namespaces).
     #[serde(default)]
     pub shard_index: Option<u32>,
+    /// Optional shared secret (also accepted via `X-Loadtest-Token` or
+    /// `?token=`). Required when the Worker has `LOADTEST_TOKEN` configured.
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 /// One concurrency stage.
@@ -770,6 +774,7 @@ impl InProcessDriver {
             git_protocol,
             content_encoding: None,
             cf_ray: None,
+            loadtest_token: None,
         };
         let resp = self.http.handle(&req, &mut stream, &self.nonce()).await;
         let status = resp.status;
@@ -1017,11 +1022,274 @@ pub async fn run_in_process(
 ) -> Result<LoadTestReport, String> {
     let cfg = req.into_config()?;
     let http = GitHttp::new(store, states);
+    execute(&http, repo, &cfg).await
+}
+
+/// Run with an already-built [`GitHttp`] (shared by JSON and HTML entry points).
+pub async fn execute(
+    http: &GitHttp,
+    repo: &str,
+    cfg: &LoadTestConfig,
+) -> Result<LoadTestReport, String> {
     if cfg.shards > 1 && !cfg.shard {
-        return run_sharded_inprocess(http, repo, &cfg).await;
+        return run_sharded_inprocess(
+            GitHttp::new(http.store.clone(), http.states.clone())
+                .with_push_limit(http.push_limit_bytes),
+            repo,
+            cfg,
+        )
+        .await;
     }
-    let driver = InProcessDriver::new(http, repo);
-    run_loadtest(repo, &driver, &cfg).await
+    let driver = InProcessDriver::new(
+        GitHttp::new(http.store.clone(), http.states.clone())
+            .with_push_limit(http.push_limit_bytes),
+        repo,
+    );
+    run_loadtest(repo, &driver, cfg).await
+}
+
+/// Constant-time-ish compare for the loadtest shared secret.
+pub fn token_matches(provided: &str, expected: &str) -> bool {
+    if provided.len() != expected.len() {
+        return false;
+    }
+    provided
+        .bytes()
+        .zip(expected.bytes())
+        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+        == 0
+}
+
+/// Phone-friendly defaults: $0.10, short stages, finishes before a mobile
+/// browser gives up waiting.
+pub fn phone_request(budget_usd: f64, duration_secs: u64) -> LoadTestRequest {
+    LoadTestRequest {
+        confirm: true,
+        budget_usd: Some(budget_usd),
+        duration_secs: Some(duration_secs),
+        stages: Some(vec![
+            StageSpec {
+                writers: 8,
+                readers: 0,
+            },
+            StageSpec {
+                writers: 32,
+                readers: 0,
+            },
+            StageSpec {
+                writers: 0,
+                readers: 64,
+            },
+        ]),
+        shards: Some(1),
+        shard: false,
+        tip: None,
+        shard_index: None,
+        token: None,
+    }
+}
+
+/// Unique disposable repo name for a phone run.
+pub fn phone_repo_name() -> String {
+    let ms = metrics::now_ms() as u64;
+    format!("lt{}", ms % 1_000_000_000)
+}
+
+/// Landing page: one big button that hits `?run=1` (and `token=` when set).
+pub fn html_landing(budget_usd: f64, duration_secs: u64, token: Option<&str>) -> String {
+    let token_q = token
+        .map(|t| format!("&amp;token={}", html_escape(t)))
+        .unwrap_or_default();
+    let token_hint = if token.is_some() {
+        String::new()
+    } else {
+        "<p style=\"color:var(--muted);font-size:0.95rem\">Add <code>?token=…</code> to the URL (required in production).</p>".into()
+    };
+    format!(
+        r##"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>git loadtest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Code+Pro:wght@500&display=swap" rel="stylesheet">
+<style>
+:root {{
+  --bg: #0f1419;
+  --fg: #e7ecf1;
+  --muted: #8b9aab;
+  --accent: #3dd68c;
+  --card: #1a222c;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  margin: 0; min-height: 100dvh; display: grid; place-items: center;
+  padding: 1.5rem; background: var(--bg); color: var(--fg);
+  font: 400 1.125rem/1.45 "Source Sans 3", system-ui, sans-serif;
+}}
+main {{ width: min(28rem, 100%); text-align: center; }}
+h1 {{ font-size: 1.75rem; font-weight: 700; margin: 0 0 0.5rem; letter-spacing: -0.02em; }}
+p {{ color: var(--muted); margin: 0 0 1.75rem; }}
+a.run {{
+  display: block; width: 100%; padding: 1.15rem 1.25rem;
+  background: var(--accent); color: #062016; text-decoration: none;
+  font-weight: 700; font-size: 1.25rem; border-radius: 0.75rem;
+}}
+a.run:active {{ filter: brightness(0.92); }}
+code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95em; }}
+</style>
+</head>
+<body>
+<main>
+  <h1>git loadtest</h1>
+  <p>Runs push/pull load against this Worker.<br>
+  Cap <code>${budget_usd:.2}</code> · ~{duration_secs}s per stage · results on the next page.</p>
+  {token_hint}
+  <a class="run" href="/loadtest?run=1&amp;budget={budget_usd}&amp;duration={duration_secs}{token_q}">Run ${budget_usd:.2} load test</a>
+</main>
+</body>
+</html>
+"##
+    )
+}
+
+/// HTML results page for a completed run (phone-readable).
+pub fn html_report(report: &LoadTestReport, token: Option<&str>) -> String {
+    let limited = if report.budget_limited {
+        r#"<span class="badge warn">budget-limited</span>"#
+    } else {
+        r#"<span class="badge ok">completed</span>"#
+    };
+    let token_q = token
+        .map(|t| format!("&amp;token={}", html_escape(t)))
+        .unwrap_or_default();
+    let again_href = format!(
+        "/loadtest?run=1&amp;budget={}&amp;duration=10{token_q}",
+        report.budget_usd
+    );
+    let mut stages = String::new();
+    for s in &report.stages {
+        let w = s.writers;
+        let r = s.readers;
+        let pps = s.pushes_per_sec;
+        let rps = s.pulls_per_sec;
+        let ok_p = s.push_ok;
+        let ok_r = s.pull_ok;
+        let cost = s.stage_cost_usd;
+        stages.push_str(&format!(
+            "<tr><td>{w}w/{r}r</td><td>{pps:.1}</td><td>{rps:.1}</td><td>{ok_p}/{ok_r}</td><td>${cost:.4}</td></tr>\n"
+        ));
+    }
+    let push = &report.cost_per_push;
+    let pull = &report.cost_per_pull;
+    let repo = html_escape(&report.repo);
+    let wall = report.duration_ms / 1000.0;
+    let spent = report.total_cost_usd;
+    let budget = report.budget_usd;
+    let peak_p = report.peak_pushes_per_sec;
+    let peak_r = report.peak_pulls_per_sec;
+    let push_n = push.samples;
+    let push_usd = push.mean_cost_usd;
+    let push_a = push.mean_r2_class_a;
+    let push_b = push.mean_r2_class_b;
+    let push_do = push.mean_do;
+    let push_ms = push.mean_ms;
+    let pull_n = pull.samples;
+    let pull_usd = pull.mean_cost_usd;
+    let pull_a = pull.mean_r2_class_a;
+    let pull_b = pull.mean_r2_class_b;
+    let pull_do = pull.mean_do;
+    let pull_ms = pull.mean_ms;
+    format!(
+        r##"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>loadtest · {repo}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Code+Pro:wght@500&display=swap" rel="stylesheet">
+<style>
+:root {{
+  --bg: #0f1419; --fg: #e7ecf1; --muted: #8b9aab; --accent: #3dd68c;
+  --warn: #f5a524; --card: #1a222c; --line: #2a3542;
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  margin: 0; padding: 1.25rem 1rem 3rem; background: var(--bg); color: var(--fg);
+  font: 400 1rem/1.45 "Source Sans 3", system-ui, sans-serif;
+}}
+.wrap {{ width: min(40rem, 100%); margin: 0 auto; }}
+h1 {{ font-size: 1.5rem; margin: 0 0 0.35rem; letter-spacing: -0.02em; }}
+.meta {{ color: var(--muted); margin: 0 0 1.25rem; font-size: 0.95rem; }}
+.badge {{
+  display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px;
+  font-size: 0.8rem; font-weight: 600; vertical-align: middle;
+}}
+.badge.ok {{ background: #143528; color: var(--accent); }}
+.badge.warn {{ background: #3a2a0e; color: var(--warn); }}
+.grid {{
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.25rem;
+}}
+.card {{
+  background: var(--card); border: 1px solid var(--line); border-radius: 0.75rem;
+  padding: 1rem 0.9rem;
+}}
+.card .label {{ color: var(--muted); font-size: 0.8rem; margin-bottom: 0.25rem; }}
+.card .val {{
+  font: 500 1.65rem/1.15 "Source Code Pro", ui-monospace, monospace;
+  letter-spacing: -0.03em;
+}}
+h2 {{ font-size: 1.05rem; margin: 1.5rem 0 0.6rem; }}
+table {{
+  width: 100%; border-collapse: collapse; font-size: 0.9rem;
+  font-family: "Source Code Pro", ui-monospace, monospace;
+}}
+th, td {{ text-align: left; padding: 0.45rem 0.35rem; border-bottom: 1px solid var(--line); }}
+th {{ color: var(--muted); font-weight: 500; font-size: 0.75rem; }}
+.ops {{ color: var(--muted); font-size: 0.9rem; margin: 0.35rem 0 0; }}
+a.again {{
+  display: block; margin-top: 1.75rem; text-align: center; padding: 1rem;
+  background: var(--accent); color: #062016; text-decoration: none;
+  font-weight: 700; border-radius: 0.75rem;
+}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>loadtest {limited}</h1>
+  <p class="meta">repo <code>{repo}</code> · wall {wall:.1}s · spend ${spent:.4} / ${budget:.2}</p>
+  <div class="grid">
+    <div class="card"><div class="label">peak pushes/s</div><div class="val">{peak_p:.1}</div></div>
+    <div class="card"><div class="label">peak pulls/s</div><div class="val">{peak_r:.1}</div></div>
+  </div>
+  <h2>Cost per push</h2>
+  <p class="ops">{push_n} samples · mean ${push_usd:.6} · R2A {push_a:.1} · R2B {push_b:.1} · DO {push_do:.1} · {push_ms:.0} ms</p>
+  <h2>Cost per pull</h2>
+  <p class="ops">{pull_n} samples · mean ${pull_usd:.6} · R2A {pull_a:.1} · R2B {pull_b:.1} · DO {pull_do:.1} · {pull_ms:.0} ms</p>
+  <h2>Stages</h2>
+  <table>
+    <thead><tr><th>load</th><th>push/s</th><th>pull/s</th><th>ok p/r</th><th>$</th></tr></thead>
+    <tbody>
+{stages}    </tbody>
+  </table>
+  <a class="again" href="{again_href}">Run again</a>
+  <p class="meta" style="margin-top:1rem;text-align:center"><a href="/loadtest" style="color:var(--muted)">Back</a></p>
+</div>
+</body>
+</html>
+"##
+    )
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// Split offered concurrency across `cfg.shards` in-process partitions and
@@ -1111,6 +1379,7 @@ mod tests {
             shard: false,
             tip: None,
             shard_index: None,
+            token: None,
         };
         assert!(r.into_config().is_err());
     }
@@ -1163,6 +1432,7 @@ mod tests {
                     shard: false,
                     tip: None,
                     shard_index: None,
+                    token: None,
                 },
             )
             .await
@@ -1209,6 +1479,7 @@ mod tests {
                     shard: false,
                     tip: None,
                     shard_index: None,
+                    token: None,
                 },
             )
             .await

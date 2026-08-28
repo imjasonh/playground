@@ -212,6 +212,7 @@ fn serve_one(
     };
     let git_protocol = header("Git-Protocol");
     let content_encoding = header("Content-Encoding");
+    let loadtest_token = header("X-Loadtest-Token");
 
     let server = GitHttp::new(
         std::rc::Rc::new(store.clone()),
@@ -225,6 +226,7 @@ fn serve_one(
         git_protocol: git_protocol.as_deref(),
         content_encoding: content_encoding.as_deref(),
         cf_ray: None,
+        loadtest_token: loadtest_token.as_deref(),
     };
     let mut body = ReaderBody::new(request.as_reader());
     let nonce = format!("t{}", NONCE.fetch_add(1, Ordering::Relaxed));
