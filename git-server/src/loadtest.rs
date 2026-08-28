@@ -1217,10 +1217,18 @@ pub const PHONE_DEFAULT_DURATION_SECS: u64 = 4;
 /// Peak writers in the write ramp; read stage uses `2 × peak`.
 pub const PHONE_DEFAULT_PEAK: u32 = 8;
 pub const PHONE_MAX_PEAK: u32 = 48;
+/// Isolates to fan writers/readers across (same repo). `1` = this isolate only.
+pub const PHONE_DEFAULT_SHARDS: u32 = 4;
+pub const PHONE_MAX_SHARDS: u32 = MAX_SHARDS;
 
 /// Clamp a phone peak-writers value into the safe range.
 pub fn clamp_phone_peak(peak: u32) -> u32 {
     peak.clamp(1, PHONE_MAX_PEAK)
+}
+
+/// Clamp phone isolate-shard count.
+pub fn clamp_phone_shards(shards: u32) -> u32 {
+    shards.clamp(1, PHONE_MAX_SHARDS)
 }
 
 /// Phone stages from a peak writer count: warm-up → peak writers → 2× readers.
@@ -1245,13 +1253,18 @@ pub fn phone_stages(peak: u32) -> Vec<StageSpec> {
 }
 
 /// Phone-friendly request: short stages scaled by `peak` writers.
-pub fn phone_request(budget_usd: f64, duration_secs: u64, peak: u32) -> LoadTestRequest {
+pub fn phone_request(
+    budget_usd: f64,
+    duration_secs: u64,
+    peak: u32,
+    shards: u32,
+) -> LoadTestRequest {
     LoadTestRequest {
         confirm: true,
         budget_usd: Some(budget_usd),
         duration_secs: Some(duration_secs),
         stages: Some(phone_stages(peak)),
-        shards: Some(1),
+        shards: Some(clamp_phone_shards(shards)),
         shard: false,
         tip: None,
         shard_index: None,
@@ -1265,8 +1278,14 @@ pub fn phone_repo_name() -> String {
     format!("lt{}", ms % 1_000_000_000)
 }
 
-/// Landing page: budget + peak controls, then Run (one disposable repo).
-pub fn html_landing(budget_usd: f64, duration_secs: u64, peak: u32, token: Option<&str>) -> String {
+/// Landing page: budget + peak + shards controls, then Run (one disposable repo).
+pub fn html_landing(
+    budget_usd: f64,
+    duration_secs: u64,
+    peak: u32,
+    shards: u32,
+    token: Option<&str>,
+) -> String {
     let token_js = token.map(js_string_escape).unwrap_or_default();
     let has_token = token.is_some();
     let token_hint = if has_token {
@@ -1276,11 +1295,13 @@ pub fn html_landing(budget_usd: f64, duration_secs: u64, peak: u32, token: Optio
             .into()
     };
     let peak = clamp_phone_peak(peak);
+    let shards = clamp_phone_shards(shards);
     let stages = phone_stages(peak);
     let warm = stages[0].writers;
     let readers = stages[2].readers;
     let expect_secs = duration_secs.saturating_mul(3).saturating_add(5);
     let max_peak = PHONE_MAX_PEAK;
+    let max_shards = PHONE_MAX_SHARDS;
     format!(
         r##"<!doctype html>
 <html lang="en">
@@ -1345,8 +1366,12 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       <span class="detail">Warm-up → peak → 2× readers. Max {max_peak}. Each writer owns a branch.</span>
       <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
     </label>
+    <label>Isolates (shards)
+      <span class="detail">Same repo; fan writers across Worker isolates. Max {max_shards}. Raise this to beat one-isolate CPU.</span>
+      <input id="shards" type="number" inputmode="numeric" min="1" max="{max_shards}" step="1" value="{shards}">
+    </label>
   </div>
-  <p class="plan" id="plan">{warm}w → {peak}w → {readers}r · {duration_secs}s × 3 · ~{expect_secs}s</p>
+  <p class="plan" id="plan">{warm}w → {peak}w → {readers}r · {shards} shards · {duration_secs}s × 3 · ~{expect_secs}s</p>
   <button class="run" id="run" type="button">Run load test</button>
   <p id="status" aria-live="polite"></p>
 </main>
@@ -1356,31 +1381,42 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
   var status = document.getElementById("status");
   var budgetEl = document.getElementById("budget");
   var peakEl = document.getElementById("peak");
+  var shardsEl = document.getElementById("shards");
   var plan = document.getElementById("plan");
   var duration = {duration_secs};
   var token = "{token_js}";
   var maxPeak = {max_peak};
+  var maxShards = {max_shards};
   function clampPeak(p) {{
     p = Math.floor(Number(p) || 1);
     if (p < 1) p = 1;
     if (p > maxPeak) p = maxPeak;
     return p;
   }}
+  function clampShards(s) {{
+    s = Math.floor(Number(s) || 1);
+    if (s < 1) s = 1;
+    if (s > maxShards) s = maxShards;
+    return s;
+  }}
   function updatePlan() {{
     var peak = clampPeak(peakEl.value);
+    var shards = clampShards(shardsEl.value);
     var warm = Math.max(1, Math.floor(peak / 3));
     var readers = Math.max(1, peak * 2);
     var expect = duration * 3 + 5;
     plan.textContent = warm + "w → " + peak + "w → " + readers +
-      "r · " + duration + "s × 3 · ~" + expect + "s";
+      "r · " + shards + " shards · " + duration + "s × 3 · ~" + expect + "s";
   }}
   peakEl.addEventListener("input", updatePlan);
+  shardsEl.addEventListener("input", updatePlan);
   function runUrl() {{
     var budget = Number(budgetEl.value);
     if (!(budget > 0)) budget = {budget_usd:.2};
     var peak = clampPeak(peakEl.value);
+    var shards = clampShards(shardsEl.value);
     var q = "/loadtest?run=1&budget=" + encodeURIComponent(budget.toFixed(2)) +
-      "&duration=" + duration + "&peak=" + peak;
+      "&duration=" + duration + "&peak=" + peak + "&shards=" + shards;
     if (token) q += "&token=" + encodeURIComponent(token);
     return q;
   }}
@@ -1408,7 +1444,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         clearInterval(tick);
         status.className = "err";
         status.textContent = "Request failed: " + (e && e.message ? e.message : e) +
-          "\\nTry a lower peak.";
+          "\\nTry a lower peak or fewer shards.";
         btn.disabled = false;
       }});
   }});
@@ -1437,8 +1473,9 @@ pub fn html_report(
         .map(|t| format!("&amp;token={}", html_escape(t)))
         .unwrap_or_default();
     let peak = clamp_phone_peak(peak);
+    let shards = clamp_phone_shards(report.shards.max(1));
     let again_href = format!(
-        "/loadtest?budget={:.2}&amp;duration={duration_secs}&amp;peak={peak}{token_q}",
+        "/loadtest?budget={:.2}&amp;duration={duration_secs}&amp;peak={peak}&amp;shards={shards}{token_q}",
         report.budget_usd
     );
     let mut stages = String::new();
@@ -1552,7 +1589,7 @@ a.again {{
 <body>
 <div class="wrap">
   <h1>loadtest {limited}</h1>
-  <p class="meta">repo <code>{repo}</code> · wall {wall:.1}s · spend ${spent:.4} / ${budget:.2}</p>
+  <p class="meta">repo <code>{repo}</code> · {shards} shards · wall {wall:.1}s · spend ${spent:.4} / ${budget:.2}</p>
   {pull_note}
   <div class="grid">
     <div class="card"><div class="label">peak pushes/s</div><div class="val">{peak_p:.1}</div></div>
@@ -1973,7 +2010,7 @@ mod tests {
                 store,
                 states,
                 "lt-bench-phone",
-                phone_request(0.05, 4, PHONE_DEFAULT_PEAK),
+                phone_request(0.05, 4, PHONE_DEFAULT_PEAK, 1),
             )
             .await
             .expect("loadtest");
