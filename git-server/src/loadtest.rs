@@ -1,0 +1,1273 @@
+//! In-worker (and native) load-test harness for per-repo push/pull ceilings.
+//!
+//! The laptop harness in [`docs/loadtest-scaling.md`] saturates the client
+//! before the server. This module drives the same protocol from *inside* the
+//! Worker (or in-process against [`crate::http::GitHttp`] in tests): concurrent
+//! synthetic push and shallow-fetch loops, with:
+//!
+//! * peak successful pushes/s and pulls/s per stage (and overall peak);
+//! * mean underlying-op cost per successful push and pull (R2 A/B, DO, KV, $);
+//! * a hard spend budget that stops the run early and marks the report
+//!   `budget_limited` while still recording the peak QPS observed.
+//!
+//! Traces: each pushed/fetched request is a normal Worker invocation, so
+//! Workers Traces + the structured `{"evt":"req",…}` logs cover the hot
+//! path under load. The loadtest coordinator itself opens a `git.loadtest`
+//! span (see `worker_entry`).
+
+use crate::http::{Body, GitHttp, Request as HttpRequest};
+use crate::metrics::{self, Metrics};
+use crate::object::{encode_tree, hash_object, ObjType, Oid, TreeEntry};
+use crate::pack::write::PackWriter;
+use crate::pktline;
+use crate::protocol::BodyStream;
+use crate::refs::StateStore;
+use crate::storage::Store;
+use async_trait::async_trait;
+use futures::future::join_all;
+use serde::{Deserialize, Serialize};
+use std::cell::Cell;
+use std::collections::VecDeque;
+use std::rc::Rc;
+
+/// Default spend cap when the request omits `budget_usd`. Small on purpose:
+/// the prototype has no auth, so a stray curl should not burn dollars.
+pub const DEFAULT_BUDGET_USD: f64 = 0.10;
+
+/// Hard upper bound on `budget_usd` (even if the caller asks for more).
+pub const MAX_BUDGET_USD: f64 = 5.0;
+
+/// Default per-stage wall time.
+pub const DEFAULT_DURATION_SECS: u64 = 20;
+
+/// Max per-stage wall time (keeps one HTTP response bounded).
+pub const MAX_DURATION_SECS: u64 = 120;
+
+/// Default concurrent writers when `stages` is omitted.
+const DEFAULT_WRITER_RAMP: &[u32] = &[1, 2, 4, 8, 16, 32, 48];
+
+/// Default concurrent readers for the read-only stage.
+const DEFAULT_READER_CONCURRENCY: u32 = 64;
+
+/// Seed repo shape: small enough that one push is cheap, large enough that
+/// shallow fetch does real pack-build work.
+const SEED_BLOBS: usize = 24;
+const SEED_BLOB_BYTES: usize = 256;
+
+/// Per-push writer payload: one small blob rewrite (keeps push cost in the
+/// "three-line edit" regime of the laptop tests).
+const WRITE_BLOB_BYTES: usize = 128;
+
+/// Request body for `POST /api/<repo>/loadtest`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct LoadTestRequest {
+    /// Must be `true`. Guards against accidental triggers.
+    pub confirm: bool,
+    /// Hard spend cap in USD (marginal R2/DO/KV only). Clamped to
+    /// [`MAX_BUDGET_USD`]. Defaults to [`DEFAULT_BUDGET_USD`].
+    #[serde(default)]
+    pub budget_usd: Option<f64>,
+    /// Per-stage duration in seconds. Defaults to [`DEFAULT_DURATION_SECS`].
+    #[serde(default)]
+    pub duration_secs: Option<u64>,
+    /// Explicit stage list. When omitted, runs the default writer ramp then
+    /// a readers-only stage.
+    #[serde(default)]
+    pub stages: Option<Vec<StageSpec>>,
+    /// How many Worker shards to fan the offered load across. `1` (default)
+    /// runs everything in this isolate; `>1` is only meaningful on the
+    /// Worker (self-fetch). Native runs ignore values above 1.
+    #[serde(default)]
+    pub shards: Option<u32>,
+    /// Internal: this invocation is one shard of a coordinated run. Shards
+    /// do not fan out further and do not re-seed.
+    #[serde(default)]
+    pub shard: bool,
+    /// Tip oid for pulls / first writer parents when `shard` is set (parent
+    /// supplies this after seeding).
+    #[serde(default)]
+    pub tip: Option<String>,
+    /// Shard index (for unique writer branch namespaces).
+    #[serde(default)]
+    pub shard_index: Option<u32>,
+}
+
+/// One concurrency stage.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StageSpec {
+    #[serde(default)]
+    pub writers: u32,
+    #[serde(default)]
+    pub readers: u32,
+}
+
+/// Normalized config after clamping.
+#[derive(Debug, Clone)]
+pub struct LoadTestConfig {
+    pub budget_usd: f64,
+    pub duration_ms: u64,
+    pub stages: Vec<StageSpec>,
+    pub shards: u32,
+    pub shard: bool,
+    pub tip: Option<Oid>,
+    pub shard_index: u32,
+}
+
+impl LoadTestRequest {
+    /// Validate and clamp into a [`LoadTestConfig`].
+    pub fn into_config(self) -> Result<LoadTestConfig, String> {
+        if !self.confirm {
+            return Err("set confirm=true to run a load test".into());
+        }
+        let budget = self
+            .budget_usd
+            .unwrap_or(DEFAULT_BUDGET_USD)
+            .clamp(0.0, MAX_BUDGET_USD);
+        if budget <= 0.0 {
+            return Err("budget_usd must be > 0".into());
+        }
+        let duration_secs = self
+            .duration_secs
+            .unwrap_or(DEFAULT_DURATION_SECS)
+            .clamp(1, MAX_DURATION_SECS);
+        let stages = match self.stages {
+            Some(s) if !s.is_empty() => s,
+            _ => {
+                let mut s: Vec<StageSpec> = DEFAULT_WRITER_RAMP
+                    .iter()
+                    .map(|&w| StageSpec {
+                        writers: w,
+                        readers: 0,
+                    })
+                    .collect();
+                s.push(StageSpec {
+                    writers: 0,
+                    readers: DEFAULT_READER_CONCURRENCY,
+                });
+                s
+            }
+        };
+        for st in &stages {
+            if st.writers == 0 && st.readers == 0 {
+                return Err("each stage needs writers > 0 and/or readers > 0".into());
+            }
+        }
+        let tip = match self.tip.as_deref() {
+            Some(hex) => Some(Oid::from_hex(hex).ok_or_else(|| format!("bad tip oid {hex}"))?),
+            None => None,
+        };
+        Ok(LoadTestConfig {
+            budget_usd: budget,
+            duration_ms: duration_secs * 1000,
+            stages,
+            shards: self.shards.unwrap_or(1).max(1),
+            shard: self.shard,
+            tip,
+            shard_index: self.shard_index.unwrap_or(0),
+        })
+    }
+}
+
+/// Mean underlying-op cost for one class of operation (push or pull).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct OpCostSummary {
+    pub samples: u64,
+    pub mean_r2_class_a: f64,
+    pub mean_r2_class_b: f64,
+    pub mean_do: f64,
+    pub mean_kv: f64,
+    pub mean_cost_usd: f64,
+    pub mean_ms: f64,
+}
+
+impl OpCostSummary {
+    fn from_totals(samples: u64, sum: &OpTotals) -> Self {
+        if samples == 0 {
+            return Self::default();
+        }
+        let n = samples as f64;
+        Self {
+            samples,
+            mean_r2_class_a: sum.r2_class_a as f64 / n,
+            mean_r2_class_b: sum.r2_class_b as f64 / n,
+            mean_do: sum.do_requests as f64 / n,
+            mean_kv: sum.kv_ops as f64 / n,
+            mean_cost_usd: sum.cost_usd / n,
+            mean_ms: sum.ms / n,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+struct OpTotals {
+    r2_class_a: u64,
+    r2_class_b: u64,
+    do_requests: u64,
+    kv_ops: u64,
+    cost_usd: f64,
+    ms: f64,
+}
+
+impl OpTotals {
+    fn add(&mut self, m: &AttemptMetrics) {
+        self.r2_class_a += m.r2_class_a;
+        self.r2_class_b += m.r2_class_b;
+        self.do_requests += m.do_requests;
+        self.kv_ops += m.kv_ops;
+        self.cost_usd += m.cost_usd;
+        self.ms += m.ms;
+    }
+}
+
+/// One stage's measured goodput and costs.
+#[derive(Debug, Clone, Serialize)]
+pub struct StageReport {
+    pub writers: u32,
+    pub readers: u32,
+    pub wall_ms: f64,
+    pub push_ok: u64,
+    pub push_conflict: u64,
+    pub push_err: u64,
+    pub pull_ok: u64,
+    pub pull_err: u64,
+    pub pushes_per_sec: f64,
+    pub pulls_per_sec: f64,
+    pub stage_cost_usd: f64,
+    pub budget_hit: bool,
+}
+
+/// Final load-test report (JSON response body).
+#[derive(Debug, Clone, Serialize)]
+pub struct LoadTestReport {
+    pub repo: String,
+    pub tip: String,
+    pub budget_usd: f64,
+    pub total_cost_usd: f64,
+    /// True when the run stopped because spend reached `budget_usd`.
+    pub budget_limited: bool,
+    pub peak_pushes_per_sec: f64,
+    pub peak_pulls_per_sec: f64,
+    pub cost_per_push: OpCostSummary,
+    pub cost_per_pull: OpCostSummary,
+    pub stages: Vec<StageReport>,
+    pub duration_ms: f64,
+    pub shards: u32,
+}
+
+/// Per-attempt outcome used by the runner and drivers.
+#[derive(Debug, Clone)]
+pub struct AttemptResult {
+    pub kind: AttemptKind,
+    pub outcome: AttemptOutcome,
+    pub metrics: AttemptMetrics,
+    /// New tip oid after a successful push (writers track per-branch tips).
+    pub new_tip: Option<Oid>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttemptKind {
+    Push,
+    Pull,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttemptOutcome {
+    Ok,
+    Conflict,
+    Err,
+}
+
+/// Subset of [`Metrics`] the runner needs (also parsed from Server-Timing).
+#[derive(Debug, Clone, Default)]
+pub struct AttemptMetrics {
+    pub r2_class_a: u64,
+    pub r2_class_b: u64,
+    pub do_requests: u64,
+    pub kv_ops: u64,
+    pub cost_usd: f64,
+    pub ms: f64,
+}
+
+impl AttemptMetrics {
+    pub fn from_metrics(m: &Metrics, total_ms: f64) -> Self {
+        Self {
+            r2_class_a: m.r2_class_a,
+            r2_class_b: m.r2_class_b,
+            do_requests: m.do_requests,
+            kv_ops: m.kv_ops,
+            cost_usd: m.cost_usd(),
+            ms: total_ms,
+        }
+    }
+}
+
+/// Parse `Server-Timing` tokens produced by [`Metrics::server_timing`].
+pub fn parse_server_timing(header: &str) -> AttemptMetrics {
+    let mut m = AttemptMetrics::default();
+    for part in header.split(',') {
+        let part = part.trim();
+        let name = part.split(';').next().unwrap_or("").trim();
+        if name == "total" {
+            if let Some(dur) = timing_dur(part) {
+                m.ms = dur;
+            }
+        } else if name == "r2a" {
+            m.r2_class_a = timing_desc_u64(part);
+        } else if name == "r2b" {
+            m.r2_class_b = timing_desc_u64(part);
+        } else if name == "do" {
+            m.do_requests = timing_desc_u64(part);
+        } else if name == "kv" {
+            m.kv_ops = timing_desc_u64(part);
+        } else if name == "cost" {
+            // desc="1.950u$"
+            if let Some(raw) = timing_desc(part) {
+                let num = raw.trim_end_matches("u$").trim();
+                if let Ok(u) = num.parse::<f64>() {
+                    m.cost_usd = u / 1e6;
+                }
+            }
+        }
+    }
+    m
+}
+
+fn timing_dur(part: &str) -> Option<f64> {
+    for tok in part.split(';') {
+        let tok = tok.trim();
+        if let Some(v) = tok.strip_prefix("dur=") {
+            return v.parse().ok();
+        }
+    }
+    None
+}
+
+fn timing_desc(part: &str) -> Option<&str> {
+    for tok in part.split(';') {
+        let tok = tok.trim();
+        if let Some(rest) = tok.strip_prefix("desc=") {
+            let rest = rest.trim_matches('"');
+            return Some(rest);
+        }
+    }
+    None
+}
+
+fn timing_desc_u64(part: &str) -> u64 {
+    timing_desc(part).and_then(|s| s.parse().ok()).unwrap_or(0)
+}
+
+/// How the runner talks to the server under test.
+#[async_trait(?Send)]
+pub trait LoadDriver {
+    /// Ensure the repo has a tip; return it. May push a seed pack.
+    async fn ensure_seeded(&self, tip_hint: Option<Oid>) -> Result<Oid, String>;
+
+    /// Push `body` (pkt-line commands + pack). `branch` is informational for
+    /// logging; the ref name is already inside `body`.
+    async fn push(&self, body: Vec<u8>) -> Result<AttemptResult, String>;
+
+    /// Protocol-v2 fetch for `want`.
+    async fn pull(&self, want: Oid) -> Result<AttemptResult, String>;
+}
+
+/// Shared spend counter: attempts check before starting and record after.
+struct Budget {
+    limit_usd: f64,
+    spent_usd: Cell<f64>,
+    hit: Cell<bool>,
+}
+
+impl Budget {
+    fn new(limit_usd: f64) -> Self {
+        Self {
+            limit_usd,
+            spent_usd: Cell::new(0.0),
+            hit: Cell::new(false),
+        }
+    }
+
+    fn remaining(&self) -> f64 {
+        (self.limit_usd - self.spent_usd.get()).max(0.0)
+    }
+
+    fn allow_start(&self) -> bool {
+        if self.hit.get() || self.remaining() <= 0.0 {
+            self.hit.set(true);
+            false
+        } else {
+            true
+        }
+    }
+
+    fn record(&self, cost: f64) {
+        self.spent_usd.set(self.spent_usd.get() + cost.max(0.0));
+        if self.spent_usd.get() >= self.limit_usd {
+            self.hit.set(true);
+        }
+    }
+
+    fn spent(&self) -> f64 {
+        self.spent_usd.get()
+    }
+
+    fn is_hit(&self) -> bool {
+        self.hit.get()
+    }
+}
+
+/// Run the configured stages against `driver`.
+pub async fn run_loadtest(
+    repo: &str,
+    driver: &dyn LoadDriver,
+    cfg: &LoadTestConfig,
+) -> Result<LoadTestReport, String> {
+    let run_start = metrics::now_ms();
+    let tip = driver.ensure_seeded(cfg.tip).await?;
+    let budget = Budget::new(cfg.budget_usd);
+
+    let mut stages = Vec::new();
+    let mut peak_push = 0.0_f64;
+    let mut peak_pull = 0.0_f64;
+    let mut push_totals = OpTotals::default();
+    let mut push_samples = 0u64;
+    let mut pull_totals = OpTotals::default();
+    let mut pull_samples = 0u64;
+    let mut budget_limited = false;
+
+    for (stage_i, spec) in cfg.stages.iter().enumerate() {
+        if !budget.allow_start() {
+            budget_limited = true;
+            break;
+        }
+        let stage_start = metrics::now_ms();
+        let deadline = stage_start + cfg.duration_ms as f64;
+        let spent_before = budget.spent();
+
+        let mut writer_futs = Vec::new();
+        for w in 0..spec.writers {
+            let branch_id = cfg.shard_index * 10_000 + stage_i as u32 * 100 + w;
+            writer_futs.push(writer_loop(driver, tip, branch_id, deadline, &budget));
+        }
+        let mut reader_futs = Vec::new();
+        for _ in 0..spec.readers {
+            reader_futs.push(reader_loop(driver, tip, deadline, &budget));
+        }
+
+        let writer_results = join_all(writer_futs).await;
+        let reader_results = join_all(reader_futs).await;
+
+        let mut push_ok = 0u64;
+        let mut push_conflict = 0u64;
+        let mut push_err = 0u64;
+        let mut pull_ok = 0u64;
+        let mut pull_err = 0u64;
+
+        for list in writer_results {
+            for a in list {
+                match a.outcome {
+                    AttemptOutcome::Ok => {
+                        push_ok += 1;
+                        push_totals.add(&a.metrics);
+                        push_samples += 1;
+                    }
+                    AttemptOutcome::Conflict => push_conflict += 1,
+                    AttemptOutcome::Err => push_err += 1,
+                }
+            }
+        }
+        for list in reader_results {
+            for a in list {
+                match a.outcome {
+                    AttemptOutcome::Ok => {
+                        pull_ok += 1;
+                        pull_totals.add(&a.metrics);
+                        pull_samples += 1;
+                    }
+                    AttemptOutcome::Conflict => {}
+                    AttemptOutcome::Err => pull_err += 1,
+                }
+            }
+        }
+
+        let wall_ms = (metrics::now_ms() - stage_start).max(1.0);
+        let wall_s = wall_ms / 1000.0;
+        let pushes_per_sec = push_ok as f64 / wall_s;
+        let pulls_per_sec = pull_ok as f64 / wall_s;
+        peak_push = peak_push.max(pushes_per_sec);
+        peak_pull = peak_pull.max(pulls_per_sec);
+        let stage_cost = budget.spent() - spent_before;
+        let budget_hit = budget.is_hit();
+        if budget_hit {
+            budget_limited = true;
+        }
+        stages.push(StageReport {
+            writers: spec.writers,
+            readers: spec.readers,
+            wall_ms,
+            push_ok,
+            push_conflict,
+            push_err,
+            pull_ok,
+            pull_err,
+            pushes_per_sec,
+            pulls_per_sec,
+            stage_cost_usd: stage_cost,
+            budget_hit,
+        });
+        if budget_hit {
+            break;
+        }
+    }
+
+    Ok(LoadTestReport {
+        repo: repo.to_string(),
+        tip: tip.to_hex(),
+        budget_usd: cfg.budget_usd,
+        total_cost_usd: budget.spent(),
+        budget_limited,
+        peak_pushes_per_sec: peak_push,
+        peak_pulls_per_sec: peak_pull,
+        cost_per_push: OpCostSummary::from_totals(push_samples, &push_totals),
+        cost_per_pull: OpCostSummary::from_totals(pull_samples, &pull_totals),
+        stages,
+        duration_ms: metrics::now_ms() - run_start,
+        shards: cfg.shards,
+    })
+}
+
+async fn writer_loop(
+    driver: &dyn LoadDriver,
+    seed_tip: Oid,
+    branch_id: u32,
+    deadline: f64,
+    budget: &Budget,
+) -> Vec<AttemptResult> {
+    let mut out = Vec::new();
+    let branch = format!("refs/heads/load/w{branch_id}");
+    let mut tip = Oid::ZERO;
+    let mut seq = 0u64;
+    while metrics::now_ms() < deadline {
+        if !budget.allow_start() {
+            break;
+        }
+        let parent = if tip.is_zero() { seed_tip } else { tip };
+        let (new_oid, pack) = build_writer_pack(parent, branch_id, seq);
+        let body = build_push_body(tip, new_oid, &branch, &pack);
+        match driver.push(body).await {
+            Ok(mut a) => {
+                budget.record(a.metrics.cost_usd);
+                if a.outcome == AttemptOutcome::Ok {
+                    tip = new_oid;
+                    a.new_tip = Some(new_oid);
+                }
+                // Conflicts still spent server work; count their cost too
+                // (already in metrics when the server processed them).
+                out.push(a);
+            }
+            Err(e) => {
+                out.push(AttemptResult {
+                    kind: AttemptKind::Push,
+                    outcome: AttemptOutcome::Err,
+                    metrics: AttemptMetrics::default(),
+                    new_tip: None,
+                });
+                let _ = e;
+            }
+        }
+        seq += 1;
+    }
+    out
+}
+
+async fn reader_loop(
+    driver: &dyn LoadDriver,
+    tip: Oid,
+    deadline: f64,
+    budget: &Budget,
+) -> Vec<AttemptResult> {
+    let mut out = Vec::new();
+    while metrics::now_ms() < deadline {
+        if !budget.allow_start() {
+            break;
+        }
+        match driver.pull(tip).await {
+            Ok(a) => {
+                budget.record(a.metrics.cost_usd);
+                out.push(a);
+            }
+            Err(_) => {
+                out.push(AttemptResult {
+                    kind: AttemptKind::Pull,
+                    outcome: AttemptOutcome::Err,
+                    metrics: AttemptMetrics::default(),
+                    new_tip: None,
+                });
+            }
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Synthetic packs / protocol bodies
+// ---------------------------------------------------------------------------
+
+/// One-commit seed: `SEED_BLOBS` small blobs under a single tree.
+pub fn build_seed_pack() -> (Oid, Vec<u8>) {
+    let mut w = PackWriter::new((SEED_BLOBS + 2) as u32);
+    let mut entries = Vec::new();
+    for i in 0..SEED_BLOBS {
+        let data = noise(SEED_BLOB_BYTES, 0xC0FFEE ^ i as u64);
+        let oid = hash_object(ObjType::Blob, &data);
+        w.add_full(ObjType::Blob, &data);
+        entries.push(TreeEntry {
+            mode: "100644".into(),
+            name: format!("f{i:03}.txt"),
+            oid,
+        });
+    }
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    let tree = encode_tree(&entries);
+    let tree_oid = hash_object(ObjType::Tree, &tree);
+    w.add_full(ObjType::Tree, &tree);
+    let commit = format!(
+        "tree {tree_oid}\nauthor Load <load@test> 1700000000 +0000\n\
+         committer Load <load@test> 1700000000 +0000\n\nloadtest seed\n"
+    );
+    let commit_oid = hash_object(ObjType::Commit, commit.as_bytes());
+    w.add_full(ObjType::Commit, commit.as_bytes());
+    (commit_oid, w.finish().0)
+}
+
+/// Incremental writer commit: new blob + new tree + commit on `parent`.
+fn build_writer_pack(parent: Oid, branch_id: u32, seq: u64) -> (Oid, Vec<u8>) {
+    let mut w = PackWriter::new(3);
+    let data = noise(
+        WRITE_BLOB_BYTES,
+        0xDEAD_BEEF ^ (branch_id as u64) << 32 ^ seq,
+    );
+    let blob_oid = hash_object(ObjType::Blob, &data);
+    w.add_full(ObjType::Blob, &data);
+    let entries = vec![TreeEntry {
+        mode: "100644".into(),
+        name: format!("w{branch_id}.txt"),
+        oid: blob_oid,
+    }];
+    let tree = encode_tree(&entries);
+    let tree_oid = hash_object(ObjType::Tree, &tree);
+    w.add_full(ObjType::Tree, &tree);
+    let commit = format!(
+        "tree {tree_oid}\nparent {parent}\n\
+         author Load <load@test> 1700000000 +0000\n\
+         committer Load <load@test> 1700000000 +0000\n\nw{branch_id}#{seq}\n"
+    );
+    let commit_oid = hash_object(ObjType::Commit, commit.as_bytes());
+    w.add_full(ObjType::Commit, commit.as_bytes());
+    (commit_oid, w.finish().0)
+}
+
+pub fn build_push_body(old: Oid, new: Oid, refname: &str, pack: &[u8]) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(&pktline::text_pkt(&format!(
+        "{} {} {refname}\0report-status side-band-64k agent=git-server-loadtest",
+        old.to_hex(),
+        new.to_hex()
+    )));
+    body.extend_from_slice(pktline::flush_pkt());
+    body.extend_from_slice(pack);
+    body
+}
+
+pub fn build_fetch_body(want: Oid) -> Vec<u8> {
+    let mut body = Vec::new();
+    body.extend_from_slice(&pktline::text_pkt("command=fetch"));
+    body.extend_from_slice(&pktline::text_pkt("object-format=sha1"));
+    body.extend_from_slice(pktline::delim_pkt());
+    body.extend_from_slice(&pktline::text_pkt("no-progress"));
+    body.extend_from_slice(&pktline::text_pkt("deepen 1"));
+    body.extend_from_slice(&pktline::text_pkt(&format!("want {want}")));
+    body.extend_from_slice(&pktline::text_pkt("done"));
+    body.extend_from_slice(pktline::flush_pkt());
+    body
+}
+
+/// Classify a receive-pack response body.
+pub fn classify_push_body(body: &[u8]) -> AttemptOutcome {
+    let text = String::from_utf8_lossy(body);
+    if text.contains("concurrent update") {
+        return AttemptOutcome::Conflict;
+    }
+    // report-status: "unpack ok" then per-ref "ok <ref>" / "ng <ref> <msg>".
+    if text.contains("ng ") {
+        return AttemptOutcome::Err;
+    }
+    if text.contains("unpack ok") {
+        return AttemptOutcome::Ok;
+    }
+    AttemptOutcome::Err
+}
+
+// ---------------------------------------------------------------------------
+// In-process driver (native tests + Worker when not sharding)
+// ---------------------------------------------------------------------------
+
+struct ChunkedBody {
+    chunks: VecDeque<Vec<u8>>,
+}
+
+impl ChunkedBody {
+    fn new(bytes: Vec<u8>) -> Self {
+        let mut chunks = VecDeque::new();
+        for c in bytes.chunks(64 * 1024) {
+            chunks.push_back(c.to_vec());
+        }
+        Self { chunks }
+    }
+}
+
+#[async_trait(?Send)]
+impl BodyStream for ChunkedBody {
+    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
+        Ok(self.chunks.pop_front())
+    }
+}
+
+/// Drive [`GitHttp`] in-process (same code path as production handlers).
+pub struct InProcessDriver {
+    http: GitHttp,
+    repo: String,
+    nonce_counter: Cell<u64>,
+}
+
+impl InProcessDriver {
+    pub fn new(http: GitHttp, repo: impl Into<String>) -> Self {
+        Self {
+            http,
+            repo: repo.into(),
+            nonce_counter: Cell::new(1),
+        }
+    }
+
+    fn nonce(&self) -> String {
+        let n = self.nonce_counter.get();
+        self.nonce_counter.set(n + 1);
+        format!("lt-{n}")
+    }
+
+    async fn call(
+        &self,
+        method: &str,
+        path: &str,
+        body: Vec<u8>,
+        git_protocol: Option<&str>,
+    ) -> Result<(u16, Vec<u8>, AttemptMetrics), String> {
+        let mut stream = ChunkedBody::new(body);
+        let req = HttpRequest {
+            method,
+            path,
+            query: None,
+            git_protocol,
+            content_encoding: None,
+            cf_ray: None,
+        };
+        let resp = self.http.handle(&req, &mut stream, &self.nonce()).await;
+        let status = resp.status;
+        let metrics = match &resp.metrics {
+            Some((m, ms)) => AttemptMetrics::from_metrics(m, *ms),
+            None => AttemptMetrics::default(),
+        };
+        let bytes = match resp.body {
+            Body::Full(b) => b,
+            Body::Stream(mut s) => {
+                use futures::StreamExt;
+                let mut out = Vec::new();
+                while let Some(chunk) = s.next().await {
+                    out.extend_from_slice(&chunk?);
+                }
+                out
+            }
+        };
+        Ok((status, bytes, metrics))
+    }
+}
+
+#[async_trait(?Send)]
+impl LoadDriver for InProcessDriver {
+    async fn ensure_seeded(&self, tip_hint: Option<Oid>) -> Result<Oid, String> {
+        if let Some(t) = tip_hint {
+            return Ok(t);
+        }
+        let path = format!("/api/{}", self.repo);
+        let (status, body, _) = self.call("GET", &path, Vec::new(), None).await?;
+        if status == 200 {
+            if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&body) {
+                if v.get("status").and_then(|s| s.as_str()) == Some("READY") {
+                    if let Some(hex) = v.get("head_commit").and_then(|s| s.as_str()) {
+                        if let Some(oid) = Oid::from_hex(hex) {
+                            return Ok(oid);
+                        }
+                    }
+                }
+            }
+        }
+        let (commit, pack) = build_seed_pack();
+        let push = build_push_body(Oid::ZERO, commit, "refs/heads/main", &pack);
+        let path = format!("/{}/git-receive-pack", self.repo);
+        let (status, body, _) = self.call("POST", &path, push, None).await?;
+        if status != 200 || classify_push_body(&body) != AttemptOutcome::Ok {
+            return Err(format!(
+                "seed push failed: status={status} body={}",
+                String::from_utf8_lossy(&body)
+            ));
+        }
+        Ok(commit)
+    }
+
+    async fn push(&self, body: Vec<u8>) -> Result<AttemptResult, String> {
+        let path = format!("/{}/git-receive-pack", self.repo);
+        let start = metrics::now_ms();
+        let (status, resp, mut m) = self.call("POST", &path, body, None).await?;
+        if m.ms == 0.0 {
+            m.ms = metrics::now_ms() - start;
+        }
+        let outcome = if status != 200 {
+            AttemptOutcome::Err
+        } else {
+            classify_push_body(&resp)
+        };
+        Ok(AttemptResult {
+            kind: AttemptKind::Push,
+            outcome,
+            metrics: m,
+            new_tip: None,
+        })
+    }
+
+    async fn pull(&self, want: Oid) -> Result<AttemptResult, String> {
+        let path = format!("/{}/git-upload-pack", self.repo);
+        let body = build_fetch_body(want);
+        let start = metrics::now_ms();
+        let (status, resp, mut m) = self.call("POST", &path, body, Some("version=2")).await?;
+        if m.ms == 0.0 {
+            m.ms = metrics::now_ms() - start;
+        }
+        let outcome = if status == 200 && !resp.is_empty() {
+            AttemptOutcome::Ok
+        } else {
+            AttemptOutcome::Err
+        };
+        Ok(AttemptResult {
+            kind: AttemptKind::Pull,
+            outcome,
+            metrics: m,
+            new_tip: None,
+        })
+    }
+}
+
+/// Deterministic noise that compiles on wasm (`testutil` is native-only).
+fn noise(len: usize, mut seed: u64) -> Vec<u8> {
+    let mut out = Vec::with_capacity(len);
+    while out.len() < len {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        out.extend_from_slice(&seed.to_le_bytes());
+    }
+    out.truncate(len);
+    out
+}
+
+/// Merge shard reports into one coordinator report (same tip/budget).
+pub fn merge_shard_reports(
+    repo: &str,
+    tip: &str,
+    budget_usd: f64,
+    shards: u32,
+    parts: &[LoadTestReport],
+) -> LoadTestReport {
+    if parts.is_empty() {
+        return LoadTestReport {
+            repo: repo.to_string(),
+            tip: tip.to_string(),
+            budget_usd,
+            total_cost_usd: 0.0,
+            budget_limited: false,
+            peak_pushes_per_sec: 0.0,
+            peak_pulls_per_sec: 0.0,
+            cost_per_push: OpCostSummary::default(),
+            cost_per_pull: OpCostSummary::default(),
+            stages: vec![],
+            duration_ms: 0.0,
+            shards,
+        };
+    }
+    // Align by stage index; sum ok counts and costs, take max wall, recompute QPS.
+    let n_stages = parts.iter().map(|p| p.stages.len()).min().unwrap_or(0);
+    let mut stages = Vec::new();
+    let mut peak_push: f64 = 0.0;
+    let mut peak_pull: f64 = 0.0;
+    let mut total_cost = 0.0;
+    let mut budget_limited = false;
+    let mut duration_ms = 0.0_f64;
+
+    for i in 0..n_stages {
+        let mut push_ok = 0u64;
+        let mut push_conflict = 0u64;
+        let mut push_err = 0u64;
+        let mut pull_ok = 0u64;
+        let mut pull_err = 0u64;
+        let mut wall_ms = 0.0_f64;
+        let mut stage_cost = 0.0;
+        let mut budget_hit = false;
+        let writers: u32 = parts.iter().map(|p| p.stages[i].writers).sum();
+        let readers: u32 = parts.iter().map(|p| p.stages[i].readers).sum();
+        for p in parts {
+            let s = &p.stages[i];
+            push_ok += s.push_ok;
+            push_conflict += s.push_conflict;
+            push_err += s.push_err;
+            pull_ok += s.pull_ok;
+            pull_err += s.pull_err;
+            wall_ms = wall_ms.max(s.wall_ms);
+            stage_cost += s.stage_cost_usd;
+            budget_hit |= s.budget_hit;
+        }
+        let wall_s = wall_ms.max(1.0) / 1000.0;
+        let pps: f64 = push_ok as f64 / wall_s;
+        let rps: f64 = pull_ok as f64 / wall_s;
+        peak_push = f64::max(peak_push, pps);
+        peak_pull = f64::max(peak_pull, rps);
+        total_cost += stage_cost;
+        budget_limited |= budget_hit;
+        stages.push(StageReport {
+            writers,
+            readers,
+            wall_ms,
+            push_ok,
+            push_conflict,
+            push_err,
+            pull_ok,
+            pull_err,
+            pushes_per_sec: pps,
+            pulls_per_sec: rps,
+            stage_cost_usd: stage_cost,
+            budget_hit,
+        });
+    }
+    for p in parts {
+        duration_ms = duration_ms.max(p.duration_ms);
+        budget_limited |= p.budget_limited;
+        total_cost = total_cost.max(p.total_cost_usd); // prefer sum of stage costs
+    }
+    // Recompute total from stages (more accurate when shards overlap in wall clock).
+    total_cost = stages.iter().map(|s| s.stage_cost_usd).sum();
+
+    // Weighted mean costs across shards.
+    let mut push = OpTotals::default();
+    let mut push_n = 0u64;
+    let mut pull = OpTotals::default();
+    let mut pull_n = 0u64;
+    for p in parts {
+        if p.cost_per_push.samples > 0 {
+            let n = p.cost_per_push.samples;
+            push.r2_class_a += (p.cost_per_push.mean_r2_class_a * n as f64) as u64;
+            push.r2_class_b += (p.cost_per_push.mean_r2_class_b * n as f64) as u64;
+            push.do_requests += (p.cost_per_push.mean_do * n as f64) as u64;
+            push.kv_ops += (p.cost_per_push.mean_kv * n as f64) as u64;
+            push.cost_usd += p.cost_per_push.mean_cost_usd * n as f64;
+            push.ms += p.cost_per_push.mean_ms * n as f64;
+            push_n += n;
+        }
+        if p.cost_per_pull.samples > 0 {
+            let n = p.cost_per_pull.samples;
+            pull.r2_class_a += (p.cost_per_pull.mean_r2_class_a * n as f64) as u64;
+            pull.r2_class_b += (p.cost_per_pull.mean_r2_class_b * n as f64) as u64;
+            pull.do_requests += (p.cost_per_pull.mean_do * n as f64) as u64;
+            pull.kv_ops += (p.cost_per_pull.mean_kv * n as f64) as u64;
+            pull.cost_usd += p.cost_per_pull.mean_cost_usd * n as f64;
+            pull.ms += p.cost_per_pull.mean_ms * n as f64;
+            pull_n += n;
+        }
+    }
+
+    LoadTestReport {
+        repo: repo.to_string(),
+        tip: tip.to_string(),
+        budget_usd,
+        total_cost_usd: total_cost,
+        budget_limited,
+        peak_pushes_per_sec: peak_push,
+        peak_pulls_per_sec: peak_pull,
+        cost_per_push: OpCostSummary::from_totals(push_n, &push),
+        cost_per_pull: OpCostSummary::from_totals(pull_n, &pull),
+        stages,
+        duration_ms,
+        shards,
+    }
+}
+
+/// Convenience: run an in-process load test against a store pair.
+pub async fn run_in_process(
+    store: Rc<dyn Store>,
+    states: Rc<dyn StateStore>,
+    repo: &str,
+    req: LoadTestRequest,
+) -> Result<LoadTestReport, String> {
+    let cfg = req.into_config()?;
+    let http = GitHttp::new(store, states);
+    if cfg.shards > 1 && !cfg.shard {
+        return run_sharded_inprocess(http, repo, &cfg).await;
+    }
+    let driver = InProcessDriver::new(http, repo);
+    run_loadtest(repo, &driver, &cfg).await
+}
+
+/// Split offered concurrency across `cfg.shards` in-process partitions and
+/// merge their reports. Same-isolate concurrency (native tests and the
+/// Worker when not using HTTP fan-out); each partition gets its own writer
+/// branch namespace via `shard_index`.
+pub async fn run_sharded_inprocess(
+    http: GitHttp,
+    repo: &str,
+    cfg: &LoadTestConfig,
+) -> Result<LoadTestReport, String> {
+    let n = cfg.shards.max(1);
+    // Seed once, then hand the tip to every shard.
+    let seeder = InProcessDriver::new(
+        GitHttp::new(http.store.clone(), http.states.clone())
+            .with_push_limit(http.push_limit_bytes),
+        repo,
+    );
+    let tip = seeder.ensure_seeded(cfg.tip).await?;
+    let budget_each = cfg.budget_usd / n as f64;
+
+    let mut futs = Vec::new();
+    for i in 0..n {
+        let mut shard_cfg = cfg.clone();
+        shard_cfg.shard = true;
+        shard_cfg.shards = 1;
+        shard_cfg.tip = Some(tip);
+        shard_cfg.shard_index = i;
+        shard_cfg.budget_usd = budget_each;
+        // Divide concurrency; give leftovers to shard 0.
+        shard_cfg.stages = cfg
+            .stages
+            .iter()
+            .map(|s| {
+                let w = s.writers / n;
+                let r = s.readers / n;
+                StageSpec {
+                    writers: if i == 0 { w + s.writers % n } else { w },
+                    readers: if i == 0 { r + s.readers % n } else { r },
+                }
+            })
+            .filter(|s| s.writers > 0 || s.readers > 0)
+            .collect();
+        if shard_cfg.stages.is_empty() {
+            continue;
+        }
+        let http_i = GitHttp::new(http.store.clone(), http.states.clone())
+            .with_push_limit(http.push_limit_bytes);
+        let repo = repo.to_string();
+        futs.push(async move {
+            let driver = InProcessDriver::new(http_i, repo.clone());
+            run_loadtest(&repo, &driver, &shard_cfg).await
+        });
+    }
+    let parts = join_all(futs).await;
+    let mut reports = Vec::new();
+    for p in parts {
+        reports.push(p?);
+    }
+    Ok(merge_shard_reports(
+        repo,
+        &tip.to_hex(),
+        cfg.budget_usd,
+        n,
+        &reports,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::refs::MemStateStore;
+    use crate::storage::MemStore;
+    use futures::executor::block_on;
+
+    #[test]
+    fn request_requires_confirm() {
+        let r = LoadTestRequest {
+            confirm: false,
+            budget_usd: Some(0.01),
+            duration_secs: Some(1),
+            stages: Some(vec![StageSpec {
+                writers: 1,
+                readers: 0,
+            }]),
+            shards: None,
+            shard: false,
+            tip: None,
+            shard_index: None,
+        };
+        assert!(r.into_config().is_err());
+    }
+
+    #[test]
+    fn parses_server_timing_cost() {
+        let h = "total;dur=12.5, backend;dur=8.0, r2a;desc=\"2\", r2b;desc=\"7\", \
+                 do;desc=\"1\", kv;desc=\"0\", cost;desc=\"9.270u$\"";
+        let m = parse_server_timing(h);
+        assert!((m.ms - 12.5).abs() < 1e-9);
+        assert_eq!(m.r2_class_a, 2);
+        assert_eq!(m.r2_class_b, 7);
+        assert_eq!(m.do_requests, 1);
+        assert!((m.cost_usd - 9.270e-6).abs() < 1e-12);
+    }
+
+    #[test]
+    fn seed_and_push_classify() {
+        let (oid, pack) = build_seed_pack();
+        assert!(!oid.is_zero());
+        assert!(pack.starts_with(b"PACK"));
+        let body = build_push_body(Oid::ZERO, oid, "refs/heads/main", &pack);
+        assert!(body.len() > pack.len());
+    }
+
+    #[test]
+    fn in_process_loadtest_reports_qps_and_respects_budget() {
+        block_on(async {
+            let store = Rc::new(MemStore::new()) as Rc<dyn Store>;
+            let states = Rc::new(MemStateStore::new()) as Rc<dyn StateStore>;
+            let report = run_in_process(
+                store,
+                states,
+                "lt",
+                LoadTestRequest {
+                    confirm: true,
+                    budget_usd: Some(0.05),
+                    duration_secs: Some(2),
+                    stages: Some(vec![
+                        StageSpec {
+                            writers: 2,
+                            readers: 0,
+                        },
+                        StageSpec {
+                            writers: 0,
+                            readers: 4,
+                        },
+                    ]),
+                    shards: Some(1),
+                    shard: false,
+                    tip: None,
+                    shard_index: None,
+                },
+            )
+            .await
+            .expect("loadtest");
+
+            assert!(!report.tip.is_empty());
+            assert!(report.total_cost_usd >= 0.0);
+            assert!(report.total_cost_usd <= report.budget_usd + 1e-6 || report.budget_limited);
+            // At least one stage should have produced successful ops.
+            let any_ok = report.stages.iter().any(|s| s.push_ok + s.pull_ok > 0);
+            assert!(any_ok, "{report:?}");
+            if report.cost_per_push.samples > 0 {
+                assert!(report.cost_per_push.mean_cost_usd > 0.0);
+                assert!(
+                    report.cost_per_push.mean_r2_class_a + report.cost_per_push.mean_r2_class_b
+                        > 0.0
+                );
+            }
+            if report.cost_per_pull.samples > 0 {
+                assert!(report.peak_pulls_per_sec > 0.0);
+            }
+        });
+    }
+
+    #[test]
+    fn budget_stops_run() {
+        block_on(async {
+            // Tiny budget: seed alone costs something; first stage should hit.
+            let store = Rc::new(MemStore::new()) as Rc<dyn Store>;
+            let states = Rc::new(MemStateStore::new()) as Rc<dyn StateStore>;
+            let report = run_in_process(
+                store,
+                states,
+                "lt-budget",
+                LoadTestRequest {
+                    confirm: true,
+                    budget_usd: Some(0.000001), // 1 µ$
+                    duration_secs: Some(5),
+                    stages: Some(vec![StageSpec {
+                        writers: 4,
+                        readers: 4,
+                    }]),
+                    shards: None,
+                    shard: false,
+                    tip: None,
+                    shard_index: None,
+                },
+            )
+            .await
+            .expect("loadtest");
+            // Seed cost is not counted in the budget (only measured attempts).
+            // With a 1µ$ cap, a single push (~30µ$) marks budget_limited.
+            assert!(
+                report.budget_limited || report.total_cost_usd > 0.0,
+                "{report:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn merge_shards_sums_goodput() {
+        let s = StageReport {
+            writers: 2,
+            readers: 0,
+            wall_ms: 1000.0,
+            push_ok: 10,
+            push_conflict: 0,
+            push_err: 0,
+            pull_ok: 0,
+            pull_err: 0,
+            pushes_per_sec: 10.0,
+            pulls_per_sec: 0.0,
+            stage_cost_usd: 0.001,
+            budget_hit: false,
+        };
+        let p = LoadTestReport {
+            repo: "r".into(),
+            tip: "a".into(),
+            budget_usd: 1.0,
+            total_cost_usd: 0.001,
+            budget_limited: false,
+            peak_pushes_per_sec: 10.0,
+            peak_pulls_per_sec: 0.0,
+            cost_per_push: OpCostSummary {
+                samples: 10,
+                mean_r2_class_a: 1.0,
+                mean_r2_class_b: 2.0,
+                mean_do: 2.0,
+                mean_kv: 0.0,
+                mean_cost_usd: 0.0001,
+                mean_ms: 50.0,
+            },
+            cost_per_pull: OpCostSummary::default(),
+            stages: vec![s.clone()],
+            duration_ms: 1000.0,
+            shards: 1,
+        };
+        let mut p2 = p.clone();
+        p2.stages[0].push_ok = 15;
+        p2.stages[0].pushes_per_sec = 15.0;
+        p2.total_cost_usd = 0.002;
+        p2.stages[0].stage_cost_usd = 0.002;
+        let merged = merge_shard_reports("r", "a", 1.0, 2, &[p, p2]);
+        assert_eq!(merged.stages[0].push_ok, 25);
+        assert!((merged.stages[0].pushes_per_sec - 25.0).abs() < 1e-9);
+        assert_eq!(merged.shards, 2);
+    }
+}

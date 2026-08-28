@@ -101,6 +101,10 @@ GIT_SERVER_URL=https://git.example.workers.dev ./scripts/bench-remote.sh
 
 # Same report against a local `wrangler dev --local` (starts it for you).
 ./scripts/bench-remote.sh
+
+# In-Worker load test: peak pushes/s + pulls/s, $/op, budget-capped.
+# See docs/loadtest-scaling.md → "In-Worker loadtest".
+GIT_SERVER_URL=https://git.example.workers.dev ./scripts/loadtest-remote.sh
 ```
 
 The integration tests start a localhost HTTP server backed by in-memory

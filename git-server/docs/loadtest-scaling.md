@@ -509,3 +509,41 @@ git init …; <generate ~180 files>; git push origin main
 Analysis: bucket events by stage; report ok/s, conflict count, p50/p95 per
 kind. Grab `Server-Timing` from a probe push (`GIT_TRACE_CURL=1 git push …`)
 for the server-side phase breakdown.
+
+## In-Worker loadtest
+
+The laptop harness above saturates the client before the server. To dial past
+that, the Worker exposes `POST /api/<repo>/loadtest` (see
+[`api.md`](api.md)): concurrent synthetic push and shallow-fetch loops run
+*inside* the isolate against the same handlers production uses.
+
+```bash
+# Against a deployment (use a disposable repo name):
+curl -sS -X POST "https://git.imjasonh.workers.dev/api/lt-$(date +%s)/loadtest" \
+  -H 'content-type: application/json' \
+  -d '{"confirm":true,"budget_usd":0.25,"duration_secs":15,"stages":[
+        {"writers":8,"readers":0},{"writers":32,"readers":0},
+        {"writers":0,"readers":64}]}' | jq .
+
+# Helper (same defaults; set GIT_SERVER_URL):
+GIT_SERVER_URL=https://git.imjasonh.workers.dev ./scripts/loadtest-remote.sh
+```
+
+What the report answers:
+
+| Field | Meaning |
+|---|---|
+| `peak_pushes_per_sec` / `peak_pulls_per_sec` | Best stage goodput observed |
+| `cost_per_push` / `cost_per_pull` | Mean R2 A/B, DO, KV ops and $ per successful op |
+| `total_cost_usd` / `budget_usd` / `budget_limited` | Spend vs cap; when limited, peaks are still valid but the run stopped early |
+
+`shards` > 1 splits offered concurrency across in-process partitions (unique
+writer branch namespaces). That raises concurrency on one isolate's event
+loop; true multi-isolate fan-out via self-fetch is the next lever if a single
+isolate's subrequest/CPU budget becomes the wall.
+
+Traces: each synthetic push/pull is a normal invocation (`git.receive_pack` /
+`git.upload_pack` spans + `{"evt":"req",…}` logs). The coordinator itself is
+`git.loadtest`. After a run, pull the slowest traces by CF-Ray (side-band /
+log `ray` field) and chase the hot phase attributes (`git.phase.*_ms`).
+

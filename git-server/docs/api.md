@@ -152,6 +152,58 @@ following. `404` if the path has no blame (never touched / not a file).
 }
 ```
 
+### `POST /api/<repo>/loadtest`
+Run a budget-capped push/pull load test against this repo from *inside* the
+Worker (or the native test server). Seeds an empty repo with a small synthetic
+pack when needed. Requires `"confirm": true`.
+
+```jsonc
+{
+  "confirm": true,              // required guard
+  "budget_usd": 0.10,           // hard spend cap (default 0.10, max 5.00)
+  "duration_secs": 20,          // per-stage wall time (default 20, max 120)
+  "shards": 1,                  // split concurrency across in-process partitions
+  "stages": [                   // optional; default = writer ramp 1..48 then 64 readers
+    { "writers": 8, "readers": 0 },
+    { "writers": 0, "readers": 64 }
+  ]
+}
+```
+
+Response:
+
+```jsonc
+{
+  "repo": "lt-demo",
+  "tip": "<oid>",
+  "budget_usd": 0.10,
+  "total_cost_usd": 0.042,
+  "budget_limited": false,      // true if spend hit the cap mid-run
+  "peak_pushes_per_sec": 6.2,
+  "peak_pulls_per_sec": 140.5,
+  "cost_per_push": {
+    "samples": 120,
+    "mean_r2_class_a": 5.0,
+    "mean_r2_class_b": 19.0,
+    "mean_do": 2.0,
+    "mean_kv": 1.0,
+    "mean_cost_usd": 0.00003,
+    "mean_ms": 180.0
+  },
+  "cost_per_pull": { "samples": 800, "mean_r2_class_a": 0, "mean_r2_class_b": 5,
+                     "mean_do": 1, "mean_kv": 0, "mean_cost_usd": 0.000002, "mean_ms": 40.0 },
+  "stages": [ /* per-stage goodput + costs */ ],
+  "duration_ms": 45000,
+  "shards": 1
+}
+```
+
+Each synthetic push/pull is a normal request on the hot path, so Workers
+Traces and the structured `{"evt":"req",…}` logs cover the load. When
+`budget_limited` is true, the peak QPS fields are still the best observed
+before the cap stopped the run. See [`loadtest-scaling.md`](loadtest-scaling.md)
+→ "In-Worker loadtest".
+
 ### `POST /api/<repo>/repack`
 Trigger one pack-consolidation run now (normally a nightly cron). Each run is
 budget-bounded: it folds a contiguous selection of packs and reports how many

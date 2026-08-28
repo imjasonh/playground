@@ -14,6 +14,7 @@
 //! | `GET /api/<repo>/tree/<refish>/<path>` | JSON dir listing + last-commit |
 //! | `GET /api/<repo>/blame/<refish>/<path>` | JSON line-level blame |
 //! | `POST /api/<repo>/repack` | run pack consolidation now |
+//! | `POST /api/<repo>/loadtest` | budget-capped push/pull load test |
 
 use crate::protocol::{self, BodyStream, BufferedBody};
 use crate::refs::StateStore;
@@ -238,6 +239,9 @@ impl GitHttp {
     async fn route(&self, req: &Request<'_>, body: &mut dyn BodyStream, nonce: &str) -> Response {
         let segments: Vec<&str> = req.path.split('/').filter(|s| !s.is_empty()).collect();
         match segments.as_slice() {
+            ["api", repo, "loadtest"] if req.method == "POST" && valid_repo_name(repo) => {
+                self.api_loadtest(strip_git(repo), body).await
+            }
             ["api", rest @ ..] => self.handle_api(req, rest, nonce).await,
             [repo, "info", "refs"] if req.method == "GET" => {
                 self.info_refs(req, strip_git(repo)).await
@@ -428,6 +432,56 @@ impl GitHttp {
                 "version": loaded.version,
             }),
         )
+    }
+
+    /// `POST /api/<repo>/loadtest` — budget-capped concurrent push/pull load
+    /// test. Nested protocol calls reset the request metrics collector, so the
+    /// response body's report is the source of truth (Server-Timing on this
+    /// response only covers coordination overhead).
+    async fn api_loadtest(&self, repo_name: &str, body: &mut dyn BodyStream) -> Response {
+        let mut buf = Vec::new();
+        loop {
+            match body.next_chunk().await {
+                Ok(Some(c)) => buf.extend_from_slice(&c),
+                Ok(None) => break,
+                Err(e) => return Response::error(400, &e),
+            }
+        }
+        if buf.is_empty() {
+            return Response::error(
+                400,
+                "JSON body required: {\"confirm\":true,\"budget_usd\":0.1,…}",
+            );
+        }
+        let req: crate::loadtest::LoadTestRequest = match serde_json::from_slice(&buf) {
+            Ok(r) => r,
+            Err(e) => return Response::error(400, &format!("bad loadtest JSON: {e}")),
+        };
+        let cfg = match req.into_config() {
+            Ok(c) => c,
+            Err(e) => return Response::error(400, &e),
+        };
+
+        let http = GitHttp::new(self.store.clone(), self.states.clone())
+            .with_push_limit(self.push_limit_bytes);
+
+        let report = if cfg.shards > 1 && !cfg.shard {
+            match crate::loadtest::run_sharded_inprocess(http, repo_name, &cfg).await {
+                Ok(r) => r,
+                Err(e) => return Response::error(500, &e),
+            }
+        } else {
+            let driver = crate::loadtest::InProcessDriver::new(http, repo_name);
+            match crate::loadtest::run_loadtest(repo_name, &driver, &cfg).await {
+                Ok(r) => r,
+                Err(e) => return Response::error(500, &e),
+            }
+        };
+
+        match serde_json::to_vec_pretty(&report) {
+            Ok(bytes) => Response::ok("application/json", bytes),
+            Err(e) => Response::error(500, &e.to_string()),
+        }
     }
 
     async fn api_file(&self, repo: &Repo<'_>, refish: &str, path: &str) -> Response {
