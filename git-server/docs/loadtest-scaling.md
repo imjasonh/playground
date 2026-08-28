@@ -518,7 +518,10 @@ that, the Worker exposes `POST /api/<repo>/loadtest` (see
 *inside* the isolate against the same handlers production uses. The harness
 also runs the same post-push auto-repack check as the Worker `wait_until`
 hook (nested pushes have no `wait_until`), and reports `mean_ms` as
-backend-await time so sibling writers do not inflate latency.
+backend-await time so sibling writers do not inflate latency. Push path
+perf notes that show up in these numbers: one `Odb` open per push (new pack
+index is attached in memory), concurrent index loads, and an isolate-local
+pack-index cache so hot packs are not re-fetched from R2 every request.
 
 ```bash
 # Against a deployment (use a disposable repo name):

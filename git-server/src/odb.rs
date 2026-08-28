@@ -24,6 +24,66 @@ pub fn index_key(repo: &str, pack_id: &str) -> String {
     format!("{repo}/pack/{pack_id}.idx")
 }
 
+/// Cross-request pack-index cache for one isolate. Indexes are immutable
+/// once written, so a hit is always safe; eviction is whole-cache when the
+/// byte budget is exceeded. Avoids re-reading the same GSIX from R2 on
+/// every push/pull against a hot repo.
+const INDEX_CACHE_BUDGET: usize = 8 * 1024 * 1024;
+
+thread_local! {
+    static INDEX_CACHE: RefCell<IndexCache> = RefCell::new(IndexCache::new());
+}
+
+struct IndexCache {
+    map: HashMap<String, PackIndex>,
+    bytes: usize,
+}
+
+impl IndexCache {
+    fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+            bytes: 0,
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<PackIndex> {
+        self.map.get(key).cloned()
+    }
+
+    fn put(&mut self, key: String, index: &PackIndex) {
+        if self.map.contains_key(&key) {
+            return;
+        }
+        // GSIX records are fixed-width (~82 B); match on-disk size closely.
+        let n = index.records.len() * 82;
+        if self.bytes + n > INDEX_CACHE_BUDGET {
+            self.map.clear();
+            self.bytes = 0;
+        }
+        self.bytes += n;
+        self.map.insert(key, index.clone());
+    }
+}
+
+fn cached_index(key: &str) -> Option<PackIndex> {
+    INDEX_CACHE.with(|c| c.borrow().get(key))
+}
+
+/// Remember a pack index (call after writing it to R2, or on a cache miss).
+pub fn remember_index(repo: &str, pack_id: &str, index: &PackIndex) {
+    INDEX_CACHE.with(|c| c.borrow_mut().put(index_key(repo, pack_id), index));
+}
+
+#[cfg(test)]
+pub fn clear_index_cache_for_test() {
+    INDEX_CACHE.with(|c| {
+        let mut c = c.borrow_mut();
+        c.map.clear();
+        c.bytes = 0;
+    });
+}
+
 /// One pack the odb can read from.
 struct PackHandle {
     pack_id: String,
@@ -57,30 +117,77 @@ const TREE_CACHE_MAX_ENTRIES: usize = 100_000;
 
 impl<'a> Odb<'a> {
     /// Load the indexes for `pack_ids` (one Class B read per pack).
+    /// Reads run concurrently so a multi-pack repo pays one R2 round-trip,
+    /// not one per pack (Workers allow many outstanding subrequests).
     pub async fn open(
         store: &'a dyn Store,
         repo: &'a str,
         pack_ids: &[String],
     ) -> Result<Odb<'a>, String> {
-        let mut packs = Vec::with_capacity(pack_ids.len());
-        for id in pack_ids {
-            let bytes = store
-                .get(&index_key(repo, id))
-                .await
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("missing pack index for {id}"))?;
-            packs.push(PackHandle {
-                pack_id: id.clone(),
-                index: PackIndex::from_bytes(&bytes)?,
-                reader: crate::storage::BlockReader::new(&pack_key(repo, id)),
-            });
-        }
+        use futures::future::try_join_all;
+        let packs = try_join_all(pack_ids.iter().map(|id| {
+            let id = id.clone();
+            async move {
+                let key = index_key(repo, &id);
+                let index = if let Some(hit) = cached_index(&key) {
+                    hit
+                } else {
+                    let bytes = store
+                        .get(&key)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .ok_or_else(|| format!("missing pack index for {id}"))?;
+                    let index = PackIndex::from_bytes(&bytes)?;
+                    remember_index(repo, &id, &index);
+                    index
+                };
+                Ok::<_, String>(PackHandle {
+                    pack_id: id.clone(),
+                    index,
+                    reader: crate::storage::BlockReader::new(&pack_key(repo, &id)),
+                })
+            }
+        }))
+        .await?;
         Ok(Odb {
             store,
             packs,
             cache: RefCell::new(ByteBudgetCache::new(CONTENT_CACHE_BUDGET)),
             tree_cache: RefCell::new(HashMap::new()),
         })
+    }
+
+    /// Append an already-built pack index without re-fetching it from R2.
+    /// Used on the push path so we do not reload every prior pack's index
+    /// just to include the pack we indexed moments ago.
+    pub fn push_pack(&mut self, repo: &str, pack_id: String, index: PackIndex) {
+        remember_index(repo, &pack_id, &index);
+        self.packs.push(PackHandle {
+            reader: crate::storage::BlockReader::new(&pack_key(repo, &pack_id)),
+            pack_id,
+            index,
+        });
+    }
+
+    /// True if `oid` is present in any pack other than `pack_id`.
+    pub fn contains_excluding(&self, oid: Oid, pack_id: &str) -> bool {
+        for p in &self.packs {
+            if p.pack_id == pack_id {
+                continue;
+            }
+            if p.index.lookup(oid).is_some() {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Index for a pack already open in this odb (None if unknown).
+    pub fn pack_index(&self, pack_id: &str) -> Option<&PackIndex> {
+        self.packs
+            .iter()
+            .find(|p| p.pack_id == pack_id)
+            .map(|p| &p.index)
     }
 
     /// Locate an oid: (pack_id, record).
@@ -272,6 +379,27 @@ mod tests {
     use crate::storage::MemStore;
     use crate::testutil::install_pack;
     use futures::executor::block_on;
+
+    #[test]
+    fn index_cache_skips_repeat_r2_gets() {
+        clear_index_cache_for_test();
+        block_on(async {
+            let store = MemStore::new();
+            let pack = build_pack(&[(ObjType::Blob, b"x".to_vec())]);
+            let id = install_pack(&store, "r", &pack).await;
+            store.reset_op_counts();
+            let _ = Odb::open(&store, "r", &[id.clone()]).await.unwrap();
+            assert_eq!(store.op_counts().class_b, 1, "cold open");
+            store.reset_op_counts();
+            let _ = Odb::open(&store, "r", &[id]).await.unwrap();
+            assert_eq!(
+                store.op_counts().class_b,
+                0,
+                "warm open hits isolate index cache"
+            );
+        });
+        clear_index_cache_for_test();
+    }
 
     #[test]
     fn reads_across_multiple_packs() {

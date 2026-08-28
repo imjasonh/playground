@@ -81,6 +81,18 @@ pub fn now_ms() -> f64 {
     }
 }
 
+/// Push a disposable metrics frame so nested work (e.g. loadtest auto-repack)
+/// does not attribute its backend ops to a sibling in-flight request on the
+/// same isolate. Pair with [`discard`].
+pub fn begin_detached() {
+    ACTIVE.with(|a| a.borrow_mut().push(Metrics::default()));
+}
+
+/// Drop the top metrics frame without returning it (see [`begin_detached`]).
+pub fn discard() {
+    let _ = take();
+}
+
 /// Start collecting for the current request (pushes a fresh frame).
 pub fn begin() {
     ACTIVE.with(|a| {
