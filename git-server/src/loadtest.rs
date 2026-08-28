@@ -90,6 +90,10 @@ pub struct LoadTestRequest {
     /// Shard index (for unique writer branch namespaces).
     #[serde(default)]
     pub shard_index: Option<u32>,
+    /// Optional shared secret (also accepted via `X-Loadtest-Token` or
+    /// `?token=`). Required when the Worker has `LOADTEST_TOKEN` configured.
+    #[serde(default)]
+    pub token: Option<String>,
 }
 
 /// One concurrency stage.
@@ -770,6 +774,7 @@ impl InProcessDriver {
             git_protocol,
             content_encoding: None,
             cf_ray: None,
+            loadtest_token: None,
         };
         let resp = self.http.handle(&req, &mut stream, &self.nonce()).await;
         let status = resp.status;
@@ -1043,6 +1048,18 @@ pub async fn execute(
     run_loadtest(repo, &driver, cfg).await
 }
 
+/// Constant-time-ish compare for the loadtest shared secret.
+pub fn token_matches(provided: &str, expected: &str) -> bool {
+    if provided.len() != expected.len() {
+        return false;
+    }
+    provided
+        .bytes()
+        .zip(expected.bytes())
+        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+        == 0
+}
+
 /// Phone-friendly defaults: $0.10, short stages, finishes before a mobile
 /// browser gives up waiting.
 pub fn phone_request(budget_usd: f64, duration_secs: u64) -> LoadTestRequest {
@@ -1068,6 +1085,7 @@ pub fn phone_request(budget_usd: f64, duration_secs: u64) -> LoadTestRequest {
         shard: false,
         tip: None,
         shard_index: None,
+        token: None,
     }
 }
 
@@ -1077,8 +1095,16 @@ pub fn phone_repo_name() -> String {
     format!("lt{}", ms % 1_000_000_000)
 }
 
-/// Landing page: one big button that hits `?run=1`.
-pub fn html_landing(budget_usd: f64, duration_secs: u64) -> String {
+/// Landing page: one big button that hits `?run=1` (and `token=` when set).
+pub fn html_landing(budget_usd: f64, duration_secs: u64, token: Option<&str>) -> String {
+    let token_q = token
+        .map(|t| format!("&amp;token={}", html_escape(t)))
+        .unwrap_or_default();
+    let token_hint = if token.is_some() {
+        String::new()
+    } else {
+        "<p style=\"color:var(--muted);font-size:0.95rem\">Add <code>?token=…</code> to the URL (required in production).</p>".into()
+    };
     format!(
         r##"<!doctype html>
 <html lang="en">
@@ -1120,7 +1146,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
   <h1>git loadtest</h1>
   <p>Runs push/pull load against this Worker.<br>
   Cap <code>${budget_usd:.2}</code> · ~{duration_secs}s per stage · results on the next page.</p>
-  <a class="run" href="/loadtest?run=1&amp;budget={budget_usd}&amp;duration={duration_secs}">Run ${budget_usd:.2} load test</a>
+  {token_hint}
+  <a class="run" href="/loadtest?run=1&amp;budget={budget_usd}&amp;duration={duration_secs}{token_q}">Run ${budget_usd:.2} load test</a>
 </main>
 </body>
 </html>
@@ -1129,12 +1156,19 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
 }
 
 /// HTML results page for a completed run (phone-readable).
-pub fn html_report(report: &LoadTestReport) -> String {
+pub fn html_report(report: &LoadTestReport, token: Option<&str>) -> String {
     let limited = if report.budget_limited {
         r#"<span class="badge warn">budget-limited</span>"#
     } else {
         r#"<span class="badge ok">completed</span>"#
     };
+    let token_q = token
+        .map(|t| format!("&amp;token={}", html_escape(t)))
+        .unwrap_or_default();
+    let again_href = format!(
+        "/loadtest?run=1&amp;budget={}&amp;duration=10{token_q}",
+        report.budget_usd
+    );
     let mut stages = String::new();
     for s in &report.stages {
         let w = s.writers;
@@ -1242,7 +1276,7 @@ a.again {{
     <tbody>
 {stages}    </tbody>
   </table>
-  <a class="again" href="/loadtest?run=1&amp;budget={budget}&amp;duration=10">Run again</a>
+  <a class="again" href="{again_href}">Run again</a>
   <p class="meta" style="margin-top:1rem;text-align:center"><a href="/loadtest" style="color:var(--muted)">Back</a></p>
 </div>
 </body>
@@ -1345,6 +1379,7 @@ mod tests {
             shard: false,
             tip: None,
             shard_index: None,
+            token: None,
         };
         assert!(r.into_config().is_err());
     }
@@ -1397,6 +1432,7 @@ mod tests {
                     shard: false,
                     tip: None,
                     shard_index: None,
+                    token: None,
                 },
             )
             .await
@@ -1443,6 +1479,7 @@ mod tests {
                     shard: false,
                     tip: None,
                     shard_index: None,
+                    token: None,
                 },
             )
             .await
