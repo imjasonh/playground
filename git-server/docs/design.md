@@ -212,7 +212,10 @@ tree API latency went from ~90 ms to ~5 ms and blame from ~55 ms to ~10 ms.
 Read APIs build a one-pass `FileLogView` (newest record per path, ordered so
 directory-prefix queries are range scans) over whatever shards were loaded.
 A remaining planned addition is an in-isolate parsed-shard cache keyed by
-shard key (shards are immutable, so caching is trivially safe).
+shard key (shards are immutable, so caching is trivially safe). The Worker
+already keeps an isolate-local byte cache of file-log objects (plain GSFL
+segments, GSFI indexes, and shards) so hot push prev-pointer loads and read
+APIs skip repeat Class B gets.
 
 * **Directory listing with attribution**: newest record per path (or path
   prefix, for subdirectories) across segments, newest segment first.

@@ -28,6 +28,7 @@ use crate::pack::{EntryRecord, PackScanner};
 use crate::refs::{PackMeta, PushDelta, RefDelta, RepoState, StateStore};
 use crate::storage::{Store, Uploader};
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::rc::Rc;
 
@@ -173,6 +174,77 @@ pub fn filelog_key(repo: &str, seg_id: &str) -> String {
     format!("{repo}/filelog/{seg_id}")
 }
 
+/// Cross-request cache of immutable file-log objects (plain GSFL segments,
+/// GSFI indexes, and individual shards). Push prev-pointer loads and read
+/// APIs hit the same keys repeatedly on a hot isolate; segments never change
+/// once written, so a hit is always safe.
+const FILELOG_CACHE_BUDGET: usize = 4 * 1024 * 1024;
+
+thread_local! {
+    static FILELOG_CACHE: RefCell<FilelogCache> = RefCell::new(FilelogCache::new());
+}
+
+struct FilelogCache {
+    map: HashMap<String, Vec<u8>>,
+    bytes: usize,
+}
+
+impl FilelogCache {
+    fn new() -> Self {
+        Self {
+            map: HashMap::new(),
+            bytes: 0,
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<Vec<u8>> {
+        self.map.get(key).cloned()
+    }
+
+    fn put(&mut self, key: String, data: &[u8]) {
+        if self.map.contains_key(&key) {
+            return;
+        }
+        if self.bytes + data.len() > FILELOG_CACHE_BUDGET {
+            self.map.clear();
+            self.bytes = 0;
+        }
+        self.bytes += data.len();
+        self.map.insert(key, data.to_vec());
+    }
+}
+
+fn cached_filelog_bytes(key: &str) -> Option<Vec<u8>> {
+    FILELOG_CACHE.with(|c| c.borrow().get(key))
+}
+
+/// Remember file-log bytes after an R2 get or a successful write.
+pub fn remember_filelog_bytes(key: String, data: &[u8]) {
+    FILELOG_CACHE.with(|c| c.borrow_mut().put(key, data));
+}
+
+#[cfg(test)]
+pub fn clear_filelog_cache_for_test() {
+    FILELOG_CACHE.with(|c| {
+        let mut c = c.borrow_mut();
+        c.map.clear();
+        c.bytes = 0;
+    });
+}
+
+async fn get_filelog_bytes(store: &dyn Store, key: &str) -> Result<Vec<u8>, String> {
+    if let Some(hit) = cached_filelog_bytes(key) {
+        return Ok(hit);
+    }
+    let bytes = store
+        .get(key)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("missing filelog object {key}"))?;
+    remember_filelog_bytes(key.to_string(), &bytes);
+    Ok(bytes)
+}
+
 // ---------------------------------------------------------------------------
 // Sharded file-log (path-range shards + GSFI index)
 // ---------------------------------------------------------------------------
@@ -285,10 +357,10 @@ pub async fn write_sharded_filelog(
         let seg = FileLogSegment {
             records: std::mem::take(current),
         };
-        store
-            .put(&shard_key(repo, seg_id, shards.len()), seg.to_bytes())
-            .await
-            .map_err(|e| e.to_string())?;
+        let key = shard_key(repo, seg_id, shards.len());
+        let bytes = seg.to_bytes();
+        remember_filelog_bytes(key.clone(), &bytes);
+        store.put(&key, bytes).await.map_err(|e| e.to_string())?;
         shards.push(info);
         Ok(())
     }
@@ -308,8 +380,11 @@ pub async fn write_sharded_filelog(
     }
     flush(store, repo, seg_id, &mut shards, &mut current).await?;
 
+    let index_key = filelog_key(repo, seg_id);
+    let index_bytes = shard_index_to_bytes(&shards);
+    remember_filelog_bytes(index_key.clone(), &index_bytes);
     store
-        .put(&filelog_key(repo, seg_id), shard_index_to_bytes(&shards))
+        .put(&index_key, index_bytes)
         .await
         .map_err(|e| e.to_string())?;
     Ok(shards.len())
@@ -377,11 +452,8 @@ pub async fn load_filelog_scoped(
     let _t = crate::timing::Phase::start("filelog: load+parse");
     let mut segs = Vec::new();
     for id in state.filelog.iter().rev() {
-        let bytes = store
-            .get(&filelog_key(repo, id))
-            .await
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("missing filelog segment {id}"))?;
+        let key = filelog_key(repo, id);
+        let bytes = get_filelog_bytes(store, &key).await?;
         if bytes.len() >= 4 && &bytes[..4] == GSFI_MAGIC {
             let shards = shard_index_from_bytes(&bytes)?;
             let fetches = shards
@@ -390,13 +462,7 @@ pub async fn load_filelog_scoped(
                 .filter(|(_, info)| scope.intersects(&info.min_path, &info.max_path))
                 .map(|(k, _)| {
                     let key = shard_key(repo, id, k);
-                    async move {
-                        store
-                            .get(&key)
-                            .await
-                            .map_err(|e| e.to_string())?
-                            .ok_or_else(|| format!("missing filelog shard {key}"))
-                    }
+                    async move { get_filelog_bytes(store, &key).await }
                 });
             for shard_bytes in futures::future::try_join_all(fetches).await? {
                 segs.push(FileLogSegment::from_bytes(&shard_bytes)?);
@@ -668,8 +734,10 @@ impl<'a> Repo<'a> {
                 if bytes.len() > 2 * FILELOG_SHARD_TARGET_BYTES {
                     write_sharded_filelog(self.store, self.name, &meta.id, segment.records).await?;
                 } else {
+                    let key = filelog_key(self.name, &meta.id);
+                    remember_filelog_bytes(key.clone(), &bytes);
                     self.store
-                        .put(&filelog_key(self.name, &meta.id), bytes)
+                        .put(&key, bytes)
                         .await
                         .map_err(|e| e.to_string())?;
                 }
@@ -1411,6 +1479,7 @@ mod tests {
     #[test]
     fn sharded_filelog_roundtrip_and_scoped_loads() {
         block_on(async {
+            clear_filelog_cache_for_test();
             let store = MemStore::new();
             // Enough records across enough paths to force several shards.
             let mut records = Vec::new();
@@ -1432,6 +1501,7 @@ mod tests {
 
             // Exact-path scope: exactly one shard is loaded (a path's records
             // are never split), and the chain is complete and in order.
+            clear_filelog_cache_for_test();
             store.reset_op_counts();
             let target = "dir07/subdir/file00707.txt";
             let segs = load_filelog_scoped(&store, "r", &state, &FilelogScope::Path(target))
@@ -1443,6 +1513,13 @@ mod tests {
             assert_eq!(chain.len(), 3);
             assert_eq!(chain[0].time, 2, "newest first");
             assert_eq!(chain[2].change, Change::Add);
+
+            // Isolate cache: repeat query does no Class B.
+            store.reset_op_counts();
+            let _ = load_filelog_scoped(&store, "r", &state, &FilelogScope::Path(target))
+                .await
+                .unwrap();
+            assert_eq!(store.op_counts().class_b, 0, "filelog cache hit");
 
             // Prefix scope: sees every path in the directory.
             let segs =
@@ -1459,14 +1536,19 @@ mod tests {
             assert!(view.latest_for_prefix("dir07/").is_some());
 
             // Scoped load must return a strict subset of the whole log.
+            clear_filelog_cache_for_test();
             store.reset_op_counts();
             let all = load_filelog_scoped(&store, "r", &state, &FilelogScope::All)
                 .await
                 .unwrap();
             let all_reads = store.op_counts().class_b;
             assert_eq!(all.iter().map(|s| s.records.len()).sum::<usize>(), 9_000);
-            assert_eq!(all_reads as usize, 1 + shards);
-
+            // Cold load: index + every shard. (Cache flushes under budget may
+            // re-fetch a key; never fewer than the shard set.)
+            assert!(
+                all_reads as usize > shards,
+                "cold full load: got {all_reads} Class B for {shards} shards"
+            );
             // Deleting removes the index and every shard.
             delete_filelog(&store, "r", "seg").await.unwrap();
             assert!(store.keys().iter().all(|k| !k.contains("filelog")));

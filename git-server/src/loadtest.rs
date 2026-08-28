@@ -59,7 +59,7 @@ const SEED_BLOB_BYTES: usize = 256;
 const WRITE_BLOB_BYTES: usize = 128;
 
 /// Request body for `POST /api/<repo>/loadtest`.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LoadTestRequest {
     /// Must be `true`. Guards against accidental triggers.
     pub confirm: bool,
@@ -75,14 +75,22 @@ pub struct LoadTestRequest {
     #[serde(default)]
     pub stages: Option<Vec<StageSpec>>,
     /// How many Worker shards to fan the offered load across. `1` (default)
-    /// runs everything in this isolate; `>1` is only meaningful on the
-    /// Worker (self-fetch). Native runs ignore values above 1.
+    /// runs everything in this isolate; `>1` self-fetches shard POSTs when a
+    /// [`LoadtestFanout`] is configured (Worker), otherwise partitions
+    /// in-process.
     #[serde(default)]
     pub shards: Option<u32>,
+    /// Parallel disposable repos (`{repo}-0` … `{repo}-{n-1}`), each with its
+    /// own Durable Object. Aggregate QPS is the sum across repos. Default 1.
+    #[serde(default)]
+    pub repos: Option<u32>,
     /// Internal: this invocation is one shard of a coordinated run. Shards
     /// do not fan out further and do not re-seed.
     #[serde(default)]
     pub shard: bool,
+    /// Internal: this invocation is one repo of a multi-repo cluster.
+    #[serde(default)]
+    pub cluster: bool,
     /// Tip oid for pulls / first writer parents when `shard` is set (parent
     /// supplies this after seeding).
     #[serde(default)]
@@ -112,10 +120,16 @@ pub struct LoadTestConfig {
     pub duration_ms: u64,
     pub stages: Vec<StageSpec>,
     pub shards: u32,
+    pub repos: u32,
     pub shard: bool,
+    pub cluster: bool,
     pub tip: Option<Oid>,
     pub shard_index: u32,
 }
+
+/// Cap on parallel repos for one coordinated run (Workers subrequest budget).
+pub const MAX_REPOS: u32 = 96;
+pub const MAX_SHARDS: u32 = 32;
 
 impl LoadTestRequest {
     /// Validate and clamp into a [`LoadTestConfig`].
@@ -164,16 +178,35 @@ impl LoadTestRequest {
             budget_usd: budget,
             duration_ms: duration_secs * 1000,
             stages,
-            shards: self.shards.unwrap_or(1).max(1),
+            shards: self.shards.unwrap_or(1).clamp(1, MAX_SHARDS),
+            repos: self.repos.unwrap_or(1).clamp(1, MAX_REPOS),
             shard: self.shard,
+            cluster: self.cluster,
             tip,
             shard_index: self.shard_index.unwrap_or(0),
         })
     }
+
+    /// Rebuild a request body for a nested shard / cluster member POST.
+    pub fn from_config(cfg: &LoadTestConfig, tip: Option<&str>) -> LoadTestRequest {
+        LoadTestRequest {
+            confirm: true,
+            budget_usd: Some(cfg.budget_usd),
+            duration_secs: Some((cfg.duration_ms / 1000).max(1)),
+            stages: Some(cfg.stages.clone()),
+            shards: Some(cfg.shards),
+            repos: Some(1),
+            shard: cfg.shard,
+            cluster: cfg.cluster,
+            tip: tip.map(str::to_string),
+            shard_index: Some(cfg.shard_index),
+            token: None,
+        }
+    }
 }
 
 /// Mean underlying-op cost for one class of operation (push or pull).
-#[derive(Debug, Clone, Default, Serialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct OpCostSummary {
     pub samples: u64,
     pub mean_r2_class_a: f64,
@@ -225,7 +258,7 @@ impl OpTotals {
 }
 
 /// One stage's measured goodput and costs.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StageReport {
     pub writers: u32,
     pub readers: u32,
@@ -242,7 +275,7 @@ pub struct StageReport {
 }
 
 /// Final load-test report (JSON response body).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoadTestReport {
     pub repo: String,
     pub tip: String,
@@ -257,6 +290,13 @@ pub struct LoadTestReport {
     pub stages: Vec<StageReport>,
     pub duration_ms: f64,
     pub shards: u32,
+    /// Parallel repos in this coordinated run (`1` for a single-repo run).
+    #[serde(default = "one_u32")]
+    pub repos: u32,
+}
+
+fn one_u32() -> u32 {
+    1
 }
 
 /// Per-attempt outcome used by the runner and drivers.
@@ -558,6 +598,7 @@ pub async fn run_loadtest(
         stages,
         duration_ms: metrics::now_ms() - run_start,
         shards: cfg.shards,
+        repos: 1,
     })
 }
 
@@ -942,12 +983,13 @@ fn noise(len: usize, mut seed: u64) -> Vec<u8> {
     out
 }
 
-/// Merge shard reports into one coordinator report (same tip/budget).
+/// Merge shard / multi-repo reports into one coordinator report.
 pub fn merge_shard_reports(
     repo: &str,
     tip: &str,
     budget_usd: f64,
     shards: u32,
+    repos: u32,
     parts: &[LoadTestReport],
 ) -> LoadTestReport {
     if parts.is_empty() {
@@ -964,6 +1006,7 @@ pub fn merge_shard_reports(
             stages: vec![],
             duration_ms: 0.0,
             shards,
+            repos,
         };
     }
     // Align by stage index; sum ok counts and costs, take max wall, recompute QPS.
@@ -1068,7 +1111,20 @@ pub fn merge_shard_reports(
         stages,
         duration_ms,
         shards,
+        repos,
     }
+}
+
+/// Fan-out hook for multi-isolate shard / multi-repo POSTs. The Worker
+/// implements this with `Fetch` to the same origin so each member runs on a
+/// fresh isolate (and its own Durable Object when `repos > 1`).
+#[async_trait(?Send)]
+pub trait LoadtestFanout {
+    async fn post_loadtest(
+        &self,
+        repo: &str,
+        req: LoadTestRequest,
+    ) -> Result<LoadTestReport, String>;
 }
 
 /// Convenience: run an in-process load test against a store pair.
@@ -1089,7 +1145,15 @@ pub async fn execute(
     repo: &str,
     cfg: &LoadTestConfig,
 ) -> Result<LoadTestReport, String> {
+    // Multi-repo cluster: each repo is a full lane (own DO). Prefer HTTP
+    // fan-out so lanes land on different isolates.
+    if cfg.repos > 1 && !cfg.cluster && !cfg.shard {
+        return run_multi_repo(http, repo, cfg).await;
+    }
     if cfg.shards > 1 && !cfg.shard {
+        if let Some(fanout) = http.loadtest_fanout.as_ref() {
+            return run_sharded_fanout(http, fanout.as_ref(), repo, cfg).await;
+        }
         return run_sharded_inprocess(
             GitHttp::new(http.store.clone(), http.states.clone())
                 .with_push_limit(http.push_limit_bytes),
@@ -1106,6 +1170,121 @@ pub async fn execute(
     run_loadtest(repo, &driver, cfg).await
 }
 
+/// Parallel disposable repos `{prefix}-0` … `{prefix}-{n-1}`. Each keeps the
+/// full per-repo stage concurrency; aggregate QPS is the sum across lanes.
+pub async fn run_multi_repo(
+    http: &GitHttp,
+    repo_prefix: &str,
+    cfg: &LoadTestConfig,
+) -> Result<LoadTestReport, String> {
+    let n = cfg.repos.max(1);
+    let budget_each = (cfg.budget_usd / n as f64).max(0.0001);
+    let mut parts = Vec::with_capacity(n as usize);
+    if let Some(fanout) = http.loadtest_fanout.clone() {
+        let mut futs = Vec::with_capacity(n as usize);
+        for i in 0..n {
+            let repo = format!("{repo_prefix}-{i}");
+            let mut member = cfg.clone();
+            member.repos = 1;
+            member.cluster = true;
+            member.budget_usd = budget_each;
+            member.shard_index = i.saturating_mul(100);
+            let req = LoadTestRequest::from_config(&member, None);
+            let fanout = fanout.clone();
+            futs.push(async move { fanout.post_loadtest(&repo, req).await });
+        }
+        for r in join_all(futs).await {
+            parts.push(r?);
+        }
+    } else {
+        let mut futs = Vec::with_capacity(n as usize);
+        for i in 0..n {
+            let repo = format!("{repo_prefix}-{i}");
+            let mut member = cfg.clone();
+            member.repos = 1;
+            member.cluster = true;
+            member.budget_usd = budget_each;
+            member.shard_index = i.saturating_mul(100);
+            let nested = GitHttp::new(http.store.clone(), http.states.clone())
+                .with_push_limit(http.push_limit_bytes);
+            futs.push(async move { execute(&nested, &repo, &member).await });
+        }
+        for r in join_all(futs).await {
+            parts.push(r?);
+        }
+    }
+    let tip = parts.first().map(|p| p.tip.clone()).unwrap_or_default();
+    Ok(merge_shard_reports(
+        repo_prefix,
+        &tip,
+        cfg.budget_usd,
+        cfg.shards,
+        n,
+        &parts,
+    ))
+}
+
+/// HTTP self-fetch sharding: each shard POST is a separate Worker invocation.
+async fn run_sharded_fanout(
+    http: &GitHttp,
+    fanout: &dyn LoadtestFanout,
+    repo: &str,
+    cfg: &LoadTestConfig,
+) -> Result<LoadTestReport, String> {
+    let n = cfg.shards.max(1);
+    // Seed once in this isolate, then hand the tip to every shard.
+    let seed_driver = InProcessDriver::new(
+        GitHttp::new(http.store.clone(), http.states.clone())
+            .with_push_limit(http.push_limit_bytes),
+        repo,
+    );
+    let tip = seed_driver.ensure_seeded(cfg.tip).await?;
+    let tip_hex = tip.to_hex();
+    let budget_each = (cfg.budget_usd / n as f64).max(0.0001);
+
+    let mut futs = Vec::with_capacity(n as usize);
+    for i in 0..n {
+        let mut shard_cfg = cfg.clone();
+        shard_cfg.shard = true;
+        shard_cfg.shards = 1;
+        shard_cfg.repos = 1;
+        shard_cfg.cluster = true;
+        shard_cfg.tip = Some(tip);
+        shard_cfg.shard_index = i;
+        shard_cfg.budget_usd = budget_each;
+        shard_cfg.stages = cfg
+            .stages
+            .iter()
+            .enumerate()
+            .map(|(si, st)| {
+                let writers = st.writers / n + if i == 0 { st.writers % n } else { 0 };
+                let readers = st.readers / n + if i == 0 { st.readers % n } else { 0 };
+                let _ = si;
+                StageSpec { writers, readers }
+            })
+            .filter(|st| st.writers > 0 || st.readers > 0)
+            .collect();
+        if shard_cfg.stages.is_empty() {
+            continue;
+        }
+        let req = LoadTestRequest::from_config(&shard_cfg, Some(&tip_hex));
+        futs.push(fanout.post_loadtest(repo, req));
+    }
+    let results = join_all(futs).await;
+    let mut parts = Vec::with_capacity(results.len());
+    for r in results {
+        parts.push(r?);
+    }
+    Ok(merge_shard_reports(
+        repo,
+        &tip_hex,
+        cfg.budget_usd,
+        n,
+        1,
+        &parts,
+    ))
+}
+
 /// Constant-time-ish compare for the loadtest shared secret.
 pub fn token_matches(provided: &str, expected: &str) -> bool {
     if provided.len() != expected.len() {
@@ -1118,17 +1297,26 @@ pub fn token_matches(provided: &str, expected: &str) -> bool {
         == 0
 }
 
-/// Phone UI defaults. Kept small so one isolate stays under Workers
-/// subrequest/memory walls (a prior 32w/64r ramp threw Error 1101).
-pub const PHONE_DEFAULT_BUDGET_USD: f64 = 0.05;
+/// Phone UI defaults. Per-repo concurrency stays light (Workers
+/// subrequest/memory walls); scale aggregate QPS with `repos` (parallel DOs
+/// + isolates via HTTP fan-out).
+pub const PHONE_DEFAULT_BUDGET_USD: f64 = 0.25;
 pub const PHONE_DEFAULT_DURATION_SECS: u64 = 4;
-/// Peak writers in the write ramp; read stage uses `2 × peak` readers.
-pub const PHONE_DEFAULT_PEAK: u32 = 6;
+/// Peak writers **per repo** in the write ramp; read stage uses `2 × peak`.
+pub const PHONE_DEFAULT_PEAK: u32 = 4;
 pub const PHONE_MAX_PEAK: u32 = 24;
+/// Parallel disposable repos (each own Durable Object / isolate lane).
+pub const PHONE_DEFAULT_REPOS: u32 = 32;
+pub const PHONE_MAX_REPOS: u32 = MAX_REPOS;
 
 /// Clamp a phone peak-writers value into the safe range.
 pub fn clamp_phone_peak(peak: u32) -> u32 {
     peak.clamp(1, PHONE_MAX_PEAK)
+}
+
+/// Clamp parallel-repo count for phone runs.
+pub fn clamp_phone_repos(repos: u32) -> u32 {
+    repos.clamp(1, PHONE_MAX_REPOS)
 }
 
 /// Phone stages from a peak writer count: warm-up → peak writers → 2× readers.
@@ -1153,14 +1341,21 @@ pub fn phone_stages(peak: u32) -> Vec<StageSpec> {
 }
 
 /// Phone-friendly request: short stages scaled by `peak` writers.
-pub fn phone_request(budget_usd: f64, duration_secs: u64, peak: u32) -> LoadTestRequest {
+pub fn phone_request(
+    budget_usd: f64,
+    duration_secs: u64,
+    peak: u32,
+    repos: u32,
+) -> LoadTestRequest {
     LoadTestRequest {
         confirm: true,
         budget_usd: Some(budget_usd),
         duration_secs: Some(duration_secs),
         stages: Some(phone_stages(peak)),
         shards: Some(1),
+        repos: Some(clamp_phone_repos(repos)),
         shard: false,
+        cluster: false,
         tip: None,
         shard_index: None,
         token: None,
@@ -1173,10 +1368,14 @@ pub fn phone_repo_name() -> String {
     format!("lt{}", ms % 1_000_000_000)
 }
 
-/// Landing page: budget + peak-load controls, then Run. Click builds
-/// `?run=1…` via fetch so the page can show a live timer instead of a blank
-/// browser spinner (and surface Worker errors as text).
-pub fn html_landing(budget_usd: f64, duration_secs: u64, peak: u32, token: Option<&str>) -> String {
+/// Landing page: budget + peak + parallel-repos controls, then Run.
+pub fn html_landing(
+    budget_usd: f64,
+    duration_secs: u64,
+    peak: u32,
+    repos: u32,
+    token: Option<&str>,
+) -> String {
     let token_js = token.map(js_string_escape).unwrap_or_default();
     let has_token = token.is_some();
     let token_hint = if has_token {
@@ -1186,11 +1385,14 @@ pub fn html_landing(budget_usd: f64, duration_secs: u64, peak: u32, token: Optio
             .into()
     };
     let peak = clamp_phone_peak(peak);
+    let repos = clamp_phone_repos(repos);
     let stages = phone_stages(peak);
     let warm = stages[0].writers;
     let readers = stages[2].readers;
     let expect_secs = duration_secs.saturating_mul(3).saturating_add(5);
     let max_peak = PHONE_MAX_PEAK;
+    let max_repos = PHONE_MAX_REPOS;
+    let total_w = peak.saturating_mul(repos);
     format!(
         r##"<!doctype html>
 <html lang="en">
@@ -1245,18 +1447,22 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
 <main>
   <h1>git loadtest</h1>
   <p>Push/pull load against this Worker.<br>
-  No mid-run updates — the timer is all you get until the report.</p>
+  Parallel repos fan out across Durable Objects and isolates.</p>
   {token_hint}
   <div class="fields">
     <label>Cost budget (USD)
       <input id="budget" type="number" inputmode="decimal" min="0.01" max="5" step="0.01" value="{budget_usd:.2}">
     </label>
-    <label>Peak writers
-      <span class="detail">Warm-up → peak writers → 2× readers. Max {max_peak}.</span>
+    <label>Peak writers <span class="detail">per repo</span>
+      <span class="detail">Warm-up → peak → 2× readers. Max {max_peak}.</span>
       <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
     </label>
+    <label>Parallel repos
+      <span class="detail">Each repo is its own DO (+ isolate via self-fetch). Max {max_repos}.</span>
+      <input id="repos" type="number" inputmode="numeric" min="1" max="{max_repos}" step="1" value="{repos}">
+    </label>
   </div>
-  <p class="plan" id="plan">{warm}w → {peak}w → {readers}r · {duration_secs}s × 3 · ~{expect_secs}s</p>
+  <p class="plan" id="plan">{repos} repos · {warm}w → {peak}w → {readers}r · {total_w} writers total · {duration_secs}s × 3 · ~{expect_secs}s</p>
   <button class="run" id="run" type="button">Run load test</button>
   <p id="status" aria-live="polite"></p>
 </main>
@@ -1266,30 +1472,43 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
   var status = document.getElementById("status");
   var budgetEl = document.getElementById("budget");
   var peakEl = document.getElementById("peak");
+  var reposEl = document.getElementById("repos");
   var plan = document.getElementById("plan");
   var duration = {duration_secs};
   var token = "{token_js}";
   var maxPeak = {max_peak};
+  var maxRepos = {max_repos};
   function clampPeak(p) {{
     p = Math.floor(Number(p) || 1);
     if (p < 1) p = 1;
     if (p > maxPeak) p = maxPeak;
     return p;
   }}
+  function clampRepos(r) {{
+    r = Math.floor(Number(r) || 1);
+    if (r < 1) r = 1;
+    if (r > maxRepos) r = maxRepos;
+    return r;
+  }}
   function updatePlan() {{
     var peak = clampPeak(peakEl.value);
+    var repos = clampRepos(reposEl.value);
     var warm = Math.max(1, Math.floor(peak / 3));
     var readers = Math.max(1, peak * 2);
+    var total = peak * repos;
     var expect = duration * 3 + 5;
-    plan.textContent = warm + "w → " + peak + "w → " + readers + "r · " + duration + "s × 3 · ~" + expect + "s";
+    plan.textContent = repos + " repos · " + warm + "w → " + peak + "w → " + readers +
+      "r · " + total + " writers total · " + duration + "s × 3 · ~" + expect + "s";
   }}
   peakEl.addEventListener("input", updatePlan);
+  reposEl.addEventListener("input", updatePlan);
   function runUrl() {{
     var budget = Number(budgetEl.value);
     if (!(budget > 0)) budget = {budget_usd:.2};
     var peak = clampPeak(peakEl.value);
+    var repos = clampRepos(reposEl.value);
     var q = "/loadtest?run=1&budget=" + encodeURIComponent(budget.toFixed(2)) +
-      "&duration=" + duration + "&peak=" + peak;
+      "&duration=" + duration + "&peak=" + peak + "&repos=" + repos;
     if (token) q += "&token=" + encodeURIComponent(token);
     return q;
   }}
@@ -1317,7 +1536,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         clearInterval(tick);
         status.className = "err";
         status.textContent = "Request failed: " + (e && e.message ? e.message : e) +
-          "\\nThe Worker may have hit a limit (try a lower peak).";
+          "\\nTry fewer repos or a lower peak.";
         btn.disabled = false;
       }});
   }});
@@ -1346,8 +1565,9 @@ pub fn html_report(
         .map(|t| format!("&amp;token={}", html_escape(t)))
         .unwrap_or_default();
     let peak = clamp_phone_peak(peak);
+    let repos = report.repos.max(1);
     let again_href = format!(
-        "/loadtest?budget={:.2}&amp;duration={duration_secs}&amp;peak={peak}{token_q}",
+        "/loadtest?budget={:.2}&amp;duration={duration_secs}&amp;peak={peak}&amp;repos={repos}{token_q}",
         report.budget_usd
     );
     let mut stages = String::new();
@@ -1461,7 +1681,7 @@ a.again {{
 <body>
 <div class="wrap">
   <h1>loadtest {limited}</h1>
-  <p class="meta">repo <code>{repo}</code> · wall {wall:.1}s · spend ${spent:.4} / ${budget:.2}</p>
+  <p class="meta">repo <code>{repo}</code> · {repos} repos · wall {wall:.1}s · spend ${spent:.4} / ${budget:.2}</p>
   {pull_note}
   <div class="grid">
     <div class="card"><div class="label">peak pushes/s</div><div class="val">{peak_p:.1}</div></div>
@@ -1535,6 +1755,8 @@ pub async fn run_sharded_inprocess(
         let mut shard_cfg = cfg.clone();
         shard_cfg.shard = true;
         shard_cfg.shards = 1;
+        shard_cfg.repos = 1;
+        shard_cfg.cluster = true;
         shard_cfg.tip = Some(tip);
         shard_cfg.shard_index = i;
         shard_cfg.budget_usd = budget_each;
@@ -1573,6 +1795,7 @@ pub async fn run_sharded_inprocess(
         &tip.to_hex(),
         cfg.budget_usd,
         n,
+        1,
         &reports,
     ))
 }
@@ -1608,6 +1831,8 @@ mod tests {
                 readers: 0,
             }]),
             shards: None,
+            repos: Some(1),
+            cluster: false,
             shard: false,
             tip: None,
             shard_index: None,
@@ -1666,6 +1891,8 @@ mod tests {
                         },
                     ]),
                     shards: Some(1),
+                    repos: Some(1),
+                    cluster: false,
                     shard: false,
                     tip: None,
                     shard_index: None,
@@ -1713,6 +1940,8 @@ mod tests {
                         },
                     ]),
                     shards: Some(1),
+                    repos: Some(1),
+                    cluster: false,
                     shard: false,
                     tip: None,
                     shard_index: None,
@@ -1800,6 +2029,8 @@ mod tests {
                         },
                     ]),
                     shards: Some(1),
+                    repos: Some(1),
+                    cluster: false,
                     shard: false,
                     tip: None,
                     shard_index: None,
@@ -1856,6 +2087,8 @@ mod tests {
                         readers: 4,
                     }]),
                     shards: None,
+                    repos: Some(1),
+                    cluster: false,
                     shard: false,
                     tip: None,
                     shard_index: None,
@@ -1882,14 +2115,14 @@ mod tests {
                 store,
                 states,
                 "lt-bench-phone",
-                phone_request(0.05, 4, PHONE_DEFAULT_PEAK),
+                phone_request(0.05, 4, PHONE_DEFAULT_PEAK, 1),
             )
             .await
             .expect("loadtest");
             // Op-count regression guard (MemStore has ~0ms backends so ms/QPS
             // are not comparable to production).
             assert!(
-                report.cost_per_push.mean_r2_class_b < 18.0,
+                report.cost_per_push.mean_r2_class_b < 12.0,
                 "push R2B too high: {}",
                 report.cost_per_push.mean_r2_class_b
             );
@@ -1898,6 +2131,48 @@ mod tests {
                 "push DO {}",
                 report.cost_per_push.mean_do
             );
+            assert!(report.cost_per_pull.samples > 0);
+        });
+    }
+
+    #[test]
+    fn multi_repo_sums_peak_qps() {
+        block_on(async {
+            let store = Rc::new(MemStore::new()) as Rc<dyn Store>;
+            let states = Rc::new(MemStateStore::new()) as Rc<dyn StateStore>;
+            let report = run_in_process(
+                store,
+                states,
+                "lt-multi",
+                LoadTestRequest {
+                    confirm: true,
+                    budget_usd: Some(0.05),
+                    duration_secs: Some(2),
+                    stages: Some(vec![
+                        StageSpec {
+                            writers: 2,
+                            readers: 0,
+                        },
+                        StageSpec {
+                            writers: 0,
+                            readers: 4,
+                        },
+                    ]),
+                    shards: Some(1),
+                    repos: Some(3),
+                    cluster: false,
+                    shard: false,
+                    tip: None,
+                    shard_index: None,
+                    token: None,
+                },
+            )
+            .await
+            .expect("multi-repo loadtest");
+            assert_eq!(report.repos, 3);
+            assert!(report.peak_pushes_per_sec > 0.0, "{report:?}");
+            assert!(report.peak_pulls_per_sec > 0.0, "{report:?}");
+            assert!(report.cost_per_push.samples > 0);
             assert!(report.cost_per_pull.samples > 0);
         });
     }
@@ -1939,13 +2214,14 @@ mod tests {
             stages: vec![s.clone()],
             duration_ms: 1000.0,
             shards: 1,
+            repos: 1,
         };
         let mut p2 = p.clone();
         p2.stages[0].push_ok = 15;
         p2.stages[0].pushes_per_sec = 15.0;
         p2.total_cost_usd = 0.002;
         p2.stages[0].stage_cost_usd = 0.002;
-        let merged = merge_shard_reports("r", "a", 1.0, 2, &[p, p2]);
+        let merged = merge_shard_reports("r", "a", 1.0, 2, 1, &[p, p2]);
         assert_eq!(merged.stages[0].push_ok, 25);
         assert!((merged.stages[0].pushes_per_sec - 25.0).abs() < 1e-9);
         assert_eq!(merged.shards, 2);

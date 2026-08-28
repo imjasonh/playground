@@ -1255,11 +1255,13 @@ fn phone_loadtest_html() {
     assert!(html.contains("Run load test"), "{html}");
     assert!(html.contains("Cost budget"), "{html}");
     assert!(html.contains("Peak writers"), "{html}");
+    assert!(html.contains("Parallel repos"), "{html}");
     assert!(html.contains("id=\"budget\""), "{html}");
     assert!(html.contains("id=\"peak\""), "{html}");
+    assert!(html.contains("id=\"repos\""), "{html}");
     assert!(html.contains("fetch("), "{html}");
 
-    let (status, body) = server.get("/loadtest?run=1&budget=0.05&duration=2&peak=4");
+    let (status, body) = server.get("/loadtest?run=1&budget=0.05&duration=2&peak=2&repos=2");
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
     let html = String::from_utf8_lossy(&body);
     assert!(html.contains("peak pushes/s"), "{html}");

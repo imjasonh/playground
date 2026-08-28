@@ -301,99 +301,15 @@ async fn fetch(
     if state.packs.is_empty() {
         return Ok(Body::Full(error_response("repository is empty")));
     }
-    let odb = repo.odb(&state).await?;
-    let fetch_start = crate::metrics::now_ms();
 
-    // Full-clone fast path: no haves, no filter, and the wants cover every
-    // ref tip means the client needs everything we have — skip the
-    // reachability walk (the only history-proportional CPU in a fetch) and
-    // send the whole manifest. Objects that are stored but unreachable
-    // (e.g. force-pushed-away history awaiting maintenance) ride along
-    // harmlessly as dangling objects on the client.
-    // Shallow (`--depth N`) fetch: bounded history walk with a shallow-info
-    // section. Takes precedence over the full-clone fast path.
-    // Partial clone (`filter`): must walk + filter; never use all_oids().
-    let mut shallow_boundary: Vec<Oid> = Vec::new();
-    let mut unshallow: Vec<Oid> = Vec::new();
-    let filter_ref = filter.as_ref();
-    let set = if let Some(depth) = deepen {
-        let _t = crate::timing::Phase::start("fetch: collect shallow set");
-        let plan =
-            crate::repo::collect_shallow_set(&odb, &wants, depth, &client_shallow, filter_ref)
-                .await?;
-        shallow_boundary = plan.shallow;
-        unshallow = plan.unshallow;
-        plan.set
-    } else {
-        let want_set: std::collections::HashSet<Oid> = wants.iter().copied().collect();
-        let is_full_clone = filter.is_none()
-            && haves.is_empty()
-            && state.refs.values().all(|hex| {
-                Oid::from_hex(hex)
-                    .map(|o| want_set.contains(&o))
-                    .unwrap_or(false)
-            });
-        if is_full_clone {
-            crate::repo::FetchSet {
-                include: odb.all_oids(),
-                common: Vec::new(),
-                client_has: std::collections::HashSet::new(),
-            }
-        } else {
-            let _t = crate::timing::Phase::start("fetch: collect set");
-            crate::repo::collect_fetch_set(&odb, &wants, &haves, filter_ref).await?
-        }
-    };
-    // The selection is turned into a plain (pack, record) list here so the
-    // response stream doesn't need the odb (or its caches) alive; it re-opens
-    // a lean odb of its own.
-    let plan = crate::repo::plan_pack(&odb, &set, thin_pack)?;
-    let object_count = plan.entries.len();
-    drop(odb);
-
-    // Section header: negotiation acks (stateless: always `ready`), an
-    // optional shallow-info section, then the packfile marker — all tiny,
-    // sent as the stream's first chunk.
-    let mut head = Vec::new();
-    if !done {
-        head.text("acknowledgments");
-        if set.common.is_empty() {
-            head.text("NAK");
-        } else {
-            for c in &set.common {
-                head.text(&format!("ACK {c}"));
-            }
-        }
-        head.text("ready");
-        head.delim_pkt();
-    }
-    // shallow-info (gitprotocol-v2(5)): the new shallow boundary and any
-    // commits that are no longer shallow. Only emitted for a shallow fetch.
-    if !shallow_boundary.is_empty() || !unshallow.is_empty() {
-        head.text("shallow-info");
-        for c in &shallow_boundary {
-            head.text(&format!("shallow {c}"));
-        }
-        for c in &unshallow {
-            head.text(&format!("unshallow {c}"));
-        }
-        head.delim_pkt();
-    }
-    head.text("packfile");
-    if !no_progress {
-        head.progress(&format!("packing {object_count} objects"));
-        write_repo_debug(
-            &mut head,
-            &state,
-            lease_until_ms,
-            crate::metrics::now_ms() as i64,
-        );
-    }
-
+    // Selection, pack planning, and emission share one `Odb` so the content /
+    // block caches warmed by the reachability walk serve emit without a
+    // second index open or cold ranged-read storm. The pack is still streamed
+    // in bounded chunks (`PackEmitter`); nothing is buffered whole.
     let repo_name = repo_name.to_string();
     let emit_progress = !no_progress;
     let stream = async_stream::stream! {
-        yield Ok(head);
+        let fetch_start = crate::metrics::now_ms();
         let repo = Repo {
             store: store.as_ref(),
             states: states.as_ref(),
@@ -406,10 +322,107 @@ async fn fetch(
                 return;
             }
         };
+
+        let mut shallow_boundary: Vec<Oid> = Vec::new();
+        let mut unshallow: Vec<Oid> = Vec::new();
+        let filter_ref = filter.as_ref();
+        let set = if let Some(depth) = deepen {
+            let _t = crate::timing::Phase::start("fetch: collect shallow set");
+            match crate::repo::collect_shallow_set(
+                &odb,
+                &wants,
+                depth,
+                &client_shallow,
+                filter_ref,
+            )
+            .await
+            {
+                Ok(plan) => {
+                    shallow_boundary = plan.shallow;
+                    unshallow = plan.unshallow;
+                    plan.set
+                }
+                Err(e) => {
+                    yield Err(e);
+                    return;
+                }
+            }
+        } else {
+            let want_set: std::collections::HashSet<Oid> = wants.iter().copied().collect();
+            let is_full_clone = filter.is_none()
+                && haves.is_empty()
+                && state.refs.values().all(|hex| {
+                    Oid::from_hex(hex)
+                        .map(|o| want_set.contains(&o))
+                        .unwrap_or(false)
+                });
+            if is_full_clone {
+                crate::repo::FetchSet {
+                    include: odb.all_oids(),
+                    common: Vec::new(),
+                    client_has: std::collections::HashSet::new(),
+                }
+            } else {
+                let _t = crate::timing::Phase::start("fetch: collect set");
+                match crate::repo::collect_fetch_set(&odb, &wants, &haves, filter_ref).await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        yield Err(e);
+                        return;
+                    }
+                }
+            }
+        };
+        let plan = match crate::repo::plan_pack(&odb, &set, thin_pack) {
+            Ok(p) => p,
+            Err(e) => {
+                yield Err(e);
+                return;
+            }
+        };
+        let object_count = plan.entries.len();
+
+        // Section header: negotiation acks (stateless: always `ready`), an
+        // optional shallow-info section, then the packfile marker — all tiny,
+        // sent as the stream's first chunk.
+        let mut head = Vec::new();
+        if !done {
+            head.text("acknowledgments");
+            if set.common.is_empty() {
+                head.text("NAK");
+            } else {
+                for c in &set.common {
+                    head.text(&format!("ACK {c}"));
+                }
+            }
+            head.text("ready");
+            head.delim_pkt();
+        }
+        if !shallow_boundary.is_empty() || !unshallow.is_empty() {
+            head.text("shallow-info");
+            for c in &shallow_boundary {
+                head.text(&format!("shallow {c}"));
+            }
+            for c in &unshallow {
+                head.text(&format!("unshallow {c}"));
+            }
+            head.delim_pkt();
+        }
+        head.text("packfile");
+        if emit_progress {
+            head.progress(&format!("packing {object_count} objects"));
+            write_repo_debug(
+                &mut head,
+                &state,
+                lease_until_ms,
+                crate::metrics::now_ms() as i64,
+            );
+        }
+        yield Ok(head);
+
         let mut emitter = crate::repo::PackEmitter::new(plan);
         loop {
             match emitter.next_chunk(&odb).await {
-                // Wrap pack bytes into side-band DATA pkts as they emerge.
                 Ok(Some(pack_bytes)) => {
                     let mut out = Vec::with_capacity(pack_bytes.len() + 64);
                     out.band(band::DATA, &pack_bytes);
@@ -417,9 +430,6 @@ async fn fetch(
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    // Mid-stream failure: report on the error band, then cut
-                    // the stream (the truncated pack fails the client's
-                    // checksum, so no corruption is possible).
                     let mut out = Vec::new();
                     out.error_band(&e);
                     yield Ok(out);
