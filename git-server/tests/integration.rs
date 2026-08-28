@@ -1252,8 +1252,9 @@ fn phone_loadtest_html() {
     let (status, body) = server.get("/loadtest");
     assert_eq!(status, 200);
     let html = String::from_utf8_lossy(&body);
-    assert!(html.contains("Run $0.10 load test"), "{html}");
-    assert!(html.contains("?run=1"), "{html}");
+    assert!(html.contains("Run $0.05 load test"), "{html}");
+    assert!(html.contains("Running"), "{html}");
+    assert!(html.contains("fetch("), "{html}");
 
     let (status, body) = server.get("/loadtest?run=1&budget=0.05&duration=2");
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));

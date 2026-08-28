@@ -1060,8 +1060,13 @@ pub fn token_matches(provided: &str, expected: &str) -> bool {
         == 0
 }
 
-/// Phone-friendly defaults: $0.10, short stages, finishes before a mobile
-/// browser gives up waiting.
+/// Phone UI defaults. Kept small so one isolate stays under Workers
+/// subrequest/memory walls (a prior 32w/64r ramp threw Error 1101).
+pub const PHONE_DEFAULT_BUDGET_USD: f64 = 0.05;
+pub const PHONE_DEFAULT_DURATION_SECS: u64 = 4;
+
+/// Phone-friendly defaults: short stages, low concurrency, finishes before
+/// a mobile browser or the isolate gives up.
 pub fn phone_request(budget_usd: f64, duration_secs: u64) -> LoadTestRequest {
     LoadTestRequest {
         confirm: true,
@@ -1069,16 +1074,16 @@ pub fn phone_request(budget_usd: f64, duration_secs: u64) -> LoadTestRequest {
         duration_secs: Some(duration_secs),
         stages: Some(vec![
             StageSpec {
-                writers: 8,
+                writers: 2,
                 readers: 0,
             },
             StageSpec {
-                writers: 32,
+                writers: 6,
                 readers: 0,
             },
             StageSpec {
                 writers: 0,
-                readers: 64,
+                readers: 12,
             },
         ]),
         shards: Some(1),
@@ -1095,16 +1100,22 @@ pub fn phone_repo_name() -> String {
     format!("lt{}", ms % 1_000_000_000)
 }
 
-/// Landing page: one big button that hits `?run=1` (and `token=` when set).
+/// Landing page: one button. Click runs `?run=1` via fetch so the page can
+/// show a live timer instead of a blank browser spinner (and surface Worker
+/// errors as text instead of a bare connection timeout).
 pub fn html_landing(budget_usd: f64, duration_secs: u64, token: Option<&str>) -> String {
     let token_q = token
-        .map(|t| format!("&amp;token={}", html_escape(t)))
+        .map(|t| format!("&token={}", js_string_escape(t)))
         .unwrap_or_default();
+    let run_url = format!("/loadtest?run=1&budget={budget_usd}&duration={duration_secs}{token_q}");
     let token_hint = if token.is_some() {
         String::new()
     } else {
-        "<p style=\"color:var(--muted);font-size:0.95rem\">Add <code>?token=…</code> to the URL (required in production).</p>".into()
+        "<p class=\"hint\">Add <code>?token=…</code> to the URL (required in production).</p>"
+            .into()
     };
+    // ~3 stages × duration, plus seed; shown as an expectation only.
+    let expect_secs = duration_secs.saturating_mul(3).saturating_add(5);
     format!(
         r##"<!doctype html>
 <html lang="en">
@@ -1117,11 +1128,7 @@ pub fn html_landing(budget_usd: f64, duration_secs: u64, token: Option<&str>) ->
 <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600;700&family=Source+Code+Pro:wght@500&display=swap" rel="stylesheet">
 <style>
 :root {{
-  --bg: #0f1419;
-  --fg: #e7ecf1;
-  --muted: #8b9aab;
-  --accent: #3dd68c;
-  --card: #1a222c;
+  --bg: #0f1419; --fg: #e7ecf1; --muted: #8b9aab; --accent: #3dd68c; --warn: #f5a524;
 }}
 * {{ box-sizing: border-box; }}
 body {{
@@ -1131,24 +1138,65 @@ body {{
 }}
 main {{ width: min(28rem, 100%); text-align: center; }}
 h1 {{ font-size: 1.75rem; font-weight: 700; margin: 0 0 0.5rem; letter-spacing: -0.02em; }}
-p {{ color: var(--muted); margin: 0 0 1.75rem; }}
-a.run {{
-  display: block; width: 100%; padding: 1.15rem 1.25rem;
-  background: var(--accent); color: #062016; text-decoration: none;
-  font-weight: 700; font-size: 1.25rem; border-radius: 0.75rem;
+p {{ color: var(--muted); margin: 0 0 1.25rem; }}
+p.hint {{ font-size: 0.95rem; }}
+button.run {{
+  display: block; width: 100%; padding: 1.15rem 1.25rem; border: 0; cursor: pointer;
+  background: var(--accent); color: #062016; font: inherit; font-weight: 700;
+  font-size: 1.25rem; border-radius: 0.75rem;
 }}
-a.run:active {{ filter: brightness(0.92); }}
+button.run:disabled {{ opacity: 0.55; cursor: wait; }}
+button.run:active:not(:disabled) {{ filter: brightness(0.92); }}
+#status {{ min-height: 1.5rem; margin: 1rem 0 0; color: var(--muted); font-size: 1rem; }}
+#status.err {{ color: var(--warn); white-space: pre-wrap; text-align: left; }}
 code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95em; }}
 </style>
 </head>
 <body>
 <main>
   <h1>git loadtest</h1>
-  <p>Runs push/pull load against this Worker.<br>
-  Cap <code>${budget_usd:.2}</code> · ~{duration_secs}s per stage · results on the next page.</p>
+  <p>Push/pull load against this Worker.<br>
+  Cap <code>${budget_usd:.2}</code> · {duration_secs}s × 3 stages · ~{expect_secs}s total.<br>
+  No mid-run updates — the timer below is all you get until the report.</p>
   {token_hint}
-  <a class="run" href="/loadtest?run=1&amp;budget={budget_usd}&amp;duration={duration_secs}{token_q}">Run ${budget_usd:.2} load test</a>
+  <button class="run" id="run" type="button">Run ${budget_usd:.2} load test</button>
+  <p id="status" aria-live="polite"></p>
 </main>
+<script>
+(function () {{
+  var btn = document.getElementById("run");
+  var status = document.getElementById("status");
+  var url = "{run_url}";
+  btn.addEventListener("click", function () {{
+    btn.disabled = true;
+    var t0 = Date.now();
+    status.className = "";
+    status.textContent = "Running… 0s";
+    var tick = setInterval(function () {{
+      status.textContent = "Running… " + Math.floor((Date.now() - t0) / 1000) + "s";
+    }}, 250);
+    fetch(url, {{ credentials: "same-origin", headers: {{ "Accept": "text/html" }} }})
+      .then(function (res) {{ return res.text().then(function (t) {{ return {{ ok: res.ok, status: res.status, text: t }}; }}); }})
+      .then(function (r) {{
+        clearInterval(tick);
+        if (r.ok && r.text.indexOf("<html") !== -1) {{
+          document.open(); document.write(r.text); document.close();
+          return;
+        }}
+        status.className = "err";
+        status.textContent = "Failed (HTTP " + r.status + ").\\n" + r.text.replace(/<[^>]+>/g, " ").slice(0, 500);
+        btn.disabled = false;
+      }})
+      .catch(function (e) {{
+        clearInterval(tick);
+        status.className = "err";
+        status.textContent = "Request failed: " + (e && e.message ? e.message : e) +
+          "\\nThe Worker may have hit a limit (try again; defaults are light).";
+        btn.disabled = false;
+      }});
+  }});
+}})();
+</script>
 </body>
 </html>
 "##
@@ -1166,8 +1214,8 @@ pub fn html_report(report: &LoadTestReport, token: Option<&str>) -> String {
         .map(|t| format!("&amp;token={}", html_escape(t)))
         .unwrap_or_default();
     let again_href = format!(
-        "/loadtest?run=1&amp;budget={}&amp;duration=10{token_q}",
-        report.budget_usd
+        "/loadtest?budget={}&amp;duration={}{token_q}",
+        report.budget_usd, PHONE_DEFAULT_DURATION_SECS
     );
     let mut stages = String::new();
     for s in &report.stages {
@@ -1177,9 +1225,11 @@ pub fn html_report(report: &LoadTestReport, token: Option<&str>) -> String {
         let rps = s.pulls_per_sec;
         let ok_p = s.push_ok;
         let ok_r = s.pull_ok;
+        let err_p = s.push_err + s.push_conflict;
+        let err_r = s.pull_err;
         let cost = s.stage_cost_usd;
         stages.push_str(&format!(
-            "<tr><td>{w}w/{r}r</td><td>{pps:.1}</td><td>{rps:.1}</td><td>{ok_p}/{ok_r}</td><td>${cost:.4}</td></tr>\n"
+            "<tr><td>{w}w/{r}r</td><td>{pps:.1}</td><td>{rps:.1}</td><td>{ok_p}/{ok_r}</td><td>{err_p}/{err_r}</td><td>${cost:.4}</td></tr>\n"
         ));
     }
     let push = &report.cost_per_push;
@@ -1190,6 +1240,23 @@ pub fn html_report(report: &LoadTestReport, token: Option<&str>) -> String {
     let budget = report.budget_usd;
     let peak_p = report.peak_pushes_per_sec;
     let peak_r = report.peak_pulls_per_sec;
+    let pull_note = if peak_r == 0.0
+        && report
+            .stages
+            .iter()
+            .any(|s| s.readers > 0 && s.pull_ok + s.pull_err > 0)
+    {
+        let errs: u64 = report.stages.iter().map(|s| s.pull_err).sum();
+        format!(
+            "<p class=\"meta\" style=\"color:var(--warn)\">No successful pulls ({errs} errors). \
+             Usually the read stage was too wide for one isolate — retry after the lighter phone defaults deploy.</p>"
+        )
+    } else if peak_r == 0.0 && report.stages.iter().any(|s| s.readers > 0) {
+        "<p class=\"meta\" style=\"color:var(--warn)\">Read stage produced no pull attempts (check duration / budget).</p>"
+            .into()
+    } else {
+        String::new()
+    };
     let push_n = push.samples;
     let push_usd = push.mean_cost_usd;
     let push_a = push.mean_r2_class_a;
@@ -1262,6 +1329,7 @@ a.again {{
 <div class="wrap">
   <h1>loadtest {limited}</h1>
   <p class="meta">repo <code>{repo}</code> · wall {wall:.1}s · spend ${spent:.4} / ${budget:.2}</p>
+  {pull_note}
   <div class="grid">
     <div class="card"><div class="label">peak pushes/s</div><div class="val">{peak_p:.1}</div></div>
     <div class="card"><div class="label">peak pulls/s</div><div class="val">{peak_r:.1}</div></div>
@@ -1272,11 +1340,11 @@ a.again {{
   <p class="ops">{pull_n} samples · mean ${pull_usd:.6} · R2A {pull_a:.1} · R2B {pull_b:.1} · DO {pull_do:.1} · {pull_ms:.0} ms</p>
   <h2>Stages</h2>
   <table>
-    <thead><tr><th>load</th><th>push/s</th><th>pull/s</th><th>ok p/r</th><th>$</th></tr></thead>
+    <thead><tr><th>load</th><th>push/s</th><th>pull/s</th><th>ok p/r</th><th>err p/r</th><th>$</th></tr></thead>
     <tbody>
 {stages}    </tbody>
   </table>
-  <a class="again" href="{again_href}">Run again</a>
+  <a class="again" href="{again_href}">Back to run</a>
   <p class="meta" style="margin-top:1rem;text-align:center"><a href="/loadtest" style="color:var(--muted)">Back</a></p>
 </div>
 </body>
@@ -1290,6 +1358,24 @@ fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// Escape for embedding inside a double-quoted JS / HTML attribute string.
+fn js_string_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\\' | '"' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '<' => out.push_str("\\u003c"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// Split offered concurrency across `cfg.shards` in-process partitions and
@@ -1403,6 +1489,57 @@ mod tests {
         assert!(pack.starts_with(b"PACK"));
         let body = build_push_body(Oid::ZERO, oid, "refs/heads/main", &pack);
         assert!(body.len() > pack.len());
+    }
+
+    #[test]
+    fn pull_stage_after_many_writes_has_ok_pulls() {
+        block_on(async {
+            let store = Rc::new(MemStore::new()) as Rc<dyn Store>;
+            let states = Rc::new(MemStateStore::new()) as Rc<dyn StateStore>;
+            let report = run_in_process(
+                store,
+                states,
+                "lt-pulls",
+                LoadTestRequest {
+                    confirm: true,
+                    budget_usd: Some(0.5),
+                    duration_secs: Some(2),
+                    stages: Some(vec![
+                        StageSpec {
+                            writers: 8,
+                            readers: 0,
+                        },
+                        StageSpec {
+                            writers: 16,
+                            readers: 0,
+                        },
+                        StageSpec {
+                            writers: 0,
+                            readers: 16,
+                        },
+                    ]),
+                    shards: Some(1),
+                    shard: false,
+                    tip: None,
+                    shard_index: None,
+                    token: None,
+                },
+            )
+            .await
+            .expect("loadtest");
+            let last = report.stages.last().expect("stage");
+            eprintln!(
+                "report: peak_pull={} pull_samples={} last={:?}",
+                report.peak_pulls_per_sec, report.cost_per_pull.samples, last
+            );
+            assert!(last.readers > 0);
+            assert!(
+                last.pull_ok > 0,
+                "expected successful pulls after writes; pull_ok={} pull_err={} report={report:?}",
+                last.pull_ok,
+                last.pull_err
+            );
+        });
     }
 
     #[test]

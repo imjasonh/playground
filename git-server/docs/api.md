@@ -230,10 +230,14 @@ Plain-text banner identifying the service.
 ### `GET /loadtest`
 Phone-friendly HTML load test. Open this URL in a browser:
 
-* without query params — landing page with one big **Run $0.10 load test**
-  button;
+* without query params — landing page with one **Run** button (JS fetch +
+  live seconds timer; no mid-run report);
 * with `?run=1` — runs immediately into a disposable repo and prints the
   report (peak pushes/s, pulls/s, $/op, budget status, per-stage table).
+
+Defaults are intentionally light (`budget=0.05`, `duration=4`, up to 6
+concurrent writers) so one isolate stays under Workers subrequest/memory
+limits. Heavier ramps belong on `POST /api/<repo>/loadtest`.
 
 **Auth:** production requires the Worker secret `LOADTEST_TOKEN`. Pass it as
 `?token=…`, or as the `X-Loadtest-Token` header. Without a matching token the
