@@ -1203,3 +1203,43 @@ fn progress_reaches_git_push_and_fetch() {
     assert!(ok, "pull failed: {pull_out}");
     assert_progress_visible("pull", &pull_out);
 }
+
+/// `POST /api/<repo>/loadtest` seeds, runs a short budget-capped stage, and
+/// returns peak QPS + per-op cost fields.
+#[test]
+fn api_loadtest_reports_peaks_and_costs() {
+    let server = TestServer::start();
+    let body = serde_json::json!({
+        "confirm": true,
+        "budget_usd": 0.05,
+        "duration_secs": 2,
+        "stages": [
+            {"writers": 2, "readers": 0},
+            {"writers": 0, "readers": 4}
+        ]
+    });
+    let (status, resp) = server.post_with_body(
+        "/api/lt/loadtest",
+        &[("Content-Type", "application/json")],
+        body.to_string().as_bytes(),
+    );
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&resp));
+    let report: Value = serde_json::from_slice(&resp).unwrap();
+    assert_eq!(report["repo"], "lt");
+    assert!(report["tip"].as_str().unwrap().len() == 40, "{report}");
+    assert!(report["total_cost_usd"].as_f64().unwrap() >= 0.0);
+    assert!(report["budget_usd"].as_f64().unwrap() <= 0.05 + 1e-9);
+    let stages = report["stages"].as_array().unwrap();
+    assert!(!stages.is_empty(), "{report}");
+    let any_ok = stages
+        .iter()
+        .any(|s| s["push_ok"].as_u64().unwrap_or(0) + s["pull_ok"].as_u64().unwrap_or(0) > 0);
+    assert!(any_ok, "{report}");
+    // Without confirm the endpoint refuses.
+    let (status, resp) = server.post_with_body(
+        "/api/lt2/loadtest",
+        &[("Content-Type", "application/json")],
+        br#"{"confirm":false,"budget_usd":0.01}"#,
+    );
+    assert_eq!(status, 400, "{}", String::from_utf8_lossy(&resp));
+}

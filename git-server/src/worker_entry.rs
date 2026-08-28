@@ -426,6 +426,43 @@ impl BodyStream for WorkerBody {
     }
 }
 
+/// Fully-buffered body (loadtest JSON is small and read once up front).
+struct BytesBody {
+    chunks: std::collections::VecDeque<Vec<u8>>,
+}
+
+impl BytesBody {
+    fn new(bytes: Vec<u8>) -> Self {
+        let mut chunks = std::collections::VecDeque::new();
+        if !bytes.is_empty() {
+            chunks.push_back(bytes);
+        }
+        Self { chunks }
+    }
+}
+
+#[async_trait(?Send)]
+impl BodyStream for BytesBody {
+    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
+        Ok(self.chunks.pop_front())
+    }
+}
+
+enum IncomingBody {
+    Bytes(BytesBody),
+    Stream(WorkerBody),
+}
+
+#[async_trait(?Send)]
+impl BodyStream for IncomingBody {
+    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
+        match self {
+            IncomingBody::Bytes(b) => b.next_chunk().await,
+            IncomingBody::Stream(b) => b.next_chunk().await,
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Entry points
 // ---------------------------------------------------------------------------
@@ -475,6 +512,8 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
         "git.receive_pack"
     } else if path.contains("git-upload-pack") {
         "git.upload_pack"
+    } else if path.ends_with("/loadtest") {
+        "git.loadtest"
     } else if path.starts_with("/api/") {
         "git.api"
     } else {
@@ -536,6 +575,23 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
         content_encoding,
         cf_ray,
     } = ctx;
+
+    // Buffer loadtest JSON so the router can parse it (small body).
+    let mut body = if method == "POST" && path.ends_with("/loadtest") {
+        let mut buf = Vec::new();
+        if let Ok(mut stream) = req.stream() {
+            use futures::StreamExt;
+            while let Some(chunk) = stream.next().await {
+                buf.extend_from_slice(&chunk.map_err(|e| worker::Error::RustError(e.to_string()))?);
+            }
+        }
+        IncomingBody::Bytes(BytesBody::new(buf))
+    } else {
+        IncomingBody::Stream(WorkerBody {
+            stream: req.stream().ok(),
+        })
+    };
+
     let http_req = HttpRequest {
         method: &method,
         path: &path,
@@ -543,9 +599,6 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
         git_protocol: git_protocol.as_deref(),
         content_encoding: content_encoding.as_deref(),
         cf_ray: cf_ray.as_deref(),
-    };
-    let mut body = WorkerBody {
-        stream: req.stream().ok(),
     };
 
     let nonce = request_nonce();
