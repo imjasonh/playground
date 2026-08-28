@@ -550,18 +550,18 @@ impl GitHttp {
     }
 
     /// `GET /loadtest` — phone-friendly HTML. Without `run=1`, shows a
-    /// one-button landing page. With `run=1`, runs a $0.10 (default) load
-    /// test into a disposable repo and prints the report. Query knobs:
+    /// one-button landing page. With `run=1`, runs a light budget-capped
+    /// load test into a disposable repo and prints the report. Query knobs:
     /// `budget`, `duration` (seconds), `token` (required when auth is on).
     async fn phone_loadtest(&self, req: &Request<'_>) -> Response {
         let query = req.query;
         let budget = query_param(query, "budget")
             .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(crate::loadtest::DEFAULT_BUDGET_USD)
+            .unwrap_or(crate::loadtest::PHONE_DEFAULT_BUDGET_USD)
             .clamp(0.01, crate::loadtest::MAX_BUDGET_USD);
         let duration = query_param(query, "duration")
             .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(10)
+            .unwrap_or(crate::loadtest::PHONE_DEFAULT_DURATION_SECS)
             .clamp(1, crate::loadtest::MAX_DURATION_SECS);
         let token = req
             .loadtest_token
