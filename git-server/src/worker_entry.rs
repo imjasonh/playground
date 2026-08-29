@@ -25,13 +25,15 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use worker::{
-    durable_object, event, Bucket, Context, DurableObject, Env, Method, MultipartUpload, Range,
-    Request, RequestInit, Response, State, UploadedPart,
+    durable_object, event, Bucket, Context, DurableObject, Env, Fetcher, Method, MultipartUpload,
+    Range, Request, RequestInit, Response, State, UploadedPart,
 };
 
 const BUCKET_BINDING: &str = "GIT_BUCKET";
 const DO_BINDING: &str = "REPO_STATE";
 const REPOS_KV_BINDING: &str = "GIT_REPOS";
+/// Service binding name for same-Worker shard fan-out (`[[services]]` in wrangler.toml).
+const SELF_BINDING: &str = "SELF";
 
 /// R2 requires all parts except the last to be at least 5 MiB.
 const PART_SIZE: usize = 5 * 1024 * 1024;
@@ -475,8 +477,10 @@ fn request_nonce() -> String {
 }
 
 /// HTTP self-fetch for coordinated loadtest shards (same repo, fresh isolates).
+/// Uses the `SELF` service binding — public-URL `Fetch` to this Worker hits
+/// Cloudflare error 1042 (same-zone Worker fetch).
 struct WorkerLoadtestFanout {
-    origin: String,
+    self_fetch: Fetcher,
     token: Option<String>,
 }
 
@@ -487,7 +491,8 @@ impl crate::loadtest::LoadtestFanout for WorkerLoadtestFanout {
         repo: &str,
         req: crate::loadtest::LoadTestRequest,
     ) -> Result<crate::loadtest::LoadTestReport, String> {
-        let url = format!("{}/api/{}/loadtest", self.origin, repo);
+        // Hostname is ignored for service bindings; path/method/body matter.
+        let url = format!("https://self/api/{repo}/loadtest");
         let body = serde_json::to_vec(&req).map_err(|e| e.to_string())?;
         let mut init = RequestInit::new();
         init.with_method(Method::Post);
@@ -504,11 +509,11 @@ impl crate::loadtest::LoadtestFanout for WorkerLoadtestFanout {
                 .map_err(|e| e.to_string())?;
         }
         init.with_headers(headers);
-        let request = Request::new_with_init(&url, &init).map_err(|e| e.to_string())?;
-        let mut resp = worker::Fetch::Request(request)
-            .send()
+        let mut resp = self
+            .self_fetch
+            .fetch(url, Some(init))
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("shard self-fetch: {e}"))?;
         let status = resp.status_code();
         let text = resp.text().await.map_err(|e| e.to_string())?;
         if !(200..300).contains(&status) {
@@ -564,21 +569,29 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
     let url = req.url()?;
     let path = url.path().to_string();
     let query = url.query().map(|q| q.to_string());
-    let origin = format!("{}://{}", url.scheme(), url.host_str().unwrap_or(""));
     let method = req.method().to_string();
     let git_protocol = req.headers().get("Git-Protocol").ok().flatten();
     let content_encoding = req.headers().get("Content-Encoding").ok().flatten();
     let cf_ray = req.headers().get("cf-ray").ok().flatten();
     let loadtest_token = req.headers().get("X-Loadtest-Token").ok().flatten();
 
-    // Self-fetch fan-out so multi-shard loadtests (same repo) land on
-    // separate isolates — useful for probing the per-repo ceiling past
-    // one-isolate CPU.
-    let fanout = std::rc::Rc::new(WorkerLoadtestFanout {
-        origin,
-        token: server.loadtest_token.clone(),
-    });
-    server = server.with_loadtest_fanout(fanout);
+    // Service-binding self-fetch so multi-shard loadtests land on separate
+    // isolates without Cloudflare error 1042 (same-zone public Fetch).
+    match env.service(SELF_BINDING) {
+        Ok(self_fetch) => {
+            let fanout = std::rc::Rc::new(WorkerLoadtestFanout {
+                self_fetch,
+                token: server.loadtest_token.clone(),
+            });
+            server = server.with_loadtest_fanout(fanout);
+        }
+        Err(e) => {
+            // shards>1 will fall back to in-process partitioning (same isolate).
+            worker::console_log!(
+                "SELF service binding unavailable ({e}); loadtest shards stay in-process"
+            );
+        }
+    }
 
     let span_name = if path.contains("git-receive-pack") {
         "git.receive_pack"
