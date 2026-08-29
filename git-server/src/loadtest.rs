@@ -120,12 +120,14 @@ pub struct LoadTestConfig {
 
 /// Cap on isolate shards for one coordinated run.
 ///
-/// Cloudflare allows at most **32 Worker invocations** in a single request
-/// chain; each `SELF` service-binding call counts. The coordinator is one
-/// invocation, so at most 31 shard POSTs can run. Cap below that for
-/// headroom (other nested work) — exceeding the limit throws and the client
-/// sees a bare HTTP 500.
-pub const MAX_SHARDS: u32 = 24;
+/// Cloudflare enforces two related limits on service-binding fan-out:
+/// * at most **32 Worker invocations** in a request chain
+/// * a **loop limit of 16** when a Worker calls itself (or another Worker) —
+///   past that the platform returns error 1019 / a bare HTTP 500
+///
+/// The coordinator is one invocation; each `SELF` shard POST is another.
+/// Cap at 16 so phone UI max matches the loop limit.
+pub const MAX_SHARDS: u32 = 16;
 
 impl LoadTestRequest {
     /// Validate and clamp into a [`LoadTestConfig`].
@@ -1374,7 +1376,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
     </label>
     <label>Isolates (shards)
-      <span class="detail">Same repo; fan writers across Worker isolates. Max {max_shards} (Cloudflare caps service-binding fan-out under 32 invocations). Raise this to beat one-isolate CPU.</span>
+      <span class="detail">Same repo; fan writers across Worker isolates. Max {max_shards} (Cloudflare loop limit on self service-binding). Raise this to beat one-isolate CPU.</span>
       <input id="shards" type="number" inputmode="numeric" min="1" max="{max_shards}" step="1" value="{shards}">
     </label>
   </div>
@@ -2091,11 +2093,11 @@ mod tests {
 
     #[test]
     fn max_shards_fits_cloudflare_invocation_cap() {
-        // Coordinator + N service-binding shards must stay ≤ 32 invocations.
+        // Worker→Worker loop limit is 16; stay at or under that.
         let cap = MAX_SHARDS;
         assert!(
-            cap <= 31,
-            "MAX_SHARDS={cap} would exceed CF's 32 Worker-invocation cap"
+            cap <= 16,
+            "MAX_SHARDS={cap} would exceed CF's Worker→Worker loop limit"
         );
         assert_eq!(clamp_phone_shards(32), MAX_SHARDS);
         assert_eq!(clamp_phone_shards(99), MAX_SHARDS);

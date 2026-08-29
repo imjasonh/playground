@@ -479,8 +479,9 @@ fn request_nonce() -> String {
 /// HTTP self-fetch for coordinated loadtest shards (same repo, fresh isolates).
 /// Uses the `SELF` service binding — public-URL `Fetch` to this Worker hits
 /// Cloudflare error 1042 (same-zone Worker fetch). Keep shard count ≤
-/// [`crate::loadtest::MAX_SHARDS`]: CF allows only 32 Worker invocations per
-/// request chain (this coordinator + each binding call).
+/// [`crate::loadtest::MAX_SHARDS`]: CF's Worker→Worker loop limit is 16
+/// (error 1019 / bare 500 past that), and a request chain may have at most
+/// 32 Worker invocations total.
 struct WorkerLoadtestFanout {
     self_fetch: Fetcher,
     token: Option<String>,
@@ -519,10 +520,15 @@ impl crate::loadtest::LoadtestFanout for WorkerLoadtestFanout {
         let status = resp.status_code();
         let text = resp.text().await.map_err(|e| e.to_string())?;
         if !(200..300).contains(&status) {
-            return Err(format!(
-                "shard HTTP {status}: {}",
-                text.chars().take(300).collect::<String>()
-            ));
+            let snip = text.chars().take(300).collect::<String>();
+            // CF loop limit (Worker→Worker) surfaces as 1019 / 5xx with little body.
+            if status == 1019 || snip.contains("1019") || snip.contains("loop") {
+                return Err(format!(
+                    "shard HTTP {status} (Cloudflare Worker→Worker loop limit; use ≤{} shards): {snip}",
+                    crate::loadtest::MAX_SHARDS
+                ));
+            }
+            return Err(format!("shard HTTP {status}: {snip}"));
         }
         serde_json::from_str(&text).map_err(|e| format!("bad shard JSON: {e}"))
     }
