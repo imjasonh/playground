@@ -640,6 +640,7 @@ impl GitHttp {
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(crate::loadtest::PHONE_DEFAULT_SHARDS);
         let shards = crate::loadtest::clamp_phone_shards(shards);
+        let (peak, shards) = crate::loadtest::phone_fanout_plan(peak, shards);
         let token = req
             .loadtest_token
             .or(query_param(query, "token"))

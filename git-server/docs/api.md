@@ -251,14 +251,22 @@ disjoint-branch pushes merge-apply without conflicting. Defaults:
 `budget=0.10`, `duration=4`, `peak=8`, `shards=4` (capped at 48 peak / 16
 shards).
 
+Each shard POST runs nested push/pull loops **inside one Worker
+invocation**. That isolate has a shared ~1000-subrequest budget and 128 MiB
+heap — a prior 32-writer phone ramp threw Cloudflare Error 1101. The UI
+keeps **≤6 writers / ≤12 readers per isolate** (auto-raising `shards` when
+peak would otherwise exceed that). Heavier single-isolate ramps belong on
+distributed clients, not nested in-Worker loops.
+
 **Auth:** production requires the Worker secret `LOADTEST_TOKEN`. Pass it as
 `?token=…`, or as the `X-Loadtest-Token` header. Without a matching token the
 run returns 401 (HTML error page for GET). If the secret is unset, loadtests
 return 503.
 
 Optional query: `budget` (USD, default `0.10`, max `5`), `peak` (writers,
-default `8`, max `48`), `shards` (isolates, default `4`, max `16`),
-`duration` (seconds per stage, default `4`). Bookmark
+default `8`, max `48`), `shards` (isolates, default `4`, max `16`; raised
+automatically so peak ÷ shards ≤ 6), `duration` (seconds per stage, default
+`4`). Bookmark
 `https://git.<account>.workers.dev/loadtest?token=…` and adjust the form, or
 `…/loadtest?run=1&budget=0.10&peak=8&shards=4&token=…` for one-tap in-process.
 

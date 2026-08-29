@@ -495,10 +495,16 @@ pub async fn run_loadtest(
     let mut pull_samples = 0u64;
     let mut budget_limited = false;
 
-    for (stage_i, spec) in cfg.stages.iter().enumerate() {
+    for (stage_i, raw_spec) in cfg.stages.iter().enumerate() {
         if !budget.allow_start() {
             budget_limited = true;
             break;
+        }
+        // One invocation's nested loops share subrequest/memory budgets.
+        // On wasm, clamp so phone shard POSTs cannot recreate Error 1101.
+        let spec = clamp_stage_to_isolate(raw_spec);
+        if spec.writers == 0 && spec.readers == 0 {
+            continue;
         }
         let stage_start = metrics::now_ms();
         let deadline = stage_start + cfg.duration_ms as f64;
@@ -1238,6 +1244,14 @@ pub const PHONE_MAX_PEAK: u32 = 48;
 /// Isolates to fan writers/readers across (same repo). `1` = this isolate only.
 pub const PHONE_DEFAULT_SHARDS: u32 = 4;
 pub const PHONE_MAX_SHARDS: u32 = MAX_SHARDS;
+/// Max concurrent writer loops in **one** Worker invocation.
+///
+/// Nested in-process pushes share one isolate's ~1000-subrequest budget and
+/// 128 MiB heap. A phone ramp of 32 writers / 64 readers threw Cloudflare
+/// Error 1101 (PR #321); ≤6 writers / ≤12 readers stayed healthy.
+pub const PHONE_MAX_WRITERS_PER_ISOLATE: u32 = 6;
+/// Max concurrent reader loops in one Worker invocation (see writers cap).
+pub const PHONE_MAX_READERS_PER_ISOLATE: u32 = 12;
 
 /// Clamp a phone peak-writers value into the safe range.
 pub fn clamp_phone_peak(peak: u32) -> u32 {
@@ -1247,6 +1261,38 @@ pub fn clamp_phone_peak(peak: u32) -> u32 {
 /// Clamp phone isolate-shard count.
 pub fn clamp_phone_shards(shards: u32) -> u32 {
     shards.clamp(1, PHONE_MAX_SHARDS)
+}
+
+/// Raise `shards` (and clamp `peak` if needed) so each isolate stays within
+/// [`PHONE_MAX_WRITERS_PER_ISOLATE`]. Preserves offered peak when enough
+/// isolates are available (≤ [`PHONE_MAX_SHARDS`]).
+pub fn phone_fanout_plan(peak: u32, shards: u32) -> (u32, u32) {
+    let peak = clamp_phone_peak(peak);
+    let mut shards = clamp_phone_shards(shards);
+    let need = peak.div_ceil(PHONE_MAX_WRITERS_PER_ISOLATE).max(1);
+    if need > shards {
+        shards = clamp_phone_shards(need);
+    }
+    let max_peak = shards
+        .saturating_mul(PHONE_MAX_WRITERS_PER_ISOLATE)
+        .clamp(1, PHONE_MAX_PEAK);
+    (peak.min(max_peak), shards)
+}
+
+/// Cap one stage to the per-isolate concurrency envelope (Workers only).
+/// Native tests keep the requested concurrency.
+pub fn clamp_stage_to_isolate(st: &StageSpec) -> StageSpec {
+    #[cfg(target_arch = "wasm32")]
+    {
+        StageSpec {
+            writers: st.writers.min(PHONE_MAX_WRITERS_PER_ISOLATE),
+            readers: st.readers.min(PHONE_MAX_READERS_PER_ISOLATE),
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        st.clone()
+    }
 }
 
 /// Phone stages from a peak writer count: warm-up → peak writers → 2× readers.
@@ -1277,12 +1323,13 @@ pub fn phone_request(
     peak: u32,
     shards: u32,
 ) -> LoadTestRequest {
+    let (peak, shards) = phone_fanout_plan(peak, shards);
     LoadTestRequest {
         confirm: true,
         budget_usd: Some(budget_usd),
         duration_secs: Some(duration_secs),
         stages: Some(phone_stages(peak)),
-        shards: Some(clamp_phone_shards(shards)),
+        shards: Some(shards),
         shard: false,
         tip: None,
         shard_index: None,
@@ -1314,12 +1361,15 @@ pub fn html_landing(
     };
     let peak = clamp_phone_peak(peak);
     let shards = clamp_phone_shards(shards);
+    let (peak, shards) = phone_fanout_plan(peak, shards);
     let stages = phone_stages(peak);
     let warm = stages[0].writers;
     let readers = stages[2].readers;
     let expect_secs = duration_secs.saturating_mul(3).saturating_add(5);
     let max_peak = PHONE_MAX_PEAK;
     let max_shards = PHONE_MAX_SHARDS;
+    let max_w_iso = PHONE_MAX_WRITERS_PER_ISOLATE;
+    let max_r_iso = PHONE_MAX_READERS_PER_ISOLATE;
     format!(
         r##"<!doctype html>
 <html lang="en">
@@ -1392,7 +1442,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
     </label>
     <label>Isolates (shards)
-      <span class="detail">Same repo; browser fires one POST per isolate. Max {max_shards}. Raise this to beat one-isolate CPU.</span>
+      <span class="detail">Same repo; one browser POST per isolate. Max {max_shards}. Auto-raises so each isolate stays ≤{max_w_iso} writers (avoids CF 1101).</span>
       <input id="shards" type="number" inputmode="numeric" min="1" max="{max_shards}" step="1" value="{shards}">
     </label>
   </div>
@@ -1414,6 +1464,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
   var token = "{token_js}";
   var maxPeak = {max_peak};
   var maxShards = {max_shards};
+  var maxWIso = {max_w_iso};
+  var maxRIso = {max_r_iso};
   function clampPeak(p) {{
     p = Math.floor(Number(p) || 1);
     if (p < 1) p = 1;
@@ -1426,14 +1478,30 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     if (s > maxShards) s = maxShards;
     return s;
   }}
+  /** Raise shards (or trim peak) so each isolate stays ≤ maxWIso writers. */
+  function fanoutPlan(peak, shards) {{
+    peak = clampPeak(peak);
+    shards = clampShards(shards);
+    var need = Math.max(1, Math.ceil(peak / maxWIso));
+    if (need > shards) shards = clampShards(need);
+    var maxPeakHere = Math.min(maxPeak, Math.max(1, shards * maxWIso));
+    if (peak > maxPeakHere) peak = maxPeakHere;
+    return {{ peak: peak, shards: shards }};
+  }}
   function updatePlan() {{
-    var peak = clampPeak(peakEl.value);
-    var shards = clampShards(shardsEl.value);
+    var requestedShards = clampShards(shardsEl.value);
+    var planVals = fanoutPlan(peakEl.value, requestedShards);
+    var peak = planVals.peak;
+    var shards = planVals.shards;
     var warm = Math.max(1, Math.floor(peak / 3));
     var readers = Math.max(1, peak * 2);
+    var perW = Math.ceil(peak / shards);
     var expect = duration * 3 + 5;
+    var note = shards > requestedShards
+      ? " (raised to " + shards + " shards, ≤" + maxWIso + "w each)"
+      : " (≤" + perW + "w/isolate)";
     plan.textContent = warm + "w → " + peak + "w → " + readers +
-      "r · " + shards + " shards · " + duration + "s × 3 · ~" + expect + "s";
+      "r · " + shards + " shards · " + duration + "s × 3 · ~" + expect + "s" + note;
   }}
   peakEl.addEventListener("input", updatePlan);
   shardsEl.addEventListener("input", updatePlan);
@@ -1529,6 +1597,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       var st = stages[s];
       var w = Math.floor(st.writers / shards) + (i === 0 ? (st.writers % shards) : 0);
       var r = Math.floor(st.readers / shards) + (i === 0 ? (st.readers % shards) : 0);
+      if (w > maxWIso) w = maxWIso;
+      if (r > maxRIso) r = maxRIso;
       if (w > 0 || r > 0) out.push({{ writers: w, readers: r }});
     }}
     return out;
@@ -1545,8 +1615,16 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     }}, 250);
     var budget = Number(budgetEl.value);
     if (!(budget > 0)) budget = {budget_usd:.2};
-    var peak = clampPeak(peakEl.value);
-    var shards = clampShards(shardsEl.value);
+    var planVals = fanoutPlan(peakEl.value, shardsEl.value);
+    var peak = planVals.peak;
+    var shards = planVals.shards;
+    if (shards !== clampShards(shardsEl.value)) {{
+      shardsEl.value = String(shards);
+    }}
+    if (peak !== clampPeak(peakEl.value)) {{
+      peakEl.value = String(peak);
+    }}
+    updatePlan();
     var warm = Math.max(1, Math.floor(peak / 3));
     var readers = Math.max(1, peak * 2);
     var stages = [
@@ -1646,7 +1724,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       clearInterval(tick);
       showErr(
         (e && e.message ? e.message : String(e)) +
-          "\nTry a lower peak or fewer shards.",
+          "\nTry fewer writers per isolate (raise shards, or peak ≤ " + maxWIso + " × shards).",
         e && e.debug ? e.debug : ""
       );
     }});
@@ -1926,6 +2004,31 @@ mod tests {
         assert_eq!(s[1].writers, 12);
         assert_eq!(s[2].readers, 24);
         assert_eq!(clamp_phone_peak(100), PHONE_MAX_PEAK);
+    }
+
+    #[test]
+    fn phone_fanout_raises_shards_for_peak() {
+        // peak=24 with shards=2 needs 4 isolates at ≤6 writers each.
+        let (peak, shards) = phone_fanout_plan(24, 2);
+        assert_eq!(peak, 24);
+        assert_eq!(shards, 4);
+        // Already enough shards: leave them.
+        let (peak, shards) = phone_fanout_plan(8, 4);
+        assert_eq!((peak, shards), (8, 4));
+        // Hit high peak with shards=1: raise shards to cover peak.
+        let (peak, shards) = phone_fanout_plan(PHONE_MAX_PEAK, 1);
+        assert_eq!(peak, PHONE_MAX_PEAK);
+        assert_eq!(shards, PHONE_MAX_PEAK.div_ceil(PHONE_MAX_WRITERS_PER_ISOLATE));
+        assert!(peak <= shards * PHONE_MAX_WRITERS_PER_ISOLATE);
+        assert_eq!(
+            clamp_stage_to_isolate(&StageSpec {
+                writers: 99,
+                readers: 99
+            })
+            .writers,
+            99,
+            "native builds do not clamp"
+        );
     }
 
     #[test]
@@ -2213,7 +2316,9 @@ mod tests {
                 store,
                 states,
                 "lt-bench-phone",
-                phone_request(0.05, 4, PHONE_DEFAULT_PEAK, 1),
+                // Keep shards=1 so this exercises a single in-process isolate
+                // (peak ≤ PHONE_MAX_WRITERS_PER_ISOLATE so fanout plan does not raise).
+                phone_request(0.05, 4, PHONE_MAX_WRITERS_PER_ISOLATE, 1),
             )
             .await
             .expect("loadtest");
