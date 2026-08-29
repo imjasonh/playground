@@ -558,14 +558,12 @@ What the report answers:
 | `cost_per_push` / `cost_per_pull` | Mean R2 A/B, DO, KV ops and $ per successful op |
 | `total_cost_usd` / `budget_usd` / `budget_limited` | Spend vs cap; when limited, peaks are still valid but the run stopped early |
 
-`shards` > 1 splits offered concurrency across Worker self-fetch POSTs when a
-fan-out is configured (else in-process partitions with unique writer branch
-namespaces). All shards hit the **same** repo — that is how to probe the
-per-repo ceiling past one-isolate CPU. The phone UI exposes `shards` (default
-4, max 8). On the Worker, fan-out uses public-URL `Fetch` with the
-`global_fetch_strictly_public` compatibility flag (required to avoid
-Cloudflare error 1042 on same-zone Worker fetch). Cap stays under Cloudflare’s
-Worker→Worker loop budget of 16.
+`shards` > 1 on the phone **Run** button splits offered concurrency across
+parallel browser `POST /api/<repo>/loadtest` calls (same repo, `shard: true`),
+then `POST /loadtest/merge` for the HTML report. Each browser POST is its own
+edge invocation / isolate — Worker self-fetch is not used (Cloudflare error
+1042 / loop limit 1019 / bare 500). Defaults: 4 shards, max 16. A `?run=1`
+bookmark still runs in-process on the Worker.
 
 Push/pull cost notes that show up in these numbers: one `Odb` open per push
 (new pack index attached in memory), concurrent index loads, an isolate-local
