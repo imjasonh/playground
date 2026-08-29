@@ -1246,13 +1246,13 @@ pub const PHONE_DEFAULT_SHARDS: u32 = 4;
 pub const PHONE_MAX_SHARDS: u32 = MAX_SHARDS;
 /// Max concurrent writer loops in **one** Worker invocation.
 ///
-/// Nested in-process pushes share one isolate's ~1000-subrequest budget and
-/// 128 MiB heap. Six writers across three stages in one POST still threw
-/// Cloudflare Error 1101; three writers (one stage per POST) is the working
-/// phone envelope.
-pub const PHONE_MAX_WRITERS_PER_ISOLATE: u32 = 3;
+/// Nested in-process pushes share one isolate's 128 MiB heap (each open
+/// `Odb` carries per-pack block readers + a content cache). Three concurrent
+/// writers still threw Cloudflare Error 1101 on the peak stage; one writer
+/// per isolate (fan out with `shards`) is the working phone envelope.
+pub const PHONE_MAX_WRITERS_PER_ISOLATE: u32 = 1;
 /// Max concurrent reader loops in one Worker invocation (see writers cap).
-pub const PHONE_MAX_READERS_PER_ISOLATE: u32 = 6;
+pub const PHONE_MAX_READERS_PER_ISOLATE: u32 = 2;
 
 /// Clamp a phone peak-writers value into the safe range.
 pub fn clamp_phone_peak(peak: u32) -> u32 {
@@ -2047,21 +2047,18 @@ mod tests {
 
     #[test]
     fn phone_fanout_raises_shards_for_peak() {
-        // peak=24 needs 8 isolates at ≤3 writers / ≤6 readers (48 readers).
+        // peak=24 needs 24 isolates at 1 writer / 2 readers (48 readers),
+        // but MAX_SHARDS caps at 16 so peak is trimmed to 16.
         let (peak, shards) = phone_fanout_plan(24, 2);
-        assert_eq!(peak, 24);
-        assert_eq!(shards, 8);
-        // Already enough shards: leave them.
+        assert_eq!(peak, 16);
+        assert_eq!(shards, PHONE_MAX_SHARDS);
+        // peak=6 with shards=4: raise to 6 isolates (1w each).
         let (peak, shards) = phone_fanout_plan(6, 4);
-        assert_eq!((peak, shards), (6, 4));
+        assert_eq!((peak, shards), (6, 6));
         // Hit high peak with shards=1: raise shards to cover writers and readers.
         let (peak, shards) = phone_fanout_plan(PHONE_MAX_PEAK, 1);
-        assert_eq!(peak, PHONE_MAX_PEAK);
-        let readers = PHONE_MAX_PEAK * 2;
-        let need = PHONE_MAX_PEAK
-            .div_ceil(PHONE_MAX_WRITERS_PER_ISOLATE)
-            .max(readers.div_ceil(PHONE_MAX_READERS_PER_ISOLATE));
-        assert_eq!(shards, need.min(PHONE_MAX_SHARDS));
+        assert_eq!(peak, PHONE_MAX_SHARDS); // trimmed by shard×writer cap
+        assert_eq!(shards, PHONE_MAX_SHARDS);
         assert!(peak <= shards * PHONE_MAX_WRITERS_PER_ISOLATE);
         assert!(peak * 2 <= shards * PHONE_MAX_READERS_PER_ISOLATE);
         assert_eq!(

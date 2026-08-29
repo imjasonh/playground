@@ -567,12 +567,13 @@ then `POST /loadtest/merge` for the HTML report. Each browser POST is its own
 edge invocation / isolate — Worker self-fetch is not used.
 
 **Per-isolate cap.** Nested push/pull loops in one shard POST share that
-invocation's subrequest (~1000) and memory (128 MiB) budgets. Phone UI keeps
-≤3 writers and ≤6 readers per isolate and auto-raises `shards` for both
-writers and the `2×peak` readers stage (for example `peak=24&shards=2`
-becomes 8 shards). It also runs **one stage per POST** (warm-up, then peak,
-then readers) so three stages in one request cannot exhaust the budget.
-On wasm the runner also clamps stage concurrency to those caps as a backstop.
+invocation's subrequest and memory (128 MiB) budgets. Phone UI keeps
+≤1 writer and ≤2 readers per isolate and auto-raises `shards` for both
+caps (phone readers are `2×peak`). Each stage is its own browser POST so
+the isolate's subrequest budget resets between warm-up, peak, and readers.
+`wrangler.toml` raises the paid-plan subrequest ceiling to 100_000 for
+these nested loops. On wasm the runner also clamps stage concurrency to
+those caps as a backstop.
 
 **Why not Worker self-fetch / `SELF`?** Same-zone public `Fetch` without
 `global_fetch_strictly_public` is Cloudflare error 1042. A `SELF` service

@@ -252,12 +252,11 @@ disjoint-branch pushes merge-apply without conflicting. Defaults:
 shards).
 
 Each shard POST runs nested push/pull loops **inside one Worker
-invocation**. That isolate has a shared ~1000-subrequest budget and 128 MiB
-heap — a prior 32-writer phone ramp threw Cloudflare Error 1101. The UI
-keeps **≤3 writers / ≤6 readers per isolate** (auto-raising `shards` when
-needed) and runs **one stage per POST** so the Worker subrequest budget
-resets between warm-up, peak, and read stages.
-peak would otherwise exceed that). Heavier single-isolate ramps belong on
+invocation**. That isolate has a shared subrequest budget and 128 MiB heap —
+concurrent writers still threw Cloudflare Error 1101. The UI keeps **≤1
+writer / ≤2 readers per isolate** (auto-raising `shards` when needed) and
+runs **one stage per POST** so the Worker subrequest budget resets between
+warm-up, peak, and read stages. Heavier single-isolate ramps belong on
 distributed clients, not nested in-Worker loops.
 
 **Auth:** production requires the Worker secret `LOADTEST_TOKEN`. Pass it as
@@ -267,8 +266,8 @@ return 503.
 
 Optional query: `budget` (USD, default `0.10`, max `5`), `peak` (writers,
 default `8`, max `48`), `shards` (isolates, default `4`, max `16`; raised
-automatically so peak ÷ shards ≤ 6), `duration` (seconds per stage, default
-`4`). Bookmark
+automatically so each isolate stays ≤1 writer / ≤2 readers), `duration`
+(seconds per stage, default `4`). Bookmark
 `https://git.<account>.workers.dev/loadtest?token=…` and adjust the form, or
 `…/loadtest?run=1&budget=0.10&peak=8&shards=4&token=…` for one-tap in-process.
 
