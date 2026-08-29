@@ -1090,8 +1090,8 @@ pub fn merge_shard_reports(
 }
 
 /// Fan-out hook for multi-isolate shard POSTs against **one** repo. The Worker
-/// implements this with `Fetch` to the same origin so each shard runs on a
-/// fresh isolate (helps find the per-repo ceiling past one-isolate CPU).
+/// implements this with a `SELF` service binding (not public `Fetch` — that
+/// hits Cloudflare error 1042 on same-zone Workers).
 #[async_trait(?Send)]
 pub trait LoadtestFanout {
     async fn post_loadtest(
