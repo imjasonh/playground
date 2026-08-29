@@ -120,14 +120,10 @@ pub struct LoadTestConfig {
 
 /// Cap on isolate shards for one coordinated run.
 ///
-/// Cloudflare enforces two related limits on service-binding fan-out:
-/// * at most **32 Worker invocations** in a request chain
-/// * a **loop limit of 16** when a Worker calls itself (or another Worker) —
-///   past that the platform returns error 1019 / a bare HTTP 500
-///
-/// The coordinator is one invocation; each `SELF` shard POST is another.
-/// Cap at 16 so phone UI max matches the loop limit.
-pub const MAX_SHARDS: u32 = 16;
+/// Cloudflare enforces a Worker→Worker **loop limit of 16** (CF-EW-Via /
+/// error 1019): the inbound coordinator counts, so `shards=16` still trips
+/// it. Empirically 32/28/24/16 all 500; stay well under with **8**.
+pub const MAX_SHARDS: u32 = 8;
 
 impl LoadTestRequest {
     /// Validate and clamp into a [`LoadTestConfig`].
@@ -1376,7 +1372,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
     </label>
     <label>Isolates (shards)
-      <span class="detail">Same repo; fan writers across Worker isolates. Max {max_shards} (Cloudflare loop limit on self service-binding). Raise this to beat one-isolate CPU.</span>
+      <span class="detail">Same repo; fan writers across Worker isolates. Max {max_shards} (Cloudflare Worker→Worker loop budget). Raise this to beat one-isolate CPU.</span>
       <input id="shards" type="number" inputmode="numeric" min="1" max="{max_shards}" step="1" value="{shards}">
     </label>
   </div>
@@ -2093,14 +2089,15 @@ mod tests {
 
     #[test]
     fn max_shards_fits_cloudflare_invocation_cap() {
-        // Worker→Worker loop limit is 16; stay at or under that.
+        // Inbound coordinator counts against CF's Worker→Worker loop budget
+        // of 16; shards=16 500'd in production — stay strictly under.
         let cap = MAX_SHARDS;
         assert!(
-            cap <= 16,
-            "MAX_SHARDS={cap} would exceed CF's Worker→Worker loop limit"
+            cap < 16,
+            "MAX_SHARDS={cap} should stay under CF's loop budget of 16"
         );
         assert_eq!(clamp_phone_shards(32), MAX_SHARDS);
-        assert_eq!(clamp_phone_shards(99), MAX_SHARDS);
+        assert_eq!(clamp_phone_shards(16), MAX_SHARDS);
         assert_eq!(clamp_phone_shards(1), 1);
     }
 }

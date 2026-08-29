@@ -562,11 +562,11 @@ What the report answers:
 fan-out is configured (else in-process partitions with unique writer branch
 namespaces). All shards hit the **same** repo — that is how to probe the
 per-repo ceiling past one-isolate CPU. The phone UI exposes `shards` (default
-4, max 16). On the Worker, fan-out uses the `SELF` service binding (see
+4, max 8). On the Worker, fan-out uses the `SELF` service binding (see
 `wrangler.toml`); public-URL self-fetch is blocked with Cloudflare error 1042.
-Cloudflare also caps Worker→Worker calls (the **loop limit** is 16, and a
-request chain at most 32 invocations). `shards` above that used to throw a
-bare HTTP 500 (error 1019).
+Cloudflare’s Worker→Worker **loop limit is 16** (error 1019), and the
+inbound coordinator counts against it — `shards=16` still 500’d in
+production, so the phone max stays at 8.
 
 Push/pull cost notes that show up in these numbers: one `Odb` open per push
 (new pack index attached in memory), concurrent index loads, an isolate-local

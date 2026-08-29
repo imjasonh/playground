@@ -245,7 +245,7 @@ Stages are derived from peak writers: warm-up (`peak/3`) → peak writers →
 disjoint-branch pushes merge-apply without conflicting. `shards` > 1 splits
 that concurrency across Worker self-fetch isolates (same repo) so one-isolate
 CPU is not the wall. Defaults: `budget=0.10`, `duration=4`, `peak=8`,
-`shards=4` (capped at 48 peak / 16 shards).
+`shards=4` (capped at 48 peak / 8 shards).
 
 **Auth:** production requires the Worker secret `LOADTEST_TOKEN`. Pass it as
 `?token=…`, or as the `X-Loadtest-Token` header. Without a matching token the
@@ -253,7 +253,7 @@ run returns 401 (HTML error page for GET). If the secret is unset, loadtests
 return 503.
 
 Optional query: `budget` (USD, default `0.10`, max `5`), `peak` (writers,
-default `8`, max `48`), `shards` (isolates, default `4`, max `16`),
+default `8`, max `48`), `shards` (isolates, default `4`, max `8`),
 `duration` (seconds per stage, default `4`). Bookmark
 `https://git.<account>.workers.dev/loadtest?token=…` and adjust the form, or
 `…/loadtest?run=1&budget=0.10&peak=8&shards=4&token=…` for one-tap.
