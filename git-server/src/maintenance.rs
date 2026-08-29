@@ -61,8 +61,9 @@ use crate::repo::{delete_filelog, load_filelog, write_sharded_filelog, FileLogSe
 /// Self-trigger threshold: after an accepted push leaves the repo with at
 /// least this many packs, schedule a bounded repack. Shared by the Worker
 /// `wait_until` hook and the in-process loadtest harness (which has no
-/// `wait_until`, so it runs the same check after each timed push).
-pub const AUTO_REPACK_TRIGGER_PACKS: usize = 4;
+/// `wait_until`, so it runs the same check after each timed push). Kept
+/// low so the transient backlog a concurrent push sees stays small.
+pub const AUTO_REPACK_TRIGGER_PACKS: usize = 2;
 
 /// Per-run consolidation budgets, sized so one run always fits a single
 /// Workers invocation regardless of repo size.

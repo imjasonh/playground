@@ -404,7 +404,10 @@ dependent. The remaining known levers, in likely order of value:
 1. **Bound what a push reads while backlog exists** — thin-pack base
    resolution and file-log loading still fan out across the live packs, so
    per-push cost rises with the in-band backlog (~50 packs ⇒ ~6 s p50 at 48
-   writers). File-log tip summaries or hot-index caching would flatten it.
+   writers). **Mitigated in-isolate:** pack-index LRU cache, file-log object
+   LRU cache, and a file-log tip map that extends on appended segment ids so
+   prev-pointers skip the O(S) reload on a hot isolate. Durable tip summaries
+   (or still-tighter auto-repack) remain if cold isolates dominate.
 2. **Distributed load generation** to find the true server-side knee (the
    read-ceiling hunt below confirms one machine can't reach it).
 3. The large-repo hard cases (base rewrite, GC) from
@@ -585,9 +588,11 @@ Worker (also subject to the per-isolate clamp).
 
 Push/pull cost notes that show up in these numbers: one `Odb` open per push
 (new pack index attached in memory), concurrent index loads, an isolate-local
-pack-index cache, an isolate-local file-log object cache, and fetch plan+emit
+pack-index cache (LRU), an isolate-local file-log object cache (LRU), an
+isolate-local file-log **tip map** (exact fingerprint or suffix-extend so
+prev-pointers do not re-read the whole segment backlog), and fetch plan+emit
 sharing one `Odb` (warm block/content caches). Auto-repack triggers at
-`AUTO_REPACK_TRIGGER_PACKS` (4) live packs.
+`AUTO_REPACK_TRIGGER_PACKS` (2) live packs.
 
 Traces: each synthetic push/pull is a normal invocation (`git.receive_pack` /
 `git.upload_pack` spans + `{"evt":"req",…}` logs). The coordinator itself is

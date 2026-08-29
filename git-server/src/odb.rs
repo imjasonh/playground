@@ -25,9 +25,10 @@ pub fn index_key(repo: &str, pack_id: &str) -> String {
 }
 
 /// Cross-request pack-index cache for one isolate. Indexes are immutable
-/// once written, so a hit is always safe; eviction is whole-cache when the
-/// byte budget is exceeded. Avoids re-reading the same GSIX from R2 on
-/// every push/pull against a hot repo.
+/// once written, so a hit is always safe. Eviction is LRU by approximate
+/// GSIX byte size so a backlog of small indexes is not wiped by one large
+/// pack. Avoids re-reading the same GSIX from R2 on every push/pull against
+/// a hot repo.
 const INDEX_CACHE_BUDGET: usize = 8 * 1024 * 1024;
 
 thread_local! {
@@ -36,6 +37,8 @@ thread_local! {
 
 struct IndexCache {
     map: HashMap<String, PackIndex>,
+    /// Front = least recently used.
+    order: std::collections::VecDeque<String>,
     bytes: usize,
 }
 
@@ -43,31 +46,56 @@ impl IndexCache {
     fn new() -> Self {
         Self {
             map: HashMap::new(),
+            order: std::collections::VecDeque::new(),
             bytes: 0,
         }
     }
 
-    fn get(&self, key: &str) -> Option<PackIndex> {
-        self.map.get(key).cloned()
+    fn index_bytes(index: &PackIndex) -> usize {
+        // GSIX records are fixed-width (~82 B); match on-disk size closely.
+        index.records.len() * 82
+    }
+
+    fn touch(&mut self, key: &str) {
+        if let Some(i) = self.order.iter().position(|k| k == key) {
+            if let Some(k) = self.order.remove(i) {
+                self.order.push_back(k);
+            }
+        }
+    }
+
+    fn get(&mut self, key: &str) -> Option<PackIndex> {
+        let hit = self.map.get(key).cloned()?;
+        self.touch(key);
+        Some(hit)
     }
 
     fn put(&mut self, key: String, index: &PackIndex) {
         if self.map.contains_key(&key) {
+            self.touch(&key);
             return;
         }
-        // GSIX records are fixed-width (~82 B); match on-disk size closely.
-        let n = index.records.len() * 82;
-        if self.bytes + n > INDEX_CACHE_BUDGET {
-            self.map.clear();
-            self.bytes = 0;
+        let n = Self::index_bytes(index);
+        while self.bytes + n > INDEX_CACHE_BUDGET && !self.order.is_empty() {
+            if let Some(old) = self.order.pop_front() {
+                if let Some(evicted) = self.map.remove(&old) {
+                    self.bytes = self.bytes.saturating_sub(Self::index_bytes(&evicted));
+                }
+            }
+        }
+        // Still too big (single index > budget): skip caching rather than
+        // thrashing every other entry.
+        if n > INDEX_CACHE_BUDGET {
+            return;
         }
         self.bytes += n;
-        self.map.insert(key, index.clone());
+        self.map.insert(key.clone(), index.clone());
+        self.order.push_back(key);
     }
 }
 
 fn cached_index(key: &str) -> Option<PackIndex> {
-    INDEX_CACHE.with(|c| c.borrow().get(key))
+    INDEX_CACHE.with(|c| c.borrow_mut().get(key))
 }
 
 /// Remember a pack index (call after writing it to R2, or on a cache miss).
@@ -80,6 +108,7 @@ pub fn clear_index_cache_for_test() {
     INDEX_CACHE.with(|c| {
         let mut c = c.borrow_mut();
         c.map.clear();
+        c.order.clear();
         c.bytes = 0;
     });
 }

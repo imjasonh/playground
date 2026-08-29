@@ -215,7 +215,10 @@ A remaining planned addition is an in-isolate parsed-shard cache keyed by
 shard key (shards are immutable, so caching is trivially safe). The Worker
 already keeps an isolate-local byte cache of file-log objects (plain GSFL
 segments, GSFI indexes, and shards) so hot push prev-pointer loads and read
-APIs skip repeat Class B gets.
+APIs skip repeat Class B gets. Push prev-pointers also use an isolate-local
+**tip map** keyed by the repo's current `filelog` id list: an exact match
+costs zero Class B, and when only newer segment ids were appended the map
+extends from the suffix instead of re-reading the whole backlog.
 
 * **Directory listing with attribution**: newest record per path (or path
   prefix, for subdirectories) across segments, newest segment first.
