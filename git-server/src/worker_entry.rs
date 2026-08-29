@@ -598,8 +598,7 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
     } = ctx;
 
     // Buffer loadtest JSON so the router can parse it (small body).
-    let mut body = if method == "POST"
-        && (path.ends_with("/loadtest") || path == "/loadtest/merge")
+    let mut body = if method == "POST" && (path.ends_with("/loadtest") || path == "/loadtest/merge")
     {
         let mut buf = Vec::new();
         if let Ok(mut stream) = req.stream() {

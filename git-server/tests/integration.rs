@@ -1265,7 +1265,10 @@ fn phone_loadtest_html() {
     assert!(html.contains("/loadtest/merge"), "{html}");
     assert!(html.contains("id=\"debug\""), "{html}");
     assert!(html.contains("cf-ray"), "{html}");
-    assert!(html.contains("browser fires one POST per isolate") || html.contains("shard_index"), "{html}");
+    assert!(
+        html.contains("browser fires one POST per isolate") || html.contains("shard_index"),
+        "{html}"
+    );
 
     let (status, body) = server.get("/loadtest?run=1&budget=0.05&duration=2&peak=2&shards=2");
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));

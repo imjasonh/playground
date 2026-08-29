@@ -566,11 +566,7 @@ impl GitHttp {
 
     /// `POST /loadtest/merge` — phone UI posts shard JSON reports after
     /// browser fan-out; returns the merged HTML report.
-    async fn phone_merge_reports(
-        &self,
-        req: &Request<'_>,
-        body: &mut dyn BodyStream,
-    ) -> Response {
+    async fn phone_merge_reports(&self, req: &Request<'_>, body: &mut dyn BodyStream) -> Response {
         let mut buf = Vec::new();
         loop {
             match body.next_chunk().await {
@@ -611,8 +607,7 @@ impl GitHttp {
         let repo = parsed.parts[0].repo.clone();
         let tip = parsed.parts[0].tip.clone();
         let n = parsed.parts.len() as u32;
-        let report =
-            crate::loadtest::merge_shard_reports(&repo, &tip, budget, n, &parsed.parts);
+        let report = crate::loadtest::merge_shard_reports(&repo, &tip, budget, n, &parsed.parts);
         let token = provided.map(percent_decode);
         Response::ok(
             "text/html; charset=utf-8",

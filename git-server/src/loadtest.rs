@@ -2288,10 +2288,7 @@ mod tests {
     fn max_shards_fits_cloudflare_invocation_cap() {
         // Browser fan-out is not Worker→Worker; keep a sane phone UI max.
         let cap = MAX_SHARDS;
-        assert!(
-            (2..=32).contains(&cap),
-            "MAX_SHARDS={cap}"
-        );
+        assert!((2..=32).contains(&cap), "MAX_SHARDS={cap}");
         assert_eq!(clamp_phone_shards(99), MAX_SHARDS);
         assert_eq!(clamp_phone_shards(1), 1);
     }
