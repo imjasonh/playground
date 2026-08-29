@@ -254,7 +254,9 @@ shards).
 Each shard POST runs nested push/pull loops **inside one Worker
 invocation**. That isolate has a shared ~1000-subrequest budget and 128 MiB
 heap — a prior 32-writer phone ramp threw Cloudflare Error 1101. The UI
-keeps **≤6 writers / ≤12 readers per isolate** (auto-raising `shards` when
+keeps **≤3 writers / ≤6 readers per isolate** (auto-raising `shards` when
+needed) and runs **one stage per POST** so the Worker subrequest budget
+resets between warm-up, peak, and read stages.
 peak would otherwise exceed that). Heavier single-isolate ramps belong on
 distributed clients, not nested in-Worker loops.
 
