@@ -10,6 +10,10 @@
 name = "git"
 main = "build/worker/shim.mjs"
 compatibility_date = "2026-06-16"
+# Allow this Worker to fetch its own public URL (shard fan-out). Without this,
+# same-zone Worker fetch is Cloudflare error 1042. A SELF service binding was
+# tried instead and 500'd even at 4 shards.
+compatibility_flags = ["global_fetch_strictly_public"]
 
 # Build the wasm Worker from Rust. The script wraps `worker-build --release`
 # (pinned to 0.8.x for worker 0.8 / wasm-bindgen 0.2.125 — see Cargo.toml) and
@@ -17,12 +21,6 @@ compatibility_date = "2026-06-16"
 # embed it (worker-build still cannot parse the nested dependencies object).
 [build]
 command = "bash scripts/worker-build.sh"
-
-# Loadtest shard fan-out invokes this Worker again (fresh isolate) via a
-# service binding. Public-URL self-fetch hits Cloudflare error 1042.
-[[services]]
-binding = "SELF"
-service = "git"
 
 # All bulk data: packs, pack indexes, file-log segments.
 [[r2_buckets]]

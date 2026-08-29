@@ -120,9 +120,10 @@ pub struct LoadTestConfig {
 
 /// Cap on isolate shards for one coordinated run.
 ///
-/// Cloudflare enforces a Worker→Worker **loop limit of 16** (CF-EW-Via /
-/// error 1019): the inbound coordinator counts, so `shards=16` still trips
-/// it. Empirically 32/28/24/16 all 500; stay well under with **8**.
+/// Cloudflare’s Worker→Worker loop budget is 16 (inbound coordinator counts).
+/// Empirically high shard counts 500’d via a broken `SELF` service binding;
+/// public self-fetch with `global_fetch_strictly_public` is the supported path.
+/// Cap at 8 for headroom under the loop budget.
 pub const MAX_SHARDS: u32 = 8;
 
 impl LoadTestRequest {
@@ -1095,8 +1096,9 @@ pub fn merge_shard_reports(
 }
 
 /// Fan-out hook for multi-isolate shard POSTs against **one** repo. The Worker
-/// implements this with a `SELF` service binding (not public `Fetch` — that
-/// hits Cloudflare error 1042 on same-zone Workers).
+/// implements this with public-URL `Fetch` plus the
+/// `global_fetch_strictly_public` compatibility flag (same-zone fetch without
+/// that flag is Cloudflare error 1042).
 #[async_trait(?Send)]
 pub trait LoadtestFanout {
     async fn post_loadtest(
