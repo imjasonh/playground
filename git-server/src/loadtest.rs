@@ -1367,6 +1367,13 @@ button.run:disabled {{ opacity: 0.55; cursor: wait; }}
 button.run:active:not(:disabled) {{ filter: brightness(0.92); }}
 #status {{ min-height: 1.5rem; margin: 1rem 0 0; color: var(--muted); font-size: 1rem; }}
 #status.err {{ color: var(--warn); white-space: pre-wrap; text-align: left; }}
+#debug {{
+  display: none; margin: 0.75rem 0 0; padding: 0.75rem; text-align: left;
+  border: 1px solid var(--line); border-radius: 0.5rem; background: var(--field);
+  font: 500 0.8rem/1.35 "Source Code Pro", ui-monospace, monospace;
+  color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow: auto;
+}}
+#debug.show {{ display: block; }}
 code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95em; }}
 </style>
 </head>
@@ -1392,11 +1399,13 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
   <p class="plan" id="plan">{warm}w → {peak}w → {readers}r · {shards} shards · {duration_secs}s × 3 · ~{expect_secs}s</p>
   <button class="run" id="run" type="button">Run load test</button>
   <p id="status" aria-live="polite"></p>
+  <pre id="debug" aria-live="polite"></pre>
 </main>
 <script>
 (function () {{
   var btn = document.getElementById("run");
   var status = document.getElementById("status");
+  var debugEl = document.getElementById("debug");
   var budgetEl = document.getElementById("budget");
   var peakEl = document.getElementById("peak");
   var shardsEl = document.getElementById("shards");
@@ -1433,24 +1442,87 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     if (token) h["X-Loadtest-Token"] = token;
     return h;
   }}
-  function showErr(msg) {{
+  function headerGet(res, name) {{
+    try {{ return res.headers.get(name) || ""; }} catch (e) {{ return ""; }}
+  }}
+  /** Summarize a failed HTTP body without wiping Cloudflare error pages. */
+  function summarizeBody(text) {{
+    if (!text) return "(empty body)";
+    var t = String(text);
+    var codes = [];
+    var m;
+    var re = /\\b(10\\d{{2}}|11\\d{{2}})\\b/g;
+    while ((m = re.exec(t))) {{
+      if (codes.indexOf(m[1]) < 0) codes.push(m[1]);
+    }}
+    var jsonErr = "";
+    try {{
+      var j = JSON.parse(t);
+      if (j && (j.error || j.message)) jsonErr = String(j.error || j.message);
+    }} catch (e) {{}}
+    var plain = t
+      .replace(/<script[\\s\\S]*?<\\/script>/gi, " ")
+      .replace(/<style[\\s\\S]*?<\\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\\s+/g, " ")
+      .trim();
+    if (!plain && codes.length) plain = "Cloudflare error " + codes.join(", ");
+    if (!plain) plain = t.slice(0, 400);
+    var out = jsonErr || plain.slice(0, 600);
+    if (codes.length && out.indexOf(codes[0]) < 0) {{
+      out = "CF " + codes.join("/") + ": " + out;
+    }}
+    return out;
+  }}
+  function showErr(msg, detail) {{
     status.className = "err";
     status.textContent = msg;
+    if (detail) {{
+      debugEl.textContent = detail;
+      debugEl.className = "show";
+    }} else {{
+      debugEl.textContent = "";
+      debugEl.className = "";
+    }}
     btn.disabled = false;
   }}
-  function postLoadtest(repo, body) {{
-    return fetch("/api/" + repo + "/loadtest", {{
+  function clearDebug() {{
+    debugEl.textContent = "";
+    debugEl.className = "";
+  }}
+  function fetchJson(step, url, init) {{
+    return fetch(url, init).then(function (res) {{
+      var ray = headerGet(res, "cf-ray") || headerGet(res, "CF-Ray");
+      return res.text().then(function (t) {{
+        if (!res.ok) {{
+          var err = new Error(step + " HTTP " + res.status + ": " + summarizeBody(t));
+          err.debug = [
+            "step: " + step,
+            "url: " + url,
+            "status: " + res.status,
+            "cf-ray: " + (ray || "(none)"),
+            "content-type: " + (headerGet(res, "content-type") || "(none)"),
+            "body:",
+            t.slice(0, 2000) || "(empty)"
+          ].join("\\n");
+          throw err;
+        }}
+        try {{
+          return JSON.parse(t);
+        }} catch (e) {{
+          var pe = new Error(step + ": bad JSON (" + (e && e.message ? e.message : e) + ")");
+          pe.debug = "step: " + step + "\\nurl: " + url + "\\nbody:\\n" + t.slice(0, 2000);
+          throw pe;
+        }}
+      }});
+    }});
+  }}
+  function postLoadtest(step, repo, body) {{
+    return fetchJson(step, "/api/" + repo + "/loadtest", {{
       method: "POST",
       credentials: "same-origin",
       headers: jsonHeaders(),
       body: JSON.stringify(body)
-    }}).then(function (res) {{
-      return res.text().then(function (t) {{
-        if (!res.ok) {{
-          throw new Error("HTTP " + res.status + ": " + t.replace(/<[^>]+>/g, " ").slice(0, 300));
-        }}
-        return JSON.parse(t);
-      }});
     }});
   }}
   function partitionStages(stages, shards, i) {{
@@ -1465,11 +1537,13 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
   }}
   btn.addEventListener("click", function () {{
     btn.disabled = true;
+    clearDebug();
     var t0 = Date.now();
+    var phase = "starting";
     status.className = "";
     status.textContent = "Running… 0s";
     var tick = setInterval(function () {{
-      status.textContent = "Running… " + Math.floor((Date.now() - t0) / 1000) + "s";
+      status.textContent = "Running… " + Math.floor((Date.now() - t0) / 1000) + "s · " + phase;
     }}, 250);
     var budget = Number(budgetEl.value);
     if (!(budget > 0)) budget = {budget_usd:.2};
@@ -1487,7 +1561,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     // Seed once (creates tip), then fan shard POSTs from the browser so each
     // lands on a separate isolate — Worker self-fetch is blocked by Cloudflare.
     var seedBudget = Math.min(0.02, Math.max(0.01, budget * 0.1));
-    postLoadtest(repo, {{
+    phase = "seed " + repo;
+    postLoadtest("seed", repo, {{
       confirm: true,
       budget_usd: seedBudget,
       duration_secs: 1,
@@ -1495,23 +1570,34 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       shards: 1
     }}).then(function (seed) {{
       var tip = seed.tip;
+      phase = "shards 0/" + shards;
+      var done = 0;
       var posts = [];
       for (var i = 0; i < shards; i++) {{
-        var shardStages = partitionStages(stages, shards, i);
-        if (!shardStages.length) continue;
-        posts.push(postLoadtest(repo, {{
-          confirm: true,
-          budget_usd: budget / shards,
-          duration_secs: duration,
-          stages: shardStages,
-          shard: true,
-          tip: tip,
-          shard_index: i,
-          shards: 1
-        }}));
+        (function (idx) {{
+          var shardStages = partitionStages(stages, shards, idx);
+          if (!shardStages.length) return;
+          posts.push(
+            postLoadtest("shard " + idx, repo, {{
+              confirm: true,
+              budget_usd: budget / shards,
+              duration_secs: duration,
+              stages: shardStages,
+              shard: true,
+              tip: tip,
+              shard_index: idx,
+              shards: 1
+            }}).then(function (part) {{
+              done += 1;
+              phase = "shards " + done + "/" + posts.length;
+              return part;
+            }})
+          );
+        }})(i);
       }}
       if (!posts.length) throw new Error("no shard work after partitioning");
       return Promise.all(posts).then(function (parts) {{
+        phase = "merge";
         var mergeHeaders = {{
           "Content-Type": "application/json",
           "Accept": "text/html"
@@ -1529,8 +1615,15 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
             parts: parts
           }})
         }}).then(function (res) {{
+          var ray = headerGet(res, "cf-ray") || headerGet(res, "CF-Ray");
           return res.text().then(function (t) {{
-            return {{ ok: res.ok, status: res.status, text: t }};
+            return {{
+              ok: res.ok,
+              status: res.status,
+              text: t,
+              ray: ray,
+              ctype: headerGet(res, "content-type")
+            }};
           }});
         }});
       }});
@@ -1540,12 +1633,24 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         document.open(); document.write(r.text); document.close();
         return;
       }}
-      showErr("Failed (HTTP " + r.status + ").\\n" +
-        r.text.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").trim().slice(0, 500));
+      showErr(
+        "merge HTTP " + r.status + ": " + summarizeBody(r.text),
+        [
+          "step: merge",
+          "status: " + r.status,
+          "cf-ray: " + (r.ray || "(none)"),
+          "content-type: " + (r.ctype || "(none)"),
+          "body:",
+          (r.text || "").slice(0, 2000) || "(empty)"
+        ].join("\\n")
+      );
     }}).catch(function (e) {{
       clearInterval(tick);
-      showErr("Request failed: " + (e && e.message ? e.message : e) +
-        "\\nTry a lower peak or fewer shards.");
+      showErr(
+        (e && e.message ? e.message : String(e)) +
+          "\\nTry a lower peak or fewer shards.",
+        e && e.debug ? e.debug : ""
+      );
     }});
   }});
   updatePlan();
