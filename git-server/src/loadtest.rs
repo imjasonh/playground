@@ -1538,6 +1538,10 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     if (codes.length && out.indexOf(codes[0]) < 0) {{
       out = "CF " + codes.join("/") + ": " + out;
     }}
+    if (codes.indexOf("1101") >= 0) {{
+      out += " — isolate likely blew the nested-subrequest/memory budget; keep ≤" +
+        maxWIso + " writers per shard (raise shards).";
+    }}
     return out;
   }}
   function showErr(msg, detail) {{
