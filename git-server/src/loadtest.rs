@@ -1247,11 +1247,12 @@ pub const PHONE_MAX_SHARDS: u32 = MAX_SHARDS;
 /// Max concurrent writer loops in **one** Worker invocation.
 ///
 /// Nested in-process pushes share one isolate's ~1000-subrequest budget and
-/// 128 MiB heap. A phone ramp of 32 writers / 64 readers threw Cloudflare
-/// Error 1101 (PR #321); ≤6 writers / ≤12 readers stayed healthy.
-pub const PHONE_MAX_WRITERS_PER_ISOLATE: u32 = 6;
+/// 128 MiB heap. Six writers across three stages in one POST still threw
+/// Cloudflare Error 1101; three writers (one stage per POST) is the working
+/// phone envelope.
+pub const PHONE_MAX_WRITERS_PER_ISOLATE: u32 = 3;
 /// Max concurrent reader loops in one Worker invocation (see writers cap).
-pub const PHONE_MAX_READERS_PER_ISOLATE: u32 = 12;
+pub const PHONE_MAX_READERS_PER_ISOLATE: u32 = 6;
 
 /// Clamp a phone peak-writers value into the safe range.
 pub fn clamp_phone_peak(peak: u32) -> u32 {
@@ -1264,18 +1265,23 @@ pub fn clamp_phone_shards(shards: u32) -> u32 {
 }
 
 /// Raise `shards` (and clamp `peak` if needed) so each isolate stays within
-/// [`PHONE_MAX_WRITERS_PER_ISOLATE`]. Preserves offered peak when enough
-/// isolates are available (≤ [`PHONE_MAX_SHARDS`]).
+/// the per-isolate writer **and** reader caps. Phone stages use `2×peak`
+/// readers, so reader fan-out often dominates.
 pub fn phone_fanout_plan(peak: u32, shards: u32) -> (u32, u32) {
     let peak = clamp_phone_peak(peak);
     let mut shards = clamp_phone_shards(shards);
-    let need = peak.div_ceil(PHONE_MAX_WRITERS_PER_ISOLATE).max(1);
+    let readers = peak.saturating_mul(2).max(1);
+    let need_w = peak.div_ceil(PHONE_MAX_WRITERS_PER_ISOLATE).max(1);
+    let need_r = readers.div_ceil(PHONE_MAX_READERS_PER_ISOLATE).max(1);
+    let need = need_w.max(need_r);
     if need > shards {
         shards = clamp_phone_shards(need);
     }
-    let max_peak = shards
+    let max_peak_w = shards
         .saturating_mul(PHONE_MAX_WRITERS_PER_ISOLATE)
         .clamp(1, PHONE_MAX_PEAK);
+    let max_peak_r = shards.saturating_mul(PHONE_MAX_READERS_PER_ISOLATE) / 2;
+    let max_peak = max_peak_w.min(max_peak_r.max(1)).clamp(1, PHONE_MAX_PEAK);
     (peak.min(max_peak), shards)
 }
 
@@ -1442,7 +1448,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
     </label>
     <label>Isolates (shards)
-      <span class="detail">Same repo; one browser POST per isolate. Max {max_shards}. Auto-raises so each isolate stays ≤{max_w_iso} writers (avoids CF 1101).</span>
+      <span class="detail">Same repo; one browser POST per isolate per stage. Max {max_shards}. Auto-raises so each isolate stays ≤{max_w_iso} writers / ≤{max_r_iso} readers.</span>
       <input id="shards" type="number" inputmode="numeric" min="1" max="{max_shards}" step="1" value="{shards}">
     </label>
   </div>
@@ -1478,13 +1484,19 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     if (s > maxShards) s = maxShards;
     return s;
   }}
-  /** Raise shards (or trim peak) so each isolate stays ≤ maxWIso writers. */
+  /** Raise shards (or trim peak) so each isolate stays ≤ maxWIso writers
+   *  and ≤ maxRIso readers (phone stages use 2×peak readers). */
   function fanoutPlan(peak, shards) {{
     peak = clampPeak(peak);
     shards = clampShards(shards);
-    var need = Math.max(1, Math.ceil(peak / maxWIso));
+    var readers = Math.max(1, peak * 2);
+    var needW = Math.max(1, Math.ceil(peak / maxWIso));
+    var needR = Math.max(1, Math.ceil(readers / maxRIso));
+    var need = Math.max(needW, needR);
     if (need > shards) shards = clampShards(need);
-    var maxPeakHere = Math.min(maxPeak, Math.max(1, shards * maxWIso));
+    var maxPeakW = Math.min(maxPeak, Math.max(1, shards * maxWIso));
+    var maxPeakR = Math.min(maxPeak, Math.max(1, Math.floor((shards * maxRIso) / 2)));
+    var maxPeakHere = Math.min(maxPeakW, maxPeakR);
     if (peak > maxPeakHere) peak = maxPeakHere;
     return {{ peak: peak, shards: shards }};
   }}
@@ -1498,7 +1510,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     var perW = Math.ceil(peak / shards);
     var expect = duration * 3 + 5;
     var note = shards > requestedShards
-      ? " (raised to " + shards + " shards, ≤" + maxWIso + "w each)"
+      ? " (raised to " + shards + " shards, ≤" + maxWIso + "w/" + maxRIso + "r each)"
       : " (≤" + perW + "w/isolate)";
     plan.textContent = warm + "w → " + peak + "w → " + readers +
       "r · " + shards + " shards · " + duration + "s × 3 · ~" + expect + "s" + note;
@@ -1595,17 +1607,28 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       body: JSON.stringify(body)
     }});
   }}
-  function partitionStages(stages, shards, i) {{
-    var out = [];
-    for (var s = 0; s < stages.length; s++) {{
-      var st = stages[s];
-      var w = Math.floor(st.writers / shards) + (i === 0 ? (st.writers % shards) : 0);
-      var r = Math.floor(st.readers / shards) + (i === 0 ? (st.readers % shards) : 0);
-      if (w > maxWIso) w = maxWIso;
-      if (r > maxRIso) r = maxRIso;
-      if (w > 0 || r > 0) out.push({{ writers: w, readers: r }});
+  /** Split one stage's concurrency across shards (capped per isolate). */
+  function partitionOneStage(stage, shards, i) {{
+    var w = Math.floor(stage.writers / shards) + (i === 0 ? (stage.writers % shards) : 0);
+    var r = Math.floor(stage.readers / shards) + (i === 0 ? (stage.readers % shards) : 0);
+    if (w > maxWIso) w = maxWIso;
+    if (r > maxRIso) r = maxRIso;
+    if (w <= 0 && r <= 0) return null;
+    return {{ writers: w, readers: r }};
+  }}
+  /** Append a single-stage report onto a per-shard accumulator for /loadtest/merge. */
+  function appendStageReport(acc, rep) {{
+    if (!acc) {{
+      return rep;
     }}
-    return out;
+    acc.stages = acc.stages.concat(rep.stages || []);
+    acc.total_cost_usd = (acc.total_cost_usd || 0) + (rep.total_cost_usd || 0);
+    acc.duration_ms = (acc.duration_ms || 0) + (rep.duration_ms || 0);
+    acc.budget_limited = !!(acc.budget_limited || rep.budget_limited);
+    acc.peak_pushes_per_sec = Math.max(acc.peak_pushes_per_sec || 0, rep.peak_pushes_per_sec || 0);
+    acc.peak_pulls_per_sec = Math.max(acc.peak_pulls_per_sec || 0, rep.peak_pulls_per_sec || 0);
+    acc.shards = Math.max(acc.shards || 1, rep.shards || 1);
+    return acc;
   }}
   btn.addEventListener("click", function () {{
     btn.disabled = true;
@@ -1638,8 +1661,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     ];
     var repo = "lt" + String(Date.now()).slice(-9);
 
-    // Seed once (creates tip), then fan shard POSTs from the browser so each
-    // lands on a separate isolate — Worker self-fetch is blocked by Cloudflare.
+    // Seed, then for each stage fire one POST per shard (fresh subrequest
+    // budget). Three stages in one POST was still Error 1101 at 6 writers.
     var seedBudget = Math.min(0.02, Math.max(0.01, budget * 0.1));
     phase = "seed " + repo;
     postLoadtest("seed", repo, {{
@@ -1650,33 +1673,45 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       shards: 1
     }}).then(function (seed) {{
       var tip = seed.tip;
-      phase = "shards 0/" + shards;
-      var done = 0;
-      var posts = [];
-      for (var i = 0; i < shards; i++) {{
-        (function (idx) {{
-          var shardStages = partitionStages(stages, shards, idx);
-          if (!shardStages.length) return;
-          posts.push(
-            postLoadtest("shard " + idx, repo, {{
-              confirm: true,
-              budget_usd: budget / shards,
-              duration_secs: duration,
-              stages: shardStages,
-              shard: true,
-              tip: tip,
-              shard_index: idx,
-              shards: 1
-            }}).then(function (part) {{
-              done += 1;
-              phase = "shards " + done + "/" + posts.length;
-              return part;
-            }})
-          );
-        }})(i);
-      }}
-      if (!posts.length) throw new Error("no shard work after partitioning");
-      return Promise.all(posts).then(function (parts) {{
+      var parts = [];
+      var stageBudget = budget / stages.length / shards;
+      var runStage = function (stageIdx) {{
+        if (stageIdx >= stages.length) {{
+          return Promise.resolve(parts.filter(Boolean));
+        }}
+        var stage = stages[stageIdx];
+        phase = "stage " + (stageIdx + 1) + "/" + stages.length;
+        var posts = [];
+        for (var i = 0; i < shards; i++) {{
+          (function (idx) {{
+            var slice = partitionOneStage(stage, shards, idx);
+            if (!slice) return;
+            posts.push(
+              postLoadtest("shard " + idx + " stage " + stageIdx, repo, {{
+                confirm: true,
+                budget_usd: stageBudget,
+                duration_secs: duration,
+                stages: [slice],
+                shard: true,
+                tip: tip,
+                shard_index: idx,
+                shards: 1
+              }}).then(function (rep) {{
+                parts[idx] = appendStageReport(parts[idx], rep);
+                return rep;
+              }})
+            );
+          }})(i);
+        }}
+        if (!posts.length) {{
+          return runStage(stageIdx + 1);
+        }}
+        return Promise.all(posts).then(function () {{
+          return runStage(stageIdx + 1);
+        }});
+      }};
+      return runStage(0).then(function (mergedParts) {{
+        if (!mergedParts.length) throw new Error("no shard work after partitioning");
         phase = "merge";
         var mergeHeaders = {{
           "Content-Type": "application/json",
@@ -1692,7 +1727,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
           body: JSON.stringify({{
             confirm: true,
             budget_usd: budget,
-            parts: parts
+            parts: mergedParts
           }})
         }}).then(function (res) {{
           var ray = headerGet(res, "cf-ray") || headerGet(res, "CF-Ray");
@@ -2012,21 +2047,23 @@ mod tests {
 
     #[test]
     fn phone_fanout_raises_shards_for_peak() {
-        // peak=24 with shards=2 needs 4 isolates at ≤6 writers each.
+        // peak=24 needs 8 isolates at ≤3 writers / ≤6 readers (48 readers).
         let (peak, shards) = phone_fanout_plan(24, 2);
         assert_eq!(peak, 24);
-        assert_eq!(shards, 4);
+        assert_eq!(shards, 8);
         // Already enough shards: leave them.
-        let (peak, shards) = phone_fanout_plan(8, 4);
-        assert_eq!((peak, shards), (8, 4));
-        // Hit high peak with shards=1: raise shards to cover peak.
+        let (peak, shards) = phone_fanout_plan(6, 4);
+        assert_eq!((peak, shards), (6, 4));
+        // Hit high peak with shards=1: raise shards to cover writers and readers.
         let (peak, shards) = phone_fanout_plan(PHONE_MAX_PEAK, 1);
         assert_eq!(peak, PHONE_MAX_PEAK);
-        assert_eq!(
-            shards,
-            PHONE_MAX_PEAK.div_ceil(PHONE_MAX_WRITERS_PER_ISOLATE)
-        );
+        let readers = PHONE_MAX_PEAK * 2;
+        let need = PHONE_MAX_PEAK
+            .div_ceil(PHONE_MAX_WRITERS_PER_ISOLATE)
+            .max(readers.div_ceil(PHONE_MAX_READERS_PER_ISOLATE));
+        assert_eq!(shards, need.min(PHONE_MAX_SHARDS));
         assert!(peak <= shards * PHONE_MAX_WRITERS_PER_ISOLATE);
+        assert!(peak * 2 <= shards * PHONE_MAX_READERS_PER_ISOLATE);
         assert_eq!(
             clamp_stage_to_isolate(&StageSpec {
                 writers: 99,
