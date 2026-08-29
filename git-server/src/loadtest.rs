@@ -2018,7 +2018,10 @@ mod tests {
         // Hit high peak with shards=1: raise shards to cover peak.
         let (peak, shards) = phone_fanout_plan(PHONE_MAX_PEAK, 1);
         assert_eq!(peak, PHONE_MAX_PEAK);
-        assert_eq!(shards, PHONE_MAX_PEAK.div_ceil(PHONE_MAX_WRITERS_PER_ISOLATE));
+        assert_eq!(
+            shards,
+            PHONE_MAX_PEAK.div_ceil(PHONE_MAX_WRITERS_PER_ISOLATE)
+        );
         assert!(peak <= shards * PHONE_MAX_WRITERS_PER_ISOLATE);
         assert_eq!(
             clamp_stage_to_isolate(&StageSpec {
