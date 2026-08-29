@@ -558,12 +558,22 @@ What the report answers:
 | `cost_per_push` / `cost_per_pull` | Mean R2 A/B, DO, KV ops and $ per successful op |
 | `total_cost_usd` / `budget_usd` / `budget_limited` | Spend vs cap; when limited, peaks are still valid but the run stopped early |
 
-`shards` > 1 splits offered concurrency across Worker self-fetch POSTs when a
-fan-out is configured (else in-process partitions with unique writer branch
-namespaces). All shards hit the **same** repo — that is how to probe the
-per-repo ceiling past one-isolate CPU. The phone UI exposes `shards` (default
-4, max 32). On the Worker, fan-out uses the `SELF` service binding (see
-`wrangler.toml`); public-URL self-fetch is blocked with Cloudflare error 1042.
+`shards` > 1 on the phone **Run** button splits offered concurrency across
+parallel browser `POST /api/<repo>/loadtest` calls (same repo, `shard: true`),
+then `POST /loadtest/merge` for the HTML report. Each browser POST is its own
+edge invocation / isolate — Worker self-fetch is not used.
+
+**Why not Worker self-fetch / `SELF`?** Same-zone public `Fetch` without
+`global_fetch_strictly_public` is Cloudflare error 1042. A `SELF` service
+binding (and public self-fetch with the flag) still returned bare HTTP 500
+even at `shards=2` — well under the Worker→Worker loop budget of 16 — with an
+empty body after HTML strip. That pattern is a platform kill / uncaught
+exception in the nested same-Worker call, not an application `Response::error`.
+Browser fan-out avoids that path entirely. On failure the phone UI shows the
+failing step, status, `cf-ray`, and raw body snippet.
+
+Defaults: 4 shards, max 16. A `?run=1` bookmark still runs in-process on the
+Worker.
 
 Push/pull cost notes that show up in these numbers: one `Odb` open per push
 (new pack index attached in memory), concurrent index loads, an isolate-local

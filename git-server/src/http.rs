@@ -316,6 +316,9 @@ impl GitHttp {
             ["api", repo, "loadtest"] if req.method == "POST" && valid_repo_name(repo) => {
                 self.api_loadtest(req, strip_git(repo), body).await
             }
+            ["loadtest", "merge"] if req.method == "POST" => {
+                self.phone_merge_reports(req, body).await
+            }
             ["loadtest"] if req.method == "GET" => self.phone_loadtest(req).await,
             ["api", rest @ ..] => self.handle_api(req, rest, nonce).await,
             [repo, "info", "refs"] if req.method == "GET" => {
@@ -561,9 +564,61 @@ impl GitHttp {
         }
     }
 
+    /// `POST /loadtest/merge` — phone UI posts shard JSON reports after
+    /// browser fan-out; returns the merged HTML report.
+    async fn phone_merge_reports(&self, req: &Request<'_>, body: &mut dyn BodyStream) -> Response {
+        let mut buf = Vec::new();
+        loop {
+            match body.next_chunk().await {
+                Ok(Some(c)) => buf.extend_from_slice(&c),
+                Ok(None) => break,
+                Err(e) => return Response::error(400, &e),
+            }
+        }
+        let parsed: crate::loadtest::LoadTestMergeRequest = match serde_json::from_slice(&buf) {
+            Ok(r) => r,
+            Err(e) => return Response::error(400, &format!("bad merge JSON: {e}")),
+        };
+        let provided = req
+            .loadtest_token
+            .or(query_param(req.query, "token"))
+            .or(parsed.token.as_deref());
+        if let Some(deny) = self.loadtest_auth_error(provided) {
+            return deny;
+        }
+        if !parsed.confirm {
+            return Response::error(400, "set confirm=true");
+        }
+        if parsed.parts.is_empty() {
+            return Response::error(400, "parts must be non-empty");
+        }
+        let peak = query_param(req.query, "peak")
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(crate::loadtest::PHONE_DEFAULT_PEAK);
+        let peak = crate::loadtest::clamp_phone_peak(peak);
+        let duration = query_param(req.query, "duration")
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(crate::loadtest::PHONE_DEFAULT_DURATION_SECS)
+            .clamp(1, crate::loadtest::MAX_DURATION_SECS);
+        let budget = parsed
+            .budget_usd
+            .unwrap_or(parsed.parts.iter().map(|p| p.budget_usd).sum::<f64>())
+            .clamp(0.01, crate::loadtest::MAX_BUDGET_USD);
+        let repo = parsed.parts[0].repo.clone();
+        let tip = parsed.parts[0].tip.clone();
+        let n = parsed.parts.len() as u32;
+        let report = crate::loadtest::merge_shard_reports(&repo, &tip, budget, n, &parsed.parts);
+        let token = provided.map(percent_decode);
+        Response::ok(
+            "text/html; charset=utf-8",
+            crate::loadtest::html_report(&report, token.as_deref(), peak, duration).into_bytes(),
+        )
+    }
+
     /// `GET /loadtest` — phone-friendly HTML. Without `run=1`, shows a
     /// landing page with budget / peak / shards controls. With `run=1`, runs a
-    /// budget-capped load test into one disposable repo and prints the report.
+    /// budget-capped load test into one disposable repo and prints the report
+    /// (in-process; the landing page JS fans out shards from the browser).
     /// Query knobs: `budget`, `peak` (concurrent writers, each on its own
     /// branch), `shards` (Worker isolates for the same repo), `duration`
     /// (seconds per stage), `token`.

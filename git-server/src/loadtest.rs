@@ -58,6 +58,17 @@ const SEED_BLOB_BYTES: usize = 256;
 /// "three-line edit" regime of the laptop tests).
 const WRITE_BLOB_BYTES: usize = 128;
 
+/// Request body for `POST /loadtest/merge` (phone UI after browser fan-out).
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct LoadTestMergeRequest {
+    pub confirm: bool,
+    #[serde(default)]
+    pub budget_usd: Option<f64>,
+    pub parts: Vec<LoadTestReport>,
+    #[serde(default)]
+    pub token: Option<String>,
+}
+
 /// Request body for `POST /api/<repo>/loadtest`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LoadTestRequest {
@@ -75,9 +86,9 @@ pub struct LoadTestRequest {
     #[serde(default)]
     pub stages: Option<Vec<StageSpec>>,
     /// How many Worker shards to fan the offered load across. `1` (default)
-    /// runs everything in this isolate; `>1` self-fetches shard POSTs when a
-    /// [`LoadtestFanout`] is configured (Worker), otherwise partitions
-    /// in-process. All shards hit the **same** repo (per-repo ceiling).
+    /// runs everything in this isolate; `>1` partitions in-process when no
+    /// HTTP fan-out is configured. Phone UI fans out from the browser instead.
+    /// All shards hit the **same** repo (per-repo ceiling).
     #[serde(default)]
     pub shards: Option<u32>,
     /// Internal: this invocation is one shard of a coordinated run. Shards
@@ -118,7 +129,13 @@ pub struct LoadTestConfig {
     pub shard_index: u32,
 }
 
-pub const MAX_SHARDS: u32 = 32;
+/// Cap on isolate shards for one coordinated run.
+///
+/// Phone multi-shard runs fan out from the **browser** (parallel POSTs to
+/// `/api/…/loadtest`). Each request is its own edge invocation, so Cloudflare's
+/// Worker→Worker loop limit does not apply. Cap keeps the UI honest about
+/// practical parallelism from one phone.
+pub const MAX_SHARDS: u32 = 16;
 
 impl LoadTestRequest {
     /// Validate and clamp into a [`LoadTestConfig`].
@@ -1089,9 +1106,10 @@ pub fn merge_shard_reports(
     }
 }
 
-/// Fan-out hook for multi-isolate shard POSTs against **one** repo. The Worker
-/// implements this with a `SELF` service binding (not public `Fetch` — that
-/// hits Cloudflare error 1042 on same-zone Workers).
+/// Fan-out hook for multi-isolate shard POSTs against **one** repo.
+/// Native tests leave this unset (in-process partitions). The Worker also
+/// leaves it unset — phone UI fans out from the browser instead (Worker
+/// self-fetch hits Cloudflare 1042 / 1019 / bare 500).
 #[async_trait(?Send)]
 pub trait LoadtestFanout {
     async fn post_loadtest(
@@ -1349,6 +1367,13 @@ button.run:disabled {{ opacity: 0.55; cursor: wait; }}
 button.run:active:not(:disabled) {{ filter: brightness(0.92); }}
 #status {{ min-height: 1.5rem; margin: 1rem 0 0; color: var(--muted); font-size: 1rem; }}
 #status.err {{ color: var(--warn); white-space: pre-wrap; text-align: left; }}
+#debug {{
+  display: none; margin: 0.75rem 0 0; padding: 0.75rem; text-align: left;
+  border: 1px solid var(--line); border-radius: 0.5rem; background: var(--field);
+  font: 500 0.8rem/1.35 "Source Code Pro", ui-monospace, monospace;
+  color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow: auto;
+}}
+#debug.show {{ display: block; }}
 code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95em; }}
 </style>
 </head>
@@ -1367,18 +1392,20 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
     </label>
     <label>Isolates (shards)
-      <span class="detail">Same repo; fan writers across Worker isolates. Max {max_shards}. Raise this to beat one-isolate CPU.</span>
+      <span class="detail">Same repo; browser fires one POST per isolate. Max {max_shards}. Raise this to beat one-isolate CPU.</span>
       <input id="shards" type="number" inputmode="numeric" min="1" max="{max_shards}" step="1" value="{shards}">
     </label>
   </div>
   <p class="plan" id="plan">{warm}w → {peak}w → {readers}r · {shards} shards · {duration_secs}s × 3 · ~{expect_secs}s</p>
   <button class="run" id="run" type="button">Run load test</button>
   <p id="status" aria-live="polite"></p>
+  <pre id="debug" aria-live="polite"></pre>
 </main>
 <script>
 (function () {{
   var btn = document.getElementById("run");
   var status = document.getElementById("status");
+  var debugEl = document.getElementById("debug");
   var budgetEl = document.getElementById("budget");
   var peakEl = document.getElementById("peak");
   var shardsEl = document.getElementById("shards");
@@ -1410,43 +1437,221 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
   }}
   peakEl.addEventListener("input", updatePlan);
   shardsEl.addEventListener("input", updatePlan);
-  function runUrl() {{
+  function jsonHeaders() {{
+    var h = {{ "Content-Type": "application/json", "Accept": "application/json" }};
+    if (token) h["X-Loadtest-Token"] = token;
+    return h;
+  }}
+  function headerGet(res, name) {{
+    try {{ return res.headers.get(name) || ""; }} catch (e) {{ return ""; }}
+  }}
+  /** Summarize a failed HTTP body without wiping Cloudflare error pages. */
+  function summarizeBody(text) {{
+    if (!text) return "(empty body)";
+    var t = String(text);
+    var codes = [];
+    var m;
+    var re = /\\b(10\\d{{2}}|11\\d{{2}})\\b/g;
+    while ((m = re.exec(t))) {{
+      if (codes.indexOf(m[1]) < 0) codes.push(m[1]);
+    }}
+    var jsonErr = "";
+    try {{
+      var j = JSON.parse(t);
+      if (j && (j.error || j.message)) jsonErr = String(j.error || j.message);
+    }} catch (e) {{}}
+    var plain = t
+      .replace(/<script[\\s\\S]*?<\\/script>/gi, " ")
+      .replace(/<style[\\s\\S]*?<\\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\\s+/g, " ")
+      .trim();
+    if (!plain && codes.length) plain = "Cloudflare error " + codes.join(", ");
+    if (!plain) plain = t.slice(0, 400);
+    var out = jsonErr || plain.slice(0, 600);
+    if (codes.length && out.indexOf(codes[0]) < 0) {{
+      out = "CF " + codes.join("/") + ": " + out;
+    }}
+    return out;
+  }}
+  function showErr(msg, detail) {{
+    status.className = "err";
+    status.textContent = msg;
+    if (detail) {{
+      debugEl.textContent = detail;
+      debugEl.className = "show";
+    }} else {{
+      debugEl.textContent = "";
+      debugEl.className = "";
+    }}
+    btn.disabled = false;
+  }}
+  function clearDebug() {{
+    debugEl.textContent = "";
+    debugEl.className = "";
+  }}
+  function fetchJson(step, url, init) {{
+    return fetch(url, init).then(function (res) {{
+      var ray = headerGet(res, "cf-ray") || headerGet(res, "CF-Ray");
+      return res.text().then(function (t) {{
+        if (!res.ok) {{
+          var err = new Error(step + " HTTP " + res.status + ": " + summarizeBody(t));
+          err.debug = [
+            "step: " + step,
+            "url: " + url,
+            "status: " + res.status,
+            "cf-ray: " + (ray || "(none)"),
+            "content-type: " + (headerGet(res, "content-type") || "(none)"),
+            "body:",
+            t.slice(0, 2000) || "(empty)"
+          ].join("\\n");
+          throw err;
+        }}
+        try {{
+          return JSON.parse(t);
+        }} catch (e) {{
+          var pe = new Error(step + ": bad JSON (" + (e && e.message ? e.message : e) + ")");
+          pe.debug = "step: " + step + "\\nurl: " + url + "\\nbody:\\n" + t.slice(0, 2000);
+          throw pe;
+        }}
+      }});
+    }});
+  }}
+  function postLoadtest(step, repo, body) {{
+    return fetchJson(step, "/api/" + repo + "/loadtest", {{
+      method: "POST",
+      credentials: "same-origin",
+      headers: jsonHeaders(),
+      body: JSON.stringify(body)
+    }});
+  }}
+  function partitionStages(stages, shards, i) {{
+    var out = [];
+    for (var s = 0; s < stages.length; s++) {{
+      var st = stages[s];
+      var w = Math.floor(st.writers / shards) + (i === 0 ? (st.writers % shards) : 0);
+      var r = Math.floor(st.readers / shards) + (i === 0 ? (st.readers % shards) : 0);
+      if (w > 0 || r > 0) out.push({{ writers: w, readers: r }});
+    }}
+    return out;
+  }}
+  btn.addEventListener("click", function () {{
+    btn.disabled = true;
+    clearDebug();
+    var t0 = Date.now();
+    var phase = "starting";
+    status.className = "";
+    status.textContent = "Running… 0s";
+    var tick = setInterval(function () {{
+      status.textContent = "Running… " + Math.floor((Date.now() - t0) / 1000) + "s · " + phase;
+    }}, 250);
     var budget = Number(budgetEl.value);
     if (!(budget > 0)) budget = {budget_usd:.2};
     var peak = clampPeak(peakEl.value);
     var shards = clampShards(shardsEl.value);
-    var q = "/loadtest?run=1&budget=" + encodeURIComponent(budget.toFixed(2)) +
-      "&duration=" + duration + "&peak=" + peak + "&shards=" + shards;
-    if (token) q += "&token=" + encodeURIComponent(token);
-    return q;
-  }}
-  btn.addEventListener("click", function () {{
-    btn.disabled = true;
-    var t0 = Date.now();
-    status.className = "";
-    status.textContent = "Running… 0s";
-    var tick = setInterval(function () {{
-      status.textContent = "Running… " + Math.floor((Date.now() - t0) / 1000) + "s";
-    }}, 250);
-    fetch(runUrl(), {{ credentials: "same-origin", headers: {{ "Accept": "text/html" }} }})
-      .then(function (res) {{ return res.text().then(function (t) {{ return {{ ok: res.ok, status: res.status, text: t }}; }}); }})
-      .then(function (r) {{
-        clearInterval(tick);
-        if (r.ok && r.text.indexOf("<html") !== -1) {{
-          document.open(); document.write(r.text); document.close();
-          return;
-        }}
-        status.className = "err";
-        status.textContent = "Failed (HTTP " + r.status + ").\\n" + r.text.replace(/<[^>]+>/g, " ").slice(0, 500);
-        btn.disabled = false;
-      }})
-      .catch(function (e) {{
-        clearInterval(tick);
-        status.className = "err";
-        status.textContent = "Request failed: " + (e && e.message ? e.message : e) +
-          "\\nTry a lower peak or fewer shards.";
-        btn.disabled = false;
+    var warm = Math.max(1, Math.floor(peak / 3));
+    var readers = Math.max(1, peak * 2);
+    var stages = [
+      {{ writers: warm, readers: 0 }},
+      {{ writers: peak, readers: 0 }},
+      {{ writers: 0, readers: readers }}
+    ];
+    var repo = "lt" + String(Date.now()).slice(-9);
+
+    // Seed once (creates tip), then fan shard POSTs from the browser so each
+    // lands on a separate isolate — Worker self-fetch is blocked by Cloudflare.
+    var seedBudget = Math.min(0.02, Math.max(0.01, budget * 0.1));
+    phase = "seed " + repo;
+    postLoadtest("seed", repo, {{
+      confirm: true,
+      budget_usd: seedBudget,
+      duration_secs: 1,
+      stages: [{{ writers: 1, readers: 0 }}],
+      shards: 1
+    }}).then(function (seed) {{
+      var tip = seed.tip;
+      phase = "shards 0/" + shards;
+      var done = 0;
+      var posts = [];
+      for (var i = 0; i < shards; i++) {{
+        (function (idx) {{
+          var shardStages = partitionStages(stages, shards, idx);
+          if (!shardStages.length) return;
+          posts.push(
+            postLoadtest("shard " + idx, repo, {{
+              confirm: true,
+              budget_usd: budget / shards,
+              duration_secs: duration,
+              stages: shardStages,
+              shard: true,
+              tip: tip,
+              shard_index: idx,
+              shards: 1
+            }}).then(function (part) {{
+              done += 1;
+              phase = "shards " + done + "/" + posts.length;
+              return part;
+            }})
+          );
+        }})(i);
+      }}
+      if (!posts.length) throw new Error("no shard work after partitioning");
+      return Promise.all(posts).then(function (parts) {{
+        phase = "merge";
+        var mergeHeaders = {{
+          "Content-Type": "application/json",
+          "Accept": "text/html"
+        }};
+        if (token) mergeHeaders["X-Loadtest-Token"] = token;
+        var q = "/loadtest/merge?peak=" + peak + "&duration=" + duration;
+        if (token) q += "&token=" + encodeURIComponent(token);
+        return fetch(q, {{
+          method: "POST",
+          credentials: "same-origin",
+          headers: mergeHeaders,
+          body: JSON.stringify({{
+            confirm: true,
+            budget_usd: budget,
+            parts: parts
+          }})
+        }}).then(function (res) {{
+          var ray = headerGet(res, "cf-ray") || headerGet(res, "CF-Ray");
+          return res.text().then(function (t) {{
+            return {{
+              ok: res.ok,
+              status: res.status,
+              text: t,
+              ray: ray,
+              ctype: headerGet(res, "content-type")
+            }};
+          }});
+        }});
       }});
+    }}).then(function (r) {{
+      clearInterval(tick);
+      if (r.ok && r.text.indexOf("<html") !== -1) {{
+        document.open(); document.write(r.text); document.close();
+        return;
+      }}
+      showErr(
+        "merge HTTP " + r.status + ": " + summarizeBody(r.text),
+        [
+          "step: merge",
+          "status: " + r.status,
+          "cf-ray: " + (r.ray || "(none)"),
+          "content-type: " + (r.ctype || "(none)"),
+          "body:",
+          (r.text || "").slice(0, 2000) || "(empty)"
+        ].join("\\n")
+      );
+    }}).catch(function (e) {{
+      clearInterval(tick);
+      showErr(
+        (e && e.message ? e.message : String(e)) +
+          "\\nTry a lower peak or fewer shards.",
+        e && e.debug ? e.debug : ""
+      );
+    }});
   }});
   updatePlan();
 }})();
@@ -2077,5 +2282,14 @@ mod tests {
         assert_eq!(merged.stages[0].push_ok, 25);
         assert!((merged.stages[0].pushes_per_sec - 25.0).abs() < 1e-9);
         assert_eq!(merged.shards, 2);
+    }
+
+    #[test]
+    fn max_shards_fits_cloudflare_invocation_cap() {
+        // Browser fan-out is not Worker→Worker; keep a sane phone UI max.
+        let cap = MAX_SHARDS;
+        assert!((2..=32).contains(&cap), "MAX_SHARDS={cap}");
+        assert_eq!(clamp_phone_shards(99), MAX_SHARDS);
+        assert_eq!(clamp_phone_shards(1), 1);
     }
 }

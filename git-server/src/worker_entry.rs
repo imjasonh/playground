@@ -25,15 +25,13 @@ use async_trait::async_trait;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use worker::{
-    durable_object, event, Bucket, Context, DurableObject, Env, Fetcher, Method, MultipartUpload,
-    Range, Request, RequestInit, Response, State, UploadedPart,
+    durable_object, event, Bucket, Context, DurableObject, Env, Method, MultipartUpload, Range,
+    Request, RequestInit, Response, State, UploadedPart,
 };
 
 const BUCKET_BINDING: &str = "GIT_BUCKET";
 const DO_BINDING: &str = "REPO_STATE";
 const REPOS_KV_BINDING: &str = "GIT_REPOS";
-/// Service binding name for same-Worker shard fan-out (`[[services]]` in wrangler.toml).
-const SELF_BINDING: &str = "SELF";
 
 /// R2 requires all parts except the last to be at least 5 MiB.
 const PART_SIZE: usize = 5 * 1024 * 1024;
@@ -476,56 +474,6 @@ fn request_nonce() -> String {
     format!("{ms:x}-{r:x}")
 }
 
-/// HTTP self-fetch for coordinated loadtest shards (same repo, fresh isolates).
-/// Uses the `SELF` service binding — public-URL `Fetch` to this Worker hits
-/// Cloudflare error 1042 (same-zone Worker fetch).
-struct WorkerLoadtestFanout {
-    self_fetch: Fetcher,
-    token: Option<String>,
-}
-
-#[async_trait(?Send)]
-impl crate::loadtest::LoadtestFanout for WorkerLoadtestFanout {
-    async fn post_loadtest(
-        &self,
-        repo: &str,
-        req: crate::loadtest::LoadTestRequest,
-    ) -> Result<crate::loadtest::LoadTestReport, String> {
-        // Hostname is ignored for service bindings; path/method/body matter.
-        let url = format!("https://self/api/{repo}/loadtest");
-        let body = serde_json::to_vec(&req).map_err(|e| e.to_string())?;
-        let mut init = RequestInit::new();
-        init.with_method(Method::Post);
-        init.with_body(Some(worker::wasm_bindgen::JsValue::from(
-            worker::js_sys::Uint8Array::from(body.as_slice()),
-        )));
-        let headers = worker::Headers::new();
-        headers
-            .set("content-type", "application/json")
-            .map_err(|e| e.to_string())?;
-        if let Some(t) = &self.token {
-            headers
-                .set("X-Loadtest-Token", t)
-                .map_err(|e| e.to_string())?;
-        }
-        init.with_headers(headers);
-        let mut resp = self
-            .self_fetch
-            .fetch(url, Some(init))
-            .await
-            .map_err(|e| format!("shard self-fetch: {e}"))?;
-        let status = resp.status_code();
-        let text = resp.text().await.map_err(|e| e.to_string())?;
-        if !(200..300).contains(&status) {
-            return Err(format!(
-                "shard HTTP {status}: {}",
-                text.chars().take(300).collect::<String>()
-            ));
-        }
-        serde_json::from_str(&text).map_err(|e| format!("bad shard JSON: {e}"))
-    }
-}
-
 /// Self-triggering maintenance: after an accepted push, if the repo has at
 /// least [`crate::maintenance::AUTO_REPACK_TRIGGER_PACKS`] packs, a bounded
 /// repack runs in the background of the same invocation (`ctx.wait_until`).
@@ -575,23 +523,8 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
     let cf_ray = req.headers().get("cf-ray").ok().flatten();
     let loadtest_token = req.headers().get("X-Loadtest-Token").ok().flatten();
 
-    // Service-binding self-fetch so multi-shard loadtests land on separate
-    // isolates without Cloudflare error 1042 (same-zone public Fetch).
-    match env.service(SELF_BINDING) {
-        Ok(self_fetch) => {
-            let fanout = std::rc::Rc::new(WorkerLoadtestFanout {
-                self_fetch,
-                token: server.loadtest_token.clone(),
-            });
-            server = server.with_loadtest_fanout(fanout);
-        }
-        Err(e) => {
-            // shards>1 will fall back to in-process partitioning (same isolate).
-            worker::console_log!(
-                "SELF service binding unavailable ({e}); loadtest shards stay in-process"
-            );
-        }
-    }
+    // Multi-shard phone runs fan out from the browser (parallel POSTs), not via
+    // Worker self-fetch — CF blocks same-zone Worker→Worker (1042 / 1019 / 500).
 
     let span_name = if path.contains("git-receive-pack") {
         "git.receive_pack"
@@ -665,7 +598,8 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
     } = ctx;
 
     // Buffer loadtest JSON so the router can parse it (small body).
-    let mut body = if method == "POST" && path.ends_with("/loadtest") {
+    let mut body = if method == "POST" && (path.ends_with("/loadtest") || path == "/loadtest/merge")
+    {
         let mut buf = Vec::new();
         if let Ok(mut stream) = req.stream() {
             use futures::StreamExt;

@@ -18,12 +18,6 @@ compatibility_date = "2026-06-16"
 [build]
 command = "bash scripts/worker-build.sh"
 
-# Loadtest shard fan-out invokes this Worker again (fresh isolate) via a
-# service binding. Public-URL self-fetch hits Cloudflare error 1042.
-[[services]]
-binding = "SELF"
-service = "git"
-
 # All bulk data: packs, pack indexes, file-log segments.
 [[r2_buckets]]
 binding = "GIT_BUCKET"
