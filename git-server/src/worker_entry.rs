@@ -478,7 +478,9 @@ fn request_nonce() -> String {
 
 /// HTTP self-fetch for coordinated loadtest shards (same repo, fresh isolates).
 /// Uses the `SELF` service binding — public-URL `Fetch` to this Worker hits
-/// Cloudflare error 1042 (same-zone Worker fetch).
+/// Cloudflare error 1042 (same-zone Worker fetch). Keep shard count ≤
+/// [`crate::loadtest::MAX_SHARDS`]: CF allows only 32 Worker invocations per
+/// request chain (this coordinator + each binding call).
 struct WorkerLoadtestFanout {
     self_fetch: Fetcher,
     token: Option<String>,

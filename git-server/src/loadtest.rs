@@ -118,7 +118,14 @@ pub struct LoadTestConfig {
     pub shard_index: u32,
 }
 
-pub const MAX_SHARDS: u32 = 32;
+/// Cap on isolate shards for one coordinated run.
+///
+/// Cloudflare allows at most **32 Worker invocations** in a single request
+/// chain; each `SELF` service-binding call counts. The coordinator is one
+/// invocation, so at most 31 shard POSTs can run. Cap below that for
+/// headroom (other nested work) — exceeding the limit throws and the client
+/// sees a bare HTTP 500.
+pub const MAX_SHARDS: u32 = 24;
 
 impl LoadTestRequest {
     /// Validate and clamp into a [`LoadTestConfig`].
@@ -1367,7 +1374,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
     </label>
     <label>Isolates (shards)
-      <span class="detail">Same repo; fan writers across Worker isolates. Max {max_shards}. Raise this to beat one-isolate CPU.</span>
+      <span class="detail">Same repo; fan writers across Worker isolates. Max {max_shards} (Cloudflare caps service-binding fan-out under 32 invocations). Raise this to beat one-isolate CPU.</span>
       <input id="shards" type="number" inputmode="numeric" min="1" max="{max_shards}" step="1" value="{shards}">
     </label>
   </div>
@@ -1437,7 +1444,10 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
           return;
         }}
         status.className = "err";
-        status.textContent = "Failed (HTTP " + r.status + ").\\n" + r.text.replace(/<[^>]+>/g, " ").slice(0, 500);
+        var plain = r.text.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").trim();
+        if (!plain) plain = r.text.slice(0, 500);
+        status.textContent = "Failed (HTTP " + r.status + ").\\n" + plain.slice(0, 500) +
+          "\\nTry fewer shards (max {max_shards}) or a lower peak.";
         btn.disabled = false;
       }})
       .catch(function (e) {{
@@ -2077,5 +2087,18 @@ mod tests {
         assert_eq!(merged.stages[0].push_ok, 25);
         assert!((merged.stages[0].pushes_per_sec - 25.0).abs() < 1e-9);
         assert_eq!(merged.shards, 2);
+    }
+
+    #[test]
+    fn max_shards_fits_cloudflare_invocation_cap() {
+        // Coordinator + N service-binding shards must stay ≤ 32 invocations.
+        let cap = MAX_SHARDS;
+        assert!(
+            cap <= 31,
+            "MAX_SHARDS={cap} would exceed CF's 32 Worker-invocation cap"
+        );
+        assert_eq!(clamp_phone_shards(32), MAX_SHARDS);
+        assert_eq!(clamp_phone_shards(99), MAX_SHARDS);
+        assert_eq!(clamp_phone_shards(1), 1);
     }
 }
