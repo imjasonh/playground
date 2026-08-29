@@ -1451,7 +1451,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     var t = String(text);
     var codes = [];
     var m;
-    var re = /\\b(10\\d{{2}}|11\\d{{2}})\\b/g;
+    // Single backslashes: this is a raw Rust format string, not a JS string escape.
+    var re = /\b(10\d{{2}}|11\d{{2}})\b/g;
     while ((m = re.exec(t))) {{
       if (codes.indexOf(m[1]) < 0) codes.push(m[1]);
     }}
@@ -1460,12 +1461,9 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       var j = JSON.parse(t);
       if (j && (j.error || j.message)) jsonErr = String(j.error || j.message);
     }} catch (e) {{}}
-    var plain = t
-      .replace(/<script[\\s\\S]*?<\\/script>/gi, " ")
-      .replace(/<style[\\s\\S]*?<\\/style>/gi, " ")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\\s+/g, " ")
-      .trim();
+    // Strip tags with a simple pattern (avoid embedding a script end-tag
+    // sequence anywhere in this file — HTML would close the script early).
+    var plain = t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     if (!plain && codes.length) plain = "Cloudflare error " + codes.join(", ");
     if (!plain) plain = t.slice(0, 400);
     var out = jsonErr || plain.slice(0, 600);
@@ -1504,14 +1502,14 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
             "content-type: " + (headerGet(res, "content-type") || "(none)"),
             "body:",
             t.slice(0, 2000) || "(empty)"
-          ].join("\\n");
+          ].join("\n");
           throw err;
         }}
         try {{
           return JSON.parse(t);
         }} catch (e) {{
           var pe = new Error(step + ": bad JSON (" + (e && e.message ? e.message : e) + ")");
-          pe.debug = "step: " + step + "\\nurl: " + url + "\\nbody:\\n" + t.slice(0, 2000);
+          pe.debug = "step: " + step + "\nurl: " + url + "\nbody:\n" + t.slice(0, 2000);
           throw pe;
         }}
       }});
@@ -1642,13 +1640,13 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
           "content-type: " + (r.ctype || "(none)"),
           "body:",
           (r.text || "").slice(0, 2000) || "(empty)"
-        ].join("\\n")
+        ].join("\n")
       );
     }}).catch(function (e) {{
       clearInterval(tick);
       showErr(
         (e && e.message ? e.message : String(e)) +
-          "\\nTry a lower peak or fewer shards.",
+          "\nTry a lower peak or fewer shards.",
         e && e.debug ? e.debug : ""
       );
     }});

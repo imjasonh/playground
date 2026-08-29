@@ -1269,6 +1269,17 @@ fn phone_loadtest_html() {
         html.contains("browser fires one POST per isolate") || html.contains("shard_index"),
         "{html}"
     );
+    // HTML ends <script> at the first "</script" substring — even inside JS.
+    let script_open = html.find("<script>").expect("script");
+    let after = &html[script_open + "<script>".len()..];
+    let script_close = after.find("</script>").expect("close");
+    let script = &after[..script_close];
+    assert!(
+        script.to_ascii_lowercase().matches("</script").count() == 0,
+        "embedded </script would truncate the landing JS"
+    );
+    assert!(script.contains("addEventListener(\"click\""), "{script}");
+    assert!(script.contains("function summarizeBody"), "{script}");
 
     let (status, body) = server.get("/loadtest?run=1&budget=0.05&duration=2&peak=2&shards=2");
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
