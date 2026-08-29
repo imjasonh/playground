@@ -563,6 +563,13 @@ parallel browser `POST /api/<repo>/loadtest` calls (same repo, `shard: true`),
 then `POST /loadtest/merge` for the HTML report. Each browser POST is its own
 edge invocation / isolate — Worker self-fetch is not used.
 
+**Per-isolate cap.** Nested push/pull loops in one shard POST share that
+invocation's subrequest (~1000) and memory (128 MiB) budgets. Phone UI keeps
+≤6 writers and ≤12 readers per isolate (the envelope that stopped Error 1101
+in PR #321) and auto-raises `shards` when `peak` would exceed that (for
+example `peak=24&shards=2` becomes 4 shards × 6 writers). On wasm the runner
+also clamps stage concurrency to those caps as a backstop.
+
 **Why not Worker self-fetch / `SELF`?** Same-zone public `Fetch` without
 `global_fetch_strictly_public` is Cloudflare error 1042. A `SELF` service
 binding (and public self-fetch with the flag) still returned bare HTTP 500
@@ -573,7 +580,7 @@ Browser fan-out avoids that path entirely. On failure the phone UI shows the
 failing step, status, `cf-ray`, and raw body snippet.
 
 Defaults: 4 shards, max 16. A `?run=1` bookmark still runs in-process on the
-Worker.
+Worker (also subject to the per-isolate clamp).
 
 Push/pull cost notes that show up in these numbers: one `Odb` open per push
 (new pack index attached in memory), concurrent index loads, an isolate-local
