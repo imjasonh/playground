@@ -41,6 +41,14 @@ available to load. They still start the battle loaded with AT. The HE upgrade
 below is redundant for stock Skirmish / Platoon / Combined as we play them; it
 remains for custom / painted builds if you want the upgrade list complete.
 
+**House rule — list building.** **Platoon** and **Combined** tanks spend **up
+to 10** upgrade points before the game (you may spend fewer). Combined tanks
+may buy **mines**; each Combined tank also gets one air strike as a scenario
+grant (does not consume list points). APCs spend **up to 4** points (armor,
+engine, smoke). **Skirmish** and **Squadron** use stock tanks with no list.
+The simulator picks a random target spend in `0..=budget` per vehicle when
+lists apply.
+
 ### Upgrades (up to 10 points)
 
 Spend up to 10 upgrade points before the game:
@@ -95,9 +103,13 @@ penetration, glance wound, HE fire start, cook-off, and similar):
 
 ## Initiative and setup
 
-1. Roll off; highest chooses who activates first (or as the scenario says).
-2. Apply any **scenario spoil** for the second player (see
-   [Scenarios](#scenarios)).
+1. Build lists when the scenario uses them (Platoon / Combined). Sum each
+   side’s total spend. Skirmish and Squadron skip lists.
+2. **House rule — under-spend initiative** (list scenarios only). If one side
+   spent **fewer** upgrade points than the other, that side activates first and
+   there is **no** second-player spoil. If totals are equal — or the scenario
+   has no lists — roll off as usual and apply any scenario spoil for the
+   second player.
 3. First activation begins.
 
 ### Pass activation (multi-unit)
@@ -324,36 +336,59 @@ required tabletop clocks — see [`RULES_CHANGES.md`](RULES_CHANGES.md).
 
 ## Scenarios
 
-These are the setups the simulator balances against. Map sizes are hex
-**columns × rows** on an odd-r rectangular mat (not an axial parallelogram).
+These are the setups the simulator balances against — a short learning ladder
+from stock 1v1 up to combined arms. Map sizes are hex **columns × rows** on an
+odd-r rectangular mat (not an axial parallelogram).
 
-### Skirmish
+### 1. Skirmish (intro)
 
-- **Force:** 1v1 stock tanks (HE available).
+Learn maneuvering and shooting.
+
+- **Force:** 1v1 **stock** tanks (HE free). **No upgrades.**
 - **Board:** 9×12 with a midline building block, clear alleys, random
   forest/mud/rubble outside reserved hexes, offset starts.
+- **Initiative:** roll off; second player always gets spoil.
 - **Second-player spoil:** shift up to **2** scatter terrain tiles (forest /
   mud / rubble) by 1 hex each onto Open hexes before the first activation.
   Buildings stay fixed. No opposing-unit nudge (it skewed color on this map).
 
-### Platoon
+### 2. Squadron
 
-- **Force:** 3v3 stock tanks.
+Learn pass activation and group tactics.
+
+- **Force:** 3v3 **stock** tanks (HE free). **No upgrades.**
 - **Board:** 18×12 open mat — scattered **building clumps** and **forest
   patches**, plus single mud/rubble tiles. No sealed midline or plaza funnel.
+- **Initiative:** roll off; second player always gets spoil.
 - **Second-player spoil:** nudge **each** opposing unit up to **1 hex**
   (empty, passable; facing unchanged), then shift up to **3** scatter tiles
   (same rules as below).
 
-### Combined arms
+### 3. Platoon
 
-- **Force:** per side — **2 tanks** (each with one air strike), **2 APCs**,
-  **2 infantry**.
-- **Board:** 18×12 open mat (same size as platoon) with building clumps and
-  forest patches; starts and scatter are east–west **mirrored** at generation
-  (second-player terrain spoil may break scatter symmetry on purpose).
-- **Second-player spoil:** nudge each opposing unit up to 1 hex, then shift up
-  to **4** scatter tiles.
+Same force and board as Squadron, plus list building.
+
+- **Force:** 3v3 tanks with up to 10 upgrade points each (HE free; may spend
+  fewer).
+- **Board:** same 18×12 open mat as Squadron.
+- **Initiative:** under-spend initiative (see above); spoil only when list
+  totals tie.
+- **Second-player spoil** (tied lists only): nudge **each** opposing unit up
+  to **1 hex**, then shift up to **3** scatter tiles.
+
+### 4. Combined arms
+
+Full combined-arms game with lists.
+
+- **Force:** per side — **2 tanks** (10-pt lists + one air strike each; mines
+  allowed), **2 APCs** (4-pt lists), **2 infantry**.
+- **Board:** 18×12 open mat (same size as squadron/platoon) with building
+  clumps and forest patches; starts and scatter are east–west **mirrored** at
+  generation (second-player terrain spoil may break scatter symmetry on
+  purpose).
+- **Initiative:** under-spend initiative; spoil only when list totals tie.
+- **Second-player spoil** (tied lists only): nudge each opposing unit up to 1
+  hex, then shift up to **4** scatter tiles.
 
 ### Scatter terrain spoil (shared rules)
 

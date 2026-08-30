@@ -483,6 +483,134 @@ we'd like — denser map or longer clocks may be next if this size sticks.
 
 ---
 
+## 2026-08-30 — Stock field kit (smoke, medkit, lieutenant)
+
+**Type: Rule / Scenario**
+
+Stock tanks always field a **smoke launcher**, **medkit**, and **lieutenant**
+(house rule, like stock HE). APCs get smoke. Medkit absorbs the first crew
+injury; the LT auto-covers the first killed core role (acts as wounded). Smoke
+is once per battle, range 2, and blocks LOS for the rest of the game. The AI
+deploys smoke when threatened without a return shot, and covers with the LT
+immediately after a kill.
+
+**Effect (seed 1; 400 / 150 / 100) vs pre-kit same mat:**
+
+| Scenario | Decisive | FP share | Smoke /game | Medkit | LT cover | Crew K |
+|----------|----------|----------|-------------|--------|----------|--------|
+| Skirmish | 91%→**90%** | 44%→**38%** | **1.93** | **1.86** | **0.56** | 1.70→**0.83** |
+| Platoon | 98%→**95%** | 51%→**48%** | **5.83** | **5.94** | **2.95** | 8.06→**4.59** |
+| Combined | 96%→**93%** | 52%→**43%** | **6.10** | **3.97** | **2.08** | 4.88→**3.03** |
+
+They get used. Crew kills drop hard (medkit + LT). Decisive rate holds.
+Skirmish / combined first-player share slipped — worth watching. Combined
+timeouts/idles are a bit worse (smoke LOS?).
+
+---
+
+## 2026-08-30 — Full list upgrades (10-pt tanks / 4-pt APCs)
+
+**Type: Rule / Scenario**
+
+Stock scenarios now **list-build**: tanks spend up to 10 points (armor, engine,
+extended barrel, optics, anti-infantry, smoke, medkit, lieutenant; Combined
+may buy mines). APCs spend up to 4 (armor / engine / smoke). Combined air
+strikes remain a scenario grant. HE stays free for stock tanks.
+
+The AI deploys mines on approaches, sprays with tank AI weapons when equipped,
+and still uses smoke / LT cover / medkit when those upgrades land.
+
+**Effect (seed 1; 400 / 150 / 100) vs field-kit-only on the same mats:**
+
+| Scenario | Decisive | FP share | Hard TO | Idle | Smoke/g | Medkit | Mines trig |
+|----------|----------|----------|---------|------|---------|--------|------------|
+| Skirmish | 90%→**84%** | 38%→**54%** | 21%→**67%** | 0% | 1.93→**1.06** | 1.86→**0.94** | — |
+| Platoon | 95%→**100%** | 48%→**49%** | 0%→**6%** | ~1% | 5.83→**3.37** | 5.94→**3.26** | — |
+| Combined | 93%→**95%** | 43%→**56%** | 32%→**40%** | 24%→**6%** | 6.10→**3.73** | 3.97→**2.20** | **5.62** |
+
+**List mix (vehicles):** soft upgrades land ~55% of the time on skirmish/platoon;
+leftover points favor **engine (~88%)** and **armor (~5.8 pts/tank)**. Combined
+mines: ~1.2 charges/vehicle at list, **9.3 deployed / 5.6 triggered** per game.
+
+Armor is doing real work — skirmish timeouts jumped because pens land less often
+(4.3→3.3 pens/game) and glances stack up. Platoon stays decisive and fun.
+Combined idles improved; timeouts and low-engagement are still the soft spots.
+
+---
+
+## 2026-08-30 — Under-spend initiative (skip spoil)
+
+**Type: Rule / Scenario**
+
+You may spend fewer than the list cap. After lists are built, compare each
+side’s **total** upgrade points. The side that spent **less** activates first
+and there is **no** second-player spoil. Equal totals still roll off and apply
+spoil. The simulator picks a random target in `0..=budget` per vehicle so this
+tradeoff shows up in Monte Carlo runs.
+
+**Effect (seed 1; 400 / 150 / 100) vs full-list (always aiming at the cap):**
+
+| Scenario | Decisive | FP share | Hard TO | Idle | Under-spend 1st | Avg pts/side | Gap |
+|----------|----------|----------|---------|------|-----------------|--------------|-----|
+| Skirmish | 84%→**93%** | 54%→**34%** | 67%→**26%** | 0% | **94%** | ~5.1 | 3.4 |
+| Platoon | 100%→**96%** | 49%→**37%** | 6%→**1%** | ~1% | **96%** | ~15 | 6.2 |
+| Combined | 95%→**94%** | 56%→**48%** | 40%→**32%** | 6%→**13%** | **94%** | ~14 | 4.7 |
+
+Going light almost always wins initiative (~94%), but in skirmish/platoon the
+**second** player still wins more games — the points gap (armor/engine) beats
+the first-activation edge. Timeouts dropped hard on skirmish because average
+lists are thinner (~5 pts/tank vs ~10). Worth watching whether humans game this
+into a race to the bottom; if so, floor the target spend or weight toward the
+cap in the sim.
+
+---
+
+## 2026-08-30 — Four-stage learning ladder
+
+**Type: Scenario / Rule**
+
+Scenarios are now a ladder:
+
+| Stage | CLI | Force | Lists |
+|-------|-----|-------|-------|
+| 1 Intro | `skirmish` | 1v1 stock | no |
+| 2 Squadron | `squadron` | 3v3 stock | no |
+| 3 Platoon | `platoon` | 3v3 | ≤10 pts / tank |
+| 4 Combined | `combined` | 2 tank + 2 APC + 2 inf / side | tanks ≤10 (+mines), APC ≤4; air grant |
+
+Under-spend initiative applies only on list stages (3–4). Stock stages always
+roll off and apply second-player spoil.
+
+**Balance (seed 1; 400 / 150 / 150 / 100):**
+
+| Stage | Decisive | FP share | Hard TO | Idle | Notes |
+|-------|----------|----------|---------|------|-------|
+| Skirmish | **92%** | 43% | 17% | 0% | Clean intro; pens 5.3, glances 1.9 |
+| Squadron | **98%** | **48%** | **0%** | 3% | Best-balanced stock multi; Red-leaning color |
+| Platoon | 96% | **37%** | 1% | 1% | Lists used; under-spend still hurts FP |
+| Combined | 94% | 48% | 32% | 13% | Mines/air live; idle + low-eng soft |
+
+**Rules coverage by stage**
+
+| Rule family | Skirmish | Squadron | Platoon | Combined |
+|-------------|----------|----------|---------|----------|
+| Move / turn / turret / LOS / cover | ✓ | ✓ | ✓ | ✓ |
+| AT + HE fire, pen / glance / suppress | ✓ | ✓ | ✓ | ✓ |
+| Crew wound / kill / fire / cook-off | ✓ | ✓ | ✓ | ✓ |
+| Pass activation (multi-unit) | — | ✓ | ✓ | ✓ |
+| Unit + terrain spoil | terrain | ✓ | if lists tie | if lists tie |
+| List upgrades + under-spend init | — | — | ✓ | ✓ |
+| Smoke / medkit / LT | — | — | ✓ | ✓ |
+| APC / infantry / AI spray / air / mines | — | — | — | ✓ |
+
+Stock stages teach the core loop without list noise. Platoon is where soft
+upgrades fire (~2.5 smoke / medkit per game). Combined is the only stage that
+exercises air (**3.9**/g), mines (**4.7** deploy / **3.2** trig), and infantry
+kills (**3.1**/g). Soft spots to watch: platoon first-player share under
+under-spend, combined timeouts / low engagement, squadron Red color lean.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.

@@ -23,6 +23,10 @@ pub struct CombatEvent {
     pub destroyed: bool,
     pub cook_off: bool,
     pub impact: Option<ImpactFacing>,
+    /// Medkit absorbed this injury (no status change).
+    pub medkit_save: bool,
+    /// Lieutenant began covering a killed role after this injury.
+    pub lt_cover: bool,
 }
 
 /// Inputs for [`resolve_shot`].
@@ -138,21 +142,55 @@ fn wound_random_crew<R: Rng>(rng: &mut R, target: &mut Tank, ev: &mut CombatEven
         return;
     }
     let idx = living[rng.gen_range(0..living.len())];
+    let role = target.crew[idx].role;
+
+    // Medkit: first injury ignores its penalty once.
+    if target.has_medkit && !target.medkit_used {
+        target.medkit_used = true;
+        ev.medkit_save = true;
+        ev.description
+            .push_str(&format!("; Medkit ignores {} injury", role_name(role)));
+        return;
+    }
+
     match target.crew[idx].status {
         CrewStatus::Healthy => {
             target.crew[idx].status = CrewStatus::Wounded;
             ev.crew_wounded = true;
             ev.description
-                .push_str(&format!("; {} wounded", role_name(target.crew[idx].role)));
+                .push_str(&format!("; {} wounded", role_name(role)));
         }
         CrewStatus::Wounded => {
             target.crew[idx].status = CrewStatus::Killed;
             ev.crew_killed = true;
             ev.description
-                .push_str(&format!("; {} killed", role_name(target.crew[idx].role)));
+                .push_str(&format!("; {} killed", role_name(role)));
+            if role == crate::unit::CrewRole::Lieutenant {
+                target.crew[idx].covering = None;
+            } else if assign_lieutenant_cover(target, role) {
+                ev.lt_cover = true;
+                ev.description
+                    .push_str(&format!("; Lieutenant covers {}", role_name(role)));
+            }
         }
         CrewStatus::Killed => {}
     }
+}
+
+/// Living uncovered lieutenant steps into a killed core role (acts as wounded).
+fn assign_lieutenant_cover(target: &mut Tank, killed: crate::unit::CrewRole) -> bool {
+    if matches!(killed, crate::unit::CrewRole::Lieutenant) {
+        return false;
+    }
+    if let Some(lt) = target.crew.iter_mut().find(|c| {
+        c.role == crate::unit::CrewRole::Lieutenant
+            && c.status != CrewStatus::Killed
+            && c.covering.is_none()
+    }) {
+        lt.covering = Some(killed);
+        return true;
+    }
+    false
 }
 
 fn role_name(role: crate::unit::CrewRole) -> &'static str {

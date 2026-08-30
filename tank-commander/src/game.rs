@@ -44,7 +44,7 @@ pub struct Game {
     pub max_activations: u32,
     pub events: Vec<GameEvent>,
     pub first_player: Side,
-    /// `"skirmish"` | `"platoon"` | `"combined"`.
+    /// `"skirmish"` | `"squadron"` | `"platoon"` | `"combined"`.
     pub scenario: String,
     pub pending_air_strikes: Vec<PendingAirStrike>,
     pub air_strikes_resolved: u32,
@@ -62,6 +62,11 @@ pub struct Game {
     pub total_crew_wounds: u32,
     pub total_crew_kills: u32,
     pub abilities_used: u32,
+    pub smoke_deployed: u32,
+    pub medkit_saves: u32,
+    pub lt_covers: u32,
+    pub mines_deployed: u32,
+    pub mines_triggered: u32,
     pub shots_fired: u32,
     pub shots_missed: u32,
     pub at_shots: u32,
@@ -69,6 +74,12 @@ pub struct Game {
     pub moves_made: u32,
     pub turns_made: u32,
     pub turret_rotations: u32,
+    /// Snapshot of upgrades at game start.
+    pub loadout_census: crate::upgrades::LoadoutCensus,
+    /// True when the lower-spend list won first activation (spoil skipped).
+    pub list_initiative: bool,
+    pub red_list_points: u32,
+    pub blue_list_points: u32,
 }
 
 impl Game {
@@ -79,6 +90,9 @@ impl Game {
         max_activations: u32,
         scenario: impl Into<String>,
     ) -> Self {
+        let loadout_census = crate::upgrades::LoadoutCensus::from_tanks(&tanks);
+        let red_list_points = crate::upgrades::side_list_points(&tanks, Side::Red);
+        let blue_list_points = crate::upgrades::side_list_points(&tanks, Side::Blue);
         Self {
             board,
             tanks,
@@ -103,6 +117,11 @@ impl Game {
             total_crew_wounds: 0,
             total_crew_kills: 0,
             abilities_used: 0,
+            smoke_deployed: 0,
+            medkit_saves: 0,
+            lt_covers: 0,
+            mines_deployed: 0,
+            mines_triggered: 0,
             shots_fired: 0,
             shots_missed: 0,
             at_shots: 0,
@@ -110,11 +129,20 @@ impl Game {
             moves_made: 0,
             turns_made: 0,
             turret_rotations: 0,
+            loadout_census,
+            list_initiative: false,
+            red_list_points,
+            blue_list_points,
         }
     }
 
     pub fn with_stalemate(mut self, activations_without_damage: u32) -> Self {
         self.stalemate_after = activations_without_damage;
+        self
+    }
+
+    pub fn with_list_initiative(mut self, won_by_underspend: bool) -> Self {
+        self.list_initiative = won_by_underspend;
         self
     }
 
@@ -381,6 +409,18 @@ impl Game {
             }
         }
 
+        // Tank AI weapons (anti-infantry upgrade).
+        if tank.ai_range > 0 && ap_left >= 1 {
+            for enemy in self.enemy_units(tank.side) {
+                if enemy.destroyed {
+                    continue;
+                }
+                if self.can_see_ai(tank, enemy) {
+                    out.push(Action::FireAi { target: enemy.id });
+                }
+            }
+        }
+
         if tank.can_load() {
             let cost = if buffs.free_load {
                 0
@@ -404,6 +444,10 @@ impl Game {
                 out.push(Action::CallAirStrike { hex: nearest.pos });
             }
         }
+
+        self.push_smoke_actions(tank, ap_left, out);
+        self.push_mine_actions(tank, ap_left, out);
+        self.push_lt_cover_actions(tank, out);
     }
 
     fn legal_apc(&self, tank: &Tank, ap_left: i32, out: &mut Vec<Action>) {
@@ -424,6 +468,71 @@ impl Game {
                 if self.can_see_ai(tank, enemy) {
                     out.push(Action::FireAi { target: enemy.id });
                 }
+            }
+        }
+
+        self.push_smoke_actions(tank, ap_left, out);
+    }
+
+    fn push_smoke_actions(&self, tank: &Tank, ap_left: i32, out: &mut Vec<Action>) {
+        if !tank.has_smoke_launcher || tank.smoke_used || ap_left < 1 {
+            return;
+        }
+        // Offer nearby empty hexes within range 2 (cap list size for the beam).
+        let mut n = 0;
+        for h in self.board.hexes() {
+            if tank.pos.distance(h) > 2 || h == tank.pos {
+                continue;
+            }
+            if !self.board.contains(h) {
+                continue;
+            }
+            out.push(Action::DeploySmoke { hex: h });
+            n += 1;
+            if n >= 12 {
+                break;
+            }
+        }
+    }
+
+    fn push_mine_actions(&self, tank: &Tank, ap_left: i32, out: &mut Vec<Action>) {
+        if tank.mines_left == 0 || ap_left < 1 {
+            return;
+        }
+        // Own hex or adjacent empty hexes (not already mined / building).
+        let mut candidates = vec![tank.pos];
+        for i in 0..6u8 {
+            candidates.push(tank.pos.neighbor(Facing::from_index(i)));
+        }
+        for h in candidates {
+            if !self.board.contains(h) || self.board.has_mine(h) {
+                continue;
+            }
+            if self.board.terrain_at(h).impassable() {
+                continue;
+            }
+            out.push(Action::DeployMine { hex: h });
+        }
+    }
+
+    fn push_lt_cover_actions(&self, tank: &Tank, out: &mut Vec<Action>) {
+        let Some(lt) = tank
+            .crew
+            .iter()
+            .find(|c| c.role == CrewRole::Lieutenant && c.status != CrewStatus::Killed)
+        else {
+            return;
+        };
+        if lt.covering.is_some() {
+            return;
+        }
+        for role in CrewRole::all_core() {
+            if tank
+                .crew
+                .iter()
+                .any(|c| c.role == role && c.status == CrewStatus::Killed)
+            {
+                out.push(Action::LieutenantCover { role });
             }
         }
     }
@@ -553,6 +662,7 @@ impl Game {
                 *ap_left -= cost;
                 self.moves_made += 1;
                 self.push_event(turn, Some(side), format!("Move → {next}"), None);
+                self.resolve_mine_at(tank_id, next, rng);
             }
             Action::Step(facing) => {
                 let cost = self
@@ -583,6 +693,7 @@ impl Game {
                     format!("Step {facing:?} → {next}{cover_note}"),
                     None,
                 );
+                self.resolve_mine_at(tank_id, next, rng);
             }
             Action::TurnLeft | Action::TurnRight => {
                 let left = matches!(action, Action::TurnLeft);
@@ -644,6 +755,38 @@ impl Game {
                     None,
                 );
             }
+            Action::DeploySmoke { hex } => {
+                self.tank_mut(tank_id).smoke_used = true;
+                self.board.add_smoke(hex);
+                *ap_left -= 1;
+                self.smoke_deployed += 1;
+                self.push_event(turn, Some(side), format!("Deployed smoke on {hex}"), None);
+            }
+            Action::DeployMine { hex } => {
+                if self.tank(tank_id).mines_left > 0 && !self.board.has_mine(hex) {
+                    self.tank_mut(tank_id).mines_left -= 1;
+                    self.board.add_mine(hex);
+                    *ap_left -= 1;
+                    self.mines_deployed += 1;
+                    self.push_event(turn, Some(side), format!("Deployed mine on {hex}"), None);
+                }
+            }
+            Action::LieutenantCover { role } => {
+                if let Some(lt) = self.tank_mut(tank_id).crew.iter_mut().find(|c| {
+                    c.role == CrewRole::Lieutenant
+                        && c.status != CrewStatus::Killed
+                        && c.covering.is_none()
+                }) {
+                    lt.covering = Some(role);
+                    self.lt_covers += 1;
+                    self.push_event(
+                        turn,
+                        Some(side),
+                        format!("Lieutenant covers {role:?}"),
+                        None,
+                    );
+                }
+            }
             Action::Load(kind) => {
                 let cost = if buffs.free_load {
                     0
@@ -664,6 +807,46 @@ impl Game {
             | Action::AbilityBringItDown
             | Action::AbilityQuickLoad => {}
         }
+    }
+
+    /// Entering a mined hex: AT strength-6 pen check, then remove the mine.
+    fn resolve_mine_at<R: Rng>(&mut self, tank_id: u8, hex: Hex, rng: &mut R) {
+        if !self.board.take_mine(hex) {
+            return;
+        }
+        self.mines_triggered += 1;
+        let turn = self.activations;
+        let side = self.tank(tank_id).side;
+        let mut target = self.tank(tank_id).clone();
+        let target_kind = target.kind;
+        let ev = resolve_shot(
+            rng,
+            ShotParams {
+                attacker_accuracy: 2,
+                accuracy_penalty: 0,
+                round: RoundKind::At,
+                impact: crate::unit::ImpactFacing::Front,
+                forced_hit: Some(true),
+                forced_pen_roll: None,
+            },
+            &mut target,
+        );
+        let idx = self.tanks.iter().position(|t| t.id == tank_id).unwrap();
+        self.tanks[idx] = target;
+        self.record_shot_stats(&ev);
+        let mut text = format!("Mine at {hex}: {}", ev.description);
+        if target_kind == UnitKind::Infantry && ev.hit {
+            self.destroy_infantry(tank_id);
+            text.push_str("; infantry destroyed");
+        }
+        if ev.cook_off {
+            self.total_cook_offs += 1;
+            let pos = self.tank(tank_id).pos;
+            let victim_side = self.tank(tank_id).side;
+            self.board.set_terrain(pos, Terrain::Rubble);
+            self.apply_cook_off_splash(pos, victim_side, rng);
+        }
+        self.push_event(turn, Some(side), text, Some(ev));
     }
 
     /// `forced_round` is set for missiles (no magazine); main gun takes from `loaded`.
@@ -896,6 +1079,12 @@ impl Game {
             }
             if ev.crew_killed {
                 self.total_crew_kills += 1;
+            }
+            if ev.medkit_save {
+                self.medkit_saves += 1;
+            }
+            if ev.lt_cover {
+                self.lt_covers += 1;
             }
             if ev.hull_damage > 0 {
                 self.activations_since_damage = 0;
@@ -1553,5 +1742,111 @@ mod tests {
                 .all(|a| !matches!(a, Action::Fire { target: 2 })),
             "screened infantry must not appear as a fire target: {legal:?}"
         );
+    }
+
+    #[test]
+    fn medkit_absorbs_first_crew_injury() {
+        use crate::combat::{resolve_shot, ShotParams};
+        use crate::unit::ImpactFacing;
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let mut t = Tank::stock(0, Side::Red, Hex::offset(0, 0), Facing::E, "T").with_field_kit();
+        let mut rng = ChaCha8Rng::seed_from_u64(9);
+        let ev = resolve_shot(
+            &mut rng,
+            ShotParams {
+                attacker_accuracy: 2,
+                accuracy_penalty: 0,
+                round: RoundKind::At,
+                impact: ImpactFacing::Front,
+                forced_hit: Some(true),
+                forced_pen_roll: Some(6),
+            },
+            &mut t,
+        );
+        assert!(
+            ev.medkit_save,
+            "first injury should be a medkit save: {ev:?}"
+        );
+        assert!(!ev.crew_wounded && !ev.crew_killed);
+        assert!(t.medkit_used);
+        assert!(t.crew.iter().all(|c| c.status == CrewStatus::Healthy));
+    }
+
+    #[test]
+    fn smoke_blocks_los_and_deploys_once() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::offset(2, 4), Facing::E, "Red").with_field_kit(),
+            Tank::stock(1, Side::Blue, Hex::offset(6, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 20, "test");
+        let mid = Hex::offset(4, 4);
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
+        let mut buffs = TurnBuffs::default();
+        let mut ap = 5;
+        g.apply_action(
+            0,
+            Action::DeploySmoke { hex: mid },
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
+        assert!(g.board.has_smoke(mid));
+        assert!(g.tank(0).smoke_used);
+        assert_eq!(g.smoke_deployed, 1);
+        assert!(!g.board.has_los(Hex::offset(2, 4), Hex::offset(6, 4), &[]));
+        // Second deploy not legal.
+        let legal = g.legal_actions(0, 5, &TurnBuffs::default());
+        assert!(legal
+            .iter()
+            .all(|a| !matches!(a, Action::DeploySmoke { .. })));
+    }
+
+    #[test]
+    fn lieutenant_auto_covers_on_crew_kill() {
+        use crate::combat::{resolve_shot, ShotParams};
+        use crate::unit::ImpactFacing;
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let mut t = Tank::stock(0, Side::Red, Hex::offset(0, 0), Facing::E, "T").with_field_kit();
+        // Spend medkit first so the next injury sticks.
+        t.medkit_used = true;
+        // Wound everyone once so the next pen kills someone.
+        for c in &mut t.crew {
+            if c.role != CrewRole::Lieutenant {
+                c.status = CrewStatus::Wounded;
+            }
+        }
+        let mut covered = false;
+        for seed in 0..40u64 {
+            let mut t2 = t.clone();
+            let mut rng2 = ChaCha8Rng::seed_from_u64(seed);
+            let ev = resolve_shot(
+                &mut rng2,
+                ShotParams {
+                    attacker_accuracy: 2,
+                    accuracy_penalty: 0,
+                    round: RoundKind::At,
+                    impact: ImpactFacing::Front,
+                    forced_hit: Some(true),
+                    forced_pen_roll: Some(6),
+                },
+                &mut t2,
+            );
+            if ev.lt_cover {
+                covered = true;
+                let lt = t2
+                    .crew
+                    .iter()
+                    .find(|c| c.role == CrewRole::Lieutenant)
+                    .unwrap();
+                assert!(lt.covering.is_some());
+                break;
+            }
+        }
+        assert!(covered, "expected LT cover within random kills");
     }
 }

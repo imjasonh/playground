@@ -43,6 +43,7 @@ pub struct Board {
     /// Terrain keyed by axial `(q, r)`.
     pub terrain: HashMap<(i32, i32), Terrain>,
     pub smoke: HashSet<(i32, i32)>,
+    pub mines: HashSet<(i32, i32)>,
 }
 
 impl Board {
@@ -52,6 +53,7 @@ impl Board {
             height,
             terrain: HashMap::new(),
             smoke: HashSet::new(),
+            mines: HashSet::new(),
         }
     }
 
@@ -86,6 +88,18 @@ impl Board {
 
     pub fn has_smoke(&self, hex: Hex) -> bool {
         self.smoke.contains(&(hex.q, hex.r))
+    }
+
+    pub fn add_mine(&mut self, hex: Hex) {
+        self.mines.insert((hex.q, hex.r));
+    }
+
+    pub fn take_mine(&mut self, hex: Hex) -> bool {
+        self.mines.remove(&(hex.q, hex.r))
+    }
+
+    pub fn has_mine(&self, hex: Hex) -> bool {
+        self.mines.contains(&(hex.q, hex.r))
     }
 
     /// Line of sight is blocked by buildings, smoke, or occupied hexes on the
