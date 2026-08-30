@@ -76,14 +76,41 @@ test("generatePuzzleWithRetry succeeds for size 100", () => {
   assert.equal(puzzle.size, 100);
 });
 
-test("spiralLayout returns wedge cells winding into the center", () => {
-  const layout = spiralLayout(48);
-  assert.equal(layout.cells.length, 48);
+test("spiralLayout returns equal-arc cells that stay chunky near the center", () => {
+  const layout = spiralLayout(100);
+  assert.equal(layout.cells.length, 100);
   assert.ok(layout.cells[0].path.includes("Z"));
-  assert.ok(layout.cells[0].cy < 0.35, "first cell near the top");
+  assert.ok(layout.trackWidth > 0.04, "track should be wide enough to write in");
+
+  // Outer and inner cells should have similar bounding-box area (arc-length division).
+  function area(cell) {
+    const nums = [...cell.path.matchAll(/([0-9.]+)\s+([0-9.]+)/g)].map((m) => [
+      Number(m[1]),
+      Number(m[2]),
+    ]);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const [x, y] of nums) {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+    return (maxX - minX) * (maxY - minY);
+  }
+
+  const outer = area(layout.cells[2]);
+  const inner = area(layout.cells[90]);
+  assert.ok(
+    inner / outer > 0.35,
+    `inner cell should not collapse (inner/outer=${(inner / outer).toFixed(2)})`,
+  );
+
   const last = layout.cells[layout.cells.length - 1];
   const dist = Math.hypot(last.cx - 0.5, last.cy - 0.5);
-  assert.ok(dist < 0.25, "center cell near middle");
+  assert.ok(dist < 0.28, "last cell near the middle");
 });
 
 test("play state tracks guesses, check, and reveal", () => {
