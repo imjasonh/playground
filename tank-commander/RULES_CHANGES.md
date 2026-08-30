@@ -73,8 +73,8 @@ minimum 1; does not stack). Clears at the end of that activation.
 | Scenario | Force | Board | Sim clock |
 |----------|-------|-------|-----------|
 | `skirmish` | 1v1 tanks | 11×9 | hard 20 |
-| `combined` | 2 tanks + 2 APCs + 2 infantry / side | 17×13 plaza | hard 240 + idle-48 |
-| `platoon` | 3v3 tanks | 19×15 plaza | hard 200 + idle-40 |
+| `combined` | 2 tanks + 2 APCs + 2 infantry / side | 17×13 open | hard 240 + idle-48 |
+| `platoon` | 3v3 tanks | 19×15 open | hard 200 + idle-40 |
 
 **Sim:** activation caps and idle-stalemate stops are analysis clocks so
 Monte Carlo games finish. Tabletop turn limits stay with the upstream rules
@@ -404,6 +404,58 @@ correct.
 Fire ticking only on the burning unit (correct rules) removes a lot of
 accidental attrition speed. Cook-off splash adds local drama when wrecks
 detonate. Combined’s idle/timeout problem is more visible now, not less.
+
+---
+
+## 2026-08-30 — Rectangular (odd-r) boards instead of axial parallelograms
+
+**Type: Scenario** (map geometry; same scenario coordinates, different playable
+shape)
+
+Axial `(q, r)` ranges form a **parallelogram** on the hex lattice. Tabletop mats
+are **rectangles**. Boards now use odd-r offset columns×rows (`Hex::offset`);
+neighbor / distance math stays axial under the hood.
+
+Same declared sizes (11×9 / 17×13 / 19×15) and the same designer coordinates,
+but which edge hexes exist — and therefore approaches / LOS near the rim —
+changed. This **does** change sim results.
+
+**Effect (seed 1; 500 / 200 / 200) vs prior axial-parallelogram pass:**
+
+| Scenario | Decisive | FP share | Color (R/B) | Hard TO | Idle |
+|----------|----------|----------|-------------|---------|------|
+| Skirmish | 95%→**95%** | 54%→**52%** | ~even | 16%→**18%** | 0% |
+| Platoon | 99%→**100%** | 58%→**53%** | **139/60 Red** | 0% | 0% |
+| Combined | 98%→**96%** | 55%→**46%** | ~even | 16%→**28%** | 24%→**14%** |
+
+Platoon initiative is healthier; color balance broke (Red-heavy). Combined
+flipped toward second player and more hard timeouts. Geometry was worth fixing
+for fidelity; color bias on platoon needs a follow-up.
+
+---
+
+## 2026-08-30 — Drop plaza funnel; scatter buildings and forest clumps
+
+**Type: Scenario**
+
+Platoon and combined no longer use a sealed midline with a plaza gap. Those
+boards are open mats with **random building clumps** and **forest patches**
+(mud/rubble stay single tiles). Combined still mirrors scatter east–west.
+Skirmish keeps its compact midline block.
+
+Narratively this reads as farmland / copses / farmsteads instead of a
+city-block kill funnel.
+
+**Effect (seed 1; 500 / 200 / 200) vs prior rectangular-plaza pass:**
+
+| Scenario | Decisive | FP share | Color | Hard TO | Idle |
+|----------|----------|----------|-------|---------|------|
+| Skirmish | 95%→**93%** | 52%→**55%** | ~even | 18%→**25%** | 0% |
+| Platoon | 100%→**100%** | 53%→**41%** | Red lean | 0% | **1%** |
+| Combined | 96%→**98%** | 46%→**47%** | Blue lean | 28%→**24%** | 14%→**10%** |
+
+Platoon flipped to a second-player edge; combined timeouts eased a bit. Still
+decisive. Worth iterating on initiative spoil / start symmetry next.
 
 ---
 

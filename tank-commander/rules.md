@@ -324,8 +324,8 @@ required tabletop clocks — see [`RULES_CHANGES.md`](RULES_CHANGES.md).
 
 ## Scenarios
 
-These are the setups the simulator balances against. Map sizes are hexes
-(width × height).
+These are the setups the simulator balances against. Map sizes are hex
+**columns × rows** on an odd-r rectangular mat (not an axial parallelogram).
 
 ### Skirmish
 
@@ -339,9 +339,8 @@ These are the setups the simulator balances against. Map sizes are hexes
 ### Platoon
 
 - **Force:** 3v3 stock tanks.
-- **Board:** 19×15 sealed midline with a **wide plaza** gap and side baffles
-  so tanks cannot pair off down parallel lanes. Random scatter outside
-  reserved hexes.
+- **Board:** 19×15 open mat — scattered **building clumps** and **forest
+  patches**, plus single mud/rubble tiles. No sealed midline or plaza funnel.
 - **Second-player spoil:** nudge **each** opposing unit up to **1 hex**
   (empty, passable; facing unchanged), then shift up to **3** scatter tiles
   (same rules as below).
@@ -350,8 +349,8 @@ These are the setups the simulator balances against. Map sizes are hexes
 
 - **Force:** per side — **2 tanks** (each with one air strike), **2 APCs**,
   **2 infantry**.
-- **Board:** 17×13 plaza funnel; starts, constant walls/baffles, and random
-  scatter are east–west **mirrored** at generation (second-player terrain
+- **Board:** 17×13 open mat with building clumps and forest patches; starts
+  and scatter are east–west **mirrored** at generation (second-player terrain
   spoil may break scatter symmetry on purpose).
 - **Second-player spoil:** nudge each opposing unit up to 1 hex, then shift up
   to **4** scatter tiles.

@@ -1,12 +1,15 @@
-//! Axial hex grid helpers for Tank Commander.
+//! Hex grid helpers for Tank Commander.
 //!
-//! Coordinates use axial `(q, r)`. The six facings are numbered 0..=5 clockwise
-//! starting at east (`+q`).
+//! Internally each [`Hex`] is axial `(q, r)`. Map layouts are **odd-r**
+//! offset rectangles (pointy-top): column × row looks like a normal tabletop
+//! mat, not an axial parallelogram. Use [`Hex::offset`] for board positions.
+//!
+//! The six facings are numbered 0..=5 counterclockwise starting at east (`+q`).
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// One hex on the board.
+/// One hex on the board (stored as axial).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct Hex {
     pub q: i32,
@@ -14,8 +17,23 @@ pub struct Hex {
 }
 
 impl Hex {
+    /// Axial constructor (neighbor math, tests). Prefer [`Hex::offset`] for maps.
     pub const fn new(q: i32, r: i32) -> Self {
         Self { q, r }
+    }
+
+    /// Odd-r (pointy-top) offset column/row → axial. Use for board layouts.
+    pub const fn offset(col: i32, row: i32) -> Self {
+        Self {
+            q: col - (row - (row & 1)) / 2,
+            r: row,
+        }
+    }
+
+    /// Axial → odd-r offset `(col, row)`.
+    pub const fn to_offset(self) -> (i32, i32) {
+        let col = self.q + (self.r - (self.r & 1)) / 2;
+        (col, self.r)
     }
 
     pub fn neighbors(self) -> [Hex; 6] {
@@ -96,7 +114,8 @@ impl Hex {
 
 impl fmt::Display for Hex {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({},{})", self.q, self.r)
+        let (col, row) = self.to_offset();
+        write!(f, "({col},{row})")
     }
 }
 
@@ -204,5 +223,27 @@ mod tests {
         assert_eq!(Facing::E.turn_right(), Facing::SE);
         assert_eq!(Facing::W.turn_left(), Facing::SW);
         assert_eq!(Facing::W.turn_right(), Facing::NW);
+    }
+
+    #[test]
+    fn offset_round_trip() {
+        for row in 0..8 {
+            for col in 0..10 {
+                let h = Hex::offset(col, row);
+                assert_eq!(h.to_offset(), (col, row));
+            }
+        }
+    }
+
+    #[test]
+    fn offset_neighbors_stay_near_rectangle() {
+        // In a wide enough odd-r rectangle, interior offset (3,3) has six
+        // neighbors that also convert to nearby offset cells.
+        let h = Hex::offset(3, 3);
+        let offs: Vec<_> = h.neighbors().into_iter().map(|n| n.to_offset()).collect();
+        assert_eq!(offs.len(), 6);
+        for (c, r) in offs {
+            assert!((2..=4).contains(&c) || (2..=4).contains(&r));
+        }
     }
 }

@@ -1231,8 +1231,8 @@ mod tests {
 
     fn tiny_skirmish() -> Game {
         let board = Board::rect(11, 9);
-        let red = Tank::stock(0, Side::Red, Hex::new(1, 3), Facing::E, "Red One");
-        let blue = Tank::stock(1, Side::Blue, Hex::new(9, 5), Facing::W, "Blue One");
+        let red = Tank::stock(0, Side::Red, Hex::offset(1, 3), Facing::E, "Red One");
+        let blue = Tank::stock(1, Side::Blue, Hex::offset(9, 5), Facing::W, "Blue One");
         Game::new(board, vec![red, blue], Side::Red, 20, "skirmish")
     }
 
@@ -1250,10 +1250,10 @@ mod tests {
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
         let mut g = tiny_skirmish();
-        let inf = Tank::stock_infantry(2, Side::Blue, Hex::new(3, 3), Facing::W, "Blue Squad");
+        let inf = Tank::stock_infantry(2, Side::Blue, Hex::offset(3, 3), Facing::W, "Blue Squad");
         g.tanks.push(inf);
         // Place red so it can see infantry with turret east.
-        g.tank_mut(0).pos = Hex::new(1, 3);
+        g.tank_mut(0).pos = Hex::offset(1, 3);
         g.tank_mut(0).hull_facing = Facing::E;
         g.tank_mut(0).turret_offset = 0;
         g.tank_mut(0).loaded = Some(RoundKind::At);
@@ -1280,9 +1280,9 @@ mod tests {
     fn pass_activation_blocks_repeat_until_all_acted() {
         let board = Board::rect(11, 9);
         let tanks = vec![
-            Tank::stock(0, Side::Red, Hex::new(1, 3), Facing::E, "A"),
-            Tank::stock(1, Side::Red, Hex::new(1, 5), Facing::E, "B"),
-            Tank::stock(2, Side::Blue, Hex::new(9, 5), Facing::W, "Enemy"),
+            Tank::stock(0, Side::Red, Hex::offset(1, 3), Facing::E, "A"),
+            Tank::stock(1, Side::Red, Hex::offset(1, 5), Facing::E, "B"),
+            Tank::stock(2, Side::Blue, Hex::offset(9, 5), Facing::W, "Enemy"),
         ];
         let mut g = Game::new(board, tanks, Side::Red, 40, "test");
         assert_eq!(g.activatable_ids(Side::Red), vec![0, 1]);
@@ -1302,8 +1302,8 @@ mod tests {
     fn suppressed_infantry_cannot_fire_missiles() {
         let board = Board::rect(11, 9);
         let tanks = vec![
-            Tank::stock_infantry(0, Side::Red, Hex::new(3, 4), Facing::E, "Squad"),
-            Tank::stock(1, Side::Blue, Hex::new(5, 4), Facing::W, "Tank"),
+            Tank::stock_infantry(0, Side::Red, Hex::offset(3, 4), Facing::E, "Squad"),
+            Tank::stock(1, Side::Blue, Hex::offset(5, 4), Facing::W, "Tank"),
         ];
         let mut g = Game::new(board, tanks, Side::Red, 20, "test");
         g.tank_mut(0).suppressed = true;
@@ -1322,8 +1322,8 @@ mod tests {
         use rand_chacha::ChaCha8Rng;
         let board = Board::rect(11, 9);
         let tanks = vec![
-            Tank::stock(0, Side::Red, Hex::new(1, 4), Facing::E, "Tank"),
-            Tank::stock_infantry(1, Side::Blue, Hex::new(4, 4), Facing::W, "Squad"),
+            Tank::stock(0, Side::Red, Hex::offset(1, 4), Facing::E, "Tank"),
+            Tank::stock_infantry(1, Side::Blue, Hex::offset(4, 4), Facing::W, "Squad"),
         ];
         let mut g = Game::new(board, tanks, Side::Red, 20, "test");
         g.tank_mut(1).in_cover = true;
@@ -1349,8 +1349,8 @@ mod tests {
         use rand_chacha::ChaCha8Rng;
         let board = Board::rect(11, 9);
         let tanks = vec![
-            Tank::stock_infantry(0, Side::Red, Hex::new(3, 4), Facing::E, "Squad"),
-            Tank::stock(1, Side::Blue, Hex::new(5, 4), Facing::W, "Tank"),
+            Tank::stock_infantry(0, Side::Red, Hex::offset(3, 4), Facing::E, "Squad"),
+            Tank::stock(1, Side::Blue, Hex::offset(5, 4), Facing::W, "Tank"),
         ];
         let mut g = Game::new(board, tanks, Side::Red, 20, "test");
         g.tank_mut(0).in_cover = true;
@@ -1379,8 +1379,8 @@ mod tests {
         use rand_chacha::ChaCha8Rng;
         let board = Board::rect(11, 9);
         let tanks = vec![
-            Tank::stock_apc(0, Side::Red, Hex::new(2, 4), Facing::E, "APC"),
-            Tank::stock_infantry(1, Side::Blue, Hex::new(4, 4), Facing::W, "Squad"),
+            Tank::stock_apc(0, Side::Red, Hex::offset(2, 4), Facing::E, "APC"),
+            Tank::stock_infantry(1, Side::Blue, Hex::offset(4, 4), Facing::W, "Squad"),
         ];
         let mut g = Game::new(board, tanks, Side::Red, 20, "test");
         g.tank_mut(1).in_cover = true;
@@ -1416,8 +1416,8 @@ mod tests {
         use rand_chacha::ChaCha8Rng;
         let board = Board::rect(11, 9);
         let tanks = vec![
-            Tank::stock(0, Side::Red, Hex::new(2, 4), Facing::E, "Red"),
-            Tank::stock(1, Side::Blue, Hex::new(8, 4), Facing::W, "Blue"),
+            Tank::stock(0, Side::Red, Hex::offset(2, 4), Facing::E, "Red"),
+            Tank::stock(1, Side::Blue, Hex::offset(8, 4), Facing::W, "Blue"),
         ];
         let mut g = Game::new(board, tanks, Side::Red, 20, "test");
         g.tank_mut(0).suppressed = true;
@@ -1434,7 +1434,7 @@ mod tests {
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
         let board = Board::rect(11, 9);
-        let aim = Hex::new(5, 4);
+        let aim = Hex::offset(5, 4);
         let mut on_target = 0;
         let mut drifted = 0;
         let mut wild = 0;
@@ -1469,8 +1469,8 @@ mod tests {
         use rand_chacha::ChaCha8Rng;
         let board = Board::rect(11, 9);
         let tanks = vec![
-            Tank::stock(0, Side::Red, Hex::new(2, 4), Facing::E, "Red"),
-            Tank::stock(1, Side::Blue, Hex::new(8, 4), Facing::W, "Blue"),
+            Tank::stock(0, Side::Red, Hex::offset(2, 4), Facing::E, "Red"),
+            Tank::stock(1, Side::Blue, Hex::offset(8, 4), Facing::W, "Blue"),
         ];
         let mut g = Game::new(board, tanks, Side::Red, 20, "test");
         g.tank_mut(1).on_fire = true;
@@ -1491,9 +1491,9 @@ mod tests {
         use rand_chacha::ChaCha8Rng;
         let board = Board::rect(11, 9);
         let tanks = vec![
-            Tank::stock(0, Side::Red, Hex::new(4, 4), Facing::E, "Wreck"),
-            Tank::stock(1, Side::Blue, Hex::new(5, 4), Facing::W, "Near"),
-            Tank::stock(2, Side::Blue, Hex::new(9, 4), Facing::W, "Far"),
+            Tank::stock(0, Side::Red, Hex::offset(4, 4), Facing::E, "Wreck"),
+            Tank::stock(1, Side::Blue, Hex::offset(5, 4), Facing::W, "Near"),
+            Tank::stock(2, Side::Blue, Hex::offset(9, 4), Facing::W, "Far"),
         ];
         let mut g = Game::new(board, tanks, Side::Red, 20, "test");
         g.tank_mut(0).disabled = true;
@@ -1539,9 +1539,9 @@ mod tests {
     fn infantry_adjacent_to_friendly_tank_cannot_be_targeted() {
         let board = Board::rect(11, 9);
         let tanks = vec![
-            Tank::stock(0, Side::Red, Hex::new(1, 4), Facing::E, "Hunter"),
-            Tank::stock(1, Side::Blue, Hex::new(4, 4), Facing::W, "Shield"),
-            Tank::stock_infantry(2, Side::Blue, Hex::new(5, 4), Facing::W, "Squad"),
+            Tank::stock(0, Side::Red, Hex::offset(1, 4), Facing::E, "Hunter"),
+            Tank::stock(1, Side::Blue, Hex::offset(4, 4), Facing::W, "Shield"),
+            Tank::stock_infantry(2, Side::Blue, Hex::offset(5, 4), Facing::W, "Squad"),
         ];
         let g = Game::new(board, tanks, Side::Red, 20, "test");
         assert!(g.infantry_screened(g.tank(2)));
