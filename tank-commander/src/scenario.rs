@@ -315,6 +315,8 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
     let mut game = Game::new(board, tanks, first, 240, "combined")
         .with_stalemate(48)
         .with_list_initiative(!spoil);
+    // Mines go down during deployment, before any spoil nudges.
+    game.place_deployment_mines(rng);
     if spoil {
         second_player_setup(&mut game, 4);
     }
@@ -900,6 +902,28 @@ mod tests {
             }
         }
         assert!(differ, "two seeds should scatter different terrain");
+    }
+
+    #[test]
+    fn combined_places_mines_at_deployment() {
+        let mut rng = ChaCha8Rng::seed_from_u64(8);
+        let g = combined(&mut rng);
+        // All charges spent onto the board; none left for mid-battle DeployMine.
+        for t in &g.tanks {
+            assert_eq!(t.mines_left, 0, "{} still holds mines", t.name);
+        }
+        assert_eq!(g.mines_deployed as usize, g.board.mines.len());
+        // Combined lists often buy mines — expect at least some across seeds.
+        let mut any = false;
+        for seed in 0..25u64 {
+            let mut r = ChaCha8Rng::seed_from_u64(seed);
+            let g = combined(&mut r);
+            if g.mines_deployed > 0 {
+                any = true;
+                break;
+            }
+        }
+        assert!(any, "expected some Combined seed to deploy mines");
     }
 
     #[test]

@@ -79,7 +79,8 @@ fn score_unit(game: &Game, unit_id: u8) -> i64 {
         }
         UnitKind::Infantry => {
             if unit.is_embarked() {
-                score += 8_500;
+                // Riding: do not burn activations; the vehicle drives.
+                score += 500;
             } else if enemies.iter().any(|e| game.can_see(unit, e)) {
                 score += 10_000;
             } else if enemies
@@ -202,37 +203,6 @@ fn smoke_break_los_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Option
     Some(vec![Action::DeploySmoke { hex }])
 }
 
-/// Lay a mine toward the nearest enemy when we still have charges.
-fn mine_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Option<Vec<Action>> {
-    let unit = game.tank(unit_id);
-    if unit.mines_left == 0 {
-        return None;
-    }
-    let enemy = game
-        .enemy_units(unit.side)
-        .into_iter()
-        .filter(|e| !e.destroyed)
-        .min_by_key(|e| unit.pos.distance(e.pos))?;
-    // Prefer adjacent hex closer to the enemy; else own hex.
-    let mut opts: Vec<Hex> = (0..6u8)
-        .map(|i| unit.pos.neighbor(Facing::from_index(i)))
-        .filter(|h| {
-            game.board.contains(*h)
-                && !game.board.has_mine(*h)
-                && !game.board.terrain_at(*h).impassable()
-                && h.distance(enemy.pos) < unit.pos.distance(enemy.pos)
-        })
-        .collect();
-    if opts.is_empty() && !game.board.has_mine(unit.pos) {
-        opts.push(unit.pos);
-    }
-    if opts.is_empty() || !rng.gen_bool(0.55) {
-        return None;
-    }
-    let hex = *opts.choose(rng)?;
-    Some(vec![Action::DeployMine { hex }])
-}
-
 fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
     let tank = game.tank(tank_id);
     let enemies: Vec<&crate::unit::Tank> = game.enemy_units(tank.side);
@@ -264,11 +234,6 @@ fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
         if let Some(smoke) = smoke_break_los_plan(game, tank_id, rng) {
             return smoke;
         }
-    }
-
-    // Drop a mine on the approach when closing on an enemy.
-    if let Some(mine) = mine_plan(game, tank_id, rng) {
-        return mine;
     }
 
     // Tank AI spray vs nearby infantry (anti-infantry upgrade).
@@ -330,13 +295,29 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         return Vec::new();
     }
 
-    // Embarked: get out near a fight or into forest.
-    // Exterior tank riders bail early — any hit on the tank kills them.
+    // Embarked: stay aboard by default. Vehicles keep ferrying; infantry only
+    // bail when the ride is over (near the fight) or exterior is suicidal.
     if unit.is_embarked() {
         let on_tank = unit
             .embarked_in
             .map(|id| game.tank(id).kind == UnitKind::Tank)
             .unwrap_or(false);
+        let nearest = enemies
+            .iter()
+            .map(|e| e.pos)
+            .min_by_key(|p| unit.pos.distance(*p))
+            .unwrap_or(unit.pos);
+        let dist = unit.pos.distance(nearest);
+        let should_dismount = if on_tank {
+            // Exterior: any hit kills riders — bail once enemy guns are close.
+            dist <= 6
+        } else {
+            // APC interior: stay until within missile reach (+1 hex slack).
+            dist <= unit.gun_range + 1
+        };
+        if !should_dismount {
+            return Vec::new();
+        }
         let legal = game.legal_actions(unit_id, unit.effective_actions(), &TurnBuffs::default());
         let drops: Vec<Action> = legal
             .into_iter()
@@ -345,21 +326,12 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         if drops.is_empty() {
             return Vec::new();
         }
-        let nearest = enemies
-            .iter()
-            .map(|e| e.pos)
-            .min_by_key(|p| unit.pos.distance(*p))
-            .unwrap_or(unit.pos);
         let forest_bonus = if on_tank { 8 } else { 4 };
         let best = drops.into_iter().min_by_key(|a| match a {
             Action::Dismount { hex } => {
                 let mut d = hex.distance(nearest) * 10;
                 if game.board.terrain_at(*hex) == Terrain::Forest {
                     d -= forest_bonus;
-                }
-                // Prefer any dismount when on a tank near enemy guns.
-                if on_tank && unit.pos.distance(nearest) <= 6 {
-                    d -= 20;
                 }
                 d
             }
@@ -543,6 +515,7 @@ fn deliver_passenger_plan<R: Rng>(
     unit.passenger?;
     let enemy = enemies.iter().min_by_key(|e| unit.pos.distance(e.pos))?;
     let goal = enemy.pos;
+    // Drop only when the taxi has arrived — do not dump mid-map after 2 moves.
     let close_enough = unit.pos.distance(goal) <= 5;
     let mut plan = Vec::new();
     let mut shadow = game.clone();
@@ -563,27 +536,33 @@ fn deliver_passenger_plan<R: Rng>(
         shadow.apply_action(unit_id, *a, &mut buffs, &mut ap, rng);
         plan.push(*a);
         let move_count = plan.iter().filter(|x| matches!(x, Action::Move)).count();
-        if matches!(a, Action::Move) && (close_enough || move_count >= 2) {
+        // Cap moves so the unit still has AP, but keep ferrying when far.
+        if matches!(a, Action::Move) && move_count >= 3 {
+            break;
+        }
+        if matches!(a, Action::Move) && close_enough {
             break;
         }
     }
 
-    let drops: Vec<Action> = shadow
-        .legal_actions(unit_id, ap, &buffs)
-        .into_iter()
-        .filter(|a| matches!(a, Action::DropOff { .. }))
-        .collect();
-    if let Some(best) = drops.into_iter().min_by_key(|a| match a {
-        Action::DropOff { hex } => {
-            let mut d = hex.distance(goal) * 10;
-            if shadow.board.terrain_at(*hex) == Terrain::Forest {
-                d -= 5;
+    if close_enough || shadow.tank(unit_id).pos.distance(goal) <= 5 {
+        let drops: Vec<Action> = shadow
+            .legal_actions(unit_id, ap, &buffs)
+            .into_iter()
+            .filter(|a| matches!(a, Action::DropOff { .. }))
+            .collect();
+        if let Some(best) = drops.into_iter().min_by_key(|a| match a {
+            Action::DropOff { hex } => {
+                let mut d = hex.distance(goal) * 10;
+                if shadow.board.terrain_at(*hex) == Terrain::Forest {
+                    d -= 5;
+                }
+                d
             }
-            d
+            _ => 999,
+        }) {
+            plan.push(best);
         }
-        _ => 999,
-    }) {
-        plan.push(best);
     }
     if plan.is_empty() {
         None

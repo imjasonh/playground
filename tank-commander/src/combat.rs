@@ -90,6 +90,12 @@ pub fn resolve_shot<R: Rng>(rng: &mut R, params: ShotParams, target: &mut Tank) 
             target.hull_points = 0;
             target.disabled = true;
             ev.disabled = true;
+            // APCs have no main-gun ammo cook-off — wrecked immediately.
+            if target.kind == UnitKind::Apc {
+                target.destroyed = true;
+                target.on_fire = false;
+                ev.destroyed = true;
+            }
         }
     } else {
         ev.glancing = true;
@@ -205,7 +211,8 @@ fn role_name(role: crate::unit::CrewRole) -> &'static str {
 
 /// −1 hull from fire at the end of **this** unit's activation.
 ///
-/// Last hull point lost to fire → immediate cook-off (caller applies splash).
+/// Last hull point lost to fire on a **tank** → immediate cook-off (caller
+/// applies splash). APCs are destroyed without cook-off.
 pub fn tick_fire_damage(tank: &mut Tank) -> Option<CombatEvent> {
     if tank.destroyed || !tank.on_fire || !tank.is_operational() {
         return None;
@@ -220,17 +227,25 @@ pub fn tick_fire_damage(tank: &mut Tank) -> Option<CombatEvent> {
         tank.hull_points = 0;
         tank.disabled = true;
         ev.disabled = true;
-        apply_cook_off(tank, &mut ev);
+        if tank.kind == UnitKind::Tank {
+            apply_cook_off(tank, &mut ev);
+        } else if tank.kind == UnitKind::Apc {
+            // Soft-skinned: wrecked, no ammo cook-off.
+            tank.destroyed = true;
+            tank.on_fire = false;
+            ev.destroyed = true;
+        }
     }
     Some(ev)
 }
 
-/// Cook-off roll for a disabled non-infantry unit still on the table.
+/// Cook-off roll for a disabled **tank** still on the table.
 ///
-/// Checked after every activation while the wreck remains (disabled units
-/// cannot activate themselves). Caller applies HE strength-4 splash.
+/// APCs never cook off. Checked after every activation while the wreck remains
+/// (disabled units cannot activate themselves). Caller applies HE strength-4
+/// splash.
 pub fn tick_disabled_cook_off<R: Rng>(rng: &mut R, tank: &mut Tank) -> Option<CombatEvent> {
-    if tank.destroyed || !tank.disabled || tank.kind == UnitKind::Infantry {
+    if tank.destroyed || !tank.disabled || tank.kind != UnitKind::Tank {
         return None;
     }
     let roll = rng.gen_range(1..=6);
@@ -345,6 +360,49 @@ mod tests {
         assert!(ev.cook_off);
         assert!(t.destroyed);
         assert!(!t.on_fire);
+    }
+
+    #[test]
+    fn apc_never_cooks_off() {
+        let mut rng = ChaCha8Rng::seed_from_u64(3);
+        let mut a = Tank::stock_apc(0, Side::Blue, Hex::new(1, 0), Facing::E, "APC");
+        a.disabled = true;
+        a.hull_points = 0;
+        for _ in 0..30 {
+            assert!(tick_disabled_cook_off(&mut rng, &mut a).is_none());
+            assert!(!a.destroyed);
+        }
+
+        let mut burning = Tank::stock_apc(1, Side::Blue, Hex::new(2, 0), Facing::E, "APC2");
+        burning.on_fire = true;
+        burning.hull_points = 1;
+        let ev = tick_fire_damage(&mut burning).expect("fire");
+        assert!(burning.destroyed);
+        assert!(!ev.cook_off, "APC fire death must not cook off");
+    }
+
+    #[test]
+    fn apc_last_pen_destroys_without_cook_off() {
+        let mut rng = ChaCha8Rng::seed_from_u64(4);
+        let mut a = Tank::stock_apc(0, Side::Blue, Hex::new(1, 0), Facing::E, "APC");
+        a.hull_points = 1;
+        let ev = resolve_shot(
+            &mut rng,
+            ShotParams {
+                attacker_accuracy: 2,
+                accuracy_penalty: 0,
+                round: RoundKind::At,
+                impact: ImpactFacing::Front,
+                forced_hit: Some(true),
+                forced_pen_roll: Some(6),
+            },
+            &mut a,
+        );
+        assert!(ev.penetrating);
+        assert!(ev.disabled);
+        assert!(ev.destroyed);
+        assert!(!ev.cook_off);
+        assert!(a.destroyed);
     }
 
     #[test]
