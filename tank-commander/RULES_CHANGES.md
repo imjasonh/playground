@@ -602,12 +602,107 @@ roll off and apply second-player spoil.
 | List upgrades + under-spend init | — | — | ✓ | ✓ |
 | Smoke / medkit / LT | — | — | ✓ | ✓ |
 | APC / infantry / AI spray / air / mines | — | — | — | ✓ |
+| APC embark / mount / drop-off | — | — | — | ✓ |
 
 Stock stages teach the core loop without list noise. Platoon is where soft
 upgrades fire (~2.5 smoke / medkit per game). Combined is the only stage that
 exercises air (**3.9**/g), mines (**4.7** deploy / **3.2** trig), and infantry
 kills (**3.1**/g). Soft spots to watch: platoon first-player share under
 under-spend, combined timeouts / low engagement, squadron Red color lean.
+
+---
+
+## 2026-08-30 — APC embarkation (interior ride)
+
+**Type: Rule / Sim**
+
+House rules filling in upstream Mount Up for Combined:
+
+1. Each APC carries **one** squad.
+2. Infantry **Mount Up** (1 AP) or APC **Embark** (1 AP) from an adjacent hex.
+3. Infantry **Dismount** (1 AP, once per activation with Mount) into an adjacent
+   empty hex.
+4. APC **Drop off** is **free**, once per activation, only after at least one
+   **Move**.
+5. Embarked infantry share the APC hex, cannot be targeted, cannot fire/step,
+   and die if the APC is disabled or destroyed.
+6. Exterior tank-top riding is not used.
+
+AI: infantry mount when out of missile range; APCs pick up idle squads, drive
+toward the fight, then free-drop (prefer forest).
+
+**Effect (Combined, 200 games, seed 42):**
+
+| Metric | Value |
+|--------|-------|
+| Games with ≥1 mount/embark | **100%** |
+| Mount / Embark / Dismount / Drop per game | 5.1 / 11.3 / 9.5 / 6.7 |
+| Passenger kills | 0.04 |
+| Decisive / FP share / hard TO / idle | 92% / ~52% / 36% / 13% |
+
+They actually ride. APC Embark is the preferred pickup (~2× Mount). Almost
+every load gets a Dismount or Drop. Passenger deaths are rare — the box is
+doing its job. Balance vs the pre-embark Combined ladder numbers is in the
+same neighborhood (decisive still high; timeouts still the soft spot). No
+objectives yet — that is the next lever if you want more reason to cross the
+board instead of circling.
+
+---
+
+## 2026-08-30 — Exterior tank riding
+
+**Type: Rule / Sim**
+
+Upstream exterior ride is live: infantry can Mount / be Embarked onto a
+friendly **tank** (capacity 1). Shared free Drop off after a Move. Riders
+share the tank hex and cannot be targeted, but **any hit** on the tank
+(glance, pen, AI spray, mine, air) destroys them immediately.
+
+AI prefers APC interior when both are available; tanks pick up only when they
+cannot already shoot; exterior riders dismount aggressively near enemy guns.
+
+**Effect (Combined, 200 games, seed 42) vs APC-only embark:**
+
+| Metric | APC-only | + exterior |
+|--------|----------|------------|
+| Embark games | 100% | 100% |
+| Mount (exterior) / Embark / Drop | 5.1 / 11.3 / 6.7 | 2.7 (**4.0** ext) / 10.0 / 4.7 |
+| Passenger kills (exterior) | 0.04 | **1.09 (1.06)** |
+| Decisive / hard TO / idle | 92% / 36% / 13% | **95% / 21% / 10%** |
+
+They use the hulls — and pay for it. ~1 exterior wipe per game. Timeouts fell
+(more infantry dying in transit / fights resolving). APC interior remains the
+safer taxi.
+
+---
+
+## 2026-08-30 — Forest “behind” + APC armor cap (upstream)
+
+**Type: Rule / Sim**
+
+Two fidelity fixes from the Unimplemented list:
+
+1. **Forest:** enemy accuracy −1 when the target is **in** a forest hex **or
+   behind** one (any intervening forest on the line of fire). Forest still
+   does not block LOS.
+2. **APC armor:** list builder caps each facing at **+2** (tanks stay +3).
+
+**Effect (Combined, 200 games, seed 42)** — A/B isolating each change:
+
+| Build | Decisive | Hard TO | Idle | Hit rate | FP wins |
+|-------|----------|---------|------|----------|---------|
+| Exterior ride baseline (in-forest only, APC +3) | 95% | 21% | 10% | 72% | 93 |
+| + forest behind only (APC still +3) | 95% | 24% | 9% | **69%** | 89 |
+| + APC +2 only (forest still in-hex) | 95% | 21% | 10% | 72% | 93 |
+| Both | 95% | 24% | 9% | **69%** | 89 |
+
+Embark / mount / exterior-wipe rates unchanged (~100% embark games, ~4
+exterior mounts, ~1.05 exterior kills).
+
+**Verdict.** Neither moves decisive rate or embark usefulness. Forest behind
+shaves a few points off hit rate and nudges timeouts up slightly — real but
+small. APC armor cap is a fidelity fix with **no measurable Combined effect**
+(4-pt APC budget rarely wanted front +3 anyway).
 
 ---
 

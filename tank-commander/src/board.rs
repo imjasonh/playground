@@ -119,10 +119,17 @@ impl Board {
         true
     }
 
-    /// Accuracy modifier from terrain: forest cover for the target.
-    pub fn accuracy_penalty_vs(&self, target: Hex) -> i32 {
+    /// Accuracy modifier from terrain: −1 when the target is **in** a forest
+    /// hex or **behind** one (any intervening forest on the line of fire).
+    /// Matches upstream: "in or behind a forest space."
+    pub fn accuracy_penalty_vs(&self, from: Hex, target: Hex) -> i32 {
         if self.terrain_at(target) == Terrain::Forest {
             return 1;
+        }
+        for h in from.line_through(target) {
+            if self.terrain_at(h) == Terrain::Forest {
+                return 1;
+            }
         }
         0
     }
@@ -138,6 +145,24 @@ mod tests {
         b.set_terrain(Hex::offset(2, 0), Terrain::Building);
         assert!(!b.has_los(Hex::offset(0, 0), Hex::offset(4, 0), &[]));
         assert!(b.has_los(Hex::offset(0, 0), Hex::offset(1, 0), &[]));
+    }
+
+    #[test]
+    fn forest_in_or_behind_gives_accuracy_penalty() {
+        let mut b = Board::rect(8, 8);
+        let shooter = Hex::offset(0, 0);
+        let behind = Hex::offset(4, 0);
+        let in_forest = Hex::offset(2, 0);
+        // Open shot: no penalty.
+        assert_eq!(b.accuracy_penalty_vs(shooter, behind), 0);
+        // Target in forest.
+        b.set_terrain(in_forest, Terrain::Forest);
+        assert_eq!(b.accuracy_penalty_vs(shooter, in_forest), 1);
+        // Target behind intervening forest (LOS still open — forest does not block).
+        assert!(b.has_los(shooter, behind, &[]));
+        assert_eq!(b.accuracy_penalty_vs(shooter, behind), 1);
+        // Adjacent: no intervening hexes, so "behind" does not apply.
+        assert_eq!(b.accuracy_penalty_vs(shooter, Hex::offset(1, 0)), 0);
     }
 
     #[test]

@@ -170,6 +170,14 @@ pub struct Tank {
     pub mines_left: u8,
     pub armor_points_bought: u8,
     pub upgrade_points_spent: u8,
+    /// APC: embarked infantry unit id (capacity 1).
+    pub passenger: Option<u8>,
+    /// Infantry: APC id currently carrying this squad.
+    pub embarked_in: Option<u8>,
+    /// Infantry: Mount Up or Dismount already used this activation.
+    pub mount_or_dismount_used: bool,
+    /// APC: free DropOff already used this activation.
+    pub dropped_passenger_this_activation: bool,
     /// Marked after activating; cleared when the side starts a new pass
     /// (every operational unit has activated once). See RULES_CHANGES.md.
     pub activated_this_pass: bool,
@@ -223,6 +231,10 @@ impl Tank {
             mines_left: 0,
             armor_points_bought: 0,
             upgrade_points_spent: 0,
+            passenger: None,
+            embarked_in: None,
+            mount_or_dismount_used: false,
+            dropped_passenger_this_activation: false,
             activated_this_pass: false,
             moves_this_turn: 0,
         }
@@ -275,6 +287,10 @@ impl Tank {
             mines_left: 0,
             armor_points_bought: 0,
             upgrade_points_spent: 0,
+            passenger: None,
+            embarked_in: None,
+            mount_or_dismount_used: false,
+            dropped_passenger_this_activation: false,
             activated_this_pass: false,
             moves_this_turn: 0,
         }
@@ -327,6 +343,10 @@ impl Tank {
             mines_left: 0,
             armor_points_bought: 0,
             upgrade_points_spent: 0,
+            passenger: None,
+            embarked_in: None,
+            mount_or_dismount_used: false,
+            dropped_passenger_this_activation: false,
             activated_this_pass: false,
             moves_this_turn: 0,
         }
@@ -354,6 +374,11 @@ impl Tank {
 
     pub fn is_operational(&self) -> bool {
         !self.disabled && !self.destroyed && self.hull_points > 0
+    }
+
+    /// Infantry currently riding inside an APC.
+    pub fn is_embarked(&self) -> bool {
+        self.embarked_in.is_some()
     }
 
     /// Status of a core crew role, including lieutenant cover (acts as wounded).
