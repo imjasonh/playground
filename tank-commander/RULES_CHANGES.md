@@ -334,7 +334,43 @@ re-dig — a long idle / hard-cap path in 2× combined.
 | Red / Blue | 36 / 41 | 38 / 42 |
 
 Games finish more often and a bit sooner. Color stays even. First-player lean
-ticked up — watch on the next pass; not addressed here.
+ticked up — addressed next via setup spoil.
+
+---
+
+## 2026-08-30 — Second player may shift scatter terrain
+
+**Type: Scenario**
+
+After initiative, the second player’s spoil expands:
+
+| Scenario | Unit nudges (1 hex each opposing) | Scatter shifts (budget) |
+|----------|-----------------------------------|-------------------------|
+| Skirmish | no (skewed color on offset starts) | **2** |
+| Platoon | yes | **3** |
+| Combined | yes | **4** |
+
+**Scatter = forest / mud / rubble** (non-static). Each spend moves one tile by
+1 hex onto an Open hex (may land under a unit). Source becomes Open.
+**Buildings stay fixed.** Tiles may hop across the budget; a mud/rubble that
+lands on a first-player vehicle freezes there. Mirrored scatter may break —
+intentional.
+
+**Sim:** placement AI strips FP infantry forest, gifts forest to SP infantry,
+and hops mud onto FP vehicles / approaches. Humans choose freely within the
+budget.
+
+**Effect (seed 7; skirmish 100 / platoon+combined 80):**
+
+| Scenario | FP share before | **After** | Color |
+|----------|-----------------|-----------|-------|
+| Skirmish | 62% | **56%** | 52/47 (healthy) |
+| Platoon | 60% | **57%** | 41/39 |
+| Combined | 66% | **59%** | 46/33 (Red lean) |
+
+Initiative is closer everywhere. Combined still first-player-favored and a bit
+Red-heavy after spoil — better than 66%, not solved. Hard timeout on combined
+~11%, idle ~16%.
 
 ---
 
