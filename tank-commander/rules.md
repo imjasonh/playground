@@ -46,13 +46,14 @@ available to load. They still start the battle loaded with AT. The HE upgrade
 below is redundant for stock Skirmish / Platoon / Combined as we play them; it
 remains for custom / painted builds if you want the upgrade list complete.
 
-**House rule — list building.** **Platoon** and **Combined** tanks spend **up
-to 10** upgrade points before the game (you may spend fewer). Combined tanks
-may buy **mines**; each Combined tank also gets one air strike as a scenario
-grant (does not consume list points). APCs spend **up to 4** points (armor,
-engine, smoke). **Skirmish** and **Squadron** use stock tanks with no list.
-The simulator picks a random target spend in `0..=budget` per vehicle when
-lists apply.
+**House rule — list building.** **Platoon**, **Combined**, **Capture**, and
+**Assault** tanks spend **up to 10** upgrade points before the game (you may
+spend fewer). Tanks in Combined / Capture / Assault may buy **mines**. Combined
+tanks also get one air strike as a scenario grant (does not consume list
+points). APCs spend **up to 4** points (armor, engine, smoke, and the rest of
+the APC-legal list). **Skirmish** and **Squadron** use stock tanks with no
+list. The simulator picks a random target spend in `0..=budget` per vehicle
+when lists apply.
 
 ### Upgrades (up to 10 points)
 
@@ -75,9 +76,10 @@ Spend up to 10 upgrade points before the game:
 - **Medkit** (1): the first crew injury ignores its penalty once.
 - **Lieutenant commander** (1): fifth crew member (see Crew).
 - **Air support** (2, advanced): one air strike per battle for that tank.
-- **Anti-tank mines** (1 each, max 3, advanced): placed during **deployment**
-  (before spoil), not mid-battle. Must be at least **6 hexes** from every
-  enemy vehicle at placement.
+- **Anti-tank mines** (1 each, max 3, advanced): Combined / Capture / Assault
+  only (not Platoon). Placed during **deployment** (before spoil), not
+  mid-battle. Must be at least **6 hexes** from every enemy vehicle at
+  placement.
 
 Painted tanks get +1 upgrade point. An epic name plus named crew gets +1.
 (**Not** applied by the simulator list builder — see
@@ -119,13 +121,14 @@ penetration, glance wound, HE fire start, cook-off, and similar):
 
 ## Initiative and setup
 
-1. Build lists when the scenario uses them (Platoon / Combined). Sum each
-   side’s total spend. Skirmish and Squadron skip lists.
-2. **House rule — under-spend initiative** (list scenarios only). If one side
-   spent **fewer** upgrade points than the other, that side activates first and
-   there is **no** second-player spoil. If totals are equal — or the scenario
-   has no lists — roll off as usual and apply any scenario spoil for the
-   second player.
+1. Build lists when the scenario uses them (Platoon / Combined / Capture /
+   Assault). Sum each side’s total spend. Skirmish and Squadron skip lists.
+2. **House rule — under-spend initiative** (list scenarios that use it). If
+   one side spent **fewer** upgrade points than the other, that side activates
+   first and there is **no** second-player spoil. If totals are equal — or the
+   scenario has no lists — roll off as usual and apply any scenario spoil for
+   the second player. **Assault** is the exception: the attacker always goes
+   first and the defender always spoils, regardless of list spend.
 3. First activation begins.
 
 ### Pass activation (multi-unit)
@@ -201,11 +204,11 @@ to the target’s hull facing.
 - **HE fire:** on a glance or pen from HE, roll; on 5+ the target is *on
   fire*. Extinguish with an action. If not extinguished, −1 hull at the end of
   each of that unit’s activations until out or destroyed.
-- **Cook-off (tanks only):** at the end of each activation a disabled **tank**
-  remains, roll; on 4+ ammo cooks off — destroyed, replaced with rubble, and
-  units within 2 hexes take an HE strength-4 hit. If the last hull point was
-  lost to fire, cook-off is immediate. **APCs never cook off** — at 0 hull they
-  are destroyed as wrecks with no ammo blast.
+- **Cook-off (tanks only):** after **every** activation while a disabled
+  **tank** remains on the board, roll; on 4+ ammo cooks off — destroyed,
+  replaced with rubble, and units within 2 hexes take an HE strength-4 hit. If
+  the last hull point was lost to fire, cook-off is immediate. **APCs never
+  cook off** — at 0 hull they are destroyed as wrecks with no ammo blast.
 
 Infantry are destroyed by any main-gun or missile **hit** (see
 [Infantry cover](#infantry-cover)). They do not cook off.
@@ -227,8 +230,8 @@ A second wound on an already-wounded crew member kills them.
 
 **House rule — all suppression is temporary.**
 
-Sources that apply **Suppressed**: glancing hits, APC (or infantry) AI spray
-vs vehicles, and AI-spray pins vs dug-in infantry.
+Sources that apply **Suppressed**: glancing hits, and AI spray from **APCs**
+or tanks with the anti-infantry upgrade when they hit a vehicle.
 
 - −1 action on the unit’s **next** activation (minimum 1).
 - Clears at the end of that activation.
@@ -249,7 +252,7 @@ or use AI weapons against other infantry.
 | Forest | Enemy accuracy −1 vs a unit **in** or **behind** a forest (intervening forest on the line of fire; forest does not block LOS) |
 | Building | Impassable; blocks LOS. Destroying buildings by fire is unimplemented. |
 | Hill (advanced) | Unimplemented in the simulator — tabletop reference only. |
-| Mines (advanced) | Entering: AT strength-6 pen check; then remove mine |
+| Mines (advanced) | Entering triggers an AT strength-6 pen check, then the mine is removed. Any unit that steps or drives onto the hex triggers it (infantry die on a hit). |
 
 Smoke blocks LOS through its hex until the end of the battle (or as the
 scenario says).
@@ -314,9 +317,10 @@ as upstream).
 **Actions:** move, turn, fire AI, deploy smoke, extinguish fire, **embark /
 drop off** (see [Embarkation](#embarkation)).
 
-**House rule — AI spray vs vehicles.** APC (and infantry) AI weapons may
-target vehicles. A hit **suppresses** (no pen, no hull damage). Vs infantry, a
-hit kills (or pins if in cover, above).
+**House rule — AI spray vs vehicles.** APC AI weapons (and the tank
+anti-infantry upgrade) may target vehicles. A hit **suppresses** (no pen, no
+hull damage). Infantry AI is **infantry-only**. Vs infantry, a hit kills (or
+pins if in cover, above).
 
 ### Embarkation
 
@@ -342,7 +346,8 @@ hit kills (or pins if in cover, above).
 #### APC interior
 
 7. Safer ride. Embarked infantry die if the APC is **disabled or destroyed**
-   (including cook-off) — not on a mere glance.
+   (APCs wreck at 0 hull with no ammo cook-off). Riders can also die from a
+   nearby **tank** cook-off splash.
 
 #### Tank exterior (upstream)
 
@@ -404,9 +409,13 @@ template is the counterplay.
 
 - **Wipe:** destroy or disable every enemy unit — that side wins.
 - **Concede / mission complete:** as agreed.
+- **Capture:** infantry Capture on an enemy flag hex wins immediately (Capture
+  and Assault scenarios).
 - **Clock:** if you use an activation or turn limit and both sides still have
-  operational units, score by more operational units, then remaining hull;
-  equal is a draw.
+  operational units:
+  - **Assault:** the defender wins (held the flag).
+  - **Otherwise:** score by more operational units, then remaining hull; equal
+    is a draw.
 
 Upstream’s default “10 turns” still applies for open tabletop unless the
 scenario sets another clock. Simulator Monte Carlo caps are analysis tools, not
@@ -417,8 +426,9 @@ required tabletop clocks — see [`RULES_CHANGES.md`](RULES_CHANGES.md).
 ## Scenarios
 
 These are the setups the simulator balances against — a short learning ladder
-from stock 1v1 up to combined arms. Map sizes are hex **columns × rows** on an
-odd-r rectangular mat (not an axial parallelogram).
+from stock 1v1 through combined arms, then objective missions (Capture flag
+raid and Assault). Map sizes are hex **columns × rows** on an odd-r rectangular
+mat (not an axial parallelogram).
 
 ### 1. Skirmish (intro)
 
@@ -431,6 +441,7 @@ Learn maneuvering and shooting.
 - **Second-player spoil:** shift up to **2** scatter terrain tiles (forest /
   mud / rubble) by 1 hex each onto Open hexes before the first activation.
   Buildings stay fixed. No opposing-unit nudge (it skewed color on this map).
+- **Clock (sim):** 20 activations; no idle-stalemate cutoff.
 
 ### 2. Squadron
 
@@ -443,18 +454,20 @@ Learn pass activation and group tactics.
 - **Second-player spoil:** nudge **each** opposing unit up to **1 hex**
   (empty, passable; facing unchanged), then shift up to **3** scatter tiles
   (same rules as below).
+- **Clock (sim):** 200 activations; idle stalemate after 40 no-hit.
 
 ### 3. Platoon
 
 Same force and board as Squadron, plus list building.
 
 - **Force:** 3v3 tanks with up to 10 upgrade points each (HE free; may spend
-  fewer).
+  fewer). **No mines.**
 - **Board:** same 18×12 open mat as Squadron.
 - **Initiative:** under-spend initiative (see above); spoil only when list
   totals tie.
 - **Second-player spoil** (tied lists only): nudge **each** opposing unit up
   to **1 hex**, then shift up to **3** scatter tiles.
+- **Clock (sim):** 200 activations; idle stalemate after 40 no-hit.
 
 ### 4. Combined arms
 
@@ -474,6 +487,7 @@ Full combined-arms game with lists.
   placement — outside stock gun range, still on the midfield approaches.
 - **Second-player spoil** (tied lists only): nudge each opposing unit up to 1
   hex, then shift up to **4** scatter tiles.
+- **Clock (sim):** 240 activations; idle stalemate after 48 no-hit.
 
 ### 5. Capture (flag raid)
 
@@ -487,9 +501,11 @@ Objectives matter: race the other side's flag with embarked infantry.
   on **Capture**. Capturing the enemy flag wins immediately. Wipe still wins;
   timeout / idle stalemate still resolve by attrition.
 - **Initiative:** lower list spend goes first and skips spoil; equal spend rolls
-  off and applies spoil (nudge + 3 scatter). Deployment mines before spoil.
+  off and applies spoil (nudge each opposing unit ≤1 hex + **3** scatter).
+  Deployment mines before spoil (6-hex enemy clearance).
 - **Embarkation:** squads start inside their APCs; they may stay embarked until
   dropped near the flag (see [Embarkation](#embarkation)).
+- **Clock (sim):** 200 activations; idle stalemate after 40 no-hit.
 
 ### 6. Assault (attacker / defender)
 
@@ -498,15 +514,16 @@ One side Captures; the other holds or destroys the attack.
 - **Attacker:** **1 tank** + **3 loaded APCs**. Always activates first. List
   upgrades (tank ≤10 with mines, APCs ≤4).
 - **Defender:** **1 tank** + **2 infantry** dug in near a single backline flag.
-  List upgrades on the tank (≤10 with mines). Gets second-player spoil.
+  List upgrades on the tank (≤10 with mines). Always gets second-player spoil
+  (nudge each opposing unit ≤1 hex + **3** scatter), regardless of list spend.
 - **Board:** 18×12 open mat; scatter is **not** mirrored (asymmetric approach).
   Who attacks is a coin flip (color is not locked to a role).
 - **Win:**
   - Attacker: **Capture** the defender flag, or wipe the defender.
   - Defender: wipe the attacker, **or hold** until the activation cap / idle
     stalemate (clock favors the hold).
-- **Cap:** 180 activations; idle stalemate after 50 no-hit.
-- **Mines:** deployment mines before spoil (same clearance rules as Combined).
+- **Deployment mines:** before spoil; same 6-hex clearance as Combined.
+- **Clock (sim):** 180 activations; idle stalemate after 50 no-hit.
 
 ### Scatter terrain spoil (shared rules)
 
@@ -525,7 +542,7 @@ One side Captures; the other holds or destroys the attack.
 Examples from upstream: Basic Training, Capture Objectives, Breakthrough,
 Destroy Target, Escort, Beach Landing, Urban Warfare, Cross Minefield, Disable
 AA Guns. The simulator’s playable ladder is in [Scenarios](#scenarios)
-(including **Capture** as a flag-raid variant). Full upstream mission text and
+(including **Capture** and **Assault**). Full upstream mission text and
 special rules for the rest are in [Unimplemented upstream](#unimplemented-upstream).
 
 ---
@@ -635,9 +652,10 @@ Upstream:
 
 > **Capture Objective**: Capture an objective. The unit must share the space with the objective to capture it. They don't need to remain on the space to hold it.
 
-Live rules: flag markers + Capture action on the Capture scenario. Other
-upstream missions that need multiple objectives or attacker/defender roles are
-still missing (see [Upstream missions](#upstream-missions--missing-as-playable-scenarios)).
+Live rules: flag markers + Capture action on **Capture** (one flag each) and
+**Assault** (one defender flag; hold clock). Multi-objective Capture Objectives
+cards and other upstream missions that need multiple flags remain missing (see
+[Upstream missions](#upstream-missions--missing-as-playable-scenarios)).
 
 ### Disarm Mines — **missing**
 
@@ -645,8 +663,8 @@ Upstream:
 
 > **Disarm Mines**: Remove an adjacent mine space from the board.
 
-Mines can be **deployed** and **triggered** by vehicles. Infantry cannot disarm
-them.
+Mines can be **deployed** and **triggered** by any unit that enters the hex
+(infantry die on a hit). Infantry cannot disarm them.
 
 ### Exterior tank-top riding — **implemented** (see [Embarkation](#embarkation))
 
@@ -687,8 +705,9 @@ Upstream:
 > - **Skirmish:** 1-vs-1 tank battle with light terrain.
 > - **Capture Objectives:** Use infantry to capture 1, 2 or 3 spaces on the board.
 
-The simulator’s **Capture** scenario is a 1v1 flag raid (one flag each, instant
-win on Capture). Multi-objective cards and the rest of this list remain missing.
+The simulator’s **Capture** scenario is a flag raid (one flag each, instant
+win on Capture). **Assault** is attacker/defender with one defender flag.
+Multi-objective cards and the rest of this list remain missing.
 > - **Breakthrough:** Move your tank to the other side of the board to win. One player is the attacker, the other is the defender.
 > - **Destroy Target:** Destroy a specific target on the board. The target can be a building, a tank, or an infantry unit.
 > - **Escort:** Move an infantry squad across the battlefield alive.
@@ -697,10 +716,10 @@ win on Capture). Multi-objective cards and the rest of this list remain missing.
 > - **Cross Minefield:** Navigate across a minefield with infantry disabling mines.
 > - **Disable AA Guns:** 3 air strikes available for free, but they fail on 2+ while 3 AA guns are intact. Destroy those guns and call in support.
 
-The simulator’s ladder (`skirmish` / `squadron` / `platoon` / `combined`) is
-**not** these cards. Capture / Breakthrough / Escort / Beach / Urban /
-Minefield / AA Guns need objectives, attacker–defender roles, or special AA
-rules that do not exist in code.
+The simulator’s ladder is `skirmish` / `squadron` / `platoon` / `combined` /
+`capture` / `assault`. Still missing as playable cards: multi-objective Capture,
+Breakthrough, Escort, Beach Landing, Urban Warfare, Cross Minefield, Disable
+AA Guns (special AA / multi-flag / water / plaza rules).
 
 ### Optional / questionable ideas — **missing**
 
