@@ -868,6 +868,17 @@ play; Assault ~55% attacker with smoke/mines showing up in the census.
 
 ---
 
+## 2026-08-30 — AI spray infantry-only + Disarm Mines
+
+**Type: Rule**
+
+- **AI spray** (APC AI and tank anti-infantry upgrade) may only target
+  **infantry**. Vehicles are immune — no vehicle suppression spray.
+- Infantry **Disarm Mines**: 1 AP removes an adjacent mine hex (upstream
+  fidelity). AI clears adjacent mines before remounting / racing.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.

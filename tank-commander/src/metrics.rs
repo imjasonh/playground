@@ -36,6 +36,7 @@ pub struct GameReport {
     pub lt_covers: u32,
     pub mines_deployed: u32,
     pub mines_triggered: u32,
+    pub mines_disarmed: u32,
     pub mounts: u32,
     pub exterior_mounts: u32,
     pub embarks: u32,
@@ -150,6 +151,7 @@ impl GameReport {
             lt_covers: game.lt_covers,
             mines_deployed: game.mines_deployed,
             mines_triggered: game.mines_triggered,
+            mines_disarmed: game.mines_disarmed,
             mounts: game.mounts,
             exterior_mounts: game.exterior_mounts,
             embarks: game.embarks,
@@ -264,6 +266,7 @@ pub struct AggregateReport {
     pub avg_lt_covers: f64,
     pub avg_mines_deployed: f64,
     pub avg_mines_triggered: f64,
+    pub avg_mines_disarmed: f64,
     pub avg_mounts: f64,
     pub avg_exterior_mounts: f64,
     pub avg_embarks: f64,
@@ -381,6 +384,7 @@ impl AggregateReport {
             avg_lt_covers: sum_f(|r| r.lt_covers),
             avg_mines_deployed: sum_f(|r| r.mines_deployed),
             avg_mines_triggered: sum_f(|r| r.mines_triggered),
+            avg_mines_disarmed: sum_f(|r| r.mines_disarmed),
             avg_mounts: sum_f(|r| r.mounts),
             avg_exterior_mounts: sum_f(|r| r.exterior_mounts),
             avg_embarks: sum_f(|r| r.embarks),
@@ -633,10 +637,11 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
             agg.avg_smoke_deployed, agg.avg_medkit_saves, agg.avg_lt_covers
         ));
     }
-    if agg.avg_mines_deployed > 0.0 || agg.avg_mines_triggered > 0.0 {
+    if agg.avg_mines_deployed > 0.0 || agg.avg_mines_triggered > 0.0 || agg.avg_mines_disarmed > 0.0
+    {
         out.push_str(&format!(
-            "Mines: avg deployed {:.2}, triggered {:.2}\n",
-            agg.avg_mines_deployed, agg.avg_mines_triggered
+            "Mines: avg deployed {:.2}, triggered {:.2}, disarmed {:.2}\n",
+            agg.avg_mines_deployed, agg.avg_mines_triggered, agg.avg_mines_disarmed
         ));
     }
     if agg.embark_usage_rate > 0.0

@@ -51,6 +51,10 @@ pub enum Action {
     },
     /// Infantry: claim an enemy objective hex this unit occupies.
     Capture,
+    /// Infantry: remove an adjacent mine hex from the board.
+    DisarmMine {
+        hex: Hex,
+    },
     /// Infantry: board an adjacent friendly APC (capacity 1).
     Mount {
         vehicle: u8,
@@ -106,6 +110,7 @@ impl Action {
             Action::DeployMine { .. } => "DeployMine",
             Action::LieutenantCover { .. } => "LieutenantCover",
             Action::Capture => "Capture",
+            Action::DisarmMine { .. } => "DisarmMine",
             Action::Mount { .. } => "Mount",
             Action::Dismount { .. } => "Dismount",
             Action::Embark { .. } => "Embark",

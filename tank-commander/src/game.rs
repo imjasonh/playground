@@ -85,6 +85,7 @@ pub struct Game {
     pub lt_covers: u32,
     pub mines_deployed: u32,
     pub mines_triggered: u32,
+    pub mines_disarmed: u32,
     pub mounts: u32,
     pub exterior_mounts: u32,
     pub embarks: u32,
@@ -150,6 +151,7 @@ impl Game {
             lt_covers: 0,
             mines_deployed: 0,
             mines_triggered: 0,
+            mines_disarmed: 0,
             mounts: 0,
             exterior_mounts: 0,
             embarks: 0,
@@ -511,10 +513,10 @@ impl Game {
             }
         }
 
-        // Tank AI weapons (anti-infantry upgrade).
+        // Tank AI weapons (anti-infantry upgrade) — infantry only.
         if tank.ai_range > 0 && ap_left >= 1 {
             for enemy in self.enemy_units(tank.side) {
-                if enemy.destroyed {
+                if enemy.destroyed || enemy.kind != UnitKind::Infantry {
                     continue;
                 }
                 if self.can_see_ai(tank, enemy) {
@@ -565,10 +567,10 @@ impl Game {
 
         if tank.can_fire() && ap_left >= 1 {
             for enemy in self.enemy_units(tank.side) {
-                if enemy.destroyed {
+                if enemy.destroyed || enemy.kind != UnitKind::Infantry {
                     continue;
                 }
-                // Soft kill vs infantry; suppression spray vs vehicles.
+                // Soft kill / pin vs infantry only — AI never suppresses vehicles.
                 if self.can_see_ai(tank, enemy) {
                     out.push(Action::FireAi { target: enemy.id });
                 }
@@ -868,6 +870,16 @@ impl Game {
             out.push(Action::Capture);
         }
 
+        // Disarm Mines: remove an adjacent mined hex (1 action).
+        if ap_left >= 1 {
+            for i in 0..6u8 {
+                let h = tank.pos.neighbor(Facing::from_index(i));
+                if self.board.contains(h) && self.board.has_mine(h) {
+                    out.push(Action::DisarmMine { hex: h });
+                }
+            }
+        }
+
         // Mount Up onto adjacent empty APC (interior) or tank (exterior).
         if !tank.mount_or_dismount_used && ap_left >= 1 {
             for other in &self.tanks {
@@ -1047,6 +1059,9 @@ impl Game {
             }
             Action::Capture => {
                 self.apply_capture(tank_id, turn, side, ap_left);
+            }
+            Action::DisarmMine { hex } => {
+                self.apply_disarm_mine(tank_id, hex, turn, side, ap_left);
             }
             Action::CallAirStrike { hex } => {
                 self.tank_mut(tank_id).air_strike_used = true;
@@ -1334,46 +1349,15 @@ impl Game {
             return;
         }
 
-        // Vehicle suppression spray (no pen / no HP).
-        let roll = rng.gen_range(1..=6);
-        let need = (acc + penalty).clamp(2, 6);
-        let hit = succeeds(roll, need);
-        if hit {
-            self.total_hits += 1;
-            self.activations_since_hit = 0;
-            let (name, already) = {
-                let t = self.tank_mut(target_id);
-                let already = t.suppressed;
-                if !already {
-                    t.suppressed = true;
-                }
-                (t.name.clone(), already)
-            };
-            if !already {
-                self.total_suppressions += 1;
-            }
-            let text = if already {
-                format!(
-                    "AI spray hits {name} (already suppressed until end of its next activation)"
-                )
-            } else {
-                format!(
-                    "AI spray suppresses {name} until end of its next activation \
-                     (rolled {roll}, needed {need}+)"
-                )
-            };
-            self.push_event(turn, Some(side), text, None);
-            self.maybe_kill_exterior_riders_on_hit(target_id);
-        } else {
-            self.shots_missed += 1;
-            let name = self.tank(target_id).name.clone();
-            self.push_event(
-                turn,
-                Some(side),
-                format!("AI spray misses {name} (rolled {roll}, needed {need}+)"),
-                None,
-            );
-        }
+        // AI weapons cannot affect tanks or APCs (infantry-only).
+        self.shots_missed += 1;
+        let name = self.tank(target_id).name.clone();
+        self.push_event(
+            turn,
+            Some(side),
+            format!("AI has no effect vs {name} (vehicles immune)"),
+            None,
+        );
     }
 
     fn destroy_infantry(&mut self, target_id: u8) {
@@ -1487,6 +1471,35 @@ impl Game {
             turn,
             Some(side),
             format!("{name} captures the objective at {pos}"),
+            None,
+        );
+    }
+
+    fn apply_disarm_mine(
+        &mut self,
+        infantry_id: u8,
+        hex: Hex,
+        turn: u32,
+        side: Side,
+        ap_left: &mut i32,
+    ) {
+        let unit = self.tank(infantry_id);
+        if unit.kind != UnitKind::Infantry || unit.is_embarked() || unit.destroyed {
+            return;
+        }
+        if unit.pos.distance(hex) != 1 || !self.board.has_mine(hex) {
+            return;
+        }
+        let name = unit.name.clone();
+        if !self.board.take_mine(hex) {
+            return;
+        }
+        *ap_left -= 1;
+        self.mines_disarmed += 1;
+        self.push_event(
+            turn,
+            Some(side),
+            format!("{name} disarms mine at {hex}"),
             None,
         );
     }
@@ -2653,5 +2666,66 @@ mod tests {
             .with_attacker(Side::Red);
         g.activations = 5;
         assert_eq!(g.outcome(), Outcome::Winner(Side::Blue));
+    }
+
+    #[test]
+    fn ai_weapons_cannot_target_vehicles() {
+        let board = Board::rect(11, 9);
+        let mut apc = Tank::stock_apc(0, Side::Red, Hex::offset(3, 4), Facing::E, "APC");
+        apc.ai_range = 3;
+        let tanks = vec![
+            apc,
+            Tank::stock(1, Side::Blue, Hex::offset(5, 3), Facing::W, "Tank"),
+            Tank::stock_infantry(2, Side::Blue, Hex::offset(5, 5), Facing::W, "Squad"),
+        ];
+        let g = Game::new(board, tanks, Side::Red, 20, "test");
+        let legal = g.legal_actions(0, 3, &TurnBuffs::default());
+        assert!(
+            legal
+                .iter()
+                .all(|a| !matches!(a, Action::FireAi { target: 1 })),
+            "AI must not list vehicle targets: {legal:?}"
+        );
+        assert!(
+            legal
+                .iter()
+                .any(|a| matches!(a, Action::FireAi { target: 2 })),
+            "AI should still list infantry: {legal:?}"
+        );
+    }
+
+    #[test]
+    fn infantry_disarms_adjacent_mine() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let mine = Hex::offset(4, 4);
+        let tanks = vec![
+            Tank::stock_infantry(0, Side::Red, Hex::offset(3, 4), Facing::E, "Squad"),
+            Tank::stock(1, Side::Blue, Hex::offset(9, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 20, "test");
+        g.board.add_mine(mine);
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut ap = 3;
+        let mut buffs = TurnBuffs::default();
+        g.begin_activation(0);
+        let legal = g.legal_actions(0, ap, &buffs);
+        assert!(
+            legal
+                .iter()
+                .any(|a| matches!(a, Action::DisarmMine { hex } if *hex == mine)),
+            "expected DisarmMine: {legal:?}"
+        );
+        g.apply_action(
+            0,
+            Action::DisarmMine { hex: mine },
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
+        assert!(!g.board.has_mine(mine));
+        assert_eq!(g.mines_disarmed, 1);
+        assert_eq!(ap, 2);
     }
 }

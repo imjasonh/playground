@@ -138,11 +138,6 @@ fn score_unit(game: &Game, unit_id: u8) -> i64 {
                 .any(|e| e.kind == UnitKind::Infantry && game.can_see_ai(unit, e))
             {
                 score += 9_000;
-            } else if enemies
-                .iter()
-                .any(|e| e.kind != UnitKind::Infantry && !e.suppressed && game.can_see_ai(unit, e))
-            {
-                score += 3_500;
             }
         }
     }
@@ -371,6 +366,15 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
     // Capture wins the scenario — always take it when legal.
     if game.can_capture(unit) {
         return vec![Action::Capture];
+    }
+
+    // Disarm adjacent mines before stepping onto them or remounting.
+    let legal0 = game.legal_actions(unit_id, unit.effective_actions(), &TurnBuffs::default());
+    if let Some(disarm) = legal0
+        .into_iter()
+        .find(|a| matches!(a, Action::DisarmMine { .. }))
+    {
+        return vec![disarm];
     }
 
     if enemies.is_empty() && enemy_flag.is_none() {
@@ -799,19 +803,6 @@ fn apc_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
     let mut ranked_inf = infantry.clone();
     ranked_inf.sort_by_key(|e| (if e.in_cover { 1 } else { 0 }, unit.pos.distance(e.pos)));
     for enemy in &ranked_inf {
-        if game.can_see_ai(unit, enemy) {
-            return vec![Action::FireAi { target: enemy.id }];
-        }
-    }
-
-    // Otherwise suppress one unsuppressed vehicle in AI range.
-    let mut vehicles: Vec<&crate::unit::Tank> = enemies
-        .iter()
-        .copied()
-        .filter(|e| e.kind != UnitKind::Infantry && !e.suppressed)
-        .collect();
-    vehicles.sort_by_key(|e| unit.pos.distance(e.pos));
-    for enemy in &vehicles {
         if game.can_see_ai(unit, enemy) {
             return vec![Action::FireAi { target: enemy.id }];
         }
@@ -1285,6 +1276,7 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
         }
         Action::TakeCover
         | Action::Capture
+        | Action::DisarmMine { .. }
         | Action::CallAirStrike { .. }
         | Action::DeploySmoke { .. }
         | Action::DeployMine { .. } => {

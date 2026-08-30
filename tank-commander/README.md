@@ -102,8 +102,8 @@ cross simple thresholds.
   blast template (impact + neighbors). Tank main gun (range 5) outranges
   infantry missiles (range 4). Main gun, missiles, and air kill through
   cover; only AI spray pins a dug-in squad. Firing a missile leaves cover.
-  Forest gives −1 to hit (dig-in does not stack a second −1). APC AI spray
-  can suppress vehicles. All suppression is temporary (clears at end of the
+  Forest gives −1 to hit (dig-in does not stack a second −1). AI spray is
+  infantry-only (vehicles immune). All suppression is temporary (clears at end of the
   unit's next activation). Suppressed infantry cannot fire missiles.
 - **Platoon clock.** Hard cap 200 activations as a safety valve. After
   first contact, 40 activations with no hit ends the game as an idle

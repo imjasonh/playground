@@ -43,17 +43,17 @@ upstream for STLs).
 
 **House rule — stock HE.** Stock tanks always have High-Explosive rounds
 available to load. They still start the battle loaded with AT. The HE upgrade
-below is redundant for stock Skirmish / Platoon / Combined as we play them; it
+below is redundant for stock Skirmish / Squadron / Platoon / Combined /
+Capture / Assault as we play them; it
 remains for custom / painted builds if you want the upgrade list complete.
 
 **House rule — list building.** **Platoon**, **Combined**, **Capture**, and
 **Assault** tanks spend **up to 10** upgrade points before the game (you may
 spend fewer). Tanks in Combined / Capture / Assault may buy **mines**. Combined
 tanks also get one air strike as a scenario grant (does not consume list
-points). APCs spend **up to 4** points (armor, engine, smoke, and the rest of
-the APC-legal list). **Skirmish** and **Squadron** use stock tanks with no
-list. The simulator picks a random target spend in `0..=budget` per vehicle
-when lists apply.
+points). APCs spend **up to 4** points (**armor**, **engine**, **smoke** only).
+**Skirmish** and **Squadron** use stock tanks with no list. The simulator picks
+a random target spend in `0..=budget` per vehicle when lists apply.
 
 ### Upgrades (up to 10 points)
 
@@ -230,8 +230,8 @@ A second wound on an already-wounded crew member kills them.
 
 **House rule — all suppression is temporary.**
 
-Sources that apply **Suppressed**: glancing hits, and AI spray from **APCs**
-or tanks with the anti-infantry upgrade when they hit a vehicle.
+Sources that apply **Suppressed**: glancing hits, and AI spray that **pins** a
+dug-in infantry squad (cover spent).
 
 - −1 action on the unit’s **next** activation (minimum 1).
 - Clears at the end of that activation.
@@ -274,10 +274,10 @@ scenario says).
 
 **Actions (simulator):** step (any facing), fire missile, fire AI, take cover,
 **mount / dismount** (see [Embarkation](#embarkation)), **Capture** on an enemy
-flag hex (see [Capture Objective](#capture-objective)).
+flag hex (see [Capture Objective](#capture-objective)), **Disarm Mines** on an
+adjacent mined hex.
 
-Upstream also lists **Disarm Mines** — that is **not** in the simulator yet
-(see [Unimplemented upstream](#unimplemented-upstream)).
+Upstream Take Cover lock differs — see house rule below.
 
 **House rule vs upstream Take Cover.** Upstream forbids moving or firing while
 in cover. Here, dig-in only affects how you take hits (and revealing fire when
@@ -285,6 +285,16 @@ you missile). You may still move or shoot while dug in.
 
 Cannot be targeted while adjacent to a friendly tank (upstream rule; keep
 unless a scenario says otherwise).
+
+### Disarm Mines
+
+Upstream:
+
+> **Disarm Mines**: Remove an adjacent mine space from the board.
+
+**Implemented.** An unembarked infantry squad spends **1 action** to remove a
+mine in an **adjacent** hex. The mine is gone — no trigger roll. Vehicles still
+cannot disarm; they only trigger mines by entering the hex.
 
 ### Infantry cover
 
@@ -317,10 +327,9 @@ as upstream).
 **Actions:** move, turn, fire AI, deploy smoke, extinguish fire, **embark /
 drop off** (see [Embarkation](#embarkation)).
 
-**House rule — AI spray vs vehicles.** APC AI weapons (and the tank
-anti-infantry upgrade) may target vehicles. A hit **suppresses** (no pen, no
-hull damage). Infantry AI is **infantry-only**. Vs infantry, a hit kills (or
-pins if in cover, above).
+**AI weapons** (APC stock AI and the tank anti-infantry upgrade) are
+**infantry-only**: kill (or pin if dug in). They have **no effect** on tanks or
+APCs — vehicles are immune to AI spray.
 
 ### Embarkation
 
@@ -657,14 +666,14 @@ Live rules: flag markers + Capture action on **Capture** (one flag each) and
 cards and other upstream missions that need multiple flags remain missing (see
 [Upstream missions](#upstream-missions--missing-as-playable-scenarios)).
 
-### Disarm Mines — **missing**
+### Disarm Mines — **implemented** (see [Disarm Mines](#disarm-mines))
 
 Upstream:
 
 > **Disarm Mines**: Remove an adjacent mine space from the board.
 
-Mines can be **deployed** and **triggered** by any unit that enters the hex
-(infantry die on a hit). Infantry cannot disarm them.
+Live rules: infantry spend 1 AP to clear an adjacent mine hex. Vehicles still
+trigger mines by entering them.
 
 ### Exterior tank-top riding — **implemented** (see [Embarkation](#embarkation))
 
