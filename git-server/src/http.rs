@@ -14,8 +14,6 @@
 //! | `GET /api/<repo>/tree/<refish>/<path>` | JSON dir listing + last-commit |
 //! | `GET /api/<repo>/blame/<refish>/<path>` | JSON line-level blame |
 //! | `POST /api/<repo>/repack` | run pack consolidation now |
-//! | `POST /api/<repo>/loadtest` | budget-capped push/pull load test |
-//! | `GET /loadtest` | phone-friendly HTML loadtest (use `?run=1` to start) |
 
 use crate::protocol::{self, BodyStream, BufferedBody};
 use crate::refs::StateStore;
@@ -39,8 +37,6 @@ pub struct Request<'a> {
     /// Surfaced in structured logs and side-band progress for correlation
     /// with Workers Traces.
     pub cf_ray: Option<&'a str>,
-    /// `X-Loadtest-Token` header value, if present.
-    pub loadtest_token: Option<&'a str>,
 }
 
 /// A response body: fully materialized, or streamed in chunks.
@@ -155,15 +151,6 @@ pub struct GitHttp {
     /// Per-push body limit ([`DEFAULT_PUSH_LIMIT_BYTES`] unless overridden —
     /// e.g. raised on Business/Enterprise zones, lowered in tests).
     pub push_limit_bytes: u64,
-    /// When set, `GET /loadtest` and `POST /api/…/loadtest` require this
-    /// exact token (query `token=`, header `X-Loadtest-Token`, or JSON
-    /// `"token"`). `None` leaves loadtests open (native tests).
-    pub loadtest_token: Option<String>,
-    /// When true (Worker), a missing [`Self::loadtest_token`] rejects
-    /// loadtests with 503 instead of running open.
-    pub loadtest_auth_required: bool,
-    /// Optional HTTP self-fetch for multi-shard loadtests (same repo).
-    pub loadtest_fanout: Option<std::rc::Rc<dyn crate::loadtest::LoadtestFanout>>,
 }
 
 impl GitHttp {
@@ -172,35 +159,11 @@ impl GitHttp {
             store,
             states,
             push_limit_bytes: DEFAULT_PUSH_LIMIT_BYTES,
-            loadtest_token: None,
-            loadtest_auth_required: false,
-            loadtest_fanout: None,
         }
     }
 
     pub fn with_push_limit(mut self, bytes: u64) -> GitHttp {
         self.push_limit_bytes = bytes;
-        self
-    }
-
-    pub fn with_loadtest_token(mut self, token: impl Into<String>) -> GitHttp {
-        self.loadtest_token = Some(token.into());
-        self.loadtest_auth_required = true;
-        self
-    }
-
-    /// Worker: require a token, but the secret is not configured yet.
-    pub fn with_loadtest_auth_required(mut self) -> GitHttp {
-        self.loadtest_auth_required = true;
-        self
-    }
-
-    /// Attach a self-fetch fan-out (Worker only).
-    pub fn with_loadtest_fanout(
-        mut self,
-        fanout: std::rc::Rc<dyn crate::loadtest::LoadtestFanout>,
-    ) -> GitHttp {
-        self.loadtest_fanout = Some(fanout);
         self
     }
 }
@@ -211,44 +174,6 @@ fn query_param<'q>(query: Option<&'q str>, key: &str) -> Option<&'q str> {
         .filter_map(|kv| kv.split_once('='))
         .find(|(k, _)| *k == key)
         .map(|(_, v)| v)
-}
-
-/// Minimal query-component decode (`%XX` and `+` → space). Hex tokens need
-/// no decoding; this keeps pasted tokens with accidental encoding working.
-fn percent_decode(s: &str) -> String {
-    let mut out = Vec::with_capacity(s.len());
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        match bytes[i] {
-            b'+' => {
-                out.push(b' ');
-                i += 1;
-            }
-            b'%' if i + 2 < bytes.len() => {
-                let h = |c: u8| -> Option<u8> {
-                    match c {
-                        b'0'..=b'9' => Some(c - b'0'),
-                        b'a'..=b'f' => Some(c - b'a' + 10),
-                        b'A'..=b'F' => Some(c - b'A' + 10),
-                        _ => None,
-                    }
-                };
-                if let (Some(hi), Some(lo)) = (h(bytes[i + 1]), h(bytes[i + 2])) {
-                    out.push((hi << 4) | lo);
-                    i += 3;
-                } else {
-                    out.push(bytes[i]);
-                    i += 1;
-                }
-            }
-            b => {
-                out.push(b);
-                i += 1;
-            }
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// Repo names are a single path segment: no traversal, no separators.
@@ -313,13 +238,6 @@ impl GitHttp {
     async fn route(&self, req: &Request<'_>, body: &mut dyn BodyStream, nonce: &str) -> Response {
         let segments: Vec<&str> = req.path.split('/').filter(|s| !s.is_empty()).collect();
         match segments.as_slice() {
-            ["api", repo, "loadtest"] if req.method == "POST" && valid_repo_name(repo) => {
-                self.api_loadtest(req, strip_git(repo), body).await
-            }
-            ["loadtest", "merge"] if req.method == "POST" => {
-                self.phone_merge_reports(req, body).await
-            }
-            ["loadtest"] if req.method == "GET" => self.phone_loadtest(req).await,
             ["api", rest @ ..] => self.handle_api(req, rest, nonce).await,
             [repo, "info", "refs"] if req.method == "GET" => {
                 self.info_refs(req, strip_git(repo)).await
@@ -510,216 +428,6 @@ impl GitHttp {
                 "version": loaded.version,
             }),
         )
-    }
-
-    /// `POST /api/<repo>/loadtest` — budget-capped concurrent push/pull load
-    /// test. Nested protocol calls reset the request metrics collector, so the
-    /// response body's report is the source of truth (Server-Timing on this
-    /// response only covers coordination overhead).
-    async fn api_loadtest(
-        &self,
-        req: &Request<'_>,
-        repo_name: &str,
-        body: &mut dyn BodyStream,
-    ) -> Response {
-        let mut buf = Vec::new();
-        loop {
-            match body.next_chunk().await {
-                Ok(Some(c)) => buf.extend_from_slice(&c),
-                Ok(None) => break,
-                Err(e) => return Response::error(400, &e),
-            }
-        }
-        if buf.is_empty() {
-            return Response::error(
-                400,
-                "JSON body required: {\"confirm\":true,\"budget_usd\":0.1,…}",
-            );
-        }
-        let parsed: crate::loadtest::LoadTestRequest = match serde_json::from_slice(&buf) {
-            Ok(r) => r,
-            Err(e) => return Response::error(400, &format!("bad loadtest JSON: {e}")),
-        };
-        let provided = req
-            .loadtest_token
-            .or(query_param(req.query, "token"))
-            .or(parsed.token.as_deref());
-        if let Some(deny) = self.loadtest_auth_error(provided) {
-            return deny;
-        }
-        let cfg = match parsed.into_config() {
-            Ok(c) => c,
-            Err(e) => return Response::error(400, &e),
-        };
-
-        let http = self.coordinator_http();
-        let report = match crate::loadtest::execute(&http, repo_name, &cfg).await {
-            Ok(r) => r,
-            Err(e) => return Response::error(500, &e),
-        };
-
-        match serde_json::to_vec_pretty(&report) {
-            Ok(bytes) => Response::ok("application/json", bytes),
-            Err(e) => Response::error(500, &e.to_string()),
-        }
-    }
-
-    /// `POST /loadtest/merge` — phone UI posts shard JSON reports after
-    /// browser fan-out; returns the merged HTML report.
-    async fn phone_merge_reports(&self, req: &Request<'_>, body: &mut dyn BodyStream) -> Response {
-        let mut buf = Vec::new();
-        loop {
-            match body.next_chunk().await {
-                Ok(Some(c)) => buf.extend_from_slice(&c),
-                Ok(None) => break,
-                Err(e) => return Response::error(400, &e),
-            }
-        }
-        let parsed: crate::loadtest::LoadTestMergeRequest = match serde_json::from_slice(&buf) {
-            Ok(r) => r,
-            Err(e) => return Response::error(400, &format!("bad merge JSON: {e}")),
-        };
-        let provided = req
-            .loadtest_token
-            .or(query_param(req.query, "token"))
-            .or(parsed.token.as_deref());
-        if let Some(deny) = self.loadtest_auth_error(provided) {
-            return deny;
-        }
-        if !parsed.confirm {
-            return Response::error(400, "set confirm=true");
-        }
-        if parsed.parts.is_empty() {
-            return Response::error(400, "parts must be non-empty");
-        }
-        let peak = query_param(req.query, "peak")
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(crate::loadtest::PHONE_DEFAULT_PEAK);
-        let peak = crate::loadtest::clamp_phone_peak(peak);
-        let duration = query_param(req.query, "duration")
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(crate::loadtest::PHONE_DEFAULT_DURATION_SECS)
-            .clamp(1, crate::loadtest::MAX_DURATION_SECS);
-        let budget = parsed
-            .budget_usd
-            .unwrap_or(parsed.parts.iter().map(|p| p.budget_usd).sum::<f64>())
-            .clamp(0.01, crate::loadtest::MAX_BUDGET_USD);
-        let repo = parsed.parts[0].repo.clone();
-        let tip = parsed.parts[0].tip.clone();
-        let n = parsed.parts.len() as u32;
-        let report = crate::loadtest::merge_shard_reports(&repo, &tip, budget, n, &parsed.parts);
-        let token = provided.map(percent_decode);
-        Response::ok(
-            "text/html; charset=utf-8",
-            crate::loadtest::html_report(&report, token.as_deref(), peak, duration).into_bytes(),
-        )
-    }
-
-    /// `GET /loadtest` — phone-friendly HTML. Without `run=1`, shows a
-    /// landing page with budget / peak / shards controls. With `run=1`, runs a
-    /// budget-capped load test into one disposable repo and prints the report
-    /// (in-process; the landing page JS fans out shards from the browser).
-    /// Query knobs: `budget`, `peak` (concurrent writers, each on its own
-    /// branch), `shards` (Worker isolates for the same repo), `duration`
-    /// (seconds per stage), `token`.
-    async fn phone_loadtest(&self, req: &Request<'_>) -> Response {
-        let query = req.query;
-        let budget = query_param(query, "budget")
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(crate::loadtest::PHONE_DEFAULT_BUDGET_USD)
-            .clamp(0.01, crate::loadtest::MAX_BUDGET_USD);
-        let duration = query_param(query, "duration")
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(crate::loadtest::PHONE_DEFAULT_DURATION_SECS)
-            .clamp(1, crate::loadtest::MAX_DURATION_SECS);
-        let peak = query_param(query, "peak")
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(crate::loadtest::PHONE_DEFAULT_PEAK);
-        let peak = crate::loadtest::clamp_phone_peak(peak);
-        let shards = query_param(query, "shards")
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(crate::loadtest::PHONE_DEFAULT_SHARDS);
-        let shards = crate::loadtest::clamp_phone_shards(shards);
-        let (peak, shards) = crate::loadtest::phone_fanout_plan(peak, shards);
-        let token = req
-            .loadtest_token
-            .or(query_param(query, "token"))
-            .map(percent_decode);
-        let token = token.as_deref();
-
-        let run = query_param(query, "run")
-            .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        if !run {
-            return Response::ok(
-                "text/html; charset=utf-8",
-                crate::loadtest::html_landing(budget, duration, peak, shards, token).into_bytes(),
-            );
-        }
-        if let Some(deny) = self.loadtest_auth_error(token) {
-            let msg = match deny.status {
-                503 => "LOADTEST_TOKEN secret is not configured on this Worker.",
-                _ => "Missing or invalid token. Open /loadtest?token=YOUR_TOKEN",
-            };
-            return Response::ok(
-                "text/html; charset=utf-8",
-                format!(
-                    "<!doctype html><meta name=viewport content=\"width=device-width,initial-scale=1\">\
-                     <pre style=\"padding:1.5rem;font:1rem sans-serif\">{msg}</pre>"
-                )
-                .into_bytes(),
-            );
-        }
-
-        let repo = crate::loadtest::phone_repo_name();
-        let phone_req = crate::loadtest::phone_request(budget, duration, peak, shards);
-        let cfg = match phone_req.into_config() {
-            Ok(c) => c,
-            Err(e) => {
-                return Response::ok(
-                    "text/html; charset=utf-8",
-                    format!("<pre>bad config: {e}</pre>").into_bytes(),
-                );
-            }
-        };
-        let http = self.coordinator_http();
-        match crate::loadtest::execute(&http, &repo, &cfg).await {
-            Ok(report) => Response::ok(
-                "text/html; charset=utf-8",
-                crate::loadtest::html_report(&report, token, peak, duration).into_bytes(),
-            ),
-            Err(e) => Response::ok(
-                "text/html; charset=utf-8",
-                format!("<pre>loadtest failed: {e}</pre>").into_bytes(),
-            ),
-        }
-    }
-
-    /// Keep shard fan-out so multi-isolate single-repo runs can self-fetch.
-    fn coordinator_http(&self) -> GitHttp {
-        let mut http = GitHttp::new(self.store.clone(), self.states.clone())
-            .with_push_limit(self.push_limit_bytes);
-        http.loadtest_auth_required = false;
-        http.loadtest_token = None;
-        http.loadtest_fanout = self.loadtest_fanout.clone();
-        http
-    }
-
-    /// `None` = authorized. `Some(response)` = reject.
-    fn loadtest_auth_error(&self, provided: Option<&str>) -> Option<Response> {
-        if !self.loadtest_auth_required && self.loadtest_token.is_none() {
-            return None;
-        }
-        let Some(expected) = self.loadtest_token.as_deref() else {
-            return Some(Response::error(
-                503,
-                "LOADTEST_TOKEN secret is not configured",
-            ));
-        };
-        if !crate::loadtest::token_matches(provided.unwrap_or(""), expected) {
-            return Some(Response::error(401, "invalid or missing loadtest token"));
-        }
-        None
     }
 
     async fn api_file(&self, repo: &Repo<'_>, refish: &str, path: &str) -> Response {

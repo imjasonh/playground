@@ -138,7 +138,6 @@ fn large_push_and_clone_fit_isolate_memory() {
             git_protocol: None,
             content_encoding: None,
             cf_ray: None,
-            loadtest_token: None,
         };
         server.handle(&req, &mut body, "mem-push").await
     });
@@ -195,7 +194,6 @@ fn large_push_and_clone_fit_isolate_memory() {
             git_protocol: Some("version=2"),
             content_encoding: None,
             cf_ray: None,
-            loadtest_token: None,
         };
         let resp = server.handle(&req, &mut body, "mem-clone").await;
         assert_eq!(resp.status, 200);

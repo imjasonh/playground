@@ -60,7 +60,7 @@ pub struct Metrics {
 
 thread_local! {
     /// Stack of in-flight collectors. Nested / concurrent `handle()` calls
-    /// on one isolate (the in-Worker loadtest) push a fresh frame so they
+    /// on one isolate push a fresh frame so they
     /// do not clobber each other; [`begin`] / [`take`] are paired per
     /// request.
     static ACTIVE: RefCell<Vec<Metrics>> = const { RefCell::new(Vec::new()) };
@@ -79,18 +79,6 @@ pub fn now_ms() -> f64 {
         static START: OnceLock<Instant> = OnceLock::new();
         START.get_or_init(Instant::now).elapsed().as_secs_f64() * 1e3
     }
-}
-
-/// Push a disposable metrics frame so nested work (e.g. loadtest auto-repack)
-/// does not attribute its backend ops to a sibling in-flight request on the
-/// same isolate. Pair with [`discard`].
-pub fn begin_detached() {
-    ACTIVE.with(|a| a.borrow_mut().push(Metrics::default()));
-}
-
-/// Drop the top metrics frame without returning it (see [`begin_detached`]).
-pub fn discard() {
-    let _ = take();
 }
 
 /// Start collecting for the current request (pushes a fresh frame).

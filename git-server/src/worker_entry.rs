@@ -426,43 +426,6 @@ impl BodyStream for WorkerBody {
     }
 }
 
-/// Fully-buffered body (loadtest JSON is small and read once up front).
-struct BytesBody {
-    chunks: std::collections::VecDeque<Vec<u8>>,
-}
-
-impl BytesBody {
-    fn new(bytes: Vec<u8>) -> Self {
-        let mut chunks = std::collections::VecDeque::new();
-        if !bytes.is_empty() {
-            chunks.push_back(bytes);
-        }
-        Self { chunks }
-    }
-}
-
-#[async_trait(?Send)]
-impl BodyStream for BytesBody {
-    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
-        Ok(self.chunks.pop_front())
-    }
-}
-
-enum IncomingBody {
-    Bytes(BytesBody),
-    Stream(WorkerBody),
-}
-
-#[async_trait(?Send)]
-impl BodyStream for IncomingBody {
-    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, String> {
-        match self {
-            IncomingBody::Bytes(b) => b.next_chunk().await,
-            IncomingBody::Stream(b) => b.next_chunk().await,
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Entry points
 // ---------------------------------------------------------------------------
@@ -498,22 +461,6 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
     {
         server = server.with_push_limit(limit);
     }
-    // Loadtest routes require LOADTEST_TOKEN (Workers secret). Fail closed
-    // when unset so an open Worker can't be burned by strangers.
-    match env.secret("LOADTEST_TOKEN") {
-        Ok(s) => {
-            let t = s.to_string();
-            if t.is_empty() {
-                server = server.with_loadtest_auth_required();
-            } else {
-                server = server.with_loadtest_token(t);
-            }
-        }
-        Err(_) => {
-            server = server.with_loadtest_auth_required();
-        }
-    }
-
     let url = req.url()?;
     let path = url.path().to_string();
     let query = url.query().map(|q| q.to_string());
@@ -521,17 +468,11 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
     let git_protocol = req.headers().get("Git-Protocol").ok().flatten();
     let content_encoding = req.headers().get("Content-Encoding").ok().flatten();
     let cf_ray = req.headers().get("cf-ray").ok().flatten();
-    let loadtest_token = req.headers().get("X-Loadtest-Token").ok().flatten();
-
-    // Multi-shard phone runs fan out from the browser (parallel POSTs), not via
-    // Worker self-fetch — CF blocks same-zone Worker→Worker (1042 / 1019 / 500).
 
     let span_name = if path.contains("git-receive-pack") {
         "git.receive_pack"
     } else if path.contains("git-upload-pack") {
         "git.upload_pack"
-    } else if path == "/loadtest" || path.ends_with("/loadtest") {
-        "git.loadtest"
     } else if path.starts_with("/api/") {
         "git.api"
     } else {
@@ -561,7 +502,6 @@ async fn fetch(req: Request, env: Env, ctx: Context) -> worker::Result<Response>
             git_protocol,
             content_encoding,
             cf_ray,
-            loadtest_token,
         })
         .await
     })
@@ -579,7 +519,6 @@ struct FetchCtx {
     git_protocol: Option<String>,
     content_encoding: Option<String>,
     cf_ray: Option<String>,
-    loadtest_token: Option<String>,
 }
 
 async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
@@ -594,24 +533,10 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
         git_protocol,
         content_encoding,
         cf_ray,
-        loadtest_token,
     } = ctx;
 
-    // Buffer loadtest JSON so the router can parse it (small body).
-    let mut body = if method == "POST" && (path.ends_with("/loadtest") || path == "/loadtest/merge")
-    {
-        let mut buf = Vec::new();
-        if let Ok(mut stream) = req.stream() {
-            use futures::StreamExt;
-            while let Some(chunk) = stream.next().await {
-                buf.extend_from_slice(&chunk.map_err(|e| worker::Error::RustError(e.to_string()))?);
-            }
-        }
-        IncomingBody::Bytes(BytesBody::new(buf))
-    } else {
-        IncomingBody::Stream(WorkerBody {
-            stream: req.stream().ok(),
-        })
+    let mut body = WorkerBody {
+        stream: req.stream().ok(),
     };
 
     let http_req = HttpRequest {
@@ -621,7 +546,6 @@ async fn fetch_inner(ctx: FetchCtx) -> worker::Result<Response> {
         git_protocol: git_protocol.as_deref(),
         content_encoding: content_encoding.as_deref(),
         cf_ray: cf_ray.as_deref(),
-        loadtest_token: loadtest_token.as_deref(),
     };
 
     let nonce = request_nonce();

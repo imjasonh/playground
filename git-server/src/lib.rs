@@ -30,8 +30,6 @@
 //! * [`maintenance`] — budgeted, resumable repacking for scheduled Workers.
 //! * [`http`] — the transport-agnostic HTTP request router shared by the
 //!   Workers entry point, the native test server, and the benchmarks.
-//! * [`loadtest`] — in-process / in-Worker load generator with QPS, per-op
-//!   cost, and budget-capped reporting.
 //! * [`trace`] — Cloudflare Workers custom-span tracing (no-op natively).
 //!
 //! See `docs/design.md` for the full architecture, streaming strategy, cost
@@ -43,7 +41,6 @@ pub mod diff;
 pub mod fileapi;
 pub mod filter;
 pub mod http;
-pub mod loadtest;
 pub mod maintenance;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod memtrack;
