@@ -71,9 +71,14 @@ impl IndexCache {
     }
 
     fn put(&mut self, key: String, index: &PackIndex) {
-        if self.map.contains_key(&key) {
-            self.touch(&key);
-            return;
+        // Replace on hit: pack ids can be reused after deferred deletion, and
+        // keeping the stale GSIX poisons every later open of that id (lookups
+        // miss; pushes fail with "object … not found").
+        if let Some(old) = self.map.remove(&key) {
+            self.bytes = self.bytes.saturating_sub(Self::index_bytes(&old));
+            if let Some(i) = self.order.iter().position(|k| k == &key) {
+                self.order.remove(i);
+            }
         }
         let n = Self::index_bytes(index);
         while self.bytes + n > INDEX_CACHE_BUDGET && !self.order.is_empty() {
@@ -92,6 +97,15 @@ impl IndexCache {
         self.map.insert(key.clone(), index.clone());
         self.order.push_back(key);
     }
+
+    fn forget(&mut self, key: &str) {
+        if let Some(old) = self.map.remove(key) {
+            self.bytes = self.bytes.saturating_sub(Self::index_bytes(&old));
+        }
+        if let Some(i) = self.order.iter().position(|k| k == key) {
+            self.order.remove(i);
+        }
+    }
 }
 
 fn cached_index(key: &str) -> Option<PackIndex> {
@@ -101,6 +115,11 @@ fn cached_index(key: &str) -> Option<PackIndex> {
 /// Remember a pack index (call after writing it to R2, or on a cache miss).
 pub fn remember_index(repo: &str, pack_id: &str, index: &PackIndex) {
     INDEX_CACHE.with(|c| c.borrow_mut().put(index_key(repo, pack_id), index));
+}
+
+/// Drop a cached index (call when the pack is deleted after the retire grace).
+pub fn forget_index(repo: &str, pack_id: &str) {
+    INDEX_CACHE.with(|c| c.borrow_mut().forget(&index_key(repo, pack_id)));
 }
 
 #[cfg(test)]
@@ -145,39 +164,47 @@ const CONTENT_CACHE_BUDGET: usize = 48 * 1024 * 1024;
 const TREE_CACHE_MAX_ENTRIES: usize = 100_000;
 
 impl<'a> Odb<'a> {
-    /// Load the indexes for `pack_ids` (one Class B read per pack).
-    /// Reads run concurrently so a multi-pack repo pays one R2 round-trip,
-    /// not one per pack (Workers allow many outstanding subrequests).
+    /// Workers allow only a handful of simultaneous outbound connections;
+    /// loading hundreds of pack indexes with one `try_join_all` overflows
+    /// that and shows up as Error 1101 under multi-shard phone loadtests.
+    const INDEX_LOAD_BATCH: usize = 6;
+
+    /// Load the indexes for `pack_ids` (one Class B read per pack on cache
+    /// miss). Loads run in small concurrent batches.
     pub async fn open(
         store: &'a dyn Store,
         repo: &'a str,
         pack_ids: &[String],
     ) -> Result<Odb<'a>, String> {
         use futures::future::try_join_all;
-        let packs = try_join_all(pack_ids.iter().map(|id| {
-            let id = id.clone();
-            async move {
-                let key = index_key(repo, &id);
-                let index = if let Some(hit) = cached_index(&key) {
-                    hit
-                } else {
-                    let bytes = store
-                        .get(&key)
-                        .await
-                        .map_err(|e| e.to_string())?
-                        .ok_or_else(|| format!("missing pack index for {id}"))?;
-                    let index = PackIndex::from_bytes(&bytes)?;
-                    remember_index(repo, &id, &index);
-                    index
-                };
-                Ok::<_, String>(PackHandle {
-                    pack_id: id.clone(),
-                    index,
-                    reader: crate::storage::BlockReader::new(&pack_key(repo, &id)),
-                })
-            }
-        }))
-        .await?;
+        let mut packs = Vec::with_capacity(pack_ids.len());
+        for chunk in pack_ids.chunks(Self::INDEX_LOAD_BATCH) {
+            let batch = try_join_all(chunk.iter().map(|id| {
+                let id = id.clone();
+                async move {
+                    let key = index_key(repo, &id);
+                    let index = if let Some(hit) = cached_index(&key) {
+                        hit
+                    } else {
+                        let bytes = store
+                            .get(&key)
+                            .await
+                            .map_err(|e| e.to_string())?
+                            .ok_or_else(|| format!("missing pack index for {id}"))?;
+                        let index = PackIndex::from_bytes(&bytes)?;
+                        remember_index(repo, &id, &index);
+                        index
+                    };
+                    Ok::<_, String>(PackHandle {
+                        pack_id: id.clone(),
+                        index,
+                        reader: crate::storage::BlockReader::new(&pack_key(repo, &id)),
+                    })
+                }
+            }))
+            .await?;
+            packs.extend(batch);
+        }
         Ok(Odb {
             store,
             packs,
@@ -408,6 +435,52 @@ mod tests {
     use crate::storage::MemStore;
     use crate::testutil::install_pack;
     use futures::executor::block_on;
+
+    #[test]
+    fn index_cache_replaces_on_reused_pack_id() {
+        clear_index_cache_for_test();
+        block_on(async {
+            let store = MemStore::new();
+            let a = build_pack(&[(ObjType::Blob, b"alpha".to_vec())]);
+            let b = build_pack(&[(ObjType::Blob, b"beta".to_vec())]);
+            let id_a = install_pack(&store, "r", &a).await;
+            let idx_a =
+                PackIndex::from_bytes(&store.get(&index_key("r", &id_a)).await.unwrap().unwrap())
+                    .unwrap();
+            // Poison: remember A's index under a shared key that B will reuse.
+            let shared = "shared-id".to_string();
+            remember_index("r", &shared, &idx_a);
+            // Install B under that same pack id (overwrite store objects).
+            store
+                .put(&pack_key("r", &shared), b.to_vec())
+                .await
+                .unwrap();
+            let mut s = crate::pack::PackScanner::new();
+            s.feed(&b).unwrap();
+            let scanned = s.finish().unwrap();
+            let recs = crate::pack::index::resolve_pack(
+                &store,
+                &pack_key("r", &shared),
+                &scanned,
+                &crate::pack::index::NoExternalBases,
+            )
+            .await
+            .unwrap();
+            let idx_b = PackIndex::new(recs);
+            store
+                .put(&index_key("r", &shared), idx_b.to_bytes())
+                .await
+                .unwrap();
+            // put() must replace the poisoned A entry with B.
+            remember_index("r", &shared, &idx_b);
+            let odb = Odb::open(&store, "r", &[shared]).await.unwrap();
+            let alpha = hash_object(ObjType::Blob, b"alpha");
+            let beta = hash_object(ObjType::Blob, b"beta");
+            assert!(odb.contains(beta), "replaced cache must serve new pack");
+            assert!(!odb.contains(alpha), "stale index must not linger");
+        });
+        clear_index_cache_for_test();
+    }
 
     #[test]
     fn index_cache_skips_repeat_r2_gets() {

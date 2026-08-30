@@ -204,6 +204,7 @@ async fn repack_leased(
     for id in &sweep {
         let _ = repo.store.delete(&pack_key(repo.name, id)).await;
         let _ = repo.store.delete(&index_key(repo.name, id)).await;
+        crate::odb::forget_index(repo.name, id);
         let _ = delete_filelog(repo.store, repo.name, id).await;
     }
 

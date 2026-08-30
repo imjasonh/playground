@@ -1588,8 +1588,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       out = "CF " + codes.join("/") + ": " + out;
     }}
     if (codes.indexOf("1101") >= 0) {{
-      out += " — Worker threw (often too many nested subrequests, or a panic)." +
-        " Phone shards skip inline auto-repack and cap ops/loop; hard-refresh if you still see this.";
+      out += " — Worker threw (subrequest/memory/panic). Caps are enforced in CI" +
+        " (phone_shard_peak_under_worker_subrequest_budget); hard-refresh after deploy.";
     }}
     if (codes.indexOf("1102") >= 0) {{
       out += " — Worker exceeded CPU or memory (128 MiB). Raise shards or shorten duration.";
@@ -1645,6 +1645,34 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       credentials: "same-origin",
       headers: jsonHeaders(),
       body: JSON.stringify(body)
+    }});
+  }}
+  /** Cap parallel shard POSTs so one phone does not stampede the DO. */
+  var shardPostConcurrency = 4;
+  function mapPool(items, limit, fn) {{
+    var i = 0;
+    var running = 0;
+    var results = new Array(items.length);
+    return new Promise(function (resolve, reject) {{
+      function kick() {{
+        if (i >= items.length && running === 0) {{
+          resolve(results);
+          return;
+        }}
+        while (running < limit && i < items.length) {{
+          (function (idx) {{
+            running++;
+            Promise.resolve(fn(items[idx], idx)).then(function (v) {{
+              results[idx] = v;
+              running--;
+              kick();
+            }}, function (err) {{
+              reject(err);
+            }});
+          }})(i++);
+        }}
+      }}
+      kick();
     }});
   }}
   /** Split one stage's concurrency across shards (capped per isolate). */
@@ -1721,32 +1749,29 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         }}
         var stage = stages[stageIdx];
         phase = "stage " + (stageIdx + 1) + "/" + stages.length;
-        var posts = [];
+        var jobs = [];
         for (var i = 0; i < shards; i++) {{
-          (function (idx) {{
-            var slice = partitionOneStage(stage, shards, idx);
-            if (!slice) return;
-            posts.push(
-              postLoadtest("shard " + idx + " stage " + stageIdx, repo, {{
-                confirm: true,
-                budget_usd: stageBudget,
-                duration_secs: duration,
-                stages: [slice],
-                shard: true,
-                tip: tip,
-                shard_index: idx,
-                shards: 1
-              }}).then(function (rep) {{
-                parts[idx] = appendStageReport(parts[idx], rep);
-                return rep;
-              }})
-            );
-          }})(i);
+          var slice = partitionOneStage(stage, shards, i);
+          if (slice) jobs.push({{ idx: i, slice: slice }});
         }}
-        if (!posts.length) {{
+        if (!jobs.length) {{
           return runStage(stageIdx + 1);
         }}
-        return Promise.all(posts).then(function () {{
+        return mapPool(jobs, shardPostConcurrency, function (job) {{
+          return postLoadtest("shard " + job.idx + " stage " + stageIdx, repo, {{
+            confirm: true,
+            budget_usd: stageBudget,
+            duration_secs: duration,
+            stages: [job.slice],
+            shard: true,
+            tip: tip,
+            shard_index: job.idx,
+            shards: 1
+          }}).then(function (rep) {{
+            parts[job.idx] = appendStageReport(parts[job.idx], rep);
+            return rep;
+          }});
+        }}).then(function () {{
           return runStage(stageIdx + 1);
         }});
       }};
@@ -2384,6 +2409,128 @@ mod tests {
             assert!(
                 report.budget_limited || report.total_cost_usd > 0.0,
                 "{report:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn phone_shard_peak_under_worker_subrequest_budget() {
+        // Mirrors production phone peak: build a multi-shard backlog with no
+        // inline repack, then run one shard peak POST. Fail in CI when that
+        // POST's R2+DO subrequest estimate exceeds the soft phone cap (so we
+        // do not discover Error 1101 only after deploy).
+        block_on(async {
+            crate::odb::clear_index_cache_for_test();
+            crate::repo::clear_filelog_cache_for_test();
+
+            let mem = MemStore::new();
+            let store = Rc::new(mem.clone()) as Rc<dyn Store>;
+            let states = Rc::new(MemStateStore::new()) as Rc<dyn StateStore>;
+            let http = GitHttp::new(store.clone(), states.clone());
+
+            let seed = run_in_process(
+                store.clone(),
+                states.clone(),
+                "lt-budget-backlog",
+                LoadTestRequest {
+                    confirm: true,
+                    budget_usd: Some(0.05),
+                    duration_secs: Some(1),
+                    stages: Some(vec![StageSpec {
+                        writers: 1,
+                        readers: 0,
+                    }]),
+                    shards: Some(1),
+                    shard: false,
+                    tip: None,
+                    shard_index: None,
+                    token: None,
+                },
+            )
+            .await
+            .expect("seed");
+            // Seed may have reused short `lt-N` pack ids that still sit in the
+            // isolate INDEX_CACHE; clear so backlog packs with the same ids
+            // are not served a stale GSIX (mirrors forget_index on delete).
+            crate::odb::clear_index_cache_for_test();
+            crate::repo::clear_filelog_cache_for_test();
+            let tip = seed.tip.clone();
+            let tip_oid = Oid::from_hex(&tip).expect("tip");
+
+            // Backlog ≈ (MAX_SHARDS - 1) × max ops — what shard 15 sees when
+            // siblings already finished a full peak loop without folding.
+            let backlog_pushes = (PHONE_MAX_SHARDS as u64 - 1) * PHONE_MAX_OPS_PER_LOOP as u64;
+            // Sequential FF on one branch builds the same pack/filelog backlog
+            // shape a multi-shard peak leaves for a late shard.
+            let driver = InProcessDriver::new(http, "lt-budget-backlog");
+            let mut old = Oid::ZERO;
+            let mut tip_commit = tip_oid;
+            for i in 0..backlog_pushes {
+                let (oid, pack) = build_writer_pack(tip_commit, 42, i);
+                let body = build_push_body(old, oid, "refs/heads/load/backlog", &pack);
+                let a = driver.push(body).await.expect("backlog push");
+                assert_eq!(a.outcome, AttemptOutcome::Ok, "i={i} {a:?}");
+                old = oid;
+                tip_commit = oid;
+            }
+
+            let packs = {
+                let repo = crate::repo::Repo {
+                    store: store.as_ref(),
+                    states: states.as_ref(),
+                    name: "lt-budget-backlog",
+                };
+                repo.load_state().await.expect("state").state.packs.len()
+            };
+            assert!(
+                packs as u64 > backlog_pushes / 2,
+                "expected large backlog, packs={packs}"
+            );
+
+            mem.reset_op_counts();
+            let peak = run_in_process(
+                store.clone(),
+                states.clone(),
+                "lt-budget-backlog",
+                LoadTestRequest {
+                    confirm: true,
+                    budget_usd: Some(1.0),
+                    duration_secs: Some(PHONE_DEFAULT_DURATION_SECS),
+                    stages: Some(vec![StageSpec {
+                        writers: 1,
+                        readers: 0,
+                    }]),
+                    shards: Some(1),
+                    shard: true,
+                    tip: Some(tip),
+                    shard_index: Some(15),
+                    token: None,
+                },
+            )
+            .await
+            .expect("peak shard");
+
+            let ops = mem.op_counts();
+            let push_n = peak.cost_per_push.samples.max(1);
+            let do_est = push_n * 2;
+            let subreqs = ops.class_a + ops.class_b + do_est;
+            // Soft cap: leave headroom under wrangler `subrequests = 100000`.
+            // Measured ~180 with a 300-pack backlog + push-pack tail (see
+            // `odb_tail`). Fail well below the Worker ceiling so regressions
+            // in per-push fan-out are caught in CI, not after deploy.
+            const PHONE_SHARD_SUBREQUEST_SOFT_CAP: u64 = 1_000;
+            assert!(
+                peak.cost_per_push.samples > 0,
+                "peak shard made no pushes: {peak:?}"
+            );
+            assert!(
+                subreqs <= PHONE_SHARD_SUBREQUEST_SOFT_CAP,
+                "phone peak shard burned {subreqs} subrequests \
+                 (A={} B={} DO≈{do_est} packs={packs} pushes={}); \
+                 lower PHONE_MAX_OPS_PER_LOOP or flatten per-push fan-out",
+                ops.class_a,
+                ops.class_b,
+                peak.cost_per_push.samples
             );
         });
     }
