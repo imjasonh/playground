@@ -58,32 +58,51 @@ fn score_unit(game: &Game, unit_id: u8) -> i64 {
     if enemies.is_empty() {
         return 0;
     }
-    let can_see_any = enemies.iter().any(|e| sees_enemy(game, unit, e));
     let nearest = enemies
         .iter()
         .map(|e| unit.pos.distance(e.pos))
         .min()
         .unwrap_or(99);
     let mut score = 0i64;
-    if can_see_any {
-        score += 10_000;
-    }
     score -= i64::from(nearest) * 10;
+    // Round-robin: units that have acted less get priority.
+    score -= i64::from(unit.activations_taken) * 800;
     if unit.on_fire {
         score -= 1_000;
     }
-    score
-}
 
-fn sees_enemy(game: &Game, unit: &crate::unit::Tank, enemy: &crate::unit::Tank) -> bool {
     match unit.kind {
-        UnitKind::Apc => enemy.kind == UnitKind::Infantry && game.can_see_ai(unit, enemy),
-        UnitKind::Infantry => {
-            game.can_see(unit, enemy)
-                || (enemy.kind == UnitKind::Infantry && game.can_see_ai(unit, enemy))
+        UnitKind::Tank => {
+            if enemies.iter().any(|e| game.can_see(unit, e)) {
+                score += 12_000;
+            }
         }
-        UnitKind::Tank => game.can_see(unit, enemy),
+        UnitKind::Infantry => {
+            if enemies.iter().any(|e| game.can_see(unit, e)) {
+                score += 10_000;
+            } else if enemies
+                .iter()
+                .any(|e| e.kind == UnitKind::Infantry && game.can_see_ai(unit, e))
+            {
+                score += 8_000;
+            }
+        }
+        UnitKind::Apc => {
+            if enemies
+                .iter()
+                .any(|e| e.kind == UnitKind::Infantry && game.can_see_ai(unit, e))
+            {
+                score += 9_000;
+            } else if enemies
+                .iter()
+                .any(|e| e.kind != UnitKind::Infantry && !e.suppressed && game.can_see_ai(unit, e))
+            {
+                // Suppress once; don't monopolize the side's activations.
+                score += 3_500;
+            }
+        }
     }
+    score
 }
 
 fn plan_for_unit<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
@@ -106,16 +125,17 @@ fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
         return Vec::new();
     }
 
-    // Air strike when several enemies cluster near each other.
-    if tank.has_air_support && !tank.air_strike_used && enemies.len() >= 2 {
-        let clustered = enemies.iter().any(|a| {
-            enemies
-                .iter()
-                .filter(|b| a.id != b.id)
-                .any(|b| a.pos.distance(b.pos) <= 2)
-        });
-        if clustered && rng.gen_bool(0.45) {
-            if let Some(nearest) = enemies.iter().min_by_key(|e| tank.pos.distance(e.pos)) {
+    // Air strike when enemies are nearby — don't wait for a perfect cluster.
+    if tank.has_air_support && !tank.air_strike_used {
+        if let Some(nearest) = enemies.iter().min_by_key(|e| tank.pos.distance(e.pos)) {
+            let close = tank.pos.distance(nearest.pos) <= 6;
+            let clustered = enemies.iter().any(|a| {
+                enemies
+                    .iter()
+                    .filter(|b| a.id != b.id)
+                    .any(|b| a.pos.distance(b.pos) <= 2)
+            });
+            if (close || clustered) && rng.gen_bool(0.55) {
                 return vec![Action::CallAirStrike { hex: nearest.pos }];
             }
         }
@@ -154,85 +174,77 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         return Vec::new();
     }
 
-    // Prefer missile shots on anything in LOS.
-    let mut actions = Vec::new();
-    let mut ap = unit.effective_actions();
-    for enemy in &enemies {
-        if ap <= 0 {
-            break;
-        }
+    // Prefer AT missiles on tanks/APCs in range, then anything else.
+    let mut ranked: Vec<&crate::unit::Tank> = enemies.to_vec();
+    ranked.sort_by_key(|e| {
+        let priority = match e.kind {
+            UnitKind::Tank => 0,
+            UnitKind::Apc => 1,
+            UnitKind::Infantry => 2,
+        };
+        (priority, unit.pos.distance(e.pos))
+    });
+
+    for enemy in &ranked {
         if game.can_see(unit, enemy) {
-            let round = if enemy.kind == UnitKind::Infantry || rng.gen_bool(0.4) {
+            let round = if enemy.kind == UnitKind::Infantry {
                 RoundKind::He
             } else {
                 RoundKind::At
             };
-            actions.push(Action::FireMissile {
+            return vec![Action::FireMissile {
                 target: enemy.id,
                 round,
-            });
-            ap -= 1;
-            break;
+            }];
         }
         if enemy.kind == UnitKind::Infantry && game.can_see_ai(unit, enemy) {
-            actions.push(Action::FireAi { target: enemy.id });
-            ap -= 1;
-            break;
+            return vec![Action::FireAi { target: enemy.id }];
         }
-    }
-    if !actions.is_empty() {
-        return actions;
     }
 
     let Some(enemy) = enemies.iter().min_by_key(|e| unit.pos.distance(e.pos)) else {
         return Vec::new();
     };
 
-    // Under threat (enemy within 3) → take cover if possible.
-    if unit.pos.distance(enemy.pos) <= 3 && !unit.in_cover && ap > 0 && rng.gen_bool(0.55) {
+    // Dig in when a vehicle is close and we have no shot yet.
+    if !unit.in_cover
+        && unit.pos.distance(enemy.pos) <= 4
+        && matches!(enemy.kind, UnitKind::Tank | UnitKind::Apc)
+        && rng.gen_bool(0.4)
+    {
         return vec![Action::TakeCover];
     }
 
-    // Step toward nearest enemy.
+    // Step toward nearest enemy (prefer forest approaches).
     let mut steps = Vec::new();
     let mut pos = unit.pos;
     let mut moves = 0i32;
+    let mut ap = unit.effective_actions();
     let max_move = unit.effective_max_move();
     while moves < max_move && ap > 0 {
-        let Some(need) = pos.facing_toward(enemy.pos) else {
-            break;
-        };
-        let next = pos.neighbor(need);
-        if !game.board.contains(next)
-            || game.board.terrain_at(next).impassable()
-            || game.occupied_hexes().contains(&next)
-        {
-            let mut best: Option<(Facing, Hex, i32)> = None;
-            for i in 0..6u8 {
-                let f = Facing::from_index(i);
-                let n = pos.neighbor(f);
-                if !game.board.contains(n)
-                    || game.board.terrain_at(n).impassable()
-                    || game.occupied_hexes().contains(&n)
-                {
-                    continue;
-                }
-                let d = n.distance(enemy.pos);
-                if best.is_none_or(|(_, _, bd)| d < bd) {
-                    best = Some((f, n, d));
-                }
-            }
-            if let Some((f, n, _)) = best {
-                steps.push(Action::Step(f));
-                pos = n;
-                moves += 1;
-                ap -= 1;
+        let mut best: Option<(Facing, Hex, i32)> = None;
+        for i in 0..6u8 {
+            let f = Facing::from_index(i);
+            let n = pos.neighbor(f);
+            if !game.board.contains(n)
+                || game.board.terrain_at(n).impassable()
+                || game.occupied_hexes().contains(&n)
+            {
                 continue;
             }
-            break;
+            let mut d = n.distance(enemy.pos) * 10;
+            if game.board.terrain_at(n) == Terrain::Forest {
+                d -= 3;
+            }
+            if best.is_none_or(|(_, _, bd)| d < bd) {
+                best = Some((f, n, d));
+            }
         }
-        steps.push(Action::Step(need));
-        pos = next;
+        let Some((f, n, _)) = best else {
+            break;
+        };
+        steps.push(Action::Step(f));
+        pos = n;
         moves += 1;
         ap -= 1;
     }
@@ -251,12 +263,27 @@ fn apc_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         .filter(|e| e.kind == UnitKind::Infantry)
         .collect();
 
+    // Kill infantry first when in AI range.
     for enemy in &infantry {
         if game.can_see_ai(unit, enemy) {
             return vec![Action::FireAi { target: enemy.id }];
         }
     }
 
+    // Otherwise suppress one unsuppressed vehicle in AI range.
+    let mut vehicles: Vec<&crate::unit::Tank> = enemies
+        .iter()
+        .copied()
+        .filter(|e| e.kind != UnitKind::Infantry && !e.suppressed)
+        .collect();
+    vehicles.sort_by_key(|e| unit.pos.distance(e.pos));
+    for enemy in &vehicles {
+        if game.can_see_ai(unit, enemy) {
+            return vec![Action::FireAi { target: enemy.id }];
+        }
+    }
+
+    // After spraying, push toward infantry (or any enemy) instead of camping.
     let target = infantry
         .iter()
         .copied()

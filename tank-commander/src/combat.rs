@@ -4,7 +4,7 @@
 //! after [`resolve_shot`] when the target kind is Infantry and `ev.hit`.
 
 use crate::dice::{penetrates, succeeds};
-use crate::unit::{CrewStatus, ImpactFacing, RoundKind, Tank};
+use crate::unit::{CrewStatus, ImpactFacing, RoundKind, Tank, UnitKind};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -191,7 +191,7 @@ pub fn end_of_turn_hazards<R: Rng>(rng: &mut R, tank: &mut Tank) -> Vec<CombatEv
         out.push(ev);
     }
 
-    if tank.disabled && !tank.destroyed {
+    if tank.disabled && !tank.destroyed && tank.kind != UnitKind::Infantry {
         let roll = rng.gen_range(1..=6);
         // Cook-off on 4+ (1 always fails, 6 always succeeds).
         if succeeds(roll, 4) {

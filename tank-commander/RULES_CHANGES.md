@@ -273,8 +273,29 @@ scenarios behind `--scenario`:
 | Scenario | Force | Cap |
 |----------|-------|----:|
 | `skirmish` | 1v1 tanks on 11×9 | 20 |
-| `combined` | tank (air support) + APC + infantry / side on 15×11 | 160 + idle-32 |
+| `combined` | tank (air support) + APC + infantry / side on 17×13 plaza | 160 + idle-32 |
 | `platoon` | 3v3 tanks on 19×15 plaza funnel | 200 + idle-40 |
+
+---
+
+## 2026-08-30 — Combined arms: make every piece matter
+
+**Problem.** Combined was mostly a tank-vs-APC duel. Infantry rarely fired,
+air strikes dithered for many activations then hit empty hexes, and APCs
+had no job once infantry were gone.
+
+**Changes.**
+1. Air strike arrives at the end of the caller's next activation (no delay
+   dice); blast template is aim hex + all neighbors.
+2. Infantry: stepping into forest digs in; cover saves once (pin + suppress
+   instead of die); missiles prefer tanks; range 4.
+3. APC AI spray can suppress vehicles (not only kill infantry).
+4. Combined board → 17×13 plaza funnel (same idea as platoon).
+5. Activation fairness so one APC cannot monopolize the side forever.
+
+**Effect (80 games, seed 7):** Red 33 / Blue 46 / Draw 1 (99% decisive).
+0% hard timeout. Avg air strikes ~2.0, suppressions up. Pens ~9, moves ~35.
+Still a bit second-player lean — worth watching.
 
 ---
 

@@ -156,7 +156,8 @@ pub struct Tank {
     /// Tank upgrade: may call one air strike this battle.
     pub has_air_support: bool,
     pub air_strike_used: bool,
-    /// Medkit not yet implemented in v1; reserved for later loadouts.
+    /// Activations this unit has taken (AI fairness / round-robin).
+    pub activations_taken: u32,
     pub moves_this_turn: i32,
 }
 
@@ -197,6 +198,7 @@ impl Tank {
             in_cover: false,
             has_air_support: false,
             air_strike_used: false,
+            activations_taken: 0,
             moves_this_turn: 0,
         }
     }
@@ -238,6 +240,7 @@ impl Tank {
             in_cover: false,
             has_air_support: false,
             air_strike_used: false,
+            activations_taken: 0,
             moves_this_turn: 0,
         }
     }
@@ -267,7 +270,7 @@ impl Tank {
             max_hull_points: 1,
             actions_per_turn: 3,
             max_move: 2,
-            gun_range: 3, // missile launcher
+            gun_range: 4, // missile launcher — reach plaza from forest approaches
             ai_range: 2,
             loaded: None, // missiles need no load
             has_he: true,
@@ -279,6 +282,7 @@ impl Tank {
             in_cover: false,
             has_air_support: false,
             air_strike_used: false,
+            activations_taken: 0,
             moves_this_turn: 0,
         }
     }

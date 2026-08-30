@@ -8,12 +8,12 @@ Three scenarios share the same engine and heuristic AI:
 | Scenario | Force | Board | Cap / idle stop |
 |----------|-------|-------|-----------------|
 | `skirmish` | 1v1 stock tanks | 11×9 | 20 hard (10/side) |
-| `combined` | tank + APC + infantry / side | 15×11 | 160 hard; idle after 32 no-hit |
+| `combined` | tank + APC + infantry / side | 17×13 plaza | 160 hard; idle after 32 no-hit |
 | `platoon` | 3v3 stock tanks | 19×15 funnel | 200 hard; idle after 40 no-hit |
 
-Platoon seals the midline except a **wide plaza gap** (no parallel N/S
-lanes) so the three tanks per side cannot pair off. Games run until a wipe
-or a true post-contact no-hit drought — not a short turn clock.
+Platoon and combined seal the midline except a **wide plaza gap** so forces
+cannot pair off down parallel lanes. Combined adds forest approaches for
+infantry cover, reliable next-activation air strikes, and APC vehicle spray.
 
 House rules live in [`RULES_CHANGES.md`](RULES_CHANGES.md).
 
@@ -38,7 +38,8 @@ Focus is **drama** and **stalemates**:
 | pens / glances / fires / cook-offs | How often shots do something cinematic |
 | crew wounds / kills / abilities used | Narrative crew arc |
 | comebacks | Side that trailed on HP still won |
-| timed-out | Hit the activation cap with both sides still fighting |
+| timed-out | Hit the hard activation cap with both sides still fighting |
+| idle-stalemate | Post-contact no-hit drought ended the game |
 | low engagement | Few shots relative to activations |
 | late stalemate | Long no-hit streak near the end |
 | moves / hull turns / turret | Whether units maneuver or only duel in place |
@@ -57,23 +58,26 @@ cross simple thresholds.
   of that activation.
 - **Multi-unit activation.** Each turn the AI picks one operational unit on
   the active side. Fire actions name a specific target.
-- **Turn limit.** The rules say the battle ends after 10 turns. Skirmish maps
-  that to 10 activations per side. Platoon and combined raise the budget so
-  each unit can still act a few times.
+- **Turn limit.** Skirmish keeps a short hard cap (20). Platoon/combined use
+  a high safety-valve cap and stop early only on a post-contact no-hit
+  drought (idle stalemate), so fights can resolve to a wipe.
 - **Turret arc.** Tanks need the nearest hex facing to match the turret.
   Infantry missiles ignore turret arc; APCs use AI weapons against infantry.
 - **Hull turn vs turret.** On hull turn, the turret keeps its absolute facing
   (relative offset shifts).
-- **Win.** Disable or destroy every enemy unit. On timeout, higher remaining
-  hull points wins; tie is a draw.
+- **Win.** Disable or destroy every enemy unit. On hard timeout or idle
+  stalemate, more operational units wins, then remaining hull; tie is a draw.
 - **AI.** When LOS is blocked, pathfind to a firing hex. When LOS is open,
   beam-search shoot / load / ability plans. Infantry prefer missiles and
   cover; APCs hunt infantry; tanks with air support may call a strike.
 - **Map.** Skirmish stays on an 11×9 board with a compact midline block.
-  Combined uses 15×11. Platoon uses 19×15 with a sealed midline and a wide
-  plaza gap (plus side baffles) so tanks funnel into one fight instead of
-  pairing down parallel lanes. Forest/mud/rubble scatter outside reserved
-  hexes.
+  Combined uses 17×13 and platoon 19×15, both with a sealed midline and a
+  wide plaza gap (plus side baffles) so units funnel into one fight.
+  Forest/mud/rubble scatter outside reserved hexes; infantry stepping into
+  forest dig in automatically.
+- **Combined arms.** Air strikes arrive at the end of the caller's next
+  activation (blast = aim hex + neighbors). Cover saves infantry once
+  (pin + suppress). APC AI spray can suppress vehicles.
 - **Platoon clock.** Hard cap 200 activations as a safety valve. After
   first contact, 40 activations with no hit ends the game as an idle
   stalemate (scored like a timeout). In practice platoon games wipe before

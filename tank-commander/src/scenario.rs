@@ -134,47 +134,35 @@ fn platoon_alley_clear() -> Vec<Hex> {
     clear
 }
 
-/// Combined: 15×11 — between skirmish and platoon.
-const COMBINED_WALL: [Hex; 17] = [
-    Hex::new(6, 3),
-    Hex::new(6, 4),
-    Hex::new(6, 5),
-    Hex::new(6, 6),
-    Hex::new(6, 7),
-    Hex::new(7, 3),
-    Hex::new(7, 4),
-    Hex::new(7, 5),
-    Hex::new(7, 6),
-    Hex::new(7, 7),
-    Hex::new(8, 3),
-    Hex::new(8, 4),
-    Hex::new(8, 5),
-    Hex::new(8, 6),
-    Hex::new(8, 7),
-    // Wing scraps.
-    Hex::new(2, 8),
-    Hex::new(12, 2),
-];
-const COMBINED_ALLEY: [Hex; 6] = [
-    Hex::new(7, 0),
-    Hex::new(7, 1),
-    Hex::new(7, 2),
-    Hex::new(7, 8),
-    Hex::new(7, 9),
-    Hex::new(7, 10),
-];
-const COMBINED_GOALS: [Hex; 2] = [Hex::new(7, 1), Hex::new(7, 9)];
+/// Combined: 17×13 sealed midline with a wide plaza + forest approaches.
+fn combined_wall(height: i32) -> Vec<Hex> {
+    let mut wall = Vec::new();
+    for q in 7..=9 {
+        for r in 0..height {
+            if (4..=8).contains(&r) {
+                continue;
+            }
+            wall.push(Hex::new(q, r));
+        }
+    }
+    wall.extend([
+        Hex::new(2, 1),
+        Hex::new(2, 2),
+        Hex::new(14, 10),
+        Hex::new(14, 11),
+    ]);
+    wall
+}
 
-const COMBINED_MAP: MapLayout = MapLayout {
-    width: 15,
-    height: 11,
-    wall: &COMBINED_WALL,
-    alley_clear: &COMBINED_ALLEY,
-    path_goals: &COMBINED_GOALS,
-    forest: (8, 14),
-    mud: (3, 6),
-    rubble: (2, 5),
-};
+fn combined_alley_clear() -> Vec<Hex> {
+    let mut clear = Vec::new();
+    for q in 5..=11 {
+        for r in 4..=8 {
+            clear.push(Hex::new(q, r));
+        }
+    }
+    clear
+}
 
 pub fn setup<R: Rng>(kind: ScenarioKind, rng: &mut R) -> Game {
     match kind {
@@ -244,22 +232,38 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     Game::new(board, tanks, coin_flip(rng), 200, "platoon").with_stalemate(40)
 }
 
-/// Combined arms on a 15×11 board between skirmish and platoon scale.
+/// Combined arms on a 17×13 plaza board. Infantry dig into forest approaches;
+/// APC spray and air strikes matter in the shared funnel.
 pub fn combined<R: Rng>(rng: &mut R) -> Game {
-    let red_tank = Hex::new(1, 3);
-    let red_apc = Hex::new(1, 6);
-    let red_inf = Hex::new(0, 5);
-    let blue_tank = Hex::new(13, 7);
-    let blue_apc = Hex::new(13, 4);
-    let blue_inf = Hex::new(14, 5);
+    let width = 17;
+    let height = 13;
+    let red_tank = Hex::new(1, 4);
+    let red_apc = Hex::new(1, 7);
+    let red_inf = Hex::new(0, 6);
+    let blue_tank = Hex::new(15, 8);
+    let blue_apc = Hex::new(15, 5);
+    let blue_inf = Hex::new(16, 6);
     let reserved = [red_tank, red_apc, red_inf, blue_tank, blue_apc, blue_inf];
     let egress = [
-        Hex::new(2, 3),
-        Hex::new(2, 6),
-        Hex::new(12, 7),
-        Hex::new(12, 4),
+        Hex::new(2, 4),
+        Hex::new(2, 7),
+        Hex::new(14, 8),
+        Hex::new(14, 5),
     ];
-    let board = build_board(&COMBINED_MAP, rng, &reserved, &egress);
+    let wall = combined_wall(height);
+    let alley = combined_alley_clear();
+    let goals = [Hex::new(8, 5), Hex::new(8, 7)];
+    let layout = MapLayout {
+        width,
+        height,
+        wall: &wall,
+        alley_clear: &alley,
+        path_goals: &goals,
+        forest: (12, 20),
+        mud: (3, 6),
+        rubble: (2, 5),
+    };
+    let board = build_board(&layout, rng, &reserved, &egress);
 
     let mut red_t = Tank::stock(0, Side::Red, red_tank, Facing::E, "Red Tank");
     red_t.has_air_support = true;
@@ -459,8 +463,8 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(4);
         let g = combined(&mut rng);
         assert_eq!(g.scenario, "combined");
-        assert_eq!(g.board.max_q, 14);
-        assert_eq!(g.board.max_r, 10);
+        assert_eq!(g.board.max_q, 16);
+        assert_eq!(g.board.max_r, 12);
         assert_eq!(g.tanks.len(), 6);
         let kinds: Vec<_> = g.tanks.iter().map(|t| t.kind).collect();
         assert!(kinds.contains(&UnitKind::Tank));
@@ -471,9 +475,10 @@ mod tests {
             .iter()
             .filter(|t| t.kind == UnitKind::Tank)
             .all(|t| t.has_air_support));
-        for h in COMBINED_WALL {
-            assert_eq!(g.board.terrain_at(h), Terrain::Building);
-        }
+        // Plaza open; spine sealed outside it.
+        assert!(!g.board.terrain_at(Hex::new(8, 6)).impassable());
+        assert!(g.board.terrain_at(Hex::new(8, 1)).impassable());
+        assert!(g.board.terrain_at(Hex::new(8, 11)).impassable());
     }
 
     #[test]

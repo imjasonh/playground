@@ -381,10 +381,11 @@ impl Game {
 
         if tank.can_fire() && ap_left >= 1 {
             for enemy in self.enemy_units(tank.side) {
-                if enemy.kind == UnitKind::Infantry
-                    && !enemy.destroyed
-                    && self.can_see_ai(tank, enemy)
-                {
+                if enemy.destroyed {
+                    continue;
+                }
+                // Soft kill vs infantry; suppression spray vs vehicles.
+                if self.can_see_ai(tank, enemy) {
                     out.push(Action::FireAi { target: enemy.id });
                 }
             }
@@ -527,7 +528,19 @@ impl Game {
                 self.tank_mut(tank_id).moves_this_turn += 1;
                 *ap_left -= cost;
                 self.moves_made += 1;
-                self.push_event(turn, Some(side), format!("Step {facing:?} → {next}"), None);
+                // House rule: ending a step in forest puts infantry in cover.
+                let dug_in = self.board.terrain_at(next) == Terrain::Forest
+                    && self.tank(tank_id).kind == UnitKind::Infantry;
+                if dug_in {
+                    self.tank_mut(tank_id).in_cover = true;
+                }
+                let cover_note = if dug_in { " (into cover)" } else { "" };
+                self.push_event(
+                    turn,
+                    Some(side),
+                    format!("Step {facing:?} → {next}{cover_note}"),
+                    None,
+                );
             }
             Action::TurnLeft | Action::TurnRight => {
                 let left = matches!(action, Action::TurnLeft);
@@ -570,13 +583,15 @@ impl Game {
             }
             Action::CallAirStrike { hex } => {
                 self.tank_mut(tank_id).air_strike_used = true;
+                // House rule: strike arrives at the end of this side's next
+                // activation (wait starts at 0; tick once → arrive).
                 self.pending_air_strikes
                     .push(PendingAirStrike { side, hex, wait: 0 });
                 *ap_left -= 1;
                 self.push_event(
                     turn,
                     Some(side),
-                    format!("Called air strike on {hex}"),
+                    format!("Called air strike on {hex} (arrives next activation)"),
                     None,
                 );
             }
@@ -643,6 +658,46 @@ impl Game {
             self.tank(tank_id).effective_accuracy()
         };
         let target_kind = self.tank(target_id).kind;
+
+        // Cover save: roll to-hit only; on hit, spend cover + suppress (no pen/HP).
+        if target_kind == UnitKind::Infantry && self.tank(target_id).in_cover {
+            let roll = rng.gen_range(1..=6);
+            let need = (acc + penalty).clamp(2, 6);
+            let hit = succeeds(roll, need);
+            if hit {
+                self.total_hits += 1;
+                self.activations_since_hit = 0;
+                let (name, newly) = {
+                    let t = self.tank_mut(target_id);
+                    t.in_cover = false;
+                    let newly = !t.suppressed;
+                    if newly {
+                        t.suppressed = true;
+                    }
+                    (t.name.clone(), newly)
+                };
+                if newly {
+                    self.total_suppressions += 1;
+                }
+                self.push_event(
+                    turn,
+                    Some(side),
+                    format!("{name} pinned by fire — cover spent, SUPPRESSED (rolled {roll})"),
+                    None,
+                );
+            } else {
+                self.shots_missed += 1;
+                let name = self.tank(target_id).name.clone();
+                self.push_event(
+                    turn,
+                    Some(side),
+                    format!("miss (rolled {roll}, needed {need}+) vs {name} in cover"),
+                    None,
+                );
+            }
+            return;
+        }
+
         let enemy = self.tank_mut(target_id);
         let ev = resolve_shot(
             rng,
@@ -685,9 +740,7 @@ impl Game {
         if self.tanks.iter().all(|t| t.id != target_id) {
             return;
         }
-        if self.tank(target_id).kind != UnitKind::Infantry {
-            return;
-        }
+        let target_kind = self.tank(target_id).kind;
 
         self.shots_fired += 1;
         let mut penalty = self.board.accuracy_penalty_vs(self.tank(target_id).pos);
@@ -700,26 +753,102 @@ impl Game {
         } else {
             self.tank(tank_id).effective_accuracy()
         };
-        // AI weapons: treat as HE strength 4 for pen math; any hit still kills infantry.
-        let enemy = self.tank_mut(target_id);
-        let ev = resolve_shot(
-            rng,
-            ShotParams {
-                attacker_accuracy: acc,
-                accuracy_penalty: penalty,
-                round: RoundKind::He,
-                impact,
-                forced_hit: None,
-                forced_pen_roll: None,
-            },
-            enemy,
-        );
-        self.record_shot_stats(&ev);
-        if ev.hit {
-            self.destroy_infantry(target_id);
+
+        // Soft targets: HE-style kill check. Vehicles: hit → suppress only.
+        if target_kind == UnitKind::Infantry {
+            if self.tank(target_id).in_cover {
+                let roll = rng.gen_range(1..=6);
+                let need = (acc + penalty).clamp(2, 6);
+                let hit = succeeds(roll, need);
+                if hit {
+                    self.total_hits += 1;
+                    self.activations_since_hit = 0;
+                    let (name, newly) = {
+                        let t = self.tank_mut(target_id);
+                        t.in_cover = false;
+                        let newly = !t.suppressed;
+                        if newly {
+                            t.suppressed = true;
+                        }
+                        (t.name.clone(), newly)
+                    };
+                    if newly {
+                        self.total_suppressions += 1;
+                    }
+                    self.push_event(
+                        turn,
+                        Some(side),
+                        format!("AI {name} pinned — cover spent, SUPPRESSED (rolled {roll})"),
+                        None,
+                    );
+                } else {
+                    self.shots_missed += 1;
+                    let name = self.tank(target_id).name.clone();
+                    self.push_event(
+                        turn,
+                        Some(side),
+                        format!("AI miss vs {name} in cover (rolled {roll}, needed {need}+)"),
+                        None,
+                    );
+                }
+                return;
+            }
+            let enemy = self.tank_mut(target_id);
+            let ev = resolve_shot(
+                rng,
+                ShotParams {
+                    attacker_accuracy: acc,
+                    accuracy_penalty: penalty,
+                    round: RoundKind::He,
+                    impact,
+                    forced_hit: None,
+                    forced_pen_roll: None,
+                },
+                enemy,
+            );
+            self.record_shot_stats(&ev);
+            if ev.hit {
+                self.destroy_infantry(target_id);
+            }
+            let text = format!("AI {}", ev.description);
+            self.push_event(turn, Some(side), text, Some(ev));
+            return;
         }
-        let text = format!("AI {}", ev.description);
-        self.push_event(turn, Some(side), text, Some(ev));
+
+        // Vehicle suppression spray (no pen / no HP).
+        let roll = rng.gen_range(1..=6);
+        let need = (acc + penalty).clamp(2, 6);
+        let hit = succeeds(roll, need);
+        if hit {
+            self.total_hits += 1;
+            self.activations_since_hit = 0;
+            let (name, already) = {
+                let t = self.tank_mut(target_id);
+                let already = t.suppressed;
+                if !already {
+                    t.suppressed = true;
+                }
+                (t.name.clone(), already)
+            };
+            if !already {
+                self.total_suppressions += 1;
+            }
+            let text = if already {
+                format!("AI spray hits {name} (already suppressed)")
+            } else {
+                format!("AI spray suppresses {name} (rolled {roll}, needed {need}+)")
+            };
+            self.push_event(turn, Some(side), text, None);
+        } else {
+            self.shots_missed += 1;
+            let name = self.tank(target_id).name.clone();
+            self.push_event(
+                turn,
+                Some(side),
+                format!("AI spray misses {name} (rolled {roll}, needed {need}+)"),
+                None,
+            );
+        }
     }
 
     fn destroy_infantry(&mut self, target_id: u8) {
@@ -765,9 +894,9 @@ impl Game {
 
     pub fn begin_activation(&mut self, tank_id: u8) {
         self.tank_mut(tank_id).moves_this_turn = 0;
-        if self.tank(tank_id).kind == UnitKind::Infantry {
-            self.tank_mut(tank_id).in_cover = false;
-        }
+        self.tank_mut(tank_id).activations_taken =
+            self.tank(tank_id).activations_taken.saturating_add(1);
+        // Infantry keep cover until they spend it on a save or TakeCover again.
     }
 
     pub fn end_activation<R: Rng>(&mut self, unit_id: u8, rng: &mut R) {
@@ -827,48 +956,33 @@ impl Game {
                 still_pending.push(strike);
                 continue;
             }
-            strike.wait = strike.wait.saturating_add(1);
-            let need = (6 - i32::from(strike.wait)).clamp(2, 6);
-            let roll = rng.gen_range(1..=6);
-            if succeeds(roll, need) {
+            if strike.wait == 0 {
+                // Called this activation — hold until this side activates again.
+                strike.wait = 1;
+                still_pending.push(strike);
+            } else {
                 self.resolve_air_strike(strike.hex, side, rng);
                 self.air_strikes_resolved += 1;
                 self.push_event(
                     self.activations,
                     Some(side),
-                    format!(
-                        "Air strike arrives on {} (rolled {roll}, needed {need}+)",
-                        strike.hex
-                    ),
+                    format!("Air strike arrives on {}", strike.hex),
                     None,
                 );
-            } else {
-                self.push_event(
-                    self.activations,
-                    Some(side),
-                    format!(
-                        "Air strike delayed on {} (rolled {roll}, needed {need}+)",
-                        strike.hex
-                    ),
-                    None,
-                );
-                still_pending.push(strike);
             }
         }
         self.pending_air_strikes = still_pending;
     }
 
     fn resolve_air_strike<R: Rng>(&mut self, hex: Hex, side: Side, rng: &mut R) {
+        // Blast template: aim hex + all adjacent hexes.
         self.apply_air_blast(hex, side, rng);
-        let dir = Facing::from_index(rng.gen_range(0..6));
-        let dist = rng.gen_range(1..=6);
-        let mut blast = hex;
-        for _ in 0..dist {
-            blast = blast.neighbor(dir);
+        for n in hex.neighbors() {
+            if self.board.contains(n) {
+                self.apply_air_blast(n, side, rng);
+            }
         }
-        if self.board.contains(blast) {
-            self.apply_air_blast(blast, side, rng);
-        }
+        let _ = rng;
     }
 
     fn apply_air_blast<R: Rng>(&mut self, hex: Hex, side: Side, rng: &mut R) {
@@ -880,6 +994,7 @@ impl Game {
             .collect();
         for id in victims {
             let kind = self.tank(id).kind;
+            let in_cover = self.tank(id).in_cover;
             let enemy = self.tank_mut(id);
             let ev = resolve_shot(
                 rng,
@@ -895,6 +1010,33 @@ impl Game {
             );
             self.record_shot_stats(&ev);
             if ev.hit && kind == UnitKind::Infantry {
+                if in_cover {
+                    // Don't apply pen damage from the forced hit — pin instead.
+                    let (name, newly) = {
+                        let t = self.tank_mut(id);
+                        // Undo any disable from the forced resolve_shot.
+                        t.disabled = false;
+                        t.destroyed = false;
+                        t.hull_points = t.max_hull_points.max(1);
+                        t.on_fire = false;
+                        t.in_cover = false;
+                        let newly = !t.suppressed;
+                        if newly {
+                            t.suppressed = true;
+                        }
+                        (t.name.clone(), newly)
+                    };
+                    if newly {
+                        self.total_suppressions += 1;
+                    }
+                    self.push_event(
+                        self.activations,
+                        Some(side),
+                        format!("Air strike pins {name} — cover spent, SUPPRESSED"),
+                        None,
+                    );
+                    continue;
+                }
                 self.destroy_infantry(id);
             }
             if ev.cook_off {
