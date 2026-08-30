@@ -254,11 +254,12 @@ shards).
 Each shard POST runs nested push/pull loops **inside one Worker
 invocation**. That isolate has a shared subrequest budget and 128 MiB heap —
 concurrent writers and inline auto-repack under multi-shard backlog both
-threw Cloudflare Error 1101. The UI keeps **≤1 writer / ≤2 readers per
+threw Cloudflare Error 1101. The UI keeps **≤1 writer / ≤1 reader per
 isolate** (auto-raising `shards` when needed), runs **one stage per POST**,
 **skips inline auto-repack on shard POSTs**, caps attempts per loop, opens
-only a short pack-index tail per push, and is guarded by a CI Worker-budget
-test (`phone_shard_peak_under_worker_subrequest_budget`).
+a short pack-index tail on push and bookends on fetch, and is guarded by
+`cargo test --test phone_budget_tune` (soft subrequest/heap caps + optional
+`PHONE_BUDGET_TUNE=1` search).
 Heavier single-isolate ramps belong on distributed clients, not nested
 in-Worker loops.
 

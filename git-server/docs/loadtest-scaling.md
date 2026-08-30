@@ -568,20 +568,30 @@ edge invocation / isolate — Worker self-fetch is not used.
 
 **Per-isolate cap.** Nested push/pull loops in one shard POST share that
 invocation's subrequest and memory (128 MiB) budgets. Phone UI keeps
-≤1 writer and ≤2 readers per isolate and auto-raises `shards` for both
-caps (phone readers are `2×peak`). Each stage is its own browser POST so
+≤1 writer and ≤1 reader per isolate and auto-raises `shards` for both
+caps (phone readers match `peak`). Each stage is its own browser POST so
 the isolate's subrequest budget resets between warm-up, peak, and readers.
 Shard POSTs also **skip inline auto-repack** (a full fold after every push
 in the same invocation was Error 1101 under multi-shard backlog) and cap
 attempts per loop (`PHONE_MAX_OPS_PER_LOOP`). Push handling opens only the
-newest ~64 pack indexes (full open on thin-base / deep-parent miss), and
-`Odb::open` loads indexes in batches of 6. The pack-index cache **replaces**
-on put and is forgotten when a retired pack is deleted. Browser fan-out
-limits parallel shard POSTs to 4. CI encodes the Worker budget in
-`phone_shard_peak_under_worker_subrequest_budget` (backlog ≈ 15×20 packs,
-assert soft subrequest cap) so we catch regressions without deploying.
-`wrangler.toml` raises the paid-plan subrequest ceiling to 100_000. On wasm
-the runner also clamps stage concurrency to those caps as a backstop.
+newest ~64 pack indexes (full open on thin-base / deep-parent miss); fetch
+opens oldest+newest bookends (full open on miss). `Odb::open` loads indexes
+in batches of 6. The pack-index cache **replaces** on put and is forgotten
+when a retired pack is deleted. Browser fan-out limits parallel shard POSTs
+to 4.
+
+**Tune without deploying.** CI + local:
+
+```bash
+cd git-server
+cargo test --test phone_budget_tune -- --nocapture
+PHONE_BUDGET_TUNE=1 cargo test --test phone_budget_tune tune_search -- --nocapture --ignored
+```
+
+`phone_shard_peak_and_readers_under_soft_caps` builds a ~300-pack backlog and
+asserts soft subrequest/heap caps for peak and readers shard POSTs.
+`tune_search_reader_concurrency` binary-searches how many concurrent readers
+still fit — change `PHONE_MAX_*` constants, re-run locally, then ship once.
 
 **Why not Worker self-fetch / `SELF`?** Same-zone public `Fetch` without
 `global_fetch_strictly_public` is Cloudflare error 1042. A `SELF` service

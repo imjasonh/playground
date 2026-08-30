@@ -243,7 +243,7 @@ pub fn remember_filelog_bytes(key: String, data: &[u8]) {
     FILELOG_CACHE.with(|c| c.borrow_mut().put(key, data));
 }
 
-#[cfg(test)]
+/// Test helper: drop isolate file-log + tip caches.
 pub fn clear_filelog_cache_for_test() {
     FILELOG_CACHE.with(|c| {
         let mut c = c.borrow_mut();
@@ -541,7 +541,6 @@ thread_local! {
     static TIP_CACHE: RefCell<HashMap<String, RepoTips>> = RefCell::new(HashMap::new());
 }
 
-#[cfg(test)]
 fn clear_tip_cache_for_test() {
     TIP_CACHE.with(|c| c.borrow_mut().clear());
 }
@@ -811,6 +810,27 @@ impl<'a> Repo<'a> {
     /// Open an odb over the given state's packs.
     pub async fn odb(&self, state: &RepoState) -> Result<Odb<'a>, String> {
         Odb::open(self.store, self.name, &state.pack_ids()).await
+    }
+
+    /// Open oldest + newest pack bookends. Fetch of an early tip (loadtest
+    /// seed) only needs the oldest packs; a fresh tip only needs the newest.
+    /// Middle misses fall back to [`Self::odb`]. Avoids loading hundreds of
+    /// writer-pack indexes on every upload-pack against a multi-shard backlog.
+    pub async fn odb_bookends(&self, state: &RepoState, each: usize) -> Result<Odb<'a>, String> {
+        let ids = state.pack_ids();
+        if ids.len() <= each.saturating_mul(2) {
+            return Odb::open(self.store, self.name, &ids).await;
+        }
+        let mut sel = Vec::with_capacity(each * 2);
+        for id in ids.iter().take(each) {
+            sel.push(id.clone());
+        }
+        for id in ids.iter().rev().take(each) {
+            if !sel.iter().any(|s| s == id) {
+                sel.push(id.clone());
+            }
+        }
+        Odb::open(self.store, self.name, &sel).await
     }
 
     /// Open only the newest `tail` packs. Push resolve/filelog almost always

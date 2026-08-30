@@ -743,7 +743,7 @@ pub fn build_seed_pack() -> (Oid, Vec<u8>) {
 }
 
 /// Incremental writer commit: new blob + new tree + commit on `parent`.
-fn build_writer_pack(parent: Oid, branch_id: u32, seq: u64) -> (Oid, Vec<u8>) {
+pub fn build_writer_pack(parent: Oid, branch_id: u32, seq: u64) -> (Oid, Vec<u8>) {
     let mut w = PackWriter::new(3);
     let data = noise(
         WRITE_BLOB_BYTES,
@@ -1272,7 +1272,7 @@ pub fn token_matches(provided: &str, expected: &str) -> bool {
 /// subrequest/memory walls keep peak concurrency modest).
 pub const PHONE_DEFAULT_BUDGET_USD: f64 = 0.10;
 pub const PHONE_DEFAULT_DURATION_SECS: u64 = 4;
-/// Peak writers in the write ramp; read stage uses `2 × peak`.
+/// Peak writers in the write ramp; read stage uses `peak` readers.
 pub const PHONE_DEFAULT_PEAK: u32 = 8;
 pub const PHONE_MAX_PEAK: u32 = 48;
 /// Isolates to fan writers/readers across (same repo). `1` = this isolate only.
@@ -1288,8 +1288,21 @@ pub const PHONE_MAX_OPS_PER_LOOP: u32 = 20;
 /// writers still threw Cloudflare Error 1101 on the peak stage; one writer
 /// per isolate (fan out with `shards`) is the working phone envelope.
 pub const PHONE_MAX_WRITERS_PER_ISOLATE: u32 = 1;
-/// Max concurrent reader loops in one Worker invocation (see writers cap).
-pub const PHONE_MAX_READERS_PER_ISOLATE: u32 = 2;
+/// Max concurrent reader loops in one Worker invocation.
+///
+/// Each nested upload-pack opens an `Odb` (content cache + pack handles).
+/// Two concurrent readers on a multi-shard backlog still threw Error 1101
+/// (stage 2); one reader per isolate is the working phone envelope.
+pub const PHONE_MAX_READERS_PER_ISOLATE: u32 = 1;
+
+/// Soft subrequest ceiling for one phone shard POST in CI. Measured ~180 for
+/// peak (1 writer) and similar for readers after bookend opens; stay well
+/// under wrangler `subrequests = 100000`.
+pub const PHONE_SHARD_SUBREQUEST_SOFT_CAP: u64 = 1_000;
+
+/// Transient heap soft cap for one phone shard POST (native memtrack). Leave
+/// room under the 128 MiB isolate for the wasm module + JS runtime.
+pub const PHONE_SHARD_HEAP_SOFT_CAP: usize = 48 * 1024 * 1024;
 
 /// Clamp a phone peak-writers value into the safe range.
 pub fn clamp_phone_peak(peak: u32) -> u32 {
@@ -1302,12 +1315,13 @@ pub fn clamp_phone_shards(shards: u32) -> u32 {
 }
 
 /// Raise `shards` (and clamp `peak` if needed) so each isolate stays within
-/// the per-isolate writer **and** reader caps. Phone stages use `2×peak`
-/// readers, so reader fan-out often dominates.
+/// the per-isolate writer **and** reader caps. Phone stages use `peak`
+/// readers (one read stage matching write peak), so reader fan-out matches
+/// writers when both caps are 1.
 pub fn phone_fanout_plan(peak: u32, shards: u32) -> (u32, u32) {
     let peak = clamp_phone_peak(peak);
     let mut shards = clamp_phone_shards(shards);
-    let readers = peak.saturating_mul(2).max(1);
+    let readers = peak.max(1);
     let need_w = peak.div_ceil(PHONE_MAX_WRITERS_PER_ISOLATE).max(1);
     let need_r = readers.div_ceil(PHONE_MAX_READERS_PER_ISOLATE).max(1);
     let need = need_w.max(need_r);
@@ -1317,7 +1331,7 @@ pub fn phone_fanout_plan(peak: u32, shards: u32) -> (u32, u32) {
     let max_peak_w = shards
         .saturating_mul(PHONE_MAX_WRITERS_PER_ISOLATE)
         .clamp(1, PHONE_MAX_PEAK);
-    let max_peak_r = shards.saturating_mul(PHONE_MAX_READERS_PER_ISOLATE) / 2;
+    let max_peak_r = shards.saturating_mul(PHONE_MAX_READERS_PER_ISOLATE);
     let max_peak = max_peak_w.min(max_peak_r.max(1)).clamp(1, PHONE_MAX_PEAK);
     (peak.min(max_peak), shards)
 }
@@ -1338,11 +1352,11 @@ pub fn clamp_stage_to_isolate(st: &StageSpec) -> StageSpec {
     }
 }
 
-/// Phone stages from a peak writer count: warm-up → peak writers → 2× readers.
+/// Phone stages from a peak writer count: warm-up → peak writers → peak readers.
 pub fn phone_stages(peak: u32) -> Vec<StageSpec> {
     let peak = clamp_phone_peak(peak);
     let warm = (peak / 3).max(1);
-    let readers = peak.saturating_mul(2).max(1);
+    let readers = peak.max(1);
     vec![
         StageSpec {
             writers: warm,
@@ -1481,7 +1495,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       <input id="budget" type="number" inputmode="decimal" min="0.01" max="5" step="0.01" value="{budget_usd:.2}">
     </label>
     <label>Peak writers
-      <span class="detail">Warm-up → peak → 2× readers. Max {max_peak}. Each writer owns a branch.</span>
+      <span class="detail">Warm-up → peak → readers. Max {max_peak}. Each writer owns a branch.</span>
       <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
     </label>
     <label>Isolates (shards)
@@ -1522,17 +1536,17 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     return s;
   }}
   /** Raise shards (or trim peak) so each isolate stays ≤ maxWIso writers
-   *  and ≤ maxRIso readers (phone stages use 2×peak readers). */
+   *  and ≤ maxRIso readers (phone stages use peak readers). */
   function fanoutPlan(peak, shards) {{
     peak = clampPeak(peak);
     shards = clampShards(shards);
-    var readers = Math.max(1, peak * 2);
+    var readers = Math.max(1, peak);
     var needW = Math.max(1, Math.ceil(peak / maxWIso));
     var needR = Math.max(1, Math.ceil(readers / maxRIso));
     var need = Math.max(needW, needR);
     if (need > shards) shards = clampShards(need);
     var maxPeakW = Math.min(maxPeak, Math.max(1, shards * maxWIso));
-    var maxPeakR = Math.min(maxPeak, Math.max(1, Math.floor((shards * maxRIso) / 2)));
+    var maxPeakR = Math.min(maxPeak, Math.max(1, shards * maxRIso));
     var maxPeakHere = Math.min(maxPeakW, maxPeakR);
     if (peak > maxPeakHere) peak = maxPeakHere;
     return {{ peak: peak, shards: shards }};
@@ -1543,7 +1557,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     var peak = planVals.peak;
     var shards = planVals.shards;
     var warm = Math.max(1, Math.floor(peak / 3));
-    var readers = Math.max(1, peak * 2);
+    var readers = Math.max(1, peak);
     var perW = Math.ceil(peak / shards);
     var expect = duration * 3 + 5;
     var note = shards > requestedShards
@@ -1721,7 +1735,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     }}
     updatePlan();
     var warm = Math.max(1, Math.floor(peak / 3));
-    var readers = Math.max(1, peak * 2);
+    var readers = Math.max(1, peak);
     var stages = [
       {{ writers: warm, readers: 0 }},
       {{ writers: peak, readers: 0 }},
@@ -2102,18 +2116,18 @@ mod tests {
         let s = phone_stages(6);
         assert_eq!(s[0].writers, 2);
         assert_eq!(s[1].writers, 6);
-        assert_eq!(s[2].readers, 12);
+        assert_eq!(s[2].readers, 6);
         let s = phone_stages(12);
         assert_eq!(s[0].writers, 4);
         assert_eq!(s[1].writers, 12);
-        assert_eq!(s[2].readers, 24);
+        assert_eq!(s[2].readers, 12);
         assert_eq!(clamp_phone_peak(100), PHONE_MAX_PEAK);
     }
 
     #[test]
     fn phone_fanout_raises_shards_for_peak() {
-        // peak=24 needs 24 isolates at 1 writer / 2 readers (48 readers),
-        // but MAX_SHARDS caps at 16 so peak is trimmed to 16.
+        // peak=24 needs 24 isolates at 1 writer / 1 reader, but MAX_SHARDS
+        // caps at 16 so peak is trimmed to 16.
         let (peak, shards) = phone_fanout_plan(24, 2);
         assert_eq!(peak, 16);
         assert_eq!(shards, PHONE_MAX_SHARDS);
@@ -2125,7 +2139,7 @@ mod tests {
         assert_eq!(peak, PHONE_MAX_SHARDS); // trimmed by shard×writer cap
         assert_eq!(shards, PHONE_MAX_SHARDS);
         assert!(peak <= shards * PHONE_MAX_WRITERS_PER_ISOLATE);
-        assert!(peak * 2 <= shards * PHONE_MAX_READERS_PER_ISOLATE);
+        assert!(peak <= shards * PHONE_MAX_READERS_PER_ISOLATE);
         assert_eq!(
             clamp_stage_to_isolate(&StageSpec {
                 writers: 99,
@@ -2502,7 +2516,7 @@ mod tests {
                     }]),
                     shards: Some(1),
                     shard: true,
-                    tip: Some(tip),
+                    tip: Some(tip.clone()),
                     shard_index: Some(15),
                     token: None,
                 },
@@ -2514,11 +2528,6 @@ mod tests {
             let push_n = peak.cost_per_push.samples.max(1);
             let do_est = push_n * 2;
             let subreqs = ops.class_a + ops.class_b + do_est;
-            // Soft cap: leave headroom under wrangler `subrequests = 100000`.
-            // Measured ~180 with a 300-pack backlog + push-pack tail (see
-            // `odb_tail`). Fail well below the Worker ceiling so regressions
-            // in per-push fan-out are caught in CI, not after deploy.
-            const PHONE_SHARD_SUBREQUEST_SOFT_CAP: u64 = 1_000;
             assert!(
                 peak.cost_per_push.samples > 0,
                 "peak shard made no pushes: {peak:?}"
@@ -2531,6 +2540,46 @@ mod tests {
                 ops.class_a,
                 ops.class_b,
                 peak.cost_per_push.samples
+            );
+
+            // Readers stage against the same backlog (phone stage 2).
+            mem.reset_op_counts();
+            let readers = run_in_process(
+                store.clone(),
+                states.clone(),
+                "lt-budget-backlog",
+                LoadTestRequest {
+                    confirm: true,
+                    budget_usd: Some(1.0),
+                    duration_secs: Some(PHONE_DEFAULT_DURATION_SECS),
+                    stages: Some(vec![StageSpec {
+                        writers: 0,
+                        readers: PHONE_MAX_READERS_PER_ISOLATE,
+                    }]),
+                    shards: Some(1),
+                    shard: true,
+                    tip: Some(tip),
+                    shard_index: Some(15),
+                    token: None,
+                },
+            )
+            .await
+            .expect("readers shard");
+            let ops = mem.op_counts();
+            let pull_n = readers.cost_per_pull.samples.max(1);
+            let do_est = pull_n; // upload-pack is mostly one DO load
+            let subreqs = ops.class_a + ops.class_b + do_est;
+            assert!(
+                readers.cost_per_pull.samples > 0,
+                "readers shard made no pulls: {readers:?}"
+            );
+            assert!(
+                subreqs <= PHONE_SHARD_SUBREQUEST_SOFT_CAP,
+                "phone readers shard burned {subreqs} subrequests \
+                 (A={} B={} DO≈{do_est} packs={packs} pulls={})",
+                ops.class_a,
+                ops.class_b,
+                readers.cost_per_pull.samples
             );
         });
     }
