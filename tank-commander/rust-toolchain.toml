@@ -1,0 +1,5 @@
+# Toolchain pin (repo convention: every Rust app pins its toolchain so local
+# builds and CI agree). Not a Cloudflare Worker, so no wasm target.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy", "rustfmt"]

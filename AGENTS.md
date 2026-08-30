@@ -31,6 +31,7 @@ playground/
 ├── life-scad/             # OpenSCAD Life sculpture + reverse-history Python tool
 ├── life-stl/              # Rust CLI: Game of Life → printable STL (Z = time)
 ├── mapvelopes/            # Rust Cloudflare Worker: envelope PDFs with a route map
+├── tank-commander/        # Rust CLI: Tank Commander Skirmish balance/fun simulator
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
@@ -81,6 +82,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
+| `tank-commander/` | no | Rust CLI (Skirmish balance/fun simulator); no `index.html` |
 | `mapvelopes/` | no | Rust Cloudflare Worker; no `index.html` |
 | `its-not-jaws/` | no | Cursor SDK knower/guesser guessing harness; no `index.html` |
 | `life-scad/` | no | OpenSCAD + Python reverse-history tool; no `index.html` |
@@ -664,6 +666,7 @@ bundle exec fastlane test
 | `git-server/` | git smart-HTTP server on R2 + Durable Objects — Cloudflare Worker | `cargo test` (incl. real-git integration) + clippy + wasm build |
 | `git-fuse/` | read-only FUSE adapter for git-server (mount commits/refs as files) — CLI, not a Worker | `cargo test` (incl. e2e over real FUSE mounts; skips without `/dev/fuse`) + clippy |
 | `life-stl/` | Conway's Game of Life → 3D-printable STL (Z = time); self-supporting causality braces (default) or breakaway supports | `cargo test` + clippy |
+| `tank-commander/` | Monte Carlo Skirmish simulator for [Tank Commander](https://github.com/imjasonh/tank-commander) (drama + stalemate metrics) | `cargo test` + clippy |
 | `mapvelopes/` | envelope PDFs with the sender-to-recipient route as the background (requires a Google Maps key; sizes #10, #9, Monarch, #6¾, A7) | `cargo test` + clippy + wasm build |
 | `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
 
