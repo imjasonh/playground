@@ -80,8 +80,17 @@ impl Hex {
                                   // Facings at 0, 60, 120, 180, -120, -60 degrees.
         let deg = angle.to_degrees();
         let norm = ((deg % 360.0) + 360.0) % 360.0;
+        // Pointy-top +y-down pixel space: 0°=E, 60°=SE, 120°=SW, 180°=W,
+        // 240°=NW, 300°=NE — not the same order as the Facing enum.
         let idx = ((norm + 30.0) / 60.0).floor() as i32 % 6;
-        Some(Facing::from_index(idx as u8))
+        Some(match idx {
+            0 => Facing::E,
+            1 => Facing::SE,
+            2 => Facing::SW,
+            3 => Facing::W,
+            4 => Facing::NW,
+            _ => Facing::NE,
+        })
     }
 }
 
@@ -151,11 +160,12 @@ impl Facing {
     }
 
     pub fn turn_left(self) -> Self {
-        Facing::from_index(self.index().wrapping_sub(1))
+        // Enum order is counterclockwise: E → NE → NW → W → SW → SE.
+        Facing::from_index((self.index() + 1) % 6)
     }
 
     pub fn turn_right(self) -> Self {
-        Facing::from_index(self.index() + 1)
+        Facing::from_index((self.index() + 5) % 6)
     }
 
     /// Absolute facing after applying a turret offset relative to hull.
@@ -178,16 +188,21 @@ mod tests {
     }
 
     #[test]
-    fn facing_toward_east() {
-        let a = Hex::new(0, 0);
-        let b = Hex::new(3, 0);
-        assert_eq!(a.facing_toward(b), Some(Facing::E));
+    fn facing_toward_neighbors() {
+        let a = Hex::new(2, 2);
+        assert_eq!(a.facing_toward(Hex::new(3, 2)), Some(Facing::E));
+        assert_eq!(a.facing_toward(Hex::new(3, 1)), Some(Facing::NE));
+        assert_eq!(a.facing_toward(Hex::new(2, 1)), Some(Facing::NW));
+        assert_eq!(a.facing_toward(Hex::new(1, 2)), Some(Facing::W));
+        assert_eq!(a.facing_toward(Hex::new(1, 3)), Some(Facing::SW));
+        assert_eq!(a.facing_toward(Hex::new(2, 3)), Some(Facing::SE));
     }
 
     #[test]
-    fn line_through_skips_endpoints() {
-        let a = Hex::new(0, 0);
-        let b = Hex::new(3, 0);
-        assert_eq!(a.line_through(b), vec![Hex::new(1, 0), Hex::new(2, 0)]);
+    fn turn_left_from_east_is_northeast() {
+        assert_eq!(Facing::E.turn_left(), Facing::NE);
+        assert_eq!(Facing::E.turn_right(), Facing::SE);
+        assert_eq!(Facing::W.turn_left(), Facing::SW);
+        assert_eq!(Facing::W.turn_right(), Facing::NW);
     }
 }

@@ -102,6 +102,58 @@ human playtest or a less HE-hungry policy.
 
 ---
 
+## 2026-08-30 — Blocked corridor skirmish map
+
+**Change.** The open east-west street between the tanks is closed with a 3×3
+building wall on the midline (`q=4..6`, `r=3..5`). North and south alleys
+remain open; forests sit on the alley mouths. Opening LOS is blocked — tanks
+must move to find each other.
+
+Also fixed two sim bugs that only showed up once flanks mattered:
+
+- `Facing::turn_left` from East wrapped to West (u8 underflow).
+- `facing_toward` mapped pixel angles onto the Facing enum in the wrong
+  order (NE and SE swapped, etc.).
+- Turret "left" stepped the offset the wrong way relative to hull left.
+
+The AI now pathfinds to a firing hex when LOS is blocked, and aims/loads/fires
+when geometric LOS exists.
+
+**Why.** On the old open map, after a short close the game was mostly
+Load→Fire→Load. Move was ~16% of actions. Terrain rarely forced a choice.
+
+**Effect on balance (200 games, seed 7; baseline = stock HE on the open map):**
+
+| Metric | Before (open) | After (walled) | Delta |
+|--------|--------------:|---------------:|------:|
+| Red / Blue / Draw | 103 / 95 / 2 | 61 / 135 / 4 | Blue-heavy |
+| First-player win share | 57% | ~50% (99/196) | FP edge gone |
+| Avg activations | 9.3 | 11.2 | +1.9 |
+| Timed out | 5% | 6% | similar |
+| Avg shots (AT / HE) | 13.1 (3.1 / 10.0) | 11.9 (3.7 / 8.2) | similar mix |
+| Avg moves / hull turns | *(not tracked)* | **9.2 / 7.3** | real maneuver |
+| Avg pens / glances | 4.04 / 1.67 | 3.79 / 1.86 | similar |
+| Avg fires | 1.35 | 1.30 | similar |
+| Comebacks | 91 | 59 | fewer |
+| Late stalemates | 0 | 3 (2%) | rare |
+
+**Verdict.** Keep the wall for option diversity — games now open with a
+flanking choice instead of a staring contest. Side balance drifted Blue; next
+pass should either offset starting rows, thin the wall, or add a reason to
+contest one alley (objective / VP). First-player edge collapsing is a happy
+accident of the approach race.
+
+**Better layout ideas (not shipped yet):**
+
+1. **One alley, not two** — a single gap forces contact; two alleys let tanks
+   miss each other until late.
+2. **Offset starts** — Red on `(1,3)`, Blue on `(9,5)` so the "natural" approach
+   lanes differ and one side doesn't own a mirror.
+3. **Objective hex** past the wall — VP for ending activation on it, so
+   sitting back loses even if the duel is cautious.
+
+---
+
 ## How to re-check
 
 ```bash

@@ -15,6 +15,9 @@ pub struct GameReport {
     pub shots_missed: u32,
     pub at_shots: u32,
     pub he_shots: u32,
+    pub moves_made: u32,
+    pub turns_made: u32,
+    pub turret_rotations: u32,
     pub hits: u32,
     pub pens: u32,
     pub glances: u32,
@@ -67,6 +70,9 @@ impl GameReport {
             shots_missed: game.shots_missed,
             at_shots: game.at_shots,
             he_shots: game.he_shots,
+            moves_made: game.moves_made,
+            turns_made: game.turns_made,
+            turret_rotations: game.turret_rotations,
             hits: game.total_hits,
             pens: game.total_pens,
             glances: game.total_glances,
@@ -145,6 +151,9 @@ pub struct AggregateReport {
     pub avg_shots: f64,
     pub avg_at_shots: f64,
     pub avg_he_shots: f64,
+    pub avg_moves: f64,
+    pub avg_turns: f64,
+    pub avg_turret: f64,
     pub avg_hits: f64,
     pub avg_pens: f64,
     pub avg_glances: f64,
@@ -212,6 +221,9 @@ impl AggregateReport {
             avg_shots: sum_f(|r| r.shots_fired),
             avg_at_shots: sum_f(|r| r.at_shots),
             avg_he_shots: sum_f(|r| r.he_shots),
+            avg_moves: sum_f(|r| r.moves_made),
+            avg_turns: sum_f(|r| r.turns_made),
+            avg_turret: sum_f(|r| r.turret_rotations),
             avg_hits: sum_f(|r| r.hits),
             avg_pens: sum_f(|r| r.pens),
             avg_glances: sum_f(|r| r.glances),
@@ -376,6 +388,10 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
         100.0 * agg.hit_rate,
         agg.low_engagement,
         100.0 * f64::from(agg.low_engagement) / f64::from(agg.games.max(1))
+    ));
+    out.push_str(&format!(
+        "Maneuver: avg moves {:.1}, hull turns {:.1}, turret rotates {:.1}\n",
+        agg.avg_moves, agg.avg_turns, agg.avg_turret
     ));
     out.push_str(&format!(
         "Drama: pens {:.2}, glances {:.2}, fires {:.2}, cook-offs {:.2}, \

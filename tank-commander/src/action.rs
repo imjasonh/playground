@@ -86,7 +86,8 @@ pub fn is_ability(action: Action) -> bool {
 
 /// Relative turret offset after a left/right step, wrapped to -2..=3.
 pub fn step_turret(offset: i8, left: bool) -> i8 {
-    let mut o = if left { offset - 1 } else { offset + 1 };
+    // Left matches Facing::turn_left (+1 on the facing index).
+    let mut o = if left { offset + 1 } else { offset - 1 };
     while o > 3 {
         o -= 6;
     }

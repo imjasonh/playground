@@ -49,6 +49,9 @@ pub struct Game {
     pub shots_missed: u32,
     pub at_shots: u32,
     pub he_shots: u32,
+    pub moves_made: u32,
+    pub turns_made: u32,
+    pub turret_rotations: u32,
 }
 
 impl Game {
@@ -277,6 +280,7 @@ impl Game {
                 self.tank_mut(tank_id).pos = next;
                 self.tank_mut(tank_id).moves_this_turn += 1;
                 *ap_left -= cost;
+                self.moves_made += 1;
                 self.push_event(turn, Some(side), format!("Move → {next}"), None);
             }
             Action::TurnLeft | Action::TurnRight => {
@@ -290,6 +294,7 @@ impl Game {
                 self.tank_mut(tank_id).hull_facing = new_hull;
                 self.tank_mut(tank_id).turret_offset = new_offset;
                 *ap_left -= 1;
+                self.turns_made += 1;
                 self.push_event(turn, Some(side), action.name().to_string(), None);
             }
             Action::TurretLeft | Action::TurretRight => {
@@ -297,6 +302,7 @@ impl Game {
                 let o = self.tank(tank_id).turret_offset;
                 self.tank_mut(tank_id).turret_offset = step_turret(o, left);
                 *ap_left -= 1;
+                self.turret_rotations += 1;
                 self.push_event(turn, Some(side), action.name().to_string(), None);
             }
             Action::Fire => {

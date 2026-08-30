@@ -3,11 +3,11 @@
 Monte Carlo simulator for the
 [Tank Commander](https://github.com/imjasonh/tank-commander) tabletop rules.
 
-v1 covers **Skirmish**: 1v1 stock tanks (AT + HE loadable), light terrain, core
-movement, turret arc, combat, crew wounds, fire, and cook-off. The same
-heuristic AI plays both sides so result skew points at the rules (or
-first-player bias), not uneven bots. Infantry, APCs, paid upgrades, air
-strikes, and missions come later.
+v1 covers **Skirmish**: 1v1 stock tanks (AT + HE loadable), a walled board
+with north/south alleys, core movement, turret arc, combat, crew wounds, fire,
+and cook-off. The same heuristic AI plays both sides so result skew points at
+the rules (or first-player bias), not uneven bots. Infantry, APCs, paid
+upgrades, air strikes, and missions come later.
 
 ## Run
 
@@ -31,6 +31,7 @@ Focus for now is **drama** and **stalemates**:
 | timed-out | Hit the 10-turn (20 activation) cap with both tanks fighting |
 | low engagement | Few shots relative to activations |
 | late stalemate | Long no-hit streak near the end |
+| moves / hull turns / turret | Whether tanks maneuver or only duel in place |
 
 The aggregate report ends with **suggested rules tweaks** when those rates
 cross simple thresholds.
@@ -49,10 +50,12 @@ cross simple thresholds.
   direction."
 - **Skirmish win.** Disable or destroy the enemy. On timeout, higher remaining
   hull points wins; tie is a draw.
-- **AI.** Beam search over legal action sequences with a shared heuristic
-  (range band, turret alignment, fire payoff, avoid presenting rear armor,
-  extinguish fires). Swappable later for MCTS without changing the rules
-  engine.
+- **AI.** When LOS is blocked, pathfind to a firing hex (prefer near the
+  enemy, forest cover second). When LOS is open, beam-search shoot / load /
+  ability plans. Shared heuristic on both sides.
+- **Skirmish map.** A midline building wall blocks the opening street; tanks
+  take the north or south alley. Forests on alley mouths reward peeking from
+  cover.
 
 Rules source of truth remains the upstream README, plus the house rules in
 `RULES_CHANGES.md`. Where the text is ambiguous, the sim picks a documented
