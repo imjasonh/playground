@@ -252,7 +252,10 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
     let red_tanks = [Hex::new(1, 3), Hex::new(1, 5)];
     let red_apcs = [Hex::new(1, 7), Hex::new(1, 9)];
     let red_inf = [Hex::new(0, 4), Hex::new(0, 8)];
-    let blue_tanks = [mirror_ew(red_tanks[0], width), mirror_ew(red_tanks[1], width)];
+    let blue_tanks = [
+        mirror_ew(red_tanks[0], width),
+        mirror_ew(red_tanks[1], width),
+    ];
     let blue_apcs = [mirror_ew(red_apcs[0], width), mirror_ew(red_apcs[1], width)];
     let blue_inf = [mirror_ew(red_inf[0], width), mirror_ew(red_inf[1], width)];
     let reserved: Vec<Hex> = red_tanks
@@ -648,7 +651,11 @@ mod tests {
         let red_tanks = [Hex::new(1, 3), Hex::new(1, 5)];
         let red_apcs = [Hex::new(1, 7), Hex::new(1, 9)];
         let red_inf = [Hex::new(0, 4), Hex::new(0, 8)];
-        for h in red_tanks.iter().chain(red_apcs.iter()).chain(red_inf.iter()) {
+        for h in red_tanks
+            .iter()
+            .chain(red_apcs.iter())
+            .chain(red_inf.iter())
+        {
             let m = mirror_ew(*h, width);
             assert_ne!(*h, m);
             assert_eq!(m.r, h.r);
@@ -658,7 +665,10 @@ mod tests {
         // rebuild without nudge.
         let height = 13;
         let mut rng = ChaCha8Rng::seed_from_u64(4);
-        let blue_tanks = [mirror_ew(red_tanks[0], width), mirror_ew(red_tanks[1], width)];
+        let blue_tanks = [
+            mirror_ew(red_tanks[0], width),
+            mirror_ew(red_tanks[1], width),
+        ];
         let blue_apcs = [mirror_ew(red_apcs[0], width), mirror_ew(red_apcs[1], width)];
         let blue_inf = [mirror_ew(red_inf[0], width), mirror_ew(red_inf[1], width)];
         let reserved: Vec<Hex> = red_tanks
