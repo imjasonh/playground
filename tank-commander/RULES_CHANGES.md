@@ -706,7 +706,7 @@ small. APC armor cap is a fidelity fix with **no measurable Combined effect**
 
 ---
 
-##  mid-battle embark shuttle, deployment mines, tank-only cook-off
+## 2026-08-30 — Stay embarked, deployment mines, tank-only cook-off
 
 **Type: Rule / AI / Sim**
 
@@ -741,6 +741,30 @@ The engine already allowed staying embarked. The AI did not:
 
 Embark still happens in 100% of games, but as a taxi ride, not a shuttle bus.
 Cook-offs drop as expected (no APC blasts). Balance holds.
+
+---
+
+## 2026-08-30 — Deployment mine enemy clearance (N = 6)
+
+**Type: Rule / Sim**
+
+Deployment mines may not sit within **6 hexes** of an enemy vehicle (tank or
+APC) at placement — `distance < 6` is illegal. Placer reaches midfield and
+prefers the forward edge of that envelope so the rule actually shapes the
+field.
+
+**Why 6.** Stock gun range is 5. Clearance 6 keeps mines outside the enemy
+start’s opening gun envelope while still on the approaches (need a second
+move to step on them). A/B Combined (200 games, seed 42):
+
+| Clearance | Decisive | Hard TO | Mines triggered |
+|-----------|----------|---------|-----------------|
+| 5 | 96% | 22% | **2.56** |
+| **6** | **98%** | 26% | 2.31 |
+| 7 | 97% | 30% | 2.31 |
+
+5 is a hair more “useful” on triggers; 6 is the better balance (decisive up,
+still ~2.3 triggers/game). 7 starts to push fields back and inflate timeouts.
 
 ---
 

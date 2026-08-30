@@ -76,7 +76,8 @@ Spend up to 10 upgrade points before the game:
 - **Lieutenant commander** (1): fifth crew member (see Crew).
 - **Air support** (2, advanced): one air strike per battle for that tank.
 - **Anti-tank mines** (1 each, max 3, advanced): placed during **deployment**
-  (before spoil), not mid-battle.
+  (before spoil), not mid-battle. Must be at least **6 hexes** from every
+  enemy vehicle at placement.
 
 Painted tanks get +1 upgrade point. An epic name plus named crew gets +1.
 (**Not** applied by the simulator list builder — see
@@ -449,7 +450,9 @@ Full combined-arms game with lists.
   purpose).
 - **Initiative:** under-spend initiative; spoil only when list totals tie.
 - **Deployment mines:** after lists and initiative, every purchased mine is
-  placed on the board **before** spoil. No mid-battle mine deployment.
+  placed on the board **before** spoil. No mid-battle mine deployment. A mine
+  must be at least **6 hexes** from every enemy vehicle (tank or APC) at
+  placement — outside stock gun range, still on the midfield approaches.
 - **Second-player spoil** (tied lists only): nudge each opposing unit up to 1
   hex, then shift up to **4** scatter tiles.
 

@@ -562,9 +562,17 @@ impl Game {
         }
     }
 
+    /// Minimum distance from a deployment mine to every enemy vehicle.
+    ///
+    /// Illegal if `hex.distance(enemy) < DEPLOYMENT_MINE_CLEARANCE`. On the
+    /// 18×12 Combined mat this still leaves midfield chokes legal while keeping
+    /// mines out of the enemy start gun envelope (stock gun range 5).
+    pub const DEPLOYMENT_MINE_CLEARANCE: i32 = 6;
+
     /// Place purchased anti-tank mines during deployment (before spoil).
     ///
-    /// All charges are spent here — mines are not laid mid-battle.
+    /// All charges are spent here — mines are not laid mid-battle. Hexes within
+    /// [`DEPLOYMENT_MINE_CLEARANCE`] of an enemy vehicle are illegal.
     pub fn place_deployment_mines<R: Rng>(&mut self, rng: &mut R) {
         let ids: Vec<u8> = self
             .tanks
@@ -588,37 +596,66 @@ impl Game {
         }
     }
 
+    fn enemy_vehicle_too_close(&self, hex: Hex, placer_side: Side) -> bool {
+        self.tanks.iter().any(|t| {
+            t.side != placer_side
+                && !t.destroyed
+                && matches!(t.kind, UnitKind::Tank | UnitKind::Apc)
+                && hex.distance(t.pos) < Self::DEPLOYMENT_MINE_CLEARANCE
+        })
+    }
+
     fn pick_deployment_mine_hex<R: Rng>(&self, tank_id: u8, rng: &mut R) -> Option<Hex> {
         let tank = self.tank(tank_id);
         let occ = self.occupied_hexes();
-        let center = self.board.center();
+        let enemy_anchor = self
+            .tanks
+            .iter()
+            .filter(|t| {
+                t.side != tank.side
+                    && !t.destroyed
+                    && matches!(t.kind, UnitKind::Tank | UnitKind::Apc)
+            })
+            .map(|t| t.pos)
+            .min_by_key(|p| tank.pos.distance(*p));
         let mut cands: Vec<Hex> = Vec::new();
+        // Scan a deep forward cone so clearance (not walk length) sets how close
+        // mines sit to the enemy start line.
         let mut cur = tank.pos;
-        for step in 1..=5 {
+        for _step in 1..=14 {
             cur = cur.neighbor(tank.hull_facing);
             if !self.board.contains(cur) {
                 break;
             }
+            // Ring around this forward hex (and the hex itself).
+            let mut ring = vec![cur];
             for i in 0..6u8 {
-                let h = if i == 0 {
-                    cur
-                } else {
-                    cur.neighbor(Facing::from_index(i))
-                };
+                ring.push(cur.neighbor(Facing::from_index(i)));
+                // second ring — wider cone
+                let n = cur.neighbor(Facing::from_index(i));
+                for j in 0..6u8 {
+                    ring.push(n.neighbor(Facing::from_index(j)));
+                }
+            }
+            for h in ring {
                 if !self.board.contains(h) || self.board.has_mine(h) {
                     continue;
                 }
                 if self.board.terrain_at(h).impassable() || occ.contains(&h) {
                     continue;
                 }
-                // Prefer approaches ahead of the start line (closer to center).
-                if h.distance(center) < tank.pos.distance(center) + 2 {
-                    cands.push(h);
+                if self.enemy_vehicle_too_close(h, tank.side) {
+                    continue;
                 }
+                // Forward of the start line only.
+                if let Some(anchor) = enemy_anchor {
+                    if h.distance(anchor) >= tank.pos.distance(anchor) {
+                        continue;
+                    }
+                }
+                cands.push(h);
             }
-            let _ = step;
         }
-        // Also allow hexes adjacent to the tank if forward belt is empty.
         if cands.is_empty() {
             for i in 0..6u8 {
                 let h = tank.pos.neighbor(Facing::from_index(i));
@@ -626,17 +663,30 @@ impl Game {
                     && !self.board.has_mine(h)
                     && !self.board.terrain_at(h).impassable()
                     && !occ.contains(&h)
+                    && !self.enemy_vehicle_too_close(h, tank.side)
                 {
                     cands.push(h);
                 }
             }
         }
-        cands.sort_by_key(|h| h.distance(center));
+        // Prefer mines as far forward as clearance allows (smallest legal
+        // enemy distance) — that is where the standoff rule earns its keep.
+        cands.sort_by_key(|h| {
+            self.tanks
+                .iter()
+                .filter(|t| {
+                    t.side != tank.side
+                        && !t.destroyed
+                        && matches!(t.kind, UnitKind::Tank | UnitKind::Apc)
+                })
+                .map(|t| h.distance(t.pos))
+                .min()
+                .unwrap_or(99)
+        });
         cands.dedup();
         if cands.is_empty() {
             return None;
         }
-        // Bias toward the closest-to-center third.
         let take = (cands.len() / 3).max(1);
         let slice = &cands[..take.min(cands.len())];
         slice.choose(rng).copied()

@@ -927,6 +927,39 @@ mod tests {
     }
 
     #[test]
+    fn deployment_mines_respect_enemy_clearance() {
+        use crate::game::Game;
+        let c = Game::DEPLOYMENT_MINE_CLEARANCE;
+        for seed in 0..40u64 {
+            let mut r = ChaCha8Rng::seed_from_u64(seed);
+            let g = combined(&mut r);
+            for &(q, rhex) in &g.board.mines {
+                let h = Hex::new(q, rhex);
+                let mut min_red = i32::MAX;
+                let mut min_blue = i32::MAX;
+                for t in &g.tanks {
+                    if !matches!(t.kind, UnitKind::Tank | UnitKind::Apc) {
+                        continue;
+                    }
+                    let d = h.distance(t.pos);
+                    match t.side {
+                        Side::Red => min_red = min_red.min(d),
+                        Side::Blue => min_blue = min_blue.min(d),
+                    }
+                }
+                // A legal mine is clear of every vehicle on at least one side
+                // (its enemy). Own-side vehicles may sit closer.
+                let clear_of_red = min_red >= c;
+                let clear_of_blue = min_blue >= c;
+                assert!(
+                    clear_of_red || clear_of_blue,
+                    "seed {seed} mine {h} within enemy clearance (red≥{min_red}, blue≥{min_blue}, need {c})"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn skirmish_is_stock_no_upgrades() {
         let mut rng = ChaCha8Rng::seed_from_u64(1);
         let g = skirmish(&mut rng);
