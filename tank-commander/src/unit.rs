@@ -345,7 +345,8 @@ impl Tank {
             UnitKind::Tank => {
                 self.crew_status(CrewRole::Gunner) != CrewStatus::Killed && self.loaded.is_some()
             }
-            UnitKind::Infantry => !self.in_cover,
+            // House rule: dig-in does not lock fire (revealing fire clears cover).
+            UnitKind::Infantry => true,
             UnitKind::Apc => self.ai_range > 0,
         }
     }
@@ -375,7 +376,8 @@ impl Tank {
         match self.kind {
             UnitKind::Tank => self.crew_status(CrewRole::Driver) != CrewStatus::Killed,
             UnitKind::Apc => true,
-            UnitKind::Infantry => !self.in_cover,
+            // House rule: dig-in does not lock movement (upstream Take Cover did).
+            UnitKind::Infantry => true,
         }
     }
 
