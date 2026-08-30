@@ -152,64 +152,6 @@ following. `404` if the path has no blame (never touched / not a file).
 }
 ```
 
-### `POST /api/<repo>/loadtest`
-Run a budget-capped push/pull load test against this repo from *inside* the
-Worker (or the native test server). Seeds an empty repo with a small synthetic
-pack when needed. Requires `"confirm": true`.
-
-```jsonc
-{
-  "confirm": true,              // required guard
-  "budget_usd": 0.10,           // hard spend cap (default 0.10, max 5.00)
-  "duration_secs": 20,          // per-stage wall time (default 20, max 120)
-  "shards": 1,                  // split concurrency across isolates (same repo)
-  "stages": [                   // optional; default = writer ramp 1..48 then 64 readers
-    { "writers": 8, "readers": 0 },
-    { "writers": 0, "readers": 64 }
-  ]
-}
-```
-
-Response:
-
-```jsonc
-{
-  "repo": "lt-demo",
-  "tip": "<oid>",
-  "budget_usd": 0.10,
-  "total_cost_usd": 0.042,
-  "budget_limited": false,      // true if spend hit the cap mid-run
-  "peak_pushes_per_sec": 6.2,
-  "peak_pulls_per_sec": 140.5,
-  "cost_per_push": {
-    "samples": 120,
-    "mean_r2_class_a": 5.0,
-    "mean_r2_class_b": 19.0,
-    "mean_do": 2.0,
-    "mean_kv": 1.0,
-    "mean_cost_usd": 0.00003,
-    "mean_ms": 180.0          // mean backend-await ms (R2/DO/KV), not isolate wall
-  },
-  "cost_per_pull": { "samples": 800, "mean_r2_class_a": 0, "mean_r2_class_b": 5,
-                     "mean_do": 1, "mean_kv": 0, "mean_cost_usd": 0.000002, "mean_ms": 40.0 },
-  "stages": [ /* per-stage goodput + costs */ ],
-  "duration_ms": 45000,
-  "shards": 1
-}
-```
-
-Each synthetic push/pull is a normal request on the hot path, so Workers
-Traces and the structured `{"evt":"req",…}` logs cover the load. The
-in-process harness mirrors production auto-repack after accepted pushes
-(so pack count does not climb without bound and inflate R2B) and attributes
-`mean_ms` from backend awaits so concurrent writers on one isolate do not
-queue into each other's latency. When
-`budget_limited` is true, the peak QPS fields are still the best observed
-before the cap stopped the run. Auth: same `LOADTEST_TOKEN` as
-[`GET /loadtest`](#get-loadtest) (`token` JSON field, `?token=`, or
-`X-Loadtest-Token`). See [`loadtest-scaling.md`](loadtest-scaling.md)
-→ "In-Worker loadtest".
-
 ### `POST /api/<repo>/repack`
 Trigger one pack-consolidation run now (normally a nightly cron). Each run is
 budget-bounded: it folds a contiguous selection of packs and reports how many
@@ -231,59 +173,6 @@ conflict with repack). See [`design.md` → Repacking](design.md).
 ### `GET /`
 Plain-text banner identifying the service.
 
-### `GET /loadtest`
-Phone-friendly HTML load test. Open this URL in a browser:
-
-* without `run=1` — landing page with a **cost budget** control and **Run**;
-* with `?run=1` — runs immediately in-process into **one** disposable repo
-  (bookmark / curl convenience; the landing **Run** button uses browser
-  auto-ramp instead).
-
-The landing **Run** button **auto-ramps** writers `1 → 2 → 4 → 8 → 16`
-(one writer = one isolate; shards always equal writers). Seed is
-`ensure_seeded` only (empty stages — no `load/w0` writer). Each ramp step
-uses a unique `shard_index` namespace so later steps do not recreate earlier
-branches. After each step it shows pushes/s live and **stops when the gain
-is under 10%** (or when a step gets zero successful pushes), then measures
-readers at that concurrency. The browser POSTs one shard at a time (up to 4
-in parallel), then `POST /loadtest/merge` for the HTML report. Worker
-self-fetch fan-out is not used (Cloudflare blocks same-zone Worker→Worker).
-
-Each writer owns its own branch (`refs/heads/load/wN`); disjoint-branch
-pushes merge-apply without conflicting. Defaults: `budget=0.10`,
-`duration=4` seconds per ramp step, ramp ceiling `16`.
-
-Each shard POST runs nested push/pull loops **inside one Worker
-invocation**. That isolate has a shared subrequest budget and 128 MiB heap —
-concurrent writers and inline auto-repack under multi-shard backlog both
-threw Cloudflare Error 1101. The UI keeps **≤1 writer / ≤1 reader per
-isolate**, runs **one ramp step per POST**, **skips inline auto-repack on
-shard POSTs**, caps attempts per loop, opens a short pack-index tail on push
-and bookends on fetch, and is guarded by
-`cargo test --test phone_budget_tune` (soft subrequest/heap caps + optional
-`PHONE_BUDGET_TUNE=1` search).
-Heavier single-isolate ramps belong on distributed clients, not nested
-in-Worker loops.
-
-**Auth:** production requires the Worker secret `LOADTEST_TOKEN`. Pass it as
-`?token=…`, or as the `X-Loadtest-Token` header. Without a matching token the
-run returns 401 (HTML error page for GET). If the secret is unset, loadtests
-return 503.
-
-Optional query: `budget` (USD, default `0.10`, max `5`), `peak` (ramp
-ceiling, default `16`, max `48`), `duration` (seconds per ramp step, default
-`4`). Bookmark `https://git.<account>.workers.dev/loadtest?token=…` and tap
-Run, or `…/loadtest?run=1&budget=0.10&token=…` for one-tap.
-
-### `POST /loadtest/merge`
-Merge shard JSON reports from a browser fan-out into one HTML report. Body:
-
-```json
-{ "confirm": true, "budget_usd": 0.10, "parts": [ /* LoadTestReport… */ ] }
-```
-
-Query: `peak`, `duration`, `token` (same auth as other loadtest routes).
-
 Any other unmatched path is `404`.
 
 ---
@@ -291,7 +180,7 @@ Any other unmatched path is `404`.
 ## Not yet supported
 
 * Authentication / authorization on git smart-HTTP and most `/api/…`
-  routes (loadtest endpoints are gated by `LOADTEST_TOKEN` — see above).
+  routes.
 * Date-based shallow (`--shallow-since` / `deepen-since`, `deepen-not`) —
   rejected in-band. (Depth-based shallow and partial clone `--filter` *are*
   supported.)

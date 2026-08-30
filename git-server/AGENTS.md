@@ -90,7 +90,6 @@ homes, so you know where to look before writing a new one:
 | Pack-index sorting | `PackIndex::new` (nowhere else) |
 | Tree-mode check | `object::is_tree_mode` / `TreeEntry::is_tree` |
 | Cost model ($/op) | `metrics::cost` |
-| In-Worker loadtest (QPS / $/op / budget) | `loadtest` |
 | Native HTTP harness, git runner, noise generator, pack-install fixture | `testutil` (shared by `tests/` **and** `benches/` — benches cannot import `tests/common`, so never copy the harness into a bench) |
 | Delta-chain depth limit | `pack::MAX_DELTA_CHAIN` |
 

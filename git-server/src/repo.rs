@@ -812,40 +812,6 @@ impl<'a> Repo<'a> {
         Odb::open(self.store, self.name, &state.pack_ids()).await
     }
 
-    /// Open oldest + newest pack bookends. Fetch of an early tip (loadtest
-    /// seed) only needs the oldest packs; a fresh tip only needs the newest.
-    /// Middle misses fall back to [`Self::odb`]. Avoids loading hundreds of
-    /// writer-pack indexes on every upload-pack against a multi-shard backlog.
-    pub async fn odb_bookends(&self, state: &RepoState, each: usize) -> Result<Odb<'a>, String> {
-        let ids = state.pack_ids();
-        if ids.len() <= each.saturating_mul(2) {
-            return Odb::open(self.store, self.name, &ids).await;
-        }
-        let mut sel = Vec::with_capacity(each * 2);
-        for id in ids.iter().take(each) {
-            sel.push(id.clone());
-        }
-        for id in ids.iter().rev().take(each) {
-            if !sel.iter().any(|s| s == id) {
-                sel.push(id.clone());
-            }
-        }
-        Odb::open(self.store, self.name, &sel).await
-    }
-
-    /// Open only the newest `tail` packs. Push resolve/filelog almost always
-    /// only needs recent packs (parent tip, thin bases for incremental
-    /// pushes). Opening hundreds of indexes on every push is what blew the
-    /// Worker subrequest/memory budget under phone multi-shard peak.
-    pub async fn odb_tail(&self, state: &RepoState, tail: usize) -> Result<Odb<'a>, String> {
-        let ids = state.pack_ids();
-        if ids.len() <= tail {
-            return Odb::open(self.store, self.name, &ids).await;
-        }
-        let start = ids.len() - tail;
-        Odb::open(self.store, self.name, &ids[start..]).await
-    }
-
     /// Complete a push: the pack (if any) has been streamed via
     /// [`PackIngest`]; resolve it, index it, build the file-log segment,
     /// verify, and send the resulting [`PushDelta`] to the state store,
@@ -861,32 +827,15 @@ impl<'a> Repo<'a> {
         state: RepoState,
         now_ms: i64,
     ) -> Result<PushOutcome, String> {
-        // Prefer a short pack-index tail; fall back to the full manifest if
-        // resolve or filelog needs an older object (thin-pack base / deep
-        // parent). Tail size covers a phone shard's max ops plus headroom.
-        const PUSH_PACK_TAIL: usize = 64;
-        let mut odb = self.odb_tail(&state, PUSH_PACK_TAIL).await?;
-        let mut used_full = state.packs.len() <= PUSH_PACK_TAIL;
-
         // Resolve + index the new pack (if the push carried one). Append the
         // in-memory index onto `odb` — do not reopen every prior pack index
         // from R2 (that was ~P Class B reads for no new information).
+        let mut odb = self.odb(&state).await?;
         let new_pack: Option<PackMeta> = match &ingested {
             Some((pack_id, scanned)) => {
                 let _t = crate::timing::Phase::start("push: resolve+index");
                 let key = pack_key(self.name, pack_id);
-                let records = match resolve_pack(self.store, &key, scanned, &OdbBases(&odb)).await {
-                    Ok(r) => r,
-                    Err(e) if !used_full => {
-                        // Thin-pack base (or similar) lived outside the tail.
-                        odb = self.odb(&state).await?;
-                        used_full = true;
-                        resolve_pack(self.store, &key, scanned, &OdbBases(&odb))
-                            .await
-                            .map_err(|e2| format!("{e}; full-odb retry: {e2}"))?
-                    }
-                    Err(e) => return Err(e),
-                };
+                let records = resolve_pack(self.store, &key, scanned, &OdbBases(&odb)).await?;
                 let index = PackIndex::new(records);
                 self.store
                     .put(&index_key(self.name, pack_id), index.to_bytes())
@@ -954,19 +903,7 @@ impl<'a> Repo<'a> {
         let mut filelog_id = None;
         if let Some(meta) = &new_pack {
             let _t = crate::timing::Phase::start("push: filelog build");
-            let segment = match self.build_filelog_segment(&odb, &meta.id, &state).await {
-                Ok(s) => s,
-                Err(e) if !used_full && e.contains("not found") => {
-                    let new_index = odb
-                        .pack_index(&meta.id)
-                        .cloned()
-                        .ok_or_else(|| format!("missing new pack index after tail miss: {e}"))?;
-                    odb = self.odb(&state).await?;
-                    odb.push_pack(self.name, meta.id.clone(), new_index);
-                    self.build_filelog_segment(&odb, &meta.id, &state).await?
-                }
-                Err(e) => return Err(e),
-            };
+            let segment = self.build_filelog_segment(&odb, &meta.id, &state).await?;
             if !segment.records.is_empty() {
                 let bytes = segment.to_bytes();
                 if bytes.len() > 2 * FILELOG_SHARD_TARGET_BYTES {

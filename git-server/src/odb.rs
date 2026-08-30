@@ -165,8 +165,8 @@ const TREE_CACHE_MAX_ENTRIES: usize = 100_000;
 
 impl<'a> Odb<'a> {
     /// Workers allow only a handful of simultaneous outbound connections;
-    /// loading hundreds of pack indexes with one `try_join_all` overflows
-    /// that and shows up as Error 1101 under multi-shard phone loadtests.
+    /// loading many pack indexes with one `try_join_all` overflows that and
+    /// fails the request. Batch to stay under the concurrent-connection cap.
     const INDEX_LOAD_BATCH: usize = 6;
 
     /// Load the indexes for `pack_ids` (one Class B read per pack on cache
