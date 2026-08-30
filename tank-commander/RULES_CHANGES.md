@@ -459,6 +459,30 @@ decisive. Worth iterating on initiative spoil / start symmetry next.
 
 ---
 
+## 2026-08-30 — Shared battle mat; skirmish half-width
+
+**Type: Scenario**
+
+Platoon and combined share one **18×12** open mat. Combined keeps east–west
+mirrored starts and scatter. Skirmish is **9×12** — half the battle width,
+same height — with a compact midline block.
+
+At 2″ flat-to-flat pointy-top hexes: battle mat ≈ 37″ × 21″; skirmish ≈ 19″ ×
+21″.
+
+**Effect (seed 1; 500 / 200 / 200):**
+
+| Scenario | Decisive | FP share | Color | Hard TO | Idle |
+|----------|----------|----------|-------|---------|------|
+| Skirmish | **91%** | **44%** | Blue lean | **17%** | 0% |
+| Platoon | **98%** | **51%** | Red lean | 0% | **2%** |
+| Combined | **96%** | **52%** | ~even | **23%** | **18%** |
+
+Platoon initiative looks healthy. Combined still times out / idles more than
+we'd like — denser map or longer clocks may be next if this size sticks.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.

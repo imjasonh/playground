@@ -7,14 +7,15 @@ Three scenarios share the same engine and heuristic AI:
 
 | Scenario | Force | Board | Cap / idle stop |
 |----------|-------|-------|-----------------|
-| `skirmish` | 1v1 stock tanks | 11×9 | 20 hard (10/side) |
-| `combined` | 2 tanks + 2 APCs + 2 infantry / side | 17×13 open | 240 hard; idle after 48 no-hit |
-| `platoon` | 3v3 stock tanks | 19×15 open | 200 hard; idle after 40 no-hit |
+| `skirmish` | 1v1 stock tanks | 9×12 | 20 hard (10/side) |
+| `combined` | 2 tanks + 2 APCs + 2 infantry / side | 18×12 open | 240 hard; idle after 48 no-hit |
+| `platoon` | 3v3 stock tanks | 18×12 open | 200 hard; idle after 40 no-hit |
 
-Platoon and combined use **scattered building clumps and forest patches**
-(no sealed midline funnel). Combined starts and scatter are east–west
-mirrors. After initiative, the second player may shift a few scatter terrain
-tiles (forest / mud / rubble — not buildings) by 1 hex each, and on
+Platoon and combined share one **18×12** mat with **scattered building clumps
+and forest patches** (no sealed midline funnel). Skirmish is half the width
+(**9×12**) with a compact midline block. Combined starts and scatter are
+east–west mirrors. After initiative, the second player may shift a few scatter
+terrain tiles (forest / mud / rubble — not buildings) by 1 hex each, and on
 platoon/combined may also nudge each opposing unit by up to 1 hex, before
 the first activation. Combined also has next-activation air strikes (with
 scatter) and APC vehicle spray.
@@ -80,11 +81,11 @@ cross simple thresholds.
   beam-search shoot / load / ability plans. Infantry prefer missiles and
   cover; APCs hunt infantry; tanks with air support may call a strike.
 - **Map.** Boards are odd-r **rectangles** (column × row), matching a
-  tabletop hex mat — not axial parallelograms. Skirmish stays on an 11×9
-  board with a compact midline block. Combined (17×13) and platoon (19×15)
-  use open boards with scattered building clumps and forest patches (no
-  sealed plaza funnel). Forest/mud/rubble also scatter; infantry stepping
-  into forest dig in automatically, and leaving forest clears dig-in.
+  tabletop hex mat — not axial parallelograms. Platoon and combined share an
+  **18×12** open mat (building clumps + forest patches). Skirmish is half
+  the width (**9×12**) with a compact midline block. Forest/mud/rubble also
+  scatter; infantry stepping into forest dig in automatically, and leaving
+  forest clears dig-in.
 - **Combined arms.** Air strikes arrive at the end of the caller's next
   activation, then scatter (d6: wild 2 / drift 1 / on target) before the
   blast template (impact + neighbors). Tank main gun (range 5) outranges
