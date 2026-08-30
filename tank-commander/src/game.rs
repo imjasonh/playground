@@ -35,6 +35,16 @@ pub struct PendingAirStrike {
     pub wait: u8,
 }
 
+/// A capture objective (flag) on the board.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Objective {
+    pub hex: Hex,
+    /// Side that owns this flag at deployment (defender).
+    pub home: Side,
+    /// Set when an enemy infantry Captures this hex.
+    pub captured_by: Option<Side>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Game {
     pub board: Board,
@@ -45,11 +55,15 @@ pub struct Game {
     pub max_activations: u32,
     pub events: Vec<GameEvent>,
     pub first_player: Side,
-    /// `"skirmish"` | `"squadron"` | `"platoon"` | `"combined"`.
+    /// `"skirmish"` | `"squadron"` | `"platoon"` | `"combined"` | `"capture"`.
     pub scenario: String,
     pub pending_air_strikes: Vec<PendingAirStrike>,
     pub air_strikes_resolved: u32,
     pub infantry_kills: u32,
+    /// Flags / capture markers (empty outside capture scenarios).
+    pub objectives: Vec<Objective>,
+    /// Successful Capture actions this game.
+    pub objectives_captured: u32,
     /// End like a timeout after this many activations with no hit (`0` = off).
     pub stalemate_after: u32,
     pub activations_since_hit: u32,
@@ -113,6 +127,8 @@ impl Game {
             pending_air_strikes: Vec::new(),
             air_strikes_resolved: 0,
             infantry_kills: 0,
+            objectives: Vec::new(),
+            objectives_captured: 0,
             stalemate_after: 0,
             activations_since_hit: 0,
             activations_since_damage: 0,
@@ -161,8 +177,44 @@ impl Game {
         self
     }
 
+    pub fn with_objectives(mut self, objectives: Vec<Objective>) -> Self {
+        self.objectives = objectives;
+        self
+    }
+
     pub fn push_setup_event(&mut self, text: String) {
         self.push_event(0, None, text, None);
+    }
+
+    /// Enemy flag hex that is still uncaptured, if any.
+    pub fn enemy_flag(&self, side: Side) -> Option<Hex> {
+        self.objectives
+            .iter()
+            .find(|o| o.home == side.other() && o.captured_by.is_none())
+            .map(|o| o.hex)
+    }
+
+    /// Own flag hex that is still uncaptured, if any.
+    pub fn own_flag(&self, side: Side) -> Option<Hex> {
+        self.objectives
+            .iter()
+            .find(|o| o.home == side && o.captured_by.is_none())
+            .map(|o| o.hex)
+    }
+
+    /// Side that has captured an enemy flag (instant win when present).
+    pub fn capture_winner(&self) -> Option<Side> {
+        self.objectives.iter().find_map(|o| o.captured_by)
+    }
+
+    /// True when this infantry unit may Capture on its current hex.
+    pub fn can_capture(&self, tank: &Tank) -> bool {
+        if tank.kind != UnitKind::Infantry || tank.is_embarked() || tank.destroyed {
+            return false;
+        }
+        self.objectives
+            .iter()
+            .any(|o| o.hex == tank.pos && o.home != tank.side && o.captured_by.is_none())
     }
 
     pub fn tank(&self, id: u8) -> &Tank {
@@ -214,6 +266,9 @@ impl Game {
     }
 
     pub fn outcome(&self) -> Outcome {
+        if let Some(side) = self.capture_winner() {
+            return Outcome::Winner(side);
+        }
         let red_fight = self
             .tanks
             .iter()
@@ -783,6 +838,10 @@ impl Game {
             out.push(Action::TakeCover);
         }
 
+        if ap_left >= 1 && self.can_capture(tank) {
+            out.push(Action::Capture);
+        }
+
         // Mount Up onto adjacent empty APC (interior) or tank (exterior).
         if !tank.mount_or_dismount_used && ap_left >= 1 {
             for other in &self.tanks {
@@ -959,6 +1018,9 @@ impl Game {
                 self.tank_mut(tank_id).in_cover = true;
                 *ap_left -= 1;
                 self.push_event(turn, Some(side), "Take cover".into(), None);
+            }
+            Action::Capture => {
+                self.apply_capture(tank_id, turn, side, ap_left);
             }
             Action::CallAirStrike { hex } => {
                 self.tank_mut(tank_id).air_strike_used = true;
@@ -1373,6 +1435,34 @@ impl Game {
                 None,
             );
         }
+    }
+
+    fn apply_capture(&mut self, infantry_id: u8, turn: u32, side: Side, ap_left: &mut i32) {
+        let unit = self.tank(infantry_id);
+        if !self.can_capture(unit) {
+            return;
+        }
+        let pos = unit.pos;
+        let name = unit.name.clone();
+        let mut claimed = false;
+        for obj in &mut self.objectives {
+            if obj.hex == pos && obj.home != side && obj.captured_by.is_none() {
+                obj.captured_by = Some(side);
+                claimed = true;
+                break;
+            }
+        }
+        if !claimed {
+            return;
+        }
+        *ap_left -= 1;
+        self.objectives_captured += 1;
+        self.push_event(
+            turn,
+            Some(side),
+            format!("{name} captures the objective at {pos}"),
+            None,
+        );
     }
 
     fn apply_mount(
@@ -2489,5 +2579,34 @@ mod tests {
         g.maybe_kill_exterior_riders_on_hit(0);
         assert!(!g.tank(1).destroyed);
         assert_eq!(g.tank(0).passenger, Some(1));
+    }
+
+    #[test]
+    fn infantry_capture_claims_enemy_flag_and_wins() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let flag = Hex::offset(2, 4);
+        let tanks = vec![
+            Tank::stock_infantry(0, Side::Red, flag, Facing::E, "Squad"),
+            Tank::stock(1, Side::Blue, Hex::offset(8, 4), Facing::W, "Blue"),
+        ];
+        let mut g =
+            Game::new(board, tanks, Side::Red, 40, "test").with_objectives(vec![Objective {
+                hex: flag,
+                home: Side::Blue,
+                captured_by: None,
+            }]);
+        assert!(g.can_capture(g.tank(0)));
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
+        let mut ap = 3;
+        let mut buffs = TurnBuffs::default();
+        g.begin_activation(0);
+        let legal = g.legal_actions(0, ap, &buffs);
+        assert!(legal.iter().any(|a| matches!(a, Action::Capture)));
+        g.apply_action(0, Action::Capture, &mut buffs, &mut ap, &mut rng);
+        assert_eq!(g.objectives_captured, 1);
+        assert_eq!(g.capture_winner(), Some(Side::Red));
+        assert_eq!(g.outcome(), Outcome::Winner(Side::Red));
     }
 }

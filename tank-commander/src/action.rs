@@ -49,6 +49,8 @@ pub enum Action {
     LieutenantCover {
         role: crate::unit::CrewRole,
     },
+    /// Infantry: claim an enemy objective hex this unit occupies.
+    Capture,
     /// Infantry: board an adjacent friendly APC (capacity 1).
     Mount {
         vehicle: u8,
@@ -103,6 +105,7 @@ impl Action {
             Action::DeploySmoke { .. } => "DeploySmoke",
             Action::DeployMine { .. } => "DeployMine",
             Action::LieutenantCover { .. } => "LieutenantCover",
+            Action::Capture => "Capture",
             Action::Mount { .. } => "Mount",
             Action::Dismount { .. } => "Dismount",
             Action::Embark { .. } => "Embark",

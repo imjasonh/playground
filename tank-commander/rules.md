@@ -270,10 +270,11 @@ scenario says).
 | Anti-infantry (AI) | 2 | Vs infantry |
 
 **Actions (simulator):** step (any facing), fire missile, fire AI, take cover,
-**mount / dismount** (see [Embarkation](#embarkation)).
+**mount / dismount** (see [Embarkation](#embarkation)), **Capture** on an enemy
+flag hex (see [Capture Objective](#capture-objective)).
 
-Upstream also lists **Capture Objective** and **Disarm Mines** — those are
-**not** in the simulator yet (see [Unimplemented upstream](#unimplemented-upstream)).
+Upstream also lists **Disarm Mines** — that is **not** in the simulator yet
+(see [Unimplemented upstream](#unimplemented-upstream)).
 
 **House rule vs upstream Take Cover.** Upstream forbids moving or firing while
 in cover. Here, dig-in only affects how you take hits (and revealing fire when
@@ -354,6 +355,22 @@ hit kills (or pins if in cover, above).
 **Why bother.** APC move **4** and a hard box beat walking. Tank exterior is
 faster repositioning when no APC is free — but one glance wipes the squad, so
 dismount before you expect return fire.
+
+### Capture Objective
+
+Upstream:
+
+> **Capture Objective**: Capture an objective. The unit must share the space with the objective to capture it. They don't need to remain on the space to hold it.
+
+**Implemented** for the [Capture (flag raid)](#5-capture-flag-raid) scenario:
+
+1. Each side deploys one **flag** hex in its backline.
+2. An unembarked infantry unit that **shares** the **enemy** flag hex may spend
+   **1 action** on **Capture**.
+3. Capturing the enemy flag **wins immediately**. You do not need to stay on
+   the hex afterward.
+4. Wipe (no operational enemy units) still wins. Timeout / idle stalemate still
+   resolve by attrition.
 
 ---
 
@@ -456,6 +473,21 @@ Full combined-arms game with lists.
 - **Second-player spoil** (tied lists only): nudge each opposing unit up to 1
   hex, then shift up to **4** scatter tiles.
 
+### 5. Capture (flag raid)
+
+Objectives matter: race the other side's flag with embarked infantry.
+
+- **Force:** per side — **1 tank** + **3 APCs**, each APC **pre-loaded** with
+  one infantry squad. **No upgrades** (stock).
+- **Board:** 18×12 open mat (mirrored starts/scatter like Combined). Each side
+  has one **flag** hex in its backline (kept Open).
+- **Win:** an infantry unit that **shares** the enemy flag hex may spend 1 AP
+  on **Capture**. Capturing the enemy flag wins immediately. Wipe still wins;
+  timeout / idle stalemate still resolve by attrition.
+- **Initiative:** roll off; second player always gets spoil (nudge + 3 scatter).
+- **Embarkation:** squads start inside their APCs; they may stay embarked until
+  dropped near the flag (see [Embarkation](#embarkation)).
+
 ### Scatter terrain spoil (shared rules)
 
 - Eligible tiles: **forest, mud, rubble** only — not buildings.
@@ -472,9 +504,9 @@ Full combined-arms game with lists.
 
 Examples from upstream: Basic Training, Capture Objectives, Breakthrough,
 Destroy Target, Escort, Beach Landing, Urban Warfare, Cross Minefield, Disable
-AA Guns. **None of these are playable scenarios in the simulator** — only the
-ladder in [Scenarios](#scenarios) is. Full upstream mission text and special
-rules are in [Unimplemented upstream](#unimplemented-upstream).
+AA Guns. The simulator’s playable ladder is in [Scenarios](#scenarios)
+(including **Capture** as a flag-raid variant). Full upstream mission text and
+special rules for the rest are in [Unimplemented upstream](#unimplemented-upstream).
 
 ---
 
@@ -577,14 +609,15 @@ Upstream:
 House rule: dig-in does not forbid move/fire; forest/dig-in interaction is
 under [Infantry cover](#infantry-cover).
 
-### Capture Objective — **missing**
+### Capture Objective — **implemented** (see [Capture Objective](#capture-objective))
 
 Upstream:
 
 > **Capture Objective**: Capture an objective. The unit must share the space with the objective to capture it. They don't need to remain on the space to hold it.
 
-No objectives, markers, or Capture action in the engine. Ladder scenarios are
-wipe/attrition only.
+Live rules: flag markers + Capture action on the Capture scenario. Other
+upstream missions that need multiple objectives or attacker/defender roles are
+still missing (see [Upstream missions](#upstream-missions--missing-as-playable-scenarios)).
 
 ### Disarm Mines — **missing**
 
@@ -633,6 +666,9 @@ Upstream:
 > - **Basic Training:** One tank driving to spaces and shooting targets, to learn basic rules.
 > - **Skirmish:** 1-vs-1 tank battle with light terrain.
 > - **Capture Objectives:** Use infantry to capture 1, 2 or 3 spaces on the board.
+
+The simulator’s **Capture** scenario is a 1v1 flag raid (one flag each, instant
+win on Capture). Multi-objective cards and the rest of this list remain missing.
 > - **Breakthrough:** Move your tank to the other side of the board to win. One player is the attacker, the other is the defender.
 > - **Destroy Target:** Destroy a specific target on the board. The target can be a building, a tank, or an infantry unit.
 > - **Escort:** Move an infantry squad across the battlefield alive.

@@ -60,3 +60,23 @@ fn combined_batch_runs() {
     assert_eq!(result.aggregate.scenario, "combined");
     assert!(result.aggregate.avg_shots > 0.5);
 }
+
+#[test]
+fn capture_batch_runs() {
+    let result = sim::run(SimConfig {
+        games: 16,
+        seed: 33,
+        verbose: false,
+        scenario: ScenarioKind::Capture,
+    });
+    assert_eq!(result.aggregate.games, 16);
+    assert_eq!(result.aggregate.scenario, "capture");
+    assert!(result.aggregate.avg_moves > 1.0);
+    // At least some games should resolve via Capture when the AI races.
+    assert!(
+        result.aggregate.capture_win_rate > 0.0 || result.aggregate.avg_drop_offs > 0.0,
+        "expected flag play (captures or drop-offs), got capture_win_rate={} drop_offs={}",
+        result.aggregate.capture_win_rate,
+        result.aggregate.avg_drop_offs
+    );
+}

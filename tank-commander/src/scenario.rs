@@ -19,6 +19,8 @@ pub enum ScenarioKind {
     Platoon,
     /// 2 tanks (air) + 2 APCs + 2 infantry per side, with lists.
     Combined,
+    /// Flag raid: 1 tank + 3 loaded APCs per side; infantry Capture wins.
+    Capture,
 }
 
 impl ScenarioKind {
@@ -28,6 +30,7 @@ impl ScenarioKind {
             ScenarioKind::Squadron => "squadron",
             ScenarioKind::Platoon => "platoon",
             ScenarioKind::Combined => "combined",
+            ScenarioKind::Capture => "capture",
         }
     }
 
@@ -37,6 +40,7 @@ impl ScenarioKind {
             "squadron" => Some(Self::Squadron),
             "platoon" => Some(Self::Platoon),
             "combined" => Some(Self::Combined),
+            "capture" | "raid" | "flag" => Some(Self::Capture),
             _ => None,
         }
     }
@@ -125,6 +129,7 @@ pub fn setup<R: Rng>(kind: ScenarioKind, rng: &mut R) -> Game {
         ScenarioKind::Squadron => squadron(rng),
         ScenarioKind::Platoon => platoon(rng),
         ScenarioKind::Combined => combined(rng),
+        ScenarioKind::Capture => capture(rng),
     }
 }
 
@@ -323,6 +328,112 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
     game
 }
 
+/// Flag raid: each side fields **1 tank** + **3 APCs** already loaded with
+/// infantry. Each side has a backline flag; infantry **Capture** on the enemy
+/// flag wins immediately. Stock lists (no upgrades) so the objective race is
+/// the main lesson.
+pub fn capture<R: Rng>(rng: &mut R) -> Game {
+    let width = BATTLE_WIDTH;
+    let height = BATTLE_HEIGHT;
+    let red_tank = Hex::offset(1, 5);
+    let red_apcs = [Hex::offset(1, 2), Hex::offset(1, 7), Hex::offset(1, 10)];
+    let red_flag = Hex::offset(0, 6);
+    let blue_tank = mirror_ew(red_tank, width);
+    let blue_apcs = [
+        mirror_ew(red_apcs[0], width),
+        mirror_ew(red_apcs[1], width),
+        mirror_ew(red_apcs[2], width),
+    ];
+    let blue_flag = mirror_ew(red_flag, width);
+
+    let reserved: Vec<Hex> = [red_tank, blue_tank, red_flag, blue_flag]
+        .into_iter()
+        .chain(red_apcs)
+        .chain(blue_apcs)
+        .collect();
+    let egress = [
+        Hex::offset(2, 2),
+        Hex::offset(2, 5),
+        Hex::offset(2, 7),
+        Hex::offset(2, 10),
+        mirror_ew(Hex::offset(2, 2), width),
+        mirror_ew(Hex::offset(2, 5), width),
+        mirror_ew(Hex::offset(2, 7), width),
+        mirror_ew(Hex::offset(2, 10), width),
+        red_flag,
+        blue_flag,
+    ];
+    let goals = [Hex::offset(8, 5), Hex::offset(9, 6), red_flag, blue_flag];
+    let layout = MapLayout {
+        width,
+        height,
+        wall: &[],
+        alley_clear: &egress,
+        path_goals: &goals,
+        building_clumps: (4, 7),
+        building_clump_size: (2, 5),
+        forest: (18, 30),
+        forest_clump_size: (3, 6),
+        mud: (3, 6),
+        rubble: (2, 5),
+        mirror_scatter: true,
+    };
+    let mut board = build_board(&layout, rng, &reserved, &egress);
+    board.set_terrain(red_flag, Terrain::Open);
+    board.set_terrain(blue_flag, Terrain::Open);
+
+    let mut tanks = vec![
+        Tank::stock(0, Side::Red, red_tank, Facing::E, "Red Tank"),
+        Tank::stock_apc(1, Side::Red, red_apcs[0], Facing::E, "Red APC A"),
+        Tank::stock_apc(2, Side::Red, red_apcs[1], Facing::E, "Red APC B"),
+        Tank::stock_apc(3, Side::Red, red_apcs[2], Facing::E, "Red APC C"),
+        Tank::stock_infantry(4, Side::Red, red_apcs[0], Facing::E, "Red Squad A"),
+        Tank::stock_infantry(5, Side::Red, red_apcs[1], Facing::E, "Red Squad B"),
+        Tank::stock_infantry(6, Side::Red, red_apcs[2], Facing::E, "Red Squad C"),
+        Tank::stock(7, Side::Blue, blue_tank, Facing::W, "Blue Tank"),
+        Tank::stock_apc(8, Side::Blue, blue_apcs[0], Facing::W, "Blue APC A"),
+        Tank::stock_apc(9, Side::Blue, blue_apcs[1], Facing::W, "Blue APC B"),
+        Tank::stock_apc(10, Side::Blue, blue_apcs[2], Facing::W, "Blue APC C"),
+        Tank::stock_infantry(11, Side::Blue, blue_apcs[0], Facing::W, "Blue Squad A"),
+        Tank::stock_infantry(12, Side::Blue, blue_apcs[1], Facing::W, "Blue Squad B"),
+        Tank::stock_infantry(13, Side::Blue, blue_apcs[2], Facing::W, "Blue Squad C"),
+    ];
+    // Pre-load each squad into its APC.
+    for (apc_id, inf_id) in [(1u8, 4u8), (2, 5), (3, 6), (8, 11), (9, 12), (10, 13)] {
+        let pos = tanks.iter().find(|t| t.id == apc_id).unwrap().pos;
+        if let Some(apc) = tanks.iter_mut().find(|t| t.id == apc_id) {
+            apc.passenger = Some(inf_id);
+        }
+        if let Some(inf) = tanks.iter_mut().find(|t| t.id == inf_id) {
+            inf.embarked_in = Some(apc_id);
+            inf.pos = pos;
+        }
+    }
+
+    let first = coin_flip(rng);
+    let objectives = vec![
+        crate::game::Objective {
+            hex: red_flag,
+            home: Side::Red,
+            captured_by: None,
+        },
+        crate::game::Objective {
+            hex: blue_flag,
+            home: Side::Blue,
+            captured_by: None,
+        },
+    ];
+    let mut game = Game::new(board, tanks, first, 200, "capture")
+        .with_stalemate(40)
+        .with_objectives(objectives);
+    game.push_setup_event(format!("Flags at {red_flag} (Red) and {blue_flag} (Blue)"));
+    second_player_setup(&mut game, 3);
+    // Spoil must not bury flags under buildings.
+    game.board.set_terrain(red_flag, Terrain::Open);
+    game.board.set_terrain(blue_flag, Terrain::Open);
+    game
+}
+
 /// Second-player post-initiative spoil: unit nudges, then scatter-terrain shifts.
 fn second_player_setup(game: &mut Game, terrain_budget: u32) {
     second_player_nudge_opposing(game);
@@ -343,6 +454,9 @@ fn second_player_nudge_opposing(game: &mut Game) {
         .collect();
 
     for id in fp_ids {
+        if game.tank(id).is_embarked() {
+            continue;
+        }
         let from = game.tank(id).pos;
         let kind = game.tank(id).kind;
         let name = game.tank(id).name.clone();
@@ -387,6 +501,9 @@ fn second_player_nudge_opposing(game: &mut Game) {
 
         if best != from {
             game.tank_mut(id).pos = best;
+            if let Some(pid) = game.tank(id).passenger {
+                game.tank_mut(pid).pos = best;
+            }
             game.push_setup_event(format!(
                 "Second player nudges {name} {from} → {best} before start"
             ));
@@ -1308,6 +1425,7 @@ mod tests {
         let q = squadron(&mut rng);
         let c = combined(&mut rng);
         let p = platoon(&mut rng);
+        let cap = capture(&mut rng);
         let area = |g: &Game| g.board.width * g.board.height;
         assert_eq!(s.board.width, SKIRMISH_WIDTH);
         assert_eq!(s.board.height, SKIRMISH_HEIGHT);
@@ -1317,8 +1435,11 @@ mod tests {
         assert_eq!(c.board.height, BATTLE_HEIGHT);
         assert_eq!(p.board.width, BATTLE_WIDTH);
         assert_eq!(p.board.height, BATTLE_HEIGHT);
+        assert_eq!(cap.board.width, BATTLE_WIDTH);
+        assert_eq!(cap.board.height, BATTLE_HEIGHT);
         assert_eq!(area(&c), area(&p), "platoon and combined share one mat");
         assert_eq!(area(&q), area(&p), "squadron shares the battle mat");
+        assert_eq!(area(&cap), area(&p), "capture shares the battle mat");
         assert_eq!(
             s.board.height, p.board.height,
             "skirmish keeps battle height"
@@ -1328,5 +1449,55 @@ mod tests {
             p.board.width,
             "skirmish is half battle width"
         );
+    }
+
+    #[test]
+    fn capture_scenario_loads_apcs_and_places_flags() {
+        let mut rng = ChaCha8Rng::seed_from_u64(9);
+        let g = capture(&mut rng);
+        assert_eq!(g.scenario, "capture");
+        assert_eq!(g.tanks.len(), 14);
+        assert_eq!(g.objectives.len(), 2);
+        assert_eq!(g.max_activations, 200);
+        assert_eq!(g.stalemate_after, 40);
+        for side in [Side::Red, Side::Blue] {
+            assert_eq!(
+                g.tanks
+                    .iter()
+                    .filter(|t| t.side == side && t.kind == UnitKind::Tank)
+                    .count(),
+                1
+            );
+            assert_eq!(
+                g.tanks
+                    .iter()
+                    .filter(|t| t.side == side && t.kind == UnitKind::Apc)
+                    .count(),
+                3
+            );
+            assert_eq!(
+                g.tanks
+                    .iter()
+                    .filter(|t| t.side == side && t.kind == UnitKind::Infantry)
+                    .count(),
+                3
+            );
+            assert!(g.enemy_flag(side).is_some());
+            assert!(g.own_flag(side).is_some());
+        }
+        // All infantry start embarked in APCs.
+        for t in &g.tanks {
+            if t.kind == UnitKind::Infantry {
+                assert!(t.is_embarked(), "{} should start embarked", t.name);
+            }
+            if t.kind == UnitKind::Apc {
+                assert!(t.passenger.is_some(), "{} should start loaded", t.name);
+            }
+            assert_eq!(t.upgrade_points_spent, 0);
+        }
+        for obj in &g.objectives {
+            assert_eq!(g.board.terrain_at(obj.hex), Terrain::Open);
+            assert!(obj.captured_by.is_none());
+        }
     }
 }
