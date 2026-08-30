@@ -602,12 +602,50 @@ roll off and apply second-player spoil.
 | List upgrades + under-spend init | — | — | ✓ | ✓ |
 | Smoke / medkit / LT | — | — | ✓ | ✓ |
 | APC / infantry / AI spray / air / mines | — | — | — | ✓ |
+| APC embark / mount / drop-off | — | — | — | ✓ |
 
 Stock stages teach the core loop without list noise. Platoon is where soft
 upgrades fire (~2.5 smoke / medkit per game). Combined is the only stage that
 exercises air (**3.9**/g), mines (**4.7** deploy / **3.2** trig), and infantry
 kills (**3.1**/g). Soft spots to watch: platoon first-player share under
 under-spend, combined timeouts / low engagement, squadron Red color lean.
+
+---
+
+## 2026-08-30 — APC embarkation (interior ride)
+
+**Type: Rule / Sim**
+
+House rules filling in upstream Mount Up for Combined:
+
+1. Each APC carries **one** squad.
+2. Infantry **Mount Up** (1 AP) or APC **Embark** (1 AP) from an adjacent hex.
+3. Infantry **Dismount** (1 AP, once per activation with Mount) into an adjacent
+   empty hex.
+4. APC **Drop off** is **free**, once per activation, only after at least one
+   **Move**.
+5. Embarked infantry share the APC hex, cannot be targeted, cannot fire/step,
+   and die if the APC is disabled or destroyed.
+6. Exterior tank-top riding is not used.
+
+AI: infantry mount when out of missile range; APCs pick up idle squads, drive
+toward the fight, then free-drop (prefer forest).
+
+**Effect (Combined, 200 games, seed 42):**
+
+| Metric | Value |
+|--------|-------|
+| Games with ≥1 mount/embark | **100%** |
+| Mount / Embark / Dismount / Drop per game | 5.1 / 11.3 / 9.5 / 6.7 |
+| Passenger kills | 0.04 |
+| Decisive / FP share / hard TO / idle | 92% / ~52% / 36% / 13% |
+
+They actually ride. APC Embark is the preferred pickup (~2× Mount). Almost
+every load gets a Dismount or Drop. Passenger deaths are rare — the box is
+doing its job. Balance vs the pre-embark Combined ladder numbers is in the
+same neighborhood (decisive still high; timeouts still the soft spot). No
+objectives yet — that is the next lever if you want more reason to cross the
+board instead of circling.
 
 ---
 
