@@ -459,6 +459,20 @@ decisive. Worth iterating on initiative spoil / start symmetry next.
 
 ---
 
+## 2026-08-30 — Shared battle mat; skirmish half-size
+
+**Type: Scenario**
+
+Platoon and combined now share one **19×15** open mat (same cell count, same
+physical footprint at a given hex size). Combined keeps east–west mirrored
+starts and scatter. Skirmish shrinks to **10×8** — about half the battle mat
+— and keeps its compact midline block.
+
+At 2″ flat-to-flat pointy-top hexes: battle mat ≈ 39″ × 27″; skirmish ≈ 21″ ×
+15″.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.
