@@ -573,9 +573,15 @@ caps (phone readers are `2×peak`). Each stage is its own browser POST so
 the isolate's subrequest budget resets between warm-up, peak, and readers.
 Shard POSTs also **skip inline auto-repack** (a full fold after every push
 in the same invocation was Error 1101 under multi-shard backlog) and cap
-attempts per loop (`PHONE_MAX_OPS_PER_LOOP`). `wrangler.toml` raises the
-paid-plan subrequest ceiling to 100_000. On wasm the runner also clamps
-stage concurrency to those caps as a backstop.
+attempts per loop (`PHONE_MAX_OPS_PER_LOOP`). Push handling opens only the
+newest ~64 pack indexes (full open on thin-base / deep-parent miss), and
+`Odb::open` loads indexes in batches of 6. The pack-index cache **replaces**
+on put and is forgotten when a retired pack is deleted. Browser fan-out
+limits parallel shard POSTs to 4. CI encodes the Worker budget in
+`phone_shard_peak_under_worker_subrequest_budget` (backlog ≈ 15×20 packs,
+assert soft subrequest cap) so we catch regressions without deploying.
+`wrangler.toml` raises the paid-plan subrequest ceiling to 100_000. On wasm
+the runner also clamps stage concurrency to those caps as a backstop.
 
 **Why not Worker self-fetch / `SELF`?** Same-zone public `Fetch` without
 `global_fetch_strictly_public` is Cloudflare error 1042. A `SELF` service
