@@ -1,24 +1,10 @@
 /**
- * Lightweight canvas confetti — no dependencies.
- * Paper-palette spray for when a spiral is solved.
+ * Canvas confetti in the paper palette. No dependencies.
  */
 
 const COLORS = ["#c01818", "#111111", "#f7f4ef", "#8b1a1a", "#d4a017", "#444444"];
 
-/**
- * @typedef {{
- *   x: number,
- *   y: number,
- *   vx: number,
- *   vy: number,
- *   w: number,
- *   h: number,
- *   rot: number,
- *   vr: number,
- *   color: string,
- *   life: number,
- * }} Particle
- */
+/** @typedef {{ x: number, y: number, vx: number, vy: number, w: number, h: number, rot: number, vr: number, color: string, life: number }} Particle */
 
 /** @type {HTMLCanvasElement | null} */
 let canvas = null;
@@ -41,14 +27,6 @@ function ensureCanvas() {
   canvas = document.createElement("canvas");
   canvas.className = "confetti-layer";
   canvas.setAttribute("aria-hidden", "true");
-  Object.assign(canvas.style, {
-    position: "fixed",
-    inset: "0",
-    width: "100%",
-    height: "100%",
-    pointerEvents: "none",
-    zIndex: "9999",
-  });
   document.body.appendChild(canvas);
   ctx = canvas.getContext("2d");
   resize();
@@ -69,9 +47,6 @@ function stop() {
     raf = null;
   }
   particles = [];
-  if (ctx && canvas) {
-    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
-  }
   if (canvas) {
     canvas.remove();
     canvas = null;
@@ -80,11 +55,6 @@ function stop() {
   }
 }
 
-/**
- * @param {number} originX
- * @param {number} originY
- * @param {number} count
- */
 function spawn(originX, originY, count) {
   for (let i = 0; i < count; i += 1) {
     const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.35;
@@ -110,8 +80,9 @@ function tick() {
   const h = window.innerHeight;
   ctx.clearRect(0, 0, w, h);
 
-  const next = [];
-  for (const p of particles) {
+  let write = 0;
+  for (let i = 0; i < particles.length; i += 1) {
+    const p = particles[i];
     p.vy += 0.22;
     p.vx *= 0.992;
     p.x += p.vx;
@@ -123,13 +94,14 @@ function tick() {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.rot);
-    ctx.globalAlpha = Math.max(0, Math.min(1, p.life * 1.2));
+    ctx.globalAlpha = Math.min(1, p.life * 1.2);
     ctx.fillStyle = p.color;
     ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
     ctx.restore();
-    next.push(p);
+    particles[write] = p;
+    write += 1;
   }
-  particles = next;
+  particles.length = write;
 
   if (particles.length === 0) {
     stop();
@@ -139,8 +111,8 @@ function tick() {
 }
 
 /**
- * Spray confetti from the center of `originEl`, or the viewport center.
- * No-ops when the user prefers reduced motion.
+ * Spray confetti from the center of `originEl`, or the upper viewport.
+ * Skips when the user prefers reduced motion.
  * @param {Element | null} [originEl]
  */
 export function celebrate(originEl = null) {
@@ -156,22 +128,16 @@ export function celebrate(originEl = null) {
     originY = box.top + box.height / 2;
   }
 
-  // Fresh burst; if one is already running, pile on.
-  spawn(originX, originY, 180);
-  // Second delayed pop for a fuller spray.
+  spawn(originX, originY, 160);
   window.setTimeout(() => {
     if (!canvas) return;
-    spawn(originX, originY, 120);
-  }, 160);
-  window.setTimeout(() => {
-    if (!canvas) return;
-    spawn(originX + (Math.random() - 0.5) * 80, originY - 20, 70);
-  }, 320);
+    spawn(originX, originY, 100);
+  }, 180);
 
   if (raf == null) raf = requestAnimationFrame(tick);
 }
 
-/** Stop and tear down any running celebration (e.g. on new puzzle). */
+/** Tear down any running celebration. */
 export function clearCelebration() {
   stop();
 }

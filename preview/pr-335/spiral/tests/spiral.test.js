@@ -111,29 +111,29 @@ test("partitionsInterlock rejects shared seams and identical spans", () => {
   const size = 10;
   const aligned = {
     inward: [
-      { start: 1, end: 5, word: "ABCDE", clue: "a", display: "ABCDE" },
-      { start: 6, end: 10, word: "FGHIJ", clue: "b", display: "FGHIJ" },
+      { start: 1, end: 5, word: "ABCDE", clue: "a" },
+      { start: 6, end: 10, word: "FGHIJ", clue: "b" },
     ],
     outward: [
-      { start: 10, end: 6, word: "JIHGF", clue: "c", display: "JIHGF" },
-      { start: 5, end: 1, word: "EDCBA", clue: "d", display: "EDCBA" },
+      { start: 10, end: 6, word: "JIHGF", clue: "c" },
+      { start: 5, end: 1, word: "EDCBA", clue: "d" },
     ],
   };
   assert.equal(partitionsInterlock(aligned.inward, aligned.outward, size), false);
 
   const staggered = {
     inward: [
-      { start: 1, end: 4, word: "ABCD", clue: "a", display: "ABCD" },
-      { start: 5, end: 10, word: "EFGHIJ", clue: "b", display: "EFGHIJ" },
+      { start: 1, end: 4, word: "ABCD", clue: "a" },
+      { start: 5, end: 10, word: "EFGHIJ", clue: "b" },
     ],
     outward: [
-      { start: 10, end: 8, word: "JIH", clue: "c", display: "JIH" },
-      { start: 7, end: 3, word: "GFEDC", clue: "d", display: "GFEDC" },
-      { start: 2, end: 1, word: "BA", clue: "e", display: "BA" },
+      { start: 10, end: 8, word: "JIH", clue: "c" },
+      { start: 7, end: 3, word: "GFEDC", clue: "d" },
+      { start: 2, end: 1, word: "BA", clue: "e" },
     ],
   };
-  // outward last word length 2 is only for this unit illustration; interlock
-  // cares about seams: in={4}, out={7,2} — disjoint, ranges differ.
+  // outward length-2 word is only for this seam illustration; seams in={4},
+  // out={7,2} are disjoint and ranges differ.
   assert.equal(
     partitionsInterlock(staggered.inward, staggered.outward, size),
     true,

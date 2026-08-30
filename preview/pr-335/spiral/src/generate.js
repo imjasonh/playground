@@ -1,4 +1,4 @@
-import { ENTRIES, WORD_SET, clueFor, displayFor } from "./words.js";
+import { ENTRIES, WORD_SET, clueFor } from "./words.js";
 import { buildSuffixSet, isValidOutwardSuffix, wordBreak } from "./trie.js";
 import { mulberry32, shuffle } from "./rng.js";
 
@@ -10,8 +10,7 @@ const MAX_LEN = 8;
  *   start: number,
  *   end: number,
  *   word: string,
- *   clue: string,
- *   display: string
+ *   clue: string
  * }} ClueSpan
  *
  * @typedef {{
@@ -49,13 +48,7 @@ function spansFromWords(words, fromStart) {
     for (const word of words) {
       const start = pos;
       const end = pos + word.length - 1;
-      spans.push({
-        start,
-        end,
-        word,
-        clue: clueFor(word),
-        display: displayFor(word),
-      });
+      spans.push({ start, end, word, clue: clueFor(word) });
       pos = end + 1;
     }
   } else {
@@ -68,7 +61,6 @@ function spansFromWords(words, fromStart) {
         end: start,
         word,
         clue: clueFor(word),
-        display: displayFor(word),
       });
       pos = start - 1;
     }
@@ -87,6 +79,8 @@ function cluesAreUnique(spans) {
 
 /**
  * Seams are cuts after cell N (between N and N+1), 1-based.
+ * Shared seams stall solvers: a break in one direction must never land on a
+ * break in the other.
  * @param {number[]} lengths
  * @param {"inward" | "outward"} dir
  * @param {number} size
@@ -94,18 +88,10 @@ function cluesAreUnique(spans) {
 export function seamsFromLengths(lengths, dir, size) {
   /** @type {Set<number>} */
   const seams = new Set();
-  if (dir === "inward") {
-    let cum = 0;
-    for (let i = 0; i < lengths.length - 1; i += 1) {
-      cum += lengths[i];
-      seams.add(cum);
-    }
-  } else {
-    let cum = 0;
-    for (let i = 0; i < lengths.length - 1; i += 1) {
-      cum += lengths[i];
-      seams.add(size - cum);
-    }
+  let cum = 0;
+  for (let i = 0; i < lengths.length - 1; i += 1) {
+    cum += lengths[i];
+    seams.add(dir === "inward" ? cum : size - cum);
   }
   return seams;
 }
@@ -117,9 +103,7 @@ function spanKey(span) {
 }
 
 /**
- * Inward/outward must interlock: no shared seams, no identical cell ranges.
- * Shared seams are what stall solvers — a break in one direction must never
- * land on a break in the other.
+ * True when inward and outward have no shared seams and no identical ranges.
  * @param {ClueSpan[]} inward
  * @param {ClueSpan[]} outward
  * @param {number} size
@@ -146,17 +130,15 @@ export function partitionsInterlock(inward, outward, size) {
   for (const span of inward) {
     if (outKeys.has(spanKey(span))) return false;
   }
-
   return true;
 }
 
 /**
- * Preferred lengths: favor 4–7 like magazine spirals; avoid leaving 1–2 cells.
+ * Prefer 4–7 letter words; never leave a remainder shorter than MIN_LEN.
  * @param {number} remaining
  * @param {() => number} rng
- * @param {number} _size
  */
-function candidateLengths(remaining, rng, _size) {
+function candidateLengths(remaining, rng) {
   const order = [5, 6, 4, 7, 3, 8];
   if (remaining <= MAX_LEN && remaining >= MIN_LEN) {
     const preferred = order.filter((len) => len === remaining);
@@ -165,10 +147,10 @@ function candidateLengths(remaining, rng, _size) {
     );
     return preferred.concat(shuffle(others, rng));
   }
-  const lengths = order.filter(
-    (len) => len <= remaining && remaining - len >= MIN_LEN,
+  return shuffle(
+    order.filter((len) => len <= remaining && remaining - len >= MIN_LEN),
+    rng,
   );
-  return shuffle(lengths, rng);
 }
 
 /**
@@ -216,11 +198,11 @@ function findInterlockedOutward(inwardWords, usedWords, size, letters) {
 }
 
 /**
- * Generate a spiral puzzle of the given size.
+ * Build a spiral of the given size.
  *
- * Search finds a valid letter string quickly. Interlocking is enforced afterward
- * by re-breaking the reverse path so outward seams never land on inward seams.
- * Seeds that cannot stagger return null for `generatePuzzleWithRetry`.
+ * Backtracking fills the ring with inward words, pruning any partial whose
+ * reverse cannot finish as an outward break. After a full letter string is
+ * found, outward seams are chosen so they never land on inward seams.
  *
  * @param {{ size?: number, seed?: number, maxNodes?: number }} [options]
  * @returns {Puzzle | null}
@@ -250,7 +232,7 @@ export function generatePuzzle(options = {}) {
     }
 
     const remaining = size - letters.length;
-    for (const len of candidateLengths(remaining, rng, size)) {
+    for (const len of candidateLengths(remaining, rng)) {
       const pool = shuffle(BY_LEN[len], rng);
       const limit = Math.min(pool.length, len <= 4 ? 40 : 60);
       for (let i = 0; i < limit; i += 1) {
@@ -273,17 +255,18 @@ export function generatePuzzle(options = {}) {
 
   if (!search()) return null;
 
+  const letterStr = letters.join("");
   const outwardWords = findInterlockedOutward(
     inwardWords,
     usedWords,
     size,
-    letters.join(""),
+    letterStr,
   );
   if (!outwardWords) return null;
 
   const puzzle = {
     size,
-    letters: letters.join(""),
+    letters: letterStr,
     inward: spansFromWords(inwardWords, true),
     outward: spansFromWords(outwardWords, false),
     seed,
