@@ -5,11 +5,14 @@ Monte Carlo simulator for the
 
 Three scenarios share the same engine and heuristic AI:
 
-| Scenario | Force | Activation budget |
-|----------|-------|-------------------|
-| `skirmish` | 1v1 stock tanks | 20 (10 per side) |
-| `platoon` | 3v3 stock tanks | 48 (24 per side) |
-| `combined` | tank (air support) + APC + infantry per side | 48 (24 per side) |
+| Scenario | Force | Board | Cap |
+|----------|-------|-------|----:|
+| `skirmish` | 1v1 stock tanks | 11×9 | 20 (10/side) |
+| `combined` | tank (air support) + APC + infantry / side | 15×11 | 48 (24/side) |
+| `platoon` | 3v3 stock tanks | 17×13 | 48 (24/side) |
+
+Bigger maps keep a fixed midline wall (plus wing ruins) and roll denser
+forest / mud / rubble outside reserved alleys and start hexes.
 
 House rules live in [`RULES_CHANGES.md`](RULES_CHANGES.md).
 
