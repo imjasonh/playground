@@ -120,6 +120,10 @@ impl Game {
         self
     }
 
+    pub fn push_setup_event(&mut self, text: String) {
+        self.push_event(0, None, text, None);
+    }
+
     pub fn tank(&self, id: u8) -> &Tank {
         self.tanks.iter().find(|t| t.id == id).expect("tank id")
     }

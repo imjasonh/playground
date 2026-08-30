@@ -3,7 +3,7 @@
 use crate::board::{Board, Terrain};
 use crate::game::Game;
 use crate::hex::{Facing, Hex};
-use crate::unit::{Side, Tank};
+use crate::unit::{Side, Tank, UnitKind};
 use rand::seq::SliceRandom;
 use rand::Rng;
 
@@ -278,7 +278,80 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
         Tank::stock_apc(4, Side::Blue, blue_apc, Facing::W, "Blue APC"),
         Tank::stock_infantry(5, Side::Blue, blue_inf, Facing::W, "Blue Squad"),
     ];
-    Game::new(board, tanks, coin_flip(rng), 160, "combined").with_stalemate(32)
+    let mut game = Game::new(board, tanks, coin_flip(rng), 160, "combined").with_stalemate(32);
+    // Scenario: after initiative, the second player may nudge each opposing
+    // unit up to 1 hex before the first activation.
+    second_player_nudge_opposing(&mut game);
+    game
+}
+
+/// Second player may move each first-player unit at most one hex (empty,
+/// passable, on-board). Facing is unchanged. The sim picks, for each unit, the
+/// legal hex that most spoils the opener (farther from second-player forces,
+/// farther from the plaza, strip infantry out of forest when possible).
+fn second_player_nudge_opposing(game: &mut Game) {
+    let first = game.first_player;
+    let second = first.other();
+    let plaza = Hex::new(8, 6);
+    let fp_ids: Vec<u8> = game
+        .tanks
+        .iter()
+        .filter(|t| t.side == first)
+        .map(|t| t.id)
+        .collect();
+
+    for id in fp_ids {
+        let from = game.tank(id).pos;
+        let kind = game.tank(id).kind;
+        let name = game.tank(id).name.clone();
+        let in_forest = game.board.terrain_at(from) == Terrain::Forest;
+
+        let mut occupied: Vec<Hex> = game.tanks.iter().map(|t| t.pos).collect();
+        // Free the unit's current hex so "stay" and swaps-with-self work.
+        occupied.retain(|h| *h != from);
+
+        let mut best = from;
+        let mut best_score = i32::MIN;
+        let mut candidates = vec![from];
+        candidates.extend(from.neighbors());
+        for cand in candidates {
+            if !game.board.contains(cand) || game.board.terrain_at(cand).impassable() {
+                continue;
+            }
+            if occupied.contains(&cand) {
+                continue;
+            }
+            let min_sp = game
+                .tanks
+                .iter()
+                .filter(|t| t.side == second)
+                .map(|t| cand.distance(t.pos))
+                .min()
+                .unwrap_or(0);
+            let mut score = min_sp * 10 + cand.distance(plaza) * 5;
+            if kind == UnitKind::Infantry
+                && in_forest
+                && game.board.terrain_at(cand) != Terrain::Forest
+            {
+                score += 8;
+            }
+            // Prefer an actual nudge over stay when scores tie.
+            if cand != from {
+                score += 1;
+            }
+            if score > best_score {
+                best_score = score;
+                best = cand;
+            }
+        }
+
+        if best != from {
+            game.tank_mut(id).pos = best;
+            game.push_setup_event(format!(
+                "Second player nudges {name} {from} → {best} before start"
+            ));
+        }
+    }
 }
 
 fn coin_flip<R: Rng>(rng: &mut R) -> Side {
@@ -479,6 +552,32 @@ mod tests {
         assert!(!g.board.terrain_at(Hex::new(8, 6)).impassable());
         assert!(g.board.terrain_at(Hex::new(8, 1)).impassable());
         assert!(g.board.terrain_at(Hex::new(8, 11)).impassable());
+    }
+
+    #[test]
+    fn combined_second_player_may_nudge_opposing_force() {
+        let mut rng = ChaCha8Rng::seed_from_u64(11);
+        let g = combined(&mut rng);
+        let first = g.first_player;
+        // At least one setup nudge event when the heuristic finds a better hex.
+        let nudges: Vec<_> = g
+            .events
+            .iter()
+            .filter(|e| e.text.contains("Second player nudges"))
+            .collect();
+        assert!(
+            !nudges.is_empty(),
+            "expected at least one opposing-force nudge, events={:?}",
+            g.events.iter().map(|e| &e.text).collect::<Vec<_>>()
+        );
+        // Nudged units must still be on-board and unstacked.
+        let mut seen = std::collections::HashSet::new();
+        for t in &g.tanks {
+            assert!(g.board.contains(t.pos));
+            assert!(!g.board.terrain_at(t.pos).impassable());
+            assert!(seen.insert(t.pos), "stacked at {}", t.pos);
+        }
+        assert_eq!(g.tanks.iter().filter(|t| t.side == first).count(), 3);
     }
 
     #[test]
