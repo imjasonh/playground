@@ -211,6 +211,177 @@ fn phone_shard_peak_and_readers_under_soft_caps() {
     );
 }
 
+/// Reproduce the phone auto-ramp: seed-only → 1w → 2w with unique branch ids.
+#[test]
+fn phone_auto_ramp_two_writer_step_under_caps() {
+    git_server::odb::clear_index_cache_for_test();
+    git_server::repo::clear_filelog_cache_for_test();
+    let mem = MemStore::new();
+    let store = Rc::new(mem.clone()) as Rc<dyn Store>;
+    let states = Rc::new(MemStateStore::new()) as Rc<dyn StateStore>;
+
+    // Seed-only (empty stages): main tip, no load/w0.
+    let seed = block_on(run_in_process(
+        store.clone(),
+        states.clone(),
+        "lt-ramp",
+        LoadTestRequest {
+            confirm: true,
+            budget_usd: Some(0.05),
+            duration_secs: Some(1),
+            stages: Some(vec![]),
+            shards: Some(1),
+            shard: false,
+            tip: None,
+            shard_index: None,
+            token: None,
+        },
+    ))
+    .expect("seed-only");
+    let tip = seed.tip.clone();
+    assert!(
+        seed.stages.is_empty(),
+        "seed-only must not run writer stages"
+    );
+
+    let http = GitHttp::new(store.clone(), states.clone());
+    let tip_oid = Oid::from_hex(&tip).expect("tip");
+    {
+        let repo = git_server::repo::Repo {
+            store: http.store.as_ref(),
+            states: http.states.as_ref(),
+            name: "lt-ramp",
+        };
+        let loaded = block_on(repo.load_state()).unwrap();
+        let odb = block_on(repo.odb(&loaded.state)).unwrap();
+        let got = block_on(odb.read(tip_oid)).unwrap();
+        println!(
+            "after seed: packs={} refs={:?} tip_present={}",
+            loaded.state.packs.len(),
+            loaded.state.refs.keys().collect::<Vec<_>>(),
+            got.is_some()
+        );
+        assert!(got.is_some(), "seed tip missing right after seed-only");
+    }
+
+    // 1w with stepKey-namespaced shard_index (UI: idx+1)*1000 + job.
+    mem.reset_op_counts();
+    let live_before = memtrack::live_bytes();
+    memtrack::reset_peak();
+    let one = block_on(run_in_process(
+        store.clone(),
+        states.clone(),
+        "lt-ramp",
+        LoadTestRequest {
+            confirm: true,
+            budget_usd: Some(1.0),
+            duration_secs: Some(PHONE_DEFAULT_DURATION_SECS),
+            stages: Some(vec![StageSpec {
+                writers: 1,
+                readers: 0,
+            }]),
+            shards: Some(1),
+            shard: true,
+            tip: Some(tip.clone()),
+            shard_index: Some(1000), // step 1, shard 0
+            token: None,
+        },
+    ))
+    .expect("1w");
+    let ops = mem.op_counts();
+    let do_est = one.stages[0].push_ok.max(1) * 2;
+    let subreqs = ops.class_a + ops.class_b + do_est;
+    let heap = memtrack::peak_delta_since_reset(live_before);
+    println!(
+        "ramp-1w: push_ok={} push_err={} subreqs={} heap={:.1} MiB",
+        one.stages[0].push_ok,
+        one.stages[0].push_err,
+        subreqs,
+        mib(heap)
+    );
+    assert!(one.stages[0].push_ok > 0, "1w made no pushes");
+    assert!(
+        one.stages[0].push_ok > one.stages[0].push_err,
+        "1w mostly failed (ok={} err={}) — branch collision with seed?",
+        one.stages[0].push_ok,
+        one.stages[0].push_err
+    );
+    assert!(subreqs <= PHONE_SHARD_SUBREQUEST_SOFT_CAP);
+    assert!(heap <= PHONE_SHARD_HEAP_SOFT_CAP);
+
+    // 2w shard 0 with a *new* branch id (step 2) — must succeed under caps.
+    mem.reset_op_counts();
+    let live_before = memtrack::live_bytes();
+    memtrack::reset_peak();
+    let two0 = block_on(run_in_process(
+        store.clone(),
+        states.clone(),
+        "lt-ramp",
+        LoadTestRequest {
+            confirm: true,
+            budget_usd: Some(1.0),
+            duration_secs: Some(PHONE_DEFAULT_DURATION_SECS),
+            stages: Some(vec![StageSpec {
+                writers: 1,
+                readers: 0,
+            }]),
+            shards: Some(1),
+            shard: true,
+            tip: Some(tip.clone()),
+            shard_index: Some(2000), // step 2, shard 0
+            token: None,
+        },
+    ))
+    .expect("2w s0");
+    let ops = mem.op_counts();
+    let do_est = two0.stages[0].push_ok.max(1) * 2;
+    let subreqs = ops.class_a + ops.class_b + do_est;
+    let heap = memtrack::peak_delta_since_reset(live_before);
+    println!(
+        "ramp-2w-s0: push_ok={} push_err={} subreqs={} heap={:.1} MiB",
+        two0.stages[0].push_ok,
+        two0.stages[0].push_err,
+        subreqs,
+        mib(heap)
+    );
+    assert!(two0.stages[0].push_ok > 0, "2w shard 0 made no pushes");
+    assert!(
+        two0.stages[0].push_ok > two0.stages[0].push_err,
+        "2w s0 mostly failed (ok={} err={})",
+        two0.stages[0].push_ok,
+        two0.stages[0].push_err
+    );
+    assert!(subreqs <= PHONE_SHARD_SUBREQUEST_SOFT_CAP);
+    assert!(heap <= PHONE_SHARD_HEAP_SOFT_CAP);
+
+    // 2w shard 1 (parallel writer branch).
+    let two1 = block_on(run_in_process(
+        store,
+        states,
+        "lt-ramp",
+        LoadTestRequest {
+            confirm: true,
+            budget_usd: Some(1.0),
+            duration_secs: Some(PHONE_DEFAULT_DURATION_SECS),
+            stages: Some(vec![StageSpec {
+                writers: 1,
+                readers: 0,
+            }]),
+            shards: Some(1),
+            shard: true,
+            tip: Some(tip),
+            shard_index: Some(2001),
+            token: None,
+        },
+    ))
+    .expect("2w s1");
+    println!(
+        "ramp-2w-s1: push_ok={} push_err={}",
+        two1.stages[0].push_ok, two1.stages[0].push_err
+    );
+    assert!(two1.stages[0].push_ok > 0);
+}
+
 /// Binary-search how many concurrent readers fit the soft caps on a backlog.
 /// Ignored by default; enable with `PHONE_BUDGET_TUNE=1`.
 #[test]
