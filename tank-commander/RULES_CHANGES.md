@@ -854,6 +854,20 @@ the hold too soft.
 
 ---
 
+## 2026-08-30 — Capture + Assault list upgrades
+
+**Type: Scenario**
+
+Capture and Assault were stock-only; they now use the same list budgets as
+Combined (**tanks ≤10 with mines**, **APCs ≤4**). Capture uses list initiative
+(under-spend first, spoil on tie) and deployment mines. Assault keeps
+attacker-first / defender-spoil regardless of list spend.
+
+Re-sim (120 games): Capture still ~98% win-by-capture with field kit + mines in
+play; Assault ~55% attacker with smoke/mines showing up in the census.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.
