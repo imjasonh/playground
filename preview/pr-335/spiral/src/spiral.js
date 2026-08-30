@@ -19,7 +19,7 @@
 /**
  * @param {number} size
  * @param {{ turns?: number }} [options]
- * @returns {{ cells: SpiralCell[], outerPath: string, turns: number }}
+ * @returns {{ cells: SpiralCell[], turns: number }}
  *   Coordinates in a unit square centered at (0.5, 0.5).
  */
 export function spiralLayout(size, options = {}) {
@@ -96,13 +96,7 @@ export function spiralLayout(size, options = {}) {
     });
   }
 
-  // Outer rim guide: the outer edge of the whole track.
-  const rim = sampleEdge(0, 1, half, Math.max(48, size * 2));
-  const outerPath = rim
-    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(4)} ${p.y.toFixed(4)}`)
-    .join(" ");
-
-  return { cells, outerPath, turns };
+  return { cells, turns };
 }
 
 /**
