@@ -393,9 +393,17 @@ Disabled cook-off rolls still happen after every activation while the wreck
 remains (disabled units cannot activate themselves) — that part was already
 correct.
 
-**Effect:** re-measure skirmish / platoon / combined after the fix (see latest
-sim pass in the PR summary). Expect slightly more cook-off drama and slightly
-safer infantry that hug friendly tanks.
+**Effect (seed 1; skirmish 500 / platoon+combined 200) vs prior same seed:**
+
+| Scenario | Decisive | FP share | Avg act. | Hard TO | Idle | Notes |
+|----------|----------|----------|----------|---------|------|-------|
+| Skirmish | 98%→**95%** | 54%→**54%** | 11→**14** | 6%→**16%** | 0% | Slower fires → longer duels, more hard caps |
+| Platoon | 100%→**99%** | 57%→**58%** | 42→**58** | 0% | 0% | Longer, more pens/fires; still clean |
+| Combined | 99%→**98%** | 51%→**55%** | 160→**169** | 10%→**16%** | 18%→**24%** | Stall rates worse; infantry screen + slower burns |
+
+Fire ticking only on the burning unit (correct rules) removes a lot of
+accidental attrition speed. Cook-off splash adds local drama when wrecks
+detonate. Combined’s idle/timeout problem is more visible now, not less.
 
 ---
 
