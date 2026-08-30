@@ -24,7 +24,7 @@ struct Node {
     hull: crate::hex::Facing,
     turret_offset: i8,
     moves: i32,
-    loaded: bool,
+    loaded: Option<RoundKind>,
     on_fire: bool,
     score: f64,
 }
@@ -39,6 +39,8 @@ pub fn choose_plan<R: Rng>(game: &Game, rng: &mut R) -> Vec<Action> {
         Some(e) => e,
         None => return Vec::new(),
     };
+    let enemy_hp = enemy.hull_points;
+    let enemy_max = enemy.max_hull_points;
 
     let start = Node {
         actions: Vec::new(),
@@ -48,7 +50,7 @@ pub fn choose_plan<R: Rng>(game: &Game, rng: &mut R) -> Vec<Action> {
         hull: tank.hull_facing,
         turret_offset: tank.turret_offset,
         moves: 0,
-        loaded: tank.loaded.is_some(),
+        loaded: tank.loaded,
         on_fire: tank.on_fire,
         score: 0.0,
     };
@@ -79,8 +81,7 @@ pub fn choose_plan<R: Rng>(game: &Game, rng: &mut R) -> Vec<Action> {
             for action in opts {
                 let mut child = node.clone();
                 apply_shadow(game, tank_id, &mut child, action);
-                child.score = evaluate(game, tank.side, &child, enemy.pos, enemy.hull_facing);
-                // Prefer plans that actually fire when a shot is available.
+                child.score = evaluate(game, tank.side, &child, enemy.pos, enemy_hp, enemy_max);
                 next.push(child);
             }
         }
@@ -112,14 +113,11 @@ pub fn choose_plan<R: Rng>(game: &Game, rng: &mut R) -> Vec<Action> {
 }
 
 fn has_pending_ability(node: &Node) -> bool {
-    // Abilities are applied as actions; nothing pending beyond ap.
     let _ = node;
     false
 }
 
 fn shadow_legal(game: &Game, tank_id: u8, node: &Node) -> Vec<Action> {
-    // Use real legal_actions but filter by shadow AP / loaded / fire / moves.
-    // Build a temporary view by cloning the game tank state lightly.
     let mut g = game.clone();
     {
         let t = g.tank_mut(tank_id);
@@ -128,13 +126,7 @@ fn shadow_legal(game: &Game, tank_id: u8, node: &Node) -> Vec<Action> {
         t.turret_offset = node.turret_offset;
         t.moves_this_turn = node.moves;
         t.on_fire = node.on_fire;
-        if node.loaded {
-            if t.loaded.is_none() {
-                t.loaded = Some(RoundKind::At);
-            }
-        } else {
-            t.loaded = None;
-        }
+        t.loaded = node.loaded;
     }
     g.legal_actions(tank_id, node.ap_left, &node.buffs)
 }
@@ -178,16 +170,16 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
             node.ap_left -= 1;
         }
         Action::Fire => {
-            node.loaded = false;
+            node.loaded = None;
             node.ap_left -= 1;
         }
-        Action::Load(_) => {
+        Action::Load(kind) => {
             let cost = if node.buffs.free_load {
                 0
             } else {
                 tank.load_action_cost()
             };
-            node.loaded = true;
+            node.loaded = Some(kind);
             node.ap_left -= cost;
         }
         Action::ExtinguishFire => {
@@ -213,7 +205,8 @@ fn evaluate(
     side: Side,
     node: &Node,
     enemy_pos: Hex,
-    enemy_hull: crate::hex::Facing,
+    enemy_hp: i32,
+    enemy_max: i32,
 ) -> f64 {
     let mut score = 0.0;
     let dist = node.pos.distance(enemy_pos) as f64;
@@ -231,22 +224,40 @@ fn evaluate(
         let turret = node.hull.with_turret_offset(node.turret_offset);
         if dir == turret {
             score += 40.0;
-            if node.loaded && dist <= range {
+            if node.loaded.is_some() && dist <= range {
                 score += 80.0; // can fire
             }
-        } else {
-            // Partial credit for being one step away.
-            if dir == turret.turn_left() || dir == turret.turn_right() {
-                score += 15.0;
-            }
+        } else if dir == turret.turn_left() || dir == turret.turn_right() {
+            score += 15.0;
         }
     }
 
-    // Present side / rear armor to the enemy when possible (flanking).
-    // If enemy hull faces us poorly from their perspective...
-    let _ = enemy_hull;
-    if let Some(from_enemy) = enemy_pos.facing_toward(node.pos) {
-        // Our impact facing if they shoot us.
+    // Round choice: AT is the workhorse; HE is attractive mid-fight for fire.
+    match node.loaded {
+        Some(RoundKind::At) => {
+            score += 12.0;
+            if enemy_hp <= 1 {
+                score += 10.0; // finish with reliable pen
+            }
+        }
+        Some(RoundKind::He) => {
+            score += 8.0;
+            if (2..=enemy_max).contains(&enemy_hp) && enemy_hp < enemy_max {
+                score += 14.0; // fire can finish a wounded tank
+            } else if enemy_hp == enemy_max {
+                score += 5.0; // still worth mixing in HE early
+            }
+        }
+        None => {}
+    }
+    let he_loads = node
+        .actions
+        .iter()
+        .filter(|a| **a == Action::Load(RoundKind::He))
+        .count();
+    score += he_loads as f64 * 3.0;
+
+    if let Some(_from_enemy) = enemy_pos.facing_toward(node.pos) {
         let mut shadow_tank = game
             .tanks
             .iter()
@@ -255,20 +266,16 @@ fn evaluate(
             .expect("self");
         shadow_tank.pos = node.pos;
         shadow_tank.hull_facing = node.hull;
-        let impact = shadow_tank.impact_facing(enemy_pos);
-        match impact {
+        match shadow_tank.impact_facing(enemy_pos) {
             crate::unit::ImpactFacing::Front => score += 10.0,
             crate::unit::ImpactFacing::Side => score -= 15.0,
             crate::unit::ImpactFacing::Rear => score -= 35.0,
         }
-        let _ = from_enemy;
     }
 
-    // Reward firing in the plan.
     let fires = node.actions.iter().filter(|a| **a == Action::Fire).count();
     score += fires as f64 * 50.0;
 
-    // Extinguish if on fire.
     if node.on_fire {
         score -= 60.0;
     }
@@ -276,7 +283,6 @@ fn evaluate(
         score += 55.0;
     }
 
-    // Mild preference for using a dramatic ability once engaged.
     if dist <= range + 1.0 {
         if node.buffs.hit_on_2 {
             score += 12.0;
@@ -286,13 +292,11 @@ fn evaluate(
         }
     }
 
-    // Stay on the board center-ish (avoid edge camping that never meets).
     let cx = (game.board.min_q + game.board.max_q) as f64 / 2.0;
     let cr = (game.board.min_r + game.board.max_r) as f64 / 2.0;
     let center_dist = ((node.pos.q as f64 - cx).powi(2) + (node.pos.r as f64 - cr).powi(2)).sqrt();
     score -= center_dist * 0.5;
 
-    // Tiny noise already from beam shuffle; keep deterministic score here.
     score
 }
 

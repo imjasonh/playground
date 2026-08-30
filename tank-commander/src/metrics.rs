@@ -13,6 +13,8 @@ pub struct GameReport {
     pub activations: u32,
     pub shots_fired: u32,
     pub shots_missed: u32,
+    pub at_shots: u32,
+    pub he_shots: u32,
     pub hits: u32,
     pub pens: u32,
     pub glances: u32,
@@ -63,6 +65,8 @@ impl GameReport {
             activations: game.activations,
             shots_fired: game.shots_fired,
             shots_missed: game.shots_missed,
+            at_shots: game.at_shots,
+            he_shots: game.he_shots,
             hits: game.total_hits,
             pens: game.total_pens,
             glances: game.total_glances,
@@ -139,6 +143,8 @@ pub struct AggregateReport {
     pub comebacks: u32,
     pub avg_activations: f64,
     pub avg_shots: f64,
+    pub avg_at_shots: f64,
+    pub avg_he_shots: f64,
     pub avg_hits: f64,
     pub avg_pens: f64,
     pub avg_glances: f64,
@@ -204,6 +210,8 @@ impl AggregateReport {
             comebacks: sum(|r| u32::from(r.comeback)),
             avg_activations: sum_f(|r| r.activations),
             avg_shots: sum_f(|r| r.shots_fired),
+            avg_at_shots: sum_f(|r| r.at_shots),
+            avg_he_shots: sum_f(|r| r.he_shots),
             avg_hits: sum_f(|r| r.hits),
             avg_pens: sum_f(|r| r.pens),
             avg_glances: sum_f(|r| r.glances),
@@ -291,11 +299,25 @@ fn suggest(agg: &AggregateReport) -> Vec<String> {
                 .into(),
         );
     }
-    if agg.avg_fires == 0.0 && agg.avg_cook_offs < 0.05 {
+    if agg.avg_fires == 0.0 && agg.avg_he_shots < 0.1 {
         s.push(
-            "Fires and cook-offs almost never appear in stock Skirmish \
-             (no HE). Add HE as a free stock option, or give a one-shot \
-             HE 'ready rack' so cinematic fires show up without a full upgrade pass."
+            "Fires still absent and HE is almost never loaded. \
+             Nudge the AI toward HE, or give a once-per-battle free HE load \
+             so the cinematic path shows up without relying on loadout choice."
+                .into(),
+        );
+    } else if agg.avg_fires == 0.0 && agg.avg_he_shots > 0.5 {
+        s.push(
+            "HE is being loaded but fires never start (need 5+). \
+             Consider fire on 4+, or HE strength 5 so players feel rewarded \
+             for taking the softer pen."
+                .into(),
+        );
+    } else if agg.avg_cook_offs < 0.05 && agg.avg_fires < 0.05 {
+        s.push(
+            "Cook-offs and fires are still rare. Disabled tanks may be \
+             finishing the battle before the 4+ cook-off roll matters — \
+             not necessarily a problem."
                 .into(),
         );
     }
@@ -347,8 +369,10 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
         100.0 * f64::from(agg.timed_out) / f64::from(agg.games.max(1))
     ));
     out.push_str(&format!(
-        "Engagement: avg shots {:.1}, hit rate {:.0}%, low-engagement games {} ({:.0}%)\n",
+        "Engagement: avg shots {:.1} (AT {:.1} / HE {:.1}), hit rate {:.0}%, low-engagement games {} ({:.0}%)\n",
         agg.avg_shots,
+        agg.avg_at_shots,
+        agg.avg_he_shots,
         100.0 * agg.hit_rate,
         agg.low_engagement,
         100.0 * f64::from(agg.low_engagement) / f64::from(agg.games.max(1))

@@ -47,6 +47,8 @@ pub struct Game {
     pub abilities_used: u32,
     pub shots_fired: u32,
     pub shots_missed: u32,
+    pub at_shots: u32,
+    pub he_shots: u32,
 }
 
 impl Game {
@@ -331,6 +333,10 @@ impl Game {
             None => return,
         };
         self.shots_fired += 1;
+        match round {
+            crate::unit::RoundKind::At => self.at_shots += 1,
+            crate::unit::RoundKind::He => self.he_shots += 1,
+        }
 
         let shooter_pos = self.tank(tank_id).pos;
         let penalty = self.board.accuracy_penalty_vs(self.tank(enemy_id).pos);

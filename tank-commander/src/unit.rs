@@ -165,7 +165,7 @@ impl Tank {
             max_move: 3,
             gun_range: 5,
             loaded: Some(RoundKind::At),
-            has_he: false,
+            has_he: true, // stock Skirmish: HE is always available to load
             crew: CrewRole::all_core()
                 .into_iter()
                 .map(CrewMember::healthy)
@@ -295,5 +295,11 @@ mod tests {
         // Shooter east of tank (ahead of its nose) → front armor.
         let t2 = Tank::stock(0, Side::Red, Hex::new(0, 0), Facing::E, "T");
         assert_eq!(t2.impact_facing(Hex::new(3, 0)), ImpactFacing::Front);
+    }
+
+    #[test]
+    fn stock_tank_can_load_he() {
+        let t = Tank::stock(0, Side::Red, Hex::new(0, 0), Facing::E, "T");
+        assert!(t.has_he);
     }
 }

@@ -63,5 +63,7 @@ pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
         abilities_used: 0,
         shots_fired: 0,
         shots_missed: 0,
+        at_shots: 0,
+        he_shots: 0,
     }
 }
