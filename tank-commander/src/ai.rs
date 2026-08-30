@@ -33,7 +33,7 @@ struct Node {
 
 /// Choose which unit to activate and an action plan for it.
 pub fn choose_plan<R: Rng>(game: &Game, rng: &mut R) -> Option<(u8, Vec<Action>)> {
-    let ids = game.operational_ids(game.active_side);
+    let ids = game.activatable_ids(game.active_side);
     if ids.is_empty() {
         return None;
     }
@@ -65,8 +65,6 @@ fn score_unit(game: &Game, unit_id: u8) -> i64 {
         .unwrap_or(99);
     let mut score = 0i64;
     score -= i64::from(nearest) * 10;
-    // Round-robin: units that have acted less get priority.
-    score -= i64::from(unit.activations_taken) * 800;
     if unit.on_fire {
         score -= 1_000;
     }
@@ -97,7 +95,6 @@ fn score_unit(game: &Game, unit_id: u8) -> i64 {
                 .iter()
                 .any(|e| e.kind != UnitKind::Infantry && !e.suppressed && game.can_see_ai(unit, e))
             {
-                // Suppress once; don't monopolize the side's activations.
                 score += 3_500;
             }
         }

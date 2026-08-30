@@ -15,7 +15,9 @@ Platoon and combined seal the midline except a **wide plaza gap** so forces
 cannot pair off down parallel lanes. Combined adds forest approaches for
 infantry cover, reliable next-activation air strikes, and APC vehicle spray.
 
-House rules live in [`RULES_CHANGES.md`](RULES_CHANGES.md).
+House rules and scenario setups live in [`RULES_CHANGES.md`](RULES_CHANGES.md).
+That file tags each change as **Rule** (humans must follow), **Scenario**
+(map/force), or **Sim** (AI / Monte Carlo only).
 
 ## Run
 
@@ -56,11 +58,14 @@ cross simple thresholds.
 - **Glance suppression.** A non-penetrating hit suppresses the target (−1
   action on its next activation, minimum 1; does not stack). Clears at the end
   of that activation.
-- **Multi-unit activation.** Each turn the AI picks one operational unit on
-  the active side. Fire actions name a specific target.
-- **Turn limit.** Skirmish keeps a short hard cap (20). Platoon/combined use
-  a high safety-valve cap and stop early only on a post-contact no-hit
-  drought (idle stalemate), so fights can resolve to a wipe.
+- **Multi-unit activation (Rule).** Each activation you must choose an
+  operational unit that has not yet activated this **pass**. When every
+  operational unit on your side has activated once, marks clear and a new
+  pass starts. Fire actions name a specific target.
+- **Turn limit.** Skirmish keeps a short hard cap (20) for Monte Carlo.
+  Platoon/combined use a high safety-valve cap and an idle-stalemate stop
+  (**Sim** clocks). Tabletop turn limits follow upstream unless a scenario
+  says otherwise.
 - **Turret arc.** Tanks need the nearest hex facing to match the turret.
   Infantry missiles ignore turret arc; APCs use AI weapons against infantry.
 - **Hull turn vs turret.** On hull turn, the turret keeps its absolute facing

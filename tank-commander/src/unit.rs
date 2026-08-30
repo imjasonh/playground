@@ -156,8 +156,9 @@ pub struct Tank {
     /// Tank upgrade: may call one air strike this battle.
     pub has_air_support: bool,
     pub air_strike_used: bool,
-    /// Activations this unit has taken (AI fairness / round-robin).
-    pub activations_taken: u32,
+    /// Marked after activating; cleared when the side starts a new pass
+    /// (every operational unit has activated once). See RULES_CHANGES.md.
+    pub activated_this_pass: bool,
     pub moves_this_turn: i32,
 }
 
@@ -198,7 +199,7 @@ impl Tank {
             in_cover: false,
             has_air_support: false,
             air_strike_used: false,
-            activations_taken: 0,
+            activated_this_pass: false,
             moves_this_turn: 0,
         }
     }
@@ -240,7 +241,7 @@ impl Tank {
             in_cover: false,
             has_air_support: false,
             air_strike_used: false,
-            activations_taken: 0,
+            activated_this_pass: false,
             moves_this_turn: 0,
         }
     }
@@ -282,7 +283,7 @@ impl Tank {
             in_cover: false,
             has_air_support: false,
             air_strike_used: false,
-            activations_taken: 0,
+            activated_this_pass: false,
             moves_this_turn: 0,
         }
     }

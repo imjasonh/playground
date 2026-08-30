@@ -141,6 +141,23 @@ impl Game {
             .collect()
     }
 
+    /// Units legal to activate under pass activation: operational units that
+    /// have not yet activated this pass. If every operational unit has already
+    /// activated, a new pass begins and all are legal again.
+    pub fn activatable_ids(&self, side: Side) -> Vec<u8> {
+        let ops = self.operational_ids(side);
+        let pending: Vec<u8> = ops
+            .iter()
+            .copied()
+            .filter(|id| !self.tank(*id).activated_this_pass)
+            .collect();
+        if pending.is_empty() {
+            ops
+        } else {
+            pending
+        }
+    }
+
     /// Non-destroyed enemy units.
     pub fn enemy_units(&self, side: Side) -> Vec<&Tank> {
         self.tanks
@@ -893,9 +910,16 @@ impl Game {
     }
 
     pub fn begin_activation(&mut self, tank_id: u8) {
+        let side = self.tank(tank_id).side;
+        // New pass: if every operational unit already activated, clear marks.
+        let ops = self.operational_ids(side);
+        if !ops.is_empty() && ops.iter().all(|id| self.tank(*id).activated_this_pass) {
+            for id in ops {
+                self.tank_mut(id).activated_this_pass = false;
+            }
+        }
         self.tank_mut(tank_id).moves_this_turn = 0;
-        self.tank_mut(tank_id).activations_taken =
-            self.tank(tank_id).activations_taken.saturating_add(1);
+        self.tank_mut(tank_id).activated_this_pass = true;
         // Infantry keep cover until they spend it on a save or TakeCover again.
     }
 
@@ -1079,10 +1103,7 @@ fn relative_offset(hull: Facing, absolute_turret: Facing) -> i8 {
 /// Play one full activation for `unit_id` using the provided plan of actions.
 pub fn play_activation<R: Rng>(game: &mut Game, unit_id: u8, plan: &[Action], rng: &mut R) {
     let side = game.active_side;
-    let valid = game
-        .tanks
-        .iter()
-        .any(|t| t.id == unit_id && t.side == side && t.is_operational());
+    let valid = game.activatable_ids(side).contains(&unit_id);
     if !valid {
         game.activations += 1;
         game.activations_since_hit = game.activations_since_hit.saturating_add(1);
@@ -1169,5 +1190,27 @@ mod tests {
             assert!(g.tank(2).destroyed);
             assert!(g.infantry_kills >= 1);
         }
+    }
+
+    #[test]
+    fn pass_activation_blocks_repeat_until_all_acted() {
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::new(1, 3), Facing::E, "A"),
+            Tank::stock(1, Side::Red, Hex::new(1, 5), Facing::E, "B"),
+            Tank::stock(2, Side::Blue, Hex::new(9, 5), Facing::W, "Enemy"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 40, "test");
+        assert_eq!(g.activatable_ids(Side::Red), vec![0, 1]);
+        g.begin_activation(0);
+        assert!(g.tank(0).activated_this_pass);
+        assert_eq!(g.activatable_ids(Side::Red), vec![1]);
+        g.begin_activation(1);
+        // Both marked → new pass, both legal again.
+        assert_eq!(g.activatable_ids(Side::Red), vec![0, 1]);
+        g.begin_activation(0);
+        assert!(g.tank(0).activated_this_pass);
+        assert!(!g.tank(1).activated_this_pass);
+        assert_eq!(g.activatable_ids(Side::Red), vec![1]);
     }
 }

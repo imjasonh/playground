@@ -1,363 +1,155 @@
-# Tank Commander simulator — rules changes
+# Tank Commander simulator — rules and scenario changes
 
-House rules and clarifications applied in this playground sim, relative to the
-upstream rules at <https://github.com/imjasonh/tank-commander>. Each entry
-notes why it landed and what the Monte Carlo runs showed.
+Changes applied in this playground relative to
+<https://github.com/imjasonh/tank-commander>.
 
-Baseline scenario for numbers below: Skirmish, stock tanks (armor 6/6/6, AT
-strength 6, accuracy 4+), shared heuristic AI, 200 games, seed `7`, unless
-noted.
+Every entry is tagged:
+
+| Tag | Meaning |
+|-----|---------|
+| **Rule** | Changes how humans play. Must hold for any AI or player. |
+| **Scenario** | Force composition, map, or mission setup for a named scenario. |
+| **Sim** | Simulator-only: AI heuristics, Monte Carlo clocks, metrics. Does **not** change the tabletop rules. Balance must not depend on Sim-only behavior. |
+
+Baseline for older Skirmish numbers: stock tanks, shared heuristic AI, 200
+games, seed `7`, unless noted.
 
 ---
 
 ## 2026-08-30 — Natural 1 always fails, natural 6 always succeeds
 
-**Rule.** On every d6 success check in the sim (hit, penetration, glance
-wound, HE fire start, cook-off):
+**Type: Rule**
+
+On every d6 success check (hit, penetration, glance wound, HE fire start,
+cook-off):
 
 - A natural **1** always fails.
 - A natural **6** always succeeds.
 - Otherwise use the normal target number / `roll + strength > armor` math.
 
-Implemented in `src/dice.rs` and used from `src/combat.rs`.
+**Why.** Stock AT (6) vs stock armor (6) pens on a roll of 1 (`1+6=7 > 6`),
+which erased glances in Skirmish.
 
-**Why.** Upstream, stock AT (strength 6) vs stock armor 6 pens on every hit:
-even a roll of 1 gives `1+6=7 > 6`. That erased glancing hits from Skirmish
-and made every connect a hull-damage event.
-
-**Effect on balance (same 200-game / seed 7 batch):**
-
-| Metric | Before | After | Delta |
-|--------|-------:|------:|------:|
-| Red / Blue / Draw | 105 / 93 / 2 | 113 / 85 / 2 | slight Red drift |
-| First-player win share | 57% (113/198) | 57% (113/198) | unchanged |
-| Avg activations | 7.4 | 9.0 | +1.6 (~22% longer) |
-| Timed out | 4 (2%) | 8 (4%) | still rare |
-| Avg shots | 12.8 | 14.8 | more trading |
-| Hit rate | 44% | 44% | unchanged* |
-| Avg pens | 5.63 | 5.42 | slightly fewer |
-| Avg glances | **0.00** | **1.15** | glances return |
-| Avg crew wounds / kills | 4.37 / 1.26 | 4.50 / 1.52 | similar |
-| Comebacks | 97 | 87 | still common |
-| Auto suggestions | "too fast" + "never glances" | none (thresholds clear) | healthier |
-
-\*Hit rate is unchanged because stock accuracy is already 4+: a natural 1
-already missed and a natural 6 already hit. The meaningful change is
-**penetration** (and the same floor/ceiling on wound / fire / cook-off, which
-were already 4+ or 5+ so their rates barely move).
-
-**Larger batch check (500 games, seed 1, after only):** still ~99% decisive,
-~8.9 activations, ~1.12 glances/game, first-player share ~57%, no stalemate
-flags. Side bias (Red vs Blue) is mostly start-position / first-player
-coupling, not a rules asymmetry.
-
-**Verdict.** This is a good keep. Glances come back (~1 per game), fights run
-a bit longer without tipping into timeouts or low engagement, and the
-railroad / "never glance" warnings clear. First-player edge is unchanged and
-still worth watching when we add upgrades or missions.
-
-**Open follow-ups (not applied yet):**
-
-- Soften first-player bias (simultaneous activation, or defender places after
-  initiative).
-- Upgrade loadout matchups.
-- Tune the AI's HE appetite if table players load HE less often than ~75%.
+**Effect (200 games, seed 7):** glances return (~1.15/game); fights a bit
+longer; first-player share unchanged (~57%).
 
 ---
 
 ## 2026-08-30 — Stock tanks can load HE (no upgrade)
 
-**Rule.** Skirmish stock tanks always have HE available. They still start
-loaded with AT; `Load` may choose AT or HE. The old 1-point "High-Explosive
-Rounds" upgrade is not spent in this scenario (upgrade economy comes later).
+**Type: Rule** (Skirmish stock loadout)
 
-**Why.** After the 1/6 house rule, drama looked healthy except fires stayed
-at 0.00 — Skirmish had no path to the fire / cook-off narrative without HE.
+Stock tanks always have HE available. They still start loaded with AT.
 
-**Effect on balance (200 games, seed 7; baseline = post-1/6 house rule):**
-
-| Metric | Before (1/6 only) | After (+ stock HE) | Delta |
-|--------|------------------:|-------------------:|------:|
-| Red / Blue / Draw | 113 / 85 / 2 | 103 / 95 / 2 | sides closer |
-| First-player win share | 57% | 57% | unchanged |
-| Avg activations | 9.0 | 9.3 | +0.3 |
-| Timed out | 4% | 5% | still rare |
-| Avg shots (AT / HE) | 14.8 (all AT) | 13.1 (3.1 / **10.0**) | HE-heavy mix |
-| Hit rate | 44% | 44% | unchanged |
-| Avg pens | 5.42 | 4.04 | fewer hull punches |
-| Avg glances | 1.15 | 1.67 | more soft hits |
-| Avg fires | **0.00** | **1.35** | cinema unlocked |
-| Avg cook-offs | 0.47 | 0.65 | slightly up |
-| Avg crew wounds / kills | 4.50 / 1.52 | 3.78 / 1.09 | gentler |
-| Comebacks | 87 | 91 | still common |
-
-**Larger batch (500 games, seed 1):** ~1.43 fires/game, ~9.9 HE shots vs
-~3.2 AT, 4% timeouts, first-player share still ~58%, no stalemate flags.
-
-**Verdict.** Keep. Fires land about once per game, pens soften without
-killing decisiveness, and Red/Blue drifted toward even. First-player edge
-is untouched. Caveat: the heuristic AI loads HE for ~75% of shots — higher
-than many humans might — so treat fire rates as an upper bound until a
-human playtest or a less HE-hungry policy.
+**Why.** Without HE there was no path to fire / cook-off drama in Skirmish.
 
 ---
 
-## 2026-08-30 — Blocked corridor skirmish map
+## 2026-08-30 — Blocked corridor + random terrain + offset starts
 
-**Change.** The open east-west street between the tanks is closed with a 3×3
-building wall on the midline (`q=4..6`, `r=3..5`). North and south alleys
-remain open; forests sit on the alley mouths. Opening LOS is blocked — tanks
-must move to find each other.
+**Type: Scenario** (Skirmish map)
 
-Also fixed two sim bugs that only showed up once flanks mattered:
+Midline building block, north/south alleys kept clear, random forest/mud/rubble
+outside reserved hexes, offset start positions.
 
-- `Facing::turn_left` from East wrapped to West (u8 underflow).
-- `facing_toward` mapped pixel angles onto the Facing enum in the wrong
-  order (NE and SE swapped, etc.).
-- Turret "left" stepped the offset the wrong way relative to hull left.
-
-The AI now pathfinds to a firing hex when LOS is blocked, and aims/loads/fires
-when geometric LOS exists.
-
-**Why.** On the old open map, after a short close the game was mostly
-Load→Fire→Load. Move was ~16% of actions. Terrain rarely forced a choice.
-
-**Effect on balance (200 games, seed 7; baseline = stock HE on the open map):**
-
-| Metric | Before (open) | After (walled) | Delta |
-|--------|--------------:|---------------:|------:|
-| Red / Blue / Draw | 103 / 95 / 2 | 61 / 135 / 4 | Blue-heavy |
-| First-player win share | 57% | ~50% (99/196) | FP edge gone |
-| Avg activations | 9.3 | 11.2 | +1.9 |
-| Timed out | 5% | 6% | similar |
-| Avg shots (AT / HE) | 13.1 (3.1 / 10.0) | 11.9 (3.7 / 8.2) | similar mix |
-| Avg moves / hull turns | *(not tracked)* | **9.2 / 7.3** | real maneuver |
-| Avg pens / glances | 4.04 / 1.67 | 3.79 / 1.86 | similar |
-| Avg fires | 1.35 | 1.30 | similar |
-| Comebacks | 91 | 59 | fewer |
-| Late stalemates | 0 | 3 (2%) | rare |
-
-**Verdict.** Keep the wall for option diversity — games now open with a
-flanking choice instead of a staring contest. Side balance drifted Blue; next
-pass should either offset starting rows, thin the wall, or add a reason to
-contest one alley (objective / VP). First-player edge collapsing is a happy
-accident of the approach race.
-
-**Better layout ideas (not shipped yet):**
-
-1. **One alley, not two** — a single gap forces contact; two alleys let tanks
-   miss each other until late.
-2. **Offset starts** — Red on `(1,3)`, Blue on `(9,5)` so the "natural" approach
-   lanes differ and one side doesn't own a mirror.
-3. **Objective hex** past the wall — VP for ending activation on it, so
-   sitting back loses even if the duel is cautious.
-
----
-
-## 2026-08-30 — Random terrain around the wall
-
-**Change.** The 3×3 midline wall stays fixed. Forest (5–9), mud (2–4), and
-rubble (1–3) hexes are scattered at random each game. Alley columns and the
-hex in front of each tank stay clear; boards that somehow seal an alley are
-re-rolled.
-
-**Why.** Fixed forests made every game the same approach puzzle. Random cover
-and footing should vary which alley is attractive and cut the Blue-heavy skew
-from the fixed map (61 / 135).
-
-**Effect on balance (200 games, seed 7; baseline = fixed forests/mud):**
-
-| Metric | Fixed terrain | Random scatter | Delta |
-|--------|--------------:|---------------:|------:|
-| Red / Blue / Draw | 61 / 135 / 4 | **92 / 103 / 5** | sides much closer |
-| First-player win share | ~50% | ~52% (101/195) | similar |
-| Avg activations | 11.2 | 11.5 | similar |
-| Timed out | 6% | 9% | slight up |
-| Avg moves / hull turns | 9.2 / 7.3 | 8.7 / 6.7 | still maneuvering |
-| Avg fires | 1.30 | 1.14 | similar |
-| Comebacks | 59 | 78 | up |
-
-**Larger batch (500 games, seed 1):** Red 207 / Blue 286 — still a Blue lean,
-but far better than the fixed-map blowout.
-
-**Verdict.** Keep. Same wall, different ground each game, and Red/Blue stopped
-looking like a coin with Blue painted on both sides.
-
----
-
-## 2026-08-30 — Offset starting rows
-
-**Change.** Red starts at `(1,3)` facing east; Blue at `(9,5)` facing west
-(was both on `r=4`). The wall and random scatter are unchanged.
-
-**Why.** Even with random terrain, mirrored row starts let one side's "drive
-north" habit win too often. Offset rows make each tank's nearer alley
-different from turn one — a cheap asymmetry that doesn't add rules text.
-
-**Effect on balance (200 games, seed 7; baseline = random terrain, same row):**
-
-| Metric | Same row | Offset rows | Delta |
-|--------|---------:|------------:|------:|
-| Red / Blue / Draw | 92 / 103 / 5 | 110 / 88 / 2 | Red slightly up |
-| First-player win share | 52% | 62% (122/198) | noisier at N=200 |
-| Avg activations | 11.5 | 10.4 | slightly snappier |
-| Timed out | 9% | 5% | down |
-| Avg moves / hull turns | 8.7 / 6.7 | 8.2 / 5.4 | still real maneuver |
-| Avg fires | 1.14 | 1.14 | unchanged |
-
-**Larger batch (500 games, seed 1):** Red **251** / Blue **239** / Draw 10 —
-near even. First-player share ~58% (285/490). Timeouts 6%. Drama (fires,
-pens, comebacks) holds.
-
-**Verdict.** Keep. Side balance is finally close on a big batch, games resolve
-a bit faster, and the opening decision (which alley?) is no longer the same
-puzzle for both players.
+**Sim note.** The AI pathfinds when LOS is blocked. That is Sim behavior
+implementing the same map humans would navigate.
 
 ---
 
 ## 2026-08-30 — Glance suppression
 
-**Rule.** When a shot hits but does not penetrate, the target becomes
-**Suppressed** until the end of its next activation: **−1 action** that
-activation (minimum 1). A second glance while already Suppressed does nothing
-extra. The token clears when that activation ends.
+**Type: Rule**
 
-**Why.** Mid-fight was Load→Fire→Load with glances often feeling like soft
-misses (wound roll fails ≈ half the time). Suppression makes every glance
-shake the crew without racing hull damage, and gives the shooter a short
-tempo window.
-
-**Effect on balance (200 games, seed 7; baseline = offset starts + random
-terrain):**
-
-| Metric | Before | After (+ suppression) | Delta |
-|--------|-------:|----------------------:|------:|
-| Red / Blue / Draw | 110 / 88 / 2 | 110 / 86 / 4 | similar |
-| First-player win share | 62% | 57% (111/196) | slightly fairer |
-| Avg activations | 10.4 | 10.4 | unchanged |
-| Timed out | 5% | 6% | similar |
-| Avg glances | 1.49 | 1.48 | — |
-| Avg suppressions | 0 | **1.40** | almost every glance sticks |
-| Avg pens / fires | 4.09 / 1.14 | 4.00 / 1.18 | drama holds |
-| Comebacks | 72 | 75 | similar |
-
-**Larger batch (500 games, seed 1):** Red 248 / Blue 239 / Draw 13. First-player
-share ~56% (274/487). Avg **1.33 suppressions** / **1.41 glances**. Comebacks
-173. Timeouts 7%. Decisive 97%.
-
-**Verdict.** Keep. Glances now do something every time (~94% apply a fresh
-token; the rest were already suppressed). Side balance and cinema stay healthy;
-first-player edge eased a little. Worth a human playtest to confirm the −1
-action feels like a punch, not a bookkeeping tax.
+A glancing hit suppresses the target (−1 action on its next activation,
+minimum 1; does not stack). Clears at the end of that activation.
 
 ---
 
-## How to re-check
+## 2026-08-30 — Multi-unit scenarios
 
-```bash
-cd tank-commander
-cargo run --release -- sim --games 200 --seed 7
-cargo run --release -- sim --games 500 --seed 1
-```
+**Type: Scenario**
 
-When you change a rule, append a dated section here with before/after from the
-same seed and game count so diffs stay comparable.
+| Scenario | Force | Board | Sim clock |
+|----------|-------|-------|-----------|
+| `skirmish` | 1v1 tanks | 11×9 | hard 20 |
+| `combined` | tank + APC + infantry / side | 17×13 plaza | hard 160 + idle-32 |
+| `platoon` | 3v3 tanks | 19×15 plaza | hard 200 + idle-40 |
+
+**Sim:** activation caps and idle-stalemate stops are analysis clocks so
+Monte Carlo games finish. Tabletop turn limits stay with the upstream rules
+unless a Scenario explicitly says otherwise.
+
+Timeout ranking (more operational units, then hull) is **Rule** for how a
+clock-expired game is scored when you use a clock.
 
 ---
 
-## 2026-08-30 — Multi-unit scenarios (platoon + combined)
+## 2026-08-30 — Platoon plaza funnel
 
-**Change (sim, not a tabletop house rule).** The engine now runs three
-scenarios behind `--scenario`:
+**Type: Scenario**
 
-| Scenario | Force | Cap |
-|----------|-------|----:|
-| `skirmish` | 1v1 tanks on 11×9 | 20 |
-| `combined` | tank (air support) + APC + infantry / side on 17×13 plaza | 160 + idle-32 |
-| `platoon` | 3v3 tanks on 19×15 plaza funnel | 200 + idle-40 |
+19×15 board, sealed midline with a wide plaza gap and side baffles so tanks
+cannot pair off down parallel N/S lanes.
+
+**Sim:** high hard cap + post-contact idle stop so fights can wipe. AI must
+check gun range before treating plaza LOS as a shot (bugfix; humans already
+know range).
 
 ---
 
 ## 2026-08-30 — Combined arms: make every piece matter
 
-**Problem.** Combined was mostly a tank-vs-APC duel. Infantry rarely fired,
-air strikes dithered for many activations then hit empty hexes, and APCs
-had no job once infantry were gone.
+**Problem.** Combined was a tank-vs-APC duel. Infantry rarely mattered, air
+strikes arrived late (or never), and APCs had no job after infantry died.
 
-**Changes.**
-1. Air strike arrives at the end of the caller's next activation (no delay
-   dice); blast template is aim hex + all neighbors.
-2. Infantry: stepping into forest digs in; cover saves once (pin + suppress
-   instead of die); missiles prefer tanks; range 4.
-3. APC AI spray can suppress vehicles (not only kill infantry).
-4. Combined board → 17×13 plaza funnel (same idea as platoon).
-5. Activation fairness so one APC cannot monopolize the side forever.
+### Rules
 
-**Effect (80 games, seed 7):** Red 33 / Blue 46 / Draw 1 (99% decisive).
-0% hard timeout. Avg air strikes ~2.0, suppressions up. Pens ~9, moves ~35.
-Still a bit second-player lean — worth watching.
+1. **Air strike timing.** The strike arrives at the end of the calling side's
+   **next** activation (no delay dice). Blast template: aim hex + all
+   adjacent hexes.
+2. **Infantry cover.** Stepping into forest puts the squad in cover. The first
+   hit against a squad in cover pins them (spend cover, apply suppressed)
+   instead of destroying them. A later hit with no cover still kills.
+3. **Infantry missiles.** Range 4. Prefer vehicle targets when choosing.
+4. **APC spray.** AI weapons may target vehicles: a hit suppresses (no
+   penetration / no hull damage). Against infantry, a hit still kills (or
+   pins if in cover, per above).
 
----
+### Scenario
 
-## 2026-08-30 — Platoon funnel map + resolution clock
+5. **Combined map.** 17×13 plaza funnel (same idea as platoon) with denser
+   forest near approaches so infantry have dig-in hexes.
 
-**Change.** Platoon board is 19×15 with a sealed midline (only a wide plaza
-gap at the center) and west/east baffles so N/S lanes cannot host separate
-1v1s. Hard activation cap raised to 200; after first contact, 40 activations
-with no hit end as idle stalemate. Fixed AI bug: geometric LOS through the
-plaza no longer counts as in-range across the whole board.
+### Sim only (not balance-critical)
 
-**Effect (60 games, seed 7):** Red 27 / Blue 33 / Draw 0. **0% hard timeout,
-0% idle stalemate** — every game wiped. Avg activations 49, pens 16.6, moves
-45. All sampled games engaged 3+ named tanks (no more spectator Charlie).
+- Heuristic AI preferences (when to call air, which missile, when to spray).
+- Monte Carlo idle/hard clocks.
 
+### Pass activation (was Sim; now Rule)
 
-Each activation the AI picks one operational unit and may fire at a named
-target. Timeout ranks **operational units first**, then remaining hull (so a
-side that wiped more tanks wins even if HP is close).
+Earlier the sim biased the AI away from activating the same APC every time.
+That is **not** enough for balance — a human (or a better AI) could still
+camp one unit.
 
-Infantry die on any main-gun / missile hit. APCs fire AI weapons at infantry.
-Tanks with air support may mark a hex; the strike resolves on later
-activations (need starts at 6+, improves each wait; natural 1 always fails).
+**Rule — pass activation.** When you activate, choose one of your operational
+units that has **not** yet activated this **pass**. After every operational
+unit on your side has activated once, clear the marks and start a new pass.
+If only one unit remains, it may activate every time.
 
-**Why.** 1v1 Skirmish is a good rules lab, but after contact it collapses into
-Load+Fire (~79% of post-contact actions). The real game has more units and
-combined arms — those need their own balance runs.
+This is enforced in the engine (`activatable_ids` / `begin_activation`), not
+only in the heuristic scorer.
 
-**Effect (200 games, seed 7):**
-
-| Metric | Skirmish | Platoon | Combined |
-|--------|---------:|--------:|---------:|
-| Red / Blue / Draw | 110 / 86 / 4 | 54 / 52 / 94 | 95 / 103 / 2 |
-| Decisive | 98% | 53% | 99% |
-| Timed out | 6% | 84% | 23% |
-| Avg moves | 8.2 | 14.6 | 15.2 |
-| Avg pens | 4.00 | 6.66 | 7.88 |
-| Air strikes / inf kills | — | — | 1.82 / 1.04 |
-
-**Read.** Platoon Red/Blue is even, but most games still hit the cap with
-matching unit counts — so draws dominate. That is the right place for
-**mission objectives / VP** next, not more Skirmish tweaks. Combined resolves
-far more often (infantry and air strikes add soft targets and board pressure)
-and stays balanced; air strikes fire ~1.8 times per game on average.
-
-**Next suggestions (tabletop, not yet simmed):**
-
-1. Platoon / company missions with scored objectives so timeout isn't a
-   draw-by-HP slog.
-2. Optional "broken" morale: when a side is down to one operational tank,
-   that tank is −1 action (keeps last stands dramatic without forcing a wipe).
+**Effect (80 games, seed 7, after Rules + Scenario above):** ~100% decisive;
+~2 air strikes/game; infantry kills ~1+; more suppressions and maneuver.
+Second-player lean remains worth watching.
 
 ---
 
-## How to re-check
+## How to add a change
 
-```bash
-cd tank-commander
-cargo run --release -- sim --scenario skirmish --games 200 --seed 7
-cargo run --release -- sim --scenario platoon --games 200 --seed 7
-cargo run --release -- sim --scenario combined --games 200 --seed 7
-```
-
-When you change a rule, append a dated section here with before/after from the
-same seed and game count so diffs stay comparable.
+1. Decide **Rule**, **Scenario**, or **Sim**.
+2. If balance needs a behavior humans must follow, make it a **Rule** (or
+   Scenario setup), implement it in the engine so illegal plays are impossible,
+   and document it here.
+3. Do **not** rely on AI scoring quirks alone for balance.
