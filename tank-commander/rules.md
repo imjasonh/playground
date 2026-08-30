@@ -329,7 +329,7 @@ These are the setups the simulator balances against. Map sizes are hex
 
 ### Skirmish
 
-- **Force:** 1v1 stock tanks (HE available).
+- **Force:** 1v1 stock tanks (HE + field kit: smoke, medkit, lieutenant).
 - **Board:** 9×12 with a midline building block, clear alleys, random
   forest/mud/rubble outside reserved hexes, offset starts.
 - **Second-player spoil:** shift up to **2** scatter terrain tiles (forest /
@@ -338,7 +338,7 @@ These are the setups the simulator balances against. Map sizes are hex
 
 ### Platoon
 
-- **Force:** 3v3 stock tanks.
+- **Force:** 3v3 stock tanks (HE + field kit).
 - **Board:** 18×12 open mat — scattered **building clumps** and **forest
   patches**, plus single mud/rubble tiles. No sealed midline or plaza funnel.
 - **Second-player spoil:** nudge **each** opposing unit up to **1 hex**
@@ -347,8 +347,8 @@ These are the setups the simulator balances against. Map sizes are hex
 
 ### Combined arms
 
-- **Force:** per side — **2 tanks** (each with one air strike), **2 APCs**,
-  **2 infantry**.
+- **Force:** per side — **2 tanks** (each with one air strike + field kit),
+  **2 APCs** (smoke), **2 infantry**.
 - **Board:** 18×12 open mat (same size as platoon) with building clumps and
   forest patches; starts and scatter are east–west **mirrored** at generation
   (second-player terrain spoil may break scatter symmetry on purpose).

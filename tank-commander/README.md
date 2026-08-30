@@ -7,18 +7,19 @@ Three scenarios share the same engine and heuristic AI:
 
 | Scenario | Force | Board | Cap / idle stop |
 |----------|-------|-------|-----------------|
-| `skirmish` | 1v1 stock tanks | 9×12 | 20 hard (10/side) |
+| `skirmish` | 1v1 stock tanks (field kit) | 9×12 | 20 hard (10/side) |
 | `combined` | 2 tanks + 2 APCs + 2 infantry / side | 18×12 open | 240 hard; idle after 48 no-hit |
-| `platoon` | 3v3 stock tanks | 18×12 open | 200 hard; idle after 40 no-hit |
+| `platoon` | 3v3 stock tanks (field kit) | 18×12 open | 200 hard; idle after 40 no-hit |
 
 Platoon and combined share one **18×12** mat with **scattered building clumps
 and forest patches** (no sealed midline funnel). Skirmish is half the width
-(**9×12**) with a compact midline block. Combined starts and scatter are
-east–west mirrors. After initiative, the second player may shift a few scatter
-terrain tiles (forest / mud / rubble — not buildings) by 1 hex each, and on
-platoon/combined may also nudge each opposing unit by up to 1 hex, before
-the first activation. Combined also has next-activation air strikes (with
-scatter) and APC vehicle spray.
+(**9×12**) with a compact midline block. Stock tanks carry a **field kit**
+(smoke launcher, medkit, lieutenant); APCs carry smoke. Combined starts and
+scatter are east–west mirrors. After initiative, the second player may shift a
+few scatter terrain tiles (forest / mud / rubble — not buildings) by 1 hex
+each, and on platoon/combined may also nudge each opposing unit by up to 1
+hex, before the first activation. Combined also has next-activation air
+strikes (with scatter) and APC vehicle spray.
 
 Playable rules (upstream + house rules): [`rules.md`](rules.md).
 Dated changelog with Rule / Scenario / Sim tags and sim metrics:
