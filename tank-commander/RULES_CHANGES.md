@@ -768,6 +768,53 @@ still ~2.3 triggers/game). 7 starts to push fields back and inflate timeouts.
 
 ---
 
+## 2026-08-30 — Capture objectives + flag-raid scenario
+
+**Type: Rule / Scenario / Sim**
+
+### Rule
+
+Infantry may **Capture** (1 AP) while sharing an **enemy** flag hex. Capture
+wins immediately; stay-on-hex is not required (upstream wording). Wipe and
+attrition timeouts still apply.
+
+### Scenario `capture`
+
+Per side: **1 tank + 3 APCs**, each APC **pre-loaded** with infantry. Stock
+lists. 18×12 mirrored mat with one backline flag each. Roll-off + spoil.
+
+### Sim / AI
+
+- APCs pathfind toward the enemy flag and `DropOff` within 2 hexes.
+- Infantry Capture when on the hex; otherwise race / shoot nearby threats.
+- Metrics: `objectives_captured`, win-by-capture rate.
+
+### Bugfix (APC / infantry AP)
+
+`effective_actions` treated a missing commander as killed (−2). Stock APCs and
+infantry have empty crew lists, so they ran at **1 AP** and ferry AI spent that
+on useless hull turns. Crew penalties now apply to **tanks only**.
+
+### Balance (200 games, seed 1)
+
+| Signal | Value |
+|--------|-------|
+| Decisive | **100%** (1 draw) |
+| Win-by-capture | **96%** |
+| Avg captures / drop-offs | 0.96 / 2.18 |
+| Hard TO / idle stalemate | 0.5% / 2.5% |
+| Avg activations / moves | 83 / 98 |
+| Red / Blue wins | 135 / 64 |
+| First / second player wins | 74 / 125 (37% first) |
+
+**Verdict.** Objectives are used and decide almost every game — fun as a race,
+not an attrition slog. Embarkation is a real taxi (drops ~2/game). Watchouts:
+**second-player edge (~63%)** from spoil + reaction, and a **Red skew** on this
+seed set (likely odd-r / spoil interaction; not flip-fair yet). Low shot counts
+are expected for a flag race.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.

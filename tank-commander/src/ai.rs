@@ -594,20 +594,23 @@ fn deliver_passenger_plan<R: Rng>(
     shadow.tank_mut(unit_id).moves_this_turn = 0;
     shadow.tank_mut(unit_id).dropped_passenger_this_activation = false;
 
-    let raw = if let Some(e) = enemy {
-        // Prefer firing-position chase toward the enemy; when a flag exists,
-        // also bias the path by chasing the flag hex as a fallback goal.
-        if enemy_flag.is_some() {
-            let mut toward_flag = chase_enemy_fallback(unit, goal);
-            if toward_flag.is_empty() {
-                toward_flag = maneuver_plan(game, unit_id, e, rng);
+    let raw = if let Some(flag) = enemy_flag {
+        // Pathfind to the flag. APCs have no crew so effective_actions is 1 —
+        // path_to_actions spends that on a useful Turn or Move, not a spin.
+        if let Some(path) = bfs_path(game, unit.pos, flag, unit.side) {
+            let actions = path_to_actions(unit, &path);
+            if !actions.is_empty() {
+                actions
+            } else {
+                chase_enemy_fallback(unit, flag)
             }
-            toward_flag
         } else {
-            maneuver_plan(game, unit_id, e, rng)
+            chase_enemy_fallback(unit, flag)
         }
+    } else if let Some(e) = enemy {
+        maneuver_plan(game, unit_id, e, rng)
     } else {
-        chase_enemy_fallback(unit, goal)
+        Vec::new()
     };
     for a in &raw {
         if !matches!(a, Action::Move | Action::TurnLeft | Action::TurnRight) {
@@ -986,9 +989,19 @@ fn chase_enemy_fallback(tank: &crate::unit::Tank, enemy: Hex) -> Vec<Action> {
         if let Some(need) = tank.pos.facing_toward(enemy) {
             return vec![Action::Step(need), Action::Step(need)];
         }
+        return Vec::new();
     }
-    let go_north = enemy.r < tank.pos.r || (enemy.r == tank.pos.r && tank.pos.r > 4);
-    if go_north {
+    let Some(need) = tank.pos.facing_toward(enemy) else {
+        return Vec::new();
+    };
+    // With 1 AP (stock APCs), only emit one useful action: Move if already
+    // facing the goal, otherwise turn the short way.
+    if tank.hull_facing == need {
+        return vec![Action::Move, Action::Move, Action::Move];
+    }
+    let left_steps = turn_steps_left(tank.hull_facing, need);
+    let right_steps = (6 - left_steps) % 6;
+    if left_steps > 0 && left_steps <= right_steps {
         vec![Action::TurnLeft, Action::Move, Action::Move]
     } else {
         vec![Action::TurnRight, Action::Move, Action::Move]
