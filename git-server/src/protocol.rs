@@ -315,7 +315,26 @@ async fn fetch(
             states: states.as_ref(),
             name: &repo_name,
         };
-        let odb = match repo.odb(&state).await {
+        let want_set: std::collections::HashSet<Oid> = wants.iter().copied().collect();
+        let is_full_clone = filter.is_none()
+            && haves.is_empty()
+            && state.refs.values().all(|hex| {
+                Oid::from_hex(hex)
+                    .map(|o| want_set.contains(&o))
+                    .unwrap_or(false)
+            });
+
+        // Full clone needs every pack. Incremental fetch almost always only
+        // needs oldest (seed/early tips) and/or newest (fresh tips) bookends —
+        // loading the whole multi-shard writer backlog was Error 1101 on phone
+        // reader stages. Fall back to a full open on a miss.
+        const FETCH_BOOKEND: usize = 32;
+        let mut used_full = is_full_clone || state.packs.len() <= FETCH_BOOKEND * 2;
+        let mut odb = match if used_full {
+            repo.odb(&state).await
+        } else {
+            repo.odb_bookends(&state, FETCH_BOOKEND).await
+        } {
             Ok(odb) => odb,
             Err(e) => {
                 yield Err(e);
@@ -342,37 +361,75 @@ async fn fetch(
                     unshallow = plan.unshallow;
                     plan.set
                 }
+                Err(e) if !used_full && e.contains("not found") => {
+                    odb = match repo.odb(&state).await {
+                        Ok(o) => o,
+                        Err(e2) => {
+                            yield Err(format!("{e}; full-odb retry: {e2}"));
+                            return;
+                        }
+                    };
+                    used_full = true;
+                    match crate::repo::collect_shallow_set(
+                        &odb,
+                        &wants,
+                        depth,
+                        &client_shallow,
+                        filter_ref,
+                    )
+                    .await
+                    {
+                        Ok(plan) => {
+                            shallow_boundary = plan.shallow;
+                            unshallow = plan.unshallow;
+                            plan.set
+                        }
+                        Err(e2) => {
+                            yield Err(e2);
+                            return;
+                        }
+                    }
+                }
                 Err(e) => {
                     yield Err(e);
                     return;
                 }
             }
+        } else if is_full_clone {
+            crate::repo::FetchSet {
+                include: odb.all_oids(),
+                common: Vec::new(),
+                client_has: std::collections::HashSet::new(),
+            }
         } else {
-            let want_set: std::collections::HashSet<Oid> = wants.iter().copied().collect();
-            let is_full_clone = filter.is_none()
-                && haves.is_empty()
-                && state.refs.values().all(|hex| {
-                    Oid::from_hex(hex)
-                        .map(|o| want_set.contains(&o))
-                        .unwrap_or(false)
-                });
-            if is_full_clone {
-                crate::repo::FetchSet {
-                    include: odb.all_oids(),
-                    common: Vec::new(),
-                    client_has: std::collections::HashSet::new(),
-                }
-            } else {
-                let _t = crate::timing::Phase::start("fetch: collect set");
-                match crate::repo::collect_fetch_set(&odb, &wants, &haves, filter_ref).await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        yield Err(e);
-                        return;
+            let _t = crate::timing::Phase::start("fetch: collect set");
+            match crate::repo::collect_fetch_set(&odb, &wants, &haves, filter_ref).await {
+                Ok(s) => s,
+                Err(e) if !used_full && e.contains("not found") => {
+                    odb = match repo.odb(&state).await {
+                        Ok(o) => o,
+                        Err(e2) => {
+                            yield Err(format!("{e}; full-odb retry: {e2}"));
+                            return;
+                        }
+                    };
+                    used_full = true;
+                    match crate::repo::collect_fetch_set(&odb, &wants, &haves, filter_ref).await
+                    {
+                        Ok(s) => s,
+                        Err(e2) => {
+                            yield Err(e2);
+                            return;
+                        }
                     }
+                }
+                Err(e) => {
+                    yield Err(e);
+                    return;
                 }
             }
         };
+        let _ = used_full;
         let plan = match crate::repo::plan_pack(&odb, &set, thin_pack) {
             Ok(p) => p,
             Err(e) => {

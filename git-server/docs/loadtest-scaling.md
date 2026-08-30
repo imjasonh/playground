@@ -561,27 +561,37 @@ What the report answers:
 | `cost_per_push` / `cost_per_pull` | Mean R2 A/B, DO, KV ops and $ per successful op |
 | `total_cost_usd` / `budget_usd` / `budget_limited` | Spend vs cap; when limited, peaks are still valid but the run stopped early |
 
-`shards` > 1 on the phone **Run** button splits offered concurrency across
-parallel browser `POST /api/<repo>/loadtest` calls (same repo, `shard: true`),
-then `POST /loadtest/merge` for the HTML report. Each browser POST is its own
-edge invocation / isolate — Worker self-fetch is not used.
+`shards` on the phone **Run** button is no longer a user knob. The UI
+**auto-ramps** writers `1 → 2 → 4 → 8 → 16` (always 1 writer = 1 isolate),
+shows pushes/s after each step, **stops when the gain is under 10%**, then
+measures readers at that concurrency. Parallel browser `POST
+/api/<repo>/loadtest` calls (same repo, `shard: true`) then
+`POST /loadtest/merge` for the HTML report. Worker self-fetch is not used.
 
 **Per-isolate cap.** Nested push/pull loops in one shard POST share that
 invocation's subrequest and memory (128 MiB) budgets. Phone UI keeps
-≤1 writer and ≤2 readers per isolate and auto-raises `shards` for both
-caps (phone readers are `2×peak`). Each stage is its own browser POST so
-the isolate's subrequest budget resets between warm-up, peak, and readers.
-Shard POSTs also **skip inline auto-repack** (a full fold after every push
-in the same invocation was Error 1101 under multi-shard backlog) and cap
-attempts per loop (`PHONE_MAX_OPS_PER_LOOP`). Push handling opens only the
-newest ~64 pack indexes (full open on thin-base / deep-parent miss), and
-`Odb::open` loads indexes in batches of 6. The pack-index cache **replaces**
-on put and is forgotten when a retired pack is deleted. Browser fan-out
-limits parallel shard POSTs to 4. CI encodes the Worker budget in
-`phone_shard_peak_under_worker_subrequest_budget` (backlog ≈ 15×20 packs,
-assert soft subrequest cap) so we catch regressions without deploying.
-`wrangler.toml` raises the paid-plan subrequest ceiling to 100_000. On wasm
-the runner also clamps stage concurrency to those caps as a backstop.
+≤1 writer and ≤1 reader per isolate. Each ramp step is its own browser POST
+so the isolate's subrequest budget resets between levels. Shard POSTs also
+**skip inline auto-repack** (a full fold after every push in the same
+invocation was Error 1101 under multi-shard backlog) and cap attempts per
+loop (`PHONE_MAX_OPS_PER_LOOP`). Push handling opens only the newest ~64
+pack indexes (full open on thin-base / deep-parent miss); fetch opens
+oldest+newest bookends (full open on miss). `Odb::open` loads indexes in
+batches of 6. The pack-index cache **replaces** on put and is forgotten when
+a retired pack is deleted. Browser fan-out limits parallel shard POSTs to 4.
+
+**Tune without deploying.** CI + local:
+
+```bash
+cd git-server
+cargo test --test phone_budget_tune -- --nocapture
+PHONE_BUDGET_TUNE=1 cargo test --test phone_budget_tune tune_search -- --nocapture --ignored
+```
+
+`phone_shard_peak_and_readers_under_soft_caps` builds a ~300-pack backlog and
+asserts soft subrequest/heap caps for peak and readers shard POSTs.
+`tune_search_reader_concurrency` binary-searches how many concurrent readers
+still fit — change `PHONE_MAX_*` constants, re-run locally, then ship once.
 
 **Why not Worker self-fetch / `SELF`?** Same-zone public `Fetch` without
 `global_fetch_strictly_public` is Cloudflare error 1042. A `SELF` service
@@ -592,8 +602,8 @@ exception in the nested same-Worker call, not an application `Response::error`.
 Browser fan-out avoids that path entirely. On failure the phone UI shows the
 failing step, status, `cf-ray`, and raw body snippet.
 
-Defaults: 4 shards, max 16. A `?run=1` bookmark still runs in-process on the
-Worker (also subject to the per-isolate clamp).
+Defaults: budget only on the form; ramp ceiling 16. A `?run=1` bookmark still
+runs in-process on the Worker (also subject to the per-isolate clamp).
 
 Push/pull cost notes that show up in these numbers: one `Odb` open per push
 (new pack index attached in memory), concurrent index loads, an isolate-local

@@ -122,7 +122,7 @@ pub fn forget_index(repo: &str, pack_id: &str) {
     INDEX_CACHE.with(|c| c.borrow_mut().forget(&index_key(repo, pack_id)));
 }
 
-#[cfg(test)]
+/// Test helper: drop the isolate pack-index cache.
 pub fn clear_index_cache_for_test() {
     INDEX_CACHE.with(|c| {
         let mut c = c.borrow_mut();

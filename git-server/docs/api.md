@@ -234,31 +234,31 @@ Plain-text banner identifying the service.
 ### `GET /loadtest`
 Phone-friendly HTML load test. Open this URL in a browser:
 
-* without `run=1` — landing page with **cost budget**, **peak writers**, and
-  **isolates (shards)** controls, then a **Run** button;
+* without `run=1` — landing page with a **cost budget** control and **Run**;
 * with `?run=1` — runs immediately in-process into **one** disposable repo
   (bookmark / curl convenience; the landing **Run** button uses browser
-  fan-out instead).
+  auto-ramp instead).
 
-The landing **Run** button seeds the repo, then fires one `POST
-/api/<repo>/loadtest` per shard from the browser (separate edge invocations /
-isolates), then `POST /loadtest/merge` for the HTML report. Worker self-fetch
-fan-out is not used (Cloudflare blocks same-zone Worker→Worker).
+The landing **Run** button **auto-ramps** writers `1 → 2 → 4 → 8 → 16`
+(one writer = one isolate; shards always equal writers). After each step it
+shows pushes/s live and **stops when the gain is under 10%**, then measures
+readers at that concurrency. The browser POSTs one shard at a time (up to 4
+in parallel), then `POST /loadtest/merge` for the HTML report. Worker
+self-fetch fan-out is not used (Cloudflare blocks same-zone Worker→Worker).
 
-Stages are derived from peak writers: warm-up (`peak/3`) → peak writers →
-`2×peak` readers. Each writer owns its own branch (`refs/heads/load/wN`);
-disjoint-branch pushes merge-apply without conflicting. Defaults:
-`budget=0.10`, `duration=4`, `peak=8`, `shards=4` (capped at 48 peak / 16
-shards).
+Each writer owns its own branch (`refs/heads/load/wN`); disjoint-branch
+pushes merge-apply without conflicting. Defaults: `budget=0.10`,
+`duration=4` seconds per ramp step, ramp ceiling `16`.
 
 Each shard POST runs nested push/pull loops **inside one Worker
 invocation**. That isolate has a shared subrequest budget and 128 MiB heap —
 concurrent writers and inline auto-repack under multi-shard backlog both
-threw Cloudflare Error 1101. The UI keeps **≤1 writer / ≤2 readers per
-isolate** (auto-raising `shards` when needed), runs **one stage per POST**,
-**skips inline auto-repack on shard POSTs**, caps attempts per loop, opens
-only a short pack-index tail per push, and is guarded by a CI Worker-budget
-test (`phone_shard_peak_under_worker_subrequest_budget`).
+threw Cloudflare Error 1101. The UI keeps **≤1 writer / ≤1 reader per
+isolate**, runs **one ramp step per POST**, **skips inline auto-repack on
+shard POSTs**, caps attempts per loop, opens a short pack-index tail on push
+and bookends on fetch, and is guarded by
+`cargo test --test phone_budget_tune` (soft subrequest/heap caps + optional
+`PHONE_BUDGET_TUNE=1` search).
 Heavier single-isolate ramps belong on distributed clients, not nested
 in-Worker loops.
 
@@ -267,12 +267,10 @@ in-Worker loops.
 run returns 401 (HTML error page for GET). If the secret is unset, loadtests
 return 503.
 
-Optional query: `budget` (USD, default `0.10`, max `5`), `peak` (writers,
-default `8`, max `48`), `shards` (isolates, default `4`, max `16`; raised
-automatically so each isolate stays ≤1 writer / ≤2 readers), `duration`
-(seconds per stage, default `4`). Bookmark
-`https://git.<account>.workers.dev/loadtest?token=…` and adjust the form, or
-`…/loadtest?run=1&budget=0.10&peak=8&shards=4&token=…` for one-tap in-process.
+Optional query: `budget` (USD, default `0.10`, max `5`), `peak` (ramp
+ceiling, default `16`, max `48`), `duration` (seconds per ramp step, default
+`4`). Bookmark `https://git.<account>.workers.dev/loadtest?token=…` and tap
+Run, or `…/loadtest?run=1&budget=0.10&token=…` for one-tap.
 
 ### `POST /loadtest/merge`
 Merge shard JSON reports from a browser fan-out into one HTML report. Body:
