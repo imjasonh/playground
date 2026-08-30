@@ -61,34 +61,37 @@ struct MapLayout<'a> {
 }
 
 /// Shared battle mat for platoon and combined (columns × rows).
-const BATTLE_WIDTH: i32 = 19;
-const BATTLE_HEIGHT: i32 = 15;
-/// Skirmish is half the battle mat (rounded).
-const SKIRMISH_WIDTH: i32 = 10;
-const SKIRMISH_HEIGHT: i32 = 8;
+const BATTLE_WIDTH: i32 = 18;
+const BATTLE_HEIGHT: i32 = 12;
+/// Skirmish: half the battle width, same height.
+const SKIRMISH_WIDTH: i32 = 9;
+const SKIRMISH_HEIGHT: i32 = 12;
 
-/// Skirmish: compact midline block on the half-size mat.
+/// Skirmish: compact midline block on the half-width mat.
 const SKIRMISH_WALL: [Hex; 9] = [
-    Hex::offset(3, 2),
-    Hex::offset(3, 3),
     Hex::offset(3, 4),
-    Hex::offset(4, 2),
-    Hex::offset(4, 3),
+    Hex::offset(3, 5),
+    Hex::offset(3, 6),
     Hex::offset(4, 4),
-    Hex::offset(5, 2),
-    Hex::offset(5, 3),
-    Hex::offset(5, 4),
-];
-const SKIRMISH_ALLEY: [Hex; 5] = [
-    Hex::offset(4, 0),
-    Hex::offset(4, 1),
     Hex::offset(4, 5),
     Hex::offset(4, 6),
-    Hex::offset(4, 7),
+    Hex::offset(5, 4),
+    Hex::offset(5, 5),
+    Hex::offset(5, 6),
 ];
-const SKIRMISH_GOALS: [Hex; 2] = [Hex::offset(4, 1), Hex::offset(4, 6)];
-const RED_START: Hex = Hex::offset(1, 2);
-const BLUE_START: Hex = Hex::offset(8, 5);
+const SKIRMISH_ALLEY: [Hex; 8] = [
+    Hex::offset(4, 0),
+    Hex::offset(4, 1),
+    Hex::offset(4, 2),
+    Hex::offset(4, 3),
+    Hex::offset(4, 7),
+    Hex::offset(4, 8),
+    Hex::offset(4, 9),
+    Hex::offset(4, 10),
+];
+const SKIRMISH_GOALS: [Hex; 2] = [Hex::offset(4, 2), Hex::offset(4, 9)];
+const RED_START: Hex = Hex::offset(1, 4);
+const BLUE_START: Hex = Hex::offset(7, 7);
 
 const SKIRMISH_MAP: MapLayout = MapLayout {
     width: SKIRMISH_WIDTH,
@@ -98,10 +101,10 @@ const SKIRMISH_MAP: MapLayout = MapLayout {
     path_goals: &SKIRMISH_GOALS,
     building_clumps: (0, 0),
     building_clump_size: (1, 1),
-    forest: (4, 7),
+    forest: (5, 9),
     forest_clump_size: (2, 4),
-    mud: (1, 3),
-    rubble: (1, 2),
+    mud: (2, 4),
+    rubble: (1, 3),
     mirror_scatter: false,
 };
 
@@ -119,10 +122,10 @@ pub fn setup<R: Rng>(kind: ScenarioKind, rng: &mut R) -> Game {
     }
 }
 
-/// 1v1 tank duel on the half-size mat (10×8).
+/// 1v1 tank duel on the half-width mat (9×12).
 pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
     let starts = [RED_START, BLUE_START];
-    let egress = [Hex::offset(2, 2), Hex::offset(7, 5)];
+    let egress = [Hex::offset(2, 4), Hex::offset(6, 7)];
     let board = build_board(&SKIRMISH_MAP, rng, &starts, &egress);
     let red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One");
     let blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One");
@@ -132,39 +135,39 @@ pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
     game
 }
 
-/// 3v3 on the shared 19×15 open board: scattered building clumps and forest
+/// 3v3 on the shared 18×12 open board: scattered building clumps and forest
 /// patches, no sealed midline funnel. Hard cap is high; idle ends earlier.
 pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     let width = BATTLE_WIDTH;
     let height = BATTLE_HEIGHT;
-    let red_starts = [Hex::offset(1, 4), Hex::offset(1, 7), Hex::offset(1, 10)];
-    let blue_starts = [Hex::offset(17, 5), Hex::offset(17, 8), Hex::offset(17, 11)];
+    let red_starts = [Hex::offset(1, 3), Hex::offset(1, 6), Hex::offset(1, 9)];
+    let blue_starts = [Hex::offset(16, 4), Hex::offset(16, 7), Hex::offset(16, 10)];
     let reserved: Vec<Hex> = red_starts
         .iter()
         .chain(blue_starts.iter())
         .copied()
         .collect();
     let egress = [
-        Hex::offset(2, 4),
-        Hex::offset(2, 7),
-        Hex::offset(2, 10),
-        Hex::offset(16, 5),
-        Hex::offset(16, 8),
-        Hex::offset(16, 11),
+        Hex::offset(2, 3),
+        Hex::offset(2, 6),
+        Hex::offset(2, 9),
+        Hex::offset(15, 4),
+        Hex::offset(15, 7),
+        Hex::offset(15, 10),
     ];
-    let goals = [Hex::offset(9, 6), Hex::offset(9, 8)];
+    let goals = [Hex::offset(8, 5), Hex::offset(9, 6)];
     let layout = MapLayout {
         width,
         height,
         wall: &[],
         alley_clear: &egress,
         path_goals: &goals,
-        building_clumps: (5, 8),
+        building_clumps: (4, 7),
         building_clump_size: (2, 5),
-        forest: (22, 36),
-        forest_clump_size: (3, 7),
-        mud: (4, 8),
-        rubble: (3, 6),
+        forest: (18, 30),
+        forest_clump_size: (3, 6),
+        mud: (3, 6),
+        rubble: (2, 5),
         mirror_scatter: false,
     };
     let board = build_board(&layout, rng, &reserved, &egress);
@@ -182,16 +185,16 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     game
 }
 
-/// Combined arms on the same 19×15 open board as platoon. Each side fields
+/// Combined arms on the same 18×12 open board as platoon. Each side fields
 /// **2 tanks** (each with air), **2 APCs**, and **2 infantry**. Starts and
 /// scatter are east–west mirrors; buildings and forests grow as clumps.
 pub fn combined<R: Rng>(rng: &mut R) -> Game {
     let width = BATTLE_WIDTH;
     let height = BATTLE_HEIGHT;
     // West starts — east mirrors via `mirror_ew`.
-    let red_tanks = [Hex::offset(1, 4), Hex::offset(1, 6)];
-    let red_apcs = [Hex::offset(1, 8), Hex::offset(1, 10)];
-    let red_inf = [Hex::offset(0, 5), Hex::offset(0, 9)];
+    let red_tanks = [Hex::offset(1, 3), Hex::offset(1, 5)];
+    let red_apcs = [Hex::offset(1, 7), Hex::offset(1, 9)];
+    let red_inf = [Hex::offset(0, 4), Hex::offset(0, 8)];
     let blue_tanks = [
         mirror_ew(red_tanks[0], width),
         mirror_ew(red_tanks[1], width),
@@ -208,28 +211,28 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
         .copied()
         .collect();
     let egress = [
-        Hex::offset(2, 4),
-        Hex::offset(2, 6),
-        Hex::offset(2, 8),
-        Hex::offset(2, 10),
-        mirror_ew(Hex::offset(2, 4), width),
-        mirror_ew(Hex::offset(2, 6), width),
-        mirror_ew(Hex::offset(2, 8), width),
-        mirror_ew(Hex::offset(2, 10), width),
+        Hex::offset(2, 3),
+        Hex::offset(2, 5),
+        Hex::offset(2, 7),
+        Hex::offset(2, 9),
+        mirror_ew(Hex::offset(2, 3), width),
+        mirror_ew(Hex::offset(2, 5), width),
+        mirror_ew(Hex::offset(2, 7), width),
+        mirror_ew(Hex::offset(2, 9), width),
     ];
-    let goals = [Hex::offset(9, 6), Hex::offset(9, 8)];
+    let goals = [Hex::offset(8, 5), Hex::offset(9, 6)];
     let layout = MapLayout {
         width,
         height,
         wall: &[],
         alley_clear: &egress,
         path_goals: &goals,
-        building_clumps: (5, 8),
+        building_clumps: (4, 7),
         building_clump_size: (2, 5),
-        forest: (22, 36),
-        forest_clump_size: (3, 7),
-        mud: (4, 8),
-        rubble: (3, 6),
+        forest: (18, 30),
+        forest_clump_size: (3, 6),
+        mud: (3, 6),
+        rubble: (2, 5),
         mirror_scatter: true,
     };
     let board = build_board(&layout, rng, &reserved, &egress);
@@ -857,8 +860,8 @@ mod tests {
         let g = platoon(&mut rng);
         assert_eq!(g.tanks.len(), 6);
         assert_eq!(g.scenario, "platoon");
-        assert_eq!(g.board.width, 19);
-        assert_eq!(g.board.height, 15);
+        assert_eq!(g.board.width, 18);
+        assert_eq!(g.board.height, 12);
         assert_eq!(g.max_activations, 200);
         assert_eq!(g.stalemate_after, 40);
         assert_eq!(g.tanks.iter().filter(|t| t.side == Side::Red).count(), 3);
@@ -876,14 +879,14 @@ mod tests {
             .filter(|h| g.board.terrain_at(*h) == Terrain::Forest)
             .count();
         assert!(buildings >= 8, "expected building clumps, got {buildings}");
-        assert!(forests >= 15, "expected forest clumps, got {forests}");
+        assert!(forests >= 12, "expected forest clumps, got {forests}");
         assert_ne!(
-            g.board.terrain_at(Hex::offset(9, 0)),
+            g.board.terrain_at(Hex::offset(8, 0)),
             Terrain::Building,
             "no sealed spine at north midline"
         );
         assert_ne!(
-            g.board.terrain_at(Hex::offset(9, 14)),
+            g.board.terrain_at(Hex::offset(8, 11)),
             Terrain::Building,
             "no sealed spine at south midline"
         );
@@ -912,7 +915,7 @@ mod tests {
             .all(|t| t.has_air_support));
         // Open mirrored board — buildings exist and stay east–west mirrored.
         let width = BATTLE_WIDTH;
-        assert_eq!(mirror_ew(Hex::offset(1, 4), width), Hex::offset(17, 4));
+        assert_eq!(mirror_ew(Hex::offset(1, 3), width), Hex::offset(16, 3));
         let buildings = g
             .board
             .hexes()
@@ -933,9 +936,9 @@ mod tests {
     #[test]
     fn combined_starts_mirrored_before_nudge() {
         let width = BATTLE_WIDTH;
-        let red_tanks = [Hex::offset(1, 4), Hex::offset(1, 6)];
-        let red_apcs = [Hex::offset(1, 8), Hex::offset(1, 10)];
-        let red_inf = [Hex::offset(0, 5), Hex::offset(0, 9)];
+        let red_tanks = [Hex::offset(1, 3), Hex::offset(1, 5)];
+        let red_apcs = [Hex::offset(1, 7), Hex::offset(1, 9)];
+        let red_inf = [Hex::offset(0, 4), Hex::offset(0, 8)];
         for h in red_tanks
             .iter()
             .chain(red_apcs.iter())
@@ -968,28 +971,28 @@ mod tests {
             .copied()
             .collect();
         let egress = [
-            Hex::offset(2, 4),
-            Hex::offset(2, 6),
-            Hex::offset(2, 8),
-            Hex::offset(2, 10),
-            mirror_ew(Hex::offset(2, 4), width),
-            mirror_ew(Hex::offset(2, 6), width),
-            mirror_ew(Hex::offset(2, 8), width),
-            mirror_ew(Hex::offset(2, 10), width),
+            Hex::offset(2, 3),
+            Hex::offset(2, 5),
+            Hex::offset(2, 7),
+            Hex::offset(2, 9),
+            mirror_ew(Hex::offset(2, 3), width),
+            mirror_ew(Hex::offset(2, 5), width),
+            mirror_ew(Hex::offset(2, 7), width),
+            mirror_ew(Hex::offset(2, 9), width),
         ];
-        let goals = [Hex::offset(9, 6), Hex::offset(9, 8)];
+        let goals = [Hex::offset(8, 5), Hex::offset(9, 6)];
         let layout = MapLayout {
             width,
             height,
             wall: &[],
             alley_clear: &egress,
             path_goals: &goals,
-            building_clumps: (5, 8),
+            building_clumps: (4, 7),
             building_clump_size: (2, 5),
-            forest: (22, 36),
-            forest_clump_size: (3, 7),
-            mud: (4, 8),
-            rubble: (3, 6),
+            forest: (18, 30),
+            forest_clump_size: (3, 6),
+            mud: (3, 6),
+            rubble: (2, 5),
             mirror_scatter: true,
         };
         let _board = build_board(&layout, &mut rng, &reserved, &egress);
@@ -1086,9 +1089,9 @@ mod tests {
         let width = BATTLE_WIDTH;
         let height = BATTLE_HEIGHT;
         let mut rng = ChaCha8Rng::seed_from_u64(9);
-        let red_tanks = [Hex::offset(1, 4), Hex::offset(1, 6)];
-        let red_apcs = [Hex::offset(1, 8), Hex::offset(1, 10)];
-        let red_inf = [Hex::offset(0, 5), Hex::offset(0, 9)];
+        let red_tanks = [Hex::offset(1, 3), Hex::offset(1, 5)];
+        let red_apcs = [Hex::offset(1, 7), Hex::offset(1, 9)];
+        let red_inf = [Hex::offset(0, 4), Hex::offset(0, 8)];
         let blue_tanks = [
             mirror_ew(red_tanks[0], width),
             mirror_ew(red_tanks[1], width),
@@ -1105,28 +1108,28 @@ mod tests {
             .copied()
             .collect();
         let egress = [
-            Hex::offset(2, 4),
-            Hex::offset(2, 6),
-            Hex::offset(2, 8),
-            Hex::offset(2, 10),
-            mirror_ew(Hex::offset(2, 4), width),
-            mirror_ew(Hex::offset(2, 6), width),
-            mirror_ew(Hex::offset(2, 8), width),
-            mirror_ew(Hex::offset(2, 10), width),
+            Hex::offset(2, 3),
+            Hex::offset(2, 5),
+            Hex::offset(2, 7),
+            Hex::offset(2, 9),
+            mirror_ew(Hex::offset(2, 3), width),
+            mirror_ew(Hex::offset(2, 5), width),
+            mirror_ew(Hex::offset(2, 7), width),
+            mirror_ew(Hex::offset(2, 9), width),
         ];
-        let goals = [Hex::offset(9, 6), Hex::offset(9, 8)];
+        let goals = [Hex::offset(8, 5), Hex::offset(9, 6)];
         let layout = MapLayout {
             width,
             height,
             wall: &[],
             alley_clear: &egress,
             path_goals: &goals,
-            building_clumps: (5, 8),
+            building_clumps: (4, 7),
             building_clump_size: (2, 5),
-            forest: (22, 36),
-            forest_clump_size: (3, 7),
-            mud: (4, 8),
-            rubble: (3, 6),
+            forest: (18, 30),
+            forest_clump_size: (3, 6),
+            mud: (3, 6),
+            rubble: (2, 5),
             mirror_scatter: true,
         };
         let board = build_board(&layout, &mut rng, &reserved, &egress);
@@ -1164,9 +1167,14 @@ mod tests {
         assert_eq!(p.board.width, BATTLE_WIDTH);
         assert_eq!(p.board.height, BATTLE_HEIGHT);
         assert_eq!(area(&c), area(&p), "platoon and combined share one mat");
-        assert!(
-            area(&s) * 2 <= area(&p) + SKIRMISH_WIDTH,
-            "skirmish should be about half the battle mat"
+        assert_eq!(
+            s.board.height, p.board.height,
+            "skirmish keeps battle height"
+        );
+        assert_eq!(
+            s.board.width * 2,
+            p.board.width,
+            "skirmish is half battle width"
         );
     }
 }
