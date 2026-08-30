@@ -1320,6 +1320,34 @@ pub const PHONE_SHARD_SUBREQUEST_SOFT_CAP: u64 = 1_000;
 /// room under the 128 MiB isolate for the wasm module + JS runtime.
 pub const PHONE_SHARD_HEAP_SOFT_CAP: usize = 48 * 1024 * 1024;
 
+/// Minimum `budget_usd` on any phone loadtest POST (API rejects ≤ 0).
+pub const PHONE_MIN_POST_BUDGET_USD: f64 = 0.001;
+
+/// Split a phone auto-ramp total budget into `(seed, per_step_pool)`.
+///
+/// The UI used to take `max(0.01, 10%)` for seed, which consumed a whole
+/// `$0.01` budget and left `0` for every ramp POST (`budget_usd must be > 0`).
+/// Seed stays a small slice; every returned value is ≥ [`PHONE_MIN_POST_BUDGET_USD`].
+pub fn phone_ramp_budget_split(total_usd: f64, write_ramp_levels: usize) -> (f64, f64) {
+    let total = total_usd.max(PHONE_MIN_POST_BUDGET_USD);
+    let steps = write_ramp_levels.max(1).saturating_add(1); // + readers
+    let mut seed = (total * 0.1).clamp(PHONE_MIN_POST_BUDGET_USD, 0.02);
+    if seed >= total * 0.5 {
+        seed = (total * 0.1).max(PHONE_MIN_POST_BUDGET_USD);
+    }
+    if seed >= total {
+        seed = PHONE_MIN_POST_BUDGET_USD.min(total * 0.5);
+    }
+    let rem = (total - seed).max(total * 0.5);
+    let step = (rem / steps as f64).max(PHONE_MIN_POST_BUDGET_USD);
+    (seed, step)
+}
+
+/// Per-isolate budget for one ramp step with `shards` parallel POSTs.
+pub fn phone_shard_budget(step_pool_usd: f64, shards: u32) -> f64 {
+    (step_pool_usd / shards.max(1) as f64).max(PHONE_MIN_POST_BUDGET_USD)
+}
+
 /// Clamp a phone peak-writers value into the safe range.
 pub fn clamp_phone_peak(peak: u32) -> u32 {
     peak.clamp(1, PHONE_MAX_PEAK)
@@ -1461,6 +1489,7 @@ pub fn html_landing(
     let max_r_iso = PHONE_MAX_READERS_PER_ISOLATE;
     let min_improve = PHONE_RAMP_MIN_IMPROVE;
     let min_improve_pct = (PHONE_RAMP_MIN_IMPROVE * 100.0) as u32;
+    let min_post_budget = PHONE_MIN_POST_BUDGET_USD;
     format!(
         r##"<!doctype html>
 <html lang="en">
@@ -1550,6 +1579,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
   var maxRIso = {max_r_iso};
   var rampLevels = [{ramp_js}];
   var minImprove = {min_improve};
+  var minPostBudget = {min_post_budget};
   var shardPostConcurrency = 4;
   function jsonHeaders() {{
     var h = {{ "Content-Type": "application/json", "Accept": "application/json" }};
@@ -1729,8 +1759,16 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     var repo = "lt" + String(Date.now()).slice(-9);
     var live = ["Auto-ramp (1 writer = 1 isolate):"];
     setLive(live);
-    var seedBudget = Math.min(0.02, Math.max(0.01, budget * 0.1));
-    var stepBudget = (budget - seedBudget) / (rampLevels.length + 1);
+    // Keep seed a small slice so tiny form budgets (e.g. $0.01) still leave
+    // money for ramp POSTs — old max(0.01, 10%) ate the whole budget.
+    var seedBudget = Math.max(minPostBudget, Math.min(0.02, budget * 0.1));
+    if (seedBudget >= budget * 0.5) seedBudget = Math.max(minPostBudget, budget * 0.1);
+    if (seedBudget >= budget) seedBudget = Math.min(budget * 0.5, minPostBudget);
+    var rem = Math.max(budget - seedBudget, budget * 0.5);
+    var stepBudget = Math.max(minPostBudget, rem / (Math.max(1, rampLevels.length) + 1));
+    function shardBudget(n) {{
+      return Math.max(minPostBudget, stepBudget / Math.max(1, n));
+    }}
     phase = "seed " + repo;
     postLoadtest("seed", repo, {{
       confirm: true,
@@ -1750,7 +1788,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         }}
         var n = rampLevels[idx];
         phase = n + " writers";
-        return runShardedStage(repo, tip, n, 1, 0, stepBudget / n, n + "w").then(function (reps) {{
+        return runShardedStage(repo, tip, n, 1, 0, shardBudget(n), n + "w").then(function (reps) {{
           var pps = aggregateRate(reps, "push");
           var line = "  " + n + "w: " + pps.toFixed(1) + " pushes/s";
           var parts = [];
@@ -1779,7 +1817,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         phase = best.n + " readers";
         live.push("Readers @ " + best.n + "…");
         setLive(live);
-        return runShardedStage(repo, tip, best.n, 0, 1, stepBudget / best.n, best.n + "r")
+        return runShardedStage(repo, tip, best.n, 0, 1, shardBudget(best.n), best.n + "r")
           .then(function (reps) {{
             var rps = aggregateRate(reps, "pull");
             live[live.length - 1] = "Readers @ " + best.n + ": " + rps.toFixed(1) + " pulls/s";
@@ -2121,6 +2159,24 @@ mod tests {
         assert_eq!(s[1].writers, 12);
         assert_eq!(s[2].readers, 12);
         assert_eq!(clamp_phone_peak(100), PHONE_MAX_PEAK);
+    }
+
+    #[test]
+    fn phone_ramp_budget_keeps_positive_shard_posts() {
+        // Repro: $0.01 with old seed=max(0.01,10%) left $0 for ramp POSTs.
+        let (seed, step) = phone_ramp_budget_split(0.01, PHONE_RAMP_WRITERS.len());
+        assert!(seed > 0.0 && seed < 0.01, "seed={seed}");
+        assert!(step > 0.0, "step={step}");
+        for &n in PHONE_RAMP_WRITERS {
+            let b = phone_shard_budget(step, n);
+            assert!(
+                b > 0.0,
+                "shard budget for {n} writers must be > 0 (got {b})"
+            );
+        }
+        let (seed10, step10) = phone_ramp_budget_split(0.10, PHONE_RAMP_WRITERS.len());
+        assert!(seed10 > 0.0 && step10 > 0.0);
+        assert!(phone_shard_budget(step10, 16) > 0.0);
     }
 
     #[test]
