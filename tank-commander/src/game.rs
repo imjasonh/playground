@@ -434,7 +434,8 @@ impl Game {
                 if enemy.destroyed {
                     continue;
                 }
-                if self.can_see(tank, enemy) {
+                // House rule: suppressed infantry cannot fire missiles.
+                if !tank.suppressed && self.can_see(tank, enemy) {
                     out.push(Action::FireMissile {
                         target: enemy.id,
                         round: RoundKind::At,
@@ -851,9 +852,14 @@ impl Game {
                 self.total_suppressions += 1;
             }
             let text = if already {
-                format!("AI spray hits {name} (already suppressed)")
+                format!(
+                    "AI spray hits {name} (already suppressed until end of its next activation)"
+                )
             } else {
-                format!("AI spray suppresses {name} (rolled {roll}, needed {need}+)")
+                format!(
+                    "AI spray suppresses {name} until end of its next activation \
+                     (rolled {roll}, needed {need}+)"
+                )
             };
             self.push_event(turn, Some(side), text, None);
         } else {
@@ -926,7 +932,8 @@ impl Game {
     pub fn end_activation<R: Rng>(&mut self, unit_id: u8, rng: &mut R) {
         let acted_side = self.tank(unit_id).side;
 
-        // Clear suppression on the unit that just acted.
+        // House rule: all suppression is temporary. Glance, APC spray, cover
+        // pin, and air pin clear at the end of the suppressed unit's activation.
         {
             let tank = self.tank_mut(unit_id);
             if tank.suppressed {
@@ -985,28 +992,44 @@ impl Game {
                 strike.wait = 1;
                 still_pending.push(strike);
             } else {
-                self.resolve_air_strike(strike.hex, side, rng);
+                let (impact, note) = scatter_air_impact(strike.hex, &self.board, rng);
                 self.air_strikes_resolved += 1;
-                self.push_event(
-                    self.activations,
-                    Some(side),
-                    format!("Air strike arrives on {}", strike.hex),
-                    None,
-                );
+                match impact {
+                    Some(hex) => {
+                        self.resolve_air_strike(hex, side, rng);
+                        self.push_event(
+                            self.activations,
+                            Some(side),
+                            format!("Air strike arrives on {hex} (aimed {}, {note})", strike.hex),
+                            None,
+                        );
+                    }
+                    None => {
+                        self.push_event(
+                            self.activations,
+                            Some(side),
+                            format!(
+                                "Air strike dissipates off-map (aimed {}, {note})",
+                                strike.hex
+                            ),
+                            None,
+                        );
+                    }
+                }
             }
         }
         self.pending_air_strikes = still_pending;
     }
 
     fn resolve_air_strike<R: Rng>(&mut self, hex: Hex, side: Side, rng: &mut R) {
-        // Blast template: aim hex + all adjacent hexes.
+        // Blast template: impact hex + all adjacent hexes. A 1-hex drift still
+        // usually clips the original aim hex, so staying put is dangerous.
         self.apply_air_blast(hex, side, rng);
         for n in hex.neighbors() {
             if self.board.contains(n) {
                 self.apply_air_blast(n, side, rng);
             }
         }
-        let _ = rng;
     }
 
     fn apply_air_blast<R: Rng>(&mut self, hex: Hex, side: Side, rng: &mut R) {
@@ -1086,6 +1109,38 @@ impl Game {
             text,
             combat,
         });
+    }
+}
+
+/// Scatter the air-strike impact from the aimed hex.
+///
+/// Roll d6 on arrival:
+/// - **1** — wild: 2 hexes in a random direction (off-map dissipates)
+/// - **2–3** — drift: 1 hex in a random direction (off-map dissipates)
+/// - **4–6** — on target
+///
+/// The blast template is still impact + neighbors, so a 1-hex drift almost
+/// always still clips the original aim hex. Standing still is unsafe; moving
+/// away is the point.
+fn scatter_air_impact<R: Rng>(aim: Hex, board: &Board, rng: &mut R) -> (Option<Hex>, &'static str) {
+    let roll = rng.gen_range(1..=6);
+    let (steps, note) = match roll {
+        1 => (2, "wild scatter 2"),
+        2 | 3 => (1, "drift 1"),
+        _ => (0, "on target"),
+    };
+    if steps == 0 {
+        return (Some(aim), note);
+    }
+    let dir = Facing::from_index(rng.gen_range(0..6));
+    let mut hex = aim;
+    for _ in 0..steps {
+        hex = hex.neighbor(dir);
+    }
+    if board.contains(hex) {
+        (Some(hex), note)
+    } else {
+        (None, note)
     }
 }
 
@@ -1212,5 +1267,76 @@ mod tests {
         assert!(g.tank(0).activated_this_pass);
         assert!(!g.tank(1).activated_this_pass);
         assert_eq!(g.activatable_ids(Side::Red), vec![1]);
+    }
+
+    #[test]
+    fn suppressed_infantry_cannot_fire_missiles() {
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock_infantry(0, Side::Red, Hex::new(3, 4), Facing::E, "Squad"),
+            Tank::stock(1, Side::Blue, Hex::new(5, 4), Facing::W, "Tank"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 20, "test");
+        g.tank_mut(0).suppressed = true;
+        let legal = g.legal_actions(0, 2, &TurnBuffs::default());
+        assert!(
+            legal
+                .iter()
+                .all(|a| !matches!(a, Action::FireMissile { .. })),
+            "suppressed infantry must not list missile actions: {legal:?}"
+        );
+    }
+
+    #[test]
+    fn suppression_clears_at_end_of_activation() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::new(2, 4), Facing::E, "Red"),
+            Tank::stock(1, Side::Blue, Hex::new(8, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 20, "test");
+        g.tank_mut(0).suppressed = true;
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
+        play_activation(&mut g, 0, &[], &mut rng);
+        assert!(
+            !g.tank(0).suppressed,
+            "suppression must clear after the unit activates"
+        );
+    }
+
+    #[test]
+    fn air_scatter_on_target_or_nearby() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let aim = Hex::new(5, 4);
+        let mut on_target = 0;
+        let mut drifted = 0;
+        let mut wild = 0;
+        let mut rng = ChaCha8Rng::seed_from_u64(7);
+        for _ in 0..60 {
+            let (impact, note) = scatter_air_impact(aim, &board, &mut rng);
+            let Some(hex) = impact else {
+                panic!("center aim dissipated: {note}");
+            };
+            if hex == aim {
+                on_target += 1;
+                assert_eq!(note, "on target");
+            } else if aim.distance(hex) == 1 {
+                drifted += 1;
+                assert_eq!(note, "drift 1");
+            } else if aim.distance(hex) == 2 {
+                wild += 1;
+                assert_eq!(note, "wild scatter 2");
+            } else {
+                panic!("scatter too far: {hex} ({note})");
+            }
+        }
+        assert!(
+            on_target > 0 && drifted > 0 && wild > 0,
+            "{on_target}/{drifted}/{wild}"
+        );
     }
 }

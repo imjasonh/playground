@@ -81,8 +81,11 @@ cross simple thresholds.
   Forest/mud/rubble scatter outside reserved hexes; infantry stepping into
   forest dig in automatically.
 - **Combined arms.** Air strikes arrive at the end of the caller's next
-  activation (blast = aim hex + neighbors). Cover saves infantry once
-  (pin + suppress). APC AI spray can suppress vehicles.
+  activation, then scatter (d6: wild 2 / drift 1 / on target) before the
+  blast template (impact + neighbors). Cover saves infantry once
+  (pin + suppress). APC AI spray can suppress vehicles. All suppression is
+  temporary (clears at end of the unit's next activation). Suppressed
+  infantry cannot fire missiles.
 - **Platoon clock.** Hard cap 200 activations as a safety valve. After
   first contact, 40 activations with no hit ends the game as an idle
   stalemate (scored like a timeout). In practice platoon games wipe before

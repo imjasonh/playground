@@ -105,7 +105,9 @@ pub fn resolve_shot<R: Rng>(rng: &mut R, params: ShotParams, target: &mut Tank) 
         }
         ev.description
             .push_str(&format!(", wound roll {wound_roll}"));
-        // House rule: every glance suppresses (no stacking).
+        // House rule: every glance suppresses until end of the target's next
+        // activation (no stacking / no refresh). Same temporary status as APC
+        // spray and cover/air pins.
         if !target.suppressed {
             target.suppressed = true;
             ev.suppressed = true;

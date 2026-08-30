@@ -172,6 +172,7 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
     }
 
     // Prefer AT missiles on tanks/APCs in range, then anything else.
+    // Suppressed infantry cannot fire missiles (Rule).
     let mut ranked: Vec<&crate::unit::Tank> = enemies.to_vec();
     ranked.sort_by_key(|e| {
         let priority = match e.kind {
@@ -182,18 +183,22 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         (priority, unit.pos.distance(e.pos))
     });
 
-    for enemy in &ranked {
-        if game.can_see(unit, enemy) {
-            let round = if enemy.kind == UnitKind::Infantry {
-                RoundKind::He
-            } else {
-                RoundKind::At
-            };
-            return vec![Action::FireMissile {
-                target: enemy.id,
-                round,
-            }];
+    if !unit.suppressed {
+        for enemy in &ranked {
+            if game.can_see(unit, enemy) {
+                let round = if enemy.kind == UnitKind::Infantry {
+                    RoundKind::He
+                } else {
+                    RoundKind::At
+                };
+                return vec![Action::FireMissile {
+                    target: enemy.id,
+                    round,
+                }];
+            }
         }
+    }
+    for enemy in &ranked {
         if enemy.kind == UnitKind::Infantry && game.can_see_ai(unit, enemy) {
             return vec![Action::FireAi { target: enemy.id }];
         }

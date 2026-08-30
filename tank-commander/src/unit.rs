@@ -322,8 +322,9 @@ impl Tank {
             CrewStatus::Healthy => {}
         }
         if self.suppressed {
-            // House rule: glance applies Suppressed (−1 action, minimum 1)
-            // until the end of the target's next activation.
+            // House rule: all suppression is temporary — −1 action (minimum 1)
+            // until the end of this unit's next activation (glance, APC spray,
+            // cover pin, air pin). Does not stack or refresh duration.
             actions = (actions - 1).max(1);
         } else {
             actions = actions.max(0);

@@ -146,6 +146,57 @@ Second-player lean remains worth watching.
 
 ---
 
+## 2026-08-30 — Air scatter, temporary suppression, pinned missiles
+
+**Type: Rule**
+
+### Air strike scatter
+
+When a called strike arrives, roll d6 for impact:
+
+| Roll | Result |
+|------|--------|
+| 1 | Wild — impact 2 hexes in a random direction (off-map dissipates) |
+| 2–3 | Drift — impact 1 hex in a random direction (off-map dissipates) |
+| 4–6 | On target |
+
+Blast template is still **impact hex + all adjacent hexes**. A 1-hex drift
+almost always still clips the original aim hex, so the strike remains useful
+as area denial: staying put under the aim marker is unsafe; moving away is the
+counterplay.
+
+### All suppression is temporary
+
+Glance, APC spray, cover pin, and air pin share one **Suppressed** status:
+−1 action (minimum 1) on the unit's next activation, then it clears at the end
+of that activation. Does not stack; a hit on an already-suppressed unit does
+not refresh the duration. APC spray is not a permanent soft-lock.
+
+### Suppressed infantry cannot fire missiles
+
+While Suppressed, infantry legal actions omit missile shots (they may still
+move, take cover, or use AI fire against other infantry).
+
+**Why.** Combined still had a second-player lean and idle droughts. Scatter
+softens free reactive air without deleting the denial tool; temporary
+suppression + no missiles while pinned stops spray/pin loops from freezing the
+plaza.
+
+**Effect (80 combined / 200 skirmish / 80 platoon, seed 7):**
+
+| Scenario | Decisive | 1st-player share | Idle stalemate | Notes |
+|----------|----------|------------------|----------------|-------|
+| Skirmish | 99% (unchanged) | 57% | 0% | No combined-only rules; regression clean |
+| Platoon | 100% (unchanged) | 60% | 0% | Same |
+| Combined | 96% (was 94%) | **29%** (was 36%) | 19% (was 20%) | ~2 air strikes/game still; suppressions down slightly; infantry kills ~1.1 |
+
+Scatter keeps air in the game as denial, but the second-player lean got a bit
+worse — first player's strike is less of a reliable opener, while the
+responder still gets the last look. Idle droughts barely moved. Next lever is
+still initiative / placement fairness (suggestion 4), not more Sim tweaks.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.
