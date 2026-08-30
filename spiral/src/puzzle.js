@@ -74,12 +74,26 @@ export function selectClue(state, dir, clueIndex) {
   const span = list[clueIndex];
   if (!span) return state;
   const indices = spanIndices(span);
+  const empty = indices.find((i) => !state.guesses[i]);
   return {
     ...state,
     activeDir: dir,
     activeClueIndex: clueIndex,
-    selected: indices[0] ?? state.selected,
+    selected: empty ?? indices[0] ?? state.selected,
   };
+}
+
+/** Clue indices in a direction that cover a 0-based cell. */
+export function cluesCovering(puzzle, dir, cellIndex) {
+  const cellNum = cellIndex + 1;
+  return puzzle[dir]
+    .map((span, index) => ({ span, index }))
+    .filter(
+      ({ span }) =>
+        cellNum >= Math.min(span.start, span.end) &&
+        cellNum <= Math.max(span.start, span.end),
+    )
+    .map(({ index }) => index);
 }
 
 export function activeSpan(state) {
