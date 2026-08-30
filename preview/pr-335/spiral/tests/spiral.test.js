@@ -259,3 +259,10 @@ test("cluesCovering finds inward and outward spans for a cell", () => {
   assert.ok(inwardHits.length >= 1);
   assert.ok(outwardHits.length >= 1);
 });
+
+test("celebrate is a no-op without a browser document", async () => {
+  const { celebrate, clearCelebration } = await import("../src/confetti.js");
+  assert.equal(typeof celebrate, "function");
+  assert.doesNotThrow(() => celebrate(null));
+  assert.doesNotThrow(() => clearCelebration());
+});

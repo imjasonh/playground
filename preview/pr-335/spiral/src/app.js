@@ -15,11 +15,14 @@ import {
   filledCount,
   letterAt,
 } from "./puzzle.js";
+import { celebrate, clearCelebration } from "./confetti.js";
 
 const SIZES = [36, 48, 64];
 
 /** @type {ReturnType<typeof createPlayState> | null} */
 let state = null;
+/** True after we have already sprayed confetti for the current solve. */
+let celebratedSolve = false;
 
 const els = {
   spiral: document.getElementById("spiral"),
@@ -253,12 +256,24 @@ function renderStatus() {
   els.seed.textContent = String(seed);
 }
 
+function maybeCelebrate() {
+  if (!state) return;
+  if (!isSolved(state)) {
+    celebratedSolve = false;
+    return;
+  }
+  if (celebratedSolve) return;
+  celebratedSolve = true;
+  celebrate(els.spiral);
+}
+
 function render() {
   renderSpiral();
   renderClues(els.inward, "inward");
   renderClues(els.outward, "outward");
   renderActiveClue();
   renderStatus();
+  maybeCelebrate();
 }
 
 function advanceSelection(delta) {
@@ -401,6 +416,8 @@ function newPuzzle(explicitSeed = null) {
       return;
     }
     state = createPlayState(puzzle);
+    celebratedSolve = false;
+    clearCelebration();
     writeQuery(puzzle);
     render();
     focusEntry();
@@ -432,6 +449,8 @@ function init() {
   els.clear.addEventListener("click", () => {
     if (!state) return;
     state = clearGuesses(state);
+    celebratedSolve = false;
+    clearCelebration();
     render();
     focusEntry();
   });
