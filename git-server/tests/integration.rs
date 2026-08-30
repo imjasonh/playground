@@ -1303,6 +1303,10 @@ fn phone_loadtest_html() {
         "ramp must repack between steps and survive a failed level"
     );
     assert!(
+        script.contains("convergeRepack") && script.contains("packCount"),
+        "ramp must refuse to raise concurrency while packs > 2"
+    );
+    assert!(
         script.contains("writePostConcurrency"),
         "write shards must be serial to avoid parallel cold-isolate 1101"
     );

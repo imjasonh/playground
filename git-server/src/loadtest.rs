@@ -1743,6 +1743,28 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       body: "{{}}"
     }}).catch(function () {{ return null; }});
   }}
+  function packCount(repo) {{
+    return fetchJson("status", "/api/" + repo, {{
+      method: "GET",
+      credentials: "same-origin",
+      headers: jsonHeaders()
+    }}).then(function (j) {{
+      return (j && j.packs) || 0;
+    }}).catch(function () {{ return 999; }});
+  }}
+  function convergeRepack(repo) {{
+    var tries = 0;
+    var step = function () {{
+      if (tries++ >= 8) return packCount(repo);
+      return postRepack(repo).then(function () {{
+        return packCount(repo).then(function (n) {{
+          if (n <= 2) return n;
+          return step();
+        }});
+      }});
+    }};
+    return step();
+  }}
   function runShardedStage(repo, tip, n, writers, readers, stageBudget, stepLabel, stepKey) {{
     var jobs = [];
     for (var i = 0; i < n; i++) {{
@@ -1841,9 +1863,17 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
           live.push(line);
           setLive(live);
           prevPps = pps;
-          // Repack before the next level so pack count stays small.
+          // Only raise concurrency when packs are folded flat — same shape
+          // as the 1w step that already succeeded in production.
           phase = "repack after " + n + "w";
-          return postRepack(repo).then(function () {{
+          return convergeRepack(repo).then(function (packs) {{
+            live.push("  repack → " + packs + " pack" + (packs === 1 ? "" : "s"));
+            setLive(live);
+            if (packs > 2) {{
+              live.push("Stop raise: packs still " + packs + " (need ≤2). Keeping " + bestN + "w.");
+              setLive(live);
+              return {{ n: bestN, parts: bestWriteParts }};
+            }}
             return runRamp(idx + 1);
           }});
         }}, function (err) {{
@@ -1870,7 +1900,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         phase = best.n + " readers";
         live.push("Readers @ " + best.n + "…");
         setLive(live);
-        return postRepack(repo).then(function () {{
+        return convergeRepack(repo).then(function () {{
           return runShardedStage(repo, tip, best.n, 0, 1, shardBudget(best.n), best.n + "r", 100);
         }})
           .then(function (reps) {{
