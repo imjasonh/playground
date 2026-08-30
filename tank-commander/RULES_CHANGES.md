@@ -374,6 +374,31 @@ Red-heavy after spoil — better than 66%, not solved. Hard timeout on combined
 
 ---
 
+## 2026-08-30 — Engine fixes to match documented rules (Bugbot)
+
+**Type: Rule** (engine alignment with upstream / [`rules.md`](rules.md); not new
+house rules)
+
+Three places the simulator disagreed with the playable ruleset:
+
+1. **Fire damage.** −1 hull only at the end of the **burning unit’s own**
+   activation (was: every unit after every activation).
+2. **Cook-off splash.** Destroyed unit → rubble, and every unit within **2
+   hexes** takes an automatic HE strength-4 hit (was: destroy + rubble only).
+3. **Infantry screen.** Infantry adjacent to a friendly non-destroyed **tank**
+   cannot be targeted by main gun, missiles, or AI spray (upstream rule;
+   documented in `rules.md` but not enforced).
+
+Disabled cook-off rolls still happen after every activation while the wreck
+remains (disabled units cannot activate themselves) — that part was already
+correct.
+
+**Effect:** re-measure skirmish / platoon / combined after the fix (see latest
+sim pass in the PR summary). Expect slightly more cook-off drama and slightly
+safer infantry that hug friendly tanks.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.

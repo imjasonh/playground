@@ -165,48 +165,49 @@ fn role_name(role: crate::unit::CrewRole) -> &'static str {
     }
 }
 
-/// End-of-turn fire damage and cook-off checks for disabled tanks.
-pub fn end_of_turn_hazards<R: Rng>(rng: &mut R, tank: &mut Tank) -> Vec<CombatEvent> {
-    let mut out = Vec::new();
-    if tank.destroyed {
-        return out;
+/// −1 hull from fire at the end of **this** unit's activation.
+///
+/// Last hull point lost to fire → immediate cook-off (caller applies splash).
+pub fn tick_fire_damage(tank: &mut Tank) -> Option<CombatEvent> {
+    if tank.destroyed || !tank.on_fire || !tank.is_operational() {
+        return None;
     }
-
-    if tank.on_fire && tank.is_operational() {
-        tank.hull_points -= 1;
-        let mut ev = CombatEvent {
-            description: format!("{} burns (-1 HP → {})", tank.name, tank.hull_points),
-            hull_damage: 1,
-            fire_started: false,
-            ..CombatEvent::default()
-        };
-        if tank.hull_points <= 0 {
-            tank.hull_points = 0;
-            tank.disabled = true;
-            ev.disabled = true;
-            // Last HP lost to fire → immediate cook-off.
-            cook_off(tank, &mut ev);
-        }
-        out.push(ev);
+    tank.hull_points -= 1;
+    let mut ev = CombatEvent {
+        description: format!("{} burns (-1 HP → {})", tank.name, tank.hull_points),
+        hull_damage: 1,
+        ..CombatEvent::default()
+    };
+    if tank.hull_points <= 0 {
+        tank.hull_points = 0;
+        tank.disabled = true;
+        ev.disabled = true;
+        apply_cook_off(tank, &mut ev);
     }
-
-    if tank.disabled && !tank.destroyed && tank.kind != UnitKind::Infantry {
-        let roll = rng.gen_range(1..=6);
-        // Cook-off on 4+ (1 always fails, 6 always succeeds).
-        if succeeds(roll, 4) {
-            let mut ev = CombatEvent {
-                description: format!("{} ammo cooks off (rolled {roll})", tank.name),
-                ..CombatEvent::default()
-            };
-            cook_off(tank, &mut ev);
-            out.push(ev);
-        }
-    }
-
-    out
+    Some(ev)
 }
 
-fn cook_off(tank: &mut Tank, ev: &mut CombatEvent) {
+/// Cook-off roll for a disabled non-infantry unit still on the table.
+///
+/// Checked after every activation while the wreck remains (disabled units
+/// cannot activate themselves). Caller applies HE strength-4 splash.
+pub fn tick_disabled_cook_off<R: Rng>(rng: &mut R, tank: &mut Tank) -> Option<CombatEvent> {
+    if tank.destroyed || !tank.disabled || tank.kind == UnitKind::Infantry {
+        return None;
+    }
+    let roll = rng.gen_range(1..=6);
+    if !succeeds(roll, 4) {
+        return None;
+    }
+    let mut ev = CombatEvent {
+        description: format!("{} ammo cooks off (rolled {roll})", tank.name),
+        ..CombatEvent::default()
+    };
+    apply_cook_off(tank, &mut ev);
+    Some(ev)
+}
+
+fn apply_cook_off(tank: &mut Tank, ev: &mut CombatEvent) {
     tank.destroyed = true;
     tank.disabled = true;
     tank.hull_points = 0;
@@ -283,5 +284,46 @@ mod tests {
         assert!(ev2.glancing);
         assert!(!ev2.suppressed);
         assert!(t.suppressed);
+    }
+
+    #[test]
+    fn fire_damage_only_on_burning_unit() {
+        let mut t = Tank::stock(0, Side::Blue, Hex::new(1, 0), Facing::E, "B");
+        t.on_fire = true;
+        t.hull_points = 3;
+        let ev = tick_fire_damage(&mut t).expect("fire tick");
+        assert_eq!(t.hull_points, 2);
+        assert_eq!(ev.hull_damage, 1);
+        assert!(!ev.cook_off);
+        assert!(t.on_fire);
+    }
+
+    #[test]
+    fn fire_last_hp_cooks_off_immediately() {
+        let mut t = Tank::stock(0, Side::Blue, Hex::new(1, 0), Facing::E, "B");
+        t.on_fire = true;
+        t.hull_points = 1;
+        let ev = tick_fire_damage(&mut t).expect("fire tick");
+        assert!(ev.cook_off);
+        assert!(t.destroyed);
+        assert!(!t.on_fire);
+    }
+
+    #[test]
+    fn disabled_cook_off_sometimes_succeeds() {
+        let mut cooked = false;
+        for seed in 0..40u64 {
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            let mut t = Tank::stock(0, Side::Blue, Hex::new(1, 0), Facing::E, "B");
+            t.disabled = true;
+            t.hull_points = 0;
+            if let Some(ev) = tick_disabled_cook_off(&mut rng, &mut t) {
+                assert!(ev.cook_off);
+                assert!(t.destroyed);
+                cooked = true;
+                break;
+            }
+        }
+        assert!(cooked, "expected some seed to cook off");
     }
 }

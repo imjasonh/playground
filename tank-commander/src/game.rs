@@ -2,7 +2,9 @@
 
 use crate::action::{is_ability, step_turret, turn_hull, Action, TurnBuffs};
 use crate::board::{Board, Terrain};
-use crate::combat::{end_of_turn_hazards, resolve_shot, CombatEvent, ShotParams};
+use crate::combat::{
+    resolve_shot, tick_disabled_cook_off, tick_fire_damage, CombatEvent, ShotParams,
+};
 use crate::dice::succeeds;
 use crate::hex::{Facing, Hex};
 use crate::unit::{CrewRole, CrewStatus, RoundKind, Side, Tank, UnitKind};
@@ -253,8 +255,24 @@ impl Game {
         self.board.has_los(from, to, &occ)
     }
 
+    /// Infantry adjacent to a friendly (non-destroyed) tank cannot be targeted.
+    pub fn infantry_screened(&self, target: &Tank) -> bool {
+        if target.kind != UnitKind::Infantry || target.destroyed {
+            return false;
+        }
+        self.tanks.iter().any(|t| {
+            t.side == target.side
+                && t.kind == UnitKind::Tank
+                && !t.destroyed
+                && t.pos.distance(target.pos) == 1
+        })
+    }
+
     /// Main-gun / missile visibility. Infantry ignore turret arc; tanks/APCs require it.
     pub fn can_see(&self, shooter: &Tank, target: &Tank) -> bool {
+        if self.infantry_screened(target) {
+            return false;
+        }
         if shooter.pos.distance(target.pos) > shooter.gun_range {
             return false;
         }
@@ -277,6 +295,9 @@ impl Game {
 
     /// Anti-infantry weapon: range + LOS, no turret arc.
     pub fn can_see_ai(&self, shooter: &Tank, target: &Tank) -> bool {
+        if self.infantry_screened(target) {
+            return false;
+        }
         if shooter.ai_range <= 0 {
             return false;
         }
@@ -708,7 +729,9 @@ impl Game {
         if ev.cook_off {
             self.total_cook_offs += 1;
             let pos = self.tank(target_id).pos;
+            let side = self.tank(target_id).side;
             self.board.set_terrain(pos, Terrain::Rubble);
+            self.apply_cook_off_splash(pos, side, rng);
         }
 
         let text = ev.description.clone();
@@ -913,26 +936,50 @@ impl Game {
             }
         }
 
-        // Fire / cook-off checks for every unit after each activation.
+        // Fire ticks only on the unit that just activated.
+        let mut cook_off_blasts: Vec<(Hex, Side)> = Vec::new();
+        if let Some(ev) = {
+            let tank = self.tank_mut(unit_id);
+            tick_fire_damage(tank)
+        } {
+            if ev.cook_off {
+                self.total_cook_offs += 1;
+                let pos = self.tank(unit_id).pos;
+                let side = self.tank(unit_id).side;
+                self.board.set_terrain(pos, Terrain::Rubble);
+                cook_off_blasts.push((pos, side));
+            }
+            if ev.hull_damage > 0 {
+                self.activations_since_damage = 0;
+            }
+            let side = self.tank(unit_id).side;
+            let text = ev.description.clone();
+            self.push_event(self.activations, Some(side), text, Some(ev));
+        }
+
+        // Disabled wrecks roll cook-off after every activation while they remain.
         let ids: Vec<u8> = self.tanks.iter().map(|t| t.id).collect();
         for id in ids {
-            let events = {
+            let ev = {
                 let tank = self.tank_mut(id);
-                end_of_turn_hazards(rng, tank)
+                tick_disabled_cook_off(rng, tank)
             };
-            for ev in events {
+            if let Some(ev) = ev {
                 if ev.cook_off {
                     self.total_cook_offs += 1;
                     let pos = self.tank(id).pos;
+                    let side = self.tank(id).side;
                     self.board.set_terrain(pos, Terrain::Rubble);
-                }
-                if ev.hull_damage > 0 {
-                    self.activations_since_damage = 0;
+                    cook_off_blasts.push((pos, side));
                 }
                 let side = self.tank(id).side;
                 let text = ev.description.clone();
                 self.push_event(self.activations, Some(side), text, Some(ev));
             }
+        }
+
+        for (pos, side) in cook_off_blasts {
+            self.apply_cook_off_splash(pos, side, rng);
         }
 
         self.tick_air_strikes(acted_side, rng);
@@ -1024,10 +1071,57 @@ impl Game {
             if ev.cook_off {
                 self.total_cook_offs += 1;
                 let pos = self.tank(id).pos;
+                let victim_side = self.tank(id).side;
                 self.board.set_terrain(pos, Terrain::Rubble);
+                self.apply_cook_off_splash(pos, victim_side, rng);
             }
             let text = format!("Air strike: {}", ev.description);
             self.push_event(self.activations, Some(side), text, Some(ev));
+        }
+    }
+
+    /// HE strength-4 hits on every non-destroyed unit within 2 hexes of a cook-off.
+    fn apply_cook_off_splash<R: Rng>(&mut self, origin: Hex, side: Side, rng: &mut R) {
+        let victims: Vec<u8> = self
+            .tanks
+            .iter()
+            .filter(|t| !t.destroyed && t.pos.distance(origin) >= 1 && t.pos.distance(origin) <= 2)
+            .map(|t| t.id)
+            .collect();
+        let mut nested_blasts: Vec<(Hex, Side)> = Vec::new();
+        for id in victims {
+            let kind = self.tank(id).kind;
+            let impact = self.tank(id).impact_facing(origin);
+            let enemy = self.tank_mut(id);
+            let ev = resolve_shot(
+                rng,
+                ShotParams {
+                    attacker_accuracy: 2,
+                    accuracy_penalty: 0,
+                    round: RoundKind::He,
+                    impact,
+                    forced_hit: Some(true),
+                    forced_pen_roll: None,
+                },
+                enemy,
+            );
+            self.record_shot_stats(&ev);
+            if ev.hit && kind == UnitKind::Infantry {
+                self.destroy_infantry(id);
+            }
+            if ev.cook_off {
+                self.total_cook_offs += 1;
+                let pos = self.tank(id).pos;
+                let victim_side = self.tank(id).side;
+                self.board.set_terrain(pos, Terrain::Rubble);
+                nested_blasts.push((pos, victim_side));
+            }
+            let name = self.tank(id).name.clone();
+            let text = format!("Cook-off splash vs {name}: {}", ev.description);
+            self.push_event(self.activations, Some(side), text, Some(ev));
+        }
+        for (pos, s) in nested_blasts {
+            self.apply_cook_off_splash(pos, s, rng);
         }
     }
 
@@ -1366,6 +1460,98 @@ mod tests {
         assert!(
             on_target > 0 && drifted > 0 && wild > 0,
             "{on_target}/{drifted}/{wild}"
+        );
+    }
+
+    #[test]
+    fn fire_does_not_tick_on_other_units_activation() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::new(2, 4), Facing::E, "Red"),
+            Tank::stock(1, Side::Blue, Hex::new(8, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 20, "test");
+        g.tank_mut(1).on_fire = true;
+        let hp_before = g.tank(1).hull_points;
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
+        // Red activates — Blue is burning but should not take fire damage.
+        play_activation(&mut g, 0, &[], &mut rng);
+        assert_eq!(g.tank(1).hull_points, hp_before);
+        assert!(g.tank(1).on_fire);
+        // Blue activates — fire ticks.
+        play_activation(&mut g, 1, &[], &mut rng);
+        assert_eq!(g.tank(1).hull_points, hp_before - 1);
+    }
+
+    #[test]
+    fn cook_off_splashes_he_within_two_hexes() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::new(4, 4), Facing::E, "Wreck"),
+            Tank::stock(1, Side::Blue, Hex::new(5, 4), Facing::W, "Near"),
+            Tank::stock(2, Side::Blue, Hex::new(9, 4), Facing::W, "Far"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 20, "test");
+        g.tank_mut(0).disabled = true;
+        g.tank_mut(0).hull_points = 0;
+        let near_hp = g.tank(1).hull_points;
+        let far_hp = g.tank(2).hull_points;
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
+        // Force cook-off via repeated end_activation until it happens.
+        let mut cooked = false;
+        for _ in 0..40 {
+            g.end_activation(0, &mut rng);
+            if g.tank(0).destroyed {
+                cooked = true;
+                break;
+            }
+        }
+        assert!(cooked, "expected cook-off within 40 rolls");
+        assert!(
+            g.events
+                .iter()
+                .any(|e| e.text.contains("Cook-off splash vs Near")),
+            "near unit must take splash: {:?}",
+            g.events.iter().map(|e| &e.text).collect::<Vec<_>>()
+        );
+        assert!(
+            !g.events
+                .iter()
+                .any(|e| e.text.contains("Cook-off splash vs Far")),
+            "far unit (dist 5) must not take splash"
+        );
+        // Near took an automatic HE hit — hull or at least a combat event.
+        assert!(
+            g.tank(1).hull_points < near_hp
+                || g.tank(1).suppressed
+                || g.tank(1).on_fire
+                || g.tank(1).destroyed,
+            "near unit should feel the HE splash"
+        );
+        assert_eq!(g.tank(2).hull_points, far_hp);
+    }
+
+    #[test]
+    fn infantry_adjacent_to_friendly_tank_cannot_be_targeted() {
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::new(1, 4), Facing::E, "Hunter"),
+            Tank::stock(1, Side::Blue, Hex::new(4, 4), Facing::W, "Shield"),
+            Tank::stock_infantry(2, Side::Blue, Hex::new(5, 4), Facing::W, "Squad"),
+        ];
+        let g = Game::new(board, tanks, Side::Red, 20, "test");
+        assert!(g.infantry_screened(g.tank(2)));
+        assert!(!g.can_see(g.tank(0), g.tank(2)));
+        let legal = g.legal_actions(0, 3, &TurnBuffs::default());
+        assert!(
+            legal
+                .iter()
+                .all(|a| !matches!(a, Action::Fire { target: 2 })),
+            "screened infantry must not appear as a fire target: {legal:?}"
         );
     }
 }
