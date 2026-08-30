@@ -7,11 +7,10 @@ import {
   wordBreak,
 } from "../src/trie.js";
 import {
-  generatePuzzle,
   generatePuzzleWithRetry,
   validatePuzzle,
 } from "../src/generate.js";
-import { WORD_SET } from "../src/words.js";
+import { WORD_SET, ENTRIES } from "../src/words.js";
 import { spiralLayout } from "../src/spiral.js";
 import {
   createPlayState,
@@ -28,28 +27,33 @@ import {
 const SUFFIX_SET = buildSuffixSet([...WORD_SET]);
 
 test("wordBreak segments a known reverse string", () => {
-  const words = wordBreak("SPEEDRELATE", WORD_SET, 3, 8);
+  const words = wordBreak("ACEALE", WORD_SET, 3, 8);
   assert.ok(words);
-  assert.deepEqual(words, ["SPEED", "RELATE"]);
+  assert.deepEqual(words, ["ACE", "ALE"]);
 });
 
 test("isValidOutwardSuffix accepts a complete trailing word sequence", () => {
   assert.equal(
-    isValidOutwardSuffix("SPEED", WORD_SET, SUFFIX_SET, 3, 8),
+    isValidOutwardSuffix("STOIC", WORD_SET, SUFFIX_SET, 3, 8),
     true,
   );
 });
 
 test("isValidOutwardSuffix accepts a word-suffix head plus complete words", () => {
-  // TESPEED = suffix "TE" of many words + SPEED
+  // ICSTOIC = suffix "IC" of STOIC + STOIC
   assert.equal(
-    isValidOutwardSuffix("TESPEED", WORD_SET, SUFFIX_SET, 3, 8),
+    isValidOutwardSuffix("ICSTOIC", WORD_SET, SUFFIX_SET, 3, 8),
     true,
   );
 });
 
 test("generatePuzzle builds a valid interlocking spiral", () => {
-  const puzzle = generatePuzzle({ size: 36, seed: 42, maxNodes: 200000 });
+  const puzzle = generatePuzzleWithRetry({
+    size: 36,
+    seed: 42,
+    attempts: 64,
+    maxNodes: 200000,
+  });
   assert.ok(puzzle, "expected a puzzle");
   assert.equal(puzzle.letters.length, 36);
   assert.equal(validatePuzzle(puzzle), true);
@@ -64,18 +68,46 @@ test("generatePuzzle builds a valid interlocking spiral", () => {
     outwardJoined,
     puzzle.letters.split("").reverse().join(""),
   );
+
+  const clues = [...puzzle.inward, ...puzzle.outward].map((s) => s.clue);
+  assert.equal(new Set(clues).size, clues.length, "clues must be unique");
 });
 
 test("generatePuzzleWithRetry succeeds for size 100", () => {
   const puzzle = generatePuzzleWithRetry({
     size: 100,
     seed: 7,
-    attempts: 16,
+    attempts: 64,
     maxNodes: 100 * 16000,
   });
   assert.ok(puzzle);
   assert.equal(validatePuzzle(puzzle), true);
   assert.equal(puzzle.size, 100);
+  const clues = [...puzzle.inward, ...puzzle.outward].map((s) => s.clue);
+  assert.equal(new Set(clues).size, clues.length);
+});
+
+test("lexicon clues are unique and omit the magazine originals", () => {
+  assert.equal(ENTRIES.length, new Set(ENTRIES.map((e) => e.clue)).size);
+  assert.equal(ENTRIES.length, new Set(ENTRIES.map((e) => e.word)).size);
+  const banned = [
+    "Recessed, as eyes",
+    "Irish singer",
+    "Rubber City",
+    "Schwarzenegger",
+    "Megan Thee Stallion",
+    "Spot for a massage",
+    "Church recess",
+  ];
+  for (const entry of ENTRIES) {
+    for (const phrase of banned) {
+      assert.equal(
+        entry.clue.includes(phrase),
+        false,
+        `${entry.word} still uses banned clue text`,
+      );
+    }
+  }
 });
 
 test("spiralLayout returns equal-arc cells that stay chunky near the center", () => {
@@ -116,7 +148,12 @@ test("spiralLayout returns equal-arc cells that stay chunky near the center", ()
 });
 
 test("play state tracks guesses, check, and reveal", () => {
-  const puzzle = generatePuzzle({ size: 24, seed: 1, maxNodes: 100000 });
+  const puzzle = generatePuzzleWithRetry({
+    size: 24,
+    seed: 1,
+    attempts: 64,
+    maxNodes: 100000,
+  });
   assert.ok(puzzle);
   let state = createPlayState(puzzle);
 
@@ -139,7 +176,12 @@ test("spanIndices walks outward ranges backward", () => {
 });
 
 test("selectClue jumps to the first empty cell in the span", () => {
-  const puzzle = generatePuzzle({ size: 24, seed: 1, maxNodes: 100000 });
+  const puzzle = generatePuzzleWithRetry({
+    size: 24,
+    seed: 1,
+    attempts: 64,
+    maxNodes: 100000,
+  });
   assert.ok(puzzle);
   let state = createPlayState(puzzle);
   const span = puzzle.inward[0];
@@ -152,7 +194,12 @@ test("selectClue jumps to the first empty cell in the span", () => {
 });
 
 test("cluesCovering finds inward and outward spans for a cell", () => {
-  const puzzle = generatePuzzle({ size: 24, seed: 1, maxNodes: 100000 });
+  const puzzle = generatePuzzleWithRetry({
+    size: 24,
+    seed: 1,
+    attempts: 64,
+    maxNodes: 100000,
+  });
   assert.ok(puzzle);
   const inwardHits = cluesCovering(puzzle, "inward", 0);
   const outwardHits = cluesCovering(puzzle, "outward", 0);

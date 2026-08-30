@@ -44,10 +44,18 @@ export function buildSuffixSet(words) {
 /**
  * Segment `text` into dictionary words (greedy leftmost DP).
  * Returns an array of words, or null if impossible.
+ *
+ * When `forbiddenWords` is provided, those answers are skipped so a puzzle can
+ * avoid repeating an inward answer on the outward path.
  */
-export function wordBreak(text, wordSet, minLen = 3, maxLen = 8) {
+export function wordBreak(
+  text,
+  wordSet,
+  minLen = 3,
+  maxLen = 8,
+  forbiddenWords = null,
+) {
   const n = text.length;
-  // best[i] = word list covering text[0..i), or null
   const best = new Array(n + 1).fill(null);
   best[0] = [];
   for (let i = 0; i < n; i += 1) {
@@ -56,9 +64,9 @@ export function wordBreak(text, wordSet, minLen = 3, maxLen = 8) {
     for (let j = i + minLen; j <= upper; j += 1) {
       if (best[j]) continue;
       const piece = text.slice(i, j);
-      if (wordSet.has(piece)) {
-        best[j] = best[i].concat(piece);
-      }
+      if (!wordSet.has(piece)) continue;
+      if (forbiddenWords && forbiddenWords.has(piece)) continue;
+      best[j] = best[i].concat(piece);
     }
   }
   return best[n];
@@ -76,7 +84,6 @@ export function isValidOutwardSuffix(rev, wordSet, suffixSet, minLen = 3, maxLen
   const n = rev.length;
   if (n === 0) return true;
 
-  // DP: canBreakFrom[i] = rev[i..] word-breaks completely
   const canBreakFrom = new Array(n + 1).fill(false);
   canBreakFrom[n] = true;
   for (let i = n - 1; i >= 0; i -= 1) {
@@ -89,10 +96,8 @@ export function isValidOutwardSuffix(rev, wordSet, suffixSet, minLen = 3, maxLen
     }
   }
 
-  // Cut at 0: whole reverse is complete words.
   if (canBreakFrom[0]) return true;
 
-  // Cut after a proper prefix that is a word suffix (outward word started earlier).
   for (let i = 1; i <= Math.min(n, maxLen - 1); i += 1) {
     if (!canBreakFrom[i]) continue;
     const head = rev.slice(0, i);

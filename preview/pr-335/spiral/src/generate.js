@@ -59,7 +59,6 @@ function spansFromWords(words, fromStart) {
       pos = end + 1;
     }
   } else {
-    // words cover the reverse path: first word starts at size
     let pos = words.reduce((n, w) => n + w.length, 0);
     for (const word of words) {
       const end = pos;
@@ -77,6 +76,15 @@ function spansFromWords(words, fromStart) {
   return spans;
 }
 
+function cluesAreUnique(spans) {
+  const seen = new Set();
+  for (const span of spans) {
+    if (seen.has(span.clue)) return false;
+    seen.add(span.clue);
+  }
+  return true;
+}
+
 /**
  * Preferred lengths: favor 4–7 like magazine spirals; avoid leaving 1–2 cells.
  * @param {number} remaining
@@ -84,7 +92,6 @@ function spansFromWords(words, fromStart) {
  */
 function candidateLengths(remaining, rng) {
   if (remaining <= MAX_LEN && remaining >= MIN_LEN) {
-    // Always allow finishing exactly.
     const preferred = [5, 6, 4, 7, 3, 8].filter((len) => len === remaining);
     const others = [5, 6, 4, 7, 3, 8].filter(
       (len) => len <= remaining && len !== remaining && remaining - len >= MIN_LEN,
@@ -113,6 +120,8 @@ export function generatePuzzle(options = {}) {
   const letters = [];
   /** @type {string[]} */
   const inwardWords = [];
+  /** @type {Set<string>} */
+  const usedWords = new Set();
   let nodes = 0;
 
   function search() {
@@ -132,15 +141,17 @@ export function generatePuzzle(options = {}) {
     const remaining = size - letters.length;
     for (const len of candidateLengths(remaining, rng)) {
       const pool = shuffle(BY_LEN[len], rng);
-      // Cap branching so generation stays snappy.
       const limit = Math.min(pool.length, len <= 4 ? 40 : 60);
       for (let i = 0; i < limit; i += 1) {
         const word = pool[i];
+        if (usedWords.has(word)) continue;
         for (const ch of word) letters.push(ch);
         const rev = reverseString(letters.join(""));
         if (isValidOutwardSuffix(rev, WORD_SET, SUFFIX_SET, MIN_LEN, MAX_LEN)) {
           inwardWords.push(word);
+          usedWords.add(word);
           if (search()) return true;
+          usedWords.delete(word);
           inwardWords.pop();
         }
         letters.length -= len;
@@ -152,26 +163,33 @@ export function generatePuzzle(options = {}) {
   if (!search()) return null;
 
   const text = letters.join("");
-  const outwardWords = wordBreak(reverseString(text), WORD_SET, MIN_LEN, MAX_LEN);
+  // Prefer an outward break that shares no answers (hence no clues) with inward.
+  const outwardWords =
+    wordBreak(reverseString(text), WORD_SET, MIN_LEN, MAX_LEN, usedWords) ||
+    wordBreak(reverseString(text), WORD_SET, MIN_LEN, MAX_LEN);
   if (!outwardWords) return null;
 
-  return {
+  const puzzle = {
     size,
     letters: text,
     inward: spansFromWords(inwardWords, true),
     outward: spansFromWords(outwardWords, false),
     seed,
   };
+  if (!cluesAreUnique([...puzzle.inward, ...puzzle.outward])) return null;
+  return puzzle;
 }
 
 /**
- * Validate that a puzzle's letters match both clue directions.
+ * Validate that a puzzle's letters match both clue directions and that every
+ * clue text appears at most once.
  * @param {Puzzle} puzzle
  */
 export function validatePuzzle(puzzle) {
   const { letters, inward, outward, size } = puzzle;
   if (letters.length !== size) return false;
   if (!/^[A-Z]+$/.test(letters)) return false;
+  if (!cluesAreUnique([...inward, ...outward])) return false;
 
   for (const span of inward) {
     const slice = letters.slice(span.start - 1, span.end);
