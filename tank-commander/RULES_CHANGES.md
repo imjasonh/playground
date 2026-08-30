@@ -706,6 +706,68 @@ small. APC armor cap is a fidelity fix with **no measurable Combined effect**
 
 ---
 
+## 2026-08-30 — Stay embarked, deployment mines, tank-only cook-off
+
+**Type: Rule / AI / Sim**
+
+### Why embark was so high
+
+The engine already allowed staying embarked. The AI did not:
+
+1. Loaded vehicles always `DropOff` after ≤2 moves (even mid-map).
+2. Embarked infantry always picked a `Dismount` when any hex was legal.
+3. Scoring preferred shuttle activations, so the loop remounted forever.
+
+### Fixes
+
+1. **Stay embarked:** APC riders only dismount when within missile reach; exterior
+   tank riders still bail near enemy guns (≤6). Vehicles only `DropOff` when
+   close to the fight (≤5), not after two moves. Embarked infantry score low so
+   they do not burn activations while riding.
+2. **Deployment mines:** Combined places all purchased mines **after**
+   initiative and **before** spoil. No mid-battle `DeployMine`.
+3. **APC no cook-off:** only tanks roll cook-off / immediate fire cook-off.
+   APCs at 0 hull are destroyed as wrecks with no ammo splash.
+
+**Effect (Combined, 200 games, seed 42) vs prior exterior+forest+APC-cap build:**
+
+| Metric | Before | After |
+|--------|--------|-------|
+| Embark / Drop / Dismount /game | 10.1 / 4.7 / 6.9 | **4.2 / 1.7 / 1.2** |
+| Exterior mounts / rider kills | 4.0 / 1.05 | **1.9 / 1.23** |
+| Cook-offs | ~4.4 | **2.86** |
+| Mines deployed / triggered | ~4.8 / 2.8 (mid-battle) | **5.0 / 2.5** (all at setup) |
+| Decisive / hard TO / idle | 95% / 24% / 9% | **96% / 21% / 14%** |
+
+Embark still happens in 100% of games, but as a taxi ride, not a shuttle bus.
+Cook-offs drop as expected (no APC blasts). Balance holds.
+
+---
+
+## 2026-08-30 — Deployment mine enemy clearance (N = 6)
+
+**Type: Rule / Sim**
+
+Deployment mines may not sit within **6 hexes** of an enemy vehicle (tank or
+APC) at placement — `distance < 6` is illegal. Placer reaches midfield and
+prefers the forward edge of that envelope so the rule actually shapes the
+field.
+
+**Why 6.** Stock gun range is 5. Clearance 6 keeps mines outside the enemy
+start’s opening gun envelope while still on the approaches (need a second
+move to step on them). A/B Combined (200 games, seed 42):
+
+| Clearance | Decisive | Hard TO | Mines triggered |
+|-----------|----------|---------|-----------------|
+| 5 | 96% | 22% | **2.56** |
+| **6** | **98%** | 26% | 2.31 |
+| 7 | 97% | 30% | 2.31 |
+
+5 is a hair more “useful” on triggers; 6 is the better balance (decisive up,
+still ~2.3 triggers/game). 7 starts to push fields back and inflate timeouts.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.

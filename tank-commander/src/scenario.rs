@@ -315,6 +315,8 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
     let mut game = Game::new(board, tanks, first, 240, "combined")
         .with_stalemate(48)
         .with_list_initiative(!spoil);
+    // Mines go down during deployment, before any spoil nudges.
+    game.place_deployment_mines(rng);
     if spoil {
         second_player_setup(&mut game, 4);
     }
@@ -900,6 +902,61 @@ mod tests {
             }
         }
         assert!(differ, "two seeds should scatter different terrain");
+    }
+
+    #[test]
+    fn combined_places_mines_at_deployment() {
+        let mut rng = ChaCha8Rng::seed_from_u64(8);
+        let g = combined(&mut rng);
+        // All charges spent onto the board; none left for mid-battle DeployMine.
+        for t in &g.tanks {
+            assert_eq!(t.mines_left, 0, "{} still holds mines", t.name);
+        }
+        assert_eq!(g.mines_deployed as usize, g.board.mines.len());
+        // Combined lists often buy mines — expect at least some across seeds.
+        let mut any = false;
+        for seed in 0..25u64 {
+            let mut r = ChaCha8Rng::seed_from_u64(seed);
+            let g = combined(&mut r);
+            if g.mines_deployed > 0 {
+                any = true;
+                break;
+            }
+        }
+        assert!(any, "expected some Combined seed to deploy mines");
+    }
+
+    #[test]
+    fn deployment_mines_respect_enemy_clearance() {
+        use crate::game::Game;
+        let c = Game::DEPLOYMENT_MINE_CLEARANCE;
+        for seed in 0..40u64 {
+            let mut r = ChaCha8Rng::seed_from_u64(seed);
+            let g = combined(&mut r);
+            for &(q, rhex) in &g.board.mines {
+                let h = Hex::new(q, rhex);
+                let mut min_red = i32::MAX;
+                let mut min_blue = i32::MAX;
+                for t in &g.tanks {
+                    if !matches!(t.kind, UnitKind::Tank | UnitKind::Apc) {
+                        continue;
+                    }
+                    let d = h.distance(t.pos);
+                    match t.side {
+                        Side::Red => min_red = min_red.min(d),
+                        Side::Blue => min_blue = min_blue.min(d),
+                    }
+                }
+                // A legal mine is clear of every vehicle on at least one side
+                // (its enemy). Own-side vehicles may sit closer.
+                let clear_of_red = min_red >= c;
+                let clear_of_blue = min_blue >= c;
+                assert!(
+                    clear_of_red || clear_of_blue,
+                    "seed {seed} mine {h} within enemy clearance (red≥{min_red}, blue≥{min_blue}, need {c})"
+                );
+            }
+        }
     }
 
     #[test]

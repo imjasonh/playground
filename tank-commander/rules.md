@@ -75,7 +75,9 @@ Spend up to 10 upgrade points before the game:
 - **Medkit** (1): the first crew injury ignores its penalty once.
 - **Lieutenant commander** (1): fifth crew member (see Crew).
 - **Air support** (2, advanced): one air strike per battle for that tank.
-- **Anti-tank mines** (1 each, max 3, advanced): deploy mines.
+- **Anti-tank mines** (1 each, max 3, advanced): placed during **deployment**
+  (before spoil), not mid-battle. Must be at least **6 hexes** from every
+  enemy vehicle at placement.
 
 Painted tanks get +1 upgrade point. An epic name plus named crew gets +1.
 (**Not** applied by the simulator list builder — see
@@ -199,10 +201,11 @@ to the target’s hull facing.
 - **HE fire:** on a glance or pen from HE, roll; on 5+ the target is *on
   fire*. Extinguish with an action. If not extinguished, −1 hull at the end of
   each of that unit’s activations until out or destroyed.
-- **Cook-off:** at the end of each activation a disabled non-infantry unit
+- **Cook-off (tanks only):** at the end of each activation a disabled **tank**
   remains, roll; on 4+ ammo cooks off — destroyed, replaced with rubble, and
   units within 2 hexes take an HE strength-4 hit. If the last hull point was
-  lost to fire, cook-off is immediate.
+  lost to fire, cook-off is immediate. **APCs never cook off** — at 0 hull they
+  are destroyed as wrecks with no ammo blast.
 
 Infantry are destroyed by any main-gun or missile **hit** (see
 [Infantry cover](#infantry-cover)). They do not cook off.
@@ -332,7 +335,8 @@ hit kills (or pins if in cover, above).
    passable hex. Once per activation, only after at least one **Move**.
 6. **While riding:** the squad shares the vehicle’s hex (does not occupy a
    separate hex). It **cannot be targeted**, cannot fire, and cannot step. It
-   may still activate to **Dismount**. Dig-in / cover clears on mount.
+   may still activate to **Dismount**, or **stay embarked** across activations
+   while the vehicle keeps moving. Dig-in / cover clears on mount.
 
 #### APC interior
 
@@ -438,12 +442,17 @@ Same force and board as Squadron, plus list building.
 Full combined-arms game with lists.
 
 - **Force:** per side — **2 tanks** (10-pt lists + one air strike each; mines
-  allowed), **2 APCs** (4-pt lists), **2 infantry**.
+  allowed and placed at **deployment before spoil**), **2 APCs** (4-pt lists),
+  **2 infantry**.
 - **Board:** 18×12 open mat (same size as squadron/platoon) with building
   clumps and forest patches; starts and scatter are east–west **mirrored** at
   generation (second-player terrain spoil may break scatter symmetry on
   purpose).
 - **Initiative:** under-spend initiative; spoil only when list totals tie.
+- **Deployment mines:** after lists and initiative, every purchased mine is
+  placed on the board **before** spoil. No mid-battle mine deployment. A mine
+  must be at least **6 hexes** from every enemy vehicle (tank or APC) at
+  placement — outside stock gun range, still on the midfield approaches.
 - **Second-player spoil** (tied lists only): nudge each opposing unit up to 1
   hex, then shift up to **4** scatter tiles.
 
