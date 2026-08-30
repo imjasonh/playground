@@ -495,7 +495,7 @@ Objectives matter: race the other side's flag with embarked infantry.
 One side Captures; the other holds or destroys the attack.
 
 - **Attacker:** **1 tank** + **3 loaded APCs** (stock). Always activates first.
-- **Defender:** **2 tanks** + **2 infantry** dug in near a single backline flag
+- **Defender:** **1 tank** + **2 infantry** dug in near a single backline flag
   (stock). Gets second-player spoil.
 - **Board:** 18×12 open mat; scatter is **not** mirrored (asymmetric approach).
   Who attacks is a coin flip (color is not locked to a role).

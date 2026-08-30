@@ -815,6 +815,45 @@ are expected for a flag race.
 
 ---
 
+## 2026-08-30 — Assault (attacker / defender)
+
+**Type: Rule / Scenario / Sim**
+
+### Rule / scenario
+
+Asymmetric mission on the Capture rules:
+
+- **Attacker** (coin-flip color; always activates first): 1 tank + 3 loaded APCs.
+- **Defender** (spoil): 1 tank + 2 dug-in infantry; one backline flag.
+- Attacker wins by **Capture** or wipe. Defender wins by wipe or **hold**
+  (activation cap / idle stalemate awards the defender).
+
+### Force tuning
+
+First pass used **2 defender tanks** → attacker won only ~32% (defender wiped
+the APC push; Capture rare). Dropped to **1 defender tank** so the assault is
+contestable.
+
+### Balance (200 games, seed 1; 1-tank defender)
+
+| Signal | Value |
+|--------|-------|
+| Decisive | 98% |
+| Attacker / defender wins | **114 / 82 (58% attacker)** |
+| Win-by-capture | 36% |
+| Hold wins | 2% |
+| Avg shots / activations | 33.5 / 92 |
+| Low-engagement games | 8% |
+| Color (Red/Blue) | 100 / 96 |
+
+**Verdict.** Much more of a fight than the symmetric flag race — real shooting
+(~34 shots/game) and embarkation under fire. Slightly **attacker-favored** at
+58%; Capture decides about a third of games, wipe the rest, hold is rare. Fun
+enough to keep; nudge defender up (second tank or an APC) only if humans find
+the hold too soft.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.

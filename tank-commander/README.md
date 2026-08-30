@@ -13,7 +13,7 @@ plus a Capture flag-raid:
 | `platoon` | 3v3 tanks (≤10-pt lists) | 18×12 open | 200 hard; idle after 40 no-hit |
 | `combined` | 2 tanks + 2 APCs + 2 infantry / side (lists) | 18×12 open | 240 hard; idle after 48 no-hit |
 | `capture` | 1 tank + 3 loaded APCs / side (stock); flag Capture wins | 18×12 open | 200 hard; idle after 40 no-hit |
-| `assault` | Attacker 1 tank+3 loaded APCs vs defender 2 tanks+2 infantry; Capture or hold | 18×12 open | 180 hard; idle after 50 no-hit (hold = defender) |
+| `assault` | Attacker 1 tank+3 loaded APCs vs defender 1 tank+2 infantry; Capture or hold | 18×12 open | 180 hard; idle after 50 no-hit (hold = defender) |
 
 Squadron, platoon, combined, capture, and assault share one **18×12** mat with **scattered
 building clumps and forest patches** (no sealed midline funnel). Skirmish is

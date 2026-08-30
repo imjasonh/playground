@@ -441,7 +441,7 @@ pub fn capture<R: Rng>(rng: &mut R) -> Game {
 
 /// Assault: attacker tries to Capture one defender flag; defender wins by wipe
 /// or by holding until the clock runs out. Attacker fields **1 tank + 3 loaded
-/// APCs**; defender fields **2 tanks + 2 infantry** dug in near the flag.
+/// APCs**; defender fields **1 tank + 2 infantry** dug in near the flag.
 /// Attacker always activates first; defender gets spoil.
 pub fn assault<R: Rng>(rng: &mut R) -> Game {
     let width = BATTLE_WIDTH;
@@ -454,8 +454,8 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
     // offset templates then mirror if Blue attacks.
     let atk_tank = Hex::offset(1, 5);
     let atk_apcs = [Hex::offset(1, 2), Hex::offset(1, 7), Hex::offset(1, 10)];
-    let def_tanks = [Hex::offset(15, 3), Hex::offset(15, 8)];
-    let def_inf = [Hex::offset(16, 5), Hex::offset(16, 7)];
+    let def_tank = Hex::offset(15, 5);
+    let def_inf = [Hex::offset(16, 4), Hex::offset(16, 7)];
     let def_flag = Hex::offset(17, 6);
 
     let place = |h: Hex| -> Hex {
@@ -467,7 +467,7 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
     };
     let atk_tank = place(atk_tank);
     let atk_apcs = [place(atk_apcs[0]), place(atk_apcs[1]), place(atk_apcs[2])];
-    let def_tanks = [place(def_tanks[0]), place(def_tanks[1])];
+    let def_tank = place(def_tank);
     let def_inf = [place(def_inf[0]), place(def_inf[1])];
     let def_flag = place(def_flag);
 
@@ -478,10 +478,9 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
     };
     let def_facing = atk_facing.turn_left().turn_left().turn_left(); // opposite
 
-    let reserved: Vec<Hex> = [atk_tank, def_flag]
+    let reserved: Vec<Hex> = [atk_tank, def_tank, def_flag]
         .into_iter()
         .chain(atk_apcs)
-        .chain(def_tanks)
         .chain(def_inf)
         .collect();
     let egress = [
@@ -489,9 +488,8 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
         place(Hex::offset(2, 5)),
         place(Hex::offset(2, 7)),
         place(Hex::offset(2, 10)),
-        place(Hex::offset(14, 3)),
-        place(Hex::offset(14, 8)),
-        place(Hex::offset(15, 5)),
+        place(Hex::offset(14, 5)),
+        place(Hex::offset(15, 4)),
         place(Hex::offset(15, 7)),
         def_flag,
     ];
@@ -528,10 +526,9 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
         Tank::stock_infantry(4, attacker, atk_apcs[0], atk_facing, "Attack Squad A"),
         Tank::stock_infantry(5, attacker, atk_apcs[1], atk_facing, "Attack Squad B"),
         Tank::stock_infantry(6, attacker, atk_apcs[2], atk_facing, "Attack Squad C"),
-        Tank::stock(7, defender, def_tanks[0], def_facing, "Defend Tank A"),
-        Tank::stock(8, defender, def_tanks[1], def_facing, "Defend Tank B"),
-        Tank::stock_infantry(9, defender, def_inf[0], def_facing, "Defend Squad A"),
-        Tank::stock_infantry(10, defender, def_inf[1], def_facing, "Defend Squad B"),
+        Tank::stock(7, defender, def_tank, def_facing, "Defend Tank"),
+        Tank::stock_infantry(8, defender, def_inf[0], def_facing, "Defend Squad A"),
+        Tank::stock_infantry(9, defender, def_inf[1], def_facing, "Defend Squad B"),
     ];
     for (apc_id, inf_id) in [(1u8, 4u8), (2, 5), (3, 6)] {
         let pos = tanks.iter().find(|t| t.id == apc_id).unwrap().pos;
@@ -544,7 +541,7 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
         }
     }
     // Dig defender infantry into cover at start.
-    for id in [9u8, 10] {
+    for id in [8u8, 9] {
         if let Some(inf) = tanks.iter_mut().find(|t| t.id == id) {
             inf.in_cover = true;
         }
@@ -1667,7 +1664,7 @@ mod tests {
                 .iter()
                 .filter(|t| t.side == defender && t.kind == UnitKind::Tank)
                 .count(),
-            2
+            1
         );
         assert_eq!(
             g.tanks
