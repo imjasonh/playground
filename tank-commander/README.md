@@ -5,14 +5,15 @@ Monte Carlo simulator for the
 
 Three scenarios share the same engine and heuristic AI:
 
-| Scenario | Force | Board | Cap |
-|----------|-------|-------|----:|
-| `skirmish` | 1v1 stock tanks | 11×9 | 20 (10/side) |
-| `combined` | tank (air support) + APC + infantry / side | 15×11 | 48 (24/side) |
-| `platoon` | 3v3 stock tanks | 17×13 | 48 (24/side) |
+| Scenario | Force | Board | Cap / idle stop |
+|----------|-------|-------|-----------------|
+| `skirmish` | 1v1 stock tanks | 11×9 | 20 hard (10/side) |
+| `combined` | tank + APC + infantry / side | 15×11 | 160 hard; idle after 32 no-hit |
+| `platoon` | 3v3 stock tanks | 19×15 funnel | 200 hard; idle after 40 no-hit |
 
-Bigger maps keep a fixed midline wall (plus wing ruins) and roll denser
-forest / mud / rubble outside reserved alleys and start hexes.
+Platoon seals the midline except a **wide plaza gap** (no parallel N/S
+lanes) so the three tanks per side cannot pair off. Games run until a wipe
+or a true post-contact no-hit drought — not a short turn clock.
 
 House rules live in [`RULES_CHANGES.md`](RULES_CHANGES.md).
 
