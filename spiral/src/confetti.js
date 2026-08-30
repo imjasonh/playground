@@ -117,7 +117,7 @@ function tick() {
     p.x += p.vx;
     p.y += p.vy;
     p.rot += p.vr;
-    p.life -= 0.0085;
+    p.life -= 0.006;
     if (p.life <= 0 || p.y > h + 40) continue;
 
     ctx.save();
@@ -157,12 +157,16 @@ export function celebrate(originEl = null) {
   }
 
   // Fresh burst; if one is already running, pile on.
-  spawn(originX, originY, 140);
+  spawn(originX, originY, 180);
   // Second delayed pop for a fuller spray.
   window.setTimeout(() => {
     if (!canvas) return;
-    spawn(originX, originY, 90);
-  }, 140);
+    spawn(originX, originY, 120);
+  }, 160);
+  window.setTimeout(() => {
+    if (!canvas) return;
+    spawn(originX + (Math.random() - 0.5) * 80, originY - 20, 70);
+  }, 320);
 
   if (raf == null) raf = requestAnimationFrame(tick);
 }
