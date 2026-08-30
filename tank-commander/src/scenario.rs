@@ -95,8 +95,7 @@ const SKIRMISH_MAP: MapLayout = MapLayout {
 /// Built at runtime so the wall can span the full height.
 fn platoon_wall(height: i32) -> Vec<Hex> {
     let mut wall = Vec::new();
-    // Three-column spine; wide plaza at r=5..=9 so a wreck in the throat
-    // cannot seal the only passage and freeze the game.
+    // Spine with a wide plaza gap so a wreck cannot seal the only passage.
     for q in 8..=10 {
         for r in 0..height {
             if (5..=9).contains(&r) {
@@ -105,8 +104,6 @@ fn platoon_wall(height: i32) -> Vec<Hex> {
             wall.push(Hex::new(q, r));
         }
     }
-    // West baffles: break any west-side N↔S lane so the three reds can't
-    // stay in separate corridors.
     wall.extend([
         Hex::new(3, 1),
         Hex::new(3, 2),
@@ -115,7 +112,6 @@ fn platoon_wall(height: i32) -> Vec<Hex> {
         Hex::new(3, 13),
         Hex::new(4, 12),
     ]);
-    // East baffles: same idea for blue.
     wall.extend([
         Hex::new(15, 1),
         Hex::new(15, 2),
@@ -128,7 +124,6 @@ fn platoon_wall(height: i32) -> Vec<Hex> {
 }
 
 fn platoon_alley_clear() -> Vec<Hex> {
-    // Wide plaza + approaches on both sides.
     let mut clear = Vec::new();
     for q in 6..=12 {
         for r in 5..=9 {
@@ -189,8 +184,7 @@ pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
     let red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One");
     let blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One");
     let mut game = Game::new(board, vec![red, blue], coin_flip(rng), 20, "skirmish");
-    // Scenario: terrain-only spoil on skirmish (unit nudge skewed color on the
-    // offset start map).
+    // Terrain-only spoil: unit nudges skewed color on offset starts.
     second_player_nudge_terrain(&mut game, 2);
     game
 }
@@ -240,9 +234,6 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
         Tank::stock(4, Side::Blue, blue_starts[1], Facing::W, "Blue Bravo"),
         Tank::stock(5, Side::Blue, blue_starts[2], Facing::W, "Blue Charlie"),
     ];
-    // Safety valve 200. Real stop: 40 activations with no hit after contact
-    // (true circling / lost LOS), so duels can finish instead of timing out
-    // mid-fight.
     let mut game = Game::new(board, tanks, coin_flip(rng), 200, "platoon").with_stalemate(40);
     second_player_setup(&mut game, 3);
     game
@@ -322,11 +313,7 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
         Tank::stock_infantry(10, Side::Blue, blue_inf[0], Facing::W, "Blue Squad A"),
         Tank::stock_infantry(11, Side::Blue, blue_inf[1], Facing::W, "Blue Squad B"),
     ];
-    // More units → higher safety valve / idle window so a full wipe can finish.
     let mut game = Game::new(board, tanks, coin_flip(rng), 240, "combined").with_stalemate(48);
-    // Scenario: after initiative, the second player may nudge each opposing
-    // unit up to 1 hex and shift a few scatter terrain tiles before the first
-    // activation.
     second_player_setup(&mut game, 4);
     game
 }
@@ -337,10 +324,8 @@ fn second_player_setup(game: &mut Game, terrain_budget: u32) {
     second_player_nudge_terrain(game, terrain_budget);
 }
 
-/// Second player may move each first-player unit at most one hex (empty,
-/// passable, on-board). Facing is unchanged. The sim picks, for each unit, the
-/// legal hex that most spoils the opener (farther from second-player forces,
-/// farther from the plaza, strip infantry out of forest when possible).
+/// Nudge each first-player unit at most one hex (empty, passable). Facing
+/// unchanged. Sim picks the hex that most spoils the opener.
 fn second_player_nudge_opposing(game: &mut Game) {
     let first = game.first_player;
     let second = first.other();
@@ -362,7 +347,6 @@ fn second_player_nudge_opposing(game: &mut Game) {
         let in_forest = game.board.terrain_at(from) == Terrain::Forest;
 
         let mut occupied: Vec<Hex> = game.tanks.iter().map(|t| t.pos).collect();
-        // Free the unit's current hex so "stay" and swaps-with-self work.
         occupied.retain(|h| *h != from);
 
         let mut best = from;
@@ -390,7 +374,6 @@ fn second_player_nudge_opposing(game: &mut Game) {
             {
                 score += 8;
             }
-            // Prefer an actual nudge over stay when scores tie.
             if cand != from {
                 score += 1;
             }
@@ -413,13 +396,9 @@ fn is_scatter(t: Terrain) -> bool {
     matches!(t, Terrain::Forest | Terrain::Mud | Terrain::Rubble)
 }
 
-/// Second player may shift up to `budget` non-static terrain tiles (forest /
-/// mud / rubble) by 1 hex onto Open hexes. Buildings stay fixed. Destination
-/// may be occupied (e.g. drop mud under a first-player tank); source becomes
-/// Open. May break mirrored scatter — that is the point of the spoil.
-///
-/// Tiles may hop across the budget (1 hex per spend). A tile that lands on a
-/// first-player vehicle is frozen so mud cannot walk in circles.
+/// Shift up to `budget` forest/mud/rubble tiles by 1 hex onto Open (may land
+/// under units). Buildings stay put. Destinations on first-player vehicles are
+/// frozen so mud cannot circle.
 fn second_player_nudge_terrain(game: &mut Game, budget: u32) {
     use std::collections::HashSet;
     let first = game.first_player;
@@ -553,7 +532,6 @@ fn score_terrain_nudge(
             }
         }
         if best_before < i32::MAX {
-            // Reward closing on the nearest first-player vehicle (enables hops).
             score += (best_before - best_after) * 12;
         }
     }

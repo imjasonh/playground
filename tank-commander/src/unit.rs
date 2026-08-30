@@ -322,9 +322,6 @@ impl Tank {
             CrewStatus::Healthy => {}
         }
         if self.suppressed {
-            // House rule: all suppression is temporary — −1 action (minimum 1)
-            // until the end of this unit's next activation (glance, APC spray,
-            // cover pin, air pin). Does not stack or refresh duration.
             actions = (actions - 1).max(1);
         } else {
             actions = actions.max(0);
@@ -345,7 +342,6 @@ impl Tank {
             UnitKind::Tank => {
                 self.crew_status(CrewRole::Gunner) != CrewStatus::Killed && self.loaded.is_some()
             }
-            // House rule: dig-in does not lock fire (revealing fire clears cover).
             UnitKind::Infantry => true,
             UnitKind::Apc => self.ai_range > 0,
         }
@@ -375,9 +371,7 @@ impl Tank {
     pub fn can_move_or_turn(&self) -> bool {
         match self.kind {
             UnitKind::Tank => self.crew_status(CrewRole::Driver) != CrewStatus::Killed,
-            UnitKind::Apc => true,
-            // House rule: dig-in does not lock movement (upstream Take Cover did).
-            UnitKind::Infantry => true,
+            UnitKind::Apc | UnitKind::Infantry => true,
         }
     }
 

@@ -28,7 +28,7 @@ pub struct GameEvent {
 pub struct PendingAirStrike {
     pub side: Side,
     pub hex: Hex,
-    /// Turns waited; need roll is `(6 - wait).max(2)`. Natural 1 always fails.
+    /// 0 = arrives after the caller's next activation ends.
     pub wait: u8,
 }
 
@@ -37,8 +37,7 @@ pub struct Game {
     pub board: Board,
     pub tanks: Vec<Tank>,
     pub active_side: Side,
-    /// Completed player activations. A "battle turn" in the rules is one
-    /// activation; the 10-turn limit is modeled as 20 activations (10 each).
+    /// Completed unit activations (both sides).
     pub activations: u32,
     pub max_activations: u32,
     pub events: Vec<GameEvent>,
@@ -48,11 +47,8 @@ pub struct Game {
     pub pending_air_strikes: Vec<PendingAirStrike>,
     pub air_strikes_resolved: u32,
     pub infantry_kills: u32,
-    /// End the battle (score like a timeout) after this many activations with
-    /// no hull damage. `0` disables. Used so platoon games stop on idle
-    /// loops instead of a short hard cap.
+    /// End like a timeout after this many activations with no hit (`0` = off).
     pub stalemate_after: u32,
-    /// Consecutive activations with no successful hit (drama/stalemate).
     pub activations_since_hit: u32,
     pub activations_since_damage: u32,
     pub total_hits: u32,
@@ -145,9 +141,7 @@ impl Game {
             .collect()
     }
 
-    /// Units legal to activate under pass activation: operational units that
-    /// have not yet activated this pass. If every operational unit has already
-    /// activated, a new pass begins and all are legal again.
+    /// Units that may activate under pass activation.
     pub fn activatable_ids(&self, side: Side) -> Vec<u8> {
         let ops = self.operational_ids(side);
         let pending: Vec<u8> = ops
@@ -438,7 +432,7 @@ impl Game {
                 if enemy.destroyed {
                     continue;
                 }
-                // House rule: suppressed infantry cannot fire missiles.
+                // Suppressed infantry cannot fire missiles.
                 if !tank.suppressed && self.can_see(tank, enemy) {
                     out.push(Action::FireMissile {
                         target: enemy.id,
@@ -550,7 +544,7 @@ impl Game {
                 self.tank_mut(tank_id).moves_this_turn += 1;
                 *ap_left -= cost;
                 self.moves_made += 1;
-                // Infantry dig in when ending in forest; leaving forest clears cover.
+                // Dig-in when ending in forest; leaving forest clears it.
                 let cover_note = if self.tank(tank_id).kind == UnitKind::Infantry {
                     let in_forest = self.board.terrain_at(next) == Terrain::Forest;
                     self.tank_mut(tank_id).in_cover = in_forest;
@@ -572,8 +566,7 @@ impl Game {
             Action::TurnLeft | Action::TurnRight => {
                 let left = matches!(action, Action::TurnLeft);
                 let hull = self.tank(tank_id).hull_facing;
-                // Turret may turn with hull or stay — v1: turret stays absolute,
-                // so relative offset shifts opposite to hull turn.
+                // Keep turret absolute facing when the hull turns.
                 let new_hull = turn_hull(hull, left);
                 let old_abs = hull.with_turret_offset(self.tank(tank_id).turret_offset);
                 let new_offset = relative_offset(new_hull, old_abs);
@@ -596,7 +589,7 @@ impl Game {
                 *ap_left -= 1;
             }
             Action::FireMissile { target, round } => {
-                // House rule: revealing fire — launching a missile leaves cover.
+                // Revealing fire: missiles leave cover.
                 if self.tank(tank_id).in_cover {
                     self.tank_mut(tank_id).in_cover = false;
                     self.push_event(
@@ -620,8 +613,6 @@ impl Game {
             }
             Action::CallAirStrike { hex } => {
                 self.tank_mut(tank_id).air_strike_used = true;
-                // House rule: strike arrives at the end of this side's next
-                // activation (wait starts at 0; tick once → arrive).
                 self.pending_air_strikes
                     .push(PendingAirStrike { side, hex, wait: 0 });
                 *ap_left -= 1;
@@ -684,8 +675,7 @@ impl Game {
         }
 
         let shooter_pos = self.tank(tank_id).pos;
-        // Forest terrain gives −1 to hit. Dig-in (`in_cover`) no longer stacks an
-        // extra −1 — that made forest camps too sticky for tanks to punish.
+        // Forest −1 only; dig-in does not stack.
         let penalty = self.board.accuracy_penalty_vs(self.tank(target_id).pos);
         let impact = self.tank(target_id).impact_facing(shooter_pos);
         let acc = if buffs.hit_on_2 {
@@ -694,9 +684,6 @@ impl Game {
             self.tank(tank_id).effective_accuracy()
         };
         let target_kind = self.tank(target_id).kind;
-
-        // Main gun / missiles kill through cover. Cover pin is AI-spray only
-        // (see resolve_ai_fire). Forest still applies the −1 accuracy above.
 
         let enemy = self.tank_mut(target_id);
         let ev = resolve_shot(
@@ -743,7 +730,6 @@ impl Game {
         let target_kind = self.tank(target_id).kind;
 
         self.shots_fired += 1;
-        // Forest −1 only; dig-in does not stack. Cover pin still applies below.
         let penalty = self.board.accuracy_penalty_vs(self.tank(target_id).pos);
         let impact = self.tank(target_id).impact_facing(self.tank(tank_id).pos);
         let acc = if buffs.hit_on_2 {
@@ -752,8 +738,7 @@ impl Game {
             self.tank(tank_id).effective_accuracy()
         };
 
-        // Soft targets: HE-style kill check. Vehicles: hit → suppress only.
-        // Cover pin is AI-spray only — main gun / missiles kill through cover.
+        // Soft targets: kill (or pin if dug in). Vehicles: hit → suppress.
         if target_kind == UnitKind::Infantry {
             if self.tank(target_id).in_cover {
                 let roll = rng.gen_range(1..=6);
@@ -907,14 +892,12 @@ impl Game {
         }
         self.tank_mut(tank_id).moves_this_turn = 0;
         self.tank_mut(tank_id).activated_this_pass = true;
-        // Infantry keep cover until they spend it on a save or TakeCover again.
     }
 
     pub fn end_activation<R: Rng>(&mut self, unit_id: u8, rng: &mut R) {
         let acted_side = self.tank(unit_id).side;
 
-        // House rule: all suppression is temporary. Glance, APC spray, cover
-        // pin, and air pin clear at the end of the suppressed unit's activation.
+        // Suppression clears at the end of the suppressed unit's activation.
         {
             let tank = self.tank_mut(unit_id);
             if tank.suppressed {
@@ -930,7 +913,7 @@ impl Game {
             }
         }
 
-        // Fire / cook-off for all tanks at end of each activation.
+        // Fire / cook-off checks for every unit after each activation.
         let ids: Vec<u8> = self.tanks.iter().map(|t| t.id).collect();
         for id in ids {
             let events = {
@@ -1003,8 +986,7 @@ impl Game {
     }
 
     fn resolve_air_strike<R: Rng>(&mut self, hex: Hex, side: Side, rng: &mut R) {
-        // Blast template: impact hex + all adjacent hexes. A 1-hex drift still
-        // usually clips the original aim hex, so staying put is dangerous.
+        // Blast: impact hex + neighbors.
         self.apply_air_blast(hex, side, rng);
         for n in hex.neighbors() {
             if self.board.contains(n) {
@@ -1037,7 +1019,6 @@ impl Game {
             );
             self.record_shot_stats(&ev);
             if ev.hit && kind == UnitKind::Infantry {
-                // Air blast is HE-class: kills through cover (no pin save).
                 self.destroy_infantry(id);
             }
             if ev.cook_off {
