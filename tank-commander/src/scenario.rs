@@ -188,7 +188,11 @@ pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
     let board = build_board(&SKIRMISH_MAP, rng, &starts, &egress);
     let red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One");
     let blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One");
-    Game::new(board, vec![red, blue], coin_flip(rng), 20, "skirmish")
+    let mut game = Game::new(board, vec![red, blue], coin_flip(rng), 20, "skirmish");
+    // Scenario: terrain-only spoil on skirmish (unit nudge skewed color on the
+    // offset start map).
+    second_player_nudge_terrain(&mut game, 2);
+    game
 }
 
 /// 3v3 on a 19×15 board. The midline is sealed except a two-hex plaza gap, so
@@ -239,7 +243,9 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     // Safety valve 200. Real stop: 40 activations with no hit after contact
     // (true circling / lost LOS), so duels can finish instead of timing out
     // mid-fight.
-    Game::new(board, tanks, coin_flip(rng), 200, "platoon").with_stalemate(40)
+    let mut game = Game::new(board, tanks, coin_flip(rng), 200, "platoon").with_stalemate(40);
+    second_player_setup(&mut game, 3);
+    game
 }
 
 /// Combined arms on a 17×13 plaza board. Each side fields **2 tanks** (each
@@ -319,9 +325,16 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
     // More units → higher safety valve / idle window so a full wipe can finish.
     let mut game = Game::new(board, tanks, coin_flip(rng), 240, "combined").with_stalemate(48);
     // Scenario: after initiative, the second player may nudge each opposing
-    // unit up to 1 hex before the first activation.
-    second_player_nudge_opposing(&mut game);
+    // unit up to 1 hex and shift a few scatter terrain tiles before the first
+    // activation.
+    second_player_setup(&mut game, 4);
     game
+}
+
+/// Second-player post-initiative spoil: unit nudges, then scatter-terrain shifts.
+fn second_player_setup(game: &mut Game, terrain_budget: u32) {
+    second_player_nudge_opposing(game);
+    second_player_nudge_terrain(game, terrain_budget);
 }
 
 /// Second player may move each first-player unit at most one hex (empty,
@@ -331,7 +344,10 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
 fn second_player_nudge_opposing(game: &mut Game) {
     let first = game.first_player;
     let second = first.other();
-    let plaza = Hex::new(8, 6);
+    let plaza = Hex::new(
+        (game.board.min_q + game.board.max_q) / 2,
+        (game.board.min_r + game.board.max_r) / 2,
+    );
     let fp_ids: Vec<u8> = game
         .tanks
         .iter()
@@ -391,6 +407,158 @@ fn second_player_nudge_opposing(game: &mut Game) {
             ));
         }
     }
+}
+
+fn is_scatter(t: Terrain) -> bool {
+    matches!(t, Terrain::Forest | Terrain::Mud | Terrain::Rubble)
+}
+
+/// Second player may shift up to `budget` non-static terrain tiles (forest /
+/// mud / rubble) by 1 hex onto Open hexes. Buildings stay fixed. Destination
+/// may be occupied (e.g. drop mud under a first-player tank); source becomes
+/// Open. May break mirrored scatter — that is the point of the spoil.
+///
+/// Tiles may hop across the budget (1 hex per spend). A tile that lands on a
+/// first-player vehicle is frozen so mud cannot walk in circles.
+fn second_player_nudge_terrain(game: &mut Game, budget: u32) {
+    use std::collections::HashSet;
+    let first = game.first_player;
+    let second = first.other();
+    let plaza = Hex::new(
+        (game.board.min_q + game.board.max_q) / 2,
+        (game.board.min_r + game.board.max_r) / 2,
+    );
+    let mut frozen: HashSet<(i32, i32)> = HashSet::new();
+
+    for _ in 0..budget {
+        let scatter: Vec<Hex> = {
+            let mut out = Vec::new();
+            for q in game.board.min_q..=game.board.max_q {
+                for r in game.board.min_r..=game.board.max_r {
+                    let h = Hex::new(q, r);
+                    if frozen.contains(&(h.q, h.r)) {
+                        continue;
+                    }
+                    if is_scatter(game.board.terrain_at(h)) {
+                        out.push(h);
+                    }
+                }
+            }
+            out
+        };
+        if scatter.is_empty() {
+            break;
+        }
+
+        let mut best: Option<(Hex, Hex, Terrain, i32)> = None;
+        for from in &scatter {
+            let terrain = game.board.terrain_at(*from);
+            for to in from.neighbors() {
+                if !game.board.contains(to) {
+                    continue;
+                }
+                if frozen.contains(&(to.q, to.r)) {
+                    continue;
+                }
+                if game.board.terrain_at(to) != Terrain::Open {
+                    continue;
+                }
+                let score = score_terrain_nudge(game, first, second, plaza, *from, to, terrain);
+                if best.is_none_or(|(_, _, _, s)| score > s) {
+                    best = Some((*from, to, terrain, score));
+                }
+            }
+        }
+        let Some((from, to, terrain, score)) = best else {
+            break;
+        };
+        if score < 6 {
+            break;
+        }
+        game.board.set_terrain(from, Terrain::Open);
+        game.board.set_terrain(to, terrain);
+        let landed_on_fp_vehicle = game
+            .tanks
+            .iter()
+            .any(|t| t.side == first && t.kind != UnitKind::Infantry && t.pos == to);
+        if landed_on_fp_vehicle {
+            frozen.insert((to.q, to.r));
+        }
+        for t in game.tanks.iter_mut() {
+            if t.kind == UnitKind::Infantry && t.pos == from && t.in_cover {
+                t.in_cover = false;
+            }
+            if t.kind == UnitKind::Infantry && t.pos == to && terrain == Terrain::Forest {
+                t.in_cover = true;
+            }
+        }
+        game.push_setup_event(format!(
+            "Second player shifts {terrain:?} {from} → {to} before start"
+        ));
+    }
+}
+
+fn score_terrain_nudge(
+    game: &Game,
+    first: Side,
+    second: Side,
+    plaza: Hex,
+    from: Hex,
+    to: Hex,
+    terrain: Terrain,
+) -> i32 {
+    let mut score = 0i32;
+    let fp: Vec<&Tank> = game.tanks.iter().filter(|t| t.side == first).collect();
+    let sp: Vec<&Tank> = game.tanks.iter().filter(|t| t.side == second).collect();
+
+    if terrain == Terrain::Forest {
+        for t in &fp {
+            if t.kind == UnitKind::Infantry && t.pos == from {
+                score += 24;
+            }
+        }
+        for t in &sp {
+            if t.kind == UnitKind::Infantry && t.pos == to {
+                score += 14;
+            }
+        }
+        for t in &fp {
+            if t.kind == UnitKind::Infantry && t.pos == to {
+                score -= 20;
+            }
+        }
+        for t in &fp {
+            if t.kind == UnitKind::Tank
+                && to.distance(t.pos) == 1
+                && to.distance(plaza) < t.pos.distance(plaza)
+            {
+                score += 10;
+            }
+        }
+    }
+
+    if matches!(terrain, Terrain::Mud | Terrain::Rubble) {
+        let mut best_before = i32::MAX;
+        let mut best_after = i32::MAX;
+        for t in &fp {
+            if t.kind == UnitKind::Infantry {
+                continue;
+            }
+            best_before = best_before.min(from.distance(t.pos));
+            best_after = best_after.min(to.distance(t.pos));
+            if to == t.pos {
+                score += 30;
+            } else if to.distance(t.pos) == 1 && to.distance(plaza) <= t.pos.distance(plaza) {
+                score += 8;
+            }
+        }
+        if best_before < i32::MAX {
+            // Reward closing on the nearest first-player vehicle (enables hops).
+            score += (best_before - best_after) * 12;
+        }
+    }
+
+    score
 }
 
 fn coin_flip<R: Rng>(rng: &mut R) -> Side {
@@ -536,12 +704,9 @@ mod tests {
     fn center_corridor_blocks_opening_los() {
         let mut rng = ChaCha8Rng::seed_from_u64(1);
         let g = skirmish(&mut rng);
-        let red = g.tanks.iter().find(|t| t.side == Side::Red).unwrap();
-        let blue = g.tanks.iter().find(|t| t.side == Side::Blue).unwrap();
-        assert_eq!(red.pos, RED_START);
-        assert_eq!(blue.pos, BLUE_START);
+        // Stock starts (pre-nudge) have no LOS through the wall.
         assert!(
-            !g.board.has_los(red.pos, blue.pos, &[]),
+            !g.board.has_los(RED_START, BLUE_START, &[]),
             "opening street must not allow LOS through the wall"
         );
         for h in SKIRMISH_WALL {
@@ -552,6 +717,13 @@ mod tests {
                 !g.board.terrain_at(h).impassable(),
                 "alley {h} must stay passable"
             );
+        }
+        // Second-player spoil may move the first-player tank off RED_START /
+        // BLUE_START; both must still be on-board and unstacked.
+        let mut seen = std::collections::HashSet::new();
+        for t in &g.tanks {
+            assert!(g.board.contains(t.pos));
+            assert!(seen.insert(t.pos));
         }
     }
 
@@ -760,17 +932,97 @@ mod tests {
     }
 
     #[test]
-    fn combined_scatter_is_east_west_mirrored() {
-        let mut rng = ChaCha8Rng::seed_from_u64(9);
-        let g = combined(&mut rng);
+    fn combined_second_player_may_shift_scatter_terrain() {
+        let mut any_shift = false;
+        let mut g = None;
+        for seed in 0..30u64 {
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            let game = combined(&mut rng);
+            let shifts = game
+                .events
+                .iter()
+                .any(|e| e.text.contains("Second player shifts"));
+            if shifts {
+                any_shift = true;
+                g = Some(game);
+                break;
+            }
+        }
+        assert!(any_shift, "expected some seed to shift scatter terrain");
+        let g = g.unwrap();
+        // Buildings (static) must still be mirrored.
         let width = g.board.max_q + 1;
-        let mid = (width - 1) / 2;
-        for q in g.board.min_q..=mid {
+        for q in g.board.min_q..=g.board.max_q {
             for r in g.board.min_r..=g.board.max_r {
                 let h = Hex::new(q, r);
+                if g.board.terrain_at(h) == Terrain::Building {
+                    assert_eq!(
+                        g.board.terrain_at(mirror_ew(h, width)),
+                        Terrain::Building,
+                        "building at {h} lost its mirror"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn combined_scatter_generated_east_west_mirrored() {
+        // Scatter is mirrored at generation; second-player terrain spoil may
+        // break that afterward — so check the board *before* setup.
+        let width = 17;
+        let height = 13;
+        let mut rng = ChaCha8Rng::seed_from_u64(9);
+        let red_tanks = [Hex::new(1, 3), Hex::new(1, 5)];
+        let red_apcs = [Hex::new(1, 7), Hex::new(1, 9)];
+        let red_inf = [Hex::new(0, 4), Hex::new(0, 8)];
+        let blue_tanks = [
+            mirror_ew(red_tanks[0], width),
+            mirror_ew(red_tanks[1], width),
+        ];
+        let blue_apcs = [mirror_ew(red_apcs[0], width), mirror_ew(red_apcs[1], width)];
+        let blue_inf = [mirror_ew(red_inf[0], width), mirror_ew(red_inf[1], width)];
+        let reserved: Vec<Hex> = red_tanks
+            .iter()
+            .chain(red_apcs.iter())
+            .chain(red_inf.iter())
+            .chain(blue_tanks.iter())
+            .chain(blue_apcs.iter())
+            .chain(blue_inf.iter())
+            .copied()
+            .collect();
+        let egress = [
+            Hex::new(2, 3),
+            Hex::new(2, 5),
+            Hex::new(2, 7),
+            Hex::new(2, 9),
+            mirror_ew(Hex::new(2, 3), width),
+            mirror_ew(Hex::new(2, 5), width),
+            mirror_ew(Hex::new(2, 7), width),
+            mirror_ew(Hex::new(2, 9), width),
+        ];
+        let wall = combined_wall(width, height);
+        let alley = combined_alley_clear();
+        let goals = [Hex::new(8, 5), Hex::new(8, 7)];
+        let layout = MapLayout {
+            width,
+            height,
+            wall: &wall,
+            alley_clear: &alley,
+            path_goals: &goals,
+            forest: (10, 16),
+            mud: (4, 7),
+            rubble: (3, 6),
+            mirror_scatter: true,
+        };
+        let board = build_board(&layout, &mut rng, &reserved, &egress);
+        let mid = (width - 1) / 2;
+        for q in 0..=mid {
+            for r in 0..height {
+                let h = Hex::new(q, r);
                 let m = mirror_ew(h, width);
-                let th = g.board.terrain_at(h);
-                let tm = g.board.terrain_at(m);
+                let th = board.terrain_at(h);
+                let tm = board.terrain_at(m);
                 if matches!(th, Terrain::Forest | Terrain::Mud | Terrain::Rubble)
                     || matches!(tm, Terrain::Forest | Terrain::Mud | Terrain::Rubble)
                 {

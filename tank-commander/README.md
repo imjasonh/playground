@@ -15,8 +15,10 @@ Platoon and combined seal the midline except a **wide plaza gap** so forces
 cannot pair off down parallel lanes. Combined adds forest approaches for
 infantry cover, reliable next-activation air strikes (with scatter), and APC
 vehicle spray. Combined starts, side baffles, and random terrain are
-east–west mirrors. After initiative, the second player may nudge each
-opposing unit by up to 1 hex before the first activation.
+east–west mirrors. After initiative, the second player may shift a few
+scatter terrain tiles (forest / mud / rubble — not buildings) by 1 hex each,
+and on platoon/combined may also nudge each opposing unit by up to 1 hex,
+before the first activation.
 
 House rules and scenario setups live in [`RULES_CHANGES.md`](RULES_CHANGES.md).
 That file tags each change as **Rule** (humans must follow), **Scenario**
