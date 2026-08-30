@@ -1290,6 +1290,14 @@ fn phone_loadtest_html() {
         script.contains("shardBudget") && script.contains("minPostBudget"),
         "ramp must floor per-POST budgets so $0.01 does not send budget_usd=0"
     );
+    assert!(
+        script.contains("stages: []") || script.contains("stages:[]"),
+        "seed must be empty-stages (ensure_seeded only)"
+    );
+    assert!(
+        script.contains("stepKey"),
+        "ramp must namespace shard_index so steps do not recreate load/w0"
+    );
 
     let (status, body) = server.get("/loadtest?run=1&budget=0.05&duration=2&peak=2&shards=2");
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));

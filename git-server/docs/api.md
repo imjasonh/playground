@@ -240,8 +240,11 @@ Phone-friendly HTML load test. Open this URL in a browser:
   auto-ramp instead).
 
 The landing **Run** button **auto-ramps** writers `1 → 2 → 4 → 8 → 16`
-(one writer = one isolate; shards always equal writers). After each step it
-shows pushes/s live and **stops when the gain is under 10%**, then measures
+(one writer = one isolate; shards always equal writers). Seed is
+`ensure_seeded` only (empty stages — no `load/w0` writer). Each ramp step
+uses a unique `shard_index` namespace so later steps do not recreate earlier
+branches. After each step it shows pushes/s live and **stops when the gain
+is under 10%** (or when a step gets zero successful pushes), then measures
 readers at that concurrency. The browser POSTs one shard at a time (up to 4
 in parallel), then `POST /loadtest/merge` for the HTML report. Worker
 self-fetch fan-out is not used (Cloudflare blocks same-zone Worker→Worker).

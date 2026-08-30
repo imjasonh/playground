@@ -155,8 +155,11 @@ impl LoadTestRequest {
             .unwrap_or(DEFAULT_DURATION_SECS)
             .clamp(1, MAX_DURATION_SECS);
         let stages = match self.stages {
-            Some(s) if !s.is_empty() => s,
-            _ => {
+            // Explicit empty list = seed-only (ensure_seeded, no writer/reader
+            // loops). The phone UI uses this so seed does not create
+            // `refs/heads/load/w0` and steal branch id 0 from the ramp.
+            Some(s) => s,
+            None => {
                 let mut s: Vec<StageSpec> = DEFAULT_WRITER_RAMP
                     .iter()
                     .map(|&w| StageSpec {
@@ -839,7 +842,6 @@ impl BodyStream for ChunkedBody {
 pub struct InProcessDriver {
     http: GitHttp,
     repo: String,
-    nonce_counter: Cell<u64>,
 }
 
 impl InProcessDriver {
@@ -847,13 +849,15 @@ impl InProcessDriver {
         Self {
             http,
             repo: repo.into(),
-            nonce_counter: Cell::new(1),
         }
     }
 
     fn nonce(&self) -> String {
-        let n = self.nonce_counter.get();
-        self.nonce_counter.set(n + 1);
+        // Process-wide counter. A per-driver counter reset to 1 on every
+        // `run_in_process`, so ramp step 2 overwrote `p-lt-1` and deleted the
+        // seed tip — every later push then failed with "object … not found".
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         format!("lt-{n}")
     }
 
@@ -1722,7 +1726,9 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     }});
     return wall > 0 ? ok / (wall / 1000) : 0;
   }}
-  function runShardedStage(repo, tip, n, writers, readers, stageBudget, stepLabel) {{
+  /** `stepKey` namespaces branch ids so ramp step 2 does not recreate step 1's
+   *  load/w0 (shard_index 0). Branches are load/w{{shard_index * 10000 + …}}. */
+  function runShardedStage(repo, tip, n, writers, readers, stageBudget, stepLabel, stepKey) {{
     var jobs = [];
     for (var i = 0; i < n; i++) {{
       var w = writers > 0 ? maxWIso : 0;
@@ -1738,7 +1744,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         stages: [job.slice],
         shard: true,
         tip: tip,
-        shard_index: job.idx,
+        shard_index: stepKey * 1000 + job.idx,
         shards: 1
       }});
     }});
@@ -1774,7 +1780,9 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       confirm: true,
       budget_usd: seedBudget,
       duration_secs: 1,
-      stages: [{{ writers: 1, readers: 0 }}],
+      // Empty stages: ensure_seeded only (main tip). A writer here used to
+      // create load/w0 and make every later shard_index=0 POST fail.
+      stages: [],
       shards: 1
     }}).then(function (seed) {{
       var tip = seed.tip;
@@ -1788,7 +1796,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         }}
         var n = rampLevels[idx];
         phase = n + " writers";
-        return runShardedStage(repo, tip, n, 1, 0, shardBudget(n), n + "w").then(function (reps) {{
+        // stepKey starts at 1 so branch ids never collide with a legacy seed writer.
+        return runShardedStage(repo, tip, n, 1, 0, shardBudget(n), n + "w", idx + 1).then(function (reps) {{
           var pps = aggregateRate(reps, "push");
           var line = "  " + n + "w: " + pps.toFixed(1) + " pushes/s";
           var parts = [];
@@ -1799,6 +1808,12 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
             bestPps = pps;
             bestN = n;
             bestWriteParts = parts;
+          }}
+          if (pps <= 0) {{
+            line += "  ← stop (no successful pushes)";
+            live.push(line);
+            setLive(live);
+            return {{ n: bestN, parts: bestWriteParts }};
           }}
           if (prevPps > 0 && pps < prevPps * (1 + minImprove)) {{
             line += "  ← stop (<" + Math.round(minImprove * 100) + "% gain)";
@@ -1817,7 +1832,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
         phase = best.n + " readers";
         live.push("Readers @ " + best.n + "…");
         setLive(live);
-        return runShardedStage(repo, tip, best.n, 0, 1, shardBudget(best.n), best.n + "r")
+        return runShardedStage(repo, tip, best.n, 0, 1, shardBudget(best.n), best.n + "r", 100)
           .then(function (reps) {{
             var rps = aggregateRate(reps, "pull");
             live[live.length - 1] = "Readers @ " + best.n + ": " + rps.toFixed(1) + " pulls/s";
