@@ -253,11 +253,12 @@ shards).
 
 Each shard POST runs nested push/pull loops **inside one Worker
 invocation**. That isolate has a shared subrequest budget and 128 MiB heap —
-concurrent writers still threw Cloudflare Error 1101. The UI keeps **≤1
-writer / ≤2 readers per isolate** (auto-raising `shards` when needed) and
-runs **one stage per POST** so the Worker subrequest budget resets between
-warm-up, peak, and read stages. Heavier single-isolate ramps belong on
-distributed clients, not nested in-Worker loops.
+concurrent writers and inline auto-repack under multi-shard backlog both
+threw Cloudflare Error 1101. The UI keeps **≤1 writer / ≤2 readers per
+isolate** (auto-raising `shards` when needed), runs **one stage per POST**,
+**skips inline auto-repack on shard POSTs**, and caps attempts per loop.
+Heavier single-isolate ramps belong on distributed clients, not nested
+in-Worker loops.
 
 **Auth:** production requires the Worker secret `LOADTEST_TOKEN`. Pass it as
 `?token=…`, or as the `X-Loadtest-Token` header. Without a matching token the

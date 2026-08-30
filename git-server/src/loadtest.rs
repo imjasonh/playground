@@ -511,13 +511,33 @@ pub async fn run_loadtest(
         let spent_before = budget.spent();
 
         let mut writer_futs = Vec::new();
+        // Phone shard POSTs: skip inline auto-repack. Production uses
+        // `wait_until` after a real receive-pack; here a full `repack` after
+        // every push runs in the same invocation as the nested loops and —
+        // under multi-isolate fan-out on one repo — consolidates a large
+        // backlog mid-stage (Cloudflare Error 1101). Native / non-shard
+        // runs keep per-push maybe_repack to exercise maintenance.
+        let auto_repack = !cfg.shard;
+        let max_ops = if cfg.shard {
+            Some(PHONE_MAX_OPS_PER_LOOP)
+        } else {
+            None
+        };
         for w in 0..spec.writers {
             let branch_id = cfg.shard_index * 10_000 + stage_i as u32 * 100 + w;
-            writer_futs.push(writer_loop(driver, tip, branch_id, deadline, &budget));
+            writer_futs.push(writer_loop(
+                driver,
+                tip,
+                branch_id,
+                deadline,
+                &budget,
+                auto_repack,
+                max_ops,
+            ));
         }
         let mut reader_futs = Vec::new();
         for _ in 0..spec.readers {
-            reader_futs.push(reader_loop(driver, tip, deadline, &budget));
+            reader_futs.push(reader_loop(driver, tip, deadline, &budget, max_ops));
         }
 
         let writer_results = join_all(writer_futs).await;
@@ -608,12 +628,17 @@ async fn writer_loop(
     branch_id: u32,
     deadline: f64,
     budget: &Budget,
+    auto_repack: bool,
+    max_ops: Option<u32>,
 ) -> Vec<AttemptResult> {
     let mut out = Vec::new();
     let branch = format!("refs/heads/load/w{branch_id}");
     let mut tip = Oid::ZERO;
     let mut seq = 0u64;
     while metrics::now_ms() < deadline {
+        if max_ops.is_some_and(|m| seq >= m as u64) {
+            break;
+        }
         if !budget.allow_start() {
             break;
         }
@@ -626,8 +651,11 @@ async fn writer_loop(
                 if a.outcome == AttemptOutcome::Ok {
                     tip = new_oid;
                     a.new_tip = Some(new_oid);
-                    // Outside the timed push — matches Worker wait_until.
-                    let _ = driver.maybe_repack().await;
+                    // Outside the timed push — mirrors Worker `wait_until`
+                    // for non-shard runs only (see call site).
+                    if auto_repack {
+                        let _ = driver.maybe_repack().await;
+                    }
                 }
                 // Conflicts still spent server work; count their cost too
                 // (already in metrics when the server processed them).
@@ -653,9 +681,14 @@ async fn reader_loop(
     tip: Oid,
     deadline: f64,
     budget: &Budget,
+    max_ops: Option<u32>,
 ) -> Vec<AttemptResult> {
     let mut out = Vec::new();
+    let mut n = 0u32;
     while metrics::now_ms() < deadline {
+        if max_ops.is_some_and(|m| n >= m) {
+            break;
+        }
         if !budget.allow_start() {
             break;
         }
@@ -673,6 +706,7 @@ async fn reader_loop(
                 });
             }
         }
+        n += 1;
     }
     out
 }
@@ -1244,6 +1278,9 @@ pub const PHONE_MAX_PEAK: u32 = 48;
 /// Isolates to fan writers/readers across (same repo). `1` = this isolate only.
 pub const PHONE_DEFAULT_SHARDS: u32 = 4;
 pub const PHONE_MAX_SHARDS: u32 = MAX_SHARDS;
+/// Hard cap on push/pull attempts per writer/reader loop on a phone shard
+/// POST. Bounds nested subrequests even when duration would allow more.
+pub const PHONE_MAX_OPS_PER_LOOP: u32 = 20;
 /// Max concurrent writer loops in **one** Worker invocation.
 ///
 /// Nested in-process pushes share one isolate's 128 MiB heap (each open
@@ -1551,8 +1588,11 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       out = "CF " + codes.join("/") + ": " + out;
     }}
     if (codes.indexOf("1101") >= 0) {{
-      out += " — isolate likely blew the nested-subrequest/memory budget; keep ≤" +
-        maxWIso + " writers per shard (raise shards).";
+      out += " — Worker threw (often too many nested subrequests, or a panic)." +
+        " Phone shards skip inline auto-repack and cap ops/loop; hard-refresh if you still see this.";
+    }}
+    if (codes.indexOf("1102") >= 0) {{
+      out += " — Worker exceeded CPU or memory (128 MiB). Raise shards or shorten duration.";
     }}
     return out;
   }}

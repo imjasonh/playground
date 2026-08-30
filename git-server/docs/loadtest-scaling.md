@@ -571,9 +571,11 @@ invocation's subrequest and memory (128 MiB) budgets. Phone UI keeps
 ≤1 writer and ≤2 readers per isolate and auto-raises `shards` for both
 caps (phone readers are `2×peak`). Each stage is its own browser POST so
 the isolate's subrequest budget resets between warm-up, peak, and readers.
-`wrangler.toml` raises the paid-plan subrequest ceiling to 100_000 for
-these nested loops. On wasm the runner also clamps stage concurrency to
-those caps as a backstop.
+Shard POSTs also **skip inline auto-repack** (a full fold after every push
+in the same invocation was Error 1101 under multi-shard backlog) and cap
+attempts per loop (`PHONE_MAX_OPS_PER_LOOP`). `wrangler.toml` raises the
+paid-plan subrequest ceiling to 100_000. On wasm the runner also clamps
+stage concurrency to those caps as a backstop.
 
 **Why not Worker self-fetch / `SELF`?** Same-zone public `Fetch` without
 `global_fetch_strictly_public` is Cloudflare error 1042. A `SELF` service
