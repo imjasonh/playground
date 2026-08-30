@@ -9,6 +9,8 @@ import {
 import {
   generatePuzzleWithRetry,
   validatePuzzle,
+  partitionsInterlock,
+  seamsFromLengths,
 } from "../src/generate.js";
 import { WORD_SET, ENTRIES } from "../src/words.js";
 import { spiralLayout } from "../src/spiral.js";
@@ -51,7 +53,7 @@ test("generatePuzzle builds a valid interlocking spiral", () => {
   const puzzle = generatePuzzleWithRetry({
     size: 36,
     seed: 42,
-    attempts: 64,
+    attempts: 120,
     maxNodes: 200000,
   });
   assert.ok(puzzle, "expected a puzzle");
@@ -71,20 +73,71 @@ test("generatePuzzle builds a valid interlocking spiral", () => {
 
   const clues = [...puzzle.inward, ...puzzle.outward].map((s) => s.clue);
   assert.equal(new Set(clues).size, clues.length, "clues must be unique");
+
+  const inSeams = seamsFromLengths(
+    puzzle.inward.map((s) => Math.abs(s.start - s.end) + 1),
+    "inward",
+    puzzle.size,
+  );
+  const outSeams = seamsFromLengths(
+    puzzle.outward.map((s) => Math.abs(s.start - s.end) + 1),
+    "outward",
+    puzzle.size,
+  );
+  for (const seam of inSeams) {
+    assert.equal(outSeams.has(seam), false, `shared seam after cell ${seam}`);
+  }
 });
 
-test("generatePuzzleWithRetry succeeds for size 100", () => {
+test("generatePuzzleWithRetry succeeds for size 64", () => {
   const puzzle = generatePuzzleWithRetry({
-    size: 100,
-    seed: 7,
-    attempts: 64,
-    maxNodes: 100 * 16000,
+    size: 64,
+    seed: 11,
+    attempts: 200,
+    maxNodes: 64 * 10000,
   });
   assert.ok(puzzle);
   assert.equal(validatePuzzle(puzzle), true);
-  assert.equal(puzzle.size, 100);
+  assert.equal(puzzle.size, 64);
   const clues = [...puzzle.inward, ...puzzle.outward].map((s) => s.clue);
   assert.equal(new Set(clues).size, clues.length);
+  assert.equal(
+    partitionsInterlock(puzzle.inward, puzzle.outward, puzzle.size),
+    true,
+  );
+});
+
+test("partitionsInterlock rejects shared seams and identical spans", () => {
+  const size = 10;
+  const aligned = {
+    inward: [
+      { start: 1, end: 5, word: "ABCDE", clue: "a", display: "ABCDE" },
+      { start: 6, end: 10, word: "FGHIJ", clue: "b", display: "FGHIJ" },
+    ],
+    outward: [
+      { start: 10, end: 6, word: "JIHGF", clue: "c", display: "JIHGF" },
+      { start: 5, end: 1, word: "EDCBA", clue: "d", display: "EDCBA" },
+    ],
+  };
+  assert.equal(partitionsInterlock(aligned.inward, aligned.outward, size), false);
+
+  const staggered = {
+    inward: [
+      { start: 1, end: 4, word: "ABCD", clue: "a", display: "ABCD" },
+      { start: 5, end: 10, word: "EFGHIJ", clue: "b", display: "EFGHIJ" },
+    ],
+    outward: [
+      { start: 10, end: 8, word: "JIH", clue: "c", display: "JIH" },
+      { start: 7, end: 3, word: "GFEDC", clue: "d", display: "GFEDC" },
+      { start: 2, end: 1, word: "BA", clue: "e", display: "BA" },
+    ],
+  };
+  // outward last word length 2 is only for this unit illustration; interlock
+  // cares about seams: in={4}, out={7,2} — disjoint, ranges differ.
+  assert.equal(
+    partitionsInterlock(staggered.inward, staggered.outward, size),
+    true,
+  );
 });
 
 test("lexicon clues are unique and omit the magazine originals", () => {

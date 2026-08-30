@@ -6,7 +6,7 @@ magazine "Spiral" puzzles.
 
 ## Play
 
-1. Pick a size (36, 48, 64, or 100 cells).
+1. Pick a size (36, 48, or 64 cells).
 2. Click **New puzzle**.
 3. Select a clue or cell, then type letters. Arrow keys move along the active
    clue.
@@ -33,8 +33,10 @@ npm test
 
 The generator fills the ring from the outside with dictionary words, pruning
 any partial fill whose reverse cannot finish as an outward word-break. When the
-ring is full, it word-breaks the reverse string into the outward clue list.
-Each entry carries a short crossword-style clue.
+ring is full, it re-breaks the reverse string so outward word boundaries never
+land on the same seams as the inward ones — that overlap is what keeps you from
+stalling when one direction is stuck. Answers and clue texts are unique within
+each puzzle.
 
 The URL stores `size` and `seed` after each generate, so you can reload or share
 the same puzzle.

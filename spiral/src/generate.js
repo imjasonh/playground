@@ -86,26 +86,141 @@ function cluesAreUnique(spans) {
 }
 
 /**
+ * Seams are cuts after cell N (between N and N+1), 1-based.
+ * @param {number[]} lengths
+ * @param {"inward" | "outward"} dir
+ * @param {number} size
+ */
+export function seamsFromLengths(lengths, dir, size) {
+  /** @type {Set<number>} */
+  const seams = new Set();
+  if (dir === "inward") {
+    let cum = 0;
+    for (let i = 0; i < lengths.length - 1; i += 1) {
+      cum += lengths[i];
+      seams.add(cum);
+    }
+  } else {
+    let cum = 0;
+    for (let i = 0; i < lengths.length - 1; i += 1) {
+      cum += lengths[i];
+      seams.add(size - cum);
+    }
+  }
+  return seams;
+}
+
+function spanKey(span) {
+  const lo = Math.min(span.start, span.end);
+  const hi = Math.max(span.start, span.end);
+  return `${lo}-${hi}`;
+}
+
+/**
+ * Inward/outward must interlock: no shared seams, no identical cell ranges.
+ * Shared seams are what stall solvers — a break in one direction must never
+ * land on a break in the other.
+ * @param {ClueSpan[]} inward
+ * @param {ClueSpan[]} outward
+ * @param {number} size
+ */
+export function partitionsInterlock(inward, outward, size) {
+  if (inward.length < 2 || outward.length < 2) return false;
+
+  const inSeams = seamsFromLengths(
+    inward.map((s) => Math.abs(s.start - s.end) + 1),
+    "inward",
+    size,
+  );
+  const outSeams = seamsFromLengths(
+    outward.map((s) => Math.abs(s.start - s.end) + 1),
+    "outward",
+    size,
+  );
+
+  for (const seam of inSeams) {
+    if (outSeams.has(seam)) return false;
+  }
+
+  const outKeys = new Set(outward.map(spanKey));
+  for (const span of inward) {
+    if (outKeys.has(spanKey(span))) return false;
+  }
+
+  return true;
+}
+
+/**
  * Preferred lengths: favor 4–7 like magazine spirals; avoid leaving 1–2 cells.
  * @param {number} remaining
  * @param {() => number} rng
+ * @param {number} _size
  */
-function candidateLengths(remaining, rng) {
+function candidateLengths(remaining, rng, _size) {
+  const order = [5, 6, 4, 7, 3, 8];
   if (remaining <= MAX_LEN && remaining >= MIN_LEN) {
-    const preferred = [5, 6, 4, 7, 3, 8].filter((len) => len === remaining);
-    const others = [5, 6, 4, 7, 3, 8].filter(
-      (len) => len <= remaining && len !== remaining && remaining - len >= MIN_LEN,
+    const preferred = order.filter((len) => len === remaining);
+    const others = order.filter(
+      (len) => len < remaining && remaining - len >= MIN_LEN,
     );
     return preferred.concat(shuffle(others, rng));
   }
-  const lengths = [5, 6, 4, 7, 3, 8].filter(
+  const lengths = order.filter(
     (len) => len <= remaining && remaining - len >= MIN_LEN,
   );
   return shuffle(lengths, rng);
 }
 
 /**
+ * Re-segment the reverse path so outward seams avoid every inward seam.
+ * If a break reuses an inward answer, forbid those answers and try again.
+ * @param {string[]} inwardWords
+ * @param {Set<string>} usedWords
+ * @param {number} size
+ * @param {string} letters
+ */
+function findInterlockedOutward(inwardWords, usedWords, size, letters) {
+  const inwardSeams = seamsFromLengths(
+    inwardWords.map((w) => w.length),
+    "inward",
+    size,
+  );
+  const rev = reverseString(letters);
+  /** @type {Set<string>} */
+  const forbidden = new Set();
+
+  for (let round = 0; round < 16; round += 1) {
+    const staggered = wordBreak(rev, WORD_SET, MIN_LEN, MAX_LEN, {
+      forbiddenSeams: inwardSeams,
+      forbiddenWords: forbidden.size > 0 ? forbidden : null,
+    });
+    if (!staggered) return null;
+
+    let clean = true;
+    const seen = new Set();
+    for (const word of staggered) {
+      if (usedWords.has(word) || seen.has(word)) {
+        forbidden.add(word);
+        clean = false;
+      }
+      seen.add(word);
+    }
+    if (!clean) continue;
+
+    const inward = spansFromWords(inwardWords, true);
+    const outward = spansFromWords(staggered, false);
+    if (!partitionsInterlock(inward, outward, size)) return null;
+    return staggered;
+  }
+  return null;
+}
+
+/**
  * Generate a spiral puzzle of the given size.
+ *
+ * Search finds a valid letter string quickly. Interlocking is enforced afterward
+ * by re-breaking the reverse path so outward seams never land on inward seams.
+ * Seeds that cannot stagger return null for `generatePuzzleWithRetry`.
  *
  * @param {{ size?: number, seed?: number, maxNodes?: number }} [options]
  * @returns {Puzzle | null}
@@ -129,17 +244,13 @@ export function generatePuzzle(options = {}) {
     if (nodes > maxNodes) return false;
 
     if (letters.length === size) {
-      const outwardWords = wordBreak(
-        reverseString(letters.join("")),
-        WORD_SET,
-        MIN_LEN,
-        MAX_LEN,
+      return Boolean(
+        wordBreak(reverseString(letters.join("")), WORD_SET, MIN_LEN, MAX_LEN),
       );
-      return Boolean(outwardWords);
     }
 
     const remaining = size - letters.length;
-    for (const len of candidateLengths(remaining, rng)) {
+    for (const len of candidateLengths(remaining, rng, size)) {
       const pool = shuffle(BY_LEN[len], rng);
       const limit = Math.min(pool.length, len <= 4 ? 40 : 60);
       for (let i = 0; i < limit; i += 1) {
@@ -162,27 +273,28 @@ export function generatePuzzle(options = {}) {
 
   if (!search()) return null;
 
-  const text = letters.join("");
-  // Prefer an outward break that shares no answers (hence no clues) with inward.
-  const outwardWords =
-    wordBreak(reverseString(text), WORD_SET, MIN_LEN, MAX_LEN, usedWords) ||
-    wordBreak(reverseString(text), WORD_SET, MIN_LEN, MAX_LEN);
+  const outwardWords = findInterlockedOutward(
+    inwardWords,
+    usedWords,
+    size,
+    letters.join(""),
+  );
   if (!outwardWords) return null;
 
   const puzzle = {
     size,
-    letters: text,
+    letters: letters.join(""),
     inward: spansFromWords(inwardWords, true),
     outward: spansFromWords(outwardWords, false),
     seed,
   };
   if (!cluesAreUnique([...puzzle.inward, ...puzzle.outward])) return null;
+  if (!partitionsInterlock(puzzle.inward, puzzle.outward, size)) return null;
   return puzzle;
 }
 
 /**
- * Validate that a puzzle's letters match both clue directions and that every
- * clue text appears at most once.
+ * Validate letters, unique clues, and interlocking partitions.
  * @param {Puzzle} puzzle
  */
 export function validatePuzzle(puzzle) {
@@ -190,6 +302,7 @@ export function validatePuzzle(puzzle) {
   if (letters.length !== size) return false;
   if (!/^[A-Z]+$/.test(letters)) return false;
   if (!cluesAreUnique([...inward, ...outward])) return false;
+  if (!partitionsInterlock(inward, outward, size)) return false;
 
   for (const span of inward) {
     const slice = letters.slice(span.start - 1, span.end);
@@ -212,13 +325,14 @@ export function validatePuzzle(puzzle) {
  * @param {{ size?: number, seed?: number, attempts?: number, maxNodes?: number }} [options]
  */
 export function generatePuzzleWithRetry(options = {}) {
-  const attempts = options.attempts ?? 24;
+  const size = options.size ?? 48;
+  const attempts = options.attempts ?? Math.max(120, size * 5);
   let seed = options.seed ?? (Math.floor(Math.random() * 0xffffffff) >>> 0);
   for (let i = 0; i < attempts; i += 1) {
     const puzzle = generatePuzzle({
-      size: options.size,
+      size,
       seed: (seed + i * 0x9e3779b9) >>> 0,
-      maxNodes: options.maxNodes,
+      maxNodes: options.maxNodes ?? size * 8000,
     });
     if (puzzle && validatePuzzle(puzzle)) return puzzle;
   }
