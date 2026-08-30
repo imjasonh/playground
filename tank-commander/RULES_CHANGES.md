@@ -197,6 +197,38 @@ still initiative / placement fairness (suggestion 4), not more Sim tweaks.
 
 ---
 
+## 2026-08-30 — Second-player opposing-force nudge (combined)
+
+**Type: Scenario** (combined only)
+
+After initiative is rolled, the **second player** may move **each** opposing
+unit up to **1 hex** (empty, passable, on-board; facing unchanged) before the
+first activation.
+
+**Intent note.** The earlier sketch was “second places a terrain baffle / nudges
+*their own* start.” This experiment is the user’s sharper variant: second moves
+*some of the opposing force*. The sim’s placement AI picks, per unit, the legal
+hex that most spoils the opener (farther from second-player units, farther from
+the plaza, strip infantry out of forest when possible). Humans would choose
+freely within the 1-hex cap.
+
+**Effect (80 combined, seed 7, vs prior combined):**
+
+| Metric | Before | After nudge |
+|--------|--------|-------------|
+| Decisive | 96% | 94% |
+| First-player share | 29% | **43%** |
+| Idle stalemate | 19% | **14%** |
+| Air strikes / game | ~2.0 | ~2.0 |
+
+Surprising but useful: giving the second player a spoiling nudge *improved*
+initiative balance. Likely because it delays the first-player rush into the
+plaza kill zone that the responder was punishing. Color balance is still off
+(Blue wins more games than Red regardless of who goes first) — map start
+asymmetry is the next thing to look at.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.
