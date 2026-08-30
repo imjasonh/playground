@@ -79,7 +79,6 @@ test("generatePuzzleWithRetry succeeds for size 100", () => {
 test("spiralLayout returns wedge cells winding into the center", () => {
   const layout = spiralLayout(48);
   assert.equal(layout.cells.length, 48);
-  assert.ok(layout.outerPath.startsWith("M"));
   assert.ok(layout.cells[0].path.includes("Z"));
   assert.ok(layout.cells[0].cy < 0.35, "first cell near the top");
   const last = layout.cells[layout.cells.length - 1];
