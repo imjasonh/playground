@@ -273,8 +273,23 @@ scenarios behind `--scenario`:
 | Scenario | Force | Cap |
 |----------|-------|----:|
 | `skirmish` | 1v1 tanks on 11×9 | 20 |
-| `combined` | tank (air support) + APC + infantry / side on 15×11 | 48 |
-| `platoon` | 3v3 tanks on 17×13 | 48 |
+| `combined` | tank (air support) + APC + infantry / side on 15×11 | 160 + idle-32 |
+| `platoon` | 3v3 tanks on 19×15 plaza funnel | 200 + idle-40 |
+
+---
+
+## 2026-08-30 — Platoon funnel map + resolution clock
+
+**Change.** Platoon board is 19×15 with a sealed midline (only a wide plaza
+gap at the center) and west/east baffles so N/S lanes cannot host separate
+1v1s. Hard activation cap raised to 200; after first contact, 40 activations
+with no hit end as idle stalemate. Fixed AI bug: geometric LOS through the
+plaza no longer counts as in-range across the whole board.
+
+**Effect (60 games, seed 7):** Red 27 / Blue 33 / Draw 0. **0% hard timeout,
+0% idle stalemate** — every game wiped. Avg activations 49, pens 16.6, moves
+45. All sampled games engaged 3+ named tanks (no more spectator Charlie).
+
 
 Each activation the AI picks one operational unit and may fire at a named
 target. Timeout ranks **operational units first**, then remaining hull (so a

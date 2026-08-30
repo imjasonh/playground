@@ -34,6 +34,8 @@ pub struct GameReport {
     pub blue_units_left: u32,
     /// True when the game hit the activation cap with both sides still fighting.
     pub timed_out: bool,
+    /// True when idle stalemate (no damage for `stalemate_after`) ended the game.
+    pub ended_by_stalemate: bool,
     /// True when few shots were exchanged relative to activations.
     pub low_engagement: bool,
     /// True when many consecutive activations passed without a hit near the end.
@@ -57,6 +59,7 @@ impl GameReport {
             .iter()
             .any(|t| t.side == Side::Blue && t.is_operational());
         let hit_cap = game.activations >= game.max_activations;
+        let ended_by_stalemate = game.stalemate_idle();
 
         let low_engagement = game.shots_fired < game.activations / 4;
         let late_stalemate = game.activations_since_hit >= 6 && game.activations >= 12;
@@ -111,7 +114,8 @@ impl GameReport {
             infantry_kills: game.infantry_kills,
             red_units_left,
             blue_units_left,
-            timed_out: hit_cap && red_alive && blue_alive,
+            timed_out: hit_cap && red_alive && blue_alive && !ended_by_stalemate,
+            ended_by_stalemate,
             low_engagement,
             late_stalemate,
             comeback,
@@ -175,6 +179,7 @@ pub struct AggregateReport {
     pub first_player_wins: u32,
     pub second_player_wins: u32,
     pub timed_out: u32,
+    pub ended_by_stalemate: u32,
     pub low_engagement: u32,
     pub late_stalemate: u32,
     pub comebacks: u32,
@@ -252,6 +257,7 @@ impl AggregateReport {
             first_player_wins,
             second_player_wins,
             timed_out: sum(|r| u32::from(r.timed_out)),
+            ended_by_stalemate: sum(|r| u32::from(r.ended_by_stalemate)),
             low_engagement: sum(|r| u32::from(r.low_engagement)),
             late_stalemate: sum(|r| u32::from(r.late_stalemate)),
             comebacks: sum(|r| u32::from(r.comeback)),
@@ -419,10 +425,12 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
         agg.first_player_wins, agg.second_player_wins
     ));
     out.push_str(&format!(
-        "Avg activations: {:.1}  timed-out: {} ({:.0}%)\n",
+        "Avg activations: {:.1}  timed-out: {} ({:.0}%)  idle-stalemate: {} ({:.0}%)\n",
         agg.avg_activations,
         agg.timed_out,
-        100.0 * f64::from(agg.timed_out) / f64::from(agg.games.max(1))
+        100.0 * f64::from(agg.timed_out) / f64::from(agg.games.max(1)),
+        agg.ended_by_stalemate,
+        100.0 * f64::from(agg.ended_by_stalemate) / f64::from(agg.games.max(1))
     ));
     out.push_str(&format!(
         "Engagement: avg shots {:.1} (AT {:.1} / HE {:.1}), hit rate {:.0}%, low-engagement games {} ({:.0}%)\n",

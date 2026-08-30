@@ -69,8 +69,14 @@ cross simple thresholds.
   beam-search shoot / load / ability plans. Infantry prefer missiles and
   cover; APCs hunt infantry; tanks with air support may call a strike.
 - **Map.** Skirmish stays on an 11×9 board with a compact midline block.
-  Combined uses 15×11 and platoon 17×13: taller midline walls, small wing
-  ruins, and more random forest/mud/rubble outside the alleys.
+  Combined uses 15×11. Platoon uses 19×15 with a sealed midline and a wide
+  plaza gap (plus side baffles) so tanks funnel into one fight instead of
+  pairing down parallel lanes. Forest/mud/rubble scatter outside reserved
+  hexes.
+- **Platoon clock.** Hard cap 200 activations as a safety valve. After
+  first contact, 40 activations with no hit ends the game as an idle
+  stalemate (scored like a timeout). In practice platoon games wipe before
+  either trips.
 
 Rules source of truth remains the upstream README, plus the house rules in
 `RULES_CHANGES.md`. Where the text is ambiguous, the sim picks a documented

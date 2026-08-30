@@ -48,6 +48,10 @@ pub struct Game {
     pub pending_air_strikes: Vec<PendingAirStrike>,
     pub air_strikes_resolved: u32,
     pub infantry_kills: u32,
+    /// End the battle (score like a timeout) after this many activations with
+    /// no hull damage. `0` disables. Used so platoon games stop on idle
+    /// loops instead of a short hard cap.
+    pub stalemate_after: u32,
     /// Consecutive activations with no successful hit (drama/stalemate).
     pub activations_since_hit: u32,
     pub activations_since_damage: u32,
@@ -89,6 +93,7 @@ impl Game {
             pending_air_strikes: Vec::new(),
             air_strikes_resolved: 0,
             infantry_kills: 0,
+            stalemate_after: 0,
             activations_since_hit: 0,
             activations_since_damage: 0,
             total_hits: 0,
@@ -108,6 +113,11 @@ impl Game {
             turns_made: 0,
             turret_rotations: 0,
         }
+    }
+
+    pub fn with_stalemate(mut self, activations_without_damage: u32) -> Self {
+        self.stalemate_after = activations_without_damage;
+        self
     }
 
     pub fn tank(&self, id: u8) -> &Tank {
@@ -161,42 +171,54 @@ impl Game {
         if !red_fight && !blue_fight {
             return Outcome::Draw;
         }
-        if self.activations >= self.max_activations {
-            // Timeout: more operational units wins; then more remaining hull.
-            let red_ops = self
-                .tanks
-                .iter()
-                .filter(|t| t.side == Side::Red && t.is_operational())
-                .count();
-            let blue_ops = self
-                .tanks
-                .iter()
-                .filter(|t| t.side == Side::Blue && t.is_operational())
-                .count();
-            match red_ops.cmp(&blue_ops) {
-                std::cmp::Ordering::Greater => return Outcome::Winner(Side::Red),
-                std::cmp::Ordering::Less => return Outcome::Winner(Side::Blue),
-                std::cmp::Ordering::Equal => {}
-            }
-            let red_hp: i32 = self
-                .tanks
-                .iter()
-                .filter(|t| t.side == Side::Red && !t.destroyed)
-                .map(|t| t.hull_points)
-                .sum();
-            let blue_hp: i32 = self
-                .tanks
-                .iter()
-                .filter(|t| t.side == Side::Blue && !t.destroyed)
-                .map(|t| t.hull_points)
-                .sum();
-            return match red_hp.cmp(&blue_hp) {
-                std::cmp::Ordering::Greater => Outcome::Winner(Side::Red),
-                std::cmp::Ordering::Less => Outcome::Winner(Side::Blue),
-                std::cmp::Ordering::Equal => Outcome::Draw,
-            };
+        if self.stalemate_idle() || self.activations >= self.max_activations {
+            return self.score_attrition();
         }
         Outcome::InProgress
+    }
+
+    /// Both sides still fighting, but no successful hit for `stalemate_after`
+    /// activations after contact — circling / dry lanes. Glances and misses
+    /// still count as "alive" combat; only a long no-hit drought ends early.
+    pub fn stalemate_idle(&self) -> bool {
+        self.stalemate_after > 0
+            && self.total_hits > 0
+            && self.activations_since_hit >= self.stalemate_after
+    }
+
+    fn score_attrition(&self) -> Outcome {
+        let red_ops = self
+            .tanks
+            .iter()
+            .filter(|t| t.side == Side::Red && t.is_operational())
+            .count();
+        let blue_ops = self
+            .tanks
+            .iter()
+            .filter(|t| t.side == Side::Blue && t.is_operational())
+            .count();
+        match red_ops.cmp(&blue_ops) {
+            std::cmp::Ordering::Greater => return Outcome::Winner(Side::Red),
+            std::cmp::Ordering::Less => return Outcome::Winner(Side::Blue),
+            std::cmp::Ordering::Equal => {}
+        }
+        let red_hp: i32 = self
+            .tanks
+            .iter()
+            .filter(|t| t.side == Side::Red && !t.destroyed)
+            .map(|t| t.hull_points)
+            .sum();
+        let blue_hp: i32 = self
+            .tanks
+            .iter()
+            .filter(|t| t.side == Side::Blue && !t.destroyed)
+            .map(|t| t.hull_points)
+            .sum();
+        match red_hp.cmp(&blue_hp) {
+            std::cmp::Ordering::Greater => Outcome::Winner(Side::Red),
+            std::cmp::Ordering::Less => Outcome::Winner(Side::Blue),
+            std::cmp::Ordering::Equal => Outcome::Draw,
+        }
     }
 
     pub fn occupied_hexes(&self) -> Vec<Hex> {

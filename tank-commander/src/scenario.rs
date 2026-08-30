@@ -38,15 +38,15 @@ impl ScenarioKind {
 }
 
 /// Fixed terrain + scatter recipe for a scenario board.
-struct MapLayout {
+struct MapLayout<'a> {
     width: i32,
     height: i32,
     /// Impassable buildings that never move.
-    wall: &'static [Hex],
+    wall: &'a [Hex],
     /// Must stay open (alleys / approach lanes).
-    alley_clear: &'static [Hex],
+    alley_clear: &'a [Hex],
     /// Pathability probes: each start must reach at least one goal.
-    path_goals: &'static [Hex],
+    path_goals: &'a [Hex],
     forest: (u32, u32),
     mud: (u32, u32),
     rubble: (u32, u32),
@@ -87,57 +87,52 @@ const SKIRMISH_MAP: MapLayout = MapLayout {
     rubble: (1, 3),
 };
 
-/// Platoon: 17×13. Tall midline wall + two wing buildings; north/south alleys.
-const PLATOON_WALL: [Hex; 23] = [
-    // Midline spine (alleys reserved at q=8).
-    Hex::new(7, 3),
-    Hex::new(7, 4),
-    Hex::new(7, 5),
-    Hex::new(7, 6),
-    Hex::new(7, 7),
-    Hex::new(7, 8),
-    Hex::new(7, 9),
-    Hex::new(8, 4),
-    Hex::new(8, 5),
-    Hex::new(8, 6),
-    Hex::new(8, 7),
-    Hex::new(8, 8),
-    Hex::new(9, 3),
-    Hex::new(9, 4),
-    Hex::new(9, 5),
-    Hex::new(9, 6),
-    Hex::new(9, 7),
-    Hex::new(9, 8),
-    Hex::new(9, 9),
-    // West wing ruin.
-    Hex::new(3, 9),
-    Hex::new(3, 10),
-    // East wing ruin.
-    Hex::new(13, 2),
-    Hex::new(13, 3),
-];
-const PLATOON_ALLEY: [Hex; 8] = [
-    Hex::new(8, 0),
-    Hex::new(8, 1),
-    Hex::new(8, 2),
-    Hex::new(8, 3),
-    Hex::new(8, 9),
-    Hex::new(8, 10),
-    Hex::new(8, 11),
-    Hex::new(8, 12),
-];
-const PLATOON_GOALS: [Hex; 2] = [Hex::new(8, 1), Hex::new(8, 11)];
+/// Platoon: 19×15 sealed midline with a wide plaza gap (no N/S through-lanes).
+/// Built at runtime so the wall can span the full height.
+fn platoon_wall(height: i32) -> Vec<Hex> {
+    let mut wall = Vec::new();
+    // Three-column spine; wide plaza at r=5..=9 so a wreck in the throat
+    // cannot seal the only passage and freeze the game.
+    for q in 8..=10 {
+        for r in 0..height {
+            if (5..=9).contains(&r) {
+                continue;
+            }
+            wall.push(Hex::new(q, r));
+        }
+    }
+    // West baffles: break any west-side N↔S lane so the three reds can't
+    // stay in separate corridors.
+    wall.extend([
+        Hex::new(3, 1),
+        Hex::new(3, 2),
+        Hex::new(4, 2),
+        Hex::new(3, 12),
+        Hex::new(3, 13),
+        Hex::new(4, 12),
+    ]);
+    // East baffles: same idea for blue.
+    wall.extend([
+        Hex::new(15, 1),
+        Hex::new(15, 2),
+        Hex::new(14, 2),
+        Hex::new(15, 12),
+        Hex::new(15, 13),
+        Hex::new(14, 12),
+    ]);
+    wall
+}
 
-const PLATOON_MAP: MapLayout = MapLayout {
-    width: 17,
-    height: 13,
-    wall: &PLATOON_WALL,
-    alley_clear: &PLATOON_ALLEY,
-    path_goals: &PLATOON_GOALS,
-    forest: (12, 20),
-    mud: (4, 8),
-    rubble: (3, 7),
-};
+fn platoon_alley_clear() -> Vec<Hex> {
+    // Wide plaza + approaches on both sides.
+    let mut clear = Vec::new();
+    for q in 6..=12 {
+        for r in 5..=9 {
+            clear.push(Hex::new(q, r));
+        }
+    }
+    clear
+}
 
 /// Combined: 15×11 — between skirmish and platoon.
 const COMBINED_WALL: [Hex; 17] = [
@@ -199,24 +194,41 @@ pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
     Game::new(board, vec![red, blue], coin_flip(rng), 20, "skirmish")
 }
 
-/// 3v3 on a 17×13 board: tall midline wall, wing ruins, denser scatter.
+/// 3v3 on a 19×15 board. The midline is sealed except a two-hex plaza gap, so
+/// tanks cannot pair off down parallel N/S lanes — everyone funnels into the
+/// same fight. Hard cap is high; idle (no hull damage) ends the game earlier.
 pub fn platoon<R: Rng>(rng: &mut R) -> Game {
-    let red_starts = [Hex::new(1, 3), Hex::new(1, 6), Hex::new(1, 9)];
-    let blue_starts = [Hex::new(15, 4), Hex::new(15, 7), Hex::new(15, 10)];
+    let width = 19;
+    let height = 15;
+    let red_starts = [Hex::new(1, 4), Hex::new(1, 7), Hex::new(1, 10)];
+    let blue_starts = [Hex::new(17, 5), Hex::new(17, 8), Hex::new(17, 11)];
     let reserved: Vec<Hex> = red_starts
         .iter()
         .chain(blue_starts.iter())
         .copied()
         .collect();
     let egress = [
-        Hex::new(2, 3),
-        Hex::new(2, 6),
-        Hex::new(2, 9),
-        Hex::new(14, 4),
-        Hex::new(14, 7),
-        Hex::new(14, 10),
+        Hex::new(2, 4),
+        Hex::new(2, 7),
+        Hex::new(2, 10),
+        Hex::new(16, 5),
+        Hex::new(16, 8),
+        Hex::new(16, 11),
     ];
-    let board = build_board(&PLATOON_MAP, rng, &reserved, &egress);
+    let wall = platoon_wall(height);
+    let alley = platoon_alley_clear();
+    let goals = [Hex::new(9, 6), Hex::new(9, 8)];
+    let layout = MapLayout {
+        width,
+        height,
+        wall: &wall,
+        alley_clear: &alley,
+        path_goals: &goals,
+        forest: (14, 24),
+        mud: (5, 9),
+        rubble: (4, 8),
+    };
+    let board = build_board(&layout, rng, &reserved, &egress);
 
     let tanks = vec![
         Tank::stock(0, Side::Red, red_starts[0], Facing::E, "Red Alpha"),
@@ -226,7 +238,10 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
         Tank::stock(4, Side::Blue, blue_starts[1], Facing::W, "Blue Bravo"),
         Tank::stock(5, Side::Blue, blue_starts[2], Facing::W, "Blue Charlie"),
     ];
-    Game::new(board, tanks, coin_flip(rng), 48, "platoon")
+    // Safety valve 200. Real stop: 40 activations with no hit after contact
+    // (true circling / lost LOS), so duels can finish instead of timing out
+    // mid-fight.
+    Game::new(board, tanks, coin_flip(rng), 200, "platoon").with_stalemate(40)
 }
 
 /// Combined arms on a 15×11 board between skirmish and platoon scale.
@@ -259,7 +274,7 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
         Tank::stock_apc(4, Side::Blue, blue_apc, Facing::W, "Blue APC"),
         Tank::stock_infantry(5, Side::Blue, blue_inf, Facing::W, "Blue Squad"),
     ];
-    Game::new(board, tanks, coin_flip(rng), 48, "combined")
+    Game::new(board, tanks, coin_flip(rng), 160, "combined").with_stalemate(32)
 }
 
 fn coin_flip<R: Rng>(rng: &mut R) -> Side {
@@ -270,7 +285,12 @@ fn coin_flip<R: Rng>(rng: &mut R) -> Side {
     }
 }
 
-fn build_board<R: Rng>(layout: &MapLayout, rng: &mut R, starts: &[Hex], egress: &[Hex]) -> Board {
+fn build_board<R: Rng>(
+    layout: &MapLayout<'_>,
+    rng: &mut R,
+    starts: &[Hex],
+    egress: &[Hex],
+) -> Board {
     for _ in 0..10 {
         let board = scatter_terrain(layout, rng, starts, egress);
         if alleys_pathable(&board, starts, layout.path_goals) {
@@ -281,7 +301,7 @@ fn build_board<R: Rng>(layout: &MapLayout, rng: &mut R, starts: &[Hex], egress: 
 }
 
 fn scatter_terrain<R: Rng>(
-    layout: &MapLayout,
+    layout: &MapLayout<'_>,
     rng: &mut R,
     starts: &[Hex],
     egress: &[Hex],
@@ -416,17 +436,22 @@ mod tests {
         let g = platoon(&mut rng);
         assert_eq!(g.tanks.len(), 6);
         assert_eq!(g.scenario, "platoon");
-        assert_eq!(g.board.max_q, 16);
-        assert_eq!(g.board.max_r, 12);
+        assert_eq!(g.board.max_q, 18);
+        assert_eq!(g.board.max_r, 14);
+        assert_eq!(g.max_activations, 200);
+        assert_eq!(g.stalemate_after, 40);
         assert_eq!(g.tanks.iter().filter(|t| t.side == Side::Red).count(), 3);
         assert_eq!(g.tanks.iter().filter(|t| t.side == Side::Blue).count(), 3);
         assert!(g.tanks.iter().all(|t| t.kind == UnitKind::Tank));
-        for h in PLATOON_WALL {
-            assert_eq!(g.board.terrain_at(h), Terrain::Building);
-        }
-        for h in PLATOON_ALLEY {
-            assert!(!g.board.terrain_at(h).impassable());
-        }
+        // Spine sealed except plaza throat.
+        assert_eq!(g.board.terrain_at(Hex::new(9, 0)), Terrain::Building);
+        assert_eq!(g.board.terrain_at(Hex::new(9, 14)), Terrain::Building);
+        assert!(!g.board.terrain_at(Hex::new(9, 5)).impassable());
+        assert!(!g.board.terrain_at(Hex::new(9, 7)).impassable());
+        assert!(!g.board.terrain_at(Hex::new(9, 9)).impassable());
+        // No parallel N/S through-lane at q=9 outside the plaza.
+        assert!(g.board.terrain_at(Hex::new(9, 2)).impassable());
+        assert!(g.board.terrain_at(Hex::new(9, 12)).impassable());
     }
 
     #[test]

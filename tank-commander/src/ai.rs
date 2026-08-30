@@ -366,7 +366,10 @@ fn maneuver_plan<R: Rng>(
         return infantry_plan(game, tank_id, rng);
     }
 
-    if has_geometric_los(game, tank.pos, enemy.pos) && tank.kind == UnitKind::Tank {
+    if tank.kind == UnitKind::Tank
+        && tank.pos.distance(enemy.pos) <= tank.gun_range
+        && has_geometric_los(game, tank.pos, enemy.pos)
+    {
         return aim_and_shoot_plan(game, tank_id, enemy, rng);
     }
 
