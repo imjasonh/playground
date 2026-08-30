@@ -261,6 +261,34 @@ Color and initiative look healthy. Idle droughts ticked up — leave suggestion
 
 ---
 
+## 2026-08-30 — Combined force: 2 of everything
+
+**Type: Scenario** (combined only)
+
+Each side fields **2 tanks** (each with one air strike), **2 APCs**, and
+**2 infantry**. Starts remain east–west mirrors on the same 17×13 plaza.
+Sim clocks raised to hard **240** / idle **48** so six-unit sides have room
+to finish (Sim clocks; tabletop turn limits stay upstream unless adopted).
+
+**Effect (80 games, seed 7, vs prior 1-of-each combined):**
+
+| Metric | 1× force | **2× force** |
+|--------|----------|--------------|
+| Decisive | 98% | 96% |
+| First-player share | 53% | **57%** |
+| Red / Blue wins | 42 / 36 | 36 / 41 |
+| Idle stalemate | 24% | **12%** |
+| Hard timeout | 4% | **24%** |
+| Air strikes / game | ~2.0 | ~3.9 |
+| Infantry kills / game | ~0.9 | ~2.5 |
+
+Doubling the force cuts the “one squad in cover stalls forever” idle pattern
+roughly in half and makes combined feel busier (more air, more infantry
+kills, more maneuver). Color stays close. Tradeoff: more games hit the hard
+cap still fighting — wipe rates didn’t improve. First-player lean is mild.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.
