@@ -151,6 +151,7 @@ Typical tank actions:
 - **Deploy smoke** — if equipped.
 - **Extinguish fire** — clear *on fire*.
 - **Air strike** — if the tank has unused air support (advanced / Combined).
+- **Embark / drop off** — load or unload infantry (see [Embarkation](#embarkation)).
 
 End the activation when you stop spending actions (or have none left). Then
 resolve end-of-activation effects (suppression clearing, air-strike arrival
@@ -311,30 +312,40 @@ hit kills (or pins if in cover, above).
 
 ### Embarkation
 
-**House rules** (filling in upstream Mount Up / ride inside APC):
+**House rules** filling in upstream Mount Up (APC interior + tank exterior):
 
-1. **Capacity:** each APC carries **one** infantry squad.
-2. **Mount Up** (infantry, 1 action): board an **adjacent** friendly APC that
-   has a free seat. You may mount **or** dismount at most once per infantry
+#### Shared
+
+1. **Capacity:** each vehicle carries **one** infantry squad (interior or exterior).
+2. **Mount Up** (infantry, 1 action): board an **adjacent** friendly APC or tank
+   that has a free seat. Mount **or** dismount at most once per infantry
    activation.
-3. **Embark** (APC, 1 action): load one **adjacent** friendly infantry squad
-   into a free seat.
-4. **Dismount** (infantry, 1 action): leave the APC into an **adjacent** empty
-   passable hex (not a building). Counts as the once-per-activation
-   mount/dismount.
-5. **Drop off** (APC, **0** actions): unload the passenger into an adjacent
-   empty passable hex. Allowed **once per APC activation**, and only after the
-   APC has made **at least one Move** this activation.
-6. **While embarked:** the squad shares the APC’s hex (does not occupy a
-   separate hex). It **cannot be targeted**, cannot fire, and cannot step.
-   It may still activate to **Dismount**. Dig-in / cover clears on embark.
-7. **If the APC is disabled or destroyed** (including cook-off), embarked
-   infantry are **destroyed** with it.
-8. Exterior tank-top riding from upstream is **not** used in these scenarios.
+3. **Embark** (vehicle, 1 action): load one **adjacent** friendly infantry
+   squad into a free seat (APC or tank).
+4. **Dismount** (infantry, 1 action): leave into an **adjacent** empty passable
+   hex. Counts as the once-per-activation mount/dismount.
+5. **Drop off** (vehicle, **0** actions): unload into an adjacent empty
+   passable hex. Once per activation, only after at least one **Move**.
+6. **While riding:** the squad shares the vehicle’s hex (does not occupy a
+   separate hex). It **cannot be targeted**, cannot fire, and cannot step. It
+   may still activate to **Dismount**. Dig-in / cover clears on mount.
 
-**Why bother.** APC max move is **4** vs infantry **2**, and the box is safer
-than walking under guns — especially once you leave the friendly-tank
-adjacency screen. Drop off into forest near missile range, then shoot.
+#### APC interior
+
+7. Safer ride. Embarked infantry die if the APC is **disabled or destroyed**
+   (including cook-off) — not on a mere glance.
+
+#### Tank exterior (upstream)
+
+8. Ride on the **outside** of a friendly tank.
+9. **If the tank takes any hit** (glance, pen, AI spray, mine, air blast —
+   anything that counts as a hit), exterior riders are **destroyed**
+   immediately.
+10. Riders also die if the tank is disabled or destroyed.
+
+**Why bother.** APC move **4** and a hard box beat walking. Tank exterior is
+faster repositioning when no APC is free — but one glance wipes the squad, so
+dismount before you expect return fire.
 
 ---
 
@@ -499,6 +510,27 @@ Upstream:
 Simulator: only `max_move + 1` for that activation. No double-move-for-one-AP
 and no three-hex straight special.
 
+### APC armor cap (max +2 / facing) — **partial**
+
+Upstream:
+
+> **Armor** (1 point per facing, max 2 per facing): Increases the armor of the tank by 1 point.
+
+Simulator list builder uses the tank facing cap (**max +3**) for APCs too.
+With a 4-point APC budget you can buy front +3, which upstream forbids.
+
+### End-of-turn fire / cook-off timing — **replaced**
+
+Upstream:
+
+> If the fire is not extinguished, the tank loses 1 hull point at the end of each turn until the fire is extinguished, or the tank is destroyed.
+>
+> At the end of every turn a disabled tank is on the table (including the turn it was disabled), roll a die. On a 4+, the ammunition cooks off.
+
+Simulator: fire ticks at the end of **that unit’s activation**; disabled
+cook-off rolls after **every** activation on the board. Multi-unit games tick
+much faster than upstream’s shared “turn.”
+
 ### Forest “behind” cover — **partial**
 
 Upstream:
@@ -551,7 +583,7 @@ Upstream:
 Mines can be **deployed** and **triggered** by vehicles. Infantry cannot disarm
 them.
 
-### Exterior tank-top riding — **replaced / unused**
+### Exterior tank-top riding — **implemented** (see [Embarkation](#embarkation))
 
 Upstream:
 
@@ -559,8 +591,9 @@ Upstream:
 > - Infantry can ride on the outside of tanks. If the tank takes any hits while infantry are mounted on the outside, they are destroyed.
 > - Infantry can ride inside Armored Personnel Carriers (APCs). See below.
 
-Exterior riding is **not** used. Interior APC ride uses the house rules in
-[Embarkation](#embarkation) (upstream never defined APC capacity / free drop).
+Live rules: exterior tank ride + APC interior under [Embarkation](#embarkation)
+(capacity, free drop-off, and APC pick-up Embark are house clarifications —
+upstream never defined them).
 
 ### Upstream air-strike procedure — **replaced**
 

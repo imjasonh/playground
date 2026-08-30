@@ -649,6 +649,33 @@ board instead of circling.
 
 ---
 
+## 2026-08-30 — Exterior tank riding
+
+**Type: Rule / Sim**
+
+Upstream exterior ride is live: infantry can Mount / be Embarked onto a
+friendly **tank** (capacity 1). Shared free Drop off after a Move. Riders
+share the tank hex and cannot be targeted, but **any hit** on the tank
+(glance, pen, AI spray, mine, air) destroys them immediately.
+
+AI prefers APC interior when both are available; tanks pick up only when they
+cannot already shoot; exterior riders dismount aggressively near enemy guns.
+
+**Effect (Combined, 200 games, seed 42) vs APC-only embark:**
+
+| Metric | APC-only | + exterior |
+|--------|----------|------------|
+| Embark games | 100% | 100% |
+| Mount (exterior) / Embark / Drop | 5.1 / 11.3 / 6.7 | 2.7 (**4.0** ext) / 10.0 / 4.7 |
+| Passenger kills (exterior) | 0.04 | **1.09 (1.06)** |
+| Decisive / hard TO / idle | 92% / 36% / 13% | **95% / 21% / 10%** |
+
+They use the hulls — and pay for it. ~1 exterior wipe per game. Timeouts fell
+(more infantry dying in transit / fights resolving). APC interior remains the
+safer taxi.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.

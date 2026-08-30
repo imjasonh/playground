@@ -68,10 +68,12 @@ pub struct Game {
     pub mines_deployed: u32,
     pub mines_triggered: u32,
     pub mounts: u32,
+    pub exterior_mounts: u32,
     pub embarks: u32,
     pub dismounts: u32,
     pub drop_offs: u32,
     pub passenger_kills: u32,
+    pub exterior_rider_kills: u32,
     pub shots_fired: u32,
     pub shots_missed: u32,
     pub at_shots: u32,
@@ -128,10 +130,12 @@ impl Game {
             mines_deployed: 0,
             mines_triggered: 0,
             mounts: 0,
+            exterior_mounts: 0,
             embarks: 0,
             dismounts: 0,
             drop_offs: 0,
             passenger_kills: 0,
+            exterior_rider_kills: 0,
             shots_fired: 0,
             shots_missed: 0,
             at_shots: 0,
@@ -464,6 +468,8 @@ impl Game {
         self.push_smoke_actions(tank, ap_left, out);
         self.push_mine_actions(tank, ap_left, out);
         self.push_lt_cover_actions(tank, out);
+        self.push_embark_actions(tank, ap_left, out);
+        self.push_drop_off_actions(tank, out);
     }
 
     fn legal_apc(&self, tank: &Tank, ap_left: i32, out: &mut Vec<Action>) {
@@ -493,7 +499,10 @@ impl Game {
     }
 
     fn push_embark_actions(&self, tank: &Tank, ap_left: i32, out: &mut Vec<Action>) {
-        if tank.kind != UnitKind::Apc || tank.passenger.is_some() || ap_left < 1 {
+        if !matches!(tank.kind, UnitKind::Apc | UnitKind::Tank)
+            || tank.passenger.is_some()
+            || ap_left < 1
+        {
             return;
         }
         for other in &self.tanks {
@@ -511,7 +520,7 @@ impl Game {
     }
 
     fn push_drop_off_actions(&self, tank: &Tank, out: &mut Vec<Action>) {
-        if tank.kind != UnitKind::Apc
+        if !matches!(tank.kind, UnitKind::Apc | UnitKind::Tank)
             || tank.passenger.is_none()
             || tank.dropped_passenger_this_activation
             || tank.moves_this_turn < 1
@@ -663,11 +672,11 @@ impl Game {
             out.push(Action::TakeCover);
         }
 
-        // Mount Up into adjacent empty APC.
+        // Mount Up onto adjacent empty APC (interior) or tank (exterior).
         if !tank.mount_or_dismount_used && ap_left >= 1 {
             for other in &self.tanks {
                 if other.side != tank.side
-                    || other.kind != UnitKind::Apc
+                    || !matches!(other.kind, UnitKind::Apc | UnitKind::Tank)
                     || other.destroyed
                     || other.disabled
                     || other.passenger.is_some()
@@ -948,6 +957,9 @@ impl Game {
             self.destroy_infantry(tank_id);
             text.push_str("; infantry destroyed");
         }
+        if ev.hit {
+            self.maybe_kill_exterior_riders_on_hit(tank_id);
+        }
         self.maybe_kill_passengers(tank_id);
         if ev.cook_off {
             self.total_cook_offs += 1;
@@ -1017,6 +1029,9 @@ impl Game {
 
         if ev.hit && target_kind == UnitKind::Infantry {
             self.destroy_infantry(target_id);
+        }
+        if ev.hit {
+            self.maybe_kill_exterior_riders_on_hit(target_id);
         }
 
         self.maybe_kill_passengers(target_id);
@@ -1146,6 +1161,7 @@ impl Game {
                 )
             };
             self.push_event(turn, Some(side), text, None);
+            self.maybe_kill_exterior_riders_on_hit(target_id);
         } else {
             self.shots_missed += 1;
             let name = self.tank(target_id).name.clone();
@@ -1189,10 +1205,40 @@ impl Game {
         }
     }
 
-    /// Kill embarked infantry when their APC is disabled or destroyed.
+    /// Kill riders when their vehicle is disabled or destroyed.
+    /// APC interior and tank exterior both die on disable/destroy.
     fn maybe_kill_passengers(&mut self, vehicle_id: u8) {
         let v = self.tank(vehicle_id);
-        if v.kind != UnitKind::Apc || !(v.disabled || v.destroyed) {
+        if !matches!(v.kind, UnitKind::Apc | UnitKind::Tank) || !(v.disabled || v.destroyed) {
+            return;
+        }
+        let Some(pid) = v.passenger else {
+            return;
+        };
+        let turn = self.activations;
+        let side = v.side;
+        let exterior = v.kind == UnitKind::Tank;
+        let name = self.tank(pid).name.clone();
+        self.tank_mut(vehicle_id).passenger = None;
+        if !self.tank(pid).destroyed {
+            self.destroy_infantry(pid);
+            self.passenger_kills += 1;
+            if exterior {
+                self.exterior_rider_kills += 1;
+            }
+            let how = if exterior {
+                "disabled/destroyed tank"
+            } else {
+                "disabled/destroyed APC"
+            };
+            self.push_event(turn, Some(side), format!("{name} dies with {how}"), None);
+        }
+    }
+
+    /// Exterior tank riders die on any hit to the tank (upstream).
+    fn maybe_kill_exterior_riders_on_hit(&mut self, vehicle_id: u8) {
+        let v = self.tank(vehicle_id);
+        if v.kind != UnitKind::Tank || v.passenger.is_none() {
             return;
         }
         let Some(pid) = v.passenger else {
@@ -1205,10 +1251,11 @@ impl Game {
         if !self.tank(pid).destroyed {
             self.destroy_infantry(pid);
             self.passenger_kills += 1;
+            self.exterior_rider_kills += 1;
             self.push_event(
                 turn,
                 Some(side),
-                format!("{name} dies with disabled/destroyed APC"),
+                format!("{name} wiped by hit on tank exterior"),
                 None,
             );
         }
@@ -1223,29 +1270,34 @@ impl Game {
         ap_left: &mut i32,
     ) {
         let inf = self.tank(infantry_id);
-        let apc = self.tank(vehicle_id);
+        let veh = self.tank(vehicle_id);
         if inf.kind != UnitKind::Infantry
             || inf.is_embarked()
             || inf.mount_or_dismount_used
-            || apc.kind != UnitKind::Apc
-            || apc.passenger.is_some()
-            || apc.destroyed
-            || apc.disabled
-            || inf.pos.distance(apc.pos) != 1
+            || !matches!(veh.kind, UnitKind::Apc | UnitKind::Tank)
+            || veh.passenger.is_some()
+            || veh.destroyed
+            || veh.disabled
+            || inf.pos.distance(veh.pos) != 1
         {
             return;
         }
-        let apc_pos = apc.pos;
+        let exterior = veh.kind == UnitKind::Tank;
+        let veh_pos = veh.pos;
         self.tank_mut(vehicle_id).passenger = Some(infantry_id);
         let i = self.tank_mut(infantry_id);
         i.embarked_in = Some(vehicle_id);
-        i.pos = apc_pos;
+        i.pos = veh_pos;
         i.in_cover = false;
         i.mount_or_dismount_used = true;
         *ap_left -= 1;
         self.mounts += 1;
+        if exterior {
+            self.exterior_mounts += 1;
+        }
         let vname = self.tank(vehicle_id).name.clone();
-        self.push_event(turn, Some(side), format!("Mount into {vname}"), None);
+        let verb = if exterior { "onto" } else { "into" };
+        self.push_event(turn, Some(side), format!("Mount {verb} {vname}"), None);
     }
 
     fn apply_embark(
@@ -1256,29 +1308,34 @@ impl Game {
         side: Side,
         ap_left: &mut i32,
     ) {
-        let apc = self.tank(vehicle_id);
+        let veh = self.tank(vehicle_id);
         let inf = self.tank(infantry_id);
-        if apc.kind != UnitKind::Apc
-            || apc.passenger.is_some()
-            || apc.destroyed
-            || apc.disabled
+        if !matches!(veh.kind, UnitKind::Apc | UnitKind::Tank)
+            || veh.passenger.is_some()
+            || veh.destroyed
+            || veh.disabled
             || inf.kind != UnitKind::Infantry
             || inf.is_embarked()
             || inf.destroyed
-            || inf.pos.distance(apc.pos) != 1
+            || inf.pos.distance(veh.pos) != 1
         {
             return;
         }
-        let apc_pos = apc.pos;
+        let exterior = veh.kind == UnitKind::Tank;
+        let veh_pos = veh.pos;
         self.tank_mut(vehicle_id).passenger = Some(infantry_id);
         let i = self.tank_mut(infantry_id);
         i.embarked_in = Some(vehicle_id);
-        i.pos = apc_pos;
+        i.pos = veh_pos;
         i.in_cover = false;
         *ap_left -= 1;
         self.embarks += 1;
+        if exterior {
+            self.exterior_mounts += 1;
+        }
         let iname = self.tank(infantry_id).name.clone();
-        self.push_event(turn, Some(side), format!("Embark {iname}"), None);
+        let where_ = if exterior { " (exterior)" } else { "" };
+        self.push_event(turn, Some(side), format!("Embark {iname}{where_}"), None);
     }
 
     fn apply_dismount(
@@ -1551,6 +1608,9 @@ impl Game {
             if ev.hit && kind == UnitKind::Infantry {
                 self.destroy_infantry(id);
             }
+            if ev.hit {
+                self.maybe_kill_exterior_riders_on_hit(id);
+            }
             self.maybe_kill_passengers(id);
             if ev.cook_off {
                 self.total_cook_offs += 1;
@@ -1597,6 +1657,9 @@ impl Game {
             self.record_shot_stats(&ev);
             if ev.hit && kind == UnitKind::Infantry {
                 self.destroy_infantry(id);
+            }
+            if ev.hit {
+                self.maybe_kill_exterior_riders_on_hit(id);
             }
             self.maybe_kill_passengers(id);
             if ev.cook_off {
@@ -2253,5 +2316,64 @@ mod tests {
         assert!(g.tank(1).destroyed);
         assert_eq!(g.passenger_kills, 1);
         assert!(g.tank(0).passenger.is_none());
+    }
+
+    #[test]
+    fn exterior_tank_ride_and_any_hit_kills_riders() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::offset(3, 4), Facing::E, "RedTank"),
+            Tank::stock_infantry(1, Side::Red, Hex::offset(4, 4), Facing::E, "Inf"),
+            Tank::stock(2, Side::Blue, Hex::offset(8, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 40, "test");
+        let mut rng = ChaCha8Rng::seed_from_u64(4);
+        let mut ap = 5;
+        let mut buffs = TurnBuffs::default();
+        g.begin_activation(1);
+        g.apply_action(
+            1,
+            Action::Mount { vehicle: 0 },
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
+        assert!(g.tank(1).is_embarked());
+        assert_eq!(g.exterior_mounts, 1);
+        assert!(!g.can_see(g.tank(2), g.tank(1)));
+
+        g.maybe_kill_exterior_riders_on_hit(0);
+        assert!(g.tank(1).destroyed);
+        assert_eq!(g.exterior_rider_kills, 1);
+        assert!(g.tank(0).passenger.is_none());
+    }
+
+    #[test]
+    fn exterior_hit_helper_ignores_apc_interior() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock_apc(0, Side::Red, Hex::offset(3, 4), Facing::E, "APC"),
+            Tank::stock_infantry(1, Side::Red, Hex::offset(4, 4), Facing::E, "Inf"),
+            Tank::stock(2, Side::Blue, Hex::offset(8, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 40, "test");
+        let mut rng = ChaCha8Rng::seed_from_u64(5);
+        let mut ap = 3;
+        let mut buffs = TurnBuffs::default();
+        g.begin_activation(0);
+        g.apply_action(
+            0,
+            Action::Embark { infantry: 1 },
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
+        g.maybe_kill_exterior_riders_on_hit(0);
+        assert!(!g.tank(1).destroyed);
+        assert_eq!(g.tank(0).passenger, Some(1));
     }
 }
