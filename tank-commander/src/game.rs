@@ -55,7 +55,7 @@ pub struct Game {
     pub max_activations: u32,
     pub events: Vec<GameEvent>,
     pub first_player: Side,
-    /// `"skirmish"` | `"squadron"` | `"platoon"` | `"combined"` | `"capture"`.
+    /// `"skirmish"` | `"squadron"` | `"platoon"` | `"combined"` | `"capture"` | `"assault"`.
     pub scenario: String,
     pub pending_air_strikes: Vec<PendingAirStrike>,
     pub air_strikes_resolved: u32,
@@ -64,6 +64,9 @@ pub struct Game {
     pub objectives: Vec<Objective>,
     /// Successful Capture actions this game.
     pub objectives_captured: u32,
+    /// When set, this side must Capture; the other side wins by wipe or hold
+    /// (timeout / idle stalemate). `None` = symmetric / wipe-attrition only.
+    pub attacker: Option<Side>,
     /// End like a timeout after this many activations with no hit (`0` = off).
     pub stalemate_after: u32,
     pub activations_since_hit: u32,
@@ -129,6 +132,7 @@ impl Game {
             infantry_kills: 0,
             objectives: Vec::new(),
             objectives_captured: 0,
+            attacker: None,
             stalemate_after: 0,
             activations_since_hit: 0,
             activations_since_damage: 0,
@@ -182,8 +186,26 @@ impl Game {
         self
     }
 
+    pub fn with_attacker(mut self, attacker: Side) -> Self {
+        self.attacker = Some(attacker);
+        self
+    }
+
     pub fn push_setup_event(&mut self, text: String) {
         self.push_event(0, None, text, None);
+    }
+
+    pub fn is_attacker(&self, side: Side) -> bool {
+        self.attacker == Some(side)
+    }
+
+    pub fn is_defender(&self, side: Side) -> bool {
+        matches!(self.attacker, Some(a) if a != side)
+    }
+
+    /// Defender side when this is an assault scenario.
+    pub fn defender(&self) -> Option<Side> {
+        self.attacker.map(|a| a.other())
     }
 
     /// Enemy flag hex that is still uncaptured, if any.
@@ -287,6 +309,10 @@ impl Game {
             return Outcome::Draw;
         }
         if self.stalemate_idle() || self.activations >= self.max_activations {
+            // Assault: time ran out without a Capture — defender held.
+            if let Some(defender) = self.defender() {
+                return Outcome::Winner(defender);
+            }
             return self.score_attrition();
         }
         Outcome::InProgress
@@ -2608,5 +2634,24 @@ mod tests {
         assert_eq!(g.objectives_captured, 1);
         assert_eq!(g.capture_winner(), Some(Side::Red));
         assert_eq!(g.outcome(), Outcome::Winner(Side::Red));
+    }
+
+    #[test]
+    fn assault_hold_awards_defender_on_timeout() {
+        let board = Board::rect(11, 9);
+        let flag = Hex::offset(9, 4);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::offset(1, 4), Facing::E, "Atk"),
+            Tank::stock(1, Side::Blue, Hex::offset(8, 4), Facing::W, "Def"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 5, "test")
+            .with_objectives(vec![Objective {
+                hex: flag,
+                home: Side::Blue,
+                captured_by: None,
+            }])
+            .with_attacker(Side::Red);
+        g.activations = 5;
+        assert_eq!(g.outcome(), Outcome::Winner(Side::Blue));
     }
 }

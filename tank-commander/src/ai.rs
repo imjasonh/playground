@@ -86,6 +86,27 @@ fn score_unit(game: &Game, unit_id: u8) -> i64 {
             }
             _ => {}
         }
+    } else if game.is_defender(unit.side) {
+        if let Some(flag) = game.own_flag(unit.side) {
+            let threat_near = enemies.iter().any(|e| e.pos.distance(flag) <= 7);
+            let to_flag = unit.pos.distance(flag);
+            match unit.kind {
+                UnitKind::Tank if threat_near || to_flag <= 8 => {
+                    score += 11_000 - i64::from(to_flag) * 30;
+                }
+                UnitKind::Infantry if !unit.is_embarked() => {
+                    // Hold the flag hex / approaches.
+                    score += 9_000 - i64::from(to_flag) * 80;
+                    if unit.in_cover {
+                        score += 1_500;
+                    }
+                }
+                UnitKind::Apc => {
+                    score += 4_000 - i64::from(to_flag) * 20;
+                }
+                _ => {}
+            }
+        }
     }
 
     match unit.kind {
@@ -226,6 +247,7 @@ fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
     let tank = game.tank(tank_id);
     let enemies: Vec<&crate::unit::Tank> = game.enemy_units(tank.side);
     let enemy_flag = game.enemy_flag(tank.side);
+    let own_flag = game.own_flag(tank.side);
     if enemies.is_empty() && enemy_flag.is_none() {
         return Vec::new();
     }
@@ -287,20 +309,49 @@ fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
         }
     }
 
-    if let Some(target) = visible
-        .iter()
-        .min_by_key(|e| (e.hull_points, tank.pos.distance(e.pos)))
-        .copied()
-    {
-        let tactical = beam_plan(game, tank_id, target, rng);
-        if !tactical.is_empty() {
-            return tactical;
+    // Defender: prefer targets closest to the flag (APCs / infantry first).
+    let focus: Vec<&crate::unit::Tank> = if game.is_defender(tank.side) {
+        let flag = own_flag.unwrap_or(tank.pos);
+        let mut ranked = visible.clone();
+        if ranked.is_empty() {
+            ranked = enemies.clone();
+        }
+        ranked.sort_by_key(|e| {
+            let kind_pri = match e.kind {
+                UnitKind::Infantry => 0,
+                UnitKind::Apc => 1,
+                UnitKind::Tank => 2,
+            };
+            (e.pos.distance(flag), kind_pri, e.hull_points)
+        });
+        ranked
+    } else {
+        visible
+            .iter()
+            .copied()
+            .min_by_key(|e| (e.hull_points, tank.pos.distance(e.pos)))
+            .into_iter()
+            .collect()
+    };
+
+    if let Some(target) = focus.first().copied() {
+        if game.can_see(tank, target) {
+            let tactical = beam_plan(game, tank_id, target, rng);
+            if !tactical.is_empty() {
+                return tactical;
+            }
         }
     }
 
     if let Some(enemy) = enemies
         .iter()
-        .min_by_key(|e| tank.pos.distance(e.pos))
+        .min_by_key(|e| {
+            if let Some(flag) = own_flag.filter(|_| game.is_defender(tank.side)) {
+                e.pos.distance(flag)
+            } else {
+                tank.pos.distance(e.pos)
+            }
+        })
         .copied()
     {
         return maneuver_plan(game, tank_id, enemy, rng);
@@ -423,6 +474,27 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         }
         return Vec::new();
     };
+
+    // Defender infantry: hold near own flag — shoot first, then dig in / step back.
+    if game.is_defender(unit.side) {
+        if let Some(flag) = game.own_flag(unit.side) {
+            if unit.pos.distance(flag) > 3 {
+                return step_toward(game, unit_id, flag, false);
+            }
+            let being_shelled = enemies.iter().any(|e| {
+                e.kind == UnitKind::Tank
+                    && unit.pos.distance(e.pos) <= e.gun_range
+                    && unit.pos.distance(e.pos) > unit.gun_range
+            });
+            if !unit.in_cover && !being_shelled {
+                return vec![Action::TakeCover];
+            }
+            // Stay put near the flag when already covering and out of missile range.
+            if unit.in_cover && unit.pos.distance(enemy.pos) > unit.gun_range {
+                return Vec::new();
+            }
+        }
+    }
 
     // Mount when out of missile range — prefer APC interior over tank exterior.
     // On flag raid, remount only if still far from the enemy flag.

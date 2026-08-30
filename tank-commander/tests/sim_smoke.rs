@@ -80,3 +80,19 @@ fn capture_batch_runs() {
         result.aggregate.avg_drop_offs
     );
 }
+
+#[test]
+fn assault_batch_runs() {
+    let result = sim::run(SimConfig {
+        games: 16,
+        seed: 44,
+        verbose: false,
+        scenario: ScenarioKind::Assault,
+    });
+    assert_eq!(result.aggregate.games, 16);
+    assert_eq!(result.aggregate.scenario, "assault");
+    assert_eq!(
+        result.aggregate.attacker_wins + result.aggregate.defender_wins,
+        16
+    );
+}

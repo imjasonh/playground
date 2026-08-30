@@ -46,6 +46,10 @@ pub struct GameReport {
     pub objectives_captured: u32,
     /// True when an infantry Capture ended the game.
     pub ended_by_capture: bool,
+    /// Assault: timeout/idle ended with the defender still holding.
+    pub ended_by_hold: bool,
+    /// Assault attacker side, if any (`"Red"` / `"Blue"`).
+    pub attacker: Option<String>,
     pub loadout: LoadoutCensus,
     /// Lower-spend list won first activation (spoil skipped).
     pub list_initiative: bool,
@@ -79,9 +83,16 @@ impl GameReport {
             .tanks
             .iter()
             .any(|t| t.side == Side::Blue && t.is_operational());
-        let hit_cap = game.activations >= game.max_activations;
         let ended_by_stalemate = game.stalemate_idle();
         let ended_by_capture = game.capture_winner().is_some();
+        let hit_cap = game.activations >= game.max_activations;
+        let ended_by_hold = game.attacker.is_some()
+            && !ended_by_capture
+            && (ended_by_stalemate || hit_cap)
+            && matches!(
+                outcome,
+                Outcome::Winner(s) if game.defender() == Some(s)
+            );
 
         let low_engagement = game.shots_fired < game.activations / 4;
         let late_stalemate = game.activations_since_hit >= 6 && game.activations >= 12;
@@ -148,6 +159,8 @@ impl GameReport {
             exterior_rider_kills: game.exterior_rider_kills,
             objectives_captured: game.objectives_captured,
             ended_by_capture,
+            ended_by_hold,
+            attacker: game.attacker.map(side_str).map(str::to_string),
             loadout: game.loadout_census.clone(),
             list_initiative: game.list_initiative,
             red_list_points: game.red_list_points,
@@ -158,7 +171,8 @@ impl GameReport {
                 && red_alive
                 && blue_alive
                 && !ended_by_stalemate
-                && !ended_by_capture,
+                && !ended_by_capture
+                && !ended_by_hold,
             ended_by_stalemate,
             low_engagement,
             late_stalemate,
@@ -262,6 +276,12 @@ pub struct AggregateReport {
     pub avg_objectives_captured: f64,
     /// Fraction of games ended by Capture (not wipe / timeout).
     pub capture_win_rate: f64,
+    /// Assault: wins by the attacking side.
+    pub attacker_wins: u32,
+    /// Assault: wins by the defending side.
+    pub defender_wins: u32,
+    /// Assault: fraction ended by hold (clock / idle) rather than wipe or Capture.
+    pub hold_win_rate: f64,
     /// Fraction of non-infantry units that bought each upgrade (0..=1).
     pub loadout_smoke_rate: f64,
     pub loadout_medkit_rate: f64,
@@ -372,6 +392,15 @@ impl AggregateReport {
                 / nf,
             avg_objectives_captured: sum_f(|r| r.objectives_captured),
             capture_win_rate: reports.iter().filter(|r| r.ended_by_capture).count() as f64 / nf,
+            attacker_wins: reports
+                .iter()
+                .filter(|r| r.attacker.is_some() && r.winner.is_some() && r.winner == r.attacker)
+                .count() as u32,
+            defender_wins: reports
+                .iter()
+                .filter(|r| r.attacker.is_some() && r.winner.is_some() && r.winner != r.attacker)
+                .count() as u32,
+            hold_win_rate: reports.iter().filter(|r| r.ended_by_hold).count() as f64 / nf,
             loadout_smoke_rate: 0.0,
             loadout_medkit_rate: 0.0,
             loadout_lt_rate: 0.0,
@@ -627,12 +656,23 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
             agg.avg_exterior_rider_kills
         ));
     }
-    if agg.avg_objectives_captured > 0.0 || agg.capture_win_rate > 0.0 || agg.scenario == "capture"
+    if agg.avg_objectives_captured > 0.0
+        || agg.capture_win_rate > 0.0
+        || agg.scenario == "capture"
+        || agg.scenario == "assault"
     {
         out.push_str(&format!(
             "Objectives: avg captures {:.2}, win-by-capture {:.0}%\n",
             agg.avg_objectives_captured,
             100.0 * agg.capture_win_rate
+        ));
+    }
+    if agg.attacker_wins + agg.defender_wins > 0 || agg.scenario == "assault" {
+        out.push_str(&format!(
+            "Assault: attacker {} / defender {} | hold wins {:.0}%\n",
+            agg.attacker_wins,
+            agg.defender_wins,
+            100.0 * agg.hold_win_rate
         ));
     }
     if agg.loadout_avg_points > 0.0 {

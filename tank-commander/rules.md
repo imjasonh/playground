@@ -362,15 +362,17 @@ Upstream:
 
 > **Capture Objective**: Capture an objective. The unit must share the space with the objective to capture it. They don't need to remain on the space to hold it.
 
-**Implemented** for the [Capture (flag raid)](#5-capture-flag-raid) scenario:
+**Implemented** for [Capture (flag raid)](#5-capture-flag-raid) and
+[Assault](#6-assault-attacker--defender):
 
-1. Each side deploys one **flag** hex in its backline.
+1. Capture / Assault deploy flag hexes (Assault: one flag on the defender).
 2. An unembarked infantry unit that **shares** the **enemy** flag hex may spend
    **1 action** on **Capture**.
 3. Capturing the enemy flag **wins immediately**. You do not need to stay on
    the hex afterward.
-4. Wipe (no operational enemy units) still wins. Timeout / idle stalemate still
-   resolve by attrition.
+4. Wipe (no operational enemy units) still wins. On Capture, timeout / idle
+   still resolve by attrition. On Assault, timeout / idle is a **defender hold
+   win**.
 
 ---
 
@@ -487,6 +489,21 @@ Objectives matter: race the other side's flag with embarked infantry.
 - **Initiative:** roll off; second player always gets spoil (nudge + 3 scatter).
 - **Embarkation:** squads start inside their APCs; they may stay embarked until
   dropped near the flag (see [Embarkation](#embarkation)).
+
+### 6. Assault (attacker / defender)
+
+One side Captures; the other holds or destroys the attack.
+
+- **Attacker:** **1 tank** + **3 loaded APCs** (stock). Always activates first.
+- **Defender:** **2 tanks** + **2 infantry** dug in near a single backline flag
+  (stock). Gets second-player spoil.
+- **Board:** 18×12 open mat; scatter is **not** mirrored (asymmetric approach).
+  Who attacks is a coin flip (color is not locked to a role).
+- **Win:**
+  - Attacker: **Capture** the defender flag, or wipe the defender.
+  - Defender: wipe the attacker, **or hold** until the activation cap / idle
+    stalemate (clock favors the hold).
+- **Cap:** 180 activations; idle stalemate after 50 no-hit.
 
 ### Scatter terrain spoil (shared rules)
 
