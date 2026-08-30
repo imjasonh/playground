@@ -1273,7 +1273,9 @@ pub fn token_matches(provided: &str, expected: &str) -> bool {
 pub const PHONE_DEFAULT_BUDGET_USD: f64 = 0.10;
 pub const PHONE_DEFAULT_DURATION_SECS: u64 = 4;
 /// Peak writers in the write ramp; read stage uses `peak` readers.
-pub const PHONE_DEFAULT_PEAK: u32 = 8;
+/// Default is the full ramp ceiling (`PHONE_MAX_SHARDS`); the UI auto-ramps
+/// 1→2→4→… and stops at the plateau.
+pub const PHONE_DEFAULT_PEAK: u32 = PHONE_MAX_SHARDS;
 pub const PHONE_MAX_PEAK: u32 = 48;
 /// Isolates to fan writers/readers across (same repo). `1` = this isolate only.
 pub const PHONE_DEFAULT_SHARDS: u32 = 4;
@@ -1294,6 +1296,20 @@ pub const PHONE_MAX_WRITERS_PER_ISOLATE: u32 = 1;
 /// Two concurrent readers on a multi-shard backlog still threw Error 1101
 /// (stage 2); one reader per isolate is the working phone envelope.
 pub const PHONE_MAX_READERS_PER_ISOLATE: u32 = 1;
+
+/// Writers-per-step for the phone auto-ramp (1 writer = 1 isolate).
+pub const PHONE_RAMP_WRITERS: &[u32] = &[1, 2, 4, 8, 16];
+/// Stop the write ramp when pushes/s improve by less than this fraction.
+pub const PHONE_RAMP_MIN_IMPROVE: f64 = 0.10;
+
+/// True when `new_pps` is not enough of an improvement over `prev_pps` to
+/// keep raising concurrency (plateau / knee).
+pub fn phone_ramp_should_stop(prev_pps: f64, new_pps: f64) -> bool {
+    if prev_pps <= 0.0 {
+        return false;
+    }
+    new_pps < prev_pps * (1.0 + PHONE_RAMP_MIN_IMPROVE)
+}
 
 /// Soft subrequest ceiling for one phone shard POST in CI. Measured ~180 for
 /// peak (1 writer) and similar for readers after bookend opens; stay well
@@ -1418,15 +1434,33 @@ pub fn html_landing(
     };
     let peak = clamp_phone_peak(peak);
     let shards = clamp_phone_shards(shards);
-    let (peak, shards) = phone_fanout_plan(peak, shards);
-    let stages = phone_stages(peak);
-    let warm = stages[0].writers;
-    let readers = stages[2].readers;
-    let expect_secs = duration_secs.saturating_mul(3).saturating_add(5);
-    let max_peak = PHONE_MAX_PEAK;
-    let max_shards = PHONE_MAX_SHARDS;
+    let (peak, _shards) = phone_fanout_plan(peak, shards);
+    // Ramp ceiling: query peak, clamped to what 1w/isolate fan-out allows.
+    let ramp_ceiling = peak.min(PHONE_MAX_SHARDS);
+    let ramp_levels: Vec<u32> = {
+        let levels: Vec<u32> = PHONE_RAMP_WRITERS
+            .iter()
+            .copied()
+            .filter(|n| *n <= ramp_ceiling)
+            .collect();
+        if levels.is_empty() {
+            vec![1]
+        } else {
+            levels
+        }
+    };
+    let ramp_js = ramp_levels
+        .iter()
+        .map(|n| n.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let expect_secs = duration_secs
+        .saturating_mul(ramp_levels.len() as u64 + 1)
+        .saturating_add(5);
     let max_w_iso = PHONE_MAX_WRITERS_PER_ISOLATE;
     let max_r_iso = PHONE_MAX_READERS_PER_ISOLATE;
+    let min_improve = PHONE_RAMP_MIN_IMPROVE;
+    let min_improve_pct = (PHONE_RAMP_MIN_IMPROVE * 100.0) as u32;
     format!(
         r##"<!doctype html>
 <html lang="en">
@@ -1452,31 +1486,33 @@ main {{ width: min(28rem, 100%); text-align: center; }}
 h1 {{ font-size: 1.75rem; font-weight: 700; margin: 0 0 0.5rem; letter-spacing: -0.02em; }}
 p {{ color: var(--muted); margin: 0 0 1.25rem; }}
 p.hint {{ font-size: 0.95rem; }}
-p.plan {{ font-size: 0.95rem; margin-top: 0.75rem; }}
-.fields {{
-  display: grid; gap: 0.85rem; text-align: left; margin: 0 0 1.25rem;
-}}
-label {{
-  display: grid; gap: 0.35rem; font-size: 0.95rem; color: var(--muted); font-weight: 600;
-}}
-label span.detail {{ font-weight: 400; color: var(--muted); }}
-input[type="number"] {{
-  width: 100%; padding: 0.75rem 0.85rem; border: 1px solid var(--line);
-  border-radius: 0.6rem; background: var(--field); color: var(--fg);
-  font: inherit; font-family: "Source Code Pro", ui-monospace, monospace;
+p.plan {{ font-size: 0.95rem; color: var(--fg); margin: 0 0 1rem; }}
+.fields {{ display: grid; gap: 0.85rem; text-align: left; margin-bottom: 1.25rem; }}
+label {{ display: grid; gap: 0.35rem; font-size: 0.95rem; color: var(--muted); }}
+label .detail {{ font-size: 0.8rem; color: var(--muted); opacity: 0.9; }}
+input {{
+  width: 100%; padding: 0.85rem 1rem; border-radius: 0.65rem;
+  border: 1px solid var(--line); background: var(--field); color: var(--fg);
+  font: inherit; font-variant-numeric: tabular-nums;
 }}
 button.run {{
-  display: block; width: 100%; padding: 1.15rem 1.25rem; border: 0; cursor: pointer;
-  background: var(--accent); color: #062016; font: inherit; font-weight: 700;
-  font-size: 1.25rem; border-radius: 0.75rem;
+  width: 100%; padding: 1rem 1.25rem; border: 0; border-radius: 0.75rem;
+  background: var(--accent); color: #062416; font: 700 1.2rem/1 "Source Sans 3", system-ui, sans-serif;
+  cursor: pointer;
 }}
 button.run:disabled {{ opacity: 0.55; cursor: wait; }}
-button.run:active:not(:disabled) {{ filter: brightness(0.92); }}
-#status {{ min-height: 1.5rem; margin: 1rem 0 0; color: var(--muted); font-size: 1rem; }}
-#status.err {{ color: var(--warn); white-space: pre-wrap; text-align: left; }}
+#status {{ margin-top: 1rem; min-height: 1.5em; font-variant-numeric: tabular-nums; }}
+#status.err {{ color: var(--warn); }}
+#live {{
+  display: none; text-align: left; margin: 1rem 0 0; padding: 0.85rem 1rem;
+  border-radius: 0.65rem; border: 1px solid var(--line); background: var(--field);
+  font: 500 0.85rem/1.45 "Source Code Pro", ui-monospace, monospace;
+  color: var(--fg); white-space: pre-wrap; word-break: break-word;
+}}
+#live.show {{ display: block; }}
 #debug {{
-  display: none; margin: 0.75rem 0 0; padding: 0.75rem; text-align: left;
-  border: 1px solid var(--line); border-radius: 0.5rem; background: var(--field);
+  display: none; text-align: left; margin: 0.75rem 0 0; padding: 0.75rem 0.9rem;
+  border-radius: 0.5rem; border: 1px solid var(--line); background: #121820;
   font: 500 0.8rem/1.35 "Source Code Pro", ui-monospace, monospace;
   color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 40vh; overflow: auto;
 }}
@@ -1487,113 +1523,56 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
 <body>
 <main>
   <h1>git loadtest</h1>
-  <p>Push/pull load against <strong>one</strong> disposable repo on this Worker.<br>
-  Concurrent writers use separate branches (merge-apply).</p>
+  <p>One disposable repo. Auto-ramps writers (1 isolate each) until pushes/s
+  stop improving, then measures readers at that concurrency.</p>
   {token_hint}
   <div class="fields">
     <label>Cost budget (USD)
       <input id="budget" type="number" inputmode="decimal" min="0.01" max="5" step="0.01" value="{budget_usd:.2}">
     </label>
-    <label>Peak writers
-      <span class="detail">Warm-up → peak → readers. Max {max_peak}. Each writer owns a branch.</span>
-      <input id="peak" type="number" inputmode="numeric" min="1" max="{max_peak}" step="1" value="{peak}">
-    </label>
-    <label>Isolates (shards)
-      <span class="detail">Same repo; one browser POST per isolate per stage. Max {max_shards}. Auto-raises so each isolate stays ≤{max_w_iso} writers / ≤{max_r_iso} readers.</span>
-      <input id="shards" type="number" inputmode="numeric" min="1" max="{max_shards}" step="1" value="{shards}">
-    </label>
   </div>
-  <p class="plan" id="plan">{warm}w → {peak}w → {readers}r · {shards} shards · {duration_secs}s × 3 · ~{expect_secs}s</p>
+  <p class="plan" id="plan">Ramp {ramp_js} writers · {duration_secs}s/step · stop if &lt;{min_improve_pct}% gain · ~{expect_secs}s</p>
   <button class="run" id="run" type="button">Run load test</button>
   <p id="status" aria-live="polite"></p>
+  <pre id="live" aria-live="polite"></pre>
   <pre id="debug" aria-live="polite"></pre>
 </main>
 <script>
 (function () {{
   var btn = document.getElementById("run");
   var status = document.getElementById("status");
+  var liveEl = document.getElementById("live");
   var debugEl = document.getElementById("debug");
   var budgetEl = document.getElementById("budget");
-  var peakEl = document.getElementById("peak");
-  var shardsEl = document.getElementById("shards");
-  var plan = document.getElementById("plan");
   var duration = {duration_secs};
   var token = "{token_js}";
-  var maxPeak = {max_peak};
-  var maxShards = {max_shards};
   var maxWIso = {max_w_iso};
   var maxRIso = {max_r_iso};
-  function clampPeak(p) {{
-    p = Math.floor(Number(p) || 1);
-    if (p < 1) p = 1;
-    if (p > maxPeak) p = maxPeak;
-    return p;
-  }}
-  function clampShards(s) {{
-    s = Math.floor(Number(s) || 1);
-    if (s < 1) s = 1;
-    if (s > maxShards) s = maxShards;
-    return s;
-  }}
-  /** Raise shards (or trim peak) so each isolate stays ≤ maxWIso writers
-   *  and ≤ maxRIso readers (phone stages use peak readers). */
-  function fanoutPlan(peak, shards) {{
-    peak = clampPeak(peak);
-    shards = clampShards(shards);
-    var readers = Math.max(1, peak);
-    var needW = Math.max(1, Math.ceil(peak / maxWIso));
-    var needR = Math.max(1, Math.ceil(readers / maxRIso));
-    var need = Math.max(needW, needR);
-    if (need > shards) shards = clampShards(need);
-    var maxPeakW = Math.min(maxPeak, Math.max(1, shards * maxWIso));
-    var maxPeakR = Math.min(maxPeak, Math.max(1, shards * maxRIso));
-    var maxPeakHere = Math.min(maxPeakW, maxPeakR);
-    if (peak > maxPeakHere) peak = maxPeakHere;
-    return {{ peak: peak, shards: shards }};
-  }}
-  function updatePlan() {{
-    var requestedShards = clampShards(shardsEl.value);
-    var planVals = fanoutPlan(peakEl.value, requestedShards);
-    var peak = planVals.peak;
-    var shards = planVals.shards;
-    var warm = Math.max(1, Math.floor(peak / 3));
-    var readers = Math.max(1, peak);
-    var perW = Math.ceil(peak / shards);
-    var expect = duration * 3 + 5;
-    var note = shards > requestedShards
-      ? " (raised to " + shards + " shards, ≤" + maxWIso + "w/" + maxRIso + "r each)"
-      : " (≤" + perW + "w/isolate)";
-    plan.textContent = warm + "w → " + peak + "w → " + readers +
-      "r · " + shards + " shards · " + duration + "s × 3 · ~" + expect + "s" + note;
-  }}
-  peakEl.addEventListener("input", updatePlan);
-  shardsEl.addEventListener("input", updatePlan);
+  var rampLevels = [{ramp_js}];
+  var minImprove = {min_improve};
+  var shardPostConcurrency = 4;
   function jsonHeaders() {{
     var h = {{ "Content-Type": "application/json", "Accept": "application/json" }};
     if (token) h["X-Loadtest-Token"] = token;
     return h;
   }}
   function headerGet(res, name) {{
-    try {{ return res.headers.get(name) || ""; }} catch (e) {{ return ""; }}
+    try {{ return res.headers.get(name); }} catch (e) {{ return null; }}
   }}
-  /** Summarize a failed HTTP body without wiping Cloudflare error pages. */
-  function summarizeBody(text) {{
-    if (!text) return "(empty body)";
-    var t = String(text);
+  function summarizeBody(t) {{
+    if (!t) return "(empty)";
     var codes = [];
-    var m;
-    // Single backslashes: this is a raw Rust format string, not a JS string escape.
-    var re = /\b(10\d{{2}}|11\d{{2}})\b/g;
-    while ((m = re.exec(t))) {{
-      if (codes.indexOf(m[1]) < 0) codes.push(m[1]);
-    }}
+    var m1101 = t.match(/error[_ ]?1101/i);
+    var m1102 = t.match(/error[_ ]?1102/i);
+    if (m1101) codes.push("1101");
+    if (m1102) codes.push("1102");
     var jsonErr = "";
     try {{
       var j = JSON.parse(t);
-      if (j && (j.error || j.message)) jsonErr = String(j.error || j.message);
+      if (j && (j.title || j.detail || j.error_name)) {{
+        jsonErr = [j.error_name || j.title, j.detail].filter(Boolean).join(" — ");
+      }}
     }} catch (e) {{}}
-    // Strip tags with a simple pattern (avoid embedding a script end-tag
-    // sequence anywhere in this file — HTML would close the script early).
     var plain = t.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
     if (!plain && codes.length) plain = "Cloudflare error " + codes.join(", ");
     if (!plain) plain = t.slice(0, 400);
@@ -1603,10 +1582,10 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     }}
     if (codes.indexOf("1101") >= 0) {{
       out += " — Worker threw (subrequest/memory/panic). Caps are enforced in CI" +
-        " (phone_shard_peak_under_worker_subrequest_budget); hard-refresh after deploy.";
+        " (phone_budget_tune); hard-refresh after deploy.";
     }}
     if (codes.indexOf("1102") >= 0) {{
-      out += " — Worker exceeded CPU or memory (128 MiB). Raise shards or shorten duration.";
+      out += " — Worker exceeded CPU or memory (128 MiB).";
     }}
     return out;
   }}
@@ -1625,6 +1604,10 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
   function clearDebug() {{
     debugEl.textContent = "";
     debugEl.className = "";
+  }}
+  function setLive(lines) {{
+    liveEl.textContent = lines.join("\n");
+    liveEl.className = lines.length ? "show" : "";
   }}
   function fetchJson(step, url, init) {{
     return fetch(url, init).then(function (res) {{
@@ -1661,8 +1644,6 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       body: JSON.stringify(body)
     }});
   }}
-  /** Cap parallel shard POSTs so one phone does not stampede the DO. */
-  var shardPostConcurrency = 4;
   function mapPool(items, limit, fn) {{
     var i = 0;
     var running = 0;
@@ -1689,20 +1670,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       kick();
     }});
   }}
-  /** Split one stage's concurrency across shards (capped per isolate). */
-  function partitionOneStage(stage, shards, i) {{
-    var w = Math.floor(stage.writers / shards) + (i === 0 ? (stage.writers % shards) : 0);
-    var r = Math.floor(stage.readers / shards) + (i === 0 ? (stage.readers % shards) : 0);
-    if (w > maxWIso) w = maxWIso;
-    if (r > maxRIso) r = maxRIso;
-    if (w <= 0 && r <= 0) return null;
-    return {{ writers: w, readers: r }};
-  }}
-  /** Append a single-stage report onto a per-shard accumulator for /loadtest/merge. */
   function appendStageReport(acc, rep) {{
-    if (!acc) {{
-      return rep;
-    }}
+    if (!acc) return rep;
     acc.stages = acc.stages.concat(rep.stages || []);
     acc.total_cost_usd = (acc.total_cost_usd || 0) + (rep.total_cost_usd || 0);
     acc.duration_ms = (acc.duration_ms || 0) + (rep.duration_ms || 0);
@@ -1712,9 +1681,42 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     acc.shards = Math.max(acc.shards || 1, rep.shards || 1);
     return acc;
   }}
+  /** Aggregate goodput across parallel shard reports for one ramp step. */
+  function aggregateRate(reps, kind) {{
+    var ok = 0, wall = 0;
+    reps.forEach(function (rep) {{
+      (rep.stages || []).forEach(function (s) {{
+        ok += kind === "pull" ? (s.pull_ok || 0) : (s.push_ok || 0);
+        wall = Math.max(wall, s.wall_ms || 0);
+      }});
+    }});
+    return wall > 0 ? ok / (wall / 1000) : 0;
+  }}
+  function runShardedStage(repo, tip, n, writers, readers, stageBudget, stepLabel) {{
+    var jobs = [];
+    for (var i = 0; i < n; i++) {{
+      var w = writers > 0 ? maxWIso : 0;
+      var r = readers > 0 ? maxRIso : 0;
+      if (w <= 0 && r <= 0) continue;
+      jobs.push({{ idx: i, slice: {{ writers: w, readers: r }} }});
+    }}
+    return mapPool(jobs, shardPostConcurrency, function (job) {{
+      return postLoadtest(stepLabel + " shard " + job.idx, repo, {{
+        confirm: true,
+        budget_usd: stageBudget,
+        duration_secs: duration,
+        stages: [job.slice],
+        shard: true,
+        tip: tip,
+        shard_index: job.idx,
+        shards: 1
+      }});
+    }});
+  }}
   btn.addEventListener("click", function () {{
     btn.disabled = true;
     clearDebug();
+    setLive([]);
     var t0 = Date.now();
     var phase = "starting";
     status.className = "";
@@ -1724,28 +1726,11 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     }}, 250);
     var budget = Number(budgetEl.value);
     if (!(budget > 0)) budget = {budget_usd:.2};
-    var planVals = fanoutPlan(peakEl.value, shardsEl.value);
-    var peak = planVals.peak;
-    var shards = planVals.shards;
-    if (shards !== clampShards(shardsEl.value)) {{
-      shardsEl.value = String(shards);
-    }}
-    if (peak !== clampPeak(peakEl.value)) {{
-      peakEl.value = String(peak);
-    }}
-    updatePlan();
-    var warm = Math.max(1, Math.floor(peak / 3));
-    var readers = Math.max(1, peak);
-    var stages = [
-      {{ writers: warm, readers: 0 }},
-      {{ writers: peak, readers: 0 }},
-      {{ writers: 0, readers: readers }}
-    ];
     var repo = "lt" + String(Date.now()).slice(-9);
-
-    // Seed, then for each stage fire one POST per shard (fresh subrequest
-    // budget). Three stages in one POST was still Error 1101 at 6 writers.
+    var live = ["Auto-ramp (1 writer = 1 isolate):"];
+    setLive(live);
     var seedBudget = Math.min(0.02, Math.max(0.01, budget * 0.1));
+    var stepBudget = (budget - seedBudget) / (rampLevels.length + 1);
     phase = "seed " + repo;
     postLoadtest("seed", repo, {{
       confirm: true,
@@ -1755,49 +1740,65 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       shards: 1
     }}).then(function (seed) {{
       var tip = seed.tip;
-      var parts = [];
-      var stageBudget = budget / stages.length / shards;
-      var runStage = function (stageIdx) {{
-        if (stageIdx >= stages.length) {{
-          return Promise.resolve(parts.filter(Boolean));
+      var bestN = rampLevels[0] || 1;
+      var bestPps = 0;
+      var prevPps = 0;
+      var bestWriteParts = null;
+      var runRamp = function (idx) {{
+        if (idx >= rampLevels.length) {{
+          return Promise.resolve({{ n: bestN, parts: bestWriteParts }});
         }}
-        var stage = stages[stageIdx];
-        phase = "stage " + (stageIdx + 1) + "/" + stages.length;
-        var jobs = [];
-        for (var i = 0; i < shards; i++) {{
-          var slice = partitionOneStage(stage, shards, i);
-          if (slice) jobs.push({{ idx: i, slice: slice }});
-        }}
-        if (!jobs.length) {{
-          return runStage(stageIdx + 1);
-        }}
-        return mapPool(jobs, shardPostConcurrency, function (job) {{
-          return postLoadtest("shard " + job.idx + " stage " + stageIdx, repo, {{
-            confirm: true,
-            budget_usd: stageBudget,
-            duration_secs: duration,
-            stages: [job.slice],
-            shard: true,
-            tip: tip,
-            shard_index: job.idx,
-            shards: 1
-          }}).then(function (rep) {{
-            parts[job.idx] = appendStageReport(parts[job.idx], rep);
-            return rep;
+        var n = rampLevels[idx];
+        phase = n + " writers";
+        return runShardedStage(repo, tip, n, 1, 0, stepBudget / n, n + "w").then(function (reps) {{
+          var pps = aggregateRate(reps, "push");
+          var line = "  " + n + "w: " + pps.toFixed(1) + " pushes/s";
+          var parts = [];
+          reps.forEach(function (rep, i) {{
+            parts[i] = appendStageReport(parts[i], rep);
           }});
-        }}).then(function () {{
-          return runStage(stageIdx + 1);
+          if (pps >= bestPps) {{
+            bestPps = pps;
+            bestN = n;
+            bestWriteParts = parts;
+          }}
+          if (prevPps > 0 && pps < prevPps * (1 + minImprove)) {{
+            line += "  ← stop (<" + Math.round(minImprove * 100) + "% gain)";
+            live.push(line);
+            live.push("Best write concurrency: " + bestN + " (" + bestPps.toFixed(1) + " pushes/s)");
+            setLive(live);
+            return {{ n: bestN, parts: bestWriteParts }};
+          }}
+          live.push(line);
+          setLive(live);
+          prevPps = pps;
+          return runRamp(idx + 1);
         }});
       }};
-      return runStage(0).then(function (mergedParts) {{
-        if (!mergedParts.length) throw new Error("no shard work after partitioning");
+      return runRamp(0).then(function (best) {{
+        phase = best.n + " readers";
+        live.push("Readers @ " + best.n + "…");
+        setLive(live);
+        return runShardedStage(repo, tip, best.n, 0, 1, stepBudget / best.n, best.n + "r")
+          .then(function (reps) {{
+            var rps = aggregateRate(reps, "pull");
+            live[live.length - 1] = "Readers @ " + best.n + ": " + rps.toFixed(1) + " pulls/s";
+            setLive(live);
+            var parts = best.parts ? best.parts.slice() : [];
+            reps.forEach(function (rep, i) {{
+              parts[i] = appendStageReport(parts[i], rep);
+            }});
+            return {{ peak: best.n, parts: parts.filter(Boolean) }};
+          }});
+      }}).then(function (done) {{
+        if (!done.parts.length) throw new Error("no shard work after ramp");
         phase = "merge";
         var mergeHeaders = {{
           "Content-Type": "application/json",
           "Accept": "text/html"
         }};
         if (token) mergeHeaders["X-Loadtest-Token"] = token;
-        var q = "/loadtest/merge?peak=" + peak + "&duration=" + duration;
+        var q = "/loadtest/merge?peak=" + done.peak + "&duration=" + duration;
         if (token) q += "&token=" + encodeURIComponent(token);
         return fetch(q, {{
           method: "POST",
@@ -1806,7 +1807,7 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
           body: JSON.stringify({{
             confirm: true,
             budget_usd: budget,
-            parts: mergedParts
+            parts: done.parts
           }})
         }}).then(function (res) {{
           var ray = headerGet(res, "cf-ray") || headerGet(res, "CF-Ray");
@@ -1816,7 +1817,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
               status: res.status,
               text: t,
               ray: ray,
-              ctype: headerGet(res, "content-type")
+              ctype: headerGet(res, "content-type"),
+              live: live
             }};
           }});
         }});
@@ -1841,13 +1843,11 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
     }}).catch(function (e) {{
       clearInterval(tick);
       showErr(
-        (e && e.message ? e.message : String(e)) +
-          "\nTry fewer writers per isolate (raise shards, or peak ≤ " + maxWIso + " × shards).",
+        e && e.message ? e.message : String(e),
         e && e.debug ? e.debug : ""
       );
     }});
   }});
-  updatePlan();
 }})();
 </script>
 </body>
@@ -1855,7 +1855,6 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
 "##
     )
 }
-
 /// HTML results page for a completed run (phone-readable).
 pub fn html_report(
     report: &LoadTestReport,
@@ -2122,6 +2121,15 @@ mod tests {
         assert_eq!(s[1].writers, 12);
         assert_eq!(s[2].readers, 12);
         assert_eq!(clamp_phone_peak(100), PHONE_MAX_PEAK);
+    }
+
+    #[test]
+    fn phone_ramp_stops_on_plateau() {
+        assert!(!phone_ramp_should_stop(0.0, 5.0));
+        assert!(!phone_ramp_should_stop(5.0, 6.0)); // +20%
+        assert!(phone_ramp_should_stop(5.0, 5.2)); // +4%
+        assert!(phone_ramp_should_stop(5.0, 4.0)); // regression
+        assert_eq!(PHONE_RAMP_WRITERS, &[1, 2, 4, 8, 16]);
     }
 
     #[test]
