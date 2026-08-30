@@ -8,7 +8,7 @@ Three scenarios share the same engine and heuristic AI:
 | Scenario | Force | Board | Cap / idle stop |
 |----------|-------|-------|-----------------|
 | `skirmish` | 1v1 stock tanks | 11×9 | 20 hard (10/side) |
-| `combined` | tank + APC + infantry / side | 17×13 plaza | 160 hard; idle after 32 no-hit |
+| `combined` | 2 tanks + 2 APCs + 2 infantry / side | 17×13 plaza | 240 hard; idle after 48 no-hit |
 | `platoon` | 3v3 stock tanks | 19×15 funnel | 200 hard; idle after 40 no-hit |
 
 Platoon and combined seal the midline except a **wide plaza gap** so forces

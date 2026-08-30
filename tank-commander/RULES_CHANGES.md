@@ -73,7 +73,7 @@ minimum 1; does not stack). Clears at the end of that activation.
 | Scenario | Force | Board | Sim clock |
 |----------|-------|-------|-----------|
 | `skirmish` | 1v1 tanks | 11×9 | hard 20 |
-| `combined` | tank + APC + infantry / side | 17×13 plaza | hard 160 + idle-32 |
+| `combined` | 2 tanks + 2 APCs + 2 infantry / side | 17×13 plaza | hard 240 + idle-48 |
 | `platoon` | 3v3 tanks | 19×15 plaza | hard 200 + idle-40 |
 
 **Sim:** activation caps and idle-stalemate stops are analysis clocks so

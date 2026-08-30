@@ -14,7 +14,7 @@ pub enum ScenarioKind {
     Skirmish,
     /// 3v3 stock tanks.
     Platoon,
-    /// 1 tank (air support) + 1 APC + 1 infantry per side.
+    /// 2 tanks (air) + 2 APCs + 2 infantry per side.
     Combined,
 }
 
@@ -242,24 +242,37 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     Game::new(board, tanks, coin_flip(rng), 200, "platoon").with_stalemate(40)
 }
 
-/// Combined arms on a 17×13 plaza board. Infantry dig into forest approaches;
-/// APC spray and air strikes matter in the shared funnel. Starts and constant
-/// wall/baffles are east–west mirrors so color is not baked into the map.
+/// Combined arms on a 17×13 plaza board. Each side fields **2 tanks** (each
+/// with air), **2 APCs**, and **2 infantry**. Starts, baffles, and scatter are
+/// east–west mirrors.
 pub fn combined<R: Rng>(rng: &mut R) -> Game {
     let width = 17;
     let height = 13;
-    let red_tank = Hex::new(1, 4);
-    let red_apc = Hex::new(1, 7);
-    let red_inf = Hex::new(0, 6);
-    let blue_tank = mirror_ew(red_tank, width);
-    let blue_apc = mirror_ew(red_apc, width);
-    let blue_inf = mirror_ew(red_inf, width);
-    let reserved = [red_tank, red_apc, red_inf, blue_tank, blue_apc, blue_inf];
+    // West starts — east mirrors via `mirror_ew`.
+    let red_tanks = [Hex::new(1, 3), Hex::new(1, 5)];
+    let red_apcs = [Hex::new(1, 7), Hex::new(1, 9)];
+    let red_inf = [Hex::new(0, 4), Hex::new(0, 8)];
+    let blue_tanks = [mirror_ew(red_tanks[0], width), mirror_ew(red_tanks[1], width)];
+    let blue_apcs = [mirror_ew(red_apcs[0], width), mirror_ew(red_apcs[1], width)];
+    let blue_inf = [mirror_ew(red_inf[0], width), mirror_ew(red_inf[1], width)];
+    let reserved: Vec<Hex> = red_tanks
+        .iter()
+        .chain(red_apcs.iter())
+        .chain(red_inf.iter())
+        .chain(blue_tanks.iter())
+        .chain(blue_apcs.iter())
+        .chain(blue_inf.iter())
+        .copied()
+        .collect();
     let egress = [
-        Hex::new(2, 4),
+        Hex::new(2, 3),
+        Hex::new(2, 5),
         Hex::new(2, 7),
-        mirror_ew(Hex::new(2, 4), width),
+        Hex::new(2, 9),
+        mirror_ew(Hex::new(2, 3), width),
+        mirror_ew(Hex::new(2, 5), width),
         mirror_ew(Hex::new(2, 7), width),
+        mirror_ew(Hex::new(2, 9), width),
     ];
     let wall = combined_wall(width, height);
     let alley = combined_alley_clear();
@@ -277,20 +290,31 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
     };
     let board = build_board(&layout, rng, &reserved, &egress);
 
-    let mut red_t = Tank::stock(0, Side::Red, red_tank, Facing::E, "Red Tank");
-    red_t.has_air_support = true;
-    let mut blue_t = Tank::stock(3, Side::Blue, blue_tank, Facing::W, "Blue Tank");
-    blue_t.has_air_support = true;
+    let mut red_t0 = Tank::stock(0, Side::Red, red_tanks[0], Facing::E, "Red Tank A");
+    red_t0.has_air_support = true;
+    let mut red_t1 = Tank::stock(1, Side::Red, red_tanks[1], Facing::E, "Red Tank B");
+    red_t1.has_air_support = true;
+    let mut blue_t0 = Tank::stock(6, Side::Blue, blue_tanks[0], Facing::W, "Blue Tank A");
+    blue_t0.has_air_support = true;
+    let mut blue_t1 = Tank::stock(7, Side::Blue, blue_tanks[1], Facing::W, "Blue Tank B");
+    blue_t1.has_air_support = true;
 
     let tanks = vec![
-        red_t,
-        Tank::stock_apc(1, Side::Red, red_apc, Facing::E, "Red APC"),
-        Tank::stock_infantry(2, Side::Red, red_inf, Facing::E, "Red Squad"),
-        blue_t,
-        Tank::stock_apc(4, Side::Blue, blue_apc, Facing::W, "Blue APC"),
-        Tank::stock_infantry(5, Side::Blue, blue_inf, Facing::W, "Blue Squad"),
+        red_t0,
+        red_t1,
+        Tank::stock_apc(2, Side::Red, red_apcs[0], Facing::E, "Red APC A"),
+        Tank::stock_apc(3, Side::Red, red_apcs[1], Facing::E, "Red APC B"),
+        Tank::stock_infantry(4, Side::Red, red_inf[0], Facing::E, "Red Squad A"),
+        Tank::stock_infantry(5, Side::Red, red_inf[1], Facing::E, "Red Squad B"),
+        blue_t0,
+        blue_t1,
+        Tank::stock_apc(8, Side::Blue, blue_apcs[0], Facing::W, "Blue APC A"),
+        Tank::stock_apc(9, Side::Blue, blue_apcs[1], Facing::W, "Blue APC B"),
+        Tank::stock_infantry(10, Side::Blue, blue_inf[0], Facing::W, "Blue Squad A"),
+        Tank::stock_infantry(11, Side::Blue, blue_inf[1], Facing::W, "Blue Squad B"),
     ];
-    let mut game = Game::new(board, tanks, coin_flip(rng), 160, "combined").with_stalemate(32);
+    // More units → higher safety valve / idle window so a full wipe can finish.
+    let mut game = Game::new(board, tanks, coin_flip(rng), 240, "combined").with_stalemate(48);
     // Scenario: after initiative, the second player may nudge each opposing
     // unit up to 1 hex before the first activation.
     second_player_nudge_opposing(&mut game);
@@ -580,11 +604,15 @@ mod tests {
         assert_eq!(g.scenario, "combined");
         assert_eq!(g.board.max_q, 16);
         assert_eq!(g.board.max_r, 12);
-        assert_eq!(g.tanks.len(), 6);
-        let kinds: Vec<_> = g.tanks.iter().map(|t| t.kind).collect();
-        assert!(kinds.contains(&UnitKind::Tank));
-        assert!(kinds.contains(&UnitKind::Apc));
-        assert!(kinds.contains(&UnitKind::Infantry));
+        assert_eq!(g.tanks.len(), 12);
+        assert_eq!(g.max_activations, 240);
+        assert_eq!(g.stalemate_after, 48);
+        assert_eq!(g.tanks.iter().filter(|t| t.side == Side::Red).count(), 6);
+        assert_eq!(g.tanks.iter().filter(|t| t.side == Side::Blue).count(), 6);
+        let count = |kind| g.tanks.iter().filter(|t| t.kind == kind).count();
+        assert_eq!(count(UnitKind::Tank), 4);
+        assert_eq!(count(UnitKind::Apc), 4);
+        assert_eq!(count(UnitKind::Infantry), 4);
         assert!(g
             .tanks
             .iter()
@@ -596,9 +624,9 @@ mod tests {
         assert!(g.board.terrain_at(Hex::new(8, 11)).impassable());
         // Constant skeleton is east–west mirrored (nudge may move units after).
         let width = 17;
-        assert_eq!(mirror_ew(Hex::new(1, 4), width), Hex::new(15, 4));
-        assert_eq!(mirror_ew(Hex::new(1, 7), width), Hex::new(15, 7));
-        assert_eq!(mirror_ew(Hex::new(0, 6), width), Hex::new(16, 6));
+        assert_eq!(mirror_ew(Hex::new(1, 3), width), Hex::new(15, 3));
+        assert_eq!(mirror_ew(Hex::new(1, 9), width), Hex::new(15, 9));
+        assert_eq!(mirror_ew(Hex::new(0, 4), width), Hex::new(16, 4));
         assert_eq!(g.board.terrain_at(Hex::new(2, 1)), Terrain::Building);
         assert_eq!(
             g.board.terrain_at(mirror_ew(Hex::new(2, 1), width)),
@@ -616,22 +644,41 @@ mod tests {
 
     #[test]
     fn combined_starts_mirrored_before_nudge() {
-        // Build the same way as `combined` but skip the second-player nudge.
         let width = 17;
+        let red_tanks = [Hex::new(1, 3), Hex::new(1, 5)];
+        let red_apcs = [Hex::new(1, 7), Hex::new(1, 9)];
+        let red_inf = [Hex::new(0, 4), Hex::new(0, 8)];
+        for h in red_tanks.iter().chain(red_apcs.iter()).chain(red_inf.iter()) {
+            let m = mirror_ew(*h, width);
+            assert_ne!(*h, m);
+            assert_eq!(m.r, h.r);
+            assert_eq!(m.q + h.q, width - 1);
+        }
+        // Spot-check kind pairing via a live setup's pre-nudge positions:
+        // rebuild without nudge.
         let height = 13;
         let mut rng = ChaCha8Rng::seed_from_u64(4);
-        let red_tank = Hex::new(1, 4);
-        let red_apc = Hex::new(1, 7);
-        let red_inf = Hex::new(0, 6);
-        let blue_tank = mirror_ew(red_tank, width);
-        let blue_apc = mirror_ew(red_apc, width);
-        let blue_inf = mirror_ew(red_inf, width);
-        let reserved = [red_tank, red_apc, red_inf, blue_tank, blue_apc, blue_inf];
+        let blue_tanks = [mirror_ew(red_tanks[0], width), mirror_ew(red_tanks[1], width)];
+        let blue_apcs = [mirror_ew(red_apcs[0], width), mirror_ew(red_apcs[1], width)];
+        let blue_inf = [mirror_ew(red_inf[0], width), mirror_ew(red_inf[1], width)];
+        let reserved: Vec<Hex> = red_tanks
+            .iter()
+            .chain(red_apcs.iter())
+            .chain(red_inf.iter())
+            .chain(blue_tanks.iter())
+            .chain(blue_apcs.iter())
+            .chain(blue_inf.iter())
+            .copied()
+            .collect();
         let egress = [
-            Hex::new(2, 4),
+            Hex::new(2, 3),
+            Hex::new(2, 5),
             Hex::new(2, 7),
-            mirror_ew(Hex::new(2, 4), width),
+            Hex::new(2, 9),
+            mirror_ew(Hex::new(2, 3), width),
+            mirror_ew(Hex::new(2, 5), width),
             mirror_ew(Hex::new(2, 7), width),
+            mirror_ew(Hex::new(2, 9), width),
         ];
         let wall = combined_wall(width, height);
         let alley = combined_alley_clear();
@@ -647,14 +694,20 @@ mod tests {
             rubble: (2, 5),
             mirror_scatter: true,
         };
-        let board = build_board(&layout, &mut rng, &reserved, &egress);
+        let _board = build_board(&layout, &mut rng, &reserved, &egress);
         let tanks = vec![
-            Tank::stock(0, Side::Red, red_tank, Facing::E, "Red Tank"),
-            Tank::stock_apc(1, Side::Red, red_apc, Facing::E, "Red APC"),
-            Tank::stock_infantry(2, Side::Red, red_inf, Facing::E, "Red Squad"),
-            Tank::stock(3, Side::Blue, blue_tank, Facing::W, "Blue Tank"),
-            Tank::stock_apc(4, Side::Blue, blue_apc, Facing::W, "Blue APC"),
-            Tank::stock_infantry(5, Side::Blue, blue_inf, Facing::W, "Blue Squad"),
+            Tank::stock(0, Side::Red, red_tanks[0], Facing::E, "Red Tank A"),
+            Tank::stock(1, Side::Red, red_tanks[1], Facing::E, "Red Tank B"),
+            Tank::stock_apc(2, Side::Red, red_apcs[0], Facing::E, "Red APC A"),
+            Tank::stock_apc(3, Side::Red, red_apcs[1], Facing::E, "Red APC B"),
+            Tank::stock_infantry(4, Side::Red, red_inf[0], Facing::E, "Red Squad A"),
+            Tank::stock_infantry(5, Side::Red, red_inf[1], Facing::E, "Red Squad B"),
+            Tank::stock(6, Side::Blue, blue_tanks[0], Facing::W, "Blue Tank A"),
+            Tank::stock(7, Side::Blue, blue_tanks[1], Facing::W, "Blue Tank B"),
+            Tank::stock_apc(8, Side::Blue, blue_apcs[0], Facing::W, "Blue APC A"),
+            Tank::stock_apc(9, Side::Blue, blue_apcs[1], Facing::W, "Blue APC B"),
+            Tank::stock_infantry(10, Side::Blue, blue_inf[0], Facing::W, "Blue Squad A"),
+            Tank::stock_infantry(11, Side::Blue, blue_inf[1], Facing::W, "Blue Squad B"),
         ];
         for t in &tanks {
             if t.side == Side::Red {
@@ -668,7 +721,6 @@ mod tests {
                 );
             }
         }
-        let _ = board;
     }
 
     #[test]
@@ -694,7 +746,7 @@ mod tests {
             assert!(!g.board.terrain_at(t.pos).impassable());
             assert!(seen.insert(t.pos), "stacked at {}", t.pos);
         }
-        assert_eq!(g.tanks.iter().filter(|t| t.side == first).count(), 3);
+        assert_eq!(g.tanks.iter().filter(|t| t.side == first).count(), 6);
     }
 
     #[test]
