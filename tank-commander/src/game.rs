@@ -40,6 +40,7 @@ pub struct Game {
     pub total_hits: u32,
     pub total_pens: u32,
     pub total_glances: u32,
+    pub total_suppressions: u32,
     pub total_fires: u32,
     pub total_cook_offs: u32,
     pub total_crew_wounds: u32,
@@ -377,6 +378,9 @@ impl Game {
             if ev.glancing {
                 self.total_glances += 1;
             }
+            if ev.suppressed {
+                self.total_suppressions += 1;
+            }
             if ev.fire_started {
                 self.total_fires += 1;
             }
@@ -407,6 +411,22 @@ impl Game {
     }
 
     pub fn end_activation<R: Rng>(&mut self, rng: &mut R) {
+        // Clear suppression on the tank that just acted (end of its activation).
+        if let Some(id) = self.active_tank_id() {
+            let tank = self.tank_mut(id);
+            if tank.suppressed {
+                tank.suppressed = false;
+                let side = tank.side;
+                let name = tank.name.clone();
+                self.push_event(
+                    self.activations,
+                    Some(side),
+                    format!("{name} shakes off suppression"),
+                    None,
+                );
+            }
+        }
+
         // Fire / cook-off for all tanks at end of each activation.
         let ids: Vec<u8> = self.tanks.iter().map(|t| t.id).collect();
         for id in ids {
@@ -432,9 +452,6 @@ impl Game {
         self.activations += 1;
         self.activations_since_hit = self.activations_since_hit.saturating_add(1);
         self.activations_since_damage = self.activations_since_damage.saturating_add(1);
-        // Note: hit counters reset to 0 inside resolve_fire; the saturating_add
-        // above would wrongly increment after a hit on the same activation.
-        // Fix: track whether a hit happened this activation.
         self.active_side = self.active_side.other();
     }
 

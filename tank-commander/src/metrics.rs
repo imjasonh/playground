@@ -21,6 +21,7 @@ pub struct GameReport {
     pub hits: u32,
     pub pens: u32,
     pub glances: u32,
+    pub suppressions: u32,
     pub fires: u32,
     pub cook_offs: u32,
     pub crew_wounds: u32,
@@ -76,6 +77,7 @@ impl GameReport {
             hits: game.total_hits,
             pens: game.total_pens,
             glances: game.total_glances,
+            suppressions: game.total_suppressions,
             fires: game.total_fires,
             cook_offs: game.total_cook_offs,
             crew_wounds: game.total_crew_wounds,
@@ -157,6 +159,7 @@ pub struct AggregateReport {
     pub avg_hits: f64,
     pub avg_pens: f64,
     pub avg_glances: f64,
+    pub avg_suppressions: f64,
     pub avg_fires: f64,
     pub avg_cook_offs: f64,
     pub avg_crew_wounds: f64,
@@ -227,6 +230,7 @@ impl AggregateReport {
             avg_hits: sum_f(|r| r.hits),
             avg_pens: sum_f(|r| r.pens),
             avg_glances: sum_f(|r| r.glances),
+            avg_suppressions: sum_f(|r| r.suppressions),
             avg_fires: sum_f(|r| r.fires),
             avg_cook_offs: sum_f(|r| r.cook_offs),
             avg_crew_wounds: sum_f(|r| r.crew_wounds),
@@ -394,10 +398,11 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
         agg.avg_moves, agg.avg_turns, agg.avg_turret
     ));
     out.push_str(&format!(
-        "Drama: pens {:.2}, glances {:.2}, fires {:.2}, cook-offs {:.2}, \
+        "Drama: pens {:.2}, glances {:.2} (suppressions {:.2}), fires {:.2}, cook-offs {:.2}, \
          crew wounds {:.2}, crew kills {:.2}, abilities {:.2}, comebacks {}\n",
         agg.avg_pens,
         agg.avg_glances,
+        agg.avg_suppressions,
         agg.avg_fires,
         agg.avg_cook_offs,
         agg.avg_crew_wounds,

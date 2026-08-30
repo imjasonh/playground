@@ -14,6 +14,7 @@ pub struct CombatEvent {
     pub crew_wounded: bool,
     pub crew_killed: bool,
     pub fire_started: bool,
+    pub suppressed: bool,
     pub hull_damage: i32,
     pub disabled: bool,
     pub destroyed: bool,
@@ -101,6 +102,12 @@ pub fn resolve_shot<R: Rng>(rng: &mut R, params: ShotParams, target: &mut Tank) 
         }
         ev.description
             .push_str(&format!(", wound roll {wound_roll}"));
+        // House rule: every glance suppresses (no stacking).
+        if !target.suppressed {
+            target.suppressed = true;
+            ev.suppressed = true;
+            ev.description.push_str("; SUPPRESSED");
+        }
     }
 
     if round == RoundKind::He {
@@ -254,6 +261,25 @@ mod tests {
         );
         assert!(ev.glancing);
         assert!(!ev.penetrating);
+        assert!(ev.suppressed);
+        assert!(t.suppressed);
         assert_eq!(t.hull_points, 4);
+
+        // Second glance does not stack.
+        let ev2 = resolve_shot(
+            &mut rng,
+            ShotParams {
+                attacker_accuracy: 2,
+                accuracy_penalty: 0,
+                round: RoundKind::At,
+                impact: ImpactFacing::Front,
+                forced_hit: Some(true),
+                forced_pen_roll: Some(1),
+            },
+            &mut t,
+        );
+        assert!(ev2.glancing);
+        assert!(!ev2.suppressed);
+        assert!(t.suppressed);
     }
 }

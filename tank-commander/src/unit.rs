@@ -138,6 +138,8 @@ pub struct Tank {
     pub on_fire: bool,
     pub disabled: bool,
     pub destroyed: bool,
+    /// Glanced this battle and not yet taken a full activation: −1 action.
+    pub suppressed: bool,
     /// Medkit not yet implemented in v1; reserved for later loadouts.
     pub moves_this_turn: i32,
 }
@@ -173,6 +175,7 @@ impl Tank {
             on_fire: false,
             disabled: false,
             destroyed: false,
+            suppressed: false,
             moves_this_turn: 0,
         }
     }
@@ -210,7 +213,14 @@ impl Tank {
             CrewStatus::Killed => actions -= 2,
             CrewStatus::Healthy => {}
         }
-        actions.max(0)
+        if self.suppressed {
+            // House rule: glance applies Suppressed (−1 action, minimum 1)
+            // until the end of the target's next activation.
+            actions = (actions - 1).max(1);
+        } else {
+            actions = actions.max(0);
+        }
+        actions
     }
 
     pub fn effective_accuracy(&self) -> i32 {
@@ -285,6 +295,20 @@ mod tests {
         assert_eq!(t.effective_actions(), 4);
         t.crew[0].status = CrewStatus::Killed;
         assert_eq!(t.effective_actions(), 3);
+    }
+
+    #[test]
+    fn suppressed_costs_one_action_min_one() {
+        let mut t = Tank::stock(0, Side::Red, Hex::new(0, 0), Facing::E, "T");
+        assert_eq!(t.effective_actions(), 5);
+        t.suppressed = true;
+        assert_eq!(t.effective_actions(), 4);
+        t.crew[0].status = CrewStatus::Killed; // 5-2=3, then -1 → 2
+        assert_eq!(t.effective_actions(), 2);
+        t.actions_per_turn = 1;
+        t.crew[0].status = CrewStatus::Healthy;
+        // 1 - 1 = 0, floored to 1
+        assert_eq!(t.effective_actions(), 1);
     }
 
     #[test]
