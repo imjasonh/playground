@@ -76,7 +76,11 @@ pub fn setup<R: Rng>(kind: ScenarioKind, rng: &mut R) -> Game {
 /// outside it are rolled each game so approaches and cover vary. Starts sit
 /// on offset rows so each side's natural alley differs.
 pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
-    let board = build_board(rng, &[RED_START, BLUE_START], &[Hex::new(2, 3), Hex::new(8, 5)]);
+    let board = build_board(
+        rng,
+        &[RED_START, BLUE_START],
+        &[Hex::new(2, 3), Hex::new(8, 5)],
+    );
     let red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One");
     let blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One");
     let first = coin_flip(rng);
@@ -212,10 +216,19 @@ fn scatter_terrain<R: Rng>(rng: &mut R, starts: &[Hex], egress: &[Hex]) -> Board
 
 fn alleys_pathable(board: &Board, starts: &[Hex]) -> bool {
     // At least one start on each side can reach both alleys.
-    let red = starts.iter().copied().filter(|h| h.q <= 3).collect::<Vec<_>>();
-    let blue = starts.iter().copied().filter(|h| h.q >= 8).collect::<Vec<_>>();
+    let red = starts
+        .iter()
+        .copied()
+        .filter(|h| h.q <= 3)
+        .collect::<Vec<_>>();
+    let blue = starts
+        .iter()
+        .copied()
+        .filter(|h| h.q >= 8)
+        .collect::<Vec<_>>();
     let goals = [Hex::new(5, 1), Hex::new(5, 7)];
-    red.iter().any(|s| goals.iter().all(|g| reachable(board, *s, *g)))
+    red.iter()
+        .any(|s| goals.iter().all(|g| reachable(board, *s, *g)))
         && blue
             .iter()
             .any(|s| goals.iter().all(|g| reachable(board, *s, *g)))
@@ -301,14 +314,8 @@ mod tests {
         let g = platoon(&mut rng);
         assert_eq!(g.tanks.len(), 6);
         assert_eq!(g.scenario, "platoon");
-        assert_eq!(
-            g.tanks.iter().filter(|t| t.side == Side::Red).count(),
-            3
-        );
-        assert_eq!(
-            g.tanks.iter().filter(|t| t.side == Side::Blue).count(),
-            3
-        );
+        assert_eq!(g.tanks.iter().filter(|t| t.side == Side::Red).count(), 3);
+        assert_eq!(g.tanks.iter().filter(|t| t.side == Side::Blue).count(), 3);
         assert!(g.tanks.iter().all(|t| t.kind == UnitKind::Tank));
     }
 
@@ -322,6 +329,10 @@ mod tests {
         assert!(kinds.contains(&UnitKind::Tank));
         assert!(kinds.contains(&UnitKind::Apc));
         assert!(kinds.contains(&UnitKind::Infantry));
-        assert!(g.tanks.iter().filter(|t| t.kind == UnitKind::Tank).all(|t| t.has_air_support));
+        assert!(g
+            .tanks
+            .iter()
+            .filter(|t| t.kind == UnitKind::Tank)
+            .all(|t| t.has_air_support));
     }
 }
