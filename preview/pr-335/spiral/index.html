@@ -43,11 +43,6 @@
 
       <section class="board" aria-label="Spiral board">
         <div id="spiral" class="spiral"></div>
-        <div id="active-clue" class="active-clue" hidden>
-          <button id="flip-dir" class="active-clue-dir" type="button">Inward</button>
-          <span id="active-clue-range" class="active-clue-range"></span>
-          <span id="active-clue-text" class="active-clue-text"></span>
-        </div>
         <input
           id="entry"
           class="entry"
@@ -77,6 +72,21 @@
         Tap a clue or cell, then type. Seed <span id="seed">—</span>
       </p>
     </div>
+
+    <div id="active-clue" class="active-clue" hidden>
+      <div class="active-clue-meta">
+        <button id="flip-dir" class="active-clue-dir" type="button">Inward</button>
+        <span id="active-clue-range" class="active-clue-range"></span>
+        <span id="active-clue-text" class="active-clue-text"></span>
+      </div>
+      <div
+        id="active-slots"
+        class="active-slots"
+        role="group"
+        aria-label="Letters for the selected clue"
+      ></div>
+    </div>
+
     <script type="module" src="src/app.js"></script>
   </body>
 </html>
