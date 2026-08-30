@@ -676,6 +676,36 @@ safer taxi.
 
 ---
 
+## 2026-08-30 — Forest “behind” + APC armor cap (upstream)
+
+**Type: Rule / Sim**
+
+Two fidelity fixes from the Unimplemented list:
+
+1. **Forest:** enemy accuracy −1 when the target is **in** a forest hex **or
+   behind** one (any intervening forest on the line of fire). Forest still
+   does not block LOS.
+2. **APC armor:** list builder caps each facing at **+2** (tanks stay +3).
+
+**Effect (Combined, 200 games, seed 42)** — A/B isolating each change:
+
+| Build | Decisive | Hard TO | Idle | Hit rate | FP wins |
+|-------|----------|---------|------|----------|---------|
+| Exterior ride baseline (in-forest only, APC +3) | 95% | 21% | 10% | 72% | 93 |
+| + forest behind only (APC still +3) | 95% | 24% | 9% | **69%** | 89 |
+| + APC +2 only (forest still in-hex) | 95% | 21% | 10% | 72% | 93 |
+| Both | 95% | 24% | 9% | **69%** | 89 |
+
+Embark / mount / exterior-wipe rates unchanged (~100% embark games, ~4
+exterior mounts, ~1.05 exterior kills).
+
+**Verdict.** Neither moves decisive rate or embark usefulness. Forest behind
+shaves a few points off hit rate and nudges timeouts up slightly — real but
+small. APC armor cap is a fidelity fix with **no measurable Combined effect**
+(4-pt APC budget rarely wanted front +3 anyway).
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.
