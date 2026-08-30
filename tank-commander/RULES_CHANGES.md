@@ -215,6 +215,43 @@ puzzle for both players.
 
 ---
 
+## 2026-08-30 — Glance suppression
+
+**Rule.** When a shot hits but does not penetrate, the target becomes
+**Suppressed** until the end of its next activation: **−1 action** that
+activation (minimum 1). A second glance while already Suppressed does nothing
+extra. The token clears when that activation ends.
+
+**Why.** Mid-fight was Load→Fire→Load with glances often feeling like soft
+misses (wound roll fails ≈ half the time). Suppression makes every glance
+shake the crew without racing hull damage, and gives the shooter a short
+tempo window.
+
+**Effect on balance (200 games, seed 7; baseline = offset starts + random
+terrain):**
+
+| Metric | Before | After (+ suppression) | Delta |
+|--------|-------:|----------------------:|------:|
+| Red / Blue / Draw | 110 / 88 / 2 | 110 / 86 / 4 | similar |
+| First-player win share | 62% | 57% (111/196) | slightly fairer |
+| Avg activations | 10.4 | 10.4 | unchanged |
+| Timed out | 5% | 6% | similar |
+| Avg glances | 1.49 | 1.48 | — |
+| Avg suppressions | 0 | **1.40** | almost every glance sticks |
+| Avg pens / fires | 4.09 / 1.14 | 4.00 / 1.18 | drama holds |
+| Comebacks | 72 | 75 | similar |
+
+**Larger batch (500 games, seed 1):** Red 248 / Blue 239 / Draw 13. First-player
+share ~56% (274/487). Avg **1.33 suppressions** / **1.41 glances**. Comebacks
+173. Timeouts 7%. Decisive 97%.
+
+**Verdict.** Keep. Glances now do something every time (~94% apply a fresh
+token; the rest were already suppressed). Side balance and cinema stay healthy;
+first-player edge eased a little. Worth a human playtest to confirm the −1
+action feels like a punch, not a bookkeeping tax.
+
+---
+
 ## How to re-check
 
 ```bash

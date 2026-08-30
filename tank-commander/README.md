@@ -42,6 +42,9 @@ cross simple thresholds.
 - **Natural 1 / natural 6.** A roll of 1 always fails and a roll of 6 always
   succeeds on hit, pen, glance-wound, fire, and cook-off checks. See
   [`RULES_CHANGES.md`](RULES_CHANGES.md).
+- **Glance suppression.** A non-penetrating hit suppresses the target (−1
+  action on its next activation, minimum 1; does not stack). Clears at the end
+  of that activation.
 - **Turn limit.** The rules say the battle ends after 10 turns. The sim
   treats that as 10 activations per side (20 total).
 - **Turret arc.** A target is in arc when the nearest hex facing from shooter
