@@ -83,8 +83,7 @@ function renderClues(container, dir) {
     });
     btn.addEventListener("click", () => {
       state = selectClue(state, dir, index);
-      render();
-      focusEntry();
+      paint();
     });
     container.appendChild(btn);
   });
@@ -128,9 +127,8 @@ function selectCell(index, { toggleDir = false } = {}) {
     }
   }
 
-  state = { ...state, selected: index };
   if (chosen) state = selectClue(state, chosen.dir, chosen.index);
-  // Keep the tapped cell selected even if selectClue jumped to an empty one.
+  // Keep the tapped cell even if selectClue jumped to an empty one.
   state = { ...state, selected: index };
 }
 
@@ -138,7 +136,6 @@ function syncEntryDock() {
   const dock = els.activeClue;
   if (!dock || dock.hidden) return;
   const vv = window.visualViewport;
-  // Sit just above the soft keyboard (or at the screen bottom).
   const keyboard = vv
     ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
     : 0;
@@ -179,8 +176,7 @@ function renderActiveClue() {
     });
     btn.addEventListener("click", () => {
       state = { ...state, selected: cellIndex };
-      render();
-      focusEntry();
+      paint();
     });
     els.activeSlots.appendChild(btn);
   });
@@ -235,8 +231,7 @@ function renderSpiral() {
       const index = Number(node.getAttribute("data-index"));
       const sameCell = state && state.selected === index;
       selectCell(index, { toggleDir: sameCell });
-      render();
-      focusEntry();
+      paint();
     });
   });
 }
@@ -258,13 +253,19 @@ function renderStatus() {
 
 function maybeCelebrate() {
   if (!state) return;
-  if (!isSolved(state)) {
+  // Reveal fills the grid but is not a solve; only celebrate typed finishes.
+  if (state.revealed || !isSolved(state)) {
     celebratedSolve = false;
     return;
   }
   if (celebratedSolve) return;
   celebratedSolve = true;
   celebrate(els.spiral);
+}
+
+function paint() {
+  render();
+  focusEntry();
 }
 
 function render() {
@@ -302,43 +303,31 @@ function typeLetter(ch) {
   if (!state || state.revealed) return;
   state = setLetter(state, state.selected, ch);
   advanceSelection(1);
-  render();
-  focusEntry();
+  paint();
 }
 
 function deleteLetter({ goBack }) {
   if (!state || state.revealed) return;
-  if (goBack && state.guesses[state.selected]) {
-    state = setLetter(state, state.selected, "");
-  } else if (goBack) {
-    advanceSelection(-1);
-    state = setLetter(state, state.selected, "");
-  } else {
-    state = setLetter(state, state.selected, "");
-  }
-  render();
-  focusEntry();
+  if (goBack && !state.guesses[state.selected]) advanceSelection(-1);
+  state = setLetter(state, state.selected, "");
+  paint();
 }
 
 function onKeyDown(event) {
   if (!state) return;
   if (event.metaKey || event.ctrlKey || event.altKey) return;
 
-  // Ignore keydown letter repeats when the entry input will also fire input —
-  // except for navigation / edit keys that input events do not cover well.
   const key = event.key;
   if (key === "ArrowRight" || key === "ArrowDown" || key === "Tab") {
     event.preventDefault();
     advanceSelection(key === "Tab" && event.shiftKey ? -1 : 1);
-    render();
-    focusEntry();
+    paint();
     return;
   }
   if (key === "ArrowLeft" || key === "ArrowUp") {
     event.preventDefault();
     advanceSelection(-1);
-    render();
-    focusEntry();
+    paint();
     return;
   }
   if (key === "Backspace") {
@@ -353,10 +342,8 @@ function onKeyDown(event) {
   }
   if (key === " " || key === "Enter") {
     event.preventDefault();
-    // Flip inward/outward for the selected cell.
     selectCell(state.selected, { toggleDir: true });
-    render();
-    focusEntry();
+    paint();
     return;
   }
   if (/^[a-zA-Z]$/.test(key) && event.target !== els.entry) {
@@ -377,8 +364,7 @@ function onEntryInput() {
 function flipDirection() {
   if (!state) return;
   selectCell(state.selected, { toggleDir: true });
-  render();
-  focusEntry();
+  paint();
 }
 
 function readQuery() {
@@ -419,8 +405,7 @@ function newPuzzle(explicitSeed = null) {
     celebratedSolve = false;
     clearCelebration();
     writeQuery(puzzle);
-    render();
-    focusEntry();
+    paint();
   });
 }
 
@@ -438,8 +423,7 @@ function init() {
   els.check.addEventListener("click", () => {
     if (!state) return;
     state = checkGuesses(state);
-    render();
-    focusEntry();
+    paint();
   });
   els.reveal.addEventListener("click", () => {
     if (!state) return;
@@ -451,8 +435,7 @@ function init() {
     state = clearGuesses(state);
     celebratedSolve = false;
     clearCelebration();
-    render();
-    focusEntry();
+    paint();
   });
 
   els.flipDir.addEventListener("click", flipDirection);
@@ -463,7 +446,6 @@ function init() {
 
   els.entry.addEventListener("keydown", onKeyDown);
   els.entry.addEventListener("input", onEntryInput);
-  // Desktop: typing while focus is elsewhere still works.
   document.addEventListener("keydown", (event) => {
     if (event.target === els.entry) return;
     if (
@@ -477,7 +459,6 @@ function init() {
     onKeyDown(event);
   });
 
-  // Tap the board background to reopen the keyboard.
   els.spiral.addEventListener("pointerdown", (event) => {
     if (event.target.closest(".cell")) return;
     event.preventDefault();

@@ -1,7 +1,6 @@
 /**
- * Magazine-style spiral track: constant-width ribbon, cells of equal arc
- * length. Dividers are perpendicular to the path, so they do not line up
- * from one turn to the next — same idea as the printed Games spiral.
+ * Equal-arc spiral track. Dividers are perpendicular to the path so they do
+ * not line up turn-to-turn, like the printed Games spiral.
  *
  * Cell 0 (number 1) starts near 1 o'clock on the outer rim and winds
  * counter-clockwise into the center.
@@ -24,7 +23,7 @@
  * @returns {{ cells: SpiralCell[], turns: number, trackWidth: number }}
  */
 export function spiralLayout(size, options = {}) {
-  // Printed 100-cell spirals use about 4.5–5 turns so inner cells stay chunky.
+  // More turns on larger boards keep the inner track wide enough to write in.
   const turns = options.turns ?? Math.max(3.2, Math.min(5.2, 2.2 + size / 36));
   const rim = 0.485;
   const pitch = (rim - 0.055) / turns;
@@ -158,28 +157,19 @@ export function spiralLayout(size, options = {}) {
 }
 
 /**
- * Letter font size as a fraction of the viewBox.
- * Sized from track width so inner cells stay as readable as outer ones.
- * @param {number} size
- * @param {number} [trackWidth]
+ * Letter font size as a fraction of the viewBox, from track width.
+ * @param {number} _size
+ * @param {number} trackWidth
  */
-export function cellFontScale(size, trackWidth) {
-  if (trackWidth) return Math.min(0.032, trackWidth * 0.58);
-  if (size <= 36) return 0.028;
-  if (size <= 48) return 0.024;
-  if (size <= 64) return 0.02;
-  return 0.016;
+export function cellFontScale(_size, trackWidth) {
+  return Math.min(0.032, trackWidth * 0.58);
 }
 
 /**
- * Cell number font size as a fraction of the viewBox.
- * @param {number} size
- * @param {number} [trackWidth]
+ * Cell-number font size as a fraction of the viewBox, from track width.
+ * @param {number} _size
+ * @param {number} trackWidth
  */
-export function cellNumberScale(size, trackWidth) {
-  if (trackWidth) return Math.min(0.014, trackWidth * 0.28);
-  if (size <= 36) return 0.014;
-  if (size <= 48) return 0.012;
-  if (size <= 64) return 0.01;
-  return 0.009;
+export function cellNumberScale(_size, trackWidth) {
+  return Math.min(0.014, trackWidth * 0.28);
 }

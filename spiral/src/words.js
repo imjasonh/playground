@@ -1,4 +1,4 @@
-/** @typedef {{ word: string, clue: string, display?: string }} Entry */
+/** @typedef {{ word: string, clue: string }} Entry */
 
 /** Curated spiral lexicon: uppercase answers with original crossword-style clues. */
 export const ENTRIES = [
@@ -2002,7 +2002,7 @@ export const ENTRIES = [
   { word: "RACCOON", clue: "Masked night scavenger" },
   { word: "SPARROW", clue: "Common city songbird" },
   { word: "SWEATER", clue: "Knit top" },
-  { word: "TEALEAF", clue: "Tea plant part", display: "TEA LEAF" },
+  { word: "TEALEAF", clue: "Tea plant part" },
   { word: "THEATER", clue: "Playhouse" },
   { word: "TRILOGY", clue: "Story in three parts" },
   { word: "TRUMPET", clue: "Brass instrument" },
@@ -2028,8 +2028,4 @@ export const ENTRY_BY_WORD = new Map(ENTRIES.map((e) => [e.word, e]));
 
 export function clueFor(word) {
   return ENTRY_BY_WORD.get(word)?.clue ?? word;
-}
-
-export function displayFor(word) {
-  return ENTRY_BY_WORD.get(word)?.display ?? word;
 }
