@@ -41,6 +41,10 @@ available to load. They still start the battle loaded with AT. The HE upgrade
 below is redundant for stock Skirmish / Platoon / Combined as we play them; it
 remains for custom / painted builds if you want the upgrade list complete.
 
+**House rule — stock field kit.** Stock tanks also bring a **smoke launcher**,
+**medkit**, and **lieutenant** (3 upgrade points). APCs bring smoke. Same idea
+as stock HE: these scenarios always field them so those rules get used.
+
 ### Upgrades (up to 10 points)
 
 Spend up to 10 upgrade points before the game:
