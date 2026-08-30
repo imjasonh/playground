@@ -162,6 +162,14 @@ pub struct Tank {
     /// Upgrade: first crew injury ignores its penalty once.
     pub has_medkit: bool,
     pub medkit_used: bool,
+    /// Upgrade flags for census / reporting.
+    pub has_engine: bool,
+    pub has_optics: bool,
+    pub has_barrel: bool,
+    /// Remaining anti-tank mine charges (advanced).
+    pub mines_left: u8,
+    pub armor_points_bought: u8,
+    pub upgrade_points_spent: u8,
     /// Marked after activating; cleared when the side starts a new pass
     /// (every operational unit has activated once). See RULES_CHANGES.md.
     pub activated_this_pass: bool,
@@ -209,6 +217,12 @@ impl Tank {
             smoke_used: false,
             has_medkit: false,
             medkit_used: false,
+            has_engine: false,
+            has_optics: false,
+            has_barrel: false,
+            mines_left: 0,
+            armor_points_bought: 0,
+            upgrade_points_spent: 0,
             activated_this_pass: false,
             moves_this_turn: 0,
         }
@@ -255,6 +269,12 @@ impl Tank {
             smoke_used: false,
             has_medkit: false,
             medkit_used: false,
+            has_engine: false,
+            has_optics: false,
+            has_barrel: false,
+            mines_left: 0,
+            armor_points_bought: 0,
+            upgrade_points_spent: 0,
             activated_this_pass: false,
             moves_this_turn: 0,
         }
@@ -301,6 +321,12 @@ impl Tank {
             smoke_used: false,
             has_medkit: false,
             medkit_used: false,
+            has_engine: false,
+            has_optics: false,
+            has_barrel: false,
+            mines_left: 0,
+            armor_points_bought: 0,
+            upgrade_points_spent: 0,
             activated_this_pass: false,
             moves_this_turn: 0,
         }

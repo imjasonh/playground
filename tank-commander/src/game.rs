@@ -65,6 +65,8 @@ pub struct Game {
     pub smoke_deployed: u32,
     pub medkit_saves: u32,
     pub lt_covers: u32,
+    pub mines_deployed: u32,
+    pub mines_triggered: u32,
     pub shots_fired: u32,
     pub shots_missed: u32,
     pub at_shots: u32,
@@ -72,6 +74,8 @@ pub struct Game {
     pub moves_made: u32,
     pub turns_made: u32,
     pub turret_rotations: u32,
+    /// Snapshot of upgrades at game start.
+    pub loadout_census: crate::upgrades::LoadoutCensus,
 }
 
 impl Game {
@@ -82,6 +86,7 @@ impl Game {
         max_activations: u32,
         scenario: impl Into<String>,
     ) -> Self {
+        let loadout_census = crate::upgrades::LoadoutCensus::from_tanks(&tanks);
         Self {
             board,
             tanks,
@@ -109,6 +114,8 @@ impl Game {
             smoke_deployed: 0,
             medkit_saves: 0,
             lt_covers: 0,
+            mines_deployed: 0,
+            mines_triggered: 0,
             shots_fired: 0,
             shots_missed: 0,
             at_shots: 0,
@@ -116,6 +123,7 @@ impl Game {
             moves_made: 0,
             turns_made: 0,
             turret_rotations: 0,
+            loadout_census,
         }
     }
 
@@ -387,6 +395,18 @@ impl Game {
             }
         }
 
+        // Tank AI weapons (anti-infantry upgrade).
+        if tank.ai_range > 0 && ap_left >= 1 {
+            for enemy in self.enemy_units(tank.side) {
+                if enemy.destroyed {
+                    continue;
+                }
+                if self.can_see_ai(tank, enemy) {
+                    out.push(Action::FireAi { target: enemy.id });
+                }
+            }
+        }
+
         if tank.can_load() {
             let cost = if buffs.free_load {
                 0
@@ -412,6 +432,7 @@ impl Game {
         }
 
         self.push_smoke_actions(tank, ap_left, out);
+        self.push_mine_actions(tank, ap_left, out);
         self.push_lt_cover_actions(tank, out);
     }
 
@@ -457,6 +478,26 @@ impl Game {
             if n >= 12 {
                 break;
             }
+        }
+    }
+
+    fn push_mine_actions(&self, tank: &Tank, ap_left: i32, out: &mut Vec<Action>) {
+        if tank.mines_left == 0 || ap_left < 1 {
+            return;
+        }
+        // Own hex or adjacent empty hexes (not already mined / building).
+        let mut candidates = vec![tank.pos];
+        for i in 0..6u8 {
+            candidates.push(tank.pos.neighbor(Facing::from_index(i)));
+        }
+        for h in candidates {
+            if !self.board.contains(h) || self.board.has_mine(h) {
+                continue;
+            }
+            if self.board.terrain_at(h).impassable() {
+                continue;
+            }
+            out.push(Action::DeployMine { hex: h });
         }
     }
 
@@ -604,6 +645,7 @@ impl Game {
                 *ap_left -= cost;
                 self.moves_made += 1;
                 self.push_event(turn, Some(side), format!("Move → {next}"), None);
+                self.resolve_mine_at(tank_id, next, rng);
             }
             Action::Step(facing) => {
                 let cost = self
@@ -634,6 +676,7 @@ impl Game {
                     format!("Step {facing:?} → {next}{cover_note}"),
                     None,
                 );
+                self.resolve_mine_at(tank_id, next, rng);
             }
             Action::TurnLeft | Action::TurnRight => {
                 let left = matches!(action, Action::TurnLeft);
@@ -707,6 +750,20 @@ impl Game {
                     None,
                 );
             }
+            Action::DeployMine { hex } => {
+                if self.tank(tank_id).mines_left > 0 && !self.board.has_mine(hex) {
+                    self.tank_mut(tank_id).mines_left -= 1;
+                    self.board.add_mine(hex);
+                    *ap_left -= 1;
+                    self.mines_deployed += 1;
+                    self.push_event(
+                        turn,
+                        Some(side),
+                        format!("Deployed mine on {hex}"),
+                        None,
+                    );
+                }
+            }
             Action::LieutenantCover { role } => {
                 if let Some(lt) = self.tank_mut(tank_id).crew.iter_mut().find(|c| {
                     c.role == CrewRole::Lieutenant
@@ -743,6 +800,46 @@ impl Game {
             | Action::AbilityBringItDown
             | Action::AbilityQuickLoad => {}
         }
+    }
+
+    /// Entering a mined hex: AT strength-6 pen check, then remove the mine.
+    fn resolve_mine_at<R: Rng>(&mut self, tank_id: u8, hex: Hex, rng: &mut R) {
+        if !self.board.take_mine(hex) {
+            return;
+        }
+        self.mines_triggered += 1;
+        let turn = self.activations;
+        let side = self.tank(tank_id).side;
+        let mut target = self.tank(tank_id).clone();
+        let target_kind = target.kind;
+        let ev = resolve_shot(
+            rng,
+            ShotParams {
+                attacker_accuracy: 2,
+                accuracy_penalty: 0,
+                round: RoundKind::At,
+                impact: crate::unit::ImpactFacing::Front,
+                forced_hit: Some(true),
+                forced_pen_roll: None,
+            },
+            &mut target,
+        );
+        let idx = self.tanks.iter().position(|t| t.id == tank_id).unwrap();
+        self.tanks[idx] = target;
+        self.record_shot_stats(&ev);
+        let mut text = format!("Mine at {hex}: {}", ev.description);
+        if target_kind == UnitKind::Infantry && ev.hit {
+            self.destroy_infantry(tank_id);
+            text.push_str("; infantry destroyed");
+        }
+        if ev.cook_off {
+            self.total_cook_offs += 1;
+            let pos = self.tank(tank_id).pos;
+            let victim_side = self.tank(tank_id).side;
+            self.board.set_terrain(pos, Terrain::Rubble);
+            self.apply_cook_off_splash(pos, victim_side, rng);
+        }
+        self.push_event(turn, Some(side), text, Some(ev));
     }
 
     /// `forced_round` is set for missiles (no magazine); main gun takes from `loaded`.

@@ -197,6 +197,37 @@ fn smoke_break_los_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Option
     Some(vec![Action::DeploySmoke { hex }])
 }
 
+/// Lay a mine toward the nearest enemy when we still have charges.
+fn mine_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Option<Vec<Action>> {
+    let unit = game.tank(unit_id);
+    if unit.mines_left == 0 {
+        return None;
+    }
+    let enemy = game
+        .enemy_units(unit.side)
+        .into_iter()
+        .filter(|e| !e.destroyed)
+        .min_by_key(|e| unit.pos.distance(e.pos))?;
+    // Prefer adjacent hex closer to the enemy; else own hex.
+    let mut opts: Vec<Hex> = (0..6u8)
+        .map(|i| unit.pos.neighbor(Facing::from_index(i)))
+        .filter(|h| {
+            game.board.contains(*h)
+                && !game.board.has_mine(*h)
+                && !game.board.terrain_at(*h).impassable()
+                && h.distance(enemy.pos) < unit.pos.distance(enemy.pos)
+        })
+        .collect();
+    if opts.is_empty() && !game.board.has_mine(unit.pos) {
+        opts.push(unit.pos);
+    }
+    if opts.is_empty() || !rng.gen_bool(0.55) {
+        return None;
+    }
+    let hex = *opts.choose(rng)?;
+    Some(vec![Action::DeployMine { hex }])
+}
+
 fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
     let tank = game.tank(tank_id);
     let enemies: Vec<&crate::unit::Tank> = game.enemy_units(tank.side);
@@ -214,6 +245,26 @@ fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
     if visible.is_empty() {
         if let Some(smoke) = smoke_break_los_plan(game, tank_id, rng) {
             return smoke;
+        }
+    }
+
+    // Drop a mine on the approach when closing on an enemy.
+    if let Some(mine) = mine_plan(game, tank_id, rng) {
+        return mine;
+    }
+
+    // Tank AI spray vs nearby infantry (anti-infantry upgrade).
+    if tank.ai_range > 0 {
+        let mut infantry: Vec<&crate::unit::Tank> = enemies
+            .iter()
+            .copied()
+            .filter(|e| e.kind == UnitKind::Infantry)
+            .collect();
+        infantry.sort_by_key(|e| (if e.in_cover { 1 } else { 0 }, tank.pos.distance(e.pos)));
+        for enemy in &infantry {
+            if game.can_see_ai(tank, enemy) {
+                return vec![Action::FireAi { target: enemy.id }];
+            }
         }
     }
 
@@ -839,7 +890,10 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
         Action::FireMissile { .. } | Action::FireAi { .. } => {
             node.ap_left -= 1;
         }
-        Action::TakeCover | Action::CallAirStrike { .. } | Action::DeploySmoke { .. } => {
+        Action::TakeCover
+        | Action::CallAirStrike { .. }
+        | Action::DeploySmoke { .. }
+        | Action::DeployMine { .. } => {
             node.ap_left -= 1;
         }
         Action::LieutenantCover { .. } => {

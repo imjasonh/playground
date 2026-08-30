@@ -41,6 +41,10 @@ pub enum Action {
     DeploySmoke {
         hex: Hex,
     },
+    /// Place an anti-tank mine in an adjacent empty hex (or own hex).
+    DeployMine {
+        hex: Hex,
+    },
     /// Lieutenant covers a killed core role (acts as wounded for that role).
     LieutenantCover {
         role: crate::unit::CrewRole,
@@ -81,6 +85,7 @@ impl Action {
             Action::TakeCover => "TakeCover",
             Action::CallAirStrike { .. } => "CallAirStrike",
             Action::DeploySmoke { .. } => "DeploySmoke",
+            Action::DeployMine { .. } => "DeployMine",
             Action::LieutenantCover { .. } => "LieutenantCover",
             Action::AbilityBoomingVoice => "Ability:BoomingVoice",
             Action::AbilityMoveMoveMove => "Ability:MoveMoveMove",

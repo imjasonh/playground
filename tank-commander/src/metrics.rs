@@ -2,6 +2,7 @@
 
 use crate::game::{Game, Outcome};
 use crate::unit::Side;
+use crate::upgrades::LoadoutCensus;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -33,6 +34,9 @@ pub struct GameReport {
     pub smoke_deployed: u32,
     pub medkit_saves: u32,
     pub lt_covers: u32,
+    pub mines_deployed: u32,
+    pub mines_triggered: u32,
+    pub loadout: LoadoutCensus,
     pub red_units_left: u32,
     pub blue_units_left: u32,
     /// True when the game hit the activation cap with both sides still fighting.
@@ -118,6 +122,9 @@ impl GameReport {
             smoke_deployed: game.smoke_deployed,
             medkit_saves: game.medkit_saves,
             lt_covers: game.lt_covers,
+            mines_deployed: game.mines_deployed,
+            mines_triggered: game.mines_triggered,
+            loadout: game.loadout_census.clone(),
             red_units_left,
             blue_units_left,
             timed_out: hit_cap && red_alive && blue_alive && !ended_by_stalemate,
@@ -210,6 +217,19 @@ pub struct AggregateReport {
     pub avg_smoke_deployed: f64,
     pub avg_medkit_saves: f64,
     pub avg_lt_covers: f64,
+    pub avg_mines_deployed: f64,
+    pub avg_mines_triggered: f64,
+    /// Fraction of non-infantry units that bought each upgrade (0..=1).
+    pub loadout_smoke_rate: f64,
+    pub loadout_medkit_rate: f64,
+    pub loadout_lt_rate: f64,
+    pub loadout_optics_rate: f64,
+    pub loadout_barrel_rate: f64,
+    pub loadout_engine_rate: f64,
+    pub loadout_ai_rate: f64,
+    pub loadout_avg_armor_pts: f64,
+    pub loadout_avg_mine_charges: f64,
+    pub loadout_avg_points: f64,
     pub hit_rate: f64,
     pub suggestions: Vec<String>,
 }
@@ -291,9 +311,38 @@ impl AggregateReport {
             avg_smoke_deployed: sum_f(|r| r.smoke_deployed),
             avg_medkit_saves: sum_f(|r| r.medkit_saves),
             avg_lt_covers: sum_f(|r| r.lt_covers),
+            avg_mines_deployed: sum_f(|r| r.mines_deployed),
+            avg_mines_triggered: sum_f(|r| r.mines_triggered),
+            loadout_smoke_rate: 0.0,
+            loadout_medkit_rate: 0.0,
+            loadout_lt_rate: 0.0,
+            loadout_optics_rate: 0.0,
+            loadout_barrel_rate: 0.0,
+            loadout_engine_rate: 0.0,
+            loadout_ai_rate: 0.0,
+            loadout_avg_armor_pts: 0.0,
+            loadout_avg_mine_charges: 0.0,
+            loadout_avg_points: 0.0,
             hit_rate,
             suggestions: Vec::new(),
         };
+        let units: u32 = reports.iter().map(|r| r.loadout.tanks).sum();
+        if units > 0 {
+            let uf = f64::from(units);
+            let sum_l = |f: fn(&LoadoutCensus) -> u32| {
+                reports.iter().map(|r| f(&r.loadout)).sum::<u32>()
+            };
+            agg.loadout_smoke_rate = f64::from(sum_l(|c| c.smoke)) / uf;
+            agg.loadout_medkit_rate = f64::from(sum_l(|c| c.medkit)) / uf;
+            agg.loadout_lt_rate = f64::from(sum_l(|c| c.lieutenant)) / uf;
+            agg.loadout_optics_rate = f64::from(sum_l(|c| c.optics)) / uf;
+            agg.loadout_barrel_rate = f64::from(sum_l(|c| c.barrel)) / uf;
+            agg.loadout_engine_rate = f64::from(sum_l(|c| c.engine)) / uf;
+            agg.loadout_ai_rate = f64::from(sum_l(|c| c.anti_infantry)) / uf;
+            agg.loadout_avg_armor_pts = f64::from(sum_l(|c| c.armor_points)) / uf;
+            agg.loadout_avg_mine_charges = f64::from(sum_l(|c| c.mines_charges)) / uf;
+            agg.loadout_avg_points = f64::from(sum_l(|c| c.upgrade_points)) / uf;
+        }
         agg.suggestions = suggest(&agg);
         agg
     }
@@ -479,6 +528,29 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
         out.push_str(&format!(
             "Field kit: avg smoke {:.2}, medkit saves {:.2}, LT covers {:.2}\n",
             agg.avg_smoke_deployed, agg.avg_medkit_saves, agg.avg_lt_covers
+        ));
+    }
+    if agg.avg_mines_deployed > 0.0 || agg.avg_mines_triggered > 0.0 {
+        out.push_str(&format!(
+            "Mines: avg deployed {:.2}, triggered {:.2}\n",
+            agg.avg_mines_deployed, agg.avg_mines_triggered
+        ));
+    }
+    if agg.loadout_avg_points > 0.0 {
+        out.push_str(&format!(
+            "List mix (share of vehicles): smoke {:.0}% medkit {:.0}% LT {:.0}% optics {:.0}% \
+             barrel {:.0}% engine {:.0}% AI {:.0}% | avg armor pts {:.1}, mine charges {:.2}, \
+             points spent {:.1}\n",
+            100.0 * agg.loadout_smoke_rate,
+            100.0 * agg.loadout_medkit_rate,
+            100.0 * agg.loadout_lt_rate,
+            100.0 * agg.loadout_optics_rate,
+            100.0 * agg.loadout_barrel_rate,
+            100.0 * agg.loadout_engine_rate,
+            100.0 * agg.loadout_ai_rate,
+            agg.loadout_avg_armor_pts,
+            agg.loadout_avg_mine_charges,
+            agg.loadout_avg_points
         ));
     }
     out.push_str(&format!(

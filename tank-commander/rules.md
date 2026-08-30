@@ -41,9 +41,11 @@ available to load. They still start the battle loaded with AT. The HE upgrade
 below is redundant for stock Skirmish / Platoon / Combined as we play them; it
 remains for custom / painted builds if you want the upgrade list complete.
 
-**House rule — stock field kit.** Stock tanks also bring a **smoke launcher**,
-**medkit**, and **lieutenant** (3 upgrade points). APCs bring smoke. Same idea
-as stock HE: these scenarios always field them so those rules get used.
+**House rule — list building.** Skirmish and Platoon tanks spend **up to 10**
+upgrade points before the game (weighted random in the simulator). Combined
+tanks do the same and may buy **mines**; each Combined tank also gets one air
+strike as a scenario grant (does not consume list points). APCs spend **up to
+4** points (armor, engine, smoke).
 
 ### Upgrades (up to 10 points)
 
@@ -333,7 +335,7 @@ These are the setups the simulator balances against. Map sizes are hex
 
 ### Skirmish
 
-- **Force:** 1v1 stock tanks (HE + field kit: smoke, medkit, lieutenant).
+- **Force:** 1v1 stock tanks with up to 10 upgrade points (HE free).
 - **Board:** 9×12 with a midline building block, clear alleys, random
   forest/mud/rubble outside reserved hexes, offset starts.
 - **Second-player spoil:** shift up to **2** scatter terrain tiles (forest /
@@ -342,7 +344,7 @@ These are the setups the simulator balances against. Map sizes are hex
 
 ### Platoon
 
-- **Force:** 3v3 stock tanks (HE + field kit).
+- **Force:** 3v3 stock tanks with up to 10 upgrade points each (HE free).
 - **Board:** 18×12 open mat — scattered **building clumps** and **forest
   patches**, plus single mud/rubble tiles. No sealed midline or plaza funnel.
 - **Second-player spoil:** nudge **each** opposing unit up to **1 hex**
@@ -351,8 +353,8 @@ These are the setups the simulator balances against. Map sizes are hex
 
 ### Combined arms
 
-- **Force:** per side — **2 tanks** (each with one air strike + field kit),
-  **2 APCs** (smoke), **2 infantry**.
+- **Force:** per side — **2 tanks** (10-pt lists + one air strike each; mines
+  allowed), **2 APCs** (4-pt lists), **2 infantry**.
 - **Board:** 18×12 open mat (same size as platoon) with building clumps and
   forest patches; starts and scatter are east–west **mirrored** at generation
   (second-player terrain spoil may break scatter symmetry on purpose).

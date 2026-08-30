@@ -4,6 +4,7 @@ use crate::board::{Board, Terrain};
 use crate::game::Game;
 use crate::hex::{Facing, Hex};
 use crate::unit::{Side, Tank, UnitKind};
+use crate::upgrades::spend_budget;
 use rand::seq::SliceRandom;
 use rand::Rng;
 
@@ -127,8 +128,10 @@ pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
     let starts = [RED_START, BLUE_START];
     let egress = [Hex::offset(2, 4), Hex::offset(6, 7)];
     let board = build_board(&SKIRMISH_MAP, rng, &starts, &egress);
-    let red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One").with_field_kit();
-    let blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One").with_field_kit();
+    let mut red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One");
+    spend_budget(&mut red, 10, false, rng);
+    let mut blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One");
+    spend_budget(&mut blue, 10, false, rng);
     let mut game = Game::new(board, vec![red, blue], coin_flip(rng), 20, "skirmish");
     // Terrain-only spoil: unit nudges skewed color on offset starts.
     second_player_nudge_terrain(&mut game, 2);
@@ -172,14 +175,17 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     };
     let board = build_board(&layout, rng, &reserved, &egress);
 
-    let tanks = vec![
-        Tank::stock(0, Side::Red, red_starts[0], Facing::E, "Red Alpha").with_field_kit(),
-        Tank::stock(1, Side::Red, red_starts[1], Facing::E, "Red Bravo").with_field_kit(),
-        Tank::stock(2, Side::Red, red_starts[2], Facing::E, "Red Charlie").with_field_kit(),
-        Tank::stock(3, Side::Blue, blue_starts[0], Facing::W, "Blue Alpha").with_field_kit(),
-        Tank::stock(4, Side::Blue, blue_starts[1], Facing::W, "Blue Bravo").with_field_kit(),
-        Tank::stock(5, Side::Blue, blue_starts[2], Facing::W, "Blue Charlie").with_field_kit(),
+    let mut tanks = vec![
+        Tank::stock(0, Side::Red, red_starts[0], Facing::E, "Red Alpha"),
+        Tank::stock(1, Side::Red, red_starts[1], Facing::E, "Red Bravo"),
+        Tank::stock(2, Side::Red, red_starts[2], Facing::E, "Red Charlie"),
+        Tank::stock(3, Side::Blue, blue_starts[0], Facing::W, "Blue Alpha"),
+        Tank::stock(4, Side::Blue, blue_starts[1], Facing::W, "Blue Bravo"),
+        Tank::stock(5, Side::Blue, blue_starts[2], Facing::W, "Blue Charlie"),
     ];
+    for t in &mut tanks {
+        spend_budget(t, 10, false, rng);
+    }
     let mut game = Game::new(board, tanks, coin_flip(rng), 200, "platoon").with_stalemate(40);
     second_player_setup(&mut game, 3);
     game
@@ -237,30 +243,39 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
     };
     let board = build_board(&layout, rng, &reserved, &egress);
 
-    let mut red_t0 =
-        Tank::stock(0, Side::Red, red_tanks[0], Facing::E, "Red Tank A").with_field_kit();
-    red_t0.has_air_support = true;
-    let mut red_t1 =
-        Tank::stock(1, Side::Red, red_tanks[1], Facing::E, "Red Tank B").with_field_kit();
+    let mut red_t0 = Tank::stock(0, Side::Red, red_tanks[0], Facing::E, "Red Tank A");
+    spend_budget(&mut red_t0, 10, true, rng);
+    red_t0.has_air_support = true; // scenario grant (on top of list)
+    let mut red_t1 = Tank::stock(1, Side::Red, red_tanks[1], Facing::E, "Red Tank B");
+    spend_budget(&mut red_t1, 10, true, rng);
     red_t1.has_air_support = true;
-    let mut blue_t0 =
-        Tank::stock(6, Side::Blue, blue_tanks[0], Facing::W, "Blue Tank A").with_field_kit();
+    let mut blue_t0 = Tank::stock(6, Side::Blue, blue_tanks[0], Facing::W, "Blue Tank A");
+    spend_budget(&mut blue_t0, 10, true, rng);
     blue_t0.has_air_support = true;
-    let mut blue_t1 =
-        Tank::stock(7, Side::Blue, blue_tanks[1], Facing::W, "Blue Tank B").with_field_kit();
+    let mut blue_t1 = Tank::stock(7, Side::Blue, blue_tanks[1], Facing::W, "Blue Tank B");
+    spend_budget(&mut blue_t1, 10, true, rng);
     blue_t1.has_air_support = true;
+
+    let mut red_apc_a = Tank::stock_apc(2, Side::Red, red_apcs[0], Facing::E, "Red APC A");
+    spend_budget(&mut red_apc_a, 4, false, rng);
+    let mut red_apc_b = Tank::stock_apc(3, Side::Red, red_apcs[1], Facing::E, "Red APC B");
+    spend_budget(&mut red_apc_b, 4, false, rng);
+    let mut blue_apc_a = Tank::stock_apc(8, Side::Blue, blue_apcs[0], Facing::W, "Blue APC A");
+    spend_budget(&mut blue_apc_a, 4, false, rng);
+    let mut blue_apc_b = Tank::stock_apc(9, Side::Blue, blue_apcs[1], Facing::W, "Blue APC B");
+    spend_budget(&mut blue_apc_b, 4, false, rng);
 
     let tanks = vec![
         red_t0,
         red_t1,
-        Tank::stock_apc(2, Side::Red, red_apcs[0], Facing::E, "Red APC A").with_smoke(),
-        Tank::stock_apc(3, Side::Red, red_apcs[1], Facing::E, "Red APC B").with_smoke(),
+        red_apc_a,
+        red_apc_b,
         Tank::stock_infantry(4, Side::Red, red_inf[0], Facing::E, "Red Squad A"),
         Tank::stock_infantry(5, Side::Red, red_inf[1], Facing::E, "Red Squad B"),
         blue_t0,
         blue_t1,
-        Tank::stock_apc(8, Side::Blue, blue_apcs[0], Facing::W, "Blue APC A").with_smoke(),
-        Tank::stock_apc(9, Side::Blue, blue_apcs[1], Facing::W, "Blue APC B").with_smoke(),
+        blue_apc_a,
+        blue_apc_b,
         Tank::stock_infantry(10, Side::Blue, blue_inf[0], Facing::W, "Blue Squad A"),
         Tank::stock_infantry(11, Side::Blue, blue_inf[1], Facing::W, "Blue Squad B"),
     ];

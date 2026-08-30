@@ -15,3 +15,4 @@ pub mod metrics;
 pub mod scenario;
 pub mod sim;
 pub mod unit;
+pub mod upgrades;
