@@ -65,9 +65,9 @@ cross simple thresholds.
 - **AI.** When LOS is blocked, pathfind to a firing hex. When LOS is open,
   beam-search shoot / load / ability plans. Infantry prefer missiles and
   cover; APCs hunt infantry; tanks with air support may call a strike.
-- **Map.** A midline building wall blocks the opening street; units take the
-  north or south alley. Forest, mud, and rubble outside the wall are rolled
-  each game.
+- **Map.** Skirmish stays on an 11×9 board with a compact midline block.
+  Combined uses 15×11 and platoon 17×13: taller midline walls, small wing
+  ruins, and more random forest/mud/rubble outside the alleys.
 
 Rules source of truth remains the upstream README, plus the house rules in
 `RULES_CHANGES.md`. Where the text is ambiguous, the sim picks a documented
