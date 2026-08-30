@@ -538,6 +538,33 @@ Combined idles improved; timeouts and low-engagement are still the soft spots.
 
 ---
 
+## 2026-08-30 — Under-spend initiative (skip spoil)
+
+**Type: Rule / Scenario**
+
+You may spend fewer than the list cap. After lists are built, compare each
+side’s **total** upgrade points. The side that spent **less** activates first
+and there is **no** second-player spoil. Equal totals still roll off and apply
+spoil. The simulator picks a random target in `0..=budget` per vehicle so this
+tradeoff shows up in Monte Carlo runs.
+
+**Effect (seed 1; 400 / 150 / 100) vs full-list (always aiming at the cap):**
+
+| Scenario | Decisive | FP share | Hard TO | Idle | Under-spend 1st | Avg pts/side | Gap |
+|----------|----------|----------|---------|------|-----------------|--------------|-----|
+| Skirmish | 84%→**93%** | 54%→**34%** | 67%→**26%** | 0% | **94%** | ~5.1 | 3.4 |
+| Platoon | 100%→**96%** | 49%→**37%** | 6%→**1%** | ~1% | **96%** | ~15 | 6.2 |
+| Combined | 95%→**94%** | 56%→**48%** | 40%→**32%** | 6%→**13%** | **94%** | ~14 | 4.7 |
+
+Going light almost always wins initiative (~94%), but in skirmish/platoon the
+**second** player still wins more games — the points gap (armor/engine) beats
+the first-activation edge. Timeouts dropped hard on skirmish because average
+lists are thinner (~5 pts/tank vs ~10). Worth watching whether humans game this
+into a race to the bottom; if so, floor the target spend or weight toward the
+cap in the sim.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.
