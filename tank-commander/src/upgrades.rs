@@ -155,6 +155,8 @@ pub fn spend_budget<R: Rng>(
         UnitKind::Infantry => return load,
     }
     menu.shuffle_stable(rng);
+    // Drop some options so lists trade off instead of always buying everything.
+    menu.retain(|_| rng.gen_bool(0.55));
 
     let mut spent = load.cost();
     for buy in menu {
@@ -172,34 +174,45 @@ pub fn spend_budget<R: Rng>(
         }
     }
 
-    // Second pass: fill leftover with armor / mines if legal.
+    // Fill leftover points with armor / mines / engine (tradeoffs still matter).
+    let fillers: [Buy; 5] = [
+        Buy::ArmorFront,
+        Buy::ArmorSide,
+        Buy::ArmorRear,
+        Buy::Mine,
+        Buy::Engine,
+    ];
+    let mut fill_order = fillers.to_vec();
+    fill_order.shuffle_stable(rng);
     while spent < budget {
         let mut filled = false;
-        if load.armor_front < 3 && spent < budget {
-            let mut trial = load.clone();
-            trial.armor_front += 1;
-            if trial.is_legal() {
-                load.armor_front += 1;
-                spent += 1;
-                filled = true;
+        for buy in &fill_order {
+            if matches!(buy, Buy::Mine) && !allow_mines {
+                continue;
             }
-        }
-        if !filled
-            && allow_mines
-            && tank.kind == UnitKind::Tank
-            && load.mines < 3
-            && spent < budget
-        {
-            load.mines += 1;
-            spent += 1;
+            if spent >= budget || !buy.can_add(&load) {
+                continue;
+            }
+            let cost = buy.cost();
+            if spent + cost > budget {
+                continue;
+            }
+            buy.add(&mut load);
+            spent += cost;
             filled = true;
-        }
-        if !filled && !load.engine && spent < budget && tank.kind != UnitKind::Infantry {
-            load.engine = true;
-            spent += 1;
-            filled = true;
+            break;
         }
         if !filled {
+            // Last resort: front armor if still legal.
+            if load.armor_front < 3 && load.is_legal() {
+                let mut trial = load.clone();
+                trial.armor_front += 1;
+                if trial.is_legal() && spent < budget {
+                    load.armor_front += 1;
+                    spent += 1;
+                    continue;
+                }
+            }
             break;
         }
     }
