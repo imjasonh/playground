@@ -37,6 +37,7 @@ const els = {
   flipDir: document.getElementById("flip-dir"),
   activeRange: document.getElementById("active-clue-range"),
   activeText: document.getElementById("active-clue-text"),
+  activeSlots: document.getElementById("active-slots"),
 };
 
 function formatRange(span) {
@@ -130,6 +131,17 @@ function selectCell(index, { toggleDir = false } = {}) {
   state = { ...state, selected: index };
 }
 
+function syncEntryDock() {
+  const dock = els.activeClue;
+  if (!dock || dock.hidden) return;
+  const vv = window.visualViewport;
+  // Sit just above the soft keyboard (or at the screen bottom).
+  const keyboard = vv
+    ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop)
+    : 0;
+  dock.style.bottom = `${keyboard}px`;
+}
+
 function renderActiveClue() {
   if (!state) {
     els.activeClue.hidden = true;
@@ -144,6 +156,32 @@ function renderActiveClue() {
   els.flipDir.textContent = state.activeDir === "inward" ? "Inward" : "Outward";
   els.activeRange.textContent = formatRange(span);
   els.activeText.textContent = span.clue;
+
+  const indices = spanIndices(span);
+  els.activeSlots.replaceChildren();
+  indices.forEach((cellIndex) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "active-slot";
+    if (state.selected === cellIndex) btn.classList.add("is-selected");
+    const letter = letterAt(state, cellIndex);
+    if (letter) btn.classList.add("is-filled");
+    btn.setAttribute("aria-label", `Cell ${cellIndex + 1}`);
+    btn.innerHTML =
+      `<span class="active-slot-num">${cellIndex + 1}</span>` +
+      `<span class="active-slot-letter">${letter || ""}</span>`;
+    btn.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      focusEntry();
+    });
+    btn.addEventListener("click", () => {
+      state = { ...state, selected: cellIndex };
+      render();
+      focusEntry();
+    });
+    els.activeSlots.appendChild(btn);
+  });
+  syncEntryDock();
 }
 
 function renderSpiral() {
@@ -158,9 +196,6 @@ function renderSpiral() {
 
   parts.push(
     `<svg viewBox="0 0 ${vb} ${vb}" role="img" aria-label="Spiral puzzle grid with ${size} cells">`,
-  );
-  parts.push(
-    `<circle class="spiral-rim" cx="${vb / 2}" cy="${vb / 2}" r="${0.48 * vb}" />`,
   );
 
   layout.cells.forEach((cell, i) => {
@@ -429,6 +464,13 @@ function init() {
     event.preventDefault();
     focusEntry();
   });
+
+  const vv = window.visualViewport;
+  if (vv) {
+    vv.addEventListener("resize", syncEntryDock);
+    vv.addEventListener("scroll", syncEntryDock);
+  }
+  window.addEventListener("resize", syncEntryDock);
 
   newPuzzle(query.seed);
 }
