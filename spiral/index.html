@@ -2,66 +2,60 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
-    <meta name="theme-color" content="#d9e3ec" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f1ea" />
     <meta
       name="description"
-      content="Generate and solve spiral word puzzles: one letter string reads as words inward and outward."
+      content="Generate and solve spiral word puzzles like the magazine classic."
     />
     <title>The Spiral</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Literata:opsz,wght@7..72,400;7..72,600;7..72,700&family=Syne:wght@600;700;800&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="page">
-      <header class="hero">
-        <p class="eyebrow">Word spiral</p>
+      <header class="masthead">
         <h1>The Spiral</h1>
-        <p class="lede">
-          One ring of letters, two directions. Fill each cell so the numbered path
-          spells words inward (1→center) and different words outward (center→1).
-        </p>
-        <div class="toolbar" role="group" aria-label="Puzzle controls">
-          <label class="field">
-            <span>Size</span>
-            <select id="size"></select>
-          </label>
-          <button id="generate" class="btn primary" type="button">New puzzle</button>
-          <button id="check" class="btn" type="button">Check</button>
-          <button id="reveal" class="btn" type="button">Reveal</button>
-          <button id="clear" class="btn" type="button">Clear</button>
-        </div>
-        <p id="status" class="status" aria-live="polite">Generating…</p>
+        <p class="byline">A circular word list</p>
       </header>
+
+      <p class="rules">
+        This puzzle looks like a crossword, but it is really a circular word
+        list. Starting at number 1, fill in the answers to the Inward clues in
+        order, working toward the center. Then work outward from the center with
+        the Outward clues. Working back and forth will help you find the
+        answers.
+      </p>
+
+      <div class="toolbar" role="group" aria-label="Puzzle controls">
+        <label class="field">
+          Size
+          <select id="size"></select>
+        </label>
+        <button id="generate" type="button">New puzzle</button>
+        <button id="check" type="button">Check</button>
+        <button id="reveal" type="button">Reveal</button>
+        <button id="clear" type="button">Clear</button>
+        <span id="status" class="status" aria-live="polite">Generating…</span>
+      </div>
 
       <section class="board" aria-label="Spiral board">
         <div id="spiral" class="spiral" tabindex="0"></div>
-        <p class="hint">
-          Click a cell or clue, then type. Arrows move along the active clue.
-          Seed <span id="seed">—</span>
-        </p>
       </section>
 
       <section class="clues" aria-label="Clues">
         <div class="clue-col">
           <h2>Inward</h2>
-          <p class="clue-dir">Counter-clockwise, 1 to the center</p>
           <div id="inward-clues" class="clue-list"></div>
         </div>
         <div class="clue-col">
           <h2>Outward</h2>
-          <p class="clue-dir">Clockwise, center back to 1</p>
           <div id="outward-clues" class="clue-list"></div>
         </div>
       </section>
+
+      <p class="footer-note">
+        Click a cell or clue, then type. Seed <span id="seed">—</span>
+      </p>
     </div>
     <script type="module" src="src/app.js"></script>
   </body>
