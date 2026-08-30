@@ -543,37 +543,34 @@ fn firing_positions(
     gun_range: i32,
 ) -> Vec<(Hex, bool)> {
     let mut out = Vec::new();
-    for q in game.board.min_q..=game.board.max_q {
-        for r in game.board.min_r..=game.board.max_r {
-            let h = Hex::new(q, r);
-            if game.board.terrain_at(h).impassable() {
-                continue;
-            }
-            if h == enemy.pos {
-                continue;
-            }
-            if h.distance(enemy.pos) > gun_range || h.distance(enemy.pos) < 1 {
-                continue;
-            }
-            if game
-                .tanks
-                .iter()
-                .any(|t| t.side == side && !t.destroyed && t.pos == h)
-            {
-                continue;
-            }
-            let occ: Vec<Hex> = game
-                .tanks
-                .iter()
-                .filter(|t| !t.destroyed && t.pos != h && t.pos != enemy.pos)
-                .map(|t| t.pos)
-                .collect();
-            if !game.board.has_los(h, enemy.pos, &occ) {
-                continue;
-            }
-            let forest = game.board.terrain_at(h) == Terrain::Forest;
-            out.push((h, forest));
+    for h in game.board.hexes() {
+        if game.board.terrain_at(h).impassable() {
+            continue;
         }
+        if h == enemy.pos {
+            continue;
+        }
+        if h.distance(enemy.pos) > gun_range || h.distance(enemy.pos) < 1 {
+            continue;
+        }
+        if game
+            .tanks
+            .iter()
+            .any(|t| t.side == side && !t.destroyed && t.pos == h)
+        {
+            continue;
+        }
+        let occ: Vec<Hex> = game
+            .tanks
+            .iter()
+            .filter(|t| !t.destroyed && t.pos != h && t.pos != enemy.pos)
+            .map(|t| t.pos)
+            .collect();
+        if !game.board.has_los(h, enemy.pos, &occ) {
+            continue;
+        }
+        let forest = game.board.terrain_at(h) == Terrain::Forest;
+        out.push((h, forest));
     }
     out
 }

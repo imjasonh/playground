@@ -407,6 +407,33 @@ detonate. Combined’s idle/timeout problem is more visible now, not less.
 
 ---
 
+## 2026-08-30 — Rectangular (odd-r) boards instead of axial parallelograms
+
+**Type: Scenario** (map geometry; same scenario coordinates, different playable
+shape)
+
+Axial `(q, r)` ranges form a **parallelogram** on the hex lattice. Tabletop mats
+are **rectangles**. Boards now use odd-r offset columns×rows (`Hex::offset`);
+neighbor / distance math stays axial under the hood.
+
+Same declared sizes (11×9 / 17×13 / 19×15) and the same designer coordinates,
+but which edge hexes exist — and therefore approaches / LOS near the rim —
+changed. This **does** change sim results.
+
+**Effect (seed 1; 500 / 200 / 200) vs prior axial-parallelogram pass:**
+
+| Scenario | Decisive | FP share | Color (R/B) | Hard TO | Idle |
+|----------|----------|----------|-------------|---------|------|
+| Skirmish | 95%→**95%** | 54%→**52%** | ~even | 16%→**18%** | 0% |
+| Platoon | 99%→**100%** | 58%→**53%** | **139/60 Red** | 0% | 0% |
+| Combined | 98%→**96%** | 55%→**46%** | ~even | 16%→**28%** | 24%→**14%** |
+
+Platoon initiative is healthier; color balance broke (Red-heavy). Combined
+flipped toward second player and more hard timeouts. Geometry was worth fixing
+for fidelity; color bias on platoon needs a follow-up.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.

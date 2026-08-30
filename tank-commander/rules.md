@@ -324,8 +324,8 @@ required tabletop clocks — see [`RULES_CHANGES.md`](RULES_CHANGES.md).
 
 ## Scenarios
 
-These are the setups the simulator balances against. Map sizes are hexes
-(width × height).
+These are the setups the simulator balances against. Map sizes are hex
+**columns × rows** on an odd-r rectangular mat (not an axial parallelogram).
 
 ### Skirmish
 

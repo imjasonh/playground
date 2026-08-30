@@ -1,4 +1,8 @@
 //! Board terrain and occupancy.
+//!
+//! Boards are **odd-r offset rectangles** (pointy-top): `width` columns by
+//! `height` rows. That matches a tabletop hex mat. Internally hexes stay axial
+//! for distance / facing math — see [`crate::hex::Hex::offset`].
 
 use crate::hex::Hex;
 use serde::{Deserialize, Serialize};
@@ -32,10 +36,11 @@ impl Terrain {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Board {
-    pub min_q: i32,
-    pub max_q: i32,
-    pub min_r: i32,
-    pub max_r: i32,
+    /// Offset columns (odd-r).
+    pub width: i32,
+    /// Offset rows.
+    pub height: i32,
+    /// Terrain keyed by axial `(q, r)`.
     pub terrain: HashMap<(i32, i32), Terrain>,
     pub smoke: HashSet<(i32, i32)>,
 }
@@ -43,17 +48,25 @@ pub struct Board {
 impl Board {
     pub fn rect(width: i32, height: i32) -> Self {
         Self {
-            min_q: 0,
-            max_q: width - 1,
-            min_r: 0,
-            max_r: height - 1,
+            width,
+            height,
             terrain: HashMap::new(),
             smoke: HashSet::new(),
         }
     }
 
     pub fn contains(&self, hex: Hex) -> bool {
-        hex.q >= self.min_q && hex.q <= self.max_q && hex.r >= self.min_r && hex.r <= self.max_r
+        let (col, row) = hex.to_offset();
+        col >= 0 && col < self.width && row >= 0 && row < self.height
+    }
+
+    /// Every hex on the rectangular mat, row-major in offset space.
+    pub fn hexes(&self) -> impl Iterator<Item = Hex> + '_ {
+        (0..self.height).flat_map(|row| (0..self.width).map(move |col| Hex::offset(col, row)))
+    }
+
+    pub fn center(&self) -> Hex {
+        Hex::offset(self.width / 2, self.height / 2)
     }
 
     pub fn terrain_at(&self, hex: Hex) -> Terrain {
@@ -97,8 +110,6 @@ impl Board {
         if self.terrain_at(target) == Terrain::Forest {
             return 1;
         }
-        // Behind forest: any forest neighbor between shooter and target is
-        // handled as "in forest" for v1 simplicity — only in-forest counts.
         0
     }
 }
@@ -110,8 +121,24 @@ mod tests {
     #[test]
     fn building_blocks_los() {
         let mut b = Board::rect(8, 8);
-        b.set_terrain(Hex::new(2, 0), Terrain::Building);
-        assert!(!b.has_los(Hex::new(0, 0), Hex::new(4, 0), &[]));
-        assert!(b.has_los(Hex::new(0, 0), Hex::new(1, 0), &[]));
+        b.set_terrain(Hex::offset(2, 0), Terrain::Building);
+        assert!(!b.has_los(Hex::offset(0, 0), Hex::offset(4, 0), &[]));
+        assert!(b.has_los(Hex::offset(0, 0), Hex::offset(1, 0), &[]));
+    }
+
+    #[test]
+    fn rect_contains_offset_cells_not_axial_parallelogram() {
+        let b = Board::rect(5, 3);
+        assert_eq!(b.hexes().count(), 15);
+        // Offset (4,1) is on the east edge of a 5-wide mat.
+        assert!(b.contains(Hex::offset(4, 1)));
+        // Same axial numbers as a former parallelogram corner may fall off.
+        let axial_style = Hex::new(4, 1);
+        let (c, r) = axial_style.to_offset();
+        // Documented: contains uses offset bounds, not raw axial q/r.
+        assert_eq!(
+            b.contains(axial_style),
+            (0..5).contains(&c) && (0..3).contains(&r)
+        );
     }
 }

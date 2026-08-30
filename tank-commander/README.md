@@ -80,11 +80,13 @@ cross simple thresholds.
 - **AI.** When LOS is blocked, pathfind to a firing hex. When LOS is open,
   beam-search shoot / load / ability plans. Infantry prefer missiles and
   cover; APCs hunt infantry; tanks with air support may call a strike.
-- **Map.** Skirmish stays on an 11×9 board with a compact midline block.
-  Combined uses 17×13 and platoon 19×15, both with a sealed midline and a
-  wide plaza gap (plus side baffles) so units funnel into one fight.
-  Forest/mud/rubble scatter outside reserved hexes; infantry stepping into
-  forest dig in automatically, and leaving forest clears dig-in.
+- **Map.** Boards are odd-r **rectangles** (column × row), matching a
+  tabletop hex mat — not axial parallelograms. Skirmish stays on an 11×9
+  board with a compact midline block. Combined uses 17×13 and platoon 19×15,
+  both with a sealed midline and a wide plaza gap (plus side baffles) so
+  units funnel into one fight. Forest/mud/rubble scatter outside reserved
+  hexes; infantry stepping into forest dig in automatically, and leaving
+  forest clears dig-in.
 - **Combined arms.** Air strikes arrive at the end of the caller's next
   activation, then scatter (d6: wild 2 / drift 1 / on target) before the
   blast template (impact + neighbors). Tank main gun (range 5) outranges
@@ -106,9 +108,9 @@ default rather than blocking.
 
 | Path | Role |
 |------|------|
-| `src/hex.rs` | Axial hex math, facings, LOS line |
+| `src/hex.rs` | Axial math + odd-r offset map coords, facings, LOS line |
 | `src/unit.rs` | Tank / APC / infantry, crew, armor |
-| `src/board.rs` | Terrain and smoke |
+| `src/board.rs` | Rectangular boards, terrain, smoke |
 | `src/combat.rs` | Hit / pen / glance / fire / cook-off |
 | `src/action.rs` | Action enum and turn buffs |
 | `src/game.rs` | Legal moves and activation loop |
