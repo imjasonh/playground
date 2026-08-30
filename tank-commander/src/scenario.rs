@@ -4,7 +4,7 @@ use crate::board::{Board, Terrain};
 use crate::game::Game;
 use crate::hex::{Facing, Hex};
 use crate::unit::{Side, Tank, UnitKind};
-use crate::upgrades::spend_budget;
+use crate::upgrades::{initiative_from_lists, spend_budget};
 use rand::seq::SliceRandom;
 use rand::Rng;
 
@@ -132,9 +132,13 @@ pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
     spend_budget(&mut red, 10, false, rng);
     let mut blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One");
     spend_budget(&mut blue, 10, false, rng);
-    let mut game = Game::new(board, vec![red, blue], coin_flip(rng), 20, "skirmish");
-    // Terrain-only spoil: unit nudges skewed color on offset starts.
-    second_player_nudge_terrain(&mut game, 2);
+    let tanks = vec![red, blue];
+    let (first, spoil) = initiative_from_lists(&tanks, rng);
+    let mut game = Game::new(board, tanks, first, 20, "skirmish").with_list_initiative(!spoil);
+    // Terrain-only spoil when lists tied; skipped if under-spend won initiative.
+    if spoil {
+        second_player_nudge_terrain(&mut game, 2);
+    }
     game
 }
 
@@ -186,8 +190,13 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     for t in &mut tanks {
         spend_budget(t, 10, false, rng);
     }
-    let mut game = Game::new(board, tanks, coin_flip(rng), 200, "platoon").with_stalemate(40);
-    second_player_setup(&mut game, 3);
+    let (first, spoil) = initiative_from_lists(&tanks, rng);
+    let mut game = Game::new(board, tanks, first, 200, "platoon")
+        .with_stalemate(40)
+        .with_list_initiative(!spoil);
+    if spoil {
+        second_player_setup(&mut game, 3);
+    }
     game
 }
 
@@ -279,8 +288,13 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
         Tank::stock_infantry(10, Side::Blue, blue_inf[0], Facing::W, "Blue Squad A"),
         Tank::stock_infantry(11, Side::Blue, blue_inf[1], Facing::W, "Blue Squad B"),
     ];
-    let mut game = Game::new(board, tanks, coin_flip(rng), 240, "combined").with_stalemate(48);
-    second_player_setup(&mut game, 4);
+    let (first, spoil) = initiative_from_lists(&tanks, rng);
+    let mut game = Game::new(board, tanks, first, 240, "combined")
+        .with_stalemate(48)
+        .with_list_initiative(!spoil);
+    if spoil {
+        second_player_setup(&mut game, 4);
+    }
     game
 }
 
@@ -494,14 +508,6 @@ fn score_terrain_nudge(
     }
 
     score
-}
-
-fn coin_flip<R: Rng>(rng: &mut R) -> Side {
-    if rng.gen_bool(0.5) {
-        Side::Red
-    } else {
-        Side::Blue
-    }
 }
 
 fn build_board<R: Rng>(
@@ -1046,9 +1052,11 @@ mod tests {
     #[test]
     fn combined_second_player_may_nudge_opposing_force() {
         let mut rng = ChaCha8Rng::seed_from_u64(11);
-        let g = combined(&mut rng);
+        let mut g = combined(&mut rng);
+        // Under-spend often skips spoil; exercise the nudge path directly.
+        g.events.clear();
+        super::second_player_setup(&mut g, 4);
         let first = g.first_player;
-        // At least one setup nudge event when the heuristic finds a better hex.
         let nudges: Vec<_> = g
             .events
             .iter()
@@ -1059,7 +1067,6 @@ mod tests {
             "expected at least one opposing-force nudge, events={:?}",
             g.events.iter().map(|e| &e.text).collect::<Vec<_>>()
         );
-        // Nudged units must still be on-board and unstacked.
         let mut seen = std::collections::HashSet::new();
         for t in &g.tanks {
             assert!(g.board.contains(t.pos));

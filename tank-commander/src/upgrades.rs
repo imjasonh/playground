@@ -107,17 +107,40 @@ pub fn apply_loadout(tank: &mut Tank, load: &Loadout) {
     tank.upgrade_points_spent = load.cost() as u8;
 }
 
-/// Weighted random spend within `budget`. `allow_mines` unlocks anti-tank mines.
+/// Weighted random spend up to `budget`. Picks a target in `0..=budget` so
+/// sides can under-spend (and win initiative — see scenario setup).
+/// `allow_mines` unlocks anti-tank mines.
 pub fn spend_budget<R: Rng>(
     tank: &mut Tank,
     budget: i32,
     allow_mines: bool,
     rng: &mut R,
 ) -> Loadout {
+    let target = if budget <= 0 {
+        0
+    } else {
+        rng.gen_range(0..=budget)
+    };
+    spend_up_to(tank, target, allow_mines, rng)
+}
+
+/// Spend up to exactly `target` points (never more).
+pub fn spend_up_to<R: Rng>(
+    tank: &mut Tank,
+    target: i32,
+    allow_mines: bool,
+    rng: &mut R,
+) -> Loadout {
+    let budget = target.max(0);
     let mut load = Loadout::default();
     // Stock HE house rule: tanks already have HE; don't charge unless missing.
     if tank.kind == UnitKind::Tank && !tank.has_he {
         load.he = true;
+    }
+
+    if budget == 0 {
+        apply_loadout(tank, &load);
+        return load;
     }
 
     // Build a shuffled shopping list of one-point options.
@@ -152,7 +175,10 @@ pub fn spend_budget<R: Rng>(
                 Buy::ArmorRear,
             ]);
         }
-        UnitKind::Infantry => return load,
+        UnitKind::Infantry => {
+            apply_loadout(tank, &load);
+            return load;
+        }
     }
     menu.shuffle_stable(rng);
     // Drop some options so lists trade off instead of always buying everything.
@@ -204,7 +230,7 @@ pub fn spend_budget<R: Rng>(
         }
         if !filled {
             // Last resort: front armor if still legal.
-            if load.armor_front < 3 && load.is_legal() {
+            if load.armor_front < 3 {
                 let mut trial = load.clone();
                 trial.armor_front += 1;
                 if trial.is_legal() && spent < budget {
@@ -221,6 +247,35 @@ pub fn spend_budget<R: Rng>(
     debug_assert!(load.cost() <= budget);
     apply_loadout(tank, &load);
     load
+}
+
+/// Total upgrade points spent by a side (infantry count as 0).
+pub fn side_list_points(tanks: &[Tank], side: crate::unit::Side) -> u32 {
+    tanks
+        .iter()
+        .filter(|t| t.side == side)
+        .map(|t| u32::from(t.upgrade_points_spent))
+        .sum()
+}
+
+/// First player from list totals: lower spend goes first and skips spoil.
+/// Equal spend → coin flip and spoil still applies.
+pub fn initiative_from_lists<R: Rng>(
+    tanks: &[Tank],
+    rng: &mut R,
+) -> (crate::unit::Side, bool /* spoil */) {
+    use crate::unit::Side;
+    let red = side_list_points(tanks, Side::Red);
+    let blue = side_list_points(tanks, Side::Blue);
+    if red < blue {
+        (Side::Red, false)
+    } else if blue < red {
+        (Side::Blue, false)
+    } else if rng.gen_bool(0.5) {
+        (Side::Red, true)
+    } else {
+        (Side::Blue, true)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -417,6 +472,49 @@ mod tests {
             assert!(load.cost() <= 10, "{} > 10", load.cost());
             assert!(t.upgrade_points_spent as i32 <= 10);
         }
+    }
+
+    #[test]
+    fn spend_up_to_exact_target() {
+        let mut r = ChaCha8Rng::seed_from_u64(7);
+        for target in [0, 3, 7, 10] {
+            let mut t = Tank::stock(0, Side::Red, Hex::new(0, 0), Facing::E, "T");
+            let load = spend_up_to(&mut t, target, false, &mut r);
+            assert!(load.cost() <= target);
+            assert_eq!(t.upgrade_points_spent as i32, load.cost());
+        }
+    }
+
+    #[test]
+    fn lower_list_spend_wins_initiative_without_spoil() {
+        let mut red = Tank::stock(0, Side::Red, Hex::new(0, 0), Facing::E, "R");
+        let mut blue = Tank::stock(1, Side::Blue, Hex::new(1, 0), Facing::W, "B");
+        let mut r = ChaCha8Rng::seed_from_u64(1);
+        spend_up_to(&mut red, 3, false, &mut r);
+        spend_up_to(&mut blue, 8, false, &mut r);
+        let tanks = vec![red, blue];
+        let (first, spoil) = initiative_from_lists(&tanks, &mut r);
+        assert_eq!(first, Side::Red);
+        assert!(!spoil);
+    }
+
+    #[test]
+    fn tied_lists_allow_spoil() {
+        let mut red = Tank::stock(0, Side::Red, Hex::new(0, 0), Facing::E, "R");
+        let mut blue = Tank::stock(1, Side::Blue, Hex::new(1, 0), Facing::W, "B");
+        let mut r = ChaCha8Rng::seed_from_u64(2);
+        spend_up_to(&mut red, 5, false, &mut r);
+        // Force blue to the same spend total as red after red's spend.
+        let red_pts = red.upgrade_points_spent;
+        spend_up_to(&mut blue, red_pts as i32, false, &mut r);
+        // If random shop undershot, pad by re-rolling until equal or give up.
+        // Directly set points for a clean tie when shop can't match.
+        if blue.upgrade_points_spent != red_pts {
+            blue.upgrade_points_spent = red_pts;
+        }
+        let tanks = vec![red, blue];
+        let (_, spoil) = initiative_from_lists(&tanks, &mut r);
+        assert!(spoil);
     }
 
     #[test]

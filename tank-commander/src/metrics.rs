@@ -37,6 +37,10 @@ pub struct GameReport {
     pub mines_deployed: u32,
     pub mines_triggered: u32,
     pub loadout: LoadoutCensus,
+    /// Lower-spend list won first activation (spoil skipped).
+    pub list_initiative: bool,
+    pub red_list_points: u32,
+    pub blue_list_points: u32,
     pub red_units_left: u32,
     pub blue_units_left: u32,
     /// True when the game hit the activation cap with both sides still fighting.
@@ -125,6 +129,9 @@ impl GameReport {
             mines_deployed: game.mines_deployed,
             mines_triggered: game.mines_triggered,
             loadout: game.loadout_census.clone(),
+            list_initiative: game.list_initiative,
+            red_list_points: game.red_list_points,
+            blue_list_points: game.blue_list_points,
             red_units_left,
             blue_units_left,
             timed_out: hit_cap && red_alive && blue_alive && !ended_by_stalemate,
@@ -230,6 +237,11 @@ pub struct AggregateReport {
     pub loadout_avg_armor_pts: f64,
     pub loadout_avg_mine_charges: f64,
     pub loadout_avg_points: f64,
+    /// Fraction of games where under-spend decided initiative (spoil skipped).
+    pub list_initiative_rate: f64,
+    pub avg_red_list_points: f64,
+    pub avg_blue_list_points: f64,
+    pub avg_list_point_gap: f64,
     pub hit_rate: f64,
     pub suggestions: Vec<String>,
 }
@@ -323,6 +335,14 @@ impl AggregateReport {
             loadout_avg_armor_pts: 0.0,
             loadout_avg_mine_charges: 0.0,
             loadout_avg_points: 0.0,
+            list_initiative_rate: reports.iter().filter(|r| r.list_initiative).count() as f64 / nf,
+            avg_red_list_points: sum_f(|r| r.red_list_points),
+            avg_blue_list_points: sum_f(|r| r.blue_list_points),
+            avg_list_point_gap: reports
+                .iter()
+                .map(|r| f64::from(r.red_list_points.abs_diff(r.blue_list_points)))
+                .sum::<f64>()
+                / nf,
             hit_rate,
             suggestions: Vec::new(),
         };
@@ -550,6 +570,14 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
             agg.loadout_avg_armor_pts,
             agg.loadout_avg_mine_charges,
             agg.loadout_avg_points
+        ));
+        out.push_str(&format!(
+            "List initiative: under-spend first {:.0}% | avg Red {:.1} / Blue {:.1} pts \
+             (gap {:.1})\n",
+            100.0 * agg.list_initiative_rate,
+            agg.avg_red_list_points,
+            agg.avg_blue_list_points,
+            agg.avg_list_point_gap
         ));
     }
     out.push_str(&format!(

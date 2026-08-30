@@ -42,10 +42,11 @@ below is redundant for stock Skirmish / Platoon / Combined as we play them; it
 remains for custom / painted builds if you want the upgrade list complete.
 
 **House rule — list building.** Skirmish and Platoon tanks spend **up to 10**
-upgrade points before the game (weighted random in the simulator). Combined
-tanks do the same and may buy **mines**; each Combined tank also gets one air
-strike as a scenario grant (does not consume list points). APCs spend **up to
-4** points (armor, engine, smoke).
+upgrade points before the game (you may spend fewer). Combined tanks do the
+same and may buy **mines**; each Combined tank also gets one air strike as a
+scenario grant (does not consume list points). APCs spend **up to 4** points
+(armor, engine, smoke). The simulator picks a random target spend in
+`0..=budget` per vehicle.
 
 ### Upgrades (up to 10 points)
 
@@ -101,9 +102,11 @@ penetration, glance wound, HE fire start, cook-off, and similar):
 
 ## Initiative and setup
 
-1. Roll off; highest chooses who activates first (or as the scenario says).
-2. Apply any **scenario spoil** for the second player (see
-   [Scenarios](#scenarios)).
+1. Build lists (upgrade points). Sum each side’s total spend.
+2. **House rule — under-spend initiative.** If one side spent **fewer**
+   upgrade points than the other, that side activates first and there is
+   **no** second-player spoil. If totals are equal, roll off as usual and
+   apply any scenario spoil for the second player.
 3. First activation begins.
 
 ### Pass activation (multi-unit)
@@ -338,18 +341,21 @@ These are the setups the simulator balances against. Map sizes are hex
 - **Force:** 1v1 stock tanks with up to 10 upgrade points (HE free).
 - **Board:** 9×12 with a midline building block, clear alleys, random
   forest/mud/rubble outside reserved hexes, offset starts.
-- **Second-player spoil:** shift up to **2** scatter terrain tiles (forest /
-  mud / rubble) by 1 hex each onto Open hexes before the first activation.
-  Buildings stay fixed. No opposing-unit nudge (it skewed color on this map).
+- **Second-player spoil** (only when list totals tied): shift up to **2**
+  scatter terrain tiles (forest / mud / rubble) by 1 hex each onto Open hexes
+  before the first activation. Buildings stay fixed. No opposing-unit nudge
+  (it skewed color on this map). If the under-spend side won initiative, skip
+  spoil entirely.
 
 ### Platoon
 
 - **Force:** 3v3 stock tanks with up to 10 upgrade points each (HE free).
 - **Board:** 18×12 open mat — scattered **building clumps** and **forest
   patches**, plus single mud/rubble tiles. No sealed midline or plaza funnel.
-- **Second-player spoil:** nudge **each** opposing unit up to **1 hex**
-  (empty, passable; facing unchanged), then shift up to **3** scatter tiles
-  (same rules as below).
+- **Second-player spoil** (only when list totals tied): nudge **each**
+  opposing unit up to **1 hex** (empty, passable; facing unchanged), then
+  shift up to **3** scatter tiles (same rules as below). Skip spoil if
+  under-spend won initiative.
 
 ### Combined arms
 
@@ -358,8 +364,9 @@ These are the setups the simulator balances against. Map sizes are hex
 - **Board:** 18×12 open mat (same size as platoon) with building clumps and
   forest patches; starts and scatter are east–west **mirrored** at generation
   (second-player terrain spoil may break scatter symmetry on purpose).
-- **Second-player spoil:** nudge each opposing unit up to 1 hex, then shift up
-  to **4** scatter tiles.
+- **Second-player spoil** (only when list totals tied): nudge each opposing
+  unit up to 1 hex, then shift up to **4** scatter tiles. Skip spoil if
+  under-spend won initiative.
 
 ### Scatter terrain spoil (shared rules)
 

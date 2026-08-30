@@ -15,12 +15,11 @@ Platoon and combined share one **18×12** mat with **scattered building clumps
 and forest patches** (no sealed midline funnel). Skirmish is half the width
 (**9×12**) with a compact midline block. Tanks spend up to **10** upgrade
 points (armor, engine, barrel, optics, AI, smoke, medkit, LT; Combined also
-mines). APCs spend up to **4**. Combined tanks also get a scenario air strike.
-Combined starts and scatter are east–west mirrors. After initiative, the second
-player may shift a few scatter terrain tiles (forest / mud / rubble — not
-buildings) by 1 hex each, and on platoon/combined may also nudge each opposing
-unit by up to 1 hex, before the first activation. Combined also has
-next-activation air strikes (with scatter) and APC vehicle spray.
+mines) and may spend fewer. APCs spend up to **4**. The side with the
+**lower** total list spend activates first and skips second-player spoil; equal
+spend still rolls off and applies spoil. Combined tanks also get a scenario
+air strike. Combined starts and scatter are east–west mirrors. Combined also
+has next-activation air strikes (with scatter) and APC vehicle spray.
 
 Playable rules (upstream + house rules): [`rules.md`](rules.md).
 Dated changelog with Rule / Scenario / Sim tags and sim metrics:

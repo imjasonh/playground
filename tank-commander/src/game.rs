@@ -76,6 +76,10 @@ pub struct Game {
     pub turret_rotations: u32,
     /// Snapshot of upgrades at game start.
     pub loadout_census: crate::upgrades::LoadoutCensus,
+    /// True when the lower-spend list won first activation (spoil skipped).
+    pub list_initiative: bool,
+    pub red_list_points: u32,
+    pub blue_list_points: u32,
 }
 
 impl Game {
@@ -87,6 +91,8 @@ impl Game {
         scenario: impl Into<String>,
     ) -> Self {
         let loadout_census = crate::upgrades::LoadoutCensus::from_tanks(&tanks);
+        let red_list_points = crate::upgrades::side_list_points(&tanks, Side::Red);
+        let blue_list_points = crate::upgrades::side_list_points(&tanks, Side::Blue);
         Self {
             board,
             tanks,
@@ -124,11 +130,19 @@ impl Game {
             turns_made: 0,
             turret_rotations: 0,
             loadout_census,
+            list_initiative: false,
+            red_list_points,
+            blue_list_points,
         }
     }
 
     pub fn with_stalemate(mut self, activations_without_damage: u32) -> Self {
         self.stalemate_after = activations_without_damage;
+        self
+    }
+
+    pub fn with_list_initiative(mut self, won_by_underspend: bool) -> Self {
+        self.list_initiative = won_by_underspend;
         self
     }
 
