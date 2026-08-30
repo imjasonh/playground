@@ -50,6 +50,9 @@ struct MapLayout<'a> {
     forest: (u32, u32),
     mud: (u32, u32),
     rubble: (u32, u32),
+    /// When true, place scatter only on the west half and mirror each tile
+    /// east–west so both approaches get the same cover/mud/rubble.
+    mirror_scatter: bool,
 }
 
 /// Skirmish: 11×9, compact midline block.
@@ -85,6 +88,7 @@ const SKIRMISH_MAP: MapLayout = MapLayout {
     forest: (5, 9),
     mud: (2, 4),
     rubble: (1, 3),
+    mirror_scatter: false,
 };
 
 /// Platoon: 19×15 sealed midline with a wide plaza gap (no N/S through-lanes).
@@ -134,8 +138,8 @@ fn platoon_alley_clear() -> Vec<Hex> {
     clear
 }
 
-/// Combined: 17×13 sealed midline with a wide plaza + forest approaches.
-fn combined_wall(height: i32) -> Vec<Hex> {
+/// Combined: 17×13 sealed midline with a wide plaza + mirrored side baffles.
+fn combined_wall(width: i32, height: i32) -> Vec<Hex> {
     let mut wall = Vec::new();
     for q in 7..=9 {
         for r in 0..height {
@@ -145,12 +149,12 @@ fn combined_wall(height: i32) -> Vec<Hex> {
             wall.push(Hex::new(q, r));
         }
     }
-    wall.extend([
-        Hex::new(2, 1),
-        Hex::new(2, 2),
-        Hex::new(14, 10),
-        Hex::new(14, 11),
-    ]);
+    // Side baffles — west pair, then east–west mirrors.
+    let west_baffles = [Hex::new(2, 1), Hex::new(2, 2)];
+    for h in west_baffles {
+        wall.push(h);
+        wall.push(mirror_ew(h, width));
+    }
     wall
 }
 
@@ -162,6 +166,11 @@ fn combined_alley_clear() -> Vec<Hex> {
         }
     }
     clear
+}
+
+/// Reflect across the vertical midline (east–west symmetry).
+fn mirror_ew(h: Hex, width: i32) -> Hex {
+    Hex::new(width - 1 - h.q, h.r)
 }
 
 pub fn setup<R: Rng>(kind: ScenarioKind, rng: &mut R) -> Game {
@@ -215,6 +224,7 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
         forest: (14, 24),
         mud: (5, 9),
         rubble: (4, 8),
+        mirror_scatter: false,
     };
     let board = build_board(&layout, rng, &reserved, &egress);
 
@@ -233,24 +243,25 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
 }
 
 /// Combined arms on a 17×13 plaza board. Infantry dig into forest approaches;
-/// APC spray and air strikes matter in the shared funnel.
+/// APC spray and air strikes matter in the shared funnel. Starts and constant
+/// wall/baffles are east–west mirrors so color is not baked into the map.
 pub fn combined<R: Rng>(rng: &mut R) -> Game {
     let width = 17;
     let height = 13;
     let red_tank = Hex::new(1, 4);
     let red_apc = Hex::new(1, 7);
     let red_inf = Hex::new(0, 6);
-    let blue_tank = Hex::new(15, 8);
-    let blue_apc = Hex::new(15, 5);
-    let blue_inf = Hex::new(16, 6);
+    let blue_tank = mirror_ew(red_tank, width);
+    let blue_apc = mirror_ew(red_apc, width);
+    let blue_inf = mirror_ew(red_inf, width);
     let reserved = [red_tank, red_apc, red_inf, blue_tank, blue_apc, blue_inf];
     let egress = [
         Hex::new(2, 4),
         Hex::new(2, 7),
-        Hex::new(14, 8),
-        Hex::new(14, 5),
+        mirror_ew(Hex::new(2, 4), width),
+        mirror_ew(Hex::new(2, 7), width),
     ];
-    let wall = combined_wall(height);
+    let wall = combined_wall(width, height);
     let alley = combined_alley_clear();
     let goals = [Hex::new(8, 5), Hex::new(8, 7)];
     let layout = MapLayout {
@@ -262,6 +273,7 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
         forest: (12, 20),
         mud: (3, 6),
         rubble: (2, 5),
+        mirror_scatter: true,
     };
     let board = build_board(&layout, rng, &reserved, &egress);
 
@@ -388,8 +400,17 @@ fn scatter_terrain<R: Rng>(
         board.set_terrain(*h, Terrain::Building);
     }
 
+    let mid_q = (layout.width - 1) / 2;
     let mut candidates: Vec<Hex> = Vec::new();
     for q in board.min_q..=board.max_q {
+        if layout.mirror_scatter && q > mid_q {
+            // East half is filled by mirroring west placements.
+            continue;
+        }
+        if layout.mirror_scatter && q == mid_q {
+            // Midline is wall/plaza; don't place unpaired center scatter.
+            continue;
+        }
         for r in board.min_r..=board.max_r {
             let h = Hex::new(q, r);
             if layout.wall.contains(&h) || layout.alley_clear.contains(&h) || starts.contains(&h) {
@@ -406,6 +427,16 @@ fn scatter_terrain<R: Rng>(
     let n_forest = rng.gen_range(layout.forest.0..=layout.forest.1) as usize;
     let n_mud = rng.gen_range(layout.mud.0..=layout.mud.1) as usize;
     let n_rubble = rng.gen_range(layout.rubble.0..=layout.rubble.1) as usize;
+    // With mirror scatter, counts are per-half; total tiles ≈ 2×.
+    let (n_forest, n_mud, n_rubble) = if layout.mirror_scatter {
+        (
+            n_forest.div_ceil(2),
+            n_mud.div_ceil(2),
+            n_rubble.div_ceil(2),
+        )
+    } else {
+        (n_forest, n_mud, n_rubble)
+    };
     let need = n_forest + n_mud + n_rubble;
     let take = need.min(candidates.len());
 
@@ -418,6 +449,17 @@ fn scatter_terrain<R: Rng>(
             Terrain::Rubble
         };
         board.set_terrain(h, terrain);
+        if layout.mirror_scatter {
+            let m = mirror_ew(h, layout.width);
+            if board.contains(m)
+                && !layout.wall.contains(&m)
+                && !layout.alley_clear.contains(&m)
+                && !starts.contains(&m)
+                && !egress.contains(&m)
+            {
+                board.set_terrain(m, terrain);
+            }
+        }
     }
     board
 }
@@ -552,6 +594,81 @@ mod tests {
         assert!(!g.board.terrain_at(Hex::new(8, 6)).impassable());
         assert!(g.board.terrain_at(Hex::new(8, 1)).impassable());
         assert!(g.board.terrain_at(Hex::new(8, 11)).impassable());
+        // Constant skeleton is east–west mirrored (nudge may move units after).
+        let width = 17;
+        assert_eq!(mirror_ew(Hex::new(1, 4), width), Hex::new(15, 4));
+        assert_eq!(mirror_ew(Hex::new(1, 7), width), Hex::new(15, 7));
+        assert_eq!(mirror_ew(Hex::new(0, 6), width), Hex::new(16, 6));
+        assert_eq!(g.board.terrain_at(Hex::new(2, 1)), Terrain::Building);
+        assert_eq!(
+            g.board.terrain_at(mirror_ew(Hex::new(2, 1), width)),
+            Terrain::Building
+        );
+        assert_eq!(g.board.terrain_at(Hex::new(2, 2)), Terrain::Building);
+        assert_eq!(
+            g.board.terrain_at(mirror_ew(Hex::new(2, 2), width)),
+            Terrain::Building
+        );
+        // Old asymmetric south baffles must be gone.
+        assert_ne!(g.board.terrain_at(Hex::new(14, 10)), Terrain::Building);
+        assert_ne!(g.board.terrain_at(Hex::new(14, 11)), Terrain::Building);
+    }
+
+    #[test]
+    fn combined_starts_mirrored_before_nudge() {
+        // Build the same way as `combined` but skip the second-player nudge.
+        let width = 17;
+        let height = 13;
+        let mut rng = ChaCha8Rng::seed_from_u64(4);
+        let red_tank = Hex::new(1, 4);
+        let red_apc = Hex::new(1, 7);
+        let red_inf = Hex::new(0, 6);
+        let blue_tank = mirror_ew(red_tank, width);
+        let blue_apc = mirror_ew(red_apc, width);
+        let blue_inf = mirror_ew(red_inf, width);
+        let reserved = [red_tank, red_apc, red_inf, blue_tank, blue_apc, blue_inf];
+        let egress = [
+            Hex::new(2, 4),
+            Hex::new(2, 7),
+            mirror_ew(Hex::new(2, 4), width),
+            mirror_ew(Hex::new(2, 7), width),
+        ];
+        let wall = combined_wall(width, height);
+        let alley = combined_alley_clear();
+        let goals = [Hex::new(8, 5), Hex::new(8, 7)];
+        let layout = MapLayout {
+            width,
+            height,
+            wall: &wall,
+            alley_clear: &alley,
+            path_goals: &goals,
+            forest: (12, 20),
+            mud: (3, 6),
+            rubble: (2, 5),
+            mirror_scatter: true,
+        };
+        let board = build_board(&layout, &mut rng, &reserved, &egress);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, red_tank, Facing::E, "Red Tank"),
+            Tank::stock_apc(1, Side::Red, red_apc, Facing::E, "Red APC"),
+            Tank::stock_infantry(2, Side::Red, red_inf, Facing::E, "Red Squad"),
+            Tank::stock(3, Side::Blue, blue_tank, Facing::W, "Blue Tank"),
+            Tank::stock_apc(4, Side::Blue, blue_apc, Facing::W, "Blue APC"),
+            Tank::stock_infantry(5, Side::Blue, blue_inf, Facing::W, "Blue Squad"),
+        ];
+        for t in &tanks {
+            if t.side == Side::Red {
+                let m = mirror_ew(t.pos, width);
+                assert!(
+                    tanks
+                        .iter()
+                        .any(|b| b.side == Side::Blue && b.pos == m && b.kind == t.kind),
+                    "no blue mirror for {:?}",
+                    t.pos
+                );
+            }
+        }
+        let _ = board;
     }
 
     #[test]
@@ -578,6 +695,27 @@ mod tests {
             assert!(seen.insert(t.pos), "stacked at {}", t.pos);
         }
         assert_eq!(g.tanks.iter().filter(|t| t.side == first).count(), 3);
+    }
+
+    #[test]
+    fn combined_scatter_is_east_west_mirrored() {
+        let mut rng = ChaCha8Rng::seed_from_u64(9);
+        let g = combined(&mut rng);
+        let width = g.board.max_q + 1;
+        let mid = (width - 1) / 2;
+        for q in g.board.min_q..=mid {
+            for r in g.board.min_r..=g.board.max_r {
+                let h = Hex::new(q, r);
+                let m = mirror_ew(h, width);
+                let th = g.board.terrain_at(h);
+                let tm = g.board.terrain_at(m);
+                if matches!(th, Terrain::Forest | Terrain::Mud | Terrain::Rubble)
+                    || matches!(tm, Terrain::Forest | Terrain::Mud | Terrain::Rubble)
+                {
+                    assert_eq!(th, tm, "scatter mismatch at {h} ({th:?}) vs {m} ({tm:?})");
+                }
+            }
+        }
     }
 
     #[test]

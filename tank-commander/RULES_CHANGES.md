@@ -229,6 +229,38 @@ asymmetry is the next thing to look at.
 
 ---
 
+## 2026-08-30 — Mirror combined map (skeleton, then scatter)
+
+**Type: Scenario** (combined only)
+
+### 1. Mirror starts + constant wall/baffles
+
+Blue starts are the east–west mirrors of Red. Side baffles are mirrored pairs
+(no more north-vs-south asymmetric stubs).
+
+**Effect (80 games, seed 7, after nudge + skeleton mirror only):** first-player
+share ~46%; color flipped to Red-heavy (53/27). Asymmetry moved into random
+scatter.
+
+### 2. Mirror random terrain
+
+Scatter forest/mud/rubble only on the west half, then copy each tile to its
+east–west mirror (counts are per-half so total density stays similar).
+
+**Effect (80 games, seed 7, after 1+2):**
+
+| Metric | After nudge only | + skeleton mirror | + mirrored scatter |
+|--------|------------------|-------------------|--------------------|
+| Decisive | 94% | 100% | **98%** |
+| First-player share | 43% | 46% | **53%** |
+| Red / Blue wins | 24 / 51 | 53 / 27 | **42 / 36** |
+| Idle stalemate | 14% | 19% | 24% |
+
+Color and initiative look healthy. Idle droughts ticked up — leave suggestion
+3 alone for now; revisit if idle stays high across seeds.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.
