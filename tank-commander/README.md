@@ -20,9 +20,9 @@ scatter terrain tiles (forest / mud / rubble — not buildings) by 1 hex each,
 and on platoon/combined may also nudge each opposing unit by up to 1 hex,
 before the first activation.
 
-House rules and scenario setups live in [`RULES_CHANGES.md`](RULES_CHANGES.md).
-That file tags each change as **Rule** (humans must follow), **Scenario**
-(map/force), or **Sim** (AI / Monte Carlo only).
+Playable rules (upstream + house rules): [`rules.md`](rules.md).
+Dated changelog with Rule / Scenario / Sim tags and sim metrics:
+[`RULES_CHANGES.md`](RULES_CHANGES.md).
 
 ## Run
 
