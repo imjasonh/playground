@@ -154,6 +154,67 @@ accident of the approach race.
 
 ---
 
+## 2026-08-30 — Random terrain around the wall
+
+**Change.** The 3×3 midline wall stays fixed. Forest (5–9), mud (2–4), and
+rubble (1–3) hexes are scattered at random each game. Alley columns and the
+hex in front of each tank stay clear; boards that somehow seal an alley are
+re-rolled.
+
+**Why.** Fixed forests made every game the same approach puzzle. Random cover
+and footing should vary which alley is attractive and cut the Blue-heavy skew
+from the fixed map (61 / 135).
+
+**Effect on balance (200 games, seed 7; baseline = fixed forests/mud):**
+
+| Metric | Fixed terrain | Random scatter | Delta |
+|--------|--------------:|---------------:|------:|
+| Red / Blue / Draw | 61 / 135 / 4 | **92 / 103 / 5** | sides much closer |
+| First-player win share | ~50% | ~52% (101/195) | similar |
+| Avg activations | 11.2 | 11.5 | similar |
+| Timed out | 6% | 9% | slight up |
+| Avg moves / hull turns | 9.2 / 7.3 | 8.7 / 6.7 | still maneuvering |
+| Avg fires | 1.30 | 1.14 | similar |
+| Comebacks | 59 | 78 | up |
+
+**Larger batch (500 games, seed 1):** Red 207 / Blue 286 — still a Blue lean,
+but far better than the fixed-map blowout.
+
+**Verdict.** Keep. Same wall, different ground each game, and Red/Blue stopped
+looking like a coin with Blue painted on both sides.
+
+---
+
+## 2026-08-30 — Offset starting rows
+
+**Change.** Red starts at `(1,3)` facing east; Blue at `(9,5)` facing west
+(was both on `r=4`). The wall and random scatter are unchanged.
+
+**Why.** Even with random terrain, mirrored row starts let one side's "drive
+north" habit win too often. Offset rows make each tank's nearer alley
+different from turn one — a cheap asymmetry that doesn't add rules text.
+
+**Effect on balance (200 games, seed 7; baseline = random terrain, same row):**
+
+| Metric | Same row | Offset rows | Delta |
+|--------|---------:|------------:|------:|
+| Red / Blue / Draw | 92 / 103 / 5 | 110 / 88 / 2 | Red slightly up |
+| First-player win share | 52% | 62% (122/198) | noisier at N=200 |
+| Avg activations | 11.5 | 10.4 | slightly snappier |
+| Timed out | 9% | 5% | down |
+| Avg moves / hull turns | 8.7 / 6.7 | 8.2 / 5.4 | still real maneuver |
+| Avg fires | 1.14 | 1.14 | unchanged |
+
+**Larger batch (500 games, seed 1):** Red **251** / Blue **239** / Draw 10 —
+near even. First-player share ~58% (285/490). Timeouts 6%. Drama (fires,
+pens, comebacks) holds.
+
+**Verdict.** Keep. Side balance is finally close on a big batch, games resolve
+a bit faster, and the opening decision (which alley?) is no longer the same
+puzzle for both players.
+
+---
+
 ## How to re-check
 
 ```bash

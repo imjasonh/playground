@@ -3,11 +3,12 @@
 Monte Carlo simulator for the
 [Tank Commander](https://github.com/imjasonh/tank-commander) tabletop rules.
 
-v1 covers **Skirmish**: 1v1 stock tanks (AT + HE loadable), a walled board
-with north/south alleys, core movement, turret arc, combat, crew wounds, fire,
-and cook-off. The same heuristic AI plays both sides so result skew points at
-the rules (or first-player bias), not uneven bots. Infantry, APCs, paid
-upgrades, air strikes, and missions come later.
+v1 covers **Skirmish**: 1v1 stock tanks (AT + HE loadable), a fixed midline
+wall with random forest/mud/rubble around it, offset starting rows, core
+movement, turret arc, combat, crew wounds, fire, and cook-off. The same
+heuristic AI plays both sides so result skew points at the rules (or
+first-player bias), not uneven bots. Infantry, APCs, paid upgrades, air
+strikes, and missions come later.
 
 ## Run
 
@@ -54,8 +55,9 @@ cross simple thresholds.
   enemy, forest cover second). When LOS is open, beam-search shoot / load /
   ability plans. Shared heuristic on both sides.
 - **Skirmish map.** A midline building wall blocks the opening street; tanks
-  take the north or south alley. Forests on alley mouths reward peeking from
-  cover.
+  take the north or south alley. Forest, mud, and rubble outside the wall are
+  rolled each game. Starts sit on offset rows (`(1,3)` vs `(9,5)`) so each
+  side's nearer alley differs.
 
 Rules source of truth remains the upstream README, plus the house rules in
 `RULES_CHANGES.md`. Where the text is ambiguous, the sim picks a documented
