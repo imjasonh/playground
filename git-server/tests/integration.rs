@@ -1282,7 +1282,10 @@ fn phone_loadtest_html() {
     );
     assert!(script.contains("addEventListener(\"click\""), "{script}");
     assert!(script.contains("function summarizeBody"), "{script}");
-    assert!(script.contains("runRamp") || script.contains("rampLevels"), "{script}");
+    assert!(
+        script.contains("runRamp") || script.contains("rampLevels"),
+        "{script}"
+    );
 
     let (status, body) = server.get("/loadtest?run=1&budget=0.05&duration=2&peak=2&shards=2");
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
