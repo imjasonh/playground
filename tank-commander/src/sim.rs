@@ -3,7 +3,7 @@
 use crate::ai;
 use crate::game::Outcome;
 use crate::metrics::{AggregateReport, GameReport, HpTrace};
-use crate::scenario;
+use crate::scenario::{self, ScenarioKind};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
@@ -11,6 +11,7 @@ pub struct SimConfig {
     pub games: u32,
     pub seed: u64,
     pub verbose: bool,
+    pub scenario: ScenarioKind,
 }
 
 pub struct SimResult {
@@ -26,14 +27,13 @@ pub fn run(config: SimConfig) -> SimResult {
     for i in 0..config.games {
         let seed = config.seed.wrapping_add(u64::from(i));
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
-        let mut game = scenario::skirmish(&mut rng);
+        let mut game = scenario::setup(config.scenario, &mut rng);
         let mut hp = HpTrace::default();
         hp.observe(&game);
 
         while matches!(game.outcome(), Outcome::InProgress) {
             ai::take_turn(&mut game, &mut rng);
             hp.observe(&game);
-            // Safety valve against infinite loops if legality breaks.
             if game.activations > game.max_activations + 2 {
                 break;
             }
@@ -48,7 +48,8 @@ pub fn run(config: SimConfig) -> SimResult {
         reports.push(report);
     }
 
-    let aggregate = AggregateReport::from_games(&reports);
+    let mut aggregate = AggregateReport::from_games(&reports);
+    aggregate.scenario = config.scenario.as_str().into();
     SimResult {
         reports,
         aggregate,

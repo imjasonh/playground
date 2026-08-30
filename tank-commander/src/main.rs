@@ -4,13 +4,14 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use tank_commander::metrics::format_aggregate;
+use tank_commander::scenario::ScenarioKind;
 use tank_commander::sim::{self, SimConfig};
 
 #[derive(Debug, Parser)]
 #[command(
     name = "tank-commander",
     version,
-    about = "Simulate Tank Commander Skirmish games for balance and fun metrics"
+    about = "Simulate Tank Commander games for balance and fun metrics"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -19,7 +20,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    /// Run many Skirmish games and print drama / stalemate aggregates.
+    /// Run many games and print drama / stalemate aggregates.
     Sim {
         /// Number of games to play.
         #[arg(long, default_value_t = 200)]
@@ -27,6 +28,9 @@ enum Commands {
         /// Base RNG seed (game i uses seed+i).
         #[arg(long, default_value_t = 1)]
         seed: u64,
+        /// Scenario: skirmish (1v1), platoon (3v3), or combined (tank+APC+infantry).
+        #[arg(long, default_value = "skirmish")]
+        scenario: String,
         /// Print a full event log for the first game.
         #[arg(long, default_value_t = false)]
         verbose: bool,
@@ -42,16 +46,24 @@ fn main() -> ExitCode {
         Commands::Sim {
             games,
             seed,
+            scenario,
             verbose,
             json,
         } => {
+            let Some(kind) = ScenarioKind::parse(&scenario) else {
+                eprintln!(
+                    "unknown scenario '{scenario}' (expected skirmish, platoon, or combined)"
+                );
+                return ExitCode::FAILURE;
+            };
             let result = sim::run(SimConfig {
                 games,
                 seed,
                 verbose,
+                scenario: kind,
             });
             if verbose {
-                println!("=== sample game (seed {seed}) ===");
+                println!("=== sample game ({scenario}, seed {seed}) ===");
                 for line in &result.sample_events {
                     println!("{line}");
                 }

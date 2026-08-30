@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct GameReport {
     pub seed: u64,
+    pub scenario: String,
     pub outcome: String,
     pub winner: Option<String>,
     pub first_player: String,
@@ -27,7 +28,11 @@ pub struct GameReport {
     pub crew_wounds: u32,
     pub crew_kills: u32,
     pub abilities_used: u32,
-    /// True when the game hit the activation cap with both tanks still fighting.
+    pub air_strikes: u32,
+    pub infantry_kills: u32,
+    pub red_units_left: u32,
+    pub blue_units_left: u32,
+    /// True when the game hit the activation cap with both sides still fighting.
     pub timed_out: bool,
     /// True when few shots were exchanged relative to activations.
     pub low_engagement: bool,
@@ -43,7 +48,14 @@ pub struct GameReport {
 impl GameReport {
     pub fn from_game(game: &Game, seed: u64, hp_trace: &HpTrace) -> Self {
         let outcome = game.outcome();
-        let both_fighting_at_end = game.tanks.iter().filter(|t| t.is_operational()).count() == 2;
+        let red_alive = game
+            .tanks
+            .iter()
+            .any(|t| t.side == Side::Red && t.is_operational());
+        let blue_alive = game
+            .tanks
+            .iter()
+            .any(|t| t.side == Side::Blue && t.is_operational());
         let hit_cap = game.activations >= game.max_activations;
 
         let low_engagement = game.shots_fired < game.activations / 4;
@@ -58,8 +70,20 @@ impl GameReport {
             _ => false,
         };
 
+        let red_units_left = game
+            .tanks
+            .iter()
+            .filter(|t| t.side == Side::Red && !t.destroyed)
+            .count() as u32;
+        let blue_units_left = game
+            .tanks
+            .iter()
+            .filter(|t| t.side == Side::Blue && !t.destroyed)
+            .count() as u32;
+
         GameReport {
             seed,
+            scenario: game.scenario.clone(),
             outcome: outcome_str(outcome),
             winner: match outcome {
                 Outcome::Winner(s) => Some(side_str(s).into()),
@@ -83,7 +107,11 @@ impl GameReport {
             crew_wounds: game.total_crew_wounds,
             crew_kills: game.total_crew_kills,
             abilities_used: game.abilities_used,
-            timed_out: hit_cap && both_fighting_at_end,
+            air_strikes: game.air_strikes_resolved,
+            infantry_kills: game.infantry_kills,
+            red_units_left,
+            blue_units_left,
+            timed_out: hit_cap && red_alive && blue_alive,
             low_engagement,
             late_stalemate,
             comeback,
@@ -139,6 +167,7 @@ impl HpTrace {
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct AggregateReport {
+    pub scenario: String,
     pub games: u32,
     pub red_wins: u32,
     pub blue_wins: u32,
@@ -165,6 +194,8 @@ pub struct AggregateReport {
     pub avg_crew_wounds: f64,
     pub avg_crew_kills: f64,
     pub avg_abilities_used: f64,
+    pub avg_air_strikes: f64,
+    pub avg_infantry_kills: f64,
     pub hit_rate: f64,
     pub suggestions: Vec<String>,
 }
@@ -210,6 +241,10 @@ impl AggregateReport {
         };
 
         let mut agg = Self {
+            scenario: reports
+                .first()
+                .map(|r| r.scenario.clone())
+                .unwrap_or_default(),
             games: n,
             red_wins,
             blue_wins,
@@ -236,6 +271,8 @@ impl AggregateReport {
             avg_crew_wounds: sum_f(|r| r.crew_wounds),
             avg_crew_kills: sum_f(|r| r.crew_kills),
             avg_abilities_used: sum_f(|r| r.abilities_used),
+            avg_air_strikes: sum_f(|r| r.air_strikes),
+            avg_infantry_kills: sum_f(|r| r.infantry_kills),
             hit_rate,
             suggestions: Vec::new(),
         };
@@ -260,9 +297,9 @@ fn suggest(agg: &AggregateReport) -> Vec<String> {
 
     if timeout_rate > 0.35 {
         s.push(
-            "High timeout rate: games often hit the 10-turn cap with both tanks up. \
-             Try a shorter gun range, more starting distance pressure (objectives), \
-             or award victory points for board control so camping loses."
+            "High timeout rate: games often hit the activation cap with both \
+             sides still fighting. Try objectives / VP for kills, a shorter \
+             gun range, or award board-control points so camping loses."
                 .into(),
         );
     }
@@ -366,6 +403,9 @@ fn suggest(agg: &AggregateReport) -> Vec<String> {
 
 pub fn format_aggregate(agg: &AggregateReport) -> String {
     let mut out = String::new();
+    if !agg.scenario.is_empty() {
+        out.push_str(&format!("Scenario: {}\n", agg.scenario));
+    }
     out.push_str(&format!("Games: {}\n", agg.games));
     out.push_str(&format!(
         "Results: Red {} / Blue {} / Draw {} ({:.0}% decisive)\n",
@@ -410,6 +450,12 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
         agg.avg_abilities_used,
         agg.comebacks
     ));
+    if agg.avg_air_strikes > 0.0 || agg.avg_infantry_kills > 0.0 || agg.scenario == "combined" {
+        out.push_str(&format!(
+            "Combined arms: avg air strikes {:.2}, infantry kills {:.2}\n",
+            agg.avg_air_strikes, agg.avg_infantry_kills
+        ));
+    }
     out.push_str(&format!(
         "Stalemate flags: late-stalemate games {} ({:.0}%)\n",
         agg.late_stalemate,

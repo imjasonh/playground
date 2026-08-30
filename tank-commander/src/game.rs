@@ -70,6 +70,46 @@ pub struct Game {
 }
 
 impl Game {
+    pub fn new(
+        board: Board,
+        tanks: Vec<Tank>,
+        first: Side,
+        max_activations: u32,
+        scenario: impl Into<String>,
+    ) -> Self {
+        Self {
+            board,
+            tanks,
+            active_side: first,
+            activations: 0,
+            max_activations,
+            events: Vec::new(),
+            first_player: first,
+            scenario: scenario.into(),
+            pending_air_strikes: Vec::new(),
+            air_strikes_resolved: 0,
+            infantry_kills: 0,
+            activations_since_hit: 0,
+            activations_since_damage: 0,
+            total_hits: 0,
+            total_pens: 0,
+            total_glances: 0,
+            total_suppressions: 0,
+            total_fires: 0,
+            total_cook_offs: 0,
+            total_crew_wounds: 0,
+            total_crew_kills: 0,
+            abilities_used: 0,
+            shots_fired: 0,
+            shots_missed: 0,
+            at_shots: 0,
+            he_shots: 0,
+            moves_made: 0,
+            turns_made: 0,
+            turret_rotations: 0,
+        }
+    }
+
     pub fn tank(&self, id: u8) -> &Tank {
         self.tanks.iter().find(|t| t.id == id).expect("tank id")
     }
@@ -122,7 +162,22 @@ impl Game {
             return Outcome::Draw;
         }
         if self.activations >= self.max_activations {
-            // Timeout: more hull remaining wins; else draw.
+            // Timeout: more operational units wins; then more remaining hull.
+            let red_ops = self
+                .tanks
+                .iter()
+                .filter(|t| t.side == Side::Red && t.is_operational())
+                .count();
+            let blue_ops = self
+                .tanks
+                .iter()
+                .filter(|t| t.side == Side::Blue && t.is_operational())
+                .count();
+            match red_ops.cmp(&blue_ops) {
+                std::cmp::Ordering::Greater => return Outcome::Winner(Side::Red),
+                std::cmp::Ordering::Less => return Outcome::Winner(Side::Blue),
+                std::cmp::Ordering::Equal => {}
+            }
             let red_hp: i32 = self
                 .tanks
                 .iter()
@@ -909,37 +964,7 @@ mod tests {
         let board = Board::rect(11, 9);
         let red = Tank::stock(0, Side::Red, Hex::new(1, 3), Facing::E, "Red One");
         let blue = Tank::stock(1, Side::Blue, Hex::new(9, 5), Facing::W, "Blue One");
-        Game {
-            board,
-            tanks: vec![red, blue],
-            active_side: Side::Red,
-            activations: 0,
-            max_activations: 20,
-            events: Vec::new(),
-            first_player: Side::Red,
-            scenario: "skirmish".into(),
-            pending_air_strikes: Vec::new(),
-            air_strikes_resolved: 0,
-            infantry_kills: 0,
-            activations_since_hit: 0,
-            activations_since_damage: 0,
-            total_hits: 0,
-            total_pens: 0,
-            total_glances: 0,
-            total_suppressions: 0,
-            total_fires: 0,
-            total_cook_offs: 0,
-            total_crew_wounds: 0,
-            total_crew_kills: 0,
-            abilities_used: 0,
-            shots_fired: 0,
-            shots_missed: 0,
-            at_shots: 0,
-            he_shots: 0,
-            moves_made: 0,
-            turns_made: 0,
-            turret_rotations: 0,
-        }
+        Game::new(board, vec![red, blue], Side::Red, 20, "skirmish")
     }
 
     #[test]

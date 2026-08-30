@@ -262,3 +262,66 @@ cargo run --release -- sim --games 500 --seed 1
 
 When you change a rule, append a dated section here with before/after from the
 same seed and game count so diffs stay comparable.
+
+---
+
+## 2026-08-30 — Multi-unit scenarios (platoon + combined)
+
+**Change (sim, not a tabletop house rule).** The engine now runs three
+scenarios behind `--scenario`:
+
+| Scenario | Force | Cap |
+|----------|-------|----:|
+| `skirmish` | 1v1 tanks | 20 |
+| `platoon` | 3v3 tanks | 48 |
+| `combined` | tank (air support) + APC + infantry / side | 48 |
+
+Each activation the AI picks one operational unit and may fire at a named
+target. Timeout ranks **operational units first**, then remaining hull (so a
+side that wiped more tanks wins even if HP is close).
+
+Infantry die on any main-gun / missile hit. APCs fire AI weapons at infantry.
+Tanks with air support may mark a hex; the strike resolves on later
+activations (need starts at 6+, improves each wait; natural 1 always fails).
+
+**Why.** 1v1 Skirmish is a good rules lab, but after contact it collapses into
+Load+Fire (~79% of post-contact actions). The real game has more units and
+combined arms — those need their own balance runs.
+
+**Effect (200 games, seed 7):**
+
+| Metric | Skirmish | Platoon | Combined |
+|--------|---------:|--------:|---------:|
+| Red / Blue / Draw | 110 / 86 / 4 | 54 / 52 / 94 | 95 / 103 / 2 |
+| Decisive | 98% | 53% | 99% |
+| Timed out | 6% | 84% | 23% |
+| Avg moves | 8.2 | 14.6 | 15.2 |
+| Avg pens | 4.00 | 6.66 | 7.88 |
+| Air strikes / inf kills | — | — | 1.82 / 1.04 |
+
+**Read.** Platoon Red/Blue is even, but most games still hit the cap with
+matching unit counts — so draws dominate. That is the right place for
+**mission objectives / VP** next, not more Skirmish tweaks. Combined resolves
+far more often (infantry and air strikes add soft targets and board pressure)
+and stays balanced; air strikes fire ~1.8 times per game on average.
+
+**Next suggestions (tabletop, not yet simmed):**
+
+1. Platoon / company missions with scored objectives so timeout isn't a
+   draw-by-HP slog.
+2. Optional "broken" morale: when a side is down to one operational tank,
+   that tank is −1 action (keeps last stands dramatic without forcing a wipe).
+
+---
+
+## How to re-check
+
+```bash
+cd tank-commander
+cargo run --release -- sim --scenario skirmish --games 200 --seed 7
+cargo run --release -- sim --scenario platoon --games 200 --seed 7
+cargo run --release -- sim --scenario combined --games 200 --seed 7
+```
+
+When you change a rule, append a dated section here with before/after from the
+same seed and game count so diffs stay comparable.

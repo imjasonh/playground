@@ -1,4 +1,4 @@
-//! Built-in scenarios. v1: Skirmish only.
+//! Built-in scenarios: Skirmish (1v1), Platoon (3v3), Combined arms.
 
 use crate::board::{Board, Terrain};
 use crate::game::Game;
@@ -6,6 +6,36 @@ use crate::hex::{Facing, Hex};
 use crate::unit::{Side, Tank};
 use rand::seq::SliceRandom;
 use rand::Rng;
+
+/// Which scenario to spin up.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScenarioKind {
+    /// 1v1 stock tanks.
+    Skirmish,
+    /// 3v3 stock tanks.
+    Platoon,
+    /// 1 tank (air support) + 1 APC + 1 infantry per side.
+    Combined,
+}
+
+impl ScenarioKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ScenarioKind::Skirmish => "skirmish",
+            ScenarioKind::Platoon => "platoon",
+            ScenarioKind::Combined => "combined",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "skirmish" => Some(Self::Skirmish),
+            "platoon" => Some(Self::Platoon),
+            "combined" => Some(Self::Combined),
+            _ => None,
+        }
+    }
+}
 
 /// Fixed midline wall hexes. Everything else on the board is rolled each game.
 const WALL: [Hex; 9] = [
@@ -30,82 +60,122 @@ const ALLEY_CLEAR: [Hex; 6] = [
     Hex::new(5, 8),
 ];
 
-/// Red / Blue start hexes (offset rows so the opening isn't a mirror).
+/// Red / Blue start hexes for 1v1 (offset rows so the opening isn't a mirror).
 const RED_START: Hex = Hex::new(1, 3);
 const BLUE_START: Hex = Hex::new(9, 5);
+
+pub fn setup<R: Rng>(kind: ScenarioKind, rng: &mut R) -> Game {
+    match kind {
+        ScenarioKind::Skirmish => skirmish(rng),
+        ScenarioKind::Platoon => platoon(rng),
+        ScenarioKind::Combined => combined(rng),
+    }
+}
 
 /// 1v1 tank duel. The midline building wall is fixed; forest / mud / rubble
 /// outside it are rolled each game so approaches and cover vary. Starts sit
 /// on offset rows so each side's natural alley differs.
 pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
-    let board = build_board(rng);
-
+    let board = build_board(rng, &[RED_START, BLUE_START], &[Hex::new(2, 3), Hex::new(8, 5)]);
     let red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One");
     let blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One");
+    let first = coin_flip(rng);
+    Game::new(board, vec![red, blue], first, 20, "skirmish")
+}
 
-    let first = if rng.gen_bool(0.5) {
+/// 3v3 tank platoon fight on the same walled board. Starts fan north/south of
+/// the 1v1 positions so units don't stack. Longer activation budget so each
+/// tank can act a few times.
+pub fn platoon<R: Rng>(rng: &mut R) -> Game {
+    let red_starts = [Hex::new(1, 2), Hex::new(1, 4), Hex::new(0, 3)];
+    let blue_starts = [Hex::new(9, 4), Hex::new(9, 6), Hex::new(10, 5)];
+    let reserved: Vec<Hex> = red_starts
+        .iter()
+        .chain(blue_starts.iter())
+        .copied()
+        .collect();
+    let egress = [
+        Hex::new(2, 2),
+        Hex::new(2, 4),
+        Hex::new(8, 4),
+        Hex::new(8, 6),
+    ];
+    let board = build_board(rng, &reserved, &egress);
+
+    let tanks = vec![
+        Tank::stock(0, Side::Red, red_starts[0], Facing::E, "Red Alpha"),
+        Tank::stock(1, Side::Red, red_starts[1], Facing::E, "Red Bravo"),
+        Tank::stock(2, Side::Red, red_starts[2], Facing::E, "Red Charlie"),
+        Tank::stock(3, Side::Blue, blue_starts[0], Facing::W, "Blue Alpha"),
+        Tank::stock(4, Side::Blue, blue_starts[1], Facing::W, "Blue Bravo"),
+        Tank::stock(5, Side::Blue, blue_starts[2], Facing::W, "Blue Charlie"),
+    ];
+    let first = coin_flip(rng);
+    // 24 activations each side → ~8 per tank if shared evenly. 15/side
+    // timed out ~98% of games (not enough pens to wipe three hulls).
+    Game::new(board, tanks, first, 48, "platoon")
+}
+
+/// Combined arms: tank with air support, APC, and infantry squad per side.
+pub fn combined<R: Rng>(rng: &mut R) -> Game {
+    let red_tank = Hex::new(1, 3);
+    let red_apc = Hex::new(1, 5);
+    let red_inf = Hex::new(0, 4);
+    let blue_tank = Hex::new(9, 5);
+    let blue_apc = Hex::new(9, 3);
+    let blue_inf = Hex::new(10, 4);
+    let reserved = [red_tank, red_apc, red_inf, blue_tank, blue_apc, blue_inf];
+    let egress = [
+        Hex::new(2, 3),
+        Hex::new(2, 5),
+        Hex::new(8, 5),
+        Hex::new(8, 3),
+    ];
+    let board = build_board(rng, &reserved, &egress);
+
+    let mut red_t = Tank::stock(0, Side::Red, red_tank, Facing::E, "Red Tank");
+    red_t.has_air_support = true;
+    let mut blue_t = Tank::stock(3, Side::Blue, blue_tank, Facing::W, "Blue Tank");
+    blue_t.has_air_support = true;
+
+    let tanks = vec![
+        red_t,
+        Tank::stock_apc(1, Side::Red, red_apc, Facing::E, "Red APC"),
+        Tank::stock_infantry(2, Side::Red, red_inf, Facing::E, "Red Squad"),
+        blue_t,
+        Tank::stock_apc(4, Side::Blue, blue_apc, Facing::W, "Blue APC"),
+        Tank::stock_infantry(5, Side::Blue, blue_inf, Facing::W, "Blue Squad"),
+    ];
+    let first = coin_flip(rng);
+    // 24 each: mixed force dies faster than a pure tank platoon, but air
+    // strikes and infantry need room to matter.
+    Game::new(board, tanks, first, 48, "combined")
+}
+
+fn coin_flip<R: Rng>(rng: &mut R) -> Side {
+    if rng.gen_bool(0.5) {
         Side::Red
     } else {
         Side::Blue
-    };
-
-    Game {
-        board,
-        tanks: vec![red, blue],
-        active_side: first,
-        activations: 0,
-        // 10 turns each side → 20 activations.
-        max_activations: 20,
-        events: Vec::new(),
-        first_player: first,
-        scenario: "skirmish".into(),
-        pending_air_strikes: Vec::new(),
-        air_strikes_resolved: 0,
-        infantry_kills: 0,
-        activations_since_hit: 0,
-        activations_since_damage: 0,
-        total_hits: 0,
-        total_pens: 0,
-        total_glances: 0,
-        total_suppressions: 0,
-        total_fires: 0,
-        total_cook_offs: 0,
-        total_crew_wounds: 0,
-        total_crew_kills: 0,
-        abilities_used: 0,
-        shots_fired: 0,
-        shots_missed: 0,
-        at_shots: 0,
-        he_shots: 0,
-        moves_made: 0,
-        turns_made: 0,
-        turret_rotations: 0,
     }
 }
 
-fn build_board<R: Rng>(rng: &mut R) -> Board {
-    // Re-roll a few times if a scatter somehow seals an alley (shouldn't with
-    // ALLEY_CLEAR reserved, but rubble+mud stacks of bad luck are cheap to avoid).
+fn build_board<R: Rng>(rng: &mut R, starts: &[Hex], egress: &[Hex]) -> Board {
     for _ in 0..8 {
-        let board = scatter_terrain(rng);
-        if alleys_pathable(&board) {
+        let board = scatter_terrain(rng, starts, egress);
+        if alleys_pathable(&board, starts) {
             return board;
         }
     }
-    scatter_terrain(rng)
+    scatter_terrain(rng, starts, egress)
 }
 
-fn scatter_terrain<R: Rng>(rng: &mut R) -> Board {
+fn scatter_terrain<R: Rng>(rng: &mut R, starts: &[Hex], egress: &[Hex]) -> Board {
     let mut board = Board::rect(11, 9);
     for h in WALL {
         board.set_terrain(h, Terrain::Building);
     }
 
-    let starts = [RED_START, BLUE_START];
-    let egress = [
-        Hex::new(2, 3), // in front of Red
-        Hex::new(8, 5), // in front of Blue
-    ];
     let mut candidates: Vec<Hex> = Vec::new();
     for q in board.min_q..=board.max_q {
         for r in board.min_r..=board.max_r {
@@ -140,11 +210,15 @@ fn scatter_terrain<R: Rng>(rng: &mut R) -> Board {
     board
 }
 
-fn alleys_pathable(board: &Board) -> bool {
-    reachable(board, RED_START, Hex::new(5, 1))
-        && reachable(board, RED_START, Hex::new(5, 7))
-        && reachable(board, BLUE_START, Hex::new(5, 1))
-        && reachable(board, BLUE_START, Hex::new(5, 7))
+fn alleys_pathable(board: &Board, starts: &[Hex]) -> bool {
+    // At least one start on each side can reach both alleys.
+    let red = starts.iter().copied().filter(|h| h.q <= 3).collect::<Vec<_>>();
+    let blue = starts.iter().copied().filter(|h| h.q >= 8).collect::<Vec<_>>();
+    let goals = [Hex::new(5, 1), Hex::new(5, 7)];
+    red.iter().any(|s| goals.iter().all(|g| reachable(board, *s, *g)))
+        && blue
+            .iter()
+            .any(|s| goals.iter().all(|g| reachable(board, *s, *g)))
 }
 
 fn reachable(board: &Board, start: Hex, goal: Hex) -> bool {
@@ -173,6 +247,7 @@ fn reachable(board: &Board, start: Hex, goal: Hex) -> bool {
 mod tests {
     use super::*;
     use crate::hex::Hex;
+    use crate::unit::UnitKind;
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
@@ -205,7 +280,6 @@ mod tests {
         let mut b = ChaCha8Rng::seed_from_u64(2);
         let ga = skirmish(&mut a);
         let gb = skirmish(&mut b);
-        // Some non-wall hex should differ (very unlikely to collide on all).
         let mut differ = false;
         for q in 0..=10 {
             for r in 0..=8 {
@@ -219,5 +293,35 @@ mod tests {
             }
         }
         assert!(differ, "two seeds should scatter different terrain");
+    }
+
+    #[test]
+    fn platoon_has_six_tanks() {
+        let mut rng = ChaCha8Rng::seed_from_u64(3);
+        let g = platoon(&mut rng);
+        assert_eq!(g.tanks.len(), 6);
+        assert_eq!(g.scenario, "platoon");
+        assert_eq!(
+            g.tanks.iter().filter(|t| t.side == Side::Red).count(),
+            3
+        );
+        assert_eq!(
+            g.tanks.iter().filter(|t| t.side == Side::Blue).count(),
+            3
+        );
+        assert!(g.tanks.iter().all(|t| t.kind == UnitKind::Tank));
+    }
+
+    #[test]
+    fn combined_has_mixed_force() {
+        let mut rng = ChaCha8Rng::seed_from_u64(4);
+        let g = combined(&mut rng);
+        assert_eq!(g.scenario, "combined");
+        assert_eq!(g.tanks.len(), 6);
+        let kinds: Vec<_> = g.tanks.iter().map(|t| t.kind).collect();
+        assert!(kinds.contains(&UnitKind::Tank));
+        assert!(kinds.contains(&UnitKind::Apc));
+        assert!(kinds.contains(&UnitKind::Infantry));
+        assert!(g.tanks.iter().filter(|t| t.kind == UnitKind::Tank).all(|t| t.has_air_support));
     }
 }
