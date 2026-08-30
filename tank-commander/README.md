@@ -70,4 +70,6 @@ default rather than blocking.
 | `src/scenario.rs` | Skirmish setup |
 | `src/ai.rs` | Heuristic planner |
 | `src/metrics.rs` | Drama / stalemate aggregates + suggestions |
+| `src/dice.rs` | Natural 1 fails / natural 6 succeeds |
 | `src/sim.rs` | Monte Carlo runner |
+| `RULES_CHANGES.md` | House-rule log with sim before/after |
