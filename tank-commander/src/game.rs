@@ -513,7 +513,10 @@ impl Game {
             return;
         }
         for role in CrewRole::all_core() {
-            if tank.crew.iter().any(|c| c.role == role && c.status == CrewStatus::Killed)
+            if tank
+                .crew
+                .iter()
+                .any(|c| c.role == role && c.status == CrewStatus::Killed)
             {
                 out.push(Action::LieutenantCover { role });
             }
@@ -743,12 +746,7 @@ impl Game {
                 self.board.add_smoke(hex);
                 *ap_left -= 1;
                 self.smoke_deployed += 1;
-                self.push_event(
-                    turn,
-                    Some(side),
-                    format!("Deployed smoke on {hex}"),
-                    None,
-                );
+                self.push_event(turn, Some(side), format!("Deployed smoke on {hex}"), None);
             }
             Action::DeployMine { hex } => {
                 if self.tank(tank_id).mines_left > 0 && !self.board.has_mine(hex) {
@@ -756,12 +754,7 @@ impl Game {
                     self.board.add_mine(hex);
                     *ap_left -= 1;
                     self.mines_deployed += 1;
-                    self.push_event(
-                        turn,
-                        Some(side),
-                        format!("Deployed mine on {hex}"),
-                        None,
-                    );
+                    self.push_event(turn, Some(side), format!("Deployed mine on {hex}"), None);
                 }
             }
             Action::LieutenantCover { role } => {
@@ -1757,7 +1750,10 @@ mod tests {
             },
             &mut t,
         );
-        assert!(ev.medkit_save, "first injury should be a medkit save: {ev:?}");
+        assert!(
+            ev.medkit_save,
+            "first injury should be a medkit save: {ev:?}"
+        );
         assert!(!ev.crew_wounded && !ev.crew_killed);
         assert!(t.medkit_used);
         assert!(t.crew.iter().all(|c| c.status == CrewStatus::Healthy));
@@ -1777,14 +1773,22 @@ mod tests {
         let mut rng = ChaCha8Rng::seed_from_u64(1);
         let mut buffs = TurnBuffs::default();
         let mut ap = 5;
-        g.apply_action(0, Action::DeploySmoke { hex: mid }, &mut buffs, &mut ap, &mut rng);
+        g.apply_action(
+            0,
+            Action::DeploySmoke { hex: mid },
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
         assert!(g.board.has_smoke(mid));
         assert!(g.tank(0).smoke_used);
         assert_eq!(g.smoke_deployed, 1);
         assert!(!g.board.has_los(Hex::offset(2, 4), Hex::offset(6, 4), &[]));
         // Second deploy not legal.
         let legal = g.legal_actions(0, 5, &TurnBuffs::default());
-        assert!(legal.iter().all(|a| !matches!(a, Action::DeploySmoke { .. })));
+        assert!(legal
+            .iter()
+            .all(|a| !matches!(a, Action::DeploySmoke { .. })));
     }
 
     #[test]

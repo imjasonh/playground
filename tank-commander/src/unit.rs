@@ -336,11 +336,7 @@ impl Tank {
     pub fn with_field_kit(mut self) -> Self {
         self.has_smoke_launcher = true;
         self.has_medkit = true;
-        if !self
-            .crew
-            .iter()
-            .any(|c| c.role == CrewRole::Lieutenant)
-        {
+        if !self.crew.iter().any(|c| c.role == CrewRole::Lieutenant) {
             self.crew.push(CrewMember::healthy(CrewRole::Lieutenant));
         }
         self
@@ -521,7 +517,11 @@ mod tests {
     #[test]
     fn lieutenant_covers_killed_gunner_as_wounded() {
         let mut t = Tank::stock(0, Side::Red, Hex::new(0, 0), Facing::E, "T").with_field_kit();
-        let gunner = t.crew.iter_mut().find(|c| c.role == CrewRole::Gunner).unwrap();
+        let gunner = t
+            .crew
+            .iter_mut()
+            .find(|c| c.role == CrewRole::Gunner)
+            .unwrap();
         gunner.status = CrewStatus::Killed;
         let lt = t
             .crew

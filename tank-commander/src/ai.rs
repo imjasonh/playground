@@ -122,10 +122,9 @@ fn plan_for_unit<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
 
 fn lieutenant_cover_plan(game: &Game, unit_id: u8) -> Option<Vec<Action>> {
     let tank = game.tank(unit_id);
-    let lt = tank
-        .crew
-        .iter()
-        .find(|c| c.role == crate::unit::CrewRole::Lieutenant && c.status != crate::unit::CrewStatus::Killed)?;
+    let lt = tank.crew.iter().find(|c| {
+        c.role == crate::unit::CrewRole::Lieutenant && c.status != crate::unit::CrewStatus::Killed
+    })?;
     if lt.covering.is_some() {
         return None;
     }

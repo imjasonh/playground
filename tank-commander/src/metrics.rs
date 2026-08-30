@@ -329,9 +329,8 @@ impl AggregateReport {
         let units: u32 = reports.iter().map(|r| r.loadout.tanks).sum();
         if units > 0 {
             let uf = f64::from(units);
-            let sum_l = |f: fn(&LoadoutCensus) -> u32| {
-                reports.iter().map(|r| f(&r.loadout)).sum::<u32>()
-            };
+            let sum_l =
+                |f: fn(&LoadoutCensus) -> u32| reports.iter().map(|r| f(&r.loadout)).sum::<u32>();
             agg.loadout_smoke_rate = f64::from(sum_l(|c| c.smoke)) / uf;
             agg.loadout_medkit_rate = f64::from(sum_l(|c| c.medkit)) / uf;
             agg.loadout_lt_rate = f64::from(sum_l(|c| c.lieutenant)) / uf;

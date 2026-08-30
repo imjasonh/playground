@@ -169,10 +169,8 @@ fn wound_random_crew<R: Rng>(rng: &mut R, target: &mut Tank, ev: &mut CombatEven
                 target.crew[idx].covering = None;
             } else if assign_lieutenant_cover(target, role) {
                 ev.lt_cover = true;
-                ev.description.push_str(&format!(
-                    "; Lieutenant covers {}",
-                    role_name(role)
-                ));
+                ev.description
+                    .push_str(&format!("; Lieutenant covers {}", role_name(role)));
             }
         }
         CrewStatus::Killed => {}
