@@ -91,8 +91,14 @@ fn assault_batch_runs() {
     });
     assert_eq!(result.aggregate.games, 16);
     assert_eq!(result.aggregate.scenario, "assault");
+    assert!(result.aggregate.attacker_wins + result.aggregate.defender_wins <= 16);
     assert_eq!(
-        result.aggregate.attacker_wins + result.aggregate.defender_wins,
+        result.aggregate.attacker_wins + result.aggregate.defender_wins + result.aggregate.draws,
         16
+    );
+    assert!(
+        result.aggregate.loadout_avg_points > 0.0,
+        "expected Assault lists to include upgrades, avg points={}",
+        result.aggregate.loadout_avg_points
     );
 }

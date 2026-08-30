@@ -335,8 +335,7 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
 
 /// Flag raid: each side fields **1 tank** + **3 APCs** already loaded with
 /// infantry. Each side has a backline flag; infantry **Capture** on the enemy
-/// flag wins immediately. Stock lists (no upgrades) so the objective race is
-/// the main lesson.
+/// flag wins immediately. List upgrades (tanks ≤10 with mines, APCs ≤4).
 pub fn capture<R: Rng>(rng: &mut R) -> Game {
     let width = BATTLE_WIDTH;
     let height = BATTLE_HEIGHT;
@@ -387,18 +386,35 @@ pub fn capture<R: Rng>(rng: &mut R) -> Game {
     board.set_terrain(red_flag, Terrain::Open);
     board.set_terrain(blue_flag, Terrain::Open);
 
+    let mut red_t = Tank::stock(0, Side::Red, red_tank, Facing::E, "Red Tank");
+    spend_budget(&mut red_t, 10, true, rng);
+    let mut red_apc_a = Tank::stock_apc(1, Side::Red, red_apcs[0], Facing::E, "Red APC A");
+    spend_budget(&mut red_apc_a, 4, false, rng);
+    let mut red_apc_b = Tank::stock_apc(2, Side::Red, red_apcs[1], Facing::E, "Red APC B");
+    spend_budget(&mut red_apc_b, 4, false, rng);
+    let mut red_apc_c = Tank::stock_apc(3, Side::Red, red_apcs[2], Facing::E, "Red APC C");
+    spend_budget(&mut red_apc_c, 4, false, rng);
+    let mut blue_t = Tank::stock(7, Side::Blue, blue_tank, Facing::W, "Blue Tank");
+    spend_budget(&mut blue_t, 10, true, rng);
+    let mut blue_apc_a = Tank::stock_apc(8, Side::Blue, blue_apcs[0], Facing::W, "Blue APC A");
+    spend_budget(&mut blue_apc_a, 4, false, rng);
+    let mut blue_apc_b = Tank::stock_apc(9, Side::Blue, blue_apcs[1], Facing::W, "Blue APC B");
+    spend_budget(&mut blue_apc_b, 4, false, rng);
+    let mut blue_apc_c = Tank::stock_apc(10, Side::Blue, blue_apcs[2], Facing::W, "Blue APC C");
+    spend_budget(&mut blue_apc_c, 4, false, rng);
+
     let mut tanks = vec![
-        Tank::stock(0, Side::Red, red_tank, Facing::E, "Red Tank"),
-        Tank::stock_apc(1, Side::Red, red_apcs[0], Facing::E, "Red APC A"),
-        Tank::stock_apc(2, Side::Red, red_apcs[1], Facing::E, "Red APC B"),
-        Tank::stock_apc(3, Side::Red, red_apcs[2], Facing::E, "Red APC C"),
+        red_t,
+        red_apc_a,
+        red_apc_b,
+        red_apc_c,
         Tank::stock_infantry(4, Side::Red, red_apcs[0], Facing::E, "Red Squad A"),
         Tank::stock_infantry(5, Side::Red, red_apcs[1], Facing::E, "Red Squad B"),
         Tank::stock_infantry(6, Side::Red, red_apcs[2], Facing::E, "Red Squad C"),
-        Tank::stock(7, Side::Blue, blue_tank, Facing::W, "Blue Tank"),
-        Tank::stock_apc(8, Side::Blue, blue_apcs[0], Facing::W, "Blue APC A"),
-        Tank::stock_apc(9, Side::Blue, blue_apcs[1], Facing::W, "Blue APC B"),
-        Tank::stock_apc(10, Side::Blue, blue_apcs[2], Facing::W, "Blue APC C"),
+        blue_t,
+        blue_apc_a,
+        blue_apc_b,
+        blue_apc_c,
         Tank::stock_infantry(11, Side::Blue, blue_apcs[0], Facing::W, "Blue Squad A"),
         Tank::stock_infantry(12, Side::Blue, blue_apcs[1], Facing::W, "Blue Squad B"),
         Tank::stock_infantry(13, Side::Blue, blue_apcs[2], Facing::W, "Blue Squad C"),
@@ -415,7 +431,7 @@ pub fn capture<R: Rng>(rng: &mut R) -> Game {
         }
     }
 
-    let first = coin_flip(rng);
+    let (first, spoil) = initiative_from_lists(&tanks, rng);
     let objectives = vec![
         crate::game::Objective {
             hex: red_flag,
@@ -430,9 +446,13 @@ pub fn capture<R: Rng>(rng: &mut R) -> Game {
     ];
     let mut game = Game::new(board, tanks, first, 200, "capture")
         .with_stalemate(40)
+        .with_list_initiative(!spoil)
         .with_objectives(objectives);
     game.push_setup_event(format!("Flags at {red_flag} (Red) and {blue_flag} (Blue)"));
-    second_player_setup(&mut game, 3);
+    game.place_deployment_mines(rng);
+    if spoil {
+        second_player_setup(&mut game, 3);
+    }
     // Spoil must not bury flags under buildings.
     game.board.set_terrain(red_flag, Terrain::Open);
     game.board.set_terrain(blue_flag, Terrain::Open);
@@ -442,7 +462,8 @@ pub fn capture<R: Rng>(rng: &mut R) -> Game {
 /// Assault: attacker tries to Capture one defender flag; defender wins by wipe
 /// or by holding until the clock runs out. Attacker fields **1 tank + 3 loaded
 /// APCs**; defender fields **1 tank + 2 infantry** dug in near the flag.
-/// Attacker always activates first; defender gets spoil.
+/// List upgrades (tanks ≤10 with mines, APCs ≤4). Attacker always activates
+/// first; defender gets spoil.
 pub fn assault<R: Rng>(rng: &mut R) -> Game {
     let width = BATTLE_WIDTH;
     let height = BATTLE_HEIGHT;
@@ -518,15 +539,26 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
         }
     }
 
+    let mut atk_t = Tank::stock(0, attacker, atk_tank, atk_facing, "Attack Tank");
+    spend_budget(&mut atk_t, 10, true, rng);
+    let mut atk_apc_a = Tank::stock_apc(1, attacker, atk_apcs[0], atk_facing, "Attack APC A");
+    spend_budget(&mut atk_apc_a, 4, false, rng);
+    let mut atk_apc_b = Tank::stock_apc(2, attacker, atk_apcs[1], atk_facing, "Attack APC B");
+    spend_budget(&mut atk_apc_b, 4, false, rng);
+    let mut atk_apc_c = Tank::stock_apc(3, attacker, atk_apcs[2], atk_facing, "Attack APC C");
+    spend_budget(&mut atk_apc_c, 4, false, rng);
+    let mut def_t = Tank::stock(7, defender, def_tank, def_facing, "Defend Tank");
+    spend_budget(&mut def_t, 10, true, rng);
+
     let mut tanks = vec![
-        Tank::stock(0, attacker, atk_tank, atk_facing, "Attack Tank"),
-        Tank::stock_apc(1, attacker, atk_apcs[0], atk_facing, "Attack APC A"),
-        Tank::stock_apc(2, attacker, atk_apcs[1], atk_facing, "Attack APC B"),
-        Tank::stock_apc(3, attacker, atk_apcs[2], atk_facing, "Attack APC C"),
+        atk_t,
+        atk_apc_a,
+        atk_apc_b,
+        atk_apc_c,
         Tank::stock_infantry(4, attacker, atk_apcs[0], atk_facing, "Attack Squad A"),
         Tank::stock_infantry(5, attacker, atk_apcs[1], atk_facing, "Attack Squad B"),
         Tank::stock_infantry(6, attacker, atk_apcs[2], atk_facing, "Attack Squad C"),
-        Tank::stock(7, defender, def_tank, def_facing, "Defend Tank"),
+        def_t,
         Tank::stock_infantry(8, defender, def_inf[0], def_facing, "Defend Squad A"),
         Tank::stock_infantry(9, defender, def_inf[1], def_facing, "Defend Squad B"),
     ];
@@ -552,7 +584,7 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
         home: defender,
         captured_by: None,
     }];
-    // Attacker first; defender spoils.
+    // Attacker first; defender spoils. List spend does not flip initiative here.
     let mut game = Game::new(board, tanks, attacker, 180, "assault")
         .with_stalemate(50)
         .with_objectives(objectives)
@@ -560,6 +592,7 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
     game.push_setup_event(format!(
         "{attacker:?} assaults; {defender:?} holds flag at {def_flag}"
     ));
+    game.place_deployment_mines(rng);
     second_player_setup(&mut game, 3);
     game.board.set_terrain(def_flag, Terrain::Open);
     game
@@ -1624,8 +1657,13 @@ mod tests {
             if t.kind == UnitKind::Apc {
                 assert!(t.passenger.is_some(), "{} should start loaded", t.name);
             }
-            assert_eq!(t.upgrade_points_spent, 0);
         }
+        assert!(
+            g.tanks
+                .iter()
+                .any(|t| t.kind != UnitKind::Infantry && t.upgrade_points_spent > 0),
+            "expected Capture lists to spend upgrades"
+        );
         for obj in &g.objectives {
             assert_eq!(g.board.terrain_at(obj.hex), Terrain::Open);
             assert!(obj.captured_by.is_none());
@@ -1682,5 +1720,11 @@ mod tests {
                 assert!(t.in_cover);
             }
         }
+        assert!(
+            g.tanks
+                .iter()
+                .any(|t| t.kind != UnitKind::Infantry && t.upgrade_points_spent > 0),
+            "expected Assault lists to spend upgrades"
+        );
     }
 }

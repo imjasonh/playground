@@ -12,18 +12,18 @@ plus a Capture flag-raid:
 | `squadron` | 3v3 stock tanks (no upgrades) | 18×12 open | 200 hard; idle after 40 no-hit |
 | `platoon` | 3v3 tanks (≤10-pt lists) | 18×12 open | 200 hard; idle after 40 no-hit |
 | `combined` | 2 tanks + 2 APCs + 2 infantry / side (lists) | 18×12 open | 240 hard; idle after 48 no-hit |
-| `capture` | 1 tank + 3 loaded APCs / side (stock); flag Capture wins | 18×12 open | 200 hard; idle after 40 no-hit |
-| `assault` | Attacker 1 tank+3 loaded APCs vs defender 1 tank+2 infantry; Capture or hold | 18×12 open | 180 hard; idle after 50 no-hit (hold = defender) |
+| `capture` | 1 tank + 3 loaded APCs / side (lists ≤10/≤4 + mines); flag Capture wins | 18×12 open | 200 hard; idle after 40 no-hit |
+| `assault` | Attacker 1 tank+3 loaded APCs vs defender 1 tank+2 infantry (lists); Capture or hold | 18×12 open | 180 hard; idle after 50 no-hit (hold = defender) |
 
 Squadron, platoon, combined, capture, and assault share one **18×12** mat with **scattered
 building clumps and forest patches** (no sealed midline funnel). Skirmish is
-half the width (**9×12**) with a compact midline block. Platoon/Combined tanks
-spend up to **10** upgrade points (armor, engine, barrel, optics, AI, smoke,
-medkit, LT; Combined also mines) and may spend fewer; APCs spend up to **4**.
-On list scenarios, the side with the **lower** total spend activates first and
+half the width (**9×12**) with a compact midline block. Platoon/Combined/Capture/Assault
+tanks spend up to **10** upgrade points (armor, engine, barrel, optics, AI, smoke,
+medkit, LT; tanks may buy mines) and may spend fewer; APCs spend up to **4**.
+On list scenarios (except Assault), the side with the **lower** total spend activates first and
 skips second-player spoil; equal spend still rolls off and applies spoil.
-Skirmish/Squadron/Capture always roll off and apply spoil. Assault: attacker
-always first, defender spoils. Combined tanks also get a
+Skirmish/Squadron always roll off and apply spoil. Assault: attacker
+always first, defender spoils (list spend does not flip initiative). Combined tanks also get a
 scenario air strike, next-activation air strikes (with scatter), and APC
 vehicle spray. Combined and Capture starts and scatter are east–west mirrors.
 

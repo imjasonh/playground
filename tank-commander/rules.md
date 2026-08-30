@@ -480,13 +480,14 @@ Full combined-arms game with lists.
 Objectives matter: race the other side's flag with embarked infantry.
 
 - **Force:** per side — **1 tank** + **3 APCs**, each APC **pre-loaded** with
-  one infantry squad. **No upgrades** (stock).
+  one infantry squad. List upgrades: tanks ≤**10** (mines allowed), APCs ≤**4**.
 - **Board:** 18×12 open mat (mirrored starts/scatter like Combined). Each side
   has one **flag** hex in its backline (kept Open).
 - **Win:** an infantry unit that **shares** the enemy flag hex may spend 1 AP
   on **Capture**. Capturing the enemy flag wins immediately. Wipe still wins;
   timeout / idle stalemate still resolve by attrition.
-- **Initiative:** roll off; second player always gets spoil (nudge + 3 scatter).
+- **Initiative:** lower list spend goes first and skips spoil; equal spend rolls
+  off and applies spoil (nudge + 3 scatter). Deployment mines before spoil.
 - **Embarkation:** squads start inside their APCs; they may stay embarked until
   dropped near the flag (see [Embarkation](#embarkation)).
 
@@ -494,9 +495,10 @@ Objectives matter: race the other side's flag with embarked infantry.
 
 One side Captures; the other holds or destroys the attack.
 
-- **Attacker:** **1 tank** + **3 loaded APCs** (stock). Always activates first.
-- **Defender:** **1 tank** + **2 infantry** dug in near a single backline flag
-  (stock). Gets second-player spoil.
+- **Attacker:** **1 tank** + **3 loaded APCs**. Always activates first. List
+  upgrades (tank ≤10 with mines, APCs ≤4).
+- **Defender:** **1 tank** + **2 infantry** dug in near a single backline flag.
+  List upgrades on the tank (≤10 with mines). Gets second-player spoil.
 - **Board:** 18×12 open mat; scatter is **not** mirrored (asymmetric approach).
   Who attacks is a coin flip (color is not locked to a role).
 - **Win:**
@@ -504,6 +506,7 @@ One side Captures; the other holds or destroys the attack.
   - Defender: wipe the attacker, **or hold** until the activation cap / idle
     stalemate (clock favors the hold).
 - **Cap:** 180 activations; idle stalemate after 50 no-hit.
+- **Mines:** deployment mines before spoil (same clearance rules as Combined).
 
 ### Scatter terrain spoil (shared rules)
 
