@@ -8,6 +8,7 @@ pub mod action;
 pub mod ai;
 pub mod board;
 pub mod combat;
+pub mod dice;
 pub mod game;
 pub mod hex;
 pub mod metrics;

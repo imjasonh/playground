@@ -261,8 +261,7 @@ fn suggest(agg: &AggregateReport) -> Vec<String> {
     if agg.avg_activations < 8.0 && decisive > 0.85 {
         s.push(
             "Games resolve very quickly. That can feel railroaded. \
-             Stock armor 6 vs AT strength 6 means pen on 1+ vs rear/side often — \
-             check whether first successful pen snowballs via crew loss. \
+             Check whether the first pen snowballs via crew loss. \
              A 'stun' on first pen (lose 1 action next turn) instead of always \
              wounding crew would slow the death spiral."
                 .into(),
@@ -270,10 +269,9 @@ fn suggest(agg: &AggregateReport) -> Vec<String> {
     }
     if agg.avg_glances == 0.0 && agg.avg_pens > 1.0 {
         s.push(
-            "Stock AT strength 6 vs armor 6 never glances: every hit pens \
-             (need roll+6 > 6, true even on a 1). That makes every connect \
-             a hull-damage event and speeds snowballs. Options: armor 7/6/5, \
-             AT strength 5, or 'more than or equal' only pens on a 6+ margin."
+            "No glances observed despite many pens. With the 1-always-fails \
+             house rule, stock AT vs armor 6 should glance on natural 1s — \
+             if glances stay at zero, something is wrong in the pen path."
                 .into(),
         );
     } else if agg.avg_pens < 0.5 && agg.avg_glances > 2.0 {

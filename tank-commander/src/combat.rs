@@ -1,5 +1,6 @@
 //! Combat resolution: hit, glance, penetrate, fire, cook-off.
 
+use crate::dice::{penetrates, succeeds};
 use crate::unit::{CrewStatus, ImpactFacing, RoundKind, Tank};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -47,7 +48,7 @@ pub fn resolve_shot<R: Rng>(rng: &mut R, params: ShotParams, target: &mut Tank) 
 
     let need = attacker_accuracy + accuracy_penalty;
     let hit_roll = rng.gen_range(1..=6);
-    let hits = forced_hit.unwrap_or(hit_roll >= need);
+    let hits = forced_hit.unwrap_or_else(|| succeeds(hit_roll, need));
     if !hits {
         ev.description = format!(
             "miss (rolled {hit_roll}, needed {need}+) vs {} {}",
@@ -61,7 +62,7 @@ pub fn resolve_shot<R: Rng>(rng: &mut R, params: ShotParams, target: &mut Tank) 
     let pen_roll = forced_pen_roll.unwrap_or_else(|| rng.gen_range(1..=6));
     let total = pen_roll + round.strength();
     let armor = target.armor.for_impact(impact);
-    let penetrating = total > armor;
+    let penetrating = penetrates(pen_roll, round.strength(), armor);
 
     if penetrating {
         ev.penetrating = true;
@@ -93,9 +94,9 @@ pub fn resolve_shot<R: Rng>(rng: &mut R, params: ShotParams, target: &mut Tank) 
             total,
             armor
         );
-        // Glancing wounds on 4+.
+        // Glancing wounds on 4+ (1 always fails, 6 always succeeds).
         let wound_roll = rng.gen_range(1..=6);
-        if wound_roll >= 4 {
+        if succeeds(wound_roll, 4) {
             wound_random_crew(rng, target, &mut ev);
         }
         ev.description
@@ -104,7 +105,7 @@ pub fn resolve_shot<R: Rng>(rng: &mut R, params: ShotParams, target: &mut Tank) 
 
     if round == RoundKind::He {
         let fire_roll = rng.gen_range(1..=6);
-        if fire_roll >= 5 {
+        if succeeds(fire_roll, 5) {
             target.on_fire = true;
             ev.fire_started = true;
             ev.description.push_str("; FIRE started");
@@ -182,7 +183,8 @@ pub fn end_of_turn_hazards<R: Rng>(rng: &mut R, tank: &mut Tank) -> Vec<CombatEv
 
     if tank.disabled && !tank.destroyed {
         let roll = rng.gen_range(1..=6);
-        if roll >= 4 {
+        // Cook-off on 4+ (1 always fails, 6 always succeeds).
+        if succeeds(roll, 4) {
             let mut ev = CombatEvent {
                 description: format!("{} ammo cooks off (rolled {roll})", tank.name),
                 ..CombatEvent::default()
@@ -232,5 +234,26 @@ mod tests {
         assert!(ev.penetrating);
         assert!(ev.disabled);
         assert!(t.disabled);
+    }
+
+    #[test]
+    fn natural_one_on_pen_is_glance_vs_stock_armor() {
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
+        let mut t = Tank::stock(0, Side::Blue, Hex::new(1, 0), Facing::E, "B");
+        let ev = resolve_shot(
+            &mut rng,
+            ShotParams {
+                attacker_accuracy: 2,
+                accuracy_penalty: 0,
+                round: RoundKind::At,
+                impact: ImpactFacing::Front,
+                forced_hit: Some(true),
+                forced_pen_roll: Some(1),
+            },
+            &mut t,
+        );
+        assert!(ev.glancing);
+        assert!(!ev.penetrating);
+        assert_eq!(t.hull_points, 4);
     }
 }

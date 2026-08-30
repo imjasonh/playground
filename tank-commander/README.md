@@ -36,6 +36,9 @@ cross simple thresholds.
 
 ## Design notes
 
+- **Natural 1 / natural 6.** A roll of 1 always fails and a roll of 6 always
+  succeeds on hit, pen, glance-wound, fire, and cook-off checks. See
+  [`RULES_CHANGES.md`](RULES_CHANGES.md).
 - **Turn limit.** The rules say the battle ends after 10 turns. The sim
   treats that as 10 activations per side (20 total).
 - **Turret arc.** A target is in arc when the nearest hex facing from shooter
@@ -50,9 +53,9 @@ cross simple thresholds.
   extinguish fires). Swappable later for MCTS without changing the rules
   engine.
 
-Rules source of truth remains the upstream README. Where the text is
-ambiguous, the sim picks a documented default (see above) rather than
-blocking.
+Rules source of truth remains the upstream README, plus the house rules in
+`RULES_CHANGES.md`. Where the text is ambiguous, the sim picks a documented
+default rather than blocking.
 
 ## Layout
 
