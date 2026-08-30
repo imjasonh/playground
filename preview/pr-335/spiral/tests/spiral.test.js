@@ -76,14 +76,15 @@ test("generatePuzzleWithRetry succeeds for size 100", () => {
   assert.equal(puzzle.size, 100);
 });
 
-test("spiralLayout returns size points starting near the top", () => {
-  const points = spiralLayout(48);
-  assert.equal(points.length, 48);
-  assert.ok(Math.abs(points[0].x - 0.5) < 0.02);
-  assert.ok(points[0].y < 0.2);
-  const last = points[points.length - 1];
-  const dist = Math.hypot(last.x - 0.5, last.y - 0.5);
-  assert.ok(dist < 0.2, "center cell near middle");
+test("spiralLayout returns wedge cells winding into the center", () => {
+  const layout = spiralLayout(48);
+  assert.equal(layout.cells.length, 48);
+  assert.ok(layout.outerPath.startsWith("M"));
+  assert.ok(layout.cells[0].path.includes("Z"));
+  assert.ok(layout.cells[0].cy < 0.35, "first cell near the top");
+  const last = layout.cells[layout.cells.length - 1];
+  const dist = Math.hypot(last.cx - 0.5, last.cy - 0.5);
+  assert.ok(dist < 0.25, "center cell near middle");
 });
 
 test("play state tracks guesses, check, and reveal", () => {

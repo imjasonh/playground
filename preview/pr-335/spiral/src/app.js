@@ -1,5 +1,5 @@
 import { generatePuzzleWithRetry } from "./generate.js";
-import { spiralLayout, cellFontScale, cellRadiusScale } from "./spiral.js";
+import { spiralLayout, cellFontScale, cellNumberScale } from "./spiral.js";
 import {
   createPlayState,
   setLetter,
@@ -77,12 +77,19 @@ function highlightSet() {
   return new Set(span ? spanIndices(span) : []);
 }
 
+function scalePath(path, vb) {
+  return path.replace(
+    /([ML])\s*([0-9.]+)\s+([0-9.]+)/g,
+    (_, cmd, x, y) => `${cmd}${(Number(x) * vb).toFixed(1)} ${(Number(y) * vb).toFixed(1)}`,
+  ).replace(/Z/g, "Z");
+}
+
 function renderSpiral() {
   if (!state) return;
   const { size } = state.puzzle;
   const layout = spiralLayout(size);
   const font = cellFontScale(size);
-  const radius = cellRadiusScale(size);
+  const numFont = cellNumberScale(size);
   const hot = highlightSet();
   const vb = 1000;
   const parts = [];
@@ -90,16 +97,12 @@ function renderSpiral() {
   parts.push(
     `<svg viewBox="0 0 ${vb} ${vb}" role="img" aria-label="Spiral puzzle grid with ${size} cells">`,
   );
-  // Soft guide path through cell centers.
-  const path = layout
-    .map((p, i) => `${i === 0 ? "M" : "L"} ${(p.x * vb).toFixed(1)} ${(p.y * vb).toFixed(1)}`)
-    .join(" ");
-  parts.push(`<path class="spiral-guide" d="${path}" />`);
+  // Circular outer rim like the printed puzzle.
+  parts.push(
+    `<circle class="spiral-rim" cx="${vb / 2}" cy="${vb / 2}" r="${0.48 * vb}" />`,
+  );
 
-  layout.forEach((p, i) => {
-    const cx = p.x * vb;
-    const cy = p.y * vb;
-    const r = radius * vb;
+  layout.cells.forEach((cell, i) => {
     const status = cellStatus(state, i);
     const selected = state.selected === i;
     const inClue = hot.has(i);
@@ -108,16 +111,14 @@ function renderSpiral() {
     if (inClue) classes.push("is-clue");
 
     parts.push(`<g class="${classes.join(" ")}" data-index="${i}">`);
+    parts.push(`<path d="${scalePath(cell.path, vb)}" />`);
     parts.push(
-      `<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${r.toFixed(1)}" />`,
-    );
-    parts.push(
-      `<text class="cell-num" x="${(cx - r * 0.55).toFixed(1)}" y="${(cy - r * 0.35).toFixed(1)}" font-size="${(font * vb * 0.55).toFixed(1)}">${i + 1}</text>`,
+      `<text class="cell-num" x="${(cell.numX * vb).toFixed(1)}" y="${(cell.numY * vb).toFixed(1)}" font-size="${(numFont * vb).toFixed(1)}">${i + 1}</text>`,
     );
     const letter = letterAt(state, i);
     if (letter) {
       parts.push(
-        `<text class="cell-letter" x="${cx.toFixed(1)}" y="${(cy + font * vb * 0.35).toFixed(1)}" font-size="${(font * vb).toFixed(1)}">${letter}</text>`,
+        `<text class="cell-letter" x="${(cell.cx * vb).toFixed(1)}" y="${(cell.cy * vb).toFixed(1)}" font-size="${(font * vb).toFixed(1)}">${letter}</text>`,
       );
     }
     parts.push("</g>");
@@ -275,7 +276,7 @@ function init() {
     const opt = document.createElement("option");
     opt.value = String(size);
     opt.textContent = `${size} cells`;
-    if (size === (query.size ?? 48)) opt.selected = true;
+    if (size === (query.size ?? 100)) opt.selected = true;
     els.size.appendChild(opt);
   }
 
