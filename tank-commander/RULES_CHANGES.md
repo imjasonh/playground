@@ -565,6 +565,52 @@ cap in the sim.
 
 ---
 
+## 2026-08-30 — Four-stage learning ladder
+
+**Type: Scenario / Rule**
+
+Scenarios are now a ladder:
+
+| Stage | CLI | Force | Lists |
+|-------|-----|-------|-------|
+| 1 Intro | `skirmish` | 1v1 stock | no |
+| 2 Squadron | `squadron` | 3v3 stock | no |
+| 3 Platoon | `platoon` | 3v3 | ≤10 pts / tank |
+| 4 Combined | `combined` | 2 tank + 2 APC + 2 inf / side | tanks ≤10 (+mines), APC ≤4; air grant |
+
+Under-spend initiative applies only on list stages (3–4). Stock stages always
+roll off and apply second-player spoil.
+
+**Balance (seed 1; 400 / 150 / 150 / 100):**
+
+| Stage | Decisive | FP share | Hard TO | Idle | Notes |
+|-------|----------|----------|---------|------|-------|
+| Skirmish | **92%** | 43% | 17% | 0% | Clean intro; pens 5.3, glances 1.9 |
+| Squadron | **98%** | **48%** | **0%** | 3% | Best-balanced stock multi; Red-leaning color |
+| Platoon | 96% | **37%** | 1% | 1% | Lists used; under-spend still hurts FP |
+| Combined | 94% | 48% | 32% | 13% | Mines/air live; idle + low-eng soft |
+
+**Rules coverage by stage**
+
+| Rule family | Skirmish | Squadron | Platoon | Combined |
+|-------------|----------|----------|---------|----------|
+| Move / turn / turret / LOS / cover | ✓ | ✓ | ✓ | ✓ |
+| AT + HE fire, pen / glance / suppress | ✓ | ✓ | ✓ | ✓ |
+| Crew wound / kill / fire / cook-off | ✓ | ✓ | ✓ | ✓ |
+| Pass activation (multi-unit) | — | ✓ | ✓ | ✓ |
+| Unit + terrain spoil | terrain | ✓ | if lists tie | if lists tie |
+| List upgrades + under-spend init | — | — | ✓ | ✓ |
+| Smoke / medkit / LT | — | — | ✓ | ✓ |
+| APC / infantry / AI spray / air / mines | — | — | — | ✓ |
+
+Stock stages teach the core loop without list noise. Platoon is where soft
+upgrades fire (~2.5 smoke / medkit per game). Combined is the only stage that
+exercises air (**3.9**/g), mines (**4.7** deploy / **3.2** trig), and infantry
+kills (**3.1**/g). Soft spots to watch: platoon first-player share under
+under-spend, combined timeouts / low engagement, squadron Red color lean.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.
