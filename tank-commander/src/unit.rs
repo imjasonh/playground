@@ -84,6 +84,14 @@ impl RoundKind {
     }
 }
 
+/// What kind of unit this is on the table.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum UnitKind {
+    Tank,
+    Apc,
+    Infantry,
+}
+
 /// Armor values for front / side / rear facings.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Armor {
@@ -121,6 +129,7 @@ pub struct Tank {
     pub id: u8,
     pub side: Side,
     pub name: String,
+    pub kind: UnitKind,
     pub pos: Hex,
     pub hull_facing: Facing,
     /// Turret offset relative to hull, in 60° steps (-2..=3 typically).
@@ -132,6 +141,8 @@ pub struct Tank {
     pub actions_per_turn: i32,
     pub max_move: i32,
     pub gun_range: i32,
+    /// Anti-infantry weapon range (0 = none).
+    pub ai_range: i32,
     pub loaded: Option<RoundKind>,
     pub has_he: bool,
     pub crew: Vec<CrewMember>,
@@ -140,6 +151,11 @@ pub struct Tank {
     pub destroyed: bool,
     /// Glanced this battle and not yet taken a full activation: −1 action.
     pub suppressed: bool,
+    /// Infantry: enemies shooting this unit have −1 accuracy until cleared.
+    pub in_cover: bool,
+    /// Tank upgrade: may call one air strike this battle.
+    pub has_air_support: bool,
+    pub air_strike_used: bool,
     /// Medkit not yet implemented in v1; reserved for later loadouts.
     pub moves_this_turn: i32,
 }
@@ -156,6 +172,7 @@ impl Tank {
             id,
             side,
             name: name.into(),
+            kind: UnitKind::Tank,
             pos,
             hull_facing,
             turret_offset: 0,
@@ -166,6 +183,7 @@ impl Tank {
             actions_per_turn: 5,
             max_move: 3,
             gun_range: 5,
+            ai_range: 0,
             loaded: Some(RoundKind::At),
             has_he: true, // stock Skirmish: HE is always available to load
             crew: CrewRole::all_core()
@@ -176,6 +194,91 @@ impl Tank {
             disabled: false,
             destroyed: false,
             suppressed: false,
+            in_cover: false,
+            has_air_support: false,
+            air_strike_used: false,
+            moves_this_turn: 0,
+        }
+    }
+
+    pub fn stock_apc(
+        id: u8,
+        side: Side,
+        pos: Hex,
+        hull_facing: Facing,
+        name: impl Into<String>,
+    ) -> Self {
+        Self {
+            id,
+            side,
+            name: name.into(),
+            kind: UnitKind::Apc,
+            pos,
+            hull_facing,
+            turret_offset: 0,
+            armor: Armor {
+                front: 4,
+                side: 4,
+                rear: 4,
+            },
+            accuracy: 4,
+            hull_points: 2,
+            max_hull_points: 2,
+            actions_per_turn: 3,
+            max_move: 4,
+            gun_range: 0,
+            ai_range: 3,
+            loaded: None,
+            has_he: false,
+            crew: Vec::new(),
+            on_fire: false,
+            disabled: false,
+            destroyed: false,
+            suppressed: false,
+            in_cover: false,
+            has_air_support: false,
+            air_strike_used: false,
+            moves_this_turn: 0,
+        }
+    }
+
+    pub fn stock_infantry(
+        id: u8,
+        side: Side,
+        pos: Hex,
+        hull_facing: Facing,
+        name: impl Into<String>,
+    ) -> Self {
+        Self {
+            id,
+            side,
+            name: name.into(),
+            kind: UnitKind::Infantry,
+            pos,
+            hull_facing,
+            turret_offset: 0,
+            armor: Armor {
+                front: 3,
+                side: 3,
+                rear: 3,
+            },
+            accuracy: 4,
+            hull_points: 1,
+            max_hull_points: 1,
+            actions_per_turn: 3,
+            max_move: 2,
+            gun_range: 3, // missile launcher
+            ai_range: 2,
+            loaded: None, // missiles need no load
+            has_he: true,
+            crew: Vec::new(),
+            on_fire: false,
+            disabled: false,
+            destroyed: false,
+            suppressed: false,
+            in_cover: false,
+            has_air_support: false,
+            air_strike_used: false,
             moves_this_turn: 0,
         }
     }
@@ -232,11 +335,19 @@ impl Tank {
     }
 
     pub fn can_fire(&self) -> bool {
-        self.crew_status(CrewRole::Gunner) != CrewStatus::Killed && self.loaded.is_some()
+        match self.kind {
+            UnitKind::Tank => {
+                self.crew_status(CrewRole::Gunner) != CrewStatus::Killed && self.loaded.is_some()
+            }
+            UnitKind::Infantry => !self.in_cover,
+            UnitKind::Apc => self.ai_range > 0,
+        }
     }
 
     pub fn can_load(&self) -> bool {
-        self.crew_status(CrewRole::Loader) != CrewStatus::Killed && self.loaded.is_none()
+        self.kind == UnitKind::Tank
+            && self.crew_status(CrewRole::Loader) != CrewStatus::Killed
+            && self.loaded.is_none()
     }
 
     pub fn load_action_cost(&self) -> i32 {
@@ -255,7 +366,11 @@ impl Tank {
     }
 
     pub fn can_move_or_turn(&self) -> bool {
-        self.crew_status(CrewRole::Driver) != CrewStatus::Killed
+        match self.kind {
+            UnitKind::Tank => self.crew_status(CrewRole::Driver) != CrewStatus::Killed,
+            UnitKind::Apc => true,
+            UnitKind::Infantry => !self.in_cover,
+        }
     }
 
     pub fn living_crew_indices(&self) -> Vec<usize> {

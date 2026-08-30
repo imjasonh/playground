@@ -1,4 +1,7 @@
 //! Combat resolution: hit, glance, penetrate, fire, cook-off.
+//!
+//! Infantry are destroyed by any hit — callers (see `game.rs`) force-destroy
+//! after [`resolve_shot`] when the target kind is Infantry and `ev.hit`.
 
 use crate::dice::{penetrates, succeeds};
 use crate::unit::{CrewStatus, ImpactFacing, RoundKind, Tank};

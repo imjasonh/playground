@@ -1,15 +1,14 @@
-//! Heuristic AI for Skirmish balance runs.
+//! Heuristic AI for multi-unit Tank Commander balance runs.
 //!
-//! When the enemy is in sight, a short beam search picks shoot / load / peek
-//! plans. When line of sight is blocked (the usual opening on the walled
-//! map), the AI pathfinds to a firing hex — preferably forest cover — and
-//! spends the activation following that path. Both sides share the policy.
+//! Picks the best operational unit on the active side, then either shoots
+//! (beam / tactical) or pathfinds toward the nearest enemy. Infantry prefer
+//! missiles and cover; APCs hunt infantry with AI weapons.
 
 use crate::action::{Action, TurnBuffs};
 use crate::board::Terrain;
 use crate::game::{Game, Outcome};
 use crate::hex::{Facing, Hex};
-use crate::unit::{RoundKind, Side};
+use crate::unit::{RoundKind, Side, UnitKind};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use std::collections::{HashMap, VecDeque};
@@ -29,33 +28,249 @@ struct Node {
     loaded: Option<RoundKind>,
     on_fire: bool,
     score: f64,
+    focus_target: u8,
 }
 
-/// Choose an action plan for the active tank.
-pub fn choose_plan<R: Rng>(game: &Game, rng: &mut R) -> Vec<Action> {
-    let Some(tank_id) = game.active_tank_id() else {
-        return Vec::new();
-    };
-    let tank = game.tank(tank_id);
-    let Some(enemy) = game.enemy_tank(tank.side) else {
-        return Vec::new();
-    };
+/// Choose which unit to activate and an action plan for it.
+pub fn choose_plan<R: Rng>(game: &Game, rng: &mut R) -> Option<(u8, Vec<Action>)> {
+    let ids = game.operational_ids(game.active_side);
+    if ids.is_empty() {
+        return None;
+    }
 
-    // Extinguish first if burning.
-    if tank.on_fire {
+    let mut best_id = ids[0];
+    let mut best_score = i64::MIN;
+    for id in &ids {
+        let s = score_unit(game, *id);
+        if s > best_score {
+            best_score = s;
+            best_id = *id;
+        }
+    }
+
+    let plan = plan_for_unit(game, best_id, rng);
+    Some((best_id, plan))
+}
+
+fn score_unit(game: &Game, unit_id: u8) -> i64 {
+    let unit = game.tank(unit_id);
+    let enemies = game.enemy_units(unit.side);
+    if enemies.is_empty() {
+        return 0;
+    }
+    let can_see_any = enemies.iter().any(|e| sees_enemy(game, unit, e));
+    let nearest = enemies
+        .iter()
+        .map(|e| unit.pos.distance(e.pos))
+        .min()
+        .unwrap_or(99);
+    let mut score = 0i64;
+    if can_see_any {
+        score += 10_000;
+    }
+    score -= i64::from(nearest) * 10;
+    if unit.on_fire {
+        score -= 1_000;
+    }
+    score
+}
+
+fn sees_enemy(game: &Game, unit: &crate::unit::Tank, enemy: &crate::unit::Tank) -> bool {
+    match unit.kind {
+        UnitKind::Apc => enemy.kind == UnitKind::Infantry && game.can_see_ai(unit, enemy),
+        UnitKind::Infantry => {
+            game.can_see(unit, enemy)
+                || (enemy.kind == UnitKind::Infantry && game.can_see_ai(unit, enemy))
+        }
+        UnitKind::Tank => game.can_see(unit, enemy),
+    }
+}
+
+fn plan_for_unit<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
+    let unit = game.tank(unit_id);
+    if unit.on_fire {
         return vec![Action::ExtinguishFire];
     }
 
-    let can_see = game.can_see(tank, enemy);
-    if can_see {
-        let tactical = beam_plan(game, tank_id, enemy, rng);
+    match unit.kind {
+        UnitKind::Infantry => infantry_plan(game, unit_id, rng),
+        UnitKind::Apc => apc_plan(game, unit_id, rng),
+        UnitKind::Tank => tank_plan(game, unit_id, rng),
+    }
+}
+
+fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
+    let tank = game.tank(tank_id);
+    let enemies: Vec<&crate::unit::Tank> = game.enemy_units(tank.side);
+    if enemies.is_empty() {
+        return Vec::new();
+    }
+
+    // Air strike when several enemies cluster near each other.
+    if tank.has_air_support && !tank.air_strike_used && enemies.len() >= 2 {
+        let clustered = enemies.iter().any(|a| {
+            enemies
+                .iter()
+                .filter(|b| a.id != b.id)
+                .any(|b| a.pos.distance(b.pos) <= 2)
+        });
+        if clustered && rng.gen_bool(0.45) {
+            if let Some(nearest) = enemies.iter().min_by_key(|e| tank.pos.distance(e.pos)) {
+                return vec![Action::CallAirStrike { hex: nearest.pos }];
+            }
+        }
+    }
+
+    let visible: Vec<&crate::unit::Tank> = enemies
+        .iter()
+        .copied()
+        .filter(|e| game.can_see(tank, e))
+        .collect();
+    if let Some(target) = visible
+        .iter()
+        .min_by_key(|e| (e.hull_points, tank.pos.distance(e.pos)))
+        .copied()
+    {
+        let tactical = beam_plan(game, tank_id, target, rng);
         if !tactical.is_empty() {
             return tactical;
         }
     }
 
-    // No clean shot — drive toward a firing position via an alley.
+    let Some(enemy) = enemies
+        .iter()
+        .min_by_key(|e| tank.pos.distance(e.pos))
+        .copied()
+    else {
+        return Vec::new();
+    };
     maneuver_plan(game, tank_id, enemy, rng)
+}
+
+fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
+    let unit = game.tank(unit_id);
+    let enemies = game.enemy_units(unit.side);
+    if enemies.is_empty() {
+        return Vec::new();
+    }
+
+    // Prefer missile shots on anything in LOS.
+    let mut actions = Vec::new();
+    let mut ap = unit.effective_actions();
+    for enemy in &enemies {
+        if ap <= 0 {
+            break;
+        }
+        if game.can_see(unit, enemy) {
+            let round = if enemy.kind == UnitKind::Infantry || rng.gen_bool(0.4) {
+                RoundKind::He
+            } else {
+                RoundKind::At
+            };
+            actions.push(Action::FireMissile {
+                target: enemy.id,
+                round,
+            });
+            ap -= 1;
+            break;
+        }
+        if enemy.kind == UnitKind::Infantry && game.can_see_ai(unit, enemy) {
+            actions.push(Action::FireAi { target: enemy.id });
+            ap -= 1;
+            break;
+        }
+    }
+    if !actions.is_empty() {
+        return actions;
+    }
+
+    let Some(enemy) = enemies.iter().min_by_key(|e| unit.pos.distance(e.pos)) else {
+        return Vec::new();
+    };
+
+    // Under threat (enemy within 3) → take cover if possible.
+    if unit.pos.distance(enemy.pos) <= 3 && !unit.in_cover && ap > 0 && rng.gen_bool(0.55) {
+        return vec![Action::TakeCover];
+    }
+
+    // Step toward nearest enemy.
+    let mut steps = Vec::new();
+    let mut pos = unit.pos;
+    let mut moves = 0i32;
+    let max_move = unit.effective_max_move();
+    while moves < max_move && ap > 0 {
+        let Some(need) = pos.facing_toward(enemy.pos) else {
+            break;
+        };
+        let next = pos.neighbor(need);
+        if !game.board.contains(next)
+            || game.board.terrain_at(next).impassable()
+            || game.occupied_hexes().contains(&next)
+        {
+            let mut best: Option<(Facing, Hex, i32)> = None;
+            for i in 0..6u8 {
+                let f = Facing::from_index(i);
+                let n = pos.neighbor(f);
+                if !game.board.contains(n)
+                    || game.board.terrain_at(n).impassable()
+                    || game.occupied_hexes().contains(&n)
+                {
+                    continue;
+                }
+                let d = n.distance(enemy.pos);
+                if best.is_none_or(|(_, _, bd)| d < bd) {
+                    best = Some((f, n, d));
+                }
+            }
+            if let Some((f, n, _)) = best {
+                steps.push(Action::Step(f));
+                pos = n;
+                moves += 1;
+                ap -= 1;
+                continue;
+            }
+            break;
+        }
+        steps.push(Action::Step(need));
+        pos = next;
+        moves += 1;
+        ap -= 1;
+    }
+    if steps.is_empty() && !unit.in_cover {
+        return vec![Action::TakeCover];
+    }
+    steps
+}
+
+fn apc_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
+    let unit = game.tank(unit_id);
+    let enemies = game.enemy_units(unit.side);
+    let infantry: Vec<&crate::unit::Tank> = enemies
+        .iter()
+        .copied()
+        .filter(|e| e.kind == UnitKind::Infantry)
+        .collect();
+
+    for enemy in &infantry {
+        if game.can_see_ai(unit, enemy) {
+            return vec![Action::FireAi { target: enemy.id }];
+        }
+    }
+
+    let target = infantry
+        .iter()
+        .copied()
+        .min_by_key(|e| unit.pos.distance(e.pos))
+        .or_else(|| {
+            enemies
+                .iter()
+                .copied()
+                .min_by_key(|e| unit.pos.distance(e.pos))
+        });
+    let Some(enemy) = target else {
+        return Vec::new();
+    };
+    maneuver_plan(game, unit_id, enemy, rng)
 }
 
 fn beam_plan<R: Rng>(
@@ -67,6 +282,7 @@ fn beam_plan<R: Rng>(
     let tank = game.tank(tank_id);
     let enemy_hp = enemy.hull_points;
     let enemy_max = enemy.max_hull_points;
+    let enemy_id = enemy.id;
 
     let start = Node {
         actions: Vec::new(),
@@ -79,6 +295,7 @@ fn beam_plan<R: Rng>(
         loaded: tank.loaded,
         on_fire: tank.on_fire,
         score: 0.0,
+        focus_target: enemy_id,
     };
 
     let mut beam = vec![start];
@@ -126,15 +343,17 @@ fn beam_plan<R: Rng>(
         }
     }
 
-    // Only accept tactical plans that actually shoot or aim meaningfully.
-    let fires = best.actions.iter().filter(|a| **a == Action::Fire).count();
+    let fires = best
+        .actions
+        .iter()
+        .filter(|a| matches!(a, Action::Fire { .. }))
+        .count();
     if fires > 0 || best.score >= 80.0 {
         return best.actions;
     }
     Vec::new()
 }
 
-/// Pathfind to a hex that can see the enemy, then walk/turn along that path.
 fn maneuver_plan<R: Rng>(
     game: &Game,
     tank_id: u8,
@@ -143,17 +362,24 @@ fn maneuver_plan<R: Rng>(
 ) -> Vec<Action> {
     let tank = game.tank(tank_id);
 
-    // If we already have geometric LOS, spend the turn aiming and shooting.
-    if has_geometric_los(game, tank.pos, enemy.pos) {
+    if tank.kind == UnitKind::Infantry {
+        return infantry_plan(game, tank_id, rng);
+    }
+
+    if has_geometric_los(game, tank.pos, enemy.pos) && tank.kind == UnitKind::Tank {
         return aim_and_shoot_plan(game, tank_id, enemy, rng);
     }
 
-    let goals = firing_positions(game, tank.side, enemy, tank.gun_range);
+    let range = if tank.gun_range > 0 {
+        tank.gun_range
+    } else {
+        tank.ai_range.max(3)
+    };
+    let goals = firing_positions(game, tank.side, enemy, range);
     if goals.is_empty() {
         return chase_enemy_fallback(tank, enemy.pos);
     }
 
-    // Chase the enemy's current alley: prefer goals near them, forest second.
     let mut goals = goals;
     goals.shuffle(rng);
     goals.sort_by_key(|(h, forest)| {
@@ -170,7 +396,10 @@ fn maneuver_plan<R: Rng>(
     };
 
     if path.len() <= 1 {
-        return aim_and_shoot_plan(game, tank_id, enemy, rng);
+        if tank.kind == UnitKind::Tank {
+            return aim_and_shoot_plan(game, tank_id, enemy, rng);
+        }
+        return chase_enemy_fallback(tank, enemy.pos);
     }
     path_to_actions(tank, &path)
 }
@@ -198,12 +427,12 @@ fn aim_and_shoot_plan<R: Rng>(
     let mut turret_off = tank.turret_offset;
     let mut loaded = tank.loaded;
     let mut buffs = TurnBuffs::default();
+    let target_id = enemy.id;
 
     let Some(need) = tank.pos.facing_toward(enemy.pos) else {
         return vec![Action::TurretLeft];
     };
 
-    // Prefer rotating the turret (keeps armor facing).
     while hull.with_turret_offset(turret_off) != need && ap > 0 {
         let cur = hull.with_turret_offset(turret_off);
         let left_steps = turn_steps_left(cur, need);
@@ -241,7 +470,7 @@ fn aim_and_shoot_plan<R: Rng>(
             actions.push(Action::AbilityBringItDown);
             buffs.hit_on_2 = true;
         }
-        actions.push(Action::Fire);
+        actions.push(Action::Fire { target: target_id });
         ap -= 1;
         loaded = None;
         if ap >= tank.load_action_cost() {
@@ -257,7 +486,11 @@ fn aim_and_shoot_plan<R: Rng>(
 }
 
 fn chase_enemy_fallback(tank: &crate::unit::Tank, enemy: Hex) -> Vec<Action> {
-    // Turn toward the enemy's row (north/south), then crawl.
+    if tank.kind == UnitKind::Infantry {
+        if let Some(need) = tank.pos.facing_toward(enemy) {
+            return vec![Action::Step(need), Action::Step(need)];
+        }
+    }
     let go_north = enemy.r < tank.pos.r || (enemy.r == tank.pos.r && tank.pos.r > 4);
     if go_north {
         vec![Action::TurnLeft, Action::Move, Action::Move]
@@ -285,7 +518,6 @@ fn firing_positions(
             if h.distance(enemy.pos) > gun_range || h.distance(enemy.pos) < 1 {
                 continue;
             }
-            // Don't stand on a friendly (only one tank per side in Skirmish).
             if game
                 .tanks
                 .iter()
@@ -357,7 +589,6 @@ fn bfs_path(game: &Game, start: Hex, goal: Hex, side: Side) -> Option<Vec<Hex>> 
 #[allow(clippy::explicit_counter_loop)]
 fn path_to_actions(tank: &crate::unit::Tank, path: &[Hex]) -> Vec<Action> {
     if path.len() < 2 {
-        // Already on a firing hex — turn turret/hull toward a fight next turn.
         return vec![Action::TurretLeft];
     }
     let mut actions = Vec::new();
@@ -372,12 +603,9 @@ fn path_to_actions(tank: &crate::unit::Tank, path: &[Hex]) -> Vec<Action> {
         let Some(need) = pos.facing_toward(next) else {
             break;
         };
-        // Turn hull toward the next step (turret stays absolute).
         while facing != need && ap > 0 {
             let left_steps = turn_steps_left(facing, need);
             let right_steps = (6 - left_steps) % 6;
-            // Strict shorter direction; on a dead opposite (3/3) always go right
-            // so we cannot oscillate Left/Right.
             let go_left = left_steps > 0 && left_steps < right_steps;
             if go_left {
                 actions.push(Action::TurnLeft);
@@ -391,8 +619,6 @@ fn path_to_actions(tank: &crate::unit::Tank, path: &[Hex]) -> Vec<Action> {
         if facing != need || ap <= 0 || moves >= max_move {
             break;
         }
-        // Leave-cost is paid from current terrain; approximate as 1 for planning
-        // (mud is rare on alley paths).
         actions.push(Action::Move);
         pos = next;
         moves += 1;
@@ -409,7 +635,6 @@ fn path_to_actions(tank: &crate::unit::Tank, path: &[Hex]) -> Vec<Action> {
 }
 
 fn turn_steps_left(from: Facing, to: Facing) -> u8 {
-    // Left turns = +1 on the facing index.
     (to.index() + 6 - from.index()) % 6
 }
 
@@ -445,6 +670,13 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
             node.moves += 1;
             node.ap_left -= cost;
         }
+        Action::Step(facing) => {
+            let cost = game.board.terrain_at(node.pos).move_cost_to_leave();
+            node.pos = node.pos.neighbor(facing);
+            node.hull = facing;
+            node.moves += 1;
+            node.ap_left -= cost;
+        }
         Action::TurnLeft => {
             let abs = node.hull.with_turret_offset(node.turret_offset);
             node.hull = node.hull.turn_left();
@@ -465,8 +697,15 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
             node.turret_offset = crate::action::step_turret(node.turret_offset, false);
             node.ap_left -= 1;
         }
-        Action::Fire => {
+        Action::Fire { target } => {
+            node.focus_target = target;
             node.loaded = None;
+            node.ap_left -= 1;
+        }
+        Action::FireMissile { .. } | Action::FireAi { .. } => {
+            node.ap_left -= 1;
+        }
+        Action::TakeCover | Action::CallAirStrike { .. } => {
             node.ap_left -= 1;
         }
         Action::Load(kind) => {
@@ -555,12 +794,17 @@ fn evaluate_tactical(
         let mut shadow_tank = game
             .tanks
             .iter()
-            .find(|t| t.side == side)
+            .find(|t| t.side == side && t.is_operational())
             .cloned()
-            .expect("self");
+            .unwrap_or_else(|| {
+                game.tanks
+                    .iter()
+                    .find(|t| t.side == side)
+                    .cloned()
+                    .expect("self")
+            });
         shadow_tank.pos = node.pos;
         shadow_tank.hull_facing = node.hull;
-        // Armor we present if they shoot us from their hex.
         match shadow_tank.impact_facing(enemy_pos) {
             crate::unit::ImpactFacing::Front => score += 8.0,
             crate::unit::ImpactFacing::Side => score -= 12.0,
@@ -568,7 +812,11 @@ fn evaluate_tactical(
         }
     }
 
-    let fires = node.actions.iter().filter(|a| **a == Action::Fire).count();
+    let fires = node
+        .actions
+        .iter()
+        .filter(|a| matches!(a, Action::Fire { .. }))
+        .count();
     score += fires as f64 * 50.0;
 
     if node.buffs.hit_on_2 {
@@ -586,6 +834,10 @@ pub fn take_turn<R: Rng>(game: &mut Game, rng: &mut R) {
     if game.outcome() != Outcome::InProgress {
         return;
     }
-    let plan = choose_plan(game, rng);
-    crate::game::play_activation(game, &plan, rng);
+    let Some((unit_id, plan)) = choose_plan(game, rng) else {
+        game.activations += 1;
+        game.active_side = game.active_side.other();
+        return;
+    };
+    crate::game::play_activation(game, unit_id, &plan, rng);
 }
