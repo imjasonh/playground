@@ -82,13 +82,15 @@ cross simple thresholds.
   Combined uses 17×13 and platoon 19×15, both with a sealed midline and a
   wide plaza gap (plus side baffles) so units funnel into one fight.
   Forest/mud/rubble scatter outside reserved hexes; infantry stepping into
-  forest dig in automatically.
+  forest dig in automatically, and leaving forest clears dig-in.
 - **Combined arms.** Air strikes arrive at the end of the caller's next
   activation, then scatter (d6: wild 2 / drift 1 / on target) before the
-  blast template (impact + neighbors). Cover saves infantry once
-  (pin + suppress). APC AI spray can suppress vehicles. All suppression is
-  temporary (clears at end of the unit's next activation). Suppressed
-  infantry cannot fire missiles.
+  blast template (impact + neighbors). Tank main gun (range 5) outranges
+  infantry missiles (range 4). Main gun, missiles, and air kill through
+  cover; only AI spray pins a dug-in squad. Firing a missile leaves cover.
+  Forest gives −1 to hit (dig-in does not stack a second −1). APC AI spray
+  can suppress vehicles. All suppression is temporary (clears at end of the
+  unit's next activation). Suppressed infantry cannot fire missiles.
 - **Platoon clock.** Hard cap 200 activations as a safety valve. After
   first contact, 40 activations with no hit ends the game as an idle
   stalemate (scored like a timeout). In practice platoon games wipe before

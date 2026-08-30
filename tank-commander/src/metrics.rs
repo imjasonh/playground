@@ -320,8 +320,7 @@ fn suggest(agg: &AggregateReport) -> Vec<String> {
     if stalemate > 0.2 {
         s.push(
             "Late stalemates: long stretches without hits near the end. \
-             Smoke and forest stacking may make trading shots rare — \
-             soften cover (−1 accuracy only once), or let HE ignore forest."
+             Check LOS blocks, plaza bottlenecks, or air/APC spray loops."
                 .into(),
         );
     }

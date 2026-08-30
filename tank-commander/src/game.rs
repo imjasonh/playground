@@ -550,13 +550,18 @@ impl Game {
                 self.tank_mut(tank_id).moves_this_turn += 1;
                 *ap_left -= cost;
                 self.moves_made += 1;
-                // House rule: ending a step in forest puts infantry in cover.
-                let dug_in = self.board.terrain_at(next) == Terrain::Forest
-                    && self.tank(tank_id).kind == UnitKind::Infantry;
-                if dug_in {
-                    self.tank_mut(tank_id).in_cover = true;
-                }
-                let cover_note = if dug_in { " (into cover)" } else { "" };
+                // Infantry dig in when ending in forest; leaving forest clears cover.
+                let cover_note = if self.tank(tank_id).kind == UnitKind::Infantry {
+                    let in_forest = self.board.terrain_at(next) == Terrain::Forest;
+                    self.tank_mut(tank_id).in_cover = in_forest;
+                    if in_forest {
+                        " (into cover)"
+                    } else {
+                        ""
+                    }
+                } else {
+                    ""
+                };
                 self.push_event(
                     turn,
                     Some(side),
@@ -591,6 +596,16 @@ impl Game {
                 *ap_left -= 1;
             }
             Action::FireMissile { target, round } => {
+                // House rule: revealing fire — launching a missile leaves cover.
+                if self.tank(tank_id).in_cover {
+                    self.tank_mut(tank_id).in_cover = false;
+                    self.push_event(
+                        turn,
+                        Some(side),
+                        "Revealing fire — leave cover".into(),
+                        None,
+                    );
+                }
                 self.resolve_fire(tank_id, target, Some(round), buffs, rng);
                 *ap_left -= 1;
             }
@@ -669,10 +684,9 @@ impl Game {
         }
 
         let shooter_pos = self.tank(tank_id).pos;
-        let mut penalty = self.board.accuracy_penalty_vs(self.tank(target_id).pos);
-        if self.tank(target_id).in_cover {
-            penalty += 1;
-        }
+        // Forest terrain gives −1 to hit. Dig-in (`in_cover`) no longer stacks an
+        // extra −1 — that made forest camps too sticky for tanks to punish.
+        let penalty = self.board.accuracy_penalty_vs(self.tank(target_id).pos);
         let impact = self.tank(target_id).impact_facing(shooter_pos);
         let acc = if buffs.hit_on_2 {
             2
@@ -681,44 +695,8 @@ impl Game {
         };
         let target_kind = self.tank(target_id).kind;
 
-        // Cover save: roll to-hit only; on hit, spend cover + suppress (no pen/HP).
-        if target_kind == UnitKind::Infantry && self.tank(target_id).in_cover {
-            let roll = rng.gen_range(1..=6);
-            let need = (acc + penalty).clamp(2, 6);
-            let hit = succeeds(roll, need);
-            if hit {
-                self.total_hits += 1;
-                self.activations_since_hit = 0;
-                let (name, newly) = {
-                    let t = self.tank_mut(target_id);
-                    t.in_cover = false;
-                    let newly = !t.suppressed;
-                    if newly {
-                        t.suppressed = true;
-                    }
-                    (t.name.clone(), newly)
-                };
-                if newly {
-                    self.total_suppressions += 1;
-                }
-                self.push_event(
-                    turn,
-                    Some(side),
-                    format!("{name} pinned by fire — cover spent, SUPPRESSED (rolled {roll})"),
-                    None,
-                );
-            } else {
-                self.shots_missed += 1;
-                let name = self.tank(target_id).name.clone();
-                self.push_event(
-                    turn,
-                    Some(side),
-                    format!("miss (rolled {roll}, needed {need}+) vs {name} in cover"),
-                    None,
-                );
-            }
-            return;
-        }
+        // Main gun / missiles kill through cover. Cover pin is AI-spray only
+        // (see resolve_ai_fire). Forest still applies the −1 accuracy above.
 
         let enemy = self.tank_mut(target_id);
         let ev = resolve_shot(
@@ -765,10 +743,8 @@ impl Game {
         let target_kind = self.tank(target_id).kind;
 
         self.shots_fired += 1;
-        let mut penalty = self.board.accuracy_penalty_vs(self.tank(target_id).pos);
-        if self.tank(target_id).in_cover {
-            penalty += 1;
-        }
+        // Forest −1 only; dig-in does not stack. Cover pin still applies below.
+        let penalty = self.board.accuracy_penalty_vs(self.tank(target_id).pos);
         let impact = self.tank(target_id).impact_facing(self.tank(tank_id).pos);
         let acc = if buffs.hit_on_2 {
             2
@@ -777,6 +753,7 @@ impl Game {
         };
 
         // Soft targets: HE-style kill check. Vehicles: hit → suppress only.
+        // Cover pin is AI-spray only — main gun / missiles kill through cover.
         if target_kind == UnitKind::Infantry {
             if self.tank(target_id).in_cover {
                 let roll = rng.gen_range(1..=6);
@@ -1045,7 +1022,6 @@ impl Game {
             .collect();
         for id in victims {
             let kind = self.tank(id).kind;
-            let in_cover = self.tank(id).in_cover;
             let enemy = self.tank_mut(id);
             let ev = resolve_shot(
                 rng,
@@ -1061,33 +1037,7 @@ impl Game {
             );
             self.record_shot_stats(&ev);
             if ev.hit && kind == UnitKind::Infantry {
-                if in_cover {
-                    // Don't apply pen damage from the forced hit — pin instead.
-                    let (name, newly) = {
-                        let t = self.tank_mut(id);
-                        // Undo any disable from the forced resolve_shot.
-                        t.disabled = false;
-                        t.destroyed = false;
-                        t.hull_points = t.max_hull_points.max(1);
-                        t.on_fire = false;
-                        t.in_cover = false;
-                        let newly = !t.suppressed;
-                        if newly {
-                            t.suppressed = true;
-                        }
-                        (t.name.clone(), newly)
-                    };
-                    if newly {
-                        self.total_suppressions += 1;
-                    }
-                    self.push_event(
-                        self.activations,
-                        Some(side),
-                        format!("Air strike pins {name} — cover spent, SUPPRESSED"),
-                        None,
-                    );
-                    continue;
-                }
+                // Air blast is HE-class: kills through cover (no pin save).
                 self.destroy_infantry(id);
             }
             if ev.cook_off {
@@ -1288,6 +1238,100 @@ mod tests {
                 .iter()
                 .all(|a| !matches!(a, Action::FireMissile { .. })),
             "suppressed infantry must not list missile actions: {legal:?}"
+        );
+    }
+
+    #[test]
+    fn main_gun_kills_infantry_through_cover() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::new(1, 4), Facing::E, "Tank"),
+            Tank::stock_infantry(1, Side::Blue, Hex::new(4, 4), Facing::W, "Squad"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 20, "test");
+        g.tank_mut(1).in_cover = true;
+        g.tank_mut(0).loaded = Some(RoundKind::He);
+        let mut rng = ChaCha8Rng::seed_from_u64(3);
+        let buffs = TurnBuffs::default();
+        for _ in 0..30 {
+            if g.tank(1).destroyed {
+                break;
+            }
+            g.tank_mut(0).loaded = Some(RoundKind::He);
+            g.resolve_fire(0, 1, None, &buffs, &mut rng);
+        }
+        assert!(
+            g.tank(1).destroyed && g.infantry_kills >= 1,
+            "main gun must kill through cover (no pin save)"
+        );
+    }
+
+    #[test]
+    fn missile_revealing_fire_clears_cover() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock_infantry(0, Side::Red, Hex::new(3, 4), Facing::E, "Squad"),
+            Tank::stock(1, Side::Blue, Hex::new(5, 4), Facing::W, "Tank"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 20, "test");
+        g.tank_mut(0).in_cover = true;
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
+        let mut ap = 3;
+        let mut buffs = TurnBuffs::default();
+        g.apply_action(
+            0,
+            Action::FireMissile {
+                target: 1,
+                round: RoundKind::At,
+            },
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
+        assert!(
+            !g.tank(0).in_cover,
+            "missile must clear cover (revealing fire)"
+        );
+    }
+
+    #[test]
+    fn ai_spray_still_pins_covered_infantry() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock_apc(0, Side::Red, Hex::new(2, 4), Facing::E, "APC"),
+            Tank::stock_infantry(1, Side::Blue, Hex::new(4, 4), Facing::W, "Squad"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 20, "test");
+        g.tank_mut(1).in_cover = true;
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let buffs = TurnBuffs::default();
+        let mut pinned = false;
+        for _ in 0..40 {
+            if g.tank(1).destroyed {
+                break;
+            }
+            if !g.tank(1).in_cover && g.tank(1).suppressed {
+                pinned = true;
+                break;
+            }
+            g.resolve_ai_fire(0, 1, &buffs, &mut rng);
+            // Re-dig so we can observe another pin attempt if the first missed.
+            if g.tank(1).in_cover || g.tank(1).destroyed {
+                continue;
+            }
+            if !g.tank(1).suppressed {
+                g.tank_mut(1).in_cover = true;
+            }
+        }
+        assert!(
+            pinned || g.tank(1).destroyed,
+            "AI spray should pin covered infantry at least once, or kill after cover spent"
         );
     }
 

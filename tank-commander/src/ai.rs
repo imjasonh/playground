@@ -173,6 +173,7 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
 
     // Prefer AT missiles on tanks/APCs in range, then anything else.
     // Suppressed infantry cannot fire missiles (Rule).
+    // Revealing fire: a missile leaves cover — still worth it vs vehicles.
     let mut ranked: Vec<&crate::unit::Tank> = enemies.to_vec();
     ranked.sort_by_key(|e| {
         let priority = match e.kind {
@@ -208,8 +209,16 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         return Vec::new();
     };
 
-    // Dig in when a vehicle is close and we have no shot yet.
-    if !unit.in_cover
+    // Leave cover / charge when a tank sits in gun range (5) but outside missile
+    // range (4): camping forest just eats main-gun shells that kill through cover.
+    let tank_shelling = enemies.iter().any(|e| {
+        e.kind == UnitKind::Tank
+            && unit.pos.distance(e.pos) <= e.gun_range
+            && unit.pos.distance(e.pos) > unit.gun_range
+    });
+    if unit.in_cover && tank_shelling {
+        // Fall through to step toward nearest enemy (charge into missile range).
+    } else if !unit.in_cover
         && unit.pos.distance(enemy.pos) <= 4
         && matches!(enemy.kind, UnitKind::Tank | UnitKind::Apc)
         && rng.gen_bool(0.4)
@@ -217,7 +226,7 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         return vec![Action::TakeCover];
     }
 
-    // Step toward nearest enemy (prefer forest approaches).
+    // Step toward nearest enemy (prefer forest approaches unless charging).
     let mut steps = Vec::new();
     let mut pos = unit.pos;
     let mut moves = 0i32;
@@ -235,7 +244,7 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
                 continue;
             }
             let mut d = n.distance(enemy.pos) * 10;
-            if game.board.terrain_at(n) == Terrain::Forest {
+            if !tank_shelling && game.board.terrain_at(n) == Terrain::Forest {
                 d -= 3;
             }
             if best.is_none_or(|(_, _, bd)| d < bd) {
@@ -250,7 +259,7 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         moves += 1;
         ap -= 1;
     }
-    if steps.is_empty() && !unit.in_cover {
+    if steps.is_empty() && !unit.in_cover && !tank_shelling {
         return vec![Action::TakeCover];
     }
     steps

@@ -289,6 +289,55 @@ cap still fighting — wipe rates didn’t improve. First-player lean is mild.
 
 ---
 
+## 2026-08-30 — Soften infantry cover + range pressure
+
+**Type: Rule**
+
+Stock ranges (unchanged, now intentional pressure):
+
+| Unit | Weapon | Range |
+|------|--------|-------|
+| Tank | main gun | **5** |
+| Infantry | missile | **4** |
+
+A tank can shell a forest hex from outside missile range. Digging in and never
+leaving is unsafe.
+
+Cover softens:
+
+1. **Main gun / missiles kill through cover.** No pin save against AT/HE or
+   missiles. Forest still gives −1 to hit.
+2. **Cover pin is AI-spray only.** APC (and infantry) AI weapons still pin a
+   dug-in squad (spend cover + suppress).
+3. **Air blast kills through cover** (HE-class).
+4. **Revealing fire.** An infantry missile clears `in_cover`.
+5. **No stacked dig-in penalty.** Forest −1 only; dig-in no longer adds a
+   second −1.
+6. **Leaving forest clears cover.** Ending a step in open ground drops dig-in.
+
+**Sim:** infantry AI charges when a tank sits in gun range but outside missile
+range (rational reaction to the Rule, not a balance crutch).
+
+**Why.** Covered squads could sit in forest, shrug the first main-gun hit, and
+re-dig — a long idle / hard-cap path in 2× combined.
+
+**Effect (80 games, seed 7, 2× combined):**
+
+| Metric | Before (2×) | **After soften** |
+|--------|-------------|------------------|
+| Decisive | 96% | **100%** |
+| Avg activations | ~181 | **~164** |
+| Hard timeout | 24% | **8%** |
+| Idle stalemate | 12% | **11%** |
+| Infantry kills / game | ~2.5 | **~2.8** |
+| First-player share | 57% | 66% |
+| Red / Blue | 36 / 41 | 38 / 42 |
+
+Games finish more often and a bit sooner. Color stays even. First-player lean
+ticked up — watch on the next pass; not addressed here.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.
