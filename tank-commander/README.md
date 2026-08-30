@@ -117,7 +117,7 @@ default rather than blocking.
 | `src/combat.rs` | Hit / pen / glance / fire / cook-off |
 | `src/action.rs` | Action enum and turn buffs |
 | `src/game.rs` | Legal moves and activation loop |
-| `src/scenario.rs` | Skirmish / platoon / combined setup |
+| `src/scenario.rs` | Skirmish / squadron / platoon / combined setup |
 | `src/ai.rs` | Multi-unit heuristic planner |
 | `src/sim.rs` | Monte Carlo runner |
 | `src/metrics.rs` | Drama / stalemate aggregates + suggestions |
