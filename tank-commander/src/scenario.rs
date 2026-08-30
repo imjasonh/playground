@@ -41,13 +41,18 @@ impl ScenarioKind {
 struct MapLayout<'a> {
     width: i32,
     height: i32,
-    /// Impassable buildings that never move.
+    /// Impassable buildings that never move (may be empty).
     wall: &'a [Hex],
-    /// Must stay open (alleys / approach lanes).
+    /// Must stay open (approaches / reserved lanes).
     alley_clear: &'a [Hex],
     /// Pathability probes: each start must reach at least one goal.
     path_goals: &'a [Hex],
+    /// Random building clumps (count range, size range per clump).
+    building_clumps: (u32, u32),
+    building_clump_size: (u32, u32),
+    /// Forest hex budget, grown as clumps of `forest_clump_size`.
     forest: (u32, u32),
+    forest_clump_size: (u32, u32),
     mud: (u32, u32),
     rubble: (u32, u32),
     /// When true, place scatter only on the west half and mirror each tile
@@ -85,83 +90,14 @@ const SKIRMISH_MAP: MapLayout = MapLayout {
     wall: &SKIRMISH_WALL,
     alley_clear: &SKIRMISH_ALLEY,
     path_goals: &SKIRMISH_GOALS,
+    building_clumps: (0, 0),
+    building_clump_size: (1, 1),
     forest: (5, 9),
+    forest_clump_size: (2, 4),
     mud: (2, 4),
     rubble: (1, 3),
     mirror_scatter: false,
 };
-
-/// Platoon: 19×15 sealed midline with a wide plaza gap (no N/S through-lanes).
-/// Built at runtime so the wall can span the full height.
-fn platoon_wall(height: i32) -> Vec<Hex> {
-    let mut wall = Vec::new();
-    // Spine with a wide plaza gap so a wreck cannot seal the only passage.
-    for q in 8..=10 {
-        for r in 0..height {
-            if (5..=9).contains(&r) {
-                continue;
-            }
-            wall.push(Hex::offset(q, r));
-        }
-    }
-    wall.extend([
-        Hex::offset(3, 1),
-        Hex::offset(3, 2),
-        Hex::offset(4, 2),
-        Hex::offset(3, 12),
-        Hex::offset(3, 13),
-        Hex::offset(4, 12),
-    ]);
-    wall.extend([
-        Hex::offset(15, 1),
-        Hex::offset(15, 2),
-        Hex::offset(14, 2),
-        Hex::offset(15, 12),
-        Hex::offset(15, 13),
-        Hex::offset(14, 12),
-    ]);
-    wall
-}
-
-fn platoon_alley_clear() -> Vec<Hex> {
-    let mut clear = Vec::new();
-    for q in 6..=12 {
-        for r in 5..=9 {
-            clear.push(Hex::offset(q, r));
-        }
-    }
-    clear
-}
-
-/// Combined: 17×13 sealed midline with a wide plaza + mirrored side baffles.
-fn combined_wall(width: i32, height: i32) -> Vec<Hex> {
-    let mut wall = Vec::new();
-    for q in 7..=9 {
-        for r in 0..height {
-            if (4..=8).contains(&r) {
-                continue;
-            }
-            wall.push(Hex::offset(q, r));
-        }
-    }
-    // Side baffles — west pair, then east–west mirrors.
-    let west_baffles = [Hex::offset(2, 1), Hex::offset(2, 2)];
-    for h in west_baffles {
-        wall.push(h);
-        wall.push(mirror_ew(h, width));
-    }
-    wall
-}
-
-fn combined_alley_clear() -> Vec<Hex> {
-    let mut clear = Vec::new();
-    for q in 5..=11 {
-        for r in 4..=8 {
-            clear.push(Hex::offset(q, r));
-        }
-    }
-    clear
-}
 
 /// Reflect across the vertical midline (east–west symmetry) in offset space.
 fn mirror_ew(h: Hex, width: i32) -> Hex {
@@ -190,9 +126,8 @@ pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
     game
 }
 
-/// 3v3 on a 19×15 board. The midline is sealed except a two-hex plaza gap, so
-/// tanks cannot pair off down parallel N/S lanes — everyone funnels into the
-/// same fight. Hard cap is high; idle (no hull damage) ends the game earlier.
+/// 3v3 on a 19×15 open board: scattered building clumps and forest patches,
+/// no sealed midline funnel. Hard cap is high; idle (no hit) ends earlier.
 pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     let width = 19;
     let height = 15;
@@ -211,18 +146,19 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
         Hex::offset(16, 8),
         Hex::offset(16, 11),
     ];
-    let wall = platoon_wall(height);
-    let alley = platoon_alley_clear();
     let goals = [Hex::offset(9, 6), Hex::offset(9, 8)];
     let layout = MapLayout {
         width,
         height,
-        wall: &wall,
-        alley_clear: &alley,
+        wall: &[],
+        alley_clear: &egress,
         path_goals: &goals,
-        forest: (14, 24),
-        mud: (5, 9),
-        rubble: (4, 8),
+        building_clumps: (5, 8),
+        building_clump_size: (2, 5),
+        forest: (22, 36),
+        forest_clump_size: (3, 7),
+        mud: (4, 8),
+        rubble: (3, 6),
         mirror_scatter: false,
     };
     let board = build_board(&layout, rng, &reserved, &egress);
@@ -240,9 +176,9 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     game
 }
 
-/// Combined arms on a 17×13 plaza board. Each side fields **2 tanks** (each
-/// with air), **2 APCs**, and **2 infantry**. Starts, baffles, and scatter are
-/// east–west mirrors.
+/// Combined arms on a 17×13 open board. Each side fields **2 tanks** (each
+/// with air), **2 APCs**, and **2 infantry**. Starts and scatter are
+/// east–west mirrors; buildings and forests grow as clumps.
 pub fn combined<R: Rng>(rng: &mut R) -> Game {
     let width = 17;
     let height = 13;
@@ -275,16 +211,17 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
         mirror_ew(Hex::offset(2, 7), width),
         mirror_ew(Hex::offset(2, 9), width),
     ];
-    let wall = combined_wall(width, height);
-    let alley = combined_alley_clear();
     let goals = [Hex::offset(8, 5), Hex::offset(8, 7)];
     let layout = MapLayout {
         width,
         height,
-        wall: &wall,
-        alley_clear: &alley,
+        wall: &[],
+        alley_clear: &egress,
         path_goals: &goals,
-        forest: (12, 20),
+        building_clumps: (4, 6),
+        building_clump_size: (2, 4),
+        forest: (18, 30),
+        forest_clump_size: (3, 6),
         mud: (3, 6),
         rubble: (2, 5),
         mirror_scatter: true,
@@ -565,16 +502,75 @@ fn scatter_terrain<R: Rng>(
         board.set_terrain(*h, Terrain::Building);
     }
 
-    let mid_col = (layout.width - 1) / 2;
-    let mut candidates: Vec<Hex> = Vec::new();
-    for h in board.hexes() {
-        let (col, _row) = h.to_offset();
-        if layout.mirror_scatter && col > mid_col {
-            // East half is filled by mirroring west placements.
+    let mut candidates = open_candidates(layout, &board, starts, egress);
+    candidates.shuffle(rng);
+
+    let n_building_clumps =
+        rng.gen_range(layout.building_clumps.0..=layout.building_clumps.1) as usize;
+    let n_forest = rng.gen_range(layout.forest.0..=layout.forest.1) as usize;
+    let n_mud = rng.gen_range(layout.mud.0..=layout.mud.1) as usize;
+    let n_rubble = rng.gen_range(layout.rubble.0..=layout.rubble.1) as usize;
+    let (n_building_clumps, n_forest, n_mud, n_rubble) = if layout.mirror_scatter {
+        (
+            n_building_clumps.div_ceil(2),
+            n_forest.div_ceil(2),
+            n_mud.div_ceil(2),
+            n_rubble.div_ceil(2),
+        )
+    } else {
+        (n_building_clumps, n_forest, n_mud, n_rubble)
+    };
+
+    place_clumps(
+        &mut board,
+        rng,
+        &mut candidates,
+        Terrain::Building,
+        n_building_clumps,
+        layout.building_clump_size,
+        layout,
+        starts,
+        egress,
+    );
+    place_forest_clumps(
+        &mut board,
+        rng,
+        &mut candidates,
+        n_forest,
+        layout.forest_clump_size,
+        layout,
+        starts,
+        egress,
+    );
+
+    // Mud / rubble stay as single tiles.
+    candidates.shuffle(rng);
+    let singles = n_mud + n_rubble;
+    for (i, h) in candidates.into_iter().take(singles).enumerate() {
+        if board.terrain_at(h) != Terrain::Open {
             continue;
         }
-        if layout.mirror_scatter && col == mid_col {
-            // Midline is wall/plaza; don't place unpaired center scatter.
+        let terrain = if i < n_mud {
+            Terrain::Mud
+        } else {
+            Terrain::Rubble
+        };
+        set_scatter(&mut board, h, terrain, layout, starts, egress);
+    }
+    board
+}
+
+fn open_candidates(
+    layout: &MapLayout<'_>,
+    board: &Board,
+    starts: &[Hex],
+    egress: &[Hex],
+) -> Vec<Hex> {
+    let mid_col = (layout.width - 1) / 2;
+    let mut candidates = Vec::new();
+    for h in board.hexes() {
+        let (col, _row) = h.to_offset();
+        if layout.mirror_scatter && col >= mid_col {
             continue;
         }
         if layout.wall.contains(&h) || layout.alley_clear.contains(&h) || starts.contains(&h) {
@@ -583,48 +579,173 @@ fn scatter_terrain<R: Rng>(
         if egress.contains(&h) {
             continue;
         }
+        if board.terrain_at(h) != Terrain::Open {
+            continue;
+        }
         candidates.push(h);
     }
-    candidates.shuffle(rng);
+    candidates
+}
 
-    let n_forest = rng.gen_range(layout.forest.0..=layout.forest.1) as usize;
-    let n_mud = rng.gen_range(layout.mud.0..=layout.mud.1) as usize;
-    let n_rubble = rng.gen_range(layout.rubble.0..=layout.rubble.1) as usize;
-    // With mirror scatter, counts are per-half; total tiles ≈ 2×.
-    let (n_forest, n_mud, n_rubble) = if layout.mirror_scatter {
-        (
-            n_forest.div_ceil(2),
-            n_mud.div_ceil(2),
-            n_rubble.div_ceil(2),
-        )
-    } else {
-        (n_forest, n_mud, n_rubble)
-    };
-    let need = n_forest + n_mud + n_rubble;
-    let take = need.min(candidates.len());
-
-    for (i, h) in candidates.into_iter().take(take).enumerate() {
-        let terrain = if i < n_forest {
-            Terrain::Forest
-        } else if i < n_forest + n_mud {
-            Terrain::Mud
-        } else {
-            Terrain::Rubble
-        };
-        board.set_terrain(h, terrain);
-        if layout.mirror_scatter {
-            let m = mirror_ew(h, layout.width);
-            if board.contains(m)
-                && !layout.wall.contains(&m)
-                && !layout.alley_clear.contains(&m)
-                && !starts.contains(&m)
-                && !egress.contains(&m)
-            {
-                board.set_terrain(m, terrain);
-            }
-        }
+fn set_scatter(
+    board: &mut Board,
+    h: Hex,
+    terrain: Terrain,
+    layout: &MapLayout<'_>,
+    starts: &[Hex],
+    egress: &[Hex],
+) {
+    board.set_terrain(h, terrain);
+    if !layout.mirror_scatter {
+        return;
     }
-    board
+    let m = mirror_ew(h, layout.width);
+    if board.contains(m)
+        && board.terrain_at(m) == Terrain::Open
+        && !layout.wall.contains(&m)
+        && !layout.alley_clear.contains(&m)
+        && !starts.contains(&m)
+        && !egress.contains(&m)
+    {
+        board.set_terrain(m, terrain);
+    }
+}
+
+/// Grow `n_clumps` connected patches of `terrain`.
+#[allow(clippy::too_many_arguments)]
+fn place_clumps<R: Rng>(
+    board: &mut Board,
+    rng: &mut R,
+    candidates: &mut Vec<Hex>,
+    terrain: Terrain,
+    n_clumps: usize,
+    size_range: (u32, u32),
+    layout: &MapLayout<'_>,
+    starts: &[Hex],
+    egress: &[Hex],
+) {
+    if n_clumps == 0 || size_range.1 == 0 {
+        return;
+    }
+    candidates.shuffle(rng);
+    let mut placed = 0;
+    let mut seed_i = 0;
+    while placed < n_clumps && seed_i < candidates.len() {
+        let seed = candidates[seed_i];
+        seed_i += 1;
+        if board.terrain_at(seed) != Terrain::Open {
+            continue;
+        }
+        let target = rng.gen_range(size_range.0..=size_range.1) as usize;
+        let mut clump = vec![seed];
+        while clump.len() < target {
+            let mut nbrs = Vec::new();
+            for h in &clump {
+                for n in h.neighbors() {
+                    if !board.contains(n) || board.terrain_at(n) != Terrain::Open {
+                        continue;
+                    }
+                    if starts.contains(&n)
+                        || egress.contains(&n)
+                        || layout.alley_clear.contains(&n)
+                        || layout.wall.contains(&n)
+                    {
+                        continue;
+                    }
+                    if layout.mirror_scatter {
+                        let (col, _) = n.to_offset();
+                        if col >= (layout.width - 1) / 2 {
+                            continue;
+                        }
+                    }
+                    if !clump.contains(&n) {
+                        nbrs.push(n);
+                    }
+                }
+            }
+            if nbrs.is_empty() {
+                break;
+            }
+            nbrs.shuffle(rng);
+            clump.push(nbrs[0]);
+        }
+        for h in &clump {
+            set_scatter(board, *h, terrain, layout, starts, egress);
+        }
+        placed += 1;
+    }
+    candidates.retain(|h| board.terrain_at(*h) == Terrain::Open);
+}
+
+/// Place about `budget` forest hexes as clumps of `size_range`.
+#[allow(clippy::too_many_arguments)]
+fn place_forest_clumps<R: Rng>(
+    board: &mut Board,
+    rng: &mut R,
+    candidates: &mut Vec<Hex>,
+    budget: usize,
+    size_range: (u32, u32),
+    layout: &MapLayout<'_>,
+    starts: &[Hex],
+    egress: &[Hex],
+) {
+    if budget == 0 {
+        return;
+    }
+    let avg = ((size_range.0 + size_range.1) / 2).max(1) as usize;
+    let n_clumps = budget.div_ceil(avg).max(1);
+    // Grow clumps until we hit the hex budget.
+    candidates.shuffle(rng);
+    let mut remaining = budget;
+    let mut seed_i = 0;
+    let mut clumps_left = n_clumps;
+    while remaining > 0 && clumps_left > 0 && seed_i < candidates.len() {
+        let seed = candidates[seed_i];
+        seed_i += 1;
+        if board.terrain_at(seed) != Terrain::Open {
+            continue;
+        }
+        let want = rng.gen_range(size_range.0..=size_range.1) as usize;
+        let target = want.min(remaining);
+        let mut clump = vec![seed];
+        while clump.len() < target {
+            let mut nbrs = Vec::new();
+            for h in &clump {
+                for n in h.neighbors() {
+                    if !board.contains(n) || board.terrain_at(n) != Terrain::Open {
+                        continue;
+                    }
+                    if starts.contains(&n)
+                        || egress.contains(&n)
+                        || layout.alley_clear.contains(&n)
+                        || layout.wall.contains(&n)
+                    {
+                        continue;
+                    }
+                    if layout.mirror_scatter {
+                        let (col, _) = n.to_offset();
+                        if col >= (layout.width - 1) / 2 {
+                            continue;
+                        }
+                    }
+                    if !clump.contains(&n) {
+                        nbrs.push(n);
+                    }
+                }
+            }
+            if nbrs.is_empty() {
+                break;
+            }
+            nbrs.shuffle(rng);
+            clump.push(nbrs[0]);
+        }
+        for h in &clump {
+            set_scatter(board, *h, Terrain::Forest, layout, starts, egress);
+        }
+        remaining = remaining.saturating_sub(clump.len());
+        clumps_left -= 1;
+    }
+    candidates.retain(|h| board.terrain_at(*h) == Terrain::Open);
 }
 
 fn alleys_pathable(board: &Board, starts: &[Hex], goals: &[Hex]) -> bool {
@@ -737,15 +858,29 @@ mod tests {
         assert_eq!(g.tanks.iter().filter(|t| t.side == Side::Red).count(), 3);
         assert_eq!(g.tanks.iter().filter(|t| t.side == Side::Blue).count(), 3);
         assert!(g.tanks.iter().all(|t| t.kind == UnitKind::Tank));
-        // Spine sealed except plaza throat.
-        assert_eq!(g.board.terrain_at(Hex::offset(9, 0)), Terrain::Building);
-        assert_eq!(g.board.terrain_at(Hex::offset(9, 14)), Terrain::Building);
-        assert!(!g.board.terrain_at(Hex::offset(9, 5)).impassable());
-        assert!(!g.board.terrain_at(Hex::offset(9, 7)).impassable());
-        assert!(!g.board.terrain_at(Hex::offset(9, 9)).impassable());
-        // No parallel N/S through-lane at q=9 outside the plaza.
-        assert!(g.board.terrain_at(Hex::offset(9, 2)).impassable());
-        assert!(g.board.terrain_at(Hex::offset(9, 12)).impassable());
+        // Open board: scattered buildings and forests, no sealed midline.
+        let buildings = g
+            .board
+            .hexes()
+            .filter(|h| g.board.terrain_at(*h) == Terrain::Building)
+            .count();
+        let forests = g
+            .board
+            .hexes()
+            .filter(|h| g.board.terrain_at(*h) == Terrain::Forest)
+            .count();
+        assert!(buildings >= 8, "expected building clumps, got {buildings}");
+        assert!(forests >= 15, "expected forest clumps, got {forests}");
+        assert_ne!(
+            g.board.terrain_at(Hex::offset(9, 0)),
+            Terrain::Building,
+            "no sealed spine at north midline"
+        );
+        assert_ne!(
+            g.board.terrain_at(Hex::offset(9, 14)),
+            Terrain::Building,
+            "no sealed spine at south midline"
+        );
     }
 
     #[test]
@@ -769,28 +904,24 @@ mod tests {
             .iter()
             .filter(|t| t.kind == UnitKind::Tank)
             .all(|t| t.has_air_support));
-        // Plaza open; spine sealed outside it.
-        assert!(!g.board.terrain_at(Hex::offset(8, 6)).impassable());
-        assert!(g.board.terrain_at(Hex::offset(8, 1)).impassable());
-        assert!(g.board.terrain_at(Hex::offset(8, 11)).impassable());
-        // Constant skeleton is east–west mirrored (nudge may move units after).
+        // Open mirrored board — buildings exist and stay east–west mirrored.
         let width = 17;
         assert_eq!(mirror_ew(Hex::offset(1, 3), width), Hex::offset(15, 3));
-        assert_eq!(mirror_ew(Hex::offset(1, 9), width), Hex::offset(15, 9));
-        assert_eq!(mirror_ew(Hex::offset(0, 4), width), Hex::offset(16, 4));
-        assert_eq!(g.board.terrain_at(Hex::offset(2, 1)), Terrain::Building);
-        assert_eq!(
-            g.board.terrain_at(mirror_ew(Hex::offset(2, 1), width)),
-            Terrain::Building
-        );
-        assert_eq!(g.board.terrain_at(Hex::offset(2, 2)), Terrain::Building);
-        assert_eq!(
-            g.board.terrain_at(mirror_ew(Hex::offset(2, 2), width)),
-            Terrain::Building
-        );
-        // Old asymmetric south baffles must be gone.
-        assert_ne!(g.board.terrain_at(Hex::offset(14, 10)), Terrain::Building);
-        assert_ne!(g.board.terrain_at(Hex::offset(14, 11)), Terrain::Building);
+        let buildings = g
+            .board
+            .hexes()
+            .filter(|h| g.board.terrain_at(*h) == Terrain::Building)
+            .count();
+        assert!(buildings >= 6, "expected building clumps, got {buildings}");
+        for h in g.board.hexes() {
+            if g.board.terrain_at(h) == Terrain::Building {
+                assert_eq!(
+                    g.board.terrain_at(mirror_ew(h, width)),
+                    Terrain::Building,
+                    "building at {h} lost its mirror"
+                );
+            }
+        }
     }
 
     #[test]
@@ -840,16 +971,17 @@ mod tests {
             mirror_ew(Hex::offset(2, 7), width),
             mirror_ew(Hex::offset(2, 9), width),
         ];
-        let wall = combined_wall(width, height);
-        let alley = combined_alley_clear();
         let goals = [Hex::offset(8, 5), Hex::offset(8, 7)];
         let layout = MapLayout {
             width,
             height,
-            wall: &wall,
-            alley_clear: &alley,
+            wall: &[],
+            alley_clear: &egress,
             path_goals: &goals,
-            forest: (12, 20),
+            building_clumps: (4, 6),
+            building_clump_size: (2, 4),
+            forest: (18, 30),
+            forest_clump_size: (3, 6),
             mud: (3, 6),
             rubble: (2, 5),
             mirror_scatter: true,
@@ -976,16 +1108,17 @@ mod tests {
             mirror_ew(Hex::offset(2, 7), width),
             mirror_ew(Hex::offset(2, 9), width),
         ];
-        let wall = combined_wall(width, height);
-        let alley = combined_alley_clear();
         let goals = [Hex::offset(8, 5), Hex::offset(8, 7)];
         let layout = MapLayout {
             width,
             height,
-            wall: &wall,
-            alley_clear: &alley,
+            wall: &[],
+            alley_clear: &egress,
             path_goals: &goals,
+            building_clumps: (4, 6),
+            building_clump_size: (2, 4),
             forest: (10, 16),
+            forest_clump_size: (3, 6),
             mud: (4, 7),
             rubble: (3, 6),
             mirror_scatter: true,
@@ -998,9 +1131,13 @@ mod tests {
                 let m = mirror_ew(h, width);
                 let th = board.terrain_at(h);
                 let tm = board.terrain_at(m);
-                if matches!(th, Terrain::Forest | Terrain::Mud | Terrain::Rubble)
-                    || matches!(tm, Terrain::Forest | Terrain::Mud | Terrain::Rubble)
-                {
+                if matches!(
+                    th,
+                    Terrain::Forest | Terrain::Mud | Terrain::Rubble | Terrain::Building
+                ) || matches!(
+                    tm,
+                    Terrain::Forest | Terrain::Mud | Terrain::Rubble | Terrain::Building
+                ) {
                     assert_eq!(th, tm, "scatter mismatch at {h} ({th:?}) vs {m} ({tm:?})");
                 }
             }
