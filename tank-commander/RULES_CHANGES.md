@@ -508,6 +508,36 @@ timeouts/idles are a bit worse (smoke LOS?).
 
 ---
 
+## 2026-08-30 — Full list upgrades (10-pt tanks / 4-pt APCs)
+
+**Type: Rule / Scenario**
+
+Stock scenarios now **list-build**: tanks spend up to 10 points (armor, engine,
+extended barrel, optics, anti-infantry, smoke, medkit, lieutenant; Combined
+may buy mines). APCs spend up to 4 (armor / engine / smoke). Combined air
+strikes remain a scenario grant. HE stays free for stock tanks.
+
+The AI deploys mines on approaches, sprays with tank AI weapons when equipped,
+and still uses smoke / LT cover / medkit when those upgrades land.
+
+**Effect (seed 1; 400 / 150 / 100) vs field-kit-only on the same mats:**
+
+| Scenario | Decisive | FP share | Hard TO | Idle | Smoke/g | Medkit | Mines trig |
+|----------|----------|----------|---------|------|---------|--------|------------|
+| Skirmish | 90%→**84%** | 38%→**54%** | 21%→**67%** | 0% | 1.93→**1.06** | 1.86→**0.94** | — |
+| Platoon | 95%→**100%** | 48%→**49%** | 0%→**6%** | ~1% | 5.83→**3.37** | 5.94→**3.26** | — |
+| Combined | 93%→**95%** | 43%→**56%** | 32%→**40%** | 24%→**6%** | 6.10→**3.73** | 3.97→**2.20** | **5.62** |
+
+**List mix (vehicles):** soft upgrades land ~55% of the time on skirmish/platoon;
+leftover points favor **engine (~88%)** and **armor (~5.8 pts/tank)**. Combined
+mines: ~1.2 charges/vehicle at list, **9.3 deployed / 5.6 triggered** per game.
+
+Armor is doing real work — skirmish timeouts jumped because pens land less often
+(4.3→3.3 pens/game) and glances stack up. Platoon stays decisive and fun.
+Combined idles improved; timeouts and low-engagement are still the soft spots.
+
+---
+
 ## How to add a change
 
 1. Decide **Rule**, **Scenario**, or **Sim**.
