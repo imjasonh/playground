@@ -1,4 +1,4 @@
-//! Built-in scenarios: Skirmish (1v1), Platoon (3v3), Combined arms.
+//! Built-in scenarios: learning ladder from 1v1 stock to combined arms.
 
 use crate::board::{Board, Terrain};
 use crate::game::Game;
@@ -11,11 +11,13 @@ use rand::Rng;
 /// Which scenario to spin up.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ScenarioKind {
-    /// 1v1 stock tanks.
+    /// Intro: 1v1 stock tanks, no upgrades.
     Skirmish,
-    /// 3v3 stock tanks.
+    /// 3v3 stock tanks, no upgrades (group tactics).
+    Squadron,
+    /// 3v3 with list upgrades.
     Platoon,
-    /// 2 tanks (air) + 2 APCs + 2 infantry per side.
+    /// 2 tanks (air) + 2 APCs + 2 infantry per side, with lists.
     Combined,
 }
 
@@ -23,6 +25,7 @@ impl ScenarioKind {
     pub fn as_str(self) -> &'static str {
         match self {
             ScenarioKind::Skirmish => "skirmish",
+            ScenarioKind::Squadron => "squadron",
             ScenarioKind::Platoon => "platoon",
             ScenarioKind::Combined => "combined",
         }
@@ -30,7 +33,8 @@ impl ScenarioKind {
 
     pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "skirmish" => Some(Self::Skirmish),
+            "skirmish" | "intro" => Some(Self::Skirmish),
+            "squadron" => Some(Self::Squadron),
             "platoon" => Some(Self::Platoon),
             "combined" => Some(Self::Combined),
             _ => None,
@@ -61,7 +65,7 @@ struct MapLayout<'a> {
     mirror_scatter: bool,
 }
 
-/// Shared battle mat for platoon and combined (columns × rows).
+/// Shared battle mat for squadron / platoon / combined (columns × rows).
 const BATTLE_WIDTH: i32 = 18;
 const BATTLE_HEIGHT: i32 = 12;
 /// Skirmish: half the battle width, same height.
@@ -118,33 +122,45 @@ fn mirror_ew(h: Hex, width: i32) -> Hex {
 pub fn setup<R: Rng>(kind: ScenarioKind, rng: &mut R) -> Game {
     match kind {
         ScenarioKind::Skirmish => skirmish(rng),
+        ScenarioKind::Squadron => squadron(rng),
         ScenarioKind::Platoon => platoon(rng),
         ScenarioKind::Combined => combined(rng),
     }
 }
 
-/// 1v1 tank duel on the half-width mat (9×12).
+fn coin_flip<R: Rng>(rng: &mut R) -> Side {
+    if rng.gen_bool(0.5) {
+        Side::Red
+    } else {
+        Side::Blue
+    }
+}
+
+/// Intro / skirmish: 1v1 stock tanks on the half-width mat (9×12). No upgrades.
 pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
     let starts = [RED_START, BLUE_START];
     let egress = [Hex::offset(2, 4), Hex::offset(6, 7)];
     let board = build_board(&SKIRMISH_MAP, rng, &starts, &egress);
-    let mut red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One");
-    spend_budget(&mut red, 10, false, rng);
-    let mut blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One");
-    spend_budget(&mut blue, 10, false, rng);
-    let tanks = vec![red, blue];
-    let (first, spoil) = initiative_from_lists(&tanks, rng);
-    let mut game = Game::new(board, tanks, first, 20, "skirmish").with_list_initiative(!spoil);
-    // Terrain-only spoil when lists tied; skipped if under-spend won initiative.
-    if spoil {
-        second_player_nudge_terrain(&mut game, 2);
-    }
+    let red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One");
+    let blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One");
+    let mut game = Game::new(board, vec![red, blue], coin_flip(rng), 20, "skirmish");
+    // Terrain-only spoil: unit nudges skewed color on offset starts.
+    second_player_nudge_terrain(&mut game, 2);
     game
 }
 
-/// 3v3 on the shared 18×12 open board: scattered building clumps and forest
-/// patches, no sealed midline funnel. Hard cap is high; idle ends earlier.
-pub fn platoon<R: Rng>(rng: &mut R) -> Game {
+fn six_tank_force(red_starts: [Hex; 3], blue_starts: [Hex; 3]) -> Vec<Tank> {
+    vec![
+        Tank::stock(0, Side::Red, red_starts[0], Facing::E, "Red Alpha"),
+        Tank::stock(1, Side::Red, red_starts[1], Facing::E, "Red Bravo"),
+        Tank::stock(2, Side::Red, red_starts[2], Facing::E, "Red Charlie"),
+        Tank::stock(3, Side::Blue, blue_starts[0], Facing::W, "Blue Alpha"),
+        Tank::stock(4, Side::Blue, blue_starts[1], Facing::W, "Blue Bravo"),
+        Tank::stock(5, Side::Blue, blue_starts[2], Facing::W, "Blue Charlie"),
+    ]
+}
+
+fn open_battle_board<R: Rng>(rng: &mut R) -> (Board, [Hex; 3], [Hex; 3]) {
     let width = BATTLE_WIDTH;
     let height = BATTLE_HEIGHT;
     let red_starts = [Hex::offset(1, 3), Hex::offset(1, 6), Hex::offset(1, 9)];
@@ -178,15 +194,22 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
         mirror_scatter: false,
     };
     let board = build_board(&layout, rng, &reserved, &egress);
+    (board, red_starts, blue_starts)
+}
 
-    let mut tanks = vec![
-        Tank::stock(0, Side::Red, red_starts[0], Facing::E, "Red Alpha"),
-        Tank::stock(1, Side::Red, red_starts[1], Facing::E, "Red Bravo"),
-        Tank::stock(2, Side::Red, red_starts[2], Facing::E, "Red Charlie"),
-        Tank::stock(3, Side::Blue, blue_starts[0], Facing::W, "Blue Alpha"),
-        Tank::stock(4, Side::Blue, blue_starts[1], Facing::W, "Blue Bravo"),
-        Tank::stock(5, Side::Blue, blue_starts[2], Facing::W, "Blue Charlie"),
-    ];
+/// Squadron: 3v3 stock tanks, no upgrades — learn pass activation / group play.
+pub fn squadron<R: Rng>(rng: &mut R) -> Game {
+    let (board, red_starts, blue_starts) = open_battle_board(rng);
+    let tanks = six_tank_force(red_starts, blue_starts);
+    let mut game = Game::new(board, tanks, coin_flip(rng), 200, "squadron").with_stalemate(40);
+    second_player_setup(&mut game, 3);
+    game
+}
+
+/// Platoon: 3v3 with list upgrades on the shared 18×12 open board.
+pub fn platoon<R: Rng>(rng: &mut R) -> Game {
+    let (board, red_starts, blue_starts) = open_battle_board(rng);
+    let mut tanks = six_tank_force(red_starts, blue_starts);
     for t in &mut tanks {
         spend_budget(t, 10, false, rng);
     }
@@ -200,7 +223,7 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     game
 }
 
-/// Combined arms on the same 18×12 open board as platoon. Each side fields
+/// Combined arms on the same 18×12 open board as squadron/platoon. Each side fields
 /// **2 tanks** (each with air), **2 APCs**, and **2 infantry**. Starts and
 /// scatter are east–west mirrors; buildings and forests grow as clumps.
 pub fn combined<R: Rng>(rng: &mut R) -> Game {
@@ -880,6 +903,27 @@ mod tests {
     }
 
     #[test]
+    fn skirmish_is_stock_no_upgrades() {
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
+        let g = skirmish(&mut rng);
+        assert_eq!(g.scenario, "skirmish");
+        assert!(!g.list_initiative);
+        for t in &g.tanks {
+            assert_eq!(t.upgrade_points_spent, 0);
+            assert!(!t.has_smoke_launcher);
+            assert!(!t.has_medkit);
+            assert!(!t.has_engine);
+            assert!(!t.has_optics);
+            assert!(!t.has_barrel);
+            assert_eq!(t.mines_left, 0);
+            assert!(!t
+                .crew
+                .iter()
+                .any(|m| m.role == crate::unit::CrewRole::Lieutenant));
+        }
+    }
+
+    #[test]
     fn platoon_has_six_tanks_on_big_board() {
         let mut rng = ChaCha8Rng::seed_from_u64(3);
         let g = platoon(&mut rng);
@@ -915,6 +959,27 @@ mod tests {
             Terrain::Building,
             "no sealed spine at south midline"
         );
+        // Lists spend something on average (seeded random).
+        assert!(g.tanks.iter().any(|t| t.upgrade_points_spent > 0));
+    }
+
+    #[test]
+    fn squadron_is_stock_3v3_no_upgrades() {
+        let mut rng = ChaCha8Rng::seed_from_u64(3);
+        let g = squadron(&mut rng);
+        assert_eq!(g.scenario, "squadron");
+        assert_eq!(g.tanks.len(), 6);
+        assert_eq!(g.board.width, BATTLE_WIDTH);
+        assert_eq!(g.board.height, BATTLE_HEIGHT);
+        assert_eq!(g.max_activations, 200);
+        assert_eq!(g.stalemate_after, 40);
+        assert!(!g.list_initiative);
+        assert!(g.tanks.iter().all(|t| t.kind == UnitKind::Tank));
+        assert!(g.tanks.iter().all(|t| t.upgrade_points_spent == 0));
+        assert!(g
+            .tanks
+            .iter()
+            .all(|t| !t.has_smoke_launcher && !t.has_medkit));
     }
 
     #[test]
@@ -1183,16 +1248,20 @@ mod tests {
     fn board_sizes_scale_with_scenario() {
         let mut rng = ChaCha8Rng::seed_from_u64(5);
         let s = skirmish(&mut rng);
+        let q = squadron(&mut rng);
         let c = combined(&mut rng);
         let p = platoon(&mut rng);
         let area = |g: &Game| g.board.width * g.board.height;
         assert_eq!(s.board.width, SKIRMISH_WIDTH);
         assert_eq!(s.board.height, SKIRMISH_HEIGHT);
+        assert_eq!(q.board.width, BATTLE_WIDTH);
+        assert_eq!(q.board.height, BATTLE_HEIGHT);
         assert_eq!(c.board.width, BATTLE_WIDTH);
         assert_eq!(c.board.height, BATTLE_HEIGHT);
         assert_eq!(p.board.width, BATTLE_WIDTH);
         assert_eq!(p.board.height, BATTLE_HEIGHT);
         assert_eq!(area(&c), area(&p), "platoon and combined share one mat");
+        assert_eq!(area(&q), area(&p), "squadron shares the battle mat");
         assert_eq!(
             s.board.height, p.board.height,
             "skirmish keeps battle height"

@@ -3,23 +3,25 @@
 Monte Carlo simulator for the
 [Tank Commander](https://github.com/imjasonh/tank-commander) tabletop rules.
 
-Three scenarios share the same engine and heuristic AI:
+Four scenarios share the same engine and heuristic AI — a learning ladder:
 
 | Scenario | Force | Board | Cap / idle stop |
 |----------|-------|-------|-----------------|
-| `skirmish` | 1v1 tanks (10-pt lists) | 9×12 | 20 hard (10/side) |
-| `combined` | 2 tanks + 2 APCs + 2 infantry / side | 18×12 open | 240 hard; idle after 48 no-hit |
-| `platoon` | 3v3 tanks (10-pt lists) | 18×12 open | 200 hard; idle after 40 no-hit |
+| `skirmish` | 1v1 stock tanks (no upgrades) | 9×12 | 20 hard (10/side) |
+| `squadron` | 3v3 stock tanks (no upgrades) | 18×12 open | 200 hard; idle after 40 no-hit |
+| `platoon` | 3v3 tanks (≤10-pt lists) | 18×12 open | 200 hard; idle after 40 no-hit |
+| `combined` | 2 tanks + 2 APCs + 2 infantry / side (lists) | 18×12 open | 240 hard; idle after 48 no-hit |
 
-Platoon and combined share one **18×12** mat with **scattered building clumps
-and forest patches** (no sealed midline funnel). Skirmish is half the width
-(**9×12**) with a compact midline block. Tanks spend up to **10** upgrade
-points (armor, engine, barrel, optics, AI, smoke, medkit, LT; Combined also
-mines) and may spend fewer. APCs spend up to **4**. The side with the
-**lower** total list spend activates first and skips second-player spoil; equal
-spend still rolls off and applies spoil. Combined tanks also get a scenario
-air strike. Combined starts and scatter are east–west mirrors. Combined also
-has next-activation air strikes (with scatter) and APC vehicle spray.
+Squadron, platoon, and combined share one **18×12** mat with **scattered
+building clumps and forest patches** (no sealed midline funnel). Skirmish is
+half the width (**9×12**) with a compact midline block. Platoon/Combined tanks
+spend up to **10** upgrade points (armor, engine, barrel, optics, AI, smoke,
+medkit, LT; Combined also mines) and may spend fewer; APCs spend up to **4**.
+On list scenarios, the side with the **lower** total spend activates first and
+skips second-player spoil; equal spend still rolls off and applies spoil.
+Skirmish/Squadron always roll off and apply spoil. Combined tanks also get a
+scenario air strike, next-activation air strikes (with scatter), and APC
+vehicle spray. Combined starts and scatter are east–west mirrors.
 
 Playable rules (upstream + house rules): [`rules.md`](rules.md).
 Dated changelog with Rule / Scenario / Sim tags and sim metrics:
@@ -30,9 +32,10 @@ Dated changelog with Rule / Scenario / Sim tags and sim metrics:
 ```bash
 cd tank-commander
 cargo test
-cargo run --release -- sim --scenario skirmish --games 500 --seed 1
-cargo run --release -- sim --scenario platoon --games 200 --seed 1
-cargo run --release -- sim --scenario combined --games 200 --seed 1
+cargo run --release -- sim --scenario skirmish --games 400 --seed 1
+cargo run --release -- sim --scenario squadron --games 150 --seed 1
+cargo run --release -- sim --scenario platoon --games 150 --seed 1
+cargo run --release -- sim --scenario combined --games 100 --seed 1
 cargo run --release -- sim --games 1 --seed 42 --verbose   # event log
 cargo run --release -- sim --games 200 --json              # machine-readable
 ```

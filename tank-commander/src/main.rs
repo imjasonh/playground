@@ -28,7 +28,7 @@ enum Commands {
         /// Base RNG seed (game i uses seed+i).
         #[arg(long, default_value_t = 1)]
         seed: u64,
-        /// Scenario: skirmish (1v1), platoon (3v3), or combined (tank+APC+infantry).
+        /// Scenario: skirmish, squadron, platoon, or combined.
         #[arg(long, default_value = "skirmish")]
         scenario: String,
         /// Print a full event log for the first game.
@@ -52,7 +52,7 @@ fn main() -> ExitCode {
         } => {
             let Some(kind) = ScenarioKind::parse(&scenario) else {
                 eprintln!(
-                    "unknown scenario '{scenario}' (expected skirmish, platoon, or combined)"
+                    "unknown scenario '{scenario}' (expected skirmish, squadron, platoon, or combined)"
                 );
                 return ExitCode::FAILURE;
             };

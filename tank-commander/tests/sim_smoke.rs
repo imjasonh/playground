@@ -20,6 +20,21 @@ fn skirmish_batch_produces_drama_signals() {
 }
 
 #[test]
+fn squadron_batch_runs() {
+    let result = sim::run(SimConfig {
+        games: 20,
+        seed: 13,
+        verbose: false,
+        scenario: ScenarioKind::Squadron,
+    });
+    assert_eq!(result.aggregate.games, 20);
+    assert_eq!(result.aggregate.scenario, "squadron");
+    assert!(result.aggregate.avg_shots > 1.0);
+    assert!(result.aggregate.avg_moves > 1.0);
+    assert_eq!(result.aggregate.loadout_avg_points, 0.0);
+}
+
+#[test]
 fn platoon_batch_runs() {
     let result = sim::run(SimConfig {
         games: 20,

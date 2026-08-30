@@ -44,7 +44,7 @@ pub struct Game {
     pub max_activations: u32,
     pub events: Vec<GameEvent>,
     pub first_player: Side,
-    /// `"skirmish"` | `"platoon"` | `"combined"`.
+    /// `"skirmish"` | `"squadron"` | `"platoon"` | `"combined"`.
     pub scenario: String,
     pub pending_air_strikes: Vec<PendingAirStrike>,
     pub air_strikes_resolved: u32,
