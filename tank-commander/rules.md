@@ -12,6 +12,11 @@ simulation.
 Where this file and upstream disagree, **this file wins** for games run with
 these house rules.
 
+**Unimplemented upstream material** is collected loudly in
+[Unimplemented upstream](#unimplemented-upstream). If a line there and a house
+rule here conflict, the house rule still wins for play — the Unimplemented
+section is the fidelity gap list, not an alternate ruleset.
+
 ---
 
 ## Introduction
@@ -70,6 +75,8 @@ Spend up to 10 upgrade points before the game:
 - **Anti-tank mines** (1 each, max 3, advanced): deploy mines.
 
 Painted tanks get +1 upgrade point. An epic name plus named crew gets +1.
+(**Not** applied by the simulator list builder — see
+[Unimplemented upstream](#unimplemented-upstream).)
 
 ### Crew
 
@@ -79,9 +86,13 @@ activation):
 | Role | Ability |
 |------|---------|
 | Commander | *Booming Voice* — +2 actions this activation |
-| Driver | *Move move move!* — move twice for one action, or three hexes straight |
+| Driver | *Move move move!* — +1 max move this activation (partial; see Unimplemented) |
 | Gunner | *Bring it down!* — hit on 2+ this activation |
 | Loader | *Quick Load* — loading costs 0 actions this activation |
+
+**Driver ability note.** Upstream allows moving twice for one action **or**
+three spaces straight. The simulator currently only grants **+1 max move** for
+the activation (see [Unimplemented upstream](#unimplemented-upstream)).
 
 **Lieutenant commander** (upgrade): may cover a killed role, always acting as
 if that role were wounded until the lieutenant is killed.
@@ -228,9 +239,9 @@ or use AI weapons against other infantry.
 | Open | No effect |
 | Mud | 2 actions to leave |
 | Rubble | 2 actions to leave |
-| Forest | Enemy accuracy −1 vs a unit in the hex |
-| Building | Impassable; blocks LOS |
-| Hill (advanced) | Behind hill: enemy accuracy −1; on hill: hits use rear armor |
+| Forest | Enemy accuracy −1 vs a unit **in** the hex (not “behind”; see Unimplemented) |
+| Building | Impassable; blocks LOS. Destroying buildings by fire is unimplemented. |
+| Hill (advanced) | Unimplemented in the simulator — tabletop reference only. |
 | Mines (advanced) | Entering: AT strength-6 pen check; then remove mine |
 
 Smoke blocks LOS through its hex until the end of the battle (or as the
@@ -251,8 +262,11 @@ scenario says).
 | Missile launcher | **4** (house rule; upstream 3) | AT or HE; no load action; ignores turret arc |
 | Anti-infantry (AI) | 2 | Vs infantry |
 
-**Actions:** step (any facing), fire missile, fire AI, take cover, capture
-objective, disarm mines, **mount / dismount** (see [Embarkation](#embarkation)).
+**Actions (simulator):** step (any facing), fire missile, fire AI, take cover,
+**mount / dismount** (see [Embarkation](#embarkation)).
+
+Upstream also lists **Capture Objective** and **Disarm Mines** — those are
+**not** in the simulator yet (see [Unimplemented upstream](#unimplemented-upstream)).
 
 **House rule vs upstream Take Cover.** Upstream forbids moving or firing while
 in cover. Here, dig-in only affects how you take hits (and revealing fire when
@@ -434,14 +448,176 @@ Full combined-arms game with lists.
 
 Examples from upstream: Basic Training, Capture Objectives, Breakthrough,
 Destroy Target, Escort, Beach Landing, Urban Warfare, Cross Minefield, Disable
-AA Guns. Use them with these house rules unless a mission card says otherwise.
+AA Guns. **None of these are playable scenarios in the simulator** — only the
+ladder in [Scenarios](#scenarios) is. Full upstream mission text and special
+rules are in [Unimplemented upstream](#unimplemented-upstream).
 
 ---
 
 ## Optional / questionable ideas (upstream)
 
 Weather, night fighting, campaigns, hover tanks, and so on remain optional
-flavor from upstream — not required for the scenarios above.
+flavor from upstream — also catalogued under Unimplemented.
+
+---
+
+## Unimplemented upstream
+
+> **Loud fidelity gaps.** Everything below is in
+> [imjasonh/tank-commander](https://github.com/imjasonh/tank-commander)
+> `README.md` (verbatim quotes) but is **missing**, **partial**, or
+> **replaced** in this playground’s rules / engine / AI. Do not treat this
+> section as live tabletop rules for the ladder scenarios — use the sections
+> above for that. Use this list when deciding what to port next.
+
+Status tags: **missing** (not in engine), **partial** (weaker than upstream),
+**replaced** (house rule differs; original text unused).
+
+### Battle length — **replaced**
+
+Upstream:
+
+> The battle is over when the mission is complete, or a player concedes, or after 10 turns of play.
+
+This file uses wipe / concede / mission / optional clocks. Simulator Monte
+Carlo caps are analysis tools, not the upstream 10-turn default.
+
+### Painted / named tanks — **missing** (sim)
+
+Upstream:
+
+> Tanks that are painted get an extra upgrade point. Tanks that are given a suitably epic name and have named crew members get an extra upgrade point.
+
+Mentioned above for humans; the list builder never awards these.
+
+### Driver *Move move move!* — **partial**
+
+Upstream:
+
+> _"Move move move!"_: the tank can move twice for one action, or move three spaces straight ahead
+
+Simulator: only `max_move + 1` for that activation. No double-move-for-one-AP
+and no three-hex straight special.
+
+### Forest “behind” cover — **partial**
+
+Upstream:
+
+> **Forest**: When a tank is in or behind a forest space, enemy accuracy is -1. No movement penalty.
+
+Simulator: −1 only when the **target hex is Forest**. Line-of-sight “behind”
+forest is not modeled.
+
+### Destroy buildings by fire — **missing**
+
+Upstream:
+
+> **Building**: Buildings are impassable terrain. Tanks can fire rounds at buildings to turn them into Rubble.
+
+Buildings stay impassable forever in the sim. No “shoot the wall” action.
+
+### Hills — **missing**
+
+Upstream:
+
+> (Advanced) **Hill**: When a tank is immediately behind a hill space, enemy accuracy is -1. When a tank is on a hill space, all hits against it are taken against the rear armor value.
+
+No `Hill` terrain type in the board code. Not placed on any ladder map.
+
+### Take Cover lock — **replaced**
+
+Upstream:
+
+> **Take Cover**: Enemies shooting this unit have -1 accuracy until the next turn. The unit cannot move or fire while in cover.
+
+House rule: dig-in does not forbid move/fire; forest/dig-in interaction is
+under [Infantry cover](#infantry-cover).
+
+### Capture Objective — **missing**
+
+Upstream:
+
+> **Capture Objective**: Capture an objective. The unit must share the space with the objective to capture it. They don't need to remain on the space to hold it.
+
+No objectives, markers, or Capture action in the engine. Ladder scenarios are
+wipe/attrition only.
+
+### Disarm Mines — **missing**
+
+Upstream:
+
+> **Disarm Mines**: Remove an adjacent mine space from the board.
+
+Mines can be **deployed** and **triggered** by vehicles. Infantry cannot disarm
+them.
+
+### Exterior tank-top riding — **replaced / unused**
+
+Upstream:
+
+> **Mount Up / Dismount**: Infantry units can mount or dismount from a tank. They can only mount or dismount once per turn.
+> - Infantry can ride on the outside of tanks. If the tank takes any hits while infantry are mounted on the outside, they are destroyed.
+> - Infantry can ride inside Armored Personnel Carriers (APCs). See below.
+
+Exterior riding is **not** used. Interior APC ride uses the house rules in
+[Embarkation](#embarkation) (upstream never defined APC capacity / free drop).
+
+### Upstream air-strike procedure — **replaced**
+
+Upstream:
+
+> Mark a space anywhere on the board. In the next turn, the player must roll a 6+ for the air strike to hit. On the following turn, it's a 5+, and then 4+, and so on. An air strike is never called on a roll of a 1.
+>
+> When an air strike is carried out, the marked space is hit with an AT round with a strength of 6. Roll a die to determine the direction of the blast (1 is north, 2 is northeast, and so on). Then roll a die to determine the distance of the blast (1 is 1 space, 2 is 2 spaces, and so on). Each of those spaces are also hit with an AT round with a strength of 6.
+
+Live rules: fixed one-activation delay, scatter table, impact + adjacent blast
+— see [Air strikes](#air-strikes).
+
+### Infantry missile range — **replaced**
+
+Upstream:
+
+> Infantry units are equipped with Anti-Infantry Weapons with a range of 2 spaces, and a missile launcher with AT and HE rounds and a range of 3 spaces.
+
+House rule: missile range **4**.
+
+### Upstream missions — **missing** (as playable scenarios)
+
+Upstream:
+
+> - **Basic Training:** One tank driving to spaces and shooting targets, to learn basic rules.
+> - **Skirmish:** 1-vs-1 tank battle with light terrain.
+> - **Capture Objectives:** Use infantry to capture 1, 2 or 3 spaces on the board.
+> - **Breakthrough:** Move your tank to the other side of the board to win. One player is the attacker, the other is the defender.
+> - **Destroy Target:** Destroy a specific target on the board. The target can be a building, a tank, or an infantry unit.
+> - **Escort:** Move an infantry squad across the battlefield alive.
+> - **Beach Landing:** Attacker/defender where attackers begin in water (as Mud), with defenders guarding 3 objectives on the beach.
+> - **Urban Warfare:** Navigate tank columns through a maze of streets to take the town's central plaza.
+> - **Cross Minefield:** Navigate across a minefield with infantry disabling mines.
+> - **Disable AA Guns:** 3 air strikes available for free, but they fail on 2+ while 3 AA guns are intact. Destroy those guns and call in support.
+
+The simulator’s ladder (`skirmish` / `squadron` / `platoon` / `combined`) is
+**not** these cards. Capture / Breakthrough / Escort / Beach / Urban /
+Minefield / AA Guns need objectives, attacker–defender roles, or special AA
+rules that do not exist in code.
+
+### Optional / questionable ideas — **missing**
+
+Upstream:
+
+> - **Weather:** Roll a die at the beginning of each turn. On a 1, a storm hits. All tanks have -1 accuracy, and all infantry have -1 movement.
+> - **Night Fighting:** Accurancy is lowered by 1, visible range is lowered by 3. Tanks can use an action to fire flares to light up 3 spaces around them for both sides.
+> - **Campaign Progressions**: Players can keep track of their tanks and crew from battle to battle. Crew members can gain experience, and tanks can be upgraded with new equipment.
+> - **Hover Tanks, Walkers, Aliens, etc.**: Add new units to the game with different movement and armor values.
+
+Not in the simulator. Spelling “Accurancy” is upstream’s.
+
+### Upstream prose quirks (not gaps we invented)
+
+Upstream infantry text says “armor value of 2” while the infantry table is
+`3/3/3` — we follow the **table**. Upstream also says infantry “can fire at
+tanks within 2 spaces” while listing a range-3 missile; we treat the missile
+range (house 4) as authoritative.
 
 ---
 
