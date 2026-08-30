@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <meta name="theme-color" content="#f4f1ea" />
     <meta
       name="description"
@@ -39,7 +42,24 @@
       </div>
 
       <section class="board" aria-label="Spiral board">
-        <div id="spiral" class="spiral" tabindex="0"></div>
+        <div id="spiral" class="spiral"></div>
+        <div id="active-clue" class="active-clue" hidden>
+          <button id="flip-dir" class="active-clue-dir" type="button">Inward</button>
+          <span id="active-clue-range" class="active-clue-range"></span>
+          <span id="active-clue-text" class="active-clue-text"></span>
+        </div>
+        <input
+          id="entry"
+          class="entry"
+          type="text"
+          inputmode="text"
+          autocomplete="off"
+          autocapitalize="characters"
+          autocorrect="off"
+          spellcheck="false"
+          enterkeyhint="done"
+          aria-label="Type a letter for the selected cell"
+        />
       </section>
 
       <section class="clues" aria-label="Clues">
@@ -54,7 +74,7 @@
       </section>
 
       <p class="footer-note">
-        Click a cell or clue, then type. Seed <span id="seed">—</span>
+        Tap a clue or cell, then type. Seed <span id="seed">—</span>
       </p>
     </div>
     <script type="module" src="src/app.js"></script>

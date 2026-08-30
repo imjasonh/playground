@@ -19,6 +19,8 @@ import {
   checkGuesses,
   cellStatus,
   spanIndices,
+  selectClue,
+  cluesCovering,
   isSolved,
   revealAll,
 } from "../src/puzzle.js";
@@ -134,4 +136,26 @@ test("play state tracks guesses, check, and reveal", () => {
 test("spanIndices walks outward ranges backward", () => {
   assert.deepEqual(spanIndices({ start: 5, end: 1 }), [4, 3, 2, 1, 0]);
   assert.deepEqual(spanIndices({ start: 1, end: 4 }), [0, 1, 2, 3]);
+});
+
+test("selectClue jumps to the first empty cell in the span", () => {
+  const puzzle = generatePuzzle({ size: 24, seed: 1, maxNodes: 100000 });
+  assert.ok(puzzle);
+  let state = createPlayState(puzzle);
+  const span = puzzle.inward[0];
+  const indices = spanIndices(span);
+  state = setLetter(state, indices[0], "A");
+  state = setLetter(state, indices[1], "B");
+  state = selectClue(state, "inward", 0);
+  assert.equal(state.selected, indices[2]);
+  assert.equal(state.activeDir, "inward");
+});
+
+test("cluesCovering finds inward and outward spans for a cell", () => {
+  const puzzle = generatePuzzle({ size: 24, seed: 1, maxNodes: 100000 });
+  assert.ok(puzzle);
+  const inwardHits = cluesCovering(puzzle, "inward", 0);
+  const outwardHits = cluesCovering(puzzle, "outward", 0);
+  assert.ok(inwardHits.length >= 1);
+  assert.ok(outwardHits.length >= 1);
 });

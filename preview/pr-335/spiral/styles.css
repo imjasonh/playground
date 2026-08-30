@@ -119,6 +119,7 @@ body {
 }
 
 .board {
+  position: relative;
   margin: 1rem 0 1.25rem;
 }
 
@@ -127,11 +128,9 @@ body {
   margin: 0 auto;
   aspect-ratio: 1;
   outline: none;
-}
-
-.spiral:focus-visible {
-  outline: 1px solid var(--ink);
-  outline-offset: 3px;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .spiral svg {
@@ -144,6 +143,12 @@ body {
   fill: none;
   stroke: var(--ink);
   stroke-width: 2;
+  pointer-events: none;
+}
+
+.cell {
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .cell path {
@@ -165,17 +170,14 @@ body {
   fill: var(--wrong);
 }
 
-.cell.is-correct path {
-  fill: #fff;
-}
-
+.cell.is-correct path,
 .cell.is-revealed path {
   fill: #fff;
 }
 
-.cell.is-correct .cell-letter,
-.cell.is-revealed .cell-letter {
-  fill: var(--ink);
+.cell-num,
+.cell-letter {
+  pointer-events: none;
 }
 
 .cell-num {
@@ -191,6 +193,62 @@ body {
   font-weight: 700;
   text-anchor: middle;
   dominant-baseline: middle;
+}
+
+.active-clue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+  align-items: baseline;
+  margin: 0.65rem auto 0;
+  width: min(560px, 100%);
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--rule);
+  background: #fff;
+  font-size: 0.95rem;
+  cursor: text;
+}
+
+.active-clue[hidden] {
+  display: none;
+}
+
+.active-clue-dir {
+  font: inherit;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--hl);
+  border: 1px solid var(--rule);
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+}
+
+.active-clue-range {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.active-clue-text {
+  flex: 1 1 12rem;
+  line-height: 1.3;
+}
+
+/* Visually hidden but focusable — opens the phone keyboard. */
+.entry {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  /* 16px avoids iOS zoom-on-focus. */
+  font-size: 16px;
 }
 
 .clues {
@@ -222,7 +280,7 @@ body {
   align-items: baseline;
   width: 100%;
   margin: 0;
-  padding: 0.1rem 0.15rem;
+  padding: 0.35rem 0.3rem;
   border: 0;
   background: transparent;
   color: inherit;
@@ -230,6 +288,8 @@ body {
   font-size: 0.92rem;
   text-align: left;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .clue:hover {
@@ -262,6 +322,10 @@ body {
 }
 
 @media (max-width: 640px) {
+  .page {
+    padding-bottom: 5rem;
+  }
+
   .clues {
     grid-template-columns: 1fr;
     gap: 1rem;
@@ -274,5 +338,17 @@ body {
 
   .byline {
     display: none;
+  }
+
+  .clue {
+    min-height: 2.5rem;
+    padding: 0.45rem 0.35rem;
+  }
+
+  .active-clue {
+    position: sticky;
+    bottom: 0.5rem;
+    z-index: 2;
+    background: var(--paper);
   }
 }

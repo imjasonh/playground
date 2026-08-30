@@ -9,6 +9,7 @@ import {
   cellStatus,
   spanIndices,
   selectClue,
+  cluesCovering,
   activeSpan,
   isSolved,
   filledCount,
@@ -31,10 +32,26 @@ const els = {
   reveal: document.getElementById("reveal"),
   clear: document.getElementById("clear"),
   seed: document.getElementById("seed"),
+  entry: document.getElementById("entry"),
+  activeClue: document.getElementById("active-clue"),
+  flipDir: document.getElementById("flip-dir"),
+  activeRange: document.getElementById("active-clue-range"),
+  activeText: document.getElementById("active-clue-text"),
 };
 
 function formatRange(span) {
   return `${span.start}-${span.end}`;
+}
+
+function focusEntry() {
+  // Keep the caret ready so phone keyboards stay open after each letter.
+  els.entry.focus({ preventScroll: true });
+  try {
+    const len = els.entry.value.length;
+    els.entry.setSelectionRange(len, len);
+  } catch {
+    // Some browsers reject setSelectionRange on certain input types.
+  }
 }
 
 function renderClues(container, dir) {
@@ -55,10 +72,15 @@ function renderClues(container, dir) {
     btn.innerHTML =
       `<span class="clue-range">${formatRange(span)}</span>` +
       `<span class="clue-text">${escapeHtml(span.clue)}</span>`;
+    btn.addEventListener("pointerdown", (event) => {
+      // Keep / open the soft keyboard; don't let the button steal focus.
+      event.preventDefault();
+      focusEntry();
+    });
     btn.addEventListener("click", () => {
       state = selectClue(state, dir, index);
       render();
-      focusSpiral();
+      focusEntry();
     });
     container.appendChild(btn);
   });
@@ -81,7 +103,47 @@ function scalePath(path, vb) {
   return path.replace(
     /([ML])\s*([0-9.]+)\s+([0-9.]+)/g,
     (_, cmd, x, y) => `${cmd}${(Number(x) * vb).toFixed(1)} ${(Number(y) * vb).toFixed(1)}`,
-  ).replace(/Z/g, "Z");
+  );
+}
+
+function selectCell(index, { toggleDir = false } = {}) {
+  if (!state) return;
+  const prefer = toggleDir
+    ? state.activeDir === "inward"
+      ? "outward"
+      : "inward"
+    : state.activeDir;
+  const order = prefer === "outward" ? ["outward", "inward"] : ["inward", "outward"];
+
+  let chosen = null;
+  for (const dir of order) {
+    const matches = cluesCovering(state.puzzle, dir, index);
+    if (matches.length) {
+      chosen = { dir, index: matches[0] };
+      break;
+    }
+  }
+
+  state = { ...state, selected: index };
+  if (chosen) state = selectClue(state, chosen.dir, chosen.index);
+  // Keep the tapped cell selected even if selectClue jumped to an empty one.
+  state = { ...state, selected: index };
+}
+
+function renderActiveClue() {
+  if (!state) {
+    els.activeClue.hidden = true;
+    return;
+  }
+  const span = activeSpan(state);
+  if (!span) {
+    els.activeClue.hidden = true;
+    return;
+  }
+  els.activeClue.hidden = false;
+  els.flipDir.textContent = state.activeDir === "inward" ? "Inward" : "Outward";
+  els.activeRange.textContent = formatRange(span);
+  els.activeText.textContent = span.clue;
 }
 
 function renderSpiral() {
@@ -97,7 +159,6 @@ function renderSpiral() {
   parts.push(
     `<svg viewBox="0 0 ${vb} ${vb}" role="img" aria-label="Spiral puzzle grid with ${size} cells">`,
   );
-  // Circular outer rim like the printed puzzle.
   parts.push(
     `<circle class="spiral-rim" cx="${vb / 2}" cy="${vb / 2}" r="${0.48 * vb}" />`,
   );
@@ -128,22 +189,16 @@ function renderSpiral() {
   els.spiral.innerHTML = parts.join("");
 
   els.spiral.querySelectorAll(".cell").forEach((node) => {
+    node.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      focusEntry();
+    });
     node.addEventListener("click", () => {
       const index = Number(node.getAttribute("data-index"));
-      state = { ...state, selected: index };
-      // Prefer the inward clue covering this cell; fall back to outward.
-      const inwardIdx = state.puzzle.inward.findIndex(
-        (span) => index + 1 >= Math.min(span.start, span.end) && index + 1 <= Math.max(span.start, span.end),
-      );
-      if (inwardIdx >= 0) state = selectClue(state, "inward", inwardIdx);
-      else {
-        const outwardIdx = state.puzzle.outward.findIndex(
-          (span) => index + 1 >= Math.min(span.start, span.end) && index + 1 <= Math.max(span.start, span.end),
-        );
-        if (outwardIdx >= 0) state = selectClue(state, "outward", outwardIdx);
-      }
+      const sameCell = state && state.selected === index;
+      selectCell(index, { toggleDir: sameCell });
       render();
-      focusSpiral();
+      focusEntry();
     });
   });
 }
@@ -167,11 +222,8 @@ function render() {
   renderSpiral();
   renderClues(els.inward, "inward");
   renderClues(els.outward, "outward");
+  renderActiveClue();
   renderStatus();
-}
-
-function focusSpiral() {
-  els.spiral.focus({ preventScroll: true });
 }
 
 function advanceSelection(delta) {
@@ -196,36 +248,87 @@ function advanceSelection(delta) {
   }
 }
 
+function typeLetter(ch) {
+  if (!state || state.revealed) return;
+  state = setLetter(state, state.selected, ch);
+  advanceSelection(1);
+  render();
+  focusEntry();
+}
+
+function deleteLetter({ goBack }) {
+  if (!state || state.revealed) return;
+  if (goBack && state.guesses[state.selected]) {
+    state = setLetter(state, state.selected, "");
+  } else if (goBack) {
+    advanceSelection(-1);
+    state = setLetter(state, state.selected, "");
+  } else {
+    state = setLetter(state, state.selected, "");
+  }
+  render();
+  focusEntry();
+}
+
 function onKeyDown(event) {
   if (!state) return;
   if (event.metaKey || event.ctrlKey || event.altKey) return;
 
+  // Ignore keydown letter repeats when the entry input will also fire input —
+  // except for navigation / edit keys that input events do not cover well.
   const key = event.key;
-  if (key === "ArrowRight" || key === "ArrowDown") {
+  if (key === "ArrowRight" || key === "ArrowDown" || key === "Tab") {
     event.preventDefault();
-    advanceSelection(1);
+    advanceSelection(key === "Tab" && event.shiftKey ? -1 : 1);
     render();
+    focusEntry();
     return;
   }
   if (key === "ArrowLeft" || key === "ArrowUp") {
     event.preventDefault();
     advanceSelection(-1);
     render();
+    focusEntry();
     return;
   }
-  if (key === "Backspace" || key === "Delete") {
+  if (key === "Backspace") {
     event.preventDefault();
-    state = setLetter(state, state.selected, "");
-    if (key === "Backspace") advanceSelection(-1);
-    render();
+    deleteLetter({ goBack: true });
     return;
   }
-  if (/^[a-zA-Z]$/.test(key)) {
+  if (key === "Delete") {
     event.preventDefault();
-    state = setLetter(state, state.selected, key);
-    advanceSelection(1);
-    render();
+    deleteLetter({ goBack: false });
+    return;
   }
+  if (key === " " || key === "Enter") {
+    event.preventDefault();
+    // Flip inward/outward for the selected cell.
+    selectCell(state.selected, { toggleDir: true });
+    render();
+    focusEntry();
+    return;
+  }
+  if (/^[a-zA-Z]$/.test(key) && event.target !== els.entry) {
+    event.preventDefault();
+    typeLetter(key);
+  }
+}
+
+function onEntryInput() {
+  const raw = els.entry.value;
+  els.entry.value = "";
+  const letters = raw.replace(/[^a-zA-Z]/g, "");
+  if (!letters) return;
+  // Mobile keyboards sometimes dump a whole word; take the last letter typed.
+  typeLetter(letters.slice(-1));
+}
+
+function flipDirection() {
+  if (!state) return;
+  selectCell(state.selected, { toggleDir: true });
+  render();
+  focusEntry();
 }
 
 function readQuery() {
@@ -250,7 +353,6 @@ function newPuzzle(explicitSeed = null) {
   els.status.textContent = "Generating…";
   els.generate.disabled = true;
 
-  // Yield so the status can paint before a longer search.
   requestAnimationFrame(() => {
     const puzzle = generatePuzzleWithRetry({
       size,
@@ -266,7 +368,7 @@ function newPuzzle(explicitSeed = null) {
     state = createPlayState(puzzle);
     writeQuery(puzzle);
     render();
-    focusSpiral();
+    focusEntry();
   });
 }
 
@@ -285,6 +387,7 @@ function init() {
     if (!state) return;
     state = checkGuesses(state);
     render();
+    focusEntry();
   });
   els.reveal.addEventListener("click", () => {
     if (!state) return;
@@ -295,13 +398,36 @@ function init() {
     if (!state) return;
     state = clearGuesses(state);
     render();
+    focusEntry();
   });
 
-  els.spiral.tabIndex = 0;
-  els.spiral.addEventListener("keydown", onKeyDown);
+  els.flipDir.addEventListener("click", flipDirection);
+  els.activeClue.addEventListener("click", (event) => {
+    if (event.target === els.flipDir) return;
+    focusEntry();
+  });
+
+  els.entry.addEventListener("keydown", onKeyDown);
+  els.entry.addEventListener("input", onEntryInput);
+  // Desktop: typing while focus is elsewhere still works.
   document.addEventListener("keydown", (event) => {
-    if (event.target !== document.body && event.target !== els.spiral) return;
+    if (event.target === els.entry) return;
+    if (
+      event.target instanceof HTMLInputElement ||
+      event.target instanceof HTMLTextAreaElement ||
+      event.target instanceof HTMLSelectElement ||
+      (event.target instanceof HTMLElement && event.target.isContentEditable)
+    ) {
+      return;
+    }
     onKeyDown(event);
+  });
+
+  // Tap the board background to reopen the keyboard.
+  els.spiral.addEventListener("pointerdown", (event) => {
+    if (event.target.closest(".cell")) return;
+    event.preventDefault();
+    focusEntry();
   });
 
   newPuzzle(query.seed);
