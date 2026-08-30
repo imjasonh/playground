@@ -3,10 +3,11 @@
 Monte Carlo simulator for the
 [Tank Commander](https://github.com/imjasonh/tank-commander) tabletop rules.
 
-v1 covers **Skirmish**: 1v1 stock tanks, light terrain, core movement, turret
-arc, AT fire, crew wounds, and cook-off. The same heuristic AI plays both
-sides so result skew points at the rules (or first-player bias), not uneven
-bots. Infantry, APCs, upgrades, air strikes, and missions come later.
+v1 covers **Skirmish**: 1v1 stock tanks (AT + HE loadable), light terrain, core
+movement, turret arc, combat, crew wounds, fire, and cook-off. The same
+heuristic AI plays both sides so result skew points at the rules (or
+first-player bias), not uneven bots. Infantry, APCs, paid upgrades, air
+strikes, and missions come later.
 
 ## Run
 

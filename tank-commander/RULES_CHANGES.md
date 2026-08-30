@@ -60,8 +60,45 @@ still worth watching when we add upgrades or missions.
 
 - Soften first-player bias (simultaneous activation, or defender places after
   initiative).
-- Stock HE or a one-shot ready-rack so fires show up in Skirmish drama stats.
 - Upgrade loadout matchups.
+- Tune the AI's HE appetite if table players load HE less often than ~75%.
+
+---
+
+## 2026-08-30 — Stock tanks can load HE (no upgrade)
+
+**Rule.** Skirmish stock tanks always have HE available. They still start
+loaded with AT; `Load` may choose AT or HE. The old 1-point "High-Explosive
+Rounds" upgrade is not spent in this scenario (upgrade economy comes later).
+
+**Why.** After the 1/6 house rule, drama looked healthy except fires stayed
+at 0.00 — Skirmish had no path to the fire / cook-off narrative without HE.
+
+**Effect on balance (200 games, seed 7; baseline = post-1/6 house rule):**
+
+| Metric | Before (1/6 only) | After (+ stock HE) | Delta |
+|--------|------------------:|-------------------:|------:|
+| Red / Blue / Draw | 113 / 85 / 2 | 103 / 95 / 2 | sides closer |
+| First-player win share | 57% | 57% | unchanged |
+| Avg activations | 9.0 | 9.3 | +0.3 |
+| Timed out | 4% | 5% | still rare |
+| Avg shots (AT / HE) | 14.8 (all AT) | 13.1 (3.1 / **10.0**) | HE-heavy mix |
+| Hit rate | 44% | 44% | unchanged |
+| Avg pens | 5.42 | 4.04 | fewer hull punches |
+| Avg glances | 1.15 | 1.67 | more soft hits |
+| Avg fires | **0.00** | **1.35** | cinema unlocked |
+| Avg cook-offs | 0.47 | 0.65 | slightly up |
+| Avg crew wounds / kills | 4.50 / 1.52 | 3.78 / 1.09 | gentler |
+| Comebacks | 87 | 91 | still common |
+
+**Larger batch (500 games, seed 1):** ~1.43 fires/game, ~9.9 HE shots vs
+~3.2 AT, 4% timeouts, first-player share still ~58%, no stalemate flags.
+
+**Verdict.** Keep. Fires land about once per game, pens soften without
+killing decisiveness, and Red/Blue drifted toward even. First-player edge
+is untouched. Caveat: the heuristic AI loads HE for ~75% of shots — higher
+than many humans might — so treat fire rates as an upper bound until a
+human playtest or a less HE-hungry policy.
 
 ---
 
