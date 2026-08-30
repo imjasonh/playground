@@ -88,8 +88,8 @@ function renderSpiral() {
   if (!state) return;
   const { size } = state.puzzle;
   const layout = spiralLayout(size);
-  const font = cellFontScale(size);
-  const numFont = cellNumberScale(size);
+  const font = cellFontScale(size, layout.trackWidth);
+  const numFont = cellNumberScale(size, layout.trackWidth);
   const hot = highlightSet();
   const vb = 1000;
   const parts = [];
