@@ -1001,8 +1001,9 @@ impl Game {
         }
 
         let shooter_pos = self.tank(tank_id).pos;
-        // Forest −1 only; dig-in does not stack.
-        let penalty = self.board.accuracy_penalty_vs(self.tank(target_id).pos);
+        let penalty = self
+            .board
+            .accuracy_penalty_vs(self.tank(tank_id).pos, self.tank(target_id).pos);
         let impact = self.tank(target_id).impact_facing(shooter_pos);
         let acc = if buffs.hit_on_2 {
             2
@@ -1063,7 +1064,9 @@ impl Game {
         let target_kind = self.tank(target_id).kind;
 
         self.shots_fired += 1;
-        let penalty = self.board.accuracy_penalty_vs(self.tank(target_id).pos);
+        let penalty = self
+            .board
+            .accuracy_penalty_vs(self.tank(tank_id).pos, self.tank(target_id).pos);
         let impact = self.tank(target_id).impact_facing(self.tank(tank_id).pos);
         let acc = if buffs.hit_on_2 {
             2

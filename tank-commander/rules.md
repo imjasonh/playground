@@ -58,10 +58,13 @@ lists apply.
 
 Spend up to 10 upgrade points before the game:
 
-- **Armor** (1 per facing, max +3 per facing): raise that facing by 1.
-  - Side cannot exceed front; rear cannot exceed side.
-  - **Heavy armor:** if any facing took all 3 points, max move −1.
-  - **Light armor:** if you bought no armor points, max move +1.
+- **Armor** (1 per facing): raise that facing by 1.
+  - **Tanks:** max **+3** per facing. Side cannot exceed front; rear cannot
+    exceed side. **Heavy armor:** if any facing took all 3 points, max move −1.
+    **Light armor:** if you bought no armor points, max move +1.
+  - **APCs:** max **+2** per facing (same side ≤ front, rear ≤ side). Heavy
+    armor does not apply (cannot reach +3). Light armor still applies if no
+    armor points were bought.
 - **Engine** (1): max move +1 (stacks with light armor; can offset heavy).
 - **Extended barrel** (1): main-gun range +1.
 - **Enhanced optics** (1): accuracy +1 (better target number).
@@ -240,7 +243,7 @@ or use AI weapons against other infantry.
 | Open | No effect |
 | Mud | 2 actions to leave |
 | Rubble | 2 actions to leave |
-| Forest | Enemy accuracy −1 vs a unit **in** the hex (not “behind”; see Unimplemented) |
+| Forest | Enemy accuracy −1 vs a unit **in** or **behind** a forest (intervening forest on the line of fire; forest does not block LOS) |
 | Building | Impassable; blocks LOS. Destroying buildings by fire is unimplemented. |
 | Hill (advanced) | Unimplemented in the simulator — tabletop reference only. |
 | Mines (advanced) | Entering: AT strength-6 pen check; then remove mine |
@@ -282,7 +285,7 @@ unless a scenario says otherwise).
 
 1. Ending a **step in forest** puts the squad in cover (`in cover`). Leaving
    forest clears cover. **Take cover** also digs in (open ground included).
-2. Forest already gives −1 to hit. Dig-in does **not** stack a second −1.
+2. Forest already gives −1 to hit (in or behind). Dig-in does **not** stack a second −1.
 3. **Main gun, missiles, and air blast kill through cover** — a hit destroys
    the squad (no “pin instead of kill” save).
 4. **AI spray** vs a dug-in squad: on a hit, spend cover and apply Suppressed
@@ -301,7 +304,8 @@ Charge into range or die under HE/AT.
 |-------|----------|------|---------|----------|----------|
 | 4/4/4 | 4+ | 2 | 3 | 4 | 3 |
 
-4 upgrade points at list-building (armor, engine, smoke — as upstream).
+4 upgrade points at list-building (armor max **+2**/facing, engine, smoke —
+as upstream).
 
 **Actions:** move, turn, fire AI, deploy smoke, extinguish fire, **embark /
 drop off** (see [Embarkation](#embarkation)).
@@ -510,14 +514,13 @@ Upstream:
 Simulator: only `max_move + 1` for that activation. No double-move-for-one-AP
 and no three-hex straight special.
 
-### APC armor cap (max +2 / facing) — **partial**
+### APC armor cap (max +2 / facing) — **implemented**
 
 Upstream:
 
 > **Armor** (1 point per facing, max 2 per facing): Increases the armor of the tank by 1 point.
 
-Simulator list builder uses the tank facing cap (**max +3**) for APCs too.
-With a 4-point APC budget you can buy front +3, which upstream forbids.
+Live rules / list builder: APC facings max **+2**; tanks remain max **+3**.
 
 ### End-of-turn fire / cook-off timing — **replaced**
 
@@ -531,14 +534,14 @@ Simulator: fire ticks at the end of **that unit’s activation**; disabled
 cook-off rolls after **every** activation on the board. Multi-unit games tick
 much faster than upstream’s shared “turn.”
 
-### Forest “behind” cover — **partial**
+### Forest “behind” cover — **implemented**
 
 Upstream:
 
 > **Forest**: When a tank is in or behind a forest space, enemy accuracy is -1. No movement penalty.
 
-Simulator: −1 only when the **target hex is Forest**. Line-of-sight “behind”
-forest is not modeled.
+Live rules: −1 when the target hex is Forest, or any intervening hex on the
+line of fire is Forest (forest never blocks LOS).
 
 ### Destroy buildings by fire — **missing**
 

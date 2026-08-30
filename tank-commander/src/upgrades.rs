@@ -43,20 +43,33 @@ impl Loadout {
         self.armor_front + self.armor_side + self.armor_rear
     }
 
-    /// Side ≤ front, rear ≤ side; each facing 0..=3; mines 0..=3.
+    /// Side ≤ front, rear ≤ side; each facing within the kind's max; mines 0..=3.
     pub fn is_legal(&self) -> bool {
-        self.armor_front <= 3
-            && self.armor_side <= 3
-            && self.armor_rear <= 3
+        self.is_legal_for(UnitKind::Tank)
+    }
+
+    /// Tank facings max +3; APC facings max +2 (upstream).
+    pub fn is_legal_for(&self, kind: UnitKind) -> bool {
+        let max = armor_facing_max(kind);
+        self.armor_front <= max
+            && self.armor_side <= max
+            && self.armor_rear <= max
             && self.armor_side <= self.armor_front
             && self.armor_rear <= self.armor_side
             && self.mines <= 3
     }
 }
 
+fn armor_facing_max(kind: UnitKind) -> u8 {
+    match kind {
+        UnitKind::Apc => 2,
+        UnitKind::Tank | UnitKind::Infantry => 3,
+    }
+}
+
 /// Apply a legal loadout to a stock unit. Panics if illegal (callers validate).
 pub fn apply_loadout(tank: &mut Tank, load: &Loadout) {
-    debug_assert!(load.is_legal());
+    debug_assert!(load.is_legal_for(tank.kind));
     tank.armor.front += i32::from(load.armor_front);
     tank.armor.side += i32::from(load.armor_side);
     tank.armor.rear += i32::from(load.armor_rear);
@@ -184,13 +197,15 @@ pub fn spend_up_to<R: Rng>(
     // Drop some options so lists trade off instead of always buying everything.
     menu.retain(|_| rng.gen_bool(0.55));
 
+    let kind = tank.kind;
+    let armor_max = armor_facing_max(kind);
     let mut spent = load.cost();
     for buy in menu {
         let cost = buy.cost();
         if spent + cost > budget {
             continue;
         }
-        if !buy.can_add(&load) {
+        if !buy.can_add(&load, kind) {
             continue;
         }
         buy.add(&mut load);
@@ -216,7 +231,7 @@ pub fn spend_up_to<R: Rng>(
             if matches!(buy, Buy::Mine) && !allow_mines {
                 continue;
             }
-            if spent >= budget || !buy.can_add(&load) {
+            if spent >= budget || !buy.can_add(&load, kind) {
                 continue;
             }
             let cost = buy.cost();
@@ -229,11 +244,11 @@ pub fn spend_up_to<R: Rng>(
             break;
         }
         if !filled {
-            // Last resort: front armor if still legal.
-            if load.armor_front < 3 {
+            // Last resort: front armor if still legal for this kind.
+            if load.armor_front < armor_max {
                 let mut trial = load.clone();
                 trial.armor_front += 1;
-                if trial.is_legal() && spent < budget {
+                if trial.is_legal_for(kind) && spent < budget {
                     load.armor_front += 1;
                     spent += 1;
                     continue;
@@ -243,7 +258,7 @@ pub fn spend_up_to<R: Rng>(
         }
     }
 
-    debug_assert!(load.is_legal());
+    debug_assert!(load.is_legal_for(kind));
     debug_assert!(load.cost() <= budget);
     apply_loadout(tank, &load);
     load
@@ -298,7 +313,8 @@ impl Buy {
         1
     }
 
-    fn can_add(self, load: &Loadout) -> bool {
+    fn can_add(self, load: &Loadout, kind: UnitKind) -> bool {
+        let armor_max = armor_facing_max(kind);
         match self {
             Buy::Smoke => !load.smoke,
             Buy::Medkit => !load.medkit,
@@ -307,9 +323,9 @@ impl Buy {
             Buy::Barrel => !load.extended_barrel,
             Buy::Engine => !load.engine,
             Buy::AntiInfantry => !load.anti_infantry,
-            Buy::ArmorFront => load.armor_front < 3,
-            Buy::ArmorSide => load.armor_side < 3 && load.armor_side < load.armor_front,
-            Buy::ArmorRear => load.armor_rear < 3 && load.armor_rear < load.armor_side,
+            Buy::ArmorFront => load.armor_front < armor_max,
+            Buy::ArmorSide => load.armor_side < armor_max && load.armor_side < load.armor_front,
+            Buy::ArmorRear => load.armor_rear < armor_max && load.armor_rear < load.armor_side,
             Buy::Mine => load.mines < 3,
         }
     }
@@ -431,6 +447,38 @@ mod tests {
         );
         // Heavy (−1) + engine (+1) → same as base; no light bonus.
         assert_eq!(t.max_move, base_move);
+    }
+
+    #[test]
+    fn apc_armor_facing_max_is_two() {
+        let ok = Loadout {
+            armor_front: 2,
+            armor_side: 1,
+            armor_rear: 1,
+            ..Loadout::default()
+        };
+        assert!(ok.is_legal_for(UnitKind::Apc));
+        let too_much = Loadout {
+            armor_front: 3,
+            armor_side: 1,
+            armor_rear: 0,
+            ..Loadout::default()
+        };
+        assert!(!too_much.is_legal_for(UnitKind::Apc));
+        assert!(too_much.is_legal_for(UnitKind::Tank));
+
+        for seed in 0..40u64 {
+            let mut a = Tank::stock_apc(0, Side::Red, Hex::new(0, 0), Facing::E, "A");
+            let mut rr = ChaCha8Rng::seed_from_u64(seed);
+            let load = spend_up_to(&mut a, 4, false, &mut rr);
+            assert!(
+                load.is_legal_for(UnitKind::Apc),
+                "APC loadout illegal: {load:?}"
+            );
+            assert!(load.armor_front <= 2);
+            assert!(load.armor_side <= 2);
+            assert!(load.armor_rear <= 2);
+        }
     }
 
     #[test]
