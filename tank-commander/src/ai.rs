@@ -108,6 +108,11 @@ fn plan_for_unit<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         return vec![Action::ExtinguishFire];
     }
 
+    // Lieutenant cover is free and urgent — restore a killed role before anything else.
+    if let Some(cover) = lieutenant_cover_plan(game, unit_id) {
+        return cover;
+    }
+
     match unit.kind {
         UnitKind::Infantry => infantry_plan(game, unit_id, rng),
         UnitKind::Apc => apc_plan(game, unit_id, rng),
@@ -115,11 +120,101 @@ fn plan_for_unit<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
     }
 }
 
+fn lieutenant_cover_plan(game: &Game, unit_id: u8) -> Option<Vec<Action>> {
+    let tank = game.tank(unit_id);
+    let lt = tank
+        .crew
+        .iter()
+        .find(|c| c.role == crate::unit::CrewRole::Lieutenant && c.status != crate::unit::CrewStatus::Killed)?;
+    if lt.covering.is_some() {
+        return None;
+    }
+    // Prefer gunner (keep shooting), then commander, driver, loader.
+    for role in [
+        crate::unit::CrewRole::Gunner,
+        crate::unit::CrewRole::Commander,
+        crate::unit::CrewRole::Driver,
+        crate::unit::CrewRole::Loader,
+    ] {
+        if tank
+            .crew
+            .iter()
+            .any(|c| c.role == role && c.status == crate::unit::CrewStatus::Killed)
+        {
+            return Some(vec![Action::LieutenantCover { role }]);
+        }
+    }
+    None
+}
+
+/// Place smoke on an intervening hex when an enemy has LOS into this unit.
+fn smoke_break_los_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Option<Vec<Action>> {
+    let unit = game.tank(unit_id);
+    if !unit.has_smoke_launcher || unit.smoke_used {
+        return None;
+    }
+    let enemies = game.enemy_units(unit.side);
+    let threats: Vec<&crate::unit::Tank> = enemies
+        .iter()
+        .copied()
+        .filter(|e| {
+            if e.destroyed {
+                return false;
+            }
+            // Enemy can shoot us (main gun or AI).
+            (e.gun_range > 0 && game.can_see(e, unit))
+                || (e.ai_range > 0 && game.can_see_ai(e, unit))
+        })
+        .collect();
+    if threats.is_empty() {
+        return None;
+    }
+    // Prefer smoking when threatened and not already about to delete the threat.
+    if !rng.gen_bool(0.7) {
+        return None;
+    }
+    let threat = threats
+        .iter()
+        .min_by_key(|e| unit.pos.distance(e.pos))
+        .copied()?;
+    let mut candidates: Vec<Hex> = unit
+        .pos
+        .line_through(threat.pos)
+        .into_iter()
+        .filter(|h| unit.pos.distance(*h) <= 2 && *h != unit.pos && *h != threat.pos)
+        .filter(|h| game.board.contains(*h))
+        .collect();
+    if candidates.is_empty() {
+        // Fallback: any hex within 2 toward the threat.
+        for i in 0..6u8 {
+            let n = unit.pos.neighbor(Facing::from_index(i));
+            if game.board.contains(n) && n.distance(threat.pos) < unit.pos.distance(threat.pos) {
+                candidates.push(n);
+            }
+        }
+    }
+    let hex = *candidates.choose(rng)?;
+    Some(vec![Action::DeploySmoke { hex }])
+}
+
 fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
     let tank = game.tank(tank_id);
     let enemies: Vec<&crate::unit::Tank> = game.enemy_units(tank.side);
     if enemies.is_empty() {
         return Vec::new();
+    }
+
+    let visible: Vec<&crate::unit::Tank> = enemies
+        .iter()
+        .copied()
+        .filter(|e| game.can_see(tank, e))
+        .collect();
+
+    // Smoke to break incoming LOS when we cannot shoot back this activation.
+    if visible.is_empty() {
+        if let Some(smoke) = smoke_break_los_plan(game, tank_id, rng) {
+            return smoke;
+        }
     }
 
     // Air strike when enemies are nearby — don't wait for a perfect cluster.
@@ -138,11 +233,6 @@ fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
         }
     }
 
-    let visible: Vec<&crate::unit::Tank> = enemies
-        .iter()
-        .copied()
-        .filter(|e| game.can_see(tank, e))
-        .collect();
     if let Some(target) = visible
         .iter()
         .min_by_key(|e| (e.hull_points, tank.pos.distance(e.pos)))
@@ -264,14 +354,24 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
 fn apc_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
     let unit = game.tank(unit_id);
     let enemies = game.enemy_units(unit.side);
+
+    if let Some(smoke) = smoke_break_los_plan(game, unit_id, rng) {
+        return smoke;
+    }
+
     let infantry: Vec<&crate::unit::Tank> = enemies
         .iter()
         .copied()
         .filter(|e| e.kind == UnitKind::Infantry)
         .collect();
 
-    // Kill infantry first when in AI range.
-    for enemy in &infantry {
+    // Kill / pin infantry first when in AI range (including dug-in).
+    let mut ranked_inf = infantry.clone();
+    ranked_inf.sort_by_key(|e| {
+        // Prefer uncovered (easier kills) but still shoot cover to exercise dig-in pin.
+        (if e.in_cover { 1 } else { 0 }, unit.pos.distance(e.pos))
+    });
+    for enemy in &ranked_inf {
         if game.can_see_ai(unit, enemy) {
             return vec![Action::FireAi { target: enemy.id }];
         }
@@ -739,8 +839,11 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
         Action::FireMissile { .. } | Action::FireAi { .. } => {
             node.ap_left -= 1;
         }
-        Action::TakeCover | Action::CallAirStrike { .. } => {
+        Action::TakeCover | Action::CallAirStrike { .. } | Action::DeploySmoke { .. } => {
             node.ap_left -= 1;
+        }
+        Action::LieutenantCover { .. } => {
+            // Free action.
         }
         Action::Load(kind) => {
             let cost = if node.buffs.free_load {
@@ -858,6 +961,31 @@ fn evaluate_tactical(
     }
     if node.buffs.booming_used {
         score += 6.0;
+    }
+    if node
+        .actions
+        .iter()
+        .any(|a| matches!(a, Action::DeploySmoke { .. }))
+    {
+        // Prefer plans that break enemy LOS after smoking.
+        let smoked = node.actions.iter().find_map(|a| match a {
+            Action::DeploySmoke { hex } => Some(*hex),
+            _ => None,
+        });
+        if let Some(h) = smoked {
+            let mut blocked = false;
+            for mid in node.pos.line_through(enemy_pos) {
+                if mid == h {
+                    blocked = true;
+                    break;
+                }
+            }
+            if blocked {
+                score += 25.0;
+            } else {
+                score += 8.0;
+            }
+        }
     }
 
     score

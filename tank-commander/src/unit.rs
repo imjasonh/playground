@@ -156,6 +156,12 @@ pub struct Tank {
     /// Tank upgrade: may call one air strike this battle.
     pub has_air_support: bool,
     pub air_strike_used: bool,
+    /// Upgrade: place smoke once this battle (range 2).
+    pub has_smoke_launcher: bool,
+    pub smoke_used: bool,
+    /// Upgrade: first crew injury ignores its penalty once.
+    pub has_medkit: bool,
+    pub medkit_used: bool,
     /// Marked after activating; cleared when the side starts a new pass
     /// (every operational unit has activated once). See RULES_CHANGES.md.
     pub activated_this_pass: bool,
@@ -199,6 +205,10 @@ impl Tank {
             in_cover: false,
             has_air_support: false,
             air_strike_used: false,
+            has_smoke_launcher: false,
+            smoke_used: false,
+            has_medkit: false,
+            medkit_used: false,
             activated_this_pass: false,
             moves_this_turn: 0,
         }
@@ -241,6 +251,10 @@ impl Tank {
             in_cover: false,
             has_air_support: false,
             air_strike_used: false,
+            has_smoke_launcher: false,
+            smoke_used: false,
+            has_medkit: false,
+            medkit_used: false,
             activated_this_pass: false,
             moves_this_turn: 0,
         }
@@ -271,7 +285,7 @@ impl Tank {
             max_hull_points: 1,
             actions_per_turn: 3,
             max_move: 2,
-            gun_range: 4, // missile launcher — reach plaza from forest approaches
+            gun_range: 4, // missile launcher
             ai_range: 2,
             loaded: None, // missiles need no load
             has_he: true,
@@ -283,9 +297,33 @@ impl Tank {
             in_cover: false,
             has_air_support: false,
             air_strike_used: false,
+            has_smoke_launcher: false,
+            smoke_used: false,
+            has_medkit: false,
+            medkit_used: false,
             activated_this_pass: false,
             moves_this_turn: 0,
         }
+    }
+
+    /// Stock tank with smoke launcher, medkit, and lieutenant (1+1+1 upgrade pts).
+    pub fn with_field_kit(mut self) -> Self {
+        self.has_smoke_launcher = true;
+        self.has_medkit = true;
+        if !self
+            .crew
+            .iter()
+            .any(|c| c.role == CrewRole::Lieutenant)
+        {
+            self.crew.push(CrewMember::healthy(CrewRole::Lieutenant));
+        }
+        self
+    }
+
+    /// APC with a smoke launcher.
+    pub fn with_smoke(mut self) -> Self {
+        self.has_smoke_launcher = true;
+        self
     }
 
     pub fn turret_facing(&self) -> Facing {
@@ -296,22 +334,32 @@ impl Tank {
         !self.disabled && !self.destroyed && self.hull_points > 0
     }
 
+    /// Status of a core crew role, including lieutenant cover (acts as wounded).
     pub fn crew_status(&self, role: CrewRole) -> CrewStatus {
-        if let Some(c) = self.crew.iter().find(|c| c.role == role) {
-            return c.status;
+        if role == CrewRole::Lieutenant {
+            return self
+                .crew
+                .iter()
+                .find(|c| c.role == CrewRole::Lieutenant)
+                .map(|c| c.status)
+                .unwrap_or(CrewStatus::Killed);
         }
-        // Lieutenant covering a role acts as wounded for that role.
-        if let Some(lt) = self
-            .crew
-            .iter()
-            .find(|c| c.role == CrewRole::Lieutenant && c.covering == Some(role))
-        {
-            return match lt.status {
-                CrewStatus::Killed => CrewStatus::Killed,
-                _ => CrewStatus::Wounded,
-            };
+        let own = self.crew.iter().find(|c| c.role == role).map(|c| c.status);
+        if let Some(status) = own {
+            if status != CrewStatus::Killed {
+                return status;
+            }
         }
-        CrewStatus::Killed
+        // Role missing or killed — living LT covering acts as wounded.
+        if let Some(lt) = self.crew.iter().find(|c| {
+            c.role == CrewRole::Lieutenant
+                && c.status != CrewStatus::Killed
+                && c.covering == Some(role)
+        }) {
+            let _ = lt;
+            return CrewStatus::Wounded;
+        }
+        own.unwrap_or(CrewStatus::Killed)
     }
 
     pub fn effective_actions(&self) -> i32 {
@@ -442,5 +490,35 @@ mod tests {
     fn stock_tank_can_load_he() {
         let t = Tank::stock(0, Side::Red, Hex::new(0, 0), Facing::E, "T");
         assert!(t.has_he);
+    }
+
+    #[test]
+    fn lieutenant_covers_killed_gunner_as_wounded() {
+        let mut t = Tank::stock(0, Side::Red, Hex::new(0, 0), Facing::E, "T").with_field_kit();
+        let gunner = t.crew.iter_mut().find(|c| c.role == CrewRole::Gunner).unwrap();
+        gunner.status = CrewStatus::Killed;
+        let lt = t
+            .crew
+            .iter_mut()
+            .find(|c| c.role == CrewRole::Lieutenant)
+            .unwrap();
+        lt.covering = Some(CrewRole::Gunner);
+        assert_eq!(t.crew_status(CrewRole::Gunner), CrewStatus::Wounded);
+        t.loaded = Some(RoundKind::At);
+        assert!(t.can_fire());
+    }
+
+    #[test]
+    fn field_kit_adds_smoke_medkit_lieutenant() {
+        let t = Tank::stock(0, Side::Red, Hex::new(0, 0), Facing::E, "T").with_field_kit();
+        assert!(t.has_smoke_launcher);
+        assert!(t.has_medkit);
+        assert_eq!(
+            t.crew
+                .iter()
+                .filter(|c| c.role == CrewRole::Lieutenant)
+                .count(),
+            1
+        );
     }
 }

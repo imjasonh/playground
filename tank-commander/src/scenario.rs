@@ -127,8 +127,8 @@ pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
     let starts = [RED_START, BLUE_START];
     let egress = [Hex::offset(2, 4), Hex::offset(6, 7)];
     let board = build_board(&SKIRMISH_MAP, rng, &starts, &egress);
-    let red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One");
-    let blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One");
+    let red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One").with_field_kit();
+    let blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One").with_field_kit();
     let mut game = Game::new(board, vec![red, blue], coin_flip(rng), 20, "skirmish");
     // Terrain-only spoil: unit nudges skewed color on offset starts.
     second_player_nudge_terrain(&mut game, 2);
@@ -173,12 +173,12 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     let board = build_board(&layout, rng, &reserved, &egress);
 
     let tanks = vec![
-        Tank::stock(0, Side::Red, red_starts[0], Facing::E, "Red Alpha"),
-        Tank::stock(1, Side::Red, red_starts[1], Facing::E, "Red Bravo"),
-        Tank::stock(2, Side::Red, red_starts[2], Facing::E, "Red Charlie"),
-        Tank::stock(3, Side::Blue, blue_starts[0], Facing::W, "Blue Alpha"),
-        Tank::stock(4, Side::Blue, blue_starts[1], Facing::W, "Blue Bravo"),
-        Tank::stock(5, Side::Blue, blue_starts[2], Facing::W, "Blue Charlie"),
+        Tank::stock(0, Side::Red, red_starts[0], Facing::E, "Red Alpha").with_field_kit(),
+        Tank::stock(1, Side::Red, red_starts[1], Facing::E, "Red Bravo").with_field_kit(),
+        Tank::stock(2, Side::Red, red_starts[2], Facing::E, "Red Charlie").with_field_kit(),
+        Tank::stock(3, Side::Blue, blue_starts[0], Facing::W, "Blue Alpha").with_field_kit(),
+        Tank::stock(4, Side::Blue, blue_starts[1], Facing::W, "Blue Bravo").with_field_kit(),
+        Tank::stock(5, Side::Blue, blue_starts[2], Facing::W, "Blue Charlie").with_field_kit(),
     ];
     let mut game = Game::new(board, tanks, coin_flip(rng), 200, "platoon").with_stalemate(40);
     second_player_setup(&mut game, 3);
@@ -237,26 +237,30 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
     };
     let board = build_board(&layout, rng, &reserved, &egress);
 
-    let mut red_t0 = Tank::stock(0, Side::Red, red_tanks[0], Facing::E, "Red Tank A");
+    let mut red_t0 =
+        Tank::stock(0, Side::Red, red_tanks[0], Facing::E, "Red Tank A").with_field_kit();
     red_t0.has_air_support = true;
-    let mut red_t1 = Tank::stock(1, Side::Red, red_tanks[1], Facing::E, "Red Tank B");
+    let mut red_t1 =
+        Tank::stock(1, Side::Red, red_tanks[1], Facing::E, "Red Tank B").with_field_kit();
     red_t1.has_air_support = true;
-    let mut blue_t0 = Tank::stock(6, Side::Blue, blue_tanks[0], Facing::W, "Blue Tank A");
+    let mut blue_t0 =
+        Tank::stock(6, Side::Blue, blue_tanks[0], Facing::W, "Blue Tank A").with_field_kit();
     blue_t0.has_air_support = true;
-    let mut blue_t1 = Tank::stock(7, Side::Blue, blue_tanks[1], Facing::W, "Blue Tank B");
+    let mut blue_t1 =
+        Tank::stock(7, Side::Blue, blue_tanks[1], Facing::W, "Blue Tank B").with_field_kit();
     blue_t1.has_air_support = true;
 
     let tanks = vec![
         red_t0,
         red_t1,
-        Tank::stock_apc(2, Side::Red, red_apcs[0], Facing::E, "Red APC A"),
-        Tank::stock_apc(3, Side::Red, red_apcs[1], Facing::E, "Red APC B"),
+        Tank::stock_apc(2, Side::Red, red_apcs[0], Facing::E, "Red APC A").with_smoke(),
+        Tank::stock_apc(3, Side::Red, red_apcs[1], Facing::E, "Red APC B").with_smoke(),
         Tank::stock_infantry(4, Side::Red, red_inf[0], Facing::E, "Red Squad A"),
         Tank::stock_infantry(5, Side::Red, red_inf[1], Facing::E, "Red Squad B"),
         blue_t0,
         blue_t1,
-        Tank::stock_apc(8, Side::Blue, blue_apcs[0], Facing::W, "Blue APC A"),
-        Tank::stock_apc(9, Side::Blue, blue_apcs[1], Facing::W, "Blue APC B"),
+        Tank::stock_apc(8, Side::Blue, blue_apcs[0], Facing::W, "Blue APC A").with_smoke(),
+        Tank::stock_apc(9, Side::Blue, blue_apcs[1], Facing::W, "Blue APC B").with_smoke(),
         Tank::stock_infantry(10, Side::Blue, blue_inf[0], Facing::W, "Blue Squad A"),
         Tank::stock_infantry(11, Side::Blue, blue_inf[1], Facing::W, "Blue Squad B"),
     ];

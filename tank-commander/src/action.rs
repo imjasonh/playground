@@ -37,6 +37,14 @@ pub enum Action {
     CallAirStrike {
         hex: Hex,
     },
+    /// Place smoke in a hex within range 2 (smoke launcher upgrade).
+    DeploySmoke {
+        hex: Hex,
+    },
+    /// Lieutenant covers a killed core role (acts as wounded for that role).
+    LieutenantCover {
+        role: crate::unit::CrewRole,
+    },
     /// Commander ability: +2 actions this turn (applied when planning).
     AbilityBoomingVoice,
     /// Driver ability: next Move this turn counts as two forward spaces, or
@@ -72,6 +80,8 @@ impl Action {
             Action::ExtinguishFire => "Extinguish",
             Action::TakeCover => "TakeCover",
             Action::CallAirStrike { .. } => "CallAirStrike",
+            Action::DeploySmoke { .. } => "DeploySmoke",
+            Action::LieutenantCover { .. } => "LieutenantCover",
             Action::AbilityBoomingVoice => "Ability:BoomingVoice",
             Action::AbilityMoveMoveMove => "Ability:MoveMoveMove",
             Action::AbilityBringItDown => "Ability:BringItDown",

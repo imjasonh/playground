@@ -30,6 +30,9 @@ pub struct GameReport {
     pub abilities_used: u32,
     pub air_strikes: u32,
     pub infantry_kills: u32,
+    pub smoke_deployed: u32,
+    pub medkit_saves: u32,
+    pub lt_covers: u32,
     pub red_units_left: u32,
     pub blue_units_left: u32,
     /// True when the game hit the activation cap with both sides still fighting.
@@ -112,6 +115,9 @@ impl GameReport {
             abilities_used: game.abilities_used,
             air_strikes: game.air_strikes_resolved,
             infantry_kills: game.infantry_kills,
+            smoke_deployed: game.smoke_deployed,
+            medkit_saves: game.medkit_saves,
+            lt_covers: game.lt_covers,
             red_units_left,
             blue_units_left,
             timed_out: hit_cap && red_alive && blue_alive && !ended_by_stalemate,
@@ -201,6 +207,9 @@ pub struct AggregateReport {
     pub avg_abilities_used: f64,
     pub avg_air_strikes: f64,
     pub avg_infantry_kills: f64,
+    pub avg_smoke_deployed: f64,
+    pub avg_medkit_saves: f64,
+    pub avg_lt_covers: f64,
     pub hit_rate: f64,
     pub suggestions: Vec<String>,
 }
@@ -279,6 +288,9 @@ impl AggregateReport {
             avg_abilities_used: sum_f(|r| r.abilities_used),
             avg_air_strikes: sum_f(|r| r.air_strikes),
             avg_infantry_kills: sum_f(|r| r.infantry_kills),
+            avg_smoke_deployed: sum_f(|r| r.smoke_deployed),
+            avg_medkit_saves: sum_f(|r| r.medkit_saves),
+            avg_lt_covers: sum_f(|r| r.lt_covers),
             hit_rate,
             suggestions: Vec::new(),
         };
@@ -461,6 +473,12 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
         out.push_str(&format!(
             "Combined arms: avg air strikes {:.2}, infantry kills {:.2}\n",
             agg.avg_air_strikes, agg.avg_infantry_kills
+        ));
+    }
+    if agg.avg_smoke_deployed > 0.0 || agg.avg_medkit_saves > 0.0 || agg.avg_lt_covers > 0.0 {
+        out.push_str(&format!(
+            "Field kit: avg smoke {:.2}, medkit saves {:.2}, LT covers {:.2}\n",
+            agg.avg_smoke_deployed, agg.avg_medkit_saves, agg.avg_lt_covers
         ));
     }
     out.push_str(&format!(
