@@ -252,7 +252,7 @@ scenario says).
 | Anti-infantry (AI) | 2 | Vs infantry |
 
 **Actions:** step (any facing), fire missile, fire AI, take cover, capture
-objective, disarm mines, mount / dismount (as upstream).
+objective, disarm mines, **mount / dismount** (see [Embarkation](#embarkation)).
 
 **House rule vs upstream Take Cover.** Upstream forbids moving or firing while
 in cover. Here, dig-in only affects how you take hits (and revealing fire when
@@ -288,11 +288,39 @@ Charge into range or die under HE/AT.
 
 4 upgrade points at list-building (armor, engine, smoke — as upstream).
 
-**Actions:** move, turn, fire AI, deploy smoke, extinguish fire.
+**Actions:** move, turn, fire AI, deploy smoke, extinguish fire, **embark /
+drop off** (see [Embarkation](#embarkation)).
 
 **House rule — AI spray vs vehicles.** APC (and infantry) AI weapons may
 target vehicles. A hit **suppresses** (no pen, no hull damage). Vs infantry, a
 hit kills (or pins if in cover, above).
+
+### Embarkation
+
+**House rules** (filling in upstream Mount Up / ride inside APC):
+
+1. **Capacity:** each APC carries **one** infantry squad.
+2. **Mount Up** (infantry, 1 action): board an **adjacent** friendly APC that
+   has a free seat. You may mount **or** dismount at most once per infantry
+   activation.
+3. **Embark** (APC, 1 action): load one **adjacent** friendly infantry squad
+   into a free seat.
+4. **Dismount** (infantry, 1 action): leave the APC into an **adjacent** empty
+   passable hex (not a building). Counts as the once-per-activation
+   mount/dismount.
+5. **Drop off** (APC, **0** actions): unload the passenger into an adjacent
+   empty passable hex. Allowed **once per APC activation**, and only after the
+   APC has made **at least one Move** this activation.
+6. **While embarked:** the squad shares the APC’s hex (does not occupy a
+   separate hex). It **cannot be targeted**, cannot fire, and cannot step.
+   It may still activate to **Dismount**. Dig-in / cover clears on embark.
+7. **If the APC is disabled or destroyed** (including cook-off), embarked
+   infantry are **destroyed** with it.
+8. Exterior tank-top riding from upstream is **not** used in these scenarios.
+
+**Why bother.** APC max move is **4** vs infantry **2**, and the box is safer
+than walking under guns — especially once you leave the friendly-tank
+adjacency screen. Drop off into forest near missile range, then shoot.
 
 ---
 

@@ -67,6 +67,11 @@ pub struct Game {
     pub lt_covers: u32,
     pub mines_deployed: u32,
     pub mines_triggered: u32,
+    pub mounts: u32,
+    pub embarks: u32,
+    pub dismounts: u32,
+    pub drop_offs: u32,
+    pub passenger_kills: u32,
     pub shots_fired: u32,
     pub shots_missed: u32,
     pub at_shots: u32,
@@ -122,6 +127,11 @@ impl Game {
             lt_covers: 0,
             mines_deployed: 0,
             mines_triggered: 0,
+            mounts: 0,
+            embarks: 0,
+            dismounts: 0,
+            drop_offs: 0,
+            passenger_kills: 0,
             shots_fired: 0,
             shots_missed: 0,
             at_shots: 0,
@@ -269,7 +279,7 @@ impl Game {
     pub fn occupied_hexes(&self) -> Vec<Hex> {
         self.tanks
             .iter()
-            .filter(|t| !t.destroyed)
+            .filter(|t| !t.destroyed && !t.is_embarked())
             .map(|t| t.pos)
             .collect()
     }
@@ -298,6 +308,9 @@ impl Game {
 
     /// Main-gun / missile visibility. Infantry ignore turret arc; tanks/APCs require it.
     pub fn can_see(&self, shooter: &Tank, target: &Tank) -> bool {
+        if target.is_embarked() {
+            return false;
+        }
         if self.infantry_screened(target) {
             return false;
         }
@@ -323,6 +336,9 @@ impl Game {
 
     /// Anti-infantry weapon: range + LOS, no turret arc.
     pub fn can_see_ai(&self, shooter: &Tank, target: &Tank) -> bool {
+        if target.is_embarked() {
+            return false;
+        }
         if self.infantry_screened(target) {
             return false;
         }
@@ -472,6 +488,47 @@ impl Game {
         }
 
         self.push_smoke_actions(tank, ap_left, out);
+        self.push_embark_actions(tank, ap_left, out);
+        self.push_drop_off_actions(tank, out);
+    }
+
+    fn push_embark_actions(&self, tank: &Tank, ap_left: i32, out: &mut Vec<Action>) {
+        if tank.kind != UnitKind::Apc || tank.passenger.is_some() || ap_left < 1 {
+            return;
+        }
+        for other in &self.tanks {
+            if other.side != tank.side
+                || other.kind != UnitKind::Infantry
+                || other.destroyed
+                || other.is_embarked()
+            {
+                continue;
+            }
+            if other.pos.distance(tank.pos) == 1 {
+                out.push(Action::Embark { infantry: other.id });
+            }
+        }
+    }
+
+    fn push_drop_off_actions(&self, tank: &Tank, out: &mut Vec<Action>) {
+        if tank.kind != UnitKind::Apc
+            || tank.passenger.is_none()
+            || tank.dropped_passenger_this_activation
+            || tank.moves_this_turn < 1
+        {
+            return;
+        }
+        let occupied = self.occupied_hexes();
+        for i in 0..6u8 {
+            let h = tank.pos.neighbor(Facing::from_index(i));
+            if !self.board.contains(h) || self.board.terrain_at(h).impassable() {
+                continue;
+            }
+            if occupied.contains(&h) {
+                continue;
+            }
+            out.push(Action::DropOff { hex: h });
+        }
     }
 
     fn push_smoke_actions(&self, tank: &Tank, ap_left: i32, out: &mut Vec<Action>) {
@@ -538,6 +595,27 @@ impl Game {
     }
 
     fn legal_infantry(&self, tank: &Tank, ap_left: i32, out: &mut Vec<Action>) {
+        // Embarked: only Dismount (once per activation).
+        if tank.is_embarked() {
+            if !tank.mount_or_dismount_used && ap_left >= 1 {
+                if let Some(apc_id) = tank.embarked_in {
+                    let apc_pos = self.tank(apc_id).pos;
+                    let occupied = self.occupied_hexes();
+                    for i in 0..6u8 {
+                        let h = apc_pos.neighbor(Facing::from_index(i));
+                        if !self.board.contains(h) || self.board.terrain_at(h).impassable() {
+                            continue;
+                        }
+                        if occupied.contains(&h) {
+                            continue;
+                        }
+                        out.push(Action::Dismount { hex: h });
+                    }
+                }
+            }
+            return;
+        }
+
         if tank.can_move_or_turn() {
             let max_move = tank.effective_max_move();
             let move_ok = tank.moves_this_turn < max_move;
@@ -583,6 +661,23 @@ impl Game {
 
         if !tank.in_cover && ap_left >= 1 {
             out.push(Action::TakeCover);
+        }
+
+        // Mount Up into adjacent empty APC.
+        if !tank.mount_or_dismount_used && ap_left >= 1 {
+            for other in &self.tanks {
+                if other.side != tank.side
+                    || other.kind != UnitKind::Apc
+                    || other.destroyed
+                    || other.disabled
+                    || other.passenger.is_some()
+                {
+                    continue;
+                }
+                if other.pos.distance(tank.pos) == 1 {
+                    out.push(Action::Mount { vehicle: other.id });
+                }
+            }
         }
     }
 
@@ -662,7 +757,9 @@ impl Game {
                 *ap_left -= cost;
                 self.moves_made += 1;
                 self.push_event(turn, Some(side), format!("Move → {next}"), None);
+                self.sync_passenger_pos(tank_id);
                 self.resolve_mine_at(tank_id, next, rng);
+                self.maybe_kill_passengers(tank_id);
             }
             Action::Step(facing) => {
                 let cost = self
@@ -787,6 +884,18 @@ impl Game {
                     );
                 }
             }
+            Action::Mount { vehicle } => {
+                self.apply_mount(tank_id, vehicle, turn, side, ap_left);
+            }
+            Action::Dismount { hex } => {
+                self.apply_dismount(tank_id, hex, turn, side, ap_left);
+            }
+            Action::Embark { infantry } => {
+                self.apply_embark(tank_id, infantry, turn, side, ap_left);
+            }
+            Action::DropOff { hex } => {
+                self.apply_drop_off(tank_id, hex, turn, side);
+            }
             Action::Load(kind) => {
                 let cost = if buffs.free_load {
                     0
@@ -839,6 +948,7 @@ impl Game {
             self.destroy_infantry(tank_id);
             text.push_str("; infantry destroyed");
         }
+        self.maybe_kill_passengers(tank_id);
         if ev.cook_off {
             self.total_cook_offs += 1;
             let pos = self.tank(tank_id).pos;
@@ -908,6 +1018,8 @@ impl Game {
         if ev.hit && target_kind == UnitKind::Infantry {
             self.destroy_infantry(target_id);
         }
+
+        self.maybe_kill_passengers(target_id);
 
         if ev.cook_off {
             self.total_cook_offs += 1;
@@ -1051,10 +1163,188 @@ impl Game {
         if t.kind != UnitKind::Infantry || t.destroyed {
             return;
         }
+        // Clear APC seat if this squad was embarked.
+        if let Some(apc_id) = t.embarked_in {
+            if let Some(apc) = self.tanks.iter_mut().find(|x| x.id == apc_id) {
+                if apc.passenger == Some(target_id) {
+                    apc.passenger = None;
+                }
+            }
+        }
+        let t = self.tank_mut(target_id);
+        t.embarked_in = None;
         t.destroyed = true;
         t.disabled = true;
         t.hull_points = 0;
         self.infantry_kills += 1;
+    }
+
+    fn sync_passenger_pos(&mut self, vehicle_id: u8) {
+        let Some(pid) = self.tank(vehicle_id).passenger else {
+            return;
+        };
+        let pos = self.tank(vehicle_id).pos;
+        if let Some(p) = self.tanks.iter_mut().find(|t| t.id == pid) {
+            p.pos = pos;
+        }
+    }
+
+    /// Kill embarked infantry when their APC is disabled or destroyed.
+    fn maybe_kill_passengers(&mut self, vehicle_id: u8) {
+        let v = self.tank(vehicle_id);
+        if v.kind != UnitKind::Apc || !(v.disabled || v.destroyed) {
+            return;
+        }
+        let Some(pid) = v.passenger else {
+            return;
+        };
+        let turn = self.activations;
+        let side = v.side;
+        let name = self.tank(pid).name.clone();
+        self.tank_mut(vehicle_id).passenger = None;
+        if !self.tank(pid).destroyed {
+            self.destroy_infantry(pid);
+            self.passenger_kills += 1;
+            self.push_event(
+                turn,
+                Some(side),
+                format!("{name} dies with disabled/destroyed APC"),
+                None,
+            );
+        }
+    }
+
+    fn apply_mount(
+        &mut self,
+        infantry_id: u8,
+        vehicle_id: u8,
+        turn: u32,
+        side: Side,
+        ap_left: &mut i32,
+    ) {
+        let inf = self.tank(infantry_id);
+        let apc = self.tank(vehicle_id);
+        if inf.kind != UnitKind::Infantry
+            || inf.is_embarked()
+            || inf.mount_or_dismount_used
+            || apc.kind != UnitKind::Apc
+            || apc.passenger.is_some()
+            || apc.destroyed
+            || apc.disabled
+            || inf.pos.distance(apc.pos) != 1
+        {
+            return;
+        }
+        let apc_pos = apc.pos;
+        self.tank_mut(vehicle_id).passenger = Some(infantry_id);
+        let i = self.tank_mut(infantry_id);
+        i.embarked_in = Some(vehicle_id);
+        i.pos = apc_pos;
+        i.in_cover = false;
+        i.mount_or_dismount_used = true;
+        *ap_left -= 1;
+        self.mounts += 1;
+        let vname = self.tank(vehicle_id).name.clone();
+        self.push_event(turn, Some(side), format!("Mount into {vname}"), None);
+    }
+
+    fn apply_embark(
+        &mut self,
+        vehicle_id: u8,
+        infantry_id: u8,
+        turn: u32,
+        side: Side,
+        ap_left: &mut i32,
+    ) {
+        let apc = self.tank(vehicle_id);
+        let inf = self.tank(infantry_id);
+        if apc.kind != UnitKind::Apc
+            || apc.passenger.is_some()
+            || apc.destroyed
+            || apc.disabled
+            || inf.kind != UnitKind::Infantry
+            || inf.is_embarked()
+            || inf.destroyed
+            || inf.pos.distance(apc.pos) != 1
+        {
+            return;
+        }
+        let apc_pos = apc.pos;
+        self.tank_mut(vehicle_id).passenger = Some(infantry_id);
+        let i = self.tank_mut(infantry_id);
+        i.embarked_in = Some(vehicle_id);
+        i.pos = apc_pos;
+        i.in_cover = false;
+        *ap_left -= 1;
+        self.embarks += 1;
+        let iname = self.tank(infantry_id).name.clone();
+        self.push_event(turn, Some(side), format!("Embark {iname}"), None);
+    }
+
+    fn apply_dismount(
+        &mut self,
+        infantry_id: u8,
+        hex: Hex,
+        turn: u32,
+        side: Side,
+        ap_left: &mut i32,
+    ) {
+        let inf = self.tank(infantry_id);
+        let Some(apc_id) = inf.embarked_in else {
+            return;
+        };
+        if inf.mount_or_dismount_used {
+            return;
+        }
+        let apc_pos = self.tank(apc_id).pos;
+        if hex.distance(apc_pos) != 1
+            || !self.board.contains(hex)
+            || self.board.terrain_at(hex).impassable()
+            || self.occupied_hexes().contains(&hex)
+        {
+            return;
+        }
+        self.tank_mut(apc_id).passenger = None;
+        let forest = self.board.terrain_at(hex) == Terrain::Forest;
+        let i = self.tank_mut(infantry_id);
+        i.embarked_in = None;
+        i.pos = hex;
+        i.mount_or_dismount_used = true;
+        if forest {
+            i.in_cover = true;
+        }
+        *ap_left -= 1;
+        self.dismounts += 1;
+        self.push_event(turn, Some(side), format!("Dismount → {hex}"), None);
+    }
+
+    fn apply_drop_off(&mut self, vehicle_id: u8, hex: Hex, turn: u32, side: Side) {
+        let apc = self.tank(vehicle_id);
+        let Some(pid) = apc.passenger else {
+            return;
+        };
+        if apc.dropped_passenger_this_activation || apc.moves_this_turn < 1 {
+            return;
+        }
+        if hex.distance(apc.pos) != 1
+            || !self.board.contains(hex)
+            || self.board.terrain_at(hex).impassable()
+            || self.occupied_hexes().contains(&hex)
+        {
+            return;
+        }
+        self.tank_mut(vehicle_id).passenger = None;
+        self.tank_mut(vehicle_id).dropped_passenger_this_activation = true;
+        let forest = self.board.terrain_at(hex) == Terrain::Forest;
+        let p = self.tank_mut(pid);
+        p.embarked_in = None;
+        p.pos = hex;
+        if forest {
+            p.in_cover = true;
+        }
+        self.drop_offs += 1;
+        let pname = self.tank(pid).name.clone();
+        self.push_event(turn, Some(side), format!("Drop off {pname} → {hex}"), None);
     }
 
     fn record_shot_stats(&mut self, ev: &CombatEvent) {
@@ -1103,6 +1393,8 @@ impl Game {
             }
         }
         self.tank_mut(tank_id).moves_this_turn = 0;
+        self.tank_mut(tank_id).mount_or_dismount_used = false;
+        self.tank_mut(tank_id).dropped_passenger_this_activation = false;
         self.tank_mut(tank_id).activated_this_pass = true;
     }
 
@@ -1144,6 +1436,7 @@ impl Game {
             let side = self.tank(unit_id).side;
             let text = ev.description.clone();
             self.push_event(self.activations, Some(side), text, Some(ev));
+            self.maybe_kill_passengers(unit_id);
         }
 
         // Disabled wrecks roll cook-off after every activation while they remain.
@@ -1164,6 +1457,7 @@ impl Game {
                 let side = self.tank(id).side;
                 let text = ev.description.clone();
                 self.push_event(self.activations, Some(side), text, Some(ev));
+                self.maybe_kill_passengers(id);
             }
         }
 
@@ -1235,7 +1529,7 @@ impl Game {
         let victims: Vec<u8> = self
             .tanks
             .iter()
-            .filter(|t| !t.destroyed && t.pos == hex)
+            .filter(|t| !t.destroyed && !t.is_embarked() && t.pos == hex)
             .map(|t| t.id)
             .collect();
         for id in victims {
@@ -1257,6 +1551,7 @@ impl Game {
             if ev.hit && kind == UnitKind::Infantry {
                 self.destroy_infantry(id);
             }
+            self.maybe_kill_passengers(id);
             if ev.cook_off {
                 self.total_cook_offs += 1;
                 let pos = self.tank(id).pos;
@@ -1274,7 +1569,12 @@ impl Game {
         let victims: Vec<u8> = self
             .tanks
             .iter()
-            .filter(|t| !t.destroyed && t.pos.distance(origin) >= 1 && t.pos.distance(origin) <= 2)
+            .filter(|t| {
+                !t.destroyed
+                    && !t.is_embarked()
+                    && t.pos.distance(origin) >= 1
+                    && t.pos.distance(origin) <= 2
+            })
             .map(|t| t.id)
             .collect();
         let mut nested_blasts: Vec<(Hex, Side)> = Vec::new();
@@ -1298,6 +1598,7 @@ impl Game {
             if ev.hit && kind == UnitKind::Infantry {
                 self.destroy_infantry(id);
             }
+            self.maybe_kill_passengers(id);
             if ev.cook_off {
                 self.total_cook_offs += 1;
                 let pos = self.tank(id).pos;
@@ -1848,5 +2149,109 @@ mod tests {
             }
         }
         assert!(covered, "expected LT cover within random kills");
+    }
+
+    #[test]
+    fn infantry_can_mount_and_becomes_untargetable() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock_infantry(0, Side::Red, Hex::offset(2, 4), Facing::E, "Inf"),
+            Tank::stock_apc(1, Side::Red, Hex::offset(3, 4), Facing::E, "APC"),
+            Tank::stock(2, Side::Blue, Hex::offset(8, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 40, "test");
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
+        let mut ap = 3;
+        let mut buffs = TurnBuffs::default();
+        g.begin_activation(0);
+        g.apply_action(
+            0,
+            Action::Mount { vehicle: 1 },
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
+        assert!(g.tank(0).is_embarked());
+        assert_eq!(g.tank(1).passenger, Some(0));
+        assert_eq!(g.mounts, 1);
+        assert!(!g.can_see(g.tank(2), g.tank(0)));
+        // Occupied list includes the APC hex once (embarked infantry does not double-occupy).
+        let occ = g.occupied_hexes();
+        assert_eq!(occ.iter().filter(|h| **h == g.tank(1).pos).count(), 1);
+        assert!(!occ
+            .iter()
+            .any(|h| *h != g.tank(1).pos && *h == g.tank(0).pos));
+    }
+
+    #[test]
+    fn apc_embark_move_and_free_drop_off() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock_apc(0, Side::Red, Hex::offset(2, 4), Facing::E, "APC"),
+            Tank::stock_infantry(1, Side::Red, Hex::offset(3, 4), Facing::E, "Inf"),
+            Tank::stock(2, Side::Blue, Hex::offset(9, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 40, "test");
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut ap = 3;
+        let mut buffs = TurnBuffs::default();
+        g.begin_activation(0);
+        g.apply_action(
+            0,
+            Action::Embark { infantry: 1 },
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
+        assert_eq!(g.embarks, 1);
+        assert!(g.tank(1).is_embarked());
+        // DropOff illegal until a Move.
+        let legal = g.legal_actions(0, ap, &buffs);
+        assert!(!legal.iter().any(|a| matches!(a, Action::DropOff { .. })));
+        g.apply_action(0, Action::Move, &mut buffs, &mut ap, &mut rng);
+        assert_eq!(g.tank(1).pos, g.tank(0).pos);
+        let legal = g.legal_actions(0, ap, &buffs);
+        let drop = legal
+            .into_iter()
+            .find(|a| matches!(a, Action::DropOff { .. }))
+            .expect("free drop after move");
+        g.apply_action(0, drop, &mut buffs, &mut ap, &mut rng);
+        assert!(!g.tank(1).is_embarked());
+        assert_eq!(g.drop_offs, 1);
+        assert!(g.tank(0).passenger.is_none());
+    }
+
+    #[test]
+    fn disabled_apc_kills_passenger() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let tanks = vec![
+            Tank::stock_apc(0, Side::Red, Hex::offset(4, 4), Facing::E, "APC"),
+            Tank::stock_infantry(1, Side::Red, Hex::offset(5, 4), Facing::E, "Inf"),
+            Tank::stock(2, Side::Blue, Hex::offset(8, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 40, "test");
+        let mut rng = ChaCha8Rng::seed_from_u64(3);
+        let mut ap = 3;
+        let mut buffs = TurnBuffs::default();
+        g.begin_activation(0);
+        g.apply_action(
+            0,
+            Action::Embark { infantry: 1 },
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
+        g.tank_mut(0).disabled = true;
+        g.tank_mut(0).hull_points = 0;
+        g.maybe_kill_passengers(0);
+        assert!(g.tank(1).destroyed);
+        assert_eq!(g.passenger_kills, 1);
+        assert!(g.tank(0).passenger.is_none());
     }
 }

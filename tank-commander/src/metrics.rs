@@ -36,6 +36,11 @@ pub struct GameReport {
     pub lt_covers: u32,
     pub mines_deployed: u32,
     pub mines_triggered: u32,
+    pub mounts: u32,
+    pub embarks: u32,
+    pub dismounts: u32,
+    pub drop_offs: u32,
+    pub passenger_kills: u32,
     pub loadout: LoadoutCensus,
     /// Lower-spend list won first activation (spoil skipped).
     pub list_initiative: bool,
@@ -128,6 +133,11 @@ impl GameReport {
             lt_covers: game.lt_covers,
             mines_deployed: game.mines_deployed,
             mines_triggered: game.mines_triggered,
+            mounts: game.mounts,
+            embarks: game.embarks,
+            dismounts: game.dismounts,
+            drop_offs: game.drop_offs,
+            passenger_kills: game.passenger_kills,
             loadout: game.loadout_census.clone(),
             list_initiative: game.list_initiative,
             red_list_points: game.red_list_points,
@@ -226,6 +236,13 @@ pub struct AggregateReport {
     pub avg_lt_covers: f64,
     pub avg_mines_deployed: f64,
     pub avg_mines_triggered: f64,
+    pub avg_mounts: f64,
+    pub avg_embarks: f64,
+    pub avg_dismounts: f64,
+    pub avg_drop_offs: f64,
+    pub avg_passenger_kills: f64,
+    /// Fraction of games with at least one Mount or Embark.
+    pub embark_usage_rate: f64,
     /// Fraction of non-infantry units that bought each upgrade (0..=1).
     pub loadout_smoke_rate: f64,
     pub loadout_medkit_rate: f64,
@@ -325,6 +342,13 @@ impl AggregateReport {
             avg_lt_covers: sum_f(|r| r.lt_covers),
             avg_mines_deployed: sum_f(|r| r.mines_deployed),
             avg_mines_triggered: sum_f(|r| r.mines_triggered),
+            avg_mounts: sum_f(|r| r.mounts),
+            avg_embarks: sum_f(|r| r.embarks),
+            avg_dismounts: sum_f(|r| r.dismounts),
+            avg_drop_offs: sum_f(|r| r.drop_offs),
+            avg_passenger_kills: sum_f(|r| r.passenger_kills),
+            embark_usage_rate: reports.iter().filter(|r| r.mounts + r.embarks > 0).count() as f64
+                / nf,
             loadout_smoke_rate: 0.0,
             loadout_medkit_rate: 0.0,
             loadout_lt_rate: 0.0,
@@ -553,6 +577,21 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
         out.push_str(&format!(
             "Mines: avg deployed {:.2}, triggered {:.2}\n",
             agg.avg_mines_deployed, agg.avg_mines_triggered
+        ));
+    }
+    if agg.embark_usage_rate > 0.0
+        || agg.avg_mounts > 0.0
+        || agg.avg_embarks > 0.0
+        || agg.avg_drop_offs > 0.0
+    {
+        out.push_str(&format!(
+            "Embark: games {:.0}% | mount {:.2} embark {:.2} dismount {:.2} drop {:.2} | passenger kills {:.2}\n",
+            agg.embark_usage_rate * 100.0,
+            agg.avg_mounts,
+            agg.avg_embarks,
+            agg.avg_dismounts,
+            agg.avg_drop_offs,
+            agg.avg_passenger_kills
         ));
     }
     if agg.loadout_avg_points > 0.0 {

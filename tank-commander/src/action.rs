@@ -49,6 +49,22 @@ pub enum Action {
     LieutenantCover {
         role: crate::unit::CrewRole,
     },
+    /// Infantry: board an adjacent friendly APC (capacity 1).
+    Mount {
+        vehicle: u8,
+    },
+    /// Infantry: leave the APC into an adjacent empty hex.
+    Dismount {
+        hex: Hex,
+    },
+    /// APC: load an adjacent friendly infantry squad.
+    Embark {
+        infantry: u8,
+    },
+    /// APC: unload passenger into an adjacent empty hex (free after a Move).
+    DropOff {
+        hex: Hex,
+    },
     /// Commander ability: +2 actions this turn (applied when planning).
     AbilityBoomingVoice,
     /// Driver ability: next Move this turn counts as two forward spaces, or
@@ -87,6 +103,10 @@ impl Action {
             Action::DeploySmoke { .. } => "DeploySmoke",
             Action::DeployMine { .. } => "DeployMine",
             Action::LieutenantCover { .. } => "LieutenantCover",
+            Action::Mount { .. } => "Mount",
+            Action::Dismount { .. } => "Dismount",
+            Action::Embark { .. } => "Embark",
+            Action::DropOff { .. } => "DropOff",
             Action::AbilityBoomingVoice => "Ability:BoomingVoice",
             Action::AbilityMoveMoveMove => "Ability:MoveMoveMove",
             Action::AbilityBringItDown => "Ability:BringItDown",
