@@ -16,7 +16,7 @@ import {
   letterAt,
 } from "./puzzle.js";
 
-const SIZES = [36, 48, 64, 100];
+const SIZES = [36, 48, 64];
 
 /** @type {ReturnType<typeof createPlayState> | null} */
 let state = null;
@@ -392,8 +392,8 @@ function newPuzzle(explicitSeed = null) {
     const puzzle = generatePuzzleWithRetry({
       size,
       seed: explicitSeed ?? undefined,
-      attempts: explicitSeed == null ? 32 : 12,
-      maxNodes: size * 16000,
+      attempts: explicitSeed == null ? Math.max(80, size * 4) : Math.max(40, size * 2),
+      maxNodes: size * 10000,
     });
     els.generate.disabled = false;
     if (!puzzle) {
@@ -413,7 +413,7 @@ function init() {
     const opt = document.createElement("option");
     opt.value = String(size);
     opt.textContent = `${size} cells`;
-    if (size === (query.size ?? 100)) opt.selected = true;
+    if (size === (query.size ?? 48)) opt.selected = true;
     els.size.appendChild(opt);
   }
 
