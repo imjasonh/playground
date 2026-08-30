@@ -1286,7 +1286,9 @@ pub const PHONE_DEFAULT_SHARDS: u32 = 4;
 pub const PHONE_MAX_SHARDS: u32 = MAX_SHARDS;
 /// Hard cap on push/pull attempts per writer/reader loop on a phone shard
 /// POST. Bounds nested subrequests even when duration would allow more.
-pub const PHONE_MAX_OPS_PER_LOOP: u32 = 20;
+/// Kept modest so a ramp step leaves a small pack backlog for the next
+/// level (repack between steps; 20 ops × N levels was Error 1101 on 2w).
+pub const PHONE_MAX_OPS_PER_LOOP: u32 = 12;
 /// Max concurrent writer loops in **one** Worker invocation.
 ///
 /// Nested in-process pushes share one isolate's 128 MiB heap (each open
@@ -1584,7 +1586,10 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
   var rampLevels = [{ramp_js}];
   var minImprove = {min_improve};
   var minPostBudget = {min_post_budget};
-  var shardPostConcurrency = 4;
+  // Serial write shard POSTs: two cold isolates opening a post-1w pack
+  // backlog in parallel was Cloudflare Error 1101. Readers stay parallel.
+  var writePostConcurrency = 1;
+  var readPostConcurrency = 4;
   function jsonHeaders() {{
     var h = {{ "Content-Type": "application/json", "Accept": "application/json" }};
     if (token) h["X-Loadtest-Token"] = token;
@@ -1728,6 +1733,16 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
   }}
   /** `stepKey` namespaces branch ids so ramp step 2 does not recreate step 1's
    *  load/w0 (shard_index 0). Branches are load/w{{shard_index * 10000 + …}}. */
+  function postRepack(repo) {{
+    // Fold packs between ramp steps so the next cold isolate does not open
+    // a 20-pack backlog (that was Error 1101 on 2w after a successful 1w).
+    return fetchJson("repack", "/api/" + repo + "/repack", {{
+      method: "POST",
+      credentials: "same-origin",
+      headers: jsonHeaders(),
+      body: "{{}}"
+    }}).catch(function () {{ return null; }});
+  }}
   function runShardedStage(repo, tip, n, writers, readers, stageBudget, stepLabel, stepKey) {{
     var jobs = [];
     for (var i = 0; i < n; i++) {{
@@ -1736,7 +1751,8 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
       if (w <= 0 && r <= 0) continue;
       jobs.push({{ idx: i, slice: {{ writers: w, readers: r }} }});
     }}
-    return mapPool(jobs, shardPostConcurrency, function (job) {{
+    var conc = writers > 0 ? writePostConcurrency : readPostConcurrency;
+    return mapPool(jobs, conc, function (job) {{
       return postLoadtest(stepLabel + " shard " + job.idx, repo, {{
         confirm: true,
         budget_usd: stageBudget,
@@ -1825,14 +1841,38 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
           live.push(line);
           setLive(live);
           prevPps = pps;
-          return runRamp(idx + 1);
+          // Repack before the next level so pack count stays small.
+          phase = "repack after " + n + "w";
+          return postRepack(repo).then(function () {{
+            return runRamp(idx + 1);
+          }});
+        }}, function (err) {{
+          // Do not abort the whole run on one Cloudflare 1101 — keep the
+          // best completed level and continue to readers.
+          var msg = err && err.message ? err.message : String(err);
+          live.push("  " + n + "w: FAILED (" + msg.slice(0, 120) + ")");
+          live.push("Keeping best: " + bestN + "w @ " + bestPps.toFixed(1) + " pushes/s");
+          setLive(live);
+          if (err && err.debug) {{
+            debugEl.textContent = err.debug;
+            debugEl.className = "show";
+          }}
+          return {{ n: bestN, parts: bestWriteParts }};
         }});
       }};
       return runRamp(0).then(function (best) {{
+        if (!best.parts || !best.parts.length) {{
+          throw new Error(
+            "no successful write level (best=" + best.n + "). " +
+            "Try again, or check debug for the failing shard."
+          );
+        }}
         phase = best.n + " readers";
         live.push("Readers @ " + best.n + "…");
         setLive(live);
-        return runShardedStage(repo, tip, best.n, 0, 1, shardBudget(best.n), best.n + "r", 100)
+        return postRepack(repo).then(function () {{
+          return runShardedStage(repo, tip, best.n, 0, 1, shardBudget(best.n), best.n + "r", 100);
+        }})
           .then(function (reps) {{
             var rps = aggregateRate(reps, "pull");
             live[live.length - 1] = "Readers @ " + best.n + ": " + rps.toFixed(1) + " pulls/s";
@@ -1842,6 +1882,12 @@ code {{ font-family: "Source Code Pro", ui-monospace, monospace; font-size: 0.95
               parts[i] = appendStageReport(parts[i], rep);
             }});
             return {{ peak: best.n, parts: parts.filter(Boolean) }};
+          }}, function (err) {{
+            // Readers failed — still report write results.
+            var msg = err && err.message ? err.message : String(err);
+            live.push("Readers FAILED (" + msg.slice(0, 120) + ") — showing write results");
+            setLive(live);
+            return {{ peak: best.n, parts: best.parts.filter(Boolean) }};
           }});
       }}).then(function (done) {{
         if (!done.parts.length) throw new Error("no shard work after ramp");

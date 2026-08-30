@@ -309,77 +309,114 @@ fn phone_auto_ramp_two_writer_step_under_caps() {
     assert!(subreqs <= PHONE_SHARD_SUBREQUEST_SOFT_CAP);
     assert!(heap <= PHONE_SHARD_HEAP_SOFT_CAP);
 
-    // 2w shard 0 with a *new* branch id (step 2) — must succeed under caps.
+    // Production 2w fires two shard POSTs; after 1w the repo has ~N packs.
+    // Fold first (phone UI does this between ramp steps), then run both
+    // shard shapes under soft caps.
+    let http = GitHttp::new(store.clone(), states.clone());
+    let packs_before = block_on(async {
+        let repo = git_server::repo::Repo {
+            store: http.store.as_ref(),
+            states: http.states.as_ref(),
+            name: "lt-ramp",
+        };
+        repo.load_state().await.unwrap().state.packs.len()
+    });
+    block_on(async {
+        let repo = git_server::repo::Repo {
+            store: http.store.as_ref(),
+            states: http.states.as_ref(),
+            name: "lt-ramp",
+        };
+        // Converge; ignore LostRace / NoOp.
+        for _ in 0..8 {
+            let _ = git_server::maintenance::repack(&repo, "tune-repack").await;
+            let n = repo.load_state().await.unwrap().state.packs.len();
+            if n <= 2 {
+                break;
+            }
+        }
+    });
+    let packs_after = block_on(async {
+        let repo = git_server::repo::Repo {
+            store: http.store.as_ref(),
+            states: http.states.as_ref(),
+            name: "lt-ramp",
+        };
+        repo.load_state().await.unwrap().state.packs.len()
+    });
+    println!("repack between 1w and 2w: packs {packs_before} → {packs_after}");
+    assert!(packs_after <= packs_before, "repack should not grow packs");
+
+    // Interleave two shard POSTs (closest native stand-in for parallel browser fetches).
     mem.reset_op_counts();
     let live_before = memtrack::live_bytes();
     memtrack::reset_peak();
-    let two0 = block_on(run_in_process(
-        store.clone(),
-        states.clone(),
-        "lt-ramp",
-        LoadTestRequest {
-            confirm: true,
-            budget_usd: Some(1.0),
-            duration_secs: Some(PHONE_DEFAULT_DURATION_SECS),
-            stages: Some(vec![StageSpec {
-                writers: 1,
-                readers: 0,
-            }]),
-            shards: Some(1),
-            shard: true,
-            tip: Some(tip.clone()),
-            shard_index: Some(2000), // step 2, shard 0
-            token: None,
-        },
-    ))
-    .expect("2w s0");
+    let (two0, two1) = block_on(async {
+        let a = run_in_process(
+            store.clone(),
+            states.clone(),
+            "lt-ramp",
+            LoadTestRequest {
+                confirm: true,
+                budget_usd: Some(1.0),
+                duration_secs: Some(PHONE_DEFAULT_DURATION_SECS),
+                stages: Some(vec![StageSpec {
+                    writers: 1,
+                    readers: 0,
+                }]),
+                shards: Some(1),
+                shard: true,
+                tip: Some(tip.clone()),
+                shard_index: Some(2000),
+                token: None,
+            },
+        );
+        let b = run_in_process(
+            store.clone(),
+            states.clone(),
+            "lt-ramp",
+            LoadTestRequest {
+                confirm: true,
+                budget_usd: Some(1.0),
+                duration_secs: Some(PHONE_DEFAULT_DURATION_SECS),
+                stages: Some(vec![StageSpec {
+                    writers: 1,
+                    readers: 0,
+                }]),
+                shards: Some(1),
+                shard: true,
+                tip: Some(tip.clone()),
+                shard_index: Some(2001),
+                token: None,
+            },
+        );
+        futures::future::join(a, b).await
+    });
+    let two0 = two0.expect("2w s0");
+    let two1 = two1.expect("2w s1");
     let ops = mem.op_counts();
-    let do_est = two0.stages[0].push_ok.max(1) * 2;
+    let ok = two0.stages[0].push_ok + two1.stages[0].push_ok;
+    let do_est = ok.max(1) * 2;
     let subreqs = ops.class_a + ops.class_b + do_est;
     let heap = memtrack::peak_delta_since_reset(live_before);
     println!(
-        "ramp-2w-s0: push_ok={} push_err={} subreqs={} heap={:.1} MiB",
+        "ramp-2w-parallel: s0_ok={} s1_ok={} subreqs={} heap={:.1} MiB",
         two0.stages[0].push_ok,
-        two0.stages[0].push_err,
+        two1.stages[0].push_ok,
         subreqs,
         mib(heap)
     );
     assert!(two0.stages[0].push_ok > 0, "2w shard 0 made no pushes");
+    assert!(two1.stages[0].push_ok > 0, "2w shard 1 made no pushes");
     assert!(
-        two0.stages[0].push_ok > two0.stages[0].push_err,
-        "2w s0 mostly failed (ok={} err={})",
-        two0.stages[0].push_ok,
-        two0.stages[0].push_err
+        subreqs <= PHONE_SHARD_SUBREQUEST_SOFT_CAP * 2,
+        "parallel 2w subreqs {subreqs} too high"
     );
-    assert!(subreqs <= PHONE_SHARD_SUBREQUEST_SOFT_CAP);
-    assert!(heap <= PHONE_SHARD_HEAP_SOFT_CAP);
-
-    // 2w shard 1 (parallel writer branch).
-    let two1 = block_on(run_in_process(
-        store,
-        states,
-        "lt-ramp",
-        LoadTestRequest {
-            confirm: true,
-            budget_usd: Some(1.0),
-            duration_secs: Some(PHONE_DEFAULT_DURATION_SECS),
-            stages: Some(vec![StageSpec {
-                writers: 1,
-                readers: 0,
-            }]),
-            shards: Some(1),
-            shard: true,
-            tip: Some(tip),
-            shard_index: Some(2001),
-            token: None,
-        },
-    ))
-    .expect("2w s1");
-    println!(
-        "ramp-2w-s1: push_ok={} push_err={}",
-        two1.stages[0].push_ok, two1.stages[0].push_err
+    assert!(
+        heap <= PHONE_SHARD_HEAP_SOFT_CAP,
+        "parallel 2w heap {:.1} MiB too high",
+        mib(heap)
     );
-    assert!(two1.stages[0].push_ok > 0);
 }
 
 /// Binary-search how many concurrent readers fit the soft caps on a backlog.

@@ -1298,6 +1298,14 @@ fn phone_loadtest_html() {
         script.contains("stepKey"),
         "ramp must namespace shard_index so steps do not recreate load/w0"
     );
+    assert!(
+        script.contains("postRepack") && script.contains("Keeping best"),
+        "ramp must repack between steps and survive a failed level"
+    );
+    assert!(
+        script.contains("writePostConcurrency"),
+        "write shards must be serial to avoid parallel cold-isolate 1101"
+    );
 
     let (status, body) = server.get("/loadtest?run=1&budget=0.05&duration=2&peak=2&shards=2");
     assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));

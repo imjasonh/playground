@@ -590,8 +590,15 @@ PHONE_BUDGET_TUNE=1 cargo test --test phone_budget_tune tune_search -- --nocaptu
 
 `phone_shard_peak_and_readers_under_soft_caps` builds a ~300-pack backlog and
 asserts soft subrequest/heap caps for peak and readers shard POSTs.
-`tune_search_reader_concurrency` binary-searches how many concurrent readers
-still fit — change `PHONE_MAX_*` constants, re-run locally, then ship once.
+`phone_auto_ramp_two_writer_step_under_caps` seeds, runs 1w, **repacks**, then
+runs two interleaved 2w shard POSTs — the production failure mode after a
+successful 1w. `tune_search_reader_concurrency` binary-searches how many
+concurrent readers still fit — change `PHONE_MAX_*` constants, re-run locally,
+then ship once.
+
+The phone UI also **repacks between ramp steps**, runs write shards
+**serially**, and on a Cloudflare 1101 **keeps the best completed level**
+instead of aborting the whole run.
 
 **Why not Worker self-fetch / `SELF`?** Same-zone public `Fetch` without
 `global_fetch_strictly_public` is Cloudflare error 1042. A `SELF` service
