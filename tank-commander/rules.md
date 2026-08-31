@@ -447,7 +447,11 @@ Learn maneuvering and shooting.
 
 - **Force:** 1v1 **stock** tanks (HE free). **No upgrades.**
 - **Board:** 9×12 with a midline building block, clear alleys, random
-  forest/mud/rubble outside reserved hexes, offset starts.
+  forest/mud/rubble outside reserved hexes.
+- **Deployment:** each side places into a zone **2 hexes deep from its home
+  edge** (west for Red, east for Blue). Players alternate; the second player
+  places first. The sim picks hexes for scenario advantage (lanes toward the
+  center).
 - **Initiative:** roll off; second player always gets spoil.
 - **Second-player spoil:** shift up to **2** scatter terrain tiles (forest /
   mud / rubble) by 1 hex each onto Open hexes before the first activation.
@@ -461,9 +465,12 @@ Learn pass activation and group tactics.
 - **Force:** 3v3 **stock** tanks (HE free). **No upgrades.**
 - **Board:** 18×12 open mat — scattered **building clumps** and **forest
   patches**, plus single mud/rubble tiles. No sealed midline or plaza funnel.
+- **Deployment:** edge zones **3 hexes deep** from each home edge; alternating
+  placement (second player first). Buildings are kept out of the zones.
 - **Initiative:** roll off; second player always gets spoil.
-- **Second-player spoil:** nudge **each** opposing unit up to **1 hex**
-  (empty, passable; facing unchanged), then shift up to **3** scatter tiles
+- **Second-player spoil:** nudge up to **half** of the opposing unembarked
+  units (floor) by ≤**1 hex** each (empty, passable; facing unchanged) —
+  highest-value spoil targets first — then shift up to **3** scatter tiles
   (same rules as below).
 - **Clock (sim):** 200 activations; idle stalemate after 40 no-hit.
 
@@ -474,10 +481,11 @@ Same force and board as Squadron, plus list building.
 - **Force:** 3v3 tanks with up to 10 upgrade points each (HE free; may spend
   fewer). **No mines.**
 - **Board:** same 18×12 open mat as Squadron.
+- **Deployment:** same edge zones + alternating placement as Squadron.
 - **Initiative:** under-spend initiative (see above); spoil only when list
   totals tie.
-- **Second-player spoil** (tied lists only): nudge **each** opposing unit up
-  to **1 hex**, then shift up to **3** scatter tiles.
+- **Second-player spoil** (tied lists only): nudge up to **half** of opposing
+  unembarked units ≤**1 hex**, then shift up to **3** scatter tiles.
 - **Clock (sim):** 200 activations; idle stalemate after 40 no-hit.
 
 ### 4. Combined arms
@@ -488,16 +496,17 @@ Full combined-arms game with lists.
   allowed and placed at **deployment before spoil**), **2 APCs** (4-pt lists),
   **2 infantry**.
 - **Board:** 18×12 open mat (same size as squadron/platoon) with building
-  clumps and forest patches; starts and scatter are east–west **mirrored** at
-  generation (second-player terrain spoil may break scatter symmetry on
-  purpose).
+  clumps and forest patches; scatter is east–west **mirrored** at generation
+  (second-player terrain spoil may break scatter symmetry on purpose).
+- **Deployment:** edge zones **3 deep**; alternating placement (second player
+  first). Placement AI favors tanks on lanes, infantry into nearby forest.
 - **Initiative:** under-spend initiative; spoil only when list totals tie.
-- **Deployment mines:** after lists and initiative, every purchased mine is
-  placed on the board **before** spoil. No mid-battle mine deployment. A mine
-  must be at least **6 hexes** from every enemy vehicle (tank or APC) at
-  placement — outside stock gun range, still on the midfield approaches.
-- **Second-player spoil** (tied lists only): nudge each opposing unit up to 1
-  hex, then shift up to **4** scatter tiles.
+- **Deployment mines:** after unit placement, every purchased mine is placed
+  on the board **before** spoil. No mid-battle mine deployment. A mine must be
+  at least **6 hexes** from every enemy vehicle (tank or APC) at placement —
+  outside stock gun range, still on the midfield approaches.
+- **Second-player spoil** (tied lists only): nudge up to **half** of opposing
+  unembarked units ≤1 hex, then shift up to **4** scatter tiles.
 - **Clock (sim):** 240 activations; idle stalemate after 48 no-hit.
 
 ### 5. Capture (flag raid)
@@ -506,14 +515,18 @@ Objectives matter: race the other side's flag with embarked infantry.
 
 - **Force:** per side — **1 tank** + **3 APCs**, each APC **pre-loaded** with
   one infantry squad. List upgrades: tanks ≤**10** (mines allowed), APCs ≤**4**.
-- **Board:** 18×12 open mat (mirrored starts/scatter like Combined). Each side
-  has one **flag** hex in its backline (kept Open).
+- **Board:** 18×12 open mat (mirrored scatter like Combined). Each side has one
+  **flag** hex on its home edge (kept Open). Units place into **3-deep** edge
+  zones (alternating; second player first); the placement AI minimizes distance
+  to the enemy flag so neither color gets a fixed start-hex race advantage.
 - **Win:** an infantry unit that **shares** the enemy flag hex may spend 1 AP
   on **Capture**. Capturing the enemy flag wins immediately. Wipe still wins;
   timeout / idle stalemate still resolve by attrition.
+- **Note:** Capture is still a thin “race” scenario — useful for objective
+  plumbing, weak as a full game until engagement incentives improve.
 - **Initiative:** lower list spend goes first and skips spoil; equal spend rolls
-  off and applies spoil (nudge each opposing unit ≤1 hex + **3** scatter).
-  Deployment mines before spoil (6-hex enemy clearance).
+  off and applies spoil (nudge ≤ half opposing units + **3** scatter).
+  Deployment mines after placement / before spoil (6-hex enemy clearance).
 - **Embarkation:** squads start inside their APCs; they may stay embarked until
   dropped near the flag (see [Embarkation](#embarkation)).
 - **Clock (sim):** 200 activations; idle stalemate after 40 no-hit.
@@ -524,16 +537,19 @@ One side Captures; the other holds or destroys the attack.
 
 - **Attacker:** **1 tank** + **3 loaded APCs**. Always activates first. List
   upgrades (tank ≤10 with mines, APCs ≤4).
-- **Defender:** **1 tank** + **2 infantry** dug in near a single backline flag.
-  List upgrades on the tank (≤10 with mines). Always gets second-player spoil
-  (nudge each opposing unit ≤1 hex + **3** scatter), regardless of list spend.
+- **Defender:** **1 tank** + **2 infantry** dug in near a single home-edge
+  flag. List upgrades on the tank (≤10 with mines). Places first in
+  alternating deployment, then always gets second-player spoil (nudge ≤ half
+  opposing units + **3** scatter), regardless of list spend.
 - **Board:** 18×12 open mat; scatter is **not** mirrored (asymmetric approach).
-  Who attacks is a coin flip (color is not locked to a role).
+  Who attacks is a coin flip (color is not locked to a role). Edge deploy zones
+  **3 deep**; attacker AI races the flag, defender AI sits on it.
 - **Win:**
   - Attacker: **Capture** the defender flag, or wipe the defender.
   - Defender: wipe the attacker, **or hold** until the activation cap / idle
     stalemate (clock favors the hold).
-- **Deployment mines:** before spoil; same 6-hex clearance as Combined.
+- **Deployment mines:** after placement / before spoil; same 6-hex clearance
+  as Combined.
 - **Clock (sim):** 180 activations; idle stalemate after 50 no-hit.
 
 ### Scatter terrain spoil (shared rules)
@@ -544,6 +560,9 @@ One side Captures; the other holds or destroys the attack.
 - You may hop the same kind of tile across multiple spends; a mud/rubble that
   lands on a first-player **vehicle** should stay there (don’t keep sliding
   it).
+- Unit spoil (when the scenario allows it): move at most **half** (floor) of
+  the first player's unembarked units by ≤1 hex each, choosing the best spoil
+  targets.
 - Humans choose freely within the budget; the sim uses a spoiling heuristic.
 
 ---

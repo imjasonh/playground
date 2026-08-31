@@ -103,8 +103,6 @@ const SKIRMISH_ALLEY: [Hex; 8] = [
     Hex::offset(4, 10),
 ];
 const SKIRMISH_GOALS: [Hex; 2] = [Hex::offset(4, 2), Hex::offset(4, 9)];
-const RED_START: Hex = Hex::offset(1, 4);
-const BLUE_START: Hex = Hex::offset(7, 7);
 
 const SKIRMISH_MAP: MapLayout = MapLayout {
     width: SKIRMISH_WIDTH,
@@ -125,6 +123,282 @@ const SKIRMISH_MAP: MapLayout = MapLayout {
 fn mirror_ew(h: Hex, width: i32) -> Hex {
     let (col, row) = h.to_offset();
     Hex::offset(width - 1 - col, row)
+}
+
+/// How deep each side's deployment zone reaches from its home edge.
+const DEPLOY_DEPTH_BATTLE: i32 = 3;
+const DEPLOY_DEPTH_SKIRMISH: i32 = 2;
+
+fn deploy_zone_hexes(width: i32, height: i32, depth: i32) -> Vec<Hex> {
+    let mut out = Vec::with_capacity((depth * height * 2) as usize);
+    for row in 0..height {
+        for d in 0..depth {
+            out.push(Hex::offset(d, row));
+            out.push(Hex::offset(width - 1 - d, row));
+        }
+    }
+    out
+}
+
+/// Provisional seed hex inside a side's zone (before alternating placement).
+fn zone_seed(side: Side, width: i32, height: i32, depth: i32, slot: usize) -> Hex {
+    let row = ((slot as i32 * 3) + 2).clamp(0, height - 1);
+    let col = match side {
+        Side::Red => (depth / 2).min(depth - 1).max(0),
+        Side::Blue => (width - 1 - depth / 2).clamp(0, width - 1),
+    };
+    Hex::offset(col, row)
+}
+
+/// Scenario-aware reason a unit is being placed.
+#[derive(Clone, Copy, Debug)]
+enum PlaceGoal {
+    /// Close and shoot (skirmish / squadron / platoon).
+    Duel,
+    /// Combined: tanks hold lanes; APCs/infantry want cover / mutual support.
+    Combined,
+    /// Race enemy flag with APCs; tank covers.
+    Capture,
+    /// Assault attacker: push the flag.
+    AssaultAttack,
+    /// Assault defender: sit on the flag.
+    AssaultDefend,
+}
+
+fn place_goal_for(game: &Game, side: Side) -> PlaceGoal {
+    match game.scenario.as_str() {
+        "capture" => PlaceGoal::Capture,
+        "assault" => {
+            if game.is_attacker(side) {
+                PlaceGoal::AssaultAttack
+            } else {
+                PlaceGoal::AssaultDefend
+            }
+        }
+        "combined" => PlaceGoal::Combined,
+        _ => PlaceGoal::Duel,
+    }
+}
+
+/// Alternating placement into edge deployment zones.
+///
+/// `first_to_place` puts the first unit (usually the second player / defender),
+/// then sides alternate. Embarked infantry are skipped (they ride with their
+/// vehicle). Scoring is scenario-aware so a Red distance bias from fixed
+/// mirrored seeds is an AI/placement bug, not a map rule.
+fn deploy_alternating(game: &mut Game, depth: i32, first_to_place: Side) {
+    let mut red_q: Vec<u8> = game
+        .tanks
+        .iter()
+        .filter(|t| t.side == Side::Red && !t.is_embarked())
+        .map(|t| t.id)
+        .collect();
+    let mut blue_q: Vec<u8> = game
+        .tanks
+        .iter()
+        .filter(|t| t.side == Side::Blue && !t.is_embarked())
+        .map(|t| t.id)
+        .collect();
+    // Prefer vehicles before lone infantry when both are in the queue.
+    let sort_q = |q: &mut Vec<u8>, g: &Game| {
+        q.sort_by_key(|id| match g.tank(*id).kind {
+            UnitKind::Tank => 0,
+            UnitKind::Apc => 1,
+            UnitKind::Infantry => 2,
+        });
+    };
+    sort_q(&mut red_q, game);
+    sort_q(&mut blue_q, game);
+    // `pop` takes the last element — reverse so tanks come off first.
+    red_q.reverse();
+    blue_q.reverse();
+
+    let mut placed: std::collections::HashSet<u8> = std::collections::HashSet::new();
+    let mut side = first_to_place;
+    let total = red_q.len() + blue_q.len();
+    for _ in 0..total {
+        let q = match side {
+            Side::Red => &mut red_q,
+            Side::Blue => &mut blue_q,
+        };
+        let Some(id) = q.pop() else {
+            side = side.other();
+            continue;
+        };
+        let goal = place_goal_for(game, side);
+        let hex = pick_deploy_hex(game, id, depth, goal, &placed);
+        let name = game.tank(id).name.clone();
+        let from = game.tank(id).pos;
+        game.tank_mut(id).pos = hex;
+        if let Some(pid) = game.tank(id).passenger {
+            game.tank_mut(pid).pos = hex;
+            placed.insert(pid);
+        }
+        // Dig infantry into forest when defending / combined.
+        if game.tank(id).kind == UnitKind::Infantry
+            && game.board.terrain_at(hex) == Terrain::Forest
+            && matches!(goal, PlaceGoal::AssaultDefend | PlaceGoal::Combined)
+        {
+            game.tank_mut(id).in_cover = true;
+        }
+        placed.insert(id);
+        if hex != from {
+            game.push_setup_event(format!("{side:?} deploys {name} → {hex} ({goal:?})"));
+        }
+        side = side.other();
+    }
+}
+
+fn pick_deploy_hex(
+    game: &Game,
+    unit_id: u8,
+    depth: i32,
+    goal: PlaceGoal,
+    placed: &std::collections::HashSet<u8>,
+) -> Hex {
+    let unit = game.tank(unit_id);
+    let side = unit.side;
+    let width = game.board.width;
+    let height = game.board.height;
+    let occupied: Vec<Hex> = game
+        .tanks
+        .iter()
+        .filter(|t| placed.contains(&t.id))
+        .map(|t| t.pos)
+        .collect();
+    let mut best = unit.pos;
+    let mut best_score = i32::MIN;
+    for row in 0..height {
+        for d in 0..depth {
+            let col = match side {
+                Side::Red => d,
+                Side::Blue => width - 1 - d,
+            };
+            let hex = Hex::offset(col, row);
+            if !game.board.contains(hex) || game.board.terrain_at(hex).impassable() {
+                continue;
+            }
+            if occupied.contains(&hex) {
+                continue;
+            }
+            // Flags are not units; keep them free for Capture/Assault.
+            if game.objectives.iter().any(|o| o.hex == hex) {
+                continue;
+            }
+            let score = score_deploy_hex(game, unit_id, hex, goal, depth, placed);
+            if score > best_score {
+                best_score = score;
+                best = hex;
+            }
+        }
+    }
+    best
+}
+
+fn score_deploy_hex(
+    game: &Game,
+    unit_id: u8,
+    hex: Hex,
+    goal: PlaceGoal,
+    depth: i32,
+    placed: &std::collections::HashSet<u8>,
+) -> i32 {
+    let unit = game.tank(unit_id);
+    let side = unit.side;
+    let width = game.board.width;
+    let (col, row) = hex.to_offset();
+    // Forward edge of the zone (toward the enemy).
+    let forward_col = match side {
+        Side::Red => depth - 1,
+        Side::Blue => width - depth,
+    };
+    let forwardness = depth - 1 - (col - forward_col).abs();
+    let mut score = forwardness * 3;
+
+    // Spread: avoid stacking on same row as already-placed friendly vehicles.
+    let same_row_friends = game
+        .tanks
+        .iter()
+        .filter(|t| {
+            t.side == side
+                && placed.contains(&t.id)
+                && t.id != unit_id
+                && !t.is_embarked()
+                && t.pos.to_offset().1 == row
+        })
+        .count() as i32;
+    score -= same_row_friends * 4;
+
+    let terrain = game.board.terrain_at(hex);
+    match goal {
+        PlaceGoal::Duel => {
+            score += forwardness * 8;
+            // Prefer open firing lanes toward board center.
+            let center = game.board.center();
+            score += (20 - hex.distance(center).min(20)) * 2;
+            if terrain == Terrain::Mud {
+                score -= 6;
+            }
+        }
+        PlaceGoal::Combined => match unit.kind {
+            UnitKind::Tank => {
+                score += forwardness * 6;
+                score += (18 - hex.distance(game.board.center()).min(18)) * 2;
+            }
+            UnitKind::Apc => {
+                score += forwardness * 4;
+                if terrain == Terrain::Forest {
+                    score += 4;
+                }
+            }
+            UnitKind::Infantry => {
+                if terrain == Terrain::Forest {
+                    score += 20;
+                }
+                // Near a friendly APC already placed.
+                let near_apc = game
+                    .tanks
+                    .iter()
+                    .filter(|t| {
+                        t.side == side
+                            && t.kind == UnitKind::Apc
+                            && placed.contains(&t.id)
+                            && t.pos.distance(hex) <= 2
+                    })
+                    .count() as i32;
+                score += near_apc * 6;
+            }
+        },
+        PlaceGoal::Capture | PlaceGoal::AssaultAttack => {
+            if let Some(flag) = game.enemy_flag(side) {
+                let dist = hex.distance(flag);
+                // Primary: race. Equalize by picking the globally shortest path hex.
+                score += (40 - dist.min(40)) * 20;
+                if matches!(unit.kind, UnitKind::Apc) {
+                    score += 8; // APCs are the carriers
+                }
+                if unit.kind == UnitKind::Tank {
+                    score -= 4; // tank slightly less obsessed with pure race
+                }
+            }
+            if terrain == Terrain::Mud {
+                score -= 10;
+            }
+        }
+        PlaceGoal::AssaultDefend => {
+            if let Some(flag) = game.own_flag(side) {
+                let dist = hex.distance(flag);
+                score += (12 - dist.min(12)) * 25;
+                if unit.kind == UnitKind::Infantry && terrain == Terrain::Forest {
+                    score += 30;
+                }
+                if unit.kind == UnitKind::Tank {
+                    score += forwardness * 2;
+                }
+            }
+        }
+    }
+    score
 }
 
 pub fn setup<R: Rng>(kind: ScenarioKind, rng: &mut R) -> Game {
@@ -148,46 +422,48 @@ fn coin_flip<R: Rng>(rng: &mut R) -> Side {
 
 /// Intro / skirmish: 1v1 stock tanks on the half-width mat (9×12). No upgrades.
 pub fn skirmish<R: Rng>(rng: &mut R) -> Game {
-    let starts = [RED_START, BLUE_START];
+    let depth = DEPLOY_DEPTH_SKIRMISH;
+    let zones = deploy_zone_hexes(SKIRMISH_WIDTH, SKIRMISH_HEIGHT, depth);
     let egress = [Hex::offset(2, 4), Hex::offset(6, 7)];
-    let board = build_board(&SKIRMISH_MAP, rng, &starts, &egress);
-    let red = Tank::stock(0, Side::Red, RED_START, Facing::E, "Red One");
-    let blue = Tank::stock(1, Side::Blue, BLUE_START, Facing::W, "Blue One");
-    let mut game = Game::new(board, vec![red, blue], coin_flip(rng), 20, "skirmish");
+    let reserved: Vec<Hex> = zones.iter().chain(egress.iter()).copied().collect();
+    let board = build_board(&SKIRMISH_MAP, rng, &reserved, &egress);
+    let red = Tank::stock(
+        0,
+        Side::Red,
+        zone_seed(Side::Red, SKIRMISH_WIDTH, SKIRMISH_HEIGHT, depth, 0),
+        Facing::E,
+        "Red One",
+    );
+    let blue = Tank::stock(
+        1,
+        Side::Blue,
+        zone_seed(Side::Blue, SKIRMISH_WIDTH, SKIRMISH_HEIGHT, depth, 0),
+        Facing::W,
+        "Blue One",
+    );
+    let first = coin_flip(rng);
+    let mut game = Game::new(board, vec![red, blue], first, 20, "skirmish");
+    // Second player places first, then alternate (1v1: SP then FP).
+    deploy_alternating(&mut game, depth, first.other());
     // Terrain-only spoil: unit nudges skewed color on offset starts.
     second_player_nudge_terrain(&mut game, 2);
     game
 }
 
-fn six_tank_force(red_starts: [Hex; 3], blue_starts: [Hex; 3]) -> Vec<Tank> {
-    vec![
-        Tank::stock(0, Side::Red, red_starts[0], Facing::E, "Red Alpha"),
-        Tank::stock(1, Side::Red, red_starts[1], Facing::E, "Red Bravo"),
-        Tank::stock(2, Side::Red, red_starts[2], Facing::E, "Red Charlie"),
-        Tank::stock(3, Side::Blue, blue_starts[0], Facing::W, "Blue Alpha"),
-        Tank::stock(4, Side::Blue, blue_starts[1], Facing::W, "Blue Bravo"),
-        Tank::stock(5, Side::Blue, blue_starts[2], Facing::W, "Blue Charlie"),
-    ]
-}
-
-fn open_battle_board<R: Rng>(rng: &mut R) -> (Board, [Hex; 3], [Hex; 3]) {
+fn open_battle_board<R: Rng>(rng: &mut R) -> Board {
     let width = BATTLE_WIDTH;
     let height = BATTLE_HEIGHT;
-    let red_starts = [Hex::offset(1, 3), Hex::offset(1, 6), Hex::offset(1, 9)];
-    let blue_starts = [Hex::offset(16, 4), Hex::offset(16, 7), Hex::offset(16, 10)];
-    let reserved: Vec<Hex> = red_starts
-        .iter()
-        .chain(blue_starts.iter())
-        .copied()
-        .collect();
+    let depth = DEPLOY_DEPTH_BATTLE;
+    let zones = deploy_zone_hexes(width, height, depth);
     let egress = [
-        Hex::offset(2, 3),
-        Hex::offset(2, 6),
-        Hex::offset(2, 9),
-        Hex::offset(15, 4),
-        Hex::offset(15, 7),
-        Hex::offset(15, 10),
+        Hex::offset(3, 3),
+        Hex::offset(3, 6),
+        Hex::offset(3, 9),
+        Hex::offset(14, 3),
+        Hex::offset(14, 6),
+        Hex::offset(14, 9),
     ];
+    let reserved: Vec<Hex> = zones.iter().chain(egress.iter()).copied().collect();
     let goals = [Hex::offset(8, 5), Hex::offset(9, 6)];
     let layout = MapLayout {
         width,
@@ -203,23 +479,73 @@ fn open_battle_board<R: Rng>(rng: &mut R) -> (Board, [Hex; 3], [Hex; 3]) {
         rubble: (2, 5),
         mirror_scatter: false,
     };
-    let board = build_board(&layout, rng, &reserved, &egress);
-    (board, red_starts, blue_starts)
+    build_board(&layout, rng, &reserved, &egress)
+}
+
+fn seed_six_tank_force(width: i32, height: i32, depth: i32) -> Vec<Tank> {
+    vec![
+        Tank::stock(
+            0,
+            Side::Red,
+            zone_seed(Side::Red, width, height, depth, 0),
+            Facing::E,
+            "Red Alpha",
+        ),
+        Tank::stock(
+            1,
+            Side::Red,
+            zone_seed(Side::Red, width, height, depth, 1),
+            Facing::E,
+            "Red Bravo",
+        ),
+        Tank::stock(
+            2,
+            Side::Red,
+            zone_seed(Side::Red, width, height, depth, 2),
+            Facing::E,
+            "Red Charlie",
+        ),
+        Tank::stock(
+            3,
+            Side::Blue,
+            zone_seed(Side::Blue, width, height, depth, 0),
+            Facing::W,
+            "Blue Alpha",
+        ),
+        Tank::stock(
+            4,
+            Side::Blue,
+            zone_seed(Side::Blue, width, height, depth, 1),
+            Facing::W,
+            "Blue Bravo",
+        ),
+        Tank::stock(
+            5,
+            Side::Blue,
+            zone_seed(Side::Blue, width, height, depth, 2),
+            Facing::W,
+            "Blue Charlie",
+        ),
+    ]
 }
 
 /// Squadron: 3v3 stock tanks, no upgrades — learn pass activation / group play.
 pub fn squadron<R: Rng>(rng: &mut R) -> Game {
-    let (board, red_starts, blue_starts) = open_battle_board(rng);
-    let tanks = six_tank_force(red_starts, blue_starts);
-    let mut game = Game::new(board, tanks, coin_flip(rng), 200, "squadron").with_stalemate(40);
+    let depth = DEPLOY_DEPTH_BATTLE;
+    let board = open_battle_board(rng);
+    let tanks = seed_six_tank_force(BATTLE_WIDTH, BATTLE_HEIGHT, depth);
+    let first = coin_flip(rng);
+    let mut game = Game::new(board, tanks, first, 200, "squadron").with_stalemate(40);
+    deploy_alternating(&mut game, depth, first.other());
     second_player_setup(&mut game, 3);
     game
 }
 
 /// Platoon: 3v3 with list upgrades on the shared 18×12 open board.
 pub fn platoon<R: Rng>(rng: &mut R) -> Game {
-    let (board, red_starts, blue_starts) = open_battle_board(rng);
-    let mut tanks = six_tank_force(red_starts, blue_starts);
+    let depth = DEPLOY_DEPTH_BATTLE;
+    let board = open_battle_board(rng);
+    let mut tanks = seed_six_tank_force(BATTLE_WIDTH, BATTLE_HEIGHT, depth);
     for t in &mut tanks {
         spend_budget(t, 10, false, rng);
     }
@@ -227,6 +553,7 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     let mut game = Game::new(board, tanks, first, 200, "platoon")
         .with_stalemate(40)
         .with_list_initiative(!spoil);
+    deploy_alternating(&mut game, depth, first.other());
     if spoil {
         second_player_setup(&mut game, 3);
     }
@@ -234,40 +561,24 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
 }
 
 /// Combined arms on the same 18×12 open board as squadron/platoon. Each side fields
-/// **2 tanks** (each with air), **2 APCs**, and **2 infantry**. Starts and
-/// scatter are east–west mirrors; buildings and forests grow as clumps.
+/// **2 tanks** (each with air), **2 APCs**, and **2 infantry**. Scatter is
+/// east–west mirrored at generation; units place alternately into edge zones.
 pub fn combined<R: Rng>(rng: &mut R) -> Game {
     let width = BATTLE_WIDTH;
     let height = BATTLE_HEIGHT;
-    // West starts — east mirrors via `mirror_ew`.
-    let red_tanks = [Hex::offset(1, 3), Hex::offset(1, 5)];
-    let red_apcs = [Hex::offset(1, 7), Hex::offset(1, 9)];
-    let red_inf = [Hex::offset(0, 4), Hex::offset(0, 8)];
-    let blue_tanks = [
-        mirror_ew(red_tanks[0], width),
-        mirror_ew(red_tanks[1], width),
-    ];
-    let blue_apcs = [mirror_ew(red_apcs[0], width), mirror_ew(red_apcs[1], width)];
-    let blue_inf = [mirror_ew(red_inf[0], width), mirror_ew(red_inf[1], width)];
-    let reserved: Vec<Hex> = red_tanks
-        .iter()
-        .chain(red_apcs.iter())
-        .chain(red_inf.iter())
-        .chain(blue_tanks.iter())
-        .chain(blue_apcs.iter())
-        .chain(blue_inf.iter())
-        .copied()
-        .collect();
+    let depth = DEPLOY_DEPTH_BATTLE;
+    let zones = deploy_zone_hexes(width, height, depth);
     let egress = [
-        Hex::offset(2, 3),
-        Hex::offset(2, 5),
-        Hex::offset(2, 7),
-        Hex::offset(2, 9),
-        mirror_ew(Hex::offset(2, 3), width),
-        mirror_ew(Hex::offset(2, 5), width),
-        mirror_ew(Hex::offset(2, 7), width),
-        mirror_ew(Hex::offset(2, 9), width),
+        Hex::offset(3, 3),
+        Hex::offset(3, 5),
+        Hex::offset(3, 7),
+        Hex::offset(3, 9),
+        mirror_ew(Hex::offset(3, 3), width),
+        mirror_ew(Hex::offset(3, 5), width),
+        mirror_ew(Hex::offset(3, 7), width),
+        mirror_ew(Hex::offset(3, 9), width),
     ];
+    let reserved: Vec<Hex> = zones.iter().chain(egress.iter()).copied().collect();
     let goals = [Hex::offset(8, 5), Hex::offset(9, 6)];
     let layout = MapLayout {
         width,
@@ -285,26 +596,74 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
     };
     let board = build_board(&layout, rng, &reserved, &egress);
 
-    let mut red_t0 = Tank::stock(0, Side::Red, red_tanks[0], Facing::E, "Red Tank A");
+    let mut red_t0 = Tank::stock(
+        0,
+        Side::Red,
+        zone_seed(Side::Red, width, height, depth, 0),
+        Facing::E,
+        "Red Tank A",
+    );
     spend_budget(&mut red_t0, 10, true, rng);
     red_t0.has_air_support = true; // scenario grant (on top of list)
-    let mut red_t1 = Tank::stock(1, Side::Red, red_tanks[1], Facing::E, "Red Tank B");
+    let mut red_t1 = Tank::stock(
+        1,
+        Side::Red,
+        zone_seed(Side::Red, width, height, depth, 1),
+        Facing::E,
+        "Red Tank B",
+    );
     spend_budget(&mut red_t1, 10, true, rng);
     red_t1.has_air_support = true;
-    let mut blue_t0 = Tank::stock(6, Side::Blue, blue_tanks[0], Facing::W, "Blue Tank A");
+    let mut blue_t0 = Tank::stock(
+        6,
+        Side::Blue,
+        zone_seed(Side::Blue, width, height, depth, 0),
+        Facing::W,
+        "Blue Tank A",
+    );
     spend_budget(&mut blue_t0, 10, true, rng);
     blue_t0.has_air_support = true;
-    let mut blue_t1 = Tank::stock(7, Side::Blue, blue_tanks[1], Facing::W, "Blue Tank B");
+    let mut blue_t1 = Tank::stock(
+        7,
+        Side::Blue,
+        zone_seed(Side::Blue, width, height, depth, 1),
+        Facing::W,
+        "Blue Tank B",
+    );
     spend_budget(&mut blue_t1, 10, true, rng);
     blue_t1.has_air_support = true;
 
-    let mut red_apc_a = Tank::stock_apc(2, Side::Red, red_apcs[0], Facing::E, "Red APC A");
+    let mut red_apc_a = Tank::stock_apc(
+        2,
+        Side::Red,
+        zone_seed(Side::Red, width, height, depth, 2),
+        Facing::E,
+        "Red APC A",
+    );
     spend_budget(&mut red_apc_a, 4, false, rng);
-    let mut red_apc_b = Tank::stock_apc(3, Side::Red, red_apcs[1], Facing::E, "Red APC B");
+    let mut red_apc_b = Tank::stock_apc(
+        3,
+        Side::Red,
+        zone_seed(Side::Red, width, height, depth, 3),
+        Facing::E,
+        "Red APC B",
+    );
     spend_budget(&mut red_apc_b, 4, false, rng);
-    let mut blue_apc_a = Tank::stock_apc(8, Side::Blue, blue_apcs[0], Facing::W, "Blue APC A");
+    let mut blue_apc_a = Tank::stock_apc(
+        8,
+        Side::Blue,
+        zone_seed(Side::Blue, width, height, depth, 2),
+        Facing::W,
+        "Blue APC A",
+    );
     spend_budget(&mut blue_apc_a, 4, false, rng);
-    let mut blue_apc_b = Tank::stock_apc(9, Side::Blue, blue_apcs[1], Facing::W, "Blue APC B");
+    let mut blue_apc_b = Tank::stock_apc(
+        9,
+        Side::Blue,
+        zone_seed(Side::Blue, width, height, depth, 3),
+        Facing::W,
+        "Blue APC B",
+    );
     spend_budget(&mut blue_apc_b, 4, false, rng);
 
     let tanks = vec![
@@ -312,20 +671,45 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
         red_t1,
         red_apc_a,
         red_apc_b,
-        Tank::stock_infantry(4, Side::Red, red_inf[0], Facing::E, "Red Squad A"),
-        Tank::stock_infantry(5, Side::Red, red_inf[1], Facing::E, "Red Squad B"),
+        Tank::stock_infantry(
+            4,
+            Side::Red,
+            zone_seed(Side::Red, width, height, depth, 4),
+            Facing::E,
+            "Red Squad A",
+        ),
+        Tank::stock_infantry(
+            5,
+            Side::Red,
+            zone_seed(Side::Red, width, height, depth, 5),
+            Facing::E,
+            "Red Squad B",
+        ),
         blue_t0,
         blue_t1,
         blue_apc_a,
         blue_apc_b,
-        Tank::stock_infantry(10, Side::Blue, blue_inf[0], Facing::W, "Blue Squad A"),
-        Tank::stock_infantry(11, Side::Blue, blue_inf[1], Facing::W, "Blue Squad B"),
+        Tank::stock_infantry(
+            10,
+            Side::Blue,
+            zone_seed(Side::Blue, width, height, depth, 4),
+            Facing::W,
+            "Blue Squad A",
+        ),
+        Tank::stock_infantry(
+            11,
+            Side::Blue,
+            zone_seed(Side::Blue, width, height, depth, 5),
+            Facing::W,
+            "Blue Squad B",
+        ),
     ];
     let (first, spoil) = initiative_from_lists(&tanks, rng);
     let mut game = Game::new(board, tanks, first, 240, "combined")
         .with_stalemate(48)
         .with_list_initiative(!spoil);
-    // Mines go down during deployment, before any spoil nudges.
+    deploy_alternating(&mut game, depth, first.other());
+    // Mines go down during deployment, after unit placement, before spoil.
     game.place_deployment_mines(rng);
     if spoil {
         second_player_setup(&mut game, 4);
@@ -339,34 +723,23 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
 pub fn capture<R: Rng>(rng: &mut R) -> Game {
     let width = BATTLE_WIDTH;
     let height = BATTLE_HEIGHT;
-    let red_tank = Hex::offset(1, 5);
-    let red_apcs = [Hex::offset(1, 2), Hex::offset(1, 7), Hex::offset(1, 10)];
+    let depth = DEPLOY_DEPTH_BATTLE;
     let red_flag = Hex::offset(0, 6);
-    let blue_tank = mirror_ew(red_tank, width);
-    let blue_apcs = [
-        mirror_ew(red_apcs[0], width),
-        mirror_ew(red_apcs[1], width),
-        mirror_ew(red_apcs[2], width),
-    ];
-    let blue_flag = mirror_ew(red_flag, width);
-
-    let reserved: Vec<Hex> = [red_tank, blue_tank, red_flag, blue_flag]
-        .into_iter()
-        .chain(red_apcs)
-        .chain(blue_apcs)
-        .collect();
+    let blue_flag = Hex::offset(width - 1, 6);
+    let zones = deploy_zone_hexes(width, height, depth);
     let egress = [
-        Hex::offset(2, 2),
-        Hex::offset(2, 5),
-        Hex::offset(2, 7),
-        Hex::offset(2, 10),
-        mirror_ew(Hex::offset(2, 2), width),
-        mirror_ew(Hex::offset(2, 5), width),
-        mirror_ew(Hex::offset(2, 7), width),
-        mirror_ew(Hex::offset(2, 10), width),
+        Hex::offset(3, 2),
+        Hex::offset(3, 5),
+        Hex::offset(3, 7),
+        Hex::offset(3, 10),
+        mirror_ew(Hex::offset(3, 2), width),
+        mirror_ew(Hex::offset(3, 5), width),
+        mirror_ew(Hex::offset(3, 7), width),
+        mirror_ew(Hex::offset(3, 10), width),
         red_flag,
         blue_flag,
     ];
+    let reserved: Vec<Hex> = zones.iter().chain(egress.iter()).copied().collect();
     let goals = [Hex::offset(8, 5), Hex::offset(9, 6), red_flag, blue_flag];
     let layout = MapLayout {
         width,
@@ -386,21 +759,69 @@ pub fn capture<R: Rng>(rng: &mut R) -> Game {
     board.set_terrain(red_flag, Terrain::Open);
     board.set_terrain(blue_flag, Terrain::Open);
 
-    let mut red_t = Tank::stock(0, Side::Red, red_tank, Facing::E, "Red Tank");
+    let mut red_t = Tank::stock(
+        0,
+        Side::Red,
+        zone_seed(Side::Red, width, height, depth, 0),
+        Facing::E,
+        "Red Tank",
+    );
     spend_budget(&mut red_t, 10, true, rng);
-    let mut red_apc_a = Tank::stock_apc(1, Side::Red, red_apcs[0], Facing::E, "Red APC A");
+    let mut red_apc_a = Tank::stock_apc(
+        1,
+        Side::Red,
+        zone_seed(Side::Red, width, height, depth, 1),
+        Facing::E,
+        "Red APC A",
+    );
     spend_budget(&mut red_apc_a, 4, false, rng);
-    let mut red_apc_b = Tank::stock_apc(2, Side::Red, red_apcs[1], Facing::E, "Red APC B");
+    let mut red_apc_b = Tank::stock_apc(
+        2,
+        Side::Red,
+        zone_seed(Side::Red, width, height, depth, 2),
+        Facing::E,
+        "Red APC B",
+    );
     spend_budget(&mut red_apc_b, 4, false, rng);
-    let mut red_apc_c = Tank::stock_apc(3, Side::Red, red_apcs[2], Facing::E, "Red APC C");
+    let mut red_apc_c = Tank::stock_apc(
+        3,
+        Side::Red,
+        zone_seed(Side::Red, width, height, depth, 3),
+        Facing::E,
+        "Red APC C",
+    );
     spend_budget(&mut red_apc_c, 4, false, rng);
-    let mut blue_t = Tank::stock(7, Side::Blue, blue_tank, Facing::W, "Blue Tank");
+    let mut blue_t = Tank::stock(
+        7,
+        Side::Blue,
+        zone_seed(Side::Blue, width, height, depth, 0),
+        Facing::W,
+        "Blue Tank",
+    );
     spend_budget(&mut blue_t, 10, true, rng);
-    let mut blue_apc_a = Tank::stock_apc(8, Side::Blue, blue_apcs[0], Facing::W, "Blue APC A");
+    let mut blue_apc_a = Tank::stock_apc(
+        8,
+        Side::Blue,
+        zone_seed(Side::Blue, width, height, depth, 1),
+        Facing::W,
+        "Blue APC A",
+    );
     spend_budget(&mut blue_apc_a, 4, false, rng);
-    let mut blue_apc_b = Tank::stock_apc(9, Side::Blue, blue_apcs[1], Facing::W, "Blue APC B");
+    let mut blue_apc_b = Tank::stock_apc(
+        9,
+        Side::Blue,
+        zone_seed(Side::Blue, width, height, depth, 2),
+        Facing::W,
+        "Blue APC B",
+    );
     spend_budget(&mut blue_apc_b, 4, false, rng);
-    let mut blue_apc_c = Tank::stock_apc(10, Side::Blue, blue_apcs[2], Facing::W, "Blue APC C");
+    let mut blue_apc_c = Tank::stock_apc(
+        10,
+        Side::Blue,
+        zone_seed(Side::Blue, width, height, depth, 3),
+        Facing::W,
+        "Blue APC C",
+    );
     spend_budget(&mut blue_apc_c, 4, false, rng);
 
     let mut tanks = vec![
@@ -408,16 +829,52 @@ pub fn capture<R: Rng>(rng: &mut R) -> Game {
         red_apc_a,
         red_apc_b,
         red_apc_c,
-        Tank::stock_infantry(4, Side::Red, red_apcs[0], Facing::E, "Red Squad A"),
-        Tank::stock_infantry(5, Side::Red, red_apcs[1], Facing::E, "Red Squad B"),
-        Tank::stock_infantry(6, Side::Red, red_apcs[2], Facing::E, "Red Squad C"),
+        Tank::stock_infantry(
+            4,
+            Side::Red,
+            zone_seed(Side::Red, width, height, depth, 1),
+            Facing::E,
+            "Red Squad A",
+        ),
+        Tank::stock_infantry(
+            5,
+            Side::Red,
+            zone_seed(Side::Red, width, height, depth, 2),
+            Facing::E,
+            "Red Squad B",
+        ),
+        Tank::stock_infantry(
+            6,
+            Side::Red,
+            zone_seed(Side::Red, width, height, depth, 3),
+            Facing::E,
+            "Red Squad C",
+        ),
         blue_t,
         blue_apc_a,
         blue_apc_b,
         blue_apc_c,
-        Tank::stock_infantry(11, Side::Blue, blue_apcs[0], Facing::W, "Blue Squad A"),
-        Tank::stock_infantry(12, Side::Blue, blue_apcs[1], Facing::W, "Blue Squad B"),
-        Tank::stock_infantry(13, Side::Blue, blue_apcs[2], Facing::W, "Blue Squad C"),
+        Tank::stock_infantry(
+            11,
+            Side::Blue,
+            zone_seed(Side::Blue, width, height, depth, 1),
+            Facing::W,
+            "Blue Squad A",
+        ),
+        Tank::stock_infantry(
+            12,
+            Side::Blue,
+            zone_seed(Side::Blue, width, height, depth, 2),
+            Facing::W,
+            "Blue Squad B",
+        ),
+        Tank::stock_infantry(
+            13,
+            Side::Blue,
+            zone_seed(Side::Blue, width, height, depth, 3),
+            Facing::W,
+            "Blue Squad C",
+        ),
     ];
     // Pre-load each squad into its APC.
     for (apc_id, inf_id) in [(1u8, 4u8), (2, 5), (3, 6), (8, 11), (9, 12), (10, 13)] {
@@ -449,6 +906,7 @@ pub fn capture<R: Rng>(rng: &mut R) -> Game {
         .with_list_initiative(!spoil)
         .with_objectives(objectives);
     game.push_setup_event(format!("Flags at {red_flag} (Red) and {blue_flag} (Blue)"));
+    deploy_alternating(&mut game, depth, first.other());
     game.place_deployment_mines(rng);
     if spoil {
         second_player_setup(&mut game, 3);
@@ -463,35 +921,20 @@ pub fn capture<R: Rng>(rng: &mut R) -> Game {
 /// or by holding until the clock runs out. Attacker fields **1 tank + 3 loaded
 /// APCs**; defender fields **1 tank + 2 infantry** dug in near the flag.
 /// List upgrades (tanks ≤10 with mines, APCs ≤4). Attacker always activates
-/// first; defender gets spoil.
+/// first; defender places first and gets spoil.
 pub fn assault<R: Rng>(rng: &mut R) -> Game {
     let width = BATTLE_WIDTH;
     let height = BATTLE_HEIGHT;
+    let depth = DEPLOY_DEPTH_BATTLE;
     // Coin-flip who attacks so color bias does not hard-code the role.
     let attacker = coin_flip(rng);
     let defender = attacker.other();
 
-    // Attacker starts on the west layout when Red, east when Blue — reuse
-    // offset templates then mirror if Blue attacks.
-    let atk_tank = Hex::offset(1, 5);
-    let atk_apcs = [Hex::offset(1, 2), Hex::offset(1, 7), Hex::offset(1, 10)];
-    let def_tank = Hex::offset(15, 5);
-    let def_inf = [Hex::offset(16, 4), Hex::offset(16, 7)];
-    let def_flag = Hex::offset(17, 6);
-
-    let place = |h: Hex| -> Hex {
-        if attacker == Side::Red {
-            h
-        } else {
-            mirror_ew(h, width)
-        }
+    // Defender flag sits on the defender's home edge (backline).
+    let def_flag = match defender {
+        Side::Red => Hex::offset(0, 6),
+        Side::Blue => Hex::offset(width - 1, 6),
     };
-    let atk_tank = place(atk_tank);
-    let atk_apcs = [place(atk_apcs[0]), place(atk_apcs[1]), place(atk_apcs[2])];
-    let def_tank = place(def_tank);
-    let def_inf = [place(def_inf[0]), place(def_inf[1])];
-    let def_flag = place(def_flag);
-
     let atk_facing = if attacker == Side::Red {
         Facing::E
     } else {
@@ -499,21 +942,19 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
     };
     let def_facing = atk_facing.turn_left().turn_left().turn_left(); // opposite
 
-    let reserved: Vec<Hex> = [atk_tank, def_tank, def_flag]
-        .into_iter()
-        .chain(atk_apcs)
-        .chain(def_inf)
-        .collect();
+    let zones = deploy_zone_hexes(width, height, depth);
     let egress = [
-        place(Hex::offset(2, 2)),
-        place(Hex::offset(2, 5)),
-        place(Hex::offset(2, 7)),
-        place(Hex::offset(2, 10)),
-        place(Hex::offset(14, 5)),
-        place(Hex::offset(15, 4)),
-        place(Hex::offset(15, 7)),
+        Hex::offset(3, 2),
+        Hex::offset(3, 5),
+        Hex::offset(3, 7),
+        Hex::offset(3, 10),
+        Hex::offset(14, 2),
+        Hex::offset(14, 5),
+        Hex::offset(14, 7),
+        Hex::offset(14, 10),
         def_flag,
     ];
+    let reserved: Vec<Hex> = zones.iter().chain(egress.iter()).copied().collect();
     let goals = [Hex::offset(8, 5), Hex::offset(9, 6), def_flag];
     let layout = MapLayout {
         width,
@@ -532,22 +973,56 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
     };
     let mut board = build_board(&layout, rng, &reserved, &egress);
     board.set_terrain(def_flag, Terrain::Open);
-    // Light cover near the flag for dug-in infantry (if still open).
-    for h in def_inf {
+    // Seed light cover near the flag for dug-in infantry.
+    for drow in [4i32, 7] {
+        let h = match defender {
+            Side::Red => Hex::offset(1, drow),
+            Side::Blue => Hex::offset(width - 2, drow),
+        };
         if board.terrain_at(h) == Terrain::Open {
             board.set_terrain(h, Terrain::Forest);
         }
     }
 
-    let mut atk_t = Tank::stock(0, attacker, atk_tank, atk_facing, "Attack Tank");
+    let mut atk_t = Tank::stock(
+        0,
+        attacker,
+        zone_seed(attacker, width, height, depth, 0),
+        atk_facing,
+        "Attack Tank",
+    );
     spend_budget(&mut atk_t, 10, true, rng);
-    let mut atk_apc_a = Tank::stock_apc(1, attacker, atk_apcs[0], atk_facing, "Attack APC A");
+    let mut atk_apc_a = Tank::stock_apc(
+        1,
+        attacker,
+        zone_seed(attacker, width, height, depth, 1),
+        atk_facing,
+        "Attack APC A",
+    );
     spend_budget(&mut atk_apc_a, 4, false, rng);
-    let mut atk_apc_b = Tank::stock_apc(2, attacker, atk_apcs[1], atk_facing, "Attack APC B");
+    let mut atk_apc_b = Tank::stock_apc(
+        2,
+        attacker,
+        zone_seed(attacker, width, height, depth, 2),
+        atk_facing,
+        "Attack APC B",
+    );
     spend_budget(&mut atk_apc_b, 4, false, rng);
-    let mut atk_apc_c = Tank::stock_apc(3, attacker, atk_apcs[2], atk_facing, "Attack APC C");
+    let mut atk_apc_c = Tank::stock_apc(
+        3,
+        attacker,
+        zone_seed(attacker, width, height, depth, 3),
+        atk_facing,
+        "Attack APC C",
+    );
     spend_budget(&mut atk_apc_c, 4, false, rng);
-    let mut def_t = Tank::stock(7, defender, def_tank, def_facing, "Defend Tank");
+    let mut def_t = Tank::stock(
+        7,
+        defender,
+        zone_seed(defender, width, height, depth, 0),
+        def_facing,
+        "Defend Tank",
+    );
     spend_budget(&mut def_t, 10, true, rng);
 
     let mut tanks = vec![
@@ -555,12 +1030,42 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
         atk_apc_a,
         atk_apc_b,
         atk_apc_c,
-        Tank::stock_infantry(4, attacker, atk_apcs[0], atk_facing, "Attack Squad A"),
-        Tank::stock_infantry(5, attacker, atk_apcs[1], atk_facing, "Attack Squad B"),
-        Tank::stock_infantry(6, attacker, atk_apcs[2], atk_facing, "Attack Squad C"),
+        Tank::stock_infantry(
+            4,
+            attacker,
+            zone_seed(attacker, width, height, depth, 1),
+            atk_facing,
+            "Attack Squad A",
+        ),
+        Tank::stock_infantry(
+            5,
+            attacker,
+            zone_seed(attacker, width, height, depth, 2),
+            atk_facing,
+            "Attack Squad B",
+        ),
+        Tank::stock_infantry(
+            6,
+            attacker,
+            zone_seed(attacker, width, height, depth, 3),
+            atk_facing,
+            "Attack Squad C",
+        ),
         def_t,
-        Tank::stock_infantry(8, defender, def_inf[0], def_facing, "Defend Squad A"),
-        Tank::stock_infantry(9, defender, def_inf[1], def_facing, "Defend Squad B"),
+        Tank::stock_infantry(
+            8,
+            defender,
+            zone_seed(defender, width, height, depth, 1),
+            def_facing,
+            "Defend Squad A",
+        ),
+        Tank::stock_infantry(
+            9,
+            defender,
+            zone_seed(defender, width, height, depth, 2),
+            def_facing,
+            "Defend Squad B",
+        ),
     ];
     for (apc_id, inf_id) in [(1u8, 4u8), (2, 5), (3, 6)] {
         let pos = tanks.iter().find(|t| t.id == apc_id).unwrap().pos;
@@ -572,19 +1077,13 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
             inf.pos = pos;
         }
     }
-    // Dig defender infantry into cover at start.
-    for id in [8u8, 9] {
-        if let Some(inf) = tanks.iter_mut().find(|t| t.id == id) {
-            inf.in_cover = true;
-        }
-    }
 
     let objectives = vec![crate::game::Objective {
         hex: def_flag,
         home: defender,
         captured_by: None,
     }];
-    // Attacker first; defender spoils. List spend does not flip initiative here.
+    // Attacker first; defender places first and spoils.
     let mut game = Game::new(board, tanks, attacker, 180, "assault")
         .with_stalemate(50)
         .with_objectives(objectives)
@@ -592,6 +1091,7 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
     game.push_setup_event(format!(
         "{attacker:?} assaults; {defender:?} holds flag at {def_flag}"
     ));
+    deploy_alternating(&mut game, depth, defender);
     game.place_deployment_mines(rng);
     second_player_setup(&mut game, 3);
     game.board.set_terrain(def_flag, Terrain::Open);
@@ -604,8 +1104,9 @@ fn second_player_setup(game: &mut Game, terrain_budget: u32) {
     second_player_nudge_terrain(game, terrain_budget);
 }
 
-/// Nudge each first-player unit at most one hex (empty, passable). Facing
-/// unchanged. Sim picks the hex that most spoils the opener.
+/// Nudge up to **half** of the first-player's unembarked units by at most one
+/// hex (empty, passable). Facing unchanged. Sim picks the hex that most spoils
+/// the opener, and only the highest-value half of targets are moved.
 fn second_player_nudge_opposing(game: &mut Game) {
     let first = game.first_player;
     let second = first.other();
@@ -613,14 +1114,17 @@ fn second_player_nudge_opposing(game: &mut Game) {
     let fp_ids: Vec<u8> = game
         .tanks
         .iter()
-        .filter(|t| t.side == first)
+        .filter(|t| t.side == first && !t.is_embarked())
         .map(|t| t.id)
         .collect();
+    let budget = fp_ids.len() / 2;
+    if budget == 0 {
+        return;
+    }
 
+    // Score each unit's best spoil nudge, then apply only the top half.
+    let mut ranked: Vec<(u8, Hex, Hex, i32, String)> = Vec::new();
     for id in fp_ids {
-        if game.tank(id).is_embarked() {
-            continue;
-        }
         let from = game.tank(id).pos;
         let kind = game.tank(id).kind;
         let name = game.tank(id).name.clone();
@@ -638,6 +1142,9 @@ fn second_player_nudge_opposing(game: &mut Game) {
                 continue;
             }
             if occupied.contains(&cand) {
+                continue;
+            }
+            if game.objectives.iter().any(|o| o.hex == cand) {
                 continue;
             }
             let min_sp = game
@@ -662,16 +1169,32 @@ fn second_player_nudge_opposing(game: &mut Game) {
                 best = cand;
             }
         }
-
         if best != from {
-            game.tank_mut(id).pos = best;
-            if let Some(pid) = game.tank(id).passenger {
-                game.tank_mut(pid).pos = best;
-            }
-            game.push_setup_event(format!(
-                "Second player nudges {name} {from} → {best} before start"
-            ));
+            ranked.push((id, from, best, best_score, name));
         }
+    }
+    ranked.sort_by(|a, b| b.3.cmp(&a.3));
+    let mut moved = 0usize;
+    for (id, from, best, _, name) in ranked {
+        if moved >= budget {
+            break;
+        }
+        // Re-check occupation after earlier nudges in this pass.
+        let blocked = game
+            .tanks
+            .iter()
+            .any(|t| t.id != id && !t.is_embarked() && t.pos == best);
+        if blocked {
+            continue;
+        }
+        game.tank_mut(id).pos = best;
+        if let Some(pid) = game.tank(id).passenger {
+            game.tank_mut(pid).pos = best;
+        }
+        game.push_setup_event(format!(
+            "Second player nudges {name} {from} → {best} before start"
+        ));
+        moved += 1;
     }
 }
 
@@ -1139,11 +1662,13 @@ mod tests {
 
     #[test]
     fn center_corridor_blocks_opening_los() {
+        let red_start = Hex::offset(1, 4);
+        let blue_start = Hex::offset(7, 7);
         let mut rng = ChaCha8Rng::seed_from_u64(1);
         let g = skirmish(&mut rng);
-        // Stock starts (pre-nudge) have no LOS through the wall.
+        // Stock corridor (pre-deploy seeds) have no LOS through the wall.
         assert!(
-            !g.board.has_los(RED_START, BLUE_START, &[]),
+            !g.board.has_los(red_start, blue_start, &[]),
             "opening street must not allow LOS through the wall"
         );
         for h in SKIRMISH_WALL {
@@ -1155,8 +1680,8 @@ mod tests {
                 "alley {h} must stay passable"
             );
         }
-        // Second-player spoil may move the first-player tank off RED_START /
-        // BLUE_START; both must still be on-board and unstacked.
+        // Deployment + spoil may move tanks; both must still be on-board and
+        // unstacked.
         let mut seen = std::collections::HashSet::new();
         for t in &g.tanks {
             assert!(g.board.contains(t.pos));
@@ -1470,8 +1995,23 @@ mod tests {
             "expected at least one opposing-force nudge, events={:?}",
             g.events.iter().map(|e| &e.text).collect::<Vec<_>>()
         );
+        // Half of first-player unembarked units at most.
+        let fp_unembarked = g
+            .tanks
+            .iter()
+            .filter(|t| t.side == first && !t.is_embarked())
+            .count();
+        assert!(
+            nudges.len() <= fp_unembarked / 2,
+            "spoil should move at most half of FP units ({} nudges, {} FP)",
+            nudges.len(),
+            fp_unembarked
+        );
         let mut seen = std::collections::HashSet::new();
         for t in &g.tanks {
+            if t.is_embarked() {
+                continue;
+            }
             assert!(g.board.contains(t.pos));
             assert!(!g.board.terrain_at(t.pos).impassable());
             assert!(seen.insert(t.pos), "stacked at {}", t.pos);
@@ -1483,9 +2023,12 @@ mod tests {
     fn combined_second_player_may_shift_scatter_terrain() {
         let mut any_shift = false;
         let mut g = None;
-        for seed in 0..30u64 {
+        for seed in 0..40u64 {
             let mut rng = ChaCha8Rng::seed_from_u64(seed);
-            let game = combined(&mut rng);
+            let mut game = combined(&mut rng);
+            // Force spoil terrain even when under-spend skipped it.
+            game.events.clear();
+            super::second_player_nudge_terrain(&mut game, 4);
             let shifts = game
                 .events
                 .iter()
@@ -1658,6 +2201,43 @@ mod tests {
                 assert!(t.passenger.is_some(), "{} should start loaded", t.name);
             }
         }
+        // Units live in their edge deploy zones.
+        let depth = DEPLOY_DEPTH_BATTLE;
+        for t in &g.tanks {
+            if t.is_embarked() {
+                continue;
+            }
+            let (col, _) = t.pos.to_offset();
+            match t.side {
+                Side::Red => assert!(col < depth, "{} col {col} outside red zone", t.name),
+                Side::Blue => assert!(
+                    col >= BATTLE_WIDTH - depth,
+                    "{} col {col} outside blue zone",
+                    t.name
+                ),
+            }
+        }
+        // Race distances should match when both AIs place optimally.
+        let red_flag = g.own_flag(Side::Red).unwrap();
+        let blue_flag = g.own_flag(Side::Blue).unwrap();
+        let red_min = g
+            .tanks
+            .iter()
+            .filter(|t| t.side == Side::Red && t.kind == UnitKind::Apc)
+            .map(|t| t.pos.distance(blue_flag))
+            .min()
+            .unwrap();
+        let blue_min = g
+            .tanks
+            .iter()
+            .filter(|t| t.side == Side::Blue && t.kind == UnitKind::Apc)
+            .map(|t| t.pos.distance(red_flag))
+            .min()
+            .unwrap();
+        assert!(
+            (red_min - blue_min).abs() <= 1,
+            "capture race distance skew red_min={red_min} blue_min={blue_min}"
+        );
         assert!(
             g.tanks
                 .iter()
@@ -1667,6 +2247,39 @@ mod tests {
         for obj in &g.objectives {
             assert_eq!(g.board.terrain_at(obj.hex), Terrain::Open);
             assert!(obj.captured_by.is_none());
+        }
+    }
+
+    #[test]
+    fn alternating_deploy_keeps_units_in_edge_zones() {
+        let mut rng = ChaCha8Rng::seed_from_u64(3);
+        for kind in [
+            ScenarioKind::Squadron,
+            ScenarioKind::Platoon,
+            ScenarioKind::Combined,
+        ] {
+            let g = setup(kind, &mut rng);
+            let depth = DEPLOY_DEPTH_BATTLE;
+            for t in &g.tanks {
+                if t.is_embarked() {
+                    continue;
+                }
+                let (col, _) = t.pos.to_offset();
+                match t.side {
+                    Side::Red => assert!(
+                        col < depth,
+                        "{:?} {} col {col} outside red zone",
+                        kind,
+                        t.name
+                    ),
+                    Side::Blue => assert!(
+                        col >= BATTLE_WIDTH - depth,
+                        "{:?} {} col {col} outside blue zone",
+                        kind,
+                        t.name
+                    ),
+                }
+            }
         }
     }
 

@@ -16,6 +16,26 @@ games, seed `7`, unless noted.
 
 ---
 
+## 2026-08-31 — Edge deploy zones, alternating placement, half-unit spoil
+
+**Type: Rule** (+ **Sim** placement AI)
+
+1. **Deployment zones** are **N hexes from each home edge** (skirmish depth 2,
+   battle depth 3), not fixed offset seeds / center-relative plazas. Buildings
+   stay out of the zones.
+2. **Alternating placement:** second player (Assault: defender) places first;
+   sides take turns. Embarked infantry ride with their vehicle.
+3. **Placement AI** is scenario-aware (duel lanes, Capture/Assault race or
+   hold the flag). A consistent Red win from distance-to-flag is treated as a
+   placement bug, not a map feature.
+4. **Spoil unit nudges** now move at most **half** (floor) of the first
+   player's unembarked units — best spoil targets first — instead of every
+   opposing unit. Terrain spoil budgets unchanged.
+
+Capture stays a thin race scenario; no redesign this pass.
+
+---
+
 ## 2026-08-30 — Driver *Move move move!* matches upstream
 
 **Type: Rule** (+ **Sim** AI pathing)
