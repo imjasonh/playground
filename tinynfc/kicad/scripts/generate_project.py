@@ -1029,22 +1029,21 @@ def write_pcb() -> None:
     # the south rim is not the only usable bay (pads are on ±X of the piezo).
     add_fp(board, f"{sys_fp}/Buzzer_Beeper.pretty", "Buzzer_Murata_PKMCS0909E", "PZ1", 0.0, -1.6, 0)
 
-    # West flank (near LA/LB feeds): tune cap in the NW pocket beside the piezo
-    # body; NT3H + gate Rs south of the piezo electrodes.
+    # West flank (near LA/LB feeds): NT3H level with the piezo body; tune + gate
+    # Rs fill the rest of the west column.
+    add_fp(board, str(PRETTY), "NXP_SOT902-3_XQFN8", "U1", -6.7, -1.6, 0)
     add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C1", -6.2, -4.0, 90)
-    add_fp(board, str(PRETTY), "NXP_SOT902-3_XQFN8", "U1", -6.35, 1.9, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R1", -6.35, 3.4, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R2", -4.55, 3.4, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R1", -6.5, 0.7, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R2", -6.5, 2.0, 0)
 
-    # East flank: bypass in the NE pocket; P-FET / bulk / series R / TVS south-east.
+    # East flank: P-FET level with the piezo; bypass / bulk / series R / TVS south-east.
+    add_fp(board, f"{sys_fp}/Package_DFN_QFN.pretty", "Diodes_DFN1006-3", "Q1", 6.7, -1.6, 0)
     add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C2", 6.2, -4.0, 90)
-    add_fp(board, f"{sys_fp}/Package_DFN_QFN.pretty", "Diodes_DFN1006-3", "Q1", 6.35, 1.9, 0)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C3", 6.35, 3.4, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R3", 4.55, 3.4, 0)
-    add_fp(board, f"{sys_fp}/Diode_SMD.pretty", "D_SOD-882", "D1", 5.35, 4.75, 0)
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C3", 6.5, 0.7, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R3", 6.5, 2.0, 0)
+    add_fp(board, f"{sys_fp}/Diode_SMD.pretty", "D_SOD-882", "D1", 5.2, 3.5, 0)
 
-    # ATtiny816 south-center — flanks took the passives, so the MCU can sit
-    # closer to the piezo with room left for UPDI pads on the south rim.
+    # ATtiny816 south-center; UPDI pads on the south rim.
     add_fp(
         board,
         f"{sys_fp}/Package_DFN_QFN.pretty",
