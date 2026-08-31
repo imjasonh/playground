@@ -166,15 +166,16 @@ def draw_tank_page(c: canvas.Canvas) -> None:
 
     # Gun: breech + spent as two left-labeled rows (same pattern as Hull).
     y = section_head(c, x, y, "Gun", width)
+    label_col = 0.72 * inch
     c.setFillColor(MUTED)
     c.setFont("Helvetica", 9)
     c.drawString(x, text_mid(y, 9), "Breech")
-    flag_row(c, x + 0.55 * inch, y, ["Empty", "AT", "HE"], pitch=1.15 * inch)
+    flag_row(c, x + label_col, y, ["Empty", "AT", "HE"], pitch=1.20 * inch)
     y -= ROW
     c.setFillColor(MUTED)
     c.setFont("Helvetica", 9)
     c.drawString(x, text_mid(y, 9), "Spent")
-    flag_row(c, x + 0.55 * inch, y, ["Smoke", "Air", "Medkit"], pitch=1.15 * inch)
+    flag_row(c, x + label_col, y, ["Smoke", "Air", "Medkit"], pitch=1.20 * inch)
     y -= ROW + 0.20 * inch
 
     # Crew — custom header band so W/K/Abl never sit on the section rule.
@@ -261,38 +262,43 @@ def draw_apc_page(c: canvas.Canvas) -> None:
 
 def draw_infantry_card(c: canvas.Canvas, left: float, bottom: float, card_w: float, card_h: float) -> None:
     panel(c, left, bottom, card_w, card_h)
-    pad = 0.18 * inch
+    pad = 0.20 * inch
     x = left + pad
-    y = bottom + card_h - 0.26 * inch
+    inner_w = card_w - 2 * pad
+
+    # Three bands: title, fields, activated — even vertical split.
+    band = (card_h - 2 * pad) / 3
+    y_title = bottom + card_h - pad - 12
+    y_fields = bottom + pad + 1.5 * band - 2
+    y_act = bottom + pad + 0.15 * inch
 
     c.setFillColor(INK)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(x, y, "Infantry")
-    y -= 0.32 * inch
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(x, y_title, "Infantry")
 
-    name_w = card_w - 2 * pad - 1.2 * inch
-    field(c, x, y, name_w, "Name")
-    field(c, x + name_w + 0.15 * inch, y, 1.05 * inch, "Side")
-    y -= 0.36 * inch
-    labeled_box(c, x, y, "Activated")
+    name_w = inner_w - 1.2 * inch
+    field(c, x, y_fields, name_w, "Name")
+    field(c, x + name_w + 0.15 * inch, y_fields, 1.05 * inch, "Side")
+
+    labeled_box(c, x, y_act, "Activated")
 
 
 def draw_infantry_page(c: canvas.Canvas) -> None:
-    """2×4 content-sized infantry cards, top-aligned for cutting."""
+    """2×4 infantry cards filling the letter page for cutting."""
     paint_page_bg(c)
     page_w, page_h = letter
-    margin = 0.45 * inch
+    margin = 0.4 * inch
     cols, rows = 2, 4
-    gap_x = 0.18 * inch
-    gap_y = 0.16 * inch
+    gap_x = 0.16 * inch
+    gap_y = 0.14 * inch
     card_w = (page_w - 2 * margin - (cols - 1) * gap_x) / cols
-    card_h = 1.22 * inch
+    card_h = (page_h - 2 * margin - (rows - 1) * gap_y) / rows
     origin_x = margin
-    top = page_h - margin
+    origin_y = margin
     for row in range(rows):
         for col in range(cols):
             left = origin_x + col * (card_w + gap_x)
-            bottom = top - (row + 1) * card_h - row * gap_y
+            bottom = origin_y + (rows - 1 - row) * (card_h + gap_y)
             draw_infantry_card(c, left, bottom, card_w, card_h)
     c.showPage()
 
