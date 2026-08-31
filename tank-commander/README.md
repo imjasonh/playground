@@ -31,7 +31,7 @@ Playable rules (upstream + house rules): [`rules.md`](rules.md).
 Dated changelog with Rule / Scenario / Sim tags and sim metrics:
 [`RULES_CHANGES.md`](RULES_CHANGES.md).
 
-Printable unit boards (tank whiteboard, APC whiteboard, infantry card):
+Printable unit boards (tank, APC, infantry):
 [`docs/unit-boards.pdf`](docs/unit-boards.pdf). Regenerate with
 `python3 scripts/render_unit_boards.py` (needs `reportlab`).
 
