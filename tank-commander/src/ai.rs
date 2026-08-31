@@ -1395,14 +1395,7 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
 }
 
 fn rel(hull: Facing, abs: Facing) -> i8 {
-    let mut o = abs.index() as i8 - hull.index() as i8;
-    while o > 3 {
-        o -= 6;
-    }
-    while o < -2 {
-        o += 6;
-    }
-    o
+    hull.relative_offset(abs)
 }
 
 fn evaluate_tactical(

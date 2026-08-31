@@ -45,6 +45,16 @@ pub struct Objective {
     pub captured_by: Option<Side>,
 }
 
+impl Objective {
+    pub fn new(hex: Hex, home: Side) -> Self {
+        Self {
+            hex,
+            home,
+            captured_by: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Game {
     pub board: Board,
@@ -2030,14 +2040,7 @@ fn scatter_air_impact<R: Rng>(aim: Hex, board: &Board, rng: &mut R) -> (Option<H
 }
 
 fn relative_offset(hull: Facing, absolute_turret: Facing) -> i8 {
-    let mut o = absolute_turret.index() as i8 - hull.index() as i8;
-    while o > 3 {
-        o -= 6;
-    }
-    while o < -2 {
-        o += 6;
-    }
-    o
+    hull.relative_offset(absolute_turret)
 }
 
 /// Play one full activation for `unit_id` using the provided plan of actions.
@@ -2731,11 +2734,8 @@ mod tests {
             Tank::stock(1, Side::Blue, Hex::offset(8, 4), Facing::W, "Blue"),
         ];
         let mut g =
-            Game::new(board, tanks, Side::Red, 40, "test").with_objectives(vec![Objective {
-                hex: flag,
-                home: Side::Blue,
-                captured_by: None,
-            }]);
+            Game::new(board, tanks, Side::Red, 40, "test")
+                .with_objectives(vec![Objective::new(flag, Side::Blue)]);
         assert!(g.can_capture(g.tank(0)));
         let mut rng = ChaCha8Rng::seed_from_u64(1);
         let mut ap = 3;
@@ -2758,11 +2758,7 @@ mod tests {
             Tank::stock(1, Side::Blue, Hex::offset(8, 4), Facing::W, "Def"),
         ];
         let mut g = Game::new(board, tanks, Side::Red, 5, "test")
-            .with_objectives(vec![Objective {
-                hex: flag,
-                home: Side::Blue,
-                captured_by: None,
-            }])
+            .with_objectives(vec![Objective::new(flag, Side::Blue)])
             .with_attacker(Side::Red);
         g.activations = 5;
         assert_eq!(g.outcome(), Outcome::Winner(Side::Blue));
