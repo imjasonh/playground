@@ -239,18 +239,6 @@ fn embark_pairs(tanks: &mut [Tank], pairs: &[(u8, u8)]) {
     }
 }
 
-fn dig_in_side(game: &mut Game, side: Side) {
-    let ids: Vec<u8> = game
-        .tanks
-        .iter()
-        .filter(|t| t.side == side && t.kind == UnitKind::Infantry)
-        .map(|t| t.id)
-        .collect();
-    for id in ids {
-        game.tank_mut(id).in_cover = true;
-    }
-}
-
 /// Shared alley columns for Capture / Assault approach lanes.
 fn raid_alley_egress() -> [Hex; 8] {
     let mut out = [Hex::offset(0, 0); 8];
@@ -279,7 +267,8 @@ fn finish_deployment<R: Rng>(
         game.place_deployment_mines(rng);
     }
     if spoil {
-        second_player_setup(game, terrain_budget);
+        second_player_nudge_opposing(game);
+        second_player_nudge_terrain(game, terrain_budget);
     }
 }
 
@@ -855,14 +844,16 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
     ));
     finish_deployment(&mut game, depth, defender, true, 3, true, rng);
     game.board.set_terrain(def_flag, Terrain::Open);
-    dig_in_side(&mut game, defender);
+    let dug: Vec<u8> = game
+        .tanks
+        .iter()
+        .filter(|t| t.side == defender && t.kind == UnitKind::Infantry)
+        .map(|t| t.id)
+        .collect();
+    for id in dug {
+        game.tank_mut(id).in_cover = true;
+    }
     game
-}
-
-/// Second-player post-initiative spoil: unit nudges, then scatter-terrain shifts.
-fn second_player_setup(game: &mut Game, terrain_budget: u32) {
-    second_player_nudge_opposing(game);
-    second_player_nudge_terrain(game, terrain_budget);
 }
 
 /// Nudge up to **half** of the first-player's unembarked units by at most one
@@ -959,10 +950,6 @@ fn second_player_nudge_opposing(game: &mut Game) {
     }
 }
 
-fn is_scatter(t: Terrain) -> bool {
-    matches!(t, Terrain::Forest | Terrain::Mud | Terrain::Rubble)
-}
-
 /// Shift up to `budget` forest/mud/rubble tiles by 1 hex onto Open (may land
 /// under units). Buildings stay put. Destinations on first-player vehicles are
 /// frozen so mud cannot circle.
@@ -980,7 +967,10 @@ fn second_player_nudge_terrain(game: &mut Game, budget: u32) {
                 if frozen.contains(&(h.q, h.r)) {
                     continue;
                 }
-                if is_scatter(game.board.terrain_at(h)) {
+                if matches!(
+                    game.board.terrain_at(h),
+                    Terrain::Forest | Terrain::Mud | Terrain::Rubble
+                ) {
                     out.push(h);
                 }
             }
@@ -1728,7 +1718,8 @@ mod tests {
         let mut g = combined(&mut rng);
         // Under-spend often skips spoil; exercise the nudge path directly.
         g.events.clear();
-        super::second_player_setup(&mut g, 4);
+        super::second_player_nudge_opposing(&mut g);
+        super::second_player_nudge_terrain(&mut g, 4);
         let first = g.first_player;
         let nudges: Vec<_> = g
             .events

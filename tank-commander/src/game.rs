@@ -1080,7 +1080,7 @@ impl Game {
                 // Keep turret absolute facing when the hull turns.
                 let new_hull = turn_hull(hull, left);
                 let old_abs = hull.with_turret_offset(self.tank(tank_id).turret_offset);
-                let new_offset = relative_offset(new_hull, old_abs);
+                let new_offset = new_hull.relative_offset(old_abs);
                 self.tank_mut(tank_id).hull_facing = new_hull;
                 self.tank_mut(tank_id).turret_offset = new_offset;
                 *ap_left -= 1;
@@ -2033,10 +2033,6 @@ fn scatter_air_impact<R: Rng>(aim: Hex, board: &Board, rng: &mut R) -> (Option<H
     } else {
         (None, note)
     }
-}
-
-fn relative_offset(hull: Facing, absolute_turret: Facing) -> i8 {
-    hull.relative_offset(absolute_turret)
 }
 
 /// Play one full activation for `unit_id` using the provided plan of actions.

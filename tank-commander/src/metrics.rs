@@ -122,12 +122,16 @@ impl GameReport {
         GameReport {
             seed,
             scenario: game.scenario.clone(),
-            outcome: outcome_str(outcome),
+            outcome: match outcome {
+                Outcome::Winner(s) => format!("Winner({s})"),
+                Outcome::Draw => "Draw".into(),
+                Outcome::InProgress => "InProgress".into(),
+            },
             winner: match outcome {
-                Outcome::Winner(s) => Some(side_str(s).into()),
+                Outcome::Winner(s) => Some(s.to_string()),
                 _ => None,
             },
-            first_player: side_str(game.first_player).into(),
+            first_player: game.first_player.to_string(),
             activations: game.activations,
             shots_fired: game.shots_fired,
             shots_missed: game.shots_missed,
@@ -164,7 +168,7 @@ impl GameReport {
             objectives_captured: game.objectives_captured,
             ended_by_capture,
             ended_by_hold,
-            attacker: game.attacker.map(side_str).map(str::to_string),
+            attacker: game.attacker.map(|s| s.to_string()),
             loadout: game.loadout_census.clone(),
             list_initiative: game.list_initiative,
             red_list_points: game.red_list_points,
@@ -194,21 +198,6 @@ fn hp_sum(game: &Game, side: Side) -> i32 {
         .filter(|t| t.side == side && !t.destroyed)
         .map(|t| t.hull_points)
         .sum()
-}
-
-fn side_str(s: Side) -> &'static str {
-    match s {
-        Side::Red => "Red",
-        Side::Blue => "Blue",
-    }
-}
-
-fn outcome_str(o: Outcome) -> String {
-    match o {
-        Outcome::Winner(s) => format!("Winner({})", side_str(s)),
-        Outcome::Draw => "Draw".into(),
-        Outcome::InProgress => "InProgress".into(),
-    }
 }
 
 /// Tracks whether each side ever trailed on hull points (for comeback detection).
