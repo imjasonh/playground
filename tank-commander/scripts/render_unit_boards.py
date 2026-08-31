@@ -150,7 +150,17 @@ def draw_tank_page(c: canvas.Canvas) -> None:
         field(c, x + i * stat_pitch, y + 2, stat_pitch - 0.12 * inch, label)
     y -= 0.40 * inch
 
-    upgrades = ["Engine", "Optics", "Barrel", "AI", "Air", "Smoke", "Medkit", "LT", "HE"]
+    upgrades = [
+        "Engine",
+        "Optics",
+        "Barrel",
+        "Anti-infantry",
+        "Air Strike",
+        "Smoke",
+        "Medkit",
+        "Lieutenant",
+        "HE",
+    ]
     up_pitch = width / 3
     y = upgrade_grid(c, x, y, upgrades, cols=3, pitch=up_pitch)
     y -= ROW + 0.18 * inch
@@ -173,7 +183,7 @@ def draw_tank_page(c: canvas.Canvas) -> None:
     c.setFillColor(MUTED)
     c.setFont("Helvetica", 9)
     c.drawString(x, text_mid(y, 9), "Spent")
-    flag_row(c, x + label_col, y, ["Smoke", "Air", "Medkit"], pitch=1.20 * inch)
+    flag_row(c, x + label_col, y, ["Smoke", "Air Strike", "Medkit"], pitch=1.55 * inch)
     y -= ROW + 0.20 * inch
 
     # Crew — custom header band so W/K/Abl never sit on the section rule.
@@ -235,7 +245,7 @@ def draw_apc_card(c: canvas.Canvas, left: float, bottom: float, card_w: float, c
     y -= 0.40 * inch
 
     y = section_head(c, x, y, "Loadout", width)
-    stats = ["F", "S", "R", "Move", "AP", "AI"]
+    stats = ["F", "S", "R", "Move", "AP", "Anti-infantry"]
     pitch = width / len(stats)
     for i, label in enumerate(stats):
         field(c, x + i * pitch, y + 2, pitch - 0.10 * inch, label)
