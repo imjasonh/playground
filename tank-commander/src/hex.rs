@@ -1,8 +1,10 @@
 //! Hex grid helpers for Tank Commander.
 //!
-//! Internally each [`Hex`] is axial `(q, r)`. Map layouts are **odd-r**
-//! offset rectangles (pointy-top): column × row looks like a normal tabletop
-//! mat, not an axial parallelogram. Use [`Hex::offset`] for board positions.
+//! Internally each [`Hex`] is axial `(q, r)`. Map layouts are **odd-q**
+//! offset rectangles (**flat-top** / point-sided): column × row looks like a
+//! normal tabletop mat. Flat faces point east–west, so opposed Red/Blue
+//! approaches along columns are distance-symmetric (odd-r pointy-top was
+//! chiral on that axis). Use [`Hex::offset`] for board positions.
 //!
 //! The six facings are numbered 0..=5 counterclockwise starting at east (`+q`).
 
@@ -22,18 +24,19 @@ impl Hex {
         Self { q, r }
     }
 
-    /// Odd-r (pointy-top) offset column/row → axial. Use for board layouts.
+    /// Odd-q (flat-top) offset column/row → axial. Use for board layouts.
     pub const fn offset(col: i32, row: i32) -> Self {
         Self {
-            q: col - (row - (row & 1)) / 2,
-            r: row,
+            q: col,
+            r: row - (col - (col & 1)) / 2,
         }
     }
 
-    /// Axial → odd-r offset `(col, row)`.
+    /// Axial → odd-q offset `(col, row)`.
     pub const fn to_offset(self) -> (i32, i32) {
-        let col = self.q + (self.r - (self.r & 1)) / 2;
-        (col, self.r)
+        let col = self.q;
+        let row = self.r + (self.q - (self.q & 1)) / 2;
+        (col, row)
     }
 
     pub fn neighbors(self) -> [Hex; 6] {
@@ -84,23 +87,17 @@ impl Hex {
         }
         let dq = f64::from(other.q - self.q);
         let dr = f64::from(other.r - self.r);
-        // Convert axial delta to a continuous angle in cube space.
-        // x = q, z = r, y = -q-r. Angle from +q (east).
-        let x = dq;
-        let z = dr;
-        let y = -dq - dr;
-        // Pointy-top axial: east is (1,0), angle via atan2 of cartesian.
-        // Using cube-to-pixel for pointy-top: x = √3*q + √3/2*r, y = 3/2*r
-        let px = 3f64.sqrt() * x + (3f64.sqrt() / 2.0) * z;
-        let py = 1.5 * z;
-        let _ = y;
-        let angle = py.atan2(px); // -pi..pi, 0 = east
-                                  // Facings at 0, 60, 120, 180, -120, -60 degrees.
+        // Flat-top cube-to-pixel: x = 3/2·q, y = √3/2·q + √3·r (+y down).
+        // Axial neighbor deltas stay the cube-adjacent set (same as pointy-top);
+        // only the pixel projection changes with orientation.
+        let px = 1.5 * dq;
+        let py = (3f64.sqrt() / 2.0) * dq + 3f64.sqrt() * dr;
+        let angle = py.atan2(px); // -pi..pi
         let deg = angle.to_degrees();
         let norm = ((deg % 360.0) + 360.0) % 360.0;
-        // Pointy-top +y-down pixel space: 0°=E, 60°=SE, 120°=SW, 180°=W,
-        // 240°=NW, 300°=NE — not the same order as the Facing enum.
-        let idx = ((norm + 30.0) / 60.0).floor() as i32 % 6;
+        // With flat-top pixels, cube neighbors land at 30°, 90°, 150°, …
+        // (E=(1,0) at 30°, SE=(0,1) at 90°, …). Offset by −30° then bin.
+        let idx = (((norm - 30.0) + 360.0) % 360.0 / 60.0).floor() as i32 % 6;
         Some(match idx {
             0 => Facing::E,
             1 => Facing::SE,
@@ -139,7 +136,7 @@ fn cube_round(q: f64, r: f64) -> Hex {
     Hex::new(rq as i32, rr as i32)
 }
 
-/// One of six hex facings.
+/// One of six hex facings (cube-adjacent axial deltas).
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum Facing {
@@ -167,6 +164,7 @@ impl Facing {
         self as u8
     }
 
+    /// Cube-adjacent axial deltas (orientation-independent).
     pub fn delta(self) -> (i32, i32) {
         match self {
             Facing::E => (1, 0),
@@ -209,12 +207,16 @@ mod tests {
     #[test]
     fn facing_toward_neighbors() {
         let a = Hex::new(2, 2);
-        assert_eq!(a.facing_toward(Hex::new(3, 2)), Some(Facing::E));
-        assert_eq!(a.facing_toward(Hex::new(3, 1)), Some(Facing::NE));
-        assert_eq!(a.facing_toward(Hex::new(2, 1)), Some(Facing::NW));
-        assert_eq!(a.facing_toward(Hex::new(1, 2)), Some(Facing::W));
-        assert_eq!(a.facing_toward(Hex::new(1, 3)), Some(Facing::SW));
-        assert_eq!(a.facing_toward(Hex::new(2, 3)), Some(Facing::SE));
+        for f in [
+            Facing::E,
+            Facing::NE,
+            Facing::NW,
+            Facing::W,
+            Facing::SW,
+            Facing::SE,
+        ] {
+            assert_eq!(a.facing_toward(a.neighbor(f)), Some(f));
+        }
     }
 
     #[test]
@@ -237,13 +239,28 @@ mod tests {
 
     #[test]
     fn offset_neighbors_stay_near_rectangle() {
-        // In a wide enough odd-r rectangle, interior offset (3,3) has six
+        // In a wide enough odd-q rectangle, interior offset (3,3) has six
         // neighbors that also convert to nearby offset cells.
         let h = Hex::offset(3, 3);
         let offs: Vec<_> = h.neighbors().into_iter().map(|n| n.to_offset()).collect();
         assert_eq!(offs.len(), 6);
         for (c, r) in offs {
             assert!((2..=4).contains(&c) || (2..=4).contains(&r));
+        }
+    }
+
+    #[test]
+    fn ew_race_distances_are_symmetric() {
+        // The reason we switched to flat-top: Red/Blue forward edges match.
+        let w = 18i32;
+        let depth = 3i32;
+        let flag_row = 6i32;
+        let rflag = Hex::offset(0, flag_row);
+        let bflag = Hex::offset(w - 1, flag_row);
+        for row in 0..12 {
+            let red = Hex::offset(depth - 1, row).distance(bflag);
+            let blue = Hex::offset(w - depth, row).distance(rflag);
+            assert_eq!(red, blue, "row {row}: red={red} blue={blue}");
         }
     }
 }

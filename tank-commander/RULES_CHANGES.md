@@ -16,6 +16,81 @@ games, seed `7`, unless noted.
 
 ---
 
+## 2026-08-31 — Edge deploy zones, alternating placement, half-unit spoil
+
+**Type: Rule** (+ **Sim** placement AI)
+
+1. **Deployment zones** are **N hexes from each home edge** (skirmish depth 2,
+   battle depth 3), not fixed offset seeds / center-relative plazas. Buildings
+   stay out of the zones.
+2. **Alternating placement:** second player (Assault: defender) places first;
+   sides take turns. Embarked infantry ride with their vehicle.
+3. **Placement AI** is scenario-aware (duel lanes, Capture/Assault race or
+   hold the flag). A consistent Red win from distance-to-flag is treated as a
+   placement bug, not a map feature.
+4. **Spoil unit nudges** now move at most **half** (floor) of the first
+   player's unembarked units — best spoil targets first — instead of every
+   opposing unit. Terrain spoil budgets unchanged.
+
+Capture stays a thin race scenario; no redesign this pass.
+
+**Effect (200 games = 50 × 4 seeds):**
+
+| Scenario | Red win % | First-player win % | Notes |
+|----------|-----------|--------------------|-------|
+| Squadron | 58% | 44% | mild SP edge remains |
+| Platoon | 49% | 34% | SP still strong when spoil applies |
+| Combined | 36% | 43% | Blue lean; revisit if it sticks |
+| Capture | **58%** (was ~77%) | **47%** (was ~69%) | race distance equalized |
+| Assault | 59% color / **47% attacker** | — | 93 atk / 104 def — hold-able |
+
+Half-unit spoil did not erase the ladder second-player lean, but Capture's
+structural Red/FP skew is mostly gone.
+
+## 2026-08-31 — Capture board rotated north–south
+
+**Type: Scenario** *(superseded by flat-top odd-q below)*
+
+Capture briefly used a **12×18** N–S mat to dodge odd-r E–W race chirality.
+That layout is gone: all scenarios stay E–W with flat-top hexes instead.
+
+## 2026-08-31 — Flat-top (point-sided) odd-q boards
+
+**Type: Rule**
+
+Boards switch from **pointy-top odd-r** (flat sides on the E–W edges) to
+**flat-top odd-q** (points on the E–W edges). Red stays west, Blue stays
+east, and map sizes stay **18×12** / **9×12**. Capture returns to the shared
+battle mat (no more 12×18 N–S rotate).
+
+Why: on pointy-top, distance from a west forward-edge hex to an east flag is
+**chiral by row** — Red had more optimal deploy hexes than Blue. Flat-top makes
+every row's race length match (18×12, depth 3 → distance 15 for both sides).
+
+Facing axial deltas stay the cube-adjacent set; only offset conversion and
+cube-to-pixel math follow flat-top. Offset `(col, row)` round-trips unchanged
+for layout authors.
+
+Assault defender infantry are forced dug-in after spoil so the hold scenario
+does not depend on a forest tile surviving the nudge.
+
+**Effect (200 games, seed 7):**
+
+| Scenario | Red / Blue / Draw | FP / SP wins | Notes |
+|----------|-------------------|--------------|-------|
+| Skirmish | 89 / 105 / 6 | 74 / 120 | SP spoil edge (unchanged shape) |
+| Squadron | 89 / 103 / 8 | 92 / 100 | near color-fair |
+| Platoon | 89 / 108 / 3 | 65 / 132 | SP spoil still strong |
+| Combined | 106 / 92 / 2 | 92 / 106 | mild Red; not geometry |
+| Capture | 111 / 84 / 5 | 88 / 107 | race dist **tied 80/80**; mild Red remains (AI/list) |
+| Assault | 100 / 95 / 5 | 111 / 84 | attacker 111 / defender 84; **color ~50/50** |
+
+Geometry chirality is gone (Capture APC→flag min distance tied every seed).
+Remaining color leans are small and track initiative / spoil / AI, not mat
+chirality.
+
+---
+
 ## 2026-08-30 — Driver *Move move move!* matches upstream
 
 **Type: Rule** (+ **Sim** AI pathing)

@@ -91,7 +91,7 @@ cross simple thresholds.
 - **AI.** When LOS is blocked, pathfind to a firing hex. When LOS is open,
   beam-search shoot / load / ability plans. Infantry prefer missiles and
   cover; APCs hunt infantry; tanks with air support may call a strike.
-- **Map.** Boards are odd-r **rectangles** (column × row), matching a
+- **Map.** Boards are odd-q **flat-top** rectangles (column × row), matching a
   tabletop hex mat — not axial parallelograms. Platoon and combined share an
   **18×12** open mat (building clumps + forest patches). Skirmish is half
   the width (**9×12**) with a compact midline block. Forest/mud/rubble also
@@ -118,7 +118,7 @@ default rather than blocking.
 
 | Path | Role |
 |------|------|
-| `src/hex.rs` | Axial math + odd-r offset map coords, facings, LOS line |
+| `src/hex.rs` | Axial math + odd-q flat-top offset map coords, facings, LOS line |
 | `src/unit.rs` | Tank / APC / infantry, crew, armor |
 | `src/board.rs` | Rectangular boards, terrain, smoke |
 | `src/combat.rs` | Hit / pen / glance / fire / cook-off |
