@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 pub enum Action {
     /// Move one hex forward (hull facing). Vehicles only.
     Move,
+    /// Driver *Move move move!*: advance **two** hexes forward for one action.
+    MoveDouble,
+    /// Driver *Move move move!*: advance **three** hexes straight ahead for one action.
+    MoveStraight3,
     /// Infantry: step one hex in any facing.
     Step(Facing),
     TurnLeft,
@@ -86,6 +90,8 @@ impl Action {
     pub fn name(self) -> &'static str {
         match self {
             Action::Move => "Move",
+            Action::MoveDouble => "MoveDouble",
+            Action::MoveStraight3 => "MoveStraight3",
             Action::Step(_) => "Step",
             Action::TurnLeft => "TurnLeft",
             Action::TurnRight => "TurnRight",
@@ -127,6 +133,7 @@ impl Action {
 #[derive(Clone, Debug, Default)]
 pub struct TurnBuffs {
     pub extra_actions: i32,
+    /// Driver *Move move move!*: double / triple forward moves this activation.
     pub move_move_move: bool,
     pub hit_on_2: bool,
     pub free_load: bool,

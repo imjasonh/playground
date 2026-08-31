@@ -93,13 +93,15 @@ activation):
 | Role | Ability |
 |------|---------|
 | Commander | *Booming Voice* — +2 actions this activation |
-| Driver | *Move move move!* — +1 max move this activation (partial; see Unimplemented) |
+| Driver | *Move move move!* — move twice for one action, **or** three spaces straight ahead |
 | Gunner | *Bring it down!* — hit on 2+ this activation |
 | Loader | *Quick Load* — loading costs 0 actions this activation |
 
-**Driver ability note.** Upstream allows moving twice for one action **or**
-three spaces straight. The simulator currently only grants **+1 max move** for
-the activation (see [Unimplemented upstream](#unimplemented-upstream)).
+**Driver ability.** Once activated this battle, for the rest of that activation
+the tank may take `MoveDouble` (two hexes forward for one action) or
+`MoveStraight3` (three hexes straight ahead for one action), in addition to
+normal single-hex `Move`. Each hex still counts toward max move and can
+trigger mines.
 
 **Lieutenant commander** (upgrade): may cover a killed role, always acting as
 if that role were wounded until the lieutenant is killed.
@@ -251,7 +253,7 @@ or use AI weapons against other infantry.
 | Rubble | 2 actions to leave |
 | Forest | Enemy accuracy −1 vs a unit **in** or **behind** a forest (intervening forest on the line of fire; forest does not block LOS) |
 | Building | Impassable; blocks LOS. Destroying buildings by fire is unimplemented. |
-| Hill (advanced) | Unimplemented in the simulator — tabletop reference only. |
+| Hill (advanced) | Deferred (future work) — not in the simulator. |
 | Mines (advanced) | Entering triggers an AT strength-6 pen check, then the mine is removed. Any unit that steps or drives onto the hex triggers it (infantry die on a hit). |
 
 Smoke blocks LOS through its hex until the end of the battle (or as the
@@ -592,14 +594,15 @@ Upstream:
 
 Mentioned above for humans; the list builder never awards these.
 
-### Driver *Move move move!* — **partial**
+### Driver *Move move move!* — **implemented**
 
 Upstream:
 
 > _"Move move move!"_: the tank can move twice for one action, or move three spaces straight ahead
 
-Simulator: only `max_move + 1` for that activation. No double-move-for-one-AP
-and no three-hex straight special.
+Live rules: activating the Driver ability unlocks `MoveDouble` (2 hexes / 1 AP)
+and `MoveStraight3` (3 hexes straight / 1 AP) for that activation. Hexes count
+toward max move; mines resolve on every entered hex.
 
 ### APC armor cap (max +2 / facing) — **implemented**
 
@@ -630,21 +633,23 @@ Upstream:
 Live rules: −1 when the target hex is Forest, or any intervening hex on the
 line of fire is Forest (forest never blocks LOS).
 
-### Destroy buildings by fire — **missing**
+### Destroy buildings by fire — **deferred (future work)**
 
 Upstream:
 
 > **Building**: Buildings are impassable terrain. Tanks can fire rounds at buildings to turn them into Rubble.
 
-Buildings stay impassable forever in the sim. No “shoot the wall” action.
+Dropped for now. Buildings stay impassable forever in the sim. No “shoot the
+wall” action. Revisit later.
 
-### Hills — **missing**
+### Hills — **deferred (future work)**
 
 Upstream:
 
 > (Advanced) **Hill**: When a tank is immediately behind a hill space, enemy accuracy is -1. When a tank is on a hill space, all hits against it are taken against the rear armor value.
 
-No `Hill` terrain type in the board code. Not placed on any ladder map.
+Dropped for now. No `Hill` terrain type and no hill placement on ladder maps.
+Revisit later.
 
 ### Take Cover lock — **replaced**
 

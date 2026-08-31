@@ -16,6 +16,30 @@ games, seed `7`, unless noted.
 
 ---
 
+## 2026-08-30 — Driver *Move move move!* matches upstream
+
+**Type: Rule** (+ **Sim** AI pathing)
+
+Upstream Driver ability: move twice for one action, **or** three spaces
+straight ahead. Was previously simulated as only `max_move + 1`.
+
+Now: activating the ability unlocks `MoveDouble` (2 hexes / 1 AP) and
+`MoveStraight3` (3 hexes straight / 1 AP) for that activation. Each hex
+counts toward max move and can trigger mines. AI chase / path plans use the
+ability when closing distance.
+
+**Effect (same seeds 42):** avg MoveMoveMove uses/game —
+
+| Scenario | Before (+1 max move) | After (2× / 3-straight) |
+|----------|----------------------|-------------------------|
+| Squadron (64) | 1.02 | **6.00** (every tank) |
+| Platoon (64) | 1.06 | **6.00** (every tank) |
+| Combined (48) | 0.33 | **4.00** (every tank) |
+
+Hills and destroy-buildings remain deferred future work (not simulated).
+
+---
+
 ## 2026-08-30 — Natural 1 always fails, natural 6 always succeeds
 
 **Type: Rule**

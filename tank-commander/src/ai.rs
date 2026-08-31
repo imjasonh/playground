@@ -1057,16 +1057,43 @@ fn chase_enemy_fallback(tank: &crate::unit::Tank, enemy: Hex) -> Vec<Action> {
     let Some(need) = tank.pos.facing_toward(enemy) else {
         return Vec::new();
     };
+    let driver_ready = tank.kind == UnitKind::Tank
+        && tank.crew.iter().any(|c| {
+            c.role == crate::unit::CrewRole::Driver
+                && c.status != crate::unit::CrewStatus::Killed
+                && !c.ability_used
+        });
+    let dist = tank.pos.distance(enemy);
     // With 1 AP (stock APCs), only emit one useful action: Move if already
     // facing the goal, otherwise turn the short way.
     if tank.hull_facing == need {
+        if driver_ready && dist >= 3 {
+            return vec![Action::AbilityMoveMoveMove, Action::MoveStraight3];
+        }
+        if driver_ready && dist >= 2 {
+            return vec![Action::AbilityMoveMoveMove, Action::MoveDouble];
+        }
         return vec![Action::Move, Action::Move, Action::Move];
     }
     let left_steps = turn_steps_left(tank.hull_facing, need);
     let right_steps = (6 - left_steps) % 6;
     if left_steps > 0 && left_steps <= right_steps {
+        if driver_ready && dist >= 3 {
+            return vec![
+                Action::TurnLeft,
+                Action::AbilityMoveMoveMove,
+                Action::MoveStraight3,
+            ];
+        }
         vec![Action::TurnLeft, Action::Move, Action::Move]
     } else {
+        if driver_ready && dist >= 3 {
+            return vec![
+                Action::TurnRight,
+                Action::AbilityMoveMoveMove,
+                Action::MoveStraight3,
+            ];
+        }
         vec![Action::TurnRight, Action::Move, Action::Move]
     }
 }
@@ -1166,6 +1193,17 @@ fn path_to_actions(tank: &crate::unit::Tank, path: &[Hex]) -> Vec<Action> {
     let mut moves = 0i32;
     let mut ap = tank.effective_actions();
     let max_move = tank.effective_max_move();
+    let driver_ready = tank.kind == UnitKind::Tank
+        && tank.crew.iter().any(|c| {
+            c.role == crate::unit::CrewRole::Driver
+                && c.status != crate::unit::CrewStatus::Killed
+                && !c.ability_used
+        });
+    let mut rush = false;
+    if driver_ready && path.len() > 3 {
+        actions.push(Action::AbilityMoveMoveMove);
+        rush = true;
+    }
 
     for window in path.windows(2) {
         let next = window[1];
@@ -1187,6 +1225,39 @@ fn path_to_actions(tank: &crate::unit::Tank, path: &[Hex]) -> Vec<Action> {
         }
         if facing != need || ap <= 0 || moves >= max_move {
             break;
+        }
+        // With Move move move!, take 3- or 2-hex rushes when the path stays
+        // straight ahead for that many steps.
+        if rush && facing == need {
+            let remaining: Vec<Hex> = path
+                .iter()
+                .skip_while(|h| **h != pos)
+                .skip(1)
+                .copied()
+                .collect();
+            if remaining.len() >= 3
+                && moves + 3 <= max_move
+                && remaining[0] == pos.neighbor(facing)
+                && remaining[1] == pos.neighbor(facing).neighbor(facing)
+                && remaining[2] == pos.neighbor(facing).neighbor(facing).neighbor(facing)
+            {
+                actions.push(Action::MoveStraight3);
+                pos = remaining[2];
+                moves += 3;
+                ap -= 1;
+                continue;
+            }
+            if remaining.len() >= 2
+                && moves + 2 <= max_move
+                && remaining[0] == pos.neighbor(facing)
+                && remaining[1] == pos.neighbor(facing).neighbor(facing)
+            {
+                actions.push(Action::MoveDouble);
+                pos = remaining[1];
+                moves += 2;
+                ap -= 1;
+                continue;
+            }
         }
         actions.push(Action::Move);
         pos = next;
@@ -1237,6 +1308,22 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
             let cost = game.board.terrain_at(node.pos).move_cost_to_leave();
             node.pos = node.pos.neighbor(node.hull);
             node.moves += 1;
+            node.ap_left -= cost;
+        }
+        Action::MoveDouble => {
+            let cost = game.board.terrain_at(node.pos).move_cost_to_leave();
+            node.pos = node.pos.neighbor(node.hull).neighbor(node.hull);
+            node.moves += 2;
+            node.ap_left -= cost;
+        }
+        Action::MoveStraight3 => {
+            let cost = game.board.terrain_at(node.pos).move_cost_to_leave();
+            node.pos = node
+                .pos
+                .neighbor(node.hull)
+                .neighbor(node.hull)
+                .neighbor(node.hull);
+            node.moves += 3;
             node.ap_left -= cost;
         }
         Action::Step(facing) => {

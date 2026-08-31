@@ -29,6 +29,7 @@ pub struct GameReport {
     pub crew_wounds: u32,
     pub crew_kills: u32,
     pub abilities_used: u32,
+    pub move_move_move_used: u32,
     pub air_strikes: u32,
     pub infantry_kills: u32,
     pub smoke_deployed: u32,
@@ -144,6 +145,7 @@ impl GameReport {
             crew_wounds: game.total_crew_wounds,
             crew_kills: game.total_crew_kills,
             abilities_used: game.abilities_used,
+            move_move_move_used: game.move_move_move_used,
             air_strikes: game.air_strikes_resolved,
             infantry_kills: game.infantry_kills,
             smoke_deployed: game.smoke_deployed,
@@ -259,6 +261,7 @@ pub struct AggregateReport {
     pub avg_crew_wounds: f64,
     pub avg_crew_kills: f64,
     pub avg_abilities_used: f64,
+    pub avg_move_move_move_used: f64,
     pub avg_air_strikes: f64,
     pub avg_infantry_kills: f64,
     pub avg_smoke_deployed: f64,
@@ -377,6 +380,7 @@ impl AggregateReport {
             avg_crew_wounds: sum_f(|r| r.crew_wounds),
             avg_crew_kills: sum_f(|r| r.crew_kills),
             avg_abilities_used: sum_f(|r| r.abilities_used),
+            avg_move_move_move_used: sum_f(|r| r.move_move_move_used),
             avg_air_strikes: sum_f(|r| r.air_strikes),
             avg_infantry_kills: sum_f(|r| r.infantry_kills),
             avg_smoke_deployed: sum_f(|r| r.smoke_deployed),
@@ -614,7 +618,7 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
     ));
     out.push_str(&format!(
         "Drama: pens {:.2}, glances {:.2} (suppressions {:.2}), fires {:.2}, cook-offs {:.2}, \
-         crew wounds {:.2}, crew kills {:.2}, abilities {:.2}, comebacks {}\n",
+         crew wounds {:.2}, crew kills {:.2}, abilities {:.2} (MoveMoveMove {:.2}), comebacks {}\n",
         agg.avg_pens,
         agg.avg_glances,
         agg.avg_suppressions,
@@ -623,6 +627,7 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
         agg.avg_crew_wounds,
         agg.avg_crew_kills,
         agg.avg_abilities_used,
+        agg.avg_move_move_move_used,
         agg.comebacks
     ));
     if agg.avg_air_strikes > 0.0 || agg.avg_infantry_kills > 0.0 || agg.scenario == "combined" {

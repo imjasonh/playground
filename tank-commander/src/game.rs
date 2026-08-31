@@ -80,6 +80,8 @@ pub struct Game {
     pub total_crew_wounds: u32,
     pub total_crew_kills: u32,
     pub abilities_used: u32,
+    /// Driver *Move move move!* activations this game.
+    pub move_move_move_used: u32,
     pub smoke_deployed: u32,
     pub medkit_saves: u32,
     pub lt_covers: u32,
@@ -146,6 +148,7 @@ impl Game {
             total_crew_wounds: 0,
             total_crew_kills: 0,
             abilities_used: 0,
+            move_move_move_used: 0,
             smoke_deployed: 0,
             medkit_saves: 0,
             lt_covers: 0,
@@ -905,27 +908,88 @@ impl Game {
         buffs: &TurnBuffs,
         out: &mut Vec<Action>,
     ) {
-        if tank.moves_this_turn < tank.effective_max_move() {
+        let max_move = tank.effective_max_move();
+        let used = tank.moves_this_turn;
+        if used < max_move {
             let forward = tank.pos.neighbor(tank.hull_facing);
             let cost = self.board.terrain_at(tank.pos).move_cost_to_leave();
-            let move_ok = if buffs.move_move_move {
-                tank.moves_this_turn < tank.effective_max_move() + 1
-            } else {
-                tank.moves_this_turn < tank.effective_max_move()
-            };
-            if move_ok
-                && ap_left >= cost
-                && self.board.contains(forward)
-                && !self.board.terrain_at(forward).impassable()
-                && !self.occupied_hexes().contains(&forward)
-            {
+            if ap_left >= cost && self.can_drive_into(tank, forward) {
                 out.push(Action::Move);
+            }
+        }
+        // Driver ability: move twice for one action, or three spaces straight.
+        if buffs.move_move_move && ap_left >= 1 {
+            if used + 2 <= max_move && self.forward_path_clear(tank, 2).is_some() {
+                out.push(Action::MoveDouble);
+            }
+            if used + 3 <= max_move && self.forward_path_clear(tank, 3).is_some() {
+                out.push(Action::MoveStraight3);
             }
         }
         if ap_left >= 1 {
             out.push(Action::TurnLeft);
             out.push(Action::TurnRight);
         }
+    }
+
+    fn can_drive_into(&self, _tank: &Tank, hex: Hex) -> bool {
+        self.board.contains(hex)
+            && !self.board.terrain_at(hex).impassable()
+            && !self.occupied_hexes().contains(&hex)
+    }
+
+    /// Next `steps` hexes along hull facing are all driveable. Returns the
+    /// final hex when clear.
+    fn forward_path_clear(&self, tank: &Tank, steps: i32) -> Option<Hex> {
+        let mut pos = tank.pos;
+        for _ in 0..steps {
+            let next = pos.neighbor(tank.hull_facing);
+            if !self.can_drive_into(tank, next) {
+                return None;
+            }
+            pos = next;
+        }
+        Some(pos)
+    }
+
+    /// Drive `steps` hexes forward along hull facing for **one** action point
+    /// (leave-cost of the starting hex). Each intermediate hex resolves mines.
+    fn apply_forward_drive<R: Rng>(
+        &mut self,
+        tank_id: u8,
+        steps: i32,
+        ap_left: &mut i32,
+        rng: &mut R,
+    ) {
+        let turn = self.activations;
+        let side = self.tank(tank_id).side;
+        let cost = self
+            .board
+            .terrain_at(self.tank(tank_id).pos)
+            .move_cost_to_leave();
+        let facing = self.tank(tank_id).hull_facing;
+        let mut last = self.tank(tank_id).pos;
+        for i in 0..steps {
+            let next = self.tank(tank_id).pos.neighbor(facing);
+            self.tank_mut(tank_id).pos = next;
+            self.tank_mut(tank_id).moves_this_turn += 1;
+            self.moves_made += 1;
+            last = next;
+            self.sync_passenger_pos(tank_id);
+            self.resolve_mine_at(tank_id, next, rng);
+            self.maybe_kill_passengers(tank_id);
+            if self.tank(tank_id).destroyed || self.tank(tank_id).disabled {
+                break;
+            }
+            let _ = i;
+        }
+        *ap_left -= cost;
+        let label = match steps {
+            2 => "MoveDouble",
+            3 => "MoveStraight3",
+            _ => "Move",
+        };
+        self.push_event(turn, Some(side), format!("{label} → {last}"), None);
     }
 
     pub fn apply_action<R: Rng>(
@@ -957,26 +1021,22 @@ impl Game {
                 _ => 0,
             };
             self.abilities_used += 1;
+            if matches!(action, Action::AbilityMoveMoveMove) {
+                self.move_move_move_used += 1;
+            }
             self.push_event(turn, Some(side), action.name().to_string(), None);
             return;
         }
 
         match action {
             Action::Move => {
-                let cost = self
-                    .board
-                    .terrain_at(self.tank(tank_id).pos)
-                    .move_cost_to_leave();
-                let facing = self.tank(tank_id).hull_facing;
-                let next = self.tank(tank_id).pos.neighbor(facing);
-                self.tank_mut(tank_id).pos = next;
-                self.tank_mut(tank_id).moves_this_turn += 1;
-                *ap_left -= cost;
-                self.moves_made += 1;
-                self.push_event(turn, Some(side), format!("Move → {next}"), None);
-                self.sync_passenger_pos(tank_id);
-                self.resolve_mine_at(tank_id, next, rng);
-                self.maybe_kill_passengers(tank_id);
+                self.apply_forward_drive(tank_id, 1, ap_left, rng);
+            }
+            Action::MoveDouble => {
+                self.apply_forward_drive(tank_id, 2, ap_left, rng);
+            }
+            Action::MoveStraight3 => {
+                self.apply_forward_drive(tank_id, 3, ap_left, rng);
             }
             Action::Step(facing) => {
                 let cost = self
@@ -2489,6 +2549,46 @@ mod tests {
         assert!(!occ
             .iter()
             .any(|h| *h != g.tank(1).pos && *h == g.tank(0).pos));
+    }
+
+    #[test]
+    fn driver_move_move_move_double_and_triple() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(14, 9);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::offset(2, 4), Facing::E, "Red"),
+            Tank::stock(1, Side::Blue, Hex::offset(12, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 40, "test");
+        let mut rng = ChaCha8Rng::seed_from_u64(9);
+        let mut ap = 3;
+        let mut buffs = TurnBuffs::default();
+        g.begin_activation(0);
+        g.apply_action(
+            0,
+            Action::AbilityMoveMoveMove,
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
+        assert_eq!(g.move_move_move_used, 1);
+        assert!(buffs.move_move_move);
+        let legal = g.legal_actions(0, ap, &buffs);
+        assert!(legal.contains(&Action::MoveDouble));
+        assert!(legal.contains(&Action::MoveStraight3));
+        let start = g.tank(0).pos;
+        g.apply_action(0, Action::MoveStraight3, &mut buffs, &mut ap, &mut rng);
+        assert_eq!(
+            g.tank(0).pos,
+            start
+                .neighbor(Facing::E)
+                .neighbor(Facing::E)
+                .neighbor(Facing::E)
+        );
+        assert_eq!(g.tank(0).moves_this_turn, 3);
+        // One action for three hexes.
+        assert_eq!(ap, 2);
     }
 
     #[test]
