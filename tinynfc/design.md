@@ -166,19 +166,42 @@ Layout constraints:
 - Route the gated bulk capacitor and MOSFET close to the MCU and piezo so the
   high-current PWM path is short.
 
+## KiCad project
+
+Schematic and board live under [`kicad/`](kicad/). Open
+`kicad/tinynfc.kicad_pro` in KiCad 7 or later.
+
+| Decision | Choice in this revision |
+|----------|-------------------------|
+| MCU | ATtiny816-MNR (VQFN-20) |
+| Piezo drive | Differential on PB0 / PB1 |
+| Hard-tied `VOUT` cap | 100 nF (under the 220 nF NXP limit) |
+| Board size | 40 mm × 40 mm |
+| Antenna | 28 mm rectangular spiral on `F.Cu` (~2.75 µH target) |
+
+Connectivity in the schematic is by net labels. After opening the project,
+run **Update PCB from Schematic**, then route. The generator places
+footprints and draws the spiral; it does not auto-route.
+
+Regenerate from the design inputs with:
+
+```bash
+python3 tinynfc/kicad/scripts/generate_project.py
+```
+
 ## Open questions
 
 These need decisions or measurements before locking the schematic:
 
-- ATtiny816 versus ATtiny412 (pins, Flash headroom, package height).
-- Single-ended versus differential piezo drive as the default.
 - Exact series resistor after measuring piezo current spikes on NFC power.
 - Antenna geometry for reliable coupling across common phone NFC coil
-  placements.
+  placements (confirm inductance on a VNA).
 - Whether the NTAG's I2C / EEPROM side is used for anything (melody select,
   config) or left unused with the chip acting only as a harvester and tag.
 - Melody format extensions (volume, duty cycle, envelopes) versus staying at
   two `uint16_t` fields per note.
+- Confirm XQFN8 / DFN1006 land patterns against manufacturer drawings before
+  fab.
 
 ## Out of scope (for now)
 

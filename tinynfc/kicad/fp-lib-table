@@ -1,0 +1,4 @@
+(fp_lib_table
+  (version 7)
+  (lib (name "tinynfc")(type "KiCad")(uri "${KIPRJMOD}/libraries/tinynfc.pretty")(options "")(descr "TinyNFC project footprints"))
+)

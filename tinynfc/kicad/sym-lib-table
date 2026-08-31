@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "tinynfc")(type "KiCad")(uri "${KIPRJMOD}/libraries/tinynfc.kicad_sym")(options "")(descr "TinyNFC project symbols"))
+)
