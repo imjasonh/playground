@@ -251,6 +251,38 @@ fn dig_in_side(game: &mut Game, side: Side) {
     }
 }
 
+/// Shared alley columns for Capture / Assault approach lanes.
+fn raid_alley_egress() -> [Hex; 8] {
+    let mut out = [Hex::offset(0, 0); 8];
+    let mut i = 0;
+    for col in [3i32, 14] {
+        for row in [2i32, 5, 7, 10] {
+            out[i] = Hex::offset(col, row);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Deploy → optional mines → optional spoil.
+fn finish_deployment<R: Rng>(
+    game: &mut Game,
+    depth: i32,
+    first_to_place: Side,
+    spoil: bool,
+    terrain_budget: u32,
+    mines: bool,
+    rng: &mut R,
+) {
+    deploy_alternating(game, depth, first_to_place);
+    if mines {
+        game.place_deployment_mines(rng);
+    }
+    if spoil {
+        second_player_setup(game, terrain_budget);
+    }
+}
+
 /// Deployment zones on the west and east edges (Red west, Blue east).
 fn deploy_zone_hexes(width: i32, height: i32, depth: i32) -> Vec<Hex> {
     let mut out = Vec::new();
@@ -622,8 +654,7 @@ pub fn squadron<R: Rng>(rng: &mut R) -> Game {
     let tanks = seed_six_tank_force(BATTLE_WIDTH, BATTLE_HEIGHT, depth);
     let first = coin_flip(rng);
     let mut game = Game::new(board, tanks, first, 200, "squadron").with_stalemate(40);
-    deploy_alternating(&mut game, depth, first.other());
-    second_player_setup(&mut game, 3);
+    finish_deployment(&mut game, depth, first.other(), true, 3, false, rng);
     game
 }
 
@@ -639,10 +670,7 @@ pub fn platoon<R: Rng>(rng: &mut R) -> Game {
     let mut game = Game::new(board, tanks, first, 200, "platoon")
         .with_stalemate(40)
         .with_list_initiative(!spoil);
-    deploy_alternating(&mut game, depth, first.other());
-    if spoil {
-        second_player_setup(&mut game, 3);
-    }
+    finish_deployment(&mut game, depth, first.other(), spoil, 3, false, rng);
     game
 }
 
@@ -689,11 +717,7 @@ pub fn combined<R: Rng>(rng: &mut R) -> Game {
     let mut game = Game::new(board, tanks, first, 240, "combined")
         .with_stalemate(48)
         .with_list_initiative(!spoil);
-    deploy_alternating(&mut game, depth, first.other());
-    game.place_deployment_mines(rng);
-    if spoil {
-        second_player_setup(&mut game, 4);
-    }
+    finish_deployment(&mut game, depth, first.other(), spoil, 4, true, rng);
     game
 }
 
@@ -709,18 +733,10 @@ pub fn capture<R: Rng>(rng: &mut R) -> Game {
     let depth = DEPLOY_DEPTH_BATTLE;
     let red_flag = home_edge_flag(Side::Red, width, height);
     let blue_flag = home_edge_flag(Side::Blue, width, height);
-    let egress = [
-        Hex::offset(3, 2),
-        Hex::offset(3, 5),
-        Hex::offset(3, 7),
-        Hex::offset(3, 10),
-        Hex::offset(14, 2),
-        Hex::offset(14, 5),
-        Hex::offset(14, 7),
-        Hex::offset(14, 10),
-        red_flag,
-        blue_flag,
-    ];
+    let alleys = raid_alley_egress();
+    let mut egress: Vec<Hex> = alleys.to_vec();
+    egress.push(red_flag);
+    egress.push(blue_flag);
     let goals = [Hex::offset(8, 5), Hex::offset(9, 6), red_flag, blue_flag];
     let mut board = build_battle_board(rng, &egress, &goals, true);
     board.set_terrain(red_flag, Terrain::Open);
@@ -759,11 +775,7 @@ pub fn capture<R: Rng>(rng: &mut R) -> Game {
     game.push_setup_event(format!(
         "Capture {width}×{height}; flags at {red_flag} (Red/W) and {blue_flag} (Blue/E)"
     ));
-    deploy_alternating(&mut game, depth, first.other());
-    game.place_deployment_mines(rng);
-    if spoil {
-        second_player_setup(&mut game, 3);
-    }
+    finish_deployment(&mut game, depth, first.other(), spoil, 3, true, rng);
     game.board.set_terrain(red_flag, Terrain::Open);
     game.board.set_terrain(blue_flag, Terrain::Open);
     game
@@ -784,17 +796,9 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
     let atk_facing = facing_for(attacker);
     let def_facing = atk_facing.opposite();
 
-    let egress = [
-        Hex::offset(3, 2),
-        Hex::offset(3, 5),
-        Hex::offset(3, 7),
-        Hex::offset(3, 10),
-        Hex::offset(14, 2),
-        Hex::offset(14, 5),
-        Hex::offset(14, 7),
-        Hex::offset(14, 10),
-        def_flag,
-    ];
+    let alleys = raid_alley_egress();
+    let mut egress: Vec<Hex> = alleys.to_vec();
+    egress.push(def_flag);
     let goals = [Hex::offset(8, 5), Hex::offset(9, 6), def_flag];
     let mut board = build_battle_board(rng, &egress, &goals, false);
     board.set_terrain(def_flag, Terrain::Open);
@@ -849,9 +853,7 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
     game.push_setup_event(format!(
         "{attacker:?} assaults; {defender:?} holds flag at {def_flag}"
     ));
-    deploy_alternating(&mut game, depth, defender);
-    game.place_deployment_mines(rng);
-    second_player_setup(&mut game, 3);
+    finish_deployment(&mut game, depth, defender, true, 3, true, rng);
     game.board.set_terrain(def_flag, Terrain::Open);
     dig_in_side(&mut game, defender);
     game

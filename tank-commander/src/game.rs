@@ -298,10 +298,6 @@ impl Game {
             .collect()
     }
 
-    pub fn enemy_tank(&self, side: Side) -> Option<&Tank> {
-        self.enemy_units(side).into_iter().next()
-    }
-
     pub fn outcome(&self) -> Outcome {
         if let Some(side) = self.capture_winner() {
             return Outcome::Winner(side);
@@ -979,7 +975,7 @@ impl Game {
             .move_cost_to_leave();
         let facing = self.tank(tank_id).hull_facing;
         let mut last = self.tank(tank_id).pos;
-        for i in 0..steps {
+        for _ in 0..steps {
             let next = self.tank(tank_id).pos.neighbor(facing);
             self.tank_mut(tank_id).pos = next;
             self.tank_mut(tank_id).moves_this_turn += 1;
@@ -991,7 +987,6 @@ impl Game {
             if self.tank(tank_id).destroyed || self.tank(tank_id).disabled {
                 break;
             }
-            let _ = i;
         }
         *ap_left -= cost;
         let label = match steps {
@@ -1204,6 +1199,7 @@ impl Game {
                 *ap_left -= 1;
                 self.push_event(turn, Some(side), "Extinguished fire".into(), None);
             }
+            // Handled by the early `is_ability` return; kept for exhaustiveness.
             Action::AbilityBoomingVoice
             | Action::AbilityMoveMoveMove
             | Action::AbilityBringItDown
@@ -2733,9 +2729,8 @@ mod tests {
             Tank::stock_infantry(0, Side::Red, flag, Facing::E, "Squad"),
             Tank::stock(1, Side::Blue, Hex::offset(8, 4), Facing::W, "Blue"),
         ];
-        let mut g =
-            Game::new(board, tanks, Side::Red, 40, "test")
-                .with_objectives(vec![Objective::new(flag, Side::Blue)]);
+        let mut g = Game::new(board, tanks, Side::Red, 40, "test")
+            .with_objectives(vec![Objective::new(flag, Side::Blue)]);
         assert!(g.can_capture(g.tank(0)));
         let mut rng = ChaCha8Rng::seed_from_u64(1);
         let mut ap = 3;
