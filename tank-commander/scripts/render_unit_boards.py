@@ -46,6 +46,13 @@ def labeled_box(c: canvas.Canvas, x: float, y: float, text: str) -> None:
     draw_label(c, x + BOX + 5, y, text)
 
 
+def activated_top_right(c: canvas.Canvas, right: float, y: float) -> None:
+    """Right-align Activated so the label ends at `right`."""
+    label = "Activated"
+    tw = c.stringWidth(label, "Helvetica", 10)
+    labeled_box(c, right - BOX - 5 - tw, y, label)
+
+
 def underline(c: canvas.Canvas, x: float, y: float, w: float) -> None:
     c.setStrokeColor(RULE)
     c.setLineWidth(1.0)
@@ -130,15 +137,16 @@ def draw_tank_page(c: canvas.Canvas) -> None:
 
     x = panel_x + 0.28 * inch
     width = panel_w - 0.56 * inch
+    right = x + width
     y = panel_y + panel_h - 0.38 * inch
 
     c.setFillColor(INK)
     c.setFont("Helvetica-Bold", 18)
     c.drawString(x, y, "Tank")
+    activated_top_right(c, right, y - 4)
     y -= 0.42 * inch
 
-    field(c, x, y, 4.6 * inch, "Name")
-    field(c, x + 4.85 * inch, y, 1.1 * inch, "Pts")
+    field(c, x, y, width, "Name")
     y -= 0.48 * inch
 
     # Loadout stats on an even 7-column grid.
@@ -169,7 +177,7 @@ def draw_tank_page(c: canvas.Canvas) -> None:
     y = section_head(c, x, y, "Battle", width)
     hull_track(c, x, y, 4)
     y -= ROW
-    flag_row(c, x, y, ["Fire", "Disabled", "Activated"], pitch=1.25 * inch)
+    flag_row(c, x, y, ["Fire", "Disabled"], pitch=1.25 * inch)
     y -= ROW + 0.16 * inch
 
     # Gun: breech + spent as two left-labeled rows (same pattern as Hull).
@@ -233,15 +241,16 @@ def draw_apc_card(c: canvas.Canvas, left: float, bottom: float, card_w: float, c
     pad = 0.22 * inch
     x = left + pad
     width = card_w - 2 * pad
+    right = x + width
     y = bottom + card_h - 0.30 * inch
 
     c.setFillColor(INK)
     c.setFont("Helvetica-Bold", 14)
     c.drawString(x, y, "APC")
+    activated_top_right(c, right, y - 2)
     y -= 0.36 * inch
 
-    field(c, x, y, 3.3 * inch, "Name")
-    field(c, x + 3.5 * inch, y, 0.95 * inch, "Pts")
+    field(c, x, y, width, "Name")
     y -= 0.40 * inch
 
     y = section_head(c, x, y, "Loadout", width)
@@ -259,7 +268,7 @@ def draw_apc_card(c: canvas.Canvas, left: float, bottom: float, card_w: float, c
     y -= ROW
     flag_row(c, x, y, ["Fire", "Disabled"], pitch=1.25 * inch)
     y -= ROW
-    flag_row(c, x, y, ["Activated", "Smoke spent"], pitch=1.85 * inch)
+    labeled_box(c, x, y, "Smoke spent")
 
 
 def draw_apc_page(c: canvas.Canvas) -> None:
@@ -282,19 +291,17 @@ def draw_infantry_card(c: canvas.Canvas, left: float, bottom: float, card_w: flo
     pad = 0.20 * inch
     x = left + pad
     inner_w = card_w - 2 * pad
+    right = x + inner_w
 
-    # Three bands: title, fields, activated — even vertical split.
-    band = (card_h - 2 * pad) / 3
     y_title = bottom + card_h - pad - 12
-    y_fields = bottom + pad + 1.5 * band - 2
-    y_act = bottom + pad + 0.15 * inch
+    y_name = bottom + (card_h / 2) - 4
 
     c.setFillColor(INK)
     c.setFont("Helvetica-Bold", 13)
     c.drawString(x, y_title, "Infantry")
+    activated_top_right(c, right, y_title - 2)
 
-    field(c, x, y_fields, inner_w, "Name")
-    labeled_box(c, x, y_act, "Activated")
+    field(c, x, y_name, inner_w, "Name")
 
 
 def draw_infantry_page(c: canvas.Canvas) -> None:
