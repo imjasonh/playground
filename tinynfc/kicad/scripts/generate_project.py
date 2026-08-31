@@ -29,6 +29,10 @@ ANT_OUTER = 23.0
 ANT_TURNS = 6
 ANT_TRACE = 0.35
 ANT_GAP = 0.28
+# US quarter for scale drawings (documentation layer only — not fab copper).
+US_QUARTER_DIA_MM = 24.26
+BOARD_THICKNESS_MM = 1.6
+PIEZO_HEIGHT_MM = 1.8
 
 
 def uid() -> str:
@@ -914,6 +918,35 @@ def add_keepout_zone(board: pcbnew.BOARD, size: float) -> None:
     board.Add(ko)
 
 
+def add_quarter_scale(board: pcbnew.BOARD) -> None:
+    """Draw a US-quarter outline on Dwgs.User, beside the board, for scale."""
+    r = US_QUARTER_DIA_MM / 2
+    # Sit to the right of the square outline with a small gap.
+    cx = BOARD_MM / 2 + 2.0 + r
+    cy = 0.0
+    circ = pcbnew.PCB_SHAPE(board)
+    circ.SetShape(pcbnew.SHAPE_T_CIRCLE)
+    circ.SetLayer(pcbnew.Dwgs_User)
+    circ.SetCenter(pcbnew.VECTOR2I(mm(cx), mm(cy)))
+    circ.SetEnd(pcbnew.VECTOR2I(mm(cx + r), mm(cy)))
+    circ.SetWidth(mm(0.15))
+    board.Add(circ)
+    for txt, x, y, h in [
+        ("US quarter", cx, cy - r - 2.2, 1.0),
+        (f"Ø{US_QUARTER_DIA_MM} mm", cx, cy - r - 0.9, 0.8),
+        (f"board {BOARD_MM:.0f}×{BOARD_MM:.0f}×{BOARD_THICKNESS_MM} mm", 0.0, -BOARD_MM / 2 - 2.4, 0.9),
+        (f"assembled ~{BOARD_THICKNESS_MM + PIEZO_HEIGHT_MM:.1f} mm tall", 0.0, -BOARD_MM / 2 - 1.2, 0.7),
+    ]:
+        t = pcbnew.PCB_TEXT(board)
+        t.SetText(txt)
+        t.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))
+        t.SetLayer(pcbnew.Dwgs_User)
+        t.SetTextHeight(mm(h))
+        t.SetTextWidth(mm(h))
+        t.SetTextThickness(mm(max(0.1, h * 0.12)))
+        board.Add(t)
+
+
 def write_pcb() -> None:
     board = pcbnew.BOARD()
     # Title
@@ -924,6 +957,7 @@ def write_pcb() -> None:
 
     draw_rect_outline(board, BOARD_MM)
     add_keepout_zone(board, BOARD_MM)
+    add_quarter_scale(board)
 
     sys_fp = "/usr/share/kicad/footprints"
     # Antenna fills the board; electronics sit in the ~15 mm center island.
@@ -1026,8 +1060,12 @@ in this revision (no-connects).
 - Board: **28 mm × 28 mm** postage stamp (not credit-card size). A larger
   outline couples more RF; this one is the minimum that still fits a 9 mm
   piezo in the spiral island plus UPDI pads in the edge margin.
+- Thickness: **1.6 mm** FR-4 by default (~**3.4 mm** assembled with the piezo).
+  Optional 0.8 mm FR-4 for a flatter button.
 - Antenna: 23 mm square spiral, 6 turns, 0.35 / 0.28 mm trace/gap on `F.Cu`.
   Do **not** add a continuous GND plane under it.
+- A US-quarter outline (Ø 24.26 mm) is drawn on `Dwgs.User` beside the board
+  for scale — documentation only, not fab copper.
 - Footprint reference designators are hidden on silk so they do not sit on
   copper. Only GND / VCC / UPDI pad labels are silkscreened.
 - Keep the piezo + gated bulk path short inside the spiral island.

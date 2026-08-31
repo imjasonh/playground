@@ -156,10 +156,15 @@ startup, timer setup, and sleep.
 ## Form factor and layout
 
 Target a **postage-stamp** outline: **28 mm × 28 mm** in the current KiCad
-revision. Antenna area still dominates, but the board is intentionally not
-credit-card sized — smaller outline means weaker coupling to some phone coils,
-so expect to validate harvest current on real handsets and enlarge only if the
-field is too thin.
+revision — about the size of a US quarter (Ø 24.26 mm; a quarter outline sits
+on the `Dwgs.User` layer beside the board for scale). Antenna area still
+dominates, but the board is intentionally not credit-card sized — smaller
+outline means weaker coupling to some phone coils, so expect to validate
+harvest current on real handsets and enlarge only if the field is too thin.
+
+**Thickness:** default fab is **1.6 mm** FR-4. With the ~1.8 mm tall 9×9 piezo,
+the assembled button is about **3.4 mm** thick. Order **0.8 mm** FR-4 if you
+want it flatter.
 
 A 9×9 mm piezo (instead of 12×12) is what makes the spiral island fit at this
 size. Footprint refs stay off silkscreen so they do not land on antenna copper;
@@ -185,7 +190,7 @@ Schematic and board live under [`kicad/`](kicad/). Open
 | MCU | ATtiny816-MNR (VQFN-20) |
 | Piezo drive | Differential on PB0 / PB1 |
 | Hard-tied `VOUT` cap | 100 nF (under the 220 nF NXP limit) |
-| Board size | 28 mm × 28 mm (postage stamp) |
+| Board size | 28 mm × 28 mm × 1.6 mm FR-4 (postage stamp; ~3.4 mm assembled) |
 | Antenna | 23 mm square spiral, 6 turns on `F.Cu` (~2.75 µH target) |
 | Piezo | FUET-9018 on Murata PKMCS0909 land pattern |
 
