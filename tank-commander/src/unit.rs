@@ -411,10 +411,15 @@ impl Tank {
 
     pub fn effective_actions(&self) -> i32 {
         let mut actions = self.actions_per_turn;
-        match self.crew_status(CrewRole::Commander) {
-            CrewStatus::Wounded => actions -= 1,
-            CrewStatus::Killed => actions -= 2,
-            CrewStatus::Healthy => {}
+        // Tank crew roles only exist on tanks. APCs and infantry have empty
+        // crew lists; treating a missing commander as "killed" left them at
+        // 1 AP and broke ferry / flag races.
+        if self.kind == UnitKind::Tank {
+            match self.crew_status(CrewRole::Commander) {
+                CrewStatus::Wounded => actions -= 1,
+                CrewStatus::Killed => actions -= 2,
+                CrewStatus::Healthy => {}
+            }
         }
         if self.suppressed {
             actions = (actions - 1).max(1);
@@ -537,6 +542,16 @@ mod tests {
     fn stock_tank_can_load_he() {
         let t = Tank::stock(0, Side::Red, Hex::new(0, 0), Facing::E, "T");
         assert!(t.has_he);
+    }
+
+    #[test]
+    fn apc_and_infantry_keep_full_action_budget() {
+        let apc = Tank::stock_apc(0, Side::Red, Hex::new(0, 0), Facing::E, "APC");
+        let inf = Tank::stock_infantry(1, Side::Red, Hex::new(1, 0), Facing::E, "Inf");
+        assert!(apc.crew.is_empty());
+        assert!(inf.crew.is_empty());
+        assert_eq!(apc.effective_actions(), 3);
+        assert_eq!(inf.effective_actions(), 3);
     }
 
     #[test]

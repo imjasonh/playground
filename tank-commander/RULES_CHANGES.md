@@ -16,6 +16,30 @@ games, seed `7`, unless noted.
 
 ---
 
+## 2026-08-30 — Driver *Move move move!* matches upstream
+
+**Type: Rule** (+ **Sim** AI pathing)
+
+Upstream Driver ability: move twice for one action, **or** three spaces
+straight ahead. Was previously simulated as only `max_move + 1`.
+
+Now: activating the ability unlocks `MoveDouble` (2 hexes / 1 AP) and
+`MoveStraight3` (3 hexes straight / 1 AP) for that activation. Each hex
+counts toward max move and can trigger mines. AI chase / path plans use the
+ability when closing distance.
+
+**Effect (same seeds 42):** avg MoveMoveMove uses/game —
+
+| Scenario | Before (+1 max move) | After (2× / 3-straight) |
+|----------|----------------------|-------------------------|
+| Squadron (64) | 1.02 | **6.00** (every tank) |
+| Platoon (64) | 1.06 | **6.00** (every tank) |
+| Combined (48) | 0.33 | **4.00** (every tank) |
+
+Hills and destroy-buildings remain deferred future work (not simulated).
+
+---
+
 ## 2026-08-30 — Natural 1 always fails, natural 6 always succeeds
 
 **Type: Rule**
@@ -765,6 +789,117 @@ move to step on them). A/B Combined (200 games, seed 42):
 
 5 is a hair more “useful” on triggers; 6 is the better balance (decisive up,
 still ~2.3 triggers/game). 7 starts to push fields back and inflate timeouts.
+
+---
+
+## 2026-08-30 — Capture objectives + flag-raid scenario
+
+**Type: Rule / Scenario / Sim**
+
+### Rule
+
+Infantry may **Capture** (1 AP) while sharing an **enemy** flag hex. Capture
+wins immediately; stay-on-hex is not required (upstream wording). Wipe and
+attrition timeouts still apply.
+
+### Scenario `capture`
+
+Per side: **1 tank + 3 APCs**, each APC **pre-loaded** with infantry. Stock
+lists. 18×12 mirrored mat with one backline flag each. Roll-off + spoil.
+
+### Sim / AI
+
+- APCs pathfind toward the enemy flag and `DropOff` within 2 hexes.
+- Infantry Capture when on the hex; otherwise race / shoot nearby threats.
+- Metrics: `objectives_captured`, win-by-capture rate.
+
+### Bugfix (APC / infantry AP)
+
+`effective_actions` treated a missing commander as killed (−2). Stock APCs and
+infantry have empty crew lists, so they ran at **1 AP** and ferry AI spent that
+on useless hull turns. Crew penalties now apply to **tanks only**.
+
+### Balance (200 games, seed 1)
+
+| Signal | Value |
+|--------|-------|
+| Decisive | **100%** (1 draw) |
+| Win-by-capture | **96%** |
+| Avg captures / drop-offs | 0.96 / 2.18 |
+| Hard TO / idle stalemate | 0.5% / 2.5% |
+| Avg activations / moves | 83 / 98 |
+| Red / Blue wins | 135 / 64 |
+| First / second player wins | 74 / 125 (37% first) |
+
+**Verdict.** Objectives are used and decide almost every game — fun as a race,
+not an attrition slog. Embarkation is a real taxi (drops ~2/game). Watchouts:
+**second-player edge (~63%)** from spoil + reaction, and a **Red skew** on this
+seed set (likely odd-r / spoil interaction; not flip-fair yet). Low shot counts
+are expected for a flag race.
+
+---
+
+## 2026-08-30 — Assault (attacker / defender)
+
+**Type: Rule / Scenario / Sim**
+
+### Rule / scenario
+
+Asymmetric mission on the Capture rules:
+
+- **Attacker** (coin-flip color; always activates first): 1 tank + 3 loaded APCs.
+- **Defender** (spoil): 1 tank + 2 dug-in infantry; one backline flag.
+- Attacker wins by **Capture** or wipe. Defender wins by wipe or **hold**
+  (activation cap / idle stalemate awards the defender).
+
+### Force tuning
+
+First pass used **2 defender tanks** → attacker won only ~32% (defender wiped
+the APC push; Capture rare). Dropped to **1 defender tank** so the assault is
+contestable.
+
+### Balance (200 games, seed 1; 1-tank defender)
+
+| Signal | Value |
+|--------|-------|
+| Decisive | 98% |
+| Attacker / defender wins | **114 / 82 (58% attacker)** |
+| Win-by-capture | 36% |
+| Hold wins | 2% |
+| Avg shots / activations | 33.5 / 92 |
+| Low-engagement games | 8% |
+| Color (Red/Blue) | 100 / 96 |
+
+**Verdict.** Much more of a fight than the symmetric flag race — real shooting
+(~34 shots/game) and embarkation under fire. Slightly **attacker-favored** at
+58%; Capture decides about a third of games, wipe the rest, hold is rare. Fun
+enough to keep; nudge defender up (second tank or an APC) only if humans find
+the hold too soft.
+
+---
+
+## 2026-08-30 — Capture + Assault list upgrades
+
+**Type: Scenario**
+
+Capture and Assault were stock-only; they now use the same list budgets as
+Combined (**tanks ≤10 with mines**, **APCs ≤4**). Capture uses list initiative
+(under-spend first, spoil on tie) and deployment mines. Assault keeps
+attacker-first / defender-spoil regardless of list spend.
+
+Re-sim (120 games): Capture still ~98% win-by-capture with field kit + mines in
+play; Assault ~55% attacker with smoke/mines showing up in the census.
+
+---
+
+## 2026-08-30 — AI spray infantry-only + Disarm Mines
+
+**Type: Rule**
+
+- **AI spray** (APC AI and tank anti-infantry upgrade) may only target
+  **infantry**. Vehicles are immune — no vehicle suppression spray.
+- Infantry **Disarm Mines**: 1 AP removes an adjacent mine hex (upstream
+  fidelity). AI clears adjacent mines before remounting / racing.
 
 ---
 

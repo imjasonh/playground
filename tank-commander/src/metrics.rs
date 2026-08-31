@@ -29,6 +29,7 @@ pub struct GameReport {
     pub crew_wounds: u32,
     pub crew_kills: u32,
     pub abilities_used: u32,
+    pub move_move_move_used: u32,
     pub air_strikes: u32,
     pub infantry_kills: u32,
     pub smoke_deployed: u32,
@@ -36,6 +37,7 @@ pub struct GameReport {
     pub lt_covers: u32,
     pub mines_deployed: u32,
     pub mines_triggered: u32,
+    pub mines_disarmed: u32,
     pub mounts: u32,
     pub exterior_mounts: u32,
     pub embarks: u32,
@@ -43,6 +45,13 @@ pub struct GameReport {
     pub drop_offs: u32,
     pub passenger_kills: u32,
     pub exterior_rider_kills: u32,
+    pub objectives_captured: u32,
+    /// True when an infantry Capture ended the game.
+    pub ended_by_capture: bool,
+    /// Assault: timeout/idle ended with the defender still holding.
+    pub ended_by_hold: bool,
+    /// Assault attacker side, if any (`"Red"` / `"Blue"`).
+    pub attacker: Option<String>,
     pub loadout: LoadoutCensus,
     /// Lower-spend list won first activation (spoil skipped).
     pub list_initiative: bool,
@@ -76,8 +85,16 @@ impl GameReport {
             .tanks
             .iter()
             .any(|t| t.side == Side::Blue && t.is_operational());
-        let hit_cap = game.activations >= game.max_activations;
         let ended_by_stalemate = game.stalemate_idle();
+        let ended_by_capture = game.capture_winner().is_some();
+        let hit_cap = game.activations >= game.max_activations;
+        let ended_by_hold = game.attacker.is_some()
+            && !ended_by_capture
+            && (ended_by_stalemate || hit_cap)
+            && matches!(
+                outcome,
+                Outcome::Winner(s) if game.defender() == Some(s)
+            );
 
         let low_engagement = game.shots_fired < game.activations / 4;
         let late_stalemate = game.activations_since_hit >= 6 && game.activations >= 12;
@@ -128,6 +145,7 @@ impl GameReport {
             crew_wounds: game.total_crew_wounds,
             crew_kills: game.total_crew_kills,
             abilities_used: game.abilities_used,
+            move_move_move_used: game.move_move_move_used,
             air_strikes: game.air_strikes_resolved,
             infantry_kills: game.infantry_kills,
             smoke_deployed: game.smoke_deployed,
@@ -135,6 +153,7 @@ impl GameReport {
             lt_covers: game.lt_covers,
             mines_deployed: game.mines_deployed,
             mines_triggered: game.mines_triggered,
+            mines_disarmed: game.mines_disarmed,
             mounts: game.mounts,
             exterior_mounts: game.exterior_mounts,
             embarks: game.embarks,
@@ -142,13 +161,22 @@ impl GameReport {
             drop_offs: game.drop_offs,
             passenger_kills: game.passenger_kills,
             exterior_rider_kills: game.exterior_rider_kills,
+            objectives_captured: game.objectives_captured,
+            ended_by_capture,
+            ended_by_hold,
+            attacker: game.attacker.map(side_str).map(str::to_string),
             loadout: game.loadout_census.clone(),
             list_initiative: game.list_initiative,
             red_list_points: game.red_list_points,
             blue_list_points: game.blue_list_points,
             red_units_left,
             blue_units_left,
-            timed_out: hit_cap && red_alive && blue_alive && !ended_by_stalemate,
+            timed_out: hit_cap
+                && red_alive
+                && blue_alive
+                && !ended_by_stalemate
+                && !ended_by_capture
+                && !ended_by_hold,
             ended_by_stalemate,
             low_engagement,
             late_stalemate,
@@ -233,6 +261,7 @@ pub struct AggregateReport {
     pub avg_crew_wounds: f64,
     pub avg_crew_kills: f64,
     pub avg_abilities_used: f64,
+    pub avg_move_move_move_used: f64,
     pub avg_air_strikes: f64,
     pub avg_infantry_kills: f64,
     pub avg_smoke_deployed: f64,
@@ -240,6 +269,7 @@ pub struct AggregateReport {
     pub avg_lt_covers: f64,
     pub avg_mines_deployed: f64,
     pub avg_mines_triggered: f64,
+    pub avg_mines_disarmed: f64,
     pub avg_mounts: f64,
     pub avg_exterior_mounts: f64,
     pub avg_embarks: f64,
@@ -249,6 +279,15 @@ pub struct AggregateReport {
     pub avg_exterior_rider_kills: f64,
     /// Fraction of games with at least one Mount or Embark.
     pub embark_usage_rate: f64,
+    pub avg_objectives_captured: f64,
+    /// Fraction of games ended by Capture (not wipe / timeout).
+    pub capture_win_rate: f64,
+    /// Assault: wins by the attacking side.
+    pub attacker_wins: u32,
+    /// Assault: wins by the defending side.
+    pub defender_wins: u32,
+    /// Assault: fraction ended by hold (clock / idle) rather than wipe or Capture.
+    pub hold_win_rate: f64,
     /// Fraction of non-infantry units that bought each upgrade (0..=1).
     pub loadout_smoke_rate: f64,
     pub loadout_medkit_rate: f64,
@@ -341,6 +380,7 @@ impl AggregateReport {
             avg_crew_wounds: sum_f(|r| r.crew_wounds),
             avg_crew_kills: sum_f(|r| r.crew_kills),
             avg_abilities_used: sum_f(|r| r.abilities_used),
+            avg_move_move_move_used: sum_f(|r| r.move_move_move_used),
             avg_air_strikes: sum_f(|r| r.air_strikes),
             avg_infantry_kills: sum_f(|r| r.infantry_kills),
             avg_smoke_deployed: sum_f(|r| r.smoke_deployed),
@@ -348,6 +388,7 @@ impl AggregateReport {
             avg_lt_covers: sum_f(|r| r.lt_covers),
             avg_mines_deployed: sum_f(|r| r.mines_deployed),
             avg_mines_triggered: sum_f(|r| r.mines_triggered),
+            avg_mines_disarmed: sum_f(|r| r.mines_disarmed),
             avg_mounts: sum_f(|r| r.mounts),
             avg_exterior_mounts: sum_f(|r| r.exterior_mounts),
             avg_embarks: sum_f(|r| r.embarks),
@@ -357,6 +398,17 @@ impl AggregateReport {
             avg_exterior_rider_kills: sum_f(|r| r.exterior_rider_kills),
             embark_usage_rate: reports.iter().filter(|r| r.mounts + r.embarks > 0).count() as f64
                 / nf,
+            avg_objectives_captured: sum_f(|r| r.objectives_captured),
+            capture_win_rate: reports.iter().filter(|r| r.ended_by_capture).count() as f64 / nf,
+            attacker_wins: reports
+                .iter()
+                .filter(|r| r.attacker.is_some() && r.winner.is_some() && r.winner == r.attacker)
+                .count() as u32,
+            defender_wins: reports
+                .iter()
+                .filter(|r| r.attacker.is_some() && r.winner.is_some() && r.winner != r.attacker)
+                .count() as u32,
+            hold_win_rate: reports.iter().filter(|r| r.ended_by_hold).count() as f64 / nf,
             loadout_smoke_rate: 0.0,
             loadout_medkit_rate: 0.0,
             loadout_lt_rate: 0.0,
@@ -413,7 +465,15 @@ fn suggest(agg: &AggregateReport) -> Vec<String> {
         0.5
     };
 
-    if timeout_rate > 0.35 {
+    if timeout_rate > 0.35 && agg.capture_win_rate < 0.2 {
+        s.push(
+            "High timeout rate: games often hit the activation cap with both \
+             sides still fighting. On capture scenarios, check whether the AI \
+             drives APCs to the flag; otherwise try a shorter gun range or \
+             award board-control points so camping loses."
+                .into(),
+        );
+    } else if timeout_rate > 0.35 {
         s.push(
             "High timeout rate: games often hit the activation cap with both \
              sides still fighting. Try objectives / VP for kills, a shorter \
@@ -558,7 +618,7 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
     ));
     out.push_str(&format!(
         "Drama: pens {:.2}, glances {:.2} (suppressions {:.2}), fires {:.2}, cook-offs {:.2}, \
-         crew wounds {:.2}, crew kills {:.2}, abilities {:.2}, comebacks {}\n",
+         crew wounds {:.2}, crew kills {:.2}, abilities {:.2} (MoveMoveMove {:.2}), comebacks {}\n",
         agg.avg_pens,
         agg.avg_glances,
         agg.avg_suppressions,
@@ -567,6 +627,7 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
         agg.avg_crew_wounds,
         agg.avg_crew_kills,
         agg.avg_abilities_used,
+        agg.avg_move_move_move_used,
         agg.comebacks
     ));
     if agg.avg_air_strikes > 0.0 || agg.avg_infantry_kills > 0.0 || agg.scenario == "combined" {
@@ -581,10 +642,11 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
             agg.avg_smoke_deployed, agg.avg_medkit_saves, agg.avg_lt_covers
         ));
     }
-    if agg.avg_mines_deployed > 0.0 || agg.avg_mines_triggered > 0.0 {
+    if agg.avg_mines_deployed > 0.0 || agg.avg_mines_triggered > 0.0 || agg.avg_mines_disarmed > 0.0
+    {
         out.push_str(&format!(
-            "Mines: avg deployed {:.2}, triggered {:.2}\n",
-            agg.avg_mines_deployed, agg.avg_mines_triggered
+            "Mines: avg deployed {:.2}, triggered {:.2}, disarmed {:.2}\n",
+            agg.avg_mines_deployed, agg.avg_mines_triggered, agg.avg_mines_disarmed
         ));
     }
     if agg.embark_usage_rate > 0.0
@@ -602,6 +664,25 @@ pub fn format_aggregate(agg: &AggregateReport) -> String {
             agg.avg_drop_offs,
             agg.avg_passenger_kills,
             agg.avg_exterior_rider_kills
+        ));
+    }
+    if agg.avg_objectives_captured > 0.0
+        || agg.capture_win_rate > 0.0
+        || agg.scenario == "capture"
+        || agg.scenario == "assault"
+    {
+        out.push_str(&format!(
+            "Objectives: avg captures {:.2}, win-by-capture {:.0}%\n",
+            agg.avg_objectives_captured,
+            100.0 * agg.capture_win_rate
+        ));
+    }
+    if agg.attacker_wins + agg.defender_wins > 0 || agg.scenario == "assault" {
+        out.push_str(&format!(
+            "Assault: attacker {} / defender {} | hold wins {:.0}%\n",
+            agg.attacker_wins,
+            agg.defender_wins,
+            100.0 * agg.hold_win_rate
         ));
     }
     if agg.loadout_avg_points > 0.0 {

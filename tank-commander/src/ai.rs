@@ -55,7 +55,7 @@ pub fn choose_plan<R: Rng>(game: &Game, rng: &mut R) -> Option<(u8, Vec<Action>)
 fn score_unit(game: &Game, unit_id: u8) -> i64 {
     let unit = game.tank(unit_id);
     let enemies = game.enemy_units(unit.side);
-    if enemies.is_empty() {
+    if enemies.is_empty() && game.enemy_flag(unit.side).is_none() {
         return 0;
     }
     let nearest = enemies
@@ -67,6 +67,46 @@ fn score_unit(game: &Game, unit_id: u8) -> i64 {
     score -= i64::from(nearest) * 10;
     if unit.on_fire {
         score -= 1_000;
+    }
+
+    if game.can_capture(unit) {
+        score += 50_000;
+    }
+    if let Some(flag) = game.enemy_flag(unit.side) {
+        let to_flag = unit.pos.distance(flag);
+        match unit.kind {
+            UnitKind::Infantry if !unit.is_embarked() => {
+                score += 8_000 - i64::from(to_flag) * 40;
+            }
+            UnitKind::Apc if unit.passenger.is_some() => {
+                score += 12_000 - i64::from(to_flag) * 50;
+            }
+            UnitKind::Tank => {
+                score += 2_000 - i64::from(to_flag) * 15;
+            }
+            _ => {}
+        }
+    } else if game.is_defender(unit.side) {
+        if let Some(flag) = game.own_flag(unit.side) {
+            let threat_near = enemies.iter().any(|e| e.pos.distance(flag) <= 7);
+            let to_flag = unit.pos.distance(flag);
+            match unit.kind {
+                UnitKind::Tank if threat_near || to_flag <= 8 => {
+                    score += 11_000 - i64::from(to_flag) * 30;
+                }
+                UnitKind::Infantry if !unit.is_embarked() => {
+                    // Hold the flag hex / approaches.
+                    score += 9_000 - i64::from(to_flag) * 80;
+                    if unit.in_cover {
+                        score += 1_500;
+                    }
+                }
+                UnitKind::Apc => {
+                    score += 4_000 - i64::from(to_flag) * 20;
+                }
+                _ => {}
+            }
+        }
     }
 
     match unit.kind {
@@ -98,11 +138,6 @@ fn score_unit(game: &Game, unit_id: u8) -> i64 {
                 .any(|e| e.kind == UnitKind::Infantry && game.can_see_ai(unit, e))
             {
                 score += 9_000;
-            } else if enemies
-                .iter()
-                .any(|e| e.kind != UnitKind::Infantry && !e.suppressed && game.can_see_ai(unit, e))
-            {
-                score += 3_500;
             }
         }
     }
@@ -206,7 +241,9 @@ fn smoke_break_los_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Option
 fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
     let tank = game.tank(tank_id);
     let enemies: Vec<&crate::unit::Tank> = game.enemy_units(tank.side);
-    if enemies.is_empty() {
+    let enemy_flag = game.enemy_flag(tank.side);
+    let own_flag = game.own_flag(tank.side);
+    if enemies.is_empty() && enemy_flag.is_none() {
         return Vec::new();
     }
 
@@ -267,36 +304,86 @@ fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
         }
     }
 
-    if let Some(target) = visible
-        .iter()
-        .min_by_key(|e| (e.hull_points, tank.pos.distance(e.pos)))
-        .copied()
-    {
-        let tactical = beam_plan(game, tank_id, target, rng);
-        if !tactical.is_empty() {
-            return tactical;
+    // Defender: prefer targets closest to the flag (APCs / infantry first).
+    let focus: Vec<&crate::unit::Tank> = if game.is_defender(tank.side) {
+        let flag = own_flag.unwrap_or(tank.pos);
+        let mut ranked = visible.clone();
+        if ranked.is_empty() {
+            ranked = enemies.clone();
+        }
+        ranked.sort_by_key(|e| {
+            let kind_pri = match e.kind {
+                UnitKind::Infantry => 0,
+                UnitKind::Apc => 1,
+                UnitKind::Tank => 2,
+            };
+            (e.pos.distance(flag), kind_pri, e.hull_points)
+        });
+        ranked
+    } else {
+        visible
+            .iter()
+            .copied()
+            .min_by_key(|e| (e.hull_points, tank.pos.distance(e.pos)))
+            .into_iter()
+            .collect()
+    };
+
+    if let Some(target) = focus.first().copied() {
+        if game.can_see(tank, target) {
+            let tactical = beam_plan(game, tank_id, target, rng);
+            if !tactical.is_empty() {
+                return tactical;
+            }
         }
     }
 
-    let Some(enemy) = enemies
+    if let Some(enemy) = enemies
         .iter()
-        .min_by_key(|e| tank.pos.distance(e.pos))
+        .min_by_key(|e| {
+            if let Some(flag) = own_flag.filter(|_| game.is_defender(tank.side)) {
+                e.pos.distance(flag)
+            } else {
+                tank.pos.distance(e.pos)
+            }
+        })
         .copied()
-    else {
-        return Vec::new();
-    };
-    maneuver_plan(game, tank_id, enemy, rng)
+    {
+        return maneuver_plan(game, tank_id, enemy, rng);
+    }
+    // No enemies left — push toward the enemy flag to clear a path / screen.
+    if let Some(flag) = enemy_flag {
+        return chase_enemy_fallback(tank, flag);
+    }
+    Vec::new()
 }
 
 fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
     let unit = game.tank(unit_id);
     let enemies = game.enemy_units(unit.side);
-    if enemies.is_empty() {
+    let enemy_flag = game.enemy_flag(unit.side);
+
+    // Capture wins the scenario — always take it when legal.
+    if game.can_capture(unit) {
+        return vec![Action::Capture];
+    }
+
+    // Disarm adjacent mines before stepping onto them or remounting.
+    let legal0 = game.legal_actions(unit_id, unit.effective_actions(), &TurnBuffs::default());
+    if let Some(disarm) = legal0
+        .into_iter()
+        .find(|a| matches!(a, Action::DisarmMine { .. }))
+    {
+        return vec![disarm];
+    }
+
+    if enemies.is_empty() && enemy_flag.is_none() {
         return Vec::new();
     }
 
-    // Embarked: stay aboard by default. Vehicles keep ferrying; infantry only
-    // bail when the ride is over (near the fight) or exterior is suicidal.
+    // Embarked: stay aboard by default. Toward a flag, bail when adjacent/near.
+    // Without objectives, vehicles keep ferrying; infantry only bail when the
+    // ride is over (near the fight) or exterior is suicidal.
     if unit.is_embarked() {
         let on_tank = unit
             .embarked_in
@@ -306,9 +393,14 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
             .iter()
             .map(|e| e.pos)
             .min_by_key(|p| unit.pos.distance(*p))
+            .or(enemy_flag)
             .unwrap_or(unit.pos);
-        let dist = unit.pos.distance(nearest);
-        let should_dismount = if on_tank {
+        let drop_goal = enemy_flag.unwrap_or(nearest);
+        let dist = unit.pos.distance(drop_goal);
+        let should_dismount = if enemy_flag.is_some() {
+            // Flag raid: hop out once the APC has closed to the objective.
+            dist <= 2
+        } else if on_tank {
             // Exterior: any hit kills riders — bail once enemy guns are close.
             dist <= 6
         } else {
@@ -329,7 +421,7 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         let forest_bonus = if on_tank { 8 } else { 4 };
         let best = drops.into_iter().min_by_key(|a| match a {
             Action::Dismount { hex } => {
-                let mut d = hex.distance(nearest) * 10;
+                let mut d = hex.distance(drop_goal) * 10;
                 if game.board.terrain_at(*hex) == Terrain::Forest {
                     d -= forest_bonus;
                 }
@@ -341,6 +433,7 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
     }
 
     // Missiles on vehicles first; suppressed infantry cannot fire missiles.
+    // On a flag raid, only shoot when the threat is close — keep racing.
     let mut ranked: Vec<&crate::unit::Tank> = enemies.to_vec();
     ranked.sort_by_key(|e| {
         let priority = match e.kind {
@@ -351,7 +444,11 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         (priority, unit.pos.distance(e.pos))
     });
 
-    if !unit.suppressed {
+    let shoot_ok = enemy_flag.is_none_or(|flag| {
+        unit.pos.distance(flag) > 3 || enemies.iter().any(|e| unit.pos.distance(e.pos) <= 3)
+    });
+
+    if shoot_ok && !unit.suppressed {
         for enemy in &ranked {
             if game.can_see(unit, enemy) {
                 let round = if enemy.kind == UnitKind::Infantry {
@@ -366,18 +463,50 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
             }
         }
     }
-    for enemy in &ranked {
-        if enemy.kind == UnitKind::Infantry && game.can_see_ai(unit, enemy) {
-            return vec![Action::FireAi { target: enemy.id }];
+    if shoot_ok {
+        for enemy in &ranked {
+            if enemy.kind == UnitKind::Infantry && game.can_see_ai(unit, enemy) {
+                return vec![Action::FireAi { target: enemy.id }];
+            }
         }
     }
 
     let Some(enemy) = enemies.iter().min_by_key(|e| unit.pos.distance(e.pos)) else {
+        // No enemies left — walk onto the flag if present.
+        if let Some(flag) = enemy_flag {
+            return step_toward(game, unit_id, flag, false);
+        }
         return Vec::new();
     };
 
+    // Defender infantry: hold near own flag — shoot first, then dig in / step back.
+    if game.is_defender(unit.side) {
+        if let Some(flag) = game.own_flag(unit.side) {
+            if unit.pos.distance(flag) > 3 {
+                return step_toward(game, unit_id, flag, false);
+            }
+            let being_shelled = enemies.iter().any(|e| {
+                e.kind == UnitKind::Tank
+                    && unit.pos.distance(e.pos) <= e.gun_range
+                    && unit.pos.distance(e.pos) > unit.gun_range
+            });
+            if !unit.in_cover && !being_shelled {
+                return vec![Action::TakeCover];
+            }
+            // Stay put near the flag when already covering and out of missile range.
+            if unit.in_cover && unit.pos.distance(enemy.pos) > unit.gun_range {
+                return Vec::new();
+            }
+        }
+    }
+
     // Mount when out of missile range — prefer APC interior over tank exterior.
-    let far = unit.pos.distance(enemy.pos) > unit.gun_range;
+    // On flag raid, remount only if still far from the enemy flag.
+    let far = if let Some(flag) = enemy_flag {
+        unit.pos.distance(flag) > 4
+    } else {
+        unit.pos.distance(enemy.pos) > unit.gun_range
+    };
     if far {
         let legal = game.legal_actions(unit_id, unit.effective_actions(), &TurnBuffs::default());
         let mounts: Vec<u8> = legal
@@ -403,7 +532,8 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
             && unit.pos.distance(e.pos) <= e.gun_range
             && unit.pos.distance(e.pos) > unit.gun_range
     });
-    if !unit.in_cover
+    if enemy_flag.is_none()
+        && !unit.in_cover
         && !tank_shelling
         && unit.pos.distance(enemy.pos) <= 4
         && matches!(enemy.kind, UnitKind::Tank | UnitKind::Apc)
@@ -412,8 +542,7 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         return vec![Action::TakeCover];
     }
 
-    // Step toward nearest enemy (prefer forest approaches unless charging).
-    // Also step toward a friendly empty APC (prefer) or tank when far from the fight.
+    // Step toward enemy flag (capture) or nearest enemy / ride.
     let ride: Option<Hex> = if far {
         let apc = game
             .tanks
@@ -443,8 +572,48 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
     } else {
         None
     };
-    let goal = ride.unwrap_or(enemy.pos);
+    let goal = enemy_flag.or(ride).unwrap_or(enemy.pos);
 
+    let mut steps = step_toward(game, unit_id, goal, tank_shelling);
+    // After stepping adjacent to a vehicle, mount if still far (APC first).
+    if far && !steps.is_empty() {
+        let mut pos = unit.pos;
+        let ap = unit.effective_actions() - steps.len() as i32;
+        for a in &steps {
+            if let Action::Step(f) = a {
+                pos = pos.neighbor(*f);
+            }
+        }
+        if ap > 0 {
+            let mut apc_id = None;
+            let mut tank_id = None;
+            for t in &game.tanks {
+                if t.side == unit.side
+                    && !t.destroyed
+                    && t.passenger.is_none()
+                    && t.pos.distance(pos) == 1
+                {
+                    match t.kind {
+                        UnitKind::Apc => apc_id = Some(t.id),
+                        UnitKind::Tank => tank_id = Some(t.id),
+                        UnitKind::Infantry => {}
+                    }
+                }
+            }
+            if let Some(id) = apc_id.or(tank_id) {
+                steps.push(Action::Mount { vehicle: id });
+                return steps;
+            }
+        }
+    }
+    if steps.is_empty() && enemy_flag.is_none() && !unit.in_cover && !tank_shelling {
+        return vec![Action::TakeCover];
+    }
+    steps
+}
+
+fn step_toward(game: &Game, unit_id: u8, goal: Hex, tank_shelling: bool) -> Vec<Action> {
+    let unit = game.tank(unit_id);
     let mut steps = Vec::new();
     let mut pos = unit.pos;
     let mut moves = 0i32;
@@ -476,31 +645,6 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         pos = n;
         moves += 1;
         ap -= 1;
-        // After stepping adjacent to a vehicle, mount if still far (APC first).
-        if far && ap > 0 {
-            let mut apc_id = None;
-            let mut tank_id = None;
-            for t in &game.tanks {
-                if t.side == unit.side
-                    && !t.destroyed
-                    && t.passenger.is_none()
-                    && t.pos.distance(pos) == 1
-                {
-                    match t.kind {
-                        UnitKind::Apc => apc_id = Some(t.id),
-                        UnitKind::Tank => tank_id = Some(t.id),
-                        UnitKind::Infantry => {}
-                    }
-                }
-            }
-            if let Some(id) = apc_id.or(tank_id) {
-                steps.push(Action::Mount { vehicle: id });
-                return steps;
-            }
-        }
-    }
-    if steps.is_empty() && !unit.in_cover && !tank_shelling {
-        return vec![Action::TakeCover];
     }
     steps
 }
@@ -513,10 +657,12 @@ fn deliver_passenger_plan<R: Rng>(
 ) -> Option<Vec<Action>> {
     let unit = game.tank(unit_id);
     unit.passenger?;
-    let enemy = enemies.iter().min_by_key(|e| unit.pos.distance(e.pos))?;
-    let goal = enemy.pos;
+    let enemy_flag = game.enemy_flag(unit.side);
+    let enemy = enemies.iter().min_by_key(|e| unit.pos.distance(e.pos));
+    let goal = enemy_flag.or_else(|| enemy.map(|e| e.pos))?;
+    let drop_range = if enemy_flag.is_some() { 2 } else { 5 };
     // Drop only when the taxi has arrived — do not dump mid-map after 2 moves.
-    let close_enough = unit.pos.distance(goal) <= 5;
+    let close_enough = unit.pos.distance(goal) <= drop_range;
     let mut plan = Vec::new();
     let mut shadow = game.clone();
     let mut ap = unit.effective_actions();
@@ -524,7 +670,24 @@ fn deliver_passenger_plan<R: Rng>(
     shadow.tank_mut(unit_id).moves_this_turn = 0;
     shadow.tank_mut(unit_id).dropped_passenger_this_activation = false;
 
-    let raw = maneuver_plan(game, unit_id, enemy, rng);
+    let raw = if let Some(flag) = enemy_flag {
+        // Pathfind to the flag. APCs have no crew so effective_actions is 1 —
+        // path_to_actions spends that on a useful Turn or Move, not a spin.
+        if let Some(path) = bfs_path(game, unit.pos, flag, unit.side) {
+            let actions = path_to_actions(unit, &path);
+            if !actions.is_empty() {
+                actions
+            } else {
+                chase_enemy_fallback(unit, flag)
+            }
+        } else {
+            chase_enemy_fallback(unit, flag)
+        }
+    } else if let Some(e) = enemy {
+        maneuver_plan(game, unit_id, e, rng)
+    } else {
+        Vec::new()
+    };
     for a in &raw {
         if !matches!(a, Action::Move | Action::TurnLeft | Action::TurnRight) {
             break;
@@ -545,7 +708,7 @@ fn deliver_passenger_plan<R: Rng>(
         }
     }
 
-    if close_enough || shadow.tank(unit_id).pos.distance(goal) <= 5 {
+    if close_enough || shadow.tank(unit_id).pos.distance(goal) <= drop_range {
         let drops: Vec<Action> = shadow
             .legal_actions(unit_id, ap, &buffs)
             .into_iter()
@@ -620,6 +783,7 @@ fn pickup_infantry_plan<R: Rng>(
 fn apc_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
     let unit = game.tank(unit_id);
     let enemies = game.enemy_units(unit.side);
+    let enemy_flag = game.enemy_flag(unit.side);
 
     if let Some(smoke) = smoke_break_los_plan(game, unit_id, rng) {
         return smoke;
@@ -644,19 +808,6 @@ fn apc_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         }
     }
 
-    // Otherwise suppress one unsuppressed vehicle in AI range.
-    let mut vehicles: Vec<&crate::unit::Tank> = enemies
-        .iter()
-        .copied()
-        .filter(|e| e.kind != UnitKind::Infantry && !e.suppressed)
-        .collect();
-    vehicles.sort_by_key(|e| unit.pos.distance(e.pos));
-    for enemy in &vehicles {
-        if game.can_see_ai(unit, enemy) {
-            return vec![Action::FireAi { target: enemy.id }];
-        }
-    }
-
     if let Some(plan) = pickup_infantry_plan(game, unit_id, &enemies, rng) {
         return plan;
     }
@@ -672,10 +823,13 @@ fn apc_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
                 .copied()
                 .min_by_key(|e| unit.pos.distance(e.pos))
         });
-    let Some(enemy) = target else {
-        return Vec::new();
-    };
-    maneuver_plan(game, unit_id, enemy, rng)
+    if let Some(enemy) = target {
+        return maneuver_plan(game, unit_id, enemy, rng);
+    }
+    if let Some(flag) = enemy_flag {
+        return chase_enemy_fallback(unit, flag);
+    }
+    Vec::new()
 }
 
 fn beam_plan<R: Rng>(
@@ -898,11 +1052,48 @@ fn chase_enemy_fallback(tank: &crate::unit::Tank, enemy: Hex) -> Vec<Action> {
         if let Some(need) = tank.pos.facing_toward(enemy) {
             return vec![Action::Step(need), Action::Step(need)];
         }
+        return Vec::new();
     }
-    let go_north = enemy.r < tank.pos.r || (enemy.r == tank.pos.r && tank.pos.r > 4);
-    if go_north {
+    let Some(need) = tank.pos.facing_toward(enemy) else {
+        return Vec::new();
+    };
+    let driver_ready = tank.kind == UnitKind::Tank
+        && tank.crew.iter().any(|c| {
+            c.role == crate::unit::CrewRole::Driver
+                && c.status != crate::unit::CrewStatus::Killed
+                && !c.ability_used
+        });
+    let dist = tank.pos.distance(enemy);
+    // With 1 AP (stock APCs), only emit one useful action: Move if already
+    // facing the goal, otherwise turn the short way.
+    if tank.hull_facing == need {
+        if driver_ready && dist >= 3 {
+            return vec![Action::AbilityMoveMoveMove, Action::MoveStraight3];
+        }
+        if driver_ready && dist >= 2 {
+            return vec![Action::AbilityMoveMoveMove, Action::MoveDouble];
+        }
+        return vec![Action::Move, Action::Move, Action::Move];
+    }
+    let left_steps = turn_steps_left(tank.hull_facing, need);
+    let right_steps = (6 - left_steps) % 6;
+    if left_steps > 0 && left_steps <= right_steps {
+        if driver_ready && dist >= 3 {
+            return vec![
+                Action::TurnLeft,
+                Action::AbilityMoveMoveMove,
+                Action::MoveStraight3,
+            ];
+        }
         vec![Action::TurnLeft, Action::Move, Action::Move]
     } else {
+        if driver_ready && dist >= 3 {
+            return vec![
+                Action::TurnRight,
+                Action::AbilityMoveMoveMove,
+                Action::MoveStraight3,
+            ];
+        }
         vec![Action::TurnRight, Action::Move, Action::Move]
     }
 }
@@ -1002,6 +1193,17 @@ fn path_to_actions(tank: &crate::unit::Tank, path: &[Hex]) -> Vec<Action> {
     let mut moves = 0i32;
     let mut ap = tank.effective_actions();
     let max_move = tank.effective_max_move();
+    let driver_ready = tank.kind == UnitKind::Tank
+        && tank.crew.iter().any(|c| {
+            c.role == crate::unit::CrewRole::Driver
+                && c.status != crate::unit::CrewStatus::Killed
+                && !c.ability_used
+        });
+    let mut rush = false;
+    if driver_ready && path.len() > 3 {
+        actions.push(Action::AbilityMoveMoveMove);
+        rush = true;
+    }
 
     for window in path.windows(2) {
         let next = window[1];
@@ -1023,6 +1225,39 @@ fn path_to_actions(tank: &crate::unit::Tank, path: &[Hex]) -> Vec<Action> {
         }
         if facing != need || ap <= 0 || moves >= max_move {
             break;
+        }
+        // With Move move move!, take 3- or 2-hex rushes when the path stays
+        // straight ahead for that many steps.
+        if rush && facing == need {
+            let remaining: Vec<Hex> = path
+                .iter()
+                .skip_while(|h| **h != pos)
+                .skip(1)
+                .copied()
+                .collect();
+            if remaining.len() >= 3
+                && moves + 3 <= max_move
+                && remaining[0] == pos.neighbor(facing)
+                && remaining[1] == pos.neighbor(facing).neighbor(facing)
+                && remaining[2] == pos.neighbor(facing).neighbor(facing).neighbor(facing)
+            {
+                actions.push(Action::MoveStraight3);
+                pos = remaining[2];
+                moves += 3;
+                ap -= 1;
+                continue;
+            }
+            if remaining.len() >= 2
+                && moves + 2 <= max_move
+                && remaining[0] == pos.neighbor(facing)
+                && remaining[1] == pos.neighbor(facing).neighbor(facing)
+            {
+                actions.push(Action::MoveDouble);
+                pos = remaining[1];
+                moves += 2;
+                ap -= 1;
+                continue;
+            }
         }
         actions.push(Action::Move);
         pos = next;
@@ -1075,6 +1310,22 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
             node.moves += 1;
             node.ap_left -= cost;
         }
+        Action::MoveDouble => {
+            let cost = game.board.terrain_at(node.pos).move_cost_to_leave();
+            node.pos = node.pos.neighbor(node.hull).neighbor(node.hull);
+            node.moves += 2;
+            node.ap_left -= cost;
+        }
+        Action::MoveStraight3 => {
+            let cost = game.board.terrain_at(node.pos).move_cost_to_leave();
+            node.pos = node
+                .pos
+                .neighbor(node.hull)
+                .neighbor(node.hull)
+                .neighbor(node.hull);
+            node.moves += 3;
+            node.ap_left -= cost;
+        }
         Action::Step(facing) => {
             let cost = game.board.terrain_at(node.pos).move_cost_to_leave();
             node.pos = node.pos.neighbor(facing);
@@ -1111,6 +1362,8 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
             node.ap_left -= 1;
         }
         Action::TakeCover
+        | Action::Capture
+        | Action::DisarmMine { .. }
         | Action::CallAirStrike { .. }
         | Action::DeploySmoke { .. }
         | Action::DeployMine { .. } => {

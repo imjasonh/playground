@@ -35,6 +35,16 @@ pub struct PendingAirStrike {
     pub wait: u8,
 }
 
+/// A capture objective (flag) on the board.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Objective {
+    pub hex: Hex,
+    /// Side that owns this flag at deployment (defender).
+    pub home: Side,
+    /// Set when an enemy infantry Captures this hex.
+    pub captured_by: Option<Side>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Game {
     pub board: Board,
@@ -45,11 +55,18 @@ pub struct Game {
     pub max_activations: u32,
     pub events: Vec<GameEvent>,
     pub first_player: Side,
-    /// `"skirmish"` | `"squadron"` | `"platoon"` | `"combined"`.
+    /// `"skirmish"` | `"squadron"` | `"platoon"` | `"combined"` | `"capture"` | `"assault"`.
     pub scenario: String,
     pub pending_air_strikes: Vec<PendingAirStrike>,
     pub air_strikes_resolved: u32,
     pub infantry_kills: u32,
+    /// Flags / capture markers (empty outside capture scenarios).
+    pub objectives: Vec<Objective>,
+    /// Successful Capture actions this game.
+    pub objectives_captured: u32,
+    /// When set, this side must Capture; the other side wins by wipe or hold
+    /// (timeout / idle stalemate). `None` = symmetric / wipe-attrition only.
+    pub attacker: Option<Side>,
     /// End like a timeout after this many activations with no hit (`0` = off).
     pub stalemate_after: u32,
     pub activations_since_hit: u32,
@@ -63,11 +80,14 @@ pub struct Game {
     pub total_crew_wounds: u32,
     pub total_crew_kills: u32,
     pub abilities_used: u32,
+    /// Driver *Move move move!* activations this game.
+    pub move_move_move_used: u32,
     pub smoke_deployed: u32,
     pub medkit_saves: u32,
     pub lt_covers: u32,
     pub mines_deployed: u32,
     pub mines_triggered: u32,
+    pub mines_disarmed: u32,
     pub mounts: u32,
     pub exterior_mounts: u32,
     pub embarks: u32,
@@ -113,6 +133,9 @@ impl Game {
             pending_air_strikes: Vec::new(),
             air_strikes_resolved: 0,
             infantry_kills: 0,
+            objectives: Vec::new(),
+            objectives_captured: 0,
+            attacker: None,
             stalemate_after: 0,
             activations_since_hit: 0,
             activations_since_damage: 0,
@@ -125,11 +148,13 @@ impl Game {
             total_crew_wounds: 0,
             total_crew_kills: 0,
             abilities_used: 0,
+            move_move_move_used: 0,
             smoke_deployed: 0,
             medkit_saves: 0,
             lt_covers: 0,
             mines_deployed: 0,
             mines_triggered: 0,
+            mines_disarmed: 0,
             mounts: 0,
             exterior_mounts: 0,
             embarks: 0,
@@ -161,8 +186,62 @@ impl Game {
         self
     }
 
+    pub fn with_objectives(mut self, objectives: Vec<Objective>) -> Self {
+        self.objectives = objectives;
+        self
+    }
+
+    pub fn with_attacker(mut self, attacker: Side) -> Self {
+        self.attacker = Some(attacker);
+        self
+    }
+
     pub fn push_setup_event(&mut self, text: String) {
         self.push_event(0, None, text, None);
+    }
+
+    pub fn is_attacker(&self, side: Side) -> bool {
+        self.attacker == Some(side)
+    }
+
+    pub fn is_defender(&self, side: Side) -> bool {
+        matches!(self.attacker, Some(a) if a != side)
+    }
+
+    /// Defender side when this is an assault scenario.
+    pub fn defender(&self) -> Option<Side> {
+        self.attacker.map(|a| a.other())
+    }
+
+    /// Enemy flag hex that is still uncaptured, if any.
+    pub fn enemy_flag(&self, side: Side) -> Option<Hex> {
+        self.objectives
+            .iter()
+            .find(|o| o.home == side.other() && o.captured_by.is_none())
+            .map(|o| o.hex)
+    }
+
+    /// Own flag hex that is still uncaptured, if any.
+    pub fn own_flag(&self, side: Side) -> Option<Hex> {
+        self.objectives
+            .iter()
+            .find(|o| o.home == side && o.captured_by.is_none())
+            .map(|o| o.hex)
+    }
+
+    /// Side that has captured an enemy flag (instant win when present).
+    pub fn capture_winner(&self) -> Option<Side> {
+        self.objectives.iter().find_map(|o| o.captured_by)
+    }
+
+    /// True when this infantry unit may Capture on its current hex.
+    pub fn can_capture(&self, tank: &Tank) -> bool {
+        if tank.kind != UnitKind::Infantry || tank.is_embarked() || tank.destroyed {
+            return false;
+        }
+        self.objectives
+            .iter()
+            .any(|o| o.hex == tank.pos && o.home != tank.side && o.captured_by.is_none())
     }
 
     pub fn tank(&self, id: u8) -> &Tank {
@@ -214,6 +293,9 @@ impl Game {
     }
 
     pub fn outcome(&self) -> Outcome {
+        if let Some(side) = self.capture_winner() {
+            return Outcome::Winner(side);
+        }
         let red_fight = self
             .tanks
             .iter()
@@ -232,6 +314,10 @@ impl Game {
             return Outcome::Draw;
         }
         if self.stalemate_idle() || self.activations >= self.max_activations {
+            // Assault: time ran out without a Capture — defender held.
+            if let Some(defender) = self.defender() {
+                return Outcome::Winner(defender);
+            }
             return self.score_attrition();
         }
         Outcome::InProgress
@@ -430,10 +516,10 @@ impl Game {
             }
         }
 
-        // Tank AI weapons (anti-infantry upgrade).
+        // Tank AI weapons (anti-infantry upgrade) — infantry only.
         if tank.ai_range > 0 && ap_left >= 1 {
             for enemy in self.enemy_units(tank.side) {
-                if enemy.destroyed {
+                if enemy.destroyed || enemy.kind != UnitKind::Infantry {
                     continue;
                 }
                 if self.can_see_ai(tank, enemy) {
@@ -484,10 +570,10 @@ impl Game {
 
         if tank.can_fire() && ap_left >= 1 {
             for enemy in self.enemy_units(tank.side) {
-                if enemy.destroyed {
+                if enemy.destroyed || enemy.kind != UnitKind::Infantry {
                     continue;
                 }
-                // Soft kill vs infantry; suppression spray vs vehicles.
+                // Soft kill / pin vs infantry only — AI never suppresses vehicles.
                 if self.can_see_ai(tank, enemy) {
                     out.push(Action::FireAi { target: enemy.id });
                 }
@@ -783,6 +869,20 @@ impl Game {
             out.push(Action::TakeCover);
         }
 
+        if ap_left >= 1 && self.can_capture(tank) {
+            out.push(Action::Capture);
+        }
+
+        // Disarm Mines: remove an adjacent mined hex (1 action).
+        if ap_left >= 1 {
+            for i in 0..6u8 {
+                let h = tank.pos.neighbor(Facing::from_index(i));
+                if self.board.contains(h) && self.board.has_mine(h) {
+                    out.push(Action::DisarmMine { hex: h });
+                }
+            }
+        }
+
         // Mount Up onto adjacent empty APC (interior) or tank (exterior).
         if !tank.mount_or_dismount_used && ap_left >= 1 {
             for other in &self.tanks {
@@ -808,27 +908,88 @@ impl Game {
         buffs: &TurnBuffs,
         out: &mut Vec<Action>,
     ) {
-        if tank.moves_this_turn < tank.effective_max_move() {
+        let max_move = tank.effective_max_move();
+        let used = tank.moves_this_turn;
+        if used < max_move {
             let forward = tank.pos.neighbor(tank.hull_facing);
             let cost = self.board.terrain_at(tank.pos).move_cost_to_leave();
-            let move_ok = if buffs.move_move_move {
-                tank.moves_this_turn < tank.effective_max_move() + 1
-            } else {
-                tank.moves_this_turn < tank.effective_max_move()
-            };
-            if move_ok
-                && ap_left >= cost
-                && self.board.contains(forward)
-                && !self.board.terrain_at(forward).impassable()
-                && !self.occupied_hexes().contains(&forward)
-            {
+            if ap_left >= cost && self.can_drive_into(tank, forward) {
                 out.push(Action::Move);
+            }
+        }
+        // Driver ability: move twice for one action, or three spaces straight.
+        if buffs.move_move_move && ap_left >= 1 {
+            if used + 2 <= max_move && self.forward_path_clear(tank, 2).is_some() {
+                out.push(Action::MoveDouble);
+            }
+            if used + 3 <= max_move && self.forward_path_clear(tank, 3).is_some() {
+                out.push(Action::MoveStraight3);
             }
         }
         if ap_left >= 1 {
             out.push(Action::TurnLeft);
             out.push(Action::TurnRight);
         }
+    }
+
+    fn can_drive_into(&self, _tank: &Tank, hex: Hex) -> bool {
+        self.board.contains(hex)
+            && !self.board.terrain_at(hex).impassable()
+            && !self.occupied_hexes().contains(&hex)
+    }
+
+    /// Next `steps` hexes along hull facing are all driveable. Returns the
+    /// final hex when clear.
+    fn forward_path_clear(&self, tank: &Tank, steps: i32) -> Option<Hex> {
+        let mut pos = tank.pos;
+        for _ in 0..steps {
+            let next = pos.neighbor(tank.hull_facing);
+            if !self.can_drive_into(tank, next) {
+                return None;
+            }
+            pos = next;
+        }
+        Some(pos)
+    }
+
+    /// Drive `steps` hexes forward along hull facing for **one** action point
+    /// (leave-cost of the starting hex). Each intermediate hex resolves mines.
+    fn apply_forward_drive<R: Rng>(
+        &mut self,
+        tank_id: u8,
+        steps: i32,
+        ap_left: &mut i32,
+        rng: &mut R,
+    ) {
+        let turn = self.activations;
+        let side = self.tank(tank_id).side;
+        let cost = self
+            .board
+            .terrain_at(self.tank(tank_id).pos)
+            .move_cost_to_leave();
+        let facing = self.tank(tank_id).hull_facing;
+        let mut last = self.tank(tank_id).pos;
+        for i in 0..steps {
+            let next = self.tank(tank_id).pos.neighbor(facing);
+            self.tank_mut(tank_id).pos = next;
+            self.tank_mut(tank_id).moves_this_turn += 1;
+            self.moves_made += 1;
+            last = next;
+            self.sync_passenger_pos(tank_id);
+            self.resolve_mine_at(tank_id, next, rng);
+            self.maybe_kill_passengers(tank_id);
+            if self.tank(tank_id).destroyed || self.tank(tank_id).disabled {
+                break;
+            }
+            let _ = i;
+        }
+        *ap_left -= cost;
+        let label = match steps {
+            2 => "MoveDouble",
+            3 => "MoveStraight3",
+            _ => "Move",
+        };
+        self.push_event(turn, Some(side), format!("{label} → {last}"), None);
     }
 
     pub fn apply_action<R: Rng>(
@@ -860,26 +1021,22 @@ impl Game {
                 _ => 0,
             };
             self.abilities_used += 1;
+            if matches!(action, Action::AbilityMoveMoveMove) {
+                self.move_move_move_used += 1;
+            }
             self.push_event(turn, Some(side), action.name().to_string(), None);
             return;
         }
 
         match action {
             Action::Move => {
-                let cost = self
-                    .board
-                    .terrain_at(self.tank(tank_id).pos)
-                    .move_cost_to_leave();
-                let facing = self.tank(tank_id).hull_facing;
-                let next = self.tank(tank_id).pos.neighbor(facing);
-                self.tank_mut(tank_id).pos = next;
-                self.tank_mut(tank_id).moves_this_turn += 1;
-                *ap_left -= cost;
-                self.moves_made += 1;
-                self.push_event(turn, Some(side), format!("Move → {next}"), None);
-                self.sync_passenger_pos(tank_id);
-                self.resolve_mine_at(tank_id, next, rng);
-                self.maybe_kill_passengers(tank_id);
+                self.apply_forward_drive(tank_id, 1, ap_left, rng);
+            }
+            Action::MoveDouble => {
+                self.apply_forward_drive(tank_id, 2, ap_left, rng);
+            }
+            Action::MoveStraight3 => {
+                self.apply_forward_drive(tank_id, 3, ap_left, rng);
             }
             Action::Step(facing) => {
                 let cost = self
@@ -959,6 +1116,12 @@ impl Game {
                 self.tank_mut(tank_id).in_cover = true;
                 *ap_left -= 1;
                 self.push_event(turn, Some(side), "Take cover".into(), None);
+            }
+            Action::Capture => {
+                self.apply_capture(tank_id, turn, side, ap_left);
+            }
+            Action::DisarmMine { hex } => {
+                self.apply_disarm_mine(tank_id, hex, turn, side, ap_left);
             }
             Action::CallAirStrike { hex } => {
                 self.tank_mut(tank_id).air_strike_used = true;
@@ -1246,46 +1409,15 @@ impl Game {
             return;
         }
 
-        // Vehicle suppression spray (no pen / no HP).
-        let roll = rng.gen_range(1..=6);
-        let need = (acc + penalty).clamp(2, 6);
-        let hit = succeeds(roll, need);
-        if hit {
-            self.total_hits += 1;
-            self.activations_since_hit = 0;
-            let (name, already) = {
-                let t = self.tank_mut(target_id);
-                let already = t.suppressed;
-                if !already {
-                    t.suppressed = true;
-                }
-                (t.name.clone(), already)
-            };
-            if !already {
-                self.total_suppressions += 1;
-            }
-            let text = if already {
-                format!(
-                    "AI spray hits {name} (already suppressed until end of its next activation)"
-                )
-            } else {
-                format!(
-                    "AI spray suppresses {name} until end of its next activation \
-                     (rolled {roll}, needed {need}+)"
-                )
-            };
-            self.push_event(turn, Some(side), text, None);
-            self.maybe_kill_exterior_riders_on_hit(target_id);
-        } else {
-            self.shots_missed += 1;
-            let name = self.tank(target_id).name.clone();
-            self.push_event(
-                turn,
-                Some(side),
-                format!("AI spray misses {name} (rolled {roll}, needed {need}+)"),
-                None,
-            );
-        }
+        // AI weapons cannot affect tanks or APCs (infantry-only).
+        self.shots_missed += 1;
+        let name = self.tank(target_id).name.clone();
+        self.push_event(
+            turn,
+            Some(side),
+            format!("AI has no effect vs {name} (vehicles immune)"),
+            None,
+        );
     }
 
     fn destroy_infantry(&mut self, target_id: u8) {
@@ -1373,6 +1505,63 @@ impl Game {
                 None,
             );
         }
+    }
+
+    fn apply_capture(&mut self, infantry_id: u8, turn: u32, side: Side, ap_left: &mut i32) {
+        let unit = self.tank(infantry_id);
+        if !self.can_capture(unit) {
+            return;
+        }
+        let pos = unit.pos;
+        let name = unit.name.clone();
+        let mut claimed = false;
+        for obj in &mut self.objectives {
+            if obj.hex == pos && obj.home != side && obj.captured_by.is_none() {
+                obj.captured_by = Some(side);
+                claimed = true;
+                break;
+            }
+        }
+        if !claimed {
+            return;
+        }
+        *ap_left -= 1;
+        self.objectives_captured += 1;
+        self.push_event(
+            turn,
+            Some(side),
+            format!("{name} captures the objective at {pos}"),
+            None,
+        );
+    }
+
+    fn apply_disarm_mine(
+        &mut self,
+        infantry_id: u8,
+        hex: Hex,
+        turn: u32,
+        side: Side,
+        ap_left: &mut i32,
+    ) {
+        let unit = self.tank(infantry_id);
+        if unit.kind != UnitKind::Infantry || unit.is_embarked() || unit.destroyed {
+            return;
+        }
+        if unit.pos.distance(hex) != 1 || !self.board.has_mine(hex) {
+            return;
+        }
+        let name = unit.name.clone();
+        if !self.board.take_mine(hex) {
+            return;
+        }
+        *ap_left -= 1;
+        self.mines_disarmed += 1;
+        self.push_event(
+            turn,
+            Some(side),
+            format!("{name} disarms mine at {hex}"),
+            None,
+        );
     }
 
     fn apply_mount(
@@ -2363,6 +2552,46 @@ mod tests {
     }
 
     #[test]
+    fn driver_move_move_move_double_and_triple() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(14, 9);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::offset(2, 4), Facing::E, "Red"),
+            Tank::stock(1, Side::Blue, Hex::offset(12, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 40, "test");
+        let mut rng = ChaCha8Rng::seed_from_u64(9);
+        let mut ap = 3;
+        let mut buffs = TurnBuffs::default();
+        g.begin_activation(0);
+        g.apply_action(
+            0,
+            Action::AbilityMoveMoveMove,
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
+        assert_eq!(g.move_move_move_used, 1);
+        assert!(buffs.move_move_move);
+        let legal = g.legal_actions(0, ap, &buffs);
+        assert!(legal.contains(&Action::MoveDouble));
+        assert!(legal.contains(&Action::MoveStraight3));
+        let start = g.tank(0).pos;
+        g.apply_action(0, Action::MoveStraight3, &mut buffs, &mut ap, &mut rng);
+        assert_eq!(
+            g.tank(0).pos,
+            start
+                .neighbor(Facing::E)
+                .neighbor(Facing::E)
+                .neighbor(Facing::E)
+        );
+        assert_eq!(g.tank(0).moves_this_turn, 3);
+        // One action for three hexes.
+        assert_eq!(ap, 2);
+    }
+
+    #[test]
     fn apc_embark_move_and_free_drop_off() {
         use rand::SeedableRng;
         use rand_chacha::ChaCha8Rng;
@@ -2489,5 +2718,114 @@ mod tests {
         g.maybe_kill_exterior_riders_on_hit(0);
         assert!(!g.tank(1).destroyed);
         assert_eq!(g.tank(0).passenger, Some(1));
+    }
+
+    #[test]
+    fn infantry_capture_claims_enemy_flag_and_wins() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let flag = Hex::offset(2, 4);
+        let tanks = vec![
+            Tank::stock_infantry(0, Side::Red, flag, Facing::E, "Squad"),
+            Tank::stock(1, Side::Blue, Hex::offset(8, 4), Facing::W, "Blue"),
+        ];
+        let mut g =
+            Game::new(board, tanks, Side::Red, 40, "test").with_objectives(vec![Objective {
+                hex: flag,
+                home: Side::Blue,
+                captured_by: None,
+            }]);
+        assert!(g.can_capture(g.tank(0)));
+        let mut rng = ChaCha8Rng::seed_from_u64(1);
+        let mut ap = 3;
+        let mut buffs = TurnBuffs::default();
+        g.begin_activation(0);
+        let legal = g.legal_actions(0, ap, &buffs);
+        assert!(legal.iter().any(|a| matches!(a, Action::Capture)));
+        g.apply_action(0, Action::Capture, &mut buffs, &mut ap, &mut rng);
+        assert_eq!(g.objectives_captured, 1);
+        assert_eq!(g.capture_winner(), Some(Side::Red));
+        assert_eq!(g.outcome(), Outcome::Winner(Side::Red));
+    }
+
+    #[test]
+    fn assault_hold_awards_defender_on_timeout() {
+        let board = Board::rect(11, 9);
+        let flag = Hex::offset(9, 4);
+        let tanks = vec![
+            Tank::stock(0, Side::Red, Hex::offset(1, 4), Facing::E, "Atk"),
+            Tank::stock(1, Side::Blue, Hex::offset(8, 4), Facing::W, "Def"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 5, "test")
+            .with_objectives(vec![Objective {
+                hex: flag,
+                home: Side::Blue,
+                captured_by: None,
+            }])
+            .with_attacker(Side::Red);
+        g.activations = 5;
+        assert_eq!(g.outcome(), Outcome::Winner(Side::Blue));
+    }
+
+    #[test]
+    fn ai_weapons_cannot_target_vehicles() {
+        let board = Board::rect(11, 9);
+        let mut apc = Tank::stock_apc(0, Side::Red, Hex::offset(3, 4), Facing::E, "APC");
+        apc.ai_range = 3;
+        let tanks = vec![
+            apc,
+            Tank::stock(1, Side::Blue, Hex::offset(5, 3), Facing::W, "Tank"),
+            Tank::stock_infantry(2, Side::Blue, Hex::offset(5, 5), Facing::W, "Squad"),
+        ];
+        let g = Game::new(board, tanks, Side::Red, 20, "test");
+        let legal = g.legal_actions(0, 3, &TurnBuffs::default());
+        assert!(
+            legal
+                .iter()
+                .all(|a| !matches!(a, Action::FireAi { target: 1 })),
+            "AI must not list vehicle targets: {legal:?}"
+        );
+        assert!(
+            legal
+                .iter()
+                .any(|a| matches!(a, Action::FireAi { target: 2 })),
+            "AI should still list infantry: {legal:?}"
+        );
+    }
+
+    #[test]
+    fn infantry_disarms_adjacent_mine() {
+        use rand::SeedableRng;
+        use rand_chacha::ChaCha8Rng;
+        let board = Board::rect(11, 9);
+        let mine = Hex::offset(4, 4);
+        let tanks = vec![
+            Tank::stock_infantry(0, Side::Red, Hex::offset(3, 4), Facing::E, "Squad"),
+            Tank::stock(1, Side::Blue, Hex::offset(9, 4), Facing::W, "Blue"),
+        ];
+        let mut g = Game::new(board, tanks, Side::Red, 20, "test");
+        g.board.add_mine(mine);
+        let mut rng = ChaCha8Rng::seed_from_u64(2);
+        let mut ap = 3;
+        let mut buffs = TurnBuffs::default();
+        g.begin_activation(0);
+        let legal = g.legal_actions(0, ap, &buffs);
+        assert!(
+            legal
+                .iter()
+                .any(|a| matches!(a, Action::DisarmMine { hex } if *hex == mine)),
+            "expected DisarmMine: {legal:?}"
+        );
+        g.apply_action(
+            0,
+            Action::DisarmMine { hex: mine },
+            &mut buffs,
+            &mut ap,
+            &mut rng,
+        );
+        assert!(!g.board.has_mine(mine));
+        assert_eq!(g.mines_disarmed, 1);
+        assert_eq!(ap, 2);
     }
 }

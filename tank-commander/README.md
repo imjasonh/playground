@@ -3,7 +3,8 @@
 Monte Carlo simulator for the
 [Tank Commander](https://github.com/imjasonh/tank-commander) tabletop rules.
 
-Four scenarios share the same engine and heuristic AI — a learning ladder:
+Four scenarios share the same engine and heuristic AI — a learning ladder,
+plus a Capture flag-raid:
 
 | Scenario | Force | Board | Cap / idle stop |
 |----------|-------|-------|-----------------|
@@ -11,17 +12,20 @@ Four scenarios share the same engine and heuristic AI — a learning ladder:
 | `squadron` | 3v3 stock tanks (no upgrades) | 18×12 open | 200 hard; idle after 40 no-hit |
 | `platoon` | 3v3 tanks (≤10-pt lists) | 18×12 open | 200 hard; idle after 40 no-hit |
 | `combined` | 2 tanks + 2 APCs + 2 infantry / side (lists) | 18×12 open | 240 hard; idle after 48 no-hit |
+| `capture` | 1 tank + 3 loaded APCs / side (lists ≤10/≤4 + mines); flag Capture wins | 18×12 open | 200 hard; idle after 40 no-hit |
+| `assault` | Attacker 1 tank+3 loaded APCs vs defender 1 tank+2 infantry (lists); Capture or hold | 18×12 open | 180 hard; idle after 50 no-hit (hold = defender) |
 
-Squadron, platoon, and combined share one **18×12** mat with **scattered
+Squadron, platoon, combined, capture, and assault share one **18×12** mat with **scattered
 building clumps and forest patches** (no sealed midline funnel). Skirmish is
-half the width (**9×12**) with a compact midline block. Platoon/Combined tanks
-spend up to **10** upgrade points (armor, engine, barrel, optics, AI, smoke,
-medkit, LT; Combined also mines) and may spend fewer; APCs spend up to **4**.
-On list scenarios, the side with the **lower** total spend activates first and
+half the width (**9×12**) with a compact midline block. Platoon/Combined/Capture/Assault
+tanks spend up to **10** upgrade points (armor, engine, barrel, optics, AI, smoke,
+medkit, LT; tanks may buy mines) and may spend fewer; APCs spend up to **4**.
+On list scenarios (except Assault), the side with the **lower** total spend activates first and
 skips second-player spoil; equal spend still rolls off and applies spoil.
-Skirmish/Squadron always roll off and apply spoil. Combined tanks also get a
+Skirmish/Squadron always roll off and apply spoil. Assault: attacker
+always first, defender spoils (list spend does not flip initiative). Combined tanks also get a
 scenario air strike, next-activation air strikes (with scatter), and APC
-vehicle spray. Combined starts and scatter are east–west mirrors.
+vehicle spray. Combined and Capture starts and scatter are east–west mirrors.
 
 Playable rules (upstream + house rules): [`rules.md`](rules.md).
 Dated changelog with Rule / Scenario / Sim tags and sim metrics:
@@ -36,6 +40,8 @@ cargo run --release -- sim --scenario skirmish --games 400 --seed 1
 cargo run --release -- sim --scenario squadron --games 150 --seed 1
 cargo run --release -- sim --scenario platoon --games 150 --seed 1
 cargo run --release -- sim --scenario combined --games 100 --seed 1
+cargo run --release -- sim --scenario capture --games 100 --seed 1
+cargo run --release -- sim --scenario assault --games 100 --seed 1
 cargo run --release -- sim --games 1 --seed 42 --verbose   # event log
 cargo run --release -- sim --games 200 --json              # machine-readable
 ```
@@ -55,6 +61,7 @@ Focus is **drama** and **stalemates**:
 | late stalemate | Long no-hit streak near the end |
 | moves / hull turns / turret | Whether units maneuver or only duel in place |
 | air strikes / infantry kills | Combined-arms drama (combined scenario) |
+| objectives / win-by-capture | Flag Capture finishes (capture scenario) |
 
 The aggregate report ends with **suggested rules tweaks** when those rates
 cross simple thresholds.
@@ -95,8 +102,8 @@ cross simple thresholds.
   blast template (impact + neighbors). Tank main gun (range 5) outranges
   infantry missiles (range 4). Main gun, missiles, and air kill through
   cover; only AI spray pins a dug-in squad. Firing a missile leaves cover.
-  Forest gives −1 to hit (dig-in does not stack a second −1). APC AI spray
-  can suppress vehicles. All suppression is temporary (clears at end of the
+  Forest gives −1 to hit (dig-in does not stack a second −1). AI spray is
+  infantry-only (vehicles immune). All suppression is temporary (clears at end of the
   unit's next activation). Suppressed infantry cannot fire missiles.
 - **Platoon clock.** Hard cap 200 activations as a safety valve. After
   first contact, 40 activations with no hit ends the game as an idle
