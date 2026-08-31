@@ -155,13 +155,12 @@ startup, timer setup, and sleep.
 
 ## Form factor and layout
 
-Target a **round postage-stamp** outline: **Ø 28 mm** in the current KiCad
-revision — a bit larger than a US quarter (Ø 24.26 mm; a quarter outline sits
-on the `Dwgs.User` layer beside the board for scale). A circular board and
-spiral usually couple better to phone NFC coils than a square of the same
-width. Antenna area still dominates, but the board is intentionally not
-credit-card sized — smaller outline means weaker coupling on some handsets, so
-expect to validate harvest current and enlarge only if the field is too thin.
+Target a **US-quarter** outline: **Ø 24.26 mm** in the current KiCad revision
+(the board edge *is* the quarter; no spare FR-4 ring outside the spiral). A
+circular board and spiral usually couple better to phone NFC coils than a
+square of the same width. Antenna area still dominates — this is the size
+floor; expect to validate harvest current and enlarge only if the field is too
+thin.
 
 **Thickness:** default fab is **1.6 mm** FR-4. With the ~1.8 mm tall 9×9 piezo,
 the assembled button is about **3.4 mm** thick. Order **0.8 mm** FR-4 if you
@@ -195,8 +194,8 @@ Schematic and board live under [`kicad/`](kicad/). Open
 | MCU | ATtiny816-MNR (VQFN-20) |
 | Piezo drive | Differential on PB0 / PB1 |
 | Hard-tied `VOUT` cap | 100 nF (under the 220 nF NXP limit) |
-| Board size | Ø 28 mm × 1.6 mm FR-4 round (postage stamp; ~3.4 mm assembled) |
-| Antenna | Ø 24 mm circular spiral, 5 turns on `F.Cu` (~2.75 µH target; retune C1) |
+| Board size | Ø 24.26 mm × 1.6 mm FR-4 round (US quarter; ~3.4 mm assembled) |
+| Antenna | Ø 23 mm circular spiral, 5 turns on `F.Cu` (~2.75 µH target; retune C1) |
 | Piezo | FUET-9018 on Murata PKMCS0909 land pattern |
 
 Connectivity in the schematic is by net labels. After opening the project,
@@ -215,8 +214,8 @@ These need decisions or measurements before locking the schematic:
 
 - Exact series resistor after measuring piezo current spikes on NFC power.
 - Antenna geometry for reliable coupling across common phone NFC coil
-  placements (confirm inductance on a VNA). The Ø 28 mm outline is the size
-  floor; grow the spiral if harvest current is too low on target phones.
+  placements (confirm inductance on a VNA). The Ø 24.26 mm quarter outline is
+  the size floor; grow the spiral if harvest current is too low on target phones.
 - Whether the NTAG's I2C / EEPROM side is used for anything (melody select,
   config) or left unused with the chip acting only as a harvester and tag.
 - Melody format extensions (volume, duty cycle, envelopes) versus staying at

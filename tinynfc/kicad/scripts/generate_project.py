@@ -22,22 +22,22 @@ LIB_DIR = ROOT / "libraries"
 PRETTY = LIB_DIR / "tinynfc.pretty"
 SYM = LIB_DIR / "tinynfc.kicad_sym"
 
-# Postage-stamp disc: as small as the 9 mm piezo + spiral inductance allow.
+# Exact US-quarter disc: trim the FR-4 that sat outside the spiral.
 # Round outline + circular spiral usually couple better to phone NFC coils.
-BOARD_DIA_MM = 28.0
-ANT_OUTER_DIA = 24.0
-ANT_TURNS = 5  # leaves a larger center island so silicon clears the spiral
+US_QUARTER_DIA_MM = 24.26
+BOARD_DIA_MM = US_QUARTER_DIA_MM
+# Outer spiral stays ~0.5 mm inside Edge.Cuts (trace half-width + fab margin).
+ANT_OUTER_DIA = 23.0
+ANT_TURNS = 5  # leaves a center island so silicon clears the spiral
 ANT_TRACE = 0.35
 ANT_GAP = 0.28
 ANT_PTS_PER_TURN = 64
 # No antenna copper inside this radius — component pads must stay inside it
 # with a small margin (see COMPONENT_CLEAR_R).
-ANT_INNER_CLEAR_R = 8.6
+ANT_INNER_CLEAR_R = 8.35
 COMPONENT_CLEAR_R = ANT_INNER_CLEAR_R - 0.35
 # Feed pads sit on the inner rim, west side (−X), away from the south parts bay.
 ANT_FEED_PHASE = math.pi
-# US quarter for scale drawings (documentation layer only — not fab copper).
-US_QUARTER_DIA_MM = 24.26
 BOARD_THICKNESS_MM = 1.6
 PIEZO_HEIGHT_MM = 1.8
 
@@ -981,9 +981,9 @@ def add_keepout_zone(board: pcbnew.BOARD, _size: float) -> None:
 
 
 def add_quarter_scale(board: pcbnew.BOARD) -> None:
-    """Draw a US-quarter outline on Dwgs.User, beside the board, for scale."""
-    r = US_QUARTER_DIA_MM / 2
-    # Sit to the right of the round outline with a small gap.
+    """Annotate the quarter-sized outline; draw a matching circle beside for scale."""
+    r = BOARD_DIA_MM / 2
+    # Identical Ø beside the board (proof the outline is a US quarter).
     cx = BOARD_DIA_MM / 2 + 2.0 + r
     cy = 0.0
     circ = pcbnew.PCB_SHAPE(board)
@@ -995,9 +995,9 @@ def add_quarter_scale(board: pcbnew.BOARD) -> None:
     board.Add(circ)
     for txt, x, y, h in [
         ("US quarter", cx, cy - r - 2.2, 1.0),
-        (f"Ø{US_QUARTER_DIA_MM} mm", cx, cy - r - 0.9, 0.8),
-        (f"board Ø{BOARD_DIA_MM:.0f}×{BOARD_THICKNESS_MM} mm", 0.0, -BOARD_DIA_MM / 2 - 2.4, 0.9),
-        (f"assembled ~{BOARD_THICKNESS_MM + PIEZO_HEIGHT_MM:.1f} mm tall", 0.0, -BOARD_DIA_MM / 2 - 1.2, 0.7),
+        (f"Ø{US_QUARTER_DIA_MM} mm (same)", cx, cy - r - 0.9, 0.75),
+        (f"board = US quarter Ø{BOARD_DIA_MM}×{BOARD_THICKNESS_MM} mm", 0.0, -r - 2.4, 0.85),
+        (f"assembled ~{BOARD_THICKNESS_MM + PIEZO_HEIGHT_MM:.1f} mm tall", 0.0, -r - 1.2, 0.7),
     ]:
         t = pcbnew.PCB_TEXT(board)
         t.SetText(txt)
@@ -1014,7 +1014,7 @@ def write_pcb() -> None:
     # Title
     board.GetTitleBlock().SetTitle("TinyNFC")
     board.GetTitleBlock().SetDate("2026-08-31")
-    board.GetTitleBlock().SetRevision("0.5")
+    board.GetTitleBlock().SetRevision("0.6")
     board.GetTitleBlock().SetComment(0, "NFC energy-harvesting audio player")
 
     draw_round_outline(board, BOARD_DIA_MM)
@@ -1027,21 +1027,21 @@ def write_pcb() -> None:
 
     # Piezo near center-north. East/west flanks beside the body hold silicon so
     # the south rim is not the only usable bay (pads are on ±X of the piezo).
-    add_fp(board, f"{sys_fp}/Buzzer_Beeper.pretty", "Buzzer_Murata_PKMCS0909E", "PZ1", 0.0, -1.6, 0)
+    add_fp(board, f"{sys_fp}/Buzzer_Beeper.pretty", "Buzzer_Murata_PKMCS0909E", "PZ1", 0.0, -1.5, 0)
 
     # West flank (near LA/LB feeds): NT3H level with the piezo body; tune + gate
-    # Rs fill the rest of the west column.
-    add_fp(board, str(PRETTY), "NXP_SOT902-3_XQFN8", "U1", -6.7, -1.6, 0)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C1", -6.2, -4.0, 90)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R1", -6.5, 0.7, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R2", -6.5, 2.0, 0)
+    # Rs fill the rest of the west column. Pulled in for the quarter-sized clear.
+    add_fp(board, str(PRETTY), "NXP_SOT902-3_XQFN8", "U1", -6.35, -1.5, 0)
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C1", -5.9, -3.85, 90)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R1", -6.2, 0.7, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R2", -6.2, 1.9, 0)
 
     # East flank: P-FET level with the piezo; bypass / bulk / series R / TVS south-east.
-    add_fp(board, f"{sys_fp}/Package_DFN_QFN.pretty", "Diodes_DFN1006-3", "Q1", 6.7, -1.6, 0)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C2", 6.2, -4.0, 90)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C3", 6.5, 0.7, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R3", 6.5, 2.0, 0)
-    add_fp(board, f"{sys_fp}/Diode_SMD.pretty", "D_SOD-882", "D1", 5.2, 3.5, 0)
+    add_fp(board, f"{sys_fp}/Package_DFN_QFN.pretty", "Diodes_DFN1006-3", "Q1", 6.35, -1.5, 0)
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C2", 5.9, -3.85, 90)
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C3", 6.2, 0.7, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R3", 6.2, 1.9, 0)
+    add_fp(board, f"{sys_fp}/Diode_SMD.pretty", "D_SOD-882", "D1", 4.9, 3.35, 0)
 
     # ATtiny816 south-center; UPDI pads on the south rim.
     add_fp(
@@ -1050,29 +1050,29 @@ def write_pcb() -> None:
         "VQFN-20-1EP_3x3mm_P0.4mm_EP1.7x1.7mm",
         "U2",
         0.0,
-        3.9,
+        3.7,
         0,
     )
 
     # UPDI pogo pads on the south rim of the island (inside the spiral, not on it).
-    y_pads = 6.7
+    y_pads = 6.35
     add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP1", -2.54, y_pads, 0)
     add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP2", 0.0, y_pads, 0)
     add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP3", 2.54, y_pads, 0)
 
     # Silk pad callouts just south of the pogo pads (still inside the island).
     for txt, x, y in [
-        ("GND", -2.54, y_pads + 0.95),
-        ("VCC", 0.0, y_pads + 0.95),
-        ("UPDI", 2.54, y_pads + 0.95),
+        ("GND", -2.54, y_pads + 0.9),
+        ("VCC", 0.0, y_pads + 0.9),
+        ("UPDI", 2.54, y_pads + 0.9),
     ]:
         t = pcbnew.PCB_TEXT(board)
         t.SetText(txt)
         t.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))
         t.SetLayer(pcbnew.F_SilkS)
-        t.SetTextHeight(mm(0.5))
-        t.SetTextWidth(mm(0.5))
-        t.SetTextThickness(mm(0.08))
+        t.SetTextHeight(mm(0.45))
+        t.SetTextWidth(mm(0.45))
+        t.SetTextThickness(mm(0.07))
         board.Add(t)
 
     assert_clean_placement(board)
@@ -1129,17 +1129,16 @@ in this revision (no-connects).
 
 ## Layout rules
 
-- Board: **Ø 28 mm × 1.6 mm** round postage stamp (not credit-card size). A
-  larger outline couples more RF; this one is the minimum that still fits a
-  9 mm piezo near center-north, with NT3H/passives in the east/west flanks and
-  the ATtiny + UPDI pads south.
+- Board: **Ø 24.26 mm × 1.6 mm** round — exact US-quarter diameter (trim the
+  FR-4 that used to sit outside the spiral). Fits a 9 mm piezo near
+  center-north, with NT3H/passives in the east/west flanks and the ATtiny +
+  UPDI pads south.
 - Thickness: **1.6 mm** FR-4 by default (~**3.4 mm** assembled with the piezo).
   Optional 0.8 mm FR-4 for a flatter button.
-- Antenna: Ø 24 mm circular spiral, 5 turns, 0.35 / 0.28 mm trace/gap on
-  `F.Cu` (inner clear ~Ø 17 mm so parts do not sit on the spiral). Do **not**
-  add a continuous GND plane under it.
-- A US-quarter outline (Ø 24.26 mm) is drawn on `Dwgs.User` beside the board
-  for scale — documentation only, not fab copper.
+- Antenna: Ø 23 mm circular spiral, 5 turns, 0.35 / 0.28 mm trace/gap on
+  `F.Cu` (inner clear ~Ø 16.7 mm so parts do not sit on the spiral; ~0.5 mm
+  copper-to-edge). Do **not** add a continuous GND plane under it.
+- Dwgs.User text labels the outline as a US quarter — documentation only.
 - Footprint reference designators are hidden on silk so they do not sit on
   copper. Only GND / VCC / UPDI pad labels are silkscreened.
 - Keep the piezo + gated bulk path short inside the spiral island.

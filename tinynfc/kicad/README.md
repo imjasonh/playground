@@ -43,17 +43,16 @@ in this revision (no-connects).
 
 ## Layout rules
 
-- Board: **Ø 28 mm × 1.6 mm** round postage stamp (not credit-card size). A
-  larger outline couples more RF; this one is the minimum that still fits a
-  9 mm piezo near center-north, with NT3H/passives in the east/west flanks and
-  the ATtiny + UPDI pads south.
+- Board: **Ø 24.26 mm × 1.6 mm** round — exact US-quarter diameter (trim the
+  FR-4 that used to sit outside the spiral). Fits a 9 mm piezo near
+  center-north, with NT3H/passives in the east/west flanks and the ATtiny +
+  UPDI pads south.
 - Thickness: **1.6 mm** FR-4 by default (~**3.4 mm** assembled with the piezo).
   Optional 0.8 mm FR-4 for a flatter button.
-- Antenna: Ø 24 mm circular spiral, 5 turns, 0.35 / 0.28 mm trace/gap on
-  `F.Cu` (inner clear ~Ø 17 mm so parts do not sit on the spiral). Do **not**
-  add a continuous GND plane under it.
-- A US-quarter outline (Ø 24.26 mm) is drawn on `Dwgs.User` beside the board
-  for scale — documentation only, not fab copper.
+- Antenna: Ø 23 mm circular spiral, 5 turns, 0.35 / 0.28 mm trace/gap on
+  `F.Cu` (inner clear ~Ø 16.7 mm so parts do not sit on the spiral; ~0.5 mm
+  copper-to-edge). Do **not** add a continuous GND plane under it.
+- Dwgs.User text labels the outline as a US quarter — documentation only.
 - Footprint reference designators are hidden on silk so they do not sit on
   copper. Only GND / VCC / UPDI pad labels are silkscreened.
 - Keep the piezo + gated bulk path short inside the spiral island.
