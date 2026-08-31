@@ -67,11 +67,27 @@ Why: on pointy-top, distance from a west forward-edge hex to an east flag is
 **chiral by row** — Red had more optimal deploy hexes than Blue. Flat-top makes
 every row's race length match (18×12, depth 3 → distance 15 for both sides).
 
-Facing axial deltas and cube-to-pixel math follow flat-top conventions; offset
-`(col, row)` round-trips unchanged for layout authors.
+Facing axial deltas stay the cube-adjacent set; only offset conversion and
+cube-to-pixel math follow flat-top. Offset `(col, row)` round-trips unchanged
+for layout authors.
 
-**Effect:** see sim table in the PR / post-change Monte Carlo (color bias on
-Capture/Assault should track first/second player, not Red/Blue).
+Assault defender infantry are forced dug-in after spoil so the hold scenario
+does not depend on a forest tile surviving the nudge.
+
+**Effect (200 games, seed 7):**
+
+| Scenario | Red / Blue / Draw | FP / SP wins | Notes |
+|----------|-------------------|--------------|-------|
+| Skirmish | 89 / 105 / 6 | 74 / 120 | SP spoil edge (unchanged shape) |
+| Squadron | 89 / 103 / 8 | 92 / 100 | near color-fair |
+| Platoon | 89 / 108 / 3 | 65 / 132 | SP spoil still strong |
+| Combined | 106 / 92 / 2 | 92 / 106 | mild Red; not geometry |
+| Capture | 111 / 84 / 5 | 88 / 107 | race dist **tied 80/80**; mild Red remains (AI/list) |
+| Assault | 100 / 95 / 5 | 111 / 84 | attacker 111 / defender 84; **color ~50/50** |
+
+Geometry chirality is gone (Capture APC→flag min distance tied every seed).
+Remaining color leans are small and track initiative / spoil / AI, not mat
+chirality.
 
 ---
 
