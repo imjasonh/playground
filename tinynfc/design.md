@@ -168,11 +168,11 @@ the assembled button is about **3.4 mm** thick. Order **0.8 mm** FR-4 if you
 want it flatter.
 
 A 9×9 mm piezo (instead of 12×12) is what makes the spiral island fit at this
-size. The piezo sits in the north half of the island; the ATtiny816, NT3H2111,
-passives, and UPDI pads sit in the south half so nothing lands on spiral
-copper. Footprint refs stay off silkscreen; only the UPDI pad labels are silk.
-The generator refuses to write a board if any non-antenna pad crosses the
-spiral keep-out or overlaps another pad.
+size. The piezo sits near center-north; the NT3H2111 and power passives sit in
+the east/west flanks beside it (near the west antenna feeds on that side); the
+ATtiny816 and UPDI pads sit south. Footprint refs stay off silkscreen; only the
+UPDI pad labels are silk. The generator refuses to write a board if any
+non-antenna pad crosses the spiral keep-out or overlaps another pad.
 
 Layout constraints:
 

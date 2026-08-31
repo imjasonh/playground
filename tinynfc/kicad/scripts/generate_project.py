@@ -1014,7 +1014,7 @@ def write_pcb() -> None:
     # Title
     board.GetTitleBlock().SetTitle("TinyNFC")
     board.GetTitleBlock().SetDate("2026-08-31")
-    board.GetTitleBlock().SetRevision("0.4")
+    board.GetTitleBlock().SetRevision("0.5")
     board.GetTitleBlock().SetComment(0, "NFC energy-harvesting audio player")
 
     draw_round_outline(board, BOARD_DIA_MM)
@@ -1025,36 +1025,38 @@ def write_pcb() -> None:
     # Antenna ring outside ANT_INNER_CLEAR_R; all other copper stays in the island.
     add_fp(board, str(PRETTY), "PCB_Antenna_RoundSpiral", "L1", 0, 0, 0)
 
-    # Piezo shifted north so the south half of the island holds the silicon.
-    # Body ~9×9; pads on east/west. Keep clear of the west antenna feeds.
-    add_fp(board, f"{sys_fp}/Buzzer_Beeper.pretty", "Buzzer_Murata_PKMCS0909E", "PZ1", 0.0, -2.4, 0)
+    # Piezo near center-north. East/west flanks beside the body hold silicon so
+    # the south rim is not the only usable bay (pads are on ±X of the piezo).
+    add_fp(board, f"{sys_fp}/Buzzer_Beeper.pretty", "Buzzer_Murata_PKMCS0909E", "PZ1", 0.0, -1.6, 0)
 
-    # ATtiny816 VQFN-20 — south-center of the island (was overlapping the spiral).
+    # West flank (near LA/LB feeds): tune cap in the NW pocket beside the piezo
+    # body; NT3H + gate Rs south of the piezo electrodes.
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C1", -6.2, -4.0, 90)
+    add_fp(board, str(PRETTY), "NXP_SOT902-3_XQFN8", "U1", -6.35, 1.9, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R1", -6.35, 3.4, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R2", -4.55, 3.4, 0)
+
+    # East flank: bypass in the NE pocket; P-FET / bulk / series R / TVS south-east.
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C2", 6.2, -4.0, 90)
+    add_fp(board, f"{sys_fp}/Package_DFN_QFN.pretty", "Diodes_DFN1006-3", "Q1", 6.35, 1.9, 0)
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C3", 6.35, 3.4, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R3", 4.55, 3.4, 0)
+    add_fp(board, f"{sys_fp}/Diode_SMD.pretty", "D_SOD-882", "D1", 5.35, 4.75, 0)
+
+    # ATtiny816 south-center — flanks took the passives, so the MCU can sit
+    # closer to the piezo with room left for UPDI pads on the south rim.
     add_fp(
         board,
         f"{sys_fp}/Package_DFN_QFN.pretty",
         "VQFN-20-1EP_3x3mm_P0.4mm_EP1.7x1.7mm",
         "U2",
         0.0,
-        4.35,
+        3.9,
         0,
     )
-    # NT3H2111 — west of MCU, near LA/LB feeds on the inner west rim.
-    add_fp(board, str(PRETTY), "NXP_SOT902-3_XQFN8", "U1", -3.55, 2.55, 0)
-    # P-FET + bulk/bypass + gate resistors — east/south of MCU.
-    add_fp(board, f"{sys_fp}/Package_DFN_QFN.pretty", "Diodes_DFN1006-3", "Q1", 3.45, 2.55, 0)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C2", 3.45, 3.85, 0)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C3", 3.45, 4.85, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R1", -3.55, 3.85, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R2", -3.55, 4.85, 0)
-    # Antenna tune cap near U1 / feed.
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C1", -5.4, 1.2, 90)
-    # Piezo series R + UPDI TVS tucked in the SE pocket.
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R3", 5.2, 1.2, 90)
-    add_fp(board, f"{sys_fp}/Diode_SMD.pretty", "D_SOD-882", "D1", 5.2, 3.0, 90)
 
     # UPDI pogo pads on the south rim of the island (inside the spiral, not on it).
-    y_pads = 6.85
+    y_pads = 6.7
     add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP1", -2.54, y_pads, 0)
     add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP2", 0.0, y_pads, 0)
     add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP3", 2.54, y_pads, 0)
@@ -1130,7 +1132,8 @@ in this revision (no-connects).
 
 - Board: **Ø 28 mm × 1.6 mm** round postage stamp (not credit-card size). A
   larger outline couples more RF; this one is the minimum that still fits a
-  9 mm piezo in the north half of the spiral island with silicon + UPDI south.
+  9 mm piezo near center-north, with NT3H/passives in the east/west flanks and
+  the ATtiny + UPDI pads south.
 - Thickness: **1.6 mm** FR-4 by default (~**3.4 mm** assembled with the piezo).
   Optional 0.8 mm FR-4 for a flatter button.
 - Antenna: Ø 24 mm circular spiral, 5 turns, 0.35 / 0.28 mm trace/gap on

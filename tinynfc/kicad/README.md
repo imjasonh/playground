@@ -45,7 +45,8 @@ in this revision (no-connects).
 
 - Board: **Ø 28 mm × 1.6 mm** round postage stamp (not credit-card size). A
   larger outline couples more RF; this one is the minimum that still fits a
-  9 mm piezo in the north half of the spiral island with silicon + UPDI south.
+  9 mm piezo near center-north, with NT3H/passives in the east/west flanks and
+  the ATtiny + UPDI pads south.
 - Thickness: **1.6 mm** FR-4 by default (~**3.4 mm** assembled with the piezo).
   Optional 0.8 mm FR-4 for a flatter button.
 - Antenna: Ø 24 mm circular spiral, 5 turns, 0.35 / 0.28 mm trace/gap on
