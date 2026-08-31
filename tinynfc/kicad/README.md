@@ -25,9 +25,9 @@ Requires KiCad 7 or later with the standard symbol/footprint libraries.
 | C3 | 10 µF 0402 | Gated bulk reservoir on `VBULK` |
 | U2 | ATtiny816-MNR | Melody PWM + gate control |
 | R3 | 220 Ω | Piezo series current limit |
-| PZ1 | PKLCS1212E4001-R1 | Passive piezo |
+| PZ1 | FUET-9018 | Passive 9×9 piezo (PKMCS0909 land) |
 | D1 | TPESD8L3_3CT5G | UPDI ESD TVS |
-| TP1–TP3 | 1.5 mm pads @ 2.54 mm | GND / VCC / UPDI pogo |
+| TP1–TP3 | 1.0 mm pads @ 2.54 mm | GND / VCC / UPDI pogo |
 
 ### MCU pin map
 
@@ -43,8 +43,13 @@ in this revision (no-connects).
 
 ## Layout rules
 
-- Board: 40 mm × 40 mm, 2-layer (28 mm spiral with edge margin for pogo pads).
-- Antenna footprint draws the spiral on `F.Cu`; do **not** add a continuous GND plane under it.
+- Board: **28 mm × 28 mm** postage stamp (not credit-card size). A larger
+  outline couples more RF; this one is the minimum that still fits a 9 mm
+  piezo in the spiral island plus UPDI pads in the edge margin.
+- Antenna: 23 mm square spiral, 6 turns, 0.35 / 0.28 mm trace/gap on `F.Cu`.
+  Do **not** add a continuous GND plane under it.
+- Footprint reference designators are hidden on silk so they do not sit on
+  copper. Only GND / VCC / UPDI pad labels are silkscreened.
 - Keep the piezo + gated bulk path short inside the spiral island.
 
 ## Regenerate

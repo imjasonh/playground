@@ -22,11 +22,13 @@ LIB_DIR = ROOT / "libraries"
 PRETTY = LIB_DIR / "tinynfc.pretty"
 SYM = LIB_DIR / "tinynfc.kicad_sym"
 
-BOARD_MM = 40.0  # leave margin outside antenna for pogo pads
-ANT_OUTER = 28.0
-ANT_TURNS = 5
-ANT_TRACE = 0.45
-ANT_GAP = 0.40
+# Postage-stamp outline: as small as the 9 mm piezo + spiral inductance allow.
+# Card-sized boards couple better; this revision prioritizes minimum area.
+BOARD_MM = 28.0
+ANT_OUTER = 23.0
+ANT_TURNS = 6
+ANT_TRACE = 0.35
+ANT_GAP = 0.28
 
 
 def uid() -> str:
@@ -224,22 +226,24 @@ def rect_spiral_points(
 
 
 def write_antenna_footprint() -> None:
-    """PCB rectangular spiral ~2.75 µH class, two feed pads at the inner end."""
+    """PCB square spiral ~2.75 µH class; feeds on the inner rim (not under the piezo)."""
     pts = rect_spiral_points(ANT_OUTER, ANT_TURNS, ANT_TRACE, ANT_GAP)
-    # Feed pads near center-right of inner turn.
+    # Inner opening is ~15 mm across; keep feeds on the west rim so the 9 mm
+    # piezo can sit at the geometric center without landing on antenna pads.
     feed_a = pts[-1]
-    # Second feed: step inward from last point toward center.
-    feed_b = (0.0, 0.0)
+    feed_b = (feed_a[0], feed_a[1] - (ANT_TRACE + ANT_GAP))
+    fab_y = ANT_OUTER / 2 + 1.2
     lines = [
         '(footprint "PCB_Antenna_RectSpiral" (version 20221018) (generator "tinynfc")',
         '  (layer "F.Cu")',
-        '  (descr "Rectangular spiral NFC antenna ~2.75uH target; feed pads 1=LA 2=LB")',
-        '  (tags "NFC antenna spiral 13.56MHz")',
+        '  (descr "Square spiral NFC antenna ~2.75uH target; feed pads 1=LA 2=LB")',
+        '  (tags "NFC antenna spiral 13.56MHz postage-stamp")',
         "  (attr smd)",
-        '  (fp_text reference "AE**" (at 0 16) (layer "F.SilkS")',
-        "    (effects (font (size 1 1) (thickness 0.15))))",
-        '  (fp_text value "PCB_Antenna_RectSpiral" (at 0 17.5) (layer "F.Fab")',
-        "    (effects (font (size 0.8 0.8) (thickness 0.1))))",
+        # Refs stay off F.SilkS so they never sit on spiral copper.
+        f'  (fp_text reference "L1" (at 0 {fab_y:.2f}) (layer "F.Fab")',
+        "    (effects (font (size 0.7 0.7) (thickness 0.1))))",
+        f'  (fp_text value "PCB_Antenna_RectSpiral" (at 0 {-fab_y:.2f}) (layer "F.Fab")',
+        "    (effects (font (size 0.7 0.7) (thickness 0.1))))",
         f'  (fp_rect (start {-ANT_OUTER/2-0.5:.2f} {-ANT_OUTER/2-0.5:.2f}) '
         f'(end {ANT_OUTER/2+0.5:.2f} {ANT_OUTER/2+0.5:.2f}) (layer "F.CrtYd")'
         " (stroke (width 0.05) (type solid)) (fill none))",
@@ -249,18 +253,20 @@ def write_antenna_footprint() -> None:
             f'  (fp_line (start {a[0]:.3f} {a[1]:.3f}) (end {b[0]:.3f} {b[1]:.3f}) '
             f'(layer "F.Cu") (stroke (width {ANT_TRACE}) (type solid)))'
         )
-    # Feed pads (also solderable for debug)
     lines.append(
         f'  (pad "1" smd rect (at {feed_a[0]:.3f} {feed_a[1]:.3f}) '
-        f'(size 0.8 0.8) (layers "F.Cu" "F.Paste" "F.Mask"))'
+        f'(size 0.7 0.7) (layers "F.Cu" "F.Paste" "F.Mask"))'
     )
     lines.append(
         f'  (pad "2" smd rect (at {feed_b[0]:.3f} {feed_b[1]:.3f}) '
-        f'(size 0.8 0.8) (layers "F.Cu" "F.Paste" "F.Mask"))'
+        f'(size 0.7 0.7) (layers "F.Cu" "F.Paste" "F.Mask"))'
     )
-    # Connect last spiral point to pad 1.
     lines.append(
         f'  (fp_line (start {pts[-1][0]:.3f} {pts[-1][1]:.3f}) (end {feed_a[0]:.3f} {feed_a[1]:.3f}) '
+        f'(layer "F.Cu") (stroke (width {ANT_TRACE}) (type solid)))'
+    )
+    lines.append(
+        f'  (fp_line (start {feed_a[0]:.3f} {feed_a[1]:.3f}) (end {feed_b[0]:.3f} {feed_b[1]:.3f}) '
         f'(layer "F.Cu") (stroke (width {ANT_TRACE}) (type solid)))'
     )
     lines.append(")\n")
@@ -694,13 +700,14 @@ def write_schematic() -> str:
         sch_component(
             "Device:Buzzer",
             "PZ1",
-            "PKLCS1212E4001-R1",
-            "Buzzer_Beeper:Buzzer_Murata_PKLCS1212E",
+            "FUET-9018",
+            "Buzzer_Beeper:Buzzer_Murata_PKMCS0909E",
             241.3,
             76.2,
             0,
             ["1", "2"],
             root_uuid,
+            extras='    (property "Description" "9x9 passive piezo; PKMCS0909 land pattern" (at 241.3 76.2 0)\n      (effects (font (size 1.27 1.27)) hide))\n',
         )
     )
     labels += [
@@ -716,7 +723,7 @@ def write_schematic() -> str:
             "Connector:TestPoint",
             "TP1",
             "GND",
-            "TestPoint:TestPoint_Pad_D1.5mm",
+            "TestPoint:TestPoint_Pad_D1.0mm",
             101.6,
             101.6,
             0,
@@ -729,7 +736,7 @@ def write_schematic() -> str:
             "Connector:TestPoint",
             "TP2",
             "VCC",
-            "TestPoint:TestPoint_Pad_D1.5mm",
+            "TestPoint:TestPoint_Pad_D1.0mm",
             111.76,
             101.6,
             0,
@@ -742,7 +749,7 @@ def write_schematic() -> str:
             "Connector:TestPoint",
             "TP3",
             "UPDI",
-            "TestPoint:TestPoint_Pad_D1.5mm",
+            "TestPoint:TestPoint_Pad_D1.0mm",
             121.92,
             101.6,
             0,
@@ -861,6 +868,9 @@ def add_fp(board: pcbnew.BOARD, libpath: str, name: str, ref: str, x_mm: float, 
     fp.SetReference(ref)
     fp.SetPosition(pcbnew.VECTOR2I(mm(x_mm), mm(y_mm)))
     fp.SetOrientationDegrees(rot_deg)
+    # Dense postage-stamp layout: keep ref/value off silk so they never sit on copper.
+    fp.Reference().SetVisible(False)
+    fp.Value().SetVisible(False)
     board.Add(fp)
     return fp
 
@@ -909,58 +919,56 @@ def write_pcb() -> None:
     # Title
     board.GetTitleBlock().SetTitle("TinyNFC")
     board.GetTitleBlock().SetDate("2026-08-31")
-    board.GetTitleBlock().SetRevision("0.1")
+    board.GetTitleBlock().SetRevision("0.2")
     board.GetTitleBlock().SetComment(0, "NFC energy-harvesting audio player")
 
     draw_rect_outline(board, BOARD_MM)
     add_keepout_zone(board, BOARD_MM)
 
     sys_fp = "/usr/share/kicad/footprints"
-    # Antenna centered (fills most of the board). Electronics sit in the center island.
+    # Antenna fills the board; electronics sit in the ~15 mm center island.
     add_fp(board, str(PRETTY), "PCB_Antenna_RectSpiral", "L1", 0, 0, 0)
 
-    # Center island (~±9–10 mm inside a 28 mm / 5-turn spiral).
-    # 12×12 mm piezo sits at the origin; silicon and passives ring it.
-    add_fp(board, f"{sys_fp}/Buzzer_Beeper.pretty", "Buzzer_Murata_PKLCS1212E", "PZ1", 0.0, 0.0, 0)
-    add_fp(board, str(PRETTY), "NXP_SOT902-3_XQFN8", "U1", -5.5, -7.5, 0)
+    # 9×9 mm piezo at origin; silicon and 0402s ring the body inside the spiral.
+    add_fp(board, f"{sys_fp}/Buzzer_Beeper.pretty", "Buzzer_Murata_PKMCS0909E", "PZ1", 0.0, 0.0, 0)
+    add_fp(board, str(PRETTY), "NXP_SOT902-3_XQFN8", "U1", -5.2, -5.8, 0)
     add_fp(
         board,
         f"{sys_fp}/Package_DFN_QFN.pretty",
         "VQFN-20-1EP_3x3mm_P0.4mm_EP1.7x1.7mm",
         "U2",
-        5.0,
-        -7.5,
+        4.8,
+        -5.8,
         0,
     )
-    add_fp(board, f"{sys_fp}/Package_DFN_QFN.pretty", "Diodes_DFN1006-3", "Q1", -6.0, 7.0, 0)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C1", -7.5, -7.5, 0)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C2", -4.0, 7.0, 0)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C3", -2.0, 7.0, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R1", 0.0, 7.5, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R2", 2.0, 7.5, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R3", 6.5, 7.0, 90)
-    add_fp(board, f"{sys_fp}/Diode_SMD.pretty", "D_SOD-882", "D1", 7.5, -7.5, 0)
+    add_fp(board, f"{sys_fp}/Package_DFN_QFN.pretty", "Diodes_DFN1006-3", "Q1", -5.4, 5.6, 0)
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C1", -5.2, -3.6, 0)
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C2", -3.4, 5.6, 0)
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C3", -1.6, 5.6, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R1", 0.2, 5.8, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R2", 2.0, 5.8, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R3", 5.4, 5.4, 90)
+    add_fp(board, f"{sys_fp}/Diode_SMD.pretty", "D_SOD-882", "D1", 5.6, -3.4, 0)
 
-    # UPDI pogo pads at 2.54 mm pitch along bottom edge, outside the antenna copper.
-    y_pads = BOARD_MM / 2 - 2.0
-    add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.5mm", "TP1", -2.54, y_pads, 0)
-    add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.5mm", "TP2", 0.0, y_pads, 0)
-    add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.5mm", "TP3", 2.54, y_pads, 0)
+    # UPDI pogo pads in the 2.5 mm margin south of the spiral (1.0 mm pads).
+    y_pads = BOARD_MM / 2 - 1.4
+    add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP1", -2.54, y_pads, 0)
+    add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP2", 0.0, y_pads, 0)
+    add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP3", 2.54, y_pads, 0)
 
-    # Silk legend
+    # Silk only for pad callouts — kept clear of antenna copper.
     for txt, x, y in [
-        ("GND", -2.54, y_pads + 1.6),
-        ("VCC", 0.0, y_pads + 1.6),
-        ("UPDI", 2.54, y_pads + 1.6),
-        ("TinyNFC", 0, -BOARD_MM / 2 + 1.2),
+        ("GND", -2.54, y_pads + 1.1),
+        ("VCC", 0.0, y_pads + 1.1),
+        ("UPDI", 2.54, y_pads + 1.1),
     ]:
         t = pcbnew.PCB_TEXT(board)
         t.SetText(txt)
         t.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))
         t.SetLayer(pcbnew.F_SilkS)
-        t.SetTextHeight(mm(0.8))
-        t.SetTextWidth(mm(0.8))
-        t.SetTextThickness(mm(0.12))
+        t.SetTextHeight(mm(0.6))
+        t.SetTextWidth(mm(0.6))
+        t.SetTextThickness(mm(0.1))
         board.Add(t)
 
     out = ROOT / "tinynfc.kicad_pcb"
@@ -997,9 +1005,9 @@ Requires KiCad 7 or later with the standard symbol/footprint libraries.
 | C3 | 10 µF 0402 | Gated bulk reservoir on `VBULK` |
 | U2 | ATtiny816-MNR | Melody PWM + gate control |
 | R3 | 220 Ω | Piezo series current limit |
-| PZ1 | PKLCS1212E4001-R1 | Passive piezo |
+| PZ1 | FUET-9018 | Passive 9×9 piezo (PKMCS0909 land) |
 | D1 | TPESD8L3_3CT5G | UPDI ESD TVS |
-| TP1–TP3 | 1.5 mm pads @ 2.54 mm | GND / VCC / UPDI pogo |
+| TP1–TP3 | 1.0 mm pads @ 2.54 mm | GND / VCC / UPDI pogo |
 
 ### MCU pin map
 
@@ -1015,8 +1023,13 @@ in this revision (no-connects).
 
 ## Layout rules
 
-- Board: 40 mm × 40 mm, 2-layer (28 mm spiral with edge margin for pogo pads).
-- Antenna footprint draws the spiral on `F.Cu`; do **not** add a continuous GND plane under it.
+- Board: **28 mm × 28 mm** postage stamp (not credit-card size). A larger
+  outline couples more RF; this one is the minimum that still fits a 9 mm
+  piezo in the spiral island plus UPDI pads in the edge margin.
+- Antenna: 23 mm square spiral, 6 turns, 0.35 / 0.28 mm trace/gap on `F.Cu`.
+  Do **not** add a continuous GND plane under it.
+- Footprint reference designators are hidden on silk so they do not sit on
+  copper. Only GND / VCC / UPDI pad labels are silkscreened.
 - Keep the piezo + gated bulk path short inside the spiral island.
 
 ## Regenerate

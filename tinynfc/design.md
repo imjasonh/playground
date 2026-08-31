@@ -45,7 +45,7 @@ the harvested current stays available for the piezo.
 
 | Part | Role |
 |------|------|
-| Passive SMD piezo (for example Murata `PKLCS1212E4001-R1`) | Acoustic output |
+| Passive SMD piezo (FUET `FUET-9018`, or Murata `PKMCS0909E4000-R1`) | Acoustic output; 9×9 mm keeps the board postage-stamp small |
 | Hardware PWM on the MCU | Square-wave drive at the note frequency |
 | Series resistor (100–330 Ω) | Limits piezo switching transients so they stay inside the NFC power budget |
 
@@ -74,7 +74,8 @@ the MOSFET is on.
 
 ### Programming interface
 
-Three exposed pads at 2.54 mm pitch for a temporary pogo-pin clip:
+Three exposed pads at 2.54 mm pitch for a temporary pogo-pin clip (1.0 mm
+pads on the postage-stamp outline):
 
 | Pad | Signal |
 |-----|--------|
@@ -95,7 +96,7 @@ Priced supplier links and a 100-board cost roll-up are in [`BOM.md`](BOM.md).
 | Antenna | PCB spiral ≈ 2.75 µH | Tuned with chip C + external C |
 | Antenna tune | 1.5 pF | 0402 |
 | MCU | `ATTINY816-MNR` (or ATtiny412) | QFN preferred |
-| Piezo | Murata `PKLCS1212E4001-R1` (or equivalent) | Passive SMD |
+| Piezo | FUET `FUET-9018` (or Murata `PKMCS0909E4000-R1`) | Passive 9×9 SMD |
 | Piezo series R | 100–330 Ω | Limit switching current |
 | Bulk C (gated) | 10 µF | 0402; not hard-tied to `VOUT` |
 | Gate MOSFET | `DMP21D0UFB4-P` | P-channel |
@@ -154,9 +155,15 @@ startup, timer setup, and sleep.
 
 ## Form factor and layout
 
-Antenna area dominates the outline. Expect something from about 25 mm × 25 mm
-(postage-stamp) up to credit-card size, depending on how much flux you need
-from weak phone fields.
+Target a **postage-stamp** outline: **28 mm × 28 mm** in the current KiCad
+revision. Antenna area still dominates, but the board is intentionally not
+credit-card sized — smaller outline means weaker coupling to some phone coils,
+so expect to validate harvest current on real handsets and enlarge only if the
+field is too thin.
+
+A 9×9 mm piezo (instead of 12×12) is what makes the spiral island fit at this
+size. Footprint refs stay off silkscreen so they do not land on antenna copper;
+only the UPDI pad labels are silk.
 
 Layout constraints:
 
@@ -178,8 +185,9 @@ Schematic and board live under [`kicad/`](kicad/). Open
 | MCU | ATtiny816-MNR (VQFN-20) |
 | Piezo drive | Differential on PB0 / PB1 |
 | Hard-tied `VOUT` cap | 100 nF (under the 220 nF NXP limit) |
-| Board size | 40 mm × 40 mm |
-| Antenna | 28 mm rectangular spiral on `F.Cu` (~2.75 µH target) |
+| Board size | 28 mm × 28 mm (postage stamp) |
+| Antenna | 23 mm square spiral, 6 turns on `F.Cu` (~2.75 µH target) |
+| Piezo | FUET-9018 on Murata PKMCS0909 land pattern |
 
 Connectivity in the schematic is by net labels. After opening the project,
 run **Update PCB from Schematic**, then route. The generator places
@@ -197,7 +205,8 @@ These need decisions or measurements before locking the schematic:
 
 - Exact series resistor after measuring piezo current spikes on NFC power.
 - Antenna geometry for reliable coupling across common phone NFC coil
-  placements (confirm inductance on a VNA).
+  placements (confirm inductance on a VNA). The 28 mm outline is the size
+  floor; grow the spiral if harvest current is too low on target phones.
 - Whether the NTAG's I2C / EEPROM side is used for anything (melody select,
   config) or left unused with the chip acting only as a harvester and tag.
 - Melody format extensions (volume, duty cycle, envelopes) versus staying at
