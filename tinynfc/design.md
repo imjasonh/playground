@@ -87,6 +87,8 @@ on the programming line.
 
 ## Bill of materials (draft)
 
+Priced supplier links and a 100-board cost roll-up are in [`BOM.md`](BOM.md).
+
 | Ref / function | Part / value | Package / notes |
 |----------------|--------------|-----------------|
 | NFC / energy harvest | NXP `NT3H2111W0FHKH` | NTAG I2C Plus |
