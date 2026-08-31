@@ -34,6 +34,19 @@ games, seed `7`, unless noted.
 
 Capture stays a thin race scenario; no redesign this pass.
 
+**Effect (200 games = 50 × 4 seeds):**
+
+| Scenario | Red win % | First-player win % | Notes |
+|----------|-----------|--------------------|-------|
+| Squadron | 58% | 44% | mild SP edge remains |
+| Platoon | 49% | 34% | SP still strong when spoil applies |
+| Combined | 36% | 43% | Blue lean; revisit if it sticks |
+| Capture | **58%** (was ~77%) | **47%** (was ~69%) | race distance equalized |
+| Assault | 59% color / **47% attacker** | — | 93 atk / 104 def — hold-able |
+
+Half-unit spoil did not erase the ladder second-player lean, but Capture's
+structural Red/FP skew is mostly gone.
+
 ---
 
 ## 2026-08-30 — Driver *Move move move!* matches upstream
