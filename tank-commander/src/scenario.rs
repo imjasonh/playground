@@ -1106,6 +1106,16 @@ pub fn assault<R: Rng>(rng: &mut R) -> Game {
     game.place_deployment_mines(rng);
     second_player_setup(&mut game, 3);
     game.board.set_terrain(def_flag, Terrain::Open);
+    // Defender infantry start dug in after spoil (scenario: holding the flag).
+    let dug: Vec<u8> = game
+        .tanks
+        .iter()
+        .filter(|t| t.side == defender && t.kind == UnitKind::Infantry)
+        .map(|t| t.id)
+        .collect();
+    for id in dug {
+        game.tank_mut(id).in_cover = true;
+    }
     game
 }
 

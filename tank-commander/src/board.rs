@@ -1,8 +1,8 @@
 //! Board terrain and occupancy.
 //!
-//! Boards are **odd-r offset rectangles** (pointy-top): `width` columns by
-//! `height` rows. That matches a tabletop hex mat. Internally hexes stay axial
-//! for distance / facing math — see [`crate::hex::Hex::offset`].
+//! Boards are **odd-q offset rectangles** (flat-top / point-sided): `width`
+//! columns by `height` rows. That matches a tabletop hex mat. Internally hexes
+//! stay axial for distance / facing math — see [`crate::hex::Hex::offset`].
 
 use crate::hex::Hex;
 use serde::{Deserialize, Serialize};
@@ -36,7 +36,7 @@ impl Terrain {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Board {
-    /// Offset columns (odd-r).
+    /// Offset columns (odd-q).
     pub width: i32,
     /// Offset rows.
     pub height: i32,

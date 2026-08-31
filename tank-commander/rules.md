@@ -438,8 +438,10 @@ required tabletop clocks — see [`RULES_CHANGES.md`](RULES_CHANGES.md).
 
 These are the setups the simulator balances against — a short learning ladder
 from stock 1v1 through combined arms, then objective missions (Capture flag
-raid and Assault). Map sizes are hex **columns × rows** on an odd-r rectangular
-mat (not an axial parallelogram).
+raid and Assault). Map sizes are hex **columns × rows** on an odd-q
+(**flat-top** / point-sided) rectangular mat (not an axial parallelogram).
+Flat faces point east–west so Red/Blue races along columns are
+distance-symmetric.
 
 ### 1. Skirmish (intro)
 
@@ -515,13 +517,12 @@ Objectives matter: race the other side's flag with embarked infantry.
 
 - **Force:** per side — **1 tank** + **3 APCs**, each APC **pre-loaded** with
   one infantry squad. List upgrades: tanks ≤**10** (mines allowed), APCs ≤**4**.
-- **Board:** **12×18** (the battle mat rotated so the long axis is
-  north–south). Red deploys from the **north** edge, Blue from the **south**.
-  Each side has one **flag** on its home edge (center column, kept Open).
-  Deploy zones are **3 rows deep**; alternating placement (second player
-  first). The placement AI minimizes distance to the enemy flag.
-  North–south avoids the odd-r east–west race-distance chirality that
-  otherwise gives Red a wider band of optimal hexes.
+- **Board:** **18×12** east–west battle mat (same size as Combined). Red
+  deploys from the **west** edge, Blue from the **east**. Each side has one
+  **flag** on its home edge (mid-row, kept Open). Deploy zones are **3
+  columns deep**; alternating placement (second player first). The placement
+  AI minimizes distance to the enemy flag. Flat-top odd-q keeps Red/Blue race
+  distances symmetric (pointy-top odd-r did not).
 - **Win:** an infantry unit that **shares** the enemy flag hex may spend 1 AP
   on **Capture**. Capturing the enemy flag wins immediately. Wipe still wins;
   timeout / idle stalemate still resolve by attrition.

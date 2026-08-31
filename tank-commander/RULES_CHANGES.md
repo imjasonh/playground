@@ -49,24 +49,29 @@ structural Red/FP skew is mostly gone.
 
 ## 2026-08-31 — Capture board rotated north–south
 
-**Type: Scenario**
+**Type: Scenario** *(superseded by flat-top odd-q below)*
 
-Capture now uses a **12×18** mat (battle area rotated) with Red on the
-**north** edge and Blue on the **south**. Odd-r east–west race distance is
-chiral (Red had 3 optimal forward hexes, Blue only 1). North–south on 12×18
-is fully distance-symmetric: every forward-edge column is length 15 for both
-sides.
+Capture briefly used a **12×18** N–S mat to dodge odd-r E–W race chirality.
+That layout is gone: all scenarios stay E–W with flat-top hexes instead.
 
-**Effect (80 seeds / 200 games):**
+## 2026-08-31 — Flat-top (point-sided) odd-q boards
 
-| | Before (E–W 18×12) | After (N–S 12×18) |
-|--|--------------------|-------------------|
-| Min APC→flag dist | Red 15 / Blue 16 always | **15 = 15** (80/80 tied) |
-| Red win rate | ~56–58% | **46%** |
-| First-player win | ~47–50% | **58%** |
+**Type: Rule**
 
-Color bias is gone; the remaining skew is first-player on a race scenario,
-which is expected.
+Boards switch from **pointy-top odd-r** (flat sides on the E–W edges) to
+**flat-top odd-q** (points on the E–W edges). Red stays west, Blue stays
+east, and map sizes stay **18×12** / **9×12**. Capture returns to the shared
+battle mat (no more 12×18 N–S rotate).
+
+Why: on pointy-top, distance from a west forward-edge hex to an east flag is
+**chiral by row** — Red had more optimal deploy hexes than Blue. Flat-top makes
+every row's race length match (18×12, depth 3 → distance 15 for both sides).
+
+Facing axial deltas and cube-to-pixel math follow flat-top conventions; offset
+`(col, row)` round-trips unchanged for layout authors.
+
+**Effect:** see sim table in the PR / post-change Monte Carlo (color bias on
+Capture/Assault should track first/second player, not Red/Blue).
 
 ---
 
