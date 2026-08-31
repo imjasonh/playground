@@ -193,7 +193,13 @@ def draw_tank_page(c: canvas.Canvas) -> None:
     c.drawCentredString(ax + BOX / 2, y - 16, "Abl")
     y = y - 16 - 4 - BOX
 
-    for role in ("Commander", "Driver", "Gunner", "Loader", "Lieutenant"):
+    for role, ability in (
+        ("Commander", "Booming Voice"),
+        ("Driver", "Move move move!"),
+        ("Gunner", "Snapshot"),
+        ("Loader", "Quick Load"),
+        ("Lieutenant", None),
+    ):
         draw_label(c, x, y, role)
         checkbox(c, wx, y)
         checkbox(c, kx, y)
@@ -203,6 +209,10 @@ def draw_tank_page(c: canvas.Canvas) -> None:
             c.setFont("Helvetica", 8)
             c.drawString(ax + BOX + 8, text_mid(y, 8), "covers")
             underline(c, ax + BOX + 44, y + 2, 1.6 * inch)
+        else:
+            c.setFillColor(MUTED)
+            c.setFont("Helvetica", 8)
+            c.drawString(ax + BOX + 8, text_mid(y, 8), ability)
         y -= ROW
 
     c.showPage()
