@@ -12,256 +12,249 @@ from reportlab.pdfgen import canvas
 
 OUT_DEFAULT = Path(__file__).resolve().parents[1] / "docs" / "unit-boards.pdf"
 
-# Checkbox size: readable, easy to tick with dry-erase or pencil.
-BOX = 0.32 * inch
-BOX_GAP = 0.12 * inch
-RULE = Color(0.25, 0.22, 0.18)
-MUTED = Color(0.45, 0.42, 0.38)
-FILL = Color(0.97, 0.95, 0.90)
-ACCENT = Color(0.55, 0.35, 0.22)
+BOX = 0.28 * inch
+GAP = 0.10 * inch
+ROW = BOX + 14  # checkbox row pitch
+RULE = Color(0.22, 0.20, 0.18)
+MUTED = Color(0.38, 0.36, 0.32)
+FILL = Color(0.96, 0.94, 0.90)
+INK = Color(0.12, 0.10, 0.08)
 
 
 def checkbox(c: canvas.Canvas, x: float, y: float, size: float = BOX) -> None:
     c.setStrokeColor(RULE)
     c.setFillColor(white)
-    c.setLineWidth(1.4)
+    c.setLineWidth(1.25)
     c.rect(x, y, size, size, fill=1, stroke=1)
 
 
-def labeled_box(c: canvas.Canvas, x: float, y: float, label: str, size: float = BOX) -> None:
-    checkbox(c, x, y, size)
-    c.setFillColor(RULE)
-    c.setFont("Helvetica", 11)
-    c.drawString(x + size + 6, y + 4, label)
+def label_y(box_y: float, font_size: float = 10) -> float:
+    return box_y + (BOX - font_size) / 2 + 0.5
 
 
-def line_field(c: canvas.Canvas, x: float, y: float, w: float, label: str) -> None:
-    c.setFillColor(MUTED)
-    c.setFont("Helvetica", 9)
-    c.drawString(x, y + 14, label)
+def labeled_box(c: canvas.Canvas, x: float, y: float, text: str, font_size: float = 10) -> float:
+    checkbox(c, x, y)
+    c.setFillColor(INK)
+    c.setFont("Helvetica", font_size)
+    tx = x + BOX + 5
+    c.drawString(tx, label_y(y, font_size), text)
+    return tx + c.stringWidth(text, "Helvetica", font_size)
+
+
+def underline(c: canvas.Canvas, x: float, y: float, w: float) -> None:
     c.setStrokeColor(RULE)
     c.setLineWidth(1)
     c.line(x, y, x + w, y)
 
 
-def section_title(c: canvas.Canvas, x: float, y: float, text: str) -> None:
-    c.setFillColor(ACCENT)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(x, y, text.upper())
+def field(c: canvas.Canvas, x: float, y: float, w: float, text: str) -> None:
+    """Write-in field. `y` is the underline."""
+    c.setFillColor(MUTED)
+    c.setFont("Helvetica", 8)
+    c.drawString(x, y + 9, text)
+    underline(c, x, y, w)
 
 
-def page_frame(c: canvas.Canvas, title: str) -> tuple[float, float]:
+def section(c: canvas.Canvas, x: float, y: float, title: str, width: float) -> float:
+    """
+    Draw section title + rule. Return the y where a checkbox bottom should sit
+    so the box top clears the rule by 8pt.
+    """
+    c.setFillColor(INK)
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(x, y, title.upper())
+    rule_y = y - 5
+    c.setStrokeColor(MUTED)
+    c.setLineWidth(0.7)
+    c.line(x, rule_y, x + width, rule_y)
+    # Clearance under rule, then room for a full checkbox above the returned y.
+    return rule_y - 8 - BOX
+
+
+def page_shell(c: canvas.Canvas, title: str) -> tuple[float, float, float]:
     w, h = letter
-    margin = 0.5 * inch
+    m = 0.55 * inch
     c.setFillColor(FILL)
     c.rect(0, 0, w, h, fill=1, stroke=0)
     c.setStrokeColor(RULE)
-    c.setLineWidth(2)
-    c.rect(margin, margin, w - 2 * margin, h - 2 * margin, fill=0, stroke=1)
-    c.setFillColor(RULE)
-    c.setFont("Helvetica-Bold", 20)
-    c.drawString(margin + 14, h - margin - 28, title)
+    c.setLineWidth(1.5)
+    c.rect(m, m, w - 2 * m, h - 2 * m, fill=0, stroke=1)
+    left = m + 18
+    width = w - 2 * m - 36
+    top = h - m - 28
+    c.setFillColor(INK)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(left, top, title)
+    return left, top - 34, width
+
+
+def card_shell(
+    c: canvas.Canvas, title: str, card_w: float, card_h: float
+) -> tuple[float, float, float]:
+    w, h = letter
+    c.setFillColor(FILL)
+    c.rect(0, 0, w, h, fill=1, stroke=0)
+    pad = 16
+    cx = (w - card_w) / 2
+    cy = (h - card_h) / 2
     c.setStrokeColor(RULE)
-    c.setLineWidth(1)
-    c.line(margin + 14, h - margin - 36, w - margin - 14, h - margin - 36)
-    return margin + 14, h - margin - 56
+    c.setLineWidth(1.5)
+    c.setFillColor(white)
+    c.roundRect(cx, cy, card_w, card_h, 6, fill=1, stroke=1)
+    left = cx + pad
+    width = card_w - 2 * pad
+    top = cy + card_h - 22
+    c.setFillColor(INK)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(left, top, title)
+    return left, top - 26, width
 
 
-def hull_row(c: canvas.Canvas, x: float, y: float, n: int) -> None:
-    c.setFillColor(RULE)
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(x, y + 4, "Hull")
-    bx = x + 42
-    for _ in range(n):
-        checkbox(c, bx, y)
-        bx += BOX + BOX_GAP
-
-
-def status_row(c: canvas.Canvas, x: float, y: float) -> None:
-    labeled_box(c, x, y, "Fire")
-    labeled_box(c, x + 1.35 * inch, y, "Disabled")
-    labeled_box(c, x + 3.15 * inch, y, "Activated")
-
-
-def upgrade_ticks(
-    c: canvas.Canvas, x: float, y: float, items: list[str], cols: int = 4
+def tick_grid(
+    c: canvas.Canvas,
+    x: float,
+    y: float,
+    items: list[str],
+    cols: int,
+    col_w: float,
 ) -> float:
-    col_w = 1.7 * inch
-    row_h = BOX + 0.18 * inch
-    for i, label in enumerate(items):
+    last = y
+    for i, text in enumerate(items):
         col = i % cols
         row = i // cols
-        labeled_box(c, x + col * col_w, y - row * row_h, label)
-    rows = (len(items) + cols - 1) // cols
-    return y - rows * row_h - 6
+        yy = y - row * ROW
+        labeled_box(c, x + col * col_w, yy, text)
+        last = yy
+    return last
+
+
+def hull_boxes(c: canvas.Canvas, x: float, y: float, n: int) -> float:
+    c.setFillColor(INK)
+    c.setFont("Helvetica", 10)
+    c.drawString(x, label_y(y), "Hull")
+    bx = x + 30
+    for _ in range(n):
+        checkbox(c, bx, y)
+        bx += BOX + GAP
+    return bx + 8
+
+
+def status_flags(c: canvas.Canvas, x: float, y: float, labels: list[str], col_w: float = 1.25 * inch) -> None:
+    for i, text in enumerate(labels):
+        labeled_box(c, x + i * col_w, y, text)
 
 
 def draw_tank_page(c: canvas.Canvas) -> None:
-    x, y = page_frame(c, "Tank")
-    line_field(c, x, y, 3.2 * inch, "Name")
-    line_field(c, x + 3.5 * inch, y, 1.2 * inch, "Side")
-    line_field(c, x + 5.0 * inch, y, 1.4 * inch, "List pts")
-    y -= 0.48 * inch
+    x, y, width = page_shell(c, "Tank")
 
-    section_title(c, x, y, "Armor & stats")
-    y -= 0.26 * inch
-    line_field(c, x, y, 0.7 * inch, "Front")
-    line_field(c, x + 0.95 * inch, y, 0.7 * inch, "Side")
-    line_field(c, x + 1.9 * inch, y, 0.7 * inch, "Rear")
-    line_field(c, x + 2.9 * inch, y, 0.7 * inch, "Move")
-    line_field(c, x + 3.8 * inch, y, 0.55 * inch, "AP")
-    line_field(c, x + 4.55 * inch, y, 0.7 * inch, "Range")
-    line_field(c, x + 5.45 * inch, y, 0.7 * inch, "Acc TN")
-    y -= 0.4 * inch
+    field(c, x, y, 3.0 * inch, "Name")
+    field(c, x + 3.2 * inch, y, 1.1 * inch, "Side")
+    field(c, x + 4.5 * inch, y, 1.2 * inch, "Pts")
+    y -= 40
 
-    y = upgrade_ticks(
+    y = section(c, x, y, "Loadout", width)
+    # Stat write-ins sit on the checkbox baseline row.
+    field(c, x, y + 2, 0.6 * inch, "F")
+    field(c, x + 0.8 * inch, y + 2, 0.6 * inch, "S")
+    field(c, x + 1.6 * inch, y + 2, 0.6 * inch, "R")
+    field(c, x + 2.4 * inch, y + 2, 0.6 * inch, "Move")
+    field(c, x + 3.2 * inch, y + 2, 0.5 * inch, "AP")
+    field(c, x + 3.9 * inch, y + 2, 0.6 * inch, "Rng")
+    field(c, x + 4.7 * inch, y + 2, 0.6 * inch, "Acc")
+    y -= 34
+
+    y = tick_grid(
         c,
         x,
         y,
-        [
-            "Engine",
-            "Optics",
-            "Barrel",
-            "AI weapon",
-            "Air support",
-            "Smoke",
-            "Medkit",
-            "Lieutenant",
-            "HE rounds",
-        ],
+        ["Engine", "Optics", "Barrel", "AI", "Air", "Smoke", "Medkit", "LT", "HE"],
         cols=3,
+        col_w=width / 3,
     )
-    y -= 0.06 * inch
+    y -= ROW + 10
 
-    section_title(c, x, y, "Battle")
-    y -= 0.28 * inch
-    hull_row(c, x, y, 4)
-    y -= 0.4 * inch
-    status_row(c, x, y)
-    y -= 0.42 * inch
+    y = section(c, x, y, "Battle", width)
+    right = hull_boxes(c, x, y, 4)
+    status_flags(c, right, y, ["Fire", "Disabled", "Activated"], col_w=1.3 * inch)
+    y -= ROW + 6
 
-    section_title(c, x, y, "Breech")
-    y -= 0.28 * inch
+    y = section(c, x, y, "Breech", width)
     labeled_box(c, x, y, "Empty")
-    labeled_box(c, x + 1.4 * inch, y, "AT")
-    labeled_box(c, x + 2.4 * inch, y, "HE")
-    y -= 0.42 * inch
+    labeled_box(c, x + 1.2 * inch, y, "AT")
+    labeled_box(c, x + 2.1 * inch, y, "HE")
+    y -= ROW + 6
 
-    section_title(c, x, y, "Spent")
-    y -= 0.28 * inch
+    y = section(c, x, y, "Spent", width)
     labeled_box(c, x, y, "Smoke")
-    labeled_box(c, x + 1.5 * inch, y, "Air")
-    labeled_box(c, x + 2.8 * inch, y, "Medkit")
-    y -= 0.48 * inch
+    labeled_box(c, x + 1.35 * inch, y, "Air")
+    labeled_box(c, x + 2.5 * inch, y, "Medkit")
+    y -= ROW + 12
 
-    section_title(c, x, y, "Crew")
-    y -= 0.24 * inch
+    y = section(c, x, y, "Crew", width)
+    # Extra band for column headers between the rule and the first row.
+    y -= 14
+    wx = x + 1.5 * inch
+    kx = x + 2.2 * inch
+    ax = x + 2.9 * inch
+    c.setFillColor(MUTED)
+    c.setFont("Helvetica", 8)
+    c.drawCentredString(wx + BOX / 2, y + BOX + 3, "W")
+    c.drawCentredString(kx + BOX / 2, y + BOX + 3, "K")
+    c.drawCentredString(ax + BOX / 2, y + BOX + 3, "Abl")
 
-    c.setFillColor(RULE)
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(x + 1.6 * inch, y, "Wounded")
-    c.drawString(x + 2.7 * inch, y, "Killed")
-    c.drawString(x + 3.7 * inch, y, "Ability")
-    y -= 0.08 * inch
-    c.setStrokeColor(MUTED)
-    c.line(x, y, x + 6.5 * inch, y)
-    y -= 0.34 * inch
-
-    rows = [
-        ("Commander", "Booming Voice"),
-        ("Driver", "Move move move!"),
-        ("Gunner", "Snapshot"),
-        ("Loader", "Quick Load"),
-        ("Lieutenant", "covers: ________"),
-    ]
-    for role, ability in rows:
-        c.setFillColor(RULE)
-        c.setFont("Helvetica", 11)
-        c.drawString(x, y + 4, role)
-        checkbox(c, x + 1.7 * inch, y)
-        checkbox(c, x + 2.8 * inch, y)
-        checkbox(c, x + 3.85 * inch, y)
-        c.setFillColor(MUTED)
-        c.setFont("Helvetica", 9)
-        c.drawString(x + 3.85 * inch + BOX + 8, y + 4, ability)
-        y -= BOX + 0.16 * inch
+    for role in ("Commander", "Driver", "Gunner", "Loader", "Lieutenant"):
+        c.setFillColor(INK)
+        c.setFont("Helvetica", 10)
+        c.drawString(x, label_y(y), role)
+        checkbox(c, wx, y)
+        checkbox(c, kx, y)
+        checkbox(c, ax, y)
+        if role == "Lieutenant":
+            c.setFillColor(MUTED)
+            c.setFont("Helvetica", 8)
+            c.drawString(ax + BOX + 10, label_y(y, 8), "covers")
+            underline(c, ax + BOX + 46, y + 2, 1.5 * inch)
+        y -= ROW
 
     c.showPage()
 
 
 def draw_apc_page(c: canvas.Canvas) -> None:
-    x, y = page_frame(c, "APC")
-    line_field(c, x, y, 3.2 * inch, "Name")
-    line_field(c, x + 3.5 * inch, y, 1.2 * inch, "Side")
-    line_field(c, x + 5.0 * inch, y, 1.4 * inch, "List pts")
-    y -= 0.55 * inch
+    x, y, width = card_shell(c, "APC", 5.1 * inch, 3.35 * inch)
 
-    section_title(c, x, y, "Armor & stats")
-    y -= 0.28 * inch
-    line_field(c, x, y, 0.7 * inch, "Front")
-    line_field(c, x + 0.95 * inch, y, 0.7 * inch, "Side")
-    line_field(c, x + 1.9 * inch, y, 0.7 * inch, "Rear")
-    line_field(c, x + 2.9 * inch, y, 0.7 * inch, "Move")
-    line_field(c, x + 3.8 * inch, y, 0.55 * inch, "AP")
-    line_field(c, x + 4.55 * inch, y, 0.9 * inch, "AI range")
-    y -= 0.5 * inch
+    field(c, x, y, 2.3 * inch, "Name")
+    field(c, x + 2.5 * inch, y, 0.9 * inch, "Side")
+    field(c, x + 3.55 * inch, y, 0.85 * inch, "Pts")
+    y -= 36
 
-    y = upgrade_ticks(c, x, y, ["Engine", "Smoke"], cols=2)
-    y -= 0.15 * inch
+    y = section(c, x, y, "Loadout", width)
+    field(c, x, y + 2, 0.55 * inch, "F")
+    field(c, x + 0.7 * inch, y + 2, 0.55 * inch, "S")
+    field(c, x + 1.4 * inch, y + 2, 0.55 * inch, "R")
+    field(c, x + 2.1 * inch, y + 2, 0.55 * inch, "Move")
+    field(c, x + 2.8 * inch, y + 2, 0.45 * inch, "AP")
+    field(c, x + 3.4 * inch, y + 2, 0.65 * inch, "AI")
+    y -= 32
 
-    section_title(c, x, y, "Battle")
-    y -= 0.32 * inch
-    hull_row(c, x, y, 2)
-    y -= 0.45 * inch
-    status_row(c, x, y)
-    y -= 0.5 * inch
+    labeled_box(c, x, y, "Engine")
+    labeled_box(c, x + 1.55 * inch, y, "Smoke")
+    y -= ROW + 10
 
-    section_title(c, x, y, "Spent")
-    y -= 0.32 * inch
-    labeled_box(c, x, y, "Smoke")
+    y = section(c, x, y, "Battle", width)
+    right = hull_boxes(c, x, y, 2)
+    status_flags(c, right, y, ["Fire", "Disabled"], col_w=1.25 * inch)
+    y -= ROW + 4
+    status_flags(c, x, y, ["Activated", "Smoke spent"], col_w=1.7 * inch)
     c.showPage()
 
 
 def draw_infantry_page(c: canvas.Canvas) -> None:
-    w, h = letter
-    c.setFillColor(FILL)
-    c.rect(0, 0, w, h, fill=1, stroke=0)
+    x, y, _width = card_shell(c, "Infantry", 4.2 * inch, 1.35 * inch)
 
-    card_w, card_h = 4.25 * inch, 2.6 * inch
-    cx = (w - card_w) / 2
-    cy = (h - card_h) / 2
-
-    c.setStrokeColor(RULE)
-    c.setLineWidth(2)
-    c.setFillColor(white)
-    c.roundRect(cx, cy, card_w, card_h, 8, fill=1, stroke=1)
-
-    x = cx + 14
-    y = cy + card_h - 28
-    c.setFillColor(RULE)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(x, y, "Infantry")
-    y -= 22
-    line_field(c, x, y, 2.4 * inch, "Name")
-    line_field(c, x + 2.55 * inch, y, 1.2 * inch, "Side")
-    y -= 0.42 * inch
-
+    field(c, x, y, 2.3 * inch, "Name")
+    field(c, x + 2.5 * inch, y, 1.1 * inch, "Side")
+    y -= 34
     labeled_box(c, x, y, "Activated")
-    y -= 0.42 * inch
-
-    c.setFillColor(RULE)
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(x, y, "Actions")
-    y -= 14
-    c.setFont("Helvetica", 9)
-    c.setFillColor(MUTED)
-    for line in (
-        "Step · Missile (AT or HE) · AI spray",
-        "Take cover · Capture · Disarm mine · Mount / Dismount",
-    ):
-        c.drawString(x, y, line)
-        y -= 12
-
     c.showPage()
 
 
