@@ -2,6 +2,7 @@
 
 use crate::hex::{Facing, Hex};
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 /// Which side owns a unit.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -15,6 +16,15 @@ impl Side {
         match self {
             Side::Red => Side::Blue,
             Side::Blue => Side::Red,
+        }
+    }
+}
+
+impl fmt::Display for Side {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Side::Red => write!(f, "Red"),
+            Side::Blue => write!(f, "Blue"),
         }
     }
 }

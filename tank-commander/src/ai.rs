@@ -8,7 +8,7 @@ use crate::action::{Action, TurnBuffs};
 use crate::board::Terrain;
 use crate::game::{Game, Outcome};
 use crate::hex::{Facing, Hex};
-use crate::unit::{RoundKind, Side, UnitKind};
+use crate::unit::{CrewRole, CrewStatus, ImpactFacing, RoundKind, Side, Tank, UnitKind};
 use rand::seq::SliceRandom;
 use rand::Rng;
 use std::collections::{HashMap, VecDeque};
@@ -22,7 +22,7 @@ struct Node {
     ap_left: i32,
     buffs: TurnBuffs,
     pos: Hex,
-    hull: crate::hex::Facing,
+    hull: Facing,
     turret_offset: i8,
     moves: i32,
     loaded: Option<RoundKind>,
@@ -164,23 +164,24 @@ fn plan_for_unit<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
 
 fn lieutenant_cover_plan(game: &Game, unit_id: u8) -> Option<Vec<Action>> {
     let tank = game.tank(unit_id);
-    let lt = tank.crew.iter().find(|c| {
-        c.role == crate::unit::CrewRole::Lieutenant && c.status != crate::unit::CrewStatus::Killed
-    })?;
+    let lt = tank
+        .crew
+        .iter()
+        .find(|c| c.role == CrewRole::Lieutenant && c.status != CrewStatus::Killed)?;
     if lt.covering.is_some() {
         return None;
     }
     // Prefer gunner (keep shooting), then commander, driver, loader.
     for role in [
-        crate::unit::CrewRole::Gunner,
-        crate::unit::CrewRole::Commander,
-        crate::unit::CrewRole::Driver,
-        crate::unit::CrewRole::Loader,
+        CrewRole::Gunner,
+        CrewRole::Commander,
+        CrewRole::Driver,
+        CrewRole::Loader,
     ] {
         if tank
             .crew
             .iter()
-            .any(|c| c.role == role && c.status == crate::unit::CrewStatus::Killed)
+            .any(|c| c.role == role && c.status == CrewStatus::Killed)
         {
             return Some(vec![Action::LieutenantCover { role }]);
         }
@@ -195,7 +196,7 @@ fn smoke_break_los_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Option
         return None;
     }
     let enemies = game.enemy_units(unit.side);
-    let threats: Vec<&crate::unit::Tank> = enemies
+    let threats: Vec<&Tank> = enemies
         .iter()
         .copied()
         .filter(|e| {
@@ -240,7 +241,7 @@ fn smoke_break_los_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Option
 
 fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
     let tank = game.tank(tank_id);
-    let enemies: Vec<&crate::unit::Tank> = game.enemy_units(tank.side);
+    let enemies: Vec<&Tank> = game.enemy_units(tank.side);
     let enemy_flag = game.enemy_flag(tank.side);
     let own_flag = game.own_flag(tank.side);
     if enemies.is_empty() && enemy_flag.is_none() {
@@ -260,7 +261,7 @@ fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
         }
     }
 
-    let visible: Vec<&crate::unit::Tank> = enemies
+    let visible: Vec<&Tank> = enemies
         .iter()
         .copied()
         .filter(|e| game.can_see(tank, e))
@@ -275,7 +276,7 @@ fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
 
     // Tank AI spray vs nearby infantry (anti-infantry upgrade).
     if tank.ai_range > 0 {
-        let mut infantry: Vec<&crate::unit::Tank> = enemies
+        let mut infantry: Vec<&Tank> = enemies
             .iter()
             .copied()
             .filter(|e| e.kind == UnitKind::Infantry)
@@ -305,7 +306,7 @@ fn tank_plan<R: Rng>(game: &Game, tank_id: u8, rng: &mut R) -> Vec<Action> {
     }
 
     // Defender: prefer targets closest to the flag (APCs / infantry first).
-    let focus: Vec<&crate::unit::Tank> = if game.is_defender(tank.side) {
+    let focus: Vec<&Tank> = if game.is_defender(tank.side) {
         let flag = own_flag.unwrap_or(tank.pos);
         let mut ranked = visible.clone();
         if ranked.is_empty() {
@@ -434,7 +435,7 @@ fn infantry_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
 
     // Missiles on vehicles first; suppressed infantry cannot fire missiles.
     // On a flag raid, only shoot when the threat is close — keep racing.
-    let mut ranked: Vec<&crate::unit::Tank> = enemies.to_vec();
+    let mut ranked: Vec<&Tank> = enemies.to_vec();
     ranked.sort_by_key(|e| {
         let priority = match e.kind {
             UnitKind::Tank => 0,
@@ -652,7 +653,7 @@ fn step_toward(game: &Game, unit_id: u8, goal: Hex, tank_shelling: bool) -> Vec<
 fn deliver_passenger_plan<R: Rng>(
     game: &Game,
     unit_id: u8,
-    enemies: &[&crate::unit::Tank],
+    enemies: &[&Tank],
     rng: &mut R,
 ) -> Option<Vec<Action>> {
     let unit = game.tank(unit_id);
@@ -737,7 +738,7 @@ fn deliver_passenger_plan<R: Rng>(
 fn pickup_infantry_plan<R: Rng>(
     game: &Game,
     unit_id: u8,
-    enemies: &[&crate::unit::Tank],
+    enemies: &[&Tank],
     rng: &mut R,
 ) -> Option<Vec<Action>> {
     let unit = game.tank(unit_id);
@@ -793,7 +794,7 @@ fn apc_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
         return plan;
     }
 
-    let infantry: Vec<&crate::unit::Tank> = enemies
+    let infantry: Vec<&Tank> = enemies
         .iter()
         .copied()
         .filter(|e| e.kind == UnitKind::Infantry)
@@ -832,12 +833,7 @@ fn apc_plan<R: Rng>(game: &Game, unit_id: u8, rng: &mut R) -> Vec<Action> {
     Vec::new()
 }
 
-fn beam_plan<R: Rng>(
-    game: &Game,
-    tank_id: u8,
-    enemy: &crate::unit::Tank,
-    rng: &mut R,
-) -> Vec<Action> {
+fn beam_plan<R: Rng>(game: &Game, tank_id: u8, enemy: &Tank, rng: &mut R) -> Vec<Action> {
     let tank = game.tank(tank_id);
     let enemy_hp = enemy.hull_points;
     let enemy_max = enemy.max_hull_points;
@@ -913,12 +909,7 @@ fn beam_plan<R: Rng>(
     Vec::new()
 }
 
-fn maneuver_plan<R: Rng>(
-    game: &Game,
-    tank_id: u8,
-    enemy: &crate::unit::Tank,
-    rng: &mut R,
-) -> Vec<Action> {
+fn maneuver_plan<R: Rng>(game: &Game, tank_id: u8, enemy: &Tank, rng: &mut R) -> Vec<Action> {
     let tank = game.tank(tank_id);
 
     if tank.kind == UnitKind::Infantry {
@@ -976,12 +967,7 @@ fn has_geometric_los(game: &Game, from: Hex, to: Hex) -> bool {
     game.board.has_los(from, to, &occ)
 }
 
-fn aim_and_shoot_plan<R: Rng>(
-    game: &Game,
-    tank_id: u8,
-    enemy: &crate::unit::Tank,
-    rng: &mut R,
-) -> Vec<Action> {
+fn aim_and_shoot_plan<R: Rng>(game: &Game, tank_id: u8, enemy: &Tank, rng: &mut R) -> Vec<Action> {
     let tank = game.tank(tank_id);
     let mut actions = Vec::new();
     let mut ap = tank.effective_actions();
@@ -1026,7 +1012,7 @@ fn aim_and_shoot_plan<R: Rng>(
             && tank
                 .crew
                 .iter()
-                .any(|c| c.role == crate::unit::CrewRole::Gunner && !c.ability_used)
+                .any(|c| c.role == CrewRole::Gunner && !c.ability_used)
             && rng.gen_bool(0.5)
         {
             actions.push(Action::AbilityBringItDown);
@@ -1047,7 +1033,7 @@ fn aim_and_shoot_plan<R: Rng>(
     actions
 }
 
-fn chase_enemy_fallback(tank: &crate::unit::Tank, enemy: Hex) -> Vec<Action> {
+fn chase_enemy_fallback(tank: &Tank, enemy: Hex) -> Vec<Action> {
     if tank.kind == UnitKind::Infantry {
         if let Some(need) = tank.pos.facing_toward(enemy) {
             return vec![Action::Step(need), Action::Step(need)];
@@ -1059,9 +1045,7 @@ fn chase_enemy_fallback(tank: &crate::unit::Tank, enemy: Hex) -> Vec<Action> {
     };
     let driver_ready = tank.kind == UnitKind::Tank
         && tank.crew.iter().any(|c| {
-            c.role == crate::unit::CrewRole::Driver
-                && c.status != crate::unit::CrewStatus::Killed
-                && !c.ability_used
+            c.role == CrewRole::Driver && c.status != CrewStatus::Killed && !c.ability_used
         });
     let dist = tank.pos.distance(enemy);
     // With 1 AP (stock APCs), only emit one useful action: Move if already
@@ -1098,12 +1082,7 @@ fn chase_enemy_fallback(tank: &crate::unit::Tank, enemy: Hex) -> Vec<Action> {
     }
 }
 
-fn firing_positions(
-    game: &Game,
-    side: Side,
-    enemy: &crate::unit::Tank,
-    gun_range: i32,
-) -> Vec<(Hex, bool)> {
+fn firing_positions(game: &Game, side: Side, enemy: &Tank, gun_range: i32) -> Vec<(Hex, bool)> {
     let mut out = Vec::new();
     for h in game.board.hexes() {
         if game.board.terrain_at(h).impassable() {
@@ -1183,7 +1162,7 @@ fn bfs_path(game: &Game, start: Hex, goal: Hex, side: Side) -> Option<Vec<Hex>> 
 }
 
 #[allow(clippy::explicit_counter_loop)]
-fn path_to_actions(tank: &crate::unit::Tank, path: &[Hex]) -> Vec<Action> {
+fn path_to_actions(tank: &Tank, path: &[Hex]) -> Vec<Action> {
     if path.len() < 2 {
         return vec![Action::TurretLeft];
     }
@@ -1195,9 +1174,7 @@ fn path_to_actions(tank: &crate::unit::Tank, path: &[Hex]) -> Vec<Action> {
     let max_move = tank.effective_max_move();
     let driver_ready = tank.kind == UnitKind::Tank
         && tank.crew.iter().any(|c| {
-            c.role == crate::unit::CrewRole::Driver
-                && c.status != crate::unit::CrewStatus::Killed
-                && !c.ability_used
+            c.role == CrewRole::Driver && c.status != CrewStatus::Killed && !c.ability_used
         });
     let mut rush = false;
     if driver_ready && path.len() > 3 {
@@ -1336,13 +1313,13 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
         Action::TurnLeft => {
             let abs = node.hull.with_turret_offset(node.turret_offset);
             node.hull = node.hull.turn_left();
-            node.turret_offset = rel(node.hull, abs);
+            node.turret_offset = node.hull.relative_offset(abs);
             node.ap_left -= 1;
         }
         Action::TurnRight => {
             let abs = node.hull.with_turret_offset(node.turret_offset);
             node.hull = node.hull.turn_right();
-            node.turret_offset = rel(node.hull, abs);
+            node.turret_offset = node.hull.relative_offset(abs);
             node.ap_left -= 1;
         }
         Action::TurretLeft => {
@@ -1392,17 +1369,6 @@ fn apply_shadow(game: &Game, tank_id: u8, node: &mut Node, action: Action) {
             node.ap_left -= 1;
         }
     }
-}
-
-fn rel(hull: Facing, abs: Facing) -> i8 {
-    let mut o = abs.index() as i8 - hull.index() as i8;
-    while o > 3 {
-        o -= 6;
-    }
-    while o < -2 {
-        o += 6;
-    }
-    o
 }
 
 fn evaluate_tactical(
@@ -1476,9 +1442,9 @@ fn evaluate_tactical(
         shadow_tank.pos = node.pos;
         shadow_tank.hull_facing = node.hull;
         match shadow_tank.impact_facing(enemy_pos) {
-            crate::unit::ImpactFacing::Front => score += 8.0,
-            crate::unit::ImpactFacing::Side => score -= 12.0,
-            crate::unit::ImpactFacing::Rear => score -= 30.0,
+            ImpactFacing::Front => score += 8.0,
+            ImpactFacing::Side => score -= 12.0,
+            ImpactFacing::Rear => score -= 30.0,
         }
     }
 

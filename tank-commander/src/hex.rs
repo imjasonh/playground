@@ -185,6 +185,23 @@ impl Facing {
         Facing::from_index((self.index() + 5) % 6)
     }
 
+    /// Facing 180° opposite (three steps left or right).
+    pub fn opposite(self) -> Self {
+        Facing::from_index(self.index() + 3)
+    }
+
+    /// Turret offset relative to hull, in −2..=3 steps.
+    pub fn relative_offset(self, absolute: Facing) -> i8 {
+        let mut o = absolute.index() as i8 - self.index() as i8;
+        while o > 3 {
+            o -= 6;
+        }
+        while o < -2 {
+            o += 6;
+        }
+        o
+    }
+
     /// Absolute facing after applying a turret offset relative to hull.
     pub fn with_turret_offset(self, offset: i8) -> Self {
         let o = offset.rem_euclid(6);
@@ -225,6 +242,8 @@ mod tests {
         assert_eq!(Facing::E.turn_right(), Facing::SE);
         assert_eq!(Facing::W.turn_left(), Facing::SW);
         assert_eq!(Facing::W.turn_right(), Facing::NW);
+        assert_eq!(Facing::E.opposite(), Facing::W);
+        assert_eq!(Facing::NE.opposite(), Facing::SW);
     }
 
     #[test]

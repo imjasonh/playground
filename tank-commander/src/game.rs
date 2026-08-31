@@ -45,6 +45,16 @@ pub struct Objective {
     pub captured_by: Option<Side>,
 }
 
+impl Objective {
+    pub fn new(hex: Hex, home: Side) -> Self {
+        Self {
+            hex,
+            home,
+            captured_by: None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Game {
     pub board: Board,
@@ -286,10 +296,6 @@ impl Game {
             .iter()
             .filter(|t| t.side == side.other() && !t.destroyed)
             .collect()
-    }
-
-    pub fn enemy_tank(&self, side: Side) -> Option<&Tank> {
-        self.enemy_units(side).into_iter().next()
     }
 
     pub fn outcome(&self) -> Outcome {
@@ -969,7 +975,7 @@ impl Game {
             .move_cost_to_leave();
         let facing = self.tank(tank_id).hull_facing;
         let mut last = self.tank(tank_id).pos;
-        for i in 0..steps {
+        for _ in 0..steps {
             let next = self.tank(tank_id).pos.neighbor(facing);
             self.tank_mut(tank_id).pos = next;
             self.tank_mut(tank_id).moves_this_turn += 1;
@@ -981,7 +987,6 @@ impl Game {
             if self.tank(tank_id).destroyed || self.tank(tank_id).disabled {
                 break;
             }
-            let _ = i;
         }
         *ap_left -= cost;
         let label = match steps {
@@ -1075,7 +1080,7 @@ impl Game {
                 // Keep turret absolute facing when the hull turns.
                 let new_hull = turn_hull(hull, left);
                 let old_abs = hull.with_turret_offset(self.tank(tank_id).turret_offset);
-                let new_offset = relative_offset(new_hull, old_abs);
+                let new_offset = new_hull.relative_offset(old_abs);
                 self.tank_mut(tank_id).hull_facing = new_hull;
                 self.tank_mut(tank_id).turret_offset = new_offset;
                 *ap_left -= 1;
@@ -1194,6 +1199,7 @@ impl Game {
                 *ap_left -= 1;
                 self.push_event(turn, Some(side), "Extinguished fire".into(), None);
             }
+            // Handled by the early `is_ability` return; kept for exhaustiveness.
             Action::AbilityBoomingVoice
             | Action::AbilityMoveMoveMove
             | Action::AbilityBringItDown
@@ -2029,17 +2035,6 @@ fn scatter_air_impact<R: Rng>(aim: Hex, board: &Board, rng: &mut R) -> (Option<H
     }
 }
 
-fn relative_offset(hull: Facing, absolute_turret: Facing) -> i8 {
-    let mut o = absolute_turret.index() as i8 - hull.index() as i8;
-    while o > 3 {
-        o -= 6;
-    }
-    while o < -2 {
-        o += 6;
-    }
-    o
-}
-
 /// Play one full activation for `unit_id` using the provided plan of actions.
 pub fn play_activation<R: Rng>(game: &mut Game, unit_id: u8, plan: &[Action], rng: &mut R) {
     let side = game.active_side;
@@ -2730,12 +2725,8 @@ mod tests {
             Tank::stock_infantry(0, Side::Red, flag, Facing::E, "Squad"),
             Tank::stock(1, Side::Blue, Hex::offset(8, 4), Facing::W, "Blue"),
         ];
-        let mut g =
-            Game::new(board, tanks, Side::Red, 40, "test").with_objectives(vec![Objective {
-                hex: flag,
-                home: Side::Blue,
-                captured_by: None,
-            }]);
+        let mut g = Game::new(board, tanks, Side::Red, 40, "test")
+            .with_objectives(vec![Objective::new(flag, Side::Blue)]);
         assert!(g.can_capture(g.tank(0)));
         let mut rng = ChaCha8Rng::seed_from_u64(1);
         let mut ap = 3;
@@ -2758,11 +2749,7 @@ mod tests {
             Tank::stock(1, Side::Blue, Hex::offset(8, 4), Facing::W, "Def"),
         ];
         let mut g = Game::new(board, tanks, Side::Red, 5, "test")
-            .with_objectives(vec![Objective {
-                hex: flag,
-                home: Side::Blue,
-                captured_by: None,
-            }])
+            .with_objectives(vec![Objective::new(flag, Side::Blue)])
             .with_attacker(Side::Red);
         g.activations = 5;
         assert_eq!(g.outcome(), Outcome::Winner(Side::Blue));

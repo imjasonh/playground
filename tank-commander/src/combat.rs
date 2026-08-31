@@ -4,7 +4,7 @@
 //! after [`resolve_shot`] when the target kind is Infantry and `ev.hit`.
 
 use crate::dice::{penetrates, succeeds};
-use crate::unit::{CrewStatus, ImpactFacing, RoundKind, Tank, UnitKind};
+use crate::unit::{CrewRole, CrewStatus, ImpactFacing, RoundKind, Tank, UnitKind};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -199,7 +199,7 @@ fn assign_lieutenant_cover(target: &mut Tank, killed: crate::unit::CrewRole) -> 
     false
 }
 
-fn role_name(role: crate::unit::CrewRole) -> &'static str {
+fn role_name(role: CrewRole) -> &'static str {
     match role {
         crate::unit::CrewRole::Commander => "Commander",
         crate::unit::CrewRole::Driver => "Driver",
