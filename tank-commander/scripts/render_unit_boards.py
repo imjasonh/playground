@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from reportlab.lib.colors import Color, black, white
+from reportlab.lib.colors import Color, white
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen import canvas
@@ -28,15 +28,11 @@ def checkbox(c: canvas.Canvas, x: float, y: float, size: float = BOX) -> None:
     c.rect(x, y, size, size, fill=1, stroke=1)
 
 
-def labeled_box(
-    c: canvas.Canvas, x: float, y: float, label: str, size: float = BOX
-) -> float:
-    """Draw checkbox with label to the right. Returns width used."""
+def labeled_box(c: canvas.Canvas, x: float, y: float, label: str, size: float = BOX) -> None:
     checkbox(c, x, y, size)
     c.setFillColor(RULE)
     c.setFont("Helvetica", 11)
     c.drawString(x + size + 6, y + 4, label)
-    return size + 6 + c.stringWidth(label, "Helvetica", 11)
 
 
 def line_field(c: canvas.Canvas, x: float, y: float, w: float, label: str) -> None:
@@ -54,24 +50,21 @@ def section_title(c: canvas.Canvas, x: float, y: float, text: str) -> None:
     c.drawString(x, y, text.upper())
 
 
-def page_frame(c: canvas.Canvas, title: str, subtitle: str) -> tuple[float, float]:
+def page_frame(c: canvas.Canvas, title: str) -> tuple[float, float]:
     w, h = letter
-    margin = 0.6 * inch
+    margin = 0.5 * inch
     c.setFillColor(FILL)
     c.rect(0, 0, w, h, fill=1, stroke=0)
     c.setStrokeColor(RULE)
     c.setLineWidth(2)
     c.rect(margin, margin, w - 2 * margin, h - 2 * margin, fill=0, stroke=1)
     c.setFillColor(RULE)
-    c.setFont("Helvetica-Bold", 22)
+    c.setFont("Helvetica-Bold", 20)
     c.drawString(margin + 14, h - margin - 28, title)
-    c.setFont("Helvetica", 10)
-    c.setFillColor(MUTED)
-    c.drawString(margin + 14, h - margin - 44, subtitle)
     c.setStrokeColor(RULE)
     c.setLineWidth(1)
-    c.line(margin + 14, h - margin - 54, w - margin - 14, h - margin - 54)
-    return margin + 14, h - margin - 78
+    c.line(margin + 14, h - margin - 36, w - margin - 14, h - margin - 36)
+    return margin + 14, h - margin - 56
 
 
 def hull_row(c: canvas.Canvas, x: float, y: float, n: int) -> None:
@@ -87,37 +80,31 @@ def hull_row(c: canvas.Canvas, x: float, y: float, n: int) -> None:
 def status_row(c: canvas.Canvas, x: float, y: float) -> None:
     labeled_box(c, x, y, "Fire")
     labeled_box(c, x + 1.35 * inch, y, "Disabled")
-    labeled_box(c, x + 3.15 * inch, y, "Activated this pass")
+    labeled_box(c, x + 3.15 * inch, y, "Activated")
 
 
 def upgrade_ticks(
     c: canvas.Canvas, x: float, y: float, items: list[str], cols: int = 4
 ) -> float:
-    """Return y after the grid."""
     col_w = 1.7 * inch
-    row_h = BOX + 0.22 * inch
+    row_h = BOX + 0.18 * inch
     for i, label in enumerate(items):
         col = i % cols
         row = i // cols
         labeled_box(c, x + col * col_w, y - row * row_h, label)
     rows = (len(items) + cols - 1) // cols
-    return y - rows * row_h - 8
+    return y - rows * row_h - 6
 
 
 def draw_tank_page(c: canvas.Canvas) -> None:
-    x, y = page_frame(
-        c,
-        "Tank board",
-        "Dry-erase · facing & turret on the mini · suppressed = token · flip mini when destroyed",
-    )
-    # Identity
+    x, y = page_frame(c, "Tank")
     line_field(c, x, y, 3.2 * inch, "Name")
     line_field(c, x + 3.5 * inch, y, 1.2 * inch, "Side")
     line_field(c, x + 5.0 * inch, y, 1.4 * inch, "List pts")
-    y -= 0.55 * inch
+    y -= 0.48 * inch
 
     section_title(c, x, y, "Armor & stats")
-    y -= 0.28 * inch
+    y -= 0.26 * inch
     line_field(c, x, y, 0.7 * inch, "Front")
     line_field(c, x + 0.95 * inch, y, 0.7 * inch, "Side")
     line_field(c, x + 1.9 * inch, y, 0.7 * inch, "Rear")
@@ -125,7 +112,7 @@ def draw_tank_page(c: canvas.Canvas) -> None:
     line_field(c, x + 3.8 * inch, y, 0.55 * inch, "AP")
     line_field(c, x + 4.55 * inch, y, 0.7 * inch, "Range")
     line_field(c, x + 5.45 * inch, y, 0.7 * inch, "Acc TN")
-    y -= 0.45 * inch
+    y -= 0.4 * inch
 
     y = upgrade_ticks(
         c,
@@ -144,48 +131,41 @@ def draw_tank_page(c: canvas.Canvas) -> None:
         ],
         cols=3,
     )
-    y -= 0.1 * inch
+    y -= 0.06 * inch
 
-    section_title(c, x, y, "Battle state")
-    y -= 0.32 * inch
+    section_title(c, x, y, "Battle")
+    y -= 0.28 * inch
     hull_row(c, x, y, 4)
-    y -= 0.45 * inch
+    y -= 0.4 * inch
     status_row(c, x, y)
-    y -= 0.5 * inch
+    y -= 0.42 * inch
 
     section_title(c, x, y, "Breech")
-    y -= 0.32 * inch
-    # Radio-style: three exclusive boxes
+    y -= 0.28 * inch
     labeled_box(c, x, y, "Empty")
     labeled_box(c, x + 1.4 * inch, y, "AT")
     labeled_box(c, x + 2.4 * inch, y, "HE")
-    y -= 0.5 * inch
+    y -= 0.42 * inch
 
-    section_title(c, x, y, "Once per battle")
-    y -= 0.32 * inch
-    labeled_box(c, x, y, "Smoke used")
-    labeled_box(c, x + 1.9 * inch, y, "Air used")
-    labeled_box(c, x + 3.6 * inch, y, "Medkit used")
-    y -= 0.55 * inch
+    section_title(c, x, y, "Spent")
+    y -= 0.28 * inch
+    labeled_box(c, x, y, "Smoke")
+    labeled_box(c, x + 1.5 * inch, y, "Air")
+    labeled_box(c, x + 2.8 * inch, y, "Medkit")
+    y -= 0.48 * inch
 
     section_title(c, x, y, "Crew")
-    y -= 0.22 * inch
-    c.setFillColor(MUTED)
-    c.setFont("Helvetica", 9)
-    c.drawString(x, y, "All start healthy. Mark wound or kill when it happens.")
-    y -= 0.28 * inch
+    y -= 0.24 * inch
 
-    # Header
     c.setFillColor(RULE)
     c.setFont("Helvetica-Bold", 10)
-    c.drawString(x, y, "Role")
     c.drawString(x + 1.6 * inch, y, "Wounded")
     c.drawString(x + 2.7 * inch, y, "Killed")
-    c.drawString(x + 3.7 * inch, y, "Ability used")
+    c.drawString(x + 3.7 * inch, y, "Ability")
     y -= 0.08 * inch
     c.setStrokeColor(MUTED)
     c.line(x, y, x + 6.5 * inch, y)
-    y -= 0.38 * inch
+    y -= 0.34 * inch
 
     rows = [
         ("Commander", "Booming Voice"),
@@ -204,25 +184,13 @@ def draw_tank_page(c: canvas.Canvas) -> None:
         c.setFillColor(MUTED)
         c.setFont("Helvetica", 9)
         c.drawString(x + 3.85 * inch + BOX + 8, y + 4, ability)
-        y -= BOX + 0.22 * inch
+        y -= BOX + 0.16 * inch
 
-    y -= 0.15 * inch
-    c.setFillColor(MUTED)
-    c.setFont("Helvetica-Oblique", 9)
-    c.drawString(
-        x,
-        y,
-        "Rider: put the infantry card beside this board. Cover & facing live on the map.",
-    )
     c.showPage()
 
 
 def draw_apc_page(c: canvas.Canvas) -> None:
-    x, y = page_frame(
-        c,
-        "APC board",
-        "Simpler vehicle board · no crew / breech · passenger card sits beside this",
-    )
+    x, y = page_frame(c, "APC")
     line_field(c, x, y, 3.2 * inch, "Name")
     line_field(c, x + 3.5 * inch, y, 1.2 * inch, "Side")
     line_field(c, x + 5.0 * inch, y, 1.4 * inch, "List pts")
@@ -241,52 +209,27 @@ def draw_apc_page(c: canvas.Canvas) -> None:
     y = upgrade_ticks(c, x, y, ["Engine", "Smoke"], cols=2)
     y -= 0.15 * inch
 
-    section_title(c, x, y, "Battle state")
+    section_title(c, x, y, "Battle")
     y -= 0.32 * inch
     hull_row(c, x, y, 2)
     y -= 0.45 * inch
     status_row(c, x, y)
     y -= 0.5 * inch
 
-    section_title(c, x, y, "Once per battle")
+    section_title(c, x, y, "Spent")
     y -= 0.32 * inch
-    labeled_box(c, x, y, "Smoke used")
-    y -= 0.7 * inch
-
-    c.setFillColor(MUTED)
-    c.setFont("Helvetica-Oblique", 10)
-    for line in (
-        "No main gun, no crew track, no cook-off.",
-        "At 0 hull: wreck — flip the mini (destroyed).",
-        "Embarked infantry: place their card next to this board.",
-        "Facing on the mini. Suppressed = token on the mini.",
-    ):
-        c.drawString(x, y, line)
-        y -= 16
-
+    labeled_box(c, x, y, "Smoke")
     c.showPage()
 
 
 def draw_infantry_page(c: canvas.Canvas) -> None:
-    # Card-sized frame centered on letter for printing / cutting.
     w, h = letter
     c.setFillColor(FILL)
     c.rect(0, 0, w, h, fill=1, stroke=0)
 
-    card_w, card_h = 4.25 * inch, 3.0 * inch
+    card_w, card_h = 4.25 * inch, 2.6 * inch
     cx = (w - card_w) / 2
-    cy = (h - card_h) / 2 + 0.4 * inch
-
-    c.setFillColor(RULE)
-    c.setFont("Helvetica-Bold", 16)
-    c.drawCentredString(w / 2, cy + card_h + 36, "Infantry card")
-    c.setFont("Helvetica", 10)
-    c.setFillColor(MUTED)
-    c.drawCentredString(
-        w / 2,
-        cy + card_h + 20,
-        "Cut on the border · ride = park this card beside the vehicle board",
-    )
+    cy = (h - card_h) / 2
 
     c.setStrokeColor(RULE)
     c.setLineWidth(2)
@@ -297,13 +240,13 @@ def draw_infantry_page(c: canvas.Canvas) -> None:
     y = cy + card_h - 28
     c.setFillColor(RULE)
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(x, y, "Infantry squad")
+    c.drawString(x, y, "Infantry")
     y -= 22
     line_field(c, x, y, 2.4 * inch, "Name")
     line_field(c, x + 2.55 * inch, y, 1.2 * inch, "Side")
     y -= 0.42 * inch
 
-    labeled_box(c, x, y, "Activated this pass")
+    labeled_box(c, x, y, "Activated")
     y -= 0.42 * inch
 
     c.setFillColor(RULE)
@@ -313,18 +256,12 @@ def draw_infantry_page(c: canvas.Canvas) -> None:
     c.setFont("Helvetica", 9)
     c.setFillColor(MUTED)
     for line in (
-        "Step · Missile (AT or HE, no load) · AI spray",
+        "Step · Missile (AT or HE) · AI spray",
         "Take cover · Capture · Disarm mine · Mount / Dismount",
     ):
         c.drawString(x, y, line)
         y -= 12
 
-    y -= 6
-    c.setFillColor(MUTED)
-    c.setFont("Helvetica-Oblique", 8)
-    c.drawString(x, y, "Any hit destroys — remove or flip this card.")
-    y -= 11
-    c.drawString(x, y, "Cover from the map. Suppressed = token on the mini.")
     c.showPage()
 
 
