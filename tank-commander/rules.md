@@ -515,10 +515,13 @@ Objectives matter: race the other side's flag with embarked infantry.
 
 - **Force:** per side — **1 tank** + **3 APCs**, each APC **pre-loaded** with
   one infantry squad. List upgrades: tanks ≤**10** (mines allowed), APCs ≤**4**.
-- **Board:** 18×12 open mat (mirrored scatter like Combined). Each side has one
-  **flag** hex on its home edge (kept Open). Units place into **3-deep** edge
-  zones (alternating; second player first); the placement AI minimizes distance
-  to the enemy flag so neither color gets a fixed start-hex race advantage.
+- **Board:** **12×18** (the battle mat rotated so the long axis is
+  north–south). Red deploys from the **north** edge, Blue from the **south**.
+  Each side has one **flag** on its home edge (center column, kept Open).
+  Deploy zones are **3 rows deep**; alternating placement (second player
+  first). The placement AI minimizes distance to the enemy flag.
+  North–south avoids the odd-r east–west race-distance chirality that
+  otherwise gives Red a wider band of optimal hexes.
 - **Win:** an infantry unit that **shares** the enemy flag hex may spend 1 AP
   on **Capture**. Capturing the enemy flag wins immediately. Wipe still wins;
   timeout / idle stalemate still resolve by attrition.

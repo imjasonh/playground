@@ -47,6 +47,27 @@ Capture stays a thin race scenario; no redesign this pass.
 Half-unit spoil did not erase the ladder second-player lean, but Capture's
 structural Red/FP skew is mostly gone.
 
+## 2026-08-31 — Capture board rotated north–south
+
+**Type: Scenario**
+
+Capture now uses a **12×18** mat (battle area rotated) with Red on the
+**north** edge and Blue on the **south**. Odd-r east–west race distance is
+chiral (Red had 3 optimal forward hexes, Blue only 1). North–south on 12×18
+is fully distance-symmetric: every forward-edge column is length 15 for both
+sides.
+
+**Effect (80 seeds / 200 games):**
+
+| | Before (E–W 18×12) | After (N–S 12×18) |
+|--|--------------------|-------------------|
+| Min APC→flag dist | Red 15 / Blue 16 always | **15 = 15** (80/80 tied) |
+| Red win rate | ~56–58% | **46%** |
+| First-player win | ~47–50% | **58%** |
+
+Color bias is gone; the remaining skew is first-player on a race scenario,
+which is expected.
+
 ---
 
 ## 2026-08-30 — Driver *Move move move!* matches upstream
