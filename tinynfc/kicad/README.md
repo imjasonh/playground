@@ -45,11 +45,12 @@ in this revision (no-connects).
 
 - Board: **Ø 28 mm × 1.6 mm** round postage stamp (not credit-card size). A
   larger outline couples more RF; this one is the minimum that still fits a
-  9 mm piezo in the spiral island plus UPDI pads in the edge margin.
+  9 mm piezo in the north half of the spiral island with silicon + UPDI south.
 - Thickness: **1.6 mm** FR-4 by default (~**3.4 mm** assembled with the piezo).
   Optional 0.8 mm FR-4 for a flatter button.
-- Antenna: Ø 24 mm circular spiral, 6 turns, 0.35 / 0.28 mm trace/gap on
-  `F.Cu`. Do **not** add a continuous GND plane under it.
+- Antenna: Ø 24 mm circular spiral, 5 turns, 0.35 / 0.28 mm trace/gap on
+  `F.Cu` (inner clear ~Ø 17 mm so parts do not sit on the spiral). Do **not**
+  add a continuous GND plane under it.
 - A US-quarter outline (Ø 24.26 mm) is drawn on `Dwgs.User` beside the board
   for scale — documentation only, not fab copper.
 - Footprint reference designators are hidden on silk so they do not sit on

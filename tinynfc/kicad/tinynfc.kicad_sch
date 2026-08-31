@@ -1,5 +1,5 @@
 (kicad_sch (version 20230121) (generator tinynfc-generate)
-  (uuid 19c61324-5beb-4473-9e79-3e404d081f1c)
+  (uuid d76ffcac-e1c5-4952-9c82-069cbc81dc27)
   (paper "A3")
   (title_block
     (title "TinyNFC")
@@ -725,27 +725,27 @@
   (text "TinyNFC — NFC energy-harvesting audio player"
     (at 25.4 20.32 0)
     (effects (font (size 2.54 2.54)))
-    (uuid af00a015-8a4e-41df-830d-c5f08afb383d)
+    (uuid db375e29-2d67-4b03-b8b9-4f099d624937)
   )
   (text "Hard-tied C on VOUT must stay under 220 nF. Bulk 10 uF is FET-gated."
     (at 25.4 25.4 0)
     (effects (font (size 1.27 1.27)))
-    (uuid d5760610-8ade-4d42-91e6-b41296604623)
+    (uuid f8646a95-cee3-4107-ad51-d80f5d5616e1)
   )
   (text "Pin map: PA7=CAP_EN, PB0=PIEZO_A (TCA0 WO0), PB1=PIEZO_B, PA0=UPDI"
     (at 152.4 101.6 0)
     (effects (font (size 1.27 1.27)))
-    (uuid 10dc2afd-2186-4672-a5f4-c62911bb185a)
+    (uuid f1ca526a-8f74-4bd4-bf92-4198c8aaf337)
   )
   (text "Place electronics in antenna center island. No GND pour under spiral."
     (at 152.4 106.68 0)
     (effects (font (size 1.27 1.27)))
-    (uuid 7409f1fa-f5bc-4501-84aa-183f99a8bf71)
+    (uuid 320a4ff7-d6a7-4199-adf4-525611b09e71)
   )
 
   (symbol (lib_id "tinynfc:NT3H2111W0FHKH") (at 63.5 63.5 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 43677ee4-0696-4d9f-9105-5c80c69bd481)
+    (uuid 2287fc25-1e0f-4e35-a77b-2426a7e465c3)
     (property "Reference" "U1" (at 63.5 58.42 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "NT3H2111W0FHKH" (at 63.5 68.58 0)
@@ -754,17 +754,17 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 63.5 63.5 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid bb7f18da-06d6-4a86-871a-fdccc211fe38))
-    (pin "2" (uuid 7e74ffa0-3b17-4d83-a4c1-6bb823515261))
-    (pin "3" (uuid 6d5c8944-c46d-44bf-9074-a0b8878b3223))
-    (pin "4" (uuid 52e313dd-02f9-4d66-83dc-bcb5f9f76801))
-    (pin "5" (uuid ae27a1e1-8333-4d8e-9780-10a251773ae3))
-    (pin "6" (uuid e4a7d685-54ed-4810-9cbe-9a90e3eb7e70))
-    (pin "7" (uuid e81e06ad-eb51-4e24-98ea-d01ac8006310))
-    (pin "8" (uuid b5ec4fe9-5c80-4af4-8441-9c9b3d25d9b6))
+    (pin "1" (uuid 5d973574-0576-4b90-af41-a5d4adb48102))
+    (pin "2" (uuid d20eb667-f89f-4cfa-82f9-a617eec629c6))
+    (pin "3" (uuid 99f90070-cc2b-4411-9167-f208c5da1856))
+    (pin "4" (uuid f209e716-b934-4e95-bec0-7b17f2202a4d))
+    (pin "5" (uuid 84c818e2-3abf-4dc8-8575-267530722d50))
+    (pin "6" (uuid d43b17ad-8644-4a4e-b4f6-87faf2d97189))
+    (pin "7" (uuid ac32ecca-6188-4535-83bf-329dc72eaf45))
+    (pin "8" (uuid 389459eb-4330-4394-819a-4a7ab073bc00))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "U1")
           (unit 1)
         )
@@ -773,7 +773,7 @@
   )
   (symbol (lib_id "Device:L") (at 33.02 53.34 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 5dae33d0-d195-47d0-9136-f142ed33303d)
+    (uuid 782b65e4-33b2-411f-a5a8-c8910b713896)
     (property "Reference" "L1" (at 33.02 48.260000000000005 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "2.75uH" (at 33.02 58.42 0)
@@ -784,11 +784,11 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Description" "PCB spiral antenna target inductance" (at 33.02 53.34 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 00ebf8cc-5d81-4648-b515-cb023a13a0ca))
-    (pin "2" (uuid 6afecffe-d96c-46b1-9a27-883e982fa3b6))
+    (pin "1" (uuid 6e15b404-7487-4c23-ace3-363afad3bc9b))
+    (pin "2" (uuid d13af5cf-d291-43fb-8261-649e5da454e5))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "L1")
           (unit 1)
         )
@@ -797,7 +797,7 @@
   )
   (symbol (lib_id "Device:C") (at 33.02 68.58 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid fc4700f5-e546-49d9-8967-55a83e22ab02)
+    (uuid 4cb98f7e-b30a-4f25-ae4b-ee830e745f04)
     (property "Reference" "C1" (at 33.02 63.5 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "1.5pF" (at 33.02 73.66 0)
@@ -806,11 +806,11 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 33.02 68.58 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid f660e308-0c8a-4452-b188-ad6004deb43e))
-    (pin "2" (uuid 161501d8-95d2-481a-86e2-6484eb678d27))
+    (pin "1" (uuid f3d9142e-69f0-4230-a57b-f51af921667e))
+    (pin "2" (uuid 55f6f062-eef3-4f06-8821-bfd0c3c66942))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "C1")
           (unit 1)
         )
@@ -819,7 +819,7 @@
   )
   (symbol (lib_id "Device:C") (at 101.6 50.8 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 00be97c0-2156-4b82-8e2b-e705c320b83e)
+    (uuid 03b422d3-b020-4a8c-84f9-760700671cb0)
     (property "Reference" "C2" (at 101.6 45.72 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "100nF" (at 101.6 55.879999999999995 0)
@@ -830,11 +830,11 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Description" "Hard-tied VOUT bulk; keep total <220nF" (at 101.6 50.8 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 31a3cad5-508e-4d48-899c-947931d3a0f8))
-    (pin "2" (uuid 56e58767-e4bd-4a4f-be7a-c688d8d88d21))
+    (pin "1" (uuid 3eacdf12-327a-4d0e-9c0a-41caf7bfa9d5))
+    (pin "2" (uuid 0563f71f-387c-49ff-9d1a-cfd90677a59f))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "C2")
           (unit 1)
         )
@@ -843,7 +843,7 @@
   )
   (symbol (lib_id "Device:Q_PMOS_GSD") (at 114.3 63.5 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid b5a76919-db24-42ce-98cc-9706b0570a1b)
+    (uuid c69f10b3-69df-409a-9ca0-1582d8e47a05)
     (property "Reference" "Q1" (at 114.3 58.42 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "DMP21D0UFB4" (at 114.3 68.58 0)
@@ -852,12 +852,12 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 114.3 63.5 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid ba892eb5-fbde-4c4c-8172-78018d05e198))
-    (pin "2" (uuid bdd317b7-4576-4170-8941-fed3708e7661))
-    (pin "3" (uuid 86cf3d8d-8fb2-4284-868e-aed759b35910))
+    (pin "1" (uuid 10e309d1-8a14-4c90-acd4-e09498f71d94))
+    (pin "2" (uuid 6362871e-9658-418d-9c66-a469bd33a92b))
+    (pin "3" (uuid 600043d4-f772-4126-8942-528929d51162))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "Q1")
           (unit 1)
         )
@@ -866,7 +866,7 @@
   )
   (symbol (lib_id "Device:R") (at 101.6 63.5 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid eba159f3-ab93-4d1d-8102-4b0f9a74ad0a)
+    (uuid fc90d74b-8196-44b9-aa4f-bb49035f399c)
     (property "Reference" "R1" (at 101.6 58.42 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "100k" (at 101.6 68.58 0)
@@ -875,11 +875,11 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 101.6 63.5 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 7ecea4a2-2d56-4079-a487-e30e498c62c8))
-    (pin "2" (uuid cceeb5cd-191a-46ff-901d-b4557d179a8d))
+    (pin "1" (uuid e8d9731f-87da-4b97-88a9-45d37978ba7d))
+    (pin "2" (uuid fba7e2df-5949-400f-b12b-fce907ce4699))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "R1")
           (unit 1)
         )
@@ -888,7 +888,7 @@
   )
   (symbol (lib_id "Device:R") (at 127.0 71.12 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 731f923f-b4f2-4ede-a28e-8aba1ea161ec)
+    (uuid f8fe4656-3fae-4b56-80e1-87dbcf72877d)
     (property "Reference" "R2" (at 127.0 66.04 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "2.2k" (at 127.0 76.2 0)
@@ -897,11 +897,11 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 127.0 71.12 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 27872190-71b1-4121-bea2-2094db8d1fb5))
-    (pin "2" (uuid 280dc9b2-90fc-4fdb-b194-f986ff1b4439))
+    (pin "1" (uuid 10016d34-8b68-4d99-82d1-6c55fc346e2f))
+    (pin "2" (uuid 2731efe3-ba64-432f-a18e-f83b070c184a))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "R2")
           (unit 1)
         )
@@ -910,7 +910,7 @@
   )
   (symbol (lib_id "Device:C") (at 127.0 50.8 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 234d850b-3423-4950-aa44-b87e8f8629ce)
+    (uuid 0f486c86-c331-48bc-8929-f2276df900f0)
     (property "Reference" "C3" (at 127.0 45.72 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "10uF" (at 127.0 55.879999999999995 0)
@@ -921,11 +921,11 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Description" "Gated bulk reservoir after ~120ms" (at 127.0 50.8 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 703af191-b401-451a-a487-a0ef413139bc))
-    (pin "2" (uuid 5c4e72c8-b4ef-4e83-b780-01f8b083c70a))
+    (pin "1" (uuid f290530c-1cc2-4d1e-993b-3218983a6576))
+    (pin "2" (uuid 53363f51-06c8-4e01-bcba-3c40661e4d67))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "C3")
           (unit 1)
         )
@@ -934,7 +934,7 @@
   )
   (symbol (lib_id "tinynfc:ATtiny816-MNR") (at 177.8 63.5 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 99f3d704-1b83-4956-a5fe-f877ad7d4cc8)
+    (uuid de9cf6c2-0672-4a7a-872e-a1f2d5b7320d)
     (property "Reference" "U2" (at 177.8 58.42 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "ATtiny816-MNR" (at 177.8 68.58 0)
@@ -943,30 +943,30 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 177.8 63.5 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 189f1d8c-6fbb-45d4-98f0-178a82956edc))
-    (pin "2" (uuid b0d81cbb-0bb2-43c2-aa93-872b586d5ea6))
-    (pin "3" (uuid 5a4c0401-02d8-405b-b8e5-c5b4a7728617))
-    (pin "4" (uuid 1870d21b-7bb9-4b8c-b2fd-7d74a9cb43d8))
-    (pin "5" (uuid 20a3b018-64c6-4b41-820e-a4cd8d84699a))
-    (pin "6" (uuid c1188bd0-8822-4318-a1b4-fc11a182f360))
-    (pin "7" (uuid 0bf8b223-85b6-47f9-97d7-ca0ab9346856))
-    (pin "8" (uuid 565a64d4-a3b3-4f1a-83e9-d7210ab774f8))
-    (pin "9" (uuid 6cbb0956-6573-405f-995f-b433ccfc6795))
-    (pin "10" (uuid f975d519-7688-469c-b187-53effd2eee97))
-    (pin "11" (uuid 734232f0-decf-4ccc-9070-a12e3435612e))
-    (pin "12" (uuid c443a1b2-74c3-45c8-8451-77dfd0499ccb))
-    (pin "13" (uuid ca8beefa-10ad-421e-b93d-d3e3d91f1ed9))
-    (pin "14" (uuid 24ed091a-1357-4fa9-ad85-d0cef83ae45a))
-    (pin "15" (uuid d899e8eb-f9e1-4ae7-9f4f-d633908ffdcc))
-    (pin "16" (uuid 005736bd-f1bd-41ac-b253-82fff25d3bc8))
-    (pin "17" (uuid 116821c7-057c-4991-b5dc-5042d30ebc25))
-    (pin "18" (uuid 1d669da5-8773-4149-b03f-5fb92f277759))
-    (pin "19" (uuid 5daafc4f-b2ba-4f95-ad88-91d48f85de44))
-    (pin "20" (uuid 80ae3a64-43d5-48f1-91eb-006a4d9d96d7))
-    (pin "21" (uuid 3a324918-0218-4db4-a881-a0bbb446a4d2))
+    (pin "1" (uuid 5f640e73-ca83-4d81-a58e-d522a8d69113))
+    (pin "2" (uuid f5a787b2-ce9f-4d0e-b113-2e6c491b22d1))
+    (pin "3" (uuid 49200668-9329-4628-88f1-e2aea6a90776))
+    (pin "4" (uuid 45d387c8-7714-4ee0-bdbd-606396f801e3))
+    (pin "5" (uuid c9a5fedf-200f-4eaa-b532-b4cc96057fb2))
+    (pin "6" (uuid 3c9e3993-72f6-4677-9910-522cf1b1c563))
+    (pin "7" (uuid e4224606-e77f-44bb-991f-f2d80f91e6a6))
+    (pin "8" (uuid f88d71bd-4139-4a09-9d1a-1e076adae961))
+    (pin "9" (uuid b275f77c-491f-4792-a007-42ded7694af1))
+    (pin "10" (uuid fcbeb83b-6921-4d05-8d42-a6816a2e7b37))
+    (pin "11" (uuid d9b7c1a5-530b-4c83-980b-96fa59b8907f))
+    (pin "12" (uuid d79cb646-efed-427d-b741-e9932fbec572))
+    (pin "13" (uuid 3cc3cdaf-d943-4560-a9be-0fa4eb809d04))
+    (pin "14" (uuid 4618cef7-b7e9-4c68-ac69-27bddb3d2952))
+    (pin "15" (uuid d67aa984-df3a-4332-b3e9-b8b61f0f9cc9))
+    (pin "16" (uuid db0f26dd-ae24-476b-89de-1858e76637ee))
+    (pin "17" (uuid cdbbf451-f5fa-481f-9adf-f86d3327d3a8))
+    (pin "18" (uuid 50d7aca1-9223-4f25-a2a5-820b2106f78e))
+    (pin "19" (uuid 147f9a41-2a7c-4c62-aecc-8db1c0c5780e))
+    (pin "20" (uuid 5de1eaf3-f35c-4f34-b759-5d3cdb5d1b77))
+    (pin "21" (uuid b9479b67-ca1d-416b-832b-b8ef76219584))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "U2")
           (unit 1)
         )
@@ -975,7 +975,7 @@
   )
   (symbol (lib_id "Device:R") (at 220.98 71.12 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid cf03c68a-702c-4879-a607-3ccf7f6c6b50)
+    (uuid 84f04297-2adc-46ac-95d2-6b0593bfacf9)
     (property "Reference" "R3" (at 220.98 66.04 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "220" (at 220.98 76.2 0)
@@ -984,11 +984,11 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 220.98 71.12 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid fd01cb95-a139-498d-9082-e84398aea8ff))
-    (pin "2" (uuid 0ed5ae2f-9525-46d8-9cc0-768523b80343))
+    (pin "1" (uuid 11226254-5745-40cc-81fc-e049a642f816))
+    (pin "2" (uuid 785a3a27-ebb5-4c55-ab86-3805519b0f2d))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "R3")
           (unit 1)
         )
@@ -997,7 +997,7 @@
   )
   (symbol (lib_id "Device:Buzzer") (at 241.3 76.2 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid a4159a2c-bd3c-4892-9caa-c9ba4c48496a)
+    (uuid ae7ce008-eae6-4734-8d73-4f4a077f3b63)
     (property "Reference" "PZ1" (at 241.3 71.12 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "FUET-9018" (at 241.3 81.28 0)
@@ -1008,11 +1008,11 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Description" "9x9 passive piezo; PKMCS0909 land pattern" (at 241.3 76.2 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 4dfe1ac7-6100-4e5d-bf3f-98bb919fd715))
-    (pin "2" (uuid d4b6eb8c-eaa1-490e-bd84-e70079b9fab2))
+    (pin "1" (uuid a3c9fcc7-5430-44df-8bd4-39f4540e9f9e))
+    (pin "2" (uuid 7bca39a7-4c75-4e58-81b6-d530755f093c))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "PZ1")
           (unit 1)
         )
@@ -1021,7 +1021,7 @@
   )
   (symbol (lib_id "Connector:TestPoint") (at 101.6 101.6 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid ac2765fd-62b4-4d39-a37c-f7d3fbf6e9a7)
+    (uuid b096717f-73be-4044-9e96-3d88c25e652d)
     (property "Reference" "TP1" (at 101.6 96.52 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "GND" (at 101.6 106.67999999999999 0)
@@ -1030,10 +1030,10 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 101.6 101.6 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid df4590bd-46bd-471e-bd53-cff63ac9d79a))
+    (pin "1" (uuid b0c3e321-d980-4405-844e-6af67506cd16))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "TP1")
           (unit 1)
         )
@@ -1042,7 +1042,7 @@
   )
   (symbol (lib_id "Connector:TestPoint") (at 111.76 101.6 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 10bd2707-c533-4f16-91ae-cf0b95d98d84)
+    (uuid 8bb44d69-fedc-40b2-b3dd-331dd6cf83be)
     (property "Reference" "TP2" (at 111.76 96.52 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "VCC" (at 111.76 106.67999999999999 0)
@@ -1051,10 +1051,10 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 111.76 101.6 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid efa0fc96-d495-48c5-bb92-c9b7c95321d0))
+    (pin "1" (uuid 44b857a6-4524-43e3-90ea-1dc08ebd6ebc))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "TP2")
           (unit 1)
         )
@@ -1063,7 +1063,7 @@
   )
   (symbol (lib_id "Connector:TestPoint") (at 121.92 101.6 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 84589abc-f96f-442f-aefc-38109466a530)
+    (uuid 410282d2-a4e1-4295-9c45-f414ede78085)
     (property "Reference" "TP3" (at 121.92 96.52 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "UPDI" (at 121.92 106.67999999999999 0)
@@ -1072,10 +1072,10 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 121.92 101.6 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid fede04b8-ef71-4377-a477-742060ec8c83))
+    (pin "1" (uuid 008fe244-dafb-4449-80cf-f1828d9b7c05))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "TP3")
           (unit 1)
         )
@@ -1084,7 +1084,7 @@
   )
   (symbol (lib_id "Device:D") (at 137.16 101.6 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 648c0e5b-6641-4ff9-910b-a8f24521ede6)
+    (uuid 82c7282f-9961-463b-a811-0a0db664db15)
     (property "Reference" "D1" (at 137.16 96.52 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "TPESD8L3_3CT5G" (at 137.16 106.67999999999999 0)
@@ -1095,11 +1095,11 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Description" "UPDI ESD TVS to GND" (at 137.16 101.6 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid ee47d089-9f0f-4442-81f2-be19a0554fbc))
-    (pin "2" (uuid 2e628339-9628-480b-ba5c-3ee378c28c05))
+    (pin "1" (uuid f9ba5994-8f2e-455c-a01f-de5d6c3c28c0))
+    (pin "2" (uuid 657ce8eb-53ed-4e7c-b1f8-7469c27466b2))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "D1")
           (unit 1)
         )
@@ -1108,7 +1108,7 @@
   )
   (symbol (lib_id "power:PWR_FLAG") (at 88.9 45.72 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid c2b7a84c-a90b-4484-8761-ff42faaae45e)
+    (uuid 4d55c78d-7a37-424f-a9b8-8a73d949e1d5)
     (property "Reference" "#FLG01" (at 88.9 40.64 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "PWR_FLAG" (at 88.9 50.8 0)
@@ -1117,10 +1117,10 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 88.9 45.72 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 4d42d3a4-fb6d-437a-8dec-fe531f83f8b2))
+    (pin "1" (uuid 03196b63-13ff-4883-9eac-c7ed85a8e357))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "#FLG01")
           (unit 1)
         )
@@ -1129,7 +1129,7 @@
   )
   (symbol (lib_id "power:GND") (at 88.9 88.9 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid cbb288f7-4eb6-43bf-8e72-caa3576d8f84)
+    (uuid 8c1b6f5d-25af-4271-a394-901b4e824b64)
     (property "Reference" "#PWR01" (at 88.9 83.82000000000001 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "GND" (at 88.9 93.98 0)
@@ -1138,10 +1138,10 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 88.9 88.9 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid c826b357-bf07-4588-a7ee-d9734110ef95))
+    (pin "1" (uuid fed08589-c0d0-45aa-9827-feb19e2a2823))
     (instances
       (project "tinynfc"
-        (path "/19c61324-5beb-4473-9e79-3e404d081f1c"
+        (path "/d76ffcac-e1c5-4952-9c82-069cbc81dc27"
           (reference "#PWR01")
           (unit 1)
         )
@@ -1152,171 +1152,171 @@
   (label "LA"
     (at 25.4 50.8 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 86fc73ad-df26-4884-b24c-1a1239b72a97)
+    (uuid e40da3ff-058b-4778-a637-a72c846f1b86)
   )
   (label "LB"
     (at 25.4 55.88 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 828344cc-24be-4d40-8d3a-aecc75603c2e)
+    (uuid 9780c2f9-beb9-4018-9bd3-6b7c17114d2e)
   )
   (label "LA"
     (at 50.8 58.42 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 221b6d83-97fc-4a53-9541-a3014c06caed)
+    (uuid 29fac0ff-9558-4e30-870d-f038743cf80d)
   )
   (label "LB"
     (at 76.2 63.5 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 15c1e2eb-bc12-4bfa-bd48-f21fcd9ce60a)
+    (uuid 646cd6e0-fd10-4dcd-8b9a-fb9c62da69d1)
   )
   (label "VOUT"
     (at 76.2 58.42 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid d21e4e68-f3d4-4e53-8cd2-406c53e96f5f)
+    (uuid d89aa71d-e89f-4227-9ff9-0739ae845757)
   )
   (label "VOUT"
     (at 63.5 50.8 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 6e9ea730-3e82-4b10-ab9f-8bce4a83893e)
+    (uuid f1c478e7-e2cb-482b-90da-0cd8c1a52ba3)
   )
   (label "GND"
     (at 63.5 76.2 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 8b2b6bf5-a6c7-427b-a555-a9c56ed4464f)
+    (uuid 03bbb907-d826-4c57-ac96-f830e9ac21b8)
   )
   (label "VOUT"
     (at 96.52 45.72 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 9e3a36aa-1cc3-4af6-b128-7ef69ad8f230)
+    (uuid 323ab211-13d4-4307-860a-954d1b7f23e8)
   )
   (label "GND"
     (at 101.6 58.42 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 2f87b5e1-4fcd-4711-a3c9-a7b39ab1bf06)
+    (uuid 3f312bc1-2178-42e5-b6db-c061833a8c17)
   )
   (label "VOUT"
     (at 106.68 58.42 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid e74cf78d-91d0-46f7-9f20-87c0f5230888)
+    (uuid 293a98ac-425f-49e2-87d6-fd635402e74d)
   )
   (label "CAP_GATE"
     (at 114.3 71.12 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 1c841751-8c0d-4a04-a80e-e29915c10b67)
+    (uuid bc256ccd-e851-4d4b-ae2e-3458162980a1)
   )
   (label "CAP_EN"
     (at 134.62 71.12 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid ae2952f0-12a7-4c46-9e23-4539b8c7402a)
+    (uuid 7042226c-7fa7-430c-84e2-198d85dcb5e4)
   )
   (label "VBULK"
     (at 134.62 45.72 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 992e9bd3-9f54-4638-82f9-9986447bf30d)
+    (uuid 415e806f-c3ae-4bb8-93bc-4c5ffd1cdcdc)
   )
   (label "GND"
     (at 127.0 58.42 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid a60a0842-9170-4391-a510-9af2bbf0c367)
+    (uuid 673c613f-b5f8-40a6-8e9e-619153d7ffa1)
   )
   (label "VOUT"
     (at 114.3 55.88 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 59e8c616-911f-4761-8809-53875f9fb010)
+    (uuid c240ff40-1422-49d2-a0f9-d4da499c29f1)
   )
   (label "VOUT"
     (at 177.8 38.1 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid dd77eb34-c9cf-47ef-a942-cb57413fcaf9)
+    (uuid b9ebd7e9-375c-4d4e-bb5f-b7021cb36566)
   )
   (label "GND"
     (at 177.8 88.9 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 5433e8b8-6425-43bb-a1d0-7061e9cdffdc)
+    (uuid 8095e78c-a35d-46cc-be45-9071e6fc5606)
   )
   (label "UPDI"
     (at 195.58 43.18 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 95997657-479a-4173-9726-85cd723344e9)
+    (uuid 7be6f639-6e78-4bd8-84e5-194e7bcd7b56)
   )
   (label "CAP_EN"
     (at 195.58 63.5 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid c5b4fbcc-7b18-4498-a9f9-b4887930634b)
+    (uuid 40777052-30e0-45bb-866d-3eb85aa94f84)
   )
   (label "PIEZO_A"
     (at 195.58 71.12 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 10729e60-b7b3-4ac4-83f7-91fecfa0fcf8)
+    (uuid 812793b6-86ae-421b-b4ad-e83b4af6c846)
   )
   (label "PIEZO_B"
     (at 195.58 76.2 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 77e0f57f-2ac4-448a-b211-70355b4fdc75)
+    (uuid 7f539855-24f3-49fb-a87c-68e66f4cba9c)
   )
   (label "PIEZO_A"
     (at 210.82 71.12 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 926fa595-a6fd-4443-9f12-43c1153b428b)
+    (uuid 8b18797b-192b-4ecb-ac17-7a6be07c95fe)
   )
   (label "PIEZO_P"
     (at 228.6 71.12 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 956fbf4a-8214-4bd6-bbe1-b00baca8f3c2)
+    (uuid 2b174947-b44e-422f-9f66-2ce4dce0626c)
   )
   (label "PIEZO_P"
     (at 233.68 71.12 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 30b8f240-eb21-4bdd-a866-69c4772f983b)
+    (uuid cfbe2ce2-26f8-4a78-8d6c-df11055b3018)
   )
   (label "PIEZO_B"
     (at 233.68 81.28 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid c4b4e46a-6389-47e4-ba0d-988ade573f2f)
+    (uuid b6979c07-6f91-4a13-a446-15433edef94f)
   )
   (label "GND"
     (at 101.6 96.52 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid e3cd9076-ce41-4407-af37-5b59a2616492)
+    (uuid 310fbd37-9a50-47da-a2ae-8068442bd70e)
   )
   (label "VOUT"
     (at 111.76 96.52 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 962a434e-f2ea-4494-b76b-ee8f5f35fab3)
+    (uuid bae9de5c-9689-4116-98fa-028af76c9d58)
   )
   (label "UPDI"
     (at 121.92 96.52 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 18773164-cd72-4253-8688-dd2ae98cc9cf)
+    (uuid 3128a997-8f36-4d15-8f55-8449e8214b03)
   )
   (label "UPDI"
     (at 132.08 96.52 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid b79ecc71-dfdf-403d-976b-ef67d32d85ca)
+    (uuid 243d7492-f018-4bbf-8196-4cae7780396a)
   )
   (label "GND"
     (at 142.24 106.68 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid 686b3e71-51a2-46b4-9b60-2f0f0a015521)
+    (uuid 76417002-7964-4d04-ae5e-ee1541d63318)
   )
   (label "VOUT"
     (at 88.9 40.64 0)
     (effects (font (size 1.27 1.27)) (justify left bottom))
-    (uuid a117fba1-e009-41ba-be5b-6f6760966167)
+    (uuid 77aa5beb-4a45-448d-a5df-b320bafad301)
   )
 
-  (no_connect (at 50.8 63.5) (uuid d6e1c34c-b75d-48f5-b88e-9180da224144))
-  (no_connect (at 50.8 68.58) (uuid ebd588c5-4c76-4ae7-bd79-5bc4ccdaf7c2))
-  (no_connect (at 76.2 68.58) (uuid 73a5020e-63d0-4abc-922e-0821798e2772))
-  (no_connect (at 195.58 45.72) (uuid 158cb90f-bd73-4bb5-8e3a-18b7c18a2f07))
-  (no_connect (at 195.58 48.26) (uuid 9006e3f5-4b08-49a7-bcad-f2af32e9c1e2))
-  (no_connect (at 195.58 50.8) (uuid 8970ca10-4d69-46be-823d-fa77952ac5de))
-  (no_connect (at 195.58 53.34) (uuid 8df3879a-e15a-40a4-a28a-08fd727dde98))
-  (no_connect (at 195.58 55.88) (uuid 1658f12e-b5e0-4008-8142-222d4f80b3e7))
-  (no_connect (at 195.58 58.42) (uuid d29cb212-291d-407f-8cea-eee093e1895f))
-  (no_connect (at 195.58 80.0) (uuid cf76aff7-038a-49b9-9c99-a3e9d749f418))
-  (no_connect (at 195.58 82.54) (uuid 2c2ff4ab-e94d-42db-95ab-45476e3a80ac))
-  (no_connect (at 195.58 85.08) (uuid 489244f6-72fe-4013-b670-79fa241859a8))
+  (no_connect (at 50.8 63.5) (uuid 4b4fbad3-c0b8-4953-8f2d-6dd5d6b85219))
+  (no_connect (at 50.8 68.58) (uuid 13839827-900b-42f1-9dbb-7841053d3c69))
+  (no_connect (at 76.2 68.58) (uuid f15c20fd-68d9-4b24-9bd3-a072f5d03f6c))
+  (no_connect (at 195.58 45.72) (uuid f8efab30-4d44-43c9-9065-fd3e327dee4a))
+  (no_connect (at 195.58 48.26) (uuid 3f152618-45b7-444c-91fa-7a874aea3e0a))
+  (no_connect (at 195.58 50.8) (uuid 63fc6f59-7c0c-4054-bebb-4b5005d981c0))
+  (no_connect (at 195.58 53.34) (uuid f239a42d-7e94-4ba3-9620-2107c7b87215))
+  (no_connect (at 195.58 55.88) (uuid 49c6fb7d-c0c3-4645-a200-407957605131))
+  (no_connect (at 195.58 58.42) (uuid 5c442d1a-de37-405f-858b-37dddc1bf93a))
+  (no_connect (at 195.58 80.0) (uuid f3c5a299-0f5e-4a74-8522-499b1c04c7e4))
+  (no_connect (at 195.58 82.54) (uuid 9c03fba2-3a25-4477-b776-047036f46733))
+  (no_connect (at 195.58 85.08) (uuid 693806ae-10e4-4c1f-8edc-aa953b4f7684))
 
   (sheet_instances
     (path "/" (page "1"))

@@ -168,14 +168,18 @@ the assembled button is about **3.4 mm** thick. Order **0.8 mm** FR-4 if you
 want it flatter.
 
 A 9×9 mm piezo (instead of 12×12) is what makes the spiral island fit at this
-size. Footprint refs stay off silkscreen so they do not land on antenna copper;
-only the UPDI pad labels are silk.
+size. The piezo sits in the north half of the island; the ATtiny816, NT3H2111,
+passives, and UPDI pads sit in the south half so nothing lands on spiral
+copper. Footprint refs stay off silkscreen; only the UPDI pad labels are silk.
+The generator refuses to write a board if any non-antenna pad crosses the
+spiral keep-out or overlaps another pad.
 
 Layout constraints:
 
 - Don't put continuous ground planes over the antenna's interior. They induce
   eddy currents that kill coupling.
 - Minimize large closed copper loops inside the antenna keep-out.
+- Keep every part pad inside the spiral's inner clear radius (~Ø 17 mm).
 - Keep the board low-profile: QFN MCU, 0402 passives, SMD piezo, no tall
   electrolytics.
 - Route the gated bulk capacitor and MOSFET close to the MCU and piezo so the
@@ -192,7 +196,7 @@ Schematic and board live under [`kicad/`](kicad/). Open
 | Piezo drive | Differential on PB0 / PB1 |
 | Hard-tied `VOUT` cap | 100 nF (under the 220 nF NXP limit) |
 | Board size | Ø 28 mm × 1.6 mm FR-4 round (postage stamp; ~3.4 mm assembled) |
-| Antenna | Ø 24 mm circular spiral, 6 turns on `F.Cu` (~2.75 µH target) |
+| Antenna | Ø 24 mm circular spiral, 5 turns on `F.Cu` (~2.75 µH target; retune C1) |
 | Piezo | FUET-9018 on Murata PKMCS0909 land pattern |
 
 Connectivity in the schematic is by net labels. After opening the project,

@@ -19,7 +19,7 @@ a round postage-stamp disc instead.
 ## Quick facts
 
 - Board: **Ø 28 mm × 1.6 mm** FR-4 disc (~**3.4 mm** assembled with the piezo)
-- Antenna: Ø 24 mm circular spiral on the PCB
+- Antenna: Ø 24 mm / 5-turn circular spiral on the PCB (parts stay in the center island)
 - Harvest: NXP `NT3H2111`
 - MCU: ATtiny816, differential PWM into a 9×9 SMD piezo
 - Program once over UPDI pogo pads

@@ -121,11 +121,11 @@ slice. That flips as qty climbs.
 
 ## Antenna note
 
-A Ø 28 mm board with a Ø 24 mm circular spiral is enough to *target* ~2.75 µH
-with six turns, but harvested current scales with coupling area. Phones with
-weak or offset NFC coils may need a larger outline. Treat the postage-stamp
-disc as the minimum to try first; enlarge only if bench measurements say the
-rail collapses under piezo load.
+A Ø 28 mm board with a Ø 24 mm circular spiral (5 turns, inner clear ~Ø 17 mm)
+is enough to *target* ~2.75 µH after C1 trim, but harvested current scales with
+coupling area. Phones with weak or offset NFC coils may need a larger outline.
+Treat the postage-stamp disc as the minimum to try first; enlarge only if bench
+measurements say the rail collapses under piezo load.
 
 ## What this leaves out
 

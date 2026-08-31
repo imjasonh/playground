@@ -26,10 +26,16 @@ SYM = LIB_DIR / "tinynfc.kicad_sym"
 # Round outline + circular spiral usually couple better to phone NFC coils.
 BOARD_DIA_MM = 28.0
 ANT_OUTER_DIA = 24.0
-ANT_TURNS = 6
+ANT_TURNS = 5  # leaves a larger center island so silicon clears the spiral
 ANT_TRACE = 0.35
 ANT_GAP = 0.28
 ANT_PTS_PER_TURN = 64
+# No antenna copper inside this radius — component pads must stay inside it
+# with a small margin (see COMPONENT_CLEAR_R).
+ANT_INNER_CLEAR_R = 8.6
+COMPONENT_CLEAR_R = ANT_INNER_CLEAR_R - 0.35
+# Feed pads sit on the inner rim, west side (−X), away from the south parts bay.
+ANT_FEED_PHASE = math.pi
 # US quarter for scale drawings (documentation layer only — not fab copper).
 US_QUARTER_DIA_MM = 24.26
 BOARD_THICKNESS_MM = 1.6
@@ -208,32 +214,39 @@ def circular_spiral_points(
     turns: int,
     width: float,
     gap: float,
+    inner_clear_r: float = ANT_INNER_CLEAR_R,
+    phase: float = ANT_FEED_PHASE,
     pts_per_turn: int = ANT_PTS_PER_TURN,
 ) -> list[tuple[float, float]]:
-    """Archimedean spiral centered at origin, outer diameter `outer_dia` mm."""
+    """Archimedean spiral centered at origin, outer diameter `outer_dia` mm.
+
+    `phase` rotates the spiral so the inner end (feed) lands at that angle
+    (default π = west). Copper stops at `inner_clear_r`.
+    """
     pitch = width + gap
     r_max = outer_dia / 2
     total_theta = turns * 2 * math.pi
     n = max(8, int(turns * pts_per_turn))
     pts: list[tuple[float, float]] = []
     for i in range(n + 1):
-        theta = total_theta * i / n
-        r = r_max - pitch * theta / (2 * math.pi)
-        if r < width + 0.5:
+        theta = phase + total_theta * i / n
+        r = r_max - pitch * (theta - phase) / (2 * math.pi)
+        if r < inner_clear_r:
             break
         pts.append((r * math.cos(theta), r * math.sin(theta)))
     return pts
 
 
 def write_antenna_footprint() -> None:
-    """PCB circular spiral ~2.75 µH class; feeds on the inner rim (not under the piezo)."""
+    """PCB circular spiral; feeds on the inner rim (west), outside the parts island."""
     pts = circular_spiral_points(ANT_OUTER_DIA, ANT_TURNS, ANT_TRACE, ANT_GAP)
-    # Keep feeds on the west side of the inner turn so the 9 mm piezo can sit
-    # at the geometric center without landing on antenna pads.
+    if len(pts) < 2:
+        raise RuntimeError("antenna spiral produced too few points")
     feed_a = pts[-1]
-    # Second feed one pitch inward along the same radial line.
     r_a = math.hypot(feed_a[0], feed_a[1])
-    r_b = max(ANT_TRACE, r_a - (ANT_TRACE + ANT_GAP))
+    # Second feed sits slightly outward along the same radial line so both pads
+    # stay in the spiral ring (never inside the component island).
+    r_b = r_a + 0.85
     scale = r_b / r_a if r_a else 0.0
     feed_b = (feed_a[0] * scale, feed_a[1] * scale)
     fab_y = ANT_OUTER_DIA / 2 + 1.2
@@ -241,7 +254,7 @@ def write_antenna_footprint() -> None:
     lines = [
         '(footprint "PCB_Antenna_RoundSpiral" (version 20221018) (generator "tinynfc")',
         '  (layer "F.Cu")',
-        '  (descr "Circular spiral NFC antenna ~2.75uH target; feed pads 1=LA 2=LB")',
+        '  (descr "Circular spiral NFC antenna; feed pads 1=LA 2=LB on inner west rim")',
         '  (tags "NFC antenna spiral 13.56MHz round postage-stamp")',
         "  (attr smd)",
         # Refs stay off F.SilkS so they never sit on spiral copper.
@@ -250,6 +263,9 @@ def write_antenna_footprint() -> None:
         f'  (fp_text value "PCB_Antenna_RoundSpiral" (at 0 {-fab_y:.2f}) (layer "F.Fab")',
         "    (effects (font (size 0.7 0.7) (thickness 0.1))))",
         f'  (fp_circle (center 0 0) (end {half:.2f} 0) (layer "F.CrtYd")'
+        " (stroke (width 0.05) (type solid)) (fill none))",
+        # Keep-out ring drawn on Dwgs so the island radius is visible in the PCB.
+        f'  (fp_circle (center 0 0) (end {ANT_INNER_CLEAR_R:.2f} 0) (layer "Dwgs.User")'
         " (stroke (width 0.05) (type solid)) (fill none))",
     ]
     for a, b in zip(pts, pts[1:]):
@@ -878,6 +894,61 @@ def add_fp(board: pcbnew.BOARD, libpath: str, name: str, ref: str, x_mm: float, 
     return fp
 
 
+def _pad_corners(fp: pcbnew.FOOTPRINT) -> list[tuple[float, float]]:
+    corners: list[tuple[float, float]] = []
+    for pad in fp.Pads():
+        p = pad.GetPosition()
+        s = pad.GetSize()
+        x, y = pcbnew.ToMM(p.x), pcbnew.ToMM(p.y)
+        w, h = pcbnew.ToMM(s.x) / 2, pcbnew.ToMM(s.y) / 2
+        corners.extend([(x - w, y - h), (x - w, y + h), (x + w, y - h), (x + w, y + h)])
+    return corners
+
+
+def _pad_bbox(fp: pcbnew.FOOTPRINT) -> tuple[float, float, float, float] | None:
+    corners = _pad_corners(fp)
+    if not corners:
+        return None
+    xs = [c[0] for c in corners]
+    ys = [c[1] for c in corners]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def assert_clean_placement(board: pcbnew.BOARD) -> None:
+    """Fail generation if any non-antenna pad hits the spiral ring or another pad."""
+    errors: list[str] = []
+    parts = [fp for fp in board.GetFootprints() if fp.GetReference() != "L1"]
+    for fp in parts:
+        ref = fp.GetReference()
+        for x, y in _pad_corners(fp):
+            r = math.hypot(x, y)
+            if r > COMPONENT_CLEAR_R:
+                errors.append(
+                    f"{ref} pad corner ({x:.2f},{y:.2f}) r={r:.2f} > clear {COMPONENT_CLEAR_R:.2f}"
+                )
+                break
+    boxes = {fp.GetReference(): _pad_bbox(fp) for fp in parts}
+    refs = list(boxes.keys())
+    margin = 0.12  # mm — minimum copper-to-copper gap between parts
+    for i, a in enumerate(refs):
+        ba = boxes[a]
+        if not ba:
+            continue
+        for b in refs[i + 1 :]:
+            bb = boxes[b]
+            if not bb:
+                continue
+            if not (
+                ba[2] + margin < bb[0]
+                or bb[2] + margin < ba[0]
+                or ba[3] + margin < bb[1]
+                or bb[3] + margin < ba[1]
+            ):
+                errors.append(f"pad overlap {a} vs {b}")
+    if errors:
+        raise RuntimeError("placement overlaps:\n  " + "\n  ".join(errors))
+
+
 def draw_round_outline(board: pcbnew.BOARD, diameter: float) -> None:
     r = diameter / 2
     circ = pcbnew.PCB_SHAPE(board)
@@ -943,7 +1014,7 @@ def write_pcb() -> None:
     # Title
     board.GetTitleBlock().SetTitle("TinyNFC")
     board.GetTitleBlock().SetDate("2026-08-31")
-    board.GetTitleBlock().SetRevision("0.3")
+    board.GetTitleBlock().SetRevision("0.4")
     board.GetTitleBlock().SetComment(0, "NFC energy-harvesting audio player")
 
     draw_round_outline(board, BOARD_DIA_MM)
@@ -951,50 +1022,59 @@ def write_pcb() -> None:
     add_quarter_scale(board)
 
     sys_fp = "/usr/share/kicad/footprints"
-    # Antenna fills the disc; electronics sit in the center island.
+    # Antenna ring outside ANT_INNER_CLEAR_R; all other copper stays in the island.
     add_fp(board, str(PRETTY), "PCB_Antenna_RoundSpiral", "L1", 0, 0, 0)
 
-    # 9×9 mm piezo at origin; silicon and 0402s ring the body inside the spiral.
-    add_fp(board, f"{sys_fp}/Buzzer_Beeper.pretty", "Buzzer_Murata_PKMCS0909E", "PZ1", 0.0, 0.0, 0)
-    add_fp(board, str(PRETTY), "NXP_SOT902-3_XQFN8", "U1", -5.2, -5.8, 0)
+    # Piezo shifted north so the south half of the island holds the silicon.
+    # Body ~9×9; pads on east/west. Keep clear of the west antenna feeds.
+    add_fp(board, f"{sys_fp}/Buzzer_Beeper.pretty", "Buzzer_Murata_PKMCS0909E", "PZ1", 0.0, -2.4, 0)
+
+    # ATtiny816 VQFN-20 — south-center of the island (was overlapping the spiral).
     add_fp(
         board,
         f"{sys_fp}/Package_DFN_QFN.pretty",
         "VQFN-20-1EP_3x3mm_P0.4mm_EP1.7x1.7mm",
         "U2",
-        4.8,
-        -5.8,
+        0.0,
+        4.35,
         0,
     )
-    add_fp(board, f"{sys_fp}/Package_DFN_QFN.pretty", "Diodes_DFN1006-3", "Q1", -5.4, 5.6, 0)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C1", -5.2, -3.6, 0)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C2", -3.4, 5.6, 0)
-    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C3", -1.6, 5.6, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R1", 0.2, 5.8, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R2", 2.0, 5.8, 0)
-    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R3", 5.4, 5.4, 90)
-    add_fp(board, f"{sys_fp}/Diode_SMD.pretty", "D_SOD-882", "D1", 5.6, -3.4, 0)
+    # NT3H2111 — west of MCU, near LA/LB feeds on the inner west rim.
+    add_fp(board, str(PRETTY), "NXP_SOT902-3_XQFN8", "U1", -3.55, 2.55, 0)
+    # P-FET + bulk/bypass + gate resistors — east/south of MCU.
+    add_fp(board, f"{sys_fp}/Package_DFN_QFN.pretty", "Diodes_DFN1006-3", "Q1", 3.45, 2.55, 0)
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C2", 3.45, 3.85, 0)
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C3", 3.45, 4.85, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R1", -3.55, 3.85, 0)
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R2", -3.55, 4.85, 0)
+    # Antenna tune cap near U1 / feed.
+    add_fp(board, f"{sys_fp}/Capacitor_SMD.pretty", "C_0402_1005Metric", "C1", -5.4, 1.2, 90)
+    # Piezo series R + UPDI TVS tucked in the SE pocket.
+    add_fp(board, f"{sys_fp}/Resistor_SMD.pretty", "R_0402_1005Metric", "R3", 5.2, 1.2, 90)
+    add_fp(board, f"{sys_fp}/Diode_SMD.pretty", "D_SOD-882", "D1", 5.2, 3.0, 90)
 
-    # UPDI pogo pads in the south margin inside the circular outline (1.0 mm pads).
-    y_pads = BOARD_DIA_MM / 2 - 1.6
+    # UPDI pogo pads on the south rim of the island (inside the spiral, not on it).
+    y_pads = 6.85
     add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP1", -2.54, y_pads, 0)
     add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP2", 0.0, y_pads, 0)
     add_fp(board, f"{sys_fp}/TestPoint.pretty", "TestPoint_Pad_D1.0mm", "TP3", 2.54, y_pads, 0)
 
-    # Silk only for pad callouts — kept clear of antenna copper.
+    # Silk pad callouts just south of the pogo pads (still inside the island).
     for txt, x, y in [
-        ("GND", -2.54, y_pads + 1.1),
-        ("VCC", 0.0, y_pads + 1.1),
-        ("UPDI", 2.54, y_pads + 1.1),
+        ("GND", -2.54, y_pads + 0.95),
+        ("VCC", 0.0, y_pads + 0.95),
+        ("UPDI", 2.54, y_pads + 0.95),
     ]:
         t = pcbnew.PCB_TEXT(board)
         t.SetText(txt)
         t.SetPosition(pcbnew.VECTOR2I(mm(x), mm(y)))
         t.SetLayer(pcbnew.F_SilkS)
-        t.SetTextHeight(mm(0.6))
-        t.SetTextWidth(mm(0.6))
-        t.SetTextThickness(mm(0.1))
+        t.SetTextHeight(mm(0.5))
+        t.SetTextWidth(mm(0.5))
+        t.SetTextThickness(mm(0.08))
         board.Add(t)
+
+    assert_clean_placement(board)
 
     out = ROOT / "tinynfc.kicad_pcb"
     board.Save(str(out))
@@ -1050,11 +1130,12 @@ in this revision (no-connects).
 
 - Board: **Ø 28 mm × 1.6 mm** round postage stamp (not credit-card size). A
   larger outline couples more RF; this one is the minimum that still fits a
-  9 mm piezo in the spiral island plus UPDI pads in the edge margin.
+  9 mm piezo in the north half of the spiral island with silicon + UPDI south.
 - Thickness: **1.6 mm** FR-4 by default (~**3.4 mm** assembled with the piezo).
   Optional 0.8 mm FR-4 for a flatter button.
-- Antenna: Ø 24 mm circular spiral, 6 turns, 0.35 / 0.28 mm trace/gap on
-  `F.Cu`. Do **not** add a continuous GND plane under it.
+- Antenna: Ø 24 mm circular spiral, 5 turns, 0.35 / 0.28 mm trace/gap on
+  `F.Cu` (inner clear ~Ø 17 mm so parts do not sit on the spiral). Do **not**
+  add a continuous GND plane under it.
 - A US-quarter outline (Ø 24.26 mm) is drawn on `Dwgs.User` beside the board
   for scale — documentation only, not fab copper.
 - Footprint reference designators are hidden on silk so they do not sit on
