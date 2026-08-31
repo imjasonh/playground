@@ -137,10 +137,8 @@ def draw_tank_page(c: canvas.Canvas) -> None:
     c.drawString(x, y, "Tank")
     y -= 0.42 * inch
 
-    # Identity — three fields on one baseline.
-    field(c, x, y, 3.1 * inch, "Name")
-    field(c, x + 3.35 * inch, y, 1.2 * inch, "Side")
-    field(c, x + 4.75 * inch, y, 1.2 * inch, "Pts")
+    field(c, x, y, 4.6 * inch, "Name")
+    field(c, x + 4.85 * inch, y, 1.1 * inch, "Pts")
     y -= 0.48 * inch
 
     # Loadout stats on an even 7-column grid.
@@ -222,9 +220,8 @@ def draw_apc_card(c: canvas.Canvas, left: float, bottom: float, card_w: float, c
     c.drawString(x, y, "APC")
     y -= 0.36 * inch
 
-    field(c, x, y, 2.2 * inch, "Name")
-    field(c, x + 2.4 * inch, y, 0.95 * inch, "Side")
-    field(c, x + 3.5 * inch, y, 0.85 * inch, "Pts")
+    field(c, x, y, 3.3 * inch, "Name")
+    field(c, x + 3.5 * inch, y, 0.95 * inch, "Pts")
     y -= 0.40 * inch
 
     y = section_head(c, x, y, "Loadout", width)
@@ -276,10 +273,7 @@ def draw_infantry_card(c: canvas.Canvas, left: float, bottom: float, card_w: flo
     c.setFont("Helvetica-Bold", 13)
     c.drawString(x, y_title, "Infantry")
 
-    name_w = inner_w - 1.2 * inch
-    field(c, x, y_fields, name_w, "Name")
-    field(c, x + name_w + 0.15 * inch, y_fields, 1.05 * inch, "Side")
-
+    field(c, x, y_fields, inner_w, "Name")
     labeled_box(c, x, y_act, "Activated")
 
 
