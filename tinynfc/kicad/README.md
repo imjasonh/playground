@@ -16,7 +16,7 @@ Requires KiCad 7 or later with the standard symbol/footprint libraries.
 | Ref | Part | Role |
 |-----|------|------|
 | U1 | NT3H2111W0FHKH | NFC harvest (`VOUT`) + antenna |
-| L1 | PCB spiral | ~2.75 µH rectangular spiral on `F.Cu` |
+| L1 | PCB spiral | ~2.75 µH circular spiral on `F.Cu` |
 | C1 | 1.5 pF 0402 | Antenna fine tune |
 | C2 | 100 nF 0402 | Hard-tied `VOUT` bypass (<220 nF limit) |
 | Q1 | DMP21D0UFB4 | P-FET gate for delayed bulk cap |
@@ -43,13 +43,13 @@ in this revision (no-connects).
 
 ## Layout rules
 
-- Board: **28 mm × 28 mm** postage stamp (not credit-card size). A larger
-  outline couples more RF; this one is the minimum that still fits a 9 mm
-  piezo in the spiral island plus UPDI pads in the edge margin.
+- Board: **Ø 28 mm × 1.6 mm** round postage stamp (not credit-card size). A
+  larger outline couples more RF; this one is the minimum that still fits a
+  9 mm piezo in the spiral island plus UPDI pads in the edge margin.
 - Thickness: **1.6 mm** FR-4 by default (~**3.4 mm** assembled with the piezo).
   Optional 0.8 mm FR-4 for a flatter button.
-- Antenna: 23 mm square spiral, 6 turns, 0.35 / 0.28 mm trace/gap on `F.Cu`.
-  Do **not** add a continuous GND plane under it.
+- Antenna: Ø 24 mm circular spiral, 6 turns, 0.35 / 0.28 mm trace/gap on
+  `F.Cu`. Do **not** add a continuous GND plane under it.
 - A US-quarter outline (Ø 24.26 mm) is drawn on `Dwgs.User` beside the board
   for scale — documentation only, not fab copper.
 - Footprint reference designators are hidden on silk so they do not sit on

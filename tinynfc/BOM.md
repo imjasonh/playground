@@ -12,7 +12,7 @@ Prices move. Re-quote before you order.
 
 | Item | Choice |
 |------|--------|
-| Board | 28 mm × 28 mm, 2-layer, **1.6 mm** FR-4, ENIG (QFN-friendly) |
+| Board | Ø 28 mm round, 2-layer, **1.6 mm** FR-4, ENIG (QFN-friendly) |
 | Assembly | JLCPCB SMT, one side (Economic ≤30 pcs; Standard above that) |
 | Component overage | ~10–20% attrition (see per-qty tables) |
 | Currency | USD |
@@ -73,7 +73,7 @@ louder but blocks the postage-stamp outline.
 
 | Line | 10 | 50 | 100 | Notes |
 |------|---:|---:|----:|-------|
-| Bare PCB, 28×28 mm, 2L ENIG | $8 ($0.80/ea) | $22 ($0.44/ea) | $35 ($0.35/ea) | [JLCPCB quote](https://cart.jlcpcb.com/quote). HASL is cheaper; ENIG is safer for the VQFN. |
+| Bare PCB, Ø 28 mm, 2L ENIG | $8 ($0.80/ea) | $22 ($0.44/ea) | $35 ($0.35/ea) | [JLCPCB quote](https://cart.jlcpcb.com/quote). Round outline; HASL is cheaper; ENIG is safer for the VQFN. |
 | SMT stencil | $7 | $7 | $7 | Usually once per design. |
 | SMT assembly | $55 | $90 | $120 | Setup + place ~11 parts. Economic for ≤30; Standard for 50/100. Extended-part load fees included in the ballpark. |
 | Intl. shipping (DHL-class) | $35 | $45 | $50 | To US/EU; economy sea is less. |
@@ -121,11 +121,11 @@ slice. That flips as qty climbs.
 
 ## Antenna note
 
-A 28 mm board with a 23 mm spiral is enough to *target* ~2.75 µH with six
-turns, but harvested current scales with coupling area. Phones with weak or
-offset NFC coils may need a larger outline. Treat the postage-stamp size as the
-minimum to try first; enlarge only if bench measurements say the rail collapses
-under piezo load.
+A Ø 28 mm board with a Ø 24 mm circular spiral is enough to *target* ~2.75 µH
+with six turns, but harvested current scales with coupling area. Phones with
+weak or offset NFC coils may need a larger outline. Treat the postage-stamp
+disc as the minimum to try first; enlarge only if bench measurements say the
+rail collapses under piezo load.
 
 ## What this leaves out
 

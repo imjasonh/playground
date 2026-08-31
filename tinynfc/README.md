@@ -6,7 +6,7 @@ short chiptune on a piezo. No battery.
 The harvest / delayed-bulk / ATtiny816 architecture follows Wilson Harper's
 [NFC energy-harvesting PCB business card](https://wilsonharper.net/projects/businesscard/)
 (LEDs on a full-size card). This project swaps the LEDs for a piezo and aims for
-a postage-stamp outline instead.
+a round postage-stamp disc instead.
 
 ## Docs
 
@@ -18,8 +18,9 @@ a postage-stamp outline instead.
 
 ## Quick facts
 
-- Board: **28 mm × 28 mm × 1.6 mm** FR-4 (~**3.4 mm** assembled with the piezo)
-- Harvest: NXP `NT3H2111` + PCB spiral antenna
+- Board: **Ø 28 mm × 1.6 mm** FR-4 disc (~**3.4 mm** assembled with the piezo)
+- Antenna: Ø 24 mm circular spiral on the PCB
+- Harvest: NXP `NT3H2111`
 - MCU: ATtiny816, differential PWM into a 9×9 SMD piezo
 - Program once over UPDI pogo pads
 
