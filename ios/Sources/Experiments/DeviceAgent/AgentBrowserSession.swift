@@ -469,7 +469,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         }
         if matches.isEmpty {
             let query = json["query"] as? String ?? ""
-            return query.isEmpty ? "No matches." : "No matches for “\(query)”."
+            return query.isEmpty ? "No matches." : "No matches for \"\(query)\"."
         }
         var lines = ["matches (\(matches.count)):"]
         lines.append(contentsOf: matches)
@@ -754,7 +754,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
               break;
             }
           }
-          if (!match) return JSON.stringify({ ok: false, error: 'no option matching “' + option + '”' });
+          if (!match) return JSON.stringify({ ok: false, error: 'no option matching "' + option + '"' });
           try {
             el.value = match.value;
             el.dispatchEvent(new Event('input', { bubbles: true }));
