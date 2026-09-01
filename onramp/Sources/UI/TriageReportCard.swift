@@ -17,6 +17,7 @@ struct TriageReportCard: View {
                 }
                 .buttonStyle(.plain)
                 .help("Copy report")
+                .accessibilityLabel("Copy report")
                 .accessibilityIdentifier("copy-triage-report")
             }
 
@@ -58,6 +59,8 @@ struct TriageReportCard: View {
                                 .font(.caption)
                         }
                         .buttonStyle(.plain)
+                        .help("Copy step")
+                        .accessibilityLabel("Copy step")
                     }
                 }
             }

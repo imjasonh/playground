@@ -11,8 +11,20 @@ struct SnoreSessionListView: View {
     var body: some View {
         Group {
             if sessions.isEmpty {
-                Text("No saved sessions yet.")
-                    .foregroundStyle(.secondary)
+                VStack(spacing: 8) {
+                    Image(systemName: "moon.zzz")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text("No sessions yet")
+                        .font(.headline)
+                    Text("Start a sleep session from Snore Log to save clips here.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
             } else {
                 List {
                     ForEach(sessions) { session in
@@ -91,6 +103,7 @@ struct SnoreSessionDetailView: View {
                                     .font(.title2)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(playingID == event.id ? "Pause clip" : "Play clip")
                             .accessibilityIdentifier("playSavedClip-\(event.id.uuidString)")
                         }
                     }

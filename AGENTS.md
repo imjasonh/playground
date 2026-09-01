@@ -589,6 +589,7 @@ bundle exec fastlane test
 - **Unslop**: when you write comments, docs, HTML copy, or PR prose, read [`.cursor/skills/unslop/SKILL.md`](.cursor/skills/unslop/SKILL.md) ([unslop](https://github.com/cursor/plugins/blob/HEAD/pstack/skills/unslop/SKILL.md) from cursor/plugins) and strip AI tells. Google style still owns headings, code font, inclusive language, and procedures. First person is fine in README ledes and PR descriptions.
 - **Taglines**: do not invent taglines or slogans. If existing tagline copy should go, delete it and wait for an explicit replacement.
 - **Visual design and typography**: when you design or restyle HTML, CSS, or Pages templates, read [`.cursor/skills/web-typography/SKILL.md`](.cursor/skills/web-typography/SKILL.md) (Wondel's [web-typography](https://skills.wondel.ai/skills/web-typography/) skill).
+- **Apple HIG**: when you design, edit, or review iOS / macOS / watchOS UI (`ios/`, `hello-macos/`, `onramp/`), read [`.cursor/skills/apple-hig/SKILL.md`](.cursor/skills/apple-hig/SKILL.md) and consult the linked [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) topics.
 - **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), `*.xcodeproj`, `*.dmg`, or Playwright/Jest output (`test-results/`, `coverage/`).
 - **Do not write `blog-post.md` files.** Those are human-authored project
   posts. Agents must not create, edit, or rewrite them. The published

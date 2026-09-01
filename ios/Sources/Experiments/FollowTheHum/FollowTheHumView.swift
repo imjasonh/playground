@@ -34,7 +34,8 @@ struct FollowTheHumView: View {
     private var hero: some View {
         VStack(spacing: 8) {
             Image(systemName: session.isFound ? "checkmark.seal.fill" : "waveform.circle.fill")
-                .font(.system(size: 64))
+                .font(.largeTitle)
+                .imageScale(.large)
                 .foregroundStyle(session.isFound ? Color.green : Color.accentColor)
                 .accessibilityHidden(true)
 
@@ -65,6 +66,9 @@ struct FollowTheHumView: View {
                             .animation(.easeOut(duration: 0.15), value: relative)
                     }
                     .frame(height: 24)
+                    .accessibilityElement()
+                    .accessibilityLabel(steeringLabel(relative))
+                    .accessibilityValue("\(Int(relative.rounded())) degrees")
                     .accessibilityIdentifier("humPanIndicator")
                 }
                 .padding()

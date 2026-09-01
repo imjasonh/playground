@@ -86,7 +86,9 @@ The manual workflow remains for greenfield setup and certificate recovery.
 
 1. Create `Sources/Experiments/<YourExperiment>/` (one directory per experiment).
 2. Put UI + logic there. Keep testable logic in plain types. Add accessibility
-   identifiers for UI tests.
+   identifiers for UI tests. When editing SwiftUI chrome, also apply
+   [Apple HIG](../.cursor/skills/apple-hig/SKILL.md) (labels, hit targets,
+   empty states, Dynamic Type).
 3. Add `*Experiment.swift` with `static let experiment: Experiment` (stable
    unique `id`, title, summary, SF Symbol `icon`, destination).
 4. Append it to `ExperimentCatalog.all` in `Sources/Experiment.swift`.

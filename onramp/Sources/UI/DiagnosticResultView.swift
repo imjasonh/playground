@@ -53,6 +53,7 @@ struct DiagnosticResultView: View {
                             }
                             .buttonStyle(.plain)
                             .help("Copy this fix")
+                            .accessibilityLabel("Copy fix")
                         }
                     }
                     .accessibilityIdentifier("proposed-fixes")

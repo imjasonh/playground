@@ -31,9 +31,9 @@ struct T9SwiftUIPadView: View {
         } label: {
             VStack(spacing: 2) {
                 Text(key.title)
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.title2.weight(.semibold))
                 Text(subtitle)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.caption2.weight(.medium))
                     .foregroundStyle(Color.white.opacity(0.75))
             }
             .foregroundStyle(.white)
@@ -52,6 +52,8 @@ struct T9SwiftUIPadView: View {
                 model.longPress(key)
             }
         )
+        .accessibilityLabel("\(key.title), \(subtitle)")
+        .accessibilityHint("Long press to insert the digit")
         .accessibilityIdentifier("t9-key-\(key.title)")
     }
 }

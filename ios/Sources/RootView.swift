@@ -16,11 +16,13 @@ struct RootView: View {
                             Text(experiment.summary)
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+                                .lineLimit(2)
                         }
                     } icon: {
                         Image(systemName: experiment.icon)
                     }
                 }
+                .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("experiment-\(experiment.id)")
             }
             .navigationTitle("Playground")
@@ -30,7 +32,20 @@ struct RootView: View {
                         .navigationTitle(experiment.title)
                         .navigationBarTitleDisplayMode(.inline)
                 } else {
-                    Text("Unknown experiment")
+                    VStack(spacing: 8) {
+                        Image(systemName: "questionmark.circle")
+                            .font(.largeTitle)
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text("Unknown experiment")
+                            .font(.headline)
+                        Text("That experiment id is not in this build.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding()
                 }
             }
         }

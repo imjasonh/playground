@@ -209,6 +209,7 @@ struct ChatView: View {
                 model.isResponding
                     || model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             )
+            .accessibilityLabel("Send")
             .accessibilityIdentifier("chat-send")
             .keyboardShortcut(.return, modifiers: [.command])
         }
@@ -238,6 +239,7 @@ private struct MessageBubble: View {
                         }
                         .buttonStyle(.plain)
                         .help("Copy")
+                        .accessibilityLabel("Copy message")
                         .accessibilityIdentifier("copy-message")
                     }
                 }
