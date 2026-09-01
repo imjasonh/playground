@@ -342,7 +342,7 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertTrue(find.contains("[3] link"))
         XCTAssertEqual(
             AgentBrowserSession.formatFindPayload(#"{"query":"zzz","matches":[]}"#),
-            "No matches for “zzz”."
+            #"No matches for "zzz"."#
         )
 
         let get = AgentBrowserSession.formatGetPayload(
@@ -385,9 +385,21 @@ final class DeviceAgentTests: XCTestCase {
         )
         XCTAssertTrue(slim.contains("extractedFindings"))
         XCTAssertTrue(slim.contains("Fact one"))
-        XCTAssertTrue(slim.contains("Page text omitted"))
-        XCTAssertLessThanOrEqual(slim.count, 800)
         XCTAssertTrue(slim.contains("showing 40"))
+        XCTAssertLessThanOrEqual(slim.count, 800)
+        // 40 element lines push past 800 chars, so the footer is truncated.
+        XCTAssertTrue(slim.hasSuffix("…"))
+        XCTAssertFalse(slim.contains("Page text omitted"))
+
+        let roomy = AgentContextBudget.modelFacingSnapshot(
+            title: "Example",
+            url: "https://example.com",
+            elements: ["[1] link \"Home\""],
+            headings: ["Hello"],
+            extractedFindings: ["Fact one"],
+            maxChars: 2_000
+        )
+        XCTAssertTrue(roomy.contains("Page text omitted"))
 
         let carry = AgentContextBudget.compactionCarryOver(
             url: "https://example.com",
