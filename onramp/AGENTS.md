@@ -10,7 +10,8 @@ Sparkle). Golden path:
 Read [`README.md`](README.md) for layout/run instructions and
 [`docs/onramp-design.md`](../docs/onramp-design.md) for product design.
 Repo-wide rules live in the root [`AGENTS.md`](../AGENTS.md); this file adds
-rules specific to this app.
+rules specific to this app. For SwiftUI chrome, also follow
+[`.cursor/skills/apple-hig/SKILL.md`](../.cursor/skills/apple-hig/SKILL.md).
 
 ## Hard rules
 

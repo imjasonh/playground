@@ -336,13 +336,32 @@ struct DeviceAgentView: View {
     private var transcriptList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(runtime.transcript.filter(\.isVisibleInChat)) { entry in
-                        transcriptRow(entry)
-                            .id(entry.id)
+                let visible = runtime.transcript.filter(\.isVisibleInChat)
+                if visible.isEmpty {
+                    VStack(spacing: 8) {
+                        Image(systemName: "cpu")
+                            .font(.largeTitle)
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text("Ask Device Agent")
+                            .font(.headline)
+                        Text("Type a request, attach a file, or open the browser pane.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
                     }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 48)
+                    .padding(.horizontal)
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(visible) { entry in
+                            transcriptRow(entry)
+                                .id(entry.id)
+                        }
+                    }
+                    .padding()
                 }
-                .padding()
             }
             .onChange(of: runtime.transcript.count) { _ in
                 if let last = runtime.transcript.last(where: \.isVisibleInChat)?.id {
@@ -500,6 +519,7 @@ struct DeviceAgentView: View {
                 } label: {
                     Image(systemName: "paperclip")
                 }
+                .accessibilityLabel("Attach")
                 .accessibilityIdentifier("deviceAgentAttachButton")
 
                 Button {
@@ -508,6 +528,8 @@ struct DeviceAgentView: View {
                 } label: {
                     Image(systemName: voiceMode ? "mic.fill" : "mic")
                 }
+                .accessibilityLabel(voiceMode ? "Hide voice input" : "Show voice input")
+                .accessibilityAddTraits(voiceMode ? [.isSelected] : [])
                 .accessibilityIdentifier("deviceAgentVoiceModeButton")
 
                 Button {
@@ -520,6 +542,8 @@ struct DeviceAgentView: View {
                 } label: {
                     Image(systemName: "globe")
                 }
+                .accessibilityLabel(showBrowser ? "Hide browser" : "Show browser")
+                .accessibilityAddTraits(showBrowser ? [.isSelected] : [])
                 .accessibilityIdentifier("deviceAgentBrowserToggle")
 
                 TextField("Ask Device Agent…", text: $draft, axis: .vertical)
@@ -543,6 +567,7 @@ struct DeviceAgentView: View {
                         .font(.title2)
                 }
                 .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || runtime.isRunning)
+                .accessibilityLabel("Send")
                 .accessibilityIdentifier("deviceAgentSendButton")
             }
         }

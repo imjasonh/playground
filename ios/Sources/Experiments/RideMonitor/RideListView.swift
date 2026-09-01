@@ -16,9 +16,21 @@ struct RideListView: View {
     var body: some View {
         List {
             if rides.isEmpty {
-                Text("No saved rides yet. Record one from the Ride Monitor.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                VStack(spacing: 8) {
+                    Image(systemName: "bicycle")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text("No rides yet")
+                        .font(.headline)
+                    Text("Record one from the Ride Monitor.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
+                .listRowBackground(Color.clear)
             } else {
                 ForEach(rides) { ride in
                     NavigationLink {
@@ -107,7 +119,9 @@ struct RideListView: View {
                     .font(.headline)
                 Spacer()
                 if ride.crashCount > 0 {
-                    Image(systemName: "sos").foregroundStyle(.pink)
+                    Image(systemName: "sos")
+                        .foregroundStyle(.pink)
+                        .accessibilityLabel("Includes possible crash")
                 }
             }
             if let summary = ride.summary, !summary.isEmpty {

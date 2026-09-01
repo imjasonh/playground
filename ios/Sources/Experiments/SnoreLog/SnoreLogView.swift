@@ -118,6 +118,8 @@ struct SnoreLogView: View {
                     .foregroundStyle(.secondary)
             }
             Slider(value: $monitor.sensitivity, in: 0...1)
+                .accessibilityLabel("Sensitivity")
+                .accessibilityValue(sensitivityLabel)
                 .accessibilityIdentifier("snoreSensitivitySlider")
             HStack {
                 Text("Less")
@@ -174,6 +176,7 @@ struct SnoreLogView: View {
                             Image(systemName: playingID == event.id ? "pause.circle.fill" : "play.circle.fill")
                                 .font(.title2)
                         }
+                        .accessibilityLabel(playingID == event.id ? "Pause clip" : "Play clip")
                         .accessibilityIdentifier("playSnoreClip-\(event.id.uuidString)")
                     }
                     .padding(.vertical, 4)

@@ -12,24 +12,23 @@ struct T9KeyboardDemoView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 16) {
                 howToEnable
                 tryHere
                 systemField
             }
             .padding()
         }
-        .background(Color(uiColor: UIColor(white: 0.08, alpha: 1)).ignoresSafeArea())
+        .background(Color(.systemGroupedBackground).ignoresSafeArea())
         .onDisappear {
             model.commit()
         }
     }
 
     private var howToEnable: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("System keyboard")
                 .font(.headline)
-                .foregroundStyle(.white)
             Text(
                 """
                 1. Open Settings → General → Keyboard → Keyboards → Add New Keyboard…
@@ -50,43 +49,54 @@ struct T9KeyboardDemoView: View {
             .accessibilityIdentifier("t9OpenSettingsButton")
         }
         .padding()
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
     }
 
     private var tryHere: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Try it here")
                     .font(.headline)
-                    .foregroundStyle(.white)
                 Spacer()
                 Text(model.shiftLabel)
                     .font(.caption.monospaced())
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(Color.white.opacity(0.12)))
-                    .foregroundStyle(.white)
+                    .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                    .foregroundStyle(.primary)
                     .accessibilityIdentifier("t9ShiftModeLabel")
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(model.text.isEmpty ? " " : model.text)
+                Text(model.text.isEmpty ? "Type here" : model.text)
                     .font(.title2.monospaced())
-                    .foregroundStyle(.white)
+                    .foregroundStyle(model.text.isEmpty ? .tertiary : .primary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel(model.text.isEmpty ? "Typed text, empty" : model.text)
                     .accessibilityIdentifier("t9DemoText")
-                Text(model.pending.isEmpty ? " " : model.pending)
+                Text(model.pending.isEmpty ? "" : model.pending)
                     .font(.title2.monospaced().weight(.bold))
-                    .foregroundStyle(.yellow)
+                    .foregroundStyle(Color.accentColor)
                     .accessibilityIdentifier("t9PendingPreview")
             }
             .padding(12)
             .frame(minHeight: 56)
-            .background(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.2)))
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(.tertiarySystemGroupedBackground))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.12))
+            )
 
             T9SwiftUIPadView(model: model)
                 .frame(height: 280)
-                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .accessibilityIdentifier("t9Pad")
 
             HStack {
@@ -99,26 +109,36 @@ struct T9KeyboardDemoView: View {
             .buttonStyle(.bordered)
         }
         .padding()
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
     }
 
     private var systemField: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Test with the system keyboard")
                 .font(.headline)
-                .foregroundStyle(.white)
             Text("After enabling T9 Multi-tap, tap below and switch to it with the globe key.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
             TextField("Type here…", text: $model.systemText, axis: .vertical)
                 .lineLimit(3...6)
                 .padding(12)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(.tertiarySystemGroupedBackground))
+                )
                 .focused($systemFieldFocused)
                 .accessibilityIdentifier("t9SystemTextField")
         }
         .padding()
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color(.secondarySystemGroupedBackground))
+        )
     }
 
     private func openSettings() {

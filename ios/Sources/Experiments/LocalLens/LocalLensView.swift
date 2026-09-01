@@ -292,12 +292,15 @@ struct LocalLensView: View {
                         : Color.white.opacity(0.08),
                     in: Circle()
                 )
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(session.runState != .running)
         .accessibilityIdentifier("localLensFlipCameraButton")
-        .accessibilityLabel(session.usingFrontCamera ? "Front camera" : "Rear camera")
-        .accessibilityHint("Flip camera")
+        .accessibilityLabel(
+            session.usingFrontCamera ? "Switch to rear camera" : "Switch to front camera"
+        )
     }
 
     private func modeButton(_ mode: LocalLensMode) -> some View {
@@ -313,6 +316,8 @@ struct LocalLensView: View {
                     selected ? Color.white.opacity(0.95) : Color.white.opacity(0.14),
                     in: Circle()
                 )
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("localLensMode-\(mode.rawValue)")

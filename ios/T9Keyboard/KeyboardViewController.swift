@@ -91,6 +91,7 @@ final class KeyboardViewController: UIInputViewController {
         deleteButton.setImage(UIImage(systemName: "delete.left"), for: .normal)
         deleteButton.tintColor = .white
         deleteButton.accessibilityIdentifier = "t9-delete"
+        deleteButton.accessibilityLabel = "Delete"
         deleteButton.addAction(UIAction { [weak self] _ in
             self?.engine.deleteBackward()
             self?.padView.refreshChrome()
