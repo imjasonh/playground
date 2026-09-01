@@ -451,7 +451,7 @@ final class AgentRuntime: ObservableObject {
         contextUsage = AgentContextUsage(budget: budget, didCompact: didCompactThisSession)
     }
 
-    static func isExceededContextWindow(_ error: Error) -> Bool {
+    nonisolated static func isExceededContextWindow(_ error: Error) -> Bool {
         let text = error.localizedDescription.lowercased()
         if text.contains("context window") || text.contains("exceededcontext") {
             return true
