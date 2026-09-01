@@ -29,11 +29,8 @@ final class AgentRuntime: ObservableObject {
     private var recentUserPrompts: [String] = []
     private var carryOverNotes: String = ""
     private var didCompactThisSession = false
-
-    #if canImport(FoundationModels)
-    @available(iOS 26.0, *)
-    private var languageSession: LanguageModelSession?
-    #endif
+    /// Holds `LanguageModelSession` when FoundationModels is linked (typed via helpers).
+    private var languageSessionBox: Any?
 
     init(context: AgentToolContext? = nil) {
         self.context = context ?? AgentToolContext()
@@ -206,12 +203,12 @@ final class AgentRuntime: ObservableObject {
 
     @available(iOS 26.0, *)
     private func ensureLanguageSession() -> LanguageModelSession {
-        if let languageSession {
-            return languageSession
+        if let existing = languageSessionBox as? LanguageModelSession {
+            return existing
         }
         let tools = makeFoundationTools()
         let session = LanguageModelSession(tools: tools, instructions: sessionInstructions)
-        languageSession = session
+        languageSessionBox = session
         budget.resetBaseline(instructions: sessionInstructions)
         publishContextUsage()
         return session
@@ -259,11 +256,7 @@ final class AgentRuntime: ObservableObject {
     #endif
 
     private func resetLanguageSession() {
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
-            languageSession = nil
-        }
-        #endif
+        languageSessionBox = nil
         budget = AgentContextBudget(windowTokens: budget.windowTokens)
         publishContextUsage()
     }
