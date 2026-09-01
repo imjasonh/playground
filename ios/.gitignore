@@ -5,6 +5,7 @@ T9Keyboard-Info.plist
 
 # Xcode / build artifacts
 DerivedData/
+.ci-derived-data/
 build/
 *.xcarchive
 *.ipa

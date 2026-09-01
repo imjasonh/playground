@@ -290,7 +290,8 @@ schemes:
         RideMonitorWidget: all
         RideMonitorWatch: all
     test:
-      gatherCoverageData: true
+      # Coverage collection slows simulator CI and isn't published anywhere.
+      gatherCoverageData: false
       targets:
         - PlaygroundTests
         - PlaygroundUITests

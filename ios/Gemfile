@@ -1,5 +1,5 @@
 source "https://rubygems.org"
 
-# Pin fastlane via bundler so local and CI runs agree. Run `bundle install`
-# once to generate Gemfile.lock, then commit it for fully reproducible builds.
+# Pin fastlane via bundler so local and CI runs agree. Gemfile.lock is
+# committed; re-run `bundle update fastlane` when you intentionally bump.
 gem "fastlane", "~> 2.222"
