@@ -34,37 +34,74 @@ export IOS_DERIVED_DATA_PATH="${IOS_DERIVED_DATA_PATH:-$repo_root/ios/.ci-derive
 mkdir -p "$IOS_DERIVED_DATA_PATH"
 
 # Pick a simulator that actually exists on this runner's Xcode (device names
-# change between Xcode versions), unless the caller pinned one. Boot it right
-# away so CoreSimulator overlaps xcodegen + bundle install.
+# change between Xcode versions), unless the caller pinned one. Prefer a
+# device that is already Booted so we don't fight a cold sibling with the
+# same name. Boot the chosen UDID right away so CoreSimulator overlaps
+# xcodegen + bundle install; Fastfile must target this same UDID.
 sim_boot_pid=""
 if [ -z "${IOS_SIM_DEVICE:-}" ] || [ -z "${IOS_SIM_UDID:-}" ]; then
-  if [ -n "${IOS_SIM_DEVICE:-}" ] && [ -z "${IOS_SIM_UDID:-}" ]; then
-    # Caller pinned a name; resolve that device's UDID rather than the first iPhone.
-    sim_line=$(
-      xcrun simctl list devices available \
-        | grep -F "${IOS_SIM_DEVICE} (" \
-        | head -1
+  # JSON listing is stable across Xcode versions and avoids ambiguous
+  # name→UDID mapping when several iPhones share a display name.
+  sim_json=$(xcrun simctl list devices available -j 2>/dev/null || true)
+  if [ -n "$sim_json" ]; then
+    pick=$(
+      printf '%s' "$sim_json" | jq -r --arg want "${IOS_SIM_DEVICE:-}" '
+        [
+          .devices
+          | to_entries[]
+          | select(.key | test("iOS|iPhone OS"))
+          | .value[]
+          | select(.isAvailable != false)
+          | select(.name | test("^iPhone"))
+          | select(($want | length) == 0 or .name == $want)
+          | {udid, name, state}
+        ]
+        | (map(select(.state == "Booted")) + .)
+        | .[0]
+        | if . then "\(.udid)\t\(.name)" else empty end
+      '
     )
-  else
-    sim_line=$(
-      xcrun simctl list devices available \
-        | grep -E '^[[:space:]]+iPhone' \
-        | head -1
-    )
+    if [ -n "$pick" ]; then
+      if [ -z "${IOS_SIM_UDID:-}" ]; then
+        IOS_SIM_UDID=${pick%%$'\t'*}
+        export IOS_SIM_UDID
+      fi
+      if [ -z "${IOS_SIM_DEVICE:-}" ]; then
+        IOS_SIM_DEVICE=${pick#*$'\t'}
+        export IOS_SIM_DEVICE
+      fi
+    fi
   fi
-  if [ -z "${IOS_SIM_DEVICE:-}" ]; then
-    IOS_SIM_DEVICE=$(
-      printf '%s\n' "$sim_line" \
-        | sed -E 's/^[[:space:]]+//; s/ \([0-9A-Fa-f-]{36}\).*//'
-    )
-    export IOS_SIM_DEVICE
-  fi
-  if [ -z "${IOS_SIM_UDID:-}" ]; then
-    IOS_SIM_UDID=$(
-      printf '%s\n' "$sim_line" \
-        | sed -nE 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/p'
-    )
-    export IOS_SIM_UDID
+
+  # Text-list fallback when jq/JSON is unavailable.
+  if [ -z "${IOS_SIM_DEVICE:-}" ] || [ -z "${IOS_SIM_UDID:-}" ]; then
+    if [ -n "${IOS_SIM_DEVICE:-}" ] && [ -z "${IOS_SIM_UDID:-}" ]; then
+      sim_line=$(
+        xcrun simctl list devices available \
+          | grep -F "${IOS_SIM_DEVICE} (" \
+          | head -1
+      )
+    else
+      sim_line=$(
+        xcrun simctl list devices available \
+          | grep -E '^[[:space:]]+iPhone' \
+          | head -1
+      )
+    fi
+    if [ -z "${IOS_SIM_DEVICE:-}" ]; then
+      IOS_SIM_DEVICE=$(
+        printf '%s\n' "$sim_line" \
+          | sed -E 's/^[[:space:]]+//; s/ \([0-9A-Fa-f-]{36}\).*//'
+      )
+      export IOS_SIM_DEVICE
+    fi
+    if [ -z "${IOS_SIM_UDID:-}" ]; then
+      IOS_SIM_UDID=$(
+        printf '%s\n' "$sim_line" \
+          | sed -nE 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/p'
+      )
+      export IOS_SIM_UDID
+    fi
   fi
 fi
 echo "Using simulator device: ${IOS_SIM_DEVICE:-<none found>} (${IOS_SIM_UDID:-no udid})"
@@ -88,7 +125,8 @@ for app in "${apps[@]}"; do
     set -euo pipefail
     cd "$app"
     xcodegen generate
-    bundle install
+    # setup-ruby already ran bundle install with the lockfile; skip when warm.
+    bundle check >/dev/null 2>&1 || bundle install
   ); then
     echo "${app}: project ready"
   else

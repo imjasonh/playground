@@ -124,12 +124,12 @@ platform :ios do
   desc "Run unit + UI tests on a simulator (no signing required)"
   lane :test do
     derived_data = ENV.fetch("IOS_DERIVED_DATA_PATH", "DerivedData")
-    run_tests(
+    # Prefer an explicit UDID from ios-ci.sh. Multiple devices can share a
+    # display name (e.g. two "iPhone 17 Pro" entries); `devices:` then picks a
+    # different one than we pre-booted and wastes the early simctl boot.
+    opts = {
       project: XCODEPROJ,
       scheme: APP_SCHEME,
-      # Device name is chosen at runtime by ios-ci.sh (falls back to a common
-      # one) so we don't hardcode a simulator that a given Xcode may not ship.
-      devices: [ENV.fetch("IOS_SIM_DEVICE", "iPhone 16")],
       derived_data_path: derived_data,
       # Coverage collection slows every XCTest host and isn't published by CI.
       code_coverage: false,
@@ -139,7 +139,14 @@ platform :ios do
       # (mach peer unload). Retry the failed test a couple of times before
       # failing the lane — unit tests still fail immediately on a real bug.
       number_of_retries: 2
-    )
+    }
+    udid = ENV["IOS_SIM_UDID"].to_s
+    if !udid.empty?
+      opts[:destination] = "platform=iOS Simulator,id=#{udid}"
+    else
+      opts[:devices] = [ENV.fetch("IOS_SIM_DEVICE", "iPhone 16")]
+    end
+    run_tests(opts)
   end
 
   desc "One-time / when adding an Apple app extension: ensure Bundle IDs exist, " \
