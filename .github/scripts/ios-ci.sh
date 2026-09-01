@@ -38,11 +38,20 @@ mkdir -p "$IOS_DERIVED_DATA_PATH"
 # away so CoreSimulator overlaps xcodegen + bundle install.
 sim_boot_pid=""
 if [ -z "${IOS_SIM_DEVICE:-}" ] || [ -z "${IOS_SIM_UDID:-}" ]; then
-  sim_line=$(
-    xcrun simctl list devices available \
-      | grep -E '^[[:space:]]+iPhone' \
-      | head -1
-  )
+  if [ -n "${IOS_SIM_DEVICE:-}" ] && [ -z "${IOS_SIM_UDID:-}" ]; then
+    # Caller pinned a name; resolve that device's UDID rather than the first iPhone.
+    sim_line=$(
+      xcrun simctl list devices available \
+        | grep -F "${IOS_SIM_DEVICE} (" \
+        | head -1
+    )
+  else
+    sim_line=$(
+      xcrun simctl list devices available \
+        | grep -E '^[[:space:]]+iPhone' \
+        | head -1
+    )
+  fi
   if [ -z "${IOS_SIM_DEVICE:-}" ]; then
     IOS_SIM_DEVICE=$(
       printf '%s\n' "$sim_line" \
