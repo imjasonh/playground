@@ -252,9 +252,7 @@ end
   like the current per-type discovery, so we don't pay macOS time on browser/Go/
   Rust-only PRs.
 - Cache bundler gems (`ruby/setup-ruby` + committed `ios/Gemfile.lock`) to
-  cut cold gem installs. Warm CoreSimulator while Homebrew installs XcodeGen,
-  then boot the destination simulator (by UDID) during setup so it overlaps
-  `xcodegen` / fastlane preamble. Skip unused coverage collection.
+  cut cold gem installs. Skip unused coverage collection during `fastlane test`.
 - The existing `test.yml` stays all-Linux; add iOS as a **separate job/workflow**
   on `macos-latest` rather than bolting it onto the Linux `test` job, so the
   single-runner Linux flow is unchanged.

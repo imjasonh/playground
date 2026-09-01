@@ -30,86 +30,17 @@ export FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT="${FASTLANE_XCODEBUILD_SETTINGS_TIME
 export FASTLANE_XCODEBUILD_SETTINGS_RETRIES="${FASTLANE_XCODEBUILD_SETTINGS_RETRIES:-10}"
 
 # Pick a simulator that actually exists on this runner's Xcode (device names
-# change between Xcode versions), unless the caller pinned one. Prefer a
-# device that is already Booted so we don't fight a cold sibling with the
-# same name. Boot the chosen UDID in the background so CoreSimulator overlaps
-# xcodegen + fastlane preamble; Fastfile must target this same UDID.
-sim_boot_pid=""
-if [ -z "${IOS_SIM_DEVICE:-}" ] || [ -z "${IOS_SIM_UDID:-}" ]; then
-  # JSON listing is stable across Xcode versions and avoids ambiguous
-  # name→UDID mapping when several iPhones share a display name.
-  sim_json=$(xcrun simctl list devices available -j 2>/dev/null || true)
-  if [ -n "$sim_json" ]; then
-    pick=$(
-      printf '%s' "$sim_json" | jq -r --arg want "${IOS_SIM_DEVICE:-}" '
-        [
-          .devices
-          | to_entries[]
-          | select(.key | test("iOS|iPhone OS"))
-          | .value[]
-          | select(.isAvailable != false)
-          | select(.name | test("^iPhone"))
-          | select(($want | length) == 0 or .name == $want)
-          | {udid, name, state}
-        ]
-        | (map(select(.state == "Booted")) + .)
-        | .[0]
-        | if . then "\(.udid)\t\(.name)" else empty end
-      '
-    )
-    if [ -n "$pick" ]; then
-      if [ -z "${IOS_SIM_UDID:-}" ]; then
-        IOS_SIM_UDID=${pick%%$'\t'*}
-        export IOS_SIM_UDID
-      fi
-      if [ -z "${IOS_SIM_DEVICE:-}" ]; then
-        IOS_SIM_DEVICE=${pick#*$'\t'}
-        export IOS_SIM_DEVICE
-      fi
-    fi
-  fi
-
-  # Text-list fallback when jq/JSON is unavailable.
-  if [ -z "${IOS_SIM_DEVICE:-}" ] || [ -z "${IOS_SIM_UDID:-}" ]; then
-    if [ -n "${IOS_SIM_DEVICE:-}" ] && [ -z "${IOS_SIM_UDID:-}" ]; then
-      sim_line=$(
-        xcrun simctl list devices available \
-          | grep -F "${IOS_SIM_DEVICE} (" \
-          | head -1
-      )
-    else
-      sim_line=$(
-        xcrun simctl list devices available \
-          | grep -E '^[[:space:]]+iPhone' \
-          | head -1
-      )
-    fi
-    if [ -z "${IOS_SIM_DEVICE:-}" ]; then
-      IOS_SIM_DEVICE=$(
-        printf '%s\n' "$sim_line" \
-          | sed -E 's/^[[:space:]]+//; s/ \([0-9A-Fa-f-]{36}\).*//'
-      )
-      export IOS_SIM_DEVICE
-    fi
-    if [ -z "${IOS_SIM_UDID:-}" ]; then
-      IOS_SIM_UDID=$(
-        printf '%s\n' "$sim_line" \
-          | sed -nE 's/.*\(([0-9A-Fa-f-]{36})\).*/\1/p'
-      )
-      export IOS_SIM_UDID
-    fi
-  fi
+# change between Xcode versions), unless the caller pinned one.
+if [ -z "${IOS_SIM_DEVICE:-}" ]; then
+  IOS_SIM_DEVICE=$(
+    xcrun simctl list devices available \
+      | grep -E '^[[:space:]]+iPhone' \
+      | head -1 \
+      | sed -E 's/ \(.*//; s/^[[:space:]]+//'
+  )
+  export IOS_SIM_DEVICE
 fi
-echo "Using simulator device: ${IOS_SIM_DEVICE:-<none found>} (${IOS_SIM_UDID:-no udid})"
-
-if [ -n "${IOS_SIM_UDID:-}" ]; then
-  # boot is idempotent when the device is already up; ignore "already booted".
-  xcrun simctl boot "$IOS_SIM_UDID" 2>/dev/null || true
-  # Do not wait here — let boot finish during xcodegen / fastlane preamble.
-  # Reap the background bootstatus at the end so we don't leave a stray job.
-  xcrun simctl bootstatus "$IOS_SIM_UDID" -b >/dev/null 2>&1 &
-  sim_boot_pid=$!
-fi
+echo "Using simulator device: ${IOS_SIM_DEVICE:-<none found>}"
 
 deploy="${DEPLOY:-false}"
 result=0
@@ -149,9 +80,5 @@ for app in "${apps[@]}"; do
     echo "::endgroup::"
   fi
 done
-
-if [ -n "${sim_boot_pid:-}" ]; then
-  wait "$sim_boot_pid" || true
-fi
 
 exit "$result"

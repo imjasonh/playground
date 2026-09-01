@@ -54,15 +54,8 @@ jobs:
           bundler-cache: true
           working-directory: ios
 
-      # Warm CoreSimulator while Homebrew installs XcodeGen. A cold `simctl
-      # list` otherwise burns ~10-15s at the start of ios-ci.sh, and booting
-      # the destination early overlaps the remaining setup.
-      - name: Install XcodeGen and warm CoreSimulator
-        run: |
-          brew install xcodegen &
-          brew_pid=$!
-          xcrun simctl list devices available >/dev/null
-          wait "$brew_pid"
+      - name: Install XcodeGen
+        run: brew install xcodegen
 
       # A push to main with signing secrets configured is the only case that
       # ships to TestFlight; everything else just builds and tests.
