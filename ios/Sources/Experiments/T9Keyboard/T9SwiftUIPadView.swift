@@ -5,6 +5,9 @@ import SwiftUI
 /// The system keyboard extension keeps a UIKit `T9PadView`; this view is used
 /// only inside the host app so XCUITest can open the experiment without hanging
 /// on a nested UIKit accessibility tree.
+///
+/// Keys stay dark on purpose: they mirror a phone keypad. The surrounding demo
+/// page uses semantic grouped backgrounds so Light/Dark Mode still work.
 struct T9SwiftUIPadView: View {
     @ObservedObject var model: T9DemoModel
 
@@ -18,8 +21,17 @@ struct T9SwiftUIPadView: View {
                 }
             }
         }
-        .padding(8)
-        .background(Color(white: 0.12))
+        .padding(10)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(red: 0.14, green: 0.14, blue: 0.16),
+                    Color(red: 0.08, green: 0.08, blue: 0.10),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        )
     }
 
     private func keyButton(_ key: T9PadKey) -> some View {
@@ -34,13 +46,15 @@ struct T9SwiftUIPadView: View {
                     .font(.title2.weight(.semibold))
                 Text(subtitle)
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(Color.white.opacity(0.75))
+                    .foregroundStyle(Color.white.opacity(0.72))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color(white: emphasized ? 0.22 : 0.28))
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(emphasized ? 0.14 : 0.20))
             )
         }
         .buttonStyle(.plain)

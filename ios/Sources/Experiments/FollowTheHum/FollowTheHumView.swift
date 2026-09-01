@@ -3,6 +3,8 @@ import SwiftUI
 /// Follow the Hum — a nearby spot is hidden; a spatial hum in your AirPods
 /// steers you until you find it. The phone screen is secondary: listen and walk.
 struct FollowTheHumView: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @ScaledMetric(relativeTo: .largeTitle) private var heroSymbolSize: CGFloat = 56
     @StateObject private var session = HumHuntSession()
 
     var body: some View {
@@ -32,10 +34,10 @@ struct FollowTheHumView: View {
     }
 
     private var hero: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             Image(systemName: session.isFound ? "checkmark.seal.fill" : "waveform.circle.fill")
-                .font(.largeTitle)
-                .imageScale(.large)
+                .font(.system(size: heroSymbolSize, weight: .regular))
+                .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(session.isFound ? Color.green : Color.accentColor)
                 .accessibilityHidden(true)
 
@@ -48,22 +50,30 @@ struct FollowTheHumView: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
+        .padding(.top, 8)
     }
 
     private var compassHint: some View {
         Group {
             if session.isHunting, let relative = session.relativeBearingDegrees {
-                VStack(spacing: 6) {
+                VStack(spacing: 10) {
                     Text(steeringLabel(relative))
                         .font(.headline)
                     GeometryReader { geo in
                         let width = geo.size.width
                         let x = width / 2 + CGFloat(sin(relative * .pi / 180)) * (width / 2 - 16)
-                        Circle()
-                            .fill(Color.accentColor)
-                            .frame(width: 18, height: 18)
-                            .position(x: x, y: 12)
-                            .animation(.easeOut(duration: 0.15), value: relative)
+                        ZStack {
+                            Capsule()
+                                .fill(Color.primary.opacity(0.08))
+                                .frame(height: 6)
+                                .position(x: width / 2, y: 12)
+                            Circle()
+                                .fill(Color.accentColor)
+                                .frame(width: 18, height: 18)
+                                .shadow(color: Color.accentColor.opacity(0.35), radius: 4, y: 1)
+                                .position(x: x, y: 12)
+                                .animation(.easeOut(duration: 0.15), value: relative)
+                        }
                     }
                     .frame(height: 24)
                     .accessibilityElement()
@@ -73,7 +83,7 @@ struct FollowTheHumView: View {
                 }
                 .padding()
                 .frame(maxWidth: .infinity)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
         }
     }
@@ -88,6 +98,7 @@ struct FollowTheHumView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .accessibilityIdentifier("stopHumHuntButton")
             } else {
                 Button {
@@ -97,21 +108,29 @@ struct FollowTheHumView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
                 .accessibilityIdentifier("startHumHuntButton")
             }
         }
     }
 
     private var tips: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("AirPods in ears — the hum follows your head, not the phone", systemImage: "headphones")
-            Label("At start, hold the phone facing the way you're looking (locks north)", systemImage: "location.north.line")
-            Label("Then pocket the phone; turn until the hum is centered and walk", systemImage: "ear")
-            Label("It brightens and clears as you get closer", systemImage: "sparkles")
+        VStack(alignment: .leading, spacing: 10) {
+            tipRow("headphones", "AirPods in ears — the hum follows your head, not the phone")
+            tipRow("location.north.line", "At start, hold the phone facing the way you're looking (locks north)")
+            tipRow("ear", "Then pocket the phone; turn until the hum is centered and walk")
+            tipRow("sparkles", "It brightens and clears as you get closer")
         }
-        .font(.footnote)
-        .foregroundStyle(.secondary)
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func tipRow(_ symbol: String, _ text: String) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .labelStyle(.titleAndIcon)
     }
 
     private var disclaimer: some View {
@@ -121,11 +140,14 @@ struct FollowTheHumView: View {
             .multilineTextAlignment(.leading)
     }
 
+    /// Soft teal wash that tracks Light/Dark Mode instead of a fixed cream gradient.
     private var atmosphere: some View {
-        LinearGradient(
+        let deep = colorScheme == .dark
+        return LinearGradient(
             colors: [
-                Color(red: 0.93, green: 0.96, blue: 0.94),
-                Color(red: 0.86, green: 0.91, blue: 0.95),
+                Color(uiColor: .systemBackground),
+                Color.accentColor.opacity(deep ? 0.18 : 0.10),
+                Color.teal.opacity(deep ? 0.12 : 0.08),
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
