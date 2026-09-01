@@ -45,7 +45,7 @@ final class DeviceAgentTests: XCTestCase {
         let runtime = AgentRuntime()
         runtime.refreshModelStatus()
         let before = runtime.transcript.count
-        await runtime.send(prompt: "list attachments", source: .chat)
+        await runtime.send(prompt: "open https://example.com", source: .chat)
         XCTAssertGreaterThan(runtime.transcript.count, before)
 
         if !runtime.isModelAvailable {
@@ -60,12 +60,11 @@ final class DeviceAgentTests: XCTestCase {
 
     @MainActor
     func testDeepLinkParsesPrompt() {
-        let url = URL(string: "playground://device-agent?prompt=hello%20world&voice=1&mode=browse")!
+        let url = URL(string: "playground://device-agent?prompt=hello%20world&voice=1")!
         let inbox = AgentInbox.shared
         XCTAssertTrue(inbox.handleOpenURL(url))
         let run = inbox.consumePendingRun()
         XCTAssertEqual(run?.prompt, "hello world")
-        XCTAssertEqual(run?.mode, .browse)
         XCTAssertEqual(run?.preferVoice, true)
         XCTAssertEqual(run?.source, .deepLink)
     }
@@ -76,82 +75,19 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertFalse(AgentInbox.shared.handleOpenURL(url))
     }
 
-    @MainActor
-    func testSanitizeAndImportRoundTrip() throws {
-        let inbox = AgentInbox.shared
-        let temp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("device-agent-test-\(UUID().uuidString).txt")
-        try "hello agent".write(to: temp, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: temp) }
-
-        let attachment = try inbox.importFile(from: temp, preferredName: "note.txt")
-        XCTAssertEqual(attachment.filename, "note.txt")
-        XCTAssertGreaterThan(attachment.byteCount, 0)
-        let url = try XCTUnwrap(inbox.fileURL(for: attachment))
-        let text = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertEqual(text, "hello agent")
-
-        let listed = AgentToolExecutor.listAttachments(
-            context: AgentToolContext(inbox: inbox)
-        )
-        XCTAssertTrue(listed.contains("note.txt"))
-    }
-
     func testPermissionDomainPrePromptIsNonEmpty() {
         for domain in AgentPermissionDomain.allCases {
             XCTAssertFalse(domain.prePrompt.isEmpty)
             XCTAssertFalse(domain.title.isEmpty)
         }
-    }
-
-    @MainActor
-    func testWatchDueAndAutomationNudgeHeuristics() throws {
-        let suiteName = "device-agent-watch-tests-\(UUID().uuidString)"
-        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { suite.removePersistentDomain(forName: suiteName) }
-        let store = AgentWatchStore(userDefaults: suite)
-
-        XCTAssertFalse(store.needsAutomationNudge)
-        store.addWatch(title: "PR", prompt: "Any new review comments?", intervalHours: 24)
-        XCTAssertTrue(store.needsAutomationNudge)
-        XCTAssertEqual(store.dueWatches().count, 1)
-
-        store.userMarkedAutomationConfigured = true
-        XCTAssertTrue(store.isAutomaticCheckStale)
-        XCTAssertTrue(store.needsAutomationNudge)
-
-        let due = store.recordAutomaticCheck()
-        XCTAssertEqual(due.count, 1)
-        XCTAssertFalse(store.isAutomaticCheckStale)
-        XCTAssertFalse(store.needsAutomationNudge)
-        XCTAssertTrue(store.dueWatches().isEmpty)
-
-        let prompt = store.makeCheckPrompt(for: due)
-        XCTAssertTrue(prompt.contains("PR"))
-        XCTAssertTrue(prompt.contains("review comments"))
-    }
-
-    func testWatchIntervalDueMath() {
-        let now = Date()
-        var watch = AgentWatch(
-            title: "x",
-            prompt: "y",
-            intervalHours: 2,
-            lastCheckedAt: now.addingTimeInterval(-7200),
-            createdAt: now
-        )
-        XCTAssertTrue(watch.isDue(at: now))
-        watch.lastCheckedAt = now.addingTimeInterval(-3600)
-        XCTAssertFalse(watch.isDue(at: now))
-        watch.isPaused = true
-        XCTAssertFalse(watch.isDue(at: now))
+        XCTAssertEqual(AgentPermissionDomain.allCases.count, 2)
     }
 
     @MainActor
     func testConversationDumpIncludesHiddenToolResults() throws {
         let runtime = AgentRuntime()
-        runtime.appendToolCall(name: "searchContacts", arguments: "Mom")
-        runtime.appendToolResult(name: "searchContacts", result: "Mom <mom@example.com>")
+        runtime.appendToolCall(name: "browserSnapshot", arguments: "max=3500")
+        runtime.appendToolResult(name: "browserSnapshot", result: "title: Example\ntext:\nHello")
 
         let visible = runtime.transcript.filter(\.isVisibleInChat)
         XCTAssertEqual(
@@ -163,7 +99,7 @@ final class DeviceAgentTests: XCTestCase {
         )
         XCTAssertTrue(visible.contains { entry in
             if case .toolCall(let name) = entry.kind {
-                return name == "searchContacts" && entry.text == "Invoking searchContacts…"
+                return name == "browserSnapshot" && entry.text == "Invoking browserSnapshot…"
             }
             return false
         })
@@ -171,16 +107,16 @@ final class DeviceAgentTests: XCTestCase {
             if case .toolResult = entry.kind { return true }
             return false
         })
-        // Help text may already be in the transcript; ensure a toolCall is visible and a toolResult is not.
         XCTAssertTrue(runtime.transcript.contains { entry in
             if case .toolResult = entry.kind { return !entry.isVisibleInChat }
             return false
         })
 
         let dump = runtime.makeConversationDump()
+        XCTAssertEqual(dump.mode, "browser")
         XCTAssertEqual(dump.entries.count, runtime.transcript.count)
         let result = try XCTUnwrap(dump.entries.first { $0.kind == "toolResult" })
-        XCTAssertEqual(result.debugDetail, "Mom <mom@example.com>")
+        XCTAssertEqual(result.debugDetail, "title: Example\ntext:\nHello")
         XCTAssertEqual(dump.browserReplay, runtime.context.browser.replay)
         XCTAssertEqual(dump.extractionDiagnostics, runtime.extractionDiagnostics)
         let jsonl = try runtime.conversationDumpJSONLData()
@@ -278,6 +214,10 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertTrue(pageCard.contains("Week 1: Chiefs vs Ravens"))
         XCTAssertTrue(enriched.contains("extractedFindings"))
         XCTAssertTrue(enriched.contains("Week 1: Chiefs vs Ravens"))
+        // Model-facing payload must stay slim (no full page text dump).
+        XCTAssertFalse(enriched.contains("Hello from the page with enough text"))
+        XCTAssertTrue(enriched.contains("Page text omitted"))
+        XCTAssertGreaterThan(runtime.contextUsage.windowTokens, 0)
         let dump = runtime.makeConversationDump()
         XCTAssertEqual(dump.browserReplay.count, 2)
         XCTAssertEqual(dump.browserReplay.first?.action, "open")
@@ -370,6 +310,9 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertEqual(AgentBrowserSession.jsString("a'b"), "'a\\'b'")
         XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("__deviceAgent"))
         XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("snapshot"))
+        XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("__version === 3"))
+        XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("clickText"))
+        XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("find:"))
     }
 
     @MainActor
@@ -382,5 +325,188 @@ final class DeviceAgentTests: XCTestCase {
             try AgentBrowserSession.requireOK(#"{"ok":true}"#, action: "click"),
             "click ok"
         )
+        XCTAssertEqual(
+            try AgentBrowserSession.requireOK(
+                #"{"ok":true,"detail":"clicked link \"Home\" (ref=3)"}"#,
+                action: "clickText"
+            ),
+            #"clicked link "Home" (ref=3)"#
+        )
+    }
+
+    func testBrowserFindAndGetFormatting() {
+        let find = AgentBrowserSession.formatFindPayload(
+            #"{"query":"bike","matches":["[3] link \"E-bike deals\"","[8] link \"Bike shop\""]}"#
+        )
+        XCTAssertTrue(find.contains("matches (2):"))
+        XCTAssertTrue(find.contains("[3] link"))
+        XCTAssertEqual(
+            AgentBrowserSession.formatFindPayload(#"{"query":"zzz","matches":[]}"#),
+            #"No matches for "zzz"."#
+        )
+
+        let get = AgentBrowserSession.formatGetPayload(
+            #"{"ok":true,"ref":"3","kind":"link","label":"Home","href":"https://example.com/","value":""}"#
+        )
+        XCTAssertTrue(get.contains("ref=3"))
+        XCTAssertTrue(get.contains("href=https://example.com/"))
+        XCTAssertEqual(
+            AgentBrowserSession.formatGetPayload(#"{"ok":false,"error":"unknown ref 9"}"#),
+            "get failed: unknown ref 9"
+        )
+    }
+
+    func testContextBudgetEstimatesAndTruncates() {
+        XCTAssertEqual(AgentContextBudget.estimateTokens(""), 0)
+        XCTAssertEqual(AgentContextBudget.estimateTokens("abc"), 1)
+        XCTAssertEqual(AgentContextBudget.estimateTokens(String(repeating: "a", count: 12)), 4)
+
+        var budget = AgentContextBudget()
+        budget.resetBaseline(instructions: String(repeating: "i", count: 300), toolsReserveTokens: 900)
+        XCTAssertGreaterThan(budget.fractionUsed, 0)
+        XCTAssertLessThan(budget.fractionUsed, AgentContextBudget.compactThreshold)
+        XCTAssertFalse(budget.needsCompact)
+
+        budget.addTokens(2_500)
+        XCTAssertTrue(budget.needsCompact)
+        XCTAssertGreaterThanOrEqual(budget.percentUsed, 72)
+
+        let truncated = AgentContextBudget.truncateToChars(String(repeating: "x", count: 100), maxChars: 20)
+        XCTAssertEqual(truncated.count, 20)
+        XCTAssertTrue(truncated.hasSuffix("…"))
+
+        let slim = AgentContextBudget.modelFacingSnapshot(
+            title: "Example",
+            url: "https://example.com",
+            elements: (1...50).map { "[\($0)] link \"Item \($0)\"" },
+            headings: ["Hello"],
+            extractedFindings: ["Fact one", "Fact two"],
+            maxChars: 800
+        )
+        XCTAssertTrue(slim.contains("extractedFindings"))
+        XCTAssertTrue(slim.contains("Fact one"))
+        XCTAssertTrue(slim.contains("showing 40"))
+        XCTAssertLessThanOrEqual(slim.count, 800)
+        // 40 element lines push past 800 chars, so the footer is truncated.
+        XCTAssertTrue(slim.hasSuffix("…"))
+        XCTAssertFalse(slim.contains("Page text omitted"))
+
+        let roomy = AgentContextBudget.modelFacingSnapshot(
+            title: "Example",
+            url: "https://example.com",
+            elements: ["[1] link \"Home\""],
+            headings: ["Hello"],
+            extractedFindings: ["Fact one"],
+            maxChars: 2_000
+        )
+        XCTAssertTrue(roomy.contains("Page text omitted"))
+
+        let carry = AgentContextBudget.compactionCarryOver(
+            url: "https://example.com",
+            title: "Example",
+            findings: ["A", "B"],
+            findingsURL: "https://example.com",
+            recentUserPrompts: ["first", "second", "third", "fourth"]
+        )
+        XCTAssertTrue(carry.contains("https://example.com"))
+        XCTAssertTrue(carry.contains("• A"))
+        XCTAssertTrue(carry.contains("fourth"))
+        XCTAssertFalse(carry.contains("- first"))
+
+        let stale = AgentContextBudget.compactionCarryOver(
+            url: "https://example.com/b",
+            title: "B",
+            findings: ["Old page fact"],
+            findingsURL: "https://example.com/a",
+            recentUserPrompts: ["what is on this page?"]
+        )
+        XCTAssertTrue(stale.contains("https://example.com/b"))
+        XCTAssertFalse(stale.contains("Old page fact"))
+        XCTAssertFalse(stale.contains("Latest page findings"))
+    }
+
+    func testContextBudgetSnapshotCharBudgetShrinksWhenFull() {
+        var budget = AgentContextBudget()
+        budget.resetBaseline(instructions: "short", toolsReserveTokens: 100)
+        let roomy = budget.snapshotTextCharBudget()
+        XCTAssertGreaterThanOrEqual(roomy, 400)
+
+        budget.addTokens(3_200)
+        let tight = budget.snapshotTextCharBudget()
+        XCTAssertLessThan(tight, roomy)
+        XCTAssertGreaterThanOrEqual(tight, 400)
+        XCTAssertTrue(budget.isNearHardStop || budget.needsCompact)
+    }
+
+    @MainActor
+    func testBrowserOpenClearsCachedPageFindings() async throws {
+        AgentPageExtractor.testExtractionOverride = { _ in ["From page A"] }
+        defer { AgentPageExtractor.testExtractionOverride = nil }
+
+        let runtime = AgentRuntime()
+        runtime.lastUserPrompt = "facts?"
+        runtime.context.browser.record(
+            action: "snapshot",
+            detail: "1",
+            url: "https://example.com/a",
+            title: "A",
+            pageText: "Hello A",
+            elements: [#"[1] link "Home""#],
+            headings: ["A"],
+            listItems: []
+        )
+        _ = try await runtime.appendToolResultAndEnrich(
+            name: "browserSnapshot",
+            result: "title: A\ntext:\nHello A"
+        )
+        XCTAssertEqual(runtime.cachedPageFindings, ["From page A"])
+        XCTAssertEqual(runtime.cachedPageFindingsURL, "https://example.com/a")
+
+        _ = try await runtime.appendToolResultAndEnrich(
+            name: "browserOpen",
+            result: "Loaded https://example.com/b in the in-app browser. Call browserSnapshot next."
+        )
+        XCTAssertTrue(runtime.cachedPageFindings.isEmpty)
+        XCTAssertNil(runtime.cachedPageFindingsURL)
+    }
+
+    func testExceededContextWindowDetection() {
+        let err = NSError(
+            domain: "FoundationModels.LanguageModelSession.GenerationError",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "Exceeded model context window size"]
+        )
+        XCTAssertTrue(AgentRuntime.isExceededContextWindow(err))
+        XCTAssertFalse(AgentRuntime.isExceededContextWindow(
+            NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "network down"])
+        ))
+    }
+
+    @MainActor
+    func testRuntimePublishesContextUsage() async throws {
+        let runtime = AgentRuntime()
+        XCTAssertEqual(runtime.contextUsage.windowTokens, AgentContextBudget.defaultWindowTokens)
+        XCTAssertGreaterThanOrEqual(runtime.contextUsage.percentUsed, 0)
+
+        AgentPageExtractor.testExtractionOverride = { _ in ["Bullet"] }
+        defer { AgentPageExtractor.testExtractionOverride = nil }
+        runtime.lastUserPrompt = "hi"
+        runtime.context.browser.record(
+            action: "snapshot",
+            detail: "1",
+            url: "https://example.com",
+            title: "Example",
+            pageText: "Hello",
+            elements: [#"[1] link "Home""#],
+            headings: ["Example"],
+            listItems: []
+        )
+        let before = runtime.contextUsage.usedTokens
+        _ = try await runtime.appendToolResultAndEnrich(
+            name: "browserSnapshot",
+            result: "title: Example\ntext:\nHello"
+        )
+        XCTAssertGreaterThan(runtime.contextUsage.usedTokens, before)
+        XCTAssertFalse(runtime.contextUsage.accessibilityLabel.isEmpty)
     }
 }

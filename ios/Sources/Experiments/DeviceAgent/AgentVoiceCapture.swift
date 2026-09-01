@@ -86,7 +86,7 @@ final class AgentVoiceCapture: ObservableObject {
                 if let result {
                     self.transcript = result.bestTranscription.formattedString
                     if result.isFinal {
-                        self.statusMessage = "Voice ready — edit or send"
+                        self.statusMessage = "Voice ready. Edit or send"
                         self.stopEngineOnly()
                     }
                 }
@@ -107,7 +107,7 @@ final class AgentVoiceCapture: ObservableObject {
         request = nil
         isRecording = false
         if !transcript.isEmpty {
-            statusMessage = "Voice ready — edit or send"
+            statusMessage = "Voice ready. Edit or send"
         } else if lastError == nil {
             statusMessage = "Voice idle"
         }

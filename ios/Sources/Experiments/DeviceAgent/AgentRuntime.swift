@@ -4,36 +4,50 @@ import Foundation
 import FoundationModels
 #endif
 
-/// Runs prompts through on-device Foundation Models + tools. Unavailable without
-/// Apple Intelligence (iOS 26+ with the model ready).
+/// Runs prompts through on-device Foundation Models + in-app browser tools.
+/// Unavailable without Apple Intelligence (iOS 26+ with the model ready).
 @MainActor
 final class AgentRuntime: ObservableObject {
     @Published var transcript: [AgentTranscriptEntry] = []
     @Published var isRunning = false
     @Published private(set) var modelGate: AgentModelGate = .unsupportedPlatform
+    /// How full the on-device model context window is (0...1).
+    @Published private(set) var contextUsage = AgentContextUsage.empty
 
     var isModelAvailable: Bool { modelGate.isAvailable }
     var modelStatusText: String { modelGate.detail }
 
-    /// Latest user prompt — used to keep page findings relevant to the question.
+    /// Latest user prompt. Page extraction stays tied to this question.
     var lastUserPrompt: String = ""
     /// AFM page-extraction failures recorded for conversation export / iteration.
     private(set) var extractionDiagnostics: [AgentPageExtractionDiagnostic] = []
 
     let context: AgentToolContext
 
+    private var budget = AgentContextBudget()
+    private var lastPageFindings: [String] = []
+    /// URL the cached findings were extracted from. Dropped on navigation mismatch.
+    private var lastPageFindingsURL: String?
+    private var recentUserPrompts: [String] = []
+    private var carryOverNotes: String = ""
+    private var didCompactThisSession = false
+    /// Holds `LanguageModelSession` when FoundationModels is linked (typed via helpers).
+    private var languageSessionBox: Any?
+
     init(context: AgentToolContext? = nil) {
         self.context = context ?? AgentToolContext()
         refreshModelStatus()
         if isModelAvailable {
-            appendSystem(AgentToolExecutor.helpText(mode: self.context.mode))
+            appendSystem(AgentToolExecutor.helpText())
         }
+        publishContextUsage()
     }
 
     func refreshModelStatus() {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             modelGate = Self.gate(for: SystemLanguageModel.default.availability)
+            refreshWindowSizeFromModel()
             return
         }
         #endif
@@ -71,15 +85,43 @@ final class AgentRuntime: ObservableObject {
             return .other("Apple Intelligence isn’t available on this device.")
         }
     }
+
+    @available(iOS 26.0, *)
+    private func refreshWindowSizeFromModel() {
+        // contextSize is available on newer SDKs (back-deployed). Fall back to 4096.
+        let model = SystemLanguageModel.default
+        if let size = Self.readContextSize(from: model), size > 0 {
+            budget.windowTokens = size
+            publishContextUsage()
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private static func readContextSize(from model: SystemLanguageModel) -> Int? {
+        // Avoid a hard dependency on iOS 26.4 SDK symbols in older toolchains.
+        let mirror = Mirror(reflecting: model)
+        for child in mirror.children {
+            if child.label == "contextSize", let value = child.value as? Int {
+                return value
+            }
+        }
+        return nil
+    }
     #endif
 
     func clearTranscript() {
         transcript.removeAll()
         extractionDiagnostics.removeAll()
         context.browser.clearReplay()
+        clearPageFindings()
+        recentUserPrompts = []
+        carryOverNotes = ""
+        didCompactThisSession = false
+        resetLanguageSession()
         if isModelAvailable {
-            appendSystem(AgentToolExecutor.helpText(mode: context.mode))
+            appendSystem(AgentToolExecutor.helpText())
         }
+        publishContextUsage()
     }
 
     func send(prompt: String, source: AgentRunSource) async {
@@ -97,6 +139,10 @@ final class AgentRuntime: ObservableObject {
         defer { isRunning = false }
 
         lastUserPrompt = trimmed
+        recentUserPrompts.append(trimmed)
+        if recentUserPrompts.count > 8 {
+            recentUserPrompts.removeFirst(recentUserPrompts.count - 8)
+        }
         append(.user, text: trimmed, sourceNote: source)
 
         do {
@@ -110,71 +156,169 @@ final class AgentRuntime: ObservableObject {
             try await runFoundationModels(prompt: trimmed)
             #endif
         } catch {
+            if Self.isExceededContextWindow(error) {
+                // Last-resort recovery: compact and retry once.
+                compactLanguageSession(reason: "Model context filled; compacted and retrying.")
+                do {
+                    #if canImport(FoundationModels)
+                    if #available(iOS 26.0, *) {
+                        try await runFoundationModels(prompt: trimmed, isRetryAfterCompact: true)
+                        return
+                    }
+                    #endif
+                } catch {
+                    append(.assistant, text: "Couldn’t finish after compacting context: \(error.localizedDescription)")
+                    return
+                }
+            }
             append(.assistant, text: error.localizedDescription)
         }
     }
 
     #if canImport(FoundationModels)
     @available(iOS 26.0, *)
-    private func runFoundationModels(prompt: String) async throws {
+    private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
         refreshModelStatus()
         guard isModelAvailable else {
             append(.system, text: modelStatusText)
             return
         }
 
-        let tools = makeFoundationTools()
-        let session = LanguageModelSession(tools: tools, instructions: instructions)
+        if !isRetryAfterCompact, budget.needsCompact {
+            compactLanguageSession(reason: "Trimmed model context to leave room for this turn.")
+        }
+
+        let session = ensureLanguageSession()
+        budget.addText(prompt)
+        publishContextUsage()
+
         let response = try await session.respond(to: prompt)
         let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        budget.addText(text)
+        publishContextUsage()
         append(.assistant, text: text.isEmpty ? "(Empty model response.)" : text)
+
+        if budget.needsCompact {
+            compactLanguageSession(reason: "Trimmed model context after that reply.")
+        }
     }
 
     @available(iOS 26.0, *)
-    private var instructions: String {
+    private func ensureLanguageSession() -> LanguageModelSession {
+        if let existing = languageSessionBox as? LanguageModelSession {
+            return existing
+        }
+        let tools = makeFoundationTools()
+        let session = LanguageModelSession(tools: tools, instructions: sessionInstructions)
+        languageSessionBox = session
+        budget.resetBaseline(instructions: sessionInstructions)
+        publishContextUsage()
+        return session
+    }
+
+    @available(iOS 26.0, *)
+    private var sessionInstructions: String {
+        var body = baseInstructions
+        if !carryOverNotes.isEmpty {
+            body += "\n\n" + carryOverNotes
+        }
+        return body
+    }
+
+    @available(iOS 26.0, *)
+    private var baseInstructions: String {
         """
-        You are Device Agent inside the Playground iOS app.
-        Use tools to act on the phone. Request only what you need.
-        For calendar, SMS, and email drafts, tools will ask the user to confirm.
-        Prefer listAttachments / readTextAttachment for files the user shared.
-        Use the in-app browser for web questions: browserOpen (only if no useful page is open) → browserSnapshot → optional browserClick / browserType → browserSnapshot again.
-        browserSnapshot returns raw scrape plus extractedFindings (Foundation Model bullets from the page). Prefer those bullets for your answer; dig with click/type only if needed.
+        You are Device Agent inside the Playground iOS app. Your only job is driving the in-app browser.
+        Prefer cheap tools before another full browserSnapshot:
+        - browserFind(query) to list matching controls (tiny)
+        - browserClickText(text) to click by visible label without a ref
+        - browserGet(ref) for one element's href/value/label
+        - browserScroll(up|down|top|bottom|ref) to move the viewport
+        - browserSelect(ref, option) for <select> controls
+        Use browserOpen only if no useful page is open. Use browserSnapshot when you need extractedFindings or a fresh element map.
+        browserSnapshot returns extractedFindings plus interactive element refs (page text omitted). Prefer extractedFindings for answers.
         Your final reply must be short bullet points from the page that answer the user question. Do not summarize the chat transcript.
         Keep the same browser tab for follow-ups unless they ask for a different site.
-        Use openURL only when the user wants Safari or another system handler.
-        Keep final answers short. Mode is \(context.mode.title).
+        Keep final answers short. Prefer one snapshot per turn when possible.
+        After browserOpen or browserBack, call browserSnapshot again before trusting prior findings.
         """
     }
 
     @available(iOS 26.0, *)
     private func makeFoundationTools() -> [any Tool] {
-        var tools: [any Tool] = [
-            ListAttachmentsFMTool(runtime: self),
-            ReadTextAttachmentFMTool(runtime: self),
+        [
             GetDateTimeFMTool(runtime: self),
-            OpenURLFMTool(runtime: self),
-            SearchContactsFMTool(runtime: self),
-            GetLocationFMTool(runtime: self),
-            OpenMapsFMTool(runtime: self),
             BrowserOpenFMTool(runtime: self),
             BrowserReadFMTool(runtime: self),
             BrowserSnapshotFMTool(runtime: self),
+            BrowserFindFMTool(runtime: self),
             BrowserClickFMTool(runtime: self),
+            BrowserClickTextFMTool(runtime: self),
             BrowserTypeFMTool(runtime: self),
+            BrowserSelectFMTool(runtime: self),
+            BrowserGetFMTool(runtime: self),
+            BrowserScrollFMTool(runtime: self),
             BrowserBackFMTool(runtime: self),
         ]
-        if context.mode == .act {
-            tools.append(CreateEventFMTool(runtime: self))
-            tools.append(DraftSMSFMTool(runtime: self))
-            tools.append(DraftEmailFMTool(runtime: self))
-        }
-        return tools
     }
     #else
-    private func runFoundationModels(prompt: String) async throws {
+    private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
+        _ = isRetryAfterCompact
         append(.system, text: modelStatusText)
     }
     #endif
+
+    private func resetLanguageSession() {
+        languageSessionBox = nil
+        budget = AgentContextBudget(windowTokens: budget.windowTokens)
+        publishContextUsage()
+    }
+
+    private func compactLanguageSession(reason: String) {
+        dropStalePageFindings()
+        let currentURL = context.browser.url?.absoluteString ?? context.browserURL?.absoluteString
+        carryOverNotes = AgentContextBudget.compactionCarryOver(
+            url: currentURL,
+            title: context.browser.title.isEmpty ? context.browserTitle : context.browser.title,
+            findings: lastPageFindings,
+            findingsURL: lastPageFindingsURL,
+            recentUserPrompts: recentUserPrompts
+        )
+        didCompactThisSession = true
+        resetLanguageSession()
+        appendSystem(reason)
+        publishContextUsage()
+    }
+
+    private func clearPageFindings() {
+        lastPageFindings = []
+        lastPageFindingsURL = nil
+    }
+
+    /// Cached AFM findings for the open page (empty after navigate / failed extract).
+    var cachedPageFindings: [String] { lastPageFindings }
+
+    /// URL the cached findings were taken from, if any.
+    var cachedPageFindingsURL: String? { lastPageFindingsURL }
+
+    /// Drops cached findings when the in-app browser left the page they came from.
+    private func dropStalePageFindings() {
+        let current = context.browser.url?.absoluteString ?? context.browserURL?.absoluteString
+        guard let bound = lastPageFindingsURL else {
+            if !lastPageFindings.isEmpty {
+                clearPageFindings()
+            }
+            return
+        }
+        if bound != current {
+            clearPageFindings()
+        }
+    }
+
+    /// Snapshot scrape char budget for the current remaining context.
+    var snapshotTextCharBudget: Int {
+        budget.snapshotTextCharBudget()
+    }
 
     func appendToolCall(name: String, arguments: String) {
         let detail = arguments.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -185,6 +329,8 @@ final class AgentRuntime: ObservableObject {
                 debugDetail: detail.isEmpty ? nil : detail
             )
         )
+        budget.addText(name + detail)
+        publishContextUsage()
     }
 
     func appendToolResult(name: String, result: String) {
@@ -197,19 +343,35 @@ final class AgentRuntime: ObservableObject {
         )
     }
 
-    /// Logs the tool result, runs Foundation Model extraction for snapshots, and returns
-    /// an enriched payload the agent session can use (raw scrape + extractedFindings).
-    /// Snapshot extraction failures are visible in chat and fail the tool call (no heuristic fallback).
+    /// Logs the full tool result for export, runs page extraction for snapshots, and returns
+    /// a slim payload for the LanguageModelSession so we stay under the context window.
     func appendToolResultAndEnrich(name: String, result: String) async throws -> String {
         appendToolResult(name: name, result: result)
-        guard name == "browserSnapshot" else { return result }
+
+        if name == "browserOpen" || name == "browserBack" {
+            // Navigation invalidates prior page findings (carry-over must not reuse them).
+            clearPageFindings()
+        }
+
+        let maxChars = budget.modelToolResultCharBudget()
+        guard name == "browserSnapshot" else {
+            let slim = AgentContextBudget.truncateToChars(result, maxChars: maxChars)
+            budget.addText(slim)
+            publishContextUsage()
+            return slim
+        }
 
         let input = pageExtractionInput(fromSnapshotResult: result)
         let title = input.title
         let url = input.url
+        let event = context.browser.replay.last(where: { $0.action == "snapshot" })
+        let elements = event?.elements ?? []
+        let headings = event?.headings ?? input.headings
 
         do {
             let bullets = try await AgentPageExtractor.extract(from: input)
+            lastPageFindings = bullets
+            lastPageFindingsURL = url.isEmpty ? nil : url
             let findings = AgentPageExtractor.formatFindings(title: title, url: url, bullets: bullets)
             transcript.append(
                 AgentTranscriptEntry(
@@ -218,14 +380,19 @@ final class AgentRuntime: ObservableObject {
                     debugDetail: bullets.joined(separator: "\n")
                 )
             )
-            let extracted = bullets.map { "• \($0)" }.joined(separator: "\n")
-            return """
-            \(result)
-
-            extractedFindings (relevant to user question):
-            \(extracted)
-            """
+            let slim = AgentContextBudget.modelFacingSnapshot(
+                title: title,
+                url: url,
+                elements: elements,
+                headings: headings,
+                extractedFindings: bullets,
+                maxChars: budget.modelToolResultCharBudget()
+            )
+            budget.addText(slim)
+            publishContextUsage()
+            return slim
         } catch {
+            clearPageFindings()
             let diagnostic = recordExtractionFailure(
                 input: input,
                 rawSnapshot: result,
@@ -318,11 +485,30 @@ final class AgentRuntime: ObservableObject {
         )
     }
 
+    private func publishContextUsage() {
+        contextUsage = AgentContextUsage(budget: budget, didCompact: didCompactThisSession)
+    }
+
+    nonisolated static func isExceededContextWindow(_ error: Error) -> Bool {
+        let text = error.localizedDescription.lowercased()
+        if text.contains("context window") || text.contains("exceededcontext") {
+            return true
+        }
+        let ns = error as NSError
+        if ns.domain.lowercased().contains("foundationmodels") {
+            // GenerationError.exceededContextWindowSize has been observed as code -1.
+            if ns.localizedDescription.lowercased().contains("context") {
+                return true
+            }
+        }
+        return false
+    }
+
     /// JSON dump of the full transcript (including hidden tool results) for debugging.
     func makeConversationDump() -> AgentConversationDump {
         AgentConversationDump(
             exportedAt: Date(),
-            mode: context.mode.rawValue,
+            mode: "browser",
             modelGate: modelGate.title,
             modelAvailable: isModelAvailable,
             entries: transcript.map { entry in
@@ -399,47 +585,6 @@ private enum AgentFMToolBridge {
 }
 
 @available(iOS 26.0, *)
-struct ListAttachmentsFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "listAttachments"
-    let description = "List files in the Device Agent inbox (from Shortcuts or in-app attach)."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "Unused; pass an empty string")
-        var note: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name) { context in
-            AgentToolExecutor.listAttachments(context: context)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct ReadTextAttachmentFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "readTextAttachment"
-    let description = "Read a text attachment by filename substring or id prefix."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "Filename or id fragment")
-        var filenameQuery: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.filenameQuery) { context in
-            try AgentToolExecutor.readTextAttachment(
-                context: context,
-                filenameQuery: arguments.filenameQuery
-            )
-        }
-    }
-}
-
-@available(iOS 26.0, *)
 struct GetDateTimeFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "getCurrentDateTime"
@@ -454,166 +599,6 @@ struct GetDateTimeFMTool: Tool {
     func call(arguments: Arguments) async throws -> String {
         try await AgentFMToolBridge.run(runtime, name: name) { _ in
             AgentToolExecutor.getCurrentDateTime()
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct OpenURLFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "openURL"
-    let description = "Open an absolute http(s) or other URL in the system browser or handler."
-
-    @Generable
-    struct Arguments {
-        var url: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.url) { _ in
-            try AgentToolExecutor.openURL(arguments.url)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct SearchContactsFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "searchContacts"
-    let description = "Search device Contacts by name. Requests Contacts permission just-in-time."
-
-    @Generable
-    struct Arguments {
-        var query: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(
-            runtime,
-            name: name,
-            summary: arguments.query,
-            permission: .contacts
-        ) { context in
-            try await AgentToolExecutor.searchContacts(context: context, query: arguments.query)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct GetLocationFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "getCurrentLocation"
-    let description = "Get the current GPS location. Requests Location permission just-in-time."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "Unused; pass an empty string")
-        var note: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(
-            runtime,
-            name: name,
-            permission: .location
-        ) { context in
-            try await AgentToolExecutor.getCurrentLocation(context: context)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct OpenMapsFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "openMapsDirections"
-    let description = "Open Apple Maps with driving directions to a destination query."
-
-    @Generable
-    struct Arguments {
-        var query: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.query) { _ in
-            try AgentToolExecutor.openMapsDirections(query: arguments.query)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct CreateEventFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "createCalendarEvent"
-    let description = "Create a calendar event after user confirmation. hoursFromNow defaults to 2."
-
-    @Generable
-    struct Arguments {
-        var title: String
-        var notes: String
-        var hoursFromNow: Double
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(
-            runtime,
-            name: name,
-            summary: arguments.title,
-            permission: .calendars
-        ) { context in
-            try await AgentToolExecutor.createCalendarEvent(
-                context: context,
-                title: arguments.title,
-                notes: arguments.notes,
-                hoursFromNow: arguments.hoursFromNow
-            )
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct DraftSMSFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "draftSMS"
-    let description = "Open an SMS/iMessage draft after confirmation. recipients is a comma-separated phone list."
-
-    @Generable
-    struct Arguments {
-        var recipients: String
-        var body: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.recipients) { context in
-            try await AgentToolExecutor.draftSMS(
-                context: context,
-                recipients: arguments.recipients,
-                body: arguments.body
-            )
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct DraftEmailFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "draftEmail"
-    let description = "Open a Mail draft after confirmation."
-
-    @Generable
-    struct Arguments {
-        var to: String
-        var subject: String
-        var body: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.to) { context in
-            try await AgentToolExecutor.draftEmail(
-                context: context,
-                to: arguments.to,
-                subject: arguments.subject,
-                body: arguments.body
-            )
         }
     }
 }
@@ -660,18 +645,25 @@ struct BrowserReadFMTool: Tool {
 struct BrowserSnapshotFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserSnapshot"
-    let description = "Read interactive elements (with numeric refs) and visible text from the in-app browser. Call before click/type."
+    let description = "Read interactive element refs and extract question-relevant findings. Prefer browserFind or browserClickText when you already know the control label."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Max visible text characters to return (default 3500)")
+        @Guide(description: "Max page-text characters to scrape (default comes from remaining context budget)")
         var maxTextChars: Double
     }
 
     func call(arguments: Arguments) async throws -> String {
-        let maxChars = arguments.maxTextChars > 0 ? arguments.maxTextChars : 3500
-        return try await AgentFMToolBridge.run(runtime, name: name, summary: "max=\(Int(maxChars))") { context in
-            try await AgentToolExecutor.browserSnapshot(context: context, maxTextChars: maxChars)
+        return try await AgentFMToolBridge.run(runtime, name: name, summary: "snapshot") { context in
+            guard let runtime else {
+                throw AgentToolError.unavailable("Device Agent runtime is gone.")
+            }
+            let requested = arguments.maxTextChars > 0 ? Int(arguments.maxTextChars) : runtime.snapshotTextCharBudget
+            let capped = min(requested, runtime.snapshotTextCharBudget)
+            return try await AgentToolExecutor.browserSnapshot(
+                context: context,
+                maxTextChars: Double(capped)
+            )
         }
     }
 }
@@ -680,11 +672,11 @@ struct BrowserSnapshotFMTool: Tool {
 struct BrowserClickFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserClick"
-    let description = "Click an element by ref from the latest browserSnapshot (for example \"3\")."
+    let description = "Click an element by ref from the latest browserSnapshot or browserFind (for example \"3\")."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Numeric ref from browserSnapshot")
+        @Guide(description: "Numeric ref from browserSnapshot or browserFind")
         var ref: String
     }
 
@@ -696,14 +688,115 @@ struct BrowserClickFMTool: Tool {
 }
 
 @available(iOS 26.0, *)
-struct BrowserTypeFMTool: Tool {
+struct BrowserClickTextFMTool: Tool {
     weak var runtime: AgentRuntime?
-    let name = "browserType"
-    let description = "Type into an input/textarea by ref from browserSnapshot. Set submit true to press Enter / submit the form."
+    let name = "browserClickText"
+    let description = "Click the first visible control whose label contains the given text. Prefer this over snapshot+click when the label is known."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Numeric ref from browserSnapshot")
+        @Guide(description: "Visible label substring to click (for example \"third result\" or \"Next\")")
+        var text: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.text) { context in
+            try await AgentToolExecutor.browserClickText(context: context, text: arguments.text)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserFindFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserFind"
+    let description = "List interactive controls matching a query (label/href). Returns a short match list and refreshes refs. Cheaper than browserSnapshot."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Substring to match in control labels or hrefs (empty returns the first controls)")
+        var query: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.query) { context in
+            try await AgentToolExecutor.browserFind(context: context, query: arguments.query)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserGetFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserGet"
+    let description = "Read one element by ref: kind, label, href, value. Tiny result."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Numeric ref from browserSnapshot or browserFind")
+        var ref: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.ref) { context in
+            try await AgentToolExecutor.browserGet(context: context, ref: arguments.ref)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserScrollFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserScroll"
+    let description = "Scroll the page: up, down, top, bottom, or a ref to bring that element into view."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "up | down | top | bottom | numeric ref")
+        var directionOrRef: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.directionOrRef) { context in
+            try await AgentToolExecutor.browserScroll(context: context, directionOrRef: arguments.directionOrRef)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserSelectFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserSelect"
+    let description = "Choose an option on a <select> by visible label or value."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Numeric ref of the select from browserSnapshot or browserFind")
+        var ref: String
+        @Guide(description: "Option label or value to select")
+        var option: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.ref) { context in
+            try await AgentToolExecutor.browserSelect(
+                context: context,
+                ref: arguments.ref,
+                option: arguments.option
+            )
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserTypeFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserType"
+    let description = "Type into an input/textarea by ref from browserSnapshot or browserFind. Set submit true to press Enter / submit the form."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Numeric ref from browserSnapshot or browserFind")
         var ref: String
         @Guide(description: "Text to enter")
         var text: String

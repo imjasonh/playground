@@ -5,7 +5,7 @@ import FoundationModels
 #endif
 
 /// Turns a browser scrape into short, question-relevant bullets via Foundation Models.
-/// No heuristic fallback — extraction failures surface so we can fix the model path.
+/// No heuristic fallback. Extraction failures surface so we can fix the model path.
 enum AgentPageExtractor {
     struct Input: Equatable {
         var userQuestion: String
@@ -135,14 +135,15 @@ enum AgentPageExtractor {
             sections.append("List items:")
             sections.append(contentsOf: input.listItems.prefix(24).map { "- \($0)" })
         }
-        let text = String(input.pageText.prefix(3500))
+        // Keep extraction prompts well under the 4096-token window.
+        let text = String(input.pageText.prefix(2_000))
         if !text.isEmpty {
             sections.append("Page text:")
             sections.append(text)
         }
         sections.append("")
         sections.append(
-            "Extract 3–8 short factual bullets from the page that answer the user question. Use only page content."
+            "Extract 3-8 short factual bullets from the page that answer the user question. Use only page content."
         )
         return sections.joined(separator: "\n")
     }
@@ -161,7 +162,7 @@ enum AgentPageExtractor {
     @available(iOS 26.0, *)
     @Generable
     struct ModelFindings {
-        @Guide(description: "3–8 short factual bullets from the page that answer the user question")
+        @Guide(description: "3-8 short factual bullets from the page that answer the user question")
         var bullets: [String]
     }
 
