@@ -322,7 +322,7 @@ enum AgentModelGateAction: Equatable {
 @MainActor
 enum AgentAppleIntelligenceSettings {
     static func open() async {
-        // Undocumented Settings deep links — try SIRI / Apple Intelligence pane first,
+        // Undocumented Settings deep links. Try SIRI / Apple Intelligence pane first,
         // then Settings root, then this app’s Settings page.
         let candidates: [URL] = [
             URL(string: "App-prefs:root=SIRI"),
