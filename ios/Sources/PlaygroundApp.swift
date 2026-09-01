@@ -24,21 +24,6 @@ struct PlaygroundApp: App {
                     }
                 }
                 .onOpenURL { url in
-                    if url.isFileURL {
-                        Task { @MainActor in
-                            do {
-                                _ = try AgentInbox.shared.importFile(from: url)
-                                AgentInbox.shared.enqueue(
-                                    prompt: "List attachments and summarize any text files.",
-                                    source: .share,
-                                    mode: .act
-                                )
-                                router.openDeviceAgent()
-                            } catch {
-                                // Ignore unreadable opens; deep links still work below.
-                            }
-                        }
-                    }
                     router.handleOpenURL(url)
                 }
                 .onReceive(AgentInbox.shared.$shouldOpenExperiment) { shouldOpen in

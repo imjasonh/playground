@@ -4,8 +4,8 @@ import Foundation
 import FoundationModels
 #endif
 
-/// Runs prompts through on-device Foundation Models + tools. Unavailable without
-/// Apple Intelligence (iOS 26+ with the model ready).
+/// Runs prompts through on-device Foundation Models + in-app browser tools.
+/// Unavailable without Apple Intelligence (iOS 26+ with the model ready).
 @MainActor
 final class AgentRuntime: ObservableObject {
     @Published var transcript: [AgentTranscriptEntry] = []
@@ -26,7 +26,7 @@ final class AgentRuntime: ObservableObject {
         self.context = context ?? AgentToolContext()
         refreshModelStatus()
         if isModelAvailable {
-            appendSystem(AgentToolExecutor.helpText(mode: self.context.mode))
+            appendSystem(AgentToolExecutor.helpText())
         }
     }
 
@@ -78,7 +78,7 @@ final class AgentRuntime: ObservableObject {
         extractionDiagnostics.removeAll()
         context.browser.clearReplay()
         if isModelAvailable {
-            appendSystem(AgentToolExecutor.helpText(mode: context.mode))
+            appendSystem(AgentToolExecutor.helpText())
         }
     }
 
@@ -133,29 +133,20 @@ final class AgentRuntime: ObservableObject {
     @available(iOS 26.0, *)
     private var instructions: String {
         """
-        You are Device Agent inside the Playground iOS app.
-        Use tools to act on the phone. Request only what you need.
-        For calendar, SMS, and email drafts, tools will ask the user to confirm.
-        Prefer listAttachments / readTextAttachment for files the user shared.
-        Use the in-app browser for web questions: browserOpen (only if no useful page is open) → browserSnapshot → optional browserClick / browserType → browserSnapshot again.
+        You are Device Agent inside the Playground iOS app. Your only job is driving the in-app browser.
+        Use tools in this loop: browserOpen (only if no useful page is open) → browserSnapshot → optional browserClick / browserType → browserSnapshot again.
         browserSnapshot returns raw scrape plus extractedFindings (Foundation Model bullets from the page). Prefer those bullets for your answer; dig with click/type only if needed.
         Your final reply must be short bullet points from the page that answer the user question. Do not summarize the chat transcript.
         Keep the same browser tab for follow-ups unless they ask for a different site.
-        Use openURL only when the user wants Safari or another system handler.
-        Keep final answers short. Mode is \(context.mode.title).
+        Do not invent phone tools (contacts, calendar, SMS, Maps, files). You only have browser tools and getCurrentDateTime.
+        Keep final answers short.
         """
     }
 
     @available(iOS 26.0, *)
     private func makeFoundationTools() -> [any Tool] {
-        var tools: [any Tool] = [
-            ListAttachmentsFMTool(runtime: self),
-            ReadTextAttachmentFMTool(runtime: self),
+        [
             GetDateTimeFMTool(runtime: self),
-            OpenURLFMTool(runtime: self),
-            SearchContactsFMTool(runtime: self),
-            GetLocationFMTool(runtime: self),
-            OpenMapsFMTool(runtime: self),
             BrowserOpenFMTool(runtime: self),
             BrowserReadFMTool(runtime: self),
             BrowserSnapshotFMTool(runtime: self),
@@ -163,12 +154,6 @@ final class AgentRuntime: ObservableObject {
             BrowserTypeFMTool(runtime: self),
             BrowserBackFMTool(runtime: self),
         ]
-        if context.mode == .act {
-            tools.append(CreateEventFMTool(runtime: self))
-            tools.append(DraftSMSFMTool(runtime: self))
-            tools.append(DraftEmailFMTool(runtime: self))
-        }
-        return tools
     }
     #else
     private func runFoundationModels(prompt: String) async throws {
@@ -322,7 +307,7 @@ final class AgentRuntime: ObservableObject {
     func makeConversationDump() -> AgentConversationDump {
         AgentConversationDump(
             exportedAt: Date(),
-            mode: context.mode.rawValue,
+            mode: "browser",
             modelGate: modelGate.title,
             modelAvailable: isModelAvailable,
             entries: transcript.map { entry in
@@ -399,47 +384,6 @@ private enum AgentFMToolBridge {
 }
 
 @available(iOS 26.0, *)
-struct ListAttachmentsFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "listAttachments"
-    let description = "List files in the Device Agent inbox (from Shortcuts or in-app attach)."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "Unused; pass an empty string")
-        var note: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name) { context in
-            AgentToolExecutor.listAttachments(context: context)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct ReadTextAttachmentFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "readTextAttachment"
-    let description = "Read a text attachment by filename substring or id prefix."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "Filename or id fragment")
-        var filenameQuery: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.filenameQuery) { context in
-            try AgentToolExecutor.readTextAttachment(
-                context: context,
-                filenameQuery: arguments.filenameQuery
-            )
-        }
-    }
-}
-
-@available(iOS 26.0, *)
 struct GetDateTimeFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "getCurrentDateTime"
@@ -454,166 +398,6 @@ struct GetDateTimeFMTool: Tool {
     func call(arguments: Arguments) async throws -> String {
         try await AgentFMToolBridge.run(runtime, name: name) { _ in
             AgentToolExecutor.getCurrentDateTime()
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct OpenURLFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "openURL"
-    let description = "Open an absolute http(s) or other URL in the system browser or handler."
-
-    @Generable
-    struct Arguments {
-        var url: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.url) { _ in
-            try AgentToolExecutor.openURL(arguments.url)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct SearchContactsFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "searchContacts"
-    let description = "Search device Contacts by name. Requests Contacts permission just-in-time."
-
-    @Generable
-    struct Arguments {
-        var query: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(
-            runtime,
-            name: name,
-            summary: arguments.query,
-            permission: .contacts
-        ) { context in
-            try await AgentToolExecutor.searchContacts(context: context, query: arguments.query)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct GetLocationFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "getCurrentLocation"
-    let description = "Get the current GPS location. Requests Location permission just-in-time."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "Unused; pass an empty string")
-        var note: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(
-            runtime,
-            name: name,
-            permission: .location
-        ) { context in
-            try await AgentToolExecutor.getCurrentLocation(context: context)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct OpenMapsFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "openMapsDirections"
-    let description = "Open Apple Maps with driving directions to a destination query."
-
-    @Generable
-    struct Arguments {
-        var query: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.query) { _ in
-            try AgentToolExecutor.openMapsDirections(query: arguments.query)
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct CreateEventFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "createCalendarEvent"
-    let description = "Create a calendar event after user confirmation. hoursFromNow defaults to 2."
-
-    @Generable
-    struct Arguments {
-        var title: String
-        var notes: String
-        var hoursFromNow: Double
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(
-            runtime,
-            name: name,
-            summary: arguments.title,
-            permission: .calendars
-        ) { context in
-            try await AgentToolExecutor.createCalendarEvent(
-                context: context,
-                title: arguments.title,
-                notes: arguments.notes,
-                hoursFromNow: arguments.hoursFromNow
-            )
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct DraftSMSFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "draftSMS"
-    let description = "Open an SMS/iMessage draft after confirmation. recipients is a comma-separated phone list."
-
-    @Generable
-    struct Arguments {
-        var recipients: String
-        var body: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.recipients) { context in
-            try await AgentToolExecutor.draftSMS(
-                context: context,
-                recipients: arguments.recipients,
-                body: arguments.body
-            )
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct DraftEmailFMTool: Tool {
-    weak var runtime: AgentRuntime?
-    let name = "draftEmail"
-    let description = "Open a Mail draft after confirmation."
-
-    @Generable
-    struct Arguments {
-        var to: String
-        var subject: String
-        var body: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.to) { context in
-            try await AgentToolExecutor.draftEmail(
-                context: context,
-                to: arguments.to,
-                subject: arguments.subject,
-                body: arguments.body
-            )
         }
     }
 }

@@ -45,7 +45,7 @@ final class DeviceAgentTests: XCTestCase {
         let runtime = AgentRuntime()
         runtime.refreshModelStatus()
         let before = runtime.transcript.count
-        await runtime.send(prompt: "list attachments", source: .chat)
+        await runtime.send(prompt: "open https://example.com", source: .chat)
         XCTAssertGreaterThan(runtime.transcript.count, before)
 
         if !runtime.isModelAvailable {
@@ -60,12 +60,11 @@ final class DeviceAgentTests: XCTestCase {
 
     @MainActor
     func testDeepLinkParsesPrompt() {
-        let url = URL(string: "playground://device-agent?prompt=hello%20world&voice=1&mode=browse")!
+        let url = URL(string: "playground://device-agent?prompt=hello%20world&voice=1")!
         let inbox = AgentInbox.shared
         XCTAssertTrue(inbox.handleOpenURL(url))
         let run = inbox.consumePendingRun()
         XCTAssertEqual(run?.prompt, "hello world")
-        XCTAssertEqual(run?.mode, .browse)
         XCTAssertEqual(run?.preferVoice, true)
         XCTAssertEqual(run?.source, .deepLink)
     }
@@ -76,82 +75,19 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertFalse(AgentInbox.shared.handleOpenURL(url))
     }
 
-    @MainActor
-    func testSanitizeAndImportRoundTrip() throws {
-        let inbox = AgentInbox.shared
-        let temp = FileManager.default.temporaryDirectory
-            .appendingPathComponent("device-agent-test-\(UUID().uuidString).txt")
-        try "hello agent".write(to: temp, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: temp) }
-
-        let attachment = try inbox.importFile(from: temp, preferredName: "note.txt")
-        XCTAssertEqual(attachment.filename, "note.txt")
-        XCTAssertGreaterThan(attachment.byteCount, 0)
-        let url = try XCTUnwrap(inbox.fileURL(for: attachment))
-        let text = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertEqual(text, "hello agent")
-
-        let listed = AgentToolExecutor.listAttachments(
-            context: AgentToolContext(inbox: inbox)
-        )
-        XCTAssertTrue(listed.contains("note.txt"))
-    }
-
     func testPermissionDomainPrePromptIsNonEmpty() {
         for domain in AgentPermissionDomain.allCases {
             XCTAssertFalse(domain.prePrompt.isEmpty)
             XCTAssertFalse(domain.title.isEmpty)
         }
-    }
-
-    @MainActor
-    func testWatchDueAndAutomationNudgeHeuristics() throws {
-        let suiteName = "device-agent-watch-tests-\(UUID().uuidString)"
-        let suite = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { suite.removePersistentDomain(forName: suiteName) }
-        let store = AgentWatchStore(userDefaults: suite)
-
-        XCTAssertFalse(store.needsAutomationNudge)
-        store.addWatch(title: "PR", prompt: "Any new review comments?", intervalHours: 24)
-        XCTAssertTrue(store.needsAutomationNudge)
-        XCTAssertEqual(store.dueWatches().count, 1)
-
-        store.userMarkedAutomationConfigured = true
-        XCTAssertTrue(store.isAutomaticCheckStale)
-        XCTAssertTrue(store.needsAutomationNudge)
-
-        let due = store.recordAutomaticCheck()
-        XCTAssertEqual(due.count, 1)
-        XCTAssertFalse(store.isAutomaticCheckStale)
-        XCTAssertFalse(store.needsAutomationNudge)
-        XCTAssertTrue(store.dueWatches().isEmpty)
-
-        let prompt = store.makeCheckPrompt(for: due)
-        XCTAssertTrue(prompt.contains("PR"))
-        XCTAssertTrue(prompt.contains("review comments"))
-    }
-
-    func testWatchIntervalDueMath() {
-        let now = Date()
-        var watch = AgentWatch(
-            title: "x",
-            prompt: "y",
-            intervalHours: 2,
-            lastCheckedAt: now.addingTimeInterval(-7200),
-            createdAt: now
-        )
-        XCTAssertTrue(watch.isDue(at: now))
-        watch.lastCheckedAt = now.addingTimeInterval(-3600)
-        XCTAssertFalse(watch.isDue(at: now))
-        watch.isPaused = true
-        XCTAssertFalse(watch.isDue(at: now))
+        XCTAssertEqual(AgentPermissionDomain.allCases.count, 2)
     }
 
     @MainActor
     func testConversationDumpIncludesHiddenToolResults() throws {
         let runtime = AgentRuntime()
-        runtime.appendToolCall(name: "searchContacts", arguments: "Mom")
-        runtime.appendToolResult(name: "searchContacts", result: "Mom <mom@example.com>")
+        runtime.appendToolCall(name: "browserSnapshot", arguments: "max=3500")
+        runtime.appendToolResult(name: "browserSnapshot", result: "title: Example\ntext:\nHello")
 
         let visible = runtime.transcript.filter(\.isVisibleInChat)
         XCTAssertEqual(
@@ -163,7 +99,7 @@ final class DeviceAgentTests: XCTestCase {
         )
         XCTAssertTrue(visible.contains { entry in
             if case .toolCall(let name) = entry.kind {
-                return name == "searchContacts" && entry.text == "Invoking searchContacts…"
+                return name == "browserSnapshot" && entry.text == "Invoking browserSnapshot…"
             }
             return false
         })
@@ -171,16 +107,16 @@ final class DeviceAgentTests: XCTestCase {
             if case .toolResult = entry.kind { return true }
             return false
         })
-        // Help text may already be in the transcript; ensure a toolCall is visible and a toolResult is not.
         XCTAssertTrue(runtime.transcript.contains { entry in
             if case .toolResult = entry.kind { return !entry.isVisibleInChat }
             return false
         })
 
         let dump = runtime.makeConversationDump()
+        XCTAssertEqual(dump.mode, "browser")
         XCTAssertEqual(dump.entries.count, runtime.transcript.count)
         let result = try XCTUnwrap(dump.entries.first { $0.kind == "toolResult" })
-        XCTAssertEqual(result.debugDetail, "Mom <mom@example.com>")
+        XCTAssertEqual(result.debugDetail, "title: Example\ntext:\nHello")
         XCTAssertEqual(dump.browserReplay, runtime.context.browser.replay)
         XCTAssertEqual(dump.extractionDiagnostics, runtime.extractionDiagnostics)
         let jsonl = try runtime.conversationDumpJSONLData()

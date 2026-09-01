@@ -46,7 +46,7 @@ ios/
 | Id | Title | Notes |
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
-| `device-agent` | Device Agent | On-device model + JIT tools; Shortcuts; voice; requires Apple Intelligence |
+| `device-agent` | Device Agent | On-device model drives an in-app browser; Shortcuts; voice; requires Apple Intelligence |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
@@ -113,45 +113,34 @@ through the system share sheet.
 
 ### Device Agent
 
-On-device assistant that calls **tools** over phone APIs (Contacts, location,
-Maps, calendar with confirm, SMS/Mail drafts with confirm, inbox files, bundled
-Demo Mail web page). Permissions are requested **only when a tool needs them**.
+On-device assistant that **drives an in-app browser**. The model can open
+http(s) pages, snapshot interactive elements, click/type by ref, and extract
+question-relevant bullets from the page. Mic/speech permissions are requested
+only for optional voice input.
 
-- **Chat + tool transcript** in the experiment UI; Observe / Act / Browse modes
-  (Observe = read-only tools; Act = calendar/SMS/Mail drafts with confirm; Browse
-  = same tool set as Observe with in-app browser focus)
+- **Chat + tool transcript** plus a live WKWebView pane when a page is open
+- **Browser tools only:** `browserOpen`, `browserRead`, `browserSnapshot`,
+  `browserClick`, `browserType`, `browserBack` (plus `getCurrentDateTime`)
+- After each snapshot, Foundation Models guided generation extracts
+  question-relevant **From the page** bullets into chat. If extraction fails,
+  the tool fails with a visible error (no heuristic substitute). Diagnostics
+  land in the export ZIP.
 - **Voice input** (mic + speech, just-in-time) → editable text → same agent loop
 - **Export conversation** — share a `.jsonl.zip` of the transcript (including
   hidden tool args/results), browser replay, and AFM extraction diagnostics
 - Chat shows `Invoking <tool>…` only; raw tool I/O stays in the dump
-- **Shortcuts / App Intents / Siri:** “Run Device Agent”, “Ask Device Agent”, and
-  “Check Device Agent watches” (for Automations); App Shortcut phrases + in-app
-  Siri tips
-- **Watches:** long-horizon checklist items; one repeating Shortcuts Automation
-  calls Check watches; the app tracks last wake and nudges if checks look stale
-  (no API to read the user’s Automation list)
-- **Deep link:** `playground://device-agent?prompt=…&mode=act&voice=1`
-- **Files:** attach in-app, pass from Shortcuts, or Open-in / document types into
-  the app inbox (a Share Extension appex is intentionally not included yet —
-  that needs a new Bundle ID + signing bootstrap)
-- **In-app browser:** `browserOpen` loads real http(s) URLs; injected JS bridge
-  supports `browserSnapshot` / `browserClick` / `browserType` / `browserBack`.
-  After each snapshot, Foundation Models guided generation extracts
-  question-relevant **From the page** bullets into chat. If extraction fails,
-  the tool fails with a visible error (no heuristic substitute). Diagnostics
-  (prompt, page text, headings, raw model bullets, error code) are stored for
-  export. Successful bullets are also appended to the tool result as
-  `extractedFindings` for the agent turn. The tab stays open for follow-ups.
-  Structured browser replay (actions + scraped text, no screenshots) is included
-  in the conversation `.jsonl.zip` export. With the browser open, the composer
-  collapses to an Ask follow-up control so the keyboard stays out of the way.
+- **Shortcuts / App Intents / Siri:** “Ask Device Agent” queues a prompt and opens
+  the experiment
+- **Deep link:** `playground://device-agent?prompt=…&voice=1`
+- With the browser open, the composer collapses to an Ask follow-up control so
+  the keyboard stays out of the way
 
 When Apple Intelligence / Foundation Models is available (iOS 26+ device), the
-on-device model chooses tools. If Apple Intelligence is off, the UI offers a
-button that opens Settings (Apple Intelligence & Siri when the deep link works).
-If the model is still downloading, it shows progress plus **Check again**.
-Unsupported hardware / older OS / Simulator get a plain unavailable pane. There
-is no keyword-planner fallback.
+on-device model chooses browser tools. If Apple Intelligence is off, the UI
+offers a button that opens Settings (Apple Intelligence & Siri when the deep
+link works). If the model is still downloading, it shows progress plus
+**Check again**. Unsupported hardware / older OS / Simulator get a plain
+unavailable pane. There is no keyword-planner fallback.
 
 If page extraction quality is weak for a domain, a next step is Apple’s
 Foundation Models **adapter** toolkit (LoRA). Adapters ship as small packages

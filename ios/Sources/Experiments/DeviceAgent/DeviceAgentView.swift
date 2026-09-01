@@ -1,24 +1,16 @@
 import SwiftUI
-import UniformTypeIdentifiers
-import MessageUI
-import AppIntents
 import UIKit
 
-/// Chat + tool transcript + optional in-app browser for Device Agent.
+/// Chat + tool transcript + in-app browser for Device Agent.
 struct DeviceAgentView: View {
     @StateObject private var runtime = AgentRuntime()
     @StateObject private var voice = AgentVoiceCapture()
     @ObservedObject private var inbox = AgentInbox.shared
     @ObservedObject private var permissions = AgentPermissionGate.shared
-    @ObservedObject private var watches = AgentWatchStore.shared
 
     @State private var draft = ""
     @State private var showBrowser = false
-    @State private var showImporter = false
-    @State private var showSMS = false
-    @State private var showMail = false
     @State private var voiceMode = false
-    @State private var showWatches = false
     @State private var exportShareURL: URL?
     @State private var exportError: String?
     @FocusState private var promptFocused: Bool
@@ -28,9 +20,6 @@ struct DeviceAgentView: View {
         VStack(spacing: 0) {
             if runtime.isModelAvailable {
                 statusBar
-                if !(showBrowser && promptFocused) {
-                    modePicker
-                }
                 transcriptList
                     .frame(maxHeight: showBrowser ? 220 : .infinity)
                 if showBrowser {
@@ -94,56 +83,9 @@ struct DeviceAgentView: View {
                 runtime.context.browserTitle = title
             }
         }
-        .onChange(of: runtime.context.pendingSMS) { draft in
-            showSMS = draft != nil && MFMessageComposeViewController.canSendText()
-        }
-        .onChange(of: runtime.context.pendingMail) { draft in
-            showMail = draft != nil && MFMailComposeViewController.canSendMail()
-        }
         .onChange(of: permissions.prePromptDomain) { domain in
             if let domain {
                 runtime.appendPermission(domain)
-            }
-        }
-        .fileImporter(
-            isPresented: $showImporter,
-            allowedContentTypes: [.item, .text, .plainText, .pdf, .image, .data],
-            allowsMultipleSelection: true
-        ) { result in
-            handleImport(result)
-        }
-        .confirmationDialog(
-            runtime.context.pendingConfirmation?.title ?? "Confirm",
-            isPresented: Binding(
-                get: { runtime.context.pendingConfirmation != nil },
-                set: { if !$0 { runtime.context.resolveConfirmation(false) } }
-            ),
-            titleVisibility: .visible
-        ) {
-            Button("Allow") { runtime.context.resolveConfirmation(true) }
-            Button("Don’t allow", role: .cancel) { runtime.context.resolveConfirmation(false) }
-        } message: {
-            Text(runtime.context.pendingConfirmation?.message ?? "")
-        }
-        .sheet(isPresented: $showSMS) {
-            if let sms = runtime.context.pendingSMS {
-                AgentSMSComposer(draft: sms) {
-                    runtime.context.pendingSMS = nil
-                    showSMS = false
-                }
-            }
-        }
-        .sheet(isPresented: $showMail) {
-            if let mail = runtime.context.pendingMail {
-                AgentMailComposer(draft: mail) {
-                    runtime.context.pendingMail = nil
-                    showMail = false
-                }
-            }
-        }
-        .sheet(isPresented: $showWatches) {
-            NavigationStack {
-                DeviceAgentWatchesView(store: watches)
             }
         }
         .sheet(isPresented: Binding(
@@ -242,7 +184,7 @@ struct DeviceAgentView: View {
         case .modelNotReady:
             return "arrow.down.circle"
         case .deviceNotEligible, .unsupportedPlatform, .other, .available:
-            return "cpu"
+            return "globe"
         }
     }
 
@@ -261,31 +203,6 @@ struct DeviceAgentView: View {
                 }
                 .accessibilityLabel("Export conversation")
                 .accessibilityIdentifier("deviceAgentExportButton")
-                Button {
-                    showWatches = true
-                } label: {
-                    Label("Watches", systemImage: "clock.arrow.2.circlepath")
-                        .font(.footnote.weight(.semibold))
-                }
-                .accessibilityIdentifier("deviceAgentWatchesButton")
-            }
-            if watches.needsAutomationNudge {
-                Button {
-                    showWatches = true
-                } label: {
-                    Text(watches.isAutomaticCheckStale
-                        ? "Automatic checks look stale — recreate your Shortcuts Automation."
-                        : "Set up a repeating Shortcuts Automation so watches can wake Device Agent.")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .multilineTextAlignment(.leading)
-                }
-                .accessibilityIdentifier("deviceAgentAutomationNudge")
-            } else if !watches.watches.isEmpty {
-                Text(watches.lastAutomaticCheckSummary)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("deviceAgentLastAutomaticCheck")
             }
             if let pre = permissions.prePromptDomain {
                 Text(pre.prePrompt)
@@ -293,44 +210,10 @@ struct DeviceAgentView: View {
                     .foregroundStyle(.orange)
                     .accessibilityIdentifier("deviceAgentPermissionPrePrompt")
             }
-            if !inbox.attachments.isEmpty {
-                Text("Inbox: \(inbox.attachments.map(\.filename).joined(separator: ", "))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
         .padding(.vertical, 8)
-    }
-
-    private var modePicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Picker(
-                "Mode",
-                selection: Binding(
-                    get: { runtime.context.mode },
-                    set: { runtime.context.mode = $0 }
-                )
-            ) {
-                ForEach(AgentMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("deviceAgentModePicker")
-            .onChange(of: runtime.context.mode) { mode in
-                runtime.transcript.append(
-                    AgentTranscriptEntry(kind: .system, text: "Mode → \(mode.title): \(mode.detail)")
-                )
-            }
-            Text(runtime.context.mode.detail)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .accessibilityIdentifier("deviceAgentModeDetail")
-        }
-        .padding(.horizontal)
     }
 
     private var transcriptList: some View {
@@ -380,7 +263,6 @@ struct DeviceAgentView: View {
         case .toolResult: return ("Result", .purple)
         case .system: return ("System", .secondary)
         case .permission: return ("Permission", .orange)
-        case .confirmation: return ("Confirm", .red)
         case .pageFindings: return ("Page", .teal)
         }
     }
@@ -496,13 +378,6 @@ struct DeviceAgentView: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 Button {
-                    showImporter = true
-                } label: {
-                    Image(systemName: "paperclip")
-                }
-                .accessibilityIdentifier("deviceAgentAttachButton")
-
-                Button {
                     voiceMode.toggle()
                     if !voiceMode { voice.stop() }
                 } label: {
@@ -554,9 +429,6 @@ struct DeviceAgentView: View {
 
     private func openBrowserPane() {
         showBrowser = true
-        if runtime.context.mode == .observe {
-            runtime.context.mode = .browse
-        }
         dismissKeyboard()
         voiceMode = false
         voice.stop()
@@ -596,7 +468,6 @@ struct DeviceAgentView: View {
 
     private func consumeInboxIfNeeded() {
         guard let run = inbox.consumePendingRun() else { return }
-        runtime.context.mode = run.mode
         if run.preferVoice {
             voiceMode = true
         }
@@ -609,34 +480,9 @@ struct DeviceAgentView: View {
             runtime.transcript.append(
                 AgentTranscriptEntry(
                     kind: .system,
-                    text: "Opened from \(run.source.rawValue) with \(run.attachmentIDs.count) attachment id(s)."
+                    text: "Opened from \(run.source.rawValue)."
                 )
             )
-        }
-    }
-
-    private func handleImport(_ result: Result<[URL], Error>) {
-        switch result {
-        case .failure(let error):
-            runtime.transcript.append(
-                AgentTranscriptEntry(kind: .system, text: "Attach failed: \(error.localizedDescription)")
-            )
-        case .success(let urls):
-            for url in urls {
-                do {
-                    let attachment = try inbox.importFile(from: url)
-                    runtime.transcript.append(
-                        AgentTranscriptEntry(
-                            kind: .system,
-                            text: "Attached \(attachment.filename) (\(attachment.byteCount) bytes)."
-                        )
-                    )
-                } catch {
-                    runtime.transcript.append(
-                        AgentTranscriptEntry(kind: .system, text: "Could not import \(url.lastPathComponent).")
-                    )
-                }
-            }
         }
     }
 }
