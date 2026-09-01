@@ -207,9 +207,12 @@ struct PlaybooksView: View {
                 actionLog = []
             }
         } else {
-            Text("Select a playbook")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ContentUnavailableView(
+                "Select a playbook",
+                systemImage: "list.bullet.clipboard",
+                description: Text("Choose a playbook from the list to run diagnosis.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

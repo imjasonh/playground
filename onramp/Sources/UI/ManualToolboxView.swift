@@ -115,9 +115,12 @@ struct ManualToolboxView: View {
                 }
             }
         } else {
-            Text("Select a check")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ContentUnavailableView(
+                "Select a check",
+                systemImage: "wrench.and.screwdriver",
+                description: Text("Choose a toolbox check from the list to run it.")
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
