@@ -67,7 +67,9 @@ enum AgentToolExecutor {
 
     static func browserSnapshot(context: AgentToolContext, maxTextChars: Double) async throws -> String {
         let chars = Int(maxTextChars.rounded())
-        let snap = try await context.browser.snapshot(maxTextChars: chars > 0 ? chars : 3500)
+        let snap = try await context.browser.snapshot(
+            maxTextChars: chars > 0 ? chars : AgentContextBudget.defaultSnapshotTextChars
+        )
         context.browserURL = context.browser.url ?? context.browserURL
         context.browserTitle = context.browser.title
         context.logTool(name: "browserSnapshot", detail: "\(snap.count) chars")

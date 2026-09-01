@@ -61,9 +61,9 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         )
     }
 
-    func snapshot(maxTextChars: Int = 3500) async throws -> String {
+    func snapshot(maxTextChars: Int = AgentContextBudget.defaultSnapshotTextChars) async throws -> String {
         try await ensureBridge()
-        let capped = max(500, min(maxTextChars, 12_000))
+        let capped = max(400, min(maxTextChars, 4_000))
         let raw = try await evaluate("window.__deviceAgent.snapshot(\(capped))")
         let parsed = Self.parseSnapshotJSON(raw)
         let formatted = Self.formatSnapshotPayload(raw)

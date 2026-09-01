@@ -214,6 +214,10 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertTrue(pageCard.contains("Week 1: Chiefs vs Ravens"))
         XCTAssertTrue(enriched.contains("extractedFindings"))
         XCTAssertTrue(enriched.contains("Week 1: Chiefs vs Ravens"))
+        // Model-facing payload must stay slim (no full page text dump).
+        XCTAssertFalse(enriched.contains("Hello from the page with enough text"))
+        XCTAssertTrue(enriched.contains("Page text omitted"))
+        XCTAssertGreaterThan(runtime.contextUsage.windowTokens, 0)
         let dump = runtime.makeConversationDump()
         XCTAssertEqual(dump.browserReplay.count, 2)
         XCTAssertEqual(dump.browserReplay.first?.action, "open")
@@ -318,5 +322,103 @@ final class DeviceAgentTests: XCTestCase {
             try AgentBrowserSession.requireOK(#"{"ok":true}"#, action: "click"),
             "click ok"
         )
+    }
+
+    func testContextBudgetEstimatesAndTruncates() {
+        XCTAssertEqual(AgentContextBudget.estimateTokens(""), 0)
+        XCTAssertEqual(AgentContextBudget.estimateTokens("abc"), 1)
+        XCTAssertEqual(AgentContextBudget.estimateTokens(String(repeating: "a", count: 12)), 4)
+
+        var budget = AgentContextBudget()
+        budget.resetBaseline(instructions: String(repeating: "i", count: 300), toolsReserveTokens: 900)
+        XCTAssertGreaterThan(budget.fractionUsed, 0)
+        XCTAssertLessThan(budget.fractionUsed, AgentContextBudget.compactThreshold)
+        XCTAssertFalse(budget.needsCompact)
+
+        budget.addTokens(2_500)
+        XCTAssertTrue(budget.needsCompact)
+        XCTAssertGreaterThanOrEqual(budget.percentUsed, 72)
+
+        let truncated = AgentContextBudget.truncateToChars(String(repeating: "x", count: 100), maxChars: 20)
+        XCTAssertEqual(truncated.count, 20)
+        XCTAssertTrue(truncated.hasSuffix("…"))
+
+        let slim = AgentContextBudget.modelFacingSnapshot(
+            title: "Example",
+            url: "https://example.com",
+            elements: (1...50).map { "[\($0)] link \"Item \($0)\"" },
+            headings: ["Hello"],
+            extractedFindings: ["Fact one", "Fact two"],
+            maxChars: 800
+        )
+        XCTAssertTrue(slim.contains("extractedFindings"))
+        XCTAssertTrue(slim.contains("Fact one"))
+        XCTAssertTrue(slim.contains("Page text omitted"))
+        XCTAssertLessThanOrEqual(slim.count, 800)
+        XCTAssertTrue(slim.contains("showing 40"))
+
+        let carry = AgentContextBudget.compactionCarryOver(
+            url: "https://example.com",
+            title: "Example",
+            findings: ["A", "B"],
+            recentUserPrompts: ["first", "second", "third", "fourth"]
+        )
+        XCTAssertTrue(carry.contains("https://example.com"))
+        XCTAssertTrue(carry.contains("• A"))
+        XCTAssertTrue(carry.contains("fourth"))
+        XCTAssertFalse(carry.contains("- first"))
+    }
+
+    func testContextBudgetSnapshotCharBudgetShrinksWhenFull() {
+        var budget = AgentContextBudget()
+        budget.resetBaseline(instructions: "short", toolsReserveTokens: 100)
+        let roomy = budget.snapshotTextCharBudget()
+        XCTAssertGreaterThanOrEqual(roomy, 400)
+
+        budget.addTokens(3_200)
+        let tight = budget.snapshotTextCharBudget()
+        XCTAssertLessThan(tight, roomy)
+        XCTAssertGreaterThanOrEqual(tight, 400)
+        XCTAssertTrue(budget.isNearHardStop || budget.needsCompact)
+    }
+
+    func testExceededContextWindowDetection() {
+        let err = NSError(
+            domain: "FoundationModels.LanguageModelSession.GenerationError",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "Exceeded model context window size"]
+        )
+        XCTAssertTrue(AgentRuntime.isExceededContextWindow(err))
+        XCTAssertFalse(AgentRuntime.isExceededContextWindow(
+            NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "network down"])
+        ))
+    }
+
+    @MainActor
+    func testRuntimePublishesContextUsage() async throws {
+        let runtime = AgentRuntime()
+        XCTAssertEqual(runtime.contextUsage.windowTokens, AgentContextBudget.defaultWindowTokens)
+        XCTAssertGreaterThanOrEqual(runtime.contextUsage.percentUsed, 0)
+
+        AgentPageExtractor.testExtractionOverride = { _ in ["Bullet"] }
+        defer { AgentPageExtractor.testExtractionOverride = nil }
+        runtime.lastUserPrompt = "hi"
+        runtime.context.browser.record(
+            action: "snapshot",
+            detail: "1",
+            url: "https://example.com",
+            title: "Example",
+            pageText: "Hello",
+            elements: [#"[1] link "Home""#],
+            headings: ["Example"],
+            listItems: []
+        )
+        let before = runtime.contextUsage.usedTokens
+        _ = try await runtime.appendToolResultAndEnrich(
+            name: "browserSnapshot",
+            result: "title: Example\ntext:\nHello"
+        )
+        XCTAssertGreaterThan(runtime.contextUsage.usedTokens, before)
+        XCTAssertFalse(runtime.contextUsage.accessibilityLabel.isEmpty)
     }
 }

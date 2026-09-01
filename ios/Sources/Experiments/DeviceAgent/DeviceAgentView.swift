@@ -204,6 +204,7 @@ struct DeviceAgentView: View {
                 .accessibilityLabel("Export conversation")
                 .accessibilityIdentifier("deviceAgentExportButton")
             }
+            contextMeter
             if let pre = permissions.prePromptDomain {
                 Text(pre.prePrompt)
                     .font(.footnote)
@@ -214,6 +215,39 @@ struct DeviceAgentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+
+    private var contextMeter: some View {
+        let usage = runtime.contextUsage
+        let tint: Color = {
+            if usage.fractionUsed >= 0.85 { return .orange }
+            if usage.fractionUsed >= AgentContextBudget.compactThreshold { return .yellow }
+            return Color.secondary.opacity(0.85)
+        }()
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Context")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("\(usage.percentUsed)%")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("deviceAgentContextPercent")
+            }
+            ProgressView(value: usage.fractionUsed, total: 1)
+                .tint(tint)
+                .accessibilityIdentifier("deviceAgentContextMeter")
+            if usage.didCompact {
+                Text("Older turns were compacted to stay under the model limit.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("deviceAgentContextCompactNote")
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(usage.accessibilityLabel)
+        .accessibilityIdentifier("deviceAgentContextUsage")
     }
 
     private var transcriptList: some View {

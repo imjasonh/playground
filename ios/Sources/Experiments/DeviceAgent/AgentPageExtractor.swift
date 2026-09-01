@@ -135,7 +135,8 @@ enum AgentPageExtractor {
             sections.append("List items:")
             sections.append(contentsOf: input.listItems.prefix(24).map { "- \($0)" })
         }
-        let text = String(input.pageText.prefix(3500))
+        // Keep extraction prompts well under the 4096-token window.
+        let text = String(input.pageText.prefix(2_000))
         if !text.isEmpty {
             sections.append("Page text:")
             sections.append(text)

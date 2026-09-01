@@ -11,6 +11,8 @@ final class AgentRuntime: ObservableObject {
     @Published var transcript: [AgentTranscriptEntry] = []
     @Published var isRunning = false
     @Published private(set) var modelGate: AgentModelGate = .unsupportedPlatform
+    /// How full the on-device model context window is (0...1).
+    @Published private(set) var contextUsage = AgentContextUsage.empty
 
     var isModelAvailable: Bool { modelGate.isAvailable }
     var modelStatusText: String { modelGate.detail }
@@ -22,18 +24,31 @@ final class AgentRuntime: ObservableObject {
 
     let context: AgentToolContext
 
+    private var budget = AgentContextBudget()
+    private var lastPageFindings: [String] = []
+    private var recentUserPrompts: [String] = []
+    private var carryOverNotes: String = ""
+    private var didCompactThisSession = false
+
+    #if canImport(FoundationModels)
+    @available(iOS 26.0, *)
+    private var languageSession: LanguageModelSession?
+    #endif
+
     init(context: AgentToolContext? = nil) {
         self.context = context ?? AgentToolContext()
         refreshModelStatus()
         if isModelAvailable {
             appendSystem(AgentToolExecutor.helpText())
         }
+        publishContextUsage()
     }
 
     func refreshModelStatus() {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             modelGate = Self.gate(for: SystemLanguageModel.default.availability)
+            refreshWindowSizeFromModel()
             return
         }
         #endif
@@ -71,15 +86,43 @@ final class AgentRuntime: ObservableObject {
             return .other("Apple Intelligence isn’t available on this device.")
         }
     }
+
+    @available(iOS 26.0, *)
+    private func refreshWindowSizeFromModel() {
+        // contextSize is available on newer SDKs (back-deployed). Fall back to 4096.
+        let model = SystemLanguageModel.default
+        if let size = Self.readContextSize(from: model), size > 0 {
+            budget.windowTokens = size
+            publishContextUsage()
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private static func readContextSize(from model: SystemLanguageModel) -> Int? {
+        // Avoid a hard dependency on iOS 26.4 SDK symbols in older toolchains.
+        let mirror = Mirror(reflecting: model)
+        for child in mirror.children {
+            if child.label == "contextSize", let value = child.value as? Int {
+                return value
+            }
+        }
+        return nil
+    }
     #endif
 
     func clearTranscript() {
         transcript.removeAll()
         extractionDiagnostics.removeAll()
         context.browser.clearReplay()
+        lastPageFindings = []
+        recentUserPrompts = []
+        carryOverNotes = ""
+        didCompactThisSession = false
+        resetLanguageSession()
         if isModelAvailable {
             appendSystem(AgentToolExecutor.helpText())
         }
+        publishContextUsage()
     }
 
     func send(prompt: String, source: AgentRunSource) async {
@@ -97,6 +140,10 @@ final class AgentRuntime: ObservableObject {
         defer { isRunning = false }
 
         lastUserPrompt = trimmed
+        recentUserPrompts.append(trimmed)
+        if recentUserPrompts.count > 8 {
+            recentUserPrompts.removeFirst(recentUserPrompts.count - 8)
+        }
         append(.user, text: trimmed, sourceNote: source)
 
         do {
@@ -110,36 +157,85 @@ final class AgentRuntime: ObservableObject {
             try await runFoundationModels(prompt: trimmed)
             #endif
         } catch {
+            if Self.isExceededContextWindow(error) {
+                // Last-resort recovery: compact and retry once.
+                compactLanguageSession(reason: "Model context filled; compacted and retrying.")
+                do {
+                    #if canImport(FoundationModels)
+                    if #available(iOS 26.0, *) {
+                        try await runFoundationModels(prompt: trimmed, isRetryAfterCompact: true)
+                        return
+                    }
+                    #endif
+                } catch {
+                    append(.assistant, text: "Couldn’t finish after compacting context: \(error.localizedDescription)")
+                    return
+                }
+            }
             append(.assistant, text: error.localizedDescription)
         }
     }
 
     #if canImport(FoundationModels)
     @available(iOS 26.0, *)
-    private func runFoundationModels(prompt: String) async throws {
+    private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
         refreshModelStatus()
         guard isModelAvailable else {
             append(.system, text: modelStatusText)
             return
         }
 
-        let tools = makeFoundationTools()
-        let session = LanguageModelSession(tools: tools, instructions: instructions)
+        if !isRetryAfterCompact, budget.needsCompact {
+            compactLanguageSession(reason: "Trimmed model context to leave room for this turn.")
+        }
+
+        let session = ensureLanguageSession()
+        budget.addText(prompt)
+        publishContextUsage()
+
         let response = try await session.respond(to: prompt)
         let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        budget.addText(text)
+        publishContextUsage()
         append(.assistant, text: text.isEmpty ? "(Empty model response.)" : text)
+
+        if budget.needsCompact {
+            compactLanguageSession(reason: "Trimmed model context after that reply.")
+        }
     }
 
     @available(iOS 26.0, *)
-    private var instructions: String {
+    private func ensureLanguageSession() -> LanguageModelSession {
+        if let languageSession {
+            return languageSession
+        }
+        let tools = makeFoundationTools()
+        let session = LanguageModelSession(tools: tools, instructions: sessionInstructions)
+        languageSession = session
+        budget.resetBaseline(instructions: sessionInstructions)
+        publishContextUsage()
+        return session
+    }
+
+    @available(iOS 26.0, *)
+    private var sessionInstructions: String {
+        var body = baseInstructions
+        if !carryOverNotes.isEmpty {
+            body += "\n\n" + carryOverNotes
+        }
+        return body
+    }
+
+    @available(iOS 26.0, *)
+    private var baseInstructions: String {
         """
         You are Device Agent inside the Playground iOS app. Your only job is driving the in-app browser.
         Use tools in this loop: browserOpen (only if no useful page is open) → browserSnapshot → optional browserClick / browserType → browserSnapshot again.
-        browserSnapshot returns raw scrape plus extractedFindings (Foundation Model bullets from the page). Prefer those bullets for your answer; dig with click/type only if needed.
+        browserSnapshot returns extractedFindings plus interactive element refs (page text is omitted to save context). Prefer extractedFindings for your answer; dig with click/type only if needed.
         Your final reply must be short bullet points from the page that answer the user question. Do not summarize the chat transcript.
         Keep the same browser tab for follow-ups unless they ask for a different site.
         Do not invent phone tools (contacts, calendar, SMS, Maps, files). You only have browser tools and getCurrentDateTime.
-        Keep final answers short.
+        Keep final answers short. Prefer one snapshot per turn when possible.
         """
     }
 
@@ -156,10 +252,39 @@ final class AgentRuntime: ObservableObject {
         ]
     }
     #else
-    private func runFoundationModels(prompt: String) async throws {
+    private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
+        _ = isRetryAfterCompact
         append(.system, text: modelStatusText)
     }
     #endif
+
+    private func resetLanguageSession() {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            languageSession = nil
+        }
+        #endif
+        budget = AgentContextBudget(windowTokens: budget.windowTokens)
+        publishContextUsage()
+    }
+
+    private func compactLanguageSession(reason: String) {
+        carryOverNotes = AgentContextBudget.compactionCarryOver(
+            url: context.browser.url?.absoluteString ?? context.browserURL?.absoluteString,
+            title: context.browser.title.isEmpty ? context.browserTitle : context.browser.title,
+            findings: lastPageFindings,
+            recentUserPrompts: recentUserPrompts
+        )
+        didCompactThisSession = true
+        resetLanguageSession()
+        appendSystem(reason)
+        publishContextUsage()
+    }
+
+    /// Snapshot scrape char budget for the current remaining context.
+    var snapshotTextCharBudget: Int {
+        budget.snapshotTextCharBudget()
+    }
 
     func appendToolCall(name: String, arguments: String) {
         let detail = arguments.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -170,6 +295,8 @@ final class AgentRuntime: ObservableObject {
                 debugDetail: detail.isEmpty ? nil : detail
             )
         )
+        budget.addText(name + detail)
+        publishContextUsage()
     }
 
     func appendToolResult(name: String, result: String) {
@@ -182,19 +309,29 @@ final class AgentRuntime: ObservableObject {
         )
     }
 
-    /// Logs the tool result, runs Foundation Model extraction for snapshots, and returns
-    /// an enriched payload the agent session can use (raw scrape + extractedFindings).
-    /// Snapshot extraction failures are visible in chat and fail the tool call (no heuristic fallback).
+    /// Logs the full tool result for export, runs page extraction for snapshots, and returns
+    /// a **slim** payload for the LanguageModelSession so we stay under the context window.
     func appendToolResultAndEnrich(name: String, result: String) async throws -> String {
         appendToolResult(name: name, result: result)
-        guard name == "browserSnapshot" else { return result }
+
+        let maxChars = budget.modelToolResultCharBudget()
+        guard name == "browserSnapshot" else {
+            let slim = AgentContextBudget.truncateToChars(result, maxChars: maxChars)
+            budget.addText(slim)
+            publishContextUsage()
+            return slim
+        }
 
         let input = pageExtractionInput(fromSnapshotResult: result)
         let title = input.title
         let url = input.url
+        let event = context.browser.replay.last(where: { $0.action == "snapshot" })
+        let elements = event?.elements ?? []
+        let headings = event?.headings ?? input.headings
 
         do {
             let bullets = try await AgentPageExtractor.extract(from: input)
+            lastPageFindings = bullets
             let findings = AgentPageExtractor.formatFindings(title: title, url: url, bullets: bullets)
             transcript.append(
                 AgentTranscriptEntry(
@@ -203,13 +340,17 @@ final class AgentRuntime: ObservableObject {
                     debugDetail: bullets.joined(separator: "\n")
                 )
             )
-            let extracted = bullets.map { "• \($0)" }.joined(separator: "\n")
-            return """
-            \(result)
-
-            extractedFindings (relevant to user question):
-            \(extracted)
-            """
+            let slim = AgentContextBudget.modelFacingSnapshot(
+                title: title,
+                url: url,
+                elements: elements,
+                headings: headings,
+                extractedFindings: bullets,
+                maxChars: budget.modelToolResultCharBudget()
+            )
+            budget.addText(slim)
+            publishContextUsage()
+            return slim
         } catch {
             let diagnostic = recordExtractionFailure(
                 input: input,
@@ -301,6 +442,25 @@ final class AgentRuntime: ObservableObject {
                 text: domain.prePrompt
             )
         )
+    }
+
+    private func publishContextUsage() {
+        contextUsage = AgentContextUsage(budget: budget, didCompact: didCompactThisSession)
+    }
+
+    static func isExceededContextWindow(_ error: Error) -> Bool {
+        let text = error.localizedDescription.lowercased()
+        if text.contains("context window") || text.contains("exceededcontext") {
+            return true
+        }
+        let ns = error as NSError
+        if ns.domain.lowercased().contains("foundationmodels") {
+            // GenerationError.exceededContextWindowSize has been observed as code -1.
+            if ns.localizedDescription.lowercased().contains("context") {
+                return true
+            }
+        }
+        return false
     }
 
     /// JSON dump of the full transcript (including hidden tool results) for debugging.
@@ -444,18 +604,25 @@ struct BrowserReadFMTool: Tool {
 struct BrowserSnapshotFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserSnapshot"
-    let description = "Read interactive elements (with numeric refs) and visible text from the in-app browser. Call before click/type."
+    let description = "Read interactive element refs and extract question-relevant findings from the in-app browser. Call before click/type."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Max visible text characters to return (default 3500)")
+        @Guide(description: "Max page-text characters to scrape (default comes from remaining context budget)")
         var maxTextChars: Double
     }
 
     func call(arguments: Arguments) async throws -> String {
-        let maxChars = arguments.maxTextChars > 0 ? arguments.maxTextChars : 3500
-        return try await AgentFMToolBridge.run(runtime, name: name, summary: "max=\(Int(maxChars))") { context in
-            try await AgentToolExecutor.browserSnapshot(context: context, maxTextChars: maxChars)
+        return try await AgentFMToolBridge.run(runtime, name: name, summary: "snapshot") { context in
+            guard let runtime else {
+                throw AgentToolError.unavailable("Device Agent runtime is gone.")
+            }
+            let requested = arguments.maxTextChars > 0 ? Int(arguments.maxTextChars) : runtime.snapshotTextCharBudget
+            let capped = min(requested, runtime.snapshotTextCharBudget)
+            return try await AgentToolExecutor.browserSnapshot(
+                context: context,
+                maxTextChars: Double(capped)
+            )
         }
     }
 }

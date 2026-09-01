@@ -129,6 +129,11 @@ only for optional voice input.
 - **Export conversation** — share a `.jsonl.zip` of the transcript (including
   hidden tool args/results), browser replay, and AFM extraction diagnostics
 - Chat shows `Invoking <tool>…` only; raw tool I/O stays in the dump
+- **Context budget:** tracks estimated fill of the 4096-token on-device window,
+  shows a **Context** meter in the status bar, returns slim tool payloads to the
+  model (page text stays in the export / chat findings), and compacts into a
+  fresh session with page carry-over before the hard limit. If the framework
+  still throws a context-window error, the run compacts and retries once.
 - **Shortcuts / App Intents / Siri:** “Ask Device Agent” queues a prompt and opens
   the experiment
 - **Deep link:** `playground://device-agent?prompt=…&voice=1`
