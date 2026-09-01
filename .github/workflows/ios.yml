@@ -45,10 +45,6 @@ jobs:
         with:
           xcode-version: latest-stable
 
-      - name: Xcode version for cache key
-        id: xcode-version
-        run: echo "version=$(xcodebuild -version | awk 'NR==1 { print $2 }')" >> "$GITHUB_OUTPUT"
-
       # Bundler cache needs the committed ios/Gemfile.lock. Cuts ~30-40s of cold
       # gem resolve + native extension builds on every run.
       - name: Set up Ruby
@@ -67,15 +63,6 @@ jobs:
           brew_pid=$!
           xcrun simctl list devices available >/dev/null
           wait "$brew_pid"
-
-      - name: Cache Xcode DerivedData
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ios/.ci-derived-data
-          key: ios-deriveddata-${{ runner.os }}-${{ steps.xcode-version.outputs.version }}-${{ hashFiles('ios/Gemfile.lock', 'ios/project.yml', 'ios/**/*.swift') }}
-          restore-keys: |
-            ios-deriveddata-${{ runner.os }}-${{ steps.xcode-version.outputs.version }}-
-            ios-deriveddata-${{ runner.os }}-
 
       # A push to main with signing secrets configured is the only case that
       # ships to TestFlight; everything else just builds and tests.
@@ -97,7 +84,6 @@ jobs:
         env:
           IOS_APPS: ${{ needs.discover.outputs.ios }}
           DEPLOY: ${{ steps.mode.outputs.deploy }}
-          IOS_DERIVED_DATA_PATH: ${{ github.workspace }}/ios/.ci-derived-data
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}

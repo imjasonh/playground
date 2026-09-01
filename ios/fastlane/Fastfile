@@ -123,14 +123,12 @@ end
 platform :ios do
   desc "Run unit + UI tests on a simulator (no signing required)"
   lane :test do
-    derived_data = ENV.fetch("IOS_DERIVED_DATA_PATH", "DerivedData")
     # Prefer an explicit UDID from ios-ci.sh. Multiple devices can share a
     # display name (e.g. two "iPhone 17 Pro" entries); `devices:` then picks a
     # different one than we pre-booted and wastes the early simctl boot.
     opts = {
       project: XCODEPROJ,
       scheme: APP_SCHEME,
-      derived_data_path: derived_data,
       # Coverage collection slows every XCTest host and isn't published by CI.
       code_coverage: false,
       result_bundle: true,

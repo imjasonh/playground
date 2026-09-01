@@ -29,15 +29,11 @@ fi
 export FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT="${FASTLANE_XCODEBUILD_SETTINGS_TIMEOUT:-120}"
 export FASTLANE_XCODEBUILD_SETTINGS_RETRIES="${FASTLANE_XCODEBUILD_SETTINGS_RETRIES:-10}"
 
-# Stable DerivedData path so the workflow can cache compile products across runs.
-export IOS_DERIVED_DATA_PATH="${IOS_DERIVED_DATA_PATH:-$repo_root/ios/.ci-derived-data}"
-mkdir -p "$IOS_DERIVED_DATA_PATH"
-
 # Pick a simulator that actually exists on this runner's Xcode (device names
 # change between Xcode versions), unless the caller pinned one. Prefer a
 # device that is already Booted so we don't fight a cold sibling with the
-# same name. Boot the chosen UDID right away so CoreSimulator overlaps
-# xcodegen + bundle install; Fastfile must target this same UDID.
+# same name. Boot the chosen UDID in the background so CoreSimulator overlaps
+# xcodegen + fastlane preamble; Fastfile must target this same UDID.
 sim_boot_pid=""
 if [ -z "${IOS_SIM_DEVICE:-}" ] || [ -z "${IOS_SIM_UDID:-}" ]; then
   # JSON listing is stable across Xcode versions and avoids ambiguous
@@ -109,8 +105,8 @@ echo "Using simulator device: ${IOS_SIM_DEVICE:-<none found>} (${IOS_SIM_UDID:-n
 if [ -n "${IOS_SIM_UDID:-}" ]; then
   # boot is idempotent when the device is already up; ignore "already booted".
   xcrun simctl boot "$IOS_SIM_UDID" 2>/dev/null || true
-  # `wait` only reaps children of this shell, so keep bootstatus in the parent
-  # (not inside the per-app subshells below).
+  # Do not wait here — let boot finish during xcodegen / fastlane preamble.
+  # Reap the background bootstatus at the end so we don't leave a stray job.
   xcrun simctl bootstatus "$IOS_SIM_UDID" -b >/dev/null 2>&1 &
   sim_boot_pid=$!
 fi
@@ -127,23 +123,6 @@ for app in "${apps[@]}"; do
     xcodegen generate
     # setup-ruby already ran bundle install with the lockfile; skip when warm.
     bundle check >/dev/null 2>&1 || bundle install
-  ); then
-    echo "${app}: project ready"
-  else
-    echo "::error title=iOS setup failed::${app}: xcodegen/bundle install"
-    result=1
-    echo "::endgroup::"
-    continue
-  fi
-
-  if [ -n "${sim_boot_pid:-}" ]; then
-    wait "$sim_boot_pid" || true
-    sim_boot_pid=""
-  fi
-
-  if (
-    set -euo pipefail
-    cd "$app"
     bundle exec fastlane test
   ); then
     echo "${app}: tests passed"
