@@ -12,7 +12,7 @@ struct AgentContextBudget: Equatable {
     /// Leave room for the model’s final answer.
     static let responseReserveTokens = 512
     /// Rough cost of browser tool schemas registered with the session.
-    static let defaultToolsReserveTokens = 900
+    static let defaultToolsReserveTokens = 1200
     /// Compact into a fresh session at or above this fill fraction.
     static let compactThreshold = 0.72
     /// Refuse further large tool payloads at or above this fill fraction.

@@ -113,6 +113,83 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         return result
     }
 
+    /// Find interactive elements whose label/href contains `query`. Returns a short match list.
+    func find(query: String, limit: Int = 12) async throws -> String {
+        try await ensureBridge()
+        let q = Self.jsString(query)
+        let capped = max(1, min(limit, 24))
+        let raw = try await evaluate("window.__deviceAgent.find(\(q), \(capped))")
+        let formatted = Self.formatFindPayload(raw)
+        record(
+            action: "find",
+            detail: "query=\(query.prefix(80)) → \(formatted.split(separator: "\n").count - 1) match(es)",
+            url: url?.absoluteString,
+            title: title
+        )
+        return formatted
+    }
+
+    /// Click the first visible control whose label contains `text` (no prior snapshot required).
+    func clickText(_ text: String) async throws -> String {
+        try await ensureBridge()
+        let escaped = Self.jsString(text)
+        let raw = try await evaluate("window.__deviceAgent.clickText(\(escaped))")
+        let result = try Self.requireOK(raw, action: "clickText")
+        record(
+            action: "clickText",
+            detail: text.prefix(120).description,
+            url: url?.absoluteString,
+            title: title
+        )
+        return result
+    }
+
+    /// Scroll the page (`up`/`down`/`top`/`bottom`) or to a snapshot ref.
+    func scroll(directionOrRef: String) async throws -> String {
+        try await ensureBridge()
+        let escaped = Self.jsString(directionOrRef)
+        let raw = try await evaluate("window.__deviceAgent.scroll(\(escaped))")
+        let result = try Self.requireOK(raw, action: "scroll")
+        record(
+            action: "scroll",
+            detail: directionOrRef,
+            url: url?.absoluteString,
+            title: title
+        )
+        return result
+    }
+
+    /// Read a single element's kind/label/href/value by ref (tiny payload).
+    func get(ref: String) async throws -> String {
+        try await ensureBridge()
+        let escaped = Self.jsString(ref)
+        let raw = try await evaluate("window.__deviceAgent.get(\(escaped))")
+        let formatted = Self.formatGetPayload(raw)
+        record(
+            action: "get",
+            detail: "ref=\(ref)",
+            url: url?.absoluteString,
+            title: title
+        )
+        return formatted
+    }
+
+    /// Choose an option on a `<select>` by visible label or value.
+    func select(ref: String, option: String) async throws -> String {
+        try await ensureBridge()
+        let refJS = Self.jsString(ref)
+        let optionJS = Self.jsString(option)
+        let raw = try await evaluate("window.__deviceAgent.select(\(refJS), \(optionJS))")
+        let result = try Self.requireOK(raw, action: "select")
+        record(
+            action: "select",
+            detail: "ref=\(ref) option=\(option.prefix(80))",
+            url: url?.absoluteString,
+            title: title
+        )
+        return result
+    }
+
     func goBack() async throws -> String {
         guard webView.canGoBack else {
             return "No back history in the in-app browser."
@@ -165,7 +242,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
 
     private func ensureBridge() async throws {
         let ready = try await evaluate(
-            "(window.__deviceAgent && window.__deviceAgent.__version === 2) ? '1' : '0'"
+            "(window.__deviceAgent && window.__deviceAgent.__version === 3) ? '1' : '0'"
         )
         if ready.trimmingCharacters(in: .whitespacesAndNewlines) == "1" {
             return
@@ -173,7 +250,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         // SPA navigations or older bridge: inject / upgrade.
         _ = try await evaluate(Self.bridgeJavaScript + "\n'ok'")
         let again = try await evaluate(
-            "(window.__deviceAgent && window.__deviceAgent.__version === 2) ? '1' : '0'"
+            "(window.__deviceAgent && window.__deviceAgent.__version === 3) ? '1' : '0'"
         )
         guard again.trimmingCharacters(in: .whitespacesAndNewlines) == "1" else {
             throw AgentToolError.unavailable("In-app browser bridge is not available on this page.")
@@ -374,18 +451,59 @@ final class AgentBrowserSession: NSObject, ObservableObject {
             return raw.isEmpty ? "\(action) finished." : raw
         }
         if let ok = json["ok"] as? Bool, ok {
+            if let detail = json["detail"] as? String, !detail.isEmpty {
+                return detail
+            }
             return "\(action) ok"
         }
         let error = json["error"] as? String ?? "failed"
         throw AgentToolError.unavailable("browser \(action): \(error)")
     }
 
-    /// Injected into every main-frame document. Exposes snapshot/click/type with stable refs.
+    nonisolated static func formatFindPayload(_ raw: String) -> String {
+        guard let data = raw.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let matches = json["matches"] as? [String]
+        else {
+            return raw
+        }
+        if matches.isEmpty {
+            let query = json["query"] as? String ?? ""
+            return query.isEmpty ? "No matches." : "No matches for “\(query)”."
+        }
+        var lines = ["matches (\(matches.count)):"]
+        lines.append(contentsOf: matches)
+        return lines.joined(separator: "\n")
+    }
+
+    nonisolated static func formatGetPayload(_ raw: String) -> String {
+        guard let data = raw.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return raw
+        }
+        if let ok = json["ok"] as? Bool, ok == false {
+            let error = json["error"] as? String ?? "failed"
+            return "get failed: \(error)"
+        }
+        let ref = json["ref"] as? String ?? "?"
+        let kind = json["kind"] as? String ?? "node"
+        let label = json["label"] as? String ?? ""
+        let href = json["href"] as? String ?? ""
+        let value = json["value"] as? String ?? ""
+        var lines = ["ref=\(ref) kind=\(kind) label=\"\(label)\""]
+        if !href.isEmpty { lines.append("href=\(href)") }
+        if !value.isEmpty { lines.append("value=\(value)") }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Injected into every main-frame document. Exposes snapshot/find/click/type/scroll/get/select.
     nonisolated static let bridgeJavaScript: String = #"""
     (function () {
-      if (window.__deviceAgent && window.__deviceAgent.__version === 2) return;
+      if (window.__deviceAgent && window.__deviceAgent.__version === 3) return;
       var refs = new Map();
       var next = 1;
+      var INTERACTIVE = 'a[href],button,input,textarea,select,[role="button"],[role="link"],[role="textbox"],[role="searchbox"],[role="option"],[role="menuitem"],[contenteditable="true"]';
 
       function visible(el) {
         if (!el || !el.getBoundingClientRect) return false;
@@ -428,20 +546,54 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         return document.querySelector('main, article, [role="main"], #content, .content') || document.body;
       }
 
+      function interactiveNodes() {
+        return Array.prototype.slice.call(document.querySelectorAll(INTERACTIVE)).filter(visible).slice(0, 120);
+      }
+
+      function reindex() {
+        refs.clear();
+        next = 1;
+        var nodes = interactiveNodes();
+        var elements = [];
+        for (var i = 0; i < nodes.length; i++) {
+          var el = nodes[i];
+          var ref = String(next++);
+          refs.set(ref, el);
+          elements.push({
+            ref: ref,
+            el: el,
+            line: '[' + ref + '] ' + kindOf(el) + ' "' + labelOf(el).replace(/"/g, '\\"') + '"',
+            label: labelOf(el),
+            kind: kindOf(el),
+            href: (el.href || el.getAttribute('href') || '')
+          });
+        }
+        return elements;
+      }
+
+      function setNativeValue(el, value) {
+        var proto = el.tagName === 'TEXTAREA'
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype;
+        var setter = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (setter && setter.set) setter.set.call(el, value);
+        else el.value = value;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+
+      function clickEl(el) {
+        el.scrollIntoView({ block: 'center', inline: 'nearest' });
+        try { el.focus(); } catch (e0) {}
+        el.click();
+      }
+
       window.__deviceAgent = {
-        __version: 2,
+        __version: 3,
         reset: function () { refs.clear(); next = 1; },
         snapshot: function (maxChars) {
-          this.reset();
-          var sel = 'a[href],button,input,textarea,select,[role="button"],[role="link"],[role="textbox"],[role="searchbox"],[contenteditable="true"]';
-          var nodes = Array.prototype.slice.call(document.querySelectorAll(sel)).filter(visible).slice(0, 100);
-          var elements = [];
-          for (var i = 0; i < nodes.length; i++) {
-            var el = nodes[i];
-            var ref = String(next++);
-            refs.set(ref, el);
-            elements.push('[' + ref + '] ' + kindOf(el) + ' "' + labelOf(el).replace(/"/g, '\\"') + '"');
-          }
+          var indexed = reindex();
+          var elements = indexed.map(function (item) { return item.line; });
 
           var root = mainRoot();
           var headings = [];
@@ -467,7 +619,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
           var bodyText = '';
           try {
             bodyText = cleanText((root && (root.innerText || root.textContent)) || '')
-              .slice(0, maxChars || 3500);
+              .slice(0, maxChars || 1800);
           } catch (e3) {}
 
           return JSON.stringify({
@@ -479,29 +631,58 @@ final class AgentBrowserSession: NSObject, ObservableObject {
             text: bodyText
           });
         },
+        find: function (query, limit) {
+          var q = cleanText(query).toLowerCase();
+          var indexed = reindex();
+          var matches = [];
+          if (!q) {
+            return JSON.stringify({ query: query || '', matches: indexed.slice(0, limit || 12).map(function (i) { return i.line; }) });
+          }
+          for (var i = 0; i < indexed.length && matches.length < (limit || 12); i++) {
+            var item = indexed[i];
+            var hay = (item.label + ' ' + item.kind + ' ' + item.href).toLowerCase();
+            if (hay.indexOf(q) !== -1) matches.push(item.line);
+          }
+          return JSON.stringify({ query: query || '', matches: matches });
+        },
         click: function (ref) {
           var el = refs.get(String(ref));
-          if (!el) return JSON.stringify({ ok: false, error: 'unknown ref ' + ref + '; call browserSnapshot first' });
+          if (!el) return JSON.stringify({ ok: false, error: 'unknown ref ' + ref + '; call browserSnapshot or browserFind first' });
           try {
-            el.scrollIntoView({ block: 'center', inline: 'nearest' });
-            el.focus();
-            el.click();
-            return JSON.stringify({ ok: true });
+            clickEl(el);
+            return JSON.stringify({ ok: true, detail: 'clicked ref ' + ref + ' (' + kindOf(el) + ' "' + labelOf(el) + '")' });
           } catch (e) {
             return JSON.stringify({ ok: false, error: String(e) });
           }
         },
+        clickText: function (text) {
+          var needle = cleanText(text).toLowerCase();
+          if (!needle) return JSON.stringify({ ok: false, error: 'need non-empty text' });
+          var indexed = reindex();
+          for (var i = 0; i < indexed.length; i++) {
+            var item = indexed[i];
+            if ((item.label || '').toLowerCase().indexOf(needle) === -1) continue;
+            try {
+              clickEl(item.el);
+              return JSON.stringify({
+                ok: true,
+                detail: 'clicked ' + item.kind + ' "' + item.label + '" (ref=' + item.ref + ')'
+              });
+            } catch (e) {
+              return JSON.stringify({ ok: false, error: String(e) });
+            }
+          }
+          return JSON.stringify({ ok: false, error: 'no visible control matching “' + text + '”' });
+        },
         type: function (ref, text, submit) {
           var el = refs.get(String(ref));
-          if (!el) return JSON.stringify({ ok: false, error: 'unknown ref ' + ref + '; call browserSnapshot first' });
+          if (!el) return JSON.stringify({ ok: false, error: 'unknown ref ' + ref + '; call browserSnapshot or browserFind first' });
           try {
             el.scrollIntoView({ block: 'center', inline: 'nearest' });
             el.focus();
             var value = text == null ? '' : String(text);
             if ('value' in el) {
-              el.value = value;
-              el.dispatchEvent(new Event('input', { bubbles: true }));
-              el.dispatchEvent(new Event('change', { bubbles: true }));
+              setNativeValue(el, value);
             } else if (el.isContentEditable) {
               el.textContent = value;
               el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -517,7 +698,71 @@ final class AgentBrowserSession: NSObject, ObservableObject {
                 el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
               }
             }
-            return JSON.stringify({ ok: true });
+            return JSON.stringify({ ok: true, detail: 'typed into ref ' + ref + (submit ? ' (submitted)' : '') });
+          } catch (e) {
+            return JSON.stringify({ ok: false, error: String(e) });
+          }
+        },
+        scroll: function (directionOrRef) {
+          var arg = cleanText(directionOrRef || 'down').toLowerCase();
+          try {
+            var el = refs.get(String(directionOrRef));
+            if (el) {
+              el.scrollIntoView({ block: 'center', inline: 'nearest' });
+              return JSON.stringify({ ok: true, detail: 'scrolled to ref ' + directionOrRef });
+            }
+            var h = window.innerHeight || 600;
+            if (arg === 'top') window.scrollTo({ top: 0, behavior: 'auto' });
+            else if (arg === 'bottom') window.scrollTo({ top: document.body.scrollHeight, behavior: 'auto' });
+            else if (arg === 'up') window.scrollBy({ top: -Math.floor(h * 0.85), behavior: 'auto' });
+            else window.scrollBy({ top: Math.floor(h * 0.85), behavior: 'auto' });
+            return JSON.stringify({ ok: true, detail: 'scrolled ' + (arg || 'down') });
+          } catch (e) {
+            return JSON.stringify({ ok: false, error: String(e) });
+          }
+        },
+        get: function (ref) {
+          var el = refs.get(String(ref));
+          if (!el) return JSON.stringify({ ok: false, error: 'unknown ref ' + ref + '; call browserSnapshot or browserFind first' });
+          return JSON.stringify({
+            ok: true,
+            ref: String(ref),
+            kind: kindOf(el),
+            label: labelOf(el),
+            href: el.href || el.getAttribute('href') || '',
+            value: ('value' in el && el.value != null) ? String(el.value).slice(0, 200) : ''
+          });
+        },
+        select: function (ref, option) {
+          var el = refs.get(String(ref));
+          if (!el) return JSON.stringify({ ok: false, error: 'unknown ref ' + ref + '; call browserSnapshot or browserFind first' });
+          var tag = (el.tagName || '').toLowerCase();
+          if (tag !== 'select') {
+            return JSON.stringify({ ok: false, error: 'ref ' + ref + ' is not a select' });
+          }
+          var wanted = cleanText(option).toLowerCase();
+          if (!wanted) return JSON.stringify({ ok: false, error: 'need an option label or value' });
+          var opts = Array.prototype.slice.call(el.options || []);
+          var match = null;
+          for (var i = 0; i < opts.length; i++) {
+            var o = opts[i];
+            var label = cleanText(o.text || o.label || '');
+            var value = cleanText(o.value || '');
+            if (label.toLowerCase() === wanted || value.toLowerCase() === wanted
+                || label.toLowerCase().indexOf(wanted) !== -1 || value.toLowerCase().indexOf(wanted) !== -1) {
+              match = o;
+              break;
+            }
+          }
+          if (!match) return JSON.stringify({ ok: false, error: 'no option matching “' + option + '”' });
+          try {
+            el.value = match.value;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return JSON.stringify({
+              ok: true,
+              detail: 'selected “' + cleanText(match.text || match.value) + '” on ref ' + ref
+            });
           } catch (e) {
             return JSON.stringify({ ok: false, error: String(e) });
           }

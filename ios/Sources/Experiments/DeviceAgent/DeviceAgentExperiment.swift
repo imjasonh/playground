@@ -5,7 +5,7 @@ enum DeviceAgentExperiment {
     static let experiment = Experiment(
         id: "device-agent",
         title: "Device Agent",
-        summary: "On-device model that drives an in-app browser (open, snapshot, click, type).",
+        summary: "On-device model that drives an in-app browser (find, click, type, scroll).",
         icon: "globe"
     ) {
         DeviceAgentView()

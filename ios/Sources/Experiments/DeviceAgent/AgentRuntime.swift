@@ -227,11 +227,16 @@ final class AgentRuntime: ObservableObject {
     private var baseInstructions: String {
         """
         You are Device Agent inside the Playground iOS app. Your only job is driving the in-app browser.
-        Use tools in this loop: browserOpen (only if no useful page is open) → browserSnapshot → optional browserClick / browserType → browserSnapshot again.
-        browserSnapshot returns extractedFindings plus interactive element refs (page text is omitted to save context). Prefer extractedFindings for your answer; dig with click/type only if needed.
+        Prefer cheap tools before another full browserSnapshot:
+        - browserFind(query) to list matching controls (tiny)
+        - browserClickText(text) to click by visible label without a ref
+        - browserGet(ref) for one element's href/value/label
+        - browserScroll(up|down|top|bottom|ref) to move the viewport
+        - browserSelect(ref, option) for <select> controls
+        Use browserOpen only if no useful page is open. Use browserSnapshot when you need extractedFindings or a fresh element map.
+        browserSnapshot returns extractedFindings plus interactive element refs (page text omitted). Prefer extractedFindings for answers.
         Your final reply must be short bullet points from the page that answer the user question. Do not summarize the chat transcript.
         Keep the same browser tab for follow-ups unless they ask for a different site.
-        Do not invent phone tools (contacts, calendar, SMS, Maps, files). You only have browser tools and getCurrentDateTime.
         Keep final answers short. Prefer one snapshot per turn when possible.
         """
     }
@@ -243,8 +248,13 @@ final class AgentRuntime: ObservableObject {
             BrowserOpenFMTool(runtime: self),
             BrowserReadFMTool(runtime: self),
             BrowserSnapshotFMTool(runtime: self),
+            BrowserFindFMTool(runtime: self),
             BrowserClickFMTool(runtime: self),
+            BrowserClickTextFMTool(runtime: self),
             BrowserTypeFMTool(runtime: self),
+            BrowserSelectFMTool(runtime: self),
+            BrowserGetFMTool(runtime: self),
+            BrowserScrollFMTool(runtime: self),
             BrowserBackFMTool(runtime: self),
         ]
     }
@@ -624,11 +634,11 @@ struct BrowserSnapshotFMTool: Tool {
 struct BrowserClickFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserClick"
-    let description = "Click an element by ref from the latest browserSnapshot (for example \"3\")."
+    let description = "Click an element by ref from the latest browserSnapshot or browserFind (for example \"3\")."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Numeric ref from browserSnapshot")
+        @Guide(description: "Numeric ref from browserSnapshot or browserFind")
         var ref: String
     }
 
@@ -640,14 +650,115 @@ struct BrowserClickFMTool: Tool {
 }
 
 @available(iOS 26.0, *)
-struct BrowserTypeFMTool: Tool {
+struct BrowserClickTextFMTool: Tool {
     weak var runtime: AgentRuntime?
-    let name = "browserType"
-    let description = "Type into an input/textarea by ref from browserSnapshot. Set submit true to press Enter / submit the form."
+    let name = "browserClickText"
+    let description = "Click the first visible control whose label contains the given text. Prefer this over snapshot+click when the label is known."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Numeric ref from browserSnapshot")
+        @Guide(description: "Visible label substring to click (for example \"third result\" or \"Next\")")
+        var text: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.text) { context in
+            try await AgentToolExecutor.browserClickText(context: context, text: arguments.text)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserFindFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserFind"
+    let description = "List interactive controls matching a query (label/href). Returns a short match list and refreshes refs. Cheaper than browserSnapshot."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Substring to match in control labels or hrefs (empty returns the first controls)")
+        var query: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.query) { context in
+            try await AgentToolExecutor.browserFind(context: context, query: arguments.query)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserGetFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserGet"
+    let description = "Read one element by ref: kind, label, href, value. Tiny result."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Numeric ref from browserSnapshot or browserFind")
+        var ref: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.ref) { context in
+            try await AgentToolExecutor.browserGet(context: context, ref: arguments.ref)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserScrollFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserScroll"
+    let description = "Scroll the page: up, down, top, bottom, or a ref to bring that element into view."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "up | down | top | bottom | numeric ref")
+        var directionOrRef: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.directionOrRef) { context in
+            try await AgentToolExecutor.browserScroll(context: context, directionOrRef: arguments.directionOrRef)
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserSelectFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserSelect"
+    let description = "Choose an option on a <select> by visible label or value."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Numeric ref of the select from browserSnapshot or browserFind")
+        var ref: String
+        @Guide(description: "Option label or value to select")
+        var option: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await AgentFMToolBridge.run(runtime, name: name, summary: arguments.ref) { context in
+            try await AgentToolExecutor.browserSelect(
+                context: context,
+                ref: arguments.ref,
+                option: arguments.option
+            )
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct BrowserTypeFMTool: Tool {
+    weak var runtime: AgentRuntime?
+    let name = "browserType"
+    let description = "Type into an input/textarea by ref from browserSnapshot or browserFind. Set submit true to press Enter / submit the form."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "Numeric ref from browserSnapshot or browserFind")
         var ref: String
         @Guide(description: "Text to enter")
         var text: String

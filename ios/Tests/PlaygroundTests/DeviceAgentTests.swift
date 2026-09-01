@@ -310,6 +310,9 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertEqual(AgentBrowserSession.jsString("a'b"), "'a\\'b'")
         XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("__deviceAgent"))
         XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("snapshot"))
+        XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("__version === 3"))
+        XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("clickText"))
+        XCTAssertTrue(AgentBrowserSession.bridgeJavaScript.contains("find:"))
     }
 
     @MainActor
@@ -321,6 +324,35 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertEqual(
             try AgentBrowserSession.requireOK(#"{"ok":true}"#, action: "click"),
             "click ok"
+        )
+        XCTAssertEqual(
+            try AgentBrowserSession.requireOK(
+                #"{"ok":true,"detail":"clicked link \"Home\" (ref=3)"}"#,
+                action: "clickText"
+            ),
+            #"clicked link "Home" (ref=3)"#
+        )
+    }
+
+    func testBrowserFindAndGetFormatting() {
+        let find = AgentBrowserSession.formatFindPayload(
+            #"{"query":"bike","matches":["[3] link \"E-bike deals\"","[8] link \"Bike shop\""]}"#
+        )
+        XCTAssertTrue(find.contains("matches (2):"))
+        XCTAssertTrue(find.contains("[3] link"))
+        XCTAssertEqual(
+            AgentBrowserSession.formatFindPayload(#"{"query":"zzz","matches":[]}"#),
+            "No matches for “zzz”."
+        )
+
+        let get = AgentBrowserSession.formatGetPayload(
+            #"{"ok":true,"ref":"3","kind":"link","label":"Home","href":"https://example.com/","value":""}"#
+        )
+        XCTAssertTrue(get.contains("ref=3"))
+        XCTAssertTrue(get.contains("href=https://example.com/"))
+        XCTAssertEqual(
+            AgentBrowserSession.formatGetPayload(#"{"ok":false,"error":"unknown ref 9"}"#),
+            "get failed: unknown ref 9"
         )
     }
 

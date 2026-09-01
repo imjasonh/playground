@@ -82,6 +82,45 @@ enum AgentToolExecutor {
         return result
     }
 
+    static func browserClickText(context: AgentToolContext, text: String) async throws -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw AgentToolError.invalidArguments("Need visible label text to click.")
+        }
+        let result = try await context.browser.clickText(trimmed)
+        context.logTool(name: "browserClickText", detail: trimmed)
+        return result
+    }
+
+    static func browserFind(context: AgentToolContext, query: String) async throws -> String {
+        let result = try await context.browser.find(query: query)
+        context.logTool(name: "browserFind", detail: query)
+        return result
+    }
+
+    static func browserScroll(context: AgentToolContext, directionOrRef: String) async throws -> String {
+        let trimmed = directionOrRef.trimmingCharacters(in: .whitespacesAndNewlines)
+        let arg = trimmed.isEmpty ? "down" : trimmed
+        let result = try await context.browser.scroll(directionOrRef: arg)
+        context.logTool(name: "browserScroll", detail: arg)
+        return result
+    }
+
+    static func browserGet(context: AgentToolContext, ref: String) async throws -> String {
+        let result = try await context.browser.get(ref: ref)
+        if result.hasPrefix("get failed:") {
+            throw AgentToolError.unavailable(result)
+        }
+        context.logTool(name: "browserGet", detail: ref)
+        return result
+    }
+
+    static func browserSelect(context: AgentToolContext, ref: String, option: String) async throws -> String {
+        let result = try await context.browser.select(ref: ref, option: option)
+        context.logTool(name: "browserSelect", detail: "\(ref)=\(option)")
+        return result
+    }
+
     static func browserType(
         context: AgentToolContext,
         ref: String,
@@ -104,8 +143,8 @@ enum AgentToolExecutor {
     static func helpText() -> String {
         """
         Device Agent drives an in-app browser with the on-device Foundation Model. \
-        Ask it to open an http(s) URL, then it snapshots the page, extracts answer bullets, \
-        and can click or type by element ref. The tab stays open for follow-ups. \
+        Open an http(s) URL, then snapshot or find controls, click by ref or visible text, \
+        type/select/scroll, and answer from page findings. The tab stays open for follow-ups. \
         Requires Apple Intelligence on this device.
         """
     }

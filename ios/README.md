@@ -119,8 +119,11 @@ question-relevant bullets from the page. Mic/speech permissions are requested
 only for optional voice input.
 
 - **Chat + tool transcript** plus a live WKWebView pane when a page is open
-- **Browser tools only:** `browserOpen`, `browserRead`, `browserSnapshot`,
-  `browserClick`, `browserType`, `browserBack` (plus `getCurrentDateTime`)
+- **Browser tools:** `browserOpen`, `browserRead`, `browserSnapshot`,
+  `browserFind`, `browserClick`, `browserClickText`, `browserType`,
+  `browserSelect`, `browserGet`, `browserScroll`, `browserBack` (plus
+  `getCurrentDateTime`). Find / click-by-text / get / scroll return tiny
+  payloads so digs do not re-dump the page into the model context.
 - After each snapshot, Foundation Models guided generation extracts
   question-relevant **From the page** bullets into chat. If extraction fails,
   the tool fails with a visible error (no heuristic substitute). Diagnostics
