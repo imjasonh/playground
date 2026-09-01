@@ -17,7 +17,7 @@ final class AgentRuntime: ObservableObject {
     var isModelAvailable: Bool { modelGate.isAvailable }
     var modelStatusText: String { modelGate.detail }
 
-    /// Latest user prompt — used to keep page findings relevant to the question.
+    /// Latest user prompt. Page extraction stays tied to this question.
     var lastUserPrompt: String = ""
     /// AFM page-extraction failures recorded for conversation export / iteration.
     private(set) var extractionDiagnostics: [AgentPageExtractionDiagnostic] = []
@@ -26,6 +26,8 @@ final class AgentRuntime: ObservableObject {
 
     private var budget = AgentContextBudget()
     private var lastPageFindings: [String] = []
+    /// URL the cached findings were extracted from. Dropped on navigation mismatch.
+    private var lastPageFindingsURL: String?
     private var recentUserPrompts: [String] = []
     private var carryOverNotes: String = ""
     private var didCompactThisSession = false
@@ -111,7 +113,7 @@ final class AgentRuntime: ObservableObject {
         transcript.removeAll()
         extractionDiagnostics.removeAll()
         context.browser.clearReplay()
-        lastPageFindings = []
+        clearPageFindings()
         recentUserPrompts = []
         carryOverNotes = ""
         didCompactThisSession = false
@@ -238,6 +240,7 @@ final class AgentRuntime: ObservableObject {
         Your final reply must be short bullet points from the page that answer the user question. Do not summarize the chat transcript.
         Keep the same browser tab for follow-ups unless they ask for a different site.
         Keep final answers short. Prefer one snapshot per turn when possible.
+        After browserOpen or browserBack, call browserSnapshot again before trusting prior findings.
         """
     }
 
@@ -272,16 +275,44 @@ final class AgentRuntime: ObservableObject {
     }
 
     private func compactLanguageSession(reason: String) {
+        dropStalePageFindings()
+        let currentURL = context.browser.url?.absoluteString ?? context.browserURL?.absoluteString
         carryOverNotes = AgentContextBudget.compactionCarryOver(
-            url: context.browser.url?.absoluteString ?? context.browserURL?.absoluteString,
+            url: currentURL,
             title: context.browser.title.isEmpty ? context.browserTitle : context.browser.title,
             findings: lastPageFindings,
+            findingsURL: lastPageFindingsURL,
             recentUserPrompts: recentUserPrompts
         )
         didCompactThisSession = true
         resetLanguageSession()
         appendSystem(reason)
         publishContextUsage()
+    }
+
+    private func clearPageFindings() {
+        lastPageFindings = []
+        lastPageFindingsURL = nil
+    }
+
+    /// Cached AFM findings for the open page (empty after navigate / failed extract).
+    var cachedPageFindings: [String] { lastPageFindings }
+
+    /// URL the cached findings were taken from, if any.
+    var cachedPageFindingsURL: String? { lastPageFindingsURL }
+
+    /// Drops cached findings when the in-app browser left the page they came from.
+    private func dropStalePageFindings() {
+        let current = context.browser.url?.absoluteString ?? context.browserURL?.absoluteString
+        guard let bound = lastPageFindingsURL else {
+            if !lastPageFindings.isEmpty {
+                clearPageFindings()
+            }
+            return
+        }
+        if bound != current {
+            clearPageFindings()
+        }
     }
 
     /// Snapshot scrape char budget for the current remaining context.
@@ -313,9 +344,14 @@ final class AgentRuntime: ObservableObject {
     }
 
     /// Logs the full tool result for export, runs page extraction for snapshots, and returns
-    /// a **slim** payload for the LanguageModelSession so we stay under the context window.
+    /// a slim payload for the LanguageModelSession so we stay under the context window.
     func appendToolResultAndEnrich(name: String, result: String) async throws -> String {
         appendToolResult(name: name, result: result)
+
+        if name == "browserOpen" || name == "browserBack" {
+            // Navigation invalidates prior page findings (carry-over must not reuse them).
+            clearPageFindings()
+        }
 
         let maxChars = budget.modelToolResultCharBudget()
         guard name == "browserSnapshot" else {
@@ -335,6 +371,7 @@ final class AgentRuntime: ObservableObject {
         do {
             let bullets = try await AgentPageExtractor.extract(from: input)
             lastPageFindings = bullets
+            lastPageFindingsURL = url.isEmpty ? nil : url
             let findings = AgentPageExtractor.formatFindings(title: title, url: url, bullets: bullets)
             transcript.append(
                 AgentTranscriptEntry(
@@ -355,6 +392,7 @@ final class AgentRuntime: ObservableObject {
             publishContextUsage()
             return slim
         } catch {
+            clearPageFindings()
             let diagnostic = recordExtractionFailure(
                 input: input,
                 rawSnapshot: result,
@@ -607,7 +645,7 @@ struct BrowserReadFMTool: Tool {
 struct BrowserSnapshotFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserSnapshot"
-    let description = "Read interactive element refs and extract question-relevant findings from the in-app browser. Call before click/type."
+    let description = "Read interactive element refs and extract question-relevant findings. Prefer browserFind or browserClickText when you already know the control label."
 
     @Generable
     struct Arguments {

@@ -3,13 +3,13 @@ import Foundation
 /// Tracks how full the on-device Foundation Model context window is, and caps
 /// text so Device Agent does not hit the hard limit mid-turn.
 ///
-/// Apple’s on-device model window is 4096 tokens. English is roughly 3–4
+/// Apple's on-device model window is 4096 tokens. English is roughly 3-4
 /// characters per token; this budget uses 3 so estimates stay slightly high.
 struct AgentContextBudget: Equatable {
     static let defaultWindowTokens = 4096
     /// Conservative chars/token so we under-fill rather than overshoot.
     static let charsPerToken = 3
-    /// Leave room for the model’s final answer.
+    /// Leave room for the model's final answer.
     static let responseReserveTokens = 512
     /// Rough cost of browser tool schemas registered with the session.
     static let defaultToolsReserveTokens = 1200
@@ -49,7 +49,7 @@ struct AgentContextBudget: Equatable {
         max(0, windowTokens - committedTokens - Self.responseReserveTokens)
     }
 
-    /// 0...1 fill level for the UI (includes reserved response headroom as free).
+    /// 0...1 fill level for the UI (response reserve still counts as free).
     var fractionUsed: Double {
         guard windowTokens > 0 else { return 1 }
         return min(1, Double(committedTokens) / Double(windowTokens))
@@ -149,10 +149,12 @@ struct AgentContextBudget: Equatable {
     }
 
     /// Short carry-over for a compacted session so follow-ups keep page context.
+    /// Omits findings when `findingsURL` does not match the current page `url`.
     static func compactionCarryOver(
         url: String?,
         title: String?,
         findings: [String],
+        findingsURL: String? = nil,
         recentUserPrompts: [String]
     ) -> String {
         var parts: [String] = ["Compacted prior context (keep using the open browser tab):"]
@@ -162,7 +164,12 @@ struct AgentContextBudget: Equatable {
         if let url, !url.isEmpty {
             parts.append("Page URL: \(url)")
         }
-        if !findings.isEmpty {
+        let findingsMatchCurrentPage: Bool = {
+            guard !findings.isEmpty else { return false }
+            guard let findingsURL, !findingsURL.isEmpty else { return true }
+            return findingsURL == url
+        }()
+        if findingsMatchCurrentPage {
             parts.append("Latest page findings:")
             parts.append(contentsOf: findings.prefix(8).map { "• \($0)" })
         }

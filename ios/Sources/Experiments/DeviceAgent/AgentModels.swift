@@ -75,7 +75,7 @@ struct AgentTranscriptEntry: Identifiable, Equatable {
     }
 }
 
-/// One step in a structured browser replay (no screenshots — actions + scraped text).
+/// One step in a structured browser replay (actions + scraped text, no screenshots).
 struct AgentBrowserReplayEvent: Identifiable, Equatable, Codable {
     var id: UUID
     var date: Date
@@ -128,7 +128,7 @@ struct AgentConversationDump: Codable, Equatable {
     var extractionDiagnostics: [AgentPageExtractionDiagnostic]
 }
 
-/// One failed AFM page-extraction attempt — enough to reproduce / improve prompts.
+/// One failed AFM page-extraction attempt. Enough to reproduce / improve prompts.
 struct AgentPageExtractionDiagnostic: Codable, Equatable, Identifiable {
     var id: UUID
     var date: Date

@@ -393,12 +393,24 @@ final class DeviceAgentTests: XCTestCase {
             url: "https://example.com",
             title: "Example",
             findings: ["A", "B"],
+            findingsURL: "https://example.com",
             recentUserPrompts: ["first", "second", "third", "fourth"]
         )
         XCTAssertTrue(carry.contains("https://example.com"))
         XCTAssertTrue(carry.contains("• A"))
         XCTAssertTrue(carry.contains("fourth"))
         XCTAssertFalse(carry.contains("- first"))
+
+        let stale = AgentContextBudget.compactionCarryOver(
+            url: "https://example.com/b",
+            title: "B",
+            findings: ["Old page fact"],
+            findingsURL: "https://example.com/a",
+            recentUserPrompts: ["what is on this page?"]
+        )
+        XCTAssertTrue(stale.contains("https://example.com/b"))
+        XCTAssertFalse(stale.contains("Old page fact"))
+        XCTAssertFalse(stale.contains("Latest page findings"))
     }
 
     func testContextBudgetSnapshotCharBudgetShrinksWhenFull() {
@@ -412,6 +424,38 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertLessThan(tight, roomy)
         XCTAssertGreaterThanOrEqual(tight, 400)
         XCTAssertTrue(budget.isNearHardStop || budget.needsCompact)
+    }
+
+    @MainActor
+    func testBrowserOpenClearsCachedPageFindings() async throws {
+        AgentPageExtractor.testExtractionOverride = { _ in ["From page A"] }
+        defer { AgentPageExtractor.testExtractionOverride = nil }
+
+        let runtime = AgentRuntime()
+        runtime.lastUserPrompt = "facts?"
+        runtime.context.browser.record(
+            action: "snapshot",
+            detail: "1",
+            url: "https://example.com/a",
+            title: "A",
+            pageText: "Hello A",
+            elements: [#"[1] link "Home""#],
+            headings: ["A"],
+            listItems: []
+        )
+        _ = try await runtime.appendToolResultAndEnrich(
+            name: "browserSnapshot",
+            result: "title: A\ntext:\nHello A"
+        )
+        XCTAssertEqual(runtime.cachedPageFindings, ["From page A"])
+        XCTAssertEqual(runtime.cachedPageFindingsURL, "https://example.com/a")
+
+        _ = try await runtime.appendToolResultAndEnrich(
+            name: "browserOpen",
+            result: "Loaded https://example.com/b in the in-app browser. Call browserSnapshot next."
+        )
+        XCTAssertTrue(runtime.cachedPageFindings.isEmpty)
+        XCTAssertNil(runtime.cachedPageFindingsURL)
     }
 
     func testExceededContextWindowDetection() {

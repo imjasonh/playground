@@ -113,33 +113,36 @@ through the system share sheet.
 
 ### Device Agent
 
-On-device assistant that **drives an in-app browser**. The model can open
-http(s) pages, snapshot interactive elements, click/type by ref, and extract
-question-relevant bullets from the page. Mic/speech permissions are requested
-only for optional voice input.
+On-device assistant that drives an in-app browser. The model can open http(s)
+pages, snapshot interactive elements, click/type by ref or visible text, and
+extract question-relevant bullets from the page. Mic/speech permissions are
+requested only for optional voice input.
 
-- **Chat + tool transcript** plus a live WKWebView pane when a page is open
-- **Browser tools:** `browserOpen`, `browserRead`, `browserSnapshot`,
+- Chat + tool transcript, plus a live WKWebView pane when a page is open
+- Browser tools: `browserOpen`, `browserRead`, `browserSnapshot`,
   `browserFind`, `browserClick`, `browserClickText`, `browserType`,
   `browserSelect`, `browserGet`, `browserScroll`, `browserBack` (plus
-  `getCurrentDateTime`). Find / click-by-text / get / scroll return tiny
+  `getCurrentDateTime`). Find, click-by-text, get, and scroll return tiny
   payloads so digs do not re-dump the page into the model context.
 - After each snapshot, Foundation Models guided generation extracts
-  question-relevant **From the page** bullets into chat. If extraction fails,
+  question-relevant "From the page" bullets into chat. If extraction fails,
   the tool fails with a visible error (no heuristic substitute). Diagnostics
   land in the export ZIP.
-- **Voice input** (mic + speech, just-in-time) → editable text → same agent loop
-- **Export conversation** — share a `.jsonl.zip` of the transcript (including
+- Voice input (mic + speech, just-in-time) to editable text, then the same
+  agent loop
+- Export conversation: share a `.jsonl.zip` of the transcript (including
   hidden tool args/results), browser replay, and AFM extraction diagnostics
 - Chat shows `Invoking <tool>…` only; raw tool I/O stays in the dump
-- **Context budget:** tracks estimated fill of the 4096-token on-device window,
-  shows a **Context** meter in the status bar, returns slim tool payloads to the
+- Context budget: tracks estimated fill of the 4096-token on-device window,
+  shows a Context meter in the status bar, returns slim tool payloads to the
   model (page text stays in the export / chat findings), and compacts into a
-  fresh session with page carry-over before the hard limit. If the framework
-  still throws a context-window error, the run compacts and retries once.
-- **Shortcuts / App Intents / Siri:** “Ask Device Agent” queues a prompt and opens
+  fresh session with page carry-over before the hard limit. Findings are bound
+  to the page URL, so a navigate + compact does not reuse the previous page's
+  bullets. If the framework still throws a context-window error, the run
+  compacts and retries once.
+- Shortcuts / App Intents / Siri: "Ask Device Agent" queues a prompt and opens
   the experiment
-- **Deep link:** `playground://device-agent?prompt=…&voice=1`
+- Deep link: `playground://device-agent?prompt=…&voice=1`
 - With the browser open, the composer collapses to an Ask follow-up control so
   the keyboard stays out of the way
 
@@ -150,10 +153,10 @@ link works). If the model is still downloading, it shows progress plus
 **Check again**. Unsupported hardware / older OS / Simulator get a plain
 unavailable pane. There is no keyword-planner fallback.
 
-If page extraction quality is weak for a domain, a next step is Apple’s
-Foundation Models **adapter** toolkit (LoRA). Adapters ship as small packages
-and must be retrained when Apple updates the base system model — not wired up
-in this experiment yet.
+If page extraction quality is weak for a domain, a next step is Apple's
+Foundation Models adapter toolkit (LoRA). Adapters ship as small packages and
+must be retrained when Apple updates the base system model. Not wired up in
+this experiment yet.
 
 ### T9 Keyboard
 

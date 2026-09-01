@@ -672,7 +672,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
               return JSON.stringify({ ok: false, error: String(e) });
             }
           }
-          return JSON.stringify({ ok: false, error: 'no visible control matching “' + text + '”' });
+          return JSON.stringify({ ok: false, error: 'no visible control matching "' + text + '"' });
         },
         type: function (ref, text, submit) {
           var el = refs.get(String(ref));
@@ -761,7 +761,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
             el.dispatchEvent(new Event('change', { bubbles: true }));
             return JSON.stringify({
               ok: true,
-              detail: 'selected “' + cleanText(match.text || match.value) + '” on ref ' + ref
+              detail: 'selected "' + cleanText(match.text || match.value) + '" on ref ' + ref
             });
           } catch (e) {
             return JSON.stringify({ ok: false, error: String(e) });
