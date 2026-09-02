@@ -282,7 +282,7 @@ final class AgentLiveQueryRunner: ObservableObject {
         )
         if timedOut {
             status = .timedOut
-            await waitUntilIdle(runtime: runtime, maxSeconds: 30)
+            await waitUntilIdle(runtime: runtime, maxSeconds: 5)
         } else {
             status = .completed
         }

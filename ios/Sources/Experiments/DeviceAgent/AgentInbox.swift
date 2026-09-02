@@ -1,6 +1,6 @@
 import Foundation
 
-/// Queues prompts from Shortcuts and deep links into Device Agent.
+/// Queues prompts from Shortcuts, App Intents, and deep links into Device Agent.
 @MainActor
 final class AgentInbox: ObservableObject {
     static let shared = AgentInbox()
@@ -24,16 +24,34 @@ final class AgentInbox: ObservableObject {
     func enqueue(
         prompt: String,
         source: AgentRunSource,
-        preferVoice: Bool = false
+        preferVoice: Bool = false,
+        url: String? = nil
     ) {
+        let trimmedURL = url?.trimmingCharacters(in: .whitespacesAndNewlines)
         let run = AgentPendingRun(
             prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
             source: source,
-            preferVoice: preferVoice
+            preferVoice: preferVoice,
+            url: (trimmedURL?.isEmpty == false) ? trimmedURL : nil
         )
         pendingRun = run
         persist(run)
         shouldOpenExperiment = true
+    }
+
+    /// Queues a browser drive: open `url` (when http/https), then run `prompt`.
+    func enqueueBrowserDrive(
+        url: URL,
+        prompt: String = "",
+        source: AgentRunSource = .shortcut,
+        preferVoice: Bool = false
+    ) {
+        enqueue(
+            prompt: prompt,
+            source: source,
+            preferVoice: preferVoice,
+            url: url.absoluteString
+        )
     }
 
     func consumePendingRun() -> AgentPendingRun? {
@@ -51,9 +69,10 @@ final class AgentInbox: ObservableObject {
 
         let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
         let prompt = items.first(where: { $0.name == "prompt" })?.value?.removingPercentEncoding ?? ""
+        let pageURL = items.first(where: { $0.name == "url" })?.value?.removingPercentEncoding
         let voice = items.first(where: { $0.name == "voice" })?.value == "1"
 
-        enqueue(prompt: prompt, source: .deepLink, preferVoice: voice)
+        enqueue(prompt: prompt, source: .deepLink, preferVoice: voice, url: pageURL)
         return true
     }
 

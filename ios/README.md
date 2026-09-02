@@ -46,7 +46,7 @@ ios/
 | Id | Title | Notes |
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
-| `device-agent` | Device Agent | On-device model drives an in-app browser; Shortcuts; voice; requires Apple Intelligence |
+| `device-agent` | Device Agent | On-device model drives an in-app browser; App Intents/Shortcuts; voice; requires Apple Intelligence |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
@@ -141,13 +141,18 @@ requested only for optional voice input.
   to the page URL, so a navigate + compact does not reuse the previous page's
   bullets. If the framework still throws a context-window error, the run
   compacts and retries once.
-- Shortcuts / App Intents / Siri: "Ask Device Agent" queues a prompt and opens
-  the experiment
-- Deep link: `playground://device-agent?prompt=…&voice=1`
+- Shortcuts / App Intents / Siri:
+  - **Ask Device Agent** — queue a free-form prompt
+  - **Browse URL with Device Agent** — open an http(s) URL, then run an optional
+    prompt so the model drives the in-app browser
+  - **Summarize URL with Device Agent** — open a URL and summarize the page
+  - **Find on Page with Device Agent** — open a URL and search it for a query
+- Deep link: `playground://device-agent?prompt=…&url=https://…&voice=1`
+  (`url` is optional; when set, Device Agent opens it before running the prompt)
 - CI / UI test: launch with `-deviceAgentLiveQueries` to run ten open-ended
   prompts through the on-device model against live websites (shopping, near-me,
-  news, Wikipedia, weather, sports, …). Queries run **in parallel** (isolated
-  runtime + browser each) with a **5-minute** suite budget. The suite scores
+  news, Wikipedia, weather, sports, …). Queries run in parallel (isolated
+  runtime + browser each) with a 5-minute suite budget. The suite scores
   completion and browser-tool progress, not fixed page text.
   These tests require Foundation Models. After `xcodegen generate`,
   `scripts/enable-foundation-models-scheme.sh` sets the Playground scheme’s
