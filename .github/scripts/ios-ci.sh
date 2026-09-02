@@ -4,7 +4,7 @@
 #
 # For each app:
 #   1. xcodegen generate          (build the .xcodeproj from project.yml)
-#   2. bundle install             (fastlane, pinned by the app's Gemfile)
+#   2. bundle install             (fastlane, pinned by the app's Gemfile.lock)
 #   3. bundle exec fastlane test  (unit + UI tests on a simulator)
 #   4. bundle exec fastlane beta  (only when DEPLOY=true → upload to TestFlight)
 set -uo pipefail
@@ -52,7 +52,8 @@ for app in "${apps[@]}"; do
     set -euo pipefail
     cd "$app"
     xcodegen generate
-    bundle install
+    # setup-ruby already ran bundle install with the lockfile; skip when warm.
+    bundle check >/dev/null 2>&1 || bundle install
     bundle exec fastlane test
   ); then
     echo "${app}: tests passed"

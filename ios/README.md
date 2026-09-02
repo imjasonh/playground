@@ -316,6 +316,9 @@ xcodegen generate
 bundle exec fastlane test
 ```
 
+`Gemfile.lock` is committed so local and CI resolve the same fastlane gems.
+Re-run `bundle update fastlane` only when you intentionally bump.
+
 ## Shipping to TestFlight
 
 [`docs/ios-testflight-setup.md`](../docs/ios-testflight-setup.md) ·

@@ -251,7 +251,8 @@ end
 - Keep the iOS legs **change-gated** (only run when an iOS app dir changed), just
   like the current per-type discovery, so we don't pay macOS time on browser/Go/
   Rust-only PRs.
-- Cache DerivedData and SwiftPM/CocoaPods to cut build times.
+- Cache bundler gems (`ruby/setup-ruby` + committed `ios/Gemfile.lock`) to
+  cut cold gem installs. Skip unused coverage collection during `fastlane test`.
 - The existing `test.yml` stays all-Linux; add iOS as a **separate job/workflow**
   on `macos-latest` rather than bolting it onto the Linux `test` job, so the
   single-runner Linux flow is unchanged.

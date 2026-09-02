@@ -45,6 +45,15 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # Bundler cache needs the committed ios/Gemfile.lock. Cuts ~30-40s of cold
+      # gem resolve + native extension builds on every run.
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: ios
+
       - name: Install XcodeGen
         run: brew install xcodegen
 

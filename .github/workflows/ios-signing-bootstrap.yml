@@ -58,6 +58,13 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1.321.0
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: ${{ inputs.app }}
+
       - name: Verify signing secrets are present
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
