@@ -157,7 +157,7 @@ final class PlaygroundUITests: XCTestCase {
 
     /// Drives ten open-ended prompts through Device Agent against live websites.
     /// The on-device model chooses tools; assertions score completion/progress, not fixed page text.
-    func testDeviceAgentLiveQuerySuiteHandlesTenRealQueries() {
+    func testDeviceAgentLiveQuerySuiteHandlesTenRealQueries() throws {
         continueAfterFailure = true
 
         let app = XCUIApplication()

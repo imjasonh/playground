@@ -263,7 +263,6 @@ final class AgentLiveQueryRunner: ObservableObject {
 
         let status: AgentLiveQueryStatus
         let timedOut = await waitForSend(
-            runtime: runtime,
             sendTask: sendTask,
             timeoutSeconds: timeoutSeconds
         )
@@ -327,7 +326,6 @@ final class AgentLiveQueryRunner: ObservableObject {
 
     /// Returns `true` if the timeout won before `send` finished.
     private func waitForSend(
-        runtime: AgentRuntime,
         sendTask: Task<Void, Never>,
         timeoutSeconds: TimeInterval
     ) async -> Bool {
@@ -343,11 +341,7 @@ final class AgentLiveQueryRunner: ObservableObject {
             }
             let first = await group.next() ?? false
             group.cancelAll()
-            // If send already finished, first is false. If timeout fired first, drain send later.
-            if first {
-                return true
-            }
-            return false
+            return first
         }
     }
 
