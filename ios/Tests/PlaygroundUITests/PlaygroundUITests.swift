@@ -155,49 +155,70 @@ final class PlaygroundUITests: XCTestCase {
         }
     }
 
-    /// Drives ten scripted browser queries (fixture HTML) and tracks pass/fail.
-    /// Does not need Apple Intelligence — CI is the reliable simulator for this path.
-    func testDeviceAgentBrowserTaskSuiteHandlesTenQueries() {
+    /// Drives ten open-ended prompts through Device Agent against live websites.
+    /// The on-device model chooses tools; assertions score completion/progress, not fixed page text.
+    func testDeviceAgentLiveQuerySuiteHandlesTenRealQueries() {
         continueAfterFailure = true
 
         let app = XCUIApplication()
-        // Keep in sync with AgentBrowserTaskRunner.launchArgument.
-        app.launchArguments.append("-deviceAgentBrowserTasks")
+        // Keep in sync with AgentLiveQueryRunner.launchArgument.
+        app.launchArguments.append("-deviceAgentLiveQueries")
         app.launch()
         XCTAssertTrue(app.navigationBars["Playground"].waitForExistence(timeout: 10))
 
         openExperiment("device-agent", title: "Device Agent", in: app)
         XCTAssertTrue(app.navigationBars["Device Agent"].waitForExistence(timeout: 8))
 
-        let root = app.descendants(matching: .any)["deviceAgentBrowserTasksRoot"]
-        XCTAssertTrue(root.waitForExistence(timeout: 15), "Browser task suite UI should appear")
-
-        let summary = app.descendants(matching: .any)["deviceAgentBrowserTasksSummary"]
-        let finished = NSPredicate { _, _ in
-            let label = summary.label
-            return label.contains("10/") || label.contains("passed")
-        }
-        let expectation = XCTNSPredicateExpectation(predicate: finished, object: summary)
-        // Ten WKWebView fixture loads + tool calls; leave headroom for slow sims.
-        let waited = XCTWaiter.wait(for: [expectation], timeout: 120)
-        XCTAssertEqual(waited, .completed, "Timed out waiting for browser task suite: \(summary.label)")
-
-        XCTAssertTrue(
-            summary.label.contains("10/10 passed") || summary.label.hasPrefix("10/10"),
-            "Expected 10/10 passed, got: \(summary.label)"
+        let root = app.descendants(matching: .any)["deviceAgentLiveQueriesRoot"]
+        let unavailable = app.descendants(matching: .any)["deviceAgentUnavailable"]
+        let ready = NSPredicate { _, _ in root.exists || unavailable.exists }
+        let readyWait = XCTNSPredicateExpectation(predicate: ready, object: app)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [readyWait], timeout: 20),
+            .completed,
+            "Expected live-query suite UI or unavailable pane"
         )
 
-        let taskIDs = [
-            "open-snapshot", "find-ebike", "read-prices", "click-product", "search-type-submit",
-            "dismiss-cookies", "scroll-list", "get-href", "select-size", "back-navigation",
+        if unavailable.exists && !root.exists {
+            // Simulator without Apple Intelligence cannot drive live web queries.
+            throw XCTSkip("Device Agent model unavailable; live web query suite needs Foundation Models")
+        }
+
+        XCTAssertTrue(root.exists, "Live query suite UI should appear")
+
+        let summary = app.descendants(matching: .any)["deviceAgentLiveQueriesSummary"]
+        let finished = NSPredicate { _, _ in
+            let label = summary.label
+            // "N/10 passed" once the catalog finishes (pass or fail).
+            return label.range(of: #"/10 passed"#, options: .regularExpression) != nil
+                && !label.contains("Running")
+        }
+        let expectation = XCTNSPredicateExpectation(predicate: finished, object: summary)
+        // Ten live web digs; each may take up to ~90s.
+        let waited = XCTWaiter.wait(for: [expectation], timeout: 20 * 60)
+        XCTAssertEqual(waited, .completed, "Timed out waiting for live query suite: \(summary.label)")
+
+        if summary.label.contains("model unavailable") {
+            throw XCTSkip("Live query suite skipped — model unavailable mid-run")
+        }
+
+        XCTAssertTrue(
+            summary.label.contains("10/10 passed"),
+            "Expected 10/10 passed for live queries, got: \(summary.label)"
+        )
+
+        let queryIDs = [
+            "ebike-top5", "radishes-near-me", "macbook-price-compare", "bbc-headlines",
+            "wikipedia-facts", "cookie-recipe", "chicago-weekend-weather", "portland-vegetarian",
+            "dune-scores", "warriors-schedule",
         ]
-        for id in taskIDs {
-            let row = app.descendants(matching: .any)["deviceAgentBrowserTask-\(id)"]
+        for id in queryIDs {
+            let row = app.descendants(matching: .any)["deviceAgentLiveQuery-\(id)"]
             XCTAssertTrue(row.waitForExistence(timeout: 2), "Missing result row for \(id)")
             let value = row.value as? String ?? row.label
             XCTAssertTrue(
                 value.localizedCaseInsensitiveContains("passed"),
-                "Task \(id) should pass; accessibility=\(value)"
+                "Query \(id) should pass; accessibility=\(value)"
             )
         }
     }

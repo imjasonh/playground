@@ -237,7 +237,8 @@ final class AgentRuntime: ObservableObject {
         - browserSelect(ref, option) for <select> controls
         Use browserOpen only if no useful page is open. Use browserSnapshot when you need extractedFindings or a fresh element map.
         browserSnapshot returns extractedFindings (or approximateFindings) plus interactive element refs (page text omitted). Prefer findings for answers.
-        For product prices or shopping questions, open a concrete http(s) search or product URL. Dismiss cookie/consent banners with browserClickText("Accept") or similar before trusting the page. Prefer browserFind for "price", "$", or product names.
+        For product prices or shopping questions, open a concrete http(s) search or product URL (DuckDuckGo HTML, a retailer, Wikipedia, etc.). Dismiss cookie/consent banners with browserClickText("Accept") or similar before trusting the page. Prefer browserFind for "price", "$", or product names.
+        You do not have device GPS. For "near me" questions, ask once for a city — or assume San Francisco, CA and say that you assumed it — then search with that place in the query.
         If a tool fails, recover: find/snapshot again, try another control, or open a simpler page. Do not stop after one failure.
         Your final reply must be short bullet points from the page that answer the user question. Do not summarize the chat transcript.
         Keep the same browser tab for follow-ups unless they ask for a different site.

@@ -5,7 +5,7 @@ import UIKit
 struct DeviceAgentView: View {
     @StateObject private var runtime = AgentRuntime()
     @StateObject private var voice = AgentVoiceCapture()
-    @StateObject private var browserTaskRunner = AgentBrowserTaskRunner()
+    @StateObject private var liveQueryRunner = AgentLiveQueryRunner()
     @ObservedObject private var inbox = AgentInbox.shared
     @ObservedObject private var permissions = AgentPermissionGate.shared
 
@@ -19,8 +19,8 @@ struct DeviceAgentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if browserTaskRunner.isRunning || !browserTaskRunner.results.isEmpty {
-                browserTasksPane
+            if liveQueryRunner.isRunning || !liveQueryRunner.results.isEmpty {
+                liveQueriesPane
             } else if runtime.isModelAvailable {
                 statusBar
                 transcriptList
@@ -47,12 +47,14 @@ struct DeviceAgentView: View {
         .animation(.easeInOut(duration: 0.2), value: voiceMode)
         .animation(.easeInOut(duration: 0.2), value: promptFocused)
         .animation(.easeInOut(duration: 0.2), value: runtime.isModelAvailable)
-        .animation(.easeInOut(duration: 0.2), value: browserTaskRunner.isRunning)
+        .animation(.easeInOut(duration: 0.2), value: liveQueryRunner.isRunning)
         .scrollDismissesKeyboard(.interactively)
         .onAppear {
             runtime.refreshModelStatus()
-            if AgentBrowserTaskRunner.shouldAutostartFromLaunchArguments {
-                Task { await browserTaskRunner.runAll(browser: runtime.context.browser) }
+            if AgentLiveQueryRunner.shouldAutostartFromLaunchArguments {
+                Task {
+                    await liveQueryRunner.runAll(runtime: runtime, perQueryTimeoutSeconds: 90)
+                }
             } else if runtime.isModelAvailable {
                 consumeInboxIfNeeded()
             }
@@ -136,41 +138,61 @@ struct DeviceAgentView: View {
         .accessibilityIdentifier("deviceAgentRoot")
     }
 
-    private var browserTasksPane: some View {
+    private var liveQueriesPane: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Browser task suite")
+            Text("Live query suite")
                 .font(.headline)
-                .accessibilityIdentifier("deviceAgentBrowserTasksTitle")
-            Text(browserTaskRunner.summaryLine.isEmpty
-                 ? "Preparing \(AgentBrowserTaskCatalog.count) queries…"
-                 : browserTaskRunner.summaryLine)
+                .accessibilityIdentifier("deviceAgentLiveQueriesTitle")
+            Text(liveQueryRunner.summaryLine.isEmpty
+                 ? "Preparing \(AgentLiveQueryCatalog.count) live queries…"
+                 : liveQueryRunner.summaryLine)
                 .font(.subheadline.monospacedDigit())
-                .foregroundStyle(browserTaskRunner.allPassed ? .green : .primary)
-                .accessibilityIdentifier("deviceAgentBrowserTasksSummary")
-            if browserTaskRunner.isRunning {
+                .foregroundStyle(liveQueryRunner.allPassed ? .green : .primary)
+                .accessibilityIdentifier("deviceAgentLiveQueriesSummary")
+            if let skipped = liveQueryRunner.skippedReason, !skipped.isEmpty {
+                Text(skipped)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("deviceAgentLiveQueriesSkipReason")
+            }
+            if liveQueryRunner.isRunning {
                 ProgressView()
-                    .accessibilityIdentifier("deviceAgentBrowserTasksProgress")
+                    .accessibilityIdentifier("deviceAgentLiveQueriesProgress")
+            }
+            // Keep the real browser visible while the model digs — this is the point of the soak.
+            if runtime.context.browser.url != nil || runtime.context.browserURL != nil {
+                AgentBrowserPane(session: runtime.context.browser)
+                    .frame(minHeight: 160, maxHeight: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .accessibilityIdentifier("deviceAgentLiveQueriesBrowser")
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(browserTaskRunner.results) { result in
+                    ForEach(liveQueryRunner.results) { result in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(result.passed ? "PASS" : "FAIL") · \(result.task.id)")
+                            Text("\(result.passed ? "PASS" : "FAIL") · \(result.query.id) · \(result.status.rawValue)")
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(result.passed ? .green : .red)
-                            Text(result.task.query)
+                            Text(result.query.prompt)
                                 .font(.subheadline)
+                                .lineLimit(3)
                             Text(result.summary)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            if !result.assistantSnippet.isEmpty {
+                                Text(result.assistantSnippet)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(4)
+                            }
                         }
                         .padding(10)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color(.secondarySystemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .accessibilityElement(children: .combine)
-                        .accessibilityLabel("\(result.passed ? "passed" : "failed") \(result.task.id)")
-                        .accessibilityIdentifier("deviceAgentBrowserTask-\(result.task.id)")
+                        .accessibilityLabel("\(result.passed ? "passed" : "failed") \(result.query.id)")
+                        .accessibilityIdentifier("deviceAgentLiveQuery-\(result.query.id)")
                         .accessibilityValue(result.passed ? "passed" : "failed")
                     }
                 }
@@ -178,7 +200,7 @@ struct DeviceAgentView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .accessibilityIdentifier("deviceAgentBrowserTasksRoot")
+        .accessibilityIdentifier("deviceAgentLiveQueriesRoot")
     }
 
     private var unavailablePane: some View {

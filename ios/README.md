@@ -144,9 +144,10 @@ requested only for optional voice input.
 - Shortcuts / App Intents / Siri: "Ask Device Agent" queues a prompt and opens
   the experiment
 - Deep link: `playground://device-agent?prompt=…&voice=1`
-- CI / UI test: launch with `-deviceAgentBrowserTasks` to run ten fixture
-  browser queries (open, find, prices, click, type, cookies, scroll, get,
-  select, back) and show pass/fail in the experiment UI
+- CI / UI test: launch with `-deviceAgentLiveQueries` to run ten open-ended
+  prompts through the on-device model against live websites (shopping, near-me,
+  news, Wikipedia, weather, sports, …). The suite scores completion and
+  browser-tool progress, not fixed page text, and shows pass/fail in the UI.
 - With the browser open, the composer collapses to an Ask follow-up control so
   the keyboard stays out of the way
 

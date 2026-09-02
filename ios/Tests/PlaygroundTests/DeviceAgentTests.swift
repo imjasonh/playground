@@ -534,24 +534,42 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertFalse(bullets.contains(where: { $0.lowercased().contains("cookie") }))
     }
 
-    @MainActor
-    func testBrowserTaskCatalogHasTenQueries() {
-        XCTAssertEqual(AgentBrowserTaskCatalog.count, 10)
-        XCTAssertEqual(Set(AgentBrowserTaskCatalog.all.map(\.id)).count, 10)
-        XCTAssertTrue(AgentBrowserTaskCatalog.all.contains { $0.query.localizedCaseInsensitiveContains("ebike") })
+    func testLiveQueryCatalogHasTenOpenEndedPrompts() {
+        XCTAssertEqual(AgentLiveQueryCatalog.count, 10)
+        XCTAssertEqual(Set(AgentLiveQueryCatalog.all.map(\.id)).count, 10)
+        for query in AgentLiveQueryCatalog.all {
+            XCTAssertFalse(query.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            XCTAssertGreaterThanOrEqual(query.prompt.split(separator: " ").count, 5)
+        }
+        XCTAssertTrue(AgentLiveQueryCatalog.all.contains { $0.prompt.localizedCaseInsensitiveContains("ebike") })
+        XCTAssertTrue(AgentLiveQueryCatalog.all.contains { $0.prompt.localizedCaseInsensitiveContains("radish") })
     }
 
-    @MainActor
-    func testBrowserTaskSuitePassesAllTenQueries() async throws {
-        let browser = AgentBrowserSession()
-        let runner = AgentBrowserTaskRunner()
-        await runner.runAll(browser: browser)
-        XCTAssertEqual(runner.totalCount, 10)
-        let failures = runner.results.filter { !$0.passed }
-        XCTAssertTrue(
-            runner.allPassed,
-            failures.map { "\($0.task.id): \($0.summary)" }.joined(separator: " | ")
+    func testLiveQueryScorerAcceptsBrowseOrClarifyingAsk() {
+        let browsed = AgentLiveQueryScorer.Snapshot(
+            toolCallCount: 2,
+            pageFindingCount: 1,
+            assistantTexts: ["• Trail Glide about $1,200 on Example Shop"],
+            systemTexts: []
         )
-        XCTAssertEqual(runner.summaryLine, "10/10 passed")
+        XCTAssertTrue(AgentLiveQueryScorer.passed(status: .completed, snapshot: browsed))
+
+        let clarify = AgentLiveQueryScorer.Snapshot(
+            toolCallCount: 0,
+            pageFindingCount: 0,
+            assistantTexts: ["What city should I search near?"],
+            systemTexts: []
+        )
+        XCTAssertTrue(AgentLiveQueryScorer.passed(status: .completed, snapshot: clarify))
+        XCTAssertTrue(AgentLiveQueryScorer.looksLikeClarifyingAsk("What city should I search near?"))
+
+        let emptyBrowse = AgentLiveQueryScorer.Snapshot(
+            toolCallCount: 0,
+            pageFindingCount: 0,
+            assistantTexts: ["Hello"],
+            systemTexts: []
+        )
+        XCTAssertFalse(AgentLiveQueryScorer.passed(status: .completed, snapshot: emptyBrowse))
+        XCTAssertFalse(AgentLiveQueryScorer.passed(status: .timedOut, snapshot: browsed))
     }
 }
