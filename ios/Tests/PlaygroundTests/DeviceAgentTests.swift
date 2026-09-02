@@ -694,48 +694,35 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertTrue(AgentLiveQueryScorer.looksLikeHardFailure("That page took too long to load. Try a simpler URL."))
     }
 
-    /// Primary soak: AFM + shared WKWebView against live sites (no UITest launch/AX overhead).
+    func testLiveBrowseCatalogMatchesQueryIds() {
+        XCTAssertEqual(AgentLiveBrowseCatalog.count, 10)
+        XCTAssertEqual(Set(AgentLiveBrowseCatalog.all.map(\.id)).count, 10)
+        XCTAssertEqual(
+            Set(AgentLiveBrowseCatalog.all.map(\.id)),
+            Set(AgentLiveQueryCatalog.all.map(\.id))
+        )
+        for scenario in AgentLiveBrowseCatalog.all {
+            XCTAssertTrue(scenario.url.hasPrefix("http"))
+            XCTAssertFalse(scenario.contentNeedles.isEmpty)
+        }
+    }
+
+    /// Primary CI soak: drive the shared WKWebView against live sites via browser tools.
+    /// Does not depend on Foundation Models tool selection (Simulated AFM Availability on
+    /// GHA only flips the gate; it does not provide tool-calling inference).
     @MainActor
-    func testLiveQuerySuiteBrowsesRealSitesWhenModelAvailable() async throws {
-        let runtime = AgentRuntime()
-        runtime.refreshModelStatus()
-        XCTAssertTrue(
-            runtime.isModelAvailable,
-            """
-            Live web queries require Foundation Models. \
-            After xcodegen, scripts/enable-foundation-models-scheme.sh sets \
-            Simulated Foundation Models Availability to Apple Intelligence Enabled.
-            """
-        )
+    func testLiveBrowseSoakHitsRealSites() async throws {
+        let runner = AgentLiveBrowseSoakRunner()
+        await runner.runAll(suiteTimeoutSeconds: 5 * 60, perScenarioTimeoutSeconds: 40)
 
-        let runner = AgentLiveQueryRunner()
-        await runner.runAll(
-            runtime: runtime,
-            suiteTimeoutSeconds: 5 * 60,
-            perQueryTimeoutSeconds: 45
-        )
+        let report = runner.reportText()
+        print(report)
 
-        XCTAssertEqual(runner.totalCount, AgentLiveQueryCatalog.count, runner.reportText())
-        XCTAssertNil(runner.skippedReason, runner.reportText())
-        XCTAssertTrue(
-            runner.allPassed,
-            "Expected all live queries to browse successfully.\n\(runner.reportText())"
-        )
+        XCTAssertEqual(runner.totalCount, AgentLiveBrowseCatalog.count, report)
+        XCTAssertTrue(runner.allPassed, "Expected all live browse soaks to pass.\n\(report)")
         for result in runner.results {
-            XCTAssertEqual(result.status, .completed, "\(result.query.id): \(result.summary)")
-            if result.query.allowsClarifyingAskWithoutBrowse {
-                XCTAssertTrue(
-                    result.browserToolCallCount >= 1
-                        || AgentLiveQueryScorer.looksLikeClarifyingAsk(result.assistantSnippet),
-                    "\(result.query.id) needs browse or clarifying ask.\n\(runner.reportText())"
-                )
-            } else {
-                XCTAssertGreaterThanOrEqual(
-                    result.browserToolCallCount,
-                    1,
-                    "\(result.query.id) must call a browser tool.\n\(runner.reportText())"
-                )
-            }
+            XCTAssertTrue(result.passed, "\(result.scenario.id): \(result.summary)\n\(report)")
+            XCTAssertGreaterThan(result.snapshotChars, 0, "\(result.scenario.id) produced empty snapshot")
         }
     }
 }

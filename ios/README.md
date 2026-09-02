@@ -149,17 +149,15 @@ requested only for optional voice input.
   - **Find on Page with Device Agent** — open a URL and search it for a query
 - Deep link: `playground://device-agent?prompt=…&url=https://…&voice=1`
   (`url` is optional; when set, Device Agent opens it before running the prompt)
-- CI soak (unit test): `testLiveQuerySuiteBrowsesRealSitesWhenModelAvailable`
-  runs ten open-ended prompts through `AgentRuntime` + the shared WKWebView
-  against live websites (shopping, near-me, news, Wikipedia, weather, sports, …).
-  Queries run sequentially (one browser tab) with a 5-minute suite budget and
-  score real browser-tool use (open/snapshot/find/…), not fixed page text.
-  Clarifying “what city?” without browsing is only allowed for the near-me
-  prompt. Optional manual launch: `-deviceAgentLiveQueries`.
-  These tests require Foundation Models. After `xcodegen generate`,
-  `scripts/enable-foundation-models-scheme.sh` sets the Playground scheme’s
-  Simulated Foundation Models Availability to Apple Intelligence Enabled
-  (same as Edit Scheme → Run/Test → Options). Do not skip when AFM is missing.
+- CI soak (unit test): `testLiveBrowseSoakHitsRealSites` drives the shared
+  WKWebView through `browserOpen` / `browserSnapshot` / `browserFind` against
+  ten live URLs (DuckDuckGo HTML, Apple, BBC, Wikipedia, …) matching the
+  open-ended Device Agent prompts. This flushes load/scrape/tool errors without
+  depending on Foundation Models tool selection — Simulated AFM Availability on
+  CI only flips the model gate; it does not provide tool-calling inference.
+  Optional manual launch: `-deviceAgentLiveQueries`.
+  After `xcodegen generate`, `scripts/enable-foundation-models-scheme.sh` still
+  sets Simulated Foundation Models Availability for interactive AFM UI testing.
 - With the browser open, the composer collapses to an Ask follow-up control so
   the keyboard stays out of the way
 
