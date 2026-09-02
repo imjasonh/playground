@@ -53,7 +53,7 @@ struct DeviceAgentView: View {
             runtime.refreshModelStatus()
             if AgentLiveQueryRunner.shouldAutostartFromLaunchArguments {
                 Task {
-                    await liveQueryRunner.runAll(runtime: runtime, perQueryTimeoutSeconds: 90)
+                    await liveQueryRunner.runAll(runtime: runtime, suiteTimeoutSeconds: 5 * 60)
                 }
             } else if runtime.isModelAvailable {
                 consumeInboxIfNeeded()

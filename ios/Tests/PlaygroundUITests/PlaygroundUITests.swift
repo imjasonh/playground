@@ -195,8 +195,8 @@ final class PlaygroundUITests: XCTestCase {
         )
 
         // Poll without reading .label on a missing element (that throws snapshot errors).
-        // 10 queries × ~90s tool budget + model/navigation overhead — leave headroom.
-        let deadline = Date().addingTimeInterval(35 * 60)
+        // Suite runs all 10 queries in parallel with a 5-minute budget.
+        let deadline = Date().addingTimeInterval(5 * 60 + 30)
         var lastSummary = ""
         var finished = false
         while Date() < deadline {

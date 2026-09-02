@@ -187,13 +187,13 @@ final class AgentLiveQueryRunner: ObservableObject {
 
     func runAll(
         runtime: AgentRuntime,
-        perQueryTimeoutSeconds: TimeInterval = 90
+        suiteTimeoutSeconds: TimeInterval = 5 * 60
     ) async {
         guard !isRunning else { return }
         isRunning = true
         results = []
         skippedReason = nil
-        summaryLine = "Running \(AgentLiveQueryCatalog.count) live queries…"
+        summaryLine = "Running \(AgentLiveQueryCatalog.count) live queries in parallel…"
         defer { isRunning = false }
 
         runtime.refreshModelStatus()
@@ -216,17 +216,31 @@ final class AgentLiveQueryRunner: ObservableObject {
             return
         }
 
-        var collected: [AgentLiveQueryResult] = []
-        for query in AgentLiveQueryCatalog.all {
-            let result = await runOne(
-                query,
-                runtime: runtime,
-                timeoutSeconds: perQueryTimeoutSeconds
-            )
-            collected.append(result)
-            results = collected
-            summaryLine = "\(passedCount)/\(collected.count) passed"
+        // One isolated runtime (transcript + WKWebView + model session) per query so
+        // they can progress concurrently while awaiting network / AFM.
+        let catalog = AgentLiveQueryCatalog.all
+        var byID: [String: AgentLiveQueryResult] = [:]
+
+        await withTaskGroup(of: AgentLiveQueryResult.self) { group in
+            for query in catalog {
+                group.addTask { @MainActor in
+                    let isolated = AgentRuntime()
+                    return await self.runOne(
+                        query,
+                        runtime: isolated,
+                        timeoutSeconds: suiteTimeoutSeconds
+                    )
+                }
+            }
+            for await result in group {
+                byID[result.query.id] = result
+                let ordered = catalog.compactMap { byID[$0.id] }
+                results = ordered
+                summaryLine = "\(ordered.filter(\.passed).count)/\(ordered.count) finished…"
+            }
         }
+
+        results = catalog.compactMap { byID[$0.id] }
         summaryLine = "\(passedCount)/\(AgentLiveQueryCatalog.count) passed"
     }
 

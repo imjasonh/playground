@@ -146,8 +146,9 @@ requested only for optional voice input.
 - Deep link: `playground://device-agent?prompt=…&voice=1`
 - CI / UI test: launch with `-deviceAgentLiveQueries` to run ten open-ended
   prompts through the on-device model against live websites (shopping, near-me,
-  news, Wikipedia, weather, sports, …). The suite scores completion and
-  browser-tool progress, not fixed page text, and shows pass/fail in the UI.
+  news, Wikipedia, weather, sports, …). Queries run **in parallel** (isolated
+  runtime + browser each) with a **5-minute** suite budget. The suite scores
+  completion and browser-tool progress, not fixed page text.
   These tests require Foundation Models. After `xcodegen generate`,
   `scripts/enable-foundation-models-scheme.sh` sets the Playground scheme’s
   Simulated Foundation Models Availability to Apple Intelligence Enabled
