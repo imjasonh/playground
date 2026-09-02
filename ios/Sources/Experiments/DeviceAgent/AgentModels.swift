@@ -195,12 +195,14 @@ struct AgentConversationDumpToolLog: Codable, Equatable {
     var detail: String
 }
 
-/// Queued work from Shortcuts or deep links.
+/// Queued work from Shortcuts, App Intents, or deep links.
 struct AgentPendingRun: Equatable, Codable {
     var id: UUID
     var prompt: String
     var source: AgentRunSource
     var preferVoice: Bool
+    /// Optional http(s) URL to open in the in-app browser before the model runs.
+    var url: String?
     var createdAt: Date
 
     init(
@@ -208,13 +210,48 @@ struct AgentPendingRun: Equatable, Codable {
         prompt: String,
         source: AgentRunSource,
         preferVoice: Bool = false,
+        url: String? = nil,
         createdAt: Date = Date()
     ) {
         self.id = id
         self.prompt = prompt
         self.source = source
         self.preferVoice = preferVoice
+        self.url = url
         self.createdAt = createdAt
+    }
+
+    /// Prompt the runtime should send after optionally pre-opening `url`.
+    static func resolvedPrompt(_ run: AgentPendingRun, pageAlreadyOpen: Bool) -> String {
+        let task = run.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = run.url?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if pageAlreadyOpen {
+            if task.isEmpty {
+                return "The page is already open in the in-app browser. Call browserSnapshot, then summarize the main points as short bullets."
+            }
+            return "The page is already open in the in-app browser. Call browserSnapshot if you need a fresh map, then: \(task)"
+        }
+        if !url.isEmpty {
+            if task.isEmpty {
+                return "Open \(url) and summarize the main points from the page as short bullets."
+            }
+            return "Open \(url) and \(task)"
+        }
+        return task
+    }
+
+    /// Returns a validated http(s) URL from `url`, or nil.
+    var browserURL: URL? {
+        guard let raw = url?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty,
+              let parsed = URL(string: raw),
+              let scheme = parsed.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              parsed.host != nil
+        else {
+            return nil
+        }
+        return parsed
     }
 }
 

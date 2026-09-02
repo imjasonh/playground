@@ -7,12 +7,14 @@ final class DeviceAgentTests: XCTestCase {
         try await super.setUp()
         AgentBrowserSession.shared.clearReplay()
         AgentPageExtractor.testExtractionOverride = nil
+        _ = AgentInbox.shared.consumePendingRun()
     }
 
     @MainActor
     override func tearDown() async throws {
         AgentPageExtractor.testExtractionOverride = nil
         AgentBrowserSession.shared.clearReplay()
+        _ = AgentInbox.shared.consumePendingRun()
         try await super.tearDown()
     }
 
@@ -67,6 +69,92 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertEqual(run?.prompt, "hello world")
         XCTAssertEqual(run?.preferVoice, true)
         XCTAssertEqual(run?.source, .deepLink)
+        XCTAssertNil(run?.url)
+    }
+
+    @MainActor
+    func testDeepLinkParsesURLAndPrompt() {
+        let url = URL(
+            string: "playground://device-agent?url=https%3A%2F%2Fexample.com%2Fdocs&prompt=find%20pricing"
+        )!
+        XCTAssertTrue(AgentInbox.shared.handleOpenURL(url))
+        let run = AgentInbox.shared.consumePendingRun()
+        XCTAssertEqual(run?.url, "https://example.com/docs")
+        XCTAssertEqual(run?.prompt, "find pricing")
+        XCTAssertEqual(run?.browserURL?.absoluteString, "https://example.com/docs")
+        XCTAssertEqual(run?.source, .deepLink)
+    }
+
+    @MainActor
+    func testEnqueueBrowserDriveStoresURL() {
+        let page = URL(string: "https://example.com/a")!
+        AgentInbox.shared.enqueueBrowserDrive(
+            url: page,
+            prompt: "Click Sign in",
+            source: .shortcut
+        )
+        let run = AgentInbox.shared.consumePendingRun()
+        XCTAssertEqual(run?.url, "https://example.com/a")
+        XCTAssertEqual(run?.prompt, "Click Sign in")
+        XCTAssertEqual(run?.source, .shortcut)
+    }
+
+    @MainActor
+    func testIntentActionsAskAndBrowse() throws {
+        let askMessage = DeviceAgentIntentActions.ask(prompt: "open example.com")
+        XCTAssertTrue(askMessage.contains("Queued"))
+        let askRun = AgentInbox.shared.consumePendingRun()
+        XCTAssertEqual(askRun?.prompt, "open example.com")
+        XCTAssertNil(askRun?.url)
+
+        let browseMessage = try DeviceAgentIntentActions.browse(
+            url: URL(string: "https://example.com")!,
+            prompt: "Summarize pricing"
+        )
+        XCTAssertTrue(browseMessage.contains("https://example.com"))
+        let browseRun = AgentInbox.shared.consumePendingRun()
+        XCTAssertEqual(browseRun?.url, "https://example.com")
+        XCTAssertEqual(browseRun?.prompt, "Summarize pricing")
+
+        XCTAssertThrowsError(
+            try DeviceAgentIntentActions.browse(url: URL(string: "ftp://example.com")!)
+        )
+    }
+
+    func testResolvedPromptForBrowserDrive() {
+        let withURL = AgentPendingRun(
+            prompt: "find pricing",
+            source: .shortcut,
+            url: "https://example.com"
+        )
+        XCTAssertEqual(
+            AgentPendingRun.resolvedPrompt(withURL, pageAlreadyOpen: false),
+            "Open https://example.com and find pricing"
+        )
+        XCTAssertTrue(
+            AgentPendingRun.resolvedPrompt(withURL, pageAlreadyOpen: true)
+                .contains("find pricing")
+        )
+
+        let summarize = AgentPendingRun(prompt: "", source: .shortcut, url: "https://example.com")
+        XCTAssertTrue(
+            AgentPendingRun.resolvedPrompt(summarize, pageAlreadyOpen: false)
+                .contains("Open https://example.com")
+        )
+        XCTAssertTrue(
+            AgentPendingRun.resolvedPrompt(summarize, pageAlreadyOpen: true)
+                .contains("browserSnapshot")
+        )
+
+        let chatOnly = AgentPendingRun(prompt: "hello", source: .chat)
+        XCTAssertEqual(
+            AgentPendingRun.resolvedPrompt(chatOnly, pageAlreadyOpen: false),
+            "hello"
+        )
+        XCTAssertNil(chatOnly.browserURL)
+        XCTAssertNil(
+            AgentPendingRun(prompt: "", source: .shortcut, url: "ftp://example.com").browserURL
+        )
     }
 
     @MainActor
