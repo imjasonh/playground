@@ -212,10 +212,13 @@ final class AgentBrowserTaskRunner: ObservableObject {
         case "select-size":
             try await browser.loadHTML(Self.productHTML, titleHint: "Trail Glide")
             _ = try await browser.snapshot(maxTextChars: 800)
-            guard let ref = Self.firstRef(
-                in: try await browser.find(query: "Frame size"),
-                kindHint: "combobox"
-            ) ?? Self.firstRef(in: try await browser.find(query: "size")) else {
+            let frameSizeFind = try await browser.find(query: "Frame size")
+            var ref = Self.firstRef(in: frameSizeFind, kindHint: "combobox")
+            if ref == nil {
+                let sizeFind = try await browser.find(query: "size")
+                ref = Self.firstRef(in: sizeFind)
+            }
+            guard let ref else {
                 return (false, "No size select found.")
             }
             let selected = try await browser.select(ref: ref, option: "Large")
