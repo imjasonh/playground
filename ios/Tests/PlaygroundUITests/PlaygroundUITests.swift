@@ -189,26 +189,44 @@ final class PlaygroundUITests: XCTestCase {
             """
         )
         XCTAssertTrue(root.exists, "Live query suite UI should appear")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["deviceAgentLiveQueriesSummary"].waitForExistence(timeout: 10),
+            "Summary label should appear once the suite starts"
+        )
 
-        let summary = app.descendants(matching: .any)["deviceAgentLiveQueriesSummary"]
-        let finished = NSPredicate { _, _ in
-            let label = summary.label
-            // "N/10 passed" once the catalog finishes (pass or fail).
-            return label.range(of: #"/10 passed"#, options: .regularExpression) != nil
-                && !label.contains("Running")
+        // Poll without reading .label on a missing element (that throws snapshot errors).
+        // 10 queries × ~90s tool budget + model/navigation overhead — leave headroom.
+        let deadline = Date().addingTimeInterval(35 * 60)
+        var lastSummary = ""
+        var finished = false
+        while Date() < deadline {
+            lastSummary = deviceAgentLiveQuerySummary(in: app)
+            let rootValue = root.exists ? ((root.value as? String) ?? "") : ""
+            if rootValue == "finished",
+               lastSummary.range(of: #"/10 passed"#, options: .regularExpression) != nil {
+                finished = true
+                break
+            }
+            if lastSummary.range(of: #"/10 passed"#, options: .regularExpression) != nil,
+               !lastSummary.contains("Running"),
+               rootValue != "running" {
+                finished = true
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(2))
         }
-        let expectation = XCTNSPredicateExpectation(predicate: finished, object: summary)
-        // Ten live web digs; each may take up to ~90s.
-        let waited = XCTWaiter.wait(for: [expectation], timeout: 20 * 60)
-        XCTAssertEqual(waited, .completed, "Timed out waiting for live query suite: \(summary.label)")
+        XCTAssertTrue(
+            finished,
+            "Timed out waiting for live query suite. lastSummary=\(lastSummary) rootValue=\((root.value as? String) ?? "<missing>")"
+        )
 
         XCTAssertFalse(
-            summary.label.contains("model unavailable"),
-            "Live query suite requires Foundation Models; got: \(summary.label)"
+            lastSummary.contains("model unavailable"),
+            "Live query suite requires Foundation Models; got: \(lastSummary)"
         )
         XCTAssertTrue(
-            summary.label.contains("10/10 passed"),
-            "Expected 10/10 passed for live queries, got: \(summary.label)"
+            lastSummary.contains("10/10 passed"),
+            "Expected 10/10 passed for live queries, got: \(lastSummary)"
         )
 
         let queryIDs = [
@@ -225,6 +243,14 @@ final class PlaygroundUITests: XCTestCase {
                 "Query \(id) should pass; accessibility=\(value)"
             )
         }
+    }
+
+    /// Safe read of the live-query summary; returns "" when the node is missing.
+    private func deviceAgentLiveQuerySummary(in app: XCUIApplication) -> String {
+        let summary = app.descendants(matching: .any)["deviceAgentLiveQueriesSummary"]
+        guard summary.exists else { return "" }
+        if !summary.label.isEmpty { return summary.label }
+        return (summary.value as? String) ?? ""
     }
 
     func testT9KeyboardExperimentOpens() {

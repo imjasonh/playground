@@ -143,12 +143,14 @@ struct DeviceAgentView: View {
             Text("Live query suite")
                 .font(.headline)
                 .accessibilityIdentifier("deviceAgentLiveQueriesTitle")
-            Text(liveQueryRunner.summaryLine.isEmpty
-                 ? "Preparing \(AgentLiveQueryCatalog.count) live queries…"
-                 : liveQueryRunner.summaryLine)
+            Text(liveQuerySummaryText)
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(liveQueryRunner.allPassed ? .green : .primary)
+                // Stable AX node for UI tests — don't let child text replace the identifier.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(liveQuerySummaryText)
                 .accessibilityIdentifier("deviceAgentLiveQueriesSummary")
+                .accessibilityValue(liveQueryRunner.isRunning ? "running" : "finished")
             if let skipped = liveQueryRunner.skippedReason, !skipped.isEmpty {
                 Text(skipped)
                     .font(.caption)
@@ -200,7 +202,16 @@ struct DeviceAgentView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("deviceAgentLiveQueriesRoot")
+        .accessibilityValue(liveQueryRunner.isRunning ? "running" : "finished")
+    }
+
+    private var liveQuerySummaryText: String {
+        if liveQueryRunner.summaryLine.isEmpty {
+            return "Preparing \(AgentLiveQueryCatalog.count) live queries…"
+        }
+        return liveQueryRunner.summaryLine
     }
 
     private var unavailablePane: some View {
