@@ -243,6 +243,20 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         replay.removeAll()
     }
 
+    /// Stop the current load and clear tab state between live-query soak prompts.
+    /// Does not wait for a blank document; the next `open` replaces the page.
+    func resetForNextQuery() {
+        loadTimeoutTask?.cancel()
+        loadTimeoutTask = nil
+        failLoadWaiters(AgentToolError.unavailable("Browser reset between queries."))
+        webView.stopLoading()
+        lastError = nil
+        isLoading = false
+        url = nil
+        title = ""
+        clearReplay()
+    }
+
     func record(
         action: String,
         detail: String? = nil,

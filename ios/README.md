@@ -149,11 +149,13 @@ requested only for optional voice input.
   - **Find on Page with Device Agent** — open a URL and search it for a query
 - Deep link: `playground://device-agent?prompt=…&url=https://…&voice=1`
   (`url` is optional; when set, Device Agent opens it before running the prompt)
-- CI / UI test: launch with `-deviceAgentLiveQueries` to run ten open-ended
-  prompts through the on-device model against live websites (shopping, near-me,
-  news, Wikipedia, weather, sports, …). Queries run in parallel (isolated
-  runtime + browser each) with a 5-minute suite budget. The suite scores
-  completion and browser-tool progress, not fixed page text.
+- CI soak (unit test): `testLiveQuerySuiteBrowsesRealSitesWhenModelAvailable`
+  runs ten open-ended prompts through `AgentRuntime` + the shared WKWebView
+  against live websites (shopping, near-me, news, Wikipedia, weather, sports, …).
+  Queries run sequentially (one browser tab) with a 5-minute suite budget and
+  score real browser-tool use (open/snapshot/find/…), not fixed page text.
+  Clarifying “what city?” without browsing is only allowed for the near-me
+  prompt. Optional manual launch: `-deviceAgentLiveQueries`.
   These tests require Foundation Models. After `xcodegen generate`,
   `scripts/enable-foundation-models-scheme.sh` sets the Playground scheme’s
   Simulated Foundation Models Availability to Apple Intelligence Enabled

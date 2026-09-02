@@ -631,33 +631,111 @@ final class DeviceAgentTests: XCTestCase {
         }
         XCTAssertTrue(AgentLiveQueryCatalog.all.contains { $0.prompt.localizedCaseInsensitiveContains("ebike") })
         XCTAssertTrue(AgentLiveQueryCatalog.all.contains { $0.prompt.localizedCaseInsensitiveContains("radish") })
+        XCTAssertEqual(
+            AgentLiveQueryCatalog.all.filter(\.allowsClarifyingAskWithoutBrowse).map(\.id),
+            ["radishes-near-me"]
+        )
     }
 
-    func testLiveQueryScorerAcceptsBrowseOrClarifyingAsk() {
+    func testLiveQueryScorerRequiresBrowserTools() {
         let browsed = AgentLiveQueryScorer.Snapshot(
             toolCallCount: 2,
+            browserToolCallCount: 2,
             pageFindingCount: 1,
+            toolNames: ["browserOpen", "browserSnapshot"],
             assistantTexts: ["• Trail Glide about $1,200 on Example Shop"],
-            systemTexts: []
+            systemTexts: [],
+            toolResultSnippets: ["https://example.com/ebikes"]
         )
         XCTAssertTrue(AgentLiveQueryScorer.passed(status: .completed, snapshot: browsed))
 
         let clarify = AgentLiveQueryScorer.Snapshot(
             toolCallCount: 0,
+            browserToolCallCount: 0,
             pageFindingCount: 0,
+            toolNames: [],
             assistantTexts: ["What city should I search near?"],
-            systemTexts: []
+            systemTexts: [],
+            toolResultSnippets: []
         )
-        XCTAssertTrue(AgentLiveQueryScorer.passed(status: .completed, snapshot: clarify))
+        XCTAssertTrue(
+            AgentLiveQueryScorer.passed(
+                status: .completed,
+                snapshot: clarify,
+                allowsClarifyingAskWithoutBrowse: true
+            )
+        )
+        XCTAssertFalse(AgentLiveQueryScorer.passed(status: .completed, snapshot: clarify))
         XCTAssertTrue(AgentLiveQueryScorer.looksLikeClarifyingAsk("What city should I search near?"))
 
-        let emptyBrowse = AgentLiveQueryScorer.Snapshot(
+        let chatOnly = AgentLiveQueryScorer.Snapshot(
             toolCallCount: 0,
+            browserToolCallCount: 0,
             pageFindingCount: 0,
-            assistantTexts: ["Hello"],
-            systemTexts: []
+            toolNames: [],
+            assistantTexts: ["Here are five great ebikes I remember…"],
+            systemTexts: [],
+            toolResultSnippets: []
         )
-        XCTAssertFalse(AgentLiveQueryScorer.passed(status: .completed, snapshot: emptyBrowse))
+        XCTAssertFalse(AgentLiveQueryScorer.passed(status: .completed, snapshot: chatOnly))
+
+        let oneToolNoEvidence = AgentLiveQueryScorer.Snapshot(
+            toolCallCount: 1,
+            browserToolCallCount: 1,
+            pageFindingCount: 0,
+            toolNames: ["browserFind"],
+            assistantTexts: ["ok"],
+            systemTexts: [],
+            toolResultSnippets: []
+        )
+        XCTAssertFalse(AgentLiveQueryScorer.passed(status: .completed, snapshot: oneToolNoEvidence))
+
         XCTAssertFalse(AgentLiveQueryScorer.passed(status: .timedOut, snapshot: browsed))
+        XCTAssertTrue(AgentLiveQueryScorer.looksLikeHardFailure("That page took too long to load. Try a simpler URL."))
+    }
+
+    /// Primary soak: AFM + shared WKWebView against live sites (no UITest launch/AX overhead).
+    @MainActor
+    func testLiveQuerySuiteBrowsesRealSitesWhenModelAvailable() async throws {
+        let runtime = AgentRuntime()
+        runtime.refreshModelStatus()
+        XCTAssertTrue(
+            runtime.isModelAvailable,
+            """
+            Live web queries require Foundation Models. \
+            After xcodegen, scripts/enable-foundation-models-scheme.sh sets \
+            Simulated Foundation Models Availability to Apple Intelligence Enabled.
+            """
+        )
+
+        let runner = AgentLiveQueryRunner()
+        await runner.runAll(
+            runtime: runtime,
+            suiteTimeoutSeconds: 5 * 60,
+            perQueryTimeoutSeconds: 45
+        )
+
+        XCTAssertEqual(runner.totalCount, AgentLiveQueryCatalog.count, runner.reportText())
+        XCTAssertNil(runner.skippedReason, runner.reportText())
+        XCTAssertTrue(
+            runner.allPassed,
+            "Expected all live queries to browse successfully.\n\(runner.reportText())"
+        )
+        for result in runner.results {
+            XCTAssertEqual(result.status, .completed, "\(result.query.id): \(result.summary)")
+            if result.query.allowsClarifyingAskWithoutBrowse {
+                XCTAssertTrue(
+                    result.browserToolCallCount >= 1
+                        || AgentLiveQueryScorer.looksLikeClarifyingAsk(result.assistantSnippet),
+                    "\(result.query.id) needs browse or clarifying ask.\n\(runner.reportText())"
+                )
+            } else {
+                XCTAssertGreaterThanOrEqual(
+                    result.browserToolCallCount,
+                    1,
+                    "\(result.query.id) must call a browser tool.\n\(runner.reportText())"
+                )
+            }
+        }
     }
 }
