@@ -529,18 +529,42 @@ struct DeviceAgentView: View {
         if run.preferVoice {
             voiceMode = true
         }
-        if !run.prompt.isEmpty {
-            draft = run.prompt
-            Task {
-                await runtime.send(prompt: run.prompt, source: run.source)
+        Task {
+            await startPendingRun(run)
+        }
+    }
+
+    /// Opens an optional seed URL in the in-app browser, then sends the resolved prompt.
+    private func startPendingRun(_ run: AgentPendingRun) async {
+        var pageAlreadyOpen = false
+        if let url = run.browserURL {
+            openBrowserPane()
+            do {
+                try await runtime.context.browser.open(url)
+                runtime.context.browserURL = runtime.context.browser.url ?? url
+                runtime.context.browserTitle = runtime.context.browser.title
+                pageAlreadyOpen = true
+            } catch {
+                runtime.transcript.append(
+                    AgentTranscriptEntry(
+                        kind: .system,
+                        text: "Couldn’t open \(url.absoluteString). The model can still try browserOpen."
+                    )
+                )
             }
-        } else {
+        }
+
+        let prompt = AgentPendingRun.resolvedPrompt(run, pageAlreadyOpen: pageAlreadyOpen)
+        guard !prompt.isEmpty else {
             runtime.transcript.append(
                 AgentTranscriptEntry(
                     kind: .system,
                     text: "Opened from \(run.source.rawValue)."
                 )
             )
+            return
         }
+        draft = prompt
+        await runtime.send(prompt: prompt, source: run.source)
     }
 }
