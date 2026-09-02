@@ -148,6 +148,10 @@ requested only for optional voice input.
   prompts through the on-device model against live websites (shopping, near-me,
   news, Wikipedia, weather, sports, …). The suite scores completion and
   browser-tool progress, not fixed page text, and shows pass/fail in the UI.
+  These tests require Foundation Models. After `xcodegen generate`,
+  `scripts/enable-foundation-models-scheme.sh` sets the Playground scheme’s
+  Simulated Foundation Models Availability to Apple Intelligence Enabled
+  (same as Edit Scheme → Run/Test → Options). Do not skip when AFM is missing.
 - With the browser open, the composer collapses to an Ask follow-up control so
   the keyboard stays out of the way
 

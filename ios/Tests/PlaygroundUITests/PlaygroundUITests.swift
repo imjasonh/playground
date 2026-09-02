@@ -156,8 +156,9 @@ final class PlaygroundUITests: XCTestCase {
     }
 
     /// Drives ten open-ended prompts through Device Agent against live websites.
-    /// The on-device model chooses tools; assertions score completion/progress, not fixed page text.
-    func testDeviceAgentLiveQuerySuiteHandlesTenRealQueries() throws {
+    /// Requires Simulated Foundation Models Availability = Apple Intelligence Enabled
+    /// on the Playground scheme (see ios/scripts/enable-foundation-models-scheme.sh).
+    func testDeviceAgentLiveQuerySuiteHandlesTenRealQueries() {
         continueAfterFailure = true
 
         let app = XCUIApplication()
@@ -179,11 +180,14 @@ final class PlaygroundUITests: XCTestCase {
             "Expected live-query suite UI or unavailable pane"
         )
 
-        if unavailable.exists && !root.exists {
-            // Simulator without Apple Intelligence cannot drive live web queries.
-            throw XCTSkip("Device Agent model unavailable; live web query suite needs Foundation Models")
-        }
-
+        XCTAssertFalse(
+            unavailable.exists && !root.exists,
+            """
+            Foundation Models must be available for live queries. \
+            Edit Scheme → Test → Options → Simulated Foundation Models Availability \
+            → Apple Intelligence Enabled (CI patches this via enable-foundation-models-scheme.sh).
+            """
+        )
         XCTAssertTrue(root.exists, "Live query suite UI should appear")
 
         let summary = app.descendants(matching: .any)["deviceAgentLiveQueriesSummary"]
@@ -198,10 +202,10 @@ final class PlaygroundUITests: XCTestCase {
         let waited = XCTWaiter.wait(for: [expectation], timeout: 20 * 60)
         XCTAssertEqual(waited, .completed, "Timed out waiting for live query suite: \(summary.label)")
 
-        if summary.label.contains("model unavailable") {
-            throw XCTSkip("Live query suite skipped — model unavailable mid-run")
-        }
-
+        XCTAssertFalse(
+            summary.label.contains("model unavailable"),
+            "Live query suite requires Foundation Models; got: \(summary.label)"
+        )
         XCTAssertTrue(
             summary.label.contains("10/10 passed"),
             "Expected 10/10 passed for live queries, got: \(summary.label)"

@@ -21,6 +21,8 @@ options:
     watchOS: "9.0"
   createIntermediateGroups: true
   minimumXcodeGenVersion: "2.38.0"
+  # Force AFM available for Run/Test (Simulated Foundation Models Availability).
+  postGenCommand: bash scripts/enable-foundation-models-scheme.sh
 
 settings:
   base:
