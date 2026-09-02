@@ -99,6 +99,7 @@ enum AgentLiveQueryScorer {
             String((assistantTexts.last ?? "").prefix(180))
         }
 
+        @MainActor
         static func capture(from runtime: AgentRuntime, afterIndex: Int) -> Snapshot {
             let slice = Array(runtime.transcript.dropFirst(afterIndex))
             var tools = 0
