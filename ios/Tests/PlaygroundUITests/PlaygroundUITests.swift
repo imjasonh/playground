@@ -155,6 +155,53 @@ final class PlaygroundUITests: XCTestCase {
         }
     }
 
+    /// Drives ten scripted browser queries (fixture HTML) and tracks pass/fail.
+    /// Does not need Apple Intelligence — CI is the reliable simulator for this path.
+    func testDeviceAgentBrowserTaskSuiteHandlesTenQueries() {
+        continueAfterFailure = true
+
+        let app = XCUIApplication()
+        // Keep in sync with AgentBrowserTaskRunner.launchArgument.
+        app.launchArguments.append("-deviceAgentBrowserTasks")
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Playground"].waitForExistence(timeout: 10))
+
+        openExperiment("device-agent", title: "Device Agent", in: app)
+        XCTAssertTrue(app.navigationBars["Device Agent"].waitForExistence(timeout: 8))
+
+        let root = app.descendants(matching: .any)["deviceAgentBrowserTasksRoot"]
+        XCTAssertTrue(root.waitForExistence(timeout: 15), "Browser task suite UI should appear")
+
+        let summary = app.descendants(matching: .any)["deviceAgentBrowserTasksSummary"]
+        let finished = NSPredicate { _, _ in
+            let label = summary.label
+            return label.contains("10/") || label.contains("passed")
+        }
+        let expectation = XCTNSPredicateExpectation(predicate: finished, object: summary)
+        // Ten WKWebView fixture loads + tool calls; leave headroom for slow sims.
+        let waited = XCTWaiter.wait(for: [expectation], timeout: 120)
+        XCTAssertEqual(waited, .completed, "Timed out waiting for browser task suite: \(summary.label)")
+
+        XCTAssertTrue(
+            summary.label.contains("10/10 passed") || summary.label.hasPrefix("10/10"),
+            "Expected 10/10 passed, got: \(summary.label)"
+        )
+
+        let taskIDs = [
+            "open-snapshot", "find-ebike", "read-prices", "click-product", "search-type-submit",
+            "dismiss-cookies", "scroll-list", "get-href", "select-size", "back-navigation",
+        ]
+        for id in taskIDs {
+            let row = app.descendants(matching: .any)["deviceAgentBrowserTask-\(id)"]
+            XCTAssertTrue(row.waitForExistence(timeout: 2), "Missing result row for \(id)")
+            let value = row.value as? String ?? row.label
+            XCTAssertTrue(
+                value.localizedCaseInsensitiveContains("passed"),
+                "Task \(id) should pass; accessibility=\(value)"
+            )
+        }
+    }
+
     func testT9KeyboardExperimentOpens() {
         let app = launchApp()
 

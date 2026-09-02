@@ -226,7 +226,7 @@ final class DeviceAgentTests: XCTestCase {
     }
 
     @MainActor
-    func testPageExtractionFailureIsVisibleAndThrows() async throws {
+    func testPageExtractionFailureFallsBackToApproximateFindings() async throws {
         AgentPageExtractor.testExtractionOverride = { _ in
             throw AgentPageExtractor.Failure(
                 error: .emptyFindings(rawBulletCount: 2),
@@ -236,39 +236,36 @@ final class DeviceAgentTests: XCTestCase {
         defer { AgentPageExtractor.testExtractionOverride = nil }
 
         let runtime = AgentRuntime()
-        runtime.lastUserPrompt = "What games are on?"
+        runtime.lastUserPrompt = "What do the ebikes cost?"
         runtime.context.browser.record(
             action: "snapshot",
             detail: "0 elements",
-            url: "https://example.com/nfl",
-            title: "Example",
-            pageText: "Nav only",
-            headings: ["NFL"],
-            listItems: ["Week 1"]
+            url: "https://example.com/ebikes",
+            title: "Ebike prices",
+            pageText: "Trail Glide — $1,299\nCity Commuter — $899",
+            headings: ["Ebike prices"],
+            listItems: ["Trail Glide — $1,299", "City Commuter — $899"]
         )
 
-        do {
-            _ = try await runtime.appendToolResultAndEnrich(
-                name: "browserSnapshot",
-                result: "title: Example\ntext:\nNav only"
-            )
-            XCTFail("Expected page extraction to fail the tool")
-        } catch {
-            // expected
-        }
+        let enriched = try await runtime.appendToolResultAndEnrich(
+            name: "browserSnapshot",
+            result: "title: Ebike prices\ntext:\nTrail Glide — $1,299"
+        )
 
         let failureCard = runtime.transcript.first { $0.kind == .pageFindings }?.text ?? ""
         XCTAssertTrue(failureCard.contains("Page extraction failed"))
-        XCTAssertTrue(failureCard.contains("Export the conversation ZIP"))
+        XCTAssertTrue(failureCard.contains("Approximate findings"))
+        XCTAssertTrue(failureCard.contains("$1,299") || failureCard.contains("Trail Glide"))
         XCTAssertEqual(runtime.extractionDiagnostics.count, 1)
         let diagnostic = try XCTUnwrap(runtime.extractionDiagnostics.first)
         XCTAssertEqual(diagnostic.errorCode, "emptyFindings")
-        XCTAssertEqual(diagnostic.userQuestion, "What games are on?")
-        XCTAssertEqual(diagnostic.url, "https://example.com/nfl")
-        XCTAssertEqual(diagnostic.headings, ["NFL"])
-        XCTAssertTrue(diagnostic.prompt.contains("User question:"))
-        XCTAssertEqual(diagnostic.rawModelBullets, [" ", "ok"])
-        XCTAssertNotNil(diagnostic.rawSnapshotPrefix)
+        XCTAssertEqual(diagnostic.userQuestion, "What do the ebikes cost?")
+        XCTAssertEqual(diagnostic.url, "https://example.com/ebikes")
+        XCTAssertFalse(runtime.cachedPageFindings.isEmpty)
+        XCTAssertTrue(enriched.contains("approximateFindings") || enriched.contains("$1,299"))
+        XCTAssertTrue(enriched.contains("AFM page extraction failed"))
+        // Tool must stay usable for the model (no throw).
+        XCTAssertTrue(enriched.contains("elements") || enriched.contains("title:"))
 
         let dump = runtime.makeConversationDump()
         XCTAssertEqual(dump.extractionDiagnostics.count, 1)
@@ -276,7 +273,7 @@ final class DeviceAgentTests: XCTestCase {
         let text = try XCTUnwrap(String(data: jsonl, encoding: .utf8))
         XCTAssertTrue(text.contains(#""type":"extractionDiagnostic""#))
         XCTAssertTrue(text.contains("emptyFindings"))
-        XCTAssertTrue(text.contains("What games are on?"))
+        XCTAssertTrue(text.contains("What do the ebikes cost?"))
     }
 
     @MainActor
@@ -508,5 +505,53 @@ final class DeviceAgentTests: XCTestCase {
         )
         XCTAssertGreaterThan(runtime.contextUsage.usedTokens, before)
         XCTAssertFalse(runtime.contextUsage.accessibilityLabel.isEmpty)
+    }
+
+    func testErrorCopyMapsNetworkAndToolFailures() {
+        let offline = NSError(
+            domain: NSURLErrorDomain,
+            code: NSURLErrorNotConnectedToInternet,
+            userInfo: [NSLocalizedDescriptionKey: "offline"]
+        )
+        XCTAssertTrue(AgentErrorCopy.userMessage(for: offline).localizedCaseInsensitiveContains("network"))
+
+        let timeout = AgentToolError.unavailable("Timed out loading https://example.com")
+        XCTAssertTrue(AgentErrorCopy.userMessage(for: timeout).localizedCaseInsensitiveContains("long"))
+
+        let click = AgentToolError.unavailable("browser click: unknown ref 9")
+        XCTAssertTrue(AgentErrorCopy.userMessage(for: click).localizedCaseInsensitiveContains("browserFind"))
+    }
+
+    func testApproximatePriceFindingsPreferDollarLines() {
+        let bullets = AgentBrowserSession.approximateFindings(
+            userQuestion: "What do the ebikes cost?",
+            headings: ["Shop"],
+            listItems: ["Trail Glide — $1,299", "Accept all cookies"],
+            pageText: "Nav\nCity Commuter — $899\nPrivacy policy"
+        )
+        XCTAssertTrue(bullets.contains(where: { $0.contains("$1,299") }))
+        XCTAssertTrue(bullets.contains(where: { $0.contains("$899") }))
+        XCTAssertFalse(bullets.contains(where: { $0.lowercased().contains("cookie") }))
+    }
+
+    @MainActor
+    func testBrowserTaskCatalogHasTenQueries() {
+        XCTAssertEqual(AgentBrowserTaskCatalog.count, 10)
+        XCTAssertEqual(Set(AgentBrowserTaskCatalog.all.map(\.id)).count, 10)
+        XCTAssertTrue(AgentBrowserTaskCatalog.all.contains { $0.query.localizedCaseInsensitiveContains("ebike") })
+    }
+
+    @MainActor
+    func testBrowserTaskSuitePassesAllTenQueries() async throws {
+        let browser = AgentBrowserSession()
+        let runner = AgentBrowserTaskRunner()
+        await runner.runAll(browser: browser)
+        XCTAssertEqual(runner.totalCount, 10)
+        let failures = runner.results.filter { !$0.passed }
+        XCTAssertTrue(
+            runner.allPassed,
+            failures.map { "\($0.task.id): \($0.summary)" }.joined(separator: " | ")
+        )
+        XCTAssertEqual(runner.summaryLine, "10/10 passed")
     }
 }

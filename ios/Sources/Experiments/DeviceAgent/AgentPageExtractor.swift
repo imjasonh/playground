@@ -81,7 +81,12 @@ enum AgentPageExtractor {
         return lines.joined(separator: "\n")
     }
 
-    static func formatExtractionFailure(title: String, url: String, error: Error) -> String {
+    static func formatExtractionFailure(
+        title: String,
+        url: String,
+        error: Error,
+        approximateBullets: [String] = []
+    ) -> String {
         var lines: [String] = []
         let heading = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !heading.isEmpty {
@@ -92,6 +97,14 @@ enum AgentPageExtractor {
             lines.append("Page extraction failed")
         }
         lines.append(error.localizedDescription)
+        if !approximateBullets.isEmpty {
+            lines.append("Approximate findings from the scrape:")
+            lines.append(contentsOf: approximateBullets.map { "• \($0)" })
+        } else {
+            lines.append(
+                "Dismiss cookie or sign-in chrome, scroll to the content, then Ask a follow-up."
+            )
+        }
         lines.append("Export the conversation ZIP for diagnostics.")
         return lines.joined(separator: "\n")
     }

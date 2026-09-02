@@ -167,11 +167,11 @@ final class AgentRuntime: ObservableObject {
                     }
                     #endif
                 } catch {
-                    append(.assistant, text: "Couldn’t finish after compacting context: \(error.localizedDescription)")
+                    append(.assistant, text: AgentErrorCopy.userMessage(for: error))
                     return
                 }
             }
-            append(.assistant, text: error.localizedDescription)
+            append(.assistant, text: AgentErrorCopy.userMessage(for: error))
         }
     }
 
@@ -236,7 +236,9 @@ final class AgentRuntime: ObservableObject {
         - browserScroll(up|down|top|bottom|ref) to move the viewport
         - browserSelect(ref, option) for <select> controls
         Use browserOpen only if no useful page is open. Use browserSnapshot when you need extractedFindings or a fresh element map.
-        browserSnapshot returns extractedFindings plus interactive element refs (page text omitted). Prefer extractedFindings for answers.
+        browserSnapshot returns extractedFindings (or approximateFindings) plus interactive element refs (page text omitted). Prefer findings for answers.
+        For product prices or shopping questions, open a concrete http(s) search or product URL. Dismiss cookie/consent banners with browserClickText("Accept") or similar before trusting the page. Prefer browserFind for "price", "$", or product names.
+        If a tool fails, recover: find/snapshot again, try another control, or open a simpler page. Do not stop after one failure.
         Your final reply must be short bullet points from the page that answer the user question. Do not summarize the chat transcript.
         Keep the same browser tab for follow-ups unless they ask for a different site.
         Keep final answers short. Prefer one snapshot per turn when possible.
@@ -392,16 +394,27 @@ final class AgentRuntime: ObservableObject {
             publishContextUsage()
             return slim
         } catch {
-            clearPageFindings()
+            // Keep browsing usable: surface the AFM failure, then fall back to
+            // approximate bullets (prices/list rows) so the model can still answer.
             let diagnostic = recordExtractionFailure(
                 input: input,
                 rawSnapshot: result,
                 error: error
             )
+            let approximate = AgentBrowserSession.approximateFindings(
+                userQuestion: input.userQuestion,
+                headings: headings,
+                listItems: event?.listItems ?? input.listItems,
+                pageText: input.pageText
+            )
+            lastPageFindings = approximate
+            lastPageFindingsURL = approximate.isEmpty || url.isEmpty ? nil : url
+
             let failure = AgentPageExtractor.formatExtractionFailure(
                 title: title,
                 url: url,
-                error: error
+                error: error,
+                approximateBullets: approximate
             )
             transcript.append(
                 AgentTranscriptEntry(
@@ -410,7 +423,21 @@ final class AgentRuntime: ObservableObject {
                     debugDetail: diagnosticDebugDetail(diagnostic)
                 )
             )
-            throw AgentToolError.unavailable(error.localizedDescription)
+            let note = approximate.isEmpty
+                ? "AFM page extraction failed; no approximate bullets. Use element refs, browserFind, or open another page."
+                : "AFM page extraction failed; approximateFindings are heuristic. Prefer dig tools if they look wrong."
+            let slim = AgentContextBudget.modelFacingSnapshot(
+                title: title,
+                url: url,
+                elements: elements,
+                headings: headings,
+                extractedFindings: approximate,
+                maxChars: budget.modelToolResultCharBudget(),
+                extractionNote: note
+            )
+            budget.addText(slim)
+            publishContextUsage()
+            return slim
         }
     }
 

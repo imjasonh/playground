@@ -126,8 +126,9 @@ requested only for optional voice input.
   payloads so digs do not re-dump the page into the model context.
 - After each snapshot, Foundation Models guided generation extracts
   question-relevant "From the page" bullets into chat. If extraction fails,
-  the tool fails with a visible error (no heuristic substitute). Diagnostics
-  land in the export ZIP.
+  the chat shows the failure plus approximate scrape findings (prices, list
+  rows) when available, and the tool still returns element refs so the agent
+  can keep browsing. Diagnostics land in the export ZIP.
 - Voice input (mic + speech, just-in-time) to editable text, then the same
   agent loop
 - Export conversation: share a `.jsonl.zip` of the transcript (including
@@ -143,6 +144,9 @@ requested only for optional voice input.
 - Shortcuts / App Intents / Siri: "Ask Device Agent" queues a prompt and opens
   the experiment
 - Deep link: `playground://device-agent?prompt=…&voice=1`
+- CI / UI test: launch with `-deviceAgentBrowserTasks` to run ten fixture
+  browser queries (open, find, prices, click, type, cookies, scroll, get,
+  select, back) and show pass/fail in the experiment UI
 - With the browser open, the composer collapses to an Ask follow-up control so
   the keyboard stays out of the way
 

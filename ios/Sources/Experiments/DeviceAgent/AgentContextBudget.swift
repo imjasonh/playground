@@ -125,14 +125,19 @@ struct AgentContextBudget: Equatable {
         elements: [String],
         headings: [String],
         extractedFindings: [String],
-        maxChars: Int
+        maxChars: Int,
+        extractionNote: String? = nil
     ) -> String {
         var lines: [String] = [
             "title: \(title)",
             "url: \(url)",
         ]
+        if let extractionNote, !extractionNote.isEmpty {
+            lines.append("note: \(extractionNote)")
+        }
         if !extractedFindings.isEmpty {
-            lines.append("extractedFindings:")
+            let label = (extractionNote?.isEmpty == false) ? "approximateFindings" : "extractedFindings"
+            lines.append("\(label):")
             lines.append(contentsOf: extractedFindings.map { "• \($0)" })
         }
         let elementCap = min(40, elements.count)
@@ -144,7 +149,7 @@ struct AgentContextBudget: Equatable {
             lines.append("headings:")
             lines.append(contentsOf: headings.prefix(12).map { "- \($0)" })
         }
-        lines.append("Page text omitted from model context; use extractedFindings and element refs.")
+        lines.append("Page text omitted from model context; use findings and element refs.")
         return truncateToChars(lines.joined(separator: "\n"), maxChars: maxChars)
     }
 

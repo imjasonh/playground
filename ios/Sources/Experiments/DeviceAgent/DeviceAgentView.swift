@@ -5,6 +5,7 @@ import UIKit
 struct DeviceAgentView: View {
     @StateObject private var runtime = AgentRuntime()
     @StateObject private var voice = AgentVoiceCapture()
+    @StateObject private var browserTaskRunner = AgentBrowserTaskRunner()
     @ObservedObject private var inbox = AgentInbox.shared
     @ObservedObject private var permissions = AgentPermissionGate.shared
 
@@ -18,7 +19,9 @@ struct DeviceAgentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if runtime.isModelAvailable {
+            if browserTaskRunner.isRunning || !browserTaskRunner.results.isEmpty {
+                browserTasksPane
+            } else if runtime.isModelAvailable {
                 statusBar
                 transcriptList
                     .frame(maxHeight: showBrowser ? 220 : .infinity)
@@ -44,10 +47,13 @@ struct DeviceAgentView: View {
         .animation(.easeInOut(duration: 0.2), value: voiceMode)
         .animation(.easeInOut(duration: 0.2), value: promptFocused)
         .animation(.easeInOut(duration: 0.2), value: runtime.isModelAvailable)
+        .animation(.easeInOut(duration: 0.2), value: browserTaskRunner.isRunning)
         .scrollDismissesKeyboard(.interactively)
         .onAppear {
             runtime.refreshModelStatus()
-            if runtime.isModelAvailable {
+            if AgentBrowserTaskRunner.shouldAutostartFromLaunchArguments {
+                Task { await browserTaskRunner.runAll(browser: runtime.context.browser) }
+            } else if runtime.isModelAvailable {
                 consumeInboxIfNeeded()
             }
         }
@@ -128,6 +134,51 @@ struct DeviceAgentView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("deviceAgentRoot")
+    }
+
+    private var browserTasksPane: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Browser task suite")
+                .font(.headline)
+                .accessibilityIdentifier("deviceAgentBrowserTasksTitle")
+            Text(browserTaskRunner.summaryLine.isEmpty
+                 ? "Preparing \(AgentBrowserTaskCatalog.count) queries…"
+                 : browserTaskRunner.summaryLine)
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(browserTaskRunner.allPassed ? .green : .primary)
+                .accessibilityIdentifier("deviceAgentBrowserTasksSummary")
+            if browserTaskRunner.isRunning {
+                ProgressView()
+                    .accessibilityIdentifier("deviceAgentBrowserTasksProgress")
+            }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 8) {
+                    ForEach(browserTaskRunner.results) { result in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(result.passed ? "PASS" : "FAIL") · \(result.task.id)")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(result.passed ? .green : .red)
+                            Text(result.task.query)
+                                .font(.subheadline)
+                            Text(result.summary)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(result.passed ? "passed" : "failed") \(result.task.id)")
+                        .accessibilityIdentifier("deviceAgentBrowserTask-\(result.task.id)")
+                        .accessibilityValue(result.passed ? "passed" : "failed")
+                    }
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .accessibilityIdentifier("deviceAgentBrowserTasksRoot")
     }
 
     private var unavailablePane: some View {
@@ -262,7 +313,7 @@ struct DeviceAgentView: View {
                             .accessibilityHidden(true)
                         Text("Ask Device Agent")
                             .font(.headline)
-                        Text("Type a request, attach a file, or open the browser pane.")
+                        Text("Type a request or open the browser pane.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)

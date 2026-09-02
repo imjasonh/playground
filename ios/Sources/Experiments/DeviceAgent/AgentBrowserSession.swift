@@ -44,14 +44,7 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             loadWaiters.append(continuation)
             webView.load(URLRequest(url: url))
-            loadTimeoutTask?.cancel()
-            loadTimeoutTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
-                guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self?.failLoadWaiters(AgentToolError.unavailable("Timed out loading \(url.absoluteString)."))
-                }
-            }
+            armLoadTimeout(seconds: timeoutSeconds, label: url.absoluteString)
         }
         record(
             action: "open",
@@ -59,6 +52,52 @@ final class AgentBrowserSession: NSObject, ObservableObject {
             url: self.url?.absoluteString ?? url.absoluteString,
             title: title
         )
+    }
+
+    /// Load local HTML for CI / UI browser-task fixtures (not exposed as a model tool).
+    func loadHTML(
+        _ html: String,
+        titleHint: String? = nil,
+        baseURL: URL? = URL(string: "https://fixture.local/"),
+        timeoutSeconds: Double = 10
+    ) async throws {
+        lastError = nil
+        isLoading = true
+        if let titleHint, !titleHint.isEmpty {
+            title = titleHint
+        }
+        url = baseURL
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            loadWaiters.append(continuation)
+            webView.loadHTMLString(html, baseURL: baseURL)
+            armLoadTimeout(seconds: timeoutSeconds, label: titleHint ?? "fixture HTML")
+        }
+        if let pageTitle = webView.title?.trimmingCharacters(in: .whitespacesAndNewlines), !pageTitle.isEmpty {
+            title = pageTitle
+        } else if let titleHint, !titleHint.isEmpty {
+            title = titleHint
+        }
+        url = webView.url ?? baseURL
+        record(
+            action: "loadHTML",
+            detail: titleHint ?? "fixture",
+            url: url?.absoluteString,
+            title: title
+        )
+    }
+
+    private func armLoadTimeout(seconds: Double, label: String) {
+        loadTimeoutTask?.cancel()
+        loadTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.failLoadWaiters(
+                    AgentToolError.unavailable("Timed out loading \(label).")
+                )
+            }
+        }
     }
 
     func snapshot(maxTextChars: Int = AgentContextBudget.defaultSnapshotTextChars) async throws -> String {
@@ -294,11 +333,17 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         loadTimeoutTask?.cancel()
         loadTimeoutTask = nil
         isLoading = false
-        lastError = error.localizedDescription
+        let wrapped: Error
+        if error is AgentToolError {
+            wrapped = error
+        } else {
+            wrapped = AgentToolError.unavailable(AgentErrorCopy.userMessage(for: error))
+        }
+        lastError = (wrapped as? LocalizedError)?.errorDescription ?? wrapped.localizedDescription
         let waiters = loadWaiters
         loadWaiters.removeAll()
         for waiter in waiters {
-            waiter.resume(throwing: error)
+            waiter.resume(throwing: wrapped)
         }
     }
 
@@ -377,6 +422,71 @@ final class AgentBrowserSession: NSObject, ObservableObject {
             limit: limit
         )
         return AgentPageExtractor.formatFindings(title: title, url: url, bullets: bullets)
+    }
+
+    /// Approximate findings when Foundation Models extraction fails (prices, list rows, headings).
+    nonisolated static func approximateFindings(
+        userQuestion: String,
+        headings: [String] = [],
+        listItems: [String] = [],
+        pageText: String,
+        limit: Int = 8
+    ) -> [String] {
+        var out: [String] = []
+        let wantsPrice = Self.questionLooksLikePriceLookup(userQuestion)
+        if wantsPrice {
+            for line in priceLines(in: pageText, listItems: listItems) {
+                appendApprox(&out, line, limit: limit)
+                if out.count >= limit { return out }
+            }
+        }
+        for bullet in pageFindingsBullets(
+            headings: headings,
+            listItems: listItems,
+            pageText: pageText,
+            limit: limit
+        ) {
+            appendApprox(&out, bullet, limit: limit)
+            if out.count >= limit { break }
+        }
+        return out
+    }
+
+    nonisolated static func questionLooksLikePriceLookup(_ question: String) -> Bool {
+        let q = question.lowercased()
+        return q.contains("price") || q.contains("cost") || q.contains("how much")
+            || q.contains("$") || q.contains("deal") || q.contains("ebike")
+            || q.contains("e-bike") || q.contains("bike")
+    }
+
+    nonisolated private static func priceLines(in pageText: String, listItems: [String]) -> [String] {
+        let blob = (listItems + pageText.split(separator: "\n").map(String.init))
+            .map { $0.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var out: [String] = []
+        for line in blob {
+            guard line.contains("$") || line.range(of: #"\b\d{2,5}\b"#, options: .regularExpression) != nil else {
+                continue
+            }
+            guard line.count >= 4, line.count <= 160 else { continue }
+            if isChromeNoise(line.lowercased()) { continue }
+            if !out.contains(line) { out.append(line) }
+            if out.count >= 8 { break }
+        }
+        return out
+    }
+
+    nonisolated private static func appendApprox(_ out: inout [String], _ raw: String, limit: Int) {
+        let chunk = raw
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard chunk.count >= 4, chunk.count <= 160 else { return }
+        let lower = chunk.lowercased()
+        if isChromeNoise(lower) { return }
+        let key = String(lower.prefix(36))
+        if out.contains(where: { $0.lowercased().hasPrefix(key) }) { return }
+        out.append(chunk)
+        _ = limit
     }
 
     nonisolated static func pageFindingsBullets(
