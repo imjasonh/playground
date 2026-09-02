@@ -131,7 +131,7 @@ final class AgentLiveBrowseSoakRunner: ObservableObject {
     }
 
     func runAll(
-        context: AgentToolContext = AgentToolContext(),
+        context: AgentToolContext? = nil,
         suiteTimeoutSeconds: TimeInterval = 5 * 60,
         perScenarioTimeoutSeconds: TimeInterval = 40
     ) async {
@@ -141,6 +141,7 @@ final class AgentLiveBrowseSoakRunner: ObservableObject {
         summaryLine = "Running \(AgentLiveBrowseCatalog.count) live browse soaks…"
         defer { isRunning = false }
 
+        let context = context ?? AgentToolContext()
         let catalog = AgentLiveBrowseCatalog.all
         let deadline = Date().addingTimeInterval(suiteTimeoutSeconds)
         var collected: [AgentLiveBrowseResult] = []
