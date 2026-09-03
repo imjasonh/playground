@@ -3,12 +3,12 @@ import * as THREE from 'three';
 // Debug overlays: direct path (green/red by occlusion) and reflection polylines.
 // Order-1 draws listener → hit → source. Order-2 draws listener → hitB → hitA → source.
 export class DebugRays {
-  constructor(scene, { maxTaps = 12 } = {}) {
+  constructor(scene, { maxTaps = 16 } = {}) {
     this.scene = scene;
-    this.direct = makeLine(0x7dffa0, 4);
+    this.direct = makeLine(0x7dffa0, 5);
     this.refLines = [];
     for (let i = 0; i < maxTaps; i++) {
-      const line = makeLine(0x6ec8ff, 4);
+      const line = makeLine(0x6ec8ff, 5);
       this.refLines.push(line);
       scene.add(line);
     }
@@ -37,7 +37,9 @@ export class DebugRays {
       // Path in travel order from the listener: last bounce first, then earlier.
       const points = [listener, ...hits.slice().reverse(), source];
       setPolyline(line, points);
-      line.material.color.setHex(r.order > 1 ? 0xc9a0ff : 0x6ec8ff);
+      line.material.color.setHex(
+        r.kind === 'diffraction' ? 0xffb86b : r.order >= 3 ? 0xff7ad9 : r.order > 1 ? 0xc9a0ff : 0x6ec8ff,
+      );
       line.visible = true;
     }
   }
