@@ -275,7 +275,7 @@ export class HeliAudio {
       this.#setImpulseForEnclosure(enc);
       // Late send rises with enclosure. Sized so canyon RMS clears a ~4% A/B
       // probe against dry-only (uncorrelated wet needs ~30% of dry RMS).
-      const send = 0.12 + enc * 0.55;
+      const send = 0.18 + enc * 0.7;
       this.reverbSend.gain.setTargetAtTime(send, t, 0.1);
       const dampHz = 6500 - enc * 2800;
       this.reverbFilter.frequency.setTargetAtTime(dampHz, t, 0.1);
