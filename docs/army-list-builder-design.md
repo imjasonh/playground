@@ -1,9 +1,10 @@
 # Design: Army List Builder (Warhammer 40,000, 11th Edition)
 
-> **Status: Phases 0–5 landed; catalog covers all MFM factions.** Playground
-> experiment under `ios/Sources/Experiments/ArmyList/`. Bundled multi-faction
-> catalog + validator + authoring UI + export + on-device Foundation Models chat
-> (tool calls re-validate). Richer wargear options remain a follow-up.
+> **Status: Phases 0–5 landed; catalog covers all factions; weekly bundled
+> refresh + id migration.** Playground experiment under
+> `ios/Sources/Experiments/ArmyList/`. Bundled multi-faction catalog +
+> validator + authoring UI + export + on-device Foundation Models chat (tool
+> calls re-validate). Richer wargear options remain a follow-up.
 
 This document is the implementation plan for a Warhammer 40,000 army list
 builder experiment: build lists, validate them against 11th Edition army
@@ -17,9 +18,9 @@ Apple Intelligence on device.
 | Ship shape | Playground **experiment** under `ios/Sources/Experiments/ArmyList/` |
 | Bundle ID / signing | Host Bundle ID only. No extension. No re-bootstrap. |
 | Rules priority | **Authoring + validation first.** LLM features are blocked until the validator is trustworthy for the shipped catalog. |
-| Rules data source | **Bundled construction catalog** generated from [BSData `wh40k-11e-mfm`](https://github.com/BSData/wh40k-11e-mfm) (Munitorum Field Manual scrape) plus keywords/join edges from [BSData `wh40k-11e`](https://github.com/BSData/wh40k-11e). Refresh with `python3 ios/scripts/refresh-army-list-catalog.py`. Wahapedia is fine as a human reference; the machine source of truth is BSData/MFM. |
+| Rules data source | **Bundled construction catalog** (versioned in-app; no remote fetch). Generated from [BSData `wh40k-11e-mfm`](https://github.com/BSData/wh40k-11e-mfm) plus keywords from [BSData `wh40k-11e`](https://github.com/BSData/wh40k-11e). Refresh with `python3 ios/scripts/refresh-army-list-catalog.py` or the weekly `army-list-catalog.yml` workflow. |
 | Edition | **11th Edition** army construction (Detachment Points, multi-detachment, Leader/Support at list build, enhancement/upgrade limits, Force Disposition). |
-| Catalog coverage | **All Munitorum Field Manual factions** from BSData `wh40k-11e-mfm` (ids namespaced `{faction}--{slug}`). Incursion (1000 pts) + Strike Force (2000 pts). |
+| Catalog coverage | **All factions** in the BSData points scrape (ids namespaced `{faction}--{slug}`, stable across refreshes when display names match; `idMigrations` remaps saved lists). Incursion (1000 pts) + Strike Force (2000 pts). |
 | LLM | Apple **Foundation Models** (same weak-link pattern as Device Agent / Ride Monitor). Tools edit the list; the validator accepts or rejects every change. |
 | Export | Versioned JSON (canonical) + plain-text roster + `ShareLink` / share sheet. |
 
@@ -93,13 +94,18 @@ join edges, keywords) derived from the public Munitorum Field Manual via the
 community [BSData `wh40k-11e-mfm`](https://github.com/BSData/wh40k-11e-mfm)
 dataset, with datasheet keywords from [BSData `wh40k-11e`](https://github.com/BSData/wh40k-11e).
 
-1. Refresh the bundled catalog with `python3 ios/scripts/refresh-army-list-catalog.py`.
+1. Refresh the bundled catalog with `python3 ios/scripts/refresh-army-list-catalog.py`
+   (or let `.github/workflows/army-list-catalog.yml` open the weekly PR).
 2. Do **not** paste long copyrighted datasheet or ability text into the catalog.
-3. Show an in-app disclaimer: unofficial fan experiment; use official sources
-   for tournament play.
+3. Show an in-app disclaimer: unofficial fan experiment; confirm points with
+   Games Workshop for events. Do not surface scrape nicknames (for example
+   "MFM") in UI copy.
+4. Keep the catalog **bundled and versioned** (`11e-<N>`) so CI validates every
+   points bump before it ships. No remote catalog fetch in the app.
 
-Wahapedia is a useful human reference while building features. Prefer BSData/MFM
-for machine-readable construction data so refreshes stay reproducible.
+Wahapedia is a useful human reference while building features. Prefer the BSData
+points + keyword repos for machine-readable construction data so refreshes stay
+reproducible.
 
 ---
 

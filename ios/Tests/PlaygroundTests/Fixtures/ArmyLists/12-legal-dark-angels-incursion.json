@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "9C2CE131-DCD6-4551-A802-BCA75467CC1F",
+    "id": "3B9BBC15-9427-48A4-A6B2-26CC8F2A3149",
     "name": "Dark Angels Incursion 950pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "dark-angels",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,7 +12,7 @@
     ],
     "units": [
       {
-        "id": "0C9B9D16-6E3E-4AA6-BCD7-2B91253B394E",
+        "id": "6A2D3E92-A7C2-4743-8DF4-AB19E23A228D",
         "datasheetID": "dark-angels--judiciar",
         "models": 1,
         "optionIDs": [],
@@ -22,7 +22,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "6D884A52-4150-4F8C-A065-84619594BA46",
+        "id": "7FD3D418-96CF-421D-BAB5-4EB81766EA4C",
         "datasheetID": "dark-angels--predator-annihilator",
         "models": 1,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "0EF343CE-7C4F-424A-BDEE-E5E1F618873B",
+        "id": "5228CF27-0630-4F72-98C3-ADC36FA3A80D",
         "datasheetID": "dark-angels--ravenwing-dark-talon",
         "models": 1,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "C3FCE805-8677-4720-8F52-5C630BD86939",
+        "id": "6E789ADA-FB96-4B1E-93A9-C7C57519F5EE",
         "datasheetID": "dark-angels--gladiator-lancer",
         "models": 1,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "B158B053-827E-4A64-935D-9E7CE18F2339",
+        "id": "42F322DE-364E-4A7E-A32C-BB4BF9D18C81",
         "datasheetID": "dark-angels--deathwing-command-squad",
         "models": 5,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "70EC4BE6-65C5-4205-B665-F6098976F8BD",
+        "id": "7BE55E26-BEFB-4077-B2E9-76B6215A4A36",
         "datasheetID": "dark-angels--whirlwind",
         "models": 1,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "0C9B9D16-6E3E-4AA6-BCD7-2B91253B394E",
+    "warlordUnitID": "6A2D3E92-A7C2-4743-8DF4-AB19E23A228D",
     "notes": "stress seed=11 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

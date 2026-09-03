@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "93B602C4-7072-4B72-A481-154FD5F4A44C",
+    "id": "95626B8D-DE4B-4A14-A604-CB753719ACA2",
     "name": "Thousand Sons Strike Force 1935pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "thousand-sons",
     "battleSizeID": "strike-force",
     "detachmentIDs": [
@@ -12,17 +12,17 @@
     ],
     "units": [
       {
-        "id": "CD7C8366-0EE1-42CE-B9DC-C5B0BD4E5C5D",
+        "id": "089D1753-0749-4281-9D4D-836D0FD02F6D",
         "datasheetID": "thousand-sons--tzaangor-shaman",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "thousand-sons--ritual-of-regeneration--eruption-of-vitality"
         ],
-        "attachedToUnitID": "F4ACE331-239A-4159-A3AB-05AA217C3456"
+        "attachedToUnitID": "5912C8C9-8A75-4920-8F9E-4CCD3D460F2F"
       },
       {
-        "id": "EC24463A-B13B-4374-9B8A-EFD47799D657",
+        "id": "1C2DF641-9261-4978-B115-87D1A41FAB18",
         "datasheetID": "thousand-sons--pink-horrors",
         "models": 10,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "B6119568-C4AE-4BE0-9EF8-44F8CDABD606",
+        "id": "9CAA2BA9-F250-4BDC-804E-CD06B2D15BAB",
         "datasheetID": "thousand-sons--screamers",
         "models": 3,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "4BBBF265-D079-4367-93A2-C1870B9B3E26",
+        "id": "080D35DA-2D09-40E9-AC51-4919B071FC47",
         "datasheetID": "thousand-sons--heldrake",
         "models": 1,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "E0DAF9E5-0235-4FB8-BBC8-F895BB81636F",
+        "id": "1FD439E9-0BD7-47AA-A551-BC267B928D33",
         "datasheetID": "thousand-sons--forgefiend",
         "models": 1,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "3497E300-D924-42D9-98B7-D60E80FA9772",
+        "id": "395D8366-E6B9-4CA1-AB80-01A0F64EAD96",
         "datasheetID": "thousand-sons--helbrute",
         "models": 1,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F4ACE331-239A-4159-A3AB-05AA217C3456",
+        "id": "5912C8C9-8A75-4920-8F9E-4CCD3D460F2F",
         "datasheetID": "thousand-sons--tzaangor-enlightened",
         "models": 3,
         "optionIDs": [],
@@ -70,7 +70,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "89C85B07-3498-4BA2-A810-D96AD7AFDF0C",
+        "id": "83835FD5-F5F1-4CDB-BA59-E3CFC946BEFC",
         "datasheetID": "thousand-sons--mutalith-vortex-beast",
         "models": 1,
         "optionIDs": [],
@@ -78,7 +78,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "D9BF8B65-8836-4BD8-8E01-6FD2CA1AD12E",
+        "id": "D89DD74F-641D-4D75-B71C-80E840565104",
         "datasheetID": "thousand-sons--chaos-predator-destructor",
         "models": 1,
         "optionIDs": [],
@@ -86,7 +86,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "EAD82D0D-2D35-40A0-B176-A60C9157CCAD",
+        "id": "45353831-8486-4046-8795-8141808F0FDB",
         "datasheetID": "thousand-sons--chaos-spawn",
         "models": 2,
         "optionIDs": [],
@@ -94,7 +94,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "1CD43EAC-FB40-4B09-B2F0-315B2781FE65",
+        "id": "A02B21E0-3248-46B6-A052-3929912C1E16",
         "datasheetID": "thousand-sons--pink-horrors",
         "models": 10,
         "optionIDs": [],
@@ -102,7 +102,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "828824C2-AE78-4CAF-BDC2-FA95AF9D3640",
+        "id": "EAAA3FD3-5118-4BEE-AEF8-9D17887D8902",
         "datasheetID": "thousand-sons--sekhetar-robots",
         "models": 2,
         "optionIDs": [],
@@ -110,7 +110,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "E1151900-00BD-45CD-BAA5-2CB9EACFA90C",
+        "id": "C21A4E64-CB4B-4068-832E-D0D5ABA1FAC0",
         "datasheetID": "thousand-sons--tzaangor-enlightened-with-fatecaster-greatbows",
         "models": 3,
         "optionIDs": [],
@@ -118,7 +118,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "2510A65F-AA7B-43BC-A373-B14E957344F6",
+        "id": "D4F620B4-267E-430F-BA46-D9EACF974DE2",
         "datasheetID": "thousand-sons--chaos-predator-annihilator",
         "models": 1,
         "optionIDs": [],
@@ -126,7 +126,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "A0F839E2-D17F-4978-8372-E700FE1E524A",
+        "id": "1EEE8B80-DC30-46E1-8BA0-86AFDC3F8A43",
         "datasheetID": "thousand-sons--rubric-marines",
         "models": 10,
         "optionIDs": [],
@@ -134,7 +134,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "7155D039-EF1C-427C-8F49-DCBE67C96E76",
+        "id": "D4F7C9D6-6C94-42C4-856B-48E9926771F9",
         "datasheetID": "thousand-sons--maulerfiend",
         "models": 1,
         "optionIDs": [],
@@ -142,7 +142,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F042DCB9-616E-4E3A-B716-42E423193157",
+        "id": "2A1F45AB-2EDC-43F9-BA1C-C77666C73CC6",
         "datasheetID": "thousand-sons--blue-horrors",
         "models": 10,
         "optionIDs": [],
@@ -150,7 +150,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "CD7C8366-0EE1-42CE-B9DC-C5B0BD4E5C5D",
+    "warlordUnitID": "089D1753-0749-4281-9D4D-836D0FD02F6D",
     "notes": "stress seed=39 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

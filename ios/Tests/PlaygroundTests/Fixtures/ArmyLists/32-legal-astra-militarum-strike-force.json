@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "F18ACCF6-464E-4D0D-BF8E-5CA64ACDF1BF",
+    "id": "6D8C5770-375D-48E7-8416-9ED7E2B7AD38",
     "name": "Astra Militarum Strike Force 1955pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "astra-militarum",
     "battleSizeID": "strike-force",
     "detachmentIDs": [
@@ -13,17 +13,17 @@
     ],
     "units": [
       {
-        "id": "EFC0FF9B-AD6C-4027-BFCE-64DE2C2BB57A",
+        "id": "A1842730-2145-4AA3-A4E1-892C0BB96D96",
         "datasheetID": "astra-militarum--commissar",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "astra-militarum--bridgehead-strike--priority-drop-beacon"
         ],
-        "attachedToUnitID": "536DE9CB-A435-41B3-8D9E-ED464C33934D"
+        "attachedToUnitID": "371A2777-8C4D-4CEB-9655-D8CCFF2A52B3"
       },
       {
-        "id": "03E509DA-DF05-41E1-A623-27501AADF797",
+        "id": "55081E2E-8402-4229-A231-7E3D666D439A",
         "datasheetID": "astra-militarum--hades-breaching-drill",
         "models": 1,
         "optionIDs": [],
@@ -31,7 +31,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "66F0028E-415D-4A9A-8930-0A71D385B1B1",
+        "id": "12093528-6E6A-489D-AEB5-CDF4684D532A",
         "datasheetID": "astra-militarum--cadian-heavy-weapons-squad",
         "models": 3,
         "optionIDs": [],
@@ -39,7 +39,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F2BF07B6-AC9A-4627-A5C3-F4000ABF7364",
+        "id": "18911076-A704-463E-9258-F2CB8E0B3586",
         "datasheetID": "astra-militarum--valkyrie-sky-talon",
         "models": 1,
         "optionIDs": [],
@@ -47,7 +47,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "B2CF1225-CA05-4726-8EC2-A8A18E7AC1AA",
+        "id": "735426A6-678B-4922-BF71-5825D17DFE52",
         "datasheetID": "astra-militarum--krieg-heavy-weapons-squad",
         "models": 4,
         "optionIDs": [],
@@ -55,7 +55,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "D4B08585-9EA9-46CA-AD3F-DC5C8D8DDEE5",
+        "id": "C8BBA1BE-F40C-427C-A1AF-04D0FB5DBEFE",
         "datasheetID": "astra-militarum--salamander-command-vehicle",
         "models": 1,
         "optionIDs": [],
@@ -63,7 +63,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "B12D64F8-0B73-40BD-902F-35FBDE3B3C8F",
+        "id": "5B831120-D181-44CC-8816-54A162328AF2",
         "datasheetID": "astra-militarum--taurox-prime",
         "models": 1,
         "optionIDs": [],
@@ -71,7 +71,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "C6013FD0-5753-47DB-8B33-7CDA65DA60D8",
+        "id": "9417CC1C-ECB4-4688-A727-69025E62FD29",
         "datasheetID": "astra-militarum--tarantula-battery",
         "models": 1,
         "optionIDs": [],
@@ -79,7 +79,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "DE5DF552-DCA5-4825-AB1D-DF56C5BA24CE",
+        "id": "41AA436C-37EB-4F9B-B137-706221F4F672",
         "datasheetID": "astra-militarum--earthshaker-platform",
         "models": 1,
         "optionIDs": [],
@@ -87,7 +87,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "FF9BFE24-35BE-4343-B702-1640548CD811",
+        "id": "2D4BF648-5CE8-4F94-873A-D2C23AB78DC9",
         "datasheetID": "astra-militarum--gorgon-heavy-transport",
         "models": 1,
         "optionIDs": [],
@@ -95,7 +95,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "719D2412-3D3F-4170-A2E1-0E98A45A0613",
+        "id": "062F9B05-3B34-4E21-A8BA-8B6ED15D3BEA",
         "datasheetID": "astra-militarum--malcador-annihilator",
         "models": 1,
         "optionIDs": [],
@@ -103,7 +103,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "5C2084E1-B662-4E87-B049-79E05C161B3C",
+        "id": "89EA7FFF-0469-438A-AAB9-5637E60FA2F5",
         "datasheetID": "astra-militarum--basilisk",
         "models": 1,
         "optionIDs": [],
@@ -111,7 +111,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "026CA83F-0E5A-4D43-9AB8-F32AF07FC4AD",
+        "id": "10C5A0FC-95B0-48AB-A23D-F587157AAA17",
         "datasheetID": "astra-militarum--elysian-drop-sentinel",
         "models": 1,
         "optionIDs": [],
@@ -119,7 +119,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "0212A464-C9F0-4785-B3CB-AED23CD295CC",
+        "id": "9988B905-2EEF-4EA1-8131-ABBF8C1CB33A",
         "datasheetID": "astra-militarum--heavy-mortar-team",
         "models": 1,
         "optionIDs": [],
@@ -127,7 +127,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "8DA632B0-9C56-4ECB-A94A-93F62FA7998E",
+        "id": "9C7B007E-4046-4EA3-A422-C8C419EED6DC",
         "datasheetID": "astra-militarum--valkyrie",
         "models": 1,
         "optionIDs": [],
@@ -135,7 +135,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F6EA864E-50FC-4EA8-9123-A8B71887DC2D",
+        "id": "E1DFCF55-39B5-4A10-8DA1-68A80E98BED2",
         "datasheetID": "astra-militarum--manticore-platform",
         "models": 1,
         "optionIDs": [],
@@ -143,7 +143,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "DAB4A197-4CBE-4408-B1F2-80CF9837806C",
+        "id": "6418B5BE-D405-4B07-A67F-5E115A046046",
         "datasheetID": "astra-militarum--munitorum-servitors",
         "models": 4,
         "optionIDs": [],
@@ -151,7 +151,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "536DE9CB-A435-41B3-8D9E-ED464C33934D",
+        "id": "371A2777-8C4D-4CEB-9655-D8CCFF2A52B3",
         "datasheetID": "astra-militarum--cadian-shock-troops",
         "models": 10,
         "optionIDs": [],
@@ -159,7 +159,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "EFC0FF9B-AD6C-4027-BFCE-64DE2C2BB57A",
+    "warlordUnitID": "A1842730-2145-4AA3-A4E1-892C0BB96D96",
     "notes": "stress seed=31 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

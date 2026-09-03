@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "C056F9C9-17CD-4650-8CEF-88CF576C7996",
+    "id": "C3C11E34-2AD5-4132-85BA-9D82C5CC48E7",
     "name": "Chaos Space Marines Incursion 1000pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "chaos-space-marines",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,17 +12,17 @@
     ],
     "units": [
       {
-        "id": "3CF3DCF9-5233-4AF1-BEAC-8EC3A532E9E4",
+        "id": "A4D695C1-22EF-4930-9C04-F4FE384E8E10",
         "datasheetID": "chaos-space-marines--cultist-firebrand",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "chaos-space-marines--warpstrike-champions--eye-of-the-warp"
         ],
-        "attachedToUnitID": "95F0571A-313B-4E34-BE49-379A82B9303B"
+        "attachedToUnitID": "33736876-E960-447F-81B8-AE8BD71862AD"
       },
       {
-        "id": "B2E07E79-4E4A-4B09-B3C3-9177F8C79CF8",
+        "id": "6B83C817-EEEA-4195-9F99-282C0E120DE3",
         "datasheetID": "chaos-space-marines--maulerfiend",
         "models": 1,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "8C39149B-1B1F-4DD7-A0EC-F0BC235F9A2D",
+        "id": "50E6A17B-B245-4AAB-9266-A4F1D491262A",
         "datasheetID": "chaos-space-marines--legionaries",
         "models": 10,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "38BD256D-913F-4D8E-9B4C-7498EC40F498",
+        "id": "EE18068F-6B0F-46A1-B928-30F58C761B5C",
         "datasheetID": "chaos-space-marines--hell-talon",
         "models": 1,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "EF665DBB-31EE-42FA-BB72-9FB39F7D175C",
+        "id": "87A1BA54-1E0B-42D9-AFE0-5D785121E505",
         "datasheetID": "chaos-space-marines--defiler",
         "models": 1,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "65EA6740-C4FE-4153-8B3B-A5C348C9954B",
+        "id": "2760EFF1-2BDE-4B7E-9F09-653E6699576F",
         "datasheetID": "chaos-space-marines--raptors",
         "models": 5,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "95F0571A-313B-4E34-BE49-379A82B9303B",
+        "id": "33736876-E960-447F-81B8-AE8BD71862AD",
         "datasheetID": "chaos-space-marines--accursed-cultists",
         "models": 8,
         "optionIDs": [],
@@ -70,7 +70,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "3CF3DCF9-5233-4AF1-BEAC-8EC3A532E9E4",
+    "warlordUnitID": "A4D695C1-22EF-4930-9C04-F4FE384E8E10",
     "notes": "stress seed=9 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

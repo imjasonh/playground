@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "425D0E89-0E37-4C9E-AF50-6C0EB989BA2A",
+    "id": "BDE480FD-9E25-4055-95D7-436BAFBA4CF2",
     "name": "Deathwatch Incursion 975pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "deathwatch",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -13,7 +13,7 @@
     ],
     "units": [
       {
-        "id": "CE5DE691-CCA3-4744-8890-493E4E7B6415",
+        "id": "CA645564-24BC-48BE-AB32-A5CB3CDA26D1",
         "datasheetID": "deathwatch--judiciar",
         "models": 1,
         "optionIDs": [],
@@ -23,7 +23,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "7D8DB7CD-7DAF-46F5-8A25-73805A4816D0",
+        "id": "3C25732A-68CA-4017-BFD2-FC3F187FD1D4",
         "datasheetID": "deathwatch--brutalis-dreadnought",
         "models": 1,
         "optionIDs": [],
@@ -31,7 +31,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "B3725237-3414-4FF5-B853-3754C9D80F2C",
+        "id": "16DDCFC8-5CD1-42C4-A4FF-9A39591A38C0",
         "datasheetID": "deathwatch--hammerfall-bunker",
         "models": 1,
         "optionIDs": [],
@@ -39,7 +39,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "7A933EA7-B1F0-4AD2-A913-3C18B0B2B619",
+        "id": "BBBAF5B2-4936-46C7-A554-FFBB08EAEA2E",
         "datasheetID": "deathwatch--desolation-squad",
         "models": 5,
         "optionIDs": [],
@@ -47,7 +47,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "41E50936-13A9-4C37-B948-6CE6D788508D",
+        "id": "C6823B4D-D8CE-4368-B807-095E71E2DA04",
         "datasheetID": "deathwatch--deathwatch-terminator-squad",
         "models": 5,
         "optionIDs": [],
@@ -55,7 +55,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "37F3F087-7EE5-42B0-9245-5A9FEECA01F9",
+        "id": "5A537812-0277-4E6C-A181-5369DE2907F0",
         "datasheetID": "deathwatch--invader-atv",
         "models": 1,
         "optionIDs": [],
@@ -63,7 +63,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "0E518F70-C982-4482-A895-5B517226A14B",
+        "id": "720DB8EF-1AF9-4A25-9EA8-9346D5909EED",
         "datasheetID": "deathwatch--stormhawk-interceptor",
         "models": 1,
         "optionIDs": [],
@@ -71,7 +71,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "CE5DE691-CCA3-4744-8890-493E4E7B6415",
+    "warlordUnitID": "CA645564-24BC-48BE-AB32-A5CB3CDA26D1",
     "notes": "stress seed=13 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

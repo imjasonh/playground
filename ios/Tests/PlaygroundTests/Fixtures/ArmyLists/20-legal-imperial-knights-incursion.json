@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "D6BA13AD-40BF-47FA-A865-ECB47AE4619B",
+    "id": "1B24DCCF-9263-4249-8543-33655DA4257F",
     "name": "Imperial Knights Incursion 985pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "imperial-knights",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,7 +12,7 @@
     ],
     "units": [
       {
-        "id": "2A1A4041-3870-4E85-81AC-985C0D7A393F",
+        "id": "79475E01-6021-429F-AEA8-D2E3ED60FE4A",
         "datasheetID": "imperial-knights--knight-destrier",
         "models": 1,
         "optionIDs": [],
@@ -22,7 +22,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "49E3093D-C98D-40C4-8BD4-E3B40F9E916D",
+        "id": "39C8A81B-ECCE-4828-97B6-3FD3263EAB37",
         "datasheetID": "imperial-knights--armiger-warglaive",
         "models": 1,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "DEA358FE-B4FD-40BC-A9D6-36E55730F1F0",
+        "id": "F6A2235D-FDA0-4645-B76F-5B21FF0DEFB5",
         "datasheetID": "imperial-knights--armiger-moirax",
         "models": 1,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "8913394A-04FA-4302-B585-F831C26CAB8C",
+        "id": "271AA159-988F-417D-BCDD-B12E5164D556",
         "datasheetID": "imperial-knights--armiger-helverin",
         "models": 1,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "338B9546-16EE-4711-85E6-E833D88AA429",
+        "id": "C5DDEB3E-E967-492C-B95A-CD63D1D173A3",
         "datasheetID": "imperial-knights--armiger-helverin",
         "models": 1,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "30C7BF10-1898-4BE8-AFAF-B584DD8D44CB",
+        "id": "68BF8A8A-AA2A-48BE-BBB9-A1ECC3687ED7",
         "datasheetID": "imperial-knights--armiger-warglaive",
         "models": 1,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "2A1A4041-3870-4E85-81AC-985C0D7A393F",
+    "warlordUnitID": "79475E01-6021-429F-AEA8-D2E3ED60FE4A",
     "notes": "stress seed=19 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

@@ -391,19 +391,37 @@ def main() -> int:
         detachments.sort(key=lambda d: (d["factionID"], d["name"].casefold()))
         datasheets.sort(key=lambda d: (d["factionID"], d["name"].casefold()))
 
-        version_label = meta.get("version") or (
-            f"multi-{max(mfm_versions)}" if mfm_versions else "unknown"
+        previous = {}
+        if OUT.exists():
+            try:
+                previous = json.loads(OUT.read_text())
+            except json.JSONDecodeError:
+                previous = {}
+
+        datasheets, detachments, id_migrations = stabilize_ids_against_previous(
+            previous, datasheets, detachments
         )
+
+        points_revision = str(
+            meta.get("version")
+            or (max(mfm_versions) if mfm_versions else "unknown")
+        )
+
         catalog = {
-            "version": f"11e-mfm-{version_label}",
+            "version": str(previous.get("version") or "11e-0"),
             "edition": "11th",
             "source": {
-                "mfm": "https://github.com/BSData/wh40k-11e-mfm (data/*.yaml)",
+                "pointsSource": "https://github.com/BSData/wh40k-11e-mfm (data/*.yaml)",
                 "datasheetKeywords": "https://github.com/BSData/wh40k-11e (*.json)",
-                "mfmVersion": str(version_label),
-                "mfmFirstSeen": str(meta.get("generatedAt") or meta.get("date") or ""),
-                "note": "Construction data for all MFM factions. Ids are faction-prefixed. No ability prose.",
+                "pointsRevision": points_revision,
+                "generatedAt": str(meta.get("generatedAt") or meta.get("date") or ""),
+                "note": (
+                    "Bundled construction data for every faction. Ids are "
+                    "faction-prefixed and stable across refreshes when the "
+                    "datasheet/detachment display name is unchanged."
+                ),
             },
+            "idMigrations": id_migrations,
             "battleSizes": [
                 {
                     "id": "incursion",
@@ -440,13 +458,192 @@ def main() -> int:
             ids = [i["id"] for i in items]
             if len(ids) != len(set(ids)):
                 raise SystemExit(f"Duplicate {label} ids detected")
+        enh_ids = [
+            e["id"] for d in detachments for e in (d.get("enhancements") or [])
+        ]
+        if len(enh_ids) != len(set(enh_ids)):
+            raise SystemExit("Duplicate enhancement ids detected")
+
+        if previous and not catalog_needs_rewrite(previous, catalog):
+            print(
+                f"No construction changes versus {OUT} "
+                f"(version {previous.get('version')}); leaving file untouched"
+            )
+            return 0
+
+        catalog["version"] = next_catalog_version(previous, points_revision)
 
         OUT.parent.mkdir(parents=True, exist_ok=True)
         OUT.write_text(json.dumps(catalog, indent=2, ensure_ascii=False) + "\n")
         print(
-            f"Wrote {OUT} ({len(factions)} factions, {len(detachments)} detachments, {len(datasheets)} datasheets)"
+            f"Wrote {OUT} version={catalog['version']} "
+            f"({len(factions)} factions, {len(detachments)} detachments, "
+            f"{len(datasheets)} datasheets, {len(id_migrations)} id migrations)"
         )
     return 0
+
+
+def construction_fingerprint(catalog: dict) -> dict:
+    source = catalog.get("source") or {}
+    return {
+        "edition": catalog.get("edition"),
+        "battleSizes": catalog.get("battleSizes"),
+        "factions": catalog.get("factions"),
+        "detachments": catalog.get("detachments"),
+        "datasheets": catalog.get("datasheets"),
+        "idMigrations": catalog.get("idMigrations") or [],
+        "pointsRevision": source.get("pointsRevision") or source.get("mfmVersion"),
+    }
+
+
+def catalog_needs_rewrite(previous: dict, catalog: dict) -> bool:
+    if construction_fingerprint(previous) != construction_fingerprint(catalog):
+        return True
+    source = previous.get("source") or {}
+    # Migrate older bundled schema (mfm* keys / missing idMigrations).
+    if "mfm" in source or "idMigrations" not in previous:
+        return True
+    return False
+
+
+def next_catalog_version(previous: dict, points_revision: str) -> str:
+    """Bump the app-facing catalog version on each refresh that writes.
+
+    Format: ``11e-<N>`` (no scrape nicknames in the version string shown in UI).
+    """
+    del points_revision  # revision is recorded under source.pointsRevision
+    prev = str(previous.get("version") or "")
+    match = re.fullmatch(r"11e-(\d+)", prev)
+    if match:
+        return f"11e-{int(match.group(1)) + 1}"
+    # First migration away from older labels (e.g. 11e-mfm-1.4).
+    return "11e-1"
+
+
+def stabilize_ids_against_previous(
+    previous: dict,
+    datasheets: list[dict],
+    detachments: list[dict],
+) -> tuple[list[dict], list[dict], list[dict]]:
+    """Keep ids stable when faction+display name match; emit migrations otherwise.
+
+    Matching is by exact display ``name`` within a faction (and enhancement name
+    within a detachment). That way a list entry keeps resolving to the same
+    named unit after a points refresh even if slugify output would have drifted.
+    """
+    prev_sheets = previous.get("datasheets") or []
+    prev_dets = previous.get("detachments") or []
+    if not prev_sheets and not prev_dets:
+        return datasheets, detachments, []
+
+    prev_sheet_by_key = {(s["factionID"], s["name"]): s for s in prev_sheets}
+    prev_det_by_key = {(d["factionID"], d["name"]): d for d in prev_dets}
+
+    migrations: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add_migration(kind: str, frm: str, to: str) -> None:
+        if frm == to or not frm or not to:
+            return
+        key = (frm, to)
+        if key in seen:
+            return
+        seen.add(key)
+        migrations.append({"from": frm, "to": to, "kind": kind})
+
+    sheet_id_map: dict[str, str] = {}  # provisional -> stable
+    for sheet in datasheets:
+        provisional = sheet["id"]
+        key = (sheet["factionID"], sheet["name"])
+        prev = prev_sheet_by_key.get(key)
+        if prev and prev["id"] != provisional:
+            sheet_id_map[provisional] = prev["id"]
+            sheet["id"] = prev["id"]
+            add_migration("datasheet", provisional, prev["id"])
+        elif prev:
+            sheet_id_map[provisional] = sheet["id"]
+
+    # Remap leaderTo through sheet id changes.
+    for sheet in datasheets:
+        sheet["leaderTo"] = [
+            sheet_id_map.get(target, target) for target in (sheet.get("leaderTo") or [])
+        ]
+
+    det_id_map: dict[str, str] = {}
+    for det in detachments:
+        provisional = det["id"]
+        key = (det["factionID"], det["name"])
+        prev = prev_det_by_key.get(key)
+        if prev and prev["id"] != provisional:
+            det_id_map[provisional] = prev["id"]
+            det["id"] = prev["id"]
+            add_migration("detachment", provisional, prev["id"])
+        elif prev:
+            det_id_map[provisional] = det["id"]
+
+        prev_enh_by_name = {
+            e["name"]: e for e in (prev.get("enhancements") or [])
+        } if prev else {}
+        new_enhancements = []
+        for enh in det.get("enhancements") or []:
+            provisional_enh = f"{det['id']}--{slugify(enh['name'])}"
+            prev_enh = prev_enh_by_name.get(enh["name"])
+            enh = dict(enh)
+            if prev_enh:
+                enh["id"] = prev_enh["id"]
+                if provisional_enh != prev_enh["id"]:
+                    add_migration("enhancement", provisional_enh, prev_enh["id"])
+            else:
+                enh["id"] = provisional_enh
+            new_enhancements.append(enh)
+        det["enhancements"] = new_enhancements
+
+    # Migrations: previous ids that no longer exist but whose name still does.
+    new_sheet_ids = {s["id"] for s in datasheets}
+    new_sheet_by_key = {(s["factionID"], s["name"]): s for s in datasheets}
+    new_det_ids = {d["id"] for d in detachments}
+    new_det_by_key = {(d["factionID"], d["name"]): d for d in detachments}
+    new_enh_ids = {
+        e["id"] for d in detachments for e in (d.get("enhancements") or [])
+    }
+
+    for prev in prev_sheets:
+        if prev["id"] in new_sheet_ids:
+            continue
+        match = new_sheet_by_key.get((prev["factionID"], prev["name"]))
+        if match:
+            add_migration("datasheet", prev["id"], match["id"])
+
+    for prev in prev_dets:
+        if prev["id"] in new_det_ids:
+            continue
+        match = new_det_by_key.get((prev["factionID"], prev["name"]))
+        if match:
+            add_migration("detachment", prev["id"], match["id"])
+        prev_match_det = new_det_by_key.get((prev["factionID"], prev["name"]))
+        new_enh_by_name = {
+            e["name"]: e for e in ((prev_match_det or {}).get("enhancements") or [])
+        }
+        for enh in prev.get("enhancements") or []:
+            if enh["id"] in new_enh_ids:
+                continue
+            matched = new_enh_by_name.get(enh["name"])
+            if matched:
+                add_migration("enhancement", enh["id"], matched["id"])
+
+    # Carry forward prior migrations that still apply (from missing → present).
+    for old in previous.get("idMigrations") or []:
+        frm, to = old.get("from"), old.get("to")
+        kind = old.get("kind") or "datasheet"
+        if not frm or not to:
+            continue
+        if frm in new_sheet_ids or frm in new_det_ids or frm in new_enh_ids:
+            continue
+        if to in new_sheet_ids or to in new_det_ids or to in new_enh_ids:
+            add_migration(kind, frm, to)
+
+    migrations.sort(key=lambda m: (m["kind"], m["from"], m["to"]))
+    return datasheets, detachments, migrations
 
 
 if __name__ == "__main__":

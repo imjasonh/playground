@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "AE135ACD-1394-4F6A-8F5E-850DEA35B9A5",
+    "id": "0F934D4F-BE03-4F64-B529-43D57A5D21E5",
     "name": "Adepta Sororitas Strike Force 1865pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "adepta-sororitas",
     "battleSizeID": "strike-force",
     "detachmentIDs": [
@@ -12,17 +12,17 @@
     ],
     "units": [
       {
-        "id": "4B3F78FB-07AB-4D2C-85BC-89060352DACF",
+        "id": "D801C2EC-5A5B-4C98-AD1B-41498369929C",
         "datasheetID": "adepta-sororitas--ministorum-priest",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "adepta-sororitas--bringers-of-flame--iron-surplice-of-saint-istalela"
         ],
-        "attachedToUnitID": "5D28EFE1-5D84-4C71-A56E-DDCE474A95D2"
+        "attachedToUnitID": "0EE48458-646E-43EC-BC64-C8C6ACDF162B"
       },
       {
-        "id": "51085F7F-EC77-4B8F-9274-04625CA4AD93",
+        "id": "36A8EB7B-CCD6-47D1-A472-12F586F65930",
         "datasheetID": "adepta-sororitas--repentia-squad",
         "models": 5,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "5D28EFE1-5D84-4C71-A56E-DDCE474A95D2",
+        "id": "0EE48458-646E-43EC-BC64-C8C6ACDF162B",
         "datasheetID": "adepta-sororitas--celestian-insidiants",
         "models": 10,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "0BACD97D-460F-4880-87E6-0F1D8915F14B",
+        "id": "E8AC2F03-CA45-4730-97F7-739ACA612A69",
         "datasheetID": "adepta-sororitas--sanctifiers",
         "models": 9,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "E7A233B4-891B-4507-997C-204E95CF2444",
+        "id": "19192D32-5261-4EC4-ABA0-C165372DF487",
         "datasheetID": "adepta-sororitas--immolator",
         "models": 1,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "64BF55E4-1BBD-4377-A39A-7D188D13DDE8",
+        "id": "2455AFFA-9518-4181-9D8B-7C880C31D501",
         "datasheetID": "adepta-sororitas--sororitas-rhino",
         "models": 1,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "92EA3992-3B9C-4511-BB9D-4464AA71A8C6",
+        "id": "1900B287-3C74-4BB8-B472-AAC9FF1C4186",
         "datasheetID": "adepta-sororitas--battle-sisters-squad",
         "models": 10,
         "optionIDs": [],
@@ -70,7 +70,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F8A79253-2B7B-46E2-9BEC-6175939C13CD",
+        "id": "95E50265-1B0C-45AA-82A5-034F39C75B26",
         "datasheetID": "adepta-sororitas--dominion-squad",
         "models": 10,
         "optionIDs": [],
@@ -78,7 +78,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "9A3BCD1A-0C08-448D-BEED-7FE2C10E6E34",
+        "id": "185F4874-AED1-4E12-8FD7-517488BB7054",
         "datasheetID": "adepta-sororitas--paragon-warsuits",
         "models": 3,
         "optionIDs": [],
@@ -86,7 +86,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "C875878A-CD29-42A9-A419-9C371541D838",
+        "id": "3501BB14-BD9B-480D-B40E-C1FB7DF91BB7",
         "datasheetID": "adepta-sororitas--sisters-novitiate-squad",
         "models": 10,
         "optionIDs": [],
@@ -94,7 +94,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "E6C8A94C-1AE7-43D5-9AF2-24B2E37C4959",
+        "id": "D89C1933-AB89-471E-BF12-FF5708692BDD",
         "datasheetID": "adepta-sororitas--castigator",
         "models": 1,
         "optionIDs": [],
@@ -102,7 +102,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "E793EA88-A2E4-48C5-BF78-0F0E5F15980C",
+        "id": "31396C76-DF11-4A44-8ABF-41B876552F40",
         "datasheetID": "adepta-sororitas--mortifiers",
         "models": 1,
         "optionIDs": [],
@@ -110,7 +110,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "BB117271-F69B-4D95-8D3D-4F705E2B211E",
+        "id": "B47B1541-4087-42C7-9CA8-527ECE2EEC6B",
         "datasheetID": "adepta-sororitas--death-cult-assassins",
         "models": 2,
         "optionIDs": [],
@@ -118,7 +118,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "97491021-BD18-4EAE-BF9E-E5CC20271B09",
+        "id": "3F196EDF-BA15-4411-A8FC-49FE7748BEB4",
         "datasheetID": "adepta-sororitas--celestian-sacresants",
         "models": 5,
         "optionIDs": [],
@@ -126,7 +126,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F5AD7F82-CCC3-47D2-A756-5F97359EC204",
+        "id": "A3C7484B-F5F7-4AB7-916D-CF1544B29A02",
         "datasheetID": "adepta-sororitas--penitent-engines",
         "models": 1,
         "optionIDs": [],
@@ -134,7 +134,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "BCA29E4B-51DE-4595-9E29-D26A49ED8E3D",
+        "id": "A9BE9AA6-4867-4D56-8DE3-6A10BD1DB44B",
         "datasheetID": "adepta-sororitas--seraphim-squad",
         "models": 5,
         "optionIDs": [],
@@ -142,7 +142,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "7A8AF505-DCB2-493E-B4AA-95040DD41A88",
+        "id": "7C95C97D-7EE1-4876-9B02-432CD4344D6F",
         "datasheetID": "adepta-sororitas--arco-flagellants",
         "models": 3,
         "optionIDs": [],
@@ -150,7 +150,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "28CB00E5-5608-4945-B1D0-AF81D672FE18",
+        "id": "5B0A676B-320B-4BA4-853A-692910828E9E",
         "datasheetID": "adepta-sororitas--battle-sisters-squad",
         "models": 10,
         "optionIDs": [],
@@ -158,7 +158,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "1D7B015A-5C5B-4C17-BAFE-C7AD4C85BF4E",
+        "id": "95CD85A0-C055-442B-A95B-4A288DEE3C0D",
         "datasheetID": "adepta-sororitas--zephyrim-squad",
         "models": 5,
         "optionIDs": [],
@@ -166,7 +166,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "99E76E04-C6E1-4C49-82F8-C1E80EFDD005",
+        "id": "19450142-1506-4E85-A10A-24431BBDB57B",
         "datasheetID": "adepta-sororitas--crusaders",
         "models": 2,
         "optionIDs": [],
@@ -174,7 +174,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "C588F306-72C7-47C9-94C5-D22D3A7C486F",
+        "id": "405760B6-7F42-4F53-9CDD-5E4B298157DD",
         "datasheetID": "adepta-sororitas--retributor-squad",
         "models": 5,
         "optionIDs": [],
@@ -182,7 +182,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "4B3F78FB-07AB-4D2C-85BC-89060352DACF",
+    "warlordUnitID": "D801C2EC-5A5B-4C98-AD1B-41498369929C",
     "notes": "stress seed=37 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

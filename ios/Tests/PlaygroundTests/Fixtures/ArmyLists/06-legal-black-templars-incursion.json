@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "BE2A2012-30FE-4307-8916-0865AFA74AAF",
+    "id": "21A4D5BD-0C04-476D-BBCD-3450E79932F0",
     "name": "Black Templars Incursion 985pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "black-templars",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,7 +12,7 @@
     ],
     "units": [
       {
-        "id": "D7ACA5B2-D3D7-43D9-B179-7DC834B795FA",
+        "id": "593C5AB4-D746-4BD7-BD0F-953EE1E092E1",
         "datasheetID": "black-templars--execrator",
         "models": 1,
         "optionIDs": [],
@@ -22,7 +22,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "ECD25C95-90C2-4DC5-81C4-FCD5DA21ADFF",
+        "id": "B5B3E273-09C8-474C-8697-22ABE67E79C6",
         "datasheetID": "black-templars--redemptor-dreadnought",
         "models": 1,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "FB72660C-765E-459F-9A0A-3C358FCFE291",
+        "id": "25F2AC20-DA0A-4B22-A747-ABD97A85A569",
         "datasheetID": "black-templars--land-raider",
         "models": 1,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "5B4FEE52-0099-4BC5-A5A6-868C2C4E9FF0",
+        "id": "0434EA94-344B-4122-B1AF-342178287D63",
         "datasheetID": "black-templars--bladeguard-veteran-squad",
         "models": 3,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "8CC6E7FF-38FD-4856-A0AC-8875B6F93C96",
+        "id": "755FCB41-72BE-4920-9D6C-D9F738756F45",
         "datasheetID": "black-templars--intercessor-squad",
         "models": 10,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "E677BDE1-BEB8-4FEF-8067-174F935A615C",
+        "id": "D199D45E-0EA8-4965-827B-994F13EA89D2",
         "datasheetID": "black-templars--desolation-squad",
         "models": 5,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "055C940F-808A-4C74-8C03-8010B333C7F9",
+        "id": "DD88F091-A4D1-4DC2-B743-9D2FEC715B5F",
         "datasheetID": "black-templars--eradicator-squad",
         "models": 3,
         "optionIDs": [],
@@ -70,7 +70,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "D7ACA5B2-D3D7-43D9-B179-7DC834B795FA",
+    "warlordUnitID": "593C5AB4-D746-4BD7-BD0F-953EE1E092E1",
     "notes": "stress seed=5 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

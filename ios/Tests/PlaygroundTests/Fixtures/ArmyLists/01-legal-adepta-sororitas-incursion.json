@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "9576BB6E-02E9-4416-B506-77897AAAE162",
+    "id": "AD5646F4-C4DF-431A-A01D-5C3B4F4CEB2F",
     "name": "Adepta Sororitas Incursion 940pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "adepta-sororitas",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,17 +12,17 @@
     ],
     "units": [
       {
-        "id": "FE978A6F-3BD5-4D6E-A3B7-1F771D237E16",
+        "id": "467B7C5C-C5A8-46E3-B4D3-476435F54CB5",
         "datasheetID": "adepta-sororitas--ministorum-priest",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "adepta-sororitas--army-of-faith--blade-of-saint-ellynor"
         ],
-        "attachedToUnitID": "6754B962-AF0F-4E92-8D78-492D309839A9"
+        "attachedToUnitID": "7D446A25-CDAB-4A73-8487-AF6CFBE07CE4"
       },
       {
-        "id": "6754B962-AF0F-4E92-8D78-492D309839A9",
+        "id": "7D446A25-CDAB-4A73-8487-AF6CFBE07CE4",
         "datasheetID": "adepta-sororitas--battle-sisters-squad",
         "models": 10,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "9C89321B-3FA0-47C8-AED1-396A35FCCCDF",
+        "id": "D8F80676-E4D8-462A-A11A-0572F826DA62",
         "datasheetID": "adepta-sororitas--battle-sisters-squad",
         "models": 10,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "C25655A7-3AD1-44EF-ABE8-C4B3BA653539",
+        "id": "0DD0BE93-4345-4DAA-B82E-75513D36407A",
         "datasheetID": "adepta-sororitas--sanctifiers",
         "models": 9,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "74F28952-6A61-431B-ADA8-653DEF0089EF",
+        "id": "94832DA7-8535-43A2-8138-8C1B7EFE4A99",
         "datasheetID": "adepta-sororitas--penitent-engines",
         "models": 1,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "A147D017-8400-41FB-B1E8-3D058FA196E0",
+        "id": "53E5C204-A239-412A-AC80-BCED02CC814D",
         "datasheetID": "adepta-sororitas--mortifiers",
         "models": 1,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "9AF6A37A-A2F2-49D0-9531-923270262DAB",
+        "id": "821A80BA-D743-4AA1-A88A-240BB845E4A1",
         "datasheetID": "adepta-sororitas--zephyrim-squad",
         "models": 5,
         "optionIDs": [],
@@ -70,7 +70,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "D35479FE-B01A-4762-8EDB-8120401C2FA1",
+        "id": "F5C848FA-A557-48E3-8C7D-85EF31B3A2C0",
         "datasheetID": "adepta-sororitas--exorcist",
         "models": 1,
         "optionIDs": [],
@@ -78,7 +78,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "90780E02-77B6-4662-AA27-53125D41F581",
+        "id": "CD61A8B2-F09D-4D5B-AB2F-3CB79D030693",
         "datasheetID": "adepta-sororitas--battle-sanctum",
         "models": 1,
         "optionIDs": [],
@@ -86,7 +86,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "FE978A6F-3BD5-4D6E-A3B7-1F771D237E16",
+    "warlordUnitID": "467B7C5C-C5A8-46E3-B4D3-476435F54CB5",
     "notes": "stress seed=0 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

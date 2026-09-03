@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "8391CA06-5B83-4199-AF91-5370531BD19B",
+    "id": "6113D03F-8E09-4810-874F-BCDD1635DE64",
     "name": "Imperial Agents Incursion 970pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "imperial-agents",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,17 +12,17 @@
     ],
     "units": [
       {
-        "id": "ADE976EB-5640-4EED-AE91-AFDF876E63E5",
+        "id": "90D0F3F9-3BC9-4340-B1B1-89C5F95072C4",
         "datasheetID": "imperial-agents--jokaero-weaponsmith",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "imperial-agents--ordo-xenos-alien-hunters--blackweave-shroud"
         ],
-        "attachedToUnitID": "47FBFC29-8B26-4EDF-B09E-F6B9E425C5F8"
+        "attachedToUnitID": "5018CC98-1214-4A66-95E0-12F79ED7BBBC"
       },
       {
-        "id": "7DF9CD3D-C6C3-4AF1-8914-6965FCD52D36",
+        "id": "02F61B14-A2EF-4F2C-9374-B42D2AF36000",
         "datasheetID": "imperial-agents--inquisitorial-chimera--every-model-has-the-imperium-keyword",
         "models": 1,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "DE0E5C44-0DD0-42F4-907A-11FEBC70489A",
+        "id": "15EF855D-5007-463C-B498-BA217D425F8B",
         "datasheetID": "imperial-agents--daemonhost",
         "models": 1,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "E5F1A93F-9951-4B08-B09A-81E153F88876",
+        "id": "9A12A9E9-2FBA-4A5C-8E22-23B352F93339",
         "datasheetID": "imperial-agents--aquila-kill-team--every-model-has-the-imperium-keyword",
         "models": 10,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "C6553EFE-54A1-4A08-A0CC-1B4A5C43A73C",
+        "id": "1BF863BB-6EBE-4DA0-A17F-6E5AFC53F572",
         "datasheetID": "imperial-agents--subductor-squad--every-model-has-the-imperium-keyword",
         "models": 11,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "EDEDE0A5-572A-4A27-8731-A2FC15E1CF8E",
+        "id": "D377A5E0-0B04-4CA2-8AE7-53571D445772",
         "datasheetID": "imperial-agents--vigilant-squad--every-model-has-the-imperium-keyword",
         "models": 11,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "8AF0F5D3-0132-4F01-8F3C-726EABB61532",
+        "id": "4BB7B57C-ACC8-46CB-A3B1-7FD195D11F0A",
         "datasheetID": "imperial-agents--deathwatch-kill-team",
         "models": 10,
         "optionIDs": [],
@@ -70,7 +70,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F7F17BA3-5236-4BB0-A030-08CA0A2AC2B6",
+        "id": "5A8AC8B4-2C31-44DE-8B02-9512F04E8EDE",
         "datasheetID": "imperial-agents--fortis-kill-team",
         "models": 5,
         "optionIDs": [],
@@ -78,7 +78,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "47FBFC29-8B26-4EDF-B09E-F6B9E425C5F8",
+        "id": "5018CC98-1214-4A66-95E0-12F79ED7BBBC",
         "datasheetID": "imperial-agents--inquisitorial-agents",
         "models": 6,
         "optionIDs": [],
@@ -86,7 +86,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "B0D72FB3-C763-4F96-8B1F-69C2F206A685",
+        "id": "0F033E82-E11B-4EC5-9905-15BD6D695E80",
         "datasheetID": "imperial-agents--deathwatch-kill-team--every-model-has-the-imperium-keyword",
         "models": 5,
         "optionIDs": [],
@@ -94,7 +94,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "ADE976EB-5640-4EED-AE91-AFDF876E63E5",
+    "warlordUnitID": "90D0F3F9-3BC9-4340-B1B1-89C5F95072C4",
     "notes": "stress seed=18 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

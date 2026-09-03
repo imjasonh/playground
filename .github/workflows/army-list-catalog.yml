@@ -1,0 +1,102 @@
+name: Update Army List catalog
+
+on:
+  schedule:
+    # Mondays 06:00 UTC — after weekend points drops have usually landed.
+    - cron: '0 6 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write # Octo STS OIDC federation
+
+concurrency:
+  group: update-army-list-catalog
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Refresh bundled catalog
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+
+      - name: Refresh catalog and regenerate stress fixtures
+        id: update_catalog
+        run: bash .github/scripts/update-army-list-catalog.sh
+        continue-on-error: true
+
+      # App token (not GITHUB_TOKEN) so the automation PR triggers required
+      # checks and can enable auto-merge onto protected main.
+      - name: Federate GitHub App token via Octo STS
+        id: octo-sts
+        uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
+        with:
+          scope: imjasonh/playground
+          identity: dependency-updates
+
+      - name: Open a pull request for a successful refresh
+        id: pr_success
+        if: >-
+          ${{
+            steps.update_catalog.outcome == 'success' &&
+            steps.update_catalog.outputs.has_changes == 'true'
+          }}
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: bash .github/scripts/manage-army-list-catalog-update.sh open-success-pr
+
+      - name: Enable auto-merge for a successful refresh
+        if: >-
+          ${{
+            steps.update_catalog.outcome == 'success' &&
+            steps.update_catalog.outputs.has_changes == 'true'
+          }}
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+          PR_NUMBER: ${{ steps.pr_success.outputs.pull-request-number }}
+        run: |
+          if [[ -z "${PR_NUMBER}" ]]; then
+            PR_NUMBER=$(gh pr list \
+              --head automation/army-list-catalog \
+              --base main \
+              --state open \
+              --json number \
+              --jq '.[0].number // empty')
+          fi
+          if [[ -z "${PR_NUMBER}" ]]; then
+            echo "::error::No army-list-catalog pull request found to auto-merge"
+            exit 1
+          fi
+          bash .github/scripts/manage-army-list-catalog-update.sh enable-auto-merge "${PR_NUMBER}"
+
+      - name: Open a pull request when refresh fails
+        id: pr_failure
+        if: ${{ steps.update_catalog.outcome == 'failure' }}
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: bash .github/scripts/manage-army-list-catalog-update.sh open-failure-pr
+
+      - name: Close a stale catalog-update pull request
+        if: >-
+          ${{
+            steps.update_catalog.outcome == 'success' &&
+            steps.update_catalog.outputs.has_changes != 'true'
+          }}
+        env:
+          GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        run: bash .github/scripts/manage-army-list-catalog-update.sh close-stale
+
+      - name: Report unsuccessful catalog refresh
+        if: ${{ steps.update_catalog.outcome == 'failure' }}
+        run: bash .github/scripts/manage-army-list-catalog-update.sh report-failure

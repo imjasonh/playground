@@ -33,7 +33,7 @@ struct ArmyListHomeView: View {
                         .accessibilityHidden(true)
                     Text("No army lists")
                         .font(.headline)
-                    Text("Build an 11th Edition list for any faction and validate it against construction rules from the Munitorum Field Manual.")
+                    Text("Build an 11th Edition list for any faction and validate it against the construction rules bundled with this build.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -94,7 +94,7 @@ struct ArmyListHomeView: View {
     @ViewBuilder
     private var catalogFooter: some View {
         if let catalog {
-            Text("Catalog \(catalog.version). Unofficial fan experiment — confirm with the Munitorum Field Manual for events.")
+            Text("Catalog \(catalog.version). Unofficial fan experiment — confirm points with Games Workshop for events.")
                 .font(.footnote)
         }
     }
@@ -109,7 +109,18 @@ struct ArmyListHomeView: View {
     }
 
     private func reload() {
-        lists = store.loadAll()
+        let loaded = store.loadAll()
+        guard let catalog else {
+            lists = loaded
+            return
+        }
+        lists = loaded.map { document in
+            var upgraded = document
+            if upgraded.applyCatalogUpgrade(using: catalog) {
+                try? store.save(upgraded)
+            }
+            return upgraded
+        }
     }
 
     private func delete(at offsets: IndexSet) {
@@ -193,7 +204,7 @@ struct ArmyListNewSheet: View {
                 .accessibilityIdentifier("armyListBattleSizePicker")
             }
             Section {
-                Text("Points, Detachment Points, enhancements, and duplicates come from the Munitorum Field Manual snapshot bundled with this build.")
+                Text("Points, Detachment Points, enhancements, and duplicates come from the construction catalog bundled with this build.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

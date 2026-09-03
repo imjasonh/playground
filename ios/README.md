@@ -47,7 +47,7 @@ ios/
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
 | `device-agent` | Device Agent | On-device model drives an in-app browser; App Intents/Shortcuts; voice; requires Apple Intelligence |
-| `army-list` | Army List | Build/validate 11th Edition lists (all MFM factions); on-device chat tools edit via the validator |
+| `army-list` | Army List | Build/validate 11th Edition lists (all factions in the bundled catalog); on-device chat tools edit via the validator |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
@@ -115,16 +115,21 @@ through the system share sheet.
 ### Army List
 
 Build and validate Warhammer 40,000 **11th Edition** army lists for every
-faction in the Munitorum Field Manual scrape (30 factions, faction-prefixed
-datasheet/detachment ids). The experiment bundles construction data (points,
-Detachment Points, unique tags, Leader join edges) as JSON, a deterministic
+faction in the bundled construction catalog (30 factions, faction-prefixed
+datasheet/detachment ids). The experiment ships points, Detachment Points,
+unique tags, and Leader join edges as versioned JSON, plus a deterministic
 validator, SwiftUI authoring UI, and share/export as plain text or `.army.json`.
 
-Refresh catalog data from BSData’s Munitorum Field Manual scrape:
+Refresh the **bundled** catalog (no remote fetch at runtime):
 
 ```bash
 python3 ios/scripts/refresh-army-list-catalog.py
 ```
+
+A weekly GitHub Action (`.github/workflows/army-list-catalog.yml`) runs that
+refresh on `main`, opens a PR, regenerates stress fixtures, and auto-merges
+when CI is green. Catalog versions bump as `11e-<N>`; id migrations keep saved
+lists pointed at the same named datasheets when ids would otherwise drift.
 
 Stress-test the validator with 50 constructed lists (also writes XCTest fixtures):
 
@@ -137,8 +142,7 @@ Apple Intelligence is available (iOS 26+). Tools mutate the same document the
 editor shows; every tool result re-runs the validator. Without the model, chat
 shows an unavailable pane — authoring and validation still work.
 
-Unofficial fan experiment — confirm points with the official Munitorum Field
-Manual for events.
+Unofficial fan experiment — confirm points with Games Workshop for events.
 
 ### Device Agent
 

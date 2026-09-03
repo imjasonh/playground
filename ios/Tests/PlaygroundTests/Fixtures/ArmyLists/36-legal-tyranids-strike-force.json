@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "CA3D70AA-A6CA-4351-98BC-FF906C55BB3F",
+    "id": "12310422-E28D-49E4-ADD2-2FBC609C4CC7",
     "name": "Tyranids Strike Force 1915pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "tyranids",
     "battleSizeID": "strike-force",
     "detachmentIDs": [
@@ -13,17 +13,17 @@
     ],
     "units": [
       {
-        "id": "4AC195D5-27A7-4845-AA86-B0A0D98A21BE",
+        "id": "9731B8BD-9778-48E6-822B-AB5B8554BBE1",
         "datasheetID": "tyranids--winged-tyranid-prime",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "tyranids--vanguard-onslaught--stalker"
         ],
-        "attachedToUnitID": "7E37CFC5-807A-408E-B65A-E6534DD94F97"
+        "attachedToUnitID": "E8D3DE7C-729E-4E4A-9515-501346233C64"
       },
       {
-        "id": "89A101B6-7F3B-4BF2-9D84-86283117D4A9",
+        "id": "773D5210-A384-482B-997E-9C1FEC087047",
         "datasheetID": "tyranids--barbed-hierodule",
         "models": 1,
         "optionIDs": [],
@@ -31,7 +31,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "23ABDE6A-B227-4F14-879B-BA1A3CA850A9",
+        "id": "5212386D-D84C-46B3-B2FD-213930CD6C9A",
         "datasheetID": "tyranids--dimachaeron",
         "models": 1,
         "optionIDs": [],
@@ -39,7 +39,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "B7419248-8417-4C58-BF23-03FE4610D265",
+        "id": "09A7F73E-285D-44A0-9195-7A9EF1EE640A",
         "datasheetID": "tyranids--mawloc",
         "models": 1,
         "optionIDs": [],
@@ -47,7 +47,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "2521F26C-E528-4B81-B294-733D106EF0AF",
+        "id": "644BD2EE-220A-4DE7-A137-CDF19C673CAA",
         "datasheetID": "tyranids--norn-assimilator",
         "models": 1,
         "optionIDs": [],
@@ -55,7 +55,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "8D9474C2-5BD5-4DC2-9122-1545B0867FC7",
+        "id": "9D3F86EE-C647-4AE0-A974-2CF82995FB9D",
         "datasheetID": "tyranids--ripper-swarms",
         "models": 1,
         "optionIDs": [],
@@ -63,7 +63,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "25D01305-3637-41D6-B7C1-CFA1CB5B3603",
+        "id": "1CC79DC6-8246-4925-BDFB-40048B790447",
         "datasheetID": "tyranids--carnifexes",
         "models": 1,
         "optionIDs": [],
@@ -71,7 +71,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "4BAC0DD5-DBAD-49A3-834F-A04E41581542",
+        "id": "4FE1CC48-F5CA-4199-84A0-3BD06687BB48",
         "datasheetID": "tyranids--lictor",
         "models": 1,
         "optionIDs": [],
@@ -79,7 +79,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "1991BAA7-A2E2-4431-B12A-431C69DD5715",
+        "id": "D0D9DF5C-E351-4406-BB2F-F8E4DD811334",
         "datasheetID": "tyranids--raveners",
         "models": 5,
         "optionIDs": [],
@@ -87,7 +87,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "71595D77-4198-422D-A8E7-A8E288A6F568",
+        "id": "62761256-0674-4081-9F7A-F1EA8E76C7F5",
         "datasheetID": "tyranids--sky-slasher-swarms",
         "models": 3,
         "optionIDs": [],
@@ -95,7 +95,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "72B43AD6-0507-4F7A-BDAE-369F4BC441E2",
+        "id": "D5F007DA-4E00-4E98-B573-D16D4DEDCC55",
         "datasheetID": "tyranids--sporocyst",
         "models": 1,
         "optionIDs": [],
@@ -103,7 +103,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "7E37CFC5-807A-408E-B65A-E6534DD94F97",
+        "id": "E8D3DE7C-729E-4E4A-9515-501346233C64",
         "datasheetID": "tyranids--gargoyles",
         "models": 20,
         "optionIDs": [],
@@ -111,7 +111,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "BB1A3603-5596-49B8-9720-CC3901C5C30F",
+        "id": "72F60D59-56DD-42E8-A85E-BDEFEE31D66F",
         "datasheetID": "tyranids--norn-emissary",
         "models": 1,
         "optionIDs": [],
@@ -119,7 +119,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "4AC195D5-27A7-4845-AA86-B0A0D98A21BE",
+    "warlordUnitID": "9731B8BD-9778-48E6-822B-AB5B8554BBE1",
     "notes": "stress seed=35 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

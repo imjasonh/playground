@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "14F349EC-DAB5-410F-9077-DF619727BDB9",
+    "id": "AA7B6FA2-F4F8-4C7A-B7A7-C7C991F6667C",
     "name": "Adeptus Mechanicus Incursion 990pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "adeptus-mechanicus",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,17 +12,17 @@
     ],
     "units": [
       {
-        "id": "CB18D88D-D3D4-4033-BA54-3717AF511F21",
+        "id": "F7150232-1035-4D7A-BEB5-8512D8B8EDAF",
         "datasheetID": "adeptus-mechanicus--tech-priest-enginseer",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "adeptus-mechanicus--explorator-maniple--logis"
         ],
-        "attachedToUnitID": "FB2D0A88-ADAA-4132-841E-39EE20CD9FEF"
+        "attachedToUnitID": "41909B11-03B8-4595-822A-8A7890A50D5E"
       },
       {
-        "id": "FB2D0A88-ADAA-4132-841E-39EE20CD9FEF",
+        "id": "41909B11-03B8-4595-822A-8A7890A50D5E",
         "datasheetID": "adeptus-mechanicus--secutarii-peltasts",
         "models": 5,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "BE684CDF-1241-40DA-8841-AFA7B670DEB5",
+        "id": "85A22C78-4D8F-42BD-9BA2-7694314F90DC",
         "datasheetID": "adeptus-mechanicus--hastarii-fusiliers",
         "models": 5,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "BB6CFAEB-0D33-425C-94A4-28BC98386762",
+        "id": "0679BA60-C1F8-4855-ACE6-60D96C48BC83",
         "datasheetID": "adeptus-mechanicus--ironstrider-ballistarii",
         "models": 1,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "A99C1C03-13E5-4B08-8140-6D8878657479",
+        "id": "5286C8A2-3CD0-4E3D-9353-47B2452CF46D",
         "datasheetID": "adeptus-mechanicus--sicarian-ruststalkers",
         "models": 5,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "76E3A587-C192-4DA5-82EC-6B66AB17FD2C",
+        "id": "CC384606-3122-46DC-A32C-30CE6C8EF87C",
         "datasheetID": "adeptus-mechanicus--skitarii-rangers",
         "models": 10,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "787D959F-3B46-485F-AE3B-3E0E02619404",
+        "id": "E8BC1928-A3D8-4E97-BA46-BCAEE0F962FA",
         "datasheetID": "adeptus-mechanicus--kataphron-breachers",
         "models": 3,
         "optionIDs": [],
@@ -70,7 +70,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "0FDE3B3F-9DB4-432D-A51F-99FFA306DFA5",
+        "id": "A58E7F40-9C06-4B80-B94D-7A762E6FE65D",
         "datasheetID": "adeptus-mechanicus--serberys-sulphurhounds",
         "models": 3,
         "optionIDs": [],
@@ -78,7 +78,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "391333C5-011D-4E51-8CE3-2856CB5192E9",
+        "id": "8E55A860-B44E-4FBA-A8F7-596B75D20EA1",
         "datasheetID": "adeptus-mechanicus--sydonian-dragoons-with-taser-lances",
         "models": 1,
         "optionIDs": [],
@@ -86,7 +86,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "5EB61586-7CF4-4657-8625-8D38F938632F",
+        "id": "A5C16B9D-A399-4F6B-ADF2-DA5ECD19C75C",
         "datasheetID": "adeptus-mechanicus--sicarian-infiltrators",
         "models": 5,
         "optionIDs": [],
@@ -94,7 +94,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "35AE3E2F-8952-44B2-A785-903CFA692880",
+        "id": "9A7BC8E0-C946-4783-B1A6-686895F4804A",
         "datasheetID": "adeptus-mechanicus--skorpius-dunerider",
         "models": 1,
         "optionIDs": [],
@@ -102,7 +102,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "174D9EE1-E311-4BE1-8E1D-677816C28589",
+        "id": "F0DC4961-A3C8-4457-BE7C-43C893A24A30",
         "datasheetID": "adeptus-mechanicus--kataphron-destroyers",
         "models": 3,
         "optionIDs": [],
@@ -110,7 +110,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "CB18D88D-D3D4-4033-BA54-3717AF511F21",
+    "warlordUnitID": "F7150232-1035-4D7A-BEB5-8512D8B8EDAF",
     "notes": "stress seed=2 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

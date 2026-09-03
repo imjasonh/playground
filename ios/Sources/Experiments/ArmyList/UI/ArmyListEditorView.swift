@@ -129,6 +129,11 @@ struct ArmyListEditorView: View {
         .sheet(isPresented: $showShare) {
             ShareArmyListSheet(text: shareText, fileURL: shareFileURL)
         }
+        .onAppear {
+            if list.applyCatalogUpgrade(using: catalog) {
+                persist()
+            }
+        }
         .onChange(of: list) { _ in
             persist()
         }

@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "F9E23D93-12CB-4869-8A40-355443E20464",
+    "id": "BF0DF1A0-2341-4E9A-8017-3AB92CA3B9A4",
     "name": "Necrons Incursion 940pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "necrons",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,7 +12,7 @@
     ],
     "units": [
       {
-        "id": "C284DA40-E1E1-4B48-9ADA-5D7B2CC58A40",
+        "id": "76DD22A0-7B80-4CA5-8A97-4481ED576FD0",
         "datasheetID": "necrons--royal-warden",
         "models": 1,
         "optionIDs": [],
@@ -20,7 +20,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "44C97282-AB23-419A-A509-3F9EAECA78D5",
+        "id": "54DDA950-4921-408E-AAA4-488C196669F7",
         "datasheetID": "necrons--annihilation-barge",
         "models": 1,
         "optionIDs": [],
@@ -28,7 +28,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "B4E96F38-8A04-4762-8665-97F8CC7FD203",
+        "id": "0A6C7357-2120-40CC-9E82-7978F4F2B8EE",
         "datasheetID": "necrons--canoptek-reanimator",
         "models": 1,
         "optionIDs": [],
@@ -36,7 +36,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F0907FB8-1C2D-48D2-9AF5-91A87BDD7380",
+        "id": "E713D1A3-1B4F-48DD-81FB-64989A4F2A7B",
         "datasheetID": "necrons--lokhust-destroyers",
         "models": 1,
         "optionIDs": [],
@@ -44,7 +44,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "4CA0C514-42D4-4A06-AC1B-803FE60DC923",
+        "id": "46B1D13D-FD53-42F6-B770-8536FF84EACF",
         "datasheetID": "necrons--skorpekh-destroyers",
         "models": 3,
         "optionIDs": [],
@@ -52,7 +52,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "47501871-6113-4ADD-85E3-EDE2E1F70FB5",
+        "id": "DFFB739A-3453-48E7-BE09-FB1566BE558F",
         "datasheetID": "necrons--flayed-ones",
         "models": 5,
         "optionIDs": [],
@@ -60,7 +60,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "4992BC66-5C54-48C2-B05E-1BEDC247BD2B",
+        "id": "B9CA6A8E-50A5-4D9D-86EA-F1F47FB1184F",
         "datasheetID": "necrons--seraptek-heavy-construct",
         "models": 1,
         "optionIDs": [],
@@ -68,7 +68,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "C284DA40-E1E1-4B48-9ADA-5D7B2CC58A40",
+    "warlordUnitID": "76DD22A0-7B80-4CA5-8A97-4481ED576FD0",
     "notes": "stress seed=21 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

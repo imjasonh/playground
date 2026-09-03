@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "A62AA046-E997-49B7-8821-5EC96C319DDD",
+    "id": "4A583687-643F-4A60-9B2B-6A7C52E1C46B",
     "name": "Grey Knights Incursion 915pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "grey-knights",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -13,7 +13,7 @@
     ],
     "units": [
       {
-        "id": "28DB340B-90AE-4809-8FF5-25D8BD700EE1",
+        "id": "EE210156-18C5-4932-8C70-F2FF9698866E",
         "datasheetID": "grey-knights--brotherhood-chaplain",
         "models": 1,
         "optionIDs": [],
@@ -23,7 +23,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "91693D6E-49E0-4249-8ED1-1CCF68036688",
+        "id": "5695FA20-0B49-464A-9F00-FD69F3068A5A",
         "datasheetID": "grey-knights--strike-squad",
         "models": 10,
         "optionIDs": [],
@@ -31,7 +31,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "D7CC6F3C-3F00-47A8-AB92-41A839735E96",
+        "id": "309DD258-D9D5-46B2-8BA2-16DCAA65D6C4",
         "datasheetID": "grey-knights--purgation-squad",
         "models": 5,
         "optionIDs": [],
@@ -39,7 +39,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "7B914AE8-75F6-46DD-BBB8-B4170AC3B3CB",
+        "id": "37B0021C-35D8-4103-B03D-6055609F9A71",
         "datasheetID": "grey-knights--servitors",
         "models": 4,
         "optionIDs": [],
@@ -47,7 +47,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "4D71AA46-0AF2-4A4A-9AC5-C37A6F4F4CD0",
+        "id": "2937753E-4D8B-497F-9EE3-64317EF126E9",
         "datasheetID": "grey-knights--nemesis-dreadknight",
         "models": 1,
         "optionIDs": [],
@@ -55,7 +55,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "FB6C3806-2B8E-47F6-B542-276E216AFED0",
+        "id": "8BD384C2-1FD7-4108-8F40-0BB46770A8AD",
         "datasheetID": "grey-knights--rhino",
         "models": 1,
         "optionIDs": [],
@@ -63,7 +63,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "FA0121DC-F724-4541-BC1B-A365473467D5",
+        "id": "23F02094-9D55-442C-A9C2-2685D1DE40AE",
         "datasheetID": "grey-knights--stormtalon-gunship",
         "models": 1,
         "optionIDs": [],
@@ -71,7 +71,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "28DB340B-90AE-4809-8FF5-25D8BD700EE1",
+    "warlordUnitID": "EE210156-18C5-4932-8C70-F2FF9698866E",
     "notes": "stress seed=17 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

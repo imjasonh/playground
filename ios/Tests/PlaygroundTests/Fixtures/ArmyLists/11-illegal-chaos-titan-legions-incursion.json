@@ -2,9 +2,9 @@
   "expectedLegal": false,
   "notes": "expected illegal: no detachments in catalog",
   "list": {
-    "id": "25D1C11E-40A8-4840-BA23-BB7EE754BF58",
+    "id": "66E9B903-4DA0-4F6E-8692-DC017A55DEBA",
     "name": "Chaos Titan Legions \u2014 no detachments",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "chaos-titan-legions",
     "battleSizeID": "incursion",
     "detachmentIDs": [],

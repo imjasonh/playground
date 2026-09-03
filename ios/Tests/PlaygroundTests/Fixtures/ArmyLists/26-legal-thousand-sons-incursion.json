@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "016136AE-BD0E-4A40-A91A-9698F2B81D15",
+    "id": "EC19B440-3519-4F89-A526-E0B93295BA40",
     "name": "Thousand Sons Incursion 970pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "thousand-sons",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,17 +12,17 @@
     ],
     "units": [
       {
-        "id": "0FCEF228-A901-4CD0-BE14-C248F3B94138",
+        "id": "EF10E834-0E23-4049-99B0-93950A05A633",
         "datasheetID": "thousand-sons--tzaangor-shaman",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "thousand-sons--sekhetar-cohort--walking-rampart"
         ],
-        "attachedToUnitID": "0CCDB708-1337-492B-83FB-8CAA9F485833"
+        "attachedToUnitID": "86732123-9FBA-42C4-9A91-F4AAF29951A4"
       },
       {
-        "id": "8FC92B1E-B508-4AF1-B2DD-E3A30829F07C",
+        "id": "D9249C9E-59E6-4292-89B4-8E8E831B450A",
         "datasheetID": "thousand-sons--chaos-land-raider",
         "models": 1,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "0CCDB708-1337-492B-83FB-8CAA9F485833",
+        "id": "86732123-9FBA-42C4-9A91-F4AAF29951A4",
         "datasheetID": "thousand-sons--tzaangors",
         "models": 10,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "111F07F7-FF4B-44B5-8D0D-B69451FA3422",
+        "id": "9F5955CF-0425-4027-95E1-BF8C90FDEC4F",
         "datasheetID": "thousand-sons--chaos-predator-annihilator",
         "models": 1,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "D2F9F07E-689E-484C-945D-ED9620D655D9",
+        "id": "C142D473-E754-41BC-A461-480DF3EACC65",
         "datasheetID": "thousand-sons--rubric-marines",
         "models": 10,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "70EB2704-4D1C-4A8C-B95B-ADE2A6315DD0",
+        "id": "3BC99CF6-F118-47CD-A91F-60997618CBC5",
         "datasheetID": "thousand-sons--tzaangor-enlightened-with-fatecaster-greatbows",
         "models": 3,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "B1107DCF-8DFE-40AE-9913-B1B126F1567D",
+        "id": "343B448E-B56A-4879-AE60-5382F964BBBD",
         "datasheetID": "thousand-sons--sekhetar-robots",
         "models": 2,
         "optionIDs": [],
@@ -70,7 +70,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "3704ADDE-B1C7-46CD-B2F3-9A4BDA05D39B",
+        "id": "FD65160D-4E1A-408B-A23A-DF9612CF62FA",
         "datasheetID": "thousand-sons--helbrute",
         "models": 1,
         "optionIDs": [],
@@ -78,7 +78,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "0FCEF228-A901-4CD0-BE14-C248F3B94138",
+    "warlordUnitID": "EF10E834-0E23-4049-99B0-93950A05A633",
     "notes": "stress seed=25 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

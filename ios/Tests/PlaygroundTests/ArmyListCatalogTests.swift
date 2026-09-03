@@ -50,6 +50,56 @@ final class ArmyListCatalogTests: XCTestCase {
         XCTAssertEqual(sheet.points(models: 6, copyIndex: 3), 180)
     }
 
+    func testCatalogVersionHasNoMFMToken() throws {
+        let catalog = try Self.loadCatalogFromRepo()
+        XCTAssertFalse(catalog.version.localizedCaseInsensitiveContains("mfm"))
+        XCTAssertTrue(catalog.version.hasPrefix("11e-"))
+        XCTAssertFalse(catalog.source.pointsSource.isEmpty)
+    }
+
+    func testIDMigrationRemapsSavedListAndBumpsVersion() throws {
+        var catalog = try Self.loadCatalogFromRepo()
+        catalog.idMigrations = [
+            CatalogIDMigration(
+                from: "legacy--hearthkyn",
+                to: "leagues-of-votann--hearthkyn-warriors",
+                kind: "datasheet"
+            ),
+            CatalogIDMigration(
+                from: "legacy--hearthband",
+                to: "leagues-of-votann--hearthband",
+                kind: "detachment"
+            ),
+        ]
+        catalog.version = "11e-999"
+
+        let warriors = try XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--hearthkyn-warriors"))
+        let khal = try XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--kahl"))
+        var body = ListUnitInstance(datasheetID: "legacy--hearthkyn", models: warriors.minModels)
+        let leader = ListUnitInstance(
+            datasheetID: khal.id,
+            models: 1,
+            attachedToUnitID: body.id
+        )
+        var list = ArmyListDocument(
+            name: "Migrate me",
+            catalogVersion: "11e-0",
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            detachmentIDs: ["legacy--hearthband"],
+            units: [body, leader],
+            warlordUnitID: leader.id
+        )
+
+        XCTAssertTrue(list.applyCatalogUpgrade(using: catalog))
+        XCTAssertEqual(list.detachmentIDs, ["leagues-of-votann--hearthband"])
+        XCTAssertEqual(list.units[0].datasheetID, "leagues-of-votann--hearthkyn-warriors")
+        XCTAssertEqual(list.catalogVersion, "11e-999")
+        let result = ArmyListValidator.validate(list: list, catalog: catalog)
+        XCTAssertFalse(result.errors.contains { $0.code == "unit.unknownDatasheet" })
+        XCTAssertFalse(result.errors.contains { $0.code == "detachment.unknown" })
+    }
+
     static func loadCatalogFromRepo() throws -> ArmyCatalog {
         let thisFile = URL(fileURLWithPath: #filePath)
         // ios/Tests/PlaygroundTests/ArmyListCatalogTests.swift -> ios/

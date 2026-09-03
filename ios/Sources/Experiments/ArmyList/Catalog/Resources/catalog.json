@@ -1,13 +1,14 @@
 {
-  "version": "11e-mfm-1.4",
+  "version": "11e-1",
   "edition": "11th",
   "source": {
-    "mfm": "https://github.com/BSData/wh40k-11e-mfm (data/*.yaml)",
+    "pointsSource": "https://github.com/BSData/wh40k-11e-mfm (data/*.yaml)",
     "datasheetKeywords": "https://github.com/BSData/wh40k-11e (*.json)",
-    "mfmVersion": "1.4",
-    "mfmFirstSeen": "",
-    "note": "Construction data for all MFM factions. Ids are faction-prefixed. No ability prose."
+    "pointsRevision": "1.4",
+    "generatedAt": "",
+    "note": "Bundled construction data for every faction. Ids are faction-prefixed and stable across refreshes when the datasheet/detachment display name is unchanged."
   },
+  "idMigrations": [],
   "battleSizes": [
     {
       "id": "incursion",

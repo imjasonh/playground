@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "B2CA4BC2-2235-4159-9B98-9827F3AEC2F0",
+    "id": "7FC650CF-A344-4AD7-A9BD-B563A4BC7BEB",
     "name": "Chaos Daemons Incursion 940pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "chaos-daemons",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -13,15 +13,15 @@
     ],
     "units": [
       {
-        "id": "123FB756-641F-4E18-A336-6C629B229685",
+        "id": "E1B29C09-25B0-4B21-9CE8-0F65B32FB5DE",
         "datasheetID": "chaos-daemons--sloppity-bilepiper",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [],
-        "attachedToUnitID": "5137EE14-7196-46F2-9C61-786DD9FC92BD"
+        "attachedToUnitID": "D7870590-4B99-43C6-94BF-4C67FB04C9D1"
       },
       {
-        "id": "F87D42BD-E41A-4512-8077-591B04C9030C",
+        "id": "4B5FC3B7-0D2C-4088-9299-54EEC17A151D",
         "datasheetID": "chaos-daemons--pink-horrors",
         "models": 10,
         "optionIDs": [],
@@ -29,7 +29,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "0A860D51-A2F8-47D6-AAFD-3C5D35F09E87",
+        "id": "C52316D8-DE88-432C-AAB6-04C16243B99D",
         "datasheetID": "chaos-daemons--bloodcrushers",
         "models": 3,
         "optionIDs": [],
@@ -37,7 +37,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "E1A65FB9-DEB7-49DC-9B52-F26EFD0ADD1D",
+        "id": "8827BF48-48AA-48F9-9E86-8D444321D0E3",
         "datasheetID": "chaos-daemons--pox-riders",
         "models": 3,
         "optionIDs": [],
@@ -45,7 +45,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "5137EE14-7196-46F2-9C61-786DD9FC92BD",
+        "id": "D7870590-4B99-43C6-94BF-4C67FB04C9D1",
         "datasheetID": "chaos-daemons--plaguebearers",
         "models": 10,
         "optionIDs": [],
@@ -53,7 +53,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "A69A7B21-63AF-42B7-B72C-566EB878ABA3",
+        "id": "D6BC8A5A-4FF1-413C-AE19-842BA70BDED7",
         "datasheetID": "chaos-daemons--plaguebearers",
         "models": 10,
         "optionIDs": [],
@@ -61,7 +61,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "6FE7D8F0-01E4-437D-BEF6-E730C63028CD",
+        "id": "D24359A4-3F67-4212-B1F7-B3965F3DDDA7",
         "datasheetID": "chaos-daemons--beasts-of-nurgle",
         "models": 1,
         "optionIDs": [],
@@ -69,7 +69,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "FA50A050-AE8D-4190-9CC7-25FDDEEF85FA",
+        "id": "393E051E-9FE0-49DD-B806-F8F696757BF7",
         "datasheetID": "chaos-daemons--fiends",
         "models": 3,
         "optionIDs": [],
@@ -77,7 +77,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "51D15A12-F55D-4505-831D-564A2AB3D42C",
+        "id": "319644B8-D77C-4FA7-BF09-4B5B1C102B54",
         "datasheetID": "chaos-daemons--screamers",
         "models": 3,
         "optionIDs": [],
@@ -85,7 +85,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "123FB756-641F-4E18-A336-6C629B229685",
+    "warlordUnitID": "E1B29C09-25B0-4B21-9CE8-0F65B32FB5DE",
     "notes": "stress seed=7 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

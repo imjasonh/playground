@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "9545D37B-01E5-4265-8354-791BE084E46F",
+    "id": "5FE10A9D-33A4-4ED8-81CD-71294AED2431",
     "name": "Drukhari Incursion 990pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "drukhari",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,17 +12,17 @@
     ],
     "units": [
       {
-        "id": "40A11CED-B6E1-4160-AE63-CA6E192D5698",
+        "id": "D4DA1F3D-B853-4F6C-BC7A-173EF93470F9",
         "datasheetID": "drukhari--haemonculus",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "drukhari--skysplinter-assault--sadistic-fulcrum"
         ],
-        "attachedToUnitID": "C65100EE-23E5-495B-BE74-06E5061DDEEA"
+        "attachedToUnitID": "B915A1B0-0435-4D8B-8D26-2B5337F7D36D"
       },
       {
-        "id": "43739895-D6A8-4028-8BF9-B1610C79A223",
+        "id": "5CC85628-AEAB-408F-8304-1B5CBC93F4C6",
         "datasheetID": "drukhari--incubi",
         "models": 5,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "9B396EBD-A1C9-46E6-8A72-49CDF73BCD42",
+        "id": "B949F84B-FBF5-414E-A01C-576C34E9D596",
         "datasheetID": "drukhari--kabalite-warriors",
         "models": 10,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F29FF553-FFD4-41D6-B70F-1A4BE2E7EF08",
+        "id": "ED902FB9-950C-453D-A11E-A3A2E8822FA1",
         "datasheetID": "drukhari--ravager",
         "models": 1,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "240E94C7-A27C-4F22-8FAC-23F8CAE67EFE",
+        "id": "A3747753-2BD1-4A0E-B64A-F62B11DF9A59",
         "datasheetID": "drukhari--scourges-with-heavy-weapons",
         "models": 5,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "FF796ACB-63B1-4FF5-A392-6DED87C82146",
+        "id": "044B9829-3171-4180-93D1-3AFA12A9185D",
         "datasheetID": "drukhari--venom",
         "models": 1,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "459B8C43-3CE2-4AD8-8016-964E57BF7B57",
+        "id": "34084AB0-1999-48EE-9233-6FEA4C3C4380",
         "datasheetID": "drukhari--beastmaster",
         "models": 7,
         "optionIDs": [],
@@ -70,7 +70,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "4E5BDE8F-A2DF-4F9E-9216-37EA5D0952E6",
+        "id": "4F607A85-8102-43AC-9A0E-414538E4955B",
         "datasheetID": "drukhari--hellions",
         "models": 5,
         "optionIDs": [],
@@ -78,7 +78,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "02B259E6-B6F3-4B94-B292-33E111AF06CF",
+        "id": "D7B26C4A-7BC2-49F1-9E59-37ABAC261A66",
         "datasheetID": "drukhari--court-of-the-archon",
         "models": 4,
         "optionIDs": [],
@@ -86,7 +86,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "C65100EE-23E5-495B-BE74-06E5061DDEEA",
+        "id": "B915A1B0-0435-4D8B-8D26-2B5337F7D36D",
         "datasheetID": "drukhari--wracks",
         "models": 10,
         "optionIDs": [],
@@ -94,7 +94,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "40A11CED-B6E1-4160-AE63-CA6E192D5698",
+    "warlordUnitID": "D4DA1F3D-B853-4F6C-BC7A-173EF93470F9",
     "notes": "stress seed=14 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

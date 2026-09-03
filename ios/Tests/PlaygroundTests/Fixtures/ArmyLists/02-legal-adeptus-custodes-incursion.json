@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "F5D5C829-CC5B-4A8E-AFE7-ACC60B5B381D",
+    "id": "FB97CF49-FA5C-4CC4-B2F9-F551C09A9952",
     "name": "Adeptus Custodes Incursion 980pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "adeptus-custodes",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,7 +12,7 @@
     ],
     "units": [
       {
-        "id": "D2D87DE4-95F7-49B7-A78F-4509E6CB5EF0",
+        "id": "2AEF2E63-BBF5-4088-9967-CBD214ACFBA6",
         "datasheetID": "adeptus-custodes--knight-centura",
         "models": 1,
         "optionIDs": [],
@@ -22,7 +22,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "9FB38AA7-10EF-41D0-89E4-ED91A6C44341",
+        "id": "53081414-6D9E-4EAE-8B73-B0968D150D2C",
         "datasheetID": "adeptus-custodes--telemon-heavy-dreadnought",
         "models": 1,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "DD5316AD-7261-426C-A6C5-387D8A3DA477",
+        "id": "8D39DC38-2EFE-4543-A23A-2C8DD4FA6531",
         "datasheetID": "adeptus-custodes--custodian-guard",
         "models": 5,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "11D2EB59-EF05-4296-A627-A370558D5B10",
+        "id": "54D1A690-479C-4F21-B981-5D0294DC513C",
         "datasheetID": "adeptus-custodes--venerable-land-raider",
         "models": 1,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "86358B28-DD88-4410-B6ED-1FB2B0C7F4CA",
+        "id": "DB1729CE-9CC0-4F89-9371-CE30BAF1F6A1",
         "datasheetID": "adeptus-custodes--custodian-guard-with-adrasite-and-pyrithite-spears",
         "models": 5,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "D2D87DE4-95F7-49B7-A78F-4509E6CB5EF0",
+    "warlordUnitID": "2AEF2E63-BBF5-4088-9967-CBD214ACFBA6",
     "notes": "stress seed=1 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

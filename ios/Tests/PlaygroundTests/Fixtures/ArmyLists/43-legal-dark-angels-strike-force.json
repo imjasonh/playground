@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "9BFAAE13-6D77-4B69-93F8-063A166D115D",
+    "id": "74035AF6-F31D-4DE0-828B-6CCF64A7C796",
     "name": "Dark Angels Strike Force 1870pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "dark-angels",
     "battleSizeID": "strike-force",
     "detachmentIDs": [
@@ -13,17 +13,17 @@
     ],
     "units": [
       {
-        "id": "44F02368-53B5-4BEF-90EE-4B39F2B50096",
+        "id": "63641925-7CF2-473B-8997-AA4B171495A2",
         "datasheetID": "dark-angels--judiciar",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "dark-angels--headhunter-task-force--gunnery-honours"
         ],
-        "attachedToUnitID": "6655657A-401F-475A-9149-D46BE8AB7961"
+        "attachedToUnitID": "25B7A845-D126-46D2-A3D2-8CBC1A51B51C"
       },
       {
-        "id": "C688F406-9718-4268-A84B-255F3D441E17",
+        "id": "68ED8A14-4011-4CBE-83D6-C6AFE0DC4C22",
         "datasheetID": "dark-angels--storm-speeder-hailstrike",
         "models": 1,
         "optionIDs": [],
@@ -31,7 +31,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "B5BC3F6F-C0E1-4854-88C0-B79FEAD8D960",
+        "id": "849FE6C3-F16E-4E28-A2B0-8301F7FC1EAB",
         "datasheetID": "dark-angels--ballistus-dreadnought",
         "models": 1,
         "optionIDs": [],
@@ -39,7 +39,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "84B0F666-C5C9-48F0-8A37-88DB1C6CD75A",
+        "id": "D0E4437E-2989-401D-B188-968B58F725AC",
         "datasheetID": "dark-angels--scout-squad",
         "models": 5,
         "optionIDs": [],
@@ -47,7 +47,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "4706E855-EEB2-40EB-B9D1-5C99B3021634",
+        "id": "32F46386-DE45-49EF-8D93-D02FC212CD1E",
         "datasheetID": "dark-angels--company-heroes",
         "models": 4,
         "optionIDs": [],
@@ -55,7 +55,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "6655657A-401F-475A-9149-D46BE8AB7961",
+        "id": "25B7A845-D126-46D2-A3D2-8CBC1A51B51C",
         "datasheetID": "dark-angels--tactical-squad",
         "models": 10,
         "optionIDs": [],
@@ -63,7 +63,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "10A15A7E-E611-4767-9FC9-F9A06A29A5F8",
+        "id": "0974D44B-6981-442C-A2EE-948567401FA4",
         "datasheetID": "dark-angels--infiltrator-squad",
         "models": 5,
         "optionIDs": [],
@@ -71,7 +71,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "29B91522-0836-4ABB-801A-8D9515C0A109",
+        "id": "22AC29F3-7917-4BB2-9173-83A678BFDB34",
         "datasheetID": "dark-angels--centurion-assault-squad",
         "models": 3,
         "optionIDs": [],
@@ -79,7 +79,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "EE66B131-609F-4B9B-AF92-674B30115892",
+        "id": "09253B6B-3B77-4B87-B3DB-09067C2D4DE2",
         "datasheetID": "dark-angels--reiver-squad",
         "models": 5,
         "optionIDs": [],
@@ -87,7 +87,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "D1D67058-9702-4017-B045-1CE5EC966A43",
+        "id": "4245A0A1-24E5-4626-8E9C-3280512F1881",
         "datasheetID": "dark-angels--land-speeder-vengeance",
         "models": 1,
         "optionIDs": [],
@@ -95,7 +95,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "335FF0C7-9386-4C57-90A0-8C4CCDE87AB6",
+        "id": "0C96B244-00BE-4D57-9AB3-590904AA755C",
         "datasheetID": "dark-angels--invictor-tactical-warsuit",
         "models": 1,
         "optionIDs": [],
@@ -103,7 +103,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "20741F24-2706-4160-AEF5-B988F4FA639D",
+        "id": "3E9CAAB5-5684-430B-8BAF-FA37242B14BB",
         "datasheetID": "dark-angels--sternguard-veteran-squad",
         "models": 5,
         "optionIDs": [],
@@ -111,7 +111,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "FA71141D-6A53-42EB-A25D-6838060B717C",
+        "id": "DAE5B188-E632-4698-B355-2D7FBD2A2FA3",
         "datasheetID": "dark-angels--deathwing-terminator-squad",
         "models": 5,
         "optionIDs": [],
@@ -119,7 +119,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "24D0FEFF-EC29-4C10-898C-A9C9C57B3199",
+        "id": "89C1112F-1B52-4E9D-88A7-39AC11ECEEDF",
         "datasheetID": "dark-angels--whirlwind",
         "models": 1,
         "optionIDs": [],
@@ -127,7 +127,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "D68F8A38-7404-478E-82E8-5CDB03F44407",
+        "id": "902EAE6F-9134-4A33-AC62-6E7576C146B8",
         "datasheetID": "dark-angels--deathwing-command-squad",
         "models": 5,
         "optionIDs": [],
@@ -135,7 +135,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "44F02368-53B5-4BEF-90EE-4B39F2B50096",
+    "warlordUnitID": "63641925-7CF2-473B-8997-AA4B171495A2",
     "notes": "stress seed=42 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

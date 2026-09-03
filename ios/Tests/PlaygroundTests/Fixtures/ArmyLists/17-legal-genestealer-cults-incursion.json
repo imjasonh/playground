@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "96207800-06CE-43A7-AD7D-6C742932F407",
+    "id": "2584DA1B-BA2E-4ABB-8770-879DCBC7CA5E",
     "name": "Genestealer Cults Incursion 955pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "genestealer-cults",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -13,17 +13,17 @@
     ],
     "units": [
       {
-        "id": "D74D66FB-3E09-4907-B52A-7321C43EEC41",
+        "id": "15B315A1-C3E9-4FAA-A3D9-7F1844857E46",
         "datasheetID": "genestealer-cults--acolyte-iconward",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "genestealer-cults--heroes-of-the-uprising--gene-tailored-toxins"
         ],
-        "attachedToUnitID": "C593BA14-6452-4EF3-ACFC-E90FBF95C88D"
+        "attachedToUnitID": "7AD914DC-E925-4C99-A249-63FD2C4D3763"
       },
       {
-        "id": "CBF65E4D-9798-43C0-825A-2A202EDB671C",
+        "id": "FA8E3E14-270D-4403-B5F0-DADF311B930C",
         "datasheetID": "genestealer-cults--aberrants",
         "models": 5,
         "optionIDs": [],
@@ -31,7 +31,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "D19F9D09-E57B-4CB6-9C5F-3282DA6771DE",
+        "id": "BC3678FF-679A-4B33-885A-EA7D1F66BC4D",
         "datasheetID": "genestealer-cults--atalan-jackals",
         "models": 5,
         "optionIDs": [],
@@ -39,7 +39,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "A10C9842-688B-4B51-B895-E9374B2A4AB4",
+        "id": "A6EA2D49-2BD2-4497-B166-72A9DED1D789",
         "datasheetID": "genestealer-cults--achilles-ridgerunners",
         "models": 1,
         "optionIDs": [],
@@ -47,7 +47,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "C593BA14-6452-4EF3-ACFC-E90FBF95C88D",
+        "id": "7AD914DC-E925-4C99-A249-63FD2C4D3763",
         "datasheetID": "genestealer-cults--acolyte-hybrids-with-hand-flamers",
         "models": 10,
         "optionIDs": [],
@@ -55,7 +55,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "8B8B48CB-F082-4D06-AB05-3783E9CF67C5",
+        "id": "6C5F32C6-3037-43D4-8874-C206F4F7C014",
         "datasheetID": "genestealer-cults--neophyte-hybrids",
         "models": 20,
         "optionIDs": [],
@@ -63,7 +63,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "E4F049B9-424A-4DE7-9674-FCFE199F1A07",
+        "id": "716611FC-4B81-4C4E-989C-3F910B782E78",
         "datasheetID": "genestealer-cults--purestrain-genestealers",
         "models": 5,
         "optionIDs": [],
@@ -71,7 +71,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "FDB58184-6234-4F6C-8A7A-3AE2B99441D7",
+        "id": "A3A19543-4A6B-4C8B-A5EA-CC8E4F4042A3",
         "datasheetID": "genestealer-cults--acolyte-hybrids-with-autopistols",
         "models": 10,
         "optionIDs": [],
@@ -79,7 +79,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "1D6DBF9E-1025-4BC9-8C26-507E7AF2A4D0",
+        "id": "4306A6D6-5ECC-45EF-BCDD-8723B2D77AEB",
         "datasheetID": "genestealer-cults--acolyte-hybrids-with-autopistols",
         "models": 5,
         "optionIDs": [],
@@ -87,7 +87,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "D74D66FB-3E09-4907-B52A-7321C43EEC41",
+    "warlordUnitID": "15B315A1-C3E9-4FAA-A3D9-7F1844857E46",
     "notes": "stress seed=16 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

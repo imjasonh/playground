@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "AC58540F-EEC2-4F26-BF12-423620314179",
+    "id": "6283FB15-E192-4354-BEC0-4A2D877DA22F",
     "name": "World Eaters Incursion 960pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "world-eaters",
     "battleSizeID": "incursion",
     "detachmentIDs": [
@@ -12,7 +12,7 @@
     ],
     "units": [
       {
-        "id": "52555DE6-03A1-45D3-9B2C-474A796E4802",
+        "id": "14AADEE7-CC78-49C3-9251-F6A8EA446089",
         "datasheetID": "world-eaters--master-of-executions",
         "models": 1,
         "optionIDs": [],
@@ -22,7 +22,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "37D46E85-30BF-40EE-98AD-3E44AC19C3BB",
+        "id": "B392CF0A-401C-4858-BEBA-393FB72FE690",
         "datasheetID": "world-eaters--eightbound",
         "models": 3,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "A1BEBB17-F25D-469E-A15F-D76AB08E8077",
+        "id": "A99294BE-1C4F-4354-9E2E-41742E07F634",
         "datasheetID": "world-eaters--exalted-eightbound",
         "models": 3,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "9D30A744-38A5-4325-95F1-136FB3600DF6",
+        "id": "BD6F83BB-7193-47B9-A8E0-DE72B71416CD",
         "datasheetID": "world-eaters--flesh-hounds",
         "models": 5,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "86559B57-2B88-44BF-ABC8-F67F985E5395",
+        "id": "482F8E6A-1DA0-420D-A48B-9513F4262DC8",
         "datasheetID": "world-eaters--heldrake",
         "models": 1,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "9FACAC45-02DD-4A7F-857D-8610800ADFCA",
+        "id": "B8877E54-141D-41E8-B21D-E8F4A871A7B1",
         "datasheetID": "world-eaters--chaos-spawn",
         "models": 2,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "E4B165BB-573F-4AC2-8D53-9C41C3D6536D",
+        "id": "703E3144-CBD7-4E35-B7DC-2B8A00D536B6",
         "datasheetID": "world-eaters--maulerfiend",
         "models": 1,
         "optionIDs": [],
@@ -70,7 +70,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "2652B2A0-D870-44ED-91D0-237FC3CEB112",
+        "id": "AC323C89-4B51-40BF-AEC6-8FAAB459C3E5",
         "datasheetID": "world-eaters--goremongers",
         "models": 8,
         "optionIDs": [],
@@ -78,7 +78,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "2FED4131-383B-40E6-AD4C-1B9CA39F403F",
+        "id": "F707FFF0-3D66-441B-87EE-C947C3E3861B",
         "datasheetID": "world-eaters--chaos-rhino",
         "models": 1,
         "optionIDs": [],
@@ -86,7 +86,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "52555DE6-03A1-45D3-9B2C-474A796E4802",
+    "warlordUnitID": "14AADEE7-CC78-49C3-9251-F6A8EA446089",
     "notes": "stress seed=29 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

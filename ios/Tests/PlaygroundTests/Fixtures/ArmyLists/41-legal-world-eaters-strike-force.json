@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "801894AC-5726-44C0-B2D3-2F7A6E5F9D65",
+    "id": "8F1ECEB7-9A0B-4732-8EF2-A3C6DF17E145",
     "name": "World Eaters Strike Force 1870pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "world-eaters",
     "battleSizeID": "strike-force",
     "detachmentIDs": [
@@ -12,7 +12,7 @@
     ],
     "units": [
       {
-        "id": "90F28C85-3A9F-48DF-99C7-ACB0A73EB300",
+        "id": "49CC826D-71D5-4B24-9D39-1D209094B1DE",
         "datasheetID": "world-eaters--master-of-executions",
         "models": 1,
         "optionIDs": [],
@@ -22,7 +22,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "7EE900C9-C71D-4BA6-9D9A-E110517A2BCA",
+        "id": "A7704BEB-B258-4AC4-8914-7CAEC2E13860",
         "datasheetID": "world-eaters--chaos-predator-annihilator",
         "models": 1,
         "optionIDs": [],
@@ -30,7 +30,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "270A5F58-6FAE-40F0-AA76-DCF21221F9A5",
+        "id": "FBD775BF-EF3E-4D75-8A11-CCBCACC13FC2",
         "datasheetID": "world-eaters--eightbound",
         "models": 3,
         "optionIDs": [],
@@ -38,7 +38,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F07FECE3-774F-46C1-88F9-735CCADD0D53",
+        "id": "367A79AF-4384-4C23-B5C3-E2656D59E05D",
         "datasheetID": "world-eaters--maulerfiend",
         "models": 1,
         "optionIDs": [],
@@ -46,7 +46,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "2EE92EB9-4F02-4744-93A3-8149F8A0B318",
+        "id": "38276302-9566-4859-8ECB-5E223AEFF61E",
         "datasheetID": "world-eaters--chaos-rhino",
         "models": 1,
         "optionIDs": [],
@@ -54,7 +54,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "49B68309-B827-4E05-9F6A-407614F60498",
+        "id": "326149BC-9ED9-433F-B98E-65B42D06BD5F",
         "datasheetID": "world-eaters--defiler",
         "models": 1,
         "optionIDs": [],
@@ -62,7 +62,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "1A7564F5-D8F4-43A8-B676-E68CC648E9B7",
+        "id": "FE290E20-2102-41F8-993B-8DD3D1F17808",
         "datasheetID": "world-eaters--exalted-eightbound",
         "models": 3,
         "optionIDs": [],
@@ -70,7 +70,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F4D17BD6-EEF2-47FD-B745-36BFC28726F8",
+        "id": "DDF28106-BEB7-4D97-A730-BC7F86F1004D",
         "datasheetID": "world-eaters--chaos-land-raider",
         "models": 1,
         "optionIDs": [],
@@ -78,7 +78,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "9F4B4542-3264-4C46-9A41-5A724CF5EF4E",
+        "id": "83BA29A2-7720-4DDD-AF62-639BEB957767",
         "datasheetID": "world-eaters--khorne-lord-of-skulls",
         "models": 1,
         "optionIDs": [],
@@ -86,7 +86,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "289B8BF7-A9AF-4445-8285-B2B36ABA256B",
+        "id": "FDFFAD9A-75B4-429E-9E18-4A30360597BE",
         "datasheetID": "world-eaters--chaos-spawn",
         "models": 2,
         "optionIDs": [],
@@ -94,7 +94,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "C2260A50-B700-4BEE-883A-2177B69F330C",
+        "id": "AB65A9BE-2D29-411B-BD2A-F336B86DB680",
         "datasheetID": "world-eaters--bloodletters",
         "models": 10,
         "optionIDs": [],
@@ -102,7 +102,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "90F28C85-3A9F-48DF-99C7-ACB0A73EB300",
+    "warlordUnitID": "49CC826D-71D5-4B24-9D39-1D209094B1DE",
     "notes": "stress seed=40 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"

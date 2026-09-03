@@ -2,9 +2,9 @@
   "expectedLegal": true,
   "notes": "auto-built",
   "list": {
-    "id": "2D03440B-2357-42CC-BE24-C99CF14C5D1F",
+    "id": "8B24895E-06C6-4D28-AD90-CEB6944AE375",
     "name": "Aeldari Strike Force 1900pts",
-    "catalogVersion": "11e-mfm-1.4",
+    "catalogVersion": "11e-1",
     "factionID": "aeldari",
     "battleSizeID": "strike-force",
     "detachmentIDs": [
@@ -13,17 +13,17 @@
     ],
     "units": [
       {
-        "id": "19805429-0808-44BD-A54C-71DC5769275B",
+        "id": "4CDDDFF6-FED8-4464-A6C2-E1C2FBCBD282",
         "datasheetID": "aeldari--bonesinger",
         "models": 1,
         "optionIDs": [],
         "enhancementIDs": [
           "aeldari--spirit-conclave--rune-of-mists"
         ],
-        "attachedToUnitID": "84B8B348-1FA3-42C3-BE70-247F1957224D"
+        "attachedToUnitID": "692AE008-8973-444D-A0E4-4060EC1C7BD4"
       },
       {
-        "id": "CA4E706B-85B6-42BB-BBB0-8B40E6E744BE",
+        "id": "612190E9-628C-4F41-8664-9AC06A4A7849",
         "datasheetID": "aeldari--amallyn-shadowguide",
         "models": 1,
         "optionIDs": [],
@@ -31,7 +31,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "190CCAE0-333E-4B9F-9B67-DB3C9ACC9E3A",
+        "id": "B8D17CBE-D9DC-42A1-A932-E59DAFF5B190",
         "datasheetID": "aeldari--howling-banshees",
         "models": 5,
         "optionIDs": [],
@@ -39,7 +39,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "84B8B348-1FA3-42C3-BE70-247F1957224D",
+        "id": "692AE008-8973-444D-A0E4-4060EC1C7BD4",
         "datasheetID": "aeldari--wraithlord",
         "models": 1,
         "optionIDs": [],
@@ -47,7 +47,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "093A3690-0A16-4365-9D19-8B01C40F307E",
+        "id": "9EF22C22-92DA-4440-87C3-C0A3C681811C",
         "datasheetID": "aeldari--ynnari-incubi",
         "models": 5,
         "optionIDs": [],
@@ -55,7 +55,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "F5A83479-F301-4877-850A-88ACE71F8F03",
+        "id": "44EED478-9BCA-423A-88CB-95D7691F9B8D",
         "datasheetID": "aeldari--falcon",
         "models": 1,
         "optionIDs": [],
@@ -63,7 +63,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "782D1240-14E7-4BD6-A000-A3CED28D1E0D",
+        "id": "A1F284BF-2D3D-4782-959E-9DA0F6321BA8",
         "datasheetID": "aeldari--fire-dragons",
         "models": 5,
         "optionIDs": [],
@@ -71,7 +71,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "9C41E2B6-C91E-4D17-A027-4278911E5FBF",
+        "id": "D3F0BDF8-C26C-4668-930A-47E59A076F05",
         "datasheetID": "aeldari--ynnari-kabalite-warriors",
         "models": 10,
         "optionIDs": [],
@@ -79,7 +79,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "5B32C206-2994-4614-9847-F0215CAD325B",
+        "id": "859AD7B3-6252-4FB1-B393-F6241033594A",
         "datasheetID": "aeldari--warp-spiders",
         "models": 5,
         "optionIDs": [],
@@ -87,7 +87,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "124EBF82-BD35-4485-8150-F063EBAE4D08",
+        "id": "FC1D63CA-4AF7-493D-B5A5-3C49974B9851",
         "datasheetID": "aeldari--ynnari-venom",
         "models": 1,
         "optionIDs": [],
@@ -95,7 +95,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "5231A1A8-DE75-40D4-8499-4922D1724F73",
+        "id": "D18CF752-412B-4428-970A-1FF9A915262D",
         "datasheetID": "aeldari--wraithknight-with-ghostglaive",
         "models": 1,
         "optionIDs": [],
@@ -103,7 +103,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "FDD0B9BE-89D9-417B-A33F-F0E559646E7C",
+        "id": "60615A29-D99A-46E0-BE84-14FB6E2BB65D",
         "datasheetID": "aeldari--wraithseer",
         "models": 1,
         "optionIDs": [],
@@ -111,7 +111,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "312AC0C0-5E2E-4E1D-B02C-0A2CA13AA31A",
+        "id": "3B4206AF-8BC7-4526-BF74-168FA642800F",
         "datasheetID": "aeldari--starfangs",
         "models": 1,
         "optionIDs": [],
@@ -119,7 +119,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "A9E69B73-B431-4633-BC6E-0B0659B85710",
+        "id": "5601FFA1-DD68-4123-9005-CE266517A2B2",
         "datasheetID": "aeldari--lynx",
         "models": 1,
         "optionIDs": [],
@@ -127,7 +127,7 @@
         "attachedToUnitID": null
       },
       {
-        "id": "CFAB9A3C-D5FF-4E8E-95C0-93EB1DB89859",
+        "id": "60ACF31A-288A-4824-9578-7DD31AB1C82C",
         "datasheetID": "aeldari--crimson-hunter",
         "models": 1,
         "optionIDs": [],
@@ -135,7 +135,7 @@
         "attachedToUnitID": null
       }
     ],
-    "warlordUnitID": "19805429-0808-44BD-A54C-71DC5769275B",
+    "warlordUnitID": "4CDDDFF6-FED8-4464-A6C2-E1C2FBCBD282",
     "notes": "stress seed=32 attach=True enh=True",
     "createdAt": "2026-01-01T00:00:00Z",
     "updatedAt": "2026-01-01T00:00:00Z"
