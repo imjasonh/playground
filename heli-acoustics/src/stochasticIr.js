@@ -93,7 +93,9 @@ export function traceEnergyBins(
       if (!hit) break;
       dist += hit.t;
       if (dist > maxDist) break;
-      energy *= hit.material.reflectivity * (1 - hit.material.absorb.mid);
+      energy *=
+        Math.sqrt(1 - hit.material.absorb.mid) *
+        Math.sqrt(Math.max(0, 1 - (hit.material.scatter || 0)));
       // Deposit at this bounce as if heard from the listener direction of arrival
       // approximated by path length (diffuse late field; not image-source accurate).
       const toListener = length(sub(listener, hit.point));
@@ -103,10 +105,11 @@ export function traceEnergyBins(
         // Extra HF loss baked as mid-band deposit; listener proximity falloff.
         bins[bin] += energy / Math.max(toListener, 1);
       }
-      // Scatter: mostly specular with a bit of random.
+      // Scatter mix from material s (Kang-style diffuse fraction).
+      const s = hit.material.scatter ?? 0.15;
       const spec = reflectDir(dir, hit.normal);
       const rnd = randomDir(i * 17 + b, seed + 3);
-      dir = normalize(add(scale(spec, 0.75), scale(rnd, 0.25)));
+      dir = normalize(add(scale(spec, 1 - s), scale(rnd, s)));
       // Nudge off the surface.
       origin = add(hit.point, scale(hit.normal, 0.08));
       if (dot(dir, hit.normal) < 0) dir = reflectDir(dir, hit.normal);

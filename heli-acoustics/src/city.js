@@ -43,3 +43,15 @@ export function helicopterPath(t, { radius = 55, height = 52, period = 18, cente
     center[2] + radius * Math.cos(a),
   ];
 }
+
+/** Analytic velocity (m/s) of `helicopterPath` at time t. */
+export function helicopterVelocity(t, opts = {}) {
+  const { radius = 55, period = 18 } = opts;
+  const a = (t / period) * Math.PI * 2;
+  const w = (Math.PI * 2) / period;
+  return [
+    radius * 0.55 * Math.cos(a) * w,
+    10 * Math.cos(a * 2) * 2 * w,
+    -radius * Math.sin(a) * w,
+  ];
+}

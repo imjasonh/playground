@@ -171,6 +171,15 @@ export class HeliAudio {
     turbine2.connect(turbineHi);
     turbineHi.connect(turbineGain).connect(source);
 
+    this._dopplerNodes = [
+      { node: chopLfo, base: 12 },
+      { node: thump, base: 55 },
+      { node: turbine, base: 480 },
+      { node: turbine2, base: 487 },
+    ];
+    this._washBand = washBand;
+    this._washBandBase = 1400;
+
     chopLfo.start();
     thump.start();
     turbine.start();
@@ -246,9 +255,29 @@ export class HeliAudio {
     setPannerPosition(this.panner, sourcePos, t);
     setListenerPose(this.ctx.listener, listenerPos, forward, up, t);
 
+    // Classical Doppler from radial source velocity (listener approx. still).
+    const vel = acoustics.sourceVelocity;
+    if (vel && this._dopplerNodes) {
+      const dx = listenerPos[0] - sourcePos[0];
+      const dy = listenerPos[1] - sourcePos[1];
+      const dz = listenerPos[2] - sourcePos[2];
+      const dist = Math.hypot(dx, dy, dz) || 1;
+      // Positive when source moves toward the listener.
+      const vRadial = (vel[0] * dx + vel[1] * dy + vel[2] * dz) / dist;
+      const c = SPEED_OF_SOUND;
+      const factor = c / Math.max(c * 0.15, c - Math.max(-0.85 * c, Math.min(0.85 * c, vRadial)));
+      for (const { node, base } of this._dopplerNodes) {
+        node.frequency.setTargetAtTime(base * factor, t, ramp);
+      }
+      if (this._washBand) {
+        this._washBand.frequency.setTargetAtTime(this._washBandBase * factor, t, ramp);
+      }
+    }
+
     const occ = this.occlusionEnabled ? acoustics.occlusion : 0;
-    const dry = 1 - 0.85 * occ;
-    const cutoff = 18000 - 17300 * occ;
+    // Soft Maekawa occlusion: continuous dry attenuation + muffling.
+    const dry = 1 - 0.9 * occ;
+    const cutoff = 18000 - 16000 * occ;
     this.occludeGain.gain.setTargetAtTime(dry, t, ramp);
     this.occludeFilter.frequency.setTargetAtTime(cutoff, t, ramp);
 

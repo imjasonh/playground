@@ -1,8 +1,11 @@
-import { length, sub, add, scale } from './geometry.js';
+// Soft occlusion via Maekawa barrier IL on the best wrapping edge.
+// Binary isOccluded remains for specular visibility tests.
 
-// Ray vs AABB. Returns distance t along the ray to the first hit, or null.
-// Ray is origin + t * dir with dir not necessarily unit; t is in the same
-// units as dir's scale (if dir is unit, t is meters).
+import { length, sub, add, scale } from './geometry.js';
+import { buildingEdges, diffractionPoint } from './edges.js';
+import { maekawaAmplitude, maekawaInsertionLossDb, fresnelNumber } from './maekawa.js';
+import { BAND_HZ } from './airAbsorption.js';
+
 export function rayAabb(origin, dir, box) {
   let tmin = 0;
   let tmax = Infinity;
@@ -31,9 +34,6 @@ export function rayAabb(origin, dir, box) {
   return t >= 0 ? t : null;
 }
 
-// True when a building AABB sits between listener and source (exclusive of
-// endpoints, so standing inside a block still reports clear if the source is
-// outside through an open face is not expected in this scene).
 export function isOccluded(listener, source, buildings) {
   const delta = sub(source, listener);
   const dist = length(delta);
@@ -47,10 +47,46 @@ export function isOccluded(listener, source, buildings) {
   return false;
 }
 
-// Occlusion amount in [0,1]: 0 clear, 1 fully blocked. Softens near grazing
-// hits by counting how much of the path is buried in an AABB (simple for M1).
+/**
+ * Best-edge path difference δ = R_edge − R_direct for Maekawa (m).
+ * Returns 0 when LOS is clear.
+ */
+export function bestPathDifference(listener, source, buildings) {
+  if (!isOccluded(listener, source, buildings)) return 0;
+  const direct = length(sub(source, listener));
+  const edges = buildingEdges(buildings);
+  let bestDelta = Infinity;
+  for (const edge of edges) {
+    const p = diffractionPoint(source, listener, edge.a, edge.b);
+    // Skip if either leg still punches through a different building.
+    if (isOccluded(source, p, buildings) || isOccluded(p, listener, buildings)) continue;
+    const pathLen = length(sub(p, source)) + length(sub(listener, p));
+    const delta = pathLen - direct;
+    if (delta > 0 && delta < bestDelta) bestDelta = delta;
+  }
+  if (!Number.isFinite(bestDelta)) {
+    // Deeply enclosed: treat as large δ so Maekawa saturates.
+    return 8;
+  }
+  return bestDelta;
+}
+
+/**
+ * Occlusion amount in [0,1] from continuous Maekawa mid-band IL.
+ * 0 = clear LOS, ~1 = deep shadow (IL ≈ 25 dB).
+ */
 export function occlusionAmount(listener, source, buildings) {
-  return isOccluded(listener, source, buildings) ? 1 : 0;
+  const delta = bestPathDifference(listener, source, buildings);
+  if (delta <= 0) return 0;
+  const amp = maekawaAmplitude(delta, BAND_HZ.mid);
+  return Math.max(0, Math.min(1, 1 - amp));
+}
+
+/** Mid-band Maekawa IL (dB) for HUD / debug. */
+export function occlusionInsertionLossDb(listener, source, buildings) {
+  const delta = bestPathDifference(listener, source, buildings);
+  if (delta <= 0) return 0;
+  return maekawaInsertionLossDb(fresnelNumber(delta, BAND_HZ.mid));
 }
 
 export function hitPoint(origin, dir, t) {

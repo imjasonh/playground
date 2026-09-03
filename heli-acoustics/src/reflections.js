@@ -7,7 +7,9 @@ import {
   unitBands,
   cutoffFromBands,
   gainFromBands,
+  sphericalPressureGain,
 } from './materials.js';
+import { applyAirToBands } from './airAbsorption.js';
 
 // Reflect a point across an axis-aligned plane (constant x or z or y).
 export function mirrorPoint(p, axis, value) {
@@ -56,6 +58,7 @@ function sourceOnOutwardSide(source, face) {
 }
 
 function finishSpecular(order, kind, faceId, hit, hits, image, pathLen, bands) {
+  const withAir = applyAirToBands(bands, pathLen);
   return {
     kind,
     order,
@@ -65,9 +68,10 @@ function finishSpecular(order, kind, faceId, hit, hits, image, pathLen, bands) {
     image,
     pathLength: pathLen,
     delaySec: pathLen / SPEED_OF_SOUND,
-    bands,
-    gain: gainFromBands(bands) / Math.max(Math.sqrt(pathLen), 1),
-    cutoffHz: cutoffFromBands(bands, pathLen),
+    bands: withAir,
+    // Allen & Berkley: pressure ~ β / R (bands already include β product).
+    gain: gainFromBands(withAir) * sphericalPressureGain(pathLen),
+    cutoffHz: cutoffFromBands(withAir, pathLen),
   };
 }
 
