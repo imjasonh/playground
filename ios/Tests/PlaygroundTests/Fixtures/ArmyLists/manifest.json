@@ -1,0 +1,252 @@
+[
+  {
+    "file": "01-legal-adepta-sororitas-incursion.json",
+    "expectedLegal": true,
+    "name": "Adepta Sororitas Incursion 940pts"
+  },
+  {
+    "file": "02-legal-adeptus-custodes-incursion.json",
+    "expectedLegal": true,
+    "name": "Adeptus Custodes Incursion 980pts"
+  },
+  {
+    "file": "03-legal-adeptus-mechanicus-incursion.json",
+    "expectedLegal": true,
+    "name": "Adeptus Mechanicus Incursion 990pts"
+  },
+  {
+    "file": "04-legal-aeldari-incursion.json",
+    "expectedLegal": true,
+    "name": "Aeldari Incursion 920pts"
+  },
+  {
+    "file": "05-legal-astra-militarum-incursion.json",
+    "expectedLegal": true,
+    "name": "Astra Militarum Incursion 915pts"
+  },
+  {
+    "file": "06-legal-black-templars-incursion.json",
+    "expectedLegal": true,
+    "name": "Black Templars Incursion 985pts"
+  },
+  {
+    "file": "07-legal-blood-angels-incursion.json",
+    "expectedLegal": true,
+    "name": "Blood Angels Incursion 950pts"
+  },
+  {
+    "file": "08-legal-chaos-daemons-incursion.json",
+    "expectedLegal": true,
+    "name": "Chaos Daemons Incursion 940pts"
+  },
+  {
+    "file": "09-legal-chaos-knights-incursion.json",
+    "expectedLegal": true,
+    "name": "Chaos Knights Incursion 900pts"
+  },
+  {
+    "file": "10-legal-chaos-space-marines-incursion.json",
+    "expectedLegal": true,
+    "name": "Chaos Space Marines Incursion 1000pts"
+  },
+  {
+    "file": "11-illegal-chaos-titan-legions-incursion.json",
+    "expectedLegal": false,
+    "name": "Chaos Titan Legions Incursion (no detachments)"
+  },
+  {
+    "file": "12-legal-dark-angels-incursion.json",
+    "expectedLegal": true,
+    "name": "Dark Angels Incursion 950pts"
+  },
+  {
+    "file": "13-legal-death-guard-incursion.json",
+    "expectedLegal": true,
+    "name": "Death Guard Incursion 995pts"
+  },
+  {
+    "file": "14-legal-deathwatch-incursion.json",
+    "expectedLegal": true,
+    "name": "Deathwatch Incursion 975pts"
+  },
+  {
+    "file": "15-legal-drukhari-incursion.json",
+    "expectedLegal": true,
+    "name": "Drukhari Incursion 990pts"
+  },
+  {
+    "file": "16-legal-emperors-children-incursion.json",
+    "expectedLegal": true,
+    "name": "Emperor\u2019s Children Incursion 980pts"
+  },
+  {
+    "file": "17-legal-genestealer-cults-incursion.json",
+    "expectedLegal": true,
+    "name": "Genestealer Cults Incursion 955pts"
+  },
+  {
+    "file": "18-legal-grey-knights-incursion.json",
+    "expectedLegal": true,
+    "name": "Grey Knights Incursion 915pts"
+  },
+  {
+    "file": "19-legal-imperial-agents-incursion.json",
+    "expectedLegal": true,
+    "name": "Imperial Agents Incursion 970pts"
+  },
+  {
+    "file": "20-legal-imperial-knights-incursion.json",
+    "expectedLegal": true,
+    "name": "Imperial Knights Incursion 985pts"
+  },
+  {
+    "file": "21-legal-leagues-of-votann-incursion.json",
+    "expectedLegal": true,
+    "name": "Leagues of Votann Incursion 965pts"
+  },
+  {
+    "file": "22-legal-necrons-incursion.json",
+    "expectedLegal": true,
+    "name": "Necrons Incursion 940pts"
+  },
+  {
+    "file": "23-legal-orks-incursion.json",
+    "expectedLegal": true,
+    "name": "Orks Incursion 975pts"
+  },
+  {
+    "file": "24-legal-space-marines-incursion.json",
+    "expectedLegal": true,
+    "name": "Space Marines Incursion 995pts"
+  },
+  {
+    "file": "25-legal-space-wolves-incursion.json",
+    "expectedLegal": true,
+    "name": "Space Wolves Incursion 990pts"
+  },
+  {
+    "file": "26-legal-thousand-sons-incursion.json",
+    "expectedLegal": true,
+    "name": "Thousand Sons Incursion 970pts"
+  },
+  {
+    "file": "27-illegal-titan-legions-incursion.json",
+    "expectedLegal": false,
+    "name": "Titan Legions Incursion (no detachments)"
+  },
+  {
+    "file": "28-legal-tyranids-incursion.json",
+    "expectedLegal": true,
+    "name": "Tyranids Incursion 1000pts"
+  },
+  {
+    "file": "29-legal-tau-empire-incursion.json",
+    "expectedLegal": true,
+    "name": "T\u2019au Empire Incursion 915pts"
+  },
+  {
+    "file": "30-legal-world-eaters-incursion.json",
+    "expectedLegal": true,
+    "name": "World Eaters Incursion 960pts"
+  },
+  {
+    "file": "31-legal-space-marines-strike-force.json",
+    "expectedLegal": true,
+    "name": "Space Marines Strike Force 1915pts"
+  },
+  {
+    "file": "32-legal-astra-militarum-strike-force.json",
+    "expectedLegal": true,
+    "name": "Astra Militarum Strike Force 1955pts"
+  },
+  {
+    "file": "33-legal-aeldari-strike-force.json",
+    "expectedLegal": true,
+    "name": "Aeldari Strike Force 1900pts"
+  },
+  {
+    "file": "34-legal-necrons-strike-force.json",
+    "expectedLegal": true,
+    "name": "Necrons Strike Force 1900pts"
+  },
+  {
+    "file": "35-legal-orks-strike-force.json",
+    "expectedLegal": true,
+    "name": "Orks Strike Force 1980pts"
+  },
+  {
+    "file": "36-legal-tyranids-strike-force.json",
+    "expectedLegal": true,
+    "name": "Tyranids Strike Force 1915pts"
+  },
+  {
+    "file": "37-legal-tau-empire-strike-force.json",
+    "expectedLegal": true,
+    "name": "T\u2019au Empire Strike Force 1985pts"
+  },
+  {
+    "file": "38-legal-adepta-sororitas-strike-force.json",
+    "expectedLegal": true,
+    "name": "Adepta Sororitas Strike Force 1865pts"
+  },
+  {
+    "file": "39-legal-death-guard-strike-force.json",
+    "expectedLegal": true,
+    "name": "Death Guard Strike Force 1920pts"
+  },
+  {
+    "file": "40-legal-thousand-sons-strike-force.json",
+    "expectedLegal": true,
+    "name": "Thousand Sons Strike Force 1935pts"
+  },
+  {
+    "file": "41-legal-world-eaters-strike-force.json",
+    "expectedLegal": true,
+    "name": "World Eaters Strike Force 1870pts"
+  },
+  {
+    "file": "42-legal-blood-angels-strike-force.json",
+    "expectedLegal": true,
+    "name": "Blood Angels Strike Force 1910pts"
+  },
+  {
+    "file": "43-legal-dark-angels-strike-force.json",
+    "expectedLegal": true,
+    "name": "Dark Angels Strike Force 1870pts"
+  },
+  {
+    "file": "44-legal-space-wolves-strike-force.json",
+    "expectedLegal": true,
+    "name": "Space Wolves Strike Force 1970pts"
+  },
+  {
+    "file": "45-legal-genestealer-cults-strike-force.json",
+    "expectedLegal": true,
+    "name": "Genestealer Cults Strike Force 1880pts"
+  },
+  {
+    "file": "46-legal-drukhari-strike-force.json",
+    "expectedLegal": true,
+    "name": "Drukhari Strike Force 1970pts"
+  },
+  {
+    "file": "47-legal-grey-knights-strike-force.json",
+    "expectedLegal": true,
+    "name": "Grey Knights Strike Force 1985pts"
+  },
+  {
+    "file": "48-illegal-leagues-of-votann-incursion.json",
+    "expectedLegal": false,
+    "name": "illegal warlord not character"
+  },
+  {
+    "file": "49-illegal-leagues-of-votann-incursion.json",
+    "expectedLegal": false,
+    "name": "illegal DP over budget"
+  },
+  {
+    "file": "50-illegal-chaos-space-marines-incursion.json",
+    "expectedLegal": false,
+    "name": "illegal attach with empty leaderTo"
+  }
+]

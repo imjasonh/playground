@@ -1,0 +1,79 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "425D0E89-0E37-4C9E-AF50-6C0EB989BA2A",
+    "name": "Deathwatch Incursion 975pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "deathwatch",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "deathwatch--librarius-conclave",
+      "deathwatch--vengeful-hosts"
+    ],
+    "units": [
+      {
+        "id": "CE5DE691-CCA3-4744-8890-493E4E7B6415",
+        "datasheetID": "deathwatch--judiciar",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "deathwatch--vengeful-hosts--orksbane"
+        ],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7D8DB7CD-7DAF-46F5-8A25-73805A4816D0",
+        "datasheetID": "deathwatch--brutalis-dreadnought",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B3725237-3414-4FF5-B853-3754C9D80F2C",
+        "datasheetID": "deathwatch--hammerfall-bunker",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7A933EA7-B1F0-4AD2-A913-3C18B0B2B619",
+        "datasheetID": "deathwatch--desolation-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "41E50936-13A9-4C37-B948-6CE6D788508D",
+        "datasheetID": "deathwatch--deathwatch-terminator-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "37F3F087-7EE5-42B0-9245-5A9FEECA01F9",
+        "datasheetID": "deathwatch--invader-atv",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0E518F70-C982-4482-A895-5B517226A14B",
+        "datasheetID": "deathwatch--stormhawk-interceptor",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "CE5DE691-CCA3-4744-8890-493E4E7B6415",
+    "notes": "stress seed=13 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "EE7FB133-0CB4-44C9-8E5E-705C0AE8A665",
+    "name": "Death Guard Incursion 995pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "death-guard",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "death-guard--death-lord-s-chosen"
+    ],
+    "units": [
+      {
+        "id": "802AC81F-510D-4933-B424-3DBD43121A05",
+        "datasheetID": "death-guard--icon-bearer",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "death-guard--death-lord-s-chosen--face-of-death"
+        ],
+        "attachedToUnitID": "BA599D06-65AB-4735-A821-00594FE6B7D2"
+      },
+      {
+        "id": "04DA74EC-4223-41F7-A889-A829E4AA7D58",
+        "datasheetID": "death-guard--nurglings",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "57776396-21F8-43DA-BC35-F088F4908BED",
+        "datasheetID": "death-guard--defiler",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "15E88B35-FDD5-4307-B14C-FA38412CAA06",
+        "datasheetID": "death-guard--chaos-rhino",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "CBAFAE73-1AF0-4737-BFCB-2F80F959A4BB",
+        "datasheetID": "death-guard--chaos-predator-annihilator",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "1DA66ACB-8078-4637-9446-F560C5EC4EC5",
+        "datasheetID": "death-guard--plaguebearers",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "239266B5-FBBD-4472-959A-12DA59E8D2B7",
+        "datasheetID": "death-guard--plague-drones",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "FCF73131-C2F4-466B-A17E-F1357BEBE4BC",
+        "datasheetID": "death-guard--beasts-of-nurgle",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "BA599D06-65AB-4735-A821-00594FE6B7D2",
+        "datasheetID": "death-guard--plague-marines",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "802AC81F-510D-4933-B424-3DBD43121A05",
+    "notes": "stress seed=12 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

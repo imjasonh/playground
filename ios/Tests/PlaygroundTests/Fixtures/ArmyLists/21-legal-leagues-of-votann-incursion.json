@@ -1,0 +1,95 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "647D939D-751D-4243-AAF2-43ED255A1EC4",
+    "name": "Leagues of Votann Incursion 965pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "leagues-of-votann",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "leagues-of-votann--farseekers",
+      "leagues-of-votann--hearthguard-covenant"
+    ],
+    "units": [
+      {
+        "id": "35230F5D-A87E-483C-8A7D-C64E71CBF2D9",
+        "datasheetID": "leagues-of-votann--memnyr-strategist",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "leagues-of-votann--hearthguard-covenant--high-kahl"
+        ],
+        "attachedToUnitID": "4B0245C7-68BE-47B5-8FCE-9DB1FC22C8FB"
+      },
+      {
+        "id": "042BC199-D379-453F-AB2B-325D842AC618",
+        "datasheetID": "leagues-of-votann--hernkyn-yaegirs",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "26E864CB-DE11-49AD-8715-95CFBABDC6D7",
+        "datasheetID": "leagues-of-votann--sagitaur",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B78DD250-2595-4DD5-8C16-701A06E067F9",
+        "datasheetID": "leagues-of-votann--einhyr-hearthguard",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "4B0245C7-68BE-47B5-8FCE-9DB1FC22C8FB",
+        "datasheetID": "leagues-of-votann--ironkin-steeljacks-with-heavy-volkanite-disintegrators",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "80C8EE45-9C08-43E6-BD86-D03B31EDBDD8",
+        "datasheetID": "leagues-of-votann--hearthkyn-warriors",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "D6F7526F-5579-4CDA-8B22-4A0FB61074BA",
+        "datasheetID": "leagues-of-votann--ironkin-steeljacks-with-melee-weapons",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5FBA2046-C31B-4131-9B11-DA54D944E41A",
+        "datasheetID": "leagues-of-votann--hearthkyn-warriors",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "19574CC8-37BB-450C-BBDB-5E796DAC0DF3",
+        "datasheetID": "leagues-of-votann--hekaton-land-fortress",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "35230F5D-A87E-483C-8A7D-C64E71CBF2D9",
+    "notes": "stress seed=20 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

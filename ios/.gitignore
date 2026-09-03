@@ -27,3 +27,4 @@ fastlane/screenshots/**/*.png
 # Ruby / bundler
 vendor/bundle/
 .bundle/
+__pycache__/

@@ -1,0 +1,87 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "651C7AC2-0E29-471D-83D4-EB7875FD5C89",
+    "name": "Space Wolves Incursion 990pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "space-wolves",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "space-wolves--legends-of-saga-and-song",
+      "space-wolves--subversion-assets"
+    ],
+    "units": [
+      {
+        "id": "6955C573-67AB-4973-9980-B8A3088D5654",
+        "datasheetID": "space-wolves--iron-priest",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "space-wolves--subversion-assets--shroud-field"
+        ],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "549AC095-55C8-43D7-BAA7-3C7A1F84BAB0",
+        "datasheetID": "space-wolves--land-raider-crusader",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0AB25382-6077-402A-B855-0503150B96B0",
+        "datasheetID": "space-wolves--inceptor-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "57C353D8-A687-4259-9D68-D9C0325249F1",
+        "datasheetID": "space-wolves--suppressor-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B1F13B34-2301-4030-8441-905068B86F98",
+        "datasheetID": "space-wolves--assault-intercessor-squad",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "9AA72BD2-05F2-47E3-9EB1-E789BEEEE1A5",
+        "datasheetID": "space-wolves--brutalis-dreadnought",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "40871669-8363-4E2E-8EA7-4BF33A22154A",
+        "datasheetID": "space-wolves--skyclaws",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "1BBDAC5E-9436-46AE-87C9-6AD3D8E50873",
+        "datasheetID": "space-wolves--sternguard-veteran-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "6955C573-67AB-4973-9980-B8A3088D5654",
+    "notes": "stress seed=24 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

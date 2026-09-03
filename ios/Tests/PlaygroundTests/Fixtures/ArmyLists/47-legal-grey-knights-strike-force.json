@@ -1,0 +1,94 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "3C166EFD-C1D2-4598-A244-CE606C9FDE8D",
+    "name": "Grey Knights Strike Force 1985pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "grey-knights",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "grey-knights--banishers"
+    ],
+    "units": [
+      {
+        "id": "41C7DDB1-88F9-4167-8AE1-845FA8A7C7AE",
+        "datasheetID": "grey-knights--brotherhood-chaplain",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "grey-knights--banishers--sigil-of-the-hunt"
+        ],
+        "attachedToUnitID": "7B45C7AD-8368-45DA-9203-7DDA33DA123F"
+      },
+      {
+        "id": "7B45C7AD-8368-45DA-9203-7DDA33DA123F",
+        "datasheetID": "grey-knights--paladin-squad",
+        "models": 4,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "BD6A16AC-2FF2-4AE2-A20E-872291B0AA47",
+        "datasheetID": "grey-knights--nemesis-dreadknight",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "77E15040-7243-417E-8FB4-4D5B54ED318B",
+        "datasheetID": "grey-knights--rhino",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "C48759A9-AF5D-4751-8EC7-8160865A1651",
+        "datasheetID": "grey-knights--grey-knights-thunderhawk-gunship",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "50001910-443E-4391-8EF7-215C7981787D",
+        "datasheetID": "grey-knights--stormtalon-gunship",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "660AE55A-4E2A-42B0-91F3-DFAB35FDDB72",
+        "datasheetID": "grey-knights--land-raider-crusader",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "ADC13430-E7EE-4397-97A8-E52175F31875",
+        "datasheetID": "grey-knights--purgation-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "D0B44B2A-B22C-4663-9E07-2715BAC04142",
+        "datasheetID": "grey-knights--brotherhood-terminator-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "41C7DDB1-88F9-4167-8AE1-845FA8A7C7AE",
+    "notes": "stress seed=46 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

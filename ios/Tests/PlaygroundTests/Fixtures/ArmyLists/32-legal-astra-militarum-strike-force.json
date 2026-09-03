@@ -1,0 +1,167 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "F18ACCF6-464E-4D0D-BF8E-5CA64ACDF1BF",
+    "name": "Astra Militarum Strike Force 1955pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "astra-militarum",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "astra-militarum--bridgehead-strike",
+      "astra-militarum--designation-force"
+    ],
+    "units": [
+      {
+        "id": "EFC0FF9B-AD6C-4027-BFCE-64DE2C2BB57A",
+        "datasheetID": "astra-militarum--commissar",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "astra-militarum--bridgehead-strike--priority-drop-beacon"
+        ],
+        "attachedToUnitID": "536DE9CB-A435-41B3-8D9E-ED464C33934D"
+      },
+      {
+        "id": "03E509DA-DF05-41E1-A623-27501AADF797",
+        "datasheetID": "astra-militarum--hades-breaching-drill",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "66F0028E-415D-4A9A-8930-0A71D385B1B1",
+        "datasheetID": "astra-militarum--cadian-heavy-weapons-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F2BF07B6-AC9A-4627-A5C3-F4000ABF7364",
+        "datasheetID": "astra-militarum--valkyrie-sky-talon",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B2CF1225-CA05-4726-8EC2-A8A18E7AC1AA",
+        "datasheetID": "astra-militarum--krieg-heavy-weapons-squad",
+        "models": 4,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "D4B08585-9EA9-46CA-AD3F-DC5C8D8DDEE5",
+        "datasheetID": "astra-militarum--salamander-command-vehicle",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B12D64F8-0B73-40BD-902F-35FBDE3B3C8F",
+        "datasheetID": "astra-militarum--taurox-prime",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "C6013FD0-5753-47DB-8B33-7CDA65DA60D8",
+        "datasheetID": "astra-militarum--tarantula-battery",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "DE5DF552-DCA5-4825-AB1D-DF56C5BA24CE",
+        "datasheetID": "astra-militarum--earthshaker-platform",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "FF9BFE24-35BE-4343-B702-1640548CD811",
+        "datasheetID": "astra-militarum--gorgon-heavy-transport",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "719D2412-3D3F-4170-A2E1-0E98A45A0613",
+        "datasheetID": "astra-militarum--malcador-annihilator",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5C2084E1-B662-4E87-B049-79E05C161B3C",
+        "datasheetID": "astra-militarum--basilisk",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "026CA83F-0E5A-4D43-9AB8-F32AF07FC4AD",
+        "datasheetID": "astra-militarum--elysian-drop-sentinel",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0212A464-C9F0-4785-B3CB-AED23CD295CC",
+        "datasheetID": "astra-militarum--heavy-mortar-team",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "8DA632B0-9C56-4ECB-A94A-93F62FA7998E",
+        "datasheetID": "astra-militarum--valkyrie",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F6EA864E-50FC-4EA8-9123-A8B71887DC2D",
+        "datasheetID": "astra-militarum--manticore-platform",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "DAB4A197-4CBE-4408-B1F2-80CF9837806C",
+        "datasheetID": "astra-militarum--munitorum-servitors",
+        "models": 4,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "536DE9CB-A435-41B3-8D9E-ED464C33934D",
+        "datasheetID": "astra-militarum--cadian-shock-troops",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "EFC0FF9B-AD6C-4027-BFCE-64DE2C2BB57A",
+    "notes": "stress seed=31 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

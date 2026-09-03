@@ -263,6 +263,26 @@ def build_faction(mfm: dict, bs_index: dict[str, dict]) -> tuple[dict, list[dict
             continue
         bs_entry = find_bs(bs_index, unit["name"]) or find_bs(bs_index, display)
         keywords = extract_keywords(bs_entry, faction_name)
+        # MFM join edges imply Leader; keep Character/Leader even when BS miss.
+        if unit.get("leaderTo"):
+            if "Character" not in keywords:
+                keywords.append("Character")
+            if "Leader" not in keywords:
+                keywords.append("Leader")
+        # Name heuristics for common HQ datasheets that BS sometimes omits.
+        name_l = unit["name"].lower()
+        if len(keywords) <= 1 and any(
+            tip in name_l
+            for tip in (
+                "captain",
+                "lieutenant",
+                "chaos lord",
+                "brother-captain",
+                "warlord titan",
+            )
+        ):
+            if "Character" not in keywords:
+                keywords.append("Character")
         role = None
         if "Leader" in keywords:
             role = "leader"

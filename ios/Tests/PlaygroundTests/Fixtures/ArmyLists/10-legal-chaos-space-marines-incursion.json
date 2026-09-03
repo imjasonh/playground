@@ -1,0 +1,78 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "C056F9C9-17CD-4650-8CEF-88CF576C7996",
+    "name": "Chaos Space Marines Incursion 1000pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "chaos-space-marines",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "chaos-space-marines--warpstrike-champions"
+    ],
+    "units": [
+      {
+        "id": "3CF3DCF9-5233-4AF1-BEAC-8EC3A532E9E4",
+        "datasheetID": "chaos-space-marines--cultist-firebrand",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "chaos-space-marines--warpstrike-champions--eye-of-the-warp"
+        ],
+        "attachedToUnitID": "95F0571A-313B-4E34-BE49-379A82B9303B"
+      },
+      {
+        "id": "B2E07E79-4E4A-4B09-B3C3-9177F8C79CF8",
+        "datasheetID": "chaos-space-marines--maulerfiend",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "8C39149B-1B1F-4DD7-A0EC-F0BC235F9A2D",
+        "datasheetID": "chaos-space-marines--legionaries",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "38BD256D-913F-4D8E-9B4C-7498EC40F498",
+        "datasheetID": "chaos-space-marines--hell-talon",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "EF665DBB-31EE-42FA-BB72-9FB39F7D175C",
+        "datasheetID": "chaos-space-marines--defiler",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "65EA6740-C4FE-4153-8B3B-A5C348C9954B",
+        "datasheetID": "chaos-space-marines--raptors",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "95F0571A-313B-4E34-BE49-379A82B9303B",
+        "datasheetID": "chaos-space-marines--accursed-cultists",
+        "models": 8,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "3CF3DCF9-5233-4AF1-BEAC-8EC3A532E9E4",
+    "notes": "stress seed=9 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

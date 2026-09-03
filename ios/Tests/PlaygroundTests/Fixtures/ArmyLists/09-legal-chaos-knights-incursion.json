@@ -1,0 +1,60 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "4282B064-6E76-4E82-831B-F67A03F1A96A",
+    "name": "Chaos Knights Incursion 900pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "chaos-knights",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "chaos-knights--hunting-warpack"
+    ],
+    "units": [
+      {
+        "id": "7B30E86C-9589-4CCA-8B5C-0F87E54F593D",
+        "datasheetID": "chaos-knights--knight-ruinator",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "FD3EA2D2-B98E-49D1-94EB-5BBFD164FF68",
+        "datasheetID": "chaos-knights--war-dog-moirax",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5E70EE3D-A3FD-489C-9D7C-7F1A3423CE16",
+        "datasheetID": "chaos-knights--war-dog-executioner",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "CC784917-00CF-400B-97CE-B92D0A5D941F",
+        "datasheetID": "chaos-knights--war-dog-karnivore",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F378DE17-00FA-43C3-A9D9-FDCD2D4CDF7F",
+        "datasheetID": "chaos-knights--war-dog-brigand",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "7B30E86C-9589-4CCA-8B5C-0F87E54F593D",
+    "notes": "stress seed=8 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

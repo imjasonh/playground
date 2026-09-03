@@ -1,0 +1,95 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "F96AC7FB-5536-4582-9485-C42C9990D7CF",
+    "name": "T\u2019au Empire Incursion 915pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "tau-empire",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "tau-empire--auxiliary-cadre",
+      "tau-empire--experimental-prototype-cadre"
+    ],
+    "units": [
+      {
+        "id": "13206A2F-3247-4874-8BD5-3F4F85B0FFC2",
+        "datasheetID": "tau-empire--kroot-flesh-shaper",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "tau-empire--experimental-prototype-cadre--supernova-launcher"
+        ],
+        "attachedToUnitID": "C3FFAFAC-8F98-4A0E-979D-03560DAD59B8"
+      },
+      {
+        "id": "C3FFAFAC-8F98-4A0E-979D-03560DAD59B8",
+        "datasheetID": "tau-empire--kroot-farstalkers",
+        "models": 12,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B13DDCC3-9EF0-4C47-B705-8EDA4AF47C9B",
+        "datasheetID": "tau-empire--broadside-battlesuits",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7C838F7B-716C-40AB-A29B-5B150163C3BE",
+        "datasheetID": "tau-empire--longstrike",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "C63A575A-525E-4881-95DB-F4883A3FBCA0",
+        "datasheetID": "tau-empire--crisis-fireknife-battlesuits",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F02DBCD6-F6E8-44B4-A084-1A93E284D10D",
+        "datasheetID": "tau-empire--tetras",
+        "models": 2,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F6FA6673-6BE5-41C8-A2CB-BCD61C6F2233",
+        "datasheetID": "tau-empire--sky-ray-gunship",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "C33559D4-E940-4E94-9AB2-38D2F67F1993",
+        "datasheetID": "tau-empire--pathfinder-team",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "1C1B135F-3160-4C56-884A-5BAFF3162662",
+        "datasheetID": "tau-empire--razorshark-strike-fighter",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "13206A2F-3247-4874-8BD5-3F4F85B0FFC2",
+    "notes": "stress seed=28 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

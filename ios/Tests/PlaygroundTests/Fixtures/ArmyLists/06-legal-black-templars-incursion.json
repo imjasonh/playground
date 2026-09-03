@@ -1,0 +1,78 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "BE2A2012-30FE-4307-8916-0865AFA74AAF",
+    "name": "Black Templars Incursion 985pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "black-templars",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "black-templars--ironstorm-spearhead"
+    ],
+    "units": [
+      {
+        "id": "D7ACA5B2-D3D7-43D9-B179-7DC834B795FA",
+        "datasheetID": "black-templars--execrator",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "black-templars--ironstorm-spearhead--master-of-machine-war"
+        ],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "ECD25C95-90C2-4DC5-81C4-FCD5DA21ADFF",
+        "datasheetID": "black-templars--redemptor-dreadnought",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "FB72660C-765E-459F-9A0A-3C358FCFE291",
+        "datasheetID": "black-templars--land-raider",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5B4FEE52-0099-4BC5-A5A6-868C2C4E9FF0",
+        "datasheetID": "black-templars--bladeguard-veteran-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "8CC6E7FF-38FD-4856-A0AC-8875B6F93C96",
+        "datasheetID": "black-templars--intercessor-squad",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "E677BDE1-BEB8-4FEF-8067-174F935A615C",
+        "datasheetID": "black-templars--desolation-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "055C940F-808A-4C74-8C03-8010B333C7F9",
+        "datasheetID": "black-templars--eradicator-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "D7ACA5B2-D3D7-43D9-B179-7DC834B795FA",
+    "notes": "stress seed=5 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

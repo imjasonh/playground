@@ -1,0 +1,111 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "37DE75DE-976B-48FA-A0D6-AB6BAD58653A",
+    "name": "Blood Angels Strike Force 1910pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "blood-angels",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "blood-angels--fulguris-task-force",
+      "blood-angels--headhunter-task-force"
+    ],
+    "units": [
+      {
+        "id": "CC634B47-57CD-4E1C-98BC-51D2716CA07E",
+        "datasheetID": "blood-angels--judiciar",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "blood-angels--headhunter-task-force--firestorm-coordinators"
+        ],
+        "attachedToUnitID": "FD5CDB0A-AE50-4903-82C1-4A35CF091CCC"
+      },
+      {
+        "id": "4DD10E63-807A-42E9-9E29-6E3E97CDBBF0",
+        "datasheetID": "blood-angels--gladiator-lancer",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5F1D76B0-A596-43EC-B32A-CC1D41F929C4",
+        "datasheetID": "blood-angels--astraeus",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "FC32EA26-1FF8-45A0-81AB-CC19574FEC8D",
+        "datasheetID": "blood-angels--land-raider-crusader",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0B67C417-6B35-4810-89E7-5A2B67AA96CD",
+        "datasheetID": "blood-angels--land-raider-redeemer",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "FD5CDB0A-AE50-4903-82C1-4A35CF091CCC",
+        "datasheetID": "blood-angels--sternguard-veteran-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "6817C5B3-E75B-4931-BFCE-A6BDA9D78314",
+        "datasheetID": "blood-angels--hellblaster-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7BDEFA66-2D19-4619-89B6-9229E93BCAE5",
+        "datasheetID": "blood-angels--gladiator-reaper",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "D0892F5F-6857-4193-95B1-E1A7E6EE1B9F",
+        "datasheetID": "blood-angels--razorback",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "D653CFF6-8C7C-40C8-9008-D4D4B94897D1",
+        "datasheetID": "blood-angels--eradicator-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "9185A819-81C2-454C-BD1F-76FFE1353E8F",
+        "datasheetID": "blood-angels--baal-predator",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "CC634B47-57CD-4E1C-98BC-51D2716CA07E",
+    "notes": "stress seed=41 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

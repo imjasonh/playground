@@ -1,0 +1,70 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "9C2CE131-DCD6-4551-A802-BCA75467CC1F",
+    "name": "Dark Angels Incursion 950pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "dark-angels",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "dark-angels--vanguard-spearhead"
+    ],
+    "units": [
+      {
+        "id": "0C9B9D16-6E3E-4AA6-BCD7-2B91253B394E",
+        "datasheetID": "dark-angels--judiciar",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "dark-angels--vanguard-spearhead--the-blade-driven-deep"
+        ],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "6D884A52-4150-4F8C-A065-84619594BA46",
+        "datasheetID": "dark-angels--predator-annihilator",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0EF343CE-7C4F-424A-BDEE-E5E1F618873B",
+        "datasheetID": "dark-angels--ravenwing-dark-talon",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "C3FCE805-8677-4720-8F52-5C630BD86939",
+        "datasheetID": "dark-angels--gladiator-lancer",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B158B053-827E-4A64-935D-9E7CE18F2339",
+        "datasheetID": "dark-angels--deathwing-command-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "70EC4BE6-65C5-4205-B665-F6098976F8BD",
+        "datasheetID": "dark-angels--whirlwind",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "0C9B9D16-6E3E-4AA6-BCD7-2B91253B394E",
+    "notes": "stress seed=11 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

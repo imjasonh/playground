@@ -1,0 +1,36 @@
+{
+  "expectedLegal": false,
+  "notes": "dp.overBudget",
+  "list": {
+    "id": "90A5EE7A-CB3D-4424-8761-2A1B39E54921",
+    "name": "Illegal DP",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "leagues-of-votann",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "leagues-of-votann--hearthband"
+    ],
+    "units": [
+      {
+        "id": "193800F7-A6ED-46C7-92B0-CB078856C70B",
+        "datasheetID": "leagues-of-votann--kahl",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5C9855B1-1525-4012-96A3-C25591449A33",
+        "datasheetID": "leagues-of-votann--hearthkyn-warriors",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "193800F7-A6ED-46C7-92B0-CB078856C70B",
+    "notes": "",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

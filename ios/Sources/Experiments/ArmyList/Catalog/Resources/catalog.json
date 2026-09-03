@@ -11730,9 +11730,10 @@
         "Vehicle",
         "Character",
         "Epic Hero",
-        "Faction: Adepta Sororitas"
+        "Faction: Adepta Sororitas",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -11977,7 +11978,8 @@
         "Fly",
         "Grenades",
         "Epic Hero",
-        "Leader"
+        "Leader",
+        "Character"
       ],
       "characterRole": "leader",
       "epicHero": true,
@@ -14451,9 +14453,10 @@
       "keywords": [
         "Faction: Adeptus Mechanicus",
         "Character",
-        "Infantry"
+        "Infantry",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -14494,9 +14497,10 @@
       "keywords": [
         "Faction: Adeptus Mechanicus",
         "Character",
-        "Infantry"
+        "Infantry",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -14534,9 +14538,10 @@
       "keywords": [
         "Faction: Adeptus Mechanicus",
         "Character",
-        "Infantry"
+        "Infantry",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -14803,9 +14808,11 @@
       "name": "Autarch Skyrunner",
       "factionID": "aeldari",
       "keywords": [
-        "Faction: Aeldari"
+        "Faction: Aeldari",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -14943,9 +14950,11 @@
       "name": "Bonesinger",
       "factionID": "aeldari",
       "keywords": [
-        "Faction: Aeldari"
+        "Faction: Aeldari",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -15830,9 +15839,11 @@
       "name": "Illic Nightspear",
       "factionID": "aeldari",
       "keywords": [
-        "Faction: Aeldari"
+        "Faction: Aeldari",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -15861,9 +15872,11 @@
       "name": "Irillyth",
       "factionID": "aeldari",
       "keywords": [
-        "Faction: Aeldari"
+        "Faction: Aeldari",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -15928,9 +15941,11 @@
       "name": "Karandras",
       "factionID": "aeldari",
       "keywords": [
-        "Faction: Aeldari"
+        "Faction: Aeldari",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -17736,9 +17751,10 @@
         "Faction: Aeldari",
         "Character",
         "Infantry",
-        "Faction: Ynnari"
+        "Faction: Ynnari",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -18971,9 +18987,11 @@
       "name": "Ciaphas Cain",
       "factionID": "astra-militarum",
       "keywords": [
-        "Faction: Astra Militarum"
+        "Faction: Astra Militarum",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -19318,9 +19336,11 @@
       "name": "Death Rider Commissar",
       "factionID": "astra-militarum",
       "keywords": [
-        "Faction: Astra Militarum"
+        "Faction: Astra Militarum",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -19810,9 +19830,11 @@
       "name": "Hell'S Last",
       "factionID": "astra-militarum",
       "keywords": [
-        "Faction: Astra Militarum"
+        "Faction: Astra Militarum",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -21251,9 +21273,11 @@
       "name": "Provisionally Prepared",
       "factionID": "astra-militarum",
       "keywords": [
-        "Faction: Astra Militarum"
+        "Faction: Astra Militarum",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -21282,9 +21306,11 @@
       "name": "Quartermaster Cadre Squad",
       "factionID": "astra-militarum",
       "keywords": [
-        "Faction: Astra Militarum"
+        "Faction: Astra Militarum",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -21663,9 +21689,11 @@
       "name": "Sergeant Harker",
       "factionID": "astra-militarum",
       "keywords": [
-        "Faction: Astra Militarum"
+        "Faction: Astra Militarum",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -22491,9 +22519,11 @@
       "name": "‘iron Hand’ Straken",
       "factionID": "astra-militarum",
       "keywords": [
-        "Faction: Astra Militarum"
+        "Faction: Astra Militarum",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -23303,7 +23333,8 @@
         "Infantry",
         "Faction: Adeptus Astartes",
         "Faction: Black Templars",
-        "Leader"
+        "Leader",
+        "Character"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -26359,9 +26390,11 @@
       "name": "Brother Corbulo",
       "factionID": "blood-angels",
       "keywords": [
-        "Faction: Blood Angels"
+        "Faction: Blood Angels",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -26592,9 +26625,11 @@
       "name": "Captain Tycho",
       "factionID": "blood-angels",
       "keywords": [
-        "Faction: Blood Angels"
+        "Faction: Blood Angels",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -27640,9 +27675,11 @@
       "name": "Gabriel Seth",
       "factionID": "blood-angels",
       "keywords": [
-        "Faction: Blood Angels"
+        "Faction: Blood Angels",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -29698,9 +29735,11 @@
       "name": "Tycho The Lost",
       "factionID": "blood-angels",
       "keywords": [
-        "Faction: Blood Angels"
+        "Faction: Blood Angels",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -30050,9 +30089,10 @@
         "Faction: Chaos Daemons",
         "Faction: Legiones Daemonica",
         "Infantry",
-        "Character"
+        "Character",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -30188,9 +30228,10 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Character",
-        "Psyker"
+        "Psyker",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -30224,9 +30265,10 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Character",
-        "Psyker"
+        "Psyker",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -30361,9 +30403,10 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Character",
-        "Epic Hero"
+        "Epic Hero",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -30396,9 +30439,10 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Character",
-        "Fly"
+        "Fly",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -30432,9 +30476,10 @@
         "Mounted",
         "Character",
         "Fly",
-        "Psyker"
+        "Psyker",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -30604,9 +30649,10 @@
         "Mounted",
         "Character",
         "Fly",
-        "Psyker"
+        "Psyker",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -30768,9 +30814,11 @@
       "name": "Herald Of Slaanesh On Steed Of Slaanesh",
       "factionID": "chaos-daemons",
       "keywords": [
-        "Faction: Chaos Daemons"
+        "Faction: Chaos Daemons",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -30803,9 +30851,10 @@
         "Faction: Legiones Daemonica",
         "Mounted",
         "Character",
-        "Epic Hero"
+        "Epic Hero",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -30839,9 +30888,10 @@
         "Faction: Chaos Daemons",
         "Faction: Legiones Daemonica",
         "Infantry",
-        "Character"
+        "Character",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -30907,9 +30957,10 @@
         "Faction: Chaos Daemons",
         "Character",
         "Epic Hero",
-        "Faction: Legiones Daemonica"
+        "Faction: Legiones Daemonica",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -31210,9 +31261,10 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Character",
-        "Psyker"
+        "Psyker",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -31544,9 +31596,10 @@
         "Faction: Chaos Daemons",
         "Faction: Legiones Daemonica",
         "Mounted",
-        "Character"
+        "Character",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -31579,9 +31632,10 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Character",
-        "Epic Hero"
+        "Epic Hero",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -31613,9 +31667,10 @@
         "Faction: Chaos Daemons",
         "Faction: Legiones Daemonica",
         "Infantry",
-        "Character"
+        "Character",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -31712,9 +31767,10 @@
         "Faction: Chaos Daemons",
         "Faction: Legiones Daemonica",
         "Infantry",
-        "Character"
+        "Character",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -31747,9 +31803,10 @@
         "Faction: Legiones Daemonica",
         "Character",
         "Epic Hero",
-        "Psyker"
+        "Psyker",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -31884,9 +31941,10 @@
         "Faction: Legiones Daemonica",
         "Mounted",
         "Character",
-        "Psyker"
+        "Psyker",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -31919,9 +31977,10 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Character",
-        "Psyker"
+        "Psyker",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -32701,9 +32760,10 @@
         "Faction: Heretic Astartes",
         "Infantry",
         "Character",
-        "Epic Hero"
+        "Epic Hero",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -32909,9 +32969,10 @@
         "Faction: Heretic Astartes",
         "Infantry",
         "Character",
-        "Grenades"
+        "Grenades",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -32946,9 +33007,10 @@
         "Faction: Chaos Space Marines",
         "Faction: Heretic Astartes",
         "Infantry",
-        "Character"
+        "Character",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -32977,9 +33039,11 @@
       "name": "Chaos Lord On Bike",
       "factionID": "chaos-space-marines",
       "keywords": [
-        "Faction: Chaos Space Marines"
+        "Faction: Chaos Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -33008,9 +33072,11 @@
       "name": "Chaos Lord On Disc Of Tzeentch",
       "factionID": "chaos-space-marines",
       "keywords": [
-        "Faction: Chaos Space Marines"
+        "Faction: Chaos Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -33040,9 +33106,11 @@
       "name": "Chaos Lord On Juggernaut",
       "factionID": "chaos-space-marines",
       "keywords": [
-        "Faction: Chaos Space Marines"
+        "Faction: Chaos Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -33071,9 +33139,11 @@
       "name": "Chaos Lord On Palanquin Of Nurgle",
       "factionID": "chaos-space-marines",
       "keywords": [
-        "Faction: Chaos Space Marines"
+        "Faction: Chaos Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -33103,9 +33173,11 @@
       "name": "Chaos Lord On Steed Of Slaanesh",
       "factionID": "chaos-space-marines",
       "keywords": [
-        "Faction: Chaos Space Marines"
+        "Faction: Chaos Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -33139,9 +33211,10 @@
         "Character",
         "Infantry",
         "Fly",
-        "Grenades"
+        "Grenades",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -33462,9 +33535,10 @@
         "Character",
         "Faction: Heretic Astartes",
         "Infantry",
-        "Grenades"
+        "Grenades",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -33606,9 +33680,10 @@
         "Character",
         "Faction: Heretic Astartes",
         "Infantry",
-        "Grenades"
+        "Grenades",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -33648,9 +33723,10 @@
         "Character",
         "Faction: Heretic Astartes",
         "Infantry",
-        "Grenades"
+        "Grenades",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -33816,9 +33892,11 @@
       "keywords": [
         "Faction: Chaos Space Marines",
         "Epic Hero",
-        "Infantry"
+        "Infantry",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -34015,9 +34093,10 @@
         "Infantry",
         "Character",
         "Epic Hero",
-        "Fly"
+        "Fly",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -34272,9 +34351,10 @@
         "Faction: Heretic Astartes",
         "Infantry",
         "Character",
-        "Epic Hero"
+        "Epic Hero",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -34377,9 +34457,10 @@
         "Faction: Heretic Astartes",
         "Infantry",
         "Character",
-        "Epic Hero"
+        "Epic Hero",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -34543,9 +34624,10 @@
         "Faction: Heretic Astartes",
         "Infantry",
         "Character",
-        "Psyker"
+        "Psyker",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -34970,9 +35052,10 @@
         "Faction: Chaos Space Marines",
         "Faction: Heretic Astartes",
         "Character",
-        "Infantry"
+        "Infantry",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -35004,9 +35087,11 @@
       "name": "Renegade Enforcer",
       "factionID": "chaos-space-marines",
       "keywords": [
-        "Faction: Chaos Space Marines"
+        "Faction: Chaos Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -35154,9 +35239,11 @@
       "name": "Rogue Psyker",
       "factionID": "chaos-space-marines",
       "keywords": [
-        "Faction: Chaos Space Marines"
+        "Faction: Chaos Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -35193,9 +35280,10 @@
         "Infantry",
         "Character",
         "Psyker",
-        "Grenades"
+        "Grenades",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -35231,9 +35319,10 @@
         "Faction: Heretic Astartes",
         "Infantry",
         "Character",
-        "Psyker"
+        "Psyker",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -35262,9 +35351,11 @@
       "name": "Sorcerer On Bike",
       "factionID": "chaos-space-marines",
       "keywords": [
-        "Faction: Chaos Space Marines"
+        "Faction: Chaos Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -35293,9 +35384,11 @@
       "name": "Sorcerer On Disc Of Tzeentch",
       "factionID": "chaos-space-marines",
       "keywords": [
-        "Faction: Chaos Space Marines"
+        "Faction: Chaos Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -35325,9 +35418,11 @@
       "name": "Sorcerer On Palanquin Of Nurgle",
       "factionID": "chaos-space-marines",
       "keywords": [
-        "Faction: Chaos Space Marines"
+        "Faction: Chaos Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -35357,9 +35452,11 @@
       "name": "Sorcerer On Steed Of Slaanesh",
       "factionID": "chaos-space-marines",
       "keywords": [
-        "Faction: Chaos Space Marines"
+        "Faction: Chaos Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -35389,9 +35486,10 @@
       "factionID": "chaos-space-marines",
       "keywords": [
         "Faction: Chaos Space Marines",
-        "Character"
+        "Character",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -35569,9 +35667,10 @@
         "Faction: Chaos Space Marines",
         "Faction: Heretic Astartes",
         "Infantry",
-        "Character"
+        "Character",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -35691,9 +35790,10 @@
       "name": "Chaos Warlord Titan",
       "factionID": "chaos-titan-legions",
       "keywords": [
-        "Faction: Chaos Titan Legions"
+        "Faction: Chaos Titan Legions",
+        "Character"
       ],
-      "characterRole": null,
+      "characterRole": "character",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -39869,9 +39969,11 @@
       "name": "Death Guard Chaos Lord",
       "factionID": "death-guard",
       "keywords": [
-        "Faction: Death Guard"
+        "Faction: Death Guard",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -39900,9 +40002,11 @@
       "name": "Death Guard Chaos Lord In Terminator Armour",
       "factionID": "death-guard",
       "keywords": [
-        "Faction: Death Guard"
+        "Faction: Death Guard",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -39994,9 +40098,11 @@
       "name": "Death Guard Sorcerer In Terminator Armour",
       "factionID": "death-guard",
       "keywords": [
-        "Faction: Death Guard"
+        "Faction: Death Guard",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -40286,9 +40392,10 @@
         "Faction: Death Guard",
         "Infantry",
         "Character",
-        "Grenades"
+        "Grenades",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -44111,9 +44218,10 @@
         "Infantry",
         "Grenades",
         "Faction: Adeptus Astartes",
-        "Faction: Deathwatch"
+        "Faction: Deathwatch",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -44148,9 +44256,10 @@
         "Infantry",
         "Grenades",
         "Faction: Adeptus Astartes",
-        "Faction: Deathwatch"
+        "Faction: Deathwatch",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -45083,9 +45192,11 @@
       "name": "Urien Rakarth",
       "factionID": "drukhari",
       "keywords": [
-        "Faction: Drukhari"
+        "Faction: Drukhari",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -47013,9 +47124,11 @@
       "name": "Brother-Captain Stern",
       "factionID": "grey-knights",
       "keywords": [
-        "Faction: Grey Knights"
+        "Faction: Grey Knights",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -47525,9 +47638,11 @@
       "name": "Kaldor Draigo",
       "factionID": "grey-knights",
       "keywords": [
-        "Faction: Grey Knights"
+        "Faction: Grey Knights",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -49222,9 +49337,11 @@
       "name": "Inquisitor Eisenhorn",
       "factionID": "imperial-agents",
       "keywords": [
-        "Faction: Imperial Agents"
+        "Faction: Imperial Agents",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -49352,9 +49469,11 @@
       "name": "Inquisitor In Terminator Armour",
       "factionID": "imperial-agents",
       "keywords": [
-        "Faction: Imperial Agents"
+        "Faction: Imperial Agents",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -49494,9 +49613,11 @@
       "name": "Inquisitor Ostromandeus",
       "factionID": "imperial-agents",
       "keywords": [
-        "Faction: Imperial Agents"
+        "Faction: Imperial Agents",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -49678,9 +49799,11 @@
       "name": "Janus Draik",
       "factionID": "imperial-agents",
       "keywords": [
-        "Faction: Imperial Agents"
+        "Faction: Imperial Agents",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -49710,9 +49833,11 @@
       "name": "Jokaero Weaponsmith",
       "factionID": "imperial-agents",
       "keywords": [
-        "Faction: Imperial Agents"
+        "Faction: Imperial Agents",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -49908,9 +50033,11 @@
       "name": "Neyam Shai Murad",
       "factionID": "imperial-agents",
       "keywords": [
-        "Faction: Imperial Agents"
+        "Faction: Imperial Agents",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -52408,9 +52535,11 @@
       "name": "Anrakyr The Traveller",
       "factionID": "necrons",
       "keywords": [
-        "Faction: Necrons"
+        "Faction: Necrons",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -53476,9 +53605,11 @@
       "name": "Lord",
       "factionID": "necrons",
       "keywords": [
-        "Faction: Necrons"
+        "Faction: Necrons",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -53644,9 +53775,11 @@
       "name": "Nemesor Zahndrekh",
       "factionID": "necrons",
       "keywords": [
-        "Faction: Necrons"
+        "Faction: Necrons",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -54516,9 +54649,11 @@
       "name": "Vargard Obyron",
       "factionID": "necrons",
       "keywords": [
-        "Faction: Necrons"
+        "Faction: Necrons",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -55055,9 +55190,11 @@
       "name": "Boss Zagstruk",
       "factionID": "orks",
       "keywords": [
-        "Faction: Orks"
+        "Faction: Orks",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -55689,9 +55826,11 @@
       "name": "Kaptin Badrukk",
       "factionID": "orks",
       "keywords": [
-        "Faction: Orks"
+        "Faction: Orks",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -55927,9 +56066,11 @@
       "name": "Mad Dok Grotsnik",
       "factionID": "orks",
       "keywords": [
-        "Faction: Orks"
+        "Faction: Orks",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -56184,9 +56325,11 @@
       "name": "Nazdreg",
       "factionID": "orks",
       "keywords": [
-        "Faction: Orks"
+        "Faction: Orks",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -56687,9 +56830,11 @@
       "name": "Warboss On Warbike",
       "factionID": "orks",
       "keywords": [
-        "Faction: Orks"
+        "Faction: Orks",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -56920,9 +57065,11 @@
       "name": "Adrax Agatone",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -57642,9 +57789,11 @@
       "name": "Caanok Var",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -57866,9 +58015,11 @@
       "name": "Captain On Bike",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -57899,9 +58050,11 @@
       "name": "Captain Titus",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -58177,9 +58330,11 @@
       "name": "Chaplain Cassius",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -58355,9 +58510,11 @@
       "name": "Chief Librarian Tigurius",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -58515,9 +58672,11 @@
       "name": "Darnath Lysander",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -58970,9 +59129,11 @@
       "name": "Ferren Aerios",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -59642,9 +59803,11 @@
       "name": "Iron Father Feirros",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -59775,9 +59938,11 @@
       "name": "Kayvaan Shrike",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -59808,9 +59973,11 @@
       "name": "Kor’Sarro Khan",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -60448,9 +60615,11 @@
       "name": "Librarian On Bike",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -60481,9 +60650,11 @@
       "name": "Librarian With Jump Pack",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -60645,9 +60816,11 @@
       "name": "Marneus Calgar In Armour Of Antilochus",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -60784,9 +60957,11 @@
       "name": "Pedro Kantor",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -61463,9 +61638,11 @@
       "name": "Sergeant Telion",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -62011,9 +62188,11 @@
       "name": "Suboden Khan",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -62458,9 +62637,11 @@
       "name": "Tor Garadon",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -62549,9 +62730,11 @@
       "name": "Uriel Ventris",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -62798,9 +62981,11 @@
       "name": "Vulkan He’Stan",
       "factionID": "space-marines",
       "keywords": [
-        "Faction: Space Marines"
+        "Faction: Space Marines",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -63437,9 +63622,11 @@
       "name": "Canis Wolfborn",
       "factionID": "space-wolves",
       "keywords": [
-        "Faction: Space Wolves"
+        "Faction: Space Wolves",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -64409,9 +64596,11 @@
       "name": "Harald Deathwolf",
       "factionID": "space-wolves",
       "keywords": [
-        "Faction: Space Wolves"
+        "Faction: Space Wolves",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -64915,9 +65104,11 @@
       "name": "Krom Dragongaze",
       "factionID": "space-wolves",
       "keywords": [
-        "Faction: Space Wolves"
+        "Faction: Space Wolves",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -65396,9 +65587,11 @@
       "name": "Logan Grimnar On Stormrider",
       "factionID": "space-wolves",
       "keywords": [
-        "Faction: Space Wolves"
+        "Faction: Space Wolves",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -65458,9 +65651,11 @@
       "name": "Lukas The Trickster",
       "factionID": "space-wolves",
       "keywords": [
-        "Faction: Space Wolves"
+        "Faction: Space Wolves",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -66807,9 +67002,11 @@
       "name": "Wolf Guard Battle Leader In Terminator Armour",
       "factionID": "space-wolves",
       "keywords": [
-        "Faction: Space Wolves"
+        "Faction: Space Wolves",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -66840,9 +67037,11 @@
       "name": "Wolf Guard Battle Leader On Thunderwolf",
       "factionID": "space-wolves",
       "keywords": [
-        "Faction: Space Wolves"
+        "Faction: Space Wolves",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -67043,9 +67242,11 @@
       "name": "Wolf Lord On Thunderwolf",
       "factionID": "space-wolves",
       "keywords": [
-        "Faction: Space Wolves"
+        "Faction: Space Wolves",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -67265,9 +67466,11 @@
       "name": "Aun’Shi",
       "factionID": "tau-empire",
       "keywords": [
-        "Faction: T’au Empire"
+        "Faction: T’au Empire",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -67589,9 +67792,11 @@
       "name": "Commander In Crisis Battlesuit",
       "factionID": "tau-empire",
       "keywords": [
-        "Faction: T’au Empire"
+        "Faction: T’au Empire",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -68839,9 +69044,11 @@
       "name": "Shas’O R’Alai",
       "factionID": "tau-empire",
       "keywords": [
-        "Faction: T’au Empire"
+        "Faction: T’au Empire",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -70419,9 +70626,10 @@
         "Infantry",
         "Character",
         "Psyker",
-        "Grenades"
+        "Grenades",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -70460,9 +70668,10 @@
         "Faction: Thousand Sons",
         "Infantry",
         "Character",
-        "Psyker"
+        "Psyker",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -70569,9 +70778,10 @@
         "Character",
         "Fly",
         "Psyker",
-        "Infantry"
+        "Infantry",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -71435,9 +71645,11 @@
       "name": "Malanthrope",
       "factionID": "tyranids",
       "keywords": [
-        "Faction: Tyranids"
+        "Faction: Tyranids",
+        "Character",
+        "Leader"
       ],
-      "characterRole": null,
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -73481,9 +73693,10 @@
         "Infantry",
         "Character",
         "Epic Hero",
-        "Grenades"
+        "Grenades",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -73515,9 +73728,10 @@
         "Faction: World Eaters",
         "Mounted",
         "Character",
-        "Epic Hero"
+        "Epic Hero",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
       "dedicatedTransport": false,
@@ -73550,9 +73764,10 @@
       "keywords": [
         "Faction: World Eaters",
         "Mounted",
-        "Character"
+        "Character",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -73585,9 +73800,10 @@
       "keywords": [
         "Faction: World Eaters",
         "Infantry",
-        "Character"
+        "Character",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,
@@ -73687,9 +73903,10 @@
       "keywords": [
         "Character",
         "Infantry",
-        "Faction: World Eaters"
+        "Faction: World Eaters",
+        "Leader"
       ],
-      "characterRole": "character",
+      "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
       "dedicatedTransport": false,

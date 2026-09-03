@@ -1,0 +1,86 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "71984969-5E73-4FFA-990A-6C1FEA7C13DE",
+    "name": "Space Marines Incursion 995pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "space-marines",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "space-marines--vengeful-hosts"
+    ],
+    "units": [
+      {
+        "id": "488EBB45-5ED2-407A-881D-702320BAD606",
+        "datasheetID": "space-marines--judiciar",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "space-marines--vengeful-hosts--orksbane"
+        ],
+        "attachedToUnitID": "F850EAD6-AEC7-4477-8A82-7B5B8396A770"
+      },
+      {
+        "id": "D46342ED-316E-4F33-9BC8-A2D41C0B94BE",
+        "datasheetID": "space-marines--land-speeder-storm",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A349FFAF-E0BA-4908-8CDD-3176E19725AF",
+        "datasheetID": "space-marines--inceptor-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "3398E3DC-BDDF-4BBD-9909-F04424721DBE",
+        "datasheetID": "space-marines--imperial-space-marine",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5D9811EB-A50C-4139-A5CE-D1BC55E52FC9",
+        "datasheetID": "space-marines--chaplain-venerable-dreadnought",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B887E423-53E1-4285-81DE-BDCACFFA9561",
+        "datasheetID": "space-marines--fire-raptor-gunship",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "6592F6FB-1E8E-43E8-A2BD-52E3D35BF233",
+        "datasheetID": "space-marines--repulsor",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F850EAD6-AEC7-4477-8A82-7B5B8396A770",
+        "datasheetID": "space-marines--assault-intercessor-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "488EBB45-5ED2-407A-881D-702320BAD606",
+    "notes": "stress seed=23 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

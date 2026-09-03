@@ -1,0 +1,86 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "74B93358-E595-4703-BE7F-70E562F95F1A",
+    "name": "Emperor\u2019s Children Incursion 980pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "emperors-children",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "emperors-children--peerless-bladesmen"
+    ],
+    "units": [
+      {
+        "id": "026594A4-1998-42A5-9444-6556CD2D0C0B",
+        "datasheetID": "emperors-children--sorcerer",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "emperors-children--peerless-bladesmen--rise-to-the-challenge"
+        ],
+        "attachedToUnitID": "A8C0C4AD-7619-4E66-B871-5F2DA78C9191"
+      },
+      {
+        "id": "96BE29AD-A065-4B37-98D1-847CF941E515",
+        "datasheetID": "emperors-children--chaos-spawn",
+        "models": 2,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "6ED28A5C-A944-44F8-AD5C-35F1BC0CAA9B",
+        "datasheetID": "emperors-children--daemonettes",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B7C5E3F8-4B17-4108-BBB7-AC686A48C1AF",
+        "datasheetID": "emperors-children--heldrake",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A8C0C4AD-7619-4E66-B871-5F2DA78C9191",
+        "datasheetID": "emperors-children--infractors",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "2F619BCD-03FB-47FD-8707-F2BDD060245F",
+        "datasheetID": "emperors-children--seekers",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A11FE097-52C7-4DAD-A6A9-57E740F66F30",
+        "datasheetID": "emperors-children--tormentors",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "FC941B08-10E4-4FB8-BFE1-9A1D8925F7C2",
+        "datasheetID": "emperors-children--noise-marines",
+        "models": 6,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "026594A4-1998-42A5-9444-6556CD2D0C0B",
+    "notes": "stress seed=15 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

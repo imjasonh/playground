@@ -1,0 +1,118 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "14F349EC-DAB5-410F-9077-DF619727BDB9",
+    "name": "Adeptus Mechanicus Incursion 990pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "adeptus-mechanicus",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "adeptus-mechanicus--explorator-maniple"
+    ],
+    "units": [
+      {
+        "id": "CB18D88D-D3D4-4033-BA54-3717AF511F21",
+        "datasheetID": "adeptus-mechanicus--tech-priest-enginseer",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "adeptus-mechanicus--explorator-maniple--logis"
+        ],
+        "attachedToUnitID": "FB2D0A88-ADAA-4132-841E-39EE20CD9FEF"
+      },
+      {
+        "id": "FB2D0A88-ADAA-4132-841E-39EE20CD9FEF",
+        "datasheetID": "adeptus-mechanicus--secutarii-peltasts",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "BE684CDF-1241-40DA-8841-AFA7B670DEB5",
+        "datasheetID": "adeptus-mechanicus--hastarii-fusiliers",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "BB6CFAEB-0D33-425C-94A4-28BC98386762",
+        "datasheetID": "adeptus-mechanicus--ironstrider-ballistarii",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A99C1C03-13E5-4B08-8140-6D8878657479",
+        "datasheetID": "adeptus-mechanicus--sicarian-ruststalkers",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "76E3A587-C192-4DA5-82EC-6B66AB17FD2C",
+        "datasheetID": "adeptus-mechanicus--skitarii-rangers",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "787D959F-3B46-485F-AE3B-3E0E02619404",
+        "datasheetID": "adeptus-mechanicus--kataphron-breachers",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0FDE3B3F-9DB4-432D-A51F-99FFA306DFA5",
+        "datasheetID": "adeptus-mechanicus--serberys-sulphurhounds",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "391333C5-011D-4E51-8CE3-2856CB5192E9",
+        "datasheetID": "adeptus-mechanicus--sydonian-dragoons-with-taser-lances",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5EB61586-7CF4-4657-8625-8D38F938632F",
+        "datasheetID": "adeptus-mechanicus--sicarian-infiltrators",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "35AE3E2F-8952-44B2-A785-903CFA692880",
+        "datasheetID": "adeptus-mechanicus--skorpius-dunerider",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "174D9EE1-E311-4BE1-8E1D-677816C28589",
+        "datasheetID": "adeptus-mechanicus--kataphron-destroyers",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "CB18D88D-D3D4-4033-BA54-3717AF511F21",
+    "notes": "stress seed=2 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

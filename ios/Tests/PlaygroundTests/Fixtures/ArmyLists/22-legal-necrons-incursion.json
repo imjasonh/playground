@@ -1,0 +1,76 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "F9E23D93-12CB-4869-8A40-355443E20464",
+    "name": "Necrons Incursion 940pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "necrons",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "necrons--hand-of-the-dynasty"
+    ],
+    "units": [
+      {
+        "id": "C284DA40-E1E1-4B48-9ADA-5D7B2CC58A40",
+        "datasheetID": "necrons--royal-warden",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "44C97282-AB23-419A-A509-3F9EAECA78D5",
+        "datasheetID": "necrons--annihilation-barge",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B4E96F38-8A04-4762-8665-97F8CC7FD203",
+        "datasheetID": "necrons--canoptek-reanimator",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F0907FB8-1C2D-48D2-9AF5-91A87BDD7380",
+        "datasheetID": "necrons--lokhust-destroyers",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "4CA0C514-42D4-4A06-AC1B-803FE60DC923",
+        "datasheetID": "necrons--skorpekh-destroyers",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "47501871-6113-4ADD-85E3-EDE2E1F70FB5",
+        "datasheetID": "necrons--flayed-ones",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "4992BC66-5C54-48C2-B05E-1BEDC247BD2B",
+        "datasheetID": "necrons--seraptek-heavy-construct",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "C284DA40-E1E1-4B48-9ADA-5D7B2CC58A40",
+    "notes": "stress seed=21 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

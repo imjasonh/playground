@@ -1,0 +1,166 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "356337C6-43CC-4C37-92AE-B3846FC2CE57",
+    "name": "Genestealer Cults Strike Force 1880pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "genestealer-cults",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "genestealer-cults--brood-brothers-auxilia"
+    ],
+    "units": [
+      {
+        "id": "4A6F7437-BBF4-475A-9700-94EF2ED7CBA3",
+        "datasheetID": "genestealer-cults--acolyte-iconward",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "genestealer-cults--brood-brothers-auxilia--adaptive-reprisal"
+        ],
+        "attachedToUnitID": "1F3CF97D-3DA2-4C52-8466-01B8ACF5838A"
+      },
+      {
+        "id": "1F3CF97D-3DA2-4C52-8466-01B8ACF5838A",
+        "datasheetID": "genestealer-cults--neophyte-hybrids",
+        "models": 20,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A1877CF9-6544-4BCC-9950-77144ECD50C4",
+        "datasheetID": "genestealer-cults--hybrid-metamorphs",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "369A50CB-D9AD-4B8B-9F71-1C63773E984F",
+        "datasheetID": "genestealer-cults--goliath-rockgrinder",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "71955981-89ED-49EE-BCD1-47B843E7845A",
+        "datasheetID": "genestealer-cults--acolyte-hybrids-with-hand-flamers",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "E7830DE6-882D-443C-B449-8818461E9C68",
+        "datasheetID": "genestealer-cults--achilles-ridgerunners",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5E0F550C-2C26-4F9D-86D7-C170079CB232",
+        "datasheetID": "genestealer-cults--acolyte-hybrids-with-autopistols",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A1984E3D-F629-4E20-83FB-4AF9FFAFEE2B",
+        "datasheetID": "genestealer-cults--atalan-jackals",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "89C12B04-B7D1-4ABA-99C0-CDFC2AFD0BEE",
+        "datasheetID": "genestealer-cults--acolyte-hybrids-with-autopistols",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "524195DA-0E8C-4DD5-9865-02F95689D64C",
+        "datasheetID": "genestealer-cults--aberrants",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "EE0201F1-879F-44AE-922F-10C353DF93E0",
+        "datasheetID": "genestealer-cults--neophyte-hybrids",
+        "models": 20,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "121549F5-CAFF-4259-AEF4-730FFF9106CD",
+        "datasheetID": "genestealer-cults--acolyte-hybrids-with-hand-flamers",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "DE7C73B5-607C-4A21-A793-7DF262E9C575",
+        "datasheetID": "genestealer-cults--tectonic-fragdrill",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "649CAD8D-4DE3-4C9B-BC5E-BA9760B3F0AC",
+        "datasheetID": "genestealer-cults--purestrain-genestealers",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5FE55EC9-E465-4096-8E4A-6660BE8EF787",
+        "datasheetID": "genestealer-cults--goliath-truck",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "650BB183-0AAB-4224-9CDC-E15D8CBBDF2F",
+        "datasheetID": "genestealer-cults--acolyte-hybrids-with-autopistols",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "2E30576B-1037-4575-8F74-3B34D66EDB63",
+        "datasheetID": "genestealer-cults--neophyte-hybrids",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "BF4DBB78-F3C0-490D-A6B7-0A833180E2BB",
+        "datasheetID": "genestealer-cults--acolyte-hybrids-with-hand-flamers",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "4A6F7437-BBF4-475A-9700-94EF2ED7CBA3",
+    "notes": "stress seed=44 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

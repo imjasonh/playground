@@ -126,6 +126,12 @@ Refresh catalog data from BSData’s Munitorum Field Manual scrape:
 python3 ios/scripts/refresh-army-list-catalog.py
 ```
 
+Stress-test the validator with 50 constructed lists (also writes XCTest fixtures):
+
+```bash
+python3 ios/scripts/stress-army-lists.py --write-fixtures
+```
+
 **List chat** (toolbar bubble on a list) uses on-device Foundation Models when
 Apple Intelligence is available (iOS 26+). Tools mutate the same document the
 editor shows; every tool result re-runs the validator. Without the model, chat

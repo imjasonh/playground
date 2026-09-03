@@ -1,0 +1,70 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "D6BA13AD-40BF-47FA-A865-ECB47AE4619B",
+    "name": "Imperial Knights Incursion 985pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "imperial-knights",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "imperial-knights--spearhead-at-arms"
+    ],
+    "units": [
+      {
+        "id": "2A1A4041-3870-4E85-81AC-985C0D7A393F",
+        "datasheetID": "imperial-knights--knight-destrier",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "imperial-knights--spearhead-at-arms--tales-of-heroism"
+        ],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "49E3093D-C98D-40C4-8BD4-E3B40F9E916D",
+        "datasheetID": "imperial-knights--armiger-warglaive",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "DEA358FE-B4FD-40BC-A9D6-36E55730F1F0",
+        "datasheetID": "imperial-knights--armiger-moirax",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "8913394A-04FA-4302-B585-F831C26CAB8C",
+        "datasheetID": "imperial-knights--armiger-helverin",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "338B9546-16EE-4711-85E6-E833D88AA429",
+        "datasheetID": "imperial-knights--armiger-helverin",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "30C7BF10-1898-4BE8-AFAF-B584DD8D44CB",
+        "datasheetID": "imperial-knights--armiger-warglaive",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "2A1A4041-3870-4E85-81AC-985C0D7A393F",
+    "notes": "stress seed=19 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "8CAEE23D-AE4C-44B7-A945-D941B12505FE",
+    "name": "Tyranids Incursion 1000pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "tyranids",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "tyranids--ambush-predators",
+      "tyranids--talons-of-the-norn-queen"
+    ],
+    "units": [
+      {
+        "id": "FFFAD5A7-F85E-4D88-8EED-AEAF86205807",
+        "datasheetID": "tyranids--winged-tyranid-prime",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": "B35ABAA3-5D66-44E4-85AB-2E9838871940"
+      },
+      {
+        "id": "5985A454-06F0-401C-B696-4ECB536CCDA2",
+        "datasheetID": "tyranids--haruspex",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "6AA129AE-74C9-43A5-9DEB-6BD03B8C7E8B",
+        "datasheetID": "tyranids--venomthropes",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "99E69100-0280-4777-8F6B-4EC7D383CF89",
+        "datasheetID": "tyranids--neurogaunts",
+        "models": 11,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "51523CFB-0712-4234-8523-3E6C3CA00461",
+        "datasheetID": "tyranids--hive-crone",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "9A192794-C771-48F3-AA85-130883E7C76C",
+        "datasheetID": "tyranids--barbed-hierodule",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "9E5DE3E6-A739-4032-AE52-83BB7EF29FB6",
+        "datasheetID": "tyranids--spore-mines",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "DE965B2E-C3EF-42DF-A8AC-690238971ACA",
+        "datasheetID": "tyranids--mucolid-spores",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "8C25C671-BA6A-44C2-9761-015591A97128",
+        "datasheetID": "tyranids--pyrovores",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B35ABAA3-5D66-44E4-85AB-2E9838871940",
+        "datasheetID": "tyranids--tyranid-warriors-with-melee-bio-weapons",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "FFFAD5A7-F85E-4D88-8EED-AEAF86205807",
+    "notes": "stress seed=27 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

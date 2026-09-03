@@ -1,0 +1,158 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "93B602C4-7072-4B72-A481-154FD5F4A44C",
+    "name": "Thousand Sons Strike Force 1935pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "thousand-sons",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "thousand-sons--ritual-of-regeneration"
+    ],
+    "units": [
+      {
+        "id": "CD7C8366-0EE1-42CE-B9DC-C5B0BD4E5C5D",
+        "datasheetID": "thousand-sons--tzaangor-shaman",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "thousand-sons--ritual-of-regeneration--eruption-of-vitality"
+        ],
+        "attachedToUnitID": "F4ACE331-239A-4159-A3AB-05AA217C3456"
+      },
+      {
+        "id": "EC24463A-B13B-4374-9B8A-EFD47799D657",
+        "datasheetID": "thousand-sons--pink-horrors",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B6119568-C4AE-4BE0-9EF8-44F8CDABD606",
+        "datasheetID": "thousand-sons--screamers",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "4BBBF265-D079-4367-93A2-C1870B9B3E26",
+        "datasheetID": "thousand-sons--heldrake",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "E0DAF9E5-0235-4FB8-BBC8-F895BB81636F",
+        "datasheetID": "thousand-sons--forgefiend",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "3497E300-D924-42D9-98B7-D60E80FA9772",
+        "datasheetID": "thousand-sons--helbrute",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F4ACE331-239A-4159-A3AB-05AA217C3456",
+        "datasheetID": "thousand-sons--tzaangor-enlightened",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "89C85B07-3498-4BA2-A810-D96AD7AFDF0C",
+        "datasheetID": "thousand-sons--mutalith-vortex-beast",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "D9BF8B65-8836-4BD8-8E01-6FD2CA1AD12E",
+        "datasheetID": "thousand-sons--chaos-predator-destructor",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "EAD82D0D-2D35-40A0-B176-A60C9157CCAD",
+        "datasheetID": "thousand-sons--chaos-spawn",
+        "models": 2,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "1CD43EAC-FB40-4B09-B2F0-315B2781FE65",
+        "datasheetID": "thousand-sons--pink-horrors",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "828824C2-AE78-4CAF-BDC2-FA95AF9D3640",
+        "datasheetID": "thousand-sons--sekhetar-robots",
+        "models": 2,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "E1151900-00BD-45CD-BAA5-2CB9EACFA90C",
+        "datasheetID": "thousand-sons--tzaangor-enlightened-with-fatecaster-greatbows",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "2510A65F-AA7B-43BC-A373-B14E957344F6",
+        "datasheetID": "thousand-sons--chaos-predator-annihilator",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A0F839E2-D17F-4978-8372-E700FE1E524A",
+        "datasheetID": "thousand-sons--rubric-marines",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7155D039-EF1C-427C-8F49-DCBE67C96E76",
+        "datasheetID": "thousand-sons--maulerfiend",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F042DCB9-616E-4E3A-B716-42E423193157",
+        "datasheetID": "thousand-sons--blue-horrors",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "CD7C8366-0EE1-42CE-B9DC-C5B0BD4E5C5D",
+    "notes": "stress seed=39 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

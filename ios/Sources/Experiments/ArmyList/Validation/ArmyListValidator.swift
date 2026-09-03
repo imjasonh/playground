@@ -256,7 +256,16 @@ enum ArmyListValidator {
                         unitID: unit.id
                     ))
                 }
-                if !sheet.leaderTo.isEmpty && !sheet.leaderTo.contains(body.datasheetID) {
+                // Empty leaderTo means this datasheet has no legal bodyguards in the
+                // catalog — do not treat that as "joins anything".
+                if sheet.leaderTo.isEmpty {
+                    issues.append(.init(
+                        code: "unit.attachNoTargets",
+                        severity: .error,
+                        message: "\(sheet.name) has no Leader join targets in the catalog.",
+                        unitID: unit.id
+                    ))
+                } else if !sheet.leaderTo.contains(body.datasheetID) {
                     let bodyName = catalog.datasheet(id: body.datasheetID)?.name ?? body.datasheetID
                     issues.append(.init(
                         code: "unit.attachIllegal",

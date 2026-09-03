@@ -1,0 +1,78 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "5724EBD7-DEC4-4A5E-9F01-18E4D5FEC16F",
+    "name": "Blood Angels Incursion 950pts",
+    "catalogVersion": "11e-mfm-1.4",
+    "factionID": "blood-angels",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "blood-angels--orbital-assault-force"
+    ],
+    "units": [
+      {
+        "id": "219031F2-C0FA-4605-9B05-EA440130D4F4",
+        "datasheetID": "blood-angels--judiciar",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "blood-angels--orbital-assault-force--orbital-uplink-reliquary"
+        ],
+        "attachedToUnitID": "CD7B6837-1B01-4F2F-8829-29CDCCD7423A"
+      },
+      {
+        "id": "F940B6E4-FA45-40B4-BD30-AB86C9CC5443",
+        "datasheetID": "blood-angels--repulsor",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0278EF46-1A9B-4CA9-9016-F6501BAC2BB7",
+        "datasheetID": "blood-angels--ballistus-dreadnought",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "CD7B6837-1B01-4F2F-8829-29CDCCD7423A",
+        "datasheetID": "blood-angels--assault-intercessor-squad",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "C6759A2A-4BED-403A-A6D6-28220194D711",
+        "datasheetID": "blood-angels--brutalis-dreadnought",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B2B7439B-3502-4469-9BA1-6F94E5E18E87",
+        "datasheetID": "blood-angels--tactical-squad",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "95930269-0135-45A6-8E2E-4F4D57936900",
+        "datasheetID": "blood-angels--hellblaster-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "219031F2-C0FA-4605-9B05-EA440130D4F4",
+    "notes": "stress seed=6 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}
