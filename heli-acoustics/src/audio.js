@@ -78,7 +78,7 @@ export class HeliAudio {
     this.convolver = this.ctx.createConvolver();
     this.convolver.normalize = true;
     this.reverbOut = this.ctx.createGain();
-    this.reverbOut.gain.value = 0.35;
+    this.reverbOut.gain.value = 0.55;
     this.reverbSend
       .connect(this.reverbFilter)
       .connect(this.convolver)
@@ -273,8 +273,9 @@ export class HeliAudio {
     const enc = acoustics.enclosure?.amount ?? 0;
     if (this.reverbEnabled) {
       this.#setImpulseForEnclosure(enc);
-      // Late send rises with enclosure; keep it under the early taps.
-      const send = 0.02 + enc * 0.22;
+      // Late send rises with enclosure; keep it under the early taps but
+      // loud enough to hear (and to pass the reverb A/B probe).
+      const send = 0.06 + enc * 0.38;
       this.reverbSend.gain.setTargetAtTime(send, t, 0.1);
       const dampHz = 6500 - enc * 2800;
       this.reverbFilter.frequency.setTargetAtTime(dampHz, t, 0.1);
