@@ -41,17 +41,20 @@
     const wet = phase === 0;
     const bucket = wet ? onSamples : offSamples;
     const start = performance.now();
+    // Wait for ConvolverNode tails to build (on) or die (off) before measuring.
+    const settleSec = wet ? 1.2 : 2.2;
+    const endSec = settleSec + 6;
     await new Promise((resolve) => {
       function tick() {
         const t = (performance.now() - start) / 1000;
         sampleAt(t, wet);
-        if (t > 0.5) {
+        if (t > settleSec) {
           const levels = audio.earLevels();
           if (levels.left + levels.right > 0.0005) {
             bucket.push(levels.left + levels.right);
           }
         }
-        if (t < 8) requestAnimationFrame(tick);
+        if (t < endSec) requestAnimationFrame(tick);
         else resolve();
       }
       requestAnimationFrame(tick);
@@ -73,6 +76,8 @@
     avgEnergyReverbOn: onAvg,
     avgEnergyReverbOff: offAvg,
     ratio: offAvg > 0 ? onAvg / offAvg : null,
+    onSamples: onSamples.length,
+    offSamples: offSamples.length,
     contextState: audio.earLevels().contextState,
   };
   document.getElementById('out').textContent = ['REVERB_PROBE', JSON.stringify(verdict)].join('=');
