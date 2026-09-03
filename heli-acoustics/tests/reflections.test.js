@@ -8,6 +8,7 @@ import {
   excessDelaySec,
   order2Reflection,
   groundFace,
+  order2PairList,
 } from '../src/reflections.js';
 
 test('ground reflection delays by the mirrored path', () => {
@@ -93,17 +94,29 @@ test('order-2 facade then ground is accepted when clear', () => {
 });
 
 test('computeReflections with maxOrder 2 includes order-2 taps in the avenue', () => {
-  const listener = [0, 1.7, 40];
-  const source = [8, 30, 50];
+  const listener = [0, 1.7, 0];
+  const source = [0, 38, 65];
   const list = computeReflections(listener, source, BUILDINGS, {
     limit: 12,
     maxOrder: 2,
-    order2CandidateLimit: 120,
   });
   assert.ok(list.length >= 1);
   assert.ok(
     list.some((r) => r.order === 2),
-    `expected at least one order-2 tap, got ${list.map((r) => r.faceId).join(',')}`,
+    `expected at least one order-2 tap, got ${list.map((r) => `${r.order}:${r.faceId}`).join(',')}`,
+  );
+});
+
+test('order2PairList puts ground pairs before facade pairs', () => {
+  const faces = buildingFaces(BUILDINGS);
+  const pairs = order2PairList(faces, { limit: 80 });
+  assert.ok(pairs.length > 0);
+  const firstGround = pairs.findIndex(
+    ([a, b]) => a.kind === 'ground' || b.kind === 'ground',
+  );
+  assert.equal(firstGround, 0);
+  assert.ok(
+    pairs.every(([a, b]) => a.building !== b.building || a.kind === 'ground' || b.kind === 'ground'),
   );
 });
 
