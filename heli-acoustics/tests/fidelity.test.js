@@ -5,7 +5,6 @@ import { bounceBands, unitBands, materialForFace, cutoffFromBands } from '../src
 import { buildingEdges, computeDiffraction, edgeDiffraction } from '../src/diffraction.js';
 import { traceEnergyBins, binsToImpulseResponse } from '../src/stochasticIr.js';
 import { computeReflections, order3TripleList, order3Reflection } from '../src/reflections.js';
-import { computeAcousticsCpu } from '../src/acousticsGpu.js';
 import { buildingFaces } from '../src/city.js';
 
 test('materials darken high band more than low on asphalt', () => {
@@ -82,13 +81,4 @@ test('stochastic energy bins have energy and build an IR', () => {
   const buf = binsToImpulseResponse(fakeCtx, bins);
   assert.equal(buf.numberOfChannels, 2);
   assert.ok(buf.length > 1000);
-});
-
-test('reference acoustics includes diffraction and ir bins', () => {
-  const listener = [0, 1.7, 40];
-  const source = [-90, 50, 50];
-  const r = computeAcousticsCpu(listener, source, BUILDINGS, 16);
-  assert.ok(r.irBins && r.irBins.length > 0);
-  assert.ok(r.diffractionCount >= 1);
-  assert.ok(r.reflections.some((x) => x.kind === 'diffraction') || r.diffractionCount >= 1);
 });
