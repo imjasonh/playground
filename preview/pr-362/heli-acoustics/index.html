@@ -2,7 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <title>Heli acoustics, M2 early reflections</title>
     <style>
       * {
@@ -18,6 +19,10 @@
         background: #0a0e14;
         color: #cfe4ff;
         font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+        touch-action: none;
+        overscroll-behavior: none;
+        -webkit-user-select: none;
+        user-select: none;
       }
       #scene {
         display: block;
@@ -69,18 +74,20 @@
       }
       #controls {
         position: fixed;
-        top: 16px;
-        right: 16px;
+        top: max(12px, env(safe-area-inset-top));
+        right: max(12px, env(safe-area-inset-right));
         display: flex;
         flex-direction: column;
-        gap: 8px;
-        padding: 12px 14px;
-        background: rgba(6, 9, 14, 0.72);
+        gap: 4px;
+        padding: 10px 12px;
+        background: rgba(6, 9, 14, 0.78);
         border: 1px solid rgba(120, 180, 255, 0.25);
         z-index: 5;
         font-size: 13px;
         line-height: 1.4;
         text-shadow: none;
+        -webkit-user-select: none;
+        user-select: none;
       }
       #controls label {
         display: flex;
@@ -88,13 +95,14 @@
         gap: 8px;
         cursor: pointer;
         color: #cfe4ff;
-        user-select: none;
+        min-height: 36px;
       }
       #controls input {
-        width: 14px;
-        height: 14px;
+        width: 18px;
+        height: 18px;
         accent-color: #7fb4ff;
         cursor: pointer;
+        flex-shrink: 0;
       }
       #controls .key {
         margin-left: auto;
@@ -102,11 +110,28 @@
         color: rgba(207, 228, 255, 0.45);
         font-size: 11px;
       }
+      @media (pointer: coarse) {
+        #controls {
+          gap: 2px;
+          padding: 8px 10px;
+        }
+        #controls label {
+          min-height: 44px;
+        }
+        #controls .key {
+          display: none;
+        }
+        #hud {
+          font-size: 12px;
+          top: max(12px, env(safe-area-inset-top));
+          left: max(12px, env(safe-area-inset-left));
+        }
+      }
       #hint {
         position: fixed;
-        bottom: 16px;
-        left: 16px;
-        right: 16px;
+        bottom: max(12px, env(safe-area-inset-bottom));
+        left: max(12px, env(safe-area-inset-left));
+        right: max(12px, env(safe-area-inset-right));
         font-size: 12px;
         color: rgba(207, 228, 255, 0.55);
         pointer-events: none;
@@ -201,8 +226,8 @@
     </div>
 
     <div id="hint">
-      WASD move, mouse look. Use the checkboxes (or O / R / G) to A/B occlusion,
-      reflections, and debug rays. Click the canvas again to re-lock the mouse.
+      Drag to look. On a keyboard: WASD move, O / R / G toggle. Tap the
+      checkboxes to A/B occlusion and reflections.
     </div>
 
     <div id="overlay">
@@ -215,7 +240,7 @@
         as a delayed, filtered, HRTF-panned tap. Use the checkboxes to disable
         occlusion or reflections and A/B what you hear.
       </p>
-      <div class="go">Click to start</div>
+      <div class="go">Tap or click to start</div>
     </div>
 
     <script type="importmap">

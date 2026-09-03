@@ -1,5 +1,5 @@
 import { HeliAudio } from './audio.js';
-import { FpsControls } from './controls.js';
+import { FpsControls, coarsePointer } from './controls.js';
 import { createCityScene, createRenderer, createCamera } from './scene3d.js';
 import { DebugRays } from './debugRays.js';
 import { BUILDINGS, helicopterPath } from './city.js';
@@ -78,7 +78,7 @@ togRays.addEventListener('change', () => setRays(togRays.checked));
 
 // Keep pointer-lock clicks on the canvas; when using the control panel, exit
 // pointer lock so the checkboxes are clickable without hunting for Esc.
-document.getElementById('controls').addEventListener('mousedown', (e) => {
+document.getElementById('controls').addEventListener('pointerdown', (e) => {
   e.stopPropagation();
   if (document.pointerLockElement) document.exitPointerLock();
 });
@@ -160,7 +160,8 @@ async function start() {
   startTime = performance.now();
   lastFrame = startTime;
   overlay.classList.add('hidden');
-  canvas.requestPointerLock();
+  // Pointer lock is a desktop convenience; phones use drag-to-look instead.
+  if (!coarsePointer()) canvas.requestPointerLock?.();
   requestAnimationFrame(frame);
 
   proofEl.textContent = 'running\u2026';
@@ -176,4 +177,10 @@ async function start() {
   }
 }
 
+overlay.addEventListener('pointerup', (e) => {
+  // Treat a tap or click on the start screen as start. Ignore non-primary mouse.
+  if (e.pointerType === 'mouse' && e.button !== 0) return;
+  start();
+});
+// Keep click as a fallback for older browsers that synthesize it from taps.
 overlay.addEventListener('click', start);
