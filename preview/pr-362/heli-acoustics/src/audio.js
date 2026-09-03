@@ -41,6 +41,20 @@ export class HeliAudio {
     this.master.gain.value = 0;
     this.master.connect(this.ctx.destination);
 
+    // Tap the stereo output so the HUD can show measured left/right ear energy.
+    // This is the live proof that HRTF is producing an asymmetric signal, not
+    // just that a panner node exists in the graph.
+    const splitter = this.ctx.createChannelSplitter(2);
+    this.master.connect(splitter);
+    this.leftAnalyser = this.ctx.createAnalyser();
+    this.rightAnalyser = this.ctx.createAnalyser();
+    this.leftAnalyser.fftSize = 2048;
+    this.rightAnalyser.fftSize = 2048;
+    splitter.connect(this.leftAnalyser, 0);
+    splitter.connect(this.rightAnalyser, 1);
+    this._leftBuf = new Float32Array(this.leftAnalyser.fftSize);
+    this._rightBuf = new Float32Array(this.rightAnalyser.fftSize);
+
     // HRTF panner: this is what makes left/right/front/back audible in
     // headphones. refDistance/rolloff give a plausible urban falloff.
     this.panner = this.ctx.createPanner();
@@ -51,6 +65,28 @@ export class HeliAudio {
     this.panner.connect(this.master);
 
     this.#buildHelicopter();
+  }
+
+  // Measured RMS on each ear after the HRTF panner. Negative balance means
+  // louder left; positive means louder right. See meter.js.
+  earLevels() {
+    this.leftAnalyser.getFloatTimeDomainData(this._leftBuf);
+    this.rightAnalyser.getFloatTimeDomainData(this._rightBuf);
+    let l = 0;
+    let r = 0;
+    for (let i = 0; i < this._leftBuf.length; i++) {
+      l += this._leftBuf[i] * this._leftBuf[i];
+      r += this._rightBuf[i] * this._rightBuf[i];
+    }
+    const left = Math.sqrt(l / this._leftBuf.length);
+    const right = Math.sqrt(r / this._rightBuf.length);
+    const total = left + right;
+    return {
+      left,
+      right,
+      balance: total === 0 ? 0 : (right - left) / total,
+      contextState: this.ctx.state,
+    };
   }
 
   // A helicopter is dominated by three layers: a low blade-slap "chop" that

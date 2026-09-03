@@ -6,7 +6,12 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
+    "test:audio": "node scripts/run-hrtf-proof.mjs && node scripts/sample-live-ears.mjs",
+    "test:e2e": "npm run test:audio",
     "start": "npx --yes serve . -p 3000"
+  },
+  "devDependencies": {
+    "playwright": "^1.52.0"
   },
   "engines": {
     "node": ">=20"
