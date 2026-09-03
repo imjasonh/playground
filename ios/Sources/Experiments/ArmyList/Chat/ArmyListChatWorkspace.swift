@@ -353,11 +353,16 @@ enum ArmyListChatToolExecutor {
         if let exact = workspace.catalog.detachment(id: q), exact.factionID == workspace.list.factionID {
             return exact.id
         }
-        let matches = workspace.catalog.detachments.filter {
+        let factionDetachments = workspace.catalog.detachments.filter {
             $0.factionID == workspace.list.factionID
-                && ($0.id.contains(q) || $0.name.lowercased().contains(q))
         }
-        return matches.count == 1 ? matches[0].id : workspace.catalog.detachment(id: q)?.id
+        if let suffix = factionDetachments.first(where: { $0.id.hasSuffix("--\(q)") || $0.id == q }) {
+            return suffix.id
+        }
+        let matches = factionDetachments.filter {
+            $0.id.contains(q) || $0.name.lowercased().contains(q)
+        }
+        return matches.count == 1 ? matches[0].id : nil
     }
 
     private static func resolveDatasheet(workspace: ArmyListChatWorkspace, raw: String) -> DatasheetDefinition? {
@@ -365,12 +370,17 @@ enum ArmyListChatToolExecutor {
         if let exact = workspace.catalog.datasheet(id: q), exact.factionID == workspace.list.factionID {
             return exact
         }
-        let matches = workspace.catalog.datasheets.filter {
+        let factionSheets = workspace.catalog.datasheets.filter {
             $0.factionID == workspace.list.factionID
-                && ($0.id.contains(q) || $0.name.lowercased().contains(q))
+        }
+        if let suffix = factionSheets.first(where: { $0.id.hasSuffix("--\(q)") || $0.id == q }) {
+            return suffix
+        }
+        let matches = factionSheets.filter {
+            $0.id.contains(q) || $0.name.lowercased().contains(q)
         }
         if matches.count == 1 { return matches[0] }
-        return matches.first { $0.id == q }
+        return nil
     }
 
     private static func resolveEnhancementID(workspace: ArmyListChatWorkspace, raw: String) -> String? {

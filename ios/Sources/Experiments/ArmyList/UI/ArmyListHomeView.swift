@@ -33,7 +33,7 @@ struct ArmyListHomeView: View {
                         .accessibilityHidden(true)
                     Text("No army lists")
                         .font(.headline)
-                    Text("Build a Leagues of Votann list and validate it against 11th Edition construction rules.")
+                    Text("Build an 11th Edition list for any faction and validate it against construction rules from the Munitorum Field Manual.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -151,15 +151,24 @@ private struct ArmyListRowView: View {
     }
 }
 
-/// Create a blank list: faction (Votann only for now), battle size, name.
+/// Create a blank list: faction, battle size, name.
 struct ArmyListNewSheet: View {
     let catalog: ArmyCatalog
     var onCreate: (ArmyListDocument) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var name = "New list"
-    @State private var factionID = "leagues-of-votann"
+    @State private var factionID: String
     @State private var battleSizeID = "incursion"
+
+    init(catalog: ArmyCatalog, onCreate: @escaping (ArmyListDocument) -> Void) {
+        self.catalog = catalog
+        self.onCreate = onCreate
+        let defaultFaction = catalog.faction(id: "leagues-of-votann")?.id
+            ?? catalog.factions.first?.id
+            ?? "leagues-of-votann"
+        _factionID = State(initialValue: defaultFaction)
+    }
 
     var body: some View {
         Form {

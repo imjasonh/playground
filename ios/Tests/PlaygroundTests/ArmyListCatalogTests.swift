@@ -6,33 +6,45 @@ final class ArmyListCatalogTests: XCTestCase {
         let catalog = try Self.loadCatalogFromRepo()
         XCTAssertEqual(catalog.edition, "11th")
         XCTAssertFalse(catalog.version.isEmpty)
-        XCTAssertEqual(catalog.factions.count, 1)
-        XCTAssertEqual(catalog.factions[0].id, "leagues-of-votann")
+        XCTAssertGreaterThanOrEqual(catalog.factions.count, 20)
+        XCTAssertTrue(catalog.factions.contains { $0.id == "leagues-of-votann" })
+        XCTAssertTrue(catalog.factions.contains { $0.id == "space-marines" })
+        XCTAssertTrue(catalog.factions.contains { $0.id == "tyranids" })
         XCTAssertEqual(catalog.battleSizes.count, 2)
-        XCTAssertGreaterThanOrEqual(catalog.detachments.count, 10)
-        XCTAssertGreaterThanOrEqual(catalog.datasheets.count, 20)
+        XCTAssertGreaterThanOrEqual(catalog.detachments.count, 300)
+        XCTAssertGreaterThanOrEqual(catalog.datasheets.count, 1500)
+    }
+
+    func testFactionScopedIdsDoNotCollide() throws {
+        let catalog = try Self.loadCatalogFromRepo()
+        let captainIDs = catalog.datasheets
+            .filter { $0.name == "Captain" }
+            .map(\.id)
+        XCTAssertGreaterThanOrEqual(captainIDs.count, 2)
+        XCTAssertEqual(Set(captainIDs).count, captainIDs.count)
+        XCTAssertTrue(captainIDs.allSatisfy { $0.contains("--") })
     }
 
     func testHearthkynIsBattleline() throws {
         let catalog = try Self.loadCatalogFromRepo()
-        let warriors = try XCTUnwrap(catalog.datasheet(id: "hearthkyn-warriors"))
+        let warriors = try XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--hearthkyn-warriors"))
         XCTAssertTrue(warriors.battleline)
         XCTAssertEqual(warriors.points(models: 10, copyIndex: 1), 90)
     }
 
     func testHearthbandUniqueTagAndDP() throws {
         let catalog = try Self.loadCatalogFromRepo()
-        let hearthband = try XCTUnwrap(catalog.detachment(id: "hearthband"))
+        let hearthband = try XCTUnwrap(catalog.detachment(id: "leagues-of-votann--hearthband"))
         XCTAssertEqual(hearthband.detachmentPoints, 3)
         XCTAssertEqual(hearthband.uniqueTag, "Hearthband")
-        let covenant = try XCTUnwrap(catalog.detachment(id: "hearthguard-covenant"))
+        let covenant = try XCTUnwrap(catalog.detachment(id: "leagues-of-votann--hearthguard-covenant"))
         XCTAssertEqual(covenant.uniqueTag, "Hearthband")
         XCTAssertEqual(covenant.detachmentPoints, 1)
     }
 
     func testPointsStepperForThunderkyn() throws {
         let catalog = try Self.loadCatalogFromRepo()
-        let sheet = try XCTUnwrap(catalog.datasheet(id: "brokhyr-thunderkyn"))
+        let sheet = try XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--brokhyr-thunderkyn"))
         XCTAssertEqual(sheet.points(models: 6, copyIndex: 1), 170)
         XCTAssertEqual(sheet.points(models: 6, copyIndex: 2), 170)
         XCTAssertEqual(sheet.points(models: 6, copyIndex: 3), 180)
@@ -74,14 +86,14 @@ final class ArmyListValidatorTests: XCTestCase {
     func testDPOverBudget() {
         var list = sampleLegalIncursion()
         // Hearthband is 3 DP; Incursion budget is 2.
-        list.detachmentIDs = ["hearthband"]
+        list.detachmentIDs = ["leagues-of-votann--hearthband"]
         let result = ArmyListValidator.validate(list: list, catalog: catalog)
         XCTAssertTrue(result.errors.contains { $0.code == "dp.overBudget" })
     }
 
     func testUniqueTagCollision() {
         var list = sampleLegalIncursion()
-        list.detachmentIDs = ["hearthband", "hearthguard-covenant"]
+        list.detachmentIDs = ["leagues-of-votann--hearthband", "leagues-of-votann--hearthguard-covenant"]
         list.battleSizeID = "strike-force"
         let result = ArmyListValidator.validate(list: list, catalog: catalog)
         XCTAssertTrue(result.errors.contains { $0.code == "detachment.uniqueTagCollision" })
@@ -99,7 +111,7 @@ final class ArmyListValidatorTests: XCTestCase {
     func testPointsOverLimit() {
         var list = sampleLegalIncursion()
         // Stack expensive units past 1000.
-        let hekaton = try! XCTUnwrap(catalog.datasheet(id: "hekaton-land-fortress"))
+        let hekaton = try! XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--hekaton-land-fortress"))
         list.units.append(ListUnitInstance(datasheetID: hekaton.id, models: 1))
         list.units.append(ListUnitInstance(datasheetID: hekaton.id, models: 1))
         list.units.append(ListUnitInstance(datasheetID: hekaton.id, models: 1))
@@ -110,10 +122,10 @@ final class ArmyListValidatorTests: XCTestCase {
     func testBattlelineDuplicateCapIncursion() {
         var list = sampleLegalIncursion()
         list.units = (0..<5).map { _ in
-            ListUnitInstance(datasheetID: "hearthkyn-warriors", models: 10)
+            ListUnitInstance(datasheetID: "leagues-of-votann--hearthkyn-warriors", models: 10)
         }
         // Keep a warlord character
-        let kahl = ListUnitInstance(datasheetID: "kahl", models: 1)
+        let kahl = ListUnitInstance(datasheetID: "leagues-of-votann--kahl", models: 1)
         list.units.append(kahl)
         list.warlordUnitID = kahl.id
         let result = ArmyListValidator.validate(list: list, catalog: catalog)
@@ -122,9 +134,9 @@ final class ArmyListValidatorTests: XCTestCase {
 
     func testIllegalAttachment() {
         var list = sampleLegalIncursion()
-        let warriors = ListUnitInstance(datasheetID: "hearthkyn-warriors", models: 10)
+        let warriors = ListUnitInstance(datasheetID: "leagues-of-votann--hearthkyn-warriors", models: 10)
         let champion = ListUnitInstance(
-            datasheetID: "einhyr-champion",
+            datasheetID: "leagues-of-votann--einhyr-champion",
             models: 1,
             attachedToUnitID: warriors.id
         )
@@ -136,20 +148,20 @@ final class ArmyListValidatorTests: XCTestCase {
 
     func testLegalAttachment() {
         var list = sampleLegalIncursion()
-        let warriors = ListUnitInstance(datasheetID: "hearthkyn-warriors", models: 10)
+        let warriors = ListUnitInstance(datasheetID: "leagues-of-votann--hearthkyn-warriors", models: 10)
         let kahl = ListUnitInstance(
-            datasheetID: "kahl",
+            datasheetID: "leagues-of-votann--kahl",
             models: 1,
             attachedToUnitID: warriors.id
         )
         list.units = [
             warriors,
             kahl,
-            ListUnitInstance(datasheetID: "hearthkyn-warriors", models: 10),
-            ListUnitInstance(datasheetID: "cthonian-beserks", models: 5),
-            ListUnitInstance(datasheetID: "hernkyn-pioneers", models: 3),
-            ListUnitInstance(datasheetID: "sagitaur", models: 1),
-            ListUnitInstance(datasheetID: "hernkyn-yaegirs", models: 10),
+            ListUnitInstance(datasheetID: "leagues-of-votann--hearthkyn-warriors", models: 10),
+            ListUnitInstance(datasheetID: "leagues-of-votann--cthonian-beserks", models: 5),
+            ListUnitInstance(datasheetID: "leagues-of-votann--hernkyn-pioneers", models: 3),
+            ListUnitInstance(datasheetID: "leagues-of-votann--sagitaur", models: 1),
+            ListUnitInstance(datasheetID: "leagues-of-votann--hernkyn-yaegirs", models: 10),
         ]
         list.warlordUnitID = kahl.id
         let result = ArmyListValidator.validate(list: list, catalog: catalog)
@@ -159,7 +171,7 @@ final class ArmyListValidatorTests: XCTestCase {
 
     func testWarlordMustBeCharacter() {
         var list = sampleLegalIncursion()
-        let warriors = list.units.first { $0.datasheetID == "hearthkyn-warriors" }!
+        let warriors = list.units.first { $0.datasheetID == "leagues-of-votann--hearthkyn-warriors" }!
         list.warlordUnitID = warriors.id
         let result = ArmyListValidator.validate(list: list, catalog: catalog)
         XCTAssertTrue(result.errors.contains { $0.code == "warlord.notCharacter" })
@@ -167,11 +179,11 @@ final class ArmyListValidatorTests: XCTestCase {
 
     func testEnhancementRequiresDetachment() {
         var list = sampleLegalIncursion()
-        guard let kahlIndex = list.units.firstIndex(where: { $0.datasheetID == "kahl" }) else {
+        guard let kahlIndex = list.units.firstIndex(where: { $0.datasheetID == "leagues-of-votann--kahl" }) else {
             return XCTFail("missing kahl")
         }
         // High Kâhl is on Hearthband / Hearthguard Covenant — not on Brandfast.
-        list.units[kahlIndex].enhancementIDs = ["hearthband--high-kahl"]
+        list.units[kahlIndex].enhancementIDs = ["leagues-of-votann--hearthband--high-kahl"]
         let result = ArmyListValidator.validate(list: list, catalog: catalog)
         XCTAssertTrue(result.errors.contains { $0.code == "enhancement.detachmentNotSelected" })
     }
@@ -180,20 +192,20 @@ final class ArmyListValidatorTests: XCTestCase {
         var list = sampleLegalIncursion()
         // Brandfast has character enhancements. Add a second character with another enhancement.
         let grimnyr = ListUnitInstance(
-            datasheetID: "grimnyr",
+            datasheetID: "leagues-of-votann--grimnyr",
             models: 3,
-            enhancementIDs: ["brandfast-oathband--signature-restoration"]
+            enhancementIDs: ["leagues-of-votann--brandfast-oathband--signature-restoration"]
         )
-        guard let kahlIndex = list.units.firstIndex(where: { $0.datasheetID == "kahl" }) else {
+        guard let kahlIndex = list.units.firstIndex(where: { $0.datasheetID == "leagues-of-votann--kahl" }) else {
             return XCTFail("missing kahl")
         }
-        list.units[kahlIndex].enhancementIDs = ["brandfast-oathband--precursive-judgement"]
+        list.units[kahlIndex].enhancementIDs = ["leagues-of-votann--brandfast-oathband--precursive-judgement"]
         list.units.append(grimnyr)
         // Incursion allows 2 picks — still legal. Add a third.
         let ironMaster = ListUnitInstance(
-            datasheetID: "brokhyr-iron-master",
+            datasheetID: "leagues-of-votann--brokhyr-iron-master",
             models: 5,
-            enhancementIDs: ["brandfast-oathband--tactical-alchemy"]
+            enhancementIDs: ["leagues-of-votann--brandfast-oathband--tactical-alchemy"]
         )
         list.units.append(ironMaster)
         let result = ArmyListValidator.validate(list: list, catalog: catalog)
@@ -232,21 +244,21 @@ final class ArmyListValidatorTests: XCTestCase {
 
     /// ~990 pt Brandfast Incursion list used as the golden legal sample.
     private func sampleLegalIncursion() -> ArmyListDocument {
-        let kahl = ListUnitInstance(datasheetID: "kahl", models: 1)
-        let warriorsA = ListUnitInstance(datasheetID: "hearthkyn-warriors", models: 10)
-        let warriorsB = ListUnitInstance(datasheetID: "hearthkyn-warriors", models: 10)
-        let beserks = ListUnitInstance(datasheetID: "cthonian-beserks", models: 5)
-        let pioneers = ListUnitInstance(datasheetID: "hernkyn-pioneers", models: 3)
-        let yaegirs = ListUnitInstance(datasheetID: "hernkyn-yaegirs", models: 10)
-        let sagitaur = ListUnitInstance(datasheetID: "sagitaur", models: 1)
-        let steeljacks = ListUnitInstance(datasheetID: "ironkin-steeljacks-with-melee-weapons", models: 3)
+        let kahl = ListUnitInstance(datasheetID: "leagues-of-votann--kahl", models: 1)
+        let warriorsA = ListUnitInstance(datasheetID: "leagues-of-votann--hearthkyn-warriors", models: 10)
+        let warriorsB = ListUnitInstance(datasheetID: "leagues-of-votann--hearthkyn-warriors", models: 10)
+        let beserks = ListUnitInstance(datasheetID: "leagues-of-votann--cthonian-beserks", models: 5)
+        let pioneers = ListUnitInstance(datasheetID: "leagues-of-votann--hernkyn-pioneers", models: 3)
+        let yaegirs = ListUnitInstance(datasheetID: "leagues-of-votann--hernkyn-yaegirs", models: 10)
+        let sagitaur = ListUnitInstance(datasheetID: "leagues-of-votann--sagitaur", models: 1)
+        let steeljacks = ListUnitInstance(datasheetID: "leagues-of-votann--ironkin-steeljacks-with-melee-weapons", models: 3)
         // Points: 65+90+90+95+80+90+85+75 = 670 — under 1000, plenty of headroom.
         return ArmyListDocument(
             name: "Forge-tight 1k",
             catalogVersion: catalog.version,
             factionID: "leagues-of-votann",
             battleSizeID: "incursion",
-            detachmentIDs: ["brandfast-oathband"],
+            detachmentIDs: ["leagues-of-votann--brandfast-oathband"],
             units: [kahl, warriorsA, warriorsB, beserks, pioneers, yaegirs, sagitaur, steeljacks],
             warlordUnitID: kahl.id
         )

@@ -47,7 +47,7 @@ ios/
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
 | `device-agent` | Device Agent | On-device model drives an in-app browser; App Intents/Shortcuts; voice; requires Apple Intelligence |
-| `army-list` | Army List | Build/validate 11th Edition lists (Votann); on-device chat tools edit via the validator |
+| `army-list` | Army List | Build/validate 11th Edition lists (all MFM factions); on-device chat tools edit via the validator |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
@@ -114,10 +114,11 @@ through the system share sheet.
 
 ### Army List
 
-Build and validate Warhammer 40,000 **11th Edition** army lists. v1 ships a
-Leagues of Votann construction catalog (points, Detachment Points, unique tags,
-Leader join edges) bundled as JSON, a deterministic validator, SwiftUI
-authoring UI, and share/export as plain text or `.army.json`.
+Build and validate Warhammer 40,000 **11th Edition** army lists for every
+faction in the Munitorum Field Manual scrape (30 factions, faction-prefixed
+datasheet/detachment ids). The experiment bundles construction data (points,
+Detachment Points, unique tags, Leader join edges) as JSON, a deterministic
+validator, SwiftUI authoring UI, and share/export as plain text or `.army.json`.
 
 Refresh catalog data from BSData’s Munitorum Field Manual scrape:
 

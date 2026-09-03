@@ -23,26 +23,26 @@ final class ArmyListChatToolTests: XCTestCase {
             query: "hearthkyn",
             kind: "unit"
         )
-        XCTAssertTrue(result.contains("hearthkyn-warriors"))
+        XCTAssertTrue(result.contains("leagues-of-votann--hearthkyn-warriors"))
     }
 
     func testBuildLegalIncursionViaTools() {
         _ = ArmyListChatToolExecutor.setBattleSize(workspace: workspace, battleSizeID: "1000")
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,
-            detachmentIDsCSV: "brandfast-oathband"
+            detachmentIDsCSV: "leagues-of-votann--brandfast-oathband"
         )
         _ = ArmyListChatToolExecutor.clearUnits(workspace: workspace)
 
         let adds: [(String, Double)] = [
-            ("kahl", 1),
-            ("hearthkyn-warriors", 10),
-            ("hearthkyn-warriors", 10),
-            ("cthonian-beserks", 5),
-            ("hernkyn-pioneers", 3),
-            ("hernkyn-yaegirs", 10),
-            ("sagitaur", 1),
-            ("ironkin-steeljacks-with-melee-weapons", 3),
+            ("leagues-of-votann--kahl", 1),
+            ("leagues-of-votann--hearthkyn-warriors", 10),
+            ("leagues-of-votann--hearthkyn-warriors", 10),
+            ("leagues-of-votann--cthonian-beserks", 5),
+            ("leagues-of-votann--hernkyn-pioneers", 3),
+            ("leagues-of-votann--hernkyn-yaegirs", 10),
+            ("leagues-of-votann--sagitaur", 1),
+            ("leagues-of-votann--ironkin-steeljacks-with-melee-weapons", 3),
         ]
         for (id, models) in adds {
             let output = ArmyListChatToolExecutor.addUnit(
@@ -53,7 +53,7 @@ final class ArmyListChatToolTests: XCTestCase {
             XCTAssertFalse(output.contains("Unknown datasheet"), output)
         }
 
-        let kahl = try! XCTUnwrap(workspace.list.units.first { $0.datasheetID == "kahl" })
+        let kahl = try! XCTUnwrap(workspace.list.units.first { $0.datasheetID == "leagues-of-votann--kahl" })
         _ = ArmyListChatToolExecutor.setWarlord(
             workspace: workspace,
             unitID: kahl.id.uuidString
@@ -72,7 +72,7 @@ final class ArmyListChatToolTests: XCTestCase {
     func testIllegalDetachmentStillReported() {
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,
-            detachmentIDsCSV: "hearthband"
+            detachmentIDsCSV: "leagues-of-votann--hearthband"
         )
         let summary = ArmyListChatToolExecutor.getListSummary(workspace: workspace)
         XCTAssertTrue(summary.contains("ILLEGAL") || summary.contains("[ERROR]"))
@@ -82,20 +82,20 @@ final class ArmyListChatToolTests: XCTestCase {
     func testAttachAndEnhancementTools() {
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,
-            detachmentIDsCSV: "brandfast-oathband"
+            detachmentIDsCSV: "leagues-of-votann--brandfast-oathband"
         )
         _ = ArmyListChatToolExecutor.addUnit(
             workspace: workspace,
-            datasheetID: "hearthkyn-warriors",
+            datasheetID: "leagues-of-votann--hearthkyn-warriors",
             models: 10
         )
         _ = ArmyListChatToolExecutor.addUnit(
             workspace: workspace,
-            datasheetID: "kahl",
+            datasheetID: "leagues-of-votann--kahl",
             models: 1
         )
-        let warriors = try! XCTUnwrap(workspace.list.units.first { $0.datasheetID == "hearthkyn-warriors" })
-        let kahl = try! XCTUnwrap(workspace.list.units.first { $0.datasheetID == "kahl" })
+        let warriors = try! XCTUnwrap(workspace.list.units.first { $0.datasheetID == "leagues-of-votann--hearthkyn-warriors" })
+        let kahl = try! XCTUnwrap(workspace.list.units.first { $0.datasheetID == "leagues-of-votann--kahl" })
 
         let attach = ArmyListChatToolExecutor.attachCharacter(
             workspace: workspace,
@@ -107,10 +107,10 @@ final class ArmyListChatToolTests: XCTestCase {
         let enhancement = ArmyListChatToolExecutor.setEnhancement(
             workspace: workspace,
             unitID: kahl.id.uuidString,
-            enhancementID: "brandfast-oathband--precursive-judgement"
+            enhancementID: "leagues-of-votann--brandfast-oathband--precursive-judgement"
         )
         XCTAssertTrue(enhancement.contains("precursive-judgement") || enhancement.contains("Set enhancement"))
-        XCTAssertEqual(workspace.list.units.first { $0.id == kahl.id }?.enhancementIDs.first, "brandfast-oathband--precursive-judgement")
+        XCTAssertEqual(workspace.list.units.first { $0.id == kahl.id }?.enhancementIDs.first, "leagues-of-votann--brandfast-oathband--precursive-judgement")
     }
 
     func testRuntimeGateDoesNotCrash() {

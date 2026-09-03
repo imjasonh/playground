@@ -19,12 +19,15 @@ struct ArmyListChatView: View {
         _runtime = StateObject(wrappedValue: ArmyListChatRuntime(workspace: workspace))
     }
 
-    private let prompts: [(title: String, text: String)] = [
-        ("Build 1k", "Build a legal 1000 point Leagues of Votann list from scratch using Brandfast Oathband or a valid 2 DP combination. Name it when done."),
-        ("Weaknesses", "What matchups or unit types will give this list trouble? Opinion only — use getListSummary for the facts."),
-        ("Fix errors", "Read getListSummary and fix every validation ERROR with tools. Stop when Status is LEGAL or explain what you cannot fix."),
-        ("Theme", "Suggest a good army name and a paint color scheme for this list. If the user likes a name, call setListName."),
-    ]
+    private var prompts: [(title: String, text: String)] {
+        let faction = catalog.faction(id: list.factionID)?.name ?? "this faction"
+        return [
+            ("Build 1k", "Build a legal 1000 point \(faction) list from scratch using a valid Detachment Points combination for Incursion. Name it when done."),
+            ("Weaknesses", "What matchups or unit types will give this list trouble? Opinion only — use getListSummary for the facts."),
+            ("Fix errors", "Read getListSummary and fix every validation ERROR with tools. Stop when Status is LEGAL or explain what you cannot fix."),
+            ("Theme", "Suggest a good army name and a paint color scheme for this list. If the user likes a name, call setListName."),
+        ]
+    }
 
     var body: some View {
         VStack(spacing: 0) {

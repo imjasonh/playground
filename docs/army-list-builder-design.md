@@ -1,9 +1,9 @@
 # Design: Army List Builder (Warhammer 40,000, 11th Edition)
 
-> **Status: Phases 0–5 landed for Votann.** Playground experiment under
-> `ios/Sources/Experiments/ArmyList/`. Bundled catalog + validator + authoring UI
-> + export + on-device Foundation Models chat (tool calls re-validate). More
-> factions and richer wargear options are follow-ups.
+> **Status: Phases 0–5 landed; catalog covers all MFM factions.** Playground
+> experiment under `ios/Sources/Experiments/ArmyList/`. Bundled multi-faction
+> catalog + validator + authoring UI + export + on-device Foundation Models chat
+> (tool calls re-validate). Richer wargear options remain a follow-up.
 
 This document is the implementation plan for a Warhammer 40,000 army list
 builder experiment: build lists, validate them against 11th Edition army
@@ -19,7 +19,7 @@ Apple Intelligence on device.
 | Rules priority | **Authoring + validation first.** LLM features are blocked until the validator is trustworthy for the shipped catalog. |
 | Rules data source | **Bundled construction catalog** generated from [BSData `wh40k-11e-mfm`](https://github.com/BSData/wh40k-11e-mfm) (Munitorum Field Manual scrape) plus keywords/join edges from [BSData `wh40k-11e`](https://github.com/BSData/wh40k-11e). Refresh with `python3 ios/scripts/refresh-army-list-catalog.py`. Wahapedia is fine as a human reference; the machine source of truth is BSData/MFM. |
 | Edition | **11th Edition** army construction (Detachment Points, multi-detachment, Leader/Support at list build, enhancement/upgrade limits, Force Disposition). |
-| First catalog slice | **Leagues of Votann** only, Incursion (1000 pts) + Strike Force (2000 pts). Expand factions after the validator and UI are solid. |
+| Catalog coverage | **All Munitorum Field Manual factions** from BSData `wh40k-11e-mfm` (ids namespaced `{faction}--{slug}`). Incursion (1000 pts) + Strike Force (2000 pts). |
 | LLM | Apple **Foundation Models** (same weak-link pattern as Device Agent / Ride Monitor). Tools edit the list; the validator accepts or rejects every change. |
 | Export | Versioned JSON (canonical) + plain-text roster + `ShareLink` / share sheet. |
 
