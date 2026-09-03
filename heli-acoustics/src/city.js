@@ -64,24 +64,28 @@ export function buildingFaces(buildings = BUILDINGS) {
 export const FLIGHT_MODES = Object.freeze(['orbit', 'traverse']);
 
 const TRAVERSE_CRUISE = 22; // m/s
-const TRAVERSE_HEIGHT = 95;
 const TRAVERSE_PAUSE = 4; // seconds between legs
 
 function traverseLegs(bounds) {
-  const pad = 40;
+  const pad = 60;
   const xL = bounds.x0 - pad;
   const xR = bounds.x1 + pad;
   const zS = bounds.z0 - pad;
   const zN = bounds.z1 + pad;
-  const y = TRAVERSE_HEIGHT;
-  // Alternate E–W and W–E on different latitudes, then N–S / S–N.
+  // Clear the skyline so legs can cut any angle over the district without
+  // tunneling through building meshes. Mid-facade orbit mode stays lower.
+  const y = bounds.yMax + 25;
+  const y2 = bounds.yMax + 45;
   return [
-    { from: [xL, y, -90], to: [xR, y, -90] },
-    { from: [xR, y, 90], to: [xL, y, 90] },
-    { from: [xL, y, 240], to: [xR, y, 240] },
-    { from: [0, y, zS], to: [0, y, zN] },
-    { from: [90, y, zN], to: [90, y, zS] },
-    { from: [-90, y, zS], to: [-90, y, zN] },
+    // West → east, then pause and reverse on a parallel lane further north.
+    { from: [xL, y, -120], to: [xR, y, -40] },
+    { from: [xR, y, 80], to: [xL, y, 140] },
+    // Diagonal SW → NE, then back on a different diagonal.
+    { from: [xL, y2, zS], to: [xR, y2, zN] },
+    { from: [xR, y, zN], to: [xL, y, zS] },
+    // South → north strip, then north → south offset east.
+    { from: [-100, y2, zS], to: [40, y2, zN] },
+    { from: [120, y, zN], to: [-40, y, zS] },
   ];
 }
 
@@ -143,11 +147,12 @@ function traverseSample(t) {
   return { position: (last.at || last.leg.to).slice(), velocity: [0, 0, 0] };
 }
 
-export function helicopterPath(t, { mode = 'orbit', radius = 110, height = 95, period = 28, center = [0, 0, 40] } = {}) {
+export function helicopterPath(t, { mode = 'orbit', radius = 140, height = 88, period = 28, center = [0, 0, 40] } = {}) {
   if (mode === 'traverse') return traverseSample(t).position;
   const a = (t / period) * Math.PI * 2;
+  // Keep |x| inside the avenue (±30) so the orbit never tunnels a block.
   return [
-    center[0] + radius * 0.55 * Math.sin(a),
+    center[0] + 18 * Math.sin(a),
     height + 14 * Math.sin(a * 2),
     center[2] + radius * Math.cos(a),
   ];
@@ -157,11 +162,11 @@ export function helicopterPath(t, { mode = 'orbit', radius = 110, height = 95, p
 export function helicopterVelocity(t, opts = {}) {
   const mode = opts.mode || 'orbit';
   if (mode === 'traverse') return traverseSample(t).velocity;
-  const { radius = 110, period = 28 } = opts;
+  const { radius = 140, period = 28 } = opts;
   const a = (t / period) * Math.PI * 2;
   const w = (Math.PI * 2) / period;
   return [
-    radius * 0.55 * Math.cos(a) * w,
+    18 * Math.cos(a) * w,
     14 * Math.cos(a * 2) * 2 * w,
     -radius * Math.sin(a) * w,
   ];
