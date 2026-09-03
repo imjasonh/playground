@@ -1,7 +1,7 @@
 import Foundation
 
 /// Builds ~50 army lists for stress coverage. Legality is decided only by
-/// `ArmyListValidator` — this harness never reimplements construction rules.
+/// `ArmyListValidator`. This harness never reimplements construction rules.
 enum ArmyListStressHarness {
     struct BuiltList: Equatable {
         var name: String
@@ -23,7 +23,7 @@ enum ArmyListStressHarness {
         var name: String
     }
 
-    /// Deterministic LCG so fixture contents are stable across regenerations.
+    /// Deterministic LCG so fixture contents (including UUIDs) stay stable.
     struct SeededRNG {
         private var state: UInt64
 
@@ -35,6 +35,19 @@ enum ArmyListStressHarness {
         mutating func next() -> UInt64 {
             state = state &* 6364136223846793005 &+ 1
             return state
+        }
+
+        mutating func nextUUID() -> UUID {
+            var bytes: uuid_t = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            withUnsafeMutableBytes(of: &bytes) { raw in
+                for i in 0..<16 {
+                    raw[i] = UInt8(next() & 0xff)
+                }
+                // RFC 4122 version 4 / variant 1 bits.
+                raw[6] = (raw[6] & 0x0f) | 0x40
+                raw[8] = (raw[8] & 0x3f) | 0x80
+            }
+            return UUID(uuid: bytes)
         }
 
         mutating func shuffle<T>(_ items: inout [T]) {
@@ -196,12 +209,14 @@ enum ArmyListStressHarness {
         let factionDets = catalog.detachments.filter { $0.factionID == faction.id }
 
         let fixedDate = Date(timeIntervalSince1970: 1_767_225_600) // 2026-01-01Z
+        var rng = SeededRNG(seed: seed)
 
         if factionDets.isEmpty {
             return BuiltList(
                 name: "\(faction.name) \(battle.name) (no detachments)",
                 list: ArmyListDocument(
-                    name: "\(faction.name) — no detachments",
+                    id: rng.nextUUID(),
+                    name: "\(faction.name) (no detachments)",
                     catalogVersion: catalog.version,
                     factionID: faction.id,
                     battleSizeID: battleSizeID,
@@ -222,7 +237,8 @@ enum ArmyListStressHarness {
             return BuiltList(
                 name: "\(faction.name) \(battle.name) (no characters)",
                 list: ArmyListDocument(
-                    name: "\(faction.name) — no characters",
+                    id: rng.nextUUID(),
+                    name: "\(faction.name) (no characters)",
                     catalogVersion: catalog.version,
                     factionID: faction.id,
                     battleSizeID: battleSizeID,
@@ -242,7 +258,11 @@ enum ArmyListStressHarness {
         let limit = battle.pointsLimit
         let target = Int(Double(limit) * targetFill)
 
-        var warlord = ListUnitInstance(datasheetID: warlordSheet.id, models: warlordSheet.minModels)
+        var warlord = ListUnitInstance(
+            id: rng.nextUUID(),
+            datasheetID: warlordSheet.id,
+            models: warlordSheet.minModels
+        )
         let wCost = warlordSheet.points(models: warlord.models, copyIndex: 1) ?? 0
         units.append(warlord)
         copies[warlordSheet.id, default: 0] += 1
@@ -295,7 +315,6 @@ enum ArmyListStressHarness {
                 < ($1.points(models: $1.minModels, copyIndex: 1) ?? 9999)
         }
         var pool = battleline + fillers
-        var rng = SeededRNG(seed: seed)
         rng.shuffle(&pool)
 
         var bodyForAttach: ListUnitInstance?
@@ -307,7 +326,7 @@ enum ArmyListStressHarness {
             }
             for models in modelOpts {
                 guard let cost = canAdd(sheet: sheet, models: models) else { continue }
-                let unit = ListUnitInstance(datasheetID: sheet.id, models: models)
+                let unit = ListUnitInstance(id: rng.nextUUID(), datasheetID: sheet.id, models: models)
                 units.append(unit)
                 copies[sheet.id, default: 0] += 1
                 points += cost
@@ -331,7 +350,11 @@ enum ArmyListStressHarness {
                 for targetID in warlordSheet.leaderTo {
                     guard let sheet = factionSheets.first(where: { $0.id == targetID }) else { continue }
                     guard let cost = canAdd(sheet: sheet, models: sheet.minModels) else { continue }
-                    let bodyUnit = ListUnitInstance(datasheetID: sheet.id, models: sheet.minModels)
+                    let bodyUnit = ListUnitInstance(
+                        id: rng.nextUUID(),
+                        datasheetID: sheet.id,
+                        models: sheet.minModels
+                    )
                     units.append(bodyUnit)
                     copies[sheet.id, default: 0] += 1
                     points += cost
@@ -351,13 +374,16 @@ enum ArmyListStressHarness {
         for sheet in cheap {
             if points >= target { break }
             guard let cost = canAdd(sheet: sheet, models: sheet.minModels) else { continue }
-            units.append(ListUnitInstance(datasheetID: sheet.id, models: sheet.minModels))
+            units.append(
+                ListUnitInstance(id: rng.nextUUID(), datasheetID: sheet.id, models: sheet.minModels)
+            )
             copies[sheet.id, default: 0] += 1
             points += cost
         }
 
-        // Recompute points for the name via the validator so the label matches Swift.
+        // Name points from the validator so the label matches Swift totals.
         var list = ArmyListDocument(
+            id: rng.nextUUID(),
             name: "\(faction.name) \(battle.name)",
             catalogVersion: catalog.version,
             factionID: faction.id,
@@ -394,10 +420,12 @@ enum ArmyListStressHarness {
             return []
         }
 
-        let w = ListUnitInstance(datasheetID: warriors.id, models: 10)
+        var rng = SeededRNG(seed: 10_000)
+        let w = ListUnitInstance(id: rng.nextUUID(), datasheetID: warriors.id, models: 10)
         let warlordNotCharacter = BuiltList(
             name: "illegal warlord not character",
             list: ArmyListDocument(
+                id: rng.nextUUID(),
                 name: "Illegal warlord",
                 catalogVersion: catalog.version,
                 factionID: "leagues-of-votann",
@@ -412,11 +440,12 @@ enum ArmyListStressHarness {
             notes: "warlord.notCharacter"
         )
 
-        let k = ListUnitInstance(datasheetID: kahl.id, models: 1)
-        let w2 = ListUnitInstance(datasheetID: warriors.id, models: 10)
+        let k = ListUnitInstance(id: rng.nextUUID(), datasheetID: kahl.id, models: 1)
+        let w2 = ListUnitInstance(id: rng.nextUUID(), datasheetID: warriors.id, models: 10)
         let dpOver = BuiltList(
             name: "illegal DP over budget",
             list: ArmyListDocument(
+                id: rng.nextUUID(),
                 name: "Illegal DP",
                 catalogVersion: catalog.version,
                 factionID: "leagues-of-votann",
@@ -431,8 +460,9 @@ enum ArmyListStressHarness {
             notes: "dp.overBudget"
         )
 
-        let body = ListUnitInstance(datasheetID: legionaries.id, models: 10)
+        let body = ListUnitInstance(id: rng.nextUUID(), datasheetID: legionaries.id, models: 10)
         let character = ListUnitInstance(
+            id: rng.nextUUID(),
             datasheetID: moe.id,
             models: 1,
             attachedToUnitID: body.id
@@ -440,6 +470,7 @@ enum ArmyListStressHarness {
         let emptyLeaderTo = BuiltList(
             name: "illegal attach with empty leaderTo",
             list: ArmyListDocument(
+                id: rng.nextUUID(),
                 name: "Illegal empty leaderTo attach",
                 catalogVersion: catalog.version,
                 factionID: "chaos-space-marines",

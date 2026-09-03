@@ -114,7 +114,7 @@ enum ArmyListTextExporter {
         let dpBudget = battle?.detachmentPointsBudget ?? 0
 
         var lines: [String] = []
-        lines.append("\(list.name) — \(faction) — \(battleName)")
+        lines.append("\(list.name) / \(faction) / \(battleName)")
         let detachmentNames = list.detachmentIDs.compactMap { catalog.detachment(id: $0)?.name }
         lines.append(
             "Detachments: \(detachmentNames.joined(separator: ", ")) (DP \(validation.detachmentPointsSpent)/\(dpBudget))"

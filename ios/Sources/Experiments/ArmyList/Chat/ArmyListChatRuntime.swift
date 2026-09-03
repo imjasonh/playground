@@ -164,13 +164,13 @@ final class ArmyListChatRuntime: ObservableObject {
     private var sessionInstructions: String {
         """
         You help the user build and discuss a Warhammer 40,000 11th Edition army list inside the Playground app.
-        Faction for this list is fixed to whatever getListSummary reports — do not switch factions.
+        Faction for this list is fixed to whatever getListSummary reports. Do not switch factions.
         Construction facts (points, Detachment Points, join edges, legality) come ONLY from tools. Never invent datasheet ids or points.
         After mutating tools, read the returned Status line. If ILLEGAL, keep fixing with tools or explain what is still wrong.
         For thematic questions (army name, color scheme, lore vibe, matchup opinions), answer helpfully and label opinions as opinions.
         Prefer short replies. When building from scratch: setBattleSize, setDetachments, clearUnits if needed, addUnit repeatedly, setWarlord, setListName.
         Use searchCatalog before addUnit when unsure of an id.
-        Unit ids in tool results are UUIDs — pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
+        Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
         """
     }
 

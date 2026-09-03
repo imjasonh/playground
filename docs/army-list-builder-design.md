@@ -1,10 +1,10 @@
 # Design: Army List Builder (Warhammer 40,000, 11th Edition)
 
-> **Status: Phases 0–5 landed; catalog covers all factions; weekly bundled
-> refresh + id migration.** Playground experiment under
-> `ios/Sources/Experiments/ArmyList/`. Bundled multi-faction catalog +
-> validator + authoring UI + export + on-device Foundation Models chat (tool
-> calls re-validate). Richer wargear options remain a follow-up.
+> **Status.** Phases 0–5 are in. The catalog covers every faction in the
+> bundled points scrape, with weekly refresh + id migration. Code lives under
+> `ios/Sources/Experiments/ArmyList/`: catalog, validator, authoring UI, export,
+> and on-device Foundation Models chat (tools re-validate). Richer wargear is
+> still a follow-up.
 
 This document is the implementation plan for a Warhammer 40,000 army list
 builder experiment: build lists, validate them against 11th Edition army

@@ -145,7 +145,7 @@ struct ArmyListHomeView: View {
     @ViewBuilder
     private var catalogFooter: some View {
         if let catalog {
-            Text("Catalog \(catalog.version). Unofficial fan experiment — confirm points with Games Workshop for events.")
+            Text("Catalog \(catalog.version). Unofficial fan experiment. Confirm points with Games Workshop for events.")
                 .font(.footnote)
         }
     }

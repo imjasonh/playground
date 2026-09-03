@@ -8,6 +8,7 @@ cd "$ROOT"
 
 RESULT=success
 HAS_CHANGES=false
+CATALOG="ios/Sources/Experiments/ArmyList/Catalog/Resources/catalog.json"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "::error::Army list catalog update must run on macOS so stress fixtures use the Swift validator"
@@ -23,27 +24,34 @@ if [[ "$RESULT" == "success" ]]; then
   fi
 fi
 
+CATALOG_CHANGED=false
 if [[ "$RESULT" == "success" ]]; then
-  if ! bash ios/scripts/stress-army-lists.sh --write-fixtures; then
-    RESULT=failure
+  if ! git diff --quiet -- "$CATALOG"; then
+    CATALOG_CHANGED=true
+  fi
+  # Always run the Swift harness so builder/validator stay in lockstep.
+  # Only rewrite fixtures when the catalog itself changed; otherwise random
+  # churn (or even deterministic rewrites of unchanged lists) opens empty PRs.
+  if [[ "$CATALOG_CHANGED" == true ]]; then
+    if ! bash ios/scripts/stress-army-lists.sh --write-fixtures; then
+      RESULT=failure
+    fi
+  else
+    if ! bash ios/scripts/stress-army-lists.sh; then
+      RESULT=failure
+    fi
   fi
 fi
 
 if [[ "$RESULT" == "success" ]]; then
   if ! git diff --quiet -- \
-      ios/Sources/Experiments/ArmyList/Catalog/Resources/catalog.json \
-      ios/Tests/PlaygroundTests/Fixtures/ArmyLists \
-      ios/scripts/refresh-army-list-catalog.py \
-      ios/scripts/stress-army-lists.sh \
-      ios/Sources/Experiments/ArmyList/Stress \
-      ios/Tools/ArmyListStress; then
+      "$CATALOG" \
+      ios/Tests/PlaygroundTests/Fixtures/ArmyLists; then
     HAS_CHANGES=true
   fi
   if git ls-files --others --exclude-standard -- \
-      ios/Sources/Experiments/ArmyList/Catalog/Resources/catalog.json \
-      ios/Tests/PlaygroundTests/Fixtures/ArmyLists \
-      ios/Sources/Experiments/ArmyList/Stress \
-      ios/Tools/ArmyListStress | grep -q .; then
+      "$CATALOG" \
+      ios/Tests/PlaygroundTests/Fixtures/ArmyLists | grep -q .; then
     HAS_CHANGES=true
   fi
 fi
@@ -59,7 +67,7 @@ fi
   fi
 }
 
-echo "Army list catalog update result=${RESULT} has_changes=${HAS_CHANGES}"
+echo "Army list catalog update result=${RESULT} has_changes=${HAS_CHANGES} catalog_changed=${CATALOG_CHANGED:-false}"
 if [[ "$RESULT" != "success" ]]; then
   exit 1
 fi

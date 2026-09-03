@@ -257,7 +257,7 @@ enum ArmyListValidator {
                     ))
                 }
                 // Empty leaderTo means this datasheet has no legal bodyguards in the
-                // catalog — do not treat that as "joins anything".
+                // catalog. Do not treat that as "joins anything".
                 if sheet.leaderTo.isEmpty {
                     issues.append(.init(
                         code: "unit.attachNoTargets",

@@ -141,9 +141,9 @@ bash ios/scripts/stress-army-lists.sh --write-fixtures
 **List chat** (toolbar bubble on a list) uses on-device Foundation Models when
 Apple Intelligence is available (iOS 26+). Tools mutate the same document the
 editor shows; every tool result re-runs the validator. Without the model, chat
-shows an unavailable pane — authoring and validation still work.
+shows an unavailable pane. Authoring and validation still work.
 
-Unofficial fan experiment — confirm points with Games Workshop for events.
+Unofficial fan experiment. Confirm points with Games Workshop for events.
 
 ### Device Agent
 
