@@ -3,9 +3,7 @@
 // WebGPU is required for the live app; there is no CPU runtime fallback.
 
 import { BUILDINGS, SPEED_OF_SOUND, buildingFaces } from './city.js';
-import { occlusionAmount } from './occlusion.js';
 import {
-  computeReflections,
   groundFace,
   order2PairList,
   order3TripleList,
@@ -376,29 +374,6 @@ function buildJobs(faceTable, order2Limit = 80) {
   return { jobs, packed };
 }
 
-/** Pure-JS reference path for Node unit tests only — not used by the live app. */
-function computeAcousticsReference(listener, source, buildings, limit, { irBins = null } = {}) {
-  const occlusion = occlusionAmount(listener, source, buildings);
-  const specular = computeReflections(listener, source, buildings, {
-    limit: Math.max(limit * 2, 24),
-    maxOrder: 3,
-  });
-  const early = finalizeEarly(listener, source, buildings, specular, limit);
-  const enclosure = enclosureAt(listener, buildings);
-  const bins =
-    irBins ||
-    traceEnergyBins(listener, source, buildings, { rays: 128, bounces: 5, seed: 3 });
-  return {
-    occlusion,
-    reflections: early.reflections,
-    enclosure,
-    irBins: bins,
-    diffractionCount: early.diffractionCount,
-    order3Count: early.order3Count,
-    backend: 'reference',
-  };
-}
-
 /**
  * WebGPU acoustics engine. Call `init()` once, then `compute()` each frame.
  * Specular order-1/2 run on GPU; order-3, diffraction, and stochastic IR bins
@@ -614,9 +589,4 @@ export class GpuAcoustics {
       backend: 'webgpu',
     };
   }
-}
-
-/** Pure-JS reference for Node tests (not a live-app fallback). */
-export function computeAcousticsCpu(listener, source, buildings = BUILDINGS, limit = 16) {
-  return computeAcousticsReference(listener, source, buildings, limit);
 }
