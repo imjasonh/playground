@@ -52,10 +52,11 @@ npm run test:audio
 | Drag | Look |
 | WASD | Move |
 | O / R / V / G | Occlusion / reflections / reverb / rays |
-| F / Flight menu | Toggle orbit vs traverse lanes |
+| F / Flight menu | Cycle traverse / orbit / follow |
 
-**Traverse** (default) flies straight across the city, pauses a few seconds, then
-returns on another lane. **Orbit** is the older elliptical lap.
+**Traverse** (default): straight overflights, pause, another line. **Orbit**:
+ellipse above the rooftops. **Follow**: crawls until it has line of sight, then
+tracks you as you move.
 
 ## Coordinate frame
 

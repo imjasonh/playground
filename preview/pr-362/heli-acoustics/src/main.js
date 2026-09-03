@@ -3,6 +3,7 @@ import { FpsControls, coarsePointer } from './controls.js';
 import { createCityScene, createRenderer, createCamera } from './scene3d.js';
 import { DebugRays } from './debugRays.js';
 import { BUILDINGS, helicopterPath, helicopterVelocity, FLIGHT_MODES } from './city.js';
+import { FollowFlight } from './follow.js';
 import { GpuAcoustics } from './acousticsGpu.js';
 import { proveHrtfBinaural } from './hrtfProof.js';
 import { relativeAzimuthDeg, distance } from './geometry.js';
@@ -34,6 +35,7 @@ const camera = createCamera(canvas.clientWidth / Math.max(1, canvas.clientHeight
 const controls = new FpsControls(canvas);
 const debugRays = new DebugRays(scene, { maxTaps: 16 });
 const gpuAcoustics = new GpuAcoustics({ buildings: BUILDINGS, limit: 16 });
+const followFlight = new FollowFlight(BUILDINGS);
 
 let audio = null;
 let running = false;
@@ -44,6 +46,7 @@ let reflectionsOn = true;
 let reverbOn = true;
 let raysOn = true;
 let flightMode = 'traverse';
+let followPhase = 'search';
 let acousticsBusy = false;
 let latestAcoustics = {
   occlusion: 0,
@@ -97,8 +100,13 @@ function setFlightMode(mode) {
   if (!FLIGHT_MODES.includes(mode)) return;
   flightMode = mode;
   if (flightModeEl) flightModeEl.value = mode;
-  // Restart the schedule so the new mode begins cleanly.
-  if (running) startTime = performance.now();
+  if (mode === 'follow') {
+    followFlight.reset(controls.position);
+    followPhase = 'search';
+  } else if (running) {
+    // Restart time-based schedules cleanly.
+    startTime = performance.now();
+  }
 }
 
 togOcclusion.addEventListener('change', () => setOcclusion(togOcclusion.checked));
@@ -175,8 +183,17 @@ function frame(now) {
   );
 
   const flightOpts = { mode: flightMode };
-  const sourcePos = helicopterPath(t, flightOpts);
-  const sourceVelocity = helicopterVelocity(t, flightOpts);
+  let sourcePos;
+  let sourceVelocity;
+  if (flightMode === 'follow') {
+    const sample = followFlight.update(dt, listenerPos);
+    sourcePos = sample.position;
+    sourceVelocity = sample.velocity;
+    followPhase = sample.phase;
+  } else {
+    sourcePos = helicopterPath(t, flightOpts);
+    sourceVelocity = helicopterVelocity(t, flightOpts);
+  }
   heli.position.set(sourcePos[0], sourcePos[1], sourcePos[2]);
   // Point the fuselage along travel direction (boom trails behind).
   const speed = Math.hypot(sourceVelocity[0], sourceVelocity[1], sourceVelocity[2]);
@@ -210,7 +227,9 @@ function frame(now) {
 
   const az = relativeAzimuthDeg(sourcePos, listenerPos, controls.yaw);
   azEl.textContent = `${az >= 0 ? '+' : ''}${az.toFixed(0)}\u00b0`;
-  distEl.textContent = `${distance(sourcePos, listenerPos).toFixed(0)} m`;
+  const distLabel = `${distance(sourcePos, listenerPos).toFixed(0)} m`;
+  distEl.textContent =
+    flightMode === 'follow' ? `${distLabel} · ${followPhase}` : distLabel;
   occEl.textContent = `${occlusionOn ? (occ > 0.15 ? `shadow ${(occ * 100).toFixed(0)}%` : 'clear') : 'off'}`;
   const o1 = reflections.filter((r) => r.order === 1).length;
   const o2 = reflections.filter((r) => r.order === 2).length;
