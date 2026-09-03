@@ -7,62 +7,48 @@ struct ArmyListHomeView: View {
     @State private var catalog: ArmyCatalog?
     @State private var loadError: String?
     @State private var showNewList = false
+    /// `nil` means every faction.
+    @State private var factionFilter: String?
+    /// `nil` means every battle size / points level.
+    @State private var battleSizeFilter: String?
+
+    private var filteredLists: [ArmyListDocument] {
+        // `loadAll` already sorts by most recently updated.
+        lists.filter { list in
+            if let factionFilter, list.factionID != factionFilter {
+                return false
+            }
+            if let battleSizeFilter, list.battleSizeID != battleSizeFilter {
+                return false
+            }
+            return true
+        }
+    }
+
+    private var filtersActive: Bool {
+        factionFilter != nil || battleSizeFilter != nil
+    }
 
     var body: some View {
         Group {
             if let loadError {
-                VStack(spacing: 12) {
-                    Image(systemName: "exclamationmark.triangle")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text("Catalog unavailable")
-                        .font(.headline)
-                    Text(loadError)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                unavailablePane(
+                    systemImage: "exclamationmark.triangle",
+                    title: "Catalog unavailable",
+                    message: loadError
+                )
             } else if lists.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "shield.lefthalf.filled")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text("No army lists")
-                        .font(.headline)
-                    Text("Build an 11th Edition list for any faction and validate it against the construction rules bundled with this build.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
+                unavailablePane(
+                    systemImage: "shield.lefthalf.filled",
+                    title: "No army lists",
+                    message: "Build an 11th Edition list for any faction and validate it against the construction rules bundled with this build."
+                ) {
                     Button("New list") { showNewList = true }
                         .buttonStyle(.borderedProminent)
                         .accessibilityIdentifier("armyListNewButton")
                 }
-                .padding()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
-                    Section {
-                        ForEach(lists) { list in
-                            NavigationLink {
-                                if let catalog {
-                                    ArmyListEditorView(list: list, catalog: catalog, store: store) {
-                                        reload()
-                                    }
-                                }
-                            } label: {
-                                ArmyListRowView(list: list, catalog: catalog)
-                            }
-                            .accessibilityIdentifier("armyListRow-\(list.id.uuidString)")
-                        }
-                        .onDelete(perform: delete)
-                    } footer: {
-                        catalogFooter
-                    }
-                }
+                listContent
             }
         }
         .navigationTitle("Army List")
@@ -92,11 +78,99 @@ struct ArmyListHomeView: View {
     }
 
     @ViewBuilder
+    private var listContent: some View {
+        List {
+            if let catalog {
+                Section {
+                    Picker("Faction", selection: $factionFilter) {
+                        Text("All factions").tag(String?.none)
+                        ForEach(catalog.factions) { faction in
+                            Text(faction.name).tag(Optional(faction.id))
+                        }
+                    }
+                    .accessibilityIdentifier("armyListFactionFilter")
+
+                    Picker("Points", selection: $battleSizeFilter) {
+                        Text("All points levels").tag(String?.none)
+                        ForEach(catalog.battleSizes) { size in
+                            Text("\(size.name) (\(size.pointsLimit) pts)").tag(Optional(size.id))
+                        }
+                    }
+                    .accessibilityIdentifier("armyListBattleSizeFilter")
+                } header: {
+                    Text("Filter")
+                }
+            }
+
+            if filteredLists.isEmpty {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("No lists match these filters")
+                            .font(.headline)
+                        Text("Clear a filter or create a new list for this faction and points level.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        if filtersActive {
+                            Button("Clear filters") {
+                                factionFilter = nil
+                                battleSizeFilter = nil
+                            }
+                            .accessibilityIdentifier("armyListClearFiltersButton")
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+            } else {
+                Section {
+                    ForEach(filteredLists) { list in
+                        NavigationLink {
+                            if let catalog {
+                                ArmyListEditorView(list: list, catalog: catalog, store: store) {
+                                    reload()
+                                }
+                            }
+                        } label: {
+                            ArmyListRowView(list: list, catalog: catalog)
+                        }
+                        .accessibilityIdentifier("armyListRow-\(list.id.uuidString)")
+                    }
+                    .onDelete(perform: deleteFiltered)
+                } footer: {
+                    catalogFooter
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
     private var catalogFooter: some View {
         if let catalog {
             Text("Catalog \(catalog.version). Unofficial fan experiment — confirm points with Games Workshop for events.")
                 .font(.footnote)
         }
+    }
+
+    private func unavailablePane(
+        systemImage: String,
+        title: String,
+        message: String,
+        @ViewBuilder actions: () -> some View = { EmptyView() }
+    ) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.largeTitle)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.headline)
+            Text(message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            actions()
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func bootstrap() {
@@ -123,9 +197,10 @@ struct ArmyListHomeView: View {
         }
     }
 
-    private func delete(at offsets: IndexSet) {
+    private func deleteFiltered(at offsets: IndexSet) {
+        let snapshot = filteredLists
         for index in offsets {
-            try? store.delete(lists[index])
+            try? store.delete(snapshot[index])
         }
         reload()
     }
@@ -136,19 +211,28 @@ private struct ArmyListRowView: View {
     let catalog: ArmyCatalog?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(list.name)
-                .font(.headline)
+        let validation = catalog.map { ArmyListValidator.validate(list: list, catalog: $0) }
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(list.name)
+                    .font(.headline)
+                Spacer(minLength: 8)
+                if let validation {
+                    Text(validation.isLegal ? "Legal" : "Illegal")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(validation.isLegal ? Color.green : Color.red)
+                        .accessibilityLabel(validation.isLegal ? "Legal list" : "Illegal list")
+                }
+            }
             HStack(spacing: 8) {
                 Text(factionName)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                if let catalog {
-                    let result = ArmyListValidator.validate(list: list, catalog: catalog)
-                    Text(result.isLegal ? "Legal" : "Illegal")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(result.isLegal ? Color.green : Color.red)
-                    Text("\(result.totalPoints) pts")
+                Text(battleSizeLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let validation {
+                    Text("\(validation.totalPoints) pts")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -159,6 +243,13 @@ private struct ArmyListRowView: View {
 
     private var factionName: String {
         catalog?.faction(id: list.factionID)?.name ?? list.factionID
+    }
+
+    private var battleSizeLabel: String {
+        guard let size = catalog?.battleSize(id: list.battleSizeID) else {
+            return list.battleSizeID
+        }
+        return "\(size.name) · \(size.pointsLimit)"
     }
 }
 
