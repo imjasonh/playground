@@ -3,11 +3,6 @@
 # Optionally rewrite XCTest fixtures. Requires macOS + Xcode + XcodeGen.
 set -euo pipefail
 
-if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "army-list-stress requires macOS + Xcode (Swift ArmyListValidator is canonical)." >&2
-  exit 1
-fi
-
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 IOS_ROOT="$ROOT/ios"
 DERIVED="${ARMY_LIST_STRESS_DERIVED:-/tmp/army-list-stress-derived}"
@@ -18,6 +13,7 @@ for arg in "$@"; do
     --write-fixtures) WRITE_FIXTURES=true ;;
     --help|-h)
       echo "Usage: $0 [--write-fixtures]"
+      echo "Requires macOS + Xcode. Validates with the Swift ArmyListValidator only."
       exit 0
       ;;
     *)
@@ -26,6 +22,11 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+  echo "army-list-stress requires macOS + Xcode (Swift ArmyListValidator is canonical)." >&2
+  exit 1
+fi
 
 cd "$IOS_ROOT"
 if ! command -v xcodegen >/dev/null 2>&1; then
