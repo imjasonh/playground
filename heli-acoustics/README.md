@@ -4,10 +4,11 @@ A browser experiment in convincing 3D audio: a helicopter flies over a city and
 you hear it reflect off the buildings. Built in milestones so each step is
 judgeable from a live preview.
 
-## Current milestone: M3–M4 late reverb + order-2
+## Current milestone: M3–M4 late reverb + order-2 on WebGPU
 
-Five city blocks around a north-south avenue. First-person WASD + mouse or
-touch drag. A helicopter loops overhead. Audio:
+Five tall city blocks around a north-south avenue. First-person WASD + mouse or
+touch drag. A helicopter loops mid-canyon so facades usually block or bounce
+the sound. Audio:
 
 - **Direct path:** Web Audio HRTF `PannerNode`, distance falloff, and a low-pass
   + gain duck when a building blocks line of sight (toggle with **O**).
@@ -19,8 +20,10 @@ touch drag. A helicopter loops overhead. Audio:
   track how enclosed the listener is (street canyon vs open plaza). Toggle with
   **V**.
 
-Order-2 runs on the CPU with a capped pair budget. WebGPU is not used; the
-solver stays under a millisecond on this five-block scene.
+Occlusion and image-source candidates are solved with a **WebGPU compute
+shader** (`src/acousticsGpu.js`) when the browser exposes `navigator.gpu`. The
+HUD **solver** row shows `webgpu` or `cpu`. Node tests and headless VMs without
+a GPU use the CPU fallback, which implements the same math.
 
 ## Run locally
 
@@ -35,7 +38,7 @@ headphones, click to start.
 
 ```bash
 npm test           # node --test: geometry, occlusion, reflections, enclosure, IR, meters, vendor
-npm run test:audio # Chromium: HRTF + live L/R + reflections A/B + reverb A/B
+npm run test:audio # Chromium: HRTF + live L/R + reflections A/B + reverb A/B + WebGPU probe
 ```
 
 `test:audio` (also `test:e2e` for CI) launches Playwright Chromium and checks:
@@ -46,6 +49,8 @@ npm run test:audio # Chromium: HRTF + live L/R + reflections A/B + reverb A/B
    finds order-1 and order-2 taps.
 4. Reverb-on vs reverb-off in the canyon: average ear energy rises with the
    enclosure-driven Convolver send.
+5. WebGPU acoustics probe: solver init; occlusion matches CPU when WebGPU runs
+   (CPU fallback still passes in GPU-less VMs).
 
 ## Milestone history
 
@@ -53,7 +58,7 @@ npm run test:audio # Chromium: HRTF + live L/R + reflections A/B + reverb A/B
 - **M1:** three.js city, FPS controls, distance falloff, line-of-sight occlusion.
 - **M2:** order-1 image-source early reflections + debug rays.
 - **M3:** late reverb driven by enclosure (`ConvolverNode`).
-- **M4:** order-2 image-source + CPU performance caps (no WebGPU).
+- **M4:** order-2 image-source + WebGPU compute solver (CPU fallback).
 
 ## Spike: off-the-shelf library versus raw Web Audio
 

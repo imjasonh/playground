@@ -4,12 +4,12 @@ import { BUILDINGS } from './city.js';
 export function createCityScene() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x87a0b8);
-  scene.fog = new THREE.Fog(0x87a0b8, 80, 280);
+  scene.fog = new THREE.Fog(0x87a0b8, 100, 420);
 
   const hemi = new THREE.HemisphereLight(0xddeeff, 0x445566, 0.85);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff2dd, 0.9);
-  sun.position.set(40, 80, 20);
+  sun.position.set(60, 180, 40);
   scene.add(sun);
 
   // Ground / street.
@@ -84,7 +84,7 @@ export function createRenderer(canvas) {
 }
 
 export function createCamera(aspect) {
-  const camera = new THREE.PerspectiveCamera(70, aspect, 0.1, 500);
+  const camera = new THREE.PerspectiveCamera(70, aspect, 0.1, 800);
   camera.position.set(0, 1.7, 0);
   return camera;
 }
