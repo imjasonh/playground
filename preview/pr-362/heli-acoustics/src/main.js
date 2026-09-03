@@ -1,78 +1,75 @@
 import { HeliAudio } from './audio.js';
-import { drawScene } from './scene2d.js';
+import { FpsControls } from './controls.js';
+import { createCityScene, createRenderer, createCamera } from './scene3d.js';
+import { DebugRays } from './debugRays.js';
+import { BUILDINGS, helicopterPath } from './city.js';
+import { occlusionAmount } from './occlusion.js';
+import { computeReflections } from './reflections.js';
 import { proveHrtfBinaural } from './hrtfProof.js';
-import {
-  orbitPosition,
-  forwardVector,
-  upVector,
-  relativeAzimuthDeg,
-  elevationDeg,
-  distance,
-} from './geometry.js';
-
-const ORBIT = { radius: 40, height: 18, angularSpeed: (2 * Math.PI) / 9, phase: 0 };
+import { relativeAzimuthDeg, distance } from './geometry.js';
 
 const canvas = document.getElementById('scene');
-const c2d = canvas.getContext('2d');
 const overlay = document.getElementById('overlay');
 const azEl = document.getElementById('az');
-const elEl = document.getElementById('el');
 const distEl = document.getElementById('dist');
 const ctxEl = document.getElementById('ctx');
+const occEl = document.getElementById('occ');
+const refEl = document.getElementById('refn');
+const balEl = document.getElementById('bal');
+const proofEl = document.getElementById('proof');
 const leftBar = document.getElementById('left-bar');
 const rightBar = document.getElementById('right-bar');
 const leftN = document.getElementById('left-n');
 const rightN = document.getElementById('right-n');
-const balEl = document.getElementById('bal');
-const proofEl = document.getElementById('proof');
-const compassEl = document.getElementById('compass');
+
+const { scene, heli, rotor } = createCityScene();
+const renderer = createRenderer(canvas);
+const camera = createCamera(canvas.clientWidth / Math.max(1, canvas.clientHeight));
+const controls = new FpsControls(canvas);
+const debugRays = new DebugRays(scene);
 
 let audio = null;
 let running = false;
-let yaw = 0;
 let startTime = 0;
+let lastFrame = 0;
+let occlusionOn = true;
+let reflectionsOn = true;
+let raysOn = true;
 
-// Rolling samples of measured ear balance vs bearing, exposed for automated
-// audio verification (see scripts/sample-live-ears.mjs).
 const earSamples = [];
 window.__heliEarSamples = earSamples;
 window.__heliGetAudio = () => audio;
 
 function resize() {
-  const dpr = window.devicePixelRatio || 1;
-  canvas.width = canvas.clientWidth * dpr;
-  canvas.height = canvas.clientHeight * dpr;
-  c2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(w, h, false);
+  camera.aspect = w / Math.max(1, h);
+  camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
 resize();
 
-let dragging = false;
-let lastX = 0;
-canvas.addEventListener('pointerdown', (e) => {
-  dragging = true;
-  lastX = e.clientX;
-  canvas.setPointerCapture(e.pointerId);
-});
-canvas.addEventListener('pointermove', (e) => {
-  if (!dragging) return;
-  yaw += (e.clientX - lastX) * 0.006;
-  lastX = e.clientX;
-});
-canvas.addEventListener('pointerup', () => {
-  dragging = false;
-});
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowLeft') yaw -= 0.08;
-  if (e.key === 'ArrowRight') yaw += 0.08;
+  if (e.code === 'KeyO') {
+    occlusionOn = !occlusionOn;
+    audio?.setOcclusionEnabled(occlusionOn);
+  }
+  if (e.code === 'KeyR') {
+    reflectionsOn = !reflectionsOn;
+    audio?.setReflectionsEnabled(reflectionsOn);
+  }
+  if (e.code === 'KeyG') {
+    raysOn = !raysOn;
+    debugRays.setVisible(raysOn);
+  }
 });
 
 function paintMeters(levels) {
-  const scale = 8; // RMS of the heli synth sits well under 0.2
-  const lPct = Math.min(100, levels.left * scale * 100);
-  const rPct = Math.min(100, levels.right * scale * 100);
-  leftBar.style.width = `${lPct}%`;
-  rightBar.style.width = `${rPct}%`;
+  const scale = 8;
+  leftBar.style.width = `${Math.min(100, levels.left * scale * 100)}%`;
+  rightBar.style.width = `${Math.min(100, levels.right * scale * 100)}%`;
   leftN.textContent = levels.left.toFixed(3);
   rightN.textContent = levels.right.toFixed(3);
   const side =
@@ -81,50 +78,68 @@ function paintMeters(levels) {
   ctxEl.textContent = levels.contextState;
 }
 
-function frame() {
+function frame(now) {
   if (!running) return;
-  const t = (performance.now() - startTime) / 1000;
-  const pos = orbitPosition(ORBIT, t);
-  const forward = forwardVector(yaw);
-  const up = upVector();
+  const dt = Math.min(0.05, (now - lastFrame) / 1000 || 0.016);
+  lastFrame = now;
+  const t = (now - startTime) / 1000;
 
-  audio.update(pos, forward, up);
+  controls.update(dt);
+  const listenerPos = controls.position;
+  const forward = controls.forward();
+  const up = controls.up();
+  camera.position.set(listenerPos[0], listenerPos[1], listenerPos[2]);
+  camera.lookAt(
+    listenerPos[0] + forward[0],
+    listenerPos[1] + forward[1],
+    listenerPos[2] + forward[2],
+  );
 
-  drawScene(c2d, {
-    width: canvas.clientWidth,
-    height: canvas.clientHeight,
-    sourcePos: pos,
-    yaw,
-    worldRadius: ORBIT.radius,
+  const sourcePos = helicopterPath(t);
+  heli.position.set(sourcePos[0], sourcePos[1], sourcePos[2]);
+  rotor.rotation.y = t * 40;
+
+  const occ = occlusionAmount(listenerPos, sourcePos, BUILDINGS);
+  const reflections = computeReflections(listenerPos, sourcePos, BUILDINGS, { limit: 8 });
+
+  audio.update(sourcePos, listenerPos, forward, up, {
+    occlusion: occ,
+    reflections,
   });
 
-  const az = relativeAzimuthDeg(pos, [0, 0, 0], yaw);
-  azEl.textContent = `${az >= 0 ? '+' : ''}${az.toFixed(0)}\u00b0 ${az > 4 ? 'right' : az < -4 ? 'left' : 'ahead'}`;
-  elEl.textContent = `${elevationDeg(pos, [0, 0, 0]).toFixed(0)}\u00b0`;
-  distEl.textContent = `${distance(pos, [0, 0, 0]).toFixed(0)} m`;
-  compassEl.style.transform = `rotate(${-yaw}rad)`;
+  debugRays.update(listenerPos, sourcePos, occ > 0, reflectionsOn ? reflections : []);
+
+  const az = relativeAzimuthDeg(sourcePos, listenerPos, controls.yaw);
+  azEl.textContent = `${az >= 0 ? '+' : ''}${az.toFixed(0)}\u00b0`;
+  distEl.textContent = `${distance(sourcePos, listenerPos).toFixed(0)} m`;
+  occEl.textContent = `${occlusionOn ? (occ > 0 ? 'blocked' : 'clear') : 'off'}`;
+  refEl.textContent = reflectionsOn ? `${reflections.length} taps` : 'off';
 
   const levels = audio.earLevels();
   paintMeters(levels);
   if (levels.left + levels.right > 0.001) {
-    earSamples.push({ t, az, balance: levels.balance, left: levels.left, right: levels.right });
+    earSamples.push({ t, az, balance: levels.balance, left: levels.left, right: levels.right, occ });
     if (earSamples.length > 600) earSamples.shift();
   }
 
+  renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 
 async function start() {
   if (running) return;
   audio = new HeliAudio();
+  audio.setOcclusionEnabled(occlusionOn);
+  audio.setReflectionsEnabled(reflectionsOn);
   await audio.resume();
   audio.fadeIn();
   running = true;
   startTime = performance.now();
+  lastFrame = startTime;
   overlay.classList.add('hidden');
+  canvas.requestPointerLock();
   requestAnimationFrame(frame);
 
-  // Offline HRTF proof runs once at start; result lands in the HUD.
   proofEl.textContent = 'running\u2026';
   try {
     const verdict = await proveHrtfBinaural();

@@ -1,36 +1,10 @@
-// M0 audio engine: one synthesized helicopter routed through an HRTF PannerNode
-// so direct sound is truly binaural. No reflections yet — that is M2. Geometry
-// (orbit position, listener basis) comes from geometry.js; this module only
-// wires those numbers into the Web Audio graph.
+// Audio engine for M1/M2: direct HRTF path with occlusion muffling, plus a
+// bank of order-1 image-source reflection taps (delay → gain → lowpass → HRTF).
 
-// Some engines still expose only the deprecated setPosition/setOrientation
-// methods; newer ones use k-rate AudioParams. Prefer the params, fall back.
-function setListenerPose(listener, pos, forward, up, when) {
-  if (listener.positionX) {
-    listener.positionX.setValueAtTime(pos[0], when);
-    listener.positionY.setValueAtTime(pos[1], when);
-    listener.positionZ.setValueAtTime(pos[2], when);
-    listener.forwardX.setValueAtTime(forward[0], when);
-    listener.forwardY.setValueAtTime(forward[1], when);
-    listener.forwardZ.setValueAtTime(forward[2], when);
-    listener.upX.setValueAtTime(up[0], when);
-    listener.upY.setValueAtTime(up[1], when);
-    listener.upZ.setValueAtTime(up[2], when);
-  } else {
-    listener.setPosition(pos[0], pos[1], pos[2]);
-    listener.setOrientation(forward[0], forward[1], forward[2], up[0], up[1], up[2]);
-  }
-}
+import { setListenerPose, setPannerPosition } from './audioPose.js';
 
-function setPannerPosition(panner, pos, when) {
-  if (panner.positionX) {
-    panner.positionX.setValueAtTime(pos[0], when);
-    panner.positionY.setValueAtTime(pos[1], when);
-    panner.positionZ.setValueAtTime(pos[2], when);
-  } else {
-    panner.setPosition(pos[0], pos[1], pos[2]);
-  }
-}
+const MAX_REFLECTIONS = 8;
+const SPEED_OF_SOUND = 343;
 
 export class HeliAudio {
   constructor() {
@@ -41,9 +15,6 @@ export class HeliAudio {
     this.master.gain.value = 0;
     this.master.connect(this.ctx.destination);
 
-    // Tap the stereo output so the HUD can show measured left/right ear energy.
-    // This is the live proof that HRTF is producing an asymmetric signal, not
-    // just that a panner node exists in the graph.
     const splitter = this.ctx.createChannelSplitter(2);
     this.master.connect(splitter);
     this.leftAnalyser = this.ctx.createAnalyser();
@@ -55,51 +26,63 @@ export class HeliAudio {
     this._leftBuf = new Float32Array(this.leftAnalyser.fftSize);
     this._rightBuf = new Float32Array(this.rightAnalyser.fftSize);
 
-    // HRTF panner: this is what makes left/right/front/back audible in
-    // headphones. refDistance/rolloff give a plausible urban falloff.
+    // Direct path: synth → dryGain → occludeFilter → occludeGain → panner → master
+    this.dryGain = this.ctx.createGain();
+    this.dryGain.gain.value = 1;
+    this.occludeFilter = this.ctx.createBiquadFilter();
+    this.occludeFilter.type = 'lowpass';
+    this.occludeFilter.frequency.value = 18000;
+    this.occludeGain = this.ctx.createGain();
+    this.occludeGain.gain.value = 1;
     this.panner = this.ctx.createPanner();
     this.panner.panningModel = 'HRTF';
     this.panner.distanceModel = 'inverse';
     this.panner.refDistance = 8;
     this.panner.rolloffFactor = 0.9;
-    this.panner.connect(this.master);
+    this.dryGain
+      .connect(this.occludeFilter)
+      .connect(this.occludeGain)
+      .connect(this.panner)
+      .connect(this.master);
 
+    // Shared wet send into reflection taps.
+    this.wetGain = this.ctx.createGain();
+    this.wetGain.gain.value = 1;
+    this.taps = [];
+    for (let i = 0; i < MAX_REFLECTIONS; i++) {
+      const delay = this.ctx.createDelay(1.5);
+      delay.delayTime.value = 0.01;
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 4000;
+      const panner = this.ctx.createPanner();
+      panner.panningModel = 'HRTF';
+      panner.distanceModel = 'inverse';
+      panner.refDistance = 8;
+      panner.rolloffFactor = 0.9;
+      // Delay already encodes path length, so kill the panner's extra distance
+      // attenuation by using a huge refDistance... actually better: set
+      // rolloffFactor 0 so position only steers HRTF direction.
+      panner.rolloffFactor = 0;
+      this.wetGain.connect(delay);
+      delay.connect(gain).connect(filter).connect(panner).connect(this.master);
+      this.taps.push({ delay, gain, filter, panner });
+    }
+
+    this.occlusionEnabled = true;
+    this.reflectionsEnabled = true;
     this.#buildHelicopter();
   }
 
-  // Measured RMS on each ear after the HRTF panner. Negative balance means
-  // louder left; positive means louder right. See meter.js.
-  earLevels() {
-    this.leftAnalyser.getFloatTimeDomainData(this._leftBuf);
-    this.rightAnalyser.getFloatTimeDomainData(this._rightBuf);
-    let l = 0;
-    let r = 0;
-    for (let i = 0; i < this._leftBuf.length; i++) {
-      l += this._leftBuf[i] * this._leftBuf[i];
-      r += this._rightBuf[i] * this._rightBuf[i];
-    }
-    const left = Math.sqrt(l / this._leftBuf.length);
-    const right = Math.sqrt(r / this._rightBuf.length);
-    const total = left + right;
-    return {
-      left,
-      right,
-      balance: total === 0 ? 0 : (right - left) / total,
-      contextState: this.ctx.state,
-    };
-  }
-
-  // A helicopter is dominated by three layers: a low blade-slap "chop" that
-  // pulses a few times a second, a broadband rotor-wash hiss, and a turbine
-  // whine an octave-plus above. We amplitude-modulate the first two with a
-  // shared low-frequency oscillator to get the signature thwop-thwop.
   #buildHelicopter() {
     const ctx = this.ctx;
     const source = ctx.createGain();
-    source.connect(this.panner);
+    // Fan out to dry and wet.
+    source.connect(this.dryGain);
+    source.connect(this.wetGain);
 
-    // Blade-pass modulator (~12 Hz): drives a chop gain around a small DC bias
-    // so the rotor never fully cuts out.
     const chopLfo = ctx.createOscillator();
     chopLfo.type = 'triangle';
     chopLfo.frequency.value = 12;
@@ -107,7 +90,6 @@ export class HeliAudio {
     chopDepth.gain.value = 0.5;
     chopLfo.connect(chopDepth);
 
-    // Low thump: filtered sawtooth carrying the chop.
     const thump = ctx.createOscillator();
     thump.type = 'sawtooth';
     thump.frequency.value = 55;
@@ -117,11 +99,10 @@ export class HeliAudio {
     const thumpGain = ctx.createGain();
     thumpGain.gain.value = 0.28;
     const thumpChop = ctx.createGain();
-    thumpChop.gain.value = 0.55; // DC bias; LFO rides on top
+    thumpChop.gain.value = 0.55;
     chopDepth.connect(thumpChop.gain);
     thump.connect(thumpLow).connect(thumpChop).connect(thumpGain).connect(source);
 
-    // Rotor wash: white noise, band-limited, also chopped.
     const noiseBuf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
     const data = noiseBuf.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
@@ -139,7 +120,6 @@ export class HeliAudio {
     chopDepth.connect(washChop.gain);
     noise.connect(washBand).connect(washChop).connect(washGain).connect(source);
 
-    // Turbine whine: a couple of detuned tones for a metallic engine note.
     const turbine = ctx.createOscillator();
     turbine.type = 'sawtooth';
     turbine.frequency.value = 480;
@@ -161,8 +141,6 @@ export class HeliAudio {
     turbine.start();
     turbine2.start();
     noise.start();
-
-    this.chopLfo = chopLfo;
   }
 
   async resume() {
@@ -183,11 +161,84 @@ export class HeliAudio {
     this.master.gain.linearRampToValueAtTime(0, t + 0.4);
   }
 
-  // sourcePos: [x,y,z] world position of the helicopter.
-  // forward/up: listener basis vectors from geometry.forwardVector/upVector.
-  update(sourcePos, forward, up) {
+  setOcclusionEnabled(on) {
+    this.occlusionEnabled = on;
+  }
+
+  setReflectionsEnabled(on) {
+    this.reflectionsEnabled = on;
+    if (!on) {
+      const t = this.ctx.currentTime;
+      for (const tap of this.taps) {
+        tap.gain.gain.cancelScheduledValues(t);
+        tap.gain.gain.setTargetAtTime(0, t, 0.05);
+      }
+    }
+  }
+
+  earLevels() {
+    this.leftAnalyser.getFloatTimeDomainData(this._leftBuf);
+    this.rightAnalyser.getFloatTimeDomainData(this._rightBuf);
+    let l = 0;
+    let r = 0;
+    for (let i = 0; i < this._leftBuf.length; i++) {
+      l += this._leftBuf[i] * this._leftBuf[i];
+      r += this._rightBuf[i] * this._rightBuf[i];
+    }
+    const left = Math.sqrt(l / this._leftBuf.length);
+    const right = Math.sqrt(r / this._rightBuf.length);
+    const total = left + right;
+    return {
+      left,
+      right,
+      balance: total === 0 ? 0 : (right - left) / total,
+      contextState: this.ctx.state,
+    };
+  }
+
+  /**
+   * @param {number[]} sourcePos
+   * @param {number[]} listenerPos
+   * @param {number[]} forward
+   * @param {number[]} up
+   * @param {{ occlusion: number, reflections: Array<{delaySec:number,gain:number,image:number[],hit:number[]}> }} acoustics
+   */
+  update(sourcePos, listenerPos, forward, up, acoustics = { occlusion: 0, reflections: [] }) {
     const t = this.ctx.currentTime;
+    const ramp = 0.05;
     setPannerPosition(this.panner, sourcePos, t);
-    setListenerPose(this.ctx.listener, [0, 0, 0], forward, up, t);
+    setListenerPose(this.ctx.listener, listenerPos, forward, up, t);
+
+    const occ = this.occlusionEnabled ? acoustics.occlusion : 0;
+    // Fully occluded: drop ~18 dB and cut to ~700 Hz. Clear: flat and full.
+    const dry = 1 - 0.85 * occ;
+    const cutoff = 18000 - 17300 * occ;
+    this.occludeGain.gain.setTargetAtTime(dry, t, ramp);
+    this.occludeFilter.frequency.setTargetAtTime(cutoff, t, ramp);
+
+    const refs = this.reflectionsEnabled ? acoustics.reflections : [];
+    for (let i = 0; i < this.taps.length; i++) {
+      const tap = this.taps[i];
+      const r = refs[i];
+      if (!r) {
+        tap.gain.gain.setTargetAtTime(0, t, ramp);
+        continue;
+      }
+      // Delay already has the full path; keep a tiny floor so DelayNode is happy.
+      const delay = Math.min(1.45, Math.max(0.001, r.delaySec));
+      tap.delay.delayTime.setTargetAtTime(delay, t, ramp);
+      // Scale image-source gain into a audible but non-dominating wet level.
+      const g = Math.min(0.55, r.gain * 18);
+      tap.gain.gain.setTargetAtTime(g, t, ramp);
+      // Darker for longer paths.
+      const freq = Math.max(800, 6000 - r.pathLength * 25);
+      tap.filter.frequency.setTargetAtTime(freq, t, ramp);
+      // Spatialize from the image location so the reflection arrives from the
+      // bounce direction (classic image-source trick).
+      setPannerPosition(tap.panner, r.image, t);
+    }
   }
 }
+
+// Re-export for tests that only care about the constant.
+export { MAX_REFLECTIONS, SPEED_OF_SOUND };

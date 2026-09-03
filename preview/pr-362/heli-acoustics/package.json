@@ -5,15 +5,19 @@
   "description": "Binaural helicopter over a simulated city: M0 direct-sound spatialization",
   "type": "module",
   "scripts": {
-    "test": "node --test",
-    "test:audio": "node scripts/run-hrtf-proof.mjs && node scripts/sample-live-ears.mjs",
+    "test": "node --test tests/*.test.js",
+    "test:audio": "node scripts/run-hrtf-proof.mjs && node scripts/sample-live-ears.mjs && node scripts/sample-reflections.mjs",
     "test:e2e": "npm run test:audio",
-    "start": "npx --yes serve . -p 3000"
+    "start": "npx --yes serve . -p 3000",
+    "vendor": "node scripts/vendor.js"
   },
   "devDependencies": {
     "playwright": "^1.52.0"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
   }
 }
