@@ -190,17 +190,18 @@ function frame(now) {
     sourcePos = sample.position;
     sourceVelocity = sample.velocity;
     followPhase = sample.phase;
+    // Nose follows limited-rate yaw from the flight model (not raw velocity).
+    heli.rotation.set(0, sample.yaw + Math.PI, 0);
   } else {
     sourcePos = helicopterPath(t, flightOpts);
     sourceVelocity = helicopterVelocity(t, flightOpts);
+    const speed = Math.hypot(sourceVelocity[0], sourceVelocity[1], sourceVelocity[2]);
+    if (speed > 0.5) {
+      const yaw = Math.atan2(sourceVelocity[0], sourceVelocity[2]);
+      heli.rotation.set(0, yaw + Math.PI, 0);
+    }
   }
   heli.position.set(sourcePos[0], sourcePos[1], sourcePos[2]);
-  // Point the fuselage along travel direction (boom trails behind).
-  const speed = Math.hypot(sourceVelocity[0], sourceVelocity[1], sourceVelocity[2]);
-  if (speed > 0.5) {
-    const yaw = Math.atan2(sourceVelocity[0], sourceVelocity[2]);
-    heli.rotation.set(0, yaw + Math.PI, 0);
-  }
   rotor.rotation.y = t * 40;
 
   kickAcoustics(listenerPos.slice(), sourcePos.slice());

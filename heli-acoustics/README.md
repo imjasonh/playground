@@ -55,8 +55,8 @@ npm run test:audio
 | F / Flight menu | Cycle traverse / orbit / follow |
 
 **Traverse** (default): straight overflights, pause, another line. **Orbit**:
-ellipse above the rooftops. **Follow**: crawls until it has line of sight, then
-tracks you as you move.
+ellipse above the rooftops. **Follow**: low canyon cruise with inertia — hunts
+for line of sight, climbs over or steers around blocks, then tracks you.
 
 ## Coordinate frame
 
