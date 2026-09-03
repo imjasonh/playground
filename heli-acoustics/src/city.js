@@ -58,13 +58,18 @@ export function buildingFaces(buildings = BUILDINGS) {
 
 /**
  * Helicopter flight modes.
- * - orbit: elliptical lap mid-canyon (legacy demo path)
- * - traverse: straight lanes across the city, pause, then reverse on another lane
+ * - orbit: elliptical lap above the skyline
+ * - traverse: straight overflights, pause, then another line
+ * - follow: hunt for LOS, then track the listener
  */
-export const FLIGHT_MODES = Object.freeze(['orbit', 'traverse']);
+export const FLIGHT_MODES = Object.freeze(['orbit', 'traverse', 'follow']);
 
 const TRAVERSE_CRUISE = 22; // m/s
 const TRAVERSE_PAUSE = 4; // seconds between legs
+
+function clearHeight(bounds = cityBounds()) {
+  return bounds.yMax + 25;
+}
 
 function traverseLegs(bounds) {
   const pad = 60;
@@ -72,9 +77,8 @@ function traverseLegs(bounds) {
   const xR = bounds.x1 + pad;
   const zS = bounds.z0 - pad;
   const zN = bounds.z1 + pad;
-  // Clear the skyline so legs can cut any angle over the district without
-  // tunneling through building meshes. Mid-facade orbit mode stays lower.
-  const y = bounds.yMax + 25;
+  // Clear the skyline so legs can cut any angle over the district.
+  const y = clearHeight(bounds);
   const y2 = bounds.yMax + 45;
   return [
     // West → east, then pause and reverse on a parallel lane further north.
@@ -147,27 +151,41 @@ function traverseSample(t) {
   return { position: (last.at || last.leg.to).slice(), velocity: [0, 0, 0] };
 }
 
-export function helicopterPath(t, { mode = 'orbit', radius = 140, height = 88, period = 28, center = [0, 0, 40] } = {}) {
+export function helicopterPath(t, opts = {}) {
+  const mode = opts.mode || 'orbit';
   if (mode === 'traverse') return traverseSample(t).position;
+  if (mode === 'follow') {
+    throw new Error('follow mode is stateful — use FollowFlight.update()');
+  }
+  const bounds = cityBounds();
+  const radius = opts.radius ?? Math.max(bounds.spanX, bounds.spanZ) * 0.28;
+  const height = opts.height ?? clearHeight(bounds);
+  const period = opts.period ?? 32;
+  const center = opts.center ?? [0, 0, (bounds.z0 + bounds.z1) / 2];
   const a = (t / period) * Math.PI * 2;
-  // Keep |x| inside the avenue (±30) so the orbit never tunnels a block.
+  // Full ellipse above the rooftops (any angle over the district).
   return [
-    center[0] + 18 * Math.sin(a),
-    height + 14 * Math.sin(a * 2),
+    center[0] + radius * 0.75 * Math.sin(a),
+    height + 12 * Math.sin(a * 2),
     center[2] + radius * Math.cos(a),
   ];
 }
 
-/** Analytic velocity (m/s) for the active flight mode. */
+/** Analytic velocity (m/s) for orbit / traverse. Follow uses FollowFlight. */
 export function helicopterVelocity(t, opts = {}) {
   const mode = opts.mode || 'orbit';
   if (mode === 'traverse') return traverseSample(t).velocity;
-  const { radius = 140, period = 28 } = opts;
+  if (mode === 'follow') {
+    throw new Error('follow mode is stateful — use FollowFlight.update()');
+  }
+  const bounds = cityBounds();
+  const radius = opts.radius ?? Math.max(bounds.spanX, bounds.spanZ) * 0.28;
+  const period = opts.period ?? 32;
   const a = (t / period) * Math.PI * 2;
   const w = (Math.PI * 2) / period;
   return [
-    18 * Math.cos(a) * w,
-    14 * Math.cos(a * 2) * 2 * w,
+    radius * 0.75 * Math.cos(a) * w,
+    12 * Math.cos(a * 2) * 2 * w,
     -radius * Math.sin(a) * w,
   ];
 }
