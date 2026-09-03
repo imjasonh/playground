@@ -1,0 +1,14 @@
+{
+  "name": "heli-acoustics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Binaural helicopter over a simulated city: M0 direct-sound spatialization",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
