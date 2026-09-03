@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Heli acoustics, M0 binaural direct sound</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #0a0e14;
+        color: #cfe4ff;
+        font-family: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+      }
+      #scene {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        touch-action: none;
+        cursor: grab;
+      }
+      #scene:active {
+        cursor: grabbing;
+      }
+      #hud {
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        font-size: 13px;
+        line-height: 1.7;
+        pointer-events: none;
+        text-shadow: 0 1px 3px #000;
+      }
+      #hud .row span:first-child {
+        display: inline-block;
+        width: 74px;
+        color: rgba(207, 228, 255, 0.55);
+      }
+      #hud .val {
+        color: #fff;
+      }
+      #compass-wrap {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        width: 72px;
+        height: 72px;
+        border: 1px solid rgba(120, 180, 255, 0.3);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      #compass {
+        font-size: 11px;
+        color: #7fb4ff;
+        transition: transform 0.05s linear;
+      }
+      #hint {
+        position: fixed;
+        bottom: 16px;
+        left: 16px;
+        right: 16px;
+        font-size: 12px;
+        color: rgba(207, 228, 255, 0.5);
+        pointer-events: none;
+        text-shadow: 0 1px 3px #000;
+      }
+      #overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(6, 9, 14, 0.92);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        cursor: pointer;
+        z-index: 10;
+        text-align: center;
+        padding: 24px;
+      }
+      #overlay.hidden {
+        display: none;
+      }
+      #overlay h1 {
+        font-size: 26px;
+        letter-spacing: 1px;
+        color: #fff;
+      }
+      #overlay p {
+        max-width: 46ch;
+        font-size: 16px;
+        line-height: 1.6;
+        color: rgba(207, 228, 255, 0.78);
+      }
+      #overlay .go {
+        margin-top: 8px;
+        font-size: 15px;
+        color: #7fb4ff;
+        animation: pulse 2s infinite;
+      }
+      #overlay .phones {
+        font-size: 12px;
+        color: rgba(255, 200, 120, 0.9);
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.4;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="scene"></canvas>
+
+    <div id="hud">
+      <div class="row"><span>bearing</span><span class="val" id="az">&#8230;</span></div>
+      <div class="row"><span>elevation</span><span class="val" id="el">&#8230;</span></div>
+      <div class="row"><span>distance</span><span class="val" id="dist">&#8230;</span></div>
+    </div>
+    <div id="compass-wrap"><div id="compass">&#9650; fwd</div></div>
+
+    <div id="hint">Drag left or right (arrow keys work too) to turn your head. The red dot is the helicopter.</div>
+
+    <div id="overlay">
+      <h1>Heli acoustics</h1>
+      <p class="phones">Put headphones on. This is binaural (HRTF) audio.</p>
+      <p>
+        A synthesized helicopter orbits you and the browser renders it through
+        an HRTF panner. Turn your head by dragging, and the sound tracks around
+        your ears. There are no buildings or reflections yet. M0 only proves the
+        direct-sound spatialization is good enough to build on.
+      </p>
+      <div class="go">Click to start</div>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
