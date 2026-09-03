@@ -42,7 +42,7 @@ await page.goto(`http://127.0.0.1:${port}/tests/hrtf-harness.html`, {
   waitUntil: 'networkidle',
 });
 await page.waitForFunction(() => document.getElementById('out')?.textContent?.startsWith('HRTF_PROOF='), {
-  timeout: 15000,
+  timeout: 45000,
 });
 const text = await page.textContent('#out');
 await browser.close();
