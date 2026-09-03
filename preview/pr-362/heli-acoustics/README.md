@@ -71,9 +71,9 @@ tracking in without touching the audio graph.
 | Click | Start + pointer lock |
 | Mouse | Look |
 | WASD | Move |
-| O | Toggle occlusion |
-| R | Toggle reflections |
-| G | Toggle debug rays |
+| Occlusion checkbox (or O) | Enable / disable LOS muffling |
+| Reflections checkbox (or R) | Enable / disable early reflections |
+| Debug rays checkbox (or G) | Show / hide path lines |
 
 ## Refresh vendored three.js
 

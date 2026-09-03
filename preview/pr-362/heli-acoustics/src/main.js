@@ -21,6 +21,9 @@ const leftBar = document.getElementById('left-bar');
 const rightBar = document.getElementById('right-bar');
 const leftN = document.getElementById('left-n');
 const rightN = document.getElementById('right-n');
+const togOcclusion = document.getElementById('tog-occlusion');
+const togReflections = document.getElementById('tog-reflections');
+const togRays = document.getElementById('tog-rays');
 
 const { scene, heli, rotor } = createCityScene();
 const renderer = createRenderer(canvas);
@@ -51,19 +54,38 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 
+function setOcclusion(on) {
+  occlusionOn = on;
+  togOcclusion.checked = on;
+  audio?.setOcclusionEnabled(on);
+}
+
+function setReflections(on) {
+  reflectionsOn = on;
+  togReflections.checked = on;
+  audio?.setReflectionsEnabled(on);
+}
+
+function setRays(on) {
+  raysOn = on;
+  togRays.checked = on;
+  debugRays.setVisible(on);
+}
+
+togOcclusion.addEventListener('change', () => setOcclusion(togOcclusion.checked));
+togReflections.addEventListener('change', () => setReflections(togReflections.checked));
+togRays.addEventListener('change', () => setRays(togRays.checked));
+
+// Keep pointer-lock clicks on the canvas; don't steal focus into the page chrome
+// except when the user is actually using a checkbox.
+document.getElementById('controls').addEventListener('mousedown', (e) => {
+  e.stopPropagation();
+});
+
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'KeyO') {
-    occlusionOn = !occlusionOn;
-    audio?.setOcclusionEnabled(occlusionOn);
-  }
-  if (e.code === 'KeyR') {
-    reflectionsOn = !reflectionsOn;
-    audio?.setReflectionsEnabled(reflectionsOn);
-  }
-  if (e.code === 'KeyG') {
-    raysOn = !raysOn;
-    debugRays.setVisible(raysOn);
-  }
+  if (e.code === 'KeyO') setOcclusion(!occlusionOn);
+  if (e.code === 'KeyR') setReflections(!reflectionsOn);
+  if (e.code === 'KeyG') setRays(!raysOn);
 });
 
 function paintMeters(levels) {

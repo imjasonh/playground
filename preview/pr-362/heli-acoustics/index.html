@@ -67,6 +67,41 @@
       #proof.fail {
         color: #ff7d7d;
       }
+      #controls {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px 14px;
+        background: rgba(6, 9, 14, 0.72);
+        border: 1px solid rgba(120, 180, 255, 0.25);
+        z-index: 5;
+        font-size: 13px;
+        line-height: 1.4;
+        text-shadow: none;
+      }
+      #controls label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        color: #cfe4ff;
+        user-select: none;
+      }
+      #controls input {
+        width: 14px;
+        height: 14px;
+        accent-color: #7fb4ff;
+        cursor: pointer;
+      }
+      #controls .key {
+        margin-left: auto;
+        padding-left: 12px;
+        color: rgba(207, 228, 255, 0.45);
+        font-size: 11px;
+      }
       #hint {
         position: fixed;
         bottom: 16px;
@@ -147,9 +182,27 @@
       <div class="row"><span>HRTF proof</span><span class="val" id="proof">&#8230;</span></div>
     </div>
 
+    <div id="controls">
+      <label>
+        <input type="checkbox" id="tog-occlusion" checked />
+        Occlusion
+        <span class="key">O</span>
+      </label>
+      <label>
+        <input type="checkbox" id="tog-reflections" checked />
+        Reflections
+        <span class="key">R</span>
+      </label>
+      <label>
+        <input type="checkbox" id="tog-rays" checked />
+        Debug rays
+        <span class="key">G</span>
+      </label>
+    </div>
+
     <div id="hint">
-      WASD move, mouse look. O toggles occlusion, R toggles reflections, G toggles
-      debug rays (green/red direct path, cyan bounce paths).
+      WASD move, mouse look. Use the checkboxes (or O / R / G) to A/B occlusion,
+      reflections, and debug rays.
     </div>
 
     <div id="overlay">
@@ -159,7 +212,8 @@
         A helicopter flies a loop over a five-block street canyon. Direct sound
         is HRTF-spatialized and muffles when a building blocks line of sight.
         Order-1 image-source reflections bounce off facades and the street, each
-        as a delayed, filtered, HRTF-panned tap. Toggle R to A/B the wet path.
+        as a delayed, filtered, HRTF-panned tap. Use the checkboxes to disable
+        occlusion or reflections and A/B what you hear.
       </p>
       <div class="go">Click to start</div>
     </div>
