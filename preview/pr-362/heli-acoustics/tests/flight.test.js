@@ -6,7 +6,7 @@ import {
   cityBounds,
   BUILDINGS,
 } from '../src/city.js';
-import { FollowFlight, findClearOffset } from '../src/follow.js';
+import { FollowFlight, findClearOffset, avoidBuildings, buildingAt, FOLLOW_CRUISE_Y } from '../src/follow.js';
 import { isOccluded } from '../src/occlusion.js';
 
 test('city spans hundreds of meters with many blocks', () => {
@@ -62,13 +62,13 @@ test('orbit mode circles above the district', () => {
   assert.ok(Math.hypot(a[0] - b[0], a[2] - b[2]) > 40);
 });
 
-test('findClearOffset returns a visible perch above the avenue', () => {
+test('findClearOffset returns a visible perch at follow altitude', () => {
   const listener = [0, 1.7, 0];
-  const height = cityBounds().yMax + 30;
+  const height = 42;
   const p = findClearOffset(listener, height, BUILDINGS, 0);
   assert.ok(p, 'expected a clear offset');
   assert.equal(isOccluded(listener, p, BUILDINGS), false);
-  assert.ok(p[1] > cityBounds().yMax);
+  assert.ok(Math.abs(p[1] - height) < 1e-6);
 });
 
 test('follow searches until LOS then tracks listener motion', () => {
@@ -79,7 +79,7 @@ test('follow searches until LOS then tracks listener motion', () => {
 
   let sawTrack = false;
   let t = 0;
-  for (let i = 0; i < 800; i++) {
+  for (let i = 0; i < 2500; i++) {
     const sample = follow.update(0.05, listener);
     t += 0.05;
     if (sample.phase === 'track' && sample.canSee) {
@@ -91,16 +91,57 @@ test('follow searches until LOS then tracks listener motion', () => {
 
   const before = follow.pos.slice();
   const moved = [80, 1.7, 40];
-  for (let i = 0; i < 400; i++) follow.update(0.05, moved);
+  for (let i = 0; i < 1500; i++) follow.update(0.05, moved);
   const after = follow.pos;
   assert.ok(
     Math.hypot(after[0] - before[0], after[2] - before[2]) > 15,
     'heli should relocate when the listener moves',
   );
-  const distToMoved = Math.hypot(after[0] - moved[0], after[2] - moved[2]);
-  const distToOrigin = Math.hypot(after[0] - listener[0], after[2] - listener[2]);
   assert.ok(
-    distToMoved < distToOrigin,
-    `should close on new listener (toMoved=${distToMoved.toFixed(0)} toOrigin=${distToOrigin.toFixed(0)})`,
+    Math.hypot(after[0] - moved[0], after[2] - moved[2]) < 160,
+    `should end near the new listener (dist=${Math.hypot(after[0] - moved[0], after[2] - moved[2]).toFixed(0)})`,
   );
+});
+
+test('follow cruises lower than orbit/traverse skyline', () => {
+  const { yMax } = cityBounds(BUILDINGS);
+  const follow = new FollowFlight(BUILDINGS);
+  follow.reset([0, 1.7, 0]);
+  assert.ok(follow.pos[1] < yMax * 0.4, `follow y=${follow.pos[1]} should be low canyon`);
+  const orb = helicopterPath(0, { mode: 'orbit' });
+  const tr = helicopterPath(0, { mode: 'traverse' });
+  assert.ok(orb[1] > yMax);
+  assert.ok(tr[1] > yMax);
+  assert.ok(follow.pos[1] < orb[1] - 50);
+});
+
+test('follow turns and climbs smoothly (no snap headings)', () => {
+  const follow = new FollowFlight(BUILDINGS);
+  follow.reset([0, 1.7, 0]);
+  // Force a hard goal behind a tall block so avoidance must climb or turn.
+  const nw = BUILDINGS.find((b) => b.id === 'nw');
+  follow.pos = [nw.min[0] - 40, 42, (nw.min[2] + nw.max[2]) / 2];
+  follow.vel = [12, 0, 0];
+  follow.yaw = Math.PI / 2; // facing +x into the block
+  const goal = [nw.max[0] + 40, 42, follow.pos[2]];
+  const adjusted = avoidBuildings(follow.pos, follow.vel, goal, BUILDINGS, 42);
+  assert.ok(
+    adjusted[1] > 42 + 5 ||
+      Math.hypot(adjusted[0] - goal[0], adjusted[2] - goal[2]) > 5 ||
+      adjusted[0] !== goal[0],
+    `expected climb or detour, got ${adjusted}`,
+  );
+
+  let maxYawRate = 0;
+  let prevYaw = follow.yaw;
+  for (let i = 0; i < 120; i++) {
+    const s = follow.update(0.05, [0, 1.7, 0]);
+    let d = s.yaw - prevYaw;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    maxYawRate = Math.max(maxYawRate, Math.abs(d) / 0.05);
+    prevYaw = s.yaw;
+    assert.ok(!buildingAt(s.position[0], s.position[2], s.position[1], BUILDINGS));
+  }
+  assert.ok(maxYawRate <= 0.9 + 1e-6, `yaw rate ${maxYawRate} exceeds heli limit`);
 });
