@@ -57,6 +57,33 @@ final class ArmyListStressTests: XCTestCase {
         XCTAssertTrue(mismatches.isEmpty, mismatches.joined(separator: "\n"))
     }
 
+    func testSeededRNGUUIDsAreUniqueAcrossStressSizedBatch() {
+        var rng = ArmyListStressHarness.SeededRNG(seed: 0)
+        var seen = Set<UUID>()
+        for _ in 0..<512 {
+            let id = rng.nextUUID()
+            XCTAssertFalse(seen.contains(id), "SeededRNG reused UUID \(id)")
+            seen.insert(id)
+        }
+    }
+
+    func testDuplicateUnitIDsAreValidationErrorsNotCrashes() throws {
+        let catalog = try ArmyListCatalogTests.loadCatalogFromRepo()
+        let shared = UUID()
+        let a = ListUnitInstance(id: shared, datasheetID: "leagues-of-votann--hearthkyn-warriors", models: 10)
+        let b = ListUnitInstance(id: shared, datasheetID: "leagues-of-votann--cthonian-beserks", models: 5)
+        let list = ArmyListDocument(
+            name: "Dup IDs",
+            catalogVersion: catalog.version,
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            detachmentIDs: ["leagues-of-votann--hearthband"],
+            units: [a, b]
+        )
+        let result = ArmyListValidator.validate(list: list, catalog: catalog)
+        XCTAssertTrue(result.errors.contains { $0.code == "unit.duplicateID" })
+    }
+
     private struct Fixture {
         var file: String
         var expectedLegal: Bool

@@ -42,10 +42,17 @@ enum ArmyListStressHarness {
         }
 
         mutating func nextUUID() -> UUID {
+            // Pack full 64-bit LCG outputs into the UUID. Using only the low
+            // byte of each `next()` collapses the period to 256 and collides
+            // after ~16 calls (fatal in the validator's unit-id map).
             var bytes: uuid_t = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
             withUnsafeMutableBytes(of: &bytes) { raw in
-                for i in 0..<16 {
-                    raw[i] = UInt8(next() & 0xff)
+                for offset in stride(from: 0, to: 16, by: 8) {
+                    var value = next()
+                    for i in 0..<8 {
+                        raw[offset + i] = UInt8(truncatingIfNeeded: value)
+                        value >>= 8
+                    }
                 }
                 // RFC 4122 version 4 / variant 1 bits.
                 raw[6] = (raw[6] & 0x0f) | 0x40
