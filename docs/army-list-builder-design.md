@@ -1,9 +1,9 @@
 # Design: Army List Builder (Warhammer 40,000, 11th Edition)
 
-> **Status: Phase 0–3 in progress.** Playground experiment under
-> `ios/Sources/Experiments/ArmyList/`. Bundled Votann catalog + validator +
-> authoring UI + export shipped first. On-device Foundation Models chat is still
-> later.
+> **Status: Phases 0–5 landed for Votann.** Playground experiment under
+> `ios/Sources/Experiments/ArmyList/`. Bundled catalog + validator + authoring UI
+> + export + on-device Foundation Models chat (tool calls re-validate). More
+> factions and richer wargear options are follow-ups.
 
 This document is the implementation plan for a Warhammer 40,000 army list
 builder experiment: build lists, validate them against 11th Edition army

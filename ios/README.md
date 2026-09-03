@@ -47,7 +47,7 @@ ios/
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
 | `device-agent` | Device Agent | On-device model drives an in-app browser; App Intents/Shortcuts; voice; requires Apple Intelligence |
-| `army-list` | Army List | Build/validate 11th Edition army lists (Votann catalog first); export `.army.json` + text |
+| `army-list` | Army List | Build/validate 11th Edition lists (Votann); on-device chat tools edit via the validator |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
@@ -125,9 +125,13 @@ Refresh catalog data from BSData’s Munitorum Field Manual scrape:
 python3 ios/scripts/refresh-army-list-catalog.py
 ```
 
+**List chat** (toolbar bubble on a list) uses on-device Foundation Models when
+Apple Intelligence is available (iOS 26+). Tools mutate the same document the
+editor shows; every tool result re-runs the validator. Without the model, chat
+shows an unavailable pane — authoring and validation still work.
+
 Unofficial fan experiment — confirm points with the official Munitorum Field
-Manual for events. On-device chat / list ideation is planned after validation
-coverage is solid.
+Manual for events.
 
 ### Device Agent
 

@@ -97,6 +97,15 @@ struct ArmyListEditorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                NavigationLink {
+                    ArmyListChatView(list: $list, catalog: catalog, store: store)
+                } label: {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                }
+                .accessibilityLabel("List chat")
+                .accessibilityIdentifier("armyListChatButton")
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button {
                     prepareShare()
                     showShare = true
