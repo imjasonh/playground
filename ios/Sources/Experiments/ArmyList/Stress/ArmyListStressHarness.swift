@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(Playground)
+@testable import Playground
+#endif
+
 /// Builds ~50 army lists for stress coverage. Legality is decided only by
 /// `ArmyListValidator`. This harness never reimplements construction rules.
 enum ArmyListStressHarness {
