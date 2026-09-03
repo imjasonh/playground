@@ -76,10 +76,11 @@ togOcclusion.addEventListener('change', () => setOcclusion(togOcclusion.checked)
 togReflections.addEventListener('change', () => setReflections(togReflections.checked));
 togRays.addEventListener('change', () => setRays(togRays.checked));
 
-// Keep pointer-lock clicks on the canvas; don't steal focus into the page chrome
-// except when the user is actually using a checkbox.
+// Keep pointer-lock clicks on the canvas; when using the control panel, exit
+// pointer lock so the checkboxes are clickable without hunting for Esc.
 document.getElementById('controls').addEventListener('mousedown', (e) => {
   e.stopPropagation();
+  if (document.pointerLockElement) document.exitPointerLock();
 });
 
 window.addEventListener('keydown', (e) => {
