@@ -81,7 +81,8 @@ points + datasheet keyword scrapes.
 - Catalog version: \`${version}\`
 - Id migrations keep saved lists pointed at the same named datasheets when
   ids would otherwise drift
-- Stress fixtures regenerated so iOS CI validates the new points
+- Stress fixtures regenerated on macOS by the Swift \`ArmyListValidator\` CLI
+  (no second-language rules port)
 
 This catalog stays **in-app / versioned** (no remote fetch). Auto-merge is
 enabled; the PR lands on \`main\` once required checks pass.

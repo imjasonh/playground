@@ -131,10 +131,11 @@ refresh on `main`, opens a PR, regenerates stress fixtures, and auto-merges
 when CI is green. Catalog versions bump as `11e-<N>`; id migrations keep saved
 lists pointed at the same named datasheets when ids would otherwise drift.
 
-Stress-test the validator with 50 constructed lists (also writes XCTest fixtures):
+Stress-test the validator by building ~50 lists in Swift (same
+`ArmyListValidator` as the app) and writing XCTest fixtures. Requires macOS:
 
 ```bash
-python3 ios/scripts/stress-army-lists.py --write-fixtures
+bash ios/scripts/stress-army-lists.sh --write-fixtures
 ```
 
 **List chat** (toolbar bubble on a list) uses on-device Foundation Models when

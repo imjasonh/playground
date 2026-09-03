@@ -49,6 +49,14 @@ final class ArmyListStressTests: XCTestCase {
         XCTAssertTrue(result.errors.contains { $0.code == "unit.attachNoTargets" })
     }
 
+    func testStressHarnessMatchesSwiftValidator() throws {
+        let catalog = try ArmyListCatalogTests.loadCatalogFromRepo()
+        let lists = ArmyListStressHarness.buildFifty(catalog: catalog)
+        XCTAssertEqual(lists.count, 50)
+        let mismatches = ArmyListStressHarness.mismatches(in: lists, catalog: catalog)
+        XCTAssertTrue(mismatches.isEmpty, mismatches.joined(separator: "\n"))
+    }
+
     private struct Fixture {
         var file: String
         var expectedLegal: Bool

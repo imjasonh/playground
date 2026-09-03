@@ -467,7 +467,7 @@ in plain types so Simulator-less reasoning stays in unit tests.
 
 | Risk | Mitigation |
 |------|------------|
-| Rules change often (MFM drops) | Version the catalog; show version in UI and exports; easy JSON edits. |
+| Rules change often (points drops) | Version the bundled catalog; weekly macOS GHA refreshes + Swift stress fixtures; show version in UI and exports. |
 | Copyright / ToS if scraping | No scrapers. Hand-authored minimal construction data only. |
 | Catalog too large for on-device prompts | Tools + search; never dump full faction JSON into the session. |
 | LLM invents illegal units | Tools constrained to catalog ids; validator is source of truth. |
