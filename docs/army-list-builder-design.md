@@ -1,9 +1,9 @@
 # Design: Army List Builder (Warhammer 40,000, 11th Edition)
 
-> **Status: plan.** Proposed as an **in-app experiment** inside the Playground
-> iOS host (`ios/`), not a second Bundle ID. Authoring + deterministic
-> validation ship first. On-device Foundation Models chat is a later layer that
-> only mutates lists through the same validator.
+> **Status: Phase 0–3 in progress.** Playground experiment under
+> `ios/Sources/Experiments/ArmyList/`. Bundled Votann catalog + validator +
+> authoring UI + export shipped first. On-device Foundation Models chat is still
+> later.
 
 This document is the implementation plan for a Warhammer 40,000 army list
 builder experiment: build lists, validate them against 11th Edition army
@@ -17,7 +17,7 @@ Apple Intelligence on device.
 | Ship shape | Playground **experiment** under `ios/Sources/Experiments/ArmyList/` |
 | Bundle ID / signing | Host Bundle ID only. No extension. No re-bootstrap. |
 | Rules priority | **Authoring + validation first.** LLM features are blocked until the validator is trustworthy for the shipped catalog. |
-| Rules data source | **Hand-maintained structured catalog** in-repo. Do **not** scrape or vendor wahapedia.ru (or any third-party rules site). Use Warhammer Community / Munitorum Field Manual / free Faction Packs as the human reference when authoring data. |
+| Rules data source | **Bundled construction catalog** generated from [BSData `wh40k-11e-mfm`](https://github.com/BSData/wh40k-11e-mfm) (Munitorum Field Manual scrape) plus keywords/join edges from [BSData `wh40k-11e`](https://github.com/BSData/wh40k-11e). Refresh with `python3 ios/scripts/refresh-army-list-catalog.py`. Wahapedia is fine as a human reference; the machine source of truth is BSData/MFM. |
 | Edition | **11th Edition** army construction (Detachment Points, multi-detachment, Leader/Support at list build, enhancement/upgrade limits, Force Disposition). |
 | First catalog slice | **Leagues of Votann** only, Incursion (1000 pts) + Strike Force (2000 pts). Expand factions after the validator and UI are solid. |
 | LLM | Apple **Foundation Models** (same weak-link pattern as Device Agent / Ride Monitor). Tools edit the list; the validator accepts or rejects every change. |
@@ -85,23 +85,21 @@ or Watch companion is required for v1.
 - Competitive balance advice as authority (chat is opinion; validation is law).
 - Every faction at once.
 
-### Legal / data policy (hard)
+### Legal / data policy
 
-Games Workshop owns the rules, names, and points. Wahapedia and similar sites
-are third-party presentations of that material. For this playground experiment:
+Games Workshop owns the rules, names, and points. This playground experiment
+bundles **construction facts only** (points, Detachment Points, unique tags,
+join edges, keywords) derived from the public Munitorum Field Manual via the
+community [BSData `wh40k-11e-mfm`](https://github.com/BSData/wh40k-11e-mfm)
+dataset, with datasheet keywords from [BSData `wh40k-11e`](https://github.com/BSData/wh40k-11e).
 
-1. **Do not scrape** wahapedia.ru or mirror its HTML/JSON into the repo.
-2. **Do not paste** long copyrighted datasheet or ability text into the catalog.
-3. Author a **minimal structured catalog** (ids, points, keywords, option
-   matrices, join edges, detachment DP/tags) sufficient for army *construction*
-   validation. Prefer short identifiers and option labels over rulebook prose.
-4. Record catalog provenance in `catalog/VERSION.json` (edition label, MFM /
-   Faction Pack revision date the human used, and which factions are covered).
-5. Show an in-app disclaimer: unofficial fan experiment; use official sources
+1. Refresh the bundled catalog with `python3 ios/scripts/refresh-army-list-catalog.py`.
+2. Do **not** paste long copyrighted datasheet or ability text into the catalog.
+3. Show an in-app disclaimer: unofficial fan experiment; use official sources
    for tournament play.
 
-Looking at wahapedia (or the online Munitorum Field Manual) while hand-authoring
-is fine. Automating downloads into the repo is not.
+Wahapedia is a useful human reference while building features. Prefer BSData/MFM
+for machine-readable construction data so refreshes stay reproducible.
 
 ---
 

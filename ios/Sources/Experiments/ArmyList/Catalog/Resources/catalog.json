@@ -1,0 +1,1143 @@
+{
+  "version": "11e-mfm-1.4",
+  "edition": "11th",
+  "source": {
+    "mfm": "https://github.com/BSData/wh40k-11e-mfm (data/leagues-of-votann.yaml)",
+    "datasheetKeywords": "https://github.com/BSData/wh40k-11e (Leagues of Votann.json)",
+    "mfmVersion": "1.4",
+    "mfmFirstSeen": "2026-09-02",
+    "note": "Construction data only (points, DP, join edges, keywords). No ability prose."
+  },
+  "battleSizes": [
+    {
+      "id": "incursion",
+      "name": "Incursion",
+      "pointsLimit": 1000,
+      "detachmentPointsBudget": 2,
+      "enhancementPickLimit": 2,
+      "datasheetDuplicateLimit": 2,
+      "battlelineDuplicateLimit": 4,
+      "dedicatedTransportDuplicateLimit": 4
+    },
+    {
+      "id": "strike-force",
+      "name": "Strike Force",
+      "pointsLimit": 2000,
+      "detachmentPointsBudget": 3,
+      "enhancementPickLimit": 4,
+      "datasheetDuplicateLimit": 3,
+      "battlelineDuplicateLimit": 6,
+      "dedicatedTransportDuplicateLimit": 6
+    }
+  ],
+  "factions": [
+    {
+      "id": "leagues-of-votann",
+      "name": "Leagues of Votann",
+      "keywords": [
+        "Faction: Leagues of Votann"
+      ]
+    }
+  ],
+  "detachments": [
+    {
+      "id": "armoured-trailblazers",
+      "name": "Armoured Trailblazers",
+      "factionID": "leagues-of-votann",
+      "detachmentPoints": 1,
+      "forceDisposition": "Disruption",
+      "uniqueTag": null,
+      "enhancements": [
+        {
+          "id": "armoured-trailblazers--optimised-attack-lines",
+          "name": "Optimised Attack Lines",
+          "points": 15,
+          "isUpgrade": true
+        },
+        {
+          "id": "armoured-trailblazers--saturation-rounds",
+          "name": "Saturation Rounds",
+          "points": 15,
+          "isUpgrade": true
+        }
+      ]
+    },
+    {
+      "id": "brandfast-oathband",
+      "name": "Brandfast Oathband",
+      "factionID": "leagues-of-votann",
+      "detachmentPoints": 2,
+      "forceDisposition": "Take and Hold",
+      "uniqueTag": null,
+      "enhancements": [
+        {
+          "id": "brandfast-oathband--precursive-judgement",
+          "name": "Precursive Judgement",
+          "points": 15,
+          "isUpgrade": false
+        },
+        {
+          "id": "brandfast-oathband--signature-restoration",
+          "name": "Signature Restoration",
+          "points": 5,
+          "isUpgrade": false
+        },
+        {
+          "id": "brandfast-oathband--tactical-alchemy",
+          "name": "Tactical Alchemy",
+          "points": 10,
+          "isUpgrade": false
+        },
+        {
+          "id": "brandfast-oathband--trivarg-cyber-implant",
+          "name": "Trivärg Cyber Implant",
+          "points": 40,
+          "isUpgrade": false
+        }
+      ]
+    },
+    {
+      "id": "delve-assault-shift",
+      "name": "Dêlve Assault Shift",
+      "factionID": "leagues-of-votann",
+      "detachmentPoints": 2,
+      "forceDisposition": "Purge the Foe",
+      "uniqueTag": null,
+      "enhancements": [
+        {
+          "id": "delve-assault-shift--delvewerke-navigator",
+          "name": "Dêlvewerke Navigator",
+          "points": 25,
+          "isUpgrade": false
+        },
+        {
+          "id": "delve-assault-shift--multiwave-system-jammer",
+          "name": "Multiwave System Jammer",
+          "points": 10,
+          "isUpgrade": false
+        },
+        {
+          "id": "delve-assault-shift--piledriver",
+          "name": "Piledriver",
+          "points": 15,
+          "isUpgrade": false
+        },
+        {
+          "id": "delve-assault-shift--quake-supervisor",
+          "name": "Quake Supervisor",
+          "points": 20,
+          "isUpgrade": false
+        }
+      ]
+    },
+    {
+      "id": "farseekers",
+      "name": "Farseekers",
+      "factionID": "leagues-of-votann",
+      "detachmentPoints": 1,
+      "forceDisposition": "Reconnaissance",
+      "uniqueTag": null,
+      "enhancements": [
+        {
+          "id": "farseekers--pan-spectral-lockons",
+          "name": "Pan-spectral Lockons",
+          "points": 10,
+          "isUpgrade": true
+        },
+        {
+          "id": "farseekers--shroudwerke-talismans",
+          "name": "Shroudwërke Talismans",
+          "points": 15,
+          "isUpgrade": true
+        }
+      ]
+    },
+    {
+      "id": "hearthband",
+      "name": "Hearthband",
+      "factionID": "leagues-of-votann",
+      "detachmentPoints": 3,
+      "forceDisposition": "Priority Assets",
+      "uniqueTag": "Hearthband",
+      "enhancements": [
+        {
+          "id": "hearthband--bastion-shield",
+          "name": "Bastion Shield",
+          "points": 25,
+          "isUpgrade": false
+        },
+        {
+          "id": "hearthband--high-kahl",
+          "name": "High Kâhl",
+          "points": 30,
+          "isUpgrade": false
+        },
+        {
+          "id": "hearthband--ironskein",
+          "name": "Ironskein",
+          "points": 10,
+          "isUpgrade": false
+        },
+        {
+          "id": "hearthband--quake-multigenerator",
+          "name": "Quake Multigenerator",
+          "points": 15,
+          "isUpgrade": false
+        }
+      ]
+    },
+    {
+      "id": "hearthfyre-arsenal",
+      "name": "Hearthfyre Arsenal",
+      "factionID": "leagues-of-votann",
+      "detachmentPoints": 2,
+      "forceDisposition": "Priority Assets",
+      "uniqueTag": null,
+      "enhancements": [
+        {
+          "id": "hearthfyre-arsenal--calculated-tenacity",
+          "name": "Calculated Tenacity",
+          "points": 15,
+          "isUpgrade": false
+        },
+        {
+          "id": "hearthfyre-arsenal--farstrydr-node",
+          "name": "Fârstrydr Node",
+          "points": 20,
+          "isUpgrade": false
+        },
+        {
+          "id": "hearthfyre-arsenal--graviton-vault",
+          "name": "Graviton Vault",
+          "points": 5,
+          "isUpgrade": false
+        },
+        {
+          "id": "hearthfyre-arsenal--mantle-of-elders",
+          "name": "Mantle of Elders",
+          "points": 10,
+          "isUpgrade": false
+        }
+      ]
+    },
+    {
+      "id": "hearthguard-covenant",
+      "name": "Hearthguard Covenant",
+      "factionID": "leagues-of-votann",
+      "detachmentPoints": 1,
+      "forceDisposition": "Priority Assets",
+      "uniqueTag": "Hearthband",
+      "enhancements": [
+        {
+          "id": "hearthguard-covenant--high-kahl",
+          "name": "High Kâhl",
+          "points": 30,
+          "isUpgrade": false
+        },
+        {
+          "id": "hearthguard-covenant--ironskein",
+          "name": "Ironskein",
+          "points": 10,
+          "isUpgrade": false
+        }
+      ]
+    },
+    {
+      "id": "mercenary-oathband",
+      "name": "Mercenary Oathband",
+      "factionID": "leagues-of-votann",
+      "detachmentPoints": 2,
+      "forceDisposition": "Take and Hold",
+      "uniqueTag": null,
+      "enhancements": [
+        {
+          "id": "mercenary-oathband--asset-manipulator",
+          "name": "Asset Manipulator",
+          "points": 25,
+          "isUpgrade": false
+        },
+        {
+          "id": "mercenary-oathband--etacarn-sb9-targeting-implant",
+          "name": "Etacarn SB9 Targeting Implant",
+          "points": 15,
+          "isUpgrade": false
+        },
+        {
+          "id": "mercenary-oathband--mercenary-prospector",
+          "name": "Mercenary Prospector",
+          "points": 20,
+          "isUpgrade": false
+        },
+        {
+          "id": "mercenary-oathband--metaphysical-brokerage",
+          "name": "Metaphysical Brokerage",
+          "points": 20,
+          "isUpgrade": false
+        }
+      ]
+    },
+    {
+      "id": "needgaard-oathband",
+      "name": "Needgaârd Oathband",
+      "factionID": "leagues-of-votann",
+      "detachmentPoints": 2,
+      "forceDisposition": "Purge the Foe",
+      "uniqueTag": null,
+      "enhancements": [
+        {
+          "id": "needgaard-oathband--ancestral-crest",
+          "name": "Ancestral Crest",
+          "points": 15,
+          "isUpgrade": false
+        },
+        {
+          "id": "needgaard-oathband--dead-reckoning",
+          "name": "Dead Reckoning",
+          "points": 10,
+          "isUpgrade": false
+        },
+        {
+          "id": "needgaard-oathband--iron-ambassador",
+          "name": "Iron Ambassador",
+          "points": 5,
+          "isUpgrade": false
+        },
+        {
+          "id": "needgaard-oathband--oathbound-speculator",
+          "name": "Oathbound Speculator",
+          "points": 30,
+          "isUpgrade": false
+        }
+      ]
+    },
+    {
+      "id": "persecution-prospect",
+      "name": "Persecution Prospect",
+      "factionID": "leagues-of-votann",
+      "detachmentPoints": 2,
+      "forceDisposition": "Disruption",
+      "uniqueTag": null,
+      "enhancements": [
+        {
+          "id": "persecution-prospect--eye-for-weakness",
+          "name": "Eye for Weakness",
+          "points": 25,
+          "isUpgrade": false
+        },
+        {
+          "id": "persecution-prospect--nomad-strategist",
+          "name": "Nomad Strategist",
+          "points": 20,
+          "isUpgrade": false
+        },
+        {
+          "id": "persecution-prospect--surgical-saboteur",
+          "name": "Surgical Saboteur",
+          "points": 10,
+          "isUpgrade": false
+        },
+        {
+          "id": "persecution-prospect--writ-of-acquisition",
+          "name": "Writ of Acquisition",
+          "points": 10,
+          "isUpgrade": false
+        }
+      ]
+    }
+  ],
+  "datasheets": [
+    {
+      "id": "arkanyst-evaluator",
+      "name": "Arkanyst Evaluator",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Character",
+        "Infantry",
+        "Faction: Leagues of Votann"
+      ],
+      "characterRole": "character",
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 1,
+      "maxModels": 1,
+      "modelCounts": [
+        1
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "1": 70
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "berehk-stornbrow",
+      "name": "Berehk Stornbröw",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Epic Hero",
+        "Infantry",
+        "Character",
+        "Faction: Leagues of Votann",
+        "Leader"
+      ],
+      "characterRole": "leader",
+      "epicHero": true,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 1,
+      "maxModels": 1,
+      "modelCounts": [
+        1
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "1": 85
+          }
+        }
+      ],
+      "leaderTo": [
+        "cthonian-beserks"
+      ],
+      "mustAttach": false,
+      "maxCopiesOverride": null
+    },
+    {
+      "id": "brokhyr-iron-master",
+      "name": "Brôkhyr Iron-Master",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry",
+        "Character",
+        "Leader"
+      ],
+      "characterRole": "leader",
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 5,
+      "maxModels": 5,
+      "modelCounts": [
+        5
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "5": 70
+          }
+        }
+      ],
+      "leaderTo": [
+        "brokhyr-thunderkyn",
+        "hearthkyn-warriors"
+      ],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "brokhyr-thunderkyn",
+      "name": "Brôkhyr Thunderkyn",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 3,
+      "maxModels": 6,
+      "modelCounts": [
+        3,
+        6
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": 2,
+          "byModels": {
+            "3": 80,
+            "6": 170
+          }
+        },
+        {
+          "fromCopy": 3,
+          "toCopy": null,
+          "byModels": {
+            "3": 90,
+            "6": 180
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "buri-aegnirssen",
+      "name": "Buri Aegnirssen",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Epic Hero",
+        "Infantry",
+        "Character",
+        "Faction: Leagues of Votann",
+        "Leader"
+      ],
+      "characterRole": "leader",
+      "epicHero": true,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 1,
+      "maxModels": 1,
+      "modelCounts": [
+        1
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "1": 85
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": null
+    },
+    {
+      "id": "cthonian-beserks",
+      "name": "Cthonian Beserks",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 5,
+      "maxModels": 10,
+      "modelCounts": [
+        5,
+        10
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "5": 95,
+            "10": 190
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "cthonian-earthshakers",
+      "name": "Cthonian Earthshakers",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Infantry",
+        "Faction: Leagues of Votann"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 2,
+      "maxModels": 2,
+      "modelCounts": [
+        2
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "2": 100
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "einhyr-champion",
+      "name": "Einhyr Champion",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry",
+        "Character",
+        "Leader"
+      ],
+      "characterRole": "leader",
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 1,
+      "maxModels": 1,
+      "modelCounts": [
+        1
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "1": 65
+          }
+        }
+      ],
+      "leaderTo": [
+        "einhyr-hearthguard"
+      ],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "einhyr-hearthguard",
+      "name": "Einhyr Hearthguard",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 5,
+      "maxModels": 10,
+      "modelCounts": [
+        5,
+        10
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": 2,
+          "byModels": {
+            "5": 130,
+            "10": 270
+          }
+        },
+        {
+          "fromCopy": 3,
+          "toCopy": null,
+          "byModels": {
+            "5": 140,
+            "10": 280
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "grimnyr",
+      "name": "Grimnyr",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry",
+        "Character",
+        "Leader"
+      ],
+      "characterRole": "leader",
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 3,
+      "maxModels": 3,
+      "modelCounts": [
+        3
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "3": 65
+          }
+        }
+      ],
+      "leaderTo": [
+        "hearthkyn-warriors"
+      ],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "hearthkyn-warriors",
+      "name": "Hearthkyn Warriors",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry",
+        "Battleline",
+        "Grenades"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": true,
+      "dedicatedTransport": false,
+      "minModels": 10,
+      "maxModels": 10,
+      "modelCounts": [
+        10
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "10": 90
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 6
+    },
+    {
+      "id": "hekaton-land-fortress",
+      "name": "Hekaton Land Fortress",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Vehicle",
+        "Transport"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 1,
+      "maxModels": 1,
+      "modelCounts": [
+        1
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": 1,
+          "byModels": {
+            "1": 250
+          }
+        },
+        {
+          "fromCopy": 2,
+          "toCopy": null,
+          "byModels": {
+            "1": 265
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "hernkyn-pioneers",
+      "name": "Hernkyn Pioneers",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Mounted",
+        "Grenades",
+        "Fly"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 3,
+      "maxModels": 6,
+      "modelCounts": [
+        3,
+        6
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": 2,
+          "byModels": {
+            "3": 80,
+            "6": 160
+          }
+        },
+        {
+          "fromCopy": 3,
+          "toCopy": null,
+          "byModels": {
+            "3": 90,
+            "6": 170
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "hernkyn-yaegirs",
+      "name": "Hernkyn Yaegirs",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry",
+        "Grenades"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 10,
+      "maxModels": 10,
+      "modelCounts": [
+        10
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "10": 90
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "ironkin-steeljacks-with-heavy-volkanite-disintegrators",
+      "name": "Ironkin Steeljacks With Heavy Volkanite Disintegrators",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 3,
+      "maxModels": 6,
+      "modelCounts": [
+        3,
+        6
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": 2,
+          "byModels": {
+            "3": 80,
+            "6": 170
+          }
+        },
+        {
+          "fromCopy": 3,
+          "toCopy": null,
+          "byModels": {
+            "3": 90,
+            "6": 180
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "ironkin-steeljacks-with-melee-weapons",
+      "name": "Ironkin Steeljacks With Melee Weapons",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 3,
+      "maxModels": 6,
+      "modelCounts": [
+        3,
+        6
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": 2,
+          "byModels": {
+            "3": 75,
+            "6": 150
+          }
+        },
+        {
+          "fromCopy": 3,
+          "toCopy": null,
+          "byModels": {
+            "3": 85,
+            "6": 160
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "kahl",
+      "name": "Kâhl",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry",
+        "Character",
+        "Leader"
+      ],
+      "characterRole": "leader",
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 1,
+      "maxModels": 1,
+      "modelCounts": [
+        1
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "1": 65
+          }
+        }
+      ],
+      "leaderTo": [
+        "einhyr-hearthguard",
+        "hearthkyn-warriors"
+      ],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "kapricus-carrier",
+      "name": "Kapricus Carrier",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Dedicated Transport",
+        "Transport",
+        "Vehicle",
+        "Fly",
+        "Faction: Leagues of Votann"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": true,
+      "minModels": 1,
+      "maxModels": 1,
+      "modelCounts": [
+        1
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": 3,
+          "byModels": {
+            "1": 70
+          }
+        },
+        {
+          "fromCopy": 4,
+          "toCopy": null,
+          "byModels": {
+            "1": 80
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 6
+    },
+    {
+      "id": "kapricus-defenders",
+      "name": "Kapricus Defenders",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Vehicle",
+        "Fly",
+        "Faction: Leagues of Votann"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 1,
+      "maxModels": 2,
+      "modelCounts": [
+        1,
+        2
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": 2,
+          "byModels": {
+            "1": 70,
+            "2": 140
+          }
+        },
+        {
+          "fromCopy": 3,
+          "toCopy": null,
+          "byModels": {
+            "1": 80,
+            "2": 150
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "memnyr-strategist",
+      "name": "Memnyr Strategist",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Character",
+        "Infantry",
+        "Faction: Leagues of Votann",
+        "Leader"
+      ],
+      "characterRole": "leader",
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 1,
+      "maxModels": 1,
+      "modelCounts": [
+        1
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "1": 45
+          }
+        }
+      ],
+      "leaderTo": [
+        "ironkin-steeljacks-with-heavy-volkanite-disintegrators",
+        "ironkin-steeljacks-with-melee-weapons"
+      ],
+      "mustAttach": false,
+      "maxCopiesOverride": 3
+    },
+    {
+      "id": "sagitaur",
+      "name": "Sagitaur",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Vehicle",
+        "Transport",
+        "Dedicated Transport"
+      ],
+      "characterRole": null,
+      "epicHero": false,
+      "battleline": false,
+      "dedicatedTransport": true,
+      "minModels": 1,
+      "maxModels": 1,
+      "modelCounts": [
+        1
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": 3,
+          "byModels": {
+            "1": 85
+          }
+        },
+        {
+          "fromCopy": 4,
+          "toCopy": null,
+          "byModels": {
+            "1": 95
+          }
+        }
+      ],
+      "leaderTo": [],
+      "mustAttach": false,
+      "maxCopiesOverride": 6
+    },
+    {
+      "id": "uthar-the-destined",
+      "name": "Ûthar the Destined",
+      "factionID": "leagues-of-votann",
+      "keywords": [
+        "Faction: Leagues of Votann",
+        "Infantry",
+        "Character",
+        "Epic Hero",
+        "Leader"
+      ],
+      "characterRole": "leader",
+      "epicHero": true,
+      "battleline": false,
+      "dedicatedTransport": false,
+      "minModels": 1,
+      "maxModels": 1,
+      "modelCounts": [
+        1
+      ],
+      "pointsTiers": [
+        {
+          "fromCopy": 1,
+          "toCopy": null,
+          "byModels": {
+            "1": 90
+          }
+        }
+      ],
+      "leaderTo": [
+        "einhyr-hearthguard",
+        "hearthkyn-warriors"
+      ],
+      "mustAttach": false,
+      "maxCopiesOverride": 1
+    }
+  ]
+}
