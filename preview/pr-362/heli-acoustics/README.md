@@ -15,7 +15,9 @@ stochastic late field feed binaural Web Audio.
 
 Occlusion and order-1/2 specular candidates run in a **WebGPU compute shader**.
 Order-3, diffraction, material banding, and stochastic IR merge on the CPU.
-The HUD **solver** row shows `webgpu` or `cpu`.
+**WebGPU is required** — the live app does not fall back to a CPU solver. The HUD
+**solver** row shows `webgpu`, or the start screen reports an error if the GPU
+is missing.
 
 Debug rays: cyan order-1, purple order-2, pink order-3, amber diffraction.
 

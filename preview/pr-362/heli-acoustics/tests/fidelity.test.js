@@ -84,7 +84,7 @@ test('stochastic energy bins have energy and build an IR', () => {
   assert.ok(buf.length > 1000);
 });
 
-test('CPU acoustics includes diffraction and ir bins', () => {
+test('reference acoustics includes diffraction and ir bins', () => {
   const listener = [0, 1.7, 40];
   const source = [-90, 50, 50];
   const r = computeAcousticsCpu(listener, source, BUILDINGS, 16);
