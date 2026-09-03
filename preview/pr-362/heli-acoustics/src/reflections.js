@@ -212,8 +212,8 @@ export function order2PairList(faceList, { limit = 80 } = {}) {
 
 /**
  * Strongest early reflections up to `limit`, mixing order-1 and optional order-2.
- * Faces are cached by the caller when possible; order-2 uses a prioritized,
- * capped pair list so the CPU path stays fast without WebGPU.
+ * Used by Node tests and as the CPU fallback when WebGPU is unavailable. The
+ * live app prefers `GpuAcoustics` in `acousticsGpu.js`.
  */
 export function computeReflections(
   listener,

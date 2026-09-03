@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:audio": "node scripts/run-hrtf-proof.mjs && node scripts/sample-live-ears.mjs && node scripts/sample-reflections.mjs && node scripts/sample-reverb.mjs",
+    "test:audio": "node scripts/run-hrtf-proof.mjs && node scripts/sample-live-ears.mjs && node scripts/sample-reflections.mjs && node scripts/sample-reverb.mjs && node scripts/sample-webgpu.mjs",
     "test:e2e": "npm run test:audio",
     "start": "npx --yes serve . -p 3000",
     "vendor": "node scripts/vendor.js"

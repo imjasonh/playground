@@ -2,10 +2,8 @@ import { HeliAudio } from './audio.js';
 import { FpsControls, coarsePointer } from './controls.js';
 import { createCityScene, createRenderer, createCamera } from './scene3d.js';
 import { DebugRays } from './debugRays.js';
-import { BUILDINGS, helicopterPath, buildingFaces } from './city.js';
-import { occlusionAmount } from './occlusion.js';
-import { computeReflections } from './reflections.js';
-import { enclosureAt } from './enclosure.js';
+import { BUILDINGS, helicopterPath } from './city.js';
+import { GpuAcoustics } from './acousticsGpu.js';
 import { proveHrtfBinaural } from './hrtfProof.js';
 import { relativeAzimuthDeg, distance } from './geometry.js';
 
@@ -17,6 +15,7 @@ const ctxEl = document.getElementById('ctx');
 const occEl = document.getElementById('occ');
 const refEl = document.getElementById('refn');
 const revEl = document.getElementById('rev');
+const gpuEl = document.getElementById('gpu');
 const balEl = document.getElementById('bal');
 const proofEl = document.getElementById('proof');
 const leftBar = document.getElementById('left-bar');
@@ -33,7 +32,7 @@ const renderer = createRenderer(canvas);
 const camera = createCamera(canvas.clientWidth / Math.max(1, canvas.clientHeight));
 const controls = new FpsControls(canvas);
 const debugRays = new DebugRays(scene, { maxTaps: 12 });
-const FACES = buildingFaces(BUILDINGS);
+const gpuAcoustics = new GpuAcoustics({ buildings: BUILDINGS, limit: 12 });
 
 let audio = null;
 let running = false;
@@ -43,10 +42,19 @@ let occlusionOn = true;
 let reflectionsOn = true;
 let reverbOn = true;
 let raysOn = true;
+let acousticsBusy = false;
+let latestAcoustics = {
+  occlusion: 0,
+  reflections: [],
+  enclosure: { amount: 0, rt60Sec: 0.3 },
+  backend: 'init',
+};
 
 const earSamples = [];
 window.__heliEarSamples = earSamples;
 window.__heliGetAudio = () => audio;
+window.__heliGetAcoustics = () => latestAcoustics;
+window.__heliGpuAcoustics = gpuAcoustics;
 
 function resize() {
   const w = canvas.clientWidth;
@@ -88,8 +96,6 @@ togReflections.addEventListener('change', () => setReflections(togReflections.ch
 togReverb.addEventListener('change', () => setReverb(togReverb.checked));
 togRays.addEventListener('change', () => setRays(togRays.checked));
 
-// Keep pointer-lock clicks on the canvas; when using the control panel, exit
-// pointer lock so the checkboxes are clickable without hunting for Esc.
 document.getElementById('controls').addEventListener('pointerdown', (e) => {
   e.stopPropagation();
   if (document.pointerLockElement) document.exitPointerLock();
@@ -114,6 +120,21 @@ function paintMeters(levels) {
   ctxEl.textContent = levels.contextState;
 }
 
+function kickAcoustics(listenerPos, sourcePos) {
+  if (acousticsBusy) return;
+  acousticsBusy = true;
+  gpuAcoustics
+    .compute(listenerPos, sourcePos)
+    .then((result) => {
+      latestAcoustics = result;
+      acousticsBusy = false;
+    })
+    .catch((err) => {
+      console.warn('acoustics compute failed', err);
+      acousticsBusy = false;
+    });
+}
+
 function frame(now) {
   if (!running) return;
   const dt = Math.min(0.05, (now - lastFrame) / 1000 || 0.016);
@@ -135,13 +156,8 @@ function frame(now) {
   heli.position.set(sourcePos[0], sourcePos[1], sourcePos[2]);
   rotor.rotation.y = t * 40;
 
-  const occ = occlusionAmount(listenerPos, sourcePos, BUILDINGS);
-  const reflections = computeReflections(listenerPos, sourcePos, BUILDINGS, {
-    limit: 12,
-    faces: FACES,
-    maxOrder: 2,
-  });
-  const enclosure = enclosureAt(listenerPos, BUILDINGS);
+  kickAcoustics(listenerPos.slice(), sourcePos.slice());
+  const { occlusion: occ, reflections, enclosure, backend } = latestAcoustics;
 
   audio.update(sourcePos, listenerPos, forward, up, {
     occlusion: occ,
@@ -161,6 +177,7 @@ function frame(now) {
   revEl.textContent = reverbOn
     ? `${(enclosure.amount * 100).toFixed(0)}% / ${enclosure.rt60Sec.toFixed(2)}s`
     : 'off';
+  if (gpuEl) gpuEl.textContent = backend;
 
   const levels = audio.earLevels();
   paintMeters(levels);
@@ -173,6 +190,7 @@ function frame(now) {
       right: levels.right,
       occ,
       enclosure: enclosure.amount,
+      backend,
     });
     if (earSamples.length > 600) earSamples.shift();
   }
@@ -183,6 +201,10 @@ function frame(now) {
 
 async function start() {
   if (running) return;
+  await gpuAcoustics.init();
+  latestAcoustics.backend = gpuAcoustics.backend;
+  if (gpuEl) gpuEl.textContent = gpuAcoustics.backend;
+
   audio = new HeliAudio();
   audio.setOcclusionEnabled(occlusionOn);
   audio.setReflectionsEnabled(reflectionsOn);
@@ -193,7 +215,6 @@ async function start() {
   startTime = performance.now();
   lastFrame = startTime;
   overlay.classList.add('hidden');
-  // Pointer lock is a desktop convenience; phones use drag-to-look instead.
   if (!coarsePointer()) canvas.requestPointerLock?.();
   requestAnimationFrame(frame);
 
@@ -211,9 +232,7 @@ async function start() {
 }
 
 overlay.addEventListener('pointerup', (e) => {
-  // Treat a tap or click on the start screen as start. Ignore non-primary mouse.
   if (e.pointerType === 'mouse' && e.button !== 0) return;
   start();
 });
-// Keep click as a fallback for older browsers that synthesize it from taps.
 overlay.addEventListener('click', start);
