@@ -1,4 +1,6 @@
-// First-person look + WASD move on the street plane. Pointer lock after click.
+// First-person look + WASD move. Desktop can use pointer lock; mobile and
+// unlocked desktop drag on the canvas to look. Pointer events cover mouse,
+// touch, and pen so a tap starts and a drag rotates.
 
 export class FpsControls {
   constructor(canvas) {
@@ -8,20 +10,73 @@ export class FpsControls {
     this.position = [0, 1.7, 0];
     this.keys = new Set();
     this.speed = 18;
+    this.lookSensitivity = 0.0025;
+    this.dragging = false;
+    this.lastX = 0;
+    this.lastY = 0;
+
     this._onKeyDown = (e) => this.keys.add(e.code);
     this._onKeyUp = (e) => this.keys.delete(e.code);
-    this._onMove = (e) => {
-      if (document.pointerLockElement !== canvas) return;
-      this.yaw -= e.movementX * 0.0022;
-      this.pitch -= e.movementY * 0.0022;
-      this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch));
+
+    this._onPointerDown = (e) => {
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      this.dragging = true;
+      this.lastX = e.clientX;
+      this.lastY = e.clientY;
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      // Fine pointers get pointer lock for continuous look; coarse (phones)
+      // keep drag-to-look because pointer lock is unreliable or absent.
+      if (e.pointerType === 'mouse' && !coarsePointer()) {
+        canvas.requestPointerLock?.();
+      }
     };
+
+    this._onPointerMove = (e) => {
+      if (document.pointerLockElement === canvas) {
+        this.#look(e.movementX, e.movementY);
+        return;
+      }
+      if (!this.dragging) return;
+      const dx = e.clientX - this.lastX;
+      const dy = e.clientY - this.lastY;
+      this.lastX = e.clientX;
+      this.lastY = e.clientY;
+      this.#look(dx, dy);
+    };
+
+    this._onPointerUp = (e) => {
+      this.dragging = false;
+      try {
+        canvas.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+    };
+
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
-    canvas.addEventListener('mousemove', this._onMove);
-    canvas.addEventListener('click', () => {
-      if (document.pointerLockElement !== canvas) canvas.requestPointerLock();
-    });
+    canvas.addEventListener('pointerdown', this._onPointerDown);
+    canvas.addEventListener('pointermove', this._onPointerMove);
+    canvas.addEventListener('pointerup', this._onPointerUp);
+    canvas.addEventListener('pointercancel', this._onPointerUp);
+    // Stop the browser from scrolling / zooming while dragging on the canvas.
+    canvas.addEventListener(
+      'touchmove',
+      (e) => {
+        e.preventDefault();
+      },
+      { passive: false },
+    );
+  }
+
+  #look(dx, dy) {
+    this.yaw -= dx * this.lookSensitivity;
+    this.pitch -= dy * this.lookSensitivity;
+    this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch));
   }
 
   forward() {
@@ -76,9 +131,12 @@ export class FpsControls {
       dz = (dz / len) * this.speed * dt;
       this.position[0] += dx;
       this.position[2] += dz;
-      // Keep the player roughly in the playable district.
       this.position[0] = Math.max(-110, Math.min(110, this.position[0]));
       this.position[2] = Math.max(-110, Math.min(120, this.position[2]));
     }
   }
+}
+
+export function coarsePointer() {
+  return typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 }

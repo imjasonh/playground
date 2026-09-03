@@ -68,9 +68,10 @@ tracking in without touching the audio graph.
 
 | Input | Action |
 |-------|--------|
-| Click | Start + pointer lock |
-| Mouse | Look |
-| WASD | Move |
+| Tap / click start | Start audio (and pointer lock on desktop) |
+| Drag on screen | Look (touch and mouse; works without pointer lock) |
+| Mouse + pointer lock | Look (desktop) |
+| WASD | Move (keyboard) |
 | Occlusion checkbox (or O) | Enable / disable LOS muffling |
 | Reflections checkbox (or R) | Enable / disable early reflections |
 | Debug rays checkbox (or G) | Show / hide path lines |
