@@ -21,10 +21,18 @@
   function sampleAt(t, reflectionsEnabled) {
     const source = helicopterPath(t);
     const occ = occlusionAmount(listener, source, BUILDINGS);
-    const reflections = computeReflections(listener, source, BUILDINGS, { limit: 8 });
+    const reflections = computeReflections(listener, source, BUILDINGS, {
+      limit: 12,
+      maxOrder: 2,
+    });
     audio.setReflectionsEnabled(reflectionsEnabled);
     audio.setOcclusionEnabled(true);
-    audio.update(source, listener, forward, up, { occlusion: occ, reflections });
+    audio.setReverbEnabled(false);
+    audio.update(source, listener, forward, up, {
+      occlusion: occ,
+      reflections,
+      enclosure: { amount: 0, rt60Sec: 0.3 },
+    });
     return { source, occ, reflections, levels: null };
   }
 
@@ -32,6 +40,7 @@
   const onSamples = [];
   const offSamples = [];
   let maxTaps = 0;
+  let maxOrder2 = 0;
   let occludedFrames = 0;
 
   for (let phase = 0; phase < 2; phase++) {
@@ -43,6 +52,10 @@
         const t = (performance.now() - start) / 1000;
         const snap = sampleAt(t, wet);
         maxTaps = Math.max(maxTaps, snap.reflections.length);
+        maxOrder2 = Math.max(
+          maxOrder2,
+          snap.reflections.filter((r) => r.order === 2).length,
+        );
         if (snap.occ > 0) occludedFrames++;
         // Let the audio ramp settle a few frames before measuring.
         if (t > 0.4) {
@@ -64,15 +77,18 @@
   // Reflections should add measurable energy on average across the orbit.
   const energyPass = onSamples.length > 50 && offSamples.length > 50 && onAvg > offAvg * 1.05;
   const tapsPass = maxTaps >= 1;
+  const order2Pass = maxOrder2 >= 1;
   // Occlusion should engage at some point in the elongated path.
   const occPass = occludedFrames > 0;
 
   const verdict = {
-    pass: energyPass && tapsPass,
+    pass: energyPass && tapsPass && order2Pass,
     energyPass,
     tapsPass,
+    order2Pass,
     occPass,
     maxTaps,
+    maxOrder2,
     occludedFrames,
     avgEnergyReflectionsOn: onAvg,
     avgEnergyReflectionsOff: offAvg,
