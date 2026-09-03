@@ -41,7 +41,7 @@ struct ArmyListHomeView: View {
                 unavailablePane(
                     systemImage: "shield.lefthalf.filled",
                     title: "No army lists",
-                    message: "Build an 11th Edition list for any faction and validate it against the construction rules bundled with this build."
+                    message: "Create a list to get started."
                 ) {
                     Button("New list") { showNewList = true }
                         .buttonStyle(.borderedProminent)
@@ -135,18 +135,8 @@ struct ArmyListHomeView: View {
                         .accessibilityIdentifier("armyListRow-\(list.id.uuidString)")
                     }
                     .onDelete(perform: deleteFiltered)
-                } footer: {
-                    catalogFooter
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private var catalogFooter: some View {
-        if let catalog {
-            Text("Catalog \(catalog.version). Unofficial fan experiment. Confirm points with Games Workshop for events.")
-                .font(.footnote)
         }
     }
 
@@ -263,12 +253,19 @@ struct ArmyListNewSheet: View {
     @State private var factionID: String
     @State private var battleSizeID = "incursion"
 
+    private var factionsSorted: [FactionDefinition] {
+        catalog.factions.sorted {
+            $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+        }
+    }
+
     init(catalog: ArmyCatalog, onCreate: @escaping (ArmyListDocument) -> Void) {
         self.catalog = catalog
         self.onCreate = onCreate
-        let defaultFaction = catalog.faction(id: "leagues-of-votann")?.id
-            ?? catalog.factions.first?.id
-            ?? "leagues-of-votann"
+        let defaultFaction = catalog.factions
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            .first?.id
+            ?? ""
         _factionID = State(initialValue: defaultFaction)
     }
 
@@ -280,7 +277,7 @@ struct ArmyListNewSheet: View {
             }
             Section("Faction") {
                 Picker("Faction", selection: $factionID) {
-                    ForEach(catalog.factions) { faction in
+                    ForEach(factionsSorted) { faction in
                         Text(faction.name).tag(faction.id)
                     }
                 }
@@ -293,11 +290,6 @@ struct ArmyListNewSheet: View {
                     }
                 }
                 .accessibilityIdentifier("armyListBattleSizePicker")
-            }
-            Section {
-                Text("Points, Detachment Points, enhancements, and duplicates come from the construction catalog bundled with this build.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("New list")
