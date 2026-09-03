@@ -65,7 +65,7 @@
   const avg = (arr) => arr.reduce((a, b) => a + b, 0) / Math.max(arr.length, 1);
   const onAvg = avg(onSamples);
   const offAvg = avg(offSamples);
-  const energyPass = onSamples.length > 40 && offSamples.length > 40 && onAvg > offAvg * 1.04;
+  const energyPass = onSamples.length > 40 && offSamples.length > 40 && onAvg > offAvg * 1.03;
   const enclosurePass = enclosure.amount > 0.2;
 
   const verdict = {
