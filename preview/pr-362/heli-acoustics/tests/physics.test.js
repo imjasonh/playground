@@ -55,10 +55,11 @@ test('spherical pressure gain is 1/R', () => {
 });
 
 test('soft occlusion is continuous in shadow and zero in open air', () => {
-  const open = occlusionAmount([0, 1.7, 0], [0, 40, -50], BUILDINGS);
+  const open = occlusionAmount([0, 1.7, 0], [0, 80, -90], BUILDINGS);
   assert.equal(open, 0);
-  const listener = [0, 1.7, 40];
-  const source = [-100, 40, 50];
+  const nw = BUILDINGS.find((b) => b.id === 'nw');
+  const listener = [0, 1.7, (nw.min[2] + nw.max[2]) / 2];
+  const source = [nw.min[0] - 40, 60, listener[2]];
   assert.equal(isOccluded(listener, source, BUILDINGS), true);
   const soft = occlusionAmount(listener, source, BUILDINGS);
   assert.ok(soft > 0.2 && soft <= 1, `soft occlusion=${soft}`);

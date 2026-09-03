@@ -23,8 +23,9 @@ test('building edges include vertical corners and roof edges', () => {
 });
 
 test('diffraction appears when direct path is blocked behind a block', () => {
-  const listener = [0, 1.7, 40];
-  const source = [-100, 40, 50];
+  const nw = BUILDINGS.find((b) => b.id === 'nw');
+  const listener = [0, 1.7, (nw.min[2] + nw.max[2]) / 2];
+  const source = [nw.min[0] - 40, 60, listener[2]];
   const list = computeDiffraction(listener, source, BUILDINGS, { limit: 8 });
   assert.ok(list.length >= 1, 'expected at least one diffracted path');
   assert.equal(list[0].kind, 'diffraction');
@@ -46,16 +47,14 @@ test('order-3 triples produce candidates in the canyon', () => {
   const faces = buildingFaces(BUILDINGS);
   const triples = order3TripleList(faces, { limit: 48 });
   assert.ok(triples.length > 0);
-  const listener = [0, 1.7, 40];
-  const source = [8, 50, 45];
+  const listener = [0, 1.7, 80];
+  const source = [12, 90, 90];
   let found = 0;
   for (const [a, b, c] of triples) {
     if (order3Reflection(listener, source, a, b, c, BUILDINGS)) found++;
   }
-  // Not every triple hits; just ensure the solver can return some at order 3
-  // across the orbit.
-  const orbit = computeReflections(listener, source, BUILDINGS, { limit: 16, maxOrder: 3 });
   void found;
+  const orbit = computeReflections(listener, source, BUILDINGS, { limit: 16, maxOrder: 3 });
   assert.ok(orbit.some((r) => r.order >= 1));
 });
 

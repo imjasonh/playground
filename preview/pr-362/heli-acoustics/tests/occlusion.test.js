@@ -15,14 +15,15 @@ test('ray misses when aimed past the box', () => {
 });
 
 test('heli behind the NW block is occluded from the street origin', () => {
-  // NW block covers x[-80,-20] z[20,80]. Source west of it, listener in street.
-  const listener = [0, 1.7, 40];
-  const source = [-100, 40, 50];
+  const nw = BUILDINGS.find((b) => b.id === 'nw');
+  assert.ok(nw);
+  const listener = [0, 1.7, (nw.min[2] + nw.max[2]) / 2];
+  const source = [nw.min[0] - 40, 60, listener[2]];
   assert.equal(isOccluded(listener, source, BUILDINGS), true);
 });
 
 test('heli over the open avenue is not occluded', () => {
   const listener = [0, 1.7, 0];
-  const source = [0, 40, -50];
+  const source = [0, 80, -90];
   assert.equal(isOccluded(listener, source, BUILDINGS), false);
 });

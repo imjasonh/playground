@@ -28,13 +28,15 @@ test('ground reflection delays by the mirrored path', () => {
 
 test('facade reflection against a west wall places the image correctly', () => {
   const face = buildingFaces(BUILDINGS).find((f) => f.id === 'nw-e');
-  // East face of NW block is at x=-20. Source in the street east of it.
-  const source = [0, 30, 50];
-  const listener = [10, 1.7, 50];
+  assert.ok(face);
+  // East face of NW block. Source in the street east of it.
+  const source = [0, 30, 80];
+  const listener = [10, 1.7, 80];
   const r = facadeReflection(listener, source, face, BUILDINGS);
   assert.ok(r, 'expected a valid reflection');
-  assert.ok(Math.abs(r.image[0] - (-40)) < 1e-6); // mirror of x=0 across x=-20
-  assert.ok(Math.abs(r.hit[0] - (-20)) < 1e-6);
+  const mirrored = 2 * face.value - source[0];
+  assert.ok(Math.abs(r.image[0] - mirrored) < 1e-6);
+  assert.ok(Math.abs(r.hit[0] - face.value) < 1e-6);
   assert.ok(r.delaySec > 0);
   assert.ok(r.gain > 0);
   assert.equal(r.order, 1);
@@ -42,7 +44,7 @@ test('facade reflection against a west wall places the image correctly', () => {
 
 test('computeReflections returns ground plus facade hits, strongest first', () => {
   const listener = [0, 1.7, 0];
-  const source = [5, 35, -40];
+  const source = [5, 55, -70];
   const list = computeReflections(listener, source, BUILDINGS, { limit: 8, maxOrder: 1 });
   assert.ok(list.length >= 1);
   assert.ok(list.some((r) => r.kind === 'ground'));
@@ -56,19 +58,19 @@ test('computeReflections returns ground plus facade hits, strongest first', () =
 test('reflection from the wrong side of a face is rejected', () => {
   const face = buildingFaces(BUILDINGS).find((f) => f.id === 'nw-e');
   // Source is west of the east face (inside/behind the building).
-  const source = [-50, 30, 50];
-  const listener = [0, 1.7, 50];
+  const source = [face.value - 40, 30, 80];
+  const listener = [0, 1.7, 80];
   assert.equal(facadeReflection(listener, source, face, BUILDINGS), null);
 });
 
 test('order-2 opposite street walls produce a double bounce', () => {
   const faces = buildingFaces(BUILDINGS);
-  const west = faces.find((f) => f.id === 'nw-e'); // x=-20, outward -1? wait east face of NW is at x=-20 outward +1
-  const east = faces.find((f) => f.id === 'ne-low-w'); // x=+20
+  const west = faces.find((f) => f.id === 'nw-e');
+  const east = faces.find((f) => f.id === 'ne-low-w');
   assert.ok(west && east);
   // Listener and source in the avenue between the walls.
-  const listener = [0, 1.7, 40];
-  const source = [5, 28, 45];
+  const listener = [0, 1.7, 60];
+  const source = [5, 45, 70];
   const r = order2Reflection(listener, source, west, east, BUILDINGS);
   assert.ok(r, 'expected an order-2 canyon bounce');
   assert.equal(r.order, 2);
@@ -95,7 +97,7 @@ test('order-2 facade then ground is accepted when clear', () => {
 
 test('computeReflections with maxOrder 2 includes order-2 taps in the avenue', () => {
   const listener = [0, 1.7, 0];
-  const source = [0, 38, 65];
+  const source = [0, 70, 120];
   const list = computeReflections(listener, source, BUILDINGS, {
     limit: 12,
     maxOrder: 2,
