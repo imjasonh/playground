@@ -23,12 +23,26 @@ browser, put on headphones, and click to start.
 ## Test
 
 ```bash
-npm test           # node --test over the pure geometry math
+npm test           # node --test: geometry + meter math
+npm run test:audio # Chromium: OfflineAudioContext HRTF proof + live orbit L/R flip
 ```
 
-The Web Audio graph needs a browser, so tests cover the pure geometry in
-`src/geometry.js` (orbit position, listener basis vectors, bearing, elevation,
-distance falloff). That is the layer most likely to hide a sign error.
+`npm test` covers pure math in Node. The audio claim is covered separately by
+`test:audio` (also wired as `test:e2e` for CI): Playwright launches Chromium,
+renders a noise burst through an HRTF `PannerNode` hard-left and hard-right,
+and asserts opposite ear dominance. It then drives the live helicopter synth
+for one orbit and asserts measured left/right RMS balance flips with bearing.
+
+On a recent run here:
+
+- offline hard-left balance ≈ −0.59 (left ear louder)
+- offline hard-right balance ≈ +0.60 (right ear louder)
+- live orbit, when source is right: avg balance ≈ +0.15
+- live orbit, when source is left: avg balance ≈ −0.16
+- AudioContext state: `running`
+
+The on-page HUD also shows live L/R ear meters and the offline proof PASS/FAIL
+so you can judge the same numbers yourself in headphones.
 
 ## Milestones
 

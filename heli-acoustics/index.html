@@ -40,11 +40,36 @@
       }
       #hud .row span:first-child {
         display: inline-block;
-        width: 74px;
+        width: 86px;
         color: rgba(207, 228, 255, 0.55);
       }
       #hud .val {
         color: #fff;
+      }
+      #hud .ear {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      #hud .bar {
+        display: inline-block;
+        width: 110px;
+        height: 8px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(120, 180, 255, 0.25);
+        vertical-align: middle;
+      }
+      #hud .bar i {
+        display: block;
+        height: 100%;
+        width: 0%;
+        background: #7fb4ff;
+      }
+      #proof.pass {
+        color: #7dffa0;
+      }
+      #proof.fail {
+        color: #ff7d7d;
       }
       #compass-wrap {
         position: fixed;
@@ -129,10 +154,18 @@
       <div class="row"><span>bearing</span><span class="val" id="az">&#8230;</span></div>
       <div class="row"><span>elevation</span><span class="val" id="el">&#8230;</span></div>
       <div class="row"><span>distance</span><span class="val" id="dist">&#8230;</span></div>
+      <div class="row"><span>ctx</span><span class="val" id="ctx">&#8230;</span></div>
+      <div class="row ear"><span>L ear</span><span class="bar"><i id="left-bar"></i></span><span class="val" id="left-n">0</span></div>
+      <div class="row ear"><span>R ear</span><span class="bar"><i id="right-bar"></i></span><span class="val" id="right-n">0</span></div>
+      <div class="row"><span>balance</span><span class="val" id="bal">&#8230;</span></div>
+      <div class="row"><span>HRTF proof</span><span class="val" id="proof">&#8230;</span></div>
     </div>
     <div id="compass-wrap"><div id="compass">&#9650; fwd</div></div>
 
-    <div id="hint">Drag left or right (arrow keys work too) to turn your head. The red dot is the helicopter.</div>
+    <div id="hint">
+      Drag left or right (arrow keys work too) to turn your head. Watch L/R ear
+      meters: the louder ear should flip as the helicopter orbits past you.
+    </div>
 
     <div id="overlay">
       <h1>Heli acoustics</h1>
@@ -140,8 +173,10 @@
       <p>
         A synthesized helicopter orbits you and the browser renders it through
         an HRTF panner. Turn your head by dragging, and the sound tracks around
-        your ears. There are no buildings or reflections yet. M0 only proves the
-        direct-sound spatialization is good enough to build on.
+        your ears. The HUD shows measured left and right ear energy so you can
+        see the spatialization, not just assume it. There are no buildings or
+        reflections yet. M0 only proves the direct-sound spatialization is good
+        enough to build on.
       </p>
       <div class="go">Click to start</div>
     </div>

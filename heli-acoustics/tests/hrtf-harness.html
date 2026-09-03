@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>pending</title>
+<pre id="out">running</pre>
+<script type="module">
+  import { proveHrtfBinaural } from '/src/hrtfProof.js';
+  const verdict = await proveHrtfBinaural();
+  // Marker must not appear as a string literal earlier in this file, or
+  // --dump-dom's script source will match first.
+  const text = ['HRTF_PROOF', JSON.stringify(verdict)].join('=');
+  document.getElementById('out').textContent = text;
+  document.title = text;
+</script>
