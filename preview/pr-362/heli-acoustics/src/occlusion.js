@@ -1,4 +1,4 @@
-import { length, sub, add, scale, normalize, dot } from './geometry.js';
+import { length, sub, add, scale } from './geometry.js';
 
 // Ray vs AABB. Returns distance t along the ray to the first hit, or null.
 // Ray is origin + t * dir with dir not necessarily unit; t is in the same
