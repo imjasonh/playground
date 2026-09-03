@@ -186,26 +186,26 @@ export function order2Reflection(listener, source, faceA, faceB, buildings) {
 }
 
 /**
- * Prioritize order-2 pairs that matter in a street canyon: opposite parallel
- * facades, then facade↔ground. Cap the list so a frame stays cheap.
+ * Prioritize order-2 pairs that matter in a street canyon: facade↔ground first
+ * (heli in the sky), then opposite parallel facades on different buildings.
+ * Same-building opposite faces are skipped; those paths go through the mass.
  */
-export function order2PairList(faceList, { limit = 64 } = {}) {
+export function order2PairList(faceList, { limit = 80 } = {}) {
   const pairs = [];
   const ground = groundFace();
-  // Opposite parallel facades (both bounce orders).
+  for (const f of faceList) {
+    pairs.push([f, ground], [ground, f]);
+  }
   for (let i = 0; i < faceList.length; i++) {
     for (let j = i + 1; j < faceList.length; j++) {
       const a = faceList[i];
       const b = faceList[j];
+      if (a.building === b.building) continue;
       if (a.axis !== b.axis) continue;
       if (a.outward === b.outward) continue;
       if (Math.abs(a.value - b.value) < 1) continue;
       pairs.push([a, b], [b, a]);
     }
-  }
-  // Facade then ground / ground then facade.
-  for (const f of faceList) {
-    pairs.push([f, ground], [ground, f]);
   }
   return pairs.slice(0, limit);
 }
@@ -223,7 +223,7 @@ export function computeReflections(
     limit = 12,
     faces = null,
     maxOrder = 2,
-    order2CandidateLimit = 64,
+    order2CandidateLimit = 80,
   } = {},
 ) {
   const faceList = faces || buildingFaces(buildings);
