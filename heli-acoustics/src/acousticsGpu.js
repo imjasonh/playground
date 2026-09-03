@@ -4,12 +4,19 @@
 
 import { BUILDINGS, SPEED_OF_SOUND, buildingFaces } from './city.js';
 import { occlusionAmount } from './occlusion.js';
-import { computeReflections, groundFace, order2PairList } from './reflections.js';
+import {
+  computeReflections,
+  groundFace,
+  order2PairList,
+  order3TripleList,
+  order3Reflection,
+} from './reflections.js';
 import { enclosureAt } from './enclosure.js';
+import { computeDiffraction } from './diffraction.js';
+import { materialForFace, bounceBands, unitBands, cutoffFromBands } from './materials.js';
+import { traceEnergyBins } from './stochasticIr.js';
 
-const REFLECTIVITY_FACADE = 0.55;
-const REFLECTIVITY_GROUND = 0.35;
-const MAX_OUT = 64;
+const MAX_OUT = 96;
 
 const SHADER = /* wgsl */ `
 struct Uniforms {
@@ -310,10 +317,37 @@ function buildFaceTable(buildings) {
   const packed = new Float32Array(faces.length * 12);
   faces.forEach((f, i) => {
     const kind = f.kind === 'ground' ? 1 : 0;
-    const refl = kind ? REFLECTIVITY_GROUND : REFLECTIVITY_FACADE;
-    packed.set(packFace(f, refl, kind), i * 12);
+    const mat = materialForFace(f);
+    packed.set(packFace(f, mat.reflectivity, kind), i * 12);
   });
   return { faces, ids, packed, facadeCount: facades.length };
+}
+
+function enrichSpecular(r, faces) {
+  if (r.bands && r.cutoffHz != null) return r;
+  const parts = String(r.faceId).split('>');
+  let bands = unitBands();
+  for (const id of parts) {
+    const face = faces.find((f) => f.id === id) || groundFace();
+    bands = bounceBands(bands, materialForFace(face));
+  }
+  return {
+    ...r,
+    bands,
+    cutoffHz: cutoffFromBands(bands, r.pathLength || 1),
+  };
+}
+
+function finalizeEarly(listener, source, buildings, specular, limit) {
+  const faceList = [...buildingFaces(buildings), groundFace()];
+  const withBands = specular.map((r) => enrichSpecular(r, faceList));
+  const diffracted = computeDiffraction(listener, source, buildings, { limit: 8 });
+  const all = [...withBands, ...diffracted].sort((a, b) => b.gain - a.gain);
+  return {
+    reflections: all.slice(0, limit),
+    diffractionCount: diffracted.length,
+    order3Count: withBands.filter((r) => r.order === 3).length,
+  };
 }
 
 function buildJobs(faceTable, order2Limit = 80) {
@@ -342,21 +376,35 @@ function buildJobs(faceTable, order2Limit = 80) {
   return { jobs, packed };
 }
 
-function cpuFallback(listener, source, buildings, limit) {
+function cpuFallback(listener, source, buildings, limit, { irBins = null } = {}) {
   const occlusion = occlusionAmount(listener, source, buildings);
-  const reflections = computeReflections(listener, source, buildings, {
-    limit,
-    maxOrder: 2,
+  const specular = computeReflections(listener, source, buildings, {
+    limit: Math.max(limit * 2, 24),
+    maxOrder: 3,
   });
+  const early = finalizeEarly(listener, source, buildings, specular, limit);
   const enclosure = enclosureAt(listener, buildings);
-  return { occlusion, reflections, enclosure, backend: 'cpu' };
+  const bins =
+    irBins ||
+    traceEnergyBins(listener, source, buildings, { rays: 128, bounces: 5, seed: 3 });
+  return {
+    occlusion,
+    reflections: early.reflections,
+    enclosure,
+    irBins: bins,
+    diffractionCount: early.diffractionCount,
+    order3Count: early.order3Count,
+    backend: 'cpu',
+  };
 }
 
 /**
  * WebGPU acoustics engine. Call `init()` once, then `compute()` each frame.
+ * Specular order-1/2 run on GPU; order-3, diffraction, and stochastic IR bins
+ * are merged on the CPU (still cheap at this city size).
  */
 export class GpuAcoustics {
-  constructor({ buildings = BUILDINGS, limit = 12 } = {}) {
+  constructor({ buildings = BUILDINGS, limit = 16 } = {}) {
     this.buildings = buildings;
     this.limit = limit;
     this.backend = 'cpu';
@@ -364,6 +412,9 @@ export class GpuAcoustics {
     this.ready = false;
     this.faceTable = buildFaceTable(buildings);
     this.jobTable = buildJobs(this.faceTable);
+    this._frame = 0;
+    this._irBins = null;
+    this._irListener = null;
   }
 
   async init() {
@@ -459,8 +510,27 @@ export class GpuAcoustics {
    */
   async compute(listener, source) {
     if (!this.ready) await this.init();
+    this._frame++;
+    const movedFar =
+      !this._irListener ||
+      Math.hypot(
+        listener[0] - this._irListener[0],
+        listener[1] - this._irListener[1],
+        listener[2] - this._irListener[2],
+      ) > 8;
+    if (!this._irBins || this._frame % 12 === 0 || movedFar) {
+      this._irBins = traceEnergyBins(listener, source, this.buildings, {
+        rays: 160,
+        bounces: 5,
+        seed: (this._frame % 97) + 1,
+      });
+      this._irListener = listener.slice();
+    }
+
     if (this.backend !== 'webgpu' || !this.device) {
-      return cpuFallback(listener, source, this.buildings, this.limit);
+      return cpuFallback(listener, source, this.buildings, this.limit, {
+        irBins: this._irBins,
+      });
     }
 
     const jobCount = Math.min(this.jobTable.jobs.length, MAX_OUT);
@@ -495,7 +565,7 @@ export class GpuAcoustics {
     this.outRead.unmap();
     this.occRead.unmap();
 
-    const reflections = [];
+    const gpuSpecular = [];
     for (let i = 0; i < jobCount; i++) {
       const o = i * 16;
       if (outData[o] < 0.5) continue;
@@ -506,8 +576,15 @@ export class GpuAcoustics {
       const faceB = outData[o + 15];
       const idA = this.faceTable.ids[faceA] || `f${faceA}`;
       const idB = faceB >= 0 ? this.faceTable.ids[faceB] : null;
-      reflections.push({
-        kind: order === 2 ? (idA === 'ground' || idB === 'ground' ? 'order2-ground' : 'order2') : idA === 'ground' ? 'ground' : 'facade',
+      gpuSpecular.push({
+        kind:
+          order === 2
+            ? idA === 'ground' || idB === 'ground'
+              ? 'order2-ground'
+              : 'order2'
+            : idA === 'ground'
+              ? 'ground'
+              : 'facade',
         order,
         faceId: order === 2 ? `${idA}>${idB}` : idA,
         hit: order === 2 ? hit1 : hit0,
@@ -518,18 +595,35 @@ export class GpuAcoustics {
         gain: outData[o + 2],
       });
     }
-    reflections.sort((a, b) => b.gain - a.gain);
+
+    // Order-3 on CPU; diffraction on CPU; material bands on merge.
+    const faceList = buildingFaces(this.buildings);
+    const order3 = [];
+    for (const [a, b, c] of order3TripleList(faceList, { limit: 48 })) {
+      const r = order3Reflection(listener, source, a, b, c, this.buildings);
+      if (r) order3.push(r);
+    }
+    const early = finalizeEarly(
+      listener,
+      source,
+      this.buildings,
+      [...gpuSpecular, ...order3],
+      this.limit,
+    );
     const enclosure = enclosureAt(listener, this.buildings);
     return {
       occlusion: occData[0] > 0.5 ? 1 : 0,
-      reflections: reflections.slice(0, this.limit),
+      reflections: early.reflections,
       enclosure,
+      irBins: this._irBins,
+      diffractionCount: early.diffractionCount,
+      order3Count: early.order3Count,
       backend: 'webgpu',
     };
   }
 }
 
 /** Convenience: sync CPU path for Node tests. */
-export function computeAcousticsCpu(listener, source, buildings = BUILDINGS, limit = 12) {
+export function computeAcousticsCpu(listener, source, buildings = BUILDINGS, limit = 16) {
   return cpuFallback(listener, source, buildings, limit);
 }

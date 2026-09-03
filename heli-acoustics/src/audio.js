@@ -1,10 +1,11 @@
-// Audio engine: direct HRTF with occlusion, order-1/2 image-source taps, and
-// enclosure-driven late reverb (ConvolverNode).
+// Audio engine: direct HRTF with occlusion, material-aware early taps
+// (specular + diffraction), and stochastic late reverb into ConvolverNode.
 
 import { setListenerPose, setPannerPosition } from './audioPose.js';
 import { buildImpulseResponse, irParamsForEnclosure } from './impulseResponse.js';
+import { binsToImpulseResponse } from './stochasticIr.js';
 
-const MAX_REFLECTIONS = 12;
+const MAX_REFLECTIONS = 16;
 const SPEED_OF_SOUND = 343;
 
 export class HeliAudio {
@@ -27,7 +28,6 @@ export class HeliAudio {
     this._leftBuf = new Float32Array(this.leftAnalyser.fftSize);
     this._rightBuf = new Float32Array(this.rightAnalyser.fftSize);
 
-    // Direct path: synth → dryGain → occludeFilter → occludeGain → panner → master
     this.dryGain = this.ctx.createGain();
     this.dryGain.gain.value = 1;
     this.occludeFilter = this.ctx.createBiquadFilter();
@@ -46,7 +46,6 @@ export class HeliAudio {
       .connect(this.panner)
       .connect(this.master);
 
-    // Shared wet send into reflection taps.
     this.wetGain = this.ctx.createGain();
     this.wetGain.gain.value = 1;
     this.taps = [];
@@ -62,14 +61,12 @@ export class HeliAudio {
       panner.panningModel = 'HRTF';
       panner.distanceModel = 'inverse';
       panner.refDistance = 8;
-      // Delay already encodes path length; position only steers HRTF direction.
       panner.rolloffFactor = 0;
       this.wetGain.connect(delay);
       delay.connect(gain).connect(filter).connect(panner).connect(this.master);
       this.taps.push({ delay, gain, filter, panner });
     }
 
-    // Late reverb: diffuse ConvolverNode driven by enclosure (no HRTF).
     this.reverbSend = this.ctx.createGain();
     this.reverbSend.gain.value = 0;
     this.reverbFilter = this.ctx.createBiquadFilter();
@@ -84,7 +81,7 @@ export class HeliAudio {
       .connect(this.convolver)
       .connect(this.reverbOut)
       .connect(this.master);
-    this._lastIrAmount = -1;
+    this._lastIrKey = '';
     this.#setImpulseForEnclosure(0.35);
 
     this.occlusionEnabled = true;
@@ -94,18 +91,29 @@ export class HeliAudio {
   }
 
   #setImpulseForEnclosure(amount) {
-    // Rebuild only when enclosure moves enough; IR generation is cheap but
-    // swapping every frame still costs.
-    if (Math.abs(amount - this._lastIrAmount) < 0.08 && this._lastIrAmount >= 0) return;
-    this._lastIrAmount = amount;
+    const key = `enc:${amount.toFixed(2)}`;
+    if (key === this._lastIrKey) return;
+    this._lastIrKey = key;
     const params = irParamsForEnclosure(amount);
     this.convolver.buffer = buildImpulseResponse(this.ctx, params);
+  }
+
+  setImpulseFromBins(bins, enclosureAmount = 0.4) {
+    if (!bins || !bins.length) {
+      this.#setImpulseForEnclosure(enclosureAmount);
+      return;
+    }
+    let peak = 0;
+    for (let i = 0; i < bins.length; i++) peak = Math.max(peak, bins[i]);
+    const key = `bins:${bins.length}:${peak.toFixed(4)}:${enclosureAmount.toFixed(2)}`;
+    if (key === this._lastIrKey) return;
+    this._lastIrKey = key;
+    this.convolver.buffer = binsToImpulseResponse(this.ctx, bins);
   }
 
   #buildHelicopter() {
     const ctx = this.ctx;
     const source = ctx.createGain();
-    // Fan out to dry, early wet, and late reverb.
     source.connect(this.dryGain);
     source.connect(this.wetGain);
     source.connect(this.reverbSend);
@@ -232,13 +240,6 @@ export class HeliAudio {
     };
   }
 
-  /**
-   * @param {number[]} sourcePos
-   * @param {number[]} listenerPos
-   * @param {number[]} forward
-   * @param {number[]} up
-   * @param {{ occlusion: number, reflections: Array, enclosure?: { amount: number, rt60Sec: number } }} acoustics
-   */
   update(sourcePos, listenerPos, forward, up, acoustics = { occlusion: 0, reflections: [] }) {
     const t = this.ctx.currentTime;
     const ramp = 0.05;
@@ -246,7 +247,6 @@ export class HeliAudio {
     setListenerPose(this.ctx.listener, listenerPos, forward, up, t);
 
     const occ = this.occlusionEnabled ? acoustics.occlusion : 0;
-    // Fully occluded: drop ~18 dB and cut to ~700 Hz. Clear: flat and full.
     const dry = 1 - 0.85 * occ;
     const cutoff = 18000 - 17300 * occ;
     this.occludeGain.gain.setTargetAtTime(dry, t, ramp);
@@ -262,19 +262,21 @@ export class HeliAudio {
       }
       const delay = Math.min(1.45, Math.max(0.001, r.delaySec));
       tap.delay.delayTime.setTargetAtTime(delay, t, ramp);
-      // Order-2 is weaker already via reflectivity product; keep a shared scale.
-      const g = Math.min(0.55, r.gain * 18);
+      const scale = r.kind === 'diffraction' ? 22 : 18;
+      const g = Math.min(0.6, r.gain * scale);
       tap.gain.gain.setTargetAtTime(g, t, ramp);
-      const freq = Math.max(700, 6000 - r.pathLength * 25 - (r.order > 1 ? 800 : 0));
+      const freq =
+        r.cutoffHz != null
+          ? r.cutoffHz
+          : Math.max(700, 6000 - r.pathLength * 25 - (r.order > 1 ? 800 : 0));
       tap.filter.frequency.setTargetAtTime(freq, t, ramp);
       setPannerPosition(tap.panner, r.image, t);
     }
 
     const enc = acoustics.enclosure?.amount ?? 0;
     if (this.reverbEnabled) {
-      this.#setImpulseForEnclosure(enc);
-      // Late send rises with enclosure. Sized so canyon RMS clears a ~4% A/B
-      // probe against dry-only (uncorrelated wet needs ~30% of dry RMS).
+      if (acoustics.irBins) this.setImpulseFromBins(acoustics.irBins, enc);
+      else this.#setImpulseForEnclosure(enc);
       const send = 0.18 + enc * 0.7;
       this.reverbSend.gain.setTargetAtTime(send, t, 0.1);
       const dampHz = 6500 - enc * 2800;

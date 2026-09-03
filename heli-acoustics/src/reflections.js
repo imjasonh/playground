@@ -1,11 +1,13 @@
 import { add, sub, scale, length } from './geometry.js';
 import { isOccluded } from './occlusion.js';
 import { SPEED_OF_SOUND, GROUND, buildingFaces } from './city.js';
-
-const REFLECTIVITY = {
-  facade: 0.55,
-  ground: 0.35,
-};
+import {
+  materialForFace,
+  bounceBands,
+  unitBands,
+  cutoffFromBands,
+  gainFromBands,
+} from './materials.js';
 
 // Reflect a point across an axis-aligned plane (constant x or z or y).
 export function mirrorPoint(p, axis, value) {
@@ -25,10 +27,6 @@ function axisIndex(axis) {
   return axis === 'x' ? 0 : axis === 'y' ? 1 : 2;
 }
 
-function faceReflectivity(face) {
-  return face.kind === 'ground' ? REFLECTIVITY.ground : REFLECTIVITY.facade;
-}
-
 export function groundFace(groundY = GROUND.y) {
   return {
     id: 'ground',
@@ -37,8 +35,6 @@ export function groundFace(groundY = GROUND.y) {
     axis: 'y',
     value: groundY,
     outward: 1,
-    // Huge horizontal extent; onFace for ground uses u=x, v=y so v must be ~0.
-    // Ground hits are validated by y ≈ groundY instead of the v band.
     u0: -1e6,
     u1: 1e6,
     v0: -1e6,
@@ -53,51 +49,44 @@ function onReflector(hit, face) {
   return onFace(hit, face);
 }
 
-// Source must sit on the outward side of a vertical facade. Ground accepts any
-// source above the plane.
 function sourceOnOutwardSide(source, face) {
   if (face.kind === 'ground') return source[1] > face.value + 0.05;
   const si = face.axis === 'x' ? source[0] : source[2];
   return (si - face.value) * face.outward > 0.05;
 }
 
-// Intersection of listener→image ray with a finite reflector. Returns null when
-// the hit misses the face or is degenerate.
-function hitOnFace(listener, image, face) {
+function finishSpecular(order, kind, faceId, hit, hits, image, pathLen, bands) {
+  return {
+    kind,
+    order,
+    faceId,
+    hit,
+    hits,
+    image,
+    pathLength: pathLen,
+    delaySec: pathLen / SPEED_OF_SOUND,
+    bands,
+    gain: gainFromBands(bands) / Math.max(Math.sqrt(pathLen), 1),
+    cutoffHz: cutoffFromBands(bands, pathLen),
+  };
+}
+
+export function facadeReflection(listener, source, face, buildings) {
+  if (!sourceOnOutwardSide(source, face)) return null;
+  const image = mirrorPoint(source, face.axis, face.value);
   const toImage = sub(image, listener);
   const pathLen = length(toImage);
   if (pathLen < 1e-3) return null;
   const dir = scale(toImage, 1 / pathLen);
-  const ai = axisIndex(face.axis);
+  const ai = face.axis === 'x' ? 0 : 2;
   if (Math.abs(dir[ai]) < 1e-9) return null;
   const tHit = (face.value - listener[ai]) / dir[ai];
   if (tHit <= 1e-4 || tHit >= pathLen - 1e-4) return null;
   const hit = add(listener, scale(dir, tHit));
-  if (!onReflector(hit, face)) return null;
-  return { hit, pathLen, image };
-}
-
-// Order-1 image-source reflection against one finite facade. Returns null when
-// the hit misses the face, the path is degenerate, or another building blocks
-// source→hit or hit→listener.
-export function facadeReflection(listener, source, face, buildings) {
-  if (!sourceOnOutwardSide(source, face)) return null;
-  const image = mirrorPoint(source, face.axis, face.value);
-  const found = hitOnFace(listener, image, face);
-  if (!found) return null;
-  const { hit, pathLen } = found;
+  if (!onFace(hit, face)) return null;
   if (isOccluded(source, hit, buildings) || isOccluded(hit, listener, buildings)) return null;
-  return {
-    kind: 'facade',
-    order: 1,
-    faceId: face.id,
-    hit,
-    hits: [hit],
-    image,
-    pathLength: pathLen,
-    delaySec: pathLen / SPEED_OF_SOUND,
-    gain: REFLECTIVITY.facade / Math.max(pathLen, 1),
-  };
+  const bands = bounceBands(unitBands(), materialForFace(face));
+  return finishSpecular(1, 'facade', face.id, hit, [hit], image, pathLen, bands);
 }
 
 export function groundReflection(listener, source, groundY = GROUND.y) {
@@ -108,32 +97,17 @@ export function groundReflection(listener, source, groundY = GROUND.y) {
   const tHit = (groundY - listener[1]) / (image[1] - listener[1]);
   if (tHit <= 0 || tHit >= 1) return null;
   const hit = add(listener, scale(sub(image, listener), tHit));
-  return {
-    kind: 'ground',
-    order: 1,
-    faceId: 'ground',
-    hit,
-    hits: [hit],
-    image,
-    pathLength: pathLen,
-    delaySec: pathLen / SPEED_OF_SOUND,
-    gain: REFLECTIVITY.ground / Math.max(pathLen, 1),
-  };
+  const face = groundFace(groundY);
+  const bands = bounceBands(unitBands(), materialForFace(face));
+  return finishSpecular(1, 'ground', 'ground', hit, [hit], image, pathLen, bands);
 }
 
-/**
- * Order-2 image source: source → faceA → faceB → listener.
- * Mirrors source across A then across B; walks the listener→image ray back
- * through both planes and rejects occluded or off-face hits.
- */
 export function order2Reflection(listener, source, faceA, faceB, buildings) {
   if (faceA.id === faceB.id) return null;
-  // Parallel coplanar faces cannot form a bounce sequence.
   if (faceA.axis === faceB.axis && Math.abs(faceA.value - faceB.value) < 1e-6) return null;
   if (!sourceOnOutwardSide(source, faceA)) return null;
 
   const image1 = mirrorPoint(source, faceA.axis, faceA.value);
-  // Image1 must be on the outward side of B as if it were a real source for B.
   if (!sourceOnOutwardSide(image1, faceB)) return null;
   const image2 = mirrorPoint(image1, faceB.axis, faceB.value);
 
@@ -142,7 +116,6 @@ export function order2Reflection(listener, source, faceA, faceB, buildings) {
   if (pathLen < 1e-3) return null;
   const dir = scale(toImage, 1 / pathLen);
 
-  // First intersection from the listener is on face B (last bounce chronologically).
   const bi = axisIndex(faceB.axis);
   if (Math.abs(dir[bi]) < 1e-9) return null;
   const tB = (faceB.value - listener[bi]) / dir[bi];
@@ -150,7 +123,6 @@ export function order2Reflection(listener, source, faceA, faceB, buildings) {
   const hitB = add(listener, scale(dir, tB));
   if (!onReflector(hitB, faceB)) return null;
 
-  // From hitB toward image1; intersect face A.
   const toI1 = sub(image1, hitB);
   const lenI1 = length(toI1);
   if (lenI1 < 1e-3) return null;
@@ -162,7 +134,6 @@ export function order2Reflection(listener, source, faceA, faceB, buildings) {
   const hitA = add(hitB, scale(dirA, tA));
   if (!onReflector(hitA, faceA)) return null;
 
-  // Three clear legs: source→A, A→B, B→listener.
   if (
     isOccluded(source, hitA, buildings) ||
     isOccluded(hitA, hitB, buildings) ||
@@ -171,25 +142,80 @@ export function order2Reflection(listener, source, faceA, faceB, buildings) {
     return null;
   }
 
-  const reflectivity = faceReflectivity(faceA) * faceReflectivity(faceB);
-  return {
-    kind: faceA.kind === 'ground' || faceB.kind === 'ground' ? 'order2-ground' : 'order2',
-    order: 2,
-    faceId: `${faceA.id}>${faceB.id}`,
-    hit: hitB,
-    hits: [hitA, hitB],
-    image: image2,
-    pathLength: pathLen,
-    delaySec: pathLen / SPEED_OF_SOUND,
-    gain: reflectivity / Math.max(pathLen, 1),
-  };
+  let bands = bounceBands(unitBands(), materialForFace(faceA));
+  bands = bounceBands(bands, materialForFace(faceB));
+  const kind = faceA.kind === 'ground' || faceB.kind === 'ground' ? 'order2-ground' : 'order2';
+  return finishSpecular(2, kind, `${faceA.id}>${faceB.id}`, hitB, [hitA, hitB], image2, pathLen, bands);
 }
 
-/**
- * Prioritize order-2 pairs that matter in a street canyon: facade↔ground first
- * (heli in the sky), then opposite parallel facades on different buildings.
- * Same-building opposite faces are skipped; those paths go through the mass.
- */
+/** Order-3: source → A → B → C → listener. */
+export function order3Reflection(listener, source, faceA, faceB, faceC, buildings) {
+  if (faceA.id === faceB.id || faceB.id === faceC.id || faceA.id === faceC.id) return null;
+  if (!sourceOnOutwardSide(source, faceA)) return null;
+  const image1 = mirrorPoint(source, faceA.axis, faceA.value);
+  if (!sourceOnOutwardSide(image1, faceB)) return null;
+  const image2 = mirrorPoint(image1, faceB.axis, faceB.value);
+  if (!sourceOnOutwardSide(image2, faceC)) return null;
+  const image3 = mirrorPoint(image2, faceC.axis, faceC.value);
+
+  const toImage = sub(image3, listener);
+  const pathLen = length(toImage);
+  if (pathLen < 1e-3) return null;
+  const dir = scale(toImage, 1 / pathLen);
+
+  const ci = axisIndex(faceC.axis);
+  if (Math.abs(dir[ci]) < 1e-9) return null;
+  const tC = (faceC.value - listener[ci]) / dir[ci];
+  if (tC <= 1e-4 || tC >= pathLen - 1e-4) return null;
+  const hitC = add(listener, scale(dir, tC));
+  if (!onReflector(hitC, faceC)) return null;
+
+  const toI2 = sub(image2, hitC);
+  const len2 = length(toI2);
+  if (len2 < 1e-3) return null;
+  const dir2 = scale(toI2, 1 / len2);
+  const bi = axisIndex(faceB.axis);
+  if (Math.abs(dir2[bi]) < 1e-9) return null;
+  const tB = (faceB.value - hitC[bi]) / dir2[bi];
+  if (tB <= 1e-4 || tB >= len2 - 1e-4) return null;
+  const hitB = add(hitC, scale(dir2, tB));
+  if (!onReflector(hitB, faceB)) return null;
+
+  const toI1 = sub(image1, hitB);
+  const len1 = length(toI1);
+  if (len1 < 1e-3) return null;
+  const dir1 = scale(toI1, 1 / len1);
+  const ai = axisIndex(faceA.axis);
+  if (Math.abs(dir1[ai]) < 1e-9) return null;
+  const tA = (faceA.value - hitB[ai]) / dir1[ai];
+  if (tA <= 1e-4 || tA >= len1 - 1e-4) return null;
+  const hitA = add(hitB, scale(dir1, tA));
+  if (!onReflector(hitA, faceA)) return null;
+
+  if (
+    isOccluded(source, hitA, buildings) ||
+    isOccluded(hitA, hitB, buildings) ||
+    isOccluded(hitB, hitC, buildings) ||
+    isOccluded(hitC, listener, buildings)
+  ) {
+    return null;
+  }
+
+  let bands = bounceBands(unitBands(), materialForFace(faceA));
+  bands = bounceBands(bands, materialForFace(faceB));
+  bands = bounceBands(bands, materialForFace(faceC));
+  return finishSpecular(
+    3,
+    'order3',
+    `${faceA.id}>${faceB.id}>${faceC.id}`,
+    hitC,
+    [hitA, hitB, hitC],
+    image3,
+    pathLen,
+    bands,
+  );
+}
+
 export function order2PairList(faceList, { limit = 80 } = {}) {
   const pairs = [];
   const ground = groundFace();
@@ -210,20 +236,38 @@ export function order2PairList(faceList, { limit = 80 } = {}) {
   return pairs.slice(0, limit);
 }
 
+/** Order-3 triples: opposite facades with ground in the middle (street canyon). */
+export function order3TripleList(faceList, { limit = 48 } = {}) {
+  const triples = [];
+  const ground = groundFace();
+  for (let i = 0; i < faceList.length; i++) {
+    for (let j = i + 1; j < faceList.length; j++) {
+      const a = faceList[i];
+      const c = faceList[j];
+      if (a.building === c.building) continue;
+      if (a.axis !== c.axis) continue;
+      if (a.outward === c.outward) continue;
+      if (Math.abs(a.value - c.value) < 1) continue;
+      triples.push([a, ground, c], [c, ground, a], [a, c, ground], [c, a, ground]);
+      if (triples.length >= limit) return triples.slice(0, limit);
+    }
+  }
+  return triples.slice(0, limit);
+}
+
 /**
- * Strongest early reflections up to `limit`, mixing order-1 and optional order-2.
- * Used by Node tests and as the CPU fallback when WebGPU is unavailable. The
- * live app prefers `GpuAcoustics` in `acousticsGpu.js`.
+ * Strongest early reflections up to `limit`, mixing order-1..maxOrder.
  */
 export function computeReflections(
   listener,
   source,
   buildings,
   {
-    limit = 12,
+    limit = 16,
     faces = null,
-    maxOrder = 2,
+    maxOrder = 3,
     order2CandidateLimit = 80,
+    order3CandidateLimit = 48,
   } = {},
 ) {
   const faceList = faces || buildingFaces(buildings);
@@ -244,11 +288,18 @@ export function computeReflections(
     }
   }
 
+  if (maxOrder >= 3) {
+    const triples = order3TripleList(faceList, { limit: order3CandidateLimit });
+    for (const [a, b, c] of triples) {
+      const r = order3Reflection(listener, source, a, b, c, buildings);
+      if (r) candidates.push(r);
+    }
+  }
+
   candidates.sort((a, b) => b.gain - a.gain);
   return candidates.slice(0, limit);
 }
 
-// Extra path length beyond the direct path, useful for HUD / tests.
 export function excessDelaySec(reflection, listener, source) {
   const direct = length(sub(source, listener));
   return reflection.delaySec - direct / SPEED_OF_SOUND;

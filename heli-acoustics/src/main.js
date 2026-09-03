@@ -31,8 +31,8 @@ const { scene, heli, rotor } = createCityScene();
 const renderer = createRenderer(canvas);
 const camera = createCamera(canvas.clientWidth / Math.max(1, canvas.clientHeight));
 const controls = new FpsControls(canvas);
-const debugRays = new DebugRays(scene, { maxTaps: 12 });
-const gpuAcoustics = new GpuAcoustics({ buildings: BUILDINGS, limit: 12 });
+const debugRays = new DebugRays(scene, { maxTaps: 16 });
+const gpuAcoustics = new GpuAcoustics({ buildings: BUILDINGS, limit: 16 });
 
 let audio = null;
 let running = false;
@@ -163,6 +163,7 @@ function frame(now) {
     occlusion: occ,
     reflections,
     enclosure,
+    irBins: latestAcoustics.irBins,
   });
 
   debugRays.update(listenerPos, sourcePos, occ > 0, reflectionsOn ? reflections : []);
@@ -173,9 +174,13 @@ function frame(now) {
   occEl.textContent = `${occlusionOn ? (occ > 0 ? 'blocked' : 'clear') : 'off'}`;
   const o1 = reflections.filter((r) => r.order === 1).length;
   const o2 = reflections.filter((r) => r.order === 2).length;
-  refEl.textContent = reflectionsOn ? `${reflections.length} taps (${o1}+${o2})` : 'off';
+  const o3 = reflections.filter((r) => r.order === 3).length;
+  const dif = reflections.filter((r) => r.kind === 'diffraction').length;
+  refEl.textContent = reflectionsOn
+    ? `${reflections.length} (${o1}+${o2}+${o3}/d${dif})`
+    : 'off';
   revEl.textContent = reverbOn
-    ? `${(enclosure.amount * 100).toFixed(0)}% / ${enclosure.rt60Sec.toFixed(2)}s`
+    ? `${(enclosure.amount * 100).toFixed(0)}% / ${enclosure.rt60Sec.toFixed(2)}s${latestAcoustics.irBins ? ' sto' : ''}`
     : 'off';
   if (gpuEl) gpuEl.textContent = backend;
 
