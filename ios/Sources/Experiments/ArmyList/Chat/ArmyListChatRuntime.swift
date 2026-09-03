@@ -224,7 +224,7 @@ private enum ArmyListFMToolBridge {
         name: String,
         work: @escaping @MainActor (ArmyListChatWorkspace) -> String
     ) async throws -> String {
-        await Task { @MainActor in
+        try await Task { @MainActor in
             guard let runtime else {
                 return "Army List chat runtime is gone."
             }
@@ -249,7 +249,7 @@ struct ArmyGetListSummaryFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.getListSummary(workspace: workspace)
         }
     }
@@ -270,7 +270,7 @@ struct ArmySearchCatalogFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.searchCatalog(
                 workspace: workspace,
                 query: arguments.query,
@@ -293,7 +293,7 @@ struct ArmySetBattleSizeFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.setBattleSize(
                 workspace: workspace,
                 battleSizeID: arguments.battleSizeID
@@ -315,7 +315,7 @@ struct ArmySetDetachmentsFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.setDetachments(
                 workspace: workspace,
                 detachmentIDsCSV: arguments.detachmentIDsCSV
@@ -339,7 +339,7 @@ struct ArmyAddUnitFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.addUnit(
                 workspace: workspace,
                 datasheetID: arguments.datasheetID,
@@ -362,7 +362,7 @@ struct ArmyRemoveUnitFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.removeUnit(workspace: workspace, unitID: arguments.unitID)
         }
     }
@@ -383,7 +383,7 @@ struct ArmySetUnitModelsFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.setUnitModels(
                 workspace: workspace,
                 unitID: arguments.unitID,
@@ -408,7 +408,7 @@ struct ArmyAttachCharacterFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.attachCharacter(
                 workspace: workspace,
                 characterUnitID: arguments.characterUnitID,
@@ -431,7 +431,7 @@ struct ArmySetWarlordFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.setWarlord(workspace: workspace, unitID: arguments.unitID)
         }
     }
@@ -450,7 +450,7 @@ struct ArmySetListNameFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.setListName(workspace: workspace, name: arguments.name)
         }
     }
@@ -471,7 +471,7 @@ struct ArmySetEnhancementFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.setEnhancement(
                 workspace: workspace,
                 unitID: arguments.unitID,
@@ -494,7 +494,7 @@ struct ArmyClearUnitsFMTool: Tool {
     }
 
     func call(arguments: Arguments) async throws -> String {
-        await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.clearUnits(workspace: workspace)
         }
     }
