@@ -68,18 +68,17 @@ cat > "$work/hello-macos/Hello.entitlements" <<'EOF'
 </plist>
 EOF
 
-(
-  cd "$work"
-  git add -A
-  git commit -qm base
+cd "$work"
+git add -A
+git commit -qm base
 
-  mkdir -p ios/Sources/Experiments/Demo
-  echo '// demo' > ios/Sources/Experiments/Demo/Demo.swift
-  git add -A
-  git commit -qm experiment
-  assert_eq "$(bash "$detect" HEAD~1...HEAD)" "false" "experiment sources"
+mkdir -p ios/Sources/Experiments/Demo
+echo '// demo' > ios/Sources/Experiments/Demo/Demo.swift
+git add -A
+git commit -qm experiment
+assert_eq "$(bash "$detect" HEAD~1...HEAD)" "false" "experiment sources"
 
-  cat >> ios/project.yml <<'EOF'
+cat >> ios/project.yml <<'EOF'
   ArmyListStress:
     type: tool
     platform: macOS
@@ -87,12 +86,11 @@ EOF
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.army-list-stress
 EOF
-  git add -A
-  git commit -qm 'macos cli tool'
-  assert_eq "$(bash "$detect" HEAD~1...HEAD)" "false" "macos tool PRODUCT_BUNDLE_IDENTIFIER"
+git add -A
+git commit -qm 'macos cli tool'
+assert_eq "$(bash "$detect" HEAD~1...HEAD)" "false" "macos tool PRODUCT_BUNDLE_IDENTIFIER"
 
-  write_project_yml
-  cat > ios/project.yml <<'EOF'
+cat > ios/project.yml <<'EOF'
 name: Playground
 targets:
   Playground:
@@ -106,11 +104,11 @@ targets:
     entitlements:
       path: Playground.entitlements
 EOF
-  git add -A
-  git commit -qm 'host capability'
-  assert_eq "$(bash "$detect" HEAD~1...HEAD)" "true" "project.yml com.apple.developer"
+git add -A
+git commit -qm 'host capability'
+assert_eq "$(bash "$detect" HEAD~1...HEAD)" "true" "project.yml com.apple.developer"
 
-  cat > ios/Playground.entitlements <<'EOF'
+cat > ios/Playground.entitlements <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -120,11 +118,11 @@ EOF
 </dict>
 </plist>
 EOF
-  git add -A
-  git commit -qm entitlements
-  assert_eq "$(bash "$detect" HEAD~1...HEAD)" "true" "ios entitlements file"
+git add -A
+git commit -qm entitlements
+assert_eq "$(bash "$detect" HEAD~1...HEAD)" "true" "ios entitlements file"
 
-  cat >> ios/project.yml <<'EOF'
+cat >> ios/project.yml <<'EOF'
   NewKeyboard:
     type: app-extension
     platform: iOS
@@ -132,15 +130,14 @@ EOF
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.newkeyboard
 EOF
-  git add -A
-  git commit -qm extension
-  assert_eq "$(bash "$detect" HEAD~1...HEAD)" "true" "type: app-extension"
+git add -A
+git commit -qm extension
+assert_eq "$(bash "$detect" HEAD~1...HEAD)" "true" "type: app-extension"
 
-  echo '<!-- tweak -->' >> hello-macos/Hello.entitlements
-  git add -A
-  git commit -qm 'macos app entitlements'
-  assert_eq "$(bash "$detect" HEAD~1...HEAD)" "false" "non-ios entitlements ignored"
-)
+echo '<!-- tweak -->' >> hello-macos/Hello.entitlements
+git add -A
+git commit -qm 'macos app entitlements'
+assert_eq "$(bash "$detect" HEAD~1...HEAD)" "false" "non-ios entitlements ignored"
 
 if [[ "$failures" -ne 0 ]]; then
   echo "$failures failure(s)" >&2
