@@ -2,9 +2,10 @@ import { HeliAudio } from './audio.js';
 import { FpsControls, coarsePointer } from './controls.js';
 import { createCityScene, createRenderer, createCamera } from './scene3d.js';
 import { DebugRays } from './debugRays.js';
-import { BUILDINGS, helicopterPath } from './city.js';
+import { BUILDINGS, helicopterPath, buildingFaces } from './city.js';
 import { occlusionAmount } from './occlusion.js';
 import { computeReflections } from './reflections.js';
+import { enclosureAt } from './enclosure.js';
 import { proveHrtfBinaural } from './hrtfProof.js';
 import { relativeAzimuthDeg, distance } from './geometry.js';
 
@@ -15,6 +16,7 @@ const distEl = document.getElementById('dist');
 const ctxEl = document.getElementById('ctx');
 const occEl = document.getElementById('occ');
 const refEl = document.getElementById('refn');
+const revEl = document.getElementById('rev');
 const balEl = document.getElementById('bal');
 const proofEl = document.getElementById('proof');
 const leftBar = document.getElementById('left-bar');
@@ -23,13 +25,15 @@ const leftN = document.getElementById('left-n');
 const rightN = document.getElementById('right-n');
 const togOcclusion = document.getElementById('tog-occlusion');
 const togReflections = document.getElementById('tog-reflections');
+const togReverb = document.getElementById('tog-reverb');
 const togRays = document.getElementById('tog-rays');
 
 const { scene, heli, rotor } = createCityScene();
 const renderer = createRenderer(canvas);
 const camera = createCamera(canvas.clientWidth / Math.max(1, canvas.clientHeight));
 const controls = new FpsControls(canvas);
-const debugRays = new DebugRays(scene);
+const debugRays = new DebugRays(scene, { maxTaps: 12 });
+const FACES = buildingFaces(BUILDINGS);
 
 let audio = null;
 let running = false;
@@ -37,6 +41,7 @@ let startTime = 0;
 let lastFrame = 0;
 let occlusionOn = true;
 let reflectionsOn = true;
+let reverbOn = true;
 let raysOn = true;
 
 const earSamples = [];
@@ -66,6 +71,12 @@ function setReflections(on) {
   audio?.setReflectionsEnabled(on);
 }
 
+function setReverb(on) {
+  reverbOn = on;
+  togReverb.checked = on;
+  audio?.setReverbEnabled(on);
+}
+
 function setRays(on) {
   raysOn = on;
   togRays.checked = on;
@@ -74,6 +85,7 @@ function setRays(on) {
 
 togOcclusion.addEventListener('change', () => setOcclusion(togOcclusion.checked));
 togReflections.addEventListener('change', () => setReflections(togReflections.checked));
+togReverb.addEventListener('change', () => setReverb(togReverb.checked));
 togRays.addEventListener('change', () => setRays(togRays.checked));
 
 // Keep pointer-lock clicks on the canvas; when using the control panel, exit
@@ -86,6 +98,7 @@ document.getElementById('controls').addEventListener('pointerdown', (e) => {
 window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyO') setOcclusion(!occlusionOn);
   if (e.code === 'KeyR') setReflections(!reflectionsOn);
+  if (e.code === 'KeyV') setReverb(!reverbOn);
   if (e.code === 'KeyG') setRays(!raysOn);
 });
 
@@ -123,11 +136,17 @@ function frame(now) {
   rotor.rotation.y = t * 40;
 
   const occ = occlusionAmount(listenerPos, sourcePos, BUILDINGS);
-  const reflections = computeReflections(listenerPos, sourcePos, BUILDINGS, { limit: 8 });
+  const reflections = computeReflections(listenerPos, sourcePos, BUILDINGS, {
+    limit: 12,
+    faces: FACES,
+    maxOrder: 2,
+  });
+  const enclosure = enclosureAt(listenerPos, BUILDINGS);
 
   audio.update(sourcePos, listenerPos, forward, up, {
     occlusion: occ,
     reflections,
+    enclosure,
   });
 
   debugRays.update(listenerPos, sourcePos, occ > 0, reflectionsOn ? reflections : []);
@@ -136,12 +155,25 @@ function frame(now) {
   azEl.textContent = `${az >= 0 ? '+' : ''}${az.toFixed(0)}\u00b0`;
   distEl.textContent = `${distance(sourcePos, listenerPos).toFixed(0)} m`;
   occEl.textContent = `${occlusionOn ? (occ > 0 ? 'blocked' : 'clear') : 'off'}`;
-  refEl.textContent = reflectionsOn ? `${reflections.length} taps` : 'off';
+  const o1 = reflections.filter((r) => r.order === 1).length;
+  const o2 = reflections.filter((r) => r.order === 2).length;
+  refEl.textContent = reflectionsOn ? `${reflections.length} taps (${o1}+${o2})` : 'off';
+  revEl.textContent = reverbOn
+    ? `${(enclosure.amount * 100).toFixed(0)}% / ${enclosure.rt60Sec.toFixed(2)}s`
+    : 'off';
 
   const levels = audio.earLevels();
   paintMeters(levels);
   if (levels.left + levels.right > 0.001) {
-    earSamples.push({ t, az, balance: levels.balance, left: levels.left, right: levels.right, occ });
+    earSamples.push({
+      t,
+      az,
+      balance: levels.balance,
+      left: levels.left,
+      right: levels.right,
+      occ,
+      enclosure: enclosure.amount,
+    });
     if (earSamples.length > 600) earSamples.shift();
   }
 
@@ -154,6 +186,7 @@ async function start() {
   audio = new HeliAudio();
   audio.setOcclusionEnabled(occlusionOn);
   audio.setReflectionsEnabled(reflectionsOn);
+  audio.setReverbEnabled(reverbOn);
   await audio.resume();
   audio.fadeIn();
   running = true;

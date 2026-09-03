@@ -1,9 +1,10 @@
-// Audio engine for M1/M2: direct HRTF path with occlusion muffling, plus a
-// bank of order-1 image-source reflection taps (delay → gain → lowpass → HRTF).
+// Audio engine: direct HRTF with occlusion, order-1/2 image-source taps, and
+// enclosure-driven late reverb (ConvolverNode).
 
 import { setListenerPose, setPannerPosition } from './audioPose.js';
+import { buildImpulseResponse, irParamsForEnclosure } from './impulseResponse.js';
 
-const MAX_REFLECTIONS = 8;
+const MAX_REFLECTIONS = 12;
 const SPEED_OF_SOUND = 343;
 
 export class HeliAudio {
@@ -61,27 +62,53 @@ export class HeliAudio {
       panner.panningModel = 'HRTF';
       panner.distanceModel = 'inverse';
       panner.refDistance = 8;
-      panner.rolloffFactor = 0.9;
-      // Delay already encodes path length, so kill the panner's extra distance
-      // attenuation by using a huge refDistance... actually better: set
-      // rolloffFactor 0 so position only steers HRTF direction.
+      // Delay already encodes path length; position only steers HRTF direction.
       panner.rolloffFactor = 0;
       this.wetGain.connect(delay);
       delay.connect(gain).connect(filter).connect(panner).connect(this.master);
       this.taps.push({ delay, gain, filter, panner });
     }
 
+    // Late reverb: diffuse ConvolverNode driven by enclosure (no HRTF).
+    this.reverbSend = this.ctx.createGain();
+    this.reverbSend.gain.value = 0;
+    this.reverbFilter = this.ctx.createBiquadFilter();
+    this.reverbFilter.type = 'lowpass';
+    this.reverbFilter.frequency.value = 5000;
+    this.convolver = this.ctx.createConvolver();
+    this.convolver.normalize = true;
+    this.reverbOut = this.ctx.createGain();
+    this.reverbOut.gain.value = 0.35;
+    this.reverbSend
+      .connect(this.reverbFilter)
+      .connect(this.convolver)
+      .connect(this.reverbOut)
+      .connect(this.master);
+    this._lastIrAmount = -1;
+    this.#setImpulseForEnclosure(0.35);
+
     this.occlusionEnabled = true;
     this.reflectionsEnabled = true;
+    this.reverbEnabled = true;
     this.#buildHelicopter();
+  }
+
+  #setImpulseForEnclosure(amount) {
+    // Rebuild only when enclosure moves enough; IR generation is cheap but
+    // swapping every frame still costs.
+    if (Math.abs(amount - this._lastIrAmount) < 0.08 && this._lastIrAmount >= 0) return;
+    this._lastIrAmount = amount;
+    const params = irParamsForEnclosure(amount);
+    this.convolver.buffer = buildImpulseResponse(this.ctx, params);
   }
 
   #buildHelicopter() {
     const ctx = this.ctx;
     const source = ctx.createGain();
-    // Fan out to dry and wet.
+    // Fan out to dry, early wet, and late reverb.
     source.connect(this.dryGain);
     source.connect(this.wetGain);
+    source.connect(this.reverbSend);
 
     const chopLfo = ctx.createOscillator();
     chopLfo.type = 'triangle';
@@ -176,6 +203,15 @@ export class HeliAudio {
     }
   }
 
+  setReverbEnabled(on) {
+    this.reverbEnabled = on;
+    if (!on) {
+      const t = this.ctx.currentTime;
+      this.reverbSend.gain.cancelScheduledValues(t);
+      this.reverbSend.gain.setTargetAtTime(0, t, 0.08);
+    }
+  }
+
   earLevels() {
     this.leftAnalyser.getFloatTimeDomainData(this._leftBuf);
     this.rightAnalyser.getFloatTimeDomainData(this._rightBuf);
@@ -201,7 +237,7 @@ export class HeliAudio {
    * @param {number[]} listenerPos
    * @param {number[]} forward
    * @param {number[]} up
-   * @param {{ occlusion: number, reflections: Array<{delaySec:number,gain:number,image:number[],hit:number[]}> }} acoustics
+   * @param {{ occlusion: number, reflections: Array, enclosure?: { amount: number, rt60Sec: number } }} acoustics
    */
   update(sourcePos, listenerPos, forward, up, acoustics = { occlusion: 0, reflections: [] }) {
     const t = this.ctx.currentTime;
@@ -224,21 +260,26 @@ export class HeliAudio {
         tap.gain.gain.setTargetAtTime(0, t, ramp);
         continue;
       }
-      // Delay already has the full path; keep a tiny floor so DelayNode is happy.
       const delay = Math.min(1.45, Math.max(0.001, r.delaySec));
       tap.delay.delayTime.setTargetAtTime(delay, t, ramp);
-      // Scale image-source gain into a audible but non-dominating wet level.
+      // Order-2 is weaker already via reflectivity product; keep a shared scale.
       const g = Math.min(0.55, r.gain * 18);
       tap.gain.gain.setTargetAtTime(g, t, ramp);
-      // Darker for longer paths.
-      const freq = Math.max(800, 6000 - r.pathLength * 25);
+      const freq = Math.max(700, 6000 - r.pathLength * 25 - (r.order > 1 ? 800 : 0));
       tap.filter.frequency.setTargetAtTime(freq, t, ramp);
-      // Spatialize from the image location so the reflection arrives from the
-      // bounce direction (classic image-source trick).
       setPannerPosition(tap.panner, r.image, t);
+    }
+
+    const enc = acoustics.enclosure?.amount ?? 0;
+    if (this.reverbEnabled) {
+      this.#setImpulseForEnclosure(enc);
+      // Late send rises with enclosure; keep it under the early taps.
+      const send = 0.02 + enc * 0.22;
+      this.reverbSend.gain.setTargetAtTime(send, t, 0.1);
+      const dampHz = 6500 - enc * 2800;
+      this.reverbFilter.frequency.setTargetAtTime(dampHz, t, 0.1);
     }
   }
 }
 
-// Re-export for tests that only care about the constant.
 export { MAX_REFLECTIONS, SPEED_OF_SOUND };
