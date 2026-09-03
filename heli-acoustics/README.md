@@ -1,15 +1,20 @@
 # Heli acoustics
 
 A browser experiment in convincing 3D audio: a helicopter flies over a city and
-you hear it reflect off the buildings. The end goal is a first-person urban
-scene where the sound in your ears tracks the aircraft and the streets around
-you. This is being built in milestones so you can judge each step from a live
-preview before the next one starts.
+you hear it reflect off the buildings. Built in milestones so each step is
+judgeable from a live preview.
 
-M0 (this milestone) is the smallest possible proof: one synthesized helicopter
-orbiting the listener, rendered through the Web Audio HRTF panner, with
-drag-to-turn-your-head. No city, no reflections. If the direct sound does not
-already track around your ears in headphones, nothing later will save it.
+## Current milestone: M2 early reflections
+
+Five city blocks around a north-south avenue. First-person WASD + mouse look. A
+helicopter loops overhead. Audio:
+
+- **Direct path:** Web Audio HRTF `PannerNode`, distance falloff, and a low-pass
+  + gain duck when a building blocks line of sight (toggle with `O`).
+- **Early reflections:** order-1 image-source bounces off facades and the
+  street. Each bounce is a delay / gain / low-pass / HRTF tap aimed from the
+  image location (toggle with `R`). Debug rays (`G`) draw the direct path
+  (green clear / red occluded) and cyan bounce polylines.
 
 ## Run locally
 
@@ -17,93 +22,67 @@ already track around your ears in headphones, nothing later will save it.
 npm start          # static server on :3000 (or: npx serve .)
 ```
 
-No build step. The app is plain ES modules with no dependencies. Open it in a
-browser, put on headphones, and click to start.
+No build step. Three.js is vendored under `vendor/`. Open in a browser, put on
+headphones, click to start.
 
 ## Test
 
 ```bash
-npm test           # node --test: geometry + meter math
-npm run test:audio # Chromium: OfflineAudioContext HRTF proof + live orbit L/R flip
+npm test           # node --test: geometry, occlusion, reflections, meters, vendor
+npm run test:audio # Chromium: HRTF proof + live L/R flip + reflections energy A/B
 ```
 
-`npm test` covers pure math in Node. The audio claim is covered separately by
-`test:audio` (also wired as `test:e2e` for CI): Playwright launches Chromium,
-renders a noise burst through an HRTF `PannerNode` hard-left and hard-right,
-and asserts opposite ear dominance. It then drives the live helicopter synth
-for one orbit and asserts measured left/right RMS balance flips with bearing.
+`test:audio` (also `test:e2e` for CI) launches Playwright Chromium and checks:
 
-On a recent run here:
+1. OfflineAudioContext HRTF left/right ear dominance.
+2. Live orbit L/R balance flip with bearing.
+3. Reflections-on vs reflections-off: average ear energy rises when wet taps are
+   enabled, and the image-source solver finds at least one tap during the orbit.
 
-- offline hard-left balance ≈ −0.59 (left ear louder)
-- offline hard-right balance ≈ +0.60 (right ear louder)
-- live orbit, when source is right: avg balance ≈ +0.15
-- live orbit, when source is left: avg balance ≈ −0.16
-- AudioContext state: `running`
+## Milestone history
 
-The on-page HUD also shows live L/R ear meters and the offline proof PASS/FAIL
-so you can judge the same numbers yourself in headphones.
-
-## Milestones
-
-Each milestone is one PR with a live preview URL.
-
-- **M0 (here): binaural direct sound.** Orbiting helicopter, HRTF panner,
-  turn-your-head. Proves the spatializer.
-- **M1: urban scene and occlusion.** three.js city (5 blocks, central street),
-  FPS controls, distance falloff, line-of-sight muffling behind buildings.
-- **M2: early reflections.** Image-source reflections off facades and the
-  street, each an audible delayed and filtered tap, with debug rays.
-- **M3: late reverb.** A convolution or feedback-delay tail driven by how
-  enclosed you are (open intersection versus tight alley).
-- **M4: order-2 reflections and performance.** Only if profiling says the CPU
-  is the bottleneck; this is where WebGPU would earn its place, with real
-  frame-time numbers.
-- **M5: head tracking.** Mouse-look baseline plus WebXR pose, with a documented
-  listener-pose seam for a future native path.
+- **M0:** binaural direct sound (HRTF + head turn), measured L/R meters.
+- **M1:** three.js city, FPS controls, distance falloff, line-of-sight occlusion.
+- **M2 (here):** order-1 image-source early reflections + debug rays.
+- **M3 (next):** late reverb driven by enclosure.
+- **M4:** order-2 + performance (WebGPU only if profiling demands it).
+- **M5:** head-tracking options (mouse-look + WebXR), seam for native.
 
 ## Spike: off-the-shelf library versus raw Web Audio
 
-The question for M0 was whether to adopt a spatial-audio library or drive the
-Web Audio graph directly. The decision is **raw Web Audio**, and here is why.
-
-**Web Audio `PannerNode` with `panningModel: "HRTF"`** is built into every
-browser and does real binaural rendering for a moving point source, plus
-distance attenuation. It has no concept of geometry, so reflections and
-occlusion are on us. That is fine: those are exactly the milestones where the
-project's value lives.
-
-**Google Resonance Audio** is the closest turnkey option. Its Web Audio SDK
-adds ambisonic HRTF plus early reflections and late reverb generated from a
-*shoebox room* with per-surface materials. The catch is the shoebox: it models
-one rectangular room, so it cannot represent a helicopter ducking behind one
-specific building, a street canyon open to the sky, or reflections off a facade
-that is not a wall of the box. Our whole premise is per-building geometry, which
-is the one thing the shoebox cannot do. The project is also effectively in
-maintenance.
-
-**howler.js and Tone.js** wrap `PannerNode` for convenience and add nothing for
-geometry-based reflections.
-
-**Steam Audio and Wwise Reflect** do real geometry-driven acoustics, but they
-are native or heavy engine integrations with no clean browser drop-in, so they
-are out for a web-only target.
-
-Conclusion: use `PannerNode` (HRTF) for the direct path and build the
-reflections ourselves with the image-source method starting at M2. Resonance is
-still worth a look at M3 as a possible late-reverb tail generator, but not as
-the core engine.
+Raw Web Audio. Resonance Audio is the closest turnkey option but models a
+single shoebox room, which cannot represent a helicopter ducking behind one
+specific building. Per-building geometry is the point of this experiment, so
+`PannerNode` (HRTF) handles the direct path and image-source reflections are
+built here. howler.js / Tone.js add nothing for geometry. Steam Audio / Wwise
+have no clean browser drop-in.
 
 ## Head tracking, honestly
 
-AirPods head-tracking data is not exposed to browser JavaScript, so a web app
-cannot turn the game with your head through AirPods. The paths that do work on
-the web are mouse-look (the M0 baseline) and WebXR head pose inside a VR
-headset. M5 wires the listener pose through one seam so a future native iOS
-build could feed real head tracking in without touching the audio code.
+AirPods head-tracking data is not exposed to browser JavaScript. This build
+uses mouse-look. WebXR pose is the realistic web path later. Listener pose
+stays behind one seam so a future native iOS build could feed real head
+tracking in without touching the audio graph.
+
+## Controls
+
+| Input | Action |
+|-------|--------|
+| Click | Start + pointer lock |
+| Mouse | Look |
+| WASD | Move |
+| O | Toggle occlusion |
+| R | Toggle reflections |
+| G | Toggle debug rays |
+
+## Refresh vendored three.js
+
+```bash
+npm install
+npm run vendor
+```
 
 ## Coordinate frame
 
 Matches the Web Audio API: right-handed, +x right, +y up, +z toward the viewer.
-A listener at yaw 0 faces down -z. Positive yaw turns the head right (clockwise
-seen from above). The top-down view draws +x to the right and -z up the screen.
+A listener at yaw 0 faces down -z.

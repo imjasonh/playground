@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Heli acoustics, M0 binaural direct sound</title>
+    <title>Heli acoustics, M2 early reflections</title>
     <style>
       * {
         margin: 0;
@@ -24,10 +24,6 @@
         width: 100vw;
         height: 100vh;
         touch-action: none;
-        cursor: grab;
-      }
-      #scene:active {
-        cursor: grabbing;
       }
       #hud {
         position: fixed;
@@ -71,30 +67,13 @@
       #proof.fail {
         color: #ff7d7d;
       }
-      #compass-wrap {
-        position: fixed;
-        top: 16px;
-        right: 16px;
-        width: 72px;
-        height: 72px;
-        border: 1px solid rgba(120, 180, 255, 0.3);
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      #compass {
-        font-size: 11px;
-        color: #7fb4ff;
-        transition: transform 0.05s linear;
-      }
       #hint {
         position: fixed;
         bottom: 16px;
         left: 16px;
         right: 16px;
         font-size: 12px;
-        color: rgba(207, 228, 255, 0.5);
+        color: rgba(207, 228, 255, 0.55);
         pointer-events: none;
         text-shadow: 0 1px 3px #000;
       }
@@ -121,7 +100,7 @@
         color: #fff;
       }
       #overlay p {
-        max-width: 46ch;
+        max-width: 48ch;
         font-size: 16px;
         line-height: 1.6;
         color: rgba(207, 228, 255, 0.78);
@@ -152,35 +131,42 @@
 
     <div id="hud">
       <div class="row"><span>bearing</span><span class="val" id="az">&#8230;</span></div>
-      <div class="row"><span>elevation</span><span class="val" id="el">&#8230;</span></div>
       <div class="row"><span>distance</span><span class="val" id="dist">&#8230;</span></div>
+      <div class="row"><span>occlusion</span><span class="val" id="occ">&#8230;</span></div>
+      <div class="row"><span>reflect</span><span class="val" id="refn">&#8230;</span></div>
       <div class="row"><span>ctx</span><span class="val" id="ctx">&#8230;</span></div>
-      <div class="row ear"><span>L ear</span><span class="bar"><i id="left-bar"></i></span><span class="val" id="left-n">0</span></div>
-      <div class="row ear"><span>R ear</span><span class="bar"><i id="right-bar"></i></span><span class="val" id="right-n">0</span></div>
+      <div class="row ear">
+        <span>L ear</span><span class="bar"><i id="left-bar"></i></span
+        ><span class="val" id="left-n">0</span>
+      </div>
+      <div class="row ear">
+        <span>R ear</span><span class="bar"><i id="right-bar"></i></span
+        ><span class="val" id="right-n">0</span>
+      </div>
       <div class="row"><span>balance</span><span class="val" id="bal">&#8230;</span></div>
       <div class="row"><span>HRTF proof</span><span class="val" id="proof">&#8230;</span></div>
     </div>
-    <div id="compass-wrap"><div id="compass">&#9650; fwd</div></div>
 
     <div id="hint">
-      Drag left or right (arrow keys work too) to turn your head. Watch L/R ear
-      meters: the louder ear should flip as the helicopter orbits past you.
+      WASD move, mouse look. O toggles occlusion, R toggles reflections, G toggles
+      debug rays (green/red direct path, cyan bounce paths).
     </div>
 
     <div id="overlay">
       <h1>Heli acoustics</h1>
       <p class="phones">Put headphones on. This is binaural (HRTF) audio.</p>
       <p>
-        A synthesized helicopter orbits you and the browser renders it through
-        an HRTF panner. Turn your head by dragging, and the sound tracks around
-        your ears. The HUD shows measured left and right ear energy so you can
-        see the spatialization, not just assume it. There are no buildings or
-        reflections yet. M0 only proves the direct-sound spatialization is good
-        enough to build on.
+        A helicopter flies a loop over a five-block street canyon. Direct sound
+        is HRTF-spatialized and muffles when a building blocks line of sight.
+        Order-1 image-source reflections bounce off facades and the street, each
+        as a delayed, filtered, HRTF-panned tap. Toggle R to A/B the wet path.
       </p>
       <div class="go">Click to start</div>
     </div>
 
+    <script type="importmap">
+      { "imports": { "three": "./vendor/three.module.min.js" } }
+    </script>
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>

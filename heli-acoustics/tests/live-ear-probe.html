@@ -16,6 +16,8 @@
   const audio = new HeliAudio();
   await audio.resume();
   audio.fadeIn();
+  audio.setReflectionsEnabled(false);
+  audio.setOcclusionEnabled(false);
 
   const proof = await proveHrtfBinaural();
 
@@ -25,7 +27,10 @@
     function tick() {
       const t = (performance.now() - start) / 1000;
       const pos = orbitPosition(ORBIT, t);
-      audio.update(pos, forwardVector(0), upVector());
+      audio.update(pos, [0, 0, 0], forwardVector(0), upVector(), {
+        occlusion: 0,
+        reflections: [],
+      });
       const levels = audio.earLevels();
       const az = relativeAzimuthDeg(pos, [0, 0, 0], 0);
       if (levels.left + levels.right > 0.0005) {
