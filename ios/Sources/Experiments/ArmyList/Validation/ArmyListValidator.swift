@@ -159,7 +159,7 @@ enum ArmyListValidator {
     ) -> Int {
         var totalPoints = 0
         var copyIndexByDatasheet: [String: Int] = [:]
-        var unitByID = Dictionary(uniqueKeysWithValues: list.units.map { ($0.id, $0) })
+        let unitByID = Dictionary(uniqueKeysWithValues: list.units.map { ($0.id, $0) })
         if unitByID.count != list.units.count {
             issues.append(.init(
                 code: "unit.duplicateID",

@@ -100,7 +100,15 @@ final class ArmyListChatRuntime: ObservableObject {
         defer { isRunning = false }
 
         do {
+            #if canImport(FoundationModels)
+            if #available(iOS 26.0, *) {
+                try await runFoundationModels(prompt: trimmed)
+            } else {
+                append(.system, text: armyListGateDetail)
+            }
+            #else
             try await runFoundationModels(prompt: trimmed)
+            #endif
         } catch {
             append(.assistant, text: error.localizedDescription)
         }
@@ -216,7 +224,7 @@ private enum ArmyListFMToolBridge {
         name: String,
         work: @escaping @MainActor (ArmyListChatWorkspace) -> String
     ) async throws -> String {
-        try await Task { @MainActor in
+        await Task { @MainActor in
             guard let runtime else {
                 return "Army List chat runtime is gone."
             }
