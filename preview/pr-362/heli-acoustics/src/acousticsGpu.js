@@ -11,7 +11,17 @@ import {
 } from './reflections.js';
 import { enclosureAt } from './enclosure.js';
 import { computeDiffraction } from './diffraction.js';
-import { materialForFace, bounceBands, unitBands, cutoffFromBands } from './materials.js';
+import {
+  materialForFace,
+  bounceBands,
+  unitBands,
+  cutoffFromBands,
+  gainFromBands,
+  meanPressureReflection,
+  sphericalPressureGain,
+} from './materials.js';
+import { applyAirToBands } from './airAbsorption.js';
+import { occlusionAmount } from './occlusion.js';
 import { traceEnergyBins } from './stochasticIr.js';
 
 const MAX_OUT = 96;
@@ -316,23 +326,27 @@ function buildFaceTable(buildings) {
   faces.forEach((f, i) => {
     const kind = f.kind === 'ground' ? 1 : 0;
     const mat = materialForFace(f);
-    packed.set(packFace(f, mat.reflectivity, kind), i * 12);
+    packed.set(packFace(f, meanPressureReflection(mat), kind), i * 12);
   });
   return { faces, ids, packed, facadeCount: facades.length };
 }
 
 function enrichSpecular(r, faces) {
-  if (r.bands && r.cutoffHz != null) return r;
+  if (r.bands && r.cutoffHz != null && r._airApplied) return r;
   const parts = String(r.faceId).split('>');
   let bands = unitBands();
   for (const id of parts) {
     const face = faces.find((f) => f.id === id) || groundFace();
     bands = bounceBands(bands, materialForFace(face));
   }
+  const pathLen = r.pathLength || 1;
+  bands = applyAirToBands(bands, pathLen);
   return {
     ...r,
     bands,
-    cutoffHz: cutoffFromBands(bands, r.pathLength || 1),
+    gain: gainFromBands(bands) * sphericalPressureGain(pathLen),
+    cutoffHz: cutoffFromBands(bands, pathLen),
+    _airApplied: true,
   };
 }
 
@@ -579,8 +593,10 @@ export class GpuAcoustics {
       this.limit,
     );
     const enclosure = enclosureAt(listener, this.buildings);
+    // Soft Maekawa occlusion on CPU (GPU LOS is binary for visibility only).
+    const softOcc = occlusionAmount(listener, source, this.buildings);
     return {
-      occlusion: occData[0] > 0.5 ? 1 : 0,
+      occlusion: softOcc,
       reflections: early.reflections,
       enclosure,
       irBins: this._irBins,

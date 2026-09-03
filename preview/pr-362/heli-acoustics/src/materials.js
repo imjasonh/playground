@@ -1,25 +1,43 @@
-// Frequency-dependent surface materials for early paths and stochastic late field.
-// Band absorptions are rough urban averages (low ~250 Hz, mid ~1 kHz, high ~4 kHz).
+// Surface materials: energy absorption α → pressure reflection β = √(1−α)
+// (Allen & Berkley 1979). Scattering s sends (1−s) to specular ISM and s toward
+// the stochastic late field (Kang 2000 street-canyon diffuse boundaries).
+// Band centers ≈ 250 Hz / 1 kHz / 4 kHz (urban facade averages).
 
 export const MATERIALS = {
   concrete: {
     id: 'concrete',
-    reflectivity: 0.62,
+    // Typical painted/rough concrete octave averages (abridged).
     absorb: { low: 0.02, mid: 0.06, high: 0.14 },
+    scatter: 0.12,
   },
   glass: {
     id: 'glass',
-    reflectivity: 0.7,
     absorb: { low: 0.03, mid: 0.05, high: 0.08 },
+    scatter: 0.05,
   },
   asphalt: {
     id: 'asphalt',
-    reflectivity: 0.38,
     absorb: { low: 0.05, mid: 0.12, high: 0.35 },
+    scatter: 0.15,
   },
 };
 
-/** Facade material: alternate concrete / glass by building id hash. */
+/** Pressure reflection coefficient β = √(1 − α). */
+export function pressureReflection(alpha) {
+  const a = Math.max(0, Math.min(0.999, alpha));
+  return Math.sqrt(1 - a);
+}
+
+/** Mean β across bands (for GPU packing / single reflectivity). */
+export function meanPressureReflection(material) {
+  const b =
+    pressureReflection(material.absorb.low) +
+    pressureReflection(material.absorb.mid) +
+    pressureReflection(material.absorb.high);
+  return (b / 3) * Math.sqrt(Math.max(0, 1 - (material.scatter || 0)));
+}
+
+/** Facade material: alternate concrete / glass by building id. */
 export function materialForFace(face) {
   if (face.kind === 'ground' || face.id === 'ground') return MATERIALS.asphalt;
   const glass = /ne-low|se/.test(face.building || '');
@@ -27,15 +45,16 @@ export function materialForFace(face) {
 }
 
 /**
- * Apply one bounce of material absorption to a 3-band energy vector.
+ * Apply one specular bounce: β_band · √(1 − s).
  * @param {{low:number,mid:number,high:number}} bands
- * @param {{absorb:{low:number,mid:number,high:number}, reflectivity:number}} material
+ * @param {{absorb:{low:number,mid:number,high:number}, scatter?:number}} material
  */
 export function bounceBands(bands, material) {
+  const keepSpec = Math.sqrt(Math.max(0, 1 - (material.scatter || 0)));
   return {
-    low: bands.low * material.reflectivity * (1 - material.absorb.low),
-    mid: bands.mid * material.reflectivity * (1 - material.absorb.mid),
-    high: bands.high * material.reflectivity * (1 - material.absorb.high),
+    low: bands.low * pressureReflection(material.absorb.low) * keepSpec,
+    mid: bands.mid * pressureReflection(material.absorb.mid) * keepSpec,
+    high: bands.high * pressureReflection(material.absorb.high) * keepSpec,
   };
 }
 
@@ -43,15 +62,23 @@ export function unitBands() {
   return { low: 1, mid: 1, high: 1 };
 }
 
-/** Map surviving high-band energy to a low-pass cutoff for a wet tap. */
+/**
+ * Map surviving high-band energy + path length (air already in bands) to LP.
+ * Residual path darkening is mild; ISO air absorption owns the physics.
+ */
 export function cutoffFromBands(bands, pathLength) {
   const high = Math.max(0, Math.min(1, bands.high));
   const mid = Math.max(0, Math.min(1, bands.mid));
-  const base = 700 + mid * 5500 + high * 7000;
-  return Math.max(500, base - pathLength * 12);
+  const base = 900 + mid * 6000 + high * 8000;
+  return Math.max(400, base - pathLength * 4);
 }
 
-/** Broadband gain from mid band (ear-weighted) with path falloff already in bands. */
+/** Ear-weighted broadband amplitude from bands (spreading applied separately). */
 export function gainFromBands(bands) {
   return 0.55 * bands.mid + 0.25 * bands.low + 0.2 * bands.high;
+}
+
+/** Spherical pressure spreading (Allen & Berkley): 1/R. */
+export function sphericalPressureGain(pathLength) {
+  return 1 / Math.max(pathLength, 1);
 }

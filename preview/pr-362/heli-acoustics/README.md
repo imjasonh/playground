@@ -4,20 +4,21 @@ A browser experiment in convincing 3D audio: a helicopter flies over a tall
 street canyon. Occlusion, specular image-source paths, edge diffraction, and a
 stochastic late field feed binaural Web Audio.
 
+The physics model (Allen & Berkley ISM, Maekawa diffraction, ISO 9613-1 air
+absorption, Kang-style scattering) is documented in
+[`docs/acoustics-model.md`](docs/acoustics-model.md).
+
 ## What you hear
 
-- **Direct path:** HRTF `PannerNode` with LOS occlusion muffling.
-- **Early paths:** order-1–3 image-source specular taps plus geometric edge
-  diffraction around building corners and roofs. Materials (concrete, glass,
-  asphalt) apply frequency-dependent absorption to each bounce.
-- **Late field:** stochastic bounce energy binned into a Convolver IR (rebuilds
-  as you move). Toggle with **V**.
+- **Direct path:** HRTF `PannerNode` with soft Maekawa occlusion muffling and Doppler from heli radial velocity.
+- **Early paths:** order-1–3 image-source specular taps (pressure β/R) plus Maekawa edge diffraction. Materials use β = √(1−α) and scattering s.
+- **Late field:** stochastic bounce energy (scatter mix) binned into a Convolver IR. Toggle with **V**.
 
 Occlusion and order-1/2 specular candidates run in a **WebGPU compute shader**.
-Order-3, diffraction, material banding, and stochastic IR merge on the CPU.
-**WebGPU is required** — the live app does not fall back to a CPU solver. The HUD
-**solver** row shows `webgpu`, or the start screen reports an error if the GPU
-is missing.
+Order-3, diffraction, material banding, soft occlusion, and stochastic IR merge
+on the CPU. **WebGPU is required** — the live app does not fall back to a CPU
+solver. The HUD **solver** row shows `webgpu`, or the start screen reports an
+error if the GPU is missing.
 
 Debug rays: cyan order-1, purple order-2, pink order-3, amber diffraction.
 
