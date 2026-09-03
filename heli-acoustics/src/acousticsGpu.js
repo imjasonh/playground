@@ -1,6 +1,6 @@
 // WebGPU image-source + occlusion solver. Each candidate (order-1 face or
 // order-2 pair) runs as one compute thread against uploaded AABBs/faces.
-// Falls back to the CPU solver when WebGPU is missing or init fails.
+// WebGPU is required for the live app; there is no CPU runtime fallback.
 
 import { BUILDINGS, SPEED_OF_SOUND, buildingFaces } from './city.js';
 import { occlusionAmount } from './occlusion.js';
@@ -376,7 +376,8 @@ function buildJobs(faceTable, order2Limit = 80) {
   return { jobs, packed };
 }
 
-function cpuFallback(listener, source, buildings, limit, { irBins = null } = {}) {
+/** Pure-JS reference path for Node unit tests only — not used by the live app. */
+function computeAcousticsReference(listener, source, buildings, limit, { irBins = null } = {}) {
   const occlusion = occlusionAmount(listener, source, buildings);
   const specular = computeReflections(listener, source, buildings, {
     limit: Math.max(limit * 2, 24),
@@ -394,7 +395,7 @@ function cpuFallback(listener, source, buildings, limit, { irBins = null } = {})
     irBins: bins,
     diffractionCount: early.diffractionCount,
     order3Count: early.order3Count,
-    backend: 'cpu',
+    backend: 'reference',
   };
 }
 
@@ -402,12 +403,13 @@ function cpuFallback(listener, source, buildings, limit, { irBins = null } = {})
  * WebGPU acoustics engine. Call `init()` once, then `compute()` each frame.
  * Specular order-1/2 run on GPU; order-3, diffraction, and stochastic IR bins
  * are merged on the CPU (still cheap at this city size).
+ * Init fails hard if WebGPU is missing — no silent CPU substitute.
  */
 export class GpuAcoustics {
   constructor({ buildings = BUILDINGS, limit = 16 } = {}) {
     this.buildings = buildings;
     this.limit = limit;
-    this.backend = 'cpu';
+    this.backend = 'uninit';
     this.device = null;
     this.ready = false;
     this.faceTable = buildFaceTable(buildings);
@@ -419,87 +421,81 @@ export class GpuAcoustics {
 
   async init() {
     if (!globalThis.navigator?.gpu) {
-      this.backend = 'cpu';
-      this.ready = true;
-      return this;
+      throw new Error('WebGPU is required (navigator.gpu is missing)');
     }
-    try {
-      const adapter = await navigator.gpu.requestAdapter();
-      if (!adapter) throw new Error('no adapter');
-      this.device = await adapter.requestDevice();
-      this.device.lost.then(() => {
-        this.backend = 'cpu';
-        this.ready = true;
-        this.device = null;
-      });
-
-      const buildingData = packBuildings(this.buildings);
-      this.buildingBuf = this.device.createBuffer({
-        size: buildingData.byteLength,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      });
-      this.device.queue.writeBuffer(this.buildingBuf, 0, buildingData);
-
-      this.faceBuf = this.device.createBuffer({
-        size: this.faceTable.packed.byteLength,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      });
-      this.device.queue.writeBuffer(this.faceBuf, 0, this.faceTable.packed);
-
-      this.jobBuf = this.device.createBuffer({
-        size: this.jobTable.packed.byteLength,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      });
-      this.device.queue.writeBuffer(this.jobBuf, 0, this.jobTable.packed);
-
-      this.uniformBuf = this.device.createBuffer({
-        size: 48,
-        usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-      });
-
-      const outFloats = MAX_OUT * 16;
-      this.outBuf = this.device.createBuffer({
-        size: outFloats * 4,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-      });
-      this.occBuf = this.device.createBuffer({
-        size: 16,
-        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-      });
-      this.outRead = this.device.createBuffer({
-        size: outFloats * 4,
-        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-      });
-      this.occRead = this.device.createBuffer({
-        size: 16,
-        usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-      });
-
-      const module = this.device.createShaderModule({ code: SHADER });
-      this.pipeline = this.device.createComputePipeline({
-        layout: 'auto',
-        compute: { module, entryPoint: 'main' },
-      });
-      this.bindGroup = this.device.createBindGroup({
-        layout: this.pipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: { buffer: this.uniformBuf } },
-          { binding: 1, resource: { buffer: this.buildingBuf } },
-          { binding: 2, resource: { buffer: this.faceBuf } },
-          { binding: 3, resource: { buffer: this.jobBuf } },
-          { binding: 4, resource: { buffer: this.outBuf } },
-          { binding: 5, resource: { buffer: this.occBuf } },
-        ],
-      });
-
-      this.backend = 'webgpu';
-      this.ready = true;
-    } catch (err) {
-      console.warn('WebGPU acoustics unavailable, using CPU:', err);
-      this.backend = 'cpu';
-      this.ready = true;
+    const adapter = await navigator.gpu.requestAdapter();
+    if (!adapter) {
+      throw new Error('WebGPU is required (no GPU adapter)');
+    }
+    this.device = await adapter.requestDevice();
+    this.device.lost.then((info) => {
+      this.backend = 'lost';
+      this.ready = false;
       this.device = null;
-    }
+      console.error('WebGPU device lost:', info?.message || info);
+    });
+
+    const buildingData = packBuildings(this.buildings);
+    this.buildingBuf = this.device.createBuffer({
+      size: buildingData.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.buildingBuf, 0, buildingData);
+
+    this.faceBuf = this.device.createBuffer({
+      size: this.faceTable.packed.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.faceBuf, 0, this.faceTable.packed);
+
+    this.jobBuf = this.device.createBuffer({
+      size: this.jobTable.packed.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    this.device.queue.writeBuffer(this.jobBuf, 0, this.jobTable.packed);
+
+    this.uniformBuf = this.device.createBuffer({
+      size: 48,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    const outFloats = MAX_OUT * 16;
+    this.outBuf = this.device.createBuffer({
+      size: outFloats * 4,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+    this.occBuf = this.device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+    this.outRead = this.device.createBuffer({
+      size: outFloats * 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+    this.occRead = this.device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    const module = this.device.createShaderModule({ code: SHADER });
+    this.pipeline = this.device.createComputePipeline({
+      layout: 'auto',
+      compute: { module, entryPoint: 'main' },
+    });
+    this.bindGroup = this.device.createBindGroup({
+      layout: this.pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: this.uniformBuf } },
+        { binding: 1, resource: { buffer: this.buildingBuf } },
+        { binding: 2, resource: { buffer: this.faceBuf } },
+        { binding: 3, resource: { buffer: this.jobBuf } },
+        { binding: 4, resource: { buffer: this.outBuf } },
+        { binding: 5, resource: { buffer: this.occBuf } },
+      ],
+    });
+
+    this.backend = 'webgpu';
+    this.ready = true;
     return this;
   }
 
@@ -510,6 +506,9 @@ export class GpuAcoustics {
    */
   async compute(listener, source) {
     if (!this.ready) await this.init();
+    if (this.backend !== 'webgpu' || !this.device) {
+      throw new Error('WebGPU acoustics device is not available');
+    }
     this._frame++;
     const movedFar =
       !this._irListener ||
@@ -525,12 +524,6 @@ export class GpuAcoustics {
         seed: (this._frame % 97) + 1,
       });
       this._irListener = listener.slice();
-    }
-
-    if (this.backend !== 'webgpu' || !this.device) {
-      return cpuFallback(listener, source, this.buildings, this.limit, {
-        irBins: this._irBins,
-      });
     }
 
     const jobCount = Math.min(this.jobTable.jobs.length, MAX_OUT);
@@ -623,7 +616,7 @@ export class GpuAcoustics {
   }
 }
 
-/** Convenience: sync CPU path for Node tests. */
+/** Pure-JS reference for Node tests (not a live-app fallback). */
 export function computeAcousticsCpu(listener, source, buildings = BUILDINGS, limit = 16) {
-  return cpuFallback(listener, source, buildings, limit);
+  return computeAcousticsReference(listener, source, buildings, limit);
 }

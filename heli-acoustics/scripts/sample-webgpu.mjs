@@ -59,6 +59,5 @@ if (!text?.startsWith('WEBGPU_PROBE=')) {
 const verdict = JSON.parse(text.slice('WEBGPU_PROBE='.length));
 if (errors.length) verdict.pageErrors = errors;
 console.log(JSON.stringify(verdict, null, 2));
-// Pass if the solver works (WebGPU preferred; CPU fallback still valid in
-// headless VMs without a GPU). Fail only on logic mismatches.
+// Pass only when WebGPU runs; there is no CPU fallback for the live solver.
 process.exit(verdict.pass ? 0 : 1);

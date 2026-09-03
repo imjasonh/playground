@@ -8,32 +8,37 @@
   import { computeReflections } from '/src/reflections.js';
   import { occlusionAmount } from '/src/occlusion.js';
 
-  const gpu = new GpuAcoustics({ buildings: BUILDINGS, limit: 12 });
-  await gpu.init();
-
-  const listener = [0, 1.7, 0];
-  const source = helicopterPath(0);
-  const result = await gpu.compute(listener, source);
-  const cpuOcc = occlusionAmount(listener, source, BUILDINGS);
-  const cpuRefs = computeReflections(listener, source, BUILDINGS, { limit: 12, maxOrder: 2 });
-
-  // When WebGPU runs, occlusion must match CPU. Reflection counts may differ
-  // slightly from pair-budget truncation but should be in the same ballpark.
-  const occMatch = result.occlusion === cpuOcc;
-  const hasRefs = result.reflections.length >= 1 || cpuRefs.length >= 1;
-  const backendOk = result.backend === 'webgpu' || result.backend === 'cpu';
-
-  const verdict = {
-    pass: backendOk && occMatch && hasRefs,
-    backend: result.backend,
-    preferredWebGpu: result.backend === 'webgpu',
-    occMatch,
-    gpuOcclusion: result.occlusion,
-    cpuOcclusion: cpuOcc,
-    gpuTaps: result.reflections.length,
-    cpuTaps: cpuRefs.length,
-    gpuOrder2: result.reflections.filter((r) => r.order === 2).length,
-    hasNavigatorGpu: !!navigator.gpu,
-  };
+  let verdict;
+  try {
+    const gpu = new GpuAcoustics({ buildings: BUILDINGS, limit: 12 });
+    await gpu.init();
+    const listener = [0, 1.7, 0];
+    const source = helicopterPath(0);
+    const result = await gpu.compute(listener, source);
+    const cpuOcc = occlusionAmount(listener, source, BUILDINGS);
+    const cpuRefs = computeReflections(listener, source, BUILDINGS, { limit: 12, maxOrder: 2 });
+    const occMatch = result.occlusion === cpuOcc;
+    const hasRefs = result.reflections.length >= 1 || cpuRefs.length >= 1;
+    verdict = {
+      pass: result.backend === 'webgpu' && occMatch && hasRefs,
+      backend: result.backend,
+      preferredWebGpu: result.backend === 'webgpu',
+      occMatch,
+      gpuOcclusion: result.occlusion,
+      cpuOcclusion: cpuOcc,
+      gpuTaps: result.reflections.length,
+      cpuTaps: cpuRefs.length,
+      gpuOrder2: result.reflections.filter((r) => r.order === 2).length,
+      hasNavigatorGpu: !!navigator.gpu,
+    };
+  } catch (err) {
+    verdict = {
+      pass: false,
+      backend: 'unavailable',
+      preferredWebGpu: false,
+      reason: String(err?.message || err),
+      hasNavigatorGpu: !!navigator.gpu,
+    };
+  }
   document.getElementById('out').textContent = ['WEBGPU_PROBE', JSON.stringify(verdict)].join('=');
 </script>

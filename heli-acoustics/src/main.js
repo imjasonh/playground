@@ -130,7 +130,13 @@ function kickAcoustics(listenerPos, sourcePos) {
       acousticsBusy = false;
     })
     .catch((err) => {
-      console.warn('acoustics compute failed', err);
+      console.error('acoustics compute failed (WebGPU required):', err);
+      latestAcoustics = {
+        ...latestAcoustics,
+        backend: gpuAcoustics.backend === 'lost' ? 'lost' : 'unavailable',
+        reflections: [],
+        occlusion: 0,
+      };
       acousticsBusy = false;
     });
 }
@@ -158,6 +164,15 @@ function frame(now) {
 
   kickAcoustics(listenerPos.slice(), sourcePos.slice());
   const { occlusion: occ, reflections, enclosure, backend } = latestAcoustics;
+  if (backend === 'unavailable' || backend === 'lost') {
+    if (gpuEl) {
+      gpuEl.textContent = backend;
+      gpuEl.className = 'val fail';
+    }
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+    return;
+  }
 
   audio.update(sourcePos, listenerPos, forward, up, {
     occlusion: occ,
@@ -206,7 +221,20 @@ function frame(now) {
 
 async function start() {
   if (running) return;
-  await gpuAcoustics.init();
+  try {
+    await gpuAcoustics.init();
+  } catch (err) {
+    latestAcoustics.backend = 'unavailable';
+    if (gpuEl) {
+      gpuEl.textContent = 'unavailable';
+      gpuEl.className = 'val fail';
+    }
+    const msg = document.createElement('p');
+    msg.className = 'phones';
+    msg.textContent = `WebGPU is required for acoustics. ${err?.message || err}`;
+    overlay.querySelector('.go')?.replaceWith(msg);
+    return;
+  }
   latestAcoustics.backend = gpuAcoustics.backend;
   if (gpuEl) gpuEl.textContent = gpuAcoustics.backend;
 

@@ -1,13 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BUILDINGS, helicopterPath } from '../src/city.js';
-import { computeAcousticsCpu } from '../src/acousticsGpu.js';
+import { GpuAcoustics, computeAcousticsCpu } from '../src/acousticsGpu.js';
 
-test('CPU acoustics fallback returns occlusion, reflections, enclosure', () => {
+test('GpuAcoustics.init rejects when WebGPU is missing', async () => {
+  const gpu = new GpuAcoustics({ buildings: BUILDINGS, limit: 4 });
+  await assert.rejects(() => gpu.init(), /WebGPU is required/);
+});
+
+test('reference acoustics returns occlusion, reflections, enclosure', () => {
   const listener = [0, 1.7, 0];
   const source = helicopterPath(0);
   const r = computeAcousticsCpu(listener, source, BUILDINGS, 12);
-  assert.equal(r.backend, 'cpu');
+  assert.equal(r.backend, 'reference');
   assert.ok(r.occlusion === 0 || r.occlusion === 1);
   assert.ok(Array.isArray(r.reflections));
   assert.ok(r.enclosure.amount >= 0 && r.enclosure.amount <= 1);
