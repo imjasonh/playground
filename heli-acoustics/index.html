@@ -105,6 +105,16 @@
         cursor: pointer;
         flex-shrink: 0;
       }
+      #controls select {
+        flex: 1;
+        min-width: 0;
+        background: #0e1620;
+        color: #cfe4ff;
+        border: 1px solid rgba(127, 180, 255, 0.35);
+        border-radius: 4px;
+        padding: 4px 6px;
+        font: inherit;
+      }
       #controls .key {
         margin-left: auto;
         padding-left: 12px;
@@ -233,11 +243,20 @@
         Debug rays
         <span class="key">G</span>
       </label>
+      <label class="flight">
+        Flight
+        <select id="flight-mode" aria-label="Flight mode">
+          <option value="traverse">Traverse lanes</option>
+          <option value="orbit">Orbit</option>
+        </select>
+        <span class="key">F</span>
+      </label>
     </div>
 
     <div id="hint">
-      Drag to look. On a keyboard: WASD move, O / R / V / G toggle. Tap the
-      checkboxes to A/B occlusion, reflections, and late reverb.
+      Drag to look. On a keyboard: WASD move, O / R / V / G / F toggle. Traverse
+      mode flies straight lanes across the city, pauses, then returns on another
+      line.
     </div>
 
     <div id="overlay">

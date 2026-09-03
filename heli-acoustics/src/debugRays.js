@@ -48,9 +48,17 @@ export class DebugRays {
 function makeLine(color, maxPoints) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(maxPoints * 3), 3));
-  const mat = new THREE.LineBasicMaterial({ color, depthTest: false });
+  const mat = new THREE.LineBasicMaterial({
+    color,
+    depthTest: true,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.85,
+  });
   const line = new THREE.Line(geo, mat);
-  line.renderOrder = 10;
+  // Keep below opaque buildings in the transparent pass, but still depth-tested
+  // so rays disappear behind facades (matches visual occlusion of the heli).
+  line.renderOrder = 1;
   line.frustumCulled = false;
   return line;
 }

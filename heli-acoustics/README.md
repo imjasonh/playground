@@ -1,8 +1,8 @@
 # Heli acoustics
 
-A browser experiment in convincing 3D audio: a helicopter flies over a tall
-street canyon. Occlusion, specular image-source paths, edge diffraction, and a
-stochastic late field feed binaural Web Audio.
+A browser experiment in convincing 3D audio: a helicopter flies over a large
+street canyon (~600 m across, eleven blocks). Occlusion, specular image-source
+paths, edge diffraction, and a stochastic late field feed binaural Web Audio.
 
 The physics model (Allen & Berkley ISM, Maekawa diffraction, ISO 9613-1 air
 absorption, Kang-style scattering) is documented in
@@ -52,6 +52,10 @@ npm run test:audio
 | Drag | Look |
 | WASD | Move |
 | O / R / V / G | Occlusion / reflections / reverb / rays |
+| F / Flight menu | Toggle orbit vs traverse lanes |
+
+**Traverse** (default) flies straight across the city, pauses a few seconds, then
+returns on another lane. **Orbit** is the older elliptical lap.
 
 ## Coordinate frame
 

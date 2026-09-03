@@ -2,7 +2,7 @@ import { HeliAudio } from './audio.js';
 import { FpsControls, coarsePointer } from './controls.js';
 import { createCityScene, createRenderer, createCamera } from './scene3d.js';
 import { DebugRays } from './debugRays.js';
-import { BUILDINGS, helicopterPath, helicopterVelocity } from './city.js';
+import { BUILDINGS, helicopterPath, helicopterVelocity, FLIGHT_MODES } from './city.js';
 import { GpuAcoustics } from './acousticsGpu.js';
 import { proveHrtfBinaural } from './hrtfProof.js';
 import { relativeAzimuthDeg, distance } from './geometry.js';
@@ -26,10 +26,11 @@ const togOcclusion = document.getElementById('tog-occlusion');
 const togReflections = document.getElementById('tog-reflections');
 const togReverb = document.getElementById('tog-reverb');
 const togRays = document.getElementById('tog-rays');
+const flightModeEl = document.getElementById('flight-mode');
 
-const { scene, heli, rotor } = createCityScene();
+const { scene, heli, rotor, bounds } = createCityScene();
 const renderer = createRenderer(canvas);
-const camera = createCamera(canvas.clientWidth / Math.max(1, canvas.clientHeight));
+const camera = createCamera(canvas.clientWidth / Math.max(1, canvas.clientHeight), bounds);
 const controls = new FpsControls(canvas);
 const debugRays = new DebugRays(scene, { maxTaps: 16 });
 const gpuAcoustics = new GpuAcoustics({ buildings: BUILDINGS, limit: 16 });
@@ -42,6 +43,7 @@ let occlusionOn = true;
 let reflectionsOn = true;
 let reverbOn = true;
 let raysOn = true;
+let flightMode = 'traverse';
 let acousticsBusy = false;
 let latestAcoustics = {
   occlusion: 0,
@@ -91,10 +93,20 @@ function setRays(on) {
   debugRays.setVisible(on);
 }
 
+function setFlightMode(mode) {
+  if (!FLIGHT_MODES.includes(mode)) return;
+  flightMode = mode;
+  if (flightModeEl) flightModeEl.value = mode;
+  // Restart the schedule so the new mode begins cleanly.
+  if (running) startTime = performance.now();
+}
+
 togOcclusion.addEventListener('change', () => setOcclusion(togOcclusion.checked));
 togReflections.addEventListener('change', () => setReflections(togReflections.checked));
 togReverb.addEventListener('change', () => setReverb(togReverb.checked));
 togRays.addEventListener('change', () => setRays(togRays.checked));
+flightModeEl?.addEventListener('change', () => setFlightMode(flightModeEl.value));
+if (flightModeEl) flightModeEl.value = flightMode;
 
 document.getElementById('controls').addEventListener('pointerdown', (e) => {
   e.stopPropagation();
@@ -106,6 +118,10 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') setReflections(!reflectionsOn);
   if (e.code === 'KeyV') setReverb(!reverbOn);
   if (e.code === 'KeyG') setRays(!raysOn);
+  if (e.code === 'KeyF') {
+    const i = FLIGHT_MODES.indexOf(flightMode);
+    setFlightMode(FLIGHT_MODES[(i + 1) % FLIGHT_MODES.length]);
+  }
 });
 
 function paintMeters(levels) {
@@ -158,9 +174,16 @@ function frame(now) {
     listenerPos[2] + forward[2],
   );
 
-  const sourcePos = helicopterPath(t);
-  const sourceVelocity = helicopterVelocity(t);
+  const flightOpts = { mode: flightMode };
+  const sourcePos = helicopterPath(t, flightOpts);
+  const sourceVelocity = helicopterVelocity(t, flightOpts);
   heli.position.set(sourcePos[0], sourcePos[1], sourcePos[2]);
+  // Point the fuselage along travel direction (boom trails behind).
+  const speed = Math.hypot(sourceVelocity[0], sourceVelocity[1], sourceVelocity[2]);
+  if (speed > 0.5) {
+    const yaw = Math.atan2(sourceVelocity[0], sourceVelocity[2]);
+    heli.rotation.set(0, yaw + Math.PI, 0);
+  }
   rotor.rotation.y = t * 40;
 
   kickAcoustics(listenerPos.slice(), sourcePos.slice());
