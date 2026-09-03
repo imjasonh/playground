@@ -1,0 +1,17 @@
+{
+  "expectedLegal": false,
+  "notes": "expected illegal: no detachments in catalog",
+  "list": {
+    "id": "66E9B903-4DA0-4F6E-8692-DC017A55DEBA",
+    "name": "Chaos Titan Legions \u2014 no detachments",
+    "catalogVersion": "11e-1",
+    "factionID": "chaos-titan-legions",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [],
+    "units": [],
+    "warlordUnitID": null,
+    "notes": "Catalog has no detachments for this faction.",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

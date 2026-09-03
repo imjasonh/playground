@@ -64,6 +64,10 @@ final class ExperimentCatalogTests: XCTestCase {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "device-agent" })
     }
 
+    func testIncludesArmyList() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "army-list" })
+    }
+
     func testDeviceAgentIsListedRightUnderRideMonitor() throws {
         let ids = ExperimentCatalog.all.map(\.id)
         let rideIndex = try XCTUnwrap(ids.firstIndex(of: "ride-monitor"))

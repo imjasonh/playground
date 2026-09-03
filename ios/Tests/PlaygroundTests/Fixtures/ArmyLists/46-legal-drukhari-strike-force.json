@@ -1,0 +1,167 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "AC63A71E-FB8E-4E39-947C-743A095B3759",
+    "name": "Drukhari Strike Force 1970pts",
+    "catalogVersion": "11e-1",
+    "factionID": "drukhari",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "drukhari--exhibition-of-slaughter",
+      "drukhari--tools-of-torment"
+    ],
+    "units": [
+      {
+        "id": "2BD1BD21-FA5D-4F97-A2C0-B92549C6907F",
+        "datasheetID": "drukhari--haemonculus",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "drukhari--exhibition-of-slaughter--hyperstimm-trafficker"
+        ],
+        "attachedToUnitID": "487DA65C-A4F6-4696-B9BA-959C04213987"
+      },
+      {
+        "id": "1024A258-F988-4804-A3D6-3F815D3760BF",
+        "datasheetID": "drukhari--reaper",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A2047346-FF34-40D6-A96C-839FCAA7A315",
+        "datasheetID": "drukhari--cronos",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0D3B9EE3-8B0B-402E-858A-63D83773716A",
+        "datasheetID": "drukhari--raider",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7FE15ECC-FDF1-4966-A4D8-3BA7849B91A5",
+        "datasheetID": "drukhari--hand-of-the-archon",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "D931EEED-512E-4B2C-A85A-977442056FDA",
+        "datasheetID": "drukhari--raven-strike-fighter",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "52703840-0D7A-4440-B6D4-DD6AA5EAAA11",
+        "datasheetID": "drukhari--venom",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "2525D5FC-2544-4CD6-8963-6463598AE000",
+        "datasheetID": "drukhari--reavers",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "948DFACD-B2A4-4F95-AAE9-54F4E60823DD",
+        "datasheetID": "drukhari--ravager",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "220CF06E-4BDC-43CB-83E4-D1FA8ABF7F4D",
+        "datasheetID": "drukhari--mandrakes",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "06BC22B6-E55B-46A0-8391-9AE65C6C3213",
+        "datasheetID": "drukhari--kabalite-warriors",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "C0F0C356-AFAB-4773-859F-062E1B162F7F",
+        "datasheetID": "drukhari--tantalus",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F90D90FC-688C-48BB-AEC6-E9987264F9A1",
+        "datasheetID": "drukhari--wyches",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "72D58057-D39D-402A-91C4-5C36FA60B2B9",
+        "datasheetID": "drukhari--hellions",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "487DA65C-A4F6-4696-B9BA-959C04213987",
+        "datasheetID": "drukhari--wracks",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "1DEDF0F9-1A2F-477E-9D15-1247DD5BCD2B",
+        "datasheetID": "drukhari--wracks",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "38479434-D017-4D9B-9924-F3A058DC9A36",
+        "datasheetID": "drukhari--scourges-with-heavy-weapons",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "CBB3A467-8A9A-4C11-9DCC-DFCAEA529C01",
+        "datasheetID": "drukhari--razorwing-jetfighter",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "2BD1BD21-FA5D-4F97-A2C0-B92549C6907F",
+    "notes": "stress seed=45 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

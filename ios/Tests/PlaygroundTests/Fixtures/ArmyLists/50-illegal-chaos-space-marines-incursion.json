@@ -1,0 +1,36 @@
+{
+  "expectedLegal": false,
+  "notes": "unit.attachNoTargets",
+  "list": {
+    "id": "03CA1952-06A3-48BF-8C7D-D0D96B2EA022",
+    "name": "Illegal empty leaderTo attach",
+    "catalogVersion": "11e-1",
+    "factionID": "chaos-space-marines",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "chaos-space-marines--chaos-cult"
+    ],
+    "units": [
+      {
+        "id": "E558ECF1-0801-4F49-B403-DE184F40BA9E",
+        "datasheetID": "chaos-space-marines--legionaries",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5E871E2A-5422-4D61-966F-A2F1283B74B8",
+        "datasheetID": "chaos-space-marines--master-of-executions",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": "E558ECF1-0801-4F49-B403-DE184F40BA9E"
+      }
+    ],
+    "warlordUnitID": "5E871E2A-5422-4D61-966F-A2F1283B74B8",
+    "notes": "",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

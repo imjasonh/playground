@@ -1,0 +1,62 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "FB97CF49-FA5C-4CC4-B2F9-F551C09A9952",
+    "name": "Adeptus Custodes Incursion 980pts",
+    "catalogVersion": "11e-1",
+    "factionID": "adeptus-custodes",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "adeptus-custodes--null-maiden-vigil"
+    ],
+    "units": [
+      {
+        "id": "2AEF2E63-BBF5-4088-9967-CBD214ACFBA6",
+        "datasheetID": "adeptus-custodes--knight-centura",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "adeptus-custodes--null-maiden-vigil--huntress-eye"
+        ],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "53081414-6D9E-4EAE-8B73-B0968D150D2C",
+        "datasheetID": "adeptus-custodes--telemon-heavy-dreadnought",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "8D39DC38-2EFE-4543-A23A-2C8DD4FA6531",
+        "datasheetID": "adeptus-custodes--custodian-guard",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "54D1A690-479C-4F21-B981-5D0294DC513C",
+        "datasheetID": "adeptus-custodes--venerable-land-raider",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "DB1729CE-9CC0-4F89-9371-CE30BAF1F6A1",
+        "datasheetID": "adeptus-custodes--custodian-guard-with-adrasite-and-pyrithite-spears",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "2AEF2E63-BBF5-4088-9967-CBD214ACFBA6",
+    "notes": "stress seed=1 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

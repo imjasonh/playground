@@ -1,0 +1,102 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "E400A510-4440-499D-9D1C-EF1A0D34BD3E",
+    "name": "Aeldari Incursion 920pts",
+    "catalogVersion": "11e-1",
+    "factionID": "aeldari",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "aeldari--ghosts-of-the-webway"
+    ],
+    "units": [
+      {
+        "id": "44F83822-5CE2-4F3C-9175-88B18F44F6E1",
+        "datasheetID": "aeldari--bonesinger",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "aeldari--ghosts-of-the-webway--murder-s-jest"
+        ],
+        "attachedToUnitID": "3FE0A8E8-7476-4E67-8AB3-165E09C1B204"
+      },
+      {
+        "id": "85BBBD4E-87D5-4A14-9251-000F2BD6AA36",
+        "datasheetID": "aeldari--hornet",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "3FE0A8E8-7476-4E67-8AB3-165E09C1B204",
+        "datasheetID": "aeldari--wraithlord",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B2305397-8EBB-4DEF-A703-44ACA2E5D55B",
+        "datasheetID": "aeldari--d-cannon-platform",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "470B7C77-3012-4809-BBCB-C2C56E3F1890",
+        "datasheetID": "aeldari--warp-spiders",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7E8AED9C-6137-4BDD-83DC-9BEA717AD4E4",
+        "datasheetID": "aeldari--dark-reapers",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "3C19B3C9-57B3-4035-9800-9FE75A1F02D8",
+        "datasheetID": "aeldari--war-walkers",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "C4D71539-9C71-49F6-A35F-E3AE027A7500",
+        "datasheetID": "aeldari--warlock-conclave",
+        "models": 2,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "FE1B3A4C-D06C-4415-83C8-304DFC7E4355",
+        "datasheetID": "aeldari--hemlock-wraithfighter",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "004DDA36-447D-4E0A-A06E-05C7430339B0",
+        "datasheetID": "aeldari--shadow-spectres",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "44F83822-5CE2-4F3C-9175-88B18F44F6E1",
+    "notes": "stress seed=3 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

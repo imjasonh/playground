@@ -1,0 +1,136 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "CA950BD6-40DC-4B45-96AA-207FE9C8DF29",
+    "name": "Orks Strike Force 1980pts",
+    "catalogVersion": "11e-1",
+    "factionID": "orks",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "orks--blitz-brigade",
+      "orks--dread-mob",
+      "orks--flyboyz"
+    ],
+    "units": [
+      {
+        "id": "BC0C6BCA-E1C2-4FEE-AA62-28A21B3D58A7",
+        "datasheetID": "orks--mek",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "orks--dread-mob--cybork-boosta"
+        ],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "11352974-C291-4447-9132-9ADFF3C8FD93",
+        "datasheetID": "orks--grot-mega-tank",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A98652AA-E8F3-48F6-A9E2-B112E0D5BC2F",
+        "datasheetID": "orks--gargantuan-squiggoth",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B350BCE5-CA30-4412-9F0B-C4D38DB98E3E",
+        "datasheetID": "orks--trukk",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "6E281F0D-561A-4CE0-8E41-78C55264A12C",
+        "datasheetID": "orks--big-mek-dakkarig",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "D36C4AB3-3056-4DD6-8BE5-E932B5166AD1",
+        "datasheetID": "orks--mek-gunz",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "E137EBB2-50F7-4E7D-8CF9-08B55DE9F069",
+        "datasheetID": "orks--beast-snagga-boyz",
+        "models": 20,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "9A44B6A3-0A4F-4578-BEC1-653538B39A78",
+        "datasheetID": "orks--kill-tank",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "C3EA1563-4F21-459E-8669-0DBD42193637",
+        "datasheetID": "orks--deffkoptas",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "64542CE0-201B-45F3-919C-372870557AD0",
+        "datasheetID": "orks--big-trakk",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7C0B8EAA-CE25-4553-B1C1-D4FBA4431624",
+        "datasheetID": "orks--tankbustas",
+        "models": 6,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "FD7CE77C-8DCD-42B6-9E55-B8F77E0036D7",
+        "datasheetID": "orks--wartrakks",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7FA49989-B4E4-4E18-9339-A5ED41EBD098",
+        "datasheetID": "orks--warbuggies",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "FB9EAF0E-C956-4CF9-AB4B-87B8A7812CFA",
+        "datasheetID": "orks--squighog-boyz",
+        "models": 4,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "BC0C6BCA-E1C2-4FEE-AA62-28A21B3D58A7",
+    "notes": "stress seed=34 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

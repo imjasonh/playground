@@ -32,6 +32,9 @@ targets:
   Playground:
     type: application
     platform: iOS
+  HelperTool:
+    type: tool
+    platform: macOS
 EOF
 
 cat > "$work/hello-macos/project.yml" <<'EOF'
@@ -83,8 +86,12 @@ EOF
     echo "FAIL: live repo ios discovery missing ios: $live_ios" >&2
     failures=$((failures + 1))
   fi
+  live_macos="$(bash "$discover_macos" --all)"
+  if [[ "$live_macos" == *'"ios"'* ]]; then
+    echo "FAIL: live repo macos discovery incorrectly includes ios: $live_macos" >&2
+    failures=$((failures + 1))
+  fi
   if [[ -f hello-macos/project.yml ]]; then
-    live_macos="$(bash "$discover_macos" --all)"
     if [[ "$live_macos" != *'"hello-macos"'* ]]; then
       echo "FAIL: live repo macos discovery missing hello-macos: $live_macos" >&2
       failures=$((failures + 1))

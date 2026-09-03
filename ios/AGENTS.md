@@ -53,8 +53,9 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 | Info.plist privacy string or `UIBackgroundModes` | **No** |
 | Normal `project.yml` settings / version bumps | **No** |
 | On-device frameworks used from the host app (e.g. Foundation Models) | **No** |
+| macOS CLI / `type: tool` target under `ios/` (e.g. ArmyListStress) | **No** |
 | **First time** adding/changing an **app extension** target (keyboard, widget, Watch, …) | **Yes** — new Bundle ID + match profile |
-| New App ID **capability / entitlement** on an existing id (Push, HealthKit, NFC, …) | **Often yes** — update App ID + refresh profile |
+| New App ID **capability / entitlement** on an existing id (Push, HealthKit, NFC, …) | **Yes** — update App ID + refresh profile |
 | Second top-level iOS app | **Forbidden** |
 
 `signing_bootstrap` creates missing Bundle IDs via the App Store Connect API
@@ -66,12 +67,15 @@ experiment work does not touch signing.
 
 ### PR requirement when bootstrap is needed
 
-CI detects signing-bootstrap need automatically (new extension Bundle ID, Matchfile
-/ entitlements changes, or App ID capability hunks in `project.yml` / Fastfile)
-via `ios-bootstrap-label.yml` and labels the PR **`needs-ios-bootstrap`**. When
-that PR merges, `ios-bootstrap-on-merge.yml` immediately re-runs
-`fastlane signing_bootstrap` (usually finishing before the parallel `ios.yml`
-TestFlight build needs the profiles). You usually do **not** need to run
+CI detects signing-bootstrap need automatically via
+[`.github/scripts/ios-needs-bootstrap.sh`](../.github/scripts/ios-needs-bootstrap.sh)
+(wired by `ios-bootstrap-label.yml`): Matchfile / `ios/**/*.entitlements`,
+extension targets, and App ID capability hunks in `project.yml` / Fastfile.
+A macOS tool target's `PRODUCT_BUNDLE_IDENTIFIER` alone does **not** qualify.
+When the PR is labeled **`needs-ios-bootstrap`** and merges,
+`ios-bootstrap-on-merge.yml` immediately re-runs `fastlane signing_bootstrap`
+(usually finishing before the parallel `ios.yml` TestFlight build needs the
+profiles). You usually do **not** need to run
 [`ios-signing-bootstrap.yml`](../.github/workflows/ios-signing-bootstrap.yml)
 by hand.
 

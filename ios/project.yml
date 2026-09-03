@@ -37,8 +37,14 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+        excludes:
+          - "**/Catalog/Resources/**"
+          - "**/ArmyList/Stress/**"
       - path: Shared/T9
       - path: Shared/RideMonitor
+    resources:
+      - path: Sources/Experiments/ArmyList/Catalog/Resources
+        buildPhase: resources
     dependencies:
       - target: T9Keyboard
         embed: true
@@ -262,12 +268,34 @@ targets:
     platform: iOS
     sources:
       - Tests/PlaygroundTests
+      - path: Sources/Experiments/ArmyList/Stress
     dependencies:
       - target: Playground
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.tests
         GENERATE_INFOPLIST_FILE: YES
+
+  # macOS CLI that reuses Catalog/Models/Validation and writes stress fixtures.
+  # Legality comes only from ArmyListValidator (no second-language port).
+  ArmyListStress:
+    type: tool
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - path: Sources/Experiments/ArmyList/Catalog
+        excludes:
+          - "**/Resources/**"
+      - path: Sources/Experiments/ArmyList/Models
+      - path: Sources/Experiments/ArmyList/Validation
+      - path: Sources/Experiments/ArmyList/Stress
+      - path: Tools/ArmyListStress
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground.army-list-stress
+        GENERATE_INFOPLIST_FILE: YES
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        SWIFT_VERSION: "5.9"
 
   PlaygroundUITests:
     type: bundle.ui-testing
@@ -299,3 +327,10 @@ schemes:
       config: Debug
     archive:
       config: Release
+
+  ArmyListStress:
+    build:
+      targets:
+        ArmyListStress: all
+    run:
+      config: Debug

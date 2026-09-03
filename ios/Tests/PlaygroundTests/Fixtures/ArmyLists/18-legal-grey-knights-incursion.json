@@ -1,0 +1,79 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "4A583687-643F-4A60-9B2B-6A7C52E1C46B",
+    "name": "Grey Knights Incursion 915pts",
+    "catalogVersion": "11e-1",
+    "factionID": "grey-knights",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "grey-knights--argent-assault",
+      "grey-knights--immaterial-interdiction"
+    ],
+    "units": [
+      {
+        "id": "EE210156-18C5-4932-8C70-F2FF9698866E",
+        "datasheetID": "grey-knights--brotherhood-chaplain",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "grey-knights--argent-assault--vigilance-of-titan"
+        ],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5695FA20-0B49-464A-9F00-FD69F3068A5A",
+        "datasheetID": "grey-knights--strike-squad",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "309DD258-D9D5-46B2-8BA2-16DCAA65D6C4",
+        "datasheetID": "grey-knights--purgation-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "37B0021C-35D8-4103-B03D-6055609F9A71",
+        "datasheetID": "grey-knights--servitors",
+        "models": 4,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "2937753E-4D8B-497F-9EE3-64317EF126E9",
+        "datasheetID": "grey-knights--nemesis-dreadknight",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "8BD384C2-1FD7-4108-8F40-0BB46770A8AD",
+        "datasheetID": "grey-knights--rhino",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "23F02094-9D55-442C-A9C2-2685D1DE40AE",
+        "datasheetID": "grey-knights--stormtalon-gunship",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "EE210156-18C5-4932-8C70-F2FF9698866E",
+    "notes": "stress seed=17 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

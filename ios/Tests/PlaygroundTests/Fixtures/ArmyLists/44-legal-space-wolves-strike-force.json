@@ -1,0 +1,143 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "6811D4DA-C311-42B8-9F15-9A37A77DAB08",
+    "name": "Space Wolves Strike Force 1970pts",
+    "catalogVersion": "11e-1",
+    "factionID": "space-wolves",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "space-wolves--fulguris-task-force",
+      "space-wolves--saga-of-the-beastslayer"
+    ],
+    "units": [
+      {
+        "id": "9B840E39-1E93-4871-9F0A-4D09F4D3B9E0",
+        "datasheetID": "space-wolves--iron-priest",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "space-wolves--saga-of-the-beastslayer--wolf-touched"
+        ],
+        "attachedToUnitID": "3211D720-CDA0-46FF-97E7-C1197F3CFB8B"
+      },
+      {
+        "id": "2005128D-DD85-44DB-BA90-EF822499BA4C",
+        "datasheetID": "space-wolves--assault-intercessor-squad",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B7867435-476E-4ECD-B6FC-23B942029CDF",
+        "datasheetID": "space-wolves--terminator-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "DEECF0A4-C072-4383-B215-CE10C1598E2D",
+        "datasheetID": "space-wolves--stormtalon-gunship",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "E4E1CBF8-6EDD-44C3-8AE9-6FACCC7B48CF",
+        "datasheetID": "space-wolves--infernus-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0D99196A-9767-4350-9862-01F0BEFBF110",
+        "datasheetID": "space-wolves--intercessor-squad",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "08972276-85E7-4423-9759-83F92BEC17D1",
+        "datasheetID": "space-wolves--vindicator",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "72958868-CD43-41E5-8865-A6AEC1A67251",
+        "datasheetID": "space-wolves--wolf-scouts",
+        "models": 6,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "E729274D-6674-42B8-B4F0-3DFD639AAC27",
+        "datasheetID": "space-wolves--incursor-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "C4F89A9D-1525-4D3A-BE2F-0E9ECD6AA8F8",
+        "datasheetID": "space-wolves--scout-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5FA37D28-A8DC-4408-8992-CD9307CF6F6C",
+        "datasheetID": "space-wolves--assault-intercessor-squad",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "E3664092-5F4E-4366-9818-9F06BEBA5227",
+        "datasheetID": "space-wolves--hounds-of-morkai",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7ABF32A2-D7D3-4DE2-83C4-DF4F095FB00C",
+        "datasheetID": "space-wolves--aggressor-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "3D6B6885-53D1-46BD-A77D-068173D43EA9",
+        "datasheetID": "space-wolves--stormraven-gunship",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "3211D720-CDA0-46FF-97E7-C1197F3CFB8B",
+        "datasheetID": "space-wolves--grey-hunters",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "9B840E39-1E93-4871-9F0A-4D09F4D3B9E0",
+    "notes": "stress seed=43 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

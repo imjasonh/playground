@@ -1,0 +1,143 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "8B24895E-06C6-4D28-AD90-CEB6944AE375",
+    "name": "Aeldari Strike Force 1900pts",
+    "catalogVersion": "11e-1",
+    "factionID": "aeldari",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "aeldari--spirit-conclave",
+      "aeldari--twilight-flickers"
+    ],
+    "units": [
+      {
+        "id": "4CDDDFF6-FED8-4464-A6C2-E1C2FBCBD282",
+        "datasheetID": "aeldari--bonesinger",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "aeldari--spirit-conclave--rune-of-mists"
+        ],
+        "attachedToUnitID": "692AE008-8973-444D-A0E4-4060EC1C7BD4"
+      },
+      {
+        "id": "612190E9-628C-4F41-8664-9AC06A4A7849",
+        "datasheetID": "aeldari--amallyn-shadowguide",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "B8D17CBE-D9DC-42A1-A932-E59DAFF5B190",
+        "datasheetID": "aeldari--howling-banshees",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "692AE008-8973-444D-A0E4-4060EC1C7BD4",
+        "datasheetID": "aeldari--wraithlord",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "9EF22C22-92DA-4440-87C3-C0A3C681811C",
+        "datasheetID": "aeldari--ynnari-incubi",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "44EED478-9BCA-423A-88CB-95D7691F9B8D",
+        "datasheetID": "aeldari--falcon",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A1F284BF-2D3D-4782-959E-9DA0F6321BA8",
+        "datasheetID": "aeldari--fire-dragons",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "D3F0BDF8-C26C-4668-930A-47E59A076F05",
+        "datasheetID": "aeldari--ynnari-kabalite-warriors",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "859AD7B3-6252-4FB1-B393-F6241033594A",
+        "datasheetID": "aeldari--warp-spiders",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "FC1D63CA-4AF7-493D-B5A5-3C49974B9851",
+        "datasheetID": "aeldari--ynnari-venom",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "D18CF752-412B-4428-970A-1FF9A915262D",
+        "datasheetID": "aeldari--wraithknight-with-ghostglaive",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "60615A29-D99A-46E0-BE84-14FB6E2BB65D",
+        "datasheetID": "aeldari--wraithseer",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "3B4206AF-8BC7-4526-BF74-168FA642800F",
+        "datasheetID": "aeldari--starfangs",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "5601FFA1-DD68-4123-9005-CE266517A2B2",
+        "datasheetID": "aeldari--lynx",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "60ACF31A-288A-4824-9578-7DD31AB1C82C",
+        "datasheetID": "aeldari--crimson-hunter",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "4CDDDFF6-FED8-4464-A6C2-E1C2FBCBD282",
+    "notes": "stress seed=32 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "74035AF6-F31D-4DE0-828B-6CCF64A7C796",
+    "name": "Dark Angels Strike Force 1870pts",
+    "catalogVersion": "11e-1",
+    "factionID": "dark-angels",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "dark-angels--darkflight-pursuit",
+      "dark-angels--headhunter-task-force"
+    ],
+    "units": [
+      {
+        "id": "63641925-7CF2-473B-8997-AA4B171495A2",
+        "datasheetID": "dark-angels--judiciar",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "dark-angels--headhunter-task-force--gunnery-honours"
+        ],
+        "attachedToUnitID": "25B7A845-D126-46D2-A3D2-8CBC1A51B51C"
+      },
+      {
+        "id": "68ED8A14-4011-4CBE-83D6-C6AFE0DC4C22",
+        "datasheetID": "dark-angels--storm-speeder-hailstrike",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "849FE6C3-F16E-4E28-A2B0-8301F7FC1EAB",
+        "datasheetID": "dark-angels--ballistus-dreadnought",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "D0E4437E-2989-401D-B188-968B58F725AC",
+        "datasheetID": "dark-angels--scout-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "32F46386-DE45-49EF-8D93-D02FC212CD1E",
+        "datasheetID": "dark-angels--company-heroes",
+        "models": 4,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "25B7A845-D126-46D2-A3D2-8CBC1A51B51C",
+        "datasheetID": "dark-angels--tactical-squad",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0974D44B-6981-442C-A2EE-948567401FA4",
+        "datasheetID": "dark-angels--infiltrator-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "22AC29F3-7917-4BB2-9173-83A678BFDB34",
+        "datasheetID": "dark-angels--centurion-assault-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "09253B6B-3B77-4B87-B3DB-09067C2D4DE2",
+        "datasheetID": "dark-angels--reiver-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "4245A0A1-24E5-4626-8E9C-3280512F1881",
+        "datasheetID": "dark-angels--land-speeder-vengeance",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0C96B244-00BE-4D57-9AB3-590904AA755C",
+        "datasheetID": "dark-angels--invictor-tactical-warsuit",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "3E9CAAB5-5684-430B-8BAF-FA37242B14BB",
+        "datasheetID": "dark-angels--sternguard-veteran-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "DAE5B188-E632-4698-B355-2D7FBD2A2FA3",
+        "datasheetID": "dark-angels--deathwing-terminator-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "89C1112F-1B52-4E9D-88A7-39AC11ECEEDF",
+        "datasheetID": "dark-angels--whirlwind",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "902EAE6F-9134-4A33-AC62-6E7576C146B8",
+        "datasheetID": "dark-angels--deathwing-command-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "63641925-7CF2-473B-8997-AA4B171495A2",
+    "notes": "stress seed=42 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

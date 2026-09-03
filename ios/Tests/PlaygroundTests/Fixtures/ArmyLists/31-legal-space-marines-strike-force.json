@@ -1,0 +1,151 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "E9AA067A-52B3-42F8-B901-A2AECE4690C9",
+    "name": "Space Marines Strike Force 1915pts",
+    "catalogVersion": "11e-1",
+    "factionID": "space-marines",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "space-marines--fulguris-task-force",
+      "space-marines--headhunter-task-force"
+    ],
+    "units": [
+      {
+        "id": "17F76008-1A77-4FDF-A645-DA1AF1FD727B",
+        "datasheetID": "space-marines--judiciar",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "space-marines--headhunter-task-force--gunnery-honours"
+        ],
+        "attachedToUnitID": "704D4C74-697F-4748-B5EA-685741DD4ED5"
+      },
+      {
+        "id": "4F7FFFEF-AFBC-4C0D-A4DE-95DB3D4D6277",
+        "datasheetID": "space-marines--company-veterans-on-bikes",
+        "models": 2,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "40DC80B5-1749-4E8C-A300-86888FD64E68",
+        "datasheetID": "space-marines--incursor-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7B58FD7D-290B-4296-9CC2-53A399A60566",
+        "datasheetID": "space-marines--rhino-primaris",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "9BC9D87A-EF0B-488B-93EA-EB13B56EC544",
+        "datasheetID": "space-marines--ballistus-dreadnought",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F7886998-4398-42A3-B0D7-C5C4B511AC10",
+        "datasheetID": "space-marines--tarantula-sentry-battery",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A502DB34-3B17-4210-8EC9-BAE9C2EA5E78",
+        "datasheetID": "space-marines--typhon",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "83C36C54-2478-4861-B73D-FA9F4071C70A",
+        "datasheetID": "space-marines--aggressor-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "A5CCE76B-531C-4456-B7FF-11EF291A658D",
+        "datasheetID": "space-marines--imperial-space-marine",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "28A7A452-3DB1-4B8E-BF94-00ECE1624170",
+        "datasheetID": "space-marines--land-speeder-tornado",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "704D4C74-697F-4748-B5EA-685741DD4ED5",
+        "datasheetID": "space-marines--bladeguard-veteran-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "CC4C728E-F7A3-4895-8228-0684041C0866",
+        "datasheetID": "space-marines--vanguard-veteran-squad",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "15496CF6-F095-46EF-B019-33455F0E44D6",
+        "datasheetID": "space-marines--heavy-intercessor-squad",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "00AA8BDF-EDEF-4173-AC65-4E08365FC297",
+        "datasheetID": "space-marines--scout-bike-squad",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "EA993590-F968-4C5B-8FF6-C1D0BCB39561",
+        "datasheetID": "space-marines--redemptor-dreadnought",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "8EBF81A2-E555-48E9-8987-9A4EB886D6D9",
+        "datasheetID": "space-marines--venerable-dreadnought",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "17F76008-1A77-4FDF-A645-DA1AF1FD727B",
+    "notes": "stress seed=30 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

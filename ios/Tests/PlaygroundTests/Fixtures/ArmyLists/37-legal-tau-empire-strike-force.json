@@ -1,0 +1,135 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "BA5F95F6-E093-48BF-9391-B4AB4DC6305B",
+    "name": "T\u2019au Empire Strike Force 1985pts",
+    "catalogVersion": "11e-1",
+    "factionID": "tau-empire",
+    "battleSizeID": "strike-force",
+    "detachmentIDs": [
+      "tau-empire--auxiliary-cadre",
+      "tau-empire--kauyon"
+    ],
+    "units": [
+      {
+        "id": "C978C1A3-E211-4F1C-956B-CDC54EAEED9A",
+        "datasheetID": "tau-empire--kroot-flesh-shaper",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "tau-empire--auxiliary-cadre--admired-leader"
+        ],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "7E70194B-9B94-4A5C-9B6A-B98993AA4BAC",
+        "datasheetID": "tau-empire--strike-team",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "80D9B19E-EBCC-488D-8FEB-EE4A91287E58",
+        "datasheetID": "tau-empire--aun-va",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "E6FC72F3-9171-4774-883E-C63299108BD8",
+        "datasheetID": "tau-empire--hammerhead-gunship",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "2C4152A5-FDCB-44BC-8F80-07FA6621269B",
+        "datasheetID": "tau-empire--remora-stealth-drones",
+        "models": 2,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "4DA548C5-1F13-4FEE-B82E-CAB1A373B16A",
+        "datasheetID": "tau-empire--knarloc-riders",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "82F29810-144F-4B8F-AF03-85AD26036B3F",
+        "datasheetID": "tau-empire--tiger-shark",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "2BD3CB7A-4196-434C-A60B-137C9435E807",
+        "datasheetID": "tau-empire--breacher-team",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "E5372D0D-D13E-4A61-B6CF-110A5D8F6B18",
+        "datasheetID": "tau-empire--krootox-rampagers",
+        "models": 3,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "93669538-48D9-4CAF-831E-BA8DBF99E899",
+        "datasheetID": "tau-empire--orca-dropship",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "CFDC14F8-8537-47F5-9C29-9162C94F8EF3",
+        "datasheetID": "tau-empire--tidewall-shieldline",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "70D2031F-AF09-49C1-A733-B2C52F882875",
+        "datasheetID": "tau-empire--xv9-hazard-battlesuits",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "8AEED122-E1AE-40DA-B47F-02606E61AC6A",
+        "datasheetID": "tau-empire--vespid-stingwings",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "919791DB-6C79-44E1-9126-3AD732B002B0",
+        "datasheetID": "tau-empire--stormsurge",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "C978C1A3-E211-4F1C-956B-CDC54EAEED9A",
+    "notes": "stress seed=36 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

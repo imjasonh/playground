@@ -1,0 +1,95 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "216B4C5D-A82E-4114-AE54-2B90B94A536D",
+    "name": "Orks Incursion 975pts",
+    "catalogVersion": "11e-1",
+    "factionID": "orks",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "orks--brute-bosses",
+      "orks--taktikal-brigade"
+    ],
+    "units": [
+      {
+        "id": "17B02EFC-DCB3-4869-AB80-19BA377B5013",
+        "datasheetID": "orks--mek",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "orks--brute-bosses--brutal-but-kunnin"
+        ],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "071992D7-60C8-4F5D-A53D-E18A4D669091",
+        "datasheetID": "orks--kill-rig",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "BEA243FA-8683-48BC-B9EF-5D6764000E46",
+        "datasheetID": "orks--wartrakks",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "6344ADA7-704A-4F0F-BB15-E03919C7DF8C",
+        "datasheetID": "orks--lootas",
+        "models": 5,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "0426EE43-51BC-4B60-A6DA-7030B085BDB9",
+        "datasheetID": "orks--rukkatrukk-squigbuggies",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "3898B8BB-CF66-493B-A5BB-343F92D3CC63",
+        "datasheetID": "orks--tankbustas",
+        "models": 6,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "C580BB72-BE65-48D6-9C4A-C91DB1831BF9",
+        "datasheetID": "orks--gunwagon",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "3BE00722-1EEF-479B-B534-EE00CECD5194",
+        "datasheetID": "orks--runtherd",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F8FA30F6-D273-44B8-9339-69EAD0C4E649",
+        "datasheetID": "orks--wazbom-blastajet",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "17B02EFC-DCB3-4869-AB80-19BA377B5013",
+    "notes": "stress seed=22 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "expectedLegal": true,
+  "notes": "auto-built",
+  "list": {
+    "id": "C8892D4E-D9BB-4F54-9957-75F7E6EDAFB3",
+    "name": "Astra Militarum Incursion 915pts",
+    "catalogVersion": "11e-1",
+    "factionID": "astra-militarum",
+    "battleSizeID": "incursion",
+    "detachmentIDs": [
+      "astra-militarum--recon-element"
+    ],
+    "units": [
+      {
+        "id": "E8AA55B7-BDBA-4A33-88E8-CACB57AD7358",
+        "datasheetID": "astra-militarum--commissar",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [
+          "astra-militarum--recon-element--guerrilla-honours"
+        ],
+        "attachedToUnitID": "683F65DA-CA2C-47F5-BED5-544A80A7768C"
+      },
+      {
+        "id": "683F65DA-CA2C-47F5-BED5-544A80A7768C",
+        "datasheetID": "astra-militarum--kasrkin",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "1FAA65D5-3364-436E-AD2A-A7762A469E01",
+        "datasheetID": "astra-militarum--aegis-defence-line",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "600EA202-6360-4323-ADA8-9F3ADE3F941F",
+        "datasheetID": "astra-militarum--krieg-heavy-weapons-squad",
+        "models": 4,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "F24131D1-3C6E-43A0-8FC9-C397B9367137",
+        "datasheetID": "astra-militarum--colossus",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "56DA3848-1AAC-434C-BAB3-09F145670EA2",
+        "datasheetID": "astra-militarum--hellhound",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "76612EFE-B6EE-4740-A33F-5190B081DC03",
+        "datasheetID": "astra-militarum--death-korps-grenadier-squad",
+        "models": 10,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "8E563C6B-D258-46D5-A8F1-7EE4137A0547",
+        "datasheetID": "astra-militarum--field-ordnance-battery",
+        "models": 2,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      },
+      {
+        "id": "90DA99F0-3ADB-49D4-BB1B-25F816A89E04",
+        "datasheetID": "astra-militarum--scout-sentinels",
+        "models": 1,
+        "optionIDs": [],
+        "enhancementIDs": [],
+        "attachedToUnitID": null
+      }
+    ],
+    "warlordUnitID": "E8AA55B7-BDBA-4A33-88E8-CACB57AD7358",
+    "notes": "stress seed=4 attach=True enh=True",
+    "createdAt": "2026-01-01T00:00:00Z",
+    "updatedAt": "2026-01-01T00:00:00Z"
+  }
+}
