@@ -10,6 +10,13 @@ struct ArmyListChatView: View {
     @StateObject private var runtime: ArmyListChatRuntime
     @State private var draft = ""
     @FocusState private var promptFocused: Bool
+    @State private var exportShare: ExportShareItem?
+    @State private var exportError: String?
+
+    private struct ExportShareItem: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
 
     init(list: Binding<ArmyListDocument>, catalog: ArmyCatalog, store: ArmyListStore) {
         self._list = list
@@ -43,10 +50,57 @@ struct ArmyListChatView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button("Clear") { runtime.clearTranscript() }
-                    .disabled(runtime.transcript.isEmpty)
-                    .accessibilityIdentifier("armyListChatClear")
+                Menu {
+                    Button {
+                        exportConversation()
+                    } label: {
+                        Label("Export JSON", systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityIdentifier("armyListChatExport")
+                    Button("Clear") { runtime.clearTranscript() }
+                        .disabled(runtime.transcript.isEmpty)
+                        .accessibilityIdentifier("armyListChatClear")
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .accessibilityLabel("Chat options")
+                .accessibilityIdentifier("armyListChatMenu")
             }
+        }
+        .sheet(item: $exportShare) { item in
+            NavigationStack {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Share this JSON dump (transcript, tool results, list, and validation) to debug List chat.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    ShareLink(item: item.url) {
+                        Label("Share JSON", systemImage: "square.and.arrow.up")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("armyListChatExportShareLink")
+                    Spacer()
+                }
+                .padding()
+                .navigationTitle("Export chat")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { exportShare = nil }
+                            .accessibilityIdentifier("armyListChatExportDone")
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+            .accessibilityIdentifier("armyListChatExportSheet")
+        }
+        .alert("Export failed", isPresented: Binding(
+            get: { exportError != nil },
+            set: { if !$0 { exportError = nil } }
+        )) {
+            Button("OK", role: .cancel) { exportError = nil }
+        } message: {
+            Text(exportError ?? "")
         }
         .onAppear {
             runtime.workspace.list = list
@@ -55,6 +109,15 @@ struct ArmyListChatView: View {
         .onReceive(runtime.workspace.$list) { newList in
             list = newList
             try? store.save(newList)
+        }
+    }
+
+    private func exportConversation() {
+        do {
+            let url = try runtime.writeConversationDumpFile()
+            exportShare = ExportShareItem(url: url)
+        } catch {
+            exportError = error.localizedDescription
         }
     }
 
@@ -241,6 +304,13 @@ struct ArmyListChatView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+            Button {
+                exportConversation()
+            } label: {
+                Label("Export JSON", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("armyListChatExportUnavailable")
         }
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)

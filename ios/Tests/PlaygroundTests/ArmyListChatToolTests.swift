@@ -129,6 +129,33 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertGreaterThan(runtime.contextUsage.percentUsed, before)
     }
 
+    func testConversationDumpIncludesListAndToolLog() throws {
+        let runtime = ArmyListChatRuntime(workspace: workspace)
+        _ = ArmyListChatToolExecutor.seedLegalList(
+            workspace: workspace,
+            battleSizeID: "incursion",
+            name: "Dump test"
+        )
+        runtime.workspace.list = workspace.list
+        _ = runtime.noteToolExchange(name: "seedLegalList", result: "Status: LEGAL")
+        let dump = runtime.makeConversationDump()
+        XCTAssertEqual(dump.mode, "army-list-chat")
+        XCTAssertEqual(dump.list.name, "Dump test")
+        XCTAssertEqual(dump.toolLog.count, 1)
+        XCTAssertEqual(dump.toolLog[0].name, "seedLegalList")
+        XCTAssertFalse(dump.entries.isEmpty)
+
+        let data = try ArmyListChatDumpExporter.jsonData(for: dump)
+        let json = try XCTUnwrap(String(data: data, encoding: .utf8))
+        XCTAssertTrue(json.contains("\"mode\" : \"army-list-chat\""))
+        XCTAssertTrue(json.contains("Dump test"))
+
+        let url = try runtime.writeConversationDumpFile()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertTrue(url.lastPathComponent.hasPrefix("army-list-chat-"))
+        XCTAssertTrue(url.pathExtension == "json")
+    }
+
     func testAttachAndEnhancementTools() {
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,

@@ -45,6 +45,8 @@ final class ArmyListChatRuntime: ObservableObject {
     private var carryOverNotes = ""
     private var budget = AgentContextBudget(toolsReserveTokens: ArmyListChatRuntime.toolsReserveTokens)
     private var didCompactThisSession = false
+    /// Full tool payloads for export (may be longer than what the model received).
+    private(set) var toolLog: [(name: String, detail: String)] = []
 
     var isModelAvailable: Bool { modelGate.isAvailable }
 
@@ -81,6 +83,7 @@ final class ArmyListChatRuntime: ObservableObject {
             refreshModelStatus()
             if isModelAvailable {
                 transcript.removeAll()
+                toolLog.removeAll()
                 resetLanguageSession()
                 append(
                     .system,
@@ -92,6 +95,7 @@ final class ArmyListChatRuntime: ObservableObject {
 
     func clearTranscript() {
         transcript.removeAll()
+        toolLog.removeAll()
         resetLanguageSession()
         if isModelAvailable {
             append(
@@ -188,6 +192,7 @@ final class ArmyListChatRuntime: ObservableObject {
     }
 
     func noteToolExchange(name: String, result: String) -> String {
+        toolLog.append((name: name, detail: result))
         let capped = AgentContextBudget.truncateToChars(
             result,
             maxChars: budget.modelToolResultCharBudget(default: 1_600)
@@ -196,6 +201,63 @@ final class ArmyListChatRuntime: ObservableObject {
         budget.addText(capped)
         publishContextUsage()
         return capped
+    }
+
+    func makeConversationDump() -> ArmyListChatDump {
+        let validation = workspace.validation
+        return ArmyListChatDump(
+            exportedAt: Date(),
+            mode: "army-list-chat",
+            modelGate: modelGate.title,
+            modelAvailable: isModelAvailable,
+            contextPercentUsed: contextUsage.percentUsed,
+            contextDidCompact: contextUsage.didCompact,
+            catalogVersion: workspace.catalog.version,
+            list: workspace.list,
+            validation: ArmyListChatDumpValidation(
+                isLegal: validation.isLegal,
+                totalPoints: validation.totalPoints,
+                detachmentPointsSpent: validation.detachmentPointsSpent,
+                errors: validation.errors.map {
+                    ArmyListChatDumpIssue(
+                        code: $0.code,
+                        severity: $0.severity.rawValue,
+                        message: $0.message,
+                        unitID: $0.unitID?.uuidString
+                    )
+                },
+                warnings: validation.warnings.map {
+                    ArmyListChatDumpIssue(
+                        code: $0.code,
+                        severity: $0.severity.rawValue,
+                        message: $0.message,
+                        unitID: $0.unitID?.uuidString
+                    )
+                }
+            ),
+            entries: transcript.map {
+                ArmyListChatDumpEntry(
+                    id: $0.id.uuidString,
+                    date: $0.createdAt,
+                    kind: {
+                        switch $0.kind {
+                        case .user: return "user"
+                        case .assistant: return "assistant"
+                        case .system: return "system"
+                        case .tool: return "tool"
+                        }
+                    }(),
+                    text: $0.text
+                )
+            },
+            toolLog: toolLog.map {
+                ArmyListChatDumpToolLog(name: $0.name, detail: $0.detail)
+            }
+        )
+    }
+
+    func writeConversationDumpFile() throws -> URL {
+        try ArmyListChatDumpExporter.writeFile(for: makeConversationDump())
     }
 
     private func publishContextUsage() {
