@@ -189,7 +189,7 @@ final class NFCTagsController: NSObject, ObservableObject {
 
 // MARK: - Detected tag identity
 
-private struct DetectedNFCTag {
+private struct DetectedNFCTag: @unchecked Sendable {
     var ndefTag: NFCNDEFTag
     var miFare: NFCMiFareTag?
     var uid: String?
@@ -531,10 +531,12 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
             return
         }
         let tlv = Type2NDEF.wrapTLV(ndef)
+        let miFareHop = NFCUncheckedSend(value: miFare)
 
         detected.ndefTag.queryNDEFStatus { [weak self] status, capacity, _ in
             Task { @MainActor in
                 guard let self, session === self.tagSession else { return }
+                let miFare = miFareHop.value
                 if status == .readOnly {
                     self.finish(session: session, alert: "Tag is read-only.")
                     return
@@ -599,11 +601,13 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         session: NFCTagReaderSession,
         completion: @escaping (Error?) -> Void
     ) {
+        let miFareHop = NFCUncheckedSend(value: miFare)
         miFare.sendMiFareCommand(
             commandPacket: Type2NDEF.readCommandPacket(page: Type2NDEF.capabilityContainerPage)
         ) { response, error in
             Task { @MainActor in
                 guard session === self.tagSession else { return }
+                let miFare = miFareHop.value
                 if let error {
                     completion(error)
                     return
@@ -650,6 +654,7 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
     ) {
         let pages = Type2NDEF.pages(from: tlv)
         var index = 0
+        let miFareHop = NFCUncheckedSend(value: miFare)
 
         func writeNext() {
             guard session === self.tagSession else { return }
@@ -659,7 +664,7 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
             }
             let pageNumber = Type2NDEF.ndefTLVStartPage + UInt8(index)
             let packet = Type2NDEF.writeCommandPacket(page: pageNumber, bytes: pages[index])
-            miFare.sendMiFareCommand(commandPacket: packet) { _, error in
+            miFareHop.value.sendMiFareCommand(commandPacket: packet) { _, error in
                 Task { @MainActor in
                     guard session === self.tagSession else { return }
                     if let error {
@@ -725,6 +730,7 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
     ) {
         var collected = Data()
         var page = Type2NDEF.ndefTLVStartPage
+        let miFareHop = NFCUncheckedSend(value: miFare)
 
         func readNext() {
             guard session === self.tagSession else { return }
@@ -732,7 +738,7 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                 completion(.success(collected))
                 return
             }
-            miFare.sendMiFareCommand(
+            miFareHop.value.sendMiFareCommand(
                 commandPacket: Type2NDEF.readCommandPacket(page: page)
             ) { response, error in
                 Task { @MainActor in
