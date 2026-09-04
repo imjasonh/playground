@@ -10,6 +10,7 @@ struct ArmyListHomeView: View {
     /// empty library with Create enabled while `catalog` is still nil.
     @State private var didBootstrap = false
     @State private var saveError: String?
+    @State private var cloudStatus: CloudSyncStatus = .idle
     /// One presentation item for Create and the post-create editor. Catalog
     /// (or error text) lives on the case — never a second `@State` the cover
     /// body has to read. Create → editor is just replacing this value.
@@ -90,6 +91,16 @@ struct ArmyListHomeView: View {
         }
         .navigationTitle("Army List")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    Task { await syncCloud() }
+                } label: {
+                    Label(cloudStatus.title, systemImage: "icloud")
+                }
+                .disabled(cloudStatus == .syncing)
+                .accessibilityIdentifier("armyListiCloudSyncButton")
+                .accessibilityHint(cloudStatus.detail)
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     presentNewList()
@@ -265,9 +276,36 @@ struct ArmyListHomeView: View {
             catalog = try CatalogLoader.load()
             loadError = nil
             reload()
+            Task { await syncCloud() }
         } catch {
             catalog = nil
             loadError = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func syncCloud() async {
+        cloudStatus = .syncing
+        let result = await store.syncWithCloud()
+        if let reason = result.unavailableReason {
+            // Distinguish account-off from hard failure by phrasing from merge.
+            if reason.localizedCaseInsensitiveContains("sign in")
+                || reason.localizedCaseInsensitiveContains("restricted")
+                || reason.localizedCaseInsensitiveContains("unavailable")
+                || reason.localizedCaseInsensitiveContains("disabled")
+                || reason.localizedCaseInsensitiveContains("could not reach")
+            {
+                cloudStatus = .unavailable(reason)
+            } else {
+                cloudStatus = .failed(reason)
+            }
+        } else {
+            cloudStatus = .synced(
+                pulled: result.pulled,
+                pushed: result.pushed,
+                removed: result.removedLocal
+            )
+            reload()
         }
     }
 

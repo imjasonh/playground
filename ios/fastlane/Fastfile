@@ -77,6 +77,67 @@ def ensure_healthkit!(identifier)
   UI.success("Enabled HealthKit on '#{identifier}'")
 end
 
+# Enable iCloud + CloudKit on an existing App ID so match profiles include
+# com.apple.developer.icloud-* entitlements. Idempotent.
+# Container id must match Playground.entitlements
+# (iCloud.io.github.imjasonh.playground).
+def ensure_icloud_cloudkit!(identifier, container_id:)
+  require "spaceship"
+  bundle_id = Spaceship::ConnectAPI::BundleId.find(identifier)
+  UI.user_error!("Bundle ID '#{identifier}' not found — create it first") unless bundle_id
+
+  capabilities = bundle_id.get_capabilities
+  already = Array(capabilities).any? do |cap|
+    type = cap.respond_to?(:capability_type) ? cap.capability_type.to_s : cap.to_s
+    type.upcase.include?("ICLOUD")
+  end
+  if already
+    UI.success("iCloud already enabled on '#{identifier}'")
+  else
+    UI.message("Enabling iCloud (CloudKit) on '#{identifier}'…")
+    icloud_type =
+      if defined?(Spaceship::ConnectAPI::BundleIdCapability::Type::ICLOUD)
+        Spaceship::ConnectAPI::BundleIdCapability::Type::ICLOUD
+      else
+        "ICLOUD"
+      end
+    # XCODE_6 selects CloudKit (vs Documents-only on older XCODE_5).
+    xcode6 =
+      if defined?(Spaceship::ConnectAPI::BundleIdCapability::Options::XCODE_6)
+        Spaceship::ConnectAPI::BundleIdCapability::Options::XCODE_6
+      else
+        "XCODE_6"
+      end
+    icloud_version =
+      if defined?(Spaceship::ConnectAPI::BundleIdCapability::Settings::ICLOUD_VERSION)
+        Spaceship::ConnectAPI::BundleIdCapability::Settings::ICLOUD_VERSION
+      else
+        "ICLOUD_VERSION"
+      end
+    settings = [
+      {
+        key: icloud_version,
+        options: [{ key: xcode6 }]
+      }
+    ]
+    begin
+      bundle_id.create_capability(icloud_type, settings: settings)
+      UI.success("Enabled iCloud (CloudKit) on '#{identifier}'")
+    rescue StandardError => e
+      UI.important("create_capability(ICLOUD) failed (#{e.message}); trying without settings…")
+      bundle_id.create_capability(icloud_type)
+      UI.success("Enabled iCloud on '#{identifier}' (default settings)")
+    end
+  end
+
+  UI.message(
+    "CloudKit container '#{container_id}' must exist for '#{identifier}'. " \
+    "If the first sync fails with a container error, create that container in " \
+    "the Apple Developer portal (Identifiers → iCloud Containers) and link it " \
+    "to the App ID, then re-run signing_bootstrap / match."
+  )
+end
+
 # Enable NFC Tag Reading on an existing App ID so match profiles include
 # com.apple.developer.nfc.readersession.formats. Idempotent.
 def ensure_nfc_tag_reading!(identifier)
@@ -168,6 +229,12 @@ platform :ios do
     # NFC Tags uses Core NFC NDEF read/write — host App ID needs NFC Tag Reading
     # before match can issue a profile that includes the NFC entitlement.
     ensure_nfc_tag_reading!(APP_IDENTIFIER)
+
+    # Army List + Ride Monitor private CloudKit backup.
+    ensure_icloud_cloudkit!(
+      APP_IDENTIFIER,
+      container_id: "iCloud.io.github.imjasonh.playground"
+    )
 
     match(
       type: "appstore",
