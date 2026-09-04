@@ -11,7 +11,7 @@ J1,1,FH12-24S-0.5SH,FH12-24S-0.5SH(55),Hirose,24p 0.5 mm FPC,no,1.85,1.25,1.85,1
 J2,1,SWD 1.27mm,N/A,generic,1x05 P1.27,no,0.35,0.12,0.35,0.12,https://www.digikey.com/en/products/result?keywords=pin+header+1.27mm+1x5,,3V3 SWDIO SWCLK NRST GND
 J3,1,UART 2.54mm,N/A,generic,1x03 P2.54,yes,0.15,0.08,0.00,0.00,https://www.digikey.com/en/products/result?keywords=pin+header+2.54mm+1x3,,DNP. Vertical header lifts the phone off the coil.
 JP1,1,DEBUG_3V3,N/A,generic,1x02 P2.54,no,0.10,0.05,0.10,0.05,https://www.digikey.com/en/products/result?keywords=pin+header+2.54mm+1x2,,Leave open for NFC power
-DISP1,1,GDEY042T81,GDEY042T81,Good Display,4.2 in 400x300,no,18.50,11.00,18.50,11.00,https://www.good-display.com/product/386.html,https://www.good-display.com/product/386.html,Qty100 is a factory quote band ($9-$13). LaskaKit/Waveshare stay near retail.
+DISP1,1,GDEY042T81,GDEY042T81,Good Display,4.2 in 400x300,no,18.50,11.00,18.50,11.00,https://www.good-display.com/product/386.html,https://www.good-display.com/product/386.html,Display only (product 386). Do not order T02 or FT02. Qty100 is a factory quote band ($9-$13). LaskaKit/Waveshare stay near retail.
 C1,1,220nF X7R 16V,GRM155R71C224KA55D,Murata,0402,no,0.10,0.04,0.10,0.04,https://www.digikey.com/en/products/result?keywords=GRM155R71C224KA55D,,NTAG VOUT. Do not exceed 220 nF.
 C2,1,470uF 6.3V POSCAP,6TPE470MAZB,Panasonic,7343 2.0 mm,no,1.35,0.85,1.35,0.85,https://www.digikey.com/en/products/result?keywords=6TPE470MAZB,,Harvest tank. Low profile so the phone can sit on the coil.
 C3,1,22mF 5.5V supercap,KR-5R5V223-R,Eaton,radial coin,yes,2.80,1.60,0.00,0.00,https://www.digikey.com/en/products/result?keywords=KR-5R5V223-R,,DNP. Optional hold-up.

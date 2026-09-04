@@ -5,8 +5,9 @@ A phone field powers this board. There is no battery. The MCU boots, pulls a
 take the phone away.
 
 I sized this for the largest panel I trust on harvested NFC: Good Display
-GDEY042T81 (400×300, 91 mm × 77 mm). Commercial batteryless NFC e-paper stops
-around this diagonal. A 7.5 in 800×480 frame is 48 KB and a long refresh. The
+GDEY042T81 (400×300, 91 mm × 77 mm). That SKU is display only. The T02 and
+FT02 variants add a capacitive overlay this board does not wire. Commercial
+batteryless NFC e-paper stops around this diagonal. A 7.5 in 800×480 frame is 48 KB and a long refresh. The
 field cannot cover that without a hold-up cap that takes too long to charge.
 
 The board outline matches the panel. The 2-turn coil and the parts sit on the
@@ -47,7 +48,7 @@ the 24-pin FPC around the long edge to J1.
 | Boost | TPS61023DRLR | Rising UVLO is 1.8 V, then it can run down to 0.5 V. 3.29 V from 453 k / 100 k on FB. |
 | EPD switch | TPS22917DBVR | Panel stays off until the tank and image are ready. |
 | Reset | TCM809SENB713 | 2.93 V, active-low. Holds PF2-NRST until the boost is up. Do not use the J suffix (4.00 V). That part never releases on a 3.3 V rail. |
-| Panel | GDEY042T81 | SSD1683, 24-pin 0.5 mm FPC, on-glass booster. Typical refresh about 5.6 mA at 3.0 V for about 3 s. |
+| Panel | GDEY042T81 | Display only. SSD1683, 24-pin 0.5 mm FPC, on-glass booster. Typical refresh about 5.6 mA at 3.0 V for about 3 s. Do not order GDEY042T81-T02 (touch) or GDEY042T81-FT02 (touch plus front light). Those add a second 6-pin FPC and an FT6336U that this board does not drive. |
 
 Open `nfc-eink.kicad_pro` in KiCad 7. Sheets: cover, NFC, power, MCU, e-paper.
 `nfc-eink.kicad_pcb` is the 91 mm × 77 mm 4-layer board. `nfc-eink.pdf` is the
