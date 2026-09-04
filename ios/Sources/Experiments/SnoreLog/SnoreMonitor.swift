@@ -195,7 +195,7 @@ final class SnoreMonitor: ObservableObject {
         try session.setCategory(
             .playAndRecord,
             mode: .measurement,
-            options: [.mixWithOthers, .defaultToSpeaker, .allowBluetooth]
+            options: [.mixWithOthers, .defaultToSpeaker, .allowBluetoothHFP]
         )
         try session.setActive(true)
     }

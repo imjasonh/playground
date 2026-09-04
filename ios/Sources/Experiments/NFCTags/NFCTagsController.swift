@@ -257,7 +257,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         _ session: NFCTagReaderSession,
         didInvalidateWithError error: Error
     ) {
-        Task { @MainActor in
+        NFCIsolation.hopMain((session, error)) { [weak self] session, error in
+            guard let self else { return }
             self.clearSessionIfCurrent(session)
 
             let nsError = error as NSError
@@ -301,7 +302,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         _ session: NFCTagReaderSession,
         didDetect tags: [NFCTag]
     ) {
-        Task { @MainActor in
+        NFCIsolation.hopMain((session, tags)) { [weak self] session, tags in
+            guard let self else { return }
             guard session === self.tagSession else { return }
             self.handleDetectedTags(tags, session: session)
         }
@@ -316,7 +318,7 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         }
 
         session.connect(to: tag) { [weak self] error in
-            Task { @MainActor in
+            NFCIsolation.hopMain((session, tag, error)) { [weak self] session, tag, error in
                 guard let self, session === self.tagSession else { return }
                 if let error {
                     self.finish(
@@ -342,7 +344,7 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
 
     private func read(from detected: DetectedNFCTag, session: NFCTagReaderSession) {
         detected.ndefTag.queryNDEFStatus { [weak self] status, capacity, error in
-            Task { @MainActor in
+            NFCIsolation.hopMain((session, detected, status, capacity, error)) { [weak self] session, detected, status, capacity, error in
                 guard let self, session === self.tagSession else { return }
                 if let error {
                     self.finish(
@@ -360,8 +362,10 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                     self.finish(session: session, alert: "Tag has no NDEF message.")
                 case .readOnly, .readWrite:
                     detected.ndefTag.readNDEF { message, readError in
-                        Task { @MainActor in
-                            guard session === self.tagSession else { return }
+                        NFCIsolation.hopMain(
+                            (session, detected, status, capacity, message, readError)
+                        ) { [weak self] session, detected, status, capacity, message, readError in
+                            guard let self, session === self.tagSession else { return }
                             self.handleReadNDEF(
                                 message: message,
                                 readError: readError,
@@ -464,7 +468,7 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         }
 
         detected.ndefTag.queryNDEFStatus { [weak self] status, capacity, error in
-            Task { @MainActor in
+            NFCIsolation.hopMain((session, detected, message, status, capacity, error)) { [weak self] session, detected, message, status, capacity, error in
                 guard let self, session === self.tagSession else { return }
                 if let error {
                     self.finish(
@@ -491,8 +495,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                         return
                     }
                     detected.ndefTag.writeNDEF(message) { writeError in
-                        Task { @MainActor in
-                            guard session === self.tagSession else { return }
+                        NFCIsolation.hopMain((session, detected, message, writeError)) { [weak self] session, detected, message, writeError in
+                            guard let self, session === self.tagSession else { return }
                             if let writeError {
                                 self.finish(
                                     session: session,
@@ -533,7 +537,7 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         let tlv = Type2NDEF.wrapTLV(ndef)
 
         detected.ndefTag.queryNDEFStatus { [weak self] status, capacity, _ in
-            Task { @MainActor in
+            NFCIsolation.hopMain((session, miFare, status, capacity, tlv, expected, ndef)) { [weak self] session, miFare, status, capacity, tlv, expected, ndef in
                 guard let self, session === self.tagSession else { return }
                 if status == .readOnly {
                     self.finish(session: session, alert: "Tag is read-only.")
@@ -602,8 +606,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         miFare.sendMiFareCommand(
             commandPacket: Type2NDEF.readCommandPacket(page: Type2NDEF.capabilityContainerPage)
         ) { response, error in
-            Task { @MainActor in
-                guard session === self.tagSession else { return }
+            NFCIsolation.hopMain((session, miFare, response, error, ndefCapacity)) { [weak self] session, miFare, response, error, ndefCapacity in
+                guard let self, session === self.tagSession else { return }
                 if let error {
                     completion(error)
                     return
@@ -633,8 +637,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
                         bytes: bytes
                     )
                 ) { _, writeError in
-                    Task { @MainActor in
-                        guard session === self.tagSession else { return }
+                    NFCIsolation.hopMain((session, writeError)) { [weak self] session, writeError in
+                        guard let self, session === self.tagSession else { return }
                         completion(writeError)
                     }
                 }
@@ -660,8 +664,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
             let pageNumber = Type2NDEF.ndefTLVStartPage + UInt8(index)
             let packet = Type2NDEF.writeCommandPacket(page: pageNumber, bytes: pages[index])
             miFare.sendMiFareCommand(commandPacket: packet) { _, error in
-                Task { @MainActor in
-                    guard session === self.tagSession else { return }
+                NFCIsolation.hopMain((session, error)) { [weak self] session, error in
+                    guard let self, session === self.tagSession else { return }
                     if let error {
                         completion(error)
                         return
@@ -735,8 +739,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
             miFare.sendMiFareCommand(
                 commandPacket: Type2NDEF.readCommandPacket(page: page)
             ) { response, error in
-                Task { @MainActor in
-                    guard session === self.tagSession else { return }
+                NFCIsolation.hopMain((session, response, error)) { [weak self] session, response, error in
+                    guard let self, session === self.tagSession else { return }
                     if let error {
                         completion(.failure(error))
                         return
@@ -773,8 +777,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         allowRetryWrite: NFCNDEFMessage?
     ) {
         detected.ndefTag.readNDEF { message, readError in
-            Task { @MainActor in
-                guard session === self.tagSession else { return }
+            NFCIsolation.hopMain((session, message, readError, allowRetryWrite, detected, expected)) { [weak self] session, message, readError, allowRetryWrite, detected, expected in
+                guard let self, session === self.tagSession else { return }
                 let stillBlank: Bool = {
                     if let readError {
                         let nsError = readError as NSError
@@ -786,8 +790,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
 
                 if stillBlank, let retry = allowRetryWrite {
                     detected.ndefTag.writeNDEF(retry) { retryError in
-                        Task { @MainActor in
-                            guard session === self.tagSession else { return }
+                        NFCIsolation.hopMain((session, retryError, detected, expected)) { [weak self] session, retryError, detected, expected in
+                            guard let self, session === self.tagSession else { return }
                             if let retryError {
                                 self.finish(
                                     session: session,
@@ -871,8 +875,8 @@ extension NFCTagsController: NFCTagReaderSessionDelegate {
         }
 
         detected.ndefTag.readNDEF { message, readError in
-            Task { @MainActor in
-                guard session === self.tagSession else { return }
+            NFCIsolation.hopMain((session, message, readError, detected, expected)) { [weak self] session, message, readError, detected, expected in
+                guard let self, session === self.tagSession else { return }
                 if let readError {
                     self.finish(
                         session: session,

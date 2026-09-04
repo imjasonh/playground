@@ -363,6 +363,10 @@ bundle exec fastlane test
 `Gemfile.lock` is committed so local and CI resolve the same fastlane gems.
 Re-run `bundle update fastlane` only when you intentionally bump.
 
+Compiler warnings fail the build (`SWIFT_TREAT_WARNINGS_AS_ERRORS` in
+`project.yml`). Fix the warning. If an Apple type is not Sendable, hop it
+in source and say why.
+
 ## Shipping to TestFlight
 
 [`docs/ios-testflight-setup.md`](../docs/ios-testflight-setup.md) ·

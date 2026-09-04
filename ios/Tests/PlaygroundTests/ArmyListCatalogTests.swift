@@ -121,7 +121,7 @@ final class ArmyListCatalogTests: XCTestCase {
 
         let warriors = try XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--hearthkyn-warriors"))
         let khal = try XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--kahl"))
-        var body = ListUnitInstance(datasheetID: "legacy--hearthkyn", models: warriors.minModels)
+        let body = ListUnitInstance(datasheetID: "legacy--hearthkyn", models: warriors.minModels)
         let leader = ListUnitInstance(
             datasheetID: khal.id,
             models: 1,
@@ -167,7 +167,7 @@ final class ArmyListValidatorTests: XCTestCase {
     }
 
     func testEmptyListIsIllegalWithoutDetachment() {
-        var list = ArmyListDocument(
+        let list = ArmyListDocument(
             name: "Empty",
             catalogVersion: catalog.version,
             factionID: "leagues-of-votann",
@@ -176,7 +176,6 @@ final class ArmyListValidatorTests: XCTestCase {
         let result = ArmyListValidator.validate(list: list, catalog: catalog)
         XCTAssertFalse(result.isLegal)
         XCTAssertTrue(result.errors.contains { $0.code == "detachment.required" })
-        _ = list
     }
 
     func testDPOverBudget() {

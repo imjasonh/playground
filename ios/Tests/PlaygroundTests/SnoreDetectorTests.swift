@@ -242,7 +242,7 @@ final class SnoreDetectorTests: XCTestCase {
     }
 
     func testWarmupSuppressesOnsets() {
-        var config = SnoreDetectorConfig.parameters(forSensitivity: 1)
+        let config = SnoreDetectorConfig.parameters(forSensitivity: 1)
         XCTAssertGreaterThan(config.warmupSeconds, 1)
         var detector = SnoreDetector(config: config)
 
@@ -254,7 +254,7 @@ final class SnoreDetectorTests: XCTestCase {
     }
 
     func testWarmupAbsorbsSteadyRoomNoise() {
-        var config = SnoreDetectorConfig.parameters(forSensitivity: 1)
+        let config = SnoreDetectorConfig.parameters(forSensitivity: 1)
         var detector = SnoreDetector(config: config)
         let ambient = 0.01
 

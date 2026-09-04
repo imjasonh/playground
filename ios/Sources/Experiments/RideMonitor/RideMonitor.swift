@@ -22,11 +22,11 @@ import UIKit
 /// is granted, hold a `CLBackgroundActivitySession` on iOS 17+, and restart
 /// device-motion if location is flowing but accelerometer callbacks stall.
 ///
-/// Core Motion updates are delivered on `OperationQueue.main` and Core Location
-/// delegate callbacks arrive on the (main) thread this object is created on, so
-/// every `@Published` mutation already happens on the main thread. Marked
-/// `@MainActor` so Live Activity / WatchConnectivity helpers can be called
-/// directly from those same paths.
+/// Core Motion updates arrive on `OperationQueue.main`. Core Location
+/// delegate methods are `nonisolated` because `CLLocationManagerDelegate` is
+/// not main-actor isolated; they hop onto the main actor before touching
+/// `@Published` state. `@MainActor` lets Live Activity and WatchConnectivity
+/// helpers run from those same paths.
 @MainActor
 final class RideMonitor: NSObject, ObservableObject {
     @Published private(set) var isRunning = false
@@ -230,15 +230,17 @@ final class RideMonitor: NSObject, ObservableObject {
         startAltimeterUpdates()
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self, self.isRunning else { return }
-            self.elapsed = self.now
-            // Publish UI g at ~4 Hz — mutating @Published at 50 Hz on the main
-            // queue was starving Core Motion delivery on longer rides.
-            self.currentG = self.latestG
-            self.pullWatchActivity()
-            self.pollSensingHealth()
-            self.pushCompanionsIfNeeded(force: false)
-            self.logHeartbeatIfNeeded()
+            Task { @MainActor [weak self] in
+                guard let self, self.isRunning else { return }
+                self.elapsed = self.now
+                // Publish UI g at ~4 Hz. Mutating @Published at 50 Hz on the
+                // main queue starved Core Motion delivery on longer rides.
+                self.currentG = self.latestG
+                self.pullWatchActivity()
+                self.pollSensingHealth()
+                self.pushCompanionsIfNeeded(force: false)
+                self.logHeartbeatIfNeeded()
+            }
         }
 
         let snapshot = makeLiveSnapshot()
@@ -759,14 +761,36 @@ final class RideMonitor: NSObject, ObservableObject {
 }
 
 extension RideMonitor: CLLocationManagerDelegate {
-    func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        let auth = Self.describeAuth(manager.authorizationStatus)
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        Task { @MainActor in
+            self.handleAuthorizationChange(status)
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        Task { @MainActor in
+            self.handleLocationUpdates(locations)
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let message = error.localizedDescription
+        Task { @MainActor in
+            self.handleLocationFailure(message)
+        }
+    }
+}
+
+extension RideMonitor {
+    private func handleAuthorizationChange(_ status: CLAuthorizationStatus) {
+        let auth = Self.describeAuth(status)
         RideMonitorLog.notice(
             "authorization changed → \(auth) wantsRecording=\(wantsRecording) running=\(isRunning)"
         )
         guard wantsRecording else { return }
 
-        switch manager.authorizationStatus {
+        switch status {
         case .authorizedAlways:
             if isRunning {
                 enableBackgroundKeepAlive()
@@ -803,7 +827,7 @@ extension RideMonitor: CLLocationManagerDelegate {
         }
     }
 
-    func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+    private func handleLocationUpdates(_ locations: [CLLocation]) {
         guard isRunning else { return }
 
         if let last = lastMotionAt, now - last > sensingGapEndThreshold {
@@ -855,10 +879,10 @@ extension RideMonitor: CLLocationManagerDelegate {
         pushCompanionsIfNeeded(force: false)
     }
 
-    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+    private func handleLocationFailure(_ message: String) {
         locationErrorCount += 1
         RideMonitorLog.error(
-            "location error #\(locationErrorCount): \(error.localizedDescription) elapsed=\(String(format: "%.1f", elapsed))"
+            "location error #\(locationErrorCount): \(message) elapsed=\(String(format: "%.1f", elapsed))"
         )
     }
 }

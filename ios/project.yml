@@ -28,6 +28,11 @@ settings:
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
     VERSIONING_SYSTEM: apple-generic
+    # Fail the build on compiler warnings (same policy as Rust `-D warnings`).
+    # Fix the warning. If an Apple type is not Sendable, hop it in source and
+    # say why. Do not set SWIFT_SUPPRESS_WARNINGS on a target.
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: YES
     # DEVELOPMENT_TEAM is injected by CI (fastlane / xcargs) at signing time so
     # the checked-in spec stays account-agnostic.
 

@@ -464,7 +464,7 @@ private enum ArmyListFMToolBridge {
         name: String,
         work: @escaping @MainActor (ArmyListChatWorkspace) -> String
     ) async throws -> String {
-        try await Task { @MainActor in
+        await Task { @MainActor in
             guard let runtime else {
                 return "Army List chat runtime is gone."
             }
