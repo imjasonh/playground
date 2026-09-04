@@ -1,5 +1,5 @@
 {
-  "version": "11e-1",
+  "version": "11e-2",
   "edition": "11th",
   "source": {
     "pointsSource": "https://github.com/BSData/wh40k-11e-mfm (data/*.yaml)",
@@ -33894,8 +33894,8 @@
         "Faction: Chaos Space Marines",
         "Epic Hero",
         "Infantry",
-        "Character",
-        "Leader"
+        "Leader",
+        "Character"
       ],
       "characterRole": "leader",
       "epicHero": true,
