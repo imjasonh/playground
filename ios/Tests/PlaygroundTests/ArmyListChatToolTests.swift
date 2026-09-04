@@ -18,7 +18,6 @@ final class ArmyListChatToolTests: XCTestCase {
     }
 
     func testAddUnitRejectsOverDuplicateLimit() {
-        _ = ArmyListChatToolExecutor.setBattleSize(workspace: workspace, battleSizeID: "incursion")
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,
             detachmentIDsCSV: "brandfast-oathband"
@@ -50,7 +49,7 @@ final class ArmyListChatToolTests: XCTestCase {
     func testChipSendShowsTitleNotFullPrompt() async {
         let runtime = ArmyListChatRuntime(workspace: workspace)
         await runtime.send(
-            prompt: "Fix validation ERRORs only. Never call setBattleSize.",
+            prompt: "Fix validation ERRORs only. Prefer removeUnit.",
             displayText: "Fix errors"
         )
         XCTAssertEqual(runtime.transcript.last { $0.kind == .user }?.text, "Fix errors")
@@ -66,7 +65,6 @@ final class ArmyListChatToolTests: XCTestCase {
     }
 
     func testBuildLegalIncursionViaTools() {
-        _ = ArmyListChatToolExecutor.setBattleSize(workspace: workspace, battleSizeID: "1000")
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,
             detachmentIDsCSV: "leagues-of-votann--brandfast-oathband"

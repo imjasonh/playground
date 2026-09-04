@@ -39,10 +39,10 @@ struct ArmyListChatView: View {
                 title: "Fix errors",
                 text: """
                 Fix validation ERRORs only. Call getListSummary first. \
-                Keep the current battle size — never call setBattleSize. \
+                Keep the current battle size (change it only in the editor, not via tools). \
                 Prefer removeUnit, setUnitModels, setDetachments, setWarlord, or attachCharacter. \
                 Do not add more copies of a datasheet than the battle-size duplicate limit (addUnit will reject illegal copies). \
-                After each tool call, read Status; stop when LEGAL or explain what you cannot fix without changing battle size.
+                After each tool call, read Status; stop when LEGAL or explain what you cannot fix.
                 """
             ),
             PromptChip(
@@ -52,7 +52,7 @@ struct ArmyListChatView: View {
                 Fill remaining points with a thematic extension of this list. \
                 Keep battle size and existing units. Call getListSummary, note pts remaining, \
                 then addUnit a few fitting datasheets (check copies N/limit in searchCatalog). \
-                Never exceed the points limit or duplicate caps. Never call setBattleSize. \
+                Never exceed the points limit or duplicate caps. \
                 Stop when remaining points are too small for another legal unit, then briefly say what you added.
                 """
             ),

@@ -47,6 +47,15 @@ struct ArmyListEditorView: View {
                     .accessibilityIdentifier("armyListEditorNameField")
             }
 
+            Section("Battle size") {
+                Picker("Battle size", selection: $list.battleSizeID) {
+                    ForEach(catalog.battleSizes) { size in
+                        Text("\(size.name) (\(size.pointsLimit))").tag(size.id)
+                    }
+                }
+                .accessibilityIdentifier("armyListEditorBattleSizePicker")
+            }
+
             Section("Detachments") {
                 ForEach(catalog.detachments.filter { $0.factionID == list.factionID }) { detachment in
                     Toggle(isOn: bindingForDetachment(detachment.id)) {

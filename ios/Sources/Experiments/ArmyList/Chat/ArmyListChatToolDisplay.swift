@@ -34,12 +34,7 @@ enum ArmyListChatToolDisplay {
                     return "applyRosterPlan · \(String(first.prefix(72)))"
                 }
                 return "applyRosterPlan"
-            case "setBattleSize":
-            if first.hasPrefix("Battle size set to ") {
-                return "setBattleSize · \(String(first.dropFirst("Battle size set to ".count)).trimmingCharacters(in: CharacterSet(charactersIn: ".")))"
-            }
-            return "setBattleSize"
-        case "setDetachments":
+            case "setDetachments":
             if first.hasPrefix("Detachments set to: ") {
                 return "setDetachments · \(String(first.dropFirst("Detachments set to: ".count)).trimmingCharacters(in: CharacterSet(charactersIn: ".")))"
             }

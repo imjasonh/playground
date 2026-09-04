@@ -382,9 +382,10 @@ final class ArmyListChatRuntime: ObservableObject {
         For thematic questions (army name, color scheme, lore vibe, matchup opinions), answer helpfully and label opinions as opinions.
         Prefer short replies. Format with Markdown (bold, bullets, short headings) when it helps scanability.
         Always answer the latest user message; do not keep talking about an earlier Theme/name request unless they ask again.
-        For from-scratch 1000/2000 point builds: invent a fresh theme each time (different units/detachment/name), call searchCatalog as needed, then applyRosterPlan once with your full plan. Do not loop addUnit for a full army — that overflows the on-device context window.
-        When fixing errors: keep the current battle size (never call setBattleSize). Prefer removeUnit / setUnitModels / setDetachments / setWarlord / attachCharacter. Respect datasheet duplicate limits for this battle size — addUnit rejects illegal copies.
-        When filling points: keep battle size and existing units; add a few thematic units that fit remaining points without exceeding duplicate caps. Re-read Status after each mutation.
+        For from-scratch builds within the current battle size: invent a fresh theme, call searchCatalog as needed, then applyRosterPlan once. Do not loop addUnit for a full army — that overflows the on-device context window.
+        Battle size is fixed in chat — the user sets it at create time or in the editor. Never invent a different points level.
+        When fixing errors: Prefer removeUnit / setUnitModels / setDetachments / setWarlord / attachCharacter. Respect datasheet duplicate limits for this battle size — addUnit rejects illegal copies.
+        When filling points: keep existing units; add a few thematic units that fit remaining points without exceeding duplicate caps. Re-read Status after each mutation.
         Use addUnit only for small targeted edits after a roster already exists.
         Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
         """
@@ -396,7 +397,6 @@ final class ArmyListChatRuntime: ObservableObject {
             ArmyGetListSummaryFMTool(runtime: self),
             ArmySearchCatalogFMTool(runtime: self),
             ArmyApplyRosterPlanFMTool(runtime: self),
-            ArmySetBattleSizeFMTool(runtime: self),
             ArmySetDetachmentsFMTool(runtime: self),
             ArmyAddUnitFMTool(runtime: self),
             ArmyRemoveUnitFMTool(runtime: self),
@@ -511,12 +511,10 @@ struct ArmySearchCatalogFMTool: Tool {
 struct ArmyApplyRosterPlanFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "applyRosterPlan"
-    let description = "Replace the whole roster in one call with a battle size, detachments, and units you invented. Prefer this for creative from-scratch builds."
+    let description = "Replace the whole roster in one call with detachments and units you invented. Keeps the list's current battle size."
 
     @Generable
     struct Arguments {
-        @Guide(description: "incursion, strike-force, 1000, or 2000")
-        var battleSizeID: String
         @Guide(description: "Comma-separated detachment ids/names that fit the DP budget")
         var detachmentIDsCSV: String
         @Guide(description: "Comma-separated datasheet id/name or id:models, e.g. blade-champion:1,custodian-guard:5")
@@ -529,32 +527,9 @@ struct ArmyApplyRosterPlanFMTool: Tool {
         try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.applyRosterPlan(
                 workspace: workspace,
-                battleSizeID: arguments.battleSizeID,
                 detachmentIDsCSV: arguments.detachmentIDsCSV,
                 unitsCSV: arguments.unitsCSV,
                 listName: arguments.listName
-            )
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct ArmySetBattleSizeFMTool: Tool {
-    weak var runtime: ArmyListChatRuntime?
-    let name = "setBattleSize"
-    let description = "Set battle size to incursion (1000) or strike-force (2000). Never use this to clear validation errors — fix the roster instead."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "incursion, strike-force, 1000, or 2000")
-        var battleSizeID: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
-            ArmyListChatToolExecutor.setBattleSize(
-                workspace: workspace,
-                battleSizeID: arguments.battleSizeID
             )
         }
     }
