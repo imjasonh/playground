@@ -270,19 +270,19 @@ final class ArmyListChatRuntime: ObservableObject {
                     )
                 }
             ),
-            entries: transcript.map {
-                ArmyListChatDumpEntry(
-                    id: $0.id.uuidString,
-                    date: $0.createdAt,
-                    kind: {
-                        switch $0.kind {
-                        case .user: return "user"
-                        case .assistant: return "assistant"
-                        case .system: return "system"
-                        case .tool: return "tool"
-                        }
-                    }(),
-                    text: $0.text
+            entries: transcript.map { entry in
+                let kindLabel: String
+                switch entry.kind {
+                case .user: kindLabel = "user"
+                case .assistant: kindLabel = "assistant"
+                case .system: kindLabel = "system"
+                case .tool: kindLabel = "tool"
+                }
+                return ArmyListChatDumpEntry(
+                    id: entry.id.uuidString,
+                    date: entry.createdAt,
+                    kind: kindLabel,
+                    text: entry.text
                 )
             },
             toolLog: toolLog.map {
