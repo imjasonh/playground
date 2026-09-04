@@ -50,31 +50,39 @@ if (pinned) {
   scrubMs = pinned.getTime() - Date.now();
 }
 
+function parseGeo(raw) {
+  if (!raw) {
+    return null;
+  }
+  const parsed = JSON.parse(raw);
+  if (!Number.isFinite(parsed.latitude) || !Number.isFinite(parsed.longitude)) {
+    return null;
+  }
+  return {
+    latitude: parsed.latitude,
+    longitude: parsed.longitude,
+  };
+}
+
 function readGeo() {
   try {
-    const raw = sessionStorage.getItem(GEO_KEY);
-    if (!raw) {
-      return null;
+    const stored = parseGeo(localStorage.getItem(GEO_KEY));
+    if (stored) {
+      return stored;
     }
-    const parsed = JSON.parse(raw);
-    if (!Number.isFinite(parsed.latitude) || !Number.isFinite(parsed.longitude)) {
-      return null;
+    const legacy = parseGeo(sessionStorage.getItem(GEO_KEY));
+    if (legacy) {
+      writeGeo(legacy);
+      sessionStorage.removeItem(GEO_KEY);
     }
-    return {
-      latitude: parsed.latitude,
-      longitude: parsed.longitude,
-    };
+    return legacy;
   } catch (error) {
     return null;
   }
 }
 
 function writeGeo(next) {
-  if (!next) {
-    sessionStorage.removeItem(GEO_KEY);
-    return;
-  }
-  sessionStorage.setItem(
+  localStorage.setItem(
     GEO_KEY,
     JSON.stringify({
       latitude: next.latitude,
@@ -96,22 +104,22 @@ function syncLocateButton() {
   locateBtn.disabled = false;
 }
 
-function onLocateClick() {
-  if (!canUseGeolocation() || geo) {
+function applyPosition(position) {
+  geo = {
+    latitude: position.coords.latitude,
+    longitude: position.coords.longitude,
+  };
+  writeGeo(geo);
+  syncLocateButton();
+  render();
+}
+
+function requestPosition() {
+  if (!canUseGeolocation()) {
     return;
   }
-
-  locateBtn.disabled = true;
   navigator.geolocation.getCurrentPosition(
-    function onGeoSuccess(position) {
-      geo = {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      };
-      writeGeo(geo);
-      syncLocateButton();
-      render();
-    },
+    applyPosition,
     function onGeoError() {
       syncLocateButton();
     },
@@ -121,6 +129,30 @@ function onLocateClick() {
       timeout: 8000,
     },
   );
+}
+
+function resumeGrantedLocation() {
+  if (!canUseGeolocation() || !navigator.permissions || !navigator.permissions.query) {
+    return;
+  }
+  navigator.permissions
+    .query({ name: "geolocation" })
+    .then(function onPermission(status) {
+      if (status.state === "granted") {
+        locateBtn.hidden = true;
+        requestPosition();
+      }
+    })
+    .catch(function onPermissionQueryError() {});
+}
+
+function onLocateClick() {
+  if (!canUseGeolocation() || geo) {
+    return;
+  }
+
+  locateBtn.disabled = true;
+  requestPosition();
 }
 
 function hoursPerWidth() {
@@ -316,6 +348,7 @@ nowBtn.addEventListener("click", setLive);
 locateBtn.addEventListener("click", onLocateClick);
 geo = readGeo();
 syncLocateButton();
+resumeGrantedLocation();
 document.body.addEventListener("pointerdown", onPointerDown);
 document.body.addEventListener("pointermove", onPointerMove);
 document.body.addEventListener("pointerup", onPointerUp);
