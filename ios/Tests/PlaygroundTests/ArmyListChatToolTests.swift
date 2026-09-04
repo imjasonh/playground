@@ -17,6 +17,45 @@ final class ArmyListChatToolTests: XCTestCase {
         workspace = ArmyListChatWorkspace(list: list, catalog: catalog)
     }
 
+    func testAddUnitRejectsOverDuplicateLimit() {
+        _ = ArmyListChatToolExecutor.setBattleSize(workspace: workspace, battleSizeID: "incursion")
+        _ = ArmyListChatToolExecutor.setDetachments(
+            workspace: workspace,
+            detachmentIDsCSV: "brandfast-oathband"
+        )
+        _ = ArmyListChatToolExecutor.clearUnits(workspace: workspace)
+        // Non-battleline Incursion cap is 2.
+        _ = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "leagues-of-votann--cthonian-beserks",
+            models: 5
+        )
+        _ = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "leagues-of-votann--cthonian-beserks",
+            models: 5
+        )
+        let rejected = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "leagues-of-votann--cthonian-beserks",
+            models: 5
+        )
+        XCTAssertTrue(rejected.hasPrefix("Rejected:"), rejected)
+        XCTAssertEqual(
+            workspace.list.units.filter { $0.datasheetID == "leagues-of-votann--cthonian-beserks" }.count,
+            2
+        )
+    }
+
+    func testChipSendShowsTitleNotFullPrompt() async {
+        let runtime = ArmyListChatRuntime(workspace: workspace)
+        await runtime.send(
+            prompt: "Fix validation ERRORs only. Never call setBattleSize.",
+            displayText: "Fix errors"
+        )
+        XCTAssertEqual(runtime.transcript.last { $0.kind == .user }?.text, "Fix errors")
+    }
+
     func testSearchCatalogFindsWarriors() {
         let result = ArmyListChatToolExecutor.searchCatalog(
             workspace: workspace,
