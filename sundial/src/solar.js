@@ -64,6 +64,27 @@ export function parseLocation(search, date) {
   return { latitude, longitude };
 }
 
+export function resolveLocation(search, date, geo) {
+  if (
+    geo &&
+    Number.isFinite(geo.latitude) &&
+    Number.isFinite(geo.longitude)
+  ) {
+    return {
+      latitude: clamp(geo.latitude, -90, 90),
+      longitude: clamp(geo.longitude, -180, 180),
+      source: "geo",
+    };
+  }
+
+  const fallback = parseLocation(search, date);
+  return {
+    latitude: fallback.latitude,
+    longitude: fallback.longitude,
+    source: "clock",
+  };
+}
+
 export function parsePinnedTime(search) {
   const params = new URLSearchParams(search);
   if (!params.has("at")) {

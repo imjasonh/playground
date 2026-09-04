@@ -132,7 +132,7 @@ body {
 }
 
 .hint,
-.now {
+.quiet {
   margin: 1.75rem 0 0;
   min-height: 1.4em;
   font-size: 1rem;
@@ -142,7 +142,12 @@ body {
   opacity: 0.48;
 }
 
-.now {
+.hint + .quiet,
+.quiet + .quiet {
+  margin-top: 0.4rem;
+}
+
+.quiet {
   appearance: none;
   padding: 0.35rem 0.7rem;
   border: 0;
@@ -153,12 +158,12 @@ body {
   cursor: pointer;
 }
 
-.now:focus-visible {
+.quiet:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 4px;
 }
 
-.now:hover {
+.quiet:hover {
   opacity: 0.8;
 }
 
@@ -184,7 +189,7 @@ body {
   .clock,
   .date,
   .hint,
-  .now {
+  .quiet {
     transition: none;
   }
 }
@@ -195,7 +200,7 @@ body {
   }
 
   .hint,
-  .now {
+  .quiet {
     font-size: 0.9rem;
   }
 }

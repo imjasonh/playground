@@ -10,6 +10,7 @@ import {
   longitudeFromTimezoneOffset,
   parseLocation,
   parsePinnedTime,
+  resolveLocation,
   sceneFromSun,
   shadowStrength,
   sunPosition,
@@ -41,6 +42,26 @@ test("parseLocation reads lat and lon, and falls back to the timezone", () => {
   const pinned = parseLocation("lat=-33.87&lon=151.21", date);
   assert.equal(pinned.latitude, -33.87);
   assert.equal(pinned.longitude, 151.21);
+});
+
+test("resolveLocation prefers a granted fix over the clock fallback", () => {
+  const date = new Date("2026-06-21T16:00:00Z");
+  const geo = resolveLocation("lat=10&lon=20", date, {
+    latitude: -33.87,
+    longitude: 151.21,
+  });
+  assert.equal(geo.source, "geo");
+  assert.equal(geo.latitude, -33.87);
+  assert.equal(geo.longitude, 151.21);
+
+  const query = resolveLocation("lat=10&lon=20", date, null);
+  assert.equal(query.source, "clock");
+  assert.equal(query.latitude, 10);
+  assert.equal(query.longitude, 20);
+
+  const junk = resolveLocation("", date, { latitude: Number.NaN, longitude: 0 });
+  assert.equal(junk.source, "clock");
+  assert.equal(junk.latitude, DEFAULT_LATITUDE);
 });
 
 test("parsePinnedTime accepts an ISO instant and rejects junk", () => {
