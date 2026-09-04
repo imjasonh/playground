@@ -29,6 +29,20 @@ final class ArmyListCatalogTests: XCTestCase {
         }
     }
 
+    /// Regression for the TestFlight "without a catalog snapshot" sheet: the
+    /// presentation item must carry the catalog, not a second @State.
+    func testNewListPresentationCarriesCatalogOnItem() throws {
+        let catalog = try CatalogLoader.load(bundle: .main)
+        let create = ArmyListHomeView.NewListPresentation.create(catalog)
+        XCTAssertNotNil(create.catalog)
+        XCTAssertEqual(create.catalog?.version, catalog.version)
+        XCTAssertNil(create.errorMessage)
+
+        let unavailable = ArmyListHomeView.NewListPresentation.unavailable("missing")
+        XCTAssertNil(unavailable.catalog)
+        XCTAssertEqual(unavailable.errorMessage, "missing")
+    }
+
     func testFactionScopedIdsDoNotCollide() throws {
         let catalog = try Self.loadCatalogFromRepo()
         let captainIDs = catalog.datasheets

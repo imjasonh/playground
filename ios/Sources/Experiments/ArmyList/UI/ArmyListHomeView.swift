@@ -10,23 +10,39 @@ struct ArmyListHomeView: View {
     /// empty library with Create enabled while `catalog` is still nil.
     @State private var didBootstrap = false
     @State private var saveError: String?
-    /// Item-based sheet so SwiftUI always receives concrete content (a bare
-    /// `if let` inside `sheet(isPresented:)` can present a blank modal).
-    @State private var newListSheet: NewListSheetKind?
-    /// Catalog snapshot owned by the open sheet (avoids racing `@State`).
-    @State private var sheetCatalog: ArmyCatalog?
-    @State private var editorList: ArmyListDocument?
-    @State private var showEditor = false
-    @State private var openEditorAfterSheet = false
+    /// Sheet payload carries the catalog itself. Two `@State` vars
+    /// (`sheetCatalog` + `.create`) raced on device: the sheet opened on
+    /// `.create` before the snapshot landed → "without a catalog snapshot."
+    @State private var newListSheet: NewListPresentation?
+    /// Editor opened after Create. Catalog rides on the item (same race class
+    /// as the New List sheet).
+    @State private var editorPresentation: EditorPresentation?
+    @State private var pendingEditorAfterSheet: EditorPresentation?
     /// `nil` means every faction.
     @State private var factionFilter: String?
     /// `nil` means every battle size / points level.
     @State private var battleSizeFilter: String?
 
-    private enum NewListSheetKind: String, Identifiable {
-        case create
-        case unavailable
-        var id: String { rawValue }
+    /// Identifiable New List sheet. The catalog (or error) travels with the
+    /// item so `sheet(item:)` never renders against a second `@State`.
+    struct NewListPresentation: Identifiable {
+        let id = UUID()
+        let catalog: ArmyCatalog?
+        let errorMessage: String?
+
+        static func create(_ catalog: ArmyCatalog) -> NewListPresentation {
+            NewListPresentation(catalog: catalog, errorMessage: nil)
+        }
+
+        static func unavailable(_ message: String) -> NewListPresentation {
+            NewListPresentation(catalog: nil, errorMessage: message)
+        }
+    }
+
+    struct EditorPresentation: Identifiable {
+        var id: UUID { list.id }
+        let list: ArmyListDocument
+        let catalog: ArmyCatalog
     }
 
     private var filteredLists: [ArmyListDocument] {
@@ -92,30 +108,41 @@ struct ArmyListHomeView: View {
                 .disabled(!canCreateList)
             }
         }
-        .sheet(item: $newListSheet, onDismiss: handleNewListSheetDismissed) { kind in
+        .sheet(item: $newListSheet, onDismiss: handleNewListSheetDismissed) { presentation in
             NavigationStack {
-                switch kind {
-                case .create:
-                    if let sheetCatalog {
-                        ArmyListNewSheet(catalog: sheetCatalog) { created in
-                            createList(created)
-                        }
-                    } else {
-                        newListUnavailablePane(
-                            message: "The create sheet opened without a catalog snapshot."
-                        )
+                if let catalog = presentation.catalog {
+                    ArmyListNewSheet(catalog: catalog) { created in
+                        createList(created)
                     }
-                case .unavailable:
+                } else {
                     newListUnavailablePane(
-                        message: loadError
+                        message: presentation.errorMessage
                             ?? "The construction catalog is not loaded. Install a build that includes catalog.json in the app bundle."
                     )
                 }
             }
             .accessibilityIdentifier("armyListNewSheet")
         }
-        .navigationDestination(isPresented: $showEditor) {
-            editorDestination
+        .fullScreenCover(item: $editorPresentation) { presentation in
+            NavigationStack {
+                ArmyListEditorView(
+                    list: presentation.list,
+                    catalog: presentation.catalog,
+                    store: store
+                ) {
+                    reload()
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") {
+                            editorPresentation = nil
+                            reload()
+                        }
+                        .accessibilityIdentifier("armyListEditorDone")
+                    }
+                }
+            }
+            .accessibilityIdentifier("armyListEditorCover")
         }
         .alert("Could not save list", isPresented: Binding(
             get: { saveError != nil },
@@ -126,23 +153,6 @@ struct ArmyListHomeView: View {
             Text(saveError ?? "Unknown error.")
         }
         .onAppear(perform: bootstrap)
-    }
-
-    @ViewBuilder
-    private var editorDestination: some View {
-        if let editorList, let catalog {
-            ArmyListEditorView(list: editorList, catalog: catalog, store: store) {
-                reload()
-            }
-        } else {
-            unavailablePane(
-                systemImage: "exclamationmark.triangle",
-                title: "Could not open list",
-                message: loadError
-                    ?? "The construction catalog is not loaded, so the editor has nothing to validate against."
-            )
-            .accessibilityIdentifier("armyListEditorUnavailable")
-        }
     }
 
     private func newListUnavailablePane(message: String) -> some View {
@@ -272,22 +282,27 @@ struct ArmyListHomeView: View {
     private func presentNewList() {
         guard didBootstrap else { return }
         if let catalog {
-            sheetCatalog = catalog
-            newListSheet = .create
+            newListSheet = .create(catalog)
         } else {
-            sheetCatalog = nil
-            newListSheet = .unavailable
+            newListSheet = .unavailable(
+                loadError
+                    ?? "The construction catalog is not loaded. Install a build that includes catalog.json in the app bundle."
+            )
         }
     }
 
     private func createList(_ created: ArmyListDocument) {
+        guard let catalog else {
+            saveError = loadError
+                ?? "The construction catalog is not loaded, so the list cannot be opened in the editor."
+            return
+        }
         do {
             try store.save(created)
             reload()
-            editorList = created
-            // Push the editor only after the sheet finishes dismissing; doing
-            // both at once is a common source of a blank pushed destination.
-            openEditorAfterSheet = true
+            // Hold the editor payload until the create sheet's onDismiss; the
+            // catalog is already on the payload so the cover cannot open empty.
+            pendingEditorAfterSheet = EditorPresentation(list: created, catalog: catalog)
             newListSheet = nil
         } catch {
             saveError = error.localizedDescription
@@ -295,10 +310,9 @@ struct ArmyListHomeView: View {
     }
 
     private func handleNewListSheetDismissed() {
-        sheetCatalog = nil
-        guard openEditorAfterSheet else { return }
-        openEditorAfterSheet = false
-        showEditor = true
+        guard let pending = pendingEditorAfterSheet else { return }
+        pendingEditorAfterSheet = nil
+        editorPresentation = pending
     }
 
     private func reload() {
