@@ -120,30 +120,18 @@ enum ArmyListChatToolExecutor {
         return lines.joined(separator: "\n")
     }
 
-    static func setBattleSize(workspace: ArmyListChatWorkspace, battleSizeID: String) -> String {
-        let id = resolveBattleSizeID(workspace: workspace, raw: battleSizeID)
-        guard let size = workspace.catalog.battleSize(id: id) else {
-            return "Unknown battle size “\(battleSizeID)”. Use incursion or strike-force."
-        }
-        var list = workspace.list
-        list.battleSizeID = size.id
-        workspace.replaceList(list)
-        return mutationResult(workspace: workspace, note: "Battle size set to \(size.name) (\(size.pointsLimit) pts).")
-    }
-
     /// Apply a full roster the model invented in one call (avoids addUnit context blowouts).
+    /// Keeps the list's current battle size — chat cannot change points level.
     ///
     /// `unitsCSV` entries are `datasheetIdOrName` or `datasheetIdOrName:models`, comma-separated.
     static func applyRosterPlan(
         workspace: ArmyListChatWorkspace,
-        battleSizeID: String,
         detachmentIDsCSV: String,
         unitsCSV: String,
         listName: String
     ) -> String {
-        let sizeID = resolveBattleSizeID(workspace: workspace, raw: battleSizeID)
-        guard let size = workspace.catalog.battleSize(id: sizeID) else {
-            return "Unknown battle size “\(battleSizeID)”. Use incursion or strike-force."
+        guard let size = workspace.catalog.battleSize(id: workspace.list.battleSizeID) else {
+            return "List has unknown battle size “\(workspace.list.battleSizeID)”. Change it in the editor."
         }
 
         let rawDetachments = detachmentIDsCSV
@@ -213,7 +201,6 @@ enum ArmyListChatToolExecutor {
 
         let trimmedName = listName.trimmingCharacters(in: .whitespacesAndNewlines)
         var list = workspace.list
-        list.battleSizeID = size.id
         list.detachmentIDs = detachmentIDs
         list.units = units
         list.warlordUnitID = warlordID
@@ -231,7 +218,7 @@ enum ArmyListChatToolExecutor {
         }
         workspace.replaceList(list)
 
-        var note = "Applied roster (\(addedNotes.joined(separator: ", "))) · \(size.name)."
+        var note = "Applied roster (\(addedNotes.joined(separator: ", "))) · kept \(size.name)."
         if !unknownDetachments.isEmpty {
             note += " Unknown detachments ignored: \(unknownDetachments.joined(separator: ", "))."
         }
@@ -497,16 +484,6 @@ enum ArmyListChatToolExecutor {
         // Keep mutation replies short — a full roster dump after every addUnit
         // blows the on-device 4k context window mid-build.
         return lines.joined(separator: "\n")
-    }
-
-    private static func resolveBattleSizeID(workspace: ArmyListChatWorkspace, raw: String) -> String {
-        let q = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if let exact = workspace.catalog.battleSizes.first(where: { $0.id == q }) {
-            return exact.id
-        }
-        if q.contains("1000") || q.contains("incursion") { return "incursion" }
-        if q.contains("2000") || q.contains("strike") { return "strike-force" }
-        return q
     }
 
     private static func resolveDetachmentID(workspace: ArmyListChatWorkspace, raw: String) -> String? {
