@@ -209,29 +209,34 @@ export function gnomonShadow(sun, maxLengthPx) {
   };
 }
 
-export function longShadowStyle(shadow, color, steps = 36) {
+export function castLayers(shadow, color) {
   if (shadow.strength <= 0 || shadow.length <= 0) {
-    return "none";
+    return [];
   }
 
-  const stepCount = Math.max(8, steps);
-  const layers = [];
-  for (let i = 1; i <= stepCount; i += 1) {
-    const t = i / stepCount;
-    const x = shadow.offsetX * t;
-    const y = shadow.offsetY * t;
-    const alpha = color.a * shadow.strength * (1 - t * 0.62);
-    layers.push(
-      `${x.toFixed(2)}px ${y.toFixed(2)}px 0 rgba(${color.r}, ${color.g}, ${color.b}, ${alpha.toFixed(3)})`,
-    );
-  }
+  const angle = Math.atan2(shadow.offsetX, shadow.offsetY) * (180 / Math.PI);
+  return [
+    {
+      x: shadow.offsetX * 0.16,
+      y: shadow.offsetY * 0.16,
+      blur: 1.1 + shadow.length * 0.01,
+      opacity: clamp(color.a * shadow.strength * 1.85, 0, 0.78),
+      stretch: 1,
+      angle,
+    },
+    {
+      x: shadow.offsetX,
+      y: shadow.offsetY,
+      blur: 12 + shadow.length * 0.1,
+      opacity: clamp(color.a * shadow.strength * 0.7, 0, 0.36),
+      stretch: 1 + clamp(shadow.length / 1100, 0, 0.28),
+      angle,
+    },
+  ];
+}
 
-  const blur = Math.max(10, shadow.length * 0.08);
-  const soft = color.a * shadow.strength * 0.22;
-  layers.push(
-    `${shadow.offsetX.toFixed(2)}px ${shadow.offsetY.toFixed(2)}px ${blur.toFixed(1)}px rgba(${color.r}, ${color.g}, ${color.b}, ${soft.toFixed(3)})`,
-  );
-  return layers.join(", ");
+export function castTransform(layer) {
+  return `translate(${layer.x.toFixed(2)}px, ${layer.y.toFixed(2)}px) rotate(${layer.angle.toFixed(2)}deg) scaleY(${layer.stretch.toFixed(3)}) rotate(${(-layer.angle).toFixed(2)}deg)`;
 }
 
 export function mixRgb(from, to, amount) {
@@ -276,8 +281,8 @@ const PAPER_DUSK = { r: 62, g: 36, b: 44 };
 const PAPER_GOLDEN = { r: 234, g: 172, b: 118 };
 const PAPER_DAY = { r: 244, g: 236, b: 220 };
 const PAPER_NOON = { r: 248, g: 245, b: 236 };
-const SHADOW_GOLDEN = { r: 88, g: 40, b: 16 };
-const SHADOW_DAY = { r: 54, g: 44, b: 32 };
+const SHADOW_GOLDEN = { r: 58, g: 36, b: 26 };
+const SHADOW_DAY = { r: 40, g: 38, b: 36 };
 
 export function sceneFromSun(sun) {
   const morning = sun.azimuth < 180;
@@ -310,9 +315,9 @@ export function sceneFromSun(sun) {
 
   const shadowMix = clamp(sun.altitude / 28, 0, 1);
   const shadowRgb = mixRgb(SHADOW_GOLDEN, SHADOW_DAY, shadowMix);
-  let shadowAlpha = 0.34;
+  let shadowAlpha = 0.42;
   if (sun.altitude < 10) {
-    shadowAlpha = 0.4;
+    shadowAlpha = 0.5;
   }
 
   const sunX = 50 + Math.sin(toRad(sun.azimuth)) * 44;

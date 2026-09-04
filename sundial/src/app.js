@@ -1,6 +1,7 @@
 import {
+  castLayers,
+  castTransform,
   gnomonShadow,
-  longShadowStyle,
   pageBackground,
   parseLocation,
   parsePinnedTime,
@@ -18,6 +19,7 @@ const hintEl = document.getElementById("hint");
 const nowBtn = document.getElementById("now");
 const northEl = document.getElementById("north");
 const themeColorMeta = document.getElementById("theme-color");
+const castEls = clockEl.querySelectorAll("[data-cast]");
 
 const timeFormat = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
@@ -77,8 +79,35 @@ function formatClock(date) {
   };
 }
 
+function writePeriod(el, period) {
+  el.textContent = period;
+  el.hidden = !period;
+}
+
+function writeClockText(clock) {
+  timeEl.textContent = clock.time;
+  writePeriod(periodEl, clock.period);
+  for (const castEl of castEls) {
+    castEl.querySelector("[data-time]").textContent = clock.time;
+    writePeriod(castEl.querySelector("[data-period]"), clock.period);
+  }
+}
+
+function clearCast(castEl) {
+  castEl.style.transform = "none";
+  castEl.style.filter = "none";
+  castEl.style.opacity = "0";
+}
+
+function paintCast(castEl, layer, color) {
+  castEl.style.color = rgbCss(color);
+  castEl.style.opacity = String(layer.opacity);
+  castEl.style.filter = `blur(${layer.blur.toFixed(2)}px)`;
+  castEl.style.transform = castTransform(layer);
+}
+
 function maxShadowLength() {
-  return Math.min(window.innerWidth, window.innerHeight) * 0.44;
+  return Math.min(window.innerWidth, window.innerHeight) * 0.48;
 }
 
 function render() {
@@ -88,15 +117,9 @@ function render() {
   const scene = sceneFromSun(sun);
   const shadow = gnomonShadow(sun, maxShadowLength());
   const clock = formatClock(date);
+  const layers = castLayers(shadow, scene.shadow);
 
-  timeEl.textContent = clock.time;
-  if (clock.period) {
-    periodEl.textContent = clock.period;
-    periodEl.hidden = false;
-  } else {
-    periodEl.textContent = "";
-    periodEl.hidden = true;
-  }
+  writeClockText(clock);
   clockEl.setAttribute("aria-label", clock.spoken);
   dateEl.textContent = dateFormat.format(date);
 
@@ -104,7 +127,17 @@ function render() {
   document.body.style.background = pageBackground(scene);
   document.body.style.color = ink;
   document.documentElement.style.colorScheme = scene.colorScheme;
-  clockEl.style.textShadow = longShadowStyle(shadow, scene.shadow);
+  clockEl.classList.toggle("is-night", scene.night);
+
+  for (let i = 0; i < castEls.length; i += 1) {
+    const layer = layers[i];
+    if (layer) {
+      paintCast(castEls[i], layer, scene.shadow);
+    } else {
+      clearCast(castEls[i]);
+    }
+  }
+
   if (themeColorMeta) {
     themeColorMeta.setAttribute("content", rgbToHex(scene.paper));
   }
