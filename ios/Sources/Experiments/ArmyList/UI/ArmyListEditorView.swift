@@ -41,6 +41,12 @@ struct ArmyListEditorView: View {
                 pointsRow
             }
 
+            Section("Name") {
+                TextField("List name", text: $list.name)
+                    .textInputAutocapitalization(.words)
+                    .accessibilityIdentifier("armyListEditorNameField")
+            }
+
             Section("Detachments") {
                 ForEach(catalog.detachments.filter { $0.factionID == list.factionID }) { detachment in
                     Toggle(isOn: bindingForDetachment(detachment.id)) {
