@@ -31,7 +31,8 @@ struct ArmyListChatEntry: Identifiable, Equatable {
 @MainActor
 final class ArmyListChatRuntime: ObservableObject {
     /// Rough cost of the army-list tool schemas registered with the session.
-    static let toolsReserveTokens = 1_500
+    /// Matches `OnDeviceContextManager.safetyBufferTokens` (TN3193 tool + reply headroom).
+    static let toolsReserveTokens = OnDeviceContextManager.safetyBufferTokens
 
     @Published var transcript: [ArmyListChatEntry] = []
     @Published var isRunning = false
@@ -124,7 +125,7 @@ final class ArmyListChatRuntime: ObservableObject {
             try await runFoundationModels(prompt: trimmed)
             #endif
         } catch {
-            if Self.isExceededContextWindow(error) {
+            if OnDeviceContextManager.isExceededContextWindow(error) {
                 compactLanguageSession(
                     reason: "Model context filled during tool use; compacted and retrying once."
                 )
@@ -150,25 +151,11 @@ final class ArmyListChatRuntime: ObservableObject {
     /// FoundationModels often surfaces context overflow as GenerationError code -1
     /// with a generic localizedDescription (no “context” substring).
     nonisolated static func isExceededContextWindow(_ error: Error) -> Bool {
-        let text = error.localizedDescription.lowercased()
-        if text.contains("context window")
-            || text.contains("exceededcontext")
-            || text.contains("contextsizeexceeded")
-        {
-            return true
-        }
-        let ns = error as NSError
-        let domain = ns.domain.lowercased()
-        if domain.contains("foundationmodels") {
-            if text.contains("context") { return true }
-            // Observed on device: GenerationError error -1 with no useful message.
-            if ns.code == -1 { return true }
-        }
-        return false
+        OnDeviceContextManager.isExceededContextWindow(error)
     }
 
     private func friendlyGenerationError(_ error: Error) -> String {
-        if Self.isExceededContextWindow(error) {
+        if OnDeviceContextManager.isExceededContextWindow(error) {
             return "The on-device model ran out of context while editing. Tap Clear, then Build 1k again (one applyRosterPlan call) or ask for a smaller change."
         }
         return error.localizedDescription
@@ -188,13 +175,35 @@ final class ArmyListChatRuntime: ObservableObject {
             transcript: transcript
         )
         didCompactThisSession = true
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *),
+           let existing = languageSessionBox as? LanguageModelSession,
+           let rehydrated = OnDeviceContextManager.rehydratedSession(
+               from: existing,
+               tools: makeFoundationTools()
+           )
+        {
+            languageSessionBox = rehydrated
+            budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
+            budget.resetBaseline(
+                instructions: sessionInstructions,
+                toolsReserveTokens: Self.toolsReserveTokens
+            )
+            budget.addText(carryOverNotes)
+        } else {
+            languageSessionBox = nil
+            budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
+        }
+        #else
         languageSessionBox = nil
         budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
+        #endif
         append(.system, text: reason)
         publishContextUsage()
     }
 
     /// Fresh-session notes after compact so follow-ups keep list + recent turns.
+    /// Older turns compress into a rolling archive (TN3193 sliding-window pattern).
     nonisolated static func compactionCarryOver(
         listSnapshot: String,
         transcript: [ArmyListChatEntry]
@@ -208,23 +217,24 @@ final class ArmyListChatRuntime: ObservableObject {
             parts.append("List snapshot:")
             parts.append(String(snap.prefix(800)))
         }
-        let recent = transcript.filter { entry in
+        let turns: [OnDeviceContextManager.Turn] = transcript.compactMap { entry in
             switch entry.kind {
-            case .user, .assistant: return true
-            case .system, .tool: return false
-            }
-        }.suffix(4)
-        if !recent.isEmpty {
-            parts.append("Recent chat (oldest first):")
-            for entry in recent {
-                let who = entry.kind == .user ? "User" : "Assistant"
-                let body = entry.text
-                    .replacingOccurrences(of: "\n", with: " ")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                parts.append("\(who): \(String(body.prefix(280)))")
+            case .user:
+                return OnDeviceContextManager.Turn(role: .user, content: entry.text)
+            case .assistant:
+                return OnDeviceContextManager.Turn(role: .assistant, content: entry.text)
+            case .system, .tool:
+                return nil
             }
         }
-        return AgentContextBudget.truncateToChars(parts.joined(separator: "\n"), maxChars: 1_400)
+        let summary = OnDeviceContextManager.rollingSummary(turns: turns)
+        if !summary.isEmpty {
+            parts.append(summary)
+        }
+        return AgentContextBudget.truncateToChars(
+            parts.joined(separator: "\n"),
+            maxChars: OnDeviceContextManager.carryOverMaxChars
+        )
     }
 
     func noteToolExchange(name: String, result: String) -> String {
@@ -340,9 +350,21 @@ final class ArmyListChatRuntime: ObservableObject {
             )
         }
         let session = ensureLanguageSession()
-        budget.addText(prompt)
+        // Rehydrated sessions already have instructions from transcript.first;
+        // inject list/chat carry-over on the prompt instead.
+        let promptForModel: String
+        if !carryOverNotes.isEmpty {
+            promptForModel = OnDeviceContextManager.promptWithCarryOver(
+                prompt: prompt,
+                carryOver: carryOverNotes
+            )
+            carryOverNotes = ""
+        } else {
+            promptForModel = prompt
+        }
+        budget.addText(promptForModel)
         publishContextUsage()
-        let response = try await session.respond(to: prompt)
+        let response = try await session.respond(to: promptForModel)
         let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
         budget.addText(text)
         publishContextUsage()

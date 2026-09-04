@@ -253,6 +253,67 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(notes.contains("Hearthguard"))
     }
 
+    func testCompactionCarryOverArchivesOlderTurns() {
+        var entries: [ArmyListChatEntry] = []
+        for i in 1...6 {
+            entries.append(ArmyListChatEntry(kind: .user, text: "Ask \(i) about ancient lore"))
+            entries.append(ArmyListChatEntry(kind: .assistant, text: "Reply \(i) with unit names"))
+        }
+        let notes = ArmyListChatRuntime.compactionCarryOver(
+            listSnapshot: "Status: LEGAL · 2000 pts",
+            transcript: entries
+        )
+        XCTAssertTrue(notes.contains("Background archive"))
+        XCTAssertTrue(notes.contains("Ask 1"))
+        XCTAssertTrue(notes.contains("Ask 6"))
+        XCTAssertTrue(notes.contains("Recent chat"))
+        XCTAssertLessThanOrEqual(notes.count, OnDeviceContextManager.carryOverMaxChars)
+    }
+
+    func testRollingSummaryKeepsRecentAndCapsLength() {
+        let turns = (1...10).flatMap { i -> [OnDeviceContextManager.Turn] in
+            [
+                .init(role: .user, content: "User turn \(i) " + String(repeating: "x", count: 80)),
+                .init(role: .assistant, content: "Assistant turn \(i) " + String(repeating: "y", count: 80)),
+            ]
+        }
+        let summary = OnDeviceContextManager.rollingSummary(turns: turns, recentCount: 4, maxChars: 900)
+        XCTAssertTrue(summary.contains("Background archive"))
+        XCTAssertTrue(summary.contains("Recent chat"))
+        XCTAssertTrue(summary.contains("User turn 10"))
+        XCTAssertLessThanOrEqual(summary.count, 900)
+    }
+
+    func testPromptWithCarryOverPrefixesContext() {
+        let combined = OnDeviceContextManager.promptWithCarryOver(
+            prompt: "Fix errors",
+            carryOver: "List snapshot: LEGAL"
+        )
+        XCTAssertTrue(combined.contains("List snapshot: LEGAL"))
+        XCTAssertTrue(combined.contains("Fix errors"))
+        XCTAssertEqual(
+            OnDeviceContextManager.promptWithCarryOver(prompt: "Hi", carryOver: "  "),
+            "Hi"
+        )
+    }
+
+    func testExceededContextWindowDetection() {
+        let ns = NSError(
+            domain: "FoundationModels.GenerationError",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "failed"]
+        )
+        XCTAssertTrue(OnDeviceContextManager.isExceededContextWindow(ns))
+        let other = NSError(domain: "NSURLErrorDomain", code: -1009, userInfo: nil)
+        XCTAssertFalse(OnDeviceContextManager.isExceededContextWindow(other))
+        let labeled = NSError(
+            domain: "Something",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "exceeded context window size"]
+        )
+        XCTAssertTrue(OnDeviceContextManager.isExceededContextWindow(labeled))
+    }
+
     func testToolDisplayLabelsIncludeUnitName() {
         let add = ArmyListChatToolDisplay.label(
             name: "addUnit",

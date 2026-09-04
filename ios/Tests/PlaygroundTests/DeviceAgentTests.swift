@@ -513,6 +513,28 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertFalse(stale.contains("Latest page findings"))
     }
 
+    func testOnDeviceContextManagerRollingSummaryAndOverflowDetect() {
+        let turns: [OnDeviceContextManager.Turn] = [
+            .init(role: .user, content: "Open example.com"),
+            .init(role: .assistant, content: "Opened."),
+            .init(role: .user, content: "Summarize the hero"),
+            .init(role: .assistant, content: "Hero says hello."),
+            .init(role: .user, content: "Click pricing"),
+            .init(role: .assistant, content: "Clicked pricing."),
+        ]
+        let summary = OnDeviceContextManager.rollingSummary(turns: turns, recentCount: 2)
+        XCTAssertTrue(summary.contains("Background archive"))
+        XCTAssertTrue(summary.contains("Click pricing"))
+
+        let overflow = NSError(
+            domain: "FoundationModels.GenerationError",
+            code: -1,
+            userInfo: [NSLocalizedDescriptionKey: "GenerationError"]
+        )
+        XCTAssertTrue(OnDeviceContextManager.isExceededContextWindow(overflow))
+        XCTAssertTrue(AgentRuntime.isExceededContextWindow(overflow))
+    }
+
     func testContextBudgetSnapshotCharBudgetShrinksWhenFull() {
         var budget = AgentContextBudget()
         budget.resetBaseline(instructions: "short", toolsReserveTokens: 100)
