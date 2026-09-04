@@ -591,6 +591,7 @@ bundle exec fastlane test
 - **Taglines**: do not invent taglines or slogans. If existing tagline copy should go, delete it and wait for an explicit replacement.
 - **Visual design and typography**: when you design or restyle HTML, CSS, or Pages templates, read [`.cursor/skills/web-typography/SKILL.md`](.cursor/skills/web-typography/SKILL.md) (Wondel's [web-typography](https://skills.wondel.ai/skills/web-typography/) skill).
 - **Apple HIG**: when you design, edit, or review iOS / macOS / watchOS UI (`ios/`, `hello-macos/`, `onramp/`), read [`.cursor/skills/apple-hig/SKILL.md`](.cursor/skills/apple-hig/SKILL.md) and consult the linked [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) topics.
+- **Foundation Models context**: when you add or change on-device Foundation Models chat, tools, `@Generable` types, or compaction in `ios/` (Army List, Device Agent, or a new FM experiment), read [`.cursor/skills/foundation-models-context/SKILL.md`](.cursor/skills/foundation-models-context/SKILL.md) and follow [Managing the context window](https://developer.apple.com/documentation/foundationmodels/managing-the-context-window).
 - **Do not commit**: `node_modules/`, secrets, env files, browser/Go/Rust build artifacts (`target/`), `*.xcodeproj`, `*.dmg`, or Playwright/Jest output (`test-results/`, `coverage/`).
 - **Do not write `blog-post.md` files.** Those are human-authored project
   posts. Agents must not create, edit, or rewrite them. The published
