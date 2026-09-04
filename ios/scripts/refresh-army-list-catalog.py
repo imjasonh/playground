@@ -313,6 +313,7 @@ def build_faction(mfm: dict, bs_index: dict[str, dict]) -> tuple[dict, list[dict
                 "epicHero": "Epic Hero" in keywords,
                 "battleline": "Battleline" in keywords,
                 "dedicatedTransport": "Dedicated Transport" in keywords,
+                "legends": bool(unit.get("legends")),
                 "minModels": min(sizes),
                 "maxModels": max(sizes),
                 "modelCounts": sizes,

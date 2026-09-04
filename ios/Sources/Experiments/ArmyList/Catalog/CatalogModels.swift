@@ -198,6 +198,8 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
     var epicHero: Bool
     var battleline: Bool
     var dedicatedTransport: Bool
+    /// True when the points source marks this datasheet as Legends.
+    var legends: Bool
     var minModels: Int
     var maxModels: Int
     var modelCounts: [Int]
@@ -213,6 +215,88 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
         var toCopy: Int?
         /// Points by model count string keys ("5", "10").
         var byModels: [String: Int]
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, factionID, keywords, characterRole, epicHero
+        case battleline, dedicatedTransport, legends, minModels, maxModels
+        case modelCounts, pointsTiers, leaderTo, mustAttach, maxCopiesOverride
+    }
+
+    init(
+        id: String,
+        name: String,
+        factionID: String,
+        keywords: [String],
+        characterRole: CatalogCharacterRole?,
+        epicHero: Bool,
+        battleline: Bool,
+        dedicatedTransport: Bool,
+        legends: Bool = false,
+        minModels: Int,
+        maxModels: Int,
+        modelCounts: [Int],
+        pointsTiers: [PointsTier],
+        leaderTo: [String],
+        mustAttach: Bool,
+        maxCopiesOverride: Int?
+    ) {
+        self.id = id
+        self.name = name
+        self.factionID = factionID
+        self.keywords = keywords
+        self.characterRole = characterRole
+        self.epicHero = epicHero
+        self.battleline = battleline
+        self.dedicatedTransport = dedicatedTransport
+        self.legends = legends
+        self.minModels = minModels
+        self.maxModels = maxModels
+        self.modelCounts = modelCounts
+        self.pointsTiers = pointsTiers
+        self.leaderTo = leaderTo
+        self.mustAttach = mustAttach
+        self.maxCopiesOverride = maxCopiesOverride
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        factionID = try container.decode(String.self, forKey: .factionID)
+        keywords = try container.decode([String].self, forKey: .keywords)
+        characterRole = try container.decodeIfPresent(CatalogCharacterRole.self, forKey: .characterRole)
+        epicHero = try container.decode(Bool.self, forKey: .epicHero)
+        battleline = try container.decode(Bool.self, forKey: .battleline)
+        dedicatedTransport = try container.decode(Bool.self, forKey: .dedicatedTransport)
+        legends = try container.decodeIfPresent(Bool.self, forKey: .legends) ?? false
+        minModels = try container.decode(Int.self, forKey: .minModels)
+        maxModels = try container.decode(Int.self, forKey: .maxModels)
+        modelCounts = try container.decode([Int].self, forKey: .modelCounts)
+        pointsTiers = try container.decode([PointsTier].self, forKey: .pointsTiers)
+        leaderTo = try container.decode([String].self, forKey: .leaderTo)
+        mustAttach = try container.decode(Bool.self, forKey: .mustAttach)
+        maxCopiesOverride = try container.decodeIfPresent(Int.self, forKey: .maxCopiesOverride)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(factionID, forKey: .factionID)
+        try container.encode(keywords, forKey: .keywords)
+        try container.encodeIfPresent(characterRole, forKey: .characterRole)
+        try container.encode(epicHero, forKey: .epicHero)
+        try container.encode(battleline, forKey: .battleline)
+        try container.encode(dedicatedTransport, forKey: .dedicatedTransport)
+        try container.encode(legends, forKey: .legends)
+        try container.encode(minModels, forKey: .minModels)
+        try container.encode(maxModels, forKey: .maxModels)
+        try container.encode(modelCounts, forKey: .modelCounts)
+        try container.encode(pointsTiers, forKey: .pointsTiers)
+        try container.encode(leaderTo, forKey: .leaderTo)
+        try container.encode(mustAttach, forKey: .mustAttach)
+        try container.encodeIfPresent(maxCopiesOverride, forKey: .maxCopiesOverride)
     }
 
     func points(models: Int, copyIndex: Int) -> Int? {

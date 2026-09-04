@@ -72,8 +72,23 @@ struct ArmyListEditorView: View {
                     } label: {
                         unitRow(unit)
                     }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            deleteUnit(id: unit.id)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .accessibilityIdentifier("armyListDeleteUnit-\(unit.id.uuidString)")
+
+                        Button {
+                            duplicateUnit(id: unit.id)
+                        } label: {
+                            Label("Duplicate", systemImage: "plus.square.on.square")
+                        }
+                        .tint(.indigo)
+                        .accessibilityIdentifier("armyListDuplicateUnit-\(unit.id.uuidString)")
+                    }
                 }
-                .onDelete(perform: deleteUnits)
 
                 Button {
                     showAddUnit = true
@@ -246,9 +261,9 @@ struct ArmyListEditorView: View {
         )
     }
 
-    private func deleteUnits(at offsets: IndexSet) {
-        let removedIDs = Set(offsets.map { list.units[$0].id })
-        list.units.remove(atOffsets: offsets)
+    private func deleteUnit(id: UUID) {
+        let removedIDs: Set<UUID> = [id]
+        list.units.removeAll { $0.id == id }
         list.units = list.units.map { unit in
             var copy = unit
             if let attached = copy.attachedToUnitID, removedIDs.contains(attached) {
@@ -256,9 +271,13 @@ struct ArmyListEditorView: View {
             }
             return copy
         }
-        if let warlord = list.warlordUnitID, removedIDs.contains(warlord) {
+        if list.warlordUnitID == id {
             list.warlordUnitID = nil
         }
+    }
+
+    private func duplicateUnit(id: UUID) {
+        _ = list.duplicateUnit(id: id)
     }
 
     private func persist() {
@@ -287,42 +306,76 @@ struct ArmyListUnitPickerView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
+    /// Legends datasheets are hidden unless the player turns this on.
+    @State private var includeLegends = false
+    @State private var typeFilter: ArmyListUnitTypeFilter = .all
 
     private var sheets: [DatasheetDefinition] {
-        catalog.datasheets
-            .filter { $0.factionID == factionID }
-            .filter {
-                query.isEmpty
-                    || $0.name.localizedCaseInsensitiveContains(query)
-                    || $0.keywords.contains { $0.localizedCaseInsensitiveContains(query) }
-            }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        ArmyListUnitPickerFiltering.sheets(
+            from: catalog,
+            factionID: factionID,
+            query: query,
+            includeLegends: includeLegends,
+            typeFilter: typeFilter
+        )
+    }
+
+    private var filtersActive: Bool {
+        includeLegends || typeFilter != .all
     }
 
     var body: some View {
-        List(sheets) { sheet in
-            Button {
-                onPick(sheet)
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(sheet.name)
-                        .foregroundStyle(.primary)
-                    HStack(spacing: 6) {
-                        if sheet.battleline {
-                            Text("Battleline")
-                        }
-                        if sheet.characterRole != nil {
-                            Text("Character")
-                        }
-                        if let pts = sheet.points(models: sheet.minModels, copyIndex: 1) {
-                            Text("\(pts)+ pts")
-                        }
+        List {
+            Section {
+                Toggle("Include Legends", isOn: $includeLegends)
+                    .accessibilityIdentifier("armyListIncludeLegendsToggle")
+
+                Picker("Type", selection: $typeFilter) {
+                    ForEach(ArmyListUnitTypeFilter.allCases) { filter in
+                        Text(filter.title).tag(filter)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("armyListUnitTypeFilter")
+            }
+
+            Section {
+                if sheets.isEmpty {
+                    Text(emptyMessage)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("armyListUnitPickerEmpty")
+                } else {
+                    ForEach(sheets) { sheet in
+                        Button {
+                            onPick(sheet)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(sheet.name)
+                                    .foregroundStyle(.primary)
+                                HStack(spacing: 6) {
+                                    if sheet.legends {
+                                        Text("Legends")
+                                    }
+                                    if sheet.battleline {
+                                        Text("Battleline")
+                                    }
+                                    if sheet.characterRole != nil {
+                                        Text("Character")
+                                    }
+                                    if sheet.dedicatedTransport {
+                                        Text("Transport")
+                                    }
+                                    if let pts = sheet.points(models: sheet.minModels, copyIndex: 1) {
+                                        Text("\(pts)+ pts")
+                                    }
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityIdentifier("armyListPick-\(sheet.id)")
+                    }
                 }
             }
-            .accessibilityIdentifier("armyListPick-\(sheet.id)")
         }
         .searchable(text: $query, prompt: "Datasheets")
         .navigationTitle("Add unit")
@@ -331,6 +384,86 @@ struct ArmyListUnitPickerView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
             }
+            ToolbarItem(placement: .primaryAction) {
+                if filtersActive {
+                    Button("Reset filters") {
+                        includeLegends = false
+                        typeFilter = .all
+                    }
+                    .accessibilityIdentifier("armyListUnitPickerResetFilters")
+                }
+            }
+        }
+    }
+
+    private var emptyMessage: String {
+        if !query.isEmpty || filtersActive {
+            return "No datasheets match these filters."
+        }
+        return "No datasheets for this faction."
+    }
+}
+
+enum ArmyListUnitTypeFilter: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case battleline
+    case character
+    case dedicatedTransport
+    case infantry
+    case vehicle
+    case mounted
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All types"
+        case .battleline: return "Battleline"
+        case .character: return "Characters"
+        case .dedicatedTransport: return "Dedicated transports"
+        case .infantry: return "Infantry"
+        case .vehicle: return "Vehicles"
+        case .mounted: return "Mounted"
+        }
+    }
+}
+
+enum ArmyListUnitPickerFiltering {
+    static func sheets(
+        from catalog: ArmyCatalog,
+        factionID: String,
+        query: String,
+        includeLegends: Bool,
+        typeFilter: ArmyListUnitTypeFilter
+    ) -> [DatasheetDefinition] {
+        catalog.datasheets
+            .filter { $0.factionID == factionID }
+            .filter { includeLegends || !$0.legends }
+            .filter { matchesType($0, filter: typeFilter) }
+            .filter {
+                query.isEmpty
+                    || $0.name.localizedCaseInsensitiveContains(query)
+                    || $0.keywords.contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    static func matchesType(_ sheet: DatasheetDefinition, filter: ArmyListUnitTypeFilter) -> Bool {
+        switch filter {
+        case .all:
+            return true
+        case .battleline:
+            return sheet.battleline
+        case .character:
+            return sheet.characterRole != nil
+        case .dedicatedTransport:
+            return sheet.dedicatedTransport
+        case .infantry:
+            return sheet.keywords.contains("Infantry")
+        case .vehicle:
+            return sheet.keywords.contains("Vehicle")
+        case .mounted:
+            return sheet.keywords.contains("Mounted")
         }
     }
 }

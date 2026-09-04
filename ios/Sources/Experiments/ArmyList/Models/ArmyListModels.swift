@@ -43,6 +43,26 @@ struct ArmyListDocument: Identifiable, Codable, Equatable, Sendable {
     mutating func touch() {
         updatedAt = Date()
     }
+
+    /// Inserts a copy of the unit after the original. Keeps models and options;
+    /// clears attachment so the duplicate is independent. Returns the new id.
+    @discardableResult
+    mutating func duplicateUnit(id: UUID) -> UUID? {
+        guard let index = units.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+        let source = units[index]
+        let copy = ListUnitInstance(
+            datasheetID: source.datasheetID,
+            models: source.models,
+            optionIDs: source.optionIDs,
+            enhancementIDs: source.enhancementIDs,
+            attachedToUnitID: nil
+        )
+        units.insert(copy, at: index + 1)
+        touch()
+        return copy.id
+    }
 }
 
 /// One unit entry on a list (a datasheet instance with options and attachments).

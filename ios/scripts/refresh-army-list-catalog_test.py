@@ -65,5 +65,40 @@ class NormalizeKeywordsTests(unittest.TestCase):
         self.assertEqual(a.index("Character"), a.index("Leader") - 1)
 
 
+class LegendsFlagTests(unittest.TestCase):
+    def test_build_faction_copies_legends_from_mfm(self) -> None:
+        mfm = {
+            "slug": "astra-militarum",
+            "name": "Astra Militarum",
+            "units": [
+                {
+                    "name": "Cadian Shock Troops",
+                    "legends": False,
+                    "pricing": [
+                        {
+                            "range": "[1,)",
+                            "costs": [{"models": 10, "points": 60}],
+                        }
+                    ],
+                },
+                {
+                    "name": "Aquila Lander",
+                    "legends": True,
+                    "pricing": [
+                        {
+                            "range": "[1,)",
+                            "costs": [{"models": 1, "points": 70}],
+                        }
+                    ],
+                },
+            ],
+            "detachments": [],
+        }
+        _, _, sheets = MOD.build_faction(mfm, {})
+        by_name = {s["name"]: s for s in sheets}
+        self.assertFalse(by_name["Cadian Shock Troops"]["legends"])
+        self.assertTrue(by_name["Aquila Lander"]["legends"])
+
+
 if __name__ == "__main__":
     raise SystemExit(unittest.main())
