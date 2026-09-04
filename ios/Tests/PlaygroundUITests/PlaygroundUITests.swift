@@ -472,10 +472,11 @@ final class PlaygroundUITests: XCTestCase {
             XCTAssertEqual(value, listName, "Editor name field should show the name from create")
         }
 
-        // Brand-new lists are empty → illegal until detachments/units/warlord are set.
+        // Create with detachments and no units is Legal (empty is a warning only).
         XCTAssertTrue(
-            app.staticTexts["Illegal"].waitForExistence(timeout: 3)
-                || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Illegal")).firstMatch.exists
+            app.staticTexts["Legal"].waitForExistence(timeout: 3)
+                || legalBadge.waitForExistence(timeout: 2),
+            "Empty list with detachments should validate as Legal (warnings ok)"
         )
 
         // Share must open a real sheet (not blank) via item-based presentation.
