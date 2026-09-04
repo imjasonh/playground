@@ -61,25 +61,6 @@ final class PlaygroundUITests: XCTestCase {
         }
     }
 
-    /// Scroll a Form sheet until `element` appears (long Detachments lists push footer actions off-screen).
-    @discardableResult
-    private func scrollSheetUntilExists(
-        _ element: XCUIElement,
-        in app: XCUIApplication,
-        maxSwipes: Int = 10
-    ) -> Bool {
-        if element.waitForExistence(timeout: 2) {
-            return true
-        }
-        for _ in 0..<maxSwipes {
-            if element.exists {
-                return true
-            }
-            swipeLauncherUp(in: app)
-        }
-        return element.waitForExistence(timeout: 2)
-    }
-
     private func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launch()
@@ -404,48 +385,41 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(create.waitForExistence(timeout: 3))
         XCTAssertFalse(create.isEnabled, "Create requires at least one detachment")
 
-        // Detachments push "Build starter list" below the fold — scroll until it appears.
         let starter = app.buttons["armyListBuildStarterButton"]
         XCTAssertTrue(
-            scrollSheetUntilExists(starter, in: app),
-            "Expected Build starter list on the create sheet"
+            starter.waitForExistence(timeout: 3),
+            "Expected Build starter list in the sheet toolbar"
         )
         XCTAssertFalse(
             starter.isEnabled,
             "Create/starter stay disabled until a detachment is chosen"
         )
 
-        // Pick detachments until under the DP budget (Create enables).
-        let detachmentToggles = app.switches.matching(
+        // Prefer a cheap detachment (1 DP) so Incursion's 2 DP budget always fits.
+        let cheapDetachment = app.switches.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS[c] %@",
+                        "armyListNewDetachment-", "1 DP")
+        ).firstMatch
+        let anyDetachment = app.switches.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "armyListNewDetachment-")
-        )
-        // Scroll up so detachment toggles (above the starter button) are hittable.
-        for _ in 0..<4 {
-            if detachmentToggles.count > 0 { break }
-            app.swipeDown()
-        }
-        XCTAssertGreaterThan(
-            detachmentToggles.count,
-            0,
+        ).firstMatch
+        let detachmentToggle = cheapDetachment.exists ? cheapDetachment : anyDetachment
+        XCTAssertTrue(
+            detachmentToggle.waitForExistence(timeout: 5),
             "Expected detachment toggles on the create sheet"
         )
-        var enabled = false
-        for index in 0..<min(detachmentToggles.count, 8) {
-            let toggle = detachmentToggles.element(boundBy: index)
-            guard toggle.waitForExistence(timeout: 2) else { continue }
-            // Ensure the toggle is on-screen before tapping.
-            if !toggle.isHittable {
-                _ = scrollSheetUntilExists(toggle, in: app, maxSwipes: 6)
+        if !detachmentToggle.isHittable {
+            // Form may need a nudge if battle-size / faction pickers ate the viewport.
+            for _ in 0..<4 {
+                app.swipeUp()
+                if detachmentToggle.isHittable { break }
             }
-            toggle.tap()
-            if create.isEnabled {
-                enabled = true
-                break
-            }
-            // Undo if this selection went over budget.
-            toggle.tap()
         }
-        XCTAssertTrue(enabled, "Expected a legal detachment selection under the DP budget")
+        detachmentToggle.tap()
+        XCTAssertTrue(
+            create.waitForExistence(timeout: 2) && create.isEnabled,
+            "Create enables after selecting a detachment under the DP budget"
+        )
         XCTAssertTrue(starter.isEnabled)
 
         nameField.tap()

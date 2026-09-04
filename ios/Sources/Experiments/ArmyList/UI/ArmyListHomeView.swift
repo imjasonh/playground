@@ -414,11 +414,6 @@ struct ArmyListNewSheet: View {
             && detachmentPointsSpent <= detachmentPointsBudget
     }
 
-    private var pointsLabel: String {
-        guard let size = catalog.battleSize(id: battleSizeID) else { return "" }
-        return "\(size.pointsLimit)"
-    }
-
     init(catalog: ArmyCatalog, onCreate: @escaping (ArmyListDocument) -> Void) {
         self.catalog = catalog
         self.onCreate = onCreate
@@ -490,24 +485,8 @@ struct ArmyListNewSheet: View {
             } header: {
                 Text("Detachments")
             } footer: {
-                Text("\(detachmentPointsSpent) / \(detachmentPointsBudget) DP")
+                Text("\(detachmentPointsSpent) / \(detachmentPointsBudget) DP. Build starter list fills units for these picks.")
                     .accessibilityIdentifier("armyListNewDetachmentPoints")
-            }
-
-            Section {
-                Button("Build starter list") {
-                    createStarterList()
-                }
-                .disabled(!canSubmit)
-                .accessibilityIdentifier("armyListBuildStarterButton")
-
-                Text(
-                    pointsLabel.isEmpty
-                        ? "Fills units for your chosen detachments. You can edit after."
-                        : "Fills a legal \(pointsLabel)-point list using your detachments. You can edit after."
-                )
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
 
             if let seedError {
@@ -531,6 +510,13 @@ struct ArmyListNewSheet: View {
                 }
                 .disabled(!canSubmit)
                 .accessibilityIdentifier("armyListCreateButton")
+            }
+            ToolbarItem(placement: .bottomBar) {
+                Button("Build starter list") {
+                    createStarterList()
+                }
+                .disabled(!canSubmit)
+                .accessibilityIdentifier("armyListBuildStarterButton")
             }
         }
     }
