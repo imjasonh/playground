@@ -1,8 +1,8 @@
 # Sundial
 
 A clock that casts a long shadow the same way a sundial does. During the
-day the numerals themselves stay out of the way; you read the time from
-the shadow. After sunset the shadow is gone and the numerals show.
+day only the shadow is visible. After sunset the shadow is gone and the
+numerals show.
 
 The screen is a horizontal plate with north at the top. Sun position comes
 from the time on your clock. Longitude is inferred from the time zone;

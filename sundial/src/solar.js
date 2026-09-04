@@ -197,7 +197,10 @@ export function gnomonShadow(sun, maxLengthPx) {
   }
 
   const azimuth = wrapDegrees(sun.azimuth + 180);
-  const length = maxLengthPx * shadowLengthFactor(sun.altitude) * strength;
+  const length = Math.max(
+    maxLengthPx * 0.34,
+    maxLengthPx * shadowLengthFactor(sun.altitude) * strength,
+  );
   const theta = toRad(azimuth);
   return {
     visible: true,
@@ -217,19 +220,19 @@ export function castLayers(shadow, color) {
   const angle = Math.atan2(shadow.offsetX, shadow.offsetY) * (180 / Math.PI);
   return [
     {
-      x: shadow.offsetX * 0.16,
-      y: shadow.offsetY * 0.16,
-      blur: 1.1 + shadow.length * 0.01,
-      opacity: clamp(color.a * shadow.strength * 1.85, 0, 0.78),
+      x: shadow.offsetX * 0.76,
+      y: shadow.offsetY * 0.76,
+      blur: 2.4 + shadow.length * 0.006,
+      opacity: clamp(color.a * shadow.strength * 1.4, 0, 0.46),
       stretch: 1,
       angle,
     },
     {
-      x: shadow.offsetX,
-      y: shadow.offsetY,
-      blur: 12 + shadow.length * 0.1,
-      opacity: clamp(color.a * shadow.strength * 0.7, 0, 0.36),
-      stretch: 1 + clamp(shadow.length / 1100, 0, 0.28),
+      x: shadow.offsetX * 1.14,
+      y: shadow.offsetY * 1.14,
+      blur: 16 + shadow.length * 0.09,
+      opacity: clamp(color.a * shadow.strength * 0.75, 0, 0.3),
+      stretch: 1 + clamp(shadow.length / 1200, 0, 0.22),
       angle,
     },
   ];
