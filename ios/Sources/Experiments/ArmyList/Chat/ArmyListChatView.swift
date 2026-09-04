@@ -60,7 +60,7 @@ struct ArmyListChatView: View {
 
     private var statusBar: some View {
         let result = runtime.workspace.validation
-        return HStack {
+        return HStack(spacing: 12) {
             Text(result.isLegal ? "Legal" : "Illegal")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(result.isLegal ? Color.green : Color.red)
@@ -68,11 +68,48 @@ struct ArmyListChatView: View {
             Text("\(result.totalPoints) pts · \(result.errors.count) err")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            contextRing
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
         .background(Color(uiColor: .secondarySystemBackground))
         .accessibilityIdentifier("armyListChatStatus")
+    }
+
+    /// Circular fill for remaining model context (empty ring = full window free).
+    private var contextRing: some View {
+        let usage = runtime.contextUsage
+        let remaining = max(0, 1 - usage.fractionUsed)
+        let tint: Color = {
+            if usage.fractionUsed >= 0.85 { return .orange }
+            if usage.fractionUsed >= AgentContextBudget.compactThreshold { return .yellow }
+            return .accentColor
+        }()
+        return ZStack {
+            Circle()
+                .stroke(Color.secondary.opacity(0.18), lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: remaining)
+                .stroke(tint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.easeInOut(duration: 0.25), value: remaining)
+            if runtime.isRunning {
+                ProgressView()
+                    .controlSize(.mini)
+            } else {
+                Text("\(Int((remaining * 100).rounded(.down)))")
+                    .font(.system(size: 9, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(width: 28, height: 28)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            "\(Int((remaining * 100).rounded(.down))) percent model context remaining"
+                + (usage.didCompact ? ", compacted earlier" : "")
+        )
+        .accessibilityIdentifier("armyListChatContextRing")
     }
 
     private var transcript: some View {
@@ -102,12 +139,20 @@ struct ArmyListChatView: View {
             Text(label(for: entry.kind))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            Text(entry.text)
-                .font(entry.kind == .tool ? .caption.monospaced() : .body)
-                .padding(10)
-                .background(bubbleColor(for: entry.kind))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .frame(maxWidth: .infinity, alignment: entry.kind == .user ? .trailing : .leading)
+            Group {
+                if entry.kind == .assistant || entry.kind == .system {
+                    Text(ArmyListChatMarkdown.attributed(entry.text))
+                        .font(.body)
+                        .textSelection(.enabled)
+                } else {
+                    Text(entry.text)
+                        .font(entry.kind == .tool ? .caption.monospaced() : .body)
+                }
+            }
+            .padding(10)
+            .background(bubbleColor(for: entry.kind))
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .frame(maxWidth: .infinity, alignment: entry.kind == .user ? .trailing : .leading)
         }
     }
 
@@ -200,5 +245,22 @@ struct ArmyListChatView: View {
         .padding()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("armyListChatUnavailable")
+    }
+}
+
+/// Parses assistant Markdown into an `AttributedString` for chat bubbles.
+enum ArmyListChatMarkdown {
+    static func attributed(_ text: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(
+            interpretedSyntax: .full,
+            failurePolicy: .returnPartiallyParsedIfPossible
+        )
+        if let parsed = try? AttributedString(
+            markdown: text,
+            options: options
+        ) {
+            return parsed
+        }
+        return AttributedString(text)
     }
 }

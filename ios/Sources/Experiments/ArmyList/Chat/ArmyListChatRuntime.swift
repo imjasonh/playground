@@ -30,15 +30,21 @@ struct ArmyListChatEntry: Identifiable, Equatable {
 /// Runs Army List prompts through on-device Foundation Models + list tools.
 @MainActor
 final class ArmyListChatRuntime: ObservableObject {
+    /// Rough cost of the army-list tool schemas registered with the session.
+    static let toolsReserveTokens = 1_500
+
     @Published var transcript: [ArmyListChatEntry] = []
     @Published var isRunning = false
     @Published private(set) var modelGate: AgentModelGate = .unsupportedPlatform
+    @Published private(set) var contextUsage = AgentContextUsage.empty
 
     let workspace: ArmyListChatWorkspace
 
     private var languageSessionBox: Any?
     private var workspaceBag: AnyCancellable?
     private var carryOverNotes = ""
+    private var budget = AgentContextBudget(toolsReserveTokens: ArmyListChatRuntime.toolsReserveTokens)
+    private var didCompactThisSession = false
 
     var isModelAvailable: Bool { modelGate.isAvailable }
 
@@ -54,6 +60,7 @@ final class ArmyListChatRuntime: ObservableObject {
                 text: "Ask me to build, critique, rename, or fix this list. Every edit is re-checked by the validator."
             )
         }
+        publishContextUsage()
     }
 
     func refreshModelStatus() {
@@ -74,6 +81,7 @@ final class ArmyListChatRuntime: ObservableObject {
             refreshModelStatus()
             if isModelAvailable {
                 transcript.removeAll()
+                resetLanguageSession()
                 append(
                     .system,
                     text: "Ask me to build, critique, rename, or fix this list. Every edit is re-checked by the validator."
@@ -84,7 +92,7 @@ final class ArmyListChatRuntime: ObservableObject {
 
     func clearTranscript() {
         transcript.removeAll()
-        languageSessionBox = nil
+        resetLanguageSession()
         if isModelAvailable {
             append(
                 .system,
@@ -161,9 +169,37 @@ final class ArmyListChatRuntime: ObservableObject {
         return error.localizedDescription
     }
 
-    private func compactLanguageSession(reason: String) {
+    private func resetLanguageSession() {
         languageSessionBox = nil
+        budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
+        didCompactThisSession = false
+        carryOverNotes = ""
+        publishContextUsage()
+    }
+
+    private func compactLanguageSession(reason: String) {
+        let summary = workspace.compactSummary(maxIssues: 4)
+        carryOverNotes = String(summary.prefix(1_200))
+        didCompactThisSession = true
+        languageSessionBox = nil
+        budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
         append(.system, text: reason)
+        publishContextUsage()
+    }
+
+    func noteToolExchange(name: String, result: String) -> String {
+        let capped = AgentContextBudget.truncateToChars(
+            result,
+            maxChars: budget.modelToolResultCharBudget(default: 1_600)
+        )
+        budget.addText(name)
+        budget.addText(capped)
+        publishContextUsage()
+        return capped
+    }
+
+    private func publishContextUsage() {
+        contextUsage = AgentContextUsage(budget: budget, didCompact: didCompactThisSession)
     }
 
     private func append(_ kind: ArmyListChatEntry.Kind, text: String) {
@@ -196,16 +232,24 @@ final class ArmyListChatRuntime: ObservableObject {
             append(.system, text: armyListGateDetail)
             return
         }
-        if isRetryAfterCompact {
-            // Carry a tiny roster snapshot into the fresh session instructions
-            // so the model knows what survived the compact.
+        if !isRetryAfterCompact, budget.needsCompact {
+            compactLanguageSession(reason: "Trimmed model context to leave room for this turn.")
+        }
+        if isRetryAfterCompact, carryOverNotes.isEmpty {
             let summary = workspace.compactSummary(maxIssues: 4)
             carryOverNotes = String(summary.prefix(1_200))
         }
         let session = ensureLanguageSession()
+        budget.addText(prompt)
+        publishContextUsage()
         let response = try await session.respond(to: prompt)
         let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        budget.addText(text)
+        publishContextUsage()
         append(.assistant, text: text.isEmpty ? "(Empty model response.)" : text)
+        if budget.needsCompact {
+            compactLanguageSession(reason: "Trimmed model context after that reply.")
+        }
     }
 
     @available(iOS 26.0, *)
@@ -220,6 +264,11 @@ final class ArmyListChatRuntime: ObservableObject {
         }
         let session = LanguageModelSession(tools: makeFoundationTools(), instructions: instructions)
         languageSessionBox = session
+        budget.resetBaseline(
+            instructions: instructions,
+            toolsReserveTokens: Self.toolsReserveTokens
+        )
+        publishContextUsage()
         return session
     }
 
@@ -231,7 +280,8 @@ final class ArmyListChatRuntime: ObservableObject {
         Construction facts (points, Detachment Points, join edges, legality) come ONLY from tools. Never invent datasheet ids or points.
         After mutating tools, read the returned Status line. If ILLEGAL, keep fixing with tools or explain what is still wrong.
         For thematic questions (army name, color scheme, lore vibe, matchup opinions), answer helpfully and label opinions as opinions.
-        Prefer short replies. For from-scratch 1000/2000 point builds, call seedLegalList once (battleSizeID + optional name). Do not loop addUnit for a full army — that overflows the on-device context window.
+        Prefer short replies. Format with Markdown (bold, bullets, short headings) when it helps scanability.
+        For from-scratch 1000/2000 point builds, call seedLegalList once (battleSizeID + optional name). Do not loop addUnit for a full army — that overflows the on-device context window.
         Use searchCatalog before addUnit only for small targeted edits.
         Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
         """
@@ -296,7 +346,8 @@ private enum ArmyListFMToolBridge {
             runtime.transcript.append(
                 ArmyListChatEntry(kind: .tool, text: name)
             )
-            return work(runtime.workspace)
+            let raw = work(runtime.workspace)
+            return runtime.noteToolExchange(name: name, result: raw)
         }.value
     }
 }

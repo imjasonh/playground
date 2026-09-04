@@ -111,6 +111,24 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(AgentRuntime.isExceededContextWindow(err))
     }
 
+    func testMarkdownRendersBoldAndLists() {
+        let attributed = ArmyListChatMarkdown.attributed("**Bold** and\n- one\n- two")
+        let plain = String(attributed.characters)
+        XCTAssertTrue(plain.contains("Bold"))
+        XCTAssertTrue(plain.contains("one"))
+        let boldRuns = attributed.runs.filter { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true }
+        XCTAssertFalse(boldRuns.isEmpty, "Expected bold markdown run")
+    }
+
+    func testNoteToolExchangeTracksContextUsage() {
+        let runtime = ArmyListChatRuntime(workspace: workspace)
+        let before = runtime.contextUsage.percentUsed
+        let long = String(repeating: "unit line\n", count: 400)
+        let capped = runtime.noteToolExchange(name: "searchCatalog", result: long)
+        XCTAssertLessThan(capped.count, long.count)
+        XCTAssertGreaterThan(runtime.contextUsage.percentUsed, before)
+    }
+
     func testAttachAndEnhancementTools() {
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,
