@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 
 import {
   DEFAULT_LATITUDE,
+  castLayers,
   gnomonShadow,
   isNight,
   julianDate,
-  longShadowStyle,
   longitudeFromTimezoneOffset,
   parseLocation,
   parsePinnedTime,
@@ -112,8 +112,22 @@ test("night leaves no shadow", () => {
   assert.equal(shadow.visible, false);
   assert.equal(shadow.strength, 0);
   assert.equal(shadow.length, 0);
-  assert.equal(longShadowStyle(shadow, { r: 0, g: 0, b: 0, a: 0.4 }), "none");
+  assert.deepEqual(castLayers(shadow, { r: 0, g: 0, b: 0, a: 0.4 }), []);
   assert.equal(sceneFromSun(sun).night, true);
+});
+
+test("daytime casts are a soft umbra and a longer penumbra", () => {
+  const shadow = gnomonShadow(
+    { altitude: 40, azimuth: 180, declination: 20, hourAngle: 0 },
+    200,
+  );
+  const layers = castLayers(shadow, { r: 40, g: 38, b: 36, a: 0.42 });
+  assert.equal(layers.length, 2);
+  assert.ok(layers[0].blur > 0);
+  assert.ok(layers[1].blur > layers[0].blur);
+  assert.ok(Math.abs(layers[1].x) >= Math.abs(layers[0].x));
+  assert.ok(Math.abs(layers[1].y) >= Math.abs(layers[0].y));
+  assert.ok(layers[0].opacity > layers[1].opacity);
 });
 
 test("equinox sunrise at the equator is nearly due east", () => {

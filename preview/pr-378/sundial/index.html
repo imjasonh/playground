@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="styles.css" />
@@ -30,8 +30,20 @@
       </noscript>
       <p id="date" class="date"></p>
       <p id="clock" class="clock" role="timer" aria-live="off">
-        <span id="time"></span>
-        <span id="period" class="period" hidden></span>
+        <span class="casts" aria-hidden="true">
+          <span class="cast" data-cast>
+            <span data-time></span>
+            <span class="period" data-period hidden></span>
+          </span>
+          <span class="cast" data-cast>
+            <span data-time></span>
+            <span class="period" data-period hidden></span>
+          </span>
+        </span>
+        <span class="face">
+          <span id="time" data-time></span>
+          <span id="period" class="period" data-period hidden></span>
+        </span>
       </p>
       <p id="hint" class="hint">Drag or use the arrow keys to move through the day</p>
       <button type="button" id="now" class="now" hidden>Now</button>

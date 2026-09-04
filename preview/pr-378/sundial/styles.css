@@ -75,32 +75,60 @@ body {
 }
 
 .clock {
+  display: grid;
+  place-items: center;
+  margin: 0;
+  font-family: "Archivo Black", "Arial Black", Impact, sans-serif;
+  font-weight: 400;
+  font-size: clamp(3.25rem, min(20vw, 30vh), 12rem);
+  font-feature-settings: "lnum", "tnum";
+  font-variant-numeric: lining-nums tabular-nums;
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+
+.casts {
+  display: contents;
+}
+
+.face,
+.cast {
   display: flex;
   align-items: flex-start;
   justify-content: center;
   gap: 0.14em;
-  margin: 0;
-  font-family: "Fraunces", "Iowan Old Style", Palatino, "Palatino Linotype",
-    Georgia, serif;
-  font-optical-sizing: auto;
-  font-weight: 400;
-  font-size: clamp(3rem, min(18vw, 28vh), 11rem);
-  font-feature-settings: "lnum", "tnum";
-  font-variant-numeric: lining-nums tabular-nums;
-  line-height: 1.05;
-  letter-spacing: -0.03em;
-  text-wrap: balance;
+  grid-area: 1 / 1;
+}
+
+.face {
+  position: relative;
+  z-index: 1;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+.cast {
+  z-index: 0;
+  pointer-events: none;
+  transform-origin: center center;
+  color: rgb(40, 38, 36);
+}
+
+.clock.is-night .face {
+  color: inherit;
+  -webkit-text-fill-color: currentColor;
+}
+
+.clock.is-night .cast {
+  visibility: hidden;
 }
 
 .period {
-  margin-top: 0.42em;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
-  font-size: 0.2em;
-  font-weight: 600;
-  letter-spacing: 0.08em;
+  margin-top: 0.38em;
+  font-size: 0.22em;
+  letter-spacing: 0.04em;
   line-height: 1.2;
-  opacity: 0.7;
 }
 
 .hint,
