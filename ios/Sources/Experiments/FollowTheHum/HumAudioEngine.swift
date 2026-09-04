@@ -103,7 +103,7 @@ final class HumAudioEngine {
         let gainR = Float(sin(angle))
 
         let sampleRate = format.sampleRate
-        var localPhase = phase
+        let localPhase = phase
 
         for i in 0..<Int(frames) {
             let t = Double(i) / sampleRate

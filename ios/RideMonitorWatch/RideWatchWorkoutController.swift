@@ -287,10 +287,10 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
         // Publish one last metrics snapshot before finishing / discarding.
         refreshActivity(from: endingBuilder, forcePush: true)
 
-        endingBuilder.endCollection(withEnd: end) { [weak self] _, _ in
+        endingBuilder.endCollection(withEnd: end) { _, _ in
             if saveToHealth {
                 endingBuilder.finishWorkout { _, error in
-                    Task { @MainActor in
+                    Task { @MainActor [weak self] in
                         if let error {
                             self?.lastErrorMessage = error.localizedDescription
                         }
@@ -298,7 +298,7 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
                 }
             } else {
                 endingBuilder.discardWorkout()
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     self?.activity = .empty
                 }
             }
