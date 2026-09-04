@@ -19,7 +19,10 @@ if [[ "$RESULT" == "success" ]]; then
   if ! python3 -c 'import yaml' >/dev/null 2>&1; then
     python3 -m pip install --user pyyaml -q
   fi
-  if ! python3 ios/scripts/refresh-army-list-catalog.py; then
+  if ! python3 ios/scripts/refresh-army-list-catalog_test.py; then
+    RESULT=failure
+  fi
+  if [[ "$RESULT" == "success" ]] && ! python3 ios/scripts/refresh-army-list-catalog.py; then
     RESULT=failure
   fi
 fi

@@ -185,10 +185,18 @@ def extract_keywords(entry: dict | None, faction_name: str) -> list[str]:
             if label in KEYWORD_KEEP or label.startswith("Faction:"):
                 if label not in keywords:
                     keywords.append(label)
+    return normalize_keywords(keywords, faction_name)
+
+
+def normalize_keywords(keywords: list[str], faction_name: str) -> list[str]:
+    """Stable keyword order: faction first, then the rest alphabetically.
+
+    BattleScribe ``categoryLinks`` order is not stable across scrapes; without
+    sorting, refreshes churn keyword arrays and bump the catalog version.
+    """
     faction_kw = f"Faction: {faction_name}"
-    if faction_kw not in keywords:
-        keywords.insert(0, faction_kw)
-    return keywords
+    rest = sorted({k for k in keywords if k and k != faction_kw})
+    return [faction_kw, *rest]
 
 
 def max_copies_override(entry: dict | None) -> int | None:
@@ -283,6 +291,7 @@ def build_faction(mfm: dict, bs_index: dict[str, dict]) -> tuple[dict, list[dict
         ):
             if "Character" not in keywords:
                 keywords.append("Character")
+        keywords = normalize_keywords(keywords, faction_name)
         role = None
         if "Leader" in keywords:
             role = "leader"
@@ -293,6 +302,7 @@ def build_faction(mfm: dict, bs_index: dict[str, dict]) -> tuple[dict, list[dict
             target_id = local_to_id.get(slugify(target)) or local_to_id.get(target.lower())
             if target_id:
                 leader_to.append(target_id)
+        leader_to = sorted(set(leader_to))
         datasheets.append(
             {
                 "id": ds_id,
@@ -338,7 +348,7 @@ def build_faction(mfm: dict, bs_index: dict[str, dict]) -> tuple[dict, list[dict
                 "detachmentPoints": int(detachment["dp"]),
                 "forceDisposition": FORCE_MAP.get(str(raw_force).upper(), str(raw_force).title()),
                 "uniqueTag": detachment.get("unique"),
-                "enhancements": enhancements,
+                "enhancements": sorted(enhancements, key=lambda e: e["id"]),
             }
         )
 
@@ -565,9 +575,12 @@ def stabilize_ids_against_previous(
 
     # Remap leaderTo through sheet id changes.
     for sheet in datasheets:
-        sheet["leaderTo"] = [
-            sheet_id_map.get(target, target) for target in (sheet.get("leaderTo") or [])
-        ]
+        sheet["leaderTo"] = sorted(
+            {
+                sheet_id_map.get(target, target)
+                for target in (sheet.get("leaderTo") or [])
+            }
+        )
 
     det_id_map: dict[str, str] = {}
     for det in detachments:
@@ -596,7 +609,7 @@ def stabilize_ids_against_previous(
             else:
                 enh["id"] = provisional_enh
             new_enhancements.append(enh)
-        det["enhancements"] = new_enhancements
+        det["enhancements"] = sorted(new_enhancements, key=lambda e: e["id"])
 
     # Migrations: previous ids that no longer exist but whose name still does.
     new_sheet_ids = {s["id"] for s in datasheets}
