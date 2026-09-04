@@ -88,29 +88,16 @@ function canUseGeolocation() {
 }
 
 function syncLocateButton() {
-  if (!canUseGeolocation()) {
+  if (!canUseGeolocation() || geo) {
     locateBtn.hidden = true;
     return;
   }
   locateBtn.hidden = false;
   locateBtn.disabled = false;
-  if (geo) {
-    locateBtn.textContent = "Clear location";
-  } else {
-    locateBtn.textContent = "Use location";
-  }
 }
 
 function onLocateClick() {
-  if (geo) {
-    geo = null;
-    writeGeo(null);
-    syncLocateButton();
-    render();
-    return;
-  }
-
-  if (!canUseGeolocation()) {
+  if (!canUseGeolocation() || geo) {
     return;
   }
 
