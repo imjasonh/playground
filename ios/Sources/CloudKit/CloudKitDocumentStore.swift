@@ -25,25 +25,36 @@ actor CloudKitDocumentStore {
         self.assetThresholdBytes = max(0, assetThresholdBytes)
     }
 
-    func accountAvailable() async -> Result<Void, String> {
+    enum AccountError: Error, Equatable {
+        case message(String)
+
+        var localizedDescription: String {
+            switch self {
+            case .message(let text):
+                return text
+            }
+        }
+    }
+
+    func accountAvailable() async -> Result<Void, AccountError> {
         do {
             let status = try await PlaygroundCloudKit.container.accountStatus()
             switch status {
             case .available:
                 return .success(())
             case .noAccount:
-                return .failure("Sign in to iCloud in Settings")
+                return .failure(.message("Sign in to iCloud in Settings"))
             case .restricted:
-                return .failure("iCloud is restricted on this device")
+                return .failure(.message("iCloud is restricted on this device"))
             case .couldNotDetermine:
-                return .failure("Could not reach iCloud")
+                return .failure(.message("Could not reach iCloud"))
             case .temporarilyUnavailable:
-                return .failure("iCloud temporarily unavailable")
+                return .failure(.message("iCloud temporarily unavailable"))
             @unknown default:
-                return .failure("iCloud unavailable")
+                return .failure(.message("iCloud unavailable"))
             }
         } catch {
-            return .failure(error.localizedDescription)
+            return .failure(.message(error.localizedDescription))
         }
     }
 

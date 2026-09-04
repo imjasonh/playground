@@ -14,8 +14,13 @@ enum CloudDocumentSync {
         encodeErrorHint: String
     ) async -> CloudSyncResult {
         switch await cloud.accountAvailable() {
-        case .failure(let reason):
-            return CloudSyncResult(pulled: 0, pushed: 0, removedLocal: 0, unavailableReason: reason)
+        case .failure(let error):
+            return CloudSyncResult(
+                pulled: 0,
+                pushed: 0,
+                removedLocal: 0,
+                unavailableReason: error.localizedDescription
+            )
         case .success:
             break
         }
