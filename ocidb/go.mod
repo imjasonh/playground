@@ -3,7 +3,7 @@ module github.com/imjasonh/playground/ocidb
 go 1.25.0
 
 require (
-	github.com/google/go-containerregistry v0.22.0
+	github.com/google/go-containerregistry v0.22.1
 	github.com/klauspost/compress v1.20.0
 	github.com/values-conflict/go-sqlite-fdw v0.0.0
 	github.com/values-conflict/go-sqlite-fdw/modernc v0.0.0-20260630071241-65cea68abcec
@@ -12,7 +12,7 @@ require (
 
 require (
 	github.com/containerd/stargz-snapshotter/estargz v0.18.2 // indirect
-	github.com/docker/cli v29.7.2+incompatible // indirect
+	github.com/docker/cli v29.8.0+incompatible // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.9 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
