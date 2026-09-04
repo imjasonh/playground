@@ -6,16 +6,25 @@ struct ArmyListHomeView: View {
     @State private var lists: [ArmyListDocument] = []
     @State private var catalog: ArmyCatalog?
     @State private var loadError: String?
-    @State private var showNewList = false
     @State private var saveError: String?
-    /// Opened after Create so the blank sheet does not dump the user back
-    /// onto an empty library with no feedback.
+    /// Item-based sheet so SwiftUI always receives concrete content (a bare
+    /// `if let` inside `sheet(isPresented:)` can present a blank modal).
+    @State private var newListSheet: NewListSheetKind?
+    /// Catalog snapshot owned by the open sheet (avoids racing `@State`).
+    @State private var sheetCatalog: ArmyCatalog?
     @State private var editorList: ArmyListDocument?
     @State private var showEditor = false
+    @State private var openEditorAfterSheet = false
     /// `nil` means every faction.
     @State private var factionFilter: String?
     /// `nil` means every battle size / points level.
     @State private var battleSizeFilter: String?
+
+    private enum NewListSheetKind: String, Identifiable {
+        case create
+        case unavailable
+        var id: String { rawValue }
+    }
 
     private var filteredLists: [ArmyListDocument] {
         // `loadAll` already sorts by most recently updated.
@@ -53,7 +62,7 @@ struct ArmyListHomeView: View {
                     title: "No army lists",
                     message: "Create a list to get started."
                 ) {
-                    Button("New list") { showNewList = true }
+                    Button("New list") { presentNewList() }
                         .buttonStyle(.borderedProminent)
                         .disabled(!canCreateList)
                         .accessibilityIdentifier("armyListNewButton")
@@ -67,7 +76,7 @@ struct ArmyListHomeView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    showNewList = true
+                    presentNewList()
                 } label: {
                     Image(systemName: "plus")
                 }
@@ -76,17 +85,24 @@ struct ArmyListHomeView: View {
                 .disabled(!canCreateList)
             }
         }
-        .sheet(isPresented: $showNewList) {
-            // Always put real content in the sheet. An empty `if let` body is a
-            // blank modal with no error — that is what TestFlight looked like
-            // when the catalog failed to load.
+        .sheet(item: $newListSheet, onDismiss: handleNewListSheetDismissed) { kind in
             NavigationStack {
-                if let catalog {
-                    ArmyListNewSheet(catalog: catalog) { created in
-                        createList(created)
+                switch kind {
+                case .create:
+                    if let sheetCatalog {
+                        ArmyListNewSheet(catalog: sheetCatalog) { created in
+                            createList(created)
+                        }
+                    } else {
+                        newListUnavailablePane(
+                            message: "The create sheet opened without a catalog snapshot."
+                        )
                     }
-                } else {
-                    armyListNewSheetUnavailable
+                case .unavailable:
+                    newListUnavailablePane(
+                        message: loadError
+                            ?? "The construction catalog is not loaded. Install a build that includes catalog.json in the app bundle."
+                    )
                 }
             }
             .accessibilityIdentifier("armyListNewSheet")
@@ -114,7 +130,7 @@ struct ArmyListHomeView: View {
         } else {
             unavailablePane(
                 systemImage: "exclamationmark.triangle",
-                title: "Couldn’t open list",
+                title: "Could not open list",
                 message: loadError
                     ?? "The construction catalog is not loaded, so the editor has nothing to validate against."
             )
@@ -122,19 +138,18 @@ struct ArmyListHomeView: View {
         }
     }
 
-    private var armyListNewSheetUnavailable: some View {
+    private func newListUnavailablePane(message: String) -> some View {
         unavailablePane(
             systemImage: "exclamationmark.triangle",
-            title: "Can’t create a list",
-            message: loadError
-                ?? "The construction catalog is not loaded. Install a build that includes catalog.json in the app bundle."
+            title: "Cannot create a list",
+            message: message
         )
         .accessibilityIdentifier("armyListNewSheetUnavailable")
         .navigationTitle("New list")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { showNewList = false }
+                Button("Cancel") { newListSheet = nil }
                     .accessibilityIdentifier("armyListNewSheetCancel")
             }
         }
@@ -194,7 +209,7 @@ struct ArmyListHomeView: View {
                             } else {
                                 unavailablePane(
                                     systemImage: "exclamationmark.triangle",
-                                    title: "Couldn’t open list",
+                                    title: "Could not open list",
                                     message: loadError
                                         ?? "The construction catalog is not loaded."
                                 )
@@ -246,16 +261,35 @@ struct ArmyListHomeView: View {
         }
     }
 
+    private func presentNewList() {
+        if let catalog {
+            sheetCatalog = catalog
+            newListSheet = .create
+        } else {
+            sheetCatalog = nil
+            newListSheet = .unavailable
+        }
+    }
+
     private func createList(_ created: ArmyListDocument) {
         do {
             try store.save(created)
-            showNewList = false
             reload()
             editorList = created
-            showEditor = true
+            // Push the editor only after the sheet finishes dismissing; doing
+            // both at once is a common source of a blank pushed destination.
+            openEditorAfterSheet = true
+            newListSheet = nil
         } catch {
             saveError = error.localizedDescription
         }
+    }
+
+    private func handleNewListSheetDismissed() {
+        sheetCatalog = nil
+        guard openEditorAfterSheet else { return }
+        openEditorAfterSheet = false
+        showEditor = true
     }
 
     private func reload() {
