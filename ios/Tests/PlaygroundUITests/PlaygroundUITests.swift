@@ -386,6 +386,25 @@ final class PlaygroundUITests: XCTestCase {
             starter.waitForExistence(timeout: 3),
             "Expected Build starter list on the create sheet"
         )
+        XCTAssertFalse(
+            starter.isEnabled,
+            "Create/starter stay disabled until a detachment is chosen"
+        )
+
+        let create = app.buttons["armyListCreateButton"]
+        XCTAssertTrue(create.waitForExistence(timeout: 3))
+        XCTAssertFalse(create.isEnabled, "Create requires at least one detachment")
+
+        // Pick the first faction detachment under the Incursion DP budget.
+        let detachmentToggle = app.switches.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "armyListNewDetachment-")
+        ).firstMatch
+        XCTAssertTrue(
+            detachmentToggle.waitForExistence(timeout: 5),
+            "Expected detachment toggles on the create sheet"
+        )
+        detachmentToggle.tap()
+        XCTAssertTrue(create.isEnabled, "Create enables after selecting a detachment")
         XCTAssertTrue(starter.isEnabled)
 
         nameField.tap()
@@ -397,9 +416,6 @@ final class PlaygroundUITests: XCTestCase {
         let listName = "UI Test \(Int(Date().timeIntervalSince1970))"
         nameField.typeText(listName)
 
-        let create = app.buttons["armyListCreateButton"]
-        XCTAssertTrue(create.waitForExistence(timeout: 3))
-        XCTAssertTrue(create.isEnabled)
         create.tap()
 
         let legalBadge = app.descendants(matching: .any)["armyListLegalBadge"]

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Authoring surface: detachments, units, live validation, share.
+/// Authoring surface: units first; name / battle size / detachments stay editable.
 struct ArmyListEditorView: View {
     @State private var list: ArmyListDocument
     let catalog: ArmyCatalog
@@ -39,40 +39,6 @@ struct ArmyListEditorView: View {
             Section {
                 validationBanner
                 pointsRow
-            }
-
-            Section("Name") {
-                TextField("List name", text: $list.name)
-                    .textInputAutocapitalization(.words)
-                    .accessibilityIdentifier("armyListEditorNameField")
-            }
-
-            Section("Battle size") {
-                Picker("Battle size", selection: $list.battleSizeID) {
-                    ForEach(catalog.battleSizes) { size in
-                        Text("\(size.name) (\(size.pointsLimit))").tag(size.id)
-                    }
-                }
-                .accessibilityIdentifier("armyListEditorBattleSizePicker")
-            }
-
-            Section("Detachments") {
-                ForEach(catalog.detachments.filter { $0.factionID == list.factionID }) { detachment in
-                    Toggle(isOn: bindingForDetachment(detachment.id)) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(detachment.name)
-                            Text("\(detachment.detachmentPoints) DP · \(detachment.forceDisposition)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            if let tag = detachment.uniqueTag {
-                                Text("Unique: \(tag)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.orange)
-                            }
-                        }
-                    }
-                    .accessibilityIdentifier("armyListDetachment-\(detachment.id)")
-                }
             }
 
             Section("Units") {
@@ -122,6 +88,38 @@ struct ArmyListEditorView: View {
                     }
                 }
                 .accessibilityIdentifier("armyListWarlordPicker")
+            }
+
+            Section("List") {
+                TextField("List name", text: $list.name)
+                    .textInputAutocapitalization(.words)
+                    .accessibilityIdentifier("armyListEditorNameField")
+
+                Picker("Battle size", selection: $list.battleSizeID) {
+                    ForEach(catalog.battleSizes) { size in
+                        Text("\(size.name) (\(size.pointsLimit))").tag(size.id)
+                    }
+                }
+                .accessibilityIdentifier("armyListEditorBattleSizePicker")
+            }
+
+            Section("Detachments") {
+                ForEach(catalog.detachments.filter { $0.factionID == list.factionID }) { detachment in
+                    Toggle(isOn: bindingForDetachment(detachment.id)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(detachment.name)
+                            Text("\(detachment.detachmentPoints) DP · \(detachment.forceDisposition)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let tag = detachment.uniqueTag {
+                                Text("Unique: \(tag)")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("armyListDetachment-\(detachment.id)")
+                }
             }
 
             Section("Notes") {

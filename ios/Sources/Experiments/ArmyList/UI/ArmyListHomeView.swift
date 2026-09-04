@@ -371,7 +371,7 @@ private struct ArmyListRowView: View {
     }
 }
 
-/// Create a blank list or a seeded starter: faction, battle size, name.
+/// Create a blank list or a seeded starter: faction, battle size, detachments, name.
 struct ArmyListNewSheet: View {
     let catalog: ArmyCatalog
     var onCreate: (ArmyListDocument) -> Void
@@ -380,6 +380,7 @@ struct ArmyListNewSheet: View {
     @State private var name = "New list"
     @State private var factionID: String
     @State private var battleSizeID = "incursion"
+    @State private var selectedDetachmentIDs: Set<String> = []
     @State private var seedError: String?
 
     private var factionsSorted: [FactionDefinition] {
@@ -388,8 +389,29 @@ struct ArmyListNewSheet: View {
         }
     }
 
+    private var factionDetachments: [DetachmentDefinition] {
+        catalog.detachments
+            .filter { $0.factionID == factionID }
+            .sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
+    }
+
+    private var detachmentPointsBudget: Int {
+        catalog.battleSize(id: battleSizeID)?.detachmentPointsBudget ?? 0
+    }
+
+    private var detachmentPointsSpent: Int {
+        factionDetachments
+            .filter { selectedDetachmentIDs.contains($0.id) }
+            .reduce(0) { $0 + $1.detachmentPoints }
+    }
+
     private var canSubmit: Bool {
-        !factionID.isEmpty && catalog.battleSize(id: battleSizeID) != nil
+        !factionID.isEmpty
+            && catalog.battleSize(id: battleSizeID) != nil
+            && !selectedDetachmentIDs.isEmpty
+            && detachmentPointsSpent <= detachmentPointsBudget
     }
 
     private var pointsLabel: String {
@@ -429,6 +451,9 @@ struct ArmyListNewSheet: View {
                 }
                 .disabled(factionsSorted.isEmpty)
                 .accessibilityIdentifier("armyListFactionPicker")
+                .onChange(of: factionID) { _ in
+                    selectedDetachmentIDs.removeAll()
+                }
             }
             Section("Battle size") {
                 Picker("Battle size", selection: $battleSizeID) {
@@ -441,6 +466,35 @@ struct ArmyListNewSheet: View {
             }
 
             Section {
+                if factionDetachments.isEmpty {
+                    Text("No detachments for this faction.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(factionDetachments) { detachment in
+                        Toggle(isOn: bindingForDetachment(detachment.id)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(detachment.name)
+                                Text("\(detachment.detachmentPoints) DP · \(detachment.forceDisposition)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if let tag = detachment.uniqueTag {
+                                    Text("Unique: \(tag)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+                        }
+                        .accessibilityIdentifier("armyListNewDetachment-\(detachment.id)")
+                    }
+                }
+            } header: {
+                Text("Detachments")
+            } footer: {
+                Text("\(detachmentPointsSpent) / \(detachmentPointsBudget) DP")
+                    .accessibilityIdentifier("armyListNewDetachmentPoints")
+            }
+
+            Section {
                 Button("Build starter list") {
                     createStarterList()
                 }
@@ -449,8 +503,8 @@ struct ArmyListNewSheet: View {
 
                 Text(
                     pointsLabel.isEmpty
-                        ? "Fills units and a detachment for this faction. You can edit after."
-                        : "Fills a legal \(pointsLabel)-point list for this faction. You can edit after."
+                        ? "Fills units for your chosen detachments. You can edit after."
+                        : "Fills a legal \(pointsLabel)-point list using your detachments. You can edit after."
                 )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -481,6 +535,19 @@ struct ArmyListNewSheet: View {
         }
     }
 
+    private func bindingForDetachment(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { selectedDetachmentIDs.contains(id) },
+            set: { isOn in
+                if isOn {
+                    selectedDetachmentIDs.insert(id)
+                } else {
+                    selectedDetachmentIDs.remove(id)
+                }
+            }
+        )
+    }
+
     private func trimmedName() -> String? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty || trimmed == "New list" {
@@ -489,13 +556,20 @@ struct ArmyListNewSheet: View {
         return trimmed
     }
 
+    private func orderedDetachmentIDs() -> [String] {
+        factionDetachments
+            .map(\.id)
+            .filter { selectedDetachmentIDs.contains($0) }
+    }
+
     private func createBlankList() {
         seedError = nil
         let list = ArmyListDocument(
             name: trimmedName() ?? "New list",
             catalogVersion: catalog.version,
             factionID: factionID,
-            battleSizeID: battleSizeID
+            battleSizeID: battleSizeID,
+            detachmentIDs: orderedDetachmentIDs()
         )
         onCreate(list)
     }
@@ -506,11 +580,13 @@ struct ArmyListNewSheet: View {
             catalog: catalog,
             factionID: factionID,
             battleSizeID: battleSizeID,
-            name: trimmedName()
+            name: trimmedName(),
+            detachmentIDs: orderedDetachmentIDs()
         ) else {
-            seedError = "Couldn’t build a starter list for this faction and battle size."
+            seedError = "Couldn’t build a starter list for this faction, battle size, and detachments."
             return
         }
         onCreate(seeded.list)
     }
 }
+
