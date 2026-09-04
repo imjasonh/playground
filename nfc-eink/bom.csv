@@ -1,0 +1,48 @@
+Reference,Qty,Value,MPN,Manufacturer,Package,DNP,Qty1_USD,Ext_USD,Buy,Datasheet,Notes
+U1,1,NT3H2211W0FTTJ,NT3H2211W0FTTJ,NXP,TSSOP-8,no,1.18,1.18,https://www.digikey.com/en/products/result?keywords=NT3H2211W0FTTJ,https://www.nxp.com/docs/en/data-sheet/NT3H2111_2211.pdf,ISO 14443-A NTAG I2C plus 2K. Also https://www.mouser.com/c/?q=NT3H2211W0FTTJ
+U2,1,TPS61023DRLR,TPS61023DRLR,Texas Instruments,SOT-563,no,1.31,1.31,https://www.digikey.com/en/products/result?keywords=TPS61023DRLT,https://www.ti.com/lit/ds/symlink/tps61023.pdf,Cut-tape DRLT is easier in qty 1. Reel is DRLR.
+U3,1,TPS22917DBVR,TPS22917DBVR,Texas Instruments,SOT-23-6,no,0.55,0.55,https://www.digikey.com/en/products/result?keywords=TPS22917DBVR,https://www.ti.com/lit/ds/symlink/tps22917.pdf,EPD load switch
+U4,1,TCM809SENB713,TCM809SENB713,Microchip,SOT-23,no,0.48,0.48,https://www.digikey.com/en/products/result?keywords=TCM809SENB713,https://www.microchip.com/en-us/product/tcm809,S suffix is 2.93 V. Do not buy the J suffix (4.00 V).
+U5,1,STM32G071CBT6,STM32G071CBT6,STMicroelectronics,LQFP-48 7x7,no,2.79,2.79,https://www.digikey.com/en/products/result?keywords=STM32G071CBT6,https://www.st.com/resource/en/datasheet/stm32g071cb.pdf,128 KB flash 36 KB RAM. Also 497-18342-ND on DigiKey.
+Q1,1,2N7002,2N7002,onsemi,SOT-23,no,0.12,0.12,https://www.digikey.com/en/products/result?keywords=2N7002,https://www.onsemi.com/pdf/datasheet/2n7002-d.pdf,SSD1683 VGL-pump FET. Any jellybean 2N7002.
+D1,1,PMEG2010AEB,PMEG2010AEB115,Nexperia,SOD-523,no,0.28,0.28,https://www.digikey.com/en/products/result?keywords=PMEG2010AEB,https://www.nexperia.com/products/diodes/schottky-rectifiers-and-schottky-diodes/PMEG2010AEB.html,20 V 1 A Schottky
+L1,1,1uH 3A,XEL4030-102MEB,Coilcraft,4x4 mm,no,1.15,1.15,https://www.digikey.com/en/products/result?keywords=XEL4030-102ME,https://www.coilcraft.com/en-us/products/power/shielded-inductors/molded-smd/xel/xel4030/,TPS61023 1 MHz inductor
+J1,1,FH12-24S-0.5SH,FH12-24S-0.5SH(55),Hirose,24p 0.5 mm FPC,no,1.85,1.85,https://www.digikey.com/en/products/result?keywords=FH12-24S-0.5SH,https://www.hirose.com/product/p/CL0586-0757-0-55,GDEY042T81 FPC
+J2,1,SWD 1.27mm,N/A,generic,1x05 P1.27,no,0.35,0.35,https://www.digikey.com/en/products/result?keywords=pin+header+1.27mm+1x5,,3V3 SWDIO SWCLK NRST GND
+J3,1,UART 2.54mm,N/A,generic,1x03 P2.54,no,0.15,0.15,https://www.digikey.com/en/products/result?keywords=pin+header+2.54mm+1x3,,GND TX RX
+JP1,1,DEBUG_3V3,N/A,generic,1x02 P2.54,no,0.10,0.10,https://www.digikey.com/en/products/result?keywords=pin+header+2.54mm+1x2,,Leave open for NFC power
+DISP1,1,GDEY042T81,GDEY042T81,Good Display,4.2 in 400x300,no,18.50,18.50,https://www.good-display.com/product/386.html,https://www.good-display.com/product/386.html,SSD1683. Also search LaskaKit / Waveshare 4.2in T81.
+C1,1,220nF X7R 16V,GRM155R71C224KA55D,Murata,0402,no,0.10,0.10,https://www.digikey.com/en/products/result?keywords=GRM155R71C224KA55D,,NTAG VOUT. Do not exceed 220 nF.
+C2,1,470uF 6.3V OS-CON,6SEPC470M,Panasonic,radial 8 mm,no,1.40,1.40,https://www.digikey.com/en/products/result?keywords=6SEPC470M,,Harvest tank
+C3,1,22mF 5.5V supercap,KR-5R5V223-R,Eaton,radial coin,yes,2.80,0.00,https://www.digikey.com/en/products/result?keywords=KR-5R5V223-R,,DNP. Optional hold-up.
+C4,1,10uF 6.3V,GRM188R60J106ME47D,Murata,0603,no,0.12,0.12,https://www.digikey.com/en/products/result?keywords=GRM188R60J106ME47D,,Boost VIN
+C5,1,22uF 6.3V,GRM21BR60J226ME39L,Murata,0805,no,0.22,0.22,https://www.digikey.com/en/products/result?keywords=GRM21BR60J226ME39L,,Boost VOUT
+C6,1,22uF 6.3V,GRM21BR60J226ME39L,Murata,0805,no,0.22,0.22,https://www.digikey.com/en/products/result?keywords=GRM21BR60J226ME39L,,Boost VOUT
+C7,1,1nF 50V,GRM155R71H102KA01D,Murata,0402,no,0.05,0.05,https://www.digikey.com/en/products/result?keywords=GRM155R71H102KA01D,,TPS22917 CT
+C8,1,100nF 50V,GRM155R71H104KE14D,Murata,0402,no,0.04,0.04,https://www.digikey.com/en/products/result?keywords=GRM155R71H104KE14D,,NRST
+C9,1,100nF 50V,GRM155R71H104KE14D,Murata,0402,no,0.04,0.04,https://www.digikey.com/en/products/result?keywords=GRM155R71H104KE14D,,MCU VDD
+C10,1,1uF 10V,GRM155R61A105KE15D,Murata,0402,no,0.06,0.06,https://www.digikey.com/en/products/result?keywords=GRM155R61A105KE15D,,MCU VDD bulk
+C11,1,100nF 50V,GRM155R71H104KE14D,Murata,0402,no,0.04,0.04,https://www.digikey.com/en/products/result?keywords=GRM155R71H104KE14D,,MCU VDD
+C12,1,1uF 6.3V,GRM155R61A105KE15D,Murata,0402,no,0.06,0.06,https://www.digikey.com/en/products/result?keywords=GRM155R61A105KE15D,,EPD VDD
+C13,1,1uF 25V,GRM188R61E105KA12D,Murata,0603,no,0.10,0.10,https://www.digikey.com/en/products/result?keywords=GRM188R61E105KA12D,,EPD VGH
+C14,1,1uF 25V,GRM188R61E105KA12D,Murata,0603,no,0.10,0.10,https://www.digikey.com/en/products/result?keywords=GRM188R61E105KA12D,,EPD VGL
+C15,1,1uF 25V,GRM188R61E105KA12D,Murata,0603,no,0.10,0.10,https://www.digikey.com/en/products/result?keywords=GRM188R61E105KA12D,,EPD VSH1
+C16,1,1uF 25V,GRM188R61E105KA12D,Murata,0603,no,0.10,0.10,https://www.digikey.com/en/products/result?keywords=GRM188R61E105KA12D,,EPD VSH2
+C17,1,1uF 25V,GRM188R61E105KA12D,Murata,0603,no,0.10,0.10,https://www.digikey.com/en/products/result?keywords=GRM188R61E105KA12D,,EPD VSL
+C18,1,1uF 25V,GRM188R61E105KA12D,Murata,0603,no,0.10,0.10,https://www.digikey.com/en/products/result?keywords=GRM188R61E105KA12D,,EPD VCOM
+C19,1,1uF 6.3V,GRM155R61A105KE15D,Murata,0402,no,0.06,0.06,https://www.digikey.com/en/products/result?keywords=GRM155R61A105KE15D,,EPD VCI
+CT1,1,15pF NP0,GRM1555C1H150JA01D,Murata,0402,yes,0.08,0.00,https://www.digikey.com/en/products/result?keywords=GRM1555C1H150JA01D,,Antenna tune. DNP until a sweep.
+CT2,1,27pF NP0,GRM1555C1H270JA01D,Murata,0402,yes,0.08,0.00,https://www.digikey.com/en/products/result?keywords=GRM1555C1H270JA01D,,Antenna tune. DNP until a sweep.
+R1,1,22,RC0402FR-0722RL,Yageo,0402,no,0.02,0.02,https://www.digikey.com/en/products/result?keywords=RC0402FR-0722RL,,Inrush limit into C2
+R2,1,453k,RC0402FR-07453KL,Yageo,0402,no,0.02,0.02,https://www.digikey.com/en/products/result?keywords=RC0402FR-07453KL,,Boost FB top. 3.29 V with R3.
+R3,1,100k,RC0402FR-07100KL,Yageo,0402,no,0.02,0.02,https://www.digikey.com/en/products/result?keywords=RC0402FR-07100KL,,Boost FB bottom
+R4,1,220k,RC0402FR-07220KL,Yageo,0402,no,0.02,0.02,https://www.digikey.com/en/products/result?keywords=RC0402FR-07220KL,,VSTORE divider
+R5,1,100k,RC0402FR-07100KL,Yageo,0402,no,0.02,0.02,https://www.digikey.com/en/products/result?keywords=RC0402FR-07100KL,,VSTORE divider
+R6,1,1k,RC0402FR-071KL,Yageo,0402,no,0.02,0.02,https://www.digikey.com/en/products/result?keywords=RC0402FR-071KL,,TPS22917 QOD
+R7,1,2.2k,RC0402FR-072K2L,Yageo,0402,no,0.02,0.02,https://www.digikey.com/en/products/result?keywords=RC0402FR-072K2L,,I2C SCL pull-up
+R8,1,2.2k,RC0402FR-072K2L,Yageo,0402,no,0.02,0.02,https://www.digikey.com/en/products/result?keywords=RC0402FR-072K2L,,I2C SDA pull-up
+R9,1,10k,RC0402FR-0710KL,Yageo,0402,no,0.02,0.02,https://www.digikey.com/en/products/result?keywords=RC0402FR-0710KL,,FD pull-up
+R10,1,0.47,RL0402FR-070R47L,Yageo,0402,no,0.08,0.08,https://www.digikey.com/en/products/result?keywords=RL0402FR-070R47L,,SSD1683 RESE sense
+ANT1,1,PCB loop 2.76uH,N/A,fab,2-turn Class-1,no,0.00,0.00,,,On the 91 mm x 77 mm outline. See README.
+PCB1,1,4-layer 91x77 mm,N/A,PCB fab,91 x 77 mm,no,8.00,8.00,https://jlcpcb.com/,,Estimate for one panel-sized 4-layer board. Not a catalog part.
+TOTAL,,,,,,,40.08,,Prices are qty-1 USD snapshots on 2026-09-04. DigiKey and Mouser move. DNP lines are 0 in the total. PCB is a fab estimate.

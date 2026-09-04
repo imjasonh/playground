@@ -1,0 +1,4 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "nfc-eink")(type "KiCad")(uri "${KIPRJMOD}/nfc-eink.kicad_sym")(options "")(descr "NT3H2211 and TPS61023"))
+)

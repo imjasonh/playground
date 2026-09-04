@@ -41,6 +41,7 @@ playground/
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
+├── nfc-eink/              # batteryless NFC-harvest e-ink tag (KiCad)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
@@ -89,6 +90,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `its-not-jaws/` | no | Cursor SDK knower/guesser guessing harness; no `index.html` |
 | `life-scad/` | no | OpenSCAD + Python reverse-history tool; no `index.html` |
 | `life-qr/` | no | OpenSCAD Life+QR sculpture; no `index.html` |
+| `nfc-eink/` | no | KiCad batteryless NFC e-ink tag; no `index.html` |
 | `ios/` | no | The single "Playground" iOS app (XcodeGen + SwiftUI); no `index.html` |
 | `hello-macos/` | no | Example macOS app (XcodeGen + SwiftUI); no `index.html` |
 | `onramp/` | no | Offline Mac network triage / can’t-get-online playbooks (XcodeGen + SwiftUI + Sparkle); no `index.html` |
@@ -695,6 +697,7 @@ auto-discover them. Run their local tests when you change them.
 | `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
+| `nfc-eink/` | Batteryless NFC-harvest 4.2 in e-ink tag (KiCad schematic + BOM) | `bash nfc-eink/tools/validate.sh` (needs `kicad-cli`) |
 
 ## The iOS app
 

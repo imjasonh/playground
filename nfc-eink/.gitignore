@@ -1,0 +1,9 @@
+*-backups/
+*.kicad_prl
+fp-info-cache
+~*
+_autosave-*
+*.net
+erc-report.txt
+__pycache__/
+*.pyc

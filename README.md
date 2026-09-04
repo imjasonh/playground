@@ -97,6 +97,9 @@ them:
   plus an offline reverse-history searcher for shallow roof targets.
 - **[`life-qr/`](life-qr/)** — parametric OpenSCAD Life sculpture whose roof is
   a scannable QR code for any text and height (time runs toward the bed).
+- **[`nfc-eink/`](nfc-eink/)** — batteryless NFC-harvest e-ink tag: phone field
+  boots an STM32, streams a 4.2 in image, paints the panel, then the rails
+  fall. KiCad 7 schematic, netlist check, and a priced BOM.
 - **[`its-not-jaws/`](its-not-jaws/)** — Cursor Agent SDK harness for It's Not
   Jaws: knower picks a movie, guesser uses shared-fact clues; tracks outcomes,
   leaks in published traces, game length, and token cost.
