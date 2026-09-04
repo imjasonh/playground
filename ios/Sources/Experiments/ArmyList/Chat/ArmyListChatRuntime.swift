@@ -382,7 +382,6 @@ final class ArmyListChatRuntime: ObservableObject {
         Prefer short replies. Format with Markdown (bold, bullets, short headings) when it helps scanability.
         Always answer the latest user message; do not keep talking about an earlier Theme/name request unless they ask again.
         For from-scratch 1000/2000 point builds: invent a fresh theme each time (different units/detachment/name), call searchCatalog as needed, then applyRosterPlan once with your full plan. Do not loop addUnit for a full army — that overflows the on-device context window.
-        seedLegalList is a last-resort deterministic filler when you cannot invent a plan; avoid it when the user wants something creative or new.
         Use addUnit only for small targeted edits after a roster already exists.
         Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
         """
@@ -394,7 +393,6 @@ final class ArmyListChatRuntime: ObservableObject {
             ArmyGetListSummaryFMTool(runtime: self),
             ArmySearchCatalogFMTool(runtime: self),
             ArmyApplyRosterPlanFMTool(runtime: self),
-            ArmySeedLegalListFMTool(runtime: self),
             ArmySetBattleSizeFMTool(runtime: self),
             ArmySetDetachmentsFMTool(runtime: self),
             ArmyAddUnitFMTool(runtime: self),
@@ -532,31 +530,6 @@ struct ArmyApplyRosterPlanFMTool: Tool {
                 detachmentIDsCSV: arguments.detachmentIDsCSV,
                 unitsCSV: arguments.unitsCSV,
                 listName: arguments.listName
-            )
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct ArmySeedLegalListFMTool: Tool {
-    weak var runtime: ArmyListChatRuntime?
-    let name = "seedLegalList"
-    let description = "Last-resort deterministic filler that stamps a legal-ish list. Prefer applyRosterPlan when inventing a creative army."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "incursion, strike-force, 1000, or 2000")
-        var battleSizeID: String
-        @Guide(description: "Optional army name; empty keeps a generated name")
-        var name: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
-            ArmyListChatToolExecutor.seedLegalList(
-                workspace: workspace,
-                battleSizeID: arguments.battleSizeID,
-                name: arguments.name
             )
         }
     }

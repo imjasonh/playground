@@ -125,36 +125,6 @@ enum ArmyListChatToolExecutor {
         return mutationResult(workspace: workspace, note: "Battle size set to \(size.name) (\(size.pointsLimit) pts).")
     }
 
-    /// Replace the roster with a validator-checked seeded list for this faction.
-    /// Boring deterministic filler — prefer `applyRosterPlan` when the model invents a list.
-    static func seedLegalList(
-        workspace: ArmyListChatWorkspace,
-        battleSizeID: String,
-        name: String
-    ) -> String {
-        let sizeID = resolveBattleSizeID(workspace: workspace, raw: battleSizeID)
-        guard let seeded = ArmyListLegalSeeder.seed(
-            catalog: workspace.catalog,
-            factionID: workspace.list.factionID,
-            battleSizeID: sizeID,
-            name: name
-        ) else {
-            return "Could not seed a list for this faction/battle size. Try setBattleSize + setDetachments + applyRosterPlan instead."
-        }
-        // Preserve the document id so the editor binding stays on the same file.
-        var list = seeded.list
-        list.id = workspace.list.id
-        list.createdAt = workspace.list.createdAt
-        workspace.replaceList(list)
-        let status = seeded.validation.isLegal ? "LEGAL" : "ILLEGAL"
-        return [
-            seeded.notes,
-            "Named “\(list.name)”.",
-            "Status: \(status) · \(seeded.validation.totalPoints) pts · DP \(seeded.validation.detachmentPointsSpent) · units=\(list.units.count)",
-            "errors=\(seeded.validation.errors.count) warnings=\(seeded.validation.warnings.count)",
-        ].joined(separator: "\n")
-    }
-
     /// Apply a full roster the model invented in one call (avoids addUnit context blowouts).
     ///
     /// `unitsCSV` entries are `datasheetIdOrName` or `datasheetIdOrName:models`, comma-separated.

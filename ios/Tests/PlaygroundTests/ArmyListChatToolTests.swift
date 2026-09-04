@@ -79,23 +79,23 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(workspace.validation.errors.contains { $0.code == "dp.overBudget" })
     }
 
-    func testSeedLegalListBuildsIncursion() {
-        let output = ArmyListChatToolExecutor.seedLegalList(
-            workspace: workspace,
+    func testLegalSeederBuildsIncursion() {
+        let seeded = ArmyListLegalSeeder.seed(
+            catalog: catalog,
+            factionID: "leagues-of-votann",
             battleSizeID: "incursion",
             name: "Seeded Votann"
         )
-        XCTAssertTrue(output.contains("Status: LEGAL") || output.contains("Status: ILLEGAL"), output)
-        XCTAssertEqual(workspace.list.name, "Seeded Votann")
-        XCTAssertEqual(workspace.list.battleSizeID, "incursion")
-        XCTAssertFalse(workspace.list.units.isEmpty)
-        XCTAssertFalse(workspace.list.detachmentIDs.isEmpty)
-        let result = workspace.validation
+        let result = try XCTUnwrap(seeded)
+        XCTAssertEqual(result.list.name, "Seeded Votann")
+        XCTAssertEqual(result.list.battleSizeID, "incursion")
+        XCTAssertFalse(result.list.units.isEmpty)
+        XCTAssertFalse(result.list.detachmentIDs.isEmpty)
         XCTAssertTrue(
-            result.isLegal,
-            result.errors.map(\.message).joined(separator: "; ")
+            result.validation.isLegal,
+            result.validation.errors.map(\.message).joined(separator: "; ")
         )
-        XCTAssertLessThanOrEqual(result.totalPoints, 1000)
+        XCTAssertLessThanOrEqual(result.validation.totalPoints, 1000)
     }
 
     func testApplyRosterPlanBuildsCustomCustodesList() throws {
@@ -120,27 +120,20 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertLessThanOrEqual(custodesWorkspace.validation.totalPoints, 1000)
     }
 
-    func testSeedLegalListBuildsCustodesIncursion() throws {
-        let list = ArmyListDocument(
-            name: "Custodes chat",
-            catalogVersion: catalog.version,
+    func testLegalSeederBuildsCustodesIncursion() throws {
+        let seeded = ArmyListLegalSeeder.seed(
+            catalog: catalog,
             factionID: "adeptus-custodes",
-            battleSizeID: "incursion"
-        )
-        let custodesWorkspace = ArmyListChatWorkspace(list: list, catalog: catalog)
-        let output = ArmyListChatToolExecutor.seedLegalList(
-            workspace: custodesWorkspace,
             battleSizeID: "incursion",
             name: "Custodes 1k"
         )
-        XCTAssertFalse(output.contains("Could not seed"), output)
-        let result = custodesWorkspace.validation
+        let result = try XCTUnwrap(seeded)
         XCTAssertTrue(
-            result.isLegal,
-            result.errors.map(\.message).joined(separator: "; ")
+            result.validation.isLegal,
+            result.validation.errors.map(\.message).joined(separator: "; ")
         )
-        XCTAssertLessThanOrEqual(result.totalPoints, 1000)
-        XCTAssertFalse(custodesWorkspace.list.units.isEmpty)
+        XCTAssertLessThanOrEqual(result.validation.totalPoints, 1000)
+        XCTAssertFalse(result.list.units.isEmpty)
     }
 
     func testContextWindowDetectionTreatsGenerationErrorMinusOne() {
@@ -176,25 +169,27 @@ final class ArmyListChatToolTests: XCTestCase {
 
     func testConversationDumpIncludesListAndToolLog() throws {
         let runtime = ArmyListChatRuntime(workspace: workspace)
-        _ = ArmyListChatToolExecutor.seedLegalList(
+        _ = ArmyListChatToolExecutor.applyRosterPlan(
             workspace: workspace,
             battleSizeID: "incursion",
-            name: "Dump test"
+            detachmentIDsCSV: "hearthband",
+            unitsCSV: "kahl:1,hearthkyn-warriors:10",
+            listName: "Dump test"
         )
         runtime.workspace.list = workspace.list
-        _ = runtime.noteToolExchange(name: "seedLegalList", result: "Status: LEGAL")
+        _ = runtime.noteToolExchange(name: "applyRosterPlan", result: "Status: LEGAL")
         let dump = runtime.makeConversationDump()
         XCTAssertEqual(dump.mode, "army-list-chat")
         XCTAssertEqual(dump.list.name, "Dump test")
         XCTAssertEqual(dump.toolLog.count, 1)
-        XCTAssertEqual(dump.toolLog[0].name, "seedLegalList")
+        XCTAssertEqual(dump.toolLog[0].name, "applyRosterPlan")
         XCTAssertFalse(dump.entries.isEmpty)
 
         let data = try ArmyListChatDumpExporter.jsonData(for: dump)
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))
         XCTAssertTrue(json.contains("army-list-chat"))
         XCTAssertTrue(json.contains("Dump test"))
-        XCTAssertTrue(json.contains("seedLegalList"))
+        XCTAssertTrue(json.contains("applyRosterPlan"))
 
         let url = try runtime.writeConversationDumpFile()
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
