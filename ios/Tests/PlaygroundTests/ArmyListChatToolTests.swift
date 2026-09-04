@@ -79,6 +79,38 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(workspace.validation.errors.contains { $0.code == "dp.overBudget" })
     }
 
+    func testSeedLegalListBuildsIncursion() {
+        let output = ArmyListChatToolExecutor.seedLegalList(
+            workspace: workspace,
+            battleSizeID: "incursion",
+            name: "Seeded Votann"
+        )
+        XCTAssertTrue(output.contains("Status: LEGAL") || output.contains("Status: ILLEGAL"), output)
+        XCTAssertEqual(workspace.list.name, "Seeded Votann")
+        XCTAssertEqual(workspace.list.battleSizeID, "incursion")
+        XCTAssertFalse(workspace.list.units.isEmpty)
+        XCTAssertFalse(workspace.list.detachmentIDs.isEmpty)
+        let result = workspace.validation
+        XCTAssertTrue(
+            result.isLegal,
+            result.errors.map(\.message).joined(separator: "; ")
+        )
+        XCTAssertLessThanOrEqual(result.totalPoints, 1000)
+    }
+
+    func testContextWindowDetectionTreatsGenerationErrorMinusOne() {
+        let err = NSError(
+            domain: "FoundationModels.LanguageModelSession.GenerationError",
+            code: -1,
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                    "The operation couldn’t be completed. (FoundationModels.LanguageModelSession.GenerationError error -1.)",
+            ]
+        )
+        XCTAssertTrue(ArmyListChatRuntime.isExceededContextWindow(err))
+        XCTAssertTrue(AgentRuntime.isExceededContextWindow(err))
+    }
+
     func testAttachAndEnhancementTools() {
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,

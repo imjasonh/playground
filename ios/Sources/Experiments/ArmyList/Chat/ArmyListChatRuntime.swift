@@ -38,6 +38,7 @@ final class ArmyListChatRuntime: ObservableObject {
 
     private var languageSessionBox: Any?
     private var workspaceBag: AnyCancellable?
+    private var carryOverNotes = ""
 
     var isModelAvailable: Bool { modelGate.isAvailable }
 
@@ -110,8 +111,59 @@ final class ArmyListChatRuntime: ObservableObject {
             try await runFoundationModels(prompt: trimmed)
             #endif
         } catch {
-            append(.assistant, text: error.localizedDescription)
+            if Self.isExceededContextWindow(error) {
+                compactLanguageSession(
+                    reason: "Model context filled during tool use; compacted and retrying once."
+                )
+                do {
+                    #if canImport(FoundationModels)
+                    if #available(iOS 26.0, *) {
+                        try await runFoundationModels(prompt: trimmed, isRetryAfterCompact: true)
+                        return
+                    }
+                    #endif
+                } catch {
+                    append(
+                        .assistant,
+                        text: "Couldn’t finish after compacting context: \(error.localizedDescription). Try Clear, then Build 1k again (uses seedLegalList in one step)."
+                    )
+                    return
+                }
+            }
+            append(.assistant, text: friendlyGenerationError(error))
         }
+    }
+
+    /// FoundationModels often surfaces context overflow as GenerationError code -1
+    /// with a generic localizedDescription (no “context” substring).
+    nonisolated static func isExceededContextWindow(_ error: Error) -> Bool {
+        let text = error.localizedDescription.lowercased()
+        if text.contains("context window")
+            || text.contains("exceededcontext")
+            || text.contains("contextsizeexceeded")
+        {
+            return true
+        }
+        let ns = error as NSError
+        let domain = ns.domain.lowercased()
+        if domain.contains("foundationmodels") {
+            if text.contains("context") { return true }
+            // Observed on device: GenerationError error -1 with no useful message.
+            if ns.code == -1 { return true }
+        }
+        return false
+    }
+
+    private func friendlyGenerationError(_ error: Error) -> String {
+        if Self.isExceededContextWindow(error) {
+            return "The on-device model ran out of context while editing. Tap Clear, then Build 1k (one seedLegalList call) or ask for a smaller change."
+        }
+        return error.localizedDescription
+    }
+
+    private func compactLanguageSession(reason: String) {
+        languageSessionBox = nil
+        append(.system, text: reason)
     }
 
     private func append(_ kind: ArmyListChatEntry.Kind, text: String) {
@@ -138,11 +190,17 @@ final class ArmyListChatRuntime: ObservableObject {
     }
 
     @available(iOS 26.0, *)
-    private func runFoundationModels(prompt: String) async throws {
+    private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
         refreshModelStatus()
         guard isModelAvailable else {
             append(.system, text: armyListGateDetail)
             return
+        }
+        if isRetryAfterCompact {
+            // Carry a tiny roster snapshot into the fresh session instructions
+            // so the model knows what survived the compact.
+            let summary = workspace.compactSummary(maxIssues: 4)
+            carryOverNotes = String(summary.prefix(1_200))
         }
         let session = ensureLanguageSession()
         let response = try await session.respond(to: prompt)
@@ -155,7 +213,12 @@ final class ArmyListChatRuntime: ObservableObject {
         if let existing = languageSessionBox as? LanguageModelSession {
             return existing
         }
-        let session = LanguageModelSession(tools: makeFoundationTools(), instructions: sessionInstructions)
+        var instructions = sessionInstructions
+        if !carryOverNotes.isEmpty {
+            instructions += "\n\nCurrent list snapshot:\n" + carryOverNotes
+            carryOverNotes = ""
+        }
+        let session = LanguageModelSession(tools: makeFoundationTools(), instructions: instructions)
         languageSessionBox = session
         return session
     }
@@ -168,8 +231,8 @@ final class ArmyListChatRuntime: ObservableObject {
         Construction facts (points, Detachment Points, join edges, legality) come ONLY from tools. Never invent datasheet ids or points.
         After mutating tools, read the returned Status line. If ILLEGAL, keep fixing with tools or explain what is still wrong.
         For thematic questions (army name, color scheme, lore vibe, matchup opinions), answer helpfully and label opinions as opinions.
-        Prefer short replies. When building from scratch: setBattleSize, setDetachments, clearUnits if needed, addUnit repeatedly, setWarlord, setListName.
-        Use searchCatalog before addUnit when unsure of an id.
+        Prefer short replies. For from-scratch 1000/2000 point builds, call seedLegalList once (battleSizeID + optional name). Do not loop addUnit for a full army — that overflows the on-device context window.
+        Use searchCatalog before addUnit only for small targeted edits.
         Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
         """
     }
@@ -179,6 +242,7 @@ final class ArmyListChatRuntime: ObservableObject {
         [
             ArmyGetListSummaryFMTool(runtime: self),
             ArmySearchCatalogFMTool(runtime: self),
+            ArmySeedLegalListFMTool(runtime: self),
             ArmySetBattleSizeFMTool(runtime: self),
             ArmySetDetachmentsFMTool(runtime: self),
             ArmyAddUnitFMTool(runtime: self),
@@ -192,8 +256,9 @@ final class ArmyListChatRuntime: ObservableObject {
         ]
     }
     #else
-    private func runFoundationModels(prompt: String) async throws {
+    private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
         _ = prompt
+        _ = isRetryAfterCompact
         append(.system, text: armyListGateDetail)
     }
     #endif
@@ -275,6 +340,31 @@ struct ArmySearchCatalogFMTool: Tool {
                 workspace: workspace,
                 query: arguments.query,
                 kind: arguments.kind
+            )
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+struct ArmySeedLegalListFMTool: Tool {
+    weak var runtime: ArmyListChatRuntime?
+    let name = "seedLegalList"
+    let description = "Replace the roster with a seeded legal list for this faction. Prefer this for from-scratch 1000/2000 point builds instead of many addUnit calls."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "incursion, strike-force, 1000, or 2000")
+        var battleSizeID: String
+        @Guide(description: "Optional army name; empty keeps a generated name")
+        var name: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+            ArmyListChatToolExecutor.seedLegalList(
+                workspace: workspace,
+                battleSizeID: arguments.battleSizeID,
+                name: arguments.name
             )
         }
     }

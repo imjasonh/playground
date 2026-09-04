@@ -20,11 +20,10 @@ struct ArmyListChatView: View {
     }
 
     private var prompts: [(title: String, text: String)] {
-        let faction = catalog.faction(id: list.factionID)?.name ?? "this faction"
-        return [
-            ("Build 1k", "Build a legal 1000 point \(faction) list from scratch using a valid Detachment Points combination for Incursion. Name it when done."),
+        [
+            ("Build 1k", "Call seedLegalList with battleSizeID incursion and a short name for a legal 1000 point list. Then getListSummary and confirm Status."),
             ("Weaknesses", "What matchups or unit types will give this list trouble? Opinion only. Use getListSummary for the facts."),
-            ("Fix errors", "Read getListSummary and fix every validation ERROR with tools. Stop when Status is LEGAL or explain what you cannot fix."),
+            ("Fix errors", "Read getListSummary and fix every validation ERROR with tools. Prefer small edits. Stop when Status is LEGAL or explain what you cannot fix."),
             ("Theme", "Suggest a good army name and a paint color scheme for this list. If the user likes a name, call setListName."),
         ]
     }

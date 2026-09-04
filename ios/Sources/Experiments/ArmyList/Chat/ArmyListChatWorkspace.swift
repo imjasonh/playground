@@ -86,12 +86,13 @@ enum ArmyListChatToolExecutor {
         if wantUnits {
             let matches = workspace.catalog.datasheets.filter { sheet in
                 sheet.factionID == workspace.list.factionID
+                    && !sheet.legends
                     && (q.isEmpty
                         || sheet.name.lowercased().contains(q)
                         || sheet.id.contains(q)
                         || sheet.keywords.contains { $0.lowercased().contains(q) })
             }
-            for sheet in matches.prefix(16) {
+            for sheet in matches.prefix(10) {
                 let pts = sheet.points(models: sheet.minModels, copyIndex: 1).map(String.init) ?? "?"
                 var flags: [String] = []
                 if sheet.battleline { flags.append("Battleline") }
@@ -99,6 +100,7 @@ enum ArmyListChatToolExecutor {
                 if sheet.characterRole == .character { flags.append("Character") }
                 if sheet.epicHero { flags.append("EpicHero") }
                 if sheet.dedicatedTransport { flags.append("DedicatedTransport") }
+                if sheet.legends { flags.append("Legends") }
                 let flagText = flags.isEmpty ? "" : " | " + flags.joined(separator: ",")
                 lines.append(
                     "unit \(sheet.id) | \(sheet.name) | \(pts)pts@\(sheet.minModels)\(flagText)"
@@ -121,6 +123,35 @@ enum ArmyListChatToolExecutor {
         list.battleSizeID = size.id
         workspace.replaceList(list)
         return mutationResult(workspace: workspace, note: "Battle size set to \(size.name) (\(size.pointsLimit) pts).")
+    }
+
+    /// Replace the roster with a validator-checked seeded list for this faction.
+    static func seedLegalList(
+        workspace: ArmyListChatWorkspace,
+        battleSizeID: String,
+        name: String
+    ) -> String {
+        let sizeID = resolveBattleSizeID(workspace: workspace, raw: battleSizeID)
+        guard let seeded = ArmyListLegalSeeder.seed(
+            catalog: workspace.catalog,
+            factionID: workspace.list.factionID,
+            battleSizeID: sizeID,
+            name: name
+        ) else {
+            return "Could not seed a list for this faction/battle size. Try setBattleSize + setDetachments + addUnit instead."
+        }
+        // Preserve the document id so the editor binding stays on the same file.
+        var list = seeded.list
+        list.id = workspace.list.id
+        list.createdAt = workspace.list.createdAt
+        workspace.replaceList(list)
+        let status = seeded.validation.isLegal ? "LEGAL" : "ILLEGAL"
+        return [
+            seeded.notes,
+            "Named “\(list.name)”.",
+            "Status: \(status) · \(seeded.validation.totalPoints) pts · DP \(seeded.validation.detachmentPointsSpent) · units=\(list.units.count)",
+            "errors=\(seeded.validation.errors.count) warnings=\(seeded.validation.warnings.count)",
+        ].joined(separator: "\n")
     }
 
     static func setDetachments(workspace: ArmyListChatWorkspace, detachmentIDsCSV: String) -> String {
@@ -330,15 +361,15 @@ enum ArmyListChatToolExecutor {
         let status = result.isLegal ? "LEGAL" : "ILLEGAL"
         var lines = [
             note,
-            "Status: \(status) · \(result.totalPoints) pts · DP \(result.detachmentPointsSpent)",
+            "Status: \(status) · \(result.totalPoints) pts · DP \(result.detachmentPointsSpent) · units=\(workspace.list.units.count)",
             "errors=\(result.errors.count) warnings=\(result.warnings.count)",
         ]
-        for issue in result.issues.prefix(8) {
+        for issue in result.issues.prefix(6) {
             let mark = issue.severity == .error ? "ERROR" : "WARN"
             lines.append("[\(mark)] \(issue.code): \(issue.message)")
         }
-        lines.append("---")
-        lines.append(workspace.compactSummary(maxIssues: 6))
+        // Keep mutation replies short — a full roster dump after every addUnit
+        // blows the on-device 4k context window mid-build.
         return lines.joined(separator: "\n")
     }
 

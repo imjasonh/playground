@@ -463,7 +463,7 @@ enum ArmyListValidator {
             if selected.count < group.min || selected.count > group.max {
                 issues.append(.init(
                     code: "option.groupCount",
-                    severity: .error,
+                    severity: .warning,
                     message: "\(sheet.name): choose \(group.min)–\(group.max) from \(group.name) (have \(selected.count)).",
                     unitID: unit.id
                 ))
