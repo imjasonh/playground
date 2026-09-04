@@ -4,6 +4,7 @@ import SwiftUI
 /// just recorded shows up.
 struct RideListView: View {
     @State private var rides: [Ride] = []
+    @State private var cloudStatus: CloudSyncStatus = .idle
     @State private var isSavingZipFile = false
     @State private var zipExportDocument: RideZipFileDocument?
     @State private var zipExportFilename = RideJSONLExporter.filenameForAllRidesZip()
@@ -44,6 +45,16 @@ struct RideListView: View {
         }
         .navigationTitle("Past rides")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    Task { await syncCloud() }
+                } label: {
+                    Label(cloudStatus.title, systemImage: "icloud")
+                }
+                .disabled(cloudStatus == .syncing)
+                .accessibilityIdentifier("rideListiCloudSyncButton")
+                .accessibilityHint(cloudStatus.detail)
+            }
             ToolbarItem(placement: .topBarLeading) { EditButton() }
             ToolbarItem(placement: .topBarTrailing) {
                 if !rides.isEmpty {
@@ -79,7 +90,10 @@ struct RideListView: View {
                 }
             }
         }
-        .onAppear { rides = store.loadAll() }
+        .onAppear {
+            rides = store.loadAll()
+            Task { await syncCloud() }
+        }
         .alert("Export failed", isPresented: Binding(
             get: { exportErrorMessage != nil },
             set: { if !$0 { exportErrorMessage = nil } }
@@ -171,6 +185,31 @@ struct RideListView: View {
             isSavingCombinedFile = true
         } catch {
             exportErrorMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func syncCloud() async {
+        cloudStatus = .syncing
+        let result = await store.syncWithCloud()
+        if let reason = result.unavailableReason {
+            if reason.localizedCaseInsensitiveContains("sign in")
+                || reason.localizedCaseInsensitiveContains("restricted")
+                || reason.localizedCaseInsensitiveContains("unavailable")
+                || reason.localizedCaseInsensitiveContains("disabled")
+                || reason.localizedCaseInsensitiveContains("could not reach")
+            {
+                cloudStatus = .unavailable(reason)
+            } else {
+                cloudStatus = .failed(reason)
+            }
+        } else {
+            cloudStatus = .synced(
+                pulled: result.pulled,
+                pushed: result.pushed,
+                removed: result.removedLocal
+            )
+            rides = store.loadAll()
         }
     }
 }

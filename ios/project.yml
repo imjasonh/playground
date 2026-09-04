@@ -71,6 +71,12 @@ targets:
         # Ride Monitor launches the Watch companion via HealthKit startWatchApp
         # so the wrist stays on the ride UI without the user hunting for it.
         com.apple.developer.healthkit: true
+        # Private CloudKit backup for Army List + Ride Monitor JSON documents.
+        # Needs App ID iCloud capability + match profile refresh (bootstrap).
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.io.github.imjasonh.playground
+        com.apple.developer.icloud-services:
+          - CloudKit
         # NFC Tags experiment: Core NFC Tag Reading (NFCTagReaderSession + NDEF).
         # Needs App ID capability + match profile refresh (bootstrap).
         com.apple.developer.nfc.readersession.formats:

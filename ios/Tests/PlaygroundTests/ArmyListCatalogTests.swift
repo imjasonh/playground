@@ -311,7 +311,7 @@ final class ArmyListValidatorTests: XCTestCase {
     func testStoreRoundTrip() throws {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("army-list-tests-\(UUID().uuidString)", isDirectory: true)
-        let store = ArmyListStore(directory: dir)
+        let store = ArmyListStore(directory: dir, cloudSyncEnabled: false)
         let list = sampleLegalIncursion()
         try store.save(list)
         let loaded = store.loadAll()

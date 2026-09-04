@@ -17,13 +17,13 @@ On every push to `main`, CI builds, tests, and (with signing secrets) uploads to
 |--------------------|-----------|---------------------------|
 | In-app experiment (Ride Monitor–style) | Host only | **No** |
 | Info.plist privacy / background modes | Host only | **No** |
-| New App ID capability (HealthKit, NFC, …) | Host, plus extensions when they need it | **Yes** for a profile refresh |
+| New App ID capability (HealthKit, NFC, CloudKit / iCloud, …) | Host, plus extensions when they need it | **Yes** for a profile refresh |
 | Custom Keyboard / other **app extension** | Host + **extension id** (Apple requires it) | **Yes, once** for that extension |
 
 Bootstrap is **not** per experiment. It is once for the host app, once more
 when you add a new extension Bundle ID (today: T9 keyboard, Ride Monitor
 widget, Ride Monitor Watch), and again when you add an App ID capability such
-as NFC Tag Reading.
+as NFC Tag Reading or CloudKit.
 
 ## How it's structured
 
@@ -45,9 +45,9 @@ ios/
 
 | Id | Title | Notes |
 |----|-------|-------|
-| `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
+| `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion; private CloudKit backup |
 | `device-agent` | Device Agent | On-device model drives an in-app browser; App Intents/Shortcuts; voice; requires Apple Intelligence |
-| `army-list` | Army List | Build/validate 11th Edition lists (all factions in the bundled catalog); on-device chat tools edit via the validator |
+| `army-list` | Army List | Build/validate 11th Edition lists; on-device chat; private CloudKit backup |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
@@ -110,7 +110,8 @@ fails, the summary stays empty — there is no heuristic substitute.
 Past rides can be exported as JSON Lines (`.jsonl`): open a ride for a single
 export, or use **Export all** on the Past rides list to **Save ZIP…** (one
 archive of per-ride `.jsonl` files), save/share one combined JSONL, or share
-through the system share sheet.
+through the system share sheet. Past rides also sync to the private CloudKit
+database when the device is signed into iCloud (same container as Army List).
 
 ### Army List
 
@@ -119,6 +120,8 @@ faction in the bundled construction catalog (30 factions, faction-prefixed
 datasheet/detachment ids). The experiment ships points, Detachment Points,
 unique tags, and Leader join edges as versioned JSON, plus a deterministic
 validator, SwiftUI authoring UI, and share/export as plain text or `.army.json`.
+Saved lists sync to private CloudKit (`iCloud.io.github.imjasonh.playground`)
+when iCloud is available; use the toolbar iCloud control to sync manually.
 
 Refresh the **bundled** catalog (no remote fetch at runtime):
 

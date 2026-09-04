@@ -8,7 +8,7 @@ final class RideStoreTests: XCTestCase {
     override func setUpWithError() throws {
         tempDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ride-store-tests-\(UUID().uuidString)", isDirectory: true)
-        store = RideStore(directory: tempDir)
+        store = RideStore(directory: tempDir, cloudSyncEnabled: false)
     }
 
     override func tearDownWithError() throws {
