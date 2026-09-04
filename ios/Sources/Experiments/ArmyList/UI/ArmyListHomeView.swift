@@ -466,20 +466,38 @@ struct ArmyListNewSheet: View {
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(factionDetachments) { detachment in
-                        Toggle(isOn: bindingForDetachment(detachment.id)) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(detachment.name)
-                                Text("\(detachment.detachmentPoints) DP · \(detachment.forceDisposition)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                if let tag = detachment.uniqueTag {
-                                    Text("Unique: \(tag)")
-                                        .font(.caption2)
-                                        .foregroundStyle(.orange)
-                                }
+                        let selected = selectedDetachmentIDs.contains(detachment.id)
+                        Button {
+                            if selected {
+                                selectedDetachmentIDs.remove(detachment.id)
+                            } else {
+                                selectedDetachmentIDs.insert(detachment.id)
                             }
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                                    .font(.title3)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(detachment.name)
+                                        .foregroundStyle(.primary)
+                                    Text("\(detachment.detachmentPoints) DP · \(detachment.forceDisposition)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    if let tag = detachment.uniqueTag {
+                                        Text("Unique: \(tag)")
+                                            .font(.caption2)
+                                            .foregroundStyle(.orange)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                         .accessibilityIdentifier("armyListNewDetachment-\(detachment.id)")
+                        .accessibilityValue(selected ? "selected" : "unselected")
+                        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
                     }
                 }
             } header: {
@@ -519,19 +537,6 @@ struct ArmyListNewSheet: View {
                 .accessibilityIdentifier("armyListBuildStarterButton")
             }
         }
-    }
-
-    private func bindingForDetachment(_ id: String) -> Binding<Bool> {
-        Binding(
-            get: { selectedDetachmentIDs.contains(id) },
-            set: { isOn in
-                if isOn {
-                    selectedDetachmentIDs.insert(id)
-                } else {
-                    selectedDetachmentIDs.remove(id)
-                }
-            }
-        )
     }
 
     private func trimmedName() -> String? {

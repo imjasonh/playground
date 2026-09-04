@@ -396,30 +396,37 @@ final class PlaygroundUITests: XCTestCase {
         )
 
         // Prefer a cheap detachment (1 DP) so Incursion's 2 DP budget always fits.
-        let cheapDetachment = app.switches.matching(
-            NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS[c] %@",
-                        "armyListNewDetachment-", "1 DP")
-        ).firstMatch
-        let anyDetachment = app.switches.matching(
+        let detachmentRows = app.buttons.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "armyListNewDetachment-")
-        ).firstMatch
-        let detachmentToggle = cheapDetachment.exists ? cheapDetachment : anyDetachment
-        XCTAssertTrue(
-            detachmentToggle.waitForExistence(timeout: 5),
-            "Expected detachment toggles on the create sheet"
         )
-        if !detachmentToggle.isHittable {
-            // Form may need a nudge if battle-size / faction pickers ate the viewport.
-            for _ in 0..<4 {
-                app.swipeUp()
-                if detachmentToggle.isHittable { break }
+        XCTAssertGreaterThan(detachmentRows.count, 0, "Expected detachment rows on the create sheet")
+
+        var selected = false
+        for index in 0..<min(detachmentRows.count, 10) {
+            let row = detachmentRows.element(boundBy: index)
+            guard row.waitForExistence(timeout: 2) else { continue }
+            for _ in 0..<8 where !row.isHittable {
+                if app.collectionViews.firstMatch.exists {
+                    app.collectionViews.firstMatch.swipeUp()
+                } else if app.tables.firstMatch.exists {
+                    app.tables.firstMatch.swipeUp()
+                } else {
+                    app.swipeUp()
+                }
             }
+            guard row.isHittable else { continue }
+            row.tap()
+            // Wait for SwiftUI to enable the toolbar Create button.
+            let createEnabled = NSPredicate { _, _ in create.isEnabled }
+            let wait = XCTNSPredicateExpectation(predicate: createEnabled, object: nil)
+            if XCTWaiter.wait(for: [wait], timeout: 2) == .completed {
+                selected = true
+                break
+            }
+            // Undo over-budget or no-op taps.
+            if row.isHittable { row.tap() }
         }
-        detachmentToggle.tap()
-        XCTAssertTrue(
-            create.waitForExistence(timeout: 2) && create.isEnabled,
-            "Create enables after selecting a detachment under the DP budget"
-        )
+        XCTAssertTrue(selected, "Create enables after selecting a detachment under the DP budget")
         XCTAssertTrue(starter.isEnabled)
 
         nameField.tap()
