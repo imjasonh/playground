@@ -43,6 +43,10 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 - Host **`CFBundleName`** and **`CFBundleDisplayName`** must both be unique
   on the App Store (`ITMS-90129`). Do not set either to `Playground`; that
   name is taken. The Xcode target can stay `Playground`.
+- **Sheets / covers:** use `sheet(item:)` / `fullScreenCover(item:)` and put
+  every value the presented UI needs on that item (enum associated values).
+  Do not pair `isPresented` (or a bare enum case) with a second `@State`
+  optional the body `if let`s — that race showed up blank on TestFlight.
 
 ## Will my change need re-bootstrap?
 
