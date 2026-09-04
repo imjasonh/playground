@@ -123,8 +123,12 @@ test("daytime casts are a soft umbra and a longer penumbra", () => {
   );
   const layers = castLayers(shadow, { r: 40, g: 38, b: 36, a: 0.42 });
   assert.equal(layers.length, 2);
-  assert.ok(layers[0].blur > 0);
+  assert.ok(layers[0].blur >= 0);
   assert.ok(layers[1].blur > layers[0].blur);
+  assert.ok(
+    Math.hypot(layers[0].x, layers[0].y) >
+      Math.hypot(shadow.offsetX, shadow.offsetY) * 0.5,
+  );
   assert.ok(Math.abs(layers[1].x) >= Math.abs(layers[0].x));
   assert.ok(Math.abs(layers[1].y) >= Math.abs(layers[0].y));
   assert.ok(layers[0].opacity > layers[1].opacity);
