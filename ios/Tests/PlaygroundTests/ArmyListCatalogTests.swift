@@ -338,6 +338,113 @@ final class ArmyListValidatorTests: XCTestCase {
         XCTAssertTrue(text.contains("Total:"))
     }
 
+    func testLegendsFlagOnCatalogDatasheets() throws {
+        let catalog = try CatalogLoader.load(bundle: .main)
+        let aquila = try XCTUnwrap(catalog.datasheet(id: "astra-militarum--aquila-lander"))
+        XCTAssertTrue(aquila.legends)
+        let shock = try XCTUnwrap(catalog.datasheet(id: "astra-militarum--cadian-shock-troops"))
+        XCTAssertFalse(shock.legends)
+        XCTAssertGreaterThan(
+            catalog.datasheets.filter(\.legends).count,
+            100
+        )
+    }
+
+    func testUnitPickerHidesLegendsByDefault() throws {
+        let catalog = try CatalogLoader.load(bundle: .main)
+        let withoutLegends = ArmyListUnitPickerFiltering.sheets(
+            from: catalog,
+            factionID: "astra-militarum",
+            query: "",
+            includeLegends: false,
+            typeFilter: .all
+        )
+        XCTAssertFalse(withoutLegends.contains { $0.id == "astra-militarum--aquila-lander" })
+        XCTAssertTrue(withoutLegends.contains { $0.id == "astra-militarum--cadian-shock-troops" })
+
+        let withLegends = ArmyListUnitPickerFiltering.sheets(
+            from: catalog,
+            factionID: "astra-militarum",
+            query: "",
+            includeLegends: true,
+            typeFilter: .all
+        )
+        XCTAssertTrue(withLegends.contains { $0.id == "astra-militarum--aquila-lander" })
+
+        let battleline = ArmyListUnitPickerFiltering.sheets(
+            from: catalog,
+            factionID: "astra-militarum",
+            query: "",
+            includeLegends: false,
+            typeFilter: .battleline
+        )
+        XCTAssertTrue(battleline.allSatisfy(\.battleline))
+        XCTAssertFalse(battleline.contains { $0.legends })
+    }
+
+    func testCadianCommandSquadHasPlasmaLoadoutOptions() throws {
+        let catalog = try CatalogLoader.load(bundle: .main)
+        let sheet = try XCTUnwrap(catalog.datasheet(id: "astra-militarum--cadian-command-squad"))
+        XCTAssertFalse(sheet.optionGroups.isEmpty)
+        let optionNames = sheet.optionGroups.flatMap { $0.options.map(\.name) }
+        XCTAssertTrue(optionNames.contains("Plasma gun"))
+        XCTAssertTrue(optionNames.contains("Plasma gun and close combat weapon"))
+
+        let defaults = sheet.defaultOptionIDs()
+        XCTAssertEqual(defaults.count, sheet.optionGroups.filter { $0.min >= 1 }.count)
+
+        var unit = ListUnitInstance(
+            datasheetID: sheet.id,
+            models: sheet.minModels,
+            optionIDs: defaults
+        )
+        // Swap the standard-bearer slot to Plasma gun.
+        let wargear = try XCTUnwrap(
+            sheet.optionGroups.first { $0.name.contains("Wargear Options") }
+        )
+        let plasma = try XCTUnwrap(wargear.options.first { $0.name == "Plasma gun" })
+        let groupIDs = Set(wargear.options.map(\.id))
+        unit.optionIDs.removeAll { groupIDs.contains($0) }
+        unit.optionIDs.append(plasma.id)
+        XCTAssertEqual(sheet.optionPoints(selectedIDs: unit.optionIDs), 0)
+
+        let list = ArmyListDocument(
+            name: "CCS loadout",
+            catalogVersion: catalog.version,
+            factionID: "astra-militarum",
+            battleSizeID: "incursion",
+            units: [unit]
+        )
+        let result = ArmyListValidator.validate(list: list, catalog: catalog)
+        XCTAssertFalse(result.errors.contains { $0.code == "option.groupCount" })
+    }
+
+    func testDuplicateUnitClearsAttachmentAndInsertsAfterSource() {
+        let body = ListUnitInstance(datasheetID: "leagues-of-votann--hearthkyn-warriors", models: 10)
+        var leader = ListUnitInstance(datasheetID: "leagues-of-votann--kahl", models: 1)
+        leader.attachedToUnitID = body.id
+        leader.enhancementIDs = ["detachment--example-enhancement"]
+        var list = ArmyListDocument(
+            name: "Dup",
+            catalogVersion: "test",
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            units: [body, leader]
+        )
+
+        let newID = list.duplicateUnit(id: leader.id)
+        XCTAssertEqual(list.units.count, 3)
+        XCTAssertEqual(list.units[0].id, body.id)
+        XCTAssertEqual(list.units[1].id, leader.id)
+        let copy = list.units[2]
+        XCTAssertEqual(copy.id, newID)
+        XCTAssertEqual(copy.datasheetID, leader.datasheetID)
+        XCTAssertEqual(copy.models, leader.models)
+        XCTAssertEqual(copy.enhancementIDs, leader.enhancementIDs)
+        XCTAssertNil(copy.attachedToUnitID)
+        XCTAssertNotEqual(copy.id, leader.id)
+    }
+
     /// ~990 pt Brandfast Incursion list used as the golden legal sample.
     private func sampleLegalIncursion() -> ArmyListDocument {
         let kahl = ListUnitInstance(datasheetID: "leagues-of-votann--kahl", models: 1)

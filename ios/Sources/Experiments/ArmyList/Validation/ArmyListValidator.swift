@@ -211,6 +211,7 @@ enum ArmyListValidator {
 
             if let pts = sheet.points(models: unit.models, copyIndex: nextCopy) {
                 totalPoints += pts
+                totalPoints += sheet.optionPoints(selectedIDs: unit.optionIDs)
             } else {
                 issues.append(.init(
                     code: "unit.pointsMissing",
@@ -219,6 +220,12 @@ enum ArmyListValidator {
                     unitID: unit.id
                 ))
             }
+
+            validateOptions(
+                unit: unit,
+                sheet: sheet,
+                issues: &issues
+            )
 
             // Attachment rules
             if sheet.mustAttach && unit.attachedToUnitID == nil {
@@ -422,6 +429,47 @@ enum ArmyListValidator {
     }
 
     // MARK: - Warlord
+
+    private static func validateOptions(
+        unit: ListUnitInstance,
+        sheet: DatasheetDefinition,
+        issues: inout [ValidationIssue]
+    ) {
+        guard !sheet.optionGroups.isEmpty else {
+            if !unit.optionIDs.isEmpty {
+                issues.append(.init(
+                    code: "option.unknown",
+                    severity: .warning,
+                    message: "\(sheet.name) has loadout picks that are not in the catalog.",
+                    unitID: unit.id
+                ))
+            }
+            return
+        }
+
+        let knownIDs = Set(sheet.optionGroups.flatMap { $0.options.map(\.id) })
+        for optionID in unit.optionIDs where !knownIDs.contains(optionID) {
+            issues.append(.init(
+                code: "option.unknown",
+                severity: .warning,
+                message: "\(sheet.name) has unknown loadout pick “\(optionID)”.",
+                unitID: unit.id
+            ))
+        }
+
+        for group in sheet.optionGroups {
+            let groupIDs = Set(group.options.map(\.id))
+            let selected = unit.optionIDs.filter { groupIDs.contains($0) }
+            if selected.count < group.min || selected.count > group.max {
+                issues.append(.init(
+                    code: "option.groupCount",
+                    severity: .warning,
+                    message: "\(sheet.name): choose \(group.min)–\(group.max) from \(group.name) (have \(selected.count)).",
+                    unitID: unit.id
+                ))
+            }
+        }
+    }
 
     private static func validateWarlord(
         list: ArmyListDocument,

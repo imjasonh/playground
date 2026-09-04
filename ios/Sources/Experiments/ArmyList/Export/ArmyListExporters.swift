@@ -136,7 +136,12 @@ enum ArmyListTextExporter {
                     .filter { $0.datasheetID == unit.datasheetID }
                     .count + 1
                 if let pts = sheet.points(models: unit.models, copyIndex: copyIndex) {
-                    var unitPts = pts
+                    var unitPts = pts + sheet.optionPoints(selectedIDs: unit.optionIDs)
+                    for optionID in unit.optionIDs {
+                        if let option = sheet.optionGroups.flatMap(\.options).first(where: { $0.id == optionID }) {
+                            detail += ", \(option.name)"
+                        }
+                    }
                     for enhancementID in unit.enhancementIDs {
                         if let (_, enhancement) = catalog.enhancement(id: enhancementID) {
                             unitPts += enhancement.points

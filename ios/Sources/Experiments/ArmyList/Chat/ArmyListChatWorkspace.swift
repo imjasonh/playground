@@ -86,12 +86,13 @@ enum ArmyListChatToolExecutor {
         if wantUnits {
             let matches = workspace.catalog.datasheets.filter { sheet in
                 sheet.factionID == workspace.list.factionID
+                    && !sheet.legends
                     && (q.isEmpty
                         || sheet.name.lowercased().contains(q)
                         || sheet.id.contains(q)
                         || sheet.keywords.contains { $0.lowercased().contains(q) })
             }
-            for sheet in matches.prefix(16) {
+            for sheet in matches.prefix(10) {
                 let pts = sheet.points(models: sheet.minModels, copyIndex: 1).map(String.init) ?? "?"
                 var flags: [String] = []
                 if sheet.battleline { flags.append("Battleline") }
@@ -99,9 +100,16 @@ enum ArmyListChatToolExecutor {
                 if sheet.characterRole == .character { flags.append("Character") }
                 if sheet.epicHero { flags.append("EpicHero") }
                 if sheet.dedicatedTransport { flags.append("DedicatedTransport") }
+                if sheet.legends { flags.append("Legends") }
                 let flagText = flags.isEmpty ? "" : " | " + flags.joined(separator: ",")
+                var copyNote = ""
+                if let battle = workspace.catalog.battleSize(id: workspace.list.battleSizeID) {
+                    let have = workspace.list.units.filter { $0.datasheetID == sheet.id }.count
+                    let limit = duplicateLimit(for: sheet, battleSize: battle)
+                    copyNote = " | copies \(have)/\(limit)"
+                }
                 lines.append(
-                    "unit \(sheet.id) | \(sheet.name) | \(pts)pts@\(sheet.minModels)\(flagText)"
+                    "unit \(sheet.id) | \(sheet.name) | \(pts)pts@\(sheet.minModels)\(flagText)\(copyNote)"
                 )
             }
         }
@@ -121,6 +129,116 @@ enum ArmyListChatToolExecutor {
         list.battleSizeID = size.id
         workspace.replaceList(list)
         return mutationResult(workspace: workspace, note: "Battle size set to \(size.name) (\(size.pointsLimit) pts).")
+    }
+
+    /// Apply a full roster the model invented in one call (avoids addUnit context blowouts).
+    ///
+    /// `unitsCSV` entries are `datasheetIdOrName` or `datasheetIdOrName:models`, comma-separated.
+    static func applyRosterPlan(
+        workspace: ArmyListChatWorkspace,
+        battleSizeID: String,
+        detachmentIDsCSV: String,
+        unitsCSV: String,
+        listName: String
+    ) -> String {
+        let sizeID = resolveBattleSizeID(workspace: workspace, raw: battleSizeID)
+        guard let size = workspace.catalog.battleSize(id: sizeID) else {
+            return "Unknown battle size “\(battleSizeID)”. Use incursion or strike-force."
+        }
+
+        let rawDetachments = detachmentIDsCSV
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var detachmentIDs: [String] = []
+        var unknownDetachments: [String] = []
+        for raw in rawDetachments {
+            if let id = resolveDetachmentID(workspace: workspace, raw: raw) {
+                if !detachmentIDs.contains(id) {
+                    detachmentIDs.append(id)
+                }
+            } else {
+                unknownDetachments.append(raw)
+            }
+        }
+        if detachmentIDs.isEmpty {
+            return "No valid detachments in “\(detachmentIDsCSV)”. Call searchCatalog kind=detachment first."
+        }
+
+        let rawUnits = unitsCSV
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if rawUnits.isEmpty {
+            return "unitsCSV is empty. Pass datasheet ids/names like shield-captain:1,custodian-guard:5."
+        }
+
+        var units: [ListUnitInstance] = []
+        var unknownUnits: [String] = []
+        var addedNotes: [String] = []
+        for raw in rawUnits {
+            let parts = raw.split(separator: ":", maxSplits: 1).map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            let sheetRaw = parts[0]
+            guard let sheet = resolveDatasheet(workspace: workspace, raw: sheetRaw) else {
+                unknownUnits.append(sheetRaw)
+                continue
+            }
+            let modelCount: Int
+            if parts.count == 2, let parsed = Int(parts[1]), sheet.modelCounts.contains(parsed) {
+                modelCount = parsed
+            } else {
+                modelCount = sheet.modelCounts.first ?? sheet.minModels
+            }
+            units.append(
+                ListUnitInstance(
+                    datasheetID: sheet.id,
+                    models: modelCount,
+                    optionIDs: sheet.defaultOptionIDs()
+                )
+            )
+            addedNotes.append("\(sheet.name)×\(modelCount)")
+        }
+        if units.isEmpty {
+            return "No valid units in unitsCSV. Unknown: \(unknownUnits.joined(separator: ", ")). Call searchCatalog."
+        }
+
+        var warlordID: UUID?
+        if let character = units.first(where: {
+            workspace.catalog.datasheet(id: $0.datasheetID)?.characterRole != nil
+        }) {
+            warlordID = character.id
+        }
+
+        let trimmedName = listName.trimmingCharacters(in: .whitespacesAndNewlines)
+        var list = workspace.list
+        list.battleSizeID = size.id
+        list.detachmentIDs = detachmentIDs
+        list.units = units
+        list.warlordUnitID = warlordID
+        if !trimmedName.isEmpty {
+            list.name = trimmedName
+        }
+        // Drop enhancements that no longer apply.
+        for index in list.units.indices {
+            list.units[index].enhancementIDs.removeAll { enhancementID in
+                guard let (detachment, _) = workspace.catalog.enhancement(id: enhancementID) else {
+                    return true
+                }
+                return !detachmentIDs.contains(detachment.id)
+            }
+        }
+        workspace.replaceList(list)
+
+        var note = "Applied roster (\(addedNotes.joined(separator: ", "))) · \(size.name)."
+        if !unknownDetachments.isEmpty {
+            note += " Unknown detachments ignored: \(unknownDetachments.joined(separator: ", "))."
+        }
+        if !unknownUnits.isEmpty {
+            note += " Unknown units ignored: \(unknownUnits.joined(separator: ", "))."
+        }
+        return mutationResult(workspace: workspace, note: note)
     }
 
     static func setDetachments(workspace: ArmyListChatWorkspace, detachmentIDsCSV: String) -> String {
@@ -166,6 +284,19 @@ enum ArmyListChatToolExecutor {
         guard let sheet = resolveDatasheet(workspace: workspace, raw: datasheetID) else {
             return "Unknown datasheet “\(datasheetID)”. Call searchCatalog first."
         }
+        guard let battle = workspace.catalog.battleSize(id: workspace.list.battleSizeID) else {
+            return "Unknown battle size on the list."
+        }
+        let existingCopies = workspace.list.units.filter { $0.datasheetID == sheet.id }.count
+        let nextCopy = existingCopies + 1
+        let limit = duplicateLimit(for: sheet, battleSize: battle)
+        if sheet.epicHero && nextCopy > 1 {
+            return "Rejected: \(sheet.name) is an Epic Hero (max 1). Status unchanged."
+        }
+        if nextCopy > limit {
+            return "Rejected: \(sheet.name) already has \(existingCopies)/\(limit) copies for \(battle.name). Pick a different datasheet. Status unchanged."
+        }
+
         let requested = Int(models.rounded())
         let modelCount: Int
         if sheet.modelCounts.contains(requested) {
@@ -173,7 +304,19 @@ enum ArmyListChatToolExecutor {
         } else {
             modelCount = sheet.modelCounts.first ?? sheet.minModels
         }
-        let unit = ListUnitInstance(datasheetID: sheet.id, models: modelCount)
+        guard let cost = sheet.points(models: modelCount, copyIndex: nextCopy) else {
+            return "Rejected: no points entry for \(sheet.name) ×\(modelCount)."
+        }
+        let remaining = battle.pointsLimit - workspace.validation.totalPoints
+        if cost > remaining {
+            return "Rejected: \(sheet.name) ×\(modelCount) is \(cost) pts but only \(remaining) pts remain under \(battle.pointsLimit). Status unchanged."
+        }
+
+        let unit = ListUnitInstance(
+            datasheetID: sheet.id,
+            models: modelCount,
+            optionIDs: sheet.defaultOptionIDs()
+        )
         var list = workspace.list
         list.units.append(unit)
         if list.warlordUnitID == nil, sheet.characterRole != nil {
@@ -321,20 +464,38 @@ enum ArmyListChatToolExecutor {
 
     // MARK: - Helpers
 
+    private static func duplicateLimit(
+        for sheet: DatasheetDefinition,
+        battleSize: BattleSizeDefinition
+    ) -> Int {
+        let sizeLimit: Int
+        if sheet.battleline {
+            sizeLimit = battleSize.battlelineDuplicateLimit
+        } else if sheet.dedicatedTransport {
+            sizeLimit = battleSize.dedicatedTransportDuplicateLimit
+        } else {
+            sizeLimit = battleSize.datasheetDuplicateLimit
+        }
+        if let override = sheet.maxCopiesOverride {
+            return min(override, sizeLimit)
+        }
+        return sizeLimit
+    }
+
     private static func mutationResult(workspace: ArmyListChatWorkspace, note: String) -> String {
         let result = workspace.validation
         let status = result.isLegal ? "LEGAL" : "ILLEGAL"
         var lines = [
             note,
-            "Status: \(status) · \(result.totalPoints) pts · DP \(result.detachmentPointsSpent)",
+            "Status: \(status) · \(result.totalPoints) pts · DP \(result.detachmentPointsSpent) · units=\(workspace.list.units.count)",
             "errors=\(result.errors.count) warnings=\(result.warnings.count)",
         ]
-        for issue in result.issues.prefix(8) {
+        for issue in result.issues.prefix(6) {
             let mark = issue.severity == .error ? "ERROR" : "WARN"
             lines.append("[\(mark)] \(issue.code): \(issue.message)")
         }
-        lines.append("---")
-        lines.append(workspace.compactSummary(maxIssues: 6))
+        // Keep mutation replies short — a full roster dump after every addUnit
+        // blows the on-device 4k context window mid-build.
         return lines.joined(separator: "\n")
     }
 

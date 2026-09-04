@@ -565,6 +565,17 @@ final class DeviceAgentTests: XCTestCase {
             userInfo: [NSLocalizedDescriptionKey: "Exceeded model context window size"]
         )
         XCTAssertTrue(AgentRuntime.isExceededContextWindow(err))
+
+        let bareCode = NSError(
+            domain: "FoundationModels.LanguageModelSession.GenerationError",
+            code: -1,
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                    "The operation couldn’t be completed. (FoundationModels.LanguageModelSession.GenerationError error -1.)",
+            ]
+        )
+        XCTAssertTrue(AgentRuntime.isExceededContextWindow(bareCode))
+
         XCTAssertFalse(AgentRuntime.isExceededContextWindow(
             NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "network down"])
         ))

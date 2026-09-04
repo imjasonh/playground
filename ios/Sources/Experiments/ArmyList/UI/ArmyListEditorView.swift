@@ -41,6 +41,12 @@ struct ArmyListEditorView: View {
                 pointsRow
             }
 
+            Section("Name") {
+                TextField("List name", text: $list.name)
+                    .textInputAutocapitalization(.words)
+                    .accessibilityIdentifier("armyListEditorNameField")
+            }
+
             Section("Detachments") {
                 ForEach(catalog.detachments.filter { $0.factionID == list.factionID }) { detachment in
                     Toggle(isOn: bindingForDetachment(detachment.id)) {
@@ -72,8 +78,23 @@ struct ArmyListEditorView: View {
                     } label: {
                         unitRow(unit)
                     }
+                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                        Button(role: .destructive) {
+                            deleteUnit(id: unit.id)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .accessibilityIdentifier("armyListDeleteUnit-\(unit.id.uuidString)")
+
+                        Button {
+                            duplicateUnit(id: unit.id)
+                        } label: {
+                            Label("Duplicate", systemImage: "plus.square.on.square")
+                        }
+                        .tint(.indigo)
+                        .accessibilityIdentifier("armyListDuplicateUnit-\(unit.id.uuidString)")
+                    }
                 }
-                .onDelete(perform: deleteUnits)
 
                 Button {
                     showAddUnit = true
@@ -125,7 +146,13 @@ struct ArmyListEditorView: View {
             NavigationStack {
                 ArmyListUnitPickerView(catalog: catalog, factionID: list.factionID) { sheet in
                     let models = sheet.modelCounts.first ?? sheet.minModels
-                    list.units.append(ListUnitInstance(datasheetID: sheet.id, models: models))
+                    list.units.append(
+                        ListUnitInstance(
+                            datasheetID: sheet.id,
+                            models: models,
+                            optionIDs: sheet.defaultOptionIDs()
+                        )
+                    )
                     showAddUnit = false
                     persist()
                 }
@@ -168,9 +195,10 @@ struct ArmyListEditorView: View {
                     .foregroundStyle(result.isLegal ? Color.green : Color.red)
                     .accessibilityIdentifier("armyListLegalBadge")
                 Spacer()
-                Text("\(result.errors.count) errors · \(result.warnings.count) warnings")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                ArmyListIssueCountsLabel(
+                    errors: result.errors.count,
+                    warnings: result.warnings.count
+                )
             }
             ForEach(result.issues.prefix(8)) { issue in
                 Text("\(issue.severity == .error ? "•" : "◦") \(issue.message)")
@@ -246,9 +274,9 @@ struct ArmyListEditorView: View {
         )
     }
 
-    private func deleteUnits(at offsets: IndexSet) {
-        let removedIDs = Set(offsets.map { list.units[$0].id })
-        list.units.remove(atOffsets: offsets)
+    private func deleteUnit(id: UUID) {
+        let removedIDs: Set<UUID> = [id]
+        list.units.removeAll { $0.id == id }
         list.units = list.units.map { unit in
             var copy = unit
             if let attached = copy.attachedToUnitID, removedIDs.contains(attached) {
@@ -256,9 +284,13 @@ struct ArmyListEditorView: View {
             }
             return copy
         }
-        if let warlord = list.warlordUnitID, removedIDs.contains(warlord) {
+        if list.warlordUnitID == id {
             list.warlordUnitID = nil
         }
+    }
+
+    private func duplicateUnit(id: UUID) {
+        _ = list.duplicateUnit(id: id)
     }
 
     private func persist() {
@@ -287,42 +319,76 @@ struct ArmyListUnitPickerView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
+    /// Legends datasheets are hidden unless the player turns this on.
+    @State private var includeLegends = false
+    @State private var typeFilter: ArmyListUnitTypeFilter = .all
 
     private var sheets: [DatasheetDefinition] {
-        catalog.datasheets
-            .filter { $0.factionID == factionID }
-            .filter {
-                query.isEmpty
-                    || $0.name.localizedCaseInsensitiveContains(query)
-                    || $0.keywords.contains { $0.localizedCaseInsensitiveContains(query) }
-            }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        ArmyListUnitPickerFiltering.sheets(
+            from: catalog,
+            factionID: factionID,
+            query: query,
+            includeLegends: includeLegends,
+            typeFilter: typeFilter
+        )
+    }
+
+    private var filtersActive: Bool {
+        includeLegends || typeFilter != .all
     }
 
     var body: some View {
-        List(sheets) { sheet in
-            Button {
-                onPick(sheet)
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(sheet.name)
-                        .foregroundStyle(.primary)
-                    HStack(spacing: 6) {
-                        if sheet.battleline {
-                            Text("Battleline")
-                        }
-                        if sheet.characterRole != nil {
-                            Text("Character")
-                        }
-                        if let pts = sheet.points(models: sheet.minModels, copyIndex: 1) {
-                            Text("\(pts)+ pts")
-                        }
+        List {
+            Section {
+                Toggle("Include Legends", isOn: $includeLegends)
+                    .accessibilityIdentifier("armyListIncludeLegendsToggle")
+
+                Picker("Type", selection: $typeFilter) {
+                    ForEach(ArmyListUnitTypeFilter.allCases) { filter in
+                        Text(filter.title).tag(filter)
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                }
+                .accessibilityIdentifier("armyListUnitTypeFilter")
+            }
+
+            Section {
+                if sheets.isEmpty {
+                    Text(emptyMessage)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("armyListUnitPickerEmpty")
+                } else {
+                    ForEach(sheets) { sheet in
+                        Button {
+                            onPick(sheet)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(sheet.name)
+                                    .foregroundStyle(.primary)
+                                HStack(spacing: 6) {
+                                    if sheet.legends {
+                                        Text("Legends")
+                                    }
+                                    if sheet.battleline {
+                                        Text("Battleline")
+                                    }
+                                    if sheet.characterRole != nil {
+                                        Text("Character")
+                                    }
+                                    if sheet.dedicatedTransport {
+                                        Text("Transport")
+                                    }
+                                    if let pts = sheet.points(models: sheet.minModels, copyIndex: 1) {
+                                        Text("\(pts)+ pts")
+                                    }
+                                }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            }
+                        }
+                        .accessibilityIdentifier("armyListPick-\(sheet.id)")
+                    }
                 }
             }
-            .accessibilityIdentifier("armyListPick-\(sheet.id)")
         }
         .searchable(text: $query, prompt: "Datasheets")
         .navigationTitle("Add unit")
@@ -331,6 +397,86 @@ struct ArmyListUnitPickerView: View {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
             }
+            ToolbarItem(placement: .primaryAction) {
+                if filtersActive {
+                    Button("Reset filters") {
+                        includeLegends = false
+                        typeFilter = .all
+                    }
+                    .accessibilityIdentifier("armyListUnitPickerResetFilters")
+                }
+            }
+        }
+    }
+
+    private var emptyMessage: String {
+        if !query.isEmpty || filtersActive {
+            return "No datasheets match these filters."
+        }
+        return "No datasheets for this faction."
+    }
+}
+
+enum ArmyListUnitTypeFilter: String, CaseIterable, Identifiable, Sendable {
+    case all
+    case battleline
+    case character
+    case dedicatedTransport
+    case infantry
+    case vehicle
+    case mounted
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All types"
+        case .battleline: return "Battleline"
+        case .character: return "Characters"
+        case .dedicatedTransport: return "Dedicated transports"
+        case .infantry: return "Infantry"
+        case .vehicle: return "Vehicles"
+        case .mounted: return "Mounted"
+        }
+    }
+}
+
+enum ArmyListUnitPickerFiltering {
+    static func sheets(
+        from catalog: ArmyCatalog,
+        factionID: String,
+        query: String,
+        includeLegends: Bool,
+        typeFilter: ArmyListUnitTypeFilter
+    ) -> [DatasheetDefinition] {
+        catalog.datasheets
+            .filter { $0.factionID == factionID }
+            .filter { includeLegends || !$0.legends }
+            .filter { matchesType($0, filter: typeFilter) }
+            .filter {
+                query.isEmpty
+                    || $0.name.localizedCaseInsensitiveContains(query)
+                    || $0.keywords.contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+    }
+
+    static func matchesType(_ sheet: DatasheetDefinition, filter: ArmyListUnitTypeFilter) -> Bool {
+        switch filter {
+        case .all:
+            return true
+        case .battleline:
+            return sheet.battleline
+        case .character:
+            return sheet.characterRole != nil
+        case .dedicatedTransport:
+            return sheet.dedicatedTransport
+        case .infantry:
+            return sheet.keywords.contains("Infantry")
+        case .vehicle:
+            return sheet.keywords.contains("Vehicle")
+        case .mounted:
+            return sheet.keywords.contains("Mounted")
         }
     }
 }
@@ -370,13 +516,17 @@ struct ArmyListUnitDetailView: View {
                         }
                     }
 
-                    Section("Enhancements") {
-                        let available = availableEnhancements(for: sheet)
-                        if available.isEmpty {
-                            Text("Select a detachment that grants enhancements, or this unit cannot take any.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        } else {
+                    if !sheet.optionGroups.isEmpty {
+                        Section("Loadout") {
+                            ForEach(sheet.optionGroups) { group in
+                                optionGroupControl(unitIndex: index, group: group)
+                            }
+                        }
+                    }
+
+                    let available = availableEnhancements(for: sheet)
+                    if !available.isEmpty {
+                        Section("Enhancements") {
                             ForEach(available, id: \.enhancement.id) { item in
                                 Toggle(isOn: enhancementBinding(unitIndex: index, enhancementID: item.enhancement.id)) {
                                     VStack(alignment: .leading, spacing: 2) {
@@ -392,6 +542,9 @@ struct ArmyListUnitDetailView: View {
                     }
                 }
                 .navigationTitle(sheet.name)
+                .onAppear {
+                    seedDefaultOptionsIfNeeded(unitIndex: index, sheet: sheet)
+                }
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "questionmark.circle")
@@ -445,6 +598,99 @@ struct ArmyListUnitDetailView: View {
                 }
             }
         )
+    }
+
+    @ViewBuilder
+    private func optionGroupControl(unitIndex: Int, group: OptionGroupDefinition) -> some View {
+        if group.min == 0, group.max == 1, group.options.count == 1 {
+            let option = group.options[0]
+            Toggle(isOn: optionToggleBinding(unitIndex: unitIndex, group: group, optionID: option.id)) {
+                optionLabel(option)
+            }
+            .accessibilityIdentifier("armyListOption-\(option.id)")
+        } else if group.max == 1 {
+            Picker(selection: exclusiveOptionBinding(unitIndex: unitIndex, group: group)) {
+                if group.min == 0 {
+                    Text("None").tag(String?.none)
+                }
+                ForEach(group.options) { option in
+                    optionLabel(option).tag(Optional(option.id))
+                }
+            } label: {
+                Text(group.name)
+            }
+            .accessibilityIdentifier("armyListOptionGroup-\(group.id)")
+        } else {
+            // Rare multi-pick groups: toggles capped at max.
+            ForEach(group.options) { option in
+                Toggle(isOn: optionToggleBinding(unitIndex: unitIndex, group: group, optionID: option.id)) {
+                    optionLabel(option)
+                }
+                .accessibilityIdentifier("armyListOption-\(option.id)")
+            }
+        }
+    }
+
+    private func optionLabel(_ option: OptionDefinition) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(option.name)
+            if option.points != 0 {
+                Text("\(option.points) pts")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func exclusiveOptionBinding(
+        unitIndex: Int,
+        group: OptionGroupDefinition
+    ) -> Binding<String?> {
+        let groupIDs = Set(group.options.map(\.id))
+        return Binding(
+            get: {
+                list.units[unitIndex].optionIDs.first { groupIDs.contains($0) }
+            },
+            set: { newValue in
+                list.units[unitIndex].optionIDs.removeAll { groupIDs.contains($0) }
+                if let newValue {
+                    list.units[unitIndex].optionIDs.append(newValue)
+                }
+            }
+        )
+    }
+
+    private func optionToggleBinding(
+        unitIndex: Int,
+        group: OptionGroupDefinition,
+        optionID: String
+    ) -> Binding<Bool> {
+        let groupIDs = Set(group.options.map(\.id))
+        return Binding(
+            get: { list.units[unitIndex].optionIDs.contains(optionID) },
+            set: { enabled in
+                if enabled {
+                    var selected = list.units[unitIndex].optionIDs.filter { groupIDs.contains($0) }
+                    if !selected.contains(optionID) {
+                        selected.append(optionID)
+                    }
+                    if selected.count > group.max {
+                        selected = Array(selected.suffix(group.max))
+                    }
+                    list.units[unitIndex].optionIDs.removeAll { groupIDs.contains($0) }
+                    list.units[unitIndex].optionIDs.append(contentsOf: selected)
+                } else {
+                    list.units[unitIndex].optionIDs.removeAll { $0 == optionID }
+                }
+            }
+        )
+    }
+
+    private func seedDefaultOptionsIfNeeded(unitIndex: Int, sheet: DatasheetDefinition) {
+        guard list.units[unitIndex].optionIDs.isEmpty else { return }
+        let defaults = sheet.defaultOptionIDs()
+        guard !defaults.isEmpty else { return }
+        list.units[unitIndex].optionIDs = defaults
     }
 }
 

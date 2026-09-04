@@ -491,15 +491,18 @@ final class AgentRuntime: ObservableObject {
 
     nonisolated static func isExceededContextWindow(_ error: Error) -> Bool {
         let text = error.localizedDescription.lowercased()
-        if text.contains("context window") || text.contains("exceededcontext") {
+        if text.contains("context window")
+            || text.contains("exceededcontext")
+            || text.contains("contextsizeexceeded")
+        {
             return true
         }
         let ns = error as NSError
-        if ns.domain.lowercased().contains("foundationmodels") {
-            // GenerationError.exceededContextWindowSize has been observed as code -1.
-            if ns.localizedDescription.lowercased().contains("context") {
-                return true
-            }
+        let domain = ns.domain.lowercased()
+        if domain.contains("foundationmodels") {
+            if text.contains("context") { return true }
+            // Observed on device: GenerationError error -1 with no useful message.
+            if ns.code == -1 { return true }
         }
         return false
     }

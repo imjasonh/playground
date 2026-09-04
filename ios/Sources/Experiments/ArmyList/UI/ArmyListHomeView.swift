@@ -348,6 +348,11 @@ private struct ArmyListRowView: View {
                     Text("\(validation.totalPoints) pts")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    ArmyListIssueCountsLabel(
+                        errors: validation.errors.count,
+                        warnings: validation.warnings.count,
+                        style: .caption2
+                    )
                 }
             }
         }
@@ -366,7 +371,7 @@ private struct ArmyListRowView: View {
     }
 }
 
-/// Create a blank list: faction, battle size, name.
+/// Create a blank list or a seeded starter: faction, battle size, name.
 struct ArmyListNewSheet: View {
     let catalog: ArmyCatalog
     var onCreate: (ArmyListDocument) -> Void
@@ -375,6 +380,7 @@ struct ArmyListNewSheet: View {
     @State private var name = "New list"
     @State private var factionID: String
     @State private var battleSizeID = "incursion"
+    @State private var seedError: String?
 
     private var factionsSorted: [FactionDefinition] {
         catalog.factions.sorted {
@@ -384,6 +390,11 @@ struct ArmyListNewSheet: View {
 
     private var canSubmit: Bool {
         !factionID.isEmpty && catalog.battleSize(id: battleSizeID) != nil
+    }
+
+    private var pointsLabel: String {
+        guard let size = catalog.battleSize(id: battleSizeID) else { return "" }
+        return "\(size.pointsLimit)"
     }
 
     init(catalog: ArmyCatalog, onCreate: @escaping (ArmyListDocument) -> Void) {
@@ -428,6 +439,30 @@ struct ArmyListNewSheet: View {
                 .disabled(catalog.battleSizes.isEmpty)
                 .accessibilityIdentifier("armyListBattleSizePicker")
             }
+
+            Section {
+                Button("Build starter list") {
+                    createStarterList()
+                }
+                .disabled(!canSubmit)
+                .accessibilityIdentifier("armyListBuildStarterButton")
+
+                Text(
+                    pointsLabel.isEmpty
+                        ? "Fills units and a detachment for this faction. You can edit after."
+                        : "Fills a legal \(pointsLabel)-point list for this faction. You can edit after."
+                )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let seedError {
+                Section {
+                    Text(seedError)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("armyListBuildStarterError")
+                }
+            }
         }
         .navigationTitle("New list")
         .navigationBarTitleDisplayMode(.inline)
@@ -438,18 +473,44 @@ struct ArmyListNewSheet: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Create") {
-                    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let list = ArmyListDocument(
-                        name: trimmed.isEmpty ? "New list" : trimmed,
-                        catalogVersion: catalog.version,
-                        factionID: factionID,
-                        battleSizeID: battleSizeID
-                    )
-                    onCreate(list)
+                    createBlankList()
                 }
                 .disabled(!canSubmit)
                 .accessibilityIdentifier("armyListCreateButton")
             }
         }
+    }
+
+    private func trimmedName() -> String? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == "New list" {
+            return nil
+        }
+        return trimmed
+    }
+
+    private func createBlankList() {
+        seedError = nil
+        let list = ArmyListDocument(
+            name: trimmedName() ?? "New list",
+            catalogVersion: catalog.version,
+            factionID: factionID,
+            battleSizeID: battleSizeID
+        )
+        onCreate(list)
+    }
+
+    private func createStarterList() {
+        seedError = nil
+        guard let seeded = ArmyListLegalSeeder.seed(
+            catalog: catalog,
+            factionID: factionID,
+            battleSizeID: battleSizeID,
+            name: trimmedName()
+        ) else {
+            seedError = "Couldn’t build a starter list for this faction and battle size."
+            return
+        }
+        onCreate(seeded.list)
     }
 }

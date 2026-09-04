@@ -30,14 +30,23 @@ struct ArmyListChatEntry: Identifiable, Equatable {
 /// Runs Army List prompts through on-device Foundation Models + list tools.
 @MainActor
 final class ArmyListChatRuntime: ObservableObject {
+    /// Rough cost of the army-list tool schemas registered with the session.
+    static let toolsReserveTokens = 1_500
+
     @Published var transcript: [ArmyListChatEntry] = []
     @Published var isRunning = false
     @Published private(set) var modelGate: AgentModelGate = .unsupportedPlatform
+    @Published private(set) var contextUsage = AgentContextUsage.empty
 
     let workspace: ArmyListChatWorkspace
 
     private var languageSessionBox: Any?
     private var workspaceBag: AnyCancellable?
+    private var carryOverNotes = ""
+    private var budget = AgentContextBudget(toolsReserveTokens: ArmyListChatRuntime.toolsReserveTokens)
+    private var didCompactThisSession = false
+    /// Full tool payloads for export (may be longer than what the model received).
+    private(set) var toolLog: [(name: String, detail: String)] = []
 
     var isModelAvailable: Bool { modelGate.isAvailable }
 
@@ -53,6 +62,7 @@ final class ArmyListChatRuntime: ObservableObject {
                 text: "Ask me to build, critique, rename, or fix this list. Every edit is re-checked by the validator."
             )
         }
+        publishContextUsage()
     }
 
     func refreshModelStatus() {
@@ -73,6 +83,8 @@ final class ArmyListChatRuntime: ObservableObject {
             refreshModelStatus()
             if isModelAvailable {
                 transcript.removeAll()
+                toolLog.removeAll()
+                resetLanguageSession()
                 append(
                     .system,
                     text: "Ask me to build, critique, rename, or fix this list. Every edit is re-checked by the validator."
@@ -83,7 +95,8 @@ final class ArmyListChatRuntime: ObservableObject {
 
     func clearTranscript() {
         transcript.removeAll()
-        languageSessionBox = nil
+        toolLog.removeAll()
+        resetLanguageSession()
         if isModelAvailable {
             append(
                 .system,
@@ -92,10 +105,11 @@ final class ArmyListChatRuntime: ObservableObject {
         }
     }
 
-    func send(prompt: String) async {
+    func send(prompt: String, displayText: String? = nil) async {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        append(.user, text: trimmed)
+        let shown = (displayText ?? trimmed).trimmingCharacters(in: .whitespacesAndNewlines)
+        append(.user, text: shown.isEmpty ? trimmed : shown)
         isRunning = true
         defer { isRunning = false }
 
@@ -110,8 +124,180 @@ final class ArmyListChatRuntime: ObservableObject {
             try await runFoundationModels(prompt: trimmed)
             #endif
         } catch {
-            append(.assistant, text: error.localizedDescription)
+            if Self.isExceededContextWindow(error) {
+                compactLanguageSession(
+                    reason: "Model context filled during tool use; compacted and retrying once."
+                )
+                do {
+                    #if canImport(FoundationModels)
+                    if #available(iOS 26.0, *) {
+                        try await runFoundationModels(prompt: trimmed, isRetryAfterCompact: true)
+                        return
+                    }
+                    #endif
+                } catch {
+                    append(
+                        .assistant,
+                        text: "Couldn’t finish after compacting context: \(error.localizedDescription). Try Clear, then ask for a smaller change."
+                    )
+                    return
+                }
+            }
+            append(.assistant, text: friendlyGenerationError(error))
         }
+    }
+
+    /// FoundationModels often surfaces context overflow as GenerationError code -1
+    /// with a generic localizedDescription (no “context” substring).
+    nonisolated static func isExceededContextWindow(_ error: Error) -> Bool {
+        let text = error.localizedDescription.lowercased()
+        if text.contains("context window")
+            || text.contains("exceededcontext")
+            || text.contains("contextsizeexceeded")
+        {
+            return true
+        }
+        let ns = error as NSError
+        let domain = ns.domain.lowercased()
+        if domain.contains("foundationmodels") {
+            if text.contains("context") { return true }
+            // Observed on device: GenerationError error -1 with no useful message.
+            if ns.code == -1 { return true }
+        }
+        return false
+    }
+
+    private func friendlyGenerationError(_ error: Error) -> String {
+        if Self.isExceededContextWindow(error) {
+            return "The on-device model ran out of context while editing. Tap Clear, then Build 1k again (one applyRosterPlan call) or ask for a smaller change."
+        }
+        return error.localizedDescription
+    }
+
+    private func resetLanguageSession() {
+        languageSessionBox = nil
+        budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
+        didCompactThisSession = false
+        carryOverNotes = ""
+        publishContextUsage()
+    }
+
+    private func compactLanguageSession(reason: String) {
+        carryOverNotes = Self.compactionCarryOver(
+            listSnapshot: workspace.compactSummary(maxIssues: 4),
+            transcript: transcript
+        )
+        didCompactThisSession = true
+        languageSessionBox = nil
+        budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
+        append(.system, text: reason)
+        publishContextUsage()
+    }
+
+    /// Fresh-session notes after compact so follow-ups keep list + recent turns.
+    nonisolated static func compactionCarryOver(
+        listSnapshot: String,
+        transcript: [ArmyListChatEntry]
+    ) -> String {
+        var parts: [String] = [
+            "Prior model context was compacted.",
+            "Answer ONLY the latest user message. Do not continue an earlier topic unless that message asks for it.",
+        ]
+        let snap = listSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !snap.isEmpty {
+            parts.append("List snapshot:")
+            parts.append(String(snap.prefix(800)))
+        }
+        let recent = transcript.filter { entry in
+            switch entry.kind {
+            case .user, .assistant: return true
+            case .system, .tool: return false
+            }
+        }.suffix(4)
+        if !recent.isEmpty {
+            parts.append("Recent chat (oldest first):")
+            for entry in recent {
+                let who = entry.kind == .user ? "User" : "Assistant"
+                let body = entry.text
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                parts.append("\(who): \(String(body.prefix(280)))")
+            }
+        }
+        return AgentContextBudget.truncateToChars(parts.joined(separator: "\n"), maxChars: 1_400)
+    }
+
+    func noteToolExchange(name: String, result: String) -> String {
+        toolLog.append((name: name, detail: result))
+        let capped = AgentContextBudget.truncateToChars(
+            result,
+            maxChars: budget.modelToolResultCharBudget(default: 1_600)
+        )
+        budget.addText(name)
+        budget.addText(capped)
+        publishContextUsage()
+        return capped
+    }
+
+    func makeConversationDump() -> ArmyListChatDump {
+        let validation = workspace.validation
+        return ArmyListChatDump(
+            exportedAt: Date(),
+            mode: "army-list-chat",
+            modelGate: modelGate.title,
+            modelAvailable: isModelAvailable,
+            contextPercentUsed: contextUsage.percentUsed,
+            contextDidCompact: contextUsage.didCompact,
+            catalogVersion: workspace.catalog.version,
+            list: workspace.list,
+            validation: ArmyListChatDumpValidation(
+                isLegal: validation.isLegal,
+                totalPoints: validation.totalPoints,
+                detachmentPointsSpent: validation.detachmentPointsSpent,
+                errors: validation.errors.map {
+                    ArmyListChatDumpIssue(
+                        code: $0.code,
+                        severity: $0.severity.rawValue,
+                        message: $0.message,
+                        unitID: $0.unitID?.uuidString
+                    )
+                },
+                warnings: validation.warnings.map {
+                    ArmyListChatDumpIssue(
+                        code: $0.code,
+                        severity: $0.severity.rawValue,
+                        message: $0.message,
+                        unitID: $0.unitID?.uuidString
+                    )
+                }
+            ),
+            entries: transcript.map { entry in
+                let kindLabel: String
+                switch entry.kind {
+                case .user: kindLabel = "user"
+                case .assistant: kindLabel = "assistant"
+                case .system: kindLabel = "system"
+                case .tool: kindLabel = "tool"
+                }
+                return ArmyListChatDumpEntry(
+                    id: entry.id.uuidString,
+                    date: entry.createdAt,
+                    kind: kindLabel,
+                    text: entry.text
+                )
+            },
+            toolLog: toolLog.map {
+                ArmyListChatDumpToolLog(name: $0.name, detail: $0.detail)
+            }
+        )
+    }
+
+    func writeConversationDumpFile() throws -> URL {
+        try ArmyListChatDumpExporter.writeFile(for: makeConversationDump())
+    }
+
+    private func publishContextUsage() {
+        contextUsage = AgentContextUsage(budget: budget, didCompact: didCompactThisSession)
     }
 
     private func append(_ kind: ArmyListChatEntry.Kind, text: String) {
@@ -138,16 +324,32 @@ final class ArmyListChatRuntime: ObservableObject {
     }
 
     @available(iOS 26.0, *)
-    private func runFoundationModels(prompt: String) async throws {
+    private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
         refreshModelStatus()
         guard isModelAvailable else {
             append(.system, text: armyListGateDetail)
             return
         }
+        if !isRetryAfterCompact, budget.needsCompact {
+            compactLanguageSession(reason: "Trimmed model context to leave room for this turn.")
+        }
+        if isRetryAfterCompact, carryOverNotes.isEmpty {
+            carryOverNotes = Self.compactionCarryOver(
+                listSnapshot: workspace.compactSummary(maxIssues: 4),
+                transcript: transcript
+            )
+        }
         let session = ensureLanguageSession()
+        budget.addText(prompt)
+        publishContextUsage()
         let response = try await session.respond(to: prompt)
         let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        budget.addText(text)
+        publishContextUsage()
         append(.assistant, text: text.isEmpty ? "(Empty model response.)" : text)
+        if budget.needsCompact {
+            compactLanguageSession(reason: "Trimmed model context after that reply.")
+        }
     }
 
     @available(iOS 26.0, *)
@@ -155,8 +357,18 @@ final class ArmyListChatRuntime: ObservableObject {
         if let existing = languageSessionBox as? LanguageModelSession {
             return existing
         }
-        let session = LanguageModelSession(tools: makeFoundationTools(), instructions: sessionInstructions)
+        var instructions = sessionInstructions
+        if !carryOverNotes.isEmpty {
+            instructions += "\n\n" + carryOverNotes
+            carryOverNotes = ""
+        }
+        let session = LanguageModelSession(tools: makeFoundationTools(), instructions: instructions)
         languageSessionBox = session
+        budget.resetBaseline(
+            instructions: instructions,
+            toolsReserveTokens: Self.toolsReserveTokens
+        )
+        publishContextUsage()
         return session
     }
 
@@ -168,8 +380,12 @@ final class ArmyListChatRuntime: ObservableObject {
         Construction facts (points, Detachment Points, join edges, legality) come ONLY from tools. Never invent datasheet ids or points.
         After mutating tools, read the returned Status line. If ILLEGAL, keep fixing with tools or explain what is still wrong.
         For thematic questions (army name, color scheme, lore vibe, matchup opinions), answer helpfully and label opinions as opinions.
-        Prefer short replies. When building from scratch: setBattleSize, setDetachments, clearUnits if needed, addUnit repeatedly, setWarlord, setListName.
-        Use searchCatalog before addUnit when unsure of an id.
+        Prefer short replies. Format with Markdown (bold, bullets, short headings) when it helps scanability.
+        Always answer the latest user message; do not keep talking about an earlier Theme/name request unless they ask again.
+        For from-scratch 1000/2000 point builds: invent a fresh theme each time (different units/detachment/name), call searchCatalog as needed, then applyRosterPlan once with your full plan. Do not loop addUnit for a full army — that overflows the on-device context window.
+        When fixing errors: keep the current battle size (never call setBattleSize). Prefer removeUnit / setUnitModels / setDetachments / setWarlord / attachCharacter. Respect datasheet duplicate limits for this battle size — addUnit rejects illegal copies.
+        When filling points: keep battle size and existing units; add a few thematic units that fit remaining points without exceeding duplicate caps. Re-read Status after each mutation.
+        Use addUnit only for small targeted edits after a roster already exists.
         Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
         """
     }
@@ -179,6 +395,7 @@ final class ArmyListChatRuntime: ObservableObject {
         [
             ArmyGetListSummaryFMTool(runtime: self),
             ArmySearchCatalogFMTool(runtime: self),
+            ArmyApplyRosterPlanFMTool(runtime: self),
             ArmySetBattleSizeFMTool(runtime: self),
             ArmySetDetachmentsFMTool(runtime: self),
             ArmyAddUnitFMTool(runtime: self),
@@ -192,8 +409,9 @@ final class ArmyListChatRuntime: ObservableObject {
         ]
     }
     #else
-    private func runFoundationModels(prompt: String) async throws {
+    private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
         _ = prompt
+        _ = isRetryAfterCompact
         append(.system, text: armyListGateDetail)
     }
     #endif
@@ -228,10 +446,19 @@ private enum ArmyListFMToolBridge {
             guard let runtime else {
                 return "Army List chat runtime is gone."
             }
-            runtime.transcript.append(
-                ArmyListChatEntry(kind: .tool, text: name)
-            )
-            return work(runtime.workspace)
+            let pending = ArmyListChatEntry(kind: .tool, text: "\(name)…")
+            runtime.transcript.append(pending)
+            let raw = work(runtime.workspace)
+            let label = ArmyListChatToolDisplay.label(name: name, result: raw)
+            if let index = runtime.transcript.lastIndex(where: { $0.id == pending.id }) {
+                runtime.transcript[index] = ArmyListChatEntry(
+                    id: pending.id,
+                    kind: .tool,
+                    text: label,
+                    createdAt: pending.createdAt
+                )
+            }
+            return runtime.noteToolExchange(name: name, result: raw)
         }.value
     }
 }
@@ -281,10 +508,41 @@ struct ArmySearchCatalogFMTool: Tool {
 }
 
 @available(iOS 26.0, *)
+struct ArmyApplyRosterPlanFMTool: Tool {
+    weak var runtime: ArmyListChatRuntime?
+    let name = "applyRosterPlan"
+    let description = "Replace the whole roster in one call with a battle size, detachments, and units you invented. Prefer this for creative from-scratch builds."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "incursion, strike-force, 1000, or 2000")
+        var battleSizeID: String
+        @Guide(description: "Comma-separated detachment ids/names that fit the DP budget")
+        var detachmentIDsCSV: String
+        @Guide(description: "Comma-separated datasheet id/name or id:models, e.g. blade-champion:1,custodian-guard:5")
+        var unitsCSV: String
+        @Guide(description: "Army list name")
+        var listName: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+            ArmyListChatToolExecutor.applyRosterPlan(
+                workspace: workspace,
+                battleSizeID: arguments.battleSizeID,
+                detachmentIDsCSV: arguments.detachmentIDsCSV,
+                unitsCSV: arguments.unitsCSV,
+                listName: arguments.listName
+            )
+        }
+    }
+}
+
+@available(iOS 26.0, *)
 struct ArmySetBattleSizeFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setBattleSize"
-    let description = "Set battle size to incursion (1000) or strike-force (2000)."
+    let description = "Set battle size to incursion (1000) or strike-force (2000). Never use this to clear validation errors — fix the roster instead."
 
     @Generable
     struct Arguments {
