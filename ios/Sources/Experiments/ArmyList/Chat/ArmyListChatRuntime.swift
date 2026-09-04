@@ -402,7 +402,7 @@ final class ArmyListChatRuntime: ObservableObject {
         Construction facts (points, Detachment Points, join edges, legality) come ONLY from tools. Never invent datasheet ids or points.
         After mutating tools, read the returned Status line. If ILLEGAL, keep fixing with tools or explain what is still wrong.
         For thematic questions (army name, color scheme, lore vibe, matchup opinions), answer helpfully and label opinions as opinions.
-        Prefer short replies. Format with Markdown (bold, bullets, short headings) when it helps scanability.
+        Prefer short replies. Format with Markdown: put a blank line between paragraphs and between matchup/section blocks, use **bold** for headings, and put each Weakness / Countermeasure on its own line. Never run sections together on one line.
         Always answer the latest user message; do not keep talking about an earlier Theme/name request unless they ask again.
         For from-scratch 1000/2000 point builds: invent a fresh theme each time (different units/detachment/name), call searchCatalog as needed, then applyRosterPlan once with your full plan. Do not loop addUnit for a full army — that overflows the on-device context window.
         When fixing errors: keep the current battle size (never call setBattleSize). Prefer removeUnit / setUnitModels / setDetachments / setWarlord / attachCharacter. Respect datasheet duplicate limits for this battle size — addUnit rejects illegal copies.

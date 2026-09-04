@@ -197,6 +197,64 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertFalse(boldRuns.isEmpty, "Expected bold markdown run")
     }
 
+    func testMarkdownInsertsSoftBreaksBeforeLabels() {
+        let mashed = "concentrated fire.Countermeasure: Use your speed.Tyranids:Weakness: Swarm."
+        let fixed = ArmyListChatMarkdown.insertSoftBreaks(mashed)
+        XCTAssertTrue(fixed.contains("fire.\n\nCountermeasure:"), fixed)
+        XCTAssertTrue(fixed.contains("Tyranids:\nWeakness:"), fixed)
+
+        let plain = String(ArmyListChatMarkdown.attributed(mashed).characters)
+        XCTAssertTrue(plain.contains("Countermeasure:"))
+        XCTAssertTrue(
+            plain.contains("\n"),
+            "Soft breaks should survive into the attributed string: \(plain.debugDescription)"
+        )
+    }
+
+    func testMarkdownKeepsParagraphSpacing() {
+        let attributed = ArmyListChatMarkdown.attributed("First paragraph.\n\nSecond paragraph.")
+        let plain = String(attributed.characters)
+        XCTAssertTrue(
+            plain.contains("First paragraph.\n\nSecond paragraph."),
+            "Expected a blank line between paragraphs, got: \(plain.debugDescription)"
+        )
+    }
+
+    func testMarkdownKeepsSingleLineBreaks() {
+        // Default AttributedString markdown collapses single newlines into spaces;
+        // the block renderer must keep them so labeled lines stay separate.
+        let attributed = ArmyListChatMarkdown.attributed("Line one\nLine two")
+        let plain = String(attributed.characters)
+        XCTAssertTrue(
+            plain.contains("Line one\nLine two"),
+            "Expected a line break between lines, got: \(plain.debugDescription)"
+        )
+    }
+
+    func testMarkdownRendersBulletMarkers() {
+        let attributed = ArmyListChatMarkdown.attributed("- one\n- two")
+        let plain = String(attributed.characters)
+        XCTAssertTrue(plain.contains("•"), "Expected a bullet marker, got: \(plain.debugDescription)")
+        XCTAssertFalse(plain.contains("- one"), "Raw bullet syntax should be replaced")
+    }
+
+    func testBuildPromptFoldsInTheme() {
+        let prompt = ArmyListChatPromptComposer.buildPrompt(theme: "night raiders")
+        XCTAssertTrue(prompt.contains("applyRosterPlan"))
+        XCTAssertTrue(prompt.contains("Theme to honor: night raiders"))
+    }
+
+    func testFillPointsPromptFoldsInTheme() {
+        let prompt = ArmyListChatPromptComposer.fillPointsPrompt(theme: "veteran survivors")
+        XCTAssertTrue(prompt.contains("Fill remaining points"))
+        XCTAssertTrue(prompt.contains("Theme to honor: veteran survivors"))
+    }
+
+    func testPromptsOmitThemeClauseWhenBlank() {
+        XCTAssertFalse(ArmyListChatPromptComposer.buildPrompt(theme: "   ").contains("Theme to honor"))
+        XCTAssertFalse(ArmyListChatPromptComposer.fillPointsPrompt(theme: "").contains("Theme to honor"))
+    }
+
     func testNoteToolExchangeTracksContextUsage() {
         let runtime = ArmyListChatRuntime(workspace: workspace)
         let before = runtime.contextUsage.percentUsed

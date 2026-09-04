@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// Authoring surface: detachments, units, live validation, share.
+/// Authoring surface: units, warlord, live validation, share.
+/// Army-level settings (name, battle size, detachments, notes) live on
+/// `ArmyListSettingsView`.
 struct ArmyListEditorView: View {
     @State private var list: ArmyListDocument
     let catalog: ArmyCatalog
@@ -41,29 +43,23 @@ struct ArmyListEditorView: View {
                 pointsRow
             }
 
-            Section("Name") {
-                TextField("List name", text: $list.name)
-                    .textInputAutocapitalization(.words)
-                    .accessibilityIdentifier("armyListEditorNameField")
-            }
-
-            Section("Detachments") {
-                ForEach(catalog.detachments.filter { $0.factionID == list.factionID }) { detachment in
-                    Toggle(isOn: bindingForDetachment(detachment.id)) {
+            Section {
+                NavigationLink {
+                    ArmyListSettingsView(list: $list, catalog: catalog)
+                        .onDisappear(perform: persist)
+                } label: {
+                    Label {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(detachment.name)
-                            Text("\(detachment.detachmentPoints) DP · \(detachment.forceDisposition)")
+                            Text("Army settings")
+                            Text(settingsSummary)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            if let tag = detachment.uniqueTag {
-                                Text("Unique: \(tag)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.orange)
-                            }
                         }
+                    } icon: {
+                        Image(systemName: "slider.horizontal.3")
                     }
-                    .accessibilityIdentifier("armyListDetachment-\(detachment.id)")
                 }
+                .accessibilityIdentifier("armyListSettingsLink")
             }
 
             Section("Units") {
@@ -113,11 +109,6 @@ struct ArmyListEditorView: View {
                     }
                 }
                 .accessibilityIdentifier("armyListWarlordPicker")
-            }
-
-            Section("Notes") {
-                TextField("Notes", text: $list.notes, axis: .vertical)
-                    .lineLimit(3...6)
             }
         }
         .navigationTitle(list.name)
@@ -177,6 +168,24 @@ struct ArmyListEditorView: View {
         list.units.filter {
             catalog.datasheet(id: $0.datasheetID)?.characterRole != nil
         }
+    }
+
+    private var settingsSummary: String {
+        let battle = catalog.battleSize(id: list.battleSizeID)
+        var parts: [String] = []
+        if let battle {
+            parts.append("\(battle.name) · \(battle.pointsLimit) pts")
+        }
+        let names = list.detachmentIDs.compactMap { catalog.detachment(id: $0)?.name }
+        switch names.count {
+        case 0:
+            parts.append("No detachment")
+        case 1:
+            parts.append(names[0])
+        default:
+            parts.append("\(names.count) detachments")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var warlordBinding: Binding<UUID?> {
@@ -250,30 +259,6 @@ struct ArmyListEditorView: View {
         }
     }
 
-    private func bindingForDetachment(_ id: String) -> Binding<Bool> {
-        Binding(
-            get: { list.detachmentIDs.contains(id) },
-            set: { enabled in
-                if enabled {
-                    if !list.detachmentIDs.contains(id) {
-                        list.detachmentIDs.append(id)
-                    }
-                } else {
-                    list.detachmentIDs.removeAll { $0 == id }
-                    // Drop enhancements that required the removed detachment.
-                    for index in list.units.indices {
-                        list.units[index].enhancementIDs.removeAll { enhancementID in
-                            guard let (detachment, _) = catalog.enhancement(id: enhancementID) else {
-                                return false
-                            }
-                            return detachment.id == id
-                        }
-                    }
-                }
-            }
-        )
-    }
-
     private func deleteUnit(id: UUID) {
         let removedIDs: Set<UUID> = [id]
         list.units.removeAll { $0.id == id }
@@ -309,6 +294,93 @@ struct ArmyListEditorView: View {
             fileURL = url
         }
         return SharePayload(text: text, fileURL: fileURL)
+    }
+}
+
+/// Army-level settings: name, battle size (points), detachments, notes. Keeps
+/// the editor screen focused on adding and tuning units.
+struct ArmyListSettingsView: View {
+    @Binding var list: ArmyListDocument
+    let catalog: ArmyCatalog
+
+    private var detachments: [DetachmentDefinition] {
+        catalog.detachments.filter { $0.factionID == list.factionID }
+    }
+
+    var body: some View {
+        Form {
+            Section("Name") {
+                TextField("List name", text: $list.name)
+                    .textInputAutocapitalization(.words)
+                    .accessibilityIdentifier("armyListSettingsNameField")
+            }
+
+            Section("Battle size") {
+                Picker("Battle size", selection: $list.battleSizeID) {
+                    ForEach(catalog.battleSizes) { size in
+                        Text("\(size.name) (\(size.pointsLimit) pts)").tag(size.id)
+                    }
+                }
+                .accessibilityIdentifier("armyListSettingsBattleSizePicker")
+            }
+
+            Section("Detachments") {
+                if detachments.isEmpty {
+                    Text("No detachments for this faction.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(detachments) { detachment in
+                        Toggle(isOn: bindingForDetachment(detachment.id)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(detachment.name)
+                                Text("\(detachment.detachmentPoints) DP · \(detachment.forceDisposition)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if let tag = detachment.uniqueTag {
+                                    Text("Unique: \(tag)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+                        }
+                        .accessibilityIdentifier("armyListDetachment-\(detachment.id)")
+                    }
+                }
+            }
+
+            Section("Notes") {
+                TextField("Notes", text: $list.notes, axis: .vertical)
+                    .lineLimit(3...6)
+                    .accessibilityIdentifier("armyListSettingsNotesField")
+            }
+        }
+        .navigationTitle("Army settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("armyListSettingsView")
+    }
+
+    private func bindingForDetachment(_ id: String) -> Binding<Bool> {
+        Binding(
+            get: { list.detachmentIDs.contains(id) },
+            set: { enabled in
+                if enabled {
+                    if !list.detachmentIDs.contains(id) {
+                        list.detachmentIDs.append(id)
+                    }
+                } else {
+                    list.detachmentIDs.removeAll { $0 == id }
+                    // Drop enhancements that required the removed detachment.
+                    for index in list.units.indices {
+                        list.units[index].enhancementIDs.removeAll { enhancementID in
+                            guard let (detachment, _) = catalog.enhancement(id: enhancementID) else {
+                                return false
+                            }
+                            return detachment.id == id
+                        }
+                    }
+                }
+            }
+        )
     }
 }
 
