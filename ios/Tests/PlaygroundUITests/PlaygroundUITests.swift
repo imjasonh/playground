@@ -73,10 +73,16 @@ final class PlaygroundUITests: XCTestCase {
 
         // Early rows stay on-screen; later ones may sit below the fold once the
         // catalog grows (SwiftUI List also virtualizes off-screen cells).
+        // Assert near-top rows before scrolling down — swipeUp-only helpers
+        // cannot bring virtualized early rows back into view.
         XCTAssertTrue(app.staticTexts["Ride Monitor"].exists)
         XCTAssertTrue(
             scrollLauncherUntilExists(app.staticTexts["Device Agent"], in: app),
             "Device Agent should appear in the launcher"
+        )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["Army List"], in: app),
+            "Army List should appear near Device Agent in the launcher"
         )
         XCTAssertTrue(app.staticTexts["T9 Keyboard"].exists)
         XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
@@ -97,10 +103,6 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(
             scrollLauncherUntilExists(app.staticTexts["NFC Tags"], in: app),
             "NFC Tags should appear after scrolling the launcher"
-        )
-        XCTAssertTrue(
-            scrollLauncherUntilExists(app.staticTexts["Army List"], in: app),
-            "Army List should appear after scrolling the launcher"
         )
     }
 
