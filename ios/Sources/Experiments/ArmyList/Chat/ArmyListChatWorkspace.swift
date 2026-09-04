@@ -102,8 +102,14 @@ enum ArmyListChatToolExecutor {
                 if sheet.dedicatedTransport { flags.append("DedicatedTransport") }
                 if sheet.legends { flags.append("Legends") }
                 let flagText = flags.isEmpty ? "" : " | " + flags.joined(separator: ",")
+                var copyNote = ""
+                if let battle = workspace.catalog.battleSize(id: workspace.list.battleSizeID) {
+                    let have = workspace.list.units.filter { $0.datasheetID == sheet.id }.count
+                    let limit = duplicateLimit(for: sheet, battleSize: battle)
+                    copyNote = " | copies \(have)/\(limit)"
+                }
                 lines.append(
-                    "unit \(sheet.id) | \(sheet.name) | \(pts)pts@\(sheet.minModels)\(flagText)"
+                    "unit \(sheet.id) | \(sheet.name) | \(pts)pts@\(sheet.minModels)\(flagText)\(copyNote)"
                 )
             }
         }
@@ -278,6 +284,19 @@ enum ArmyListChatToolExecutor {
         guard let sheet = resolveDatasheet(workspace: workspace, raw: datasheetID) else {
             return "Unknown datasheet “\(datasheetID)”. Call searchCatalog first."
         }
+        guard let battle = workspace.catalog.battleSize(id: workspace.list.battleSizeID) else {
+            return "Unknown battle size on the list."
+        }
+        let existingCopies = workspace.list.units.filter { $0.datasheetID == sheet.id }.count
+        let nextCopy = existingCopies + 1
+        let limit = duplicateLimit(for: sheet, battleSize: battle)
+        if sheet.epicHero && nextCopy > 1 {
+            return "Rejected: \(sheet.name) is an Epic Hero (max 1). Status unchanged."
+        }
+        if nextCopy > limit {
+            return "Rejected: \(sheet.name) already has \(existingCopies)/\(limit) copies for \(battle.name). Pick a different datasheet. Status unchanged."
+        }
+
         let requested = Int(models.rounded())
         let modelCount: Int
         if sheet.modelCounts.contains(requested) {
@@ -285,6 +304,14 @@ enum ArmyListChatToolExecutor {
         } else {
             modelCount = sheet.modelCounts.first ?? sheet.minModels
         }
+        guard let cost = sheet.points(models: modelCount, copyIndex: nextCopy) else {
+            return "Rejected: no points entry for \(sheet.name) ×\(modelCount)."
+        }
+        let remaining = battle.pointsLimit - workspace.validation.totalPoints
+        if cost > remaining {
+            return "Rejected: \(sheet.name) ×\(modelCount) is \(cost) pts but only \(remaining) pts remain under \(battle.pointsLimit). Status unchanged."
+        }
+
         let unit = ListUnitInstance(
             datasheetID: sheet.id,
             models: modelCount,
@@ -436,6 +463,24 @@ enum ArmyListChatToolExecutor {
     }
 
     // MARK: - Helpers
+
+    private static func duplicateLimit(
+        for sheet: DatasheetDefinition,
+        battleSize: BattleSizeDefinition
+    ) -> Int {
+        let sizeLimit: Int
+        if sheet.battleline {
+            sizeLimit = battleSize.battlelineDuplicateLimit
+        } else if sheet.dedicatedTransport {
+            sizeLimit = battleSize.dedicatedTransportDuplicateLimit
+        } else {
+            sizeLimit = battleSize.datasheetDuplicateLimit
+        }
+        if let override = sheet.maxCopiesOverride {
+            return min(override, sizeLimit)
+        }
+        return sizeLimit
+    }
 
     private static func mutationResult(workspace: ArmyListChatWorkspace, note: String) -> String {
         let result = workspace.validation

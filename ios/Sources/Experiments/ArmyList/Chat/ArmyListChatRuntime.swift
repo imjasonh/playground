@@ -105,10 +105,11 @@ final class ArmyListChatRuntime: ObservableObject {
         }
     }
 
-    func send(prompt: String) async {
+    func send(prompt: String, displayText: String? = nil) async {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        append(.user, text: trimmed)
+        let shown = (displayText ?? trimmed).trimmingCharacters(in: .whitespacesAndNewlines)
+        append(.user, text: shown.isEmpty ? trimmed : shown)
         isRunning = true
         defer { isRunning = false }
 
@@ -137,7 +138,7 @@ final class ArmyListChatRuntime: ObservableObject {
                 } catch {
                     append(
                         .assistant,
-                        text: "Couldn’t finish after compacting context: \(error.localizedDescription). Try Clear, then ask for a smaller change or Build 1k again with applyRosterPlan."
+                        text: "Couldn’t finish after compacting context: \(error.localizedDescription). Try Clear, then ask for a smaller change."
                     )
                     return
                 }
@@ -382,6 +383,8 @@ final class ArmyListChatRuntime: ObservableObject {
         Prefer short replies. Format with Markdown (bold, bullets, short headings) when it helps scanability.
         Always answer the latest user message; do not keep talking about an earlier Theme/name request unless they ask again.
         For from-scratch 1000/2000 point builds: invent a fresh theme each time (different units/detachment/name), call searchCatalog as needed, then applyRosterPlan once with your full plan. Do not loop addUnit for a full army — that overflows the on-device context window.
+        When fixing errors: keep the current battle size (never call setBattleSize). Prefer removeUnit / setUnitModels / setDetachments / setWarlord / attachCharacter. Respect datasheet duplicate limits for this battle size — addUnit rejects illegal copies.
+        When filling points: keep battle size and existing units; add a few thematic units that fit remaining points without exceeding duplicate caps. Re-read Status after each mutation.
         Use addUnit only for small targeted edits after a roster already exists.
         Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
         """
@@ -539,7 +542,7 @@ struct ArmyApplyRosterPlanFMTool: Tool {
 struct ArmySetBattleSizeFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setBattleSize"
-    let description = "Set battle size to incursion (1000) or strike-force (2000)."
+    let description = "Set battle size to incursion (1000) or strike-force (2000). Never use this to clear validation errors — fix the roster instead."
 
     @Generable
     struct Arguments {

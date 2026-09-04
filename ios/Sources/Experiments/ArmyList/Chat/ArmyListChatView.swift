@@ -35,14 +35,31 @@ struct ArmyListChatView: View {
     private var prompts: [PromptChip] {
         [
             PromptChip(
+                id: "fix-errors",
+                title: "Fix errors",
+                text: """
+                Fix validation ERRORs only. Call getListSummary first. \
+                Keep the current battle size — never call setBattleSize. \
+                Prefer removeUnit, setUnitModels, setDetachments, setWarlord, or attachCharacter. \
+                Do not add more copies of a datasheet than the battle-size duplicate limit (addUnit will reject illegal copies). \
+                After each tool call, read Status; stop when LEGAL or explain what you cannot fix without changing battle size.
+                """
+            ),
+            PromptChip(
+                id: "fill-points",
+                title: "Fill points",
+                text: """
+                Fill remaining points with a thematic extension of this list. \
+                Keep battle size and existing units. Call getListSummary, note pts remaining, \
+                then addUnit a few fitting datasheets (check copies N/limit in searchCatalog). \
+                Never exceed the points limit or duplicate caps. Never call setBattleSize. \
+                Stop when remaining points are too small for another legal unit, then briefly say what you added.
+                """
+            ),
+            PromptChip(
                 id: "weaknesses",
                 title: "Weaknesses",
                 text: "Weaknesses only (ignore prior theme/name talk): what matchups or unit types will give this list trouble? Opinion only. Call getListSummary for the facts."
-            ),
-            PromptChip(
-                id: "fix-errors",
-                title: "Fix errors",
-                text: "Read getListSummary and fix every validation ERROR with tools. Prefer small edits. Stop when Status is LEGAL or explain what you cannot fix."
             ),
             PromptChip(
                 id: "theme",
@@ -145,9 +162,13 @@ struct ArmyListChatView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(result.isLegal ? Color.green : Color.red)
             Spacer()
-            Text("\(result.totalPoints) pts · \(result.errors.count) err")
+            Text("\(result.totalPoints) pts")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            ArmyListIssueCountsLabel(
+                errors: result.errors.count,
+                warnings: result.warnings.count
+            )
             contextRing
         }
         .padding(.horizontal)
@@ -314,8 +335,11 @@ struct ArmyListChatView: View {
                     Button(chip.title) {
                         // Copy before Task — deferred capture of ForEach locals can
                         // stick on the last chip (Theme) and ignore Weaknesses/etc.
+                        let title = chip.title
                         let prompt = chip.text
-                        Task { await runtime.send(prompt: prompt) }
+                        Task {
+                            await runtime.send(prompt: prompt, displayText: title)
+                        }
                     }
                     .buttonStyle(.bordered)
                     .disabled(runtime.isRunning)

@@ -195,9 +195,10 @@ struct ArmyListEditorView: View {
                     .foregroundStyle(result.isLegal ? Color.green : Color.red)
                     .accessibilityIdentifier("armyListLegalBadge")
                 Spacer()
-                Text("\(result.errors.count) errors · \(result.warnings.count) warnings")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                ArmyListIssueCountsLabel(
+                    errors: result.errors.count,
+                    warnings: result.warnings.count
+                )
             }
             ForEach(result.issues.prefix(8)) { issue in
                 Text("\(issue.severity == .error ? "•" : "◦") \(issue.message)")

@@ -348,6 +348,11 @@ private struct ArmyListRowView: View {
                     Text("\(validation.totalPoints) pts")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    ArmyListIssueCountsLabel(
+                        errors: validation.errors.count,
+                        warnings: validation.warnings.count,
+                        style: .caption2
+                    )
                 }
             }
         }
