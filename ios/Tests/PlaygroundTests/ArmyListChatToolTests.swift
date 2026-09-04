@@ -79,7 +79,7 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(workspace.validation.errors.contains { $0.code == "dp.overBudget" })
     }
 
-    func testLegalSeederBuildsIncursion() {
+    func testLegalSeederBuildsIncursion() throws {
         let seeded = ArmyListLegalSeeder.seed(
             catalog: catalog,
             factionID: "leagues-of-votann",
