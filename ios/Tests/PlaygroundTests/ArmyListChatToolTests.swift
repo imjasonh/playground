@@ -208,6 +208,11 @@ final class ArmyListChatToolTests: XCTestCase {
 
     func testConversationDumpIncludesListAndToolLog() throws {
         let runtime = ArmyListChatRuntime(workspace: workspace)
+        // Simulator CI has no Apple Intelligence welcome line; seed a transcript
+        // entry so the dump is never empty when the model gate is unavailable.
+        runtime.transcript.append(
+            ArmyListChatEntry(kind: .user, text: "Dump fixture prompt")
+        )
         _ = ArmyListChatToolExecutor.applyRosterPlan(
             workspace: workspace,
             battleSizeID: "incursion",

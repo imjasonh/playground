@@ -66,6 +66,9 @@ enum OnDeviceContextManager {
     /// Compresses older turns into a short factual archive and keeps the most
     /// recent turns intact. Extractive (no model call) so unit tests and CI
     /// can exercise it without Apple Intelligence.
+    ///
+    /// Recent turns are reserved first so a tight `maxChars` never drops the
+    /// latest user ask (truncate-from-start would otherwise eat the suffix).
     nonisolated static func rollingSummary(
         turns: [Turn],
         recentCount: Int = recentTurnsToKeep,
@@ -79,30 +82,45 @@ enum OnDeviceContextManager {
 
         let older = Array(turns.dropLast(keep))
         let recent = Array(turns.suffix(keep))
-        var parts: [String] = []
 
-        let archiveBits = older.map { turn in
+        var recentParts: [String] = ["Recent chat (oldest first):"]
+        for turn in recent {
             let who = turn.role == .user ? "User" : "Assistant"
             let body = turn.content
                 .replacingOccurrences(of: "\n", with: " ")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            return "\(who): \(String(body.prefix(160)))"
+            recentParts.append("\(who): \(String(body.prefix(280)))")
         }
-        if !archiveBits.isEmpty {
-            parts.append("[Background archive of prior conversation]:")
-            parts.append(archiveBits.joined(separator: " · "))
-        }
-        if !recent.isEmpty {
-            parts.append("Recent chat (oldest first):")
-            for turn in recent {
+        let recentBlock = recentParts.joined(separator: "\n")
+
+        // Always keep recent turns; shrink the archive into whatever room remains.
+        let recentBudget = min(maxChars, max(recentBlock.count, maxChars / 2))
+        let recentText = AgentContextBudget.truncateToChars(recentBlock, maxChars: recentBudget)
+        let archiveBudget = max(0, maxChars - recentText.count - 1)
+
+        var archiveText = ""
+        if archiveBudget > 40, !older.isEmpty {
+            let archiveBits = older.map { turn in
                 let who = turn.role == .user ? "User" : "Assistant"
                 let body = turn.content
                     .replacingOccurrences(of: "\n", with: " ")
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                parts.append("\(who): \(String(body.prefix(280)))")
+                return "\(who): \(String(body.prefix(160)))"
             }
+            let archiveBlock = """
+            [Background archive of prior conversation]:
+            \(archiveBits.joined(separator: " · "))
+            """
+            archiveText = AgentContextBudget.truncateToChars(archiveBlock, maxChars: archiveBudget)
         }
-        return AgentContextBudget.truncateToChars(parts.joined(separator: "\n"), maxChars: maxChars)
+
+        if archiveText.isEmpty {
+            return AgentContextBudget.truncateToChars(recentText, maxChars: maxChars)
+        }
+        return AgentContextBudget.truncateToChars(
+            archiveText + "\n" + recentText,
+            maxChars: maxChars
+        )
     }
 
     /// Prefixes a carry-over block onto the next model prompt when instructions
