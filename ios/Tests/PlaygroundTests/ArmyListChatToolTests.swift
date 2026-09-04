@@ -174,6 +174,49 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(notes.contains("Hearthguard"))
     }
 
+    func testToolDisplayLabelsIncludeUnitName() {
+        let add = ArmyListChatToolDisplay.label(
+            name: "addUnit",
+            result: "Added Hearthkyn Warriors ×10 (id ABC).\nStatus: LEGAL · 200 pts"
+        )
+        XCTAssertEqual(add, "addUnit · Hearthkyn Warriors ×10")
+
+        let search = ArmyListChatToolDisplay.label(
+            name: "searchCatalog",
+            result: "unit a\nunit b\nunit c"
+        )
+        XCTAssertEqual(search, "searchCatalog · 3 hits")
+
+        let summary = ArmyListChatToolDisplay.groupSummary(labels: [
+            "addUnit · Hearthkyn Warriors ×10",
+            "addUnit · Kâhl ×1",
+            "setWarlord · set",
+        ])
+        XCTAssertTrue(summary.contains("3 actions"))
+        XCTAssertTrue(summary.contains("Hearthkyn"))
+    }
+
+    func testTranscriptBlocksCollapseConsecutiveTools() {
+        let u = ArmyListChatEntry(kind: .user, text: "Build")
+        let t1 = ArmyListChatEntry(kind: .tool, text: "addUnit · Warriors ×10")
+        let t2 = ArmyListChatEntry(kind: .tool, text: "setWarlord · set")
+        let a = ArmyListChatEntry(kind: .assistant, text: "Done")
+        let blocks = ArmyListChatTranscriptBlock.build(from: [u, t1, t2, a])
+        XCTAssertEqual(blocks.count, 3)
+        guard case .message(let user) = blocks[0] else {
+            return XCTFail("expected user message")
+        }
+        XCTAssertEqual(user.kind, .user)
+        guard case .tools(_, let tools) = blocks[1] else {
+            return XCTFail("expected tools group")
+        }
+        XCTAssertEqual(tools.count, 2)
+        guard case .message(let assistant) = blocks[2] else {
+            return XCTFail("expected assistant message")
+        }
+        XCTAssertEqual(assistant.kind, .assistant)
+    }
+
     func testAttachAndEnhancementTools() {
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,

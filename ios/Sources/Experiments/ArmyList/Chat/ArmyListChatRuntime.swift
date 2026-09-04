@@ -443,10 +443,18 @@ private enum ArmyListFMToolBridge {
             guard let runtime else {
                 return "Army List chat runtime is gone."
             }
-            runtime.transcript.append(
-                ArmyListChatEntry(kind: .tool, text: name)
-            )
+            let pending = ArmyListChatEntry(kind: .tool, text: "\(name)…")
+            runtime.transcript.append(pending)
             let raw = work(runtime.workspace)
+            let label = ArmyListChatToolDisplay.label(name: name, result: raw)
+            if let index = runtime.transcript.lastIndex(where: { $0.id == pending.id }) {
+                runtime.transcript[index] = ArmyListChatEntry(
+                    id: pending.id,
+                    kind: .tool,
+                    text: label,
+                    createdAt: pending.createdAt
+                )
+            }
             return runtime.noteToolExchange(name: name, result: raw)
         }.value
     }

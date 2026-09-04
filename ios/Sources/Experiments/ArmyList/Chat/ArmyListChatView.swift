@@ -198,24 +198,73 @@ struct ArmyListChatView: View {
     }
 
     private var transcript: some View {
-        ScrollViewReader { proxy in
+        let blocks = ArmyListChatTranscriptBlock.build(from: runtime.transcript)
+        return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(runtime.transcript) { entry in
-                        chatBubble(entry)
-                            .id(entry.id)
+                    ForEach(blocks) { block in
+                        transcriptBlock(block)
+                            .id(block.id)
                     }
                 }
                 .padding()
             }
             .onChange(of: runtime.transcript.count) { _ in
-                if let last = runtime.transcript.last {
+                if let last = blocks.last {
                     withAnimation {
                         proxy.scrollTo(last.id, anchor: .bottom)
                     }
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func transcriptBlock(_ block: ArmyListChatTranscriptBlock) -> some View {
+        switch block {
+        case .message(let entry):
+            chatBubble(entry)
+        case .tools(_, let entries):
+            toolActionsGroup(entries)
+        }
+    }
+
+    private func toolActionsGroup(_ entries: [ArmyListChatEntry]) -> some View {
+        let labels = entries.map(\.text)
+        return DisclosureGroup {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(entries) { entry in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "wrench.and.screwdriver")
+                            .font(.caption2)
+                            .foregroundStyle(.purple.opacity(0.8))
+                            .accessibilityHidden(true)
+                        Text(entry.text)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    .accessibilityIdentifier("armyListChatToolRow")
+                }
+            }
+            .padding(.top, 4)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "ellipsis.circle")
+                    .font(.caption)
+                    .foregroundStyle(.purple)
+                    .accessibilityHidden(true)
+                Text(ArmyListChatToolDisplay.groupSummary(labels: labels))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.purple.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityIdentifier("armyListChatToolGroup")
     }
 
     private func chatBubble(_ entry: ArmyListChatEntry) -> some View {
@@ -231,7 +280,7 @@ struct ArmyListChatView: View {
                         .textSelection(.enabled)
                 } else {
                     Text(entry.text)
-                        .font(entry.kind == .tool ? .caption.monospaced() : .body)
+                        .font(.body)
                 }
             }
             .padding(10)
