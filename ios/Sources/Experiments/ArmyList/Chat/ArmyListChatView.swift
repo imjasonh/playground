@@ -26,12 +26,34 @@ struct ArmyListChatView: View {
         _runtime = StateObject(wrappedValue: ArmyListChatRuntime(workspace: workspace))
     }
 
-    private var prompts: [(title: String, text: String)] {
+    private struct PromptChip: Identifiable {
+        let id: String
+        let title: String
+        let text: String
+    }
+
+    private var prompts: [PromptChip] {
         [
-            ("Build 1k", "Call seedLegalList with battleSizeID incursion and a short name for a legal 1000 point list. Then getListSummary and confirm Status."),
-            ("Weaknesses", "What matchups or unit types will give this list trouble? Opinion only. Use getListSummary for the facts."),
-            ("Fix errors", "Read getListSummary and fix every validation ERROR with tools. Prefer small edits. Stop when Status is LEGAL or explain what you cannot fix."),
-            ("Theme", "Suggest a good army name and a paint color scheme for this list. If the user likes a name, call setListName."),
+            PromptChip(
+                id: "build-1k",
+                title: "Build 1k",
+                text: "Call seedLegalList with battleSizeID incursion and a short name for a legal 1000 point list. Then getListSummary and confirm Status."
+            ),
+            PromptChip(
+                id: "weaknesses",
+                title: "Weaknesses",
+                text: "Weaknesses only (ignore prior theme/name talk): what matchups or unit types will give this list trouble? Opinion only. Call getListSummary for the facts."
+            ),
+            PromptChip(
+                id: "fix-errors",
+                title: "Fix errors",
+                text: "Read getListSummary and fix every validation ERROR with tools. Prefer small edits. Stop when Status is LEGAL or explain what you cannot fix."
+            ),
+            PromptChip(
+                id: "theme",
+                title: "Theme",
+                text: "Theme only: suggest a good army name and a paint color scheme for this list. If the user likes a name, call setListName. Do not discuss matchup weaknesses."
+            ),
         ]
     }
 
@@ -244,13 +266,16 @@ struct ArmyListChatView: View {
     private var promptChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                ForEach(Array(prompts.enumerated()), id: \.offset) { _, item in
-                    Button(item.title) {
-                        Task { await runtime.send(prompt: item.text) }
+                ForEach(prompts) { chip in
+                    Button(chip.title) {
+                        // Copy before Task — deferred capture of ForEach locals can
+                        // stick on the last chip (Theme) and ignore Weaknesses/etc.
+                        let prompt = chip.text
+                        Task { await runtime.send(prompt: prompt) }
                     }
                     .buttonStyle(.bordered)
                     .disabled(runtime.isRunning)
-                    .accessibilityIdentifier("armyListChatChip-\(item.title)")
+                    .accessibilityIdentifier("armyListChatChip-\(chip.id)")
                 }
             }
             .padding(.horizontal)

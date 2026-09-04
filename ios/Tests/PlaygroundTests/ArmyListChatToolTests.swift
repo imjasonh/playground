@@ -157,6 +157,23 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(url.pathExtension == "json")
     }
 
+    func testCompactionCarryOverKeepsRecentTurnsAndLatestInstruction() {
+        let entries = [
+            ArmyListChatEntry(kind: .user, text: "Theme only: suggest a name"),
+            ArmyListChatEntry(kind: .assistant, text: "Call it Hearthguard. Paint ochre."),
+            ArmyListChatEntry(kind: .user, text: "Weaknesses only: matchups?"),
+        ]
+        let notes = ArmyListChatRuntime.compactionCarryOver(
+            listSnapshot: "Status: LEGAL · 1000 pts",
+            transcript: entries
+        )
+        XCTAssertTrue(notes.contains("Answer ONLY the latest user message"))
+        XCTAssertTrue(notes.contains("Status: LEGAL"))
+        XCTAssertTrue(notes.contains("Theme only"))
+        XCTAssertTrue(notes.contains("Weaknesses only"))
+        XCTAssertTrue(notes.contains("Hearthguard"))
+    }
+
     func testAttachAndEnhancementTools() {
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,

@@ -182,13 +182,48 @@ final class ArmyListChatRuntime: ObservableObject {
     }
 
     private func compactLanguageSession(reason: String) {
-        let summary = workspace.compactSummary(maxIssues: 4)
-        carryOverNotes = String(summary.prefix(1_200))
+        carryOverNotes = Self.compactionCarryOver(
+            listSnapshot: workspace.compactSummary(maxIssues: 4),
+            transcript: transcript
+        )
         didCompactThisSession = true
         languageSessionBox = nil
         budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
         append(.system, text: reason)
         publishContextUsage()
+    }
+
+    /// Fresh-session notes after compact so follow-ups keep list + recent turns.
+    nonisolated static func compactionCarryOver(
+        listSnapshot: String,
+        transcript: [ArmyListChatEntry]
+    ) -> String {
+        var parts: [String] = [
+            "Prior model context was compacted.",
+            "Answer ONLY the latest user message. Do not continue an earlier topic unless that message asks for it.",
+        ]
+        let snap = listSnapshot.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !snap.isEmpty {
+            parts.append("List snapshot:")
+            parts.append(String(snap.prefix(800)))
+        }
+        let recent = transcript.filter { entry in
+            switch entry.kind {
+            case .user, .assistant: return true
+            case .system, .tool: return false
+            }
+        }.suffix(4)
+        if !recent.isEmpty {
+            parts.append("Recent chat (oldest first):")
+            for entry in recent {
+                let who = entry.kind == .user ? "User" : "Assistant"
+                let body = entry.text
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                parts.append("\(who): \(String(body.prefix(280)))")
+            }
+        }
+        return AgentContextBudget.truncateToChars(parts.joined(separator: "\n"), maxChars: 1_400)
     }
 
     func noteToolExchange(name: String, result: String) -> String {
@@ -298,8 +333,10 @@ final class ArmyListChatRuntime: ObservableObject {
             compactLanguageSession(reason: "Trimmed model context to leave room for this turn.")
         }
         if isRetryAfterCompact, carryOverNotes.isEmpty {
-            let summary = workspace.compactSummary(maxIssues: 4)
-            carryOverNotes = String(summary.prefix(1_200))
+            carryOverNotes = Self.compactionCarryOver(
+                listSnapshot: workspace.compactSummary(maxIssues: 4),
+                transcript: transcript
+            )
         }
         let session = ensureLanguageSession()
         budget.addText(prompt)
@@ -321,7 +358,7 @@ final class ArmyListChatRuntime: ObservableObject {
         }
         var instructions = sessionInstructions
         if !carryOverNotes.isEmpty {
-            instructions += "\n\nCurrent list snapshot:\n" + carryOverNotes
+            instructions += "\n\n" + carryOverNotes
             carryOverNotes = ""
         }
         let session = LanguageModelSession(tools: makeFoundationTools(), instructions: instructions)
@@ -343,6 +380,7 @@ final class ArmyListChatRuntime: ObservableObject {
         After mutating tools, read the returned Status line. If ILLEGAL, keep fixing with tools or explain what is still wrong.
         For thematic questions (army name, color scheme, lore vibe, matchup opinions), answer helpfully and label opinions as opinions.
         Prefer short replies. Format with Markdown (bold, bullets, short headings) when it helps scanability.
+        Always answer the latest user message; do not keep talking about an earlier Theme/name request unless they ask again.
         For from-scratch 1000/2000 point builds, call seedLegalList once (battleSizeID + optional name). Do not loop addUnit for a full army — that overflows the on-device context window.
         Use searchCatalog before addUnit only for small targeted edits.
         Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
