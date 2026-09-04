@@ -45,6 +45,7 @@ playground/
 ├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
 ├── sshapp/                # GKE Autopilot Wish SSH apps (Go + Terraform + ko_build)
+├── sundial/               # sundial clock: long shadow follows the sun
 ├── web-push/              # Rust Cloudflare Worker (Cargo + tests; not a Pages app)
 ├── web-push-demo/         # static browser front-end for the web-push Worker
 └── y/                     # Rust Cloudflare Worker: one-user microblog
@@ -69,6 +70,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
 | `population-rays/` | yes | Directional 5° population slices; JS modules, npm scripts, tests |
+| `sundial/` | yes | Sundial clock; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
@@ -641,6 +643,7 @@ bundle exec fastlane test
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
 | `population-rays/` | Directional 5° population slices (distance to N people) over Meta/CIESIN HRSL grids | Node test runner |
+| `sundial/` | Clock whose long shadow follows the sun; no shadow at night | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
 
 > **`nypd-choppers` has an intentionally non-standard lifecycle.** Because free

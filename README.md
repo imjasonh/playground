@@ -30,6 +30,8 @@ bump when the tests still pass, so old experiments don't rot.
 - **[`esp-flash/`](esp-flash/)** — flash `inkbot-esp32` / `maze-esp32` (or a
   local `.bin`) to a USB ESP32 from Chrome or Edge.
 - **[`hello/`](hello/)** — a minimal static demo.
+- **[`sundial/`](sundial/)** — a clock whose long shadow follows the sun, like
+  a sundial. At night there is no shadow.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
 - **[`kubescheduler-the-game/`](kubescheduler-the-game/)** — play the Kubernetes
   scheduler and cluster operator: bin-pack pods onto nodes, handle spot
