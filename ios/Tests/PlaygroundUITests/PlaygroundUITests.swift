@@ -395,16 +395,28 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(create.waitForExistence(timeout: 3))
         XCTAssertFalse(create.isEnabled, "Create requires at least one detachment")
 
-        // Pick the first faction detachment under the Incursion DP budget.
-        let detachmentToggle = app.switches.matching(
+        // Pick detachments until under the DP budget (Create enables).
+        let detachmentToggles = app.switches.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "armyListNewDetachment-")
-        ).firstMatch
-        XCTAssertTrue(
-            detachmentToggle.waitForExistence(timeout: 5),
+        )
+        XCTAssertGreaterThan(
+            detachmentToggles.count,
+            0,
             "Expected detachment toggles on the create sheet"
         )
-        detachmentToggle.tap()
-        XCTAssertTrue(create.isEnabled, "Create enables after selecting a detachment")
+        var enabled = false
+        for index in 0..<min(detachmentToggles.count, 8) {
+            let toggle = detachmentToggles.element(boundBy: index)
+            guard toggle.waitForExistence(timeout: 2) else { continue }
+            toggle.tap()
+            if create.isEnabled {
+                enabled = true
+                break
+            }
+            // Undo if this selection went over budget.
+            toggle.tap()
+        }
+        XCTAssertTrue(enabled, "Expected a legal detachment selection under the DP budget")
         XCTAssertTrue(starter.isEnabled)
 
         nameField.tap()

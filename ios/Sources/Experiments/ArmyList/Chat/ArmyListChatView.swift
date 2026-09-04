@@ -59,7 +59,13 @@ struct ArmyListChatView: View {
             PromptChip(
                 id: "weaknesses",
                 title: "Weaknesses",
-                text: "Weaknesses only (ignore prior theme/name talk): what matchups or unit types will give this list trouble? Opinion only. Call getListSummary for the facts."
+                text: """
+                Weaknesses of THIS roster only — call getListSummary first and ground every point in units, model counts, \
+                wargear/options, enhancements, and detachments that are actually on the list. \
+                Do not write a generic faction overview. Name what I brought, what roles it covers well, \
+                and what is thin or missing (e.g. anti-tank, screening, deep strike denial, ObSec, characters). \
+                Opinion only; no tool edits.
+                """
             ),
             PromptChip(
                 id: "theme",
