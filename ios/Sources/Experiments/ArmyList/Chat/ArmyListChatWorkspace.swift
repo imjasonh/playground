@@ -173,7 +173,11 @@ enum ArmyListChatToolExecutor {
         } else {
             modelCount = sheet.modelCounts.first ?? sheet.minModels
         }
-        let unit = ListUnitInstance(datasheetID: sheet.id, models: modelCount)
+        let unit = ListUnitInstance(
+            datasheetID: sheet.id,
+            models: modelCount,
+            optionIDs: sheet.defaultOptionIDs()
+        )
         var list = workspace.list
         list.units.append(unit)
         if list.warlordUnitID == nil, sheet.characterRole != nil {

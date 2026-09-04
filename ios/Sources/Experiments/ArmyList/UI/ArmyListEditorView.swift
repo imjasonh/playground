@@ -140,7 +140,13 @@ struct ArmyListEditorView: View {
             NavigationStack {
                 ArmyListUnitPickerView(catalog: catalog, factionID: list.factionID) { sheet in
                     let models = sheet.modelCounts.first ?? sheet.minModels
-                    list.units.append(ListUnitInstance(datasheetID: sheet.id, models: models))
+                    list.units.append(
+                        ListUnitInstance(
+                            datasheetID: sheet.id,
+                            models: models,
+                            optionIDs: sheet.defaultOptionIDs()
+                        )
+                    )
                     showAddUnit = false
                     persist()
                 }
@@ -503,6 +509,14 @@ struct ArmyListUnitDetailView: View {
                         }
                     }
 
+                    if !sheet.optionGroups.isEmpty {
+                        Section("Loadout") {
+                            ForEach(sheet.optionGroups) { group in
+                                optionGroupControl(unitIndex: index, group: group)
+                            }
+                        }
+                    }
+
                     Section("Enhancements") {
                         let available = availableEnhancements(for: sheet)
                         if available.isEmpty {
@@ -525,6 +539,9 @@ struct ArmyListUnitDetailView: View {
                     }
                 }
                 .navigationTitle(sheet.name)
+                .onAppear {
+                    seedDefaultOptionsIfNeeded(unitIndex: index, sheet: sheet)
+                }
             } else {
                 VStack(spacing: 8) {
                     Image(systemName: "questionmark.circle")
@@ -578,6 +595,99 @@ struct ArmyListUnitDetailView: View {
                 }
             }
         )
+    }
+
+    @ViewBuilder
+    private func optionGroupControl(unitIndex: Int, group: OptionGroupDefinition) -> some View {
+        if group.min == 0, group.max == 1, group.options.count == 1 {
+            let option = group.options[0]
+            Toggle(isOn: optionToggleBinding(unitIndex: unitIndex, group: group, optionID: option.id)) {
+                optionLabel(option)
+            }
+            .accessibilityIdentifier("armyListOption-\(option.id)")
+        } else if group.max == 1 {
+            Picker(selection: exclusiveOptionBinding(unitIndex: unitIndex, group: group)) {
+                if group.min == 0 {
+                    Text("None").tag(String?.none)
+                }
+                ForEach(group.options) { option in
+                    optionLabel(option).tag(Optional(option.id))
+                }
+            } label: {
+                Text(group.name)
+            }
+            .accessibilityIdentifier("armyListOptionGroup-\(group.id)")
+        } else {
+            // Rare multi-pick groups: toggles capped at max.
+            ForEach(group.options) { option in
+                Toggle(isOn: optionToggleBinding(unitIndex: unitIndex, group: group, optionID: option.id)) {
+                    optionLabel(option)
+                }
+                .accessibilityIdentifier("armyListOption-\(option.id)")
+            }
+        }
+    }
+
+    private func optionLabel(_ option: OptionDefinition) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(option.name)
+            if option.points != 0 {
+                Text("\(option.points) pts")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func exclusiveOptionBinding(
+        unitIndex: Int,
+        group: OptionGroupDefinition
+    ) -> Binding<String?> {
+        let groupIDs = Set(group.options.map(\.id))
+        return Binding(
+            get: {
+                list.units[unitIndex].optionIDs.first { groupIDs.contains($0) }
+            },
+            set: { newValue in
+                list.units[unitIndex].optionIDs.removeAll { groupIDs.contains($0) }
+                if let newValue {
+                    list.units[unitIndex].optionIDs.append(newValue)
+                }
+            }
+        )
+    }
+
+    private func optionToggleBinding(
+        unitIndex: Int,
+        group: OptionGroupDefinition,
+        optionID: String
+    ) -> Binding<Bool> {
+        let groupIDs = Set(group.options.map(\.id))
+        return Binding(
+            get: { list.units[unitIndex].optionIDs.contains(optionID) },
+            set: { enabled in
+                if enabled {
+                    var selected = list.units[unitIndex].optionIDs.filter { groupIDs.contains($0) }
+                    if !selected.contains(optionID) {
+                        selected.append(optionID)
+                    }
+                    if selected.count > group.max {
+                        selected = Array(selected.suffix(group.max))
+                    }
+                    list.units[unitIndex].optionIDs.removeAll { groupIDs.contains($0) }
+                    list.units[unitIndex].optionIDs.append(contentsOf: selected)
+                } else {
+                    list.units[unitIndex].optionIDs.removeAll { $0 == optionID }
+                }
+            }
+        )
+    }
+
+    private func seedDefaultOptionsIfNeeded(unitIndex: Int, sheet: DatasheetDefinition) {
+        guard list.units[unitIndex].optionIDs.isEmpty else { return }
+        let defaults = sheet.defaultOptionIDs()
+        guard !defaults.isEmpty else { return }
+        list.units[unitIndex].optionIDs = defaults
     }
 }
 

@@ -382,6 +382,43 @@ final class ArmyListValidatorTests: XCTestCase {
         XCTAssertFalse(battleline.contains { $0.legends })
     }
 
+    func testCadianCommandSquadHasPlasmaLoadoutOptions() throws {
+        let catalog = try CatalogLoader.load(bundle: .main)
+        let sheet = try XCTUnwrap(catalog.datasheet(id: "astra-militarum--cadian-command-squad"))
+        XCTAssertFalse(sheet.optionGroups.isEmpty)
+        let optionNames = sheet.optionGroups.flatMap { $0.options.map(\.name) }
+        XCTAssertTrue(optionNames.contains("Plasma gun"))
+        XCTAssertTrue(optionNames.contains("Plasma gun and close combat weapon"))
+
+        let defaults = sheet.defaultOptionIDs()
+        XCTAssertEqual(defaults.count, sheet.optionGroups.filter { $0.min >= 1 }.count)
+
+        var unit = ListUnitInstance(
+            datasheetID: sheet.id,
+            models: sheet.minModels,
+            optionIDs: defaults
+        )
+        // Swap the standard-bearer slot to Plasma gun.
+        let wargear = try XCTUnwrap(
+            sheet.optionGroups.first { $0.name.contains("Wargear Options") }
+        )
+        let plasma = try XCTUnwrap(wargear.options.first { $0.name == "Plasma gun" })
+        let groupIDs = Set(wargear.options.map(\.id))
+        unit.optionIDs.removeAll { groupIDs.contains($0) }
+        unit.optionIDs.append(plasma.id)
+        XCTAssertEqual(sheet.optionPoints(selectedIDs: unit.optionIDs), 0)
+
+        let list = ArmyListDocument(
+            name: "CCS loadout",
+            catalogVersion: catalog.version,
+            factionID: "astra-militarum",
+            battleSizeID: "incursion",
+            units: [unit]
+        )
+        let result = ArmyListValidator.validate(list: list, catalog: catalog)
+        XCTAssertFalse(result.errors.contains { $0.code == "option.groupCount" })
+    }
+
     func testDuplicateUnitClearsAttachmentAndInsertsAfterSource() {
         let body = ListUnitInstance(datasheetID: "leagues-of-votann--hearthkyn-warriors", models: 10)
         var leader = ListUnitInstance(datasheetID: "leagues-of-votann--kahl", models: 1)

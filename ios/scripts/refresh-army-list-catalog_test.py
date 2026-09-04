@@ -94,10 +94,30 @@ class LegendsFlagTests(unittest.TestCase):
             ],
             "detachments": [],
         }
-        _, _, sheets = MOD.build_faction(mfm, {})
+        _, _, sheets = MOD.build_faction(mfm, {}, {}, {})
         by_name = {s["name"]: s for s in sheets}
         self.assertFalse(by_name["Cadian Shock Troops"]["legends"])
         self.assertTrue(by_name["Aquila Lander"]["legends"])
+
+
+class OptionGroupExtractionTests(unittest.TestCase):
+    def test_cadian_command_squad_includes_plasma_gun(self) -> None:
+        bs = pathlib.Path("/tmp/wh40k-11e")
+        if not bs.exists():
+            self.skipTest("local BSData checkout missing")
+        files = MOD.BS_FILES_BY_SLUG["astra-militarum"]
+        entries, groups = MOD.load_bs_tables(bs, files)
+        index = MOD.load_bs_index(bs, files)
+        unit = MOD.find_bs(index, "Cadian Command Squad")
+        self.assertIsNotNone(unit)
+        ogs = MOD.extract_option_groups(
+            unit, entries, groups, "astra-militarum--cadian-command-squad"
+        )
+        names = [o["name"] for g in ogs for o in g["options"]]
+        self.assertIn("Plasma gun", names)
+        wargear = next(g for g in ogs if "Wargear Options" in g["name"])
+        self.assertEqual(wargear["min"], 1)
+        self.assertEqual(wargear["max"], 1)
 
 
 if __name__ == "__main__":

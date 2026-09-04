@@ -92,6 +92,31 @@ KEYWORD_KEEP = {
     "Grenades",
 }
 
+# BattleScribe points cost type (game system).
+PTS_COST_TYPE_ID = "51b2-306e-1021-d207"
+
+# selectionEntryGroups we never surface as list loadout (crusade / enhancements / …).
+SKIP_OPTION_GROUP_NEEDLES = (
+    "crusade",
+    "enhancement",
+    "warlord",
+    "battle scar",
+    "battle honour",
+    "battle trait",
+    "relic",
+    "weapon modification",
+    "force disposition",
+    "detachment",
+    "boarding",
+    "pariah",
+    "commendation",
+    "specialism",
+    "tours of duty",
+    "experience",
+    "legendary veteran",
+    "unit composition",
+)
+
 FORCE_MAP = {
     "DISRUPTION": "Disruption",
     "TAKE AND HOLD": "Take and Hold",
@@ -146,21 +171,47 @@ def points_tiers(pricing):
     return tiers
 
 
-def load_bs_index(bs_dir: pathlib.Path, filenames: list[str]) -> dict[str, dict]:
-    """Map unit/model display name -> sharedSelectionEntry (first wins)."""
-    index: dict[str, dict] = {}
+def load_bs_tables(
+    bs_dir: pathlib.Path, filenames: list[str]
+) -> tuple[dict[str, dict], dict[str, dict]]:
+    """Id → sharedSelectionEntry / sharedSelectionEntryGroup across catalogues."""
+    entries: dict[str, dict] = {}
+    groups: dict[str, dict] = {}
+
+    def ingest(payload: dict) -> None:
+        root = payload.get("catalogue") or payload.get("gameSystem") or {}
+        for entry in root.get("sharedSelectionEntries") or []:
+            eid = entry.get("id")
+            if eid:
+                entries.setdefault(eid, entry)
+        for group in root.get("sharedSelectionEntryGroups") or []:
+            gid = group.get("id")
+            if gid:
+                groups.setdefault(gid, group)
+
+    gs_path = bs_dir / "Warhammer 40,000.json"
+    if gs_path.exists():
+        ingest(json.loads(gs_path.read_text()))
+
     for filename in filenames:
         path = bs_dir / filename
         if not path.exists():
             print(f"  warn: missing BS file {filename}", file=sys.stderr)
             continue
-        catalogue = json.loads(path.read_text()).get("catalogue") or {}
-        for entry in catalogue.get("sharedSelectionEntries") or []:
-            if entry.get("type") not in ("unit", "model") or not entry.get("name"):
-                continue
-            name = entry["name"]
-            index.setdefault(name, entry)
-            index.setdefault(slugify(name), entry)
+        ingest(json.loads(path.read_text()))
+    return entries, groups
+
+
+def load_bs_index(bs_dir: pathlib.Path, filenames: list[str]) -> dict[str, dict]:
+    """Map unit/model display name -> sharedSelectionEntry (first wins)."""
+    entries, _groups = load_bs_tables(bs_dir, filenames)
+    index: dict[str, dict] = {}
+    for entry in entries.values():
+        if entry.get("type") not in ("unit", "model") or not entry.get("name"):
+            continue
+        name = entry["name"]
+        index.setdefault(name, entry)
+        index.setdefault(slugify(name), entry)
     return index
 
 
@@ -175,6 +226,195 @@ def find_bs(index: dict[str, dict], name: str):
         if isinstance(candidate, str) and slugify(candidate) == key:
             return entry
     return None
+
+
+def pts_cost(node: dict | None) -> int:
+    if not node:
+        return 0
+    for cost in node.get("costs") or []:
+        if cost.get("typeId") == PTS_COST_TYPE_ID or cost.get("name") == "pts":
+            try:
+                return int(float(cost.get("value") or 0))
+            except (TypeError, ValueError):
+                return 0
+    return 0
+
+
+def selection_min_max(group: dict) -> tuple[int, int]:
+    minimum, maximum = 0, 1
+    for constraint in group.get("constraints") or []:
+        if constraint.get("field") != "selections":
+            continue
+        try:
+            value = int(float(constraint.get("value") or 0))
+        except (TypeError, ValueError):
+            continue
+        if constraint.get("type") == "min":
+            minimum = value
+        elif constraint.get("type") == "max":
+            maximum = value
+    return minimum, maximum
+
+
+def should_skip_option_group(name: str | None) -> bool:
+    label = (name or "").casefold()
+    return any(needle in label for needle in SKIP_OPTION_GROUP_NEEDLES)
+
+
+def is_selection_entry_group(node: dict | None) -> bool:
+    if not node:
+        return False
+    if node.get("type") == "selectionEntryGroup":
+        return True
+    # Shared groups often omit type but carry selectionEntries / entryLinks.
+    return "defaultSelectionEntryId" in node or (
+        node.get("type") not in ("unit", "model", "upgrade")
+        and (
+            "selectionEntries" in node
+            or "entryLinks" in node
+            and "categoryLinks" not in node
+            and "profiles" not in node
+        )
+    )
+
+
+def extract_option_groups(
+    unit_entry: dict | None,
+    entries: dict[str, dict],
+    groups: dict[str, dict],
+    datasheet_id: str,
+) -> list[dict]:
+    """Leaf wargear choice groups from a BattleScribe unit/model entry."""
+    if not unit_entry:
+        return []
+
+    collected: list[dict] = []
+    seen_group_ids: set[str] = set()
+
+    def option_id(local_id: str) -> str:
+        return f"{datasheet_id}--{local_id}"
+
+    def make_option(local_id: str, name: str, points: int) -> dict:
+        return {"id": option_id(local_id), "name": name, "points": int(points)}
+
+    def walk_entry(entry: dict | None, owner_name: str | None) -> None:
+        if not entry:
+            return
+        for group in entry.get("selectionEntryGroups") or []:
+            walk_group(group, owner_name)
+        for link in entry.get("entryLinks") or []:
+            target_id = link.get("targetId")
+            target = entries.get(target_id) or groups.get(target_id)
+            link_name = link.get("name") or (target or {}).get("name")
+            if should_skip_option_group(link_name):
+                continue
+            if target and is_selection_entry_group(target):
+                walk_group(target, owner_name, display_name=link_name)
+            elif target and target.get("type") == "model":
+                walk_entry(target, target.get("name") or owner_name)
+
+    def walk_group(
+        group: dict,
+        owner_name: str | None,
+        display_name: str | None = None,
+    ) -> None:
+        group_id = group.get("id")
+        name = display_name or group.get("name") or "Options"
+        if should_skip_option_group(name):
+            return
+        if group_id and group_id in seen_group_ids:
+            return
+        if group_id:
+            seen_group_ids.add(group_id)
+
+        options: list[dict] = []
+        had_model_child = False
+
+        for se in group.get("selectionEntries") or []:
+            se_type = se.get("type")
+            if se_type == "model":
+                had_model_child = True
+                walk_entry(se, se.get("name") or owner_name)
+                continue
+            if se_type == "upgrade" or se.get("id"):
+                local_id = se.get("id")
+                if not local_id:
+                    continue
+                options.append(
+                    make_option(local_id, se.get("name") or "Option", pts_cost(se))
+                )
+
+        for link in group.get("entryLinks") or []:
+            target_id = link.get("targetId")
+            target = entries.get(target_id) or groups.get(target_id)
+            link_name = link.get("name") or (target or {}).get("name")
+            if should_skip_option_group(link_name):
+                continue
+            if target and is_selection_entry_group(target):
+                walk_group(target, owner_name, display_name=link_name)
+                continue
+            if target and target.get("type") == "model":
+                had_model_child = True
+                walk_entry(target, target.get("name") or owner_name)
+                continue
+            if not target or target.get("type") not in (None, "upgrade"):
+                if target and target.get("type") not in ("upgrade",):
+                    continue
+            local_id = link.get("id")
+            if not local_id:
+                continue
+            points = pts_cost(link) or pts_cost(target)
+            options.append(
+                make_option(local_id, link_name or "Option", points)
+            )
+
+        # Model-bucket groups only exist to nest wargear; don't emit them.
+        if had_model_child and not options:
+            return
+
+        # Deduplicate by local option id while preserving order.
+        deduped: list[dict] = []
+        seen_opt: set[str] = set()
+        for opt in options:
+            if opt["id"] in seen_opt:
+                continue
+            seen_opt.add(opt["id"])
+            deduped.append(opt)
+        options = deduped
+
+        minimum, maximum = selection_min_max(group)
+        if len(options) < 2 and not (len(options) == 1 and minimum == 0):
+            return
+        if not group_id:
+            return
+
+        default_local = group.get("defaultSelectionEntryId")
+        default_option_id = option_id(default_local) if default_local else None
+        if default_option_id and default_option_id not in {o["id"] for o in options}:
+            default_option_id = None
+        if default_option_id is None and minimum >= 1 and options:
+            group_label = (group.get("name") or "").casefold()
+            named = next(
+                (opt for opt in options if opt["name"].casefold() == group_label),
+                None,
+            )
+            default_option_id = (named or options[0])["id"]
+
+        label = f"{owner_name} · {name}" if owner_name else name
+        collected.append(
+            {
+                "id": option_id(group_id),
+                "name": label,
+                "min": minimum,
+                "max": maximum,
+                "defaultOptionID": default_option_id,
+                "options": options,
+            }
+        )
+
+    walk_entry(unit_entry, None)
+    collected.sort(key=lambda g: g["id"])
+    return collected
 
 
 def extract_keywords(entry: dict | None, faction_name: str) -> list[str]:
@@ -215,7 +455,12 @@ def max_copies_override(entry: dict | None) -> int | None:
     return None
 
 
-def build_faction(mfm: dict, bs_index: dict[str, dict]) -> tuple[dict, list[dict], list[dict]]:
+def build_faction(
+    mfm: dict,
+    bs_index: dict[str, dict],
+    bs_entries: dict[str, dict],
+    bs_groups: dict[str, dict],
+) -> tuple[dict, list[dict], list[dict]]:
     faction_slug = mfm["slug"]
     faction_name = mfm["name"]
     faction = {
@@ -271,6 +516,9 @@ def build_faction(mfm: dict, bs_index: dict[str, dict]) -> tuple[dict, list[dict
             continue
         bs_entry = find_bs(bs_index, unit["name"]) or find_bs(bs_index, display)
         keywords = extract_keywords(bs_entry, faction_name)
+        option_groups = extract_option_groups(
+            bs_entry, bs_entries, bs_groups, ds_id
+        )
         # MFM join edges imply Leader; keep Character/Leader even when BS miss.
         if unit.get("leaderTo"):
             if "Character" not in keywords:
@@ -321,6 +569,7 @@ def build_faction(mfm: dict, bs_index: dict[str, dict]) -> tuple[dict, list[dict
                 "leaderTo": leader_to,
                 "mustAttach": False,
                 "maxCopiesOverride": max_copies_override(bs_entry),
+                "optionGroups": option_groups,
             }
         )
 
@@ -384,11 +633,14 @@ def main() -> int:
             if not mfm or "slug" not in mfm:
                 print(f"  skip {path.name}: missing slug", file=sys.stderr)
                 continue
-            slug = mfm["slug"]
+            bs_files = BS_FILES_BY_SLUG.get(slug, [])
             if slug not in BS_FILES_BY_SLUG:
                 print(f"  warn: no BS mapping for {slug}; keywords will be faction-only", file=sys.stderr)
-            bs_index = load_bs_index(tmp_path / "bs", BS_FILES_BY_SLUG.get(slug, []))
-            faction, dets, sheets = build_faction(mfm, bs_index)
+            bs_entries, bs_groups = load_bs_tables(tmp_path / "bs", bs_files)
+            bs_index = load_bs_index(tmp_path / "bs", bs_files)
+            faction, dets, sheets = build_faction(
+                mfm, bs_index, bs_entries, bs_groups
+            )
             factions.append(faction)
             detachments.extend(dets)
             datasheets.extend(sheets)

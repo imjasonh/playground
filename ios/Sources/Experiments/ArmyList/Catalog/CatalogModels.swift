@@ -184,6 +184,27 @@ struct EnhancementDefinition: Codable, Equatable, Identifiable, Sendable {
     var isUpgrade: Bool
 }
 
+/// One choosable loadout entry inside an ``OptionGroupDefinition``.
+struct OptionDefinition: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var name: String
+    var points: Int
+}
+
+/// Exclusive or optional wargear group from BattleScribe (0 pts is common).
+struct OptionGroupDefinition: Codable, Equatable, Identifiable, Sendable {
+    var id: String
+    var name: String
+    var min: Int
+    var max: Int
+    var defaultOptionID: String?
+    var options: [OptionDefinition]
+
+    func option(id: String) -> OptionDefinition? {
+        options.first { $0.id == id }
+    }
+}
+
 enum CatalogCharacterRole: String, Codable, Equatable, Sendable {
     case leader
     case character
@@ -207,6 +228,8 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
     var leaderTo: [String]
     var mustAttach: Bool
     var maxCopiesOverride: Int?
+    /// BattleScribe loadout choice groups (plasma gun, etc.), including 0-pt picks.
+    var optionGroups: [OptionGroupDefinition]
 
     struct PointsTier: Codable, Equatable, Sendable {
         /// 1-based copy index this tier starts at.
@@ -221,6 +244,7 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
         case id, name, factionID, keywords, characterRole, epicHero
         case battleline, dedicatedTransport, legends, minModels, maxModels
         case modelCounts, pointsTiers, leaderTo, mustAttach, maxCopiesOverride
+        case optionGroups
     }
 
     init(
@@ -239,7 +263,8 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
         pointsTiers: [PointsTier],
         leaderTo: [String],
         mustAttach: Bool,
-        maxCopiesOverride: Int?
+        maxCopiesOverride: Int?,
+        optionGroups: [OptionGroupDefinition] = []
     ) {
         self.id = id
         self.name = name
@@ -257,6 +282,7 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
         self.leaderTo = leaderTo
         self.mustAttach = mustAttach
         self.maxCopiesOverride = maxCopiesOverride
+        self.optionGroups = optionGroups
     }
 
     init(from decoder: Decoder) throws {
@@ -277,6 +303,7 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
         leaderTo = try container.decode([String].self, forKey: .leaderTo)
         mustAttach = try container.decode(Bool.self, forKey: .mustAttach)
         maxCopiesOverride = try container.decodeIfPresent(Int.self, forKey: .maxCopiesOverride)
+        optionGroups = try container.decodeIfPresent([OptionGroupDefinition].self, forKey: .optionGroups) ?? []
     }
 
     func encode(to encoder: Encoder) throws {
@@ -297,6 +324,12 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
         try container.encode(leaderTo, forKey: .leaderTo)
         try container.encode(mustAttach, forKey: .mustAttach)
         try container.encodeIfPresent(maxCopiesOverride, forKey: .maxCopiesOverride)
+        try container.encode(optionGroups, forKey: .optionGroups)
+    }
+
+    /// Default loadout picks for a newly added unit instance.
+    func defaultOptionIDs() -> [String] {
+        optionGroups.compactMap(\.defaultOptionID)
     }
 
     func points(models: Int, copyIndex: Int) -> Int? {
@@ -308,5 +341,13 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
             return nil
         }
         return tier.byModels[String(models)]
+    }
+
+    func optionPoints(selectedIDs: [String]) -> Int {
+        let selected = Set(selectedIDs)
+        return optionGroups
+            .flatMap(\.options)
+            .filter { selected.contains($0.id) }
+            .reduce(0) { $0 + $1.points }
     }
 }
