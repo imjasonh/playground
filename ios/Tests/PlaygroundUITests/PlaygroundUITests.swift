@@ -381,11 +381,52 @@ final class PlaygroundUITests: XCTestCase {
             "Expected the create form (name field) when the catalog is bundled"
         )
 
+        let create = app.buttons["armyListCreateButton"]
+        XCTAssertTrue(create.waitForExistence(timeout: 3))
+        XCTAssertFalse(create.isEnabled, "Create requires at least one detachment")
+
         let starter = app.buttons["armyListBuildStarterButton"]
         XCTAssertTrue(
             starter.waitForExistence(timeout: 3),
-            "Expected Build starter list on the create sheet"
+            "Expected Build starter list in the sheet toolbar"
         )
+        XCTAssertFalse(
+            starter.isEnabled,
+            "Create/starter stay disabled until a detachment is chosen"
+        )
+
+        // Prefer a cheap detachment (1 DP) so Incursion's 2 DP budget always fits.
+        let detachmentRows = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "armyListNewDetachment-")
+        )
+        XCTAssertGreaterThan(detachmentRows.count, 0, "Expected detachment rows on the create sheet")
+
+        var selected = false
+        for index in 0..<min(detachmentRows.count, 10) {
+            let row = detachmentRows.element(boundBy: index)
+            guard row.waitForExistence(timeout: 2) else { continue }
+            for _ in 0..<8 where !row.isHittable {
+                if app.collectionViews.firstMatch.exists {
+                    app.collectionViews.firstMatch.swipeUp()
+                } else if app.tables.firstMatch.exists {
+                    app.tables.firstMatch.swipeUp()
+                } else {
+                    app.swipeUp()
+                }
+            }
+            guard row.isHittable else { continue }
+            row.tap()
+            // Wait for SwiftUI to enable the toolbar Create button.
+            let createEnabled = NSPredicate { _, _ in create.isEnabled }
+            let wait = XCTNSPredicateExpectation(predicate: createEnabled, object: nil)
+            if XCTWaiter.wait(for: [wait], timeout: 2) == .completed {
+                selected = true
+                break
+            }
+            // Undo over-budget or no-op taps.
+            if row.isHittable { row.tap() }
+        }
+        XCTAssertTrue(selected, "Create enables after selecting a detachment under the DP budget")
         XCTAssertTrue(starter.isEnabled)
 
         nameField.tap()
@@ -397,9 +438,6 @@ final class PlaygroundUITests: XCTestCase {
         let listName = "UI Test \(Int(Date().timeIntervalSince1970))"
         nameField.typeText(listName)
 
-        let create = app.buttons["armyListCreateButton"]
-        XCTAssertTrue(create.waitForExistence(timeout: 3))
-        XCTAssertTrue(create.isEnabled)
         create.tap()
 
         let legalBadge = app.descendants(matching: .any)["armyListLegalBadge"]
@@ -434,10 +472,11 @@ final class PlaygroundUITests: XCTestCase {
             XCTAssertEqual(value, listName, "Editor name field should show the name from create")
         }
 
-        // Brand-new lists are empty → illegal until detachments/units/warlord are set.
+        // Create with detachments and no units is Legal (empty is a warning only).
         XCTAssertTrue(
-            app.staticTexts["Illegal"].waitForExistence(timeout: 3)
-                || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Illegal")).firstMatch.exists
+            app.staticTexts["Legal"].waitForExistence(timeout: 3)
+                || legalBadge.waitForExistence(timeout: 2),
+            "Empty list with detachments should validate as Legal (warnings ok)"
         )
 
         // Share must open a real sheet (not blank) via item-based presentation.

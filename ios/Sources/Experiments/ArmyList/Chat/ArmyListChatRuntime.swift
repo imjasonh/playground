@@ -310,7 +310,7 @@ final class ArmyListChatRuntime: ObservableObject {
         contextUsage = AgentContextUsage(budget: budget, didCompact: didCompactThisSession)
     }
 
-    private func append(_ kind: ArmyListChatEntry.Kind, text: String) {
+    func append(_ kind: ArmyListChatEntry.Kind, text: String) {
         transcript.append(ArmyListChatEntry(kind: kind, text: text))
     }
 
@@ -404,11 +404,12 @@ final class ArmyListChatRuntime: ObservableObject {
         For thematic questions (army name, color scheme, lore vibe, matchup opinions), answer helpfully and label opinions as opinions.
         Prefer short replies. Format with Markdown (bold, bullets, short headings) when it helps scanability.
         Always answer the latest user message; do not keep talking about an earlier Theme/name request unless they ask again.
-        For from-scratch 1000/2000 point builds: invent a fresh theme each time (different units/detachment/name), call searchCatalog as needed, then applyRosterPlan once with your full plan. Do not loop addUnit for a full army — that overflows the on-device context window.
-        When fixing errors: keep the current battle size (never call setBattleSize). Prefer removeUnit / setUnitModels / setDetachments / setWarlord / attachCharacter. Respect datasheet duplicate limits for this battle size — addUnit rejects illegal copies.
-        When filling points: keep battle size and existing units; add a few thematic units that fit remaining points without exceeding duplicate caps. Re-read Status after each mutation.
+        For from-scratch builds within the current battle size: invent a fresh theme, call searchCatalog as needed, then applyRosterPlan once. Do not loop addUnit for a full army — that overflows the on-device context window.
+        Battle size is fixed in chat — the user sets it at create time or in the editor. Never invent a different points level.
+        When fixing errors: Prefer removeUnit / setUnitModels / setDetachments / setWarlord / attachCharacter. Respect datasheet duplicate limits for this battle size — addUnit rejects illegal copies.
+        When filling points: keep existing units; add a few thematic units that fit remaining points without exceeding duplicate caps. Re-read Status after each mutation.
         Use addUnit only for small targeted edits after a roster already exists.
-        Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
+        Never ask the user for unit IDs, datasheet IDs, or detachment IDs — they are not shown in the UI. Call getListSummary or searchCatalog and pass names (or the ids those tools return). Detachments are not units; setWarlord needs a Character unit from the roster.
         """
     }
 
@@ -418,7 +419,6 @@ final class ArmyListChatRuntime: ObservableObject {
             ArmyGetListSummaryFMTool(runtime: self),
             ArmySearchCatalogFMTool(runtime: self),
             ArmyApplyRosterPlanFMTool(runtime: self),
-            ArmySetBattleSizeFMTool(runtime: self),
             ArmySetDetachmentsFMTool(runtime: self),
             ArmyAddUnitFMTool(runtime: self),
             ArmyRemoveUnitFMTool(runtime: self),
@@ -533,12 +533,10 @@ struct ArmySearchCatalogFMTool: Tool {
 struct ArmyApplyRosterPlanFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "applyRosterPlan"
-    let description = "Replace the whole roster in one call with a battle size, detachments, and units you invented. Prefer this for creative from-scratch builds."
+    let description = "Replace the whole roster in one call with detachments and units you invented. Keeps the list's current battle size."
 
     @Generable
     struct Arguments {
-        @Guide(description: "incursion, strike-force, 1000, or 2000")
-        var battleSizeID: String
         @Guide(description: "Comma-separated detachment ids/names that fit the DP budget")
         var detachmentIDsCSV: String
         @Guide(description: "Comma-separated datasheet id/name or id:models, e.g. blade-champion:1,custodian-guard:5")
@@ -551,32 +549,9 @@ struct ArmyApplyRosterPlanFMTool: Tool {
         try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
             ArmyListChatToolExecutor.applyRosterPlan(
                 workspace: workspace,
-                battleSizeID: arguments.battleSizeID,
                 detachmentIDsCSV: arguments.detachmentIDsCSV,
                 unitsCSV: arguments.unitsCSV,
                 listName: arguments.listName
-            )
-        }
-    }
-}
-
-@available(iOS 26.0, *)
-struct ArmySetBattleSizeFMTool: Tool {
-    weak var runtime: ArmyListChatRuntime?
-    let name = "setBattleSize"
-    let description = "Set battle size to incursion (1000) or strike-force (2000). Never use this to clear validation errors — fix the roster instead."
-
-    @Generable
-    struct Arguments {
-        @Guide(description: "incursion, strike-force, 1000, or 2000")
-        var battleSizeID: String
-    }
-
-    func call(arguments: Arguments) async throws -> String {
-        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
-            ArmyListChatToolExecutor.setBattleSize(
-                workspace: workspace,
-                battleSizeID: arguments.battleSizeID
             )
         }
     }
@@ -633,11 +608,11 @@ struct ArmyAddUnitFMTool: Tool {
 struct ArmyRemoveUnitFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "removeUnit"
-    let description = "Remove a unit instance by UUID from getListSummary / addUnit."
+    let description = "Remove a unit by name or id from getListSummary. Never ask the user for ids."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Unit instance UUID")
+        @Guide(description: "Unit name or id from getListSummary")
         var unitID: String
     }
 
@@ -652,11 +627,11 @@ struct ArmyRemoveUnitFMTool: Tool {
 struct ArmySetUnitModelsFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setUnitModels"
-    let description = "Change model count on an existing unit UUID."
+    let description = "Change model count on a roster unit by name or id from getListSummary."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Unit instance UUID")
+        @Guide(description: "Unit name or id from getListSummary")
         var unitID: String
         @Guide(description: "New model count")
         var models: Double
@@ -677,13 +652,13 @@ struct ArmySetUnitModelsFMTool: Tool {
 struct ArmyAttachCharacterFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "attachCharacter"
-    let description = "Attach a Leader/Character unit UUID to a bodyguard unit UUID, or bodyUnitID=none to detach."
+    let description = "Attach a Leader/Character to a body unit by name or id from getListSummary, or bodyUnitID=none to detach."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Character unit UUID")
+        @Guide(description: "Character unit name or id")
         var characterUnitID: String
-        @Guide(description: "Bodyguard unit UUID, or none")
+        @Guide(description: "Bodyguard unit name or id, or none")
         var bodyUnitID: String
     }
 
@@ -702,11 +677,11 @@ struct ArmyAttachCharacterFMTool: Tool {
 struct ArmySetWarlordFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setWarlord"
-    let description = "Set Warlord to a Character unit UUID, or none."
+    let description = "Set Warlord to a Character on the roster by unit name or id from getListSummary, or none. Never ask the user for ids."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Unit UUID or none")
+        @Guide(description: "Character unit name or id from getListSummary, or none")
         var unitID: String
     }
 
@@ -740,11 +715,11 @@ struct ArmySetListNameFMTool: Tool {
 struct ArmySetEnhancementFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setEnhancement"
-    let description = "Set or clear an enhancement on a unit. Prefer detachmentId--enhancement-slug ids."
+    let description = "Set or clear an enhancement on a unit by name or id from getListSummary."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Unit instance UUID")
+        @Guide(description: "Unit name or id from getListSummary")
         var unitID: String
         @Guide(description: "Enhancement id, or none to clear")
         var enhancementID: String

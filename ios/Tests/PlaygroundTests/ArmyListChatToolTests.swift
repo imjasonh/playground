@@ -18,7 +18,6 @@ final class ArmyListChatToolTests: XCTestCase {
     }
 
     func testAddUnitRejectsOverDuplicateLimit() {
-        _ = ArmyListChatToolExecutor.setBattleSize(workspace: workspace, battleSizeID: "incursion")
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,
             detachmentIDsCSV: "brandfast-oathband"
@@ -50,10 +49,32 @@ final class ArmyListChatToolTests: XCTestCase {
     func testChipSendShowsTitleNotFullPrompt() async {
         let runtime = ArmyListChatRuntime(workspace: workspace)
         await runtime.send(
-            prompt: "Fix validation ERRORs only. Never call setBattleSize.",
+            prompt: "Fix validation ERRORs only. Prefer removeUnit.",
             displayText: "Fix errors"
         )
         XCTAssertEqual(runtime.transcript.last { $0.kind == .user }?.text, "Fix errors")
+    }
+
+    func testSetWarlordAcceptsUnitNameAndRejectsDetachment() {
+        _ = ArmyListChatToolExecutor.setDetachments(
+            workspace: workspace,
+            detachmentIDsCSV: "brandfast-oathband"
+        )
+        _ = ArmyListChatToolExecutor.clearUnits(workspace: workspace)
+        _ = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "leagues-of-votann--kahl",
+            models: 1
+        )
+        let byName = ArmyListChatToolExecutor.setWarlord(workspace: workspace, unitID: "kahl")
+        XCTAssertTrue(byName.contains("Warlord set to"), byName)
+        XCTAssertNotNil(workspace.list.warlordUnitID)
+
+        let asDetachment = ArmyListChatToolExecutor.setWarlord(
+            workspace: workspace,
+            unitID: "Brandfast Oathband"
+        )
+        XCTAssertTrue(asDetachment.contains("Detachment"), asDetachment)
     }
 
     func testSearchCatalogFindsWarriors() {
@@ -66,7 +87,6 @@ final class ArmyListChatToolTests: XCTestCase {
     }
 
     func testBuildLegalIncursionViaTools() {
-        _ = ArmyListChatToolExecutor.setBattleSize(workspace: workspace, battleSizeID: "1000")
         _ = ArmyListChatToolExecutor.setDetachments(
             workspace: workspace,
             detachmentIDsCSV: "leagues-of-votann--brandfast-oathband"
@@ -147,7 +167,6 @@ final class ArmyListChatToolTests: XCTestCase {
         let custodesWorkspace = ArmyListChatWorkspace(list: list, catalog: catalog)
         let output = ArmyListChatToolExecutor.applyRosterPlan(
             workspace: custodesWorkspace,
-            battleSizeID: "incursion",
             detachmentIDsCSV: "shield-host",
             unitsCSV: "blade-champion:1,custodian-guard:5,custodian-wardens:5,allarus-custodians:3",
             listName: "Golden Spears"
@@ -215,19 +234,20 @@ final class ArmyListChatToolTests: XCTestCase {
         )
         _ = ArmyListChatToolExecutor.applyRosterPlan(
             workspace: workspace,
-            battleSizeID: "incursion",
             detachmentIDsCSV: "hearthband",
             unitsCSV: "kahl:1,hearthkyn-warriors:10",
             listName: "Dump test"
         )
         runtime.workspace.list = workspace.list
         _ = runtime.noteToolExchange(name: "applyRosterPlan", result: "Status: LEGAL")
+        runtime.append(.user, text: "Export this chat")
         let dump = runtime.makeConversationDump()
         XCTAssertEqual(dump.mode, "army-list-chat")
         XCTAssertEqual(dump.list.name, "Dump test")
         XCTAssertEqual(dump.toolLog.count, 1)
         XCTAssertEqual(dump.toolLog[0].name, "applyRosterPlan")
         XCTAssertFalse(dump.entries.isEmpty)
+        XCTAssertEqual(dump.entries.last?.text, "Export this chat")
 
         let data = try ArmyListChatDumpExporter.jsonData(for: dump)
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))

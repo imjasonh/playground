@@ -371,7 +371,7 @@ private struct ArmyListRowView: View {
     }
 }
 
-/// Create a blank list or a seeded starter: faction, battle size, name.
+/// Create a blank list or a seeded starter: faction, battle size, detachments, name.
 struct ArmyListNewSheet: View {
     let catalog: ArmyCatalog
     var onCreate: (ArmyListDocument) -> Void
@@ -380,6 +380,7 @@ struct ArmyListNewSheet: View {
     @State private var name = "New list"
     @State private var factionID: String
     @State private var battleSizeID = "incursion"
+    @State private var selectedDetachmentIDs: Set<String> = []
     @State private var seedError: String?
 
     private var factionsSorted: [FactionDefinition] {
@@ -388,13 +389,29 @@ struct ArmyListNewSheet: View {
         }
     }
 
-    private var canSubmit: Bool {
-        !factionID.isEmpty && catalog.battleSize(id: battleSizeID) != nil
+    private var factionDetachments: [DetachmentDefinition] {
+        catalog.detachments
+            .filter { $0.factionID == factionID }
+            .sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }
     }
 
-    private var pointsLabel: String {
-        guard let size = catalog.battleSize(id: battleSizeID) else { return "" }
-        return "\(size.pointsLimit)"
+    private var detachmentPointsBudget: Int {
+        catalog.battleSize(id: battleSizeID)?.detachmentPointsBudget ?? 0
+    }
+
+    private var detachmentPointsSpent: Int {
+        factionDetachments
+            .filter { selectedDetachmentIDs.contains($0.id) }
+            .reduce(0) { $0 + $1.detachmentPoints }
+    }
+
+    private var canSubmit: Bool {
+        !factionID.isEmpty
+            && catalog.battleSize(id: battleSizeID) != nil
+            && !selectedDetachmentIDs.isEmpty
+            && detachmentPointsSpent <= detachmentPointsBudget
     }
 
     init(catalog: ArmyCatalog, onCreate: @escaping (ArmyListDocument) -> Void) {
@@ -429,6 +446,9 @@ struct ArmyListNewSheet: View {
                 }
                 .disabled(factionsSorted.isEmpty)
                 .accessibilityIdentifier("armyListFactionPicker")
+                .onChange(of: factionID) { _ in
+                    selectedDetachmentIDs.removeAll()
+                }
             }
             Section("Battle size") {
                 Picker("Battle size", selection: $battleSizeID) {
@@ -441,19 +461,50 @@ struct ArmyListNewSheet: View {
             }
 
             Section {
-                Button("Build starter list") {
-                    createStarterList()
+                if factionDetachments.isEmpty {
+                    Text("No detachments for this faction.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(factionDetachments) { detachment in
+                        let selected = selectedDetachmentIDs.contains(detachment.id)
+                        Button {
+                            if selected {
+                                selectedDetachmentIDs.remove(detachment.id)
+                            } else {
+                                selectedDetachmentIDs.insert(detachment.id)
+                            }
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(selected ? Color.accentColor : Color.secondary)
+                                    .font(.title3)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(detachment.name)
+                                        .foregroundStyle(.primary)
+                                    Text("\(detachment.detachmentPoints) DP · \(detachment.forceDisposition)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                    if let tag = detachment.uniqueTag {
+                                        Text("Unique: \(tag)")
+                                            .font(.caption2)
+                                            .foregroundStyle(.orange)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("armyListNewDetachment-\(detachment.id)")
+                        .accessibilityValue(selected ? "selected" : "unselected")
+                        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+                    }
                 }
-                .disabled(!canSubmit)
-                .accessibilityIdentifier("armyListBuildStarterButton")
-
-                Text(
-                    pointsLabel.isEmpty
-                        ? "Fills units and a detachment for this faction. You can edit after."
-                        : "Fills a legal \(pointsLabel)-point list for this faction. You can edit after."
-                )
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Detachments")
+            } footer: {
+                Text("\(detachmentPointsSpent) / \(detachmentPointsBudget) DP. Build starter list fills units for these picks.")
+                    .accessibilityIdentifier("armyListNewDetachmentPoints")
             }
 
             if let seedError {
@@ -478,6 +529,13 @@ struct ArmyListNewSheet: View {
                 .disabled(!canSubmit)
                 .accessibilityIdentifier("armyListCreateButton")
             }
+            ToolbarItem(placement: .bottomBar) {
+                Button("Build starter list") {
+                    createStarterList()
+                }
+                .disabled(!canSubmit)
+                .accessibilityIdentifier("armyListBuildStarterButton")
+            }
         }
     }
 
@@ -489,13 +547,20 @@ struct ArmyListNewSheet: View {
         return trimmed
     }
 
+    private func orderedDetachmentIDs() -> [String] {
+        factionDetachments
+            .map(\.id)
+            .filter { selectedDetachmentIDs.contains($0) }
+    }
+
     private func createBlankList() {
         seedError = nil
         let list = ArmyListDocument(
             name: trimmedName() ?? "New list",
             catalogVersion: catalog.version,
             factionID: factionID,
-            battleSizeID: battleSizeID
+            battleSizeID: battleSizeID,
+            detachmentIDs: orderedDetachmentIDs()
         )
         onCreate(list)
     }
@@ -506,11 +571,13 @@ struct ArmyListNewSheet: View {
             catalog: catalog,
             factionID: factionID,
             battleSizeID: battleSizeID,
-            name: trimmedName()
+            name: trimmedName(),
+            detachmentIDs: orderedDetachmentIDs()
         ) else {
-            seedError = "Couldn’t build a starter list for this faction and battle size."
+            seedError = "Couldn’t build a starter list for this faction, battle size, and detachments."
             return
         }
         onCreate(seeded.list)
     }
 }
+

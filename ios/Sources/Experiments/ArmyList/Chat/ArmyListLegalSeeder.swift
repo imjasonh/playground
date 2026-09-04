@@ -15,7 +15,8 @@ enum ArmyListLegalSeeder {
         catalog: ArmyCatalog,
         factionID: String,
         battleSizeID: String,
-        name: String? = nil
+        name: String? = nil,
+        detachmentIDs: [String]? = nil
     ) -> Result? {
         guard let faction = catalog.faction(id: factionID),
               let battle = catalog.battleSize(id: battleSizeID)
@@ -31,13 +32,22 @@ enum ArmyListLegalSeeder {
             return nil
         }
 
-        let combo = bestDetachmentCombo(
-            detachments,
-            budget: battle.detachmentPointsBudget
-        )
-        guard !combo.isEmpty,
-              let warlordPick = pickWarlord(sheets)
-        else {
+        let combo: [DetachmentDefinition]
+        if let detachmentIDs, !detachmentIDs.isEmpty {
+            let picked = detachmentIDs.compactMap { id in
+                detachments.first { $0.id == id }
+            }
+            guard !picked.isEmpty else { return nil }
+            combo = picked
+        } else {
+            combo = bestDetachmentCombo(
+                detachments,
+                budget: battle.detachmentPointsBudget
+            )
+            guard !combo.isEmpty else { return nil }
+        }
+
+        guard let warlordPick = pickWarlord(sheets) else {
             return nil
         }
         var units: [ListUnitInstance] = []

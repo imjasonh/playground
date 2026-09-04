@@ -39,10 +39,10 @@ struct ArmyListChatView: View {
                 title: "Fix errors",
                 text: """
                 Fix validation ERRORs only. Call getListSummary first. \
-                Keep the current battle size — never call setBattleSize. \
+                Keep the current battle size (change it only in the editor, not via tools). \
                 Prefer removeUnit, setUnitModels, setDetachments, setWarlord, or attachCharacter. \
                 Do not add more copies of a datasheet than the battle-size duplicate limit (addUnit will reject illegal copies). \
-                After each tool call, read Status; stop when LEGAL or explain what you cannot fix without changing battle size.
+                After each tool call, read Status; stop when LEGAL or explain what you cannot fix.
                 """
             ),
             PromptChip(
@@ -52,14 +52,20 @@ struct ArmyListChatView: View {
                 Fill remaining points with a thematic extension of this list. \
                 Keep battle size and existing units. Call getListSummary, note pts remaining, \
                 then addUnit a few fitting datasheets (check copies N/limit in searchCatalog). \
-                Never exceed the points limit or duplicate caps. Never call setBattleSize. \
+                Never exceed the points limit or duplicate caps. \
                 Stop when remaining points are too small for another legal unit, then briefly say what you added.
                 """
             ),
             PromptChip(
                 id: "weaknesses",
                 title: "Weaknesses",
-                text: "Weaknesses only (ignore prior theme/name talk): what matchups or unit types will give this list trouble? Opinion only. Call getListSummary for the facts."
+                text: """
+                Weaknesses of THIS roster only — call getListSummary first and ground every point in units, model counts, \
+                wargear/options, enhancements, and detachments that are actually on the list. \
+                Do not write a generic faction overview. Name what I brought, what roles it covers well, \
+                and what is thin or missing (e.g. anti-tank, screening, deep strike denial, ObSec, characters). \
+                Opinion only; no tool edits.
+                """
             ),
             PromptChip(
                 id: "theme",
