@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 280" width="840" height="280" role="img" aria-label="Power and data path of the batteryless tag">
+  <rect width="840" height="280" fill="#f7f4ef"/>
+  <text x="24" y="32" font-family="Georgia, serif" font-size="20" fill="#1c1917">One session</text>
+  <g font-family="sans-serif" font-size="13" fill="#1c1917">
+    <rect x="24" y="64" width="140" height="72" fill="#fff" stroke="#44403c"/>
+    <text x="94" y="94" text-anchor="middle">Phone</text>
+    <text x="94" y="114" text-anchor="middle" fill="#57534e">13.56 MHz</text>
+    <rect x="204" y="64" width="140" height="72" fill="#fff" stroke="#44403c"/>
+    <text x="274" y="94" text-anchor="middle">NT3H2211</text>
+    <text x="274" y="114" text-anchor="middle" fill="#57534e">harvest + SRAM</text>
+    <rect x="384" y="64" width="140" height="72" fill="#fff" stroke="#44403c"/>
+    <text x="454" y="94" text-anchor="middle">TPS61023</text>
+    <text x="454" y="114" text-anchor="middle" fill="#57534e">0.5 V to 3.29 V</text>
+    <rect x="564" y="64" width="140" height="72" fill="#fff" stroke="#44403c"/>
+    <text x="634" y="94" text-anchor="middle">STM32G071</text>
+    <text x="634" y="114" text-anchor="middle" fill="#57534e">36 KB RAM</text>
+    <rect x="564" y="176" width="140" height="72" fill="#fff" stroke="#44403c"/>
+    <text x="634" y="206" text-anchor="middle">GDEY042T81</text>
+    <text x="634" y="226" text-anchor="middle" fill="#57534e">400x300 SSD1683</text>
+    <path d="M164 100 H204" stroke="#44403c" stroke-width="1.5" fill="none"/>
+    <path d="M344 100 H384" stroke="#44403c" stroke-width="1.5" fill="none"/>
+    <path d="M524 100 H564" stroke="#44403c" stroke-width="1.5" fill="none"/>
+    <path d="M634 136 V176" stroke="#44403c" stroke-width="1.5" fill="none"/>
+    <path d="M274 136 V156 H634 V136" stroke="#44403c" stroke-width="1.5" fill="none"/>
+    <text x="454" y="174" text-anchor="middle" fill="#57534e">I2C mailbox 64 B</text>
+  </g>
+</svg>

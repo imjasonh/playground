@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Export a KiCad netlist and fail on unexpected unconnected pins.
+# Schematic netlist check, PCB presence check, firmware host tests.
 set -euo pipefail
 
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -11,3 +11,5 @@ if ! command -v kicad-cli >/dev/null 2>&1; then
 fi
 
 python3 tools/erc.py
+python3 tools/pcb_check.py
+make -C firmware test

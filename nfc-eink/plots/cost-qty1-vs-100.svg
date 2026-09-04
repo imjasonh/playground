@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 340" width="720" height="340" role="img" aria-label="Unit cost at quantity 1 versus 100">
+  <rect width="720" height="340" fill="#f7f4ef"/>
+  <text x="36" y="36" font-family="Georgia, serif" font-size="20" fill="#1c1917">Unit cost, 4.2 in NFC e-ink tag</text>
+  <text x="36" y="58" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" fill="#57534e">USD catalog snapshots, 2026-09-04. Panel qty 100 is a factory band.</text>
+  <line x1="200" y1="90" x2="200" y2="280" stroke="#a8a29e" stroke-width="1"/>
+  <text x="190" y="94" text-anchor="end" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" fill="#57534e">40</text>
+  <text x="190" y="184" text-anchor="end" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" fill="#57534e">20</text>
+  <text x="190" y="274" text-anchor="end" font-family="ui-sans-serif, system-ui, sans-serif" font-size="11" fill="#57534e">0</text>
+  <!-- scale: 180px = $40 -->
+  <rect x="250" y="99.6" width="90" height="37.1" fill="#44403c"/>
+  <rect x="250" y="136.7" width="90" height="83.3" fill="#a8a29e"/>
+  <rect x="250" y="220" width="90" height="60" fill="#d6d3d1"/>
+  <rect x="430" y="188.5" width="90" height="38.3" fill="#44403c"/>
+  <rect x="430" y="226.8" width="90" height="49.5" fill="#a8a29e"/>
+  <rect x="430" y="276.3" width="90" height="3.8" fill="#d6d3d1"/>
+  <text x="295" y="300" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" fill="#1c1917">Qty 1  USD 40.08</text>
+  <text x="475" y="300" text-anchor="middle" font-family="ui-sans-serif, system-ui, sans-serif" font-size="13" fill="#1c1917">Qty 100  USD 20.33</text>
+  <rect x="560" y="96" width="12" height="12" fill="#44403c"/>
+  <text x="578" y="107" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" fill="#1c1917">Electronics</text>
+  <rect x="560" y="118" width="12" height="12" fill="#a8a29e"/>
+  <text x="578" y="129" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" fill="#1c1917">GDEY042T81</text>
+  <rect x="560" y="140" width="12" height="12" fill="#d6d3d1"/>
+  <text x="578" y="151" font-family="ui-sans-serif, system-ui, sans-serif" font-size="12" fill="#1c1917">4-layer PCB</text>
+</svg>

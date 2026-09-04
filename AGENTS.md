@@ -697,7 +697,7 @@ auto-discover them. Run their local tests when you change them.
 | `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
-| `nfc-eink/` | Batteryless NFC-harvest 4.2 in e-ink tag (KiCad schematic + BOM) | `bash nfc-eink/tools/validate.sh` (needs `kicad-cli`) |
+| `nfc-eink/` | Batteryless NFC-harvest 4.2 in e-ink tag (KiCad schematic + PCB + STM32 firmware + BOM) | `bash nfc-eink/tools/validate.sh` (needs `kicad-cli`) |
 
 ## The iOS app
 
