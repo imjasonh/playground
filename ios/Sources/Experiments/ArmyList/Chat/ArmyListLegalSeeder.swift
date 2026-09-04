@@ -2,8 +2,8 @@ import Foundation
 
 /// Builds a legal-ish starter list for the current faction and battle size.
 ///
-/// Used by List chat so "Build 1k" is one tool call instead of a long
-/// addUnit loop that blows the on-device context window.
+/// Used by **New list → Build starter list**. Chat keeps `applyRosterPlan` for
+/// creative LLM builds; this seeder is the deterministic create-time path.
 enum ArmyListLegalSeeder {
     struct Result: Equatable {
         var list: ArmyListDocument

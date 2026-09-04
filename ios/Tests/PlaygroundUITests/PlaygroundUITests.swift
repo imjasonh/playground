@@ -381,6 +381,13 @@ final class PlaygroundUITests: XCTestCase {
             "Expected the create form (name field) when the catalog is bundled"
         )
 
+        let starter = app.buttons["armyListBuildStarterButton"]
+        XCTAssertTrue(
+            starter.waitForExistence(timeout: 3),
+            "Expected Build starter list on the create sheet"
+        )
+        XCTAssertTrue(starter.isEnabled)
+
         nameField.tap()
         // Clear the default title, then type a unique name.
         if let value = nameField.value as? String, !value.isEmpty {

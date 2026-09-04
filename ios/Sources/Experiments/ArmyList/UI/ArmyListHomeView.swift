@@ -442,7 +442,11 @@ struct ArmyListNewSheet: View {
                 .disabled(!canSubmit)
                 .accessibilityIdentifier("armyListBuildStarterButton")
 
-                Text("Fills a legal \(pointsLabel.isEmpty ? "" : "\(pointsLabel) pt ")list for this faction. You can edit it after.")
+                Text(
+                    pointsLabel.isEmpty
+                        ? "Fills units and a detachment for this faction. You can edit after."
+                        : "Fills a legal \(pointsLabel)-point list for this faction. You can edit after."
+                )
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
