@@ -364,8 +364,8 @@ bundle exec fastlane test
 Re-run `bundle update fastlane` only when you intentionally bump.
 
 Compiler warnings fail the build (`SWIFT_TREAT_WARNINGS_AS_ERRORS` in
-`project.yml`). Fix the warning. If an Apple type is not Sendable, hop it
-in source and say why.
+`project.yml`). Fix the warning. If an Apple type is not Sendable, add an
+explicit `@unchecked Sendable` conformance next to the hop and say why.
 
 ## Shipping to TestFlight
 

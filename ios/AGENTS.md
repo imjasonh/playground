@@ -50,8 +50,8 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 - **Compiler warnings:** `project.yml` sets
   `SWIFT_TREAT_WARNINGS_AS_ERRORS` and `GCC_TREAT_WARNINGS_AS_ERRORS`. Fix
   the warning when you can. If an Apple type is not `Sendable` (Core NFC
-  session objects), hop it through an explicit `@unchecked Sendable` box
-  and say why. Do not set `SWIFT_SUPPRESS_WARNINGS` on a target.
+  session objects), add an explicit `@unchecked Sendable` conformance next
+  to the hop and say why. Do not set `SWIFT_SUPPRESS_WARNINGS` on a target.
 
 ## Will my change need re-bootstrap?
 
