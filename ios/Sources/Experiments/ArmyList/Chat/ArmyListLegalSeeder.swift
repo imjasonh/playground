@@ -36,15 +36,11 @@ enum ArmyListLegalSeeder {
             budget: battle.detachmentPointsBudget
         )
         guard !combo.isEmpty,
-              let warlordSheet = sheets.first(where: { $0.characterRole != nil })
-                ?? sheets.first(where: { $0.characterRole == .leader })
+              let warlordPick = sheets.first(where: { $0.characterRole == .leader })
+                ?? sheets.first(where: { $0.characterRole != nil })
         else {
             return nil
         }
-
-        // Prefer a Leader when available.
-        let warlordPick = sheets.first(where: { $0.characterRole == .leader }) ?? warlordSheet
-
         var units: [ListUnitInstance] = []
         var copies: [String: Int] = [:]
         var points = 0

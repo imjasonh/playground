@@ -517,13 +517,9 @@ struct ArmyListUnitDetailView: View {
                         }
                     }
 
-                    Section("Enhancements") {
-                        let available = availableEnhancements(for: sheet)
-                        if available.isEmpty {
-                            Text("Select a detachment that grants enhancements, or this unit cannot take any.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        } else {
+                    let available = availableEnhancements(for: sheet)
+                    if !available.isEmpty {
+                        Section("Enhancements") {
                             ForEach(available, id: \.enhancement.id) { item in
                                 Toggle(isOn: enhancementBinding(unitIndex: index, enhancementID: item.enhancement.id)) {
                                     VStack(alignment: .leading, spacing: 2) {
