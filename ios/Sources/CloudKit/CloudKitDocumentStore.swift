@@ -151,10 +151,10 @@ actor CloudKitDocumentStore {
                 .appendingPathComponent("ck-\(record.recordID.recordName)-\(UUID().uuidString).json")
             try payload.write(to: url, options: .atomic)
             record["payloadAsset"] = CKAsset(fileURL: url)
-            record["payload"] = nil
+            record["payload"] = nil as CKRecordValue?
         } else {
             record["payload"] = payload as CKRecordValue
-            record["payloadAsset"] = nil
+            record["payloadAsset"] = nil as CKRecordValue?
         }
     }
 }
