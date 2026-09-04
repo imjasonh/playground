@@ -10,39 +10,32 @@ struct ArmyListHomeView: View {
     /// empty library with Create enabled while `catalog` is still nil.
     @State private var didBootstrap = false
     @State private var saveError: String?
-    /// Sheet payload carries the catalog itself. Two `@State` vars
-    /// (`sheetCatalog` + `.create`) raced on device: the sheet opened on
-    /// `.create` before the snapshot landed → "without a catalog snapshot."
-    @State private var newListSheet: NewListPresentation?
-    /// Editor opened after Create. Catalog rides on the item (same race class
-    /// as the New List sheet).
-    @State private var editorPresentation: EditorPresentation?
-    @State private var pendingEditorAfterSheet: EditorPresentation?
+    /// One presentation item for Create and the post-create editor. Catalog
+    /// (or error text) lives on the case — never a second `@State` the cover
+    /// body has to read. Create → editor is just replacing this value.
+    @State private var presentation: Presentation?
     /// `nil` means every faction.
     @State private var factionFilter: String?
     /// `nil` means every battle size / points level.
     @State private var battleSizeFilter: String?
 
-    /// Identifiable New List sheet. The catalog (or error) travels with the
-    /// item so `sheet(item:)` never renders against a second `@State`.
-    struct NewListPresentation: Identifiable {
-        let id = UUID()
-        let catalog: ArmyCatalog?
-        let errorMessage: String?
+    /// Full-screen flows owned by the home screen. Every case carries what
+    /// the UI needs so `fullScreenCover(item:)` cannot open empty.
+    enum Presentation: Identifiable {
+        case create(ArmyCatalog)
+        case unavailable(String)
+        case editor(list: ArmyListDocument, catalog: ArmyCatalog)
 
-        static func create(_ catalog: ArmyCatalog) -> NewListPresentation {
-            NewListPresentation(catalog: catalog, errorMessage: nil)
+        var id: String {
+            switch self {
+            case .create:
+                return "create"
+            case .unavailable:
+                return "unavailable"
+            case .editor(let list, _):
+                return "editor-\(list.id.uuidString)"
+            }
         }
-
-        static func unavailable(_ message: String) -> NewListPresentation {
-            NewListPresentation(catalog: nil, errorMessage: message)
-        }
-    }
-
-    struct EditorPresentation: Identifiable {
-        var id: UUID { list.id }
-        let list: ArmyListDocument
-        let catalog: ArmyCatalog
     }
 
     private var filteredLists: [ArmyListDocument] {
@@ -108,41 +101,8 @@ struct ArmyListHomeView: View {
                 .disabled(!canCreateList)
             }
         }
-        .sheet(item: $newListSheet, onDismiss: handleNewListSheetDismissed) { presentation in
-            NavigationStack {
-                if let catalog = presentation.catalog {
-                    ArmyListNewSheet(catalog: catalog) { created in
-                        createList(created)
-                    }
-                } else {
-                    newListUnavailablePane(
-                        message: presentation.errorMessage
-                            ?? "The construction catalog is not loaded. Install a build that includes catalog.json in the app bundle."
-                    )
-                }
-            }
-            .accessibilityIdentifier("armyListNewSheet")
-        }
-        .fullScreenCover(item: $editorPresentation) { presentation in
-            NavigationStack {
-                ArmyListEditorView(
-                    list: presentation.list,
-                    catalog: presentation.catalog,
-                    store: store
-                ) {
-                    reload()
-                }
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Done") {
-                            editorPresentation = nil
-                            reload()
-                        }
-                        .accessibilityIdentifier("armyListEditorDone")
-                    }
-                }
-            }
-            .accessibilityIdentifier("armyListEditorCover")
+        .fullScreenCover(item: $presentation) { item in
+            presentationCover(item)
         }
         .alert("Could not save list", isPresented: Binding(
             get: { saveError != nil },
@@ -153,6 +113,46 @@ struct ArmyListHomeView: View {
             Text(saveError ?? "Unknown error.")
         }
         .onAppear(perform: bootstrap)
+    }
+
+    @ViewBuilder
+    private func presentationCover(_ item: Presentation) -> some View {
+        switch item {
+        case .create(let catalog):
+            NavigationStack {
+                ArmyListNewSheet(catalog: catalog) { created in
+                    createList(created, catalog: catalog)
+                }
+            }
+            .accessibilityIdentifier("armyListNewSheet")
+
+        case .unavailable(let message):
+            NavigationStack {
+                newListUnavailablePane(message: message)
+            }
+            .accessibilityIdentifier("armyListNewSheet")
+
+        case .editor(let list, let catalog):
+            NavigationStack {
+                ArmyListEditorView(
+                    list: list,
+                    catalog: catalog,
+                    store: store
+                ) {
+                    reload()
+                }
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") {
+                            presentation = nil
+                            reload()
+                        }
+                        .accessibilityIdentifier("armyListEditorDone")
+                    }
+                }
+            }
+            .accessibilityIdentifier("armyListEditorCover")
+        }
     }
 
     private func newListUnavailablePane(message: String) -> some View {
@@ -166,7 +166,7 @@ struct ArmyListHomeView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") { newListSheet = nil }
+                Button("Cancel") { presentation = nil }
                     .accessibilityIdentifier("armyListNewSheetCancel")
             }
         }
@@ -218,24 +218,16 @@ struct ArmyListHomeView: View {
             } else {
                 Section {
                     ForEach(filteredLists) { list in
-                        NavigationLink {
-                            if let catalog {
+                        if let catalog {
+                            NavigationLink {
                                 ArmyListEditorView(list: list, catalog: catalog, store: store) {
                                     reload()
                                 }
-                            } else {
-                                unavailablePane(
-                                    systemImage: "exclamationmark.triangle",
-                                    title: "Could not open list",
-                                    message: loadError
-                                        ?? "The construction catalog is not loaded."
-                                )
-                                .accessibilityIdentifier("armyListEditorUnavailable")
+                            } label: {
+                                ArmyListRowView(list: list, catalog: catalog)
                             }
-                        } label: {
-                            ArmyListRowView(list: list, catalog: catalog)
+                            .accessibilityIdentifier("armyListRow-\(list.id.uuidString)")
                         }
-                        .accessibilityIdentifier("armyListRow-\(list.id.uuidString)")
                     }
                     .onDelete(perform: deleteFiltered)
                 }
@@ -282,37 +274,25 @@ struct ArmyListHomeView: View {
     private func presentNewList() {
         guard didBootstrap else { return }
         if let catalog {
-            newListSheet = .create(catalog)
+            presentation = .create(catalog)
         } else {
-            newListSheet = .unavailable(
+            presentation = .unavailable(
                 loadError
                     ?? "The construction catalog is not loaded. Install a build that includes catalog.json in the app bundle."
             )
         }
     }
 
-    private func createList(_ created: ArmyListDocument) {
-        guard let catalog else {
-            saveError = loadError
-                ?? "The construction catalog is not loaded, so the list cannot be opened in the editor."
-            return
-        }
+    private func createList(_ created: ArmyListDocument, catalog: ArmyCatalog) {
         do {
             try store.save(created)
             reload()
-            // Hold the editor payload until the create sheet's onDismiss; the
-            // catalog is already on the payload so the cover cannot open empty.
-            pendingEditorAfterSheet = EditorPresentation(list: created, catalog: catalog)
-            newListSheet = nil
+            // Same `presentation` value → editor. No pending handoff, no second
+            // cover, no catalog looked up from another `@State`.
+            presentation = .editor(list: created, catalog: catalog)
         } catch {
             saveError = error.localizedDescription
         }
-    }
-
-    private func handleNewListSheetDismissed() {
-        guard let pending = pendingEditorAfterSheet else { return }
-        pendingEditorAfterSheet = nil
-        editorPresentation = pending
     }
 
     private func reload() {
