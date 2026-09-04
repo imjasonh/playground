@@ -297,6 +297,18 @@ final class PlaygroundUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Army List"].waitForExistence(timeout: 8))
 
+        // While catalog bootstrap runs, Create must stay disabled (or absent).
+        let loading = app.descendants(matching: .any)["armyListCatalogLoading"]
+        if loading.exists {
+            let newButton = app.buttons["armyListNewButton"]
+            if newButton.exists {
+                XCTAssertFalse(
+                    newButton.isEnabled,
+                    "New list must stay disabled while the catalog is loading"
+                )
+            }
+        }
+
         let unavailable = app.descendants(matching: .any)["armyListCatalogUnavailable"]
         let empty = app.descendants(matching: .any)["armyListEmptyState"]
         let library = app.descendants(matching: .any)["armyListLibrary"]
@@ -307,7 +319,7 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertEqual(
             XCTWaiter.wait(for: [ready], timeout: 10),
             .completed,
-            "Expected catalog-unavailable, empty state, or library"
+            "Expected catalog-unavailable, empty state, or library after bootstrap"
         )
     }
 
@@ -316,9 +328,10 @@ final class PlaygroundUITests: XCTestCase {
 
         openExperiment("army-list", title: "Army List", in: app)
         XCTAssertTrue(app.navigationBars["Army List"].waitForExistence(timeout: 8))
+        waitForArmyListBootstrap(in: app)
 
         let unavailable = app.descendants(matching: .any)["armyListCatalogUnavailable"]
-        if unavailable.waitForExistence(timeout: 2) {
+        if unavailable.exists {
             // Catalog missing from the bundle: New list must stay disabled so we
             // never present a blank sheet again.
             let newButton = app.buttons["armyListNewButton"]
@@ -395,6 +408,69 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["Illegal"].waitForExistence(timeout: 3)
                 || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Illegal")).firstMatch.exists
+        )
+
+        // Share must open a real sheet (not blank) via item-based presentation.
+        let share = app.buttons["armyListShareButton"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        share.tap()
+        let shareText = app.descendants(matching: .any)["armyListShareText"]
+        let shareSheet = app.descendants(matching: .any)["armyListShareSheet"]
+        let shareReady = NSPredicate { _, _ in
+            shareText.exists || shareSheet.exists
+                || app.navigationBars["Share"].exists
+        }
+        let shareExpectation = XCTNSPredicateExpectation(predicate: shareReady, object: app)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [shareExpectation], timeout: 8),
+            .completed,
+            "Share sheet was blank — expected roster text or Share chrome"
+        )
+    }
+
+    func testDeviceAgentExportSheetIsNeverBlank() {
+        let app = launchApp()
+
+        openExperiment("device-agent", title: "Device Agent", in: app)
+        XCTAssertTrue(app.navigationBars["Device Agent"].waitForExistence(timeout: 8))
+
+        let export = app.buttons["deviceAgentExportButton"]
+        XCTAssertTrue(
+            export.waitForExistence(timeout: 10),
+            "Export control should be available (chat status bar or unavailable pane)"
+        )
+        export.tap()
+
+        let shareLink = app.descendants(matching: .any)["deviceAgentExportShareLink"]
+        let exportSheet = app.descendants(matching: .any)["deviceAgentExportSheet"]
+        let failedAlert = app.alerts["Export failed"]
+        let exportReady = NSPredicate { _, _ in
+            shareLink.exists
+                || exportSheet.exists
+                || app.navigationBars["Export conversation"].exists
+                || failedAlert.exists
+        }
+        let expectation = XCTNSPredicateExpectation(predicate: exportReady, object: app)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [expectation], timeout: 10),
+            .completed,
+            "Export presented a blank sheet — expected Share ZIP content or an explicit failure alert"
+        )
+    }
+
+    /// Wait until Army List leaves the bootstrap ProgressView.
+    private func waitForArmyListBootstrap(in app: XCUIApplication, timeout: TimeInterval = 10) {
+        let unavailable = app.descendants(matching: .any)["armyListCatalogUnavailable"]
+        let empty = app.descendants(matching: .any)["armyListEmptyState"]
+        let library = app.descendants(matching: .any)["armyListLibrary"]
+        let settled = NSPredicate { _, _ in
+            unavailable.exists || empty.exists || library.exists
+        }
+        let expectation = XCTNSPredicateExpectation(predicate: settled, object: app)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [expectation], timeout: timeout),
+            .completed,
+            "Army List never left the loading state"
         )
     }
 }

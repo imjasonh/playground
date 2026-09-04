@@ -8,9 +8,15 @@ struct ArmyListEditorView: View {
     var onChange: () -> Void
 
     @State private var showAddUnit = false
-    @State private var showShare = false
-    @State private var shareText = ""
-    @State private var shareFileURL: URL?
+    /// Item-based share sheet so we never present an empty modal while text/URL
+    /// state is still being filled in.
+    @State private var sharePayload: SharePayload?
+
+    private struct SharePayload: Identifiable {
+        let id = UUID()
+        let text: String
+        let fileURL: URL?
+    }
 
     init(
         list: ArmyListDocument,
@@ -107,8 +113,7 @@ struct ArmyListEditorView: View {
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    prepareShare()
-                    showShare = true
+                    sharePayload = makeSharePayload()
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                 }
@@ -125,9 +130,11 @@ struct ArmyListEditorView: View {
                     persist()
                 }
             }
+            .accessibilityIdentifier("armyListAddUnitSheet")
         }
-        .sheet(isPresented: $showShare) {
-            ShareArmyListSheet(text: shareText, fileURL: shareFileURL)
+        .sheet(item: $sharePayload) { payload in
+            ShareArmyListSheet(text: payload.text, fileURL: payload.fileURL)
+                .accessibilityIdentifier("armyListShareSheet")
         }
         .onAppear {
             if list.applyCatalogUpgrade(using: catalog) {
@@ -259,15 +266,17 @@ struct ArmyListEditorView: View {
         onChange()
     }
 
-    private func prepareShare() {
+    private func makeSharePayload() -> SharePayload {
         let result = validation
-        shareText = ArmyListTextExporter.text(for: list, catalog: catalog, validation: result)
+        let text = ArmyListTextExporter.text(for: list, catalog: catalog, validation: result)
+        var fileURL: URL?
         if let data = try? ArmyListJSONExporter.data(for: list, validation: result) {
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent(ArmyListJSONExporter.filename(for: list))
             try? data.write(to: url, options: .atomic)
-            shareFileURL = url
+            fileURL = url
         }
+        return SharePayload(text: text, fileURL: fileURL)
     }
 }
 

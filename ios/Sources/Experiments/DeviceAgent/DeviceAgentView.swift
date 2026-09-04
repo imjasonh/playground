@@ -11,10 +11,16 @@ struct DeviceAgentView: View {
     @State private var draft = ""
     @State private var showBrowser = false
     @State private var voiceMode = false
-    @State private var exportShareURL: URL?
+    /// Item-based sheet — `sheet(isPresented:)` + `if let url` can present blank.
+    @State private var exportShare: ExportShareItem?
     @State private var exportError: String?
     @FocusState private var promptFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
+
+    private struct ExportShareItem: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -88,35 +94,32 @@ struct DeviceAgentView: View {
                 runtime.appendPermission(domain)
             }
         }
-        .sheet(isPresented: Binding(
-            get: { exportShareURL != nil },
-            set: { if !$0 { exportShareURL = nil } }
-        )) {
-            if let exportShareURL {
-                NavigationStack {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text("Share this ZIP (JSONL inside) to debug tool calls, browser replay, and AFM page-extraction failures.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                        ShareLink(item: exportShareURL) {
-                            Label("Share ZIP", systemImage: "square.and.arrow.up")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .accessibilityIdentifier("deviceAgentExportShareLink")
-                        Spacer()
+        .sheet(item: $exportShare) { item in
+            NavigationStack {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Share this ZIP (JSONL inside) to debug tool calls, browser replay, and AFM page-extraction failures.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    ShareLink(item: item.url) {
+                        Label("Share ZIP", systemImage: "square.and.arrow.up")
+                            .frame(maxWidth: .infinity)
                     }
-                    .padding()
-                    .navigationTitle("Export conversation")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Done") { self.exportShareURL = nil }
-                        }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("deviceAgentExportShareLink")
+                    Spacer()
+                }
+                .padding()
+                .navigationTitle("Export conversation")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Done") { exportShare = nil }
+                            .accessibilityIdentifier("deviceAgentExportDone")
                     }
                 }
-                .presentationDetents([.medium])
             }
+            .presentationDetents([.medium])
+            .accessibilityIdentifier("deviceAgentExportSheet")
         }
         .alert("Export failed", isPresented: Binding(
             get: { exportError != nil },
@@ -170,6 +173,13 @@ struct DeviceAgentView: View {
                 .buttonStyle(.bordered)
                 .accessibilityIdentifier("deviceAgentOpenIntelligenceSettings")
             }
+            Button {
+                exportConversation()
+            } label: {
+                Label("Export conversation", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(.bordered)
+            .accessibilityIdentifier("deviceAgentExportButton")
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -504,7 +514,8 @@ struct DeviceAgentView: View {
 
     private func exportConversation() {
         do {
-            exportShareURL = try runtime.writeConversationDumpFile()
+            let url = try runtime.writeConversationDumpFile()
+            exportShare = ExportShareItem(url: url)
         } catch {
             exportError = error.localizedDescription
         }

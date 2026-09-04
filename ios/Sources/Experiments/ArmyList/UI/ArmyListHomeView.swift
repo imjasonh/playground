@@ -6,6 +6,9 @@ struct ArmyListHomeView: View {
     @State private var lists: [ArmyListDocument] = []
     @State private var catalog: ArmyCatalog?
     @State private var loadError: String?
+    /// False until `bootstrap` finishes. First paint must not look like an
+    /// empty library with Create enabled while `catalog` is still nil.
+    @State private var didBootstrap = false
     @State private var saveError: String?
     /// Item-based sheet so SwiftUI always receives concrete content (a bare
     /// `if let` inside `sheet(isPresented:)` can present a blank modal).
@@ -44,12 +47,16 @@ struct ArmyListHomeView: View {
     }
 
     private var canCreateList: Bool {
-        catalog != nil && loadError == nil
+        didBootstrap && catalog != nil && loadError == nil
     }
 
     var body: some View {
         Group {
-            if let loadError {
+            if !didBootstrap {
+                ProgressView("Loading catalog…")
+                    .accessibilityIdentifier("armyListCatalogLoading")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let loadError {
                 unavailablePane(
                     systemImage: "exclamationmark.triangle",
                     title: "Catalog unavailable",
@@ -251,6 +258,7 @@ struct ArmyListHomeView: View {
     }
 
     private func bootstrap() {
+        defer { didBootstrap = true }
         do {
             catalog = try CatalogLoader.load()
             loadError = nil
@@ -262,6 +270,7 @@ struct ArmyListHomeView: View {
     }
 
     private func presentNewList() {
+        guard didBootstrap else { return }
         if let catalog {
             sheetCatalog = catalog
             newListSheet = .create
