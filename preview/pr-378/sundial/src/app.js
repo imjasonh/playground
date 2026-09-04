@@ -3,8 +3,8 @@ import {
   castTransform,
   gnomonShadow,
   pageBackground,
-  parseLocation,
   parsePinnedTime,
+  resolveLocation,
   rgbCss,
   rgbToHex,
   sceneFromSun,
@@ -17,6 +17,7 @@ const periodEl = document.getElementById("period");
 const dateEl = document.getElementById("date");
 const hintEl = document.getElementById("hint");
 const nowBtn = document.getElementById("now");
+const locateBtn = document.getElementById("locate");
 const northEl = document.getElementById("north");
 const themeColorMeta = document.getElementById("theme-color");
 const castEls = clockEl.querySelectorAll("[data-cast]");
@@ -31,8 +32,10 @@ const dateFormat = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
 });
 
+const GEO_KEY = "sundial-geo";
 const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+let geo = null;
 let scrubMs = 0;
 let live = true;
 let dragging = false;
@@ -45,6 +48,92 @@ const pinned = parsePinnedTime(window.location.search);
 if (pinned) {
   live = false;
   scrubMs = pinned.getTime() - Date.now();
+}
+
+function readGeo() {
+  try {
+    const raw = sessionStorage.getItem(GEO_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!Number.isFinite(parsed.latitude) || !Number.isFinite(parsed.longitude)) {
+      return null;
+    }
+    return {
+      latitude: parsed.latitude,
+      longitude: parsed.longitude,
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+function writeGeo(next) {
+  if (!next) {
+    sessionStorage.removeItem(GEO_KEY);
+    return;
+  }
+  sessionStorage.setItem(
+    GEO_KEY,
+    JSON.stringify({
+      latitude: next.latitude,
+      longitude: next.longitude,
+    }),
+  );
+}
+
+function canUseGeolocation() {
+  return Boolean(navigator.geolocation);
+}
+
+function syncLocateButton() {
+  if (!canUseGeolocation()) {
+    locateBtn.hidden = true;
+    return;
+  }
+  locateBtn.hidden = false;
+  locateBtn.disabled = false;
+  if (geo) {
+    locateBtn.textContent = "Clear location";
+  } else {
+    locateBtn.textContent = "Use location";
+  }
+}
+
+function onLocateClick() {
+  if (geo) {
+    geo = null;
+    writeGeo(null);
+    syncLocateButton();
+    render();
+    return;
+  }
+
+  if (!canUseGeolocation()) {
+    return;
+  }
+
+  locateBtn.disabled = true;
+  navigator.geolocation.getCurrentPosition(
+    function onGeoSuccess(position) {
+      geo = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      };
+      writeGeo(geo);
+      syncLocateButton();
+      render();
+    },
+    function onGeoError() {
+      syncLocateButton();
+    },
+    {
+      enableHighAccuracy: false,
+      maximumAge: 900000,
+      timeout: 8000,
+    },
+  );
 }
 
 function hoursPerWidth() {
@@ -112,7 +201,11 @@ function maxShadowLength() {
 
 function render() {
   const date = shownDate();
-  const { latitude, longitude } = parseLocation(window.location.search, date);
+  const { latitude, longitude } = resolveLocation(
+    window.location.search,
+    date,
+    geo,
+  );
   const sun = sunPosition(date, latitude, longitude);
   const scene = sceneFromSun(sun);
   const shadow = gnomonShadow(sun, maxShadowLength());
@@ -170,7 +263,7 @@ function setScrub(nextMs) {
 }
 
 function onPointerDown(event) {
-  if (event.target === nowBtn) {
+  if (event.target.closest("button")) {
     return;
   }
   if (event.pointerType === "mouse" && event.button !== 0) {
@@ -233,6 +326,9 @@ function onKeyDown(event) {
 }
 
 nowBtn.addEventListener("click", setLive);
+locateBtn.addEventListener("click", onLocateClick);
+geo = readGeo();
+syncLocateButton();
 document.body.addEventListener("pointerdown", onPointerDown);
 document.body.addEventListener("pointermove", onPointerMove);
 document.body.addEventListener("pointerup", onPointerUp);
