@@ -175,8 +175,7 @@ class Sheet:
     def use(self, sym: SymbolDef) -> None:
         self.lib_needed[sym.lib_id] = sym
 
-    def add(
-        self,
+    def add(self,
         sym: SymbolDef,
         ref: str,
         x: float,
@@ -278,8 +277,7 @@ class Sheet:
         )
         return su
 
-    def emit(
-        self,
+    def emit(self,
         path: Path,
         project: str,
         root_uuid: str,
