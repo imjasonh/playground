@@ -348,6 +348,8 @@ final class PlaygroundUITests: XCTestCase {
             return
         }
 
+        // Catalog loaded (empty library or list). Create must show the form —
+        // never the dual-@State race message from older builds.
         let newButton = app.buttons["armyListNewButton"]
         XCTAssertTrue(newButton.waitForExistence(timeout: 8), "New list control missing")
         XCTAssertTrue(newButton.isEnabled, "New list should be enabled when the catalog loaded")
@@ -355,22 +357,30 @@ final class PlaygroundUITests: XCTestCase {
 
         let nameField = app.descendants(matching: .any)["armyListNameField"]
         let sheetUnavailable = app.descendants(matching: .any)["armyListNewSheetUnavailable"]
+        let raceMessage = app.staticTexts["The create sheet opened without a catalog snapshot."]
         let sheetReady = NSPredicate { _, _ in
-            nameField.exists || sheetUnavailable.exists
+            nameField.exists || sheetUnavailable.exists || raceMessage.exists
         }
         let sheetExpectation = XCTNSPredicateExpectation(predicate: sheetReady, object: app)
         XCTAssertEqual(
             XCTWaiter.wait(for: [sheetExpectation], timeout: 8),
             .completed,
-            "New list sheet was blank — expected the create form or an explicit error"
+            "New list sheet was blank — expected the create form"
         )
 
-        if sheetUnavailable.exists {
-            XCTAssertTrue(app.buttons["armyListNewSheetCancel"].waitForExistence(timeout: 3))
-            return
-        }
+        XCTAssertFalse(
+            raceMessage.exists,
+            "Catalog must ride on the sheet(item:) payload; dual @State raced on device"
+        )
+        XCTAssertFalse(
+            sheetUnavailable.exists,
+            "Catalog is loaded, so New list must not show Cannot create a list"
+        )
+        XCTAssertTrue(
+            nameField.waitForExistence(timeout: 3),
+            "Expected the create form (name field) when the catalog is bundled"
+        )
 
-        XCTAssertTrue(nameField.waitForExistence(timeout: 3))
         nameField.tap()
         // Clear the default title, then type a unique name.
         if let value = nameField.value as? String, !value.isEmpty {
@@ -387,23 +397,24 @@ final class PlaygroundUITests: XCTestCase {
 
         let legalBadge = app.descendants(matching: .any)["armyListLegalBadge"]
         let validationBanner = app.descendants(matching: .any)["armyListValidationBanner"]
+        let editorCover = app.descendants(matching: .any)["armyListEditorCover"]
         let editorUnavailable = app.descendants(matching: .any)["armyListEditorUnavailable"]
         let editorReady = NSPredicate { _, _ in
-            legalBadge.exists || validationBanner.exists || editorUnavailable.exists
+            legalBadge.exists || validationBanner.exists || editorCover.exists || editorUnavailable.exists
         }
         let editorExpectation = XCTNSPredicateExpectation(predicate: editorReady, object: app)
         XCTAssertEqual(
             XCTWaiter.wait(for: [editorExpectation], timeout: 10),
             .completed,
-            "Create did not open the editor or an explicit error"
+            "Create did not open the editor"
         )
 
-        if editorUnavailable.exists {
-            return
-        }
-
+        XCTAssertFalse(
+            editorUnavailable.exists,
+            "Editor must open with the catalog from the create payload"
+        )
         XCTAssertTrue(
-            legalBadge.waitForExistence(timeout: 3) || validationBanner.exists,
+            legalBadge.waitForExistence(timeout: 5) || validationBanner.exists,
             "Editor should show live validation for the new empty list"
         )
         // Brand-new lists are empty → illegal until detachments/units/warlord are set.
