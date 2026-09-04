@@ -98,6 +98,39 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertLessThanOrEqual(result.totalPoints, 1000)
     }
 
+    func testSeedLegalListBuildsCustodesIncursion() throws {
+        let list = ArmyListDocument(
+            name: "Custodes chat",
+            catalogVersion: catalog.version,
+            factionID: "adeptus-custodes",
+            battleSizeID: "incursion"
+        )
+        let custodesWorkspace = ArmyListChatWorkspace(list: list, catalog: catalog)
+        let output = ArmyListChatToolExecutor.seedLegalList(
+            workspace: custodesWorkspace,
+            battleSizeID: "incursion",
+            name: "Custodes 1k"
+        )
+        XCTAssertFalse(output.contains("Could not seed"), output)
+        let result = custodesWorkspace.validation
+        XCTAssertTrue(
+            result.isLegal,
+            result.errors.map(\.message).joined(separator: "; ")
+        )
+        XCTAssertLessThanOrEqual(result.totalPoints, 1000)
+        XCTAssertFalse(custodesWorkspace.list.units.isEmpty)
+    }
+
+    func testBuildLegalIncursionChipBypassesModel() async {
+        let runtime = ArmyListChatRuntime(workspace: workspace)
+        await runtime.buildLegalIncursion(name: "Chip 1k")
+        XCTAssertEqual(workspace.list.name, "Chip 1k")
+        XCTAssertTrue(workspace.validation.isLegal, workspace.validation.errors.map(\.message).joined(separator: "; "))
+        XCTAssertTrue(runtime.transcript.contains { $0.kind == .user && $0.text == "Build 1k" })
+        XCTAssertTrue(runtime.transcript.contains { $0.kind == .tool && $0.text.contains("seedLegalList") })
+        XCTAssertTrue(runtime.transcript.contains { $0.kind == .assistant && $0.text.contains("LEGAL") })
+    }
+
     func testContextWindowDetectionTreatsGenerationErrorMinusOne() {
         let err = NSError(
             domain: "FoundationModels.LanguageModelSession.GenerationError",

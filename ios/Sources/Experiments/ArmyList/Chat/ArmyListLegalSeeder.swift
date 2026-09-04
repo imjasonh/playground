@@ -36,8 +36,7 @@ enum ArmyListLegalSeeder {
             budget: battle.detachmentPointsBudget
         )
         guard !combo.isEmpty,
-              let warlordPick = sheets.first(where: { $0.characterRole == .leader })
-                ?? sheets.first(where: { $0.characterRole != nil })
+              let warlordPick = pickWarlord(sheets)
         else {
             return nil
         }
@@ -53,6 +52,10 @@ enum ArmyListLegalSeeder {
             optionIDs: warlordPick.defaultOptionIDs()
         )
         let warlordCost = warlordPick.points(models: warlord.models, copyIndex: 1) ?? 0
+        // Skip characters with no points entry — they break legality/points.
+        guard warlordCost > 0 || warlordPick.points(models: warlord.models, copyIndex: 1) != nil else {
+            return nil
+        }
         units.append(warlord)
         copies[warlordPick.id, default: 0] += 1
         points += warlordCost
@@ -75,6 +78,25 @@ enum ArmyListLegalSeeder {
             return cost
         }
 
+        // Prefer a legal attach body for the warlord before other fillers.
+        var bodyForAttach: ListUnitInstance?
+        for targetID in warlordPick.leaderTo {
+            guard let sheet = sheets.first(where: { $0.id == targetID }) else { continue }
+            guard let cost = canAdd(sheet: sheet, models: sheet.minModels) else { continue }
+            let body = ListUnitInstance(
+                datasheetID: sheet.id,
+                models: sheet.minModels,
+                optionIDs: sheet.defaultOptionIDs()
+            )
+            units.append(body)
+            copies[sheet.id, default: 0] += 1
+            points += cost
+            warlord.attachedToUnitID = body.id
+            units[0] = warlord
+            bodyForAttach = body
+            break
+        }
+
         let battleline = sheets.filter(\.battleline)
         var fillers = sheets.filter { $0.characterRole == nil && !$0.epicHero }
         fillers.sort {
@@ -83,7 +105,6 @@ enum ArmyListLegalSeeder {
         }
         let pool = battleline + fillers
 
-        var bodyForAttach: ListUnitInstance?
         for sheet in pool {
             if points >= target { break }
             var modelOpts = sheet.modelCounts
@@ -107,7 +128,7 @@ enum ArmyListLegalSeeder {
             }
         }
 
-        if let body = bodyForAttach, !warlordPick.leaderTo.isEmpty {
+        if warlord.attachedToUnitID == nil, let body = bodyForAttach, !warlordPick.leaderTo.isEmpty {
             if warlordPick.leaderTo.contains(body.datasheetID) {
                 warlord.attachedToUnitID = body.id
                 units[0] = warlord
@@ -149,6 +170,24 @@ enum ArmyListLegalSeeder {
             validation: validation,
             notes: "Seeded \(units.count) units · \(combo.map(\.name).joined(separator: ", "))"
         )
+    }
+
+    /// Prefer a non-epic Leader that can join Battleline; avoid epic heroes like Aleya/Trajann.
+    private static func pickWarlord(_ sheets: [DatasheetDefinition]) -> DatasheetDefinition? {
+        let leaders = sheets.filter { $0.characterRole == .leader && !$0.epicHero }
+        let withBattlelineJoin = leaders.filter { sheet in
+            sheet.leaderTo.contains { target in
+                sheets.contains { $0.id == target && $0.battleline }
+            }
+        }
+        if let pick = withBattlelineJoin.first {
+            return pick
+        }
+        if let pick = leaders.first {
+            return pick
+        }
+        return sheets.first { $0.characterRole != nil && !$0.epicHero }
+            ?? sheets.first { $0.characterRole != nil }
     }
 
     /// Prefer one detachment that spends as much of the DP budget as possible.

@@ -105,6 +105,68 @@ final class ArmyListChatRuntime: ObservableObject {
         }
     }
 
+    /// Deterministic Build 1k — skips the on-device model so the chip always works.
+    func buildLegalIncursion(name: String = "") async {
+        guard !isRunning else { return }
+        append(.user, text: "Build 1k")
+        isRunning = true
+        defer { isRunning = false }
+
+        let factionName = workspace.catalog.faction(id: workspace.list.factionID)?.name
+            ?? workspace.list.factionID
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let preferredName = trimmedName.isEmpty ? "\(factionName) Incursion" : trimmedName
+        let pending = ArmyListChatEntry(kind: .tool, text: "seedLegalList…")
+        transcript.append(pending)
+
+        let result = ArmyListChatToolExecutor.seedLegalList(
+            workspace: workspace,
+            battleSizeID: "incursion",
+            name: preferredName
+        )
+        let label = ArmyListChatToolDisplay.label(name: "seedLegalList", result: result)
+        if let index = transcript.lastIndex(where: { $0.id == pending.id }) {
+            transcript[index] = ArmyListChatEntry(
+                id: pending.id,
+                kind: .tool,
+                text: label,
+                createdAt: pending.createdAt
+            )
+        }
+        _ = noteToolExchange(name: "seedLegalList", result: result)
+
+        // Fresh model session so the next chat turn sees the new roster via tools.
+        languageSessionBox = nil
+        carryOverNotes = Self.compactionCarryOver(
+            listSnapshot: workspace.compactSummary(maxIssues: 4),
+            transcript: transcript
+        )
+
+        let validation = workspace.validation
+        if validation.isLegal {
+            append(
+                .assistant,
+                text: """
+                **\(workspace.list.name)** is ready — \(validation.totalPoints) pts, Status: LEGAL.
+
+                \(label)
+                """
+            )
+        } else {
+            let errors = validation.errors.prefix(4).map { "- \($0.message)" }.joined(separator: "\n")
+            append(
+                .assistant,
+                text: """
+                Seeded **\(workspace.list.name)** (\(validation.totalPoints) pts) but it’s still **ILLEGAL**.
+
+                \(errors.isEmpty ? result : errors)
+
+                Try **Fix errors**, or Export JSON if it keeps failing.
+                """
+            )
+        }
+    }
+
     func send(prompt: String) async {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

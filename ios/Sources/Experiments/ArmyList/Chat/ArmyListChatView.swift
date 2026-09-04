@@ -37,7 +37,7 @@ struct ArmyListChatView: View {
             PromptChip(
                 id: "build-1k",
                 title: "Build 1k",
-                text: "Call seedLegalList with battleSizeID incursion and a short name for a legal 1000 point list. Then getListSummary and confirm Status."
+                text: "build-1k"
             ),
             PromptChip(
                 id: "weaknesses",
@@ -317,10 +317,16 @@ struct ArmyListChatView: View {
             HStack(spacing: 8) {
                 ForEach(prompts) { chip in
                     Button(chip.title) {
-                        // Copy before Task — deferred capture of ForEach locals can
-                        // stick on the last chip (Theme) and ignore Weaknesses/etc.
+                        let chipID = chip.id
                         let prompt = chip.text
-                        Task { await runtime.send(prompt: prompt) }
+                        Task {
+                            if chipID == "build-1k" {
+                                // Bypass the model — Build 1k is deterministic via seedLegalList.
+                                await runtime.buildLegalIncursion()
+                            } else {
+                                await runtime.send(prompt: prompt)
+                            }
+                        }
                     }
                     .buttonStyle(.bordered)
                     .disabled(runtime.isRunning)
