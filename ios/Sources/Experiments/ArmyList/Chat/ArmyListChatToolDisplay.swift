@@ -29,14 +29,19 @@ enum ArmyListChatToolDisplay {
                 return "setUnitModels · \(String(first.dropFirst(4)).trimmingCharacters(in: CharacterSet(charactersIn: ".")))"
             }
             return "setUnitModels"
-        case "seedLegalList":
-            if first.hasPrefix("Seeded ") {
-                return "seedLegalList · \(String(first.prefix(72)))"
-            }
-            if first.hasPrefix("Named ") || first.contains("Named “") {
-                return "seedLegalList · \(String(first.prefix(72)))"
-            }
-            return "seedLegalList"
+            case "seedLegalList":
+                if first.hasPrefix("Seeded ") {
+                    return "seedLegalList · \(String(first.prefix(72)))"
+                }
+                if first.hasPrefix("Named ") || first.contains("Named “") {
+                    return "seedLegalList · \(String(first.prefix(72)))"
+                }
+                return "seedLegalList"
+            case "applyRosterPlan":
+                if first.hasPrefix("Applied roster") {
+                    return "applyRosterPlan · \(String(first.prefix(72)))"
+                }
+                return "applyRosterPlan"
         case "setBattleSize":
             if first.hasPrefix("Battle size set to ") {
                 return "setBattleSize · \(String(first.dropFirst("Battle size set to ".count)).trimmingCharacters(in: CharacterSet(charactersIn: ".")))"

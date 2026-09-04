@@ -105,68 +105,6 @@ final class ArmyListChatRuntime: ObservableObject {
         }
     }
 
-    /// Deterministic Build 1k — skips the on-device model so the chip always works.
-    func buildLegalIncursion(name: String = "") async {
-        guard !isRunning else { return }
-        append(.user, text: "Build 1k")
-        isRunning = true
-        defer { isRunning = false }
-
-        let factionName = workspace.catalog.faction(id: workspace.list.factionID)?.name
-            ?? workspace.list.factionID
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let preferredName = trimmedName.isEmpty ? "\(factionName) Incursion" : trimmedName
-        let pending = ArmyListChatEntry(kind: .tool, text: "seedLegalList…")
-        transcript.append(pending)
-
-        let result = ArmyListChatToolExecutor.seedLegalList(
-            workspace: workspace,
-            battleSizeID: "incursion",
-            name: preferredName
-        )
-        let label = ArmyListChatToolDisplay.label(name: "seedLegalList", result: result)
-        if let index = transcript.lastIndex(where: { $0.id == pending.id }) {
-            transcript[index] = ArmyListChatEntry(
-                id: pending.id,
-                kind: .tool,
-                text: label,
-                createdAt: pending.createdAt
-            )
-        }
-        _ = noteToolExchange(name: "seedLegalList", result: result)
-
-        // Fresh model session so the next chat turn sees the new roster via tools.
-        languageSessionBox = nil
-        carryOverNotes = Self.compactionCarryOver(
-            listSnapshot: workspace.compactSummary(maxIssues: 4),
-            transcript: transcript
-        )
-
-        let validation = workspace.validation
-        if validation.isLegal {
-            append(
-                .assistant,
-                text: """
-                **\(workspace.list.name)** is ready — \(validation.totalPoints) pts, Status: LEGAL.
-
-                \(label)
-                """
-            )
-        } else {
-            let errors = validation.errors.prefix(4).map { "- \($0.message)" }.joined(separator: "\n")
-            append(
-                .assistant,
-                text: """
-                Seeded **\(workspace.list.name)** (\(validation.totalPoints) pts) but it’s still **ILLEGAL**.
-
-                \(errors.isEmpty ? result : errors)
-
-                Try **Fix errors**, or Export JSON if it keeps failing.
-                """
-            )
-        }
-    }
-
     func send(prompt: String) async {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
@@ -199,7 +137,7 @@ final class ArmyListChatRuntime: ObservableObject {
                 } catch {
                     append(
                         .assistant,
-                        text: "Couldn’t finish after compacting context: \(error.localizedDescription). Try Clear, then Build 1k again (uses seedLegalList in one step)."
+                        text: "Couldn’t finish after compacting context: \(error.localizedDescription). Try Clear, then ask for a smaller change or Build 1k again with applyRosterPlan."
                     )
                     return
                 }
@@ -230,7 +168,7 @@ final class ArmyListChatRuntime: ObservableObject {
 
     private func friendlyGenerationError(_ error: Error) -> String {
         if Self.isExceededContextWindow(error) {
-            return "The on-device model ran out of context while editing. Tap Clear, then Build 1k (one seedLegalList call) or ask for a smaller change."
+            return "The on-device model ran out of context while editing. Tap Clear, then Build 1k again (one applyRosterPlan call) or ask for a smaller change."
         }
         return error.localizedDescription
     }
@@ -443,8 +381,9 @@ final class ArmyListChatRuntime: ObservableObject {
         For thematic questions (army name, color scheme, lore vibe, matchup opinions), answer helpfully and label opinions as opinions.
         Prefer short replies. Format with Markdown (bold, bullets, short headings) when it helps scanability.
         Always answer the latest user message; do not keep talking about an earlier Theme/name request unless they ask again.
-        For from-scratch 1000/2000 point builds, call seedLegalList once (battleSizeID + optional name). Do not loop addUnit for a full army — that overflows the on-device context window.
-        Use searchCatalog before addUnit only for small targeted edits.
+        For from-scratch 1000/2000 point builds: invent a fresh theme each time (different units/detachment/name), call searchCatalog as needed, then applyRosterPlan once with your full plan. Do not loop addUnit for a full army — that overflows the on-device context window.
+        seedLegalList is a last-resort deterministic filler when you cannot invent a plan; avoid it when the user wants something creative or new.
+        Use addUnit only for small targeted edits after a roster already exists.
         Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
         """
     }
@@ -454,6 +393,7 @@ final class ArmyListChatRuntime: ObservableObject {
         [
             ArmyGetListSummaryFMTool(runtime: self),
             ArmySearchCatalogFMTool(runtime: self),
+            ArmyApplyRosterPlanFMTool(runtime: self),
             ArmySeedLegalListFMTool(runtime: self),
             ArmySetBattleSizeFMTool(runtime: self),
             ArmySetDetachmentsFMTool(runtime: self),
@@ -567,10 +507,41 @@ struct ArmySearchCatalogFMTool: Tool {
 }
 
 @available(iOS 26.0, *)
+struct ArmyApplyRosterPlanFMTool: Tool {
+    weak var runtime: ArmyListChatRuntime?
+    let name = "applyRosterPlan"
+    let description = "Replace the whole roster in one call with a battle size, detachments, and units you invented. Prefer this for creative from-scratch builds."
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "incursion, strike-force, 1000, or 2000")
+        var battleSizeID: String
+        @Guide(description: "Comma-separated detachment ids/names that fit the DP budget")
+        var detachmentIDsCSV: String
+        @Guide(description: "Comma-separated datasheet id/name or id:models, e.g. blade-champion:1,custodian-guard:5")
+        var unitsCSV: String
+        @Guide(description: "Army list name")
+        var listName: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        try await ArmyListFMToolBridge.run(runtime, name: name) { workspace in
+            ArmyListChatToolExecutor.applyRosterPlan(
+                workspace: workspace,
+                battleSizeID: arguments.battleSizeID,
+                detachmentIDsCSV: arguments.detachmentIDsCSV,
+                unitsCSV: arguments.unitsCSV,
+                listName: arguments.listName
+            )
+        }
+    }
+}
+
+@available(iOS 26.0, *)
 struct ArmySeedLegalListFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "seedLegalList"
-    let description = "Replace the roster with a seeded legal list for this faction. Prefer this for from-scratch 1000/2000 point builds instead of many addUnit calls."
+    let description = "Last-resort deterministic filler that stamps a legal-ish list. Prefer applyRosterPlan when inventing a creative army."
 
     @Generable
     struct Arguments {

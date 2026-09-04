@@ -51,9 +51,7 @@ enum ArmyListLegalSeeder {
             models: warlordPick.minModels,
             optionIDs: warlordPick.defaultOptionIDs()
         )
-        let warlordCost = warlordPick.points(models: warlord.models, copyIndex: 1) ?? 0
-        // Skip characters with no points entry — they break legality/points.
-        guard warlordCost > 0 || warlordPick.points(models: warlord.models, copyIndex: 1) != nil else {
+        guard let warlordCost = warlordPick.points(models: warlord.models, copyIndex: 1) else {
             return nil
         }
         units.append(warlord)

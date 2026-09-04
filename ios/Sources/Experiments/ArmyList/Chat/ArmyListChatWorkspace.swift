@@ -126,6 +126,7 @@ enum ArmyListChatToolExecutor {
     }
 
     /// Replace the roster with a validator-checked seeded list for this faction.
+    /// Boring deterministic filler — prefer `applyRosterPlan` when the model invents a list.
     static func seedLegalList(
         workspace: ArmyListChatWorkspace,
         battleSizeID: String,
@@ -138,7 +139,7 @@ enum ArmyListChatToolExecutor {
             battleSizeID: sizeID,
             name: name
         ) else {
-            return "Could not seed a list for this faction/battle size. Try setBattleSize + setDetachments + addUnit instead."
+            return "Could not seed a list for this faction/battle size. Try setBattleSize + setDetachments + applyRosterPlan instead."
         }
         // Preserve the document id so the editor binding stays on the same file.
         var list = seeded.list
@@ -152,6 +153,116 @@ enum ArmyListChatToolExecutor {
             "Status: \(status) · \(seeded.validation.totalPoints) pts · DP \(seeded.validation.detachmentPointsSpent) · units=\(list.units.count)",
             "errors=\(seeded.validation.errors.count) warnings=\(seeded.validation.warnings.count)",
         ].joined(separator: "\n")
+    }
+
+    /// Apply a full roster the model invented in one call (avoids addUnit context blowouts).
+    ///
+    /// `unitsCSV` entries are `datasheetIdOrName` or `datasheetIdOrName:models`, comma-separated.
+    static func applyRosterPlan(
+        workspace: ArmyListChatWorkspace,
+        battleSizeID: String,
+        detachmentIDsCSV: String,
+        unitsCSV: String,
+        listName: String
+    ) -> String {
+        let sizeID = resolveBattleSizeID(workspace: workspace, raw: battleSizeID)
+        guard let size = workspace.catalog.battleSize(id: sizeID) else {
+            return "Unknown battle size “\(battleSizeID)”. Use incursion or strike-force."
+        }
+
+        let rawDetachments = detachmentIDsCSV
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var detachmentIDs: [String] = []
+        var unknownDetachments: [String] = []
+        for raw in rawDetachments {
+            if let id = resolveDetachmentID(workspace: workspace, raw: raw) {
+                if !detachmentIDs.contains(id) {
+                    detachmentIDs.append(id)
+                }
+            } else {
+                unknownDetachments.append(raw)
+            }
+        }
+        if detachmentIDs.isEmpty {
+            return "No valid detachments in “\(detachmentIDsCSV)”. Call searchCatalog kind=detachment first."
+        }
+
+        let rawUnits = unitsCSV
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if rawUnits.isEmpty {
+            return "unitsCSV is empty. Pass datasheet ids/names like shield-captain:1,custodian-guard:5."
+        }
+
+        var units: [ListUnitInstance] = []
+        var unknownUnits: [String] = []
+        var addedNotes: [String] = []
+        for raw in rawUnits {
+            let parts = raw.split(separator: ":", maxSplits: 1).map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            let sheetRaw = parts[0]
+            guard let sheet = resolveDatasheet(workspace: workspace, raw: sheetRaw) else {
+                unknownUnits.append(sheetRaw)
+                continue
+            }
+            let modelCount: Int
+            if parts.count == 2, let parsed = Int(parts[1]), sheet.modelCounts.contains(parsed) {
+                modelCount = parsed
+            } else {
+                modelCount = sheet.modelCounts.first ?? sheet.minModels
+            }
+            units.append(
+                ListUnitInstance(
+                    datasheetID: sheet.id,
+                    models: modelCount,
+                    optionIDs: sheet.defaultOptionIDs()
+                )
+            )
+            addedNotes.append("\(sheet.name)×\(modelCount)")
+        }
+        if units.isEmpty {
+            return "No valid units in unitsCSV. Unknown: \(unknownUnits.joined(separator: ", ")). Call searchCatalog."
+        }
+
+        var warlordID: UUID?
+        if let character = units.first(where: {
+            workspace.catalog.datasheet(id: $0.datasheetID)?.characterRole != nil
+        }) {
+            warlordID = character.id
+        }
+
+        let trimmedName = listName.trimmingCharacters(in: .whitespacesAndNewlines)
+        var list = workspace.list
+        list.battleSizeID = size.id
+        list.detachmentIDs = detachmentIDs
+        list.units = units
+        list.warlordUnitID = warlordID
+        if !trimmedName.isEmpty {
+            list.name = trimmedName
+        }
+        // Drop enhancements that no longer apply.
+        for index in list.units.indices {
+            list.units[index].enhancementIDs.removeAll { enhancementID in
+                guard let (detachment, _) = workspace.catalog.enhancement(id: enhancementID) else {
+                    return true
+                }
+                return !detachmentIDs.contains(detachment.id)
+            }
+        }
+        workspace.replaceList(list)
+
+        var note = "Applied roster (\(addedNotes.joined(separator: ", "))) · \(size.name)."
+        if !unknownDetachments.isEmpty {
+            note += " Unknown detachments ignored: \(unknownDetachments.joined(separator: ", "))."
+        }
+        if !unknownUnits.isEmpty {
+            note += " Unknown units ignored: \(unknownUnits.joined(separator: ", "))."
+        }
+        return mutationResult(workspace: workspace, note: note)
     }
 
     static func setDetachments(workspace: ArmyListChatWorkspace, detachmentIDsCSV: String) -> String {

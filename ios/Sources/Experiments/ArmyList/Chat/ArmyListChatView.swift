@@ -37,7 +37,11 @@ struct ArmyListChatView: View {
             PromptChip(
                 id: "build-1k",
                 title: "Build 1k",
-                text: "build-1k"
+                text: """
+                Invent a fresh 1000-point Incursion list for this faction — different units, detachment, and name than any prior build. \
+                Call searchCatalog if you need ids, then applyRosterPlan once with battleSizeID=incursion, your detachments, full unitsCSV, and listName. \
+                Do not call seedLegalList. Do not loop addUnit. Then briefly pitch the theme and Status.
+                """
             ),
             PromptChip(
                 id: "weaknesses",
@@ -317,16 +321,10 @@ struct ArmyListChatView: View {
             HStack(spacing: 8) {
                 ForEach(prompts) { chip in
                     Button(chip.title) {
-                        let chipID = chip.id
+                        // Copy before Task — deferred capture of ForEach locals can
+                        // stick on the last chip (Theme) and ignore Weaknesses/etc.
                         let prompt = chip.text
-                        Task {
-                            if chipID == "build-1k" {
-                                // Bypass the model — Build 1k is deterministic via seedLegalList.
-                                await runtime.buildLegalIncursion()
-                            } else {
-                                await runtime.send(prompt: prompt)
-                            }
-                        }
+                        Task { await runtime.send(prompt: prompt) }
                     }
                     .buttonStyle(.bordered)
                     .disabled(runtime.isRunning)
