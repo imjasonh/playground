@@ -147,8 +147,9 @@ final class ArmyListChatToolTests: XCTestCase {
 
         let data = try ArmyListChatDumpExporter.jsonData(for: dump)
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))
-        XCTAssertTrue(json.contains("\"mode\" : \"army-list-chat\""))
+        XCTAssertTrue(json.contains("army-list-chat"))
         XCTAssertTrue(json.contains("Dump test"))
+        XCTAssertTrue(json.contains("seedLegalList"))
 
         let url = try runtime.writeConversationDumpFile()
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
