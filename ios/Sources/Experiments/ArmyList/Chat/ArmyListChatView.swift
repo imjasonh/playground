@@ -35,15 +35,6 @@ struct ArmyListChatView: View {
     private var prompts: [PromptChip] {
         [
             PromptChip(
-                id: "build-1k",
-                title: "Build 1k",
-                text: """
-                Invent a fresh 1000-point Incursion list for this faction — different units, detachment, and name than any prior build. \
-                Call searchCatalog if you need ids, then applyRosterPlan once with battleSizeID=incursion, your detachments, full unitsCSV, and listName. \
-                Do not call seedLegalList. Do not loop addUnit. Then briefly pitch the theme and Status.
-                """
-            ),
-            PromptChip(
                 id: "weaknesses",
                 title: "Weaknesses",
                 text: "Weaknesses only (ignore prior theme/name talk): what matchups or unit types will give this list trouble? Opinion only. Call getListSummary for the facts."
