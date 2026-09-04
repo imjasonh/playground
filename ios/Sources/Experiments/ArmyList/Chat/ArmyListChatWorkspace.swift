@@ -50,7 +50,28 @@ final class ArmyListChatWorkspace: ObservableObject {
 @MainActor
 enum ArmyListChatToolExecutor {
     static func getListSummary(workspace: ArmyListChatWorkspace) -> String {
-        workspace.compactSummary()
+        var lines = [workspace.compactSummary()]
+        if !workspace.list.units.isEmpty {
+            lines.append("")
+            lines.append("Unit refs (pass name or id to tools — never ask the user for these):")
+            for unit in workspace.list.units {
+                let sheet = workspace.catalog.datasheet(id: unit.datasheetID)
+                let name = sheet?.name ?? unit.datasheetID
+                var extras: [String] = ["×\(unit.models)"]
+                if let sheet {
+                    for optionID in unit.optionIDs {
+                        if let option = sheet.optionGroups.flatMap(\.options).first(where: { $0.id == optionID }) {
+                            extras.append(option.name)
+                        }
+                    }
+                }
+                if workspace.list.warlordUnitID == unit.id {
+                    extras.append("Warlord")
+                }
+                lines.append("- \(name) (\(extras.joined(separator: ", "))) id=\(unit.id.uuidString)")
+            }
+        }
+        return lines.joined(separator: "\n")
     }
 
     static func searchCatalog(
@@ -317,26 +338,29 @@ enum ArmyListChatToolExecutor {
     }
 
     static func removeUnit(workspace: ArmyListChatWorkspace, unitID: String) -> String {
-        guard let id = UUID(uuidString: unitID),
-              let index = workspace.list.units.firstIndex(where: { $0.id == id })
-        else {
-            return "No unit with id “\(unitID)”."
-        }
-        var list = workspace.list
-        let removed = list.units.remove(at: index)
-        list.units = list.units.map { unit in
-            var copy = unit
-            if copy.attachedToUnitID == id {
-                copy.attachedToUnitID = nil
+        switch resolveListUnit(workspace: workspace, raw: unitID) {
+        case .none(let message):
+            return message
+        case .ambiguous(let message):
+            return message
+        case .found(let index, _):
+            var list = workspace.list
+            let removed = list.units.remove(at: index)
+            let removedID = removed.id
+            list.units = list.units.map { entry in
+                var copy = entry
+                if copy.attachedToUnitID == removedID {
+                    copy.attachedToUnitID = nil
+                }
+                return copy
             }
-            return copy
+            if list.warlordUnitID == removedID {
+                list.warlordUnitID = nil
+            }
+            workspace.replaceList(list)
+            let name = workspace.catalog.datasheet(id: removed.datasheetID)?.name ?? removed.datasheetID
+            return mutationResult(workspace: workspace, note: "Removed \(name).")
         }
-        if list.warlordUnitID == id {
-            list.warlordUnitID = nil
-        }
-        workspace.replaceList(list)
-        let name = workspace.catalog.datasheet(id: removed.datasheetID)?.name ?? removed.datasheetID
-        return mutationResult(workspace: workspace, note: "Removed \(name).")
     }
 
     static func setUnitModels(
@@ -344,20 +368,22 @@ enum ArmyListChatToolExecutor {
         unitID: String,
         models: Double
     ) -> String {
-        guard let id = UUID(uuidString: unitID),
-              let index = workspace.list.units.firstIndex(where: { $0.id == id }),
-              let sheet = workspace.catalog.datasheet(id: workspace.list.units[index].datasheetID)
-        else {
-            return "No unit with id “\(unitID)”."
+        switch resolveListUnit(workspace: workspace, raw: unitID) {
+        case .none(let message), .ambiguous(let message):
+            return message
+        case .found(let index, let unit):
+            guard let sheet = workspace.catalog.datasheet(id: unit.datasheetID) else {
+                return "Unknown datasheet on unit."
+            }
+            let requested = Int(models.rounded())
+            guard sheet.modelCounts.contains(requested) else {
+                return "\(sheet.name) allows model counts \(sheet.modelCounts), not \(requested)."
+            }
+            var list = workspace.list
+            list.units[index].models = requested
+            workspace.replaceList(list)
+            return mutationResult(workspace: workspace, note: "Set \(sheet.name) to \(requested) models.")
         }
-        let requested = Int(models.rounded())
-        guard sheet.modelCounts.contains(requested) else {
-            return "\(sheet.name) allows model counts \(sheet.modelCounts), not \(requested)."
-        }
-        var list = workspace.list
-        list.units[index].models = requested
-        workspace.replaceList(list)
-        return mutationResult(workspace: workspace, note: "Set \(sheet.name) to \(requested) models.")
     }
 
     static func attachCharacter(
@@ -365,26 +391,27 @@ enum ArmyListChatToolExecutor {
         characterUnitID: String,
         bodyUnitID: String
     ) -> String {
-        let bodyRaw = bodyUnitID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard let charID = UUID(uuidString: characterUnitID),
-              let charIndex = workspace.list.units.firstIndex(where: { $0.id == charID })
-        else {
-            return "No character unit id “\(characterUnitID)”."
+        switch resolveListUnit(workspace: workspace, raw: characterUnitID) {
+        case .none(let message), .ambiguous(let message):
+            return message
+        case .found(let charIndex, _):
+            var list = workspace.list
+            let bodyRaw = bodyUnitID.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if bodyRaw.isEmpty || bodyRaw == "none" || bodyRaw == "nil" {
+                list.units[charIndex].attachedToUnitID = nil
+                workspace.replaceList(list)
+                return mutationResult(workspace: workspace, note: "Detached character from any unit.")
+            }
+            switch resolveListUnit(workspace: workspace, raw: bodyUnitID) {
+            case .none(let message), .ambiguous(let message):
+                return message
+            case .found(_, let body):
+                list.units[charIndex].attachedToUnitID = body.id
+                let bodyName = workspace.catalog.datasheet(id: body.datasheetID)?.name ?? body.datasheetID
+                workspace.replaceList(list)
+                return mutationResult(workspace: workspace, note: "Attached character to \(bodyName).")
+            }
         }
-        var list = workspace.list
-        if bodyRaw.isEmpty || bodyRaw == "none" || bodyRaw == "nil" {
-            list.units[charIndex].attachedToUnitID = nil
-            workspace.replaceList(list)
-            return mutationResult(workspace: workspace, note: "Detached character from any unit.")
-        }
-        guard let bodyID = UUID(uuidString: bodyUnitID),
-              list.units.contains(where: { $0.id == bodyID })
-        else {
-            return "No bodyguard unit id “\(bodyUnitID)”."
-        }
-        list.units[charIndex].attachedToUnitID = bodyID
-        workspace.replaceList(list)
-        return mutationResult(workspace: workspace, note: "Attached character to \(bodyID.uuidString).")
     }
 
     static func setWarlord(workspace: ArmyListChatWorkspace, unitID: String) -> String {
@@ -395,14 +422,24 @@ enum ArmyListChatToolExecutor {
             workspace.replaceList(list)
             return mutationResult(workspace: workspace, note: "Cleared Warlord.")
         }
-        guard let id = UUID(uuidString: unitID),
-              list.units.contains(where: { $0.id == id })
-        else {
-            return "No unit id “\(unitID)” on the list."
+        // Detachment names are a common model mix-up — steer clearly.
+        if resolveDetachmentID(workspace: workspace, raw: unitID) != nil {
+            return "“\(unitID)” is a Detachment, not a unit. Warlord must be a Character on the roster — call getListSummary and pass that unit’s name or id."
         }
-        list.warlordUnitID = id
-        workspace.replaceList(list)
-        return mutationResult(workspace: workspace, note: "Warlord set to \(id.uuidString).")
+        switch resolveListUnit(workspace: workspace, raw: unitID) {
+        case .none(let message), .ambiguous(let message):
+            return message
+        case .found(_, let unit):
+            let sheet = workspace.catalog.datasheet(id: unit.datasheetID)
+            if sheet?.characterRole == nil {
+                let name = sheet?.name ?? unit.datasheetID
+                return "\(name) is not a Character. Pick a Character unit from getListSummary."
+            }
+            list.warlordUnitID = unit.id
+            workspace.replaceList(list)
+            let name = sheet?.name ?? unit.datasheetID
+            return mutationResult(workspace: workspace, note: "Warlord set to \(name).")
+        }
     }
 
     static func setListName(workspace: ArmyListChatWorkspace, name: String) -> String {
@@ -421,24 +458,24 @@ enum ArmyListChatToolExecutor {
         unitID: String,
         enhancementID: String
     ) -> String {
-        guard let id = UUID(uuidString: unitID),
-              let index = workspace.list.units.firstIndex(where: { $0.id == id })
-        else {
-            return "No unit id “\(unitID)”."
-        }
-        let raw = enhancementID.trimmingCharacters(in: .whitespacesAndNewlines)
-        var list = workspace.list
-        if raw.isEmpty || raw.lowercased() == "none" || raw.lowercased() == "nil" {
-            list.units[index].enhancementIDs = []
+        switch resolveListUnit(workspace: workspace, raw: unitID) {
+        case .none(let message), .ambiguous(let message):
+            return message
+        case .found(let index, _):
+            let raw = enhancementID.trimmingCharacters(in: .whitespacesAndNewlines)
+            var list = workspace.list
+            if raw.isEmpty || raw.lowercased() == "none" || raw.lowercased() == "nil" {
+                list.units[index].enhancementIDs = []
+                workspace.replaceList(list)
+                return mutationResult(workspace: workspace, note: "Cleared enhancements on unit.")
+            }
+            guard let resolved = resolveEnhancementID(workspace: workspace, raw: raw) else {
+                return "Unknown enhancement “\(enhancementID)”. Use detachmentId--enhancement-slug ids from the catalog."
+            }
+            list.units[index].enhancementIDs = [resolved]
             workspace.replaceList(list)
-            return mutationResult(workspace: workspace, note: "Cleared enhancements on unit.")
+            return mutationResult(workspace: workspace, note: "Set enhancement \(resolved).")
         }
-        guard let resolved = resolveEnhancementID(workspace: workspace, raw: raw) else {
-            return "Unknown enhancement “\(enhancementID)”. Use detachmentId--enhancement-slug ids from the catalog."
-        }
-        list.units[index].enhancementIDs = [resolved]
-        workspace.replaceList(list)
-        return mutationResult(workspace: workspace, note: "Set enhancement \(resolved).")
     }
 
     static func clearUnits(workspace: ArmyListChatWorkspace) -> String {
@@ -450,6 +487,53 @@ enum ArmyListChatToolExecutor {
     }
 
     // MARK: - Helpers
+
+    private enum ListUnitResolve {
+        case found(index: Int, unit: ListUnitInstance)
+        case none(message: String)
+        case ambiguous(message: String)
+    }
+
+    /// Resolve a roster unit by UUID or datasheet name — never make the user dig for ids.
+    private static func resolveListUnit(
+        workspace: ArmyListChatWorkspace,
+        raw: String
+    ) -> ListUnitResolve {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            return .none(message: "No unit specified. Call getListSummary and pass a unit name or id.")
+        }
+        if let id = UUID(uuidString: trimmed),
+           let index = workspace.list.units.firstIndex(where: { $0.id == id })
+        {
+            return .found(index: index, unit: workspace.list.units[index])
+        }
+
+        let q = trimmed.lowercased()
+        let matches = workspace.list.units.enumerated().filter { _, unit in
+            let sheet = workspace.catalog.datasheet(id: unit.datasheetID)
+            let name = sheet?.name.lowercased() ?? ""
+            return unit.datasheetID.lowercased() == q
+                || unit.datasheetID.lowercased().hasSuffix("--\(q)")
+                || name == q
+                || name.contains(q)
+        }
+        if matches.count == 1 {
+            return .found(index: matches[0].offset, unit: matches[0].element)
+        }
+        if matches.count > 1 {
+            let labels = matches.map { _, unit in
+                let name = workspace.catalog.datasheet(id: unit.datasheetID)?.name ?? unit.datasheetID
+                return "\(name) id=\(unit.id.uuidString)"
+            }
+            return .ambiguous(
+                message: "Several units match “\(trimmed)”: \(labels.joined(separator: "; ")). Pass the exact id from getListSummary."
+            )
+        }
+        return .none(
+            message: "No unit matching “\(trimmed)” on this list. Call getListSummary — do not ask the user for ids."
+        )
+    }
 
     private static func duplicateLimit(
         for sheet: DatasheetDefinition,

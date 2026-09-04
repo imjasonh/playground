@@ -55,6 +55,28 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertEqual(runtime.transcript.last { $0.kind == .user }?.text, "Fix errors")
     }
 
+    func testSetWarlordAcceptsUnitNameAndRejectsDetachment() {
+        _ = ArmyListChatToolExecutor.setDetachments(
+            workspace: workspace,
+            detachmentIDsCSV: "brandfast-oathband"
+        )
+        _ = ArmyListChatToolExecutor.clearUnits(workspace: workspace)
+        _ = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "leagues-of-votann--kahl",
+            models: 1
+        )
+        let byName = ArmyListChatToolExecutor.setWarlord(workspace: workspace, unitID: "kahl")
+        XCTAssertTrue(byName.contains("Warlord set to"), byName)
+        XCTAssertNotNil(workspace.list.warlordUnitID)
+
+        let asDetachment = ArmyListChatToolExecutor.setWarlord(
+            workspace: workspace,
+            unitID: "Brandfast Oathband"
+        )
+        XCTAssertTrue(asDetachment.contains("Detachment"), asDetachment)
+    }
+
     func testSearchCatalogFindsWarriors() {
         let result = ArmyListChatToolExecutor.searchCatalog(
             workspace: workspace,

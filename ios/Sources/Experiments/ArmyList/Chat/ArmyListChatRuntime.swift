@@ -387,7 +387,7 @@ final class ArmyListChatRuntime: ObservableObject {
         When fixing errors: Prefer removeUnit / setUnitModels / setDetachments / setWarlord / attachCharacter. Respect datasheet duplicate limits for this battle size — addUnit rejects illegal copies.
         When filling points: keep existing units; add a few thematic units that fit remaining points without exceeding duplicate caps. Re-read Status after each mutation.
         Use addUnit only for small targeted edits after a roster already exists.
-        Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
+        Never ask the user for unit IDs, datasheet IDs, or detachment IDs — they are not shown in the UI. Call getListSummary or searchCatalog and pass names (or the ids those tools return). Detachments are not units; setWarlord needs a Character unit from the roster.
         """
     }
 
@@ -586,11 +586,11 @@ struct ArmyAddUnitFMTool: Tool {
 struct ArmyRemoveUnitFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "removeUnit"
-    let description = "Remove a unit instance by UUID from getListSummary / addUnit."
+    let description = "Remove a unit by name or id from getListSummary. Never ask the user for ids."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Unit instance UUID")
+        @Guide(description: "Unit name or id from getListSummary")
         var unitID: String
     }
 
@@ -605,11 +605,11 @@ struct ArmyRemoveUnitFMTool: Tool {
 struct ArmySetUnitModelsFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setUnitModels"
-    let description = "Change model count on an existing unit UUID."
+    let description = "Change model count on a roster unit by name or id from getListSummary."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Unit instance UUID")
+        @Guide(description: "Unit name or id from getListSummary")
         var unitID: String
         @Guide(description: "New model count")
         var models: Double
@@ -630,13 +630,13 @@ struct ArmySetUnitModelsFMTool: Tool {
 struct ArmyAttachCharacterFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "attachCharacter"
-    let description = "Attach a Leader/Character unit UUID to a bodyguard unit UUID, or bodyUnitID=none to detach."
+    let description = "Attach a Leader/Character to a body unit by name or id from getListSummary, or bodyUnitID=none to detach."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Character unit UUID")
+        @Guide(description: "Character unit name or id")
         var characterUnitID: String
-        @Guide(description: "Bodyguard unit UUID, or none")
+        @Guide(description: "Bodyguard unit name or id, or none")
         var bodyUnitID: String
     }
 
@@ -655,11 +655,11 @@ struct ArmyAttachCharacterFMTool: Tool {
 struct ArmySetWarlordFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setWarlord"
-    let description = "Set Warlord to a Character unit UUID, or none."
+    let description = "Set Warlord to a Character on the roster by unit name or id from getListSummary, or none. Never ask the user for ids."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Unit UUID or none")
+        @Guide(description: "Character unit name or id from getListSummary, or none")
         var unitID: String
     }
 
@@ -693,11 +693,11 @@ struct ArmySetListNameFMTool: Tool {
 struct ArmySetEnhancementFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setEnhancement"
-    let description = "Set or clear an enhancement on a unit. Prefer detachmentId--enhancement-slug ids."
+    let description = "Set or clear an enhancement on a unit by name or id from getListSummary."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Unit instance UUID")
+        @Guide(description: "Unit name or id from getListSummary")
         var unitID: String
         @Guide(description: "Enhancement id, or none to clear")
         var enhancementID: String
