@@ -300,7 +300,7 @@ final class ArmyListChatRuntime: ObservableObject {
         contextUsage = AgentContextUsage(budget: budget, didCompact: didCompactThisSession)
     }
 
-    private func append(_ kind: ArmyListChatEntry.Kind, text: String) {
+    func append(_ kind: ArmyListChatEntry.Kind, text: String) {
         transcript.append(ArmyListChatEntry(kind: kind, text: text))
     }
 

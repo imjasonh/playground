@@ -235,12 +235,14 @@ final class ArmyListChatToolTests: XCTestCase {
         )
         runtime.workspace.list = workspace.list
         _ = runtime.noteToolExchange(name: "applyRosterPlan", result: "Status: LEGAL")
+        runtime.append(.user, text: "Export this chat")
         let dump = runtime.makeConversationDump()
         XCTAssertEqual(dump.mode, "army-list-chat")
         XCTAssertEqual(dump.list.name, "Dump test")
         XCTAssertEqual(dump.toolLog.count, 1)
         XCTAssertEqual(dump.toolLog[0].name, "applyRosterPlan")
         XCTAssertFalse(dump.entries.isEmpty)
+        XCTAssertEqual(dump.entries.last?.text, "Export this chat")
 
         let data = try ArmyListChatDumpExporter.jsonData(for: dump)
         let json = try XCTUnwrap(String(data: data, encoding: .utf8))

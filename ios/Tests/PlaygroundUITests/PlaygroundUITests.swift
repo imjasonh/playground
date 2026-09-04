@@ -61,6 +61,25 @@ final class PlaygroundUITests: XCTestCase {
         }
     }
 
+    /// Scroll a Form sheet until `element` appears (long Detachments lists push footer actions off-screen).
+    @discardableResult
+    private func scrollSheetUntilExists(
+        _ element: XCUIElement,
+        in app: XCUIApplication,
+        maxSwipes: Int = 10
+    ) -> Bool {
+        if element.waitForExistence(timeout: 2) {
+            return true
+        }
+        for _ in 0..<maxSwipes {
+            if element.exists {
+                return true
+            }
+            swipeLauncherUp(in: app)
+        }
+        return element.waitForExistence(timeout: 2)
+    }
+
     private func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launch()
@@ -381,9 +400,14 @@ final class PlaygroundUITests: XCTestCase {
             "Expected the create form (name field) when the catalog is bundled"
         )
 
+        let create = app.buttons["armyListCreateButton"]
+        XCTAssertTrue(create.waitForExistence(timeout: 3))
+        XCTAssertFalse(create.isEnabled, "Create requires at least one detachment")
+
+        // Detachments push "Build starter list" below the fold — scroll until it appears.
         let starter = app.buttons["armyListBuildStarterButton"]
         XCTAssertTrue(
-            starter.waitForExistence(timeout: 3),
+            scrollSheetUntilExists(starter, in: app),
             "Expected Build starter list on the create sheet"
         )
         XCTAssertFalse(
@@ -391,14 +415,15 @@ final class PlaygroundUITests: XCTestCase {
             "Create/starter stay disabled until a detachment is chosen"
         )
 
-        let create = app.buttons["armyListCreateButton"]
-        XCTAssertTrue(create.waitForExistence(timeout: 3))
-        XCTAssertFalse(create.isEnabled, "Create requires at least one detachment")
-
         // Pick detachments until under the DP budget (Create enables).
         let detachmentToggles = app.switches.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "armyListNewDetachment-")
         )
+        // Scroll up so detachment toggles (above the starter button) are hittable.
+        for _ in 0..<4 {
+            if detachmentToggles.count > 0 { break }
+            app.swipeDown()
+        }
         XCTAssertGreaterThan(
             detachmentToggles.count,
             0,
@@ -408,6 +433,10 @@ final class PlaygroundUITests: XCTestCase {
         for index in 0..<min(detachmentToggles.count, 8) {
             let toggle = detachmentToggles.element(boundBy: index)
             guard toggle.waitForExistence(timeout: 2) else { continue }
+            // Ensure the toggle is on-screen before tapping.
+            if !toggle.isHittable {
+                _ = scrollSheetUntilExists(toggle, in: app, maxSwipes: 6)
+            }
             toggle.tap()
             if create.isEnabled {
                 enabled = true
