@@ -23,7 +23,6 @@ FP_ROOT = Path("/usr/share/kicad/footprints")
 
 BOARD_W = 91.0
 BOARD_H = 77.0
-ISLAND = (6.6, 6.6, 84.4, 70.4)
 GRID = 0.30
 VIA_SIZE = 0.60
 VIA_DRILL = 0.30
@@ -37,6 +36,7 @@ FP = {
     "C0603": (FP_ROOT / "Capacitor_SMD.pretty", "C_0603_1608Metric"),
     "C0805": (FP_ROOT / "Capacitor_SMD.pretty", "C_0805_2012Metric"),
     "CP8": (FP_ROOT / "Capacitor_THT.pretty", "CP_Radial_D8.0mm_P3.50mm"),
+    "CP7343": (FP_ROOT / "Capacitor_Tantalum_SMD.pretty", "CP_EIA-7343-20_Kemet-V"),
     "CPSUP": (FP_ROOT / "Capacitor_THT.pretty", "CP_Radial_D12.5mm_P5.00mm"),
     "L4030": (FP_ROOT / "Inductor_SMD.pretty", "L_Coilcraft_XxL4030"),
     "SOD523": (FP_ROOT / "Diode_SMD.pretty", "D_SOD-523"),
@@ -98,20 +98,21 @@ PLACES: list[tuple] = [
     ("J2", "SWD", 80.0, 18.0, 90, "SWD", False, {
         "1": "DBG_3V3", "2": "SWDIO", "3": "SWCLK", "4": "NRST", "5": "GND",
     }),
-    ("J3", "UART", 80.0, 30.0, 90, "UART", False, {
+    ("J3", "UART", 80.0, 30.0, 90, "UART DNP", True, {
         "1": "GND", "2": "DBG_TX", "3": "DBG_RX",
     }),
     ("JP1", "JMP", 80.0, 40.0, 90, "DEBUG_3V3", False, {
         "1": "+3V3", "2": "DBG_3V3",
     }),
     ("C1", "C0402", 22.0, 58.0, 0, "220nF", False, {"1": "VOUT_EH", "2": "GND"}),
-    ("C2", "CP8", 18.0, 18.0, 0, "470uF", False, {"1": "VSTORE", "2": "GND"}),
+    ("C2", "CP7343", 18.0, 20.0, 0, "470uF POSCAP", False, {"1": "VSTORE", "2": "GND"}),
     ("C3", "CPSUP", 74.0, 56.0, 0, "22mF DNP", True, {"1": "VSTORE", "2": "GND"}),
     ("C4", "C0603", 28.0, 48.0, 0, "10uF", False, {"1": "VSTORE", "2": "GND"}),
     ("C5", "C0805", 50.0, 54.0, 0, "22uF", False, {"1": "+3V3", "2": "GND"}),
     ("C6", "C0805", 50.0, 46.0, 0, "22uF", False, {"1": "+3V3", "2": "GND"}),
     ("C7", "C0402", 68.0, 36.0, 0, "1nF", False, {"1": "EPD_CT", "2": "GND"}),
-    ("C8", "C0402", 68.0, 28.0, 0, "100nF", False, {"1": "NRST", "2": "GND"}),
+    ("R11", "R0402", 68.0, 32.0, 0, "100k", False, {"1": "EPD_PWR_EN", "2": "GND"}),
+    ("R12", "R0402", 68.0, 28.0, 0, "100k", False, {"1": "NRST", "2": "GND"}),
     ("C9", "C0402", 40.0, 36.0, 0, "100nF", False, {"1": "+3V3", "2": "GND"}),
     ("C10", "C0402", 44.0, 36.0, 0, "1uF", False, {"1": "+3V3", "2": "GND"}),
     ("C11", "C0402", 48.0, 36.0, 0, "100nF", False, {"1": "+3V3", "2": "GND"}),
@@ -131,8 +132,8 @@ PLACES: list[tuple] = [
     ("R4", "R0402", 28.0, 40.0, 0, "220k", False, {"1": "VSTORE", "2": "VSTORE_DIV"}),
     ("R5", "R0402", 28.0, 36.0, 0, "100k", False, {"1": "VSTORE_DIV", "2": "GND"}),
     ("R6", "R0402", 68.0, 40.0, 0, "1k", False, {"1": "EPD_QOD", "2": "+3V3_EPD"}),
-    ("R7", "R0402", 38.0, 32.0, 0, "2.2k", False, {"1": "I2C_SCL", "2": "+3V3"}),
-    ("R8", "R0402", 42.0, 32.0, 0, "2.2k", False, {"1": "I2C_SDA", "2": "+3V3"}),
+    ("R7", "R0402", 38.0, 32.0, 0, "4.7k", False, {"1": "I2C_SCL", "2": "+3V3"}),
+    ("R8", "R0402", 42.0, 32.0, 0, "4.7k", False, {"1": "I2C_SDA", "2": "+3V3"}),
     ("R9", "R0402", 46.0, 32.0, 0, "10k", False, {"1": "NFC_FD", "2": "+3V3"}),
     ("R10", "R0402", 24.0, 28.0, 0, "0.47", False, {"1": "EPD_RESE", "2": "GND"}),
 ]
@@ -227,11 +228,6 @@ def add_zone(board: pcbnew.BOARD, net: pcbnew.NETINFO_ITEM, layer: int, pts: lis
     for x, y in pts:
         outline.Append(mm(x), mm(y))
     board.Add(zone)
-
-
-def island_pts() -> list[tuple[float, float]]:
-    x0, y0, x1, y1 = ISLAND
-    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
 
 
 def load_fp(key: str) -> pcbnew.FOOTPRINT:
@@ -613,9 +609,12 @@ def main() -> int:
     draw_antenna(board, nets)
     connect_antenna_ends(board, fps, nets)
 
-    add_zone(board, nets["GND"], pcbnew.In1_Cu, island_pts(), 0.35)
-    add_zone(board, nets["+3V3"], pcbnew.In2_Cu, island_pts(), 0.35)
-    add_zone(board, nets["GND"], pcbnew.B_Cu, island_pts(), 0.35)
+    # Keep the inner pours smaller than the coil island. A solid plate
+    # filling the loop is a shorted turn for 13.56 MHz.
+    pour = [(16.0, 22.0), (70.0, 22.0), (70.0, 60.0), (16.0, 60.0)]
+    add_zone(board, nets["GND"], pcbnew.In1_Cu, pour, 0.35)
+    add_zone(board, nets["+3V3"], pcbnew.In2_Cu, pour, 0.35)
+    add_zone(board, nets["GND"], pcbnew.B_Cu, pour, 0.35)
     add_zone(board, nets["+3V3_EPD"], pcbnew.F_Cu, [(16, 8), (74, 8), (74, 18), (16, 18)], 0.30)
     add_zone(board, nets["VSTORE"], pcbnew.F_Cu, [(14, 44), (46, 44), (46, 56), (14, 56)], 0.30)
 
@@ -628,6 +627,7 @@ def main() -> int:
     add_text(board, "GDEY042T81 PANEL THIS SIDE", 45.5, 66.5, pcbnew.B_SilkS, 1.2)
     add_text(board, "nfc-eink  91x77 mm", 45.5, 22.0, pcbnew.F_SilkS, 0.9)
     add_text(board, "keep phone on coil 8-12 s", 45.5, 24.0, pcbnew.F_SilkS, 0.8)
+    add_text(board, "J2 bring-up only. J3 DNP. FPC contacts toward board.", 45.5, 26.0, pcbnew.F_SilkS, 0.7)
 
     pcbnew.SaveBoard(str(OUT), board)
     print(f"wrote {OUT}")

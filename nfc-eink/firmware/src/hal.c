@@ -52,13 +52,19 @@ int gpio_in(int port, int pin)
 
 void hal_delay_ms(uint32_t ms)
 {
-    /* 16 MHz HSI, rough busy-wait. */
-    volatile uint32_t n;
+    /* 16 MHz HSI. Each inner iter is a nop plus the volatile count. */
     while (ms--) {
-        for (n = 0; n < 1600; n++) {
-            (void)n;
+        volatile uint32_t n = 4000;
+        while (n--) {
+            __asm volatile ("nop");
         }
+        iwdg_kick();
     }
+}
+
+void iwdg_kick(void)
+{
+    IWDG_KR = 0xAAAAu;
 }
 
 void epd_rail(int on)
@@ -96,8 +102,9 @@ static void gpio_setup(void)
     gpio_mode(GPIO_PORTB, PIN_I2C_SCL, 2, 6, 1); /* AF6 I2C1 OD */
     gpio_mode(GPIO_PORTB, PIN_I2C_SDA, 2, 6, 1);
     gpio_out(GPIO_PORTA, PIN_EPD_CS, 1);
-    gpio_out(GPIO_PORTA, PIN_EPD_DC, 1);
-    gpio_out(GPIO_PORTA, PIN_EPD_RST, 1);
+    gpio_out(GPIO_PORTA, PIN_EPD_DC, 0);
+    /* Hold RST low while +3V3_EPD is off so the pin cannot back-power VCI. */
+    gpio_out(GPIO_PORTA, PIN_EPD_RST, 0);
     gpio_out(GPIO_PORTB, PIN_EPD_PWR_EN, 0);
 }
 
@@ -133,7 +140,21 @@ static void adc_setup(void)
     ADC_CR |= (1u << 31); /* ADCAL */
     while (ADC_CR & (1u << 31)) {
     }
+    ADC_ISR = 1u;
     ADC_CR |= (1u << 0); /* ADEN */
+    while ((ADC_ISR & 1u) == 0) {
+    }
+}
+
+static void iwdg_setup(void)
+{
+    RCC_CSR |= 1u; /* LSION */
+    while ((RCC_CSR & 2u) == 0) {
+    }
+    IWDG_KR = 0x5555u;
+    IWDG_PR = 6u;     /* /256 */
+    IWDG_RLR = 1023u; /* about 8 s at 32 kHz LSI */
+    IWDG_KR = 0xCCCCu;
 }
 
 void hal_init(void)
@@ -144,6 +165,7 @@ void hal_init(void)
     i2c_setup();
     uart_setup();
     adc_setup();
+    iwdg_setup();
 }
 
 void spi_tx(const uint8_t *data, uint32_t n)
@@ -171,6 +193,13 @@ static int i2c_wait(uint32_t mask, uint32_t timeout)
         }
     }
     return -2;
+}
+
+void i2c_recover(void)
+{
+    I2C_CR1(I2C1_BASE) = 0;
+    I2C_ICR(I2C1_BASE) = 0x3F38u;
+    I2C_CR1(I2C1_BASE) = 1u;
 }
 
 int i2c_write(uint8_t addr7, const uint8_t *data, uint32_t n)

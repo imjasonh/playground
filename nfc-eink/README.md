@@ -42,9 +42,9 @@ the 24-pin FPC around the long edge to J1.
 
 | Role | Part | Why |
 | --- | --- | --- |
-| NFC + harvest | NXP NT3H2211W0FTTJ | ISO 14443-A. Faster than ST25DV (ISO 15693). About 15 mW in a strong phone field. 2 KB EEPROM, so the image must stream through the 64-byte SRAM mailbox. |
+| NFC + harvest | NXP NT3H2211W0FTTJ | ISO 14443-A. Faster than ST25DV (ISO 15693). NXP quotes about 5 mA at 2 V (10 mW) from a phone. 2 KB EEPROM, so the image must stream through the 64-byte SRAM mailbox. |
 | MCU | STM32G071CBT6 | 36 KB RAM holds the 15 000-byte frame plus stack. HSI, no crystal. |
-| Boost | TPS61023DRLR | Starts at 0.5 V. 3.29 V from 453 k / 100 k on FB. |
+| Boost | TPS61023DRLR | Rising UVLO is 1.8 V, then it can run down to 0.5 V. 3.29 V from 453 k / 100 k on FB. |
 | EPD switch | TPS22917DBVR | Panel stays off until the tank and image are ready. |
 | Reset | TCM809SENB713 | 2.93 V, active-low. Holds PF2-NRST until the boost is up. Do not use the J suffix (4.00 V). That part never releases on a 3.3 V rail. |
 | Panel | GDEY042T81 | SSD1683, 24-pin 0.5 mm FPC, on-glass booster. Typical refresh about 5.6 mA at 3.0 V for about 3 s. |
@@ -56,15 +56,22 @@ schematic. Copper plots live in `plots/`.
 ## How a session runs
 
 1. Place the phone on the coil. Keep it there until the panel finishes.
-2. NT3H2211 VOUT charges C2 (470 µF) through D1 and R1 (22 Ω). C1 on VOUT is
-   220 nF. NXP caps that pin at 220 nF. Do not add bulk there.
-3. TPS61023 starts near 0.5 V and regulates 3.29 V.
-4. TCM809 releases PF2-NRST (LQFP48 pin 10). The G071 has no dedicated NRST pin
-   on this package.
-5. Firmware enables harvest in the tag config if it is not already on, then
-   drains the SRAM mailbox over I2C1 (PB6/PB7).
-6. When the 15 000-byte frame is in RAM and `VSTORE_DIV` looks healthy, the MCU
-   asserts `EPD_PWR_EN`, talks 4-wire SPI to the SSD1683, and waits on BUSY.
+2. NT3H2211 VOUT charges C2 (470 µF POSCAP) through D1 and R1 (22 Ω). C1 on
+   VOUT is 220 nF. NXP caps that pin at 220 nF. Do not add bulk there.
+3. TPS61023 starts once VSTORE crosses 1.8 V and regulates 3.29 V. The
+   0.5 V figure in the TI headline is the running UVLO after VOUT is up, not
+   the start threshold.
+4. TCM809 holds PF2-NRST (LQFP48 pin 10) for at least 140 ms after 3.29 V is
+   up. That delay covers the boost soft-start inrush. Do not put a capacitor
+   on NRST. The TCM809 output is push-pull. R12 (100 k) holds the pin low
+   after VDD falls below 1 V.
+5. Firmware waits for an RF field, sets NTAG pass-through (NC_REG bit 6) and
+   NFC-to-I2C direction (bit 0), then drains the SRAM mailbox over I2C1
+   (PB6/PB7). It polls `SRAM_I2C_READY` (NS_REG bit 4).
+6. When the 15 000-byte frame is in RAM and `VSTORE_DIV` is about 2.0 V, the
+   MCU asserts `EPD_PWR_EN`, talks 4-wire SPI to the SSD1683, and waits on
+   BUSY. A bad header, CRC fail, or low tank skips the refresh. The panel
+   is not painted with a test pattern.
 7. The MCU drops the EPD rail and waits in WFI. Remove the phone and the rails
    collapse. The image stays.
 
@@ -73,8 +80,8 @@ takes about 3 s. Refresh is another 3 s. Budget 8 to 12 s of coupling.
 
 ## Power budget
 
-Phone harvest is 15 to 20 mW when the coil is well coupled (NXP NTAG I2C plus
-app note, ST AN4913 on ST25DV). That is the whole supply.
+NXP quotes a typical 5 mA at 2 V (10 mW) from a phone on NT3H2211 VOUT. A
+strong field can do better. Treat 10 mW as the planning number, not 15 to 20.
 
 | Load | Draw | Notes |
 | --- | --- | --- |
@@ -97,12 +104,12 @@ Yes, the unit price drops. The panel is still most of the bill.
 
 | | Qty 1 | Qty 100 each |
 | --- | --- | --- |
-| Electronics (ICs, passives, inductor, FPC, headers) | $13.58 | $8.48 |
+| Electronics (ICs, passives, inductor, FPC, headers) | $13.38 | $8.33 |
 | GDEY042T81 panel | $18.50 | $11.00 |
 | 4-layer PCB 91×77 mm | $8.00 | $0.85 |
-| **Kit total** | **$40.08** | **$20.33** |
+| **Kit total** | **$39.88** | **$20.18** |
 
-A hundred kits is about $2,033 in parts and bare boards before tax and
+A hundred kits is about $2,018 in parts and bare boards before tax and
 shipping. Figures are USD catalog snapshots on 2026-09-04. DigiKey and Mouser
 move. DNP lines are $0.
 
@@ -114,7 +121,7 @@ The PCB number uses JLCPCB's published 4-layer rate of about $70.60/m² on a
 100-piece 100×100 mm example, scaled to 91×77 mm, plus a slice of setup and
 ship. A single proto board from a Western fab is the $8 line.
 
-That $20.33 is a kit you solder. JLCPCB SMT on this BOM is mostly Extended
+That $20.18 is a kit you solder. JLCPCB SMT on this BOM is mostly Extended
 library parts (NXP, ST, Coilcraft, Hirose), so feeder setup is real. Budget
 about $4 to $8 extra per board at 100 if you do not want to place 0402s
 yourself. A stuffed board is then about $24 to $28.
@@ -143,8 +150,9 @@ yourself. A stuffed board is then about $24 to $28.
 | B.Cu | GND island. Silk says `PANEL THIS SIDE`. |
 
 The coil is a 2-turn Class-1 loop, 0.5 mm trace, 0.5 mm gap, target 2.76 µH
-with the chip's 50 pF. No pour under the turns. CT1 and CT2 are NP0 pads,
-DNP until a VNA or a phone-range sweep.
+with the chip's 50 pF. No pour under the turns. Inner-layer pours stay in a
+smaller courtyard under the parts so they do not fill the loop. CT1 and CT2
+are NP0 pads, DNP until a VNA or a phone-range sweep.
 
 `tools/gen_pcb.py` rebuilds the board from the footprint list. `tools/erc.py`
 checks the schematic netlist. `tools/pcb_check.py` checks outline, required
@@ -163,7 +171,7 @@ feeds J2 pin 1.
 ## Firmware
 
 See [`firmware/README.md`](firmware/README.md). Host tests of the 64-byte
-`EINK` mailbox and the 400×300 PBM packer:
+`EINK` mailbox, the NTAG session-register masks, and the 400×300 PBM packer:
 
 ```bash
 make -C nfc-eink/firmware test
@@ -258,8 +266,49 @@ connector sits on the long edge of the panel.
 The e-ink backplane is metal. Putting the coil under the glass kills it. That
 is why the phone taps the parts side, not the picture side.
 
+## Before you order a board
+
+This is a first article, not a finished product. Host tests pass. Nothing here
+has run on silicon, on a VNA, or against a phone field. `pcb_check.py` is not
+KiCad DRC.
+
+Do this before you send gerbers:
+
+1. Open `nfc-eink.kicad_pcb` in Pcbnew and run DRC. The Python router can
+   leave B.Cu L-fallback tracks that cross.
+2. Measure the coil on the first panel. Target 2.76 µH with the chip's 50 pF.
+   Fit CT1 or CT2 if a phone only talks at a few millimetres.
+3. With a phone on the coil and no firmware yet, measure VOUT_EH and VSTORE.
+   TPS61023 needs VSTORE ≥ 1.8 V to start. NXP's typical loaded VOUT is 2.0 V.
+   D1 (PMEG2010AEB) drops about 0.2 V. If VSTORE sits under 1.8 V, replace D1
+   with an ideal-diode (LM66100) before you order more boards.
+4. Flash over J2 with JP1 closed. Then open JP1. Do not leave J2 or J3
+   populated for an NFC session. A tall header is an air gap.
+5. Confirm the GDEY042T81 FPC gold fingers face the board in the FH12
+   (bottom contact). The panel is on `B.Cu`. The connector is on `F.Cu`.
+   That is a 180° wrap. If the fingers face up after the wrap, add a second
+   fold or the panel will not drive.
+6. Write SRAM pages from the phone only after the MCU has set pass-through.
+   EEPROM cannot hold the frame. There is no phone app in this tree.
+
+C2 is a 2 mm POSCAP, not an 8 mm radial, so the phone can sit on the coil.
+R11 holds `EPD_PWR_EN` low at reset. R12 holds `NRST` low after the harvest
+rail collapses. Do not add a capacitor on `NRST`.
+
+## What will still fail if you skip bring-up
+
+- Antenna L is a geometry estimate. A detuned loop harvests nothing useful.
+- 470 µF at 2 V is about 1 mJ. That is a dip absorber. The phone must stay
+  on the coil for the whole transfer and refresh. Populate C3 only if you
+  accept several extra seconds of charge time, and only on a board you are
+  not trying to couple to a phone (the coin supercap is thick).
+- The inner copper pour and the metal e-ink backplane both lower Q. The
+  coil is on the phone side for that reason. Range will be short.
+- `tools/pcb_check.py` only checks outline, required footprints, and that
+  listed nets have two pads.
+
 ## What is not in this tree
 
 No phone app. `firmware/host/pack_pbm` builds the 235-chunk file. You still
-need something on the phone that writes NTAG SRAM. NXP's NTAG I2C plus demo
-is the usual starting point.
+need something on the phone that writes NTAG SRAM pass-through after the MCU
+enables it. NXP's NTAG I2C plus demo is the usual starting point.

@@ -48,7 +48,7 @@ void epd_init(void)
 
     epd_hw_reset();
     epd_cmd(0x12);
-    hal_delay_ms(10);
+    epd_wait(200);
     epd_cmd(0x01);
     epd_data(mux, 3);
     epd_cmd(0x3C);

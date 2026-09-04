@@ -9,17 +9,16 @@ D1,1,PMEG2010AEB,PMEG2010AEB115,Nexperia,SOD-523,no,0.28,0.11,0.28,0.11,https://
 L1,1,1uH 3A,XEL4030-102MEB,Coilcraft,4x4 mm,no,1.15,0.88,1.15,0.88,https://www.digikey.com/en/products/result?keywords=XEL4030-102ME,https://www.coilcraft.com/en-us/products/power/shielded-inductors/molded-smd/xel/xel4030/,TPS61023 1 MHz inductor
 J1,1,FH12-24S-0.5SH,FH12-24S-0.5SH(55),Hirose,24p 0.5 mm FPC,no,1.85,1.25,1.85,1.25,https://www.digikey.com/en/products/result?keywords=FH12-24S-0.5SH,https://www.hirose.com/product/p/CL0586-0757-0-55,GDEY042T81 FPC
 J2,1,SWD 1.27mm,N/A,generic,1x05 P1.27,no,0.35,0.12,0.35,0.12,https://www.digikey.com/en/products/result?keywords=pin+header+1.27mm+1x5,,3V3 SWDIO SWCLK NRST GND
-J3,1,UART 2.54mm,N/A,generic,1x03 P2.54,no,0.15,0.08,0.15,0.08,https://www.digikey.com/en/products/result?keywords=pin+header+2.54mm+1x3,,GND TX RX
+J3,1,UART 2.54mm,N/A,generic,1x03 P2.54,yes,0.15,0.08,0.00,0.00,https://www.digikey.com/en/products/result?keywords=pin+header+2.54mm+1x3,,DNP. Vertical header lifts the phone off the coil.
 JP1,1,DEBUG_3V3,N/A,generic,1x02 P2.54,no,0.10,0.05,0.10,0.05,https://www.digikey.com/en/products/result?keywords=pin+header+2.54mm+1x2,,Leave open for NFC power
 DISP1,1,GDEY042T81,GDEY042T81,Good Display,4.2 in 400x300,no,18.50,11.00,18.50,11.00,https://www.good-display.com/product/386.html,https://www.good-display.com/product/386.html,Qty100 is a factory quote band ($9-$13). LaskaKit/Waveshare stay near retail.
 C1,1,220nF X7R 16V,GRM155R71C224KA55D,Murata,0402,no,0.10,0.04,0.10,0.04,https://www.digikey.com/en/products/result?keywords=GRM155R71C224KA55D,,NTAG VOUT. Do not exceed 220 nF.
-C2,1,470uF 6.3V OS-CON,6SEPC470M,Panasonic,radial 8 mm,no,1.40,0.92,1.40,0.92,https://www.digikey.com/en/products/result?keywords=6SEPC470M,,Harvest tank
+C2,1,470uF 6.3V POSCAP,6TPE470MAZB,Panasonic,7343 2.0 mm,no,1.35,0.85,1.35,0.85,https://www.digikey.com/en/products/result?keywords=6TPE470MAZB,,Harvest tank. Low profile so the phone can sit on the coil.
 C3,1,22mF 5.5V supercap,KR-5R5V223-R,Eaton,radial coin,yes,2.80,1.60,0.00,0.00,https://www.digikey.com/en/products/result?keywords=KR-5R5V223-R,,DNP. Optional hold-up.
 C4,1,10uF 6.3V,GRM188R60J106ME47D,Murata,0603,no,0.12,0.05,0.12,0.05,https://www.digikey.com/en/products/result?keywords=GRM188R60J106ME47D,,Boost VIN
 C5,1,22uF 6.3V,GRM21BR60J226ME39L,Murata,0805,no,0.22,0.08,0.22,0.08,https://www.digikey.com/en/products/result?keywords=GRM21BR60J226ME39L,,Boost VOUT
 C6,1,22uF 6.3V,GRM21BR60J226ME39L,Murata,0805,no,0.22,0.08,0.22,0.08,https://www.digikey.com/en/products/result?keywords=GRM21BR60J226ME39L,,Boost VOUT
 C7,1,1nF 50V,GRM155R71H102KA01D,Murata,0402,no,0.05,0.02,0.05,0.02,https://www.digikey.com/en/products/result?keywords=GRM155R71H102KA01D,,TPS22917 CT
-C8,1,100nF 50V,GRM155R71H104KE14D,Murata,0402,no,0.04,0.02,0.04,0.02,https://www.digikey.com/en/products/result?keywords=GRM155R71H104KE14D,,NRST
 C9,1,100nF 50V,GRM155R71H104KE14D,Murata,0402,no,0.04,0.02,0.04,0.02,https://www.digikey.com/en/products/result?keywords=GRM155R71H104KE14D,,MCU VDD
 C10,1,1uF 10V,GRM155R61A105KE15D,Murata,0402,no,0.06,0.03,0.06,0.03,https://www.digikey.com/en/products/result?keywords=GRM155R61A105KE15D,,MCU VDD bulk
 C11,1,100nF 50V,GRM155R71H104KE14D,Murata,0402,no,0.04,0.02,0.04,0.02,https://www.digikey.com/en/products/result?keywords=GRM155R71H104KE14D,,MCU VDD
@@ -39,10 +38,12 @@ R3,1,100k,RC0402FR-07100KL,Yageo,0402,no,0.02,0.01,0.02,0.01,https://www.digikey
 R4,1,220k,RC0402FR-07220KL,Yageo,0402,no,0.02,0.01,0.02,0.01,https://www.digikey.com/en/products/result?keywords=RC0402FR-07220KL,,VSTORE divider
 R5,1,100k,RC0402FR-07100KL,Yageo,0402,no,0.02,0.01,0.02,0.01,https://www.digikey.com/en/products/result?keywords=RC0402FR-07100KL,,VSTORE divider
 R6,1,1k,RC0402FR-071KL,Yageo,0402,no,0.02,0.01,0.02,0.01,https://www.digikey.com/en/products/result?keywords=RC0402FR-071KL,,TPS22917 QOD
-R7,1,2.2k,RC0402FR-072K2L,Yageo,0402,no,0.02,0.01,0.02,0.01,https://www.digikey.com/en/products/result?keywords=RC0402FR-072K2L,,I2C SCL pull-up
-R8,1,2.2k,RC0402FR-072K2L,Yageo,0402,no,0.02,0.01,0.02,0.01,https://www.digikey.com/en/products/result?keywords=RC0402FR-072K2L,,I2C SDA pull-up
+R7,1,4.7k,RC0402FR-074K7L,Yageo,0402,no,0.02,0.01,0.02,0.01,https://www.digikey.com/en/products/result?keywords=RC0402FR-074K7L,,I2C SCL pull-up
+R8,1,4.7k,RC0402FR-074K7L,Yageo,0402,no,0.02,0.01,0.02,0.01,https://www.digikey.com/en/products/result?keywords=RC0402FR-074K7L,,I2C SDA pull-up
 R9,1,10k,RC0402FR-0710KL,Yageo,0402,no,0.02,0.01,0.02,0.01,https://www.digikey.com/en/products/result?keywords=RC0402FR-0710KL,,FD pull-up
 R10,1,0.47,RL0402FR-070R47L,Yageo,0402,no,0.08,0.04,0.08,0.04,https://www.digikey.com/en/products/result?keywords=RL0402FR-070R47L,,SSD1683 RESE sense
+R11,1,100k,RC0402FR-07100KL,Yageo,0402,no,0.02,0.01,0.02,0.01,https://www.digikey.com/en/products/result?keywords=RC0402FR-07100KL,,TPS22917 ON pulldown
+R12,1,100k,RC0402FR-07100KL,Yageo,0402,no,0.02,0.01,0.02,0.01,https://www.digikey.com/en/products/result?keywords=RC0402FR-07100KL,,NRST pulldown. TCM809 output is open below 1 V.
 ANT1,1,PCB loop 2.76uH,N/A,fab,2-turn Class-1,no,0.00,0.00,0.00,0.00,,,On the 91 mm x 77 mm outline.
 PCB1,1,4-layer 91x77 mm,N/A,JLCPCB,91 x 77 mm,no,8.00,0.85,8.00,0.85,https://jlcpcb.com/,,Qty1 is a proto panel. Qty100 uses JLCPCB 4-layer ~$70.60/m2 plus setup and ship.
-TOTAL,,,,,,,40.08,20.33,40.08,20.33,,,USD snapshots 2026-09-04. DNP lines are 0. Display qty100 is a factory band. SMT assembly is extra.
+TOTAL,,,,,,,39.88,20.18,39.88,20.18,,,USD snapshots 2026-09-04. DNP lines are 0. Display qty100 is a factory band. SMT assembly is extra.

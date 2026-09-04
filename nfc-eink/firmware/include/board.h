@@ -28,6 +28,15 @@
 #define NTAG_SESS_BLK  0xFE
 #define NTAG_CFG_2K    0xE8
 
-#define VSTORE_READY_COUNTS 600  /* ~1.5 V on the tank with the 220k/100k divider */
+/*
+ * VSTORE divider is 220k/100k. ADC uses VDD (~3.29 V) as VREF.
+ * 780 counts is about 2.0 V on the tank, above the TPS61023 1.8 V
+ * rising UVLO with a little margin for the Schottky.
+ */
+#define VSTORE_READY_COUNTS 780
+#define VSTORE_WAIT_MS 2000
+
+#define NTAG_FIRST_CHUNK_SPINS 4000
+#define NTAG_NEXT_CHUNK_SPINS 1500
 
 #endif

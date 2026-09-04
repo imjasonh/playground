@@ -10,6 +10,8 @@ __pycache__/
 *.pyc
 firmware/host/test_protocol
 firmware/host/test_image
+firmware/host/test_ntag
 firmware/host/pack_pbm
 firmware/nfc-eink.elf
 firmware/nfc-eink.bin
+nfc-eink-layers.svg

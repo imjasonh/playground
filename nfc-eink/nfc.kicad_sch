@@ -1,5 +1,5 @@
 (kicad_sch (version 20230121) (generator eeschema)
-  (uuid b370e25a-9fa0-4275-bb87-c89f8937e81c)
+  (uuid f9bfcaf1-4384-44e9-9a75-e47a38097c05)
   (paper "A3")
   (title_block
     (title "NFC front end")
@@ -293,31 +293,31 @@
         )
       )
   )
-  (wire (pts (xy 40.0 85.08) (xy 40.0 87.62)) (stroke (width 0) (type default)) (uuid 634f62a7-850a-45a8-bdf7-1a1fef52d433))
-  (wire (pts (xy 42.54 85.08) (xy 42.54 87.62)) (stroke (width 0) (type default)) (uuid 52c0b3f1-409a-43a3-8694-bffad861ca29))
-  (wire (pts (xy 70.0 56.19) (xy 70.0 53.65)) (stroke (width 0) (type default)) (uuid 90056b4a-563e-485d-83d5-909fd0d6c8c3))
-  (wire (pts (xy 70.0 63.81) (xy 70.0 66.35)) (stroke (width 0) (type default)) (uuid 59367d47-51a0-4a3c-903c-6cba2c00449a))
-  (wire (pts (xy 85.0 56.19) (xy 85.0 53.65)) (stroke (width 0) (type default)) (uuid 5a3d45e1-48b1-4631-92af-58c36be55bda))
-  (wire (pts (xy 85.0 63.81) (xy 85.0 66.35)) (stroke (width 0) (type default)) (uuid dc81fe35-83e1-4581-8b03-adbaac0650b0))
-  (wire (pts (xy 139.84 84.92) (xy 137.3 84.92)) (stroke (width 0) (type default)) (uuid 3b4baea3-249e-4f4f-bd4b-70995533808d))
-  (wire (pts (xy 139.84 95.08) (xy 137.3 95.08)) (stroke (width 0) (type default)) (uuid 2087695c-e0a2-40b7-bbe0-126e0139cf7c))
-  (wire (pts (xy 139.84 87.46) (xy 137.3 87.46)) (stroke (width 0) (type default)) (uuid 36686a26-da55-48e9-a504-12e695358e3a))
-  (wire (pts (xy 139.84 90.0) (xy 137.3 90.0)) (stroke (width 0) (type default)) (uuid 6552a78b-37c5-4285-8c9d-ab7ebf7e652f))
-  (wire (pts (xy 160.16 92.54) (xy 162.7 92.54)) (stroke (width 0) (type default)) (uuid 42dce5f1-74d1-48ec-84db-05da1ffc819a))
-  (wire (pts (xy 160.16 84.92) (xy 162.7 84.92)) (stroke (width 0) (type default)) (uuid 64adf0af-b2ea-49d1-b308-fdfa9245f5e3))
-  (wire (pts (xy 150.0 78.57) (xy 150.0 76.03)) (stroke (width 0) (type default)) (uuid fb64f05c-f763-4287-8dbf-35cb22adc394))
-  (wire (pts (xy 150.0 101.43) (xy 150.0 103.97)) (stroke (width 0) (type default)) (uuid 7156331f-4c6d-4667-a04f-9256b52f6397))
-  (wire (pts (xy 190.0 51.19) (xy 190.0 48.65)) (stroke (width 0) (type default)) (uuid 3b18ad58-e9c6-4720-8ebd-1cda86006012))
-  (wire (pts (xy 190.0 58.81) (xy 190.0 61.35)) (stroke (width 0) (type default)) (uuid dde91c7a-aa64-47f3-aa45-74720712556f))
-  (wire (pts (xy 220.0 80.0) (xy 220.0 82.54)) (stroke (width 0) (type default)) (uuid 81be68b2-f589-495c-87d3-3c49f9e3c562))
-  (wire (pts (xy 220.0 100.0) (xy 220.0 102.54)) (stroke (width 0) (type default)) (uuid d556b007-a5a2-454d-9c1a-ff7ad89c0e24))
-  (wire (pts (xy 220.0 120.0) (xy 220.0 117.46)) (stroke (width 0) (type default)) (uuid 14f17e46-8e47-4498-89e0-9a22a3c32b98))
+  (wire (pts (xy 40.0 85.08) (xy 40.0 87.62)) (stroke (width 0) (type default)) (uuid 69acd7c9-fa0e-46d7-bd2f-aef23fc359dc))
+  (wire (pts (xy 42.54 85.08) (xy 42.54 87.62)) (stroke (width 0) (type default)) (uuid eaec8c3d-b3df-474e-91ba-d4541dfc59d4))
+  (wire (pts (xy 70.0 56.19) (xy 70.0 53.65)) (stroke (width 0) (type default)) (uuid 8bd013f2-efe6-4612-b513-461af05bc10c))
+  (wire (pts (xy 70.0 63.81) (xy 70.0 66.35)) (stroke (width 0) (type default)) (uuid fda9ed33-76bd-442c-9184-a927c8782eee))
+  (wire (pts (xy 85.0 56.19) (xy 85.0 53.65)) (stroke (width 0) (type default)) (uuid ac3823a2-ebd7-403f-b700-25a69dd6e03f))
+  (wire (pts (xy 85.0 63.81) (xy 85.0 66.35)) (stroke (width 0) (type default)) (uuid 6d624750-0fbf-4b41-91f9-1182faf62aba))
+  (wire (pts (xy 139.84 84.92) (xy 137.3 84.92)) (stroke (width 0) (type default)) (uuid 35b08f6a-d1d4-44eb-9abf-5120ae7c15f6))
+  (wire (pts (xy 139.84 95.08) (xy 137.3 95.08)) (stroke (width 0) (type default)) (uuid 90298eec-4921-4efb-89f6-85f40a04d230))
+  (wire (pts (xy 139.84 87.46) (xy 137.3 87.46)) (stroke (width 0) (type default)) (uuid c2bdf1f0-fcb6-4b4c-9a70-5ad400b242d1))
+  (wire (pts (xy 139.84 90.0) (xy 137.3 90.0)) (stroke (width 0) (type default)) (uuid 123661a2-d616-4f52-875f-bb70aea250a8))
+  (wire (pts (xy 160.16 92.54) (xy 162.7 92.54)) (stroke (width 0) (type default)) (uuid 1ef8f584-a23d-4c3a-b2b7-e7012cbd4dde))
+  (wire (pts (xy 160.16 84.92) (xy 162.7 84.92)) (stroke (width 0) (type default)) (uuid 2f325bab-fee8-4b2e-94d3-5a99287f9583))
+  (wire (pts (xy 150.0 78.57) (xy 150.0 76.03)) (stroke (width 0) (type default)) (uuid e5f5865f-ef4c-4460-92b4-ad25bbaf295d))
+  (wire (pts (xy 150.0 101.43) (xy 150.0 103.97)) (stroke (width 0) (type default)) (uuid 97f7ebaa-0bd9-4460-b388-25caa907adae))
+  (wire (pts (xy 190.0 51.19) (xy 190.0 48.65)) (stroke (width 0) (type default)) (uuid b78a1837-f786-4576-ae2e-01e63ef3444b))
+  (wire (pts (xy 190.0 58.81) (xy 190.0 61.35)) (stroke (width 0) (type default)) (uuid 56147fe6-0b25-4185-af9e-8992154f13e1))
+  (wire (pts (xy 220.0 80.0) (xy 220.0 82.54)) (stroke (width 0) (type default)) (uuid 2663acf3-424c-431c-973c-c1b38e6dc37e))
+  (wire (pts (xy 220.0 100.0) (xy 220.0 102.54)) (stroke (width 0) (type default)) (uuid a05200a4-50a5-4afe-8bac-4e7ac07b9308))
+  (wire (pts (xy 220.0 120.0) (xy 220.0 117.46)) (stroke (width 0) (type default)) (uuid 0af03af3-2297-4114-a462-2c7316b8a9e0))
   (global_label "NFC_LA"
     (shape input)
     (at 40.0 87.62 270)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 09400635-7e76-4414-a113-928ac558952f)
+    (uuid 385f305f-6b12-402b-92d9-7518f74d174e)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 40.0 87.62 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "NFC_LB"
@@ -325,7 +325,7 @@
     (at 42.54 87.62 270)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 7ba1e69b-f90d-4541-a4d9-7c864ecaf020)
+    (uuid 5c4ede19-3339-40ac-a318-e85b7c328e22)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 42.54 87.62 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "NFC_LA"
@@ -333,7 +333,7 @@
     (at 70.0 53.65 90)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 6fabd03d-c5f7-45bb-92c4-d7bd65a1d4f8)
+    (uuid e8d1f30e-f76d-42ef-b032-31a808e2f84d)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 70.0 53.65 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "NFC_LB"
@@ -341,7 +341,7 @@
     (at 70.0 66.35 270)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid c517eed7-7ff2-4c32-8e75-825dc03b5d76)
+    (uuid 266e86e6-3b30-4faa-98bc-7cdd89813815)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 70.0 66.35 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "NFC_LA"
@@ -349,7 +349,7 @@
     (at 85.0 53.65 90)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid c89cc2c6-29fa-4417-92c6-d8f07bb5b20b)
+    (uuid 3f8e434f-3179-4602-8702-56306ed7e136)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 85.0 53.65 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "NFC_LB"
@@ -357,7 +357,7 @@
     (at 85.0 66.35 270)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 75d93a2d-7860-40c3-906e-d02daa2163fe)
+    (uuid a5647bf5-b1fd-45ef-a549-396b24f94aff)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 85.0 66.35 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "NFC_LA"
@@ -365,7 +365,7 @@
     (at 137.3 84.92 180)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 1b1269f5-5a6e-455c-b543-29d08e309463)
+    (uuid 3bff1eca-6eb8-4a97-9f02-a41c3dd16ee4)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 137.3 84.92 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "NFC_LB"
@@ -373,7 +373,7 @@
     (at 137.3 95.08 180)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid dbf7ef4a-038c-45e1-b1c0-9472c6222339)
+    (uuid 2c51556b-ac96-49bf-94f7-483b02534195)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 137.3 95.08 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "I2C_SCL"
@@ -381,7 +381,7 @@
     (at 137.3 87.46 180)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 861ef019-bdea-44fb-819c-07179d76565a)
+    (uuid 49e69ee4-157c-4938-9ed1-e4b9f68e4299)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 137.3 87.46 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "I2C_SDA"
@@ -389,7 +389,7 @@
     (at 137.3 90.0 180)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid a9d11979-39e3-4b83-b230-9068960c0bea)
+    (uuid 5c052398-7f9b-4e39-86d3-63c6f01ea5ab)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 137.3 90.0 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "NFC_FD"
@@ -397,7 +397,7 @@
     (at 162.7 92.54 0)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 7319371a-5a61-4dbd-a90f-80d995b7e701)
+    (uuid e371914d-5e16-4f7b-958f-ea65ef2042e8)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 162.7 92.54 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "VOUT_EH"
@@ -405,7 +405,7 @@
     (at 162.7 84.92 0)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 89bb12d4-156e-41f2-a505-de3d6dca6b99)
+    (uuid 5ebaa6f9-432b-48a4-ab20-4114bed6a87b)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 162.7 84.92 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "+3V3"
@@ -413,7 +413,7 @@
     (at 150.0 76.03 90)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid f3a2c14b-b7b2-416f-b65f-4acc03516b0e)
+    (uuid fc8d9ca0-f5dd-412f-9ec8-d86e74b76456)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 150.0 76.03 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "GND"
@@ -421,7 +421,7 @@
     (at 150.0 103.97 270)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 63e18d90-e303-4286-937e-18b12dcacaf3)
+    (uuid 88f54d5c-04f7-4312-831c-d4ec2a9fd61b)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 150.0 103.97 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "VOUT_EH"
@@ -429,7 +429,7 @@
     (at 190.0 48.65 90)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 8942b7bc-e308-4b55-ad75-3426be5055e3)
+    (uuid 143bff0d-1890-4638-a00c-d9856ae59d77)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 190.0 48.65 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "GND"
@@ -437,7 +437,7 @@
     (at 190.0 61.35 270)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid f6767edb-7e7e-4a89-90b9-2d5706f1064b)
+    (uuid 6c122afc-fdb9-4b25-a3e5-88934a9dfba3)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 190.0 61.35 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "VOUT_EH"
@@ -445,7 +445,7 @@
     (at 220.0 82.54 270)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 267e4a07-4a95-4770-b2f6-5e5b70bebedb)
+    (uuid f4e96aee-a3c4-4c2c-99fc-6ed9370e76ae)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 220.0 82.54 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "+3V3"
@@ -453,7 +453,7 @@
     (at 220.0 102.54 270)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid f10e7124-df46-4907-a43a-6b3d44e7c7ff)
+    (uuid 40403c3f-62ed-4877-82e9-c878155867a9)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 220.0 102.54 0)
       (effects (font (size 1.27 1.27)) hide)))
   (global_label "GND"
@@ -461,15 +461,15 @@
     (at 220.0 117.46 90)
     (fields_autoplaced)
     (effects (font (size 1.27 1.27)) (justify left))
-    (uuid 6680d7f1-c282-4211-aabe-2b589ac0ab11)
+    (uuid ca23f520-33e5-4c47-b7bc-618d57ad6997)
     (property "Intersheetrefs" "${INTERSHEET_REFS}" (at 220.0 117.46 0)
       (effects (font (size 1.27 1.27)) hide)))
-  (text "Antenna and NT3H2211W0FTTJ" (at 15 15 0) (effects (font (size 3 3)) (justify left bottom)) (uuid ed0ef6b0-60ab-4174-b42f-89f6727aca45))
-  (text "Internal Cr = 50 pF. Target Lant = 2.76 uH at 13.56 MHz.\\nCT1/CT2 are NP0 tuning pads. Leave DNP until a VNA or phone-range sweep." (at 15 22 0) (effects (font (size 1.5 1.5)) (justify left bottom)) (uuid 5b81f39a-c9f5-4a41-a2de-9a01cca0c566))
-  (text "NXP max on VOUT is 220 nF. Do not add more here." (at 175 40 0) (effects (font (size 1.3 1.3)) (justify left bottom)) (uuid 1d44112c-d797-4a3e-93c4-80feeaab09ad))
+  (text "Antenna and NT3H2211W0FTTJ" (at 15 15 0) (effects (font (size 3 3)) (justify left bottom)) (uuid 290f7d7e-86ee-46bd-afb7-b2207b0a15e9))
+  (text "Internal Cr = 50 pF. Target Lant = 2.76 uH at 13.56 MHz.\\nCT1/CT2 are NP0 tuning pads. Leave DNP until a VNA or phone-range sweep." (at 15 22 0) (effects (font (size 1.5 1.5)) (justify left bottom)) (uuid 9f4f4811-18fe-4b38-8038-9cd2c910c108))
+  (text "NXP max on VOUT is 220 nF. Do not add more here." (at 175 40 0) (effects (font (size 1.3 1.3)) (justify left bottom)) (uuid dd155e39-5373-4278-8125-f90aaf9f7dd5))
   (symbol (lib_id "Device:Antenna_Loop") (at 40 80 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid ef3a363a-1ee2-4c97-b218-8922145b58d5)
+    (uuid a13eb5ba-9d75-4c25-b992-0bfca21cab6e)
     (property "Reference" "ANT1" (at 40 72.38 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "PCB loop 2.76uH" (at 40 87.62 0)
@@ -478,15 +478,15 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "~" (at 40 80 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 07dcbfd6-4e85-406b-b4b6-a067435a7863))
-    (pin "2" (uuid aad0414b-71e7-41a5-b4e8-d7c838e8e73e))
+    (pin "1" (uuid 7df1a2df-3dc0-4465-9896-9f05d5f5beed))
+    (pin "2" (uuid 59d5da22-5a63-4267-90dd-024332b12ec7))
     (instances
       (project "nfc-eink"
-        (path "/f9a18703-a337-49ac-b86a-4c7a7cdf298f/2138350d-1a58-467a-a7cb-504eb8cbbeb1"
+        (path "/9ad5f43f-f38f-4382-a467-b5b9de5a6ce4/448ca772-6ca8-4034-8027-7db4b9b45d60"
           (reference "ANT1") (unit 1)))))
   (symbol (lib_id "Device:C") (at 70 60 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp yes)
-    (uuid 0e171b49-d750-45e2-a4ac-88aad86bf40a)
+    (uuid fd2d0d6a-edb5-4a2c-9af1-92d9ae57ac52)
     (property "Reference" "CT1" (at 70 52.38 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "15pF NP0 DNP" (at 70 67.62 0)
@@ -496,15 +496,15 @@
     (property "Datasheet" "~" (at 70 60 0)
       (effects (font (size 1.27 1.27)) hide))
     (property "MPN" "GRM1555C1H150JA01D" (at 70 60 0) (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 2b656076-4128-4a56-a3fd-a9f2ab97fd3e))
-    (pin "2" (uuid c9239a06-f6a1-40c9-91ed-c32bc6d86882))
+    (pin "1" (uuid 7b6d4bee-5aeb-4cbe-befa-8eda336b6665))
+    (pin "2" (uuid 5a1c8ff1-2877-461b-b4e2-3fc320a4d12c))
     (instances
       (project "nfc-eink"
-        (path "/f9a18703-a337-49ac-b86a-4c7a7cdf298f/2138350d-1a58-467a-a7cb-504eb8cbbeb1"
+        (path "/9ad5f43f-f38f-4382-a467-b5b9de5a6ce4/448ca772-6ca8-4034-8027-7db4b9b45d60"
           (reference "CT1") (unit 1)))))
   (symbol (lib_id "Device:C") (at 85 60 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp yes)
-    (uuid 483a4efb-08a4-462a-ab83-beea702d4db2)
+    (uuid 84710113-ddc2-4b63-b517-4a6b1cbc2871)
     (property "Reference" "CT2" (at 85 52.38 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "27pF NP0 DNP" (at 85 67.62 0)
@@ -514,15 +514,15 @@
     (property "Datasheet" "~" (at 85 60 0)
       (effects (font (size 1.27 1.27)) hide))
     (property "MPN" "GRM1555C1H270JA01D" (at 85 60 0) (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid b9a03704-e271-4c4c-9652-96348345f2f5))
-    (pin "2" (uuid 1caadfb1-eeef-4155-9f24-90d3b98bb1af))
+    (pin "1" (uuid 8d939201-3238-4d04-be1d-abe4e60921eb))
+    (pin "2" (uuid adfedc8e-9e7d-4fa8-9458-fa9ee8723dc6))
     (instances
       (project "nfc-eink"
-        (path "/f9a18703-a337-49ac-b86a-4c7a7cdf298f/2138350d-1a58-467a-a7cb-504eb8cbbeb1"
+        (path "/9ad5f43f-f38f-4382-a467-b5b9de5a6ce4/448ca772-6ca8-4034-8027-7db4b9b45d60"
           (reference "CT2") (unit 1)))))
   (symbol (lib_id "nfc-eink:NT3H2211") (at 150 90 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid fe72f87e-9d72-4907-81a5-ad4ef4ff3edb)
+    (uuid f3f3f6c3-c1c6-46d9-a5ea-6d941465f1be)
     (property "Reference" "U1" (at 150 82.38 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "NT3H2211W0FTTJ" (at 150 97.62 0)
@@ -532,21 +532,21 @@
     (property "Datasheet" "https://www.nxp.com/docs/en/data-sheet/NT3H2111_2211.pdf" (at 150 90 0)
       (effects (font (size 1.27 1.27)) hide))
     (property "MPN" "NT3H2211W0FTTJ" (at 150 90 0) (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid daab7eaf-6239-402d-b3bd-ad1c86b898e5))
-    (pin "2" (uuid 8eb84b95-6e57-45fd-a14f-5721d059c68c))
-    (pin "3" (uuid c1d948c8-303e-46f7-baf3-07970ee76a4a))
-    (pin "4" (uuid d7a0fd8d-e512-4158-9521-8d7c0b723fba))
-    (pin "5" (uuid 28ad2c43-fba5-41f2-9aaf-591670892db6))
-    (pin "6" (uuid 1ef19bc9-279d-457a-ab01-12609dbd13be))
-    (pin "7" (uuid 2a1125f9-f5f4-4607-9215-b04757b641b5))
-    (pin "8" (uuid 0b655224-3ca9-41f2-90cd-0008bae290f8))
+    (pin "1" (uuid aa5f415a-cd59-4f5f-a904-c30c33febf76))
+    (pin "2" (uuid 4130d814-027d-4b26-ad7a-017fed8f0c32))
+    (pin "3" (uuid a8fc7d83-2a3e-48e2-b93a-b0fbf0008831))
+    (pin "4" (uuid 324ec547-6b0a-4c4c-aedf-c1924a24d483))
+    (pin "5" (uuid 5aa88b80-629a-4598-981d-eba931ae11a5))
+    (pin "6" (uuid 14f13c25-4cb6-484e-b56d-090d1a1632e5))
+    (pin "7" (uuid 0b2ddb25-08ce-422e-a6a9-2a1b3d4246b8))
+    (pin "8" (uuid 69be1423-7530-4797-aba8-5fe122895ff3))
     (instances
       (project "nfc-eink"
-        (path "/f9a18703-a337-49ac-b86a-4c7a7cdf298f/2138350d-1a58-467a-a7cb-504eb8cbbeb1"
+        (path "/9ad5f43f-f38f-4382-a467-b5b9de5a6ce4/448ca772-6ca8-4034-8027-7db4b9b45d60"
           (reference "U1") (unit 1)))))
   (symbol (lib_id "Device:C") (at 190 55 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 53c7e377-23b3-457e-b12a-38ddd3d163e2)
+    (uuid 211f2e4d-c810-4adb-acbd-521f1fc6a9ad)
     (property "Reference" "C1" (at 190 47.38 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "220nF X7R" (at 190 62.62 0)
@@ -556,15 +556,15 @@
     (property "Datasheet" "~" (at 190 55 0)
       (effects (font (size 1.27 1.27)) hide))
     (property "MPN" "GRM155R71C224KA55D" (at 190 55 0) (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 7cfc7edb-5fe6-4f76-a14d-314123b5bf3e))
-    (pin "2" (uuid b0c1fa98-c87e-44af-92c4-9e05b4b0e947))
+    (pin "1" (uuid 2cfe8cca-7c9c-407f-8a67-9c2b359899f8))
+    (pin "2" (uuid 7842095e-8e9b-4425-ae11-031526247dec))
     (instances
       (project "nfc-eink"
-        (path "/f9a18703-a337-49ac-b86a-4c7a7cdf298f/2138350d-1a58-467a-a7cb-504eb8cbbeb1"
+        (path "/9ad5f43f-f38f-4382-a467-b5b9de5a6ce4/448ca772-6ca8-4034-8027-7db4b9b45d60"
           (reference "C1") (unit 1)))))
   (symbol (lib_id "power:VOUT_EH") (at 220 80 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 87285a5b-4636-4992-82c5-8d8fecbf8c9e)
+    (uuid 311bd97d-bb2a-4d7e-bf7a-0c3cf23da0d2)
     (property "Reference" "#PWR001P" (at 220 72.38 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "VOUT_EH" (at 220 87.62 0)
@@ -573,14 +573,14 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 220 80 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 265e43f8-85bb-42c5-b756-81ddc2efcae7))
+    (pin "1" (uuid 1ff9eb7a-8270-4cc6-a3d9-8a63efa2976d))
     (instances
       (project "nfc-eink"
-        (path "/f9a18703-a337-49ac-b86a-4c7a7cdf298f/2138350d-1a58-467a-a7cb-504eb8cbbeb1"
+        (path "/9ad5f43f-f38f-4382-a467-b5b9de5a6ce4/448ca772-6ca8-4034-8027-7db4b9b45d60"
           (reference "#PWR001P") (unit 1)))))
   (symbol (lib_id "power:+3V3") (at 220 100 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid b738b17f-b4dd-4e37-bac3-6b332faf359e)
+    (uuid ec122c7b-1e1a-4382-a417-9e3929809919)
     (property "Reference" "#PWR002P" (at 220 92.38 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "+3V3" (at 220 107.62 0)
@@ -589,14 +589,14 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 220 100 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid 38e5a3bb-f78e-4859-92d5-76fb7ace8baa))
+    (pin "1" (uuid 39127691-91a7-4ea2-951e-7f52d371b480))
     (instances
       (project "nfc-eink"
-        (path "/f9a18703-a337-49ac-b86a-4c7a7cdf298f/2138350d-1a58-467a-a7cb-504eb8cbbeb1"
+        (path "/9ad5f43f-f38f-4382-a467-b5b9de5a6ce4/448ca772-6ca8-4034-8027-7db4b9b45d60"
           (reference "#PWR002P") (unit 1)))))
   (symbol (lib_id "power:GND") (at 220 120 0) (unit 1)
     (in_bom yes) (on_board yes) (dnp no)
-    (uuid 5a73173a-08f1-4ae4-ae00-42ae0d0d87bb)
+    (uuid 0ca1cffe-f97f-45d5-8e98-c87cf3ee2081)
     (property "Reference" "#PWR003G" (at 220 112.38 0)
       (effects (font (size 1.27 1.27))))
     (property "Value" "GND" (at 220 127.62 0)
@@ -605,12 +605,12 @@
       (effects (font (size 1.27 1.27)) hide))
     (property "Datasheet" "" (at 220 120 0)
       (effects (font (size 1.27 1.27)) hide))
-    (pin "1" (uuid dbfda19f-f12e-4e3f-8f02-d75bb6cee0c3))
+    (pin "1" (uuid b723bf2d-80b7-48dc-ab0b-f30a7fed0cf3))
     (instances
       (project "nfc-eink"
-        (path "/f9a18703-a337-49ac-b86a-4c7a7cdf298f/2138350d-1a58-467a-a7cb-504eb8cbbeb1"
+        (path "/9ad5f43f-f38f-4382-a467-b5b9de5a6ce4/448ca772-6ca8-4034-8027-7db4b9b45d60"
           (reference "#PWR003G") (unit 1)))))
   (sheet_instances
-    (path "/f9a18703-a337-49ac-b86a-4c7a7cdf298f/2138350d-1a58-467a-a7cb-504eb8cbbeb1" (page "2"))
+    (path "/9ad5f43f-f38f-4382-a467-b5b9de5a6ce4/448ca772-6ca8-4034-8027-7db4b9b45d60" (page "2"))
   )
 )

@@ -1,7 +1,7 @@
 # Host tests always. Cross-build the G071 image when arm-none-eabi-gcc exists.
 CC ?= cc
 CFLAGS ?= -std=c11 -Wall -Wextra -Werror -Iinclude
-HOST_BIN = host/test_protocol host/test_image host/pack_pbm
+HOST_BIN = host/test_protocol host/test_image host/test_ntag host/pack_pbm
 
 .PHONY: all test clean mcu
 
@@ -16,9 +16,13 @@ host/test_image: host/test_image.c src/image.c src/protocol.c
 host/pack_pbm: host/pack_pbm.c src/image.c src/protocol.c
 	$(CC) $(CFLAGS) -o $@ host/pack_pbm.c src/image.c src/protocol.c
 
+host/test_ntag: host/test_ntag.c
+	$(CC) $(CFLAGS) -o $@ host/test_ntag.c
+
 test: $(HOST_BIN)
 	./host/test_protocol
 	./host/test_image
+	./host/test_ntag
 
 MCU_CC = arm-none-eabi-gcc
 MCU_CFLAGS = -std=c11 -Wall -Wextra -Werror -Iinclude -mcpu=cortex-m0plus -mthumb \

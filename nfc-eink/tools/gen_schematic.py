@@ -25,6 +25,7 @@ FP = {
     "C0603": "Capacitor_SMD:C_0603_1608Metric",
     "C0805": "Capacitor_SMD:C_0805_2012Metric",
     "CP8": "Capacitor_THT:CP_Radial_D8.0mm_P3.50mm",
+    "CP7343": "Capacitor_Tantalum_SMD:CP_EIA-7343-20_Kemet-V",
     "CPSUP": "Capacitor_THT:CP_Radial_D12.5mm_P5.00mm",
     "L4030": "Inductor_SMD:L_Coilcraft_XxL4030",
     "SOD523": "Diode_SMD:D_SOD-523",
@@ -273,9 +274,9 @@ def build_pwr(L) -> Sheet:
         "C2",
         115,
         55,
-        value="470uF 6.3V",
-        footprint=FP["CP8"],
-        extra={"MPN": "6SEPC470M"},
+        value="470uF 6.3V POSCAP",
+        footprint=FP["CP7343"],
+        extra={"MPN": "6TPE470MAZB"},
     )
     two_pin_nets(s, cstore, "VSTORE", "GND")
     csuper = s.add(
@@ -310,7 +311,7 @@ def build_pwr(L) -> Sheet:
         extra={"MPN": "TPS61023DRLR"},
     )
     s.label_pin(u2, "3", "VSTORE")
-    s.label_pin(u2, "2", "VSTORE")  # EN to VIN: run whenever the tank is up
+    s.label_pin(u2, "2", "VSTORE")  # EN to VIN. TPS61023 rising UVLO is 1.8 V, not 0.5 V.
     s.label_pin(u2, "4", "GND")
     s.label_pin(u2, "5", "BOOST_SW")
     s.label_pin(u2, "6", "+3V3", shape="output")
@@ -392,17 +393,17 @@ def build_pwr(L) -> Sheet:
     s.label_pin(u4, "3", "+3V3")
     s.label_pin(u4, "1", "GND")
     s.label_pin(u4, "2", "NRST", shape="output")
-    cnrst = s.add(
-        L["C"],
-        "C8",
-        240,
-        210,
-        value="100nF",
-        footprint=FP["C0402"],
-        extra={"MPN": "GRM155R71H104KE14D"},
+    rnrst = s.add(L["R"], "R12", 240, 210, value="100k", footprint=FP["R0402"], extra={"MPN": "RC0402FR-07100KL"})
+    two_pin_nets(s, rnrst, "NRST", "GND")
+    s.text(
+        "TCM809 is push-pull. No capacitor on NRST. R12 holds the pin low after VDD falls below 1 V.",
+        175,
+        185,
+        1.3,
     )
-    two_pin_nets(s, cnrst, "NRST", "GND")
-    s.text("2.93 V threshold. Holds PF2-NRST until the boost is in regulation.", 175, 185, 1.3)
+    ren = s.add(L["R"], "R11", 160, 210, value="100k", footprint=FP["R0402"], extra={"MPN": "RC0402FR-07100KL"})
+    two_pin_nets(s, ren, "EPD_PWR_EN", "GND")
+    s.text("R11 keeps TPS22917 OFF while PB0 is analog after reset.", 150, 230, 1.3)
 
     jp = s.add(L["J2"], "JP1", 320, 200, value="DEBUG_3V3", footprint=FP["JMP"])
     s.label_pin(jp, "1", "+3V3")
@@ -454,9 +455,9 @@ def build_mcu(L) -> Sheet:
         cap = s.add(L["C"], ref, x, 40, value=val, footprint=FP["C0402"], extra={"MPN": mpn})
         two_pin_nets(s, cap, "+3V3", "GND")
 
-    rpu1 = s.add(L["R"], "R7", 230, 70, value="2.2k", footprint=FP["R0402"], extra={"MPN": "RC0402FR-072K2L"})
+    rpu1 = s.add(L["R"], "R7", 230, 70, value="4.7k", footprint=FP["R0402"], extra={"MPN": "RC0402FR-074K7L"})
     two_pin_nets(s, rpu1, "I2C_SCL", "+3V3")
-    rpu2 = s.add(L["R"], "R8", 255, 70, value="2.2k", footprint=FP["R0402"], extra={"MPN": "RC0402FR-072K2L"})
+    rpu2 = s.add(L["R"], "R8", 255, 70, value="4.7k", footprint=FP["R0402"], extra={"MPN": "RC0402FR-074K7L"})
     two_pin_nets(s, rpu2, "I2C_SDA", "+3V3")
     rfd = s.add(L["R"], "R9", 280, 70, value="10k", footprint=FP["R0402"], extra={"MPN": "RC0402FR-0710KL"})
     two_pin_nets(s, rfd, "NFC_FD", "+3V3")
@@ -470,7 +471,7 @@ def build_mcu(L) -> Sheet:
     s.label_pin(jswd, "5", "GND")
     s.text("J2 1.27 mm: 3V3, SWDIO, SWCLK, NRST, GND", 15, 190, 1.3)
 
-    juart = s.add(L["J3"], "J3", 120, 220, value="UART", footprint=FP["UART"])
+    juart = s.add(L["J3"], "J3", 120, 220, value="UART DNP", footprint=FP["UART"], dnp=True)
     s.label_pin(juart, "1", "GND")
     s.label_pin(juart, "2", "DBG_TX")
     s.label_pin(juart, "3", "DBG_RX")
