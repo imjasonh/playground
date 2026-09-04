@@ -238,6 +238,73 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertFalse(plain.contains("- one"), "Raw bullet syntax should be replaced")
     }
 
+    /// Table of input Markdown to the exact rendered text (bullet markers use a
+    /// non-breaking space). This is the primary guard on the chat markdown fix:
+    /// spacing, line breaks, bullets, ordered items, headings, inline styles,
+    /// and the soft breaks that split run-on model replies.
+    func testMarkdownRenderingCases() {
+        let bullet = "\u{00A0}"  // trailing non-breaking space after "•"/"1."
+        let cases: [(name: String, input: String, expected: String)] = [
+            ("paragraph spacing",
+             "First paragraph.\n\nSecond paragraph.",
+             "First paragraph.\n\nSecond paragraph."),
+            ("single line breaks kept",
+             "Line one\nLine two",
+             "Line one\nLine two"),
+            ("dash bullets",
+             "- one\n- two",
+             "•\(bullet)one\n•\(bullet)two"),
+            ("star and plus bullets",
+             "* a\n+ b",
+             "•\(bullet)a\n•\(bullet)b"),
+            ("ordered list",
+             "1. first\n2. second",
+             "1.\(bullet)first\n2.\(bullet)second"),
+            ("bullet keeps inline bold text",
+             "- **Kahl** leads",
+             "•\(bullet)Kahl leads"),
+            ("heading then body",
+             "# Heading\nBody text",
+             "Heading\nBody text"),
+            ("second-level heading",
+             "## Sub heading",
+             "Sub heading"),
+            ("inline bold stripped to text",
+             "This is **strong** text",
+             "This is strong text"),
+            ("inline italic stripped to text",
+             "This is *em* text",
+             "This is em text"),
+            ("sentence then bold heading soft break",
+             "Done.**Next:** go",
+             "Done.\n\nNext: go"),
+            ("label soft break after sentence",
+             "fire.Countermeasure: run.",
+             "fire.\n\nCountermeasure: run."),
+            ("faction then Weakness soft break",
+             "Tyranids:Weakness: swarm.",
+             "Tyranids:\nWeakness: swarm."),
+            ("carriage returns normalized",
+             "A\r\nB",
+             "A\nB"),
+            ("collapses extra blank lines",
+             "a\n\n\n\nb",
+             "a\n\nb"),
+            ("real run-on reply is split",
+             "concentrated fire.Countermeasure: Use your speed.Tyranids:Weakness: Swarm.",
+             "concentrated fire.\n\nCountermeasure: Use your speed.\n\nTyranids:\nWeakness: Swarm."),
+        ]
+
+        for testCase in cases {
+            let rendered = String(ArmyListChatMarkdown.attributed(testCase.input).characters)
+            XCTAssertEqual(
+                rendered,
+                testCase.expected,
+                "\(testCase.name): \(testCase.input.debugDescription) -> \(rendered.debugDescription)"
+            )
+        }
+    }
+
     func testBuildPromptFoldsInTheme() {
         let prompt = ArmyListChatPromptComposer.buildPrompt(theme: "night raiders")
         XCTAssertTrue(prompt.contains("applyRosterPlan"))
