@@ -98,6 +98,10 @@ final class PlaygroundUITests: XCTestCase {
             scrollLauncherUntilExists(app.staticTexts["NFC Tags"], in: app),
             "NFC Tags should appear after scrolling the launcher"
         )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["Army List"], in: app),
+            "Army List should appear after scrolling the launcher"
+        )
     }
 
     func testRideMonitorExperimentOpens() {
@@ -284,5 +288,113 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["nfcAvailabilityBanner"].waitForExistence(timeout: 3)
             || app.staticTexts["NFC reader ready"].waitForExistence(timeout: 3)
             || app.staticTexts["NFC needs a physical iPhone. The Simulator cannot scan tags."].waitForExistence(timeout: 3))
+    }
+
+    func testArmyListExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("army-list", title: "Army List", in: app)
+
+        XCTAssertTrue(app.navigationBars["Army List"].waitForExistence(timeout: 8))
+
+        let unavailable = app.descendants(matching: .any)["armyListCatalogUnavailable"]
+        let empty = app.descendants(matching: .any)["armyListEmptyState"]
+        let library = app.descendants(matching: .any)["armyListLibrary"]
+        let marker = NSPredicate { _, _ in
+            unavailable.exists || empty.exists || library.exists
+        }
+        let ready = XCTNSPredicateExpectation(predicate: marker, object: app)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [ready], timeout: 10),
+            .completed,
+            "Expected catalog-unavailable, empty state, or library"
+        )
+    }
+
+    func testArmyListNewListOpensEditorOrShowsError() {
+        let app = launchApp()
+
+        openExperiment("army-list", title: "Army List", in: app)
+        XCTAssertTrue(app.navigationBars["Army List"].waitForExistence(timeout: 8))
+
+        let unavailable = app.descendants(matching: .any)["armyListCatalogUnavailable"]
+        if unavailable.waitForExistence(timeout: 2) {
+            // Catalog missing from the bundle: New list must stay disabled so we
+            // never present a blank sheet again.
+            let newButton = app.buttons["armyListNewButton"]
+            if newButton.exists {
+                XCTAssertFalse(newButton.isEnabled, "New list must stay disabled when the catalog is missing")
+            }
+            XCTAssertTrue(
+                app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "catalog.json")).firstMatch.exists
+                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "missing")).firstMatch.exists
+                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Catalog unavailable")).firstMatch.exists
+            )
+            return
+        }
+
+        let newButton = app.buttons["armyListNewButton"]
+        XCTAssertTrue(newButton.waitForExistence(timeout: 8), "New list control missing")
+        XCTAssertTrue(newButton.isEnabled, "New list should be enabled when the catalog loaded")
+        newButton.tap()
+
+        let nameField = app.descendants(matching: .any)["armyListNameField"]
+        let sheetUnavailable = app.descendants(matching: .any)["armyListNewSheetUnavailable"]
+        let sheetReady = NSPredicate { _, _ in
+            nameField.exists || sheetUnavailable.exists
+        }
+        let sheetExpectation = XCTNSPredicateExpectation(predicate: sheetReady, object: app)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [sheetExpectation], timeout: 8),
+            .completed,
+            "New list sheet was blank — expected the create form or an explicit error"
+        )
+
+        if sheetUnavailable.exists {
+            XCTAssertTrue(app.buttons["armyListNewSheetCancel"].waitForExistence(timeout: 3))
+            return
+        }
+
+        XCTAssertTrue(nameField.waitForExistence(timeout: 3))
+        nameField.tap()
+        // Clear the default title, then type a unique name.
+        if let value = nameField.value as? String, !value.isEmpty {
+            let delete = String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count)
+            nameField.typeText(delete)
+        }
+        let listName = "UI Test \(Int(Date().timeIntervalSince1970))"
+        nameField.typeText(listName)
+
+        let create = app.buttons["armyListCreateButton"]
+        XCTAssertTrue(create.waitForExistence(timeout: 3))
+        XCTAssertTrue(create.isEnabled)
+        create.tap()
+
+        let legalBadge = app.descendants(matching: .any)["armyListLegalBadge"]
+        let validationBanner = app.descendants(matching: .any)["armyListValidationBanner"]
+        let editorUnavailable = app.descendants(matching: .any)["armyListEditorUnavailable"]
+        let editorReady = NSPredicate { _, _ in
+            legalBadge.exists || validationBanner.exists || editorUnavailable.exists
+        }
+        let editorExpectation = XCTNSPredicateExpectation(predicate: editorReady, object: app)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [editorExpectation], timeout: 10),
+            .completed,
+            "Create did not open the editor or an explicit error"
+        )
+
+        if editorUnavailable.exists {
+            return
+        }
+
+        XCTAssertTrue(
+            legalBadge.waitForExistence(timeout: 3) || validationBanner.exists,
+            "Editor should show live validation for the new empty list"
+        )
+        // Brand-new lists are empty → illegal until detachments/units/warlord are set.
+        XCTAssertTrue(
+            app.staticTexts["Illegal"].waitForExistence(timeout: 3)
+                || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Illegal")).firstMatch.exists
+        )
     }
 }

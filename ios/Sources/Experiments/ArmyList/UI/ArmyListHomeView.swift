@@ -7,6 +7,11 @@ struct ArmyListHomeView: View {
     @State private var catalog: ArmyCatalog?
     @State private var loadError: String?
     @State private var showNewList = false
+    @State private var saveError: String?
+    /// Opened after Create so the blank sheet does not dump the user back
+    /// onto an empty library with no feedback.
+    @State private var editorList: ArmyListDocument?
+    @State private var showEditor = false
     /// `nil` means every faction.
     @State private var factionFilter: String?
     /// `nil` means every battle size / points level.
@@ -29,6 +34,10 @@ struct ArmyListHomeView: View {
         factionFilter != nil || battleSizeFilter != nil
     }
 
+    private var canCreateList: Bool {
+        catalog != nil && loadError == nil
+    }
+
     var body: some View {
         Group {
             if let loadError {
@@ -37,6 +46,7 @@ struct ArmyListHomeView: View {
                     title: "Catalog unavailable",
                     message: loadError
                 )
+                .accessibilityIdentifier("armyListCatalogUnavailable")
             } else if lists.isEmpty {
                 unavailablePane(
                     systemImage: "shield.lefthalf.filled",
@@ -45,8 +55,10 @@ struct ArmyListHomeView: View {
                 ) {
                     Button("New list") { showNewList = true }
                         .buttonStyle(.borderedProminent)
+                        .disabled(!canCreateList)
                         .accessibilityIdentifier("armyListNewButton")
                 }
+                .accessibilityIdentifier("armyListEmptyState")
             } else {
                 listContent
             }
@@ -61,20 +73,71 @@ struct ArmyListHomeView: View {
                 }
                 .accessibilityLabel("New list")
                 .accessibilityIdentifier("armyListNewButton")
+                .disabled(!canCreateList)
             }
         }
         .sheet(isPresented: $showNewList) {
-            if let catalog {
-                NavigationStack {
+            // Always put real content in the sheet. An empty `if let` body is a
+            // blank modal with no error — that is what TestFlight looked like
+            // when the catalog failed to load.
+            NavigationStack {
+                if let catalog {
                     ArmyListNewSheet(catalog: catalog) { created in
-                        try? store.save(created)
-                        showNewList = false
-                        reload()
+                        createList(created)
                     }
+                } else {
+                    armyListNewSheetUnavailable
                 }
             }
+            .accessibilityIdentifier("armyListNewSheet")
+        }
+        .navigationDestination(isPresented: $showEditor) {
+            editorDestination
+        }
+        .alert("Could not save list", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: {
+            Text(saveError ?? "Unknown error.")
         }
         .onAppear(perform: bootstrap)
+    }
+
+    @ViewBuilder
+    private var editorDestination: some View {
+        if let editorList, let catalog {
+            ArmyListEditorView(list: editorList, catalog: catalog, store: store) {
+                reload()
+            }
+        } else {
+            unavailablePane(
+                systemImage: "exclamationmark.triangle",
+                title: "Couldn’t open list",
+                message: loadError
+                    ?? "The construction catalog is not loaded, so the editor has nothing to validate against."
+            )
+            .accessibilityIdentifier("armyListEditorUnavailable")
+        }
+    }
+
+    private var armyListNewSheetUnavailable: some View {
+        unavailablePane(
+            systemImage: "exclamationmark.triangle",
+            title: "Can’t create a list",
+            message: loadError
+                ?? "The construction catalog is not loaded. Install a build that includes catalog.json in the app bundle."
+        )
+        .accessibilityIdentifier("armyListNewSheetUnavailable")
+        .navigationTitle("New list")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") { showNewList = false }
+                    .accessibilityIdentifier("armyListNewSheetCancel")
+            }
+        }
     }
 
     @ViewBuilder
@@ -128,6 +191,14 @@ struct ArmyListHomeView: View {
                                 ArmyListEditorView(list: list, catalog: catalog, store: store) {
                                     reload()
                                 }
+                            } else {
+                                unavailablePane(
+                                    systemImage: "exclamationmark.triangle",
+                                    title: "Couldn’t open list",
+                                    message: loadError
+                                        ?? "The construction catalog is not loaded."
+                                )
+                                .accessibilityIdentifier("armyListEditorUnavailable")
                             }
                         } label: {
                             ArmyListRowView(list: list, catalog: catalog)
@@ -138,6 +209,7 @@ struct ArmyListHomeView: View {
                 }
             }
         }
+        .accessibilityIdentifier("armyListLibrary")
     }
 
     private func unavailablePane(
@@ -166,9 +238,23 @@ struct ArmyListHomeView: View {
     private func bootstrap() {
         do {
             catalog = try CatalogLoader.load()
+            loadError = nil
             reload()
         } catch {
+            catalog = nil
             loadError = error.localizedDescription
+        }
+    }
+
+    private func createList(_ created: ArmyListDocument) {
+        do {
+            try store.save(created)
+            showNewList = false
+            reload()
+            editorList = created
+            showEditor = true
+        } catch {
+            saveError = error.localizedDescription
         }
     }
 
@@ -259,6 +345,10 @@ struct ArmyListNewSheet: View {
         }
     }
 
+    private var canSubmit: Bool {
+        !factionID.isEmpty && catalog.battleSize(id: battleSizeID) != nil
+    }
+
     init(catalog: ArmyCatalog, onCreate: @escaping (ArmyListDocument) -> Void) {
         self.catalog = catalog
         self.onCreate = onCreate
@@ -271,6 +361,14 @@ struct ArmyListNewSheet: View {
 
     var body: some View {
         Form {
+            if factionsSorted.isEmpty {
+                Section {
+                    Text("This catalog has no factions, so a list cannot be created.")
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("armyListNewSheetEmptyCatalog")
+                }
+            }
+
             Section("Name") {
                 TextField("List name", text: $name)
                     .accessibilityIdentifier("armyListNameField")
@@ -281,6 +379,7 @@ struct ArmyListNewSheet: View {
                         Text(faction.name).tag(faction.id)
                     }
                 }
+                .disabled(factionsSorted.isEmpty)
                 .accessibilityIdentifier("armyListFactionPicker")
             }
             Section("Battle size") {
@@ -289,6 +388,7 @@ struct ArmyListNewSheet: View {
                         Text("\(size.name) (\(size.pointsLimit))").tag(size.id)
                     }
                 }
+                .disabled(catalog.battleSizes.isEmpty)
                 .accessibilityIdentifier("armyListBattleSizePicker")
             }
         }
@@ -297,6 +397,7 @@ struct ArmyListNewSheet: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
+                    .accessibilityIdentifier("armyListNewSheetCancel")
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Create") {
@@ -309,6 +410,7 @@ struct ArmyListNewSheet: View {
                     )
                     onCreate(list)
                 }
+                .disabled(!canSubmit)
                 .accessibilityIdentifier("armyListCreateButton")
             }
         }
