@@ -591,6 +591,14 @@ bundle exec fastlane test
 - **Comments and documentation**: follow the [Google developer documentation style guide](https://developers.google.com/style). Agents: read [`.cursor/skills/google-developer-style/SKILL.md`](.cursor/skills/google-developer-style/SKILL.md) before writing or editing comments, READMEs, or other docs.
 - **Unslop**: when you write comments, docs, HTML copy, or PR prose, read [`.cursor/skills/unslop/SKILL.md`](.cursor/skills/unslop/SKILL.md) ([unslop](https://github.com/cursor/plugins/blob/HEAD/pstack/skills/unslop/SKILL.md) from cursor/plugins) and strip AI tells. Google style still owns headings, code font, inclusive language, and procedures. First person is fine in README ledes and PR descriptions.
 - **Taglines**: do not invent taglines or slogans. If existing tagline copy should go, delete it and wait for an explicit replacement.
+- **No control helper text**: do not put small secondary / caption / footnote
+  prose under a button, toggle, link, or section action that restates what the
+  control already says (for example, a gray line under **Build starter list**
+  reading “Fills a legal 1000-point list… You can edit after.”). The control’s
+  label is the explanation. This ban covers every UI surface in the repo — iOS,
+  macOS, firmware, browser apps, Worker demos, SSH apps, etc. Still fine:
+  empty states (when there is nothing to show), validation and error messages,
+  status lines that report current values, and text-field placeholders.
 - **Visual design and typography**: when you design or restyle HTML, CSS, or Pages templates, read [`.cursor/skills/web-typography/SKILL.md`](.cursor/skills/web-typography/SKILL.md) (Wondel's [web-typography](https://skills.wondel.ai/skills/web-typography/) skill).
 - **Apple HIG**: when you design, edit, or review iOS / macOS / watchOS UI (`ios/`, `hello-macos/`, `onramp/`), read [`.cursor/skills/apple-hig/SKILL.md`](.cursor/skills/apple-hig/SKILL.md) and consult the linked [Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines/) topics.
 - **Foundation Models context**: when you add or change on-device Foundation Models chat, tools, `@Generable` types, or compaction in `ios/` (Army List, Device Agent, or a new FM experiment), read [`.cursor/skills/foundation-models-context/SKILL.md`](.cursor/skills/foundation-models-context/SKILL.md) and follow [TN3193](https://developer.apple.com/documentation/technotes/tn3193-managing-the-on-device-foundation-model-s-context-window).

@@ -392,11 +392,6 @@ struct ArmyListNewSheet: View {
         !factionID.isEmpty && catalog.battleSize(id: battleSizeID) != nil
     }
 
-    private var pointsLabel: String {
-        guard let size = catalog.battleSize(id: battleSizeID) else { return "" }
-        return "\(size.pointsLimit)"
-    }
-
     init(catalog: ArmyCatalog, onCreate: @escaping (ArmyListDocument) -> Void) {
         self.catalog = catalog
         self.onCreate = onCreate
@@ -446,14 +441,6 @@ struct ArmyListNewSheet: View {
                 }
                 .disabled(!canSubmit)
                 .accessibilityIdentifier("armyListBuildStarterButton")
-
-                Text(
-                    pointsLabel.isEmpty
-                        ? "Fills units and a detachment for this faction. You can edit after."
-                        : "Fills a legal \(pointsLabel)-point list for this faction. You can edit after."
-                )
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
 
             if let seedError {
