@@ -243,8 +243,8 @@ export function castLayers(shadow, color) {
     {
       x: shadow.offsetX * 0.76,
       y: shadow.offsetY * 0.76,
-      blur: 2.4 + shadow.length * 0.006,
-      opacity: clamp(color.a * shadow.strength * 1.4, 0, 0.46),
+      blur: 4 + shadow.length * 0.012,
+      opacity: clamp(color.a * shadow.strength * 1.25, 0, 0.4),
       stretch: 1,
       angle,
     },
