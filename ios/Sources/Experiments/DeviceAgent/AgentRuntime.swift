@@ -156,7 +156,7 @@ final class AgentRuntime: ObservableObject {
             try await runFoundationModels(prompt: trimmed)
             #endif
         } catch {
-            if Self.isExceededContextWindow(error) {
+            if OnDeviceContextManager.isExceededContextWindow(error) {
                 // Last-resort recovery: compact and retry once.
                 compactLanguageSession(reason: "Model context filled; compacted and retrying.")
                 do {
@@ -189,10 +189,20 @@ final class AgentRuntime: ObservableObject {
         }
 
         let session = ensureLanguageSession()
-        budget.addText(prompt)
+        let promptForModel: String
+        if !carryOverNotes.isEmpty {
+            promptForModel = OnDeviceContextManager.promptWithCarryOver(
+                prompt: prompt,
+                carryOver: carryOverNotes
+            )
+            carryOverNotes = ""
+        } else {
+            promptForModel = prompt
+        }
+        budget.addText(promptForModel)
         publishContextUsage()
 
-        let response = try await session.respond(to: prompt)
+        let response = try await session.respond(to: promptForModel)
         let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
         budget.addText(text)
         publishContextUsage()
@@ -209,9 +219,14 @@ final class AgentRuntime: ObservableObject {
             return existing
         }
         let tools = makeFoundationTools()
-        let session = LanguageModelSession(tools: tools, instructions: sessionInstructions)
+        var instructions = baseInstructions
+        if !carryOverNotes.isEmpty {
+            instructions += "\n\n" + carryOverNotes
+            carryOverNotes = ""
+        }
+        let session = LanguageModelSession(tools: tools, instructions: instructions)
         languageSessionBox = session
-        budget.resetBaseline(instructions: sessionInstructions)
+        budget.resetBaseline(instructions: instructions)
         publishContextUsage()
         return session
     }
@@ -285,7 +300,24 @@ final class AgentRuntime: ObservableObject {
             recentUserPrompts: recentUserPrompts
         )
         didCompactThisSession = true
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *),
+           let existing = languageSessionBox as? LanguageModelSession,
+           let rehydrated = OnDeviceContextManager.rehydratedSession(
+               from: existing,
+               tools: makeFoundationTools()
+           )
+        {
+            languageSessionBox = rehydrated
+            budget = AgentContextBudget(windowTokens: budget.windowTokens)
+            budget.resetBaseline(instructions: baseInstructions)
+            budget.addText(carryOverNotes)
+        } else {
+            resetLanguageSession()
+        }
+        #else
         resetLanguageSession()
+        #endif
         appendSystem(reason)
         publishContextUsage()
     }
@@ -490,21 +522,7 @@ final class AgentRuntime: ObservableObject {
     }
 
     nonisolated static func isExceededContextWindow(_ error: Error) -> Bool {
-        let text = error.localizedDescription.lowercased()
-        if text.contains("context window")
-            || text.contains("exceededcontext")
-            || text.contains("contextsizeexceeded")
-        {
-            return true
-        }
-        let ns = error as NSError
-        let domain = ns.domain.lowercased()
-        if domain.contains("foundationmodels") {
-            if text.contains("context") { return true }
-            // Observed on device: GenerationError error -1 with no useful message.
-            if ns.code == -1 { return true }
-        }
-        return false
+        OnDeviceContextManager.isExceededContextWindow(error)
     }
 
     /// JSON dump of the full transcript (including hidden tool results) for debugging.
