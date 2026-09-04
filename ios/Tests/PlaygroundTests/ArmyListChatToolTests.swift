@@ -145,7 +145,6 @@ final class ArmyListChatToolTests: XCTestCase {
         let custodesWorkspace = ArmyListChatWorkspace(list: list, catalog: catalog)
         let output = ArmyListChatToolExecutor.applyRosterPlan(
             workspace: custodesWorkspace,
-            battleSizeID: "incursion",
             detachmentIDsCSV: "shield-host",
             unitsCSV: "blade-champion:1,custodian-guard:5,custodian-wardens:5,allarus-custodians:3",
             listName: "Golden Spears"
@@ -208,7 +207,6 @@ final class ArmyListChatToolTests: XCTestCase {
         let runtime = ArmyListChatRuntime(workspace: workspace)
         _ = ArmyListChatToolExecutor.applyRosterPlan(
             workspace: workspace,
-            battleSizeID: "incursion",
             detachmentIDsCSV: "hearthband",
             unitsCSV: "kahl:1,hearthkyn-warriors:10",
             listName: "Dump test"
