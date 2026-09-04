@@ -42,8 +42,10 @@ targets:
           - "**/ArmyList/Stress/**"
       - path: Shared/T9
       - path: Shared/RideMonitor
-    resources:
-      - path: Sources/Experiments/ArmyList/Catalog/Resources
+      # XcodeGen has no target-level `resources:` key — catalog must be a
+      # sources entry with buildPhase: resources or it never reaches the app
+      # bundle (TestFlight then shows "Catalog unavailable").
+      - path: Sources/Experiments/ArmyList/Catalog/Resources/catalog.json
         buildPhase: resources
     dependencies:
       - target: T9Keyboard

@@ -15,6 +15,20 @@ final class ArmyListCatalogTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(catalog.datasheets.count, 1500)
     }
 
+    /// Hosted unit tests use Playground.app as Bundle.main. If catalog.json is
+    /// not in Copy Bundle Resources, TestFlight shows "Catalog unavailable".
+    func testCatalogLoadsFromAppBundle() throws {
+        do {
+            let catalog = try CatalogLoader.load(bundle: .main)
+            XCTAssertFalse(catalog.factions.isEmpty)
+            XCTAssertEqual(catalog.edition, "11th")
+        } catch CatalogLoader.LoadError.missingResource {
+            XCTFail(
+                "catalog.json missing from app bundle. In project.yml, add it under sources with buildPhase: resources (XcodeGen has no target-level resources key)."
+            )
+        }
+    }
+
     func testFactionScopedIdsDoNotCollide() throws {
         let catalog = try Self.loadCatalogFromRepo()
         let captainIDs = catalog.datasheets
