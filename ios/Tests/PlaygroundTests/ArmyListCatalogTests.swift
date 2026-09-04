@@ -29,18 +29,36 @@ final class ArmyListCatalogTests: XCTestCase {
         }
     }
 
-    /// Regression for the TestFlight "without a catalog snapshot" sheet: the
-    /// presentation item must carry the catalog, not a second @State.
-    func testNewListPresentationCarriesCatalogOnItem() throws {
+    /// Regression for the TestFlight blank Create sheet: presentation cases
+    /// carry the catalog (or error), never a second `@State`.
+    func testHomePresentationCarriesCatalogOnCase() throws {
         let catalog = try CatalogLoader.load(bundle: .main)
-        let create = ArmyListHomeView.NewListPresentation.create(catalog)
-        XCTAssertNotNil(create.catalog)
-        XCTAssertEqual(create.catalog?.version, catalog.version)
-        XCTAssertNil(create.errorMessage)
+        if case .create(let embedded) = ArmyListHomeView.Presentation.create(catalog) {
+            XCTAssertEqual(embedded.version, catalog.version)
+        } else {
+            XCTFail("expected .create")
+        }
 
-        let unavailable = ArmyListHomeView.NewListPresentation.unavailable("missing")
-        XCTAssertNil(unavailable.catalog)
-        XCTAssertEqual(unavailable.errorMessage, "missing")
+        if case .unavailable(let message) = ArmyListHomeView.Presentation.unavailable("missing") {
+            XCTAssertEqual(message, "missing")
+        } else {
+            XCTFail("expected .unavailable")
+        }
+
+        let list = ArmyListDocument(
+            name: "Test",
+            catalogVersion: catalog.version,
+            factionID: catalog.factions[0].id,
+            battleSizeID: catalog.battleSizes[0].id
+        )
+        if case .editor(let embeddedList, let embeddedCatalog) =
+            ArmyListHomeView.Presentation.editor(list: list, catalog: catalog)
+        {
+            XCTAssertEqual(embeddedList.id, list.id)
+            XCTAssertEqual(embeddedCatalog.version, catalog.version)
+        } else {
+            XCTFail("expected .editor")
+        }
     }
 
     func testFactionScopedIdsDoNotCollide() throws {
