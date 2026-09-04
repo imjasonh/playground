@@ -424,6 +424,16 @@ final class PlaygroundUITests: XCTestCase {
             legalBadge.waitForExistence(timeout: 5) || validationBanner.exists,
             "Editor should show live validation for the new empty list"
         )
+
+        let editorName = app.descendants(matching: .any)["armyListEditorNameField"]
+        XCTAssertTrue(
+            editorName.waitForExistence(timeout: 3),
+            "Editor must let you rename the list"
+        )
+        if let value = editorName.value as? String {
+            XCTAssertEqual(value, listName, "Editor name field should show the name from create")
+        }
+
         // Brand-new lists are empty → illegal until detachments/units/warlord are set.
         XCTAssertTrue(
             app.staticTexts["Illegal"].waitForExistence(timeout: 3)
