@@ -510,31 +510,42 @@ struct ArmyListNewSheet: View {
     /// Builds a fresh list from 0 with the on-device model, steered by the
     /// flavor text. Each run invents a new roster instead of the old
     /// deterministic seeder that stamped out the same list every time.
+    ///
+    /// `ArmyListStarterBuilder` hands the model a self-contained prompt (valid
+    /// detachment and unit ids with points) and a builder-mode runtime with one
+    /// tool, then retries — a much more reliable fit for the 4096-token window
+    /// than chaining discovery tools.
     private func buildStarterList() {
         seedError = nil
-        let blank = ArmyListDocument(
-            name: trimmedName() ?? "New list",
-            catalogVersion: catalog.version,
-            factionID: factionID,
-            battleSizeID: battleSizeID
+        let probe = ArmyListChatWorkspace(
+            list: ArmyListDocument(
+                name: "probe",
+                catalogVersion: catalog.version,
+                factionID: factionID,
+                battleSizeID: battleSizeID
+            ),
+            catalog: catalog
         )
-        let workspace = ArmyListChatWorkspace(list: blank, catalog: catalog)
-        let runtime = ArmyListChatRuntime(workspace: workspace)
-        guard runtime.isModelAvailable else {
+        guard ArmyListChatRuntime(workspace: probe, mode: .builder).isModelAvailable else {
             seedError = "Building a list needs Apple Intelligence (iOS 26+). Turn it on, or tap Create for a blank list to edit."
             return
         }
         isBuilding = true
+        let theme = flavor
+        let userName = trimmedName()
         Task {
-            await runtime.send(
-                prompt: ArmyListChatPromptComposer.buildPrompt(theme: flavor),
-                displayText: "Build list"
+            let built = await ArmyListStarterBuilder.build(
+                catalog: catalog,
+                factionID: factionID,
+                battleSizeID: battleSizeID,
+                theme: theme,
+                userName: userName
             )
             isBuilding = false
-            if workspace.list.units.isEmpty {
-                seedError = "The model couldn’t build a list this time. Try again or tweak the theme."
+            if let built {
+                onCreate(built)
             } else {
-                onCreate(workspace.list)
+                seedError = "The model couldn’t build a list this time. Try again or tweak the theme."
             }
         }
     }
