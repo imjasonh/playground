@@ -421,10 +421,10 @@ final class ArmyListChatRuntime: ObservableObject {
         """
         You build exactly one Warhammer 40,000 army list, then stop.
         The user message lists the faction, points limit, DP budget, valid detachment ids, and valid unit ids with points.
-        Call applyRosterPlan exactly once, using only ids from that message: one detachment within the DP budget and units totaling as close to the points limit as possible without exceeding it.
+        Call applyRosterPlan exactly once, using only ids from that message: one detachment within the DP budget and units totaling as close to the points limit as possible without exceeding it (aim to leave at most ~25 pts unused).
         Use pts@models sizes and max copy counts from the unit table; repeat an id for another copy.
         Honor any Theme line when picking units and the list name.
-        Include at least one Character for Warlord.
+        Include at least one Character so the list has a Warlord. Give the list a short themed name.
         Do not call any other tool and do not write prose.
         """
     }
@@ -439,9 +439,9 @@ final class ArmyListChatRuntime: ObservableObject {
         For thematic questions (army name, color scheme, lore vibe, matchup opinions), answer helpfully and label opinions as opinions.
         Prefer short replies. Format with Markdown: put a blank line between paragraphs and between matchup/section blocks, use **bold** for headings, and put each Weakness / Countermeasure on its own line. Never run sections together on one line.
         Always answer the latest user message; do not keep talking about an earlier Theme/name request unless they ask again.
-        For from-scratch 1000/2000 point builds: invent a fresh theme each time (different units/detachment/name), call searchCatalog as needed, then applyRosterPlan once with your full plan. Do not loop addUnit for a full army — that overflows the on-device context window.
+        For from-scratch 1000/2000 point builds: invent a fresh theme each time (different units/detachment/name), call searchCatalog as needed, then applyRosterPlan once with your full plan spending as close to the points limit as possible. Do not loop addUnit for a full army — that overflows the on-device context window.
         When fixing errors: keep the current battle size (never call setBattleSize). Prefer removeUnit / setUnitModels / setDetachments / setWarlord / attachCharacter. Respect datasheet duplicate limits for this battle size — addUnit rejects illegal copies.
-        When filling points: keep battle size and existing units; add a few thematic units that fit remaining points without exceeding duplicate caps. Re-read Status after each mutation.
+        When filling points: keep battle size and existing units; add thematic units until remaining points cannot fit another legal datasheet (aim to leave at most ~25 pts unused). Re-read Status after each mutation.
         Use addUnit only for small targeted edits after a roster already exists.
         Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
         """

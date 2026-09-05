@@ -303,12 +303,15 @@ final class ArmyListChatToolTests: XCTestCase {
         let prompt = ArmyListChatPromptComposer.buildPrompt(theme: "night raiders")
         XCTAssertTrue(prompt.contains("applyRosterPlan"))
         XCTAssertTrue(prompt.contains("Theme to honor: night raiders"))
+        XCTAssertTrue(prompt.contains("as close to the points limit"))
     }
 
     func testFillPointsPromptFoldsInTheme() {
         let prompt = ArmyListChatPromptComposer.fillPointsPrompt(theme: "veteran survivors")
-        XCTAssertTrue(prompt.contains("Fill remaining points"))
+        XCTAssertTrue(prompt.contains("as completely as possible"))
         XCTAssertTrue(prompt.contains("Theme to honor: veteran survivors"))
+        XCTAssertTrue(prompt.contains("as close to the points limit"))
+        XCTAssertFalse(prompt.contains("addUnit a few"))
     }
 
     func testPromptsOmitThemeClauseWhenBlank() {
@@ -327,6 +330,8 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(prompt.contains("1000 pts"), prompt)
         XCTAssertTrue(prompt.contains("applyRosterPlan"), prompt)
         XCTAssertTrue(prompt.contains("Theme: Armored Company Only Leman russes"), prompt)
+        XCTAssertTrue(prompt.contains("as close to 1000 pts"), prompt)
+        XCTAssertTrue(prompt.contains("~25 pts unused"), prompt)
         // A real detachment id and a theme-matched unit id must appear so the
         // model never has to invent one.
         XCTAssertTrue(prompt.contains("astra-militarum--combined-arms"), prompt)

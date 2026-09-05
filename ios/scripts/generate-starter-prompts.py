@@ -155,8 +155,8 @@ def build_prompt(catalog, fid, battle_id, theme):
         "",
         (
             "Call applyRosterPlan exactly once: pick one detachment id above within the DP budget, "
-            f"and units from the ids above. Get as close to {limit} pts as you can — "
-            "keep adding units until no listed unit fits the points that remain. "
+            f"and units from the ids above. Get as close to {limit} pts as you can "
+            "(aim to leave at most ~25 pts unused) — keep adding until no listed unit fits the points that remain. "
             "Use pts@models sizes and max copy counts from the table; repeat an id to field another copy. "
             "Include at least one Character for the Warlord."
         ),

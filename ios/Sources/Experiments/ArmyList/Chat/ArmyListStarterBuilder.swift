@@ -39,7 +39,9 @@ enum ArmyListStarterPrompt {
         var lines: [String] = []
         lines.append("Build one \(factionName) army list for \(battleName) (\(pointsLimit) pts, \(dpBudget) DP budget).")
         if !trimmedTheme.isEmpty {
-            lines.append("Theme: \(trimmedTheme). Favor units that fit it and name the list accordingly.")
+            lines.append(
+                "Theme: \(trimmedTheme). Prefer themed units and name the list accordingly — still spend as close to \(pointsLimit) pts as you can."
+            )
         }
 
         let detachments = catalog.detachments
@@ -73,10 +75,11 @@ enum ArmyListStarterPrompt {
         lines.append("")
         lines.append(
             "Call applyRosterPlan exactly once: pick one detachment id above within the DP budget, "
-            + "and units from the ids above. Get as close to \(pointsLimit) pts as you can — "
-            + "keep adding units until no listed unit fits the points that remain. "
+            + "and units from the ids above. Get as close to \(pointsLimit) pts as you can "
+            + "(aim to leave at most ~25 pts unused) — keep adding until no listed unit fits the points that remain. "
             + "Use pts@models sizes and max copy counts from the table; repeat an id to field another copy. "
             + "Include at least one Character for the Warlord."
+            + (trimmedTheme.isEmpty ? "" : " Prefer themed units from the list above.")
         )
         return lines.joined(separator: "\n")
     }
@@ -228,7 +231,8 @@ enum ArmyListStarterBuilder {
             battleSizeID: battleSizeID,
             theme: theme
         )
-        var fallback: ArmyListDocument?
+        var bestLegal: (list: ArmyListDocument, points: Int)?
+        var bestAny: (list: ArmyListDocument, points: Int)?
         for _ in 0..<max(1, attempts) {
             let blank = ArmyListDocument(
                 name: userName ?? "New list",
@@ -245,16 +249,14 @@ enum ArmyListStarterBuilder {
             if let userName, !userName.isEmpty {
                 built.name = userName
             }
-            if workspace.validation.isLegal {
-                return built
+            let total = workspace.validation.totalPoints
+            if workspace.validation.isLegal, total > (bestLegal?.points ?? -1) {
+                bestLegal = (built, total)
             }
-            if fallback == nil {
-                fallback = built
+            if total > (bestAny?.points ?? -1) {
+                bestAny = (built, total)
             }
         }
-        if let userName, !userName.isEmpty {
-            fallback?.name = userName
-        }
-        return fallback
+        return bestLegal?.list ?? bestAny?.list
     }
 }
