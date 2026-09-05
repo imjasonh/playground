@@ -9,6 +9,8 @@ struct ArmyListChatView: View {
 
     @StateObject private var runtime: ArmyListChatRuntime
     @State private var draft = ""
+    /// A few words of theme the build/fill prompts fold into list generation.
+    @State private var theme = ""
     @FocusState private var promptFocused: Bool
     @State private var exportShare: ExportShareItem?
     @State private var exportError: String?
@@ -35,6 +37,11 @@ struct ArmyListChatView: View {
     private var prompts: [PromptChip] {
         [
             PromptChip(
+                id: "build-list",
+                title: "Build list",
+                text: ArmyListChatPromptComposer.buildPrompt(theme: theme)
+            ),
+            PromptChip(
                 id: "fix-errors",
                 title: "Fix errors",
                 text: """
@@ -48,13 +55,7 @@ struct ArmyListChatView: View {
             PromptChip(
                 id: "fill-points",
                 title: "Fill points",
-                text: """
-                Fill remaining points with a thematic extension of this list. \
-                Keep battle size and existing units. Call getListSummary, note pts remaining, \
-                then addUnit a few fitting datasheets (check copies N/limit in searchCatalog). \
-                Never exceed the points limit or duplicate caps. Never call setBattleSize. \
-                Stop when remaining points are too small for another legal unit, then briefly say what you added.
-                """
+                text: ArmyListChatPromptComposer.fillPointsPrompt(theme: theme)
             ),
             PromptChip(
                 id: "weaknesses",
@@ -74,6 +75,7 @@ struct ArmyListChatView: View {
             if runtime.isModelAvailable {
                 statusBar
                 transcript
+                themeField
                 promptChips
                 composer
             } else {
@@ -328,6 +330,36 @@ struct ArmyListChatView: View {
         }
     }
 
+    /// Optional theme words that Build list and Fill points fold into the
+    /// generation prompt (for example "veteran survivors" or "night raiders").
+    private var themeField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "paintpalette")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("Theme for Build / Fill (optional)", text: $theme)
+                .font(.caption)
+                .textInputAutocapitalization(.words)
+                .submitLabel(.done)
+                .accessibilityLabel("List theme")
+                .accessibilityIdentifier("armyListChatTheme")
+            if !theme.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button {
+                    theme = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear theme")
+                .accessibilityIdentifier("armyListChatThemeClear")
+            }
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+    }
+
     private var promptChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
@@ -411,17 +443,161 @@ struct ArmyListChatView: View {
     }
 }
 
+/// Builds the Build list / Fill points prompts, folding in optional theme words.
+///
+/// Kept separate from the view so prompt composition is unit-testable.
+enum ArmyListChatPromptComposer {
+    /// A trailing clause instructing the model to honor the user's theme, or
+    /// empty when no theme was given.
+    static func themeClause(_ theme: String) -> String {
+        let trimmed = theme.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return " Theme to honor: \(trimmed). Choose units, detachment, and army name that fit this theme."
+    }
+
+    /// From-scratch build. One `applyRosterPlan` call to avoid context blowouts.
+    static func buildPrompt(theme: String) -> String {
+        "Build a fresh, legal army list from scratch for this faction at the current battle size. "
+            + "Call getListSummary first for the faction and points limit, use searchCatalog as needed, "
+            + "then call applyRosterPlan ONCE with a full plan (battle size, detachments, units, name). "
+            + "Do not loop addUnit."
+            + themeClause(theme)
+    }
+
+    /// Fill remaining points on top of the existing roster.
+    static func fillPointsPrompt(theme: String) -> String {
+        "Fill remaining points with a thematic extension of this list. "
+            + "Keep battle size and existing units. Call getListSummary, note pts remaining, "
+            + "then addUnit a few fitting datasheets (check copies N/limit in searchCatalog). "
+            + "Never exceed the points limit or duplicate caps. Never call setBattleSize. "
+            + "Stop when remaining points are too small for another legal unit, then briefly say what you added."
+            + themeClause(theme)
+    }
+}
+
 /// Parses assistant Markdown into an `AttributedString` for chat bubbles.
+///
+/// SwiftUI `Text` ignores the block-level `presentationIntent` that
+/// `AttributedString(markdown:)` produces, so parsing a multi-paragraph reply
+/// with `.full` collapses every paragraph and list item onto one run with no
+/// breaks. We keep block structure ourselves: split the reply into paragraphs
+/// and lines, parse each line's inline markup, and rejoin with explicit
+/// newlines (`\n\n` between paragraphs, `\n` within one).
 enum ArmyListChatMarkdown {
     static func attributed(_ text: String) -> AttributedString {
+        let normalized = insertSoftBreaks(
+            text.replacingOccurrences(of: "\r\n", with: "\n")
+        )
+        let paragraphs = normalized
+            .components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        var result = AttributedString()
+        for (index, paragraph) in paragraphs.enumerated() {
+            if index > 0 {
+                result.append(AttributedString("\n\n"))
+            }
+            result.append(renderParagraph(paragraph))
+        }
+        return result
+    }
+
+    /// When the model forgets newlines between sections, insert soft breaks so
+    /// labels like `Weakness:` / `Countermeasure:` and bold headings still
+    /// read as separate blocks.
+    static func insertSoftBreaks(_ text: String) -> String {
+        var result = text
+        // `.Countermeasure:` / `.Weakness:` → period, blank line, label.
+        for label in ["Weakness", "Countermeasure", "Strength", "Theme"] {
+            result = result.replacingOccurrences(
+                of: #"([.!?])\s*"# + label + #":"#,
+                with: "$1\n\n\(label):",
+                options: .regularExpression
+            )
+        }
+        // `Tyranids:Weakness:` style faction labels jammed before Weakness.
+        result = result.replacingOccurrences(
+            of: #"([A-Za-z][A-Za-z0-9' -]{1,40}):\s*(Weakness:)"#,
+            with: "\n\n$1:\n$2",
+            options: .regularExpression
+        )
+        // Sentence end immediately followed by a bold heading.
+        result = result.replacingOccurrences(
+            of: #"([.!?])\s*(\*\*[^*\n]+\*\*)"#,
+            with: "$1\n\n$2",
+            options: .regularExpression
+        )
+        // Collapse accidental triple blank lines from overlapping rules.
+        while result.contains("\n\n\n") {
+            result = result.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+        }
+        return result
+    }
+
+    private static func renderParagraph(_ paragraph: String) -> AttributedString {
+        let lines = paragraph.components(separatedBy: "\n")
+        var block = AttributedString()
+        for (index, line) in lines.enumerated() {
+            if index > 0 {
+                block.append(AttributedString("\n"))
+            }
+            block.append(renderLine(line))
+        }
+        return block
+    }
+
+    private static func renderLine(_ line: String) -> AttributedString {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+        // Headings: strip the leading #s and render the rest bold.
+        if let heading = headingBody(trimmed) {
+            var attributed = inline(heading)
+            attributed.inlinePresentationIntent = .stronglyEmphasized
+            return attributed
+        }
+
+        // Bullets (-, *, +) and ordered items (1.) get a stable marker so the
+        // list reads as a list without relying on block presentation intent.
+        if let (marker, body) = listItem(trimmed) {
+            var attributed = AttributedString(marker)
+            attributed.append(inline(body))
+            return attributed
+        }
+
+        return inline(line)
+    }
+
+    private static func headingBody(_ line: String) -> String? {
+        guard line.hasPrefix("#") else { return nil }
+        let hashes = line.prefix { $0 == "#" }
+        guard hashes.count <= 6 else { return nil }
+        let rest = line.dropFirst(hashes.count)
+        guard rest.first == " " else { return nil }
+        return rest.trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func listItem(_ line: String) -> (marker: String, body: String)? {
+        for bullet in ["- ", "* ", "+ "] where line.hasPrefix(bullet) {
+            return ("•\u{00A0}", String(line.dropFirst(bullet.count)))
+        }
+        // Ordered item: digits then ". "
+        let digits = line.prefix { $0.isNumber }
+        if !digits.isEmpty {
+            let afterDigits = line.dropFirst(digits.count)
+            if afterDigits.hasPrefix(". ") {
+                return ("\(digits).\u{00A0}", String(afterDigits.dropFirst(2)))
+            }
+        }
+        return nil
+    }
+
+    private static func inline(_ text: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(
-            interpretedSyntax: .full,
+            interpretedSyntax: .inlineOnlyPreservingWhitespace,
             failurePolicy: .returnPartiallyParsedIfPossible
         )
-        if let parsed = try? AttributedString(
-            markdown: text,
-            options: options
-        ) {
+        if let parsed = try? AttributedString(markdown: text, options: options) {
             return parsed
         }
         return AttributedString(text)

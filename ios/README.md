@@ -119,6 +119,11 @@ faction in the bundled construction catalog (30 factions, faction-prefixed
 datasheet/detachment ids). The experiment ships points, Detachment Points,
 unique tags, and Leader join edges as versioned JSON, plus a deterministic
 validator, SwiftUI authoring UI, and share/export as plain text or `.army.json`.
+The editor focuses on units (drag to reorder); name, battle size, and
+detachments live on **Army settings**. **Build starter list** on the New list
+screen fills a roster from 0 with the on-device model, steered by a few words of
+flavor text, so each build is different (needs Apple Intelligence; otherwise
+create a blank list to edit).
 
 Refresh the **bundled** catalog (no remote fetch at runtime):
 
@@ -140,7 +145,8 @@ bash ios/scripts/stress-army-lists.sh --write-fixtures
 
 **List chat** (toolbar bubble on a list) uses on-device Foundation Models when
 Apple Intelligence is available (iOS 26+). Tools mutate the same document the
-editor shows; every tool result re-runs the validator. Chat tracks the 4096-token
+editor shows; every tool result re-runs the validator. Optional theme text
+feeds the Build list / Fill points chips. Chat tracks the 4096-token
 window, compacts proactively (TN3193: rehydrate from transcript first+last when
 possible, plus a rolling summary of older turns and a list snapshot), and retries
 once on overflow. Without the model, chat shows an unavailable pane. Authoring

@@ -444,6 +444,23 @@ final class ArmyListValidatorTests: XCTestCase {
         XCTAssertNotEqual(copy.id, leader.id)
     }
 
+    func testMoveUnitsReordersRows() {
+        let first = ListUnitInstance(datasheetID: "leagues-of-votann--kahl", models: 1)
+        let second = ListUnitInstance(datasheetID: "leagues-of-votann--hearthkyn-warriors", models: 10)
+        let third = ListUnitInstance(datasheetID: "leagues-of-votann--sagitaur", models: 1)
+        var list = ArmyListDocument(
+            name: "Reorder",
+            catalogVersion: "test",
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            units: [first, second, third]
+        )
+        let before = list.updatedAt
+        list.moveUnits(fromOffsets: IndexSet(integer: 0), toOffset: 3)
+        XCTAssertEqual(list.units.map(\.id), [second.id, third.id, first.id])
+        XCTAssertGreaterThanOrEqual(list.updatedAt, before)
+    }
+
     /// ~990 pt Brandfast Incursion list used as the golden legal sample.
     private func sampleLegalIncursion() -> ArmyListDocument {
         let kahl = ListUnitInstance(datasheetID: "leagues-of-votann--kahl", models: 1)

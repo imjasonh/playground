@@ -1,6 +1,8 @@
 import SwiftUI
 
-/// Authoring surface: detachments, units, live validation, share.
+/// Authoring surface: units, warlord, live validation, share.
+/// Army-level settings (name, battle size, detachments, notes) live on
+/// `ArmyListSettingsView`.
 struct ArmyListEditorView: View {
     @State private var list: ArmyListDocument
     let catalog: ArmyCatalog
@@ -41,29 +43,23 @@ struct ArmyListEditorView: View {
                 pointsRow
             }
 
-            Section("Name") {
-                TextField("List name", text: $list.name)
-                    .textInputAutocapitalization(.words)
-                    .accessibilityIdentifier("armyListEditorNameField")
-            }
-
-            Section("Detachments") {
-                ForEach(catalog.detachments.filter { $0.factionID == list.factionID }) { detachment in
-                    Toggle(isOn: bindingForDetachment(detachment.id)) {
+            Section {
+                NavigationLink {
+                    ArmyListSettingsView(list: $list, catalog: catalog)
+                        .onDisappear(perform: persist)
+                } label: {
+                    Label {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(detachment.name)
-                            Text("\(detachment.detachmentPoints) DP · \(detachment.forceDisposition)")
+                            Text("Army settings")
+                            Text(settingsSummary)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            if let tag = detachment.uniqueTag {
-                                Text("Unique: \(tag)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.orange)
-                            }
                         }
+                    } icon: {
+                        Image(systemName: "slider.horizontal.3")
                     }
-                    .accessibilityIdentifier("armyListDetachment-\(detachment.id)")
                 }
+                .accessibilityIdentifier("armyListSettingsLink")
             }
 
             Section("Units") {
@@ -95,6 +91,7 @@ struct ArmyListEditorView: View {
                         .accessibilityIdentifier("armyListDuplicateUnit-\(unit.id.uuidString)")
                     }
                 }
+                .onMove(perform: moveUnits)
 
                 Button {
                     showAddUnit = true
@@ -114,15 +111,16 @@ struct ArmyListEditorView: View {
                 }
                 .accessibilityIdentifier("armyListWarlordPicker")
             }
-
-            Section("Notes") {
-                TextField("Notes", text: $list.notes, axis: .vertical)
-                    .lineLimit(3...6)
-            }
         }
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if !list.units.isEmpty {
+                ToolbarItem(placement: .topBarLeading) {
+                    EditButton()
+                        .accessibilityIdentifier("armyListEditUnitsButton")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 NavigationLink {
                     ArmyListChatView(list: $list, catalog: catalog, store: store)
@@ -177,6 +175,24 @@ struct ArmyListEditorView: View {
         list.units.filter {
             catalog.datasheet(id: $0.datasheetID)?.characterRole != nil
         }
+    }
+
+    private var settingsSummary: String {
+        let battle = catalog.battleSize(id: list.battleSizeID)
+        var parts: [String] = []
+        if let battle {
+            parts.append("\(battle.name) · \(battle.pointsLimit) pts")
+        }
+        let names = list.detachmentIDs.compactMap { catalog.detachment(id: $0)?.name }
+        switch names.count {
+        case 0:
+            parts.append("No detachment")
+        case 1:
+            parts.append(names[0])
+        default:
+            parts.append("\(names.count) detachments")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private var warlordBinding: Binding<UUID?> {
@@ -250,6 +266,111 @@ struct ArmyListEditorView: View {
         }
     }
 
+    private func deleteUnit(id: UUID) {
+        let removedIDs: Set<UUID> = [id]
+        list.units.removeAll { $0.id == id }
+        list.units = list.units.map { unit in
+            var copy = unit
+            if let attached = copy.attachedToUnitID, removedIDs.contains(attached) {
+                copy.attachedToUnitID = nil
+            }
+            return copy
+        }
+        if list.warlordUnitID == id {
+            list.warlordUnitID = nil
+        }
+    }
+
+    private func duplicateUnit(id: UUID) {
+        _ = list.duplicateUnit(id: id)
+    }
+
+    private func moveUnits(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        list.moveUnits(fromOffsets: offsets, toOffset: destination)
+        persist()
+    }
+
+    private func persist() {
+        try? store.save(list)
+        onChange()
+    }
+
+    private func makeSharePayload() -> SharePayload {
+        let result = validation
+        let text = ArmyListTextExporter.text(for: list, catalog: catalog, validation: result)
+        var fileURL: URL?
+        if let data = try? ArmyListJSONExporter.data(for: list, validation: result) {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent(ArmyListJSONExporter.filename(for: list))
+            try? data.write(to: url, options: .atomic)
+            fileURL = url
+        }
+        return SharePayload(text: text, fileURL: fileURL)
+    }
+}
+
+/// Army-level settings: name, battle size (points), detachments, notes. Keeps
+/// the editor screen focused on adding and tuning units.
+struct ArmyListSettingsView: View {
+    @Binding var list: ArmyListDocument
+    let catalog: ArmyCatalog
+
+    private var detachments: [DetachmentDefinition] {
+        catalog.detachments.filter { $0.factionID == list.factionID }
+    }
+
+    var body: some View {
+        Form {
+            Section("Name") {
+                TextField("List name", text: $list.name)
+                    .textInputAutocapitalization(.words)
+                    .accessibilityIdentifier("armyListSettingsNameField")
+            }
+
+            Section("Battle size") {
+                Picker("Battle size", selection: $list.battleSizeID) {
+                    ForEach(catalog.battleSizes) { size in
+                        Text("\(size.name) (\(size.pointsLimit) pts)").tag(size.id)
+                    }
+                }
+                .accessibilityIdentifier("armyListSettingsBattleSizePicker")
+            }
+
+            Section("Detachments") {
+                if detachments.isEmpty {
+                    Text("No detachments for this faction.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(detachments) { detachment in
+                        Toggle(isOn: bindingForDetachment(detachment.id)) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(detachment.name)
+                                Text("\(detachment.detachmentPoints) DP · \(detachment.forceDisposition)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                if let tag = detachment.uniqueTag {
+                                    Text("Unique: \(tag)")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                }
+                            }
+                        }
+                        .accessibilityIdentifier("armyListDetachment-\(detachment.id)")
+                    }
+                }
+            }
+
+            Section("Notes") {
+                TextField("Notes", text: $list.notes, axis: .vertical)
+                    .lineLimit(3...6)
+                    .accessibilityIdentifier("armyListSettingsNotesField")
+            }
+        }
+        .navigationTitle("Army settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("armyListSettingsView")
+    }
+
     private func bindingForDetachment(_ id: String) -> Binding<Bool> {
         Binding(
             get: { list.detachmentIDs.contains(id) },
@@ -272,43 +393,6 @@ struct ArmyListEditorView: View {
                 }
             }
         )
-    }
-
-    private func deleteUnit(id: UUID) {
-        let removedIDs: Set<UUID> = [id]
-        list.units.removeAll { $0.id == id }
-        list.units = list.units.map { unit in
-            var copy = unit
-            if let attached = copy.attachedToUnitID, removedIDs.contains(attached) {
-                copy.attachedToUnitID = nil
-            }
-            return copy
-        }
-        if list.warlordUnitID == id {
-            list.warlordUnitID = nil
-        }
-    }
-
-    private func duplicateUnit(id: UUID) {
-        _ = list.duplicateUnit(id: id)
-    }
-
-    private func persist() {
-        try? store.save(list)
-        onChange()
-    }
-
-    private func makeSharePayload() -> SharePayload {
-        let result = validation
-        let text = ArmyListTextExporter.text(for: list, catalog: catalog, validation: result)
-        var fileURL: URL?
-        if let data = try? ArmyListJSONExporter.data(for: list, validation: result) {
-            let url = FileManager.default.temporaryDirectory
-                .appendingPathComponent(ArmyListJSONExporter.filename(for: list))
-            try? data.write(to: url, options: .atomic)
-            fileURL = url
-        }
-        return SharePayload(text: text, fileURL: fileURL)
     }
 }
 

@@ -63,6 +63,12 @@ struct ArmyListDocument: Identifiable, Codable, Equatable, Sendable {
         touch()
         return copy.id
     }
+
+    /// Reorders unit rows (same indices as SwiftUI `List` / `ForEach.onMove`).
+    mutating func moveUnits(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        units.move(fromOffsets: offsets, toOffset: destination)
+        touch()
+    }
 }
 
 /// One unit entry on a list (a datasheet instance with options and attachments).

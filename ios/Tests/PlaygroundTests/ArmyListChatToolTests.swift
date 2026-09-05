@@ -118,25 +118,6 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(workspace.validation.errors.contains { $0.code == "dp.overBudget" })
     }
 
-    func testLegalSeederBuildsIncursion() throws {
-        let seeded = ArmyListLegalSeeder.seed(
-            catalog: catalog,
-            factionID: "leagues-of-votann",
-            battleSizeID: "incursion",
-            name: "Seeded Votann"
-        )
-        let result = try XCTUnwrap(seeded)
-        XCTAssertEqual(result.list.name, "Seeded Votann")
-        XCTAssertEqual(result.list.battleSizeID, "incursion")
-        XCTAssertFalse(result.list.units.isEmpty)
-        XCTAssertFalse(result.list.detachmentIDs.isEmpty)
-        XCTAssertTrue(
-            result.validation.isLegal,
-            result.validation.errors.map(\.message).joined(separator: "; ")
-        )
-        XCTAssertLessThanOrEqual(result.validation.totalPoints, 1000)
-    }
-
     func testApplyRosterPlanBuildsCustomCustodesList() throws {
         let list = ArmyListDocument(
             name: "Custodes chat",
@@ -159,22 +140,6 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertLessThanOrEqual(custodesWorkspace.validation.totalPoints, 1000)
     }
 
-    func testLegalSeederBuildsCustodesIncursion() throws {
-        let seeded = ArmyListLegalSeeder.seed(
-            catalog: catalog,
-            factionID: "adeptus-custodes",
-            battleSizeID: "incursion",
-            name: "Custodes 1k"
-        )
-        let result = try XCTUnwrap(seeded)
-        XCTAssertTrue(
-            result.validation.isLegal,
-            result.validation.errors.map(\.message).joined(separator: "; ")
-        )
-        XCTAssertLessThanOrEqual(result.validation.totalPoints, 1000)
-        XCTAssertFalse(result.list.units.isEmpty)
-    }
-
     func testContextWindowDetectionTreatsGenerationErrorMinusOne() {
         let err = NSError(
             domain: "FoundationModels.LanguageModelSession.GenerationError",
@@ -195,6 +160,131 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(plain.contains("one"))
         let boldRuns = attributed.runs.filter { $0.inlinePresentationIntent?.contains(.stronglyEmphasized) == true }
         XCTAssertFalse(boldRuns.isEmpty, "Expected bold markdown run")
+    }
+
+    func testMarkdownInsertsSoftBreaksBeforeLabels() {
+        let mashed = "concentrated fire.Countermeasure: Use your speed.Tyranids:Weakness: Swarm."
+        let fixed = ArmyListChatMarkdown.insertSoftBreaks(mashed)
+        XCTAssertTrue(fixed.contains("fire.\n\nCountermeasure:"), fixed)
+        XCTAssertTrue(fixed.contains("Tyranids:\nWeakness:"), fixed)
+
+        let plain = String(ArmyListChatMarkdown.attributed(mashed).characters)
+        XCTAssertTrue(plain.contains("Countermeasure:"))
+        XCTAssertTrue(
+            plain.contains("\n"),
+            "Soft breaks should survive into the attributed string: \(plain.debugDescription)"
+        )
+    }
+
+    func testMarkdownKeepsParagraphSpacing() {
+        let attributed = ArmyListChatMarkdown.attributed("First paragraph.\n\nSecond paragraph.")
+        let plain = String(attributed.characters)
+        XCTAssertTrue(
+            plain.contains("First paragraph.\n\nSecond paragraph."),
+            "Expected a blank line between paragraphs, got: \(plain.debugDescription)"
+        )
+    }
+
+    func testMarkdownKeepsSingleLineBreaks() {
+        // Default AttributedString markdown collapses single newlines into spaces;
+        // the block renderer must keep them so labeled lines stay separate.
+        let attributed = ArmyListChatMarkdown.attributed("Line one\nLine two")
+        let plain = String(attributed.characters)
+        XCTAssertTrue(
+            plain.contains("Line one\nLine two"),
+            "Expected a line break between lines, got: \(plain.debugDescription)"
+        )
+    }
+
+    func testMarkdownRendersBulletMarkers() {
+        let attributed = ArmyListChatMarkdown.attributed("- one\n- two")
+        let plain = String(attributed.characters)
+        XCTAssertTrue(plain.contains("•"), "Expected a bullet marker, got: \(plain.debugDescription)")
+        XCTAssertFalse(plain.contains("- one"), "Raw bullet syntax should be replaced")
+    }
+
+    /// Table of input Markdown to the exact rendered text (bullet markers use a
+    /// non-breaking space). This is the primary guard on the chat markdown fix:
+    /// spacing, line breaks, bullets, ordered items, headings, inline styles,
+    /// and the soft breaks that split run-on model replies.
+    func testMarkdownRenderingCases() {
+        let bullet = "\u{00A0}"  // trailing non-breaking space after "•"/"1."
+        let cases: [(name: String, input: String, expected: String)] = [
+            ("paragraph spacing",
+             "First paragraph.\n\nSecond paragraph.",
+             "First paragraph.\n\nSecond paragraph."),
+            ("single line breaks kept",
+             "Line one\nLine two",
+             "Line one\nLine two"),
+            ("dash bullets",
+             "- one\n- two",
+             "•\(bullet)one\n•\(bullet)two"),
+            ("star and plus bullets",
+             "* a\n+ b",
+             "•\(bullet)a\n•\(bullet)b"),
+            ("ordered list",
+             "1. first\n2. second",
+             "1.\(bullet)first\n2.\(bullet)second"),
+            ("bullet keeps inline bold text",
+             "- **Kahl** leads",
+             "•\(bullet)Kahl leads"),
+            ("heading then body",
+             "# Heading\nBody text",
+             "Heading\nBody text"),
+            ("second-level heading",
+             "## Sub heading",
+             "Sub heading"),
+            ("inline bold stripped to text",
+             "This is **strong** text",
+             "This is strong text"),
+            ("inline italic stripped to text",
+             "This is *em* text",
+             "This is em text"),
+            ("sentence then bold heading soft break",
+             "Done.**Next:** go",
+             "Done.\n\nNext: go"),
+            ("label soft break after sentence",
+             "fire.Countermeasure: run.",
+             "fire.\n\nCountermeasure: run."),
+            ("faction then Weakness soft break",
+             "Tyranids:Weakness: swarm.",
+             "Tyranids:\nWeakness: swarm."),
+            ("carriage returns normalized",
+             "A\r\nB",
+             "A\nB"),
+            ("collapses extra blank lines",
+             "a\n\n\n\nb",
+             "a\n\nb"),
+            ("real run-on reply is split",
+             "concentrated fire.Countermeasure: Use your speed.Tyranids:Weakness: Swarm.",
+             "concentrated fire.\n\nCountermeasure: Use your speed.\n\nTyranids:\nWeakness: Swarm."),
+        ]
+
+        for testCase in cases {
+            let rendered = String(ArmyListChatMarkdown.attributed(testCase.input).characters)
+            XCTAssertEqual(
+                rendered,
+                testCase.expected,
+                "\(testCase.name): \(testCase.input.debugDescription) -> \(rendered.debugDescription)"
+            )
+        }
+    }
+
+    func testBuildPromptFoldsInTheme() {
+        let prompt = ArmyListChatPromptComposer.buildPrompt(theme: "night raiders")
+        XCTAssertTrue(prompt.contains("applyRosterPlan"))
+        XCTAssertTrue(prompt.contains("Theme to honor: night raiders"))
+    }
+
+    func testFillPointsPromptFoldsInTheme() {
+        let prompt = ArmyListChatPromptComposer.fillPointsPrompt(theme: "veteran survivors")
+        XCTAssertTrue(prompt.contains("Fill remaining points"))
+        XCTAssertTrue(prompt.contains("Theme to honor: veteran survivors"))
+    }
+
+    func testPromptsOmitThemeClauseWhenBlank() {
+        XCTAssertFalse(ArmyListChatPromptComposer.buildPrompt(theme: "   ").contains("Theme to honor"))
+        XCTAssertFalse(ArmyListChatPromptComposer.fillPointsPrompt(theme: "").contains("Theme to honor"))
     }
 
     func testNoteToolExchangeTracksContextUsage() {

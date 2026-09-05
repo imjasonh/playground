@@ -425,14 +425,30 @@ final class PlaygroundUITests: XCTestCase {
             "Editor should show live validation for the new empty list"
         )
 
-        let editorName = app.descendants(matching: .any)["armyListEditorNameField"]
+        // Name, battle size, and detachments now live on the Army settings page,
+        // so the editor stays focused on units. Open settings to rename.
+        let settingsLink = app.descendants(matching: .any)["armyListSettingsLink"]
         XCTAssertTrue(
-            editorName.waitForExistence(timeout: 3),
-            "Editor must let you rename the list"
+            settingsLink.waitForExistence(timeout: 3),
+            "Editor must offer an Army settings page"
         )
-        if let value = editorName.value as? String {
-            XCTAssertEqual(value, listName, "Editor name field should show the name from create")
+        settingsLink.tap()
+
+        let settingsName = app.descendants(matching: .any)["armyListSettingsNameField"]
+        XCTAssertTrue(
+            settingsName.waitForExistence(timeout: 3),
+            "Army settings must let you rename the list"
+        )
+        if let value = settingsName.value as? String {
+            XCTAssertEqual(value, listName, "Settings name field should show the name from create")
         }
+        XCTAssertTrue(
+            app.descendants(matching: .any)["armyListSettingsBattleSizePicker"].waitForExistence(timeout: 3),
+            "Army settings must let you change battle size"
+        )
+
+        // Back to the editor.
+        app.navigationBars.buttons.element(boundBy: 0).tap()
 
         // Brand-new lists are empty → illegal until detachments/units/warlord are set.
         XCTAssertTrue(
