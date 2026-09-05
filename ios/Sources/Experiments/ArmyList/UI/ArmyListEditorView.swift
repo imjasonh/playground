@@ -91,6 +91,7 @@ struct ArmyListEditorView: View {
                         .accessibilityIdentifier("armyListDuplicateUnit-\(unit.id.uuidString)")
                     }
                 }
+                .onMove(perform: moveUnits)
 
                 Button {
                     showAddUnit = true
@@ -114,6 +115,12 @@ struct ArmyListEditorView: View {
         .navigationTitle(list.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if !list.units.isEmpty {
+                ToolbarItem(placement: .topBarLeading) {
+                    EditButton()
+                        .accessibilityIdentifier("armyListEditUnitsButton")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 NavigationLink {
                     ArmyListChatView(list: $list, catalog: catalog, store: store)
@@ -276,6 +283,11 @@ struct ArmyListEditorView: View {
 
     private func duplicateUnit(id: UUID) {
         _ = list.duplicateUnit(id: id)
+    }
+
+    private func moveUnits(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        list.moveUnits(fromOffsets: offsets, toOffset: destination)
+        persist()
     }
 
     private func persist() {
