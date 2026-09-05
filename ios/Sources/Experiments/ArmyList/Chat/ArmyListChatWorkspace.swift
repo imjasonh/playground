@@ -90,7 +90,8 @@ enum ArmyListChatToolExecutor {
                     && (q.isEmpty
                         || sheet.name.lowercased().contains(q)
                         || sheet.id.contains(q)
-                        || sheet.keywords.contains { $0.lowercased().contains(q) })
+                        || sheet.keywords.contains { $0.lowercased().contains(q) }
+                        || sheet.themeKeywords.contains { $0.lowercased().contains(q) })
             }
             for sheet in matches.prefix(10) {
                 let pts = sheet.points(models: sheet.minModels, copyIndex: 1).map(String.init) ?? "?"
@@ -173,9 +174,12 @@ enum ArmyListChatToolExecutor {
             return "unitsCSV is empty. Pass datasheet ids/names like shield-captain:1,custodian-guard:5."
         }
 
-        var units: [ListUnitInstance] = []
+        struct ResolvedPick {
+            let sheet: DatasheetDefinition
+            let models: Int
+        }
+        var resolved: [ResolvedPick] = []
         var unknownUnits: [String] = []
-        var addedNotes: [String] = []
         for raw in rawUnits {
             let parts = raw.split(separator: ":", maxSplits: 1).map {
                 $0.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -191,14 +195,50 @@ enum ArmyListChatToolExecutor {
             } else {
                 modelCount = sheet.modelCounts.first ?? sheet.minModels
             }
+            resolved.append(ResolvedPick(sheet: sheet, models: modelCount))
+        }
+        if resolved.isEmpty {
+            return "No valid units in unitsCSV. Unknown: \(unknownUnits.joined(separator: ", ")). Call searchCatalog."
+        }
+
+        // Clamp the plan to legality. The on-device model often over-picks copies
+        // or overshoots the points limit; rather than apply an ILLEGAL roster and
+        // hope a retry does better, drop copies past the datasheet limit and skip
+        // units that would exceed the points cap. Scanning continues so smaller
+        // later units can still fill the gap.
+        var units: [ListUnitInstance] = []
+        var addedNotes: [String] = []
+        var copiesByID: [String: Int] = [:]
+        var runningPoints = 0
+        var droppedOverCap = 0
+        var droppedOverLimit = 0
+        for pick in resolved {
+            let sheet = pick.sheet
+            let cap = sheet.epicHero ? 1 : duplicateLimit(for: sheet, battleSize: size)
+            let already = copiesByID[sheet.id] ?? 0
+            if already >= cap {
+                droppedOverCap += 1
+                continue
+            }
+            let copyIndex = already + 1
+            let fallbackModels = sheet.modelCounts.first ?? sheet.minModels
+            guard let cost = sheet.points(models: pick.models, copyIndex: copyIndex)
+                ?? sheet.points(models: fallbackModels, copyIndex: copyIndex)
+            else { continue }
+            if runningPoints + cost > size.pointsLimit {
+                droppedOverLimit += 1
+                continue
+            }
+            copiesByID[sheet.id] = copyIndex
+            runningPoints += cost
             units.append(
                 ListUnitInstance(
                     datasheetID: sheet.id,
-                    models: modelCount,
+                    models: pick.models,
                     optionIDs: sheet.defaultOptionIDs()
                 )
             )
-            addedNotes.append("\(sheet.name)×\(modelCount)")
+            addedNotes.append("\(sheet.name)×\(pick.models)")
         }
         if units.isEmpty {
             return "No valid units in unitsCSV. Unknown: \(unknownUnits.joined(separator: ", ")). Call searchCatalog."
@@ -232,6 +272,12 @@ enum ArmyListChatToolExecutor {
         workspace.replaceList(list)
 
         var note = "Applied roster (\(addedNotes.joined(separator: ", "))) · \(size.name)."
+        if droppedOverCap > 0 {
+            note += " Dropped \(droppedOverCap) over-cap \(droppedOverCap == 1 ? "copy" : "copies")."
+        }
+        if droppedOverLimit > 0 {
+            note += " Skipped \(droppedOverLimit) \(droppedOverLimit == 1 ? "unit" : "units") over the \(size.pointsLimit) pt limit."
+        }
         if !unknownDetachments.isEmpty {
             note += " Unknown detachments ignored: \(unknownDetachments.joined(separator: ", "))."
         }
@@ -485,9 +531,11 @@ enum ArmyListChatToolExecutor {
     private static func mutationResult(workspace: ArmyListChatWorkspace, note: String) -> String {
         let result = workspace.validation
         let status = result.isLegal ? "LEGAL" : "ILLEGAL"
+        let limit = workspace.catalog.battleSize(id: workspace.list.battleSizeID)?.pointsLimit ?? 0
+        let remaining = max(0, limit - result.totalPoints)
         var lines = [
             note,
-            "Status: \(status) · \(result.totalPoints) pts · DP \(result.detachmentPointsSpent) · units=\(workspace.list.units.count)",
+            "Status: \(status) · \(result.totalPoints) pts · \(remaining) left · DP \(result.detachmentPointsSpent) · units=\(workspace.list.units.count)",
             "errors=\(result.errors.count) warnings=\(result.warnings.count)",
         ]
         for issue in result.issues.prefix(6) {

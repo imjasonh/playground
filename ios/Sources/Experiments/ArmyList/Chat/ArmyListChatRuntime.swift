@@ -422,7 +422,8 @@ final class ArmyListChatRuntime: ObservableObject {
         You build exactly one Warhammer 40,000 army list, then stop.
         The user message lists the faction, points limit, DP budget, valid detachment ids, and valid unit ids with points.
         Call applyRosterPlan exactly once, using only ids from that message: one detachment within the DP budget and units totaling as close to the points limit as possible without exceeding it (aim to leave at most ~25 pts unused).
-        Honor any Theme line in the user message when picking units and the list name.
+        Use pts@models sizes and max copy counts from the unit table; repeat an id for another copy.
+        Honor any Theme line when picking units and the list name.
         Include at least one Character so the list has a Warlord. Give the list a short themed name.
         Do not call any other tool and do not write prose.
         """

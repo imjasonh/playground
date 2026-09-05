@@ -270,6 +270,35 @@ final class ArmyListChatToolTests: XCTestCase {
         }
     }
 
+    func testStarterPromptUsesCuratedThemeKeywords() {
+        // "aspect" appears on no Aeldari datasheet name/id/keyword — only in the
+        // curated themeKeywords — so a match proves the overlay drives ranking.
+        let prompt = ArmyListStarterPrompt.prompt(
+            catalog: catalog,
+            factionID: "aeldari",
+            battleSizeID: "incursion",
+            theme: "aspect warriors"
+        )
+        let unitLines = prompt
+            .components(separatedBy: "\n")
+            .drop { !$0.hasPrefix("Units (") }
+            .dropFirst()
+            .prefix { $0.contains("@") && $0.contains(" | ") }
+        let aspectIDs = [
+            "aeldari--howling-banshees",
+            "aeldari--striking-scorpions",
+            "aeldari--fire-dragons",
+            "aeldari--dark-reapers",
+            "aeldari--swooping-hawks",
+            "aeldari--dire-avengers",
+        ]
+        let surfaced = aspectIDs.filter { id in unitLines.contains { $0.contains(id) } }
+        XCTAssertGreaterThanOrEqual(
+            surfaced.count, 3,
+            "Curated aspect units should float into the palette: surfaced \(surfaced)"
+        )
+    }
+
     func testBuildPromptFoldsInTheme() {
         let prompt = ArmyListChatPromptComposer.buildPrompt(theme: "night raiders")
         XCTAssertTrue(prompt.contains("applyRosterPlan"))
@@ -307,6 +336,92 @@ final class ArmyListChatToolTests: XCTestCase {
         // model never has to invent one.
         XCTAssertTrue(prompt.contains("astra-militarum--combined-arms"), prompt)
         XCTAssertTrue(prompt.contains("astra-militarum--leman-russ-battle-tank"), prompt)
+        XCTAssertTrue(prompt.contains("| max)"), prompt)
+    }
+
+    func testStarterPromptShowsModelOptionsAndCopyMax() {
+        let prompt = ArmyListStarterPrompt.prompt(
+            catalog: catalog,
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            theme: "hearthkyn"
+        )
+        XCTAssertTrue(
+            prompt.contains("leagues-of-votann--hearthkyn-warriors"),
+            prompt
+        )
+        // Multiple squad sizes and a per-line copy cap help small models pack points.
+        let warriorsLine = prompt
+            .components(separatedBy: "\n")
+            .first { $0.contains("hearthkyn-warriors") }
+        XCTAssertNotNil(warriorsLine)
+        XCTAssertTrue(warriorsLine?.contains("@") == true, warriorsLine ?? "")
+        // The last column is the copy cap: a positive integer (battleline cap
+        // at Incursion is 4). This is what lets a small model respect limits.
+        let maxToken = warriorsLine?
+            .components(separatedBy: " | ")
+            .last?
+            .trimmingCharacters(in: .whitespaces)
+        XCTAssertNotNil(maxToken)
+        XCTAssertNotNil(maxToken.flatMap { Int($0) }, "Expected trailing max copies int, got: \(maxToken ?? "nil")")
+        XCTAssertGreaterThanOrEqual(maxToken.flatMap { Int($0) } ?? 0, 1)
+    }
+
+    func testBuildFeasibilityRejectsTitanLegionsAtIncursion() {
+        let issue = ArmyListStarterPrompt.buildFeasibilityIssue(
+            catalog: catalog,
+            factionID: "titan-legions",
+            battleSizeID: "incursion"
+        )
+        XCTAssertNotNil(issue)
+        XCTAssertTrue(issue?.contains("detachments") == true || issue?.contains("1100") == true, issue ?? "")
+    }
+
+    func testApplyRosterPlanClampsOverCapAndOverLimitToLegal() {
+        _ = ArmyListChatToolExecutor.clearUnits(workspace: workspace)
+        // A deliberately illegal plan: Hekaton listed 4× (non-battleline cap is
+        // 2 at Incursion) and enough points to blow past 1000. A weak model
+        // produces exactly this; the tool must clamp it to a legal roster.
+        let output = ArmyListChatToolExecutor.applyRosterPlan(
+            workspace: workspace,
+            battleSizeID: "incursion",
+            detachmentIDsCSV: "brandfast-oathband",
+            unitsCSV: [
+                "leagues-of-votann--kahl:1",
+                "leagues-of-votann--hekaton-land-fortress:1",
+                "leagues-of-votann--hekaton-land-fortress:1",
+                "leagues-of-votann--hekaton-land-fortress:1",
+                "leagues-of-votann--hekaton-land-fortress:1",
+                "leagues-of-votann--einhyr-hearthguard:5",
+                "leagues-of-votann--einhyr-hearthguard:5",
+                "leagues-of-votann--cthonian-earthshakers:2",
+                "leagues-of-votann--brokhyr-thunderkyn:3",
+                "leagues-of-votann--hernkyn-yaegirs:10",
+            ].joined(separator: ","),
+            listName: "Overstuffed Oathband"
+        )
+        XCTAssertTrue(output.contains("LEGAL"), output)
+        XCTAssertFalse(output.contains("ILLEGAL"), output)
+        XCTAssertTrue(output.contains("over-cap"), output)
+        XCTAssertTrue(output.contains("over the 1000 pt limit"), output)
+        XCTAssertLessThanOrEqual(workspace.validation.totalPoints, 1000)
+        XCTAssertTrue(workspace.validation.isLegal, "Clamped roster must validate legal")
+        // Hekaton must be clamped to its Incursion cap of 2.
+        XCTAssertEqual(
+            workspace.list.units.filter { $0.datasheetID == "leagues-of-votann--hekaton-land-fortress" }.count,
+            2
+        )
+    }
+
+    func testApplyRosterPlanStatusIncludesRemainingPoints() {
+        let output = ArmyListChatToolExecutor.applyRosterPlan(
+            workspace: workspace,
+            battleSizeID: "incursion",
+            detachmentIDsCSV: "leagues-of-votann--brandfast-oathband",
+            unitsCSV: "leagues-of-votann--kahl:1,leagues-of-votann--hearthkyn-warriors:10",
+            listName: "Remaining pts test"
+        )
+        XCTAssertTrue(output.contains(" left ·"), output)
     }
 
     func testStarterPromptFloatsThemeMatchesToTop() {
@@ -320,7 +435,7 @@ final class ArmyListChatToolTests: XCTestCase {
             .components(separatedBy: "\n")
             .drop { !$0.hasPrefix("Units (") }
             .dropFirst()
-            .prefix { $0.contains("pts@") }
+            .prefix { $0.contains("@") && $0.contains(" | ") }
         let first = try? XCTUnwrap(unitLines.first)
         XCTAssertTrue((first ?? "").contains("leman-russ"), "Expected a theme match first, got: \(first ?? "none")")
     }
@@ -335,7 +450,7 @@ final class ArmyListChatToolTests: XCTestCase {
         )
         let unitLines = prompt
             .components(separatedBy: "\n")
-            .filter { $0.contains("pts@") }
+            .filter { $0.contains(" | ") && $0.contains("@") && !$0.hasPrefix("Units (") }
         XCTAssertLessThanOrEqual(unitLines.count, 12, "Candidate list must respect maxUnits")
         XCTAssertTrue(unitLines.contains { $0.contains("Character") }, "Palette must include a Character for the Warlord")
     }

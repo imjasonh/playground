@@ -45,9 +45,12 @@ enum ArmyListStarterPrompt {
         }
 
         let detachments = catalog.detachments
-            .filter { $0.factionID == factionID }
+            .filter { $0.factionID == factionID && $0.detachmentPoints <= dpBudget }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-        if !detachments.isEmpty {
+        if detachments.isEmpty {
+            lines.append("")
+            lines.append("No detachments fit the \(dpBudget) DP budget for this battle size.")
+        } else {
             lines.append("")
             lines.append("Detachments (id | name | DP):")
             for detachment in detachments.prefix(12) {
@@ -56,27 +59,66 @@ enum ArmyListStarterPrompt {
         }
 
         lines.append("")
-        lines.append("Units (id | name | points | role):")
-        for candidate in candidateUnits(catalog: catalog, factionID: factionID, theme: trimmedTheme, limit: maxUnits) {
-            lines.append(candidate.line)
+        lines.append("Units (id | name | pts@models | role | max):")
+        if let battle {
+            for candidate in candidateUnits(
+                catalog: catalog,
+                factionID: factionID,
+                battleSize: battle,
+                theme: trimmedTheme,
+                limit: maxUnits
+            ) {
+                lines.append(candidate.line)
+            }
         }
 
         lines.append("")
         lines.append(
             "Call applyRosterPlan exactly once: pick one detachment id above within the DP budget, "
-            + "and units from the ids above totaling as close to \(pointsLimit) pts as you can without going over "
-            + "(aim to leave at most ~25 pts unused). "
-            + "Repeat a unit id (e.g. leman-russ-battle-tank:1,leman-russ-battle-tank:1) to field more than one. "
+            + "and units from the ids above. Get as close to \(pointsLimit) pts as you can "
+            + "(aim to leave at most ~25 pts unused) — keep adding until no listed unit fits the points that remain. "
+            + "Use pts@models sizes and max copy counts from the table; repeat an id to field another copy. "
             + "Include at least one Character for the Warlord."
             + (trimmedTheme.isEmpty ? "" : " Prefer themed units from the list above.")
         )
         return lines.joined(separator: "\n")
     }
 
+    /// When non-nil, starter build cannot succeed at this battle size (no model call).
+    static func buildFeasibilityIssue(
+        catalog: ArmyCatalog,
+        factionID: String,
+        battleSizeID: String
+    ) -> String? {
+        guard let battle = catalog.battleSize(id: battleSizeID) else { return nil }
+        let detachments = catalog.detachments.filter {
+            $0.factionID == factionID && $0.detachmentPoints <= battle.detachmentPointsBudget
+        }
+        if detachments.isEmpty {
+            return "No detachments fit the \(battle.detachmentPointsBudget) DP budget for \(battle.name). Choose a larger battle size or create a blank list."
+        }
+        var cheapest: Int?
+        var hasCharacter = false
+        for sheet in catalog.datasheets where sheet.factionID == factionID && !sheet.legends {
+            if sheet.characterRole != nil { hasCharacter = true }
+            for models in sheet.modelCounts {
+                if let pts = sheet.points(models: models, copyIndex: 1) {
+                    cheapest = min(cheapest ?? pts, pts)
+                }
+            }
+        }
+        if let cheapest, cheapest > battle.pointsLimit {
+            return "The cheapest unit is \(cheapest) pts; \(battle.name) allows \(battle.pointsLimit). Choose a larger battle size or create a blank list."
+        }
+        if !hasCharacter {
+            return "This faction has no Character datasheets, so a Warlord cannot be set. Create a blank list to edit manually."
+        }
+        return nil
+    }
+
     private struct Candidate {
         let sheet: DatasheetDefinition
-        let models: Int
-        let points: Int
+        let battleSize: BattleSizeDefinition
         let score: Int
 
         var line: String {
@@ -85,35 +127,63 @@ enum ArmyListStarterPrompt {
             if sheet.battleline { flags.append("Battleline") }
             if sheet.dedicatedTransport { flags.append("Transport") }
             let role = flags.isEmpty ? "-" : flags.joined(separator: ",")
-            return "\(sheet.id) | \(sheet.name) | \(points)pts@\(models) | \(role)"
+            let options = Self.pointsOptions(sheet: sheet)
+            let maxCopies = Self.duplicateLimit(for: sheet, battleSize: battleSize)
+            return "\(sheet.id) | \(sheet.name) | \(options) | \(role) | \(maxCopies)"
+        }
+
+        private static func pointsOptions(sheet: DatasheetDefinition) -> String {
+            sheet.modelCounts.compactMap { models in
+                guard let pts = sheet.points(models: models, copyIndex: 1) else { return nil }
+                return "\(pts)@\(models)"
+            }.joined(separator: ",")
+        }
+
+        private static func duplicateLimit(
+            for sheet: DatasheetDefinition,
+            battleSize: BattleSizeDefinition
+        ) -> Int {
+            let sizeLimit: Int
+            if sheet.battleline {
+                sizeLimit = battleSize.battlelineDuplicateLimit
+            } else if sheet.dedicatedTransport {
+                sizeLimit = battleSize.dedicatedTransportDuplicateLimit
+            } else {
+                sizeLimit = battleSize.datasheetDuplicateLimit
+            }
+            if let override = sheet.maxCopiesOverride {
+                return min(override, sizeLimit)
+            }
+            return sizeLimit
         }
     }
 
-    /// Theme-ranked, points-priced shortlist. Theme matches float to the top;
-    /// characters and battleline get a small nudge so every palette can build a
-    /// legal list even when the theme is narrow. Guarantees at least one
-    /// Character survives the cut.
+    /// Theme-ranked shortlist. Theme matches float to the top; characters and
+    /// battleline get a small nudge. Guarantees at least one Character survives
+    /// the cut.
     private static func candidateUnits(
         catalog: ArmyCatalog,
         factionID: String,
+        battleSize: BattleSizeDefinition,
         theme: String,
         limit: Int
     ) -> [Candidate] {
         let tokens = themeTokens(theme)
         let eligible: [Candidate] = catalog.datasheets.compactMap { sheet in
             guard sheet.factionID == factionID, !sheet.legends else { return nil }
-            let models = sheet.modelCounts.first ?? sheet.minModels
-            guard let points = sheet.points(models: models, copyIndex: 1) else { return nil }
+            guard sheet.points(models: sheet.modelCounts.first ?? sheet.minModels, copyIndex: 1) != nil else {
+                return nil
+            }
             var score = 0
             if !tokens.isEmpty {
-                let haystack = ([sheet.name, sheet.id] + sheet.keywords)
+                let haystack = ([sheet.name, sheet.id] + sheet.keywords + sheet.themeKeywords)
                     .joined(separator: " ")
                     .lowercased()
                 score += tokens.filter { haystack.contains($0) }.count * 100
             }
             if sheet.characterRole != nil { score += 10 }
             if sheet.battleline { score += 5 }
-            return Candidate(sheet: sheet, models: models, points: points, score: score)
+            return Candidate(sheet: sheet, battleSize: battleSize, score: score)
         }
 
         let ranked = eligible.sorted { lhs, rhs in

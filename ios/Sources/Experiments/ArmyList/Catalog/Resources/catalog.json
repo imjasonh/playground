@@ -14812,6 +14812,9 @@
         "Faction: Adeptus Mechanicus",
         "Vehicle"
       ],
+      "themeKeywords": [
+        "skitarii"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -15065,6 +15068,9 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "skitarii"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -15107,6 +15113,9 @@
         "Faction: Adeptus Mechanicus",
         "Fly",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "skitarii"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -15216,6 +15225,10 @@
         "Faction: Adeptus Mechanicus",
         "Mounted"
       ],
+      "themeKeywords": [
+        "cavalry",
+        "skitarii"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -15249,6 +15262,10 @@
       "keywords": [
         "Faction: Adeptus Mechanicus",
         "Mounted"
+      ],
+      "themeKeywords": [
+        "cavalry",
+        "skitarii"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -15323,6 +15340,9 @@
         "Faction: Adeptus Mechanicus",
         "Infantry"
       ],
+      "themeKeywords": [
+        "skitarii"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -15364,6 +15384,9 @@
       "keywords": [
         "Faction: Adeptus Mechanicus",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "skitarii"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -15644,6 +15667,10 @@
         "Faction: Adeptus Mechanicus",
         "Vehicle"
       ],
+      "themeKeywords": [
+        "cavalry",
+        "skitarii"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -15705,6 +15732,10 @@
         "Faction: Adeptus Mechanicus",
         "Vehicle"
       ],
+      "themeKeywords": [
+        "cavalry",
+        "skitarii"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -15761,6 +15792,9 @@
         "Faction: Adeptus Mechanicus",
         "Character",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "skitarii"
       ],
       "characterRole": "character",
       "epicHero": false,
@@ -16188,6 +16222,10 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "aspect",
+        "phoenix lord"
+      ],
       "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
@@ -16307,6 +16345,10 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "fast",
+        "swift"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -16381,6 +16423,11 @@
         "Grenades",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "aspect",
+        "phoenix lord",
+        "swift"
       ],
       "characterRole": "leader",
       "epicHero": true,
@@ -16944,6 +16991,10 @@
         "Faction: Asuryani",
         "Infantry"
       ],
+      "themeKeywords": [
+        "aspect",
+        "aspect warrior"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -17063,6 +17114,10 @@
         "Faction: Asuryani",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "aspect",
+        "aspect warrior"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -17381,6 +17436,11 @@
         "Mounted",
         "Psyker"
       ],
+      "themeKeywords": [
+        "fast",
+        "jetbike",
+        "swift"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -17442,6 +17502,10 @@
         "Faction: Asuryani",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "aspect",
+        "aspect warrior"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -17605,6 +17669,10 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "aspect",
+        "phoenix lord"
+      ],
       "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
@@ -17676,6 +17744,9 @@
         "Fly",
         "Psyker",
         "Vehicle"
+      ],
+      "themeKeywords": [
+        "wraith construct"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -17755,6 +17826,10 @@
         "Faction: Aeldari",
         "Faction: Asuryani",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "aspect",
+        "aspect warrior"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -17893,6 +17968,10 @@
         "Faction: Asuryani",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "aspect",
+        "phoenix lord"
       ],
       "characterRole": "leader",
       "epicHero": true,
@@ -18073,6 +18152,10 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "aspect",
+        "phoenix lord"
+      ],
       "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
@@ -18141,6 +18224,10 @@
         "Faction: Asuryani",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "aspect",
+        "phoenix lord"
       ],
       "characterRole": "leader",
       "epicHero": true,
@@ -18659,6 +18746,13 @@
         "Fly",
         "Mounted"
       ],
+      "themeKeywords": [
+        "aspect",
+        "aspect warrior",
+        "fast",
+        "jetbike",
+        "swift"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -18739,6 +18833,12 @@
         "Fly",
         "Mounted"
       ],
+      "themeKeywords": [
+        "fast",
+        "jetbike",
+        "ranger",
+        "swift"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -18805,6 +18905,11 @@
         "Faction: Harlequins",
         "Fly",
         "Mounted"
+      ],
+      "themeKeywords": [
+        "fast",
+        "jetbike",
+        "swift"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -18877,6 +18982,10 @@
         "Faction: Asuryani",
         "Infantry",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "wraith",
+        "wraith construct"
       ],
       "characterRole": "character",
       "epicHero": false,
@@ -19136,6 +19245,10 @@
         "Faction: Asuryani",
         "Infantry"
       ],
+      "themeKeywords": [
+        "aspect",
+        "aspect warrior"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -19197,6 +19310,12 @@
         "Fly",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "aspect",
+        "aspect warrior",
+        "fast",
+        "swift"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -19679,6 +19798,10 @@
       "keywords": [
         "Faction: Aeldari"
       ],
+      "themeKeywords": [
+        "fast",
+        "swift"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -19842,6 +19965,11 @@
         "Mounted",
         "Psyker"
       ],
+      "themeKeywords": [
+        "fast",
+        "jetbike",
+        "swift"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -19908,6 +20036,12 @@
         "Faction: Asuryani",
         "Fly",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "aspect",
+        "aspect warrior",
+        "fast",
+        "swift"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -20103,6 +20237,12 @@
         "Fly",
         "Mounted"
       ],
+      "themeKeywords": [
+        "fast",
+        "guardian",
+        "jetbike",
+        "swift"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -20138,6 +20278,9 @@
         "Faction: Asuryani",
         "Infantry"
       ],
+      "themeKeywords": [
+        "wraith construct"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -20171,6 +20314,9 @@
         "Faction: Asuryani",
         "Infantry"
       ],
+      "themeKeywords": [
+        "wraith construct"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -20202,6 +20348,9 @@
       "keywords": [
         "Faction: Aeldari",
         "Faction: Asuryani"
+      ],
+      "themeKeywords": [
+        "wraith construct"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -20257,6 +20406,9 @@
         "Faction: Aeldari",
         "Faction: Asuryani"
       ],
+      "themeKeywords": [
+        "wraith construct"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -20310,6 +20462,9 @@
       "keywords": [
         "Faction: Aeldari",
         "Faction: Asuryani"
+      ],
+      "themeKeywords": [
+        "wraith construct"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -33348,6 +33503,9 @@
         "Faction: Adeptus Astartes",
         "Infantry"
       ],
+      "themeKeywords": [
+        "gravis"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -35357,6 +35515,9 @@
         "Faction: Adeptus Astartes",
         "Vehicle"
       ],
+      "themeKeywords": [
+        "assault"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -35443,6 +35604,9 @@
         "Faction: Adeptus Astartes",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "assault"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -36079,6 +36243,9 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "phobos"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -36156,6 +36323,9 @@
         "Faction: Adeptus Astartes",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "gravis"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -36630,6 +36800,9 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "gravis"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -36867,6 +37040,9 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "phobos"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -36946,6 +37122,9 @@
         "Faction: Adeptus Astartes",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "phobos"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -38391,6 +38570,9 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "phobos"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -38666,6 +38848,9 @@
         "Fly",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "jump pack"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -39423,6 +39608,9 @@
         "Fly",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "phobos"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -40476,6 +40664,9 @@
         "Faction: Legiones Daemonica",
         "Mounted"
       ],
+      "themeKeywords": [
+        "khorne"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -40520,6 +40711,9 @@
         "Faction: Legiones Daemonica",
         "Infantry"
       ],
+      "themeKeywords": [
+        "khorne"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -40554,6 +40748,9 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "khorne"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -40605,6 +40802,9 @@
         "Character",
         "Faction: Legiones Daemonica",
         "Fly"
+      ],
+      "themeKeywords": [
+        "khorne"
       ],
       "characterRole": "character",
       "epicHero": false,
@@ -40662,6 +40862,9 @@
         "Faction: Legiones Daemonica",
         "Infantry"
       ],
+      "themeKeywords": [
+        "tzeentch"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -40695,6 +40898,9 @@
         "Faction: Legiones Daemonica",
         "Fly",
         "Mounted"
+      ],
+      "themeKeywords": [
+        "tzeentch"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -40757,6 +40963,9 @@
         "Leader",
         "Psyker"
       ],
+      "themeKeywords": [
+        "tzeentch"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -40815,6 +41024,9 @@
         "Infantry",
         "Leader",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "slaanesh"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -41044,6 +41256,9 @@
         "Faction: Legiones Daemonica",
         "Infantry"
       ],
+      "themeKeywords": [
+        "slaanesh"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -41079,6 +41294,9 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "nurgle"
       ],
       "characterRole": "leader",
       "epicHero": true,
@@ -41117,6 +41335,9 @@
         "Fly",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "tzeentch"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -41177,6 +41398,9 @@
         "Mounted",
         "Psyker"
       ],
+      "themeKeywords": [
+        "tzeentch"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -41236,6 +41460,9 @@
         "Faction: Chaos Daemons",
         "Faction: Legiones Daemonica"
       ],
+      "themeKeywords": [
+        "nurgle"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -41267,6 +41494,9 @@
       "keywords": [
         "Faction: Chaos Daemons",
         "Faction: Legiones Daemonica"
+      ],
+      "themeKeywords": [
+        "slaanesh"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -41312,6 +41542,9 @@
         "Fly",
         "Infantry"
       ],
+      "themeKeywords": [
+        "tzeentch"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -41345,6 +41578,9 @@
       "keywords": [
         "Faction: Chaos Daemons",
         "Faction: Legiones Daemonica"
+      ],
+      "themeKeywords": [
+        "khorne"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -41384,6 +41620,9 @@
         "Leader",
         "Mounted",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "tzeentch"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -41505,6 +41744,9 @@
         "Character",
         "Faction: Legiones Daemonica",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "nurgle"
       ],
       "characterRole": "character",
       "epicHero": false,
@@ -41634,6 +41876,9 @@
         "Leader",
         "Mounted"
       ],
+      "themeKeywords": [
+        "nurgle"
+      ],
       "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
@@ -41672,6 +41917,9 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "slaanesh"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -41731,6 +41979,9 @@
         "Fly",
         "Psyker"
       ],
+      "themeKeywords": [
+        "tzeentch"
+      ],
       "characterRole": "character",
       "epicHero": true,
       "battleline": false,
@@ -41765,6 +42016,9 @@
         "Epic Hero",
         "Faction: Legiones Daemonica",
         "Leader"
+      ],
+      "themeKeywords": [
+        "khorne"
       ],
       "characterRole": "leader",
       "epicHero": true,
@@ -41801,6 +42055,9 @@
         "Character",
         "Faction: Legiones Daemonica",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "slaanesh"
       ],
       "characterRole": "character",
       "epicHero": false,
@@ -41869,6 +42126,9 @@
         "Fly",
         "Psyker"
       ],
+      "themeKeywords": [
+        "tzeentch"
+      ],
       "characterRole": "character",
       "epicHero": false,
       "battleline": false,
@@ -41929,6 +42189,9 @@
         "Battleline",
         "Faction: Legiones Daemonica"
       ],
+      "themeKeywords": [
+        "nurgle"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -41965,6 +42228,9 @@
         "Faction: Legiones Daemonica",
         "Infantry"
       ],
+      "themeKeywords": [
+        "tzeentch"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -41998,6 +42264,9 @@
         "Faction: Legiones Daemonica",
         "Fly",
         "Mounted"
+      ],
+      "themeKeywords": [
+        "nurgle"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -42066,6 +42335,9 @@
         "Faction: Legiones Daemonica",
         "Infantry"
       ],
+      "themeKeywords": [
+        "nurgle"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -42133,6 +42405,9 @@
         "Leader",
         "Psyker"
       ],
+      "themeKeywords": [
+        "nurgle"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -42190,6 +42465,9 @@
         "Character",
         "Faction: Legiones Daemonica",
         "Mounted"
+      ],
+      "themeKeywords": [
+        "khorne"
       ],
       "characterRole": "character",
       "epicHero": false,
@@ -42252,6 +42530,9 @@
         "Epic Hero",
         "Faction: Legiones Daemonica",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "nurgle"
       ],
       "characterRole": "character",
       "epicHero": true,
@@ -42317,6 +42598,9 @@
         "Faction: Legiones Daemonica",
         "Fly"
       ],
+      "themeKeywords": [
+        "tzeentch"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -42351,6 +42635,9 @@
         "Faction: Chaos Daemons",
         "Faction: Legiones Daemonica",
         "Mounted"
+      ],
+      "themeKeywords": [
+        "slaanesh"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -42389,6 +42676,9 @@
         "Faction: Legiones Daemonica",
         "Psyker"
       ],
+      "themeKeywords": [
+        "slaanesh"
+      ],
       "characterRole": "character",
       "epicHero": true,
       "battleline": false,
@@ -42423,6 +42713,9 @@
         "Epic Hero",
         "Faction: Legiones Daemonica"
       ],
+      "themeKeywords": [
+        "khorne"
+      ],
       "characterRole": "character",
       "epicHero": true,
       "battleline": false,
@@ -42454,6 +42747,9 @@
       "keywords": [
         "Faction: Chaos Daemons",
         "Faction: Legiones Daemonica"
+      ],
+      "themeKeywords": [
+        "khorne"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -42487,6 +42783,9 @@
         "Faction: Chaos Daemons",
         "Faction: Legiones Daemonica",
         "Mounted"
+      ],
+      "themeKeywords": [
+        "khorne"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -42548,6 +42847,9 @@
         "Leader",
         "Mounted"
       ],
+      "themeKeywords": [
+        "khorne"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -42606,6 +42908,9 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "khorne"
+      ],
       "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
@@ -42642,6 +42947,9 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "nurgle"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -42764,6 +43072,9 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "nurgle"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -42822,6 +43133,9 @@
         "Leader",
         "Psyker"
       ],
+      "themeKeywords": [
+        "slaanesh"
+      ],
       "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
@@ -42860,6 +43174,9 @@
         "Fly",
         "Mounted"
       ],
+      "themeKeywords": [
+        "tzeentch"
+      ],
       "characterRole": "character",
       "epicHero": true,
       "battleline": false,
@@ -42895,6 +43212,9 @@
         "Faction: Legiones Daemonica",
         "Infantry",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "tzeentch"
       ],
       "characterRole": "character",
       "epicHero": true,
@@ -42968,6 +43288,9 @@
         "Mounted",
         "Psyker"
       ],
+      "themeKeywords": [
+        "slaanesh"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -43030,6 +43353,9 @@
         "Infantry",
         "Leader",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "slaanesh"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -56607,6 +56933,10 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -56665,6 +56995,10 @@
       "keywords": [
         "Faction: Death Guard",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -57275,6 +57609,10 @@
         "Faction: Death Guard",
         "Infantry"
       ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -57372,6 +57710,10 @@
         "Fly",
         "Vehicle"
       ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -57426,6 +57768,10 @@
         "Faction: Death Guard",
         "Fly",
         "Vehicle"
+      ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -57488,6 +57834,10 @@
         "Grenades",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -57673,6 +58023,10 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -57730,6 +58084,11 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "nurgle",
+        "plague",
+        "terminator"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -57782,6 +58141,10 @@
         "Grenades",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -57838,6 +58201,10 @@
         "Character",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -57896,6 +58263,9 @@
         "Infantry",
         "Leader",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "nurgle"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -57992,6 +58362,10 @@
         "Grenades",
         "Psyker"
       ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
+      ],
       "characterRole": "character",
       "epicHero": true,
       "battleline": false,
@@ -58022,6 +58396,10 @@
       "factionID": "death-guard",
       "keywords": [
         "Faction: Death Guard"
+      ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -58058,6 +58436,10 @@
         "Character",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -58114,6 +58496,10 @@
         "Faction: Death Guard",
         "Faction: Plague Legions"
       ],
+      "themeKeywords": [
+        "horde",
+        "nurgle"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -58150,6 +58536,9 @@
         "Fly",
         "Mounted"
       ],
+      "themeKeywords": [
+        "nurgle"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -58185,6 +58574,9 @@
         "Battleline",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "nurgle"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -58223,6 +58615,9 @@
         "Character",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "nurgle"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -58280,6 +58675,10 @@
         "Faction: Plague Legions",
         "Infantry"
       ],
+      "themeKeywords": [
+        "horde",
+        "nurgle"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -58311,6 +58710,9 @@
       "keywords": [
         "Faction: Death Guard",
         "Vehicle"
+      ],
+      "themeKeywords": [
+        "nurgle"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -58370,6 +58772,11 @@
       "keywords": [
         "Faction: Death Guard",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "horde",
+        "nurgle",
+        "plague"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -58442,6 +58849,10 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "nurgle",
+        "plague"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -58499,6 +58910,11 @@
         "Infantry",
         "Leader",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "nurgle",
+        "plague",
+        "terminator"
       ],
       "characterRole": "leader",
       "epicHero": true,
@@ -64307,6 +64723,9 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "kabal"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -64421,6 +64840,9 @@
         "Faction: Drukhari",
         "Fly"
       ],
+      "themeKeywords": [
+        "coven"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -64526,6 +64948,9 @@
         "Character",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "coven"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -64716,6 +65141,11 @@
         "Fly",
         "Mounted"
       ],
+      "themeKeywords": [
+        "cult",
+        "wych",
+        "wych cult"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -64783,6 +65213,9 @@
         "Faction: Drukhari",
         "Infantry"
       ],
+      "themeKeywords": [
+        "kabal"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -64845,6 +65278,9 @@
         "Faction: Drukhari",
         "Battleline",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "raiding party"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -64983,6 +65419,11 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "cult",
+        "wych",
+        "wych cult"
+      ],
       "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
@@ -65016,6 +65457,9 @@
       "keywords": [
         "Faction: Drukhari",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "raiding party"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -65061,6 +65505,10 @@
         "Fly",
         "Transport",
         "Vehicle"
+      ],
+      "themeKeywords": [
+        "kabal",
+        "raiding party"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -65116,6 +65564,10 @@
         "Faction: Drukhari",
         "Fly",
         "Vehicle"
+      ],
+      "themeKeywords": [
+        "kabal",
+        "raiding party"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -65195,6 +65647,9 @@
         "Faction: Drukhari",
         "Fly",
         "Vehicle"
+      ],
+      "themeKeywords": [
+        "kabal"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -65279,6 +65734,12 @@
         "Faction: Drukhari",
         "Fly",
         "Mounted"
+      ],
+      "themeKeywords": [
+        "cult",
+        "raiding party",
+        "wych",
+        "wych cult"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -65367,6 +65828,9 @@
         "Fly",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "kabal"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -65473,6 +65937,9 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "kabal"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -65563,6 +66030,11 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "cult",
+        "wych",
+        "wych cult"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -65596,6 +66068,9 @@
       "keywords": [
         "Faction: Drukhari",
         "Fly"
+      ],
+      "themeKeywords": [
+        "coven"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -65708,6 +66183,10 @@
         "Transport",
         "Vehicle"
       ],
+      "themeKeywords": [
+        "kabal",
+        "raiding party"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -65768,6 +66247,9 @@
         "Fly",
         "Vehicle"
       ],
+      "themeKeywords": [
+        "kabal"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -65821,6 +66303,9 @@
         "Battleline",
         "Infantry"
       ],
+      "themeKeywords": [
+        "coven"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -65858,6 +66343,10 @@
         "Battleline",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "cult",
+        "wych cult"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -67069,6 +67558,9 @@
       "keywords": [
         "Faction: Genestealer Cults",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "brood"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -68345,6 +68837,10 @@
       "keywords": [
         "Faction: Genestealer Cults",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "brood",
+        "swarm"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -75505,6 +76001,10 @@
         "Character",
         "Infantry"
       ],
+      "themeKeywords": [
+        "clan",
+        "kin"
+      ],
       "characterRole": "character",
       "epicHero": false,
       "battleline": false,
@@ -75596,6 +76096,11 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "clan",
+        "kin",
+        "mining"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -75630,6 +76135,11 @@
       "keywords": [
         "Faction: Leagues of Votann",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "clan",
+        "kin",
+        "mining"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -75708,6 +76218,11 @@
         "Faction: Leagues of Votann",
         "Infantry"
       ],
+      "themeKeywords": [
+        "clan",
+        "kin",
+        "mining"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -75781,6 +76296,11 @@
         "Faction: Leagues of Votann",
         "Infantry"
       ],
+      "themeKeywords": [
+        "clan",
+        "kin",
+        "mining"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -75814,6 +76334,11 @@
         "Character",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "clan",
+        "elite",
+        "kin"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -75863,6 +76388,11 @@
       "keywords": [
         "Faction: Leagues of Votann",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "clan",
+        "elite",
+        "kin"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -75947,6 +76477,10 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "clan",
+        "kin"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -75983,6 +76517,12 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "clan",
+        "kin",
+        "kindred",
+        "mining"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -76015,6 +76555,10 @@
         "Faction: Leagues of Votann",
         "Transport",
         "Vehicle"
+      ],
+      "themeKeywords": [
+        "clan",
+        "kin"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -76077,6 +76621,12 @@
         "Grenades",
         "Mounted"
       ],
+      "themeKeywords": [
+        "clan",
+        "kin",
+        "mining",
+        "recon"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -76119,6 +76669,12 @@
         "Faction: Leagues of Votann",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "clan",
+        "kin",
+        "mining",
+        "recon"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -76172,6 +76728,10 @@
         "Faction: Leagues of Votann",
         "Infantry"
       ],
+      "themeKeywords": [
+        "clan",
+        "mining"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -76213,6 +76773,10 @@
       "keywords": [
         "Faction: Leagues of Votann",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "clan",
+        "mining"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -76258,6 +76822,10 @@
         "Fly",
         "Transport",
         "Vehicle"
+      ],
+      "themeKeywords": [
+        "clan",
+        "kin"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -76329,6 +76897,10 @@
         "Fly",
         "Vehicle"
       ],
+      "themeKeywords": [
+        "clan",
+        "kin"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -76373,6 +76945,10 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "clan",
+        "kin"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -76409,6 +76985,10 @@
         "Character",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "clan",
+        "kin"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -76466,6 +77046,11 @@
         "Dedicated Transport",
         "Transport",
         "Vehicle"
+      ],
+      "themeKeywords": [
+        "clan",
+        "kin",
+        "mining"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -77224,6 +77809,10 @@
         "Epic Hero",
         "Fly"
       ],
+      "themeKeywords": [
+        "ctan",
+        "star god"
+      ],
       "characterRole": "character",
       "epicHero": true,
       "battleline": false,
@@ -77258,6 +77847,10 @@
         "Epic Hero",
         "Fly"
       ],
+      "themeKeywords": [
+        "ctan",
+        "star god"
+      ],
       "characterRole": "character",
       "epicHero": true,
       "battleline": false,
@@ -77291,6 +77884,10 @@
         "Character",
         "Epic Hero",
         "Fly"
+      ],
+      "themeKeywords": [
+        "ctan",
+        "star god"
       ],
       "characterRole": "character",
       "epicHero": true,
@@ -77658,6 +78255,9 @@
         "Character",
         "Infantry"
       ],
+      "themeKeywords": [
+        "cult"
+      ],
       "characterRole": "character",
       "epicHero": false,
       "battleline": false,
@@ -77839,6 +78439,9 @@
         "Fly",
         "Mounted"
       ],
+      "themeKeywords": [
+        "cult"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -77888,6 +78491,9 @@
         "Fly",
         "Mounted"
       ],
+      "themeKeywords": [
+        "cult"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -77935,6 +78541,9 @@
         "Fly",
         "Leader",
         "Mounted"
+      ],
+      "themeKeywords": [
+        "cult"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -78403,6 +79012,9 @@
         "Faction: Necrons",
         "Infantry"
       ],
+      "themeKeywords": [
+        "cult"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -78828,6 +79440,9 @@
         "Faction: Necrons",
         "Infantry"
       ],
+      "themeKeywords": [
+        "cult"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -78871,6 +79486,9 @@
         "Character",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "cult"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -79241,6 +79859,10 @@
         "Faction: Necrons",
         "Character",
         "Fly"
+      ],
+      "themeKeywords": [
+        "ctan",
+        "star god"
       ],
       "characterRole": "character",
       "epicHero": false,
@@ -91986,6 +92608,9 @@
         "Faction: Adeptus Astartes",
         "Infantry"
       ],
+      "themeKeywords": [
+        "gravis"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -92725,6 +93350,9 @@
         "Faction: Adeptus Astartes",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "wolf"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -93887,6 +94515,9 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "phobos"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -93965,6 +94596,9 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "gravis"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -94039,6 +94673,11 @@
       "keywords": [
         "Faction: Space Wolves",
         "Faction: Adeptus Astartes"
+      ],
+      "themeKeywords": [
+        "cavalry",
+        "mounted",
+        "wolf"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -94355,6 +94994,9 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "wolf"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -94520,6 +95162,9 @@
         "Faction: Adeptus Astartes",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "gravis"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -94791,6 +95436,9 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "phobos"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -94870,6 +95518,9 @@
         "Faction: Adeptus Astartes",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "phobos"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -96597,6 +97248,9 @@
         "Grenades",
         "Infantry"
       ],
+      "themeKeywords": [
+        "phobos"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -97549,6 +98203,9 @@
         "Fly",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "phobos"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -98770,6 +99427,9 @@
         "Faction: Adeptus Astartes",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "phobos"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -104489,6 +105149,9 @@
         "Faction: Tyranids",
         "Infantry"
       ],
+      "themeKeywords": [
+        "swarm"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -104562,6 +105225,9 @@
         "Leader",
         "Psyker"
       ],
+      "themeKeywords": [
+        "swarm"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -104609,6 +105275,9 @@
       "factionID": "tyranids",
       "keywords": [
         "Faction: Tyranids"
+      ],
+      "themeKeywords": [
+        "monster"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -104708,6 +105377,9 @@
       "keywords": [
         "Faction: Tyranids"
       ],
+      "themeKeywords": [
+        "monster"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -104769,6 +105441,10 @@
         "Fly",
         "Infantry"
       ],
+      "themeKeywords": [
+        "gaunt",
+        "swarm"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -104802,6 +105478,9 @@
       "keywords": [
         "Faction: Tyranids",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "swarm"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -104970,6 +105649,9 @@
       "factionID": "tyranids",
       "keywords": [
         "Faction: Tyranids"
+      ],
+      "themeKeywords": [
+        "monster"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -105215,6 +105897,10 @@
         "Leader",
         "Psyker"
       ],
+      "themeKeywords": [
+        "monster",
+        "synapse"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -105249,6 +105935,9 @@
         "Faction: Tyranids",
         "Battleline",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "swarm"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -105409,6 +106098,10 @@
         "Faction: Tyranids",
         "Psyker"
       ],
+      "themeKeywords": [
+        "monster",
+        "synapse"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -105519,6 +106212,9 @@
         "Faction: Tyranids",
         "Fly"
       ],
+      "themeKeywords": [
+        "swarm"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -105552,6 +106248,9 @@
       "keywords": [
         "Faction: Tyranids",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "swarm"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -105644,6 +106343,9 @@
         "Leader",
         "Psyker"
       ],
+      "themeKeywords": [
+        "synapse"
+      ],
       "characterRole": "leader",
       "epicHero": false,
       "battleline": false,
@@ -105698,6 +106400,9 @@
       "factionID": "tyranids",
       "keywords": [
         "Faction: Tyranids"
+      ],
+      "themeKeywords": [
+        "monster"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -105757,6 +106462,9 @@
       "keywords": [
         "Faction: Tyranids",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "monster"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -106081,6 +106789,9 @@
       "keywords": [
         "Faction: Tyranids"
       ],
+      "themeKeywords": [
+        "monster"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -106202,6 +106913,9 @@
         "Faction: Tyranids",
         "Fly"
       ],
+      "themeKeywords": [
+        "swarm"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -106288,6 +107002,10 @@
         "Battleline",
         "Infantry"
       ],
+      "themeKeywords": [
+        "gaunt",
+        "swarm"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": true,
@@ -106347,6 +107065,10 @@
         "Faction: Tyranids",
         "Character",
         "Psyker"
+      ],
+      "themeKeywords": [
+        "monster",
+        "synapse"
       ],
       "characterRole": "character",
       "epicHero": false,
@@ -106451,6 +107173,10 @@
         "Leader",
         "Psyker"
       ],
+      "themeKeywords": [
+        "monster",
+        "synapse"
+      ],
       "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
@@ -106504,6 +107230,9 @@
       "keywords": [
         "Faction: Tyranids"
       ],
+      "themeKeywords": [
+        "monster"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -106549,6 +107278,9 @@
       "factionID": "tyranids",
       "keywords": [
         "Faction: Tyranids"
+      ],
+      "themeKeywords": [
+        "monster"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -106666,6 +107398,9 @@
         "Faction: Tyranids",
         "Infantry"
       ],
+      "themeKeywords": [
+        "synapse"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -106699,6 +107434,9 @@
       "keywords": [
         "Faction: Tyranids",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "synapse"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -106862,6 +107600,9 @@
       "factionID": "tyranids",
       "keywords": [
         "Faction: Tyranids"
+      ],
+      "themeKeywords": [
+        "monster"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -107052,6 +107793,10 @@
         "Fly",
         "Psyker"
       ],
+      "themeKeywords": [
+        "monster",
+        "synapse"
+      ],
       "characterRole": "character",
       "epicHero": false,
       "battleline": false,
@@ -107190,6 +107935,10 @@
         "Character",
         "Epic Hero",
         "Fly"
+      ],
+      "themeKeywords": [
+        "blood",
+        "khorne"
       ],
       "characterRole": "character",
       "epicHero": true,
@@ -107896,6 +108645,11 @@
         "Faction: World Eaters",
         "Infantry"
       ],
+      "themeKeywords": [
+        "berserker",
+        "blood",
+        "khorne"
+      ],
       "characterRole": null,
       "epicHero": false,
       "battleline": false,
@@ -107937,6 +108691,11 @@
       "keywords": [
         "Faction: World Eaters",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "berserker",
+        "blood",
+        "khorne"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -108053,6 +108812,11 @@
         "Faction: World Eaters",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "berserker",
+        "blood",
+        "khorne"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -108181,6 +108945,10 @@
         "Faction: World Eaters",
         "Grenades",
         "Infantry"
+      ],
+      "themeKeywords": [
+        "blood",
+        "khorne"
       ],
       "characterRole": null,
       "epicHero": false,
@@ -108345,6 +109113,11 @@
         "Infantry",
         "Leader"
       ],
+      "themeKeywords": [
+        "berserker",
+        "blood",
+        "khorne"
+      ],
       "characterRole": "leader",
       "epicHero": true,
       "battleline": false,
@@ -108381,6 +109154,10 @@
         "Epic Hero",
         "Leader",
         "Mounted"
+      ],
+      "themeKeywords": [
+        "blood",
+        "khorne"
       ],
       "characterRole": "leader",
       "epicHero": true,
@@ -108419,6 +109196,10 @@
         "Character",
         "Leader",
         "Mounted"
+      ],
+      "themeKeywords": [
+        "blood",
+        "khorne"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -108482,6 +109263,10 @@
         "Character",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "blood",
+        "khorne"
       ],
       "characterRole": "leader",
       "epicHero": false,
@@ -108626,6 +109411,11 @@
         "Character",
         "Infantry",
         "Leader"
+      ],
+      "themeKeywords": [
+        "berserker",
+        "blood",
+        "khorne"
       ],
       "characterRole": "leader",
       "epicHero": false,
