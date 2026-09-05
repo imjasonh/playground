@@ -335,6 +335,42 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(issue?.contains("detachments") == true || issue?.contains("1100") == true, issue ?? "")
     }
 
+    func testApplyRosterPlanClampsOverCapAndOverLimitToLegal() {
+        _ = ArmyListChatToolExecutor.clearUnits(workspace: workspace)
+        // A deliberately illegal plan: Hekaton listed 4× (non-battleline cap is
+        // 2 at Incursion) and enough points to blow past 1000. A weak model
+        // produces exactly this; the tool must clamp it to a legal roster.
+        let output = ArmyListChatToolExecutor.applyRosterPlan(
+            workspace: workspace,
+            battleSizeID: "incursion",
+            detachmentIDsCSV: "brandfast-oathband",
+            unitsCSV: [
+                "leagues-of-votann--kahl:1",
+                "leagues-of-votann--hekaton-land-fortress:1",
+                "leagues-of-votann--hekaton-land-fortress:1",
+                "leagues-of-votann--hekaton-land-fortress:1",
+                "leagues-of-votann--hekaton-land-fortress:1",
+                "leagues-of-votann--einhyr-hearthguard:5",
+                "leagues-of-votann--einhyr-hearthguard:5",
+                "leagues-of-votann--cthonian-earthshakers:2",
+                "leagues-of-votann--brokhyr-thunderkyn:3",
+                "leagues-of-votann--hernkyn-yaegirs:10",
+            ].joined(separator: ","),
+            listName: "Overstuffed Oathband"
+        )
+        XCTAssertTrue(output.contains("LEGAL"), output)
+        XCTAssertFalse(output.contains("ILLEGAL"), output)
+        XCTAssertTrue(output.contains("over-cap"), output)
+        XCTAssertTrue(output.contains("over the 1000 pt limit"), output)
+        XCTAssertLessThanOrEqual(workspace.validation.totalPoints, 1000)
+        XCTAssertTrue(workspace.validation.isLegal, "Clamped roster must validate legal")
+        // Hekaton must be clamped to its Incursion cap of 2.
+        XCTAssertEqual(
+            workspace.list.units.filter { $0.datasheetID == "leagues-of-votann--hekaton-land-fortress" }.count,
+            2
+        )
+    }
+
     func testApplyRosterPlanStatusIncludesRemainingPoints() {
         let output = ArmyListChatToolExecutor.applyRosterPlan(
             workspace: workspace,
