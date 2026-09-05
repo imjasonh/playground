@@ -30,6 +30,15 @@ struct ArmyListChatEntry: Identifiable, Equatable {
 /// Runs Army List prompts through on-device Foundation Models + list tools.
 @MainActor
 final class ArmyListChatRuntime: ObservableObject {
+    /// How the session is configured. Chat exposes the full tool set for
+    /// interactive editing; builder trims to one bulk tool for a self-contained
+    /// from-scratch build, which fits the 4096-token window far more reliably
+    /// (see the `foundation-models-context` skill).
+    enum Mode {
+        case chat
+        case builder
+    }
+
     /// Rough cost of the army-list tool schemas registered with the session.
     /// Matches `OnDeviceContextManager.safetyBufferTokens` (TN3193 tool + reply headroom).
     static let toolsReserveTokens = OnDeviceContextManager.safetyBufferTokens
@@ -40,6 +49,7 @@ final class ArmyListChatRuntime: ObservableObject {
     @Published private(set) var contextUsage = AgentContextUsage.empty
 
     let workspace: ArmyListChatWorkspace
+    let mode: Mode
 
     private var languageSessionBox: Any?
     private var workspaceBag: AnyCancellable?
@@ -51,13 +61,14 @@ final class ArmyListChatRuntime: ObservableObject {
 
     var isModelAvailable: Bool { modelGate.isAvailable }
 
-    init(workspace: ArmyListChatWorkspace) {
+    init(workspace: ArmyListChatWorkspace, mode: Mode = .chat) {
         self.workspace = workspace
+        self.mode = mode
         workspaceBag = workspace.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
         }
         refreshModelStatus()
-        if isModelAvailable {
+        if mode == .chat, isModelAvailable {
             append(
                 .system,
                 text: "Ask me to build, critique, rename, or fix this list. Every edit is re-checked by the validator."
@@ -396,6 +407,28 @@ final class ArmyListChatRuntime: ObservableObject {
 
     @available(iOS 26.0, *)
     private var sessionInstructions: String {
+        if mode == .builder {
+            return builderInstructions
+        }
+        return chatInstructions
+    }
+
+    /// Short instructions for a one-shot from-scratch build. The prompt carries
+    /// the faction, points limit, DP budget, and valid ids, so the model needs
+    /// only one `applyRosterPlan` call — keeping the 4096-token window clear.
+    @available(iOS 26.0, *)
+    private var builderInstructions: String {
+        """
+        You build exactly one Warhammer 40,000 army list, then stop.
+        The user message lists the faction, points limit, DP budget, valid detachment ids, and valid unit ids with points.
+        Call applyRosterPlan exactly once, using only ids from that message: one detachment within the DP budget and units totaling as close to the points limit as possible without exceeding it.
+        Include at least one Character so the list has a Warlord. Give the list a short themed name.
+        Do not call any other tool and do not write prose.
+        """
+    }
+
+    @available(iOS 26.0, *)
+    private var chatInstructions: String {
         """
         You help the user build and discuss a Warhammer 40,000 11th Edition army list inside the Playground app.
         Faction for this list is fixed to whatever getListSummary reports. Do not switch factions.
@@ -414,7 +447,12 @@ final class ArmyListChatRuntime: ObservableObject {
 
     @available(iOS 26.0, *)
     private func makeFoundationTools() -> [any Tool] {
-        [
+        // A from-scratch build only needs the bulk roster tool. Fewer resident
+        // tool schemas leave far more of the 4096-token window for the plan.
+        if mode == .builder {
+            return [ArmyApplyRosterPlanFMTool(runtime: self)]
+        }
+        return [
             ArmyGetListSummaryFMTool(runtime: self),
             ArmySearchCatalogFMTool(runtime: self),
             ArmyApplyRosterPlanFMTool(runtime: self),

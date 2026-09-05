@@ -287,6 +287,66 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertFalse(ArmyListChatPromptComposer.fillPointsPrompt(theme: "").contains("Theme to honor"))
     }
 
+    func testStarterPromptListsFactsDetachmentsAndUnits() {
+        let prompt = ArmyListStarterPrompt.prompt(
+            catalog: catalog,
+            factionID: "astra-militarum",
+            battleSizeID: "incursion",
+            theme: "Armored Company Only Leman russes"
+        )
+        XCTAssertTrue(prompt.contains("Astra Militarum"), prompt)
+        XCTAssertTrue(prompt.contains("1000 pts"), prompt)
+        XCTAssertTrue(prompt.contains("applyRosterPlan"), prompt)
+        XCTAssertTrue(prompt.contains("Theme: Armored Company Only Leman russes"), prompt)
+        // A real detachment id and a theme-matched unit id must appear so the
+        // model never has to invent one.
+        XCTAssertTrue(prompt.contains("astra-militarum--combined-arms"), prompt)
+        XCTAssertTrue(prompt.contains("astra-militarum--leman-russ-battle-tank"), prompt)
+    }
+
+    func testStarterPromptFloatsThemeMatchesToTop() {
+        let prompt = ArmyListStarterPrompt.prompt(
+            catalog: catalog,
+            factionID: "astra-militarum",
+            battleSizeID: "incursion",
+            theme: "leman russ"
+        )
+        let unitLines = prompt
+            .components(separatedBy: "\n")
+            .drop { !$0.hasPrefix("Units (") }
+            .dropFirst()
+            .prefix { $0.contains("pts@") }
+        let first = try? XCTUnwrap(unitLines.first)
+        XCTAssertTrue((first ?? "").contains("leman-russ"), "Expected a theme match first, got: \(first ?? "none")")
+    }
+
+    func testStarterPromptCapsCandidatesAndKeepsACharacter() {
+        let prompt = ArmyListStarterPrompt.prompt(
+            catalog: catalog,
+            factionID: "astra-militarum",
+            battleSizeID: "incursion",
+            theme: "tanks",
+            maxUnits: 12
+        )
+        let unitLines = prompt
+            .components(separatedBy: "\n")
+            .filter { $0.contains("pts@") }
+        XCTAssertLessThanOrEqual(unitLines.count, 12, "Candidate list must respect maxUnits")
+        XCTAssertTrue(unitLines.contains { $0.contains("Character") }, "Palette must include a Character for the Warlord")
+    }
+
+    func testStarterPromptOmitsThemeLineWhenBlank() {
+        let prompt = ArmyListStarterPrompt.prompt(
+            catalog: catalog,
+            factionID: "astra-militarum",
+            battleSizeID: "incursion",
+            theme: "   "
+        )
+        XCTAssertFalse(prompt.contains("Theme:"), prompt)
+        XCTAssertTrue(prompt.contains("applyRosterPlan"), prompt)
+        XCTAssertTrue(prompt.contains("pts@"), prompt)
+    }
+
     func testNoteToolExchangeTracksContextUsage() {
         let runtime = ArmyListChatRuntime(workspace: workspace)
         let before = runtime.contextUsage.percentUsed
