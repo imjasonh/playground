@@ -180,16 +180,13 @@ enum ArmyListStarterBuilder {
                 built.name = userName
             }
             let total = workspace.validation.totalPoints
-            if workspace.validation.isLegal {
-                if bestLegal == nil || total > bestLegal!.points {
-                    bestLegal = (built, total)
-                }
+            if workspace.validation.isLegal, total > (bestLegal?.points ?? -1) {
+                bestLegal = (built, total)
             }
-            if bestAny == nil || total > bestAny!.points {
+            if total > (bestAny?.points ?? -1) {
                 bestAny = (built, total)
             }
         }
-        let chosen = bestLegal?.list ?? bestAny?.list
-        return chosen
+        return bestLegal?.list ?? bestAny?.list
     }
 }
