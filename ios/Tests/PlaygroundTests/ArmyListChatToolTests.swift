@@ -302,6 +302,48 @@ final class ArmyListChatToolTests: XCTestCase {
         // model never has to invent one.
         XCTAssertTrue(prompt.contains("astra-militarum--combined-arms"), prompt)
         XCTAssertTrue(prompt.contains("astra-militarum--leman-russ-battle-tank"), prompt)
+        XCTAssertTrue(prompt.contains("| max)"), prompt)
+    }
+
+    func testStarterPromptShowsModelOptionsAndCopyMax() {
+        let prompt = ArmyListStarterPrompt.prompt(
+            catalog: catalog,
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            theme: "hearthkyn"
+        )
+        XCTAssertTrue(
+            prompt.contains("leagues-of-votann--hearthkyn-warriors"),
+            prompt
+        )
+        // Multiple squad sizes and a per-line copy cap help small models pack points.
+        let warriorsLine = prompt
+            .components(separatedBy: "\n")
+            .first { $0.contains("hearthkyn-warriors") }
+        XCTAssertNotNil(warriorsLine)
+        XCTAssertTrue(warriorsLine?.contains("@") == true, warriorsLine ?? "")
+        XCTAssertTrue(warriorsLine?.contains("| 3") == true || warriorsLine?.contains("| 2") == true, warriorsLine ?? "")
+    }
+
+    func testBuildFeasibilityRejectsTitanLegionsAtIncursion() {
+        let issue = ArmyListStarterPrompt.buildFeasibilityIssue(
+            catalog: catalog,
+            factionID: "titan-legions",
+            battleSizeID: "incursion"
+        )
+        XCTAssertNotNil(issue)
+        XCTAssertTrue(issue?.contains("detachments") == true || issue?.contains("1100") == true, issue ?? "")
+    }
+
+    func testApplyRosterPlanStatusIncludesRemainingPoints() {
+        let output = ArmyListChatToolExecutor.applyRosterPlan(
+            workspace: workspace,
+            battleSizeID: "incursion",
+            detachmentIDsCSV: "leagues-of-votann--brandfast-oathband",
+            unitsCSV: "leagues-of-votann--kahl:1,leagues-of-votann--hearthkyn-warriors:10",
+            listName: "Remaining pts test"
+        )
+        XCTAssertTrue(output.contains(" left ·"), output)
     }
 
     func testStarterPromptFloatsThemeMatchesToTop() {

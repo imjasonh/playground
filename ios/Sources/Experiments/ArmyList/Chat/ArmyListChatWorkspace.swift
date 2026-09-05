@@ -485,9 +485,11 @@ enum ArmyListChatToolExecutor {
     private static func mutationResult(workspace: ArmyListChatWorkspace, note: String) -> String {
         let result = workspace.validation
         let status = result.isLegal ? "LEGAL" : "ILLEGAL"
+        let limit = workspace.catalog.battleSize(id: workspace.list.battleSizeID)?.pointsLimit ?? 0
+        let remaining = max(0, limit - result.totalPoints)
         var lines = [
             note,
-            "Status: \(status) · \(result.totalPoints) pts · DP \(result.detachmentPointsSpent) · units=\(workspace.list.units.count)",
+            "Status: \(status) · \(result.totalPoints) pts · \(remaining) left · DP \(result.detachmentPointsSpent) · units=\(workspace.list.units.count)",
             "errors=\(result.errors.count) warnings=\(result.warnings.count)",
         ]
         for issue in result.issues.prefix(6) {

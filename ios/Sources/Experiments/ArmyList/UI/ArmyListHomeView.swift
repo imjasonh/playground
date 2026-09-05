@@ -530,6 +530,14 @@ struct ArmyListNewSheet: View {
             seedError = "Building a list needs Apple Intelligence (iOS 26+). Turn it on, or tap Create for a blank list to edit."
             return
         }
+        if let issue = ArmyListStarterPrompt.buildFeasibilityIssue(
+            catalog: catalog,
+            factionID: factionID,
+            battleSizeID: battleSizeID
+        ) {
+            seedError = issue
+            return
+        }
         isBuilding = true
         let theme = flavor
         let userName = trimmedName()
