@@ -215,6 +215,10 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
     var name: String
     var factionID: String
     var keywords: [String]
+    /// Curated theme tokens (e.g. "aspect", "kabal", "plague") folded in from
+    /// `ios/scripts/theme-keywords.json` so natural-language themes match units
+    /// whose BSData keywords miss the concept. Empty for most datasheets.
+    var themeKeywords: [String]
     var characterRole: CatalogCharacterRole?
     var epicHero: Bool
     var battleline: Bool
@@ -241,7 +245,7 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, factionID, keywords, characterRole, epicHero
+        case id, name, factionID, keywords, themeKeywords, characterRole, epicHero
         case battleline, dedicatedTransport, legends, minModels, maxModels
         case modelCounts, pointsTiers, leaderTo, mustAttach, maxCopiesOverride
         case optionGroups
@@ -252,6 +256,7 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
         name: String,
         factionID: String,
         keywords: [String],
+        themeKeywords: [String] = [],
         characterRole: CatalogCharacterRole?,
         epicHero: Bool,
         battleline: Bool,
@@ -270,6 +275,7 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
         self.name = name
         self.factionID = factionID
         self.keywords = keywords
+        self.themeKeywords = themeKeywords
         self.characterRole = characterRole
         self.epicHero = epicHero
         self.battleline = battleline
@@ -291,6 +297,7 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
         name = try container.decode(String.self, forKey: .name)
         factionID = try container.decode(String.self, forKey: .factionID)
         keywords = try container.decode([String].self, forKey: .keywords)
+        themeKeywords = try container.decodeIfPresent([String].self, forKey: .themeKeywords) ?? []
         characterRole = try container.decodeIfPresent(CatalogCharacterRole.self, forKey: .characterRole)
         epicHero = try container.decode(Bool.self, forKey: .epicHero)
         battleline = try container.decode(Bool.self, forKey: .battleline)
@@ -312,6 +319,9 @@ struct DatasheetDefinition: Codable, Equatable, Identifiable, Sendable {
         try container.encode(name, forKey: .name)
         try container.encode(factionID, forKey: .factionID)
         try container.encode(keywords, forKey: .keywords)
+        if !themeKeywords.isEmpty {
+            try container.encode(themeKeywords, forKey: .themeKeywords)
+        }
         try container.encodeIfPresent(characterRole, forKey: .characterRole)
         try container.encode(epicHero, forKey: .epicHero)
         try container.encode(battleline, forKey: .battleline)

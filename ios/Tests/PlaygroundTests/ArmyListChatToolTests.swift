@@ -270,6 +270,35 @@ final class ArmyListChatToolTests: XCTestCase {
         }
     }
 
+    func testStarterPromptUsesCuratedThemeKeywords() {
+        // "aspect" appears on no Aeldari datasheet name/id/keyword — only in the
+        // curated themeKeywords — so a match proves the overlay drives ranking.
+        let prompt = ArmyListStarterPrompt.prompt(
+            catalog: catalog,
+            factionID: "aeldari",
+            battleSizeID: "incursion",
+            theme: "aspect warriors"
+        )
+        let unitLines = prompt
+            .components(separatedBy: "\n")
+            .drop { !$0.hasPrefix("Units (") }
+            .dropFirst()
+            .prefix { $0.contains("@") && $0.contains(" | ") }
+        let aspectIDs = [
+            "aeldari--howling-banshees",
+            "aeldari--striking-scorpions",
+            "aeldari--fire-dragons",
+            "aeldari--dark-reapers",
+            "aeldari--swooping-hawks",
+            "aeldari--dire-avengers",
+        ]
+        let surfaced = aspectIDs.filter { id in unitLines.contains { $0.contains(id) } }
+        XCTAssertGreaterThanOrEqual(
+            surfaced.count, 3,
+            "Curated aspect units should float into the palette: surfaced \(surfaced)"
+        )
+    }
+
     func testBuildPromptFoldsInTheme() {
         let prompt = ArmyListChatPromptComposer.buildPrompt(theme: "night raiders")
         XCTAssertTrue(prompt.contains("applyRosterPlan"))

@@ -30,6 +30,7 @@ except ImportError:
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 OUT = ROOT / "ios/Sources/Experiments/ArmyList/Catalog/Resources/catalog.json"
+THEME_KEYWORDS_PATH = ROOT / "ios/scripts/theme-keywords.json"
 
 # MFM slug -> BattleScribe catalogue JSON filename(s) for keyword lookup.
 BS_FILES_BY_SLUG: dict[str, list[str]] = {
@@ -607,6 +608,67 @@ def build_faction(
     return faction, detachments, datasheets
 
 
+def load_theme_keywords(path: pathlib.Path = THEME_KEYWORDS_PATH) -> dict[str, list[str]]:
+    """Curated datasheet id -> theme tokens overlay (see theme-keywords.json)."""
+    if not path.exists():
+        return {}
+    data = json.loads(path.read_text())
+    raw = data.get("themeKeywords") or {}
+    out: dict[str, list[str]] = {}
+    for ds_id, tokens in raw.items():
+        cleaned = [t.strip().lower() for t in (tokens or []) if t and t.strip()]
+        if cleaned:
+            out[ds_id] = cleaned
+    return out
+
+
+def apply_theme_keywords(
+    datasheets: list[dict],
+    overlay: dict[str, list[str]],
+    migrations: list[dict],
+) -> None:
+    """Fold curated theme tokens into each datasheet's ``themeKeywords``.
+
+    Keys are matched by current id and by any old id that migrated to it, so
+    curated keywords survive BSData id changes. The field is placed right after
+    ``keywords`` and omitted when empty to keep catalog.json lean and stable.
+    """
+    olds_by_new: dict[str, list[str]] = {}
+    for migration in migrations:
+        if migration.get("kind") == "datasheet" and migration.get("to"):
+            olds_by_new.setdefault(migration["to"], []).append(migration["from"])
+
+    for index, sheet in enumerate(datasheets):
+        candidate_keys = [sheet["id"], *olds_by_new.get(sheet["id"], [])]
+        tokens: list[str] = []
+        for key in candidate_keys:
+            tokens.extend(overlay.get(key, []))
+        # Drop tokens already present in the name/id/keywords (matching covers those).
+        existing = " ".join(
+            [sheet["name"], sheet["id"], *sheet.get("keywords", [])]
+        ).lower()
+        tokens = sorted(
+            {
+                token
+                for raw in tokens
+                if raw and (token := raw.strip().lower()) and token not in existing
+            }
+        )
+        if not tokens:
+            sheet.pop("themeKeywords", None)
+            continue
+        rebuilt: dict = {}
+        for key, value in sheet.items():
+            if key == "themeKeywords":
+                continue
+            rebuilt[key] = value
+            if key == "keywords":
+                rebuilt["themeKeywords"] = tokens
+        if "themeKeywords" not in rebuilt:
+            rebuilt["themeKeywords"] = tokens
+        datasheets[index] = rebuilt
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = pathlib.Path(tmp)
@@ -633,6 +695,7 @@ def main() -> int:
             if not mfm or "slug" not in mfm:
                 print(f"  skip {path.name}: missing slug", file=sys.stderr)
                 continue
+            slug = mfm["slug"]
             bs_files = BS_FILES_BY_SLUG.get(slug, [])
             if slug not in BS_FILES_BY_SLUG:
                 print(f"  warn: no BS mapping for {slug}; keywords will be faction-only", file=sys.stderr)
@@ -664,6 +727,10 @@ def main() -> int:
         datasheets, detachments, id_migrations = stabilize_ids_against_previous(
             previous, datasheets, detachments
         )
+
+        # Fold in curated theme keywords after ids are stable, remapping overlay
+        # keys through this refresh's migrations so they follow renamed units.
+        apply_theme_keywords(datasheets, load_theme_keywords(), id_migrations)
 
         points_revision = str(
             meta.get("version")

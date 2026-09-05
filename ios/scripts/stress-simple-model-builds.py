@@ -114,7 +114,7 @@ def palette(catalog: dict, faction_id: str, theme: str, limit: int = 22) -> list
             continue
         score = 0
         if tokens:
-            hay = " ".join([sheet["name"], sheet["id"], *sheet["keywords"]]).lower()
+            hay = " ".join([sheet["name"], sheet["id"], *sheet["keywords"], *sheet.get("themeKeywords", [])]).lower()
             score += sum(100 for t in tokens if t in hay)
         if sheet.get("characterRole"):
             score += 10

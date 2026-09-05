@@ -120,5 +120,51 @@ class OptionGroupExtractionTests(unittest.TestCase):
         self.assertEqual(wargear["max"], 1)
 
 
+class ThemeKeywordsTests(unittest.TestCase):
+    def _sheet(self, ds_id: str, name: str, keywords=None) -> dict:
+        return {
+            "id": ds_id,
+            "name": name,
+            "factionID": "aeldari",
+            "keywords": keywords or ["Faction: Aeldari"],
+            "epicHero": False,
+        }
+
+    def test_applies_by_id_after_keywords_and_sorted(self) -> None:
+        sheets = [self._sheet("aeldari--howling-banshees", "Howling Banshees")]
+        MOD.apply_theme_keywords(
+            sheets,
+            {"aeldari--howling-banshees": ["Aspect Warrior", "aspect"]},
+            [],
+        )
+        self.assertEqual(sheets[0]["themeKeywords"], ["aspect", "aspect warrior"])
+        # Placed right after keywords for stable catalog.json ordering.
+        keys = list(sheets[0].keys())
+        self.assertEqual(keys[keys.index("keywords") + 1], "themeKeywords")
+
+    def test_drops_tokens_already_in_name_or_keywords(self) -> None:
+        sheets = [self._sheet("aeldari--wraithguard", "Wraithguard")]
+        MOD.apply_theme_keywords(
+            sheets, {"aeldari--wraithguard": ["wraith", "wraith construct"]}, []
+        )
+        # "wraith" is a substring of the name, so only the novel token remains.
+        self.assertEqual(sheets[0]["themeKeywords"], ["wraith construct"])
+
+    def test_omits_field_when_empty(self) -> None:
+        sheets = [self._sheet("aeldari--rangers", "Rangers")]
+        MOD.apply_theme_keywords(sheets, {}, [])
+        self.assertNotIn("themeKeywords", sheets[0])
+
+    def test_follows_migrated_ids(self) -> None:
+        # Overlay is keyed by the OLD id; a migration to the new id must carry it.
+        sheets = [self._sheet("aeldari--fire-dragons-v2", "Fire Dragons")]
+        MOD.apply_theme_keywords(
+            sheets,
+            {"aeldari--fire-dragons": ["aspect"]},
+            [{"from": "aeldari--fire-dragons", "to": "aeldari--fire-dragons-v2", "kind": "datasheet"}],
+        )
+        self.assertEqual(sheets[0]["themeKeywords"], ["aspect"])
+
+
 if __name__ == "__main__":
     raise SystemExit(unittest.main())

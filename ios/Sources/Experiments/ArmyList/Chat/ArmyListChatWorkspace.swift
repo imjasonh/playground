@@ -90,7 +90,8 @@ enum ArmyListChatToolExecutor {
                     && (q.isEmpty
                         || sheet.name.lowercased().contains(q)
                         || sheet.id.contains(q)
-                        || sheet.keywords.contains { $0.lowercased().contains(q) })
+                        || sheet.keywords.contains { $0.lowercased().contains(q) }
+                        || sheet.themeKeywords.contains { $0.lowercased().contains(q) })
             }
             for sheet in matches.prefix(10) {
                 let pts = sheet.points(models: sheet.minModels, copyIndex: 1).map(String.init) ?? "?"

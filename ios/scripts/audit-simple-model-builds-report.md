@@ -60,11 +60,38 @@ call.
 5. **Feasibility gate** before the model runs.
 6. **`applyRosterPlan` Status** includes `N left` remaining points.
 
+## Curated theme keywords (preserved across BSData refreshes)
+
+Theme share was low for factions whose lore concepts aren't BSData keywords
+(Aeldari "aspect", Drukhari "kabal"/"wych", Death Guard "plague"/"nurgle",
+Chaos Daemons god names, Adeptus Mechanicus "skitarii"). A curated overlay adds
+those tokens so the same simple LLM builds far more thematic lists.
+
+- `ios/scripts/theme-keywords.json` — datasheet id → curated tokens (218
+  datasheets). Hand-authored; **do not edit `themeKeywords` in catalog.json**.
+- `refresh-army-list-catalog.py` folds the overlay into each datasheet's
+  `themeKeywords` on every refresh, remapping keys through `idMigrations`, so the
+  keywords survive BSData updates and unit renames.
+- The palette ranker and chat `searchCatalog` now match `themeKeywords` too.
+
+Theme share, same simple LLM, before → after the overlay:
+
+| Faction | Before | After |
+|---------|-------:|------:|
+| Aeldari | 11% | 100% |
+| Leagues of Votann | 18% | 100% |
+| Adeptus Mechanicus | 39% | 100% |
+| Chaos Daemons | 45% | 100% |
+| Drukhari | 23% | 87% |
+| Tyranids | 46% | 84% |
+| World Eaters | 67% | 100% |
+
+Legality stayed 28/28 buildable factions; fill stayed high.
+
 ## Remaining gaps (not worth prompt/context cost)
 
-- **Theme share** is low for a few factions (Aeldari 11%, Leagues 18%, Drukhari
-  23%) because theme words don't match catalog keywords (e.g. "aspect"). A
-  synonym map would bloat every prompt; left as-is.
+- **Narrow single-unit themes** (e.g. Death Guard "poxwalker horde") stay capped
+  by how many themed units exist, even with curated keywords.
 - **Adepta Sororitas** still under-fills (~86%): expensive themed units plus low
   copy caps leave a gap the model can't close from the 22-unit palette.
 - Chat **Fill points** still uses the `addUnit` loop, which already rejects

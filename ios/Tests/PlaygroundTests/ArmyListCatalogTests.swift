@@ -15,6 +15,17 @@ final class ArmyListCatalogTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(catalog.datasheets.count, 1500)
     }
 
+    func testCuratedThemeKeywordsAreBundled() throws {
+        let catalog = try Self.loadCatalogFromRepo()
+        // Aspect Warriors carry the curated "aspect" theme token even though it
+        // is absent from their BSData name/keywords.
+        let banshees = try XCTUnwrap(catalog.datasheet(id: "aeldari--howling-banshees"))
+        XCTAssertTrue(banshees.themeKeywords.contains("aspect"), "\(banshees.themeKeywords)")
+        // Units without a curated entry decode to an empty list, not a crash.
+        let anyEmpty = catalog.datasheets.contains { $0.themeKeywords.isEmpty }
+        XCTAssertTrue(anyEmpty)
+    }
+
     /// Hosted unit tests use Playground.app as Bundle.main. If catalog.json is
     /// not in Copy Bundle Resources, TestFlight shows "Catalog unavailable".
     func testCatalogLoadsFromAppBundle() throws {

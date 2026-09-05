@@ -120,7 +120,7 @@ def assess(catalog, plan):
     for s in catalog["datasheets"]:
         if s["factionID"] != fid:
             continue
-        hay = " ".join([s["name"], s["id"], *s["keywords"]]).lower()
+        hay = " ".join([s["name"], s["id"], *s["keywords"], *s.get("themeKeywords", [])]).lower()
         if tk and any(t in hay for t in tk):
             themed.add(s["id"])
 

@@ -112,7 +112,7 @@ def palette(catalog, fid, battle, theme, limit=22):
             continue
         score = 0
         if tk:
-            hay = " ".join([s["name"], s["id"], *s["keywords"]]).lower()
+            hay = " ".join([s["name"], s["id"], *s["keywords"], *s.get("themeKeywords", [])]).lower()
             score += sum(100 for t in tk if t in hay)
         if s.get("characterRole"):
             score += 10

@@ -173,7 +173,7 @@ enum ArmyListStarterPrompt {
             }
             var score = 0
             if !tokens.isEmpty {
-                let haystack = ([sheet.name, sheet.id] + sheet.keywords)
+                let haystack = ([sheet.name, sheet.id] + sheet.keywords + sheet.themeKeywords)
                     .joined(separator: " ")
                     .lowercased()
                 score += tokens.filter { haystack.contains($0) }.count * 100
