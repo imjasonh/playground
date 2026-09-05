@@ -435,7 +435,7 @@ final class ArmyListChatToolTests: XCTestCase {
             .components(separatedBy: "\n")
             .drop { !$0.hasPrefix("Units (") }
             .dropFirst()
-            .prefix { $0.contains("pts@") }
+            .prefix { $0.contains("@") && $0.contains(" | ") }
         let first = try? XCTUnwrap(unitLines.first)
         XCTAssertTrue((first ?? "").contains("leman-russ"), "Expected a theme match first, got: \(first ?? "none")")
     }
@@ -450,7 +450,7 @@ final class ArmyListChatToolTests: XCTestCase {
         )
         let unitLines = prompt
             .components(separatedBy: "\n")
-            .filter { $0.contains("pts@") }
+            .filter { $0.contains(" | ") && $0.contains("@") && !$0.hasPrefix("Units (") }
         XCTAssertLessThanOrEqual(unitLines.count, 12, "Candidate list must respect maxUnits")
         XCTAssertTrue(unitLines.contains { $0.contains("Character") }, "Palette must include a Character for the Warlord")
     }
