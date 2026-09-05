@@ -118,25 +118,6 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertTrue(workspace.validation.errors.contains { $0.code == "dp.overBudget" })
     }
 
-    func testLegalSeederBuildsIncursion() throws {
-        let seeded = ArmyListLegalSeeder.seed(
-            catalog: catalog,
-            factionID: "leagues-of-votann",
-            battleSizeID: "incursion",
-            name: "Seeded Votann"
-        )
-        let result = try XCTUnwrap(seeded)
-        XCTAssertEqual(result.list.name, "Seeded Votann")
-        XCTAssertEqual(result.list.battleSizeID, "incursion")
-        XCTAssertFalse(result.list.units.isEmpty)
-        XCTAssertFalse(result.list.detachmentIDs.isEmpty)
-        XCTAssertTrue(
-            result.validation.isLegal,
-            result.validation.errors.map(\.message).joined(separator: "; ")
-        )
-        XCTAssertLessThanOrEqual(result.validation.totalPoints, 1000)
-    }
-
     func testApplyRosterPlanBuildsCustomCustodesList() throws {
         let list = ArmyListDocument(
             name: "Custodes chat",
@@ -157,22 +138,6 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertEqual(custodesWorkspace.list.units.count, 4)
         XCTAssertFalse(custodesWorkspace.list.detachmentIDs.isEmpty)
         XCTAssertLessThanOrEqual(custodesWorkspace.validation.totalPoints, 1000)
-    }
-
-    func testLegalSeederBuildsCustodesIncursion() throws {
-        let seeded = ArmyListLegalSeeder.seed(
-            catalog: catalog,
-            factionID: "adeptus-custodes",
-            battleSizeID: "incursion",
-            name: "Custodes 1k"
-        )
-        let result = try XCTUnwrap(seeded)
-        XCTAssertTrue(
-            result.validation.isLegal,
-            result.validation.errors.map(\.message).joined(separator: "; ")
-        )
-        XCTAssertLessThanOrEqual(result.validation.totalPoints, 1000)
-        XCTAssertFalse(result.list.units.isEmpty)
     }
 
     func testContextWindowDetectionTreatsGenerationErrorMinusOne() {

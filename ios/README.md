@@ -119,8 +119,11 @@ faction in the bundled construction catalog (30 factions, faction-prefixed
 datasheet/detachment ids). The experiment ships points, Detachment Points,
 unique tags, and Leader join edges as versioned JSON, plus a deterministic
 validator, SwiftUI authoring UI, and share/export as plain text or `.army.json`.
-The editor focuses on units; name, battle size, and detachments live on
-**Army settings**.
+The editor focuses on units (drag to reorder); name, battle size, and
+detachments live on **Army settings**. **Build starter list** on the New list
+screen fills a roster from 0 with the on-device model, steered by a few words of
+flavor text, so each build is different (needs Apple Intelligence; otherwise
+create a blank list to edit).
 
 Refresh the **bundled** catalog (no remote fetch at runtime):
 

@@ -371,7 +371,8 @@ private struct ArmyListRowView: View {
     }
 }
 
-/// Create a blank list or a seeded starter: faction, battle size, name.
+/// Create a blank list, or build one from 0 with the on-device model using a
+/// few words of flavor text: faction, battle size, name, theme.
 struct ArmyListNewSheet: View {
     let catalog: ArmyCatalog
     var onCreate: (ArmyListDocument) -> Void
@@ -380,6 +381,8 @@ struct ArmyListNewSheet: View {
     @State private var name = "New list"
     @State private var factionID: String
     @State private var battleSizeID = "incursion"
+    @State private var flavor = ""
+    @State private var isBuilding = false
     @State private var seedError: String?
 
     private var factionsSorted: [FactionDefinition] {
@@ -435,11 +438,27 @@ struct ArmyListNewSheet: View {
                 .accessibilityIdentifier("armyListBattleSizePicker")
             }
 
+            Section("Theme") {
+                TextField("A few words of flavor (optional)", text: $flavor)
+                    .textInputAutocapitalization(.words)
+                    .disabled(isBuilding)
+                    .accessibilityIdentifier("armyListFlavorField")
+            }
+
             Section {
-                Button("Build starter list") {
-                    createStarterList()
+                Button {
+                    buildStarterList()
+                } label: {
+                    if isBuilding {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Building…")
+                        }
+                    } else {
+                        Text("Build starter list")
+                    }
                 }
-                .disabled(!canSubmit)
+                .disabled(!canSubmit || isBuilding)
                 .accessibilityIdentifier("armyListBuildStarterButton")
             }
 
@@ -456,13 +475,14 @@ struct ArmyListNewSheet: View {
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
+                    .disabled(isBuilding)
                     .accessibilityIdentifier("armyListNewSheetCancel")
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Create") {
                     createBlankList()
                 }
-                .disabled(!canSubmit)
+                .disabled(!canSubmit || isBuilding)
                 .accessibilityIdentifier("armyListCreateButton")
             }
         }
@@ -487,17 +507,35 @@ struct ArmyListNewSheet: View {
         onCreate(list)
     }
 
-    private func createStarterList() {
+    /// Builds a fresh list from 0 with the on-device model, steered by the
+    /// flavor text. Each run invents a new roster instead of the old
+    /// deterministic seeder that stamped out the same list every time.
+    private func buildStarterList() {
         seedError = nil
-        guard let seeded = ArmyListLegalSeeder.seed(
-            catalog: catalog,
+        let blank = ArmyListDocument(
+            name: trimmedName() ?? "New list",
+            catalogVersion: catalog.version,
             factionID: factionID,
-            battleSizeID: battleSizeID,
-            name: trimmedName()
-        ) else {
-            seedError = "Couldn’t build a starter list for this faction and battle size."
+            battleSizeID: battleSizeID
+        )
+        let workspace = ArmyListChatWorkspace(list: blank, catalog: catalog)
+        let runtime = ArmyListChatRuntime(workspace: workspace)
+        guard runtime.isModelAvailable else {
+            seedError = "Building a list needs Apple Intelligence (iOS 26+). Turn it on, or tap Create for a blank list to edit."
             return
         }
-        onCreate(seeded.list)
+        isBuilding = true
+        Task {
+            await runtime.send(
+                prompt: ArmyListChatPromptComposer.buildPrompt(theme: flavor),
+                displayText: "Build list"
+            )
+            isBuilding = false
+            if workspace.list.units.isEmpty {
+                seedError = "The model couldn’t build a list this time. Try again or tweak the theme."
+            } else {
+                onCreate(workspace.list)
+            }
+        }
     }
 }
