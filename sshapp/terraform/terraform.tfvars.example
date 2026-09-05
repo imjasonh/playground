@@ -15,7 +15,9 @@ domain     = "example.com"
 #   { cidr_block = "203.0.113.0/24", display_name = "office" },
 # ]
 
-# Create GitHub Actions WIF once you are ready to deploy from CI:
+# Create GitHub Actions WIF once you are ready for post-merge CD
+# (.github/workflows/deploy-sshapp.yml). Then set the repo vars/secret listed
+# in README.md under "GitHub Actions CD".
 # github_repository = "imjasonh/playground"
 
 # Add more Wish apps by extending this map (and adding apps/<name>/ under sshapp/).
