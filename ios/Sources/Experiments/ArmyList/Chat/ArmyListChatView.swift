@@ -447,17 +447,22 @@ struct ArmyListChatView: View {
 ///
 /// Kept separate from the view so prompt composition is unit-testable.
 enum ArmyListChatPromptComposer {
+    /// Shared guidance: spend up to the battle-size cap while honoring theme.
+    static let maximizePointsGuidance =
+        "Spend as close to the points limit as possible without going over — aim to leave at most ~25 pts unused unless no legal unit fits."
+
     /// A trailing clause instructing the model to honor the user's theme, or
     /// empty when no theme was given.
     static func themeClause(_ theme: String) -> String {
         let trimmed = theme.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
-        return " Theme to honor: \(trimmed). Choose units, detachment, and army name that fit this theme."
+        return " Theme to honor: \(trimmed). Choose units, detachment, and army name that fit this theme while \(maximizePointsGuidance.lowercased())"
     }
 
     /// From-scratch build. One `applyRosterPlan` call to avoid context blowouts.
     static func buildPrompt(theme: String) -> String {
         "Build a fresh, legal army list from scratch for this faction at the current battle size. "
+            + maximizePointsGuidance + " "
             + "Call getListSummary first for the faction and points limit, use searchCatalog as needed, "
             + "then call applyRosterPlan ONCE with a full plan (battle size, detachments, units, name). "
             + "Do not loop addUnit."
@@ -466,11 +471,12 @@ enum ArmyListChatPromptComposer {
 
     /// Fill remaining points on top of the existing roster.
     static func fillPointsPrompt(theme: String) -> String {
-        "Fill remaining points with a thematic extension of this list. "
+        "Fill remaining points on this list as completely as possible while keeping it thematic. "
+            + maximizePointsGuidance + " "
             + "Keep battle size and existing units. Call getListSummary, note pts remaining, "
-            + "then addUnit a few fitting datasheets (check copies N/limit in searchCatalog). "
-            + "Never exceed the points limit or duplicate caps. Never call setBattleSize. "
-            + "Stop when remaining points are too small for another legal unit, then briefly say what you added."
+            + "then addUnit thematic datasheets until remaining points are too small for another legal unit. "
+            + "Check copies N/limit in searchCatalog. Never exceed the points limit or duplicate caps. Never call setBattleSize. "
+            + "Re-read Status after each addUnit, then briefly say what you added and the final pts total."
             + themeClause(theme)
     }
 }
