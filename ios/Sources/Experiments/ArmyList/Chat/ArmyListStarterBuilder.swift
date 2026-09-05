@@ -73,7 +73,8 @@ enum ArmyListStarterPrompt {
         lines.append("")
         lines.append(
             "Call applyRosterPlan exactly once: pick one detachment id above within the DP budget, "
-            + "and units from the ids above totaling as close to \(pointsLimit) pts as you can without going over. "
+            + "and units from the ids above. Get as close to \(pointsLimit) pts as you can — "
+            + "keep adding units until no listed unit fits the points that remain. "
             + "Use pts@models sizes and max copy counts from the table; repeat an id to field another copy. "
             + "Include at least one Character for the Warlord."
         )
