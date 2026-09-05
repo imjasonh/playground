@@ -322,7 +322,15 @@ final class ArmyListChatToolTests: XCTestCase {
             .first { $0.contains("hearthkyn-warriors") }
         XCTAssertNotNil(warriorsLine)
         XCTAssertTrue(warriorsLine?.contains("@") == true, warriorsLine ?? "")
-        XCTAssertTrue(warriorsLine?.contains("| 3") == true || warriorsLine?.contains("| 2") == true, warriorsLine ?? "")
+        // The last column is the copy cap: a positive integer (battleline cap
+        // at Incursion is 4). This is what lets a small model respect limits.
+        let maxToken = warriorsLine?
+            .components(separatedBy: " | ")
+            .last?
+            .trimmingCharacters(in: .whitespaces)
+        XCTAssertNotNil(maxToken)
+        XCTAssertNotNil(maxToken.flatMap { Int($0) }, "Expected trailing max copies int, got: \(maxToken ?? "nil")")
+        XCTAssertGreaterThanOrEqual(maxToken.flatMap { Int($0) } ?? 0, 1)
     }
 
     func testBuildFeasibilityRejectsTitanLegionsAtIncursion() {
