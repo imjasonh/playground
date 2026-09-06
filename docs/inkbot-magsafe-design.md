@@ -1,17 +1,19 @@
 # Design: inkbot-magsafe, a MagSafe e-ink tile
 
 > **Status: 0.1.0, hardware design, not yet built.** A 4-inch mono e-ink tile
-> that snaps to the MagSafe ring on the back of an iPhone. An iOS app pushes
-> frames to it over Bluetooth Low Energy (BLE), on demand or in the background.
-> It runs off a tiny lithium-polymer (LiPo) cell and tops off wirelessly when
-> the phone-plus-tile stack sits on a charger. This doc is the circuit, the bill
-> of materials (BOM), and the pricing. The companion BOM lives in
+> that snaps to the MagSafe ring on the back of an iPhone. The paired iPhone is
+> the only source of frames; an iOS app pushes them over Bluetooth Low Energy
+> (BLE), on demand or in the background. It runs off a tiny lithium-polymer
+> (LiPo) cell and recharges by popping off the phone and sitting on any
+> MagSafe or Qi pad. This doc is the circuit, the bill of materials (BOM), and
+> the pricing. The companion BOM lives in
 > [`inkbot-magsafe-bom.csv`](inkbot-magsafe-bom.csv).
 
 This is a sibling to the existing [`inkbot-esp32/`](../inkbot-esp32/) firmware.
 That device is a tethered 7.5-inch panel that joins Wi-Fi and polls the
-[`inkbot/`](../inkbot/) Worker. This one drops Wi-Fi and the wall wart: it is
-battery-first, phone-first, and talks BLE to a phone in your pocket.
+[`inkbot/`](../inkbot/) Worker. This one drops Wi-Fi, the wall wart, and the
+Worker: it is battery-first, phone-first, and talks BLE to a phone in your
+pocket. The phone composes every frame.
 
 ## What the brief gets right, and the one thing it gets wrong
 
@@ -23,32 +25,31 @@ The wrong assumption is the power source. **An iPhone does not send Qi power out
 its back to an accessory stuck on the MagSafe ring.** Reverse wireless charging
 to arbitrary accessories is not a feature Apple ships (the MagSafe Battery Pack
 is a special case with its own handshake). So "infinite power whenever the phone
-is picked up or set down" is not real. Power only arrives when the whole
-phone-plus-tile stack is placed on a MagSafe or Qi charger, and even then only if
-the tile either sits closest to the pad or relays power through to the phone.
-That relay (pass-through charging) is the expensive, thick, hot part of this
-product, and it fights all three stated goals: reliability, slimness, and
-battery life.
+is picked up or set down" is not real. The tile runs on its own cell whenever it
+is on the phone, on or off a charger.
 
-So this design ships two variants, and I recommend the simpler one for the
-stated priorities:
+### How it charges: detach and drop it on a pad
 
-| | Variant S (self-charge) | Variant P (pass-through) |
-|---|---|---|
-| Tile charges from | its own Qi receive (RX) coil when the stack is on a pad | RX coil, taps the field it relays |
-| Phone charges when stacked | no (tile blocks the pad) | yes, at 5 W through the tile |
-| Added thickness | ~1 mm (thin RX coil) | ~2.5–3.5 mm (RX + transmit coil + shield + heat spread) |
-| Peak heat under charge | low | meaningful; needs a thermistor and throttling |
-| Regulatory lift | Qi RX (WPC + FCC Part 18) | Qi RX **and** TX; larger EMC and thermal test burden |
-| Recommended for | reliability, slimness, battery life | the "never think about it" pass-through UX |
+The tile carries its own 5 W Qi receive (RX) coil, and its MagSafe magnets do
+double duty: they hold it to the phone, and they self-align it on a charger. To
+recharge, **pop the tile off the phone and set it on any MagSafe or Qi pad.**
+Because the battery lasts weeks off charger (see the power budget), this is an
+AirPods-style occasional top-off, not a daily chore.
 
-**Recommendation: build Variant S first.** The tile owns a tiny battery that
-lasts weeks off charger (see the power budget), so "charge the tile" is a rare
-event, not a daily chore. When the stack goes on a pad the tile tops itself off;
-when you need the phone to charge, the tile's magnets let you pop it off in a
-second. Variant P is a real option, but it turns a paper-thin accessory into a
-warm coaster and adds a second coil, a transmit controller, and a thermal
-budget. Ship it as a follow-on once the BLE and panel path are proven.
+This is a deliberate choice to skip pass-through charging. When the phone sits on
+a normal back-charging puck, the puck wants the phone's back, which is exactly
+where the tile lives. Charging the phone *through* the tile would need a second
+(transmit) coil stacked over the phone's receiver, plus a transmit controller and
+a real thermal budget. That relay is the expensive, thick, hot part, and it
+fights all three stated goals: reliability, slimness, and battery life. Detaching
+to charge sidesteps it entirely.
+
+**Rejected alternative: pass-through.** A version with an added Qi transmit stage
+(a P9242-class controller and a stacked TX coil) could relay ~5 W to the phone so
+you never detach. It adds ~1.5 mm, a hot spot behind the phone, an NTC thermistor
+with power foldback, and a second radiator to certify. Revisit it only if
+"never take it off" turns out to matter more than thinness; the battery math says
+it should not.
 
 ## Decisions (locked for 0.1.0)
 
@@ -59,10 +60,12 @@ budget. Ship it as a follow-on once the BLE and panel path are proven.
 | Battery | 110–150 mAh LiPo pouch with protection, ~2 mm thick |
 | Charger | **power-path** charger (TI BQ25100), not a bare MCP73831 |
 | Panel power | fully gated by a load switch between refreshes |
-| Wireless | Variant S: 5 W Qi RX only. Variant P: adds a 5 W Qi TX relay |
+| Charging | 5 W Qi RX only; detach the tile and set it on a pad. No pass-through |
+| Frame source | the paired iPhone only; no Worker, no second radio |
+| Port | none for the user; SWD/USB test pads for factory flash and recovery. USB-C is an option, not the default |
 | Magnets | MagSafe-geometry N52 annular array; "MagSafe" naming needs Apple MFi |
 | Link | BLE 4.2+ GATT for control, **L2CAP connection-oriented channel** for the frame blob |
-| iOS delivery | Core Bluetooth central + State Preservation/Restoration, silent APNs wake, BGTasks |
+| iOS delivery | Core Bluetooth central + State Preservation/Restoration, BGTasks, tile-initiated nudge; no server push |
 
 ### Why nRF52832, not the ESP32-C3 in the brief
 
@@ -101,12 +104,12 @@ fresh RF layout and certification.
    Qi RX coil ─► │   ├─ NFCT ────────► NFC "tap to pair" antenna│    (+ 220µF bulk)
    (BQ51013B) ─┐ │   └─ SAADC ───────◄ battery + thermistor     │
                │ └─────────────────────────────────────────────┘
-   5V(RX out) ─┼──► BQ25100 power-path charger ──► LiPo 110mAh ──► VSYS ─► nRF (DC/DC)
-               │        ▲                                   ▲
-   USB-C ──────┘        │ ISET (charge ≈ 50–90mA)           │ protection FET
-   (charge + SWD/DFU)   └─ NTC thermistor (charge safety)   └─ 220µF bulk near panel
+   5V(RX out) ─┴──► BQ25100 power-path charger ──► LiPo 110mAh ──► VSYS ─► nRF (DC/DC)
+                        ▲                                   ▲
+                        │ ISET (charge ≈ 50–90mA)           │ protection FET
+                        └─ NTC thermistor (charge safety)   └─ 220µF bulk near panel
 
-   Variant P only:  Qi RX out ─► P9242-class TX controller ─► TX coil ─► phone
+   Recovery/factory only:  SWD pads (SWDIO/SWCLK/GND/VDD) ─► BLE-DFU fallback + programming
 ```
 
 Signal notes: the panel is a bare chip-on-glass (COG) module on a 24-pin 0.5 mm
@@ -157,10 +160,8 @@ the phone off a charger mid-refresh. Set charge current low (50–90 mA) with th
 ISET resistor to be kind to the small cell; there is no reason to fast-charge a
 battery that drains a fraction of a milliamp-hour a day.
 
-Two charge inputs feed it, OR-ed with Schottky or an ideal-diode load switch:
-
-- **USB-C** on the tile edge, for factory bring-up, SWD/DFU, and manual charging.
-- **Qi RX output** from the BQ51013B 5 W receiver (both variants).
+The **Qi RX output** from the BQ51013B 5 W receiver is the only charge input the
+user touches. There is no USB-C port on the shipping tile (see the next section).
 
 The nRF52832 runs directly from VSYS through its internal DC/DC (add the DC/DC
 inductor and caps per Nordic's reference). The panel gets a dedicated 3.3 V rail
@@ -169,17 +170,35 @@ nRF plus leakage.
 
 ### Wireless power
 
-Variant S uses the **BQ51013B** (or NXP equivalent) with a MagSafe-profile RX
-coil sized to Apple's ring geometry so it aligns on any MagSafe pad. Route the
+The tile uses the **BQ51013B** (or NXP equivalent) with a MagSafe-profile RX coil
+sized to Apple's ring geometry so it self-aligns on any MagSafe pad. Route the
 coil on the back layer, keep a ferrite shield between the coil and the PCB ground
 plane, and keep the 2.4 GHz antenna in the opposite corner from the coil and
-magnets (both detune it).
+magnets (both detune it). There is no transmit stage: the tile charges itself,
+not the phone (see the rejected pass-through note above).
 
-Variant P adds a Qi **transmit** stage (a P9242-class TX controller and TX coil)
-fed from the RX output, relaying ~5 W to the phone. This is where the thickness,
-heat, and EMC work live. Add an NTC thermistor under the coil stack and throttle
-or fold back TX power above ~45 °C. Do not attempt 15 W: Apple caps non-MFi
-accessories to 7.5 W, and 5 W keeps the thermal story sane behind a phone.
+### Ports: none, by design
+
+Ship the tile with **no user-facing connector.** Charging is wireless, and
+firmware updates ride the same BLE link as frames (Nordic Secure DFU). A port is
+the part most likely to fail on a thin accessory carried against a phone: it
+costs thickness, invites water and lint, and adds a certification and a BOM line
+for a job the wireless path already does.
+
+Keep two things instead of a port:
+
+- **SWD test pads** (SWDIO, SWCLK, GND, VDD) on the back, under a peel label or
+  the magnet ring, for factory programming on a pogo fixture and for brick
+  recovery when a BLE DFU goes wrong. This is the reliability backstop for a
+  portless device: DFU can fail, but SWD always brings a board back.
+- Optional **USB test pads** if you want cabled charging on the bench during
+  bring-up.
+
+**USB-C as an option, not the default.** If a cabled fallback matters (charging
+without a Qi pad, or simpler contract manufacturing), a USB-C receptacle can wire
+to the second charger input and to the nRF USB/SWD for DFU. It adds ~$0.5 in
+parts, an ESD array, an enclosure cutout, and an ingress path. The BOM lists it
+as an optional line so the tradeoff is explicit.
 
 ### Antenna and the phone-metal problem
 
@@ -201,9 +220,10 @@ panel adheres to the front; battery, coil, and magnet ring stack on the back.
 
 ### Realistic thickness
 
-Paper-thin is aspirational. Honest stack-ups:
+Paper-thin is aspirational. Honest stack-up, with the rejected pass-through
+version alongside for reference:
 
-| Layer | Variant S | Variant P |
+| Layer | Shipping (self-charge) | If pass-through were added |
 |---|---|---|
 | E-ink panel + FPC | 1.0 mm | 1.0 mm |
 | PCB | 0.8 mm | 0.8 mm |
@@ -213,8 +233,10 @@ Paper-thin is aspirational. Honest stack-ups:
 | Magnet ring + skins/adhesive | 0.8 mm | 0.8 mm |
 | **Total (approx.)** | **~4.5 mm** | **~5.8 mm** |
 
-That is thicker than a MagSafe wallet but thinner than a battery pack. The
-"under 2 mm" figure in the brief describes the bare cell, not the finished tile.
+Dropping the USB-C port keeps the edge clean and shaves the cutout, but the
+coil, cell, and magnets set the floor, so the tile is ~4.5 mm either way. That is
+thicker than a MagSafe wallet but thinner than a battery pack. The "under 2 mm"
+figure in the brief describes the bare cell, not the finished tile.
 
 ## BLE and iOS integration
 
@@ -239,24 +261,30 @@ centrals that will not open a channel.
 ### Getting a frame there in the background
 
 iOS does not let an app run arbitrary code on a schedule to poke BLE. Truly
-"push any time" is not something iOS guarantees. What it does give you, and the
-tile should be designed around, is a combination:
+"push any time" is not something iOS guarantees, and with the phone as the sole
+source there is no server to send a wake. So background updates are event-driven
+and best-effort, and the product should be pitched around faces that tolerate
+that: a clock, the day's calendar, weather, a step count, the next transit
+departure. It is not a pager. What iOS does give a source-on-device app:
 
 - **Persistent connection + State Preservation and Restoration.** With the
   `bluetooth-central` background mode, iOS keeps a connection alive and relaunches
   the app to handle events (`willRestoreState`, notifications) even after the app
   is jettisoned. The tile stays connected and the app is woken briefly to write a
   new frame.
-- **Silent push (APNs `content-available`).** The tile's data source (for example
-  the inkbot Worker) sends a background push to the phone; the app wakes, connects
-  to the retained peripheral by identifier, and pushes the frame.
-- **`BGAppRefreshTask` / `BGProcessingTask`.** For non-urgent updates, the app
-  wakes on the system's schedule and syncs.
+- **`BGAppRefreshTask` / `BGProcessingTask`.** The app wakes on the system's
+  schedule (typically tens of minutes, adaptive to usage) to recompute a frame
+  from on-device data and push it. This is the workhorse for a phone-only source.
 - **Peripheral-initiated nudge.** If the tile wants attention (a button, or it
   woke on its own timer), it advertises a specific service UUID; iOS background
-  scanning for that UUID relaunches the app. Background scans must name the UUID
-  (no wildcard) and are duty-cycled, so treat this as "within a minute," not
-  instant.
+  scanning for that UUID relaunches the app, which then pushes. Background scans
+  must name the UUID (no wildcard) and are duty-cycled, so treat this as "within
+  a minute," not instant.
+
+If a face ever needs sub-minute remote updates (an inbound message the instant it
+lands), that requires a silent APNs push from some server, which the phone-only
+model deliberately gives up. That is the one thing this decision trades away; see
+Open questions.
 
 Design the protocol so a push is idempotent and resumable: the app sends a frame
 id and a hash, the tile acknowledges what it already has, and a dropped
@@ -282,7 +310,8 @@ C/Zephyr build if the panel vendor's driver is easier to port). Core pieces:
   state that still meets the latency target, sample battery and temperature on
   the SAADC, report them over Status.
 - **DFU**: BLE DFU (Nordic Secure DFU) so updates arrive over the same link as
-  frames; USB-C is the recovery path.
+  frames. SWD test pads are the brick-recovery path when a DFU fails; there is no
+  USB port to fall back to.
 
 Firmware does not need the OTA-from-GHCR or GCP machinery the Wi-Fi device
 carries; the phone is the update transport.
@@ -293,27 +322,29 @@ Full line items with part numbers and price columns are in
 [`inkbot-magsafe-bom.csv`](inkbot-magsafe-bom.csv). Rolled-up cost of goods
 (COGS) at ~1,000 units, using the pre-certified radio module:
 
-| | Variant S | Variant P |
+| | Shipping tile | + optional USB-C |
 |---|---|---|
-| Parts | ~$29 | ~$37 |
-| Assembly (SMT, test) | ~$4 | ~$5 |
-| **COGS** | **~$33** | **~$42** |
-| Suggested retail (2.5–3×) | ~$85–99 | ~$119–129 |
+| Parts (incl. PCB) | ~$29 | ~$29.5 |
+| Assembly (SMT, test) | ~$4 | ~$4 |
+| **COGS** | **~$33** | **~$33.5** |
+| Suggested retail (2.5–3×) | ~$85–99 | ~$85–99 |
 
 The panel (~$12), the radio module (~$4.2), and the Qi receive stage (~$4.6 for
-the receiver plus coil) dominate Variant S. Dropping to a bare nRF52832 QFN saves
+the receiver plus coil) dominate the bill. Dropping to a bare nRF52832 QFN saves
 ~$2 in parts but costs an RF layout and a certification cycle; do that only at
-volume. Variant P's ~$8 adder is almost entirely the transmit coil and controller
-plus the thermal parts.
+volume. The optional USB-C receptacle plus its ESD array adds ~$0.5. The rejected
+pass-through version would add ~$8 (transmit coil, controller, thermal parts) and
+push COGS to ~$42, but it is not in the shipping BOM.
 
 ## Reliability checklist
 
 - Power-path charger so lift-off-charger transitions never brown out the nRF.
 - 220 µF bulk cap at the panel rail to absorb refresh inrush from a high-ESR cell.
 - Antenna tuned with a phone attached; ground keep-out under it.
-- NTC thermistor for charge safety (both variants) and TX throttling (Variant P).
+- NTC thermistor for Qi charge safety.
 - Cell with an integrated protection FET, or add a DW01 + dual FET.
-- ESD protection (TVS array) on the USB-C data and power pins.
+- SWD test pads for brick recovery, since there is no USB port to fall back to.
+- ESD protection (TVS array) only if the optional USB-C port is fitted.
 - Forced periodic full refresh to prevent e-ink ghosting.
 - Note the operating range: e-ink refresh is unreliable below ~0 °C.
 
@@ -325,14 +356,26 @@ plus the thermal parts.
   licensing). Without MFi: generic magnets, "works with MagSafe chargers,"
   7.5 W cap.
 - The pre-certified radio module clears the intentional-radiator certification.
-- The Qi coil is still a Part 18 radiator; Variant P's transmitter roughly
-  doubles the EMC and thermal test burden and may want WPC (Qi) certification.
+- The Qi coil is still a Part 18 radiator. The tile is receive-only, so there is
+  no transmit EMC burden; adding pass-through later would roughly double it and
+  may want WPC (Qi) certification.
+
+## Decisions taken since 0.1.0 draft
+
+- **The phone is the sole source of frames.** No Worker, no server push. This
+  keeps the system to one radio and one trust boundary, at the cost of sub-minute
+  remote updates (see BLE background). Faces are on-device data: clock, calendar,
+  weather, health, transit.
+- **Charging is detach-and-drop on a Qi/MagSafe pad.** No pass-through in the
+  shipping design.
+- **No user-facing port.** BLE DFU for updates, SWD pads for recovery, USB-C only
+  as an optional cabled fallback.
 
 ## Open questions
 
 - Mono only, or a BWR / grayscale variant? Grayscale pushes to the nRF52833 and
   larger frames.
-- Is pass-through charging a launch requirement, or a v2? The recommendation is
-  v2; Variant S ships the better product against the stated goals.
-- Does the frame source stay the inkbot Worker (silent push from the same place
-  that feeds the Wi-Fi device), or is the phone the sole source of truth?
+- Which on-device sources make the launch faces, and what `BGTask` cadence do
+  they need to feel fresh without draining background budget?
+- Is the sub-minute-update gap (no server push) acceptable for every intended
+  face, or does one face justify an optional companion push service later?
