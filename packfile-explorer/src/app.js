@@ -151,6 +151,7 @@ async function openPack(record) {
     base: record.base,
     refs: record.refs,
     head: record.head,
+    packBytes: record.pack,
     parsed,
     objects: resolved.objects,
     byOid: resolved.byOid,
