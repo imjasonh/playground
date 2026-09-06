@@ -383,6 +383,7 @@ struct ArmyListNewSheet: View {
     @State private var battleSizeID = "incursion"
     @State private var flavor = ""
     @State private var isBuilding = false
+    @State private var buildProgress: ArmyListStarterBuildProgress?
     @State private var seedError: String?
 
     private var factionsSorted: [FactionDefinition] {
@@ -445,18 +446,25 @@ struct ArmyListNewSheet: View {
                     .accessibilityIdentifier("armyListFlavorField")
             }
 
+            if isBuilding, let buildProgress {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ProgressView(value: buildProgress.fractionComplete, total: 1.0)
+                        Text(buildProgress.statusText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .animation(.easeInOut(duration: 0.25), value: buildProgress)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("armyListBuildStarterProgress")
+                }
+            }
+
             Section {
                 Button {
                     buildStarterList()
                 } label: {
-                    if isBuilding {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("Building…")
-                        }
-                    } else {
-                        Text("Build starter list")
-                    }
+                    Text(isBuilding ? "Building…" : "Build starter list")
                 }
                 .disabled(!canSubmit || isBuilding)
                 .accessibilityIdentifier("armyListBuildStarterButton")
@@ -539,6 +547,11 @@ struct ArmyListNewSheet: View {
             return
         }
         isBuilding = true
+        buildProgress = ArmyListStarterBuildProgress(
+            attempt: 0,
+            maxAttempts: 3,
+            phase: .preparing
+        )
         let theme = flavor
         let userName = trimmedName()
         Task {
@@ -547,9 +560,13 @@ struct ArmyListNewSheet: View {
                 factionID: factionID,
                 battleSizeID: battleSizeID,
                 theme: theme,
-                userName: userName
+                userName: userName,
+                onProgress: { progress in
+                    buildProgress = progress
+                }
             )
             isBuilding = false
+            buildProgress = nil
             if let built {
                 onCreate(built)
             } else {

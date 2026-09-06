@@ -51,6 +51,10 @@ final class ArmyListChatRuntime: ObservableObject {
     let workspace: ArmyListChatWorkspace
     let mode: Mode
 
+    /// Builder-mode starter builds use this to advance the New list progress UI
+    /// when `applyRosterPlan` starts running.
+    var onStarterBuildToolStarted: (@MainActor (String) -> Void)?
+
     private var languageSessionBox: Any?
     private var workspaceBag: AnyCancellable?
     private var carryOverNotes = ""
@@ -507,6 +511,9 @@ private enum ArmyListFMToolBridge {
         await Task { @MainActor in
             guard let runtime else {
                 return "Army List chat runtime is gone."
+            }
+            if runtime.mode == .builder {
+                runtime.onStarterBuildToolStarted?(name)
             }
             let pending = ArmyListChatEntry(kind: .tool, text: "\(name)…")
             runtime.transcript.append(pending)
