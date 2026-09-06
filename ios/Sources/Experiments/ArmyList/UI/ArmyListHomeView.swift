@@ -385,6 +385,10 @@ struct ArmyListNewSheet: View {
     @State private var isBuilding = false
     @State private var buildProgress: ArmyListStarterBuildProgress?
     @State private var buildTask: Task<Void, Never>?
+    /// Smoothly animated bar value. A trickle loop nudges it toward the next
+    /// milestone so the long, opaque model call still looks like it is moving;
+    /// real milestones snap it forward.
+    @State private var displayedFraction: Double = 0
     @State private var seedError: String?
 
     private var factionsSorted: [FactionDefinition] {
@@ -450,12 +454,13 @@ struct ArmyListNewSheet: View {
             if isBuilding, let buildProgress {
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
-                        ProgressView(value: buildProgress.fractionComplete, total: 1.0)
+                        ProgressView(value: displayedFraction, total: 1.0)
+                            .animation(.linear(duration: 0.12), value: displayedFraction)
                         Text(buildProgress.statusText)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
+                            .animation(.easeInOut(duration: 0.25), value: buildProgress)
                     }
-                    .animation(.easeInOut(duration: 0.25), value: buildProgress)
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("armyListBuildStarterProgress")
                 }
@@ -490,6 +495,16 @@ struct ArmyListNewSheet: View {
         }
         .navigationTitle("New list")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: isBuilding) {
+            guard isBuilding else { return }
+            while isBuilding, !Task.isCancelled {
+                displayedFraction = ArmyListStarterBuildProgress.trickle(
+                    from: displayedFraction,
+                    milestone: buildProgress
+                )
+                try? await Task.sleep(nanoseconds: 90_000_000)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
@@ -556,6 +571,7 @@ struct ArmyListNewSheet: View {
             seedError = issue
             return
         }
+        displayedFraction = 0
         isBuilding = true
         buildProgress = ArmyListStarterBuildProgress(
             attempt: 0,
@@ -601,5 +617,6 @@ struct ArmyListNewSheet: View {
         buildTask = nil
         isBuilding = false
         buildProgress = nil
+        displayedFraction = 0
     }
 }

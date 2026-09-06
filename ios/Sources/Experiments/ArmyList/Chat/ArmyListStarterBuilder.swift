@@ -245,6 +245,27 @@ struct ArmyListStarterBuildProgress: Equatable {
         }
     }
 
+    /// Eases a displayed bar value upward toward the next milestone so the long,
+    /// opaque model call still looks like it is filling. The value creeps toward
+    /// a ceiling just past the current milestone (decelerating so it never
+    /// claims done), while the milestone floor snaps it forward when real
+    /// progress arrives. On the finishing phase it goes straight to full.
+    static func trickle(
+        from current: Double,
+        milestone: ArmyListStarterBuildProgress?
+    ) -> Double {
+        guard let milestone else {
+            return min(0.9, current + (0.9 - current) * 0.05)
+        }
+        let floor = milestone.fractionComplete
+        if milestone.phase == .finishing {
+            return 1.0
+        }
+        let ceiling = min(0.95, floor + 0.22)
+        let eased = current + (ceiling - current) * 0.06
+        return min(ceiling, max(floor, eased))
+    }
+
     var statusText: String {
         switch phase {
         case .preparing:
