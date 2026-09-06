@@ -304,6 +304,12 @@ enum ArmyListStarterBuilder {
         onProgress?(
             ArmyListStarterBuildProgress(attempt: 0, maxAttempts: maxAttempts, phase: .preparing)
         )
+        // The on-device model is a single shared resource, so extra attempts run
+        // one after another, not in parallel. Stop as soon as one is legal and
+        // already spends within this slack of the limit — no point paying for
+        // more serialized generations when the first roster is good enough.
+        let pointsLimit = catalog.battleSize(id: battleSizeID)?.pointsLimit ?? 0
+        let goodEnoughSlack = 25
         let prompt = ArmyListStarterPrompt.prompt(
             catalog: catalog,
             factionID: factionID,
@@ -361,6 +367,11 @@ enum ArmyListStarterBuilder {
             }
             if total > (bestAny?.points ?? -1) {
                 bestAny = (built, total)
+            }
+            if workspace.validation.isLegal,
+               pointsLimit > 0,
+               total >= pointsLimit - goodEnoughSlack {
+                break
             }
         }
         let result = bestLegal?.list ?? bestAny?.list
