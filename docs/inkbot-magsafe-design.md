@@ -56,8 +56,9 @@ it should not.
 | Topic | Decision |
 |-------|----------|
 | MCU / radio | **Nordic nRF52832 bare QFN-48** (Raytac MDBT42Q optional later for cert) |
-| Panel | 4.2-inch 400×300 mono e-ink, on-glass controller (SSD1683-class), partial refresh |
-| Battery | ~100 mAh thin LiPo pouch with protection, ~1.5 mm, in a PCB cutout |
+| Panel | **3.7-inch 240×416 portrait** mono e-ink, on-glass controller (UC8253-class), partial refresh |
+| Orientation | portrait; ring high on the tile, panel fills the tile and overlaps the ring |
+| Battery | ~90 mAh thin LiPo pouch with protection, ~1.5 mm, in a PCB cutout below the coil |
 | Power | **BQ51050B** Qi RX + LiPo charger (one IC); system on the cell (detach-to-charge) |
 | Panel power | fully gated by a load switch + 3.3 V LDO between refreshes |
 | Charging | 5 W Qi RX only; detach the tile and set it on a pad. No pass-through |
@@ -99,7 +100,7 @@ path later if intentional-radiator certification becomes the bottleneck.
 ```
                  ┌─────────────────────────────────────────────┐
    MagSafe ring  │  nRF52832-QFAA (bare QFN)                   │
-   magnets ──────┤   ├─ SPI ─────────► 4.2" e-ink COG (SSD1683)│
+   magnets ──────┤   ├─ SPI ─────────► 3.7" e-ink COG (UC8253) │
                  │   ├─ GPIO ────────► TPS22810 + MIC5504 ──────┼─► panel 3.3V rail
    Qi RX coil ─► │   ├─ NFCT ────────► NFC "tap to pair" antenna│    (+ 220µF bulk)
    (in magnet    │   └─ SAADC ───────◄ battery + thermistor     │
@@ -119,6 +120,18 @@ flex (FPC); its on-glass charge pump makes its own gate and source rails from
 caps on the FPC pins. The load switch cuts that rail to zero between refreshes so
 the panel contributes nothing to sleep current.
 
+### Why 3.7-inch, portrait
+
+The tile has to fit an iPhone's back without hanging over the sides or fouling
+the camera plateau. A 4.2-inch 400×300 module is 91 × 77 mm; even rotated to
+portrait its short edge is 77 mm, wider than a standard iPhone (71.6 mm), so it
+overhangs. The 3.7-inch 240×416 module is **53 mm wide** — narrower than every
+MagSafe iPhone, including the 64.2 mm minis — and portrait-native (tall), so it
+fills a tile that sits inside the phone's width. The trade is resolution and
+area: 240×416 (12,480 bytes mono) instead of 400×300 (15,000). The controller is
+the UC8253/UC81xx family rather than SSD1683; the SPI control lines (SCK, SDI,
+CS, D/C, RST, BUSY) and the load-switched 3.3 V rail are unchanged.
+
 ## Power budget
 
 Assume a realistic day: the tile is off charger 8 hours, holds a background BLE
@@ -129,7 +142,7 @@ connection the whole time, and does 24 refreshes (a new frame roughly every
 |---|---|---|---|
 | nRF connected idle (1 s interval, slave latency) | ~20 µA avg | 0.16 mAh | radio kept alive to catch pushes |
 | Panel + logic asleep (load switch open) | ~1 µA | ~0 mAh | panel fully gated |
-| One full refresh | ~15 mA for ~2 s = 0.008 mAh | (per event) | mono 400×300, full update |
+| One full refresh | ~15 mA for ~2 s = 0.008 mAh | (per event) | mono 240×416, full update |
 | One partial refresh | ~10 mA for ~0.7 s = 0.002 mAh | (per event) | most updates are partial |
 | 24 refreshes (say 6 full, 18 partial) | | ~0.09 mAh | |
 | BLE frame transfer (15 KB, L2CAP) | ~5 mA for ~3 s = 0.004 mAh | ~0.02 mAh | a few per day |
@@ -201,13 +214,19 @@ radio and will detune a 2.4 GHz antenna. Two consequences drive the layout:
 
 ### Board stack
 
-A **0.4 mm** 4-layer PCB (signal / ground / power / signal) with a **central
-battery cutout** so the cell does not stack on the FR4. Outline follows the
-panel (~91 × 77 mm). No case for 0.1.0: the panel is the front face; coil and
-magnets sit on the back. See [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/)
-for the schematic and outline, and
+A **0.4 mm** 4-layer PCB (signal / ground / power / signal), **57 × 96 mm
+portrait**, with a **battery cutout** below the coil so the cell does not stack
+on the FR4. The 3.7-inch panel is bonded to the whole front and **overlaps the
+MagSafe ring**: the coil and magnets are on the back, the panel on the front, so
+they share the same footprint without colliding. No case for 0.1.0. See
+[`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/) for the schematic and
+outline, and
 [`inkbot-magsafe/hardware/stackup.md`](../inkbot-magsafe/hardware/stackup.md)
 for the mechanical stack.
+
+Because the panel covers the front, the nRF, BQ51050B, and passives mount on the
+**back**, ringing the coil and the cutout, inside the magnet-ring thickness
+envelope.
 
 ### Realistic thickness
 
@@ -216,7 +235,7 @@ Thickness-first layout (cutout + thin PCB + bare QFN + combined Qi/charger):
 | Region | Approx. |
 |--------|---------|
 | At the cell (panel + 1.5 mm LiPo in cutout) | **~2.55 mm** |
-| At the magnet ring (panel + 0.4 mm PCB + coil/magnets) | **~2.0–2.1 mm** |
+| At the magnet ring (panel + 0.4 mm PCB + coil/magnets/parts) | **~2.0–2.1 mm** |
 
 Earlier ~4.5 mm assumed a 0.8 mm PCB and a cell under the board. Pass-through
 TX would still add ~1.2 mm and is rejected. The "under 2 mm" figure in the brief
@@ -231,25 +250,24 @@ Plus, Pro, Pro Max). It does **not** fit phones without the ring — iPhone 11 a
 earlier, every iPhone SE, and the **iPhone 16e** (Qi 7.5 W only, no magnets). A
 third-party MagSafe-magnet case adds the ring to any of those.
 
-The magnet array self-centers the tile on the ring; the phone model only changes
-how far the 77 × 91 mm outline overhangs the body. Orient the 91 mm side along
-the phone's length:
+At **57 mm wide**, the portrait tile sits inside the width of every one of those
+phones — including the 64.2 mm minis — so there is **no side overhang**:
 
-| Phone | Body W × H (mm) | Side overhang | Notes |
-|-------|-----------------|---------------|-------|
-| 16 Pro Max / 15 Plus / 14 Pro Max | ~77–78 × 160–163 | flush (±0.5) | best fit; tile inside the body |
-| 15 / 16 / 14 / 13 / 12 (standard + Pro) | ~71.5 × 147 | +2.7 /side | small, even overhang |
-| 13 mini / 12 mini | 64.2 × 131.5 | +6.4 /side | noticeable overhang |
+| Phone | Body W × H (mm) | Side inset | Notes |
+|-------|-----------------|-----------|-------|
+| 16 Pro Max / 15 Plus / 14 Pro Max | ~77–78 × 160–163 | ~10 /side | lots of margin |
+| 15 / 16 / 14 / 13 / 12 (standard + Pro) | ~71.6 × 147 | ~7.3 /side | comfortable |
+| 13 mini / 12 mini | 64.2 × 131.5 | ~3.6 /side | still inside the body |
 
-Two real consequences, independent of model:
-
-- **The tile overhangs the sides** on everything but the Plus/Max, because the
-  panel is 84.8 mm across and the narrowest iPhones are ~64–71 mm. A smaller
-  panel is the only way to sit fully within a standard body.
-- **It rides up over the camera plateau.** The MagSafe ring sits above the
-  phone's center, so a tile centered on it extends into the rear-camera area. On
-  a real build, add a back-side pocket or accept that the tile covers the
-  cameras while attached (it is a back accessory, not a case).
+**Camera clearance comes from Apple's own rule.** The Accessory Design
+Guidelines require a MagSafe accessory not to extend past **30 mm from the ring
+center toward the top of the phone**, which is exactly the zone the camera
+plateau lives above. So the tile puts the MagSafe ring **as high as it can** —
+ring center 30 mm from the top edge, the magnet ring itself (Ø ~55 mm) tucked
+just under that edge — and the body hangs downward, below the cameras. The
+96 mm-tall tile reaches roughly mid-phone on a standard model and near the
+bottom edge on a mini; on the smallest minis the bottom can approach the phone's
+lower edge, but it never covers the cameras.
 
 ## BLE and iOS integration
 
@@ -266,7 +284,7 @@ top-level app.
 | Frame (fallback) | write-without-response | chunked pixel data when L2CAP is unavailable |
 
 For the pixel payload, prefer an **L2CAP connection-oriented channel**
-(`CBL2CAPChannel` on iOS). A 400×300 mono frame is 15 KB; over an L2CAP stream
+(`CBL2CAPChannel` on iOS). A 240×416 mono frame is 12.2 KB; over an L2CAP stream
 with a negotiated MTU that is a couple of seconds, versus a slow parade of
 20-byte GATT writes. Keep the GATT "Frame" characteristic as a fallback for
 centrals that will not open a channel.
@@ -319,7 +337,7 @@ Reuse the shape of [`inkbot-esp32/`](../inkbot-esp32/) where it helps, but this 
 a fresh crate for the nRF target (nRF52 SoftDevice via `nrf-softdevice`, or a
 C/Zephyr build if the panel vendor's driver is easier to port). Core pieces:
 
-- **Panel driver**: SPI to the SSD1683-class COG, full and partial LUTs, forced
+- **Panel driver**: SPI to the UC8253-class COG, full and partial LUTs, forced
   full refresh every N partials to clear ghosting.
 - **BLE peripheral**: the GATT table above plus the L2CAP server; low duty-cycle
   advertising when disconnected.
@@ -343,14 +361,15 @@ Full line items with part numbers and price columns are in
 
 | | Shipping tile |
 |---|---|
-| Parts (incl. thin PCB) | ~$28 |
+| Parts (incl. thin PCB) | ~$25 |
 | Assembly (SMT, test) | ~$4 |
-| **COGS** | **~$32** |
-| Suggested retail (2.5–3×) | ~$85–99 |
+| **COGS** | **~$29** |
+| Suggested retail (2.5–3×) | ~$75–89 |
 
-The panel (~$12) and the Qi stage (~$4.8 for BQ51050B + coil) dominate. The bare
-nRF52832 (~$2.30) is cheaper than a pre-certified module; certification is a
-later cost if you stay bare. Pass-through TX would still add ~$8 and is rejected.
+The 3.7-inch panel (~$9.5) and the Qi stage (~$4.8 for BQ51050B + coil)
+dominate. The bare nRF52832 (~$2.30) is cheaper than a pre-certified module;
+certification is a later cost if you stay bare. Pass-through TX would still add
+~$8 and is rejected.
 
 ## Reliability checklist
 

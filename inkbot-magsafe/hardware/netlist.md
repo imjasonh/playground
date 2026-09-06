@@ -30,6 +30,9 @@ schematic in [`../kicad/`](../kicad/) and
 
 ## Panel (SPI + control)
 
+Panel: 3.7-inch 240×416 portrait mono e-ink, UC8253-class COG, 24-pin 0.5 mm
+FPC. Same SPI control lines as any UC81xx/SSD168x panel.
+
 - PANEL_SCLK (P0.14) → J1 / panel SCK
 - PANEL_MOSI (P0.13) → SDI
 - PANEL_CS (P0.12) → CS#

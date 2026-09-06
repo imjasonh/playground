@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """Generate a thickness-first PCB outline for inkbot-magsafe (KiCad 7 format).
 
-No case: the 4.2\" panel is the front face. The LiPo sits in a board cutout so
-its thickness does not stack on the 0.4 mm PCB. MagSafe magnets and the Qi coil
-share the back plane. Footprints are placed afterward with place_footprints.py.
+Portrait tile sized to fit within an iPhone's width. No case: the 3.7" panel is
+the front face and covers the whole board, overlapping the MagSafe ring (the
+coil and magnets live on the back, the panel on the front, so they share the
+outline without colliding). The MagSafe ring sits as high as possible so the
+tile hangs downward, clear of the rear-camera plateau: the board top stays
+within Apple's 30 mm keep-in above the ring center. The LiPo sits in a board
+cutout below the coil. Footprints are placed afterward with place_footprints.py.
 """
 
 from __future__ import annotations
@@ -13,11 +17,24 @@ from pathlib import Path
 
 OUT = Path(__file__).resolve().parent / "inkbot-magsafe.kicad_pcb"
 
-BOARD_W = 91.0
-BOARD_H = 77.0
+# Portrait outline. 3.7" module is 53 x 93 mm; a 57 mm-wide board clears the
+# panel and still fits every MagSafe iPhone (narrowest, 12/13 mini, is 64.2 mm).
+BOARD_W = 57.0
+BOARD_H = 96.0
+
+# MagSafe ring as high as possible: center 30 mm from the top edge = Apple's
+# keep-in limit toward the phone's top, which is what clears the camera bump.
+RING_CY = 30.0
 RING_DIA = 54.9
 COIL_DIA = 40.0
-BAT_W, BAT_H = 32.0, 22.0
+
+# Panel module outline (front face), near the top so it overlaps the ring.
+PANEL_W, PANEL_H = 53.0, 93.0
+PANEL_TOP = 1.5
+
+# LiPo cutout below the coil.
+BAT_W, BAT_H = 30.0, 20.0
+BAT_CY = 72.0
 
 
 def uid() -> str:
@@ -52,19 +69,23 @@ def text(s: str, x: float, y: float, layer: str, size: float = 1.0) -> str:
 
 
 def main() -> None:
-    cx, cy = BOARD_W / 2, BOARD_H / 2
+    cx = BOARD_W / 2
     bat_x = cx - BAT_W / 2
-    bat_y = cy - BAT_H / 2
+    bat_y = BAT_CY - BAT_H / 2
+    panel_x = cx - PANEL_W / 2
 
     graphics = [
         rect_outline(0, 0, BOARD_W, BOARD_H, "Edge.Cuts", 0.05),
         rect_outline(bat_x, bat_y, BAT_W, BAT_H, "Edge.Cuts", 0.05),
-        circle(cx, cy, RING_DIA / 2, "Dwgs.User", 0.15),
-        circle(cx, cy, COIL_DIA / 2, "Dwgs.User", 0.1),
-        text("MagSafe ring PCD", cx, cy - RING_DIA / 2 - 1.5, "Dwgs.User", 0.8),
-        text("Qi coil keep-in", cx, cy + COIL_DIA / 2 + 1.5, "Dwgs.User", 0.8),
+        # Panel outline (front face) on the fab layer.
+        rect_outline(panel_x, PANEL_TOP, PANEL_W, PANEL_H, "Cmts.User", 0.1),
+        circle(cx, RING_CY, RING_DIA / 2, "Dwgs.User", 0.15),
+        circle(cx, RING_CY, COIL_DIA / 2, "Dwgs.User", 0.1),
+        text("MagSafe ring PCD", cx, RING_CY, "Dwgs.User", 0.8),
+        text("Qi coil", cx, RING_CY + COIL_DIA / 2 + 1.5, "Dwgs.User", 0.7),
         text("LiPo cutout", cx, bat_y - 1.5, "Dwgs.User", 0.8),
-        text("inkbot-magsafe 0.4mm 4-layer  no case", 2, 2, "Cmts.User", 1.0),
+        text("panel 3.7in 240x416 (front, overlaps ring)", cx, BOARD_H - 2, "Cmts.User", 0.7),
+        text("top edge <=30mm above ring center: clears camera bump", 2, 2, "Cmts.User", 0.8),
     ]
 
     pcb = f"""(kicad_pcb (version 20221018) (generator pcbnew)
@@ -77,9 +98,9 @@ def main() -> None:
   (title_block
     (title "inkbot-magsafe")
     (date "2026-09-06")
-    (rev "0.2.0")
-    (comment 1 "0.4 mm 4-layer; battery cutout; no case — panel is the front face")
-    (comment 2 "Place magnets + Qi coil on back; keep antenna outside magnet ring")
+    (rev "0.3.0")
+    (comment 1 "0.4 mm 4-layer; portrait; battery cutout; no case — panel is the front face")
+    (comment 2 "Ring high (30mm keep-in) clears cameras; panel overlaps ring; antenna at bottom edge")
   )
 
   (layers
@@ -167,7 +188,10 @@ def main() -> None:
 """
     OUT.write_text(pcb)
     print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")
-    print(f"board {BOARD_W}x{BOARD_H} mm, thickness 0.4 mm, battery cutout {BAT_W}x{BAT_H} mm")
+    print(
+        f"board {BOARD_W}x{BOARD_H} mm portrait, 0.4 mm, ring center {RING_CY} mm from top, "
+        f"battery cutout {BAT_W}x{BAT_H} mm"
+    )
 
 
 if __name__ == "__main__":

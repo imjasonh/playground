@@ -18,7 +18,7 @@ mod firmware {
     // Compile-time guard: the mono framebuffer must fit the RAM budget we
     // reserve for it (see memory.x). If the geometry ever changes, the build
     // fails here rather than at runtime.
-    const _: () = assert!(panel::FRAME_BYTES == 15_000);
+    const _: () = assert!(panel::FRAME_BYTES == 12_480);
 
     #[entry]
     fn main() -> ! {

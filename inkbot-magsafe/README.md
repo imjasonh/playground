@@ -20,8 +20,8 @@ hardware settle.
 
 - `src/protocol.rs`: the resumable, idempotent BLE frame-transfer state machine
   with a table-free streaming CRC-32. Host-tested.
-- `src/panel.rs`: geometry and the SSD1683-class command set for the 400x300
-  panel, including partial-refresh window math. Host-tested.
+- `src/panel.rs`: geometry and the UC8253-class command set for the 240x416
+  portrait panel, including partial-refresh window math. Host-tested.
 - `src/power.rs`: battery state-of-charge estimate and the voltage and
   temperature gates for refresh and charge. Host-tested.
 - `src/main.rs`: the bare-metal entry point. A do-nothing WFI loop today, with
