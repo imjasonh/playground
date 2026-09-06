@@ -405,8 +405,25 @@ function init() {
   if (typeof DeviceOrientationEvent === "undefined") {
     enablePreview("Motion sensors aren't supported here — drag the dial to preview.");
   } else if (typeof DeviceOrientationEvent.requestPermission === "function") {
-    // iOS Safari: a tap is required before the sensor can be read.
-    showPanel("This level needs permission to use your device's motion sensors.");
+    // Chromium exposes requestPermission and may grant without a gesture.
+    // iOS Safari rejects without a tap — only then show the enable panel.
+    DeviceOrientationEvent.requestPermission()
+      .then((state) => {
+        if (state === "granted") {
+          startSensors();
+        } else if (state === "denied") {
+          enablePreview("Motion access denied — drag the dial to preview.");
+        } else {
+          showPanel(
+            "This level needs permission to use your device's motion sensors.",
+          );
+        }
+      })
+      .catch(() => {
+        showPanel(
+          "This level needs permission to use your device's motion sensors.",
+        );
+      });
   } else {
     startSensors();
   }
