@@ -16,6 +16,7 @@ import {
   sunPosition,
   wrapDegrees,
 } from "../src/solar.js";
+import { locationFromTimeZone } from "../src/timezones.js";
 
 const NYC = { latitude: 40.7128, longitude: -74.006 };
 
@@ -42,6 +43,47 @@ test("parseLocation reads lat and lon, and falls back to the timezone", () => {
   const pinned = parseLocation("lat=-33.87&lon=151.21", date);
   assert.equal(pinned.latitude, -33.87);
   assert.equal(pinned.longitude, 151.21);
+});
+
+test("locationFromTimeZone returns tz-database coordinates, or null", () => {
+  const ny = locationFromTimeZone("America/New_York");
+  assert.ok(Math.abs(ny.latitude - 40.7128) < 0.05);
+  assert.ok(Math.abs(ny.longitude - -74.006) < 0.05);
+  assert.equal(locationFromTimeZone("Not/AZone"), null);
+  assert.equal(locationFromTimeZone(undefined), null);
+});
+
+test("parseLocation uses the time-zone name when no query is given", () => {
+  const date = new Date("2026-06-21T16:00:00Z");
+  const located = parseLocation("", date, "America/New_York");
+  assert.ok(Math.abs(located.latitude - 40.7128) < 0.05);
+  assert.ok(Math.abs(located.longitude - -74.006) < 0.05);
+
+  // A query lat/lon still overrides the time zone.
+  const overridden = parseLocation("lat=-33.87&lon=151.21", date, "America/New_York");
+  assert.equal(overridden.latitude, -33.87);
+  assert.equal(overridden.longitude, 151.21);
+
+  // An unknown zone falls back to the offset-based estimate.
+  const unknown = parseLocation("", date, "Not/AZone");
+  assert.equal(unknown.latitude, DEFAULT_LATITUDE);
+  assert.equal(
+    unknown.longitude,
+    longitudeFromTimezoneOffset(date.getTimezoneOffset()),
+  );
+});
+
+test("New York dusk reads as light with the tz longitude, not night", () => {
+  // 2026-09-06 23:07 UTC is 7:07pm EDT, minutes before sunset in New York.
+  const date = new Date("2026-09-06T23:07:00Z");
+  const zoned = parseLocation("", date, "America/New_York");
+  const withZone = sunPosition(date, zoned.latitude, zoned.longitude);
+  assert.equal(isNight(withZone.altitude), false);
+
+  // The offset-only estimate pins you to the EDT meridian (60°W), ~14° east of
+  // New York, which reads as night while it is still light outside.
+  const meridian = sunPosition(date, DEFAULT_LATITUDE, -60);
+  assert.equal(isNight(meridian.altitude), true);
 });
 
 test("resolveLocation prefers a granted fix over the clock fallback", () => {

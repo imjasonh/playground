@@ -35,6 +35,16 @@ const dateFormat = new Intl.DateTimeFormat(undefined, {
 const GEO_KEY = "sundial-geo";
 const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+function resolveTimeZone() {
+  try {
+    return new Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch (error) {
+    return undefined;
+  }
+}
+
+const timeZone = resolveTimeZone();
+
 let geo = null;
 let scrubMs = 0;
 let live = true;
@@ -224,6 +234,7 @@ function render() {
     window.location.search,
     date,
     geo,
+    timeZone,
   );
   const sun = sunPosition(date, latitude, longitude);
   const scene = sceneFromSun(sun);
