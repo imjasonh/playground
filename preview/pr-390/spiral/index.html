@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f7f4ef" />
+    <meta
+      name="description"
+      content="Generate and solve spiral word puzzles like the magazine classic."
+    />
+    <title>The Spiral</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="masthead">
+        <h1>The Spiral</h1>
+      </header>
+
+      <p class="rules">
+        Fill Inward clues from cell 1 toward the center, then Outward clues
+        from the center back out. The letters are the same both ways; only the
+        word breaks differ. Working back and forth helps.
+      </p>
+
+      <div class="toolbar" role="group" aria-label="Puzzle controls">
+        <label class="field">
+          Size
+          <select id="size"></select>
+        </label>
+        <button id="generate" type="button">New puzzle</button>
+        <button id="check" type="button">Check</button>
+        <button id="reveal" type="button">Reveal</button>
+        <button id="clear" type="button">Clear</button>
+        <span id="status" class="status" aria-live="polite">Generating…</span>
+      </div>
+
+      <section class="board" aria-label="Spiral board">
+        <div id="spiral" class="spiral"></div>
+        <input
+          id="entry"
+          class="entry"
+          type="text"
+          inputmode="text"
+          autocomplete="off"
+          autocapitalize="characters"
+          autocorrect="off"
+          spellcheck="false"
+          enterkeyhint="done"
+          aria-label="Type a letter for the selected cell"
+        />
+      </section>
+
+      <section class="clues" aria-label="Clues">
+        <div class="clue-col">
+          <h2>Inward</h2>
+          <div id="inward-clues" class="clue-list"></div>
+        </div>
+        <div class="clue-col">
+          <h2>Outward</h2>
+          <div id="outward-clues" class="clue-list"></div>
+        </div>
+      </section>
+
+      <p class="footer-note">
+        Tap a clue or cell, then type. Seed <span id="seed">—</span>
+      </p>
+    </div>
+
+    <div id="active-clue" class="active-clue" hidden>
+      <div class="active-clue-meta">
+        <button id="flip-dir" class="active-clue-dir" type="button">Inward</button>
+        <span id="active-clue-range" class="active-clue-range"></span>
+        <span id="active-clue-text" class="active-clue-text"></span>
+      </div>
+      <div
+        id="active-slots"
+        class="active-slots"
+        role="group"
+        aria-label="Letters for the selected clue"
+      ></div>
+    </div>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
