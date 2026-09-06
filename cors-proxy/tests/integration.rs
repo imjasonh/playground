@@ -74,3 +74,21 @@ fn allow_list_blocks_unknown_origin() {
         CorsDecision::Denied
     );
 }
+
+#[test]
+fn locked_deployment_is_not_an_open_proxy() {
+    // The playground deployment allows only its GitHub Pages origin.
+    let cfg = "https://imjasonh.github.io";
+    assert_eq!(
+        decide_cors(Some("https://imjasonh.github.io"), cfg),
+        CorsDecision::Reflect("https://imjasonh.github.io".to_string())
+    );
+    // A different browser origin is refused.
+    assert_eq!(
+        decide_cors(Some("https://evil.example"), cfg),
+        CorsDecision::Denied
+    );
+    // A non-browser caller (curl, server-side script) sends no Origin and is
+    // refused too, so the proxy can't be used as an open internet relay.
+    assert_eq!(decide_cors(None, cfg), CorsDecision::Denied);
+}

@@ -159,9 +159,7 @@ pub enum CorsDecision {
     Wildcard,
     /// Reflect this specific origin (allow-list matched).
     Reflect(String),
-    /// Proxy, but send no CORS header (a non-browser caller with no `Origin`).
-    OmitHeader,
-    /// The browser origin is not on the allow-list; refuse the request.
+    /// The request is not an allowed browser request; refuse it.
     Denied,
 }
 
@@ -169,12 +167,17 @@ pub enum CorsDecision {
 ///
 /// `allowed_config` is either `*` (allow any origin) or a comma-separated list
 /// of exact origins (e.g. `https://a.example,https://b.example`).
+///
+/// With a non-`*` list the proxy serves only browser clients from those
+/// origins: a caller with no `Origin` header (curl, a server-side script) is
+/// refused rather than proxied, so a locked-down deployment is not an open
+/// proxy for the whole internet.
 pub fn decide_cors(request_origin: Option<&str>, allowed_config: &str) -> CorsDecision {
     if allowed_config.trim() == "*" {
         return CorsDecision::Wildcard;
     }
     match request_origin {
-        None => CorsDecision::OmitHeader,
+        None => CorsDecision::Denied,
         Some(origin) => {
             let matches = allowed_config
                 .split(',')
@@ -382,7 +385,9 @@ mod tests {
             decide_cors(Some("https://evil.example"), cfg),
             CorsDecision::Denied
         );
-        assert_eq!(decide_cors(None, cfg), CorsDecision::OmitHeader);
+        // A caller with no Origin is not a browser request from an allowed
+        // front-end, so a strict list refuses it (not an open proxy).
+        assert_eq!(decide_cors(None, cfg), CorsDecision::Denied);
     }
 
     #[test]
