@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Library of saved army lists.
 struct ArmyListHomeView: View {
@@ -385,6 +386,7 @@ struct ArmyListNewSheet: View {
     @State private var isBuilding = false
     @State private var buildProgress: ArmyListStarterBuildProgress?
     @State private var buildTask: Task<Void, Never>?
+    @State private var buildBackgroundAssertion = ArmyListStarterBuildBackgroundAssertion()
     /// Smoothly animated bar value. A trickle loop nudges it toward the next
     /// milestone so the long, opaque model call still looks like it is moving;
     /// real milestones snap it forward.
@@ -580,7 +582,9 @@ struct ArmyListNewSheet: View {
         )
         let theme = flavor
         let userName = trimmedName()
+        buildBackgroundAssertion.begin(onExpiration: cancelBuild)
         buildTask = Task {
+            defer { buildBackgroundAssertion.end() }
             let built = await ArmyListStarterBuilder.build(
                 catalog: catalog,
                 factionID: factionID,
@@ -615,8 +619,39 @@ struct ArmyListNewSheet: View {
     private func cancelBuild() {
         buildTask?.cancel()
         buildTask = nil
+        buildBackgroundAssertion.end()
         isBuilding = false
         buildProgress = nil
         displayedFraction = 0
+    }
+}
+
+/// Keeps a starter build alive briefly after the app leaves the foreground.
+/// iOS still caps this window (~30s); generation may pause when it expires.
+@MainActor
+private final class ArmyListStarterBuildBackgroundAssertion {
+    private var taskID: UIBackgroundTaskIdentifier = .invalid
+
+    func begin(onExpiration: @escaping @MainActor () -> Void) {
+        end()
+        taskID = UIApplication.shared.beginBackgroundTask(
+            withName: "Army List starter build"
+        ) { [weak self] in
+            guard let self else { return }
+            let id = self.taskID
+            if id != .invalid {
+                UIApplication.shared.endBackgroundTask(id)
+                self.taskID = .invalid
+            }
+            Task { @MainActor in
+                onExpiration()
+            }
+        }
+    }
+
+    func end() {
+        guard taskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(taskID)
+        taskID = .invalid
     }
 }
