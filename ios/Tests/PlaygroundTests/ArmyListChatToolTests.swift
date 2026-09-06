@@ -672,4 +672,53 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertFalse(runtime.modelGate.title.isEmpty)
         XCTAssertFalse(runtime.armyListGateDetail.isEmpty)
     }
+
+    func testStarterBuildProgressAdvancesAcrossPhases() {
+        let maxAttempts = 3
+        let preparing = ArmyListStarterBuildProgress(
+            attempt: 0,
+            maxAttempts: maxAttempts,
+            phase: .preparing
+        )
+        let generating = ArmyListStarterBuildProgress(
+            attempt: 1,
+            maxAttempts: maxAttempts,
+            phase: .generating
+        )
+        let applying = ArmyListStarterBuildProgress(
+            attempt: 1,
+            maxAttempts: maxAttempts,
+            phase: .applyingRoster
+        )
+        let checking = ArmyListStarterBuildProgress(
+            attempt: 1,
+            maxAttempts: maxAttempts,
+            phase: .checking
+        )
+        let secondAttempt = ArmyListStarterBuildProgress(
+            attempt: 2,
+            maxAttempts: maxAttempts,
+            phase: .generating
+        )
+        let finishing = ArmyListStarterBuildProgress(
+            attempt: maxAttempts,
+            maxAttempts: maxAttempts,
+            phase: .finishing
+        )
+
+        XCTAssertLessThan(preparing.fractionComplete, generating.fractionComplete)
+        XCTAssertLessThan(generating.fractionComplete, applying.fractionComplete)
+        XCTAssertLessThan(applying.fractionComplete, checking.fractionComplete)
+        XCTAssertLessThan(checking.fractionComplete, secondAttempt.fractionComplete)
+        XCTAssertEqual(finishing.fractionComplete, 1.0)
+    }
+
+    func testStarterBuildProgressStatusTextMentionsAttemptCount() {
+        let progress = ArmyListStarterBuildProgress(
+            attempt: 2,
+            maxAttempts: 3,
+            phase: .generating
+        )
+        XCTAssertEqual(progress.statusText, "Generating roster (attempt 2 of 3)…")
+    }
 }

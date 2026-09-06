@@ -211,6 +211,59 @@ enum ArmyListStarterPrompt {
     }
 }
 
+/// Milestones for the New list sheet while a starter build runs.
+struct ArmyListStarterBuildProgress: Equatable {
+    enum Phase: Equatable {
+        case preparing
+        case generating
+        case applyingRoster
+        case checking
+        case finishing
+    }
+
+    let attempt: Int
+    let maxAttempts: Int
+    let phase: Phase
+
+    /// Determinate fraction for `ProgressView(value:total:)` — advances on
+    /// known orchestration steps, not on opaque model timing.
+    var fractionComplete: Double {
+        let maxAttempts = max(1, maxAttempts)
+        let perAttempt = 0.9 / Double(maxAttempts)
+        let base = 0.05 + Double(max(0, attempt - 1)) * perAttempt
+        switch phase {
+        case .preparing:
+            return 0.05
+        case .generating:
+            return base + perAttempt * 0.2
+        case .applyingRoster:
+            return base + perAttempt * 0.65
+        case .checking:
+            return base + perAttempt * 0.9
+        case .finishing:
+            return 1.0
+        }
+    }
+
+    var statusText: String {
+        switch phase {
+        case .preparing:
+            return "Preparing roster options…"
+        case .generating:
+            if maxAttempts > 1 {
+                return "Generating roster (attempt \(attempt) of \(maxAttempts))…"
+            }
+            return "Generating roster…"
+        case .applyingRoster:
+            return "Applying roster…"
+        case .checking:
+            return "Checking list…"
+        case .finishing:
+            return "Opening list…"
+        }
+    }
+}
+
 /// Runs the starter build on the on-device model, retrying a few times because
 /// generation is stochastic. Returns the first non-empty roster, preferring a
 /// legal one; returns `nil` only when the model is unavailable or every attempt
@@ -223,8 +276,13 @@ enum ArmyListStarterBuilder {
         battleSizeID: String,
         theme: String,
         userName: String?,
-        attempts: Int = 3
+        attempts: Int = 3,
+        onProgress: (@MainActor (ArmyListStarterBuildProgress) -> Void)? = nil
     ) async -> ArmyListDocument? {
+        let maxAttempts = max(1, attempts)
+        onProgress?(
+            ArmyListStarterBuildProgress(attempt: 0, maxAttempts: maxAttempts, phase: .preparing)
+        )
         let prompt = ArmyListStarterPrompt.prompt(
             catalog: catalog,
             factionID: factionID,
@@ -233,7 +291,7 @@ enum ArmyListStarterBuilder {
         )
         var bestLegal: (list: ArmyListDocument, points: Int)?
         var bestAny: (list: ArmyListDocument, points: Int)?
-        for _ in 0..<max(1, attempts) {
+        for attemptIndex in 1...maxAttempts {
             let blank = ArmyListDocument(
                 name: userName ?? "New list",
                 catalogVersion: catalog.version,
@@ -243,7 +301,32 @@ enum ArmyListStarterBuilder {
             let workspace = ArmyListChatWorkspace(list: blank, catalog: catalog)
             let runtime = ArmyListChatRuntime(workspace: workspace, mode: .builder)
             guard runtime.isModelAvailable else { return nil }
+            onProgress?(
+                ArmyListStarterBuildProgress(
+                    attempt: attemptIndex,
+                    maxAttempts: maxAttempts,
+                    phase: .generating
+                )
+            )
+            runtime.onStarterBuildToolStarted = { toolName in
+                guard toolName == "applyRosterPlan" else { return }
+                onProgress?(
+                    ArmyListStarterBuildProgress(
+                        attempt: attemptIndex,
+                        maxAttempts: maxAttempts,
+                        phase: .applyingRoster
+                    )
+                )
+            }
             await runtime.send(prompt: prompt, displayText: "Build starter list")
+            runtime.onStarterBuildToolStarted = nil
+            onProgress?(
+                ArmyListStarterBuildProgress(
+                    attempt: attemptIndex,
+                    maxAttempts: maxAttempts,
+                    phase: .checking
+                )
+            )
             guard !workspace.list.units.isEmpty else { continue }
             var built = workspace.list
             if let userName, !userName.isEmpty {
@@ -257,6 +340,16 @@ enum ArmyListStarterBuilder {
                 bestAny = (built, total)
             }
         }
-        return bestLegal?.list ?? bestAny?.list
+        let result = bestLegal?.list ?? bestAny?.list
+        if result != nil {
+            onProgress?(
+                ArmyListStarterBuildProgress(
+                    attempt: maxAttempts,
+                    maxAttempts: maxAttempts,
+                    phase: .finishing
+                )
+            )
+        }
+        return result
     }
 }
