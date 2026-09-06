@@ -292,6 +292,7 @@ enum ArmyListStarterBuilder {
         var bestLegal: (list: ArmyListDocument, points: Int)?
         var bestAny: (list: ArmyListDocument, points: Int)?
         for attemptIndex in 1...maxAttempts {
+            if Task.isCancelled { return nil }
             let blank = ArmyListDocument(
                 name: userName ?? "New list",
                 catalogVersion: catalog.version,
@@ -320,6 +321,7 @@ enum ArmyListStarterBuilder {
             }
             await runtime.send(prompt: prompt, displayText: "Build starter list")
             runtime.onStarterBuildToolStarted = nil
+            if Task.isCancelled { return nil }
             onProgress?(
                 ArmyListStarterBuildProgress(
                     attempt: attemptIndex,

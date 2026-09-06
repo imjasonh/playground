@@ -721,4 +721,20 @@ final class ArmyListChatToolTests: XCTestCase {
         )
         XCTAssertEqual(progress.statusText, "Generating roster (attempt 2 of 3)…")
     }
+
+    func testStarterBuildReturnsNilWhenCancelledBeforeModelCall() async {
+        let catalog = self.catalog!
+        let task = Task { @MainActor () -> ArmyListDocument? in
+            await ArmyListStarterBuilder.build(
+                catalog: catalog,
+                factionID: "leagues-of-votann",
+                battleSizeID: "incursion",
+                theme: "",
+                userName: nil
+            )
+        }
+        task.cancel()
+        let built = await task.value
+        XCTAssertNil(built)
+    }
 }

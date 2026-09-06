@@ -384,6 +384,7 @@ struct ArmyListNewSheet: View {
     @State private var flavor = ""
     @State private var isBuilding = false
     @State private var buildProgress: ArmyListStarterBuildProgress?
+    @State private var buildTask: Task<Void, Never>?
     @State private var seedError: String?
 
     private var factionsSorted: [FactionDefinition] {
@@ -461,13 +462,22 @@ struct ArmyListNewSheet: View {
             }
 
             Section {
-                Button {
-                    buildStarterList()
-                } label: {
-                    Text(isBuilding ? "Building…" : "Build starter list")
+                if isBuilding {
+                    Button(role: .cancel) {
+                        cancelBuild()
+                    } label: {
+                        Text("Cancel build")
+                    }
+                    .accessibilityIdentifier("armyListCancelBuildButton")
+                } else {
+                    Button {
+                        buildStarterList()
+                    } label: {
+                        Text("Build starter list")
+                    }
+                    .disabled(!canSubmit)
+                    .accessibilityIdentifier("armyListBuildStarterButton")
                 }
-                .disabled(!canSubmit || isBuilding)
-                .accessibilityIdentifier("armyListBuildStarterButton")
             }
 
             if let seedError {
@@ -554,7 +564,7 @@ struct ArmyListNewSheet: View {
         )
         let theme = flavor
         let userName = trimmedName()
-        Task {
+        buildTask = Task {
             let built = await ArmyListStarterBuilder.build(
                 catalog: catalog,
                 factionID: factionID,
@@ -565,13 +575,31 @@ struct ArmyListNewSheet: View {
                     buildProgress = progress
                 }
             )
+            if Task.isCancelled {
+                isBuilding = false
+                buildProgress = nil
+                buildTask = nil
+                return
+            }
             isBuilding = false
             buildProgress = nil
+            buildTask = nil
             if let built {
                 onCreate(built)
             } else {
                 seedError = "The model couldn’t build a list this time. Try again or tweak the theme."
             }
         }
+    }
+
+    /// Stops an in-flight starter build and returns the sheet to its idle state.
+    /// The on-device model may not interrupt a generation already in flight, so
+    /// the builder checks for cancellation at each attempt boundary and drops
+    /// whatever it produced.
+    private func cancelBuild() {
+        buildTask?.cancel()
+        buildTask = nil
+        isBuilding = false
+        buildProgress = nil
     }
 }
