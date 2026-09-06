@@ -42,6 +42,7 @@ playground/
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
+├── packfile-explorer/     # fetch a git packfile via CORS proxy and explore it (JS + Node tests)
 ├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
 ├── sshapp/                # GKE Autopilot Wish SSH apps (Go + Terraform + ko_build)
@@ -69,6 +70,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
+| `packfile-explorer/` | yes | Fetch a git packfile via the CORS proxy and explore objects/deltas; JS modules, npm scripts, tests |
 | `population-rays/` | yes | Directional 5° population slices; JS modules, npm scripts, tests |
 | `sundial/` | yes | Sundial clock; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
@@ -650,6 +652,7 @@ bundle exec fastlane test
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
+| `packfile-explorer/` | Fetch a git packfile through the CORS proxy; index objects/deltas in IndexedDB and browse contents | Node test runner |
 | `population-rays/` | Directional 5° population slices (distance to N people) over Meta/CIESIN HRSL grids | Node test runner |
 | `sundial/` | Clock whose long shadow follows the sun; no shadow at night | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
