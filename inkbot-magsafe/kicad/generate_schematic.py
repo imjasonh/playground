@@ -42,7 +42,6 @@ def build_lib_symbols() -> str:
             embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x24"),
             embed(SYM / "Connector.kicad_sym", "Connector", "TestPoint"),
             embed(SYM / "Device.kicad_sym", "Device", "Battery_Cell"),
-            embed(SYM / "Device.kicad_sym", "Device", "Antenna_Loop"),
             embed(SYM / "Device.kicad_sym", "Device", "Antenna_Chip"),
             embed(SYM / "Device.kicad_sym", "Device", "Crystal"),
             embed(SYM / "Device.kicad_sym", "Device", "Thermistor_NTC"),
@@ -263,15 +262,9 @@ def main() -> None:
     sch.connect_pin("U1", "SWDIO", "SWDIO", wire_dx=10.16)
     sch.connect_pin("U1", "SWDCLK", "SWDCLK", wire_dx=10.16)
     sch.connect_pin("U1", "P0.21/~{RESET}", "NRST", wire_dx=10.16)
-    sch.connect_pin("U1", "NFC1/P0.09", "NFC1", wire_dx=10.16)
-    sch.connect_pin("U1", "NFC2/P0.10", "NFC2", wire_dx=10.16)
-
-    # Antenna_Loop pins sit side-by-side; fan wires vertically so labels cannot short.
-    sch.place("Device:Antenna_Loop", "ANT1", "NFC", x=snap(mcu_x + 60), y=snap(mcu_y - 35), footprint="")
-    sch.connect_pin("ANT1", "1", "NFC1", wire_dy=7.62, by_number=True)
-    sch.connect_pin("ANT1", "2", "NFC2", wire_dy=-7.62, by_number=True)
 
     # 2.4 GHz chip antenna on bare nRF ANT pin (matching network TBD on layout).
+    # No NFC: pairing and frames ride BLE; NFCT pins stay unused (no-connect).
     sch.connect_pin("U1", "ANT", "RF_ANT", wire_dx=10.16)
     sch.place(
         "Device:Antenna_Chip",
@@ -306,7 +299,7 @@ def main() -> None:
         "P0.14", "P0.13", "P0.12", "P0.11", "P0.08", "P0.07", "P0.06",
         "P0.03/AIN1", "P0.04/AIN2", "P0.05/AIN3",
         "SWDIO", "SWDCLK", "P0.21/~{RESET}",
-        "NFC1/P0.09", "NFC2/P0.10", "ANT",
+        "ANT",
     }
     for pin in lib.get("nRF52832-QFxx").pins:
         if pin.name not in used:

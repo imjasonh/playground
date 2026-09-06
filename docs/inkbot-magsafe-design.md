@@ -84,12 +84,10 @@ for a battery-first BLE peripheral that must stay reachable in the background:
   connection behavior; the e-ink hobbyist and product world runs on it.
 - **It runs straight off the cell.** The nRF52 internal DC/DC converter accepts
   1.7–3.6 V, so a 3.0–4.2 V LiPo needs no regulator for the MCU.
-- **Built-in NFC tag (NFCT)** gives an almost-free "tap to pair / open the app"
-  path with a two-turn antenna.
-
-The 52832 has 64 KB RAM and 512 KB flash: plenty for a 15 KB mono framebuffer
+The 52832 has 64 KB RAM and 512 KB flash: plenty for a 12 KB mono framebuffer
 plus the S132 SoftDevice. Step up to the nRF52833 (128 KB RAM) only if you add
-grayscale (a 4-level frame is ~30 KB) or want BLE Long Range (Coded PHY).
+grayscale (a 4-level frame is ~30 KB) or want BLE Long Range (Coded PHY). No
+NFC: pairing and frames are BLE-only, so the NFCT pins stay unused.
 
 For thickness, the schematic BOMs the **bare nRF52832-QFAA** QFN-48 with discrete
 32 MHz crystal, chip antenna, and matching. The Raytac MDBT42Q remains a drop-in
@@ -102,9 +100,9 @@ path later if intentional-radiator certification becomes the bottleneck.
    MagSafe ring  │  nRF52832-QFAA (bare QFN)                   │
    magnets ──────┤   ├─ SPI ─────────► 3.7" e-ink COG (UC8253) │
                  │   ├─ GPIO ────────► TPS22810 + MIC5504 ──────┼─► panel 3.3V rail
-   Qi RX coil ─► │   ├─ NFCT ────────► NFC "tap to pair" antenna│    (+ 220µF bulk)
-   (in magnet    │   └─ SAADC ───────◄ battery + thermistor     │
-    ring)        └─────────────────────────────────────────────┘
+   Qi RX coil ─► │   └─ SAADC ───────◄ battery + thermistor     │    (+ 220µF bulk)
+   (in magnet    └─────────────────────────────────────────────┘
+    ring)
         │
         └─► BQ51050B (Qi RX + charger) ──► LiPo ~100mAh (PCB cutout) = VSYS ─► nRF DC/DC
                  ▲                                              ▲

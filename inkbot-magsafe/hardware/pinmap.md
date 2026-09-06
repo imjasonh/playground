@@ -22,8 +22,8 @@ doc).
 | SWDCLK | SWDCLK | in | SWDCLK | test pad |
 | 32.768 kHz | P0.00 / XL1 | xtal | LFXO | low-power BLE timing |
 | 32.768 kHz | P0.01 / XL2 | xtal | LFXO | low-power BLE timing |
-| NFC | P0.09 / NFC1 | nfc | NFC1 | tap-to-pair antenna (optional) |
-| NFC | P0.10 / NFC2 | nfc | NFC2 | tap-to-pair antenna (optional) |
+| (unused) | P0.09 / NFC1 | — | — | left free; no NFC antenna |
+| (unused) | P0.10 / NFC2 | — | — | left free; no NFC antenna |
 
 Panel SPI pins mirror the roles the [`inkbot-esp32/`](../../inkbot-esp32/) driver
 uses (SCLK, MOSI, CS, DC, RST, BUSY), so the panel command sequence ports across

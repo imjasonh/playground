@@ -42,11 +42,11 @@ FPC. Same SPI control lines as any UC81xx/SSD168x panel.
 - PANEL_PWR_EN (P0.06) → U3 EN/UVLO
 - Panel charge-pump caps on the remaining FPC pins per the panel datasheet
 
-## Radio, timing, NFC, debug
+## Radio, timing, debug
 
 - U1 ANT → matching (C22 stub) → ANT2 2.4 GHz chip antenna
 - LFXO Y1 → XL1/XL2; HFXO Y2 → XC1/XC2
-- NFC1/NFC2 → ANT1 (optional tap-to-pair)
+- NFC1/NFC2 (P0.09/P0.10) unused — no NFC antenna; pairing and frames are BLE
 - SWDIO, SWDCLK, NRST, VSYS, GND → TP1–TP5
 
 ## Decoupling
