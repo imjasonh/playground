@@ -184,6 +184,29 @@ export function buildResolvedSegments(deltaParsed, baseOid) {
   return segments;
 }
 
+/**
+ * Map the base object's byte ranges to the copy instructions that read them.
+ *
+ * Ranges the result never copies stay unmarked, so a base-vs-result view can
+ * grey out the bytes the delta dropped and color the rest by copy instruction.
+ * Returns `{ start, end, copyIndex }` segments covering only copied ranges.
+ */
+export function buildBaseSegments(deltaParsed) {
+  const segments = [];
+  for (const op of deltaParsed.ops) {
+    if (op.type !== "copy") continue;
+    segments.push({
+      start: op.offset,
+      end: op.offset + op.size,
+      kind: "copy",
+      copyIndex: op.copyIndex,
+      size: op.size,
+    });
+  }
+  segments.sort((a, b) => a.start - b.start || a.end - b.end);
+  return segments;
+}
+
 /** Apply a delta against its base object, returning the reconstructed bytes. */
 export function applyDelta(base, delta) {
   const { baseSize, resultSize, ops } = parseDelta(delta);

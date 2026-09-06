@@ -4,7 +4,7 @@
 // plain bytes/structures that the pure parser modules consume.
 
 import { buildFetchRequest, parseInfoRefs, splitUploadPackResult } from "./protocol.js";
-import { demuxSideband } from "./pktline.js";
+import { createUploadPackReader, demuxSideband } from "./pktline.js";
 import { infoRefsUrl, proxied, uploadPackUrl } from "./proxy.js";
 
 /** Fetch and parse the info/refs advertisement. */
@@ -26,9 +26,12 @@ export async function fetchRefs(proxyBase, base) {
 
 /**
  * Fetch a packfile for the given wants. `deepen` requests a shallow clone.
- * Returns `{ pack, progress, control }`.
+ *
+ * When the response body streams, side-band progress is reported live through
+ * `onProgress(text)`; otherwise the whole body is demuxed at once. `wants` must
+ * be a non-empty list of oids. Returns `{ pack, progress, control }`.
  */
-export async function fetchPack(proxyBase, base, { wants, deepen = 1 }) {
+export async function fetchPack(proxyBase, base, { wants, deepen = 1, onProgress = null }) {
   const body = buildFetchRequest({ wants, deepen });
   const url = proxied(proxyBase, uploadPackUrl(base));
   const res = await fetch(url, {
@@ -42,12 +45,27 @@ export async function fetchPack(proxyBase, base, { wants, deepen = 1 }) {
   if (!res.ok) {
     throw new Error(`upload-pack failed: HTTP ${res.status}`);
   }
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  const { control, sidebandLines } = splitUploadPackResult(bytes);
-  const { pack, progress, error } = demuxSideband(sidebandLines);
-  if (error) throw new Error(`server error: ${error.trim()}`);
-  if (pack.length === 0) {
+
+  let result;
+  if (res.body && typeof res.body.getReader === "function") {
+    const reader = createUploadPackReader({ onProgress });
+    const streamReader = res.body.getReader();
+    for (;;) {
+      const { value, done } = await streamReader.read();
+      if (done) break;
+      if (value && value.length) reader.push(value instanceof Uint8Array ? value : new Uint8Array(value));
+    }
+    result = reader.finish();
+  } else {
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const { sidebandLines } = splitUploadPackResult(bytes);
+    const { pack, progress, error } = demuxSideband(sidebandLines);
+    result = { pack, progress, error, control: [] };
+  }
+
+  if (result.error) throw new Error(`server error: ${result.error.trim()}`);
+  if (result.pack.length === 0) {
     throw new Error("no pack data returned");
   }
-  return { pack, progress, control };
+  return { pack: result.pack, progress: result.progress, control: result.control };
 }

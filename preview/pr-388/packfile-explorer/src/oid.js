@@ -29,3 +29,8 @@ export function makeComputeOid(digest) {
 export function subtleComputeOid(subtle) {
   return makeComputeOid(async (bytes) => new Uint8Array(await subtle.digest("SHA-1", bytes)));
 }
+
+/** A raw `sha1Hex(bytes)` (not a git oid) backed by Web Crypto. */
+export function subtleSha1Hex(subtle) {
+  return async (bytes) => bytesToHex(new Uint8Array(await subtle.digest("SHA-1", bytes)));
+}
