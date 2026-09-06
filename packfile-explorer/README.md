@@ -59,6 +59,13 @@ reopen a previously saved pack from IndexedDB.
   and show literal inserts in white.
 - Tap any oid link (parent, tree entry, delta base) to jump.
 
+## Shareable links
+
+After a pack is saved in IndexedDB, the address bar carries its id in the
+`pack` query parameter (the repo base URL, or `file://…` for a local open). The
+selected object's oid is in the hash (`#…`). Copy the URL to share, or refresh
+to reopen the same pack and selection in this browser.
+
 ## Test
 
 ```bash
