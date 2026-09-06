@@ -379,13 +379,23 @@ BOM.
   shipping design.
 - **No connector.** Wireless charge, BLE DFU for updates, SWD pads for recovery.
   USB-C was considered and dropped.
+- **Magnet-only retention.** The MagSafe magnet ring holds the tile to the phone;
+  no adhesive skin. The magnets already have to hold the tile on a charger, so
+  they carry the phone too, and a magnet-only mount stays swappable between
+  phones and cases.
+- **A later push service stays independent.** If the reserved notification path
+  is built, it is a private companion service, not the [`inkbot/`](../inkbot/)
+  Worker and it shares no code with it. The tile firmware and app stay agnostic
+  to the sender.
+
+The firmware and hardware scaffold live in
+[`../inkbot-magsafe/`](../inkbot-magsafe/); the iOS app is deferred until they
+are dialed in.
 
 ## Open questions
 
-- Mechanical: magnet-only retention against the phone, or magnets plus a thin
-  adhesive skin? What enclosure material and how is the panel bonded?
+- Enclosure material and how the panel is bonded to the front (adhesive frame vs
+  bezel clip), given magnet-only retention.
 - Per-face `BGTask` cadence tuning: which faces (weather, health) warrant a
   `BGProcessingTask` versus a lighter `BGAppRefreshTask`, within the relaxed
   target?
-- If the reserved push service is built later, does it stay a private companion
-  service or reuse the existing [`inkbot/`](../inkbot/) Worker as the sender?
