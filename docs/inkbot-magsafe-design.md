@@ -62,7 +62,7 @@ it should not.
 | Panel power | fully gated by a load switch between refreshes |
 | Charging | 5 W Qi RX only; detach the tile and set it on a pad. No pass-through |
 | Frame source | the paired iPhone only; no Worker, no second radio |
-| Port | none for the user; SWD/USB test pads for factory flash and recovery. USB-C is an option, not the default |
+| Port | none; SWD test pads for factory flash and recovery. USB-C considered and dropped |
 | Magnets | MagSafe-geometry N52 annular array; "MagSafe" naming needs Apple MFi |
 | Link | BLE 4.2+ GATT for control, **L2CAP connection-oriented channel** for the frame blob |
 | iOS delivery | Core Bluetooth central + State Preservation/Restoration, BGTasks, tile-initiated nudge; no server push |
@@ -179,26 +179,20 @@ not the phone (see the rejected pass-through note above).
 
 ### Ports: none, by design
 
-Ship the tile with **no user-facing connector.** Charging is wireless, and
-firmware updates ride the same BLE link as frames (Nordic Secure DFU). A port is
-the part most likely to fail on a thin accessory carried against a phone: it
-costs thickness, invites water and lint, and adds a certification and a BOM line
-for a job the wireless path already does.
+Ship the tile with **no connector at all.** Charging is wireless, and firmware
+updates ride the same BLE link as frames (Nordic Secure DFU). A port is the part
+most likely to fail on a thin accessory carried against a phone: it costs
+thickness, invites water and lint, and adds a certification and a BOM line for a
+job the wireless path already does.
 
-Keep two things instead of a port:
+The reliability backstop is a set of **SWD test pads** (SWDIO, SWCLK, GND, VDD)
+on the back, under a peel label or the magnet ring, for factory programming on a
+pogo fixture and for brick recovery when a BLE DFU goes wrong. DFU can fail, but
+SWD always brings a board back.
 
-- **SWD test pads** (SWDIO, SWCLK, GND, VDD) on the back, under a peel label or
-  the magnet ring, for factory programming on a pogo fixture and for brick
-  recovery when a BLE DFU goes wrong. This is the reliability backstop for a
-  portless device: DFU can fail, but SWD always brings a board back.
-- Optional **USB test pads** if you want cabled charging on the bench during
-  bring-up.
-
-**USB-C as an option, not the default.** If a cabled fallback matters (charging
-without a Qi pad, or simpler contract manufacturing), a USB-C receptacle can wire
-to the second charger input and to the nRF USB/SWD for DFU. It adds ~$0.5 in
-parts, an ESD array, an enclosure cutout, and an ingress path. The BOM lists it
-as an optional line so the tradeoff is explicit.
+USB-C was considered as a cabled charge and DFU fallback and dropped: with
+wireless charge plus BLE DFU plus SWD recovery, the port earns nothing it does
+not already have, and a sealed edge is thinner and more reliable.
 
 ### Antenna and the phone-metal problem
 
@@ -322,19 +316,19 @@ Full line items with part numbers and price columns are in
 [`inkbot-magsafe-bom.csv`](inkbot-magsafe-bom.csv). Rolled-up cost of goods
 (COGS) at ~1,000 units, using the pre-certified radio module:
 
-| | Shipping tile | + optional USB-C |
-|---|---|---|
-| Parts (incl. PCB) | ~$29 | ~$29.5 |
-| Assembly (SMT, test) | ~$4 | ~$4 |
-| **COGS** | **~$33** | **~$33.5** |
-| Suggested retail (2.5–3×) | ~$85–99 | ~$85–99 |
+| | Shipping tile |
+|---|---|
+| Parts (incl. PCB) | ~$29 |
+| Assembly (SMT, test) | ~$4 |
+| **COGS** | **~$33** |
+| Suggested retail (2.5–3×) | ~$85–99 |
 
 The panel (~$12), the radio module (~$4.2), and the Qi receive stage (~$4.6 for
 the receiver plus coil) dominate the bill. Dropping to a bare nRF52832 QFN saves
 ~$2 in parts but costs an RF layout and a certification cycle; do that only at
-volume. The optional USB-C receptacle plus its ESD array adds ~$0.5. The rejected
-pass-through version would add ~$8 (transmit coil, controller, thermal parts) and
-push COGS to ~$42, but it is not in the shipping BOM.
+volume. The rejected pass-through version would add ~$8 (transmit coil,
+controller, thermal parts) and push COGS to ~$42, but it is not in the shipping
+BOM.
 
 ## Reliability checklist
 
@@ -344,7 +338,6 @@ push COGS to ~$42, but it is not in the shipping BOM.
 - NTC thermistor for Qi charge safety.
 - Cell with an integrated protection FET, or add a DW01 + dual FET.
 - SWD test pads for brick recovery, since there is no USB port to fall back to.
-- ESD protection (TVS array) only if the optional USB-C port is fitted.
 - Forced periodic full refresh to prevent e-ink ghosting.
 - Note the operating range: e-ink refresh is unreliable below ~0 °C.
 
@@ -368,8 +361,8 @@ push COGS to ~$42, but it is not in the shipping BOM.
   weather, health, transit.
 - **Charging is detach-and-drop on a Qi/MagSafe pad.** No pass-through in the
   shipping design.
-- **No user-facing port.** BLE DFU for updates, SWD pads for recovery, USB-C only
-  as an optional cabled fallback.
+- **No connector.** Wireless charge, BLE DFU for updates, SWD pads for recovery.
+  USB-C was considered and dropped.
 
 ## Open questions
 

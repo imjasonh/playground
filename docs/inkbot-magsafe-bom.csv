@@ -17,5 +17,3 @@ TP1,test,"SWD/USB test pads (SWDIO/SWCLK/GND/VDD)",n/a,PCB-PADS,1,core,0.00,0.00
 PASS1,passive,"decoupling + DC/DC inductor + RC set",various,BOM-PASSIVES,1,core,1.20,0.60,"nRF DC/DC inductor+caps, panel reservoir caps, ISET/dividers, LED"
 PCB1,pcb,"4-layer PCB ~91x77mm 0.8mm",generic,PCB-4L,1,core,4.00,1.50,"solid reference plane under radio/SPI"
 ASSY,assembly,"SMT assembly + test",cm,ASSY,1,core,7.00,4.00,"per unit at qty1k"
-J2,connector,"USB-C receptacle (optional cabled charge + DFU)",GCT,USB4085,1,opt-usbc,0.75,0.35,"NOT default; wires to 2nd charger input and nRF USB/SWD; adds enclosure cutout + ingress path"
-D1,protection,"USB ESD TVS array (only with USB-C)",Texas Instruments,TPD4E05U06DQAR,1,opt-usbc,0.35,0.18,"data + power line ESD; only if J2 fitted"
