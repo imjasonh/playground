@@ -108,8 +108,12 @@ An open proxy is attractive to scrapers and as an IP launderer, so:
   (`If-None-Match`, `If-Modified-Since`) are stripped, and responses go out with
   `Cache-Control: no-store`, so a browser cannot turn a successful proxy GET
   into a 304 empty body on the next try.
-- **Origin allow-list.** `ALLOWED_ORIGINS` lets you restrict the proxy to your
-  own front-ends instead of running it fully open.
+- **Origin allow-list.** `ALLOWED_ORIGINS` restricts the proxy to your own
+  front-ends instead of running it fully open. This deployment is locked to
+  `https://imjasonh.github.io` (the playground's GitHub Pages origin). With a
+  non-`*` list the proxy also refuses any request that arrives without an
+  `Origin` header — a browser always sends one, so curl or a server-side script
+  cannot use a locked-down deployment as an open proxy.
 
 Rate limiting and bot defense are best handled at the platform edge:
 Cloudflare **Rate Limiting Rules**, **WAF**, and **Turnstile** are the right

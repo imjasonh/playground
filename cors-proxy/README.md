@@ -66,7 +66,7 @@ This is an open URL fetcher, so it is hardened against SSRF and abuse. See
 | Response header hygiene | Strips `Set-Cookie`/`Set-Cookie2`, upstream `Access-Control-*`, and cache validators (`ETag`, `Last-Modified`, `Cache-Control`); sets its own CORS headers and `Cache-Control: no-store`. |
 | Response size cap | Rejects responses larger than `MAX_RESPONSE_BYTES` (default 25 MiB), enforced **while streaming** so a chunked body can't be buffered unbounded. |
 | Request size cap | Rejects inbound bodies larger than `MAX_REQUEST_BYTES` (default 10 MiB). |
-| Origin allow-list | `ALLOWED_ORIGINS` restricts which browser origins may use the proxy (default `*`). |
+| Origin allow-list | `ALLOWED_ORIGINS` restricts which browser origins may use the proxy. This deployment is locked to `https://imjasonh.github.io`; with a non-`*` list, callers with no `Origin` header (curl, server-side scripts) are refused too, so it is not an open proxy. |
 
 ### Known limitation: DNS rebinding
 
@@ -85,7 +85,7 @@ Set in `wrangler.toml` under `[vars]` (or with `wrangler secret`/dashboard):
 
 | Var | Default | Meaning |
 |-----|---------|---------|
-| `ALLOWED_ORIGINS` | `*` | `*` to allow any browser origin, or a comma-separated list of exact origins (`https://a.example,https://b.example`). |
+| `ALLOWED_ORIGINS` | `https://imjasonh.github.io` (this deployment) | `*` to allow any browser origin, or a comma-separated list of exact origins (`https://a.example,https://b.example`). With a non-`*` list, requests with no `Origin` header are refused. |
 | `MAX_RESPONSE_BYTES` | `26214400` | Reject upstream responses larger than this (streamed). |
 | `MAX_REQUEST_BYTES` | `10485760` | Reject inbound request bodies larger than this. |
 

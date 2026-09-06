@@ -294,7 +294,7 @@ fn apply_cors(headers: &Headers, cors: &CorsDecision) {
             let _ = headers.set("Vary", "Origin");
             Some(o.clone())
         }
-        CorsDecision::OmitHeader | CorsDecision::Denied => None,
+        CorsDecision::Denied => None,
     };
     if let Some(origin) = origin {
         let _ = headers.set("Access-Control-Allow-Origin", &origin);

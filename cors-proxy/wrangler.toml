@@ -23,8 +23,11 @@ command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release
 # Public, non-secret configuration.
 #
 # ALLOWED_ORIGINS: comma-separated list of browser Origins allowed to call the
-# proxy. Use "*" to allow any origin (a fully open proxy — read the README's
-# security section first). Example:
+# proxy. This deployment serves only the playground front-ends on GitHub Pages,
+# so it is locked to that origin — it is not an open proxy. With a non-"*" list
+# the proxy also refuses callers with no Origin header (curl, server-side
+# scripts). Use "*" to run a fully open proxy (read the README's security
+# section first). Example:
 #   ALLOWED_ORIGINS = "https://example.com,https://app.example.com"
 #
 # MAX_RESPONSE_BYTES: reject upstream responses larger than this many bytes
@@ -34,7 +37,7 @@ command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release
 # MAX_REQUEST_BYTES: reject inbound request bodies larger than this many bytes
 # (defaults to 10485760 = 10 MiB when unset).
 [vars]
-ALLOWED_ORIGINS = "*"
+ALLOWED_ORIGINS = "https://imjasonh.github.io"
 MAX_RESPONSE_BYTES = "26214400"
 MAX_REQUEST_BYTES = "10485760"
 
