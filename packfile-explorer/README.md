@@ -37,27 +37,51 @@ reopen a previously saved pack from IndexedDB.
 
 1. Normalize the typed URL to a smart-HTTP base (`…/repo.git`).
 2. `GET …/info/refs?service=git-upload-pack` through the CORS proxy.
-3. `POST …/git-upload-pack` with a `want` for HEAD (or the first heads ref) and
-   `deepen N` (default 1) so the pack stays small enough to explore.
-4. Demultiplex the side-band-64k response into raw pack bytes.
-5. Parse every entry, inflate zlib members (recording compressed length),
-   resolve ofs- and ref-delta chains, and compute each object's SHA-1 oid.
-6. Persist the raw pack + refs in IndexedDB under the repo URL so you can reopen
+3. Pick which refs to fetch — HEAD is preselected; check more branches or tags,
+   or **Select all**. Set the depth (default 1) so the pack stays small.
+4. `POST …/git-upload-pack` with a `want` per chosen ref. Side-band progress
+   from the server streams into a live log as the pack arrives.
+5. Demultiplex the side-band-64k response into raw pack bytes.
+6. Parse every entry (in a Web Worker when available, so the tab stays
+   responsive), inflate zlib members (recording compressed length), resolve
+   ofs- and ref-delta chains, and compute each object's SHA-1 oid.
+7. Persist the raw pack + refs in IndexedDB under the repo URL so you can reopen
    it without another fetch.
 
 ## Explore
 
-- Object list: filter by type / delta kind, sort by offset / packed size /
-  inflated size / depth, search by oid prefix.
-- Stats: object count, packed vs inflated size, compression ratio, max delta
-  depth, ofs/ref counts.
-- Detail pane: metadata, delta instruction list (copy/insert), and for resolved
-  objects the structured commit/tree/tag view or the full blob text.
-- Delta objects also get hex-editor views of the raw pack entry (header, base
-  pointer, zlib) and the inflated delta stream (size headers, copy pointers,
-  literal inserts). Resolved blobs color copied bytes by source copy instruction
-  and show literal inserts in white.
-- Tap any oid link (parent, tree entry, delta base) to jump.
+The sidebar has four tabs.
+
+- **Objects**: filter by type / delta kind / reachability, sort by offset /
+  packed size / inflated size / depth, search by oid prefix.
+- **Insights**: a leaderboard of the largest objects (rank by packed size,
+  inflated size, delta savings, or depth), a per-type size breakdown, a delta
+  depth histogram, a reachability summary (with a jump to unreachable objects),
+  and the pack version / object count / verified trailer checksum.
+- **Refs**: the advertised refs; click one to open the object it points at.
+- **Paths**: the HEAD tree flattened to file paths; search by substring or a
+  `*` glob and click a path to open its blob.
+
+The detail pane shows object metadata plus:
+
+- The **delta chain** (root base → … → this object) as jump links.
+- Hex-editor views of the raw pack entry (header, base pointer, zlib) and the
+  inflated delta stream (size headers, copy pointers, literal inserts). Hex
+  bodies are keyboard-scrollable when focused.
+- A **delta base** hex view coloring the bytes this delta reuses and greying the
+  ones it dropped, with a reuse percentage.
+- For resolved blobs, the structured commit/tree/tag view, the full blob text
+  (copied bytes colored by source copy instruction, inserts in white), or an
+  inline image preview for PNG/JPEG/GIF/WebP/BMP/SVG blobs.
+- **Download loose object** writes the selected object as a zlib loose file you
+  can drop into `.git/objects/`.
+
+The detail toolbar carries **back/forward** through the objects you've viewed, a
+**jump to full oid** box, and **Copy link** for the current `?pack=#oid` URL.
+From Insights, **Compare with another pack** diffs two saved packs (added,
+removed, and the size deltas).
+
+- Tap any oid link (parent, tree entry, delta base, chain link) to jump.
 
 ## Shareable links
 
@@ -72,10 +96,12 @@ to reopen the same pack and selection in this browser.
 npm test
 ```
 
-Coverage includes pkt-line framing, the upload-pack request body, delta
-apply/parse, synthetic pack round-trips (ofs- and ref-delta), oid computation
-against git's known empty-blob hash, and a live `git repack` fixture when `git`
-is on `PATH`.
+Coverage includes pkt-line framing and the streaming side-band reader, the
+upload-pack request body, delta apply/parse, base/result segment mapping, delta
+chains, reachability and tree-path walking, leaderboards, pack-trailer
+verification, two-pack diff, loose-object export, image sniffing, synthetic pack
+round-trips (ofs- and ref-delta), oid computation against git's known empty-blob
+hash, and a live `git repack` fixture when `git` is on `PATH`.
 
 ## Notes
 

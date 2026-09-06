@@ -111,7 +111,7 @@ export function renderHexEditor(bytes, regions, { baseOffset = 0, maxBytes = 655
   return (
     `<div class="hex-editor">` +
     renderLegend(regions) +
-    `<div class="hex-body">${rows.join("")}</div>` +
+    `<div class="hex-body" tabindex="0" role="group" aria-label="hex dump (arrow keys scroll)">${rows.join("")}</div>` +
     truncated +
     `</div>`
   );
