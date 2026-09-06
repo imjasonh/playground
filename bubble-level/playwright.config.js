@@ -10,6 +10,10 @@ export default defineConfig({
   use: {
     baseURL: 'http://127.0.0.1:4173',
     trace: 'on-first-retry',
+    // Chromium 153+ exposes DeviceOrientationEvent.requestPermission and
+    // returns "prompt" unless Sensors are granted; grant so tests skip the
+    // iOS-style enable panel (and desktop can fall through to preview).
+    permissions: ['accelerometer'],
   },
   webServer: {
     command: 'npx --yes serve . -p 4173',
