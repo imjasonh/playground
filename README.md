@@ -78,7 +78,10 @@ them:
 - **[`inkbot-esp32/`](inkbot-esp32/)** — Rust/ESP-IDF firmware for the Waveshare
   ESP32 + 7.5″ panel: poll `inkbot` every minute, signed OTA from GHCR
   after a USB NVS provision, or flash `APP=maze` for an offline maze that
-  partial-refreshes a correct solve.
+  partial-refreshes a correct solve. A battery-first BLE sibling that snaps to
+  an iPhone's MagSafe ring is designed in
+  [`docs/inkbot-magsafe-design.md`](docs/inkbot-magsafe-design.md) (with a
+  [BOM](docs/inkbot-magsafe-bom.csv)); not yet built.
 - **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare
   Workers, in Rust: repositories in R2, refs in Durable Objects, plus
   file/tree/blame APIs and streaming pack ingest.
