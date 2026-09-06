@@ -3,44 +3,50 @@
 ## PCB
 
 - 4 layers: signal / ground / power / signal.
-- Thickness ~0.8 mm.
-- Outline follows the panel, about 91 x 77 mm.
-- A solid ground plane sits under the radio and the panel SPI runs. The antenna
-  gets a ground keep-out and lives at the edge farthest from the magnet ring and
-  the Qi coil, which both detune 2.4 GHz. Tune the matching network with a phone
-  attached, not on the bench.
+- Thickness **0.4 mm** (thin FR4; confirm fab yield before volume).
+- Outline follows the panel: 91 x 77 mm.
+- Central **battery cutout** (~32 x 22 mm) so the LiPo thickness does not stack on
+  the PCB.
+- Solid ground under the radio and panel SPI. Antenna keep-out at the edge
+  farthest from the MagSafe ring and Qi coil. Tune matching with a phone
+  attached.
+
+## No case
+
+The panel is the front face (adhesive bond to the PCB). The back is the Qi coil,
+ferrite, and MagSafe magnet ring. There is no plastic shell for the first
+spin; add a thin PET or painted mask later only if handling needs it.
 
 ## Placement
 
-- Front: the e-ink panel, adhered over the PCB.
-- Back: the LiPo cell, the Qi receive coil with its ferrite shield, and the
-  MagSafe magnet ring.
-- The magnet ring is annular; the coil sits inside it, matching Apple's ring
-  geometry so the tile self-aligns on a charger.
+- Front: e-ink panel + FPC into the board-edge connector.
+- PCB: nRF52832 QFN, BQ51050B, load switch, LDO, passives around the cutout.
+- Cutout: thin 100 mAh LiPo (~1.5 mm).
+- Back (coplanar): Qi RX coil inside the MagSafe magnet ring.
 
-## Vertical stack (approximate)
+## Vertical stack (thickest region)
+
+With the cell in the cutout, the PCB does not sit under the cell:
 
 | Layer | Thickness |
 |-------|-----------|
-| E-ink panel + FPC | 1.0 mm |
-| PCB | 0.8 mm |
-| LiPo cell | 2.0 mm |
-| RX coil + ferrite | 0.6 mm |
-| Magnet ring + skins/adhesive | 0.8 mm |
-| Total (approx.) | ~4.5 mm |
+| E-ink panel + adhesive | ~1.05 mm |
+| LiPo in cutout | ~1.5 mm |
+| **Total at cell** | **~2.55 mm** |
 
-The coil, cell, and magnets set the floor, so the tile is about 4.5 mm: thicker
-than a MagSafe wallet, thinner than a battery pack.
+Around the magnet ring (no cell):
+
+| Layer | Thickness |
+|-------|-----------|
+| Panel + adhesive | ~1.05 mm |
+| PCB | 0.4 mm |
+| Coil + ferrite (or magnets) | ~0.5–0.6 mm |
+| **Total at ring** | **~2.0–2.1 mm** |
+
+Earlier ~4.5 mm estimate assumed a 0.8 mm PCB and a cell stacked under the board.
+This cutout + thin PCB design targets about **2.5–2.8 mm**.
 
 ## Retention
 
-Magnet-only. The MagSafe magnet ring holds the tile to the phone and self-aligns
-it on a charger; there is no adhesive skin, so the tile stays swappable between
-phones and cases.
-
-## Thermal
-
-Receive-only charging keeps heat low. The NTC thermistor feeds both the SAADC
-(for the status readout) and the charger's thermal cutoff. If pass-through were
-ever added (it is not in this design), the transmit coil would need its own
-thermistor and power foldback.
+Magnet-only. The MagSafe ring holds the tile to the phone and self-aligns it on
+a charger.

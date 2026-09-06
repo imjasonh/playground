@@ -55,17 +55,19 @@ it should not.
 
 | Topic | Decision |
 |-------|----------|
-| MCU / radio | **Nordic nRF52832** (or the Raytac MDBT42Q pre-certified module), not ESP32-C3 |
+| MCU / radio | **Nordic nRF52832 bare QFN-48** (Raytac MDBT42Q optional later for cert) |
 | Panel | 4.2-inch 400×300 mono e-ink, on-glass controller (SSD1683-class), partial refresh |
-| Battery | 110–150 mAh LiPo pouch with protection, ~2 mm thick |
-| Charger | **power-path** charger (TI BQ25100), not a bare MCP73831 |
-| Panel power | fully gated by a load switch between refreshes |
+| Battery | ~100 mAh thin LiPo pouch with protection, ~1.5 mm, in a PCB cutout |
+| Power | **BQ51050B** Qi RX + LiPo charger (one IC); system on the cell (detach-to-charge) |
+| Panel power | fully gated by a load switch + 3.3 V LDO between refreshes |
 | Charging | 5 W Qi RX only; detach the tile and set it on a pad. No pass-through |
 | Frame source | the paired iPhone only; no Worker, no second radio |
 | Port | none; SWD test pads for factory flash and recovery. USB-C considered and dropped |
-| Magnets | MagSafe-geometry N52 annular array; "MagSafe" naming needs Apple MFi |
+| Enclosure | **none for 0.1.0** — panel is the front face |
+| Magnets | MagSafe-geometry N52 annular array; magnet-only retention; "MagSafe" naming needs Apple MFi |
 | Link | BLE 4.2+ GATT for control, **L2CAP connection-oriented channel** for the frame blob |
-| iOS delivery | Core Bluetooth central + State Preservation/Restoration, BGTasks, tile-initiated nudge; no server push |
+| iOS delivery | deferred until hardware is dialed in; Core Bluetooth central when built |
+| Schematic | KiCad project under [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/) |
 
 ### Why nRF52832, not the ESP32-C3 in the brief
 
@@ -88,28 +90,27 @@ The 52832 has 64 KB RAM and 512 KB flash: plenty for a 15 KB mono framebuffer
 plus the S132 SoftDevice. Step up to the nRF52833 (128 KB RAM) only if you add
 grayscale (a 4-level frame is ~30 KB) or want BLE Long Range (Coded PHY).
 
-For the first prototypes, BOM the **Raytac MDBT42Q** module: it carries the
-crystal, matching network, and antenna, and it is FCC/CE/MIC/BLE-SIG
-pre-certified, which removes an intentional-radiator certification from the
-critical path. Move to the bare QFN chip for cost only once volume justifies a
-fresh RF layout and certification.
+For thickness, the schematic BOMs the **bare nRF52832-QFAA** QFN-48 with discrete
+32 MHz crystal, chip antenna, and matching. The Raytac MDBT42Q remains a drop-in
+path later if intentional-radiator certification becomes the bottleneck.
 
 ## Block diagram
 
 ```
                  ┌─────────────────────────────────────────────┐
-   MagSafe ring  │  nRF52832 (MDBT42Q module)                  │
+   MagSafe ring  │  nRF52832-QFAA (bare QFN)                   │
    magnets ──────┤   ├─ SPI ─────────► 4.2" e-ink COG (SSD1683)│
-                 │   ├─ GPIO ────────► TPS22860 load switch ────┼─► panel 3.3V rail
+                 │   ├─ GPIO ────────► TPS22810 + MIC5504 ──────┼─► panel 3.3V rail
    Qi RX coil ─► │   ├─ NFCT ────────► NFC "tap to pair" antenna│    (+ 220µF bulk)
-   (BQ51013B) ─┐ │   └─ SAADC ───────◄ battery + thermistor     │
-               │ └─────────────────────────────────────────────┘
-   5V(RX out) ─┴──► BQ25100 power-path charger ──► LiPo 110mAh ──► VSYS ─► nRF (DC/DC)
-                        ▲                                   ▲
-                        │ ISET (charge ≈ 50–90mA)           │ protection FET
-                        └─ NTC thermistor (charge safety)   └─ 220µF bulk near panel
+   (in magnet    │   └─ SAADC ───────◄ battery + thermistor     │
+    ring)        └─────────────────────────────────────────────┘
+        │
+        └─► BQ51050B (Qi RX + charger) ──► LiPo ~100mAh (PCB cutout) = VSYS ─► nRF DC/DC
+                 ▲                                              ▲
+                 │ ILIM / FOD / TERM                            │ protection FET
+                 └─ NTC (TS/CTRL + SAADC)                       └─ 220µF bulk near panel
 
-   Recovery/factory only:  SWD pads (SWDIO/SWCLK/GND/VDD) ─► BLE-DFU fallback + programming
+   Recovery/factory only:  SWD pads (SWDIO/SWCLK/GND/VDD/NRST) ─► BLE-DFU + programming
 ```
 
 Signal notes: the panel is a bare chip-on-glass (COG) module on a 24-pin 0.5 mm
@@ -149,33 +150,27 @@ power-path charger so charge/discharge transitions never drop the system rail.
 
 ### Power path
 
-Use a **power-path** charger, the TI BQ25100, not a bare MCP73831. The MCP73831
-in the brief is a fine linear charger, but it has no system output: it sits
-between the source and the battery, so the load hangs directly on the cell and
-sees every transient. The BQ25100 powers the system from the input when input is
-present and switches to battery seamlessly when it is removed. That "instant
-cutover" the brief describes is exactly what a power-path IC gives you for free,
-and it is the difference between a reliable tile and one that resets when you lift
-the phone off a charger mid-refresh. Set charge current low (50–90 mA) with the
-ISET resistor to be kind to the small cell; there is no reason to fast-charge a
-battery that drains a fraction of a milliamp-hour a day.
+Use the **BQ51050B**: one VQFN that is both the Qi receiver and the LiPo
+charger. That removes a second power IC and its height from the stack. The
+system hangs on the cell (`BAT` = `VSYS`). Charge while detached on a pad; do not
+expect seamless source/battery cutover mid-refresh (refresh only runs when the
+tile is awake on the phone, not while sitting on a charger). Cap charge current
+with the ILIM resistor for the small cell.
 
-The **Qi RX output** from the BQ51013B 5 W receiver is the only charge input the
-user touches. There is no USB-C port on the shipping tile (see the next section).
+There is no USB-C port on the shipping tile (see the next section).
 
-The nRF52832 runs directly from VSYS through its internal DC/DC (add the DC/DC
-inductor and caps per Nordic's reference). The panel gets a dedicated 3.3 V rail
-behind a **TPS22860 load switch** driven by a GPIO, so idle current is just the
-nRF plus leakage.
+The nRF52832 runs directly from VSYS through its internal DC/DC (DCC inductor
+and DEC caps per Nordic's reference). The panel gets a dedicated 3.3 V rail
+behind a **TPS22810 load switch** and **MIC5504-3.3** LDO driven by a GPIO, so
+idle current is just the nRF plus leakage.
 
 ### Wireless power
 
-The tile uses the **BQ51013B** (or NXP equivalent) with a MagSafe-profile RX coil
-sized to Apple's ring geometry so it self-aligns on any MagSafe pad. Route the
-coil on the back layer, keep a ferrite shield between the coil and the PCB ground
-plane, and keep the 2.4 GHz antenna in the opposite corner from the coil and
-magnets (both detune it). There is no transmit stage: the tile charges itself,
-not the phone (see the rejected pass-through note above).
+The **BQ51050B** drives a MagSafe-profile RX coil sized to Apple's ring geometry
+so the tile self-aligns on any MagSafe pad. Place the coil inside the magnet
+ring on the back, keep ferrite between the coil and the board, and put the
+2.4 GHz chip antenna at the opposite edge (magnets and coil both detune it).
+There is no transmit stage: the tile charges itself, not the phone.
 
 ### Ports: none, by design
 
@@ -206,31 +201,27 @@ radio and will detune a 2.4 GHz antenna. Two consequences drive the layout:
 
 ### Board stack
 
-A 4-layer PCB (signal / ground / power / signal), ~0.8 mm, is worth the small
-cost premium: it keeps a solid reference plane under the radio and the SPI runs,
-which matters more here than in a hobby build because the antenna is already
-compromised by the phone. Board outline follows the panel (~91 × 77 mm). The
-panel adheres to the front; battery, coil, and magnet ring stack on the back.
+A **0.4 mm** 4-layer PCB (signal / ground / power / signal) with a **central
+battery cutout** so the cell does not stack on the FR4. Outline follows the
+panel (~91 × 77 mm). No case for 0.1.0: the panel is the front face; coil and
+magnets sit on the back. See [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/)
+for the schematic and outline, and
+[`inkbot-magsafe/hardware/stackup.md`](../inkbot-magsafe/hardware/stackup.md)
+for the mechanical stack.
 
 ### Realistic thickness
 
-Paper-thin is aspirational. Honest stack-up, with the rejected pass-through
-version alongside for reference:
+Thickness-first layout (cutout + thin PCB + bare QFN + combined Qi/charger):
 
-| Layer | Shipping (self-charge) | If pass-through were added |
-|---|---|---|
-| E-ink panel + FPC | 1.0 mm | 1.0 mm |
-| PCB | 0.8 mm | 0.8 mm |
-| LiPo cell | 2.0 mm | 2.0 mm |
-| RX coil + ferrite | 0.6 mm | 0.6 mm |
-| TX coil + shield | (none) | 1.2 mm |
-| Magnet ring + skins/adhesive | 0.8 mm | 0.8 mm |
-| **Total (approx.)** | **~4.5 mm** | **~5.8 mm** |
+| Region | Approx. |
+|--------|---------|
+| At the cell (panel + 1.5 mm LiPo in cutout) | **~2.55 mm** |
+| At the magnet ring (panel + 0.4 mm PCB + coil/magnets) | **~2.0–2.1 mm** |
 
-Dropping the USB-C port keeps the edge clean and shaves the cutout, but the
-coil, cell, and magnets set the floor, so the tile is ~4.5 mm either way. That is
-thicker than a MagSafe wallet but thinner than a battery pack. The "under 2 mm"
-figure in the brief describes the bare cell, not the finished tile.
+Earlier ~4.5 mm assumed a 0.8 mm PCB and a cell under the board. Pass-through
+TX would still add ~1.2 mm and is rejected. The "under 2 mm" figure in the brief
+describes the bare cell, not the finished tile — this design lands near that
+floor without a case.
 
 ## BLE and iOS integration
 
@@ -320,28 +311,25 @@ carries; the phone is the update transport.
 
 Full line items with part numbers and price columns are in
 [`inkbot-magsafe-bom.csv`](inkbot-magsafe-bom.csv). Rolled-up cost of goods
-(COGS) at ~1,000 units, using the pre-certified radio module:
+(COGS) at ~1,000 units, thickness-first bare SoC:
 
 | | Shipping tile |
 |---|---|
-| Parts (incl. PCB) | ~$29 |
+| Parts (incl. thin PCB) | ~$28 |
 | Assembly (SMT, test) | ~$4 |
-| **COGS** | **~$33** |
+| **COGS** | **~$32** |
 | Suggested retail (2.5–3×) | ~$85–99 |
 
-The panel (~$12), the radio module (~$4.2), and the Qi receive stage (~$4.6 for
-the receiver plus coil) dominate the bill. Dropping to a bare nRF52832 QFN saves
-~$2 in parts but costs an RF layout and a certification cycle; do that only at
-volume. The rejected pass-through version would add ~$8 (transmit coil,
-controller, thermal parts) and push COGS to ~$42, but it is not in the shipping
-BOM.
+The panel (~$12) and the Qi stage (~$4.8 for BQ51050B + coil) dominate. The bare
+nRF52832 (~$2.30) is cheaper than a pre-certified module; certification is a
+later cost if you stay bare. Pass-through TX would still add ~$8 and is rejected.
 
 ## Reliability checklist
 
-- Power-path charger so lift-off-charger transitions never brown out the nRF.
-- 220 µF bulk cap at the panel rail to absorb refresh inrush from a high-ESR cell.
+- System on the cell via BQ51050B; charge while detached (no mid-refresh cutover).
+- 220 µF bulk cap at VSYS near the panel connector for refresh inrush.
 - Antenna tuned with a phone attached; ground keep-out under it.
-- NTC thermistor for Qi charge safety.
+- NTC thermistor for Qi charge safety (shared with SAADC).
 - Cell with an integrated protection FET, or add a DW01 + dual FET.
 - SWD test pads for brick recovery, since there is no USB port to fall back to.
 - Forced periodic full refresh to prevent e-ink ghosting.
@@ -354,7 +342,8 @@ BOM.
   charging ring needs Apple's MFi program (which adds an authentication IC and
   licensing). Without MFi: generic magnets, "works with MagSafe chargers,"
   7.5 W cap.
-- The pre-certified radio module clears the intentional-radiator certification.
+- The bare SoC needs intentional-radiator certification; swap to MDBT42Q if that
+  becomes the bottleneck.
 - The Qi coil is still a Part 18 radiator. The tile is receive-only, so there is
   no transmit EMC burden; adding pass-through later would roughly double it and
   may want WPC (Qi) certification.
