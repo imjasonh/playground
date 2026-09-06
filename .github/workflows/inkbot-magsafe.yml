@@ -1,0 +1,62 @@
+# Host logic tests + ARM cross-build for the inkbot-magsafe e-ink tile firmware.
+#
+# inkbot-magsafe/ is excluded from the shared Rust job in test.yml because it
+# cross-compiles to the bare-metal thumbv7em-none-eabihf target, which the
+# generic stable-Rust job cannot build. This workflow runs only when the
+# firmware or this file changes.
+
+name: inkbot-magsafe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "inkbot-magsafe/**"
+      - ".github/workflows/inkbot-magsafe.yml"
+  pull_request:
+    paths:
+      - "inkbot-magsafe/**"
+      - ".github/workflows/inkbot-magsafe.yml"
+  workflow_dispatch: {}
+
+concurrency:
+  group: inkbot-magsafe-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    name: Host tests + ARM build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: inkbot-magsafe
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      # rust-toolchain.toml pins stable and the thumbv7em-none-eabihf target;
+      # rustup installs both on the first cargo call.
+      - name: Install Rust toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install stable --profile minimal
+          rustup component add clippy rustfmt
+          rustup target add thumbv7em-none-eabihf
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy (host)
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test (host logic)
+        run: cargo test --locked
+
+      - name: Clippy (thumbv7em-none-eabihf)
+        run: cargo clippy --locked --target thumbv7em-none-eabihf -- -D warnings
+
+      - name: Build firmware (thumbv7em-none-eabihf)
+        run: cargo build --locked --release --target thumbv7em-none-eabihf

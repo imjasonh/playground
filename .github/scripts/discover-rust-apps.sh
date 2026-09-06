@@ -25,6 +25,13 @@ is_rust_app() {
     return 1
   fi
 
+  # inkbot-magsafe firmware cross-compiles to the bare-metal
+  # thumbv7em-none-eabihf target, which the generic stable-Rust job cannot
+  # build. inkbot-magsafe.yml owns its host lib tests and ARM cross-build.
+  if [[ "$name" == "inkbot-magsafe" ]]; then
+    return 1
+  fi
+
   [[ -f "$name/Cargo.toml" ]]
 }
 

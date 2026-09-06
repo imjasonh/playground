@@ -1,0 +1,31 @@
+[package]
+name = "inkbot-magsafe"
+version = "0.1.0"
+edition = "2021"
+description = "Firmware for the inkbot-magsafe MagSafe e-ink tile (nRF52832, BLE)."
+publish = false
+
+[lib]
+name = "inkbot_magsafe"
+
+[[bin]]
+name = "inkbot-magsafe"
+test = false
+bench = false
+
+[lints.rust]
+unused = "deny"
+
+# Bare-metal-only dependencies. Gating them on the embedded target keeps the
+# host build (cargo test / clippy) free of the ARM runtime, so the pure logic in
+# the library stays testable without a cross toolchain.
+[target.'cfg(target_os = "none")'.dependencies]
+cortex-m = "0.7"
+cortex-m-rt = "0.7"
+panic-halt = "1.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+debug = true

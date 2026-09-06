@@ -1,0 +1,7 @@
+# The linker script and flashing runner apply only to the embedded target, so
+# host builds (cargo test, cargo clippy) are untouched and use the default
+# x86_64 target. cortex-m-rt provides link.x, which pulls in memory.x from the
+# build-script search path.
+[target.thumbv7em-none-eabihf]
+rustflags = ["-C", "link-arg=-Tlink.x"]
+runner = "probe-rs run --chip nRF52832_xxAA"

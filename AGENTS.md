@@ -38,6 +38,7 @@ playground/
 ├── onramp/             # offline Mac can’t-get-online triage (Sparkle CD)
 ├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
 ├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot + signed OTA, or APP=maze, on Waveshare 7.5″
+├── inkbot-magsafe/        # Rust/nRF52 firmware + hardware: MagSafe BLE e-ink tile (bare-metal; own CI)
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
@@ -81,6 +82,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
 | `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
+| `inkbot-magsafe/` | no | Rust/nRF52 bare-metal firmware (thumbv7em); no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
@@ -181,6 +183,7 @@ discovery scripts.
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
 | `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
 | `inkbot-esp32-publish.yml` | push to `main` touching `inkbot-esp32/**` (or this workflow), manual | Cross-builds inkbot firmware, pushes `ghcr.io/<owner>/playground/inkbot-esp32`, and Cosign-signs the digest (devices poll this for OTA) |
+| `inkbot-magsafe.yml` | push to `main` / pull requests touching `inkbot-magsafe/**` (or this workflow), manual | Host logic tests + `thumbv7em-none-eabihf` cross-build for the MagSafe e-ink tile firmware (excluded from `test.yml`) |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
@@ -283,6 +286,9 @@ directories (names starting with `.`) and changes outside any app directory
 or the root `README.md` runs no app tests. `inkbot-esp32/` has a `Cargo.toml`
 but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
 `inkbot-esp32.yml` runs its host lib tests and firmware cross-build instead.
+`inkbot-magsafe/` is excluded the same way (it cross-compiles to the bare-metal
+`thumbv7em-none-eabihf` target); `inkbot-magsafe.yml` runs its host tests and ARM
+cross-build.
 
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
@@ -701,6 +707,7 @@ auto-discover them. Run their local tests when you change them.
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
 | `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
+| `inkbot-magsafe/` | Rust/nRF52 bare-metal firmware + hardware for the MagSafe BLE e-ink tile (4-inch, phone-first, no connector). Scaffold: logic tested, bring-up stubbed. Design: [`docs/inkbot-magsafe-design.md`](docs/inkbot-magsafe-design.md). Agent guide: [`inkbot-magsafe/AGENTS.md`](inkbot-magsafe/AGENTS.md) | host logic tests + `thumbv7em-none-eabihf` cross-build via `inkbot-magsafe.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 
