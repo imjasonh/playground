@@ -257,9 +257,12 @@ centrals that will not open a channel.
 iOS does not let an app run arbitrary code on a schedule to poke BLE. Truly
 "push any time" is not something iOS guarantees, and with the phone as the sole
 source there is no server to send a wake. So background updates are event-driven
-and best-effort, and the product should be pitched around faces that tolerate
-that: a clock, the day's calendar, weather, a step count, the next transit
-departure. It is not a pager. What iOS does give a source-on-device app:
+and best-effort, and the launch faces are chosen to tolerate that: clock, the
+day's calendar, weather, a health readout (steps or rings), a photo or custom
+image, and custom text or a countdown. A best-effort notification or message
+summary rides along, with the caveat that it lands on the next background wake,
+not the instant a message arrives. Transit is deferred to a later face. What iOS
+gives a source-on-device app:
 
 - **Persistent connection + State Preservation and Restoration.** With the
   `bluetooth-central` background mode, iOS keeps a connection alive and relaunches
@@ -277,8 +280,11 @@ departure. It is not a pager. What iOS does give a source-on-device app:
 
 If a face ever needs sub-minute remote updates (an inbound message the instant it
 lands), that requires a silent APNs push from some server, which the phone-only
-model deliberately gives up. That is the one thing this decision trades away; see
-Open questions.
+model deliberately gives up. The notification-summary face is the likely reason
+to add one later, so **reserve that path**: keep the tile firmware agnostic to
+what wakes the app (it just receives a frame), and keep the app's push handling
+behind one seam, so a future optional companion push service drops in without a
+firmware change or a second radio. It is not built for launch.
 
 Design the protocol so a push is idempotent and resumable: the app sends a frame
 id and a hash, the tile acknowledges what it already has, and a dropped
@@ -357,8 +363,18 @@ BOM.
 
 - **The phone is the sole source of frames.** No Worker, no server push. This
   keeps the system to one radio and one trust boundary, at the cost of sub-minute
-  remote updates (see BLE background). Faces are on-device data: clock, calendar,
-  weather, health, transit.
+  remote updates (see BLE background).
+- **Mono panel.** Black/white only, staying on the nRF52832. Grayscale or color
+  is a later variant that would move to the nRF52833 for the larger frame.
+- **Launch faces:** clock, calendar, weather, health, photo/image, custom text,
+  and a best-effort notification summary. Transit is deferred.
+- **Relaxed background cadence.** Target the iOS `BGTask` rhythm (roughly every
+  15 to 30 minutes, adaptive), which is the best-battery choice; foreground
+  updates are immediate. No tight always-on connection interval.
+- **Push gap accepted, path reserved.** Phone-only for launch. The
+  notification-summary face is the one that would justify an optional companion
+  push service later, so the firmware and app are structured to add it without a
+  redesign.
 - **Charging is detach-and-drop on a Qi/MagSafe pad.** No pass-through in the
   shipping design.
 - **No connector.** Wireless charge, BLE DFU for updates, SWD pads for recovery.
@@ -366,9 +382,10 @@ BOM.
 
 ## Open questions
 
-- Mono only, or a BWR / grayscale variant? Grayscale pushes to the nRF52833 and
-  larger frames.
-- Which on-device sources make the launch faces, and what `BGTask` cadence do
-  they need to feel fresh without draining background budget?
-- Is the sub-minute-update gap (no server push) acceptable for every intended
-  face, or does one face justify an optional companion push service later?
+- Mechanical: magnet-only retention against the phone, or magnets plus a thin
+  adhesive skin? What enclosure material and how is the panel bonded?
+- Per-face `BGTask` cadence tuning: which faces (weather, health) warrant a
+  `BGProcessingTask` versus a lighter `BGAppRefreshTask`, within the relaxed
+  target?
+- If the reserved push service is built later, does it stay a private companion
+  service or reuse the existing [`inkbot/`](../inkbot/) Worker as the sender?
