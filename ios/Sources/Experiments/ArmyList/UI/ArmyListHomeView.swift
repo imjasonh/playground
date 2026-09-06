@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Library of saved army lists.
 struct ArmyListHomeView: View {
@@ -383,6 +384,13 @@ struct ArmyListNewSheet: View {
     @State private var battleSizeID = "incursion"
     @State private var flavor = ""
     @State private var isBuilding = false
+    @State private var buildProgress: ArmyListStarterBuildProgress?
+    @State private var buildTask: Task<Void, Never>?
+    @State private var buildBackgroundAssertion = ArmyListStarterBuildBackgroundAssertion()
+    /// Smoothly animated bar value. A trickle loop nudges it toward the next
+    /// milestone so the long, opaque model call still looks like it is moving;
+    /// real milestones snap it forward.
+    @State private var displayedFraction: Double = 0
     @State private var seedError: String?
 
     private var factionsSorted: [FactionDefinition] {
@@ -445,21 +453,38 @@ struct ArmyListNewSheet: View {
                     .accessibilityIdentifier("armyListFlavorField")
             }
 
+            if isBuilding, let buildProgress {
+                Section {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ProgressView(value: displayedFraction, total: 1.0)
+                            .animation(.linear(duration: 0.12), value: displayedFraction)
+                        Text(buildProgress.statusText)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .animation(.easeInOut(duration: 0.25), value: buildProgress)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("armyListBuildStarterProgress")
+                }
+            }
+
             Section {
-                Button {
-                    buildStarterList()
-                } label: {
-                    if isBuilding {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                            Text("Building…")
-                        }
-                    } else {
+                if isBuilding {
+                    Button(role: .cancel) {
+                        cancelBuild()
+                    } label: {
+                        Text("Cancel build")
+                    }
+                    .accessibilityIdentifier("armyListCancelBuildButton")
+                } else {
+                    Button {
+                        buildStarterList()
+                    } label: {
                         Text("Build starter list")
                     }
+                    .disabled(!canSubmit)
+                    .accessibilityIdentifier("armyListBuildStarterButton")
                 }
-                .disabled(!canSubmit || isBuilding)
-                .accessibilityIdentifier("armyListBuildStarterButton")
             }
 
             if let seedError {
@@ -472,6 +497,16 @@ struct ArmyListNewSheet: View {
         }
         .navigationTitle("New list")
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: isBuilding) {
+            guard isBuilding else { return }
+            while isBuilding, !Task.isCancelled {
+                displayedFraction = ArmyListStarterBuildProgress.trickle(
+                    from: displayedFraction,
+                    milestone: buildProgress
+                )
+                try? await Task.sleep(nanoseconds: 90_000_000)
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Cancel") { dismiss() }
@@ -538,23 +573,85 @@ struct ArmyListNewSheet: View {
             seedError = issue
             return
         }
+        displayedFraction = 0
         isBuilding = true
+        buildProgress = ArmyListStarterBuildProgress(
+            attempt: 0,
+            maxAttempts: 3,
+            phase: .preparing
+        )
         let theme = flavor
         let userName = trimmedName()
-        Task {
+        buildBackgroundAssertion.begin(onExpiration: cancelBuild)
+        buildTask = Task {
+            defer { buildBackgroundAssertion.end() }
             let built = await ArmyListStarterBuilder.build(
                 catalog: catalog,
                 factionID: factionID,
                 battleSizeID: battleSizeID,
                 theme: theme,
-                userName: userName
+                userName: userName,
+                onProgress: { progress in
+                    buildProgress = progress
+                }
             )
+            if Task.isCancelled {
+                isBuilding = false
+                buildProgress = nil
+                buildTask = nil
+                return
+            }
             isBuilding = false
+            buildProgress = nil
+            buildTask = nil
             if let built {
                 onCreate(built)
             } else {
                 seedError = "The model couldn’t build a list this time. Try again or tweak the theme."
             }
         }
+    }
+
+    /// Stops an in-flight starter build and returns the sheet to its idle state.
+    /// The on-device model may not interrupt a generation already in flight, so
+    /// the builder checks for cancellation at each attempt boundary and drops
+    /// whatever it produced.
+    private func cancelBuild() {
+        buildTask?.cancel()
+        buildTask = nil
+        buildBackgroundAssertion.end()
+        isBuilding = false
+        buildProgress = nil
+        displayedFraction = 0
+    }
+}
+
+/// Keeps a starter build alive briefly after the app leaves the foreground.
+/// iOS still caps this window (~30s); generation may pause when it expires.
+@MainActor
+private final class ArmyListStarterBuildBackgroundAssertion {
+    private var taskID: UIBackgroundTaskIdentifier = .invalid
+
+    func begin(onExpiration: @escaping @MainActor () -> Void) {
+        end()
+        taskID = UIApplication.shared.beginBackgroundTask(
+            withName: "Army List starter build"
+        ) { [weak self] in
+            guard let self else { return }
+            let id = self.taskID
+            if id != .invalid {
+                UIApplication.shared.endBackgroundTask(id)
+                self.taskID = .invalid
+            }
+            Task { @MainActor in
+                onExpiration()
+            }
+        }
+    }
+
+    func end() {
+        guard taskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(taskID)
+        taskID = .invalid
     }
 }

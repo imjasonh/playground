@@ -672,4 +672,109 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertFalse(runtime.modelGate.title.isEmpty)
         XCTAssertFalse(runtime.armyListGateDetail.isEmpty)
     }
+
+    func testStarterBuildProgressAdvancesAcrossPhases() {
+        let maxAttempts = 3
+        let preparing = ArmyListStarterBuildProgress(
+            attempt: 0,
+            maxAttempts: maxAttempts,
+            phase: .preparing
+        )
+        let generating = ArmyListStarterBuildProgress(
+            attempt: 1,
+            maxAttempts: maxAttempts,
+            phase: .generating
+        )
+        let applying = ArmyListStarterBuildProgress(
+            attempt: 1,
+            maxAttempts: maxAttempts,
+            phase: .applyingRoster
+        )
+        let checking = ArmyListStarterBuildProgress(
+            attempt: 1,
+            maxAttempts: maxAttempts,
+            phase: .checking
+        )
+        let secondAttempt = ArmyListStarterBuildProgress(
+            attempt: 2,
+            maxAttempts: maxAttempts,
+            phase: .generating
+        )
+        let finishing = ArmyListStarterBuildProgress(
+            attempt: maxAttempts,
+            maxAttempts: maxAttempts,
+            phase: .finishing
+        )
+
+        XCTAssertLessThan(preparing.fractionComplete, generating.fractionComplete)
+        XCTAssertLessThan(generating.fractionComplete, applying.fractionComplete)
+        XCTAssertLessThan(applying.fractionComplete, checking.fractionComplete)
+        XCTAssertLessThan(checking.fractionComplete, secondAttempt.fractionComplete)
+        XCTAssertEqual(finishing.fractionComplete, 1.0)
+    }
+
+    func testStarterBuildProgressStatusTextMentionsAttemptCount() {
+        let progress = ArmyListStarterBuildProgress(
+            attempt: 2,
+            maxAttempts: 3,
+            phase: .generating
+        )
+        XCTAssertEqual(progress.statusText, "Generating roster (attempt 2 of 3)…")
+    }
+
+    func testStarterBuildTrickleCreepsUpwardWithinPhase() {
+        let milestone = ArmyListStarterBuildProgress(
+            attempt: 1,
+            maxAttempts: 3,
+            phase: .generating
+        )
+        var value = milestone.fractionComplete
+        var ticks = 0
+        while ticks < 200 {
+            let next = ArmyListStarterBuildProgress.trickle(from: value, milestone: milestone)
+            XCTAssertGreaterThanOrEqual(next, value)
+            value = next
+            ticks += 1
+        }
+        // Creeps up but never claims completion mid-phase.
+        XCTAssertGreaterThan(value, milestone.fractionComplete)
+        XCTAssertLessThan(value, 0.95)
+    }
+
+    func testStarterBuildTrickleSnapsToFloorAndFinish() {
+        let generating = ArmyListStarterBuildProgress(
+            attempt: 2,
+            maxAttempts: 3,
+            phase: .generating
+        )
+        // A stale low displayed value snaps up to the new milestone floor.
+        let snapped = ArmyListStarterBuildProgress.trickle(from: 0.05, milestone: generating)
+        XCTAssertGreaterThanOrEqual(snapped, generating.fractionComplete)
+
+        let finishing = ArmyListStarterBuildProgress(
+            attempt: 3,
+            maxAttempts: 3,
+            phase: .finishing
+        )
+        XCTAssertEqual(
+            ArmyListStarterBuildProgress.trickle(from: 0.5, milestone: finishing),
+            1.0
+        )
+    }
+
+    func testStarterBuildReturnsNilWhenCancelledBeforeModelCall() async {
+        let catalog = self.catalog!
+        let task = Task { @MainActor () -> ArmyListDocument? in
+            await ArmyListStarterBuilder.build(
+                catalog: catalog,
+                factionID: "leagues-of-votann",
+                battleSizeID: "incursion",
+                theme: "",
+                userName: nil
+            )
+        }
+        task.cancel()
+        let built = await task.value
+        XCTAssertNil(built)
+    }
 }
