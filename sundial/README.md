@@ -5,10 +5,12 @@ day only the shadow is visible. After sunset the shadow is gone and the
 numerals show.
 
 The screen is a horizontal plate with north at the top. Sun position comes
-from the time on your clock. Longitude is inferred from the time zone;
-latitude defaults to 40.7°N. **Use location** asks for your coordinates.
-After you grant it, the button goes away and the page keeps using that
-fix. The page does not ask until you click it. If you want a
+from the time on your clock. Your latitude and longitude default to your
+time zone's location (`America/New_York` sits at New York, not the middle
+of the Eastern meridian), so sunrise and sunset land near where you are
+without asking for anything. **Use location** refines that to your exact
+coordinates. After you grant it, the button goes away and the page keeps
+using that fix. The page does not ask until you click it. If you want a
 specific place without sharing a location, pass `lat` and `lon` in the
 query string. To pin the clock to a moment, add an `at` parameter with an
 ISO timestamp.
