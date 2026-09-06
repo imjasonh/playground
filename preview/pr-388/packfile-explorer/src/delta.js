@@ -20,44 +20,168 @@ function readDeltaSize(bytes, start) {
 }
 
 /**
- * Decode a delta into a base size, result size, and instruction list. Each
- * instruction is `{ type: "copy", offset, size }` or
- * `{ type: "insert", data: Uint8Array }`. Useful for both applying and
- * visualizing how a deltified object reuses its base.
+ * Decode a delta into a base size, result size, instruction list, and byte
+ * regions for hex visualization. Each instruction is
+ * `{ type: "copy", offset, size, copyIndex, span }` or
+ * `{ type: "insert", data, span }`. Regions mark header varints, opcodes,
+ * offset/size fields, and literal insert bytes in the delta stream.
  */
 export function parseDelta(delta) {
   let { size: baseSize, at } = readDeltaSize(delta, 0);
+  const baseSizeStart = 0;
+  const baseSizeEnd = at;
   const resultRead = readDeltaSize(delta, at);
   const resultSize = resultRead.size;
+  const resultSizeStart = at;
   at = resultRead.at;
+  const resultSizeEnd = at;
+
+  const regions = [
+    {
+      start: baseSizeStart,
+      end: baseSizeEnd,
+      role: "header",
+      field: "baseSize",
+      value: baseSize,
+      label: `base size ${baseSize}`,
+    },
+    {
+      start: resultSizeStart,
+      end: resultSizeEnd,
+      role: "header",
+      field: "resultSize",
+      value: resultSize,
+      label: `result size ${resultSize}`,
+    },
+  ];
 
   const ops = [];
+  let copyIndex = 0;
   while (at < delta.length) {
+    const opcodeAt = at;
     const opcode = delta[at];
     at += 1;
     if (opcode & 0x80) {
       // Copy from base: variable offset/size fields selected by the low bits.
       let offset = 0;
       let size = 0;
+      const offsetStart = at;
       if (opcode & 0x01) offset |= delta[at++];
       if (opcode & 0x02) offset |= delta[at++] << 8;
       if (opcode & 0x04) offset |= delta[at++] << 16;
       if (opcode & 0x08) offset |= delta[at++] << 24;
+      const offsetEnd = at;
+      const sizeStart = at;
       if (opcode & 0x10) size |= delta[at++];
       if (opcode & 0x20) size |= delta[at++] << 8;
       if (opcode & 0x40) size |= delta[at++] << 16;
+      const sizeEnd = at;
       if (size === 0) size = 0x10000;
-      ops.push({ type: "copy", offset: offset >>> 0, size });
+      offset = offset >>> 0;
+
+      regions.push({
+        start: opcodeAt,
+        end: opcodeAt + 1,
+        role: "opcode",
+        op: "copy",
+        copyIndex,
+        opcode,
+        label: `copy opcode 0x${opcode.toString(16)}`,
+      });
+      if (offsetEnd > offsetStart) {
+        regions.push({
+          start: offsetStart,
+          end: offsetEnd,
+          role: "copy-offset",
+          copyIndex,
+          offset,
+          label: `base offset ${offset}`,
+        });
+      }
+      if (sizeEnd > sizeStart) {
+        regions.push({
+          start: sizeStart,
+          end: sizeEnd,
+          role: "copy-size",
+          copyIndex,
+          size,
+          label: `copy size ${size}`,
+        });
+      } else {
+        regions.push({
+          start: opcodeAt,
+          end: opcodeAt + 1,
+          role: "copy-size",
+          copyIndex,
+          size,
+          label: `copy size ${size} (implicit)`,
+        });
+      }
+
+      ops.push({
+        type: "copy",
+        offset,
+        size,
+        copyIndex,
+        span: { start: opcodeAt, end: at },
+      });
+      copyIndex += 1;
     } else if (opcode !== 0) {
       // Insert the next `opcode` literal bytes.
+      const dataStart = at;
       const data = delta.subarray(at, at + opcode);
       at += opcode;
-      ops.push({ type: "insert", data });
+      regions.push({
+        start: opcodeAt,
+        end: opcodeAt + 1,
+        role: "opcode",
+        op: "insert",
+        label: `insert opcode (${opcode} B)`,
+      });
+      regions.push({
+        start: dataStart,
+        end: at,
+        role: "insert-data",
+        label: `literal insert (${opcode} B)`,
+      });
+      ops.push({ type: "insert", data, span: { start: opcodeAt, end: at } });
     } else {
       throw new Error("invalid delta opcode 0x00");
     }
   }
-  return { baseSize, resultSize, ops };
+  return { baseSize, resultSize, ops, regions };
+}
+
+/**
+ * Map a resolved object's bytes back to copy/insert segments for coloring.
+ * Copy segments reference the delta base oid and offset in that base object.
+ */
+export function buildResolvedSegments(deltaParsed, baseOid) {
+  const segments = [];
+  let outAt = 0;
+  for (const op of deltaParsed.ops) {
+    if (op.type === "copy") {
+      segments.push({
+        start: outAt,
+        end: outAt + op.size,
+        kind: "copy",
+        copyIndex: op.copyIndex,
+        baseOffset: op.offset,
+        baseOid,
+        size: op.size,
+      });
+      outAt += op.size;
+    } else {
+      segments.push({
+        start: outAt,
+        end: outAt + op.data.length,
+        kind: "insert",
+        size: op.data.length,
+      });
+      outAt += op.data.length;
+    }
+  }
+  return segments;
 }
 
 /** Apply a delta against its base object, returning the reconstructed bytes. */

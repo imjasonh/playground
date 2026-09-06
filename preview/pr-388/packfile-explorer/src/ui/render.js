@@ -1,7 +1,9 @@
 // DOM rendering for the packfile explorer.
 
 import { parseCommit, parseTag, parseTree, looksBinary } from "../gitObject.js";
-import { parseDelta } from "../delta.js";
+import { parseDelta, buildResolvedSegments } from "../delta.js";
+import { annotatePackEntry } from "../packVisual.js";
+import { renderHexEditor, renderSegmentedHex, renderSegmentedText } from "../hexView.js";
 import { formatBytes, formatPercent, shortOid } from "../format.js";
 import { decodeUtf8 } from "../hex.js";
 
@@ -64,6 +66,8 @@ export function renderDetail(el, obj, session, onSelectOid) {
   }
 
   const content = obj.oid ? session.contentByOid.get(obj.oid) : null;
+  let deltaParsed = null;
+  let deltaBaseOid = null;
   const parts = [];
   parts.push(`<h2>${escapeHtml(obj.typeName)}</h2>`);
   parts.push(
@@ -92,27 +96,55 @@ export function renderDetail(el, obj, session, onSelectOid) {
   }
   parts.push(`</dl>`);
 
-  // Delta instructions, if this entry was stored as a delta.
+  // Delta visualization: pack entry bytes, delta instruction stream, and op list.
   const raw = session.parsed.objects[obj.index];
   if (raw && (raw.type === 6 || raw.type === 7)) {
     try {
-      const delta = parseDelta(raw.data);
+      const deltaParsedResult = parseDelta(raw.data);
+      const baseOid = obj.baseOid || raw.baseOid || null;
+
+      if (session.packBytes) {
+        const entry = annotatePackEntry(session.packBytes, raw);
+        parts.push(
+          `<div class="panel"><h3>Pack entry @${raw.offset}</h3>` +
+            `<p class="panel-note">Raw bytes in the packfile for this object: header, base pointer, zlib.</p>` +
+            renderHexEditor(entry.bytes, entry.regions, { baseOffset: raw.offset }) +
+            `</div>`,
+        );
+      }
+
+      parts.push(
+        `<div class="panel"><h3>Delta stream (inflated)</h3>` +
+          `<p class="panel-note">Decoded zlib payload: size headers, copy pointers into the base object, literal inserts.</p>` +
+          renderHexEditor(raw.data, deltaParsedResult.regions) +
+          `</div>`,
+      );
+
       parts.push(`<div class="panel"><h3>Delta instructions</h3><ul class="delta-ops">`);
-      for (const op of delta.ops.slice(0, 200)) {
+      for (const op of deltaParsedResult.ops.slice(0, 200)) {
         if (op.type === "copy") {
+          const baseLink = baseOid
+            ? `<a href="#${escapeHtml(baseOid)}" data-oid="${escapeHtml(baseOid)}">${escapeHtml(shortOid(baseOid))}</a>`
+            : "base";
           parts.push(
-            `<li><span>copy</span><span>@${op.offset}</span><span>${formatBytes(op.size)}</span></li>`,
+            `<li><span>copy #${op.copyIndex}</span>` +
+              `<span>${baseLink} @${op.offset} · ${formatBytes(op.size)}</span>` +
+              `<span>pack +${op.span.start}</span></li>`,
           );
         } else {
           parts.push(
-            `<li><span>insert</span><span>${escapeHtml(previewBytes(op.data, 40))}</span><span>${formatBytes(op.data.length)}</span></li>`,
+            `<li><span>insert</span><span>${escapeHtml(previewBytes(op.data, 40))}</span>` +
+              `<span>${formatBytes(op.data.length)}</span></li>`,
           );
         }
       }
-      if (delta.ops.length > 200) {
-        parts.push(`<li><span>…</span><span>${delta.ops.length - 200} more</span><span></span></li>`);
+      if (deltaParsedResult.ops.length > 200) {
+        parts.push(`<li><span>…</span><span>${deltaParsedResult.ops.length - 200} more</span><span></span></li>`);
       }
       parts.push(`</ul></div>`);
+
+      deltaParsed = deltaParsedResult;
+      deltaBaseOid = baseOid;
     } catch (err) {
       parts.push(`<div class="panel"><h3>Delta</h3><p>${escapeHtml(err.message)}</p></div>`);
     }
@@ -162,7 +194,19 @@ export function renderDetail(el, obj, session, onSelectOid) {
     if (tag.tagger) parts.push(kv("Tagger", escapeHtml(formatIdentity(tag.tagger))));
     parts.push(`</dl><pre class="content">${escapeHtml(tag.message)}</pre></div>`);
   } else if (content && obj.typeName === "blob") {
-    if (looksBinary(content)) {
+    if (deltaParsed) {
+      const segments = buildResolvedSegments(deltaParsed, deltaBaseOid);
+      parts.push(`<div class="panel"><h3>Resolved blob</h3>`);
+      parts.push(
+        `<p class="panel-note">White is literal insert data. Colors are bytes copied from the delta base.</p>`,
+      );
+      if (looksBinary(content)) {
+        parts.push(renderSegmentedHex(content, segments));
+      } else {
+        parts.push(renderSegmentedText(content, segments));
+      }
+      parts.push(`</div>`);
+    } else if (looksBinary(content)) {
       parts.push(
         `<div class="panel"><h3>Blob</h3><p>Binary (${formatBytes(content.length)}). First 64 bytes: ` +
           `<code>${escapeHtml(hexPreview(content, 64))}</code></p></div>`,
