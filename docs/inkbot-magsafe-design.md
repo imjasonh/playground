@@ -223,6 +223,34 @@ TX would still add ~1.2 mm and is rejected. The "under 2 mm" figure in the brief
 describes the bare cell, not the finished tile — this design lands near that
 floor without a case.
 
+### Phone compatibility and fit
+
+Retention is magnet-only, so the tile fits any iPhone that carries the MagSafe
+magnet ring: **iPhone 12 through iPhone 16**, every variant (mini, standard,
+Plus, Pro, Pro Max). It does **not** fit phones without the ring — iPhone 11 and
+earlier, every iPhone SE, and the **iPhone 16e** (Qi 7.5 W only, no magnets). A
+third-party MagSafe-magnet case adds the ring to any of those.
+
+The magnet array self-centers the tile on the ring; the phone model only changes
+how far the 77 × 91 mm outline overhangs the body. Orient the 91 mm side along
+the phone's length:
+
+| Phone | Body W × H (mm) | Side overhang | Notes |
+|-------|-----------------|---------------|-------|
+| 16 Pro Max / 15 Plus / 14 Pro Max | ~77–78 × 160–163 | flush (±0.5) | best fit; tile inside the body |
+| 15 / 16 / 14 / 13 / 12 (standard + Pro) | ~71.5 × 147 | +2.7 /side | small, even overhang |
+| 13 mini / 12 mini | 64.2 × 131.5 | +6.4 /side | noticeable overhang |
+
+Two real consequences, independent of model:
+
+- **The tile overhangs the sides** on everything but the Plus/Max, because the
+  panel is 84.8 mm across and the narrowest iPhones are ~64–71 mm. A smaller
+  panel is the only way to sit fully within a standard body.
+- **It rides up over the camera plateau.** The MagSafe ring sits above the
+  phone's center, so a tile centered on it extends into the rear-camera area. On
+  a real build, add a back-side pocket or accept that the tile covers the
+  cameras while attached (it is a back accessory, not a case).
+
 ## BLE and iOS integration
 
 The tile is a BLE peripheral (GATT server). The iOS app is the central. See the
@@ -376,6 +404,9 @@ later cost if you stay bare. Pass-through TX would still add ~$8 and is rejected
   is built, it is a private companion service, not the [`inkbot/`](../inkbot/)
   Worker and it shares no code with it. The tile firmware and app stay agnostic
   to the sender.
+- **Thickness-first KiCad schematic.** Bare nRF QFN, BQ51050B (Qi+charger),
+  0.4 mm PCB with battery cutout, no case. Project under
+  [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/).
 
 The firmware and hardware scaffold live in
 [`../inkbot-magsafe/`](../inkbot-magsafe/); the iOS app is deferred until they
