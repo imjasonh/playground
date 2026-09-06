@@ -1,6 +1,8 @@
 // Sun position follows the NOAA solar calculator (Meeus).
 // Azimuth is degrees clockwise from north: 0 north, 90 east, 180 south, 270 west.
 
+import { locationFromTimeZone } from "./timezones.js";
+
 export const DEFAULT_LATITUDE = 40.7;
 
 const DEG = Math.PI / 180;
@@ -43,10 +45,13 @@ export function longitudeFromTimezoneOffset(offsetMinutes) {
   return (-offsetMinutes / 60) * 15 + 0;
 }
 
-export function parseLocation(search, date) {
+export function parseLocation(search, date, timeZone) {
   const params = new URLSearchParams(search);
-  let latitude = DEFAULT_LATITUDE;
-  let longitude = longitudeFromTimezoneOffset(date.getTimezoneOffset());
+  const zoned = locationFromTimeZone(timeZone);
+  let latitude = zoned ? zoned.latitude : DEFAULT_LATITUDE;
+  let longitude = zoned
+    ? zoned.longitude
+    : longitudeFromTimezoneOffset(date.getTimezoneOffset());
 
   if (params.has("lat")) {
     const parsed = Number.parseFloat(params.get("lat"));
@@ -64,7 +69,7 @@ export function parseLocation(search, date) {
   return { latitude, longitude };
 }
 
-export function resolveLocation(search, date, geo) {
+export function resolveLocation(search, date, geo, timeZone) {
   if (
     geo &&
     Number.isFinite(geo.latitude) &&
@@ -77,7 +82,7 @@ export function resolveLocation(search, date, geo) {
     };
   }
 
-  const fallback = parseLocation(search, date);
+  const fallback = parseLocation(search, date, timeZone);
   return {
     latitude: fallback.latitude,
     longitude: fallback.longitude,
