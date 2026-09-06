@@ -2,7 +2,8 @@
 //
 // Flow: type a repo → fetch refs + pack through the CORS proxy → parse and
 // resolve objects → index them for filtering/stats → persist the raw pack in
-// IndexedDB so it can be reopened offline.
+// IndexedDB so it can be reopened offline. Shareable URLs use ?pack=<stored id>
+// and an optional #<object oid> so refresh restores the same pack and selection.
 
 import pako from "../vendor/pako/pako.esm.mjs";
 import { makePakoInflate } from "./inflate.js";
@@ -12,6 +13,7 @@ import { computeStats, queryObjects } from "./packIndex.js";
 import { normalizeRepoUrl, DEFAULT_PROXY } from "./proxy.js";
 import { fetchPack, fetchRefs } from "./transport.js";
 import { deleteRepo, listRepos, loadRepo, saveRepo } from "./store.js";
+import { readUrlState, writeUrlState } from "./urlState.js";
 import {
   renderDetail,
   renderObjectList,
@@ -42,6 +44,7 @@ const els = {
 };
 
 /** @type {null | {
+ *   packId: string,
  *   base: string,
  *   refs: Array,
  *   head: string | null,
@@ -66,14 +69,18 @@ document.getElementById("pack-file").addEventListener("change", async (event) =>
   try {
     setStatus(els.status, `Reading ${file.name}…`);
     const pack = new Uint8Array(await file.arrayBuffer());
-    await openPack({
-      base: `file://${file.name}`,
+    const base = `file://${file.name}`;
+    const record = {
+      base,
       refs: [],
       head: null,
       wants: [],
       pack,
       progress: "",
-    });
+    };
+    await openPack(record);
+    await saveRepo(record);
+    await refreshSaved();
     setStatus(els.status, `Loaded ${session.objects.length} objects from ${file.name}`);
   } catch (err) {
     console.error(err);
@@ -105,22 +112,16 @@ async function runFetch() {
     );
     const { pack, progress } = await fetchPack(DEFAULT_PROXY, base, { wants, deepen });
     setStatus(els.status, `Parsing ${pack.length.toLocaleString()} pack bytes…`);
-    await openPack({
+    const record = {
       base,
       refs: refs.refs,
       head: refs.head,
       wants,
       pack,
       progress,
-    });
-    await saveRepo({
-      base,
-      refs: refs.refs,
-      head: refs.head,
-      wants,
-      pack,
-      progress,
-    });
+    };
+    await openPack(record);
+    await saveRepo(record);
     await refreshSaved();
     setStatus(
       els.status,
@@ -143,11 +144,22 @@ function pickWants(refs) {
   return [refs.refs[0].oid];
 }
 
-async function openPack(record) {
+async function openSavedPack(packId, { objectId = null } = {}) {
+  const record = await loadRepo(packId);
+  if (!record) {
+    throw new Error(`No saved pack "${packId}" in this browser`);
+  }
+  els.repo.value = record.base;
+  await openPack(record, { objectId });
+}
+
+async function openPack(record, { objectId = null } = {}) {
   const parsed = parsePack(record.pack, inflate);
   const resolved = await resolveObjects(parsed, computeOid);
   const stats = computeStats(resolved.objects);
+  const packId = record.base;
   session = {
+    packId,
     base: record.base,
     refs: record.refs,
     head: record.head,
@@ -162,10 +174,15 @@ async function openPack(record) {
   els.saved.hidden = true;
   els.workspace.hidden = false;
   renderStats(els.stats, stats, { base: record.base });
-  // Prefer opening HEAD so the first clickable surface is a commit, not an ofs.
-  const initial = record.head && resolved.byOid.has(record.head)
-    ? resolved.byOid.get(record.head)
-    : resolved.objects.find((o) => o.typeName === "commit") || resolved.objects[0];
+
+  let initial = null;
+  if (objectId && resolved.byOid.has(objectId)) {
+    initial = resolved.byOid.get(objectId);
+  } else if (record.head && resolved.byOid.has(record.head)) {
+    initial = resolved.byOid.get(record.head);
+  } else {
+    initial = resolved.objects.find((o) => o.typeName === "commit") || resolved.objects[0];
+  }
   selectObject(initial || null);
   refreshList();
 }
@@ -182,14 +199,14 @@ function refreshList() {
 }
 
 function selectObject(obj) {
-  if (!session || !obj) {
+  if (!session) {
     renderDetail(els.detail, null, session, selectOid);
     return;
   }
-  session.selectedOid = obj.oid;
+  session.selectedOid = obj?.oid || null;
   renderDetail(els.detail, obj, session, selectOid);
   refreshList();
-  location.hash = obj.oid || "";
+  writeUrlState({ packId: session.packId, objectId: session.selectedOid });
 }
 
 function selectOid(oid) {
@@ -210,25 +227,62 @@ async function refreshSaved() {
     onOpen: async (key) => {
       try {
         setStatus(els.status, "Loading saved pack…");
-        const record = await loadRepo(key);
-        if (!record) throw new Error("saved pack not found");
-        els.repo.value = record.base;
-        await openPack(record);
-        setStatus(els.status, `Opened saved pack for ${record.base}`);
+        await openSavedPack(key);
+        setStatus(els.status, `Opened saved pack for ${session.base}`);
+        await refreshSaved();
       } catch (err) {
         setStatus(els.status, err.message, { error: true });
       }
     },
     onDelete: async (key) => {
       await deleteRepo(key);
+      const { packId } = readUrlState();
+      if (packId === key) writeUrlState({ packId: null, objectId: null });
+      if (session?.packId === key) {
+        session = null;
+        els.workspace.hidden = true;
+        renderDetail(els.detail, null, session, selectOid);
+      }
       await refreshSaved();
     },
   });
 }
 
+async function restoreFromUrl() {
+  const { packId, objectId } = readUrlState();
+  if (!packId) return;
+  if (session?.packId === packId) {
+    if (objectId && session.byOid.has(objectId)) selectObject(session.byOid.get(objectId));
+    return;
+  }
+  try {
+    setStatus(els.status, "Restoring pack from link…");
+    await openSavedPack(packId, { objectId });
+    setStatus(els.status, `Restored ${session.objects.length} objects from ${session.base}`);
+    await refreshSaved();
+  } catch (err) {
+    console.error(err);
+    setStatus(els.status, err.message || String(err), { error: true });
+    await refreshSaved();
+  }
+}
+
 window.addEventListener("hashchange", () => {
-  const oid = location.hash.replace(/^#/, "");
-  if (oid && session && session.byOid.has(oid)) selectOid(oid);
+  const { objectId } = readUrlState();
+  if (objectId && session?.byOid.has(objectId)) selectObject(session.byOid.get(objectId));
 });
 
-refreshSaved().catch((err) => console.error(err));
+window.addEventListener("popstate", () => {
+  void restoreFromUrl();
+});
+
+async function boot() {
+  const { packId } = readUrlState();
+  if (packId) {
+    await restoreFromUrl();
+  } else {
+    await refreshSaved();
+  }
+}
+
+boot().catch((err) => console.error(err));

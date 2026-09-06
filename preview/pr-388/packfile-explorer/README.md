@@ -53,6 +53,10 @@ reopen a previously saved pack from IndexedDB.
   depth, ofs/ref counts.
 - Detail pane: metadata, delta instruction list (copy/insert), and for resolved
   objects the structured commit/tree/tag view or the full blob text.
+- Delta objects also get hex-editor views of the raw pack entry (header, base
+  pointer, zlib) and the inflated delta stream (size headers, copy pointers,
+  literal inserts). Resolved blobs color copied bytes by source copy instruction
+  and show literal inserts in white.
 - Tap any oid link (parent, tree entry, delta base) to jump.
 
 ## Test
