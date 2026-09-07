@@ -462,6 +462,8 @@ The following target integrations remain release blockers:
   from the final linked image.
 - Lock production debug against readout while preserving documented full-erase
   recovery through CTRL-AP and the SWD fixture.
+- Program and verify both UICR `PSELRESET` words for P0.18 in the factory image
+  so the reset pogo pad works before field recovery is needed.
 
 BLE transports firmware from the phone. A CRC-only frame path and an unsigned
 image are not acceptable DFU mechanisms.
@@ -476,9 +478,9 @@ extended cost for every reference in that row, not a single component price:
 
 | Quantity | Unit direct cost | Build total | With 15% yield and price reserve |
 |---:|---:|---:|---:|
-| 1 | **$169.44** | **$169** | **$195** |
-| 100 | **$60.34** | **$6,034** | **$6,939** |
-| 1,000 | **$42.33** | **$42,330** | **$48,680** |
+| 1 | **$170.13** | **$170** | **$196** |
+| 100 | **$61.38** | **$6,138** | **$7,059** |
+| 1,000 | **$43.17** | **$43,170** | **$49,646** |
 
 The one-unit estimate includes manual assembly setup but excludes minimum reel
 buys, shipping, duties, tax, and the tools needed to program or measure the
@@ -536,7 +538,7 @@ and raw data. A pass on one prototype is not a production qualification.
 | Battery margin | BAT and SYS stay above the refresh floor at cold temperature, minimum allowed state of charge, aged-cell impedance, and worst-case radio timing |
 | Panel high voltage | VGH, VGL, VSH1, VSH2, VSL, and VCOM match the panel waveform settings without overshoot or oscillation |
 | Qi tuning | Measured `Ls`, `Ls'`, Q, series resonance, parallel resonance, current limit, and FOD calibration are archived for the final stack |
-| Qi interoperability | Charge starts, regulates, terminates, and recovers on the WPC interoperability set at centered and allowed offset positions |
+| Qi interoperability | Charge starts, regulates, terminates, and recovers on the WPC interoperability set at centered and allowed offset positions; the accessory magnet array does not repel or displace the tile on supported magnetic chargers |
 | Thermals | Cell stays within its charge specification; coil, receiver, charger, panel circuit, cover, and adhesive stay below their qualified limits |
 | Sleep current | Connected-idle and disconnected-advertising current support the stated 60-90 day target at cell end of life |
 | BLE | A full 48 KB frame completes within the foreground target and resumes after forced disconnects without corruption or stale-frame acceptance |
