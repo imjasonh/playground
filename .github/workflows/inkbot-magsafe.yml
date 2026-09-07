@@ -1,9 +1,9 @@
-# Host logic tests + ARM cross-build for the inkbot-magsafe e-ink tile firmware.
+# Firmware and generated-hardware checks for the inkbot-magsafe e-paper tile.
 #
 # inkbot-magsafe/ is excluded from the shared Rust job in test.yml because it
 # cross-compiles to the bare-metal thumbv7em-none-eabihf target, which the
-# generic stable-Rust job cannot build. This workflow runs only when the
-# firmware or this file changes.
+# generic stable-Rust job cannot build. This workflow also checks the schematic
+# contracts, BOM coverage, generated files, and routed PCB.
 
 name: inkbot-magsafe
 
@@ -12,10 +12,14 @@ on:
     branches: [main]
     paths:
       - "inkbot-magsafe/**"
+      - "docs/inkbot-magsafe-bom.csv"
+      - "docs/inkbot-magsafe-design.md"
       - ".github/workflows/inkbot-magsafe.yml"
   pull_request:
     paths:
       - "inkbot-magsafe/**"
+      - "docs/inkbot-magsafe-bom.csv"
+      - "docs/inkbot-magsafe-design.md"
       - ".github/workflows/inkbot-magsafe.yml"
   workflow_dispatch: {}
 
@@ -60,3 +64,38 @@ jobs:
 
       - name: Build firmware (thumbv7em-none-eabihf)
         run: cargo build --locked --release --target thumbv7em-none-eabihf
+
+  hardware:
+    name: Schematic contracts + PCB DRC
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: inkbot-magsafe/kicad
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Install KiCad
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends kicad kicad-footprints
+
+      - name: Check generated schematic
+        run: |
+          python3 generate_schematic.py
+          git diff --exit-code -- \
+            inkbot-magsafe.kicad_sch \
+            inkbot-magsafe.kicad_pro
+
+      - name: Export netlist
+        run: >-
+          kicad-cli sch export netlist
+          -o /tmp/inkbot.net
+          inkbot-magsafe.kicad_sch
+
+      - name: Check electrical contracts and BOM
+        run: python3 run_erc.py
+
+      - name: Check routed board
+        run: python3 run_drc.py
