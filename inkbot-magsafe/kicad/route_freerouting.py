@@ -637,21 +637,43 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("C7", "1"),
         (2.225, 68.7),
     )
-    connect_through_front(
+    stat_start_via = board_point(48.2, 59.4)
+    stat_end_via = board_point(13.5, 87.8)
+    add_locked_track(
+        pad_center("U3", "3"),
+        board_point(48.8, 60.0),
         "/CHG_STAT2",
-        ("U3", "3"),
-        (49.2, 59.4),
+        width=layout_route.mm(0.15),
+    )
+    add_locked_track(
+        board_point(48.8, 60.0),
+        stat_start_via,
+        "/CHG_STAT2",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(stat_start_via, "/CHG_STAT2")
+    add_locked_path(
         (
-            (48.6, 60.0),
-            (48.6, 82.9),
+            (48.2, 59.4),
+            (49.0, 60.2),
+            (49.0, 82.9),
             (48.5, 83.4),
             (20.5, 83.4),
             (20.5, 88.7),
             (20.0, 89.2),
             (14.9, 89.2),
+            (13.5, 87.8),
         ),
-        ("U1", "21"),
-        (13.5, 87.8),
+        "/CHG_STAT2",
+        pcbnew.F_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(stat_end_via, "/CHG_STAT2")
+    add_locked_track(
+        stat_end_via,
+        pad_center("U1", "21"),
+        "/CHG_STAT2",
+        width=layout_route.mm(0.15),
     )
     connect_through_front(
         "/VDD_NRF",
