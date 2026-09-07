@@ -458,7 +458,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("U1", "15", (16.4, 84.2)),
         ("U1", "33", (16.4, 93.8)),
         ("U1", "55", (5.2, 95.0)),
-        ("U3", "11", (44.0, 57.0)),
+        ("U3", "11", (44.0, 56.0)),
         ("U5", "2", (21.0, 91.0)),
     ):
         fanout_to_plane(
@@ -618,9 +618,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             (1.0, 56.0),
             (20.0, 56.0),
             (21.5, 57.5),
-            (40.0, 57.5),
-            (41.5, 56.0),
-            (47.225, 56.0),
+            (47.225, 57.5),
             (47.225, 57.0),
         ),
         "/QI_OUT",
@@ -635,9 +633,19 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         width=layout_route.mm(0.3),
     )
     add_locked_track(
-        pad_center("C17", "1"),
         pad_center("U3", "10"),
+        board_point(45.8, 55.8),
         "/QI_OUT",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_path(
+        (
+            (45.8, 55.8),
+            (46.6, 55.0),
+            (47.225, 55.0),
+        ),
+        "/QI_OUT",
+        pcbnew.B_Cu,
         width=layout_route.mm(0.3),
     )
     add_locked_path(
