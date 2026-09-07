@@ -303,9 +303,9 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
     clamp_path = [
         pad_center("U5", "16"),
-        pcbnew.VECTOR2I(layout_route.mm(11.5), layout_route.mm(66.25)),
-        pcbnew.VECTOR2I(layout_route.mm(12.0), layout_route.mm(65.4)),
-        pcbnew.VECTOR2I(layout_route.mm(13.35), layout_route.mm(65.4)),
+        pcbnew.VECTOR2I(layout_route.mm(11.4), layout_route.mm(66.25)),
+        pcbnew.VECTOR2I(layout_route.mm(12.0), layout_route.mm(66.15)),
+        pcbnew.VECTOR2I(layout_route.mm(13.35), layout_route.mm(66.15)),
         pcbnew.VECTOR2I(layout_route.mm(13.35), layout_route.mm(69.0)),
         pad_center("C7", "1"),
     ]
@@ -319,7 +319,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
     comm2_path = [
         pad_center("U5", "15"),
-        pcbnew.VECTOR2I(layout_route.mm(11.4), layout_route.mm(65.75)),
+        pcbnew.VECTOR2I(layout_route.mm(12.0), layout_route.mm(65.75)),
         pad_center("C9", "1"),
     ]
     for start, end in zip(comm2_path, comm2_path[1:]):
@@ -340,13 +340,20 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         width=layout_route.mm(0.15),
     )
     add_locked_via(fod_via, "/QI_FOD")
-    add_locked_track(
+    fod_path = [
         fod_via,
+        pcbnew.VECTOR2I(layout_route.mm(12.2), layout_route.mm(64.8)),
+        pcbnew.VECTOR2I(layout_route.mm(12.2), layout_route.mm(62.0)),
         fod_end,
-        "/QI_FOD",
-        layer=pcbnew.In1_Cu,
-        width=layout_route.mm(0.15),
-    )
+    ]
+    for start, end in zip(fod_path, fod_path[1:]):
+        add_locked_track(
+            start,
+            end,
+            "/QI_FOD",
+            layer=pcbnew.In1_Cu,
+            width=layout_route.mm(0.15),
+        )
     add_locked_via(fod_end, "/QI_FOD")
 
     add_locked_track(
