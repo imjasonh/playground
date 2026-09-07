@@ -882,39 +882,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         "/QI_OUT",
         width=layout_route.mm(0.3),
     )
-    add_locked_path(
-        (
-            (5.35, 66.75),
-            (4.8, 67.3),
-            (3.775, 68.325),
-            (3.775, 69.0),
-        ),
-        "/QI_BOOT1",
-        pcbnew.B_Cu,
-        width=layout_route.mm(0.15),
-    )
-    add_locked_path(
-        (
-            (8.65, 64.75),
-            (9.1, 64.3),
-            (9.675, 63.725),
-            (9.675, 61.5),
-        ),
-        "/QI_FOD",
-        pcbnew.B_Cu,
-        width=layout_route.mm(0.15),
-    )
-    add_locked_path(
-        (
-            (8.65, 64.25),
-            (8.65, 53.35),
-            (8.5, 53.2),
-        ),
-        "/QI_COIL_NTC",
-        pcbnew.B_Cu,
-        width=layout_route.mm(0.2),
-    )
-
     settings = board.GetDesignSettings()
     default_netclass = settings.m_NetSettings.m_DefaultNetClass
     default_netclass.SetClearance(layout_route.mm(layout_route.CLEAR))
