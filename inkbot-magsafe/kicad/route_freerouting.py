@@ -707,12 +707,7 @@ def mark_power_layers(path: Path) -> None:
             150.1,
             (
                 "/BAT",
-                "/QI_AC1",
-                "/QI_AC2",
-                "/QI_COIL_A",
                 "/QI_OUT",
-                "/QI_RECT",
-                "/SYS",
             ),
         ),
         (
