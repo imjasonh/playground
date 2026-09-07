@@ -24,6 +24,8 @@
 - The panel rails reach 40 V peak-to-peak. Keep their external copper under
   intact solder mask, do not expose them on test pads, and cover the assembled
   circuit with the specified electrical insulation.
+- Five adjacent bottom-edge pogo pads expose SWDIO, SWDCLK, reset, MCU_3V0, and
+  ground. Three component-side fiducials support assembly alignment.
 
 ## Laminated enclosure
 

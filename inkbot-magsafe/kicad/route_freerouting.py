@@ -245,12 +245,23 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         if rotation:
             footprint.SetOrientationDegrees(rotation)
         footprint.Flip(footprint.GetPosition(), False)
-        for graphic in footprint.GraphicalItems():
-            if graphic.GetLayer() == pcbnew.B_SilkS:
-                graphic.SetLayer(pcbnew.B_Fab)
         footprint.Reference().SetLayer(pcbnew.B_Fab)
         footprint.Reference().SetVisible(True)
         placed[reference] = footprint
+
+    for reference, (x, y) in {
+        "FID1": (16.0, 56.0),
+        "FID2": (58.0, 55.0),
+        "FID3": (58.0, 95.0),
+    }.items():
+        fiducial = layout_route.load_fp("Fiducial:Fiducial_1mm_Mask2mm")
+        board.Add(fiducial)
+        fiducial.SetReference(reference)
+        fiducial.SetPosition(
+            pcbnew.VECTOR2I(layout_route.mm(x), layout_route.mm(y))
+        )
+        fiducial.Flip(fiducial.GetPosition(), False)
+        fiducial.Reference().SetLayer(pcbnew.B_Fab)
 
     assigned: set[tuple[str, str]] = set()
     intentional_nc = {
@@ -450,7 +461,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("D2", "1", (53.35, 85.7)),
         ("J1", "8", (42.75, 97.0)),
         ("J1", "17", (47.25, 97.0)),
-        ("TP5", "1", (58.6, 97.0)),
+        ("TP5", "1", (16.6, 97.0)),
         ("U1", "15", (16.4, 84.2)),
         ("U1", "33", (16.4, 93.8)),
         ("U1", "55", (5.2, 95.0)),
