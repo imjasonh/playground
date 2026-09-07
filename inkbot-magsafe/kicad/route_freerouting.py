@@ -12,8 +12,8 @@ runtime. On headless Linux, install ``xvfb-run`` for Freerouting's AWT setup.
 
 from __future__ import annotations
 
-import os
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -237,6 +237,16 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     for pad_number in layout_route.MODULE_GND_PADS:
         assign_pad("U1", pad_number, layout_route.GND)
 
+    settings = board.GetDesignSettings()
+    settings.SetCustomTrackWidth(layout_route.TRACK_W)
+    settings.SetCustomViaSize(layout_route.VIA_D)
+    settings.SetCustomViaDrill(layout_route.VIA_DRILL)
+    settings.m_ViasDimensionsList.clear()
+    settings.m_ViasDimensionsList.append(
+        pcbnew.VIA_DIMENSION(layout_route.VIA_D, layout_route.VIA_DRILL)
+    )
+    settings.SetViaSizeIndex(0)
+
     keepalive: list[pcbnew.SHAPE_POLY_SET] = []
 
     def add_plane(layer: int, net_name: str) -> None:
@@ -245,6 +255,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         zone.SetNet(netmap[net_name])
         zone.SetLocalClearance(layout_route.mm(layout_route.CLEAR))
         zone.SetMinThickness(layout_route.mm(0.2))
+        zone.SetPadConnection(pcbnew.ZONE_CONNECTION_FULL)
         outline = pcbnew.SHAPE_POLY_SET()
         outline.NewOutline()
         for x, y in (
@@ -280,6 +291,20 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     keepalive.append(outline)
     board.Add(antenna_keepout)
 
+    cutout_keepout = pcbnew.ZONE(board)
+    cutout_keepout.SetIsRuleArea(True)
+    cutout_keepout.SetDoNotAllowCopperPour(True)
+    cutout_keepout.SetDoNotAllowTracks(True)
+    cutout_keepout.SetDoNotAllowVias(True)
+    cutout_keepout.SetLayerSet(layers)
+    outline = pcbnew.SHAPE_POLY_SET()
+    outline.NewOutline()
+    for x, y in ((13.5, 59.5), (46.5, 59.5), (46.5, 80.5), (13.5, 80.5)):
+        outline.Append(layout_route.mm(x), layout_route.mm(y))
+    cutout_keepout.SetOutline(outline)
+    keepalive.append(outline)
+    board.Add(cutout_keepout)
+
     board.BuildConnectivity()
     fill_zones(board)
     pcbnew.SaveBoard(str(BOARD), board)
@@ -313,7 +338,7 @@ def freerouting_command() -> list[str]:
         "-mp",
         os.environ.get("FREEROUTING_PASSES", "100"),
         "-mt",
-        os.environ.get("FREEROUTING_THREADS", "2"),
+        os.environ.get("FREEROUTING_THREADS", "1"),
         "-l",
         "en",
     ]

@@ -38,19 +38,19 @@ CX = BOARD_W / 2
 # panel is the front face). The magnet ring / coil dominate the top (y < 57)
 # and the LiPo cutout takes the center (x14-46, y60-80). Parts live in the two
 # columns beside the cutout and the bottom band (y > 82). U5 keeps its pads
-# >= 0.5 mm off the left edge; J1 is centered so the FPC connector stays on the
-# board; the SWD pads sit right of the module to clear its courtyard.
+# >= 0.5 mm off the left edge. J1 sits to the right of the module, and the SWD
+# pads use the narrow corridor between their courtyards.
 PLACEMENT = {
     # Module rotated landscape and dropped below the cutout (a portrait module
     # is 0.1 mm too tall to keep 0.5 mm off both the cutout and the board edge).
     "U1": (20.0, 88.0, 90),
-    "J1": (30.0, 94.0, 0),   # panel FPC, centered so the connector body is on-board
+    "J1": (44.0, 94.0, 0),   # panel FPC, clear of the module at the bottom edge
     # Qi receiver + coil leads: left column beside the cutout
     "U5": (9.5, 66.0, 0),
     "L1": (24.0, 57.0, 0),
     # panel power in the bottom-right, clear of the sense column (y63-75)
-    "U3": (54.0, 84.0, 0),
-    "U4": (54.0, 89.0, 0),
+    "U3": (48.5, 82.5, 0),
+    "U4": (56.5, 82.5, 0),
     # module bypass + LFXO in the bottom-left corner (clear of the module body
     # and its antenna keep-out)
     "C15": (4.0, 96.5, 0),
@@ -69,26 +69,26 @@ PLACEMENT = {
     "C2": (4.0, 66.0, 0),
     "C3": (4.0, 70.0, 0),
     "C4": (4.0, 74.0, 0),
-    "C5": (13.5, 62.0, 0),
-    "C6": (13.5, 66.0, 0),
-    "C7": (13.5, 70.0, 0),
+    "C5": (12.5, 62.0, 0),
+    "C6": (12.5, 66.0, 0),
+    "C7": (12.5, 70.0, 0),
     "C8": (7.5, 74.0, 0),
     "C9": (11.0, 74.0, 0),
     "R1": (4.0, 78.0, 0),
     "R2": (8.0, 78.0, 0),
     "R3": (12.0, 78.0, 0),
-    "R4": (13.5, 74.0, 0),
+    "R4": (12.5, 74.0, 0),
     # panel-power passives near U3/U4 in the bottom-right
-    "C12": (58.0, 84.0, 0),
-    "C13": (58.0, 88.0, 0),
-    "C14": (58.0, 92.0, 0),
-    "C21": (50.0, 86.0, 0),
-    # SWD test pads along the bottom edge, right of the module body
-    "TP1": (33.0, 96.5, 0),
-    "TP2": (37.0, 96.5, 0),
-    "TP3": (41.0, 96.5, 0),
-    "TP4": (45.0, 96.5, 0),
-    "TP5": (49.0, 96.5, 0),
+    "C12": (52.5, 82.0, 0),
+    "C13": (52.5, 85.0, 0),
+    "C14": (52.5, 87.5, 0),
+    "C21": (48.5, 86.5, 0),
+    # SWD test pads in the module-to-FPC corridor and beside the FPC.
+    "TP1": (31.5, 83.0, 0),
+    "TP2": (31.5, 87.0, 0),
+    "TP3": (31.5, 91.0, 0),
+    "TP4": (31.5, 95.0, 0),
+    "TP5": (56.5, 95.5, 0),
 }
 
 # Plane nets: poured, not track-routed. KiCad prefixes local labels with "/";
