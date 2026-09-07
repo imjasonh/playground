@@ -918,6 +918,55 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         width=layout_route.mm(0.12),
     )
 
+    chg_ce_charger_via = board_point(49.2, 58.8)
+    chg_ce_pullup_via = board_point(49.8, 68.2)
+    add_locked_track(
+        pad_center("U3", "4"),
+        chg_ce_charger_via,
+        "/CHG_CE_N",
+        width=layout_route.MIN_TRACK_W,
+    )
+    add_locked_via(
+        chg_ce_charger_via,
+        "/CHG_CE_N",
+        layout_route.FANOUT_VIA_D,
+        layout_route.FANOUT_VIA_DRILL,
+    )
+    add_locked_track(
+        pad_center("R5", "2"),
+        chg_ce_pullup_via,
+        "/CHG_CE_N",
+        width=layout_route.mm(0.12),
+    )
+    add_locked_via(chg_ce_pullup_via, "/CHG_CE_N")
+    add_locked_path(
+        (
+            (49.2, 58.8),
+            (50.2, 59.5),
+            (50.3, 60.2),
+            (49.8, 68.2),
+        ),
+        "/CHG_CE_N",
+        pcbnew.In1_Cu,
+        width=layout_route.mm(0.12),
+    )
+    add_locked_path(
+        (
+            (49.825, 67.0),
+            (50.571, 66.254),
+            (51.667, 66.254),
+            (51.737, 66.324),
+            (52.05, 66.636),
+            (52.392, 66.294),
+            (53.247, 66.294),
+            (54.514, 67.56),
+            (54.514, 69.424),
+            (53.9375, 70.0),
+        ),
+        "/CHG_CE_N",
+        pcbnew.B_Cu,
+    )
+
     chg_enable_module_via = board_point(16.8, 88.2)
     chg_enable_gate_via = board_point(50.8, 68.5)
     add_locked_track(
@@ -948,6 +997,23 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         "/CHG_ENABLE",
         pcbnew.In1_Cu,
         width=layout_route.mm(0.12),
+    )
+    add_locked_path(
+        (
+            (51.175, 67.0),
+            (51.083, 67.092),
+            (51.083, 69.336),
+            (51.348, 69.601),
+            (52.981, 69.601),
+            (53.114, 69.468),
+            (54.74, 69.468),
+            (54.909, 69.637),
+            (54.909, 70.359),
+            (54.319, 70.95),
+            (52.0625, 70.95),
+        ),
+        "/CHG_ENABLE",
+        pcbnew.B_Cu,
     )
 
     add_locked_path(
