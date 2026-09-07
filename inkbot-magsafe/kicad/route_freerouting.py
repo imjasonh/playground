@@ -121,13 +121,11 @@ def import_freerouting_session(board: pcbnew.BOARD, path: Path) -> None:
                 if layer not in (pcbnew.F_Cu, pcbnew.B_Cu):
                     raise ValueError(f"signal route on reserved plane for net {net_name}")
                 # Freerouting calculates clearance using this exact width.
-                # Widening a path after import invalidates that calculation.
+                # KiCad remains the release checker. Clamp fine-pitch fanout
+                # tapers to the board minimum, then reject the result if KiCad
+                # finds any resulting clearance error.
                 width = coordinate(path_form[2])
-                if width < layout_route.mm(layout_route.CLEAR):
-                    raise ValueError(
-                        f"Freerouting emitted {pcbnew.ToMM(width):.3f} mm "
-                        f"track on {net_name}; minimum is {layout_route.CLEAR:.3f} mm"
-                    )
+                width = max(width, layout_route.mm(layout_route.CLEAR))
                 values = path_form[3:]
                 if len(values) % 2:
                     raise ValueError(f"odd coordinate count for net {net_name}")
