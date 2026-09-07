@@ -551,10 +551,6 @@ def main() -> None:
         )
         sch.connect_pin(ref, "1", net, wire_dy=5.08, by_number=True)
 
-    sch.place_pwr_flag(x=snap(225), y=snap(40), net_name="SYS")
-    sch.place_pwr_flag(x=snap(235), y=snap(40), net_name="BAT")
-    sch.place_pwr_flag(x=snap(295), y=snap(125), net_name="PANEL_3V0")
-    sch.place_pwr_flag(x=snap(70), y=snap(185), net_name="MCU_3V0")
     sch.place_power("power:GND", "GND", snap(205), snap(120))
 
     sch.text_note(
