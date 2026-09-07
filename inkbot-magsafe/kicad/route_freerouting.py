@@ -786,6 +786,88 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         width=layout_route.mm(0.15),
     )
 
+    chg_sda_charger_via = board_point(54.2, 59.6)
+    chg_sda_pullup_via = board_point(58.0, 67.0)
+    add_locked_track(
+        pad_center("U3", "7"),
+        chg_sda_charger_via,
+        "/CHG_SDA",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(chg_sda_charger_via, "/CHG_SDA")
+    add_locked_track(
+        pad_center("R7", "2"),
+        chg_sda_pullup_via,
+        "/CHG_SDA",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(chg_sda_pullup_via, "/CHG_SDA")
+    add_locked_path(
+        (
+            (54.2, 59.6),
+            (56.0, 61.4),
+            (58.0, 63.4),
+            (58.0, 67.0),
+        ),
+        "/CHG_SDA",
+        pcbnew.In1_Cu,
+        width=layout_route.mm(0.15),
+    )
+
+    coil_ntc_connector_via = board_point(8.5, 54.5)
+    coil_ntc_receiver_via = board_point(10.0, 64.25)
+    add_locked_track(
+        pad_center("J3", "3"),
+        coil_ntc_connector_via,
+        "/QI_COIL_NTC",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(coil_ntc_connector_via, "/QI_COIL_NTC")
+    add_locked_track(
+        pad_center("U2", "13"),
+        coil_ntc_receiver_via,
+        "/QI_COIL_NTC",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(coil_ntc_receiver_via, "/QI_COIL_NTC")
+    add_locked_path(
+        (
+            (8.5, 54.5),
+            (5.0, 58.0),
+            (5.0, 64.25),
+            (10.0, 64.25),
+        ),
+        "/QI_COIL_NTC",
+        pcbnew.In1_Cu,
+        width=layout_route.mm(0.15),
+    )
+
+    add_locked_path(
+        (
+            (5.35, 65.25),
+            (4.7, 65.25),
+            (4.4, 64.95),
+            (4.4, 63.4),
+            (3.275, 62.275),
+            (3.275, 61.8),
+        ),
+        "/QI_COMM1",
+        pcbnew.B_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_path(
+        (
+            (8.65, 66.25),
+            (9.2, 66.25),
+            (9.5, 66.55),
+            (9.5, 68.275),
+            (10.225, 69.0),
+        ),
+        "/QI_BOOT2",
+        pcbnew.B_Cu,
+        width=layout_route.mm(0.15),
+    )
+
     add_locked_path(
         (
             (5.35, 66.75),
