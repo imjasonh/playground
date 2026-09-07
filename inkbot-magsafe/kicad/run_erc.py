@@ -166,6 +166,10 @@ VALUE_CONTRACT = {
 }
 
 ALLOWED_EXTRA_BOM_REFS = {"ASSY", "DS1", "MAG1", "MECH1", "PCB1"}
+BOARD_ONLY_NETS = {
+    ("J1", "MP"): "GND",
+    ("J2", "MP"): "GND",
+}
 
 
 def parse_netlist(path: Path):
@@ -325,6 +329,13 @@ def main() -> int:
                 errors.append(
                     f"BOARD_PARITY: no-connect {reference}.{pin} has {pad.GetNetname()}"
                 )
+            elif node in BOARD_ONLY_NETS:
+                expected_board_net = BOARD_ONLY_NETS[node]
+                if pad.GetNetname() != expected_board_net:
+                    errors.append(
+                        f"BOARD_PARITY: {reference}.{pin} expected "
+                        f"{expected_board_net}, found {pad.GetNetname() or 'no net'}"
+                    )
             elif node not in claimed_nodes:
                 errors.append(f"BOARD_PARITY: unclaimed pad {reference}.{pin}")
 

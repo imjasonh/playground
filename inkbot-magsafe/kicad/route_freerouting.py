@@ -261,6 +261,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             footprint = placed.get(reference)
             if footprint is None:
                 continue
+            found = False
             for pad in footprint.Pads():
                 if pad.GetNumber() == pad_number:
                     pad.SetNet(netmap[net_name])
@@ -271,10 +272,10 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
                         "U4",
                     }:
                         pad.SetZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
-                    assigned.add((reference, pad_number))
-                    break
-            else:
+                    found = True
+            if not found:
                 raise ValueError(f"missing pad {reference}.{pad_number}")
+            assigned.add((reference, pad_number))
 
     for reference, footprint in placed.items():
         for pad in footprint.Pads():
