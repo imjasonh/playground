@@ -192,7 +192,7 @@ def add_rect_rule_area(
     return zone
 
 
-def build_placed_board() -> pcbnew.BOARD:
+def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     """Build the outline, place footprints, assign nets, and add power planes."""
     generate_pcb.main()
     subprocess.run(
@@ -353,7 +353,7 @@ def build_placed_board() -> pcbnew.BOARD:
     board.BuildConnectivity()
     fill_zones(board)
     pcbnew.SaveBoard(str(BOARD), board)
-    return board
+    return board, keepalive
 
 
 def mark_power_layers(path: Path) -> None:
@@ -410,7 +410,7 @@ def freerouting_command() -> list[str]:
 
 def main() -> None:
     FAB.mkdir(exist_ok=True)
-    board = build_placed_board()
+    board, _keepalive = build_placed_board()
     if os.environ.get("INKBOT_PLACE_ONLY") == "1":
         print(f"placed {len(list(board.GetFootprints()))} footprints")
         return
