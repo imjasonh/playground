@@ -640,10 +640,10 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     connect_through_front(
         "/CHG_STAT2",
         ("U3", "3"),
-        (49.75, 60.0),
+        (49.2, 59.4),
         (
-            (49.0, 60.75),
-            (49.0, 82.9),
+            (48.6, 60.0),
+            (48.6, 82.9),
             (48.5, 83.4),
             (20.5, 83.4),
             (20.5, 88.7),
@@ -661,41 +661,24 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("C22", "1"),
         (16.5, 93.0),
     )
-    # BAT exits between adjacent charger pins before changing layers. Its via
-    # is offset from the CHG_STAT2 via by more than the drill-clearance limit.
-    battery_via = board_point(49.75, 61.2)
-    battery_end_via = board_point(55.225, 62.8)
+    # BAT exits between adjacent charger pins, then widens below U3. Keeping it
+    # on B.Cu avoids crossing the CHG_STAT2 front-layer channel.
     add_locked_track(
         pad_center("U3", "2"),
-        board_point(49.75, 60.4),
+        board_point(48.2, 60.4),
         "/BAT",
         width=layout_route.mm(0.15),
     )
-    add_locked_track(
-        board_point(49.75, 60.4),
-        battery_via,
-        "/BAT",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(battery_via, "/BAT")
     add_locked_path(
         (
-            (49.75, 61.2),
-            (49.75, 62.2),
-            (50.05, 62.5),
-            (55.225, 62.5),
-            (55.225, 62.8),
+            (48.2, 60.4),
+            (48.2, 62.6),
+            (53.825, 62.6),
+            (55.225, 64.0),
         ),
         "/BAT",
-        pcbnew.F_Cu,
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(battery_end_via, "/BAT")
-    add_locked_track(
-        battery_end_via,
-        pad_center("C19", "1"),
-        "/BAT",
-        width=layout_route.mm(0.15),
+        pcbnew.B_Cu,
+        width=layout_route.mm(0.3),
     )
 
     # QI_COMM2 and QI_FOD change to the back-side channels between passive
@@ -753,6 +736,12 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     fod_end_via = board_point(9.0, 77.8)
     add_locked_track(
         pad_center("U2", "14"),
+        board_point(9.1, 58.25),
+        "/QI_FOD",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_track(
+        board_point(9.1, 58.25),
         fod_start_via,
         "/QI_FOD",
         width=layout_route.mm(0.15),
