@@ -661,53 +661,113 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("C22", "1"),
         (16.5, 93.0),
     )
-    connect_through_front(
+    # BAT exits between adjacent charger pins before changing layers. Its via
+    # is offset from the CHG_STAT2 via by more than the drill-clearance limit.
+    battery_via = board_point(49.75, 61.2)
+    battery_end_via = board_point(55.225, 62.8)
+    add_locked_track(
+        pad_center("U3", "2"),
+        board_point(49.75, 60.4),
         "/BAT",
-        ("U3", "2"),
-        (49.75, 60.4),
+        width=layout_route.mm(0.15),
+    )
+    add_locked_track(
+        board_point(49.75, 60.4),
+        battery_via,
+        "/BAT",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(battery_via, "/BAT")
+    add_locked_path(
         (
-            (49.0, 61.15),
-            (49.0, 62.2),
-            (49.3, 62.5),
+            (49.75, 61.2),
+            (49.75, 62.2),
+            (50.05, 62.5),
             (55.225, 62.5),
+            (55.225, 62.8),
         ),
-        ("C19", "1"),
-        (55.225, 62.8),
+        "/BAT",
+        pcbnew.F_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(battery_end_via, "/BAT")
+    add_locked_track(
+        battery_end_via,
+        pad_center("C19", "1"),
+        "/BAT",
+        width=layout_route.mm(0.15),
     )
 
-    # The two remaining Qi control nets use the open channel between the
-    # passive columns. QI_FOD changes layers below the bootstrap crossings.
+    # QI_COMM2 and QI_FOD change to the back-side channels between passive
+    # columns only while crossing the two fixed bootstrap routes.
+    comm_start_via = board_point(10.1, 58.75)
+    comm_upper_via = board_point(5.0, 64.5)
+    comm_lower_via = board_point(5.0, 69.5)
+    comm_end_via = board_point(4.725, 71.4)
     add_locked_track(
         pad_center("U2", "15"),
-        board_point(9.3, 58.75),
+        comm_start_via,
         "/QI_COMM2",
         width=layout_route.mm(0.15),
     )
+    add_locked_via(comm_start_via, "/QI_COMM2")
     add_locked_path(
-        ((9.3, 58.75), (9.3, 71.4), (4.725, 71.4)),
+        (
+            (10.1, 58.75),
+            (10.8, 58.05),
+            (10.8, 56.3),
+            (10.3, 55.8),
+            (5.0, 55.8),
+            (5.0, 64.5),
+        ),
         "/QI_COMM2",
-        pcbnew.B_Cu,
+        pcbnew.F_Cu,
         width=layout_route.mm(0.15),
     )
+    add_locked_via(comm_upper_via, "/QI_COMM2")
     add_locked_track(
-        board_point(4.725, 71.4),
+        comm_upper_via,
+        comm_lower_via,
+        "/QI_COMM2",
+        layer=pcbnew.B_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(comm_lower_via, "/QI_COMM2")
+    add_locked_path(
+        ((5.0, 69.5), (5.0, 71.125), (4.725, 71.4)),
+        "/QI_COMM2",
+        pcbnew.F_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(comm_end_via, "/QI_COMM2")
+    add_locked_track(
+        comm_end_via,
         pad_center("C11", "1"),
         "/QI_COMM2",
         width=layout_route.mm(0.15),
     )
 
-    fod_upper_via = board_point(8.7, 71.0)
-    fod_lower_via = board_point(8.7, 77.8)
+    fod_start_via = board_point(9.6, 57.6)
+    fod_upper_via = board_point(9.0, 64.5)
+    fod_lower_via = board_point(9.0, 69.5)
+    fod_end_via = board_point(9.0, 77.8)
     add_locked_track(
         pad_center("U2", "14"),
-        board_point(8.7, 58.25),
+        fod_start_via,
         "/QI_FOD",
         width=layout_route.mm(0.15),
     )
+    add_locked_via(fod_start_via, "/QI_FOD")
     add_locked_path(
-        ((8.7, 58.25), (8.7, 71.0)),
+        (
+            (9.6, 57.6),
+            (8.8, 56.8),
+            (8.2, 57.4),
+            (8.2, 63.7),
+            (9.0, 64.5),
+        ),
         "/QI_FOD",
-        pcbnew.B_Cu,
+        pcbnew.F_Cu,
         width=layout_route.mm(0.15),
     )
     add_locked_via(fod_upper_via, "/QI_FOD")
@@ -715,12 +775,20 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         fod_upper_via,
         fod_lower_via,
         "/QI_FOD",
-        layer=pcbnew.F_Cu,
+        layer=pcbnew.B_Cu,
         width=layout_route.mm(0.15),
     )
     add_locked_via(fod_lower_via, "/QI_FOD")
     add_locked_track(
         fod_lower_via,
+        fod_end_via,
+        "/QI_FOD",
+        layer=pcbnew.F_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(fod_end_via, "/QI_FOD")
+    add_locked_track(
+        fod_end_via,
         pad_center("R1", "2"),
         "/QI_FOD",
         width=layout_route.mm(0.15),
