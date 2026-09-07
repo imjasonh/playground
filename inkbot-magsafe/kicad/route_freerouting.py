@@ -280,14 +280,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         track.SetLocked(True)
         board.Add(track)
 
-    for reference, pad_number in (("TP4", "1"), ("U3", "6")):
-        add_locked_via(pad_center(reference, pad_number), layout_route.VSYS)
-
-    u5_vsys = pad_center("U5", "4")
-    u5_via = pcbnew.VECTOR2I(u5_vsys.x - layout_route.mm(0.85), u5_vsys.y)
-    add_locked_track(u5_vsys, u5_via, layout_route.VSYS)
-    add_locked_via(u5_via, layout_route.VSYS)
-
     u5_ntc = pad_center("U5", "13")
     ntc_corner = pcbnew.VECTOR2I(layout_route.mm(11.4), u5_ntc.y)
     ntc_via = pcbnew.VECTOR2I(layout_route.mm(11.7), layout_route.mm(63.7))
@@ -307,20 +299,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     ]
     for start, end in zip(ntc_path, ntc_path[1:]):
         add_locked_track(start, end, "/NTC_SENSE", layer=pcbnew.F_Cu)
-
-    clamp_path = [
-        pad_center("U5", "16"),
-        pcbnew.VECTOR2I(layout_route.mm(11.5), layout_route.mm(66.25)),
-        pcbnew.VECTOR2I(layout_route.mm(11.5), layout_route.mm(69.0)),
-        pad_center("C7", "1"),
-    ]
-    for start, end in zip(clamp_path, clamp_path[1:]):
-        add_locked_track(
-            start,
-            end,
-            "/QI_CLAMP2",
-            width=layout_route.mm(0.15),
-        )
 
     add_locked_track(
         pad_center("U5", "17"),
