@@ -48,7 +48,7 @@ def build_lib_symbols() -> str:
             embed(SYM / "Device.kicad_sym", "Device", "R"),
             embed(SYM / "Device.kicad_sym", "Device", "L"),
             embed(SYM / "Device.kicad_sym", "Device", "D"),
-            embed(SYM / "Transistor_FET.kicad_sym", "Transistor_FET", "Q_NMOS_GSD"),
+            embed(SYM / "Device.kicad_sym", "Device", "Q_NMOS_GSD"),
             lib_sym_power("power:GND", "GND"),
             lib_sym_pwr_flag(),
         ]
@@ -111,7 +111,6 @@ def main() -> None:
         "Connector_Generic.kicad_sym",
         "Connector.kicad_sym",
         "Device.kicad_sym",
-        "Transistor_FET.kicad_sym",
     ):
         library.load_from_kicad_sym(str(SYM / name))
     library.load_from_kicad_sym(str(LOCAL_SYM))
@@ -412,7 +411,7 @@ def main() -> None:
     sch.connect_pin("L1", "1", "PANEL_3V0", wire_dy=-5.08, by_number=True)
     sch.connect_pin("L1", "2", "PANEL_SW", wire_dy=5.08, by_number=True)
     sch.place(
-        "Transistor_FET:Q_NMOS_GSD",
+        "Device:Q_NMOS_GSD",
         "Q1",
         "Si1308EDL-T1-GE3",
         x=snap(345),
