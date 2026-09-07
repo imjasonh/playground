@@ -170,7 +170,7 @@ def load_fp(library_name: str):
     footprint = pcbnew.FootprintLoad(str(root), name)
     if footprint is None:
         raise SystemExit(f"missing footprint {library_name}")
-    footprint.SetFPID(pcbnew.LIB_ID(library_name))
+    footprint.SetFPID(pcbnew.LIB_ID(library, name))
     return footprint
 
 
