@@ -286,12 +286,22 @@ Who builds what:
   turnkey/box-build can source and attach some of these; JLCPCB generally will
   not.
 
-The KiCad project is **routed** by `kicad/layout_route.py`: it places the parts,
-pours the In2/B.Cu ground and In1 VSYS planes, and maze-routes the signal nets
-(most auto-route; a couple are left as ratsnest for manual finishing), then
+`kicad/layout_route.py` places the parts, pours the In2/B.Cu ground and In1
+VSYS planes, honors the module's antenna keep-outs, drops via/stub fanout to
+the planes, maze-routes the signal nets it can, stitches the grounds, and
 exports Gerbers, drill, and centroid. The module is pre-certified, so there is
-no antenna match to tune. Open the project and **run DRC in the KiCad GUI**,
-finish any remaining ratsnest, and verify impedance before a production order.
+no antenna match to tune.
+
+Validate with `kicad/run_drc.py` (KiCad's real DRC engine via pcbnew) and
+`kicad/run_erc.py` (netlist electrical rules + board parity). **ERC is clean**;
+DRC is down from 1067 to 49 error-severity violations after the router became
+clearance-correct. The Python router is a placement-and-feasibility tool, not a
+fab-ready autorouter: the remaining violations sit in the 0.5 mm-pitch fanout
+and the dense bottom cluster, and 20 signal nets stay as ratsnest. **Finish
+routing in the pcbnew GUI** (or a real autorouter), re-run `run_drc.py` to zero,
+and verify impedance before a production order. `kicad-cli pcb drc` / `sch erc`
+are the one-line equivalents on KiCad 8+; this environment only has KiCad 7, so
+the scripts stand in. See [`../inkbot-magsafe/hardware/README.md`](../inkbot-magsafe/hardware/README.md).
 
 Recommended one-off sequence (validate function before optimizing thickness):
 

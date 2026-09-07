@@ -8,26 +8,58 @@ See [`../kicad/`](../kicad/): schematic, routed 0.8 mm board (0.4 mm volume
 target) with battery cutout, and generators that rebuild both from symbol
 libraries.
 
-### DRC
+### Validation: DRC + ERC
 
-This environment ships **KiCad 7.0**, whose `kicad-cli pcb` only exports
-Gerbers — there is no `pcb drc` subcommand (that arrives in KiCad 8+). Run the
-pcbnew-based substitute instead:
+Regenerate and check the board:
 
 ```bash
 cd inkbot-magsafe/kicad
-python3 run_drc.py
-# writes fab/drc-report.txt (gitignored with the rest of fab/)
+python3 generate_schematic.py
+kicad-cli sch export netlist -o /tmp/inkbot.net inkbot-magsafe.kicad_sch
+python3 generate_pcb.py
+python3 layout_route.py     # place, pour, route, stitch, export fab/
+python3 run_drc.py          # KiCad's DRC engine -> fab/drc-report.txt
+python3 run_erc.py          # netlist electrical rules + board parity
 ```
 
-On KiCad 8+:
+**`run_drc.py` runs KiCad's real DRC engine** (clearance, hole, keep-out,
+courtyard, mask, edge, connectivity, silk) through `pcbnew.WriteDRCReport`, not
+a geometry approximation. `kicad-cli pcb drc` would be the tidier entry point,
+but it only exists on KiCad 8+; this environment has KiCad 7.0, which cannot be
+upgraded here (the KiCad PPA, Flathub, the Snap Store, and downloads.kicad.org
+are all outside the sandbox's egress allow-list). The pcbnew engine is the same
+core checker, so on KiCad 8/9 the tidier form is equivalent:
 
 ```bash
-kicad-cli pcb drc --format report --output fab/drc-report.txt inkbot-magsafe.kicad_pcb
+kicad-cli pcb drc --format report --exit-code-violations \
+  --output fab/drc-report.txt inkbot-magsafe.kicad_pcb
 ```
 
-Always re-check in the pcbnew GUI before ordering boards (silk, courtyards,
-holes).
+`run_erc.py` substitutes for `kicad-cli sch erc` (also 8+ only): it flags
+floating nets, checks that every unconnected pin is an intentional no-connect,
+confirms the critical power/interface nets exist, and checks board↔netlist
+parity.
+
+#### Current results
+
+- **ERC: clean.** 0 errors, 13/13 critical nets present, board↔netlist parity
+  holds. The only warnings are intentional no-connects (module unused GPIO,
+  the panel FPC's unused pins 11–24, the MIC5504 NC pin). The **electrical
+  design is validated**.
+- **DRC: 49 error-severity violations**, down from 1067 on the first
+  auto-route. The clearance-correct router (0.2 mm grid with a neighbour
+  clearance check, honoring the module footprint's antenna keep-outs, board
+  edge and cutout margins, via-halo spacing, and plane fanout) removed the
+  ~900 grid-pitch shorts and the keep-out intrusions. What remains is
+  concentrated in the **fine-pitch fanout** (0.5 mm-pitch QFN / module pins)
+  and the **dense bottom cluster** (module + 44 mm-wide FPC courtyard + panel
+  power + SWD pads on a 60×99 board), plus the **20 signal nets the grid router
+  can't finish** (left as ratsnest).
+
+The in-repo Python router is a placement-and-feasibility tool, not a
+fab-ready autorouter. **Finish routing interactively in the pcbnew GUI** (or a
+real autorouter) and re-run `run_drc.py` to zero before ordering boards; the
+generators keep the schematic, planes, keep-outs, and fanout reproducible.
 
 ## Text sources
 
