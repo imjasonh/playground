@@ -877,7 +877,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     )
 
     chg_enable_module_via = board_point(16.8, 88.2)
-    chg_enable_gate_via = board_point(51.2, 68.5)
+    chg_enable_gate_via = board_point(50.8, 68.5)
     add_locked_track(
         pad_center("U1", "22"),
         chg_enable_module_via,
@@ -901,7 +901,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             (46.0, 85.8),
             (46.4, 85.4),
             (48.2, 82.2),
-            (51.2, 68.5),
+            (50.8, 68.5),
         ),
         "/CHG_ENABLE",
         pcbnew.In1_Cu,
