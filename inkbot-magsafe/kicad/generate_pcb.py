@@ -3,7 +3,7 @@
 
 The 3.97-inch panel covers the front. The receiver coil, magnetic array,
 protected cell, electronics, structural spacer, and protective back film sit
-behind it. The ring center is 30 mm from the top edge for camera clearance.
+behind it. The ring center is 30 mm from the top edge as an EVT fit hypothesis.
 """
 
 from __future__ import annotations

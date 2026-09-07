@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import subprocess
 from pathlib import Path
@@ -207,7 +209,6 @@ def export_fab() -> None:
             "export",
             "step",
             "--force",
-            "--board-only",
             "-o",
             str(FAB / "inkbot-magsafe-board.step"),
             str(BOARD),
@@ -223,6 +224,57 @@ def export_fab() -> None:
             str(FAB / "inkbot-magsafe-schematic.pdf"),
             str(HERE / "inkbot-magsafe.kicad_sch"),
         ]
+    )
+
+    source_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=HERE,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    release_suffixes = {
+        ".drl",
+        ".g2",
+        ".g3",
+        ".gba",
+        ".gbr",
+        ".gbrjob",
+        ".gbl",
+        ".gbo",
+        ".gbp",
+        ".gbs",
+        ".gm1",
+        ".gta",
+        ".gtl",
+        ".gto",
+        ".gtp",
+        ".gts",
+        ".pdf",
+        ".step",
+    }
+    release_files = sorted(
+        path
+        for path in FAB.iterdir()
+        if path.is_file()
+        and (
+            path.suffix in release_suffixes
+            or path.name == "inkbot-magsafe-pos.csv"
+        )
+    )
+    manifest = {
+        "source_commit": source_commit,
+        "artifacts": [
+            {
+                "path": path.name,
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            for path in release_files
+        ],
+    }
+    (FAB / "fabrication-manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n"
     )
 
 

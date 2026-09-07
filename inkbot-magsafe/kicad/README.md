@@ -42,8 +42,8 @@ post-route optimizer because version 2.4.1 can hang while rendering conduction
 areas. KiCad DRC checks the unoptimized route.
 
 The fabrication export also writes a mirrored bottom-assembly PDF, a
-board-only STEP model, and a schematic PDF. Review those files with the Gerber
-job before ordering.
+populated STEP model, a schematic PDF, and a SHA-256 manifest tied to the source
+commit. Review those files with the Gerber job before ordering.
 
 Open `inkbot-magsafe.kicad_pro` in KiCad 7 or later to inspect the result and
 run interactive DRC before an order. A clean route is not approval to
@@ -54,13 +54,15 @@ design document first.
 
 - **3.97-inch 480 x 800 GDEY0397T81P panel** with the full SSD1677 external
   boost circuit.
-- **MagSafe ring 30 mm from the top edge** (Apple's keep-in limit) so the tile
-  hangs below the rear-camera plateau. The panel overlaps the ring.
+- **Accessory ring center 30 mm from the top edge** as an EVT placement
+  hypothesis. Confirm each phone and camera keep-out against Apple's
+  model-specific drawing. The panel overlaps the ring.
 - **Raytac MDBT50Q-512K** pre-certified nRF52833 module (128 KB RAM for the
   48 KB framebuffer). Its antenna end is flush with the left board edge over
   an all-layer copper keep-out.
 - **BQ51013C** Qi 1.3 receiver and default-off **BQ25186** protected-cell
   charger with a separate SYS power path.
+- **TPS7A0230P** 3.0 V MCU rail with nRF52833 VDD and VDDH tied together.
 - **TPS7A2030P** 3.0 V panel rail with active discharge.
 - 0.8 mm, four-layer JLC7628 PCB with a 34 x 23 mm rounded battery cutout,
   1 oz outer copper, 0.5 oz inner copper, and 0.6/0.3 mm vias.
