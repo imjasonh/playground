@@ -323,11 +323,11 @@ def main() -> None:
     )
     pin_nets = {
         "1": "GND",
+        "8": "QI_PRESENT",
         "9": "QI_EN1",
         "10": "SYS_SENSE",
-        "11": "QI_PRESENT",
+        "11": "PANEL_TEMP_SENSE",
         "12": "PANEL_PWR_EN",
-        "13": "PANEL_TEMP_SENSE",
         "14": "PANEL_BUSY",
         "16": "PANEL_TEMP_EXCITE",
         "17": "XL1",

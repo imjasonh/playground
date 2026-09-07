@@ -33,11 +33,11 @@ PIN_NETS = {
     # Raytac MDBT50Q-1MV2.
     ("U1", "1"): "GND",
     ("U1", "2"): "GND",
+    ("U1", "8"): "/QI_PRESENT",
     ("U1", "9"): "/QI_EN1",
     ("U1", "10"): "/SYS_SENSE",
-    ("U1", "11"): "/QI_PRESENT",
+    ("U1", "11"): "/PANEL_TEMP_SENSE",
     ("U1", "12"): "/PANEL_PWR_EN",
-    ("U1", "13"): "/PANEL_TEMP_SENSE",
     ("U1", "14"): "/PANEL_BUSY",
     ("U1", "15"): "GND",
     ("U1", "16"): "/PANEL_TEMP_EXCITE",

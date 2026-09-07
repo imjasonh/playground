@@ -373,7 +373,7 @@ top-level app.
 
 The cell and coil NTCs terminate at their protection ICs and are not shared
 with the MCU. A separate NCP18XH103F03RB thermistor sits beside the panel bond
-line. P0.27 excites its 10 kOhm divider only during a sample, and P0.28/AIN4
+line. P0.27 excites its 10 kOhm divider only during a sample, and P0.02/AIN0
 measures the result against the ratiometric SAADC reference. Firmware treats an
 open or shorted sensor as unavailable and blocks refresh. EVT must correlate
 this board-edge reading with the glass temperature before freezing the limits.

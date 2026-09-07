@@ -162,7 +162,7 @@ const PANEL_TEMP_TABLE: [(u16, i8); 19] = [
 
 /// Convert a ratiometric panel-thermistor sample to degrees Celsius.
 ///
-/// Drive `PANEL_TEMP_EXCITE` high only for the acquisition, sample AIN4 with
+/// Drive `PANEL_TEMP_EXCITE` high only for the acquisition, sample AIN0 with
 /// the VDD/4 reference and 1/4 gain, then drive the excitation pin low.
 pub fn panel_temp_c_from_saadc(raw: u16) -> Result<i8, ThermistorFault> {
     const SHORT_MAX: u16 = 16;

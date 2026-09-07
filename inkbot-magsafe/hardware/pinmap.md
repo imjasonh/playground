@@ -15,7 +15,7 @@ Qi coil (both detune 2.4 GHz; see the design doc).
 | Panel RST | P1.09 | 26 | out | PANEL_RST | active low |
 | Panel BUSY | P0.30 | 14 | in | PANEL_BUSY | high while refreshing |
 | Panel power enable | P0.31 | 12 | out | PANEL_PWR_EN | TPS7A20's 500 kOhm smart pull-down holds EN low during reset |
-| Qi power present | P0.02 / AIN0 | 11 | in | QI_PRESENT | BQ51013C CHG open-drain; enable internal pull-up |
+| Qi power present | P0.19 | 8 | in | QI_PRESENT | BQ51013C CHG open-drain; enable internal pull-up |
 | Qi enable 1 | P0.03 / AIN1 | 9 | out | QI_EN1 | drive high with QI_EN2 to send charge-complete EPT |
 | Qi enable 2 | P1.08 | 25 | out | QI_EN2 | drive high with QI_EN1 to send charge-complete EPT |
 | Charger interrupt | P0.04 / AIN2 | 20 | in | CHG_INT_N | BQ25186 open-drain interrupt; enable internal pull-up |
@@ -25,7 +25,7 @@ Qi coil (both detune 2.4 GHz; see the design doc).
 | Charger SCL | P0.08 | 24 | out | CHG_SCL | BQ25186 I2C, 10 kOhm pull-up to MCU_3V0 |
 | Battery/SYS sense | P0.29 / AIN5 | 10 | analog in | SYS_SENSE | 1 MOhm/330 kOhm divider with 10 nF filter |
 | Panel temperature excitation | P0.27 | 16 | out | PANEL_TEMP_EXCITE | drive high only while sampling |
-| Panel temperature sense | P0.28 / AIN4 | 13 | analog in | PANEL_TEMP_SENSE | ratiometric 10 kOhm divider; use VDD/4 reference and 1/4 gain |
+| Panel temperature sense | P0.02 / AIN0 | 11 | analog in | PANEL_TEMP_SENSE | ratiometric 10 kOhm divider; use VDD/4 reference and 1/4 gain |
 | SWDIO | SWDIO | 51 | bidir | SWDIO | test pad |
 | SWDCLK | SWDCLK | 53 | in | SWDCLK | test pad |
 | Reset | P0.18 / ~RESET | 40 | in | NRST | test pad |

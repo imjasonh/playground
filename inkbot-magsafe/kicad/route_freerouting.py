@@ -703,7 +703,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     )
 
     qi_present_receiver_via = board_point(4.4, 64.75)
-    qi_present_module_via = board_point(10.8, 83.2)
+    qi_present_module_via = board_point(9.65, 82.8)
     add_locked_track(
         pad_center("U2", "7"),
         qi_present_receiver_via,
@@ -717,7 +717,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         layout_route.FANOUT_VIA_DRILL,
     )
     add_locked_track(
-        pad_center("U1", "11"),
+        pad_center("U1", "8"),
         qi_present_module_via,
         "/QI_PRESENT",
         width=layout_route.MIN_TRACK_W,
@@ -729,7 +729,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             (5.6, 63.55),
             (5.8, 63.55),
             (5.8, 77.6),
-            (10.8, 83.2),
+            (9.65, 82.8),
         ),
         "/QI_PRESENT",
         pcbnew.F_Cu,
@@ -772,9 +772,9 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
     add_locked_path(
         (
-            (11.65, 85.25),
-            (11.65, 84.4),
-            (11.325, 84.075),
+            (10.85, 85.25),
+            (10.8, 83.2),
+            (11.325, 82.675),
             (11.325, 80.8),
         ),
         "/PANEL_TEMP_SENSE",

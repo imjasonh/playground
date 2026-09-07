@@ -33,7 +33,7 @@ schematic in [`../kicad/`](../kicad/) and
 - R9, R10, and C20 form the `SYS_SENSE` divider and filter for P0.29/AIN5.
   In battery-only mode, `SYS` tracks the cell through the BQ25186 battery FET.
 - R13 and RT3 form a panel-adjacent temperature divider. P0.27 excites the
-  divider only while P0.28/AIN4 samples it against the ratiometric VDD/4 SAADC
+  divider only while P0.02/AIN0 samples it against the ratiometric VDD/4 SAADC
   reference. Firmware treats an open or shorted sensor as unavailable and
   blocks refresh.
 
@@ -49,7 +49,7 @@ schematic in [`../kicad/`](../kicad/) and
   overcurrent protection. R2, R3, and optional R4 are the FOD calibration set.
 - RT2 is a 10 kOhm, 3435 K NTC bonded to the coil. Its insulated leads use J3
   pins 3 and 4 and connect to U2 `TS/CTRL`.
-- `QI_PRESENT` connects U2's open-drain `CHG` output to P0.02. Firmware
+- `QI_PRESENT` connects U2's open-drain `CHG` output to P0.19. Firmware
   enables the nRF GPIO pull-up.
 - `QI_EN1` and `QI_EN2` connect U2 EN1/EN2 to P0.03 and P1.08. Firmware drives
   both high after charge completion so the receiver sends EPT 0x01 and lets the
