@@ -2,7 +2,8 @@
 
 ## PCB
 
-- 4 layers: signal / ground / power / signal.
+- 4 layers: F.Cu signal + GND pour / In1.Cu mixed signal and VSYS /
+  In2.Cu solid GND / B.Cu signal + GND pour.
 - Thickness: volume target **0.4 mm**, but the **first prototype is 0.8 mm** —
   that is the 4-layer floor at JLCPCB / PCBWay standard; 0.4 mm 4-layer needs an
   advanced fab. The battery sits in a cutout, so 0.8 mm grows only the ring

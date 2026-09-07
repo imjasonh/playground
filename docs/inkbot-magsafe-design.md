@@ -286,22 +286,23 @@ Who builds what:
   turnkey/box-build can source and attach some of these; JLCPCB generally will
   not.
 
-`kicad/layout_route.py` places the parts, pours the In2/B.Cu ground and In1
-VSYS planes, honors the module's antenna keep-outs, drops via/stub fanout to
-the planes, maze-routes the signal nets it can, stitches the grounds, and
-exports Gerbers, drill, and centroid. The module is pre-certified, so there is
+`kicad/route_freerouting.py` places the parts, assigns nets, adds the solid
+In2.Cu ground plane and surface ground pours, and locks the dense receiver
+fanout. It exports a Specctra DSN file, runs Freerouting on F.Cu, In1.Cu, and
+B.Cu, imports the SES file, refills the pours, and exports Gerbers, drill, and
+centroid files. `kicad/layout_route.py` remains as the earlier
+placement-and-feasibility grid router. The module is pre-certified, so there is
 no antenna match to tune.
 
-Validate with `kicad/run_drc.py` (KiCad's real DRC engine via pcbnew) and
-`kicad/run_erc.py` (netlist electrical rules + board parity). **ERC is clean**;
-DRC is down from 1067 to 49 error-severity violations after the router became
-clearance-correct. The Python router is a placement-and-feasibility tool, not a
-fab-ready autorouter: the remaining violations sit in the 0.5 mm-pitch fanout
-and the dense bottom cluster, and 20 signal nets stay as ratsnest. **Finish
-routing in the pcbnew GUI** (or a real autorouter), re-run `run_drc.py` to zero,
-and verify impedance before a production order. `kicad-cli pcb drc` / `sch erc`
-are the one-line equivalents on KiCad 8+; this environment only has KiCad 7, so
-the scripts stand in. See [`../inkbot-magsafe/hardware/README.md`](../inkbot-magsafe/hardware/README.md).
+Validate with `kicad/run_drc.py`, which calls KiCad's DRC engine through
+pcbnew, and `kicad/run_erc.py`, which checks the netlist and board parity.
+**DRC is clean:** 0 hard violations and 0 unconnected pads. The report contains
+38 `lib_footprint_issues` warnings because pcbnew cannot resolve the library
+nickname for script-loaded footprints; they are not board defects. **ERC is
+clean:** 0 errors and all 13 critical nets present. Verify impedance before a
+production order. `kicad-cli pcb drc` and `kicad-cli sch erc` are the one-line
+equivalents on KiCad 8 or later; this environment has KiCad 7, so the scripts
+stand in. See [`../inkbot-magsafe/hardware/README.md`](../inkbot-magsafe/hardware/README.md).
 
 Recommended one-off sequence (validate function before optimizing thickness):
 

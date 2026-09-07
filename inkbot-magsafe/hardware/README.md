@@ -50,20 +50,15 @@ parity.
   holds. The only warnings are intentional no-connects (module unused GPIO,
   the panel FPC's unused pins 11–24, the MIC5504 NC pin). The **electrical
   design is validated**.
-- **DRC: 49 error-severity violations**, down from 1067 on the first
-  auto-route. The clearance-correct router (0.2 mm grid with a neighbour
-  clearance check, honoring the module footprint's antenna keep-outs, board
-  edge and cutout margins, via-halo spacing, and plane fanout) removed the
-  ~900 grid-pitch shorts and the keep-out intrusions. What remains is
-  concentrated in the **fine-pitch fanout** (0.5 mm-pitch QFN / module pins)
-  and the **dense bottom cluster** (module + 44 mm-wide FPC courtyard + panel
-  power + SWD pads on a 60×99 board), plus the **20 signal nets the grid router
-  can't finish** (left as ratsnest).
+- **DRC: clean.** 0 hard violations and 0 unconnected pads. The report also
+  contains 38 `lib_footprint_issues` warnings because pcbnew cannot resolve the
+  library nickname for footprints loaded by a script. Those warnings do not
+  describe board defects.
 
-The in-repo Python router is a placement-and-feasibility tool, not a
-fab-ready autorouter. **Finish routing interactively in the pcbnew GUI** (or a
-real autorouter) and re-run `run_drc.py` to zero before ordering boards; the
-generators keep the schematic, planes, keep-outs, and fanout reproducible.
+The routing flow keeps In2.Cu as a solid GND plane and routes signals and VSYS
+on F.Cu, In1.Cu, and B.Cu. Locked escapes handle the receiver's 0.5 mm-pitch
+fanout, then Freerouting completes the board. Inspect the result and verify
+impedance before ordering boards.
 
 ## Text sources
 
