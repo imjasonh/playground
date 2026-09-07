@@ -456,8 +456,9 @@ class SchematicBuilder:
         x, y = snap(x), snap(y)
         u = uid()
         ms = "(mirror y)" if mirror_y else ""
+        mirror = f" {ms}" if ms else ""
 
-        self.components.append(f"""  (symbol (lib_id "{lib_id}") (at {x:.2f} {y:.2f} {rotation}) {ms}
+        self.components.append(f"""  (symbol (lib_id "{lib_id}") (at {x:.2f} {y:.2f} {rotation}){mirror}
     (uuid "{u}")
     (property "Reference" "{ref}" (at {x:.2f} {y - 3.81:.2f} 0)
       (effects (font (size 1.27 1.27))))
