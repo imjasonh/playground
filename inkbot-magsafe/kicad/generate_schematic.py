@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the inkbot-magsafe KiCad schematic (thickness-first MagSafe e-ink tile).
-
-Follows kenchangh/kicad-schematic: exact pin positions from symbol libraries,
-SchematicBuilder.connect_pin (never guess), then kicad-cli netlist validation.
-"""
+"""Generate the corrected inkbot-magsafe KiCad schematic."""
 
 from __future__ import annotations
 
@@ -29,6 +25,7 @@ from kicad_sch_helpers import (  # noqa: E402
 
 SYM = Path("/usr/share/kicad/symbols")
 OUT_DIR = ROOT / "kicad"
+LOCAL_SYM = OUT_DIR / "inkbot-magsafe.kicad_sym"
 OUT = OUT_DIR / "inkbot-magsafe.kicad_sch"
 PRO = OUT_DIR / "inkbot-magsafe.kicad_pro"
 
@@ -37,9 +34,11 @@ def build_lib_symbols() -> str:
     return "\n\n".join(
         [
             embed(SYM / "RF_Module.kicad_sym", "RF_Module", "MDBT50Q-512K"),
-            embed(SYM / "Battery_Management.kicad_sym", "Battery_Management", "BQ51050BRHL"),
-            embed(SYM / "Power_Management.kicad_sym", "Power_Management", "TPS22810DRV"),
-            embed(SYM / "Regulator_Linear.kicad_sym", "Regulator_Linear", "MIC5504-3.3YM5"),
+            embed(LOCAL_SYM, "inkbot_magsafe", "BQ51013C"),
+            embed(LOCAL_SYM, "inkbot_magsafe", "BQ25185"),
+            embed(LOCAL_SYM, "inkbot_magsafe", "TPS7A2030P"),
+            embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x02"),
+            embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x03"),
             embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x24"),
             embed(SYM / "Connector.kicad_sym", "Connector", "TestPoint"),
             embed(SYM / "Device.kicad_sym", "Device", "Battery_Cell"),
@@ -48,8 +47,9 @@ def build_lib_symbols() -> str:
             embed(SYM / "Device.kicad_sym", "Device", "C"),
             embed(SYM / "Device.kicad_sym", "Device", "R"),
             embed(SYM / "Device.kicad_sym", "Device", "L"),
+            embed(SYM / "Device.kicad_sym", "Device", "D"),
+            embed(SYM / "Transistor_FET.kicad_sym", "Transistor_FET", "Q_NMOS_GSD"),
             lib_sym_power("power:GND", "GND"),
-            lib_sym_power("power:VSYS", "VSYS"),
             lib_sym_pwr_flag(),
         ]
     )
@@ -67,257 +67,417 @@ def pass_v(
     footprint: str = "",
     stub: float = 2.54,
 ) -> None:
-    """Place a vertical 2-pin part and connect by pin number using library coords."""
+    """Place a vertical two-pin part and label both pins."""
     sch.place(lib_id, ref, value, x=snap(x), y=snap(y), footprint=footprint)
     sch.connect_pin(ref, "1", top_net, wire_dy=-stub, by_number=True)
     sch.connect_pin(ref, "2", bottom_net, wire_dy=stub, by_number=True)
 
 
+def connect_outward(
+    sch: SchematicBuilder,
+    symbol,
+    ref: str,
+    pin: str,
+    net: str,
+) -> None:
+    """Label a pin outside its symbol body."""
+    definition = symbol.get_pin_by_number(pin)
+    radians = math.radians(definition.angle)
+    outward_x = -math.cos(radians)
+    outward_y = -math.sin(radians)
+    if abs(outward_x) >= abs(outward_y):
+        sch.connect_pin(
+            ref,
+            pin,
+            net,
+            wire_dx=10.16 if outward_x > 0 else -10.16,
+            by_number=True,
+        )
+    else:
+        sch.connect_pin(
+            ref,
+            pin,
+            net,
+            wire_dy=7.62 if outward_y > 0 else -7.62,
+            by_number=True,
+        )
+
+
 def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    lib = SymbolLibrary()
+    library = SymbolLibrary()
     for name in (
         "RF_Module.kicad_sym",
-        "Battery_Management.kicad_sym",
-        "Power_Management.kicad_sym",
-        "Regulator_Linear.kicad_sym",
         "Connector_Generic.kicad_sym",
         "Connector.kicad_sym",
         "Device.kicad_sym",
+        "Transistor_FET.kicad_sym",
     ):
-        lib.load_from_kicad_sym(str(SYM / name))
+        library.load_from_kicad_sym(str(SYM / name))
+    library.load_from_kicad_sym(str(LOCAL_SYM))
 
-    sch = SchematicBuilder(symbol_lib=lib, project_name="inkbot-magsafe")
+    sch = SchematicBuilder(symbol_lib=library, project_name="inkbot-magsafe")
     sch.set_lib_symbols(build_lib_symbols())
 
-    fp_c0402 = "Capacitor_SMD:C_0402_1005Metric"
-    fp_c0603 = "Capacitor_SMD:C_0603_1608Metric"
-    fp_c1206 = "Capacitor_SMD:C_1206_3216Metric"
-    fp_r0402 = "Resistor_SMD:R_0402_1005Metric"
-    fp_l1210 = "Inductor_SMD:L_1210_3225Metric"
+    c0603 = "Capacitor_SMD:C_0603_1608Metric"
+    c0805 = "Capacitor_SMD:C_0805_2012Metric"
+    r0402 = "Resistor_SMD:R_0402_1005Metric"
+    r0603 = "Resistor_SMD:R_0603_1608Metric"
 
-    # --------------------------------------------------------------- Qi power
-    # Coil far left; labels go further left so they cannot cross support-part stubs.
-    sch.place("Device:L", "L1", "Qi RX coil", x=snap(25), y=snap(40), footprint=fp_l1210)
-    sch.connect_pin("L1", "1", "AC1", wire_dx=-10.16, by_number=True)
-    sch.connect_pin("L1", "2", "AC2", wire_dx=-10.16, by_number=True)
-
-    qi_x, qi_y = snap(110), snap(75)
+    # ---------------------------------------------------- Qi 1.3 receiver
+    qi_x, qi_y = snap(92), snap(72)
     sch.place(
-        "Battery_Management:BQ51050BRHL",
-        "U5",
-        "BQ51050BRHL",
+        "inkbot_magsafe:BQ51013C",
+        "U2",
+        "BQ51013C",
         x=qi_x,
         y=qi_y,
         footprint="Package_DFN_QFN:Texas_VQFN-RHL-20",
     )
-    sch.connect_pin("U5", "AC1", "AC1", wire_dx=-10.16)
-    sch.connect_pin("U5", "AC2", "AC2", wire_dx=-10.16)
-    sch.connect_pin("U5", "BAT", "VSYS", wire_dx=10.16)
-    sch.connect_pin("U5", "PGND", "GND", wire_dy=7.62)
-    sch.connect_pin("U5", "~{CHG}", "CHG_STAT", wire_dx=7.62)
-    sch.connect_pin("U5", "TS/CTRL", "NTC_SENSE", wire_dx=7.62)
-    sch.connect_pin("U5", "ILIM", "QI_ILIM", wire_dx=7.62)
-    sch.connect_pin("U5", "FOD", "QI_FOD", wire_dx=7.62)
-    sch.connect_pin("U5", "TERM", "QI_TERM", wire_dx=7.62)
-    sch.connect_pin("U5", "EN2", "GND", wire_dx=5.08)
-    sch.connect_pin("U5", "AD", "GND", wire_dx=5.08)
-    sch.connect_pin("U5", "RECT", "QI_RECT", wire_dx=10.16)
-    for pin, net in (
-        ("CLAMP1", "QI_CLAMP1"),
-        ("CLAMP2", "QI_CLAMP2"),
-        ("COMM1", "QI_COMM1"),
-        ("COMM2", "QI_COMM2"),
-        ("BOOT1", "QI_BOOT1"),
-        ("BOOT2", "QI_BOOT2"),
-        ("~{AD-EN}", "QI_AD_EN"),
+    for pin, net in {
+        "1": "GND",
+        "2": "QI_AC1",
+        "3": "QI_BOOT1",
+        "4": "QI_OUT",
+        "5": "QI_CLAMP1",
+        "6": "QI_COMM1",
+        "7": "QI_PRESENT",
+        "9": "GND",
+        "10": "GND",
+        "11": "GND",
+        "12": "QI_ILIM",
+        "13": "QI_COIL_NTC",
+        "14": "QI_FOD",
+        "15": "QI_COMM2",
+        "16": "QI_CLAMP2",
+        "17": "QI_BOOT2",
+        "18": "QI_RECT",
+        "19": "QI_AC2",
+        "20": "GND",
+        "21": "GND",
+    }.items():
+        connect_outward(sch, library.get("BQ51013C"), "U2", pin, net)
+    sch.connect_pin_noconnect("U2", "8", by_number=True)
+
+    sch.place(
+        "Connector_Generic:Conn_01x02",
+        "J3",
+        "WR222230-26M8-G coil",
+        x=snap(25),
+        y=snap(45),
+        footprint=(
+            "Connector_Wire:"
+            "SolderWire-0.5sqmm_1x02_P4.8mm_D0.9mm_OD2.3mm_Relief2x"
+        ),
+    )
+    sch.connect_pin("J3", "1", "QI_COIL_A", wire_dx=-7.62, by_number=True)
+    sch.connect_pin("J3", "2", "QI_AC2", wire_dx=-7.62, by_number=True)
+    sch.place("Device:L", "L2", "WR222230-26M8-G 27uH", x=snap(25), y=snap(25))
+    sch.connect_pin("L2", "1", "QI_COIL_A", wire_dy=-5.08, by_number=True)
+    sch.connect_pin("L2", "2", "QI_AC2", wire_dy=5.08, by_number=True)
+
+    # Initial values from TI guidance for this receiver and coil. EVT measures
+    # Ls and Ls' in the final stack and tunes these parallel positions before
+    # FOD calibration.
+    for ref, value, x in (
+        ("C1", "33nF 50V", 42),
+        ("C2", "33nF 50V", 50),
+        ("C3", "15nF 50V", 58),
     ):
-        sch.connect_pin("U5", pin, net, wire_dx=-10.16)
+        pass_v(sch, "Device:C", ref, value, x, 70, "QI_COIL_A", "QI_AC1", c0603)
+    pass_v(sch, "Device:C", "C4", "820pF C0G 50V", 42, 88, "QI_AC1", "QI_AC2", c0603)
+    pass_v(sch, "Device:C", "C5", "130pF C0G 50V", 50, 88, "QI_AC1", "QI_AC2", c0603)
+    pass_v(sch, "Device:C", "C6", "10nF 50V", 42, 106, "QI_BOOT1", "QI_AC1", c0603)
+    pass_v(sch, "Device:C", "C7", "10nF 50V", 50, 106, "QI_BOOT2", "QI_AC2", c0603)
+    pass_v(sch, "Device:C", "C8", "470nF 25V", 58, 106, "QI_CLAMP1", "QI_AC1", c0603)
+    pass_v(sch, "Device:C", "C9", "470nF 25V", 66, 106, "QI_CLAMP2", "QI_AC2", c0603)
+    pass_v(sch, "Device:C", "C10", "22nF 50V", 74, 106, "QI_COMM1", "QI_AC1", c0603)
+    pass_v(sch, "Device:C", "C11", "22nF 50V", 82, 106, "QI_COMM2", "QI_AC2", c0603)
+    pass_v(sch, "Device:C", "C12", "10uF 25V", 115, 50, "QI_RECT", "GND", c0805)
+    pass_v(sch, "Device:C", "C13", "10uF 25V", 125, 50, "QI_RECT", "GND", c0805)
+    pass_v(sch, "Device:C", "C14", "100nF 50V", 135, 50, "QI_RECT", "GND", c0603)
+    pass_v(sch, "Device:C", "C15", "10uF 10V", 115, 88, "QI_OUT", "GND", c0805)
+    pass_v(sch, "Device:C", "C16", "100nF 10V", 125, 88, "QI_OUT", "GND", c0603)
+    pass_v(sch, "Device:R", "R1", "845R 1%", 145, 65, "QI_ILIM", "QI_FOD", r0603)
+    pass_v(sch, "Device:R", "R2", "200R 1%", 155, 65, "QI_FOD", "GND", r0603)
+    pass_v(sch, "Device:R", "R3", "20k 1%", 145, 88, "QI_RECT", "QI_FOD", r0603)
+    pass_v(sch, "Device:R", "R4", "DNP", 155, 88, "QI_OUT", "QI_FOD", r0603)
+    pass_v(
+        sch,
+        "Device:Thermistor_NTC",
+        "RT2",
+        "10k 3435K coil NTC",
+        165,
+        65,
+        "QI_COIL_NTC",
+        "GND",
+        r0402,
+    )
 
-    # Support parts in a column well below the coil so stubs cannot cross AC wires.
-    pass_v(sch, "Device:C", "C1", "10uF", qi_x + 35, qi_y - 8, "QI_RECT", "GND", fp_c0603)
-    pass_v(sch, "Device:C", "C2", "100nF", 55, 110, "AC1", "QI_RECT", fp_c0402)
-    pass_v(sch, "Device:C", "C3", "100nF", 65, 110, "AC2", "QI_RECT", fp_c0402)
-    pass_v(sch, "Device:C", "C4", "10nF", 55, 130, "QI_BOOT1", "QI_RECT", fp_c0402)
-    pass_v(sch, "Device:C", "C5", "10nF", 65, 130, "QI_BOOT2", "QI_RECT", fp_c0402)
-    pass_v(sch, "Device:C", "C6", "1uF", 75, 110, "QI_CLAMP1", "QI_RECT", fp_c0402)
-    pass_v(sch, "Device:C", "C7", "1uF", 85, 110, "QI_CLAMP2", "QI_RECT", fp_c0402)
-    pass_v(sch, "Device:C", "C8", "22nF", 75, 130, "QI_COMM1", "QI_RECT", fp_c0402)
-    pass_v(sch, "Device:C", "C9", "22nF", 85, 130, "QI_COMM2", "QI_RECT", fp_c0402)
-    pass_v(sch, "Device:R", "R1", "1.1k", qi_x + 40, qi_y + 20, "QI_ILIM", "GND", fp_r0402)
-    pass_v(sch, "Device:R", "R2", "20k", qi_x + 50, qi_y + 20, "QI_FOD", "GND", fp_r0402)
-    pass_v(sch, "Device:R", "R3", "10k", qi_x + 60, qi_y + 20, "QI_TERM", "GND", fp_r0402)
-    pass_v(sch, "Device:R", "R4", "10k", 95, 130, "QI_AD_EN", "QI_RECT", fp_r0402)
-
-    sch.place("Device:Battery_Cell", "BT1", "120mAh LiPo", x=snap(175), y=snap(45), footprint="")
-    sch.connect_pin("BT1", "+", "VSYS", wire_dy=-5.08)
-    sch.connect_pin("BT1", "-", "GND", wire_dy=5.08)
-    pass_v(sch, "Device:C", "C10", "220uF", 190, 45, "VSYS", "GND", fp_c1206)
-    pass_v(sch, "Device:C", "C11", "10uF", 200, 45, "VSYS", "GND", fp_c0603)
-    pass_v(sch, "Device:Thermistor_NTC", "RT1", "10k", 210, 30, "NTC_SENSE", "GND", fp_r0402)
-    pass_v(sch, "Device:R", "R5", "10k", 220, 30, "VSYS", "NTC_SENSE", fp_r0402)
-    pass_v(sch, "Device:R", "R6", "100k", 230, 45, "VSYS", "VBAT_SENSE", fp_r0402)
-    pass_v(sch, "Device:R", "R7", "100k", 240, 45, "VBAT_SENSE", "GND", fp_r0402)
-    pass_v(sch, "Device:R", "R8", "100k", 200, 65, "VSYS", "CHG_STAT", fp_r0402)
-
-    sw_x, sw_y = snap(270), snap(70)
+    # ------------------------------------------------ battery charger and pack
+    charger_x, charger_y = snap(205), snap(72)
     sch.place(
-        "Power_Management:TPS22810DRV",
+        "inkbot_magsafe:BQ25185",
         "U3",
-        "TPS22810DRV",
-        x=sw_x,
-        y=sw_y,
-        footprint="Package_TO_SOT_SMD:SOT-23-6",
+        "BQ25185DLHR",
+        x=charger_x,
+        y=charger_y,
+        footprint="inkbot_magsafe:BQ25185_DLH0010A",
     )
-    sch.connect_pin("U3", "VIN", "VSYS", wire_dx=-7.62)
-    sch.connect_pin("U3", "VOUT", "VSW_PANEL", wire_dx=7.62)
-    sch.connect_pin("U3", "EN/UVLO", "PANEL_PWR_EN", wire_dx=-7.62)
-    sch.connect_pin("U3", "GND", "GND", wire_dy=5.08)
-    sch.connect_pin("U3", "QOD", "GND", wire_dx=5.08)
-    sch.connect_pin("U3", "CT", "PANEL_CT", wire_dx=7.62)
-    pass_v(sch, "Device:C", "C12", "1nF", sw_x + 22, sw_y + 12, "PANEL_CT", "GND", fp_c0402)
+    for pin, net in {
+        "1": "SYS",
+        "2": "BAT",
+        "3": "CHG_STAT2",
+        "4": "CHG_EN_N",
+        "5": "GND",
+        "6": "BAT_NTC",
+        "7": "CHG_VSET",
+        "8": "CHG_ISET",
+        "9": "CHG_STAT1",
+        "10": "QI_OUT",
+        "11": "GND",
+    }.items():
+        connect_outward(sch, library.get("BQ25185"), "U3", pin, net)
 
-    ldo_x, ldo_y = snap(325), snap(70)
+    pass_v(sch, "Device:C", "C17", "1uF 10V", 180, 45, "QI_OUT", "GND", c0603)
+    pass_v(sch, "Device:C", "C18", "10uF 10V", 195, 45, "SYS", "GND", c0805)
+    pass_v(sch, "Device:C", "C19", "1uF 10V", 210, 45, "BAT", "GND", c0603)
+    pass_v(sch, "Device:R", "R5", "100k", 180, 100, "CHG_EN_N", "GND", r0603)
+    pass_v(sch, "Device:R", "R6", "24k 1%", 195, 100, "CHG_VSET", "GND", r0603)
+    pass_v(sch, "Device:R", "R7", "7.5k 1%", 210, 100, "CHG_ISET", "GND", r0603)
+    pass_v(sch, "Device:R", "R8", "2k", 225, 100, "CHG_ISET", "CHG_ISET_COMP", r0603)
+    pass_v(sch, "Device:C", "C20", "4.7nF", 235, 100, "CHG_ISET_COMP", "GND", c0603)
+
     sch.place(
-        "Regulator_Linear:MIC5504-3.3YM5",
-        "U4",
-        "MIC5504-3.3",
-        x=ldo_x,
-        y=ldo_y,
-        footprint="Package_TO_SOT_SMD:SOT-23-5",
+        "Connector_Generic:Conn_01x03",
+        "J2",
+        "Protected battery + NTC",
+        x=snap(270),
+        y=snap(55),
+        footprint="Connector_Molex:Molex_Pico-EZmate_78171-0003_1x03-1MP_P1.20mm_Vertical",
     )
-    sch.connect_pin("U4", "VIN", "VSW_PANEL", wire_dx=-7.62)
-    sch.connect_pin("U4", "VOUT", "V3V3_PANEL", wire_dx=7.62)
-    sch.connect_pin("U4", "GND", "GND", wire_dy=5.08)
-    sch.connect_pin("U4", "EN", "VSW_PANEL", wire_dx=-5.08)
-    pass_v(sch, "Device:C", "C13", "1uF", ldo_x - 18, ldo_y + 22, "VSW_PANEL", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C14", "1uF", ldo_x + 22, ldo_y + 22, "V3V3_PANEL", "GND", fp_c0402)
+    for pin, net in {"1": "BAT", "2": "BAT_NTC", "3": "GND"}.items():
+        sch.connect_pin("J2", pin, net, wire_dx=7.62, by_number=True)
 
-    sch.place_pwr_flag(x=snap(185), y=snap(25), net_name="VSYS")
-    sch.place_pwr_flag(x=snap(350), y=snap(50), net_name="V3V3_PANEL")
-    sch.place_power("power:GND", "GND", snap(175), snap(90))
+    sch.place("Device:Battery_Cell", "BT1", "LP252030 100mAh protected", x=snap(275), y=snap(90))
+    sch.connect_pin("BT1", "1", "BAT", wire_dy=-5.08, by_number=True)
+    sch.connect_pin("BT1", "2", "GND", wire_dy=5.08, by_number=True)
+    pass_v(
+        sch,
+        "Device:Thermistor_NTC",
+        "RT1",
+        "10k 3435K bonded to cell",
+        295,
+        90,
+        "BAT_NTC",
+        "GND",
+        "",
+    )
 
-    # ---------------------------------------------------------- BLE module
-    # Pre-certified Raytac MDBT50Q-512K (nRF52833): integrated 2.4 GHz antenna,
-    # 32 MHz crystal, DC/DC, and RF match on the module. No discrete antenna,
-    # matching network, or HFXO on the board. FCC/IC/CE/MIC/KC/SRRC modular IDs.
-    mcu_x, mcu_y = snap(165), snap(235)
-    mod = lib.get("MDBT50Q-512K")
+    # ----------------------------------------------------------- BLE module
+    module_x, module_y = snap(155), snap(235)
+    module = library.get("MDBT50Q-512K")
     sch.place(
         "RF_Module:MDBT50Q-512K",
         "U1",
         "MDBT50Q-512K",
-        x=mcu_x,
-        y=mcu_y,
+        x=module_x,
+        y=module_y,
         footprint="RF_Module:Raytac_MDBT50Q",
     )
-
-    # Connect by PIN NUMBER: several module pins share the name GND/NC, so names
-    # are ambiguous. GPIO map mirrors the panel/sense assignments; PANEL_PWR_EN
-    # moves to P0.28 because the module does not bond P0.31.
-    # The parsed symbol dedupes same-named pins, so only one "GND" pin (1) is
-    # addressable here; the board layout ties all GND pads (1/2/15/33/55). GPIO
-    # net names match the panel/sense assignments; the values are module pin
-    # numbers for the nRF port each net lands on.
     pin_nets = {
         "1": "GND",
-        "28": "VSYS",   # VDD
-        "30": "VSYS",   # VDDH
-        "32": "GND",    # VBUS (USB unused)
-        "17": "XL1",    # P0.00
-        "18": "XL2",    # P0.01
-        "27": "PANEL_SCLK",    # P0.11
-        "39": "PANEL_MOSI",    # P0.15
-        "41": "PANEL_CS",      # P0.17
-        "44": "PANEL_DC",      # P0.20
-        "26": "PANEL_RST",     # P1.09
-        "14": "PANEL_BUSY",    # P0.30
-        "12": "PANEL_PWR_EN",  # P0.31
-        "11": "CHG_STAT",      # P0.02
-        "9": "VBAT_SENSE",     # P0.03
-        "20": "NTC_SENSE",     # P0.04
+        "9": "VBAT_SENSE",
+        "11": "QI_PRESENT",
+        "12": "PANEL_PWR_EN",
+        "14": "PANEL_BUSY",
+        "17": "XL1",
+        "18": "XL2",
+        "20": "CHG_STAT1",
+        "21": "CHG_STAT2",
+        "22": "CHG_EN_N",
+        "26": "PANEL_RST",
+        "27": "PANEL_SCLK",
+        "28": "VDD_NRF",
+        "30": "SYS",
+        "39": "PANEL_MOSI",
+        "40": "NRST",
+        "41": "PANEL_CS",
+        "44": "PANEL_DC",
         "51": "SWDIO",
         "53": "SWDCLK",
-        "40": "NRST",          # P0.18
     }
-    # Route each used pin outward from its own coordinate (opposite the pin's
-    # angle vector) so a stub label never crosses the module body.
-    for num, net in pin_nets.items():
-        p = mod.get_pin_by_number(num)
-        rad = math.radians(p.angle)
-        ox, oy = -math.cos(rad), -math.sin(rad)
-        if abs(ox) >= abs(oy):
-            sch.connect_pin("U1", num, net, wire_dx=(10.16 if ox > 0 else -10.16), by_number=True)
-        else:
-            sch.connect_pin("U1", num, net, wire_dy=(7.62 if oy > 0 else -7.62), by_number=True)
-    for p in mod.pins:
-        if p.number not in pin_nets:
-            sch.connect_pin_noconnect("U1", p.number, by_number=True)
+    for pin, net in pin_nets.items():
+        connect_outward(sch, module, "U1", pin, net)
+    for pin in module.pins:
+        if pin.number not in pin_nets:
+            sch.connect_pin_noconnect("U1", pin.number, by_number=True)
 
-    # Module VDD/VDDH bypass. The module integrates the DC/DC and HFXO, so there
-    # are no DEC rails or a discrete inductor to decouple.
-    pass_v(sch, "Device:C", "C15", "100nF", 70, 165, "VSYS", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C16", "4.7uF", 82, 165, "VSYS", "GND", fp_c0603)
-
-    # 32.768 kHz LFXO on P0.00/P0.01 for low-power BLE timing (not on the module).
+    # High-voltage mode powers VDDH from SYS. VDD is the regulated SoC rail and
+    # must not be tied to the cell. Firmware programs REGOUT0 to 3.0 V before it
+    # configures GPIO, and the SWD fixture uses VDD_NRF as its target reference.
+    pass_v(sch, "Device:C", "C21", "4.7uF 10V", 70, 165, "SYS", "GND", c0603)
+    pass_v(sch, "Device:C", "C22", "4.7uF 10V", 82, 165, "VDD_NRF", "GND", c0603)
     sch.place(
         "Device:Crystal",
         "Y1",
-        "32.768kHz",
-        x=snap(95),
-        y=snap(215),
-        footprint="Crystal:Crystal_SMD_2012-2Pin_2.0x1.2mm",
+        "FC-135 32.768kHz 12.5pF",
+        x=snap(105),
+        y=snap(175),
+        footprint="Crystal:Crystal_SMD_3215-2Pin_3.2x1.5mm",
     )
     sch.connect_pin("Y1", "1", "XL1", wire_dy=-5.08, by_number=True)
     sch.connect_pin("Y1", "2", "XL2", wire_dy=5.08, by_number=True)
+    pass_v(sch, "Device:C", "C23", "21pF C0G", 92, 190, "XL1", "GND", c0603)
+    pass_v(sch, "Device:C", "C24", "21pF C0G", 105, 190, "XL2", "GND", c0603)
+    pass_v(sch, "Device:R", "R9", "1M 1%", 215, 175, "BAT", "VBAT_SENSE", r0603)
+    pass_v(sch, "Device:R", "R10", "330k 1%", 228, 175, "VBAT_SENSE", "GND", r0603)
+    pass_v(sch, "Device:C", "C25", "10nF", 241, 175, "VBAT_SENSE", "GND", c0603)
 
-    for i, (net, dy) in enumerate(
-        (("SWDIO", 0), ("SWDCLK", 10), ("NRST", 20), ("VSYS", 30), ("GND", 40)),
-        start=1,
-    ):
-        ref = f"TP{i}"
-        sch.place(
-            "Connector:TestPoint",
-            ref,
-            "Pad",
-            x=snap(mcu_x + 65),
-            y=snap(mcu_y + 30 + dy),
-            footprint="TestPoint:TestPoint_Pad_D1.5mm",
-        )
-        sch.connect_pin(ref, "1", net, wire_dx=5.08, by_number=True)
+    # ---------------------------------------------------------- panel power
+    ldo_x, ldo_y = snap(285), snap(145)
+    sch.place(
+        "inkbot_magsafe:TPS7A2030P",
+        "U4",
+        "TPS7A2030PDBVR",
+        x=ldo_x,
+        y=ldo_y,
+        footprint="Package_TO_SOT_SMD:SOT-23-5",
+    )
+    for pin, net in {
+        "1": "SYS",
+        "2": "GND",
+        "3": "PANEL_PWR_EN",
+        "5": "PANEL_3V0",
+    }.items():
+        connect_outward(sch, library.get("TPS7A2030P"), "U4", pin, net)
+    sch.connect_pin_noconnect("U4", "4", by_number=True)
+    pass_v(sch, "Device:C", "C26", "1uF 10V", 265, 160, "SYS", "GND", c0603)
+    pass_v(sch, "Device:C", "C27", "4.7uF 10V", 305, 160, "PANEL_3V0", "GND", c0805)
 
-    # ------------------------------------------------------------------ panel
-    fpc_x, fpc_y = snap(280), snap(220)
+    # ------------------------------------------------------ raw panel + boost
+    panel_x, panel_y = snap(345), snap(235)
     sch.place(
         "Connector_Generic:Conn_01x24",
         "J1",
-        "Panel FPC",
-        x=fpc_x,
-        y=fpc_y,
+        "GDEM0397T81P panel FPC",
+        x=panel_x,
+        y=panel_y,
         footprint="Connector_FFC-FPC:Hirose_FH12-24S-0.5SH_1x24-1MP_P0.50mm_Horizontal",
     )
-    for num, net in {
-        "1": "V3V3_PANEL",
-        "2": "V3V3_PANEL",
-        "3": "GND",
-        "4": "GND",
-        "5": "PANEL_BUSY",
-        "6": "PANEL_RST",
-        "7": "PANEL_DC",
-        "8": "PANEL_CS",
-        "9": "PANEL_SCLK",
-        "10": "PANEL_MOSI",
-    }.items():
-        sch.connect_pin("J1", num, net, wire_dx=-7.62, by_number=True)
-    for num in range(11, 25):
-        sch.connect_pin_noconnect("J1", str(num))
-    pass_v(sch, "Device:C", "C21", "1uF", fpc_x - 28, fpc_y - 45, "V3V3_PANEL", "GND", fp_c0603)
+    panel_pins = {
+        "2": "PANEL_GDR",
+        "3": "PANEL_RESE",
+        "5": "PANEL_VSH2",
+        "8": "GND",
+        "9": "PANEL_BUSY",
+        "10": "PANEL_RST",
+        "11": "PANEL_DC",
+        "12": "PANEL_CS",
+        "13": "PANEL_SCLK",
+        "14": "PANEL_MOSI",
+        "15": "PANEL_3V0",
+        "16": "PANEL_3V0",
+        "17": "GND",
+        "18": "PANEL_VDD",
+        "20": "PANEL_VSH1",
+        "21": "PANEL_VGH",
+        "22": "PANEL_VSL",
+        "23": "PANEL_VGL",
+        "24": "PANEL_VCOM",
+    }
+    for pin, net in panel_pins.items():
+        sch.connect_pin("J1", pin, net, wire_dx=-7.62, by_number=True)
+    for pin in ("1", "4", "6", "7", "19"):
+        sch.connect_pin_noconnect("J1", pin, by_number=True)
+
+    pass_v(sch, "Device:C", "C28", "4.7uF 10V", 320, 180, "PANEL_3V0", "GND", c0805)
+    pass_v(sch, "Device:C", "C29", "1uF 10V", 330, 180, "PANEL_3V0", "GND", c0603)
+    pass_v(sch, "Device:C", "C30", "1uF 6.3V", 340, 180, "PANEL_VDD", "GND", c0603)
+    pass_v(sch, "Device:C", "C31", "4.7uF 25V", 350, 180, "PANEL_VSH2", "GND", c0805)
+    pass_v(sch, "Device:C", "C32", "4.7uF 25V", 360, 180, "PANEL_VSH1", "GND", c0805)
+    pass_v(sch, "Device:C", "C33", "4.7uF 25V", 370, 180, "PANEL_VGH", "GND", c0805)
+    pass_v(sch, "Device:C", "C34", "4.7uF 25V", 380, 180, "PANEL_VSL", "GND", c0805)
+    pass_v(sch, "Device:C", "C35", "4.7uF 25V", 390, 180, "PANEL_VGL", "GND", c0805)
+    pass_v(sch, "Device:C", "C36", "1uF 50V", 400, 180, "PANEL_VCOM", "GND", c0603)
+
+    sch.place(
+        "Device:L",
+        "L1",
+        "VLS252010CX-100M-1 10uH",
+        x=snap(320),
+        y=snap(125),
+        footprint="Inductor_SMD:L_TDK_NLV25_2.5x2.0mm",
+    )
+    sch.connect_pin("L1", "1", "PANEL_3V0", wire_dy=-5.08, by_number=True)
+    sch.connect_pin("L1", "2", "PANEL_SW", wire_dy=5.08, by_number=True)
+    sch.place(
+        "Transistor_FET:Q_NMOS_GSD",
+        "Q1",
+        "Si1308EDL-T1-GE3",
+        x=snap(345),
+        y=snap(125),
+        footprint="Package_TO_SOT_SMD:SOT-323_SC-70",
+    )
+    sch.connect_pin("Q1", "1", "PANEL_GDR", wire_dx=-5.08, by_number=True)
+    sch.connect_pin("Q1", "2", "PANEL_RESE", wire_dy=5.08, by_number=True)
+    sch.connect_pin("Q1", "3", "PANEL_SW", wire_dx=5.08, by_number=True)
+    pass_v(sch, "Device:R", "R11", "2.2R 1%", 335, 145, "PANEL_RESE", "GND", r0603)
+    pass_v(sch, "Device:R", "R12", "1M", 350, 145, "PANEL_GDR", "GND", r0603)
+
+    # SSD1677 external positive boost and inverting charge pump, copied from
+    # the working Waveshare 3.97-inch board and checked against the panel's
+    # GDR/RESE application circuit.
+    sch.place("Device:D", "D3", "MBR0530", x=snap(365), y=snap(120), footprint="Diode_SMD:D_SOD-123")
+    sch.connect_pin("D3", "2", "PANEL_SW", wire_dx=-5.08, by_number=True)
+    sch.connect_pin("D3", "1", "PANEL_VGH", wire_dx=5.08, by_number=True)
+    pass_v(sch, "Device:C", "C37", "4.7uF 25V", 375, 135, "PANEL_SW", "PANEL_PUMP", c0805)
+    sch.place("Device:D", "D2", "MBR0530", x=snap(390), y=snap(120), footprint="Diode_SMD:D_SOD-123")
+    sch.connect_pin("D2", "2", "PANEL_PUMP", wire_dx=-5.08, by_number=True)
+    sch.connect_pin("D2", "1", "GND", wire_dx=5.08, by_number=True)
+    sch.place("Device:D", "D1", "MBR0530", x=snap(390), y=snap(145), footprint="Diode_SMD:D_SOD-123")
+    sch.connect_pin("D1", "2", "PANEL_VGL", wire_dx=-5.08, by_number=True)
+    sch.connect_pin("D1", "1", "PANEL_PUMP", wire_dx=5.08, by_number=True)
+    pass_v(sch, "Device:R", "R13", "1M", 405, 120, "PANEL_VGH", "GND", r0603)
+    pass_v(sch, "Device:R", "R14", "1M", 415, 145, "PANEL_VGL", "GND", r0603)
+
+    # ------------------------------------------------------------ test access
+    for index, (net, x, y) in enumerate(
+        (
+            ("SWDIO", 240, 245),
+            ("SWDCLK", 252, 245),
+            ("NRST", 264, 245),
+            ("VDD_NRF", 276, 245),
+            ("GND", 288, 245),
+            ("SYS", 240, 263),
+            ("BAT", 252, 263),
+            ("QI_OUT", 264, 263),
+            ("PANEL_3V0", 276, 263),
+        ),
+        start=1,
+    ):
+        ref = f"TP{index}"
+        sch.place(
+            "Connector:TestPoint",
+            ref,
+            net,
+            x=snap(x),
+            y=snap(y),
+            footprint="TestPoint:TestPoint_Pad_D1.0mm",
+        )
+        sch.connect_pin(ref, "1", net, wire_dy=5.08, by_number=True)
+
+    sch.place_pwr_flag(x=snap(225), y=snap(40), net_name="SYS")
+    sch.place_pwr_flag(x=snap(235), y=snap(40), net_name="BAT")
+    sch.place_pwr_flag(x=snap(295), y=snap(125), net_name="PANEL_3V0")
+    sch.place_pwr_flag(x=snap(70), y=snap(185), net_name="VDD_NRF")
+    sch.place_power("power:GND", "GND", snap(205), snap(120))
 
     sch.text_note(
-        "inkbot-magsafe MagSafe e-ink tile\\n"
-        "Raytac MDBT50Q-512K (nRF52833, pre-certified), BQ51050B Qi+charger,\\n"
-        "3.97in 480x800 panel (SSD1677), 0.8 mm proto PCB, battery in cutout,\\n"
-        "no case (panel is the front face).",
+        "inkbot-magsafe EVT schematic\\n"
+        "BQ51013C Qi 1.3 receiver + BQ25185 40 mA protected-cell charger,\\n"
+        "Raytac MDBT50Q-512K in VDDH mode, and the complete GDEM0397T81P\\n"
+        "SSD1677 boost circuit. Qi resonance and FOD values require EVT tuning.",
         snap(15),
         snap(15),
     )
@@ -326,11 +486,11 @@ def main() -> None:
         sch.build(
             title="inkbot-magsafe",
             date="2026-09-07",
-            rev="0.5.0",
+            rev="0.6.0",
             paper="A2",
             comments=[
-                "Phone-only BLE e-ink tile; detach-to-charge over MagSafe/Qi.",
-                "No USB-C. SWD test pads for factory flash and recovery.",
+                "EVT design. Do not release until coil tuning, FOD, thermal, and compliance gates pass.",
+                "No USB port. SWD pads provide factory programming and recovery.",
             ],
         )
     )
@@ -338,7 +498,7 @@ def main() -> None:
     print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")
 
     root_uuid = re.search(r'\(uuid "([^"]+)"\)', content).group(1)
-    pro = {
+    project = {
         "board": {
             "design_settings": {
                 "defaults": {},
@@ -347,11 +507,11 @@ def main() -> None:
                 "rules": {
                     "min_clearance": 0.15,
                     "min_track_width": 0.15,
-                    "min_via_diameter": 0.4,
+                    "min_via_diameter": 0.5,
                     "min_through_hole_diameter": 0.3,
                 },
-                "track_widths": [0.15, 0.2, 0.3, 0.5],
-                "via_dimensions": [{"diameter": 0.4, "drill": 0.2}],
+                "track_widths": [0.15, 0.2, 0.3, 0.4, 0.5],
+                "via_dimensions": [{"diameter": 0.5, "drill": 0.3}],
             },
             "layer_presets": [],
             "viewports": [],
@@ -376,8 +536,8 @@ def main() -> None:
                     "pcb_color": "rgba(0, 0, 0, 0.000)",
                     "schematic_color": "rgba(0, 0, 0, 0.000)",
                     "track_width": 0.2,
-                    "via_diameter": 0.4,
-                    "via_drill": 0.2,
+                    "via_diameter": 0.5,
+                    "via_drill": 0.3,
                     "wire_width": 6,
                 }
             ],
@@ -415,7 +575,6 @@ def main() -> None:
             "meta": {"version": 1},
             "net_format_name": "",
             "page_layout_descr_file": "",
-            "plot_directory": "",
             "spice_adjust_passive_values": False,
             "subpart_first_id": 65,
             "subpart_id_separator": 0,
@@ -423,7 +582,7 @@ def main() -> None:
         "sheets": [[root_uuid, "Root"]],
         "text_variables": {},
     }
-    PRO.write_text(json.dumps(pro, indent=2) + "\n")
+    PRO.write_text(json.dumps(project, indent=2) + "\n")
     print(f"wrote {PRO}")
 
 
