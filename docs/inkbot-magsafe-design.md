@@ -126,9 +126,9 @@ flex (FPC); its on-glass charge pump makes its own gate and source rails from
 diodes, sense resistor, and reservoir capacitors. The TPS7A2030P disables and
 actively discharges the panel rail between refreshes.
 
-The switched and high-voltage panel reservoirs use 50 V-rated 1206 X7R parts.
-EVT must still verify effective capacitance at DC bias and capture overshoot on
-every generated rail.
+The 4.7 uF switched and high-voltage panel reservoirs use 35 V-rated 0805 X7R
+parts, and the 1 uF reservoirs use 50 V-rated parts. EVT must verify effective
+capacitance at DC bias and capture overshoot on every generated rail.
 
 ### Why 3.97-inch, portrait
 
@@ -481,11 +481,11 @@ cost includes parts, PCB fabrication, SMT, final integration, programming,
 end-of-line test, spacer, insulation, and rear cover. Each CSV price is the
 extended cost for every reference in that row, not a single component price:
 
-| Quantity | Unit direct cost | Build total | With 15% yield and price reserve |
+| Quantity | Unit direct cost | Build total | With 15% procurement contingency |
 |---:|---:|---:|---:|
-| 1 | **$172.53** | **$173** | **$198** |
-| 100 | **$61.81** | **$6,181** | **$7,108** |
-| 1,000 | **$43.32** | **$43,320** | **$49,818** |
+| 1 | **$168.27** | **$168** | **$194** |
+| 100 | **$59.94** | **$5,994** | **$6,893** |
+| 1,000 | **$41.74** | **$41,740** | **$48,001** |
 
 The one-unit estimate includes manual assembly setup but excludes minimum reel
 buys, shipping, duties, tax, and the tools needed to program or measure the
