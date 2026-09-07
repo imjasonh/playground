@@ -586,6 +586,11 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         board_point(7.0, upper_bus_y),
         layout_route.GND,
     )
+    add_locked_track(
+        board_point(7.0, 65.5),
+        board_point(7.0, lower_bus_y),
+        layout_route.GND,
+    )
     add_locked_via(board_point(7.0, 61.7), layout_route.GND)
     add_locked_via(board_point(7.0, 70.2), layout_route.GND)
     fanout_to_plane("U2", "9", (4.3, 63.75), net_name=layout_route.GND)
@@ -844,7 +849,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     )
 
     chg_pg_module_via = board_point(13.87, 87.8)
-    chg_pg_charger_via = board_point(49.962, 60.095)
+    chg_pg_charger_via = board_point(49.8, 59.8)
     add_locked_track(
         pad_center("U1", "21"),
         chg_pg_module_via,
@@ -858,7 +863,12 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         "/CHG_PG_N",
         width=layout_route.MIN_TRACK_W,
     )
-    add_locked_via(chg_pg_charger_via, "/CHG_PG_N")
+    add_locked_via(
+        chg_pg_charger_via,
+        "/CHG_PG_N",
+        layout_route.FANOUT_VIA_D,
+        layout_route.FANOUT_VIA_DRILL,
+    )
     add_locked_path(
         (
             (13.87, 87.8),
@@ -868,11 +878,43 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             (47.6, 82.4),
             (47.8, 82.2),
             (48.8, 69.6),
-            (49.2, 61.0),
-            (49.962, 60.095),
+            (49.2, 60.4),
+            (49.8, 59.8),
         ),
         "/CHG_PG_N",
         pcbnew.In1_Cu,
+        width=layout_route.mm(0.12),
+    )
+
+    bat_charger_via = board_point(49.8, 60.4)
+    bat_capacitor_via = board_point(54.5, 64.0)
+    add_locked_track(
+        pad_center("U3", "2"),
+        bat_charger_via,
+        "/BAT",
+        width=layout_route.MIN_TRACK_W,
+    )
+    add_locked_via(
+        bat_charger_via,
+        "/BAT",
+        layout_route.FANOUT_VIA_D,
+        layout_route.FANOUT_VIA_DRILL,
+    )
+    add_locked_track(
+        pad_center("C19", "1"),
+        bat_capacitor_via,
+        "/BAT",
+        width=layout_route.mm(0.12),
+    )
+    add_locked_via(bat_capacitor_via, "/BAT")
+    add_locked_path(
+        (
+            (49.8, 60.4),
+            (50.5, 61.1),
+            (54.5, 64.0),
+        ),
+        "/BAT",
+        pcbnew.F_Cu,
         width=layout_route.mm(0.12),
     )
 
