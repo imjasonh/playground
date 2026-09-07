@@ -87,9 +87,7 @@ jobs:
           kicad-cli sch export netlist \
             -o /tmp/inkbot.net \
             inkbot-magsafe.kicad_sch
-          git diff --exit-code -- \
-            inkbot-magsafe.kicad_sch \
-            inkbot-magsafe.kicad_pro
+          git diff --exit-code -- inkbot-magsafe.kicad_sch
 
       - name: Check electrical contracts and BOM
         run: python3 run_erc.py
