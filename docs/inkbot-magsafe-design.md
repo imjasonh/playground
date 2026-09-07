@@ -55,7 +55,7 @@ it should not.
 
 | Topic | Decision |
 |-------|----------|
-| MCU / radio | **Nordic nRF52833 bare QFN-40** (128 KB RAM for the 48 KB framebuffer) |
+| MCU / radio | **Raytac MDBT50Q-512K** — pre-certified nRF52833 module (128 KB RAM for the 48 KB framebuffer; integrated antenna, 32 MHz crystal, DC/DC, RF match) |
 | Panel | **3.97-inch 480×800 portrait** mono e-ink, on-glass controller (SSD1677), partial refresh |
 | Orientation | portrait; ring high on the tile, panel fills the tile and overlaps the ring |
 | Battery | ~120 mAh thin LiPo pouch with protection, ~1.5 mm, in a PCB cutout below the coil |
@@ -88,23 +88,31 @@ for a battery-first BLE peripheral that must stay reachable in the background:
 The design uses the **nRF52833** rather than the 52832 because the 3.97-inch
 panel needs a **48 KB mono framebuffer** (480×800). The 52832's 64 KB RAM is too
 tight once the SoftDevice takes its share; the 52833's **128 KB** holds the
-frame plus the S132/S140 stack comfortably. Both are Cortex-M4F and pin similar;
-the schematic BOMs the bare **nRF52833-QDAA (QFN-40)** with a discrete 32 MHz
-crystal, chip antenna, and matching. No NFC: pairing and frames are BLE-only, so
-the NFCT pins stay unused.
+frame plus the S132/S140 stack comfortably.
+
+The nRF52833 ships as a **pre-certified module, the Raytac MDBT50Q-512K**, not a
+bare QFN. The module integrates the 2.4 GHz antenna, the 32 MHz crystal, the
+DC/DC inductors, and the RF matching network, and carries FCC/IC/CE/MIC/KC/SRRC
+modular approval. That removes the whole radio-layout problem — no antenna
+keep-out to tune, no matching network to pick with a phone attached, no
+intentional-radiator certification to run — at the cost of ~1 mm of thickness
+(the module is ~2 mm tall). The board owes it only a VDD/VDDH bypass and a
+32.768 kHz crystal on P0.00/P0.01 for low-power BLE timing (the module leaves the
+LFXO external). No NFC: pairing and frames are BLE-only, so the NFCT pins (P0.09/
+P0.10) stay unused.
 
 ## Block diagram
 
 ```
                  ┌─────────────────────────────────────────────┐
-   MagSafe ring  │  nRF52833-QDAA (bare QFN-40)                │
+   MagSafe ring  │  Raytac MDBT50Q-512K (nRF52833 module)      │
    magnets ──────┤   ├─ SPI ─────────► 3.97" e-ink COG (SSD1677)│
                  │   ├─ GPIO ────────► TPS22810 + MIC5504 ──────┼─► panel 3.3V rail
-   Qi RX coil ─► │   └─ SAADC ───────◄ battery + thermistor     │    (+ 220µF bulk)
-   (in magnet    └─────────────────────────────────────────────┘
-    ring)
+   Qi RX coil ─► │   ├─ SAADC ───────◄ battery + thermistor     │    (+ 220µF bulk)
+   (in magnet    │   └─ (antenna + 32MHz + DC/DC on-module)      │
+    ring)        └─────────────────────────────────────────────┘
         │
-        └─► BQ51050B (Qi RX + charger) ──► LiPo ~120mAh (PCB cutout) = VSYS ─► nRF DC/DC
+        └─► BQ51050B (Qi RX + charger) ──► LiPo ~120mAh (PCB cutout) = VSYS ─► module VDD
                  ▲                                              ▲
                  │ ILIM / FOD / TERM                            │ protection FET
                  └─ NTC (TS/CTRL + SAADC)                       └─ 220µF bulk near panel
@@ -178,18 +186,20 @@ with the ILIM resistor for the small cell.
 
 There is no USB-C port on the shipping tile (see the next section).
 
-The nRF52833 runs directly from VSYS through its internal DC/DC (DCC inductor
-and DEC caps per Nordic's reference). The panel gets a dedicated 3.3 V rail
-behind a **TPS22810 load switch** and **MIC5504-3.3** LDO driven by a GPIO, so
-idle current is just the nRF plus leakage.
+The module runs directly from VSYS on its `VDD`/`VDDH` pins; the DC/DC inductor
+and its decoupling live inside the module, so the board only adds a VDD/VDDH
+bypass. The panel gets a dedicated 3.3 V rail behind a **TPS22810 load switch**
+and **MIC5504-3.3** LDO driven by a GPIO, so idle current is just the module plus
+leakage.
 
 ### Wireless power
 
 The **BQ51050B** drives a MagSafe-profile RX coil sized to Apple's ring geometry
 so the tile self-aligns on any MagSafe pad. Place the coil inside the magnet
-ring on the back, keep ferrite between the coil and the board, and put the
-2.4 GHz chip antenna at the opposite edge (magnets and coil both detune it).
-There is no transmit stage: the tile charges itself, not the phone.
+ring on the back, keep ferrite between the coil and the board, and orient the
+module so its integrated antenna faces the tile edge farthest from the ring
+(magnets and coil both detune 2.4 GHz). There is no transmit stage: the tile
+charges itself, not the phone.
 
 ### Ports: none, by design
 
@@ -211,12 +221,17 @@ not already have, and a sealed edge is thinner and more reliable.
 ### Antenna and the phone-metal problem
 
 A phone's metal chassis and the MagSafe magnet array sit millimeters from the
-radio and will detune a 2.4 GHz antenna. Two consequences drive the layout:
+radio and detune a 2.4 GHz antenna. The pre-certified module fixes the *design*
+half of this — the antenna and its match are done and certified on the module —
+but not the *physics*: the magnets still pull the tuning. So the layout still:
 
-- Put the antenna (module or chip) at the tile edge farthest from the magnet
-  ring, with a ground keep-out under it.
-- **Tune with a phone attached**, not on the bench. Final matching-network
-  values must be picked with the tile in its real dielectric environment.
+- Places the **module with its antenna end at the tile edge farthest from the
+  magnet ring**, over the board edge, with the copper keep-out the module
+  footprint already defines under the antenna.
+- Expects some **range loss** with the magnets so close. At BLE distances (a
+  phone touching the tile) there is large link margin, so this is acceptable;
+  the module's certification stays valid because its antenna and matching are
+  unchanged. No board-side matching network to tune.
 
 ### Board stack
 
@@ -235,24 +250,26 @@ outline, and
 [`inkbot-magsafe/hardware/stackup.md`](../inkbot-magsafe/hardware/stackup.md)
 for the mechanical stack.
 
-Because the panel covers the front, the nRF, BQ51050B, and passives mount on the
-**back**, ringing the coil and the cutout, inside the magnet-ring thickness
+Because the panel covers the front, the module, BQ51050B, and passives mount on
+the **back**, ringing the coil and the cutout, inside the magnet-ring thickness
 envelope.
 
 ### Realistic thickness
 
-Thickness-first layout (cutout + thin PCB + bare QFN + combined Qi/charger):
+Thickness-first layout (cutout + thin PCB + module + combined Qi/charger). The
+module (~2 mm tall) is now the tallest back-side part, so it, not the battery,
+can set the thickest point:
 
 | Region | Approx. |
 |--------|---------|
+| At the module (panel + 0.8 mm PCB + ~2 mm module) | **~3.05 mm** |
 | At the cell (panel + 1.5 mm LiPo in cutout) | **~2.55 mm** |
-| At the magnet ring (panel + 0.4 mm PCB + coil/magnets/parts) | **~2.0–2.1 mm** |
+| At the magnet ring (panel + 0.8 mm PCB + coil/magnets/parts) | **~2.4 mm** |
 
-Earlier ~4.5 mm assumed a 0.8 mm PCB and a cell under the board. Pass-through
-TX would still add ~1.2 mm and is rejected. The "under 2 mm" figure in the brief
-describes the bare cell, not the finished tile — this design lands near that
-floor without a case. (The 0.8 mm prototype board, above, sits ~0.4 mm thicker
-at the ring only.)
+The pre-certified module trades ~1 mm of thickness for deleting the entire radio
+layout and certification. The bare-QFN alternative lands near ~2.55 mm but owes
+antenna tuning and an intentional-radiator cert. Pass-through TX would still add
+~1.2 mm and is rejected. This is the accepted trade for 0.1.0.
 
 ### Fabrication and first build
 
@@ -260,34 +277,38 @@ Who builds what:
 
 - **PCB + SMT assembly (PCBA)** — one vendor. **JLCPCB** (cheapest, rigid
   automation) or **PCBWay** (pricier, more hand-holding and sourcing) both fab
-  the board and place the surface-mount parts, including the leadless QFN
-  nRF52833 and the BQ51050B. Deliver Gerbers, BOM, and a centroid/pick-and-place
-  file.
+  the board and place the surface-mount parts, including the Raytac module, the
+  leadless BQ51050B, and the passives. Deliver Gerbers, BOM, and a centroid/
+  pick-and-place file (all exported from the KiCad project).
 - **Panel, coil, magnets, battery** — not reel parts an assembler drops in for a
   one-off. Bonding the e-ink glass to the front, placing the Qi coil and MagSafe
   magnet ring on the back, and attaching the LiPo are bench work. PCBWay
   turnkey/box-build can source and attach some of these; JLCPCB generally will
   not.
 
-Before ordering anything, the KiCad project needs to be **routed and tuned** —
-today it has the outline and footprints but no routing, and the 2.4 GHz match is
-not set. Route it, add the matching network, pass DRC, then export the fab set.
+The KiCad project is **routed** by `kicad/layout_route.py`: it places the parts,
+pours the In2/B.Cu ground and In1 VSYS planes, and maze-routes the signal nets
+(most auto-route; a couple are left as ratsnest for manual finishing), then
+exports Gerbers, drill, and centroid. The module is pre-certified, so there is
+no antenna match to tune. Open the project and **run DRC in the KiCad GUI**,
+finish any remaining ratsnest, and verify impedance before a production order.
 
 Recommended one-off sequence (validate function before optimizing thickness):
 
 1. **Breadboard, no custom PCB.** An nRF52833/52840 devkit (or Feather nRF52) +
    the GDEY0397T81P on its Good Display DESPI FPC adapter + a LiPo. Proves the
    SSD1677 driver, the 480×800 framebuffer, BLE push, and power behavior with no
-   RF tuning or bonding.
+   bonding.
 2. **One-off tile.** ~5 boards, **PCBA, 0.8 mm 4-layer, ENIG** from JLCPCB (or
    PCBWay if you want them to source the odd parts). Buy the panel, a MagSafe
    magnet ring + Qi RX coil, and a ~120 mAh protected LiPo separately, then
    hand-integrate. Bring up over the SWD test pads.
 
-For the first tile, a **pre-certified nRF52833 module** (Raytac MDBT50Q-class)
-removes the antenna-tuning and crystal risk at the cost of ~0.5–1 mm; swap to the
-bare QFN once the rest is proven. The bare QFN is a thickness optimization worth
-deferring past "does it work."
+The design already uses the **pre-certified Raytac MDBT50Q-512K module**, so the
+radio works out of the box on the first tile — no antenna tuning, no crystal, no
+RF certification. A future thickness optimization could move to a bare nRF52833
+QFN (~1 mm thinner) once everything else is proven, at the cost of taking on the
+antenna layout and an intentional-radiator cert.
 
 ### Phone compatibility and fit
 
@@ -406,25 +427,27 @@ carries; the phone is the update transport.
 
 Full line items with part numbers and price columns are in
 [`inkbot-magsafe-bom.csv`](inkbot-magsafe-bom.csv). Rolled-up cost of goods
-(COGS) at ~1,000 units, thickness-first bare SoC:
+(COGS) at ~1,000 units, thickness-first with the pre-certified module:
 
 | | Shipping tile |
 |---|---|
-| Parts (incl. thin PCB) | ~$28 |
+| Parts (incl. thin PCB) | ~$30 |
 | Assembly (SMT, test) | ~$4 |
-| **COGS** | **~$32** |
-| Suggested retail (2.5–3×) | ~$85–99 |
+| **COGS** | **~$34** |
+| Suggested retail (2.5–3×) | ~$90–99 |
 
-The 3.97-inch panel (~$10.50) and the Qi stage (~$4.8 for BQ51050B + coil)
-dominate. The bare nRF52833 (~$2.90) needs its own intentional-radiator
-certification if you stay bare. Pass-through TX would still add ~$8 and is
-rejected.
+The 3.97-inch panel (~$10.50), the module (~$4.50), and the Qi stage (~$4.8 for
+BQ51050B + coil) dominate. The module costs ~$1.60 more than a bare nRF52833
+(~$2.90) but folds in the antenna, crystal, and — critically — the intentional-
+radiator certification, so it is cheaper once certification and RF spins are
+counted. Pass-through TX would still add ~$8 and is rejected.
 
 ## Reliability checklist
 
 - System on the cell via BQ51050B; charge while detached (no mid-refresh cutover).
 - 220 µF bulk cap at VSYS near the panel connector for refresh inrush.
-- Antenna tuned with a phone attached; ground keep-out under it.
+- Module antenna at the tile edge farthest from the ring; keep-out per the
+  module footprint. No board-side match to tune (module is pre-certified).
 - NTC thermistor for Qi charge safety (shared with SAADC).
 - Cell with an integrated protection FET, or add a DW01 + dual FET.
 - SWD test pads for brick recovery, since there is no USB port to fall back to.
@@ -438,8 +461,10 @@ rejected.
   charging ring needs Apple's MFi program (which adds an authentication IC and
   licensing). Without MFi: generic magnets, "works with MagSafe chargers,"
   7.5 W cap.
-- The bare SoC needs intentional-radiator certification; a pre-certified
-  nRF52833 module is the drop-in alternative if that becomes the bottleneck.
+- The design uses a **pre-certified module (Raytac MDBT50Q-512K)**, so it carries
+  the module's FCC/IC/CE/MIC/KC/SRRC modular IDs and needs only unintentional-
+  radiator (Part 15B) testing for the finished product, not a full intentional-
+  radiator campaign.
 - The Qi coil is still a Part 18 radiator. The tile is receive-only, so there is
   no transmit EMC burden; adding pass-through later would roughly double it and
   may want WPC (Qi) certification.
@@ -455,6 +480,10 @@ rejected.
   4.26" was tried and dropped — it overhangs the bottom of a 15 Pro by ~4 mm.
   Minis are dropped (too narrow). The 48 KB frame is why the MCU is the 128 KB
   nRF52833.
+- **Pre-certified module, not bare QFN.** The nRF52833 ships as a Raytac
+  MDBT50Q-512K module: it folds in the antenna, 32 MHz crystal, DC/DC, and RF
+  match with modular certification, deleting the radio-layout work for ~1 mm of
+  added thickness. Accepted.
 - **Launch faces:** clock, calendar, weather, health, photo/image, custom text,
   and a best-effort notification summary. Transit is deferred.
 - **Relaxed background cadence.** Target the iOS `BGTask` rhythm (roughly every
@@ -476,9 +505,9 @@ rejected.
   is built, it is a private companion service, not the [`inkbot/`](../inkbot/)
   Worker and it shares no code with it. The tile firmware and app stay agnostic
   to the sender.
-- **Thickness-first KiCad schematic.** Bare nRF QFN, BQ51050B (Qi+charger),
-  0.4 mm PCB (0.8 mm for the first prototype) with battery cutout, no case.
-  Project under [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/).
+- **Thickness-first KiCad schematic.** Raytac MDBT50Q-512K module, BQ51050B
+  (Qi+charger), 0.8 mm prototype PCB (0.4 mm volume target) with battery cutout,
+  no case. Project under [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/).
 
 The firmware and hardware scaffold live in
 [`../inkbot-magsafe/`](../inkbot-magsafe/); the iOS app is deferred until they

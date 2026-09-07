@@ -36,14 +36,13 @@ PRO = OUT_DIR / "inkbot-magsafe.kicad_pro"
 def build_lib_symbols() -> str:
     return "\n\n".join(
         [
-            embed(SYM / "MCU_Nordic.kicad_sym", "MCU_Nordic", "nRF52833_QDxx"),
+            embed(SYM / "RF_Module.kicad_sym", "RF_Module", "MDBT50Q-512K"),
             embed(SYM / "Battery_Management.kicad_sym", "Battery_Management", "BQ51050BRHL"),
             embed(SYM / "Power_Management.kicad_sym", "Power_Management", "TPS22810DRV"),
             embed(SYM / "Regulator_Linear.kicad_sym", "Regulator_Linear", "MIC5504-3.3YM5"),
             embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x24"),
             embed(SYM / "Connector.kicad_sym", "Connector", "TestPoint"),
             embed(SYM / "Device.kicad_sym", "Device", "Battery_Cell"),
-            embed(SYM / "Device.kicad_sym", "Device", "Antenna_Chip"),
             embed(SYM / "Device.kicad_sym", "Device", "Crystal"),
             embed(SYM / "Device.kicad_sym", "Device", "Thermistor_NTC"),
             embed(SYM / "Device.kicad_sym", "Device", "C"),
@@ -78,7 +77,7 @@ def main() -> None:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     lib = SymbolLibrary()
     for name in (
-        "MCU_Nordic.kicad_sym",
+        "RF_Module.kicad_sym",
         "Battery_Management.kicad_sym",
         "Power_Management.kicad_sym",
         "Regulator_Linear.kicad_sym",
@@ -95,7 +94,6 @@ def main() -> None:
     fp_c0603 = "Capacitor_SMD:C_0603_1608Metric"
     fp_c1206 = "Capacitor_SMD:C_1206_3216Metric"
     fp_r0402 = "Resistor_SMD:R_0402_1005Metric"
-    fp_l0805 = "Inductor_SMD:L_0805_2012Metric"
     fp_l1210 = "Inductor_SMD:L_1210_3225Metric"
 
     # --------------------------------------------------------------- Qi power
@@ -199,112 +197,79 @@ def main() -> None:
     sch.place_pwr_flag(x=snap(350), y=snap(50), net_name="V3V3_PANEL")
     sch.place_power("power:GND", "GND", snap(175), snap(90))
 
-    # -------------------------------------------------------------------- MCU
-    mcu_x, mcu_y = snap(150), snap(230)
-    mcu_sym = lib.get("nRF52833_QDxx")
+    # ---------------------------------------------------------- BLE module
+    # Pre-certified Raytac MDBT50Q-512K (nRF52833): integrated 2.4 GHz antenna,
+    # 32 MHz crystal, DC/DC, and RF match on the module. No discrete antenna,
+    # matching network, or HFXO on the board. FCC/IC/CE/MIC/KC/SRRC modular IDs.
+    mcu_x, mcu_y = snap(165), snap(235)
+    mod = lib.get("MDBT50Q-512K")
     sch.place(
-        "MCU_Nordic:nRF52833_QDxx",
+        "RF_Module:MDBT50Q-512K",
         "U1",
-        "nRF52833-QDAA",
+        "MDBT50Q-512K",
         x=mcu_x,
         y=mcu_y,
-        footprint="Package_DFN_QFN:Nordic_QFN-40-1EP_5x5mm_P0.4mm",
+        footprint="RF_Module:Raytac_MDBT50Q",
     )
 
-    # Route each used pin outward from its own symbol coordinate so stub labels
-    # never cross the body. Parts below connect to these nets by name.
+    # Connect by PIN NUMBER: several module pins share the name GND/NC, so names
+    # are ambiguous. GPIO map mirrors the panel/sense assignments; PANEL_PWR_EN
+    # moves to P0.28 because the module does not bond P0.31.
+    # The parsed symbol dedupes same-named pins, so only one "GND" pin (1) is
+    # addressable here; the board layout ties all GND pads (1/2/15/33/55). GPIO
+    # net names match the panel/sense assignments; the values are module pin
+    # numbers for the nRF port each net lands on.
     pin_nets = {
-        "VDD": "VSYS",
-        "VDDH": "VSYS",
-        "VSS": "GND",
-        "VSS_PA": "GND",
-        "VBUS": "GND",
-        "DCC": "DCC",
-        "DEC1": "DEC1",
-        "DEC3": "DEC3",
-        "DEC4": "DEC4",
-        "DEC5": "DEC5",
-        "DEC6": "DEC6",
-        "DECUSB": "DECUSB",
-        "XL1/P0.00": "XL1",
-        "XL2/P0.01": "XL2",
-        "XC1": "XC1",
-        "XC2": "XC2",
-        "P0.11": "PANEL_SCLK",
-        "P0.15": "PANEL_MOSI",
-        "P0.17": "PANEL_CS",
-        "P0.20": "PANEL_DC",
-        "P1.09": "PANEL_RST",
-        "AIN6/P0.30": "PANEL_BUSY",
-        "AIN7/P0.31": "PANEL_PWR_EN",
-        "AIN0/P0.02": "CHG_STAT",
-        "AIN1/P0.03": "VBAT_SENSE",
-        "AIN2/P0.04": "NTC_SENSE",
-        "SWDIO": "SWDIO",
-        "SWDCLK": "SWDCLK",
-        "P0.18/~{RESET}": "NRST",
-        "ANT": "RF_ANT",
+        "1": "GND",
+        "28": "VSYS",   # VDD
+        "30": "VSYS",   # VDDH
+        "32": "GND",    # VBUS (USB unused)
+        "17": "XL1",    # P0.00
+        "18": "XL2",    # P0.01
+        "27": "PANEL_SCLK",    # P0.11
+        "39": "PANEL_MOSI",    # P0.15
+        "41": "PANEL_CS",      # P0.17
+        "44": "PANEL_DC",      # P0.20
+        "26": "PANEL_RST",     # P1.09
+        "14": "PANEL_BUSY",    # P0.30
+        "12": "PANEL_PWR_EN",  # P0.31
+        "11": "CHG_STAT",      # P0.02
+        "9": "VBAT_SENSE",     # P0.03
+        "20": "NTC_SENSE",     # P0.04
+        "51": "SWDIO",
+        "53": "SWDCLK",
+        "40": "NRST",          # P0.18
     }
-    # Route in the pin's own outward direction (opposite its angle vector) so a
-    # stub never crosses the body, regardless of where the symbol origin sits.
-    for pin_name, net in pin_nets.items():
-        p = mcu_sym.get_pin(pin_name)
+    # Route each used pin outward from its own coordinate (opposite the pin's
+    # angle vector) so a stub label never crosses the module body.
+    for num, net in pin_nets.items():
+        p = mod.get_pin_by_number(num)
         rad = math.radians(p.angle)
         ox, oy = -math.cos(rad), -math.sin(rad)
         if abs(ox) >= abs(oy):
-            sch.connect_pin("U1", pin_name, net, wire_dx=(10.16 if ox > 0 else -10.16))
+            sch.connect_pin("U1", num, net, wire_dx=(10.16 if ox > 0 else -10.16), by_number=True)
         else:
-            sch.connect_pin("U1", pin_name, net, wire_dy=(7.62 if oy > 0 else -7.62))
-    for pin in mcu_sym.pins:
-        if pin.name not in pin_nets:
-            sch.connect_pin_noconnect("U1", pin.name)
+            sch.connect_pin("U1", num, net, wire_dy=(7.62 if oy > 0 else -7.62), by_number=True)
+    for p in mod.pins:
+        if p.number not in pin_nets:
+            sch.connect_pin_noconnect("U1", p.number, by_number=True)
 
-    # nRF52833 supply + decoupling (DC/DC on DCC; a cap per DEC rail).
-    pass_v(sch, "Device:C", "C15", "100nF", 60, 150, "VSYS", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C16", "4.7uF", 70, 150, "VSYS", "GND", fp_c0603)
-    pass_v(sch, "Device:L", "L2", "10uH", 210, 150, "DCC", "VSYS", fp_l0805)
-    pass_v(sch, "Device:C", "C17", "100nF", 60, 300, "DEC1", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C18", "100nF", 72, 300, "DEC3", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C19", "100nF", 84, 300, "DEC4", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C20", "100nF", 96, 300, "DEC5", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C23", "100nF", 108, 300, "DEC6", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C24", "1uF", 120, 300, "DECUSB", "GND", fp_c0402)
+    # Module VDD/VDDH bypass. The module integrates the DC/DC and HFXO, so there
+    # are no DEC rails or a discrete inductor to decouple.
+    pass_v(sch, "Device:C", "C15", "100nF", 70, 165, "VSYS", "GND", fp_c0402)
+    pass_v(sch, "Device:C", "C16", "4.7uF", 82, 165, "VSYS", "GND", fp_c0603)
 
+    # 32.768 kHz LFXO on P0.00/P0.01 for low-power BLE timing (not on the module).
     sch.place(
         "Device:Crystal",
         "Y1",
         "32.768kHz",
-        x=snap(85),
-        y=snap(200),
+        x=snap(95),
+        y=snap(215),
         footprint="Crystal:Crystal_SMD_2012-2Pin_2.0x1.2mm",
     )
     sch.connect_pin("Y1", "1", "XL1", wire_dy=-5.08, by_number=True)
     sch.connect_pin("Y1", "2", "XL2", wire_dy=5.08, by_number=True)
-
-    sch.place(
-        "Device:Crystal",
-        "Y2",
-        "32MHz",
-        x=snap(85),
-        y=snap(255),
-        footprint="Crystal:Crystal_SMD_2012-2Pin_2.0x1.2mm",
-    )
-    sch.connect_pin("Y2", "1", "XC1", wire_dy=-5.08, by_number=True)
-    sch.connect_pin("Y2", "2", "XC2", wire_dy=5.08, by_number=True)
-
-    # 2.4 GHz chip antenna on nRF ANT pin (matching network TBD on layout).
-    # No NFC: pairing and frames ride BLE; NFCT pins stay unused (no-connect).
-    sch.place(
-        "Device:Antenna_Chip",
-        "ANT2",
-        "2.4GHz",
-        x=snap(mcu_x + 80),
-        y=snap(mcu_y - 10),
-        footprint="Antenna_SMD:Antenna_Abracon_ACA-107-T",
-    )
-    sch.connect_pin("ANT2", "1", "RF_ANT", wire_dx=-5.08, by_number=True)
-    sch.connect_pin("ANT2", "2", "GND", wire_dx=5.08, by_number=True)
-    pass_v(sch, "Device:C", "C22", "2.0pF", mcu_x + 75, mcu_y + 15, "RF_ANT", "GND", fp_c0402)
 
     for i, (net, dy) in enumerate(
         (("SWDIO", 0), ("SWDCLK", 10), ("NRST", 20), ("VSYS", 30), ("GND", 40)),
@@ -350,8 +315,9 @@ def main() -> None:
 
     sch.text_note(
         "inkbot-magsafe MagSafe e-ink tile\\n"
-        "nRF52833 QFN-40, BQ51050B Qi+charger, 3.97in 480x800 panel (SSD1677),\\n"
-        "0.4 mm PCB, battery in cutout, no case (panel is the front face).",
+        "Raytac MDBT50Q-512K (nRF52833, pre-certified), BQ51050B Qi+charger,\\n"
+        "3.97in 480x800 panel (SSD1677), 0.8 mm proto PCB, battery in cutout,\\n"
+        "no case (panel is the front face).",
         snap(15),
         snap(15),
     )
@@ -359,8 +325,8 @@ def main() -> None:
     content = fix_subsymbol_names(
         sch.build(
             title="inkbot-magsafe",
-            date="2026-09-06",
-            rev="0.4.0",
+            date="2026-09-07",
+            rev="0.5.0",
             paper="A2",
             comments=[
                 "Phone-only BLE e-ink tile; detach-to-charge over MagSafe/Qi.",

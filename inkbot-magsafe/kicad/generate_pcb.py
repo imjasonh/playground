@@ -93,16 +93,16 @@ def main() -> None:
     pcb = f"""(kicad_pcb (version 20221018) (generator pcbnew)
 
   (general
-    (thickness 0.4)
+    (thickness 0.8)
   )
 
   (paper "A4")
   (title_block
     (title "inkbot-magsafe")
-    (date "2026-09-06")
-    (rev "0.3.0")
-    (comment 1 "0.4 mm 4-layer; portrait; battery cutout; no case — panel is the front face")
-    (comment 2 "Ring high (30mm keep-in) clears cameras; panel overlaps ring; antenna at bottom edge")
+    (date "2026-09-07")
+    (rev "0.5.0")
+    (comment 1 "0.8 mm 4-layer prototype (0.4 mm volume target); portrait; battery cutout; no case")
+    (comment 2 "Raytac MDBT50Q-512K module (integrated antenna); ring high clears cameras; panel overlaps ring")
   )
 
   (layers
@@ -134,11 +134,11 @@ def main() -> None:
       (layer "F.Paste" (type "Top Solder Paste"))
       (layer "F.Mask" (type "Top Solder Mask") (thickness 0.01))
       (layer "F.Cu" (type "copper") (thickness 0.018))
-      (layer "dielectric 1" (type "prepreg") (thickness 0.07) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
+      (layer "dielectric 1" (type "prepreg") (thickness 0.075) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
       (layer "In1.Cu" (type "copper") (thickness 0.018))
-      (layer "dielectric 2" (type "core") (thickness 0.15) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
+      (layer "dielectric 2" (type "core") (thickness 0.55) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
       (layer "In2.Cu" (type "copper") (thickness 0.018))
-      (layer "dielectric 3" (type "prepreg") (thickness 0.07) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
+      (layer "dielectric 3" (type "prepreg") (thickness 0.075) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
       (layer "B.Cu" (type "copper") (thickness 0.018))
       (layer "B.Mask" (type "Bottom Solder Mask") (thickness 0.01))
       (layer "B.Paste" (type "Bottom Solder Paste"))
@@ -191,8 +191,8 @@ def main() -> None:
     OUT.write_text(pcb)
     print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")
     print(
-        f"board {BOARD_W}x{BOARD_H} mm portrait, 0.4 mm, ring center {RING_CY} mm from top, "
-        f"battery cutout {BAT_W}x{BAT_H} mm"
+        f"board {BOARD_W}x{BOARD_H} mm portrait, 0.8 mm proto, ring center {RING_CY} mm "
+        f"from top, battery cutout {BAT_W}x{BAT_H} mm"
     )
 
 

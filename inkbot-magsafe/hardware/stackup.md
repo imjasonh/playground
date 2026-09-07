@@ -12,8 +12,10 @@
   the 4.26" panel (105 mm tall) overshoots the bottom of a 15 Pro and was dropped.
 - **Battery cutout** (~32 × 20 mm) below the coil so the LiPo thickness does not
   stack on the PCB.
-- Solid ground under the radio and panel SPI. Antenna keep-out at the **bottom**
-  edge, farthest from the ring and coil. Tune matching with a phone attached.
+- Solid ground under the module and panel SPI. The module's integrated antenna
+  sits at the board edge farthest from the ring and coil, over the copper
+  keep-out the module footprint defines. No board-side match to tune (the module
+  is pre-certified).
 
 ## No case
 
@@ -27,8 +29,8 @@ components. There is no plastic shell for the first spin.
   **overlaps the MagSafe ring** — coil and magnets are behind it on the back.
 - Back, top: Qi RX coil inside the MagSafe magnet ring, ring center **30 mm from
   the top edge** (Apple's keep-in limit toward the phone top).
-- Back, below the coil: nRF52833, BQ51050B, load switch, LDO, passives ringing
-  the cutout.
+- Back, below the coil: MDBT50Q-512K module (antenna end toward a board edge),
+  BQ51050B, load switch, LDO, passives ringing the cutout.
 - Cutout: thin ~120 mAh LiPo (~1.5 mm).
 
 ## Camera and bottom clearance
@@ -41,7 +43,16 @@ inside it with ~4 mm above the phone's bottom edge.
 
 ## Vertical stack (thickest region)
 
-With the cell in the cutout, the PCB does not sit under the cell:
+The module (~2 mm) is the tallest back-side part, so it sets the thickest point:
+
+| Layer | Thickness |
+|-------|-----------|
+| E-ink panel + adhesive | ~1.05 mm |
+| PCB | 0.8 mm |
+| MDBT50Q-512K module | ~2.0 mm (part of it recessed against the PCB) |
+| **Total at module** | **~3.05 mm** |
+
+At the cell (cutout, so the PCB does not sit under the cell):
 
 | Layer | Thickness |
 |-------|-----------|
@@ -54,9 +65,9 @@ Around the magnet ring (no cell, back-mounted parts + coil):
 | Layer | Thickness |
 |-------|-----------|
 | Panel + adhesive | ~1.05 mm |
-| PCB | 0.4 mm |
+| PCB | 0.8 mm |
 | Coil + ferrite / parts | ~0.5–0.6 mm |
-| **Total at ring** | **~2.0–2.1 mm** |
+| **Total at ring** | **~2.4 mm** |
 
 ## Retention
 

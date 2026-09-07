@@ -30,8 +30,9 @@ hardware settle.
 
 ## Target
 
-- MCU: Nordic nRF52833 (Cortex-M4F, 128 KiB RAM), target `thumbv7em-none-eabihf`.
-  The 48 KiB mono framebuffer for the 480x800 panel needs the 52833's RAM.
+- MCU: Nordic nRF52833 (Cortex-M4F, 128 KiB RAM), target `thumbv7em-none-eabihf`,
+  shipped as a pre-certified Raytac MDBT50Q-512K module. The 48 KiB mono
+  framebuffer for the 480x800 panel needs the 52833's RAM.
 - Flashing: SWD test pads (there is no USB port); the cargo runner is
   `probe-rs`.
 

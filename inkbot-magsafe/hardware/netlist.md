@@ -8,17 +8,17 @@ schematic in [`../kicad/`](../kicad/) and
 
 - **VSYS**: LiPo positive and BQ51050B BAT. The system hangs on the cell
   (detach-to-charge: you never cut over mid-use).
-  - BT1+ → U5 BAT → U1 VDD, U3 VIN, C10 bulk, sense dividers
+  - BT1+ → U5 BAT → U1 VDD/VDDH, U3 VIN, C10 bulk, sense dividers
 - **VSW_PANEL**: load-switch output (U3 VOUT).
 - **V3V3_PANEL**: MIC5504 output to the panel FPC.
 - **QI_RECT**: BQ51050B RECT rail (support caps only).
-- **GND**: common ground, coil shield reference, antenna return.
+- **GND**: common ground, coil shield reference, module ground.
 
 ## Charger and sensing
 
 - U5 (BQ51050B) integrates Qi receive and LiPo charge. ILIM / FOD / TERM set by
   R1–R3. TS/CTRL shares the NTC with the MCU.
-- U5 ~CHG → CHG_STAT (P0.05), pulled up to VSYS
+- U5 ~CHG → CHG_STAT (P0.02), pulled up to VSYS
 - VBAT divider → VBAT_SENSE (P0.03/AIN1)
 - NTC → NTC_SENSE (P0.04/AIN2) and U5 TS/CTRL
 
@@ -43,14 +43,15 @@ Panel: 3.97-inch 480×800 portrait mono e-ink, SSD1677 COG, 24-pin 0.5 mm FPC.
 
 ## Radio, timing, debug
 
-- U1 ANT → matching (C22 stub) → ANT2 2.4 GHz chip antenna
-- LFXO Y1 → XL1/XL2; HFXO Y2 → XC1/XC2
+- U1 is the Raytac MDBT50Q-512K module: 2.4 GHz antenna, 32 MHz HFXO, DC/DC, and
+  RF match are all inside it — no discrete antenna, matching, or HFXO on the board
+- LFXO Y1 → XL1/XL2 (P0.00/P0.01), the only external crystal
 - NFC1/NFC2 (P0.09/P0.10) unused — no NFC antenna; pairing and frames are BLE
 - SWDIO, SWDCLK, NRST, VSYS, GND → TP1–TP5
 
 ## Decoupling
 
-- U1: VDD/VDDH caps, one cap per DEC rail (DEC1/3/4/5/6, DECUSB), DCC inductor
-  per Nordic nRF52833 reference; VBUS tied to GND (USB unused)
+- U1: VDD/VDDH bypass caps only (C15/C16). The module integrates the DC/DC and
+  its decoupling, so there are no DEC rails or DCC inductor; VBUS tied to GND
 - U3/U4/U5: datasheet input/output caps
 - C10: 220 uF across VSYS next to the panel connector for refresh inrush
