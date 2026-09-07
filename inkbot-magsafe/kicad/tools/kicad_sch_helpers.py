@@ -456,14 +456,16 @@ class SchematicBuilder:
 
     def place(self, lib_id: str, ref: str, value: str, x: float, y: float,
               rotation: int = 0, footprint: str = "", lcsc: str = "",
-              mirror_y: bool = False, unit: int = 1) -> PlacedComponent:
+              mirror_y: bool = False, unit: int = 1,
+              dnp: bool = False) -> PlacedComponent:
         """Place a component at grid-snapped coordinates."""
         x, y = snap(x), snap(y)
         u = uid()
         ms = "(mirror y)" if mirror_y else ""
         mirror = f" {ms}" if ms else ""
+        dnp_property = '\n    (dnp yes)' if dnp else ""
 
-        self.components.append(f"""  (symbol (lib_id "{lib_id}") (at {x:.2f} {y:.2f} {rotation}){mirror}
+        self.components.append(f"""  (symbol (lib_id "{lib_id}") (at {x:.2f} {y:.2f} {rotation}){mirror}{dnp_property}
     (uuid "{u}")
     (property "Reference" "{ref}" (at {x:.2f} {y - 3.81:.2f} 0)
       (effects (font (size 1.27 1.27))))

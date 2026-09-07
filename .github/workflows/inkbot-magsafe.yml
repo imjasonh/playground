@@ -75,11 +75,12 @@ jobs:
 
       - name: Build firmware (thumbv7em-none-eabihf)
         run: |
+          elf="${CARGO_TARGET_DIR:-target}/thumbv7em-none-eabihf/release/inkbot-magsafe"
           cargo build --locked --release \
             --target thumbv7em-none-eabihf \
             --features bringup-stub
           python3 tools/check_elf_layout.py \
-            target/thumbv7em-none-eabihf/release/inkbot-magsafe \
+            "$elf" \
             --flash-start 0x27000 \
             --flash-end 0x4f000
 
@@ -87,7 +88,7 @@ jobs:
             --target thumbv7em-none-eabihf \
             --features factory-bringup
           python3 tools/check_elf_layout.py \
-            target/thumbv7em-none-eabihf/release/inkbot-magsafe \
+            "$elf" \
             --flash-start 0x0 \
             --flash-end 0x27000
 
@@ -107,7 +108,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             kicad \
-            kicad-footprints
+            kicad-footprints \
+            kicad-symbols
 
       - name: Check generated schematic
         run: |

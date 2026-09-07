@@ -1,0 +1,3 @@
+(sym_lib_table
+  (lib (name "inkbot_magsafe")(type "KiCad")(uri "${KIPRJMOD}/inkbot-magsafe.kicad_sym")(options "")(descr "inkbot-magsafe production symbols"))
+)

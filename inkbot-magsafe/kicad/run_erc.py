@@ -157,7 +157,7 @@ VALUE_CONTRACT = {
         "Protected battery + NTC",
         "Connector_Molex:Molex_Pico-EZmate_78171-0003_1x03-1MP_P1.20mm_Vertical",
     ),
-    "L1": ("VLS252010CX-100M-1 10uH", "Inductor_SMD:L_TDK_NLV25_2.5x2.0mm"),
+    "L1": ("VLS252010CX-100M-1 10uH", "inkbot_magsafe:TDK_VLS252010CX"),
     "Q1": ("Si1308EDL-T1-GE3", "Package_TO_SOT_SMD:SOT-323_SC-70"),
     "R1": ("845R 1%", "Resistor_SMD:R_0603_1608Metric"),
     "R2": ("200R 1%", "Resistor_SMD:R_0603_1608Metric"),
@@ -167,6 +167,7 @@ VALUE_CONTRACT = {
     "C1": ("33nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
     "C2": ("33nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
     "C3": ("15nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
+    "C16": ("100nF 50V", "Capacitor_SMD:C_0603_1608Metric"),
     "C27": ("100uF 6.3V X5R", "Capacitor_SMD:C_1206_3216Metric"),
     "C38": ("47uF 10V X5R", "Capacitor_SMD:C_1206_3216Metric"),
 }

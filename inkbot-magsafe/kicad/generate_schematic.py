@@ -67,9 +67,18 @@ def pass_v(
     bottom_net: str,
     footprint: str = "",
     stub: float = 2.54,
+    dnp: bool = False,
 ) -> None:
     """Place a vertical two-pin part and label both pins."""
-    sch.place(lib_id, ref, value, x=snap(x), y=snap(y), footprint=footprint)
+    sch.place(
+        lib_id,
+        ref,
+        value,
+        x=snap(x),
+        y=snap(y),
+        footprint=footprint,
+        dnp=dnp,
+    )
     sch.connect_pin(ref, "1", top_net, wire_dy=-stub, by_number=True)
     sch.connect_pin(ref, "2", bottom_net, wire_dy=stub, by_number=True)
 
@@ -196,11 +205,22 @@ def main() -> None:
     pass_v(sch, "Device:C", "C13", "10uF 25V", 125, 50, "QI_RECT", "GND", c1206)
     pass_v(sch, "Device:C", "C14", "100nF 50V", 135, 50, "QI_RECT", "GND", c0603)
     pass_v(sch, "Device:C", "C15", "10uF 25V", 115, 88, "QI_OUT", "GND", c1206)
-    pass_v(sch, "Device:C", "C16", "100nF 10V", 125, 88, "QI_OUT", "GND", c0603)
+    pass_v(sch, "Device:C", "C16", "100nF 50V", 125, 88, "QI_OUT", "GND", c0603)
     pass_v(sch, "Device:R", "R1", "845R 1%", 145, 65, "QI_ILIM", "QI_FOD", r0603)
     pass_v(sch, "Device:R", "R2", "200R 1%", 155, 65, "QI_FOD", "GND", r0603)
     pass_v(sch, "Device:R", "R3", "20k 1%", 145, 88, "QI_RECT", "QI_FOD", r0603)
-    pass_v(sch, "Device:R", "R4", "DNP", 155, 88, "QI_OUT", "QI_FOD", r0603)
+    pass_v(
+        sch,
+        "Device:R",
+        "R4",
+        "DNP",
+        155,
+        88,
+        "QI_OUT",
+        "QI_FOD",
+        r0603,
+        dnp=True,
+    )
     pass_v(
         sch,
         "Device:Thermistor_NTC",
@@ -408,7 +428,7 @@ def main() -> None:
         "VLS252010CX-100M-1 10uH",
         x=snap(320),
         y=snap(125),
-        footprint="Inductor_SMD:L_TDK_NLV25_2.5x2.0mm",
+        footprint="inkbot_magsafe:TDK_VLS252010CX",
     )
     sch.connect_pin("L1", "1", "PANEL_3V0", wire_dy=-5.08, by_number=True)
     sch.connect_pin("L1", "2", "PANEL_SW", wire_dy=5.08, by_number=True)

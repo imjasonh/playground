@@ -89,7 +89,7 @@ SSD1677 COG, and a 24-pin 0.5 mm FPC.
 - U2 uses two 10 uF RECT capacitors plus high-frequency bypass and 10 uF OUT
   capacitance.
 - U3 uses 1 uF IN, 10 uF SYS, and 1 uF BAT capacitors.
-- U4 uses 1 uF input and 4.7 uF output capacitors.
+- U4 uses a 1 uF input capacitor and a 100 uF panel-rail reservoir.
 - C38 is a 47 uF, 10 V MLCC on SYS. C27 is a 100 uF, 6.3 V MLCC on
   PANEL_3V0. Validation must use effective capacitance at operating bias, not
   the zero-bias nominal values.
