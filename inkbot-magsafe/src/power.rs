@@ -15,6 +15,15 @@ pub const FULL_MV: u16 = 4200;
 /// this a refresh risks a half-drawn frame if the cell sags under the spike.
 pub const REFRESH_FLOOR_MV: u16 = 3400;
 
+/// SAADC resolution required by [`vddh_mv_from_saadc`].
+pub const SAADC_RESOLUTION_BITS: u8 = 12;
+/// SAADC internal reference voltage, in millivolts.
+pub const SAADC_REFERENCE_MV: u16 = 600;
+/// Reciprocal SAADC gain required by [`vddh_mv_from_saadc`].
+pub const SAADC_GAIN_RECIPROCAL: u8 = 6;
+/// Hardware divider applied by the nRF52833 VDDHDIV5 input.
+pub const VDDH_DIVIDER: u8 = 5;
+
 /// Convert a 12-bit SAADC sample from VDDHDIV5 to millivolts.
 ///
 /// This assumes the 0.6 V internal reference, gain 1/6, and no oversampling.
@@ -22,7 +31,10 @@ pub const REFRESH_FLOOR_MV: u16 = 3400;
 /// this function.
 pub fn vddh_mv_from_saadc(raw: i16) -> Option<u16> {
     let raw = u32::try_from(raw).ok()?;
-    let millivolts = (raw * 18_000 + 2_048) / 4_096;
+    let full_scale_mv =
+        u32::from(SAADC_REFERENCE_MV) * u32::from(SAADC_GAIN_RECIPROCAL) * u32::from(VDDH_DIVIDER);
+    let adc_steps = 1_u32 << SAADC_RESOLUTION_BITS;
+    let millivolts = (raw * full_scale_mv + adc_steps / 2) / adc_steps;
     u16::try_from(millivolts).ok()
 }
 
@@ -49,6 +61,11 @@ impl ChargerStatus {
     /// Return whether firmware can leave charging enabled.
     pub const fn permits_charging(self) -> bool {
         matches!(self, Self::CompleteOrIdle | Self::Charging)
+    }
+
+    /// Return whether the charger reports a fault.
+    pub const fn is_fault(self) -> bool {
+        matches!(self, Self::RecoverableFault | Self::LatchedFault)
     }
 }
 
@@ -87,11 +104,23 @@ pub fn soc_percent(mv: u16) -> u8 {
     100
 }
 
+/// Estimate cell state of charge from SYS only while wireless input is absent.
+///
+/// When Qi input is present, the BQ25185 power path can raise SYS above BAT.
+/// That sample is useful for brownout policy but does not represent resting
+/// cell voltage.
+pub fn resting_soc_percent(sys_mv: u16, qi_present: bool) -> Option<u8> {
+    if qi_present {
+        None
+    } else {
+        Some(soc_percent(sys_mv))
+    }
+}
+
 /// Whether a panel refresh should proceed at this voltage and panel
-/// temperature. E-ink refresh is unreliable when the cell is nearly empty or
-/// the panel is below freezing or too hot.
-pub fn refresh_allowed(mv: u16, temp_c: i8) -> bool {
-    mv >= REFRESH_FLOOR_MV && (0..=50).contains(&temp_c)
+/// temperature. A charger fault also blocks the panel's high-current load.
+pub fn refresh_allowed(mv: u16, temp_c: i8, charger: ChargerStatus) -> bool {
+    mv >= REFRESH_FLOOR_MV && (0..=50).contains(&temp_c) && !charger.is_fault()
 }
 
 /// The BLE connection interval to request, in units of 1.25 ms. Tight while a
@@ -118,6 +147,10 @@ mod tests {
 
     #[test]
     fn vddh_conversion_matches_saadc_configuration() {
+        assert_eq!(SAADC_RESOLUTION_BITS, 12);
+        assert_eq!(SAADC_REFERENCE_MV, 600);
+        assert_eq!(SAADC_GAIN_RECIPROCAL, 6);
+        assert_eq!(VDDH_DIVIDER, 5);
         assert_eq!(vddh_mv_from_saadc(-1), None);
         assert_eq!(vddh_mv_from_saadc(0), Some(0));
         assert_eq!(vddh_mv_from_saadc(956), Some(4201));
@@ -131,10 +164,19 @@ mod tests {
 
     #[test]
     fn refresh_is_gated_by_voltage_and_temperature() {
-        assert!(refresh_allowed(3800, 22));
-        assert!(!refresh_allowed(3350, 22)); // too empty
-        assert!(!refresh_allowed(3800, -5)); // too cold
-        assert!(!refresh_allowed(3800, 60)); // too hot
+        let idle = ChargerStatus::CompleteOrIdle;
+        assert!(refresh_allowed(3800, 22, idle));
+        assert!(!refresh_allowed(3350, 22, idle)); // too empty
+        assert!(!refresh_allowed(3800, -5, idle)); // too cold
+        assert!(!refresh_allowed(3800, 60, idle)); // too hot
+        assert!(!refresh_allowed(4200, 22, ChargerStatus::RecoverableFault));
+        assert!(!refresh_allowed(4200, 22, ChargerStatus::LatchedFault));
+    }
+
+    #[test]
+    fn sys_is_not_reported_as_resting_cell_voltage_while_qi_is_present() {
+        assert_eq!(resting_soc_percent(3800, false), Some(50));
+        assert_eq!(resting_soc_percent(4500, true), None);
     }
 
     #[test]

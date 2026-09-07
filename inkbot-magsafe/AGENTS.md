@@ -20,9 +20,9 @@ tested; nRF52833 bring-up and BLE are stubbed.
   module on `cfg(target_os = "none")` and provides an empty host `main`. Keep
   both paths building. Until peripheral bring-up lands, target builds require
   the explicit `bringup-stub` feature so nobody can ship the inert WFI loop.
-- **No connector.** Charging is wireless (Qi RX); updates are BLE DFU; recovery
-  is SWD test pads. Do not add a USB port to the design; it was considered and
-  dropped (see the design doc).
+- **No connector.** Charging is wireless (Qi RX). Signed BLE DFU is required
+  but not implemented. Recovery uses SWD test pads. Do not add a USB port to
+  the design; it was considered and dropped (see the design doc).
 - **`[lints.rust] unused = "deny"`.** Unused code fails the build. Do not
   `#[allow(dead_code)]` to keep dead methods; delete them.
 - **Toolchain is pinned.** `rust-toolchain.toml` sets stable plus the
@@ -46,4 +46,6 @@ cargo test                                          # host logic tests
 cargo clippy --all-targets -- -D warnings           # host lints
 cargo build --release --target thumbv7em-none-eabihf \
   --features bringup-stub                            # inert CI image only
+cargo run --release --target thumbv7em-none-eabihf \
+  --features factory-bringup                         # blank-device UICR image
 ```

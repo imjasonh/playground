@@ -9,11 +9,17 @@
 //! module is compiled out and a placeholder `main` keeps the binary target
 //! building.
 
-#[cfg(all(target_os = "none", not(feature = "bringup-stub")))]
+#[cfg(all(
+    target_os = "none",
+    not(any(feature = "bringup-stub", feature = "factory-bringup"))
+))]
 compile_error!(
-    "the device binary is an inert bring-up stub; use --features bringup-stub \
-     for CI only, and remove this guard after the hardware integrations land"
+    "the device binary is inert; use --features bringup-stub for the S140 app \
+     slot or --features factory-bringup for blank-device SWD provisioning"
 );
+
+#[cfg(all(feature = "bringup-stub", feature = "factory-bringup"))]
+compile_error!("bringup-stub and factory-bringup select incompatible memory maps");
 
 #[cfg(target_os = "none")]
 mod firmware {
@@ -29,10 +35,13 @@ mod firmware {
     const NVMC_READ_ONLY: u32 = 0;
     const NVMC_WRITE_ENABLE: u32 = 1;
 
-    // Compile-time guard: the mono framebuffer must fit the RAM budget we
-    // reserve for it (see memory.x). If the geometry ever changes, the build
-    // fails here rather than at runtime.
-    const _: () = assert!(panel::FRAME_BYTES == 48_000);
+    const APP_RAM_BYTES: usize = (128 - 31) * 1024;
+    const MIN_RUNTIME_RAM_BYTES: usize = 32 * 1024;
+
+    // Keep room for stacks, SoftDevice-facing state, flash buffers, and
+    // peripheral drivers after allocating the mono framebuffer. The linked
+    // image and the SoftDevice-reported RAM origin remain release gates.
+    const _: () = assert!(panel::FRAME_BYTES + MIN_RUNTIME_RAM_BYTES <= APP_RAM_BYTES);
 
     fn wait_for_nvmc() {
         while unsafe { core::ptr::read_volatile(NVMC_READY) } == 0 {
@@ -75,7 +84,7 @@ mod firmware {
     fn main() -> ! {
         ensure_regout0_3v0();
 
-        // Remaining hardware bring-up sequence:
+        // Remaining production firmware sequence:
         //   1. Configure panel power disabled and charge enabled before any
         //      other GPIO changes.
         //   2. Start the 32.768 kHz LFXO and S140.

@@ -3,5 +3,5 @@
 # x86_64 target. cortex-m-rt provides link.x, which pulls in memory.x from the
 # build-script search path.
 [target.thumbv7em-none-eabihf]
-rustflags = ["-C", "link-arg=-Tlink.x"]
+rustflags = ["-C", "link-arg=-Tlink.x", "-C", "link-arg=--nmagic"]
 runner = "probe-rs run --chip nRF52833_xxAA"

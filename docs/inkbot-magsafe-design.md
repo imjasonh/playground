@@ -209,7 +209,7 @@ Ship the tile with **no user connector.** Charging is wireless, and the planned
 signed DFU transport uses BLE. This choice is valid only after the bootloader,
 owner-recovery flow, and update rollback tests pass.
 
-The reliability backstop is a set of **SWD test pads** (SWDIO, SWCLK, GND, VDD)
+The reliability backstop is a set of **SWD test pads** (SWDIO, SWDCLK, GND, VDD)
 on the back for factory programming and full-erase recovery. The rear cover must
 define service access for the pogo fixture. Production readback protection must
 preserve CTRL-AP erase recovery.
@@ -410,20 +410,31 @@ what wakes the app (it just receives a frame), and keep the app's push handling
 behind one seam, so a future optional companion push service drops in without a
 firmware change or a second radio. It is not built for launch.
 
-The protocol rejects invalid or unaligned windows, mismatched lengths,
+Protocol version 1 uses a fixed 24-byte header. It rejects unsupported versions,
+nonzero reserved bytes, invalid or unaligned windows, mismatched lengths,
 conflicting frame ids, stale ids, out-of-order chunks, and bad CRCs. A repeated
-identical header returns the committed offset so a dropped transfer can resume.
-Background BLE windows are short; a 48 KB transfer must survive interruption.
+active header returns the received offset so a dropped transfer can resume.
+Passing the CRC marks a frame as verified, but it does not advance the replay
+boundary. Firmware advances that boundary only after atomically committing the
+pixels and metadata to flash.
 
 On demand (app in foreground) is the easy case: connect, open the L2CAP channel,
 stream, commit, done.
 
 ## Firmware
 
-The Rust crate reserves flash and RAM for S140 7.3.0. Host-tested code now
-implements frame validation, replay checks, panel window rules, periodic full
-refresh policy, charger-status decoding, voltage and temperature gates, and
-the fail-closed UICR REGOUT0 policy.
+The Rust crate reserves flash and RAM for S140 7.3.0. The provisional flash map
+allocates 156 KiB to the MBR and S140, two 160 KiB application slots, a 32 KiB
+bootloader, and a 4 KiB state page. The linker also reserves 31 KiB of RAM for
+S140 and rejects an application load segment outside its primary slot.
+Host-tested code implements versioned frame validation, replay checks, a
+separate durable-commit step, panel window rules, periodic full refresh policy,
+charger-status decoding, voltage and temperature gates, and the fail-closed
+UICR REGOUT0 policy.
+
+The S140 application image starts at `0x27000` and cannot boot on a blank
+module. A separate SWD-only factory image starts at address 0, provisions
+`REGOUT0`, and must not be combined with S140.
 
 The following target integrations remain release blockers:
 
@@ -436,7 +447,8 @@ The following target integrations remain release blockers:
   waveform, BUSY timeout, full and partial refresh, deep sleep, and rail
   discharge sequence.
 - Sample `VDDHDIV5`, retain reset and brownout causes, and run a watchdog that
-  also covers stalled panel and radio operations.
+  also covers stalled panel and radio operations. Treat SYS as a resting-cell
+  estimate only when Qi input is absent.
 - Add a signed, power-fail-safe bootloader with a trial boot, rollback, and
   monotonic version floor. Size its active, update, state, and S140 partitions
   from the final linked image.

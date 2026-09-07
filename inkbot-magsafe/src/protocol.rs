@@ -3,10 +3,10 @@
 //!
 //! The link is lossy and background windows are short, so a transfer must be
 //! resumable and idempotent. The sender announces a frame with a
-//! [`FrameHeader`] (id, length, CRC-32, target window), then streams the pixel
-//! bytes in order. The receiver tracks how much it has and a running CRC, so it
-//! never has to buffer the whole frame in RAM and can report an offset to
-//! resume from after a dropped connection.
+//! versioned [`FrameHeader`] (id, length, CRC-32, target window), then streams
+//! the pixel bytes in order. The receiver tracks how much it has and a running
+//! CRC, so it never has to buffer the whole frame in RAM and can report an
+//! offset to resume from after a dropped connection.
 
 use crate::panel::{Window, FRAME_BYTES};
 
@@ -49,8 +49,22 @@ impl Default for Crc32 {
     }
 }
 
+/// Frame-header wire version accepted by this firmware.
+pub const PROTOCOL_VERSION: u8 = 1;
+
 /// Wire length of an encoded [`FrameHeader`].
-pub const HEADER_LEN: usize = 20;
+pub const HEADER_LEN: usize = 24;
+
+/// Why a frame header could not be decoded.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum HeaderDecodeError {
+    /// The input does not contain one complete header.
+    InvalidLength,
+    /// The sender uses a wire version this firmware does not implement.
+    UnsupportedVersion,
+    /// Reserved bytes are nonzero.
+    ReservedBytes,
+}
 
 /// The announcement that opens (or re-opens) a frame transfer.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -66,35 +80,42 @@ pub struct FrameHeader {
 }
 
 impl FrameHeader {
-    /// Encode to the fixed 20-byte little-endian wire form.
+    /// Encode to the fixed 24-byte little-endian wire form.
     pub fn to_bytes(self) -> [u8; HEADER_LEN] {
         let mut b = [0u8; HEADER_LEN];
-        b[0..4].copy_from_slice(&self.id.to_le_bytes());
-        b[4..8].copy_from_slice(&self.len.to_le_bytes());
-        b[8..12].copy_from_slice(&self.crc.to_le_bytes());
-        b[12..14].copy_from_slice(&self.window.x.to_le_bytes());
-        b[14..16].copy_from_slice(&self.window.y.to_le_bytes());
-        b[16..18].copy_from_slice(&self.window.w.to_le_bytes());
-        b[18..20].copy_from_slice(&self.window.h.to_le_bytes());
+        b[0] = PROTOCOL_VERSION;
+        b[4..8].copy_from_slice(&self.id.to_le_bytes());
+        b[8..12].copy_from_slice(&self.len.to_le_bytes());
+        b[12..16].copy_from_slice(&self.crc.to_le_bytes());
+        b[16..18].copy_from_slice(&self.window.x.to_le_bytes());
+        b[18..20].copy_from_slice(&self.window.y.to_le_bytes());
+        b[20..22].copy_from_slice(&self.window.w.to_le_bytes());
+        b[22..24].copy_from_slice(&self.window.h.to_le_bytes());
         b
     }
 
     /// Decode the exact wire form.
-    pub fn from_bytes(b: &[u8]) -> Option<Self> {
+    pub fn from_bytes(b: &[u8]) -> Result<Self, HeaderDecodeError> {
         if b.len() != HEADER_LEN {
-            return None;
+            return Err(HeaderDecodeError::InvalidLength);
+        }
+        if b[0] != PROTOCOL_VERSION {
+            return Err(HeaderDecodeError::UnsupportedVersion);
+        }
+        if b[1..4] != [0, 0, 0] {
+            return Err(HeaderDecodeError::ReservedBytes);
         }
         let word = |o: usize| u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
         let half = |o: usize| u16::from_le_bytes([b[o], b[o + 1]]);
-        Some(FrameHeader {
-            id: word(0),
-            len: word(4),
-            crc: word(8),
+        Ok(FrameHeader {
+            id: word(4),
+            len: word(8),
+            crc: word(12),
             window: Window {
-                x: half(12),
-                y: half(14),
-                w: half(16),
-                h: half(18),
+                x: half(16),
+                y: half(18),
+                w: half(20),
+                h: half(22),
             },
         })
     }
@@ -119,6 +140,8 @@ pub enum Begin {
     Started,
     /// The same frame was announced again. The sender can resume at this offset.
     Resumed(u32),
+    /// The same frame already passed its length and CRC checks.
+    Verified,
 }
 
 /// Why a frame announcement was rejected.
@@ -130,8 +153,27 @@ pub enum BeginError {
     InvalidLength,
     /// The frame id matches an active transfer but describes different data.
     ConflictingId,
-    /// The frame id is not newer than the most recently completed frame.
+    /// Another verified frame must be committed or discarded first.
+    UncommittedFrame,
+    /// The frame id is not newer than the active or most recently committed frame.
     StaleId,
+}
+
+/// Why a frame chunk was rejected.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum AcceptError {
+    /// No transfer is accepting bytes.
+    NoActiveTransfer,
+    /// The chunk does not begin at the receiver's requested offset.
+    WrongOffset,
+    /// Empty chunks cannot advance a transfer.
+    EmptyChunk,
+    /// The chunk extends past the announced payload length.
+    ChunkTooLong,
+    /// The completed payload does not match the announced CRC.
+    CrcMismatch,
+    /// Internal transfer counters became inconsistent.
+    InvalidState,
 }
 
 /// The outcome of offering a chunk to the [`Receiver`].
@@ -141,9 +183,15 @@ pub enum Accept {
     Progress(u32),
     /// All bytes are in and the CRC matched; the frame is ready to paint.
     Complete,
-    /// The chunk did not fit the active transfer. The sender should resume
-    /// from [`Receiver::offset`].
-    Rejected,
+    /// The chunk was rejected.
+    Rejected(AcceptError),
+}
+
+/// A frame that the caller has made durable.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct CommittedFrame {
+    pub id: u32,
+    pub window: Window,
 }
 
 /// Tracks one in-flight frame transfer.
@@ -155,6 +203,7 @@ pub struct Receiver {
     received: u32,
     running: Crc32,
     active: bool,
+    verified: bool,
     last_completed: Option<(u32, Window)>,
 }
 
@@ -169,6 +218,7 @@ impl Receiver {
             received: 0,
             running: Crc32::new(),
             active: false,
+            verified: false,
             last_completed: None,
         }
     }
@@ -184,11 +234,21 @@ impl Receiver {
     /// so a dropped-and-retried header does not restart the download.
     pub fn begin(&mut self, header: FrameHeader) -> Result<Begin, BeginError> {
         header.validate()?;
-        if self.active && self.id == header.id {
+        if (self.active || self.verified) && self.id == header.id {
             if self.len == header.len && self.crc == header.crc && self.window == header.window {
-                return Ok(Begin::Resumed(self.received));
+                return if self.verified {
+                    Ok(Begin::Verified)
+                } else {
+                    Ok(Begin::Resumed(self.received))
+                };
             }
             return Err(BeginError::ConflictingId);
+        }
+        if self.verified {
+            return Err(BeginError::UncommittedFrame);
+        }
+        if self.active && !sequence_is_newer(header.id, self.id) {
+            return Err(BeginError::StaleId);
         }
         if let Some((last_id, _)) = self.last_completed {
             if !sequence_is_newer(header.id, last_id) {
@@ -202,6 +262,7 @@ impl Receiver {
         self.received = 0;
         self.running = Crc32::new();
         self.active = true;
+        self.verified = false;
         Ok(Begin::Started)
     }
 
@@ -215,14 +276,36 @@ impl Receiver {
         self.active
     }
 
-    /// The last frame that passed its length and CRC checks.
+    /// Whether the received frame is waiting for a durable commit.
+    pub fn is_verified(&self) -> bool {
+        self.verified
+    }
+
+    /// The last frame that the caller committed to durable storage.
     pub fn last_completed(&self) -> Option<(u32, Window)> {
         self.last_completed
     }
 
-    /// Cancel the active transfer without changing the replay boundary.
+    /// Record a verified frame after its pixels and metadata are durable.
+    pub fn commit(&mut self) -> Option<CommittedFrame> {
+        if !self.verified {
+            return None;
+        }
+        let committed = CommittedFrame {
+            id: self.id,
+            window: self.window,
+        };
+        self.last_completed = Some((committed.id, committed.window));
+        self.verified = false;
+        self.received = 0;
+        self.running = Crc32::new();
+        Some(committed)
+    }
+
+    /// Discard the active or verified transfer without moving the replay boundary.
     pub fn cancel(&mut self) {
         self.active = false;
+        self.verified = false;
         self.received = 0;
         self.running = Crc32::new();
     }
@@ -230,17 +313,23 @@ impl Receiver {
     /// Offer a chunk that the sender says begins at `at`.
     pub fn accept(&mut self, at: u32, chunk: &[u8]) -> Accept {
         let Ok(chunk_len) = u32::try_from(chunk.len()) else {
-            return Accept::Rejected;
+            return Accept::Rejected(AcceptError::ChunkTooLong);
         };
-        if !self.active || at != self.received || chunk_len == 0 {
-            return Accept::Rejected;
+        if !self.active {
+            return Accept::Rejected(AcceptError::NoActiveTransfer);
+        }
+        if at != self.received {
+            return Accept::Rejected(AcceptError::WrongOffset);
+        }
+        if chunk_len == 0 {
+            return Accept::Rejected(AcceptError::EmptyChunk);
         }
         let Some(remaining) = self.len.checked_sub(self.received) else {
             self.cancel();
-            return Accept::Rejected;
+            return Accept::Rejected(AcceptError::InvalidState);
         };
         if chunk_len > remaining {
-            return Accept::Rejected;
+            return Accept::Rejected(AcceptError::ChunkTooLong);
         }
         self.running.update(chunk);
         self.received += chunk_len;
@@ -250,10 +339,11 @@ impl Receiver {
         let matched = self.running.finalize() == self.crc;
         self.active = false;
         if matched {
-            self.last_completed = Some((self.id, self.window));
+            self.verified = true;
             Accept::Complete
         } else {
-            Accept::Rejected
+            self.cancel();
+            Accept::Rejected(AcceptError::CrcMismatch)
         }
     }
 }
@@ -306,8 +396,28 @@ mod tests {
         let h = header_for(b"pixels", 7);
         let decoded = FrameHeader::from_bytes(&h.to_bytes()).unwrap();
         assert_eq!(h, decoded);
-        assert!(FrameHeader::from_bytes(&[0u8; 4]).is_none());
-        assert!(FrameHeader::from_bytes(&[0u8; HEADER_LEN + 1]).is_none());
+        assert_eq!(
+            FrameHeader::from_bytes(&[0u8; 4]),
+            Err(HeaderDecodeError::InvalidLength)
+        );
+        assert_eq!(
+            FrameHeader::from_bytes(&[0u8; HEADER_LEN + 1]),
+            Err(HeaderDecodeError::InvalidLength)
+        );
+
+        let mut unsupported = h.to_bytes();
+        unsupported[0] = PROTOCOL_VERSION + 1;
+        assert_eq!(
+            FrameHeader::from_bytes(&unsupported),
+            Err(HeaderDecodeError::UnsupportedVersion)
+        );
+
+        let mut reserved = h.to_bytes();
+        reserved[2] = 1;
+        assert_eq!(
+            FrameHeader::from_bytes(&reserved),
+            Err(HeaderDecodeError::ReservedBytes)
+        );
     }
 
     #[test]
@@ -327,6 +437,15 @@ mod tests {
         assert_eq!(rx.offset(), 4);
         assert_eq!(rx.accept(4, &data[4..]), Accept::Complete);
         assert!(!rx.is_active());
+        assert!(rx.is_verified());
+        assert_eq!(rx.last_completed(), None);
+        assert_eq!(
+            rx.commit(),
+            Some(CommittedFrame {
+                id: 1,
+                window: header.window
+            })
+        );
         assert_eq!(rx.last_completed(), Some((1, header.window)));
     }
 
@@ -346,7 +465,10 @@ mod tests {
         rx.begin(h).unwrap();
         assert_eq!(rx.accept(0, &data[0..4]), Accept::Progress(4));
         // Sender jumps ahead; receiver rejects and keeps its offset for resume.
-        assert_eq!(rx.accept(6, &data[6..]), Accept::Rejected);
+        assert_eq!(
+            rx.accept(6, &data[6..]),
+            Accept::Rejected(AcceptError::WrongOffset)
+        );
         assert_eq!(rx.offset(), 4);
         assert_eq!(rx.accept(4, &data[4..]), Accept::Complete);
     }
@@ -364,7 +486,14 @@ mod tests {
         header.crc ^= 0x1; // wrong CRC
         let mut rx = Receiver::new();
         rx.begin(header).unwrap();
-        assert_eq!(rx.accept(0, data), Accept::Rejected);
+        assert_eq!(
+            rx.accept(0, data),
+            Accept::Rejected(AcceptError::CrcMismatch)
+        );
+        assert_eq!(rx.offset(), 0);
+        assert!(!rx.is_active());
+        assert!(!rx.is_verified());
+        assert_eq!(rx.commit(), None);
     }
 
     #[test]
@@ -385,6 +514,7 @@ mod tests {
         assert_eq!(rx.begin(h), Ok(Begin::Resumed(4)));
         assert_eq!(rx.offset(), 4);
         assert_eq!(rx.accept(4, &data[4..]), Accept::Complete);
+        assert_eq!(rx.begin(h), Ok(Begin::Verified));
     }
 
     #[test]
@@ -452,6 +582,8 @@ mod tests {
         conflict.crc ^= 1;
         assert_eq!(rx.begin(conflict), Err(BeginError::ConflictingId));
         assert_eq!(rx.accept(0, data), Accept::Complete);
+        assert_eq!(rx.begin(h), Ok(Begin::Verified));
+        assert_eq!(rx.commit().unwrap().id, 7);
         assert_eq!(rx.begin(h), Err(BeginError::StaleId));
 
         let mut older = h;
@@ -473,9 +605,55 @@ mod tests {
         };
         let mut rx = Receiver::new();
         rx.begin(h).unwrap();
-        assert_eq!(rx.accept(0, &[]), Accept::Rejected);
-        assert_eq!(rx.accept(0, b"123456789"), Accept::Rejected);
+        assert_eq!(rx.accept(0, &[]), Accept::Rejected(AcceptError::EmptyChunk));
+        assert_eq!(
+            rx.accept(0, b"123456789"),
+            Accept::Rejected(AcceptError::ChunkTooLong)
+        );
         assert_eq!(rx.offset(), 0);
+    }
+
+    #[test]
+    fn active_transfer_rejects_an_older_replacement() {
+        let data = b"abcdefgh";
+        let active = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 1,
+            },
+            ..header_for(data, 10)
+        };
+        let mut rx = Receiver::new();
+        rx.begin(active).unwrap();
+        let mut older = active;
+        older.id = 9;
+        assert_eq!(rx.begin(older), Err(BeginError::StaleId));
+        assert_eq!(rx.begin(active), Ok(Begin::Resumed(0)));
+    }
+
+    #[test]
+    fn verified_frame_blocks_replacement_until_commit_or_cancel() {
+        let data = b"abcdefgh";
+        let first = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 1,
+            },
+            ..header_for(data, 1)
+        };
+        let mut rx = Receiver::new();
+        rx.begin(first).unwrap();
+        assert_eq!(rx.accept(0, data), Accept::Complete);
+
+        let mut next = first;
+        next.id = 2;
+        assert_eq!(rx.begin(next), Err(BeginError::UncommittedFrame));
+        rx.cancel();
+        assert_eq!(rx.begin(next), Ok(Begin::Started));
     }
 
     #[test]

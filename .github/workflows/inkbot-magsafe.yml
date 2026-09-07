@@ -59,6 +59,13 @@ jobs:
       - name: Test (host logic)
         run: cargo test --locked
 
+      - name: Reject an unqualified target image
+        run: |
+          if cargo check --locked --target thumbv7em-none-eabihf; then
+            echo "target build succeeded without an explicit inert-image feature"
+            exit 1
+          fi
+
       - name: Clippy (thumbv7em-none-eabihf)
         run: >-
           cargo clippy --locked
@@ -67,10 +74,22 @@ jobs:
           -- -D warnings
 
       - name: Build firmware (thumbv7em-none-eabihf)
-        run: >-
-          cargo build --locked --release
-          --target thumbv7em-none-eabihf
-          --features bringup-stub
+        run: |
+          cargo build --locked --release \
+            --target thumbv7em-none-eabihf \
+            --features bringup-stub
+          python3 tools/check_elf_layout.py \
+            target/thumbv7em-none-eabihf/release/inkbot-magsafe \
+            --flash-start 0x27000 \
+            --flash-end 0x4f000
+
+          cargo build --locked --release \
+            --target thumbv7em-none-eabihf \
+            --features factory-bringup
+          python3 tools/check_elf_layout.py \
+            target/thumbv7em-none-eabihf/release/inkbot-magsafe \
+            --flash-start 0x0 \
+            --flash-end 0x27000
 
   hardware:
     name: Schematic contracts + PCB DRC
@@ -86,7 +105,9 @@ jobs:
       - name: Install KiCad
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends kicad kicad-footprints
+          sudo apt-get install -y --no-install-recommends \
+            kicad \
+            kicad-footprints
 
       - name: Check generated schematic
         run: |

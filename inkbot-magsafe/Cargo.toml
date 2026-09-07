@@ -16,6 +16,7 @@ bench = false
 [features]
 default = []
 bringup-stub = []
+factory-bringup = []
 
 [lints.rust]
 unused = "deny"
