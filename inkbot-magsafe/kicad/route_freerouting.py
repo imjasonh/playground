@@ -637,43 +637,21 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("C7", "1"),
         (2.225, 68.7),
     )
-    stat_start_via = board_point(48.2, 59.4)
-    stat_end_via = board_point(13.5, 87.8)
-    add_locked_track(
-        pad_center("U3", "3"),
-        board_point(48.8, 60.0),
+    connect_through_front(
         "/CHG_STAT2",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_track(
-        board_point(48.8, 60.0),
-        stat_start_via,
-        "/CHG_STAT2",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(stat_start_via, "/CHG_STAT2")
-    add_locked_path(
+        ("U3", "3"),
+        (49.75, 60.0),
         (
-            (48.2, 59.4),
-            (49.0, 60.2),
+            (49.0, 60.75),
             (49.0, 82.9),
             (48.5, 83.4),
             (20.5, 83.4),
             (20.5, 88.7),
             (20.0, 89.2),
             (14.9, 89.2),
-            (13.5, 87.8),
         ),
-        "/CHG_STAT2",
-        pcbnew.F_Cu,
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(stat_end_via, "/CHG_STAT2")
-    add_locked_track(
-        stat_end_via,
-        pad_center("U1", "21"),
-        "/CHG_STAT2",
-        width=layout_route.mm(0.15),
+        ("U1", "21"),
+        (13.5, 87.8),
     )
     connect_through_front(
         "/VDD_NRF",
@@ -682,127 +660,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         (),
         ("C22", "1"),
         (16.5, 93.0),
-    )
-    # BAT exits between adjacent charger pins, then widens below U3. Keeping it
-    # on B.Cu avoids crossing the CHG_STAT2 front-layer channel.
-    add_locked_track(
-        pad_center("U3", "2"),
-        board_point(48.2, 60.4),
-        "/BAT",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_path(
-        (
-            (48.2, 60.4),
-            (48.2, 62.6),
-            (53.825, 62.6),
-            (55.225, 64.0),
-        ),
-        "/BAT",
-        pcbnew.B_Cu,
-        width=layout_route.mm(0.3),
-    )
-
-    # QI_COMM2 and QI_FOD change to the back-side channels between passive
-    # columns only while crossing the two fixed bootstrap routes.
-    comm_start_via = board_point(10.1, 58.75)
-    comm_upper_via = board_point(5.0, 64.5)
-    comm_lower_via = board_point(5.0, 69.5)
-    comm_end_via = board_point(4.725, 71.4)
-    add_locked_track(
-        pad_center("U2", "15"),
-        comm_start_via,
-        "/QI_COMM2",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(comm_start_via, "/QI_COMM2")
-    add_locked_path(
-        (
-            (10.1, 58.75),
-            (10.8, 58.05),
-            (10.8, 56.3),
-            (10.3, 55.8),
-            (5.0, 55.8),
-            (5.0, 64.5),
-        ),
-        "/QI_COMM2",
-        pcbnew.F_Cu,
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(comm_upper_via, "/QI_COMM2")
-    add_locked_track(
-        comm_upper_via,
-        comm_lower_via,
-        "/QI_COMM2",
-        layer=pcbnew.B_Cu,
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(comm_lower_via, "/QI_COMM2")
-    add_locked_path(
-        ((5.0, 69.5), (5.0, 71.125), (4.725, 71.4)),
-        "/QI_COMM2",
-        pcbnew.F_Cu,
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(comm_end_via, "/QI_COMM2")
-    add_locked_track(
-        comm_end_via,
-        pad_center("C11", "1"),
-        "/QI_COMM2",
-        width=layout_route.mm(0.15),
-    )
-
-    fod_start_via = board_point(9.6, 57.6)
-    fod_upper_via = board_point(9.0, 64.5)
-    fod_lower_via = board_point(9.0, 69.5)
-    fod_end_via = board_point(9.0, 77.8)
-    add_locked_track(
-        pad_center("U2", "14"),
-        board_point(9.1, 58.25),
-        "/QI_FOD",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_track(
-        board_point(9.1, 58.25),
-        fod_start_via,
-        "/QI_FOD",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(fod_start_via, "/QI_FOD")
-    add_locked_path(
-        (
-            (9.6, 57.6),
-            (8.8, 56.8),
-            (8.2, 57.4),
-            (8.2, 63.7),
-            (9.0, 64.5),
-        ),
-        "/QI_FOD",
-        pcbnew.F_Cu,
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(fod_upper_via, "/QI_FOD")
-    add_locked_track(
-        fod_upper_via,
-        fod_lower_via,
-        "/QI_FOD",
-        layer=pcbnew.B_Cu,
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(fod_lower_via, "/QI_FOD")
-    add_locked_track(
-        fod_lower_via,
-        fod_end_via,
-        "/QI_FOD",
-        layer=pcbnew.F_Cu,
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(fod_end_via, "/QI_FOD")
-    add_locked_track(
-        fod_end_via,
-        pad_center("R1", "2"),
-        "/QI_FOD",
-        width=layout_route.mm(0.15),
     )
 
     settings = board.GetDesignSettings()
