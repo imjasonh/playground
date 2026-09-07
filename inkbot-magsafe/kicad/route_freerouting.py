@@ -703,7 +703,7 @@ def mark_power_layers(path: Path) -> None:
     classes = (
         (
             "power",
-            500,
+            300,
             150.1,
             (
                 "/BAT",
@@ -717,13 +717,13 @@ def mark_power_layers(path: Path) -> None:
         ),
         (
             "rail",
-            300,
+            250,
             150.1,
             ("/MCU_3V0", "/PANEL_3V0"),
         ),
         (
             "panel_high_voltage",
-            250,
+            200,
             250.1,
             (
                 "/PANEL_PUMP",
