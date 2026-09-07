@@ -12,9 +12,10 @@
 - The battery cutout is **34 x 23 mm** with 1 mm corner radii. It accepts a
   protected LP242030 pack no larger than 31 x 20.5 mm in plan view and leaves
   room for an adhesive carrier.
-- Copper stays at least 0.5 mm from routed edges. Signal clearance is 0.12 mm.
+- Copper stays at least 0.5 mm from routed edges. Signal clearance is 0.12 mm,
+  with 0.10 mm necks only where the module's staggered lands require them.
   Standard vias are 0.5 mm with a 0.25 mm drill, which provides a 0.125 mm
-  nominal annular ring. Both values remain within the selected fabricator's
+  nominal annular ring. These values remain within the selected fabricator's
   standard multilayer capability.
 - The Raytac module's antenna end is flush with the left board edge. The
   footprint and board rule remove copper, tracks, and vias from every layer

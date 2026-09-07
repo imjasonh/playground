@@ -710,7 +710,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         pad_center("U1", "11"),
         qi_present_module_via,
         "/QI_PRESENT",
-        width=layout_route.mm(0.12),
+        width=layout_route.MIN_TRACK_W,
     )
     add_locked_via(qi_present_module_via, "/QI_PRESENT")
     add_locked_path(
@@ -745,7 +745,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     default_netclass.SetViaDiameter(layout_route.VIA_D)
     default_netclass.SetViaDrill(layout_route.VIA_DRILL)
     settings.m_MinClearance = layout_route.mm(layout_route.CLEAR)
-    settings.m_TrackMinWidth = layout_route.mm(layout_route.CLEAR)
+    settings.m_TrackMinWidth = layout_route.MIN_TRACK_W
     settings.m_ViasMinSize = layout_route.VIA_D
     settings.m_MinThroughDrill = layout_route.VIA_DRILL
     settings.SetCustomTrackWidth(layout_route.TRACK_W)

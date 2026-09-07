@@ -257,9 +257,10 @@ matching network, but the host layout still controls its performance:
 A 0.8 mm, four-layer PCB uses the JLC7628 stack with 1 oz outer and 0.5 oz
 inner copper. In1.Cu is the SYS plane, and In2.Cu is ground. The routed
 34 x 23 mm battery cutout has 1 mm corner radii. Standard vias are
-0.5/0.25 mm, signal clearance is 0.12 mm, and copper stays 0.5 mm from every
-routed edge. The selected fabricator lists these values within its standard
-multilayer process, but the fabrication drawing and quote remain release gates.
+0.5/0.25 mm, signal clearance is 0.12 mm, and one module escape uses a 0.10 mm
+neck. Copper stays 0.5 mm from every routed edge. The selected fabricator lists
+these values within its standard multilayer process, but the fabrication
+drawing and quote remain release gates.
 
 The 3.97-inch panel bonds to the front and overlaps the magnetic ring. The
 back requires a rigid spacer and an insulating, flame-retardant cover. A future

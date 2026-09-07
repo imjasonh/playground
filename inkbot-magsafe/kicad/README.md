@@ -69,6 +69,6 @@ design document first.
 - **TPS7A0230P** 3.0 V MCU rail with nRF52840 VDD and VDDH tied together.
 - **TPS7A2030P** 3.0 V panel rail with active discharge.
 - 0.8 mm, four-layer JLC7628 PCB with a 34 x 23 mm rounded battery cutout,
-  1 oz outer copper, 0.5 oz inner copper, 0.12 mm signal clearance, and
-  0.5/0.25 mm vias.
+  1 oz outer copper, 0.5 oz inner copper, 0.12 mm signal clearance, one
+  0.10 mm module neck, and 0.5/0.25 mm vias.
 - A bonded front panel plus a structural spacer and insulating rear cover.
