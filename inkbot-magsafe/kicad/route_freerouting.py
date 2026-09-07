@@ -691,8 +691,8 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     # via-in-pad barrels. Closely spaced IC lands share local ground buses.
     for reference, pad_number, via_xy in (
         ("J3", "4", (11.0, 55.0)),
-        ("C12", "2", (4.025, 73.5)),
-        ("C13", "2", (8.9, 74.5)),
+        ("C12", "2", (4.5, 70.5)),
+        ("C13", "2", (7.8, 72.8)),
         ("C14", "2", (11.475, 73.3)),
         ("C15", "2", (4.025, 80.0)),
         ("C16", "2", (7.175, 78.4)),
