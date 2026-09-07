@@ -812,6 +812,37 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         width=layout_route.mm(0.12),
     )
 
+    chg_sda_module_via = board_point(13.3, 88.6)
+    chg_sda_pullup_via = board_point(58.0, 67.0)
+    add_locked_track(
+        pad_center("U1", "23"),
+        chg_sda_module_via,
+        "/CHG_SDA",
+        width=layout_route.MIN_TRACK_W,
+    )
+    add_locked_via(chg_sda_module_via, "/CHG_SDA")
+    add_locked_track(
+        pad_center("R7", "2"),
+        chg_sda_pullup_via,
+        "/CHG_SDA",
+        width=layout_route.mm(0.12),
+    )
+    add_locked_via(chg_sda_pullup_via, "/CHG_SDA")
+    add_locked_path(
+        (
+            (13.3, 88.6),
+            (28.2, 86.2),
+            (38.8, 85.0),
+            (46.2, 82.4),
+            (47.6, 82.4),
+            (47.8, 82.2),
+            (58.0, 67.0),
+        ),
+        "/CHG_SDA",
+        pcbnew.F_Cu,
+        width=layout_route.mm(0.12),
+    )
+
     add_locked_path(
         (
             (5.35, 66.75),
