@@ -117,7 +117,8 @@ def text(s: str, x: float, y: float, layer: str, size: float = 1.0) -> str:
     )
 
 
-def main() -> None:
+def main(output: Path = OUT) -> None:
+    """Write the generated board outline to `output`."""
     cx = BOARD_W / 2
     bat_x = cx - BAT_W / 2
     bat_y = BAT_CY - BAT_H / 2
@@ -250,8 +251,8 @@ def main() -> None:
 
 )
 """
-    OUT.write_text(pcb)
-    print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")
+    output.write_text(pcb)
+    print(f"wrote {output} ({output.stat().st_size} bytes)")
     print(
         f"board {BOARD_W}x{BOARD_H} mm portrait, 0.8 mm EVT, ring center {RING_CY} mm "
         f"from top, battery cutout {BAT_W}x{BAT_H} mm"

@@ -25,6 +25,9 @@ NETLIST = layout_route.NETLIST
 FAB = layout_route.FAB
 DSN = FAB / "inkbot-magsafe.dsn"
 SES = FAB / "inkbot-magsafe.ses"
+ROUTE_BASE = FAB / "inkbot-magsafe-route-base.kicad_pcb"
+PLACED_BOARD = FAB / "inkbot-magsafe-placed.kicad_pcb"
+INCOMPLETE_BOARD = FAB / "inkbot-magsafe-incomplete.kicad_pcb"
 VIA_NAME = re.compile(r"Via\[(\d+)-(\d+)\]_(\d+):(\d+)_um")
 
 
@@ -120,6 +123,11 @@ def import_freerouting_session(board: pcbnew.BOARD, path: Path) -> None:
                 # Freerouting calculates clearance using this exact width.
                 # Widening a path after import invalidates that calculation.
                 width = coordinate(path_form[2])
+                if width < layout_route.mm(layout_route.CLEAR):
+                    raise ValueError(
+                        f"Freerouting emitted {pcbnew.ToMM(width):.3f} mm "
+                        f"track on {net_name}; minimum is {layout_route.CLEAR:.3f} mm"
+                    )
                 values = path_form[3:]
                 if len(values) % 2:
                     raise ValueError(f"odd coordinate count for net {net_name}")
@@ -193,7 +201,7 @@ def add_rect_rule_area(
 
 def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     """Build the outline, place footprints, assign nets, and add power planes."""
-    generate_pcb.main()
+    generate_pcb.main(ROUTE_BASE)
     subprocess.run(
         [
             "kicad-cli",
@@ -208,7 +216,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     )
 
     components, nets = layout_route.parse_netlist(NETLIST)
-    board = pcbnew.LoadBoard(str(BOARD))
+    board = pcbnew.LoadBoard(str(ROUTE_BASE))
     for footprint in list(board.GetFootprints()):
         board.Remove(footprint)
 
@@ -286,11 +294,30 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
                 continue
             raise ValueError(f"unassigned board pad {reference}.{pad.GetNumber()}")
 
-    def pad_center(reference: str, pad_number: str) -> pcbnew.VECTOR2I:
-        for pad in placed[reference].Pads():
-            if pad.GetNumber() == pad_number:
-                return pad.GetCenter()
-        raise ValueError(f"missing pad {reference}.{pad_number}")
+    def pad_center(
+        reference: str,
+        pad_number: str,
+        near_xy: tuple[float, float] | None = None,
+    ) -> pcbnew.VECTOR2I:
+        matches = [
+            pad.GetCenter()
+            for pad in placed[reference].Pads()
+            if pad.GetNumber() == pad_number
+        ]
+        if not matches:
+            raise ValueError(f"missing pad {reference}.{pad_number}")
+        if len(matches) == 1:
+            return matches[0]
+        if near_xy is None:
+            raise ValueError(f"ambiguous duplicate pad {reference}.{pad_number}")
+        target = pcbnew.VECTOR2I(
+            layout_route.mm(near_xy[0]),
+            layout_route.mm(near_xy[1]),
+        )
+        return min(
+            matches,
+            key=lambda point: (point.x - target.x) ** 2 + (point.y - target.y) ** 2,
+        )
 
     def add_locked_track(
         start: pcbnew.VECTOR2I,
@@ -324,10 +351,12 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         via_xy: tuple[float, float],
         path_xy: tuple[tuple[float, float], ...] = (),
         width: int = layout_route.TRACK_W,
+        net_name: str = layout_route.SYS,
+        pad_near_xy: tuple[float, float] | None = None,
     ) -> None:
         via = pcbnew.VECTOR2I(layout_route.mm(via_xy[0]), layout_route.mm(via_xy[1]))
         points = [
-            pad_center(reference, pad_number),
+            pad_center(reference, pad_number, pad_near_xy),
             *(
                 pcbnew.VECTOR2I(layout_route.mm(x), layout_route.mm(y))
                 for x, y in path_xy
@@ -335,8 +364,21 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             via,
         ]
         for start, end in zip(points, points[1:]):
-            add_locked_track(start, end, layout_route.SYS, width=width)
-        add_locked_via(via, layout_route.SYS)
+            add_locked_track(start, end, net_name, width=width)
+        add_locked_via(via, net_name)
+
+    def board_point(x: float, y: float) -> pcbnew.VECTOR2I:
+        return pcbnew.VECTOR2I(layout_route.mm(x), layout_route.mm(y))
+
+    def add_locked_path(
+        coordinates: tuple[tuple[float, float], ...],
+        net_name: str,
+        layer: int,
+        width: int = layout_route.TRACK_W,
+    ) -> None:
+        points = [board_point(x, y) for x, y in coordinates]
+        for start, end in zip(points, points[1:]):
+            add_locked_track(start, end, net_name, layer=layer, width=width)
 
     # Short, narrow escapes connect every SYS load to the solid In1.Cu plane.
     # This avoids routing a wide trace through the 0.4 mm-pitch charger pads.
@@ -359,6 +401,129 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     )
     fanout_to_plane("U4", "1", (36.0, 89.0), width=layout_route.mm(0.3))
     fanout_to_plane("C18", "1", (51.55, 65.5), width=layout_route.mm(0.5))
+
+    # Each ground cluster reaches the solid In2.Cu plane through a locked
+    # through-via. Keep vias beside passive pads to avoid solder-wicking
+    # via-in-pad joints.
+    for reference, pad_number, via_xy in (
+        ("J3", "4", (11.0, 55.0)),
+        ("C12", "2", (11.0, 74.35)),
+        ("C13", "2", (4.025, 77.25)),
+        ("C14", "2", (7.175, 77.25)),
+        ("C15", "2", (11.35, 77.35)),
+        ("C16", "2", (3.775, 80.25)),
+        ("R2", "2", (11.0, 80.35)),
+        ("C17", "2", (48.55, 64.0)),
+        ("C18", "2", (54.45, 64.0)),
+        ("C19", "2", (58.0, 64.0)),
+        ("R5", "2", (48.55, 67.0)),
+        ("R6", "2", (54.0, 67.0)),
+        ("R7", "2", (58.0, 67.0)),
+        ("C20", "2", (54.0, 70.0)),
+        ("U3", "5", (49.75, 58.6)),
+        ("U3", "11", (52.0, 61.55)),
+        ("J2", "3", (54.2, 80.1)),
+        ("C21", "2", (20.4, 90.5)),
+        ("C22", "2", (20.4, 93.0)),
+        ("C23", "2", (25.4, 85.0)),
+        ("C24", "2", (25.4, 87.5)),
+        ("C26", "2", (29.7, 87.0)),
+        ("C28", "2", (29.95, 84.5)),
+        ("C29", "2", (33.775, 84.5)),
+        ("C30", "2", (37.775, 84.5)),
+        ("C31", "2", (41.95, 84.5)),
+        ("C32", "2", (45.95, 84.5)),
+        ("C33", "2", (49.95, 84.5)),
+        ("C34", "2", (53.95, 84.5)),
+        ("C35", "2", (58.0, 84.5)),
+        ("C36", "2", (30.8, 90.0)),
+        ("R11", "2", (30.8, 93.0)),
+        ("R12", "2", (34.8, 93.0)),
+        ("C38", "2", (26.3, 97.475)),
+        ("D2", "1", (53.35, 85.7)),
+        ("J1", "8", (42.75, 97.0)),
+        ("J1", "17", (47.25, 97.0)),
+        ("TP5", "1", (58.6, 97.0)),
+        ("U4", "2", (34.85, 88.3)),
+        ("U1", "15", (16.4, 84.2)),
+        ("U1", "33", (16.4, 93.8)),
+        ("U1", "55", (5.2, 95.0)),
+    ):
+        fanout_to_plane(
+            reference,
+            pad_number,
+            via_xy,
+            net_name=layout_route.GND,
+        )
+
+    # The module's first two ground lands share one nearby stitch.
+    module_ground_via = board_point(5.1, 83.3)
+    for pad_number in ("1", "2"):
+        add_locked_track(
+            pad_center("U1", pad_number),
+            module_ground_via,
+            layout_route.GND,
+        )
+    add_locked_via(module_ground_via, layout_route.GND)
+
+    # Both mechanical tabs on each connector need a physical ground path.
+    for reference, pad_near_xy, via_xy in (
+        ("J1", (37.35, 92.6), (36.1, 92.6)),
+        ("J1", (52.65, 92.6), (53.9, 92.6)),
+        ("J2", (50.65, 75.1), (50.65, 73.9)),
+        ("J2", (55.35, 75.1), (55.35, 73.9)),
+    ):
+        fanout_to_plane(
+            reference,
+            "MP",
+            via_xy,
+            net_name=layout_route.GND,
+            pad_near_xy=pad_near_xy,
+        )
+
+    # Fan out the BQ51013C's perimeter ground lands before routing. Its exposed
+    # pad connects to the upper stitch through copper under the package.
+    qi_ground_pads = [
+        pad
+        for pad in placed["U2"].Pads()
+        if pad.GetNetname() == layout_route.GND
+    ]
+    upper_bus_y = 55.8
+    lower_bus_y = 62.1
+    for pad in qi_ground_pads:
+        center = pad.GetCenter()
+        x = pcbnew.ToMM(center.x)
+        y = pcbnew.ToMM(center.y)
+        if abs(y - 56.85) < 0.01:
+            add_locked_track(
+                center,
+                board_point(x, upper_bus_y),
+                layout_route.GND,
+            )
+        elif abs(y - 61.15) < 0.01:
+            add_locked_track(
+                center,
+                board_point(x, lower_bus_y),
+                layout_route.GND,
+            )
+    add_locked_path(
+        ((6.25, upper_bus_y), (7.75, upper_bus_y), (7.0, 55.0)),
+        layout_route.GND,
+        pcbnew.B_Cu,
+    )
+    add_locked_path(
+        ((6.25, lower_bus_y), (7.75, lower_bus_y), (7.0, 62.6)),
+        layout_route.GND,
+        pcbnew.B_Cu,
+    )
+    add_locked_track(
+        board_point(7.0, 59.0),
+        board_point(7.0, upper_bus_y),
+        layout_route.GND,
+    )
+    add_locked_via(board_point(7.0, 55.0), layout_route.GND)
+    add_locked_via(board_point(7.0, 62.6), layout_route.GND)
+    fanout_to_plane("U2", "9", (4.3, 57.25), net_name=layout_route.GND)
 
     # The charge-enable signal crosses the front below the battery cutout.
     ce_left = pcbnew.VECTOR2I(layout_route.mm(19.0), layout_route.mm(88.2))
@@ -384,6 +549,89 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         pad_center("R5", "1"),
         "/CHG_EN_N",
         width=layout_route.mm(0.15),
+    )
+
+    def connect_through_front(
+        net_name: str,
+        start: tuple[str, str],
+        start_via_xy: tuple[float, float],
+        front_path_xy: tuple[tuple[float, float], ...],
+        end: tuple[str, str],
+        end_via_xy: tuple[float, float],
+    ) -> None:
+        start_via = board_point(*start_via_xy)
+        end_via = board_point(*end_via_xy)
+        add_locked_track(
+            pad_center(*start),
+            start_via,
+            net_name,
+            width=layout_route.mm(0.15),
+        )
+        add_locked_via(start_via, net_name)
+        add_locked_path(
+            (start_via_xy, *front_path_xy, end_via_xy),
+            net_name,
+            pcbnew.F_Cu,
+            width=layout_route.mm(0.15),
+        )
+        add_locked_via(end_via, net_name)
+        add_locked_track(
+            end_via,
+            pad_center(*end),
+            net_name,
+            width=layout_route.mm(0.15),
+        )
+
+    # These constrained nets repeatedly fail at fine-pitch escapes or around
+    # the battery cutout. Lock their short, reviewable paths before autorouting.
+    connect_through_front(
+        "/QI_BOOT1",
+        ("U2", "3"),
+        (4.3, 60.25),
+        (
+            (1.7, 60.25),
+            (1.2, 60.75),
+            (1.2, 65.0),
+            (1.7, 65.5),
+            (10.15, 65.5),
+        ),
+        ("C6", "1"),
+        (10.15, 65.85),
+    )
+    connect_through_front(
+        "/QI_BOOT2",
+        ("U2", "17"),
+        (9.6, 59.75),
+        (
+            (11.3, 59.75),
+            (11.8, 60.25),
+            (11.8, 68.2),
+            (11.3, 68.7),
+        ),
+        ("C7", "1"),
+        (2.225, 68.7),
+    )
+    connect_through_front(
+        "/CHG_STAT2",
+        ("U3", "3"),
+        (49.75, 60.0),
+        (
+            (49.0, 60.75),
+            (49.0, 82.9),
+            (48.5, 83.4),
+            (17.0, 83.4),
+            (13.5, 86.9),
+        ),
+        ("U1", "21"),
+        (13.5, 87.8),
+    )
+    connect_through_front(
+        "/VDD_NRF",
+        ("U1", "28"),
+        (16.5, 90.6),
+        (),
+        ("C22", "1"),
+        (16.5, 93.0),
     )
 
     settings = board.GetDesignSettings()
@@ -457,7 +705,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
     board.BuildConnectivity()
     fill_zones(board)
-    pcbnew.SaveBoard(str(BOARD), board)
     return board, keepalive
 
 
@@ -489,8 +736,11 @@ def freerouting_command() -> list[str]:
     elif shutil.which(java) is None:
         raise SystemExit(f"Java runtime not found: {java}")
 
+    router_home = FAB / "freerouting-home"
+    router_home.mkdir(exist_ok=True)
     command = [
         java,
+        f"-Duser.home={router_home}",
         "-jar",
         str(jar),
         "-de",
@@ -517,7 +767,9 @@ def main() -> None:
     FAB.mkdir(exist_ok=True)
     board, _keepalive = build_placed_board()
     if os.environ.get("INKBOT_PLACE_ONLY") == "1":
+        pcbnew.SaveBoard(str(PLACED_BOARD), board)
         print(f"placed {len(list(board.GetFootprints()))} footprints")
+        print(f"wrote {PLACED_BOARD}")
         return
 
     if not pcbnew.ExportSpecctraDSN(board, str(DSN)):
@@ -539,7 +791,6 @@ def main() -> None:
     board.BuildConnectivity()
     fill_zones(board)
     board.BuildConnectivity()
-    pcbnew.SaveBoard(str(BOARD), board)
 
     connectivity = board.GetConnectivity()
     unconnected = (
@@ -548,7 +799,9 @@ def main() -> None:
         else -1
     )
     if unconnected:
+        pcbnew.SaveBoard(str(INCOMPLETE_BOARD), board)
         raise SystemExit(f"routing left {unconnected} open ratsnest connections")
+    pcbnew.SaveBoard(str(BOARD), board)
     layout_route.export_fab()
 
 
