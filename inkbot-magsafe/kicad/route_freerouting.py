@@ -675,14 +675,14 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         "/QI_OUT",
         width=layout_route.mm(0.3),
     )
-    qi_u3_via = board_point(54.2, 60.8)
+    qi_u3_via = board_point(54.6, 61.8)
     add_locked_path(
         (
             (47.8, 57.5),
             (54.25, 57.5),
-            (55.0, 58.25),
-            (55.0, 60.0),
-            (54.2, 60.8),
+            (55.5, 58.75),
+            (55.5, 60.9),
+            (54.6, 61.8),
         ),
         "/QI_OUT",
         pcbnew.F_Cu,
@@ -695,6 +695,97 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         "/QI_OUT",
         width=layout_route.mm(0.15),
     )
+
+    # Reserve sparse low-speed control routes in the SYS layer. Keeping these
+    # three long nets out of the dense surface channels lets In2.Cu remain an
+    # uninterrupted return plane. The SYS pour clears around the tracks.
+    chg_int_module_via = board_point(17.0, 86.4)
+    chg_int_charger_via = board_point(54.2, 60.4)
+    add_locked_track(
+        pad_center("U1", "20"),
+        chg_int_module_via,
+        "/CHG_INT_N",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(chg_int_module_via, "/CHG_INT_N")
+    add_locked_track(
+        pad_center("U3", "9"),
+        chg_int_charger_via,
+        "/CHG_INT_N",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(chg_int_charger_via, "/CHG_INT_N")
+    add_locked_path(
+        (
+            (17.0, 86.4),
+            (58.8, 86.4),
+            (58.8, 58.8),
+            (55.6, 58.8),
+            (54.2, 60.4),
+        ),
+        "/CHG_INT_N",
+        pcbnew.In1_Cu,
+        width=layout_route.mm(0.15),
+    )
+
+    panel_dc_module_via = board_point(10.5, 95.0)
+    panel_dc_connector_via = board_point(44.25, 94.3)
+    add_locked_track(
+        pad_center("U1", "44"),
+        panel_dc_module_via,
+        "/PANEL_DC",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(panel_dc_module_via, "/PANEL_DC")
+    add_locked_track(
+        pad_center("J1", "11"),
+        panel_dc_connector_via,
+        "/PANEL_DC",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(panel_dc_connector_via, "/PANEL_DC")
+    add_locked_path(
+        (
+            (10.5, 95.0),
+            (17.5, 95.0),
+            (17.5, 98.2),
+            (44.25, 98.2),
+            (44.25, 94.3),
+        ),
+        "/PANEL_DC",
+        pcbnew.In1_Cu,
+        width=layout_route.mm(0.15),
+    )
+
+    qi_en2_module_via = board_point(16.5, 89.4)
+    qi_en2_receiver_via = board_point(7.75, 62.1)
+    add_locked_track(
+        pad_center("U1", "25"),
+        qi_en2_module_via,
+        "/QI_EN2",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(qi_en2_module_via, "/QI_EN2")
+    add_locked_track(
+        pad_center("U2", "11"),
+        qi_en2_receiver_via,
+        "/QI_EN2",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(qi_en2_receiver_via, "/QI_EN2")
+    add_locked_path(
+        (
+            (16.5, 89.4),
+            (12.2, 85.1),
+            (12.2, 61.5),
+            (7.75, 61.5),
+            (7.75, 62.1),
+        ),
+        "/QI_EN2",
+        pcbnew.In1_Cu,
+        width=layout_route.mm(0.15),
+    )
+
     add_locked_path(
         (
             (5.35, 66.75),
