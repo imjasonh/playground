@@ -87,8 +87,8 @@ pub const FLASH_REGIONS: [FlashRegion; 12] = [
     BOOTLOADER_SETTINGS,
 ];
 
-const _: () = assert!(FRAME_A.len() as usize == FRAME_BYTES);
-const _: () = assert!(FRAME_B.len() as usize == FRAME_BYTES);
+const _: () = assert!(FRAME_A.len() as usize >= FRAME_BYTES);
+const _: () = assert!(FRAME_B.len() as usize >= FRAME_BYTES);
 const _: () = assert!(APPLICATION.len() == UPDATE.len());
 
 #[cfg(test)]
@@ -114,8 +114,10 @@ mod tests {
         assert_eq!(SOFTDEVICE.len(), 112 * 1024);
         assert_eq!(APPLICATION.len(), 256 * 1024);
         assert_eq!(UPDATE.len(), 256 * 1024);
-        assert_eq!(FRAME_A.len(), FRAME_BYTES as u32);
-        assert_eq!(FRAME_B.len(), FRAME_BYTES as u32);
+        assert_eq!(FRAME_A.len(), 48 * 1024);
+        assert_eq!(FRAME_B.len(), 48 * 1024);
+        assert!(FRAME_A.len() as usize >= FRAME_BYTES);
+        assert!(FRAME_B.len() as usize >= FRAME_BYTES);
         assert_eq!(FRAME_METADATA.len(), 2 * FLASH_PAGE_BYTES);
         assert_eq!(FAULT_LOG.len(), 2 * FLASH_PAGE_BYTES);
         assert!(BOOTLOADER.len() >= 64 * 1024);

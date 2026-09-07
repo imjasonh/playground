@@ -204,7 +204,8 @@ mod tests {
     fn reserved_and_invalid_fields_are_rejected_after_valid_crc() {
         let mut reserved = record(7, FrameSlot::A).to_bytes();
         reserved[6] = 1;
-        reserved[36..40].copy_from_slice(&crc32(&reserved[..36]).to_le_bytes());
+        let record_crc = crc32(&reserved[..36]);
+        reserved[36..40].copy_from_slice(&record_crc.to_le_bytes());
         assert_eq!(
             FrameRecord::from_bytes(&reserved),
             Err(RecordDecodeError::ReservedBytes)
@@ -212,7 +213,8 @@ mod tests {
 
         let mut invalid_frame = record(7, FrameSlot::A).to_bytes();
         invalid_frame[28..30].copy_from_slice(&7_u16.to_le_bytes());
-        invalid_frame[36..40].copy_from_slice(&crc32(&invalid_frame[..36]).to_le_bytes());
+        let record_crc = crc32(&invalid_frame[..36]);
+        invalid_frame[36..40].copy_from_slice(&record_crc.to_le_bytes());
         assert_eq!(
             FrameRecord::from_bytes(&invalid_frame),
             Err(RecordDecodeError::InvalidFrame)
