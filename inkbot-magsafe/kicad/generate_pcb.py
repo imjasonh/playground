@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-"""Generate a thickness-first PCB outline for inkbot-magsafe (KiCad 7 format).
+"""Generate the EVT PCB outline and mechanical reference layers.
 
-Portrait tile sized to fit within an iPhone's width and height. No case: the 3.97" panel is
-the front face and covers the whole board, overlapping the MagSafe ring (the
-coil and magnets live on the back, the panel on the front, so they share the
-outline without colliding). The MagSafe ring sits as high as possible so the
-tile hangs downward, clear of the rear-camera plateau: the board top stays
-within Apple's 30 mm keep-in above the ring center. The LiPo sits in a board
-cutout below the coil. Footprints are placed afterward with place_footprints.py.
+The 3.97-inch panel covers the front. The receiver coil, magnetic array,
+protected cell, electronics, structural spacer, and protective back film sit
+behind it. The ring center is 30 mm from the top edge for camera clearance.
 """
 
 from __future__ import annotations
@@ -24,18 +20,19 @@ OUT = Path(__file__).resolve().parent / "inkbot-magsafe.kicad_pcb"
 BOARD_W = 60.0
 BOARD_H = 99.0
 
-# MagSafe ring as high as possible: center 30 mm from the top edge = Apple's
-# keep-in limit toward the phone's top, which is what clears the camera bump.
+# The public drawing is an EVT reference. MFi mechanical data and measured
+# pull-force results control the production magnetic array.
 RING_CY = 30.0
-RING_DIA = 54.9
-COIL_DIA = 40.0
+RING_OD = 54.0
+RING_ID = 46.0
+COIL_SHIELD_DIA = 22.0
 
 # Panel module outline (front face), near the top so it overlaps the ring.
 PANEL_W, PANEL_H = 56.24, 96.62
 PANEL_TOP = 1.2
 
-# LiPo cutout below the coil.
-BAT_W, BAT_H = 32.0, 20.0
+# LP252030 pack envelope after its protection circuit, plus 1 mm clearance.
+BAT_W, BAT_H = 33.0, 22.0
 BAT_CY = 70.0
 
 
@@ -81,13 +78,26 @@ def main() -> None:
         rect_outline(bat_x, bat_y, BAT_W, BAT_H, "Edge.Cuts", 0.05),
         # Panel outline (front face) on the fab layer.
         rect_outline(panel_x, PANEL_TOP, PANEL_W, PANEL_H, "Cmts.User", 0.1),
-        circle(cx, RING_CY, RING_DIA / 2, "Dwgs.User", 0.15),
-        circle(cx, RING_CY, COIL_DIA / 2, "Dwgs.User", 0.1),
-        text("MagSafe ring PCD", cx, RING_CY, "Dwgs.User", 0.8),
-        text("Qi coil", cx, RING_CY + COIL_DIA / 2 + 1.5, "Dwgs.User", 0.7),
-        text("LiPo cutout", cx, bat_y - 1.5, "Dwgs.User", 0.8),
-        text("panel 3.97in 480x800 (front, overlaps ring)", cx, BOARD_H - 2, "Cmts.User", 0.7),
-        text("top edge <=30mm above ring center: clears camera bump", 2, 2, "Cmts.User", 0.8),
+        circle(cx, RING_CY, RING_OD / 2, "Dwgs.User", 0.15),
+        circle(cx, RING_CY, RING_ID / 2, "Dwgs.User", 0.15),
+        circle(cx, RING_CY, COIL_SHIELD_DIA / 2, "Dwgs.User", 0.1),
+        text("54 x 46 mm EVT magnetic array", cx, RING_CY, "Dwgs.User", 0.65),
+        text(
+            "WR222230 coil shield",
+            cx,
+            RING_CY + COIL_SHIELD_DIA / 2 + 1.5,
+            "Dwgs.User",
+            0.65,
+        ),
+        text("LP252030 protected-cell cutout", cx, bat_y - 1.5, "Dwgs.User", 0.7),
+        text("GDEM0397T81P panel outline", cx, BOARD_H - 2, "Cmts.User", 0.7),
+        text(
+            "EVT geometry; production magnet data requires MFi approval",
+            2,
+            2,
+            "Cmts.User",
+            0.7,
+        ),
     ]
 
     pcb = f"""(kicad_pcb (version 20221018) (generator pcbnew)
@@ -100,9 +110,9 @@ def main() -> None:
   (title_block
     (title "inkbot-magsafe")
     (date "2026-09-07")
-    (rev "0.5.0")
-    (comment 1 "0.8 mm 4-layer prototype (0.4 mm volume target); portrait; battery cutout; no case")
-    (comment 2 "Raytac MDBT50Q-512K module (integrated antenna); ring high clears cameras; panel overlaps ring")
+    (rev "0.6.0")
+    (comment 1 "0.8 mm four-layer EVT board; protected-cell cutout; structural spacer and protective films")
+    (comment 2 "BQ51013C + BQ25185; Raytac MDBT50Q-512K; GDEM0397T81P")
   )
 
   (layers
@@ -143,7 +153,7 @@ def main() -> None:
       (layer "B.Mask" (type "Bottom Solder Mask") (thickness 0.01))
       (layer "B.Paste" (type "Bottom Solder Paste"))
       (layer "B.SilkS" (type "Bottom Silk Screen"))
-      (copper_finish "None")
+      (copper_finish "ENIG")
       (dielectric_constraints no)
     )
     (pcbplotparams
@@ -191,7 +201,7 @@ def main() -> None:
     OUT.write_text(pcb)
     print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")
     print(
-        f"board {BOARD_W}x{BOARD_H} mm portrait, 0.8 mm proto, ring center {RING_CY} mm "
+        f"board {BOARD_W}x{BOARD_H} mm portrait, 0.8 mm EVT, ring center {RING_CY} mm "
         f"from top, battery cutout {BAT_W}x{BAT_H} mm"
     )
 
