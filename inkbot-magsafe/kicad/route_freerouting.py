@@ -787,7 +787,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     )
 
     chg_sda_charger_via = board_point(54.2, 59.6)
-    chg_sda_pullup_via = board_point(58.0, 67.0)
+    chg_sda_pullup_via = board_point(57.2, 67.0)
     add_locked_track(
         pad_center("U3", "7"),
         chg_sda_charger_via,
@@ -805,9 +805,10 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_locked_path(
         (
             (54.2, 59.6),
-            (56.0, 61.4),
-            (58.0, 63.4),
-            (58.0, 67.0),
+            (53.4, 60.4),
+            (53.4, 62.0),
+            (57.2, 65.8),
+            (57.2, 67.0),
         ),
         "/CHG_SDA",
         pcbnew.In1_Cu,
@@ -815,7 +816,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     )
 
     coil_ntc_connector_via = board_point(8.5, 54.5)
-    coil_ntc_receiver_via = board_point(10.0, 64.25)
+    coil_ntc_receiver_via = board_point(9.25, 64.25)
     add_locked_track(
         pad_center("J3", "3"),
         coil_ntc_connector_via,
@@ -835,24 +836,39 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             (8.5, 54.5),
             (5.0, 58.0),
             (5.0, 64.25),
-            (10.0, 64.25),
+            (9.25, 64.25),
         ),
         "/QI_COIL_NTC",
         pcbnew.In1_Cu,
         width=layout_route.mm(0.15),
     )
 
+    qi_comm1_receiver_via = board_point(4.7, 64.9)
+    qi_comm1_capacitor_via = board_point(3.0, 62.7)
+    add_locked_track(
+        pad_center("U2", "6"),
+        qi_comm1_receiver_via,
+        "/QI_COMM1",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(qi_comm1_receiver_via, "/QI_COMM1")
+    add_locked_track(
+        pad_center("C10", "1"),
+        qi_comm1_capacitor_via,
+        "/QI_COMM1",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(qi_comm1_capacitor_via, "/QI_COMM1")
     add_locked_path(
         (
-            (5.35, 65.25),
-            (4.7, 65.25),
-            (4.4, 64.95),
-            (4.4, 63.4),
-            (3.275, 62.275),
-            (3.275, 61.8),
+            (4.7, 64.9),
+            (3.8, 65.8),
+            (2.5, 65.8),
+            (2.5, 62.7),
+            (3.0, 62.7),
         ),
         "/QI_COMM1",
-        pcbnew.B_Cu,
+        pcbnew.In1_Cu,
         width=layout_route.mm(0.15),
     )
     add_locked_path(
