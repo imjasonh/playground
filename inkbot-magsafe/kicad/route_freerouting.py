@@ -392,15 +392,14 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     return board, keepalive
 
 
-def mark_inner_layers_as_power(path: Path) -> None:
-    """Mark the two internal planes as non-routable in a KiCad DSN export."""
+def mark_ground_layer_as_power(path: Path) -> None:
+    """Mark the internal GND plane as non-routable in a KiCad DSN export."""
     text = path.read_text()
-    for layer_name in ("In1.Cu", "In2.Cu"):
-        signal = f"    (layer {layer_name}\n      (type signal)"
-        power = f"    (layer {layer_name}\n      (type power)"
-        if text.count(signal) != 1:
-            raise ValueError(f"cannot find the {layer_name} layer in {path}")
-        text = text.replace(signal, power)
+    signal = "    (layer In2.Cu\n      (type signal)"
+    power = "    (layer In2.Cu\n      (type power)"
+    if text.count(signal) != 1:
+        raise ValueError(f"cannot find the In2.Cu layer in {path}")
+    text = text.replace(signal, power)
     path.write_text(text)
 
 
@@ -434,7 +433,7 @@ def freerouting_command() -> list[str]:
         os.environ.get("FREEROUTING_THREADS", "1"),
         "-l",
         "en",
-        "--router.layers.routable=true,false,false,true",
+        "--router.layers.routable=true,true,false,true",
     ]
     if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
         xvfb_run = shutil.which("xvfb-run")
@@ -449,7 +448,7 @@ def main() -> None:
     board, _keepalive = build_placed_board()
     if not pcbnew.ExportSpecctraDSN(board, str(DSN)):
         raise SystemExit(f"failed to export Specctra DSN: {DSN}")
-    mark_inner_layers_as_power(DSN)
+    mark_ground_layer_as_power(DSN)
 
     SES.unlink(missing_ok=True)
     command = freerouting_command()
