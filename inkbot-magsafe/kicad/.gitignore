@@ -6,3 +6,4 @@ _autosave-*
 *.lck
 **/__pycache__/
 *.pyc
+en/
