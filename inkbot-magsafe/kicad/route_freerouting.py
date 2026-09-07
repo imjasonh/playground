@@ -13,6 +13,8 @@ runtime. On headless Linux, install ``xvfb-run`` for Freerouting's AWT setup.
 from __future__ import annotations
 
 import os
+import json
+import re
 import shutil
 import subprocess
 import sys
@@ -31,6 +33,7 @@ NETLIST = layout_route.NETLIST
 FAB = layout_route.FAB
 DSN = FAB / "inkbot-magsafe.dsn"
 SES = FAB / "inkbot-magsafe.ses"
+VIA_NAME = re.compile(r"Via\[(\d+)-(\d+)\]_(\d+):(\d+)_um")
 
 
 def fill_zones(board: pcbnew.BOARD) -> None:
@@ -40,6 +43,137 @@ def fill_zones(board: pcbnew.BOARD) -> None:
         if not zone.GetIsRuleArea():
             copper_zones.append(zone)
     pcbnew.ZONE_FILLER(board).Fill(copper_zones)
+
+
+def parse_sexpression(text: str) -> list[object]:
+    """Parse the subset of Specctra S-expressions used by SES files."""
+    root: list[object] = []
+    stack = [root]
+    tokens = re.finditer(r'\(|\)|"(?:\\.|[^"\\])*"|[^\s()]+', text)
+    for match in tokens:
+        token = match.group(0)
+        if token == "(":
+            form: list[object] = []
+            stack[-1].append(form)
+            stack.append(form)
+        elif token == ")":
+            if len(stack) == 1:
+                raise ValueError("unexpected closing parenthesis in SES file")
+            stack.pop()
+        elif token.startswith('"'):
+            stack[-1].append(json.loads(token))
+        else:
+            stack[-1].append(token)
+    if len(stack) != 1:
+        raise ValueError("unterminated form in SES file")
+    return root
+
+
+def child_form(form: list[object], name: str) -> list[object]:
+    """Return the first direct child form with the requested name."""
+    for item in form[1:]:
+        if isinstance(item, list) and item and item[0] == name:
+            return item
+    raise ValueError(f"missing ({name} ...) form in SES file")
+
+
+def import_freerouting_session(board: pcbnew.BOARD, path: Path) -> None:
+    """Import Freerouting wires and vias into a board through pcbnew.
+
+    KiCad 7 exposes ``ImportSpecctraSES(filename)`` only for an active GUI
+    board. A standalone Python process has no active board, so this importer
+    applies the SES ``network_out`` routes to the board object directly.
+    """
+    parsed = parse_sexpression(path.read_text())
+    if len(parsed) != 1 or not isinstance(parsed[0], list):
+        raise ValueError("SES file must contain one session form")
+    session = parsed[0]
+    if not session or session[0] != "session":
+        raise ValueError("SES file does not start with a session form")
+
+    routes = child_form(session, "routes")
+    resolution = child_form(routes, "resolution")
+    if len(resolution) != 3 or resolution[1] != "um":
+        raise ValueError(f"unsupported SES resolution: {resolution}")
+    units_per_micrometer = int(str(resolution[2]))
+    nanometers_per_unit = 1000 / units_per_micrometer
+    network = child_form(routes, "network_out")
+
+    copper_layers = [
+        board.GetLayerID(name) for name in ("F.Cu", "In1.Cu", "In2.Cu", "B.Cu")
+    ]
+
+    def coordinate(value: object, invert: bool = False) -> int:
+        result = round(float(str(value)) * nanometers_per_unit)
+        return -result if invert else result
+
+    for old_item in list(board.GetTracks()):
+        board.Remove(old_item)
+
+    wire_count = 0
+    via_count = 0
+    for net_form in network[1:]:
+        if not isinstance(net_form, list) or len(net_form) < 2 or net_form[0] != "net":
+            continue
+        net_name = str(net_form[1])
+        net = board.FindNet(net_name)
+        if net is None or net.GetNetCode() == 0:
+            raise ValueError(f"SES route refers to unknown net: {net_name}")
+
+        for route_item in net_form[2:]:
+            if not isinstance(route_item, list) or not route_item:
+                continue
+            if route_item[0] == "wire":
+                if len(route_item) != 2 or not isinstance(route_item[1], list):
+                    raise ValueError(f"malformed wire for net {net_name}")
+                path_form = route_item[1]
+                if len(path_form) < 7 or path_form[0] != "path":
+                    raise ValueError(f"malformed path for net {net_name}")
+                layer = board.GetLayerID(str(path_form[1]))
+                width = coordinate(path_form[2])
+                values = path_form[3:]
+                if len(values) % 2:
+                    raise ValueError(f"odd coordinate count for net {net_name}")
+                points = [
+                    pcbnew.VECTOR2I(coordinate(values[i]), coordinate(values[i + 1], True))
+                    for i in range(0, len(values), 2)
+                ]
+                for start, end in zip(points, points[1:]):
+                    if start == end:
+                        continue
+                    track = pcbnew.PCB_TRACK(board)
+                    track.SetStart(start)
+                    track.SetEnd(end)
+                    track.SetWidth(width)
+                    track.SetLayer(layer)
+                    track.SetNet(net)
+                    board.Add(track)
+                    wire_count += 1
+            elif route_item[0] == "via":
+                if len(route_item) < 4:
+                    raise ValueError(f"malformed via for net {net_name}")
+                match = VIA_NAME.fullmatch(str(route_item[1]))
+                if match is None:
+                    raise ValueError(f"unsupported via padstack: {route_item[1]}")
+                start_layer, end_layer, diameter_um, drill_um = map(int, match.groups())
+                if not 0 <= start_layer < len(copper_layers) or not 0 <= end_layer < len(
+                    copper_layers
+                ):
+                    raise ValueError(f"via layer outside board stack: {route_item[1]}")
+                via = pcbnew.PCB_VIA(board)
+                via.SetPosition(
+                    pcbnew.VECTOR2I(
+                        coordinate(route_item[2]),
+                        coordinate(route_item[3], True),
+                    )
+                )
+                via.SetWidth(diameter_um * 1000)
+                via.SetDrill(drill_um * 1000)
+                via.SetLayerPair(copper_layers[start_layer], copper_layers[end_layer])
+                via.SetNet(net)
+                board.Add(via)
+                via_count += 1
+    print(f"imported {wire_count} track segments and {via_count} vias from {path}")
 
 
 def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
@@ -208,8 +342,7 @@ def main() -> None:
     if not SES.is_file() or SES.stat().st_size == 0:
         raise SystemExit(f"Freerouting did not write a session: {SES}")
 
-    if not pcbnew.ImportSpecctraSES(board, str(SES)):
-        raise SystemExit(f"failed to import Specctra SES: {SES}")
+    import_freerouting_session(board, SES)
     board.BuildConnectivity()
     fill_zones(board)
     board.BuildConnectivity()
