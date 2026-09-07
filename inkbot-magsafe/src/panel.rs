@@ -123,11 +123,7 @@ pub enum PatchError {
 }
 
 /// Merge a controller-native partial payload into a complete framebuffer.
-pub fn apply_patch(
-    frame: &mut [u8],
-    window: Window,
-    patch: &[u8],
-) -> Result<(), PatchError> {
+pub fn apply_patch(frame: &mut [u8], window: Window, patch: &[u8]) -> Result<(), PatchError> {
     if !window.is_valid() {
         return Err(PatchError::InvalidWindow);
     }

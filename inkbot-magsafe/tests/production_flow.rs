@@ -1,15 +1,9 @@
 use inkbot_magsafe::panel::{
     apply_patch, RefreshKind, RefreshPolicy, Window, FRAME_BYTES, ROW_BYTES,
 };
-use inkbot_magsafe::power::{
-    refresh_decision, ChargerStatus, PowerSample, EVT_SAFETY_LIMITS,
-};
-use inkbot_magsafe::protocol::{
-    Accept, Begin, Crc32, FrameHeader, FrameSink, Receiver,
-};
-use inkbot_magsafe::storage::{
-    select_latest, FrameRecord, FrameSlot, RecordDecodeError,
-};
+use inkbot_magsafe::power::{refresh_decision, ChargerStatus, PowerSample, EVT_SAFETY_LIMITS};
+use inkbot_magsafe::protocol::{Accept, Begin, Crc32, FrameHeader, FrameSink, Receiver};
+use inkbot_magsafe::storage::{select_latest, FrameRecord, FrameSlot, RecordDecodeError};
 
 struct PayloadSink {
     bytes: Vec<u8>,

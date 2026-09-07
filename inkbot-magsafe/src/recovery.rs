@@ -55,9 +55,7 @@ impl OwnerResetGesture {
             };
         }
 
-        if self.attachments == 0
-            || now_ms.wrapping_sub(self.started_ms) > SEQUENCE_TIMEOUT_MS
-        {
+        if self.attachments == 0 || now_ms.wrapping_sub(self.started_ms) > SEQUENCE_TIMEOUT_MS {
             self.started_ms = now_ms;
             self.attachments = 1;
         } else {

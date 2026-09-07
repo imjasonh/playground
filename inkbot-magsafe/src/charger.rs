@@ -275,9 +275,7 @@ pub fn revalidate<I: ChargerIo>(
     }
 }
 
-fn read_safety<I: ChargerIo>(
-    io: &mut I,
-) -> Result<(SafetyRegisters, StatusRegisters), I::Error> {
+fn read_safety<I: ChargerIo>(io: &mut I) -> Result<(SafetyRegisters, StatusRegisters), I::Error> {
     let safety = SafetyRegisters {
         vbat_ctrl: io.read_register(REG_VBAT_CTRL)?,
         ichg_ctrl: io.read_register(REG_ICHG_CTRL)?,
@@ -379,9 +377,13 @@ mod tests {
     fn charge_complete_requires_observed_charging() {
         let enabled = EnabledCharger::authorize(0, required_registers(), status(3)).unwrap();
         assert!(!enabled.charge_complete(status(3)));
-        let enabled = enabled.verify(100, required_registers(), status(1)).unwrap();
+        let enabled = enabled
+            .verify(100, required_registers(), status(1))
+            .unwrap();
         assert!(!enabled.charge_complete(status(1)));
-        let enabled = enabled.verify(200, required_registers(), status(3)).unwrap();
+        let enabled = enabled
+            .verify(200, required_registers(), status(3))
+            .unwrap();
         assert!(enabled.charge_complete(status(3)));
     }
 
@@ -395,8 +397,7 @@ mod tests {
             (0x00, 0x04, SafetyFault::SafetyTimer),
         ];
         for (stat0, stat1, expected) in cases {
-            let enabled =
-                EnabledCharger::authorize(0, required_registers(), status(1)).unwrap();
+            let enabled = EnabledCharger::authorize(0, required_registers(), status(1)).unwrap();
             assert_eq!(
                 enabled.verify(1, required_registers(), StatusRegisters { stat0, stat1 }),
                 Err(expected)

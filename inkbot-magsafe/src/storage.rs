@@ -123,10 +123,7 @@ impl FrameRecord {
 }
 
 /// Select the latest valid record from the two metadata journal heads.
-pub const fn select_latest(
-    a: Option<FrameRecord>,
-    b: Option<FrameRecord>,
-) -> Option<FrameRecord> {
+pub const fn select_latest(a: Option<FrameRecord>, b: Option<FrameRecord>) -> Option<FrameRecord> {
     match (a, b) {
         (None, None) => None,
         (Some(record), None) | (None, Some(record)) => Some(record),
@@ -186,10 +183,7 @@ mod tests {
     #[test]
     fn record_round_trips() {
         let expected = record(7, FrameSlot::B);
-        assert_eq!(
-            FrameRecord::from_bytes(&expected.to_bytes()),
-            Ok(expected)
-        );
+        assert_eq!(FrameRecord::from_bytes(&expected.to_bytes()), Ok(expected));
     }
 
     #[test]
@@ -218,8 +212,7 @@ mod tests {
 
         let mut invalid_frame = record(7, FrameSlot::A).to_bytes();
         invalid_frame[28..30].copy_from_slice(&7_u16.to_le_bytes());
-        invalid_frame[36..40]
-            .copy_from_slice(&crc32(&invalid_frame[..36]).to_le_bytes());
+        invalid_frame[36..40].copy_from_slice(&crc32(&invalid_frame[..36]).to_le_bytes());
         assert_eq!(
             FrameRecord::from_bytes(&invalid_frame),
             Err(RecordDecodeError::InvalidFrame)
