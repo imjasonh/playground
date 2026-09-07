@@ -820,9 +820,10 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_locked_path(
         (
             (5.35, 65.75),
-            (4.5, 65.2),
-            (2.225, 65.2),
-            (2.225, 66.0),
+            (4.3, 65.75),
+            (3.8, 65.25),
+            (1.525, 65.25),
+            (1.525, 66.0),
         ),
         "/QI_CLAMP1",
         pcbnew.B_Cu,
