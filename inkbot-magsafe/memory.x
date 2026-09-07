@@ -1,12 +1,12 @@
-/* nRF52833 (xxAA): 512 KiB flash, 128 KiB RAM.
+/* nRF52833 with S140 7.3.0.
  *
- * SoftDevice-free layout for the scaffold. When the S132 (or S140) SoftDevice
- * is added for BLE, move FLASH ORIGIN past the SoftDevice image (about 0x27000
- * for S140 7.x) and raise RAM ORIGIN by the SoftDevice's RAM requirement. The
- * 48 KiB mono framebuffer plus the SoftDevice fit comfortably in 128 KiB.
+ * S140 occupies 156 KiB of flash. This 31 KiB RAM reservation matches the
+ * nrf-softdevice nRF52833 example and must be rechecked when the enabled GATT,
+ * L2CAP, MTU, data-length, or connection counts change. The SoftDevice reports
+ * the required application RAM origin during enable.
  */
 MEMORY
 {
-  FLASH : ORIGIN = 0x00000000, LENGTH = 512K
-  RAM   : ORIGIN = 0x20000000, LENGTH = 128K
+  FLASH : ORIGIN = 0x00000000 + 156K, LENGTH = 512K - 156K
+  RAM   : ORIGIN = 0x20000000 + 31K,  LENGTH = 128K - 31K
 }

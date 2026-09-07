@@ -8,7 +8,7 @@
 //! never has to buffer the whole frame in RAM and can report an offset to
 //! resume from after a dropped connection.
 
-use crate::panel::Window;
+use crate::panel::{Window, FRAME_BYTES};
 
 /// Streaming CRC-32 (IEEE 802.3, reflected), computed without a lookup table to
 /// keep the code and RAM footprint small.
@@ -79,9 +79,9 @@ impl FrameHeader {
         b
     }
 
-    /// Decode from the wire form, or `None` if the buffer is too short.
+    /// Decode the exact wire form.
     pub fn from_bytes(b: &[u8]) -> Option<Self> {
-        if b.len() < HEADER_LEN {
+        if b.len() != HEADER_LEN {
             return None;
         }
         let word = |o: usize| u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]);
@@ -98,6 +98,40 @@ impl FrameHeader {
             },
         })
     }
+
+    /// Validate panel bounds, byte alignment, and payload length.
+    pub fn validate(self) -> Result<(), BeginError> {
+        if !self.window.is_valid() {
+            return Err(BeginError::InvalidWindow);
+        }
+        let expected = self.window.packed_bytes();
+        if expected > FRAME_BYTES || self.len != expected as u32 {
+            return Err(BeginError::InvalidLength);
+        }
+        Ok(())
+    }
+}
+
+/// The outcome of announcing a frame transfer.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Begin {
+    /// A new frame replaced any incomplete transfer.
+    Started,
+    /// The same frame was announced again. The sender can resume at this offset.
+    Resumed(u32),
+}
+
+/// Why a frame announcement was rejected.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BeginError {
+    /// The panel window is empty, out of bounds, or not byte-aligned.
+    InvalidWindow,
+    /// The payload length does not exactly match the panel window.
+    InvalidLength,
+    /// The frame id matches an active transfer but describes different data.
+    ConflictingId,
+    /// The frame id is not newer than the most recently completed frame.
+    StaleId,
 }
 
 /// The outcome of offering a chunk to the [`Receiver`].
@@ -117,9 +151,11 @@ pub struct Receiver {
     id: u32,
     len: u32,
     crc: u32,
+    window: Window,
     received: u32,
     running: Crc32,
     active: bool,
+    last_completed: Option<(u32, Window)>,
 }
 
 impl Receiver {
@@ -129,26 +165,47 @@ impl Receiver {
             id: 0,
             len: 0,
             crc: 0,
+            window: Window::FULL,
             received: 0,
             running: Crc32::new(),
             active: false,
+            last_completed: None,
         }
+    }
+
+    /// Restore the replay boundary after loading a committed frame record.
+    pub const fn with_last_completed(id: u32, window: Window) -> Self {
+        let mut receiver = Self::new();
+        receiver.last_completed = Some((id, window));
+        receiver
     }
 
     /// Start a transfer. Re-announcing the same frame keeps existing progress,
     /// so a dropped-and-retried header does not restart the download.
-    pub fn begin(&mut self, header: FrameHeader) {
-        let same =
-            self.active && self.id == header.id && self.len == header.len && self.crc == header.crc;
-        if same {
-            return;
+    pub fn begin(&mut self, header: FrameHeader) -> Result<Begin, BeginError> {
+        header.validate()?;
+        if self.active && self.id == header.id {
+            if self.len == header.len
+                && self.crc == header.crc
+                && self.window == header.window
+            {
+                return Ok(Begin::Resumed(self.received));
+            }
+            return Err(BeginError::ConflictingId);
+        }
+        if let Some((last_id, _)) = self.last_completed {
+            if !sequence_is_newer(header.id, last_id) {
+                return Err(BeginError::StaleId);
+            }
         }
         self.id = header.id;
         self.len = header.len;
         self.crc = header.crc;
+        self.window = header.window;
         self.received = 0;
         self.running = Crc32::new();
         self.active = true;
+        Ok(Begin::Started)
     }
 
     /// Byte offset the next chunk must start at.
@@ -161,28 +218,53 @@ impl Receiver {
         self.active
     }
 
+    /// The last frame that passed its length and CRC checks.
+    pub fn last_completed(&self) -> Option<(u32, Window)> {
+        self.last_completed
+    }
+
+    /// Cancel the active transfer without changing the replay boundary.
+    pub fn cancel(&mut self) {
+        self.active = false;
+        self.received = 0;
+        self.running = Crc32::new();
+    }
+
     /// Offer a chunk that the sender says begins at `at`.
     pub fn accept(&mut self, at: u32, chunk: &[u8]) -> Accept {
-        if !self.active || at != self.received {
+        let Ok(chunk_len) = u32::try_from(chunk.len()) else {
+            return Accept::Rejected;
+        };
+        if !self.active || at != self.received || chunk_len == 0 {
             return Accept::Rejected;
         }
-        let remaining = self.len - self.received;
-        if chunk.len() as u32 > remaining {
+        let Some(remaining) = self.len.checked_sub(self.received) else {
+            self.cancel();
+            return Accept::Rejected;
+        };
+        if chunk_len > remaining {
             return Accept::Rejected;
         }
         self.running.update(chunk);
-        self.received += chunk.len() as u32;
+        self.received += chunk_len;
         if self.received != self.len {
             return Accept::Progress(self.received);
         }
         let matched = self.running.finalize() == self.crc;
         self.active = false;
         if matched {
+            self.last_completed = Some((self.id, self.window));
             Accept::Complete
         } else {
             Accept::Rejected
         }
     }
+}
+
+/// Compare wrapping sequence numbers while rejecting duplicates.
+const fn sequence_is_newer(candidate: u32, previous: u32) -> bool {
+    let distance = candidate.wrapping_sub(previous);
+    distance != 0 && distance < (1 << 31)
 }
 
 impl Default for Receiver {
@@ -228,24 +310,43 @@ mod tests {
         let decoded = FrameHeader::from_bytes(&h.to_bytes()).unwrap();
         assert_eq!(h, decoded);
         assert!(FrameHeader::from_bytes(&[0u8; 4]).is_none());
+        assert!(FrameHeader::from_bytes(&[0u8; HEADER_LEN + 1]).is_none());
     }
 
     #[test]
     fn streamed_chunks_complete_and_verify() {
         let data = b"the quick brown fox";
         let mut rx = Receiver::new();
-        rx.begin(header_for(data, 1));
+        let mut header = header_for(data, 1);
+        header.window = Window {
+            x: 0,
+            y: 0,
+            w: 152,
+            h: 1,
+        };
+        assert_eq!(header.len, header.window.packed_bytes() as u32);
+        assert_eq!(rx.begin(header), Ok(Begin::Started));
         assert_eq!(rx.accept(0, &data[0..4]), Accept::Progress(4));
         assert_eq!(rx.offset(), 4);
         assert_eq!(rx.accept(4, &data[4..]), Accept::Complete);
         assert!(!rx.is_active());
+        assert_eq!(rx.last_completed(), Some((1, header.window)));
     }
 
     #[test]
     fn out_of_order_chunk_is_rejected_and_offset_holds() {
         let data = b"abcdefgh";
         let mut rx = Receiver::new();
-        rx.begin(header_for(data, 1));
+        let h = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 1,
+            },
+            ..header_for(data, 1)
+        };
+        rx.begin(h).unwrap();
         assert_eq!(rx.accept(0, &data[0..4]), Accept::Progress(4));
         // Sender jumps ahead; receiver rejects and keeps its offset for resume.
         assert_eq!(rx.accept(6, &data[6..]), Accept::Rejected);
@@ -257,20 +358,34 @@ mod tests {
     fn corrupt_payload_fails_crc() {
         let data = b"abcdefgh";
         let mut header = header_for(data, 1);
+        header.window = Window {
+            x: 0,
+            y: 0,
+            w: 64,
+            h: 1,
+        };
         header.crc ^= 0x1; // wrong CRC
         let mut rx = Receiver::new();
-        rx.begin(header);
+        rx.begin(header).unwrap();
         assert_eq!(rx.accept(0, data), Accept::Rejected);
     }
 
     #[test]
     fn re_announcing_same_frame_keeps_progress() {
         let data = b"abcdefgh";
-        let h = header_for(data, 1);
+        let h = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 1,
+            },
+            ..header_for(data, 1)
+        };
         let mut rx = Receiver::new();
-        rx.begin(h);
+        rx.begin(h).unwrap();
         assert_eq!(rx.accept(0, &data[0..4]), Accept::Progress(4));
-        rx.begin(h); // dropped connection, sender re-announces
+        assert_eq!(rx.begin(h), Ok(Begin::Resumed(4)));
         assert_eq!(rx.offset(), 4);
         assert_eq!(rx.accept(4, &data[4..]), Accept::Complete);
     }
@@ -278,12 +393,111 @@ mod tests {
     #[test]
     fn a_new_frame_id_resets_progress() {
         let first = b"abcdefgh";
+        let first_header = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 1,
+            },
+            ..header_for(first, 1)
+        };
         let mut rx = Receiver::new();
-        rx.begin(header_for(first, 1));
+        rx.begin(first_header).unwrap();
         assert_eq!(rx.accept(0, &first[0..4]), Accept::Progress(4));
         let second = b"zyxw";
-        rx.begin(header_for(second, 2));
+        let second_header = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 32,
+                h: 1,
+            },
+            ..header_for(second, 2)
+        };
+        rx.begin(second_header).unwrap();
         assert_eq!(rx.offset(), 0);
         assert_eq!(rx.accept(0, second), Accept::Complete);
+    }
+
+    #[test]
+    fn header_must_match_an_aligned_panel_window() {
+        let mut h = header_for(&[0; 8], 1);
+        h.window = Window {
+            x: 1,
+            y: 0,
+            w: 64,
+            h: 1,
+        };
+        assert_eq!(h.validate(), Err(BeginError::InvalidWindow));
+
+        h.window.x = 0;
+        h.len = 7;
+        assert_eq!(h.validate(), Err(BeginError::InvalidLength));
+    }
+
+    #[test]
+    fn conflicting_and_stale_frame_ids_are_rejected() {
+        let data = b"abcdefgh";
+        let h = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 1,
+            },
+            ..header_for(data, 7)
+        };
+        let mut rx = Receiver::new();
+        rx.begin(h).unwrap();
+
+        let mut conflict = h;
+        conflict.crc ^= 1;
+        assert_eq!(rx.begin(conflict), Err(BeginError::ConflictingId));
+        assert_eq!(rx.accept(0, data), Accept::Complete);
+        assert_eq!(rx.begin(h), Err(BeginError::StaleId));
+
+        let mut older = h;
+        older.id = 6;
+        assert_eq!(rx.begin(older), Err(BeginError::StaleId));
+    }
+
+    #[test]
+    fn empty_and_oversized_chunks_do_not_advance() {
+        let data = b"abcdefgh";
+        let h = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 1,
+            },
+            ..header_for(data, 1)
+        };
+        let mut rx = Receiver::new();
+        rx.begin(h).unwrap();
+        assert_eq!(rx.accept(0, &[]), Accept::Rejected);
+        assert_eq!(rx.accept(0, b"123456789"), Accept::Rejected);
+        assert_eq!(rx.offset(), 0);
+    }
+
+    #[test]
+    fn restored_replay_boundary_survives_a_restart() {
+        let data = b"abcdefgh";
+        let old = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 1,
+            },
+            ..header_for(data, 41)
+        };
+        let mut rx = Receiver::with_last_completed(41, old.window);
+        assert_eq!(rx.begin(old), Err(BeginError::StaleId));
+
+        let mut next = old;
+        next.id = 42;
+        assert_eq!(rx.begin(next), Ok(Begin::Started));
     }
 }

@@ -15,18 +15,65 @@ pub const FULL_MV: u16 = 4200;
 /// this a refresh risks a half-drawn frame if the cell sags under the spike.
 pub const REFRESH_FLOOR_MV: u16 = 3400;
 
+/// BQ25185 state decoded from its two open-drain status pins.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ChargerStatus {
+    CompleteOrIdle,
+    Charging,
+    RecoverableFault,
+    LatchedFault,
+}
+
+impl ChargerStatus {
+    /// Decode the pulled-up logic levels on STAT1 and STAT2.
+    pub const fn from_pins(stat1_high: bool, stat2_high: bool) -> Self {
+        match (stat1_high, stat2_high) {
+            (true, true) => Self::CompleteOrIdle,
+            (true, false) => Self::Charging,
+            (false, true) => Self::RecoverableFault,
+            (false, false) => Self::LatchedFault,
+        }
+    }
+
+    /// Return whether firmware can leave charging enabled.
+    pub const fn permits_charging(self) -> bool {
+        matches!(self, Self::CompleteOrIdle | Self::Charging)
+    }
+}
+
 /// Estimated state of charge as a percentage in `0..=100`, from a resting
-/// cell voltage. Linear between [`EMPTY_MV`] and [`FULL_MV`].
+/// cell voltage.
 pub fn soc_percent(mv: u16) -> u8 {
-    if mv <= EMPTY_MV {
+    // Resting-voltage anchors for a light-load LiPo. Linear interpolation
+    // within each segment is still approximate, but it avoids claiming 50%
+    // at 3.75 V where a typical cell is closer to one-third charged.
+    const CURVE: &[(u16, u8)] = &[
+        (EMPTY_MV, 0),
+        (3500, 5),
+        (3600, 12),
+        (3700, 25),
+        (3750, 35),
+        (3800, 50),
+        (3900, 70),
+        (4000, 85),
+        (4100, 95),
+        (FULL_MV, 100),
+    ];
+
+    if mv <= CURVE[0].0 {
         return 0;
     }
-    if mv >= FULL_MV {
-        return 100;
+    for pair in CURVE.windows(2) {
+        let (low_mv, low_percent) = pair[0];
+        let (high_mv, high_percent) = pair[1];
+        if mv <= high_mv {
+            let span_mv = u32::from(high_mv - low_mv);
+            let offset_mv = u32::from(mv - low_mv);
+            let span_percent = u32::from(high_percent - low_percent);
+            return low_percent + ((offset_mv * span_percent) / span_mv) as u8;
+        }
     }
-    let span = u32::from(FULL_MV - EMPTY_MV);
-    let over = u32::from(mv - EMPTY_MV);
-    ((over * 100) / span) as u8
+    100
 }
 
 /// Whether a panel refresh should proceed at this voltage and panel
@@ -60,7 +107,7 @@ mod tests {
 
     #[test]
     fn soc_is_monotonic_in_the_middle() {
-        assert_eq!(soc_percent(3750), 50);
+        assert_eq!(soc_percent(3800), 50);
         assert!(soc_percent(3600) < soc_percent(3900));
     }
 
@@ -75,5 +122,26 @@ mod tests {
     #[test]
     fn connection_interval_tightens_during_transfer() {
         assert!(conn_interval_1_25ms(true) < conn_interval_1_25ms(false));
+    }
+
+    #[test]
+    fn charger_status_table_matches_bq25185() {
+        assert_eq!(
+            ChargerStatus::from_pins(true, true),
+            ChargerStatus::CompleteOrIdle
+        );
+        assert_eq!(
+            ChargerStatus::from_pins(true, false),
+            ChargerStatus::Charging
+        );
+        assert_eq!(
+            ChargerStatus::from_pins(false, true),
+            ChargerStatus::RecoverableFault
+        );
+        assert_eq!(
+            ChargerStatus::from_pins(false, false),
+            ChargerStatus::LatchedFault
+        );
+        assert!(!ChargerStatus::LatchedFault.permits_charging());
     }
 }

@@ -25,9 +25,9 @@ tested; nRF52833 bring-up and BLE are stubbed.
 - **`[lints.rust] unused = "deny"`.** Unused code fails the build. Do not
   `#[allow(dead_code)]` to keep dead methods; delete them.
 - **Toolchain is pinned.** `rust-toolchain.toml` sets stable plus the
-  `thumbv7em-none-eabihf` target. `memory.x` is the SoftDevice-free layout
-  (nRF52833: 512 KiB flash, 128 KiB RAM); adding the S132/S140 SoftDevice for
-  BLE means moving FLASH and RAM origins (see the comments in `memory.x`).
+  `thumbv7em-none-eabihf` target. The nRF52833 uses S140 for BLE. Keep the
+  application flash and RAM origins synchronized with the exact S140 build and
+  enabled BLE features.
 
 ## CI
 

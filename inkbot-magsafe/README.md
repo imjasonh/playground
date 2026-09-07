@@ -11,30 +11,34 @@ materials is [`docs/inkbot-magsafe-bom.csv`](../docs/inkbot-magsafe-bom.csv).
 Hardware notes (netlist, pin map, board stack-up) are in
 [`hardware/`](hardware/).
 
-Status: scaffold. The pure logic (frame protocol, panel geometry, power gating)
-is implemented and unit-tested; the nRF52833 bring-up (SPI panel driver, SAADC,
-SoftDevice BLE) is stubbed. The iOS app is deferred until the firmware and
-hardware settle.
+Status: EVT design. Host-tested code covers the frame protocol, panel geometry,
+refresh policy, charger status, and fail-closed REGOUT0 policy. The nRF52833
+SPI, SAADC, watchdog, S140 BLE, flash store, and signed DFU integrations are not
+implemented. Do not treat a successful cross-build as working device firmware.
 
 ## What runs today
 
-- `src/protocol.rs`: the resumable, idempotent BLE frame-transfer state machine
-  with a table-free streaming CRC-32. Host-tested.
-- `src/panel.rs`: geometry and the SSD1677-class command set for the 480x800
-  portrait panel (3.97in GDEY0397T81P), including partial-refresh window math.
+- `src/boot.rs`: one-time UICR REGOUT0 policy. An erased device is programmed
+  for a 3.0 V VDD rail and reset; a conflicting persistent setting fails closed.
+- `src/protocol.rs`: the resumable BLE frame-transfer state machine with exact
+  bounds, byte alignment, length, CRC-32, conflicting-ID, and replay checks.
+- `src/panel.rs`: geometry and the SSD1677 command set for the 480 x 800
+  portrait GDEM0397T81P panel, including byte-aligned partial-refresh windows.
   Host-tested.
-- `src/power.rs`: battery state-of-charge estimate and the voltage and
-  temperature gates for refresh and charge. Host-tested.
-- `src/main.rs`: the bare-metal entry point. A do-nothing WFI loop today, with
-  the bring-up sequence written out as the next steps.
+- `src/power.rs`: battery state-of-charge estimate, BQ25185 status decoding,
+  connection interval selection, and refresh safety gates.
+- `src/main.rs`: the bare-metal entry point and REGOUT0 programming path. It
+  enters WFI after the early power check until the peripheral drivers land.
 
 ## Target
 
 - MCU: Nordic nRF52833 (Cortex-M4F, 128 KiB RAM), target `thumbv7em-none-eabihf`,
   shipped as a pre-certified Raytac MDBT50Q-512K module. The 48 KiB mono
   framebuffer for the 480x800 panel needs the 52833's RAM.
-- Flashing: SWD test pads (there is no USB port); the cargo runner is
-  `probe-rs`.
+- BLE stack: S140 7.3.0. The linker reserves 156 KiB of flash and 31 KiB of
+  RAM. Recalculate the RAM reservation after final GATT, L2CAP, MTU, DLE, and
+  connection settings.
+- Flashing: SWD test pads. There is no USB port; the cargo runner is `probe-rs`.
 
 ## Build and test
 
