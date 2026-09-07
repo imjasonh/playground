@@ -240,6 +240,9 @@ def build_placed_board() -> pcbnew.BOARD:
         if rotation:
             footprint.SetOrientationDegrees(rotation)
         footprint.Flip(footprint.GetPosition(), False)
+        for graphic in footprint.GraphicalItems():
+            if graphic.GetLayer() == pcbnew.B_SilkS:
+                graphic.SetLayer(pcbnew.B_Fab)
         footprint.Reference().SetLayer(pcbnew.B_Fab)
         footprint.Reference().SetVisible(True)
         placed[reference] = footprint
