@@ -121,3 +121,36 @@ jobs:
 
       - name: Check routed board
         run: python3 run_drc.py
+
+  native-eda:
+    name: Native KiCad 9 ERC + DRC
+    runs-on: ubuntu-latest
+    container:
+      image: kicad/kicad:9.0@sha256:e638b79b0321f29395a5b783e94bb9f3c73303e8da15da27b8f5cb4b67a37729
+      options: --user root
+    defaults:
+      run:
+        working-directory: inkbot-magsafe/kicad
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Electrical rules
+        run: >-
+          kicad-cli sch erc
+          --format report
+          --severity-error
+          --exit-code-violations
+          --output /tmp/inkbot-erc.rpt
+          inkbot-magsafe.kicad_sch
+
+      - name: Board rules and schematic parity
+        run: >-
+          kicad-cli pcb drc
+          --format report
+          --severity-error
+          --schematic-parity
+          --exit-code-violations
+          --output /tmp/inkbot-drc.rpt
+          inkbot-magsafe.kicad_pcb
