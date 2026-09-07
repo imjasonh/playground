@@ -42,7 +42,7 @@ def fill_zones(board: pcbnew.BOARD) -> None:
     pcbnew.ZONE_FILLER(board).Fill(copper_zones)
 
 
-def build_placed_board() -> pcbnew.BOARD:
+def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     """Build the board outline, place footprints, assign nets, and add planes."""
     generate_pcb.main()
     subprocess.run(
@@ -103,6 +103,8 @@ def build_placed_board() -> pcbnew.BOARD:
     for pad_number in layout_route.MODULE_GND_PADS:
         assign_pad("U1", pad_number, layout_route.GND)
 
+    keepalive: list[pcbnew.SHAPE_POLY_SET] = []
+
     def add_plane(layer: int, net_name: str) -> None:
         zone = pcbnew.ZONE(board)
         zone.SetLayer(layer)
@@ -119,6 +121,7 @@ def build_placed_board() -> pcbnew.BOARD:
         ):
             outline.Append(layout_route.mm(x), layout_route.mm(y))
         zone.SetOutline(outline)
+        keepalive.append(outline)
         board.Add(zone)
 
     add_plane(pcbnew.In2_Cu, layout_route.GND)
@@ -140,12 +143,13 @@ def build_placed_board() -> pcbnew.BOARD:
     for x, y in ((1.5, 85), (11, 85), (11, 93), (1.5, 93)):
         outline.Append(layout_route.mm(x), layout_route.mm(y))
     antenna_keepout.SetOutline(outline)
+    keepalive.append(outline)
     board.Add(antenna_keepout)
 
     board.BuildConnectivity()
     fill_zones(board)
     pcbnew.SaveBoard(str(BOARD), board)
-    return board
+    return board, keepalive
 
 
 def freerouting_command() -> list[str]:
@@ -189,7 +193,7 @@ def freerouting_command() -> list[str]:
 
 def main() -> None:
     FAB.mkdir(exist_ok=True)
-    board = build_placed_board()
+    board, _keepalive = build_placed_board()
     if not pcbnew.ExportSpecctraDSN(board, str(DSN)):
         raise SystemExit(f"failed to export Specctra DSN: {DSN}")
 
