@@ -130,7 +130,7 @@ def import_freerouting_session(board: pcbnew.BOARD, path: Path) -> None:
                 if len(path_form) < 7 or path_form[0] != "path":
                     raise ValueError(f"malformed path for net {net_name}")
                 layer = board.GetLayerID(str(path_form[1]))
-                width = coordinate(path_form[2])
+                width = max(coordinate(path_form[2]), layout_route.mm(0.15))
                 values = path_form[3:]
                 if len(values) % 2:
                     raise ValueError(f"odd coordinate count for net {net_name}")
@@ -270,6 +270,8 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         board.Add(zone)
 
     add_plane(pcbnew.In2_Cu, layout_route.GND)
+    add_plane(pcbnew.B_Cu, layout_route.GND)
+    add_plane(pcbnew.F_Cu, layout_route.GND)
     add_plane(pcbnew.In1_Cu, layout_route.VSYS)
 
     antenna_keepout = pcbnew.ZONE(board)
