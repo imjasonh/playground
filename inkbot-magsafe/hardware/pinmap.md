@@ -1,6 +1,6 @@
 # Module pin map
 
-GPIO assignments for the tile. The MCU is a **Raytac MDBT50Q-512K** (nRF52833
+GPIO assignments for the tile. The MCU is a **Raytac MDBT50Q-1MV2** (nRF52840
 module), so each signal lands on an nRF port that maps to a module pin number.
 The antenna, 32 MHz crystal, and RF match are inside the module — orient the
 module with its antenna end at the board edge farthest from the magnet ring and
@@ -44,5 +44,5 @@ Panel SPI pins mirror the roles the [`inkbot-esp32/`](../../inkbot-esp32/) drive
 uses (SCLK, MOSI, CS, DC, RST, BUSY), so the panel command sequence ports across
 with only the pin numbers changed.
 
-The open-drain Qi and charger status pins use the nRF52833's internal pull-ups.
+The open-drain Qi and charger status pins use the nRF52840's internal pull-ups.
 Do not pull them up to `SYS`, which can reach 4.5 V.

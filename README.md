@@ -81,7 +81,7 @@ them:
   partial-refreshes a correct solve.
 - **[`inkbot-magsafe/`](inkbot-magsafe/)** — firmware and hardware for a
   battery-first BLE sibling: a 4-inch e-ink tile that snaps to an iPhone's
-  MagSafe ring and takes frames from an iOS app. nRF52833, no user connector,
+  MagSafe ring and takes frames from an iOS app. nRF52840, no user connector,
   and wireless charging. Host logic and hardware contracts are tested;
   peripheral bring-up remains incomplete. Design in
   [`docs/inkbot-magsafe-design.md`](docs/inkbot-magsafe-design.md) with a

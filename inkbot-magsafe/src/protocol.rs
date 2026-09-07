@@ -321,17 +321,22 @@ impl Receiver {
         self.last_completed
     }
 
-    /// Record a verified frame after its pixels and metadata are durable.
-    pub fn commit(&mut self) -> Option<CommittedFrame> {
-        if !self.verified {
-            return None;
-        }
-        let committed = CommittedFrame {
+    /// Return the verified metadata without advancing the replay boundary.
+    ///
+    /// Use this value to write and verify the durable frame record. Call
+    /// [`Self::commit`] only after that record is durable.
+    pub fn verified_frame(&self) -> Option<CommittedFrame> {
+        self.verified.then_some(CommittedFrame {
             id: self.id,
             len: self.len,
             crc: self.crc,
             window: self.window,
-        };
+        })
+    }
+
+    /// Record a verified frame after its pixels and metadata are durable.
+    pub fn commit(&mut self) -> Option<CommittedFrame> {
+        let committed = self.verified_frame()?;
         self.last_completed = Some(committed);
         self.verified = false;
         self.received = 0;
@@ -529,6 +534,8 @@ mod tests {
             crc: header.crc,
             window: header.window,
         };
+        assert_eq!(rx.verified_frame(), Some(committed));
+        assert_eq!(rx.last_completed(), None);
         assert_eq!(rx.commit(), Some(committed));
         assert_eq!(rx.last_completed(), Some(committed));
     }
@@ -800,5 +807,82 @@ mod tests {
         let mut next = old;
         next.id = 42;
         assert_eq!(rx.begin(next), Ok(Begin::Started));
+    }
+
+    #[test]
+    fn every_small_chunk_size_reconstructs_the_same_frame() {
+        let mut data = [0u8; 400];
+        for (index, byte) in data.iter_mut().enumerate() {
+            *byte = (index as u8).wrapping_mul(29).wrapping_add(7);
+        }
+        let header = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 800,
+                h: 4,
+            },
+            ..header_for(&data, 99)
+        };
+
+        for chunk_size in 1..=127 {
+            struct RecordingSink {
+                bytes: [u8; 400],
+            }
+            impl FrameSink for RecordingSink {
+                type Error = ();
+
+                fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+                    let start = offset as usize;
+                    self.bytes[start..start + bytes.len()].copy_from_slice(bytes);
+                    Ok(())
+                }
+            }
+
+            let mut receiver = Receiver::new();
+            let mut sink = RecordingSink { bytes: [0; 400] };
+            assert_eq!(receiver.begin(header), Ok(Begin::Started));
+            for (index, chunk) in data.chunks(chunk_size).enumerate() {
+                let offset = (index * chunk_size) as u32;
+                let accepted = receiver.ingest(offset, chunk, &mut sink).unwrap();
+                if offset as usize + chunk.len() == data.len() {
+                    assert_eq!(accepted, Accept::Complete);
+                } else {
+                    assert_eq!(accepted, Accept::Progress(offset + chunk.len() as u32));
+                }
+            }
+            assert_eq!(sink.bytes, data);
+            assert_eq!(receiver.verified_frame().unwrap().crc, header.crc);
+        }
+    }
+
+    #[test]
+    fn frame_ids_wrap_but_reject_the_ambiguous_half_range() {
+        let data = b"abcdefgh";
+        let old = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 1,
+            },
+            ..header_for(data, u32::MAX)
+        };
+        let committed = CommittedFrame {
+            id: old.id,
+            len: old.len,
+            crc: old.crc,
+            window: old.window,
+        };
+        let mut receiver = Receiver::with_last_completed(committed);
+
+        let mut wrapped = old;
+        wrapped.id = 0;
+        assert_eq!(receiver.begin(wrapped), Ok(Begin::Started));
+        receiver.cancel();
+
+        let mut ambiguous = old;
+        ambiguous.id = old.id.wrapping_add(1 << 31);
+        assert_eq!(receiver.begin(ambiguous), Err(BeginError::StaleId));
     }
 }

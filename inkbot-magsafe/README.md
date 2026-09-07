@@ -12,14 +12,15 @@ Hardware notes (netlist, pin map, board stack-up) are in
 [`hardware/`](hardware/).
 
 Status: EVT design. Host-tested code covers the frame protocol, panel geometry,
-refresh policy, charger configuration, and SYS conversion. The nRF52833
+refresh policy, charger configuration, and sensor conversions. The nRF52840
 SPI, SAADC, watchdog, S113 BLE, flash store, and signed DFU integrations are not
 implemented. Do not treat a successful cross-build as working device firmware.
 
 ## What runs today
 
 - `src/charger.rs`: ordered BQ25186 safety-register writes and exact readback
-  checks that must pass before hardware can enable charging.
+  checks that must pass before hardware can enable charging. Bus, register, and
+  live-fault failures drop the external gate.
 - `src/protocol.rs`: the versioned, resumable BLE frame-transfer state machine
   with exact bounds, byte alignment, length, CRC-32, conflicting-ID, durable
   commit, and replay checks.
@@ -28,6 +29,10 @@ implemented. Do not treat a successful cross-build as working device firmware.
   800 x 480 order, including byte-aligned partial-refresh windows. Host-tested.
 - `src/power.rs`: battery-only state-of-charge estimate, BQ25186 configuration,
   SYS-divider conversion, connection parameters, and refresh safety gates.
+- `src/memory.rs` and `src/storage.rs`: nonoverlapping 1 MiB flash regions and
+  CRC-protected metadata for alternating 48 KiB frame slots.
+- `src/recovery.rs`: the bounce- and timeout-checked physical owner-reset
+  gesture for the sealed enclosure.
 - `src/main.rs`: the bare-metal entry point. It enters WFI until the peripheral
   drivers land.
   Target builds require the explicit `bringup-stub` feature so this inert image
@@ -35,14 +40,13 @@ implemented. Do not treat a successful cross-build as working device firmware.
 
 ## Target
 
-- MCU: Nordic nRF52833 (Cortex-M4F, 128 KiB RAM), target `thumbv7em-none-eabihf`,
-  shipped as a pre-certified Raytac MDBT50Q-512K module. The 48 KiB mono
-  framebuffer for the 480x800 panel needs the 52833's RAM.
-- BLE stack: S113 7.3.0. The linker reserves 112 KiB for S113, a 176 KiB
-  application slot, a 180 KiB update slot, an 8 KiB settings journal, 32 KiB
-  for the planned signed bootloader, and one 4 KiB state page. It provisionally
-  reserves 32 KiB of RAM for S113. Recalculate RAM after final GATT, L2CAP, MTU,
-  DLE, and connection settings.
+- MCU: Nordic nRF52840 (Cortex-M4F, 256 KiB RAM), target
+  `thumbv7em-none-eabihf`, shipped as a pre-certified Raytac MDBT50Q-1MV2
+  module. Its 1 MiB flash holds equal 256 KiB application and update slots,
+  two 48 KiB frame slots, journals, and the signed bootloader region.
+- BLE stack: S113 7.3.0. The linker reserves 112 KiB for the MBR and S113 and
+  provisionally reserves 32 KiB of RAM for S113. Recalculate RAM after final
+  GATT, L2CAP, MTU, DLE, and connection settings.
 - Flashing: SWD test pads. There is no USB port; the cargo runner is `probe-rs`.
 
 ## Build and test

@@ -1,7 +1,7 @@
 #![cfg_attr(target_os = "none", no_std)]
 #![cfg_attr(target_os = "none", no_main)]
 
-//! Bare-metal entry point for the nRF52833. The interesting logic lives in the
+//! Bare-metal entry point for the nRF52840. The interesting logic lives in the
 //! [`inkbot_magsafe`] library so it can be unit-tested on the host; this file
 //! wires it to the chip.
 //!
@@ -18,7 +18,7 @@ mod firmware {
     use inkbot_magsafe::panel;
     use panic_halt as _;
 
-    const APP_RAM_BYTES: usize = (128 - 32) * 1024;
+    const APP_RAM_BYTES: usize = (256 - 32) * 1024;
     const MIN_RUNTIME_RAM_BYTES: usize = 32 * 1024;
 
     // Keep room for stacks, SoftDevice-facing state, flash buffers, and

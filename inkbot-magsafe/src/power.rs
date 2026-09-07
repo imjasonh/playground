@@ -69,6 +69,7 @@ pub struct PowerSample {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RefreshInhibit {
     LowVoltage,
+    WirelessPower,
     Charging,
     ChargerFault,
     TemperatureUnavailable,
@@ -79,6 +80,9 @@ pub enum RefreshInhibit {
 pub fn refresh_decision(sample: PowerSample, limits: SafetyLimits) -> Result<(), RefreshInhibit> {
     if sample.sys_mv < limits.refresh_start_mv {
         return Err(RefreshInhibit::LowVoltage);
+    }
+    if sample.qi_present {
+        return Err(RefreshInhibit::WirelessPower);
     }
     match sample.charger {
         ChargerStatus::Fault => return Err(RefreshInhibit::ChargerFault),
@@ -351,6 +355,14 @@ mod tests {
         assert_eq!(
             refresh_decision(sample, EVT_SAFETY_LIMITS),
             Err(RefreshInhibit::TemperatureUnavailable)
+        );
+
+        sample = safe_sample();
+        sample.qi_present = true;
+        sample.charger = ChargerStatus::ChargeComplete;
+        assert_eq!(
+            refresh_decision(sample, EVT_SAFETY_LIMITS),
+            Err(RefreshInhibit::WirelessPower)
         );
 
         sample = safe_sample();

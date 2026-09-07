@@ -25,6 +25,9 @@ pub const PORTRAIT_HEIGHT: u16 = WIDTH;
 /// Length in bytes of a full 1-bit-per-pixel framebuffer (48000 bytes).
 pub const FRAME_BYTES: usize = (WIDTH as usize * HEIGHT as usize) / 8;
 
+/// Bytes in one controller-native scan row.
+pub const ROW_BYTES: usize = WIDTH as usize / 8;
+
 /// Expected BUSY polarity from the selected panel specification.
 ///
 /// Verify this on the released panel revision before enabling refresh.
@@ -110,6 +113,40 @@ impl Window {
 pub enum RefreshKind {
     Full,
     Partial,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum PatchError {
+    InvalidWindow,
+    InvalidFrameLength,
+    InvalidPatchLength,
+}
+
+/// Merge a controller-native partial payload into a complete framebuffer.
+pub fn apply_patch(
+    frame: &mut [u8],
+    window: Window,
+    patch: &[u8],
+) -> Result<(), PatchError> {
+    if !window.is_valid() {
+        return Err(PatchError::InvalidWindow);
+    }
+    if frame.len() != FRAME_BYTES {
+        return Err(PatchError::InvalidFrameLength);
+    }
+    if patch.len() != window.packed_bytes() {
+        return Err(PatchError::InvalidPatchLength);
+    }
+
+    let patch_row_bytes = window.w as usize / 8;
+    let destination_x = window.x as usize / 8;
+    for row in 0..window.h as usize {
+        let destination_start = (window.y as usize + row) * ROW_BYTES + destination_x;
+        let source_start = row * patch_row_bytes;
+        frame[destination_start..destination_start + patch_row_bytes]
+            .copy_from_slice(&patch[source_start..source_start + patch_row_bytes]);
+    }
+    Ok(())
 }
 
 /// Tracks partial refreshes so ghosting cannot grow without a cleaning update.
@@ -242,6 +279,48 @@ mod tests {
             h: 3,
         };
         assert_eq!(w.packed_bytes(), 2 * 3);
+    }
+
+    #[test]
+    fn partial_patch_updates_only_its_native_rows() {
+        let mut frame = [0xff; FRAME_BYTES];
+        let window = Window {
+            x: 16,
+            y: 2,
+            w: 16,
+            h: 2,
+        };
+        apply_patch(&mut frame, window, &[0x12, 0x34, 0x56, 0x78]).unwrap();
+        assert_eq!(&frame[2 * ROW_BYTES + 2..2 * ROW_BYTES + 4], &[0x12, 0x34]);
+        assert_eq!(&frame[3 * ROW_BYTES + 2..3 * ROW_BYTES + 4], &[0x56, 0x78]);
+        assert!(frame[..2 * ROW_BYTES + 2].iter().all(|byte| *byte == 0xff));
+        assert!(frame[3 * ROW_BYTES + 4..].iter().all(|byte| *byte == 0xff));
+    }
+
+    #[test]
+    fn patch_rejects_every_length_or_geometry_mismatch() {
+        let mut frame = [0; FRAME_BYTES];
+        assert_eq!(
+            apply_patch(&mut frame, Window::FULL, &[0; 1]),
+            Err(PatchError::InvalidPatchLength)
+        );
+        assert_eq!(
+            apply_patch(&mut frame[..FRAME_BYTES - 1], Window::FULL, &[]),
+            Err(PatchError::InvalidFrameLength)
+        );
+        assert_eq!(
+            apply_patch(
+                &mut frame,
+                Window {
+                    x: 1,
+                    y: 0,
+                    w: 8,
+                    h: 1,
+                },
+                &[0]
+            ),
+            Err(PatchError::InvalidWindow)
+        );
     }
 
     #[test]

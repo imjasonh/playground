@@ -12,7 +12,7 @@ schematic in [`../kicad/`](../kicad/) and
 - **SYS**: BQ25186 power-path output to the MCU and panel LDO inputs. C38
   provides 47 uF of local storage while total nominal SYS capacitance remains
   below the charger's 100 uF limit.
-- **MCU_3V0**: TPS7A0230P output to both nRF52833 VDD and VDDH pins, the
+- **MCU_3V0**: TPS7A0230P output to both nRF52840 VDD and VDDH pins, the
   charger I2C pull-ups, and the SWD voltage-reference pad.
 - **PANEL_3V0**: TPS7A2030P output to panel `VDDIO` and `VCI`.
 - **QI_RECT**: BQ51013C rectifier reservoir. It does not power system loads.
@@ -78,10 +78,10 @@ SSD1677 COG, and a 24-pin 0.5 mm FPC.
 
 ## Radio, timing, debug
 
-- U1 is the Raytac MDBT50Q-512K module: 2.4 GHz antenna, 32 MHz HFXO, DC/DC, and
+- U1 is the Raytac MDBT50Q-1MV2 module: 2.4 GHz antenna, 32 MHz HFXO, DC/DC, and
   RF match are inside it. The board has no discrete RF network.
 - U5 regulates SYS to `MCU_3V0`. The rail powers module pins 28 (`VDD`) and 30
-  (`VDDH`) together, which selects the nRF52833 normal-voltage circuit.
+  (`VDDH`) together, which selects the nRF52840 normal-voltage circuit.
 - The unused module `VBUS` pin is grounded as Nordic's USB-disabled reference
   circuit requires. USB D+ and D- remain unconnected.
 - LFXO Y1 connects to XL1/XL2 (P0.00/P0.01). It is the only external crystal.

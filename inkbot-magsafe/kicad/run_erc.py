@@ -30,7 +30,7 @@ BOARD = HERE / "inkbot-magsafe.kicad_pcb"
 BOM = HERE.parents[1] / "docs" / "inkbot-magsafe-bom.csv"
 
 PIN_NETS = {
-    # Raytac MDBT50Q-512K.
+    # Raytac MDBT50Q-1MV2.
     ("U1", "1"): "GND",
     ("U1", "2"): "GND",
     ("U1", "9"): "/QI_EN1",
@@ -161,7 +161,7 @@ PIN_NETS = {
 }
 
 VALUE_CONTRACT = {
-    "U1": ("MDBT50Q-512K", "RF_Module:Raytac_MDBT50Q"),
+    "U1": ("MDBT50Q-1MV2", "RF_Module:Raytac_MDBT50Q"),
     "U2": ("BQ51013C", "Package_DFN_QFN:Texas_VQFN-RHL-20"),
     "U3": ("BQ25186DLHR", "inkbot_magsafe:TI_DLH0010A_WSON-10"),
     "U4": ("TPS7A2030PDBVR", "Package_TO_SOT_SMD:SOT-23-5"),

@@ -53,7 +53,7 @@ allowance before a production release.
   overlaps the magnetic ring. The coil and magnets are behind it.
 - Back, top: Qi RX coil inside the MagSafe magnet ring, ring center **30 mm from
   the top edge** as an EVT fit hypothesis.
-- Back, below the coil: MDBT50Q-512K module (antenna end toward a board edge),
+- Back, below the coil: MDBT50Q-1MV2 module (antenna end toward a board edge),
   BQ51013C receiver, BQ25186 charger, MCU and panel LDOs, and passives around
   the cutout.
 - Cutout: protected LP242030 100 mAh custom pack with an NTC, keyed harness,
@@ -83,9 +83,9 @@ orientation magnet.
 |-------|-----------|
 | E-ink panel + adhesive | ~1.02 mm |
 | PCB | 0.8 mm |
-| MDBT50Q-512K module | ~2.0 mm |
+| MDBT50Q-1MV2 module | ~2.05 mm |
 | Rear cover | ~0.25 mm |
-| **Total at module** | **~4.07 mm** |
+| **Total at module** | **~4.12 mm** |
 
 At the cell (cutout, so the PCB does not sit under the cell):
 

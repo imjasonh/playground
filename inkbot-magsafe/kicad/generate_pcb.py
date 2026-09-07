@@ -163,7 +163,7 @@ def main(output: Path = OUT) -> None:
     (date "2026-09-07")
     (rev "0.8.0")
     (comment 1 "0.8 mm four-layer EVT board; protected-cell cutout; structural spacer and protective films")
-    (comment 2 "BQ51013C + BQ25186; Raytac MDBT50Q-512K; GDEY0397T81P")
+    (comment 2 "BQ51013C + BQ25186; Raytac MDBT50Q-1MV2; GDEY0397T81P")
   )
 
   (layers

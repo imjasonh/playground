@@ -55,12 +55,12 @@ it should not.
 
 | Topic | Decision |
 |-------|----------|
-| MCU / radio | **Raytac MDBT50Q-512K** — pre-certified nRF52833 module (128 KB RAM for the 48 KB framebuffer; integrated antenna, 32 MHz crystal, DC/DC, RF match) |
+| MCU / radio | **Raytac MDBT50Q-1MV2**, a pre-certified nRF52840 module with 1 MiB flash, 256 KiB RAM, an integrated antenna, a 32 MHz crystal, DC/DC, and RF matching |
 | Panel | **GDEY0397T81P**, 3.97-inch 480 x 800 portrait monochrome e-paper, SSD1677, partial refresh |
 | Orientation | portrait; ring high on the tile, panel fills the tile and overlaps the ring |
 | Battery | **LP242030 custom pack requirement**, 100 mAh, protected, at least 200 mA continuous pack discharge, 10 kOhm NTC, keyed three-wire harness, up to 3.5 mm thick |
 | Power | **BQ51013C** Qi 1.3 receiver into a default-off **BQ25186** charger with a SYS power path |
-| MCU power | **TPS7A0230P** 3.0 V nanopower LDO; nRF52833 VDD and VDDH tied for normal-voltage mode |
+| MCU power | **TPS7A0230P** 3.0 V nanopower LDO; nRF52840 VDD and VDDH tied for normal-voltage mode |
 | Panel power | **TPS7A2030P** 3.0 V LDO, disabled with active discharge between refreshes |
 | Charging | Qi 1.3 receiver configured for about 250 mA nominal and 300 mA hardware limit; no pass-through |
 | Frame source | the paired iPhone only; no Worker, no second radio |
@@ -71,7 +71,7 @@ it should not.
 | iOS delivery | deferred until hardware is dialed in; Core Bluetooth central when built |
 | Schematic | KiCad project under [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/) |
 
-### Why nRF52833, not the ESP32-C3 in the brief
+### Why nRF52840, not the ESP32-C3 or nRF52833
 
 The brief names an ESP32-C3. It works, and it is cheap, but it is the wrong tool
 for a battery-first BLE peripheral that must stay reachable in the background:
@@ -84,24 +84,27 @@ for a battery-first BLE peripheral that must stay reachable in the background:
 - **The Nordic SoftDevice is a mature, qualified BLE stack** with good long-lived
   connection behavior; the e-ink hobbyist and product world runs on it.
 - **A nanopower LDO isolates the MCU rail.** TPS7A0230P regulates SYS to 3.0 V.
-  Tying VDD and VDDH follows the nRF52833 normal-voltage reference circuit and
+  Tying VDD and VDDH follows the nRF52840 normal-voltage reference circuit and
   provides a valid rail for the BQ25186 I2C pull-ups.
 
-The design uses the **nRF52833** rather than the 52832 because the 3.97-inch
-panel needs a **48 KB mono framebuffer** (480×800). The 52832's 64 KB RAM is too
-tight once the SoftDevice takes its share; the 52833's **128 KB** holds the
-frame plus S113 and the application.
+The 3.97-inch panel needs a **48 KB mono framebuffer**. An nRF52833 has enough
+RAM for one frame, but its 512 KiB flash cannot comfortably hold S113, equal
+application and update slots, a signed bootloader, bond data, and two complete
+frame slots. The **nRF52840** provides 1 MiB flash and 256 KiB RAM in the same
+host footprint. The additional flash preserves the last committed frame while
+a new frame or firmware image is written, so power loss does not destroy the
+only recoverable copy.
 
-The nRF52833 ships as a **pre-certified module, the Raytac MDBT50Q-512K**, not a
+The nRF52840 ships as the **pre-certified Raytac MDBT50Q-1MV2 module**, not a
 bare QFN. The module integrates the 2.4 GHz antenna, the 32 MHz crystal, the
-DC/DC inductors, and the RF matching network, and carries FCC/IC/CE/MIC/KC/SRRC
-modular approval. The module removes the board-side antenna matching network,
-but it does not remove RF integration work. The PCB keeps copper out beneath
-the antenna, places the antenna end at the board edge, and still needs host
-product emissions and radiated-performance tests with the phone, magnets, and
-coil installed. The module adds about 1 mm over a bare QFN and is about 2 mm
-tall. The board adds a 10 uF MCU-rail capacitor plus a 32.768 kHz crystal on
-P0.00/P0.01. The NFCT pins stay unused.
+DC/DC inductors, and the RF matching network, and carries FCC, ISED, CE, MIC,
+KC, SRRC, NCC, and RCM modular approvals. The module removes the board-side
+antenna matching network, but it does not remove RF integration work. The PCB
+keeps copper out beneath the antenna, places the antenna end at the board edge,
+and still needs finished-product emissions and radiated-performance tests with
+the phone, magnets, and coil installed. The module is about 2.05 mm tall. The
+board adds a 10 uF MCU-rail capacitor and a 32.768 kHz crystal on P0.00/P0.01.
+The NFCT pins stay unused.
 
 ## Block diagram
 
@@ -114,8 +117,8 @@ P0.00/P0.01. The NFCT pins stay unused.
 
    SYS -> TPS7A0230P 3.0 V -> MDBT50Q VDD + VDDH
    SYS -> TPS7A2030P 3.0 V -> 100 uF -> SSD1677 panel power and boost circuit
-   MDBT50Q-512K <-> panel SPI, BUSY, reset, and panel-power enable
-   MDBT50Q-512K <-> BQ25186 I2C; default-off /CE gate; Qi EPT controls
+   MDBT50Q-1MV2 <-> panel SPI, BUSY, reset, and panel-power enable
+   MDBT50Q-1MV2 <-> BQ25186 I2C; default-off /CE gate; Qi EPT controls
 
    Factory and recovery: SWDIO, SWDCLK, reset, VDD reference, SYS, and ground
 ```
@@ -147,8 +150,8 @@ Apple's MagSafe keep-in puts the tile top ~43 mm from the phone top on a 15 Pro
 
 The **3.97-inch 480×800** module is the largest common mono e-paper that clears
 both axes on a 6.1" Pro. Same resolution and SSD1677 controller as the 4.26";
-only the glass is shorter. A 480×800 mono frame is still **48 KB**, which is why
-the MCU is the nRF52833 (128 KB).
+only the glass is shorter. A 480×800 mono frame is still **48 KB**. The
+nRF52840 has room for the runtime framebuffer and two nonvolatile frame slots.
 
 ## Power budget
 
@@ -274,7 +277,7 @@ The estimates include 0.10 mm front adhesive and a 0.25 mm rear cover:
 
 | Region | Approx. |
 |--------|---------|
-| Module | **~4.07 mm** |
+| Module | **~4.12 mm** |
 | Protected battery pack in the cutout | **~4.77 mm** |
 | Magnet ring plus DC shield | **~3.27 mm** |
 | Coil, ferrite, and stacked film NTC | **~3.44 mm** |
@@ -311,9 +314,14 @@ intentional no-connects, BOM coverage, and board-pad parity. Both checks must
 pass on the release commit. They do not replace schematic review, DFM review,
 or the bench validation table later in this document.
 
+`production-gates.json` records each external review and physical qualification
+with its evidence path. Normal exports identify themselves as EVT in the
+fabrication manifest. A production-labeled export fails unless every gate has
+evidence and the classification is `PRODUCTION`.
+
 Recommended one-off sequence (validate function before optimizing thickness):
 
-1. **Bench assembly.** Use an nRF52833 or nRF52840 development kit, the
+1. **Bench assembly.** Use an nRF52840 development kit, the
    GDEY0397T81P vendor adapter, and a current-limited bench supply. Prove the
    panel sequence, measured current profile, BLE transport, and failure
    recovery before connecting a cell.
@@ -382,9 +390,14 @@ accepts control only from the bonded identity and uses private addresses.
 
 The frame CRC detects transfer corruption; it is not an authenticator.
 Persist the last committed frame id with the frame metadata so a reboot does
-not reopen the replay window. The product also needs a documented owner-reset
-gesture that does not depend on the old phone. Until that gesture exists, SWD
-erase is the only bond-recovery path and the firmware is not ready for users.
+not reopen the replay window. To reset ownership without a button or the old
+phone, place and remove the tile from a Qi pad five times within 45 seconds.
+Each attached and detached phase must last at least 750 ms, and the fifth
+placement leaves the tile on external power for the erase. Host-tested gesture
+logic rejects contact bounce and expired sequences. Target firmware must still
+erase both bond-journal copies, verify the erase, and display a new random
+passkey before this recovery path is complete. SWD full erase remains the
+factory fallback.
 
 ### Getting a frame there in the background
 
@@ -444,16 +457,18 @@ stream, commit, done.
 ## Firmware
 
 The Rust crate reserves flash and RAM for S113 7.3.0, which supports the
-nRF52833 peripheral role, LE Secure Connections, 2M PHY, and L2CAP
-connection-oriented channels with less flash than S140. The provisional map
-allocates 112 KiB to the MBR and S113, a 176 KiB application slot, a 180 KiB
-update slot, an 8 KiB settings journal, a 32 KiB bootloader, and a 4 KiB state
-page. The linker reserves 32 KiB of RAM for S113 and rejects an application
-load segment outside its primary slot.
+nRF52840 peripheral role, LE Secure Connections, 2M PHY, and L2CAP
+connection-oriented channels with less flash than S140. The 1 MiB map allocates
+112 KiB to the MBR and S113, equal 256 KiB application and update slots, a
+16 KiB bond and settings journal, two 48 KiB frame slots, separate frame and
+fault journals, and the top 128 KiB for the bootloader and Nordic metadata.
+The linker provisionally reserves 32 KiB of the 256 KiB RAM for S113 and rejects
+an application load segment outside its primary slot.
 Host-tested code implements versioned frame validation, replay checks, a
 separate durable-commit step, panel window rules, periodic full refresh policy,
-charger policy, SYS conversion, and voltage and temperature gates. Final RAM
-origin must come from `sd_ble_enable()` with the released connection settings.
+charger policy, SYS conversion, voltage and temperature gates, the complete
+flash map, and CRC-protected alternating-frame metadata. Final RAM origin must
+come from `sd_ble_enable()` with the released connection settings.
 
 The following target integrations remain release blockers:
 
@@ -477,6 +492,8 @@ The following target integrations remain release blockers:
   recovery through CTRL-AP and the SWD fixture.
 - Program and verify both UICR `PSELRESET` words for P0.18 in the factory image
   so the reset pogo pad works before field recovery is needed.
+- Connect the five-attachment owner-reset gesture to verified bond erasure and
+  new-passkey display while the tile remains on Qi power.
 
 BLE transports firmware from the phone. A CRC-only frame path and an unsigned
 image are not acceptable DFU mechanisms.
@@ -491,9 +508,9 @@ extended cost for every reference in that row, not a single component price:
 
 | Quantity | Unit direct cost | Build total | With 15% procurement contingency |
 |---:|---:|---:|---:|
-| 1 | **$168.42** | **$168** | **$194** |
-| 100 | **$60.01** | **$6,001** | **$6,901** |
-| 1,000 | **$41.79** | **$41,790** | **$48,059** |
+| 1 | **$173.65** | **$174** | **$200** |
+| 100 | **$63.05** | **$6,305** | **$7,251** |
+| 1,000 | **$44.22** | **$44,220** | **$50,853** |
 
 The one-unit estimate includes manual assembly setup but excludes minimum reel
 buys, shipping, duties, tax, and the tools needed to program or measure the
@@ -536,6 +553,7 @@ Obtain supplier quotations and compliance-lab scopes before treating the
   refresh.
 - Busy timeout, watchdog, brownout logging, and forced periodic full refresh.
 - Duty-cycled, open- and short-detecting panel temperature measurement.
+- No panel refresh while the Qi receiver reports power transfer.
 - Structural spacer, strain relief, cell swelling clearance, and electrical
   insulation under the rear cover.
 - No refresh outside the panel's qualified 0-50 degrees Celsius range.
@@ -593,15 +611,15 @@ and raw data. A pass on one prototype is not a production qualification.
   keeps the system to one radio and one trust boundary, at the cost of sub-minute
   remote updates (see BLE background).
 - **Mono panel.** Black/white only. Grayscale or color is a later variant.
-- **3.97-inch 480 x 800 panel on the nRF52833.** Largest mono e-paper that fits a
+- **3.97-inch 480 x 800 panel on the nRF52840.** Largest mono e-paper that fits a
   6.1" Pro in **both** width and height with the ring high (camera-clear). The
   4.26" was tried and dropped — it overhangs the bottom of a 15 Pro by ~4 mm.
-  Minis are dropped (too narrow). The 48 KB frame is why the MCU is the 128 KB
-  nRF52833.
-- **Pre-certified module, not bare QFN.** The nRF52833 ships as a Raytac
-  MDBT50Q-512K module: it folds in the antenna, 32 MHz crystal, DC/DC, and RF
-  match with modular certification. The module still requires its host
-  keep-out, layout review, and finished-product tests.
+  Minis are dropped because they are too narrow. The nRF52840 provides enough
+  flash for equal update slots and two 48 KiB frame copies.
+- **Pre-certified module, not bare QFN.** The nRF52840 ships as a Raytac
+  MDBT50Q-1MV2 module with the antenna, 32 MHz crystal, DC/DC, and RF matching.
+  The module still requires its host keep-out, layout review, and
+  finished-product tests.
 - **Launch faces:** clock, calendar, weather, health, photo/image, custom text,
   and a best-effort notification summary. Transit is deferred.
 - **Relaxed background cadence.** Target the iOS `BGTask` rhythm (roughly every
@@ -623,7 +641,7 @@ and raw data. A pass on one prototype is not a production qualification.
   is built, it is a private companion service, not the [`inkbot/`](../inkbot/)
   Worker and it shares no code with it. The tile firmware and app stay agnostic
   to the sender.
-- **Reference-design-based KiCad schematic.** Raytac MDBT50Q-512K module,
+- **Reference-design-based KiCad schematic.** Raytac MDBT50Q-1MV2 module,
   BQ51013C receiver, BQ25186 charger, TPS7A0230P MCU rail, TPS7A2030P panel
   rail, complete SSD1677
   boost circuit, and a 0.8 mm board with a rounded battery cutout. Project under

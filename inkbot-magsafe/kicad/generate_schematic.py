@@ -33,7 +33,7 @@ PRO = OUT_DIR / "inkbot-magsafe.kicad_pro"
 def build_lib_symbols() -> str:
     return "\n\n".join(
         [
-            embed(SYM / "RF_Module.kicad_sym", "RF_Module", "MDBT50Q-512K"),
+            embed(SYM / "RF_Module.kicad_sym", "RF_Module", "MDBT50Q-1MV2"),
             embed(LOCAL_SYM, "inkbot_magsafe", "BQ51013C"),
             embed(LOCAL_SYM, "inkbot_magsafe", "BQ25186"),
             embed(LOCAL_SYM, "inkbot_magsafe", "TPS7A2030P"),
@@ -312,11 +312,11 @@ def main() -> None:
 
     # ----------------------------------------------------------- BLE module
     module_x, module_y = snap(155), snap(235)
-    module = library.get("MDBT50Q-512K")
+    module = library.get("MDBT50Q-1MV2")
     sch.place(
-        "RF_Module:MDBT50Q-512K",
+        "RF_Module:MDBT50Q-1MV2",
         "U1",
-        "MDBT50Q-512K",
+        "MDBT50Q-1MV2",
         x=module_x,
         y=module_y,
         footprint="RF_Module:Raytac_MDBT50Q",
@@ -356,7 +356,7 @@ def main() -> None:
         if pin.number not in pin_nets:
             sch.connect_pin_noconnect("U1", pin.number, by_number=True)
 
-    # A nanopower 3.0 V LDO keeps the nRF52833 in normal-voltage mode. VDD and
+    # A nanopower 3.0 V LDO keeps the nRF52840 in normal-voltage mode. VDD and
     # VDDH are tied together as the Nordic reference circuit requires.
     sch.place(
         "inkbot_magsafe:TPS7A0230P",
@@ -560,7 +560,7 @@ def main() -> None:
     sch.text_note(
         "inkbot-magsafe EVT schematic\\n"
         "BQ51013C Qi 1.3 receiver + BQ25186 protected-cell charger,\\n"
-        "Raytac MDBT50Q-512K on a nanopower 3.0 V rail, and the GDEY0397T81P\\n"
+        "Raytac MDBT50Q-1MV2 on a nanopower 3.0 V rail, and the GDEY0397T81P\\n"
         "SSD1677 boost circuit. Qi resonance and FOD values require EVT tuning.",
         snap(15),
         snap(15),
