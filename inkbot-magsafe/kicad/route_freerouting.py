@@ -29,6 +29,13 @@ ROUTE_BASE = FAB / "inkbot-magsafe-route-base.kicad_pcb"
 PLACED_BOARD = FAB / "inkbot-magsafe-placed.kicad_pcb"
 INCOMPLETE_BOARD = FAB / "inkbot-magsafe-incomplete.kicad_pcb"
 VIA_NAME = re.compile(r"Via\[(\d+)-(\d+)\]_(\d+):(\d+)_um")
+BLOCKING_DRC_WARNINGS = {
+    "connection_width",
+    "isolated_copper",
+    "lib_footprint_mismatch",
+    "track_dangling",
+    "via_dangling",
+}
 
 
 def fill_zones(board: pcbnew.BOARD) -> None:
@@ -38,6 +45,31 @@ def fill_zones(board: pcbnew.BOARD) -> None:
         if not zone.GetIsRuleArea():
             copper_zones.append(zone)
     pcbnew.ZONE_FILLER(board).Fill(copper_zones)
+
+
+def blocking_drc_items(board: pcbnew.BOARD, report: Path) -> list[str]:
+    """Run KiCad DRC and return release-blocking report headings."""
+    pcbnew.WriteDRCReport(
+        board,
+        str(report),
+        pcbnew.EDA_UNITS_MILLIMETRES,
+        True,
+    )
+    text = report.read_text()
+    blocked = []
+    for block in re.split(r"(?=^\[)", text, flags=re.MULTILINE):
+        category_match = re.match(r"^\[([a-z_]+)\]", block)
+        if category_match is None:
+            continue
+        category = category_match.group(1)
+        if "Severity: error" in block or category in BLOCKING_DRC_WARNINGS:
+            heading = block.splitlines()[0]
+            detail = next(
+                (line.strip() for line in block.splitlines()[1:] if line.strip()),
+                "",
+            )
+            blocked.append(f"{heading} {detail}".strip())
+    return blocked
 
 
 def parse_sexpression(text: str) -> list[object]:
@@ -842,6 +874,11 @@ def main() -> None:
     if unconnected:
         pcbnew.SaveBoard(str(INCOMPLETE_BOARD), board)
         raise SystemExit(f"routing left {unconnected} open ratsnest connections")
+    blocked = blocking_drc_items(board, FAB / "route-drc-report.txt")
+    if blocked:
+        pcbnew.SaveBoard(str(INCOMPLETE_BOARD), board)
+        details = "\n  ".join(blocked[:10])
+        raise SystemExit(f"routing failed KiCad DRC:\n  {details}")
     pcbnew.SaveBoard(str(BOARD), board)
     layout_route.export_fab()
 

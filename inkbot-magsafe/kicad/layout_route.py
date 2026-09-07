@@ -17,6 +17,26 @@ NETLIST = Path("/tmp/inkbot.net")
 FP_ROOT = Path("/usr/share/kicad/footprints")
 LOCAL_FP_ROOT = HERE / "inkbot_magsafe.pretty"
 FAB = HERE / "fab"
+RELEASE_SUFFIXES = {
+    ".drl",
+    ".g2",
+    ".g3",
+    ".gba",
+    ".gbr",
+    ".gbrjob",
+    ".gbl",
+    ".gbo",
+    ".gbp",
+    ".gbs",
+    ".gm1",
+    ".gta",
+    ".gtl",
+    ".gto",
+    ".gtp",
+    ".gts",
+    ".pdf",
+    ".step",
+}
 
 BOARD_W, BOARD_H = 60.0, 99.0
 BAT_W, BAT_H, BAT_CY = 34.0, 23.0, 70.0
@@ -164,6 +184,13 @@ def load_fp(library_name: str):
 def export_fab() -> None:
     """Export Gerbers, drill data, and the pick-and-place file."""
     FAB.mkdir(exist_ok=True)
+    for path in FAB.iterdir():
+        if path.is_file() and (
+            path.suffix in RELEASE_SUFFIXES
+            or path.name
+            in {"inkbot-magsafe-pos.csv", "fabrication-manifest.json"}
+        ):
+            path.unlink()
 
     def run(arguments):
         result = subprocess.run(arguments, capture_output=True, text=True)
@@ -233,32 +260,12 @@ def export_fab() -> None:
         capture_output=True,
         text=True,
     ).stdout.strip()
-    release_suffixes = {
-        ".drl",
-        ".g2",
-        ".g3",
-        ".gba",
-        ".gbr",
-        ".gbrjob",
-        ".gbl",
-        ".gbo",
-        ".gbp",
-        ".gbs",
-        ".gm1",
-        ".gta",
-        ".gtl",
-        ".gto",
-        ".gtp",
-        ".gts",
-        ".pdf",
-        ".step",
-    }
     release_files = sorted(
         path
         for path in FAB.iterdir()
         if path.is_file()
         and (
-            path.suffix in release_suffixes
+            path.suffix in RELEASE_SUFFIXES
             or path.name == "inkbot-magsafe-pos.csv"
         )
     )
