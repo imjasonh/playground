@@ -831,10 +831,8 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_locked_path(
         (
             (5.35, 65.75),
-            (4.3, 65.75),
-            (3.8, 65.25),
-            (1.525, 65.25),
-            (1.525, 66.0),
+            (4.8, 65.75),
+            (3.775, 66.0),
         ),
         "/QI_CLAMP1",
         pcbnew.B_Cu,
@@ -883,6 +881,38 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         pad_center("C16", "1"),
         "/QI_OUT",
         width=layout_route.mm(0.3),
+    )
+    add_locked_path(
+        (
+            (5.35, 66.75),
+            (4.8, 67.3),
+            (3.775, 68.325),
+            (3.775, 69.0),
+        ),
+        "/QI_BOOT1",
+        pcbnew.B_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_path(
+        (
+            (8.65, 64.75),
+            (9.1, 64.3),
+            (9.675, 63.725),
+            (9.675, 61.5),
+        ),
+        "/QI_FOD",
+        pcbnew.B_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_path(
+        (
+            (8.65, 64.25),
+            (8.65, 53.35),
+            (8.5, 53.2),
+        ),
+        "/QI_COIL_NTC",
+        pcbnew.B_Cu,
+        width=layout_route.mm(0.2),
     )
 
     settings = board.GetDesignSettings()
