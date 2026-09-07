@@ -8,6 +8,27 @@ See [`../kicad/`](../kicad/): schematic, routed 0.8 mm board (0.4 mm volume
 target) with battery cutout, and generators that rebuild both from symbol
 libraries.
 
+### DRC
+
+This environment ships **KiCad 7.0**, whose `kicad-cli pcb` only exports
+Gerbers — there is no `pcb drc` subcommand (that arrives in KiCad 8+). Run the
+pcbnew-based substitute instead:
+
+```bash
+cd inkbot-magsafe/kicad
+python3 run_drc.py
+# writes fab/drc-report.txt (gitignored with the rest of fab/)
+```
+
+On KiCad 8+:
+
+```bash
+kicad-cli pcb drc --format report --output fab/drc-report.txt inkbot-magsafe.kicad_pcb
+```
+
+Always re-check in the pcbnew GUI before ordering boards (silk, courtyards,
+holes).
+
 ## Text sources
 
 - [`netlist.md`](netlist.md): components and net-by-net connections.
