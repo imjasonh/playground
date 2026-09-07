@@ -60,10 +60,17 @@ jobs:
         run: cargo test --locked
 
       - name: Clippy (thumbv7em-none-eabihf)
-        run: cargo clippy --locked --target thumbv7em-none-eabihf -- -D warnings
+        run: >-
+          cargo clippy --locked
+          --target thumbv7em-none-eabihf
+          --features bringup-stub
+          -- -D warnings
 
       - name: Build firmware (thumbv7em-none-eabihf)
-        run: cargo build --locked --release --target thumbv7em-none-eabihf
+        run: >-
+          cargo build --locked --release
+          --target thumbv7em-none-eabihf
+          --features bringup-stub
 
   hardware:
     name: Schematic contracts + PCB DRC
