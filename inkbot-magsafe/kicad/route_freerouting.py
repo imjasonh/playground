@@ -322,7 +322,20 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             width=layout_route.mm(0.15),
         )
 
-    for x, y in ((9.8005, 69.1673), (7.6957, 63.3848)):
+    add_locked_track(
+        pad_center("U5", "17"),
+        pad_center("C5", "1"),
+        "/QI_BOOT2",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_track(
+        pad_center("U5", "18"),
+        pad_center("C5", "2"),
+        "/QI_RECT",
+        width=layout_route.mm(0.15),
+    )
+
+    for x, y in ((30.0, 5.0), (9.8005, 69.1673), (7.6957, 63.3848)):
         add_locked_via(
             pcbnew.VECTOR2I(layout_route.mm(x), layout_route.mm(y)),
             layout_route.GND,
@@ -353,7 +366,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_plane(pcbnew.In2_Cu, layout_route.GND)
     add_plane(pcbnew.B_Cu, layout_route.GND)
     add_plane(pcbnew.F_Cu, layout_route.GND)
-    add_plane(pcbnew.In1_Cu, layout_route.VSYS)
 
     antenna_keepout = pcbnew.ZONE(board)
     antenna_keepout.SetIsRuleArea(True)
