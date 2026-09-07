@@ -428,15 +428,15 @@ def main() -> None:
     # the working Waveshare 3.97-inch board and checked against the panel's
     # GDR/RESE application circuit.
     sch.place("Device:D", "D3", "MBR0530", x=snap(365), y=snap(120), footprint="Diode_SMD:D_SOD-123")
-    sch.connect_pin("D3", "2", "PANEL_SW", wire_dx=-5.08, by_number=True)
-    sch.connect_pin("D3", "1", "PANEL_VGH", wire_dx=5.08, by_number=True)
+    sch.connect_pin("D3", "2", "PANEL_SW", wire_dx=5.08, by_number=True)
+    sch.connect_pin("D3", "1", "PANEL_VGH", wire_dx=-5.08, by_number=True)
     pass_v(sch, "Device:C", "C37", "4.7uF 25V", 375, 135, "PANEL_SW", "PANEL_PUMP", c0805)
     sch.place("Device:D", "D2", "MBR0530", x=snap(390), y=snap(120), footprint="Diode_SMD:D_SOD-123")
-    sch.connect_pin("D2", "2", "PANEL_PUMP", wire_dx=-5.08, by_number=True)
-    sch.connect_pin("D2", "1", "GND", wire_dx=5.08, by_number=True)
+    sch.connect_pin("D2", "2", "PANEL_PUMP", wire_dx=5.08, by_number=True)
+    sch.connect_pin("D2", "1", "GND", wire_dx=-5.08, by_number=True)
     sch.place("Device:D", "D1", "MBR0530", x=snap(390), y=snap(145), footprint="Diode_SMD:D_SOD-123")
-    sch.connect_pin("D1", "2", "PANEL_VGL", wire_dx=-5.08, by_number=True)
-    sch.connect_pin("D1", "1", "PANEL_PUMP", wire_dx=5.08, by_number=True)
+    sch.connect_pin("D1", "2", "PANEL_VGL", wire_dx=5.08, by_number=True)
+    sch.connect_pin("D1", "1", "PANEL_PUMP", wire_dx=-5.08, by_number=True)
     pass_v(sch, "Device:R", "R13", "1M", 405, 120, "PANEL_VGH", "GND", r0603)
     pass_v(sch, "Device:R", "R14", "1M", 415, 145, "PANEL_VGL", "GND", r0603)
 
