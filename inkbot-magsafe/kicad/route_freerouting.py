@@ -544,8 +544,9 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_locked_path(
         (
             (5.35, 65.75),
-            (4.8, 65.75),
-            (3.775, 66.0),
+            (4.6, 65.75),
+            (3.275, 64.425),
+            (3.275, 64.2),
         ),
         "/QI_CLAMP1",
         pcbnew.B_Cu,
@@ -562,16 +563,10 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         pcbnew.B_Cu,
         width=layout_route.mm(0.15),
     )
-    qi_out_start_via = board_point(4.3, 67.0)
-    qi_out_end_via = board_point(5.625, 75.8)
+    qi_out_start_via = board_point(1.0, 66.25)
+    qi_out_end_via = board_point(1.075, 77.0)
     add_locked_track(
         pad_center("U2", "4"),
-        board_point(4.8, 66.25),
-        "/QI_OUT",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_track(
-        board_point(4.8, 66.25),
         qi_out_start_via,
         "/QI_OUT",
         width=layout_route.mm(0.15),
@@ -579,10 +574,9 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_locked_via(qi_out_start_via, "/QI_OUT")
     add_locked_path(
         (
-            (4.3, 67.0),
-            (5.2, 67.9),
-            (5.2, 75.375),
-            (5.625, 75.8),
+            (1.0, 66.25),
+            (1.0, 76.925),
+            (1.075, 77.0),
         ),
         "/QI_OUT",
         pcbnew.F_Cu,
@@ -591,10 +585,22 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_locked_via(qi_out_end_via, "/QI_OUT")
     add_locked_track(
         qi_out_end_via,
-        pad_center("C16", "1"),
+        pad_center("C15", "1"),
         "/QI_OUT",
         width=layout_route.mm(0.3),
     )
+    add_locked_path(
+        (
+            (5.35, 66.75),
+            (4.6, 66.75),
+            (3.775, 67.575),
+            (3.775, 69.0),
+        ),
+        "/QI_BOOT1",
+        pcbnew.B_Cu,
+        width=layout_route.mm(0.15),
+    )
+
     settings = board.GetDesignSettings()
     default_netclass = settings.m_NetSettings.m_DefaultNetClass
     default_netclass.SetClearance(layout_route.mm(layout_route.CLEAR))
