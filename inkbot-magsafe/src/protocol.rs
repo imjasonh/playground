@@ -178,6 +178,18 @@ pub enum AcceptError {
     InvalidState,
 }
 
+/// Storage target that acknowledges a chunk only after retaining its bytes.
+pub trait FrameSink {
+    type Error;
+
+    fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error>;
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum IngestError<E> {
+    Sink(E),
+}
+
 /// The outcome of offering a chunk to the [`Receiver`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Accept {
@@ -335,8 +347,37 @@ impl Receiver {
         self.running = Crc32::new();
     }
 
-    /// Offer a chunk that the sender says begins at `at`.
-    pub fn accept(&mut self, at: u32, chunk: &[u8]) -> Accept {
+    /// Retain a chunk, then advance the acknowledged transfer offset.
+    pub fn ingest<S: FrameSink>(
+        &mut self,
+        at: u32,
+        chunk: &[u8],
+        sink: &mut S,
+    ) -> Result<Accept, IngestError<S::Error>> {
+        let Ok(chunk_len) = u32::try_from(chunk.len()) else {
+            return Ok(Accept::Rejected(AcceptError::ChunkTooLong));
+        };
+        if !self.active {
+            return Ok(Accept::Rejected(AcceptError::NoActiveTransfer));
+        }
+        if at != self.received {
+            return Ok(Accept::Rejected(AcceptError::WrongOffset));
+        }
+        if chunk_len == 0 {
+            return Ok(Accept::Rejected(AcceptError::EmptyChunk));
+        }
+        let Some(remaining) = self.len.checked_sub(self.received) else {
+            self.cancel();
+            return Ok(Accept::Rejected(AcceptError::InvalidState));
+        };
+        if chunk_len > remaining {
+            return Ok(Accept::Rejected(AcceptError::ChunkTooLong));
+        }
+        sink.write(at, chunk).map_err(IngestError::Sink)?;
+        Ok(self.accept_retained(at, chunk))
+    }
+
+    fn accept_retained(&mut self, at: u32, chunk: &[u8]) -> Accept {
         let Ok(chunk_len) = u32::try_from(chunk.len()) else {
             return Accept::Rejected(AcceptError::ChunkTooLong);
         };
@@ -371,6 +412,12 @@ impl Receiver {
             Accept::Rejected(AcceptError::CrcMismatch)
         }
     }
+
+    #[cfg(test)]
+    fn accept(&mut self, at: u32, chunk: &[u8]) -> Accept {
+        let mut sink = TestSink;
+        self.ingest(at, chunk, &mut sink).unwrap()
+    }
 }
 
 /// Compare wrapping sequence numbers while rejecting duplicates.
@@ -382,6 +429,18 @@ const fn sequence_is_newer(candidate: u32, previous: u32) -> bool {
 impl Default for Receiver {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+struct TestSink;
+
+#[cfg(test)]
+impl FrameSink for TestSink {
+    type Error = ();
+
+    fn write(&mut self, _offset: u32, _bytes: &[u8]) -> Result<(), Self::Error> {
+        Ok(())
     }
 }
 
@@ -640,6 +699,38 @@ mod tests {
             Accept::Rejected(AcceptError::ChunkTooLong)
         );
         assert_eq!(rx.offset(), 0);
+    }
+
+    #[test]
+    fn sink_failure_does_not_acknowledge_bytes() {
+        struct FailingSink;
+
+        impl FrameSink for FailingSink {
+            type Error = u8;
+
+            fn write(&mut self, _offset: u32, _bytes: &[u8]) -> Result<(), Self::Error> {
+                Err(7)
+            }
+        }
+
+        let data = b"abcdefgh";
+        let header = FrameHeader {
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 1,
+            },
+            ..header_for(data, 1)
+        };
+        let mut receiver = Receiver::new();
+        receiver.begin(header).unwrap();
+        assert_eq!(
+            receiver.ingest(0, data, &mut FailingSink),
+            Err(IngestError::Sink(7))
+        );
+        assert_eq!(receiver.offset(), 0);
+        assert!(receiver.is_active());
     }
 
     #[test]
