@@ -119,18 +119,18 @@ VIA_D = mm(0.6)
 VIA_DRILL = mm(0.3)
 
 POWER_WIDTHS = {
-    "/BAT": mm(0.5),
-    "/PANEL_3V0": mm(0.5),
+    "/BAT": mm(0.3),
+    "/PANEL_3V0": mm(0.3),
     "/PANEL_PUMP": mm(0.3),
     "/PANEL_SW": mm(0.3),
     "/PANEL_VGH": mm(0.3),
     "/PANEL_VGL": mm(0.3),
-    "/QI_AC1": mm(0.5),
-    "/QI_AC2": mm(0.5),
-    "/QI_COIL_A": mm(0.5),
-    "/QI_OUT": mm(0.5),
+    "/QI_AC1": mm(0.3),
+    "/QI_AC2": mm(0.3),
+    "/QI_COIL_A": mm(0.3),
+    "/QI_OUT": mm(0.3),
     "/QI_RECT": mm(0.3),
-    "/SYS": mm(0.5),
+    "/SYS": mm(0.25),
     "GND": mm(0.3),
 }
 

@@ -287,6 +287,106 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
                 continue
             raise ValueError(f"unassigned board pad {reference}.{pad.GetNumber()}")
 
+    def pad_center(reference: str, pad_number: str) -> pcbnew.VECTOR2I:
+        for pad in placed[reference].Pads():
+            if pad.GetNumber() == pad_number:
+                return pad.GetCenter()
+        raise ValueError(f"missing pad {reference}.{pad_number}")
+
+    def add_locked_track(
+        start: pcbnew.VECTOR2I,
+        end: pcbnew.VECTOR2I,
+        net_name: str,
+        layer: int = pcbnew.B_Cu,
+        width: int = layout_route.TRACK_W,
+    ) -> None:
+        track = pcbnew.PCB_TRACK(board)
+        track.SetStart(start)
+        track.SetEnd(end)
+        track.SetWidth(width)
+        track.SetLayer(layer)
+        track.SetNet(netmap[net_name])
+        track.SetLocked(True)
+        board.Add(track)
+
+    def add_locked_via(position: pcbnew.VECTOR2I, net_name: str) -> None:
+        via = pcbnew.PCB_VIA(board)
+        via.SetPosition(position)
+        via.SetWidth(layout_route.VIA_D)
+        via.SetDrill(layout_route.VIA_DRILL)
+        via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
+        via.SetNet(netmap[net_name])
+        via.SetLocked(True)
+        board.Add(via)
+
+    def fanout_to_plane(
+        reference: str,
+        pad_number: str,
+        via_xy: tuple[float, float],
+        path_xy: tuple[tuple[float, float], ...] = (),
+        width: int = layout_route.TRACK_W,
+    ) -> None:
+        via = pcbnew.VECTOR2I(layout_route.mm(via_xy[0]), layout_route.mm(via_xy[1]))
+        points = [
+            pad_center(reference, pad_number),
+            *(
+                pcbnew.VECTOR2I(layout_route.mm(x), layout_route.mm(y))
+                for x, y in path_xy
+            ),
+            via,
+        ]
+        for start, end in zip(points, points[1:]):
+            add_locked_track(start, end, layout_route.SYS, width=width)
+        add_locked_via(via, layout_route.SYS)
+
+    # Short, narrow escapes connect every SYS load to the solid In1.Cu plane.
+    # This avoids routing a wide trace through the 0.4 mm-pitch charger pads.
+    fanout_to_plane("U3", "1", (49.7, 61.3), width=layout_route.mm(0.15))
+    fanout_to_plane("TP6", "1", (56.8, 58.0), width=layout_route.mm(0.5))
+    fanout_to_plane("C38", "1", (23.5, 94.525), width=layout_route.mm(0.5))
+    fanout_to_plane("C26", "1", (26.8, 87.0), width=layout_route.mm(0.3))
+    fanout_to_plane(
+        "C21",
+        "1",
+        (20.5, 91.8),
+        path_xy=((17.725, 91.8),),
+        width=layout_route.mm(0.3),
+    )
+    add_locked_track(
+        pad_center("U1", "30"),
+        pad_center("C21", "1"),
+        layout_route.SYS,
+        width=layout_route.mm(0.15),
+    )
+    fanout_to_plane("U4", "1", (36.0, 89.0), width=layout_route.mm(0.3))
+    fanout_to_plane("C18", "1", (51.55, 65.5), width=layout_route.mm(0.5))
+
+    # The charge-enable signal crosses the front below the battery cutout.
+    ce_left = pcbnew.VECTOR2I(layout_route.mm(19.0), layout_route.mm(88.2))
+    ce_right = pcbnew.VECTOR2I(layout_route.mm(48.3), layout_route.mm(68.2))
+    add_locked_track(
+        pad_center("U1", "22"),
+        ce_left,
+        "/CHG_EN_N",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(ce_left, "/CHG_EN_N")
+    ce_path = [
+        ce_left,
+        pcbnew.VECTOR2I(layout_route.mm(19.0), layout_route.mm(82.7)),
+        pcbnew.VECTOR2I(layout_route.mm(48.3), layout_route.mm(82.7)),
+        ce_right,
+    ]
+    for start, end in zip(ce_path, ce_path[1:]):
+        add_locked_track(start, end, "/CHG_EN_N", layer=pcbnew.F_Cu)
+    add_locked_via(ce_right, "/CHG_EN_N")
+    add_locked_track(
+        ce_right,
+        pad_center("R5", "1"),
+        "/CHG_EN_N",
+        width=layout_route.mm(0.15),
+    )
+
     settings = board.GetDesignSettings()
     settings.SetCustomTrackWidth(layout_route.TRACK_W)
     settings.SetCustomViaSize(layout_route.VIA_D)
