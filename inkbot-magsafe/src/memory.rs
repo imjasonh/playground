@@ -18,6 +18,10 @@ impl FlashRegion {
         self.end - self.start
     }
 
+    pub const fn is_empty(self) -> bool {
+        self.start == self.end
+    }
+
     pub const fn contains(self, address: u32) -> bool {
         address >= self.start && address < self.end
     }
