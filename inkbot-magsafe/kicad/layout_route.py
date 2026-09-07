@@ -138,7 +138,7 @@ PLACEMENT = {
 
 GND = "GND"
 SYS = "/SYS"
-CLEAR = 0.15
+CLEAR = 0.12
 
 
 def to_nm(value_mm: float) -> int:
@@ -147,8 +147,8 @@ def to_nm(value_mm: float) -> int:
 
 mm = to_nm
 TRACK_W = mm(0.2)
-VIA_D = mm(0.6)
-VIA_DRILL = mm(0.3)
+VIA_D = mm(0.5)
+VIA_DRILL = mm(0.25)
 
 
 def parse_netlist(path: Path):
