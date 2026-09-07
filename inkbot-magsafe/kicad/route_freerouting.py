@@ -667,6 +667,158 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
     """
 
+    # Connect every SYS load to In1.Cu before routing signal layers.
+    for reference, pad_number, via_xy, width in (
+        ("U3", "1", (49.7, 61.3), 0.15),
+        ("TP6", "1", (56.8, 58.0), 0.5),
+        ("C38", "1", (23.5, 94.525), 0.5),
+        ("C26", "1", (26.8, 87.0), 0.3),
+        ("C21", "1", (18.0, 88.5), 0.3),
+        ("U4", "1", (36.0, 89.0), 0.3),
+        ("C18", "1", (51.55, 65.5), 0.5),
+        ("R9", "1", (17.7, 84.0), 0.2),
+        ("U5", "1", (21.2, 92.2), 0.3),
+        ("U5", "3", (21.2, 89.8), 0.2),
+    ):
+        fanout_to_plane(
+            reference,
+            pad_number,
+            via_xy,
+            width=layout_route.mm(width),
+        )
+
+    # Place ground stitches beside pads so solder does not wick into open
+    # via-in-pad barrels. Closely spaced IC lands share local ground buses.
+    for reference, pad_number, via_xy in (
+        ("J3", "4", (11.0, 55.0)),
+        ("C12", "2", (4.025, 73.5)),
+        ("C13", "2", (8.9, 74.5)),
+        ("C14", "2", (11.475, 73.3)),
+        ("C15", "2", (4.025, 80.0)),
+        ("C16", "2", (7.175, 78.4)),
+        ("R2", "2", (11.9, 60.4)),
+        ("C17", "2", (50.5, 65.0)),
+        ("C18", "2", (53.45, 65.2)),
+        ("C19", "2", (58.0, 64.0)),
+        ("C20", "2", (26.4, 82.8)),
+        ("R10", "2", (22.3, 84.0)),
+        ("C21", "2", (19.0, 91.3)),
+        ("C22", "2", (20.6, 94.8)),
+        ("C23", "2", (25.4, 85.0)),
+        ("C24", "2", (25.4, 87.5)),
+        ("C26", "2", (29.7, 87.0)),
+        ("C28", "2", (29.95, 84.5)),
+        ("C29", "2", (33.775, 84.5)),
+        ("C30", "2", (37.775, 84.5)),
+        ("C31", "2", (41.95, 84.5)),
+        ("C32", "2", (45.95, 84.5)),
+        ("C33", "2", (49.95, 84.5)),
+        ("C34", "2", (53.95, 84.5)),
+        ("C35", "2", (58.0, 84.5)),
+        ("C36", "2", (30.8, 90.0)),
+        ("R11", "2", (30.8, 93.0)),
+        ("R12", "2", (34.8, 93.0)),
+        ("C38", "2", (26.3, 97.475)),
+        ("D2", "1", (53.35, 85.7)),
+        ("J1", "8", (42.75, 97.0)),
+        ("J1", "17", (47.25, 97.0)),
+        ("J2", "3", (54.2, 80.1)),
+        ("TP5", "1", (58.6, 97.0)),
+        ("U1", "15", (16.4, 84.2)),
+        ("U1", "33", (16.4, 93.8)),
+        ("U1", "55", (5.2, 95.0)),
+        ("U3", "5", (49.75, 58.6)),
+        ("U3", "11", (52.0, 61.55)),
+        ("U5", "2", (21.0, 91.0)),
+    ):
+        fanout_to_plane(
+            reference,
+            pad_number,
+            via_xy,
+            net_name=layout_route.GND,
+        )
+
+    ldo_ground_junction = board_point(34.5, 87.0)
+    ldo_ground_via = board_point(34.5, 88.3)
+    for reference in ("C27", "U4"):
+        add_locked_track(
+            pad_center(reference, "2"),
+            ldo_ground_junction,
+            layout_route.GND,
+        )
+    add_locked_track(
+        ldo_ground_junction,
+        ldo_ground_via,
+        layout_route.GND,
+    )
+    add_locked_via(ldo_ground_via, layout_route.GND)
+
+    charger_gate_ground_via = board_point(54.0, 68.0)
+    for reference, pad_number in (("R6", "2"), ("Q2", "2")):
+        add_locked_track(
+            pad_center(reference, pad_number),
+            charger_gate_ground_via,
+            layout_route.GND,
+        )
+    add_locked_via(charger_gate_ground_via, layout_route.GND)
+
+    module_ground_via = board_point(5.1, 83.3)
+    for pad_number in ("1", "2"):
+        add_locked_track(
+            pad_center("U1", pad_number),
+            module_ground_via,
+            layout_route.GND,
+        )
+    add_locked_via(module_ground_via, layout_route.GND)
+
+    for reference, pad_near_xy, via_xy in (
+        ("J1", (37.35, 92.6), (36.1, 92.6)),
+        ("J1", (52.65, 92.6), (53.9, 92.6)),
+        ("J2", (50.65, 75.1), (50.65, 73.9)),
+        ("J2", (55.35, 75.1), (55.35, 73.9)),
+    ):
+        fanout_to_plane(
+            reference,
+            "MP",
+            via_xy,
+            net_name=layout_route.GND,
+            pad_near_xy=pad_near_xy,
+        )
+
+    qi_ground_pads = [
+        pad
+        for pad in placed["U2"].Pads()
+        if pad.GetNetname() == layout_route.GND
+    ]
+    upper_bus_y = 62.3
+    lower_bus_y = 68.7
+    for pad in qi_ground_pads:
+        center = pad.GetCenter()
+        x = pcbnew.ToMM(center.x)
+        y = pcbnew.ToMM(center.y)
+        if abs(y - 63.35) < 0.01:
+            add_locked_track(center, board_point(x, upper_bus_y), layout_route.GND)
+        elif abs(y - 67.65) < 0.01:
+            add_locked_track(center, board_point(x, lower_bus_y), layout_route.GND)
+    add_locked_path(
+        ((6.25, upper_bus_y), (7.75, upper_bus_y), (7.0, 61.7)),
+        layout_route.GND,
+        pcbnew.B_Cu,
+    )
+    add_locked_path(
+        ((6.25, lower_bus_y), (7.75, lower_bus_y), (7.0, 70.2)),
+        layout_route.GND,
+        pcbnew.B_Cu,
+    )
+    add_locked_track(
+        board_point(7.0, 65.5),
+        board_point(7.0, upper_bus_y),
+        layout_route.GND,
+    )
+    add_locked_via(board_point(7.0, 61.7), layout_route.GND)
+    add_locked_via(board_point(7.0, 70.2), layout_route.GND)
+    fanout_to_plane("U2", "9", (4.3, 63.75), net_name=layout_route.GND)
+
     settings = board.GetDesignSettings()
     default_netclass = settings.m_NetSettings.m_DefaultNetClass
     default_netclass.SetClearance(layout_route.mm(layout_route.CLEAR))
