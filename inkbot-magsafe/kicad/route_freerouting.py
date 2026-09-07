@@ -279,6 +279,20 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     board.Add(fanout)
     add_locked_via(u5_via, layout_route.VSYS)
 
+    u5_ntc = pad_center("U5", "13")
+    ntc_corner = pcbnew.VECTOR2I(layout_route.mm(11.4), u5_ntc.y)
+    ntc_via = pcbnew.VECTOR2I(layout_route.mm(11.7), layout_route.mm(63.7))
+    for start, end in ((u5_ntc, ntc_corner), (ntc_corner, ntc_via)):
+        fanout = pcbnew.PCB_TRACK(board)
+        fanout.SetStart(start)
+        fanout.SetEnd(end)
+        fanout.SetWidth(layout_route.mm(0.15))
+        fanout.SetLayer(pcbnew.B_Cu)
+        fanout.SetNet(netmap["/NTC_SENSE"])
+        fanout.SetLocked(True)
+        board.Add(fanout)
+    add_locked_via(ntc_via, "/NTC_SENSE")
+
     for x, y in ((9.8005, 69.1673), (7.6957, 63.3848)):
         add_locked_via(
             pcbnew.VECTOR2I(layout_route.mm(x), layout_route.mm(y)),
