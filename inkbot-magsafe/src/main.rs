@@ -48,6 +48,12 @@ mod firmware {
         wait_for_nvmc();
         core::ptr::write_volatile(NVMC_CONFIG, NVMC_READ_ONLY);
         wait_for_nvmc();
+        let programmed = core::ptr::read_volatile(boot::REGOUT0_ADDRESS as *const u32);
+        if programmed & boot::REGOUT0_VOUT_MASK != boot::REGOUT0_3V0 {
+            loop {
+                cortex_m::asm::wfi();
+            }
+        }
         cortex_m::peripheral::SCB::sys_reset()
     }
 
