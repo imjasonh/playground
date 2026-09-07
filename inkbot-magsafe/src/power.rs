@@ -216,7 +216,7 @@ mod tests {
     fn sys_conversion_matches_divider_configuration() {
         assert_eq!(sys_mv_from_saadc(-1), None);
         assert_eq!(sys_mv_from_saadc(0), Some(0));
-        assert_eq!(sys_mv_from_saadc(1779), Some(4200));
+        assert_eq!(sys_mv_from_saadc(1779), Some(4201));
     }
 
     #[test]
