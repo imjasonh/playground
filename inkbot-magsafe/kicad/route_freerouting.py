@@ -799,7 +799,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         elif abs(y - 67.65) < 0.01:
             add_locked_track(center, board_point(x, lower_bus_y), layout_route.GND)
     add_locked_path(
-        ((6.25, upper_bus_y), (7.75, upper_bus_y), (7.0, 61.7)),
+        ((6.725, upper_bus_y), (7.275, upper_bus_y), (7.0, 61.7)),
         layout_route.GND,
         pcbnew.B_Cu,
     )
@@ -816,6 +816,56 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_locked_via(board_point(7.0, 61.7), layout_route.GND)
     add_locked_via(board_point(7.0, 70.2), layout_route.GND)
     fanout_to_plane("U2", "9", (4.3, 63.75), net_name=layout_route.GND)
+
+    add_locked_path(
+        (
+            (5.35, 65.75),
+            (4.5, 65.2),
+            (2.225, 65.2),
+            (2.225, 66.0),
+        ),
+        "/QI_CLAMP1",
+        pcbnew.B_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_path(
+        (
+            (8.65, 65.25),
+            (9.3, 65.25),
+            (10.225, 64.325),
+            (10.225, 63.0),
+        ),
+        "/QI_COMM2",
+        pcbnew.B_Cu,
+        width=layout_route.mm(0.15),
+    )
+    qi_out_start_via = board_point(4.3, 66.25)
+    qi_out_end_via = board_point(5.625, 75.8)
+    add_locked_track(
+        pad_center("U2", "4"),
+        qi_out_start_via,
+        "/QI_OUT",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(qi_out_start_via, "/QI_OUT")
+    add_locked_path(
+        (
+            (4.3, 66.25),
+            (5.2, 67.15),
+            (5.2, 75.375),
+            (5.625, 75.8),
+        ),
+        "/QI_OUT",
+        pcbnew.F_Cu,
+        width=layout_route.mm(0.2),
+    )
+    add_locked_via(qi_out_end_via, "/QI_OUT")
+    add_locked_track(
+        qi_out_end_via,
+        pad_center("C16", "1"),
+        "/QI_OUT",
+        width=layout_route.mm(0.3),
+    )
 
     settings = board.GetDesignSettings()
     default_netclass = settings.m_NetSettings.m_DefaultNetClass
