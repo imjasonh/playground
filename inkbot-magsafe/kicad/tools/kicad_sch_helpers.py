@@ -200,7 +200,7 @@ class SymbolLibrary:
         pin_pattern = re.compile(
             r'\(pin\s+(\w+)\s+\w+\s+'
             r'\(at\s+([-\d.]+)\s+([-\d.]+)\s+(\d+)\)\s+'
-            r'\(length\s+([-\d.]+)\)\s+'
+            r'\(length\s+([-\d.]+)\)(?:\s+hide)?\s+'
             r'\(name\s+"([^"]*)".*?\)\s+'
             r'\(number\s+"([^"]*)".*?\)\)',
             re.DOTALL
