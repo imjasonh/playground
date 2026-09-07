@@ -149,6 +149,8 @@ mm = to_nm
 TRACK_W = mm(0.2)
 VIA_D = mm(0.6)
 VIA_DRILL = mm(0.3)
+FANOUT_VIA_D = mm(0.45)
+FANOUT_VIA_DRILL = mm(0.2)
 
 
 def parse_netlist(path: Path):
