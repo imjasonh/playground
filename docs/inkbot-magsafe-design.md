@@ -277,12 +277,13 @@ The estimates include 0.10 mm front adhesive and a 0.25 mm rear cover:
 | Module | **~4.07 mm** |
 | Protected battery pack in the cutout | **~4.77 mm** |
 | Magnet ring plus DC shield | **~3.27 mm** |
-| Coil and ferrite | **~2.94 mm** |
+| Coil, ferrite, and stacked film NTC | **~3.44 mm** |
 
 The battery pack sets the baseline thickness. Adhesive tolerance, connector
 clearance, cell swelling, and cosmetic films still need a mechanical tolerance
-stack. An optional orientation magnet can add thickness if it overlaps the
-cell, so the baseline uses the ring and a high-friction rear surface.
+stack. A center orientation magnet can add thickness where it overlaps the
+cell. The current sketch does overlap the cell and has been removed. A safe,
+mandatory anti-rotation geometry remains a mechanical release blocker.
 
 ### Fabrication and first build
 
@@ -627,8 +628,8 @@ are dialed in.
 ## Open questions
 
 - Final spacer, adhesive, rear-cover materials, and the cell swelling budget.
-- Whether a ring-only build has enough rotational stability or needs the
-  optional orientation magnet.
+- The anti-rotation geometry that meets Apple alignment requirements without
+  loading the pouch cell or disrupting Qi coupling.
 - Qualified battery supplier, custom harness drawing, and measured pulse-current
   acceptance limit.
 - Per-face `BGTask` cadence tuning: which faces (weather, health) warrant a
