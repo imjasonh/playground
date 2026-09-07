@@ -583,7 +583,7 @@ def main() -> None:
             "design_settings": {
                 "defaults": {
                     "copper_edge_clearance": 0.5,
-                    "copper_line_width": 0.15,
+                    "copper_line_width": 0.1,
                     "courtyard_line_width": 0.05,
                     "edge_cuts_line_width": 0.05,
                     "silk_line_width": 0.15,
@@ -594,17 +594,20 @@ def main() -> None:
                 "diff_pair_dimensions": [],
                 "drc_exclusions": [],
                 "rules": {
-                    "min_clearance": 0.15,
+                    "min_clearance": 0.1,
                     "min_copper_edge_clearance": 0.5,
-                    "min_hole_clearance": 0.25,
-                    "min_hole_to_hole": 0.25,
-                    "min_track_width": 0.15,
-                    "min_via_annular_width": 0.15,
-                    "min_via_diameter": 0.6,
-                    "min_through_hole_diameter": 0.3,
+                    "min_hole_clearance": 0.2,
+                    "min_hole_to_hole": 0.2,
+                    "min_track_width": 0.1,
+                    "min_via_annular_width": 0.1,
+                    "min_via_diameter": 0.45,
+                    "min_through_hole_diameter": 0.2,
                 },
-                "track_widths": [0.15, 0.2, 0.3, 0.4, 0.5],
-                "via_dimensions": [{"diameter": 0.6, "drill": 0.3}],
+                "track_widths": [0.1, 0.12, 0.15, 0.2, 0.3, 0.5],
+                "via_dimensions": [
+                    {"diameter": 0.45, "drill": 0.2},
+                    {"diameter": 0.5, "drill": 0.25},
+                ],
             },
             "layer_presets": [],
             "viewports": [],
@@ -618,7 +621,7 @@ def main() -> None:
             "classes": [
                 {
                     "bus_width": 12,
-                    "clearance": 0.15,
+                    "clearance": 0.1,
                     "diff_pair_gap": 0.25,
                     "diff_pair_via_gap": 0.25,
                     "diff_pair_width": 0.2,
@@ -629,8 +632,8 @@ def main() -> None:
                     "pcb_color": "rgba(0, 0, 0, 0.000)",
                     "schematic_color": "rgba(0, 0, 0, 0.000)",
                     "track_width": 0.2,
-                    "via_diameter": 0.6,
-                    "via_drill": 0.3,
+                    "via_diameter": 0.5,
+                    "via_drill": 0.25,
                     "wire_width": 6,
                 }
             ],
