@@ -45,58 +45,6 @@ def fill_zones(board: pcbnew.BOARD) -> None:
     pcbnew.ZONE_FILLER(board).Fill(copper_zones)
 
 
-def stitch_back_ground_islands(board: pcbnew.BOARD) -> int:
-    """Tie each detached back-copper ground fill to the internal GND plane."""
-    back_ground = next(
-        (
-            zone
-            for zone in board.Zones()
-            if zone.GetLayer() == pcbnew.B_Cu and zone.GetNetname() == layout_route.GND
-        ),
-        None,
-    )
-    if back_ground is None:
-        return 0
-
-    polygons = back_ground.GetFilledPolysList(pcbnew.B_Cu)
-    outlines = [polygons.Outline(index) for index in range(polygons.OutlineCount())]
-    if len(outlines) < 2:
-        return 0
-    main_outline = max(
-        outlines,
-        key=lambda outline: outline.BBox().GetWidth() * outline.BBox().GetHeight(),
-    )
-    ground = board.FindNet(layout_route.GND)
-    stitched = 0
-    for outline in outlines:
-        if outline is main_outline:
-            continue
-        bounds = outline.BBox()
-        best_point = None
-        best_distance = -1
-        step = layout_route.mm(0.1)
-        for x in range(bounds.GetX(), bounds.GetX() + bounds.GetWidth() + 1, step):
-            for y in range(bounds.GetY(), bounds.GetY() + bounds.GetHeight() + 1, step):
-                point = pcbnew.VECTOR2I(x, y)
-                if not outline.PointInside(point):
-                    continue
-                distance = outline.Distance(point, True)
-                if distance > best_distance:
-                    best_point = point
-                    best_distance = distance
-        if best_point is None or best_distance < layout_route.VIA_D // 2:
-            raise RuntimeError("back-copper GND island has no room for a stitching via")
-        via = pcbnew.PCB_VIA(board)
-        via.SetPosition(best_point)
-        via.SetWidth(layout_route.VIA_D)
-        via.SetDrill(layout_route.VIA_DRILL)
-        via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-        via.SetNet(ground)
-        board.Add(via)
-        stitched += 1
-    return stitched
-
-
 def parse_sexpression(text: str) -> list[object]:
     """Parse the subset of Specctra S-expressions used by SES files."""
     root: list[object] = []
@@ -160,7 +108,8 @@ def import_freerouting_session(board: pcbnew.BOARD, path: Path) -> None:
         return -result if invert else result
 
     for old_item in list(board.GetTracks()):
-        board.Remove(old_item)
+        if not old_item.IsLocked():
+            board.Remove(old_item)
 
     wire_count = 0
     via_count = 0
@@ -330,6 +279,12 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     board.Add(fanout)
     add_locked_via(u5_via, layout_route.VSYS)
 
+    for x, y in ((9.8005, 69.1673), (7.6957, 63.3848)):
+        add_locked_via(
+            pcbnew.VECTOR2I(layout_route.mm(x), layout_route.mm(y)),
+            layout_route.GND,
+        )
+
     keepalive: list[pcbnew.SHAPE_POLY_SET] = []
 
     def add_plane(layer: int, net_name: str) -> None:
@@ -453,10 +408,6 @@ def main() -> None:
     import_freerouting_session(board, SES)
     board.BuildConnectivity()
     fill_zones(board)
-    stitched = stitch_back_ground_islands(board)
-    if stitched:
-        fill_zones(board)
-        print(f"added {stitched} GND stitching vias")
     board.BuildConnectivity()
     pcbnew.SaveBoard(str(BOARD), board)
 
