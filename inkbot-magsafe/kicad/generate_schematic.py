@@ -164,10 +164,7 @@ def main() -> None:
         "WR222230-26M8-G coil",
         x=snap(25),
         y=snap(45),
-        footprint=(
-            "Connector_Wire:"
-            "SolderWire-0.5sqmm_1x02_P4.8mm_D0.9mm_OD2.3mm_Relief2x"
-        ),
+        footprint="inkbot_magsafe:Coil_SolderPads",
     )
     sch.connect_pin("J3", "1", "QI_COIL_A", wire_dx=-7.62, by_number=True)
     sch.connect_pin("J3", "2", "QI_AC2", wire_dx=-7.62, by_number=True)
