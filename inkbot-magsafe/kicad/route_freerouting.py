@@ -310,8 +310,8 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
     clamp_path = [
         pad_center("U5", "16"),
-        pcbnew.VECTOR2I(layout_route.mm(11.3), layout_route.mm(66.25)),
-        pcbnew.VECTOR2I(layout_route.mm(11.3), layout_route.mm(69.0)),
+        pcbnew.VECTOR2I(layout_route.mm(11.5), layout_route.mm(66.25)),
+        pcbnew.VECTOR2I(layout_route.mm(11.5), layout_route.mm(69.0)),
         pad_center("C7", "1"),
     ]
     for start, end in zip(clamp_path, clamp_path[1:]):
