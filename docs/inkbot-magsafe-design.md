@@ -56,7 +56,7 @@ it should not.
 | Topic | Decision |
 |-------|----------|
 | MCU / radio | **Nordic nRF52833 bare QFN-40** (128 KB RAM for the 48 KB framebuffer) |
-| Panel | **4.26-inch 480×800 portrait** mono e-ink, on-glass controller (SSD1677), partial refresh |
+| Panel | **3.97-inch 480×800 portrait** mono e-ink, on-glass controller (SSD1677), partial refresh |
 | Orientation | portrait; ring high on the tile, panel fills the tile and overlaps the ring |
 | Battery | ~120 mAh thin LiPo pouch with protection, ~1.5 mm, in a PCB cutout below the coil |
 | Power | **BQ51050B** Qi RX + LiPo charger (one IC); system on the cell (detach-to-charge) |
@@ -85,7 +85,7 @@ for a battery-first BLE peripheral that must stay reachable in the background:
 - **It runs straight off the cell.** The nRF52 internal DC/DC converter accepts
   1.7–3.6 V, so a 3.0–4.2 V LiPo needs no regulator for the MCU.
 
-The design uses the **nRF52833** rather than the 52832 because the 4.26-inch
+The design uses the **nRF52833** rather than the 52832 because the 3.97-inch
 panel needs a **48 KB mono framebuffer** (480×800). The 52832's 64 KB RAM is too
 tight once the SoftDevice takes its share; the 52833's **128 KB** holds the
 frame plus the S132/S140 stack comfortably. Both are Cortex-M4F and pin similar;
@@ -98,7 +98,7 @@ the NFCT pins stay unused.
 ```
                  ┌─────────────────────────────────────────────┐
    MagSafe ring  │  nRF52833-QDAA (bare QFN-40)                │
-   magnets ──────┤   ├─ SPI ─────────► 4.26" e-ink COG (SSD1677)│
+   magnets ──────┤   ├─ SPI ─────────► 3.97" e-ink COG (SSD1677)│
                  │   ├─ GPIO ────────► TPS22810 + MIC5504 ──────┼─► panel 3.3V rail
    Qi RX coil ─► │   └─ SAADC ───────◄ battery + thermistor     │    (+ 220µF bulk)
    (in magnet    └─────────────────────────────────────────────┘
@@ -118,22 +118,25 @@ flex (FPC); its on-glass charge pump makes its own gate and source rails from
 caps on the FPC pins. The load switch cuts that rail to zero between refreshes so
 the panel contributes nothing to sleep current.
 
-### Why 4.26-inch, portrait
+### Why 3.97-inch, portrait
 
-The tile has to fit an iPhone's back without hanging over the sides or fouling
-the camera plateau, and — with the minis dropped — the target width is a
-standard/Pro iPhone at ~70.6 mm. A 4.2-inch 400×300 module is 91 × 77 mm; even
-rotated to portrait its short edge is 77 mm, so it overhangs. The **4.26-inch
-480×800 module is 62.4 mm wide** and portrait-native (105 mm tall), the largest
-common mono e-paper that still sits inside a 70.6 mm iPhone. It nearly doubles
-the pixels of the 3.7-inch alternative (480×800 vs 240×416) at ~35% more active
-area (56 × 93 mm). The controller is the **SSD1677** (same SSD16xx command
-family as the SSD1683); the SPI control lines (SCK, SDI, CS, D/C, RST, BUSY) and
-the load-switched 3.3 V rail are unchanged.
+The tile has to fit an iPhone's back **without hanging over the sides or the
+bottom**, and without fouling the camera plateau. With the minis dropped, the
+width target is a standard/Pro iPhone at ~70.6 mm. The height budget is tighter:
+Apple's MagSafe keep-in puts the tile top ~43 mm from the phone top on a 15 Pro
+(146.6 mm tall), leaving only **~104 mm** of vertical room.
 
-The cost is RAM: a 480×800 mono frame is **48 KB**, which is why the MCU steps
-up to the nRF52833 (128 KB). Dropping the minis is what unlocks this size — a
-62.4 mm-wide panel would overhang a 64.2 mm mini.
+| Panel | Module (portrait) | Width fit (70.6) | Height fit (~104) |
+|-------|-------------------|------------------|-------------------|
+| 4.2" GDEY042T81 | 77 × 91 | overhang | — |
+| **4.26" GDEY0426T82** | 62 × 105 | fits | **overhangs bottom** |
+| **3.97" GDEY0397T81P** | **56 × 97** | **fits** | **fits** |
+| 3.7" GDEY037T03 | 53 × 93 | fits | fits (smaller) |
+
+The **3.97-inch 480×800** module is the largest common mono e-paper that clears
+both axes on a 6.1" Pro. Same resolution and SSD1677 controller as the 4.26";
+only the glass is shorter. A 480×800 mono frame is still **48 KB**, which is why
+the MCU is the nRF52833 (128 KB).
 
 ## Power budget
 
@@ -217,9 +220,9 @@ radio and will detune a 2.4 GHz antenna. Two consequences drive the layout:
 
 ### Board stack
 
-A **0.4 mm** 4-layer PCB (signal / ground / power / signal), **66 × 108 mm
+A **0.4 mm** 4-layer PCB (signal / ground / power / signal), **60 × 99 mm
 portrait**, with a **battery cutout** below the coil so the cell does not stack
-on the FR4. The 4.26-inch panel is bonded to the whole front and **overlaps the
+on the FR4. The 3.97-inch panel is bonded to the whole front and **overlaps the
 MagSafe ring**: the coil and magnets are on the back, the panel on the front, so
 they share the same footprint without colliding. No case for 0.1.0. See
 [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/) for the schematic and
@@ -248,32 +251,31 @@ floor without a case.
 ### Phone compatibility and fit
 
 Two things gate compatibility: the phone must have the **MagSafe magnet ring**
-(magnet-only retention), and it must be **at least 66 mm wide** so the tile does
-not hang over the sides. The 66 mm tile intentionally **drops the minis** to buy
-the larger 4.26-inch panel.
+(magnet-only retention), and the tile (**60 × 99 mm**) must sit inside the body
+in both axes — no side overhang, no bottom overhang, and clear of the camera
+bump. The minis are dropped (too narrow); the 4.26" panel was tried and dropped
+(too tall for a 6.1" Pro once the ring sits high enough to clear the cameras).
 
-| iPhone | Body W × H (mm) | MagSafe ring | Fits (≥66 mm wide)? |
-|--------|-----------------|:---:|:---:|
-| 16 Pro Max, 15 Plus, 14/13/12 Pro Max, 14 Plus | 77.6–78.1 × 160–163 | yes | **yes** (~6 mm/side inset) |
-| 16 Pro | 77.6 × 149.6 | yes | **yes** |
-| 16, 15, 14, 13, 12 (standard) | 71.5–71.6 × 147–148 | yes | **yes** (~2.8 mm/side) |
-| 16 Pro… 15 Pro | 70.6 × 146.6–149.6 | yes | **yes** (~2.3 mm/side) |
-| 17 / 17 Pro / 17 Pro Max | 71.7–77.6 × 150–163 | yes | **yes** |
-| **13 mini, 12 mini** | 64.2 × 131.5 | yes | **no** — 1.8 mm/side overhang (dropped) |
-| iPhone 16e | 71.5 × 147.7 | **no** (Qi only) | no — no magnets |
-| iPhone SE (all), 11 and earlier | — | **no** | no — no magnets |
+| iPhone | Body W × H (mm) | MagSafe | Side inset | Bottom clearance | Fits? |
+|--------|-----------------|:---:|---:|---:|:---:|
+| 16 / 15 Pro Max, 15/14 Plus, 14/13/12 Pro Max | 77.6–78.1 × 160–163 | yes | ~9 mm | lots | **yes** |
+| 16 Pro | 77.6 × 149.6 | yes | ~9 mm | ~8 mm | **yes** |
+| 16 / 15 / 14 / 13 / 12 (standard) | 71.5–71.6 × 147–148 | yes | ~5.8 mm | ~4 mm | **yes** |
+| **15 Pro / 16 Pro** | **70.6 × 146.6–149.6** | yes | **~5.3 mm** | **~4 mm** | **yes** |
+| 17 / 17 Pro / 17 Pro Max | 71.7–77.6 × 150–163 | yes | ≥5 mm | ≥4 mm | **yes** |
+| **13 mini / 12 mini** | 64.2 × 131.5 | yes | overhang | — | **no** |
+| iPhone 16e | 71.5 × 147.7 | **no** | — | — | **no** |
+| SE (all), 11 and earlier | — | **no** | — | — | **no** |
 
-A third-party MagSafe-magnet case adds the ring (and enough width) to a 16e or
-an older phone, if you want one.
+A third-party MagSafe-magnet case can add the ring to a 16e or older phone.
 
 **Camera clearance comes from Apple's own rule.** The Accessory Design
 Guidelines require a MagSafe accessory not to extend past **30 mm from the ring
-center toward the top of the phone** — exactly the zone the camera plateau lives
-above. So the tile puts the MagSafe ring **as high as it can**: ring center
-30 mm from the top edge, the magnet ring (Ø ~55 mm) tucked just under that edge,
-and the body hangs downward, below the cameras. The 108 mm-tall tile reaches
-from just below the cameras to near the bottom edge on a 6.1-inch phone; on the
-larger Plus/Max bodies it has room to spare. It never covers the cameras.
+center toward the top of the phone**. So the tile puts the MagSafe ring **as
+high as it can** — ring center 30 mm from the top edge — and hangs downward,
+below the cameras. On a 15 Pro that puts the tile top ~43 mm from the phone top
+and the bottom ~4 mm above the phone's bottom edge. The 4.26" panel (105 mm
+module) would have hung ~4 mm past that edge; the 3.97" does not.
 
 ## BLE and iOS integration
 
@@ -372,7 +374,7 @@ Full line items with part numbers and price columns are in
 | **COGS** | **~$32** |
 | Suggested retail (2.5–3×) | ~$85–99 |
 
-The 4.26-inch panel (~$11) and the Qi stage (~$4.8 for BQ51050B + coil)
+The 3.97-inch panel (~$10.50) and the Qi stage (~$4.8 for BQ51050B + coil)
 dominate. The bare nRF52833 (~$2.90) needs its own intentional-radiator
 certification if you stay bare. Pass-through TX would still add ~$8 and is
 rejected.
@@ -407,9 +409,11 @@ rejected.
   keeps the system to one radio and one trust boundary, at the cost of sub-minute
   remote updates (see BLE background).
 - **Mono panel.** Black/white only. Grayscale or color is a later variant.
-- **4.26-inch 480×800 panel on the nRF52833.** Largest mono e-paper that fits a
-  standard/Pro iPhone width in portrait; the 48 KB frame is why the MCU is the
-  128 KB nRF52833. Minis are dropped to allow the wider panel.
+- **3.97-inch 480×800 panel on the nRF52833.** Largest mono e-paper that fits a
+  6.1" Pro in **both** width and height with the ring high (camera-clear). The
+  4.26" was tried and dropped — it overhangs the bottom of a 15 Pro by ~4 mm.
+  Minis are dropped (too narrow). The 48 KB frame is why the MCU is the 128 KB
+  nRF52833.
 - **Launch faces:** clock, calendar, weather, health, photo/image, custom text,
   and a best-effort notification summary. Transit is deferred.
 - **Relaxed background cadence.** Target the iOS `BGTask` rhythm (roughly every

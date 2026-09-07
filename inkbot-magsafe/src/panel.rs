@@ -1,4 +1,4 @@
-//! Geometry and command set for the 4.26-inch 480x800 mono e-ink panel
+//! Geometry and command set for the 3.97-inch 480x800 mono e-ink panel
 //! (SSD1677 chip-on-glass controller), mounted portrait.
 //!
 //! The controller packs 8 horizontal pixels per byte and addresses RAM on byte

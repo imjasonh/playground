@@ -30,7 +30,7 @@ schematic in [`../kicad/`](../kicad/) and
 
 ## Panel (SPI + control)
 
-Panel: 4.26-inch 480×800 portrait mono e-ink, SSD1677 COG, 24-pin 0.5 mm FPC.
+Panel: 3.97-inch 480×800 portrait mono e-ink, SSD1677 COG, 24-pin 0.5 mm FPC.
 
 - PANEL_SCLK (P0.11) → J1 / panel SCK
 - PANEL_MOSI (P0.15) → SDI

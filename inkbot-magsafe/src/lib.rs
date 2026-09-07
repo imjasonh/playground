@@ -4,7 +4,7 @@
 //! be unit-tested on the host. The bare-metal entry point in `main.rs` wires
 //! these modules to the nRF52833 peripherals.
 //!
-//! - [`panel`]: geometry and command set for the 4.26-inch SSD1677-class panel.
+//! - [`panel`]: geometry and command set for the 3.97-inch SSD1677-class panel.
 //! - [`power`]: battery state-of-charge estimate and refresh/charge gating.
 //! - [`protocol`]: the resumable, idempotent BLE frame-transfer state machine.
 

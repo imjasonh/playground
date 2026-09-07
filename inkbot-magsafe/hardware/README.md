@@ -19,11 +19,11 @@ Circuit rationale: [`../../docs/inkbot-magsafe-design.md`](../../docs/inkbot-mag
 ## Board summary
 
 - MCU: bare **nRF52833-QDAA** QFN-40 (128 KB RAM holds the 48 KB framebuffer).
-- Panel: **4.26-inch 480x800 portrait** mono, 24-pin 0.5 mm FPC, SSD1677;
+- Panel: **3.97-inch 480x800 portrait** mono, 24-pin 0.5 mm FPC, SSD1677;
   fills the front and overlaps the MagSafe ring.
 - Power: **BQ51050B** (Qi RX + LiPo charger), TPS22810 load switch, MIC5504-3.3
   panel LDO. System hangs on the cell (detach-to-charge).
 - No connector: SWD test pads; wireless charge + BLE DFU otherwise.
-- 4-layer PCB, **66 x 108 mm portrait**, **0.4 mm**, battery cutout, **no case**.
+- 4-layer PCB, **60 x 99 mm portrait**, **0.4 mm**, battery cutout, **no case**.
 - Ring high (30 mm from top edge) so the tile clears the camera bump and fits
-  the phone width (standard/Pro; minis dropped).
+  a 6.1" Pro in both width and height (minis dropped; 4.26" dropped for height).

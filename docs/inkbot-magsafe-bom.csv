@@ -1,6 +1,6 @@
 ref,category,part,manufacturer,mpn,qty,fitment,unit_usd_qty10,unit_usd_qty1k,notes
 U1,radio,"nRF52833 QFN-40 bare SoC",Nordic,nRF52833-QDAA-R,1,core,4.20,2.90,"128KB RAM holds the 48KB framebuffer; QFN-40 5x5mm; add 32MHz xtal+matching+chip antenna"
-DS1,display,"4.26in 480x800 portrait mono e-ink COG panel",Good Display,GDEY0426T82,1,core,16.00,11.00,"SSD1677 on-glass controller, partial refresh, 24-pin 0.5mm FPC; module 62.4x105.3mm; largest that fits a 70.6mm iPhone in portrait"
+DS1,display,"3.97in 480x800 portrait mono e-ink COG panel",Good Display,GDEY0397T81P,1,core,15.00,10.50,"SSD1677 on-glass controller, partial refresh, 24-pin 0.5mm FPC; module 56.2x96.6mm; largest that fits a 6.1in Pro in both width and height"
 J1,connector,"24-pin 0.5mm FPC connector",Hirose,FH12-24S-0.5SH,1,core,0.80,0.35,"panel flex; FH34 OK if lower profile available"
 U5,wireless,"Qi 5W RX + LiPo charger",Texas Instruments,BQ51050BRHLR,1,core,3.80,2.80,"replaces BQ51013B+BQ25100; BAT=VSYS (system on cell); detach-to-charge"
 U3,power,"load switch (panel rail gate)",Texas Instruments,TPS22810DRVR,1,core,0.55,0.30,"GPIO-gated panel rail; WSON/SOT-23-6"
@@ -15,5 +15,5 @@ L1,wireless,"MagSafe-profile RX coil + ferrite",Wurth,760308103306,1,core,3.00,2
 C10,passive,"220uF bulk cap (VSYS)",Murata,GRM31CR60J227ME11L,1,core,0.30,0.12,"refresh inrush"
 TP1,test,"SWD test pads",n/a,PCB-PADS,1,core,0.00,0.00,"factory pogo flash + recovery"
 PASS1,passive,"decoupling + DCC inductor + Qi support RC",various,BOM-PASSIVES,1,core,1.50,0.80,"nRF52833 DC/DC + DEC caps, Qi COMM/CLAMP/BOOT, ILIM-class resistors"
-PCB1,pcb,"4-layer PCB 66x108mm 0.4mm portrait w/ battery cutout",generic,PCB-4L-04,1,core,4.60,1.90,"no case; panel is front face; fits phone width"
+PCB1,pcb,"4-layer PCB 60x99mm 0.4mm portrait w/ battery cutout",generic,PCB-4L-04,1,core,4.40,1.80,"no case; panel is front face; fits 6.1in Pro width and height"
 ASSY,assembly,"SMT assembly + test",cm,ASSY,1,core,7.00,4.00,"per unit at qty1k"

@@ -350,7 +350,7 @@ def main() -> None:
 
     sch.text_note(
         "inkbot-magsafe MagSafe e-ink tile\\n"
-        "nRF52833 QFN-40, BQ51050B Qi+charger, 4.26in 480x800 panel (SSD1677),\\n"
+        "nRF52833 QFN-40, BQ51050B Qi+charger, 3.97in 480x800 panel (SSD1677),\\n"
         "0.4 mm PCB, battery in cutout, no case (panel is the front face).",
         snap(15),
         snap(15),

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate a thickness-first PCB outline for inkbot-magsafe (KiCad 7 format).
 
-Portrait tile sized to fit within an iPhone's width. No case: the 4.26" panel is
+Portrait tile sized to fit within an iPhone's width and height. No case: the 3.97" panel is
 the front face and covers the whole board, overlapping the MagSafe ring (the
 coil and magnets live on the back, the panel on the front, so they share the
 outline without colliding). The MagSafe ring sits as high as possible so the
@@ -17,11 +17,12 @@ from pathlib import Path
 
 OUT = Path(__file__).resolve().parent / "inkbot-magsafe.kicad_pcb"
 
-# Portrait outline. 4.26" module is 62.37 x 105.33 mm; a 66 mm-wide board clears
-# the panel and still fits every non-mini MagSafe iPhone (narrowest supported,
-# iPhone 15/16 Pro, is 70.6 mm). Minis (64.2 mm) are dropped.
-BOARD_W = 66.0
-BOARD_H = 108.0
+# Portrait outline. 3.97" module is 56.24 x 96.62 mm; a 60 x 99 mm board clears
+# the panel and fits a 6.1" Pro in BOTH width (70.6 mm) and height (~104 mm
+# available below the camera keep-in). The 4.26" (105 mm tall) overshoots the
+# bottom of a 15 Pro; minis (64.2 mm) are still dropped for width.
+BOARD_W = 60.0
+BOARD_H = 99.0
 
 # MagSafe ring as high as possible: center 30 mm from the top edge = Apple's
 # keep-in limit toward the phone's top, which is what clears the camera bump.
@@ -30,12 +31,12 @@ RING_DIA = 54.9
 COIL_DIA = 40.0
 
 # Panel module outline (front face), near the top so it overlaps the ring.
-PANEL_W, PANEL_H = 62.37, 105.33
-PANEL_TOP = 1.5
+PANEL_W, PANEL_H = 56.24, 96.62
+PANEL_TOP = 1.2
 
 # LiPo cutout below the coil.
-BAT_W, BAT_H = 34.0, 22.0
-BAT_CY = 74.0
+BAT_W, BAT_H = 32.0, 20.0
+BAT_CY = 70.0
 
 
 def uid() -> str:
@@ -85,7 +86,7 @@ def main() -> None:
         text("MagSafe ring PCD", cx, RING_CY, "Dwgs.User", 0.8),
         text("Qi coil", cx, RING_CY + COIL_DIA / 2 + 1.5, "Dwgs.User", 0.7),
         text("LiPo cutout", cx, bat_y - 1.5, "Dwgs.User", 0.8),
-        text("panel 4.26in 480x800 (front, overlaps ring)", cx, BOARD_H - 2, "Cmts.User", 0.7),
+        text("panel 3.97in 480x800 (front, overlaps ring)", cx, BOARD_H - 2, "Cmts.User", 0.7),
         text("top edge <=30mm above ring center: clears camera bump", 2, 2, "Cmts.User", 0.8),
     ]
 
