@@ -19,8 +19,7 @@ class ReleaseGateTest(unittest.TestCase):
         path.write_text(json.dumps(data))
         return path
 
-    @staticmethod
-    def document(classification: str = "EVT") -> dict:
+    def document(self, classification: str = "EVT") -> dict:
         return {
             "schema_version": 1,
             "product": "inkbot-magsafe",

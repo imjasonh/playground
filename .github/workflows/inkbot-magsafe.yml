@@ -137,20 +137,26 @@ jobs:
           persist-credentials: false
 
       - name: Electrical rules
-        run: >-
-          kicad-cli sch erc
-          --format report
-          --severity-error
-          --exit-code-violations
-          --output /tmp/inkbot-erc.rpt
-          inkbot-magsafe.kicad_sch
+        run: |
+          status=0
+          kicad-cli sch erc \
+            --format report \
+            --severity-error \
+            --exit-code-violations \
+            --output /tmp/inkbot-erc.rpt \
+            inkbot-magsafe.kicad_sch || status=$?
+          cat /tmp/inkbot-erc.rpt
+          exit "$status"
 
       - name: Board rules and schematic parity
-        run: >-
-          kicad-cli pcb drc
-          --format report
-          --severity-error
-          --schematic-parity
-          --exit-code-violations
-          --output /tmp/inkbot-drc.rpt
-          inkbot-magsafe.kicad_pcb
+        run: |
+          status=0
+          kicad-cli pcb drc \
+            --format report \
+            --severity-error \
+            --schematic-parity \
+            --exit-code-violations \
+            --output /tmp/inkbot-drc.rpt \
+            inkbot-magsafe.kicad_pcb || status=$?
+          cat /tmp/inkbot-drc.rpt
+          exit "$status"
