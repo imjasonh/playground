@@ -251,7 +251,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
     for reference, (x, y) in {
         "FID1": (16.0, 56.0),
-        "FID2": (58.0, 55.0),
+        "FID2": (58.0, 51.0),
         "FID3": (58.0, 95.0),
     }.items():
         fiducial = layout_route.load_fp("Fiducial:Fiducial_1mm_Mask2mm")
@@ -449,7 +449,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("U1", "15", (16.4, 84.2)),
         ("U1", "33", (16.4, 93.8)),
         ("U1", "55", (5.2, 95.0)),
-        ("U3", "5", (41.8, 56.2)),
         ("U3", "11", (44.0, 57.0)),
         ("U5", "2", (21.0, 91.0)),
     ):
@@ -459,6 +458,20 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             via_xy,
             net_name=layout_route.GND,
         )
+
+    charger_ground_via = board_point(40.8, 56.5)
+    add_locked_path(
+        (
+            (42.95, 54.2),
+            (42.2, 54.2),
+            (41.2, 55.2),
+            (40.8, 55.6),
+            (40.8, 56.5),
+        ),
+        layout_route.GND,
+        pcbnew.B_Cu,
+    )
+    add_locked_via(charger_ground_via, layout_route.GND)
 
     ldo_ground_junction = board_point(34.5, 87.0)
     ldo_ground_via = board_point(34.5, 88.3)
