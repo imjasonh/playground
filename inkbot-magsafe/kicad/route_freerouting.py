@@ -281,8 +281,8 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         board.Add(track)
 
     u5_ntc = pad_center("U5", "13")
-    ntc_corner = pcbnew.VECTOR2I(layout_route.mm(11.25), u5_ntc.y)
-    ntc_via = pcbnew.VECTOR2I(layout_route.mm(11.5), layout_route.mm(63.4))
+    ntc_corner = pcbnew.VECTOR2I(layout_route.mm(11.45), u5_ntc.y)
+    ntc_via = pcbnew.VECTOR2I(layout_route.mm(11.45), layout_route.mm(63.4))
     for start, end in ((u5_ntc, ntc_corner), (ntc_corner, ntc_via)):
         add_locked_track(start, end, "/NTC_SENSE", width=layout_route.mm(0.15))
     add_locked_via(ntc_via, "/NTC_SENSE")
