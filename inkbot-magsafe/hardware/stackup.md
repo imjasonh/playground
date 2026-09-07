@@ -2,8 +2,8 @@
 
 ## PCB
 
-- Four layers: F.Cu signal and ground pour, In1.Cu SYS plane, In2.Cu solid
-  ground, and B.Cu signal and ground pour.
+- Four layers: F.Cu signal, In1.Cu SYS plane, In2.Cu solid ground, and B.Cu
+  signal.
 - The 0.8 mm prototype uses the JLC7628 four-layer stack: 35 um outer copper,
   15.2 um inner copper, 0.2104 mm 7628 prepreg, and a 0.2 mm core. Confirm the
   production order's stack table against the KiCad file before release.
@@ -16,8 +16,9 @@
   with a 0.3 mm drill, which provides a 0.15 mm nominal annular ring.
 - The Raytac module's antenna end is flush with the left board edge. A
   4.8 x 12 mm keep-out removes copper, tracks, and vias from every layer.
-- Surface ground pours use thermal connections for reflow consistency. The
-  two inner power planes use solid connections.
+- Every ground pad reaches In2.Cu through an explicit via. This avoids
+  disconnected surface-pour islands and gives the signal layers an unbroken
+  inner return reference.
 - The panel rails reach 40 V peak-to-peak. Keep their external copper under
   intact solder mask, do not expose them on test pads, and cover the assembled
   circuit with the specified electrical insulation.

@@ -281,10 +281,11 @@ Who builds what:
   process. The process must control FPC bend radius, cell compression, coil and
   thermistor adhesive, magnet polarity, insulation, and cure time.
 
-`kicad/route_freerouting.py` places the parts, assigns nets, adds the solid
-In1.Cu SYS and In2.Cu ground planes, and adds surface ground pours. It exports a
-Specctra DSN file, runs Freerouting on F.Cu and B.Cu, imports the SES file,
-refills the pours, and exports Gerbers, drill, and centroid files.
+`kicad/route_freerouting.py` places the parts, assigns nets, and adds solid
+In1.Cu SYS and In2.Cu ground planes. It exports a Specctra DSN file, runs
+Freerouting on F.Cu and B.Cu, imports the SES file, refills the planes, and
+exports fabrication files. Every ground pad gets a via to In2.Cu; the outer
+layers stay signal-only so disconnected pour islands cannot mask an open net.
 `kicad/layout_route.py` contains the shared placement and fabrication rules.
 
 Validate with `kicad/run_drc.py`, which calls KiCad's DRC engine through
@@ -349,7 +350,7 @@ top-level app.
 | Characteristic | Properties | Purpose |
 |---|---|---|
 | Control | encrypted write with response | begin frame, region, full-vs-partial, commit, and resume offset |
-| Status | read / notify | battery %, charge state, temperature, last-refresh result |
+| Status | read / notify | SYS estimate, charge state, panel temperature, and last-refresh result |
 | Frame fallback | encrypted write without response | chunked pixel data when L2CAP is unavailable |
 
 For the pixel payload, prefer an **L2CAP connection-oriented channel**
@@ -499,6 +500,29 @@ Obtain supplier quotations and compliance-lab scopes before treating the
 - Structural spacer, strain relief, cell swelling clearance, and electrical
   insulation under the rear cover.
 - No refresh outside the panel's qualified 0-50 degrees Celsius range.
+
+### EVT and DVT release matrix
+
+The following checks need recorded measurements, instrument setup, sample size,
+and raw data. A pass on one prototype is not a production qualification.
+
+| Area | Initial acceptance criterion |
+|---|---|
+| Charger | 36-44 mA fast charge at 25 degrees Celsius; 4.2 V regulation within the BQ25185 limit; no charge outside the qualified pack temperature range |
+| Power path | No reset or BQ25185 latch-off during receiver attach, detach, a full refresh, or a simultaneous BLE transfer |
+| Panel rail | PANEL_3V0 stays within the TPS7A2030P tolerance during the measured 120 mA peak profile; no overshoot beyond the panel rating |
+| Battery margin | BAT and SYS stay above the refresh floor at cold temperature, minimum allowed state of charge, aged-cell impedance, and worst-case radio timing |
+| Panel high voltage | VGH, VGL, VSH1, VSH2, VSL, and VCOM match the panel waveform settings without overshoot or oscillation |
+| Qi tuning | Measured `Ls`, `Ls'`, Q, series resonance, parallel resonance, current limit, and FOD calibration are archived for the final stack |
+| Qi interoperability | Charge starts, regulates, terminates, and recovers on the WPC interoperability set at centered and allowed offset positions |
+| Thermals | Cell stays within its charge specification; coil, receiver, charger, panel circuit, cover, and adhesive stay below their qualified limits |
+| Sleep current | Connected-idle and disconnected-advertising current support the stated 60-90 day target at cell end of life |
+| BLE | A full 48 KB frame completes within the foreground target and resumes after forced disconnects without corruption or stale-frame acceptance |
+| RF | Throughput, packet error rate, and reconnect behavior pass attached and detached on every supported phone and case |
+| Firmware update | Signed update, interrupted download, power loss during swap, failed trial image, rollback, stale version, lost owner, and SWD erase recovery all pass |
+| Magnet assembly | Polarity and flux map pass incoming inspection; pull force is 650-900 gf; the tile does not rotate into the camera area |
+| Mechanical | Panel bond, FPC, coil and NTC leads, cell carrier, rear cover, and SWD access pass drop, torsion, peel, sweat, thermal-cycle, and aging tests |
+| Manufacturing | AOI/X-ray criteria, programming, rail tests, radio test, panel test image, current signature, serialized result record, and failed-unit quarantine are defined |
 
 ## Regulatory and MFi
 

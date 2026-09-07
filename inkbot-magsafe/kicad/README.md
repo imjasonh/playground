@@ -14,7 +14,7 @@ Raytac MDBT50Q-512K nRF52833 module.
 | `generate_schematic.py` | Regenerates the schematic from symbol libraries |
 | `generate_pcb.py` | Regenerates the board outline and stackup |
 | `route_freerouting.py` | Places the board and routes it through Freerouting's Specctra DSN/SES flow |
-| `layout_route.py` | Shared placement, footprint, net-width, and fabrication helpers |
+| `layout_route.py` | Shared placement, footprint, board-rule, and fabrication helpers |
 | `run_drc.py` | Runs KiCad's board DRC engine and fails on hard violations |
 | `run_erc.py` | Checks electrical pin contracts, no-connects, BOM coverage, and board parity |
 | `tools/kicad_sch_helpers.py` | [kenchangh/kicad-schematic](https://github.com/kenchangh/kicad-schematic) helper (pin-accurate placement) |
@@ -33,8 +33,9 @@ python3 run_erc.py
 
 `route_freerouting.py` starts from the generated outline, exports the
 schematic netlist, places the parts on the back, assigns nets, reserves In1.Cu
-for SYS and In2.Cu for ground, and exports a Specctra DSN file. Freerouting
-routes F.Cu and B.Cu. The script imports the SES file, refills the pours, and
+for SYS and In2.Cu for ground, and exports a Specctra DSN file. F.Cu and B.Cu
+remain signal-only so isolated surface pours cannot hide missing ground vias.
+The script imports the SES file, refills the planes, and
 writes Gerbers, drill, and centroid files under `fab/`. Freerouting 2.4.1
 requires Java 25. The script runs without the GUI and disables Freerouting's
 post-route optimizer because version 2.4.1 can hang while rendering conduction

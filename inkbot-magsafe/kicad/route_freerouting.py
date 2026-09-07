@@ -117,10 +117,9 @@ def import_freerouting_session(board: pcbnew.BOARD, path: Path) -> None:
                 layer = board.GetLayerID(str(path_form[1]))
                 if layer not in (pcbnew.F_Cu, pcbnew.B_Cu):
                     raise ValueError(f"signal route on reserved plane for net {net_name}")
-                width = max(
-                    coordinate(path_form[2]),
-                    layout_route.POWER_WIDTHS.get(net_name, layout_route.mm(0.15)),
-                )
+                # Freerouting calculates clearance using this exact width.
+                # Widening a path after import invalidates that calculation.
+                width = coordinate(path_form[2])
                 values = path_form[3:]
                 if len(values) % 2:
                     raise ValueError(f"odd coordinate count for net {net_name}")
@@ -420,8 +419,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
     add_plane(pcbnew.In1_Cu, layout_route.SYS, pcbnew.ZONE_CONNECTION_FULL)
     add_plane(pcbnew.In2_Cu, layout_route.GND, pcbnew.ZONE_CONNECTION_FULL)
-    add_plane(pcbnew.F_Cu, layout_route.GND, pcbnew.ZONE_CONNECTION_THERMAL)
-    add_plane(pcbnew.B_Cu, layout_route.GND, pcbnew.ZONE_CONNECTION_THERMAL)
 
     all_layers = pcbnew.LSET()
     for layer in (pcbnew.F_Cu, pcbnew.In1_Cu, pcbnew.In2_Cu, pcbnew.B_Cu):
