@@ -362,6 +362,7 @@ def main() -> None:
     subprocess.run(
         command,
         check=True,
+        cwd=FAB,
         timeout=int(os.environ.get("FREEROUTING_TIMEOUT", "3600")),
     )
     if not SES.is_file() or SES.stat().st_size == 0:

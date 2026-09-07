@@ -46,7 +46,7 @@ PLACEMENT = {
     "U1": (20.0, 88.0, 90),
     "J1": (44.0, 94.0, 0),   # panel FPC, clear of the module at the bottom edge
     # Qi receiver + coil leads: left column beside the cutout
-    "U5": (9.5, 66.0, 0),
+    "U5": (9.2, 66.0, 0),
     "L1": (24.0, 57.0, 0),
     # panel power in the bottom-right, clear of the sense column (y63-75)
     "U3": (48.5, 82.5, 0),
@@ -77,7 +77,7 @@ PLACEMENT = {
     "R1": (4.0, 78.0, 0),
     "R2": (8.0, 78.0, 0),
     "R3": (12.0, 78.0, 0),
-    "R4": (12.5, 74.0, 0),
+    "R4": (12.5, 76.0, 0),
     # panel-power passives near U3/U4 in the bottom-right
     "C12": (52.5, 82.0, 0),
     "C13": (52.5, 85.0, 0),
