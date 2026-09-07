@@ -13,6 +13,10 @@ name = "inkbot-magsafe"
 test = false
 bench = false
 
+[features]
+default = []
+bringup-stub = []
+
 [lints.rust]
 unused = "deny"
 

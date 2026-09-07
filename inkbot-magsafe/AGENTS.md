@@ -18,7 +18,8 @@ tested; nRF52833 bring-up and BLE are stubbed.
   host build pulls the ARM runtime and breaks.
 - **The binary compiles on host and target.** `src/main.rs` gates the firmware
   module on `cfg(target_os = "none")` and provides an empty host `main`. Keep
-  both paths building.
+  both paths building. Until peripheral bring-up lands, target builds require
+  the explicit `bringup-stub` feature so nobody can ship the inert WFI loop.
 - **No connector.** Charging is wireless (Qi RX); updates are BLE DFU; recovery
   is SWD test pads. Do not add a USB port to the design; it was considered and
   dropped (see the design doc).
@@ -43,5 +44,6 @@ host tests plus the ARM cross-build on changes under `inkbot-magsafe/`.
 cd inkbot-magsafe
 cargo test                                          # host logic tests
 cargo clippy --all-targets -- -D warnings           # host lints
-cargo build --release --target thumbv7em-none-eabihf # firmware
+cargo build --release --target thumbv7em-none-eabihf \
+  --features bringup-stub                            # inert CI image only
 ```

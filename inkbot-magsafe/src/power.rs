@@ -15,6 +15,17 @@ pub const FULL_MV: u16 = 4200;
 /// this a refresh risks a half-drawn frame if the cell sags under the spike.
 pub const REFRESH_FLOOR_MV: u16 = 3400;
 
+/// Convert a 12-bit SAADC sample from VDDHDIV5 to millivolts.
+///
+/// This assumes the 0.6 V internal reference, gain 1/6, and no oversampling.
+/// Production firmware must apply measured offset calibration before calling
+/// this function.
+pub fn vddh_mv_from_saadc(raw: i16) -> Option<u16> {
+    let raw = u32::try_from(raw).ok()?;
+    let millivolts = (raw * 18_000 + 2_048) / 4_096;
+    u16::try_from(millivolts).ok()
+}
+
 /// BQ25185 state decoded from its two open-drain status pins.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ChargerStatus {
@@ -103,6 +114,13 @@ mod tests {
         assert_eq!(soc_percent(EMPTY_MV), 0);
         assert_eq!(soc_percent(FULL_MV), 100);
         assert_eq!(soc_percent(5000), 100);
+    }
+
+    #[test]
+    fn vddh_conversion_matches_saadc_configuration() {
+        assert_eq!(vddh_mv_from_saadc(-1), None);
+        assert_eq!(vddh_mv_from_saadc(0), Some(0));
+        assert_eq!(vddh_mv_from_saadc(956), Some(4201));
     }
 
     #[test]

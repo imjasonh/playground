@@ -9,6 +9,12 @@
 //! module is compiled out and a placeholder `main` keeps the binary target
 //! building.
 
+#[cfg(all(target_os = "none", not(feature = "bringup-stub")))]
+compile_error!(
+    "the device binary is an inert bring-up stub; use --features bringup-stub \
+     for CI only, and remove this guard after the hardware integrations land"
+);
+
 #[cfg(target_os = "none")]
 mod firmware {
     use cortex_m_rt::entry;

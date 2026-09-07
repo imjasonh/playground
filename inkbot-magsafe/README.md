@@ -29,6 +29,8 @@ implemented. Do not treat a successful cross-build as working device firmware.
   connection interval selection, and refresh safety gates.
 - `src/main.rs`: the bare-metal entry point and REGOUT0 programming path. It
   enters WFI after the early power check until the peripheral drivers land.
+  Target builds require the explicit `bringup-stub` feature so this inert image
+  cannot be mistaken for release firmware.
 
 ## Target
 
@@ -55,12 +57,12 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all --check
 
-# Firmware: cross-build and lint for the nRF52833.
-cargo build --release --target thumbv7em-none-eabihf
-cargo clippy --target thumbv7em-none-eabihf -- -D warnings
+# Inert bring-up image: cross-build and lint for CI only.
+cargo build --release --target thumbv7em-none-eabihf --features bringup-stub
+cargo clippy --target thumbv7em-none-eabihf --features bringup-stub -- -D warnings
 
 # Flash over SWD (needs a probe and probe-rs installed).
-cargo run --release --target thumbv7em-none-eabihf
+cargo run --release --target thumbv7em-none-eabihf --features bringup-stub
 ```
 
 CI runs the same checks in [`.github/workflows/inkbot-magsafe.yml`](../.github/workflows/inkbot-magsafe.yml).
