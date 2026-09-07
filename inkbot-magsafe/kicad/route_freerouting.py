@@ -661,6 +661,70 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("C22", "1"),
         (16.5, 93.0),
     )
+    connect_through_front(
+        "/BAT",
+        ("U3", "2"),
+        (49.75, 60.4),
+        (
+            (49.0, 61.15),
+            (49.0, 62.2),
+            (49.3, 62.5),
+            (55.225, 62.5),
+        ),
+        ("C19", "1"),
+        (55.225, 62.8),
+    )
+
+    # The two remaining Qi control nets use the open channel between the
+    # passive columns. QI_FOD changes layers below the bootstrap crossings.
+    add_locked_track(
+        pad_center("U2", "15"),
+        board_point(9.3, 58.75),
+        "/QI_COMM2",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_path(
+        ((9.3, 58.75), (9.3, 71.4), (4.725, 71.4)),
+        "/QI_COMM2",
+        pcbnew.B_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_track(
+        board_point(4.725, 71.4),
+        pad_center("C11", "1"),
+        "/QI_COMM2",
+        width=layout_route.mm(0.15),
+    )
+
+    fod_upper_via = board_point(8.7, 71.0)
+    fod_lower_via = board_point(8.7, 77.8)
+    add_locked_track(
+        pad_center("U2", "14"),
+        board_point(8.7, 58.25),
+        "/QI_FOD",
+        width=layout_route.mm(0.15),
+    )
+    add_locked_path(
+        ((8.7, 58.25), (8.7, 71.0)),
+        "/QI_FOD",
+        pcbnew.B_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(fod_upper_via, "/QI_FOD")
+    add_locked_track(
+        fod_upper_via,
+        fod_lower_via,
+        "/QI_FOD",
+        layer=pcbnew.F_Cu,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_via(fod_lower_via, "/QI_FOD")
+    add_locked_track(
+        fod_lower_via,
+        pad_center("R1", "2"),
+        "/QI_FOD",
+        width=layout_route.mm(0.15),
+    )
 
     settings = board.GetDesignSettings()
     default_netclass = settings.m_NetSettings.m_DefaultNetClass
