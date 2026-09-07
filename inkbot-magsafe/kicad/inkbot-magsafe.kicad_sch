@@ -4185,7 +4185,7 @@
     (effects (font (size 1.27 1.27)) (justify left))
     (uuid "96a376aa-de45-5281-b35a-92713e83e367")
   )
-  (label "QI_OUT" (at 180.34 93.98 0)
+  (label "SYS" (at 180.34 93.98 0)
     (effects (font (size 1.27 1.27)) (justify left))
     (uuid "880d2bd4-033a-5228-bddb-9860414fcdec")
   )

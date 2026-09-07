@@ -262,7 +262,7 @@ def main() -> None:
     pass_v(sch, "Device:C", "C17", "1uF 25V", 180, 45, "QI_OUT", "GND", c0603)
     pass_v(sch, "Device:C", "C18", "10uF 25V", 195, 45, "SYS", "GND", c0805)
     pass_v(sch, "Device:C", "C19", "1uF 10V", 210, 45, "BAT", "GND", c0603)
-    pass_v(sch, "Device:R", "R5", "100k", 180, 100, "QI_OUT", "CHG_CE_N", r0603)
+    pass_v(sch, "Device:R", "R5", "100k", 180, 100, "SYS", "CHG_CE_N", r0603)
     pass_v(sch, "Device:R", "R6", "1M", 195, 100, "CHG_ENABLE", "GND", r0603)
     pass_v(sch, "Device:R", "R7", "10k", 210, 100, "MCU_3V0", "CHG_SDA", r0603)
     pass_v(sch, "Device:R", "R8", "10k", 225, 100, "MCU_3V0", "CHG_SCL", r0603)

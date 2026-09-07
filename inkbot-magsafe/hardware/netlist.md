@@ -24,7 +24,7 @@ schematic in [`../kicad/`](../kicad/) and
 - U3 is a BQ25186 with a separate power path and programmable JEITA limits.
 - Firmware configures 4.2 V regulation, a 100 mA input limit, 40 mA fast
   charge, and a 0-45 degrees Celsius charge window before it enables charging.
-- R5 pulls `/CE` up to QI_OUT, so charging defaults off. Q2 pulls `/CE` low
+- R5 pulls `/CE` up to SYS, so charging defaults off. Q2 pulls `/CE` low
   only after `CHG_ENABLE` goes high; R6 holds the MOSFET off during reset.
 - R7 and R8 pull the I2C lines to `MCU_3V0`. `CHG_INT_N` and `CHG_PG_N` use
   MCU internal pull-ups.
