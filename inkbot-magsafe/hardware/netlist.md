@@ -32,6 +32,10 @@ schematic in [`../kicad/`](../kicad/) and
   `BAT_NTC` connects only to U3 `TS/MR`.
 - R9, R10, and C20 form the `SYS_SENSE` divider and filter for P0.29/AIN5.
   In battery-only mode, `SYS` tracks the cell through the BQ25186 battery FET.
+- R13 and RT3 form a panel-adjacent temperature divider. P0.27 excites the
+  divider only while P0.28/AIN4 samples it against the ratiometric VDD/4 SAADC
+  reference. Firmware treats an open or shorted sensor as unavailable and
+  blocks refresh.
 
 ## Wireless power
 
@@ -78,6 +82,8 @@ SSD1677 COG, and a 24-pin 0.5 mm FPC.
   RF match are inside it. The board has no discrete RF network.
 - U5 regulates SYS to `MCU_3V0`. The rail powers module pins 28 (`VDD`) and 30
   (`VDDH`) together, which selects the nRF52833 normal-voltage circuit.
+- The unused module `VBUS` pin is grounded as Nordic's USB-disabled reference
+  circuit requires. USB D+ and D- remain unconnected.
 - LFXO Y1 connects to XL1/XL2 (P0.00/P0.01). It is the only external crystal.
 - NFC1/NFC2 and USB remain unconnected.
 - TP1-TP5 expose SWDIO, SWDCLK, reset, VDD reference, and ground.

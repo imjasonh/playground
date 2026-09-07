@@ -96,6 +96,10 @@ PLACEMENT = {
     "R8": (49.0, 70.0, 0),
     "R9": (18.5, 82.8, 0),
     "R10": (21.5, 82.8, 0),
+    # Duty-cycled panel-temperature divider below the module and beside the
+    # panel bond line.
+    "R13": (10.5, 80.8, 0),
+    "RT3": (7.0, 80.8, 0),
     # Module supply and LFXO.
     "C21": (18.5, 90.0, 0),
     "C22": (18.5, 94.0, 0),

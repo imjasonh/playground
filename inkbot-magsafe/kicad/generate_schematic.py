@@ -327,7 +327,9 @@ def main() -> None:
         "10": "SYS_SENSE",
         "11": "QI_PRESENT",
         "12": "PANEL_PWR_EN",
+        "13": "PANEL_TEMP_SENSE",
         "14": "PANEL_BUSY",
+        "16": "PANEL_TEMP_EXCITE",
         "17": "XL1",
         "18": "XL2",
         "20": "CHG_INT_N",
@@ -340,6 +342,7 @@ def main() -> None:
         "27": "PANEL_SCLK",
         "28": "MCU_3V0",
         "30": "MCU_3V0",
+        "32": "GND",
         "39": "PANEL_MOSI",
         "40": "NRST",
         "41": "PANEL_CS",
@@ -391,6 +394,28 @@ def main() -> None:
     pass_v(sch, "Device:R", "R9", "1M 1%", 205, 175, "SYS", "SYS_SENSE", r0603)
     pass_v(sch, "Device:R", "R10", "330k 1%", 215, 175, "SYS_SENSE", "GND", r0603)
     pass_v(sch, "Device:C", "C20", "10nF", 220, 190, "SYS_SENSE", "GND", c0603)
+    pass_v(
+        sch,
+        "Device:R",
+        "R13",
+        "10k 1%",
+        235,
+        175,
+        "PANEL_TEMP_EXCITE",
+        "PANEL_TEMP_SENSE",
+        r0603,
+    )
+    pass_v(
+        sch,
+        "Device:Thermistor_NTC",
+        "RT3",
+        "NCP18XH103F03RB 10k 3380K",
+        245,
+        175,
+        "PANEL_TEMP_SENSE",
+        "GND",
+        c0603,
+    )
 
     # C38 stays below the BQ25186's 100 uF maximum SYS capacitance after the
     # other rail capacitors are counted.

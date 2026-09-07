@@ -459,6 +459,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("C19", "2", (58.0, 64.0)),
         ("C20", "2", (26.4, 82.8)),
         ("R10", "2", (22.3, 84.0)),
+        ("RT3", "2", (7.775, 82.0)),
         ("C21", "2", (19.0, 91.3)),
         ("C22", "2", (20.6, 94.8)),
         ("C23", "2", (25.4, 85.0)),
@@ -527,6 +528,13 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             layout_route.GND,
         )
     add_locked_via(module_ground_via, layout_route.GND)
+    # Nordic requires the unused USB supply to be grounded. Join VBUS to the
+    # adjacent module ground land, which already has a short plane fanout.
+    add_locked_track(
+        pad_center("U1", "32"),
+        pad_center("U1", "33"),
+        layout_route.GND,
+    )
 
     for reference, pad_near_xy, via_xy in (
         ("J1", (37.35, 92.6), (36.1, 92.6)),

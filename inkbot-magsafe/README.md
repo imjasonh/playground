@@ -24,8 +24,8 @@ implemented. Do not treat a successful cross-build as working device firmware.
   with exact bounds, byte alignment, length, CRC-32, conflicting-ID, durable
   commit, and replay checks.
 - `src/panel.rs`: geometry and the SSD1677 command set for the 480 x 800
-  portrait GDEY0397T81P panel, including byte-aligned partial-refresh windows.
-  Host-tested.
+  portrait GDEY0397T81P panel. Wire frames use the controller's native
+  800 x 480 order, including byte-aligned partial-refresh windows. Host-tested.
 - `src/power.rs`: battery-only state-of-charge estimate, BQ25186 configuration,
   SYS-divider conversion, connection parameters, and refresh safety gates.
 - `src/main.rs`: the bare-metal entry point. It enters WFI until the peripheral

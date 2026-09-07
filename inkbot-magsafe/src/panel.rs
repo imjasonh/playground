@@ -1,14 +1,26 @@
-//! Geometry and command set for the 3.97-inch 480x800 mono e-ink panel
-//! (SSD1677 chip-on-glass controller), mounted portrait.
+//! Geometry and command set for the 3.97-inch 800x480 mono e-ink panel
+//! (SSD1677 chip-on-glass controller), mounted with its long axis vertical.
 //!
-//! The controller packs 8 horizontal pixels per byte and addresses RAM on byte
-//! boundaries, so partial-refresh windows round their width up to whole bytes.
+//! The glass is physically portrait, but the controller RAM remains 800 pixels
+//! on its source axis by 480 pixels on its gate axis. The sender rotates the
+//! portrait face into this controller-native order before transfer. Keeping the
+//! wire payload native avoids a 48 KB transpose buffer on the device.
+//!
+//! The controller packs 8 source-axis pixels per byte and addresses RAM on byte
+//! boundaries, so partial-refresh windows must align their `x` and `w` values
+//! to whole bytes.
 
-/// Panel width in pixels (portrait: the short axis).
-pub const WIDTH: u16 = 480;
+/// SSD1677 source-axis width in pixels.
+pub const WIDTH: u16 = 800;
 
-/// Panel height in pixels (portrait: the long axis).
-pub const HEIGHT: u16 = 800;
+/// SSD1677 gate-axis height in pixels.
+pub const HEIGHT: u16 = 480;
+
+/// Visible width after the panel is mounted in portrait orientation.
+pub const PORTRAIT_WIDTH: u16 = HEIGHT;
+
+/// Visible height after the panel is mounted in portrait orientation.
+pub const PORTRAIT_HEIGHT: u16 = WIDTH;
 
 /// Length in bytes of a full 1-bit-per-pixel framebuffer (48000 bytes).
 pub const FRAME_BYTES: usize = (WIDTH as usize * HEIGHT as usize) / 8;
@@ -52,7 +64,7 @@ impl Command {
     }
 }
 
-/// A rectangular region of the panel, in pixels.
+/// A rectangular region in SSD1677 controller-native coordinates.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Window {
     pub x: u16,
@@ -156,6 +168,7 @@ mod tests {
     fn full_frame_is_48000_bytes() {
         assert_eq!(FRAME_BYTES, 48_000);
         assert_eq!(Window::FULL.packed_bytes(), FRAME_BYTES);
+        assert_eq!((PORTRAIT_WIDTH, PORTRAIT_HEIGHT), (480, 800));
     }
 
     #[test]
@@ -184,10 +197,24 @@ mod tests {
         }
         .is_valid());
         assert!(!Window {
-            x: 472,
+            x: 792,
             y: 0,
             w: 16,
             h: 10
+        }
+        .is_valid());
+        assert!(Window {
+            x: 792,
+            y: 479,
+            w: 8,
+            h: 1
+        }
+        .is_valid());
+        assert!(!Window {
+            x: 0,
+            y: 480,
+            w: 8,
+            h: 1
         }
         .is_valid());
         assert!(!Window {

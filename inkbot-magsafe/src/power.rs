@@ -118,6 +118,80 @@ pub fn sys_mv_from_saadc(raw: i16) -> Option<u16> {
     u16::try_from((numerator + denominator / 2) / denominator).ok()
 }
 
+/// Maximum code from the 12-bit ratiometric panel-temperature sample.
+pub const PANEL_TEMP_ADC_MAX: u16 = (1 << SAADC_RESOLUTION_BITS) - 1;
+
+/// Acquisition time for the 10 kOhm panel-temperature divider.
+pub const PANEL_TEMP_ACQUISITION_US: u8 = 40;
+
+/// A panel-temperature divider reading that cannot represent a valid sensor.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ThermistorFault {
+    ShortCircuit,
+    OpenCircuit,
+}
+
+// Expected 12-bit codes for a 10 kOhm high-side resistor and the
+// NCP18XH103F03RB thermistor. Configure SAADC for the VDD/4 reference and 1/4
+// gain so the measurement is ratiometric to the GPIO excitation voltage.
+const PANEL_TEMP_TABLE: [(u16, i8); 19] = [
+    (3613, -20),
+    (3492, -15),
+    (3353, -10),
+    (3196, -5),
+    (3024, 0),
+    (2839, 5),
+    (2644, 10),
+    (2445, 15),
+    (2245, 20),
+    (2048, 25),
+    (1857, 30),
+    (1675, 35),
+    (1505, 40),
+    (1347, 45),
+    (1203, 50),
+    (1072, 55),
+    (954, 60),
+    (849, 65),
+    (755, 70),
+];
+
+/// Convert a ratiometric panel-thermistor sample to degrees Celsius.
+///
+/// Drive `PANEL_TEMP_EXCITE` high only for the acquisition, sample AIN4 with
+/// the VDD/4 reference and 1/4 gain, then drive the excitation pin low.
+pub fn panel_temp_c_from_saadc(raw: u16) -> Result<i8, ThermistorFault> {
+    const SHORT_MAX: u16 = 16;
+    const OPEN_MIN: u16 = PANEL_TEMP_ADC_MAX - 16;
+
+    if raw <= SHORT_MAX {
+        return Err(ThermistorFault::ShortCircuit);
+    }
+    if raw >= OPEN_MIN {
+        return Err(ThermistorFault::OpenCircuit);
+    }
+    if raw >= PANEL_TEMP_TABLE[0].0 {
+        return Ok(PANEL_TEMP_TABLE[0].1);
+    }
+    if raw <= PANEL_TEMP_TABLE[PANEL_TEMP_TABLE.len() - 1].0 {
+        return Ok(PANEL_TEMP_TABLE[PANEL_TEMP_TABLE.len() - 1].1);
+    }
+
+    for pair in PANEL_TEMP_TABLE.windows(2) {
+        let (cold_raw, cold_c) = pair[0];
+        let (warm_raw, warm_c) = pair[1];
+        if raw <= cold_raw && raw >= warm_raw {
+            let code_span = u32::from(cold_raw - warm_raw);
+            let code_offset = u32::from(cold_raw - raw);
+            let temp_span = u32::from((warm_c - cold_c) as u8);
+            let interpolated = (code_offset * temp_span + code_span / 2) / code_span;
+            return Ok(cold_c + interpolated as i8);
+        }
+    }
+
+    unreachable!("the bounded ADC code falls within one table interval")
+}
+
 /// Estimate state of charge from a resting cell voltage.
 pub fn soc_percent(mv: u16) -> u8 {
     const CURVE: &[(u16, u8)] = &[
@@ -217,6 +291,25 @@ mod tests {
         assert_eq!(sys_mv_from_saadc(-1), None);
         assert_eq!(sys_mv_from_saadc(0), Some(0));
         assert_eq!(sys_mv_from_saadc(1779), Some(4201));
+    }
+
+    #[test]
+    fn panel_temperature_conversion_is_ratiometric_and_fault_aware() {
+        assert_eq!(
+            panel_temp_c_from_saadc(0),
+            Err(ThermistorFault::ShortCircuit)
+        );
+        assert_eq!(
+            panel_temp_c_from_saadc(PANEL_TEMP_ADC_MAX),
+            Err(ThermistorFault::OpenCircuit)
+        );
+        assert_eq!(panel_temp_c_from_saadc(3024), Ok(0));
+        assert_eq!(panel_temp_c_from_saadc(2048), Ok(25));
+        assert_eq!(panel_temp_c_from_saadc(1203), Ok(50));
+        assert_eq!(panel_temp_c_from_saadc(2932), Ok(2));
+        assert_eq!(panel_temp_c_from_saadc(2931), Ok(3));
+        assert_eq!(panel_temp_c_from_saadc(3500), Ok(-15));
+        assert_eq!(panel_temp_c_from_saadc(700), Ok(70));
     }
 
     #[test]

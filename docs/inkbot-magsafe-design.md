@@ -359,12 +359,13 @@ top-level app.
 | Status | read / notify | SYS estimate, charge state, temperature availability, and last-refresh result |
 | Frame fallback | encrypted write without response | chunked pixel data when L2CAP is unavailable |
 
-The board does not route the cell or coil NTC to the MCU, and the SPI link has
-no MISO signal for reading the SSD1677 temperature result. Firmware must report
-panel temperature as unavailable unless EVT validates another source. The
-controller can still use its internal sensor for waveform selection. If a
-firmware-enforced temperature window is required, add a panel-adjacent sensor
-before freezing the PCB.
+The cell and coil NTCs terminate at their protection ICs and are not shared
+with the MCU. A separate NCP18XH103F03RB thermistor sits beside the panel bond
+line. P0.27 excites its 10 kOhm divider only during a sample, and P0.28/AIN4
+measures the result against the ratiometric SAADC reference. Firmware treats an
+open or shorted sensor as unavailable and blocks refresh. EVT must correlate
+this board-edge reading with the glass temperature before freezing the limits.
+The SSD1677 can still use its internal sensor for waveform selection.
 
 For the pixel payload, prefer an **L2CAP connection-oriented channel**
 (`CBL2CAPChannel` on iOS) with a fixed PSM in the BLE LE dynamic range. A
@@ -431,6 +432,12 @@ Passing the CRC marks a frame as verified, but it does not advance the replay
 boundary. Firmware advances that boundary only after atomically committing the
 pixels and metadata to flash.
 
+The glass is mounted with its long axis vertical, but SSD1677 RAM remains
+800 source pixels by 480 gate pixels. The iOS encoder rotates each portrait
+face into that controller-native order before transfer. Frame windows use the
+same 800 x 480 coordinates, with source-axis bounds aligned to whole bytes.
+This keeps the device from needing a second 48 KB buffer for rotation.
+
 On demand (app in foreground) is the easy case: connect, open the L2CAP channel,
 stream, commit, done.
 
@@ -484,9 +491,9 @@ extended cost for every reference in that row, not a single component price:
 
 | Quantity | Unit direct cost | Build total | With 15% procurement contingency |
 |---:|---:|---:|---:|
-| 1 | **$168.27** | **$168** | **$194** |
-| 100 | **$59.94** | **$5,994** | **$6,893** |
-| 1,000 | **$41.74** | **$41,740** | **$48,001** |
+| 1 | **$168.42** | **$168** | **$194** |
+| 100 | **$60.01** | **$6,001** | **$6,901** |
+| 1,000 | **$41.79** | **$41,790** | **$48,059** |
 
 The one-unit estimate includes manual assembly setup but excludes minimum reel
 buys, shipping, duties, tax, and the tools needed to program or measure the
@@ -528,6 +535,7 @@ Obtain supplier quotations and compliance-lab scopes before treating the
 - Exact frame-length, bounds, alignment, CRC, and replay checks before a panel
   refresh.
 - Busy timeout, watchdog, brownout logging, and forced periodic full refresh.
+- Duty-cycled, open- and short-detecting panel temperature measurement.
 - Structural spacer, strain relief, cell swelling clearance, and electrical
   insulation under the rear cover.
 - No refresh outside the panel's qualified 0-50 degrees Celsius range.

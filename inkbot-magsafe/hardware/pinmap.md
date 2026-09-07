@@ -24,6 +24,8 @@ Qi coil (both detune 2.4 GHz; see the design doc).
 | Charger SDA | P0.07 | 23 | bidir | CHG_SDA | BQ25186 I2C, 10 kOhm pull-up to MCU_3V0 |
 | Charger SCL | P0.08 | 24 | out | CHG_SCL | BQ25186 I2C, 10 kOhm pull-up to MCU_3V0 |
 | Battery/SYS sense | P0.29 / AIN5 | 10 | analog in | SYS_SENSE | 1 MOhm/330 kOhm divider with 10 nF filter |
+| Panel temperature excitation | P0.27 | 16 | out | PANEL_TEMP_EXCITE | drive high only while sampling |
+| Panel temperature sense | P0.28 / AIN4 | 13 | analog in | PANEL_TEMP_SENSE | ratiometric 10 kOhm divider; use VDD/4 reference and 1/4 gain |
 | SWDIO | SWDIO | 51 | bidir | SWDIO | test pad |
 | SWDCLK | SWDCLK | 53 | in | SWDCLK | test pad |
 | Reset | P0.18 / ~RESET | 40 | in | NRST | test pad |
@@ -31,11 +33,12 @@ Qi coil (both detune 2.4 GHz; see the design doc).
 | 32.768 kHz | P0.01 / XL2 | 18 | xtal | LFXO | external Y1, low-power BLE timing |
 | VDD | VDD | 28 | pwr in | MCU_3V0 | tied to VDDH for normal-voltage mode |
 | VDDH | VDDH | 30 | pwr in | MCU_3V0 | tied to VDD and powered by TPS7A0230P |
-| VBUS | VBUS | 32 | pwr | unconnected | USB unused |
+| VBUS | VBUS | 32 | pwr | GND | USB-disabled reference connection |
 
 The module integrates the **32 MHz HFXO**, so there is no board crystal for it;
 only the 32.768 kHz LFXO (Y1) is external, on P0.00/P0.01. NFC pins P0.09/P0.10
 (module pins 52/54) are left free — pairing and frames ride BLE, no NFC antenna.
+The unused USB D+ and D- pins remain open; `VBUS` connects to ground.
 
 Panel SPI pins mirror the roles the [`inkbot-esp32/`](../../inkbot-esp32/) driver
 uses (SCLK, MOSI, CS, DC, RST, BUSY), so the panel command sequence ports across
