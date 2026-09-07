@@ -150,6 +150,8 @@ TRACK_W = mm(0.2)
 MIN_TRACK_W = mm(0.1)
 VIA_D = mm(0.5)
 VIA_DRILL = mm(0.25)
+FANOUT_VIA_D = mm(0.45)
+FANOUT_VIA_DRILL = mm(0.2)
 
 
 def parse_netlist(path: Path):

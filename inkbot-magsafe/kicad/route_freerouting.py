@@ -379,11 +379,16 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         track.SetLocked(True)
         board.Add(track)
 
-    def add_locked_via(position: pcbnew.VECTOR2I, net_name: str) -> None:
+    def add_locked_via(
+        position: pcbnew.VECTOR2I,
+        net_name: str,
+        diameter: int = layout_route.VIA_D,
+        drill: int = layout_route.VIA_DRILL,
+    ) -> None:
         via = pcbnew.PCB_VIA(board)
         via.SetPosition(position)
-        via.SetWidth(layout_route.VIA_D)
-        via.SetDrill(layout_route.VIA_DRILL)
+        via.SetWidth(diameter)
+        via.SetDrill(drill)
         via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
         via.SetNet(netmap[net_name])
         via.SetLocked(True)
@@ -589,7 +594,8 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         (
             (5.35, 65.75),
             (4.6, 65.75),
-            (3.275, 64.425),
+            (2.2, 65.75),
+            (2.2, 64.2),
             (3.275, 64.2),
         ),
         "/QI_CLAMP1",
@@ -697,7 +703,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         width=layout_route.mm(0.15),
     )
 
-    qi_present_receiver_via = board_point(4.6, 64.75)
+    qi_present_receiver_via = board_point(4.8, 64.6)
     qi_present_module_via = board_point(10.8, 83.2)
     add_locked_track(
         pad_center("U2", "7"),
@@ -705,7 +711,12 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         "/QI_PRESENT",
         width=layout_route.mm(0.12),
     )
-    add_locked_via(qi_present_receiver_via, "/QI_PRESENT")
+    add_locked_via(
+        qi_present_receiver_via,
+        "/QI_PRESENT",
+        layout_route.FANOUT_VIA_D,
+        layout_route.FANOUT_VIA_DRILL,
+    )
     add_locked_track(
         pad_center("U1", "11"),
         qi_present_module_via,
@@ -715,10 +726,9 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_locked_via(qi_present_module_via, "/QI_PRESENT")
     add_locked_path(
         (
-            (4.6, 64.75),
-            (4.6, 65.6),
-            (5.2, 66.2),
-            (5.2, 77.6),
+            (4.8, 64.6),
+            (5.6, 65.4),
+            (5.6, 77.6),
             (10.8, 83.2),
         ),
         "/QI_PRESENT",
@@ -726,7 +736,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         width=layout_route.mm(0.12),
     )
 
-    qi_comm1_receiver_via = board_point(4.5, 65.25)
+    qi_comm1_receiver_via = board_point(4.2, 65.25)
     qi_comm1_capacitor_via = board_point(3.275, 62.7)
     add_locked_track(
         pad_center("U2", "6"),
@@ -734,7 +744,12 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         "/QI_COMM1",
         width=layout_route.MIN_TRACK_W,
     )
-    add_locked_via(qi_comm1_receiver_via, "/QI_COMM1")
+    add_locked_via(
+        qi_comm1_receiver_via,
+        "/QI_COMM1",
+        layout_route.FANOUT_VIA_D,
+        layout_route.FANOUT_VIA_DRILL,
+    )
     add_locked_track(
         pad_center("C10", "1"),
         qi_comm1_capacitor_via,
@@ -744,8 +759,8 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_locked_via(qi_comm1_capacitor_via, "/QI_COMM1")
     add_locked_path(
         (
-            (4.5, 65.25),
-            (3.5, 66.25),
+            (4.2, 65.25),
+            (3.4, 66.05),
             (2.4, 66.25),
             (2.4, 62.7),
             (3.275, 62.7),
@@ -775,14 +790,20 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     default_netclass.SetViaDrill(layout_route.VIA_DRILL)
     settings.m_MinClearance = layout_route.mm(layout_route.CLEAR)
     settings.m_TrackMinWidth = layout_route.MIN_TRACK_W
-    settings.m_ViasMinSize = layout_route.VIA_D
-    settings.m_MinThroughDrill = layout_route.VIA_DRILL
+    settings.m_ViasMinSize = layout_route.FANOUT_VIA_D
+    settings.m_MinThroughDrill = layout_route.FANOUT_VIA_DRILL
     settings.SetCustomTrackWidth(layout_route.TRACK_W)
     settings.SetCustomViaSize(layout_route.VIA_D)
     settings.SetCustomViaDrill(layout_route.VIA_DRILL)
     settings.m_ViasDimensionsList.clear()
     settings.m_ViasDimensionsList.append(
         pcbnew.VIA_DIMENSION(layout_route.VIA_D, layout_route.VIA_DRILL)
+    )
+    settings.m_ViasDimensionsList.append(
+        pcbnew.VIA_DIMENSION(
+            layout_route.FANOUT_VIA_D,
+            layout_route.FANOUT_VIA_DRILL,
+        )
     )
     settings.SetViaSizeIndex(0)
     keepalive: list[pcbnew.SHAPE_POLY_SET] = []
