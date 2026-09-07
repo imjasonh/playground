@@ -33,8 +33,9 @@ python3 run_erc.py
 
 `route_freerouting.py` starts from the generated outline, exports the
 schematic netlist, places the parts on the back, assigns nets, reserves In1.Cu
-for SYS and In2.Cu for ground, and exports a Specctra DSN file. F.Cu and B.Cu
-remain signal-only so isolated surface pours cannot hide missing ground vias.
+for SYS distribution and In2.Cu for ground, and exports a Specctra DSN file.
+Two low-speed charger-control tracks cross In1.Cu; F.Cu and B.Cu carry the
+remaining signals. The unbroken ground plane supplies their return path.
 The script imports the SES file, refills the planes, and
 writes Gerbers, drill, and centroid files under `fab/`. Freerouting 2.4.1
 requires Java 25. The script runs without the GUI and disables Freerouting's
@@ -69,7 +70,6 @@ design document first.
 - **TPS7A0230P** 3.0 V MCU rail with nRF52840 VDD and VDDH tied together.
 - **TPS7A2030P** 3.0 V panel rail with active discharge.
 - 0.8 mm, four-layer JLC7628 PCB with a 34 x 23 mm rounded battery cutout,
-  1 oz outer copper, 0.5 oz inner copper, 0.12 mm signal clearance, one
-  0.10 mm module neck, 0.5/0.25 mm standard vias, and two 0.45/0.20 mm Qi
-  fanout vias.
+  1 oz outer copper, 0.5 oz inner copper, 0.10 mm minimum trace and clearance,
+  0.5/0.25 mm standard vias, and two 0.45/0.20 mm Qi fanout vias.
 - A bonded front panel plus a structural spacer and insulating rear cover.

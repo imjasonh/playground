@@ -58,9 +58,10 @@ parity.
   board STEP model, schematic PDF, polarity marks, and component orientation
   before ordering.
 
-The routing flow reserves In1.Cu for SYS and In2.Cu for ground. Freerouting
-routes signals and plane fanouts on F.Cu and B.Cu. The outer layers do not use
-ground pours, so every ground pad needs an explicit via to the solid plane. The
+The routing flow uses In1.Cu for SYS distribution and keeps In2.Cu as solid
+ground. Two low-speed charger-control tracks cross In1.Cu; Freerouting routes
+the remaining signals and plane fanouts on F.Cu and B.Cu. The outer layers do
+not use ground pours, so every ground pad needs an explicit via to the solid plane. The
 board is an EVT artifact until coil
 resonance, FOD, thermals, RF behavior, and mechanical construction pass the
 bench gates in the design document.

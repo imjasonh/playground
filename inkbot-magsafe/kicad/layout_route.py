@@ -138,7 +138,7 @@ PLACEMENT = {
 
 GND = "GND"
 SYS = "/SYS"
-CLEAR = 0.12
+CLEAR = 0.10
 
 
 def to_nm(value_mm: float) -> int:

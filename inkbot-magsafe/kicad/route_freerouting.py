@@ -831,15 +831,80 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_locked_path(
         (
             (13.3, 88.6),
-            (28.2, 86.2),
+            (19.0, 86.2),
             (38.8, 85.0),
-            (46.2, 82.4),
+            (46.8, 82.4),
             (47.6, 82.4),
             (47.8, 82.2),
             (58.0, 67.0),
         ),
         "/CHG_SDA",
         pcbnew.F_Cu,
+        width=layout_route.mm(0.12),
+    )
+
+    chg_pg_module_via = board_point(13.87, 87.8)
+    chg_pg_charger_via = board_point(49.962, 60.095)
+    add_locked_track(
+        pad_center("U1", "21"),
+        chg_pg_module_via,
+        "/CHG_PG_N",
+        width=layout_route.MIN_TRACK_W,
+    )
+    add_locked_via(chg_pg_module_via, "/CHG_PG_N")
+    add_locked_track(
+        pad_center("U3", "3"),
+        chg_pg_charger_via,
+        "/CHG_PG_N",
+        width=layout_route.MIN_TRACK_W,
+    )
+    add_locked_via(chg_pg_charger_via, "/CHG_PG_N")
+    add_locked_path(
+        (
+            (13.87, 87.8),
+            (26.4, 86.6),
+            (27.0, 86.4),
+            (42.4, 86.2),
+            (47.6, 82.4),
+            (47.8, 82.2),
+            (48.8, 69.6),
+            (49.2, 61.0),
+            (49.962, 60.095),
+        ),
+        "/CHG_PG_N",
+        pcbnew.In1_Cu,
+        width=layout_route.mm(0.12),
+    )
+
+    chg_enable_module_via = board_point(16.8, 88.2)
+    chg_enable_gate_via = board_point(51.2, 68.5)
+    add_locked_track(
+        pad_center("U1", "22"),
+        chg_enable_module_via,
+        "/CHG_ENABLE",
+        width=layout_route.MIN_TRACK_W,
+    )
+    add_locked_via(chg_enable_module_via, "/CHG_ENABLE")
+    add_locked_track(
+        pad_center("R6", "1"),
+        chg_enable_gate_via,
+        "/CHG_ENABLE",
+        width=layout_route.mm(0.12),
+    )
+    add_locked_via(chg_enable_gate_via, "/CHG_ENABLE")
+    add_locked_path(
+        (
+            (16.8, 88.2),
+            (18.0, 88.0),
+            (25.6, 88.0),
+            (42.6, 86.6),
+            (46.0, 85.8),
+            (46.4, 85.4),
+            (48.2, 82.2),
+            (51.2, 68.5),
+        ),
+        "/CHG_ENABLE",
+        pcbnew.In1_Cu,
         width=layout_route.mm(0.12),
     )
 
@@ -865,6 +930,8 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     settings.m_TrackMinWidth = layout_route.MIN_TRACK_W
     settings.m_ViasMinSize = layout_route.FANOUT_VIA_D
     settings.m_MinThroughDrill = layout_route.FANOUT_VIA_DRILL
+    settings.m_HoleClearance = layout_route.mm(0.2)
+    settings.m_HoleToHoleMin = layout_route.mm(0.2)
     settings.SetCustomTrackWidth(layout_route.TRACK_W)
     settings.SetCustomViaSize(layout_route.VIA_D)
     settings.SetCustomViaDrill(layout_route.VIA_DRILL)
@@ -945,9 +1012,9 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
 
 def mark_power_layers(path: Path) -> None:
-    """Mark the SYS and GND planes as non-routable in the DSN export."""
+    """Mark the unbroken ground plane as a power layer in the DSN export."""
     text = path.read_text()
-    for layer in ("In1.Cu", "In2.Cu"):
+    for layer in ("In2.Cu",):
         signal = f"    (layer {layer}\n      (type signal)"
         power = f"    (layer {layer}\n      (type power)"
         if text.count(signal) != 1:

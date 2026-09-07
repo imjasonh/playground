@@ -255,13 +255,13 @@ matching network, but the host layout still controls its performance:
 ### Board stack
 
 A 0.8 mm, four-layer PCB uses the JLC7628 stack with 1 oz outer and 0.5 oz
-inner copper. In1.Cu is the SYS plane, and In2.Cu is ground. The routed
+inner copper. In1.Cu distributes SYS around two low-speed charger-control
+tracks, and In2.Cu remains solid ground. The routed
 34 x 23 mm battery cutout has 1 mm corner radii. Standard vias are
-0.5/0.25 mm, signal clearance is 0.12 mm, and one module escape uses a 0.10 mm
-neck. Two Qi receiver fanouts use 0.45/0.20 mm vias. Copper stays 0.5 mm from
-every routed edge. The selected fabricator lists these values within its
-standard multilayer process, but the fabrication drawing and quote remain
-release gates.
+0.5/0.25 mm, minimum trace and signal clearance are 0.10 mm, and two Qi
+receiver fanouts use 0.45/0.20 mm vias. Copper stays 0.5 mm from every routed
+edge. The selected fabricator lists these values within its standard multilayer
+process, but the fabrication drawing and quote remain release gates.
 
 The 3.97-inch panel bonds to the front and overlaps the magnetic ring. The
 back requires a rigid spacer and an insulating, flame-retardant cover. A future
@@ -306,7 +306,9 @@ Who builds what:
   thermistor adhesive, magnet polarity, insulation, and cure time.
 
 `kicad/route_freerouting.py` places the parts, assigns nets, and adds solid
-In1.Cu SYS and In2.Cu ground planes. It exports a Specctra DSN file, runs
+In1.Cu SYS distribution and the In2.Cu ground plane. Two locked, low-speed
+charger-control tracks cross In1.Cu without cutting the ground plane. The flow
+exports a Specctra DSN file, runs
 Freerouting on F.Cu and B.Cu, imports the SES file, refills the planes, and
 exports fabrication files. Every ground pad gets a via to In2.Cu; the outer
 layers stay signal-only so disconnected pour islands cannot mask an open net.
