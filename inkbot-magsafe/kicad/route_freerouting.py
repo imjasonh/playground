@@ -772,6 +772,48 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
     add_locked_path(
         (
+            (11.65, 85.25),
+            (11.65, 84.4),
+            (11.325, 84.075),
+            (11.325, 80.8),
+        ),
+        "/PANEL_TEMP_SENSE",
+        pcbnew.B_Cu,
+        width=layout_route.MIN_TRACK_W,
+    )
+
+    qi_fod_upper_via = board_point(10.4, 61.5)
+    qi_fod_lower_via = board_point(11.075, 76.2)
+    add_locked_track(
+        pad_center("R2", "1"),
+        qi_fod_upper_via,
+        "/QI_FOD",
+        width=layout_route.mm(0.12),
+    )
+    add_locked_via(qi_fod_upper_via, "/QI_FOD")
+    add_locked_track(
+        pad_center("R3", "2"),
+        qi_fod_lower_via,
+        "/QI_FOD",
+        width=layout_route.mm(0.12),
+    )
+    add_locked_via(qi_fod_lower_via, "/QI_FOD")
+    add_locked_path(
+        (
+            (10.4, 61.5),
+            (12.0, 63.1),
+            (12.0, 71.5),
+            (10.6, 72.9),
+            (10.6, 76.2),
+            (11.075, 76.2),
+        ),
+        "/QI_FOD",
+        pcbnew.F_Cu,
+        width=layout_route.mm(0.12),
+    )
+
+    add_locked_path(
+        (
             (5.35, 66.75),
             (4.6, 66.75),
             (3.775, 67.575),
