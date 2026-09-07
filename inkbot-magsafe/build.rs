@@ -12,11 +12,11 @@ fn main() {
     let memory = if factory_bringup {
         include_bytes!("memory-factory.x").as_slice()
     } else {
-        include_bytes!("memory.x").as_slice()
+        include_bytes!("memory-app.x").as_slice()
     };
     fs::write(out.join("memory.x"), memory).expect("write memory.x");
     println!("cargo:rustc-link-search={}", out.display());
-    println!("cargo:rerun-if-changed=memory.x");
+    println!("cargo:rerun-if-changed=memory-app.x");
     println!("cargo:rerun-if-changed=memory-factory.x");
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_FACTORY_BRINGUP");
