@@ -612,17 +612,27 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         width=layout_route.mm(0.3),
     )
     qi_input_via = board_point(47.225, 57.0)
+    qi_layer_via = board_point(20.0, 56.0)
     add_locked_path(
         (
             (1.0, 66.25),
             (1.0, 56.0),
+            (20.0, 56.0),
+        ),
+        "/QI_OUT",
+        pcbnew.F_Cu,
+        width=layout_route.mm(0.3),
+    )
+    add_locked_via(qi_layer_via, "/QI_OUT")
+    add_locked_path(
+        (
             (20.0, 56.0),
             (21.5, 57.5),
             (47.225, 57.5),
             (47.225, 57.0),
         ),
         "/QI_OUT",
-        pcbnew.F_Cu,
+        pcbnew.B_Cu,
         width=layout_route.mm(0.3),
     )
     add_locked_via(qi_input_via, "/QI_OUT")
