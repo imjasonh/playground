@@ -81,8 +81,9 @@ them:
   partial-refreshes a correct solve.
 - **[`inkbot-magsafe/`](inkbot-magsafe/)** — firmware and hardware for a
   battery-first BLE sibling: a 4-inch e-ink tile that snaps to an iPhone's
-  MagSafe ring and takes frames from an iOS app. nRF52832, no connector,
-  wireless charge. Scaffold (logic tested, bring-up stubbed); design in
+  MagSafe ring and takes frames from an iOS app. nRF52833, no user connector,
+  and wireless charging. Host logic and hardware contracts are tested;
+  peripheral bring-up remains incomplete. Design in
   [`docs/inkbot-magsafe-design.md`](docs/inkbot-magsafe-design.md) with a
   [BOM](docs/inkbot-magsafe-bom.csv).
 - **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare

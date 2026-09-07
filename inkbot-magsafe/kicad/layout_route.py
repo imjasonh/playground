@@ -17,15 +17,17 @@ LOCAL_FP_ROOT = HERE / "inkbot_magsafe.pretty"
 FAB = HERE / "fab"
 
 BOARD_W, BOARD_H = 60.0, 99.0
-BAT_W, BAT_H, BAT_CY = 33.0, 22.0, 70.0
+BAT_W, BAT_H, BAT_CY = 34.0, 23.0, 70.0
 RING_CX, RING_CY, RING_RADIUS = 30.0, 30.0, 27.0
 CX = BOARD_W / 2
 
 # Parts mount on the back. The magnetic and coil keep-out occupies the top,
-# the protected cell occupies x=13.5..46.5 and y=59..81, and the module,
+# the protected cell occupies x=13..47 and y=58.5..81.5, and the module,
 # panel circuitry, connectors, and test pads fit around those two regions.
 PLACEMENT = {
-    "U1": (19.0, 89.0, 90),
+    # The rotated module sits flush with the left edge, antenna first. Its
+    # antenna occupies x=0..4.6 mm and must have no copper on any layer.
+    "U1": (8.3, 89.0, 90),
     "U2": (7.0, 59.0, 0),
     "U3": (52.0, 60.0, 0),
     "U4": (37.0, 87.0, 0),
@@ -37,7 +39,7 @@ PLACEMENT = {
     "D1": (57.0, 90.0, 0),
     "D2": (55.0, 87.0, 0),
     "D3": (50.0, 87.0, 0),
-    "Y1": (5.5, 96.5, 90),
+    "Y1": (20.5, 86.2, 90),
     "RT2": (11.0, 82.0, 0),
     # Qi resonance, clamp, communication, and output network.
     "C1": (3.0, 64.0, 0),
@@ -69,14 +71,12 @@ PLACEMENT = {
     "R6": (52.0, 67.0, 0),
     "R7": (56.0, 67.0, 0),
     "R8": (49.0, 70.0, 0),
-    "R9": (56.0, 70.0, 0),
-    "R10": (49.0, 73.0, 0),
-    "C25": (52.0, 73.0, 0),
     # Module supply and LFXO.
-    "C21": (10.0, 97.0, 0),
-    "C22": (14.0, 97.0, 0),
-    "C23": (18.0, 97.0, 0),
-    "C24": (22.0, 97.0, 0),
+    "C21": (18.5, 90.5, 0),
+    "C22": (18.5, 93.0, 0),
+    "C23": (23.5, 85.0, 0),
+    "C24": (23.5, 87.5, 0),
+    "C38": (25.0, 84.0, 0),
     # Panel LDO and SSD1677 boost network.
     "C26": (29.0, 87.0, 0),
     "C27": (33.0, 87.0, 0),
@@ -92,8 +92,6 @@ PLACEMENT = {
     "C37": (33.0, 90.0, 0),
     "R11": (29.0, 93.0, 0),
     "R12": (33.0, 93.0, 0),
-    "R13": (56.0, 93.0, 0),
-    "R14": (59.0, 93.0, 90),
     # SWD and rail test pads.
     "TP1": (29.0, 96.0, 0),
     "TP2": (32.0, 96.0, 0),
@@ -117,22 +115,22 @@ def to_nm(value_mm: float) -> int:
 
 mm = to_nm
 TRACK_W = mm(0.2)
-VIA_D = mm(0.5)
+VIA_D = mm(0.6)
 VIA_DRILL = mm(0.3)
 
 POWER_WIDTHS = {
-    "/BAT": mm(0.4),
-    "/PANEL_3V0": mm(0.3),
+    "/BAT": mm(0.5),
+    "/PANEL_3V0": mm(0.5),
     "/PANEL_PUMP": mm(0.3),
     "/PANEL_SW": mm(0.3),
     "/PANEL_VGH": mm(0.3),
     "/PANEL_VGL": mm(0.3),
-    "/QI_AC1": mm(0.3),
-    "/QI_AC2": mm(0.3),
-    "/QI_COIL_A": mm(0.3),
-    "/QI_OUT": mm(0.4),
+    "/QI_AC1": mm(0.5),
+    "/QI_AC2": mm(0.5),
+    "/QI_COIL_A": mm(0.5),
+    "/QI_OUT": mm(0.5),
     "/QI_RECT": mm(0.3),
-    "/SYS": mm(0.4),
+    "/SYS": mm(0.5),
     "GND": mm(0.3),
 }
 

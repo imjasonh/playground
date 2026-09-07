@@ -290,30 +290,30 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     settings.SetViaSizeIndex(0)
     keepalive: list[pcbnew.SHAPE_POLY_SET] = []
 
-    def add_plane(layer: int, net_name: str) -> None:
+    def add_plane(layer: int, net_name: str, pad_connection: int) -> None:
         zone = pcbnew.ZONE(board)
         zone.SetLayer(layer)
         zone.SetNet(netmap[net_name])
         zone.SetLocalClearance(layout_route.mm(layout_route.CLEAR))
         zone.SetMinThickness(layout_route.mm(0.2))
-        zone.SetPadConnection(pcbnew.ZONE_CONNECTION_FULL)
+        zone.SetPadConnection(pad_connection)
         outline = pcbnew.SHAPE_POLY_SET()
         outline.NewOutline()
         for x, y in (
-            (0.2, 0.2),
-            (layout_route.BOARD_W - 0.2, 0.2),
-            (layout_route.BOARD_W - 0.2, layout_route.BOARD_H - 0.2),
-            (0.2, layout_route.BOARD_H - 0.2),
+            (0.5, 0.5),
+            (layout_route.BOARD_W - 0.5, 0.5),
+            (layout_route.BOARD_W - 0.5, layout_route.BOARD_H - 0.5),
+            (0.5, layout_route.BOARD_H - 0.5),
         ):
             outline.Append(layout_route.mm(x), layout_route.mm(y))
         zone.SetOutline(outline)
         keepalive.append(outline)
         board.Add(zone)
 
-    add_plane(pcbnew.In1_Cu, layout_route.SYS)
-    add_plane(pcbnew.In2_Cu, layout_route.GND)
-    add_plane(pcbnew.F_Cu, layout_route.GND)
-    add_plane(pcbnew.B_Cu, layout_route.GND)
+    add_plane(pcbnew.In1_Cu, layout_route.SYS, pcbnew.ZONE_CONNECTION_FULL)
+    add_plane(pcbnew.In2_Cu, layout_route.GND, pcbnew.ZONE_CONNECTION_FULL)
+    add_plane(pcbnew.F_Cu, layout_route.GND, pcbnew.ZONE_CONNECTION_THERMAL)
+    add_plane(pcbnew.B_Cu, layout_route.GND, pcbnew.ZONE_CONNECTION_THERMAL)
 
     all_layers = pcbnew.LSET()
     for layer in (pcbnew.F_Cu, pcbnew.In1_Cu, pcbnew.In2_Cu, pcbnew.B_Cu):
@@ -336,7 +336,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     # copper and vias from violating routed-edge clearance.
     add_rect_rule_area(
         board,
-        [(13.0, 58.5), (47.0, 58.5), (47.0, 81.5), (13.0, 81.5)],
+        [(12.5, 58.0), (47.5, 58.0), (47.5, 82.0), (12.5, 82.0)],
         all_layers,
         keepalive,
     )
@@ -345,7 +345,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     # also protects it if a future library revision drops the footprint rule.
     add_rect_rule_area(
         board,
-        [(1.5, 85.0), (11.0, 85.0), (11.0, 93.0), (1.5, 93.0)],
+        [(0.0, 83.0), (4.8, 83.0), (4.8, 95.0), (0.0, 95.0)],
         all_layers,
         keepalive,
     )

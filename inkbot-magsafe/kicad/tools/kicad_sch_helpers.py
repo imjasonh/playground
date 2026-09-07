@@ -58,6 +58,8 @@ from typing import Optional
 # =============================================================================
 
 GRID = 1.27  # KiCad default schematic grid in mm (50 mil)
+_UID_NAMESPACE = _uuid.UUID("2145cbb0-7f9b-4bc1-a10f-2b083729a4ac")
+_uid_counter = 0
 
 
 def snap(v: float) -> float:
@@ -67,8 +69,11 @@ def snap(v: float) -> float:
 
 
 def uid() -> str:
-    """Generate a UUID for KiCad elements."""
-    return str(_uuid.uuid4())
+    """Return the next deterministic UUID for generated KiCad elements."""
+    global _uid_counter
+    value = _uuid.uuid5(_UID_NAMESPACE, str(_uid_counter))
+    _uid_counter += 1
+    return str(value)
 
 
 def pin_transform(pin_x: float, pin_y: float, rotation: int = 0) -> tuple:

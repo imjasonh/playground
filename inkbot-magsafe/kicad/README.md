@@ -1,9 +1,8 @@
 # KiCad project: inkbot-magsafe
 
-Thickness-first MagSafe e-ink tile. Portrait, 60 × 99 mm, fits a 6.1" Pro in
-both width and height. No case: the 3.97-inch panel is the front face and
-overlaps the MagSafe ring. The radio is a pre-certified Raytac MDBT50Q-512K
-(nRF52833) module, so there is no antenna or matching network to lay out.
+EVT hardware for a 60 x 99 mm portrait e-paper tile. The 3.97-inch panel is
+the front face and overlaps the magnetic ring. The radio is a pre-certified
+Raytac MDBT50Q-512K nRF52833 module.
 
 ## Files
 
@@ -15,7 +14,9 @@ overlaps the MagSafe ring. The radio is a pre-certified Raytac MDBT50Q-512K
 | `generate_schematic.py` | Regenerates the schematic from symbol libraries |
 | `generate_pcb.py` | Regenerates the board outline and stackup |
 | `route_freerouting.py` | Places the board and routes it through Freerouting's Specctra DSN/SES flow |
-| `layout_route.py` | Placement-and-feasibility grid router used to prototype the board |
+| `layout_route.py` | Shared placement, footprint, net-width, and fabrication helpers |
+| `run_drc.py` | Runs KiCad's board DRC engine and fails on hard violations |
+| `run_erc.py` | Checks electrical pin contracts, no-connects, BOM coverage, and board parity |
 | `tools/kicad_sch_helpers.py` | [kenchangh/kicad-schematic](https://github.com/kenchangh/kicad-schematic) helper (pin-accurate placement) |
 | `tools/extract_symbol.py` | Embeds KiCad library symbols into the schematic |
 
@@ -30,30 +31,31 @@ python3 run_drc.py
 python3 run_erc.py
 ```
 
-`route_freerouting.py` starts from the generated outline, exports the committed
-schematic's netlist, places the module and support parts on the back, assigns
-nets, reserves In2.Cu as the solid GND plane, pre-routes the dense receiver
-fanout, and exports a Specctra DSN file. Freerouting routes F.Cu, In1.Cu, and
-B.Cu while leaving the ground plane intact. The script imports the SES file,
-refills the ground pours, and writes Gerbers, drill, and centroid files under
-`fab/`. Freerouting 2.4.1 requires Java 25. Headless Linux also requires
+`route_freerouting.py` starts from the generated outline, exports the
+schematic netlist, places the parts on the back, assigns nets, reserves In1.Cu
+for SYS and In2.Cu for ground, and exports a Specctra DSN file. Freerouting
+routes F.Cu and B.Cu. The script imports the SES file, refills the pours, and
+writes Gerbers, drill, and centroid files under `fab/`. Freerouting 2.4.1
+requires Java 25. Headless Linux also requires
 `xvfb-run`.
 
 Open `inkbot-magsafe.kicad_pro` in KiCad 7 or later to inspect the result and
-check impedance before a production order.
+run interactive DRC before an order. A clean route is not approval to
+fabricate. Complete the electrical, RF, thermal, and mechanical gates in the
+design document first.
 
 ## Choices baked into this project
 
-- **3.97-inch 480×800 portrait panel** (module 56.2 × 96.6 mm) so the tile is
-  60 × 99 mm and fits a 6.1" Pro without side or bottom overhang (minis dropped;
-  4.26" dropped because it hangs off the bottom).
+- **3.97-inch 480 x 800 GDEM0397T81P panel** with the full SSD1677 external
+  boost circuit.
 - **MagSafe ring 30 mm from the top edge** (Apple's keep-in limit) so the tile
   hangs below the rear-camera plateau. The panel overlaps the ring.
 - **Raytac MDBT50Q-512K** pre-certified nRF52833 module (128 KB RAM for the
-  48 KB framebuffer) — antenna, 32 MHz crystal, DC/DC, and RF match on-module,
-  so the board carries no discrete radio parts. Antenna end faces a board edge
-  away from the ring.
-- `BQ51050B` Qi receiver with integrated LiPo charger (one IC instead of RX + charger).
-- 0.8 mm 4-layer prototype PCB (0.4 mm volume target) with a battery cutout so
-  the cell does not stack on the PCB.
-- No enclosure: panel bonded to the front, coil and magnets on the back.
+  48 KB framebuffer). Its antenna end is flush with the left board edge over
+  an all-layer copper keep-out.
+- **BQ51013C** Qi 1.3 receiver and **BQ25185** 40 mA protected-cell charger
+  with a separate SYS power path.
+- **TPS7A2030P** 3.0 V panel rail with active discharge.
+- 0.8 mm, four-layer JLC7628 PCB with a 34 x 23 mm rounded battery cutout,
+  1 oz outer copper, 0.5 oz inner copper, and 0.6/0.3 mm vias.
+- A bonded front panel plus a structural spacer and insulating rear cover.

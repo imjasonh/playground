@@ -120,6 +120,7 @@ def main() -> None:
 
     c0603 = "Capacitor_SMD:C_0603_1608Metric"
     c0805 = "Capacitor_SMD:C_0805_2012Metric"
+    c1206 = "Capacitor_SMD:C_1206_3216Metric"
     r0402 = "Resistor_SMD:R_0402_1005Metric"
     r0603 = "Resistor_SMD:R_0603_1608Metric"
 
@@ -172,15 +173,15 @@ def main() -> None:
     sch.connect_pin("L2", "1", "QI_COIL_A", wire_dy=-5.08, by_number=True)
     sch.connect_pin("L2", "2", "QI_AC2", wire_dy=5.08, by_number=True)
 
-    # Initial values from TI guidance for this receiver and coil. EVT measures
-    # Ls and Ls' in the final stack and tunes these parallel positions before
-    # FOD calibration.
+    # TI's starting values for the WR222230-26M8-G are 80 nF series and
+    # 950 pF parallel. Three C0G parts share the series current. EVT must
+    # measure Ls and Ls' in the final stack before freezing these values.
     for ref, value, x in (
         ("C1", "33nF 50V", 42),
         ("C2", "33nF 50V", 50),
         ("C3", "15nF 50V", 58),
     ):
-        pass_v(sch, "Device:C", ref, value, x, 70, "QI_COIL_A", "QI_AC1", c0603)
+        pass_v(sch, "Device:C", ref, value, x, 70, "QI_COIL_A", "QI_AC1", c0805)
     pass_v(sch, "Device:C", "C4", "820pF C0G 50V", 42, 88, "QI_AC1", "QI_AC2", c0603)
     pass_v(sch, "Device:C", "C5", "130pF C0G 50V", 50, 88, "QI_AC1", "QI_AC2", c0603)
     pass_v(sch, "Device:C", "C6", "10nF 50V", 42, 106, "QI_BOOT1", "QI_AC1", c0603)
@@ -189,10 +190,10 @@ def main() -> None:
     pass_v(sch, "Device:C", "C9", "470nF 25V", 66, 106, "QI_CLAMP2", "QI_AC2", c0603)
     pass_v(sch, "Device:C", "C10", "22nF 50V", 74, 106, "QI_COMM1", "QI_AC1", c0603)
     pass_v(sch, "Device:C", "C11", "22nF 50V", 82, 106, "QI_COMM2", "QI_AC2", c0603)
-    pass_v(sch, "Device:C", "C12", "10uF 25V", 115, 50, "QI_RECT", "GND", c0805)
-    pass_v(sch, "Device:C", "C13", "10uF 25V", 125, 50, "QI_RECT", "GND", c0805)
+    pass_v(sch, "Device:C", "C12", "10uF 25V", 115, 50, "QI_RECT", "GND", c1206)
+    pass_v(sch, "Device:C", "C13", "10uF 25V", 125, 50, "QI_RECT", "GND", c1206)
     pass_v(sch, "Device:C", "C14", "100nF 50V", 135, 50, "QI_RECT", "GND", c0603)
-    pass_v(sch, "Device:C", "C15", "10uF 10V", 115, 88, "QI_OUT", "GND", c0805)
+    pass_v(sch, "Device:C", "C15", "10uF 25V", 115, 88, "QI_OUT", "GND", c1206)
     pass_v(sch, "Device:C", "C16", "100nF 10V", 125, 88, "QI_OUT", "GND", c0603)
     pass_v(sch, "Device:R", "R1", "845R 1%", 145, 65, "QI_ILIM", "QI_FOD", r0603)
     pass_v(sch, "Device:R", "R2", "200R 1%", 155, 65, "QI_FOD", "GND", r0603)
@@ -235,8 +236,8 @@ def main() -> None:
     }.items():
         connect_outward(sch, library.get("BQ25185"), "U3", pin, net)
 
-    pass_v(sch, "Device:C", "C17", "1uF 10V", 180, 45, "QI_OUT", "GND", c0603)
-    pass_v(sch, "Device:C", "C18", "10uF 10V", 195, 45, "SYS", "GND", c0805)
+    pass_v(sch, "Device:C", "C17", "1uF 25V", 180, 45, "QI_OUT", "GND", c0603)
+    pass_v(sch, "Device:C", "C18", "10uF 25V", 195, 45, "SYS", "GND", c0805)
     pass_v(sch, "Device:C", "C19", "1uF 10V", 210, 45, "BAT", "GND", c0603)
     pass_v(sch, "Device:R", "R5", "100k", 180, 100, "CHG_EN_N", "GND", r0603)
     pass_v(sch, "Device:R", "R6", "24k 1%", 195, 100, "CHG_VSET", "GND", r0603)
@@ -283,7 +284,6 @@ def main() -> None:
     )
     pin_nets = {
         "1": "GND",
-        "9": "VBAT_SENSE",
         "11": "QI_PRESENT",
         "12": "PANEL_PWR_EN",
         "14": "PANEL_BUSY",
@@ -309,9 +309,9 @@ def main() -> None:
         if pin.number not in pin_nets:
             sch.connect_pin_noconnect("U1", pin.number, by_number=True)
 
-    # High-voltage mode powers VDDH from SYS. VDD is the regulated SoC rail and
-    # must not be tied to the cell. Firmware programs REGOUT0 to 3.0 V before it
-    # configures GPIO, and the SWD fixture uses VDD_NRF as its target reference.
+    # High-voltage mode powers VDDH from SYS. VDD is the SoC's regulated rail;
+    # it is decoupled and exposed only as the high-impedance SWD reference.
+    # Factory provisioning writes UICR.REGOUT0=3.0 V before GPIO is enabled.
     pass_v(sch, "Device:C", "C21", "4.7uF 10V", 70, 165, "SYS", "GND", c0603)
     pass_v(sch, "Device:C", "C22", "4.7uF 10V", 82, 165, "VDD_NRF", "GND", c0603)
     sch.place(
@@ -324,11 +324,14 @@ def main() -> None:
     )
     sch.connect_pin("Y1", "1", "XL1", wire_dy=-5.08, by_number=True)
     sch.connect_pin("Y1", "2", "XL2", wire_dy=5.08, by_number=True)
-    pass_v(sch, "Device:C", "C23", "21pF C0G", 92, 190, "XL1", "GND", c0603)
-    pass_v(sch, "Device:C", "C24", "21pF C0G", 105, 190, "XL2", "GND", c0603)
-    pass_v(sch, "Device:R", "R9", "1M 1%", 215, 175, "BAT", "VBAT_SENSE", r0603)
-    pass_v(sch, "Device:R", "R10", "330k 1%", 228, 175, "VBAT_SENSE", "GND", r0603)
-    pass_v(sch, "Device:C", "C25", "10nF", 241, 175, "VBAT_SENSE", "GND", c0603)
+    pass_v(sch, "Device:C", "C23", "22pF C0G", 92, 190, "XL1", "GND", c0603)
+    pass_v(sch, "Device:C", "C24", "22pF C0G", 105, 190, "XL2", "GND", c0603)
+
+    # In high-voltage mode the SAADC's VDDHDIV5 input measures SYS directly.
+    # Omitting an always-on divider saves about 3.2 uA in battery-only mode.
+    # C38 supplies the panel's 120 mA switching peaks without adding the high
+    # leakage of a polymer capacitor.
+    pass_v(sch, "Device:C", "C38", "220uF 6.3V X5R", 230, 175, "SYS", "GND", c1206)
 
     # ---------------------------------------------------------- panel power
     ldo_x, ldo_y = snap(285), snap(145)
@@ -387,9 +390,9 @@ def main() -> None:
     for pin in ("1", "4", "6", "7", "19"):
         sch.connect_pin_noconnect("J1", pin, by_number=True)
 
-    pass_v(sch, "Device:C", "C28", "4.7uF 10V", 320, 180, "PANEL_3V0", "GND", c0805)
-    pass_v(sch, "Device:C", "C29", "1uF 10V", 330, 180, "PANEL_3V0", "GND", c0603)
-    pass_v(sch, "Device:C", "C30", "1uF 6.3V", 340, 180, "PANEL_VDD", "GND", c0603)
+    pass_v(sch, "Device:C", "C28", "4.7uF 25V", 320, 180, "PANEL_3V0", "GND", c0805)
+    pass_v(sch, "Device:C", "C29", "1uF 25V", 330, 180, "PANEL_3V0", "GND", c0603)
+    pass_v(sch, "Device:C", "C30", "1uF 50V", 340, 180, "PANEL_VDD", "GND", c0603)
     pass_v(sch, "Device:C", "C31", "4.7uF 25V", 350, 180, "PANEL_VSH2", "GND", c0805)
     pass_v(sch, "Device:C", "C32", "4.7uF 25V", 360, 180, "PANEL_VSH1", "GND", c0805)
     pass_v(sch, "Device:C", "C33", "4.7uF 25V", 370, 180, "PANEL_VGH", "GND", c0805)
@@ -434,9 +437,6 @@ def main() -> None:
     sch.place("Device:D", "D1", "MBR0530", x=snap(390), y=snap(145), footprint="Diode_SMD:D_SOD-123")
     sch.connect_pin("D1", "2", "PANEL_VGL", wire_dx=5.08, by_number=True)
     sch.connect_pin("D1", "1", "PANEL_PUMP", wire_dx=-5.08, by_number=True)
-    pass_v(sch, "Device:R", "R13", "1M", 405, 120, "PANEL_VGH", "GND", r0603)
-    pass_v(sch, "Device:R", "R14", "1M", 415, 145, "PANEL_VGL", "GND", r0603)
-
     # ------------------------------------------------------------ test access
     for index, (net, x, y) in enumerate(
         (
@@ -482,7 +482,7 @@ def main() -> None:
         sch.build(
             title="inkbot-magsafe",
             date="2026-09-07",
-            rev="0.6.0",
+            rev="0.7.0",
             paper="A2",
             comments=[
                 "EVT design. Do not release until coil tuning, FOD, thermal, and compliance gates pass.",
@@ -497,17 +497,30 @@ def main() -> None:
     project = {
         "board": {
             "design_settings": {
-                "defaults": {},
+                "defaults": {
+                    "copper_edge_clearance": 0.5,
+                    "copper_line_width": 0.15,
+                    "courtyard_line_width": 0.05,
+                    "edge_cuts_line_width": 0.05,
+                    "silk_line_width": 0.15,
+                    "silk_text_size_h": 1.0,
+                    "silk_text_size_v": 1.0,
+                    "silk_text_thickness": 0.15,
+                },
                 "diff_pair_dimensions": [],
                 "drc_exclusions": [],
                 "rules": {
                     "min_clearance": 0.15,
+                    "min_copper_edge_clearance": 0.5,
+                    "min_hole_clearance": 0.25,
+                    "min_hole_to_hole": 0.25,
                     "min_track_width": 0.15,
-                    "min_via_diameter": 0.5,
+                    "min_via_annular_width": 0.15,
+                    "min_via_diameter": 0.6,
                     "min_through_hole_diameter": 0.3,
                 },
                 "track_widths": [0.15, 0.2, 0.3, 0.4, 0.5],
-                "via_dimensions": [{"diameter": 0.5, "drill": 0.3}],
+                "via_dimensions": [{"diameter": 0.6, "drill": 0.3}],
             },
             "layer_presets": [],
             "viewports": [],
@@ -532,7 +545,7 @@ def main() -> None:
                     "pcb_color": "rgba(0, 0, 0, 0.000)",
                     "schematic_color": "rgba(0, 0, 0, 0.000)",
                     "track_width": 0.2,
-                    "via_diameter": 0.5,
+                    "via_diameter": 0.6,
                     "via_drill": 0.3,
                     "wire_width": 6,
                 }

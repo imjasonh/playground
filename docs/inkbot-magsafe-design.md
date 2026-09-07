@@ -56,16 +56,16 @@ it should not.
 | Topic | Decision |
 |-------|----------|
 | MCU / radio | **Raytac MDBT50Q-512K** — pre-certified nRF52833 module (128 KB RAM for the 48 KB framebuffer; integrated antenna, 32 MHz crystal, DC/DC, RF match) |
-| Panel | **3.97-inch 480×800 portrait** mono e-ink, on-glass controller (SSD1677), partial refresh |
+| Panel | **GDEM0397T81P**, 3.97-inch 480 x 800 portrait monochrome e-paper, SSD1677, partial refresh |
 | Orientation | portrait; ring high on the tile, panel fills the tile and overlaps the ring |
-| Battery | ~120 mAh thin LiPo pouch with protection, ~1.5 mm, in a PCB cutout below the coil |
-| Power | **BQ51050B** Qi RX + LiPo charger (one IC); system on the cell (detach-to-charge) |
-| Panel power | fully gated by a load switch + 3.3 V LDO between refreshes |
+| Battery | **LP252030 custom pack**, 100 mAh, protected, 10 kOhm NTC, keyed three-wire harness, up to 3.2 mm thick |
+| Power | **BQ51013C** Qi 1.3 receiver into a **BQ25185** 40 mA charger with a SYS power path |
+| Panel power | **TPS7A2030P** 3.0 V LDO, disabled with active discharge between refreshes |
 | Charging | 5 W Qi RX only; detach the tile and set it on a pad. No pass-through |
 | Frame source | the paired iPhone only; no Worker, no second radio |
 | Port | none; SWD test pads for factory flash and recovery. USB-C considered and dropped |
-| Enclosure | **none for 0.1.0** — panel is the front face |
-| Magnets | MagSafe-geometry N52 annular array; magnet-only retention; "MagSafe" naming needs Apple MFi |
+| Enclosure | panel front face, structural spacer, electrical insulation, and a flame-retardant rear cover |
+| Magnets | Apple accessory-array geometry, N48H ring, low-carbon-steel DC shield, and optional orientation magnet; magnet-only retention |
 | Link | BLE 4.2+ GATT for control, **L2CAP connection-oriented channel** for the frame blob |
 | iOS delivery | deferred until hardware is dialed in; Core Bluetooth central when built |
 | Schematic | KiCad project under [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/) |
@@ -82,49 +82,47 @@ for a battery-first BLE peripheral that must stay reachable in the background:
   light-sleep current is an order of magnitude higher.
 - **The Nordic SoftDevice is a mature, qualified BLE stack** with good long-lived
   connection behavior; the e-ink hobbyist and product world runs on it.
-- **It runs straight off the cell.** The nRF52 internal DC/DC converter accepts
-  1.7–3.6 V, so a 3.0–4.2 V LiPo needs no regulator for the MCU.
+- **High-voltage mode accepts the SYS rail.** The BQ25185 powers `VDDH`; the
+  nRF52833 REG0 stage creates its internal `VDD` rail. Factory provisioning sets
+  UICR `REGOUT0` to 3.0 V before the application configures GPIO.
 
 The design uses the **nRF52833** rather than the 52832 because the 3.97-inch
 panel needs a **48 KB mono framebuffer** (480×800). The 52832's 64 KB RAM is too
 tight once the SoftDevice takes its share; the 52833's **128 KB** holds the
-frame plus the S132/S140 stack comfortably.
+frame plus S140 and the application.
 
 The nRF52833 ships as a **pre-certified module, the Raytac MDBT50Q-512K**, not a
 bare QFN. The module integrates the 2.4 GHz antenna, the 32 MHz crystal, the
 DC/DC inductors, and the RF matching network, and carries FCC/IC/CE/MIC/KC/SRRC
-modular approval. That removes the whole radio-layout problem — no antenna
-keep-out to tune, no matching network to pick with a phone attached, no
-intentional-radiator certification to run — at the cost of ~1 mm of thickness
-(the module is ~2 mm tall). The board owes it only a VDD/VDDH bypass and a
-32.768 kHz crystal on P0.00/P0.01 for low-power BLE timing (the module leaves the
-LFXO external). No NFC: pairing and frames are BLE-only, so the NFCT pins (P0.09/
-P0.10) stay unused.
+modular approval. The module removes the board-side antenna matching network,
+but it does not remove RF integration work. The PCB keeps copper out beneath
+the antenna, places the antenna end at the board edge, and still needs host
+product emissions and radiated-performance tests with the phone, magnets, and
+coil installed. The module adds about 1 mm over a bare QFN and is about 2 mm
+tall. The board adds separate VDDH and VDD capacitors plus a 32.768 kHz crystal
+on P0.00/P0.01. The NFCT pins stay unused.
 
 ## Block diagram
 
 ```
-                 ┌─────────────────────────────────────────────┐
-   MagSafe ring  │  Raytac MDBT50Q-512K (nRF52833 module)      │
-   magnets ──────┤   ├─ SPI ─────────► 3.97" e-ink COG (SSD1677)│
-                 │   ├─ GPIO ────────► TPS22810 + MIC5504 ──────┼─► panel 3.3V rail
-   Qi RX coil ─► │   ├─ SAADC ───────◄ battery + thermistor     │    (+ 220µF bulk)
-   (in magnet    │   └─ (antenna + 32MHz + DC/DC on-module)      │
-    ring)        └─────────────────────────────────────────────┘
-        │
-        └─► BQ51050B (Qi RX + charger) ──► LiPo ~120mAh (PCB cutout) = VSYS ─► module VDD
-                 ▲                                              ▲
-                 │ ILIM / FOD / TERM                            │ protection FET
-                 └─ NTC (TS/CTRL + SAADC)                       └─ 220µF bulk near panel
+   WR222230 coil -> BQ51013C -> QI_OUT -> BQ25185 -> SYS -> module VDDH
+         |              |                    ^          |
+      coil NTC       resonance/FOD           |          +-> 220 uF pulse reservoir
+                                             |
+   protected LP252030 pack + cell NTC -> BAT-+
 
-   Recovery/factory only:  SWD pads (SWDIO/SWCLK/GND/VDD/NRST) ─► BLE-DFU + programming
+   SYS -> TPS7A2030P 3.0 V -> SSD1677 panel power and external boost circuit
+   MDBT50Q-512K <-> panel SPI, BUSY, reset, and panel-power enable
+   MDBT50Q-512K <- Qi present and two charger-status signals
+
+   Factory and recovery: SWDIO, SWDCLK, reset, VDD reference, SYS, and ground
 ```
 
 Signal notes: the panel is a bare chip-on-glass (COG) module on a 24-pin 0.5 mm
 flex (FPC); its on-glass charge pump makes its own gate and source rails from
-3.3 V, so the board only owes it a clean 3.3 V rail and a handful of reservoir
-caps on the FPC pins. The load switch cuts that rail to zero between refreshes so
-the panel contributes nothing to sleep current.
+3.0 V. The board implements the panel data sheet's external MOSFET, inductor,
+diodes, sense resistor, and reservoir capacitors. The TPS7A2030P disables and
+actively discharges the panel rail between refreshes.
 
 ### Why 3.97-inch, portrait
 
@@ -138,7 +136,7 @@ Apple's MagSafe keep-in puts the tile top ~43 mm from the phone top on a 15 Pro
 |-------|-------------------|------------------|-------------------|
 | 4.2" GDEY042T81 | 77 × 91 | overhang | — |
 | **4.26" GDEY0426T82** | 62 × 105 | fits | **overhangs bottom** |
-| **3.97" GDEY0397T81P** | **56 × 97** | **fits** | **fits** |
+| **3.97" GDEM0397T81P** | **56 × 97** | **fits** | **fits** |
 | 3.7" GDEY037T03 | 53 × 93 | fits | fits (smaller) |
 
 The **3.97-inch 480×800** module is the largest common mono e-paper that clears
@@ -148,178 +146,167 @@ the MCU is the nRF52833 (128 KB).
 
 ## Power budget
 
-Assume a realistic day: the tile is off charger 8 hours, holds a background BLE
-connection the whole time, and does 24 refreshes (a new frame roughly every
-20 minutes plus a few on-demand pushes).
+Assume the tile is off its charger for 24 hours, holds a background BLE
+connection, and does 24 refreshes.
 
-| Draw | Current / cost | Over the 8 h | Notes |
+| Draw | Current / cost | Per day | Notes |
 |---|---|---|---|
-| nRF connected idle (1 s interval, slave latency) | ~20 µA avg | 0.16 mAh | radio kept alive to catch pushes |
-| Panel + logic asleep (load switch open) | ~1 µA | ~0 mAh | panel fully gated |
-| One full refresh | ~15 mA for ~2 s = 0.008 mAh | (per event) | mono 480×800, full update |
-| One partial refresh | ~10 mA for ~0.7 s = 0.002 mAh | (per event) | most updates are partial |
-| 24 refreshes (say 6 full, 18 partial) | | ~0.09 mAh | |
-| BLE frame transfer (15 KB, L2CAP) | ~5 mA for ~3 s = 0.004 mAh | ~0.02 mAh | a few per day |
-| **Daily off-charger total** | | **~0.27 mAh** | |
+| nRF connected idle (1 s interval with slave latency) | ~20 uA average | ~0.48 mAh | Verify on the final connection parameters |
+| BQ25185 in battery-only mode | ~4 uA typical | ~0.10 mAh | Charger data-sheet value |
+| Panel LDO disabled | <1 uA budget | <0.03 mAh | Includes leakage margin |
+| Six full and 18 partial refreshes | 36 mW typical while active | ~0.08 mAh | Full refresh is about 3 seconds; partial is about 0.3 seconds |
+| Twenty-four 48 KB BLE transfers | ~5 mA for ~2 seconds each | ~0.07 mAh | Measure with negotiated 2M PHY, DLE, and L2CAP settings |
+| **Daily electronics budget** | | **~0.8 mAh** | Excludes cell self-discharge and cold-temperature derating |
 
-A 110 mAh cell holds roughly **400 days** of that daily reserve with no
-recharge at all. The battery is not the constraint. Even a 60 mAh cell would do;
-110–150 mAh is chosen for pouch availability and spike headroom, not runtime.
+A new 100 mAh cell therefore has an ideal electronics-only runtime near
+125 days. Capacity tolerance, aging, self-discharge, temperature, radio
+retries, and reserve voltage reduce that number. The product target is
+60-90 days between charges until measurements support a tighter claim.
 
-The real electrical risk is not capacity, it is the **refresh current spike from
-a high-impedance tiny cell**. A 110 mAh pouch can have 1–2 Ω of internal
-resistance; a 15 mA step is fine, but the panel's charge-pump inrush plus a radio
-event can briefly pull more and sag VSYS enough to brown out the nRF. The fix is
-cheap and non-negotiable: a **220 µF bulk capacitor** at the panel rail and a
-power-path charger so charge/discharge transitions never drop the system rail.
+The panel data sheet specifies a **120 mA typical peak current**, even though
+its average refresh power is only about 36 mW. C38 adds 220 uF on SYS, and the
+BQ25185 isolates the cell from source transitions. Those parts do not prove
+margin. EVT must capture BAT, SYS, PANEL_3V0, and current at room temperature,
+cold temperature, end-of-charge, and the refresh floor. If the qualified
+LP252030 pack or its PCM exceeds its pulse rating, use a higher-rate pack or
+increase pulse storage before release.
 
 ## Circuit design
 
 ### Power path
 
-Use the **BQ51050B**: one VQFN that is both the Qi receiver and the LiPo
-charger. That removes a second power IC and its height from the stack. The
-system hangs on the cell (`BAT` = `VSYS`). Charge while detached on a pad; do not
-expect seamless source/battery cutover mid-refresh (refresh only runs when the
-tile is awake on the phone, not while sitting on a charger). Cap charge current
-with the ILIM resistor for the small cell.
+The **BQ51013C** Qi receiver supplies 5 V to a **BQ25185** charger and
+power-path manager. The BQ25185 separates `BAT` from `SYS`, blocks reverse
+drain into the receiver, and supplements a weak input from the cell. R6 selects
+a 4.2 V battery regulation voltage and a 100 mA input limit. R7 sets 40 mA fast
+charge, within the LP252030 pack's 50 mA maximum.
 
 There is no USB-C port on the shipping tile (see the next section).
 
-The module runs directly from VSYS on its `VDD`/`VDDH` pins; the DC/DC inductor
-and its decoupling live inside the module, so the board only adds a VDD/VDDH
-bypass. The panel gets a dedicated 3.3 V rail behind a **TPS22810 load switch**
-and **MIC5504-3.3** LDO driven by a GPIO, so idle current is just the module plus
-leakage.
+`SYS` powers the Raytac module through `VDDH`. The nRF52833 REG0 stage creates
+the internal 3.0 V `VDD` rail. The board does not use `VDD` as an external
+power source. A **TPS7A2030P** creates the panel's 3.0 V supply and actively
+discharges that rail while disabled.
 
 ### Wireless power
 
-The **BQ51050B** drives a MagSafe-profile RX coil sized to Apple's ring geometry
-so the tile self-aligns on any MagSafe pad. Place the coil inside the magnet
-ring on the back, keep ferrite between the coil and the board, and orient the
-module so its integrated antenna faces the tile edge farthest from the ring
-(magnets and coil both detune 2.4 GHz). There is no transmit stage: the tile
-charges itself, not the phone.
+The **BQ51013C** uses a TDK WR222230-26M8-G 22 mm, 27 uH receiver coil inside
+the magnetic ring. TI lists this coil for 50-500 mA receiver designs, while TDK
+rates it for 2 W and does not claim that the coil alone is WPC compliant.
+Starting resonance values are 81 nF series and 950 pF parallel. Measure `Ls`
+and `Ls'` in the final stack, retune the capacitors, calibrate FOD, and test
+interoperability across certified Qi transmitters.
+
+The coil's ferrite faces the PCB. A separate 10 kOhm NTC bonded to the coil
+connects to `TS/CTRL`. The receiver's current limit is about 250 mA nominal and
+300 mA at the hardware limit. There is no transmit stage; the tile charges
+itself, not the phone.
 
 ### Ports: none, by design
 
-Ship the tile with **no connector at all.** Charging is wireless, and firmware
-updates ride the same BLE link as frames (Nordic Secure DFU). A port is the part
-most likely to fail on a thin accessory carried against a phone: it costs
-thickness, invites water and lint, and adds a certification and a BOM line for a
-job the wireless path already does.
+Ship the tile with **no user connector.** Charging is wireless, and the planned
+signed DFU transport uses BLE. This choice is valid only after the bootloader,
+owner-recovery flow, and update rollback tests pass.
 
 The reliability backstop is a set of **SWD test pads** (SWDIO, SWCLK, GND, VDD)
-on the back, under a peel label or the magnet ring, for factory programming on a
-pogo fixture and for brick recovery when a BLE DFU goes wrong. DFU can fail, but
-SWD always brings a board back.
+on the back for factory programming and full-erase recovery. The rear cover must
+define service access for the pogo fixture. Production readback protection must
+preserve CTRL-AP erase recovery.
 
-USB-C was considered as a cabled charge and DFU fallback and dropped: with
-wireless charge plus BLE DFU plus SWD recovery, the port earns nothing it does
-not already have, and a sealed edge is thinner and more reliable.
+USB-C was considered as a cabled charge and DFU fallback and dropped. Revisit
+that decision if BLE owner recovery or wireless charging fails reliability
+testing.
 
 ### Antenna and the phone-metal problem
 
-A phone's metal chassis and the MagSafe magnet array sit millimeters from the
-radio and detune a 2.4 GHz antenna. The pre-certified module fixes the *design*
-half of this — the antenna and its match are done and certified on the module —
-but not the *physics*: the magnets still pull the tuning. So the layout still:
+A phone's metal chassis and the magnetic array sit millimeters from the radio
+and change the antenna pattern. The module supplies a qualified antenna and
+matching network, but the host layout still controls its performance:
 
-- Places the **module with its antenna end at the tile edge farthest from the
-  magnet ring**, over the board edge, with the copper keep-out the module
-  footprint already defines under the antenna.
-- Expects some **range loss** with the magnets so close. At BLE distances (a
-  phone touching the tile) there is large link margin, so this is acceptable;
-  the module's certification stays valid because its antenna and matching are
-  unchanged. No board-side matching network to tune.
+- The module's antenna end is flush with the left board edge, below and away
+  from the magnetic ring.
+- A 4.8 x 12 mm rule area blocks copper, tracks, and vias on every layer under
+  the antenna.
+- EVT must measure radiated performance with the complete magnetic, coil,
+  battery, panel, and rear-cover stack. Test the tile both attached to and
+  detached from every supported phone class.
+- Submit the PCB layout to Raytac's layout-review service before release.
 
 ### Board stack
 
-A 4-layer PCB (signal / ground / power / signal), **60 × 99 mm portrait**, with a
-**battery cutout** below the coil so the cell does not stack on the FR4. The
-volume target is **0.4 mm**; the first prototype is **0.8 mm** because that is
-the 4-layer floor at the cheap fabs (JLCPCB, PCBWay standard) — 0.4 mm 4-layer
-needs an advanced fab. The 0.8 mm proto only grows the ring region by ~0.4 mm
-(the battery sits in a cutout, so its region is unchanged), so it is the right
-board to validate function first. The 3.97-inch panel is bonded to the whole
-front and **overlaps the MagSafe ring**: the coil and magnets are on the back,
-the panel on the front, so they share the same footprint without colliding. No
-case for 0.1.0. See
+A 0.8 mm, four-layer PCB uses the JLC7628 stack with 1 oz outer and 0.5 oz
+inner copper. In1.Cu is the SYS plane, and In2.Cu is ground. The routed
+34 x 23 mm battery cutout has 1 mm corner radii. Standard vias are
+0.6/0.3 mm, and copper stays 0.5 mm from every routed edge.
+
+The 3.97-inch panel bonds to the front and overlaps the magnetic ring. The
+back requires a rigid spacer and an insulating, flame-retardant cover. A future
+0.4 mm board can reduce thickness after EVT, but it needs a different approved
+fabricator stack and a complete DFM review. See
 [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/) for the schematic and
 outline, and
 [`inkbot-magsafe/hardware/stackup.md`](../inkbot-magsafe/hardware/stackup.md)
 for the mechanical stack.
 
-Because the panel covers the front, the module, BQ51050B, and passives mount on
-the **back**, ringing the coil and the cutout, inside the magnet-ring thickness
-envelope.
+The module, receiver, charger, LDO, and passives mount on the back below the
+coil and around the cutout.
 
 ### Realistic thickness
 
-Thickness-first layout (cutout + thin PCB + module + combined Qi/charger). The
-module (~2 mm tall) is now the tallest back-side part, so it, not the battery,
-can set the thickest point:
+The estimates include 0.10 mm front adhesive and a 0.25 mm rear cover:
 
 | Region | Approx. |
 |--------|---------|
-| At the module (panel + 0.8 mm PCB + ~2 mm module) | **~3.05 mm** |
-| At the cell (panel + 1.5 mm LiPo in cutout) | **~2.55 mm** |
-| At the magnet ring (panel + 0.8 mm PCB + coil/magnets/parts) | **~2.4 mm** |
+| Module | **~4.07 mm** |
+| Protected battery pack in the cutout | **~4.47 mm** |
+| Magnet ring plus DC shield | **~3.27 mm** |
+| Coil and ferrite | **~2.94 mm** |
 
-The pre-certified module trades ~1 mm of thickness for deleting the entire radio
-layout and certification. The bare-QFN alternative lands near ~2.55 mm but owes
-antenna tuning and an intentional-radiator cert. Pass-through TX would still add
-~1.2 mm and is rejected. This is the accepted trade for 0.1.0.
+The battery pack sets the baseline thickness. Adhesive tolerance, connector
+clearance, cell swelling, and cosmetic films still need a mechanical tolerance
+stack. An optional orientation magnet can add thickness if it overlaps the
+cell, so the baseline uses the ring and a high-friction rear surface.
 
 ### Fabrication and first build
 
 Who builds what:
 
-- **PCB + SMT assembly (PCBA)** — one vendor. **JLCPCB** (cheapest, rigid
-  automation) or **PCBWay** (pricier, more hand-holding and sourcing) both fab
-  the board and place the surface-mount parts, including the Raytac module, the
-  leadless BQ51050B, and the passives. Deliver Gerbers, BOM, and a centroid/
-  pick-and-place file (all exported from the KiCad project).
-- **Panel, coil, magnets, battery** — not reel parts an assembler drops in for a
-  one-off. Bonding the e-ink glass to the front, placing the Qi coil and MagSafe
-  magnet ring on the back, and attaching the LiPo are bench work. PCBWay
-  turnkey/box-build can source and attach some of these; JLCPCB generally will
-  not.
+- **PCB and SMT assembly.** JLCPCB or PCBWay can fabricate the 0.8 mm board and
+  place the module, receiver, charger, panel power circuit, and passives. The
+  release package needs Gerbers, drill data, fabrication and assembly drawings,
+  an approved-vendor BOM, and a centroid file.
+- **Final integration.** The panel, coil, magnet and shield assembly, protected
+  battery pack, spacer, adhesive, and rear cover need a documented box-build
+  process. The process must control FPC bend radius, cell compression, coil and
+  thermistor adhesive, magnet polarity, insulation, and cure time.
 
 `kicad/route_freerouting.py` places the parts, assigns nets, adds the solid
-In2.Cu ground plane and surface ground pours, and locks the dense receiver
-fanout. It exports a Specctra DSN file, runs Freerouting on F.Cu, In1.Cu, and
-B.Cu, imports the SES file, refills the pours, and exports Gerbers, drill, and
-centroid files. `kicad/layout_route.py` remains as the earlier
-placement-and-feasibility grid router. The module is pre-certified, so there is
-no antenna match to tune.
+In1.Cu SYS and In2.Cu ground planes, and adds surface ground pours. It exports a
+Specctra DSN file, runs Freerouting on F.Cu and B.Cu, imports the SES file,
+refills the pours, and exports Gerbers, drill, and centroid files.
+`kicad/layout_route.py` contains the shared placement and fabrication rules.
 
 Validate with `kicad/run_drc.py`, which calls KiCad's DRC engine through
-pcbnew, and `kicad/run_erc.py`, which checks the netlist and board parity.
-**DRC is clean:** 0 hard violations and 0 unconnected pads. The report contains
-38 `lib_footprint_issues` warnings because pcbnew cannot resolve the library
-nickname for script-loaded footprints; they are not board defects. **ERC is
-clean:** 0 errors and all 13 critical nets present. Verify impedance before a
-production order. `kicad-cli pcb drc` and `kicad-cli sch erc` are the one-line
-equivalents on KiCad 8 or later; this environment has KiCad 7, so the scripts
-stand in. See [`../inkbot-magsafe/hardware/README.md`](../inkbot-magsafe/hardware/README.md).
+pcbnew. `kicad/run_erc.py` checks the exact IC and connector pin contracts,
+intentional no-connects, BOM coverage, and board-pad parity. Both checks must
+pass on the release commit. They do not replace schematic review, DFM review,
+or the bench validation table later in this document.
 
 Recommended one-off sequence (validate function before optimizing thickness):
 
-1. **Breadboard, no custom PCB.** An nRF52833/52840 devkit (or Feather nRF52) +
-   the GDEY0397T81P on its Good Display DESPI FPC adapter + a LiPo. Proves the
-   SSD1677 driver, the 480×800 framebuffer, BLE push, and power behavior with no
-   bonding.
-2. **One-off tile.** ~5 boards, **PCBA, 0.8 mm 4-layer, ENIG** from JLCPCB (or
-   PCBWay if you want them to source the odd parts). Buy the panel, a MagSafe
-   magnet ring + Qi RX coil, and a ~120 mAh protected LiPo separately, then
-   hand-integrate. Bring up over the SWD test pads.
+1. **Bench assembly.** Use an nRF52833 or nRF52840 development kit, the
+   GDEM0397T81P vendor adapter, and a current-limited bench supply. Prove the
+   panel sequence, measured current profile, BLE transport, and failure
+   recovery before connecting a cell.
+2. **EVT lot.** Build at least five 0.8 mm, four-layer ENIG assemblies. Use the
+   exact panel, coil, custom protected pack, and magnetic assembly in the BOM.
+   Program UICR and firmware over the SWD fixture, then run the electrical and
+   mechanical acceptance tests on every unit.
 
-The design already uses the **pre-certified Raytac MDBT50Q-512K module**, so the
-radio works out of the box on the first tile — no antenna tuning, no crystal, no
-RF certification. A future thickness optimization could move to a bare nRF52833
-QFN (~1 mm thinner) once everything else is proven, at the cost of taking on the
-antenna layout and an intentional-radiator cert.
+The Raytac module avoids a board-side RF matching network. It does not make the
+finished product automatically compliant or guarantee range beside a phone.
+Keep the module for production unless a later bare-QFN program budgets a new RF
+layout, antenna tuning, and intentional-radiator certification.
 
 ### Phone compatibility and fit
 
@@ -360,15 +347,28 @@ top-level app.
 
 | Characteristic | Properties | Purpose |
 |---|---|---|
-| Control | write | begin frame, region, full-vs-partial, commit |
+| Control | encrypted write with response | begin frame, region, full-vs-partial, commit, and resume offset |
 | Status | read / notify | battery %, charge state, temperature, last-refresh result |
-| Frame (fallback) | write-without-response | chunked pixel data when L2CAP is unavailable |
+| Frame fallback | encrypted write without response | chunked pixel data when L2CAP is unavailable |
 
 For the pixel payload, prefer an **L2CAP connection-oriented channel**
-(`CBL2CAPChannel` on iOS). A 480×800 mono frame is 48 KB; over an L2CAP stream
-with a negotiated MTU that is a couple of seconds, versus a slow parade of
-20-byte GATT writes. Keep the GATT "Frame" characteristic as a fallback for
-centrals that will not open a channel.
+(`CBL2CAPChannel` on iOS) with a fixed PSM in the BLE LE dynamic range. A
+480 x 800 monochrome frame is 48 KB. Negotiate 2M PHY, data-length extension,
+and ATT MTU where available, then measure transfer time and energy. Keep the
+GATT frame characteristic as a compatibility and wake-up fallback.
+
+### Pairing and authorization
+
+All control, frame, status, and DFU operations require an encrypted,
+authenticated bond. On first boot, the panel displays a random passkey that
+the app enters using LE Secure Connections. After pairing, the peripheral
+accepts control only from the bonded identity and uses private addresses.
+
+The frame CRC detects transfer corruption; it is not an authenticator.
+Persist the last committed frame id with the frame metadata so a reboot does
+not reopen the replay window. The product also needs a documented owner-reset
+gesture that does not depend on the old phone. Until that gesture exists, SWD
+erase is the only bond-recovery path and the firmware is not ready for users.
 
 ### Getting a frame there in the background
 
@@ -382,19 +382,23 @@ summary rides along, with the caveat that it lands on the next background wake,
 not the instant a message arrives. Transit is deferred to a later face. What iOS
 gives a source-on-device app:
 
-- **Persistent connection + State Preservation and Restoration.** With the
-  `bluetooth-central` background mode, iOS keeps a connection alive and relaunches
-  the app to handle events (`willRestoreState`, notifications) even after the app
-  is jettisoned. The tile stays connected and the app is woken briefly to write a
-  new frame.
+- **State preservation and restoration.** With the `bluetooth-central`
+  background mode, iOS can restore the central and wake the app for documented
+  Core Bluetooth delegate events. The app cannot assume continuous execution or
+  an unlimited transfer window.
 - **`BGAppRefreshTask` / `BGProcessingTask`.** The app wakes on the system's
   schedule (typically tens of minutes, adaptive to usage) to recompute a frame
   from on-device data and push it. This is the workhorse for a phone-only source.
 - **Peripheral-initiated nudge.** If the tile wants attention (a button, or it
   woke on its own timer), it advertises a specific service UUID; iOS background
   scanning for that UUID relaunches the app, which then pushes. Background scans
-  must name the UUID (no wildcard) and are duty-cycled, so treat this as "within
-  a minute," not instant.
+  must name the UUID and are duty-cycled. The system does not guarantee a
+  deadline, and it does not relaunch an app that the owner force-quit.
+
+L2CAP stream callbacks alone have not been reliable wake sources on every iOS
+release. Use a GATT notification to wake the central before resuming L2CAP, and
+test the minimum supported iOS version in foreground, background, after
+termination, after reboot, and after Bluetooth state restoration.
 
 If a face ever needs sub-minute remote updates (an inbound message the instant it
 lands), that requires a silent APNs push from some server, which the phone-only
@@ -404,81 +408,117 @@ what wakes the app (it just receives a frame), and keep the app's push handling
 behind one seam, so a future optional companion push service drops in without a
 firmware change or a second radio. It is not built for launch.
 
-Design the protocol so a push is idempotent and resumable: the app sends a frame
-id and a hash, the tile acknowledges what it already has, and a dropped
-connection resumes rather than restarts. Background BLE windows are short; a
-15 KB transfer must survive being interrupted and continued on the next wake.
+The protocol rejects invalid or unaligned windows, mismatched lengths,
+conflicting frame ids, stale ids, out-of-order chunks, and bad CRCs. A repeated
+identical header returns the committed offset so a dropped transfer can resume.
+Background BLE windows are short; a 48 KB transfer must survive interruption.
 
 On demand (app in foreground) is the easy case: connect, open the L2CAP channel,
 stream, commit, done.
 
 ## Firmware
 
-Reuse the shape of [`inkbot-esp32/`](../inkbot-esp32/) where it helps, but this is
-a fresh crate for the nRF target (nRF52 SoftDevice via `nrf-softdevice`, or a
-C/Zephyr build if the panel vendor's driver is easier to port). Core pieces:
+The Rust crate reserves flash and RAM for S140 7.3.0. Host-tested code now
+implements frame validation, replay checks, panel window rules, periodic full
+refresh policy, charger-status decoding, voltage and temperature gates, and
+the fail-closed UICR REGOUT0 policy.
 
-- **Panel driver**: SPI to the SSD1677-class COG, full and partial LUTs, forced
-  full refresh every N partials to clear ghosting.
-- **BLE peripheral**: the GATT table above plus the L2CAP server; low duty-cycle
-  advertising when disconnected.
-- **Frame store**: keep the last frame in flash so the tile can repaint after a
-  battery swap or a crash without waiting for the phone.
-- **Power manager**: gate the panel rail, keep the radio in the lowest connected
-  state that still meets the latency target, sample battery and temperature on
-  the SAADC, report them over Status.
-- **DFU**: BLE DFU (Nordic Secure DFU) so updates arrive over the same link as
-  frames. SWD test pads are the brick-recovery path when a DFU fails; there is no
-  USB port to fall back to.
+The following target integrations remain release blockers:
 
-Firmware does not need the OTA-from-GHCR or GCP machinery the Wi-Fi device
-carries; the phone is the update transport.
+- Configure panel power off and charge enabled before all other GPIO.
+- Start S140 from the external 32.768 kHz crystal and implement bonded GATT plus
+  the L2CAP server.
+- Stream incoming data to an atomic flash record and seed the replay boundary
+  from its committed metadata after reset.
+- Implement the SSD1677 reset, two-RAM initialization, temperature-selected
+  waveform, BUSY timeout, full and partial refresh, deep sleep, and rail
+  discharge sequence.
+- Sample `VDDHDIV5`, retain reset and brownout causes, and run a watchdog that
+  also covers stalled panel and radio operations.
+- Add a signed, power-fail-safe bootloader with a trial boot, rollback, and
+  monotonic version floor. Size its active, update, state, and S140 partitions
+  from the final linked image.
+- Lock production debug against readout while preserving documented full-erase
+  recovery through CTRL-AP and the SWD fixture.
+
+BLE transports firmware from the phone. A CRC-only frame path and an unsigned
+image are not acceptable DFU mechanisms.
 
 ## Bill of materials and cost
 
 Full line items with part numbers and price columns are in
-[`inkbot-magsafe-bom.csv`](inkbot-magsafe-bom.csv). Rolled-up cost of goods
-(COGS) at ~1,000 units, thickness-first with the pre-certified module:
+[`inkbot-magsafe-bom.csv`](inkbot-magsafe-bom.csv). The modeled direct build
+cost includes parts, PCB fabrication, SMT, final integration, programming,
+end-of-line test, spacer, insulation, and rear cover:
 
-| | Shipping tile |
-|---|---|
-| Parts (incl. thin PCB) | ~$30 |
-| Assembly (SMT, test) | ~$4 |
-| **COGS** | **~$34** |
-| Suggested retail (2.5–3×) | ~$90–99 |
+| Quantity | Unit direct cost | Build total | With 15% yield and price reserve |
+|---:|---:|---:|---:|
+| 1 | **$166.41** | **$166** | **$191** |
+| 100 | **$58.96** | **$5,896** | **$6,780** |
+| 1,000 | **$41.21** | **$41,210** | **$47,392** |
 
-The 3.97-inch panel (~$10.50), the module (~$4.50), and the Qi stage (~$4.8 for
-BQ51050B + coil) dominate. The module costs ~$1.60 more than a bare nRF52833
-(~$2.90) but folds in the antenna, crystal, and — critically — the intentional-
-radiator certification, so it is cheaper once certification and RF spins are
-counted. Pass-through TX would still add ~$8 and is rejected.
+The one-unit estimate includes manual assembly setup but excludes minimum reel
+buys, shipping, duties, tax, and the tools needed to program or measure the
+unit. A realistic one-off purchasing budget is $250-$600 once those costs are
+included.
+
+The panel, radio module, Qi receiver, custom battery pack, and mechanical
+integration dominate volume cost. The following non-recurring expenses are not
+in per-unit COGS:
+
+- Electrical and mechanical EVT lots, test fixtures, and destructive samples:
+  approximately $3,000-$15,000.
+- Rear-cover, spacer, adhesive, and assembly tooling: approximately
+  $2,000-$20,000, depending on laser-cut parts versus molded tooling.
+- Finished-product EMC, radio-exposure, Bluetooth, wireless-power,
+  battery-safety, environmental, and market-specific compliance:
+  approximately $25,000-$100,000 or more.
+- MFi program, licensed component, audit, and certification charges if the
+  product uses Apple's MagSafe marks or licensed features.
+
+Obtain supplier quotations and compliance-lab scopes before treating the
+100-unit or 1,000-unit totals as a purchase order budget.
 
 ## Reliability checklist
 
-- System on the cell via BQ51050B; charge while detached (no mid-refresh cutover).
-- 220 µF bulk cap at VSYS near the panel connector for refresh inrush.
-- Module antenna at the tile edge farthest from the ring; keep-out per the
-  module footprint. No board-side match to tune (module is pre-certified).
-- NTC thermistor for Qi charge safety (shared with SAADC).
-- Cell with an integrated protection FET, or add a DW01 + dual FET.
+- BQ51013C receiver followed by a BQ25185 charger and SYS power path.
+- 40 mA charge limit, 100 mA input limit, separate cell and coil NTCs, and
+  charger fault decoding.
+- Protected battery pack with a keyed, polarized three-wire harness.
+- 220 uF low-leakage MLCC on SYS, qualified at its 4.5 V DC bias.
+- Module antenna flush with the board edge and an all-layer copper keep-out.
+- UICR `REGOUT0=3.0 V` provisioning and a fail-closed check before GPIO setup.
 - SWD test pads for brick recovery, since there is no USB port to fall back to.
-- Forced periodic full refresh to prevent e-ink ghosting.
-- Note the operating range: e-ink refresh is unreliable below ~0 °C.
+- Signed, power-fail-safe DFU with trial boot, rollback, and monotonic version
+  policy before field updates are enabled.
+- Exact frame-length, bounds, alignment, CRC, and replay checks before a panel
+  refresh.
+- Busy timeout, watchdog, brownout logging, and forced periodic full refresh.
+- Structural spacer, strain relief, cell swelling clearance, and electrical
+  insulation under the rear cover.
+- No refresh outside the panel's qualified 0-50 degrees Celsius range.
 
 ## Regulatory and MFi
 
-- **"MagSafe" is Apple's mark.** Selling something that fits Apple's magnet
-  geometry is fine; calling it MagSafe, drawing 15 W, or showing the on-screen
-  charging ring needs Apple's MFi program (which adds an authentication IC and
-  licensing). Without MFi: generic magnets, "works with MagSafe chargers,"
-  7.5 W cap.
-- The design uses a **pre-certified module (Raytac MDBT50Q-512K)**, so it carries
-  the module's FCC/IC/CE/MIC/KC/SRRC modular IDs and needs only unintentional-
-  radiator (Part 15B) testing for the finished product, not a full intentional-
-  radiator campaign.
-- The Qi coil is still a Part 18 radiator. The tile is receive-only, so there is
-  no transmit EMC burden; adding pass-through later would roughly double it and
-  may want WPC (Qi) certification.
+- **"MagSafe" is Apple's mark.** Use generic compatibility language unless
+  Apple approves the product through MFi. MFi controls licensed marks,
+  accessory magnet specifications, approved sources, and any licensed
+  electronic features.
+- The public Apple accessory-array requirements call for N48H magnets,
+  controlled polarity and flux, 7-13 um NiCuNi plating, coplanarity, a DC
+  shield, and 650-900 gf pull force. Qualify camera OIS, autofocus, compass,
+  magnetic-stripe-card, and wireless-charging interference.
+- The Raytac modular approvals reduce radio test scope only when the host
+  design follows every grant condition. The finished product still needs host
+  labeling, RF exposure assessment, emissions testing, and the applicable FCC,
+  ISED, CE, UKCA, MIC, KC, and SRRC filings for its sale regions.
+- Complete the Bluetooth SIG qualification and product listing for the final
+  firmware and GATT design.
+- The receive-only Qi circuit is not a 15 W MagSafe transmitter. WPC
+  certification is required to use Qi marks and is the best way to verify
+  transmitter interoperability, FOD behavior, and thermal limits.
+- Require a UN 38.3 test summary for the shipped pack and complete the
+  applicable IEC 62133-2, UL 2054, shipping, recycling, RoHS, and REACH work.
 
 ## Decisions taken since 0.1.0 draft
 
@@ -486,15 +526,15 @@ counted. Pass-through TX would still add ~$8 and is rejected.
   keeps the system to one radio and one trust boundary, at the cost of sub-minute
   remote updates (see BLE background).
 - **Mono panel.** Black/white only. Grayscale or color is a later variant.
-- **3.97-inch 480×800 panel on the nRF52833.** Largest mono e-paper that fits a
+- **3.97-inch 480 x 800 panel on the nRF52833.** Largest mono e-paper that fits a
   6.1" Pro in **both** width and height with the ring high (camera-clear). The
   4.26" was tried and dropped — it overhangs the bottom of a 15 Pro by ~4 mm.
   Minis are dropped (too narrow). The 48 KB frame is why the MCU is the 128 KB
   nRF52833.
 - **Pre-certified module, not bare QFN.** The nRF52833 ships as a Raytac
   MDBT50Q-512K module: it folds in the antenna, 32 MHz crystal, DC/DC, and RF
-  match with modular certification, deleting the radio-layout work for ~1 mm of
-  added thickness. Accepted.
+  match with modular certification. The module still requires its host
+  keep-out, layout review, and finished-product tests.
 - **Launch faces:** clock, calendar, weather, health, photo/image, custom text,
   and a best-effort notification summary. Transit is deferred.
 - **Relaxed background cadence.** Target the iOS `BGTask` rhythm (roughly every
@@ -504,21 +544,22 @@ counted. Pass-through TX would still add ~$8 and is rejected.
   notification-summary face is the one that would justify an optional companion
   push service later, so the firmware and app are structured to add it without a
   redesign.
-- **Charging is detach-and-drop on a Qi/MagSafe pad.** No pass-through in the
-  shipping design.
-- **No connector.** Wireless charge, BLE DFU for updates, SWD pads for recovery.
-  USB-C was considered and dropped.
-- **Magnet-only retention.** The MagSafe magnet ring holds the tile to the phone;
-  no adhesive skin. The magnets already have to hold the tile on a charger, so
-  they carry the phone too, and a magnet-only mount stays swappable between
-  phones and cases.
+- **Charging is detach-and-drop on a Qi-compatible pad.** A BQ51013C receiver
+  feeds a BQ25185 power-path charger. No pass-through stage is included.
+- **No user connector.** Wireless charge, planned signed BLE DFU, and SWD pads
+  for factory programming and full-erase recovery. USB-C was considered and
+  dropped, subject to recovery testing.
+- **Magnet-only retention.** The N48H accessory ring and DC shield follow the
+  Apple accessory-array geometry. Pull force, rotation, camera, compass, card,
+  and charging interference remain physical acceptance tests.
 - **A later push service stays independent.** If the reserved notification path
   is built, it is a private companion service, not the [`inkbot/`](../inkbot/)
   Worker and it shares no code with it. The tile firmware and app stay agnostic
   to the sender.
-- **Thickness-first KiCad schematic.** Raytac MDBT50Q-512K module, BQ51050B
-  (Qi+charger), 0.8 mm prototype PCB (0.4 mm volume target) with battery cutout,
-  no case. Project under [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/).
+- **Reference-design-based KiCad schematic.** Raytac MDBT50Q-512K module,
+  BQ51013C receiver, BQ25185 charger, TPS7A2030P panel rail, complete SSD1677
+  boost circuit, and a 0.8 mm board with a rounded battery cutout. Project under
+  [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/).
 
 The firmware and hardware scaffold live in
 [`../inkbot-magsafe/`](../inkbot-magsafe/); the iOS app is deferred until they
@@ -526,8 +567,11 @@ are dialed in.
 
 ## Open questions
 
-- Enclosure material and how the panel is bonded to the front (adhesive frame vs
-  bezel clip), given magnet-only retention.
+- Final spacer, adhesive, rear-cover materials, and the cell swelling budget.
+- Whether a ring-only build has enough rotational stability or needs the
+  optional orientation magnet.
+- Qualified battery supplier, custom harness drawing, and measured pulse-current
+  acceptance limit.
 - Per-face `BGTask` cadence tuning: which faces (weather, health) warrant a
   `BGProcessingTask` versus a lighter `BGAppRefreshTask`, within the relaxed
   target?

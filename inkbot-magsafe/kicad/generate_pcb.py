@@ -8,6 +8,7 @@ behind it. The ring center is 30 mm from the top edge for camera clearance.
 
 from __future__ import annotations
 
+import math
 import uuid
 from pathlib import Path
 
@@ -31,13 +32,20 @@ COIL_SHIELD_DIA = 22.0
 PANEL_W, PANEL_H = 56.24, 96.62
 PANEL_TOP = 1.2
 
-# LP252030 pack envelope after its protection circuit, plus 1 mm clearance.
-BAT_W, BAT_H = 33.0, 22.0
+# The LP252030 pack is 31 x 20 mm after its protection circuit. The cutout
+# includes tolerance for the pouch, adhesive carrier, and a 1 mm router radius.
+BAT_W, BAT_H = 34.0, 23.0
 BAT_CY = 70.0
+UID_NAMESPACE = uuid.UUID("237d264a-a6c4-4c8b-b2ef-8f51b1936656")
+uid_counter = 0
 
 
 def uid() -> str:
-    return str(uuid.uuid4())
+    """Return the next deterministic UUID for generated PCB graphics."""
+    global uid_counter
+    value = uuid.uuid5(UID_NAMESPACE, str(uid_counter))
+    uid_counter += 1
+    return str(value)
 
 
 def rect_outline(x0: float, y0: float, w: float, h: float, layer: str, width: float = 0.1) -> str:
@@ -50,6 +58,48 @@ def rect_outline(x0: float, y0: float, w: float, h: float, layer: str, width: fl
             f'    (stroke (width {width}) (type solid)) (layer "{layer}") (tstamp {uid()}))'
         )
     return "\n".join(lines)
+
+
+def rounded_rect_outline(
+    x0: float,
+    y0: float,
+    w: float,
+    h: float,
+    radius: float,
+    layer: str,
+    width: float = 0.1,
+) -> str:
+    """Return a routed rectangle with explicit corner radii."""
+    x1, y1 = x0 + w, y0 + h
+    d = radius / math.sqrt(2)
+    segments = [
+        ("line", (x0 + radius, y0), (x1 - radius, y0), None),
+        ("arc", (x1 - radius, y0), (x1, y0 + radius), (x1 - radius + d, y0 + radius - d)),
+        ("line", (x1, y0 + radius), (x1, y1 - radius), None),
+        ("arc", (x1, y1 - radius), (x1 - radius, y1), (x1 - radius + d, y1 - radius + d)),
+        ("line", (x1 - radius, y1), (x0 + radius, y1), None),
+        ("arc", (x0 + radius, y1), (x0, y1 - radius), (x0 + radius - d, y1 - radius + d)),
+        ("line", (x0, y1 - radius), (x0, y0 + radius), None),
+        ("arc", (x0, y0 + radius), (x0 + radius, y0), (x0 + radius - d, y0 + radius - d)),
+    ]
+    items = []
+    for kind, start, end, mid in segments:
+        if kind == "line":
+            items.append(
+                f"  (gr_line (start {start[0]:.3f} {start[1]:.3f}) "
+                f"(end {end[0]:.3f} {end[1]:.3f})\n"
+                f'    (stroke (width {width}) (type solid)) (layer "{layer}") '
+                f"(tstamp {uid()}))"
+            )
+        else:
+            items.append(
+                f"  (gr_arc (start {start[0]:.3f} {start[1]:.3f}) "
+                f"(mid {mid[0]:.3f} {mid[1]:.3f}) "
+                f"(end {end[0]:.3f} {end[1]:.3f})\n"
+                f'    (stroke (width {width}) (type solid)) (layer "{layer}") '
+                f"(tstamp {uid()}))"
+            )
+    return "\n".join(items)
 
 
 def circle(cx: float, cy: float, r: float, layer: str, width: float = 0.1) -> str:
@@ -75,13 +125,15 @@ def main() -> None:
 
     graphics = [
         rect_outline(0, 0, BOARD_W, BOARD_H, "Edge.Cuts", 0.05),
-        rect_outline(bat_x, bat_y, BAT_W, BAT_H, "Edge.Cuts", 0.05),
+        rounded_rect_outline(bat_x, bat_y, BAT_W, BAT_H, 1.0, "Edge.Cuts", 0.05),
         # Panel outline (front face) on the fab layer.
         rect_outline(panel_x, PANEL_TOP, PANEL_W, PANEL_H, "Cmts.User", 0.1),
         circle(cx, RING_CY, RING_OD / 2, "Dwgs.User", 0.15),
         circle(cx, RING_CY, RING_ID / 2, "Dwgs.User", 0.15),
         circle(cx, RING_CY, COIL_SHIELD_DIA / 2, "Dwgs.User", 0.1),
         text("54 x 46 mm EVT magnetic array", cx, RING_CY, "Dwgs.User", 0.65),
+        rounded_rect_outline(cx - 9.45, 58.5, 18.9, 5.9, 0.8, "Dwgs.User", 0.1),
+        text("orientation magnet", cx, 61.45, "Dwgs.User", 0.55),
         text(
             "WR222230 coil shield",
             cx,
@@ -110,7 +162,7 @@ def main() -> None:
   (title_block
     (title "inkbot-magsafe")
     (date "2026-09-07")
-    (rev "0.6.0")
+    (rev "0.7.0")
     (comment 1 "0.8 mm four-layer EVT board; protected-cell cutout; structural spacer and protective films")
     (comment 2 "BQ51013C + BQ25185; Raytac MDBT50Q-512K; GDEM0397T81P")
   )
@@ -143,13 +195,13 @@ def main() -> None:
       (layer "F.SilkS" (type "Top Silk Screen"))
       (layer "F.Paste" (type "Top Solder Paste"))
       (layer "F.Mask" (type "Top Solder Mask") (thickness 0.01))
-      (layer "F.Cu" (type "copper") (thickness 0.018))
-      (layer "dielectric 1" (type "prepreg") (thickness 0.075) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
-      (layer "In1.Cu" (type "copper") (thickness 0.018))
-      (layer "dielectric 2" (type "core") (thickness 0.55) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
-      (layer "In2.Cu" (type "copper") (thickness 0.018))
-      (layer "dielectric 3" (type "prepreg") (thickness 0.075) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
-      (layer "B.Cu" (type "copper") (thickness 0.018))
+      (layer "F.Cu" (type "copper") (thickness 0.035))
+      (layer "dielectric 1" (type "prepreg") (thickness 0.2104) (material "FR4 7628") (epsilon_r 4.3) (loss_tangent 0.02))
+      (layer "In1.Cu" (type "copper") (thickness 0.0152))
+      (layer "dielectric 2" (type "core") (thickness 0.2) (material "FR4") (epsilon_r 4.5) (loss_tangent 0.02))
+      (layer "In2.Cu" (type "copper") (thickness 0.0152))
+      (layer "dielectric 3" (type "prepreg") (thickness 0.2104) (material "FR4 7628") (epsilon_r 4.3) (loss_tangent 0.02))
+      (layer "B.Cu" (type "copper") (thickness 0.035))
       (layer "B.Mask" (type "Bottom Solder Mask") (thickness 0.01))
       (layer "B.Paste" (type "Bottom Solder Paste"))
       (layer "B.SilkS" (type "Bottom Silk Screen"))
