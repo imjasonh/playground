@@ -14,26 +14,31 @@ overlaps the MagSafe ring. The radio is a pre-certified Raytac MDBT50Q-512K
 | `inkbot-magsafe.kicad_pcb` | Routed 60 × 99 mm board: battery cutout, ring high (30 mm keep-in), 0.8 mm 4-layer stackup, GND/VSYS planes + signal tracks |
 | `generate_schematic.py` | Regenerates the schematic from symbol libraries |
 | `generate_pcb.py` | Regenerates the board outline and stackup |
-| `layout_route.py` | Places footprints from the netlist, assigns nets, pours planes, routes tracks, fills, and exports the fab set |
+| `route_freerouting.py` | Places the board and routes it through Freerouting's Specctra DSN/SES flow |
+| `layout_route.py` | Placement-and-feasibility grid router used to prototype the board |
 | `tools/kicad_sch_helpers.py` | [kenchangh/kicad-schematic](https://github.com/kenchangh/kicad-schematic) helper (pin-accurate placement) |
 | `tools/extract_symbol.py` | Embeds KiCad library symbols into the schematic |
 
 ## Regenerate
 
 ```bash
-cd inkbot-magsafe
-python3 kicad/generate_schematic.py
-python3 kicad/generate_pcb.py
-kicad-cli sch export netlist -o /tmp/inkbot.net kicad/inkbot-magsafe.kicad_sch
-python3 kicad/layout_route.py            # place + net + pour + route + export
+cd inkbot-magsafe/kicad
+export FREEROUTING_JAR=/path/to/freerouting-2.4.1.jar
+export FREEROUTING_JAVA=/path/to/java-25/bin/java
+python3 route_freerouting.py
+python3 run_drc.py
+python3 run_erc.py
 ```
 
-`layout_route.py` starts from the outline board, imports the schematic netlist,
-places the module and support parts on the back, assigns nets to every pad,
-pours In2/B.Cu ground and In1 VSYS planes, routes the signal nets, fills, and
-writes Gerbers, drill, centroid, and BOM under `kicad/fab/`. Open
-`inkbot-magsafe.kicad_pro` in KiCad 7+ to run DRC and check impedance before a
-production order.
+`route_freerouting.py` starts from the generated outline, exports the committed
+schematic's netlist, places the module and support parts on the back, assigns
+nets, adds the GND and VSYS planes, and exports a Specctra DSN file. It runs
+Freerouting, imports the SES file, refills the planes, and writes Gerbers,
+drill, and centroid files under `fab/`. Freerouting 2.4.1 requires Java 25.
+Headless Linux also requires `xvfb-run`.
+
+Open `inkbot-magsafe.kicad_pro` in KiCad 7 or later to inspect the result and
+check impedance before a production order.
 
 ## Choices baked into this project
 

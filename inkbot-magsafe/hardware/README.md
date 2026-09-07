@@ -15,12 +15,16 @@ Regenerate and check the board:
 ```bash
 cd inkbot-magsafe/kicad
 python3 generate_schematic.py
-kicad-cli sch export netlist -o /tmp/inkbot.net inkbot-magsafe.kicad_sch
-python3 generate_pcb.py
-python3 layout_route.py     # place, pour, route, stitch, export fab/
-python3 run_drc.py          # KiCad's DRC engine -> fab/drc-report.txt
-python3 run_erc.py          # netlist electrical rules + board parity
+export FREEROUTING_JAR=/path/to/freerouting-2.4.1.jar
+export FREEROUTING_JAVA=/path/to/java-25/bin/java
+python3 route_freerouting.py
+python3 run_drc.py
+python3 run_erc.py
 ```
+
+`route_freerouting.py` uses KiCad's Specctra DSN and SES support to run a real
+autorouter. Freerouting 2.4.1 requires Java 25. Headless Linux also requires
+`xvfb-run`.
 
 **`run_drc.py` runs KiCad's real DRC engine** (clearance, hole, keep-out,
 courtyard, mask, edge, connectivity, silk) through `pcbnew.WriteDRCReport`, not
