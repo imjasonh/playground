@@ -220,11 +220,16 @@ radio and will detune a 2.4 GHz antenna. Two consequences drive the layout:
 
 ### Board stack
 
-A **0.4 mm** 4-layer PCB (signal / ground / power / signal), **60 × 99 mm
-portrait**, with a **battery cutout** below the coil so the cell does not stack
-on the FR4. The 3.97-inch panel is bonded to the whole front and **overlaps the
-MagSafe ring**: the coil and magnets are on the back, the panel on the front, so
-they share the same footprint without colliding. No case for 0.1.0. See
+A 4-layer PCB (signal / ground / power / signal), **60 × 99 mm portrait**, with a
+**battery cutout** below the coil so the cell does not stack on the FR4. The
+volume target is **0.4 mm**; the first prototype is **0.8 mm** because that is
+the 4-layer floor at the cheap fabs (JLCPCB, PCBWay standard) — 0.4 mm 4-layer
+needs an advanced fab. The 0.8 mm proto only grows the ring region by ~0.4 mm
+(the battery sits in a cutout, so its region is unchanged), so it is the right
+board to validate function first. The 3.97-inch panel is bonded to the whole
+front and **overlaps the MagSafe ring**: the coil and magnets are on the back,
+the panel on the front, so they share the same footprint without colliding. No
+case for 0.1.0. See
 [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/) for the schematic and
 outline, and
 [`inkbot-magsafe/hardware/stackup.md`](../inkbot-magsafe/hardware/stackup.md)
@@ -246,7 +251,43 @@ Thickness-first layout (cutout + thin PCB + bare QFN + combined Qi/charger):
 Earlier ~4.5 mm assumed a 0.8 mm PCB and a cell under the board. Pass-through
 TX would still add ~1.2 mm and is rejected. The "under 2 mm" figure in the brief
 describes the bare cell, not the finished tile — this design lands near that
-floor without a case.
+floor without a case. (The 0.8 mm prototype board, above, sits ~0.4 mm thicker
+at the ring only.)
+
+### Fabrication and first build
+
+Who builds what:
+
+- **PCB + SMT assembly (PCBA)** — one vendor. **JLCPCB** (cheapest, rigid
+  automation) or **PCBWay** (pricier, more hand-holding and sourcing) both fab
+  the board and place the surface-mount parts, including the leadless QFN
+  nRF52833 and the BQ51050B. Deliver Gerbers, BOM, and a centroid/pick-and-place
+  file.
+- **Panel, coil, magnets, battery** — not reel parts an assembler drops in for a
+  one-off. Bonding the e-ink glass to the front, placing the Qi coil and MagSafe
+  magnet ring on the back, and attaching the LiPo are bench work. PCBWay
+  turnkey/box-build can source and attach some of these; JLCPCB generally will
+  not.
+
+Before ordering anything, the KiCad project needs to be **routed and tuned** —
+today it has the outline and footprints but no routing, and the 2.4 GHz match is
+not set. Route it, add the matching network, pass DRC, then export the fab set.
+
+Recommended one-off sequence (validate function before optimizing thickness):
+
+1. **Breadboard, no custom PCB.** An nRF52833/52840 devkit (or Feather nRF52) +
+   the GDEY0397T81P on its Good Display DESPI FPC adapter + a LiPo. Proves the
+   SSD1677 driver, the 480×800 framebuffer, BLE push, and power behavior with no
+   RF tuning or bonding.
+2. **One-off tile.** ~5 boards, **PCBA, 0.8 mm 4-layer, ENIG** from JLCPCB (or
+   PCBWay if you want them to source the odd parts). Buy the panel, a MagSafe
+   magnet ring + Qi RX coil, and a ~120 mAh protected LiPo separately, then
+   hand-integrate. Bring up over the SWD test pads.
+
+For the first tile, a **pre-certified nRF52833 module** (Raytac MDBT50Q-class)
+removes the antenna-tuning and crystal risk at the cost of ~0.5–1 mm; swap to the
+bare QFN once the rest is proven. The bare QFN is a thickness optimization worth
+deferring past "does it work."
 
 ### Phone compatibility and fit
 
@@ -436,8 +477,8 @@ rejected.
   Worker and it shares no code with it. The tile firmware and app stay agnostic
   to the sender.
 - **Thickness-first KiCad schematic.** Bare nRF QFN, BQ51050B (Qi+charger),
-  0.4 mm PCB with battery cutout, no case. Project under
-  [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/).
+  0.4 mm PCB (0.8 mm for the first prototype) with battery cutout, no case.
+  Project under [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/).
 
 The firmware and hardware scaffold live in
 [`../inkbot-magsafe/`](../inkbot-magsafe/); the iOS app is deferred until they

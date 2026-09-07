@@ -3,7 +3,10 @@
 ## PCB
 
 - 4 layers: signal / ground / power / signal.
-- Thickness **0.4 mm** (thin FR4; confirm fab yield before volume).
+- Thickness: volume target **0.4 mm**, but the **first prototype is 0.8 mm** —
+  that is the 4-layer floor at JLCPCB / PCBWay standard; 0.4 mm 4-layer needs an
+  advanced fab. The battery sits in a cutout, so 0.8 mm grows only the ring
+  region by ~0.4 mm.
 - Outline **60 × 99 mm, portrait** — fits a 6.1" Pro (70.6 × 146.6 mm) in both
   width and height with the MagSafe ring high. Minis (64.2 mm) are out of scope;
   the 4.26" panel (105 mm tall) overshoots the bottom of a 15 Pro and was dropped.
