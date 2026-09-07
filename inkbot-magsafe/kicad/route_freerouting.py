@@ -29,10 +29,6 @@ ROUTE_BASE = FAB / "inkbot-magsafe-route-base.kicad_pcb"
 PLACED_BOARD = FAB / "inkbot-magsafe-placed.kicad_pcb"
 INCOMPLETE_BOARD = FAB / "inkbot-magsafe-incomplete.kicad_pcb"
 VIA_NAME = re.compile(r"Via\[(\d+)-(\d+)\]_(\d+):(\d+)_um")
-MIN_ROUTED_WIDTH_MM = {
-    "/BAT": 0.3,
-    "/QI_OUT": 0.3,
-}
 
 
 def fill_zones(board: pcbnew.BOARD) -> None:
@@ -131,9 +127,7 @@ def import_freerouting_session(board: pcbnew.BOARD, path: Path) -> None:
                 width = coordinate(path_form[2])
                 width = max(
                     width,
-                    layout_route.mm(
-                        MIN_ROUTED_WIDTH_MM.get(net_name, layout_route.CLEAR)
-                    ),
+                    layout_route.mm(layout_route.CLEAR),
                 )
                 values = path_form[3:]
                 if len(values) % 2:
@@ -622,6 +616,45 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         width=layout_route.mm(0.3),
     )
     add_locked_via(qi_input_via, "/QI_OUT")
+    qi_c17_via = board_point(48.225, 62.8)
+    add_locked_path(
+        (
+            (47.8, 57.5),
+            (48.5, 58.2),
+            (48.5, 62.525),
+            (48.225, 62.8),
+        ),
+        "/QI_OUT",
+        pcbnew.F_Cu,
+        width=layout_route.mm(0.3),
+    )
+    add_locked_via(qi_c17_via, "/QI_OUT")
+    add_locked_track(
+        qi_c17_via,
+        pad_center("C17", "1"),
+        "/QI_OUT",
+        width=layout_route.mm(0.3),
+    )
+    qi_u3_via = board_point(54.2, 60.8)
+    add_locked_path(
+        (
+            (47.8, 57.5),
+            (54.25, 57.5),
+            (55.0, 58.25),
+            (55.0, 60.0),
+            (54.2, 60.8),
+        ),
+        "/QI_OUT",
+        pcbnew.F_Cu,
+        width=layout_route.mm(0.3),
+    )
+    add_locked_via(qi_u3_via, "/QI_OUT")
+    add_locked_track(
+        qi_u3_via,
+        pad_center("U3", "10"),
+        "/QI_OUT",
+        width=layout_route.mm(0.15),
+    )
     add_locked_path(
         (
             (5.35, 66.75),
