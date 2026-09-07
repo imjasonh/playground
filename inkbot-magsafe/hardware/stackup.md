@@ -52,7 +52,7 @@ allowance before a production release.
 - Front: 3.97-inch e-ink panel (480 × 800), FPC into the connector. The panel
   overlaps the magnetic ring. The coil and magnets are behind it.
 - Back, top: Qi RX coil inside the MagSafe magnet ring, ring center **30 mm from
-  the top edge** (Apple's keep-in limit toward the phone top).
+  the top edge** as an EVT fit hypothesis.
 - Back, below the coil: MDBT50Q-512K module (antenna end toward a board edge),
   BQ51013C receiver, BQ25186 charger, MCU and panel LDOs, and passives around
   the cutout.
