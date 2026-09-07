@@ -46,9 +46,7 @@ mod firmware {
     }
 
     fn ensure_regout0_3v0() {
-        let current = unsafe {
-            core::ptr::read_volatile(boot::REGOUT0_ADDRESS as *const u32)
-        };
+        let current = unsafe { core::ptr::read_volatile(boot::REGOUT0_ADDRESS as *const u32) };
         match boot::plan_regout0(current) {
             RegoutPlan::Ready => {}
             RegoutPlan::ProgramAndReset(value) => unsafe { program_regout0(value) },

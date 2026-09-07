@@ -185,10 +185,7 @@ impl Receiver {
     pub fn begin(&mut self, header: FrameHeader) -> Result<Begin, BeginError> {
         header.validate()?;
         if self.active && self.id == header.id {
-            if self.len == header.len
-                && self.crc == header.crc
-                && self.window == header.window
-            {
+            if self.len == header.len && self.crc == header.crc && self.window == header.window {
                 return Ok(Begin::Resumed(self.received));
             }
             return Err(BeginError::ConflictingId);
