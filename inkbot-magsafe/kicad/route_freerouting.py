@@ -395,6 +395,12 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     )
     add_locked_track(
         pad_center("U1", "30"),
+        board_point(17.2, 91.4),
+        layout_route.SYS,
+        width=layout_route.mm(0.15),
+    )
+    add_locked_track(
+        board_point(17.2, 91.4),
         pad_center("C21", "1"),
         layout_route.SYS,
         width=layout_route.mm(0.15),
@@ -413,10 +419,10 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("C15", "2", (11.35, 77.35)),
         ("C16", "2", (3.775, 80.25)),
         ("R2", "2", (11.0, 80.35)),
-        ("C17", "2", (48.55, 64.0)),
-        ("C18", "2", (54.45, 64.0)),
+        ("C17", "2", (50.5, 65.0)),
+        ("C18", "2", (53.45, 65.2)),
         ("C19", "2", (58.0, 64.0)),
-        ("R5", "2", (48.55, 67.0)),
+        ("R5", "2", (50.5, 68.2)),
         ("R6", "2", (54.0, 67.0)),
         ("R7", "2", (58.0, 67.0)),
         ("C20", "2", (54.0, 70.0)),
@@ -444,7 +450,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("J1", "8", (42.75, 97.0)),
         ("J1", "17", (47.25, 97.0)),
         ("TP5", "1", (58.6, 97.0)),
-        ("U4", "2", (34.85, 88.3)),
         ("U1", "15", (16.4, 84.2)),
         ("U1", "33", (16.4, 93.8)),
         ("U1", "55", (5.2, 95.0)),
@@ -455,6 +460,27 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             via_xy,
             net_name=layout_route.GND,
         )
+
+    # C27 and the LDO share a stitch, with a horizontal escape that stays
+    # clear of U4's adjacent SYS pad.
+    ldo_ground_junction = board_point(34.5, 87.0)
+    ldo_ground_via = board_point(34.5, 88.3)
+    add_locked_track(
+        pad_center("C27", "2"),
+        ldo_ground_junction,
+        layout_route.GND,
+    )
+    add_locked_track(
+        pad_center("U4", "2"),
+        ldo_ground_junction,
+        layout_route.GND,
+    )
+    add_locked_track(
+        ldo_ground_junction,
+        ldo_ground_via,
+        layout_route.GND,
+    )
+    add_locked_via(ldo_ground_via, layout_route.GND)
 
     # The module's first two ground lands share one nearby stitch.
     module_ground_via = board_point(5.1, 83.3)
@@ -619,8 +645,10 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             (49.0, 60.75),
             (49.0, 82.9),
             (48.5, 83.4),
-            (17.0, 83.4),
-            (13.5, 86.9),
+            (20.5, 83.4),
+            (20.5, 88.7),
+            (20.0, 89.2),
+            (14.9, 89.2),
         ),
         ("U1", "21"),
         (13.5, 87.8),
@@ -635,6 +663,13 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     )
 
     settings = board.GetDesignSettings()
+    default_netclass = settings.m_NetSettings.m_DefaultNetClass
+    default_netclass.SetClearance(layout_route.mm(layout_route.CLEAR))
+    default_netclass.SetTrackWidth(layout_route.TRACK_W)
+    default_netclass.SetViaDiameter(layout_route.VIA_D)
+    default_netclass.SetViaDrill(layout_route.VIA_DRILL)
+    settings.m_MinClearance = layout_route.mm(layout_route.CLEAR)
+    settings.m_TrackMinWidth = layout_route.mm(layout_route.CLEAR)
     settings.SetCustomTrackWidth(layout_route.TRACK_W)
     settings.SetCustomViaSize(layout_route.VIA_D)
     settings.SetCustomViaDrill(layout_route.VIA_DRILL)
