@@ -23,6 +23,9 @@ bump when the tests still pass, so old experiments don't rot.
   shifting wind, destructible terrain, local multiplayer, and an imperfect AI.
 - **[`git/`](git/)** — an in-browser, read-only git client: clone a repository
   into local storage and browse its files, branches, and commit history.
+- **[`packfile-explorer/`](packfile-explorer/)** — fetch a repository's packfile
+  through the CORS proxy, index the objects and deltas locally, and click
+  through commits, trees, blobs, and delta chains.
 - **[`cold-climb/`](cold-climb/)** — a touch-first, two-handle arcade game:
   balance a ball up the wall while avoiding unlit pockets.
 - **[`droneski/`](droneski/)** — pilot an FPV camera drone filming a skier on a
