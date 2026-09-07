@@ -433,6 +433,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("C21", "1", (18.0, 88.5), 0.3),
         ("U4", "1", (36.0, 89.0), 0.3),
         ("C18", "1", (51.55, 65.5), 0.5),
+        ("R5", "1", (48.2, 68.2), 0.2),
         ("R9", "1", (17.7, 84.0), 0.2),
         ("U5", "1", (21.2, 92.2), 0.3),
         ("U5", "3", (21.2, 89.8), 0.2),
@@ -694,6 +695,35 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         pad_center("U3", "10"),
         "/QI_OUT",
         width=layout_route.mm(0.15),
+    )
+
+    qi_present_receiver_via = board_point(4.6, 64.75)
+    qi_present_module_via = board_point(10.8, 83.2)
+    add_locked_track(
+        pad_center("U2", "7"),
+        qi_present_receiver_via,
+        "/QI_PRESENT",
+        width=layout_route.mm(0.12),
+    )
+    add_locked_via(qi_present_receiver_via, "/QI_PRESENT")
+    add_locked_track(
+        pad_center("U1", "11"),
+        qi_present_module_via,
+        "/QI_PRESENT",
+        width=layout_route.mm(0.12),
+    )
+    add_locked_via(qi_present_module_via, "/QI_PRESENT")
+    add_locked_path(
+        (
+            (4.6, 64.75),
+            (4.6, 65.6),
+            (5.2, 66.2),
+            (5.2, 77.6),
+            (10.8, 83.2),
+        ),
+        "/QI_PRESENT",
+        pcbnew.F_Cu,
+        width=layout_route.mm(0.12),
     )
 
     add_locked_path(
