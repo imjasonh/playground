@@ -379,6 +379,12 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             pcbnew.VECTOR2I(layout_route.mm(x), layout_route.mm(y)),
             layout_route.GND,
         )
+    add_locked_track(
+        pad_center("U5", "11"),
+        pcbnew.VECTOR2I(layout_route.mm(9.706346), layout_route.mm(61.0306)),
+        layout_route.GND,
+        width=layout_route.mm(0.15),
+    )
 
     keepalive: list[pcbnew.SHAPE_POLY_SET] = []
 
