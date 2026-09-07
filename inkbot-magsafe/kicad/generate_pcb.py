@@ -32,7 +32,7 @@ COIL_SHIELD_DIA = 22.0
 PANEL_W, PANEL_H = 56.24, 96.62
 PANEL_TOP = 1.2
 
-# The LP252030 pack is 31 x 20 mm after its protection circuit. The cutout
+# The LP242030 pack is at most 31 x 20.5 mm after its protection circuit. The cutout
 # includes tolerance for the pouch, adhesive carrier, and a 1 mm router radius.
 BAT_W, BAT_H = 34.0, 23.0
 BAT_CY = 70.0
@@ -142,8 +142,8 @@ def main(output: Path = OUT) -> None:
             "Dwgs.User",
             0.65,
         ),
-        text("LP252030 protected-cell cutout", cx, bat_y - 1.5, "Dwgs.User", 0.7),
-        text("GDEM0397T81P panel outline", cx, BOARD_H - 2, "Cmts.User", 0.7),
+        text("LP242030 protected-cell cutout", cx, bat_y - 1.5, "Dwgs.User", 0.7),
+        text("GDEY0397T81P panel outline", cx, BOARD_H - 2, "Cmts.User", 0.7),
         text(
             "EVT geometry; production magnet data requires MFi approval",
             2,
@@ -163,9 +163,9 @@ def main(output: Path = OUT) -> None:
   (title_block
     (title "inkbot-magsafe")
     (date "2026-09-07")
-    (rev "0.7.0")
+    (rev "0.8.0")
     (comment 1 "0.8 mm four-layer EVT board; protected-cell cutout; structural spacer and protective films")
-    (comment 2 "BQ51013C + BQ25185; Raytac MDBT50Q-512K; GDEM0397T81P")
+    (comment 2 "BQ51013C + BQ25186; Raytac MDBT50Q-512K; GDEY0397T81P")
   )
 
   (layers

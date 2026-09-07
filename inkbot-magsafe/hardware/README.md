@@ -78,8 +78,9 @@ Circuit rationale: [`../../docs/inkbot-magsafe-design.md`](../../docs/inkbot-mag
   the 48 KB framebuffer; antenna, 32 MHz crystal, DC/DC, and RF match on-module).
 - Panel: **3.97-inch 480x800 portrait** mono, 24-pin 0.5 mm FPC, SSD1677;
   fills the front and overlaps the MagSafe ring.
-- Power: **BQ51013C** Qi 1.3 receiver, **BQ25185** 40 mA charger with a
-  protected-cell power path, and a **TPS7A2030P** 3.0 V panel LDO.
+- Power: **BQ51013C** Qi 1.3 receiver, **BQ25186** charger with a
+  default-off protected-cell power path, **TPS7A0230P** MCU LDO, and
+  **TPS7A2030P** panel LDO.
 - No user connector: SWD test pads for factory and erase recovery; wireless
   charging and signed BLE DFU are required before release.
 - 4-layer PCB, **60 x 99 mm portrait**, **0.8 mm prototype** (0.4 mm volume

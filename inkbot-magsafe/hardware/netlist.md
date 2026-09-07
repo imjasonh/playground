@@ -6,15 +6,14 @@ schematic in [`../kicad/`](../kicad/) and
 
 ## Power nets
 
-- **QI_OUT**: Regulated 5 V from the BQ51013C receiver to the BQ25185
+- **QI_OUT**: Regulated 5 V from the BQ51013C receiver to the BQ25186
   charger input.
-- **BAT**: Protected cell positive terminal and BQ25185 battery pin.
-- **SYS**: BQ25185 power-path output to the nRF52833 `VDDH` pin and panel
-  LDO input. C38 provides 47 uF of local storage while total nominal SYS
-  capacitance remains below the charger's 100 uF limit.
-- **VDD_NRF**: nRF52833 REG0 output and decoupling only. The SWD fixture can
-  use this net as a high-impedance target-voltage reference. It must not power
-  external circuitry.
+- **BAT**: Protected cell positive terminal and BQ25186 battery pin.
+- **SYS**: BQ25186 power-path output to the MCU and panel LDO inputs. C38
+  provides 47 uF of local storage while total nominal SYS capacitance remains
+  below the charger's 100 uF limit.
+- **MCU_3V0**: TPS7A0230P output to both nRF52833 VDD and VDDH pins, the
+  charger I2C pull-ups, and the SWD voltage-reference pad.
 - **PANEL_3V0**: TPS7A2030P output to panel `VDDIO` and `VCI`.
 - **QI_RECT**: BQ51013C rectifier reservoir. It does not power system loads.
 - **GND**: Common return, including both exposed IC pads and all five Raytac
@@ -22,18 +21,17 @@ schematic in [`../kicad/`](../kicad/) and
 
 ## Charger and sensing
 
-- U3 is a BQ25185 with a separate power path.
-- R6 = 24 kOhm selects 4.2 V battery regulation and the 100 mA input limit.
-- R7 = 7.5 kOhm selects 40 mA fast charge. R8 and C20 provide the optional
-  low-current ISET compensation network.
+- U3 is a BQ25186 with a separate power path and programmable JEITA limits.
+- Firmware configures 4.2 V regulation, a 100 mA input limit, 40 mA fast
+  charge, and a 0-45 degrees Celsius charge window before it enables charging.
+- R5 pulls `/CE` up to QI_OUT, so charging defaults off. Q2 pulls `/CE` low
+  only after `CHG_ENABLE` goes high; R6 holds the MOSFET off during reset.
+- R7 and R8 pull the I2C lines to `MCU_3V0`. `CHG_INT_N` and `CHG_PG_N` use
+  MCU internal pull-ups.
 - The protected pack's 10 kOhm, 3435 K NTC connects from `BAT_NTC` to ground.
   `BAT_NTC` connects only to U3 `TS/MR`.
-- `CHG_STAT1` and `CHG_STAT2` connect U3's open-drain status outputs to
-  P0.04 and P0.05. Firmware enables the nRF GPIO pull-ups.
-- `CHG_EN_N` connects U3 `/CE` to P0.06 and has a 100 kOhm default-enable
-  pull-down.
-- Firmware measures `SYS` with the nRF52833 SAADC `VDDHDIV5` input. In
-  battery-only mode, `SYS` tracks the cell through the BQ25185 battery FET.
+- R9, R10, and C20 form the `SYS_SENSE` divider and filter for P0.29/AIN5.
+  In battery-only mode, `SYS` tracks the cell through the BQ25186 battery FET.
 
 ## Wireless power
 
@@ -49,10 +47,13 @@ schematic in [`../kicad/`](../kicad/) and
   pins 3 and 4 and connect to U2 `TS/CTRL`.
 - `QI_PRESENT` connects U2's open-drain `CHG` output to P0.02. Firmware
   enables the nRF GPIO pull-up.
+- `QI_EN1` and `QI_EN2` connect U2 EN1/EN2 to P0.03 and P1.08. Firmware drives
+  both high after charge completion so the receiver sends EPT 0x01 and lets the
+  transmitter sleep.
 
 ## Panel (SPI + control)
 
-Panel: GDEM0397T81P, 3.97-inch 480 x 800 portrait monochrome e-paper,
+Panel: GDEY0397T81P, 3.97-inch 480 x 800 portrait monochrome e-paper,
 SSD1677 COG, and a 24-pin 0.5 mm FPC.
 
 - PANEL_SCLK (P0.11) → J1 / panel SCK
@@ -75,10 +76,8 @@ SSD1677 COG, and a 24-pin 0.5 mm FPC.
 
 - U1 is the Raytac MDBT50Q-512K module: 2.4 GHz antenna, 32 MHz HFXO, DC/DC, and
   RF match are inside it. The board has no discrete RF network.
-- SYS powers module pin 30 (`VDDH`). Module pin 28 (`VDD`) is the regulated
-  SoC rail and is not tied to the cell.
-- Factory provisioning writes UICR `REGOUT0=3.0 V`. Firmware checks this
-  setting before it configures GPIO.
+- U5 regulates SYS to `MCU_3V0`. The rail powers module pins 28 (`VDD`) and 30
+  (`VDDH`) together, which selects the nRF52833 normal-voltage circuit.
 - LFXO Y1 connects to XL1/XL2 (P0.00/P0.01). It is the only external crystal.
 - NFC1/NFC2 and USB remain unconnected.
 - TP1-TP5 expose SWDIO, SWDCLK, reset, VDD reference, and ground.
@@ -86,7 +85,7 @@ SSD1677 COG, and a 24-pin 0.5 mm FPC.
 
 ## Decoupling
 
-- U1 uses separate VDDH and VDD capacitors, C21 and C22.
+- U5 uses C21 at its input; C22 provides the module's 10 uF rail decoupling.
 - U2 uses two 10 uF RECT capacitors plus high-frequency bypass and 10 uF OUT
   capacitance.
 - U3 uses 1 uF IN, 10 uF SYS, and 1 uF BAT capacitors.

@@ -13,13 +13,15 @@ pub const HEIGHT: u16 = 800;
 /// Length in bytes of a full 1-bit-per-pixel framebuffer (48000 bytes).
 pub const FRAME_BYTES: usize = (WIDTH as usize * HEIGHT as usize) / 8;
 
-/// The GDEM0397T81P asserts BUSY high while an operation is in progress.
+/// Expected BUSY polarity from the selected panel specification.
+///
+/// Verify this on the released panel revision before enabling refresh.
 pub const BUSY_ACTIVE_HIGH: bool = true;
 
-/// Stop waiting and power-cycle the panel after this interval.
+/// Provisional EVT timeout for one panel operation.
 pub const BUSY_TIMEOUT_MS: u32 = 10_000;
 
-/// Force a cleaning full refresh before this many consecutive partial updates.
+/// Provisional EVT limit before a cleaning full refresh.
 pub const MAX_CONSECUTIVE_PARTIALS: u8 = 10;
 
 /// SSD1677 command opcodes the driver issues over SPI.

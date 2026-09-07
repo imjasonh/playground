@@ -7,15 +7,17 @@
 - The 0.8 mm prototype uses the JLC7628 four-layer stack: 35 um outer copper,
   15.2 um inner copper, 0.2104 mm 7628 prepreg, and a 0.2 mm core. Confirm the
   production order's stack table against the KiCad file before release.
-- The outline is **60 x 99 mm, portrait**. The GDEM0397T81P glass is
+- The outline is **60 x 99 mm, portrait**. The GDEY0397T81P glass is
   56.24 x 96.62 mm.
 - The battery cutout is **34 x 23 mm** with 1 mm corner radii. It accepts a
-  protected LP252030 pack no larger than 31 x 20 mm in plan view and leaves
+  protected LP242030 pack no larger than 31 x 20.5 mm in plan view and leaves
   room for an adhesive carrier.
 - Copper stays at least 0.5 mm from routed edges. Standard vias are 0.6 mm
   with a 0.3 mm drill, which provides a 0.15 mm nominal annular ring.
-- The Raytac module's antenna end is flush with the left board edge. A
-  4.8 x 12 mm keep-out removes copper, tracks, and vias from every layer.
+- The Raytac module's antenna end is flush with the left board edge. The
+  footprint and board rule remove copper, tracks, and vias from every layer
+  under the antenna without covering the module's ground lands. Raytac must
+  approve the final host layout.
 - Every ground pad reaches In2.Cu through an explicit via. This avoids
   disconnected surface-pour islands and gives the signal layers an unbroken
   inner return reference.
@@ -35,6 +37,9 @@ coil joints, or panel high-voltage circuit exposed. The assembly needs:
   panel circuit.
 - Strain relief for the panel FPC, battery harness, and both coil leads.
 - A removable fixture cover or labeled access area for the SWD pads.
+- For an EU launch, reusable rear access that lets a service technician replace
+  the keyed battery pack with commercially available tools, without heat,
+  solvent, or removing the display.
 
 The enclosure drawing must define adhesive width, material flammability,
 water and sweat exposure, venting, drop protection, torsion, and cell swelling
@@ -47,8 +52,9 @@ allowance before a production release.
 - Back, top: Qi RX coil inside the MagSafe magnet ring, ring center **30 mm from
   the top edge** (Apple's keep-in limit toward the phone top).
 - Back, below the coil: MDBT50Q-512K module (antenna end toward a board edge),
-  BQ51013C receiver, BQ25185 charger, panel LDO, and passives around the cutout.
-- Cutout: protected LP252030 100 mAh pack with an NTC and keyed harness.
+  BQ51013C receiver, BQ25186 charger, MCU and panel LDOs, and passives around
+  the cutout.
+- Cutout: protected LP242030 100 mAh, 2C pack with an NTC and keyed harness.
 - Magnetic assembly: N48H accessory ring and a low-carbon-steel DC shield.
   An orientation magnet is optional because the tile's center of mass hangs
   below the ring. If testing shows unacceptable rotation, add the orientation
@@ -56,11 +62,11 @@ allowance before a production release.
 
 ## Camera and bottom clearance
 
-Apple's Accessory Design Guidelines cap a MagSafe accessory at **30 mm from the
-ring center toward the phone's top edge**. Putting the ring that high on the
-tile and hanging the body downward keeps the whole tile below the rear-camera
-plateau. On a 15 Pro that leaves ~104 mm of vertical room; the 99 mm board sits
-inside it with ~4 mm above the phone's bottom edge.
+The 30 mm ring-center offset is an EVT placement hypothesis, not a generic
+MagSafe camera-clearance rule. Before claiming phone compatibility, overlay the
+complete assembly on Apple's dimensional drawing for every supported model and
+include camera keep-outs, phone curvature, case lips, rotation, lateral slip,
+and all manufacturing tolerances. Confirm the result on physical phones.
 
 ## Vertical stack
 
@@ -81,9 +87,9 @@ At the cell (cutout, so the PCB does not sit under the cell):
 | Layer | Thickness |
 |-------|-----------|
 | E-ink panel + adhesive | ~1.02 mm |
-| Protected LP252030 pack | up to 3.2 mm |
+| Protected LP242030 pack | up to 3.5 mm |
 | Rear cover | ~0.25 mm |
-| **Total at cell** | **~4.47 mm** |
+| **Total at cell** | **~4.77 mm** |
 
 At the magnetic ring:
 

@@ -81,16 +81,8 @@ jobs:
             --features bringup-stub
           python3 tools/check_elf_layout.py \
             "$elf" \
-            --flash-start 0x27000 \
-            --flash-end 0x4f000
-
-          cargo build --locked --release \
-            --target thumbv7em-none-eabihf \
-            --features factory-bringup
-          python3 tools/check_elf_layout.py \
-            "$elf" \
-            --flash-start 0x0 \
-            --flash-end 0x27000
+            --flash-start 0x1c000 \
+            --flash-end 0x48000
 
   hardware:
     name: Schematic contracts + PCB DRC

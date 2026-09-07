@@ -52,15 +52,15 @@ design document first.
 
 ## Choices baked into this project
 
-- **3.97-inch 480 x 800 GDEM0397T81P panel** with the full SSD1677 external
+- **3.97-inch 480 x 800 GDEY0397T81P panel** with the full SSD1677 external
   boost circuit.
 - **MagSafe ring 30 mm from the top edge** (Apple's keep-in limit) so the tile
   hangs below the rear-camera plateau. The panel overlaps the ring.
 - **Raytac MDBT50Q-512K** pre-certified nRF52833 module (128 KB RAM for the
   48 KB framebuffer). Its antenna end is flush with the left board edge over
   an all-layer copper keep-out.
-- **BQ51013C** Qi 1.3 receiver and **BQ25185** 40 mA protected-cell charger
-  with a separate SYS power path.
+- **BQ51013C** Qi 1.3 receiver and default-off **BQ25186** protected-cell
+  charger with a separate SYS power path.
 - **TPS7A2030P** 3.0 V panel rail with active discharge.
 - 0.8 mm, four-layer JLC7628 PCB with a 34 x 23 mm rounded battery cutout,
   1 oz outer copper, 0.5 oz inner copper, and 0.6/0.3 mm vias.

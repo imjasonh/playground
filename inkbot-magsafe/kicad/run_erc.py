@@ -33,19 +33,24 @@ PIN_NETS = {
     # Raytac MDBT50Q-512K.
     ("U1", "1"): "GND",
     ("U1", "2"): "GND",
+    ("U1", "9"): "/QI_EN1",
+    ("U1", "10"): "/SYS_SENSE",
     ("U1", "11"): "/QI_PRESENT",
     ("U1", "12"): "/PANEL_PWR_EN",
     ("U1", "14"): "/PANEL_BUSY",
     ("U1", "15"): "GND",
     ("U1", "17"): "/XL1",
     ("U1", "18"): "/XL2",
-    ("U1", "20"): "/CHG_STAT1",
-    ("U1", "21"): "/CHG_STAT2",
-    ("U1", "22"): "/CHG_EN_N",
+    ("U1", "20"): "/CHG_INT_N",
+    ("U1", "21"): "/CHG_PG_N",
+    ("U1", "22"): "/CHG_ENABLE",
+    ("U1", "23"): "/CHG_SDA",
+    ("U1", "24"): "/CHG_SCL",
+    ("U1", "25"): "/QI_EN2",
     ("U1", "26"): "/PANEL_RST",
     ("U1", "27"): "/PANEL_SCLK",
-    ("U1", "28"): "/VDD_NRF",
-    ("U1", "30"): "/SYS",
+    ("U1", "28"): "/MCU_3V0",
+    ("U1", "30"): "/MCU_3V0",
     ("U1", "33"): "GND",
     ("U1", "39"): "/PANEL_MOSI",
     ("U1", "40"): "/NRST",
@@ -63,8 +68,8 @@ PIN_NETS = {
     ("U2", "6"): "/QI_COMM1",
     ("U2", "7"): "/QI_PRESENT",
     ("U2", "9"): "GND",
-    ("U2", "10"): "GND",
-    ("U2", "11"): "GND",
+    ("U2", "10"): "/QI_EN1",
+    ("U2", "11"): "/QI_EN2",
     ("U2", "12"): "/QI_ILIM",
     ("U2", "13"): "/QI_COIL_NTC",
     ("U2", "14"): "/QI_FOD",
@@ -75,16 +80,16 @@ PIN_NETS = {
     ("U2", "19"): "/QI_AC2",
     ("U2", "20"): "GND",
     ("U2", "21"): "GND",
-    # BQ25185.
+    # BQ25186.
     ("U3", "1"): "/SYS",
     ("U3", "2"): "/BAT",
-    ("U3", "3"): "/CHG_STAT2",
-    ("U3", "4"): "/CHG_EN_N",
+    ("U3", "3"): "/CHG_PG_N",
+    ("U3", "4"): "/CHG_CE_N",
     ("U3", "5"): "GND",
     ("U3", "6"): "/BAT_NTC",
-    ("U3", "7"): "/CHG_VSET",
-    ("U3", "8"): "/CHG_ISET",
-    ("U3", "9"): "/CHG_STAT1",
+    ("U3", "7"): "/CHG_SDA",
+    ("U3", "8"): "/CHG_SCL",
+    ("U3", "9"): "/CHG_INT_N",
     ("U3", "10"): "/QI_OUT",
     ("U3", "11"): "GND",
     # TPS7A2030P.
@@ -92,6 +97,11 @@ PIN_NETS = {
     ("U4", "2"): "GND",
     ("U4", "3"): "/PANEL_PWR_EN",
     ("U4", "5"): "/PANEL_3V0",
+    # TPS7A0230P MCU regulator.
+    ("U5", "1"): "/SYS",
+    ("U5", "2"): "GND",
+    ("U5", "3"): "/SYS",
+    ("U5", "5"): "/MCU_3V0",
     # Panel connector.
     ("J1", "2"): "/PANEL_GDR",
     ("J1", "3"): "/PANEL_RESE",
@@ -134,6 +144,9 @@ PIN_NETS = {
     ("Q1", "1"): "/PANEL_GDR",
     ("Q1", "2"): "/PANEL_RESE",
     ("Q1", "3"): "/PANEL_SW",
+    ("Q2", "1"): "/CHG_ENABLE",
+    ("Q2", "2"): "GND",
+    ("Q2", "3"): "/CHG_CE_N",
     ("D1", "1"): "/PANEL_PUMP",
     ("D1", "2"): "/PANEL_VGL",
     ("D2", "1"): "GND",
@@ -147,10 +160,11 @@ PIN_NETS = {
 VALUE_CONTRACT = {
     "U1": ("MDBT50Q-512K", "RF_Module:Raytac_MDBT50Q"),
     "U2": ("BQ51013C", "Package_DFN_QFN:Texas_VQFN-RHL-20"),
-    "U3": ("BQ25185DLHR", "inkbot_magsafe:BQ25185_DLH0010A"),
+    "U3": ("BQ25186DLHR", "inkbot_magsafe:TI_DLH0010A_WSON-10"),
     "U4": ("TPS7A2030PDBVR", "Package_TO_SOT_SMD:SOT-23-5"),
+    "U5": ("TPS7A0230PDBVR", "Package_TO_SOT_SMD:SOT-23-5"),
     "J1": (
-        "GDEM0397T81P panel FPC",
+        "GDEY0397T81P panel FPC",
         "Connector_FFC-FPC:Hirose_FH12-24S-0.5SH_1x24-1MP_P0.50mm_Horizontal",
     ),
     "J2": (
@@ -159,11 +173,16 @@ VALUE_CONTRACT = {
     ),
     "L1": ("VLS252010CX-100M-1 10uH", "inkbot_magsafe:TDK_VLS252010CX"),
     "Q1": ("Si1308EDL-T1-GE3", "Package_TO_SOT_SMD:SOT-323_SC-70"),
+    "Q2": ("2N7002BK,215", "Package_TO_SOT_SMD:SOT-23"),
     "R1": ("845R 1%", "Resistor_SMD:R_0603_1608Metric"),
     "R2": ("200R 1%", "Resistor_SMD:R_0603_1608Metric"),
     "R3": ("20k 1%", "Resistor_SMD:R_0603_1608Metric"),
-    "R6": ("24k 1%", "Resistor_SMD:R_0603_1608Metric"),
-    "R7": ("7.5k 1%", "Resistor_SMD:R_0603_1608Metric"),
+    "R5": ("100k", "Resistor_SMD:R_0603_1608Metric"),
+    "R6": ("1M", "Resistor_SMD:R_0603_1608Metric"),
+    "R7": ("10k", "Resistor_SMD:R_0603_1608Metric"),
+    "R8": ("10k", "Resistor_SMD:R_0603_1608Metric"),
+    "R9": ("1M 1%", "Resistor_SMD:R_0603_1608Metric"),
+    "R10": ("330k 1%", "Resistor_SMD:R_0603_1608Metric"),
     "C1": ("33nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
     "C2": ("33nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
     "C3": ("15nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
@@ -217,6 +236,7 @@ def no_connect_allowed(reference: str, pin: str) -> bool:
         ("J1", "19"),
         ("U2", "8"),
         ("U4", "4"),
+        ("U5", "4"),
     }
 
 
@@ -355,7 +375,8 @@ def main() -> int:
 
     qi_nominal_ma = 262_000 / (845 + 200)
     qi_hardware_ma = 314_000 / (845 + 200)
-    charge_ma = 300_000 / 7_500
+    charge_ma = 40
+    charger_input_ma = 100
 
     warnings.append(
         f"intentional no-connects: {len(nc_nodes)} "
@@ -370,7 +391,7 @@ def main() -> int:
     print(
         "  programmed currents: "
         f"Qi {qi_nominal_ma:.0f} mA nominal/{qi_hardware_ma:.0f} mA hardware, "
-        f"charge {charge_ma:.0f} mA"
+        f"charger input {charger_input_ma} mA/charge {charge_ma} mA"
     )
     print(
         "  modeled unit cost: "

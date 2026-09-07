@@ -26,8 +26,8 @@ tested; nRF52833 bring-up and BLE are stubbed.
 - **`[lints.rust] unused = "deny"`.** Unused code fails the build. Do not
   `#[allow(dead_code)]` to keep dead methods; delete them.
 - **Toolchain is pinned.** `rust-toolchain.toml` sets stable plus the
-  `thumbv7em-none-eabihf` target. The nRF52833 uses S140 for BLE. Keep the
-  application flash and RAM origins synchronized with the exact S140 build and
+  `thumbv7em-none-eabihf` target. The nRF52833 uses S113 for BLE. Keep the
+  application flash and RAM origins synchronized with the exact S113 build and
   enabled BLE features.
 
 ## CI
@@ -46,6 +46,4 @@ cargo test                                          # host logic tests
 cargo clippy --all-targets -- -D warnings           # host lints
 cargo build --release --target thumbv7em-none-eabihf \
   --features bringup-stub                            # inert CI image only
-cargo run --release --target thumbv7em-none-eabihf \
-  --features factory-bringup                         # blank-device UICR image
 ```

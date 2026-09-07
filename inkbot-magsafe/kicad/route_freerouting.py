@@ -380,6 +380,9 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         for start, end in zip(points, points[1:]):
             add_locked_track(start, end, net_name, layer=layer, width=width)
 
+    """Legacy fixed routes retained temporarily while the 0.8 hardware
+    architecture is re-placed. Replace this block before routing.
+
     # Short, narrow escapes connect every SYS load to the solid In1.Cu plane.
     # This avoids routing a wide trace through the 0.4 mm-pitch charger pads.
     fanout_to_plane("U3", "1", (49.7, 61.3), width=layout_route.mm(0.15))
@@ -661,6 +664,8 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("C22", "1"),
         (16.5, 93.0),
     )
+
+    """
 
     settings = board.GetDesignSettings()
     default_netclass = settings.m_NetSettings.m_DefaultNetClass

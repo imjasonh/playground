@@ -1,80 +1,125 @@
-//! Battery state-of-charge estimate and the gates that keep a refresh or a
-//! charge from happening at an unsafe voltage or temperature.
+//! Host-testable battery, charger, and refresh policy.
 //!
-//! The numbers are coarse on purpose. A LiPo discharge curve is not linear, but
-//! a status glyph does not need fuel-gauge accuracy, and integer math keeps the
-//! bare-metal build free of a soft-float dependency.
+//! Hardware code supplies debounced BQ25186 status, a calibrated SYS sample,
+//! and a qualified panel-temperature reading. These predicates do not replace
+//! the charger's autonomous JEITA protection.
 
 /// Resting cell voltage treated as empty, in millivolts.
 pub const EMPTY_MV: u16 = 3300;
-
 /// Resting cell voltage treated as full, in millivolts.
 pub const FULL_MV: u16 = 4200;
 
-/// Lowest voltage at which a panel refresh is allowed, in millivolts. Below
-/// this a refresh risks a half-drawn frame if the cell sags under the spike.
-pub const REFRESH_FLOOR_MV: u16 = 3400;
-
-/// SAADC resolution required by [`vddh_mv_from_saadc`].
-pub const SAADC_RESOLUTION_BITS: u8 = 12;
-/// SAADC internal reference voltage, in millivolts.
-pub const SAADC_REFERENCE_MV: u16 = 600;
-/// Reciprocal SAADC gain required by [`vddh_mv_from_saadc`].
-pub const SAADC_GAIN_RECIPROCAL: u8 = 6;
-/// Hardware divider applied by the nRF52833 VDDHDIV5 input.
-pub const VDDH_DIVIDER: u8 = 5;
-
-/// Convert a 12-bit SAADC sample from VDDHDIV5 to millivolts.
-///
-/// This assumes the 0.6 V internal reference, gain 1/6, and no oversampling.
-/// Production firmware must apply measured offset calibration before calling
-/// this function.
-pub fn vddh_mv_from_saadc(raw: i16) -> Option<u16> {
-    let raw = u32::try_from(raw).ok()?;
-    let full_scale_mv =
-        u32::from(SAADC_REFERENCE_MV) * u32::from(SAADC_GAIN_RECIPROCAL) * u32::from(VDDH_DIVIDER);
-    let adc_steps = 1_u32 << SAADC_RESOLUTION_BITS;
-    let millivolts = (raw * full_scale_mv + adc_steps / 2) / adc_steps;
-    u16::try_from(millivolts).ok()
+/// Configuration that firmware must write before it enables BQ25186 `/CE`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ChargerConfig {
+    pub charge_ma: u16,
+    pub input_limit_ma: u16,
+    pub regulation_mv: u16,
+    pub cold_c: i8,
+    pub hot_c: i8,
 }
 
-/// BQ25185 state decoded from its two open-drain status pins.
+pub const REQUIRED_CHARGER_CONFIG: ChargerConfig = ChargerConfig {
+    charge_ma: 40,
+    input_limit_ma: 100,
+    regulation_mv: 4200,
+    cold_c: 0,
+    hot_c: 45,
+};
+
+/// BQ25186 state after reading and decoding its status and fault registers.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ChargerStatus {
-    CompleteOrIdle,
+    InputAbsent,
     Charging,
-    RecoverableFault,
-    LatchedFault,
+    ChargeComplete,
+    ThermalRegulation,
+    Fault,
 }
 
 impl ChargerStatus {
-    /// Decode the pulled-up logic levels on STAT1 and STAT2.
-    pub const fn from_pins(stat1_high: bool, stat2_high: bool) -> Self {
-        match (stat1_high, stat2_high) {
-            (true, true) => Self::CompleteOrIdle,
-            (true, false) => Self::Charging,
-            (false, true) => Self::RecoverableFault,
-            (false, false) => Self::LatchedFault,
-        }
-    }
-
-    /// Return whether firmware can leave charging enabled.
-    pub const fn permits_charging(self) -> bool {
-        matches!(self, Self::CompleteOrIdle | Self::Charging)
-    }
-
-    /// Return whether the charger reports a fault.
-    pub const fn is_fault(self) -> bool {
-        matches!(self, Self::RecoverableFault | Self::LatchedFault)
+    pub const fn blocks_refresh(self) -> bool {
+        matches!(self, Self::Charging | Self::ThermalRegulation | Self::Fault)
     }
 }
 
-/// Estimated state of charge as a percentage in `0..=100`, from a resting
-/// cell voltage.
+/// Provisional limits that EVT measurements must replace or confirm.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct SafetyLimits {
+    pub refresh_start_mv: u16,
+    pub min_panel_temp_c: i8,
+    pub max_panel_temp_c: i8,
+}
+
+pub const EVT_SAFETY_LIMITS: SafetyLimits = SafetyLimits {
+    refresh_start_mv: 3400,
+    min_panel_temp_c: 0,
+    max_panel_temp_c: 50,
+};
+
+/// Inputs required before firmware starts a panel refresh.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct PowerSample {
+    pub sys_mv: u16,
+    pub qi_present: bool,
+    pub charger: ChargerStatus,
+    pub panel_temp_c: Option<i8>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RefreshInhibit {
+    LowVoltage,
+    Charging,
+    ChargerFault,
+    TemperatureUnavailable,
+    TemperatureOutOfRange,
+}
+
+/// Apply the conservative pre-EVT refresh policy.
+pub fn refresh_decision(sample: PowerSample, limits: SafetyLimits) -> Result<(), RefreshInhibit> {
+    if sample.sys_mv < limits.refresh_start_mv {
+        return Err(RefreshInhibit::LowVoltage);
+    }
+    match sample.charger {
+        ChargerStatus::Fault => return Err(RefreshInhibit::ChargerFault),
+        ChargerStatus::Charging | ChargerStatus::ThermalRegulation => {
+            return Err(RefreshInhibit::Charging);
+        }
+        ChargerStatus::InputAbsent | ChargerStatus::ChargeComplete => {}
+    }
+    let Some(temp_c) = sample.panel_temp_c else {
+        return Err(RefreshInhibit::TemperatureUnavailable);
+    };
+    if !(limits.min_panel_temp_c..=limits.max_panel_temp_c).contains(&temp_c) {
+        return Err(RefreshInhibit::TemperatureOutOfRange);
+    }
+    Ok(())
+}
+
+/// SAADC resolution used for the external SYS divider.
+pub const SAADC_RESOLUTION_BITS: u8 = 12;
+/// SAADC internal reference voltage, in millivolts.
+pub const SAADC_REFERENCE_MV: u16 = 600;
+/// Reciprocal gain used for the external SYS divider.
+pub const SAADC_GAIN_RECIPROCAL: u8 = 4;
+/// Upper resistance of the SYS divider, in kilohms.
+pub const SYS_DIVIDER_TOP_KOHM: u16 = 1000;
+/// Lower resistance of the SYS divider, in kilohms.
+pub const SYS_DIVIDER_BOTTOM_KOHM: u16 = 330;
+
+/// Convert a calibrated 12-bit SAADC sample into SYS millivolts.
+pub fn sys_mv_from_saadc(raw: i16) -> Option<u16> {
+    let raw = u64::try_from(raw).ok()?;
+    let adc_steps = 1_u64 << SAADC_RESOLUTION_BITS;
+    let adc_full_scale_mv = u64::from(SAADC_REFERENCE_MV) * u64::from(SAADC_GAIN_RECIPROCAL);
+    let divider_total = u64::from(SYS_DIVIDER_TOP_KOHM) + u64::from(SYS_DIVIDER_BOTTOM_KOHM);
+    let numerator = raw * adc_full_scale_mv * divider_total;
+    let denominator = adc_steps * u64::from(SYS_DIVIDER_BOTTOM_KOHM);
+    u16::try_from((numerator + denominator / 2) / denominator).ok()
+}
+
+/// Estimate state of charge from a resting cell voltage.
 pub fn soc_percent(mv: u16) -> u8 {
-    // Resting-voltage anchors for a light-load LiPo. Linear interpolation
-    // within each segment is still approximate, but it avoids claiming 50%
-    // at 3.75 V where a typical cell is closer to one-third charged.
     const CURVE: &[(u16, u8)] = &[
         (EMPTY_MV, 0),
         (3500, 5),
@@ -104,32 +149,39 @@ pub fn soc_percent(mv: u16) -> u8 {
     100
 }
 
-/// Estimate cell state of charge from SYS only while wireless input is absent.
-///
-/// When Qi input is present, the BQ25185 power path can raise SYS above BAT.
-/// That sample is useful for brownout policy but does not represent resting
-/// cell voltage.
-pub fn resting_soc_percent(sys_mv: u16, qi_present: bool) -> Option<u8> {
-    if qi_present {
+/// Return an SOC estimate only for a resting, battery-only sample.
+pub fn resting_soc_percent(sys_mv: u16, qi_present: bool, charger: ChargerStatus) -> Option<u8> {
+    if qi_present || charger != ChargerStatus::InputAbsent {
         None
     } else {
         Some(soc_percent(sys_mv))
     }
 }
 
-/// Whether a panel refresh should proceed at this voltage and panel
-/// temperature. A charger fault also blocks the panel's high-current load.
-pub fn refresh_allowed(mv: u16, temp_c: i8, charger: ChargerStatus) -> bool {
-    mv >= REFRESH_FLOOR_MV && (0..=50).contains(&temp_c) && !charger.is_fault()
+/// BLE connection parameters to request. The central can choose other values.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ConnectionParameters {
+    pub min_interval_1_25ms: u16,
+    pub max_interval_1_25ms: u16,
+    pub latency: u16,
+    pub supervision_timeout_10ms: u16,
 }
 
-/// The BLE connection interval to request, in units of 1.25 ms. Tight while a
-/// transfer is in flight for throughput, relaxed while idle to save power.
-pub fn conn_interval_1_25ms(transfer_active: bool) -> u16 {
+pub const fn connection_parameters(transfer_active: bool) -> ConnectionParameters {
     if transfer_active {
-        12 // 15 ms
+        ConnectionParameters {
+            min_interval_1_25ms: 12,
+            max_interval_1_25ms: 24,
+            latency: 0,
+            supervision_timeout_10ms: 400,
+        }
     } else {
-        800 // 1 s
+        ConnectionParameters {
+            min_interval_1_25ms: 640,
+            max_interval_1_25ms: 800,
+            latency: 4,
+            supervision_timeout_10ms: 600,
+        }
     }
 }
 
@@ -137,71 +189,99 @@ pub fn conn_interval_1_25ms(transfer_active: bool) -> u16 {
 mod tests {
     use super::*;
 
+    fn safe_sample() -> PowerSample {
+        PowerSample {
+            sys_mv: 3800,
+            qi_present: false,
+            charger: ChargerStatus::InputAbsent,
+            panel_temp_c: Some(22),
+        }
+    }
+
     #[test]
-    fn soc_clamps_at_the_ends() {
+    fn charger_configuration_matches_pack_limits() {
+        assert_eq!(REQUIRED_CHARGER_CONFIG.charge_ma, 40);
+        assert_eq!(REQUIRED_CHARGER_CONFIG.input_limit_ma, 100);
+        assert_eq!(REQUIRED_CHARGER_CONFIG.regulation_mv, 4200);
+        assert_eq!(
+            (
+                REQUIRED_CHARGER_CONFIG.cold_c,
+                REQUIRED_CHARGER_CONFIG.hot_c
+            ),
+            (0, 45)
+        );
+    }
+
+    #[test]
+    fn sys_conversion_matches_divider_configuration() {
+        assert_eq!(sys_mv_from_saadc(-1), None);
+        assert_eq!(sys_mv_from_saadc(0), Some(0));
+        assert_eq!(sys_mv_from_saadc(1779), Some(4200));
+    }
+
+    #[test]
+    fn soc_clamps_and_interpolates() {
         assert_eq!(soc_percent(3000), 0);
-        assert_eq!(soc_percent(EMPTY_MV), 0);
-        assert_eq!(soc_percent(FULL_MV), 100);
+        assert_eq!(soc_percent(3800), 50);
         assert_eq!(soc_percent(5000), 100);
     }
 
     #[test]
-    fn vddh_conversion_matches_saadc_configuration() {
-        assert_eq!(SAADC_RESOLUTION_BITS, 12);
-        assert_eq!(SAADC_REFERENCE_MV, 600);
-        assert_eq!(SAADC_GAIN_RECIPROCAL, 6);
-        assert_eq!(VDDH_DIVIDER, 5);
-        assert_eq!(vddh_mv_from_saadc(-1), None);
-        assert_eq!(vddh_mv_from_saadc(0), Some(0));
-        assert_eq!(vddh_mv_from_saadc(956), Some(4201));
-    }
-
-    #[test]
-    fn soc_is_monotonic_in_the_middle() {
-        assert_eq!(soc_percent(3800), 50);
-        assert!(soc_percent(3600) < soc_percent(3900));
-    }
-
-    #[test]
-    fn refresh_is_gated_by_voltage_and_temperature() {
-        let idle = ChargerStatus::CompleteOrIdle;
-        assert!(refresh_allowed(3800, 22, idle));
-        assert!(!refresh_allowed(3350, 22, idle)); // too empty
-        assert!(!refresh_allowed(3800, -5, idle)); // too cold
-        assert!(!refresh_allowed(3800, 60, idle)); // too hot
-        assert!(!refresh_allowed(4200, 22, ChargerStatus::RecoverableFault));
-        assert!(!refresh_allowed(4200, 22, ChargerStatus::LatchedFault));
-    }
-
-    #[test]
-    fn sys_is_not_reported_as_resting_cell_voltage_while_qi_is_present() {
-        assert_eq!(resting_soc_percent(3800, false), Some(50));
-        assert_eq!(resting_soc_percent(4500, true), None);
-    }
-
-    #[test]
-    fn connection_interval_tightens_during_transfer() {
-        assert!(conn_interval_1_25ms(true) < conn_interval_1_25ms(false));
-    }
-
-    #[test]
-    fn charger_status_table_matches_bq25185() {
+    fn soc_requires_a_resting_battery_only_sample() {
         assert_eq!(
-            ChargerStatus::from_pins(true, true),
-            ChargerStatus::CompleteOrIdle
+            resting_soc_percent(3800, false, ChargerStatus::InputAbsent),
+            Some(50)
         );
         assert_eq!(
-            ChargerStatus::from_pins(true, false),
-            ChargerStatus::Charging
+            resting_soc_percent(4200, true, ChargerStatus::ChargeComplete),
+            None
         );
         assert_eq!(
-            ChargerStatus::from_pins(false, true),
-            ChargerStatus::RecoverableFault
+            resting_soc_percent(3900, false, ChargerStatus::Charging),
+            None
         );
+    }
+
+    #[test]
+    fn refresh_requires_voltage_temperature_and_idle_charger() {
+        assert_eq!(refresh_decision(safe_sample(), EVT_SAFETY_LIMITS), Ok(()));
+
+        let mut sample = safe_sample();
+        sample.sys_mv = 3300;
         assert_eq!(
-            ChargerStatus::from_pins(false, false),
-            ChargerStatus::LatchedFault
+            refresh_decision(sample, EVT_SAFETY_LIMITS),
+            Err(RefreshInhibit::LowVoltage)
         );
-        assert!(!ChargerStatus::LatchedFault.permits_charging());
+
+        sample = safe_sample();
+        sample.panel_temp_c = None;
+        assert_eq!(
+            refresh_decision(sample, EVT_SAFETY_LIMITS),
+            Err(RefreshInhibit::TemperatureUnavailable)
+        );
+
+        sample = safe_sample();
+        sample.charger = ChargerStatus::Charging;
+        assert_eq!(
+            refresh_decision(sample, EVT_SAFETY_LIMITS),
+            Err(RefreshInhibit::Charging)
+        );
+
+        sample = safe_sample();
+        sample.charger = ChargerStatus::Fault;
+        assert_eq!(
+            refresh_decision(sample, EVT_SAFETY_LIMITS),
+            Err(RefreshInhibit::ChargerFault)
+        );
+    }
+
+    #[test]
+    fn connection_parameters_cover_active_and_idle_states() {
+        let active = connection_parameters(true);
+        let idle = connection_parameters(false);
+        assert!(active.min_interval_1_25ms <= active.max_interval_1_25ms);
+        assert!(idle.min_interval_1_25ms <= idle.max_interval_1_25ms);
+        assert!(active.max_interval_1_25ms < idle.min_interval_1_25ms);
+        assert_eq!(active.latency, 0);
     }
 }

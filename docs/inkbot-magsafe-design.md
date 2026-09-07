@@ -1,11 +1,11 @@
 # Design: inkbot-magsafe, a MagSafe e-ink tile
 
-> **Status: 0.1.0, hardware design, not yet built.** A 4-inch mono e-ink tile
+> **Status: 0.8.0 EVT design, not yet built.** A 4-inch mono e-ink tile
 > that snaps to the MagSafe ring on the back of an iPhone. The paired iPhone is
 > the only source of frames; an iOS app pushes them over Bluetooth Low Energy
 > (BLE), on demand or in the background. It runs off a tiny lithium-polymer
-> (LiPo) cell and recharges by popping off the phone and sitting on any
-> MagSafe or Qi pad. This doc is the circuit, the bill of materials (BOM), and
+> (LiPo) cell and recharges after removal from the phone on a qualified Qi
+> transmitter. This doc is the circuit, the bill of materials (BOM), and
 > the pricing. The companion BOM lives in
 > [`inkbot-magsafe-bom.csv`](inkbot-magsafe-bom.csv).
 
@@ -51,15 +51,16 @@ with power foldback, and a second radiator to certify. Revisit it only if
 "never take it off" turns out to matter more than thinness; the battery math says
 it should not.
 
-## Decisions (locked for 0.1.0)
+## Decisions (locked for 0.8.0)
 
 | Topic | Decision |
 |-------|----------|
 | MCU / radio | **Raytac MDBT50Q-512K** — pre-certified nRF52833 module (128 KB RAM for the 48 KB framebuffer; integrated antenna, 32 MHz crystal, DC/DC, RF match) |
-| Panel | **GDEM0397T81P**, 3.97-inch 480 x 800 portrait monochrome e-paper, SSD1677, partial refresh |
+| Panel | **GDEY0397T81P**, 3.97-inch 480 x 800 portrait monochrome e-paper, SSD1677, partial refresh |
 | Orientation | portrait; ring high on the tile, panel fills the tile and overlaps the ring |
-| Battery | **LP252030 custom pack**, 100 mAh, protected, 10 kOhm NTC, keyed three-wire harness, up to 3.2 mm thick |
-| Power | **BQ51013C** Qi 1.3 receiver into a **BQ25185** 40 mA charger with a SYS power path |
+| Battery | **LP242030 custom pack**, 100 mAh, protected, 2C discharge, 10 kOhm NTC, keyed three-wire harness, up to 3.5 mm thick |
+| Power | **BQ51013C** Qi 1.3 receiver into a default-off **BQ25186** charger with a SYS power path |
+| MCU power | **TPS7A0230P** 3.0 V nanopower LDO; nRF52833 VDD and VDDH tied for normal-voltage mode |
 | Panel power | **TPS7A2030P** 3.0 V LDO, disabled with active discharge between refreshes |
 | Charging | 5 W Qi RX only; detach the tile and set it on a pad. No pass-through |
 | Frame source | the paired iPhone only; no Worker, no second radio |
@@ -82,14 +83,14 @@ for a battery-first BLE peripheral that must stay reachable in the background:
   light-sleep current is an order of magnitude higher.
 - **The Nordic SoftDevice is a mature, qualified BLE stack** with good long-lived
   connection behavior; the e-ink hobbyist and product world runs on it.
-- **High-voltage mode accepts the SYS rail.** The BQ25185 powers `VDDH`; the
-  nRF52833 REG0 stage creates its internal `VDD` rail. Factory provisioning sets
-  UICR `REGOUT0` to 3.0 V before the application configures GPIO.
+- **A nanopower LDO isolates the MCU rail.** TPS7A0230P regulates SYS to 3.0 V.
+  Tying VDD and VDDH follows the nRF52833 normal-voltage reference circuit and
+  provides a valid rail for the BQ25186 I2C pull-ups.
 
 The design uses the **nRF52833** rather than the 52832 because the 3.97-inch
 panel needs a **48 KB mono framebuffer** (480×800). The 52832's 64 KB RAM is too
 tight once the SoftDevice takes its share; the 52833's **128 KB** holds the
-frame plus S140 and the application.
+frame plus S113 and the application.
 
 The nRF52833 ships as a **pre-certified module, the Raytac MDBT50Q-512K**, not a
 bare QFN. The module integrates the 2.4 GHz antenna, the 32 MHz crystal, the
@@ -99,21 +100,22 @@ but it does not remove RF integration work. The PCB keeps copper out beneath
 the antenna, places the antenna end at the board edge, and still needs host
 product emissions and radiated-performance tests with the phone, magnets, and
 coil installed. The module adds about 1 mm over a bare QFN and is about 2 mm
-tall. The board adds separate VDDH and VDD capacitors plus a 32.768 kHz crystal
-on P0.00/P0.01. The NFCT pins stay unused.
+tall. The board adds a 10 uF MCU-rail capacitor plus a 32.768 kHz crystal on
+P0.00/P0.01. The NFCT pins stay unused.
 
 ## Block diagram
 
 ```
-   WR222230 coil -> BQ51013C -> QI_OUT -> BQ25185 -> SYS -> module VDDH
+   WR222230 coil -> BQ51013C -> QI_OUT -> BQ25186 -> SYS
          |              |                    ^          |
-      coil NTC       resonance/FOD           |          +-> 47 uF SYS reservoir
+      coil NTC       resonance/FOD           |          +-> 47 uF reservoir
                                              |
-   protected LP252030 pack + cell NTC -> BAT-+
+   protected LP242030 2C pack + NTC -> BAT---+
 
+   SYS -> TPS7A0230P 3.0 V -> MDBT50Q VDD + VDDH
    SYS -> TPS7A2030P 3.0 V -> 100 uF -> SSD1677 panel power and boost circuit
    MDBT50Q-512K <-> panel SPI, BUSY, reset, and panel-power enable
-   MDBT50Q-512K <- Qi present and two charger-status signals
+   MDBT50Q-512K <-> BQ25186 I2C; default-off /CE gate; Qi EPT controls
 
    Factory and recovery: SWDIO, SWDCLK, reset, VDD reference, SYS, and ground
 ```
@@ -136,7 +138,7 @@ Apple's MagSafe keep-in puts the tile top ~43 mm from the phone top on a 15 Pro
 |-------|-------------------|------------------|-------------------|
 | 4.2" GDEY042T81 | 77 × 91 | overhang | — |
 | **4.26" GDEY0426T82** | 62 × 105 | fits | **overhangs bottom** |
-| **3.97" GDEM0397T81P** | **56 × 97** | **fits** | **fits** |
+| **3.97" GDEY0397T81P** | **56 × 97** | **fits** | **fits** |
 | 3.7" GDEY037T03 | 53 × 93 | fits | fits (smaller) |
 
 The **3.97-inch 480×800** module is the largest common mono e-paper that clears
@@ -152,7 +154,8 @@ connection, and does 24 refreshes.
 | Draw | Current / cost | Per day | Notes |
 |---|---|---|---|
 | nRF connected idle (1 s interval with slave latency) | ~20 uA average | ~0.48 mAh | Verify on the final connection parameters |
-| BQ25185 in battery-only mode | ~4 uA typical | ~0.10 mAh | Charger data-sheet value |
+| BQ25186 in battery-only mode | ~4 uA typical | ~0.10 mAh | Charger data-sheet value |
+| TPS7A0230P MCU LDO | ~0.025 uA typical | <0.01 mAh | Verify the complete rail leakage |
 | Panel LDO disabled | <1 uA budget | <0.03 mAh | Includes leakage margin |
 | Six full and 18 partial refreshes | 36 mW typical while active | ~0.08 mAh | Full refresh is about 3 seconds; partial is about 0.3 seconds |
 | Twenty-four 48 KB BLE transfers | ~5 mA for ~2 seconds each | ~0.07 mAh | Measure with negotiated 2M PHY, DLE, and L2CAP settings |
@@ -165,29 +168,31 @@ retries, and reserve voltage reduce that number. The product target is
 
 The panel data sheet specifies a **120 mA typical peak current**, even though
 its average refresh power is only about 36 mW. C38 adds 47 uF on SYS without
-exceeding the BQ25185's 100 uF maximum, and C27 adds 100 uF at the panel within
+exceeding the BQ25186's 100 uF maximum, and C27 adds 100 uF at the panel within
 the TPS7A20's 200 uF stability limit. Those parts do not prove margin. EVT must
 capture BAT, SYS, PANEL_3V0, and current at room temperature, cold temperature,
-end-of-charge, and the refresh floor. If the qualified LP252030 pack or its PCM
-exceeds its pulse rating, use a higher-rate pack or revise pulse storage before
-release.
+end-of-charge, and the refresh floor. The selected LP242030 pack specifies a
+200 mA maximum discharge, but the supplier must approve the measured combined
+panel and radio pulse before release.
 
 ## Circuit design
 
 ### Power path
 
-The **BQ51013C** Qi receiver supplies 5 V to a **BQ25185** charger and
-power-path manager. The BQ25185 separates `BAT` from `SYS`, blocks reverse
-drain into the receiver, and supplements a weak input from the cell. R6 selects
-a 4.2 V battery regulation voltage and a 100 mA input limit. R7 sets 40 mA fast
-charge, within the LP252030 pack's 50 mA maximum.
+The **BQ51013C** Qi receiver supplies 5 V to a **BQ25186** charger and
+power-path manager. The BQ25186 separates `BAT` from `SYS`, blocks reverse
+drain into the receiver, and supplements a weak input from the cell. Firmware
+configures 4.2 V regulation, a 100 mA input limit, 40 mA fast charge, and a
+0-45 degrees Celsius charge window before enabling charge. R5 and Q2 hold
+`/CE` high until configuration succeeds, so reset or firmware failure leaves
+charging off rather than using the charger's 60 degrees Celsius default limit.
 
 There is no USB-C port on the shipping tile (see the next section).
 
-`SYS` powers the Raytac module through `VDDH`. The nRF52833 REG0 stage creates
-the internal 3.0 V `VDD` rail. The board does not use `VDD` as an external
-power source. A **TPS7A2030P** creates the panel's 3.0 V supply and actively
-discharges that rail while disabled.
+The **TPS7A0230P** regulates SYS to `MCU_3V0`. The rail powers the Raytac
+module's VDD and VDDH pins together in normal-voltage mode. A **TPS7A2030P**
+creates the separate panel 3.0 V supply and actively discharges that rail while
+disabled.
 
 ### Wireless power
 
@@ -202,6 +207,12 @@ The coil's ferrite faces the PCB. A separate 10 kOhm NTC bonded to the coil
 connects to `TS/CTRL`. The receiver's current limit is about 250 mA nominal and
 300 mA at the hardware limit. There is no transmit stage; the tile charges
 itself, not the phone.
+
+The MCU drives BQ51013C EN1 and EN2. After the BQ25186 reports charge complete,
+firmware drives both high so the receiver sends charge-complete EPT 0x01 and
+the transmitter can enter its low-power ping cycle. Returning both pins low
+allows recharge. Overnight full-battery temperature and transmitter behavior
+remain EVT gates.
 
 ### Ports: none, by design
 
@@ -297,13 +308,13 @@ or the bench validation table later in this document.
 Recommended one-off sequence (validate function before optimizing thickness):
 
 1. **Bench assembly.** Use an nRF52833 or nRF52840 development kit, the
-   GDEM0397T81P vendor adapter, and a current-limited bench supply. Prove the
+   GDEY0397T81P vendor adapter, and a current-limited bench supply. Prove the
    panel sequence, measured current profile, BLE transport, and failure
    recovery before connecting a cell.
 2. **EVT lot.** Build at least five 0.8 mm, four-layer ENIG assemblies. Use the
    exact panel, coil, custom protected pack, and magnetic assembly in the BOM.
-   Program UICR and firmware over the SWD fixture, then run the electrical and
-   mechanical acceptance tests on every unit.
+   Program firmware over the SWD fixture, then run the electrical and mechanical
+   acceptance tests on every unit.
 
 The Raytac module avoids a board-side RF matching network. It does not make the
 finished product automatically compliant or guarantee range beside a phone.
@@ -312,32 +323,21 @@ layout, antenna tuning, and intentional-radiator certification.
 
 ### Phone compatibility and fit
 
-Two things gate compatibility: the phone must have the **MagSafe magnet ring**
-(magnet-only retention), and the tile (**60 × 99 mm**) must sit inside the body
-in both axes — no side overhang, no bottom overhang, and clear of the camera
-bump. The minis are dropped (too narrow); the 4.26" panel was tried and dropped
-(too tall for a 6.1" Pro once the ring sits high enough to clear the cameras).
+The phone must have a compatible accessory magnet array, and the complete
+60 x 99 mm assembly must clear its body, camera plateau, curved rear surface,
+and case lip. The 30 mm ring-center offset is an EVT hypothesis. The
+similarly named 30 mm limit in Apple's guidance applies to hosts that integrate
+a MagSafe Charger Module, not as a universal camera rule for passive
+accessories.
 
-| iPhone | Body W × H (mm) | MagSafe | Side inset | Bottom clearance | Fits? |
-|--------|-----------------|:---:|---:|---:|:---:|
-| 16 / 15 Pro Max, 15/14 Plus, 14/13/12 Pro Max | 77.6–78.1 × 160–163 | yes | ~9 mm | lots | **yes** |
-| 16 Pro | 77.6 × 149.6 | yes | ~9 mm | ~8 mm | **yes** |
-| 16 / 15 / 14 / 13 / 12 (standard) | 71.5–71.6 × 147–148 | yes | ~5.8 mm | ~4 mm | **yes** |
-| **15 Pro / 16 Pro** | **70.6 × 146.6–149.6** | yes | **~5.3 mm** | **~4 mm** | **yes** |
-| 17 / 17 Pro / 17 Pro Max | 71.7–77.6 × 150–163 | yes | ≥5 mm | ≥4 mm | **yes** |
-| **13 mini / 12 mini** | 64.2 × 131.5 | yes | overhang | — | **no** |
-| iPhone 16e | 71.5 × 147.7 | **no** | — | — | **no** |
-| SE (all), 11 and earlier | — | **no** | — | — | **no** |
-
-A third-party MagSafe-magnet case can add the ring to a 16e or older phone.
-
-**Camera clearance comes from Apple's own rule.** The Accessory Design
-Guidelines require a MagSafe accessory not to extend past **30 mm from the ring
-center toward the top of the phone**. So the tile puts the MagSafe ring **as
-high as it can** — ring center 30 mm from the top edge — and hangs downward,
-below the cameras. On a 15 Pro that puts the tile top ~43 mm from the phone top
-and the bottom ~4 mm above the phone's bottom edge. The 4.26" panel (105 mm
-module) would have hung ~4 mm past that edge; the 3.97" does not.
+Do not publish a supported-phone table from body dimensions alone. Before DVT,
+overlay the tolerance-controlled assembly on Apple's dimensional drawing for
+each proposed phone. Include the model-specific camera keep-out, magnet center,
+case geometry, lateral self-alignment error, rotation, cover thickness, and
+manufacturing tolerance. Confirm positive hard-part clearance and camera
+autofocus and stabilization behavior on physical phones and supported cases.
+The 12 and 13 mini remain excluded because their 64.2 mm bodies are narrower
+than the tile.
 
 ## BLE and iOS integration
 
@@ -350,8 +350,15 @@ top-level app.
 | Characteristic | Properties | Purpose |
 |---|---|---|
 | Control | encrypted write with response | begin frame, region, full-vs-partial, commit, and resume offset |
-| Status | read / notify | SYS estimate, charge state, panel temperature, and last-refresh result |
+| Status | read / notify | SYS estimate, charge state, temperature availability, and last-refresh result |
 | Frame fallback | encrypted write without response | chunked pixel data when L2CAP is unavailable |
+
+The board does not route the cell or coil NTC to the MCU, and the SPI link has
+no MISO signal for reading the SSD1677 temperature result. Firmware must report
+panel temperature as unavailable unless EVT validates another source. The
+controller can still use its internal sensor for waveform selection. If a
+firmware-enforced temperature window is required, add a panel-adjacent sensor
+before freezing the PCB.
 
 For the pixel payload, prefer an **L2CAP connection-oriented channel**
 (`CBL2CAPChannel` on iOS) with a fixed PSM in the BLE LE dynamic range. A
@@ -423,34 +430,35 @@ stream, commit, done.
 
 ## Firmware
 
-The Rust crate reserves flash and RAM for S140 7.3.0. The provisional flash map
-allocates 156 KiB to the MBR and S140, two 160 KiB application slots, a 32 KiB
-bootloader, and a 4 KiB state page. The linker also reserves 31 KiB of RAM for
-S140 and rejects an application load segment outside its primary slot.
+The Rust crate reserves flash and RAM for S113 7.3.0, which supports the
+nRF52833 peripheral role, LE Secure Connections, 2M PHY, and L2CAP
+connection-oriented channels with less flash than S140. The provisional map
+allocates 112 KiB to the MBR and S113, a 176 KiB application slot, a 180 KiB
+update slot, an 8 KiB settings journal, a 32 KiB bootloader, and a 4 KiB state
+page. The linker reserves 32 KiB of RAM for S113 and rejects an application
+load segment outside its primary slot.
 Host-tested code implements versioned frame validation, replay checks, a
 separate durable-commit step, panel window rules, periodic full refresh policy,
-charger-status decoding, voltage and temperature gates, and the fail-closed
-UICR REGOUT0 policy.
-
-The S140 application image starts at `0x27000` and cannot boot on a blank
-module. A separate SWD-only factory image starts at address 0, provisions
-`REGOUT0`, and must not be combined with S140.
+charger policy, SYS conversion, and voltage and temperature gates. Final RAM
+origin must come from `sd_ble_enable()` with the released connection settings.
 
 The following target integrations remain release blockers:
 
-- Configure panel power off and charge enabled before all other GPIO.
-- Start S140 from the external 32.768 kHz crystal and implement bonded GATT plus
+- Configure panel power and charge disabled before all other GPIO.
+- Start S113 from the external 32.768 kHz crystal and implement bonded GATT plus
   the L2CAP server.
+- Configure the BQ25186 for 40 mA charge, 100 mA input, 4.2 V regulation, and
+  a 0-45 degrees Celsius charge window before driving `CHG_ENABLE` high.
 - Stream incoming data to an atomic flash record and seed the replay boundary
   from its committed metadata after reset.
 - Implement the SSD1677 reset, two-RAM initialization, temperature-selected
   waveform, BUSY timeout, full and partial refresh, deep sleep, and rail
   discharge sequence.
-- Sample `VDDHDIV5`, retain reset and brownout causes, and run a watchdog that
+- Sample `SYS_SENSE`, retain reset and brownout causes, and run a watchdog that
   also covers stalled panel and radio operations. Treat SYS as a resting-cell
   estimate only when Qi input is absent.
 - Add a signed, power-fail-safe bootloader with a trial boot, rollback, and
-  monotonic version floor. Size its active, update, state, and S140 partitions
+  monotonic version floor. Size its active, update, state, and S113 partitions
   from the final linked image.
 - Lock production debug against readout while preserving documented full-erase
   recovery through CTRL-AP and the SWD fixture.
@@ -468,9 +476,9 @@ extended cost for every reference in that row, not a single component price:
 
 | Quantity | Unit direct cost | Build total | With 15% yield and price reserve |
 |---:|---:|---:|---:|
-| 1 | **$166.97** | **$167** | **$192** |
-| 100 | **$59.61** | **$5,961** | **$6,855** |
-| 1,000 | **$41.71** | **$41,710** | **$47,967** |
+| 1 | **$169.44** | **$169** | **$195** |
+| 100 | **$60.34** | **$6,034** | **$6,939** |
+| 1,000 | **$42.33** | **$42,330** | **$48,680** |
 
 The one-unit estimate includes manual assembly setup but excludes minimum reel
 buys, shipping, duties, tax, and the tools needed to program or measure the
@@ -496,14 +504,15 @@ Obtain supplier quotations and compliance-lab scopes before treating the
 
 ## Reliability checklist
 
-- BQ51013C receiver followed by a BQ25185 charger and SYS power path.
-- 40 mA charge limit, 100 mA input limit, separate cell and coil NTCs, and
-  charger fault decoding.
-- Protected battery pack with a keyed, polarized three-wire harness.
+- BQ51013C receiver followed by a default-off BQ25186 charger and SYS power
+  path.
+- Firmware-set 40 mA charge, 100 mA input, 0-45 degrees Celsius JEITA limits,
+  separate cell and coil NTCs, and charger fault decoding.
+- Protected 2C battery pack with a keyed, polarized three-wire harness.
 - 47 uF on SYS and 100 uF on PANEL_3V0, each checked against regulator
   capacitance limits and qualified at operating DC bias.
 - Module antenna flush with the board edge and an all-layer copper keep-out.
-- UICR `REGOUT0=3.0 V` provisioning and a fail-closed check before GPIO setup.
+- TPS7A0230P MCU rail with VDD and VDDH tied for normal-voltage operation.
 - SWD test pads for brick recovery, since there is no USB port to fall back to.
 - Signed, power-fail-safe DFU with trial boot, rollback, and monotonic version
   policy before field updates are enabled.
@@ -521,8 +530,8 @@ and raw data. A pass on one prototype is not a production qualification.
 
 | Area | Initial acceptance criterion |
 |---|---|
-| Charger | 36-44 mA fast charge at 25 degrees Celsius; 4.2 V regulation within the BQ25185 limit; no charge outside the qualified pack temperature range |
-| Power path | No reset or BQ25185 latch-off during receiver attach, detach, a full refresh, or a simultaneous BLE transfer |
+| Charger | 36-44 mA fast charge at 25 degrees Celsius; 4.2 V regulation within the BQ25186 limit; no charge outside 0-45 degrees Celsius; reset leaves charging disabled |
+| Power path | No reset or BQ25186 latch-off during receiver attach, detach, a full refresh, or a simultaneous BLE transfer |
 | Panel rail | PANEL_3V0 stays within the TPS7A2030P tolerance during the measured 120 mA peak profile; no overshoot beyond the panel rating |
 | Battery margin | BAT and SYS stay above the refresh floor at cold temperature, minimum allowed state of charge, aged-cell impedance, and worst-case radio timing |
 | Panel high voltage | VGH, VGL, VSH1, VSH2, VSL, and VCOM match the panel waveform settings without overshoot or oscillation |
@@ -584,7 +593,7 @@ and raw data. A pass on one prototype is not a production qualification.
   push service later, so the firmware and app are structured to add it without a
   redesign.
 - **Charging is detach-and-drop on a Qi-compatible pad.** A BQ51013C receiver
-  feeds a BQ25185 power-path charger. No pass-through stage is included.
+  feeds a BQ25186 power-path charger. No pass-through stage is included.
 - **No user connector.** Wireless charge, planned signed BLE DFU, and SWD pads
   for factory programming and full-erase recovery. USB-C was considered and
   dropped, subject to recovery testing.
@@ -596,7 +605,8 @@ and raw data. A pass on one prototype is not a production qualification.
   Worker and it shares no code with it. The tile firmware and app stay agnostic
   to the sender.
 - **Reference-design-based KiCad schematic.** Raytac MDBT50Q-512K module,
-  BQ51013C receiver, BQ25185 charger, TPS7A2030P panel rail, complete SSD1677
+  BQ51013C receiver, BQ25186 charger, TPS7A0230P MCU rail, TPS7A2030P panel
+  rail, complete SSD1677
   boost circuit, and a 0.8 mm board with a rounded battery cutout. Project under
   [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/).
 

@@ -35,8 +35,9 @@ def build_lib_symbols() -> str:
         [
             embed(SYM / "RF_Module.kicad_sym", "RF_Module", "MDBT50Q-512K"),
             embed(LOCAL_SYM, "inkbot_magsafe", "BQ51013C"),
-            embed(LOCAL_SYM, "inkbot_magsafe", "BQ25185"),
+            embed(LOCAL_SYM, "inkbot_magsafe", "BQ25186"),
             embed(LOCAL_SYM, "inkbot_magsafe", "TPS7A2030P"),
+            embed(LOCAL_SYM, "inkbot_magsafe", "TPS7A0230P"),
             embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x02"),
             embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x03"),
             embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x04"),
@@ -152,8 +153,8 @@ def main() -> None:
         "6": "QI_COMM1",
         "7": "QI_PRESENT",
         "9": "GND",
-        "10": "GND",
-        "11": "GND",
+        "10": "QI_EN1",
+        "11": "QI_EN2",
         "12": "QI_ILIM",
         "13": "QI_COIL_NTC",
         "14": "QI_FOD",
@@ -236,36 +237,46 @@ def main() -> None:
     # ------------------------------------------------ battery charger and pack
     charger_x, charger_y = snap(205), snap(72)
     sch.place(
-        "inkbot_magsafe:BQ25185",
+        "inkbot_magsafe:BQ25186",
         "U3",
-        "BQ25185DLHR",
+        "BQ25186DLHR",
         x=charger_x,
         y=charger_y,
-        footprint="inkbot_magsafe:BQ25185_DLH0010A",
+        footprint="inkbot_magsafe:TI_DLH0010A_WSON-10",
     )
     for pin, net in {
         "1": "SYS",
         "2": "BAT",
-        "3": "CHG_STAT2",
-        "4": "CHG_EN_N",
+        "3": "CHG_PG_N",
+        "4": "CHG_CE_N",
         "5": "GND",
         "6": "BAT_NTC",
-        "7": "CHG_VSET",
-        "8": "CHG_ISET",
-        "9": "CHG_STAT1",
+        "7": "CHG_SDA",
+        "8": "CHG_SCL",
+        "9": "CHG_INT_N",
         "10": "QI_OUT",
         "11": "GND",
     }.items():
-        connect_outward(sch, library.get("BQ25185"), "U3", pin, net)
+        connect_outward(sch, library.get("BQ25186"), "U3", pin, net)
 
     pass_v(sch, "Device:C", "C17", "1uF 25V", 180, 45, "QI_OUT", "GND", c0603)
     pass_v(sch, "Device:C", "C18", "10uF 25V", 195, 45, "SYS", "GND", c0805)
     pass_v(sch, "Device:C", "C19", "1uF 10V", 210, 45, "BAT", "GND", c0603)
-    pass_v(sch, "Device:R", "R5", "100k", 180, 100, "CHG_EN_N", "GND", r0603)
-    pass_v(sch, "Device:R", "R6", "24k 1%", 195, 100, "CHG_VSET", "GND", r0603)
-    pass_v(sch, "Device:R", "R7", "7.5k 1%", 210, 100, "CHG_ISET", "GND", r0603)
-    pass_v(sch, "Device:R", "R8", "2k", 225, 100, "CHG_ISET", "CHG_ISET_COMP", r0603)
-    pass_v(sch, "Device:C", "C20", "4.7nF", 235, 100, "CHG_ISET_COMP", "GND", c0603)
+    pass_v(sch, "Device:R", "R5", "100k", 180, 100, "QI_OUT", "CHG_CE_N", r0603)
+    pass_v(sch, "Device:R", "R6", "1M", 195, 100, "CHG_ENABLE", "GND", r0603)
+    pass_v(sch, "Device:R", "R7", "10k", 210, 100, "MCU_3V0", "CHG_SDA", r0603)
+    pass_v(sch, "Device:R", "R8", "10k", 225, 100, "MCU_3V0", "CHG_SCL", r0603)
+    sch.place(
+        "Device:Q_NMOS_GSD",
+        "Q2",
+        "2N7002BK,215",
+        x=snap(235),
+        y=snap(72),
+        footprint="Package_TO_SOT_SMD:SOT-23",
+    )
+    sch.connect_pin("Q2", "1", "CHG_ENABLE", wire_dx=-5.08, by_number=True)
+    sch.connect_pin("Q2", "2", "GND", wire_dy=5.08, by_number=True)
+    sch.connect_pin("Q2", "3", "CHG_CE_N", wire_dx=5.08, by_number=True)
 
     sch.place(
         "Connector_Generic:Conn_01x03",
@@ -278,7 +289,13 @@ def main() -> None:
     for pin, net in {"1": "BAT", "2": "BAT_NTC", "3": "GND"}.items():
         sch.connect_pin("J2", pin, net, wire_dx=7.62, by_number=True)
 
-    sch.place("Device:Battery_Cell", "BT1", "LP252030 100mAh protected", x=snap(275), y=snap(90))
+    sch.place(
+        "Device:Battery_Cell",
+        "BT1",
+        "LP242030 100mAh 2C protected",
+        x=snap(275),
+        y=snap(90),
+    )
     sch.connect_pin("BT1", "1", "BAT", wire_dy=-5.08, by_number=True)
     sch.connect_pin("BT1", "2", "GND", wire_dy=5.08, by_number=True)
     pass_v(
@@ -306,18 +323,23 @@ def main() -> None:
     )
     pin_nets = {
         "1": "GND",
+        "9": "QI_EN1",
+        "10": "SYS_SENSE",
         "11": "QI_PRESENT",
         "12": "PANEL_PWR_EN",
         "14": "PANEL_BUSY",
         "17": "XL1",
         "18": "XL2",
-        "20": "CHG_STAT1",
-        "21": "CHG_STAT2",
-        "22": "CHG_EN_N",
+        "20": "CHG_INT_N",
+        "21": "CHG_PG_N",
+        "22": "CHG_ENABLE",
+        "23": "CHG_SDA",
+        "24": "CHG_SCL",
+        "25": "QI_EN2",
         "26": "PANEL_RST",
         "27": "PANEL_SCLK",
-        "28": "VDD_NRF",
-        "30": "SYS",
+        "28": "MCU_3V0",
+        "30": "MCU_3V0",
         "39": "PANEL_MOSI",
         "40": "NRST",
         "41": "PANEL_CS",
@@ -331,11 +353,26 @@ def main() -> None:
         if pin.number not in pin_nets:
             sch.connect_pin_noconnect("U1", pin.number, by_number=True)
 
-    # High-voltage mode powers VDDH from SYS. VDD is the SoC's regulated rail;
-    # it is decoupled and exposed only as the high-impedance SWD reference.
-    # Factory provisioning writes UICR.REGOUT0=3.0 V before GPIO is enabled.
-    pass_v(sch, "Device:C", "C21", "4.7uF 10V", 70, 165, "SYS", "GND", c0603)
-    pass_v(sch, "Device:C", "C22", "4.7uF 10V", 82, 165, "VDD_NRF", "GND", c0603)
+    # A nanopower 3.0 V LDO keeps the nRF52833 in normal-voltage mode. VDD and
+    # VDDH are tied together as the Nordic reference circuit requires.
+    sch.place(
+        "inkbot_magsafe:TPS7A0230P",
+        "U5",
+        "TPS7A0230PDBVR",
+        x=snap(70),
+        y=snap(145),
+        footprint="Package_TO_SOT_SMD:SOT-23-5",
+    )
+    for pin, net in {
+        "1": "SYS",
+        "2": "GND",
+        "3": "SYS",
+        "5": "MCU_3V0",
+    }.items():
+        connect_outward(sch, library.get("TPS7A0230P"), "U5", pin, net)
+    sch.connect_pin_noconnect("U5", "4", by_number=True)
+    pass_v(sch, "Device:C", "C21", "1uF 10V", 70, 165, "SYS", "GND", c0603)
+    pass_v(sch, "Device:C", "C22", "10uF 10V", 82, 165, "MCU_3V0", "GND", c0805)
     sch.place(
         "Device:Crystal",
         "Y1",
@@ -349,9 +386,13 @@ def main() -> None:
     pass_v(sch, "Device:C", "C23", "22pF C0G", 92, 190, "XL1", "GND", c0603)
     pass_v(sch, "Device:C", "C24", "22pF C0G", 105, 190, "XL2", "GND", c0603)
 
-    # In high-voltage mode the SAADC's VDDHDIV5 input measures SYS directly.
-    # Omitting an always-on divider saves about 3.2 uA in battery-only mode.
-    # C38 stays below the BQ25185's 100 uF maximum SYS capacitance after the
+    # The external divider lets SAADC measure SYS while the MCU runs from its
+    # regulated rail. Its 1.33 MOhm total resistance draws at most 3.4 uA.
+    pass_v(sch, "Device:R", "R9", "1M 1%", 205, 175, "SYS", "SYS_SENSE", r0603)
+    pass_v(sch, "Device:R", "R10", "330k 1%", 215, 175, "SYS_SENSE", "GND", r0603)
+    pass_v(sch, "Device:C", "C20", "10nF", 220, 190, "SYS_SENSE", "GND", c0603)
+
+    # C38 stays below the BQ25186's 100 uF maximum SYS capacitance after the
     # other rail capacitors are counted.
     pass_v(sch, "Device:C", "C38", "47uF 10V X5R", 230, 175, "SYS", "GND", c1206)
 
@@ -381,7 +422,7 @@ def main() -> None:
     sch.place(
         "Connector_Generic:Conn_01x24",
         "J1",
-        "GDEM0397T81P panel FPC",
+        "GDEY0397T81P panel FPC",
         x=panel_x,
         y=panel_y,
         footprint="Connector_FFC-FPC:Hirose_FH12-24S-0.5SH_1x24-1MP_P0.50mm_Horizontal",
@@ -465,7 +506,7 @@ def main() -> None:
             ("SWDIO", 240, 245),
             ("SWDCLK", 252, 245),
             ("NRST", 264, 245),
-            ("VDD_NRF", 276, 245),
+            ("MCU_3V0", 276, 245),
             ("GND", 288, 245),
             ("SYS", 240, 263),
             ("BAT", 252, 263),
@@ -488,13 +529,13 @@ def main() -> None:
     sch.place_pwr_flag(x=snap(225), y=snap(40), net_name="SYS")
     sch.place_pwr_flag(x=snap(235), y=snap(40), net_name="BAT")
     sch.place_pwr_flag(x=snap(295), y=snap(125), net_name="PANEL_3V0")
-    sch.place_pwr_flag(x=snap(70), y=snap(185), net_name="VDD_NRF")
+    sch.place_pwr_flag(x=snap(70), y=snap(185), net_name="MCU_3V0")
     sch.place_power("power:GND", "GND", snap(205), snap(120))
 
     sch.text_note(
         "inkbot-magsafe EVT schematic\\n"
-        "BQ51013C Qi 1.3 receiver + BQ25185 40 mA protected-cell charger,\\n"
-        "Raytac MDBT50Q-512K in VDDH mode, and the complete GDEM0397T81P\\n"
+        "BQ51013C Qi 1.3 receiver + BQ25186 protected-cell charger,\\n"
+        "Raytac MDBT50Q-512K on a nanopower 3.0 V rail, and the GDEY0397T81P\\n"
         "SSD1677 boost circuit. Qi resonance and FOD values require EVT tuning.",
         snap(15),
         snap(15),
@@ -504,7 +545,7 @@ def main() -> None:
         sch.build(
             title="inkbot-magsafe",
             date="2026-09-07",
-            rev="0.7.0",
+            rev="0.8.0",
             paper="A2",
             comments=[
                 "EVT design. Do not release until coil tuning, FOD, thermal, and compliance gates pass.",

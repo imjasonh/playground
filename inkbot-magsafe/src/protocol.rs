@@ -142,6 +142,8 @@ pub enum Begin {
     Resumed(u32),
     /// The same frame already passed its length and CRC checks.
     Verified,
+    /// The same canonical frame was already committed.
+    AlreadyCommitted,
 }
 
 /// Why a frame announcement was rejected.
@@ -191,7 +193,21 @@ pub enum Accept {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct CommittedFrame {
     pub id: u32,
+    pub len: u32,
+    pub crc: u32,
     pub window: Window,
+}
+
+impl CommittedFrame {
+    const fn matches(self, header: FrameHeader) -> bool {
+        self.id == header.id
+            && self.len == header.len
+            && self.crc == header.crc
+            && self.window.x == header.window.x
+            && self.window.y == header.window.y
+            && self.window.w == header.window.w
+            && self.window.h == header.window.h
+    }
 }
 
 /// Tracks one in-flight frame transfer.
@@ -204,7 +220,7 @@ pub struct Receiver {
     running: Crc32,
     active: bool,
     verified: bool,
-    last_completed: Option<(u32, Window)>,
+    last_completed: Option<CommittedFrame>,
 }
 
 impl Receiver {
@@ -224,9 +240,9 @@ impl Receiver {
     }
 
     /// Restore the replay boundary after loading a committed frame record.
-    pub const fn with_last_completed(id: u32, window: Window) -> Self {
+    pub const fn with_last_completed(committed: CommittedFrame) -> Self {
         let mut receiver = Self::new();
-        receiver.last_completed = Some((id, window));
+        receiver.last_completed = Some(committed);
         receiver
     }
 
@@ -250,8 +266,15 @@ impl Receiver {
         if self.active && !sequence_is_newer(header.id, self.id) {
             return Err(BeginError::StaleId);
         }
-        if let Some((last_id, _)) = self.last_completed {
-            if !sequence_is_newer(header.id, last_id) {
+        if let Some(committed) = self.last_completed {
+            if header.id == committed.id {
+                return if committed.matches(header) {
+                    Ok(Begin::AlreadyCommitted)
+                } else {
+                    Err(BeginError::ConflictingId)
+                };
+            }
+            if !sequence_is_newer(header.id, committed.id) {
                 return Err(BeginError::StaleId);
             }
         }
@@ -282,7 +305,7 @@ impl Receiver {
     }
 
     /// The last frame that the caller committed to durable storage.
-    pub fn last_completed(&self) -> Option<(u32, Window)> {
+    pub fn last_completed(&self) -> Option<CommittedFrame> {
         self.last_completed
     }
 
@@ -293,9 +316,11 @@ impl Receiver {
         }
         let committed = CommittedFrame {
             id: self.id,
+            len: self.len,
+            crc: self.crc,
             window: self.window,
         };
-        self.last_completed = Some((committed.id, committed.window));
+        self.last_completed = Some(committed);
         self.verified = false;
         self.received = 0;
         self.running = Crc32::new();
@@ -439,14 +464,14 @@ mod tests {
         assert!(!rx.is_active());
         assert!(rx.is_verified());
         assert_eq!(rx.last_completed(), None);
-        assert_eq!(
-            rx.commit(),
-            Some(CommittedFrame {
-                id: 1,
-                window: header.window
-            })
-        );
-        assert_eq!(rx.last_completed(), Some((1, header.window)));
+        let committed = CommittedFrame {
+            id: 1,
+            len: header.len,
+            crc: header.crc,
+            window: header.window,
+        };
+        assert_eq!(rx.commit(), Some(committed));
+        assert_eq!(rx.last_completed(), Some(committed));
     }
 
     #[test]
@@ -584,7 +609,11 @@ mod tests {
         assert_eq!(rx.accept(0, data), Accept::Complete);
         assert_eq!(rx.begin(h), Ok(Begin::Verified));
         assert_eq!(rx.commit().unwrap().id, 7);
-        assert_eq!(rx.begin(h), Err(BeginError::StaleId));
+        assert_eq!(rx.begin(h), Ok(Begin::AlreadyCommitted));
+
+        let mut committed_conflict = h;
+        committed_conflict.crc ^= 1;
+        assert_eq!(rx.begin(committed_conflict), Err(BeginError::ConflictingId));
 
         let mut older = h;
         older.id = 6;
@@ -668,8 +697,14 @@ mod tests {
             },
             ..header_for(data, 41)
         };
-        let mut rx = Receiver::with_last_completed(41, old.window);
-        assert_eq!(rx.begin(old), Err(BeginError::StaleId));
+        let committed = CommittedFrame {
+            id: old.id,
+            len: old.len,
+            crc: old.crc,
+            window: old.window,
+        };
+        let mut rx = Receiver::with_last_completed(committed);
+        assert_eq!(rx.begin(old), Ok(Begin::AlreadyCommitted));
 
         let mut next = old;
         next.id = 42;
