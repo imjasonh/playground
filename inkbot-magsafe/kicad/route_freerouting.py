@@ -369,7 +369,12 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         width=layout_route.mm(0.15),
     )
 
-    for x, y in ((30.0, 5.0), (9.8005, 69.1673), (7.6957, 63.3848)):
+    for x, y in (
+        (30.0, 5.0),
+        (9.8005, 69.1673),
+        (7.6957, 63.3848),
+        (9.706346, 61.0306),
+    ):
         add_locked_via(
             pcbnew.VECTOR2I(layout_route.mm(x), layout_route.mm(y)),
             layout_route.GND,
