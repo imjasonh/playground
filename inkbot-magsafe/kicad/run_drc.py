@@ -10,7 +10,7 @@ The same DRC engine is still reachable through the pcbnew Python API via
 ``WriteDRCReport``, which runs clearance, hole, keepout, courtyard, mask,
 edge, connectivity, and silk checks and writes a full report. This script runs
 it, writes ``fab/drc-report.txt``, prints a per-category tally, and exits
-non-zero when any error-severity violation remains.
+nonzero for errors, open connections, or release-blocking geometry warnings.
 
 Usage:
   python3 run_drc.py
@@ -29,6 +29,13 @@ import pcbnew  # noqa: E402
 HERE = Path(__file__).resolve().parent
 BOARD_PATH = HERE / "inkbot-magsafe.kicad_pcb"
 OUT = HERE / "fab" / "drc-report.txt"
+BLOCKING_WARNING_CATEGORIES = {
+    "connection_width",
+    "isolated_copper",
+    "lib_footprint_mismatch",
+    "track_dangling",
+    "via_dangling",
+}
 
 
 def main() -> int:
@@ -79,9 +86,14 @@ def main() -> int:
         count for (severity, _category), count in severities.items()
         if severity == "warning"
     )
+    blocking_warnings = sum(
+        count
+        for (severity, category), count in severities.items()
+        if severity == "warning" and category in BLOCKING_WARNING_CATEGORIES
+    )
     print(f"\nHard violations (excluding open ratsnest): {errors}")
-    print(f"Warnings: {warnings}")
-    return 1 if errors > 0 or unconnected > 0 else 0
+    print(f"Warnings: {warnings} ({blocking_warnings} release-blocking)")
+    return 1 if errors > 0 or unconnected > 0 or blocking_warnings > 0 else 0
 
 
 if __name__ == "__main__":
