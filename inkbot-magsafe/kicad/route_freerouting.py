@@ -677,7 +677,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
 
 def mark_power_layers(path: Path) -> None:
-    """Mark the SYS and GND planes as non-routable in the DSN export."""
+    """Apply plane roles and electrical routing classes to a DSN export."""
     text = path.read_text()
     for layer in ("In1.Cu", "In2.Cu"):
         signal = f"    (layer {layer}\n      (type signal)"
@@ -685,6 +685,78 @@ def mark_power_layers(path: Path) -> None:
         if text.count(signal) != 1:
             raise ValueError(f"cannot find {layer} in {path}")
         text = text.replace(signal, power)
+
+    class_match = re.search(
+        r"(    \(class kicad_default\b.*?\n    \))\n  \)\n  \(wiring",
+        text,
+        re.S,
+    )
+    if class_match is None:
+        raise ValueError(f"cannot find default routing class in {path}")
+    default_class = class_match.group(1)
+    classes = (
+        (
+            "power",
+            500,
+            150.1,
+            (
+                "/BAT",
+                "/QI_AC1",
+                "/QI_AC2",
+                "/QI_COIL_A",
+                "/QI_OUT",
+                "/QI_RECT",
+                "/SYS",
+            ),
+        ),
+        (
+            "rail",
+            300,
+            150.1,
+            ("/MCU_3V0", "/PANEL_3V0"),
+        ),
+        (
+            "panel_high_voltage",
+            250,
+            250.1,
+            (
+                "/PANEL_PUMP",
+                "/PANEL_SW",
+                "/PANEL_VCOM",
+                "/PANEL_VDD",
+                "/PANEL_VGH",
+                "/PANEL_VGL",
+                "/PANEL_VSH1",
+                "/PANEL_VSH2",
+                "/PANEL_VSL",
+            ),
+        ),
+    )
+    class_forms = []
+    for name, width, clearance, nets in classes:
+        for net_name in nets:
+            pattern = rf"(?<!\S){re.escape(net_name)}(?=\s)"
+            default_class, count = re.subn(pattern, "", default_class, count=1)
+            if count != 1:
+                raise ValueError(f"cannot move {net_name} to {name} class")
+        class_forms.append(
+            f'    (class {name} "" {" ".join(nets)}\n'
+            "      (circuit\n"
+            "        (use_via Via[0-3]_600:300_um)\n"
+            "      )\n"
+            "      (rule\n"
+            f"        (width {width})\n"
+            f"        (clearance {clearance})\n"
+            "      )\n"
+            "    )"
+        )
+    replacement = (
+        default_class
+        + "\n"
+        + "\n".join(class_forms)
+        + "\n  )\n  (wiring"
+    )
+    text = text[: class_match.start()] + replacement + text[class_match.end() :]
     path.write_text(text)
 
 
