@@ -49,7 +49,9 @@ pub enum Command {
     DataEntryMode = 0x11,
     SwReset = 0x12,
     TemperatureSensorControl = 0x18,
+    WriteTemperature = 0x1A,
     MasterActivation = 0x20,
+    DisplayUpdateControl1 = 0x21,
     DisplayUpdateControl2 = 0x22,
     WriteRam = 0x24,
     WriteRam2 = 0x26,
@@ -59,6 +61,20 @@ pub enum Command {
     SetRamXCounter = 0x4E,
     SetRamYCounter = 0x4F,
 }
+
+// Values from the GDEM0397T81 vendor sequence for the same SSD1677 glass
+// geometry. Confirm them against the released GDEY0397T81P sample and drawing.
+pub const INTERNAL_TEMPERATURE_SENSOR: [u8; 1] = [0x80];
+pub const BOOSTER_SOFT_START: [u8; 5] = [0xae, 0xc7, 0xc3, 0xc0, 0x80];
+pub const DRIVER_OUTPUT: [u8; 3] = [((HEIGHT - 1) & 0xff) as u8, ((HEIGHT - 1) >> 8) as u8, 0x02];
+pub const BORDER_WAVEFORM: [u8; 1] = [0x01];
+pub const DISPLAY_CONTROL_BW_ONLY: [u8; 2] = [0x40, 0x00];
+pub const DISPLAY_CONTROL_PARTIAL: [u8; 2] = [0x00, 0x00];
+pub const UPDATE_FULL: [u8; 1] = [0xf7];
+pub const UPDATE_FAST: [u8; 1] = [0xd7];
+pub const UPDATE_PARTIAL: [u8; 1] = [0xfc];
+pub const UPDATE_POWER_OFF: [u8; 1] = [0x83];
+pub const DEEP_SLEEP: [u8; 1] = [0x01];
 
 impl Command {
     /// The raw opcode byte to clock out on the command phase.
@@ -106,6 +122,43 @@ impl Window {
         let bytes_per_row = self.w.div_ceil(8) as usize;
         bytes_per_row * self.h as usize
     }
+
+    /// Build SSD1677 address data for the panel's reversed gate wiring.
+    pub fn address_plan(self) -> Option<AddressPlan> {
+        if !self.is_valid() {
+            return None;
+        }
+        let native_y = HEIGHT - self.y - self.h;
+        let x_end = self.x + self.w - 1;
+        let y_end = native_y + self.h - 1;
+        Some(AddressPlan {
+            data_entry_mode: [0x01],
+            x_window: words(self.x, x_end),
+            y_window: words(y_end, native_y),
+            x_counter: word(self.x),
+            y_counter: word(y_end),
+        })
+    }
+}
+
+/// Data bytes for commands 0x11, 0x44, 0x45, 0x4e, and 0x4f.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct AddressPlan {
+    pub data_entry_mode: [u8; 1],
+    pub x_window: [u8; 4],
+    pub y_window: [u8; 4],
+    pub x_counter: [u8; 2],
+    pub y_counter: [u8; 2],
+}
+
+const fn word(value: u16) -> [u8; 2] {
+    value.to_le_bytes()
+}
+
+const fn words(first: u16, second: u16) -> [u8; 4] {
+    let first = word(first);
+    let second = word(second);
+    [first[0], first[1], second[0], second[1]]
 }
 
 /// The waveform class requested for the next update.
@@ -210,6 +263,10 @@ mod tests {
         assert_eq!(Command::WriteRam2.opcode(), 0x26);
         assert_eq!(Command::MasterActivation.opcode(), 0x20);
         assert_eq!(Command::SwReset.opcode(), 0x12);
+        assert_eq!(DRIVER_OUTPUT, [0xdf, 0x01, 0x02]);
+        assert_eq!(BOOSTER_SOFT_START, [0xae, 0xc7, 0xc3, 0xc0, 0x80]);
+        assert_eq!(UPDATE_FULL, [0xf7]);
+        assert_eq!(UPDATE_PARTIAL, [0xfc]);
     }
 
     #[test]
@@ -275,6 +332,29 @@ mod tests {
             h: 3,
         };
         assert_eq!(w.packed_bytes(), 2 * 3);
+    }
+
+    #[test]
+    fn address_plan_uses_pixel_x_and_reversed_gate_y() {
+        let full = Window::FULL.address_plan().unwrap();
+        assert_eq!(full.data_entry_mode, [0x01]);
+        assert_eq!(full.x_window, [0x00, 0x00, 0x1f, 0x03]);
+        assert_eq!(full.y_window, [0xdf, 0x01, 0x00, 0x00]);
+        assert_eq!(full.x_counter, [0x00, 0x00]);
+        assert_eq!(full.y_counter, [0xdf, 0x01]);
+
+        let partial = Window {
+            x: 16,
+            y: 20,
+            w: 32,
+            h: 10,
+        }
+        .address_plan()
+        .unwrap();
+        assert_eq!(partial.x_window, [16, 0, 47, 0]);
+        assert_eq!(partial.y_window, [0xcb, 0x01, 0xc2, 0x01]);
+        assert_eq!(partial.x_counter, [16, 0]);
+        assert_eq!(partial.y_counter, [0xcb, 0x01]);
     }
 
     #[test]
