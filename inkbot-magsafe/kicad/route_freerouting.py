@@ -270,8 +270,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         board.Add(zone)
 
     add_plane(pcbnew.In2_Cu, layout_route.GND)
-    add_plane(pcbnew.B_Cu, layout_route.GND)
-    add_plane(pcbnew.F_Cu, layout_route.GND)
     add_plane(pcbnew.In1_Cu, layout_route.VSYS)
 
     antenna_keepout = pcbnew.ZONE(board)
