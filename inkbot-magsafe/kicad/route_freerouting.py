@@ -379,16 +379,11 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         track.SetLocked(True)
         board.Add(track)
 
-    def add_locked_via(
-        position: pcbnew.VECTOR2I,
-        net_name: str,
-        diameter: int = layout_route.VIA_D,
-        drill: int = layout_route.VIA_DRILL,
-    ) -> None:
+    def add_locked_via(position: pcbnew.VECTOR2I, net_name: str) -> None:
         via = pcbnew.PCB_VIA(board)
         via.SetPosition(position)
-        via.SetWidth(diameter)
-        via.SetDrill(drill)
+        via.SetWidth(layout_route.VIA_D)
+        via.SetDrill(layout_route.VIA_DRILL)
         via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
         via.SetNet(netmap[net_name])
         via.SetLocked(True)
@@ -680,14 +675,14 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         "/QI_OUT",
         width=layout_route.mm(0.3),
     )
-    qi_u3_via = board_point(55.0, 62.0)
+    qi_u3_via = board_point(54.6, 61.8)
     add_locked_path(
         (
             (47.8, 57.5),
             (54.25, 57.5),
             (55.5, 58.75),
-            (55.8, 60.8),
-            (55.0, 62.0),
+            (55.5, 60.9),
+            (54.6, 61.8),
         ),
         "/QI_OUT",
         pcbnew.F_Cu,
@@ -705,7 +700,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     # three long nets out of the dense surface channels lets In2.Cu remain an
     # uninterrupted return plane. The SYS pour clears around the tracks.
     chg_int_module_via = board_point(17.0, 86.4)
-    chg_int_charger_via = board_point(54.0, 60.8)
+    chg_int_charger_via = board_point(54.2, 60.4)
     add_locked_track(
         pad_center("U1", "20"),
         chg_int_module_via,
@@ -719,19 +714,14 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         "/CHG_INT_N",
         width=layout_route.mm(0.15),
     )
-    add_locked_via(
-        chg_int_charger_via,
-        "/CHG_INT_N",
-        layout_route.FANOUT_VIA_D,
-        layout_route.FANOUT_VIA_DRILL,
-    )
+    add_locked_via(chg_int_charger_via, "/CHG_INT_N")
     add_locked_path(
         (
             (17.0, 86.4),
             (58.8, 86.4),
-            (58.8, 62.8),
-            (56.0, 62.8),
-            (54.0, 60.8),
+            (58.8, 58.8),
+            (55.6, 58.8),
+            (54.2, 60.4),
         ),
         "/CHG_INT_N",
         pcbnew.In1_Cu,
@@ -796,7 +786,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         width=layout_route.mm(0.15),
     )
 
-    chg_sda_charger_via = board_point(54.0, 59.2)
+    chg_sda_charger_via = board_point(54.2, 59.6)
     chg_sda_pullup_via = board_point(57.2, 67.0)
     add_locked_track(
         pad_center("U3", "7"),
@@ -804,12 +794,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         "/CHG_SDA",
         width=layout_route.mm(0.15),
     )
-    add_locked_via(
-        chg_sda_charger_via,
-        "/CHG_SDA",
-        layout_route.FANOUT_VIA_D,
-        layout_route.FANOUT_VIA_DRILL,
-    )
+    add_locked_via(chg_sda_charger_via, "/CHG_SDA")
     add_locked_track(
         pad_center("R7", "2"),
         chg_sda_pullup_via,
@@ -819,46 +804,13 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     add_locked_via(chg_sda_pullup_via, "/CHG_SDA")
     add_locked_path(
         (
-            (54.0, 59.2),
-            (56.2, 57.0),
-            (57.2, 57.0),
+            (54.2, 59.6),
+            (53.4, 60.4),
+            (53.4, 62.0),
+            (57.2, 65.8),
             (57.2, 67.0),
         ),
         "/CHG_SDA",
-        pcbnew.In1_Cu,
-        width=layout_route.mm(0.15),
-    )
-
-    chg_scl_charger_via = board_point(54.5, 60.0)
-    chg_scl_pullup_via = board_point(49.825, 68.8)
-    add_locked_track(
-        pad_center("U3", "8"),
-        chg_scl_charger_via,
-        "/CHG_SCL",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(
-        chg_scl_charger_via,
-        "/CHG_SCL",
-        layout_route.FANOUT_VIA_D,
-        layout_route.FANOUT_VIA_DRILL,
-    )
-    add_locked_track(
-        pad_center("R8", "2"),
-        chg_scl_pullup_via,
-        "/CHG_SCL",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(chg_scl_pullup_via, "/CHG_SCL")
-    add_locked_path(
-        (
-            (54.5, 60.0),
-            (53.6, 60.9),
-            (53.6, 66.0),
-            (50.8, 68.8),
-            (49.825, 68.8),
-        ),
-        "/CHG_SCL",
         pcbnew.In1_Cu,
         width=layout_route.mm(0.15),
     )
