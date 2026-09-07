@@ -173,6 +173,7 @@ def add_rect_rule_area(
     board: pcbnew.BOARD,
     points: list[tuple[float, float]],
     layers: pcbnew.LSET,
+    keepalive: list[pcbnew.SHAPE_POLY_SET],
 ) -> pcbnew.ZONE:
     """Add a copper, track, and via keep-out polygon."""
     zone = pcbnew.ZONE(board)
@@ -186,6 +187,7 @@ def add_rect_rule_area(
     for x, y in points:
         outline.Append(layout_route.mm(x), layout_route.mm(y))
     zone.SetOutline(outline)
+    keepalive.append(outline)
     board.Add(zone)
     return zone
 
@@ -283,6 +285,7 @@ def build_placed_board() -> pcbnew.BOARD:
         pcbnew.VIA_DIMENSION(layout_route.VIA_D, layout_route.VIA_DRILL)
     )
     settings.SetViaSizeIndex(0)
+    keepalive: list[pcbnew.SHAPE_POLY_SET] = []
 
     def add_plane(layer: int, net_name: str) -> None:
         zone = pcbnew.ZONE(board)
@@ -301,6 +304,7 @@ def build_placed_board() -> pcbnew.BOARD:
         ):
             outline.Append(layout_route.mm(x), layout_route.mm(y))
         zone.SetOutline(outline)
+        keepalive.append(outline)
         board.Add(zone)
 
     add_plane(pcbnew.In1_Cu, layout_route.SYS)
@@ -323,7 +327,7 @@ def build_placed_board() -> pcbnew.BOARD:
         )
         for index in range(48)
     ]
-    add_rect_rule_area(board, circle, all_layers)
+    add_rect_rule_area(board, circle, all_layers, keepalive)
 
     # The board cutout already removes FR-4. This larger rule area prevents
     # copper and vias from violating routed-edge clearance.
@@ -331,6 +335,7 @@ def build_placed_board() -> pcbnew.BOARD:
         board,
         [(13.0, 58.5), (47.0, 58.5), (47.0, 81.5), (13.0, 81.5)],
         all_layers,
+        keepalive,
     )
 
     # The Raytac footprint includes an antenna keep-out. This explicit area
@@ -339,6 +344,7 @@ def build_placed_board() -> pcbnew.BOARD:
         board,
         [(1.5, 85.0), (11.0, 85.0), (11.0, 93.0), (1.5, 93.0)],
         all_layers,
+        keepalive,
     )
 
     board.BuildConnectivity()
