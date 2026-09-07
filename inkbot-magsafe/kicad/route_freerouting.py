@@ -264,34 +264,63 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         via.SetLocked(True)
         board.Add(via)
 
+    def add_locked_track(
+        start: pcbnew.VECTOR2I,
+        end: pcbnew.VECTOR2I,
+        net_name: str,
+        layer: int = pcbnew.B_Cu,
+        width: int = layout_route.TRACK_W,
+    ) -> None:
+        track = pcbnew.PCB_TRACK(board)
+        track.SetStart(start)
+        track.SetEnd(end)
+        track.SetWidth(width)
+        track.SetLayer(layer)
+        track.SetNet(netmap[net_name])
+        track.SetLocked(True)
+        board.Add(track)
+
     for reference, pad_number in (("TP4", "1"), ("U3", "6")):
         add_locked_via(pad_center(reference, pad_number), layout_route.VSYS)
 
     u5_vsys = pad_center("U5", "4")
     u5_via = pcbnew.VECTOR2I(u5_vsys.x - layout_route.mm(0.85), u5_vsys.y)
-    fanout = pcbnew.PCB_TRACK(board)
-    fanout.SetStart(u5_vsys)
-    fanout.SetEnd(u5_via)
-    fanout.SetWidth(layout_route.TRACK_W)
-    fanout.SetLayer(pcbnew.B_Cu)
-    fanout.SetNet(netmap[layout_route.VSYS])
-    fanout.SetLocked(True)
-    board.Add(fanout)
+    add_locked_track(u5_vsys, u5_via, layout_route.VSYS)
     add_locked_via(u5_via, layout_route.VSYS)
 
     u5_ntc = pad_center("U5", "13")
     ntc_corner = pcbnew.VECTOR2I(layout_route.mm(11.4), u5_ntc.y)
     ntc_via = pcbnew.VECTOR2I(layout_route.mm(11.7), layout_route.mm(63.7))
     for start, end in ((u5_ntc, ntc_corner), (ntc_corner, ntc_via)):
-        fanout = pcbnew.PCB_TRACK(board)
-        fanout.SetStart(start)
-        fanout.SetEnd(end)
-        fanout.SetWidth(layout_route.mm(0.15))
-        fanout.SetLayer(pcbnew.B_Cu)
-        fanout.SetNet(netmap["/NTC_SENSE"])
-        fanout.SetLocked(True)
-        board.Add(fanout)
+        add_locked_track(start, end, "/NTC_SENSE", width=layout_route.mm(0.15))
     add_locked_via(ntc_via, "/NTC_SENSE")
+
+    u1_ntc = pad_center("U1", "20")
+    u1_ntc_via = pcbnew.VECTOR2I(layout_route.mm(28.2), u1_ntc.y)
+    add_locked_track(u1_ntc, u1_ntc_via, "/NTC_SENSE", width=layout_route.mm(0.15))
+    add_locked_via(u1_ntc_via, "/NTC_SENSE")
+    ntc_path = [
+        ntc_via,
+        pcbnew.VECTOR2I(layout_route.mm(12.5), layout_route.mm(81.5)),
+        pcbnew.VECTOR2I(layout_route.mm(28.2), layout_route.mm(81.5)),
+        u1_ntc_via,
+    ]
+    for start, end in zip(ntc_path, ntc_path[1:]):
+        add_locked_track(start, end, "/NTC_SENSE", layer=pcbnew.F_Cu)
+
+    clamp_path = [
+        pad_center("U5", "16"),
+        pcbnew.VECTOR2I(layout_route.mm(11.3), layout_route.mm(66.25)),
+        pcbnew.VECTOR2I(layout_route.mm(11.3), layout_route.mm(69.0)),
+        pad_center("C7", "1"),
+    ]
+    for start, end in zip(clamp_path, clamp_path[1:]):
+        add_locked_track(
+            start,
+            end,
+            "/QI_CLAMP2",
+            width=layout_route.mm(0.15),
+        )
 
     for x, y in ((9.8005, 69.1673), (7.6957, 63.3848)):
         add_locked_via(
@@ -363,6 +392,18 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     return board, keepalive
 
 
+def mark_inner_layers_as_power(path: Path) -> None:
+    """Mark the two internal planes as non-routable in a KiCad DSN export."""
+    text = path.read_text()
+    for layer_name in ("In1.Cu", "In2.Cu"):
+        signal = f"    (layer {layer_name}\n      (type signal)"
+        power = f"    (layer {layer_name}\n      (type power)"
+        if text.count(signal) != 1:
+            raise ValueError(f"cannot find the {layer_name} layer in {path}")
+        text = text.replace(signal, power)
+    path.write_text(text)
+
+
 def freerouting_command() -> list[str]:
     """Return the validated Freerouting command."""
     jar_value = os.environ.get("FREEROUTING_JAR")
@@ -393,6 +434,7 @@ def freerouting_command() -> list[str]:
         os.environ.get("FREEROUTING_THREADS", "1"),
         "-l",
         "en",
+        "--router.layers.routable=true,false,false,true",
     ]
     if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
         xvfb_run = shutil.which("xvfb-run")
@@ -407,6 +449,7 @@ def main() -> None:
     board, _keepalive = build_placed_board()
     if not pcbnew.ExportSpecctraDSN(board, str(DSN)):
         raise SystemExit(f"failed to export Specctra DSN: {DSN}")
+    mark_inner_layers_as_power(DSN)
 
     SES.unlink(missing_ok=True)
     command = freerouting_command()
