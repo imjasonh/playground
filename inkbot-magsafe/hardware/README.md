@@ -49,6 +49,8 @@ parity.
 - `run_erc.py` must report no contract, no-connect, BOM, or board-parity
   errors.
 - `run_drc.py` must report no hard violations and no unconnected pads.
+- `production-gates.json` must classify a production export as `PRODUCTION`
+  and link evidence for every passed gate.
 - The committed schematic must match a fresh generator run. Regenerating the
   placed board from the same source must preserve footprints, nets, keep-outs,
   fixed fanouts, and design rules before routing.
@@ -74,8 +76,10 @@ Circuit rationale: [`../../docs/inkbot-magsafe-design.md`](../../docs/inkbot-mag
 
 ## Board summary
 
-- MCU: **Raytac MDBT50Q-512K** pre-certified nRF52833 module (128 KB RAM holds
-  the 48 KB framebuffer; antenna, 32 MHz crystal, DC/DC, and RF match on-module).
+- MCU: **Raytac MDBT50Q-1MV2** pre-certified nRF52840 module. Its 1 MiB flash
+  holds the update and frame slots, and its 256 KiB RAM leaves margin around
+  the 48 KiB framebuffer. The antenna, 32 MHz crystal, DC/DC, and RF match are
+  on the module.
 - Panel: **3.97-inch 480x800 portrait** mono, 24-pin 0.5 mm FPC, SSD1677;
   fills the front and overlaps the MagSafe ring.
 - Power: **BQ51013C** Qi 1.3 receiver, **BQ25186** charger with a

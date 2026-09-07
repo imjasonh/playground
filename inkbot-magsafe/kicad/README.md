@@ -2,7 +2,7 @@
 
 EVT hardware for a 60 x 99 mm portrait e-paper tile. The 3.97-inch panel is
 the front face and overlaps the magnetic ring. The radio is a pre-certified
-Raytac MDBT50Q-512K nRF52833 module.
+Raytac MDBT50Q-1MV2 nRF52840 module.
 
 ## Files
 
@@ -43,7 +43,11 @@ areas. KiCad DRC checks the unoptimized route.
 
 The fabrication export also writes a mirrored bottom-assembly PDF, a
 populated STEP model, a schematic PDF, and a SHA-256 manifest tied to the source
-commit. Review those files with the Gerber job before ordering.
+commit. The manifest records the EVT classification and every unresolved gate
+from `../production-gates.json`. Setting `INKBOT_PRODUCTION_EXPORT=1` blocks
+the export unless that file classifies the design as `PRODUCTION` and gives
+evidence for every passed gate. Review those files with the Gerber job before
+ordering.
 
 Open `inkbot-magsafe.kicad_pro` in KiCad 7 or later to inspect the result and
 run interactive DRC before an order. A clean route is not approval to
@@ -57,12 +61,12 @@ design document first.
 - **Accessory ring center 30 mm from the top edge** as an EVT placement
   hypothesis. Confirm each phone and camera keep-out against Apple's
   model-specific drawing. The panel overlaps the ring.
-- **Raytac MDBT50Q-512K** pre-certified nRF52833 module (128 KB RAM for the
-  48 KB framebuffer). Its antenna end is flush with the left board edge over
+- **Raytac MDBT50Q-1MV2** pre-certified nRF52840 module (1 MiB flash and
+  256 KiB RAM). Its antenna end is flush with the left board edge over
   an all-layer copper keep-out.
 - **BQ51013C** Qi 1.3 receiver and default-off **BQ25186** protected-cell
   charger with a separate SYS power path.
-- **TPS7A0230P** 3.0 V MCU rail with nRF52833 VDD and VDDH tied together.
+- **TPS7A0230P** 3.0 V MCU rail with nRF52840 VDD and VDDH tied together.
 - **TPS7A2030P** 3.0 V panel rail with active discharge.
 - 0.8 mm, four-layer JLC7628 PCB with a 34 x 23 mm rounded battery cutout,
   1 oz outer copper, 0.5 oz inner copper, and 0.6/0.3 mm vias.

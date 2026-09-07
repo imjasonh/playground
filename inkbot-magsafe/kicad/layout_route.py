@@ -5,11 +5,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
 
 import pcbnew
+
+import release_gates
 
 HERE = Path(__file__).resolve().parent
 BOARD = HERE / "inkbot-magsafe.kicad_pcb"
@@ -187,6 +190,14 @@ def load_fp(library_name: str):
 
 def export_fab() -> None:
     """Export Gerbers, drill data, and the pick-and-place file."""
+    gate_summary = release_gates.validate_release_gates()
+    if (
+        os.environ.get("INKBOT_PRODUCTION_EXPORT") == "1"
+        and not gate_summary.production_releasable
+    ):
+        blocked = ", ".join(gate_summary.blocked)
+        raise SystemExit(f"production fabrication export blocked by: {blocked}")
+
     FAB.mkdir(exist_ok=True)
     for path in FAB.iterdir():
         if path.is_file() and (
@@ -275,6 +286,12 @@ def export_fab() -> None:
     )
     manifest = {
         "source_commit": source_commit,
+        "classification": gate_summary.classification,
+        "production_releasable": gate_summary.production_releasable,
+        "blocked_gates": list(gate_summary.blocked),
+        "release_gates_sha256": hashlib.sha256(
+            release_gates.DEFAULT_PATH.read_bytes()
+        ).hexdigest(),
         "artifacts": [
             {
                 "path": path.name,

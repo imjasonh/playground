@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "product": "inkbot-magsafe",
+  "classification": "EVT",
+  "gates": [
+    {
+      "id": "independent-schematic-review",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "pcb-drc-and-dfm",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "panel-drawing-and-sample",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "battery-pack-qualification",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "magnet-and-anti-rotation-qualification",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "enclosure-and-assembly-drawings",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "qi-tuning-fod-and-interoperability",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "power-thermal-and-charger-validation",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "rf-and-ble-validation",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "signed-dfu-and-owner-recovery",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "mechanical-and-environmental-validation",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "factory-programming-and-eol-test",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "regulatory-and-market-access",
+      "status": "blocked",
+      "evidence": []
+    }
+  ]
+}
