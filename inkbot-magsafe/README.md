@@ -18,6 +18,8 @@ implemented. Do not treat a successful cross-build as working device firmware.
 
 ## What runs today
 
+- `src/charger.rs`: ordered BQ25186 safety-register writes and exact readback
+  checks that must pass before hardware can enable charging.
 - `src/protocol.rs`: the versioned, resumable BLE frame-transfer state machine
   with exact bounds, byte alignment, length, CRC-32, conflicting-ID, durable
   commit, and replay checks.
