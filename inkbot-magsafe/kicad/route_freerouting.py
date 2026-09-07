@@ -27,6 +27,7 @@ DSN = FAB / "inkbot-magsafe.dsn"
 SES = FAB / "inkbot-magsafe.ses"
 ROUTE_BASE = FAB / "inkbot-magsafe-route-base.kicad_pcb"
 PLACED_BOARD = FAB / "inkbot-magsafe-placed.kicad_pcb"
+ROUTED_BOARD = FAB / "inkbot-magsafe-routed.kicad_pcb"
 INCOMPLETE_BOARD = FAB / "inkbot-magsafe-incomplete.kicad_pcb"
 VIA_NAME = re.compile(r"Via\[(\d+)-(\d+)\]_(\d+):(\d+)_um")
 BLOCKING_DRC_WARNINGS = {
@@ -1202,6 +1203,12 @@ def main() -> None:
         raise SystemExit(f"Freerouting did not write a session: {SES}")
 
     import_freerouting_session(board, SES)
+    board.BuildConnectivity()
+    fill_zones(board)
+    # KiCad 7 can retain one stale zone-connectivity edge after an SES import.
+    # A save/reload cycle rebuilds the same board data that standalone DRC sees.
+    pcbnew.SaveBoard(str(ROUTED_BOARD), board)
+    board = pcbnew.LoadBoard(str(ROUTED_BOARD))
     board.BuildConnectivity()
     fill_zones(board)
     board.BuildConnectivity()
