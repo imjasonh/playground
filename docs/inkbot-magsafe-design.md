@@ -463,7 +463,8 @@ image are not acceptable DFU mechanisms.
 Full line items with part numbers and price columns are in
 [`inkbot-magsafe-bom.csv`](inkbot-magsafe-bom.csv). The modeled direct build
 cost includes parts, PCB fabrication, SMT, final integration, programming,
-end-of-line test, spacer, insulation, and rear cover:
+end-of-line test, spacer, insulation, and rear cover. Each CSV price is the
+extended cost for every reference in that row, not a single component price:
 
 | Quantity | Unit direct cost | Build total | With 15% yield and price reserve |
 |---:|---:|---:|---:|

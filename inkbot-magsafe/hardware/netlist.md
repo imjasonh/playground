@@ -61,7 +61,8 @@ SSD1677 COG, and a 24-pin 0.5 mm FPC.
 - PANEL_DC (P0.20) → D/C#
 - PANEL_RST (P1.09) → RST#
 - PANEL_BUSY (P0.30) ← BUSY
-- PANEL_PWR_EN (P0.31) → U4 EN
+- PANEL_PWR_EN (P0.31) → U4 EN. The TPS7A20's internal 500 kOhm smart
+  pull-down keeps the panel rail off while the MCU pin is high impedance.
 - J1 pins 15 and 16 connect `VDDIO` and `VCI` to `PANEL_3V0`.
 - J1 pin 18 is the internally regulated 1.8 V `VDD` node and has only its
   reservoir capacitor.

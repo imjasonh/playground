@@ -348,7 +348,7 @@ def main() -> int:
 
     costs = {}
     for quantity in (1, 100, 1000):
-        column = f"unit_usd_qty{quantity}"
+        column = f"row_cost_usd_qty{quantity}"
         costs[quantity] = sum(
             float(row[column]) for row in rows if row["fitment"] != "dnp"
         )

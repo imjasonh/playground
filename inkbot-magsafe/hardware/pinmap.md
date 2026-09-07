@@ -14,7 +14,7 @@ Qi coil (both detune 2.4 GHz; see the design doc).
 | Panel DC | P0.20 | 44 | out | PANEL_DC | command / data select |
 | Panel RST | P1.09 | 26 | out | PANEL_RST | active low |
 | Panel BUSY | P0.30 | 14 | in | PANEL_BUSY | high while refreshing |
-| Panel power enable | P0.31 | 12 | out | PANEL_PWR_EN | drives TPS7A2030P EN |
+| Panel power enable | P0.31 | 12 | out | PANEL_PWR_EN | TPS7A20's 500 kOhm smart pull-down holds EN low during reset |
 | Qi power present | P0.02 / AIN0 | 11 | in | QI_PRESENT | BQ51013C CHG open-drain; enable internal pull-up |
 | Charge status 1 | P0.04 / AIN2 | 20 | in | CHG_STAT1 | BQ25185 STAT1 open-drain; enable internal pull-up |
 | Charge status 2 | P0.05 / AIN3 | 21 | in | CHG_STAT2 | BQ25185 STAT2 open-drain; enable internal pull-up |
