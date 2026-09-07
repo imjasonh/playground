@@ -43,7 +43,17 @@ def main() -> int:
     pcbnew.WriteDRCReport(board, str(OUT), pcbnew.EDA_UNITS_MILLIMETRES, True)
 
     text = OUT.read_text()
-    tally = Counter(re.findall(r"\[([a-z_]+)\]", text))
+    tally = Counter(re.findall(r"^\[([a-z_]+)\]", text, re.MULTILINE))
+    severities = Counter()
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        match = re.match(r"^\[([a-z_]+)\]", line)
+        if match is None:
+            continue
+        category = match.group(1)
+        detail = "\n".join(lines[index + 1:index + 4])
+        severity = re.search(r"Severity: (error|warning|ignore)", detail)
+        severities[(severity.group(1) if severity else "unknown", category)] += 1
 
     total = 0
     m = re.search(r"Found (\d+) DRC violations", text)
@@ -54,19 +64,24 @@ def main() -> int:
     if mu:
         unconnected = int(mu.group(1))
 
-    # lib_footprint_issues are library-table warnings from script-loaded
-    # footprints, not board defects; call them out separately.
-    lib_warn = tally.get("lib_footprint_issues", 0)
-
     print(f"DRC report: {OUT}")
     print(f"  violations: {total}  (+{unconnected} unconnected pads)")
     print("  by category:")
     for cat, n in tally.most_common():
         print(f"    {n:5d}  {cat}")
 
-    hard = total - lib_warn
-    print(f"\nHard violations (excluding lib_footprint_issues): {hard}")
-    return 1 if hard > 0 or unconnected > 0 else 0
+    errors = sum(
+        count
+        for (severity, category), count in severities.items()
+        if severity == "error" and category != "unconnected_items"
+    )
+    warnings = sum(
+        count for (severity, _category), count in severities.items()
+        if severity == "warning"
+    )
+    print(f"\nHard violations (excluding open ratsnest): {errors}")
+    print(f"Warnings: {warnings}")
+    return 1 if errors > 0 or unconnected > 0 else 0
 
 
 if __name__ == "__main__":

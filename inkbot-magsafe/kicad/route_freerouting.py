@@ -264,6 +264,13 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             for pad in footprint.Pads():
                 if pad.GetNumber() == pad_number:
                     pad.SetNet(netmap[net_name])
+                    if net_name == layout_route.GND and reference in {
+                        "U1",
+                        "U2",
+                        "U3",
+                        "U4",
+                    }:
+                        pad.SetZoneConnection(pcbnew.ZONE_CONNECTION_FULL)
                     assigned.add((reference, pad_number))
                     break
             else:
@@ -345,7 +352,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     # also protects it if a future library revision drops the footprint rule.
     add_rect_rule_area(
         board,
-        [(0.0, 83.0), (4.8, 83.0), (4.8, 95.0), (0.0, 95.0)],
+        [(0.0, 83.0), (4.25, 83.0), (4.25, 95.0), (0.0, 95.0)],
         all_layers,
         keepalive,
     )
