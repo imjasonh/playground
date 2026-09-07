@@ -12,7 +12,7 @@ Hardware notes (netlist, pin map, board stack-up) are in
 [`hardware/`](hardware/).
 
 Status: scaffold. The pure logic (frame protocol, panel geometry, power gating)
-is implemented and unit-tested; the nRF52832 bring-up (SPI panel driver, SAADC,
+is implemented and unit-tested; the nRF52833 bring-up (SPI panel driver, SAADC,
 SoftDevice BLE) is stubbed. The iOS app is deferred until the firmware and
 hardware settle.
 
@@ -20,7 +20,7 @@ hardware settle.
 
 - `src/protocol.rs`: the resumable, idempotent BLE frame-transfer state machine
   with a table-free streaming CRC-32. Host-tested.
-- `src/panel.rs`: geometry and the UC8253-class command set for the 240x416
+- `src/panel.rs`: geometry and the SSD1677-class command set for the 480x800
   portrait panel, including partial-refresh window math. Host-tested.
 - `src/power.rs`: battery state-of-charge estimate and the voltage and
   temperature gates for refresh and charge. Host-tested.
@@ -29,8 +29,8 @@ hardware settle.
 
 ## Target
 
-- MCU: Nordic nRF52832 (Cortex-M4F), target `thumbv7em-none-eabihf`.
-- Pre-certified module for early boards: Raytac MDBT42Q.
+- MCU: Nordic nRF52833 (Cortex-M4F, 128 KiB RAM), target `thumbv7em-none-eabihf`.
+  The 48 KiB mono framebuffer for the 480x800 panel needs the 52833's RAM.
 - Flashing: SWD test pads (there is no USB port); the cargo runner is
   `probe-rs`.
 
@@ -49,7 +49,7 @@ cargo test
 cargo clippy --all-targets -- -D warnings
 cargo fmt --all --check
 
-# Firmware: cross-build and lint for the nRF52832.
+# Firmware: cross-build and lint for the nRF52833.
 cargo build --release --target thumbv7em-none-eabihf
 cargo clippy --target thumbv7em-none-eabihf -- -D warnings
 

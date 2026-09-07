@@ -4,7 +4,7 @@ Firmware and hardware for a MagSafe-attached 4-inch BLE e-ink tile, phone-first
 and battery-first. Read [`README.md`](README.md) for the build loop and
 [`../docs/inkbot-magsafe-design.md`](../docs/inkbot-magsafe-design.md) for the
 product and circuit design. This is a scaffold: pure logic is implemented and
-tested; nRF52832 bring-up and BLE are stubbed.
+tested; nRF52833 bring-up and BLE are stubbed.
 
 ## Contracts
 
@@ -25,9 +25,9 @@ tested; nRF52832 bring-up and BLE are stubbed.
 - **`[lints.rust] unused = "deny"`.** Unused code fails the build. Do not
   `#[allow(dead_code)]` to keep dead methods; delete them.
 - **Toolchain is pinned.** `rust-toolchain.toml` sets stable plus the
-  `thumbv7em-none-eabihf` target. `memory.x` is the SoftDevice-free layout;
-  adding the S132 SoftDevice for BLE means moving FLASH and RAM origins (see the
-  comments in `memory.x`).
+  `thumbv7em-none-eabihf` target. `memory.x` is the SoftDevice-free layout
+  (nRF52833: 512 KiB flash, 128 KiB RAM); adding the S132/S140 SoftDevice for
+  BLE means moving FLASH and RAM origins (see the comments in `memory.x`).
 
 ## CI
 

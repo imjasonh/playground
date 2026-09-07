@@ -29,9 +29,9 @@ def main() -> None:
     for fp in list(board.GetFootprints()):
         board.Remove(fp)
 
-    # Board is 57 x 96 mm portrait; the coil/ring fill the top (~y<50), so parts
+    # Board is 66 x 108 mm portrait; the coil/ring fill the top (~y<50), so parts
     # mount on the back below it, ringing the cutout.
-    add_fp(board, "Package_DFN_QFN", "QFN-48-1EP_6x6mm_P0.4mm_EP4.6x4.6mm", "U1", 16, 58, True)
+    add_fp(board, "Package_DFN_QFN", "Nordic_QFN-40-1EP_5x5mm_P0.4mm", "U1", 18, 60, True)
     # BQ51050 RHL-20
     rhl = None
     for candidate in ("Texas_VQFN-RHL-20", "Texas_RHL0020A", "RHL0020A"):
@@ -44,24 +44,24 @@ def main() -> None:
             print("candidate", p.name)
         raise SystemExit("BQ51050 footprint not found")
     rhl.SetReference("U5")
-    rhl.SetPosition(pcbnew.VECTOR2I(int(40 * 1e6), int(58 * 1e6)))
+    rhl.SetPosition(pcbnew.VECTOR2I(int(46 * 1e6), int(60 * 1e6)))
     rhl.Flip(rhl.GetPosition(), False)
     board.Add(rhl)
     print("placed U5")
 
-    add_fp(board, "Package_TO_SOT_SMD", "SOT-23-6", "U3", 12, 88, True)
-    add_fp(board, "Package_TO_SOT_SMD", "SOT-23-5", "U4", 24, 88, True)
+    add_fp(board, "Package_TO_SOT_SMD", "SOT-23-6", "U3", 14, 98, True)
+    add_fp(board, "Package_TO_SOT_SMD", "SOT-23-5", "U4", 28, 98, True)
     add_fp(
         board,
         "Connector_FFC-FPC",
         "Hirose_FH12-24S-0.5SH_1x24-1MP_P0.50mm_Horizontal",
         "J1",
-        28.5,
-        93,
+        33.0,
+        104,
         False,
     )
-    for i, y in enumerate((60, 64, 68, 72, 76), start=1):
-        add_fp(board, "TestPoint", "TestPoint_Pad_D1.5mm", f"TP{i}", 4, y, True)
+    for i, y in enumerate((62, 66, 70, 74, 78), start=1):
+        add_fp(board, "TestPoint", "TestPoint_Pad_D1.5mm", f"TP{i}", 5, y, True)
 
     pcbnew.SaveBoard(str(BOARD), board)
     print("saved", [fp.GetReference() for fp in board.GetFootprints()])

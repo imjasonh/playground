@@ -2,7 +2,7 @@
 name = "inkbot-magsafe"
 version = "0.1.0"
 edition = "2021"
-description = "Firmware for the inkbot-magsafe MagSafe e-ink tile (nRF52832, BLE)."
+description = "Firmware for the inkbot-magsafe MagSafe e-ink tile (nRF52833, BLE)."
 publish = false
 
 [lib]

@@ -1,34 +1,34 @@
-//! Geometry and command set for the 3.7-inch 240x416 mono e-ink panel
-//! (UC8253 chip-on-glass controller), mounted portrait.
+//! Geometry and command set for the 4.26-inch 480x800 mono e-ink panel
+//! (SSD1677 chip-on-glass controller), mounted portrait.
 //!
 //! The controller packs 8 horizontal pixels per byte and addresses RAM on byte
 //! boundaries, so partial-refresh windows round their width up to whole bytes.
 
 /// Panel width in pixels (portrait: the short axis).
-pub const WIDTH: u16 = 240;
+pub const WIDTH: u16 = 480;
 
 /// Panel height in pixels (portrait: the long axis).
-pub const HEIGHT: u16 = 416;
+pub const HEIGHT: u16 = 800;
 
-/// Length in bytes of a full 1-bit-per-pixel framebuffer (12480 bytes).
+/// Length in bytes of a full 1-bit-per-pixel framebuffer (48000 bytes).
 pub const FRAME_BYTES: usize = (WIDTH as usize * HEIGHT as usize) / 8;
 
-/// UC8253 command opcodes the driver issues over SPI.
+/// SSD1677 command opcodes the driver issues over SPI.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum Command {
-    PanelSetting = 0x00,
-    PowerSetting = 0x01,
-    PowerOff = 0x02,
-    PowerOn = 0x04,
-    DeepSleep = 0x07,
-    DisplayRefresh = 0x12,
-    WriteRam = 0x13,
-    VcomDataInterval = 0x50,
-    ResolutionSetting = 0x61,
-    PartialWindow = 0x90,
-    PartialIn = 0x91,
-    PartialOut = 0x92,
+    DriverOutputControl = 0x01,
+    DeepSleep = 0x10,
+    DataEntryMode = 0x11,
+    SwReset = 0x12,
+    TemperatureSensorControl = 0x18,
+    MasterActivation = 0x20,
+    DisplayUpdateControl2 = 0x22,
+    WriteRam = 0x24,
+    SetRamXAddress = 0x44,
+    SetRamYAddress = 0x45,
+    SetRamXCounter = 0x4E,
+    SetRamYCounter = 0x4F,
 }
 
 impl Command {
@@ -82,16 +82,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn full_frame_is_12480_bytes() {
-        assert_eq!(FRAME_BYTES, 12_480);
+    fn full_frame_is_48000_bytes() {
+        assert_eq!(FRAME_BYTES, 48_000);
         assert_eq!(Window::FULL.packed_bytes(), FRAME_BYTES);
     }
 
     #[test]
     fn opcodes_match_datasheet() {
-        assert_eq!(Command::WriteRam.opcode(), 0x13);
-        assert_eq!(Command::DisplayRefresh.opcode(), 0x12);
-        assert_eq!(Command::PartialWindow.opcode(), 0x90);
+        assert_eq!(Command::WriteRam.opcode(), 0x24);
+        assert_eq!(Command::MasterActivation.opcode(), 0x20);
+        assert_eq!(Command::SwReset.opcode(), 0x12);
     }
 
     #[test]
@@ -112,7 +112,7 @@ mod tests {
         }
         .is_valid());
         assert!(!Window {
-            x: 232,
+            x: 472,
             y: 0,
             w: 16,
             h: 10

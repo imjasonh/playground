@@ -4,4 +4,4 @@
 # build-script search path.
 [target.thumbv7em-none-eabihf]
 rustflags = ["-C", "link-arg=-Tlink.x"]
-runner = "probe-rs run --chip nRF52832_xxAA"
+runner = "probe-rs run --chip nRF52833_xxAA"

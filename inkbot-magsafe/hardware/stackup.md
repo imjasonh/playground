@@ -4,28 +4,29 @@
 
 - 4 layers: signal / ground / power / signal.
 - Thickness **0.4 mm** (thin FR4; confirm fab yield before volume).
-- Outline **57 × 96 mm, portrait** — narrower than every MagSafe iPhone (down to
-  the 64.2 mm minis), so it fits the phone width with no side overhang.
-- **Battery cutout** (~30 × 20 mm) below the coil so the LiPo thickness does not
+- Outline **66 × 108 mm, portrait** — narrower than a standard/Pro iPhone
+  (70.6 mm), so it fits the phone width with no side overhang. Minis (64.2 mm)
+  are out of scope.
+- **Battery cutout** (~34 × 22 mm) below the coil so the LiPo thickness does not
   stack on the PCB.
 - Solid ground under the radio and panel SPI. Antenna keep-out at the **bottom**
   edge, farthest from the ring and coil. Tune matching with a phone attached.
 
 ## No case
 
-The 3.7-inch panel is the front face (adhesive bond to the PCB) and covers the
+The 4.26-inch panel is the front face (adhesive bond to the PCB) and covers the
 whole board. The back holds the Qi coil, ferrite, MagSafe magnet ring, and the
 components. There is no plastic shell for the first spin.
 
 ## Placement
 
-- Front: 3.7-inch e-ink panel (240 × 416), FPC into the connector. The panel
+- Front: 4.26-inch e-ink panel (480 × 800), FPC into the connector. The panel
   **overlaps the MagSafe ring** — coil and magnets are behind it on the back.
 - Back, top: Qi RX coil inside the MagSafe magnet ring, ring center **30 mm from
   the top edge** (Apple's keep-in limit toward the phone top).
-- Back, below the coil: nRF52832, BQ51050B, load switch, LDO, passives ringing
+- Back, below the coil: nRF52833, BQ51050B, load switch, LDO, passives ringing
   the cutout.
-- Cutout: thin ~90 mAh LiPo (~1.5 mm).
+- Cutout: thin ~120 mAh LiPo (~1.5 mm).
 
 ## Camera clearance
 

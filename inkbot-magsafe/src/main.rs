@@ -1,7 +1,7 @@
 #![cfg_attr(target_os = "none", no_std)]
 #![cfg_attr(target_os = "none", no_main)]
 
-//! Bare-metal entry point for the nRF52832. The interesting logic lives in the
+//! Bare-metal entry point for the nRF52833. The interesting logic lives in the
 //! [`inkbot_magsafe`] library so it can be unit-tested on the host; this file
 //! wires it to the chip.
 //!
@@ -18,7 +18,7 @@ mod firmware {
     // Compile-time guard: the mono framebuffer must fit the RAM budget we
     // reserve for it (see memory.x). If the geometry ever changes, the build
     // fails here rather than at runtime.
-    const _: () = assert!(panel::FRAME_BYTES == 12_480);
+    const _: () = assert!(panel::FRAME_BYTES == 48_000);
 
     #[entry]
     fn main() -> ! {

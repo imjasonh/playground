@@ -30,16 +30,15 @@ schematic in [`../kicad/`](../kicad/) and
 
 ## Panel (SPI + control)
 
-Panel: 3.7-inch 240×416 portrait mono e-ink, UC8253-class COG, 24-pin 0.5 mm
-FPC. Same SPI control lines as any UC81xx/SSD168x panel.
+Panel: 4.26-inch 480×800 portrait mono e-ink, SSD1677 COG, 24-pin 0.5 mm FPC.
 
-- PANEL_SCLK (P0.14) → J1 / panel SCK
-- PANEL_MOSI (P0.13) → SDI
-- PANEL_CS (P0.12) → CS#
-- PANEL_DC (P0.11) → D/C#
-- PANEL_RST (P0.08) → RST#
-- PANEL_BUSY (P0.07) ← BUSY
-- PANEL_PWR_EN (P0.06) → U3 EN/UVLO
+- PANEL_SCLK (P0.11) → J1 / panel SCK
+- PANEL_MOSI (P0.15) → SDI
+- PANEL_CS (P0.17) → CS#
+- PANEL_DC (P0.20) → D/C#
+- PANEL_RST (P1.09) → RST#
+- PANEL_BUSY (P0.30) ← BUSY
+- PANEL_PWR_EN (P0.31) → U3 EN/UVLO
 - Panel charge-pump caps on the remaining FPC pins per the panel datasheet
 
 ## Radio, timing, debug
@@ -51,6 +50,7 @@ FPC. Same SPI control lines as any UC81xx/SSD168x panel.
 
 ## Decoupling
 
-- U1: VDD caps, DEC1–4 caps, DCC inductor per Nordic reference
+- U1: VDD/VDDH caps, one cap per DEC rail (DEC1/3/4/5/6, DECUSB), DCC inductor
+  per Nordic nRF52833 reference; VBUS tied to GND (USB unused)
 - U3/U4/U5: datasheet input/output caps
 - C10: 220 uF across VSYS next to the panel connector for refresh inrush

@@ -8,6 +8,7 @@ SchematicBuilder.connect_pin (never guess), then kicad-cli netlist validation.
 from __future__ import annotations
 
 import json
+import math
 import re
 import sys
 from pathlib import Path
@@ -35,7 +36,7 @@ PRO = OUT_DIR / "inkbot-magsafe.kicad_pro"
 def build_lib_symbols() -> str:
     return "\n\n".join(
         [
-            embed(SYM / "MCU_Nordic.kicad_sym", "MCU_Nordic", "nRF52832-QFxx"),
+            embed(SYM / "MCU_Nordic.kicad_sym", "MCU_Nordic", "nRF52833_QDxx"),
             embed(SYM / "Battery_Management.kicad_sym", "Battery_Management", "BQ51050BRHL"),
             embed(SYM / "Power_Management.kicad_sym", "Power_Management", "TPS22810DRV"),
             embed(SYM / "Regulator_Linear.kicad_sym", "Regulator_Linear", "MIC5504-3.3YM5"),
@@ -150,7 +151,7 @@ def main() -> None:
     pass_v(sch, "Device:R", "R3", "10k", qi_x + 60, qi_y + 20, "QI_TERM", "GND", fp_r0402)
     pass_v(sch, "Device:R", "R4", "10k", 95, 130, "QI_AD_EN", "QI_RECT", fp_r0402)
 
-    sch.place("Device:Battery_Cell", "BT1", "100mAh LiPo", x=snap(175), y=snap(45), footprint="")
+    sch.place("Device:Battery_Cell", "BT1", "120mAh LiPo", x=snap(175), y=snap(45), footprint="")
     sch.connect_pin("BT1", "+", "VSYS", wire_dy=-5.08)
     sch.connect_pin("BT1", "-", "GND", wire_dy=5.08)
     pass_v(sch, "Device:C", "C10", "220uF", 190, 45, "VSYS", "GND", fp_c1206)
@@ -199,84 +200,111 @@ def main() -> None:
     sch.place_power("power:GND", "GND", snap(175), snap(90))
 
     # -------------------------------------------------------------------- MCU
-    mcu_x, mcu_y = snap(140), snap(220)
+    mcu_x, mcu_y = snap(150), snap(230)
+    mcu_sym = lib.get("nRF52833_QDxx")
     sch.place(
-        "MCU_Nordic:nRF52832-QFxx",
+        "MCU_Nordic:nRF52833_QDxx",
         "U1",
-        "nRF52832-QFaa",
+        "nRF52833-QDAA",
         x=mcu_x,
         y=mcu_y,
-        footprint="Package_DFN_QFN:QFN-48-1EP_6x6mm_P0.4mm_EP4.6x4.6mm",
+        footprint="Package_DFN_QFN:Nordic_QFN-40-1EP_5x5mm_P0.4mm",
     )
-    sch.connect_pin("U1", "VDD", "VSYS", wire_dy=-7.62)
-    sch.connect_pin("U1", "VSS", "GND", wire_dy=7.62)
-    pass_v(sch, "Device:C", "C15", "100nF", mcu_x - 40, mcu_y - 60, "VSYS", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C16", "4.7uF", mcu_x - 47, mcu_y - 60, "VSYS", "GND", fp_c0603)
-    pass_v(sch, "Device:L", "L2", "15uH", mcu_x + 42, mcu_y - 60, "DCC", "VSYS", fp_l0805)
-    sch.connect_pin("U1", "DCC", "DCC", wire_dy=-7.62)
-    sch.connect_pin("U1", "DEC1", "DEC1", wire_dy=-5.08)
-    sch.connect_pin("U1", "DEC2", "DEC2", wire_dx=-7.62)
-    sch.connect_pin("U1", "DEC3", "DEC3", wire_dx=-7.62)
-    sch.connect_pin("U1", "DEC4", "DEC4", wire_dy=-5.08)
-    pass_v(sch, "Device:C", "C17", "100nF", mcu_x + 50, mcu_y - 60, "DEC4", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C18", "100nF", mcu_x - 54, mcu_y - 60, "DEC1", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C19", "100nF", mcu_x - 54, mcu_y + 60, "DEC2", "GND", fp_c0402)
-    pass_v(sch, "Device:C", "C20", "100nF", mcu_x - 61, mcu_y + 60, "DEC3", "GND", fp_c0402)
 
-    sch.connect_pin("U1", "P0.00/XL1", "XL1", wire_dx=-7.62)
-    sch.connect_pin("U1", "P0.01/XL2", "XL2", wire_dx=-7.62)
+    # Route each used pin outward from its own symbol coordinate so stub labels
+    # never cross the body. Parts below connect to these nets by name.
+    pin_nets = {
+        "VDD": "VSYS",
+        "VDDH": "VSYS",
+        "VSS": "GND",
+        "VSS_PA": "GND",
+        "VBUS": "GND",
+        "DCC": "DCC",
+        "DEC1": "DEC1",
+        "DEC3": "DEC3",
+        "DEC4": "DEC4",
+        "DEC5": "DEC5",
+        "DEC6": "DEC6",
+        "DECUSB": "DECUSB",
+        "XL1/P0.00": "XL1",
+        "XL2/P0.01": "XL2",
+        "XC1": "XC1",
+        "XC2": "XC2",
+        "P0.11": "PANEL_SCLK",
+        "P0.15": "PANEL_MOSI",
+        "P0.17": "PANEL_CS",
+        "P0.20": "PANEL_DC",
+        "P1.09": "PANEL_RST",
+        "AIN6/P0.30": "PANEL_BUSY",
+        "AIN7/P0.31": "PANEL_PWR_EN",
+        "AIN0/P0.02": "CHG_STAT",
+        "AIN1/P0.03": "VBAT_SENSE",
+        "AIN2/P0.04": "NTC_SENSE",
+        "SWDIO": "SWDIO",
+        "SWDCLK": "SWDCLK",
+        "P0.18/~{RESET}": "NRST",
+        "ANT": "RF_ANT",
+    }
+    # Route in the pin's own outward direction (opposite its angle vector) so a
+    # stub never crosses the body, regardless of where the symbol origin sits.
+    for pin_name, net in pin_nets.items():
+        p = mcu_sym.get_pin(pin_name)
+        rad = math.radians(p.angle)
+        ox, oy = -math.cos(rad), -math.sin(rad)
+        if abs(ox) >= abs(oy):
+            sch.connect_pin("U1", pin_name, net, wire_dx=(10.16 if ox > 0 else -10.16))
+        else:
+            sch.connect_pin("U1", pin_name, net, wire_dy=(7.62 if oy > 0 else -7.62))
+    for pin in mcu_sym.pins:
+        if pin.name not in pin_nets:
+            sch.connect_pin_noconnect("U1", pin.name)
+
+    # nRF52833 supply + decoupling (DC/DC on DCC; a cap per DEC rail).
+    pass_v(sch, "Device:C", "C15", "100nF", 60, 150, "VSYS", "GND", fp_c0402)
+    pass_v(sch, "Device:C", "C16", "4.7uF", 70, 150, "VSYS", "GND", fp_c0603)
+    pass_v(sch, "Device:L", "L2", "10uH", 210, 150, "DCC", "VSYS", fp_l0805)
+    pass_v(sch, "Device:C", "C17", "100nF", 60, 300, "DEC1", "GND", fp_c0402)
+    pass_v(sch, "Device:C", "C18", "100nF", 72, 300, "DEC3", "GND", fp_c0402)
+    pass_v(sch, "Device:C", "C19", "100nF", 84, 300, "DEC4", "GND", fp_c0402)
+    pass_v(sch, "Device:C", "C20", "100nF", 96, 300, "DEC5", "GND", fp_c0402)
+    pass_v(sch, "Device:C", "C23", "100nF", 108, 300, "DEC6", "GND", fp_c0402)
+    pass_v(sch, "Device:C", "C24", "1uF", 120, 300, "DECUSB", "GND", fp_c0402)
+
     sch.place(
         "Device:Crystal",
         "Y1",
         "32.768kHz",
-        x=snap(mcu_x - 60),
-        y=snap(mcu_y - 15),
+        x=snap(85),
+        y=snap(200),
         footprint="Crystal:Crystal_SMD_2012-2Pin_2.0x1.2mm",
     )
     sch.connect_pin("Y1", "1", "XL1", wire_dy=-5.08, by_number=True)
     sch.connect_pin("Y1", "2", "XL2", wire_dy=5.08, by_number=True)
 
-    sch.connect_pin("U1", "XC1", "XC1", wire_dx=-7.62)
-    sch.connect_pin("U1", "XC2", "XC2", wire_dx=-7.62)
     sch.place(
         "Device:Crystal",
         "Y2",
         "32MHz",
-        x=snap(mcu_x - 60),
-        y=snap(mcu_y + 20),
+        x=snap(85),
+        y=snap(255),
         footprint="Crystal:Crystal_SMD_2012-2Pin_2.0x1.2mm",
     )
     sch.connect_pin("Y2", "1", "XC1", wire_dy=-5.08, by_number=True)
     sch.connect_pin("Y2", "2", "XC2", wire_dy=5.08, by_number=True)
 
-    sch.connect_pin("U1", "P0.14", "PANEL_SCLK", wire_dx=10.16)
-    sch.connect_pin("U1", "P0.13", "PANEL_MOSI", wire_dx=10.16)
-    sch.connect_pin("U1", "P0.12", "PANEL_CS", wire_dx=10.16)
-    sch.connect_pin("U1", "P0.11", "PANEL_DC", wire_dx=10.16)
-    sch.connect_pin("U1", "P0.08", "PANEL_RST", wire_dx=10.16)
-    sch.connect_pin("U1", "P0.07", "PANEL_BUSY", wire_dx=10.16)
-    sch.connect_pin("U1", "P0.06", "PANEL_PWR_EN", wire_dx=10.16)
-    sch.connect_pin("U1", "P0.03/AIN1", "VBAT_SENSE", wire_dx=-10.16)
-    sch.connect_pin("U1", "P0.04/AIN2", "NTC_SENSE", wire_dx=-10.16)
-    sch.connect_pin("U1", "P0.05/AIN3", "CHG_STAT", wire_dx=-10.16)
-    sch.connect_pin("U1", "SWDIO", "SWDIO", wire_dx=10.16)
-    sch.connect_pin("U1", "SWDCLK", "SWDCLK", wire_dx=10.16)
-    sch.connect_pin("U1", "P0.21/~{RESET}", "NRST", wire_dx=10.16)
-
-    # 2.4 GHz chip antenna on bare nRF ANT pin (matching network TBD on layout).
+    # 2.4 GHz chip antenna on nRF ANT pin (matching network TBD on layout).
     # No NFC: pairing and frames ride BLE; NFCT pins stay unused (no-connect).
-    sch.connect_pin("U1", "ANT", "RF_ANT", wire_dx=10.16)
     sch.place(
         "Device:Antenna_Chip",
         "ANT2",
         "2.4GHz",
-        x=snap(mcu_x + 75),
+        x=snap(mcu_x + 80),
         y=snap(mcu_y - 10),
         footprint="Antenna_SMD:Antenna_Abracon_ACA-107-T",
     )
     sch.connect_pin("ANT2", "1", "RF_ANT", wire_dx=-5.08, by_number=True)
     sch.connect_pin("ANT2", "2", "GND", wire_dx=5.08, by_number=True)
-    pass_v(sch, "Device:C", "C22", "2.0pF", mcu_x + 70, mcu_y + 10, "RF_ANT", "GND", fp_c0402)
+    pass_v(sch, "Device:C", "C22", "2.0pF", mcu_x + 75, mcu_y + 15, "RF_ANT", "GND", fp_c0402)
 
     for i, (net, dy) in enumerate(
         (("SWDIO", 0), ("SWDCLK", 10), ("NRST", 20), ("VSYS", 30), ("GND", 40)),
@@ -287,23 +315,11 @@ def main() -> None:
             "Connector:TestPoint",
             ref,
             "Pad",
-            x=snap(mcu_x + 60),
-            y=snap(mcu_y + dy),
+            x=snap(mcu_x + 65),
+            y=snap(mcu_y + 30 + dy),
             footprint="TestPoint:TestPoint_Pad_D1.5mm",
         )
-        sch.connect_pin(ref, "1", net, wire_dx=-5.08, by_number=True)
-
-    used = {
-        "VDD", "VSS", "DCC", "DEC1", "DEC2", "DEC3", "DEC4",
-        "P0.00/XL1", "P0.01/XL2", "XC1", "XC2",
-        "P0.14", "P0.13", "P0.12", "P0.11", "P0.08", "P0.07", "P0.06",
-        "P0.03/AIN1", "P0.04/AIN2", "P0.05/AIN3",
-        "SWDIO", "SWDCLK", "P0.21/~{RESET}",
-        "ANT",
-    }
-    for pin in lib.get("nRF52832-QFxx").pins:
-        if pin.name not in used:
-            sch.connect_pin_noconnect("U1", pin.name)
+        sch.connect_pin(ref, "1", net, wire_dx=5.08, by_number=True)
 
     # ------------------------------------------------------------------ panel
     fpc_x, fpc_y = snap(280), snap(220)
@@ -334,7 +350,7 @@ def main() -> None:
 
     sch.text_note(
         "inkbot-magsafe MagSafe e-ink tile\\n"
-        "Thickness-first: bare nRF52832 QFN, BQ51050B Qi+charger,\\n"
+        "nRF52833 QFN-40, BQ51050B Qi+charger, 4.26in 480x800 panel (SSD1677),\\n"
         "0.4 mm PCB, battery in cutout, no case (panel is the front face).",
         snap(15),
         snap(15),
@@ -344,7 +360,7 @@ def main() -> None:
         sch.build(
             title="inkbot-magsafe",
             date="2026-09-06",
-            rev="0.2.0",
+            rev="0.4.0",
             paper="A2",
             comments=[
                 "Phone-only BLE e-ink tile; detach-to-charge over MagSafe/Qi.",
