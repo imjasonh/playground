@@ -1,18 +1,10 @@
 #!/usr/bin/env python3
-"""Place and route the board with Freerouting's Specctra DSN/SES flow.
-
-The script builds the placed board from the committed schematic, exports a
-Specctra DSN file, runs Freerouting, imports the resulting SES file, refills
-the copper zones, and exports the fabrication files.
-
-Set ``FREEROUTING_JAR`` to a Freerouting 2.4.1 JAR. Freerouting 2.4.1 requires
-Java 25, so set ``FREEROUTING_JAVA`` when ``java`` does not select that
-runtime. On headless Linux, install ``xvfb-run`` for Freerouting's AWT setup.
-"""
+"""Place and route the EVT board with Freerouting's DSN/SES flow."""
 
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shutil
@@ -49,8 +41,7 @@ def parse_sexpression(text: str) -> list[object]:
     """Parse the subset of Specctra S-expressions used by SES files."""
     root: list[object] = []
     stack = [root]
-    tokens = re.finditer(r'\(|\)|"(?:\\.|[^"\\])*"|[^\s()]+', text)
-    for match in tokens:
+    for match in re.finditer(r'\(|\)|"(?:\\.|[^"\\])*"|[^\s()]+', text):
         token = match.group(0)
         if token == "(":
             form: list[object] = []
@@ -78,12 +69,7 @@ def child_form(form: list[object], name: str) -> list[object]:
 
 
 def import_freerouting_session(board: pcbnew.BOARD, path: Path) -> None:
-    """Import Freerouting wires and vias into a board through pcbnew.
-
-    KiCad 7 exposes ``ImportSpecctraSES(filename)`` only for an active GUI
-    board. A standalone Python process has no active board, so this importer
-    applies the SES ``network_out`` routes to the board object directly.
-    """
+    """Import Freerouting wires and vias through the headless pcbnew API."""
     parsed = parse_sexpression(path.read_text())
     if len(parsed) != 1 or not isinstance(parsed[0], list):
         raise ValueError("SES file must contain one session form")
@@ -95,10 +81,8 @@ def import_freerouting_session(board: pcbnew.BOARD, path: Path) -> None:
     resolution = child_form(routes, "resolution")
     if len(resolution) != 3 or resolution[1] != "um":
         raise ValueError(f"unsupported SES resolution: {resolution}")
-    units_per_micrometer = int(str(resolution[2]))
-    nanometers_per_unit = 1000 / units_per_micrometer
+    nanometers_per_unit = 1000 / int(str(resolution[2]))
     network = child_form(routes, "network_out")
-
     copper_layers = [
         board.GetLayerID(name) for name in ("F.Cu", "In1.Cu", "In2.Cu", "B.Cu")
     ]
@@ -131,13 +115,21 @@ def import_freerouting_session(board: pcbnew.BOARD, path: Path) -> None:
                 if len(path_form) < 7 or path_form[0] != "path":
                     raise ValueError(f"malformed path for net {net_name}")
                 layer = board.GetLayerID(str(path_form[1]))
-                width = max(coordinate(path_form[2]), layout_route.mm(0.15))
+                if layer not in (pcbnew.F_Cu, pcbnew.B_Cu):
+                    raise ValueError(f"signal route on reserved plane for net {net_name}")
+                width = max(
+                    coordinate(path_form[2]),
+                    layout_route.POWER_WIDTHS.get(net_name, layout_route.mm(0.15)),
+                )
                 values = path_form[3:]
                 if len(values) % 2:
                     raise ValueError(f"odd coordinate count for net {net_name}")
                 points = [
-                    pcbnew.VECTOR2I(coordinate(values[i]), coordinate(values[i + 1], True))
-                    for i in range(0, len(values), 2)
+                    pcbnew.VECTOR2I(
+                        coordinate(values[index]),
+                        coordinate(values[index + 1], True),
+                    )
+                    for index in range(0, len(values), 2)
                 ]
                 for start, end in zip(points, points[1:]):
                     if start == end:
@@ -168,17 +160,38 @@ def import_freerouting_session(board: pcbnew.BOARD, path: Path) -> None:
                         coordinate(route_item[3], True),
                     )
                 )
-                via.SetWidth(diameter_um * 1000)
-                via.SetDrill(drill_um * 1000)
+                via.SetWidth(max(diameter_um * 1000, layout_route.VIA_D))
+                via.SetDrill(max(drill_um * 1000, layout_route.VIA_DRILL))
                 via.SetLayerPair(copper_layers[start_layer], copper_layers[end_layer])
                 via.SetNet(net)
                 board.Add(via)
                 via_count += 1
-    print(f"imported {wire_count} track segments and {via_count} vias from {path}")
+    print(f"imported {wire_count} track segments and {via_count} vias")
 
 
-def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
-    """Build the board outline, place footprints, assign nets, and add planes."""
+def add_rect_rule_area(
+    board: pcbnew.BOARD,
+    points: list[tuple[float, float]],
+    layers: pcbnew.LSET,
+) -> pcbnew.ZONE:
+    """Add a copper, track, and via keep-out polygon."""
+    zone = pcbnew.ZONE(board)
+    zone.SetIsRuleArea(True)
+    zone.SetDoNotAllowCopperPour(True)
+    zone.SetDoNotAllowTracks(True)
+    zone.SetDoNotAllowVias(True)
+    zone.SetLayerSet(layers)
+    outline = pcbnew.SHAPE_POLY_SET()
+    outline.NewOutline()
+    for x, y in points:
+        outline.Append(layout_route.mm(x), layout_route.mm(y))
+    zone.SetOutline(outline)
+    board.Add(zone)
+    return zone
+
+
+def build_placed_board() -> pcbnew.BOARD:
+    """Build the outline, place footprints, assign nets, and add power planes."""
     generate_pcb.main()
     subprocess.run(
         [
@@ -199,16 +212,24 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         board.Remove(footprint)
 
     netmap: dict[str, pcbnew.NETINFO_ITEM] = {}
-    for name in list(nets) + [layout_route.GND, layout_route.VSYS]:
-        if name not in netmap:
-            net = pcbnew.NETINFO_ITEM(board, name)
-            board.Add(net)
-            netmap[name] = net
+    for name in nets:
+        net = pcbnew.NETINFO_ITEM(board, name)
+        board.Add(net)
+        netmap[name] = net
 
     placed: dict[str, pcbnew.FOOTPRINT] = {}
-    for reference, library_name in components.items():
-        if not library_name or reference not in layout_route.PLACEMENT:
-            continue
+    expected = {
+        reference
+        for reference, footprint in components.items()
+        if footprint and reference in layout_route.PLACEMENT
+    }
+    if expected != set(layout_route.PLACEMENT):
+        extra = sorted(set(layout_route.PLACEMENT) - expected)
+        missing = sorted(expected - set(layout_route.PLACEMENT))
+        raise ValueError(f"placement mismatch; extra={extra}, missing={missing}")
+
+    for reference in sorted(expected):
+        library_name = components[reference]
         x, y, rotation = layout_route.PLACEMENT[reference]
         footprint = layout_route.load_fp(library_name)
         board.Add(footprint)
@@ -221,22 +242,37 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         footprint.Reference().SetVisible(True)
         placed[reference] = footprint
 
-    def assign_pad(reference: str, pad_number: str, net_name: str) -> None:
-        footprint = placed.get(reference)
-        if footprint is None:
-            return
-        for pad in footprint.Pads():
-            if pad.GetNumber() == pad_number:
-                pad.SetNet(netmap[net_name])
-                return
-
+    assigned: set[tuple[str, str]] = set()
+    intentional_nc = {
+        node
+        for net_name, nodes in nets.items()
+        if net_name.startswith("unconnected-")
+        for node in nodes
+    }
     for net_name, nodes in nets.items():
         if net_name.startswith("unconnected-"):
             continue
         for reference, pad_number in nodes:
-            assign_pad(reference, pad_number, net_name)
-    for pad_number in layout_route.MODULE_GND_PADS:
-        assign_pad("U1", pad_number, layout_route.GND)
+            footprint = placed.get(reference)
+            if footprint is None:
+                continue
+            for pad in footprint.Pads():
+                if pad.GetNumber() == pad_number:
+                    pad.SetNet(netmap[net_name])
+                    assigned.add((reference, pad_number))
+                    break
+            else:
+                raise ValueError(f"missing pad {reference}.{pad_number}")
+
+    for reference, footprint in placed.items():
+        for pad in footprint.Pads():
+            key = (reference, pad.GetNumber())
+            if not pad.GetNumber() or key in assigned or key in intentional_nc:
+                continue
+            if pad.GetNumber() == "MP":
+                pad.SetNet(netmap[layout_route.GND])
+                continue
+            raise ValueError(f"unassigned board pad {reference}.{pad.GetNumber()}")
 
     settings = board.GetDesignSettings()
     settings.SetCustomTrackWidth(layout_route.TRACK_W)
@@ -247,146 +283,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         pcbnew.VIA_DIMENSION(layout_route.VIA_D, layout_route.VIA_DRILL)
     )
     settings.SetViaSizeIndex(0)
-
-    def pad_center(reference: str, pad_number: str) -> pcbnew.VECTOR2I:
-        for pad in placed[reference].Pads():
-            if pad.GetNumber() == pad_number:
-                return pad.GetCenter()
-        raise ValueError(f"missing pad {reference}.{pad_number}")
-
-    def add_locked_via(position: pcbnew.VECTOR2I, net_name: str) -> None:
-        via = pcbnew.PCB_VIA(board)
-        via.SetPosition(position)
-        via.SetWidth(layout_route.VIA_D)
-        via.SetDrill(layout_route.VIA_DRILL)
-        via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
-        via.SetNet(netmap[net_name])
-        via.SetLocked(True)
-        board.Add(via)
-
-    def add_locked_track(
-        start: pcbnew.VECTOR2I,
-        end: pcbnew.VECTOR2I,
-        net_name: str,
-        layer: int = pcbnew.B_Cu,
-        width: int = layout_route.TRACK_W,
-    ) -> None:
-        track = pcbnew.PCB_TRACK(board)
-        track.SetStart(start)
-        track.SetEnd(end)
-        track.SetWidth(width)
-        track.SetLayer(layer)
-        track.SetNet(netmap[net_name])
-        track.SetLocked(True)
-        board.Add(track)
-
-    u5_ntc = pad_center("U5", "13")
-    ntc_corner = pcbnew.VECTOR2I(layout_route.mm(11.45), u5_ntc.y)
-    ntc_via = pcbnew.VECTOR2I(layout_route.mm(11.45), layout_route.mm(63.4))
-    for start, end in ((u5_ntc, ntc_corner), (ntc_corner, ntc_via)):
-        add_locked_track(start, end, "/NTC_SENSE", width=layout_route.mm(0.15))
-    add_locked_via(ntc_via, "/NTC_SENSE")
-
-    u1_ntc = pad_center("U1", "20")
-    u1_ntc_via = pcbnew.VECTOR2I(layout_route.mm(28.2), u1_ntc.y)
-    add_locked_track(u1_ntc, u1_ntc_via, "/NTC_SENSE", width=layout_route.mm(0.15))
-    add_locked_via(u1_ntc_via, "/NTC_SENSE")
-    ntc_path = [
-        ntc_via,
-        pcbnew.VECTOR2I(layout_route.mm(12.5), layout_route.mm(63.4)),
-        pcbnew.VECTOR2I(layout_route.mm(12.5), layout_route.mm(81.5)),
-        pcbnew.VECTOR2I(layout_route.mm(28.2), layout_route.mm(81.5)),
-        u1_ntc_via,
-    ]
-    for start, end in zip(ntc_path, ntc_path[1:]):
-        add_locked_track(start, end, "/NTC_SENSE", layer=pcbnew.F_Cu)
-
-    clamp_path = [
-        pad_center("U5", "16"),
-        pcbnew.VECTOR2I(layout_route.mm(11.4), layout_route.mm(66.25)),
-        pcbnew.VECTOR2I(layout_route.mm(12.0), layout_route.mm(66.15)),
-        pcbnew.VECTOR2I(layout_route.mm(13.35), layout_route.mm(66.15)),
-        pcbnew.VECTOR2I(layout_route.mm(13.35), layout_route.mm(69.0)),
-        pad_center("C7", "1"),
-    ]
-    for start, end in zip(clamp_path, clamp_path[1:]):
-        add_locked_track(
-            start,
-            end,
-            "/QI_CLAMP2",
-            width=layout_route.mm(0.15),
-        )
-
-    comm2_path = [
-        pad_center("U5", "15"),
-        pcbnew.VECTOR2I(layout_route.mm(12.0), layout_route.mm(65.75)),
-        pad_center("C9", "1"),
-    ]
-    for start, end in zip(comm2_path, comm2_path[1:]):
-        add_locked_track(
-            start,
-            end,
-            "/QI_COMM2",
-            width=layout_route.mm(0.15),
-        )
-
-    fod_start = pad_center("U5", "14")
-    fod_via = pcbnew.VECTOR2I(layout_route.mm(11.4), fod_start.y)
-    fod_end = pad_center("R2", "1")
-    add_locked_track(
-        fod_start,
-        fod_via,
-        "/QI_FOD",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_via(fod_via, "/QI_FOD")
-    fod_path = [
-        fod_via,
-        pcbnew.VECTOR2I(layout_route.mm(12.2), layout_route.mm(64.8)),
-        pcbnew.VECTOR2I(layout_route.mm(12.2), layout_route.mm(62.0)),
-        fod_end,
-    ]
-    for start, end in zip(fod_path, fod_path[1:]):
-        add_locked_track(
-            start,
-            end,
-            "/QI_FOD",
-            layer=pcbnew.In1_Cu,
-            width=layout_route.mm(0.15),
-        )
-    add_locked_via(fod_end, "/QI_FOD")
-
-    add_locked_track(
-        pad_center("U5", "17"),
-        pad_center("C5", "1"),
-        "/QI_BOOT2",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_track(
-        pad_center("U5", "18"),
-        pad_center("C5", "2"),
-        "/QI_RECT",
-        width=layout_route.mm(0.15),
-    )
-
-    for x, y in (
-        (30.0, 5.0),
-        (9.8005, 69.1673),
-        (7.6957, 63.3848),
-        (9.706346, 61.0306),
-    ):
-        add_locked_via(
-            pcbnew.VECTOR2I(layout_route.mm(x), layout_route.mm(y)),
-            layout_route.GND,
-        )
-    add_locked_track(
-        pad_center("U5", "11"),
-        pcbnew.VECTOR2I(layout_route.mm(9.706346), layout_route.mm(61.0306)),
-        layout_route.GND,
-        width=layout_route.mm(0.15),
-    )
-
-    keepalive: list[pcbnew.SHAPE_POLY_SET] = []
 
     def add_plane(layer: int, net_name: str) -> None:
         zone = pcbnew.ZONE(board)
@@ -405,58 +301,61 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ):
             outline.Append(layout_route.mm(x), layout_route.mm(y))
         zone.SetOutline(outline)
-        keepalive.append(outline)
         board.Add(zone)
 
+    add_plane(pcbnew.In1_Cu, layout_route.SYS)
     add_plane(pcbnew.In2_Cu, layout_route.GND)
-    add_plane(pcbnew.B_Cu, layout_route.GND)
     add_plane(pcbnew.F_Cu, layout_route.GND)
+    add_plane(pcbnew.B_Cu, layout_route.GND)
 
-    antenna_keepout = pcbnew.ZONE(board)
-    antenna_keepout.SetIsRuleArea(True)
-    antenna_keepout.SetDoNotAllowCopperPour(True)
-    antenna_keepout.SetDoNotAllowTracks(True)
-    antenna_keepout.SetDoNotAllowVias(True)
-    layers = pcbnew.LSET()
+    all_layers = pcbnew.LSET()
     for layer in (pcbnew.F_Cu, pcbnew.In1_Cu, pcbnew.In2_Cu, pcbnew.B_Cu):
-        layers.AddLayer(layer)
-    antenna_keepout.SetLayerSet(layers)
-    outline = pcbnew.SHAPE_POLY_SET()
-    outline.NewOutline()
-    for x, y in ((1.5, 85), (11, 85), (11, 93), (1.5, 93)):
-        outline.Append(layout_route.mm(x), layout_route.mm(y))
-    antenna_keepout.SetOutline(outline)
-    keepalive.append(outline)
-    board.Add(antenna_keepout)
+        all_layers.AddLayer(layer)
 
-    cutout_keepout = pcbnew.ZONE(board)
-    cutout_keepout.SetIsRuleArea(True)
-    cutout_keepout.SetDoNotAllowCopperPour(True)
-    cutout_keepout.SetDoNotAllowTracks(True)
-    cutout_keepout.SetDoNotAllowVias(True)
-    cutout_keepout.SetLayerSet(layers)
-    outline = pcbnew.SHAPE_POLY_SET()
-    outline.NewOutline()
-    for x, y in ((13.5, 59.5), (46.5, 59.5), (46.5, 80.5), (13.5, 80.5)):
-        outline.Append(layout_route.mm(x), layout_route.mm(y))
-    cutout_keepout.SetOutline(outline)
-    keepalive.append(outline)
-    board.Add(cutout_keepout)
+    # Keep every copper layer out of the magnetic assembly and receiver-coil
+    # area. The receiver coil connects through its flexible lead to J3.
+    circle = [
+        (
+            layout_route.RING_CX
+            + layout_route.RING_RADIUS * math.cos(2 * math.pi * index / 48),
+            layout_route.RING_CY
+            + layout_route.RING_RADIUS * math.sin(2 * math.pi * index / 48),
+        )
+        for index in range(48)
+    ]
+    add_rect_rule_area(board, circle, all_layers)
+
+    # The board cutout already removes FR-4. This larger rule area prevents
+    # copper and vias from violating routed-edge clearance.
+    add_rect_rule_area(
+        board,
+        [(13.0, 58.5), (47.0, 58.5), (47.0, 81.5), (13.0, 81.5)],
+        all_layers,
+    )
+
+    # The Raytac footprint includes an antenna keep-out. This explicit area
+    # also protects it if a future library revision drops the footprint rule.
+    add_rect_rule_area(
+        board,
+        [(1.5, 85.0), (11.0, 85.0), (11.0, 93.0), (1.5, 93.0)],
+        all_layers,
+    )
 
     board.BuildConnectivity()
     fill_zones(board)
     pcbnew.SaveBoard(str(BOARD), board)
-    return board, keepalive
+    return board
 
 
-def mark_ground_layer_as_power(path: Path) -> None:
-    """Mark the internal GND plane as non-routable in a KiCad DSN export."""
+def mark_power_layers(path: Path) -> None:
+    """Mark the SYS and GND planes as non-routable in the DSN export."""
     text = path.read_text()
-    signal = "    (layer In2.Cu\n      (type signal)"
-    power = "    (layer In2.Cu\n      (type power)"
-    if text.count(signal) != 1:
-        raise ValueError(f"cannot find the In2.Cu layer in {path}")
-    text = text.replace(signal, power)
+    for layer in ("In1.Cu", "In2.Cu"):
+        signal = f"    (layer {layer}\n      (type signal)"
+        power = f"    (layer {layer}\n      (type power)"
+        if text.count(signal) != 1:
+            raise ValueError(f"cannot find {layer} in {path}")
+        text = text.replace(signal, power)
     path.write_text(text)
 
 
@@ -485,12 +384,12 @@ def freerouting_command() -> list[str]:
         "-do",
         str(SES),
         "-mp",
-        os.environ.get("FREEROUTING_PASSES", "100"),
+        os.environ.get("FREEROUTING_PASSES", "150"),
         "-mt",
         os.environ.get("FREEROUTING_THREADS", "1"),
         "-l",
         "en",
-        "--router.layers.routable=true,true,false,true",
+        "--router.layers.routable=true,false,false,true",
     ]
     if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
         xvfb_run = shutil.which("xvfb-run")
@@ -502,10 +401,14 @@ def freerouting_command() -> list[str]:
 
 def main() -> None:
     FAB.mkdir(exist_ok=True)
-    board, _keepalive = build_placed_board()
+    board = build_placed_board()
+    if os.environ.get("INKBOT_PLACE_ONLY") == "1":
+        print(f"placed {len(list(board.GetFootprints()))} footprints")
+        return
+
     if not pcbnew.ExportSpecctraDSN(board, str(DSN)):
         raise SystemExit(f"failed to export Specctra DSN: {DSN}")
-    mark_ground_layer_as_power(DSN)
+    mark_power_layers(DSN)
 
     SES.unlink(missing_ok=True)
     command = freerouting_command()
@@ -530,7 +433,8 @@ def main() -> None:
         if hasattr(connectivity, "GetUnconnectedCount")
         else -1
     )
-    print(f"imported {SES}; open ratsnest connections: {unconnected}")
+    if unconnected:
+        raise SystemExit(f"routing left {unconnected} open ratsnest connections")
     layout_route.export_fab()
 
 
