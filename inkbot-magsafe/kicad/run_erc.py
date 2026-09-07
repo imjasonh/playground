@@ -118,6 +118,8 @@ PIN_NETS = {
     ("J2", "3"): "GND",
     ("J3", "1"): "/QI_COIL_A",
     ("J3", "2"): "/QI_AC2",
+    ("J3", "3"): "/QI_COIL_NTC",
+    ("J3", "4"): "GND",
     ("BT1", "1"): "/BAT",
     ("BT1", "2"): "GND",
     ("RT1", "1"): "/BAT_NTC",
@@ -162,7 +164,11 @@ VALUE_CONTRACT = {
     "R3": ("20k 1%", "Resistor_SMD:R_0603_1608Metric"),
     "R6": ("24k 1%", "Resistor_SMD:R_0603_1608Metric"),
     "R7": ("7.5k 1%", "Resistor_SMD:R_0603_1608Metric"),
-    "C38": ("220uF 6.3V X5R", "Capacitor_SMD:C_1206_3216Metric"),
+    "C1": ("33nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
+    "C2": ("33nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
+    "C3": ("15nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
+    "C27": ("100uF 6.3V X5R", "Capacitor_SMD:C_1206_3216Metric"),
+    "C38": ("47uF 10V X5R", "Capacitor_SMD:C_1206_3216Metric"),
 }
 
 ALLOWED_EXTRA_BOM_REFS = {"ASSY", "DS1", "MAG1", "MECH1", "PCB1"}

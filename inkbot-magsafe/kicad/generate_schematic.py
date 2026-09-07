@@ -39,6 +39,7 @@ def build_lib_symbols() -> str:
             embed(LOCAL_SYM, "inkbot_magsafe", "TPS7A2030P"),
             embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x02"),
             embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x03"),
+            embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x04"),
             embed(SYM / "Connector_Generic.kicad_sym", "Connector_Generic", "Conn_01x24"),
             embed(SYM / "Connector.kicad_sym", "Connector", "TestPoint"),
             embed(SYM / "Device.kicad_sym", "Device", "Battery_Cell"),
@@ -121,7 +122,6 @@ def main() -> None:
     c0603 = "Capacitor_SMD:C_0603_1608Metric"
     c0805 = "Capacitor_SMD:C_0805_2012Metric"
     c1206 = "Capacitor_SMD:C_1206_3216Metric"
-    r0402 = "Resistor_SMD:R_0402_1005Metric"
     r0603 = "Resistor_SMD:R_0603_1608Metric"
 
     # ---------------------------------------------------- Qi 1.3 receiver
@@ -160,15 +160,17 @@ def main() -> None:
     sch.connect_pin_noconnect("U2", "8", by_number=True)
 
     sch.place(
-        "Connector_Generic:Conn_01x02",
+        "Connector_Generic:Conn_01x04",
         "J3",
-        "WR222230-26M8-G coil",
+        "WR222230 coil + bonded NTC",
         x=snap(25),
         y=snap(45),
         footprint="inkbot_magsafe:Coil_SolderPads",
     )
     sch.connect_pin("J3", "1", "QI_COIL_A", wire_dx=-7.62, by_number=True)
     sch.connect_pin("J3", "2", "QI_AC2", wire_dx=-7.62, by_number=True)
+    sch.connect_pin("J3", "3", "QI_COIL_NTC", wire_dx=-7.62, by_number=True)
+    sch.connect_pin("J3", "4", "GND", wire_dx=-7.62, by_number=True)
     sch.place("Device:L", "L2", "WR222230-26M8-G 27uH", x=snap(25), y=snap(25))
     sch.connect_pin("L2", "1", "QI_COIL_A", wire_dy=-5.08, by_number=True)
     sch.connect_pin("L2", "2", "QI_AC2", wire_dy=5.08, by_number=True)
@@ -177,9 +179,9 @@ def main() -> None:
     # 950 pF parallel. Three C0G parts share the series current. EVT must
     # measure Ls and Ls' in the final stack before freezing these values.
     for ref, value, x in (
-        ("C1", "33nF 50V", 42),
-        ("C2", "33nF 50V", 50),
-        ("C3", "15nF 50V", 58),
+        ("C1", "33nF C0G 50V", 42),
+        ("C2", "33nF C0G 50V", 50),
+        ("C3", "15nF C0G 50V", 58),
     ):
         pass_v(sch, "Device:C", ref, value, x, 70, "QI_COIL_A", "QI_AC1", c0805)
     pass_v(sch, "Device:C", "C4", "820pF C0G 50V", 42, 88, "QI_AC1", "QI_AC2", c0603)
@@ -208,7 +210,7 @@ def main() -> None:
         65,
         "QI_COIL_NTC",
         "GND",
-        r0402,
+        "",
     )
 
     # ------------------------------------------------ battery charger and pack
@@ -329,9 +331,9 @@ def main() -> None:
 
     # In high-voltage mode the SAADC's VDDHDIV5 input measures SYS directly.
     # Omitting an always-on divider saves about 3.2 uA in battery-only mode.
-    # C38 supplies the panel's 120 mA switching peaks without adding the high
-    # leakage of a polymer capacitor.
-    pass_v(sch, "Device:C", "C38", "220uF 6.3V X5R", 230, 175, "SYS", "GND", c1206)
+    # C38 stays below the BQ25185's 100 uF maximum SYS capacitance after the
+    # other rail capacitors are counted.
+    pass_v(sch, "Device:C", "C38", "47uF 10V X5R", 230, 175, "SYS", "GND", c1206)
 
     # ---------------------------------------------------------- panel power
     ldo_x, ldo_y = snap(285), snap(145)
@@ -352,7 +354,7 @@ def main() -> None:
         connect_outward(sch, library.get("TPS7A2030P"), "U4", pin, net)
     sch.connect_pin_noconnect("U4", "4", by_number=True)
     pass_v(sch, "Device:C", "C26", "1uF 10V", 265, 160, "SYS", "GND", c0603)
-    pass_v(sch, "Device:C", "C27", "4.7uF 10V", 305, 160, "PANEL_3V0", "GND", c0805)
+    pass_v(sch, "Device:C", "C27", "100uF 6.3V X5R", 305, 160, "PANEL_3V0", "GND", c1206)
 
     # ------------------------------------------------------ raw panel + boost
     panel_x, panel_y = snap(345), snap(235)

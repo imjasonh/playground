@@ -10,7 +10,8 @@ schematic in [`../kicad/`](../kicad/) and
   charger input.
 - **BAT**: Protected cell positive terminal and BQ25185 battery pin.
 - **SYS**: BQ25185 power-path output to the nRF52833 `VDDH` pin and panel
-  LDO input. C38 provides 220 uF of local pulse storage.
+  LDO input. C38 provides 47 uF of local storage while total nominal SYS
+  capacitance remains below the charger's 100 uF limit.
 - **VDD_NRF**: nRF52833 REG0 output and decoupling only. The SWD fixture can
   use this net as a high-impedance target-voltage reference. It must not power
   external circuitry.
@@ -36,15 +37,16 @@ schematic in [`../kicad/`](../kicad/) and
 
 ## Wireless power
 
-- L2 is a TDK WR222230-26M8-G 27 uH receiver coil connected through J3.
+- L2 is a TDK WR222230-26M8-G 27 uH receiver coil connected through J3 pins
+  1 and 2.
 - C1-C3 provide the 81 nF starting series-resonance value. C4-C5 provide
   950 pF parallel resonance. Freeze these values only after measuring the
   assembled coil's `Ls` and `Ls'`.
 - C6-C11 implement the BQ51013C BOOT, CLAMP, and COMM networks.
 - R1 + R2 set about 250 mA nominal operating current and 300 mA hardware
   overcurrent protection. R2, R3, and optional R4 are the FOD calibration set.
-- RT2 is a 10 kOhm, 3435 K NTC bonded to the coil and connected to U2
-  `TS/CTRL`.
+- RT2 is a 10 kOhm, 3435 K NTC bonded to the coil. Its insulated leads use J3
+  pins 3 and 4 and connect to U2 `TS/CTRL`.
 - `QI_PRESENT` connects U2's open-drain `CHG` output to P0.02. Firmware
   enables the nRF GPIO pull-up.
 
@@ -88,5 +90,6 @@ SSD1677 COG, and a 24-pin 0.5 mm FPC.
   capacitance.
 - U3 uses 1 uF IN, 10 uF SYS, and 1 uF BAT capacitors.
 - U4 uses 1 uF input and 4.7 uF output capacitors.
-- C38 is a low-leakage 220 uF MLCC on SYS. Validation must use its effective
-  capacitance at 4.5 V, not the zero-bias nominal value.
+- C38 is a 47 uF, 10 V MLCC on SYS. C27 is a 100 uF, 6.3 V MLCC on
+  PANEL_3V0. Validation must use effective capacitance at operating bias, not
+  the zero-bias nominal values.

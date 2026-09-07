@@ -503,16 +503,16 @@ def freerouting_command() -> list[str]:
         "-mp",
         os.environ.get("FREEROUTING_PASSES", "150"),
         "-mt",
-        os.environ.get("FREEROUTING_THREADS", "1"),
+        "0",
         "-l",
         "en",
+        "--router.optimizer.enabled=false",
+        "--router.copperToEdgeClearanceUm=500",
+        "--gui.enabled=false",
+        "--api_server.enabled=false",
+        "--usage_and_diagnostic_data.disable_analytics=true",
         "--router.layers.routable=true,false,false,true",
     ]
-    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
-        xvfb_run = shutil.which("xvfb-run")
-        if xvfb_run is None:
-            raise SystemExit("headless Linux requires xvfb-run")
-        command = [xvfb_run, "-a", *command]
     return command
 
 

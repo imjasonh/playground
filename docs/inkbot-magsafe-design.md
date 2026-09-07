@@ -107,11 +107,11 @@ on P0.00/P0.01. The NFCT pins stay unused.
 ```
    WR222230 coil -> BQ51013C -> QI_OUT -> BQ25185 -> SYS -> module VDDH
          |              |                    ^          |
-      coil NTC       resonance/FOD           |          +-> 220 uF pulse reservoir
+      coil NTC       resonance/FOD           |          +-> 47 uF SYS reservoir
                                              |
    protected LP252030 pack + cell NTC -> BAT-+
 
-   SYS -> TPS7A2030P 3.0 V -> SSD1677 panel power and external boost circuit
+   SYS -> TPS7A2030P 3.0 V -> 100 uF -> SSD1677 panel power and boost circuit
    MDBT50Q-512K <-> panel SPI, BUSY, reset, and panel-power enable
    MDBT50Q-512K <- Qi present and two charger-status signals
 
@@ -164,12 +164,13 @@ retries, and reserve voltage reduce that number. The product target is
 60-90 days between charges until measurements support a tighter claim.
 
 The panel data sheet specifies a **120 mA typical peak current**, even though
-its average refresh power is only about 36 mW. C38 adds 220 uF on SYS, and the
-BQ25185 isolates the cell from source transitions. Those parts do not prove
-margin. EVT must capture BAT, SYS, PANEL_3V0, and current at room temperature,
-cold temperature, end-of-charge, and the refresh floor. If the qualified
-LP252030 pack or its PCM exceeds its pulse rating, use a higher-rate pack or
-increase pulse storage before release.
+its average refresh power is only about 36 mW. C38 adds 47 uF on SYS without
+exceeding the BQ25185's 100 uF maximum, and C27 adds 100 uF at the panel within
+the TPS7A20's 200 uF stability limit. Those parts do not prove margin. EVT must
+capture BAT, SYS, PANEL_3V0, and current at room temperature, cold temperature,
+end-of-charge, and the refresh floor. If the qualified LP252030 pack or its PCM
+exceeds its pulse rating, use a higher-rate pack or revise pulse storage before
+release.
 
 ## Circuit design
 
@@ -453,9 +454,9 @@ end-of-line test, spacer, insulation, and rear cover:
 
 | Quantity | Unit direct cost | Build total | With 15% yield and price reserve |
 |---:|---:|---:|---:|
-| 1 | **$166.41** | **$166** | **$191** |
-| 100 | **$58.96** | **$5,896** | **$6,780** |
-| 1,000 | **$41.21** | **$41,210** | **$47,392** |
+| 1 | **$166.97** | **$167** | **$192** |
+| 100 | **$59.61** | **$5,961** | **$6,855** |
+| 1,000 | **$41.71** | **$41,710** | **$47,967** |
 
 The one-unit estimate includes manual assembly setup but excludes minimum reel
 buys, shipping, duties, tax, and the tools needed to program or measure the
@@ -485,7 +486,8 @@ Obtain supplier quotations and compliance-lab scopes before treating the
 - 40 mA charge limit, 100 mA input limit, separate cell and coil NTCs, and
   charger fault decoding.
 - Protected battery pack with a keyed, polarized three-wire harness.
-- 220 uF low-leakage MLCC on SYS, qualified at its 4.5 V DC bias.
+- 47 uF on SYS and 100 uF on PANEL_3V0, each checked against regulator
+  capacitance limits and qualified at operating DC bias.
 - Module antenna flush with the board edge and an all-layer copper keep-out.
 - UICR `REGOUT0=3.0 V` provisioning and a fail-closed check before GPIO setup.
 - SWD test pads for brick recovery, since there is no USB port to fall back to.

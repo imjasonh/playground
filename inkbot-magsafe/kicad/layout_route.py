@@ -40,7 +40,6 @@ PLACEMENT = {
     "D2": (55.0, 87.0, 0),
     "D3": (50.0, 87.0, 0),
     "Y1": (20.5, 86.2, 90),
-    "RT2": (11.0, 82.0, 0),
     # Qi resonance, clamp, communication, and output network.
     "C1": (3.0, 64.0, 0),
     "C2": (7.0, 64.0, 0),
@@ -78,8 +77,8 @@ PLACEMENT = {
     "C24": (23.5, 87.5, 0),
     "C38": (25.0, 96.0, 90),
     # Panel LDO and SSD1677 boost network.
-    "C26": (29.0, 87.0, 0),
-    "C27": (33.0, 87.0, 0),
+    "C26": (28.0, 87.0, 0),
+    "C27": (32.5, 87.0, 0),
     "C28": (29.0, 83.2, 0),
     "C29": (33.0, 83.2, 0),
     "C30": (37.0, 83.2, 0),
@@ -196,6 +195,45 @@ def export_fab() -> None:
             "--units",
             "mm",
             str(BOARD),
+        ]
+    )
+    run(
+        [
+            "kicad-cli",
+            "pcb",
+            "export",
+            "pdf",
+            "-o",
+            str(FAB / "inkbot-magsafe-bottom-assembly.pdf"),
+            "--layers",
+            "B.Fab,B.CrtYd,Edge.Cuts",
+            "--mirror",
+            "--black-and-white",
+            str(BOARD),
+        ]
+    )
+    run(
+        [
+            "kicad-cli",
+            "pcb",
+            "export",
+            "step",
+            "--force",
+            "--board-only",
+            "-o",
+            str(FAB / "inkbot-magsafe-board.step"),
+            str(BOARD),
+        ]
+    )
+    run(
+        [
+            "kicad-cli",
+            "sch",
+            "export",
+            "pdf",
+            "-o",
+            str(FAB / "inkbot-magsafe-schematic.pdf"),
+            str(HERE / "inkbot-magsafe.kicad_sch"),
         ]
     )
 

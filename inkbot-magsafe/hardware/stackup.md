@@ -18,6 +18,9 @@
   4.8 x 12 mm keep-out removes copper, tracks, and vias from every layer.
 - Surface ground pours use thermal connections for reflow consistency. The
   two inner power planes use solid connections.
+- The panel rails reach 40 V peak-to-peak. Keep their external copper under
+  intact solder mask, do not expose them on test pads, and cover the assembled
+  circuit with the specified electrical insulation.
 
 ## Laminated enclosure
 

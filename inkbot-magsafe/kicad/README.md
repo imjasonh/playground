@@ -36,8 +36,13 @@ schematic netlist, places the parts on the back, assigns nets, reserves In1.Cu
 for SYS and In2.Cu for ground, and exports a Specctra DSN file. Freerouting
 routes F.Cu and B.Cu. The script imports the SES file, refills the pours, and
 writes Gerbers, drill, and centroid files under `fab/`. Freerouting 2.4.1
-requires Java 25. Headless Linux also requires
-`xvfb-run`.
+requires Java 25. The script runs without the GUI and disables Freerouting's
+post-route optimizer because version 2.4.1 can hang while rendering conduction
+areas. KiCad DRC checks the unoptimized route.
+
+The fabrication export also writes a mirrored bottom-assembly PDF, a
+board-only STEP model, and a schematic PDF. Review those files with the Gerber
+job before ordering.
 
 Open `inkbot-magsafe.kicad_pro` in KiCad 7 or later to inspect the result and
 run interactive DRC before an order. A clean route is not approval to

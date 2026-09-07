@@ -22,8 +22,9 @@ python3 run_erc.py
 ```
 
 `route_freerouting.py` uses KiCad's Specctra DSN and SES support to run a real
-autorouter. Freerouting 2.4.1 requires Java 25. Headless Linux also requires
-`xvfb-run`.
+autorouter. Freerouting 2.4.1 requires Java 25. The script disables the GUI,
+analytics, API server, and post-route optimizer. The optimizer can hang on
+conduction areas and is unnecessary because KiCad DRC is the release check.
 
 **`run_drc.py` runs KiCad's real DRC engine** (clearance, hole, keep-out,
 courtyard, mask, edge, connectivity, silk) through `pcbnew.WriteDRCReport`, not
@@ -48,9 +49,12 @@ parity.
 - `run_erc.py` must report no contract, no-connect, BOM, or board-parity
   errors.
 - `run_drc.py` must report no hard violations and no unconnected pads.
-- The committed schematic and routed board must match a fresh generator run.
+- The committed schematic must match a fresh generator run. Regenerating the
+  placed board from the same source must preserve footprints, nets, keep-outs,
+  fixed fanouts, and design rules before routing.
 - A human must review the Gerbers, drill file, assembly drawing, BOM, centroid,
-  polarity marks, and component orientation before ordering.
+  board STEP model, schematic PDF, polarity marks, and component orientation
+  before ordering.
 
 The routing flow reserves In1.Cu for SYS and In2.Cu for ground. Freerouting
 routes signals on F.Cu and B.Cu. The board is an EVT artifact until coil
