@@ -255,7 +255,7 @@ matching network, but the host layout still controls its performance:
 ### Board stack
 
 A 0.8 mm, four-layer PCB uses the JLC7628 stack with 1 oz outer and 0.5 oz
-inner copper. In1.Cu distributes SYS around two low-speed charger-control
+inner copper. In1.Cu distributes SYS around three low-speed charger-control
 tracks, and In2.Cu remains solid ground. The routed
 34 x 23 mm battery cutout has 1 mm corner radii. Standard vias are
 0.5/0.25 mm, minimum trace and signal clearance are 0.10 mm, and two Qi
@@ -306,7 +306,7 @@ Who builds what:
   thermistor adhesive, magnet polarity, insulation, and cure time.
 
 `kicad/route_freerouting.py` places the parts, assigns nets, and adds solid
-In1.Cu SYS distribution and the In2.Cu ground plane. Two locked, low-speed
+In1.Cu SYS distribution and the In2.Cu ground plane. Three locked, low-speed
 charger-control tracks cross In1.Cu without cutting the ground plane. The flow
 exports a Specctra DSN file, runs
 Freerouting on F.Cu and B.Cu, imports the SES file, refills the planes, and

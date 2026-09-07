@@ -34,7 +34,7 @@ python3 run_erc.py
 `route_freerouting.py` starts from the generated outline, exports the
 schematic netlist, places the parts on the back, assigns nets, reserves In1.Cu
 for SYS distribution and In2.Cu for ground, and exports a Specctra DSN file.
-Two low-speed charger-control tracks cross In1.Cu; F.Cu and B.Cu carry the
+Three low-speed charger-control tracks cross In1.Cu; F.Cu and B.Cu carry the
 remaining signals. The unbroken ground plane supplies their return path.
 The script imports the SES file, refills the planes, and
 writes Gerbers, drill, and centroid files under `fab/`. Freerouting 2.4.1

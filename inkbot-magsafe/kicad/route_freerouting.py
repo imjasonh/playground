@@ -449,6 +449,15 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             via_xy,
             width=layout_route.mm(width),
         )
+    # Bridge the two SYS-pour regions around the locked inner-layer controls.
+    # The 0.3 mm front trace also gives the panel and MCU LDO inputs a direct
+    # low-impedance connection.
+    add_locked_path(
+        ((26.8, 87.0), (25.6, 88.0), (21.2, 89.8)),
+        layout_route.SYS,
+        pcbnew.F_Cu,
+        width=layout_route.mm(0.3),
+    )
 
     # Place ground stitches beside pads so solder does not wick into open
     # via-in-pad barrels. Closely spaced IC lands share local ground buses.

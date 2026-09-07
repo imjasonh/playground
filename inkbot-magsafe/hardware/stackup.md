@@ -2,9 +2,10 @@
 
 ## PCB
 
-- Four layers: F.Cu signal, In1.Cu SYS distribution with two low-speed charger
+- Four layers: F.Cu signal, In1.Cu SYS distribution with three low-speed charger
   controls, In2.Cu solid ground, and B.Cu signal. The inner control routes do
-  not cross the ground plane.
+  not cross the ground plane. A 0.3 mm front-layer bridge joins the SYS regions
+  on both sides of those controls.
 - The 0.8 mm prototype uses the JLC7628 four-layer stack: 35 um outer copper,
   15.2 um inner copper, 0.2104 mm 7628 prepreg, and a 0.2 mm core. Confirm the
   production order's stack table against the KiCad file before release.
