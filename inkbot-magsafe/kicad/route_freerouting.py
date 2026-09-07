@@ -231,7 +231,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     expected = {
         reference
         for reference, footprint in components.items()
-        if footprint and reference in layout_route.PLACEMENT
+        if footprint
     }
     if expected != set(layout_route.PLACEMENT):
         extra = sorted(set(layout_route.PLACEMENT) - expected)

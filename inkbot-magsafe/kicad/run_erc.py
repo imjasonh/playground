@@ -188,6 +188,14 @@ VALUE_CONTRACT = {
     "C3": ("15nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
     "C16": ("100nF 50V", "Capacitor_SMD:C_0603_1608Metric"),
     "C27": ("100uF 6.3V X5R", "Capacitor_SMD:C_1206_3216Metric"),
+    "C30": ("1uF 50V X5R", "Capacitor_SMD:C_0603_1608Metric"),
+    "C31": ("4.7uF 50V X7R", "Capacitor_SMD:C_1206_3216Metric"),
+    "C32": ("4.7uF 50V X7R", "Capacitor_SMD:C_1206_3216Metric"),
+    "C33": ("4.7uF 50V X7R", "Capacitor_SMD:C_1206_3216Metric"),
+    "C34": ("4.7uF 50V X7R", "Capacitor_SMD:C_1206_3216Metric"),
+    "C35": ("4.7uF 50V X7R", "Capacitor_SMD:C_1206_3216Metric"),
+    "C36": ("1uF 50V X5R", "Capacitor_SMD:C_0603_1608Metric"),
+    "C37": ("4.7uF 50V X7R", "Capacitor_SMD:C_1206_3216Metric"),
     "C38": ("47uF 10V X5R", "Capacitor_SMD:C_1206_3216Metric"),
 }
 

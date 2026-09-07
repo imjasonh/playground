@@ -133,8 +133,6 @@ def main(output: Path = OUT) -> None:
         circle(cx, RING_CY, RING_ID / 2, "Dwgs.User", 0.15),
         circle(cx, RING_CY, COIL_SHIELD_DIA / 2, "Dwgs.User", 0.1),
         text("54 x 46 mm EVT magnetic array", cx, RING_CY, "Dwgs.User", 0.65),
-        rounded_rect_outline(cx - 9.45, 58.5, 18.9, 5.9, 0.8, "Dwgs.User", 0.1),
-        text("orientation magnet", cx, 61.45, "Dwgs.User", 0.55),
         text(
             "WR222230 coil shield",
             cx,

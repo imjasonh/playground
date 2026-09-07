@@ -226,7 +226,7 @@ def main() -> None:
         sch,
         "Device:Thermistor_NTC",
         "RT2",
-        "10k 3435K coil NTC",
+        "103JT-025 10k 3435K film NTC",
         165,
         65,
         "QI_COIL_NTC",
@@ -292,7 +292,7 @@ def main() -> None:
     sch.place(
         "Device:Battery_Cell",
         "BT1",
-        "LP242030 100mAh 2C protected",
+        "LP242030 100mAh protected HR",
         x=snap(275),
         y=snap(90),
     )
@@ -455,13 +455,13 @@ def main() -> None:
 
     pass_v(sch, "Device:C", "C28", "4.7uF 25V", 320, 180, "PANEL_3V0", "GND", c0805)
     pass_v(sch, "Device:C", "C29", "1uF 25V", 330, 180, "PANEL_3V0", "GND", c0603)
-    pass_v(sch, "Device:C", "C30", "1uF 50V", 340, 180, "PANEL_VDD", "GND", c0603)
-    pass_v(sch, "Device:C", "C31", "4.7uF 25V", 350, 180, "PANEL_VSH2", "GND", c0805)
-    pass_v(sch, "Device:C", "C32", "4.7uF 25V", 360, 180, "PANEL_VSH1", "GND", c0805)
-    pass_v(sch, "Device:C", "C33", "4.7uF 25V", 370, 180, "PANEL_VGH", "GND", c0805)
-    pass_v(sch, "Device:C", "C34", "4.7uF 25V", 380, 180, "PANEL_VSL", "GND", c0805)
-    pass_v(sch, "Device:C", "C35", "4.7uF 25V", 390, 180, "PANEL_VGL", "GND", c0805)
-    pass_v(sch, "Device:C", "C36", "1uF 50V", 400, 180, "PANEL_VCOM", "GND", c0603)
+    pass_v(sch, "Device:C", "C30", "1uF 50V X5R", 340, 180, "PANEL_VDD", "GND", c0603)
+    pass_v(sch, "Device:C", "C31", "4.7uF 50V X7R", 350, 180, "PANEL_VSH2", "GND", c1206)
+    pass_v(sch, "Device:C", "C32", "4.7uF 50V X7R", 360, 180, "PANEL_VSH1", "GND", c1206)
+    pass_v(sch, "Device:C", "C33", "4.7uF 50V X7R", 370, 180, "PANEL_VGH", "GND", c1206)
+    pass_v(sch, "Device:C", "C34", "4.7uF 50V X7R", 380, 180, "PANEL_VSL", "GND", c1206)
+    pass_v(sch, "Device:C", "C35", "4.7uF 50V X7R", 390, 180, "PANEL_VGL", "GND", c1206)
+    pass_v(sch, "Device:C", "C36", "1uF 50V X5R", 400, 180, "PANEL_VCOM", "GND", c0603)
 
     sch.place(
         "Device:L",
@@ -493,7 +493,7 @@ def main() -> None:
     sch.place("Device:D", "D3", "MBR0530", x=snap(365), y=snap(120), footprint="Diode_SMD:D_SOD-123")
     sch.connect_pin("D3", "2", "PANEL_SW", wire_dx=5.08, by_number=True)
     sch.connect_pin("D3", "1", "PANEL_VGH", wire_dx=-5.08, by_number=True)
-    pass_v(sch, "Device:C", "C37", "4.7uF 25V", 375, 135, "PANEL_SW", "PANEL_PUMP", c0805)
+    pass_v(sch, "Device:C", "C37", "4.7uF 50V X7R", 375, 135, "PANEL_SW", "PANEL_PUMP", c1206)
     sch.place("Device:D", "D2", "MBR0530", x=snap(390), y=snap(120), footprint="Diode_SMD:D_SOD-123")
     sch.connect_pin("D2", "2", "PANEL_PUMP", wire_dx=5.08, by_number=True)
     sch.connect_pin("D2", "1", "GND", wire_dx=-5.08, by_number=True)

@@ -32,7 +32,8 @@ mod firmware {
         //   1. Keep panel power and charging disabled before other GPIO changes.
         //   2. Start the 32.768 kHz LFXO and S113.
         //   3. Configure BQ25186 JEITA, current, and voltage limits over I2C,
-        //      then enable charging through Q2.
+        //      verify readback, then enable charging through Q2. Recheck the
+        //      registers while charging and drop Q2 on any mismatch.
         //   4. Initialize SPI, BUSY timeout handling, SYS sampling, the
         //      watchdog, and reset-reason retention.
         //   5. Advertise only the bonded service and serve encrypted GATT and

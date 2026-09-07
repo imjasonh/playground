@@ -5,12 +5,18 @@ pub const I2C_ADDRESS: u8 = 0x6a;
 
 pub const REG_VBAT_CTRL: u8 = 0x03;
 pub const REG_ICHG_CTRL: u8 = 0x04;
+pub const REG_IC_CTRL: u8 = 0x07;
 pub const REG_TMR_ILIM: u8 = 0x08;
 pub const REG_TS_CONTROL: u8 = 0x0b;
 
 pub const VBAT_4200_MV: u8 = 0x46;
 pub const ICHG_40_MA_DISABLED: u8 = 0x9f;
 pub const ICHG_40_MA_ENABLED: u8 = 0x1f;
+/// Keep TS and the six-hour safety timer enabled, but disable the charger
+/// watchdog. A charger watchdog reset would restore the 60 C hot threshold
+/// while the MCU could still be holding Q2 on. The MCU watchdog instead resets
+/// the GPIO and lets R6 turn Q2 off.
+pub const IC_CTRL_TS_6H_NO_WATCHDOG: u8 = 0x87;
 pub const ILIM_100_MA_WITH_RESET_DEFAULTS: u8 = 0x49;
 pub const TS_COLD_0_HOT_45: u8 = 0xc0;
 
@@ -21,7 +27,7 @@ pub struct RegisterWrite {
 }
 
 /// Safe write order while Q2 is off and R5 holds `/CE` high.
-pub const CONFIGURATION_WRITES: [RegisterWrite; 5] = [
+pub const CONFIGURATION_WRITES: [RegisterWrite; 6] = [
     RegisterWrite {
         register: REG_ICHG_CTRL,
         value: ICHG_40_MA_DISABLED,
@@ -39,6 +45,10 @@ pub const CONFIGURATION_WRITES: [RegisterWrite; 5] = [
         value: TS_COLD_0_HOT_45,
     },
     RegisterWrite {
+        register: REG_IC_CTRL,
+        value: IC_CTRL_TS_6H_NO_WATCHDOG,
+    },
+    RegisterWrite {
         register: REG_ICHG_CTRL,
         value: ICHG_40_MA_ENABLED,
     },
@@ -48,11 +58,13 @@ pub const CONFIGURATION_WRITES: [RegisterWrite; 5] = [
 pub const fn configuration_matches(
     vbat_ctrl: u8,
     ichg_ctrl: u8,
+    ic_ctrl: u8,
     tmr_ilim: u8,
     ts_control: u8,
 ) -> bool {
     vbat_ctrl == VBAT_4200_MV
         && ichg_ctrl == ICHG_40_MA_ENABLED
+        && ic_ctrl == IC_CTRL_TS_6H_NO_WATCHDOG
         && tmr_ilim == ILIM_100_MA_WITH_RESET_DEFAULTS
         && ts_control == TS_COLD_0_HOT_45
 }
@@ -81,8 +93,9 @@ mod tests {
 
     #[test]
     fn readback_requires_every_safety_value() {
-        assert!(configuration_matches(0x46, 0x1f, 0x49, 0xc0));
-        assert!(!configuration_matches(0x46, 0x1f, 0x4d, 0xc0));
-        assert!(!configuration_matches(0x46, 0x1f, 0x49, 0x00));
+        assert!(configuration_matches(0x46, 0x1f, 0x87, 0x49, 0xc0));
+        assert!(!configuration_matches(0x46, 0x1f, 0x84, 0x49, 0xc0));
+        assert!(!configuration_matches(0x46, 0x1f, 0x87, 0x4d, 0xc0));
+        assert!(!configuration_matches(0x46, 0x1f, 0x87, 0x49, 0x00));
     }
 }

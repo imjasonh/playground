@@ -56,11 +56,14 @@ allowance before a production release.
 - Back, below the coil: MDBT50Q-512K module (antenna end toward a board edge),
   BQ51013C receiver, BQ25186 charger, MCU and panel LDOs, and passives around
   the cutout.
-- Cutout: protected LP242030 100 mAh, 2C pack with an NTC and keyed harness.
+- Cutout: protected LP242030 100 mAh custom pack with an NTC, keyed harness,
+  and at least 200 mA continuous pack-level discharge capability.
 - Magnetic assembly: N48H accessory ring and a low-carbon-steel DC shield.
-  An orientation magnet is optional because the tile's center of mass hangs
-  below the ring. If testing shows unacceptable rotation, add the orientation
-  magnet and requalify Qi coupling, pull force, and the thickness stack.
+  The 60 x 99 mm body extends outside the all-orientation envelope, so a
+  qualified anti-rotation feature is mandatory. The current center orientation
+  magnet sketch overlaps the battery cutout and is not a releasable solution.
+  Freeze a safe geometry before DVT and requalify Qi coupling, pull force, and
+  the thickness stack.
 
 ## Camera and bottom clearance
 
@@ -104,11 +107,13 @@ At the magnetic ring:
 | **Total at ring** | **~3.27 mm** |
 
 At the coil center, the 0.87 mm coil and ferrite replace the annular magnet
-stack, for an approximate total of 2.94 mm.
+stack. The 0.5 mm film thermistor brings the conservative stacked total to
+3.44 mm unless the released carrier provides a sensor pocket.
 
 ## Retention
 
-Magnet-only. The accessory ring must meet Apple's published polarity, flux,
-coplanarity, and 650-900 gf pull-force requirements. Validate pull force on
-every supported phone and case, then repeat the test after drop, thermal-cycle,
-and adhesive-aging tests.
+Magnet-only. The accessory ring must meet the current Apple program's polarity,
+flux, coplanarity, and force procedures. Use 650-900 gf only as the project's
+provisional internal removal-force target until Apple approves the released
+geometry. Validate pull force on every supported phone and case, then repeat
+the test after drop, thermal-cycle, and adhesive-aging tests.

@@ -58,15 +58,15 @@ it should not.
 | MCU / radio | **Raytac MDBT50Q-512K** — pre-certified nRF52833 module (128 KB RAM for the 48 KB framebuffer; integrated antenna, 32 MHz crystal, DC/DC, RF match) |
 | Panel | **GDEY0397T81P**, 3.97-inch 480 x 800 portrait monochrome e-paper, SSD1677, partial refresh |
 | Orientation | portrait; ring high on the tile, panel fills the tile and overlaps the ring |
-| Battery | **LP242030 custom pack**, 100 mAh, protected, 2C discharge, 10 kOhm NTC, keyed three-wire harness, up to 3.5 mm thick |
+| Battery | **LP242030 custom pack requirement**, 100 mAh, protected, at least 200 mA continuous pack discharge, 10 kOhm NTC, keyed three-wire harness, up to 3.5 mm thick |
 | Power | **BQ51013C** Qi 1.3 receiver into a default-off **BQ25186** charger with a SYS power path |
 | MCU power | **TPS7A0230P** 3.0 V nanopower LDO; nRF52833 VDD and VDDH tied for normal-voltage mode |
 | Panel power | **TPS7A2030P** 3.0 V LDO, disabled with active discharge between refreshes |
-| Charging | 5 W Qi RX only; detach the tile and set it on a pad. No pass-through |
+| Charging | Qi 1.3 receiver configured for about 250 mA nominal and 300 mA hardware limit; no pass-through |
 | Frame source | the paired iPhone only; no Worker, no second radio |
 | Port | none; SWD test pads for factory flash and recovery. USB-C considered and dropped |
 | Enclosure | panel front face, structural spacer, electrical insulation, and a flame-retardant rear cover |
-| Magnets | Apple accessory-array geometry, N48H ring, low-carbon-steel DC shield, and optional orientation magnet; magnet-only retention |
+| Magnets | Apple accessory-array geometry, N48H ring, low-carbon-steel DC shield, and a mandatory anti-rotation feature; final geometry is unresolved |
 | Link | BLE 4.2+ GATT for control, **L2CAP connection-oriented channel** for the frame blob |
 | iOS delivery | deferred until hardware is dialed in; Core Bluetooth central when built |
 | Schematic | KiCad project under [`inkbot-magsafe/kicad/`](../inkbot-magsafe/kicad/) |
@@ -110,7 +110,7 @@ P0.00/P0.01. The NFCT pins stay unused.
          |              |                    ^          |
       coil NTC       resonance/FOD           |          +-> 47 uF reservoir
                                              |
-   protected LP242030 2C pack + NTC -> BAT---+
+   protected LP242030 high-rate pack + NTC -> BAT---+
 
    SYS -> TPS7A0230P 3.0 V -> MDBT50Q VDD + VDDH
    SYS -> TPS7A2030P 3.0 V -> 100 uF -> SSD1677 panel power and boost circuit
@@ -125,6 +125,10 @@ flex (FPC); its on-glass charge pump makes its own gate and source rails from
 3.0 V. The board implements the panel data sheet's external MOSFET, inductor,
 diodes, sense resistor, and reservoir capacitors. The TPS7A2030P disables and
 actively discharges the panel rail between refreshes.
+
+The switched and high-voltage panel reservoirs use 50 V-rated 1206 X7R parts.
+EVT must still verify effective capacitance at DC bias and capture overshoot on
+every generated rail.
 
 ### Why 3.97-inch, portrait
 
@@ -171,9 +175,10 @@ its average refresh power is only about 36 mW. C38 adds 47 uF on SYS without
 exceeding the BQ25186's 100 uF maximum, and C27 adds 100 uF at the panel within
 the TPS7A20's 200 uF stability limit. Those parts do not prove margin. EVT must
 capture BAT, SYS, PANEL_3V0, and current at room temperature, cold temperature,
-end-of-charge, and the refresh floor. The selected LP242030 pack specifies a
-200 mA maximum discharge, but the supplier must approve the measured combined
-panel and radio pulse before release.
+end-of-charge, and the refresh floor. The LP242030 cell specification permits
+200 mA maximum discharge, but its reference PCM does not provide the required
+continuous margin. Release `IMJ-BAT-001` only after the cell and custom PCM both
+support the measured combined panel and radio pulse.
 
 ## Circuit design
 
@@ -270,7 +275,7 @@ The estimates include 0.10 mm front adhesive and a 0.25 mm rear cover:
 | Region | Approx. |
 |--------|---------|
 | Module | **~4.07 mm** |
-| Protected battery pack in the cutout | **~4.47 mm** |
+| Protected battery pack in the cutout | **~4.77 mm** |
 | Magnet ring plus DC shield | **~3.27 mm** |
 | Coil and ferrite | **~2.94 mm** |
 
@@ -478,9 +483,9 @@ extended cost for every reference in that row, not a single component price:
 
 | Quantity | Unit direct cost | Build total | With 15% yield and price reserve |
 |---:|---:|---:|---:|
-| 1 | **$170.13** | **$170** | **$196** |
-| 100 | **$61.38** | **$6,138** | **$7,059** |
-| 1,000 | **$43.17** | **$43,170** | **$49,646** |
+| 1 | **$172.53** | **$173** | **$198** |
+| 100 | **$61.81** | **$6,181** | **$7,108** |
+| 1,000 | **$43.32** | **$43,320** | **$49,818** |
 
 The one-unit estimate includes manual assembly setup but excludes minimum reel
 buys, shipping, duties, tax, and the tools needed to program or measure the
@@ -510,7 +515,8 @@ Obtain supplier quotations and compliance-lab scopes before treating the
   path.
 - Firmware-set 40 mA charge, 100 mA input, 0-45 degrees Celsius JEITA limits,
   separate cell and coil NTCs, and charger fault decoding.
-- Protected 2C battery pack with a keyed, polarized three-wire harness.
+- Protected high-rate battery pack with a keyed, polarized three-wire harness
+  and at least 200 mA continuous pack-level discharge capability.
 - 47 uF on SYS and 100 uF on PANEL_3V0, each checked against regulator
   capacitance limits and qualified at operating DC bias.
 - Module antenna flush with the board edge and an all-layer copper keep-out.
@@ -544,7 +550,7 @@ and raw data. A pass on one prototype is not a production qualification.
 | BLE | A full 48 KB frame completes within the foreground target and resumes after forced disconnects without corruption or stale-frame acceptance |
 | RF | Throughput, packet error rate, and reconnect behavior pass attached and detached on every supported phone and case |
 | Firmware update | Signed update, interrupted download, power loss during swap, failed trial image, rollback, stale version, lost owner, and SWD erase recovery all pass |
-| Magnet assembly | Polarity and flux map pass incoming inspection; pull force is 650-900 gf; the tile does not rotate into the camera area |
+| Magnet assembly | Polarity and flux map pass incoming inspection; removal force meets the approved Apple procedure and the project's provisional 650-900 gf internal target; the tile does not rotate into the camera area |
 | Mechanical | Panel bond, FPC, coil and NTC leads, cell carrier, rear cover, and SWD access pass drop, torsion, peel, sweat, thermal-cycle, and aging tests |
 | Manufacturing | AOI/X-ray criteria, programming, rail tests, radio test, panel test image, current signature, serialized result record, and failed-unit quarantine are defined |
 
@@ -554,10 +560,12 @@ and raw data. A pass on one prototype is not a production qualification.
   Apple approves the product through MFi. MFi controls licensed marks,
   accessory magnet specifications, approved sources, and any licensed
   electronic features.
-- The public Apple accessory-array requirements call for N48H magnets,
-  controlled polarity and flux, 7-13 um NiCuNi plating, coplanarity, a DC
-  shield, and 650-900 gf pull force. Qualify camera OIS, autofocus, compass,
-  magnetic-stripe-card, and wireless-charging interference.
+- The public Apple accessory-array material calls for N48H magnets, controlled
+  polarity and flux, 7-13 um NiCuNi plating, coplanarity, and a DC shield.
+  Confirm force limits and procedures through the current Apple program rather
+  than treating the project's 650-900 gf target as a universal requirement.
+  Qualify camera OIS, autofocus, compass, magnetic-stripe-card, and
+  wireless-charging interference.
 - The Raytac modular approvals reduce radio test scope only when the host
   design follows every grant condition. The finished product still needs host
   labeling, RF exposure assessment, emissions testing, and the applicable FCC,
