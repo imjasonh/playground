@@ -400,13 +400,13 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
 
     # Connect every SYS load to In1.Cu before routing signal layers.
     for reference, pad_number, via_xy, width in (
-        ("U3", "1", (42.0, 56.8), 0.15),
-        ("TP6", "1", (40.0, 56.0), 0.5),
+        ("U3", "1", (49.7, 61.3), 0.15),
+        ("TP6", "1", (56.8, 58.0), 0.5),
         ("C38", "1", (23.5, 94.525), 0.5),
         ("C26", "1", (26.8, 87.0), 0.3),
         ("C21", "1", (18.0, 88.5), 0.3),
         ("U4", "1", (36.0, 89.0), 0.3),
-        ("C18", "1", (50.55, 56.5), 0.5),
+        ("C18", "1", (51.55, 65.5), 0.5),
         ("R9", "1", (17.7, 84.0), 0.2),
         ("U5", "1", (21.2, 92.2), 0.3),
         ("U5", "3", (21.2, 89.8), 0.2),
@@ -428,9 +428,9 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("C15", "2", (4.025, 80.0)),
         ("C16", "2", (7.175, 78.4)),
         ("R2", "2", (11.9, 60.4)),
-        ("C17", "2", (48.775, 56.5)),
-        ("C18", "2", (52.45, 56.5)),
-        ("C19", "2", (57.0, 55.0)),
+        ("C17", "2", (50.5, 65.0)),
+        ("C18", "2", (53.45, 65.2)),
+        ("C19", "2", (58.0, 64.0)),
         ("C20", "2", (26.4, 82.8)),
         ("R10", "2", (22.3, 84.0)),
         ("C21", "2", (19.0, 91.3)),
@@ -458,7 +458,8 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         ("U1", "15", (16.4, 84.2)),
         ("U1", "33", (16.4, 93.8)),
         ("U1", "55", (5.2, 95.0)),
-        ("U3", "11", (44.0, 56.0)),
+        ("U3", "5", (49.75, 58.6)),
+        ("U3", "11", (52.0, 61.55)),
         ("U5", "2", (21.0, 91.0)),
     ):
         fanout_to_plane(
@@ -467,20 +468,6 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
             via_xy,
             net_name=layout_route.GND,
         )
-
-    charger_ground_via = board_point(40.8, 56.5)
-    add_locked_path(
-        (
-            (42.95, 54.2),
-            (42.2, 54.2),
-            (41.2, 55.2),
-            (40.8, 55.6),
-            (40.8, 56.5),
-        ),
-        layout_route.GND,
-        pcbnew.B_Cu,
-    )
-    add_locked_via(charger_ground_via, layout_route.GND)
 
     ldo_ground_junction = board_point(34.5, 87.0)
     ldo_ground_via = board_point(34.5, 88.3)
@@ -497,7 +484,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
     )
     add_locked_via(ldo_ground_via, layout_route.GND)
 
-    charger_gate_ground_via = board_point(54.0, 61.0)
+    charger_gate_ground_via = board_point(54.0, 68.0)
     for reference, pad_number in (("R6", "2"), ("Q2", "2")):
         add_locked_track(
             pad_center(reference, pad_number),
@@ -611,7 +598,7 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         "/QI_OUT",
         width=layout_route.mm(0.3),
     )
-    qi_input_via = board_point(47.225, 57.0)
+    qi_input_via = board_point(47.8, 57.5)
     qi_layer_via = board_point(20.0, 56.0)
     add_locked_path(
         (
@@ -628,36 +615,13 @@ def build_placed_board() -> tuple[pcbnew.BOARD, list[pcbnew.SHAPE_POLY_SET]]:
         (
             (20.0, 56.0),
             (21.5, 57.5),
-            (47.225, 57.5),
-            (47.225, 57.0),
+            (47.8, 57.5),
         ),
         "/QI_OUT",
         pcbnew.B_Cu,
         width=layout_route.mm(0.3),
     )
     add_locked_via(qi_input_via, "/QI_OUT")
-    add_locked_track(
-        qi_input_via,
-        pad_center("C17", "1"),
-        "/QI_OUT",
-        width=layout_route.mm(0.3),
-    )
-    add_locked_track(
-        pad_center("U3", "10"),
-        board_point(45.8, 55.8),
-        "/QI_OUT",
-        width=layout_route.mm(0.15),
-    )
-    add_locked_path(
-        (
-            (45.8, 55.8),
-            (46.6, 55.0),
-            (47.225, 55.0),
-        ),
-        "/QI_OUT",
-        pcbnew.B_Cu,
-        width=layout_route.mm(0.3),
-    )
     add_locked_path(
         (
             (5.35, 66.75),
