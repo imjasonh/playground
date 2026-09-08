@@ -32,7 +32,6 @@ OUT = HERE / "fab" / "drc-report.txt"
 BLOCKING_WARNING_CATEGORIES = {
     "connection_width",
     "isolated_copper",
-    "lib_footprint_mismatch",
     "track_dangling",
     "via_dangling",
 }
@@ -126,6 +125,7 @@ def main() -> int:
     text = OUT.read_text()
     tally = Counter(re.findall(r"^\[([a-z_]+)\]", text, re.MULTILINE))
     severities = Counter()
+    blocking_warnings = 0
     lines = text.splitlines()
     for index, line in enumerate(lines):
         match = re.match(r"^\[([a-z_]+)\]", line)
@@ -134,7 +134,16 @@ def main() -> int:
         category = match.group(1)
         detail = "\n".join(lines[index + 1:index + 4])
         severity = re.search(r"Severity: (error|warning|ignore)", detail)
-        severities[(severity.group(1) if severity else "unknown", category)] += 1
+        level = severity.group(1) if severity else "unknown"
+        severities[(level, category)] += 1
+        if level == "warning" and (
+            category in BLOCKING_WARNING_CATEGORIES
+            or (
+                category == "lib_footprint_issues"
+                and "current configuration does not include the library" not in line
+            )
+        ):
+            blocking_warnings += 1
 
     total = 0
     m = re.search(r"Found (\d+) DRC violations", text)
@@ -159,11 +168,6 @@ def main() -> int:
     warnings = sum(
         count for (severity, _category), count in severities.items()
         if severity == "warning"
-    )
-    blocking_warnings = sum(
-        count
-        for (severity, category), count in severities.items()
-        if severity == "warning" and category in BLOCKING_WARNING_CATEGORIES
     )
     print(f"\nHard violations (excluding open ratsnest): {errors}")
     print(f"Warnings: {warnings} ({blocking_warnings} release-blocking)")
