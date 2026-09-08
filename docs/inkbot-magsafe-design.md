@@ -421,6 +421,13 @@ erase both bond-journal copies and the prior owner's replay boundary, verify
 the erases, and display a new random passkey before this recovery path is
 complete. SWD full erase remains the factory fallback.
 
+The proposed gesture input is the BQ51013C `CHG` output, which reports receiver
+output activity rather than physical contact. End-power-transfer, poor
+alignment, and transmitter ping cycles can change that signal while the tile
+has not moved. Keep owner reset disabled until EVT captures those traces and
+proves they cannot satisfy the gesture, or add an independent attachment
+sensor.
+
 ### Getting a frame there in the background
 
 iOS does not let an app run arbitrary code on a schedule to poke BLE. Truly
@@ -650,6 +657,10 @@ and raw data. A pass on one prototype is not a production qualification.
   transmitter interoperability, FOD behavior, and thermal limits.
 - Require a UN 38.3 test summary for the shipped pack and complete the
   applicable IEC 62133-2, UL 2054, shipping, recycling, RoHS, and REACH work.
+- For EU units placed on the market from February 18, 2027, design for end-user
+  battery replacement with commercially available tools unless legal review
+  documents an applicable exception. Keep the display bonded and provide
+  reusable rear access to the keyed pack.
 
 ## Decisions taken since 0.1.0 draft
 

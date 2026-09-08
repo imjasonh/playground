@@ -44,9 +44,10 @@ coil joints, or panel high-voltage circuit exposed. The assembly needs:
   panel circuit.
 - Strain relief for the panel FPC, battery harness, and both coil leads.
 - A removable fixture cover or labeled access area for the SWD pads.
-- For an EU launch, reusable rear access that lets a service technician replace
-  the keyed battery pack with commercially available tools, without heat,
-  solvent, or removing the display.
+- For EU units placed on the market from February 18, 2027, reusable rear
+  access that lets the end user replace the keyed battery pack with
+  commercially available tools, without heat, solvent, or removing the
+  display, unless legal review documents an applicable exception.
 
 The enclosure drawing must define adhesive width, material flammability,
 water and sweat exposure, venting, drop protection, torsion, and cell swelling
