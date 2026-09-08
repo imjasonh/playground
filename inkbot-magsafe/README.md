@@ -25,6 +25,8 @@ implemented. Do not treat a successful cross-build as working device firmware.
 - `src/protocol.rs`: the versioned, resumable BLE frame-transfer state machine
   with exact bounds, byte alignment, length, CRC-32, conflicting-ID, durable
   commit, and replay checks.
+- `src/wire.rs`: stable service and characteristic UUIDs plus versioned control,
+  status, capability, and GATT chunk codecs with fixed golden vectors.
 - `src/panel.rs`: geometry and the SSD1677 command set for the 480 x 800
   portrait GDEY0397T81P panel. Wire frames use the controller's native
   800 x 480 order, including byte-aligned partial-refresh windows, reversed

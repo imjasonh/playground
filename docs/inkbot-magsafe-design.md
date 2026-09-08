@@ -382,6 +382,7 @@ top-level app.
 | Characteristic | Properties | Purpose |
 |---|---|---|
 | Control | encrypted write with response | begin frame, region, full-vs-partial, commit, and resume offset |
+| Capabilities | encrypted read | protocol version, GATT chunk limit, optional LE PSM, and L2CAP chunk limit |
 | Status | read / notify | SYS estimate, charge state, temperature availability, and last-refresh result |
 | Frame fallback | encrypted write without response | chunked pixel data when L2CAP is unavailable |
 
@@ -463,6 +464,15 @@ active header returns the received offset so a dropped transfer can resume.
 Passing the CRC marks a frame as verified, but it does not advance the replay
 boundary. Firmware advances that boundary only after atomically committing the
 pixels and metadata to flash.
+
+`src/wire.rs` fixes the service and characteristic UUIDs and the byte-level
+messages that both implementations use. Control requests carry a version and
+an opcode for begin, commit, cancel, or status. GATT fallback chunks carry the
+frame id and required offset before nonempty pixel data. The 16-byte status
+message reports phase, error code, active frame id, resume offset, and committed
+frame id. The capabilities message publishes negotiated GATT and L2CAP limits
+and the optional LE PSM. An inactive transfer expires after 30 seconds. Golden
+vectors lock each encoding for the future Swift implementation.
 
 The glass is mounted with its long axis vertical, but SSD1677 RAM remains
 800 source pixels by 480 gate pixels. The iOS encoder rotates each portrait

@@ -19,3 +19,4 @@ pub mod power;
 pub mod protocol;
 pub mod recovery;
 pub mod storage;
+pub mod wire;
