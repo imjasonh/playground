@@ -61,8 +61,9 @@ kicad_image="kicad/kicad:9.0@sha256:e638b79b0321f29395a5b783e94bb9f3c73303e8da15
 docker run --rm --user root \
   --volume "${repo_root}:/workspace" \
   --workdir /workspace/inkbot-magsafe/kicad \
+  --entrypoint sh \
   "$kicad_image" \
-  sh -euc '
+  -euc '
     kicad-cli sch erc \
       --format report \
       --severity-error \
