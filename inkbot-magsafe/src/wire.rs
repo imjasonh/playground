@@ -258,7 +258,7 @@ impl Capabilities {
     pub const fn is_valid(self) -> bool {
         self.max_gatt_chunk > 0
             && match self.l2cap_psm {
-                Some(psm) => psm >= 0x0080 && self.max_l2cap_chunk > 0,
+                Some(psm) => psm >= 0x0080 && psm <= 0x00ff && self.max_l2cap_chunk > 0,
                 None => self.max_l2cap_chunk == 0,
             }
     }
@@ -454,6 +454,15 @@ mod tests {
         assert_eq!(
             Capabilities::from_bytes(&gatt_only.to_bytes().unwrap()),
             Ok(gatt_only)
+        );
+
+        let invalid_psm = Capabilities {
+            l2cap_psm: Some(0x0100),
+            ..expected
+        };
+        assert_eq!(
+            invalid_psm.to_bytes(),
+            Err(WireDecodeError::InvalidCapabilities)
         );
     }
 }
