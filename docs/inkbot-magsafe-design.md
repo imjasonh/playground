@@ -439,10 +439,8 @@ iOS does not let an app run arbitrary code on a schedule to poke BLE. Truly
 source there is no server to send a wake. So background updates are event-driven
 and best-effort, and the launch faces are chosen to tolerate that: clock, the
 day's calendar, weather, a health readout (steps or rings), a photo or custom
-image, and custom text or a countdown. A best-effort notification or message
-summary rides along, with the caveat that it lands on the next background wake,
-not the instant a message arrives. Transit is deferred to a later face. What iOS
-gives a source-on-device app:
+image, and custom text or a countdown. Notification summaries and transit are
+excluded. What iOS gives a source-on-device app:
 
 - **State preservation and restoration.** With the `bluetooth-central`
   background mode, iOS can restore the central and wake the app for documented
@@ -462,13 +460,12 @@ release. Use a GATT notification to wake the central before resuming L2CAP, and
 test the minimum supported iOS version in foreground, background, after
 termination, after reboot, and after Bluetooth state restoration.
 
-If a face ever needs sub-minute remote updates (an inbound message the instant it
-lands), that requires a silent APNs push from some server, which the phone-only
-model deliberately gives up. The notification-summary face is the likely reason
-to add one later, so **reserve that path**: keep the tile firmware agnostic to
-what wakes the app (it just receives a frame), and keep the app's push handling
-behind one seam, so a future optional companion push service drops in without a
-firmware change or a second radio. It is not built for launch.
+An iOS app cannot read other apps' notifications. Apple Notification Center
+Service would instead require the tile to act as a GATT client, which the
+peripheral-only S113 architecture does not support. A future companion service
+can use silent APNs for its own authorized data, but it cannot turn the launch
+design into a general notification mirror without a radio-stack and privacy
+redesign.
 
 Protocol version 1 uses a fixed 24-byte header. It rejects unsupported versions,
 nonzero reserved bytes, invalid or unaligned windows, mismatched lengths,
@@ -681,15 +678,13 @@ and raw data. A pass on one prototype is not a production qualification.
   MDBT50Q-1MV2 module with the antenna, 32 MHz crystal, DC/DC, and RF matching.
   The module still requires its host keep-out, layout review, and
   finished-product tests.
-- **Launch faces:** clock, calendar, weather, health, photo/image, custom text,
-  and a best-effort notification summary. Transit is deferred.
-- **Relaxed background cadence.** Target the iOS `BGTask` rhythm (roughly every
-  15 to 30 minutes, adaptive), which is the best-battery choice; foreground
-  updates are immediate. No tight always-on connection interval.
-- **Push gap accepted, path reserved.** Phone-only for launch. The
-  notification-summary face is the one that would justify an optional companion
-  push service later, so the firmware and app are structured to add it without a
-  redesign.
+- **Launch faces:** clock, calendar, weather, health, photo/image, and custom
+  text. Notification summaries and transit are deferred.
+- **Relaxed background cadence.** Accept the system-selected `BGTask` cadence;
+  foreground updates are immediate, but background updates have no guaranteed
+  interval or deadline.
+- **No notification mirroring.** The source app cannot read other apps'
+  notifications, and ANCS would require a central-capable tile radio stack.
 - **Charging is detach-and-drop on a Qi-compatible pad.** A BQ51013C receiver
   feeds a BQ25186 power-path charger. No pass-through stage is included.
 - **No user connector.** Wireless charge, planned signed BLE DFU, and SWD pads
@@ -698,10 +693,9 @@ and raw data. A pass on one prototype is not a production qualification.
 - **Magnet-only retention.** The N48H accessory ring and DC shield follow the
   Apple accessory-array geometry. Pull force, rotation, camera, compass, card,
   and charging interference remain physical acceptance tests.
-- **A later push service stays independent.** If the reserved notification path
-  is built, it is a private companion service, not the [`inkbot/`](../inkbot/)
-  Worker and it shares no code with it. The tile firmware and app stay agnostic
-  to the sender.
+- **A later push service stays independent.** If source-specific remote data is
+  added, it uses a private companion service, not the [`inkbot/`](../inkbot/)
+  Worker, and it shares no code with it.
 - **Reference-design-based KiCad schematic.** Raytac MDBT50Q-1MV2 module,
   BQ51013C receiver, BQ25186 charger, TPS7A0230P MCU rail, TPS7A2030P panel
   rail, complete SSD1677
