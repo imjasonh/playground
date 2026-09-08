@@ -201,6 +201,27 @@ mod tests {
     }
 
     #[test]
+    fn every_truncation_and_single_bit_corruption_is_rejected() {
+        let valid = record(7, FrameSlot::A).to_bytes();
+        for length in 0..METADATA_RECORD_BYTES {
+            assert_eq!(
+                FrameRecord::from_bytes(&valid[..length]),
+                Err(RecordDecodeError::InvalidLength)
+            );
+        }
+        for index in 0..METADATA_RECORD_BYTES {
+            for bit in 0..8 {
+                let mut corrupted = valid;
+                corrupted[index] ^= 1 << bit;
+                assert!(
+                    FrameRecord::from_bytes(&corrupted).is_err(),
+                    "accepted corruption at byte {index}, bit {bit}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn reserved_and_invalid_fields_are_rejected_after_valid_crc() {
         let mut reserved = record(7, FrameSlot::A).to_bytes();
         reserved[6] = 1;

@@ -317,10 +317,30 @@ mod tests {
     }
 
     #[test]
+    fn panel_temperature_is_monotonic_across_every_valid_adc_code() {
+        let mut previous = i8::MAX;
+        for raw in 17..(PANEL_TEMP_ADC_MAX - 16) {
+            let temperature = panel_temp_c_from_saadc(raw).unwrap();
+            assert!(
+                temperature <= previous,
+                "temperature rose from {previous} C to {temperature} C at code {raw}"
+            );
+            previous = temperature;
+        }
+    }
+
+    #[test]
     fn soc_clamps_and_interpolates() {
         assert_eq!(soc_percent(3000), 0);
         assert_eq!(soc_percent(3800), 50);
         assert_eq!(soc_percent(5000), 100);
+        let mut previous = 0;
+        for millivolts in 0..=u16::MAX {
+            let percent = soc_percent(millivolts);
+            assert!(percent >= previous);
+            assert!(percent <= 100);
+            previous = percent;
+        }
     }
 
     #[test]
