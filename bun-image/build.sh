@@ -24,7 +24,7 @@ need bun
 need crane
 
 image="${1:-gcr.io/imjasonh/bun}"
-base="${2:-gcr.io/distroless/cc-debian12}"
+base="${2:-cgr.dev/chainguard/glibc-dynamic}"
 
 host_arch="$(uname -m)"
 case "$host_arch" in
@@ -48,12 +48,12 @@ case "$target" in
 esac
 
 # bun-linux-*-musl is still dynamically linked to musl libc and libstdc++.
-# distroless/cc is glibc; distroless/static has no libc. Neither will run it.
+# glibc-dynamic / distroless/cc are glibc; distroless/static has no libc.
 if [[ "$target" == *musl* ]]; then
   case "$base" in
-    *distroless/cc* | *distroless/static*)
+    *glibc-dynamic* | *distroless/cc* | *distroless/static*)
       echo "bun's musl compile target is dynamically linked; it will not run on ${base}" >&2
-      echo "use an Alpine (or other musl + libstdc++) base, or omit BUN_TARGET for glibc + distroless/cc" >&2
+      echo "use an Alpine (or other musl + libstdc++) base, or omit BUN_TARGET for glibc + cgr.dev/chainguard/glibc-dynamic" >&2
       exit 1
       ;;
   esac

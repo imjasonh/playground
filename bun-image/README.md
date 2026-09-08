@@ -4,8 +4,9 @@ The [deno-image](https://github.com/imjasonh/deno-image) pattern, for Bun.
 
 [`build.sh`](./build.sh) compiles [`example.js`](./example.js) with
 [`bun build --compile`](https://bun.sh/docs/bundler/executables), appends that
-executable onto a [distroless](https://github.com/GoogleContainerTools/distroless)
-base, and sets it as the entrypoint.
+executable onto
+[`cgr.dev/chainguard/glibc-dynamic`](https://images.chainguard.dev/directory/image/glibc-dynamic/overview),
+and sets it as the entrypoint.
 [`crane`](https://github.com/google/go-containerregistry/tree/main/cmd/crane)
 does the image work. There is no Dockerfile and no `docker build`.
 
@@ -41,7 +42,7 @@ docker run --rm -p 8000:8000 bun-image.local/example
 Defaults:
 
 - Image: `gcr.io/imjasonh/bun`
-- Base: `gcr.io/distroless/cc-debian12`
+- Base: `cgr.dev/chainguard/glibc-dynamic`
 
 The example listens on port 8000. `./example --hello` prints `bun-image-ok` and
 exits, which `test.sh` uses as a smoke check.
@@ -60,12 +61,14 @@ on a glibc host, and it does not run on `gcr.io/distroless/static`. Bun has no
 `--static` compile flag.
 
 So this script compiles the glibc target (`bun-linux-x64` or `bun-linux-arm64`,
-matching the host) and uses `distroless/cc`, which is the same libc pairing
-[deno-image](https://github.com/imjasonh/deno-image) uses.
+matching the host) and uses `cgr.dev/chainguard/glibc-dynamic`, which has glibc,
+libgcc, and libstdc++. That is the Chainguard image meant for dynamically
+linked binaries. `gcr.io/distroless/cc` is a fine override if you want the
+[deno-image](https://github.com/imjasonh/deno-image) base instead.
 
-If you set a `*-musl` `BUN_TARGET` with a `distroless/cc` or `distroless/static`
-base, `build.sh` exits. Use an Alpine (or other musl + libstdc++) base if you
-want that target.
+If you set a `*-musl` `BUN_TARGET` with `glibc-dynamic`, `distroless/cc`, or
+`distroless/static`, `build.sh` exits. Use an Alpine (or other musl +
+libstdc++) base if you want that target.
 
 ## Why this is not node-image
 
