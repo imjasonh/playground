@@ -59,9 +59,27 @@ class ReleaseGateTest(unittest.TestCase):
         document = self.document("PRODUCTION")
         document["gates"][0]["status"] = "passed"
         document["gates"][0]["evidence"] = ["reports/schematic-review.pdf"]
-        summary = release_gates.validate_release_gates(self.write(document))
+        path = self.write(document)
+        report = path.parent / "reports" / "schematic-review.pdf"
+        report.parent.mkdir()
+        report.write_bytes(b"independent review")
+        summary = release_gates.validate_release_gates(path)
         self.assertTrue(summary.production_releasable)
         self.assertEqual(summary.blocked, ())
+        self.assertEqual(summary.evidence_files, (report,))
+
+    def test_missing_evidence_file_is_rejected(self):
+        document = self.document()
+        document["gates"][0]["evidence"] = ["reports/missing.pdf"]
+        with self.assertRaisesRegex(ValueError, "does not exist"):
+            release_gates.validate_release_gates(self.write(document))
+
+    def test_evidence_path_cannot_escape_release_directory(self):
+        document = self.document()
+        document["gates"][0]["evidence"] = ["../outside.pdf"]
+        path = self.write(document)
+        with self.assertRaisesRegex(ValueError, "escapes the release directory"):
+            release_gates.validate_release_gates(path)
 
 
 if __name__ == "__main__":

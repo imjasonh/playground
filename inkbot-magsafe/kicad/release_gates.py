@@ -20,6 +20,7 @@ class GateSummary:
     classification: str
     passed: tuple[str, ...]
     blocked: tuple[str, ...]
+    evidence_files: tuple[Path, ...]
 
     @property
     def production_releasable(self) -> bool:
@@ -29,6 +30,7 @@ class GateSummary:
 def validate_release_gates(path: Path = DEFAULT_PATH) -> GateSummary:
     """Load and validate a release-gate file."""
     data = json.loads(path.read_text())
+    evidence_root = path.resolve().parent
     if data.get("schema_version") != 1:
         raise ValueError("schema_version must be 1")
     if data.get("product") != "inkbot-magsafe":
@@ -43,6 +45,7 @@ def validate_release_gates(path: Path = DEFAULT_PATH) -> GateSummary:
     seen: set[str] = set()
     passed: list[str] = []
     blocked: list[str] = []
+    evidence_files: set[Path] = set()
     for index, gate in enumerate(gates):
         if not isinstance(gate, dict):
             raise ValueError(f"gate {index} must be an object")
@@ -61,13 +64,34 @@ def validate_release_gates(path: Path = DEFAULT_PATH) -> GateSummary:
             isinstance(item, str) and item.strip() for item in evidence
         ):
             raise ValueError(f"gate {gate_id} evidence must contain nonempty strings")
+        if len(evidence) != len(set(evidence)):
+            raise ValueError(f"gate {gate_id} contains duplicate evidence paths")
+        for item in evidence:
+            candidate = Path(item)
+            if candidate.is_absolute():
+                raise ValueError(f"gate {gate_id} evidence path must be relative: {item}")
+            resolved = (evidence_root / candidate).resolve()
+            try:
+                resolved.relative_to(evidence_root)
+            except ValueError as error:
+                raise ValueError(
+                    f"gate {gate_id} evidence path escapes the release directory: {item}"
+                ) from error
+            if not resolved.is_file():
+                raise ValueError(f"gate {gate_id} evidence file does not exist: {item}")
+            evidence_files.add(resolved)
         if status == "passed" and not evidence:
             raise ValueError(f"passed gate {gate_id} requires evidence")
         (passed if status == "passed" else blocked).append(gate_id)
 
     if classification == "PRODUCTION" and blocked:
         raise ValueError("PRODUCTION classification cannot contain blocked gates")
-    return GateSummary(classification, tuple(passed), tuple(blocked))
+    return GateSummary(
+        classification,
+        tuple(passed),
+        tuple(blocked),
+        tuple(sorted(evidence_files)),
+    )
 
 
 def main() -> int:

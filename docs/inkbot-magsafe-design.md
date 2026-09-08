@@ -320,10 +320,11 @@ intentional no-connects, BOM coverage, and board-pad parity. Both checks must
 pass on the release commit. They do not replace schematic review, DFM review,
 or the bench validation table later in this document.
 
-`production-gates.json` records each external review and physical qualification
-with its evidence path. Normal exports identify themselves as EVT in the
-fabrication manifest. A production-labeled export fails unless every gate has
-evidence and the classification is `PRODUCTION`.
+`production-gates.json` records each external review and physical qualification.
+Every evidence path must resolve to a file inside `inkbot-magsafe/`. Normal
+exports identify themselves as EVT in the fabrication manifest and record each
+evidence file's size and SHA-256 digest. A production-labeled export fails
+unless every gate has evidence and the classification is `PRODUCTION`.
 
 Recommended one-off sequence (validate function before optimizing thickness):
 

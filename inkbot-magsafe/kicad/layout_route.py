@@ -295,6 +295,16 @@ def export_fab() -> None:
         "release_gates_sha256": hashlib.sha256(
             release_gates.DEFAULT_PATH.read_bytes()
         ).hexdigest(),
+        "release_evidence": [
+            {
+                "path": path.relative_to(
+                    release_gates.DEFAULT_PATH.parent.resolve()
+                ).as_posix(),
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            for path in gate_summary.evidence_files
+        ],
         "artifacts": [
             {
                 "path": path.name,
