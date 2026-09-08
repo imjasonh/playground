@@ -103,6 +103,10 @@ them:
 - **[`its-not-jaws/`](its-not-jaws/)** — Cursor Agent SDK harness for It's Not
   Jaws: knower picks a movie, guesser uses shared-fact clues; tracks outcomes,
   leaks in published traces, game length, and token cost.
+- **[`bun-image/`](bun-image/)** — compile a JS file with Bun and pack the
+  executable onto `cgr.dev/chainguard/glibc-dynamic` with crane (shell
+  scripts; no Docker daemon). The Bun cousin of
+  [deno-image](https://github.com/imjasonh/deno-image).
 
 ## iOS app
 
