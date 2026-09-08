@@ -180,10 +180,10 @@ discovery scripts.
 | `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
-| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
+| `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, inkbot-magsafe firmware and hardware, plus the pasta style leg, posts catalog, and site index, in one job |
 | `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
 | `inkbot-esp32-publish.yml` | push to `main` touching `inkbot-esp32/**` (or this workflow), manual | Cross-builds inkbot firmware, pushes `ghcr.io/<owner>/playground/inkbot-esp32`, and Cosign-signs the digest (devices poll this for OTA) |
-| `inkbot-magsafe.yml` | push to `main` / pull requests touching `inkbot-magsafe/**`, its design/BOM docs, or this workflow; manual | Host logic tests, `thumbv7em-none-eabihf` cross-build, generated-schematic check, electrical/BOM contracts, and PCB DRC (excluded from `test.yml`) |
+| `inkbot-magsafe.yml` | push to `main` / pull requests touching `inkbot-magsafe/**`, its design/BOM docs, or this workflow; manual | Dedicated host logic, `thumbv7em-none-eabihf`, generated-hardware, electrical/BOM, and PCB checks; the required `test.yml` job repeats this release gate |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
@@ -286,9 +286,10 @@ directories (names starting with `.`) and changes outside any app directory
 or the root `README.md` runs no app tests. `inkbot-esp32/` has a `Cargo.toml`
 but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
 `inkbot-esp32.yml` runs its host lib tests and firmware cross-build instead.
-`inkbot-magsafe/` is excluded the same way (it cross-compiles to the bare-metal
-`thumbv7em-none-eabihf` target); `inkbot-magsafe.yml` runs its host tests, ARM
-cross-build, generated-hardware checks, and PCB DRC.
+`inkbot-magsafe/` is excluded from generic Rust discovery because it
+cross-compiles to `thumbv7em-none-eabihf`. Its dedicated workflow runs the
+release checks, and the required `test.yml` job repeats them when the firmware,
+hardware, design documents, or CI scripts change.
 
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
@@ -707,7 +708,7 @@ auto-discover them. Run their local tests when you change them.
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
 | `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
-| `inkbot-magsafe/` | Rust/nRF52840 firmware and EVT hardware for the 4-inch BLE e-paper tile. Host logic and design contracts are tested; peripheral bring-up remains incomplete. Design: [`docs/inkbot-magsafe-design.md`](docs/inkbot-magsafe-design.md). Agent guide: [`inkbot-magsafe/AGENTS.md`](inkbot-magsafe/AGENTS.md) | host logic tests, `thumbv7em-none-eabihf` cross-build, schematic contracts, and PCB DRC via `inkbot-magsafe.yml` |
+| `inkbot-magsafe/` | Rust/nRF52840 firmware and EVT hardware for the 4-inch BLE e-paper tile. Host logic and design contracts are tested; peripheral bring-up remains incomplete. Design: [`docs/inkbot-magsafe-design.md`](docs/inkbot-magsafe-design.md). Agent guide: [`inkbot-magsafe/AGENTS.md`](inkbot-magsafe/AGENTS.md) | host logic tests, `thumbv7em-none-eabihf` cross-build, schematic contracts, and PCB DRC via the required `test.yml` job and `inkbot-magsafe.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 

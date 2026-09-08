@@ -34,9 +34,10 @@ tested; nRF52840 bring-up and BLE are stubbed.
 
 `inkbot-magsafe` is excluded from `discover-rust-apps.sh` (same reason as
 `inkbot-esp32`: it cross-compiles to a bare-metal target that the shared stable
-Rust job cannot build). The dedicated
-[`inkbot-magsafe.yml`](../.github/workflows/inkbot-magsafe.yml) workflow runs
-host tests plus the ARM cross-build on changes under `inkbot-magsafe/`.
+Rust job cannot build). The required `test.yml` job discovers this app
+separately and runs `.github/scripts/test-inkbot-magsafe.sh`. The dedicated
+[`inkbot-magsafe.yml`](../.github/workflows/inkbot-magsafe.yml) workflow repeats
+the host, ARM, and hardware checks with separately reported results.
 
 ## Local commands
 

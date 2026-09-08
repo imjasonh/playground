@@ -59,6 +59,25 @@ jobs:
             --target wasm32-unknown-unknown
           rustup default stable
 
+      - name: Install inkbot-magsafe Rust toolchain
+        if: ${{ steps.discover.outputs.inkbot_magsafe == 'true' }}
+        run: >-
+          rustup toolchain install 1.98.1
+          --profile minimal
+          --no-self-update
+          --component clippy
+          --component rustfmt
+          --target thumbv7em-none-eabihf
+
+      - name: Install inkbot-magsafe KiCad
+        if: ${{ steps.discover.outputs.inkbot_magsafe == 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            kicad \
+            kicad-footprints \
+            kicad-symbols
+
       # Ecosystems are independent; overlap their wall time like deps.yaml.
       - parallel:
           - name: Run tests for changed apps
@@ -90,3 +109,7 @@ jobs:
           - name: Test site index
             if: ${{ steps.discover.outputs.index == 'true' }}
             run: bash .github/scripts/test-index.sh
+
+          - name: Test inkbot-magsafe
+            if: ${{ steps.discover.outputs.inkbot_magsafe == 'true' }}
+            run: bash .github/scripts/test-inkbot-magsafe.sh
