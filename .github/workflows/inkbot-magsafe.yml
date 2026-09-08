@@ -66,10 +66,12 @@ jobs:
               'import json; print(json.load(open("production-gates.json"))["classification"])'
           )"
           if [[ "$classification" == "PRODUCTION" ]]; then
-            cargo check --locked --target thumbv7em-none-eabihf
+            cargo check --locked --no-default-features \
+              --target thumbv7em-none-eabihf
             echo "INKBOT_TARGET_FEATURE=" >> "$GITHUB_ENV"
           else
-            if cargo check --locked --target thumbv7em-none-eabihf; then
+            if cargo check --locked --no-default-features \
+              --target thumbv7em-none-eabihf; then
               echo "EVT target build succeeded without the explicit inert-image feature"
               exit 1
             fi
@@ -83,6 +85,7 @@ jobs:
             feature_args=(--features "$INKBOT_TARGET_FEATURE")
           fi
           cargo clippy --locked \
+            --no-default-features \
             --target thumbv7em-none-eabihf \
             "${feature_args[@]}" \
             -- -D warnings
@@ -94,7 +97,7 @@ jobs:
             feature_args=(--features "$INKBOT_TARGET_FEATURE")
           fi
           elf="${CARGO_TARGET_DIR:-target}/thumbv7em-none-eabihf/release/inkbot-magsafe"
-          cargo build --locked --release \
+          cargo build --locked --release --no-default-features \
             --target thumbv7em-none-eabihf \
             "${feature_args[@]}"
           python3 tools/check_elf_layout.py \
