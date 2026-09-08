@@ -188,15 +188,12 @@ pub const fn select_latest(a: Option<FrameRecord>, b: Option<FrameRecord>) -> Op
 }
 
 /// Select the newest record whose complete frame slot still matches its CRC.
-pub fn select_latest_verified(
-    candidates: &[(FrameRecord, &[u8])],
-) -> Option<FrameRecord> {
+pub fn select_latest_verified(candidates: &[(FrameRecord, &[u8])]) -> Option<FrameRecord> {
     let mut latest: Option<FrameRecord> = None;
     for &(record, image) in candidates {
         if record.verifies_image(image)
-            && latest.is_none_or(|previous| {
-                sequence_is_newer(record.generation, previous.generation)
-            })
+            && latest
+                .is_none_or(|previous| sequence_is_newer(record.generation, previous.generation))
         {
             latest = Some(record);
         }
@@ -228,14 +225,14 @@ pub fn scan_metadata_journal(bytes: &[u8]) -> Result<JournalScan, JournalScanErr
                 continue;
             };
             let slot_record = &mut latest_by_slot[record.slot.index()];
-            if slot_record.is_none_or(|previous| {
-                sequence_is_newer(record.generation, previous.generation)
-            }) {
+            if slot_record
+                .is_none_or(|previous| sequence_is_newer(record.generation, previous.generation))
+            {
                 *slot_record = Some(record);
             }
-            if latest
-                .is_none_or(|(previous, _)| sequence_is_newer(record.generation, previous.generation))
-            {
+            if latest.is_none_or(|(previous, _)| {
+                sequence_is_newer(record.generation, previous.generation)
+            }) {
                 latest = Some((record, page));
             }
         }
@@ -247,8 +244,7 @@ pub fn scan_metadata_journal(bytes: &[u8]) -> Result<JournalScan, JournalScanErr
             .filter(|index| *index < METADATA_RECORDS_PER_PAGE)
         {
             JournalWritePlan {
-                offset: latest_page * METADATA_PAGE_BYTES
-                    + next_index * METADATA_RECORD_BYTES,
+                offset: latest_page * METADATA_PAGE_BYTES + next_index * METADATA_RECORD_BYTES,
                 erase_page: None,
             }
         } else {
@@ -515,11 +511,7 @@ mod tests {
 
         for written_words in 0..=METADATA_RECORD_BYTES / 4 {
             let mut interrupted = committed.clone();
-            interrupted.program_prefix(
-                METADATA_RECORD_BYTES,
-                &new.to_bytes(),
-                written_words * 4,
-            );
+            interrupted.program_prefix(METADATA_RECORD_BYTES, &new.to_bytes(), written_words * 4);
             let scan = interrupted.scan();
             let expected = if written_words == METADATA_RECORD_BYTES / 4 {
                 new
@@ -561,7 +553,15 @@ mod tests {
             }
         );
 
-        for erased in [0, 1, 20, 39, 40, METADATA_PAGE_BYTES - 1, METADATA_PAGE_BYTES] {
+        for erased in [
+            0,
+            1,
+            20,
+            39,
+            40,
+            METADATA_PAGE_BYTES - 1,
+            METADATA_PAGE_BYTES,
+        ] {
             let mut interrupted = full.clone();
             interrupted.erase_prefix(1, erased);
             assert_eq!(interrupted.scan().latest, Some(latest));
@@ -572,11 +572,7 @@ mod tests {
         erased.erase_prefix(1, METADATA_PAGE_BYTES);
         for written_words in 0..=METADATA_RECORD_BYTES / 4 {
             let mut interrupted = erased.clone();
-            interrupted.program_prefix(
-                METADATA_PAGE_BYTES,
-                &next.to_bytes(),
-                written_words * 4,
-            );
+            interrupted.program_prefix(METADATA_PAGE_BYTES, &next.to_bytes(), written_words * 4);
             let expected = if written_words == METADATA_RECORD_BYTES / 4 {
                 next
             } else {

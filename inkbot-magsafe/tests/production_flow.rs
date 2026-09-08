@@ -4,8 +4,8 @@ use inkbot_magsafe::panel::{
 use inkbot_magsafe::power::{refresh_decision, ChargerStatus, PowerSample, EVT_SAFETY_LIMITS};
 use inkbot_magsafe::protocol::{Accept, Begin, Crc32, FrameHeader, FrameSink, Receiver};
 use inkbot_magsafe::storage::{
-    scan_metadata_journal, select_latest_verified, FrameRecord, FrameSlot,
-    METADATA_JOURNAL_BYTES, METADATA_RECORD_BYTES,
+    scan_metadata_journal, select_latest_verified, FrameRecord, FrameSlot, METADATA_JOURNAL_BYTES,
+    METADATA_RECORD_BYTES,
 };
 
 struct PayloadSink {
@@ -110,8 +110,7 @@ fn partial_transfer_survives_each_power_fail_boundary() {
 
     // A torn metadata write is ignored, so the old slot remains authoritative.
     let encoded = new_record.to_bytes();
-    journal[METADATA_RECORD_BYTES..METADATA_RECORD_BYTES + 20]
-        .copy_from_slice(&encoded[..20]);
+    journal[METADATA_RECORD_BYTES..METADATA_RECORD_BYTES + 20].copy_from_slice(&encoded[..20]);
     let interrupted = scan_metadata_journal(&journal).unwrap();
     assert_eq!(interrupted.latest, Some(old_record));
     assert_eq!(interrupted.invalid_records, 1);
@@ -122,10 +121,7 @@ fn partial_transfer_survives_each_power_fail_boundary() {
     let durable = scan_metadata_journal(&journal).unwrap().latest.unwrap();
     assert_eq!(durable, new_record);
     assert_eq!(
-        select_latest_verified(&[
-            (old_record, &old_image),
-            (durable, &candidate_image),
-        ]),
+        select_latest_verified(&[(old_record, &old_image), (durable, &candidate_image),]),
         Some(new_record)
     );
     assert_eq!(receiver.commit(), Some(durable.frame));
