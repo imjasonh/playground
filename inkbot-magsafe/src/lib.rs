@@ -1,4 +1,5 @@
 #![cfg_attr(not(test), no_std)]
+#![forbid(unsafe_code)]
 
 //! Core logic for the inkbot-magsafe firmware, kept free of hardware so it can
 //! be unit-tested on the host. The bare-metal entry point in `main.rs` wires
