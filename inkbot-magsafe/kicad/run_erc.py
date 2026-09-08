@@ -31,6 +31,50 @@ BOARD = HERE / "inkbot-magsafe.kicad_pcb"
 BOM = HERE.parents[1] / "docs" / "inkbot-magsafe-bom.csv"
 DESIGN_DOC = HERE.parents[1] / "docs" / "inkbot-magsafe-design.md"
 COST_QUANTITIES = (1, 100, 1000)
+U1_PHYSICAL_PINS = {str(pin) for pin in range(1, 62)}
+U1_ALLOWED_NO_CONNECT_PINS = {
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "13",
+    "19",
+    "29",
+    "31",
+    "34",
+    "35",
+    "36",
+    "37",
+    "38",
+    "42",
+    "43",
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "52",
+    "54",
+    "56",
+    "57",
+    "58",
+    "59",
+    "60",
+    "61",
+}
+ALLOWED_NO_CONNECTS = {
+    *(("U1", pin) for pin in U1_ALLOWED_NO_CONNECT_PINS),
+    ("J1", "1"),
+    ("J1", "4"),
+    ("J1", "6"),
+    ("J1", "7"),
+    ("J1", "19"),
+    ("U2", "8"),
+    ("U4", "4"),
+    ("U5", "4"),
+}
 
 PIN_NETS = {
     # Raytac MDBT50Q-1MV2.
@@ -245,18 +289,7 @@ def parse_netlist(path: Path):
 
 
 def no_connect_allowed(reference: str, pin: str) -> bool:
-    if reference == "U1":
-        return (reference, pin) not in PIN_NETS
-    return (reference, pin) in {
-        ("J1", "1"),
-        ("J1", "4"),
-        ("J1", "6"),
-        ("J1", "7"),
-        ("J1", "19"),
-        ("U2", "8"),
-        ("U4", "4"),
-        ("U5", "4"),
-    }
+    return (reference, pin) in ALLOWED_NO_CONNECTS
 
 
 def parse_bom(path: Path):
@@ -289,6 +322,18 @@ def main() -> int:
     components, nets = parse_netlist(NETLIST)
     errors: list[str] = []
     warnings: list[str] = []
+
+    u1_connected = {pin for reference, pin in PIN_NETS if reference == "U1"}
+    overlap = u1_connected & U1_ALLOWED_NO_CONNECT_PINS
+    if overlap:
+        errors.append(f"PIN_CONTRACT: U1 pins both connected and allowed NC: {sorted(overlap)}")
+    uncovered = U1_PHYSICAL_PINS - u1_connected - U1_ALLOWED_NO_CONNECT_PINS
+    unexpected = (u1_connected | U1_ALLOWED_NO_CONNECT_PINS) - U1_PHYSICAL_PINS
+    if uncovered or unexpected:
+        errors.append(
+            f"PIN_CONTRACT: U1 coverage mismatch; "
+            f"uncovered={sorted(uncovered)}, unexpected={sorted(unexpected)}"
+        )
 
     real = {n: v for n, v in nets.items() if not n.startswith("unconnected-")}
     nc = {n: v for n, v in nets.items() if n.startswith("unconnected-")}
