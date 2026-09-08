@@ -17,9 +17,10 @@ pocket. The phone composes every frame.
 
 ## What the brief gets right, and the one thing it gets wrong
 
-The battery math in the brief is sound. A 4-inch mono panel sips microamps
-asleep and spends a few hundredths of a milliamp-hour per refresh, so a 100 mAh
-cell is comfortable. The numbers below back that up.
+The first-order battery model supports a 100 mAh starting point. A 4-inch mono
+panel draws microamps while asleep and spends a few hundredths of a
+milliamp-hour per modeled refresh. EVT must replace those assumptions with
+measured current profiles and cold, aged-cell impedance.
 
 The wrong assumption is the power source. **An iPhone does not send Qi power out
 its back to an accessory stuck on the MagSafe ring.** Reverse wireless charging
@@ -30,11 +31,11 @@ is on the phone, on or off a charger.
 
 ### How it charges: detach and drop it on a pad
 
-The tile carries its own 5 W Qi receive (RX) coil, and its MagSafe magnets do
-double duty: they hold it to the phone, and they self-align it on a charger. To
-recharge, **pop the tile off the phone and set it on any MagSafe or Qi pad.**
-Because the battery lasts weeks off charger (see the power budget), this is an
-AirPods-style occasional top-off, not a daily chore.
+The tile carries a 2 W-rated Qi receive (RX) coil and limits nominal receiver
+current to about 250 mA. Its accessory magnets hold it to the phone and align it
+on a charger. To recharge, remove the tile from the phone and set it on a
+qualified Qi pad. The supported transmitter set remains an EVT result, not a
+universal compatibility claim.
 
 This is a deliberate choice to skip pass-through charging. When the phone sits on
 a normal back-charging puck, the puck wants the phone's back, which is exactly
@@ -97,9 +98,10 @@ only recoverable copy.
 
 The nRF52840 ships as the **pre-certified Raytac MDBT50Q-1MV2 module**, not a
 bare QFN. The module integrates the 2.4 GHz antenna, the 32 MHz crystal, the
-DC/DC inductors, and the RF matching network, and carries FCC, ISED, CE, MIC,
-KC, SRRC, NCC, and RCM modular approvals. The module removes the board-side
-antenna matching network, but it does not remove RF integration work. The PCB
+DC/DC inductors, and the RF matching network. It carries FCC and ISED modular
+approvals plus supplier reports or declarations for CE, MIC, KC, SRRC, NCC, and
+RCM. The module removes the board-side antenna matching network, but it does
+not remove RF integration work. The PCB
 keeps copper out beneath the antenna, places the antenna end at the board edge,
 and still needs finished-product emissions and radiated-performance tests with
 the phone, magnets, and coil installed. The module is about 2.05 mm tall. The
@@ -636,10 +638,11 @@ and raw data. A pass on one prototype is not a production qualification.
   than treating the project's 650-900 gf target as a universal requirement.
   Qualify camera OIS, autofocus, compass, magnetic-stripe-card, and
   wireless-charging interference.
-- The Raytac modular approvals reduce radio test scope only when the host
-  design follows every grant condition. The finished product still needs host
-  labeling, RF exposure assessment, emissions testing, and the applicable FCC,
-  ISED, CE, UKCA, MIC, KC, and SRRC filings for its sale regions.
+- The Raytac FCC and ISED modular approvals reduce radio test scope only when
+  the host design follows every grant condition. The finished product still
+  needs host labeling, RF exposure assessment, emissions testing, and the
+  applicable FCC, ISED, CE, UKCA, MIC, KC, and SRRC filings for its sale
+  regions.
 - Complete the Bluetooth SIG qualification and product listing for the final
   firmware and GATT design.
 - The receive-only Qi circuit is not a 15 W MagSafe transmitter. WPC
