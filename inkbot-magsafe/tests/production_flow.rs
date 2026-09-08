@@ -51,6 +51,7 @@ fn partial_transfer_survives_each_power_fail_boundary() {
         image_crc: old_frame.crc,
         frame: old_committed,
     };
+    assert!(old_record.verifies_image(&old_image));
 
     let patch = [0x00, 0x11, 0x22, 0x33];
     let window = Window {
@@ -94,6 +95,10 @@ fn partial_transfer_survives_each_power_fail_boundary() {
         image_crc: crc32(&candidate_image),
         frame: receiver.verified_frame().unwrap(),
     };
+    assert!(new_record.verifies_image(&candidate_image));
+    let mut corrupted_image = candidate_image.clone();
+    corrupted_image[FRAME_BYTES / 2] ^= 1;
+    assert!(!new_record.verifies_image(&corrupted_image));
 
     // A torn metadata write is ignored, so the old slot remains authoritative.
     let mut torn = new_record.to_bytes();

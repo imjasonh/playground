@@ -9,7 +9,7 @@
 //! the merged 48 KiB image to the inactive slot. `image_crc` covers that merged
 //! image; `frame.crc` still covers the transfer payload.
 
-use crate::panel::Window;
+use crate::panel::{Window, FRAME_BYTES};
 use crate::protocol::{CommittedFrame, Crc32};
 
 const MAGIC: [u8; 4] = *b"IMGF";
@@ -120,6 +120,11 @@ impl FrameRecord {
             frame,
         })
     }
+
+    /// Verify the complete framebuffer before selecting or painting this slot.
+    pub fn verifies_image(self, image: &[u8]) -> bool {
+        image.len() == FRAME_BYTES && crc32(image) == self.image_crc
+    }
 }
 
 /// Select the latest valid record from the two metadata journal heads.
@@ -184,6 +189,19 @@ mod tests {
     fn record_round_trips() {
         let expected = record(7, FrameSlot::B);
         assert_eq!(FrameRecord::from_bytes(&expected.to_bytes()), Ok(expected));
+    }
+
+    #[test]
+    fn image_crc_covers_the_complete_frame_slot() {
+        let image = [0xa5; FRAME_BYTES];
+        let mut expected = record(7, FrameSlot::B);
+        expected.image_crc = crc32(&image);
+        assert!(expected.verifies_image(&image));
+
+        let mut corrupted = image;
+        corrupted[FRAME_BYTES / 2] ^= 1;
+        assert!(!expected.verifies_image(&corrupted));
+        assert!(!expected.verifies_image(&image[..FRAME_BYTES - 1]));
     }
 
     #[test]
