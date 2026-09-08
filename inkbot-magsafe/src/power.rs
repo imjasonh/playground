@@ -14,6 +14,7 @@ pub const FULL_MV: u16 = 4200;
 pub struct ChargerConfig {
     pub charge_ma: u16,
     pub input_limit_ma: u16,
+    pub battery_ocp_ma: u16,
     pub regulation_mv: u16,
     pub cold_c: i8,
     pub hot_c: i8,
@@ -22,6 +23,7 @@ pub struct ChargerConfig {
 pub const REQUIRED_CHARGER_CONFIG: ChargerConfig = ChargerConfig {
     charge_ma: 40,
     input_limit_ma: 100,
+    battery_ocp_ma: 500,
     regulation_mv: 4200,
     cold_c: 0,
     hot_c: 45,
@@ -309,6 +311,7 @@ mod tests {
     fn charger_configuration_matches_pack_limits() {
         assert_eq!(REQUIRED_CHARGER_CONFIG.charge_ma, 40);
         assert_eq!(REQUIRED_CHARGER_CONFIG.input_limit_ma, 100);
+        assert_eq!(REQUIRED_CHARGER_CONFIG.battery_ocp_ma, 500);
         assert_eq!(REQUIRED_CHARGER_CONFIG.regulation_mv, 4200);
         assert_eq!(
             (

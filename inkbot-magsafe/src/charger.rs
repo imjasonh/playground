@@ -3,14 +3,16 @@
 
 pub const I2C_ADDRESS: u8 = 0x6a;
 
+pub const REG_STAT0: u8 = 0x00;
+pub const REG_STAT1: u8 = 0x01;
+pub const REG_FLAG0: u8 = 0x02;
 pub const REG_VBAT_CTRL: u8 = 0x03;
 pub const REG_ICHG_CTRL: u8 = 0x04;
+pub const REG_CHARGECTRL1: u8 = 0x06;
 pub const REG_IC_CTRL: u8 = 0x07;
 pub const REG_TMR_ILIM: u8 = 0x08;
 pub const REG_SHIP_RST: u8 = 0x09;
 pub const REG_TS_CONTROL: u8 = 0x0b;
-pub const REG_STAT0: u8 = 0x00;
-pub const REG_STAT1: u8 = 0x01;
 
 pub const VBAT_4200_MV: u8 = 0x46;
 pub const ICHG_40_MA_DISABLED: u8 = 0x9f;
@@ -23,6 +25,7 @@ pub const IC_CTRL_TS_6H_NO_WATCHDOG: u8 = 0x87;
 pub const ILIM_100_MA_WITH_RESET_DEFAULTS: u8 = 0x49;
 pub const SHIP_MODE_WITH_RESET_DEFAULTS: u8 = 0x51;
 pub const TS_COLD_0_HOT_45: u8 = 0xc0;
+pub const BAT_OCP_500_MA_BUVLO_3V_INTERRUPTS: u8 = 0x10;
 
 /// Maximum interval between safety-register readbacks while charging is on.
 pub const SAFETY_READBACK_INTERVAL_MS: u32 = 30_000;
@@ -34,7 +37,7 @@ pub struct RegisterWrite {
 }
 
 /// Safe write order while Q2 is off and R5 holds `/CE` high.
-pub const CONFIGURATION_WRITES: [RegisterWrite; 6] = [
+pub const CONFIGURATION_WRITES: [RegisterWrite; 7] = [
     RegisterWrite {
         register: REG_ICHG_CTRL,
         value: ICHG_40_MA_DISABLED,
@@ -56,6 +59,10 @@ pub const CONFIGURATION_WRITES: [RegisterWrite; 6] = [
         value: IC_CTRL_TS_6H_NO_WATCHDOG,
     },
     RegisterWrite {
+        register: REG_CHARGECTRL1,
+        value: BAT_OCP_500_MA_BUVLO_3V_INTERRUPTS,
+    },
+    RegisterWrite {
         register: REG_ICHG_CTRL,
         value: ICHG_40_MA_ENABLED,
     },
@@ -68,12 +75,14 @@ pub const fn configuration_matches(
     ic_ctrl: u8,
     tmr_ilim: u8,
     ts_control: u8,
+    chargectrl1: u8,
 ) -> bool {
     vbat_ctrl == VBAT_4200_MV
         && ichg_ctrl == ICHG_40_MA_ENABLED
         && ic_ctrl == IC_CTRL_TS_6H_NO_WATCHDOG
         && tmr_ilim == ILIM_100_MA_WITH_RESET_DEFAULTS
         && ts_control == TS_COLD_0_HOT_45
+        && chargectrl1 == BAT_OCP_500_MA_BUVLO_3V_INTERRUPTS
 }
 
 /// One readback of every safety-critical charger register.
@@ -84,6 +93,7 @@ pub struct SafetyRegisters {
     pub ic_ctrl: u8,
     pub tmr_ilim: u8,
     pub ts_control: u8,
+    pub chargectrl1: u8,
 }
 
 impl SafetyRegisters {
@@ -94,6 +104,7 @@ impl SafetyRegisters {
             self.ic_ctrl,
             self.tmr_ilim,
             self.ts_control,
+            self.chargectrl1,
         )
     }
 }
@@ -103,15 +114,17 @@ impl SafetyRegisters {
 pub struct StatusRegisters {
     pub stat0: u8,
     pub stat1: u8,
+    pub flag0: u8,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SafetyFault {
     ConfigurationMismatch,
     ExternalPowerPresent,
-    ThermistorOpen,
+    ThermistorOpenOrBatteryBelowHalt,
     InputOvervoltage,
     BatteryUndervoltage,
+    BatteryOvercurrent,
     Temperature,
     SafetyTimer,
 }
@@ -136,7 +149,7 @@ impl StatusRegisters {
     /// Return the first condition that requires the external charge gate off.
     pub const fn safety_fault(self) -> Option<SafetyFault> {
         if self.stat0 & 0x80 != 0 {
-            Some(SafetyFault::ThermistorOpen)
+            Some(SafetyFault::ThermistorOpenOrBatteryBelowHalt)
         } else if self.stat1 & 0x80 != 0 {
             Some(SafetyFault::InputOvervoltage)
         } else if self.stat1 & 0x40 != 0 {
@@ -145,6 +158,14 @@ impl StatusRegisters {
             Some(SafetyFault::Temperature)
         } else if self.stat1 & 0x04 != 0 {
             Some(SafetyFault::SafetyTimer)
+        } else if self.flag0 & 0x80 != 0 || self.flag0 & 0x08 != 0 {
+            Some(SafetyFault::Temperature)
+        } else if self.flag0 & 0x04 != 0 {
+            Some(SafetyFault::InputOvervoltage)
+        } else if self.flag0 & 0x02 != 0 {
+            Some(SafetyFault::BatteryUndervoltage)
+        } else if self.flag0 & 0x01 != 0 {
+            Some(SafetyFault::BatteryOvercurrent)
         } else {
             None
         }
@@ -317,10 +338,12 @@ fn read_safety<I: ChargerIo>(io: &mut I) -> Result<(SafetyRegisters, StatusRegis
         ic_ctrl: io.read_register(REG_IC_CTRL)?,
         tmr_ilim: io.read_register(REG_TMR_ILIM)?,
         ts_control: io.read_register(REG_TS_CONTROL)?,
+        chargectrl1: io.read_register(REG_CHARGECTRL1)?,
     };
     let status = StatusRegisters {
         stat0: io.read_register(REG_STAT0)?,
         stat1: io.read_register(REG_STAT1)?,
+        flag0: io.read_register(REG_FLAG0)?,
     };
     Ok((safety, status))
 }
@@ -349,10 +372,36 @@ mod tests {
 
     #[test]
     fn readback_requires_every_safety_value() {
-        assert!(configuration_matches(0x46, 0x1f, 0x87, 0x49, 0xc0));
-        assert!(!configuration_matches(0x46, 0x1f, 0x84, 0x49, 0xc0));
-        assert!(!configuration_matches(0x46, 0x1f, 0x87, 0x4d, 0xc0));
-        assert!(!configuration_matches(0x46, 0x1f, 0x87, 0x49, 0x00));
+        let required = required_registers();
+        assert!(required.matches_required());
+        for wrong in [
+            SafetyRegisters {
+                vbat_ctrl: 0,
+                ..required
+            },
+            SafetyRegisters {
+                ichg_ctrl: 0,
+                ..required
+            },
+            SafetyRegisters {
+                ic_ctrl: 0,
+                ..required
+            },
+            SafetyRegisters {
+                tmr_ilim: 0,
+                ..required
+            },
+            SafetyRegisters {
+                ts_control: 0,
+                ..required
+            },
+            SafetyRegisters {
+                chargectrl1: 0,
+                ..required
+            },
+        ] {
+            assert!(!wrong.matches_required());
+        }
     }
 
     fn required_registers() -> SafetyRegisters {
@@ -362,6 +411,7 @@ mod tests {
             ic_ctrl: IC_CTRL_TS_6H_NO_WATCHDOG,
             tmr_ilim: ILIM_100_MA_WITH_RESET_DEFAULTS,
             ts_control: TS_COLD_0_HOT_45,
+            chargectrl1: BAT_OCP_500_MA_BUVLO_3V_INTERRUPTS,
         }
     }
 
@@ -369,6 +419,7 @@ mod tests {
         StatusRegisters {
             stat0: (charge_state << 5) | 1,
             stat1: 0,
+            flag0: 0,
         }
     }
 
@@ -386,7 +437,8 @@ mod tests {
                 required_registers(),
                 StatusRegisters {
                     stat0: 0,
-                    stat1: 0x04
+                    stat1: 0x04,
+                    flag0: 0,
                 }
             ),
             Err(SafetyFault::SafetyTimer)
@@ -425,16 +477,34 @@ mod tests {
     #[test]
     fn every_live_fault_disables_charging() {
         let cases = [
-            (0x80, 0x00, SafetyFault::ThermistorOpen),
-            (0x00, 0x80, SafetyFault::InputOvervoltage),
-            (0x00, 0x40, SafetyFault::BatteryUndervoltage),
-            (0x00, 0x08, SafetyFault::Temperature),
-            (0x00, 0x04, SafetyFault::SafetyTimer),
+            (
+                0x80,
+                0x00,
+                0x00,
+                SafetyFault::ThermistorOpenOrBatteryBelowHalt,
+            ),
+            (0x00, 0x80, 0x00, SafetyFault::InputOvervoltage),
+            (0x00, 0x40, 0x00, SafetyFault::BatteryUndervoltage),
+            (0x00, 0x08, 0x00, SafetyFault::Temperature),
+            (0x00, 0x04, 0x00, SafetyFault::SafetyTimer),
+            (0x00, 0x00, 0x80, SafetyFault::Temperature),
+            (0x00, 0x00, 0x08, SafetyFault::Temperature),
+            (0x00, 0x00, 0x04, SafetyFault::InputOvervoltage),
+            (0x00, 0x00, 0x02, SafetyFault::BatteryUndervoltage),
+            (0x00, 0x00, 0x01, SafetyFault::BatteryOvercurrent),
         ];
-        for (stat0, stat1, expected) in cases {
+        for (stat0, stat1, flag0, expected) in cases {
             let enabled = EnabledCharger::authorize(0, required_registers(), status(1)).unwrap();
             assert_eq!(
-                enabled.verify(1, required_registers(), StatusRegisters { stat0, stat1 }),
+                enabled.verify(
+                    1,
+                    required_registers(),
+                    StatusRegisters {
+                        stat0,
+                        stat1,
+                        flag0,
+                    }
+                ),
                 Err(expected)
             );
         }
@@ -456,6 +526,8 @@ mod tests {
             registers[REG_IC_CTRL as usize] = IC_CTRL_TS_6H_NO_WATCHDOG;
             registers[REG_TMR_ILIM as usize] = ILIM_100_MA_WITH_RESET_DEFAULTS;
             registers[REG_TS_CONTROL as usize] = TS_COLD_0_HOT_45;
+            registers[REG_CHARGECTRL1 as usize] =
+                BAT_OCP_500_MA_BUVLO_3V_INTERRUPTS;
             Self {
                 registers,
                 writes: std::vec::Vec::new(),
@@ -507,7 +579,7 @@ mod tests {
 
     #[test]
     fn every_configuration_bus_failure_leaves_gate_off() {
-        let operation_count = CONFIGURATION_WRITES.len() + 7;
+        let operation_count = CONFIGURATION_WRITES.len() + 8;
         for failing_operation in 0..operation_count {
             let mut io = MockIo::healthy();
             io.fail_operation = Some(failing_operation);

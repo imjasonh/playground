@@ -189,11 +189,20 @@ support the measured combined panel and radio pulse.
 
 The **BQ51013C** Qi receiver supplies 5 V to a **BQ25186** charger and
 power-path manager. The BQ25186 separates `BAT` from `SYS`, blocks reverse
-drain into the receiver, and supplements a weak input from the cell. Firmware
-configures 4.2 V regulation, a 100 mA input limit, 40 mA fast charge, and a
-0-45 degrees Celsius charge window before enabling charge. R5 and Q2 hold
-`/CE` high until configuration succeeds, so reset or firmware failure leaves
-charging off rather than using the charger's 60 degrees Celsius default limit.
+drain into the receiver, and supplements a weak input from the cell. The
+host-tested register plan sets 4.2 V regulation, a 100 mA input limit, 40 mA
+fast charge, the IC's minimum 500 mA battery OCP threshold, and a 0-45 degrees
+Celsius charge window. Target firmware must write and read back those values
+before enabling charge. R5 and Q2 hold `/CE` high until configuration succeeds,
+so reset or firmware failure leaves charging off rather than using the
+charger's 60 degrees Celsius default limit. The 500 mA IC threshold does not
+replace a pack-level PCM qualified for the cell's 200 mA continuous limit.
+
+`STAT0.TS_OPEN_STAT` also asserts when the battery is below `VBAT_HALT`.
+Firmware therefore reports that state as an ambiguous thermistor-open or
+deeply discharged battery condition and keeps charging disabled. EVT must
+define and test a TI-reviewed recovery path that does not bypass an open pack
+thermistor.
 
 There is no USB-C port on the shipping tile (see the next section).
 
@@ -485,8 +494,9 @@ The following target integrations remain release blockers:
 - Configure panel power and charge disabled before all other GPIO.
 - Start S113 from the external 32.768 kHz crystal and implement bonded GATT plus
   the L2CAP server.
-- Configure the BQ25186 for 40 mA charge, 100 mA input, 4.2 V regulation, and
-  a 0-45 degrees Celsius charge window before driving `CHG_ENABLE` high.
+- Configure the BQ25186 for 40 mA charge, 100 mA input, 500 mA IC battery OCP,
+  4.2 V regulation, and a 0-45 degrees Celsius charge window before driving
+  `CHG_ENABLE` high. Capture read-to-clear fault flags after live status.
 - After final test and with Qi input absent, enter BQ25186 ship mode. Verify
   transport current and first-attachment wake behavior on every production
   unit.
@@ -551,8 +561,8 @@ Obtain supplier quotations and compliance-lab scopes before treating the
 
 - BQ51013C receiver followed by a default-off BQ25186 charger and SYS power
   path.
-- Firmware-set 40 mA charge, 100 mA input, 0-45 degrees Celsius JEITA limits,
-  separate cell and coil NTCs, and charger fault decoding.
+- Required 40 mA charge, 100 mA input, 500 mA IC battery OCP, 0-45 degrees
+  Celsius JEITA limits, separate cell and coil NTCs, and charger fault decoding.
 - Protected high-rate battery pack with a keyed, polarized three-wire harness
   and at least 200 mA continuous pack-level discharge capability.
 - 47 uF on SYS and 100 uF on PANEL_3V0, each checked against regulator
