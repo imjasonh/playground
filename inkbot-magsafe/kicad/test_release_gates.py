@@ -4,10 +4,13 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+import layout_route
 import release_gates
 
 
@@ -38,6 +41,11 @@ class ReleaseGateTest(unittest.TestCase):
         self.assertEqual(summary.classification, "EVT")
         self.assertFalse(summary.production_releasable)
         self.assertGreater(len(summary.blocked), 0)
+
+    def test_repository_evt_blocks_production_fabrication(self):
+        with mock.patch.dict(os.environ, {"INKBOT_PRODUCTION_EXPORT": "1"}):
+            with self.assertRaisesRegex(SystemExit, "production fabrication export blocked"):
+                layout_route.export_fab()
 
     def test_passed_gate_requires_evidence(self):
         document = self.document()
