@@ -248,8 +248,7 @@ pub struct ConnectionParameters {
 impl ConnectionParameters {
     /// Check the Bluetooth Core connection-parameter ranges and timeout rule.
     pub const fn is_core_valid(self) -> bool {
-        let effective_max =
-            self.max_interval_1_25ms as u32 * (self.latency as u32 + 1);
+        let effective_max = self.max_interval_1_25ms as u32 * (self.latency as u32 + 1);
         self.min_interval_1_25ms >= 6
             && self.min_interval_1_25ms <= self.max_interval_1_25ms
             && self.max_interval_1_25ms <= 3200
@@ -261,8 +260,7 @@ impl ConnectionParameters {
 
     /// Check Apple's public BLE accessory connection-parameter constraints.
     pub const fn is_apple_compatible(self) -> bool {
-        let effective_max =
-            self.max_interval_1_25ms as u32 * (self.latency as u32 + 1);
+        let effective_max = self.max_interval_1_25ms as u32 * (self.latency as u32 + 1);
         self.is_core_valid()
             && self.min_interval_1_25ms >= 12
             && self.min_interval_1_25ms % 12 == 0
