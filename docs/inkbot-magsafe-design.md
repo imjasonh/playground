@@ -377,7 +377,7 @@ top-level app.
 | Frame fallback | encrypted write without response | chunked pixel data when L2CAP is unavailable |
 
 The cell and coil NTCs terminate at their protection ICs and are not shared
-with the MCU. A separate NCP18XH103F03RB thermistor sits beside the panel bond
+with the MCU. A separate NCU18XH103F60RB thermistor sits beside the panel bond
 line. P0.27 excites its 10 kOhm divider only during a sample, and P0.02/AIN0
 measures the result against the ratiometric SAADC reference. Firmware treats an
 open or shorted sensor as unavailable and blocks refresh. EVT must correlate

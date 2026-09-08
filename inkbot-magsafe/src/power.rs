@@ -136,7 +136,7 @@ pub enum ThermistorFault {
 }
 
 // Expected 12-bit codes for a 10 kOhm high-side resistor and the
-// NCP18XH103F03RB thermistor. Configure SAADC for the VDD/4 reference and 1/4
+// NCU18XH103F60RB thermistor. Configure SAADC for the VDD/4 reference and 1/4
 // gain so the measurement is ratiometric to the GPIO excitation voltage.
 const PANEL_TEMP_TABLE: [(u16, i8); 19] = [
     (3613, -20),

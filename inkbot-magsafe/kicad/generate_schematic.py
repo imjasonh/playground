@@ -409,7 +409,7 @@ def main() -> None:
         sch,
         "Device:Thermistor_NTC",
         "RT3",
-        "NCP18XH103F03RB 10k 3380K",
+        "NCU18XH103F60RB 10k 3380K",
         245,
         175,
         "PANEL_TEMP_SENSE",

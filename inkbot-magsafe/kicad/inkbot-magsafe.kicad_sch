@@ -2419,7 +2419,7 @@
     (uuid "c44e78e4-4113-543b-9645-9e2966ab713f")
     (property "Reference" "RT3" (at 245.11 171.45 0)
       (effects (font (size 1.27 1.27))))
-    (property "Value" "NCP18XH103F03RB 10k 3380K" (at 245.11 179.07 0)
+    (property "Value" "NCU18XH103F60RB 10k 3380K" (at 245.11 179.07 0)
       (effects (font (size 1.0 1.0))))
     (property "Footprint" "Capacitor_SMD:C_0603_1608Metric" (at 245.11 180.34 0)
       (effects (font (size 1.27 1.27)) hide))

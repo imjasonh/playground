@@ -235,7 +235,7 @@ VALUE_CONTRACT = {
     "R10": ("330k 1%", "Resistor_SMD:R_0603_1608Metric"),
     "R13": ("10k 1%", "Resistor_SMD:R_0603_1608Metric"),
     "RT3": (
-        "NCP18XH103F03RB 10k 3380K",
+        "NCU18XH103F60RB 10k 3380K",
         "Capacitor_SMD:C_0603_1608Metric",
     ),
     "C1": ("33nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
