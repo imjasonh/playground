@@ -43,10 +43,11 @@ before routing. It runs without the GUI and disables Freerouting's post-route
 optimizer because version 2.4.1 can hang while rendering conduction areas.
 KiCad DRC checks the unoptimized route.
 
-The fabrication export also writes a mirrored bottom-assembly PDF, a
-populated STEP model, a schematic PDF, and a SHA-256 manifest tied to the source
-commit and records whether the worktree was dirty. The manifest records the EVT
-classification and every unresolved gate from `../production-gates.json`.
+The fabrication export also writes a mirrored bottom-assembly PDF, a populated
+STEP model, a schematic PDF, and a SHA-256 manifest. The manifest records the
+source commit, dirty-worktree state, KiCad version, pinned Freerouting version
+and JAR digest, source-input hashes, EVT classification, and every unresolved
+gate from `../production-gates.json`.
 Setting `INKBOT_PRODUCTION_EXPORT=1` requires a clean worktree and blocks the
 export unless that file classifies the design as `PRODUCTION`. Every passed gate
 must name an existing, repository-relative evidence file. The manifest records

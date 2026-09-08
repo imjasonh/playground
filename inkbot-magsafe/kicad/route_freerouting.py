@@ -32,9 +32,6 @@ PLACED_BOARD = FAB / "inkbot-magsafe-placed.kicad_pcb"
 ROUTED_BOARD = FAB / "inkbot-magsafe-routed.kicad_pcb"
 INCOMPLETE_BOARD = FAB / "inkbot-magsafe-incomplete.kicad_pcb"
 VIA_NAME = re.compile(r"Via\[(\d+)-(\d+)\]_(\d+):(\d+)_um")
-FREEROUTING_2_4_1_SHA256 = (
-    "251101c3eeac22d7e7dfcf6796603279e5d1000283eb82d8f093780f7afc6aa9"
-)
 
 
 def fill_zones(board: pcbnew.BOARD) -> None:
@@ -1145,10 +1142,10 @@ def freerouting_command() -> list[str]:
     if not jar.is_file():
         raise SystemExit(f"missing Freerouting JAR: {jar}")
     jar_digest = hashlib.sha256(jar.read_bytes()).hexdigest()
-    if jar_digest != FREEROUTING_2_4_1_SHA256:
+    if jar_digest != layout_route.FREEROUTING_2_4_1_SHA256:
         raise SystemExit(
             f"unexpected Freerouting JAR SHA-256: {jar_digest}; "
-            f"expected {FREEROUTING_2_4_1_SHA256}"
+            f"expected {layout_route.FREEROUTING_2_4_1_SHA256}"
         )
 
     java = os.environ.get("FREEROUTING_JAVA", "java")

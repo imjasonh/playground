@@ -15,6 +15,7 @@ import pcbnew
 import release_gates
 
 HERE = Path(__file__).resolve().parent
+REPO_ROOT = HERE.parents[1]
 BOARD = HERE / "inkbot-magsafe.kicad_pcb"
 NETLIST = Path("/tmp/inkbot.net")
 FP_ROOT = Path("/usr/share/kicad/footprints")
@@ -40,6 +41,9 @@ RELEASE_SUFFIXES = {
     ".pdf",
     ".step",
 }
+FREEROUTING_2_4_1_SHA256 = (
+    "251101c3eeac22d7e7dfcf6796603279e5d1000283eb82d8f093780f7afc6aa9"
+)
 
 BOARD_W, BOARD_H = 60.0, 99.0
 BAT_W, BAT_H, BAT_CY = 34.0, 23.0, 70.0
@@ -308,6 +312,28 @@ def export_fab() -> None:
             or path.name == "inkbot-magsafe-pos.csv"
         )
     )
+    source_inputs = [
+        REPO_ROOT / "docs" / "inkbot-magsafe-bom.csv",
+        REPO_ROOT / "docs" / "inkbot-magsafe-design.md",
+        HERE.parent / "Cargo.lock",
+        HERE.parent / "memory-app.x",
+        release_gates.DEFAULT_PATH,
+        BOARD,
+        HERE / "inkbot-magsafe.kicad_pro",
+        HERE / "inkbot-magsafe.kicad_sch",
+        HERE / "generate_pcb.py",
+        HERE / "generate_schematic.py",
+        HERE / "layout_route.py",
+        HERE / "route_freerouting.py",
+        HERE / "run_drc.py",
+        HERE / "run_erc.py",
+    ]
+    kicad_version = subprocess.run(
+        ["kicad-cli", "--version"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     manifest = {
         "source_commit": source_commit,
         "source_dirty": source_dirty,
@@ -326,6 +352,21 @@ def export_fab() -> None:
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
             }
             for path in gate_summary.evidence_files
+        ],
+        "tools": {
+            "kicad_cli": kicad_version,
+            "freerouting": {
+                "version": "2.4.1",
+                "jar_sha256": FREEROUTING_2_4_1_SHA256,
+            },
+        },
+        "source_inputs": [
+            {
+                "path": path.relative_to(REPO_ROOT).as_posix(),
+                "bytes": path.stat().st_size,
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+            for path in source_inputs
         ],
         "artifacts": [
             {
