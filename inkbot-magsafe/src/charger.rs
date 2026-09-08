@@ -526,8 +526,7 @@ mod tests {
             registers[REG_IC_CTRL as usize] = IC_CTRL_TS_6H_NO_WATCHDOG;
             registers[REG_TMR_ILIM as usize] = ILIM_100_MA_WITH_RESET_DEFAULTS;
             registers[REG_TS_CONTROL as usize] = TS_COLD_0_HOT_45;
-            registers[REG_CHARGECTRL1 as usize] =
-                BAT_OCP_500_MA_BUVLO_3V_INTERRUPTS;
+            registers[REG_CHARGECTRL1 as usize] = BAT_OCP_500_MA_BUVLO_3V_INTERRUPTS;
             Self {
                 registers,
                 writes: std::vec::Vec::new(),
