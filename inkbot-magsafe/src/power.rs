@@ -263,8 +263,8 @@ impl ConnectionParameters {
         let effective_max = self.max_interval_1_25ms as u32 * (self.latency as u32 + 1);
         self.is_core_valid()
             && self.min_interval_1_25ms >= 12
-            && self.min_interval_1_25ms % 12 == 0
-            && self.max_interval_1_25ms % 12 == 0
+            && self.min_interval_1_25ms.is_multiple_of(12)
+            && self.max_interval_1_25ms.is_multiple_of(12)
             && self.max_interval_1_25ms - self.min_interval_1_25ms >= 12
             && self.latency <= 30
             && effective_max <= 1600
