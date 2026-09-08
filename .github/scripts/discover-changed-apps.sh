@@ -32,7 +32,7 @@ inkbot_magsafe_from_changes() {
   local path
   while IFS= read -r path; do
     case "$path" in
-      inkbot-magsafe/* | docs/inkbot-magsafe-bom.csv | docs/inkbot-magsafe-design.md | .github/workflows/inkbot-magsafe.yml | .github/scripts/test-inkbot-magsafe.sh | .github/scripts/discover-changed-apps.sh)
+      inkbot-magsafe/* | docs/inkbot-magsafe-bom.csv | docs/inkbot-magsafe-design.md | .github/workflows/inkbot-magsafe.yml | .github/workflows/test.yml | .github/scripts/test-inkbot-magsafe.sh | .github/scripts/discover-changed-apps.sh)
         echo 'true'
         return 0
         ;;
