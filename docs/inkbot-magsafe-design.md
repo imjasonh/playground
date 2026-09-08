@@ -644,6 +644,7 @@ and raw data. A pass on one prototype is not a production qualification.
 | Sleep current | Connected-idle and disconnected-advertising current support the stated 60-90 day target at cell end of life |
 | Shelf mode | A detached unit enters ship mode after final test, draws no more than the qualified transport-current limit, and wakes on its first valid Qi attachment |
 | BLE | A full 48 KB frame completes within the foreground target and resumes after forced disconnects without corruption or stale-frame acceptance |
+| iOS sender | Swift codecs match every Rust golden vector; pairing, state restoration, foreground transfer, system-granted background execution, reboot, Bluetooth reset, and force-quit behavior are recorded on every supported iOS version |
 | RF | Throughput, packet error rate, and reconnect behavior pass attached and detached on every supported phone and case |
 | Power-loss recovery | Forced resets at every flash erase, payload write, metadata commit, panel update, settings update, and DFU swap boundary retain the previous committed frame and a bootable signed image |
 | Firmware update | Signed update, interrupted download, power loss during swap, failed trial image, rollback, stale version, lost owner, and SWD erase recovery all pass |

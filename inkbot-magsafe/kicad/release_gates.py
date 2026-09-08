@@ -48,6 +48,7 @@ REQUIRED_GATE_IDS = (
     "qi-tuning-fod-and-interoperability",
     "power-thermal-and-charger-validation",
     "integrated-firmware-and-power-fail-validation",
+    "ios-sender-and-background-validation",
     "rf-and-ble-validation",
     "signed-dfu-and-owner-recovery",
     "mechanical-and-environmental-validation",

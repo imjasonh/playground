@@ -49,6 +49,11 @@
       "evidence": []
     },
     {
+      "id": "ios-sender-and-background-validation",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
       "id": "rf-and-ble-validation",
       "status": "blocked",
       "evidence": []
