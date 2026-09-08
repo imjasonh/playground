@@ -109,7 +109,9 @@ jobs:
           kicad-cli sch export netlist \
             -o /tmp/inkbot.net \
             inkbot-magsafe.kicad_sch
-          git diff --exit-code -- inkbot-magsafe.kicad_sch
+          git diff --exit-code -- \
+            inkbot-magsafe.kicad_sch \
+            inkbot-magsafe.kicad_pro
 
       - name: Check fabrication release gates
         run: |
