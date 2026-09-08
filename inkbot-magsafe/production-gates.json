@@ -44,6 +44,11 @@
       "evidence": []
     },
     {
+      "id": "integrated-firmware-and-power-fail-validation",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
       "id": "rf-and-ble-validation",
       "status": "blocked",
       "evidence": []
@@ -60,6 +65,11 @@
     },
     {
       "id": "factory-programming-and-eol-test",
+      "status": "blocked",
+      "evidence": []
+    },
+    {
+      "id": "approved-vendor-list-and-supply-chain",
       "status": "blocked",
       "evidence": []
     },

@@ -584,10 +584,12 @@ and raw data. A pass on one prototype is not a production qualification.
 | Sleep current | Connected-idle and disconnected-advertising current support the stated 60-90 day target at cell end of life |
 | BLE | A full 48 KB frame completes within the foreground target and resumes after forced disconnects without corruption or stale-frame acceptance |
 | RF | Throughput, packet error rate, and reconnect behavior pass attached and detached on every supported phone and case |
+| Power-loss recovery | Forced resets at every flash erase, payload write, metadata commit, panel update, settings update, and DFU swap boundary retain the previous committed frame and a bootable signed image |
 | Firmware update | Signed update, interrupted download, power loss during swap, failed trial image, rollback, stale version, lost owner, and SWD erase recovery all pass |
 | Magnet assembly | Polarity and flux map pass incoming inspection; removal force meets the approved Apple procedure and the project's provisional 650-900 gf internal target; the tile does not rotate into the camera area |
 | Mechanical | Panel bond, FPC, coil and NTC leads, cell carrier, rear cover, and SWD access pass drop, torsion, peel, sweat, thermal-cycle, and aging tests |
 | Manufacturing | AOI/X-ray criteria, programming, rail tests, radio test, panel test image, current signature, serialized result record, and failed-unit quarantine are defined |
+| Supply chain | The approved-vendor list records manufacturer part numbers, alternates, lifecycle status, minimum order quantities, lead times, incoming inspection, lot traceability, and capacity quotations for the production forecast |
 
 ## Regulatory and MFi
 
