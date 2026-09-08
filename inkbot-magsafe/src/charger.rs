@@ -29,6 +29,7 @@ pub const BAT_OCP_500_MA_BUVLO_3V_INTERRUPTS: u8 = 0x10;
 
 /// Maximum interval between safety-register readbacks while charging is on.
 pub const SAFETY_READBACK_INTERVAL_MS: u32 = 30_000;
+#[cfg(test)]
 const SAFETY_READ_COUNT: usize = 9;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
