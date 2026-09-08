@@ -77,9 +77,11 @@ cargo clippy --target thumbv7em-none-eabihf --features bringup-stub -- -D warnin
 
 The `bringup-stub` image starts at S113's application origin, `0x1c000`. To run
 it, first flash the exact S113 7.3.0 image and then flash the application. CI
-checks every file-backed ELF segment against its assigned flash interval. The
-`--nmagic` linker flag prevents ELF page alignment from creating a loadable
-segment inside the SoftDevice region.
+checks every file-backed ELF segment against the application flash interval and
+checks every loadable virtual-memory range, including BSS, against either that
+flash interval or the application RAM interval. The `--nmagic` linker flag
+prevents ELF page alignment from creating a loadable segment inside the
+SoftDevice region.
 
 CI runs the same checks in [`.github/workflows/inkbot-magsafe.yml`](../.github/workflows/inkbot-magsafe.yml).
 Like `inkbot-esp32`, this crate is excluded from the shared Rust job in

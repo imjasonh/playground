@@ -1,3 +1,4 @@
 /target
+__pycache__/
 # Generated fab outputs (regenerate with kicad/layout_route.py)
 kicad/fab/

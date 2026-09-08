@@ -59,6 +59,9 @@ jobs:
       - name: Test (host logic)
         run: cargo test --locked
 
+      - name: Test image-layout checker
+        run: python3 -m unittest tools/test_check_elf_layout.py
+
       - name: Qualify target image
         run: |
           classification="$(
@@ -103,7 +106,9 @@ jobs:
           python3 tools/check_elf_layout.py \
             "$elf" \
             --flash-start 0x1c000 \
-            --flash-end 0x5c000
+            --flash-end 0x5c000 \
+            --ram-start 0x20008000 \
+            --ram-end 0x20040000
 
   hardware:
     name: Schematic contracts + PCB DRC
