@@ -324,7 +324,8 @@ or the bench validation table later in this document.
 Every evidence path must resolve to a file inside `inkbot-magsafe/`. Normal
 exports identify themselves as EVT in the fabrication manifest and record each
 evidence file's size and SHA-256 digest. A production-labeled export fails
-unless every gate has evidence and the classification is `PRODUCTION`.
+unless every gate has evidence, the classification is `PRODUCTION`, and the
+source worktree is clean.
 
 Recommended one-off sequence (validate function before optimizing thickness):
 

@@ -45,12 +45,13 @@ KiCad DRC checks the unoptimized route.
 
 The fabrication export also writes a mirrored bottom-assembly PDF, a
 populated STEP model, a schematic PDF, and a SHA-256 manifest tied to the source
-commit. The manifest records the EVT classification and every unresolved gate
-from `../production-gates.json`. Setting `INKBOT_PRODUCTION_EXPORT=1` blocks
-the export unless that file classifies the design as `PRODUCTION`. Every passed
-gate must name an existing, repository-relative evidence file. The manifest
-records each evidence file's size and SHA-256 digest. Review those files with
-the Gerber job before ordering.
+commit and records whether the worktree was dirty. The manifest records the EVT
+classification and every unresolved gate from `../production-gates.json`.
+Setting `INKBOT_PRODUCTION_EXPORT=1` requires a clean worktree and blocks the
+export unless that file classifies the design as `PRODUCTION`. Every passed gate
+must name an existing, repository-relative evidence file. The manifest records
+each evidence file's size and SHA-256 digest. Review those files with the Gerber
+job before ordering.
 
 Open `inkbot-magsafe.kicad_pro` in KiCad 7 or later to inspect the result and
 run interactive DRC before an order. A clean route is not approval to

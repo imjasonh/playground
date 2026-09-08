@@ -191,15 +191,43 @@ def load_fp(library_name: str):
     return footprint
 
 
+def validate_export_request(
+    gate_summary: release_gates.GateSummary,
+    production_requested: bool,
+    source_dirty: bool,
+) -> None:
+    """Reject a production export without passed gates and clean source."""
+    if not production_requested:
+        return
+    if not gate_summary.production_releasable:
+        blocked = ", ".join(gate_summary.blocked)
+        raise SystemExit(f"production fabrication export blocked by: {blocked}")
+    if source_dirty:
+        raise SystemExit("production fabrication export requires a clean source tree")
+
+
 def export_fab() -> None:
     """Export Gerbers, drill data, and the pick-and-place file."""
     gate_summary = release_gates.validate_release_gates()
-    if (
-        os.environ.get("INKBOT_PRODUCTION_EXPORT") == "1"
-        and not gate_summary.production_releasable
-    ):
-        blocked = ", ".join(gate_summary.blocked)
-        raise SystemExit(f"production fabrication export blocked by: {blocked}")
+    production_requested = os.environ.get("INKBOT_PRODUCTION_EXPORT") == "1"
+    validate_export_request(gate_summary, production_requested, False)
+
+    source_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=HERE,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    source_status = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=HERE,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    source_dirty = bool(source_status)
+    validate_export_request(gate_summary, production_requested, source_dirty)
 
     FAB.mkdir(exist_ok=True)
     for path in FAB.iterdir():
@@ -271,13 +299,6 @@ def export_fab() -> None:
         ]
     )
 
-    source_commit = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=HERE,
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
     release_files = sorted(
         path
         for path in FAB.iterdir()
@@ -289,6 +310,7 @@ def export_fab() -> None:
     )
     manifest = {
         "source_commit": source_commit,
+        "source_dirty": source_dirty,
         "classification": gate_summary.classification,
         "production_releasable": gate_summary.production_releasable,
         "blocked_gates": list(gate_summary.blocked),

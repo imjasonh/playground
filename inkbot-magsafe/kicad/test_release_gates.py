@@ -47,6 +47,18 @@ class ReleaseGateTest(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "production fabrication export blocked"):
                 layout_route.export_fab()
 
+    def test_production_fabrication_requires_clean_source(self):
+        summary = release_gates.GateSummary(
+            classification="PRODUCTION",
+            passed=("all-gates",),
+            blocked=(),
+            evidence_files=(),
+        )
+        with self.assertRaisesRegex(SystemExit, "requires a clean source tree"):
+            layout_route.validate_export_request(summary, True, True)
+        layout_route.validate_export_request(summary, True, False)
+        layout_route.validate_export_request(summary, False, True)
+
     def test_passed_gate_requires_evidence(self):
         document = self.document()
         document["gates"][0]["status"] = "passed"
