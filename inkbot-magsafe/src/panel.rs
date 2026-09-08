@@ -168,6 +168,23 @@ pub enum RefreshKind {
     Partial,
 }
 
+/// A refresh waveform paired with the only window it may update.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct RefreshPlan {
+    kind: RefreshKind,
+    window: Window,
+}
+
+impl RefreshPlan {
+    pub const fn kind(self) -> RefreshKind {
+        self.kind
+    }
+
+    pub const fn window(self) -> Window {
+        self.window
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PatchError {
     InvalidWindow,
@@ -213,20 +230,26 @@ impl RefreshPolicy {
     }
 
     /// Select the effective refresh kind for a requested panel window.
-    pub fn choose(&self, requested: RefreshKind, window: Window) -> RefreshKind {
+    pub fn choose(&self, requested: RefreshKind, window: Window) -> RefreshPlan {
         if requested == RefreshKind::Full
             || window == Window::FULL
             || self.consecutive_partials >= MAX_CONSECUTIVE_PARTIALS
         {
-            RefreshKind::Full
+            RefreshPlan {
+                kind: RefreshKind::Full,
+                window: Window::FULL,
+            }
         } else {
-            RefreshKind::Partial
+            RefreshPlan {
+                kind: RefreshKind::Partial,
+                window,
+            }
         }
     }
 
     /// Record a successfully completed refresh.
-    pub fn record_success(&mut self, completed: RefreshKind) {
-        match completed {
+    pub fn record_success(&mut self, completed: RefreshPlan) {
+        match completed.kind {
             RefreshKind::Full => self.consecutive_partials = 0,
             RefreshKind::Partial => {
                 self.consecutive_partials = self.consecutive_partials.saturating_add(1)
@@ -409,22 +432,19 @@ mod tests {
             h: 16,
         };
         let mut policy = RefreshPolicy::new();
-        assert_eq!(
-            policy.choose(RefreshKind::Partial, partial),
-            RefreshKind::Full
-        );
-        policy.record_success(RefreshKind::Full);
+        let initial = policy.choose(RefreshKind::Partial, partial);
+        assert_eq!(initial.kind(), RefreshKind::Full);
+        assert_eq!(initial.window(), Window::FULL);
+        policy.record_success(initial);
         for expected in 1..=MAX_CONSECUTIVE_PARTIALS {
-            assert_eq!(
-                policy.choose(RefreshKind::Partial, partial),
-                RefreshKind::Partial
-            );
-            policy.record_success(RefreshKind::Partial);
+            let plan = policy.choose(RefreshKind::Partial, partial);
+            assert_eq!(plan.kind(), RefreshKind::Partial);
+            assert_eq!(plan.window(), partial);
+            policy.record_success(plan);
             assert_eq!(policy.consecutive_partials(), expected);
         }
-        assert_eq!(
-            policy.choose(RefreshKind::Partial, partial),
-            RefreshKind::Full
-        );
+        let cleaning = policy.choose(RefreshKind::Partial, partial);
+        assert_eq!(cleaning.kind(), RefreshKind::Full);
+        assert_eq!(cleaning.window(), Window::FULL);
     }
 }

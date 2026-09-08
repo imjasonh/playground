@@ -141,8 +141,7 @@ fn partial_transfer_survives_each_power_fail_boundary() {
         Ok(())
     );
     let policy = RefreshPolicy::new();
-    assert_eq!(
-        policy.choose(RefreshKind::Partial, window),
-        RefreshKind::Full
-    );
+    let plan = policy.choose(RefreshKind::Partial, window);
+    assert_eq!(plan.kind(), RefreshKind::Full);
+    assert_eq!(plan.window(), Window::FULL);
 }
