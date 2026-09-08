@@ -29,6 +29,7 @@ pub const BAT_OCP_500_MA_BUVLO_3V_INTERRUPTS: u8 = 0x10;
 
 /// Maximum interval between safety-register readbacks while charging is on.
 pub const SAFETY_READBACK_INTERVAL_MS: u32 = 30_000;
+const SAFETY_READ_COUNT: usize = 9;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct RegisterWrite {
@@ -611,7 +612,7 @@ mod tests {
 
     #[test]
     fn every_configuration_bus_failure_leaves_gate_off() {
-        let operation_count = CONFIGURATION_WRITES.len() + 8;
+        let operation_count = CONFIGURATION_WRITES.len() + SAFETY_READ_COUNT;
         for failing_operation in 0..operation_count {
             let mut io = MockIo::healthy();
             io.fail_operation = Some(failing_operation);
@@ -672,16 +673,18 @@ mod tests {
 
     #[test]
     fn periodic_bus_or_register_failure_drops_gate() {
-        let mut io = MockIo::healthy();
-        let enabled = configure(&mut io, 0).unwrap();
-        io.gates.clear();
-        io.operation = 0;
-        io.fail_operation = Some(3);
-        assert!(matches!(
-            revalidate(&mut io, enabled, SAFETY_READBACK_INTERVAL_MS),
-            Err(ChargerControlError::Bus(_))
-        ));
-        assert_eq!(io.gates, [false]);
+        for failing_operation in 0..SAFETY_READ_COUNT {
+            let mut io = MockIo::healthy();
+            let enabled = configure(&mut io, 0).unwrap();
+            io.gates.clear();
+            io.operation = 0;
+            io.fail_operation = Some(failing_operation);
+            assert!(matches!(
+                revalidate(&mut io, enabled, SAFETY_READBACK_INTERVAL_MS),
+                Err(ChargerControlError::Bus(_))
+            ));
+            assert_eq!(io.gates, [false]);
+        }
 
         let mut io = MockIo::healthy();
         let enabled = configure(&mut io, 0).unwrap();
