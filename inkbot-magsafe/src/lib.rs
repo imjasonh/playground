@@ -10,7 +10,7 @@
 //! - [`panel`]: geometry and command set for the 3.97-inch SSD1677-class panel.
 //! - [`power`]: battery state-of-charge estimate and refresh/charge gating.
 //! - [`protocol`]: the resumable, idempotent BLE frame-transfer state machine.
-//! - [`storage`]: power-fail-safe metadata for alternating frame slots.
+//! - [`storage`]: power-fail-safe metadata for wear-leveled frame slots.
 
 pub mod charger;
 pub mod memory;

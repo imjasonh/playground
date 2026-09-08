@@ -32,8 +32,9 @@ implemented. Do not treat a successful cross-build as working device firmware.
   Host-tested.
 - `src/power.rs`: battery-only state-of-charge estimate, BQ25186 configuration,
   SYS-divider conversion, connection parameters, and refresh safety gates.
-- `src/memory.rs` and `src/storage.rs`: nonoverlapping 1 MiB flash regions and
-  CRC-protected metadata for alternating 48 KiB frame slots.
+- `src/memory.rs` and `src/storage.rs`: nonoverlapping 1 MiB flash regions, five
+  wear-leveled 48 KiB frame slots, and a two-page metadata journal with
+  CRC-checked power-fail recovery.
 - `src/recovery.rs`: the bounce- and timeout-checked physical owner-reset
   gesture for the sealed enclosure.
 - `src/main.rs`: the bare-metal entry point. It enters WFI until the peripheral
@@ -48,7 +49,7 @@ implemented. Do not treat a successful cross-build as working device firmware.
 - MCU: Nordic nRF52840 (Cortex-M4F, 256 KiB RAM), target
   `thumbv7em-none-eabihf`, shipped as a pre-certified Raytac MDBT50Q-1MV2
   module. Its 1 MiB flash holds equal 256 KiB application and update slots,
-  two 48 KiB frame slots, journals, and the signed bootloader region.
+  five 48 KiB frame slots, journals, and the signed bootloader region.
 - BLE stack: S113 7.3.0. The linker reserves 112 KiB for the MBR and S113 and
   provisionally reserves 32 KiB of RAM for S113. Recalculate RAM after final
   GATT, L2CAP, MTU, DLE, and connection settings.

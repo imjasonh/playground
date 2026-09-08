@@ -5,7 +5,7 @@
  * the released GATT, L2CAP, MTU, data-length, and connection configuration.
  *
  * The 1 MiB part leaves enough flash for equal 256 KiB application and update
- * slots, two complete frame slots, journals, and Nordic's boot metadata:
+ * slots, five wear-leveled frame slots, journals, and Nordic's boot metadata:
  *
  *   0x00000..0x1C000  MBR and S113
  *   0x1C000..0x5C000  primary application
@@ -13,9 +13,11 @@
  *   0x9C000..0xA0000  bond and settings journal
  *   0xA0000..0xAC000  committed-frame slot A
  *   0xAC000..0xB8000  committed-frame slot B
- *   0xB8000..0xBA000  frame metadata journal
- *   0xBA000..0xBC000  reset and fault journal
- *   0xBC000..0xE0000  reserved
+ *   0xB8000..0xC4000  committed-frame slot C
+ *   0xC4000..0xD0000  committed-frame slot D
+ *   0xD0000..0xDC000  committed-frame slot E
+ *   0xDC000..0xDE000  frame metadata journal
+ *   0xDE000..0xE0000  reset and fault journal
  *   0xE0000..0xFE000  signed bootloader
  *   0xFE000..0xFF000  MBR parameter page
  *   0xFF000..0x100000 bootloader settings

@@ -4,7 +4,8 @@ use inkbot_magsafe::panel::{
 use inkbot_magsafe::power::{refresh_decision, ChargerStatus, PowerSample, EVT_SAFETY_LIMITS};
 use inkbot_magsafe::protocol::{Accept, Begin, Crc32, FrameHeader, FrameSink, Receiver};
 use inkbot_magsafe::storage::{
-    select_latest, select_latest_verified, FrameRecord, FrameSlot, RecordDecodeError,
+    scan_metadata_journal, select_latest_verified, FrameRecord, FrameSlot,
+    METADATA_JOURNAL_BYTES, METADATA_RECORD_BYTES,
 };
 
 struct PayloadSink {
@@ -54,6 +55,8 @@ fn partial_transfer_survives_each_power_fail_boundary() {
         frame: old_committed,
     };
     assert!(old_record.verifies_image(&old_image));
+    let mut journal = [0xff; METADATA_JOURNAL_BYTES];
+    journal[..METADATA_RECORD_BYTES].copy_from_slice(&old_record.to_bytes());
 
     let patch = [0x00, 0x11, 0x22, 0x33];
     let window = Window {
@@ -83,7 +86,10 @@ fn partial_transfer_survives_each_power_fail_boundary() {
     );
 
     // A reset before metadata commit still selects the old, verified image.
-    assert_eq!(select_latest(Some(old_record), None), Some(old_record));
+    assert_eq!(
+        scan_metadata_journal(&journal).unwrap().latest,
+        Some(old_record)
+    );
 
     let mut candidate_image = old_image.clone();
     apply_patch(&mut candidate_image, window, &sink.bytes).unwrap();
@@ -93,7 +99,7 @@ fn partial_transfer_survives_each_power_fail_boundary() {
     );
     let new_record = FrameRecord {
         generation: 11,
-        slot: old_record.slot.other(),
+        slot: old_record.slot.next(),
         image_crc: crc32(&candidate_image),
         frame: receiver.verified_frame().unwrap(),
     };
@@ -103,24 +109,23 @@ fn partial_transfer_survives_each_power_fail_boundary() {
     assert!(!new_record.verifies_image(&corrupted_image));
 
     // A torn metadata write is ignored, so the old slot remains authoritative.
-    let mut torn = new_record.to_bytes();
-    torn[20] ^= 1;
-    assert_eq!(
-        FrameRecord::from_bytes(&torn),
-        Err(RecordDecodeError::CrcMismatch)
-    );
-    assert_eq!(select_latest(Some(old_record), None), Some(old_record));
+    let encoded = new_record.to_bytes();
+    journal[METADATA_RECORD_BYTES..METADATA_RECORD_BYTES + 20]
+        .copy_from_slice(&encoded[..20]);
+    let interrupted = scan_metadata_journal(&journal).unwrap();
+    assert_eq!(interrupted.latest, Some(old_record));
+    assert_eq!(interrupted.invalid_records, 1);
 
-    let durable = FrameRecord::from_bytes(&new_record.to_bytes()).unwrap();
+    let next = interrupted.next_write;
+    assert_eq!(next.erase_page, None);
+    journal[next.offset..next.offset + METADATA_RECORD_BYTES].copy_from_slice(&encoded);
+    let durable = scan_metadata_journal(&journal).unwrap().latest.unwrap();
+    assert_eq!(durable, new_record);
     assert_eq!(
-        select_latest(Some(old_record), Some(durable)),
-        Some(new_record)
-    );
-    assert_eq!(
-        select_latest_verified(
-            Some((old_record, &old_image)),
-            Some((durable, &candidate_image))
-        ),
+        select_latest_verified(&[
+            (old_record, &old_image),
+            (durable, &candidate_image),
+        ]),
         Some(new_record)
     );
     assert_eq!(receiver.commit(), Some(durable.frame));

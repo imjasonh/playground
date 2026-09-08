@@ -479,14 +479,19 @@ The Rust crate reserves flash and RAM for S113 7.3.0, which supports the
 nRF52840 peripheral role, LE Secure Connections, 2M PHY, and L2CAP
 connection-oriented channels with less flash than S140. The 1 MiB map allocates
 112 KiB to the MBR and S113, equal 256 KiB application and update slots, a
-16 KiB bond and settings journal, two 48 KiB frame slots, separate frame and
-fault journals, and the top 128 KiB for the bootloader and Nordic metadata.
+16 KiB bond and settings journal, five wear-leveled 48 KiB frame slots,
+separate frame and fault journals, and the top 128 KiB for the bootloader and
+Nordic metadata.
 The linker provisionally reserves 32 KiB of the 256 KiB RAM for S113 and rejects
 an application load segment outside its primary slot.
+At the nRF52840's 10,000-cycle minimum page endurance and 24 durable frames per
+day, round-robin use of all five slots provides at least 2,083 days of modeled
+frame-storage life. Target firmware must preserve that rotation and report
+write or erase failures.
 Host-tested code implements versioned frame validation, replay checks, a
 separate durable-commit step, panel window rules, periodic full refresh policy,
 charger policy, SYS conversion, voltage and temperature gates, the complete
-flash map, and CRC-protected alternating-frame metadata. Final RAM origin must
+flash map, and CRC-protected wear-leveled frame metadata. Final RAM origin must
 come from `sd_ble_enable()` with the released connection settings.
 
 The following target integrations remain release blockers:
@@ -643,7 +648,7 @@ and raw data. A pass on one prototype is not a production qualification.
   6.1" Pro in **both** width and height with the ring high (camera-clear). The
   4.26" was tried and dropped — it overhangs the bottom of a 15 Pro by ~4 mm.
   Minis are dropped because they are too narrow. The nRF52840 provides enough
-  flash for equal update slots and two 48 KiB frame copies.
+  flash for equal update slots and five wear-leveled 48 KiB frame copies.
 - **Pre-certified module, not bare QFN.** The nRF52840 ships as a Raytac
   MDBT50Q-1MV2 module with the antenna, 32 MHz crystal, DC/DC, and RF matching.
   The module still requires its host keep-out, layout review, and

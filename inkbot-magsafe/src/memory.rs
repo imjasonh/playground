@@ -51,16 +51,24 @@ pub const FRAME_B: FlashRegion = FlashRegion {
     start: 0xac000,
     end: 0xb8000,
 };
-pub const FRAME_METADATA: FlashRegion = FlashRegion {
+pub const FRAME_C: FlashRegion = FlashRegion {
     start: 0xb8000,
-    end: 0xba000,
+    end: 0xc4000,
+};
+pub const FRAME_D: FlashRegion = FlashRegion {
+    start: 0xc4000,
+    end: 0xd0000,
+};
+pub const FRAME_E: FlashRegion = FlashRegion {
+    start: 0xd0000,
+    end: 0xdc000,
+};
+pub const FRAME_METADATA: FlashRegion = FlashRegion {
+    start: 0xdc000,
+    end: 0xde000,
 };
 pub const FAULT_LOG: FlashRegion = FlashRegion {
-    start: 0xba000,
-    end: 0xbc000,
-};
-pub const RESERVED: FlashRegion = FlashRegion {
-    start: 0xbc000,
+    start: 0xde000,
     end: 0xe0000,
 };
 pub const BOOTLOADER: FlashRegion = FlashRegion {
@@ -76,16 +84,18 @@ pub const BOOTLOADER_SETTINGS: FlashRegion = FlashRegion {
     end: 0x100000,
 };
 
-pub const FLASH_REGIONS: [FlashRegion; 12] = [
+pub const FLASH_REGIONS: [FlashRegion; 14] = [
     SOFTDEVICE,
     APPLICATION,
     UPDATE,
     SETTINGS,
     FRAME_A,
     FRAME_B,
+    FRAME_C,
+    FRAME_D,
+    FRAME_E,
     FRAME_METADATA,
     FAULT_LOG,
-    RESERVED,
     BOOTLOADER,
     MBR_PARAMETERS,
     BOOTLOADER_SETTINGS,
@@ -93,6 +103,9 @@ pub const FLASH_REGIONS: [FlashRegion; 12] = [
 
 const _: () = assert!(FRAME_A.len() as usize >= FRAME_BYTES);
 const _: () = assert!(FRAME_B.len() as usize >= FRAME_BYTES);
+const _: () = assert!(FRAME_C.len() as usize >= FRAME_BYTES);
+const _: () = assert!(FRAME_D.len() as usize >= FRAME_BYTES);
+const _: () = assert!(FRAME_E.len() as usize >= FRAME_BYTES);
 const _: () = assert!(APPLICATION.len() == UPDATE.len());
 
 #[cfg(test)]
@@ -120,8 +133,12 @@ mod tests {
         assert_eq!(UPDATE.len(), 256 * 1024);
         assert_eq!(FRAME_A.len(), 48 * 1024);
         assert_eq!(FRAME_B.len(), 48 * 1024);
-        assert!(FRAME_A.len() as usize >= FRAME_BYTES);
-        assert!(FRAME_B.len() as usize >= FRAME_BYTES);
+        assert_eq!(FRAME_C.len(), 48 * 1024);
+        assert_eq!(FRAME_D.len(), 48 * 1024);
+        assert_eq!(FRAME_E.len(), 48 * 1024);
+        for region in [FRAME_A, FRAME_B, FRAME_C, FRAME_D, FRAME_E] {
+            assert!(region.len() as usize >= FRAME_BYTES);
+        }
         assert_eq!(FRAME_METADATA.len(), 2 * FLASH_PAGE_BYTES);
         assert_eq!(FAULT_LOG.len(), 2 * FLASH_PAGE_BYTES);
         assert!(BOOTLOADER.len() >= 64 * 1024);
