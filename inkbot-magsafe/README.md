@@ -38,7 +38,9 @@ implemented. Do not treat a successful cross-build as working device firmware.
 - `src/main.rs`: the bare-metal entry point. It enters WFI until the peripheral
   drivers land.
   Target builds require the explicit `bringup-stub` feature so this inert image
-  cannot be mistaken for release firmware.
+  cannot be mistaken for release firmware. CI permits that feature only while
+  `production-gates.json` classifies the device below `PRODUCTION`; a production
+  release must build the target without it.
 
 ## Target
 
