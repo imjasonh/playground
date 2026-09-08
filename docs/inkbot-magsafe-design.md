@@ -508,6 +508,11 @@ At the nRF52840's 10,000-cycle minimum page endurance and 24 durable frames per
 day, round-robin use of all five slots provides at least 2,083 days of modeled
 frame-storage life. Target firmware must preserve that rotation and report
 write or erase failures.
+S113 and the nRF5 SDK are in maintenance mode. Before DVT, record an
+architecture decision that compares their security-support horizon, signed-DFU
+path, and staffing cost with nRF Connect SDK. Define a migration trigger for a
+support cutoff, unresolved vulnerability, or launch-market support-period
+requirement.
 Host-tested code implements versioned frame validation, replay checks, a
 separate durable-commit step, panel window rules, periodic full refresh policy,
 charger policy, SYS conversion, voltage and temperature gates, the complete
@@ -662,6 +667,12 @@ and raw data. A pass on one prototype is not a production qualification.
   battery replacement with commercially available tools unless legal review
   documents an applicable exception. Keep the display bonded and provide
   reusable rear access to the keyed pack.
+- Build a market-access matrix that assigns owners and evidence for EU GPSR,
+  RED cybersecurity and applicable EN 18031 standards, Cyber Resilience Act
+  support and vulnerability-reporting obligations, UK PSTI, product
+  serialization and traceability, SBOM retention, security-update periods, and
+  vulnerability intake. Scope each item against the launch date and markets
+  with qualified counsel and the selected lab.
 
 ## Decisions taken since 0.1.0 draft
 
