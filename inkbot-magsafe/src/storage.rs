@@ -208,7 +208,8 @@ pub fn scan_metadata_journal(bytes: &[u8]) -> Result<JournalScan, JournalScanErr
     }
 
     let mut latest: Option<(FrameRecord, usize)> = None;
-    let mut latest_by_slot = [None; FRAME_SLOT_COUNT];
+    let mut latest_by_slot: [Option<FrameRecord>; FRAME_SLOT_COUNT] =
+        [None; FRAME_SLOT_COUNT];
     let mut last_programmed = [None; METADATA_PAGE_COUNT];
     let mut invalid_records = 0_u16;
     for page in 0..METADATA_PAGE_COUNT {
