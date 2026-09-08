@@ -353,6 +353,9 @@ def export_fab() -> None:
             }
             for path in gate_summary.evidence_files
         ],
+        "qualification_records": [
+            record.manifest_entry() for record in gate_summary.evidence_records
+        ],
         "tools": {
             "kicad_cli": kicad_version,
             "freerouting": {

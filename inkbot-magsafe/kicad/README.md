@@ -49,10 +49,11 @@ source commit, dirty-worktree state, KiCad version, pinned Freerouting version
 and JAR digest, source-input hashes, EVT classification, and every unresolved
 gate from `../production-gates.json`.
 Setting `INKBOT_PRODUCTION_EXPORT=1` requires a clean worktree and blocks the
-export unless that file classifies the design as `PRODUCTION`. Every passed gate
-must name an existing, repository-relative evidence file. The manifest records
-each evidence file's size and SHA-256 digest. Review those files with the Gerber
-job before ordering.
+export unless that file classifies the design as `PRODUCTION`. Every passed
+gate must include immutable, gate-specific evidence metadata and two approvers.
+Local evidence files must match their recorded size and digest; restricted
+reports can use an HTTPS URI and digest. Review the records and accessible
+reports with the Gerber job before ordering.
 
 Open `inkbot-magsafe.kicad_pro` in KiCad 7 or later to inspect the result and
 run interactive DRC before an order. A clean route is not approval to

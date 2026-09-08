@@ -331,13 +331,17 @@ intentional no-connects, BOM coverage, and board-pad parity. Both checks must
 pass on the release commit. They do not replace schematic review, DFM review,
 or the bench validation table later in this document.
 
-`production-gates.json` records each external review and physical qualification.
-Every evidence path must resolve to a file inside `inkbot-magsafe/`. Normal
-exports identify themselves as EVT in the fabrication manifest and record each
-evidence file's size and SHA-256 digest. A production-labeled export fails
-unless every gate has evidence, the classification is `PRODUCTION`, and the
-source worktree is clean. The validator requires the complete ordered gate set,
-so deleting or renaming a blocked gate cannot make the package releasable.
+`production-gates.json` records each external review and physical
+qualification. Every evidence record names its gate, report type, issuer, date,
+hardware revision, source commit, pass result, acceptance criteria, subject or
+DUT IDs, byte count, SHA-256 digest, and two distinct approvers. Local evidence
+must resolve inside `inkbot-magsafe/` and match its recorded size and digest.
+Restricted reports can use an HTTPS URI with the same immutable metadata.
+Normal exports identify themselves as EVT and copy these records into the
+fabrication manifest. A production-labeled export fails unless every gate has
+valid evidence, the classification is `PRODUCTION`, and the source worktree is
+clean. The validator requires the complete ordered gate set, so deleting or
+renaming a blocked gate cannot make the package releasable.
 
 Recommended one-off sequence (validate function before optimizing thickness):
 

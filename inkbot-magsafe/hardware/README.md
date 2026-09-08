@@ -50,8 +50,9 @@ parity.
   errors.
 - `run_drc.py` must report no hard violations and no unconnected pads.
 - `production-gates.json` must classify a production export as `PRODUCTION`
-  and name an existing, repository-relative evidence file for every passed
-  gate. The fabrication manifest must include the file's SHA-256 digest.
+  and include gate-specific evidence metadata with two approvers for every
+  passed gate. Local reports must match their size and SHA-256 digest; restricted
+  reports can use an HTTPS URI and digest.
 - The committed schematic must match a fresh generator run. Regenerating the
   placed board from the same source must preserve footprints, nets, keep-outs,
   fixed fanouts, and design rules before routing.
