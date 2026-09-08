@@ -116,7 +116,7 @@ jobs:
       - name: Check fabrication release gates
         run: |
           python3 release_gates.py
-          python3 -m unittest test_release_gates.py
+          python3 -m unittest test_release_gates.py test_run_drc.py
 
       - name: Check electrical contracts and BOM
         run: python3 run_erc.py

@@ -110,19 +110,8 @@ def board_contract_errors(board: pcbnew.BOARD) -> list[str]:
     return errors
 
 
-def main() -> int:
-    if not BOARD_PATH.exists():
-        print(f"missing board: {BOARD_PATH}", file=sys.stderr)
-        return 2
-
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    board = pcbnew.LoadBoard(str(BOARD_PATH))
-    board.BuildConnectivity()
-    contract_errors = board_contract_errors(board)
-    # aReportAllTrackErrors=True so every clearance instance is listed.
-    pcbnew.WriteDRCReport(board, str(OUT), pcbnew.EDA_UNITS_MILLIMETRES, True)
-
-    text = OUT.read_text()
+def parse_drc_findings(text: str) -> tuple[Counter, Counter, int]:
+    """Return category, severity, and release-blocking warning counts."""
     tally = Counter(re.findall(r"^\[([a-z_]+)\]", text, re.MULTILINE))
     severities = Counter()
     blocking_warnings = 0
@@ -144,6 +133,23 @@ def main() -> int:
             )
         ):
             blocking_warnings += 1
+    return tally, severities, blocking_warnings
+
+
+def main() -> int:
+    if not BOARD_PATH.exists():
+        print(f"missing board: {BOARD_PATH}", file=sys.stderr)
+        return 2
+
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    board = pcbnew.LoadBoard(str(BOARD_PATH))
+    board.BuildConnectivity()
+    contract_errors = board_contract_errors(board)
+    # aReportAllTrackErrors=True so every clearance instance is listed.
+    pcbnew.WriteDRCReport(board, str(OUT), pcbnew.EDA_UNITS_MILLIMETRES, True)
+
+    text = OUT.read_text()
+    tally, severities, blocking_warnings = parse_drc_findings(text)
 
     total = 0
     m = re.search(r"Found (\d+) DRC violations", text)
