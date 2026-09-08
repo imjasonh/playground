@@ -355,6 +355,39 @@ mod tests {
     #[test]
     fn write_sequence_disables_charge_before_other_registers() {
         assert_eq!(
+            CONFIGURATION_WRITES,
+            [
+                RegisterWrite {
+                    register: 0x04,
+                    value: 0x9f,
+                },
+                RegisterWrite {
+                    register: 0x03,
+                    value: 0x46,
+                },
+                RegisterWrite {
+                    register: 0x08,
+                    value: 0x49,
+                },
+                RegisterWrite {
+                    register: 0x0b,
+                    value: 0xc0,
+                },
+                RegisterWrite {
+                    register: 0x07,
+                    value: 0x87,
+                },
+                RegisterWrite {
+                    register: 0x06,
+                    value: 0x10,
+                },
+                RegisterWrite {
+                    register: 0x04,
+                    value: 0x1f,
+                },
+            ]
+        );
+        assert_eq!(
             CONFIGURATION_WRITES[0],
             RegisterWrite {
                 register: REG_ICHG_CTRL,
