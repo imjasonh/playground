@@ -31,6 +31,7 @@ BOARD = HERE / "inkbot-magsafe.kicad_pcb"
 BOM = HERE.parents[1] / "docs" / "inkbot-magsafe-bom.csv"
 DESIGN_DOC = HERE.parents[1] / "docs" / "inkbot-magsafe-design.md"
 COST_QUANTITIES = (1, 100, 1000)
+BOM_ASSEMBLY_REFERENCE_GROUPS = {"BT1 RT1"}
 U1_PHYSICAL_PINS = {str(pin) for pin in range(1, 62)}
 U1_ALLOWED_NO_CONNECT_PINS = {
     "3",
@@ -208,41 +209,35 @@ PIN_NETS = {
 }
 
 VALUE_CONTRACT = {
-    "U1": ("MDBT50Q-1MV2", "RF_Module:Raytac_MDBT50Q"),
-    "U2": ("BQ51013C", "Package_DFN_QFN:Texas_VQFN-RHL-20"),
-    "U3": ("BQ25186DLHR", "inkbot_magsafe:TI_DLH0010A_WSON-10"),
-    "U4": ("TPS7A2030PDBVR", "Package_TO_SOT_SMD:SOT-23-5"),
-    "U5": ("TPS7A0230PDBVR", "Package_TO_SOT_SMD:SOT-23-5"),
-    "J1": (
-        "GDEY0397T81P panel FPC",
-        "Connector_FFC-FPC:Hirose_FH12-24S-0.5SH_1x24-1MP_P0.50mm_Horizontal",
-    ),
-    "J2": (
-        "Protected battery + NTC",
-        "Connector_Molex:Molex_Pico-EZmate_78171-0003_1x03-1MP_P1.20mm_Vertical",
-    ),
-    "L1": ("VLS252010CX-100M-1 10uH", "inkbot_magsafe:TDK_VLS252010CX"),
-    "Q1": ("Si1308EDL-T1-GE3", "Package_TO_SOT_SMD:SOT-323_SC-70"),
-    "Q2": ("2N7002BK,215", "Package_TO_SOT_SMD:SOT-23"),
-    "R1": ("845R 1%", "Resistor_SMD:R_0603_1608Metric"),
-    "R2": ("200R 1%", "Resistor_SMD:R_0603_1608Metric"),
-    "R3": ("20k 1%", "Resistor_SMD:R_0603_1608Metric"),
-    "R5": ("100k", "Resistor_SMD:R_0603_1608Metric"),
-    "R6": ("1M", "Resistor_SMD:R_0603_1608Metric"),
-    "R7": ("10k", "Resistor_SMD:R_0603_1608Metric"),
-    "R8": ("10k", "Resistor_SMD:R_0603_1608Metric"),
-    "R9": ("1M 1%", "Resistor_SMD:R_0603_1608Metric"),
-    "R10": ("330k 1%", "Resistor_SMD:R_0603_1608Metric"),
-    "R13": ("10k 1%", "Resistor_SMD:R_0603_1608Metric"),
-    "RT3": (
-        "NCU18XH103F60RB 10k 3380K",
-        "Capacitor_SMD:C_0603_1608Metric",
-    ),
+    "BT1": ("LP242030 100mAh protected HR", ""),
     "C1": ("33nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
     "C2": ("33nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
     "C3": ("15nF C0G 50V", "Capacitor_SMD:C_0805_2012Metric"),
+    "C4": ("820pF C0G 50V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C5": ("130pF C0G 50V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C6": ("10nF 50V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C7": ("10nF 50V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C8": ("470nF 25V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C9": ("470nF 25V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C10": ("22nF 50V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C11": ("22nF 50V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C12": ("10uF 25V", "Capacitor_SMD:C_1206_3216Metric"),
+    "C13": ("10uF 25V", "Capacitor_SMD:C_1206_3216Metric"),
+    "C14": ("100nF 50V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C15": ("10uF 25V", "Capacitor_SMD:C_1206_3216Metric"),
     "C16": ("100nF 50V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C17": ("1uF 25V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C18": ("10uF 25V", "Capacitor_SMD:C_0805_2012Metric"),
+    "C19": ("1uF 10V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C20": ("10nF", "Capacitor_SMD:C_0603_1608Metric"),
+    "C21": ("1uF 10V", "Capacitor_SMD:C_0603_1608Metric"),
+    "C22": ("10uF 10V", "Capacitor_SMD:C_0805_2012Metric"),
+    "C23": ("22pF C0G", "Capacitor_SMD:C_0603_1608Metric"),
+    "C24": ("22pF C0G", "Capacitor_SMD:C_0603_1608Metric"),
+    "C26": ("1uF 10V", "Capacitor_SMD:C_0603_1608Metric"),
     "C27": ("100uF 6.3V X5R", "Capacitor_SMD:C_1206_3216Metric"),
+    "C28": ("4.7uF 25V", "Capacitor_SMD:C_0805_2012Metric"),
+    "C29": ("1uF 25V", "Capacitor_SMD:C_0603_1608Metric"),
     "C30": ("1uF 50V X5R", "Capacitor_SMD:C_0603_1608Metric"),
     "C31": ("4.7uF 35V X7R", "Capacitor_SMD:C_0805_2012Metric"),
     "C32": ("4.7uF 35V X7R", "Capacitor_SMD:C_0805_2012Metric"),
@@ -252,6 +247,59 @@ VALUE_CONTRACT = {
     "C36": ("1uF 50V X5R", "Capacitor_SMD:C_0603_1608Metric"),
     "C37": ("4.7uF 35V X7R", "Capacitor_SMD:C_0805_2012Metric"),
     "C38": ("47uF 10V X5R", "Capacitor_SMD:C_1206_3216Metric"),
+    "D1": ("MBR0530", "Diode_SMD:D_SOD-123"),
+    "D2": ("MBR0530", "Diode_SMD:D_SOD-123"),
+    "D3": ("MBR0530", "Diode_SMD:D_SOD-123"),
+    "J1": (
+        "GDEY0397T81P panel FPC",
+        "Connector_FFC-FPC:Hirose_FH12-24S-0.5SH_1x24-1MP_P0.50mm_Horizontal",
+    ),
+    "J2": (
+        "Protected battery + NTC",
+        "Connector_Molex:Molex_Pico-EZmate_78171-0003_1x03-1MP_P1.20mm_Vertical",
+    ),
+    "J3": ("WR222230 coil + bonded NTC", "inkbot_magsafe:Coil_SolderPads"),
+    "L1": ("VLS252010CX-100M-1 10uH", "inkbot_magsafe:TDK_VLS252010CX"),
+    "L2": ("WR222230-26M8-G 27uH", ""),
+    "Q1": ("Si1308EDL-T1-GE3", "Package_TO_SOT_SMD:SOT-323_SC-70"),
+    "Q2": ("2N7002BK,215", "Package_TO_SOT_SMD:SOT-23"),
+    "R1": ("845R 1%", "Resistor_SMD:R_0603_1608Metric"),
+    "R2": ("200R 1%", "Resistor_SMD:R_0603_1608Metric"),
+    "R3": ("20k 1%", "Resistor_SMD:R_0603_1608Metric"),
+    "R4": ("DNP", "Resistor_SMD:R_0603_1608Metric"),
+    "R5": ("100k", "Resistor_SMD:R_0603_1608Metric"),
+    "R6": ("1M", "Resistor_SMD:R_0603_1608Metric"),
+    "R7": ("10k", "Resistor_SMD:R_0603_1608Metric"),
+    "R8": ("10k", "Resistor_SMD:R_0603_1608Metric"),
+    "R9": ("1M 1%", "Resistor_SMD:R_0603_1608Metric"),
+    "R10": ("330k 1%", "Resistor_SMD:R_0603_1608Metric"),
+    "R11": ("2.2R 1%", "Resistor_SMD:R_0603_1608Metric"),
+    "R12": ("1M", "Resistor_SMD:R_0603_1608Metric"),
+    "R13": ("10k 1%", "Resistor_SMD:R_0603_1608Metric"),
+    "RT1": ("10k 3435K bonded to cell", ""),
+    "RT2": ("103JT-025 10k 3435K film NTC", ""),
+    "RT3": (
+        "NCU18XH103F60RB 10k 3380K",
+        "Capacitor_SMD:C_0603_1608Metric",
+    ),
+    "TP1": ("SWDIO", "TestPoint:TestPoint_Pad_D1.0mm"),
+    "TP2": ("SWDCLK", "TestPoint:TestPoint_Pad_D1.0mm"),
+    "TP3": ("NRST", "TestPoint:TestPoint_Pad_D1.0mm"),
+    "TP4": ("MCU_3V0", "TestPoint:TestPoint_Pad_D1.0mm"),
+    "TP5": ("GND", "TestPoint:TestPoint_Pad_D1.0mm"),
+    "TP6": ("SYS", "TestPoint:TestPoint_Pad_D1.0mm"),
+    "TP7": ("BAT", "TestPoint:TestPoint_Pad_D1.0mm"),
+    "TP8": ("QI_OUT", "TestPoint:TestPoint_Pad_D1.0mm"),
+    "TP9": ("PANEL_3V0", "TestPoint:TestPoint_Pad_D1.0mm"),
+    "U1": ("MDBT50Q-1MV2", "RF_Module:Raytac_MDBT50Q"),
+    "U2": ("BQ51013C", "Package_DFN_QFN:Texas_VQFN-RHL-20"),
+    "U3": ("BQ25186DLHR", "inkbot_magsafe:TI_DLH0010A_WSON-10"),
+    "U4": ("TPS7A2030PDBVR", "Package_TO_SOT_SMD:SOT-23-5"),
+    "U5": ("TPS7A0230PDBVR", "Package_TO_SOT_SMD:SOT-23-5"),
+    "Y1": (
+        "FC-135 32.768kHz 12.5pF",
+        "Crystal:Crystal_SMD_3215-2Pin_3.2x1.5mm",
+    ),
 }
 
 ALLOWED_EXTRA_BOM_REFS = {"ASSY", "DS1", "MAG1", "MECH1", "PCB1"}
@@ -360,6 +408,19 @@ def main() -> int:
         if not no_connect_allowed(reference, pin):
             errors.append(f"NO_CONNECT: {reference}.{pin} is not on the allowlist")
 
+    schematic_refs = {
+        reference
+        for reference in components
+        if not reference.startswith(("#FLG", "#PWR"))
+    }
+    missing_value_contracts = schematic_refs - set(VALUE_CONTRACT)
+    extra_value_contracts = set(VALUE_CONTRACT) - schematic_refs
+    if missing_value_contracts or extra_value_contracts:
+        errors.append(
+            "VALUE_CONTRACT: coverage mismatch; "
+            f"missing={sorted(missing_value_contracts)}, "
+            f"extra={sorted(extra_value_contracts)}"
+        )
     for reference, (expected_value, expected_footprint) in VALUE_CONTRACT.items():
         component = components.get(reference)
         if component is None:
@@ -379,11 +440,6 @@ def main() -> int:
     rows, bom_by_reference, duplicate_bom_refs = parse_bom(BOM)
     for reference in sorted(duplicate_bom_refs):
         errors.append(f"BOM: duplicate reference {reference}")
-    schematic_refs = {
-        reference
-        for reference in components
-        if not reference.startswith(("#FLG", "#PWR"))
-    }
     for reference in sorted(schematic_refs - set(bom_by_reference)):
         errors.append(f"BOM: missing schematic reference {reference}")
     for reference in sorted(
@@ -454,6 +510,16 @@ def main() -> int:
                 raise ValueError
         except ValueError:
             errors.append(f"BOM: {label} has invalid quantity {row['qty']!r}")
+        else:
+            reference_count = len(row["refs"].split())
+            if (
+                row["refs"] not in BOM_ASSEMBLY_REFERENCE_GROUPS
+                and quantity != reference_count
+            ):
+                errors.append(
+                    f"BOM: {label} quantity {quantity} does not match "
+                    f"{reference_count} designators"
+                )
 
         for cost_quantity in COST_QUANTITIES:
             column = f"row_cost_usd_qty{cost_quantity}"
