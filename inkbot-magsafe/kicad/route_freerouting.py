@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -17,6 +18,7 @@ import pcbnew  # noqa: E402
 
 import generate_pcb  # noqa: E402
 import layout_route  # noqa: E402
+import run_drc  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 BOARD = HERE / "inkbot-magsafe.kicad_pcb"
@@ -30,13 +32,9 @@ PLACED_BOARD = FAB / "inkbot-magsafe-placed.kicad_pcb"
 ROUTED_BOARD = FAB / "inkbot-magsafe-routed.kicad_pcb"
 INCOMPLETE_BOARD = FAB / "inkbot-magsafe-incomplete.kicad_pcb"
 VIA_NAME = re.compile(r"Via\[(\d+)-(\d+)\]_(\d+):(\d+)_um")
-BLOCKING_DRC_WARNINGS = {
-    "connection_width",
-    "isolated_copper",
-    "lib_footprint_mismatch",
-    "track_dangling",
-    "via_dangling",
-}
+FREEROUTING_2_4_1_SHA256 = (
+    "251101c3eeac22d7e7dfcf6796603279e5d1000283eb82d8f093780f7afc6aa9"
+)
 
 
 def fill_zones(board: pcbnew.BOARD) -> None:
@@ -63,7 +61,10 @@ def blocking_drc_items(board: pcbnew.BOARD, report: Path) -> list[str]:
         if category_match is None:
             continue
         category = category_match.group(1)
-        if "Severity: error" in block or category in BLOCKING_DRC_WARNINGS:
+        if "Severity: error" in block or (
+            "Severity: warning" in block
+            and run_drc.release_blocking_warning(category, block.splitlines()[0])
+        ):
             heading = block.splitlines()[0]
             detail = next(
                 (line.strip() for line in block.splitlines()[1:] if line.strip()),
@@ -1143,6 +1144,12 @@ def freerouting_command() -> list[str]:
     jar = Path(jar_value).expanduser().resolve()
     if not jar.is_file():
         raise SystemExit(f"missing Freerouting JAR: {jar}")
+    jar_digest = hashlib.sha256(jar.read_bytes()).hexdigest()
+    if jar_digest != FREEROUTING_2_4_1_SHA256:
+        raise SystemExit(
+            f"unexpected Freerouting JAR SHA-256: {jar_digest}; "
+            f"expected {FREEROUTING_2_4_1_SHA256}"
+        )
 
     java = os.environ.get("FREEROUTING_JAVA", "java")
     if "/" in java:
@@ -1150,6 +1157,16 @@ def freerouting_command() -> list[str]:
             raise SystemExit(f"missing Java runtime: {java}")
     elif shutil.which(java) is None:
         raise SystemExit(f"Java runtime not found: {java}")
+    version = subprocess.run(
+        [java, "-version"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    version_text = version.stderr or version.stdout
+    major_match = re.search(r'version "(\d+)', version_text)
+    if major_match is None or int(major_match.group(1)) < 25:
+        raise SystemExit("Freerouting 2.4.1 requires Java 25 or later")
 
     router_home = FAB / "freerouting-home"
     router_home.mkdir(exist_ok=True)

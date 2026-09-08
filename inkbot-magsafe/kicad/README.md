@@ -38,9 +38,10 @@ Three low-speed charger-control tracks cross In1.Cu; F.Cu and B.Cu carry the
 remaining signals. The unbroken ground plane supplies their return path.
 The script imports the SES file, refills the planes, and
 writes Gerbers, drill, and centroid files under `fab/`. Freerouting 2.4.1
-requires Java 25. The script runs without the GUI and disables Freerouting's
-post-route optimizer because version 2.4.1 can hang while rendering conduction
-areas. KiCad DRC checks the unoptimized route.
+requires Java 25. The script verifies the official release JAR's SHA-256 digest
+before routing. It runs without the GUI and disables Freerouting's post-route
+optimizer because version 2.4.1 can hang while rendering conduction areas.
+KiCad DRC checks the unoptimized route.
 
 The fabrication export also writes a mirrored bottom-assembly PDF, a
 populated STEP model, a schematic PDF, and a SHA-256 manifest tied to the source

@@ -37,6 +37,14 @@ BLOCKING_WARNING_CATEGORIES = {
 }
 
 
+def release_blocking_warning(category: str, heading: str) -> bool:
+    """Return whether a DRC warning blocks fabrication release."""
+    return category in BLOCKING_WARNING_CATEGORIES or (
+        category == "lib_footprint_issues"
+        and "current configuration does not include the library" not in heading
+    )
+
+
 def board_contract_errors(board: pcbnew.BOARD) -> list[str]:
     """Return violations of manufacturing rules that DRC cannot infer."""
     errors = []
@@ -125,13 +133,7 @@ def parse_drc_findings(text: str) -> tuple[Counter, Counter, int]:
         severity = re.search(r"Severity: (error|warning|ignore)", detail)
         level = severity.group(1) if severity else "unknown"
         severities[(level, category)] += 1
-        if level == "warning" and (
-            category in BLOCKING_WARNING_CATEGORIES
-            or (
-                category == "lib_footprint_issues"
-                and "current configuration does not include the library" not in line
-            )
-        ):
+        if level == "warning" and release_blocking_warning(category, line):
             blocking_warnings += 1
     return tally, severities, blocking_warnings
 
