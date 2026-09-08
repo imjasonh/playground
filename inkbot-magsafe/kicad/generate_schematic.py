@@ -551,8 +551,6 @@ def main() -> None:
         )
         sch.connect_pin(ref, "1", net, wire_dy=5.08, by_number=True)
 
-    sch.place_power("power:GND", "GND", snap(205), snap(120))
-
     sch.text_note(
         "inkbot-magsafe EVT schematic\\n"
         "BQ51013C Qi 1.3 receiver + BQ25186 protected-cell charger,\\n"

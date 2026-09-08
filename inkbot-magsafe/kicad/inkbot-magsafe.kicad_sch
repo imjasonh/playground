@@ -2927,20 +2927,6 @@
       )
     )
   )
-  (symbol (lib_id "power:GND") (at 204.47 119.38 0)
-    (uuid "4a54daef-1e4b-500a-b48d-341295e6e8cd")
-    (property "Reference" "#PWR001" (at 204.47 121.92 0)
-      (effects (font (size 1.27 1.27)) hide))
-    (property "Value" "GND" (at 204.47 123.19 0)
-      (effects (font (size 0.8 0.8))))
-    (property "Footprint" "" (at 204.47 119.38 0)
-      (effects (font (size 1.27 1.27)) hide))
-    (instances
-      (project "inkbot-magsafe"
-        (path "/876e0bc8-f839-529d-8fb7-fca7b9334b7c" (reference "#PWR001") (unit 1))
-      )
-    )
-  )
   (wire (pts (xy 91.44 92.71) (xy 91.44 85.09))
     (stroke (width 0) (type default))
     (uuid "fa909560-bf74-5f69-bec7-5ede87b45de0")
@@ -4885,7 +4871,7 @@
   )
   (text "inkbot-magsafe EVT schematic\nBQ51013C Qi 1.3 receiver + BQ25186 protected-cell charger,\nRaytac MDBT50Q-1MV2 on a nanopower 3.0 V rail, and the GDEY0397T81P\nSSD1677 boost circuit. Qi resonance and FOD values require EVT tuning." (at 15.24 15.24 0)
     (effects (font (size 2.54 2.54)) (justify left))
-    (uuid "98052952-036f-57f8-beb8-22cebe7af54f")
+    (uuid "4a54daef-1e4b-500a-b48d-341295e6e8cd")
   )
 
   (sheet_instances
