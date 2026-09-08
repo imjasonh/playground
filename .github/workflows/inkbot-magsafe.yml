@@ -116,6 +116,14 @@ jobs:
             --ram-start 0x20008000 \
             --ram-end 0x20040000
 
+      - name: Upload firmware evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: inkbot-magsafe-firmware-${{ github.sha }}
+          path: inkbot-magsafe/target/thumbv7em-none-eabihf/release/inkbot-magsafe
+          if-no-files-found: error
+          retention-days: 14
+
   hardware:
     name: Schematic contracts + PCB DRC
     runs-on: ubuntu-latest
@@ -159,6 +167,19 @@ jobs:
       - name: Check routed board
         run: python3 run_drc.py
 
+      - name: Build EVT fabrication evidence
+        run: |
+          python3 -c 'import layout_route; layout_route.export_fab()'
+          cp /tmp/inkbot.net fab/inkbot-magsafe.net
+
+      - name: Upload EVT fabrication evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: inkbot-magsafe-fabrication-${{ github.sha }}
+          path: inkbot-magsafe/kicad/fab/
+          if-no-files-found: error
+          retention-days: 14
+
   native-eda:
     name: Native KiCad 9 ERC + DRC
     runs-on: ubuntu-latest
@@ -197,3 +218,12 @@ jobs:
             inkbot-magsafe.kicad_pcb || status=$?
           cat /tmp/inkbot-drc.rpt
           exit "$status"
+
+      - name: Upload native EDA reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: inkbot-magsafe-native-eda-${{ github.sha }}
+          path: /tmp/inkbot-*.rpt
+          if-no-files-found: warn
+          retention-days: 14
