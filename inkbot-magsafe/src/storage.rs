@@ -142,6 +142,16 @@ pub const fn select_latest(a: Option<FrameRecord>, b: Option<FrameRecord>) -> Op
     }
 }
 
+/// Select the newest record whose complete frame slot still matches its CRC.
+pub fn select_latest_verified(
+    a: Option<(FrameRecord, &[u8])>,
+    b: Option<(FrameRecord, &[u8])>,
+) -> Option<FrameRecord> {
+    let a = a.and_then(|(record, image)| record.verifies_image(image).then_some(record));
+    let b = b.and_then(|(record, image)| record.verifies_image(image).then_some(record));
+    select_latest(a, b)
+}
+
 fn crc32(bytes: &[u8]) -> u32 {
     let mut crc = Crc32::new();
     crc.update(bytes);
@@ -202,6 +212,33 @@ mod tests {
         corrupted[FRAME_BYTES / 2] ^= 1;
         assert!(!expected.verifies_image(&corrupted));
         assert!(!expected.verifies_image(&image[..FRAME_BYTES - 1]));
+    }
+
+    #[test]
+    fn selection_falls_back_when_the_newest_frame_slot_is_corrupt() {
+        let old_image = [0x55; FRAME_BYTES];
+        let new_image = [0xaa; FRAME_BYTES];
+        let mut old = record(7, FrameSlot::A);
+        old.image_crc = crc32(&old_image);
+        let mut new = record(8, FrameSlot::B);
+        new.image_crc = crc32(&new_image);
+
+        assert_eq!(
+            select_latest_verified(Some((old, &old_image)), Some((new, &new_image))),
+            Some(new)
+        );
+        let mut corrupted = new_image;
+        corrupted[0] ^= 1;
+        assert_eq!(
+            select_latest_verified(Some((old, &old_image)), Some((new, &corrupted))),
+            Some(old)
+        );
+        corrupted = old_image;
+        corrupted[0] ^= 1;
+        assert_eq!(
+            select_latest_verified(Some((old, &corrupted)), Some((new, &corrupted))),
+            None
+        );
     }
 
     #[test]

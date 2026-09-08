@@ -3,7 +3,9 @@ use inkbot_magsafe::panel::{
 };
 use inkbot_magsafe::power::{refresh_decision, ChargerStatus, PowerSample, EVT_SAFETY_LIMITS};
 use inkbot_magsafe::protocol::{Accept, Begin, Crc32, FrameHeader, FrameSink, Receiver};
-use inkbot_magsafe::storage::{select_latest, FrameRecord, FrameSlot, RecordDecodeError};
+use inkbot_magsafe::storage::{
+    select_latest, select_latest_verified, FrameRecord, FrameSlot, RecordDecodeError,
+};
 
 struct PayloadSink {
     bytes: Vec<u8>,
@@ -112,6 +114,13 @@ fn partial_transfer_survives_each_power_fail_boundary() {
     let durable = FrameRecord::from_bytes(&new_record.to_bytes()).unwrap();
     assert_eq!(
         select_latest(Some(old_record), Some(durable)),
+        Some(new_record)
+    );
+    assert_eq!(
+        select_latest_verified(
+            Some((old_record, &old_image)),
+            Some((durable, &candidate_image))
+        ),
         Some(new_record)
     );
     assert_eq!(receiver.commit(), Some(durable.frame));
