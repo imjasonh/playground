@@ -485,6 +485,9 @@ The following target integrations remain release blockers:
   the L2CAP server.
 - Configure the BQ25186 for 40 mA charge, 100 mA input, 4.2 V regulation, and
   a 0-45 degrees Celsius charge window before driving `CHG_ENABLE` high.
+- After final test and with Qi input absent, enter BQ25186 ship mode. Verify
+  transport current and first-attachment wake behavior on every production
+  unit.
 - Stream incoming data to an atomic flash record and seed the replay boundary
   from its committed metadata after reset.
 - Implement the SSD1677 reset, two-RAM initialization, temperature-selected
@@ -562,6 +565,8 @@ Obtain supplier quotations and compliance-lab scopes before treating the
 - Busy timeout, watchdog, brownout logging, and forced periodic full refresh.
 - Duty-cycled, open- and short-detecting panel temperature measurement.
 - No panel refresh while the Qi receiver reports power transfer.
+- BQ25186 ship mode after final test, with measured shelf current and a verified
+  wake on the first valid Qi attachment.
 - Structural spacer, strain relief, cell swelling clearance, and electrical
   insulation under the rear cover.
 - No refresh outside the panel's qualified 0-50 degrees Celsius range.
@@ -582,6 +587,7 @@ and raw data. A pass on one prototype is not a production qualification.
 | Qi interoperability | Charge starts, regulates, terminates, and recovers on the WPC interoperability set at centered and allowed offset positions; the accessory magnet array does not repel or displace the tile on supported magnetic chargers |
 | Thermals | Cell stays within its charge specification; coil, receiver, charger, panel circuit, cover, and adhesive stay below their qualified limits |
 | Sleep current | Connected-idle and disconnected-advertising current support the stated 60-90 day target at cell end of life |
+| Shelf mode | A detached unit enters ship mode after final test, draws no more than the qualified transport-current limit, and wakes on its first valid Qi attachment |
 | BLE | A full 48 KB frame completes within the foreground target and resumes after forced disconnects without corruption or stale-frame acceptance |
 | RF | Throughput, packet error rate, and reconnect behavior pass attached and detached on every supported phone and case |
 | Power-loss recovery | Forced resets at every flash erase, payload write, metadata commit, panel update, settings update, and DFU swap boundary retain the previous committed frame and a bootable signed image |

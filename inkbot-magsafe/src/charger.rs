@@ -7,6 +7,7 @@ pub const REG_VBAT_CTRL: u8 = 0x03;
 pub const REG_ICHG_CTRL: u8 = 0x04;
 pub const REG_IC_CTRL: u8 = 0x07;
 pub const REG_TMR_ILIM: u8 = 0x08;
+pub const REG_SHIP_RST: u8 = 0x09;
 pub const REG_TS_CONTROL: u8 = 0x0b;
 pub const REG_STAT0: u8 = 0x00;
 pub const REG_STAT1: u8 = 0x01;
@@ -20,6 +21,7 @@ pub const ICHG_40_MA_ENABLED: u8 = 0x1f;
 /// the GPIO and lets R6 turn Q2 off.
 pub const IC_CTRL_TS_6H_NO_WATCHDOG: u8 = 0x87;
 pub const ILIM_100_MA_WITH_RESET_DEFAULTS: u8 = 0x49;
+pub const SHIP_MODE_WITH_RESET_DEFAULTS: u8 = 0x51;
 pub const TS_COLD_0_HOT_45: u8 = 0xc0;
 
 /// Maximum interval between safety-register readbacks while charging is on.
@@ -106,6 +108,7 @@ pub struct StatusRegisters {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SafetyFault {
     ConfigurationMismatch,
+    ExternalPowerPresent,
     ThermistorOpen,
     InputOvervoltage,
     BatteryUndervoltage,
@@ -273,6 +276,38 @@ pub fn revalidate<I: ChargerIo>(
             Err(ChargerControlError::Safety(fault))
         }
     }
+}
+
+/// Disable charging and enter the BQ25186 ship mode for storage or transport.
+///
+/// The caller must confirm that Qi input is absent. Valid input power exits
+/// ship mode immediately.
+pub fn enter_ship_mode<I: ChargerIo>(
+    io: &mut I,
+    qi_present: bool,
+) -> Result<(), ChargerControlError<I::Error>> {
+    io.set_charge_gate(false);
+    if qi_present {
+        return Err(ChargerControlError::Safety(
+            SafetyFault::ExternalPowerPresent,
+        ));
+    }
+    for write in [
+        RegisterWrite {
+            register: REG_ICHG_CTRL,
+            value: ICHG_40_MA_DISABLED,
+        },
+        RegisterWrite {
+            register: REG_SHIP_RST,
+            value: SHIP_MODE_WITH_RESET_DEFAULTS,
+        },
+    ] {
+        if let Err(error) = io.write_register(write.register, write.value) {
+            io.set_charge_gate(false);
+            return Err(ChargerControlError::Bus(error));
+        }
+    }
+    Ok(())
 }
 
 fn read_safety<I: ChargerIo>(io: &mut I) -> Result<(SafetyRegisters, StatusRegisters), I::Error> {
@@ -478,6 +513,51 @@ mod tests {
             io.fail_operation = Some(failing_operation);
             assert!(matches!(
                 configure(&mut io, 0),
+                Err(ChargerControlError::Bus(_))
+            ));
+            assert_eq!(io.gates.first(), Some(&false));
+            assert_eq!(io.gates.last(), Some(&false));
+            assert!(!io.gates.contains(&true));
+        }
+    }
+
+    #[test]
+    fn ship_mode_requires_detachment_and_orders_safe_writes() {
+        let mut attached = MockIo::healthy();
+        assert_eq!(
+            enter_ship_mode(&mut attached, true),
+            Err(ChargerControlError::Safety(
+                SafetyFault::ExternalPowerPresent
+            ))
+        );
+        assert_eq!(attached.gates, [false]);
+        assert!(attached.writes.is_empty());
+
+        let mut detached = MockIo::healthy();
+        enter_ship_mode(&mut detached, false).unwrap();
+        assert_eq!(detached.gates, [false]);
+        assert_eq!(
+            detached.writes,
+            [
+                RegisterWrite {
+                    register: REG_ICHG_CTRL,
+                    value: ICHG_40_MA_DISABLED,
+                },
+                RegisterWrite {
+                    register: REG_SHIP_RST,
+                    value: SHIP_MODE_WITH_RESET_DEFAULTS,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn ship_mode_bus_failures_leave_charge_gate_off() {
+        for failing_operation in 0..2 {
+            let mut io = MockIo::healthy();
+            io.fail_operation = Some(failing_operation);
+            assert!(matches!(
+                enter_ship_mode(&mut io, false),
                 Err(ChargerControlError::Bus(_))
             ));
             assert_eq!(io.gates.first(), Some(&false));
