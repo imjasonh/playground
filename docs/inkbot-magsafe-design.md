@@ -565,6 +565,19 @@ extended cost for every reference in that row, not a single component price:
 | 100 | **$63.05** | **$6,305** | **$7,251** |
 | 1,000 | **$44.22** | **$44,220** | **$50,853** |
 
+The following sensitivity divides the contingency total by good units and
+assumes a failed unit consumes its full direct cost:
+
+| Lot | 100% yield | 95% yield | 90% yield |
+|---:|---:|---:|---:|
+| 100 | $72.51 | $76.32 | $80.56 |
+| 1,000 | $50.85 | $53.53 | $56.50 |
+
+If one lot must recover the full $30,000-$135,000 NRE range described later,
+the illustrative first-program cost becomes $372.51-$1,422.51 per good unit at
+100 units or $80.85-$185.85 at 1,000 units, before the other recurring
+exclusions. These are sensitivity bounds, not supplier quotations.
+
 The one-unit estimate includes manual assembly setup but excludes minimum reel
 buys, shipping, duties, tax, and the tools needed to program or measure the
 unit. A realistic one-off purchasing budget is $250-$600 once those costs are
