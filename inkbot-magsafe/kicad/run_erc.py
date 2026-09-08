@@ -17,6 +17,7 @@ that automatically.
 from __future__ import annotations
 
 import csv
+import math
 import re
 import sys
 from pathlib import Path
@@ -28,6 +29,8 @@ HERE = Path(__file__).resolve().parent
 NETLIST = Path("/tmp/inkbot.net")
 BOARD = HERE / "inkbot-magsafe.kicad_pcb"
 BOM = HERE.parents[1] / "docs" / "inkbot-magsafe-bom.csv"
+DESIGN_DOC = HERE.parents[1] / "docs" / "inkbot-magsafe-design.md"
+COST_QUANTITIES = (1, 100, 1000)
 
 PIN_NETS = {
     # Raytac MDBT50Q-1MV2.
@@ -276,8 +279,11 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
-    if not BOARD.exists() or not BOM.exists():
-        print(f"missing board or BOM: {BOARD}, {BOM}", file=sys.stderr)
+    if not BOARD.exists() or not BOM.exists() or not DESIGN_DOC.exists():
+        print(
+            f"missing board, BOM, or design document: {BOARD}, {BOM}, {DESIGN_DOC}",
+            file=sys.stderr,
+        )
         return 2
 
     components, nets = parse_netlist(NETLIST)
@@ -382,12 +388,55 @@ def main() -> int:
             elif node not in claimed_nodes:
                 errors.append(f"BOARD_PARITY: unclaimed pad {reference}.{pin}")
 
-    costs = {}
-    for quantity in (1, 100, 1000):
-        column = f"row_cost_usd_qty{quantity}"
-        costs[quantity] = sum(
-            float(row[column]) for row in rows if row["fitment"] != "dnp"
+    costs = dict.fromkeys(COST_QUANTITIES, 0.0)
+    for row_number, row in enumerate(rows, start=2):
+        label = row["refs"] or f"CSV row {row_number}"
+        if row["fitment"] not in {"core", "custom", "dnp"}:
+            errors.append(f"BOM: {label} has invalid fitment {row['fitment']!r}")
+        for field in (
+            "refs",
+            "category",
+            "description",
+            "manufacturer",
+            "mpn",
+            "pricing_basis",
+        ):
+            if not row[field].strip():
+                errors.append(f"BOM: {label} has empty {field}")
+        try:
+            quantity = int(row["qty"])
+            if quantity <= 0:
+                raise ValueError
+        except ValueError:
+            errors.append(f"BOM: {label} has invalid quantity {row['qty']!r}")
+
+        for cost_quantity in COST_QUANTITIES:
+            column = f"row_cost_usd_qty{cost_quantity}"
+            try:
+                value = float(row[column])
+            except ValueError:
+                errors.append(f"BOM: {label} has invalid {column} {row[column]!r}")
+                continue
+            if not math.isfinite(value) or value < 0:
+                errors.append(f"BOM: {label} has invalid {column} {row[column]!r}")
+                continue
+            if row["fitment"] == "dnp":
+                if value != 0:
+                    errors.append(f"BOM: DNP row {label} has nonzero {column}")
+            else:
+                costs[cost_quantity] += value
+
+    design_text = DESIGN_DOC.read_text()
+    for quantity, unit_cost in costs.items():
+        expected_line = (
+            f"| {quantity:,} | **${unit_cost:,.2f}** | "
+            f"**${unit_cost * quantity:,.0f}** | "
+            f"**${unit_cost * quantity * 1.15:,.0f}** |"
         )
+        if expected_line not in design_text:
+            errors.append(
+                f"COST: design document is missing the BOM-derived row {expected_line}"
+            )
 
     qi_nominal_ma = 262_000 / (845 + 200)
     qi_hardware_ma = 314_000 / (845 + 200)
