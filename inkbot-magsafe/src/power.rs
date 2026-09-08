@@ -245,6 +245,37 @@ pub struct ConnectionParameters {
     pub supervision_timeout_10ms: u16,
 }
 
+impl ConnectionParameters {
+    /// Check the Bluetooth Core connection-parameter ranges and timeout rule.
+    pub const fn is_core_valid(self) -> bool {
+        let effective_max =
+            self.max_interval_1_25ms as u32 * (self.latency as u32 + 1);
+        self.min_interval_1_25ms >= 6
+            && self.min_interval_1_25ms <= self.max_interval_1_25ms
+            && self.max_interval_1_25ms <= 3200
+            && self.latency <= 499
+            && self.supervision_timeout_10ms >= 10
+            && self.supervision_timeout_10ms <= 3200
+            && self.supervision_timeout_10ms as u32 * 8 > effective_max * 2
+    }
+
+    /// Check Apple's public BLE accessory connection-parameter constraints.
+    pub const fn is_apple_compatible(self) -> bool {
+        let effective_max =
+            self.max_interval_1_25ms as u32 * (self.latency as u32 + 1);
+        self.is_core_valid()
+            && self.min_interval_1_25ms >= 12
+            && self.min_interval_1_25ms % 12 == 0
+            && self.max_interval_1_25ms % 12 == 0
+            && self.max_interval_1_25ms - self.min_interval_1_25ms >= 12
+            && self.latency <= 30
+            && effective_max <= 1600
+            && self.supervision_timeout_10ms >= 200
+            && self.supervision_timeout_10ms <= 600
+            && self.supervision_timeout_10ms as u32 * 8 > effective_max * 3
+    }
+}
+
 pub const fn connection_parameters(transfer_active: bool) -> ConnectionParameters {
     if transfer_active {
         ConnectionParameters {
@@ -255,8 +286,8 @@ pub const fn connection_parameters(transfer_active: bool) -> ConnectionParameter
         }
     } else {
         ConnectionParameters {
-            min_interval_1_25ms: 640,
-            max_interval_1_25ms: 800,
+            min_interval_1_25ms: 288,
+            max_interval_1_25ms: 300,
             latency: 4,
             supervision_timeout_10ms: 600,
         }
@@ -404,9 +435,22 @@ mod tests {
     fn connection_parameters_cover_active_and_idle_states() {
         let active = connection_parameters(true);
         let idle = connection_parameters(false);
+        assert!(active.is_core_valid());
+        assert!(active.is_apple_compatible());
+        assert!(idle.is_core_valid());
+        assert!(idle.is_apple_compatible());
         assert!(active.min_interval_1_25ms <= active.max_interval_1_25ms);
         assert!(idle.min_interval_1_25ms <= idle.max_interval_1_25ms);
         assert!(active.max_interval_1_25ms < idle.min_interval_1_25ms);
         assert_eq!(active.latency, 0);
+
+        let invalid_idle = ConnectionParameters {
+            min_interval_1_25ms: 640,
+            max_interval_1_25ms: 800,
+            latency: 4,
+            supervision_timeout_10ms: 600,
+        };
+        assert!(!invalid_idle.is_core_valid());
+        assert!(!invalid_idle.is_apple_compatible());
     }
 }

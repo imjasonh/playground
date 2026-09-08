@@ -160,7 +160,7 @@ connection, and does 24 refreshes.
 
 | Draw | Current / cost | Per day | Notes |
 |---|---|---|---|
-| nRF connected idle (1 s interval with slave latency) | ~20 uA average | ~0.48 mAh | Verify on the final connection parameters |
+| nRF connected idle (360-375 ms interval, latency 4) | ~20 uA average | ~0.48 mAh | Effective maximum event spacing is 1.875 s; verify on supported phones |
 | BQ25186 in battery-only mode | ~4 uA typical | ~0.10 mAh | Charger data-sheet value |
 | TPS7A0230P MCU LDO | ~0.025 uA typical | <0.01 mAh | Verify the complete rail leakage |
 | Panel LDO disabled | <1 uA budget | <0.03 mAh | Includes leakage margin |
