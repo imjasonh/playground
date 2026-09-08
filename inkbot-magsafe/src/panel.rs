@@ -74,7 +74,7 @@ pub const UPDATE_FULL: [u8; 1] = [0xf7];
 pub const UPDATE_FAST: [u8; 1] = [0xd7];
 pub const UPDATE_PARTIAL: [u8; 1] = [0xfc];
 pub const UPDATE_POWER_OFF: [u8; 1] = [0x83];
-pub const DEEP_SLEEP: [u8; 1] = [0x01];
+pub const DEEP_SLEEP: [u8; 1] = [0x03];
 
 impl Command {
     /// The raw opcode byte to clock out on the command phase.
@@ -267,6 +267,7 @@ mod tests {
         assert_eq!(BOOSTER_SOFT_START, [0xae, 0xc7, 0xc3, 0xc0, 0x80]);
         assert_eq!(UPDATE_FULL, [0xf7]);
         assert_eq!(UPDATE_PARTIAL, [0xfc]);
+        assert_eq!(DEEP_SLEEP, [0x03]);
     }
 
     #[test]
