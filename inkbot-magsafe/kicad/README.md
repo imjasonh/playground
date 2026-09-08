@@ -72,5 +72,5 @@ design document first.
 - **TPS7A2030P** 3.0 V panel rail with active discharge.
 - 0.8 mm, four-layer JLC7628 PCB with a 34 x 23 mm rounded battery cutout,
   1 oz outer copper, 0.5 oz inner copper, 0.10 mm minimum trace and clearance,
-  0.5/0.25 mm standard vias, and two 0.45/0.20 mm Qi fanout vias.
+  0.5/0.25 mm standard vias, and 0.45/0.20 mm fine-pitch fanout vias.
 - A bonded front panel plus a structural spacer and insulating rear cover.

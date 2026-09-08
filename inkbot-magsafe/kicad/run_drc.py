@@ -38,6 +38,79 @@ BLOCKING_WARNING_CATEGORIES = {
 }
 
 
+def board_contract_errors(board: pcbnew.BOARD) -> list[str]:
+    """Return violations of manufacturing rules that DRC cannot infer."""
+    errors = []
+    settings = board.GetDesignSettings()
+    expected_minimums = {
+        "copper-to-edge clearance": (settings.m_CopperEdgeClearance, 0.5),
+        "copper clearance": (settings.m_MinClearance, 0.1),
+        "track width": (settings.m_TrackMinWidth, 0.1),
+        "hole clearance": (settings.m_HoleClearance, 0.2),
+        "hole-to-hole clearance": (settings.m_HoleToHoleMin, 0.2),
+        "through-hole drill": (settings.m_MinThroughDrill, 0.2),
+        "via diameter": (settings.m_ViasMinSize, 0.45),
+        "via annular width": (settings.m_ViasMinAnnularWidth, 0.1),
+    }
+    for name, (actual, expected) in expected_minimums.items():
+        actual_mm = pcbnew.ToMM(actual)
+        if actual_mm + 1e-9 < expected:
+            errors.append(f"{name} is {actual_mm:.3f} mm, expected at least {expected:.3f} mm")
+
+    if board.GetCopperLayerCount() != 4:
+        errors.append(f"board has {board.GetCopperLayerCount()} copper layers, expected 4")
+    thickness_mm = pcbnew.ToMM(settings.GetBoardThickness())
+    if abs(thickness_mm - 0.8) > 1e-9:
+        errors.append(f"board thickness is {thickness_mm:.3f} mm, expected 0.800 mm")
+    if not settings.m_HasStackup:
+        errors.append("board has no explicit stackup")
+
+    edge_bounds = board.GetBoardEdgesBoundingBox()
+    edge_size = (
+        round(pcbnew.ToMM(edge_bounds.GetWidth()), 3),
+        round(pcbnew.ToMM(edge_bounds.GetHeight()), 3),
+    )
+    if edge_size != (60.05, 99.05):
+        errors.append(f"board edge bounds are {edge_size[0]} x {edge_size[1]} mm")
+
+    rule_areas = set()
+    planes = set()
+    for zone in board.Zones():
+        if zone.GetIsRuleArea():
+            bounds = zone.GetBoundingBox()
+            rule_areas.add(
+                (
+                    round(pcbnew.ToMM(bounds.GetX()), 3),
+                    round(pcbnew.ToMM(bounds.GetY()), 3),
+                    round(pcbnew.ToMM(bounds.GetWidth()), 3),
+                    round(pcbnew.ToMM(bounds.GetHeight()), 3),
+                    zone.GetLayer(),
+                    zone.GetDoNotAllowTracks(),
+                    zone.GetDoNotAllowVias(),
+                    zone.GetDoNotAllowCopperPour(),
+                )
+            )
+        else:
+            planes.add((zone.GetLayer(), zone.GetNetname()))
+
+    expected_rule_areas = {
+        (0.0, 83.0, 4.25, 12.0, -1, True, True, True),
+        (12.5, 58.0, 35.0, 24.0, -1, True, True, True),
+        (3.0, 3.0, 54.0, 54.0, -1, True, True, True),
+    }
+    missing_rule_areas = expected_rule_areas - rule_areas
+    for area in sorted(missing_rule_areas):
+        errors.append(f"missing required copper keepout {area[:4]}")
+
+    expected_planes = {
+        (pcbnew.In1_Cu, "/SYS"),
+        (pcbnew.In2_Cu, "GND"),
+    }
+    for layer, net in sorted(expected_planes - planes):
+        errors.append(f"missing {board.GetLayerName(layer)} plane for {net}")
+    return errors
+
+
 def main() -> int:
     if not BOARD_PATH.exists():
         print(f"missing board: {BOARD_PATH}", file=sys.stderr)
@@ -46,6 +119,7 @@ def main() -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     board = pcbnew.LoadBoard(str(BOARD_PATH))
     board.BuildConnectivity()
+    contract_errors = board_contract_errors(board)
     # aReportAllTrackErrors=True so every clearance instance is listed.
     pcbnew.WriteDRCReport(board, str(OUT), pcbnew.EDA_UNITS_MILLIMETRES, True)
 
@@ -93,7 +167,14 @@ def main() -> int:
     )
     print(f"\nHard violations (excluding open ratsnest): {errors}")
     print(f"Warnings: {warnings} ({blocking_warnings} release-blocking)")
-    return 1 if errors > 0 or unconnected > 0 or blocking_warnings > 0 else 0
+    print(f"Board contract violations: {len(contract_errors)}")
+    for error in contract_errors:
+        print(f"  {error}")
+    return (
+        1
+        if errors > 0 or unconnected > 0 or blocking_warnings > 0 or contract_errors
+        else 0
+    )
 
 
 if __name__ == "__main__":

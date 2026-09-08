@@ -17,8 +17,8 @@
 - Copper stays at least 0.5 mm from routed edges. Minimum trace and signal
   clearance are 0.10 mm, and hole clearance is 0.20 mm. Standard vias are
   0.5 mm with a 0.25 mm drill, which provides a 0.125 mm nominal annular ring.
-  Two Qi receiver fanouts use 0.45/0.20 mm vias. These values remain within the
-  selected fabricator's standard multilayer capability.
+  Fine-pitch Qi and charger fanouts use 0.45/0.20 mm vias. These values remain
+  within the selected fabricator's standard multilayer capability.
 - The Raytac module's antenna end is flush with the left board edge. The
   footprint and board rule remove copper, tracks, and vias from every layer
   under the antenna without covering the module's ground lands. Raytac must
