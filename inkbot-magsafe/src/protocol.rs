@@ -352,6 +352,13 @@ impl Receiver {
         self.running = Crc32::new();
     }
 
+    /// Clear in-flight state and the durable replay boundary after owner reset.
+    ///
+    /// Call this only after the bond and replay metadata erases are durable.
+    pub fn clear_owner_state(&mut self) {
+        *self = Self::new();
+    }
+
     /// Retain a chunk, then advance the acknowledged transfer offset.
     pub fn ingest<S: FrameSink>(
         &mut self,
@@ -807,6 +814,34 @@ mod tests {
         let mut next = old;
         next.id = 42;
         assert_eq!(rx.begin(next), Ok(Begin::Started));
+    }
+
+    #[test]
+    fn owner_reset_clears_a_high_replay_boundary() {
+        let prior = FrameHeader {
+            id: 1_000_000,
+            len: 1,
+            crc: 0,
+            window: Window {
+                x: 0,
+                y: 0,
+                w: 8,
+                h: 1,
+            },
+        };
+        let mut receiver = Receiver::with_last_completed(CommittedFrame {
+            id: prior.id,
+            len: prior.len,
+            crc: prior.crc,
+            window: prior.window,
+        });
+        let first_new_owner_frame = FrameHeader { id: 0, ..prior };
+        assert_eq!(
+            receiver.begin(first_new_owner_frame),
+            Err(BeginError::StaleId)
+        );
+        receiver.clear_owner_state();
+        assert_eq!(receiver.begin(first_new_owner_frame), Ok(Begin::Started));
     }
 
     #[test]

@@ -403,10 +403,11 @@ not reopen the replay window. To reset ownership without a button or the old
 phone, place and remove the tile from a Qi pad five times within 45 seconds.
 Each attached and detached phase must last at least 750 ms, and the fifth
 placement leaves the tile on external power for the erase. Host-tested gesture
-logic rejects contact bounce and expired sequences. Target firmware must still
-erase both bond-journal copies, verify the erase, and display a new random
-passkey before this recovery path is complete. SWD full erase remains the
-factory fallback.
+logic rejects contact bounce and expired sequences, and it triggers only after
+the fifth attached phase remains stable for 750 ms. Target firmware must still
+erase both bond-journal copies and the prior owner's replay boundary, verify
+the erases, and display a new random passkey before this recovery path is
+complete. SWD full erase remains the factory fallback.
 
 ### Getting a frame there in the background
 

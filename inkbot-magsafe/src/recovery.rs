@@ -20,6 +20,7 @@ pub struct OwnerResetGesture {
     last_transition_ms: u32,
     started_ms: u32,
     attachments: u8,
+    final_attachment_armed: bool,
 }
 
 impl OwnerResetGesture {
@@ -29,12 +30,24 @@ impl OwnerResetGesture {
             last_transition_ms: now_ms,
             started_ms: now_ms,
             attachments: 0,
+            final_attachment_armed: false,
         }
     }
 
     /// Observe a debounced Qi-presence level and return any completed gesture.
     pub const fn observe(&mut self, now_ms: u32, qi_present: bool) -> GestureEvent {
         if qi_present == self.qi_present {
+            if self.final_attachment_armed {
+                if now_ms.wrapping_sub(self.started_ms) > SEQUENCE_TIMEOUT_MS {
+                    self.attachments = 0;
+                    self.final_attachment_armed = false;
+                } else if now_ms.wrapping_sub(self.last_transition_ms) >= MIN_PHASE_MS {
+                    self.attachments = 0;
+                    self.final_attachment_armed = false;
+                    self.started_ms = now_ms;
+                    return GestureEvent::TriggerOwnerReset;
+                }
+            }
             return GestureEvent::Pending {
                 attachments: self.attachments,
             };
@@ -45,11 +58,17 @@ impl OwnerResetGesture {
         self.last_transition_ms = now_ms;
         if dwell_ms < MIN_PHASE_MS {
             self.attachments = 0;
+            self.final_attachment_armed = false;
             self.started_ms = now_ms;
             return GestureEvent::Pending { attachments: 0 };
         }
 
         if !qi_present {
+            if self.final_attachment_armed {
+                self.attachments = 0;
+                self.final_attachment_armed = false;
+                self.started_ms = now_ms;
+            }
             return GestureEvent::Pending {
                 attachments: self.attachments,
             };
@@ -63,9 +82,10 @@ impl OwnerResetGesture {
         }
 
         if self.attachments == REQUIRED_ATTACHMENTS {
-            self.attachments = 0;
-            self.started_ms = now_ms;
-            GestureEvent::TriggerOwnerReset
+            self.final_attachment_armed = true;
+            GestureEvent::Pending {
+                attachments: self.attachments,
+            }
         } else {
             GestureEvent::Pending {
                 attachments: self.attachments,
@@ -107,7 +127,41 @@ mod tests {
         }
         assert_eq!(
             transition(&mut gesture, &mut now, true),
+            GestureEvent::Pending {
+                attachments: REQUIRED_ATTACHMENTS
+            }
+        );
+        assert_eq!(
+            transition(&mut gesture, &mut now, true),
             GestureEvent::TriggerOwnerReset
+        );
+    }
+
+    #[test]
+    fn removing_tile_during_final_dwell_cancels_reset() {
+        let mut now = 0;
+        let mut gesture = OwnerResetGesture::new(now, false);
+        for _ in 1..REQUIRED_ATTACHMENTS {
+            transition(&mut gesture, &mut now, true);
+            transition(&mut gesture, &mut now, false);
+        }
+        assert_eq!(
+            transition(&mut gesture, &mut now, true),
+            GestureEvent::Pending {
+                attachments: REQUIRED_ATTACHMENTS
+            }
+        );
+        now += MIN_PHASE_MS - 1;
+        assert_eq!(
+            gesture.observe(now, true),
+            GestureEvent::Pending {
+                attachments: REQUIRED_ATTACHMENTS
+            }
+        );
+        now += 1;
+        assert_eq!(
+            gesture.observe(now, false),
+            GestureEvent::Pending { attachments: 0 }
         );
     }
 
