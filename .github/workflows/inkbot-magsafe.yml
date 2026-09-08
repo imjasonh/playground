@@ -71,21 +71,23 @@ jobs:
           if [[ "$classification" == "PRODUCTION" ]]; then
             cargo check --locked --no-default-features \
               --target thumbv7em-none-eabihf
-            echo "INKBOT_TARGET_FEATURE=" >> "$GITHUB_ENV"
           else
             if cargo check --locked --no-default-features \
               --target thumbv7em-none-eabihf; then
               echo "EVT target build succeeded without the explicit inert-image feature"
               exit 1
             fi
-            echo "INKBOT_TARGET_FEATURE=bringup-stub" >> "$GITHUB_ENV"
           fi
 
       - name: Clippy (thumbv7em-none-eabihf)
         run: |
           feature_args=()
-          if [[ -n "${INKBOT_TARGET_FEATURE:-}" ]]; then
-            feature_args=(--features "$INKBOT_TARGET_FEATURE")
+          classification="$(
+            python3 -c \
+              'import json; print(json.load(open("production-gates.json"))["classification"])'
+          )"
+          if [[ "$classification" != "PRODUCTION" ]]; then
+            feature_args=(--features bringup-stub)
           fi
           cargo clippy --locked \
             --no-default-features \
@@ -96,8 +98,12 @@ jobs:
       - name: Build firmware (thumbv7em-none-eabihf)
         run: |
           feature_args=()
-          if [[ -n "${INKBOT_TARGET_FEATURE:-}" ]]; then
-            feature_args=(--features "$INKBOT_TARGET_FEATURE")
+          classification="$(
+            python3 -c \
+              'import json; print(json.load(open("production-gates.json"))["classification"])'
+          )"
+          if [[ "$classification" != "PRODUCTION" ]]; then
+            feature_args=(--features bringup-stub)
           fi
           elf="${CARGO_TARGET_DIR:-target}/thumbv7em-none-eabihf/release/inkbot-magsafe"
           cargo build --locked --release --no-default-features \
