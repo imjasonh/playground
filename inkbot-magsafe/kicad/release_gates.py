@@ -13,6 +13,23 @@ HERE = Path(__file__).resolve().parent
 DEFAULT_PATH = HERE.parent / "production-gates.json"
 VALID_CLASSIFICATIONS = {"EVT", "DVT", "PVT", "PRODUCTION"}
 VALID_STATUSES = {"blocked", "passed"}
+REQUIRED_GATE_IDS = (
+    "independent-schematic-review",
+    "pcb-drc-and-dfm",
+    "panel-drawing-and-sample",
+    "battery-pack-qualification",
+    "magnet-and-anti-rotation-qualification",
+    "enclosure-and-assembly-drawings",
+    "qi-tuning-fod-and-interoperability",
+    "power-thermal-and-charger-validation",
+    "integrated-firmware-and-power-fail-validation",
+    "rf-and-ble-validation",
+    "signed-dfu-and-owner-recovery",
+    "mechanical-and-environmental-validation",
+    "factory-programming-and-eol-test",
+    "approved-vendor-list-and-supply-chain",
+    "regulatory-and-market-access",
+)
 
 
 @dataclass(frozen=True)
@@ -86,6 +103,15 @@ def validate_release_gates(path: Path = DEFAULT_PATH) -> GateSummary:
 
     if classification == "PRODUCTION" and blocked:
         raise ValueError("PRODUCTION classification cannot contain blocked gates")
+    actual_gate_ids = tuple(gate["id"] for gate in gates)
+    if actual_gate_ids != REQUIRED_GATE_IDS:
+        missing = sorted(set(REQUIRED_GATE_IDS) - set(actual_gate_ids))
+        extra = sorted(set(actual_gate_ids) - set(REQUIRED_GATE_IDS))
+        if missing or extra:
+            raise ValueError(
+                f"release gate set mismatch; missing={missing}, extra={extra}"
+            )
+        raise ValueError("release gates must use the required order")
     return GateSummary(
         classification,
         tuple(passed),

@@ -29,10 +29,11 @@ class ReleaseGateTest(unittest.TestCase):
             "classification": classification,
             "gates": [
                 {
-                    "id": "schematic-review",
+                    "id": gate_id,
                     "status": "blocked",
                     "evidence": [],
                 }
+                for gate_id in release_gates.REQUIRED_GATE_IDS
             ],
         }
 
@@ -75,12 +76,35 @@ class ReleaseGateTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate gate id"):
             release_gates.validate_release_gates(self.write(document))
 
+    def test_missing_or_extra_gate_is_rejected(self):
+        missing = self.document()
+        missing["gates"].pop()
+        with self.assertRaisesRegex(ValueError, "release gate set mismatch"):
+            release_gates.validate_release_gates(self.write(missing))
+
+        extra = self.document()
+        extra["gates"].append(
+            {"id": "unreviewed-shortcut", "status": "blocked", "evidence": []}
+        )
+        with self.assertRaisesRegex(ValueError, "release gate set mismatch"):
+            release_gates.validate_release_gates(self.write(extra))
+
+    def test_gate_order_is_fixed_for_reviewable_manifests(self):
+        document = self.document()
+        document["gates"][0], document["gates"][1] = (
+            document["gates"][1],
+            document["gates"][0],
+        )
+        with self.assertRaisesRegex(ValueError, "required order"):
+            release_gates.validate_release_gates(self.write(document))
+
     def test_evidence_backed_production_gate_is_releasable(self):
         document = self.document("PRODUCTION")
-        document["gates"][0]["status"] = "passed"
-        document["gates"][0]["evidence"] = ["reports/schematic-review.pdf"]
+        for gate in document["gates"]:
+            gate["status"] = "passed"
+            gate["evidence"] = ["reports/qualification.pdf"]
         path = self.write(document)
-        report = path.parent / "reports" / "schematic-review.pdf"
+        report = path.parent / "reports" / "qualification.pdf"
         report.parent.mkdir()
         report.write_bytes(b"independent review")
         summary = release_gates.validate_release_gates(path)
