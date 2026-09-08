@@ -551,7 +551,8 @@ def main() -> None:
         )
         sch.connect_pin(ref, "1", net, wire_dy=5.08, by_number=True)
 
-    sch.place_pwr_flag(x=snap(205), y=snap(120), net_name="GND")
+    sch.place_power("power:GND", "GND", snap(180), snap(50))
+    sch.place_pwr_flag(x=snap(195), y=snap(50), net_name="GND")
 
     sch.text_note(
         "inkbot-magsafe EVT schematic\\n"
