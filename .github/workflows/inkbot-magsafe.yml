@@ -145,6 +145,9 @@ jobs:
             inkbot-magsafe.kicad_sch \
             inkbot-magsafe.kicad_pro
 
+      - name: Check generated placement
+        run: INKBOT_PLACE_ONLY=1 python3 route_freerouting.py
+
       - name: Check fabrication release gates
         run: |
           python3 release_gates.py

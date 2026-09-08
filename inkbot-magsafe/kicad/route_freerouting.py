@@ -1199,6 +1199,20 @@ def main() -> None:
     FAB.mkdir(exist_ok=True)
     board, _keepalive = build_placed_board()
     if os.environ.get("INKBOT_PLACE_ONLY") == "1":
+        contract_errors = run_drc.board_contract_errors(board)
+        if contract_errors:
+            details = "\n  ".join(contract_errors)
+            raise SystemExit(f"placed board violates manufacturing contracts:\n  {details}")
+        expected_references = set(layout_route.PLACEMENT) | {"FID1", "FID2", "FID3"}
+        actual_references = {
+            footprint.GetReference() for footprint in board.GetFootprints()
+        }
+        if actual_references != expected_references:
+            raise SystemExit(
+                "placed board reference mismatch: "
+                f"missing={sorted(expected_references - actual_references)}, "
+                f"extra={sorted(actual_references - expected_references)}"
+            )
         pcbnew.SaveBoard(str(PLACED_BOARD), board)
         print(f"placed {len(list(board.GetFootprints()))} footprints")
         print(f"wrote {PLACED_BOARD}")
