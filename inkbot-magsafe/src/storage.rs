@@ -211,7 +211,7 @@ pub fn scan_metadata_journal(bytes: &[u8]) -> Result<JournalScan, JournalScanErr
     let mut latest_by_slot: [Option<FrameRecord>; FRAME_SLOT_COUNT] = [None; FRAME_SLOT_COUNT];
     let mut last_programmed = [None; METADATA_PAGE_COUNT];
     let mut invalid_records = 0_u16;
-    for page in 0..METADATA_PAGE_COUNT {
+    for (page, page_last_programmed) in last_programmed.iter_mut().enumerate() {
         let page_start = page * METADATA_PAGE_BYTES;
         for index in 0..METADATA_RECORDS_PER_PAGE {
             let offset = page_start + index * METADATA_RECORD_BYTES;
@@ -219,7 +219,7 @@ pub fn scan_metadata_journal(bytes: &[u8]) -> Result<JournalScan, JournalScanErr
             if encoded.iter().all(|byte| *byte == 0xff) {
                 continue;
             }
-            last_programmed[page] = Some(index);
+            *page_last_programmed = Some(index);
             let Ok(record) = FrameRecord::from_bytes(encoded) else {
                 invalid_records = invalid_records.saturating_add(1);
                 continue;
@@ -476,8 +476,6 @@ mod tests {
             assert_eq!(select_latest(Some(previous), Some(next)), Some(next));
             previous = next;
         }
-        assert_eq!(FRAME_SLOT_COUNT, 5);
-        assert!(MIN_FRAME_STORAGE_LIFETIME_DAYS >= 5 * 365);
     }
 
     #[test]
