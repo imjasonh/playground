@@ -247,7 +247,7 @@ final class FaceSwapTests: XCTestCase {
     }
 
     func testDiffHighlightsOnlyChangedPixels() {
-        var original = FaceSwapRaster.solid(width: 4, height: 2, red: 10, green: 10, blue: 10)
+        let original = FaceSwapRaster.solid(width: 4, height: 2, red: 10, green: 10, blue: 10)
         var edited = original
         edited.setRGB(x: 1, y: 0, red: 200, green: 10, blue: 10)
         let highlight = FaceSwapDiff.highlight(original: original, edited: edited)
