@@ -1,6 +1,6 @@
 module github.com/imjasonh/playground/node-image
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/google/go-containerregistry v0.22.1
@@ -44,8 +44,8 @@ require (
 	go.opentelemetry.io/otel/sdk v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 	google.golang.org/grpc v1.72.0-dev // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
