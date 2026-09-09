@@ -358,8 +358,8 @@ the photo.
 
 The photo is indexed first: face-skin contours, and person regions with a
 clothing color such as blue. A face lists the person it sits on, so "the man
-in the blue shirt" can match that person and that face. The model sees those
-ids and calls tools:
+in the blue shirt" can match that person and that face. The model receives
+those ids and calls tools:
 
 - `removeRegion` erases one region by filling from nearby pixels.
 - `copyRegion` adds copies at new centers. The original stays. Four centers
@@ -372,20 +372,18 @@ chooses which ids to pass. Reconstruction stays in app code, so the on-device
 model is not asked to invent a lighting recipe.
 
 The session is sized for the 4096-token window: short instructions, three
-tools, capped tool results, and a catalog sized to the tokens left after
-those schemas. On iOS 26 the model cannot see the photo, so it matches the
-request to the listed ids and colors. When image input is available, a small
-preview is attached only if that still leaves room for the catalog. If the
-window fills, the next try is a new session with a shorter catalog and no
-preview. A second overflow stops and asks for a shorter request.
+tools, capped tool results, and a catalog that keeps whole lines up to the
+tokens left after those schemas. The current SDK cannot attach a photo, so
+the model matches the request to the listed ids and colors. If the window
+fills, the next try is a new session with a shorter catalog. A second overflow
+stops and asks for a shorter request.
 
 **Result** shows the edited photo with the chosen regions. **Diff** shows the
 original in gray and every changed pixel in red. Edit needs Apple Intelligence
 on iOS 26 or later.
 
 Choose a photo from the library. The working copy is scaled so the long edge is
-at most 1024 px. A preview attached to the model is at most 256 px on the long
-edge.
+at most 1024 px.
 
 ## Adding an experiment
 

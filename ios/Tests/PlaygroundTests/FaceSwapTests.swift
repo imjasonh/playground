@@ -56,16 +56,7 @@ final class FaceSwapTests: XCTestCase {
         XCTAssertNil(FaceSwapOutlineValidation.acceptedTightening(base: destination.points, tightened: outside))
     }
 
-    func testPromptBlockIncludesCoordinatesAndCannotEnlarge() {
-        let pair = facePair()
-        let block = FaceSwapOutlineValidation.promptBlock([pair.source, pair.destination])
-        XCTAssertTrue(block.contains("source id=source-face"))
-        XCTAssertTrue(block.contains("the man's face"))
-        XCTAssertTrue(block.contains("cannot enlarge"))
-        XCTAssertTrue(block.contains("0."))
-    }
-
-    func testClosedJawIsAContourTheModelCanChoose() {
+    func testClosedJawIsAFaceContour() {
         let jaw = [
             CGPoint(x: 0.20, y: 0.42),
             CGPoint(x: 0.24, y: 0.55),
@@ -81,48 +72,6 @@ final class FaceSwapTests: XCTestCase {
         XCTAssertTrue(closed.contains { $0.y < 0.34 })
         let outline = FaceSwapOutline(id: "face-1", role: .source, refersTo: "left face", points: closed)
         XCTAssertNil(FaceSwapOutlineValidation.check(outline))
-
-        let other = FaceSwapCandidate(
-            id: "face-2",
-            points: contour(center: CGPoint(x: 0.72, y: 0.48), radiusX: 0.10, radiusY: 0.14),
-            place: "right, middle",
-            chinContrast: 0.1
-        )
-        let left = FaceSwapCandidate(id: "face-1", points: closed, place: "left, middle", chinContrast: 0.4)
-        let catalog = FaceSwapContours.catalog([left, other])
-        XCTAssertTrue(catalog.contains("id=face-1"))
-        XCTAssertTrue(catalog.contains("Do not invent"))
-
-        switch FaceSwapContours.assign(
-            sourceId: "face-1",
-            destinationId: "face-2",
-            sourcePhrase: "the man's face",
-            destinationPhrase: "the woman's face",
-            candidates: [left, other]
-        ) {
-        case .success(let pair):
-            XCTAssertEqual(pair.source.refersTo, "the man's face")
-            XCTAssertEqual(pair.destination.id, "face-2")
-        case .failure(let message):
-            XCTFail(message)
-        }
-        if case .failure(let message) = FaceSwapContours.assign(
-            sourceId: "face-1",
-            destinationId: "face-9",
-            sourcePhrase: "",
-            destinationPhrase: "",
-            candidates: [left, other]
-        ) {
-            XCTAssertTrue(message.contains("Unknown"))
-        } else {
-            XCTFail("Expected an unknown destination contour")
-        }
-    }
-
-    func testRoleParserReadsSourceAndDestinationOnly() {
-        XCTAssertEqual(FaceSwapRoleParser.role(from: "source"), .source)
-        XCTAssertEqual(FaceSwapRoleParser.role(from: "destination face"), .destination)
-        XCTAssertNil(FaceSwapRoleParser.role(from: "the man's face"))
     }
 
     func testReconstructionStaysInsideOutlineAndIsNotAStamp() throws {
@@ -160,16 +109,6 @@ final class FaceSwapTests: XCTestCase {
         XCTAssertGreaterThan(changed, 0)
         XCTAssertEqual(changed, reconstructed.stats.changedFromOriginal)
         XCTAssertTrue(FaceSwapDiff.summary(original: original, edited: reconstructed.image).contains("Changed"))
-    }
-
-    func testCropIsTheOutlinedFaceNotTheFullPhoto() throws {
-        var photo = FaceSwapRaster.solid(width: 320, height: 200, red: 8, green: 8, blue: 8)
-        let source = facePair().source
-        paint(&photo, outline: source, red: 200, green: 160, blue: 120)
-        let image = try XCTUnwrap(photo.uiImage())
-        let crop = try XCTUnwrap(FaceSwapImagePrompt.crop(photo, outline: source, padding: 0.12))
-        XCTAssertLessThanOrEqual(max(crop.size.width, crop.size.height), 256)
-        XCTAssertLessThan(crop.size.width * crop.size.height, image.size.width * image.size.height)
     }
 
     func testRemoveAndCopyStayInsideTheirRegions() throws {

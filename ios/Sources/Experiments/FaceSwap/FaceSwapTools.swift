@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 
 #if canImport(FoundationModels)
 import FoundationModels
@@ -46,9 +45,8 @@ struct FaceSwapModelChoice: Equatable, Sendable {
 
 /// Sizes the one-shot prompt for the 4096-token on-device window (TN3193).
 ///
-/// Tool schemas and the reply reserve stay out of the catalog. A preview is
-/// attached only when the remaining tokens can hold it. Overflow recovery
-/// starts a new session with a shorter catalog and no preview, because the
+/// Tool schemas and the reply reserve stay out of the catalog. Overflow
+/// recovery starts a new session with a shorter catalog, because the
 /// overflowing content is the first turn itself.
 enum FaceSwapModelBudget {
     static let toolsReserveTokens = 700
@@ -60,7 +58,7 @@ enum FaceSwapModelBudget {
     static let instructions = """
     You choose photo edits by calling tools. Use only listed region ids.
     Match clothing words to person color. A face with on= is that person's face.
-    Do not redraw the photo. Reply in one short sentence.
+    Do not redraw the photo. Then stop.
     """
 
     struct PromptPlan: Equatable {
@@ -142,7 +140,7 @@ enum FaceSwapModelLimits {
         if text.contains("guardrail") || text.contains("refusal") || text.contains("refused") {
             return FaceSwapModelLimitError.refused
         }
-        if text.contains("unsupportedlanguage") || text.contains("unsupported language") || text.contains("locale") {
+        if text.contains("unsupportedlanguage") || text.contains("unsupported language") {
             return FaceSwapModelLimitError.unsupportedLanguage
         }
         return error
@@ -220,17 +218,13 @@ private enum FaceSwapToolModel {
         regions: [FaceSwapRegion],
         raster: FaceSwapRaster
     ) async throws -> FaceSwapModelChoice {
-        let preview = FaceSwapImagePrompt.previewImage(
-            from: raster,
-            maxEdge: FaceSwapImagePrompt.modelPreviewLongEdge
-        )
         let window = windowTokens()
         let first = FaceSwapModelBudget.plan(
             request: request,
             regions: regions,
             canAttachImages: FaceSwapImagePromptSupport.canAttachImages,
-            hasPreview: preview != nil,
-            includeImage: true,
+            hasPreview: false,
+            includeImage: false,
             windowTokens: window
         )
         do {
@@ -238,7 +232,6 @@ private enum FaceSwapToolModel {
                 plan: first,
                 regions: regions,
                 raster: raster,
-                preview: preview,
                 instructions: FaceSwapModelBudget.instructions
             )
             if commands.isEmpty {
@@ -254,7 +247,6 @@ private enum FaceSwapToolModel {
                     plan: textOnly,
                     regions: regions,
                     raster: raster,
-                    preview: nil,
                     instructions: "Call one listed tool now. Then stop."
                 )
                 return FaceSwapModelChoice(commands: retryCommands, notes: [])
@@ -279,12 +271,11 @@ private enum FaceSwapToolModel {
                 plan: smaller,
                 regions: regions,
                 raster: raster,
-                preview: nil,
                 instructions: FaceSwapModelBudget.instructions
             )
             return FaceSwapModelChoice(
                 commands: commands,
-                notes: ["Context was full. Retried with a shorter prompt and no preview."]
+                notes: ["Context was full. Retried with a shorter catalog."]
             )
         } catch {
             if OnDeviceContextManager.isExceededContextWindow(error) {
@@ -298,7 +289,6 @@ private enum FaceSwapToolModel {
         plan: FaceSwapModelBudget.PromptPlan,
         regions: [FaceSwapRegion],
         raster: FaceSwapRaster,
-        preview: UIImage?,
         instructions: String
     ) async throws -> [FaceSwapCommand] {
         FaceSwapEditBoard.shared.begin(regions: regions, width: raster.width, height: raster.height)
@@ -307,29 +297,8 @@ private enum FaceSwapToolModel {
             instructions: instructions
         )
         session.prewarm()
-        if plan.attachPreview, let preview {
-            try await respondWithPreview(session: session, prompt: plan.prompt, preview: preview)
-        } else {
-            _ = try await session.respond(to: plan.prompt)
-        }
+        _ = try await session.respond(to: plan.prompt)
         return FaceSwapEditBoard.shared.finish()
-    }
-
-    private static func respondWithPreview(
-        session: LanguageModelSession,
-        prompt: String,
-        preview: UIImage
-    ) async throws {
-        #if compiler(>=6.3)
-        if #available(iOS 27.0, *) {
-            _ = try await session.respond {
-                prompt
-                Attachment(preview).label("photo")
-            }
-            return
-        }
-        #endif
-        _ = try await session.respond(to: prompt)
     }
 
     /// `contextSize` is on newer SDKs. Fall back to the documented 4096-token window.

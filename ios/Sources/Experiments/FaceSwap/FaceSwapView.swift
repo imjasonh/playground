@@ -1,7 +1,7 @@
 import PhotosUI
 import SwiftUI
 
-/// Pick a photo, describe a face edit, and compare the result with a pixel diff.
+/// Pick a photo, describe an edit, and compare the result with a pixel diff.
 struct FaceSwapView: View {
     @StateObject private var session = FaceSwapSession()
     @State private var photoItem: PhotosPickerItem?
@@ -34,13 +34,6 @@ struct FaceSwapView: View {
                     resultControls
                 }
 
-                if !session.modelReply.isEmpty {
-                    Text(session.modelReply)
-                        .font(.body)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .accessibilityIdentifier("faceSwapModelReply")
-                }
-
                 if !session.toolLog.isEmpty {
                     toolLog
                 }
@@ -68,13 +61,13 @@ struct FaceSwapView: View {
     private var modelBanner: some View {
         VStack(alignment: .leading, spacing: 4) {
             Label(
-                FaceSwapModelCopy.title(session.modelGate, canAttachImages: FaceSwapImagePromptSupport.canAttachImages),
+                FaceSwapModelCopy.title(session.modelGate),
                 systemImage: session.modelGate.isAvailable ? "checkmark.circle.fill" : "sparkles"
             )
             .font(.subheadline)
             .foregroundStyle(session.modelGate.isAvailable ? Color.green : Color.orange)
             if !session.modelGate.isAvailable {
-                Text(FaceSwapModelCopy.detail(session.modelGate, canAttachImages: FaceSwapImagePromptSupport.canAttachImages))
+                Text(FaceSwapModelCopy.detail(session.modelGate))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -103,10 +96,6 @@ struct FaceSwapView: View {
                 .accessibilityHidden(true)
             Text("No photo yet")
                 .font(.headline)
-            Text("Choose a photo, then describe the edit.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)

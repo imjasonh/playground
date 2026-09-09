@@ -52,25 +52,37 @@ enum FaceSwapRegions {
     }
 
     static func catalog(_ regions: [FaceSwapRegion], maxChars: Int = 900) -> String {
-        var lines = [
-            "Listed ids only. A tool cannot grow a region or touch pixels outside it."
-        ]
-        for region in regions.prefix(12) {
-            let bounds = FaceSwapOutlineValidation.boundsOf(region.points)
-            var line = "id=\(region.id) kind=\(region.kind.rawValue) place=\(region.place) color=\(region.colorName) "
-            line += String(format: "bounds=%.2f,%.2f %.2fx%.2f", bounds.minX, bounds.minY, bounds.width, bounds.height)
-            if let onID = region.onID {
-                line += " on=\(onID)"
-                if let person = regions.first(where: { $0.id == onID }) {
-                    line += " clothing=\(person.colorName)"
-                }
-            }
-            if region.mask == nil, region.kind == .person {
-                line += " shape=box"
-            }
-            lines.append(line)
+        let limit = max(1, maxChars)
+        let header = "Listed ids only. A tool cannot grow a region or touch pixels outside it."
+        if header.count > limit {
+            return AgentContextBudget.truncateToChars(header, maxChars: limit)
         }
-        return AgentContextBudget.truncateToChars(lines.joined(separator: "\n"), maxChars: max(1, maxChars))
+        var lines = [header]
+        var used = header.count
+        for region in regions.prefix(12) {
+            let line = catalogLine(region, regions: regions)
+            let extra = 1 + line.count
+            if used + extra > limit { break }
+            lines.append(line)
+            used += extra
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func catalogLine(_ region: FaceSwapRegion, regions: [FaceSwapRegion]) -> String {
+        let bounds = FaceSwapOutlineValidation.boundsOf(region.points)
+        var line = "id=\(region.id) kind=\(region.kind.rawValue) place=\(region.place) color=\(region.colorName) "
+        line += String(format: "bounds=%.2f,%.2f %.2fx%.2f", bounds.minX, bounds.minY, bounds.width, bounds.height)
+        if let onID = region.onID {
+            line += " on=\(onID)"
+            if let person = regions.first(where: { $0.id == onID }) {
+                line += " clothing=\(person.colorName)"
+            }
+        }
+        if region.mask == nil, region.kind == .person {
+            line += " shape=box"
+        }
+        return line
     }
 
     static func region(id: String, in regions: [FaceSwapRegion]) -> FaceSwapRegion? {

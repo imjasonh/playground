@@ -49,8 +49,8 @@ enum FaceSwapLandmarks {
         return trios
     }
 
-    /// Face-skin contours for the iOS 26 model. The model cannot see the photo,
-    /// so it chooses among these contours by id. Bounding boxes are not returned.
+    /// Face-skin contours for the model. The session does not send the photo.
+    /// The model chooses among these contours by id. This returns closed contours, not bounding boxes.
     static func candidates(raster: FaceSwapRaster) -> [FaceSwapCandidate] {
         guard let cgImage = raster.makeCGImage() else { return [] }
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])

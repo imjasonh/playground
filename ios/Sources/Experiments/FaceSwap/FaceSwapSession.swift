@@ -14,7 +14,6 @@ final class FaceSwapSession: ObservableObject {
     @Published var modelGate: AgentModelGate
     @Published var outlines: [FaceSwapOutline] = []
     @Published var toolLog: [String] = []
-    @Published var modelReply = ""
     @Published var isRunning = false
     @Published var viewMode: FaceSwapViewMode = .result
     @Published var resultImage: UIImage?
@@ -76,7 +75,6 @@ final class FaceSwapSession: ObservableObject {
         outlines = []
         lastStats = nil
         toolLog = []
-        modelReply = ""
         hasEditResult = false
         viewMode = .result
         shareURL = nil
@@ -98,7 +96,6 @@ final class FaceSwapSession: ObservableObject {
         outlines = []
         lastStats = nil
         toolLog = []
-        modelReply = ""
         hasEditResult = false
         viewMode = .result
         shareURL = nil
@@ -116,7 +113,6 @@ final class FaceSwapSession: ObservableObject {
             statusMessage = result.log.joined(separator: ". ") + ". "
                 + FaceSwapDiff.summary(original: original, edited: result.image)
                 + " 0 pixels outside the chosen regions changed."
-            modelReply = result.outlines.map(\.refersTo).filter { !$0.isEmpty }.joined(separator: ", ")
             hasEditResult = true
         } catch FaceSwapImageError.missingEditPlan {
             statusMessage = "The model did not choose an edit. No pixels changed."
@@ -132,7 +128,6 @@ final class FaceSwapSession: ObservableObject {
         outlines = []
         lastStats = nil
         toolLog = []
-        modelReply = ""
         hasEditResult = false
         viewMode = .result
         shareURL = nil
@@ -180,9 +175,9 @@ final class FaceSwapSession: ObservableObject {
             case .unavailable(.modelNotReady):
                 return .modelNotReady
             case .unavailable(let reason):
-                return .other("Apple Intelligence isn’t available (\(String(describing: reason))).")
+                return .other("Apple Intelligence isn't available (\(String(describing: reason))).")
             @unknown default:
-                return .other("Apple Intelligence isn’t available on this device.")
+                return .other("Apple Intelligence isn't available on this device.")
             }
         }
         #endif
@@ -196,7 +191,7 @@ struct FaceSwapOutlineFailure: LocalizedError {
 }
 
 enum FaceSwapModelCopy {
-    static func title(_ gate: AgentModelGate, canAttachImages _: Bool) -> String {
+    static func title(_ gate: AgentModelGate) -> String {
         switch gate {
         case .available:
             return "On-device model ready"
@@ -213,21 +208,18 @@ enum FaceSwapModelCopy {
         }
     }
 
-    static func detail(_ gate: AgentModelGate, canAttachImages: Bool) -> String {
+    static func detail(_ gate: AgentModelGate) -> String {
         switch gate {
         case .available:
-            if canAttachImages {
-                return "The model sees a small preview, then calls tools that write only inside named regions."
-            }
-            return "The model chooses tools from the regions in the photo. Each tool writes only inside those regions."
+            return "The session calls tools that write only inside named regions."
         case .needsAppleIntelligence:
-            return "Face Swap uses the on-device model to choose the faces. Turn on Apple Intelligence, then come back."
+            return "Turn on Apple Intelligence, then come back."
         case .modelNotReady:
             return "Apple Intelligence is on, but the on-device model is still downloading."
         case .deviceNotEligible:
-            return "This hardware doesn’t support Apple Intelligence, so Face Swap can’t choose faces here."
+            return "This iPhone doesn't support Apple Intelligence."
         case .unsupportedPlatform:
-            return "The model needs iOS 26 or later."
+            return "Face Swap needs iOS 26 or later."
         case .other(let reason):
             return reason
         }

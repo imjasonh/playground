@@ -14,8 +14,7 @@ struct FaceSwapOutline: Equatable, Identifiable, Sendable {
     var points: [CGPoint]
 
     var displayLine: String {
-        let phrase = refersTo.isEmpty ? role.rawValue : refersTo
-        return "\(phrase), \(role.rawValue), \(points.count) points"
+        refersTo.isEmpty ? id : refersTo
     }
 }
 
@@ -203,20 +202,6 @@ enum FaceSwapOutlineValidation {
         return mask
     }
 
-    static func promptBlock(_ outlines: [FaceSwapOutline]) -> String {
-        var lines = ["Face outlines, normalized, origin top-left, x and y from 0 to 1."]
-        for outline in outlines.prefix(2) {
-            let points = outline.points.prefix(maximumPoints).map { point in
-                String(format: "%.2f,%.2f", point.x, point.y)
-            }.joined(separator: " ")
-            let phrase = outline.refersTo.isEmpty ? outline.role.rawValue : outline.refersTo
-            lines.append("\(outline.role.rawValue) id=\(outline.id) refersTo=\(phrase) points=\(points)")
-        }
-        lines.append("applyRegionEdit reconstructs inside the destination outline. It cannot enlarge it.")
-        lines.append("tightenedDestination may shrink the skin contour. Points outside the destination outline are ignored.")
-        return AgentContextBudget.truncateToChars(lines.joined(separator: "\n"), maxChars: 900)
-    }
-
     private static func isBox(_ points: [CGPoint], bounds: CGRect) -> Bool {
         guard bounds.width > 0, bounds.height > 0 else { return false }
         let tolerance: CGFloat = 0.012
@@ -284,18 +269,5 @@ enum FaceSwapOutlineValidation {
             sum += points[index].x * next.y - next.x * points[index].y
         }
         return sum / 2
-    }
-}
-
-enum FaceSwapRoleParser {
-    static func role(from raw: String) -> FaceSwapOutline.Role? {
-        let text = raw.lowercased()
-        if text.contains("dest") || text.contains("target") || text.contains("onto") {
-            return .destination
-        }
-        if text.contains("source") || text.contains("from") {
-            return .source
-        }
-        return nil
     }
 }
