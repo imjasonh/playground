@@ -14,7 +14,7 @@ struct FaceSwapRegion: Equatable, Sendable {
     var kind: Kind
     var place: String
     var colorName: String
-    /// Closed contour for the overlay. The write mask can be tighter than this.
+    /// Closed contour used when no pixel mask is stored. The write mask can be tighter.
     var points: [CGPoint]
     /// Person pixels only. Nil means the polygon is the write region.
     var mask: [UInt8]?

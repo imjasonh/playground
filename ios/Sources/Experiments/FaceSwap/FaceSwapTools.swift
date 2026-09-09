@@ -12,10 +12,11 @@ enum FaceSwapToolSession {
             throw FaceSwapOutlineFailure(message: "No faces or people were found in that photo.")
         }
         let chosen = try await choose(request: request, regions: regions, raster: raster)
-        guard !chosen.commands.isEmpty else {
+        let commands = FaceSwapCommandPolicy.select(chosen.commands, request: request, regions: regions)
+        guard !commands.isEmpty else {
             throw FaceSwapImageError.missingEditPlan
         }
-        switch FaceSwapOperations.apply(commands: chosen.commands, regions: regions, original: raster) {
+        switch FaceSwapOperations.apply(commands: commands, regions: regions, original: raster) {
         case .success(var result):
             result.log.insert(contentsOf: chosen.notes, at: 0)
             return result
@@ -56,8 +57,11 @@ enum FaceSwapModelBudget {
     static let minimumCatalogChars = 180
     static let retryCatalogChars = 420
     static let instructions = """
-    You choose photo edits by calling tools. Use only listed region ids.
-    Match clothing words to person color. A face with on= is that person's face.
+    You choose photo edits by calling one tool. Use only listed ids.
+    Swap or onto: replaceFaces once. One destination face, unless they say every face.
+    Do not copy or remove for a face swap.
+    Remove only to erase. Copy only to duplicate.
+    Match clothing to person color. A face on= is that person.
     Do not redraw the photo. Then stop.
     """
 
@@ -316,7 +320,7 @@ private enum FaceSwapToolModel {
 @available(iOS 26.0, *)
 private struct FaceSwapRemoveRegionTool: Tool {
     let name = "removeRegion"
-    let description = "Erase one listed region. Pixels outside it stay unchanged."
+    let description = "Erase one listed silhouette. Not for swapping faces."
 
     @Generable
     struct Arguments {
@@ -332,7 +336,7 @@ private struct FaceSwapRemoveRegionTool: Tool {
 @available(iOS 26.0, *)
 private struct FaceSwapCopyRegionTool: Tool {
     let name = "copyRegion"
-    let description = "Add copies of one listed region. The original stays."
+    let description = "Duplicate one listed silhouette. Not for a face swap. The original stays."
 
     @Generable
     struct Arguments {
@@ -352,7 +356,7 @@ private struct FaceSwapCopyRegionTool: Tool {
 @available(iOS 26.0, *)
 private struct FaceSwapReplaceFacesTool: Tool {
     let name = "replaceFaces"
-    let description = "Copy one face onto other face ids, inside those contours only."
+    let description = "Put one face onto other face ids, inside those contours only. Use this to swap or place a face."
 
     @Generable
     struct Arguments {

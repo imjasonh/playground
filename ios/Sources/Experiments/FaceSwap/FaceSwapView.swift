@@ -16,9 +16,6 @@ struct FaceSwapView: View {
                     emptyState
                 } else {
                     photoWell
-                    if !session.outlines.isEmpty {
-                        outlineList
-                    }
                 }
 
                 promptField
@@ -34,9 +31,6 @@ struct FaceSwapView: View {
                     resultControls
                 }
 
-                if !session.toolLog.isEmpty {
-                    toolLog
-                }
             }
             .padding()
         }
@@ -114,58 +108,10 @@ struct FaceSwapView: View {
                         .scaledToFill()
                 }
             }
-            .overlay {
-                if session.viewMode != .diff {
-                    outlineOverlay
-                }
-            }
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(session.imageAccessibilityLabel)
             .accessibilityIdentifier("faceSwapResultImage")
-    }
-
-    private var outlineOverlay: some View {
-        GeometryReader { geo in
-            ForEach(session.outlines) { outline in
-                Path { path in
-                    guard let first = outline.points.first else { return }
-                    path.move(to: CGPoint(x: first.x * geo.size.width, y: first.y * geo.size.height))
-                    for point in outline.points.dropFirst() {
-                        path.addLine(to: CGPoint(x: point.x * geo.size.width, y: point.y * geo.size.height))
-                    }
-                    path.closeSubpath()
-                }
-                .stroke(outline.role == .destination ? Color.orange : Color.blue, lineWidth: outline.role == .destination ? 3 : 2)
-                if let first = outline.points.first {
-                    Text(outline.refersTo.isEmpty ? outline.role.rawValue : outline.refersTo)
-                        .font(.caption2)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(.thinMaterial, in: Capsule())
-                        .position(
-                            x: min(geo.size.width - 24, max(24, first.x * geo.size.width)),
-                            y: min(geo.size.height - 12, max(12, first.y * geo.size.height))
-                        )
-                }
-            }
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-    }
-
-    private var outlineList: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Chosen regions")
-                .font(.subheadline)
-            ForEach(session.outlines) { outline in
-                Text(outline.displayLine)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("faceSwapOutlineList")
     }
 
     private var promptField: some View {
@@ -225,18 +171,4 @@ struct FaceSwapView: View {
         }
     }
 
-    private var toolLog: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Tools")
-                .font(.subheadline)
-            ForEach(Array(session.toolLog.suffix(8).enumerated()), id: \.offset) { _, line in
-                Text(line)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityIdentifier("faceSwapToolLog")
-    }
 }
