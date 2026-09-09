@@ -6,7 +6,7 @@
 // pack in IndexedDB. Shareable URLs use ?pack=<stored id> and #<object oid> so
 // refresh restores the same pack and selection.
 
-import pako from "../vendor/pako/pako.esm.mjs";
+import * as pako from "../vendor/pako/pako.esm.mjs";
 import { makePakoInflate } from "./inflate.js";
 import { parsePack, resolveObjects } from "./pack.js";
 import { subtleComputeOid, subtleSha1Hex } from "./oid.js";

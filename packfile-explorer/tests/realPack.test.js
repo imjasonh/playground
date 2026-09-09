@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 
-import pako from "pako";
+import * as pako from "pako";
 import { parsePack, resolveObjects } from "../src/pack.js";
 import { makePakoInflate } from "../src/inflate.js";
 import { makeComputeOid } from "../src/oid.js";

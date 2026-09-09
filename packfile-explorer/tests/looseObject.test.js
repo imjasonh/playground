@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
-import pako from "pako";
+import * as pako from "pako";
 
 import { looseObjectBytes, looseObjectPath, loosePreimage } from "../src/looseObject.js";
 import { encodeUtf8, bytesToHex } from "../src/hex.js";
