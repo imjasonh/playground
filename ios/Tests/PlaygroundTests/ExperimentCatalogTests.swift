@@ -56,6 +56,10 @@ final class ExperimentCatalogTests: XCTestCase {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "doom-face" })
     }
 
+    func testIncludesFaceSwap() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "face-swap" })
+    }
+
     func testIncludesNFCTags() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "nfc-tags" })
     }

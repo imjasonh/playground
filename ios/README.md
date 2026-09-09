@@ -57,6 +57,7 @@ ios/
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
 | `doom-face` | Doom Face | Front camera + TrueDepth; stamp your face onto doomguy's sheet and export a GIF |
 | `nfc-tags` | NFC Tags | In-app Core NFC tag read/write (NDEF text/URL, blank NTAGs); needs NFC Tag Reading capability bootstrap |
+| `face-swap` | Face Swap | On-device model chooses targeted edits, then changes only the regions those tools name |
 
 ### Ride Monitor
 
@@ -348,6 +349,41 @@ second NFC session after you remove and re-present the tag. Success means the
 chip bytes matched, not only a same-session Core NFC soft view. Broader NFC
 Tools features (lock bits, more record types) can build on the same Tag Reader
 session.
+
+### Face Swap
+
+Face Swap asks the on-device model to choose the edits a request names, then
+calls tools that write only inside those regions. The model does not redraw
+the photo.
+
+The photo is indexed first: face-skin contours, and person regions with a
+clothing color such as blue. A face lists the person it sits on, so a request
+like "the man in the blue shirt" can match that person and that face. The
+model receives those ids and calls tools:
+
+- `removeRegion` erases one region by filling from nearby pixels.
+- `copyRegion` adds copies at new centers. The original stays. Four centers
+  leave five of that person. Only the new copies are written.
+- `replaceFaces` copies one face onto other face ids, inside those contours,
+  under each destination's light. It does not stamp a rectangle.
+
+A tool cannot grow a region or change a pixel outside it. The model only
+chooses which ids to pass. Reconstruction stays in app code, so the on-device
+model is not asked to invent a lighting recipe.
+
+The session is sized for the 4096-token window: short instructions, three
+tools, capped tool results, and a catalog that keeps whole lines up to the
+tokens left after those schemas. The current SDK cannot attach a photo, so
+the model matches the request to the listed ids and colors. If the window
+fills, the next try is a new session with a shorter catalog. A second overflow
+stops and asks for a shorter request.
+
+**Result** shows the edited photo with the chosen regions. **Diff** shows the
+original in gray and every changed pixel in red. Edit needs Apple Intelligence
+on iOS 26 or later.
+
+Choose a photo from the library. The working copy is scaled so the long edge is
+at most 1024 px.
 
 ## Adding an experiment
 
