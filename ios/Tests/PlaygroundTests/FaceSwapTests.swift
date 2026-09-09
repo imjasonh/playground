@@ -440,7 +440,11 @@ final class FaceSwapTests: XCTestCase {
             for x in 0..<original.width {
                 let sample = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
                 guard FaceSwapOutlineValidation.contains(sample, polygon: polygon) else { continue }
-                if original.rgb(x: x, y: y) != edited.rgb(x: x, y: y) { return true }
+                let before = original.rgb(x: x, y: y)
+                let after = edited.rgb(x: x, y: y)
+                if before?.0 != after?.0 || before?.1 != after?.1 || before?.2 != after?.2 {
+                    return true
+                }
             }
         }
         return false
