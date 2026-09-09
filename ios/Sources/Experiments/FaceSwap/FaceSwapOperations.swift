@@ -19,7 +19,8 @@ struct FaceSwapScriptResult: Equatable, Sendable {
 enum FaceSwapOperations {
     static let maximumCopies = 6
     static let maximumFaces = 8
-    static let maximumChangedFraction = 0.75
+    static let maximumChangedFraction = 0.45
+    static let maximumFaceChangedFraction = 0.25
 
     static func validate(_ command: FaceSwapCommand, regions: [FaceSwapRegion], width: Int, height: Int) -> String? {
         switch command {
@@ -33,6 +34,9 @@ enum FaceSwapOperations {
             }
             if FaceSwapRegions.fraction(mask) == 0 {
                 return "\(region.id) has an empty write region."
+            }
+            if let box = rectangleRefusal(region) {
+                return box
             }
             return nil
         case .copy(let sourceID, let centers):
@@ -50,6 +54,9 @@ enum FaceSwapOperations {
             let mask = FaceSwapRegions.writeMask(region, width: width, height: height, inset: 0)
             if FaceSwapRegions.fraction(mask) > FaceSwapRegions.maximumRegionFraction {
                 return "\(region.id) is too large to copy."
+            }
+            if let box = rectangleRefusal(region) {
+                return box
             }
             return nil
         case .replaceFaces(let sourceID, let destinationIDs, _):
@@ -96,7 +103,7 @@ enum FaceSwapOperations {
                 let mask = FaceSwapRegions.writeMask(region, width: original.width, height: original.height, inset: inset)
                 working = fillFromOutside(working, mask: mask)
                 merge(mask, into: &union)
-                outlines.append(region.outline(refersTo: "remove \(region.id)", role: .destination))
+                outlines.append(region.outline(refersTo: region.id, role: .destination))
                 log.append("removeRegion \(region.id)")
             case .copy(let sourceID, let centers):
                 guard let region = FaceSwapRegions.region(id: sourceID, in: regions) else {
@@ -136,7 +143,8 @@ enum FaceSwapOperations {
         }
         let changed = FaceSwapDiff.changedPixelCount(original: original, edited: working)
         let fraction = Double(changed) / Double(max(original.pixelCount, 1))
-        guard fraction <= maximumChangedFraction else {
+        let limit = commands.allSatisfy(isFaceEdit) ? maximumFaceChangedFraction : maximumChangedFraction
+        guard fraction <= limit else {
             return .failure("The edit changed too much of the photo. Nothing was kept.")
         }
         guard changed > 0 else {
@@ -157,15 +165,101 @@ enum FaceSwapOperations {
     }
 
     static func fillFromOutside(_ image: FaceSwapRaster, mask: [UInt8]) -> FaceSwapRaster {
-        var output = image.copy()
         let width = image.width
         let height = image.height
+        let count = width * height
+        guard count > 0, mask.count == count else { return image }
+        var source = [Int](repeating: -1, count: count)
+        var distance = [Int](repeating: 0, count: count)
+        var queue = [Int]()
+        queue.reserveCapacity(count / 8)
+        let neighbors = [(-1, 0), (1, 0), (0, -1), (0, 1)]
         for y in 0..<height {
             for x in 0..<width {
-                if mask[y * width + x] == 0 { continue }
-                guard let color = nearestOutsideColor(image, mask: mask, x: x, y: y) else { continue }
-                output.setRGB(x: x, y: y, red: color.0, green: color.1, blue: color.2)
+                let index = y * width + x
+                if mask[index] == 0 { continue }
+                var found = -1
+                for (ox, oy) in neighbors {
+                    let nx = x + ox
+                    let ny = y + oy
+                    guard nx >= 0, ny >= 0, nx < width, ny < height else { continue }
+                    let neighbor = ny * width + nx
+                    if mask[neighbor] == 0 {
+                        found = neighbor
+                        break
+                    }
+                }
+                if found >= 0 {
+                    source[index] = found
+                    distance[index] = 1
+                    queue.append(index)
+                }
             }
+        }
+        var head = 0
+        while head < queue.count {
+            let index = queue[head]
+            head += 1
+            let x = index % width
+            let y = index / width
+            let nextDistance = distance[index] + 1
+            for (ox, oy) in neighbors {
+                let nx = x + ox
+                let ny = y + oy
+                guard nx >= 0, ny >= 0, nx < width, ny < height else { continue }
+                let neighbor = ny * width + nx
+                if mask[neighbor] == 0 || source[neighbor] >= 0 { continue }
+                source[neighbor] = source[index]
+                distance[neighbor] = nextDistance
+                queue.append(neighbor)
+            }
+        }
+
+        var filled = image.copy()
+        for index in 0..<count {
+            let from = source[index]
+            guard from >= 0 else { continue }
+            let offset = index * 4
+            let sourceOffset = from * 4
+            filled.rgba[offset] = image.rgba[sourceOffset]
+            filled.rgba[offset + 1] = image.rgba[sourceOffset + 1]
+            filled.rgba[offset + 2] = image.rgba[sourceOffset + 2]
+        }
+        for _ in 0..<4 {
+            var next = filled
+            for index in queue where distance[index] > 2 {
+                let x = index % width
+                let y = index / width
+                var red = 0
+                var green = 0
+                var blue = 0
+                var samples = 0
+                for (ox, oy) in neighbors {
+                    let nx = x + ox
+                    let ny = y + oy
+                    guard nx >= 0, ny >= 0, nx < width, ny < height else { continue }
+                    let neighbor = ny * width + nx
+                    let offset = neighbor * 4
+                    red += Int(filled.rgba[offset])
+                    green += Int(filled.rgba[offset + 1])
+                    blue += Int(filled.rgba[offset + 2])
+                    samples += 1
+                }
+                guard samples > 0 else { continue }
+                let offset = index * 4
+                next.rgba[offset] = UInt8(red / samples)
+                next.rgba[offset + 1] = UInt8(green / samples)
+                next.rgba[offset + 2] = UInt8(blue / samples)
+            }
+            filled = next
+        }
+
+        var output = image.copy()
+        for index in 0..<count where mask[index] > 0 && source[index] >= 0 {
+            let offset = index * 4
+            output.rgba[offset] = filled.rgba[offset]
+            output.rgba[offset + 1] = filled.rgba[offset + 1]
+            output.rgba[offset + 2] = filled.rgba[offset + 2]
         }
         return output
     }
@@ -187,10 +281,6 @@ enum FaceSwapOperations {
             let dx = Int((center.x * CGFloat(width)).rounded()) - Int(centroid.x.rounded())
             let dy = Int((center.y * CGFloat(height)).rounded()) - Int(centroid.y.rounded())
             var landed = 0
-            var minX = width
-            var minY = height
-            var maxX = 0
-            var maxY = 0
             for y in 0..<height {
                 for x in 0..<width {
                     if sourceMask[y * width + x] == 0 { continue }
@@ -198,13 +288,20 @@ enum FaceSwapOperations {
                     let destY = y + dy
                     guard destX >= 0, destY >= 0, destX < width, destY < height else { continue }
                     guard let color = original.rgb(x: x, y: y) else { continue }
-                    output.setRGB(x: destX, y: destY, red: color.0, green: color.1, blue: color.2)
+                    let weight = copyWeight(mask: sourceMask, x: x, y: y, width: width, height: height)
+                    if let under = working.rgb(x: destX, y: destY), weight < 1 {
+                        output.setRGB(
+                            x: destX,
+                            y: destY,
+                            red: mix(color.0, under.0, weight),
+                            green: mix(color.1, under.1, weight),
+                            blue: mix(color.2, under.2, weight)
+                        )
+                    } else {
+                        output.setRGB(x: destX, y: destY, red: color.0, green: color.1, blue: color.2)
+                    }
                     writeMask[destY * width + destX] = 255
                     landed += 1
-                    minX = min(minX, destX)
-                    minY = min(minY, destY)
-                    maxX = max(maxX, destX)
-                    maxY = max(maxY, destY)
                 }
             }
             if landed > 0 {
@@ -212,15 +309,8 @@ enum FaceSwapOperations {
                     FaceSwapOutline(
                         id: "\(region.id)-copy-\(index + 1)",
                         role: .destination,
-                        refersTo: "copy of \(region.id)",
-                        points: boxPoints(
-                            minX: minX,
-                            minY: minY,
-                            maxX: maxX,
-                            maxY: maxY,
-                            width: width,
-                            height: height
-                        )
+                        refersTo: region.id,
+                        points: region.points
                     )
                 )
             }
@@ -282,71 +372,34 @@ enum FaceSwapOperations {
         return .success((current, writeMask, outlines))
     }
 
-    private static func nearestOutsideColor(
-        _ image: FaceSwapRaster,
-        mask: [UInt8],
-        x: Int,
-        y: Int
-    ) -> (UInt8, UInt8, UInt8)? {
-        let width = image.width
-        let height = image.height
-        var red = 0
-        var green = 0
-        var blue = 0
-        var count = 0
-        for radius in 1...48 {
-            let minY = max(0, y - radius)
-            let maxY = min(height - 1, y + radius)
-            let minX = max(0, x - radius)
-            let maxX = min(width - 1, x + radius)
-            if minY == y - radius {
-                for sampleX in minX...maxX {
-                    accumulate(image, mask: mask, x: sampleX, y: minY, red: &red, green: &green, blue: &blue, count: &count)
-                }
-            }
-            if maxY != minY, maxY == y + radius {
-                for sampleX in minX...maxX {
-                    accumulate(image, mask: mask, x: sampleX, y: maxY, red: &red, green: &green, blue: &blue, count: &count)
-                }
-            }
-            if minX == x - radius {
-                for sampleY in (minY + 1)..<maxY {
-                    accumulate(image, mask: mask, x: minX, y: sampleY, red: &red, green: &green, blue: &blue, count: &count)
-                }
-            }
-            if maxX != minX, maxX == x + radius {
-                for sampleY in (minY + 1)..<maxY {
-                    accumulate(image, mask: mask, x: maxX, y: sampleY, red: &red, green: &green, blue: &blue, count: &count)
-                }
-            }
-            if count > 0 {
-                return (
-                    UInt8(red / count),
-                    UInt8(green / count),
-                    UInt8(blue / count)
-                )
-            }
-        }
-        return nil
+    private static func rectangleRefusal(_ region: FaceSwapRegion) -> String? {
+        guard region.kind == .person, region.mask == nil else { return nil }
+        return "\(region.id) is a rectangle, not a person outline. Nothing was changed."
     }
 
-    private static func accumulate(
-        _ image: FaceSwapRaster,
-        mask: [UInt8],
-        x: Int,
-        y: Int,
-        red: inout Int,
-        green: inout Int,
-        blue: inout Int,
-        count: inout Int
-    ) {
-        let index = y * image.width + x
-        if mask[index] > 0 { return }
-        guard let color = image.rgb(x: x, y: y) else { return }
-        red += Int(color.0)
-        green += Int(color.1)
-        blue += Int(color.2)
-        count += 1
+    private static func isFaceEdit(_ command: FaceSwapCommand) -> Bool {
+        if case .replaceFaces = command { return true }
+        return false
+    }
+
+    private static func copyWeight(mask: [UInt8], x: Int, y: Int, width: Int, height: Int) -> Double {
+        let band = 3
+        var nearest = band
+        let minY = max(0, y - band)
+        let maxY = min(height - 1, y + band)
+        let minX = max(0, x - band)
+        let maxX = min(width - 1, x + band)
+        for sampleY in minY...maxY {
+            for sampleX in minX...maxX where mask[sampleY * width + sampleX] == 0 {
+                nearest = min(nearest, max(abs(sampleX - x), abs(sampleY - y)))
+            }
+        }
+        return min(1, Double(nearest) / Double(band))
+    }
+
+    private static func mix(_ edited: UInt8, _ original: UInt8, _ weight: Double) -> UInt8 {
+        let value = Double(edited) * weight + Double(original) * (1 - weight)
+        return UInt8(min(255, max(0, value.rounded())))
     }
 
     private static func centroid(of mask: [UInt8], width: Int, height: Int) -> CGPoint {
@@ -363,23 +416,6 @@ enum FaceSwapOperations {
         }
         guard count > 0 else { return CGPoint(x: CGFloat(width) / 2, y: CGFloat(height) / 2) }
         return CGPoint(x: sumX / count, y: sumY / count)
-    }
-
-    private static func boxPoints(minX: Int, minY: Int, maxX: Int, maxY: Int, width: Int, height: Int) -> [CGPoint] {
-        let left = min(1, max(0, CGFloat(minX) / CGFloat(max(width, 1))))
-        let top = min(1, max(0, CGFloat(minY) / CGFloat(max(height, 1))))
-        let right = min(1, max(0, CGFloat(maxX + 1) / CGFloat(max(width, 1))))
-        let bottom = min(1, max(0, CGFloat(maxY + 1) / CGFloat(max(height, 1))))
-        return [
-            CGPoint(x: left, y: top),
-            CGPoint(x: (left + right) / 2, y: top),
-            CGPoint(x: right, y: top),
-            CGPoint(x: right, y: (top + bottom) / 2),
-            CGPoint(x: right, y: bottom),
-            CGPoint(x: (left + right) / 2, y: bottom),
-            CGPoint(x: left, y: bottom),
-            CGPoint(x: left, y: (top + bottom) / 2),
-        ]
     }
 
     private static func merge(_ mask: [UInt8], into union: inout [UInt8]) {

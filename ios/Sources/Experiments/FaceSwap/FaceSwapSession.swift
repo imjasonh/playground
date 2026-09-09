@@ -110,9 +110,7 @@ final class FaceSwapSession: ObservableObject {
             lastStats = result.stats
             toolLog.append(FaceSwapDiff.summary(original: original, edited: result.image))
             toolLog.append("0 pixels outside the chosen regions changed.")
-            statusMessage = result.log.joined(separator: ". ") + ". "
-                + FaceSwapDiff.summary(original: original, edited: result.image)
-                + " 0 pixels outside the chosen regions changed."
+            statusMessage = FaceSwapDiff.summary(original: original, edited: result.image)
             hasEditResult = true
         } catch FaceSwapImageError.missingEditPlan {
             statusMessage = "The model did not choose an edit. No pixels changed."

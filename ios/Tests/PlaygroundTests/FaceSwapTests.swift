@@ -153,6 +153,64 @@ final class FaceSwapTests: XCTestCase {
         let huge = [UInt8](repeating: 255, count: size * size)
         let tooBig = region(id: "person-9", kind: .person, colorName: "blue", mask: huge, size: size)
         XCTAssertNotNil(FaceSwapOperations.validate(.remove(regionID: "person-9", inset: 0), regions: [tooBig], width: size, height: size))
+
+        var boxed = person
+        boxed.mask = nil
+        XCTAssertTrue(
+            FaceSwapOperations.validate(.remove(regionID: "person-1", inset: 0), regions: [boxed], width: size, height: size)?
+                .contains("rectangle") == true
+        )
+        XCTAssertTrue(
+            FaceSwapOperations.validate(.copy(sourceID: "person-1", centers: [CGPoint(x: 0.7, y: 0.7)]), regions: [boxed], width: size, height: size)?
+                .contains("rectangle") == true
+        )
+    }
+
+    func testFaceSwapRequestDoesNotAlsoCopyOrErase() {
+        let faces = [
+            faceRegion(FaceSwapOutline(id: "face-1", role: .source, refersTo: "", points: contour(center: CGPoint(x: 0.3, y: 0.4), radiusX: 0.08, radiusY: 0.1))),
+            faceRegion(FaceSwapOutline(id: "face-2", role: .destination, refersTo: "", points: contour(center: CGPoint(x: 0.7, y: 0.4), radiusX: 0.08, radiusY: 0.1))),
+            faceRegion(FaceSwapOutline(id: "face-3", role: .destination, refersTo: "", points: contour(center: CGPoint(x: 0.5, y: 0.8), radiusX: 0.08, radiusY: 0.1))),
+        ]
+        let kept = FaceSwapCommandPolicy.select(
+            [
+                .replaceFaces(sourceID: "face-2", destinationIDs: ["face-1", "face-3"], plan: .identity),
+                .copy(sourceID: "person-1", centers: [CGPoint(x: 0.2, y: 0.2), CGPoint(x: 0.8, y: 0.2)]),
+            ],
+            request: "Swap the man's face onto the woman's body",
+            regions: faces
+        )
+        XCTAssertEqual(kept.count, 1)
+        guard case .replaceFaces(let sourceID, let destinationIDs, _) = kept[0] else {
+            return XCTFail("Expected a face replacement")
+        }
+        XCTAssertEqual(sourceID, "face-2")
+        XCTAssertEqual(destinationIDs, ["face-1"])
+    }
+
+    func testSwapFacesExchangesTwoFacesInsteadOfRemovingThem() {
+        let faces = [
+            faceRegion(FaceSwapOutline(id: "face-1", role: .source, refersTo: "", points: contour(center: CGPoint(x: 0.3, y: 0.4), radiusX: 0.08, radiusY: 0.1))),
+            faceRegion(FaceSwapOutline(id: "face-2", role: .destination, refersTo: "", points: contour(center: CGPoint(x: 0.7, y: 0.4), radiusX: 0.08, radiusY: 0.1))),
+        ]
+        let kept = FaceSwapCommandPolicy.select(
+            [
+                .remove(regionID: "person-1", inset: 0),
+                .remove(regionID: "person-2", inset: 0),
+            ],
+            request: "Swap faces",
+            regions: faces
+        )
+        XCTAssertEqual(kept.count, 2)
+        guard case .replaceFaces(let firstSource, let firstDestinations, _) = kept[0],
+              case .replaceFaces(let secondSource, let secondDestinations, _) = kept[1]
+        else {
+            return XCTFail("Expected the two faces to be exchanged")
+        }
+        XCTAssertEqual(firstSource, "face-1")
+        XCTAssertEqual(firstDestinations, ["face-2"])
+        XCTAssertEqual(secondSource, "face-2")
+        XCTAssertEqual(secondDestinations, ["face-1"])
     }
 
     func testModelBudgetKeepsTheRequestAndSkipsAPreviewThatWillNotFit() {

@@ -57,7 +57,7 @@ ios/
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
 | `doom-face` | Doom Face | Front camera + TrueDepth; stamp your face onto doomguy's sheet and export a GIF |
 | `nfc-tags` | NFC Tags | In-app Core NFC tag read/write (NDEF text/URL, blank NTAGs); needs NFC Tag Reading capability bootstrap |
-| `face-swap` | Face Swap | On-device model chooses targeted edits, then changes only the regions those tools name |
+| `face-swap` | Face Swap | On-device model chooses a targeted edit. The rest of the photo stays as it was. |
 
 ### Ride Monitor
 
@@ -361,11 +361,14 @@ clothing color such as blue. A face lists the person it sits on, so a request
 like "the man in the blue shirt" can match that person and that face. The
 model receives those ids and calls tools:
 
-- `removeRegion` erases one region by filling from nearby pixels.
-- `copyRegion` adds copies at new centers. The original stays. Four centers
-  leave five of that person. Only the new copies are written.
-- `replaceFaces` copies one face onto other face ids, inside those contours,
-  under each destination's light. It does not stamp a rectangle.
+- `removeRegion` erases a person silhouette by extending nearby background
+  inward. A Vision rectangle is not a person outline, so that region is left
+  alone.
+- `copyRegion` adds copies of a person silhouette at new centers. The original
+  stays. Four centers leave five of that person. It does not paste a rectangle.
+- `replaceFaces` puts one face onto other face ids, inside those contours,
+  under each destination's light. A request to swap or place a face does not
+  also copy or erase the person.
 
 A tool cannot grow a region or change a pixel outside it. The model only
 chooses which ids to pass. Reconstruction stays in app code, so the on-device
@@ -378,9 +381,9 @@ the model matches the request to the listed ids and colors. If the window
 fills, the next try is a new session with a shorter catalog. A second overflow
 stops and asks for a shorter request.
 
-**Result** shows the edited photo with the chosen regions. **Diff** shows the
-original in gray and every changed pixel in red. Edit needs Apple Intelligence
-on iOS 26 or later.
+**Result** shows the edited photo. **Diff** shows the original in gray and
+every changed pixel in red. The photo is not drawn over with region boxes.
+Edit needs Apple Intelligence on iOS 26 or later.
 
 Choose a photo from the library. The working copy is scaled so the long edge is
 at most 1024 px.
