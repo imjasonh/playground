@@ -12,7 +12,11 @@ const build = join(root, 'node_modules', 'three', 'build');
 const vendor = join(root, 'vendor');
 
 mkdirSync(vendor, { recursive: true });
-for (const name of ['three.module.min.js', 'three.core.min.js']) {
-  copyFileSync(join(build, name), join(vendor, name));
-  console.log(`vendored ${name}`);
+for (const [fromName, toName] of [
+  ['three.module.js', 'three.module.min.js'],
+  ['three.core.js', 'three.core.min.js'],
+  ['three.core.js', 'three.core.js'],
+]) {
+  copyFileSync(join(build, fromName), join(vendor, toName));
+  console.log(`vendored ${toName}`);
 }

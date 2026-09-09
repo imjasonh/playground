@@ -5,7 +5,7 @@
 // thread posts `{ pack }` and gets back the parsed structure plus resolved
 // objects (Maps sent as entry arrays, rebuilt on the other side).
 
-import pako from "../vendor/pako/pako.esm.mjs";
+import * as pako from "../vendor/pako/pako.esm.mjs";
 import { makePakoInflate } from "./inflate.js";
 import { parsePack, resolveObjects } from "./pack.js";
 import { subtleComputeOid } from "./oid.js";
