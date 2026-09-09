@@ -109,8 +109,27 @@ struct FaceSwapView: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .contextMenu {
+                Button {
+                    Task { await session.saveToPhotos() }
+                } label: {
+                    Label("Save to Photos", systemImage: "square.and.arrow.down")
+                }
+                .accessibilityIdentifier("faceSwapSavePhoto")
+
+                if let shareURL = session.shareURL {
+                    ShareLink(item: shareURL) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    .accessibilityIdentifier("faceSwapShareImage")
+                }
+            }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(session.imageAccessibilityLabel)
+            .accessibilityAction(named: "Save to Photos") {
+                Task { await session.saveToPhotos() }
+            }
             .accessibilityIdentifier("faceSwapResultImage")
     }
 

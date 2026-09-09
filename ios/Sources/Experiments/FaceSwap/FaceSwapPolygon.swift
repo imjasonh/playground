@@ -41,12 +41,12 @@ struct FaceSwapEditPlan: Equatable, Sendable {
     var tightenedDestination: [CGPoint]
 
     static let identity = FaceSwapEditPlan(
-        fitPose: 0.4,
-        lightingMatch: 0.85,
-        colorMatch: 0.15,
-        detailTransfer: 0.25,
-        edgeBand: 0.14,
-        inset: 0.06,
+        fitPose: 1,
+        lightingMatch: 0.4,
+        colorMatch: 0,
+        detailTransfer: 1,
+        edgeBand: 0.04,
+        inset: 0.03,
         motive: "",
         tightenedDestination: []
     )
