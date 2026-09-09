@@ -16,6 +16,25 @@ enum FaceSwapViewMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// Failure text for `Result` values. `String` does not conform to `Error`.
+struct FaceSwapMessageError: Error, Equatable, LocalizedError, ExpressibleByStringInterpolation, Sendable {
+    var message: String
+
+    var errorDescription: String? { message }
+
+    init(_ message: String) {
+        self.message = message
+    }
+
+    init(stringLiteral value: String) {
+        self.message = value
+    }
+
+    init(stringInterpolation: DefaultStringInterpolation) {
+        self.message = String(stringInterpolation: stringInterpolation)
+    }
+}
+
 struct FaceSwapEditStats: Equatable, Sendable {
     var sourceID: String
     var destinationID: String

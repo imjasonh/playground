@@ -27,7 +27,7 @@ enum FaceSwapEditor {
         working: FaceSwapRaster,
         sourceLandmarks: FaceSwapLandmarkTrio?,
         destinationLandmarks: FaceSwapLandmarkTrio?
-    ) -> Result<FaceSwapPasteOutput, String> {
+    ) -> Result<FaceSwapPasteOutput, FaceSwapMessageError> {
         guard original.width == working.width, original.height == working.height, original.width > 0 else {
             return .failure("Source and working images differ in size.")
         }

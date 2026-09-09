@@ -11,8 +11,8 @@ final class FaceSwapTests: XCTestCase {
             XCTAssertEqual(prepared.source.role, .source)
             XCTAssertEqual(prepared.destination.role, .destination)
             XCTAssertEqual(prepared.source.refersTo, "the man's face")
-        case .failure(let message):
-            XCTFail(message)
+        case .failure(let error):
+            XCTFail(error.message)
         }
     }
 
@@ -264,8 +264,8 @@ final class FaceSwapTests: XCTestCase {
         switch FaceSwapOperations.apply(commands: commands, regions: regions, original: photo) {
         case .success(let result):
             return result
-        case .failure(let message):
-            XCTFail(message)
+        case .failure(let error):
+            XCTFail(error.message)
             return nil
         }
     }
@@ -367,8 +367,8 @@ final class FaceSwapTests: XCTestCase {
         ) {
         case .success(let output):
             return output
-        case .failure(let message):
-            XCTFail(message)
+        case .failure(let error):
+            XCTFail(error.message)
             return nil
         }
     }

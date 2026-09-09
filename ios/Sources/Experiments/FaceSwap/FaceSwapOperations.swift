@@ -76,7 +76,7 @@ enum FaceSwapOperations {
         commands: [FaceSwapCommand],
         regions: [FaceSwapRegion],
         original: FaceSwapRaster
-    ) -> Result<FaceSwapScriptResult, String> {
+    ) -> Result<FaceSwapScriptResult, FaceSwapMessageError> {
         guard !commands.isEmpty else {
             return .failure("The model did not choose an edit. No pixels changed.")
         }
@@ -86,7 +86,7 @@ enum FaceSwapOperations {
         var log: [String] = []
         for command in commands {
             if let error = validate(command, regions: regions, width: original.width, height: original.height) {
-                return .failure(error)
+                return .failure(FaceSwapMessageError(error))
             }
             switch command {
             case .remove(let regionID, let inset):
@@ -235,7 +235,7 @@ enum FaceSwapOperations {
         regions: [FaceSwapRegion],
         original: FaceSwapRaster,
         working: FaceSwapRaster
-    ) -> Result<(image: FaceSwapRaster, writeMask: [UInt8], outlines: [FaceSwapOutline]), String> {
+    ) -> Result<(image: FaceSwapRaster, writeMask: [UInt8], outlines: [FaceSwapOutline]), FaceSwapMessageError> {
         var current = working
         var writeMask = [UInt8](repeating: 0, count: original.pixelCount)
         var outlines: [FaceSwapOutline] = [

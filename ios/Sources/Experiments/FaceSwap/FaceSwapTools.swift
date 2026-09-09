@@ -19,8 +19,8 @@ enum FaceSwapToolSession {
         case .success(var result):
             result.log.insert(contentsOf: chosen.notes, at: 0)
             return result
-        case .failure(let message):
-            throw FaceSwapOutlineFailure(message: message)
+        case .failure(let error):
+            throw FaceSwapOutlineFailure(message: error.message)
         }
     }
 

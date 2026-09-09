@@ -75,7 +75,7 @@ enum FaceSwapOutlineValidation {
     static let minimumArea = 0.004
     static let maximumArea = 0.18
 
-    static func prepare(_ outlines: [FaceSwapOutline]) -> Result<(source: FaceSwapOutline, destination: FaceSwapOutline), String> {
+    static func prepare(_ outlines: [FaceSwapOutline]) -> Result<(source: FaceSwapOutline, destination: FaceSwapOutline), FaceSwapMessageError> {
         let limited = Array(outlines.prefix(2))
         guard limited.count == 2 else {
             return .failure("Need a source outline and a destination outline. Got \(outlines.count).")
@@ -93,8 +93,8 @@ enum FaceSwapOutlineValidation {
         guard let source, let destination else {
             return .failure("Each outline needs role source or destination.")
         }
-        if let error = check(source) { return .failure(error) }
-        if let error = check(destination) { return .failure(error) }
+        if let error = check(source) { return .failure(FaceSwapMessageError(error)) }
+        if let error = check(destination) { return .failure(FaceSwapMessageError(error)) }
         return .success((source, destination))
     }
 
