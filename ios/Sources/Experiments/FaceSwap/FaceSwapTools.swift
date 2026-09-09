@@ -93,6 +93,7 @@ private enum FaceSwapToolModel {
             instructions: """
             You edit a photo only by calling tools. Do not redraw the photo.
             Use only listed region ids. A tool cannot grow a region or change pixels outside it.
+            person color is clothing. A face with on= belongs to that person. Match "blue shirt" to color=blue, then use that face's id or the person's id.
             removeRegion erases one region by filling from nearby pixels.
             copyRegion adds copies at new centers. The original stays. Pass 4 centers to end up with 5.
             replaceFaces copies one face onto other face ids, inside those face contours only.

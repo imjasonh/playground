@@ -179,9 +179,17 @@ final class FaceSwapTests: XCTestCase {
         paint(&photo, mask: sourceMask, red: 30, green: 70, blue: 190)
         let person = region(id: "person-1", kind: .person, colorName: "blue", mask: sourceMask, size: size)
 
-        let catalog = FaceSwapRegions.catalog([person])
+        var face = faceRegion(FaceSwapOutline(
+            id: "face-1",
+            role: .source,
+            refersTo: "",
+            points: contour(center: CGPoint(x: 0.18, y: 0.22), radiusX: 0.06, radiusY: 0.08)
+        ))
+        face.onID = "person-1"
+        let catalog = FaceSwapRegions.catalog([person, face])
         XCTAssertTrue(catalog.contains("kind=person"))
         XCTAssertTrue(catalog.contains("color=blue"))
+        XCTAssertTrue(catalog.contains("on=person-1 clothing=blue"))
         XCTAssertTrue(catalog.contains("cannot grow"))
         XCTAssertEqual(FaceSwapRegions.colorName(sample: (30, 70, 190)), "blue")
 

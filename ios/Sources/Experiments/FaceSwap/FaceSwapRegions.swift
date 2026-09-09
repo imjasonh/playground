@@ -62,6 +62,9 @@ enum FaceSwapRegions {
             line += String(format: "bounds=%.2f,%.2f %.2fx%.2f", bounds.minX, bounds.minY, bounds.width, bounds.height)
             if let onID = region.onID {
                 line += " on=\(onID)"
+                if let person = regions.first(where: { $0.id == onID }) {
+                    line += " clothing=\(person.colorName)"
+                }
             }
             if region.mask == nil, region.kind == .person {
                 line += " shape=box"
@@ -242,12 +245,14 @@ enum FaceSwapRegions {
     }
 
     private static func shirtColor(raster: FaceSwapRaster, mask: [UInt8], box: CGRect) -> (Double, Double, Double) {
-        let shirtMaxY = box.minY + box.height * 0.55
+        // Skip the head so clothing color is the shirt, not skin.
+        let shirtMinY = box.minY + box.height * 0.22
+        let shirtMaxY = box.minY + box.height * 0.58
         var sums = (0.0, 0.0, 0.0)
         var count = 0
         for y in 0..<raster.height {
             let ny = (CGFloat(y) + 0.5) / CGFloat(raster.height)
-            if ny < box.minY || ny > shirtMaxY { continue }
+            if ny < shirtMinY || ny > shirtMaxY { continue }
             for x in stride(from: 0, to: raster.width, by: 2) {
                 if mask[y * raster.width + x] == 0 { continue }
                 guard let color = raster.rgb(x: x, y: y) else { continue }

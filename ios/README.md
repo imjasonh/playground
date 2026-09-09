@@ -356,8 +356,10 @@ Face Swap asks the on-device model to choose the edits a request names, then
 calls tools that write only inside those regions. The model does not redraw
 the photo.
 
-The photo is indexed first: face-skin contours, and person regions with a color
-cue such as blue. The model sees those ids and calls tools:
+The photo is indexed first: face-skin contours, and person regions with a
+clothing color such as blue. A face lists the person it sits on, so "the man
+in the blue shirt" can match that person and that face. The model sees those
+ids and calls tools:
 
 - `removeRegion` erases one region by filling from nearby pixels.
 - `copyRegion` adds copies at new centers. The original stays. Four centers
@@ -368,7 +370,8 @@ cue such as blue. The model sees those ids and calls tools:
 A tool cannot grow a region or change a pixel outside it. On iOS 26 the model
 cannot see the photo, so it matches the request to the listed ids and colors.
 When image input is available, a small preview is attached so the model can
-match what it sees to those same ids. The tools do not change.
+match what it sees to those same ids. The tools still only write inside the
+listed regions.
 
 **Result** shows the edited photo with the chosen regions. **Diff** shows the
 original in gray and every changed pixel in red. Edit needs Apple Intelligence
