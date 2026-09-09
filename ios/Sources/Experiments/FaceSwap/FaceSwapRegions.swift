@@ -51,10 +51,9 @@ enum FaceSwapRegions {
         return regions
     }
 
-    static func catalog(_ regions: [FaceSwapRegion]) -> String {
+    static func catalog(_ regions: [FaceSwapRegion], maxChars: Int = 900) -> String {
         var lines = [
-            "Regions already found. Tools may use these ids only. A tool cannot grow a region or touch pixels outside it.",
-            "kind=face is a skin contour. kind=person is that person's pixels, not the background around them."
+            "Listed ids only. A tool cannot grow a region or touch pixels outside it."
         ]
         for region in regions.prefix(12) {
             let bounds = FaceSwapOutlineValidation.boundsOf(region.points)
@@ -71,8 +70,7 @@ enum FaceSwapRegions {
             }
             lines.append(line)
         }
-        lines.append("removeRegion erases one region. copyRegion adds copies at new centers. replaceFaces copies one face onto other face ids.")
-        return AgentContextBudget.truncateToChars(lines.joined(separator: "\n"), maxChars: 1_200)
+        return AgentContextBudget.truncateToChars(lines.joined(separator: "\n"), maxChars: max(1, maxChars))
     }
 
     static func region(id: String, in regions: [FaceSwapRegion]) -> FaceSwapRegion? {

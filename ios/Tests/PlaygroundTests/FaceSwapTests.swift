@@ -192,6 +192,7 @@ final class FaceSwapTests: XCTestCase {
         XCTAssertTrue(catalog.contains("on=person-1 clothing=blue"))
         XCTAssertTrue(catalog.contains("cannot grow"))
         XCTAssertEqual(FaceSwapRegions.colorName(sample: (30, 70, 190)), "blue")
+        XCTAssertLessThanOrEqual(FaceSwapRegions.catalog([person, face], maxChars: 48).count, 48)
 
         let removed = try XCTUnwrap(applyScript([.remove(regionID: "person-1", inset: 0)], regions: [person], photo: photo))
         XCTAssertEqual(removed.stats.outsideMaskChanged, 0)
@@ -213,6 +214,66 @@ final class FaceSwapTests: XCTestCase {
         let huge = [UInt8](repeating: 255, count: size * size)
         let tooBig = region(id: "person-9", kind: .person, colorName: "blue", mask: huge, size: size)
         XCTAssertNotNil(FaceSwapOperations.validate(.remove(regionID: "person-9", inset: 0), regions: [tooBig], width: size, height: size))
+    }
+
+    func testModelBudgetKeepsTheRequestAndSkipsAPreviewThatWillNotFit() {
+        let person = region(
+            id: "person-1",
+            kind: .person,
+            colorName: "blue",
+            mask: [UInt8](repeating: 0, count: 16),
+            size: 4
+        )
+        let request = "Remove the man in the blue shirt"
+        let fitted = FaceSwapModelBudget.plan(
+            request: request,
+            regions: [person],
+            canAttachImages: true,
+            hasPreview: true,
+            includeImage: true
+        )
+        XCTAssertTrue(fitted.attachPreview)
+        XCTAssertTrue(fitted.prompt.contains(request))
+        XCTAssertTrue(fitted.prompt.contains("attached photo"))
+
+        let tight = FaceSwapModelBudget.plan(
+            request: request,
+            regions: [person],
+            canAttachImages: true,
+            hasPreview: true,
+            includeImage: true,
+            windowTokens: 2_200
+        )
+        XCTAssertFalse(tight.attachPreview)
+        XCTAssertTrue(tight.prompt.contains(request))
+        XCTAssertFalse(tight.prompt.contains("attached photo"))
+
+        let retry = FaceSwapModelBudget.plan(
+            request: String(repeating: "swap faces ", count: 40),
+            regions: [person],
+            canAttachImages: true,
+            hasPreview: true,
+            includeImage: false,
+            catalogCap: FaceSwapModelBudget.retryCatalogChars
+        )
+        XCTAssertFalse(retry.attachPreview)
+        XCTAssertTrue(retry.prompt.hasPrefix("swap faces"))
+        XCTAssertLessThanOrEqual(
+            retry.prompt.split(separator: "\n").first?.count ?? 0,
+            FaceSwapModelBudget.maxRequestChars
+        )
+
+        let overflow = NSError(
+            domain: "FoundationModels.LanguageModelSession.GenerationError",
+            code: -1,
+            userInfo: [
+                NSLocalizedDescriptionKey: "The operation couldn’t be completed. (FoundationModels.LanguageModelSession.GenerationError error -1.)",
+            ]
+        )
+        XCTAssertEqual(
+            FaceSwapModelLimits.failure(overflow) as? FaceSwapModelLimitError,
+            .contextExceeded
+        )
     }
 
     func testReplaceFacesWritesOnlyDestinationContours() throws {

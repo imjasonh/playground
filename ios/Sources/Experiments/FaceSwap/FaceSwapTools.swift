@@ -12,12 +12,13 @@ enum FaceSwapToolSession {
         guard !regions.isEmpty else {
             throw FaceSwapOutlineFailure(message: "No faces or people were found in that photo.")
         }
-        let commands = try await choose(request: request, regions: regions, raster: raster)
-        guard !commands.isEmpty else {
+        let chosen = try await choose(request: request, regions: regions, raster: raster)
+        guard !chosen.commands.isEmpty else {
             throw FaceSwapImageError.missingEditPlan
         }
-        switch FaceSwapOperations.apply(commands: commands, regions: regions, original: raster) {
-        case .success(let result):
+        switch FaceSwapOperations.apply(commands: chosen.commands, regions: regions, original: raster) {
+        case .success(var result):
+            result.log.insert(contentsOf: chosen.notes, at: 0)
             return result
         case .failure(let message):
             throw FaceSwapOutlineFailure(message: message)
@@ -28,7 +29,7 @@ enum FaceSwapToolSession {
         request: String,
         regions: [FaceSwapRegion],
         raster: FaceSwapRaster
-    ) async throws -> [FaceSwapCommand] {
+    ) async throws -> FaceSwapModelChoice {
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
             return try await FaceSwapToolModel.choose(request: request, regions: regions, raster: raster)
@@ -38,8 +39,136 @@ enum FaceSwapToolSession {
     }
 }
 
+struct FaceSwapModelChoice: Equatable, Sendable {
+    var commands: [FaceSwapCommand]
+    var notes: [String]
+}
+
+/// Sizes the one-shot prompt for the 4096-token on-device window (TN3193).
+///
+/// Tool schemas and the reply reserve stay out of the catalog. A preview is
+/// attached only when the remaining tokens can hold it. Overflow recovery
+/// starts a new session with a shorter catalog and no preview, because the
+/// overflowing content is the first turn itself.
+enum FaceSwapModelBudget {
+    static let toolsReserveTokens = 700
+    static let imageReserveTokens = 900
+    static let maxRequestChars = 280
+    static let maxCatalogChars = 900
+    static let minimumCatalogChars = 180
+    static let retryCatalogChars = 420
+    static let instructions = """
+    You choose photo edits by calling tools. Use only listed region ids.
+    Match clothing words to person color. A face with on= is that person's face.
+    Do not redraw the photo. Reply in one short sentence.
+    """
+
+    struct PromptPlan: Equatable {
+        var prompt: String
+        var attachPreview: Bool
+    }
+
+    static func plan(
+        request: String,
+        regions: [FaceSwapRegion],
+        canAttachImages: Bool,
+        hasPreview: Bool,
+        includeImage: Bool,
+        windowTokens: Int = AgentContextBudget.defaultWindowTokens,
+        catalogCap: Int = maxCatalogChars
+    ) -> PromptPlan {
+        let cappedRequest = AgentContextBudget.truncateToChars(
+            request.trimmingCharacters(in: .whitespacesAndNewlines),
+            maxChars: maxRequestChars
+        )
+        var attach = includeImage && canAttachImages && hasPreview
+        var available = availableCatalogChars(
+            request: cappedRequest,
+            attachPreview: attach,
+            windowTokens: windowTokens
+        )
+        if attach, available < minimumCatalogChars {
+            attach = false
+            available = availableCatalogChars(
+                request: cappedRequest,
+                attachPreview: false,
+                windowTokens: windowTokens
+            )
+        }
+        let catalogChars = min(catalogCap, max(minimumCatalogChars, available))
+        let catalog = FaceSwapRegions.catalog(regions, maxChars: catalogChars)
+        return PromptPlan(
+            prompt: promptText(request: cappedRequest, catalog: catalog, attachPreview: attach),
+            attachPreview: attach
+        )
+    }
+
+    /// Catalog characters that fit after instructions, tool schemas, the reply reserve, and an optional preview.
+    static func availableCatalogChars(
+        request: String,
+        attachPreview: Bool,
+        windowTokens: Int
+    ) -> Int {
+        let fixed = AgentContextBudget.estimateTokens(instructions)
+            + toolsReserveTokens
+            + AgentContextBudget.responseReserveTokens
+            + (attachPreview ? imageReserveTokens : 0)
+            + AgentContextBudget.estimateTokens(request)
+            + 48
+        let room = max(0, windowTokens - fixed)
+        return AgentContextBudget.maxChars(forTokens: room)
+    }
+
+    static func promptText(request: String, catalog: String, attachPreview: Bool) -> String {
+        let task = attachPreview
+            ? "Use the attached photo only to match listed ids. Call the tools this request needs, then stop."
+            : "Match listed ids. Call the tools this request needs, then stop."
+        return """
+        \(request)
+
+        \(catalog)
+
+        \(task)
+        """
+    }
+}
+
+enum FaceSwapModelLimits {
+    static func failure(_ error: Error) -> Error {
+        if OnDeviceContextManager.isExceededContextWindow(error) {
+            return FaceSwapModelLimitError.contextExceeded
+        }
+        let text = "\(error.localizedDescription) \(String(describing: error))".lowercased()
+        if text.contains("guardrail") || text.contains("refusal") || text.contains("refused") {
+            return FaceSwapModelLimitError.refused
+        }
+        if text.contains("unsupportedlanguage") || text.contains("unsupported language") || text.contains("locale") {
+            return FaceSwapModelLimitError.unsupportedLanguage
+        }
+        return error
+    }
+}
+
+enum FaceSwapModelLimitError: LocalizedError, Equatable {
+    case contextExceeded
+    case refused
+    case unsupportedLanguage
+
+    var errorDescription: String? {
+        switch self {
+        case .contextExceeded:
+            return "The on-device model ran out of context. Shorten the request and try again."
+        case .refused:
+            return "The on-device model refused that request. No pixels changed."
+        case .unsupportedLanguage:
+            return "The on-device model does not support that language. Try the request in English."
+        }
+    }
+}
+
 final class FaceSwapEditBoard: @unchecked Sendable {
     static let shared = FaceSwapEditBoard()
+    static let maximumCommands = 4
 
     private let lock = NSLock()
     private var regions: [FaceSwapRegion] = []
@@ -59,14 +188,14 @@ final class FaceSwapEditBoard: @unchecked Sendable {
     func record(_ command: FaceSwapCommand) -> String {
         lock.lock()
         defer { lock.unlock() }
-        if commands.count >= 8 {
-            return "Too many edits. Stop."
+        if commands.count >= Self.maximumCommands {
+            return capped("Stop. Enough edits.")
         }
         if let error = FaceSwapOperations.validate(command, regions: regions, width: width, height: height) {
-            return error
+            return capped(error)
         }
         commands.append(command)
-        return "Recorded. The write stays inside the named region."
+        return capped("Recorded.")
     }
 
     func finish() -> [FaceSwapCommand] {
@@ -77,6 +206,10 @@ final class FaceSwapEditBoard: @unchecked Sendable {
         regions = []
         return recorded
     }
+
+    private func capped(_ text: String) -> String {
+        AgentContextBudget.truncateToChars(text, maxChars: 160)
+    }
 }
 
 #if canImport(FoundationModels)
@@ -86,41 +219,100 @@ private enum FaceSwapToolModel {
         request: String,
         regions: [FaceSwapRegion],
         raster: FaceSwapRaster
+    ) async throws -> FaceSwapModelChoice {
+        let preview = FaceSwapImagePrompt.previewImage(
+            from: raster,
+            maxEdge: FaceSwapImagePrompt.modelPreviewLongEdge
+        )
+        let window = windowTokens()
+        let first = FaceSwapModelBudget.plan(
+            request: request,
+            regions: regions,
+            canAttachImages: FaceSwapImagePromptSupport.canAttachImages,
+            hasPreview: preview != nil,
+            includeImage: true,
+            windowTokens: window
+        )
+        do {
+            let commands = try await respond(
+                plan: first,
+                regions: regions,
+                raster: raster,
+                preview: preview,
+                instructions: FaceSwapModelBudget.instructions
+            )
+            if commands.isEmpty {
+                let textOnly = FaceSwapModelBudget.plan(
+                    request: request,
+                    regions: regions,
+                    canAttachImages: false,
+                    hasPreview: false,
+                    includeImage: false,
+                    windowTokens: window
+                )
+                let retryCommands = try await respond(
+                    plan: textOnly,
+                    regions: regions,
+                    raster: raster,
+                    preview: nil,
+                    instructions: "Call one listed tool now. Then stop."
+                )
+                return FaceSwapModelChoice(commands: retryCommands, notes: [])
+            }
+            return FaceSwapModelChoice(commands: commands, notes: [])
+        } catch {
+            guard OnDeviceContextManager.isExceededContextWindow(error) else {
+                throw FaceSwapModelLimits.failure(error)
+            }
+        }
+        let smaller = FaceSwapModelBudget.plan(
+            request: request,
+            regions: regions,
+            canAttachImages: false,
+            hasPreview: false,
+            includeImage: false,
+            windowTokens: window,
+            catalogCap: FaceSwapModelBudget.retryCatalogChars
+        )
+        do {
+            let commands = try await respond(
+                plan: smaller,
+                regions: regions,
+                raster: raster,
+                preview: nil,
+                instructions: FaceSwapModelBudget.instructions
+            )
+            return FaceSwapModelChoice(
+                commands: commands,
+                notes: ["Context was full. Retried with a shorter prompt and no preview."]
+            )
+        } catch {
+            if OnDeviceContextManager.isExceededContextWindow(error) {
+                throw FaceSwapModelLimitError.contextExceeded
+            }
+            throw FaceSwapModelLimits.failure(error)
+        }
+    }
+
+    private static func respond(
+        plan: FaceSwapModelBudget.PromptPlan,
+        regions: [FaceSwapRegion],
+        raster: FaceSwapRaster,
+        preview: UIImage?,
+        instructions: String
     ) async throws -> [FaceSwapCommand] {
         FaceSwapEditBoard.shared.begin(regions: regions, width: raster.width, height: raster.height)
         let session = LanguageModelSession(
             tools: [FaceSwapRemoveRegionTool(), FaceSwapCopyRegionTool(), FaceSwapReplaceFacesTool()],
-            instructions: """
-            You edit a photo only by calling tools. Do not redraw the photo.
-            Use only listed region ids. A tool cannot grow a region or change pixels outside it.
-            person color is clothing. A face with on= belongs to that person. Match "blue shirt" to color=blue, then use that face's id or the person's id.
-            removeRegion erases one region by filling from nearby pixels.
-            copyRegion adds copies at new centers. The original stays. Pass 4 centers to end up with 5.
-            replaceFaces copies one face onto other face ids, inside those face contours only.
-            Call the tools the request needs, then stop.
-            """
+            instructions: instructions
         )
-        let prompt = """
-        \(request)
-
-        \(FaceSwapRegions.catalog(regions))
-        """
-        if FaceSwapImagePromptSupport.canAttachImages, let preview = FaceSwapImagePrompt.previewImage(from: raster) {
-            try await respondWithPreview(session: session, prompt: prompt, preview: preview)
+        session.prewarm()
+        if plan.attachPreview, let preview {
+            try await respondWithPreview(session: session, prompt: plan.prompt, preview: preview)
         } else {
-            _ = try await session.respond(to: prompt)
+            _ = try await session.respond(to: plan.prompt)
         }
-        var commands = FaceSwapEditBoard.shared.finish()
-        if commands.isEmpty {
-            FaceSwapEditBoard.shared.begin(regions: regions, width: raster.width, height: raster.height)
-            let retry = LanguageModelSession(
-                tools: [FaceSwapRemoveRegionTool(), FaceSwapCopyRegionTool(), FaceSwapReplaceFacesTool()],
-                instructions: "Call one of the edit tools using a listed region id. Then stop."
-            )
-            _ = try await retry.respond(to: "\(request)\nNo tool was called. Call a tool now.\n\(FaceSwapRegions.catalog(regions))")
-            commands = FaceSwapEditBoard.shared.finish()
-        }
-        return commands
+        return FaceSwapEditBoard.shared.finish()
     }
 
     private static func respondWithPreview(
@@ -139,36 +331,46 @@ private enum FaceSwapToolModel {
         #endif
         _ = try await session.respond(to: prompt)
     }
+
+    /// `contextSize` is on newer SDKs. Fall back to the documented 4096-token window.
+    private static func windowTokens() -> Int {
+        let mirror = Mirror(reflecting: SystemLanguageModel.default)
+        for child in mirror.children {
+            if child.label == "contextSize", let value = child.value as? Int, value > 0 {
+                return value
+            }
+        }
+        return AgentContextBudget.defaultWindowTokens
+    }
 }
 
 @available(iOS 26.0, *)
 private struct FaceSwapRemoveRegionTool: Tool {
     let name = "removeRegion"
-    let description = "Erase one listed region by filling from nearby pixels. Does not change pixels outside that region."
+    let description = "Erase one listed region. Pixels outside it stay unchanged."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Region id from the list, such as person-1")
+        @Guide(description: "Listed id")
         var regionId: String
-        @Guide(description: "0 to 0.12. Shrinks the erased area. Cannot enlarge it")
-        var inset: Double
     }
 
     func call(arguments: Arguments) async throws -> String {
-        FaceSwapEditBoard.shared.record(.remove(regionID: arguments.regionId, inset: arguments.inset))
+        FaceSwapEditBoard.shared.record(.remove(regionID: arguments.regionId, inset: 0))
     }
 }
 
 @available(iOS 26.0, *)
 private struct FaceSwapCopyRegionTool: Tool {
     let name = "copyRegion"
-    let description = "Add copies of one listed region at new centers. The original stays. Only the new copies are written."
+    let description = "Add copies of one listed region. The original stays."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Region id to copy, such as person-1")
+        @Guide(description: "Listed id")
         var sourceId: String
-        @Guide(description: "1 to 6 new centers, normalized 0 to 1, origin top-left. For 5 total, pass 4 centers")
+        @Guide(.maximumCount(6))
+        @Guide(description: "New centers, 0 to 1, origin top-left. Four centers make five total")
         var centers: [FaceSwapCenterFM]
     }
 
@@ -181,46 +383,23 @@ private struct FaceSwapCopyRegionTool: Tool {
 @available(iOS 26.0, *)
 private struct FaceSwapReplaceFacesTool: Tool {
     let name = "replaceFaces"
-    let description = "Copy one face onto other face ids. Writes only inside those face contours. Does not copy a rectangle."
+    let description = "Copy one face onto other face ids, inside those contours only."
 
     @Generable
     struct Arguments {
-        @Guide(description: "Face id whose appearance is copied, such as face-1")
+        @Guide(description: "Face id to copy")
         var sourceFaceId: String
-        @Guide(description: "Face ids that change. Not the source id")
+        @Guide(.minimumCount(1), .maximumCount(8))
+        @Guide(description: "Face ids that change")
         var destinationFaceIds: [String]
-        @Guide(description: "0 to 1. Reshape onto each destination pose")
-        var fitPose: Double
-        @Guide(description: "0.35 to 1. Place source color under destination light")
-        var lightingMatch: Double
-        @Guide(description: "0 to 1. Pull color toward each destination face")
-        var colorMatch: Double
-        @Guide(description: "0 to 1. Add source texture after relighting")
-        var detailTransfer: Double
-        @Guide(description: "0.02 to 0.16. Inward seam width")
-        var edgeBand: Double
-        @Guide(description: "0 to 0.12. Shrinks each write contour")
-        var inset: Double
-        @Guide(description: "One short reason this matches the request")
-        var motive: String
     }
 
     func call(arguments: Arguments) async throws -> String {
-        let plan = FaceSwapEditPlan(
-            fitPose: arguments.fitPose,
-            lightingMatch: arguments.lightingMatch,
-            colorMatch: arguments.colorMatch,
-            detailTransfer: arguments.detailTransfer,
-            edgeBand: arguments.edgeBand,
-            inset: arguments.inset,
-            motive: arguments.motive,
-            tightenedDestination: []
-        ).clamped()
         return FaceSwapEditBoard.shared.record(
             .replaceFaces(
                 sourceID: arguments.sourceFaceId,
                 destinationIDs: Array(arguments.destinationFaceIds.prefix(FaceSwapOperations.maximumFaces)),
-                plan: plan
+                plan: FaceSwapEditPlan.identity.clamped()
             )
         )
     }
@@ -229,9 +408,7 @@ private struct FaceSwapReplaceFacesTool: Tool {
 @available(iOS 26.0, *)
 @Generable
 private struct FaceSwapCenterFM {
-    @Guide(description: "0 to 1, origin left")
     var x: Double
-    @Guide(description: "0 to 1, origin top")
     var y: Double
 }
 #endif

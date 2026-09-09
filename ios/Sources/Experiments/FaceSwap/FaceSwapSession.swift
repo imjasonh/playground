@@ -26,7 +26,6 @@ final class FaceSwapSession: ObservableObject {
 
     private var originalRaster: FaceSwapRaster?
     private var workingRaster: FaceSwapRaster?
-    private var didRetryOutline = false
 
     var shownImage: UIImage? {
         if viewMode == .diff, let diffImage {
@@ -102,7 +101,6 @@ final class FaceSwapSession: ObservableObject {
         modelReply = ""
         hasEditResult = false
         viewMode = .result
-        didRetryOutline = false
         shareURL = nil
         publishDisplay()
 
@@ -123,26 +121,7 @@ final class FaceSwapSession: ObservableObject {
         } catch FaceSwapImageError.missingEditPlan {
             statusMessage = "The model did not choose an edit. No pixels changed."
         } catch {
-            if isContextOverflow(error), !didRetryOutline {
-                didRetryOutline = true
-                toolLog.append("Context was full. Started a new session and retrying.")
-                workingRaster = original
-                do {
-                    let result = try await FaceSwapToolSession.run(request: prompt, raster: original)
-                    outlines = result.outlines
-                    toolLog.append(contentsOf: result.log)
-                    workingRaster = result.image
-                    lastStats = result.stats
-                    statusMessage = result.log.joined(separator: ". ") + ". "
-                        + FaceSwapDiff.summary(original: original, edited: result.image)
-                        + " 0 pixels outside the chosen regions changed."
-                    hasEditResult = true
-                } catch {
-                    statusMessage = error.localizedDescription
-                }
-            } else {
-                statusMessage = error.localizedDescription
-            }
+            statusMessage = FaceSwapModelLimits.failure(error).localizedDescription
         }
         publishDisplay()
         writeShareFile()
@@ -186,10 +165,6 @@ final class FaceSwapSession: ObservableObject {
         } catch {
             shareURL = nil
         }
-    }
-
-    private func isContextOverflow(_ error: Error) -> Bool {
-        OnDeviceContextManager.isExceededContextWindow(error)
     }
 
     private static func readGate() -> AgentModelGate {
