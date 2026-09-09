@@ -172,6 +172,72 @@ final class FaceSwapTests: XCTestCase {
         XCTAssertLessThan(crop.size.width * crop.size.height, image.size.width * image.size.height)
     }
 
+    func testRemoveAndCopyStayInsideTheirRegions() throws {
+        let size = 48
+        var photo = FaceSwapRaster.solid(width: size, height: size, red: 20, green: 140, blue: 40)
+        let sourceMask = maskRect(x: 4, y: 8, width: 10, height: 12, imageWidth: size, imageHeight: size)
+        paint(&photo, mask: sourceMask, red: 30, green: 70, blue: 190)
+        let person = region(id: "person-1", kind: .person, colorName: "blue", mask: sourceMask, size: size)
+
+        let catalog = FaceSwapRegions.catalog([person])
+        XCTAssertTrue(catalog.contains("kind=person"))
+        XCTAssertTrue(catalog.contains("color=blue"))
+        XCTAssertTrue(catalog.contains("cannot grow"))
+        XCTAssertEqual(FaceSwapRegions.colorName(sample: (30, 70, 190)), "blue")
+
+        let removed = try XCTUnwrap(applyScript([.remove(regionID: "person-1", inset: 0)], regions: [person], photo: photo))
+        XCTAssertEqual(removed.stats.outsideMaskChanged, 0)
+        assertUnchanged(original: photo, edited: removed.image, outside: sourceMask)
+        let hole = removed.image.rgb(x: 8, y: 12)
+        XCTAssertGreaterThan(Int(hole?.1 ?? 0), Int(hole?.2 ?? 255))
+
+        let copied = try XCTUnwrap(applyScript(
+            [.copy(sourceID: "person-1", centers: [CGPoint(x: 0.75, y: 0.55)])],
+            regions: [person],
+            photo: photo
+        ))
+        XCTAssertEqual(copied.stats.outsideMaskChanged, 0)
+        XCTAssertEqual(photo.rgb(x: 8, y: 12)?.2, copied.image.rgb(x: 8, y: 12)?.2)
+        XCTAssertEqual(copied.image.rgb(x: 1, y: 1)?.1, photo.rgb(x: 1, y: 1)?.1)
+        XCTAssertGreaterThan(copied.stats.changedFromOriginal, 0)
+        XCTAssertLessThan(copied.stats.percentChanged, 75)
+
+        let huge = [UInt8](repeating: 255, count: size * size)
+        let tooBig = region(id: "person-9", kind: .person, colorName: "blue", mask: huge, size: size)
+        XCTAssertNotNil(FaceSwapOperations.validate(.remove(regionID: "person-9", inset: 0), regions: [tooBig], width: size, height: size))
+    }
+
+    func testReplaceFacesWritesOnlyDestinationContours() throws {
+        let size = 96
+        var photo = FaceSwapRaster.solid(width: size, height: size, red: 20, green: 120, blue: 40)
+        let pair = facePair()
+        paint(&photo, outline: pair.source, red: 220, green: 180, blue: 40)
+        paint(&photo, outline: pair.destination, red: 40, green: 50, blue: 90)
+        let other = FaceSwapOutline(
+            id: "face-3",
+            role: .destination,
+            refersTo: "another face",
+            points: contour(center: CGPoint(x: 0.48, y: 0.78), radiusX: 0.08, radiusY: 0.10)
+        )
+        paint(&photo, outline: other, red: 180, green: 60, blue: 50)
+        let regions = [
+            faceRegion(pair.source),
+            faceRegion(pair.destination),
+            faceRegion(other),
+        ]
+        let plan = recipe(lightingMatch: 1, colorMatch: 0, detailTransfer: 0)
+        let edited = try XCTUnwrap(applyScript(
+            [.replaceFaces(sourceID: pair.source.id, destinationIDs: [pair.destination.id, other.id], plan: plan)],
+            regions: regions,
+            photo: photo
+        ))
+        XCTAssertEqual(edited.stats.outsideMaskChanged, 0)
+        assertUnchangedOutside(original: photo, edited: edited.image, outline: pair.destination)
+        let outsideBoth = photo.rgb(x: 2, y: 2)
+        XCTAssertEqual(outsideBoth?.0, edited.image.rgb(x: 2, y: 2)?.0)
+        XCTAssertTrue(edited.log.contains { $0.contains("replaceFaces") })
+    }
+
     func testDiffHighlightsOnlyChangedPixels() {
         var original = FaceSwapRaster.solid(width: 4, height: 2, red: 10, green: 10, blue: 10)
         var edited = original
@@ -180,6 +246,88 @@ final class FaceSwapTests: XCTestCase {
         XCTAssertEqual(highlight.rgb(x: 1, y: 0)?.0, 220)
         XCTAssertEqual(highlight.rgb(x: 0, y: 0)?.0, highlight.rgb(x: 0, y: 0)?.1)
         XCTAssertNotEqual(highlight.rgb(x: 0, y: 0)?.0, 220)
+    }
+
+    private func applyScript(
+        _ commands: [FaceSwapCommand],
+        regions: [FaceSwapRegion],
+        photo: FaceSwapRaster
+    ) -> FaceSwapScriptResult? {
+        switch FaceSwapOperations.apply(commands: commands, regions: regions, original: photo) {
+        case .success(let result):
+            return result
+        case .failure(let message):
+            XCTFail(message)
+            return nil
+        }
+    }
+
+    private func region(
+        id: String,
+        kind: FaceSwapRegion.Kind,
+        colorName: String,
+        mask: [UInt8],
+        size: Int
+    ) -> FaceSwapRegion {
+        FaceSwapRegion(
+            id: id,
+            kind: kind,
+            place: "left, middle",
+            colorName: colorName,
+            points: [
+                CGPoint(x: 0.08, y: 0.16),
+                CGPoint(x: 0.16, y: 0.16),
+                CGPoint(x: 0.29, y: 0.16),
+                CGPoint(x: 0.29, y: 0.30),
+                CGPoint(x: 0.29, y: 0.42),
+                CGPoint(x: 0.16, y: 0.42),
+                CGPoint(x: 0.08, y: 0.42),
+                CGPoint(x: 0.08, y: 0.30),
+            ],
+            mask: mask,
+            onID: nil
+        )
+    }
+
+    private func faceRegion(_ outline: FaceSwapOutline) -> FaceSwapRegion {
+        FaceSwapRegion(
+            id: outline.id,
+            kind: .face,
+            place: "center, middle",
+            colorName: "tan",
+            points: outline.points,
+            mask: nil,
+            onID: nil
+        )
+    }
+
+    private func maskRect(x: Int, y: Int, width: Int, height: Int, imageWidth: Int, imageHeight: Int) -> [UInt8] {
+        var mask = [UInt8](repeating: 0, count: imageWidth * imageHeight)
+        for row in y..<(y + height) {
+            for column in x..<(x + width) {
+                mask[row * imageWidth + column] = 255
+            }
+        }
+        return mask
+    }
+
+    private func paint(_ raster: inout FaceSwapRaster, mask: [UInt8], red: UInt8, green: UInt8, blue: UInt8) {
+        for y in 0..<raster.height {
+            for x in 0..<raster.width where mask[y * raster.width + x] > 0 {
+                raster.setRGB(x: x, y: y, red: red, green: green, blue: blue)
+            }
+        }
+    }
+
+    private func assertUnchanged(original: FaceSwapRaster, edited: FaceSwapRaster, outside mask: [UInt8]) {
+        for y in 0..<original.height {
+            for x in 0..<original.width {
+                if mask[y * original.width + x] > 0 { continue }
+                XCTAssertEqual(original.rgb(x: x, y: y)?.0, edited.rgb(x: x, y: y)?.0)
+                XCTAssertEqual(original.rgb(x: x, y: y)?.1, edited.rgb(x: x, y: y)?.1)
+                XCTAssertEqual(original.rgb(x: x, y: y)?.2, edited.rgb(x: x, y: y)?.2)
+            }
+        }
     }
 
     private func recipe(lightingMatch: Double, colorMatch: Double, detailTransfer: Double) -> FaceSwapEditPlan {

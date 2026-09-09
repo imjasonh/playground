@@ -167,7 +167,7 @@ struct FaceSwapView: View {
 
     private var outlineList: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Model outlines")
+            Text("Chosen regions")
                 .font(.subheadline)
             ForEach(session.outlines) { outline in
                 Text(outline.displayLine)

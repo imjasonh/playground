@@ -57,7 +57,7 @@ ios/
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
 | `doom-face` | Doom Face | Front camera + TrueDepth; stamp your face onto doomguy's sheet and export a GIF |
 | `nfc-tags` | NFC Tags | In-app Core NFC tag read/write (NDEF text/URL, blank NTAGs); needs NFC Tag Reading capability bootstrap |
-| `face-swap` | Face Swap | On-device model chooses face contours, then reconstructs only inside them |
+| `face-swap` | Face Swap | On-device model chooses targeted edits, then changes only the regions those tools name |
 
 ### Ride Monitor
 
@@ -352,30 +352,27 @@ session.
 
 ### Face Swap
 
-Face Swap asks the on-device model to choose the faces a request names, then to
-choose how to reconstruct only inside the destination outline. The model does
-not redraw the photo, and it does not copy a rectangle of the source face.
+Face Swap asks the on-device model to choose the edits a request names, then
+calls tools that write only inside those regions. The model does not redraw
+the photo.
 
-On iOS 26 the model cannot see the photo. Face-skin contours are read from the
-photo first, as closed jaw-and-forehead outlines, not boxes. The model receives
-those coordinates and picks the source and destination ids, plus a reconstruction
-recipe. It cannot invent a new outline.
+The photo is indexed first: face-skin contours, and person regions with a color
+cue such as blue. The model sees those ids and calls tools:
 
-When the on-device model can take image input (iOS 27 or later), a first session
-sees a small preview and traces the contours itself. A second session sees only
-those two face crops, plus the contour coordinates, and calls `applyRegionEdit`.
+- `removeRegion` erases one region by filling from nearby pixels.
+- `copyRegion` adds copies at new centers. The original stays. Four centers
+  leave five of that person. Only the new copies are written.
+- `replaceFaces` copies one face onto other face ids, inside those contours,
+  under each destination's light. It does not stamp a rectangle.
 
-The recipe is pose fit, destination lighting, color match, a little source
-texture, and an inward seam. The write region can shrink. It cannot grow. A
-tighter contour is kept only when every point stays inside the traced destination
-face.
+A tool cannot grow a region or change a pixel outside it. On iOS 26 the model
+cannot see the photo, so it matches the request to the listed ids and colors.
+When image input is available, a small preview is attached so the model can
+match what it sees to those same ids. The tools do not change.
 
-The compositor places source color under the destination light and feathers
-inward. Pixels outside the write polygon stay identical to the photo you picked.
-
-**Result** shows the edited photo with the outlines. **Diff** shows the
+**Result** shows the edited photo with the chosen regions. **Diff** shows the
 original in gray and every changed pixel in red. Edit needs Apple Intelligence
-on iOS 26 or later. There is no rectangle-copy fallback.
+on iOS 26 or later.
 
 Choose a photo from the library. The working copy is scaled so the long edge is
 at most 1024 px. The outline preview attached to the model is smaller still.

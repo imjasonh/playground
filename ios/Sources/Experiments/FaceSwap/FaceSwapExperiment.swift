@@ -5,7 +5,7 @@ enum FaceSwapExperiment {
     static let experiment = Experiment(
         id: "face-swap",
         title: "Face Swap",
-        summary: "On-device model chooses face contours, then reconstructs only inside them.",
+        summary: "On-device model chooses targeted edits, then changes only the regions those tools name.",
         icon: "person.crop.rectangle"
     ) {
         FaceSwapView()
