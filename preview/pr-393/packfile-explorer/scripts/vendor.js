@@ -10,7 +10,7 @@ const root = join(here, "..");
 
 const sources = [
   {
-    from: join(root, "node_modules", "pako", "dist", "pako.esm.mjs"),
+    from: join(root, "node_modules", "pako", "dist", "pako.mjs"),
     to: join(root, "vendor", "pako", "pako.esm.mjs"),
   },
 ];
