@@ -40,7 +40,7 @@ final class FaceSwapSession: ObservableObject {
     }
 
     var canEdit: Bool {
-        guard !isRunning, originalRaster != nil, canUseImageModel else { return false }
+        guard !isRunning, originalRaster != nil, modelGate.isAvailable else { return false }
         return !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -111,15 +111,17 @@ final class FaceSwapSession: ObservableObject {
         publishDisplay()
 
         do {
-            statusMessage = "Tracing face outlines…"
-            let traced = try await traceOutlines(request: prompt, raster: original)
-            outlines = traced
-            toolLog.append(contentsOf: traced.map { "outline \($0.displayLine)" })
-            statusMessage = "Choosing the edit inside those outlines…"
-            let plan = try await choosePlan(request: prompt, outlines: traced, raster: original)
-            try apply(plan: plan, outlines: traced, original: original)
-        } catch FaceSwapImageError.imageInputUnavailable {
-            statusMessage = FaceSwapModelCopy.detail(modelGate, canAttachImages: false)
+            if FaceSwapImagePromptSupport.canAttachImages {
+                try await editFromImage(request: prompt, raster: original)
+            } else {
+                try await editFromContours(request: prompt, raster: original)
+            }
+        } catch FaceSwapImageError.imageInputUnavailable where FaceSwapImagePromptSupport.canAttachImages {
+            do {
+                try await editFromContours(request: prompt, raster: original)
+            } catch {
+                statusMessage = error.localizedDescription
+            }
         } catch FaceSwapImageError.emptyOutlines {
             statusMessage = "The model did not return face outlines."
         } catch FaceSwapImageError.missingEditPlan {
@@ -130,10 +132,11 @@ final class FaceSwapSession: ObservableObject {
                 toolLog.append("Context was full. Started a new session and retrying.")
                 workingRaster = original
                 do {
-                    let traced = try await traceOutlines(request: prompt, raster: original)
-                    outlines = traced
-                    let plan = try await choosePlan(request: prompt, outlines: traced, raster: original)
-                    try apply(plan: plan, outlines: traced, original: original)
+                    if FaceSwapImagePromptSupport.canAttachImages {
+                        try await editFromImage(request: prompt, raster: original)
+                    } else {
+                        try await editFromContours(request: prompt, raster: original)
+                    }
                 } catch {
                     statusMessage = error.localizedDescription
                 }
@@ -156,6 +159,40 @@ final class FaceSwapSession: ObservableObject {
         shareURL = nil
         statusMessage = "Reverted to the original photo."
         publishDisplay()
+    }
+
+    private func editFromImage(request: String, raster: FaceSwapRaster) async throws {
+        statusMessage = "Tracing face outlines…"
+        let traced = try await traceOutlines(request: request, raster: raster)
+        outlines = traced
+        toolLog.append(contentsOf: traced.map { "outline \($0.displayLine)" })
+        statusMessage = "Choosing the edit inside those outlines…"
+        let plan = try await choosePlan(request: request, outlines: traced, raster: raster)
+        try apply(plan: plan, outlines: traced, original: raster)
+    }
+
+    private func editFromContours(request: String, raster: FaceSwapRaster) async throws {
+        statusMessage = "Reading face contours…"
+        let decision = try await FaceSwapTextPrompt.decide(request: request, raster: raster)
+        outlines = decision.outlines
+        toolLog.append("iOS 26 contours. The model chose among traced faces. It did not see the photo.")
+        toolLog.append(contentsOf: decision.outlines.map { "outline \($0.displayLine)" })
+        let recipe = decision.plan.clamped()
+        var line = String(
+            format: "assignFaces fit=%.2f light=%.2f color=%.2f detail=%.2f edge=%.2f inset=%.2f",
+            recipe.fitPose,
+            recipe.lightingMatch,
+            recipe.colorMatch,
+            recipe.detailTransfer,
+            recipe.edgeBand,
+            recipe.inset
+        )
+        if !recipe.motive.isEmpty {
+            line += " — \(recipe.motive)"
+        }
+        toolLog.append(line)
+        statusMessage = "Reconstructing inside the chosen contour…"
+        try apply(plan: decision.plan, outlines: decision.outlines, original: raster)
     }
 
     private func traceOutlines(request: String, raster: FaceSwapRaster) async throws -> [FaceSwapOutline] {
@@ -314,16 +351,13 @@ final class FaceSwapSession: ObservableObject {
     }
 }
 
-private struct FaceSwapOutlineFailure: LocalizedError {
+struct FaceSwapOutlineFailure: LocalizedError {
     var message: String
     var errorDescription: String? { message }
 }
 
 enum FaceSwapModelCopy {
-    static func title(_ gate: AgentModelGate, canAttachImages: Bool) -> String {
-        if gate.isAvailable, !canAttachImages {
-            return "Image understanding unavailable"
-        }
+    static func title(_ gate: AgentModelGate, canAttachImages _: Bool) -> String {
         switch gate {
         case .available:
             return "On-device model ready"
@@ -341,20 +375,20 @@ enum FaceSwapModelCopy {
     }
 
     static func detail(_ gate: AgentModelGate, canAttachImages: Bool) -> String {
-        if gate.isAvailable, !canAttachImages {
-            return "Face outlines need the on-device model to see the photo. That image input needs iOS 27 or later."
-        }
         switch gate {
         case .available:
-            return "The model traces face outlines, then reconstructs only inside the destination outline."
+            if canAttachImages {
+                return "The model traces face outlines, then reconstructs only inside the destination outline."
+            }
+            return "The model chooses among face contours, then reconstructs only inside the destination contour."
         case .needsAppleIntelligence:
-            return "Face Swap uses the on-device model to trace faces. Turn on Apple Intelligence, then come back."
+            return "Face Swap uses the on-device model to choose the faces. Turn on Apple Intelligence, then come back."
         case .modelNotReady:
             return "Apple Intelligence is on, but the on-device model is still downloading."
         case .deviceNotEligible:
-            return "This hardware doesn’t support Apple Intelligence, so Face Swap can’t trace faces here."
+            return "This hardware doesn’t support Apple Intelligence, so Face Swap can’t choose faces here."
         case .unsupportedPlatform:
-            return "The model needs iOS 26 or later, and image outlines need iOS 27 or later."
+            return "The model needs iOS 26 or later."
         case .other(let reason):
             return reason
         }

@@ -69,11 +69,11 @@ struct FaceSwapView: View {
         VStack(alignment: .leading, spacing: 4) {
             Label(
                 FaceSwapModelCopy.title(session.modelGate, canAttachImages: FaceSwapImagePromptSupport.canAttachImages),
-                systemImage: session.canUseImageModel ? "checkmark.circle.fill" : "sparkles"
+                systemImage: session.modelGate.isAvailable ? "checkmark.circle.fill" : "sparkles"
             )
             .font(.subheadline)
-            .foregroundStyle(session.canUseImageModel ? Color.green : Color.orange)
-            if !session.canUseImageModel {
+            .foregroundStyle(session.modelGate.isAvailable ? Color.green : Color.orange)
+            if !session.modelGate.isAvailable {
                 Text(FaceSwapModelCopy.detail(session.modelGate, canAttachImages: FaceSwapImagePromptSupport.canAttachImages))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
