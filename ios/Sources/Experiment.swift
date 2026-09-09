@@ -58,5 +58,6 @@ enum ExperimentCatalog {
         WigglecamExperiment.experiment,
         DoomFaceExperiment.experiment,
         NFCTagsExperiment.experiment,
+        FaceSwapExperiment.experiment,
     ]
 }

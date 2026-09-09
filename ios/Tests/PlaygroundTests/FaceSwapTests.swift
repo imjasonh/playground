@@ -1,0 +1,244 @@
+import CoreGraphics
+import UIKit
+import XCTest
+@testable import Playground
+
+final class FaceSwapTests: XCTestCase {
+    func testPrepareAcceptsTwoFaceContours() {
+        let pair = facePair()
+        switch FaceSwapOutlineValidation.prepare([pair.source, pair.destination]) {
+        case .success(let prepared):
+            XCTAssertEqual(prepared.source.role, .source)
+            XCTAssertEqual(prepared.destination.role, .destination)
+            XCTAssertEqual(prepared.source.refersTo, "the man's face")
+        case .failure(let message):
+            XCTFail(message)
+        }
+    }
+
+    func testPrepareRejectsBoxHairAndFullFrameOutlines() {
+        var box = facePair().source
+        box.points = [
+            CGPoint(x: 0.20, y: 0.20),
+            CGPoint(x: 0.30, y: 0.20),
+            CGPoint(x: 0.40, y: 0.20),
+            CGPoint(x: 0.40, y: 0.35),
+            CGPoint(x: 0.40, y: 0.50),
+            CGPoint(x: 0.30, y: 0.50),
+            CGPoint(x: 0.20, y: 0.50),
+            CGPoint(x: 0.20, y: 0.35),
+        ]
+        XCTAssertTrue(FaceSwapOutlineValidation.check(box)?.contains("box") == true)
+
+        var wide = facePair().destination
+        wide.points = contour(center: CGPoint(x: 0.5, y: 0.5), radiusX: 0.30, radiusY: 0.16)
+        XCTAssertTrue(FaceSwapOutlineValidation.check(wide)?.contains("too wide") == true)
+
+        var frame = facePair().destination
+        frame.points = contour(center: CGPoint(x: 0.5, y: 0.5), radiusX: 0.48, radiusY: 0.48)
+        XCTAssertNotNil(FaceSwapOutlineValidation.check(frame))
+    }
+
+    func testTighteningCannotGrowPastTracedOutline() {
+        let destination = facePair().destination
+        let inside = contour(
+            center: CGPoint(x: 0.70, y: 0.50),
+            radiusX: 0.06,
+            radiusY: 0.08
+        )
+        XCTAssertNotNil(FaceSwapOutlineValidation.acceptedTightening(base: destination.points, tightened: inside))
+
+        let outside = contour(
+            center: CGPoint(x: 0.70, y: 0.50),
+            radiusX: 0.16,
+            radiusY: 0.20
+        )
+        XCTAssertNil(FaceSwapOutlineValidation.acceptedTightening(base: destination.points, tightened: outside))
+    }
+
+    func testPromptBlockIncludesCoordinatesAndCannotEnlarge() {
+        let pair = facePair()
+        let block = FaceSwapOutlineValidation.promptBlock([pair.source, pair.destination])
+        XCTAssertTrue(block.contains("source id=source-face"))
+        XCTAssertTrue(block.contains("the man's face"))
+        XCTAssertTrue(block.contains("cannot enlarge"))
+        XCTAssertTrue(block.contains("0."))
+    }
+
+    func testRoleParserReadsSourceAndDestinationOnly() {
+        XCTAssertEqual(FaceSwapRoleParser.role(from: "source"), .source)
+        XCTAssertEqual(FaceSwapRoleParser.role(from: "destination face"), .destination)
+        XCTAssertNil(FaceSwapRoleParser.role(from: "the man's face"))
+    }
+
+    func testReconstructionStaysInsideOutlineAndIsNotAStamp() throws {
+        let size = 96
+        var photo = FaceSwapRaster.solid(width: size, height: size, red: 20, green: 120, blue: 40)
+        let pair = facePair()
+        paint(&photo, outline: pair.source, red: 220, green: 180, blue: 40)
+        paint(&photo, outline: pair.destination, red: 40, green: 50, blue: 90)
+        let original = photo
+
+        let reconstructed = try XCTUnwrap(apply(
+            plan: recipe(lightingMatch: 1, colorMatch: 0, detailTransfer: 0),
+            pair: pair,
+            photo: photo
+        ))
+        let stamped = try XCTUnwrap(apply(
+            plan: recipe(lightingMatch: 0, colorMatch: 0, detailTransfer: 0),
+            pair: pair,
+            photo: photo
+        ))
+
+        XCTAssertEqual(reconstructed.stats.outsideMaskChanged, 0)
+        XCTAssertEqual(stamped.stats.outsideMaskChanged, 0)
+        XCTAssertLessThan(reconstructed.stats.percentChanged, 22)
+        assertUnchangedOutside(original: original, edited: reconstructed.image, outline: pair.destination)
+
+        let interior = interiorLuma(of: reconstructed.image, outline: pair.destination)
+        let stampLuma = interiorLuma(of: stamped.image, outline: pair.destination)
+        XCTAssertGreaterThan(interior.count, 8)
+        XCTAssertLessThan(interior.luma, 110)
+        XCTAssertGreaterThan(stampLuma.luma, 115)
+        XCTAssertNotEqual(reconstructed.image.rgba, stamped.image.rgba)
+
+        let changed = FaceSwapDiff.changedPixelCount(original: original, edited: reconstructed.image)
+        XCTAssertGreaterThan(changed, 0)
+        XCTAssertEqual(changed, reconstructed.stats.changedFromOriginal)
+        XCTAssertTrue(FaceSwapDiff.summary(original: original, edited: reconstructed.image).contains("Changed"))
+    }
+
+    func testCropIsTheOutlinedFaceNotTheFullPhoto() throws {
+        var photo = FaceSwapRaster.solid(width: 320, height: 200, red: 8, green: 8, blue: 8)
+        let source = facePair().source
+        paint(&photo, outline: source, red: 200, green: 160, blue: 120)
+        let image = try XCTUnwrap(photo.uiImage())
+        let crop = try XCTUnwrap(FaceSwapImagePrompt.crop(photo, outline: source, padding: 0.12))
+        XCTAssertLessThanOrEqual(max(crop.size.width, crop.size.height), 256)
+        XCTAssertLessThan(crop.size.width * crop.size.height, image.size.width * image.size.height)
+    }
+
+    func testDiffHighlightsOnlyChangedPixels() {
+        var original = FaceSwapRaster.solid(width: 4, height: 2, red: 10, green: 10, blue: 10)
+        var edited = original
+        edited.setRGB(x: 1, y: 0, red: 200, green: 10, blue: 10)
+        let highlight = FaceSwapDiff.highlight(original: original, edited: edited)
+        XCTAssertEqual(highlight.rgb(x: 1, y: 0)?.0, 220)
+        XCTAssertEqual(highlight.rgb(x: 0, y: 0)?.0, highlight.rgb(x: 0, y: 0)?.1)
+        XCTAssertNotEqual(highlight.rgb(x: 0, y: 0)?.0, 220)
+    }
+
+    private func recipe(lightingMatch: Double, colorMatch: Double, detailTransfer: Double) -> FaceSwapEditPlan {
+        FaceSwapEditPlan(
+            fitPose: 0,
+            lightingMatch: lightingMatch,
+            colorMatch: colorMatch,
+            detailTransfer: detailTransfer,
+            edgeBand: 0.02,
+            inset: 0,
+            motive: "Keep the destination light.",
+            tightenedDestination: []
+        )
+    }
+
+    private func apply(
+        plan: FaceSwapEditPlan,
+        pair: (source: FaceSwapOutline, destination: FaceSwapOutline),
+        photo: FaceSwapRaster
+    ) -> FaceSwapPasteOutput? {
+        switch FaceSwapEditor.apply(
+            plan: plan,
+            source: pair.source,
+            destination: pair.destination,
+            original: photo,
+            working: photo,
+            sourceLandmarks: nil,
+            destinationLandmarks: nil
+        ) {
+        case .success(let output):
+            return output
+        case .failure(let message):
+            XCTFail(message)
+            return nil
+        }
+    }
+
+    private func facePair() -> (source: FaceSwapOutline, destination: FaceSwapOutline) {
+        (
+            source: FaceSwapOutline(
+                id: "source-face",
+                role: .source,
+                refersTo: "the man's face",
+                points: contour(center: CGPoint(x: 0.28, y: 0.42), radiusX: 0.12, radiusY: 0.16)
+            ),
+            destination: FaceSwapOutline(
+                id: "destination-face",
+                role: .destination,
+                refersTo: "the woman's face",
+                points: contour(center: CGPoint(x: 0.70, y: 0.50), radiusX: 0.11, radiusY: 0.15)
+            )
+        )
+    }
+
+    private func contour(center: CGPoint, radiusX: CGFloat, radiusY: CGFloat) -> [CGPoint] {
+        (0..<12).map { index in
+            let angle = CGFloat(index) / 12 * 2 * .pi - .pi / 2
+            return CGPoint(
+                x: center.x + cos(angle) * radiusX,
+                y: center.y + sin(angle) * radiusY
+            )
+        }
+    }
+
+    private func paint(_ raster: inout FaceSwapRaster, outline: FaceSwapOutline, red: UInt8, green: UInt8, blue: UInt8) {
+        let polygon = FaceSwapOutlineValidation.pixelPoints(outline, width: raster.width, height: raster.height, inset: 0)
+        for y in 0..<raster.height {
+            for x in 0..<raster.width {
+                let sample = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
+                if FaceSwapOutlineValidation.contains(sample, polygon: polygon) {
+                    raster.setRGB(x: x, y: y, red: red, green: green, blue: blue)
+                }
+            }
+        }
+    }
+
+    private func assertUnchangedOutside(original: FaceSwapRaster, edited: FaceSwapRaster, outline: FaceSwapOutline) {
+        let polygon = FaceSwapOutlineValidation.pixelPoints(outline, width: original.width, height: original.height, inset: 0)
+        for y in 0..<original.height {
+            for x in 0..<original.width {
+                let sample = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
+                if FaceSwapOutlineValidation.contains(sample, polygon: polygon) { continue }
+                XCTAssertEqual(original.rgb(x: x, y: y)?.0, edited.rgb(x: x, y: y)?.0)
+                XCTAssertEqual(original.rgb(x: x, y: y)?.1, edited.rgb(x: x, y: y)?.1)
+                XCTAssertEqual(original.rgb(x: x, y: y)?.2, edited.rgb(x: x, y: y)?.2)
+            }
+        }
+    }
+
+    private func interiorLuma(of raster: FaceSwapRaster, outline: FaceSwapOutline) -> (luma: Double, count: Int) {
+        let polygon = FaceSwapOutlineValidation.pixelPoints(outline, width: raster.width, height: raster.height, inset: 0)
+        let bounds = FaceSwapOutlineValidation.boundsOf(polygon)
+        let insetX = bounds.width * 0.28
+        let insetY = bounds.height * 0.28
+        let core = bounds.insetBy(dx: insetX, dy: insetY)
+        var sum = 0.0
+        var count = 0
+        let minX = max(0, Int(core.minX.rounded(.up)))
+        let maxX = min(raster.width - 1, Int(core.maxX.rounded(.down)))
+        let minY = max(0, Int(core.minY.rounded(.up)))
+        let maxY = min(raster.height - 1, Int(core.maxY.rounded(.down)))
+        guard minX <= maxX, minY <= maxY else { return (0, 0) }
+        for y in minY...maxY {
+            for x in minX...maxX {
+                let sample = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
+                guard FaceSwapOutlineValidation.contains(sample, polygon: polygon),
+                      let color = raster.rgb(x: x, y: y)
+                else { continue }
+                sum += 0.2126 * Double(color.0) + 0.7152 * Double(color.1) + 0.0722 * Double(color.2)
+                count += 1
+            }
+        }
+        guard count > 0 else { return (0, 0) }
+        return (sum / Double(count), count)
+    }
+}

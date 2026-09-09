@@ -292,6 +292,25 @@ final class PlaygroundUITests: XCTestCase {
             || app.staticTexts["NFC needs a physical iPhone. The Simulator cannot scan tags."].waitForExistence(timeout: 3))
     }
 
+    func testFaceSwapExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("face-swap", title: "Face Swap", in: app)
+
+        XCTAssertTrue(app.navigationBars["Face Swap"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["faceSwapChoosePhoto"].waitForExistence(timeout: 8)
+            || app.otherElements["faceSwapChoosePhoto"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.textFields["faceSwapPrompt"].waitForExistence(timeout: 8)
+            || app.textViews["faceSwapPrompt"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["faceSwapEditButton"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["faceSwapEmptyState"].waitForExistence(timeout: 8)
+            || app.otherElements["faceSwapEmptyState"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["faceSwapStatus"].waitForExistence(timeout: 8)
+            || app.otherElements["faceSwapStatus"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["faceSwapModelBanner"].waitForExistence(timeout: 8)
+            || app.otherElements["faceSwapModelBanner"].waitForExistence(timeout: 3))
+    }
+
     func testArmyListExperimentOpens() {
         let app = launchApp()
 

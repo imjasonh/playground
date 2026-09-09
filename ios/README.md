@@ -57,6 +57,7 @@ ios/
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
 | `doom-face` | Doom Face | Front camera + TrueDepth; stamp your face onto doomguy's sheet and export a GIF |
 | `nfc-tags` | NFC Tags | In-app Core NFC tag read/write (NDEF text/URL, blank NTAGs); needs NFC Tag Reading capability bootstrap |
+| `face-swap` | Face Swap | On-device model traces face outlines, then reconstructs only inside those outlines |
 
 ### Ride Monitor
 
@@ -348,6 +349,30 @@ second NFC session after you remove and re-present the tag. Success means the
 chip bytes matched, not only a same-session Core NFC soft view. Broader NFC
 Tools features (lock bits, more record types) can build on the same Tag Reader
 session.
+
+### Face Swap
+
+Face Swap asks the on-device model to trace the faces a request names, then to
+choose how to reconstruct only inside the destination outline. The model does
+not redraw the photo, and it does not copy a rectangle of the source face.
+
+A first session sees a small preview and returns face-skin contours. A second
+session sees only those two face crops, plus the contour coordinates, and calls
+`applyRegionEdit`. That tool records a recipe: pose fit, destination lighting,
+color match, a little source texture, and an inward seam. It can shrink the
+write region. It cannot enlarge it. A tighter contour is kept only when every
+point stays inside the traced destination face.
+
+The compositor places source color under the destination light and feathers
+inward. Pixels outside the write polygon stay identical to the photo you picked.
+
+**Result** shows the edited photo with the model outlines. **Diff** shows the
+original in gray and every changed pixel in red. Image outlines need the
+on-device model's image input (iOS 27 or later) and Apple Intelligence. Without
+that, Edit stays off. There is no rectangle-copy fallback.
+
+Choose a photo from the library. The working copy is scaled so the long edge is
+at most 1024 px. The outline preview attached to the model is smaller still.
 
 ## Adding an experiment
 
