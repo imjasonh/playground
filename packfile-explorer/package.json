@@ -13,6 +13,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "pako": "2.1.0"
+    "pako": "3.0.1"
   }
 }

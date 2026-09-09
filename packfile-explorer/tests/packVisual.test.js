@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import pako from "pako";
+import * as pako from "pako";
 import { parsePack, OBJ_OFS_DELTA } from "../src/pack.js";
 import { makePakoInflate } from "../src/inflate.js";
 import { annotatePackEntry } from "../src/packVisual.js";
