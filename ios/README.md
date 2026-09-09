@@ -357,9 +357,9 @@ calls tools that write only inside those regions. The model does not redraw
 the photo.
 
 The photo is indexed first: face-skin contours, and person regions with a
-clothing color such as blue. A face lists the person it sits on, so "the man
-in the blue shirt" can match that person and that face. The model receives
-those ids and calls tools:
+clothing color such as blue. A face lists the person it sits on, so a request
+like "the man in the blue shirt" can match that person and that face. The
+model receives those ids and calls tools:
 
 - `removeRegion` erases one region by filling from nearby pixels.
 - `copyRegion` adds copies at new centers. The original stays. Four centers
