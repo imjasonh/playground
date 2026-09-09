@@ -240,7 +240,10 @@ final class FaceSwapTests: XCTestCase {
             photo: photo
         ))
         XCTAssertEqual(edited.stats.outsideMaskChanged, 0)
-        assertUnchangedOutside(original: photo, edited: edited.image, outline: pair.destination)
+        assertUnchangedOutside(original: photo, edited: edited.image, outlines: [pair.destination, other])
+        XCTAssertTrue(interiorChanged(original: photo, edited: edited.image, outline: pair.destination))
+        XCTAssertTrue(interiorChanged(original: photo, edited: edited.image, outline: other))
+        XCTAssertFalse(interiorChanged(original: photo, edited: edited.image, outline: pair.source))
         let outsideBoth = photo.rgb(x: 2, y: 2)
         XCTAssertEqual(outsideBoth?.0, edited.image.rgb(x: 2, y: 2)?.0)
         XCTAssertTrue(edited.log.contains { $0.contains("replaceFaces") })
@@ -413,16 +416,34 @@ final class FaceSwapTests: XCTestCase {
     }
 
     private func assertUnchangedOutside(original: FaceSwapRaster, edited: FaceSwapRaster, outline: FaceSwapOutline) {
-        let polygon = FaceSwapOutlineValidation.pixelPoints(outline, width: original.width, height: original.height, inset: 0)
+        assertUnchangedOutside(original: original, edited: edited, outlines: [outline])
+    }
+
+    private func assertUnchangedOutside(original: FaceSwapRaster, edited: FaceSwapRaster, outlines: [FaceSwapOutline]) {
+        let polygons = outlines.map {
+            FaceSwapOutlineValidation.pixelPoints($0, width: original.width, height: original.height, inset: 0)
+        }
         for y in 0..<original.height {
             for x in 0..<original.width {
                 let sample = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
-                if FaceSwapOutlineValidation.contains(sample, polygon: polygon) { continue }
+                if polygons.contains(where: { FaceSwapOutlineValidation.contains(sample, polygon: $0) }) { continue }
                 XCTAssertEqual(original.rgb(x: x, y: y)?.0, edited.rgb(x: x, y: y)?.0)
                 XCTAssertEqual(original.rgb(x: x, y: y)?.1, edited.rgb(x: x, y: y)?.1)
                 XCTAssertEqual(original.rgb(x: x, y: y)?.2, edited.rgb(x: x, y: y)?.2)
             }
         }
+    }
+
+    private func interiorChanged(original: FaceSwapRaster, edited: FaceSwapRaster, outline: FaceSwapOutline) -> Bool {
+        let polygon = FaceSwapOutlineValidation.pixelPoints(outline, width: original.width, height: original.height, inset: 0)
+        for y in 0..<original.height {
+            for x in 0..<original.width {
+                let sample = CGPoint(x: Double(x) + 0.5, y: Double(y) + 0.5)
+                guard FaceSwapOutlineValidation.contains(sample, polygon: polygon) else { continue }
+                if original.rgb(x: x, y: y) != edited.rgb(x: x, y: y) { return true }
+            }
+        }
+        return false
     }
 
     private func interiorLuma(of raster: FaceSwapRaster, outline: FaceSwapOutline) -> (luma: Double, count: Int) {

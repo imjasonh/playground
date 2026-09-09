@@ -11,15 +11,19 @@ enum FaceSwapContours {
         crown.y = min(crown.y, bounds.minY) - max(0.02, bounds.height * 0.35)
         crown.x = min(1, max(0, crown.x))
         crown.y = min(1, max(0, crown.y))
-        let arc = (1...3).map { step -> CGPoint in
-            let t = CGFloat(step) / 4
-            let u = 1 - t
-            return CGPoint(
-                x: min(1, max(0, u * u * last.x + 2 * u * t * crown.x + t * t * first.x)),
-                y: min(1, max(0, u * u * last.y + 2 * u * t * crown.y + t * t * first.y))
-            )
-        }
-        return jaw + arc
+        // The crown is only a Bezier control point, so sampled arc points never reach it.
+        // Insert it so the closed contour actually covers the forehead above the brows.
+        let left = curve(0.25, from: last, to: first, control: crown)
+        let right = curve(0.75, from: last, to: first, control: crown)
+        return jaw + [left, crown, right]
+    }
+
+    private static func curve(_ t: CGFloat, from start: CGPoint, to end: CGPoint, control: CGPoint) -> CGPoint {
+        let u = 1 - t
+        return CGPoint(
+            x: min(1, max(0, u * u * start.x + 2 * u * t * control.x + t * t * end.x)),
+            y: min(1, max(0, u * u * start.y + 2 * u * t * control.y + t * t * end.y))
+        )
     }
 
     static func decimate(_ points: [CGPoint], limit: Int) -> [CGPoint] {
