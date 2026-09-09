@@ -111,6 +111,40 @@ final class FaceSwapTests: XCTestCase {
         XCTAssertTrue(FaceSwapDiff.summary(original: original, edited: reconstructed.image).contains("Changed"))
     }
 
+    func testFaceTransferKeepsSourceFeaturesAndAlignsEyes() throws {
+        let size = 96
+        var photo = FaceSwapRaster.solid(width: size, height: size, red: 20, green: 120, blue: 40)
+        let pair = facePair()
+        paint(&photo, outline: pair.source, red: 210, green: 170, blue: 120)
+        paint(&photo, outline: pair.destination, red: 40, green: 50, blue: 90)
+        let sourceCenter = CGPoint(x: 0.28 * CGFloat(size), y: 0.42 * CGFloat(size))
+        let destCenter = CGPoint(x: 0.70 * CGFloat(size), y: 0.50 * CGFloat(size))
+        let sourceLeftEye = CGPoint(x: sourceCenter.x - 8, y: sourceCenter.y - 6)
+        let sourceRightEye = CGPoint(x: sourceCenter.x + 8, y: sourceCenter.y - 6)
+        let sourceMouth = CGPoint(x: sourceCenter.x, y: sourceCenter.y + 10)
+        let destLeftEye = CGPoint(x: destCenter.x - 8, y: destCenter.y - 6)
+        let destRightEye = CGPoint(x: destCenter.x + 8, y: destCenter.y - 6)
+        let destMouth = CGPoint(x: destCenter.x, y: destCenter.y + 10)
+        paintEye(&photo, at: sourceLeftEye, red: 20, green: 20, blue: 20)
+        paintEye(&photo, at: sourceRightEye, red: 20, green: 20, blue: 20)
+
+        var plan = recipe(lightingMatch: 0.4, colorMatch: 0, detailTransfer: 1)
+        plan.fitPose = 1
+        let transferred = try XCTUnwrap(apply(
+            plan: plan,
+            pair: pair,
+            photo: photo,
+            sourceLandmarks: FaceSwapLandmarkTrio(leftEye: sourceLeftEye, rightEye: sourceRightEye, mouth: sourceMouth),
+            destinationLandmarks: FaceSwapLandmarkTrio(leftEye: destLeftEye, rightEye: destRightEye, mouth: destMouth)
+        ))
+
+        let destEye = transferred.image.rgb(x: Int(destLeftEye.x), y: Int(destLeftEye.y))
+        let destCheek = transferred.image.rgb(x: Int(destCenter.x), y: Int(destCenter.y))
+        XCTAssertLessThan(Int(destEye?.0 ?? 255), Int(destCheek?.0 ?? 0))
+        XCTAssertEqual(transferred.stats.outsideMaskChanged, 0)
+        XCTAssertEqual(transferred.stats.warp, "eyes")
+    }
+
     func testRemoveAndCopyStayInsideTheirRegions() throws {
         let size = 48
         var photo = FaceSwapRaster.solid(width: size, height: size, red: 20, green: 140, blue: 40)
@@ -415,7 +449,9 @@ final class FaceSwapTests: XCTestCase {
     private func apply(
         plan: FaceSwapEditPlan,
         pair: (source: FaceSwapOutline, destination: FaceSwapOutline),
-        photo: FaceSwapRaster
+        photo: FaceSwapRaster,
+        sourceLandmarks: FaceSwapLandmarkTrio? = nil,
+        destinationLandmarks: FaceSwapLandmarkTrio? = nil
     ) -> FaceSwapPasteOutput? {
         switch FaceSwapEditor.apply(
             plan: plan,
@@ -423,8 +459,8 @@ final class FaceSwapTests: XCTestCase {
             destination: pair.destination,
             original: photo,
             working: photo,
-            sourceLandmarks: nil,
-            destinationLandmarks: nil
+            sourceLandmarks: sourceLandmarks,
+            destinationLandmarks: destinationLandmarks
         ) {
         case .success(let output):
             return output
@@ -458,6 +494,16 @@ final class FaceSwapTests: XCTestCase {
                 x: center.x + cos(angle) * radiusX,
                 y: center.y + sin(angle) * radiusY
             )
+        }
+    }
+
+    private func paintEye(_ raster: inout FaceSwapRaster, at point: CGPoint, red: UInt8, green: UInt8, blue: UInt8) {
+        let originX = Int(point.x.rounded())
+        let originY = Int(point.y.rounded())
+        for y in (originY - 1)...(originY + 1) {
+            for x in (originX - 1)...(originX + 1) {
+                raster.setRGB(x: x, y: y, red: red, green: green, blue: blue)
+            }
         }
     }
 

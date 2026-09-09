@@ -13,11 +13,13 @@ struct FaceSwapPasteOutput: Equatable, Sendable {
     var stats: FaceSwapEditStats
 }
 
-/// Reconstructs a face inside the destination outline only.
+/// Places a source face inside the destination outline only.
 ///
-/// The model supplies the outline and the recipe. This writes source identity
-/// under destination light, then feathers inward. It does not copy a rectangle
-/// of source pixels. Pixels outside the write polygon stay byte-identical.
+/// Eyes and mouth land on the destination eyes and mouth when landmarks exist.
+/// The source face pixels are copied, then shifted toward the destination's
+/// average color. Destination shading is not painted over the new face, which
+/// is what turns features into a smear. A thin seam feathers the edge. Pixels
+/// outside the write polygon stay byte-identical.
 enum FaceSwapEditor {
     static func apply(
         plan: FaceSwapEditPlan,
@@ -44,7 +46,8 @@ enum FaceSwapEditor {
 
         let sourceBounds = FaceSwapOutlineValidation.boundsOf(sourcePolygon)
         let destBounds = FaceSwapOutlineValidation.boundsOf(destinationPolygon)
-        let affine = landmarkAffine(source: sourceLandmarks, destination: destinationLandmarks)
+        let placement = facePlacement(source: sourceLandmarks, destination: destinationLandmarks)
+        let sourceCenter = CGPoint(x: sourceBounds.midX, y: sourceBounds.midY)
         let band = edgeBandPixels(plan: recipe, bounds: destBounds)
         let destMean = meanColor(original, mask: mask, width: width)
         let sourceMean = meanMappedColor(
@@ -55,7 +58,7 @@ enum FaceSwapEditor {
             sourcePolygon: sourcePolygon,
             sourceBounds: sourceBounds,
             destBounds: destBounds,
-            affine: affine,
+            placement: placement,
             fitPose: recipe.fitPose
         )
 
@@ -71,12 +74,13 @@ enum FaceSwapEditor {
                     fitPose: recipe.fitPose,
                     sourceBounds: sourceBounds,
                     destBounds: destBounds,
-                    affine: affine
+                    placement: placement
                 )
-                let mappedPoint = CGPoint(x: mapped.0, y: mapped.1)
-                guard FaceSwapOutlineValidation.contains(mappedPoint, polygon: sourcePolygon),
-                      let sample = sampleBilinear(original, x: mapped.0, y: mapped.1)
-                else {
+                guard let mappedPoint = samplePointInsideFace(
+                    CGPoint(x: mapped.0, y: mapped.1),
+                    polygon: sourcePolygon,
+                    center: sourceCenter
+                ), let sample = sampleBilinear(original, x: mappedPoint.x, y: mappedPoint.y) else {
                     continue
                 }
                 guard let destinationColor = original.rgb(x: x, y: y) else { continue }
@@ -110,7 +114,7 @@ enum FaceSwapEditor {
             changedFromOriginal: FaceSwapDiff.changedPixelCount(original: original, edited: output),
             totalPixels: original.pixelCount,
             outsideMaskChanged: outside,
-            warp: affine == nil ? "outline" : "pose"
+            warp: placement == nil ? "outline" : "eyes"
         )
         return .success(FaceSwapPasteOutput(image: output, mask: mask, stats: stats))
     }
@@ -177,23 +181,96 @@ enum FaceSwapEditor {
         return min(1, max(0, Double(nearest) / Double(band)))
     }
 
+    /// Eye line plus mouth distance. A full three-point affine shears the face into a smear.
+    private struct FacePlacement {
+        var sourceCenter: CGPoint
+        var destCenter: CGPoint
+        var sourceAngle: Double
+        var destAngle: Double
+        var scaleX: Double
+        var scaleY: Double
+    }
+
+    private static func facePlacement(
+        source: FaceSwapLandmarkTrio?,
+        destination: FaceSwapLandmarkTrio?
+    ) -> FacePlacement? {
+        guard let source, let destination else { return nil }
+        let sourceCenter = midpoint(source.leftEye, source.rightEye)
+        let destCenter = midpoint(destination.leftEye, destination.rightEye)
+        let sourceEye = max(1, hypot(source.rightEye.x - source.leftEye.x, source.rightEye.y - source.leftEye.y))
+        let destEye = max(1, hypot(destination.rightEye.x - destination.leftEye.x, destination.rightEye.y - destination.leftEye.y))
+        let sourceMouth = max(1, hypot(source.mouth.x - sourceCenter.x, source.mouth.y - sourceCenter.y))
+        let destMouth = max(1, hypot(destination.mouth.x - destCenter.x, destination.mouth.y - destCenter.y))
+        let scaleX = Double(sourceEye / destEye)
+        var scaleY = Double(sourceMouth / destMouth)
+        guard scaleX.isFinite, scaleX >= 0.45, scaleX <= 2.2 else { return nil }
+        if !scaleY.isFinite || scaleY < 0.45 || scaleY > 2.2 {
+            scaleY = scaleX
+        }
+        return FacePlacement(
+            sourceCenter: sourceCenter,
+            destCenter: destCenter,
+            sourceAngle: Double(atan2(source.rightEye.y - source.leftEye.y, source.rightEye.x - source.leftEye.x)),
+            destAngle: Double(atan2(destination.rightEye.y - destination.leftEye.y, destination.rightEye.x - destination.leftEye.x)),
+            scaleX: scaleX,
+            scaleY: scaleY
+        )
+    }
+
+    private static func midpoint(_ left: CGPoint, _ right: CGPoint) -> CGPoint {
+        CGPoint(x: (left.x + right.x) / 2, y: (left.y + right.y) / 2)
+    }
+
     private static func mapPoint(
         _ dest: (Double, Double),
         fitPose: Double,
         sourceBounds: CGRect,
         destBounds: CGRect,
-        affine: ((Double, Double, Double), (Double, Double, Double))?
+        placement: FacePlacement?
     ) -> (Double, Double) {
         let boxed = mapThroughBounds(dest, sourceBounds: sourceBounds, destBounds: destBounds)
-        guard let affine, fitPose > 0 else { return boxed }
+        guard let placement, fitPose > 0 else { return boxed }
+        let dx = dest.0 - Double(placement.destCenter.x)
+        let dy = dest.1 - Double(placement.destCenter.y)
+        let cosDest = cos(-placement.destAngle)
+        let sinDest = sin(-placement.destAngle)
+        let uprightX = dx * cosDest - dy * sinDest
+        let uprightY = dx * sinDest + dy * cosDest
+        let scaledX = uprightX * placement.scaleX
+        let scaledY = uprightY * placement.scaleY
+        let cosSource = cos(placement.sourceAngle)
+        let sinSource = sin(placement.sourceAngle)
         let posed = (
-            affine.0.0 * dest.0 + affine.0.1 * dest.1 + affine.0.2,
-            affine.1.0 * dest.0 + affine.1.1 * dest.1 + affine.1.2
+            Double(placement.sourceCenter.x) + scaledX * cosSource - scaledY * sinSource,
+            Double(placement.sourceCenter.y) + scaledX * sinSource + scaledY * cosSource
         )
         return (
             boxed.0 + (posed.0 - boxed.0) * fitPose,
             boxed.1 + (posed.1 - boxed.1) * fitPose
         )
+    }
+
+    /// Keeps a sample on the source face so the destination is not left as holes of the old face.
+    private static func samplePointInsideFace(_ point: CGPoint, polygon: [CGPoint], center: CGPoint) -> CGPoint? {
+        if FaceSwapOutlineValidation.contains(point, polygon: polygon) { return point }
+        var best: CGPoint?
+        var low = 0.0
+        var high = 1.0
+        for _ in 0..<8 {
+            let t = (low + high) / 2
+            let candidate = CGPoint(
+                x: point.x + (center.x - point.x) * t,
+                y: point.y + (center.y - point.y) * t
+            )
+            if FaceSwapOutlineValidation.contains(candidate, polygon: polygon) {
+                best = candidate
+                high = t
+            } else {
+                low = t
+            }
+        }
+        return best
     }
 
     private static func mapThroughBounds(
@@ -209,43 +286,11 @@ enum FaceSwapEditor {
         )
     }
 
-    private static func landmarkAffine(
-        source: FaceSwapLandmarkTrio?,
-        destination: FaceSwapLandmarkTrio?
-    ) -> ((Double, Double, Double), (Double, Double, Double))? {
-        guard let source, let destination else { return nil }
-        return affineDestToSource(
-            dest: (destination.leftEye, destination.rightEye, destination.mouth),
-            source: (source.leftEye, source.rightEye, source.mouth)
-        )
-    }
-
-    private static func affineDestToSource(
-        dest: (CGPoint, CGPoint, CGPoint),
-        source: (CGPoint, CGPoint, CGPoint)
-    ) -> ((Double, Double, Double), (Double, Double, Double))? {
-        let a = Double(dest.0.x)
-        let b = Double(dest.0.y)
-        let c = Double(dest.1.x)
-        let d = Double(dest.1.y)
-        let e = Double(dest.2.x)
-        let f = Double(dest.2.y)
-        let det = a * (d - f) - b * (c - e) + (c * f - e * d)
-        if abs(det) < 1 { return nil }
-        func solve(_ y0: Double, _ y1: Double, _ y2: Double) -> (Double, Double, Double) {
-            let aCoef = (y0 * (d - f) - b * (y1 - y2) + (y1 * f - y2 * d)) / det
-            let bCoef = (a * (y1 - y2) - y0 * (c - e) + (c * y2 - e * y1)) / det
-            let cCoef = (a * (d * y2 - f * y1) - b * (c * y2 - e * y1) + y0 * (c * f - e * d)) / det
-            return (aCoef, bCoef, cCoef)
-        }
-        return (
-            solve(Double(source.0.x), Double(source.1.x), Double(source.2.x)),
-            solve(Double(source.0.y), Double(source.1.y), Double(source.2.y))
-        )
-    }
-
-    /// Places source color ratios under destination light, then adds a little source detail.
-    /// A raw copy of `source` is the stamp this avoids when lightingMatch is above 0.
+    /// Shifts the source face toward the destination's average color.
+    ///
+    /// Each destination pixel's own shading is not used as the new face's light.
+    /// That replacement is what smears eyes and mouth. Local contrast stays with
+    /// the source face. A raw copy is the result when lightingMatch is 0.
     private static func reconstruct(
         source: (UInt8, UInt8, UInt8),
         destination: (UInt8, UInt8, UInt8),
@@ -253,19 +298,15 @@ enum FaceSwapEditor {
         destMean: (Double, Double, Double),
         plan: FaceSwapEditPlan
     ) -> (UInt8, UInt8, UInt8) {
-        let sourceLuma = luma(source)
-        let destinationLuma = luma(destination)
-        let light = sourceLuma + (destinationLuma - sourceLuma) * plan.lightingMatch
         func channel(_ sourceValue: UInt8, _ destValue: UInt8, _ sourceMean: Double, _ destMean: Double) -> UInt8 {
             let sourceChannel = Double(sourceValue)
-            let chroma = sourceLuma > 1 ? sourceChannel / sourceLuma : sourceChannel / 255
-            var value = chroma * light
-            let meanGain = sourceMean > 1 ? destMean / sourceMean : 1
-            let meanLit = sourceChannel * (1 + (meanGain - 1) * plan.lightingMatch)
-            value = value * 0.7 + meanLit * 0.3
-            value += (Double(destValue) - value) * plan.colorMatch * 0.35
-            let detail = sourceChannel - sourceLuma
-            value += detail * plan.detailTransfer * 0.35
+            let local = sourceChannel - sourceMean
+            let shiftedMean = sourceMean + (destMean - sourceMean) * plan.lightingMatch
+            let contrast = max(plan.detailTransfer, 1 - plan.lightingMatch)
+            var value = shiftedMean + local * contrast
+            if plan.colorMatch > 0 {
+                value += (Double(destValue) - value) * plan.colorMatch * 0.35
+            }
             return UInt8(min(255, max(0, value.rounded())))
         }
         return (
@@ -273,10 +314,6 @@ enum FaceSwapEditor {
             channel(source.1, destination.1, sourceMean.1, destMean.1),
             channel(source.2, destination.2, sourceMean.2, destMean.2)
         )
-    }
-
-    private static func luma(_ color: (UInt8, UInt8, UInt8)) -> Double {
-        0.2126 * Double(color.0) + 0.7152 * Double(color.1) + 0.0722 * Double(color.2)
     }
 
     private static func meanColor(_ raster: FaceSwapRaster, mask: [UInt8], width: Int) -> (Double, Double, Double) {
@@ -302,7 +339,7 @@ enum FaceSwapEditor {
         sourcePolygon: [CGPoint],
         sourceBounds: CGRect,
         destBounds: CGRect,
-        affine: ((Double, Double, Double), (Double, Double, Double))?,
+        placement: FacePlacement?,
         fitPose: Double
     ) -> (Double, Double, Double) {
         var sums = (0.0, 0.0, 0.0)
@@ -316,12 +353,14 @@ enum FaceSwapEditor {
                     fitPose: fitPose,
                     sourceBounds: sourceBounds,
                     destBounds: destBounds,
-                    affine: affine
+                    placement: placement
                 )
-                let point = CGPoint(x: mapped.0, y: mapped.1)
-                guard FaceSwapOutlineValidation.contains(point, polygon: sourcePolygon),
-                      let sample = sampleBilinear(original, x: mapped.0, y: mapped.1)
-                else {
+                let center = CGPoint(x: sourceBounds.midX, y: sourceBounds.midY)
+                guard let point = samplePointInsideFace(
+                    CGPoint(x: mapped.0, y: mapped.1),
+                    polygon: sourcePolygon,
+                    center: center
+                ), let sample = sampleBilinear(original, x: point.x, y: point.y) else {
                     continue
                 }
                 sums.0 += Double(sample.0)

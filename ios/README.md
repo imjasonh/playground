@@ -366,9 +366,11 @@ model receives those ids and calls tools:
   alone.
 - `copyRegion` adds copies of a person silhouette at new centers. The original
   stays. Four centers leave five of that person. It does not paste a rectangle.
-- `replaceFaces` puts one face onto other face ids, inside those contours,
-  under each destination's light. A request to swap or place a face does not
-  also copy or erase the person.
+- `replaceFaces` copies one face onto other face ids, inside those contours.
+  Eyes and mouth are lined up, then the source face is shifted toward the
+  destination's average color. The old face's shading is not painted over the
+  new one. A request to swap or place a face does not also copy or erase the
+  person.
 
 A tool cannot grow a region or change a pixel outside it. The model only
 chooses which ids to pass. Reconstruction stays in app code, so the on-device
@@ -383,7 +385,8 @@ stops and asks for a shorter request.
 
 **Result** shows the edited photo. **Diff** shows the original in gray and
 every changed pixel in red. The photo is not drawn over with region boxes.
-Edit needs Apple Intelligence on iOS 26 or later.
+Long-press the image to save it to Photos or share it. Edit needs Apple
+Intelligence on iOS 26 or later.
 
 Choose a photo from the library. The working copy is scaled so the long edge is
 at most 1024 px.

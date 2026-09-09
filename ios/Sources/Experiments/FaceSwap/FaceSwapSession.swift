@@ -81,6 +81,7 @@ final class FaceSwapSession: ObservableObject {
         imageAspect = CGFloat(decoded.raster.width) / CGFloat(max(decoded.raster.height, 1))
         resultImage = decoded.raster.uiImage()
         diffImage = nil
+        writeShareFile()
         var note = "Photo ready."
         if decoded.wasScaled {
             note += " Working copy long edge is \(max(decoded.raster.width, decoded.raster.height)) px."
@@ -131,6 +132,20 @@ final class FaceSwapSession: ObservableObject {
         shareURL = nil
         statusMessage = "Reverted to the original photo."
         publishDisplay()
+        writeShareFile()
+    }
+
+    func saveToPhotos() async {
+        guard let image = workingRaster?.uiImage() else {
+            statusMessage = "Choose a photo first."
+            return
+        }
+        do {
+            try await FaceSwapPhotoSaver.saveJPEG(image)
+            statusMessage = "Saved to Photos."
+        } catch {
+            statusMessage = error.localizedDescription
+        }
     }
 
     private func publishDisplay() {
@@ -143,7 +158,7 @@ final class FaceSwapSession: ObservableObject {
     }
 
     private func writeShareFile() {
-        guard let working = workingRaster, lastStats != nil,
+        guard let working = workingRaster,
               let data = working.uiImage()?.jpegData(compressionQuality: 0.92)
         else {
             shareURL = nil
