@@ -301,7 +301,10 @@ enum FaceSwapEditor {
         func channel(_ sourceValue: UInt8, _ destValue: UInt8, _ sourceMean: Double, _ destMean: Double) -> UInt8 {
             let sourceChannel = Double(sourceValue)
             let local = sourceChannel - sourceMean
-            let shiftedMean = sourceMean + (destMean - sourceMean) * plan.lightingMatch
+            // Leave some source color even at full lighting match, or a uniform
+            // destination face is unchanged and the swap writes nothing.
+            let lighting = min(plan.lightingMatch, 0.85)
+            let shiftedMean = sourceMean + (destMean - sourceMean) * lighting
             let contrast = max(plan.detailTransfer, 1 - plan.lightingMatch)
             var value = shiftedMean + local * contrast
             if plan.colorMatch > 0 {
