@@ -1,6 +1,10 @@
 terraform {
   required_version = ">= 1.5.0"
 
+  # Remote state for CD. Local and CI pass bucket/prefix at init:
+  #   terraform init -backend-config=bucket=… -backend-config=prefix=sshapp
+  backend "gcs" {}
+
   required_providers {
     google = {
       source  = "hashicorp/google"

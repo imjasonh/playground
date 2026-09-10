@@ -74,9 +74,11 @@ ssh_mux() {
     "$@"
 }
 
-# Bubble Tea / activeterm need a PTY.
+# Bubble Tea / activeterm need a PTY. -n keeps the client alive without a
+# local stdin source (process substitutions under `&` hit EOF and OpenSSH exits).
 ssh_mux_tty() {
   ssh \
+    -n \
     -tt \
     -i "${WORKDIR}/client_ed25519" \
     -o BatchMode=yes \
@@ -268,9 +270,8 @@ fi
 echo "::endgroup::"
 
 echo "::group::SSH command path (ssh … chess) scales up"
-# Keep stdin open without a FIFO (FIFOs SIGPIPE under pipefail) and without
-# wrapping the bash function in `timeout` (timeout can only exec binaries).
-ssh_mux_tty chess < <(sleep 90) >"${WORKDIR}/chess-ssh.out" 2>"${WORKDIR}/chess-ssh.err" &
+# ssh_mux_tty uses -n so background clients stay up without a stdin feeder.
+ssh_mux_tty chess >"${WORKDIR}/chess-ssh.out" 2>"${WORKDIR}/chess-ssh.err" &
 CHESS_SSH_PID=$!
 if ! await_deploy_ready chess; then
   kill "${CHESS_SSH_PID}" 2>/dev/null || true
@@ -279,11 +280,11 @@ if ! await_deploy_ready chess; then
   dump_debug
   exit 1
 fi
-ssh_mux_tty chess < <(sleep 90) >"${WORKDIR}/chess2-ssh.out" 2>"${WORKDIR}/chess2-ssh.err" &
+ssh_mux_tty chess >"${WORKDIR}/chess2-ssh.out" 2>"${WORKDIR}/chess2-ssh.err" &
 CHESS2_SSH_PID=$!
 
 matched=0
-for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
   if grep -aqE 'YOUR TURN|OPPONENT|vs ' "${WORKDIR}/chess-ssh.out" 2>/dev/null \
     || grep -aqE 'YOUR TURN|OPPONENT|vs ' "${WORKDIR}/chess2-ssh.out" 2>/dev/null; then
     matched=1
