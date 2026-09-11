@@ -1,23 +1,9 @@
 [
   {
-    "id": "n1",
-    "life": 1,
-    "turn": 1,
-    "text": "A new process first showed \"NetHack, Copyright 1985-2023\", \"Version 3.6.7\", and \"Shall I pick character's race, role, gender and alignment for you? [ynaq]\".",
-    "retracted": false
-  },
-  {
     "id": "n2",
     "life": 1,
     "turn": 2,
     "text": "Sending y replaced that with a confirmation listing name, role, race, gender, and alignment, plus the lines \"y + Yes; start game\", \"n - No; choose role again\", and \"q - Quit\". The listed role and race were not the same on every new process.",
-    "retracted": false
-  },
-  {
-    "id": "n3",
-    "life": 1,
-    "turn": 3,
-    "text": "Sending y on that confirmation showed a paragraph ending in \"--More--\" and a status line containing \"Dlvl:1\" and \"HP:\".",
     "retracted": false
   },
   {
@@ -28,17 +14,94 @@
     "retracted": false
   },
   {
-    "id": "n5",
-    "life": 1,
-    "turn": 5,
-    "text": "After --More-- was gone, sending h changed the line \"|...@..|\" to \"|..@<..|\".",
-    "retracted": false
-  },
-  {
     "id": "n6",
     "life": 1,
     "turn": 6,
     "text": "Starting again in a home directory that already had a save showed \"Restoring save file...\" instead of the pick-character question.",
+    "retracted": false
+  },
+  {
+    "id": "n21",
+    "life": 1,
+    "turn": 1,
+    "text": "Startup batch: y on [ynaq], y on confirm, spaces through --More-- (letters fail there). Extra space waits a turn on the map, which is safe at spawn.",
+    "retracted": false
+  },
+  {
+    "id": "n22",
+    "life": 1,
+    "turn": 5,
+    "text": "Bumping a wall prints a message that swallows later letters in the same batch; only space clears it.",
+    "retracted": false
+  },
+  {
+    "id": "n23",
+    "life": 1,
+    "turn": 8,
+    "text": "Kicking a locked door can smash it to . and strain a muscle, lowering Dex.",
+    "retracted": false
+  },
+  {
+    "id": "n25",
+    "life": 1,
+    "turn": 16,
+    "text": "The starting room can have no visible door; searching while adjacent to a wall can reveal a hidden + door.",
+    "retracted": false
+  },
+  {
+    "id": "n27",
+    "life": 1,
+    "turn": 16,
+    "text": "A | breaking a horizontal - wall is an open doorway and is walkable.",
+    "retracted": false
+  },
+  {
+    "id": "n28",
+    "life": 1,
+    "turn": 3,
+    "text": "The starting @ can hide an up-stair < that appears after you step off that tile.",
+    "retracted": false
+  },
+  {
+    "id": "n29",
+    "life": 1,
+    "turn": 6,
+    "text": "A d in the corridor by the starting room can be a hostile jackal.",
+    "retracted": false
+  },
+  {
+    "id": "n30",
+    "life": 1,
+    "turn": 14,
+    "text": "A . breaking a horizontal - wall is a walkable doorway.",
+    "retracted": false
+  },
+  {
+    "id": "n31",
+    "life": 1,
+    "turn": 3,
+    "text": "Opening a closed + can print \"The door resists!\" when the door stays closed.",
+    "retracted": false
+  },
+  {
+    "id": "n34",
+    "life": 1,
+    "turn": 7,
+    "text": "A locked + can shatter to . after several WHAMMM kicks with Dex unchanged.",
+    "retracted": false
+  },
+  {
+    "id": "n37",
+    "life": 1,
+    "turn": 16,
+    "text": "After stepping through a . in a - wall, @ can vanish from the mapped view until you re-enter a mapped room or swap with the pet.",
+    "retracted": false
+  },
+  {
+    "id": "n38",
+    "life": 1,
+    "turn": 16,
+    "text": "The starting f is a pet named Rex; moving onto its tile swaps places instead of attacking.",
     "retracted": false
   }
 ]
