@@ -66,6 +66,8 @@ The learning notebook is only written from the real `nethack` process. A fake sc
 
 `tty` runs `/usr/games/nethack` when that binary exists, otherwise `nethack`, and shows the terminal buffer. `npm run play` always uses that process. It resumes `notebook/` and writes the notes back there. Per-run transcripts still land under `results/`.
 
+Play uses `grok-4.6` unless you pass `--model`. After the run it prints how much that play cost in tokens. That number is for the person watching the run. It is not a score, and it is not shown to the agent.
+
 `fake` is a test double. It is not a NetHack simulator, and the prompt does not describe it. It cannot update `notebook/`.
 
 ## Where the notes go

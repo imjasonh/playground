@@ -42,8 +42,10 @@ export CURSOR_API_KEY=...
 npm run play -- --lives 1 --max-turns 16 --verbose
 ```
 
-Each run writes `results/<id>/` and updates `notebook/` (notes, saved sequences, ending screens). Do not point play at the fake screen. That stand-in is for tests only.
+The default model is `grok-4.6`. Pass `--model` to use another id from the account catalog. An id that contains `fast` uses the Fast list price.
 
-A local play does not push. The Play workflow seeds `notebook/` from `automation/nethack-notes` when that branch exists, then publishes the notebook back to that branch and opens a pull request to `main`. The next workflow play reads that branch before the pull request merges. It does not commit notes onto the pull request that triggered play, and it does not auto-merge the notes pull request. A failed play does not publish.
+Each run writes `results/<id>/` and updates `notebook/` (notes, saved sequences, ending screens). It also prints the token cost of that play on stderr and writes the same lines to `results/last-run.txt`. The figure is the billed token cost when the SDK has reported it, otherwise the published list price for the model. Do not point play at the fake screen. That stand-in is for tests only.
+
+A local play does not push. The play job uses `grok-4.6`, writes the token cost to the job summary, seeds `notebook/` from `automation/nethack-notes` when that branch exists, then publishes the notebook back to that branch and opens a pull request to `main`. The notes pull request includes that cost line. The next workflow play reads that branch before the pull request merges. It does not commit notes onto the pull request that triggered play, and it does not auto-merge the notes pull request. A failed play does not publish.
 
 The agent prompt does not name the game or list commands. Do not add a guide, a role flag, or an options file to close that gap. If the binary prints a menu, that menu is the lesson.

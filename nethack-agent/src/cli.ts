@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { formatDollars, formatUsageCost } from "./cost.js";
 import { runSession } from "./harness.js";
 import { LIMITS, clampLives, clampMaxTurns } from "./limits.js";
 import { assertLearningGame, defaultNethackCommand } from "./real-game.js";
@@ -55,6 +57,7 @@ async function main(): Promise<void> {
     throw new Error(`nethack binary not found: ${command}`);
   }
 
+  const resultsDir = path.resolve(root, argValue(args, "--results-dir") ?? "results");
   const record = await runSession({
     backend: "cursor",
     game: "tty",
@@ -65,7 +68,7 @@ async function main(): Promise<void> {
     ),
     seed: 1,
     apiKey: process.env.CURSOR_API_KEY,
-    resultsDir: path.resolve(root, argValue(args, "--results-dir") ?? "results"),
+    resultsDir,
     workspacesRoot: path.join(root, ".workspaces"),
     resumeMemoryDir: notebookDir,
     notebookDir,
@@ -74,6 +77,11 @@ async function main(): Promise<void> {
   });
 
   const last = record.lives[record.lives.length - 1];
+  const costReport = formatUsageCost(record.model, record.usage);
+  console.error(costReport);
+  await mkdir(resultsDir, { recursive: true });
+  await writeFile(path.join(resultsDir, "last-run.txt"), `${costReport}\n`);
+  await appendStepSummary(costReport);
   console.log(
     JSON.stringify(
       {
@@ -92,12 +100,27 @@ async function main(): Promise<void> {
         sequences: record.memory.procedures.length,
         lastExit: last?.exitReason,
         totalTokens: record.usage.totalTokens,
+        inputTokens: record.usage.inputTokens,
+        outputTokens: record.usage.outputTokens,
+        cacheReadTokens: record.usage.cacheReadTokens,
+        cacheWriteTokens: record.usage.cacheWriteTokens,
         totalRawCostCents: record.usage.totalRawCostCents,
+        estimatedCostCents: record.usage.estimatedCostCents,
+        invoiceCents: record.usage.invoiceCents,
+        reportedCostCents: record.usage.reportedCostCents,
+        costSource: record.usage.costSource,
+        tokenCost: formatDollars(record.usage.reportedCostCents),
       },
       null,
       2,
     ),
   );
+}
+
+async function appendStepSummary(costReport: string): Promise<void> {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) return;
+  await appendFile(summaryPath, `## NetHack play\n\n${costReport}\n`);
 }
 
 main().catch((err) => {

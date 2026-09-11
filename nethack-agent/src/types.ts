@@ -71,6 +71,7 @@ export type LifeTurn = {
   screenAfter: string;
   ack?: string;
   tokens?: number;
+  usage?: TokenUsage;
 };
 
 export type LifeRecord = {
@@ -82,6 +83,8 @@ export type LifeRecord = {
   debrief?: LifeTurn;
   error?: string;
   billedCostCents?: number;
+  invoiceCents?: number;
+  tokens?: TokenUsage;
 };
 
 export type RunRecord = {
@@ -95,7 +98,15 @@ export type RunRecord = {
   lives: LifeRecord[];
   memory: Memory;
   usage: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    cacheWriteTokens: number;
     totalTokens: number;
     totalRawCostCents: number;
+    estimatedCostCents?: number;
+    invoiceCents?: number;
+    reportedCostCents: number;
+    costSource: "billed" | "estimate" | "mixed" | "unknown";
   };
 };

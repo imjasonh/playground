@@ -15,8 +15,9 @@ export type PlayerAgent = {
   readonly model?: string;
   turn(input: PromptTurn): Promise<TurnResult>;
   getBilledUsage?(): Promise<{
-    totalTokens: number;
+    usage: TokenUsage;
     rawCostCents: number;
+    chargedCents?: number;
   }>;
   dispose(): Promise<void>;
 };
@@ -24,12 +25,18 @@ export type PlayerAgent = {
 export type MockTurn = {
   text: string;
   thinking?: string;
+  usage?: TokenUsage;
 };
 
 export type MockScript = {
   turns: MockTurn[];
   /** Filled by the mock with each prompt it received. */
   seenPrompts?: string[];
+  billed?: {
+    usage: TokenUsage;
+    rawCostCents: number;
+    chargedCents?: number;
+  };
 };
 
 export type AgentFactoryOptions = {

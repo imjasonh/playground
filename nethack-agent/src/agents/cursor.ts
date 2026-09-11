@@ -87,11 +87,12 @@ export const createCursorAgent: AgentFactory = async (options) => {
       try {
         const billed = await agent.getUsage();
         return {
-          totalTokens: billed.usage?.totalTokens ?? 0,
+          usage: normalizeUsage(billed.usage) ?? emptyUsage(),
           rawCostCents: billed.cost?.rawCostCents ?? 0,
+          chargedCents: billed.cost?.chargedCents,
         };
       } catch {
-        return { totalTokens: 0, rawCostCents: 0 };
+        return { usage: emptyUsage(), rawCostCents: 0 };
       }
     },
     async dispose() {
@@ -133,6 +134,16 @@ function appendAssistantMessages(
       messages.push({ type: "assistant", text: block.text });
     }
   }
+}
+
+function emptyUsage(): TokenUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens: 0,
+  };
 }
 
 function normalizeUsage(usage: unknown): TokenUsage | undefined {

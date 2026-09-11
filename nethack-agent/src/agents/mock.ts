@@ -1,3 +1,4 @@
+import type { TokenUsage } from "../types.js";
 import type { AgentFactory, PlayerAgent, PromptTurn, TurnResult } from "./types.js";
 
 export const createMockAgent: AgentFactory = async (options) => {
@@ -19,8 +20,17 @@ export const createMockAgent: AgentFactory = async (options) => {
             : []),
           { type: "assistant", text },
         ],
+        usage: next?.usage,
         durationMs: 1,
       };
+    },
+    async getBilledUsage() {
+      return (
+        script.billed ?? {
+          usage: emptyUsage(),
+          rawCostCents: 0,
+        }
+      );
     },
     async dispose() {
       // Nothing to close.
@@ -28,3 +38,13 @@ export const createMockAgent: AgentFactory = async (options) => {
   };
   return player;
 };
+
+function emptyUsage(): TokenUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens: 0,
+  };
+}

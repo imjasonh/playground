@@ -4,14 +4,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 import type { MockScript } from "../src/agents/types.js";
-import { runSession } from "../src/harness.js";
+import { runSession, type RunOptions } from "../src/harness.js";
 
-async function run(script: MockScript, lives = 2) {
+async function run(script: MockScript, lives = 2, model = "mock") {
   const root = await mkdtemp(path.join(tmpdir(), "nethack-agent-"));
-  return runSession({
+  const options: RunOptions = {
     backend: "mock",
     game: "fake",
-    model: "mock",
+    model,
     lives,
     maxTurns: 8,
     seed: 1,
@@ -19,7 +19,8 @@ async function run(script: MockScript, lives = 2) {
     workspacesRoot: path.join(root, "ws"),
     script,
     dryRun: true,
-  });
+  };
+  return runSession(options);
 }
 
 describe("harness", () => {
@@ -63,5 +64,48 @@ describe("harness", () => {
     assert.equal(replay?.sentKeys, "l");
     assert.match(replay?.screenAfter ?? "", /#\.@/);
     assert.equal(record.memory.procedures[0]?.name, "step");
+  });
+
+  it("reports the play's token cost from billed usage, else the list price", async () => {
+    const billed: MockScript = {
+      turns: [{ text: '{"quit":true}' }, { text: '{"note":"done"}' }],
+      billed: {
+        usage: {
+          inputTokens: 1_000_000,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 1_000_000,
+        },
+        rawCostCents: 175,
+        chargedCents: 0,
+      },
+    };
+    const billedRun = await run(billed, 1);
+    assert.equal(billedRun.model, "mock");
+    assert.equal(billedRun.usage.totalTokens, 1_000_000);
+    assert.equal(billedRun.usage.reportedCostCents, 175);
+    assert.equal(billedRun.usage.costSource, "billed");
+    assert.equal(billedRun.usage.invoiceCents, 0);
+
+    const estimated: MockScript = {
+      turns: [
+        {
+          text: '{"quit":true}',
+          usage: {
+            inputTokens: 1_000_000,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            totalTokens: 1_000_000,
+          },
+        },
+        { text: '{"note":"done"}' },
+      ],
+    };
+    const estimatedRun = await run(estimated, 1, "grok-4.6");
+    assert.equal(estimatedRun.usage.reportedCostCents, 200);
+    assert.equal(estimatedRun.usage.costSource, "estimate");
+    assert.equal(estimatedRun.usage.totalRawCostCents, 0);
   });
 });

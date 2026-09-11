@@ -4,6 +4,15 @@ import path from "node:path";
 import { createCursorAgent } from "./agents/cursor.js";
 import { createMockAgent } from "./agents/mock.js";
 import type { AgentFactory, MockScript, PlayerAgent } from "./agents/types.js";
+import {
+  addTokens,
+  emptyTokens,
+  estimateCostCents,
+  formatDollars,
+  formatUsageCost,
+  lifeReportedCost,
+} from "./cost.js";
+import type { CostSource, TokenTotals } from "./cost.js";
 import { createFakeBackend } from "./games/fake.js";
 import { createTtyBackend, type TtyOptions } from "./games/tty.js";
 import type { Game, GameBackend } from "./games/types.js";
@@ -26,6 +35,7 @@ import type {
   LifeTurn,
   Memory,
   RunRecord,
+  TokenUsage,
 } from "./types.js";
 
 export type RunOptions = {
@@ -64,8 +74,11 @@ export async function runSession(options: RunOptions): Promise<RunRecord> {
       : (options.factories?.cursor ?? createCursorAgent);
 
   const lifeRecords: LifeRecord[] = [];
-  let totalTokens = 0;
+  let tokens = emptyTokens();
   let totalRawCostCents = 0;
+  let reportedCostCents = 0;
+  let invoiceCents: number | undefined;
+  const sources = new Set<CostSource>();
 
   for (let life = 1; life <= lives; life++) {
     const record = await playLife({
@@ -82,9 +95,16 @@ export async function runSession(options: RunOptions): Promise<RunRecord> {
       verbose: options.verbose,
     });
     lifeRecords.push(record);
-    totalTokens += record.actions.reduce((sum, turn) => sum + (turn.tokens ?? 0), 0);
-    totalTokens += record.debrief?.tokens ?? 0;
+    tokens = addTokens(tokens, record.tokens);
     totalRawCostCents += record.billedCostCents ?? 0;
+    const reported = lifeReportedCost(options.model, record.tokens ?? emptyTokens(), record.billedCostCents ?? 0);
+    reportedCostCents += reported.cents;
+    if (reported.source === "billed" || reported.source === "estimate") {
+      sources.add(reported.source);
+    }
+    if (record.invoiceCents !== undefined) {
+      invoiceCents = (invoiceCents ?? 0) + record.invoiceCents;
+    }
     if (options.verbose) {
       console.error(
         `life ${life} ${record.exitReason} after ${record.turns} turns`,
@@ -103,7 +123,14 @@ export async function runSession(options: RunOptions): Promise<RunRecord> {
     seed: options.seed,
     lives: lifeRecords,
     memory,
-    usage: { totalTokens, totalRawCostCents },
+    usage: {
+      ...tokens,
+      totalRawCostCents,
+      estimatedCostCents: estimateCostCents(options.model, tokens),
+      invoiceCents,
+      reportedCostCents,
+      costSource: runCostSource(sources),
+    },
   };
 
   if (!options.dryRun) {
@@ -197,6 +224,7 @@ async function playLife(input: {
             screenAfter: observation.screen,
             ack,
             tokens: played.tokens,
+            usage: played.usage,
           });
           exitReason = "agent_quit";
           break;
@@ -229,6 +257,7 @@ async function playLife(input: {
           screenAfter: observation.screen,
           ack,
           tokens: played.tokens,
+          usage: played.usage,
         });
 
         if (observation.ended) {
@@ -253,6 +282,8 @@ async function playLife(input: {
 
   let debrief: LifeTurn | undefined;
   let billedCostCents = 0;
+  let invoiceCents: number | undefined;
+  let billedTokens: TokenUsage | undefined;
   if (agent && finalScreen) {
     try {
       debrief = await runDebrief(agent, input.memory, input.life, actions.length, finalScreen);
@@ -264,6 +295,8 @@ async function playLife(input: {
     try {
       const billed = await agent.getBilledUsage();
       billedCostCents = billed.rawCostCents;
+      invoiceCents = billed.chargedCents;
+      billedTokens = billed.usage;
     } catch {
       billedCostCents = 0;
     }
@@ -288,6 +321,8 @@ async function playLife(input: {
     debrief,
     error,
     billedCostCents,
+    invoiceCents,
+    tokens: lifeTokens(actions, debrief, billedTokens),
   };
 }
 
@@ -312,6 +347,7 @@ async function takeAction(
   parseError?: string;
   ack?: string;
   tokens: number;
+  usage?: TokenUsage;
 }> {
   const first = await agent.turn({ prompt });
   const parsed = parseAction(first.rawText);
@@ -320,23 +356,24 @@ async function takeAction(
       rawText: first.rawText,
       action: parsed.action,
       tokens: first.usage?.totalTokens ?? 0,
+      usage: first.usage,
     };
   }
   const retry = await agent.turn({
     prompt: `${prompt}\n\n${retryPrompt()}\n${parsed.error}`,
   });
   const again = parseAction(retry.rawText);
-  const tokens =
-    (first.usage?.totalTokens ?? 0) + (retry.usage?.totalTokens ?? 0);
+  const usage = addTokens(addTokens(emptyTokens(), first.usage), retry.usage);
   if (again.ok) {
-    return { rawText: retry.rawText, action: again.action, tokens };
+    return { rawText: retry.rawText, action: again.action, tokens: usage.totalTokens, usage };
   }
   return {
     rawText: retry.rawText,
     action: null,
     parseError: again.error,
     ack: "unparsed reply, no keys sent",
-    tokens,
+    tokens: usage.totalTokens,
+    usage,
   };
 }
 
@@ -367,7 +404,31 @@ async function runDebrief(
     screenAfter: screen,
     ack,
     tokens: result.usage?.totalTokens ?? 0,
+    usage: result.usage,
   };
+}
+
+function lifeTokens(
+  actions: LifeTurn[],
+  debrief: LifeTurn | undefined,
+  billed: TokenUsage | undefined,
+): TokenUsage {
+  if (
+    billed &&
+    (billed.totalTokens > 0 || billed.inputTokens > 0 || billed.outputTokens > 0)
+  ) {
+    return billed;
+  }
+  let tokens: TokenTotals = emptyTokens();
+  for (const turn of actions) tokens = addTokens(tokens, turn.usage);
+  return addTokens(tokens, debrief?.usage);
+}
+
+function runCostSource(sources: Set<CostSource>): CostSource {
+  const priced = [...sources].filter((source) => source === "billed" || source === "estimate");
+  if (priced.length === 0) return "unknown";
+  if (priced.length === 1) return priced[0] ?? "unknown";
+  return "mixed";
 }
 
 function joinAck(left?: string, right?: string): string | undefined {
@@ -380,10 +441,17 @@ function renderTranscript(run: RunRecord): string {
   chunks.push(
     `run ${run.id}`,
     `backend ${run.backend} game ${run.game} model ${run.model} seed ${run.seed}`,
+    formatUsageCost(run.model, run.usage),
     "",
   );
   for (const life of run.lives) {
     chunks.push(`=== life ${life.life} ${life.exitReason} turns ${life.turns} ===`);
+    if (life.tokens && life.tokens.totalTokens > 0) {
+      const reported = lifeReportedCost(run.model, life.tokens, life.billedCostCents ?? 0);
+      chunks.push(
+        `life token cost ${formatDollars(reported.cents)} (${life.tokens.totalTokens.toLocaleString("en-US")} tokens, ${reported.source})`,
+      );
+    }
     if (life.error) chunks.push(`error: ${life.error}`);
     for (const turn of life.actions) {
       chunks.push(`--- turn ${turn.turn} ---`);

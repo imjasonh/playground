@@ -140,6 +140,8 @@ assert_file "$work/nethack-agent/notebook/notes.json" '[{"id":"n1","text":"keep 
 
 # Publish writes the notebook onto a branch based on main, and opens a PR.
 write_notebook "$work" '[{"id":"n1","text":"from play"}]'
+mkdir -p "$work/nethack-agent/results"
+printf 'token cost $0.18 list price (9000 tokens, grok-4.6)\n' > "$work/nethack-agent/results/last-run.txt"
 (
   cd "$work"
   GH_TOKEN=test \
@@ -153,6 +155,7 @@ assert_eq \
   "$(git -C "$work" rev-parse origin/main)" \
   "notes branch is based on main"
 assert_eq "$(grep -c 'pr create' "$tmp/gh.log" || true)" "1" "opens one pull request"
+assert_eq "$(grep -c 'token cost .0.18' "$tmp/gh.log" || true)" "1" "pull request includes the token cost"
 assert_file "$tmp/gh-state/number" "42"
 
 # The same notebook does not push again, and still opens a PR if the last

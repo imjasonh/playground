@@ -6,6 +6,7 @@
 # branch exists, then publishes the updated notebook back to that branch.
 # It does not commit notes onto the feature pull request. A failed play
 # does not publish. Play jobs queue so two runs cannot overwrite the branch.
+# Play uses grok-4.6 and writes the token cost to the job summary.
 
 name: NetHack agent
 
@@ -26,6 +27,10 @@ on:
         description: Model turns per life
         type: string
         default: '16'
+      model:
+        description: Model id
+        type: string
+        default: grok-4.6
 
 concurrency:
   group: nethack-agent-${{ github.workflow }}-${{ github.ref }}
@@ -118,6 +123,7 @@ jobs:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           LIVES: ${{ github.event_name == 'workflow_dispatch' && inputs.lives || '1' }}
           MAX_TURNS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_turns || '16' }}
+          MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.model || 'grok-4.6' }}
         run: |
           set -euo pipefail
           test -x /usr/games/nethack
@@ -125,6 +131,7 @@ jobs:
             --backend cursor \
             --game tty \
             --command /usr/games/nethack \
+            --model "$MODEL" \
             --lives "$LIVES" \
             --max-turns "$MAX_TURNS" \
             --verbose

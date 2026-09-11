@@ -123,6 +123,26 @@ seed() {
   echo "Seeded ${NOTEBOOK_REL} from ${BRANCH}."
 }
 
+run_report() {
+  local path="${NETHACK_RUN_REPORT:-$NOTEBOOK_REL/../results/last-run.txt}"
+  local root
+  root="$(repo_root)"
+  if [[ "$path" != /* ]]; then
+    path="$root/$path"
+  fi
+  if [[ ! -f "$path" ]]; then
+    return 0
+  fi
+  python3 - "$path" <<'PY'
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text(errors="replace").replace("\x00", "").strip()
+if not text.startswith("token cost "):
+    raise SystemExit(0)
+print()
+print(text[:2000])
+PY
+}
+
 close_stale() {
   local existing
   existing="$(gh pr list --head "$BRANCH" --base "$BASE" --state open --json number --jq '.[0].number // empty')"
@@ -138,11 +158,14 @@ open_or_update_pr() {
   local pushed="$2"
   local counts title body url existing
   counts="$(validate_notebook "$notebook")"
+  local report
+  report="$(run_report)"
   title="Update NetHack agent notes"
   body="$(cat <<EOF
 Learning notebook from a real \`nethack\` play. The next play reads \`${BRANCH}\` even if this pull request is still open.
 
 ${counts}
+${report}
 
 Review \`nethack-agent/notebook/\` before merging. This pull request is not set to auto-merge. A failed or fake-screen run does not publish here.
 
