@@ -1,0 +1,79 @@
+# App-specific: unit-test the NetHack agent harness.
+#
+# Live Cursor play is manual. A learning run spends tokens and is not a
+# required check. Unit tests use the mock agent and the fake screen.
+
+name: NetHack agent
+
+on:
+  pull_request:
+    paths:
+      - 'nethack-agent/**'
+      - '.github/workflows/nethack-agent.yml'
+  workflow_dispatch:
+    inputs:
+      backend:
+        description: Agent backend
+        type: choice
+        options:
+          - mock
+          - cursor
+        default: mock
+      lives:
+        description: Lives in this run
+        type: string
+        default: '2'
+      max_turns:
+        description: Model turns per life
+        type: string
+        default: '8'
+
+concurrency:
+  group: nethack-agent-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: nethack-agent
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: nethack-agent/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Optional live probe
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.backend == 'cursor' }}
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CURSOR_API_KEY}" ]; then
+            echo "::error title=CURSOR_API_KEY missing::Repo secret CURSOR_API_KEY is not set."
+            exit 1
+          fi
+          npx tsx src/cli.ts \
+            --backend cursor \
+            --game fake \
+            --lives "${{ inputs.lives }}" \
+            --max-turns "${{ inputs.max_turns }}" \
+            --verbose

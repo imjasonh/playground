@@ -28,6 +28,7 @@ playground/
 ├── git-server/            # Rust Cloudflare Worker: git smart-HTTP server on R2/DO (not a Pages app)
 ├── life-lab/              # browser front-end for life-stl (wasm + three.js + Node tests)
 ├── its-not-jaws/          # Cursor SDK harness: knower/guesser secret-guessing game
+├── nethack-agent/         # Cursor SDK harness: learn a terminal game from the screen and its own notes
 ├── life-qr/               # OpenSCAD Life sculpture with a QR-code roof (parametric)
 ├── life-scad/             # OpenSCAD Life sculpture + reverse-history Python tool
 ├── life-stl/              # Rust CLI: Game of Life → printable STL (Z = time)
@@ -90,6 +91,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `tank-commander/` | no | Rust CLI (Tank Commander balance/fun simulator); no `index.html` |
 | `mapvelopes/` | no | Rust Cloudflare Worker; no `index.html` |
 | `its-not-jaws/` | no | Cursor SDK knower/guesser guessing harness; no `index.html` |
+| `nethack-agent/` | no | Cursor SDK terminal-game harness; no `index.html` |
 | `bun-image/` | no | bun compile + crane image (shell); no `index.html` |
 | `life-scad/` | no | OpenSCAD + Python reverse-history tool; no `index.html` |
 | `life-qr/` | no | OpenSCAD Life+QR sculpture; no `index.html` |
@@ -194,6 +196,7 @@ discovery scripts.
 | `army-list-catalog.yml` | weekly Mondays 06:00 UTC, manual | Refreshes the bundled iOS Army List construction catalog from BSData on **macOS**; bumps `11e-<N>`; writes id migrations; regenerates stress fixtures via the Swift `ArmyListValidator` CLI; opens a PR and auto-merges when CI is green |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
+| `nethack-agent.yml` | pull requests touching `nethack-agent/**`, manual | **App-specific:** unit-tests the terminal-game harness (mock agent, fake screen). A live Cursor probe is manual only and uses the fake screen |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go and Rust app directories are not deployed. Only
@@ -705,6 +708,7 @@ auto-discover them. Run their local tests when you change them.
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
+| `nethack-agent/` | Cursor SDK harness that plays a terminal game from the screen and the agent's own notes. The prompt does not name the game or list commands. Mock agent for tests; live Cursor play is manual | `cd nethack-agent && npm test` |
 | `bun-image/` | bun compile + crane image (deno-image cousin; shell scripts, not a Go packager) | `bash bun-image/test.sh` (needs bun; crane for the image half) |
 | `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
