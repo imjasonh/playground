@@ -527,13 +527,13 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertTrue(summary.contains("Background archive"))
         XCTAssertTrue(summary.contains("Click pricing"))
 
-        let overflow = NSError(
-            domain: "FoundationModels.GenerationError",
+        let unrelatedModelError = NSError(
+            domain: "FoundationModels.LanguageModelError",
             code: -1,
-            userInfo: [NSLocalizedDescriptionKey: "GenerationError"]
+            userInfo: [NSLocalizedDescriptionKey: "LanguageModelError"]
         )
-        XCTAssertTrue(OnDeviceContextManager.isExceededContextWindow(overflow))
-        XCTAssertTrue(AgentRuntime.isExceededContextWindow(overflow))
+        XCTAssertFalse(OnDeviceContextManager.isExceededContextWindow(unrelatedModelError))
+        XCTAssertFalse(AgentRuntime.isExceededContextWindow(unrelatedModelError))
     }
 
     func testContextBudgetSnapshotCharBudgetShrinksWhenFull() {
@@ -583,21 +583,21 @@ final class DeviceAgentTests: XCTestCase {
 
     func testExceededContextWindowDetection() {
         let err = NSError(
-            domain: "FoundationModels.LanguageModelSession.GenerationError",
+            domain: "FoundationModels.LanguageModelError",
             code: -1,
             userInfo: [NSLocalizedDescriptionKey: "Exceeded model context window size"]
         )
         XCTAssertTrue(AgentRuntime.isExceededContextWindow(err))
 
         let bareCode = NSError(
-            domain: "FoundationModels.LanguageModelSession.GenerationError",
+            domain: "FoundationModels.LanguageModelError",
             code: -1,
             userInfo: [
                 NSLocalizedDescriptionKey:
-                    "The operation couldn’t be completed. (FoundationModels.LanguageModelSession.GenerationError error -1.)",
+                    "The operation couldn’t be completed. (FoundationModels.LanguageModelError error -1.)",
             ]
         )
-        XCTAssertTrue(AgentRuntime.isExceededContextWindow(bareCode))
+        XCTAssertFalse(AgentRuntime.isExceededContextWindow(bareCode))
 
         XCTAssertFalse(AgentRuntime.isExceededContextWindow(
             NSError(domain: "test", code: 1, userInfo: [NSLocalizedDescriptionKey: "network down"])

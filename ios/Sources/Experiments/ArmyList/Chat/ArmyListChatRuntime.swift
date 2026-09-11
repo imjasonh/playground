@@ -149,8 +149,8 @@ final class ArmyListChatRuntime: ObservableObject {
         }
     }
 
-    /// FoundationModels often surfaces context overflow as GenerationError code -1
-    /// with a generic localizedDescription (no “context” substring).
+    /// Recognizes the typed iOS 27 context error and wrapped errors that retain
+    /// a context-size description.
     nonisolated static func isExceededContextWindow(_ error: Error) -> Bool {
         OnDeviceContextManager.isExceededContextWindow(error)
     }

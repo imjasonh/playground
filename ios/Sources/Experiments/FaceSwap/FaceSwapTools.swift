@@ -291,7 +291,7 @@ private enum FaceSwapToolModel {
         if plan.attachPreview, let image = raster.makeCGImage() {
             _ = try await session.respond {
                 plan.prompt
-                Attachment(image)
+                Attachment(image).label("source-photo")
             }
         } else {
             _ = try await session.respond(to: plan.prompt)

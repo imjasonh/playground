@@ -463,7 +463,7 @@ struct DeviceAgentView: View {
 
                 TextField("Ask Device Agent…", text: $draft, axis: .vertical)
                     .lineLimit(1...4)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.bordered)
                     .focused($promptFocused)
                     .accessibilityLabel("Ask Device Agent")
                     .accessibilityIdentifier("deviceAgentPromptField")

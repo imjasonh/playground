@@ -21,10 +21,8 @@ The default on-device model has a **4096-token** window per
 `LanguageModelSession`. Everything in the session counts toward that budget:
 instructions, prompts, tool definitions and their I/O, `@Generable` schemas,
 and model replies. When the window is full, the session throws
-`LanguageModelSession.GenerationError.exceededContextWindowSize` (also described
-as `LanguageModelError.contextSizeExceeded`; often surfaced as a generic
-`GenerationError` with code `-1`). The session then cannot take more requests
-until you start a new one.
+`LanguageModelError.contextSizeExceeded`. The session then cannot take more
+requests until you start a new one.
 
 ## When to use
 
@@ -102,10 +100,9 @@ Do not try to keep one chat session alive through a huge pipeline.
 
 ## Recover from overflow (TN3193)
 
-Catch `LanguageModelSession.GenerationError.exceededContextWindowSize` when the
-SDK exposes it. Also treat generic generation failures that mention context, or
-Army List / Device Agent's known `GenerationError` code `-1`, as overflow (see
-`OnDeviceContextManager.isExceededContextWindow`).
+Catch `LanguageModelError.contextSizeExceeded`. Wrapped failures can still be
+treated as overflow when their descriptions name the context-size limit. Do not
+treat every generic Foundation Models error as overflow.
 
 Then:
 

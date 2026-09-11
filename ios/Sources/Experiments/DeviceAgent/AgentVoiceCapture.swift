@@ -61,8 +61,19 @@ final class AgentVoiceCapture: ObservableObject {
         let input = audioEngine.inputNode
         let format = input.outputFormat(forBus: 0)
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-            request.append(buffer)
+        let sink = SpeechRequestAudioSink(request: request)
+        do {
+            try input.installAudioTap(
+                onBus: 0,
+                bufferSize: AudioTapBufferSizing.frameCount(sampleRate: format.sampleRate),
+                format: format
+            ) { buffer, _ in
+                sink.append(buffer)
+            }
+        } catch {
+            lastError = error.localizedDescription
+            statusMessage = "Could not monitor microphone input."
+            return
         }
 
         audioEngine.prepare()
@@ -117,5 +128,22 @@ final class AgentVoiceCapture: ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         isRecording = false
+    }
+}
+
+/// `SFSpeechAudioBufferRecognitionRequest` is not `Sendable`, but the audio tap
+/// invokes this sink serially and this is its only writer.
+private final class SpeechRequestAudioSink: @unchecked Sendable {
+    private let request: SFSpeechAudioBufferRecognitionRequest
+
+    init(request: SFSpeechAudioBufferRecognitionRequest) {
+        self.request = request
+    }
+
+    func append(_ buffer: AVReadOnlyAudioPCMBuffer) {
+        let copy: AVAudioPCMBuffer? = AVAudioPCMBuffer(copying: buffer)
+        if let copy {
+            request.append(copy)
+        }
     }
 }

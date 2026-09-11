@@ -140,17 +140,17 @@ final class ArmyListChatToolTests: XCTestCase {
         XCTAssertLessThanOrEqual(custodesWorkspace.validation.totalPoints, 1000)
     }
 
-    func testContextWindowDetectionTreatsGenerationErrorMinusOne() {
+    func testContextWindowDetectionRejectsBareLanguageModelErrorMinusOne() {
         let err = NSError(
-            domain: "FoundationModels.LanguageModelSession.GenerationError",
+            domain: "FoundationModels.LanguageModelError",
             code: -1,
             userInfo: [
                 NSLocalizedDescriptionKey:
-                    "The operation couldn’t be completed. (FoundationModels.LanguageModelSession.GenerationError error -1.)",
+                    "The operation couldn’t be completed. (FoundationModels.LanguageModelError error -1.)",
             ]
         )
-        XCTAssertTrue(ArmyListChatRuntime.isExceededContextWindow(err))
-        XCTAssertTrue(AgentRuntime.isExceededContextWindow(err))
+        XCTAssertFalse(ArmyListChatRuntime.isExceededContextWindow(err))
+        XCTAssertFalse(AgentRuntime.isExceededContextWindow(err))
     }
 
     func testMarkdownRendersBoldAndLists() {
@@ -574,11 +574,11 @@ final class ArmyListChatToolTests: XCTestCase {
 
     func testExceededContextWindowDetection() {
         let ns = NSError(
-            domain: "FoundationModels.GenerationError",
+            domain: "FoundationModels.LanguageModelError",
             code: -1,
             userInfo: [NSLocalizedDescriptionKey: "failed"]
         )
-        XCTAssertTrue(OnDeviceContextManager.isExceededContextWindow(ns))
+        XCTAssertFalse(OnDeviceContextManager.isExceededContextWindow(ns))
         let other = NSError(domain: "NSURLErrorDomain", code: -1009, userInfo: nil)
         XCTAssertFalse(OnDeviceContextManager.isExceededContextWindow(other))
         let labeled = NSError(

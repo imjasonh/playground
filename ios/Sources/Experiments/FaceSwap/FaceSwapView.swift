@@ -136,7 +136,7 @@ struct FaceSwapView: View {
     private var promptField: some View {
         TextField("Describe the edit", text: $session.prompt, axis: .vertical)
             .lineLimit(2...4)
-            .textFieldStyle(.roundedBorder)
+            .textFieldStyle(.bordered)
             .disabled(session.isRunning)
             .accessibilityIdentifier("faceSwapPrompt")
     }

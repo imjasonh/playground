@@ -26,11 +26,11 @@ enum OnDeviceContextManager {
         var content: String
     }
 
-    /// Detects context-window overflow, including typed GenerationError cases
-    /// and the generic FoundationModels code `-1` seen on device.
+    /// Detects typed context-window failures and wrapped errors that retain a
+    /// context-size description.
     nonisolated static func isExceededContextWindow(_ error: Error) -> Bool {
-        if let generationError = error as? LanguageModelSession.GenerationError,
-           case .exceededContextWindowSize(_) = generationError
+        if let modelError = error as? LanguageModelError,
+           case .contextSizeExceeded(_) = modelError
         {
             return true
         }
@@ -53,8 +53,6 @@ enum OnDeviceContextManager {
         let domain = ns.domain.lowercased()
         if domain.contains("foundationmodels") {
             if text.contains("context") { return true }
-            // Observed on device: GenerationError error -1 with no useful message.
-            if ns.code == -1 { return true }
         }
         return false
     }

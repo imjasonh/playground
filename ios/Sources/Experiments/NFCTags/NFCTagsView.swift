@@ -74,7 +74,7 @@ struct NFCTagsView: View {
                 axis: .vertical
             )
             .lineLimit(3...6)
-            .textFieldStyle(.roundedBorder)
+            .textFieldStyle(.bordered)
             .textInputAutocapitalization(controller.draft.kind == .url ? .never : .sentences)
             .keyboardType(controller.draft.kind == .url ? .URL : .default)
             .autocorrectionDisabled(controller.draft.kind == .url)

@@ -1,49 +1,50 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// `FileDocument` wrapper so a JSONL payload can be saved through SwiftUI's
-/// `fileExporter` (Files / iCloud Drive picker).
-struct RideJSONLFileDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [RideJSONLExporter.contentType] }
-    static var writableContentTypes: [UTType] { [RideJSONLExporter.contentType] }
+/// Writes a JSONL payload through SwiftUI's Files and iCloud Drive exporter.
+@MainActor
+final class RideJSONLWritableDocument: WritableDocument {
+    static let writableContentTypes: [UTType] = [RideJSONLExporter.contentType]
 
-    var data: Data
+    let data: Data
 
     init(data: Data) {
         self.data = data
     }
 
-    init(configuration: ReadConfiguration) throws {
-        guard let data = configuration.file.regularFileContents else {
-            throw CocoaError(.fileReadCorruptFile)
+    nonisolated func writer(
+        configuration: sending WriteConfiguration
+    ) -> sending FileWrapperDocumentWriter<Data> {
+        FileWrapperDocumentWriter(configuration) { snapshot, _ in
+            FileWrapper(regularFileWithContents: snapshot)
         }
-        self.data = data
     }
 
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
+    func snapshot(contentType: UTType) async throws -> sending Data {
+        data
     }
 }
 
-/// `FileDocument` wrapper for a ZIP of per-ride JSONL files.
-struct RideZipFileDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.zip] }
-    static var writableContentTypes: [UTType] { [.zip] }
+/// Writes a ZIP of per-ride JSONL files through SwiftUI's file exporter.
+@MainActor
+final class RideZipWritableDocument: WritableDocument {
+    static let writableContentTypes: [UTType] = [.zip]
 
-    var data: Data
+    let data: Data
 
     init(data: Data) {
         self.data = data
     }
 
-    init(configuration: ReadConfiguration) throws {
-        guard let data = configuration.file.regularFileContents else {
-            throw CocoaError(.fileReadCorruptFile)
+    nonisolated func writer(
+        configuration: sending WriteConfiguration
+    ) -> sending FileWrapperDocumentWriter<Data> {
+        FileWrapperDocumentWriter(configuration) { snapshot, _ in
+            FileWrapper(regularFileWithContents: snapshot)
         }
-        self.data = data
     }
 
-    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
-        FileWrapper(regularFileWithContents: data)
+    func snapshot(contentType: UTType) async throws -> sending Data {
+        data
     }
 }

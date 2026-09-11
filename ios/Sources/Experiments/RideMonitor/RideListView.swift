@@ -5,10 +5,10 @@ import SwiftUI
 struct RideListView: View {
     @State private var rides: [Ride] = []
     @State private var isSavingZipFile = false
-    @State private var zipExportDocument: RideZipFileDocument?
+    @State private var zipExportDocument: RideZipWritableDocument?
     @State private var zipExportFilename = RideJSONLExporter.filenameForAllRidesZip()
     @State private var isSavingCombinedFile = false
-    @State private var combinedExportDocument: RideJSONLFileDocument?
+    @State private var combinedExportDocument: RideJSONLWritableDocument?
     @State private var combinedExportFilename = RideJSONLExporter.filenameForAllRides()
     @State private var exportErrorMessage: String?
     private let store = RideStore()
@@ -86,6 +86,8 @@ struct RideListView: View {
                 exportErrorMessage = error.localizedDescription
             }
             zipExportDocument = nil
+        } onCancellation: {
+            zipExportDocument = nil
         }
         .fileExporter(
             isPresented: $isSavingCombinedFile,
@@ -96,6 +98,8 @@ struct RideListView: View {
             if case .failure(let error) = result {
                 exportErrorMessage = error.localizedDescription
             }
+            combinedExportDocument = nil
+        } onCancellation: {
             combinedExportDocument = nil
         }
     }
@@ -144,7 +148,7 @@ struct RideListView: View {
         do {
             let data = try RideJSONLExporter.zipData(for: rides)
             zipExportFilename = RideJSONLExporter.filenameForAllRidesZip()
-            zipExportDocument = RideZipFileDocument(data: data)
+            zipExportDocument = RideZipWritableDocument(data: data)
             isSavingZipFile = true
         } catch {
             exportErrorMessage = error.localizedDescription
@@ -155,7 +159,7 @@ struct RideListView: View {
         do {
             let data = try RideJSONLExporter.data(for: rides)
             combinedExportFilename = RideJSONLExporter.filenameForAllRides()
-            combinedExportDocument = RideJSONLFileDocument(data: data)
+            combinedExportDocument = RideJSONLWritableDocument(data: data)
             isSavingCombinedFile = true
         } catch {
             exportErrorMessage = error.localizedDescription
