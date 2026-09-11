@@ -101,4 +101,4 @@ round count and trace size. Guards live in `src/limits.ts`:
 - [ ] Stronger title leak detectors (aliases, year disambiguation)
 - [x] Suite runner: N games × model matrix → summary table (`npm run suite`, `.github/workflows/its-not-jaws-matrix.yml`)
 - [ ] Cloud runtime path for parallel tournaments
-- [x] App-specific GHA workflow (`.github/workflows/its-not-jaws.yml`) for PR live games via `CURSOR_API_KEY`
+- [x] App-specific GHA workflow (`.github/workflows/its-not-jaws.yml`) for PR live games via `CURSOR_API_KEY` (harness changes only; docs and `blog-post.md` do not play)

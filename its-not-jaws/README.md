@@ -102,11 +102,13 @@ token/cost totals, and rankings for best guesser, best knower, and best secrecy.
 
 ## CI
 
-PRs that touch `its-not-jaws/**` run `.github/workflows/its-not-jaws.yml`:
+Pull requests that change `its-not-jaws` code, tests, or `.github/workflows/its-not-jaws.yml` run that workflow. The live Cursor game runs only when the pull request changes the harness (`src/`, `package.json`, `package-lock.json`, or `tsconfig.json`), or when you start the workflow manually. A `blog-post.md`, README, or other doc under `its-not-jaws/` does not play a game.
 
-1. Require repo secret **`CURSOR_API_KEY`** (job fails if missing)
-2. `npm test` + typecheck
-3. One live Cursor game
+The job:
+
+1. Runs `npm test` and typecheck
+2. Plays one live game when the harness changed
+3. Requires repo secret **`CURSOR_API_KEY`** for that live game. If the secret is missing, the job fails.
 
 Add the secret under **Settings → Secrets and variables → Actions**.
 

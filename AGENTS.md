@@ -193,7 +193,7 @@ discovery scripts.
 | `deps.yaml` | daily at 00:00 UTC, manual | Updates every testable browser app, Go app, and Rust app; opens a PR and auto-merges passing updates to `main`, otherwise leaves a PR for review |
 | `army-list-catalog.yml` | weekly Mondays 06:00 UTC, manual | Refreshes the bundled iOS Army List construction catalog from BSData on **macOS**; bumps `11e-<N>`; writes id migrations; regenerates stress fixtures via the Swift `ArmyListValidator` CLI; opens a PR and auto-merges when CI is green |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
-| `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
+| `its-not-jaws.yml` | pull requests that change the its-not-jaws harness (`src/` or package manifests), manual | **App-specific:** requires repo secret `CURSOR_API_KEY` when a live game will run (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game only for harness changes (not docs or `blog-post.md`), uploads the result artifact |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go and Rust app directories are not deployed. Only
@@ -704,7 +704,7 @@ auto-discover them. Run their local tests when you change them.
 
 | Directory | Type | Tests |
 |-----------|------|-------|
-| `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
+| `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI runs a live game only when a pull request changes the harness and the secret is set) |
 | `bun-image/` | bun compile + crane image (deno-image cousin; shell scripts, not a Go packager) | `bash bun-image/test.sh` (needs bun; crane for the image half) |
 | `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |

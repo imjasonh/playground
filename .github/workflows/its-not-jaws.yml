@@ -1,18 +1,32 @@
-# App-specific: play one live It's Not Jaws game on PRs that touch the harness.
+# App-specific: play one live It's Not Jaws game when a pull request changes
+# the harness. Docs, tests-only edits, and blog-post.md under its-not-jaws/
+# do not start a live game. A posts catalog pull request that only adds
+# its-not-jaws/blog-post.md must not spend Cursor tokens.
 #
-# Requires repo secret CURSOR_API_KEY (Cursor user or service-account API key).
-# The job fails if that secret is missing.
+# workflow_dispatch always plays one game.
 #
-# Intentionally not folded into test.yml — this spends Cursor tokens and is
+# Requires repo secret CURSOR_API_KEY (Cursor user or service-account API key)
+# when a live game will run. The job fails if that secret is missing then.
+#
+# Intentionally not folded into test.yml. This spends Cursor tokens and is
 # gated on an app-specific secret.
 
 name: It's Not Jaws
 
 on:
   pull_request:
+    # Do not use its-not-jaws/**. blog-post.md lives in that directory, so a
+    # posts pull request matches the glob and plays a game. The live step
+    # also checks the diff before calling the Cursor API.
     paths:
-      - 'its-not-jaws/**'
+      - 'its-not-jaws/src/**'
+      - 'its-not-jaws/tests/**'
+      - 'its-not-jaws/package.json'
+      - 'its-not-jaws/package-lock.json'
+      - 'its-not-jaws/tsconfig.json'
       - '.github/workflows/its-not-jaws.yml'
+      - '.github/scripts/its-not-jaws-should-play.sh'
+      - '.github/scripts/its-not-jaws-should-play_test.sh'
   workflow_dispatch: {}
 
 concurrency:
@@ -32,6 +46,46 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0   # need base history to see whether the harness changed
+
+      - name: Test live-game path gate
+        working-directory: .
+        run: bash .github/scripts/its-not-jaws-should-play_test.sh
+
+      - name: Decide whether to play a live game
+        id: gate
+        working-directory: .
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual run; playing one live game."
+            echo "play=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$BASE_SHA" ] || [ -z "$HEAD_SHA" ]; then
+            echo "::error title=Missing pull request SHAs::Cannot tell whether the harness changed without pull_request base and head SHAs."
+            exit 1
+          fi
+          # Diff the pull request commits, not the merge ref. Comparing
+          # origin/base...HEAD on the merge commit can pick up unrelated
+          # files after main moves.
+          git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || git fetch --no-tags origin "$BASE_SHA"
+          git cat-file -e "$HEAD_SHA^{commit}" 2>/dev/null || git fetch --no-tags origin "$HEAD_SHA"
+          changed=$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}")
+          echo "Changed files:"
+          printf '%s\n' "$changed"
+          decision=$(printf '%s\n' "$changed" | bash .github/scripts/its-not-jaws-should-play.sh)
+          echo "$decision"
+          echo "$decision" >> "$GITHUB_OUTPUT"
+          if [ "$decision" = "play=true" ]; then
+            echo "Harness changed; playing one live game."
+          else
+            echo "No harness change. Skipping the live game."
+          fi
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -40,6 +94,7 @@ jobs:
           cache-dependency-path: its-not-jaws/package-lock.json
 
       - name: Require CURSOR_API_KEY
+        if: ${{ steps.gate.outputs.play == 'true' }}
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
@@ -58,6 +113,7 @@ jobs:
         run: npm run typecheck
 
       - name: Play one live game
+        if: ${{ steps.gate.outputs.play == 'true' }}
         id: play
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
@@ -81,13 +137,22 @@ jobs:
           cat results/ci-summary.json
 
       - name: Upload game record
-        if: ${{ always() }}
+        if: ${{ always() && steps.gate.outputs.play == 'true' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: its-not-jaws-results-${{ github.run_id }}
           path: |
             its-not-jaws/results/
           if-no-files-found: warn
+
+      - name: Skipped game summary
+        if: ${{ steps.gate.outputs.play != 'true' }}
+        run: |
+          {
+            echo "## It's Not Jaws"
+            echo
+            echo "Skipped the live game. This pull request does not change the harness (\`its-not-jaws/src\`, \`package.json\`, \`package-lock.json\`, or \`tsconfig.json\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Job summary
         if: ${{ steps.play.outcome == 'success' }}
