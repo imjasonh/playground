@@ -221,7 +221,7 @@ final class DeviceAgentTests: XCTestCase {
     @MainActor
     func testPageFindingsBulletsAndReplayRecording() async throws {
         let bullets = AgentBrowserSession.pageFindingsBullets(
-            from: """
+            pageText: """
             NFL Schedule 2026
             Week 1 opens with the kickoff game on Thursday night.
             Cookie settings Accept all

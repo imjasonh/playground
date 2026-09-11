@@ -88,14 +88,20 @@ final class NFCTagsController: NSObject, ObservableObject {
         isSessionActive = false
         pendingDurabilityExpected = durability
 
-        guard let session = NFCTagReaderSession(
-            pollingOption: [.iso14443, .iso15693, .iso18092],
-            delegate: self,
-            queue: nil
-        ) else {
+        guard NFCTagReaderSession.readingAvailable else {
             statusMessage = "NFC is not available on this device or the Simulator."
             return
         }
+        let configuration = NFCTagReaderSession.Configuration(
+            pollingOption: [.iso14443, .iso15693, .iso18092],
+            iso7816SelectIdentifiers: [],
+            feliCaSystemCodes: []
+        )
+        let session = NFCTagReaderSession(
+            configuration: configuration,
+            delegate: self,
+            queue: nil
+        )
         session.alertMessage = alertMessage
         tagSession = session
         isSessionActive = true
