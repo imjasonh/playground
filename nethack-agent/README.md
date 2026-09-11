@@ -7,8 +7,9 @@ Design: [DESIGN.md](./DESIGN.md)
 ## Requirements
 
 - Node.js ≥ 22.13
-- For a real game: a `nethack` binary on `PATH`, and `python3`
-- For a live Cursor agent: `CURSOR_API_KEY` from the [Cursor dashboard](https://cursor.com/dashboard/api)
+- `nethack` on `PATH`, or `/usr/games/nethack` (`nethack-console` on Debian and Ubuntu)
+- `python3`
+- `CURSOR_API_KEY` from the [Cursor dashboard](https://cursor.com/dashboard/api)
 
 ## Setup
 
@@ -17,9 +18,15 @@ cd nethack-agent
 npm install
 ```
 
+On Debian or Ubuntu:
+
+```bash
+sudo apt-get install nethack-console
+```
+
 ## Test
 
-The tests use a scripted agent and a fake screen. They do not call the Cursor API and they do not need NetHack installed.
+Unit tests use a scripted agent and a fake screen. They do not call the Cursor API, they do not need NetHack installed, and they do not write `notebook/`.
 
 ```bash
 npm test
@@ -28,29 +35,13 @@ npm run typecheck
 
 ## Play
 
-```bash
-npm run play:mock
-```
-
-A short live run against the fake screen:
+Play always attaches to the real `nethack` process and resumes `notebook/`.
 
 ```bash
 export CURSOR_API_KEY=...
-npm run play -- --backend cursor --game fake --lives 2 --max-turns 12 --verbose
+npm run play -- --lives 1 --max-turns 16 --verbose
 ```
 
-Against the real binary, when `nethack` is installed:
-
-```bash
-npm run play -- --backend cursor --game tty --command nethack --lives 1 --max-turns 30
-```
-
-Continue from a previous notebook:
-
-```bash
-npm run play -- --backend cursor --game tty --resume results/<id>/memory --lives 3
-```
-
-Each run writes `results/<id>/record.json`, a text transcript, and `results/<id>/memory/`.
+Each run writes `results/<id>/` and updates `notebook/` (notes, saved sequences, ending screens). Do not point play at the fake screen. That stand-in is for tests only.
 
 The agent prompt does not name the game or list commands. Do not add a guide, a role flag, or an options file to close that gap. If the binary prints a menu, that menu is the lesson.

@@ -106,7 +106,8 @@ them:
 - **[`nethack-agent/`](nethack-agent/)** — Cursor Agent SDK harness that plays
   NetHack from the terminal. The prompt does not name the game or list
   commands. Later lives see only notes and key sequences earlier lives wrote,
-  plus the screens those lives ended on.
+  plus the screens those lives ended on. Play and the learning notebook use
+  the real `nethack` binary. The fake screen is tests only.
 - **[`bun-image/`](bun-image/)** — compile a JS file with Bun and pack the
   executable onto `cgr.dev/chainguard/glibc-dynamic` with crane (shell
   scripts; no Docker daemon). The Bun cousin of

@@ -18,6 +18,7 @@ import {
 } from "./memory.js";
 import { parseAction, screenDiff } from "./protocol.js";
 import { debriefPrompt, playPrompt, retryPrompt, systemPrompt } from "./prompts.js";
+import { assertLearningGame } from "./real-game.js";
 import type {
   AgentAction,
   ExitReason,
@@ -38,6 +39,8 @@ export type RunOptions = {
   resultsDir: string;
   workspacesRoot: string;
   resumeMemoryDir?: string;
+  /** Canonical notes from real nethack only. Refuses the fake screen. */
+  notebookDir?: string;
   tty?: TtyOptions;
   verbose?: boolean;
   dryRun?: boolean;
@@ -46,6 +49,7 @@ export type RunOptions = {
 };
 
 export async function runSession(options: RunOptions): Promise<RunRecord> {
+  if (options.notebookDir) assertLearningGame(options.game);
   const lives = clampLives(options.lives);
   const maxTurns = clampMaxTurns(options.maxTurns);
   const id = randomUUID();
@@ -108,6 +112,9 @@ export async function runSession(options: RunOptions): Promise<RunRecord> {
     await saveMemory(path.join(outDir, "memory"), memory);
     await writeFile(path.join(outDir, "record.json"), JSON.stringify(run, null, 2));
     await writeFile(path.join(outDir, "transcript.txt"), renderTranscript(run));
+    if (options.notebookDir) {
+      await saveMemory(options.notebookDir, memory);
+    }
   }
   return run;
 }

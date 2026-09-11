@@ -1,7 +1,8 @@
-# App-specific: unit-test the NetHack agent harness.
+# App-specific: unit-test the harness, then play the real nethack binary.
 #
-# Live Cursor play is manual. A learning run spends tokens and is not a
-# required check. Unit tests use the mock agent and the fake screen.
+# Unit tests use a fake screen and do not write the learning notebook.
+# The play job installs nethack-console and runs the Cursor agent against
+# that process. It resumes notebook/ and writes the updated notes back.
 
 name: NetHack agent
 
@@ -12,21 +13,14 @@ on:
       - '.github/workflows/nethack-agent.yml'
   workflow_dispatch:
     inputs:
-      backend:
-        description: Agent backend
-        type: choice
-        options:
-          - mock
-          - cursor
-        default: mock
       lives:
         description: Lives in this run
         type: string
-        default: '2'
+        default: '1'
       max_turns:
         description: Model turns per life
         type: string
-        default: '8'
+        default: '16'
 
 concurrency:
   group: nethack-agent-${{ github.workflow }}-${{ github.ref }}
@@ -61,19 +55,63 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Optional live probe
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.backend == 'cursor' }}
+  play:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: nethack-agent
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: nethack-agent/package-lock.json
+
+      - name: Require CURSOR_API_KEY
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
-          set -euo pipefail
-          if [ -z "${CURSOR_API_KEY}" ]; then
-            echo "::error title=CURSOR_API_KEY missing::Repo secret CURSOR_API_KEY is not set."
+          if [ -z "$CURSOR_API_KEY" ]; then
+            echo "::error title=CURSOR_API_KEY missing::Repo secret CURSOR_API_KEY is not set. Add it under Settings → Secrets and variables → Actions, then re-run this workflow."
             exit 1
           fi
+
+      - name: Install NetHack
+        run: sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nethack-console
+
+      - name: Install
+        run: npm ci
+
+      - name: Play nethack
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          LIVES: ${{ github.event_name == 'workflow_dispatch' && inputs.lives || '1' }}
+          MAX_TURNS: ${{ github.event_name == 'workflow_dispatch' && inputs.max_turns || '16' }}
+        run: |
+          set -euo pipefail
+          test -x /usr/games/nethack
           npx tsx src/cli.ts \
             --backend cursor \
-            --game fake \
-            --lives "${{ inputs.lives }}" \
-            --max-turns "${{ inputs.max_turns }}" \
+            --game tty \
+            --command /usr/games/nethack \
+            --lives "$LIVES" \
+            --max-turns "$MAX_TURNS" \
             --verbose
+
+      - name: Upload notebook and transcript
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nethack-agent-${{ github.run_id }}
+          path: |
+            nethack-agent/notebook/
+            nethack-agent/results/
+          if-no-files-found: warn

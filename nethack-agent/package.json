@@ -9,8 +9,7 @@
   },
   "scripts": {
     "test": "tsx --test tests/**/*.test.ts",
-    "play": "tsx src/cli.ts",
-    "play:mock": "tsx src/cli.ts --backend mock",
+    "play": "tsx src/cli.ts --backend cursor --game tty",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

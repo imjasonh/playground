@@ -1,29 +1,30 @@
 #!/usr/bin/env node
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runSession } from "./harness.js";
 import { LIMITS, clampLives, clampMaxTurns } from "./limits.js";
+import { assertLearningGame, defaultNethackCommand } from "./real-game.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
+const notebookDir = path.join(root, "notebook");
 
 function usage(): never {
   console.log(`Usage: npm run play -- [options]
 
 Options:
-  --backend mock|cursor   Agent backend (default: mock)
-  --game fake|tty         Screen source (default: fake)
+  --backend cursor        Learning agent (required)
   --model <id>            Model id (default: ${LIMITS.DEFAULT_MODEL})
   --lives <n>             Lives in this run (default: ${LIMITS.DEFAULT_LIVES}, max ${LIMITS.MAX_LIVES})
   --max-turns <n>         Model turns per life (default: ${LIMITS.DEFAULT_MAX_TURNS}, max ${LIMITS.MAX_MAX_TURNS})
-  --seed <n>              Fake-game layout seed (default: 1)
-  --command <bin>         tty game binary (default: nethack)
-  --resume <dir>          Load notes from a previous run's memory directory
-  --results-dir <path>    Where to write records (default: ./results)
+  --command <bin>         nethack binary (default: ${defaultNethackCommand()})
+  --results-dir <path>    Per-run transcripts (default: ./results)
   --verbose               Log life outcomes on stderr
   --help                  Show help
 
-The agent prompt does not name the game or list commands. See DESIGN.md.
+Play always runs the nethack process and resumes notebook/.
+The fake screen is not available here. Tests use it without writing notes.
 `);
   process.exit(0);
 }
@@ -38,32 +39,37 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.includes("--help") || args.includes("-h")) usage();
 
-  const backend = (argValue(args, "--backend") ?? "mock") as "mock" | "cursor";
-  if (backend !== "mock" && backend !== "cursor") {
-    throw new Error(`Invalid --backend: ${backend}`);
+  const backend = argValue(args, "--backend") ?? "cursor";
+  if (backend !== "cursor") {
+    throw new Error(
+      "play only runs the cursor agent against nethack. The fake screen is for tests.",
+    );
   }
-  const game = (argValue(args, "--game") ?? "fake") as "fake" | "tty";
-  if (game !== "fake" && game !== "tty") {
-    throw new Error(`Invalid --game: ${game}`);
+  const game = argValue(args, "--game") ?? "tty";
+  assertLearningGame(game);
+  if (!process.env.CURSOR_API_KEY) {
+    throw new Error("CURSOR_API_KEY is required to play nethack");
   }
-  if (backend === "cursor" && !process.env.CURSOR_API_KEY) {
-    throw new Error("CURSOR_API_KEY is required for --backend cursor");
+  const command = argValue(args, "--command") ?? defaultNethackCommand();
+  if (!existsSync(command) && command.includes("/")) {
+    throw new Error(`nethack binary not found: ${command}`);
   }
 
   const record = await runSession({
-    backend,
-    game,
+    backend: "cursor",
+    game: "tty",
     model: argValue(args, "--model") ?? LIMITS.DEFAULT_MODEL,
     lives: clampLives(Number(argValue(args, "--lives") ?? LIMITS.DEFAULT_LIVES)),
     maxTurns: clampMaxTurns(
       Number(argValue(args, "--max-turns") ?? LIMITS.DEFAULT_MAX_TURNS),
     ),
-    seed: Number(argValue(args, "--seed") ?? 1),
+    seed: 1,
     apiKey: process.env.CURSOR_API_KEY,
     resultsDir: path.resolve(root, argValue(args, "--results-dir") ?? "results"),
     workspacesRoot: path.join(root, ".workspaces"),
-    resumeMemoryDir: argValue(args, "--resume"),
-    tty: { command: argValue(args, "--command") ?? "nethack" },
+    resumeMemoryDir: notebookDir,
+    notebookDir,
+    tty: { command },
     verbose: args.includes("--verbose"),
   });
 
@@ -73,8 +79,10 @@ async function main(): Promise<void> {
       {
         id: record.id,
         game: record.game,
+        command,
         backend: record.backend,
         model: record.model,
+        notebook: notebookDir,
         lives: record.lives.map((life) => ({
           life: life.life,
           turns: life.turns,

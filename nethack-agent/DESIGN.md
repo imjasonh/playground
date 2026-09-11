@@ -60,12 +60,12 @@ Useful later work, still without a manual:
 - a second agent that only criticizes notes against transcripts, with the same information diet
 - seeds and held-out starts, once the binary supports them, so a procedure is not a route through one dungeon
 
-None of that is in this first cut. The code is the loop, a fake terminal game for tests, and a pty backend for the real binary when you have it.
+The learning notebook is only written from the real `nethack` process. A fake screen exists so tests can check the loop without the binary and without an API key. `play` refuses that screen, and a notebook directory on a fake run throws. Tests must not be treated as practice.
 
 ## What the code does
 
-`fake` is a small process stand-in. It is not a NetHack simulator, and the prompt does not describe it. Tests use it so the notebook, the death archive, and key sequences can be checked without the binary and without an API key.
+`tty` runs `/usr/games/nethack` when that binary exists, otherwise `nethack`, and shows the terminal buffer. `npm run play` always uses that process. It resumes `notebook/` and writes the notes back there. Per-run transcripts still land under `results/`.
 
-`tty` runs a command on a pty and shows the terminal buffer. The default command is `nethack`. The agent still only sees the screen.
+`fake` is a test double. It is not a NetHack simulator, and the prompt does not describe it. It cannot update `notebook/`.
 
-`mock` agents replay scripted JSON. `cursor` agents are local SDK agents with no built-in tools.
+`mock` agents exist only inside unit tests. The play command uses a local Cursor agent with no built-in tools.

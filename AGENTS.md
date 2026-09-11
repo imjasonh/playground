@@ -196,7 +196,7 @@ discovery scripts.
 | `army-list-catalog.yml` | weekly Mondays 06:00 UTC, manual | Refreshes the bundled iOS Army List construction catalog from BSData on **macOS**; bumps `11e-<N>`; writes id migrations; regenerates stress fixtures via the Swift `ArmyListValidator` CLI; opens a PR and auto-merges when CI is green |
 | `nypd-choppers-scrape.yml` | hourly, manual | **App-specific:** fetches NYPD helicopter full-day ADS-B traces and merges per-day JSON to `gh-pages` under `nypd-choppers/data/`. Not generalized; shares the `gh-pages-publish` concurrency group with deploy/preview/cleanup |
 | `its-not-jaws.yml` | pull requests touching `its-not-jaws/**`, manual | **App-specific:** requires repo secret `CURSOR_API_KEY` (fails if missing), unit-tests the harness, plays one live Cursor Agent SDK game, uploads the result artifact |
-| `nethack-agent.yml` | pull requests touching `nethack-agent/**`, manual | **App-specific:** unit-tests the terminal-game harness (mock agent, fake screen). A live Cursor probe is manual only and uses the fake screen |
+| `nethack-agent.yml` | pull requests touching `nethack-agent/**`, manual | **App-specific:** unit-tests the harness on a fake screen (no notebook writes). The play job installs `nethack-console` and runs the Cursor agent against `/usr/games/nethack`, resuming `nethack-agent/notebook/`. Requires `CURSOR_API_KEY` |
 
 Deploy workflows copy browser app directories as-is (they do **not** run
 `npm install` or build). Go and Rust app directories are not deployed. Only
@@ -708,7 +708,7 @@ auto-discover them. Run their local tests when you change them.
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `its-not-jaws/` | Cursor SDK harness for It's Not Jaws (movie shared-fact guessing); mock backend for tests; live PR game via `its-not-jaws.yml` + `CURSOR_API_KEY` secret | `cd its-not-jaws && npm test` (CI also runs a live game when the secret is set) |
-| `nethack-agent/` | Cursor SDK harness that plays a terminal game from the screen and the agent's own notes. The prompt does not name the game or list commands. Mock agent for tests; live Cursor play is manual | `cd nethack-agent && npm test` |
+| `nethack-agent/` | Cursor SDK harness that plays NetHack from the terminal and keeps notes in `notebook/`. The fake screen is tests only and cannot write that notebook. Live play is `npm run play` against `/usr/games/nethack` | `cd nethack-agent && npm test` (CI play job also runs the real binary when `CURSOR_API_KEY` is set) |
 | `bun-image/` | bun compile + crane image (deno-image cousin; shell scripts, not a Go packager) | `bash bun-image/test.sh` (needs bun; crane for the image half) |
 | `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
