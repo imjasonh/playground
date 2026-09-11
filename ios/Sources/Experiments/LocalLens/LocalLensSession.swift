@@ -246,7 +246,7 @@ final class LocalLensSession: NSObject, ObservableObject {
                 .compactMap({ $0 as? UIWindowScene })
                 .first
             {
-                switch scene.interfaceOrientation {
+                switch scene.effectiveGeometry.interfaceOrientation {
                 case .portrait: return .portrait
                 case .portraitUpsideDown: return .portraitUpsideDown
                 case .landscapeLeft: return .landscapeLeft
