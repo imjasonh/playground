@@ -17,7 +17,7 @@ jobs:
     outputs:
       ios: ${{ steps.discover.outputs.ios }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -37,7 +37,7 @@ jobs:
     # The app targets iOS 27, whose SDK is on GitHub's Xcode 27 image.
     runs-on: xcode-27
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
