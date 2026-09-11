@@ -156,8 +156,8 @@ final class ZCameraSession: NSObject, ObservableObject {
         }
         session.addOutput(videoOutput)
         if let connection = videoOutput.connection(with: .video) {
-            if connection.isVideoOrientationSupported {
-                connection.videoOrientation = .portrait
+            if connection.isVideoRotationAngleSupported(90) {
+                connection.videoRotationAngle = 90
             }
             if connection.isVideoMirroringSupported {
                 connection.isVideoMirrored = device.position == .front
@@ -171,8 +171,8 @@ final class ZCameraSession: NSObject, ObservableObject {
         }
         session.addOutput(depthOutput)
         if let depthConnection = depthOutput.connection(with: .depthData) {
-            if depthConnection.isVideoOrientationSupported {
-                depthConnection.videoOrientation = .portrait
+            if depthConnection.isVideoRotationAngleSupported(90) {
+                depthConnection.videoRotationAngle = 90
             }
             if depthConnection.isVideoMirroringSupported {
                 depthConnection.isVideoMirrored = device.position == .front

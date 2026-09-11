@@ -225,7 +225,7 @@ final class WigglecamSession: NSObject, ObservableObject {
         multiSession.addConnection(ultraConnection)
         self.wideConnection = wideConnection
         self.ultraConnection = ultraConnection
-        Self.apply(videoOrientation: .landscapeRight, to: wideConnection, ultraConnection)
+        Self.apply(videoRotationAngle: 0, to: wideConnection, ultraConnection)
 
         if multiSession.hardwareCost > 1.0 {
             throw StereoSessionError.unsupported
@@ -343,32 +343,32 @@ final class WigglecamSession: NSObject, ObservableObject {
     }
 
     private func updateVideoOrientation(for orientation: StereoCaptureGate.Orientation) {
-        let videoOrientation: AVCaptureVideoOrientation
+        let videoRotationAngle: CGFloat
         switch orientation {
         case .landscapeLeft:
-            videoOrientation = .landscapeLeft
+            videoRotationAngle = 180
         case .landscapeRight:
-            videoOrientation = .landscapeRight
+            videoRotationAngle = 0
         case .portrait, .flatOrUnknown:
             return
         }
         let wide = wideConnection
         let ultra = ultraConnection
         sessionQueue.async {
-            Self.apply(videoOrientation: videoOrientation, to: wide, ultra)
+            Self.apply(videoRotationAngle: videoRotationAngle, to: wide, ultra)
         }
     }
 
     private static func apply(
-        videoOrientation: AVCaptureVideoOrientation,
+        videoRotationAngle: CGFloat,
         to wide: AVCaptureConnection?,
         _ ultra: AVCaptureConnection?
     ) {
-        if let wide, wide.isVideoOrientationSupported {
-            wide.videoOrientation = videoOrientation
+        if let wide, wide.isVideoRotationAngleSupported(videoRotationAngle) {
+            wide.videoRotationAngle = videoRotationAngle
         }
-        if let ultra, ultra.isVideoOrientationSupported {
-            ultra.videoOrientation = videoOrientation
+        if let ultra, ultra.isVideoRotationAngleSupported(videoRotationAngle) {
+            ultra.videoRotationAngle = videoRotationAngle
         }
     }
 
