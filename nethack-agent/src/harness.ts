@@ -23,7 +23,9 @@ import {
   lookupProcedure,
   recordEnding,
   saveMemory,
+  type NotebookBudget,
 } from "./memory.js";
+import { compactMemory } from "./notes.js";
 import { parseAction, screenDiff } from "./protocol.js";
 import { debriefPrompt, playPrompt, retryPrompt, systemPrompt } from "./prompts.js";
 import { assertLearningGame } from "./real-game.js";
@@ -66,6 +68,9 @@ export async function runSession(options: RunOptions): Promise<RunRecord> {
   const memory = options.resumeMemoryDir
     ? await loadMemory(options.resumeMemoryDir)
     : emptyMemory();
+  if (options.notebookDir || options.resumeMemoryDir) {
+    compactMemory(memory);
+  }
   const gameBackend = createBackend(options);
   const factory: AgentFactory =
     options.backend === "mock"
@@ -117,6 +122,7 @@ export async function runSession(options: RunOptions): Promise<RunRecord> {
     await writeFile(path.join(outDir, "record.json"), JSON.stringify(run, null, 2));
     await writeFile(path.join(outDir, "transcript.txt"), renderTranscript(run));
     if (options.notebookDir) {
+      compactMemory(memory);
       await saveMemory(options.notebookDir, memory);
     }
   }
@@ -151,6 +157,7 @@ async function playLife(input: {
   let exitReason: ExitReason = "error";
   let finalScreen = "";
   let error: string | undefined;
+  const notes: NotebookBudget = { notesAdded: 0, addedIds: [] };
 
   try {
     await mkdir(input.workspaceDir, { recursive: true });
@@ -189,8 +196,8 @@ async function playLife(input: {
         let ack = played.ack;
 
         if (played.action?.quit) {
-          const notes = applyNotebook(input.memory, played.action, input.life, turn);
-          ack = joinAck(ack, notes.join("\n"));
+          const filed = applyNotebook(input.memory, played.action, input.life, turn, notes);
+          ack = joinAck(ack, filed.join("\n"));
           actions.push({
             turn,
             prompt,
@@ -210,8 +217,8 @@ async function playLife(input: {
         if (played.action && game) {
           // File sequences before running one, so a save and a run in the same
           // reply use the sequence the agent just wrote.
-          const notes = applyNotebook(input.memory, played.action, input.life, turn);
-          ack = joinAck(ack, notes.join("\n"));
+          const filed = applyNotebook(input.memory, played.action, input.life, turn, notes);
+          ack = joinAck(ack, filed.join("\n"));
           const keys = keysToSend(input.memory, played.action);
           if (keys.error) {
             ack = joinAck(ack, keys.error);
@@ -264,7 +271,14 @@ async function playLife(input: {
   let billedTokens: TokenUsage | undefined;
   if (agent && finalScreen) {
     try {
-      debrief = await runDebrief(agent, input.memory, input.life, actions.length, finalScreen);
+      debrief = await runDebrief(
+        agent,
+        input.memory,
+        input.life,
+        actions.length,
+        finalScreen,
+        notes,
+      );
     } catch (err) {
       error = joinAck(error, err instanceof Error ? err.message : String(err));
     }
@@ -366,6 +380,7 @@ async function runDebrief(
   life: number,
   turn: number,
   screen: string,
+  notes: NotebookBudget,
 ): Promise<LifeTurn> {
   const prompt = debriefPrompt({ screen });
   const result = await agent.turn({ prompt });
@@ -374,8 +389,8 @@ async function runDebrief(
   let action = parsed.ok ? parsed.action : null;
   if (action) {
     action = { ...action, keys: "", quit: false, run: undefined };
-    const notes = applyNotebook(memory, action, life, turn);
-    ack = notes.join("\n") || undefined;
+    const filed = applyNotebook(memory, action, life, turn, notes);
+    ack = filed.join("\n") || undefined;
   }
   return {
     turn,

@@ -105,7 +105,7 @@ them:
   leaks in published traces, game length, and token cost.
 - **[`nethack-agent/`](nethack-agent/)** — Cursor Agent SDK harness that plays
   NetHack from the terminal. The prompt does not name the game or list
-  commands. Later lives see only notes and key sequences earlier lives wrote,
+  commands. Later lives see claims and short key sequences earlier lives wrote,
   plus the screens those lives ended on. Play and the learning notebook use
   the real `nethack` binary. The fake screen is tests only. Play uses
   Grok 4.6 and reports the token cost the SDK returned for the run. CI play publishes those
