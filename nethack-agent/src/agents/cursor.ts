@@ -1,0 +1,191 @@
+import { mkdir } from "node:fs/promises";
+import { readReportedCost } from "../cost.js";
+import { LIMITS } from "../limits.js";
+import type { TokenUsage, TraceMessage } from "../types.js";
+import type { AgentFactory, PlayerAgent, PromptTurn, TurnResult } from "./types.js";
+
+type SdkModule = typeof import("@cursor/sdk");
+
+let sdkPromise: Promise<SdkModule> | undefined;
+
+function loadSdk(): Promise<SdkModule> {
+  sdkPromise ??= import("@cursor/sdk");
+  return sdkPromise;
+}
+
+/**
+ * Local Cursor agent with no built-in tools and no repo settings.
+ * The empty workspace is the whole filesystem it can see, and it cannot read it.
+ */
+export const createCursorAgent: AgentFactory = async (options) => {
+  const { Agent } = await loadSdk();
+  await mkdir(options.workspaceDir, { recursive: true });
+
+  const agent = await Agent.create({
+    apiKey: options.apiKey ?? process.env.CURSOR_API_KEY,
+    model: { id: options.model },
+    name: "nethack-agent",
+    tools: [],
+    local: {
+      cwd: options.workspaceDir,
+      settingSources: [],
+    },
+  });
+
+  const turnTimeoutMs = options.turnTimeoutMs ?? LIMITS.TURN_TIMEOUT_MS;
+  const bootstrap = await agent.send(options.systemPrompt);
+  await withTurnTimeout(bootstrap, turnTimeoutMs);
+
+  const player: PlayerAgent = {
+    model: options.model,
+    async turn(input: PromptTurn): Promise<TurnResult> {
+      const started = Date.now();
+      const messages: TraceMessage[] = [];
+      const run = await agent.send(input.prompt);
+      try {
+        for await (const event of run.stream()) {
+          if (Date.now() - started > turnTimeoutMs) {
+            await run.cancel().catch(() => undefined);
+            throw new Error(`Cursor agent turn timed out after ${turnTimeoutMs}ms`);
+          }
+          if (event.type === "thinking") {
+            const text = String(event.text ?? "");
+            if (text) messages.push({ type: "thinking", text });
+          } else if (event.type === "assistant") {
+            appendAssistantMessages(messages, event);
+          } else if (event.type === "tool_call") {
+            messages.push({
+              type: "tool_call",
+              name: String(event.name ?? "tool"),
+              status: String(event.status ?? "unknown"),
+              args: event.args,
+              result: event.result,
+            });
+          }
+        }
+
+        const result = await withTurnTimeout(
+          run,
+          turnTimeoutMs - (Date.now() - started),
+        );
+        let rawText = assistantText(messages);
+        if (!rawText) {
+          rawText = String(result.result ?? "");
+          if (rawText) messages.push({ type: "assistant", text: rawText });
+        }
+        return {
+          rawText,
+          messages,
+          usage: normalizeUsage(result.usage ?? run.usage),
+          durationMs: Math.max(1, Date.now() - started),
+        };
+      } catch (err) {
+        await run.cancel().catch(() => undefined);
+        throw err;
+      }
+    },
+    async getBilledUsage() {
+      try {
+        return await readBilledUsage(agent);
+      } catch {
+        return { usage: emptyUsage() };
+      }
+    },
+    async dispose() {
+      const disposable = agent as unknown as {
+        [Symbol.asyncDispose]?: () => void | Promise<void>;
+        close?: () => void;
+      };
+      const asyncDispose = disposable[Symbol.asyncDispose];
+      if (typeof asyncDispose === "function") {
+        await asyncDispose.call(disposable);
+      } else {
+        disposable.close?.();
+      }
+    },
+  };
+
+  return player;
+};
+
+function assistantText(messages: TraceMessage[]): string {
+  return messages
+    .filter((message) => message.type === "assistant" && message.text)
+    .map((message) => message.text)
+    .join("");
+}
+
+function appendAssistantMessages(
+  messages: TraceMessage[],
+  event: {
+    message?: {
+      content?: Array<{ type?: string; text?: string }>;
+    };
+  },
+): void {
+  const content = event.message?.content;
+  if (!Array.isArray(content)) return;
+  for (const block of content) {
+    if (block?.type === "text" && typeof block.text === "string" && block.text) {
+      messages.push({ type: "assistant", text: block.text });
+    }
+  }
+}
+
+async function readBilledUsage(agent: {
+  getUsage(): Promise<{
+    usage?: TokenUsage;
+    cost?: { rawCostCents?: number; chargedCents?: number };
+  }>;
+}) {
+  return readReportedCost(() => agent.getUsage());
+}
+
+function emptyUsage(): TokenUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens: 0,
+  };
+}
+
+function normalizeUsage(usage: unknown): TokenUsage | undefined {
+  if (!usage || typeof usage !== "object") return undefined;
+  const u = usage as Record<string, number | undefined>;
+  const inputTokens = Number(u.inputTokens ?? 0);
+  const outputTokens = Number(u.outputTokens ?? 0);
+  const totalTokens = Number(u.totalTokens ?? inputTokens + outputTokens);
+  if (!totalTokens && !inputTokens && !outputTokens) return undefined;
+  return {
+    inputTokens,
+    outputTokens,
+    cacheReadTokens: u.cacheReadTokens,
+    cacheWriteTokens: u.cacheWriteTokens,
+    reasoningTokens: u.reasoningTokens,
+    totalTokens,
+  };
+}
+
+async function withTurnTimeout<T>(
+  run: { wait(): Promise<T>; cancel(): Promise<void> },
+  budgetMs: number,
+): Promise<T> {
+  if (budgetMs <= 0) {
+    await run.cancel().catch(() => undefined);
+    throw new Error("Cursor agent turn timed out");
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        void run.cancel().catch(() => undefined);
+        reject(new Error(`Cursor agent turn timed out after ${budgetMs}ms`));
+      }, budgetMs);
+    });
+    return await Promise.race([run.wait(), timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}

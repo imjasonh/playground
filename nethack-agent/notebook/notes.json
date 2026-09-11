@@ -1,0 +1,44 @@
+[
+  {
+    "id": "n1",
+    "life": 1,
+    "turn": 1,
+    "text": "A new process first showed \"NetHack, Copyright 1985-2023\", \"Version 3.6.7\", and \"Shall I pick character's race, role, gender and alignment for you? [ynaq]\".",
+    "retracted": false
+  },
+  {
+    "id": "n2",
+    "life": 1,
+    "turn": 2,
+    "text": "Sending y replaced that with a confirmation listing name, role, race, gender, and alignment, plus the lines \"y + Yes; start game\", \"n - No; choose role again\", and \"q - Quit\". The listed role and race were not the same on every new process.",
+    "retracted": false
+  },
+  {
+    "id": "n3",
+    "life": 1,
+    "turn": 3,
+    "text": "Sending y on that confirmation showed a paragraph ending in \"--More--\" and a status line containing \"Dlvl:1\" and \"HP:\".",
+    "retracted": false
+  },
+  {
+    "id": "n4",
+    "life": 1,
+    "turn": 4,
+    "text": "Sending space while \"--More--\" or \"-More--\" was visible replaced the paragraph with a picture of walls, periods, @, and sometimes d, plus a welcome line. Sending a letter while --More-- was still visible did not change that picture.",
+    "retracted": false
+  },
+  {
+    "id": "n5",
+    "life": 1,
+    "turn": 5,
+    "text": "After --More-- was gone, sending h changed the line \"|...@..|\" to \"|..@<..|\".",
+    "retracted": false
+  },
+  {
+    "id": "n6",
+    "life": 1,
+    "turn": 6,
+    "text": "Starting again in a home directory that already had a save showed \"Restoring save file...\" instead of the pick-character question.",
+    "retracted": false
+  }
+]

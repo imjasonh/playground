@@ -103,6 +103,14 @@ them:
 - **[`its-not-jaws/`](its-not-jaws/)** — Cursor Agent SDK harness for It's Not
   Jaws: knower picks a movie, guesser uses shared-fact clues; tracks outcomes,
   leaks in published traces, game length, and token cost.
+- **[`nethack-agent/`](nethack-agent/)** — Cursor Agent SDK harness that plays
+  NetHack from the terminal. The prompt does not name the game or list
+  commands. Later lives see only notes and key sequences earlier lives wrote,
+  plus the screens those lives ended on. Play and the learning notebook use
+  the real `nethack` binary. The fake screen is tests only. Play uses
+  Grok 4.6 and reports the token cost the SDK returned for the run. CI play publishes those
+  notes to `automation/nethack-notes` for the next run, and does not write
+  them onto the triggering pull request.
 - **[`bun-image/`](bun-image/)** — compile a JS file with Bun and pack the
   executable onto `cgr.dev/chainguard/glibc-dynamic` with crane (shell
   scripts; no Docker daemon). The Bun cousin of

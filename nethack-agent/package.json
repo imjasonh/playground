@@ -1,0 +1,24 @@
+{
+  "name": "nethack-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cursor SDK harness that plays a terminal game from the screen and its own notes",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "test": "tsx --test tests/**/*.test.ts",
+    "play": "tsx src/cli.ts --backend cursor --game tty",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.10",
+    "@xterm/headless": "^5.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
