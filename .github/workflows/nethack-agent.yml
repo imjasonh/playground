@@ -2,7 +2,10 @@
 #
 # Unit tests use a fake screen and do not write the learning notebook.
 # The play job installs nethack-console and runs the Cursor agent against
-# that process. It resumes notebook/ and writes the updated notes back.
+# that process. It seeds notebook/ from automation/nethack-notes when that
+# branch exists, then publishes the updated notebook back to that branch.
+# It does not commit notes onto the feature pull request. A failed play
+# does not publish. Play jobs queue so two runs cannot overwrite the branch.
 
 name: NetHack agent
 
@@ -11,6 +14,8 @@ on:
     paths:
       - 'nethack-agent/**'
       - '.github/workflows/nethack-agent.yml'
+      - '.github/scripts/publish-nethack-notes.sh'
+      - '.github/scripts/publish-nethack-notes_test.sh'
   workflow_dispatch:
     inputs:
       lives:
@@ -55,12 +60,23 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Notes publish script test
+        working-directory: ${{ github.workspace }}
+        run: bash .github/scripts/publish-nethack-notes_test.sh
+
   play:
     needs: test
+    if: github.event_name != 'pull_request' || github.head_ref != 'automation/nethack-notes'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    # One writer for the notes branch. A second play waits, then seeds the
+    # notebook the first play published.
+    concurrency:
+      group: nethack-notes
+      cancel-in-progress: false
     permissions:
-      contents: read
+      contents: write
+      pull-requests: write
     defaults:
       run:
         working-directory: nethack-agent
@@ -68,6 +84,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -90,6 +107,12 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Seed notebook from notes branch
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-nethack-notes.sh seed
+
       - name: Play nethack
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
@@ -105,6 +128,15 @@ jobs:
             --lives "$LIVES" \
             --max-turns "$MAX_TURNS" \
             --verbose
+
+      - name: Publish notebook for the next play
+        # success() is required. An explicit if replaces the default, and a
+        # failed play must not publish a partial notebook.
+        if: success() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        working-directory: ${{ github.workspace }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-nethack-notes.sh publish
 
       - name: Upload notebook and transcript
         if: ${{ always() }}

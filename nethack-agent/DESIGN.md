@@ -68,4 +68,14 @@ The learning notebook is only written from the real `nethack` process. A fake sc
 
 `fake` is a test double. It is not a NetHack simulator, and the prompt does not describe it. It cannot update `notebook/`.
 
+## Where the notes go
+
+A local play reads and writes `notebook/` in the checkout. Commit that directory when the next local life needs those notes.
+
+The play job does not commit notes onto the pull request it ran from. A `GITHUB_TOKEN` commit on that branch moves the head and does not start the required checks. A bad play must not rewrite the feature diff.
+
+When `automation/nethack-notes` exists, the play job copies `notebook/` from that branch, then plays the real binary. After a successful play in this repository, it commits only that directory onto a new tip of `automation/nethack-notes`, based on `main`, and opens or updates a pull request. The next play reads that branch even if the pull request is still open. The pull request is not set to auto-merge. A failed play, a fake-screen run, and a pull request from a fork do not publish.
+
+That branch is the learning store. Merging the pull request only updates `main`, so a fresh clone starts from the same notes. The token that opens the pull request does not start workflows, so required checks on `main` may stay pending until someone else pushes to that pull request. Do not merge it to keep the next play working. The next play already reads the branch.
+
 `mock` agents exist only inside unit tests. The play command uses a local Cursor agent with no built-in tools.
