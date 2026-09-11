@@ -43,7 +43,9 @@ One life is one process. The agent conversation lasts for that life only, so it 
 
 A new life starts a new agent. The only things that carry over are the notebook, saved key sequences, and archived ending screens. If the agent did not write a lesson down, the next life does not have it. Conversation memory is not a notebook.
 
-Each turn the agent returns one JSON object. `keys` is sent as bytes. `note` is stored. `save` stores a key sequence under a name the agent chose. `run` sends a sequence the agent already stored, so a later life can repeat something it found without a model call per key. `quit` closes the process from the outside. It is not mapped to a game key. That mapping would be a lesson, and for this game it would also be the wrong key.
+Each turn the agent returns one JSON object. `keys` is sent as bytes. `note` is stored only when it is a claim that is still true if this screen is gone. A turn log, a key trace, and a position on this screen are refused, and the keys are still sent. The conversation already has the screen. One life can file only a few notes. When the notebook is full, a new note requires retracting an older one. `save` stores a short key sequence under a name the agent chose. A path through this screen is not a sequence. `run` sends a sequence the agent already stored, so a later life can repeat something it found without a model call per key. `quit` closes the process from the outside. It is not mapped to a game key. That mapping would be a lesson, and for this game it would also be the wrong key.
+
+Loading a notebook drops notes that fail that check, including notes an earlier play already wrote. The next life does not see the diary. Ending screens in the notebook keep the words and drop the picture. Per-run transcripts under `results/` still have the full screen.
 
 The harness does not parse hit points, dungeon level, or score. Those strings may appear on the screen. Recording them as structured reward would be a decision about what progress is. The record keeps the raw screen, the turn count, and why the life stopped: the process exited, the agent closed it, the turn budget ran out, or the backend failed.
 
@@ -51,7 +53,7 @@ The harness does not parse hit points, dungeon level, or score. Those strings ma
 
 A successful NetHack game is tens of thousands of turns, with identification puzzles, food, and branches that a single notebook will not compress by accident. A model turn per key does not survive the budget. The `run` field is the first hole in that wall. The agent can file a procedure it has already watched, and the harness replays it. The harness still does not supply procedures of its own, and it will not grow an `explore_level` skill out of AutoAscend. If a procedure exists, some earlier life wrote the keys.
 
-Even with that, the early result is menu flailing, death, and notes that mix real observations with spoilers from pretraining. Those spoilers are data. A note that names a danger is a hypothesis until a screen agrees. The prompt says that once. It does not quiz the agent about sources. Source tags would become theater.
+Even with that, the early result is menu flailing and death. A note that names a danger is a hypothesis until a screen agrees. The prompt says that once. It does not quiz the agent about sources. Source tags would become theater. A diary of one room does not become that hypothesis, so the harness does not keep it.
 
 Useful later work, still without a manual:
 

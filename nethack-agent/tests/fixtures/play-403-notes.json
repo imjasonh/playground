@@ -1,0 +1,258 @@
+[
+  {
+    "id": "n1",
+    "text": "A new process first showed \"NetHack, Copyright 1985-2023\", \"Version 3.6.7\", and \"Shall I pick character's race, role, gender and alignment for you? [ynaq]\"."
+  },
+  {
+    "id": "n2",
+    "text": "Sending y replaced that with a confirmation listing name, role, race, gender, and alignment, plus the lines \"y + Yes; start game\", \"n - No; choose role again\", and \"q - Quit\". The listed role and race were not the same on every new process."
+  },
+  {
+    "id": "n3",
+    "text": "Sending y on that confirmation showed a paragraph ending in \"--More--\" and a status line containing \"Dlvl:1\" and \"HP:\"."
+  },
+  {
+    "id": "n4",
+    "text": "Sending space while \"--More--\" or \"-More--\" was visible replaced the paragraph with a picture of walls, periods, @, and sometimes d, plus a welcome line. Sending a letter while --More-- was still visible did not change that picture."
+  },
+  {
+    "id": "n5",
+    "text": "After --More-- was gone, sending h changed the line \"|...@..|\" to \"|..@<..|\"."
+  },
+  {
+    "id": "n6",
+    "text": "Starting again in a home directory that already had a save showed \"Restoring save file...\" instead of the pick-character question."
+  },
+  {
+    "id": "n7",
+    "text": "n7 (life 1, turn 7) Fresh process at pick-character [ynaq]; y matches n1\u2013n2 flow toward confirmation then --More-- then map."
+  },
+  {
+    "id": "n8",
+    "text": "n8 (life 1, turn 5) Map had @ mid-room, d one tile SW; welcome/--More-- cleared; message was new moon."
+  },
+  {
+    "id": "n9",
+    "text": "n9 (life 1, turn 6) After kkll, @ top row; < on map (stairs up); d still present, likely pet."
+  },
+  {
+    "id": "n10",
+    "text": "n10 (life 1, turn 7) @ west side near --+-+; d adjacent; < south-center; still seeking > and loot."
+  },
+  {
+    "id": "n11",
+    "text": "n11 (life 1, turn 8) @ bottom row east; d with pet; < mid-room; no > or items visible yet."
+  },
+  {
+    "id": "n12",
+    "text": "n12 (life 1, turn 9) @ upper-left of room; door --+-+ west; still no > on screen."
+  },
+  {
+    "id": "n13",
+    "text": "n13 (life 1, turn 10) @ bottom-left; d row2; < row2; west wall/door area not fully explored for >."
+  },
+  {
+    "id": "n14",
+    "text": "n14 (life 1, turn 11) @ top row; only < seen; try west through --+-+ door for >."
+  },
+  {
+    "id": "n15",
+    "text": "n15 (life 1, turn 12) oh at @ west interior gave 'You see no door there'; + is NW in --+-+ border, not west of @."
+  },
+  {
+    "id": "n16",
+    "text": "n16 (life 1, turn 13) y did not change map; @ still NW interior; try open/move north toward + in --+-+."
+  },
+  {
+    "id": "n17",
+    "text": "n17 (life 1, turn 14) ok failed at @; border + at col2 aligns with '.' east of @ on row1\u2014stand there for north door."
+  },
+  {
+    "id": "n18",
+    "text": "n18 (life 1, turn 15) lok opened north door (--|-+--); @ on door tile row1; proceed north into corridor."
+  },
+  {
+    "id": "n19",
+    "text": "n19 (life 1, turn 16) door-n put @ in # corridor north of room; < still in room below."
+  },
+  {
+    "id": "n20",
+    "text": "n20 (life 1, final) Startup: y on [ynaq], y on [ynq], space through each --More-- (letters fail on --More--). Dlvl1 room: --+-+ NW door opens from interior tile under first + (east of NW @): lok then k north into # corridor; oh/oy at wrong tiles say 'You see no door there'. d is pet. < in room is up; > not found before exit. Saved: open-n=ok, door-n=lokkk. Save in home dir skips to Restoring save file...."
+  },
+  {
+    "id": "n21",
+    "text": "Startup batch: y on [ynaq], y on confirm, spaces through --More-- (letters fail there). Extra space waits a turn on the map, which is safe at spawn."
+  },
+  {
+    "id": "n22",
+    "text": "Samurai Hatamoto in tiny room: ) % * and south gap --.----. Extra space after map is Unknown command (wait is .). Loot then leave south. One space after yy is enough to clear the single --More--."
+  },
+  {
+    "id": "n23",
+    "text": "% was a pile (orc corpse + whistle) and --More-- ate the rest of the loot path. < is under spawn. Space first; then ) * and south gap. Leave the corpse."
+  },
+  {
+    "id": "n24",
+    "text": "HP 15->7 and Dx 18->17 while @ stayed on the pile; % appeared north (likely a corpse) and pet moved NW. ore-- is leftover junk, not a live --More--. Flee west onto ) then south through --.----; do not rest in this room."
+  },
+  {
+    "id": "n25",
+    "text": "hjj never left the pile; j is a wall south of @. SW diagonal b lands on the --.---- gap and skips ). ) may be a mimic (8 dmg last turn, glyph never became m). Avoid ) and %. Slinky is the pet and took the gem."
+  },
+  {
+    "id": "n26",
+    "text": "@ still unmoved after hjj and bjj. Letters do nothing while leftover ore-- is on screen (n4). Dump spaces to clear --More-- before any movement. Then bjj out the SW gap; avoid )."
+  },
+  {
+    "id": "n27",
+    "text": "Spaces did not move or print Unknown command, so ore-- is a pager (help or --More-- stack). q exits a pager; newline also dismisses more. Then bjj out the SW gap. If q only quaffs, Samurai start has no potion."
+  },
+  {
+    "id": "n28",
+    "text": "Freed from a WEB on the corpse/whistle tile; all prior moves were wriggle attempts. Do not step back on that square. % north may be a spider corpse (do not eat). ) is likely a real weapon. Leave west then south."
+  },
+  {
+    "id": "n29",
+    "text": "Out of the start room via south door; web/% still inside so do not go back. Corridor # east then south. Slinky took a sling. ) from the room should be in inventory. HP 8/15, follow # and look for >."
+  },
+  {
+    "id": "n30",
+    "text": "South end of the # corridor; pet is east so that tile is open. Probe east then south for a room or >. Do not return north into the web room unless this is a dead end."
+  },
+  {
+    "id": "n31",
+    "text": "F is a fungus immediately east of @. Do not attack it and do not stay adjacent (brown mold deals cold just by being next to you). b steps SW onto ? (scroll) and breaks adjacency; then go west/south. ) in the corridor can wait."
+  },
+  {
+    "id": "n32",
+    "text": "Left the fungus; ? should be in inventory. Still HP 8/15 on Dlvl:1. Push south then west along the corridor looking for a room, a door, or >. Do not go back east toward F."
+  },
+  {
+    "id": "n33",
+    "text": "jjhhjj did not move @; south and west are walls (dead-end corner). Search for a secret door, then u NE back onto ## and go north/east along ### for another branch. Stay off F."
+  },
+  {
+    "id": "n34",
+    "text": "Back at the ##@ junction, HP 9/15. ? still at the south dead end (autopickup may have missed it). Probe east and north of @ (unexplored) and tap > after in case we land on stairs. Do not send <."
+  },
+  {
+    "id": "n35",
+    "text": "l and k from ##@ are walls; > confirmed not stairs. This south corridor is a closed stub off the start room. Search the east dead-end for a secret door, then try l through it. Next: search west toward ) and the start-room walls."
+  },
+  {
+    "id": "n36",
+    "text": "Life1 map: yy+one space start. Tiny Dlvl1 room, < under spawn, south door only, WEB on % pile (wriggle free; do not reenter). Corridor south to a stub: ) weapon, F fungus (do not stand adjacent), ? at south end. East/north of ##@ are walls; search secret doors in this stub AND start-room walls. > is not in view. Letters fail on --More--; extra space after map is Unknown command. Pet Slinky. Avoid eating spider corpses. turn_cap 16 so batch keys."
+  },
+  {
+    "id": "n37",
+    "text": "Startup: n=self-pick, v=Valkyrie, d=dwarf (lawful, no gender/align prompts), y=confirm, two spaces clear welcome/moon --More--. Do not move until the map is visible. Letters fail on --More--; extra space on the map is Unknown command (wait is .)."
+  },
+  {
+    "id": "n38",
+    "text": "Valkyrie Stripling 18HP AC6 lawful. Tiny room: + closed door NNW, % west of @ (do not step, web risk), pet f north, F fungus EEN (stay non-adjacent; brown mold cold). y to NW . then ok north door, k into corridor. Far-look % and F; space after looks in case pile --More--."
+  },
+  {
+    "id": "n39",
+    "text": "< was under spawn (do not send <). % still SW in start room; skip it. F gone from |.f.F| (likely pet killed a lichen). @ on north door, ## corridor N/NE so after k probe east. > tapped in case we hit down-stairs. SE of start room is still open (...); use if corridor is a stub."
+  },
+  {
+    "id": "n40",
+    "text": "East stub along start-room north wall is a dead end (N/E not #, S is room wall, > failed). Searched stub for a secret door, then hhh back to the door-north junction and kkk up the ### branch. Pet follows. Start-room SE ... still unexplored if north is a stub. % still on floor; skip."
+  },
+  {
+    "id": "n41",
+    "text": "North branch: @ west of pet, # is NE (take u). Secret + now on start-room north wall at the old east stub \u2014 search found a door back into the known room, ignore it. Push N then E from that #. If this corridor stubs, next try start-room SE ... opening. Still no > ."
+  },
+  {
+    "id": "n42",
+    "text": "Still only the start room plus winding #. @ at east of a north spur; # is directly north so k first, then E, then search4 for a secret door to another room. If this spur dies, retreat to start-room SE ... (same column as @, south). Secret + on -|--+- is back into start, ignore."
+  },
+  {
+    "id": "n43",
+    "text": "NE corridor spur: @ at ##@, # continues S and SE (# ## has a gap). Pet off-screen, will follow. No new room yet after search4. Probe SE/E/S then search3. If still no room walls, next retreat to start-room SE ... opening \u2014 only unused room exit. Still one room, no >."
+  },
+  {
+    "id": "n44",
+    "text": "New east # at @# with another # south of it (col east of start room). Pet north at ##f. Push l then south along that #, then E, search3. This eastern strip may hit a second room or meet start-room SE .... Still no > , HP 18/18."
+  },
+  {
+    "id": "n45",
+    "text": "@ on east strip col, one row north of start-room north-wall row; # continues south, pet is N. Push south (may pass east of start room / meet SE ...) then E into unknown, search3. Still only one room, no > , HP18. Secret + on start north wall still ignore."
+  },
+  {
+    "id": "n46",
+    "text": "@ at start-room north-wall row, 4 cols east; f is west. # is SW (b) then the SE-row of the start room. Probe south/east of start (may meet SE ... or a second room). Gap cols 26-27 look like stone between | and # \u2014 search later if no connection. 6 turns left after this; if still one room, search start-room walls for secret doors. HP18, no >."
+  },
+  {
+    "id": "n47",
+    "text": "F is back in start room at |%<.F.| south row (c24). Do not enter, do not step adjacent (brown mold risk). @ is east of room on #@, pet N. b onto # SW (safe, 3 west of F), then push south of start room and E, search3. 5 turns left; still no > . Ignore start-room % and <."
+  },
+  {
+    "id": "n48",
+    "text": "F now at east edge |%<..F#@ \u2014 one tile # between @ and F. NOT adjacent; do not h/y/b/west this row (that # is adjacent to F). Only j south and l east. If we get south of ------, next turn go west along the south exterior (never explored west of start). Pet N. 4 turns left, still no > , HP18."
+  },
+  {
+    "id": "n49",
+    "text": "Same tile two turns: letters may be eaten by a More pager. Spaces first to clear, then north-east up the east strip. No quaff, no greater-than. Avoid fungus to the west."
+  },
+  {
+    "id": "n50",
+    "text": "At east-strip north. Cross via north hashes to the hallway over the north door, then west and south around the start room. Search8 there. Fungus gone from start room. Do not step on the percent pile. Last turn after this."
+  },
+  {
+    "id": "n51",
+    "text": "Life1 end: Dlvl1 one room plus hash loop, no > seen. @ now on west ### above north door. F is on the tile inside that door; do not enter, door tile is adjacent. Percent pile still SW, skip. Last keys: west then south along west exterior and search for a secret door. Next life: valk-d start, space through More, never letter on More, wait is period, do not spam greater-than, search room walls early, treat F as mold, d/f is pet."
+  },
+  {
+    "id": "n52",
+    "text": "life1 t1: valk-d start (nvdy + 2 spaces). Wait for map before any move. Letters fail on --More--; wait is ."
+  },
+  {
+    "id": "n53",
+    "text": "t2 Valk18 room14w: @ S-row pet d E; no items/F/%. East OPEN on 2nd interior row; closed + on N-wall NE; W-edge - on 3rd interior (jog or door). No > in room; < likely under spawn. Exit E through gap; later open N + and check W -."
+  },
+  {
+    "id": "n54",
+    "text": "t3: east gap is 2-tile alcove (@ r3c15, pet N); not a corridor. < confirmed S-row spawn. No > in start room. Open N-wall + (col13) via hhkok then kk into hall. W-edge - still unchecked. Space-clear leftover -."
+  },
+  {
+    "id": "n55",
+    "text": "t4: N door open; @ in # N of door. ## is N+NW. East alcove is # along E wall (stub/wrap). Start room only <. Follow N then W hashes for room2/>. W-edge - of start still unchecked. leftover - pager?"
+  },
+  {
+    "id": "n56",
+    "text": "t5: N-of-door is # junction #@### with # # S and d# N; no > (cant go down). East ### is longest unexplored arm \u2014 follow E for room2. W # and start W-edge - still open. East-wall # may wrap. leftover -."
+  },
+  {
+    "id": "n57",
+    "text": "t6: E arm of N # is a dead end (####@, cant down). Whole # is a small NE blob + 2-tile E strip \u2014 still ONE room, no >. Secret-search this stub then W wall / W-edge -. Circumnavigate S/W exteriors if no +. Do not send <."
+  },
+  {
+    "id": "n58",
+    "text": "t7: N of start is a LONG E-W #; @ at its west end (# still further W \u2014 past start-room west edge). oh=no door (we were in #, not at W-edge -). Follow W # for room2/>; also W exterior south. Still one room visible. leftover -."
+  },
+  {
+    "id": "n59",
+    "text": "t8: @ on # just W of start. N-spur 4#; SW ## by NW corner; long E-W hall. Still only start room + #, no >. Push W off the hall end then S; search if stub. Start-room walls / W-edge - still need secret-search."
+  },
+  {
+    "id": "n60",
+    "text": "t9: W end of E-W # is a stub (@d####, no room2). Still only start+hashes, no >. Search8 this dead-end and try open W/N/S then step through. If no +, next search start-room walls (W-edge -) and N-spur/SW ## stubs."
+  },
+  {
+    "id": "n61",
+    "text": "t11: @ still at W-hall stub; long keys may have failed or pager ate them. Dismiss with newline/q then 8 east toward start room."
+  },
+  {
+    "id": "n62",
+    "text": "t12: mid E-W hall above start room. Enter via N door, walk to south wall, search and try open south. Short keys after pager stuck."
+  },
+  {
+    "id": "n63",
+    "text": "t14 at N wall 4 west of door. Go east through door into room then south wall search."
+  },
+  {
+    "id": "n64",
+    "text": "t15 still outside N wall at west. 12 east to door then south in and search. No west walks."
+  }
+]

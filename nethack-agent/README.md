@@ -44,7 +44,7 @@ npm run play -- --lives 1 --max-turns 16 --verbose
 
 The default model is `grok-4.6`. Pass `--model` to use another id from the account catalog.
 
-Each run writes `results/<id>/` and updates `notebook/` (notes, saved sequences, ending screens). It also prints the token cost of that play on stderr and writes the same lines to `results/last-run.txt`. That figure is the token cost the Cursor SDK reports for the run. If the SDK has not reported a cost yet, the log says so and still prints the token counts. The harness does not price tokens itself. Do not point play at the fake screen. That stand-in is for tests only.
+Each run writes `results/<id>/` and updates `notebook/` (claims that survive the screen, short key sequences, ending words). A turn log is not stored, and a loaded notebook drops one that is already there. It also prints the token cost of that play on stderr and writes the same lines to `results/last-run.txt`. That figure is the token cost the Cursor SDK reports for the run. If the SDK has not reported a cost yet, the log says so and still prints the token counts. The harness does not price tokens itself. Do not point play at the fake screen. That stand-in is for tests only.
 
 A local play does not push. The play job uses `grok-4.6`, writes the token cost to the job summary, seeds `notebook/` from `automation/nethack-notes` when that branch exists, then publishes the notebook back to that branch and opens a pull request to `main`. The notes pull request includes that cost line. The next workflow play reads that branch before the pull request merges. It does not commit notes onto the pull request that triggered play, and it does not auto-merge the notes pull request. A failed play does not publish.
 

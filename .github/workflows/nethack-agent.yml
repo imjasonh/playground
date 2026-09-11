@@ -7,6 +7,7 @@
 # It does not commit notes onto the feature pull request. A failed play
 # does not publish. Play jobs queue so two runs cannot overwrite the branch.
 # Play uses grok-4.6 and writes the SDK token cost to the job summary.
+# The notebook keeps claims that survive the screen and drops a turn log.
 
 name: NetHack agent
 

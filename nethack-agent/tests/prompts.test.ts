@@ -28,5 +28,8 @@ describe("harness prompts", () => {
     for (const word of HARNESS_SPOILER_WORDS) {
       assert.equal(text.includes(word), false, word);
     }
+    assert.match(systemPrompt(), /still true if this screen is gone/);
+    assert.match(debriefPrompt({ screen: "" }), /different screen/);
+    assert.equal(systemPrompt().includes("grid bug"), false);
   });
 });

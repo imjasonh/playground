@@ -21,6 +21,10 @@ export function systemPrompt(): string {
     "",
     "Keys are sent exactly. The next message is the new screen.",
     "When the process ends, this conversation ends. Notes, saved sequences, and the final screen are what a later attempt can see.",
+    "A note is one claim that is still true if this screen is gone.",
+    "Do not file where you are, the keys you just sent, or what to try next.",
+    "The notebook is small. To add a note when it is full, retract one that is narrower or wrong.",
+    "A saved sequence is a short series of keys that does the same thing on a later screen, not a path through this one.",
     "Anything you already believe is untested until a screen agrees with it.",
   ].join("\n");
 }
@@ -54,6 +58,8 @@ export function playPrompt(input: {
 export function debriefPrompt(input: { screen: string; acks?: string[] }): string {
   const parts = [
     "The process is no longer accepting keys.",
+    "File a claim a later attempt can use on a different screen.",
+    "Do not recap this path, where you were, or the keys you sent.",
     "You may reply with a JSON object that only contains note, save, or retract.",
     "The next attempt will not have this conversation.",
   ];

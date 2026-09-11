@@ -47,6 +47,25 @@ describe("harness", () => {
     assert.equal(next.toLowerCase().includes("hjkl"), false);
   });
 
+  it("does not carry a turn log into the next life", async () => {
+    const script: MockScript = {
+      turns: [
+        { text: '{"keys":"lllljj","note":"after kkll, @ was on the top row"}' },
+        { text: '{"note":"grid bugs are easy to kill"}' },
+        { text: '{"quit":true}' },
+      ],
+      seenPrompts: [],
+    };
+    const record = await run(script);
+    const next = script.seenPrompts?.[2] ?? "";
+    assert.match(next, /grid bugs are easy to kill/);
+    assert.equal(next.includes("top row"), false);
+    assert.equal(next.includes("(life "), false);
+    const texts = record.memory.notes.filter((note) => !note.retracted).map((note) => note.text);
+    assert.equal(texts.includes("after kkll, @ was on the top row"), false);
+    assert.equal(texts.includes("grid bugs are easy to kill"), true);
+  });
+
   it("replays a key sequence the agent saved, without the harness naming it", async () => {
     const script: MockScript = {
       turns: [
