@@ -57,7 +57,7 @@ struct DeviceAgentView: View {
                 consumeInboxIfNeeded()
             }
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             guard phase == .active else { return }
             let wasAvailable = runtime.isModelAvailable
             runtime.refreshModelStatus()
@@ -68,28 +68,28 @@ struct DeviceAgentView: View {
                 consumeInboxIfNeeded()
             }
         }
-        .onChange(of: inbox.pendingRun?.id) { _ in
+        .onChange(of: inbox.pendingRun?.id) {
             if runtime.isModelAvailable {
                 consumeInboxIfNeeded()
             }
         }
-        .onChange(of: runtime.context.browserURL) { url in
+        .onChange(of: runtime.context.browserURL) { _, url in
             if url != nil {
                 openBrowserPane()
             }
         }
-        .onChange(of: runtime.context.browser.url) { url in
+        .onChange(of: runtime.context.browser.url) { _, url in
             if url != nil {
                 openBrowserPane()
                 runtime.context.browserURL = url
             }
         }
-        .onChange(of: runtime.context.browser.title) { title in
+        .onChange(of: runtime.context.browser.title) { _, title in
             if !title.isEmpty {
                 runtime.context.browserTitle = title
             }
         }
-        .onChange(of: permissions.prePromptDomain) { domain in
+        .onChange(of: permissions.prePromptDomain) { _, domain in
             if let domain {
                 runtime.appendPermission(domain)
             }
@@ -121,13 +121,10 @@ struct DeviceAgentView: View {
             .presentationDetents([.medium])
             .accessibilityIdentifier("deviceAgentExportSheet")
         }
-        .alert("Export failed", isPresented: Binding(
-            get: { exportError != nil },
-            set: { if !$0 { exportError = nil } }
-        )) {
-            Button("OK", role: .cancel) { exportError = nil }
-        } message: {
-            Text(exportError ?? "")
+        .alert("Export failed", item: $exportError) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("deviceAgentRoot")
@@ -193,7 +190,7 @@ struct DeviceAgentView: View {
             return "sparkles"
         case .modelNotReady:
             return "arrow.down.circle"
-        case .deviceNotEligible, .unsupportedPlatform, .other, .available:
+        case .deviceNotEligible, .other, .available:
             return "globe"
         }
     }
@@ -290,7 +287,7 @@ struct DeviceAgentView: View {
                     .padding()
                 }
             }
-            .onChange(of: runtime.transcript.count) { _ in
+            .onChange(of: runtime.transcript.count) {
                 if let last = runtime.transcript.last(where: \.isVisibleInChat)?.id {
                     withAnimation {
                         proxy.scrollTo(last, anchor: .bottom)

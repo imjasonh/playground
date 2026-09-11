@@ -53,11 +53,8 @@ final class AgentVoiceCapture: ObservableObject {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        if #available(iOS 17.0, *) {
-            // Prefer on-device when the OS offers it.
-            if recognizer.supportsOnDeviceRecognition {
-                request.requiresOnDeviceRecognition = true
-            }
+        if recognizer.supportsOnDeviceRecognition {
+            request.requiresOnDeviceRecognition = true
         }
         self.request = request
 

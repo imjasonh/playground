@@ -15,31 +15,22 @@ struct RideListView: View {
 
     var body: some View {
         List {
+            ForEach(rides) { ride in
+                NavigationLink {
+                    RideDetailView(ride: ride)
+                } label: {
+                    row(for: ride)
+                }
+            }
+            .onDelete(perform: delete)
+        }
+        .overlay {
             if rides.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "bicycle")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text("No rides yet")
-                        .font(.headline)
-                    Text("Record one from the Ride Monitor.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-                .listRowBackground(Color.clear)
-            } else {
-                ForEach(rides) { ride in
-                    NavigationLink {
-                        RideDetailView(ride: ride)
-                    } label: {
-                        row(for: ride)
-                    }
-                }
-                .onDelete(perform: delete)
+                ContentUnavailableView(
+                    "No rides yet",
+                    systemImage: "bicycle",
+                    description: Text("Record one from Ride Monitor.")
+                )
             }
         }
         .navigationTitle("Past rides")
@@ -80,13 +71,10 @@ struct RideListView: View {
             }
         }
         .onAppear { rides = store.loadAll() }
-        .alert("Export failed", isPresented: Binding(
-            get: { exportErrorMessage != nil },
-            set: { if !$0 { exportErrorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { exportErrorMessage = nil }
-        } message: {
-            Text(exportErrorMessage ?? "")
+        .alert("Export failed", item: $exportErrorMessage) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
         }
         .fileExporter(
             isPresented: $isSavingZipFile,

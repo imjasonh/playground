@@ -22,13 +22,10 @@ struct DoomFaceView: View {
         .sheet(item: $shareURL) { item in
             ShareSheet(items: [item.url])
         }
-        .alert("Export failed", isPresented: Binding(
-            get: { exportError != nil },
-            set: { if !$0 { exportError = nil } }
-        )) {
-            Button("OK", role: .cancel) { exportError = nil }
-        } message: {
-            Text(exportError ?? "")
+        .alert("Export failed", item: $exportError) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
         }
     }
 

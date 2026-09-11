@@ -1,16 +1,13 @@
 import Foundation
-
-#if canImport(FoundationModels)
 import FoundationModels
-#endif
 
 /// Runs prompts through on-device Foundation Models + in-app browser tools.
-/// Unavailable without Apple Intelligence (iOS 26+ with the model ready).
+/// Unavailable without Apple Intelligence and a ready on-device model.
 @MainActor
 final class AgentRuntime: ObservableObject {
     @Published var transcript: [AgentTranscriptEntry] = []
     @Published var isRunning = false
-    @Published private(set) var modelGate: AgentModelGate = .unsupportedPlatform
+    @Published private(set) var modelGate: AgentModelGate = .other("Checking Apple Intelligence availability.")
     /// How full the on-device model context window is (0...1).
     @Published private(set) var contextUsage = AgentContextUsage.empty
 
@@ -31,8 +28,7 @@ final class AgentRuntime: ObservableObject {
     private var recentUserPrompts: [String] = []
     private var carryOverNotes: String = ""
     private var didCompactThisSession = false
-    /// Holds `LanguageModelSession` when FoundationModels is linked (typed via helpers).
-    private var languageSessionBox: Any?
+    private var languageSession: LanguageModelSession?
 
     init(context: AgentToolContext? = nil) {
         self.context = context ?? AgentToolContext()
@@ -44,14 +40,10 @@ final class AgentRuntime: ObservableObject {
     }
 
     func refreshModelStatus() {
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
-            modelGate = Self.gate(for: SystemLanguageModel.default.availability)
+        modelGate = Self.gate(for: SystemLanguageModel.default.availability)
+        if isModelAvailable {
             refreshWindowSizeFromModel()
-            return
         }
-        #endif
-        modelGate = .unsupportedPlatform
     }
 
     /// Primary CTA for the unavailable pane (Settings or check-again).
@@ -67,8 +59,6 @@ final class AgentRuntime: ObservableObject {
         }
     }
 
-    #if canImport(FoundationModels)
-    @available(iOS 26.0, *)
     private static func gate(for availability: SystemLanguageModel.Availability) -> AgentModelGate {
         switch availability {
         case .available:
@@ -86,28 +76,13 @@ final class AgentRuntime: ObservableObject {
         }
     }
 
-    @available(iOS 26.0, *)
     private func refreshWindowSizeFromModel() {
-        // contextSize is available on newer SDKs (back-deployed). Fall back to 4096.
-        let model = SystemLanguageModel.default
-        if let size = Self.readContextSize(from: model), size > 0 {
+        let size = SystemLanguageModel.default.contextSize
+        if size > 0 {
             budget.windowTokens = size
             publishContextUsage()
         }
     }
-
-    @available(iOS 26.0, *)
-    private static func readContextSize(from model: SystemLanguageModel) -> Int? {
-        // Avoid a hard dependency on iOS 26.4 SDK symbols in older toolchains.
-        let mirror = Mirror(reflecting: model)
-        for child in mirror.children {
-            if child.label == "contextSize", let value = child.value as? Int {
-                return value
-            }
-        }
-        return nil
-    }
-    #endif
 
     func clearTranscript() {
         transcript.removeAll()
@@ -146,26 +121,14 @@ final class AgentRuntime: ObservableObject {
         append(.user, text: trimmed, sourceNote: source)
 
         do {
-            #if canImport(FoundationModels)
-            if #available(iOS 26.0, *) {
-                try await runFoundationModels(prompt: trimmed)
-            } else {
-                append(.system, text: modelStatusText)
-            }
-            #else
             try await runFoundationModels(prompt: trimmed)
-            #endif
         } catch {
             if OnDeviceContextManager.isExceededContextWindow(error) {
                 // Last-resort recovery: compact and retry once.
                 compactLanguageSession(reason: "Model context filled; compacted and retrying.")
                 do {
-                    #if canImport(FoundationModels)
-                    if #available(iOS 26.0, *) {
-                        try await runFoundationModels(prompt: trimmed, isRetryAfterCompact: true)
-                        return
-                    }
-                    #endif
+                    try await runFoundationModels(prompt: trimmed, isRetryAfterCompact: true)
+                    return
                 } catch {
                     append(.assistant, text: "Couldn’t finish after compacting context: \(error.localizedDescription)")
                     return
@@ -175,8 +138,6 @@ final class AgentRuntime: ObservableObject {
         }
     }
 
-    #if canImport(FoundationModels)
-    @available(iOS 26.0, *)
     private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
         refreshModelStatus()
         guard isModelAvailable else {
@@ -204,7 +165,7 @@ final class AgentRuntime: ObservableObject {
 
         let response = try await session.respond(to: promptForModel)
         let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
-        budget.addText(text)
+        budget.reconcileMeasuredUsage(totalTokens: response.usage.totalTokenCount)
         publishContextUsage()
         append(.assistant, text: text.isEmpty ? "(Empty model response.)" : text)
 
@@ -213,10 +174,9 @@ final class AgentRuntime: ObservableObject {
         }
     }
 
-    @available(iOS 26.0, *)
     private func ensureLanguageSession() -> LanguageModelSession {
-        if let existing = languageSessionBox as? LanguageModelSession {
-            return existing
+        if let languageSession {
+            return languageSession
         }
         let tools = makeFoundationTools()
         var instructions = baseInstructions
@@ -225,13 +185,12 @@ final class AgentRuntime: ObservableObject {
             carryOverNotes = ""
         }
         let session = LanguageModelSession(tools: tools, instructions: instructions)
-        languageSessionBox = session
+        languageSession = session
         budget.resetBaseline(instructions: instructions)
         publishContextUsage()
         return session
     }
 
-    @available(iOS 26.0, *)
     private var sessionInstructions: String {
         var body = baseInstructions
         if !carryOverNotes.isEmpty {
@@ -240,7 +199,6 @@ final class AgentRuntime: ObservableObject {
         return body
     }
 
-    @available(iOS 26.0, *)
     private var baseInstructions: String {
         """
         You are Device Agent inside the Playground iOS app. Your only job is driving the in-app browser.
@@ -259,7 +217,6 @@ final class AgentRuntime: ObservableObject {
         """
     }
 
-    @available(iOS 26.0, *)
     private func makeFoundationTools() -> [any Tool] {
         [
             GetDateTimeFMTool(runtime: self),
@@ -276,15 +233,9 @@ final class AgentRuntime: ObservableObject {
             BrowserBackFMTool(runtime: self),
         ]
     }
-    #else
-    private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
-        _ = isRetryAfterCompact
-        append(.system, text: modelStatusText)
-    }
-    #endif
 
     private func resetLanguageSession() {
-        languageSessionBox = nil
+        languageSession = nil
         budget = AgentContextBudget(windowTokens: budget.windowTokens)
         publishContextUsage()
     }
@@ -300,24 +251,19 @@ final class AgentRuntime: ObservableObject {
             recentUserPrompts: recentUserPrompts
         )
         didCompactThisSession = true
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *),
-           let existing = languageSessionBox as? LanguageModelSession,
+        if let languageSession,
            let rehydrated = OnDeviceContextManager.rehydratedSession(
-               from: existing,
+               from: languageSession,
                tools: makeFoundationTools()
            )
         {
-            languageSessionBox = rehydrated
+            self.languageSession = rehydrated
             budget = AgentContextBudget(windowTokens: budget.windowTokens)
             budget.resetBaseline(instructions: baseInstructions)
             budget.addText(carryOverNotes)
         } else {
             resetLanguageSession()
         }
-        #else
-        resetLanguageSession()
-        #endif
         appendSystem(reason)
         publishContextUsage()
     }
@@ -581,8 +527,6 @@ final class AgentRuntime: ObservableObject {
     }
 }
 
-#if canImport(FoundationModels)
-@available(iOS 26.0, *)
 private enum AgentFMToolBridge {
     static func run(
         _ runtime: AgentRuntime?,
@@ -605,7 +549,6 @@ private enum AgentFMToolBridge {
     }
 }
 
-@available(iOS 26.0, *)
 struct GetDateTimeFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "getCurrentDateTime"
@@ -624,7 +567,6 @@ struct GetDateTimeFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct BrowserOpenFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserOpen"
@@ -643,7 +585,6 @@ struct BrowserOpenFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct BrowserReadFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserRead"
@@ -662,7 +603,6 @@ struct BrowserReadFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct BrowserSnapshotFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserSnapshot"
@@ -689,7 +629,6 @@ struct BrowserSnapshotFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct BrowserClickFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserClick"
@@ -708,7 +647,6 @@ struct BrowserClickFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct BrowserClickTextFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserClickText"
@@ -727,7 +665,6 @@ struct BrowserClickTextFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct BrowserFindFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserFind"
@@ -746,7 +683,6 @@ struct BrowserFindFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct BrowserGetFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserGet"
@@ -765,7 +701,6 @@ struct BrowserGetFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct BrowserScrollFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserScroll"
@@ -784,7 +719,6 @@ struct BrowserScrollFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct BrowserSelectFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserSelect"
@@ -809,7 +743,6 @@ struct BrowserSelectFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct BrowserTypeFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserType"
@@ -837,7 +770,6 @@ struct BrowserTypeFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct BrowserBackFMTool: Tool {
     weak var runtime: AgentRuntime?
     let name = "browserBack"
@@ -855,4 +787,3 @@ struct BrowserBackFMTool: Tool {
         }
     }
 }
-#endif

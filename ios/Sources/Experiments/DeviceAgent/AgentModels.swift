@@ -286,7 +286,6 @@ enum AgentModelGate: Equatable {
     case needsAppleIntelligence
     case modelNotReady
     case deviceNotEligible
-    case unsupportedPlatform
     case other(String)
 
     var isAvailable: Bool {
@@ -304,8 +303,6 @@ enum AgentModelGate: Equatable {
             return "Model still downloading"
         case .deviceNotEligible:
             return "Device not eligible"
-        case .unsupportedPlatform:
-            return "Needs iOS 26 +"
         case .other:
             return "Apple Intelligence unavailable"
         }
@@ -321,8 +318,6 @@ enum AgentModelGate: Equatable {
             return "Apple Intelligence is on, but the on-device model is still downloading. Keep Wi‑Fi and power connected, then check again."
         case .deviceNotEligible:
             return "This hardware doesn’t support Apple Intelligence, so Device Agent can’t run here."
-        case .unsupportedPlatform:
-            return "Requires iOS 26+ with Apple Intelligence. This device or Simulator build cannot run Device Agent."
         case .other(let reason):
             return reason
         }
@@ -335,7 +330,7 @@ enum AgentModelGate: Equatable {
             return .openAppleIntelligenceSettings
         case .modelNotReady:
             return .checkAgain
-        case .available, .deviceNotEligible, .unsupportedPlatform, .other:
+        case .available, .deviceNotEligible, .other:
             return nil
         }
     }

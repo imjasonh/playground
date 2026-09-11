@@ -24,7 +24,7 @@ final class AgentPermissionGate: NSObject, ObservableObject {
     }
 
     private func ensureMicrophone() async throws {
-        switch AVAudioSession.sharedInstance().recordPermission {
+        switch AVAudioApplication.shared.recordPermission {
         case .granted:
             return
         case .denied:
@@ -32,9 +32,7 @@ final class AgentPermissionGate: NSObject, ObservableObject {
             throw AgentToolError.permissionDenied(.microphone)
         case .undetermined:
             await showPrePrompt(for: .microphone)
-            let granted = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-                AVAudioSession.sharedInstance().requestRecordPermission { cont.resume(returning: $0) }
-            }
+            let granted = await AVAudioApplication.requestRecordPermission()
             prePromptDomain = nil
             if !granted {
                 lastDeniedDomain = .microphone
@@ -69,6 +67,6 @@ final class AgentPermissionGate: NSObject, ObservableObject {
 
     private func showPrePrompt(for domain: AgentPermissionDomain) async {
         prePromptDomain = domain
-        try? await Task.sleep(nanoseconds: 350_000_000)
+        try? await Task.sleep(for: .milliseconds(350))
     }
 }

@@ -356,22 +356,20 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
             next.watchDistanceMeters = stats.sumQuantity()?.doubleValue(for: .meter())
         }
 
-        if #available(watchOS 10.0, *) {
-            if let type = HKQuantityType.quantityType(forIdentifier: .cyclingCadence),
-               let stats = builder.statistics(for: type) {
-                next.cadenceRPM = stats.mostRecentQuantity()?.doubleValue(for: rpmUnit)
-                next.averageCadenceRPM = stats.averageQuantity()?.doubleValue(for: rpmUnit)
-            }
-            if let type = HKQuantityType.quantityType(forIdentifier: .cyclingSpeed),
-               let stats = builder.statistics(for: type) {
-                next.cyclingSpeedMetersPerSecond = stats.mostRecentQuantity()?.doubleValue(for: speedUnit)
-            }
-            if let type = HKQuantityType.quantityType(forIdentifier: .cyclingPower),
-               let stats = builder.statistics(for: type) {
-                next.cyclingPowerWatts = stats.mostRecentQuantity()?.doubleValue(for: .watt())
-                next.averageCyclingPowerWatts = stats.averageQuantity()?.doubleValue(for: .watt())
-                next.maxCyclingPowerWatts = stats.maximumQuantity()?.doubleValue(for: .watt())
-            }
+        if let type = HKQuantityType.quantityType(forIdentifier: .cyclingCadence),
+           let stats = builder.statistics(for: type) {
+            next.cadenceRPM = stats.mostRecentQuantity()?.doubleValue(for: rpmUnit)
+            next.averageCadenceRPM = stats.averageQuantity()?.doubleValue(for: rpmUnit)
+        }
+        if let type = HKQuantityType.quantityType(forIdentifier: .cyclingSpeed),
+           let stats = builder.statistics(for: type) {
+            next.cyclingSpeedMetersPerSecond = stats.mostRecentQuantity()?.doubleValue(for: speedUnit)
+        }
+        if let type = HKQuantityType.quantityType(forIdentifier: .cyclingPower),
+           let stats = builder.statistics(for: type) {
+            next.cyclingPowerWatts = stats.mostRecentQuantity()?.doubleValue(for: .watt())
+            next.averageCyclingPowerWatts = stats.averageQuantity()?.doubleValue(for: .watt())
+            next.maxCyclingPowerWatts = stats.maximumQuantity()?.doubleValue(for: .watt())
         }
 
         activity = next
@@ -416,19 +414,15 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
 
     /// Quantity types we ask HealthKit to stream into the live builder.
     private static var collectibleQuantityTypes: [HKQuantityType] {
-        var identifiers: [HKQuantityTypeIdentifier] = [
+        let identifiers: [HKQuantityTypeIdentifier] = [
             .heartRate,
             .activeEnergyBurned,
             .basalEnergyBurned,
             .distanceCycling,
+            .cyclingCadence,
+            .cyclingSpeed,
+            .cyclingPower,
         ]
-        if #available(watchOS 10.0, *) {
-            identifiers.append(contentsOf: [
-                .cyclingCadence,
-                .cyclingSpeed,
-                .cyclingPower,
-            ])
-        }
         return identifiers.compactMap { HKQuantityType.quantityType(forIdentifier: $0) }
     }
 

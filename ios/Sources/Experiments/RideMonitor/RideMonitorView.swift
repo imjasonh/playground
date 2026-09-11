@@ -75,7 +75,7 @@ struct RideMonitorView: View {
                     }
             }
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
                 // Live Activity.request only works in the foreground; retry any

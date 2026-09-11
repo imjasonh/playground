@@ -1,8 +1,5 @@
 import Foundation
-
-#if canImport(FoundationModels)
 import FoundationModels
-#endif
 
 /// Turns a browser scrape into short, question-relevant bullets via Foundation Models.
 /// No heuristic fallback. Extraction failures surface so we can fix the model path.
@@ -58,12 +55,7 @@ enum AgentPageExtractor {
             return try sanitizeBullets(try override(input))
         }
 
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
-            return try await foundationModelBullets(from: input)
-        }
-        #endif
-        throw Failure(error: .modelUnavailable)
+        return try await foundationModelBullets(from: input)
     }
 
     static func formatFindings(title: String, url: String, bullets: [String]) -> String {
@@ -135,7 +127,7 @@ enum AgentPageExtractor {
             sections.append("List items:")
             sections.append(contentsOf: input.listItems.prefix(24).map { "- \($0)" })
         }
-        // Keep extraction prompts well under the 4096-token window.
+        // Keep extraction prompts within the smallest supported model window.
         let text = String(input.pageText.prefix(2_000))
         if !text.isEmpty {
             sections.append("Page text:")
@@ -158,15 +150,12 @@ enum AgentPageExtractor {
         return ("modelFailed", error.localizedDescription, nil)
     }
 
-    #if canImport(FoundationModels)
-    @available(iOS 26.0, *)
     @Generable
     struct ModelFindings {
         @Guide(description: "3-8 short factual bullets from the page that answer the user question")
         var bullets: [String]
     }
 
-    @available(iOS 26.0, *)
     private static func foundationModelBullets(from input: Input) async throws -> [String] {
         let model = SystemLanguageModel.default
         guard model.isAvailable else {
@@ -189,5 +178,4 @@ enum AgentPageExtractor {
             throw Failure(error: .modelFailed(error.localizedDescription))
         }
     }
-    #endif
 }

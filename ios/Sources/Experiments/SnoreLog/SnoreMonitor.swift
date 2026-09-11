@@ -1,8 +1,6 @@
 import AVFoundation
 import Foundation
-#if canImport(UIKit)
 import UIKit
-#endif
 
 /// Overnight snore logger: keeps a short rolling mic buffer in RAM, detects
 /// sustained loudness spikes, and writes only those clips to disk.
@@ -117,9 +115,7 @@ final class SnoreMonitor: ObservableObject {
         timer?.invalidate()
         timer = nil
         isRunning = false
-        #if canImport(UIKit)
         UIApplication.shared.isIdleTimerDisabled = false
-        #endif
         statusMessage = events.isEmpty
             ? "Session saved — no snores detected."
             : "Session saved — \(events.count) snore clip\(events.count == 1 ? "" : "s")."
@@ -156,9 +152,7 @@ final class SnoreMonitor: ObservableObject {
         statusMessage = detector.isWarmingUp
             ? "Calibrating ambient…"
             : "Listening — only loud clips are saved."
-        #if canImport(UIKit)
         UIApplication.shared.isIdleTimerDisabled = true
-        #endif
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -178,13 +172,7 @@ final class SnoreMonitor: ObservableObject {
     }
 
     private func requestMicrophone() async -> Bool {
-        await withCheckedContinuation { continuation in
-            // AVAudioSession API — available on our iOS 16 deployment target
-            // (AVAudioApplication.requestRecordPermission requires iOS 17+).
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                continuation.resume(returning: granted)
-            }
-        }
+        await AVAudioApplication.requestRecordPermission()
     }
 
     private func configureSession() throws {

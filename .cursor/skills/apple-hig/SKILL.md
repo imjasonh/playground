@@ -219,7 +219,7 @@ After an action whose result is otherwise invisible (copy, save, export):
 
 | App | Deployment | Notes |
 | --- | --- | --- |
-| `ios/` | iOS 16.2 | No `ContentUnavailableView` without availability checks; keep UI-test `accessibilityIdentifier`s; experiments share one host Bundle ID |
+| `ios/` | iOS 27 | Use current SwiftUI controls directly; keep UI-test `accessibilityIdentifier`s; experiments share one host Bundle ID |
 | `onramp/` | macOS 14 | `ContentUnavailableView` OK; confirm-before-run for `SuggestedAction` is already correct — do not weaken it |
 | `hello-macos/` | macOS 13 | Keep the sample minimal; still label headers and avoid hardcoded version strings when `Bundle` has them |
 

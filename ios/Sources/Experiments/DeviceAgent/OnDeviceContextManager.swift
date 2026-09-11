@@ -1,17 +1,14 @@
 import Foundation
-
-#if canImport(FoundationModels)
 import FoundationModels
-#endif
 
-/// Shared helpers for staying inside Apple's on-device Foundation Models
-/// 4096-token context window (TN3193).
+/// Shared helpers for staying inside the active Foundation Model's context
+/// window (TN3193).
 ///
 /// `LanguageModelSession` owns the live transcript; you cannot prune it in
 /// place. When the window fills, start a new session seeded from a condensed
 /// transcript (first + last entries) plus a short app-state carry-over.
 enum OnDeviceContextManager {
-    /// Soft budget left for tools + model reply inside the 4096-token window.
+    /// Soft budget left for tools and the model reply.
     static let safetyBufferTokens = 1_500
     /// Cap for rolling-summary / carry-over text injected after compact.
     static let carryOverMaxChars = 1_400
@@ -32,18 +29,17 @@ enum OnDeviceContextManager {
     /// Detects context-window overflow, including typed GenerationError cases
     /// and the generic FoundationModels code `-1` seen on device.
     nonisolated static func isExceededContextWindow(_ error: Error) -> Bool {
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
-            // Prefer typed GenerationError when present; also match by description so
-            // older/newer SDK case spellings still detect overflow.
-            let described = String(describing: error).lowercased()
-            if described.contains("exceededcontextwindowsize")
-                || described.contains("contextsizeexceeded")
-            {
-                return true
-            }
+        if let generationError = error as? LanguageModelSession.GenerationError,
+           case .exceededContextWindowSize(_) = generationError
+        {
+            return true
         }
-        #endif
+        let described = String(describing: error).lowercased()
+        if described.contains("exceededcontextwindowsize")
+            || described.contains("contextsizeexceeded")
+        {
+            return true
+        }
 
         let text = error.localizedDescription.lowercased()
         if text.contains("context window")
@@ -142,11 +138,9 @@ enum OnDeviceContextManager {
         )
     }
 
-    #if canImport(FoundationModels)
     /// Seeds a fresh session from the original transcript's first and last
     /// entries (TN3193), then prewarms. Returns nil when the transcript is
     /// empty or too short to condense.
-    @available(iOS 26.0, *)
     static func rehydratedSession(
         from original: LanguageModelSession,
         tools: [any Tool]
@@ -166,7 +160,6 @@ enum OnDeviceContextManager {
         session.prewarm()
         return session
     }
-    #endif
 
     private nonisolated static func formatRecent(_ turns: [Turn], maxChars: Int) -> String {
         var parts: [String] = ["Recent chat (oldest first):"]

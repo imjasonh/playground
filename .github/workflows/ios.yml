@@ -34,16 +34,12 @@ jobs:
   ios:
     needs: discover
     if: ${{ needs.discover.outputs.ios != '[]' }}
-    runs-on: macos-latest
+    # The app targets iOS 27, whose SDK is on GitHub's Xcode 27 image.
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-
-      - name: Select Xcode
-        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1
-        with:
-          xcode-version: latest-stable
 
       # Bundler cache needs the committed ios/Gemfile.lock. Cuts ~30-40s of cold
       # gem resolve + native extension builds on every run.

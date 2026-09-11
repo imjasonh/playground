@@ -2,9 +2,7 @@ import Foundation
 import CoreMotion
 import CoreLocation
 import UserNotifications
-#if canImport(UIKit)
 import UIKit
-#endif
 
 /// Orchestrates a ride session: high-rate motion sampling for jolt/crash
 /// detection, a background location session that keeps the app alive with the
@@ -19,7 +17,7 @@ import UIKit
 /// When-In-Use with background updates **off**, so locking the phone mid-ride
 /// suspended the process — motion, GPS, and barometer all stopped together
 /// until the app was opened again. We therefore refuse to start until Always
-/// is granted, hold a `CLBackgroundActivitySession` on iOS 17+, and restart
+/// is granted, hold a `CLBackgroundActivitySession`, and restart
 /// device-motion if location is flowing but accelerometer callbacks stall.
 ///
 /// Core Motion updates arrive on `OperationQueue.main`. Core Location
@@ -72,9 +70,8 @@ final class RideMonitor: NSObject, ObservableObject {
     private var wantsRecording = false
     /// Throttle Live Activity / Watch pushes (ActivityKit has an update budget).
     private var lastCompanionPushAt: TimeInterval = 0
-    /// iOS 17+ background activity session (retained for the ride). Typed as
-    /// `AnyObject?` so this file still compiles against the iOS 16 deployment target.
-    private var backgroundActivitySession: AnyObject?
+    /// Background activity session retained for the duration of the ride.
+    private var backgroundActivitySession: CLBackgroundActivitySession?
 
     /// Uptime offset of the most recent motion sample (nil until the first one).
     private var lastMotionAt: TimeInterval?
@@ -258,7 +255,7 @@ final class RideMonitor: NSObject, ObservableObject {
         location.allowsBackgroundLocationUpdates = true
         location.showsBackgroundLocationIndicator = true
         location.pausesLocationUpdatesAutomatically = false
-        startBackgroundActivitySessionIfAvailable()
+        startBackgroundActivitySession()
     }
 
     private func disableBackgroundKeepAlive() {
@@ -267,18 +264,14 @@ final class RideMonitor: NSObject, ObservableObject {
         endBackgroundActivitySession()
     }
 
-    private func startBackgroundActivitySessionIfAvailable() {
+    private func startBackgroundActivitySession() {
         endBackgroundActivitySession()
-        if #available(iOS 17.0, *) {
-            // Holds the blue “in use” indicator / background run state for live updates.
-            backgroundActivitySession = CLBackgroundActivitySession()
-        }
+        // Holds the blue “in use” indicator and background run state for live updates.
+        backgroundActivitySession = CLBackgroundActivitySession()
     }
 
     private func endBackgroundActivitySession() {
-        if #available(iOS 17.0, *) {
-            (backgroundActivitySession as? CLBackgroundActivitySession)?.invalidate()
-        }
+        backgroundActivitySession?.invalidate()
         backgroundActivitySession = nil
     }
 
@@ -737,9 +730,7 @@ final class RideMonitor: NSObject, ObservableObject {
         RideMonitorLog.notice(
             String(format: "crash event peakG=%.2f at=%.1fs", event.peakG, event.at)
         )
-        #if canImport(UIKit)
         UINotificationFeedbackGenerator().notificationOccurred(.error)
-        #endif
         let content = UNMutableNotificationContent()
         content.title = "Possible crash detected"
         content.body = String(format: "A %.1fg impact was followed by stillness.", event.peakG)

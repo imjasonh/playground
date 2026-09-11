@@ -166,7 +166,7 @@ struct ArmyListEditorView: View {
                 persist()
             }
         }
-        .onChange(of: list) { _ in
+        .onChange(of: list) {
             persist()
         }
     }

@@ -22,8 +22,7 @@ final class DeviceAgentTests: XCTestCase {
     func testRuntimeReportsModelGate() {
         let runtime = AgentRuntime()
         runtime.refreshModelStatus()
-        // CI’s iOS 26 Simulator may report `.available`; older / ineligible
-        // hosts report an unavailable gate. Either way the copy must be set.
+        // The Simulator may report the model as available or ineligible.
         XCTAssertFalse(runtime.modelGate.title.isEmpty)
         XCTAssertFalse(runtime.modelGate.detail.isEmpty)
         XCTAssertEqual(runtime.isModelAvailable, runtime.modelGate.isAvailable)
@@ -34,7 +33,6 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertEqual(AgentModelGate.needsAppleIntelligence.primaryAction, .openAppleIntelligenceSettings)
         XCTAssertEqual(AgentModelGate.modelNotReady.primaryAction, .checkAgain)
         XCTAssertNil(AgentModelGate.deviceNotEligible.primaryAction)
-        XCTAssertNil(AgentModelGate.unsupportedPlatform.primaryAction)
         XCTAssertEqual(
             AgentModelGateAction.openAppleIntelligenceSettings.title,
             "Open Apple Intelligence Settings"
@@ -459,6 +457,9 @@ final class DeviceAgentTests: XCTestCase {
         XCTAssertTrue(budget.needsCompact)
         XCTAssertGreaterThanOrEqual(budget.percentUsed, 72)
 
+        budget.reconcileMeasuredUsage(totalTokens: 2_000)
+        XCTAssertEqual(budget.committedTokens, 2_000)
+
         let truncated = AgentContextBudget.truncateToChars(String(repeating: "x", count: 100), maxChars: 20)
         XCTAssertEqual(truncated.count, 20)
         XCTAssertTrue(truncated.hasSuffix("…"))
@@ -606,7 +607,10 @@ final class DeviceAgentTests: XCTestCase {
     @MainActor
     func testRuntimePublishesContextUsage() async throws {
         let runtime = AgentRuntime()
-        XCTAssertEqual(runtime.contextUsage.windowTokens, AgentContextBudget.defaultWindowTokens)
+        XCTAssertGreaterThanOrEqual(
+            runtime.contextUsage.windowTokens,
+            AgentContextBudget.defaultWindowTokens
+        )
         XCTAssertGreaterThanOrEqual(runtime.contextUsage.percentUsed, 0)
 
         AgentPageExtractor.testExtractionOverride = { _ in ["Bullet"] }
