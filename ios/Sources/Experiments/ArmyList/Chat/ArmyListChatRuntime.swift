@@ -1,9 +1,6 @@
 import Combine
 import Foundation
-
-#if canImport(FoundationModels)
 import FoundationModels
-#endif
 
 /// Chat transcript row for Army List on-device assistance.
 struct ArmyListChatEntry: Identifiable, Equatable {
@@ -32,7 +29,7 @@ struct ArmyListChatEntry: Identifiable, Equatable {
 final class ArmyListChatRuntime: ObservableObject {
     /// How the session is configured. Chat exposes the full tool set for
     /// interactive editing; builder trims to one bulk tool for a self-contained
-    /// from-scratch build, which fits the 4096-token window far more reliably
+    /// from-scratch build, which fits the model's context window more reliably
     /// (see the `foundation-models-context` skill).
     enum Mode {
         case chat
@@ -45,7 +42,7 @@ final class ArmyListChatRuntime: ObservableObject {
 
     @Published var transcript: [ArmyListChatEntry] = []
     @Published var isRunning = false
-    @Published private(set) var modelGate: AgentModelGate = .unsupportedPlatform
+    @Published private(set) var modelGate: AgentModelGate = .other("Checking Apple Intelligence availability.")
     @Published private(set) var contextUsage = AgentContextUsage.empty
 
     let workspace: ArmyListChatWorkspace
@@ -55,7 +52,7 @@ final class ArmyListChatRuntime: ObservableObject {
     /// when `applyRosterPlan` starts running.
     var onStarterBuildToolStarted: (@MainActor (String) -> Void)?
 
-    private var languageSessionBox: Any?
+    private var languageSession: LanguageModelSession?
     private var workspaceBag: AnyCancellable?
     private var carryOverNotes = ""
     private var budget = AgentContextBudget(toolsReserveTokens: ArmyListChatRuntime.toolsReserveTokens)
@@ -82,13 +79,14 @@ final class ArmyListChatRuntime: ObservableObject {
     }
 
     func refreshModelStatus() {
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
-            modelGate = Self.gate(for: SystemLanguageModel.default.availability)
-            return
+        modelGate = Self.gate(for: SystemLanguageModel.default.availability)
+        if isModelAvailable {
+            let size = SystemLanguageModel.default.contextSize
+            if size > 0 {
+                budget.windowTokens = size
+                publishContextUsage()
+            }
         }
-        #endif
-        modelGate = .unsupportedPlatform
     }
 
     func performModelGateAction(_ action: AgentModelGateAction) async {
@@ -130,27 +128,15 @@ final class ArmyListChatRuntime: ObservableObject {
         defer { isRunning = false }
 
         do {
-            #if canImport(FoundationModels)
-            if #available(iOS 26.0, *) {
-                try await runFoundationModels(prompt: trimmed)
-            } else {
-                append(.system, text: armyListGateDetail)
-            }
-            #else
             try await runFoundationModels(prompt: trimmed)
-            #endif
         } catch {
             if OnDeviceContextManager.isExceededContextWindow(error) {
                 compactLanguageSession(
                     reason: "Model context filled during tool use; compacted and retrying once."
                 )
                 do {
-                    #if canImport(FoundationModels)
-                    if #available(iOS 26.0, *) {
-                        try await runFoundationModels(prompt: trimmed, isRetryAfterCompact: true)
-                        return
-                    }
-                    #endif
+                    try await runFoundationModels(prompt: trimmed, isRetryAfterCompact: true)
+                    return
                 } catch {
                     append(
                         .assistant,
@@ -163,8 +149,8 @@ final class ArmyListChatRuntime: ObservableObject {
         }
     }
 
-    /// FoundationModels often surfaces context overflow as GenerationError code -1
-    /// with a generic localizedDescription (no “context” substring).
+    /// Recognizes the typed iOS 27 context error and wrapped errors that retain
+    /// a context-size description.
     nonisolated static func isExceededContextWindow(_ error: Error) -> Bool {
         OnDeviceContextManager.isExceededContextWindow(error)
     }
@@ -177,8 +163,11 @@ final class ArmyListChatRuntime: ObservableObject {
     }
 
     private func resetLanguageSession() {
-        languageSessionBox = nil
-        budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
+        languageSession = nil
+        budget = AgentContextBudget(
+            windowTokens: budget.windowTokens,
+            toolsReserveTokens: Self.toolsReserveTokens
+        )
         didCompactThisSession = false
         carryOverNotes = ""
         publishContextUsage()
@@ -190,29 +179,29 @@ final class ArmyListChatRuntime: ObservableObject {
             transcript: transcript
         )
         didCompactThisSession = true
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *),
-           let existing = languageSessionBox as? LanguageModelSession,
+        if let languageSession,
            let rehydrated = OnDeviceContextManager.rehydratedSession(
-               from: existing,
+               from: languageSession,
                tools: makeFoundationTools()
            )
         {
-            languageSessionBox = rehydrated
-            budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
+            self.languageSession = rehydrated
+            budget = AgentContextBudget(
+                windowTokens: budget.windowTokens,
+                toolsReserveTokens: Self.toolsReserveTokens
+            )
             budget.resetBaseline(
                 instructions: sessionInstructions,
                 toolsReserveTokens: Self.toolsReserveTokens
             )
             budget.addText(carryOverNotes)
         } else {
-            languageSessionBox = nil
-            budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
+            languageSession = nil
+            budget = AgentContextBudget(
+                windowTokens: budget.windowTokens,
+                toolsReserveTokens: Self.toolsReserveTokens
+            )
         }
-        #else
-        languageSessionBox = nil
-        budget = AgentContextBudget(toolsReserveTokens: Self.toolsReserveTokens)
-        #endif
         append(.system, text: reason)
         publishContextUsage()
     }
@@ -329,8 +318,6 @@ final class ArmyListChatRuntime: ObservableObject {
         transcript.append(ArmyListChatEntry(kind: kind, text: text))
     }
 
-    #if canImport(FoundationModels)
-    @available(iOS 26.0, *)
     private static func gate(for availability: SystemLanguageModel.Availability) -> AgentModelGate {
         switch availability {
         case .available:
@@ -348,7 +335,6 @@ final class ArmyListChatRuntime: ObservableObject {
         }
     }
 
-    @available(iOS 26.0, *)
     private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
         refreshModelStatus()
         guard isModelAvailable else {
@@ -381,7 +367,7 @@ final class ArmyListChatRuntime: ObservableObject {
         publishContextUsage()
         let response = try await session.respond(to: promptForModel)
         let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
-        budget.addText(text)
+        budget.reconcileMeasuredUsage(totalTokens: response.usage.totalTokenCount)
         publishContextUsage()
         append(.assistant, text: text.isEmpty ? "(Empty model response.)" : text)
         if budget.needsCompact {
@@ -389,10 +375,9 @@ final class ArmyListChatRuntime: ObservableObject {
         }
     }
 
-    @available(iOS 26.0, *)
     private func ensureLanguageSession() -> LanguageModelSession {
-        if let existing = languageSessionBox as? LanguageModelSession {
-            return existing
+        if let languageSession {
+            return languageSession
         }
         var instructions = sessionInstructions
         if !carryOverNotes.isEmpty {
@@ -400,7 +385,7 @@ final class ArmyListChatRuntime: ObservableObject {
             carryOverNotes = ""
         }
         let session = LanguageModelSession(tools: makeFoundationTools(), instructions: instructions)
-        languageSessionBox = session
+        languageSession = session
         budget.resetBaseline(
             instructions: instructions,
             toolsReserveTokens: Self.toolsReserveTokens
@@ -409,7 +394,6 @@ final class ArmyListChatRuntime: ObservableObject {
         return session
     }
 
-    @available(iOS 26.0, *)
     private var sessionInstructions: String {
         if mode == .builder {
             return builderInstructions
@@ -419,8 +403,7 @@ final class ArmyListChatRuntime: ObservableObject {
 
     /// Short instructions for a one-shot from-scratch build. The prompt carries
     /// the faction, points limit, DP budget, and valid ids, so the model needs
-    /// only one `applyRosterPlan` call — keeping the 4096-token window clear.
-    @available(iOS 26.0, *)
+    /// only one `applyRosterPlan` call, which leaves context for the response.
     private var builderInstructions: String {
         """
         You build exactly one Warhammer 40,000 army list, then stop.
@@ -433,7 +416,6 @@ final class ArmyListChatRuntime: ObservableObject {
         """
     }
 
-    @available(iOS 26.0, *)
     private var chatInstructions: String {
         """
         You help the user build and discuss a Warhammer 40,000 11th Edition army list inside the Playground app.
@@ -451,10 +433,9 @@ final class ArmyListChatRuntime: ObservableObject {
         """
     }
 
-    @available(iOS 26.0, *)
     private func makeFoundationTools() -> [any Tool] {
         // A from-scratch build only needs the bulk roster tool. Fewer resident
-        // tool schemas leave far more of the 4096-token window for the plan.
+        // tool schemas leave more of the model's context window for the plan.
         if mode == .builder {
             return [ArmyApplyRosterPlanFMTool(runtime: self)]
         }
@@ -474,13 +455,6 @@ final class ArmyListChatRuntime: ObservableObject {
             ArmyClearUnitsFMTool(runtime: self),
         ]
     }
-    #else
-    private func runFoundationModels(prompt: String, isRetryAfterCompact: Bool = false) async throws {
-        _ = prompt
-        _ = isRetryAfterCompact
-        append(.system, text: armyListGateDetail)
-    }
-    #endif
 
     var armyListGateDetail: String {
         switch modelGate {
@@ -492,16 +466,12 @@ final class ArmyListChatRuntime: ObservableObject {
             return "Apple Intelligence is on, but the on-device model is still downloading. Check again when it finishes."
         case .deviceNotEligible:
             return "This hardware doesn’t support Apple Intelligence, so Army List chat can’t run here. Authoring and validation still work."
-        case .unsupportedPlatform:
-            return "Army List chat needs iOS 26+ with Apple Intelligence. Authoring and validation still work without it."
         case .other(let reason):
             return reason
         }
     }
 }
 
-#if canImport(FoundationModels)
-@available(iOS 26.0, *)
 private enum ArmyListFMToolBridge {
     static func run(
         _ runtime: ArmyListChatRuntime?,
@@ -532,7 +502,6 @@ private enum ArmyListFMToolBridge {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmyGetListSummaryFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "getListSummary"
@@ -551,7 +520,6 @@ struct ArmyGetListSummaryFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmySearchCatalogFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "searchCatalog"
@@ -576,7 +544,6 @@ struct ArmySearchCatalogFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmyApplyRosterPlanFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "applyRosterPlan"
@@ -607,7 +574,6 @@ struct ArmyApplyRosterPlanFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmySetBattleSizeFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setBattleSize"
@@ -629,7 +595,6 @@ struct ArmySetBattleSizeFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmySetDetachmentsFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setDetachments"
@@ -651,7 +616,6 @@ struct ArmySetDetachmentsFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmyAddUnitFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "addUnit"
@@ -676,7 +640,6 @@ struct ArmyAddUnitFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmyRemoveUnitFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "removeUnit"
@@ -695,7 +658,6 @@ struct ArmyRemoveUnitFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmySetUnitModelsFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setUnitModels"
@@ -720,7 +682,6 @@ struct ArmySetUnitModelsFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmyAttachCharacterFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "attachCharacter"
@@ -745,7 +706,6 @@ struct ArmyAttachCharacterFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmySetWarlordFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setWarlord"
@@ -764,7 +724,6 @@ struct ArmySetWarlordFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmySetListNameFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setListName"
@@ -783,7 +742,6 @@ struct ArmySetListNameFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmySetEnhancementFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "setEnhancement"
@@ -808,7 +766,6 @@ struct ArmySetEnhancementFMTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 struct ArmyClearUnitsFMTool: Tool {
     weak var runtime: ArmyListChatRuntime?
     let name = "clearUnits"
@@ -826,4 +783,3 @@ struct ArmyClearUnitsFMTool: Tool {
         }
     }
 }
-#endif

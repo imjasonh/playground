@@ -130,13 +130,10 @@ struct ArmyListChatView: View {
             .presentationDetents([.medium])
             .accessibilityIdentifier("armyListChatExportSheet")
         }
-        .alert("Export failed", isPresented: Binding(
-            get: { exportError != nil },
-            set: { if !$0 { exportError = nil } }
-        )) {
-            Button("OK", role: .cancel) { exportError = nil }
-        } message: {
-            Text(exportError ?? "")
+        .alert("Export failed", item: $exportError) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
         }
         .onAppear {
             runtime.workspace.list = list
@@ -227,7 +224,7 @@ struct ArmyListChatView: View {
                 }
                 .padding()
             }
-            .onChange(of: runtime.transcript.count) { _ in
+            .onChange(of: runtime.transcript.count) {
                 if let last = blocks.last {
                     withAnimation {
                         proxy.scrollTo(last.id, anchor: .bottom)

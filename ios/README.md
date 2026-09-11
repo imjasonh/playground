@@ -11,6 +11,9 @@ many browser apps, this one TestFlight app ("Playground") hosts many
 On every push to `main`, CI builds, tests, and (with signing secrets) uploads to
 **TestFlight**.
 
+The host app and its iOS extensions require iOS 27. The Ride Monitor companion
+requires watchOS 10. Build the app with Xcode 27.
+
 ## Signing policy
 
 | What you’re adding | Bundle ID | Re-run signing bootstrap? |
@@ -66,7 +69,7 @@ the process is awake, so recording **requires Always location** plus background
 location updates to keep the app alive with the screen off. Older builds could
 start under When-In-Use, which suspended the process on lock and produced
 multi-minute sensing holes; the app now refuses to start without Always, holds
-a background activity session on iOS 17+, and auto-ends if sensing is silent
+a background activity session, and auto-ends if sensing is silent
 for ~90s. Each saved ride stores a `recordingDiagnostics` block (end reason,
 motion-restart / location-error counts, slowest companion push) and emits
 `OSLog` under subsystem `io.github.imjasonh.playground` / category
@@ -104,7 +107,7 @@ Live Activities require a real device (and Live Activities enabled in
 Settings); the Watch app needs a paired Apple Watch.
 
 When a ride ends, Ride Monitor asks the on-device Foundation Model (Apple
-Intelligence / `FoundationModels`, iOS 26+) for a **few-word summary** and
+Intelligence / `FoundationModels`) for a **few-word summary** and
 stores it on the ride for the Past rides list. If the model is unavailable or
 fails, the summary stays empty — there is no heuristic substitute.
 
@@ -145,13 +148,13 @@ bash ios/scripts/stress-army-lists.sh --write-fixtures
 ```
 
 **List chat** (toolbar bubble on a list) uses on-device Foundation Models when
-Apple Intelligence is available (iOS 26+). Tools mutate the same document the
+Apple Intelligence is available. Tools mutate the same document the
 editor shows; every tool result re-runs the validator. Optional theme text
-feeds the Build list / Fill points chips. Chat tracks the 4096-token
-window, compacts proactively (TN3193: rehydrate from transcript first+last when
-possible, plus a rolling summary of older turns and a list snapshot), and retries
-once on overflow. Without the model, chat shows an unavailable pane. Authoring
-and validation still work.
+feeds the Build list / Fill points chips. Chat reads the model's context size
+and exact response usage. It compacts proactively using TN3193's first and last
+transcript entries, a rolling summary of older turns, and a list snapshot. It
+retries once on overflow. Without the model, chat shows an unavailable pane.
+Authoring and validation still work.
 
 Unofficial fan experiment. Confirm points with Games Workshop for events.
 
@@ -177,7 +180,7 @@ requested only for optional voice input.
 - Export conversation: share a `.jsonl.zip` of the transcript (including
   hidden tool args/results), browser replay, and AFM extraction diagnostics
 - Chat shows `Invoking <tool>…` only; raw tool I/O stays in the dump
-- Context budget: tracks estimated fill of the 4096-token on-device window
+- Context budget: reads the model's context size and exact response token usage
   ([TN3193](https://developer.apple.com/documentation/technotes/tn3193-managing-the-on-device-foundation-model-s-context-window)),
   shows a Context meter in the status bar, returns slim tool payloads to the
   model (page text stays in the export / chat findings), and compacts into a
@@ -197,11 +200,11 @@ requested only for optional voice input.
 - With the browser open, the composer collapses to an Ask follow-up control so
   the keyboard stays out of the way
 
-When Apple Intelligence / Foundation Models is available (iOS 26+ device), the
+When Apple Intelligence / Foundation Models is available, the
 on-device model chooses browser tools. If Apple Intelligence is off, the UI
 offers a button that opens Settings (Apple Intelligence & Siri when the deep
 link works). If the model is still downloading, it shows progress plus
-**Check again**. Unsupported hardware / older OS / Simulator get a plain
+**Check again**. Unsupported hardware and the Simulator get a plain
 unavailable pane. There is no keyword-planner fallback.
 
 If page extraction quality is weak for a domain, a next step is Apple's
@@ -376,17 +379,17 @@ A tool cannot grow a region or change a pixel outside it. The model only
 chooses which ids to pass. Reconstruction stays in app code, so the on-device
 model is not asked to invent a lighting recipe.
 
-The session is sized for the 4096-token window: short instructions, three
+The session uses the model's reported context size: short instructions, three
 tools, capped tool results, and a catalog that keeps whole lines up to the
-tokens left after those schemas. The current SDK cannot attach a photo, so
-the model matches the request to the listed ids and colors. If the window
-fills, the next try is a new session with a shorter catalog. A second overflow
-stops and asks for a shorter request.
+tokens left after those schemas. On iOS 27, the prompt includes the selected
+photo as a Foundation Models image attachment alongside the region catalog.
+If the window fills, the next try is a new session with a shorter catalog. A
+second overflow stops and asks for a shorter request.
 
 **Result** shows the edited photo. **Diff** shows the original in gray and
 every changed pixel in red. The photo is not drawn over with region boxes.
 Long-press the image to save it to Photos or share it. Edit needs Apple
-Intelligence on iOS 26 or later.
+Intelligence.
 
 Choose a photo from the library. The working copy is scaled so the long edge is
 at most 1024 px.

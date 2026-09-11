@@ -439,11 +439,6 @@ final class AgentBrowserSession: NSObject, ObservableObject {
         return needles.contains { lower.contains($0) }
     }
 
-    /// Back-compat helper used by older tests.
-    nonisolated static func pageFindingsBullets(from text: String, limit: Int = 8) -> [String] {
-        pageFindingsBullets(headings: [], listItems: [], pageText: text, limit: limit)
-    }
-
     nonisolated static func requireOK(_ raw: String, action: String) throws -> String {
         guard let data = raw.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]

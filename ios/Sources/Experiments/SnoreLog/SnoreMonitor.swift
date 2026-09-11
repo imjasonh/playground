@@ -1,8 +1,6 @@
 import AVFoundation
 import Foundation
-#if canImport(UIKit)
 import UIKit
-#endif
 
 /// Overnight snore logger: keeps a short rolling mic buffer in RAM, detects
 /// sustained loudness spikes, and writes only those clips to disk.
@@ -117,9 +115,7 @@ final class SnoreMonitor: ObservableObject {
         timer?.invalidate()
         timer = nil
         isRunning = false
-        #if canImport(UIKit)
         UIApplication.shared.isIdleTimerDisabled = false
-        #endif
         statusMessage = events.isEmpty
             ? "Session saved — no snores detected."
             : "Session saved — \(events.count) snore clip\(events.count == 1 ? "" : "s")."
@@ -156,9 +152,7 @@ final class SnoreMonitor: ObservableObject {
         statusMessage = detector.isWarmingUp
             ? "Calibrating ambient…"
             : "Listening — only loud clips are saved."
-        #if canImport(UIKit)
         UIApplication.shared.isIdleTimerDisabled = true
-        #endif
 
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -178,13 +172,7 @@ final class SnoreMonitor: ObservableObject {
     }
 
     private func requestMicrophone() async -> Bool {
-        await withCheckedContinuation { continuation in
-            // AVAudioSession API — available on our iOS 16 deployment target
-            // (AVAudioApplication.requestRecordPermission requires iOS 17+).
-            AVAudioSession.sharedInstance().requestRecordPermission { granted in
-                continuation.resume(returning: granted)
-            }
-        }
+        await AVAudioApplication.requestRecordPermission()
     }
 
     private func configureSession() throws {
@@ -213,31 +201,34 @@ final class SnoreMonitor: ObservableObject {
         let targetRate = Self.sampleRate
         let sourceRate = hwFormat.sampleRate
 
-        input.installTap(onBus: 0, bufferSize: 2048, format: nil) { [weak self] buffer, _ in
+        try input.installAudioTap(
+            onBus: 0,
+            bufferSize: AudioTapBufferSizing.frameCount(sampleRate: sourceRate),
+            format: nil
+        ) { [weak self] buffer, _ in
             guard let self else { return }
             self.ingest(buffer: buffer, sourceRate: sourceRate, targetRate: targetRate)
         }
     }
 
-    nonisolated private func ingest(buffer: AVAudioPCMBuffer, sourceRate: Double, targetRate: Double) {
+    nonisolated private func ingest(
+        buffer: AVReadOnlyAudioPCMBuffer,
+        sourceRate: Double,
+        targetRate: Double
+    ) {
         let frameCount = Int(buffer.frameLength)
-        guard frameCount > 0, let channels = buffer.floatChannelData else { return }
+        let channelCount = Int(buffer.format.channelCount)
+        let stride = max(1, Int(buffer.stride))
+        guard frameCount > 0, channelCount > 0 else { return }
 
         // Mix down to mono if the hardware tap is multi-channel.
-        let channelCount = Int(buffer.format.channelCount)
         var mono = [Float](repeating: 0, count: frameCount)
-        if channelCount <= 1 {
-            mono.withUnsafeMutableBufferPointer { dst in
-                guard let base = dst.baseAddress else { return }
-                base.update(from: channels[0], count: frameCount)
-            }
-        } else {
-            let scale = 1 / Float(channelCount)
-            for c in 0..<channelCount {
-                let src = channels[c]
-                for i in 0..<frameCount {
-                    mono[i] += src[i] * scale
-                }
+        let scale = 1 / Float(channelCount)
+        for channel in 0..<channelCount {
+            guard case .float(let samples) = buffer.channelData(channel) else { return }
+            let availableFrames = min(frameCount, (samples.count + stride - 1) / stride)
+            for frame in 0..<availableFrames {
+                mono[frame] += samples[frame * stride] * scale
             }
         }
 

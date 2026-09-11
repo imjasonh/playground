@@ -161,16 +161,21 @@ final class RideJSONLExporterTests: XCTestCase {
         }
     }
 
-    func testFileDocumentStoresBytes() throws {
+    @MainActor
+    func testWritableDocumentStoresBytes() async throws {
         let data = try RideJSONLExporter.data(for: makeRide())
-        let document = RideJSONLFileDocument(data: data)
+        let document = RideJSONLWritableDocument(data: data)
         XCTAssertEqual(document.data, data)
-        XCTAssertEqual(RideJSONLFileDocument.writableContentTypes, [RideJSONLExporter.contentType])
+        XCTAssertEqual(RideJSONLWritableDocument.writableContentTypes, [RideJSONLExporter.contentType])
+        let jsonSnapshot = try await document.snapshot(contentType: RideJSONLExporter.contentType)
+        XCTAssertEqual(jsonSnapshot, data)
 
         let zipData = try RideJSONLExporter.zipData(for: [makeRide()])
-        let zipDocument = RideZipFileDocument(data: zipData)
+        let zipDocument = RideZipWritableDocument(data: zipData)
         XCTAssertEqual(zipDocument.data, zipData)
-        XCTAssertEqual(RideZipFileDocument.writableContentTypes, [.zip])
+        XCTAssertEqual(RideZipWritableDocument.writableContentTypes, [.zip])
+        let zipSnapshot = try await zipDocument.snapshot(contentType: .zip)
+        XCTAssertEqual(zipSnapshot, zipData)
     }
 
     func testLinesIncludeRecordingDiagnosticsWhenPresent() throws {

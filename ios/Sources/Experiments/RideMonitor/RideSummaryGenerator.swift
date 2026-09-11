@@ -1,7 +1,5 @@
 import Foundation
-#if canImport(FoundationModels)
 import FoundationModels
-#endif
 
 /// Builds a short plain-language label for a finished ride using Apple's
 /// on-device Foundation Models (`SystemLanguageModel`) when Apple Intelligence
@@ -13,14 +11,10 @@ enum RideSummaryGenerator {
 
     /// Async entry point used when a ride finishes. `nil` means leave summary empty.
     static func summarize(for ride: Ride) async -> String? {
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
-            if let text = await foundationModelSummary(for: ride) {
-                let cleaned = sanitize(text)
-                return cleaned.isEmpty ? nil : cleaned
-            }
+        if let text = await foundationModelSummary(for: ride) {
+            let cleaned = sanitize(text)
+            return cleaned.isEmpty ? nil : cleaned
         }
-        #endif
         return nil
     }
 
@@ -88,8 +82,6 @@ enum RideSummaryGenerator {
         return text
     }
 
-    #if canImport(FoundationModels)
-    @available(iOS 26.0, *)
     private static func foundationModelSummary(for ride: Ride) async -> String? {
         let model = SystemLanguageModel.default
         guard model.isAvailable else { return nil }
@@ -112,5 +104,4 @@ enum RideSummaryGenerator {
             return nil
         }
     }
-    #endif
 }

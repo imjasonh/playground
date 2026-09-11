@@ -179,7 +179,7 @@ final class HumHuntSession: NSObject, ObservableObject {
         }
 
         if let audioParams = snapshot.audio, snapshot.phase == .hunting {
-            audio.apply(audioParams)
+            guard applyAudio(audioParams) else { return }
         }
 
         if snapshot.phase == .found {
@@ -187,13 +187,24 @@ final class HumHuntSession: NSObject, ObservableObject {
                 celebration.volume = min(1, celebration.volume + 0.25)
                 celebration.muffling = 0
                 celebration.frequencyHz += 40
-                audio.apply(celebration)
+                guard applyAudio(celebration) else { return }
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { [weak self] in
                 self?.audio.stop()
             }
             stopSensors()
             wantsHunt = false
+        }
+    }
+
+    private func applyAudio(_ params: HumAudioParams) -> Bool {
+        do {
+            try audio.apply(params)
+            return true
+        } catch {
+            stop()
+            statusMessage = "Couldn't update audio: \(error.localizedDescription)"
+            return false
         }
     }
 }

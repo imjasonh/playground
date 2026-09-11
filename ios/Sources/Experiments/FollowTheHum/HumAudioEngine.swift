@@ -16,6 +16,7 @@ final class HumAudioEngine {
     private var currentFrequency: Double = 180
     private var currentPan: Double = 0
     private var isRunning = false
+    private var isConnected = false
 
     init() {
         eq.bands[0].filterType = .lowPass
@@ -28,10 +29,6 @@ final class HumAudioEngine {
         engine.attach(eq)
         engine.attach(mixer)
 
-        let format = Self.stereoFormat
-        engine.connect(player, to: eq, format: format)
-        engine.connect(eq, to: mixer, format: format)
-        engine.connect(mixer, to: engine.mainMixerNode, format: format)
         mixer.outputVolume = 0
     }
 
@@ -42,14 +39,22 @@ final class HumAudioEngine {
 
     func start() throws {
         guard !isRunning else { return }
+        try connectIfNeeded()
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         try session.setActive(true)
 
         let buffer = makeHumBuffer(frequency: currentFrequency, pan: currentPan)
         player.scheduleBuffer(buffer, at: nil, options: [.loops], completionHandler: nil)
-        try engine.start()
-        player.play()
+        do {
+            try engine.start()
+            try player.playAudio()
+        } catch {
+            player.stop()
+            engine.stop()
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            throw error
+        }
         isRunning = true
     }
 
@@ -63,7 +68,7 @@ final class HumAudioEngine {
     }
 
     /// Smoothly chase the latest game-derived audio parameters.
-    func apply(_ params: HumAudioParams) {
+    func apply(_ params: HumAudioParams) throws {
         let pan = max(-1, min(1, params.pan))
         let volume = Float(max(0, min(1, params.volume)))
         let muffling = max(0, min(1, params.muffling))
@@ -84,7 +89,16 @@ final class HumAudioEngine {
         let buffer = makeHumBuffer(frequency: frequency, pan: pan)
         player.stop()
         player.scheduleBuffer(buffer, at: nil, options: [.loops], completionHandler: nil)
-        player.play()
+        try player.playAudio()
+    }
+
+    private func connectIfNeeded() throws {
+        guard !isConnected else { return }
+        let format = Self.stereoFormat
+        try engine.connectNode(player, to: eq, format: format)
+        try engine.connectNode(eq, to: mixer, format: format)
+        try engine.connectNode(mixer, to: engine.mainMixerNode, format: format)
+        isConnected = true
     }
 
     private func makeHumBuffer(frequency: Double, pan: Double) -> AVAudioPCMBuffer {

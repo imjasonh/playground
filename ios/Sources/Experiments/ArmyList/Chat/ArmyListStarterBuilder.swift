@@ -2,8 +2,8 @@ import Foundation
 
 /// Composes a self-contained prompt for a from-scratch build and runs it.
 ///
-/// The on-device model has a 4096-token window (see the
-/// `foundation-models-context` skill). The interactive chat lets the model
+/// The runtime reads the on-device model's context size from Foundation Models.
+/// The interactive chat lets the model
 /// discover ids with `searchCatalog`, but a one-shot "Build starter list" that
 /// chains `getListSummary` → `searchCatalog` → `applyRosterPlan` across a dozen
 /// resident tool schemas is unreliable: the model runs out of room or invents

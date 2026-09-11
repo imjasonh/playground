@@ -1,9 +1,6 @@
 import Foundation
 import UIKit
-
-#if canImport(FoundationModels)
 import FoundationModels
-#endif
 
 /// The on-device model chooses which edit tools to call. Each tool writes
 /// only inside the regions it names.
@@ -49,19 +46,11 @@ final class FaceSwapSession: ObservableObject {
     }
 
     init() {
-        if #available(iOS 26.0, *) {
-            modelGate = Self.readGate()
-        } else {
-            modelGate = .unsupportedPlatform
-        }
+        modelGate = Self.readGate()
     }
 
     func refreshModelStatus() {
-        if #available(iOS 26.0, *) {
-            modelGate = Self.readGate()
-        } else {
-            modelGate = .unsupportedPlatform
-        }
+        modelGate = Self.readGate()
     }
 
     func load(image: UIImage) async {
@@ -113,7 +102,7 @@ final class FaceSwapSession: ObservableObject {
             toolLog.append("0 pixels outside the chosen regions changed.")
             statusMessage = FaceSwapDiff.summary(original: original, edited: result.image)
             hasEditResult = true
-        } catch FaceSwapImageError.missingEditPlan {
+        } catch FaceSwapModelError.missingEditPlan {
             statusMessage = "The model did not choose an edit. No pixels changed."
         } catch {
             statusMessage = FaceSwapModelLimits.failure(error).localizedDescription
@@ -176,25 +165,20 @@ final class FaceSwapSession: ObservableObject {
     }
 
     private static func readGate() -> AgentModelGate {
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
-            switch SystemLanguageModel.default.availability {
-            case .available:
-                return .available
-            case .unavailable(.deviceNotEligible):
-                return .deviceNotEligible
-            case .unavailable(.appleIntelligenceNotEnabled):
-                return .needsAppleIntelligence
-            case .unavailable(.modelNotReady):
-                return .modelNotReady
-            case .unavailable(let reason):
-                return .other("Apple Intelligence isn't available (\(String(describing: reason))).")
-            @unknown default:
-                return .other("Apple Intelligence isn't available on this device.")
-            }
+        switch SystemLanguageModel.default.availability {
+        case .available:
+            return .available
+        case .unavailable(.deviceNotEligible):
+            return .deviceNotEligible
+        case .unavailable(.appleIntelligenceNotEnabled):
+            return .needsAppleIntelligence
+        case .unavailable(.modelNotReady):
+            return .modelNotReady
+        case .unavailable(let reason):
+            return .other("Apple Intelligence isn't available (\(String(describing: reason))).")
+        @unknown default:
+            return .other("Apple Intelligence isn't available on this device.")
         }
-        #endif
-        return .unsupportedPlatform
     }
 }
 
@@ -214,8 +198,6 @@ enum FaceSwapModelCopy {
             return "Model still downloading"
         case .deviceNotEligible:
             return "Device not eligible"
-        case .unsupportedPlatform:
-            return "Needs iOS 26+"
         case .other:
             return "Apple Intelligence unavailable"
         }
@@ -231,8 +213,6 @@ enum FaceSwapModelCopy {
             return "Apple Intelligence is on, but the on-device model is still downloading."
         case .deviceNotEligible:
             return "This iPhone doesn't support Apple Intelligence."
-        case .unsupportedPlatform:
-            return "Face Swap needs iOS 26 or later."
         case .other(let reason):
             return reason
         }

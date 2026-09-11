@@ -23,9 +23,9 @@ struct ZCameraView: View {
             session.start()
         }
         .onDisappear { session.stop() }
-        .onChange(of: nearSlider) { _ in publishBand() }
-        .onChange(of: farSlider) { _ in publishBand() }
-        .onChange(of: showDepthOverlay) { enabled in
+        .onChange(of: nearSlider) { publishBand() }
+        .onChange(of: farSlider) { publishBand() }
+        .onChange(of: showDepthOverlay) { _, enabled in
             session.updateShowDepthOverlay(enabled)
         }
     }

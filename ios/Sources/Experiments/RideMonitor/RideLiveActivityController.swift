@@ -1,8 +1,6 @@
 import Foundation
 import ActivityKit
-#if canImport(UIKit)
 import UIKit
-#endif
 
 /// Starts, updates, and ends the Ride Monitor Live Activity while a ride is
 /// in progress. No-ops when Live Activities are unavailable or disabled.
@@ -25,13 +23,11 @@ final class RideLiveActivityController {
 
         pendingStart = (startedAt, snapshot)
 
-        #if canImport(UIKit)
         // Requesting a Live Activity from the background fails silently.
         // Keep `pendingStart` and retry when the scene becomes active again.
         if UIApplication.shared.applicationState != .active {
             return
         }
-        #endif
 
         enqueueStart()
     }
@@ -41,9 +37,7 @@ final class RideLiveActivityController {
     func handleSceneBecameActive() {
         endOrphansIfNeeded()
         guard pendingStart != nil, activity == nil else { return }
-        #if canImport(UIKit)
         guard UIApplication.shared.applicationState == .active else { return }
-        #endif
         enqueueStart()
     }
 

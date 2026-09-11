@@ -349,7 +349,7 @@ account, no network upload.
 
 Reuse the Device Agent / Ride Monitor approach:
 
-- `#if canImport(FoundationModels)` + `-weak_framework FoundationModels`
+- Import `FoundationModels` directly; the app requires iOS 27.
 - Gate on `SystemLanguageModel.default.availability`
 - `LanguageModelSession` with app-defined **tools**
 

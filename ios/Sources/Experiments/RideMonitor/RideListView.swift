@@ -5,41 +5,32 @@ import SwiftUI
 struct RideListView: View {
     @State private var rides: [Ride] = []
     @State private var isSavingZipFile = false
-    @State private var zipExportDocument: RideZipFileDocument?
+    @State private var zipExportDocument: RideZipWritableDocument?
     @State private var zipExportFilename = RideJSONLExporter.filenameForAllRidesZip()
     @State private var isSavingCombinedFile = false
-    @State private var combinedExportDocument: RideJSONLFileDocument?
+    @State private var combinedExportDocument: RideJSONLWritableDocument?
     @State private var combinedExportFilename = RideJSONLExporter.filenameForAllRides()
     @State private var exportErrorMessage: String?
     private let store = RideStore()
 
     var body: some View {
         List {
+            ForEach(rides) { ride in
+                NavigationLink {
+                    RideDetailView(ride: ride)
+                } label: {
+                    row(for: ride)
+                }
+            }
+            .onDelete(perform: delete)
+        }
+        .overlay {
             if rides.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "bicycle")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                        .accessibilityHidden(true)
-                    Text("No rides yet")
-                        .font(.headline)
-                    Text("Record one from the Ride Monitor.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-                .listRowBackground(Color.clear)
-            } else {
-                ForEach(rides) { ride in
-                    NavigationLink {
-                        RideDetailView(ride: ride)
-                    } label: {
-                        row(for: ride)
-                    }
-                }
-                .onDelete(perform: delete)
+                ContentUnavailableView(
+                    "No rides yet",
+                    systemImage: "bicycle",
+                    description: Text("Record one from Ride Monitor.")
+                )
             }
         }
         .navigationTitle("Past rides")
@@ -80,13 +71,10 @@ struct RideListView: View {
             }
         }
         .onAppear { rides = store.loadAll() }
-        .alert("Export failed", isPresented: Binding(
-            get: { exportErrorMessage != nil },
-            set: { if !$0 { exportErrorMessage = nil } }
-        )) {
-            Button("OK", role: .cancel) { exportErrorMessage = nil }
-        } message: {
-            Text(exportErrorMessage ?? "")
+        .alert("Export failed", item: $exportErrorMessage) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
         }
         .fileExporter(
             isPresented: $isSavingZipFile,
@@ -98,6 +86,8 @@ struct RideListView: View {
                 exportErrorMessage = error.localizedDescription
             }
             zipExportDocument = nil
+        } onCancellation: {
+            zipExportDocument = nil
         }
         .fileExporter(
             isPresented: $isSavingCombinedFile,
@@ -108,6 +98,8 @@ struct RideListView: View {
             if case .failure(let error) = result {
                 exportErrorMessage = error.localizedDescription
             }
+            combinedExportDocument = nil
+        } onCancellation: {
             combinedExportDocument = nil
         }
     }
@@ -156,7 +148,7 @@ struct RideListView: View {
         do {
             let data = try RideJSONLExporter.zipData(for: rides)
             zipExportFilename = RideJSONLExporter.filenameForAllRidesZip()
-            zipExportDocument = RideZipFileDocument(data: data)
+            zipExportDocument = RideZipWritableDocument(data: data)
             isSavingZipFile = true
         } catch {
             exportErrorMessage = error.localizedDescription
@@ -167,7 +159,7 @@ struct RideListView: View {
         do {
             let data = try RideJSONLExporter.data(for: rides)
             combinedExportFilename = RideJSONLExporter.filenameForAllRides()
-            combinedExportDocument = RideJSONLFileDocument(data: data)
+            combinedExportDocument = RideJSONLWritableDocument(data: data)
             isSavingCombinedFile = true
         } catch {
             exportErrorMessage = error.localizedDescription

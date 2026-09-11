@@ -3,9 +3,8 @@ import MapKit
 
 /// A MapKit map showing a ride's GPS track as speed-colored polylines (same
 /// slow/easy/brisk/fast buckets as the Live Activity sparkline) with a colored
-/// pin at each of the biggest detected events. Implemented over UIKit's
-/// `MKMapView` (via `UIViewRepresentable`) so it behaves identically on iOS 16+
-/// — SwiftUI's native `Map` polyline support only arrived in iOS 17.
+/// pin at each of the biggest detected events. `MKMapView` provides the custom
+/// overlay renderer and annotation display priorities this view needs.
 ///
 /// Pass the full event list; the map itself caps pins to the biggest hits via
 /// `RideMapEventFilter` so saved rides stay readable. Recording is unchanged.

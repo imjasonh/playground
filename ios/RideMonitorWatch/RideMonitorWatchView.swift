@@ -31,7 +31,7 @@ struct RideMonitorWatchView: View {
                 .frame(width: geo.size.width, height: geo.size.height)
             }
         }
-        .onChange(of: scenePhase) { phase in
+        .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 workout.reassertIfNeeded()
                 // Re-check when returning from Health settings (no-ops mid-ride).

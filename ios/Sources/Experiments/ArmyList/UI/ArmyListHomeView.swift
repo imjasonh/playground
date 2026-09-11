@@ -105,13 +105,10 @@ struct ArmyListHomeView: View {
         .fullScreenCover(item: $presentation) { item in
             presentationCover(item)
         }
-        .alert("Could not save list", isPresented: Binding(
-            get: { saveError != nil },
-            set: { if !$0 { saveError = nil } }
-        )) {
-            Button("OK", role: .cancel) { saveError = nil }
-        } message: {
-            Text(saveError ?? "Unknown error.")
+        .alert("Could not save list", item: $saveError) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
         }
         .onAppear(perform: bootstrap)
     }
@@ -548,7 +545,7 @@ struct ArmyListNewSheet: View {
     ///
     /// `ArmyListStarterBuilder` hands the model a self-contained prompt (valid
     /// detachment and unit ids with points) and a builder-mode runtime with one
-    /// tool, then retries — a much more reliable fit for the 4096-token window
+    /// tool, then retries — a much more reliable fit for the model's context window
     /// than chaining discovery tools.
     private func buildStarterList() {
         seedError = nil
@@ -562,7 +559,7 @@ struct ArmyListNewSheet: View {
             catalog: catalog
         )
         guard ArmyListChatRuntime(workspace: probe, mode: .builder).isModelAvailable else {
-            seedError = "Building a list needs Apple Intelligence (iOS 26+). Turn it on, or tap Create for a blank list to edit."
+            seedError = "Building a list needs Apple Intelligence. Turn it on, or tap Create for a blank list to edit."
             return
         }
         if let issue = ArmyListStarterPrompt.buildFeasibilityIssue(

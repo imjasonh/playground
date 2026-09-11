@@ -259,7 +259,6 @@ final class FaceSwapTests: XCTestCase {
         let fitted = FaceSwapModelBudget.plan(
             request: request,
             regions: [person],
-            canAttachImages: true,
             hasPreview: true,
             includeImage: true
         )
@@ -270,7 +269,6 @@ final class FaceSwapTests: XCTestCase {
         let tight = FaceSwapModelBudget.plan(
             request: request,
             regions: [person],
-            canAttachImages: true,
             hasPreview: true,
             includeImage: true,
             windowTokens: 2_200
@@ -282,7 +280,6 @@ final class FaceSwapTests: XCTestCase {
         let retry = FaceSwapModelBudget.plan(
             request: String(repeating: "swap faces ", count: 40),
             regions: [person],
-            canAttachImages: true,
             hasPreview: true,
             includeImage: false,
             catalogCap: FaceSwapModelBudget.retryCatalogChars
@@ -295,10 +292,10 @@ final class FaceSwapTests: XCTestCase {
         )
 
         let overflow = NSError(
-            domain: "FoundationModels.LanguageModelSession.GenerationError",
+            domain: "FoundationModels.LanguageModelError",
             code: -1,
             userInfo: [
-                NSLocalizedDescriptionKey: "The operation couldn’t be completed. (FoundationModels.LanguageModelSession.GenerationError error -1.)",
+                NSLocalizedDescriptionKey: "The model context window was exceeded.",
             ]
         )
         XCTAssertEqual(

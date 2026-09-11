@@ -25,8 +25,10 @@ struct VoxelWorldView: View {
             session.start()
         }
         .onDisappear { session.stop() }
-        .onChange(of: frozen) { session.updateFrozen($0) }
-        .onChange(of: showCameraFeed) { session.updateShowsCameraFeed($0) }
+        .onChange(of: frozen) { _, frozen in session.updateFrozen(frozen) }
+        .onChange(of: showCameraFeed) { _, showCameraFeed in
+            session.updateShowsCameraFeed(showCameraFeed)
+        }
     }
 
     private var preview: some View {

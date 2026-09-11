@@ -121,9 +121,8 @@ final class PlaygroundUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Device Agent"].waitForExistence(timeout: 8))
 
-        // CI’s iOS 26 Simulator may report Foundation Models available; older
-        // hosts show the unavailable pane. Match any marker in one wait so the
-        // available path isn’t starved by a long unavailable timeout.
+        // The Simulator may report Foundation Models as available or ineligible.
+        // Match either path in one wait.
         let unavailable = app.descendants(matching: .any)["deviceAgentUnavailable"]
         let unavailableTitle = app.descendants(matching: .any)["deviceAgentUnavailableTitle"]
         let composer = app.descendants(matching: .any)["deviceAgentComposer"]
@@ -150,7 +149,6 @@ final class PlaygroundUITests: XCTestCase {
             XCTAssertTrue(
                 app.descendants(matching: .any)["deviceAgentUnavailableDetail"].waitForExistence(timeout: 3)
                     || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Apple Intelligence")).firstMatch.exists
-                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "iOS 26")).firstMatch.exists
                     || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Foundation")).firstMatch.exists
             )
         } else {

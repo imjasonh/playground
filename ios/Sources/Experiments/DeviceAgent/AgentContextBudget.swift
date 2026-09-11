@@ -3,8 +3,8 @@ import Foundation
 /// Tracks how full the on-device Foundation Model context window is, and caps
 /// text so Device Agent does not hit the hard limit mid-turn.
 ///
-/// Apple's on-device model window is 4096 tokens. English is roughly 3-4
-/// characters per token; this budget uses 3 so estimates stay slightly high.
+/// Before the framework reports exact context and usage values, the budget uses
+/// a conservative 4096-token window and three characters per estimated token.
 struct AgentContextBudget: Equatable {
     static let defaultWindowTokens = 4096
     /// Conservative chars/token so we under-fill rather than overshoot.
@@ -80,6 +80,12 @@ struct AgentContextBudget: Equatable {
 
     mutating func addTokens(_ tokens: Int) {
         usedTokens += max(0, tokens)
+    }
+
+    /// Replaces estimates with the exact token total returned by Foundation Models.
+    mutating func reconcileMeasuredUsage(totalTokens: Int) {
+        let baseline = instructionsTokens + toolsReserveTokens
+        usedTokens = max(0, totalTokens - baseline)
     }
 
     static func estimateTokens(_ text: String) -> Int {

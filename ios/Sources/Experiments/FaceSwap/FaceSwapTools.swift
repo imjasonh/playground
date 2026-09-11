@@ -1,8 +1,5 @@
 import Foundation
-
-#if canImport(FoundationModels)
 import FoundationModels
-#endif
 
 /// The on-device model chooses which tools to call. Tools write only inside catalog regions.
 enum FaceSwapToolSession {
@@ -14,7 +11,7 @@ enum FaceSwapToolSession {
         let chosen = try await choose(request: request, regions: regions, raster: raster)
         let commands = FaceSwapCommandPolicy.select(chosen.commands, request: request, regions: regions)
         guard !commands.isEmpty else {
-            throw FaceSwapImageError.missingEditPlan
+            throw FaceSwapModelError.missingEditPlan
         }
         switch FaceSwapOperations.apply(commands: commands, regions: regions, original: raster) {
         case .success(var result):
@@ -30,12 +27,7 @@ enum FaceSwapToolSession {
         regions: [FaceSwapRegion],
         raster: FaceSwapRaster
     ) async throws -> FaceSwapModelChoice {
-        #if canImport(FoundationModels)
-        if #available(iOS 26.0, *) {
-            return try await FaceSwapToolModel.choose(request: request, regions: regions, raster: raster)
-        }
-        #endif
-        throw FaceSwapImageError.imageInputUnavailable
+        try await FaceSwapToolModel.choose(request: request, regions: regions, raster: raster)
     }
 }
 
@@ -44,7 +36,7 @@ struct FaceSwapModelChoice: Equatable, Sendable {
     var notes: [String]
 }
 
-/// Sizes the one-shot prompt for the 4096-token on-device window (TN3193).
+/// Sizes the one-shot prompt for the on-device model's reported context window.
 ///
 /// Tool schemas and the reply reserve stay out of the catalog. Overflow
 /// recovery starts a new session with a shorter catalog, because the
@@ -73,7 +65,6 @@ enum FaceSwapModelBudget {
     static func plan(
         request: String,
         regions: [FaceSwapRegion],
-        canAttachImages: Bool,
         hasPreview: Bool,
         includeImage: Bool,
         windowTokens: Int = AgentContextBudget.defaultWindowTokens,
@@ -83,7 +74,7 @@ enum FaceSwapModelBudget {
             request.trimmingCharacters(in: .whitespacesAndNewlines),
             maxChars: maxRequestChars
         )
-        var attach = includeImage && canAttachImages && hasPreview
+        var attach = includeImage && hasPreview
         var available = availableCatalogChars(
             request: cappedRequest,
             attachPreview: attach,
@@ -214,8 +205,6 @@ final class FaceSwapEditBoard: @unchecked Sendable {
     }
 }
 
-#if canImport(FoundationModels)
-@available(iOS 26.0, *)
 private enum FaceSwapToolModel {
     static func choose(
         request: String,
@@ -223,12 +212,12 @@ private enum FaceSwapToolModel {
         raster: FaceSwapRaster
     ) async throws -> FaceSwapModelChoice {
         let window = windowTokens()
+        let hasPreview = raster.makeCGImage() != nil
         let first = FaceSwapModelBudget.plan(
             request: request,
             regions: regions,
-            canAttachImages: FaceSwapImagePromptSupport.canAttachImages,
-            hasPreview: false,
-            includeImage: false,
+            hasPreview: hasPreview,
+            includeImage: true,
             windowTokens: window
         )
         do {
@@ -242,7 +231,6 @@ private enum FaceSwapToolModel {
                 let textOnly = FaceSwapModelBudget.plan(
                     request: request,
                     regions: regions,
-                    canAttachImages: false,
                     hasPreview: false,
                     includeImage: false,
                     windowTokens: window
@@ -264,7 +252,6 @@ private enum FaceSwapToolModel {
         let smaller = FaceSwapModelBudget.plan(
             request: request,
             regions: regions,
-            canAttachImages: false,
             hasPreview: false,
             includeImage: false,
             windowTokens: window,
@@ -301,23 +288,23 @@ private enum FaceSwapToolModel {
             instructions: instructions
         )
         session.prewarm()
-        _ = try await session.respond(to: plan.prompt)
+        if plan.attachPreview, let image = raster.makeCGImage() {
+            _ = try await session.respond {
+                plan.prompt
+                Attachment(image).label("source-photo")
+            }
+        } else {
+            _ = try await session.respond(to: plan.prompt)
+        }
         return FaceSwapEditBoard.shared.finish()
     }
 
-    /// `contextSize` is on newer SDKs. Fall back to the documented 4096-token window.
     private static func windowTokens() -> Int {
-        let mirror = Mirror(reflecting: SystemLanguageModel.default)
-        for child in mirror.children {
-            if child.label == "contextSize", let value = child.value as? Int, value > 0 {
-                return value
-            }
-        }
-        return AgentContextBudget.defaultWindowTokens
+        let size = SystemLanguageModel.default.contextSize
+        return size > 0 ? size : AgentContextBudget.defaultWindowTokens
     }
 }
 
-@available(iOS 26.0, *)
 private struct FaceSwapRemoveRegionTool: Tool {
     let name = "removeRegion"
     let description = "Erase one listed silhouette. Not for swapping faces."
@@ -333,7 +320,6 @@ private struct FaceSwapRemoveRegionTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 private struct FaceSwapCopyRegionTool: Tool {
     let name = "copyRegion"
     let description = "Duplicate one listed silhouette. Not for a face swap. The original stays."
@@ -353,7 +339,6 @@ private struct FaceSwapCopyRegionTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 private struct FaceSwapReplaceFacesTool: Tool {
     let name = "replaceFaces"
     let description = "Put one face onto other face ids, inside those contours only. Use this to swap or place a face."
@@ -378,10 +363,8 @@ private struct FaceSwapReplaceFacesTool: Tool {
     }
 }
 
-@available(iOS 26.0, *)
 @Generable
 private struct FaceSwapCenterFM {
     var x: Double
     var y: Double
 }
-#endif
