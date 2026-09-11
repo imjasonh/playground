@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-  estimateCostCents,
-  formatRunCost,
+  foldUsageCost,
+  formatLifeUsageCost,
   formatUsageCost,
-  lifeReportedCost,
+  readReportedCost,
 } from "../src/cost.js";
 import { LIMITS } from "../src/limits.js";
 
@@ -17,80 +17,105 @@ const million = {
 };
 
 describe("token cost", () => {
-  it("prices Grok 4.6 from the published list rate", () => {
-    assert.equal(estimateCostCents("grok-4.6", million), 200);
-    assert.equal(
-      estimateCostCents("grok-4.6", {
-        inputTokens: 0,
-        outputTokens: 1_000_000,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
-        totalTokens: 1_000_000,
-      }),
-      600,
-    );
-    assert.equal(
-      estimateCostCents("grok-4.6", {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 1_000_000,
-        cacheWriteTokens: 500_000,
-        totalTokens: 1_000_000,
-      }),
-      50,
-    );
-    assert.equal(estimateCostCents("grok-4.6-fast", million), 400);
-    assert.equal(estimateCostCents("not-a-model", million), undefined);
-  });
-
-  it("reports billed cost when the SDK has it, otherwise the list price", () => {
-    assert.deepEqual(lifeReportedCost("grok-4.6", million, 180), {
-      cents: 180,
-      source: "billed",
-    });
-    assert.deepEqual(lifeReportedCost("grok-4.6", million, 0), {
-      cents: 200,
-      source: "estimate",
-    });
-  });
-
-  it("prints a dollar amount a run log can show", () => {
-    const text = formatRunCost({
-      model: "grok-4.6",
-      tokens: {
-        inputTokens: 10_000,
-        outputTokens: 1_000,
-        cacheReadTokens: 2_000,
-        cacheWriteTokens: 0,
-        totalTokens: 13_000,
-      },
-      estimatedCostCents: 2.8,
-      billedCostCents: 0,
-      reportedCostCents: 2.8,
-      source: "estimate",
-      priceLabel: "Grok 4.6",
-    });
-    assert.match(text, /^token cost \$0.028 list price \(13,000 tokens, grok-4.6\)/);
-    assert.match(text, /10,000 input, 2,000 cache read, 1,000 output/);
-    assert.match(text, /billed cost not reported yet/);
-    assert.match(text, /\$2\.00\/M input/);
-  });
-
-  it("uses the default play model", () => {
-    const text = formatUsageCost(LIMITS.DEFAULT_MODEL, {
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      totalTokens: 1_000_000,
+  it("prints the SDK cost, and says so when billing has not landed", () => {
+    const billed = formatUsageCost(LIMITS.DEFAULT_MODEL, {
+      ...million,
+      costReported: true,
       totalRawCostCents: 250,
-      reportedCostCents: 250,
-      costSource: "billed",
       invoiceCents: 0,
     });
     assert.equal(LIMITS.DEFAULT_MODEL, "grok-4.6");
-    assert.match(text, /token cost \$2\.50 billed/);
-    assert.match(text, /invoice charge \$0\.00 \(included usage\)/);
-    assert.equal(LIMITS.DEFAULT_MODEL.includes("fast"), false);
+    assert.match(billed, /^token cost \$2\.50 \(1,000,000 tokens, grok-4\.6\)/);
+    assert.match(billed, /invoice charge \$0\.00 \(included usage\)/);
+    assert.equal(billed.includes("list price"), false);
+
+    const pending = formatUsageCost("grok-4.6", {
+      inputTokens: 10_000,
+      outputTokens: 1_000,
+      cacheReadTokens: 2_000,
+      cacheWriteTokens: 0,
+      totalTokens: 13_000,
+      costReported: false,
+    });
+    assert.match(pending, /^token cost not reported yet \(13,000 tokens, grok-4\.6\)/);
+    assert.match(pending, /10,000 input, 2,000 cache read, 1,000 output/);
+    assert.equal(pending.includes("$"), false);
+  });
+
+  it("treats a reported zero as a cost, not as a missing bill", () => {
+    const text = formatUsageCost("grok-4.6", {
+      ...million,
+      costReported: true,
+      totalRawCostCents: 0,
+      invoiceCents: 0,
+    });
+    assert.match(text, /^token cost \$0\.00 /);
+    assert.equal(text.includes("included usage"), false);
+    assert.equal(text.includes("not reported"), false);
+  });
+
+  it("omits a run total when any life is still unbilled", () => {
+    const usage = foldUsageCost([
+      { tokens: million, costReported: true, billedCostCents: 175, invoiceCents: 0 },
+      { tokens: million, costReported: false },
+    ]);
+    assert.equal(usage.costReported, false);
+    assert.equal(usage.totalRawCostCents, undefined);
+    assert.equal(usage.totalTokens, 2_000_000);
+    assert.equal(
+      formatLifeUsageCost({ tokens: million, costReported: false }),
+      "life token cost not reported yet (1,000,000 tokens)",
+    );
+  });
+
+  it("waits for the SDK cost and does not invent one", async () => {
+    const waits: number[] = [];
+    let calls = 0;
+    const reported = await readReportedCost(
+      async () => {
+        calls += 1;
+        if (calls < 3) return { usage: million };
+        return { usage: million, cost: { rawCostCents: 180, chargedCents: 180 } };
+      },
+      {
+        attempts: 4,
+        delayMs: 1500,
+        sleep: async (ms) => {
+          waits.push(ms);
+        },
+      },
+    );
+    assert.equal(calls, 3);
+    assert.deepEqual(waits, [1500, 1500]);
+    assert.equal(reported.rawCostCents, 180);
+    assert.equal(reported.chargedCents, 180);
+
+    const pending = await readReportedCost(async () => ({ usage: million }), {
+      attempts: 2,
+      delayMs: 1,
+      sleep: async () => undefined,
+    });
+    assert.equal(pending.rawCostCents, undefined);
+    assert.equal(pending.usage.totalTokens, 1_000_000);
+
+    let emptyCalls = 0;
+    const empty = await readReportedCost(
+      async () => {
+        emptyCalls += 1;
+        return {
+          usage: {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            totalTokens: 0,
+          },
+        };
+      },
+      { attempts: 4, delayMs: 1500, sleep: async () => undefined },
+    );
+    assert.equal(emptyCalls, 1);
+    assert.equal(empty.rawCostCents, undefined);
+    assert.equal(empty.usage.totalTokens, 0);
   });
 });

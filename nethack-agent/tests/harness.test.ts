@@ -66,7 +66,7 @@ describe("harness", () => {
     assert.equal(record.memory.procedures[0]?.name, "step");
   });
 
-  it("reports the play's token cost from billed usage, else the list price", async () => {
+  it("reports the SDK token cost and does not price tokens itself", async () => {
     const billed: MockScript = {
       turns: [{ text: '{"quit":true}' }, { text: '{"note":"done"}' }],
       billed: {
@@ -84,11 +84,13 @@ describe("harness", () => {
     const billedRun = await run(billed, 1);
     assert.equal(billedRun.model, "mock");
     assert.equal(billedRun.usage.totalTokens, 1_000_000);
-    assert.equal(billedRun.usage.reportedCostCents, 175);
-    assert.equal(billedRun.usage.costSource, "billed");
+    assert.equal(billedRun.usage.costReported, true);
+    assert.equal(billedRun.usage.totalRawCostCents, 175);
     assert.equal(billedRun.usage.invoiceCents, 0);
+    assert.equal(billedRun.lives[0]?.costReported, true);
+    assert.equal(billedRun.lives[0]?.billedCostCents, 175);
 
-    const estimated: MockScript = {
+    const pending: MockScript = {
       turns: [
         {
           text: '{"quit":true}',
@@ -103,9 +105,11 @@ describe("harness", () => {
         { text: '{"note":"done"}' },
       ],
     };
-    const estimatedRun = await run(estimated, 1, "grok-4.6");
-    assert.equal(estimatedRun.usage.reportedCostCents, 200);
-    assert.equal(estimatedRun.usage.costSource, "estimate");
-    assert.equal(estimatedRun.usage.totalRawCostCents, 0);
+    const pendingRun = await run(pending, 1, "grok-4.6");
+    assert.equal(pendingRun.usage.costReported, false);
+    assert.equal(pendingRun.usage.totalRawCostCents, undefined);
+    assert.equal(pendingRun.usage.totalTokens, 1_000_000);
+    assert.equal(pendingRun.lives[0]?.costReported, false);
+    assert.equal(pendingRun.lives[0]?.billedCostCents, undefined);
   });
 });

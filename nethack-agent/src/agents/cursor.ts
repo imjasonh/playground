@@ -1,4 +1,5 @@
 import { mkdir } from "node:fs/promises";
+import { readReportedCost } from "../cost.js";
 import { LIMITS } from "../limits.js";
 import type { TokenUsage, TraceMessage } from "../types.js";
 import type { AgentFactory, PlayerAgent, PromptTurn, TurnResult } from "./types.js";
@@ -85,14 +86,9 @@ export const createCursorAgent: AgentFactory = async (options) => {
     },
     async getBilledUsage() {
       try {
-        const billed = await agent.getUsage();
-        return {
-          usage: normalizeUsage(billed.usage) ?? emptyUsage(),
-          rawCostCents: billed.cost?.rawCostCents ?? 0,
-          chargedCents: billed.cost?.chargedCents,
-        };
+        return await readBilledUsage(agent);
       } catch {
-        return { usage: emptyUsage(), rawCostCents: 0 };
+        return { usage: emptyUsage() };
       }
     },
     async dispose() {
@@ -134,6 +130,15 @@ function appendAssistantMessages(
       messages.push({ type: "assistant", text: block.text });
     }
   }
+}
+
+async function readBilledUsage(agent: {
+  getUsage(): Promise<{
+    usage?: TokenUsage;
+    cost?: { rawCostCents?: number; chargedCents?: number };
+  }>;
+}) {
+  return readReportedCost(() => agent.getUsage());
 }
 
 function emptyUsage(): TokenUsage {

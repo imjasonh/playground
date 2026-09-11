@@ -82,6 +82,8 @@ export type LifeRecord = {
   actions: LifeTurn[];
   debrief?: LifeTurn;
   error?: string;
+  /** Set when this life asked the SDK for a cost. False means the SDK had not reported one yet. */
+  costReported?: boolean;
   billedCostCents?: number;
   invoiceCents?: number;
   tokens?: TokenUsage;
@@ -103,10 +105,9 @@ export type RunRecord = {
     cacheReadTokens: number;
     cacheWriteTokens: number;
     totalTokens: number;
-    totalRawCostCents: number;
-    estimatedCostCents?: number;
+    /** SDK raw token cost, in cents. Present only when `costReported` is true. */
+    totalRawCostCents?: number;
     invoiceCents?: number;
-    reportedCostCents: number;
-    costSource: "billed" | "estimate" | "mixed" | "unknown";
+    costReported: boolean;
   };
 };

@@ -108,7 +108,7 @@ them:
   commands. Later lives see only notes and key sequences earlier lives wrote,
   plus the screens those lives ended on. Play and the learning notebook use
   the real `nethack` binary. The fake screen is tests only. Play uses
-  Grok 4.6 and reports the token cost of the run. CI play publishes those
+  Grok 4.6 and reports the token cost the SDK returned for the run. CI play publishes those
   notes to `automation/nethack-notes` for the next run, and does not write
   them onto the triggering pull request.
 - **[`bun-image/`](bun-image/)** — compile a JS file with Bun and pack the

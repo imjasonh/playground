@@ -16,7 +16,8 @@ export type PlayerAgent = {
   turn(input: PromptTurn): Promise<TurnResult>;
   getBilledUsage?(): Promise<{
     usage: TokenUsage;
-    rawCostCents: number;
+    /** Absent when the SDK has not reported a cost yet. Zero is a reported cost. */
+    rawCostCents?: number;
     chargedCents?: number;
   }>;
   dispose(): Promise<void>;

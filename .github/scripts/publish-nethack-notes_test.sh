@@ -141,7 +141,7 @@ assert_file "$work/nethack-agent/notebook/notes.json" '[{"id":"n1","text":"keep 
 # Publish writes the notebook onto a branch based on main, and opens a PR.
 write_notebook "$work" '[{"id":"n1","text":"from play"}]'
 mkdir -p "$work/nethack-agent/results"
-printf 'token cost $0.18 list price (9000 tokens, grok-4.6)\n' > "$work/nethack-agent/results/last-run.txt"
+printf 'token cost $0.18 (9,000 tokens, grok-4.6)\n' > "$work/nethack-agent/results/last-run.txt"
 (
   cd "$work"
   GH_TOKEN=test \

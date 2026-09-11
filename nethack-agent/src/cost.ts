@@ -1,28 +1,5 @@
 import type { TokenUsage } from "./types.js";
 
-/**
- * USD per million tokens, from the Cursor models page.
- * Grok has no separate cache-write price, so cache-write tokens are counted
- * and not charged here. The Cursor token rate does not apply to Grok.
- * Billing can lag the run. When the SDK has not reported a cost yet, the
- * list price below is the figure the play report uses.
- */
-type TokenPrice = {
-  label: string;
-  input: number;
-  cacheRead: number;
-  output: number;
-};
-
-const PRICES: Record<string, TokenPrice> = {
-  "grok-4.6": { label: "Grok 4.6", input: 2, cacheRead: 0.5, output: 6 },
-  "grok-4.6-fast": { label: "Grok 4.6 Fast", input: 4, cacheRead: 1, output: 12 },
-  "grok-4.5": { label: "Grok 4.5", input: 2, cacheRead: 0.5, output: 6 },
-  "grok-4.5-fast": { label: "Grok 4.5 Fast", input: 4, cacheRead: 1, output: 18 },
-  "composer-2.5": { label: "Composer 2.5", input: 0.5, cacheRead: 0.2, output: 2.5 },
-  "composer-2.5-fast": { label: "Composer 2.5 Fast", input: 3, cacheRead: 0.5, output: 15 },
-};
-
 export type TokenTotals = {
   inputTokens: number;
   outputTokens: number;
@@ -31,18 +8,39 @@ export type TokenTotals = {
   totalTokens: number;
 };
 
-export type CostSource = "billed" | "estimate" | "mixed" | "unknown";
-
-export type RunCost = {
-  model: string;
-  tokens: TokenTotals;
-  estimatedCostCents?: number;
-  billedCostCents: number;
+export type UsageCost = TokenTotals & {
+  /** True when every billed life returned an SDK cost. */
+  costReported: boolean;
+  /** SDK raw token cost, in cents. Present only when `costReported` is true. */
+  totalRawCostCents?: number;
+  /** SDK invoice charge, in cents. Present only when the SDK reported it. */
   invoiceCents?: number;
-  reportedCostCents: number;
-  source: CostSource;
-  priceLabel?: string;
 };
+
+export type UsageRead = {
+  usage?: Partial<TokenUsage>;
+  cost?: {
+    rawCostCents?: number;
+    chargedCents?: number;
+  };
+};
+
+export type ReportedUsage = {
+  usage: TokenUsage;
+  /** Absent when the SDK has not reported a cost yet. Zero is a reported cost. */
+  rawCostCents?: number;
+  chargedCents?: number;
+};
+
+type BilledLife = {
+  tokens?: TokenUsage;
+  costReported?: boolean;
+  billedCostCents?: number;
+  invoiceCents?: number;
+};
+
+const USAGE_ATTEMPTS = 4;
+const USAGE_DELAY_MS = 1500;
 
 export function emptyTokens(): TokenTotals {
   return {
@@ -75,95 +73,101 @@ export function addTokens(left: TokenTotals, right: TokenUsage | TokenTotals | u
   };
 }
 
-export function priceForModel(model: string): TokenPrice | undefined {
-  const id = model.trim().toLowerCase();
-  const fast = id.includes("fast");
-  if (id.includes("grok-4.6") || id.includes("grok-4-6")) {
-    return PRICES[fast ? "grok-4.6-fast" : "grok-4.6"];
-  }
-  if (id.includes("grok-4.5") || id.includes("grok-4-5")) {
-    return PRICES[fast ? "grok-4.5-fast" : "grok-4.5"];
-  }
-  if (id.includes("composer-2.5") || id.includes("composer-2-5")) {
-    return PRICES[fast ? "composer-2.5-fast" : "composer-2.5"];
-  }
-  return undefined;
-}
-
-/** List-price cents for these tokens. Undefined when the model has no rate here. */
-export function estimateCostCents(model: string, tokens: TokenUsage): number | undefined {
-  const price = priceForModel(model);
-  if (!price) return undefined;
-  return (
-    cents(tokens.inputTokens, price.input) +
-    cents(tokens.cacheReadTokens, price.cacheRead) +
-    cents(tokens.outputTokens, price.output)
-  );
-}
-
-export function lifeReportedCost(
-  model: string,
-  tokens: TokenUsage,
-  billedCostCents: number,
-): { cents: number; source: Exclude<CostSource, "mixed"> } {
-  if (billedCostCents > 0) return { cents: billedCostCents, source: "billed" };
-  const estimated = estimateCostCents(model, tokens);
-  if (estimated !== undefined && tokens.totalTokens > 0) {
-    return { cents: estimated, source: "estimate" };
-  }
-  if (tokens.totalTokens === 0 && billedCostCents === 0) {
-    return { cents: 0, source: "unknown" };
-  }
-  return { cents: estimated ?? 0, source: estimated === undefined ? "unknown" : "estimate" };
-}
-
-export function formatUsageCost(
-  model: string,
-  usage: TokenTotals & {
-    totalRawCostCents: number;
-    estimatedCostCents?: number;
-    invoiceCents?: number;
-    reportedCostCents: number;
-    costSource: CostSource;
+/**
+ * Read SDK usage until a cost is present, or until the snapshot shows no tokens.
+ * Cost can lag the token counts. This does not price tokens locally.
+ */
+export async function readReportedCost(
+  read: () => Promise<UsageRead>,
+  options?: {
+    attempts?: number;
+    delayMs?: number;
+    sleep?: (ms: number) => Promise<void>;
   },
-): string {
-  return formatRunCost({
-    model,
-    tokens: usage,
-    estimatedCostCents: usage.estimatedCostCents,
-    billedCostCents: usage.totalRawCostCents,
-    invoiceCents: usage.invoiceCents,
-    reportedCostCents: usage.reportedCostCents,
-    source: usage.costSource,
-    priceLabel: priceForModel(model)?.label,
-  });
+): Promise<ReportedUsage> {
+  const attempts = Math.max(1, options?.attempts ?? USAGE_ATTEMPTS);
+  const delayMs = options?.delayMs ?? USAGE_DELAY_MS;
+  const sleep =
+    options?.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+
+  let latest: UsageRead | undefined;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await sleep(delayMs);
+    try {
+      latest = await read();
+      lastError = undefined;
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
+    if (hasReportedCost(latest) || usageReadyWithoutTokens(latest)) break;
+  }
+  if (!latest) {
+    if (lastError) throw lastError;
+    return { usage: emptyUsage() };
+  }
+  return toReportedUsage(latest);
 }
 
-export function formatRunCost(cost: RunCost): string {
-  const lines = [
-    `token cost ${formatDollars(cost.reportedCostCents)} ${sourceLabel(cost)} (${formatCount(cost.tokens.totalTokens)} tokens, ${cost.model})`,
-    tokenBreakdown(cost.tokens),
-  ];
-  if (cost.tokens.totalTokens > 0 && cost.priceLabel && cost.estimatedCostCents !== undefined) {
-    const price = priceForModel(cost.model);
-    const rate = price
-      ? `${formatRate(price.input)}/M input, ${formatRate(price.cacheRead)}/M cache read, ${formatRate(price.output)}/M output`
-      : cost.priceLabel;
-    lines.push(`list price ${formatDollars(cost.estimatedCostCents)} (${cost.priceLabel}, ${rate})`);
-  } else if (cost.tokens.totalTokens > 0) {
-    lines.push("list price unknown for this model");
+export function foldUsageCost(lives: BilledLife[]): UsageCost {
+  let tokens = emptyTokens();
+  let raw = 0;
+  let invoice = 0;
+  let sawInvoice = false;
+  let asked = false;
+  let missing = false;
+  for (const life of lives) {
+    tokens = addTokens(tokens, life.tokens);
+    if (life.costReported === undefined) continue;
+    asked = true;
+    if (!life.costReported) {
+      missing = true;
+      continue;
+    }
+    raw += finite(life.billedCostCents);
+    if (life.invoiceCents !== undefined) {
+      invoice += finite(life.invoiceCents);
+      sawInvoice = true;
+    }
   }
-  if (cost.billedCostCents > 0 && cost.source !== "billed") {
-    lines.push(`billed token cost ${formatDollars(cost.billedCostCents)}`);
-  } else if (cost.tokens.totalTokens > 0 && cost.billedCostCents === 0 && cost.source === "estimate") {
-    lines.push("billed cost not reported yet");
+  const costReported = asked && !missing;
+  return {
+    ...tokens,
+    costReported,
+    ...(costReported ? { totalRawCostCents: raw } : {}),
+    ...(costReported && sawInvoice ? { invoiceCents: invoice } : {}),
+  };
+}
+
+export function formatLifeUsageCost(life: BilledLife): string | undefined {
+  const total = finite(life.tokens?.totalTokens);
+  if (total <= 0 && !life.costReported) return undefined;
+  const tokens = formatCount(total);
+  if (life.costReported) {
+    return `life token cost ${formatDollars(life.billedCostCents ?? 0)} (${tokens} tokens)`;
   }
-  if (cost.invoiceCents !== undefined) {
+  return `life token cost not reported yet (${tokens} tokens)`;
+}
+
+export function formatUsageCost(model: string, usage: UsageCost): string {
+  const tokens = formatCount(usage.totalTokens);
+  const headline = usage.costReported
+    ? `token cost ${formatDollars(usage.totalRawCostCents ?? 0)} (${tokens} tokens, ${model})`
+    : `token cost not reported yet (${tokens} tokens, ${model})`;
+  const lines = [headline, tokenBreakdown(usage)];
+  if (
+    usage.costReported &&
+    usage.invoiceCents !== undefined &&
+    usage.invoiceCents !== usage.totalRawCostCents
+  ) {
     const included =
-      cost.invoiceCents === 0 && cost.billedCostCents > 0 ? " (included usage)" : "";
-    lines.push(`invoice charge ${formatDollars(cost.invoiceCents)}${included}`);
+      usage.invoiceCents === 0 && (usage.totalRawCostCents ?? 0) > 0
+        ? " (included usage)"
+        : "";
+    lines.push(`invoice charge ${formatDollars(usage.invoiceCents)}${included}`);
   }
-  return lines.filter((line) => line.length > 0).join("\n");
+  return lines.join("\n");
 }
 
 export function formatDollars(cents: number): string {
@@ -173,13 +177,6 @@ export function formatDollars(cents: number): string {
   if (!text.includes(".")) return `$${text}.00`;
   const [whole, frac] = text.split(".");
   return `$${whole}.${(frac ?? "").padEnd(2, "0")}`;
-}
-
-function sourceLabel(cost: RunCost): string {
-  if (cost.source === "billed") return "billed";
-  if (cost.source === "estimate") return "list price";
-  if (cost.source === "mixed") return "billed and list price";
-  return "unpriced";
 }
 
 function tokenBreakdown(tokens: TokenTotals): string {
@@ -194,14 +191,58 @@ function formatCount(value: number): string {
   return Math.round(finite(value)).toLocaleString("en-US");
 }
 
-function formatRate(dollarsPerMillion: number): string {
-  return formatDollars(dollarsPerMillion * 100);
-}
-
-function cents(tokens: number | undefined, dollarsPerMillion: number): number {
-  return (finite(tokens) * dollarsPerMillion * 100) / 1_000_000;
-}
-
 function finite(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function emptyUsage(): TokenUsage {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens: 0,
+  };
+}
+
+function hasReportedCost(read: UsageRead | undefined): boolean {
+  return typeof read?.cost?.rawCostCents === "number" && Number.isFinite(read.cost.rawCostCents);
+}
+
+function usageReadyWithoutTokens(read: UsageRead | undefined): boolean {
+  const usage = read?.usage;
+  if (!usage) return false;
+  const fields = [
+    usage.inputTokens,
+    usage.outputTokens,
+    usage.cacheReadTokens,
+    usage.cacheWriteTokens,
+    usage.totalTokens,
+  ];
+  if (fields.every((value) => value === undefined)) return false;
+  return fields.every((value) => !finite(value));
+}
+
+function toReportedUsage(read: UsageRead): ReportedUsage {
+  const usage = normalizeReadUsage(read.usage);
+  if (!hasReportedCost(read) || !read.cost) return { usage };
+  const reported: ReportedUsage = {
+    usage,
+    rawCostCents: read.cost.rawCostCents,
+  };
+  if (typeof read.cost.chargedCents === "number" && Number.isFinite(read.cost.chargedCents)) {
+    reported.chargedCents = read.cost.chargedCents;
+  }
+  return reported;
+}
+
+function normalizeReadUsage(usage: Partial<TokenUsage> | undefined): TokenUsage {
+  return {
+    inputTokens: finite(usage?.inputTokens),
+    outputTokens: finite(usage?.outputTokens),
+    cacheReadTokens: finite(usage?.cacheReadTokens),
+    cacheWriteTokens: finite(usage?.cacheWriteTokens),
+    reasoningTokens: usage?.reasoningTokens,
+    totalTokens: finite(usage?.totalTokens),
+  };
 }

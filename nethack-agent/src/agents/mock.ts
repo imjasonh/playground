@@ -25,12 +25,12 @@ export const createMockAgent: AgentFactory = async (options) => {
       };
     },
     async getBilledUsage() {
-      return (
-        script.billed ?? {
-          usage: emptyUsage(),
-          rawCostCents: 0,
-        }
-      );
+      if (!script.billed) return { usage: emptyUsage() };
+      return {
+        usage: script.billed.usage,
+        rawCostCents: script.billed.rawCostCents,
+        chargedCents: script.billed.chargedCents,
+      };
     },
     async dispose() {
       // Nothing to close.

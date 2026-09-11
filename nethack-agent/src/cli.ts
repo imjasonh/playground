@@ -105,11 +105,11 @@ async function main(): Promise<void> {
         cacheReadTokens: record.usage.cacheReadTokens,
         cacheWriteTokens: record.usage.cacheWriteTokens,
         totalRawCostCents: record.usage.totalRawCostCents,
-        estimatedCostCents: record.usage.estimatedCostCents,
         invoiceCents: record.usage.invoiceCents,
-        reportedCostCents: record.usage.reportedCostCents,
-        costSource: record.usage.costSource,
-        tokenCost: formatDollars(record.usage.reportedCostCents),
+        costReported: record.usage.costReported,
+        tokenCost: record.usage.costReported
+          ? formatDollars(record.usage.totalRawCostCents ?? 0)
+          : "not reported yet",
       },
       null,
       2,
