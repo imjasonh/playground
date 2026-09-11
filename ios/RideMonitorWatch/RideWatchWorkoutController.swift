@@ -289,10 +289,11 @@ final class RideWatchWorkoutController: NSObject, ObservableObject {
 
         endingBuilder.endCollection(withEnd: end) { [weak self] _, _ in
             if saveToHealth {
-                endingBuilder.finishWorkout { _, error in
+                endingBuilder.finishWorkout { [weak self] _, error in
                     Task { @MainActor in
+                        guard let self else { return }
                         if let error {
-                            self?.lastErrorMessage = error.localizedDescription
+                            self.lastErrorMessage = error.localizedDescription
                         }
                     }
                 }
