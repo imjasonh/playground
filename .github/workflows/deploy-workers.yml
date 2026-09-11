@@ -24,7 +24,7 @@ jobs:
     outputs:
       workers: ${{ steps.discover.outputs.workers }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           fetch-depth: 0
@@ -48,7 +48,7 @@ jobs:
       matrix:
         app: ${{ fromJSON(needs.discover.outputs.workers) }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
@@ -62,14 +62,14 @@ jobs:
           rustup default stable
 
       - name: Deploy ${{ matrix.app }}
-        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: ${{ matrix.app }}
-          # wrangler-action defaults to an old bundled wrangler (3.x); pin a
-          # current v4 so deploys don't run on an out-of-date CLI. Bump this
-          # periodically (the dependency-update bot doesn't manage it).
+          # wrangler-action v4 defaults to latest wrangler v4; pin a known
+          # version so deploys stay reproducible. Bump this periodically (the
+          # dependency-update bot doesn't manage it).
           wranglerVersion: "4.107.0"
           # Before deploying, create-or-get the KV namespaces this Worker needs
           # (rewriting the placeholder ids in wrangler.toml with the real ones),

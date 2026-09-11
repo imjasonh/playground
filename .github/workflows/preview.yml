@@ -24,7 +24,7 @@ jobs:
       blog: ${{ steps.discover.outputs.blog }}
       index: ${{ steps.discover.outputs.index }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           fetch-depth: 0   # need base history to detect changed browser apps
@@ -59,7 +59,7 @@ jobs:
       group: gh-pages-publish
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           fetch-depth: 0   # git history for post published / updated dates
@@ -114,7 +114,7 @@ jobs:
       # Regenerate the production root index so it lists this PR's preview.
       # Runs after the deploy so the gh-pages checkout includes preview.json.
       - name: Check out gh-pages
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: true
           ref: gh-pages
@@ -135,7 +135,7 @@ jobs:
       # must keep the base branch template, otherwise an unmerged index change
       # would go live as soon as preview ran.
       - name: Check out PR base for the production index
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
           ref: ${{ github.base_ref }}
@@ -147,7 +147,7 @@ jobs:
         run: bash base/.github/scripts/publish-site-index.sh gh-pages "$REPO_URL"
 
       - name: Wait for GitHub Pages deployment
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const owner = context.repo.owner;
@@ -206,7 +206,7 @@ jobs:
             core.setFailed(`Timed out waiting for Pages deployment on ${targetSha}.`);
 
       - name: Comment preview URL on PR
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
             const pr = context.payload.pull_request.number;
