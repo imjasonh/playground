@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#170b08" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Cold Climb — Two-Thumb Arcade Game</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="eyebrow">Two-thumb arcade</span>
+          <h1>Cold Climb</h1>
+        </div>
+        <div class="header-actions">
+          <button
+            id="sound-button"
+            class="utility-button"
+            type="button"
+            aria-pressed="true"
+          >
+            Sound on
+          </button>
+          <button
+            id="reset-button"
+            class="utility-button"
+            type="button"
+            disabled
+          >
+            Restart
+          </button>
+        </div>
+      </header>
+
+      <section class="machine" aria-label="Cold Climb game">
+        <div class="scoreboard" aria-label="Game status">
+          <div class="score-cell">
+            <span class="score-label">Target</span>
+            <strong id="target-value">1/10</strong>
+          </div>
+          <div class="score-cell score-main">
+            <span class="score-label">Score</span>
+            <strong id="score-value">00000</strong>
+          </div>
+          <div class="score-cell">
+            <span class="score-label">Best</span>
+            <strong id="best-value">00000</strong>
+          </div>
+          <div class="score-cell lives-cell">
+            <span class="score-label">Balls</span>
+            <strong id="lives-value" aria-label="3 balls remaining">●●●</strong>
+          </div>
+        </div>
+
+        <div class="playfield-frame">
+          <canvas
+            id="game-canvas"
+            width="720"
+            height="1080"
+            aria-label="Vertical wall with ten pockets, a metal bar, and a ball"
+          ></canvas>
+
+          <div id="screen-overlay" class="screen-overlay">
+            <span id="overlay-kicker" class="overlay-kicker">A steady hand wins</span>
+            <h2 id="overlay-title">Raise the bar</h2>
+            <p id="overlay-copy">
+              Use two thumbs to lift each end. Roll the ball into the glowing
+              pocket and avoid every dark one.
+            </p>
+            <div class="mini-controls" aria-hidden="true">
+              <span>↕</span>
+              <i></i>
+              <span>↕</span>
+            </div>
+            <button id="start-button" class="start-button" type="button">
+              Start climbing
+            </button>
+          </div>
+        </div>
+
+        <div class="message-panel">
+          <span class="status-light" aria-hidden="true"></span>
+          <p id="message" role="status" aria-live="polite">
+            Find two thumbs. The first pocket is waiting.
+          </p>
+        </div>
+      </section>
+
+      <section class="control-deck" aria-label="Bar controls">
+        <div
+          id="left-control"
+          class="touch-control"
+          role="slider"
+          tabindex="0"
+          aria-label="Left end movement"
+          aria-valuemin="-100"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          aria-valuetext="Stopped"
+        >
+          <span class="control-name">Left end</span>
+          <span class="control-track" aria-hidden="true">
+            <span class="control-arrow up">▲</span>
+            <span class="control-knob">L</span>
+            <span class="control-arrow down">▼</span>
+          </span>
+          <span class="control-hint">drag up / down</span>
+        </div>
+
+        <div class="deck-center" aria-hidden="true">
+          <span>Lift together</span>
+          <i></i>
+          <span>Tilt to roll</span>
+        </div>
+
+        <div
+          id="right-control"
+          class="touch-control"
+          role="slider"
+          tabindex="0"
+          aria-label="Right end movement"
+          aria-valuemin="-100"
+          aria-valuemax="100"
+          aria-valuenow="0"
+          aria-valuetext="Stopped"
+        >
+          <span class="control-name">Right end</span>
+          <span class="control-track" aria-hidden="true">
+            <span class="control-arrow up">▲</span>
+            <span class="control-knob">R</span>
+            <span class="control-arrow down">▼</span>
+          </span>
+          <span class="control-hint">drag up / down</span>
+        </div>
+      </section>
+
+      <p class="keyboard-help">
+        Keyboard: <kbd>W</kbd>/<kbd>S</kbd> left · <kbd>↑</kbd>/<kbd>↓</kbd>
+        right · <kbd>R</kbd> restart
+      </p>
+    </main>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>

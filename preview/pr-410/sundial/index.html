@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta id="theme-color" name="theme-color" content="#f4eee2" />
+    <meta
+      name="description"
+      content="A clock whose long shadow follows the sun, like a sundial. At night the shadow is gone."
+    />
+    <title>Sundial</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <p id="north" class="north" aria-hidden="true">N</p>
+    <main class="stage">
+      <h1 class="visually-hidden">Sundial</h1>
+      <noscript>
+        <p class="noscript">This clock needs JavaScript to follow the sun.</p>
+      </noscript>
+      <p id="clock" class="clock" role="timer" aria-live="off">
+        <span class="casts" aria-hidden="true">
+          <span class="cast" data-cast>
+            <span data-time></span>
+            <span class="period" data-period hidden></span>
+          </span>
+          <span class="cast" data-cast>
+            <span data-time></span>
+            <span class="period" data-period hidden></span>
+          </span>
+        </span>
+        <span class="face">
+          <span id="time" data-time></span>
+          <span id="period" class="period" data-period hidden></span>
+        </span>
+      </p>
+      <p id="date" class="date"></p>
+      <p id="hint" class="hint">Drag or use the arrow keys to move through the day</p>
+      <button type="button" id="now" class="quiet" hidden>Now</button>
+      <button type="button" id="locate" class="quiet" hidden>Use location</button>
+    </main>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
