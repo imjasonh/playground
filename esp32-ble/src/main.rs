@@ -81,8 +81,8 @@ fn main() -> Result<()> {
         }
     });
 
-    let mut adv = BLEAdvertisementData::new()
-        .name(DEVICE_NAME)
+    let mut adv = BLEAdvertisementData::new();
+    adv.name(DEVICE_NAME)
         .add_service_uuid(uuid_or_panic(SERVICE_UUID));
     advertising.lock().set_data(&mut adv)?;
     advertising.lock().start()?;
