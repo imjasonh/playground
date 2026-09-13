@@ -77,11 +77,18 @@ struct ESP32BLEView: View {
 
     @ViewBuilder
     private var deviceList: some View {
-        if controller.phase == .connected {
-            Label(controller.connectedName, systemImage: "link")
-                .font(.headline)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("esp32BleConnectedName")
+        if controller.phase == .connected
+            || (controller.phase == .connecting && !controller.connectedName.isEmpty)
+        {
+            Label(
+                controller.connectedName,
+                systemImage: controller.phase == .connected
+                    ? "link"
+                    : "arrow.triangle.2.circlepath"
+            )
+            .font(.headline)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("esp32BleConnectedName")
         } else if controller.isBluetoothUsable, controller.devices.isEmpty {
             ContentUnavailableView(
                 "No devices yet",
@@ -246,7 +253,8 @@ struct ESP32BLEView: View {
                 "The iPhone is a BLE central. The ESP32 is a peripheral that advertises "
                     + "service \(ESP32BLEProtocol.serviceUUIDString.lowercased()). Writes go to the "
                     + "command characteristic; status notifications come back on a second "
-                    + "characteristic. Firmware lives in esp32-ble/."
+                    + "characteristic. After a drop the app reconnects to the last board; "
+                    + "Disconnect cancels that. Firmware lives in esp32-ble/."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
