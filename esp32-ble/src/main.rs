@@ -1,7 +1,6 @@
 //! Playground BLE GATT server: LED commands in, status notifications out.
 
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 use anyhow::Result;
 use esp32_ble::protocol::{
@@ -16,22 +15,21 @@ use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::sys::esp_get_free_heap_size;
 use log::info;
 
-/// GPIOs that cheap ESP-WROOM-32 DevKits put a user LED on. Inland boards
-/// often have only a power LED (D1), which no GPIO can drive.
-const LED_GPIO_LABEL: &str = "GPIO2/4/5/13/16/18/19/21/22/23/25/26/27/32/33";
+/// Command LED is GPIO 2, the D2 pad on the Inland / Keyestudio core board.
+/// D1 on that board is power only and cannot be toggled.
+const LED_GPIO_LABEL: &str = "GPIO2";
 
 fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
 
-    info!("{FIRMWARE_ID} starting (LED bank {LED_GPIO_LABEL})");
+    info!("{FIRMWARE_ID} starting ({LED_GPIO_LABEL}; Inland D1 is power-only)");
 
     let peripherals = Peripherals::take()?;
-    let mut leds = led_bank(peripherals.pins)?;
-    drive_leds(&mut leds, true)?;
+    let mut led = PinDriver::output(peripherals.pins.gpio2)?;
+    drive_led(&mut led, true)?;
 
     let state = Arc::new(Mutex::new(DeviceState::default()));
-    let started = Instant::now();
 
     let device = BLEDevice::take();
     let server = device.get_server();
@@ -90,54 +88,30 @@ fn main() -> Result<()> {
     info!("advertising as {DEVICE_NAME}");
 
     let mut last_line = String::new();
-    let mut last_notify = Instant::now();
+    let mut elapsed_ms: u64 = 0;
+    let mut last_notify_ms: u64 = 0;
     loop {
         FreeRtos::delay_ms(50);
-        let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
+        elapsed_ms = elapsed_ms.saturating_add(50);
         let snapshot = state.lock().expect("state").clone();
-        drive_leds(&mut leds, snapshot.physical_led_on(elapsed_ms))?;
+        drive_led(&mut led, snapshot.physical_led_on(elapsed_ms))?;
 
         let line = format_status(&snapshot.to_status(elapsed_ms, heap_free()));
-        let due = last_notify.elapsed().as_millis() >= 500;
+        let due = elapsed_ms.saturating_sub(last_notify_ms) >= 500;
         if due || line != last_line {
             status.lock().set_value(line.as_bytes()).notify();
             last_line = line;
-            last_notify = Instant::now();
+            last_notify_ms = elapsed_ms;
         }
     }
 }
 
-type LedPin<'a> = PinDriver<'a, Output>;
-
-fn led_bank(pins: esp_idf_svc::hal::gpio::Pins) -> Result<Vec<LedPin<'static>>> {
-    // Skip flash pins (6–11), UART0 (1, 3), boot straps we should not hold
-    // (0, 12), and input-only pins (34–39).
-    Ok(vec![
-        PinDriver::output(pins.gpio2)?,
-        PinDriver::output(pins.gpio4)?,
-        PinDriver::output(pins.gpio5)?,
-        PinDriver::output(pins.gpio13)?,
-        PinDriver::output(pins.gpio16)?,
-        PinDriver::output(pins.gpio18)?,
-        PinDriver::output(pins.gpio19)?,
-        PinDriver::output(pins.gpio21)?,
-        PinDriver::output(pins.gpio22)?,
-        PinDriver::output(pins.gpio23)?,
-        PinDriver::output(pins.gpio25)?,
-        PinDriver::output(pins.gpio26)?,
-        PinDriver::output(pins.gpio27)?,
-        PinDriver::output(pins.gpio32)?,
-        PinDriver::output(pins.gpio33)?,
-    ])
-}
-
-fn drive_leds(leds: &mut [LedPin<'_>], on: bool) -> Result<()> {
-    for led in leds {
-        if on {
-            led.set_high()?;
-        } else {
-            led.set_low()?;
-        }
+// esp-idf-hal 0.46 uses PinDriver<'d, MODE>. The pin type is erased into MODE.
+fn drive_led(led: &mut PinDriver<'_, Output>, on: bool) -> Result<()> {
+    if on {
+        led.set_high()?;
+    } else {
+        led.set_low()?;
     }
     Ok(())
 }
