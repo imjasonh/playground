@@ -358,9 +358,11 @@ session.
 
 Scan for a nearby board flashed with [`esp32-ble/`](../esp32-ble/), connect,
 write LED commands (`led on`, `stop`, or the blink-speed slider), and show the
-status line the firmware notifies. Needs `NSBluetoothAlwaysUsageDescription` only;
-Core Bluetooth central mode is not an App ID capability, so no signing
-bootstrap. The Simulator opens the UI but cannot see a real ESP32.
+status line the firmware notifies. After the first connect, a drop immediately
+retries that same peripheral. **Disconnect** stops the retries. Needs
+`NSBluetoothAlwaysUsageDescription` only; Core Bluetooth central mode is not
+an App ID capability, so no signing bootstrap. The Simulator opens the UI but
+cannot see a real ESP32.
 
 ### Face Swap
 

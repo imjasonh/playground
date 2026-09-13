@@ -39,10 +39,19 @@ final class ESP32BLEController: NSObject, ObservableObject {
     private var statusCharacteristic: CBCharacteristic?
     private var blinkSendTask: Task<Void, Never>?
     private var isAdjustingBlinkSlider = false
+    private var preferred: ESP32BLEPreferredDevice?
+    private var wantsReconnect = false
+    private let defaults: UserDefaults
 
     private let serviceUUID = CBUUID(string: ESP32BLEProtocol.serviceUUIDString)
     private let commandUUID = CBUUID(string: ESP32BLEProtocol.commandUUIDString)
     private let statusUUID = CBUUID(string: ESP32BLEProtocol.statusUUIDString)
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        super.init()
+        preferred = ESP32BLEPreferredDevice.load(from: defaults)
+    }
 
     var isBluetoothUsable: Bool {
         bluetoothState == .poweredOn
@@ -68,6 +77,8 @@ final class ESP32BLEController: NSObject, ObservableObject {
     }
 
     func start() {
+        preferred = ESP32BLEPreferredDevice.load(from: defaults)
+        wantsReconnect = preferred != nil
         if central == nil {
             central = CBCentralManager(delegate: self, queue: nil)
         }
@@ -76,7 +87,8 @@ final class ESP32BLEController: NSObject, ObservableObject {
 
     func stop() {
         blinkSendTask?.cancel()
-        disconnect()
+        wantsReconnect = false
+        cancelPendingConnection()
         central?.stopScan()
         phase = .idle
         devices = []
@@ -89,42 +101,36 @@ final class ESP32BLEController: NSObject, ObservableObject {
             return
         }
         if connectedPeripheral != nil {
-            disconnect()
+            cancelPendingConnection()
         }
         devices = []
+        let kept = preferred.flatMap { peripherals[$0.id] }
         peripherals.removeAll()
-        phase = .scanning
-        statusMessage = "Scanning for \(ESP32BLEProtocol.deviceName)."
-        central.scanForPeripherals(
-            withServices: [serviceUUID],
-            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
-        )
+        if let kept {
+            peripherals[kept.identifier] = kept
+        }
+        beginDiscoveryScan()
+        if wantsReconnect {
+            attemptPreferredConnect()
+        }
     }
 
     func connect(to advertisement: ESP32BLEAdvertisement) {
-        guard let central, let peripheral = peripherals[advertisement.id] else {
+        guard let peripheral = peripherals[advertisement.id] else {
             statusMessage = "That device is no longer in range. Scan again."
             return
         }
-        central.stopScan()
-        connectedPeripheral = peripheral
-        connectedName = advertisement.name
-        peripheral.delegate = self
-        phase = .connecting
-        statusMessage = "Connecting to \(advertisement.name)."
-        central.connect(peripheral, options: nil)
+        rememberPreferred(id: advertisement.id, name: advertisement.name)
+        wantsReconnect = true
+        connect(peripheral, name: advertisement.name, reconnecting: false)
     }
 
     func disconnect() {
+        wantsReconnect = false
         blinkSendTask?.cancel()
-        if let central, let peripheral = connectedPeripheral {
-            central.cancelPeripheralConnection(peripheral)
-        }
-        clearConnection()
-        if phase == .connected || phase == .connecting {
-            phase = .idle
-            statusMessage = "Disconnected."
-        }
+        cancelPendingConnection()
+        phase = .idle
+        statusMessage = "Disconnected."
     }
 
     func send(_ command: ESP32BLECommand) {
@@ -196,24 +202,123 @@ final class ESP32BLEController: NSObject, ObservableObject {
 
     private func applyBluetoothState(_ state: CBManagerState) {
         bluetoothState = state
-        if state != .poweredOn, phase == .scanning {
+        if state != .poweredOn {
             central?.stopScan()
-            phase = .idle
+            if phase == .scanning {
+                phase = .idle
+            }
+            if phase == .idle || phase == .scanning {
+                statusMessage = availabilitySummary
+            }
+            return
         }
-        if phase == .idle || phase == .scanning {
-            statusMessage = availabilitySummary
+        if phase == .connected {
+            return
         }
-        if state == .poweredOn, phase == .idle {
+        if wantsReconnect {
+            attemptPreferredConnect()
+            beginDiscoveryScan()
+            return
+        }
+        if phase == .idle {
             startScan()
         }
     }
 
-    private func clearConnection() {
+    private func rememberPreferred(id: UUID, name: String) {
+        let next = ESP32BLEPreferredDevice(id: id, name: name)
+        preferred = next
+        next.save(to: defaults)
+    }
+
+    private func connect(_ peripheral: CBPeripheral, name: String, reconnecting: Bool) {
+        guard let central, central.state == .poweredOn else {
+            statusMessage = availabilitySummary
+            return
+        }
+        peripherals[peripheral.identifier] = peripheral
+        connectedPeripheral = peripheral
+        connectedName = name
+        peripheral.delegate = self
+        phase = .connecting
+        statusMessage = reconnecting
+            ? "Reconnecting to \(name)."
+            : "Connecting to \(name)."
+        central.connect(peripheral, options: nil)
+    }
+
+    private func attemptPreferredConnect() {
+        guard wantsReconnect, let preferred, let central, central.state == .poweredOn else {
+            return
+        }
+        if connectedPeripheral?.identifier == preferred.id,
+           phase == .connected || phase == .connecting
+        {
+            return
+        }
+        let already = central.retrieveConnectedPeripherals(withServices: [serviceUUID])
+        if let match = already.first(where: { $0.identifier == preferred.id }) {
+            connect(match, name: preferred.name, reconnecting: true)
+            return
+        }
+        if let match = central.retrievePeripherals(withIdentifiers: [preferred.id]).first {
+            connect(match, name: preferred.name, reconnecting: true)
+        }
+    }
+
+    private func beginDiscoveryScan() {
+        guard let central, central.state == .poweredOn else {
+            return
+        }
+        if phase == .idle {
+            phase = .scanning
+        }
+        if phase == .scanning {
+            statusMessage = wantsReconnect
+                ? "Reconnecting to \(preferred?.name ?? ESP32BLEProtocol.deviceName)."
+                : "Scanning for \(ESP32BLEProtocol.deviceName)."
+        }
+        central.scanForPeripherals(
+            withServices: [serviceUUID],
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
+        )
+    }
+
+    private func handleUnexpectedDrop(of peripheral: CBPeripheral, message: String) {
+        blinkSendTask?.cancel()
+        commandCharacteristic = nil
+        statusCharacteristic = nil
+        connectedPeripheral = nil
+        status = nil
+        peripherals[peripheral.identifier] = peripheral
+        guard wantsReconnect, peripheral.identifier == preferred?.id else {
+            connectedName = ""
+            phase = .idle
+            statusMessage = message
+            return
+        }
+        connect(peripheral, name: preferred?.name ?? connectedName, reconnecting: true)
+        beginDiscoveryScan()
+    }
+
+    private func cancelPendingConnection() {
+        if let central, let peripheral = connectedPeripheral {
+            central.cancelPeripheralConnection(peripheral)
+        }
         connectedPeripheral = nil
         commandCharacteristic = nil
         statusCharacteristic = nil
         connectedName = ""
         status = nil
+    }
+
+    private func sortDevices() {
+        let preferredID = preferred?.id
+        devices.sort { a, b in
+            if a.id == preferredID { return true }
+            if b.id == preferredID { return false }
+            return a.rssi > b.rssi
+        }
     }
 
     private func recordStatusLine(_ line: String) {
@@ -251,7 +356,16 @@ extension ESP32BLEController: CBCentralManagerDelegate {
                 self.devices[index] = row
             } else {
                 self.devices.append(row)
-                self.devices.sort { $0.rssi > $1.rssi }
+            }
+            self.sortDevices()
+            if ESP32BLEPreferredDevice.shouldReconnect(
+                discovered: id,
+                preferred: self.preferred?.id,
+                wantsReconnect: self.wantsReconnect,
+                isBusy: self.phase == .connected || self.phase == .connecting
+            ) {
+                let label = self.preferred?.name ?? name
+                self.connect(peripheral, name: label, reconnecting: true)
             }
         }
     }
@@ -259,7 +373,12 @@ extension ESP32BLEController: CBCentralManagerDelegate {
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         let service = CBUUID(string: ESP32BLEProtocol.serviceUUIDString)
         Task { @MainActor in
+            self.central?.stopScan()
             self.phase = .connected
+            self.connectedPeripheral = peripheral
+            self.connectedName = self.preferred?.name ?? peripheral.name ?? ESP32BLEProtocol.deviceName
+            self.rememberPreferred(id: peripheral.identifier, name: self.connectedName)
+            self.wantsReconnect = true
             self.statusMessage = "Connected. Discovering services."
         }
         peripheral.discoverServices([service])
@@ -272,9 +391,7 @@ extension ESP32BLEController: CBCentralManagerDelegate {
     ) {
         let detail = error?.localizedDescription ?? "unknown error"
         Task { @MainActor in
-            self.clearConnection()
-            self.phase = .idle
-            self.statusMessage = "Connect failed: \(detail)"
+            self.handleUnexpectedDrop(of: peripheral, message: "Connect failed: \(detail)")
         }
     }
 
@@ -285,7 +402,18 @@ extension ESP32BLEController: CBCentralManagerDelegate {
     ) {
         let detail = error?.localizedDescription
         Task { @MainActor in
-            self.clearConnection()
+            if self.wantsReconnect {
+                self.handleUnexpectedDrop(
+                    of: peripheral,
+                    message: "Reconnecting to \(self.preferred?.name ?? ESP32BLEProtocol.deviceName)."
+                )
+                return
+            }
+            self.connectedPeripheral = nil
+            self.commandCharacteristic = nil
+            self.statusCharacteristic = nil
+            self.connectedName = ""
+            self.status = nil
             self.phase = .idle
             if let detail {
                 self.statusMessage = "Disconnected: \(detail)"

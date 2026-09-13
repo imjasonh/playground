@@ -101,4 +101,58 @@ final class ESP32BLEProtocolTests: XCTestCase {
         )
         XCTAssertEqual(ESP32BLEProtocol.deviceName, "PlaygroundBLE")
     }
+
+    func testPreferredDeviceRoundTrip() {
+        let suite = "esp32-ble.preferred-tests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suite) else {
+            XCTFail("suite")
+            return
+        }
+        defaults.removePersistentDomain(forName: suite)
+        XCTAssertNil(ESP32BLEPreferredDevice.load(from: defaults))
+
+        let id = UUID()
+        ESP32BLEPreferredDevice(id: id, name: "PlaygroundBLE").save(to: defaults)
+        let loaded = ESP32BLEPreferredDevice.load(from: defaults)
+        XCTAssertEqual(loaded?.id, id)
+        XCTAssertEqual(loaded?.name, "PlaygroundBLE")
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    func testReconnectPrefersSameDevice() {
+        let preferred = UUID()
+        let other = UUID()
+        XCTAssertTrue(
+            ESP32BLEPreferredDevice.shouldReconnect(
+                discovered: preferred,
+                preferred: preferred,
+                wantsReconnect: true,
+                isBusy: false
+            )
+        )
+        XCTAssertFalse(
+            ESP32BLEPreferredDevice.shouldReconnect(
+                discovered: other,
+                preferred: preferred,
+                wantsReconnect: true,
+                isBusy: false
+            )
+        )
+        XCTAssertFalse(
+            ESP32BLEPreferredDevice.shouldReconnect(
+                discovered: preferred,
+                preferred: preferred,
+                wantsReconnect: false,
+                isBusy: false
+            )
+        )
+        XCTAssertFalse(
+            ESP32BLEPreferredDevice.shouldReconnect(
+                discovered: preferred,
+                preferred: preferred,
+                wantsReconnect: true,
+                isBusy: true
+            )
+        )
+    }
 }
