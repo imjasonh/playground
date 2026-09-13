@@ -576,7 +576,7 @@ var _tr_flush_block = (s, buf, stored_len, last) => {
 		max_blindex = build_bl_tree(s);
 		opt_lenb = s.opt_len + 3 + 7 >>> 3;
 		static_lenb = s.static_len + 3 + 7 >>> 3;
-		if (static_lenb <= opt_lenb) opt_lenb = static_lenb;
+		if (static_lenb <= opt_lenb || s.strategy === Z_FIXED) opt_lenb = static_lenb;
 	} else opt_lenb = static_lenb = stored_len + 5;
 	if (stored_len + 4 <= opt_lenb && buf !== -1) _tr_stored_block(s, buf, stored_len, last);
 	else if (s.strategy === Z_FIXED || static_lenb === opt_lenb) {
@@ -2412,7 +2412,7 @@ var inflate$1 = (strm, flush) => {
 				hold += input[next++] << bits;
 				bits += 8;
 			}
-			if (state.head) state.head.time = hold;
+			if (state.head) state.head.time = hold >>> 0;
 			if (state.flags & 512 && state.wrap & 4) {
 				hbuf[0] = hold & 255;
 				hbuf[1] = hold >>> 8 & 255;
