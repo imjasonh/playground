@@ -40,6 +40,7 @@ playground/
 ├── onramp/             # offline Mac can’t-get-online triage (Sparkle CD)
 ├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
 ├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot + signed OTA, or APP=maze, on Waveshare 7.5″
+├── esp32-ble/             # Rust/ESP-IDF firmware: BLE GATT LED control for the iOS experiment
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
@@ -85,6 +86,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
 | `inkbot/` | no | Rust Cloudflare Worker (e-ink frame + Slack); no `index.html` |
 | `inkbot-esp32/` | no | Rust/ESP-IDF ESP32 firmware (espup); no `index.html` |
+| `esp32-ble/` | no | Rust/ESP-IDF ESP32 BLE GATT firmware (espup); no `index.html` |
 | `git-server/` | no | Rust Cloudflare Worker; no `index.html` |
 | `git-fuse/` | no | Rust CLI (FUSE); no `index.html` |
 | `life-stl/` | no | Rust CLI (STL generator); no `index.html` |
@@ -187,6 +189,7 @@ discovery scripts.
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
 | `inkbot-esp32.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `inkbot-esp32/` (or this workflow) is unchanged (excluded from `test.yml`) |
 | `inkbot-esp32-publish.yml` | push to `main` touching `inkbot-esp32/**` (or this workflow), manual | Cross-builds inkbot firmware, pushes `ghcr.io/<owner>/playground/inkbot-esp32`, and Cosign-signs the digest (devices poll this for OTA) |
+| `esp32-ble.yml` | push to `main`, pull requests, manual | Always runs discover + host/firmware jobs (so they can be required checks); host/firmware no-op when `esp32-ble/` (or this workflow) is unchanged (excluded from `test.yml`) |
 | `ios.yml` | push to `main`, pull requests | Tests changed iOS apps on macOS; on `main`, delivers them to TestFlight |
 | `macos.yml` | push to `main`, pull requests | Tests changed macOS apps on macOS; on `main`, ships notarized Sparkle updates when secrets are present |
 | `ios-bootstrap-label.yml` | pull request | Labels PRs that need signing re-bootstrap with `needs-ios-bootstrap` |
@@ -287,9 +290,10 @@ Discovery is by **top-level directory**: a change under `kanoodle/` selects
 `kanoodle`, a change under `web-push/` selects `web-push`, and so on. Hidden
 directories (names starting with `.`) and changes outside any app directory
 (e.g. a lone top-level file) select nothing — so a PR that only edits CI scripts
-or the root `README.md` runs no app tests. `inkbot-esp32/` has a `Cargo.toml`
-but is excluded from Rust discovery because it needs the espup Xtensa toolchain;
-`inkbot-esp32.yml` runs its host lib tests and firmware cross-build instead.
+or the root `README.md` runs no app tests. `inkbot-esp32/` and `esp32-ble/` have
+a `Cargo.toml` but are excluded from Rust discovery because they need the espup
+Xtensa toolchain. `inkbot-esp32.yml` and `esp32-ble.yml` run those host lib
+tests and firmware cross-builds instead.
 
 | App type | Selected when its dir has | CI runs, per changed app |
 |----------|---------------------------|--------------------------|
@@ -306,12 +310,14 @@ Browser apps without a `test` script (e.g. `hello/`) are never tested. Each Rust
 app's toolchain comes from its `rust-toolchain.toml` (defaulting to stable);
 Worker apps pin Rust 1.88 (with `worker` 0.8 / wasm-bindgen 0.2.125).
 
-**ESP32 firmware is tested by `inkbot-esp32.yml`, not `test.yml`.** Stable
-Linux Cargo cannot build `xtensa-esp32-espidf`; the dedicated workflow installs
-the esp-rs Xtensa toolchain, runs host `cargo test --lib` / clippy / provision
-dry-run, and `make build`s both the inkbot and maze device images when
-`inkbot-esp32/` changes. Signed OTA images are published by
+**ESP32 firmware is tested by `inkbot-esp32.yml` and `esp32-ble.yml`, not
+`test.yml`.** Stable Linux Cargo cannot build `xtensa-esp32-espidf`. Each
+dedicated workflow installs the esp-rs Xtensa toolchain, runs host
+`cargo test --lib` / clippy, and `make build`s the device image when that
+directory changes. `inkbot-esp32.yml` also runs a provision dry-run and builds
+both the inkbot and maze images. Signed inkbot OTA images are published by
 `inkbot-esp32-publish.yml` on `main` (see [`inkbot-esp32/docs/ota.md`](inkbot-esp32/docs/ota.md)).
+`esp32-ble` is USB-flash only.
 
 **The iOS app is tested by a separate workflow (`ios.yml`), not `test.yml`,**
 because it needs a macOS runner. A cheap Linux `discover` job reuses the same
@@ -711,6 +717,7 @@ auto-discover them. Run their local tests when you change them.
 | `nethack-agent/` | Cursor SDK harness that plays NetHack from the terminal and keeps notes in `notebook/`. The fake screen is tests only and cannot write that notebook. Live play is `npm run play` against `/usr/games/nethack` using `grok-4.6`, and each run prints the token cost the SDK reported. The notebook keeps claims that survive the screen, not a turn log. CI play publishes `notebook/` to `automation/nethack-notes` so the next play can read it before that pull request merges | `cd nethack-agent && npm test` (CI also runs `bash .github/scripts/publish-nethack-notes_test.sh`; the play job runs the real binary when `CURSOR_API_KEY` is set) |
 | `bun-image/` | bun compile + crane image (deno-image cousin; shell scripts, not a Go packager) | `bash bun-image/test.sh` (needs bun; crane for the image half) |
 | `inkbot-esp32/` | Rust/ESP-IDF firmware: poll `inkbot` Worker and signed GHCR OTA, or `APP=maze` for an offline maze on the same 7.5″ panel. Secrets in NVS (`make provision`). Agent guide: [`inkbot-esp32/AGENTS.md`](inkbot-esp32/AGENTS.md) | host lib tests + provision dry-run + Xtensa cross-build via `inkbot-esp32.yml`; publish + Cosign on `main` via `inkbot-esp32-publish.yml` |
+| `esp32-ble/` | Rust/ESP-IDF firmware: BLE GATT LED control for the iOS ESP32 BLE experiment. USB flash only. Agent guide: [`esp32-ble/AGENTS.md`](esp32-ble/AGENTS.md) | host protocol tests + Xtensa cross-build via `esp32-ble.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
 

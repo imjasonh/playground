@@ -19,9 +19,9 @@ is_rust_app() {
   fi
 
   # ESP32 firmware uses the espup Xtensa toolchain and ESP-IDF, so it cannot
-  # run through the generic stable-Rust job. inkbot-esp32.yml owns its host
-  # lib tests and Xtensa cross-build instead.
-  if [[ "$name" == "inkbot-esp32" ]]; then
+  # run through the generic stable-Rust job. inkbot-esp32.yml / esp32-ble.yml
+  # own those host lib tests and Xtensa cross-builds instead.
+  if [[ "$name" == "inkbot-esp32" || "$name" == "esp32-ble" ]]; then
     return 1
   fi
 

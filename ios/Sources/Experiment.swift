@@ -58,6 +58,7 @@ enum ExperimentCatalog {
         WigglecamExperiment.experiment,
         DoomFaceExperiment.experiment,
         NFCTagsExperiment.experiment,
+        ESP32BLEExperiment.experiment,
         FaceSwapExperiment.experiment,
     ]
 }

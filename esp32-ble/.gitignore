@@ -1,0 +1,7 @@
+/target
+/.embuild
+sdkconfig
+sdkconfig.old
+sdkconfig.defaults
+dependencies.lock
+.vscode/.browse.c_cpp.db*

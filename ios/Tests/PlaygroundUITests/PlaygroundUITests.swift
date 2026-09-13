@@ -37,7 +37,7 @@ final class PlaygroundUITests: XCTestCase {
     private func scrollLauncherUntilExists(
         _ element: XCUIElement,
         in app: XCUIApplication,
-        maxSwipes: Int = 8
+        maxSwipes: Int = 10
     ) -> Bool {
         if element.waitForExistence(timeout: 2) {
             return true
@@ -103,6 +103,10 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(
             scrollLauncherUntilExists(app.staticTexts["NFC Tags"], in: app),
             "NFC Tags should appear after scrolling the launcher"
+        )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["ESP32 BLE"], in: app),
+            "ESP32 BLE should appear after scrolling the launcher"
         )
     }
 
@@ -288,6 +292,23 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["nfcAvailabilityBanner"].waitForExistence(timeout: 3)
             || app.staticTexts["NFC reader ready"].waitForExistence(timeout: 3)
             || app.staticTexts["NFC needs a physical iPhone. The Simulator cannot scan tags."].waitForExistence(timeout: 3))
+    }
+
+    func testESP32BLEExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("esp32-ble", title: "ESP32 BLE", in: app)
+
+        XCTAssertTrue(app.navigationBars["ESP32 BLE"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["esp32BleScanButton"].waitForExistence(timeout: 8)
+            || app.otherElements["esp32BleScanButton"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["esp32BleStatusMessage"].waitForExistence(timeout: 8)
+            || app.otherElements["esp32BleStatusMessage"].waitForExistence(timeout: 3)
+            || app.staticTexts["Flash esp32-ble, then scan."].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["esp32BleAvailabilityBanner"].waitForExistence(timeout: 8)
+            || app.otherElements["esp32BleAvailabilityBanner"].waitForExistence(timeout: 3)
+            || app.staticTexts["Bluetooth is on."].waitForExistence(timeout: 3)
+            || app.staticTexts["BLE needs a physical iPhone. The Simulator cannot talk to an ESP32."].waitForExistence(timeout: 3))
     }
 
     func testFaceSwapExperimentOpens() {
