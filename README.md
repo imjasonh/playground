@@ -82,6 +82,9 @@ them:
   ESP32 + 7.5″ panel: poll `inkbot` every minute, signed OTA from GHCR
   after a USB NVS provision, or flash `APP=maze` for an offline maze that
   partial-refreshes a correct solve.
+- **[`esp32-ble/`](esp32-ble/)** — Rust/ESP-IDF firmware that advertises as
+  PlaygroundBLE. The Playground iOS **ESP32 BLE** experiment writes LED
+  commands and displays status notifications.
 - **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare
   Workers, in Rust: repositories in R2, refs in Durable Objects, plus
   file/tree/blame APIs and streaming pack ingest.

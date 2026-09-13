@@ -64,6 +64,10 @@ final class ExperimentCatalogTests: XCTestCase {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "nfc-tags" })
     }
 
+    func testIncludesESP32BLE() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "esp32-ble" })
+    }
+
     func testIncludesDeviceAgent() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "device-agent" })
     }

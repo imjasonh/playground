@@ -60,6 +60,7 @@ ios/
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
 | `doom-face` | Doom Face | Front camera + TrueDepth; stamp your face onto doomguy's sheet and export a GIF |
 | `nfc-tags` | NFC Tags | In-app Core NFC tag read/write (NDEF text/URL, blank NTAGs); needs NFC Tag Reading capability bootstrap |
+| `esp32-ble` | ESP32 BLE | In-app Core Bluetooth central for `esp32-ble/` firmware; no extra Bundle ID |
 | `face-swap` | Face Swap | On-device model chooses a targeted edit. The rest of the photo stays as it was. |
 
 ### Ride Monitor
@@ -352,6 +353,14 @@ second NFC session after you remove and re-present the tag. Success means the
 chip bytes matched, not only a same-session Core NFC soft view. Broader NFC
 Tools features (lock bits, more record types) can build on the same Tag Reader
 session.
+
+### ESP32 BLE
+
+Scan for a nearby board flashed with [`esp32-ble/`](../esp32-ble/), connect,
+write LED commands (`led on`, `stop`, or the blink-speed slider), and show the
+status line the firmware notifies. Needs `NSBluetoothAlwaysUsageDescription` only;
+Core Bluetooth central mode is not an App ID capability, so no signing
+bootstrap. The Simulator opens the UI but cannot see a real ESP32.
 
 ### Face Swap
 

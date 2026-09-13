@@ -1,0 +1,47 @@
+[package]
+name = "esp32-ble"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "ESP32 firmware: BLE GATT LED control for the Playground iOS experiment"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+name = "esp32_ble"
+path = "src/lib.rs"
+
+[[bin]]
+name = "esp32-ble"
+path = "src/main.rs"
+harness = false
+required-features = ["firmware"]
+
+[features]
+default = []
+# Device firmware (esp-idf HAL + NimBLE). Host `cargo test` leaves this off.
+firmware = []
+
+[target.'cfg(target_os = "espidf")'.dependencies]
+anyhow = "1"
+esp-idf-svc = { version = "0.52", features = ["std", "native", "binstart"] }
+esp32-nimble = "0.12"
+log = "0.4"
+
+[build-dependencies]
+embuild = { version = "0.33", features = ["espidf"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[lints.rust]
+unused = "deny"

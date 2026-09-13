@@ -119,6 +119,7 @@ targets:
         NSHealthShareUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
         NSHealthUpdateUsageDescription: Ride Monitor uses HealthKit so the Apple Watch companion can stay active during a ride and record heart rate, energy, Watch distance, and cycling cadence/speed/power when a sensor is paired. GPS and jolt data stay in the app; the Watch workout is also saved to Health.
         NFCReaderUsageDescription: NFC Tags reads and writes NDEF text and URL payloads on nearby NFC tags.
+        NSBluetoothAlwaysUsageDescription: ESP32 BLE scans for a nearby PlaygroundBLE board so you can send LED commands and read status.
         CFBundleURLTypes:
           - CFBundleURLName: io.github.imjasonh.playground.device-agent
             CFBundleTypeRole: Editor

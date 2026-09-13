@@ -1,0 +1,141 @@
+# Host tests + Xtensa cross-build for the Playground BLE firmware.
+#
+# esp32-ble/ is excluded from the shared Rust job in test.yml (stable
+# Linux Cargo cannot build xtensa-esp32-espidf). This workflow always runs on
+# PRs/pushes. Expensive jobs always report a status (so they can be required
+# checks) but no-op successfully when discovery finds no firmware changes —
+# same idea as inkbot-esp32.yml / ios.yml, without job-level `if:` skips that
+# leave required checks pending.
+
+name: esp32-ble
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  workflow_dispatch: {}
+
+concurrency:
+  group: esp32-ble-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  discover:
+    name: Discover
+    runs-on: ubuntu-latest
+    outputs:
+      esp32_ble: ${{ steps.discover.outputs.esp32_ble }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Discover changed esp32-ble firmware
+        id: discover
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo 'esp32_ble=["esp32-ble"]' >> "$GITHUB_OUTPUT"
+            echo "Manual run: testing esp32-ble."
+            exit 0
+          fi
+          bash .github/scripts/discover-changed-apps.sh
+
+  host:
+    name: Host lib tests
+    needs: discover
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate
+        id: gate
+        run: |
+          if [ "${{ needs.discover.outputs.esp32_ble }}" = '[]' ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No esp32-ble changes; host tests no-op."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+        if: steps.gate.outputs.run == 'true'
+
+      - name: Install Rust 1.88
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update \
+            --component clippy --component rustfmt
+          rustup default 1.88.0
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        if: steps.gate.outputs.run == 'true'
+        with:
+          workspaces: esp32-ble
+          shared-key: esp32-ble-host
+
+      - name: Format, lint, and test (host)
+        if: steps.gate.outputs.run == 'true'
+        working-directory: esp32-ble
+        run: |
+          cargo fmt --check
+          cargo clippy --lib --locked -- -D warnings
+          make test
+
+  firmware:
+    name: Cross-build firmware
+    needs: discover
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Gate
+        id: gate
+        run: |
+          if [ "${{ needs.discover.outputs.esp32_ble }}" = '[]' ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No esp32-ble changes; firmware build no-op."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+        if: steps.gate.outputs.run == 'true'
+
+      - name: Install native build tools
+        if: steps.gate.outputs.run == 'true'
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Setup uv
+        if: steps.gate.outputs.run == 'true'
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10
+
+      - name: Setup Xtensa toolchain
+        if: steps.gate.outputs.run == 'true'
+        uses: esp-rs/xtensa-toolchain@ec6d36527049a7f4fb2cb0c1a644668c1bb8a2a4 # v1.7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          default: true
+          buildtargets: esp32
+          ldproxy: true
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        if: steps.gate.outputs.run == 'true'
+        with:
+          workspaces: esp32-ble
+          shared-key: esp32-ble-firmware
+
+      - name: Build firmware
+        if: steps.gate.outputs.run == 'true'
+        working-directory: esp32-ble
+        run: make build
