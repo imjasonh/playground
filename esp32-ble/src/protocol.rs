@@ -48,11 +48,22 @@ pub struct Status {
 }
 
 /// Mutable LED / blink bookkeeping shared by the GATT write path and the loop.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceState {
     pub led_on: bool,
     pub blink_period_ms: Option<u32>,
     pub last_command: String,
+}
+
+impl Default for DeviceState {
+    /// Boot blinking at 1 s so the board is visible before the first write.
+    fn default() -> Self {
+        Self {
+            led_on: true,
+            blink_period_ms: Some(1_000),
+            last_command: String::new(),
+        }
+    }
 }
 
 impl DeviceState {
@@ -318,6 +329,14 @@ mod tests {
             let encoded = encode_command(command);
             assert_eq!(parse_command(&encoded), Some(command), "{encoded}");
         }
+    }
+
+    #[test]
+    fn default_state_blinks() {
+        let state = DeviceState::default();
+        assert_eq!(state.blink_period_ms, Some(1000));
+        assert!(state.physical_led_on(0));
+        assert!(!state.physical_led_on(500));
     }
 
     #[test]

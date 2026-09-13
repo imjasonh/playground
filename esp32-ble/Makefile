@@ -82,6 +82,8 @@ check-firmware:
 
 BOOTLOADER := $(firstword $(wildcard $(FW_TARGET_DIR)/$(TARGET)/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
 
+# App-only write. Boards that still have inkbot's OTA table will not boot
+# this image; use `make flash-all` once to install a factory layout.
 flash: build
 	espflash flash --port $(PORT) $(BIN)
 

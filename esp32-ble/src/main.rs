@@ -30,7 +30,7 @@ fn main() -> Result<()> {
 
     let peripherals = Peripherals::take()?;
     let mut led = PinDriver::output(peripherals.pins.gpio2)?;
-    drive_led(&mut led, false)?;
+    drive_led(&mut led, true)?;
 
     let state = Arc::new(Mutex::new(DeviceState::default()));
     let started = Instant::now();
@@ -45,8 +45,11 @@ fn main() -> Result<()> {
             info!("update_conn_params: {err:?}");
         }
     });
-    server.on_disconnect(|_desc, reason| {
+    server.on_disconnect(move |_desc, reason| {
         info!("disconnected: {reason:?}");
+        if let Err(err) = advertising.lock().start() {
+            info!("restart advertising: {err:?}");
+        }
     });
 
     let service = server.create_service(uuid_or_panic(SERVICE_UUID));
