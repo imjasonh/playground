@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Browser demo for the Web Push backend on Cloudflare Workers: subscribe, unsubscribe, and send notifications end to end.">
+  <title>Web Push demo</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#4f46e5">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main>
+    <header class="hero">
+      <h1>Web Push demo</h1>
+      <p>
+        A browser front-end for the
+        <a href="https://github.com/imjasonh/playground/tree/main/web-push">Web Push backend</a>
+        (a Rust Cloudflare Worker). Point it at your deployed Worker, subscribe,
+        and send a notification to see the full round-trip work.
+      </p>
+    </header>
+
+    <section class="card">
+      <h2><span class="step">1</span> Connect to your Worker</h2>
+      <p class="hint">
+        The base URL of your deployed Worker, e.g.
+        <code>https://web-push-worker.your-name.workers.dev</code>.
+        It's saved in this browser and can be shared via <code>?api=</code>.
+      </p>
+      <div class="field">
+        <label for="api-base">Worker API base URL</label>
+        <input id="api-base" type="url" inputmode="url" autocomplete="off" spellcheck="false"
+               placeholder="https://web-push-worker.example.workers.dev">
+      </div>
+      <div class="row">
+        <button id="check-btn" type="button" class="secondary">Check connection</button>
+        <span class="status">Server: <span id="server-state" class="badge" data-state="unknown">unknown</span></span>
+      </div>
+      <p id="vapid-row" class="kv" hidden>VAPID public key: <code id="vapid-key"></code></p>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">2</span> Enable notifications</h2>
+      <p class="hint">The browser must grant permission before it can receive pushes.</p>
+      <div class="row">
+        <button id="permission-btn" type="button" class="secondary">Request permission</button>
+        <span class="status">Permission: <span id="perm-state" class="badge" data-state="unknown">unknown</span></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">3</span> Subscribe / unsubscribe</h2>
+      <p class="hint">
+        Subscribing registers the service worker, asks the push service for an
+        endpoint, and POSTs it to your Worker's <code>/subscribe</code>.
+      </p>
+      <div class="row">
+        <button id="subscribe-btn" type="button" class="primary">Subscribe</button>
+        <button id="unsubscribe-btn" type="button" class="secondary" disabled>Unsubscribe</button>
+        <span class="status">State: <span id="sub-state" class="badge" data-state="unknown">unknown</span></span>
+      </div>
+      <div id="sub-details" class="kv" hidden>
+        <p>Subscription id: <code id="sub-id"></code></p>
+        <p class="endpoint">Endpoint: <code id="sub-endpoint"></code></p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2><span class="step">4</span> Send a test notification</h2>
+      <p class="hint">
+        Posts to <code>/notify</code>. The Worker encrypts the payload and hands
+        it to the push service, which wakes the service worker.
+      </p>
+      <div class="grid">
+        <div class="field">
+          <label for="notify-title">Title</label>
+          <input id="notify-title" type="text" value="Hello from Web Push">
+        </div>
+        <div class="field">
+          <label for="notify-body">Body</label>
+          <input id="notify-body" type="text" value="It works end to end!">
+        </div>
+        <div class="field">
+          <label for="notify-urgency">Urgency</label>
+          <select id="notify-urgency">
+            <option value="">(default)</option>
+            <option value="very-low">very-low</option>
+            <option value="low">low</option>
+            <option value="normal">normal</option>
+            <option value="high">high</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="notify-ttl">TTL (seconds)</label>
+          <input id="notify-ttl" type="number" min="0" step="1" placeholder="server default">
+        </div>
+        <div class="field">
+          <label for="notify-topic">Topic (optional)</label>
+          <input id="notify-topic" type="text" placeholder="collapse key">
+        </div>
+      </div>
+      <label class="checkbox">
+        <input id="only-this-device" type="checkbox" checked>
+        Only notify this device (otherwise broadcast to every subscription)
+      </label>
+      <div class="row">
+        <button id="notify-btn" type="button" class="primary">Send notification</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Activity log</h2>
+        <button id="clear-log-btn" type="button" class="link">clear</button>
+      </div>
+      <div id="log" class="log" aria-live="polite"></div>
+    </section>
+
+    <section class="card">
+      <h2>Browser support</h2>
+      <ul class="support">
+        <li id="support-secure">Secure context (HTTPS) <span class="badge" data-state="unknown">?</span></li>
+        <li id="support-sw">Service workers <span class="badge" data-state="unknown">?</span></li>
+        <li id="support-push">Push API <span class="badge" data-state="unknown">?</span></li>
+        <li id="support-notification">Notifications <span class="badge" data-state="unknown">?</span></li>
+      </ul>
+      <p class="hint">
+        Web Push needs HTTPS (or <code>localhost</code>). On iOS, add this page to
+        the Home Screen first, then open it from there.
+      </p>
+    </section>
+  </main>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
