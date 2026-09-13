@@ -2,7 +2,7 @@
 
 Rust / ESP-IDF firmware that exposes a small GATT server for the Playground
 **ESP32 BLE** iOS experiment. The iPhone writes LED commands; the board
-notifies a status line and blinks GPIO 2.
+notifies a status line and blinks the usual DevKit LED pins.
 
 Read [`README.md`](README.md) for the flash loop and the on-wire format.
 
@@ -20,9 +20,10 @@ Read [`README.md`](README.md) for the flash loop and the on-wire format.
   in lockstep. Bump `FIRMWARE_ID` when the on-wire contract changes.
 - **No Wi-Fi, NVS secrets, or OTA.** This image is USB-flash only. Do not
   copy inkbot's provision / GHCR publish path here unless the product changes.
-- **LED pin is GPIO 2, active-high.** That matches most ESP32-DevKitC boards.
-  Change `LED_GPIO_LABEL` / `gpio2` / `LED_ACTIVE_HIGH` in `src/main.rs` if
-  the board you have is different.
+- **LED bank, not a single pin.** Inland ESP-WROOM-32 boards often have only
+  a power LED (D1) that firmware cannot drive. `src/main.rs` blinks the
+  common clone LED pins together (2, 4, 5, 13, 16, 18, 19, 21, 22, 23, 25,
+  26, 27, 32, 33). Narrow that list once a board's user LED is known.
 - **CI:** `esp32-ble.yml` always runs discover + host/firmware jobs (so they
   can be required checks) and no-ops when `esp32-ble/` is unchanged.
 

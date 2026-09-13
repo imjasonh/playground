@@ -16,21 +16,19 @@ use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::sys::esp_get_free_heap_size;
 use log::info;
 
-/// Onboard LED on most ESP32-DevKitC boards. Change this if your board differs.
-const LED_GPIO_LABEL: &str = "GPIO2";
-
-/// True when a high pin level turns the LED on.
-const LED_ACTIVE_HIGH: bool = true;
+/// GPIOs that cheap ESP-WROOM-32 DevKits put a user LED on. Inland boards
+/// often have only a power LED (D1), which no GPIO can drive.
+const LED_GPIO_LABEL: &str = "GPIO2/4/5/13/16/18/19/21/22/23/25/26/27/32/33";
 
 fn main() -> Result<()> {
     esp_idf_svc::sys::link_patches();
     esp_idf_svc::log::EspLogger::initialize_default();
 
-    info!("{FIRMWARE_ID} starting ({LED_GPIO_LABEL}, active_high={LED_ACTIVE_HIGH})");
+    info!("{FIRMWARE_ID} starting (LED bank {LED_GPIO_LABEL})");
 
     let peripherals = Peripherals::take()?;
-    let mut led = PinDriver::output(peripherals.pins.gpio2)?;
-    drive_led(&mut led, true)?;
+    let mut leds = led_bank(peripherals.pins)?;
+    drive_leds(&mut leds, true)?;
 
     let state = Arc::new(Mutex::new(DeviceState::default()));
     let started = Instant::now();
@@ -97,7 +95,7 @@ fn main() -> Result<()> {
         FreeRtos::delay_ms(50);
         let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
         let snapshot = state.lock().expect("state").clone();
-        drive_led(&mut led, snapshot.physical_led_on(elapsed_ms))?;
+        drive_leds(&mut leds, snapshot.physical_led_on(elapsed_ms))?;
 
         let line = format_status(&snapshot.to_status(elapsed_ms, heap_free()));
         let due = last_notify.elapsed().as_millis() >= 500;
@@ -109,13 +107,37 @@ fn main() -> Result<()> {
     }
 }
 
-// esp-idf-hal 0.46 uses PinDriver<'d, MODE>. The pin type is erased into MODE.
-fn drive_led(led: &mut PinDriver<'_, Output>, on: bool) -> Result<()> {
-    let level = if LED_ACTIVE_HIGH { on } else { !on };
-    if level {
-        led.set_high()?;
-    } else {
-        led.set_low()?;
+type LedPin<'a> = PinDriver<'a, Output>;
+
+fn led_bank(pins: esp_idf_svc::hal::gpio::Pins) -> Result<Vec<LedPin<'static>>> {
+    // Skip flash pins (6–11), UART0 (1, 3), boot straps we should not hold
+    // (0, 12), and input-only pins (34–39).
+    Ok(vec![
+        PinDriver::output(pins.gpio2)?,
+        PinDriver::output(pins.gpio4)?,
+        PinDriver::output(pins.gpio5)?,
+        PinDriver::output(pins.gpio13)?,
+        PinDriver::output(pins.gpio16)?,
+        PinDriver::output(pins.gpio18)?,
+        PinDriver::output(pins.gpio19)?,
+        PinDriver::output(pins.gpio21)?,
+        PinDriver::output(pins.gpio22)?,
+        PinDriver::output(pins.gpio23)?,
+        PinDriver::output(pins.gpio25)?,
+        PinDriver::output(pins.gpio26)?,
+        PinDriver::output(pins.gpio27)?,
+        PinDriver::output(pins.gpio32)?,
+        PinDriver::output(pins.gpio33)?,
+    ])
+}
+
+fn drive_leds(leds: &mut [LedPin<'_>], on: bool) -> Result<()> {
+    for led in leds {
+        if on {
+            led.set_high()?;
+        } else {
+            led.set_low()?;
+        }
     }
     Ok(())
 }

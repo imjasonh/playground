@@ -67,12 +67,14 @@ make flash-all
 
 That erases flash and writes this crate's bootloader plus a factory partition
 table. After reset, nRF Connect lists **PlaygroundBLE** and the two
-characteristics. The LED on GPIO 2 blinks every 1 s until you send a command.
-The iOS experiment scans for the service UUID. Restoring inkbot later is
-`cd ../inkbot-esp32 && make bootstrap`.
+characteristics. The firmware blinks the usual DevKit LED pins every 1 s
+until you send a command. The iOS experiment scans for the service UUID.
+Restoring inkbot later is `cd ../inkbot-esp32 && make bootstrap`.
 
-If the LED does not light, your board may use a different pin or an
-active-low LED. Edit `gpio2` and `LED_ACTIVE_HIGH` in `src/main.rs`.
+Inland ESP-WROOM-32 boards often have only D1, a power LED. If nothing
+blinks, the board has no user LED. Wire an LED plus resistor to a header
+pin in the bank (GPIO 2, 4, 5, 13, 16, 18, 19, 21, 22, 23, 25, 26, 27, 32,
+or 33).
 
 ## Tests
 
