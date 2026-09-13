@@ -72,6 +72,20 @@ final class ESP32BLEProtocolTests: XCTestCase {
         XCTAssertEqual(ESP32BLEProtocol.parseStatus(line), status)
     }
 
+    func testClampSliderPeriodMs() {
+        XCTAssertEqual(ESP32BLEProtocol.clampSliderPeriodMs(0), 100)
+        XCTAssertEqual(ESP32BLEProtocol.clampSliderPeriodMs(50), 100)
+        XCTAssertEqual(ESP32BLEProtocol.clampSliderPeriodMs(1000), 1000)
+        XCTAssertEqual(ESP32BLEProtocol.clampSliderPeriodMs(1234), 1250)
+        XCTAssertEqual(ESP32BLEProtocol.clampSliderPeriodMs(9_999), 5_000)
+    }
+
+    func testBlinkPeriodLabel() {
+        XCTAssertEqual(ESP32BLEProtocol.blinkPeriodLabel(1000), "every 1s")
+        XCTAssertEqual(ESP32BLEProtocol.blinkPeriodLabel(500), "every 0.5s")
+        XCTAssertEqual(ESP32BLEProtocol.blinkPeriodLabel(150), "every 0.15s")
+    }
+
     func testUUIDLiteralsMatchFirmware() {
         XCTAssertEqual(
             ESP32BLEProtocol.serviceUUIDString.lowercased(),

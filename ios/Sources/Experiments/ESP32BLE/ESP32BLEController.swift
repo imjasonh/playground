@@ -29,6 +29,7 @@ final class ESP32BLEController: NSObject, ObservableObject {
     @Published var status: ESP32BLEStatus?
     @Published var statusLog: [String] = []
     @Published var commandDraft = "blink every 1s"
+    @Published var blinkPeriodMs = Double(ESP32BLEProtocol.sliderDefaultBlinkMs)
     @Published var statusMessage = "Flash esp32-ble, then scan."
 
     private var central: CBCentralManager?
@@ -36,6 +37,8 @@ final class ESP32BLEController: NSObject, ObservableObject {
     private var connectedPeripheral: CBPeripheral?
     private var commandCharacteristic: CBCharacteristic?
     private var statusCharacteristic: CBCharacteristic?
+    private var blinkSendTask: Task<Void, Never>?
+    private var isAdjustingBlinkSlider = false
 
     private let serviceUUID = CBUUID(string: ESP32BLEProtocol.serviceUUIDString)
     private let commandUUID = CBUUID(string: ESP32BLEProtocol.commandUUIDString)
@@ -72,6 +75,7 @@ final class ESP32BLEController: NSObject, ObservableObject {
     }
 
     func stop() {
+        blinkSendTask?.cancel()
         disconnect()
         central?.stopScan()
         phase = .idle
@@ -112,6 +116,7 @@ final class ESP32BLEController: NSObject, ObservableObject {
     }
 
     func disconnect() {
+        blinkSendTask?.cancel()
         if let central, let peripheral = connectedPeripheral {
             central.cancelPeripheralConnection(peripheral)
         }
@@ -126,6 +131,18 @@ final class ESP32BLEController: NSObject, ObservableObject {
         sendRaw(ESP32BLEProtocol.encode(command))
     }
 
+    func updateBlinkPeriodMs(_ raw: Double) {
+        blinkPeriodMs = Double(ESP32BLEProtocol.clampSliderPeriodMs(raw))
+        scheduleBlinkSend()
+    }
+
+    func blinkSliderEditingChanged(_ editing: Bool) {
+        isAdjustingBlinkSlider = editing
+        if !editing {
+            flushBlinkSend()
+        }
+    }
+
     func sendDraft() {
         let raw = commandDraft.trimmingCharacters(in: .whitespacesAndNewlines)
         if raw.isEmpty {
@@ -133,6 +150,35 @@ final class ESP32BLEController: NSObject, ObservableObject {
             return
         }
         sendRaw(raw)
+    }
+
+    private func scheduleBlinkSend() {
+        blinkSendTask?.cancel()
+        blinkSendTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard let self, !Task.isCancelled else {
+                return
+            }
+            self.send(.blink(periodMs: UInt32(self.blinkPeriodMs)))
+        }
+    }
+
+    private func flushBlinkSend() {
+        blinkSendTask?.cancel()
+        blinkSendTask = nil
+        send(.blink(periodMs: UInt32(blinkPeriodMs)))
+    }
+
+    private func adoptStatus(_ parsed: ESP32BLEStatus?) {
+        status = parsed
+        guard !isAdjustingBlinkSlider, let parsed, parsed.blinkMs > 0 else {
+            return
+        }
+        if parsed.blinkMs >= ESP32BLEProtocol.sliderMinBlinkMs,
+           parsed.blinkMs <= ESP32BLEProtocol.sliderMaxBlinkMs
+        {
+            blinkPeriodMs = Double(parsed.blinkMs)
+        }
     }
 
     private func sendRaw(_ raw: String) {
@@ -320,7 +366,7 @@ extension ESP32BLEController: CBPeripheralDelegate {
         }
         let parsed = ESP32BLEProtocol.parseStatus(line)
         Task { @MainActor in
-            self.status = parsed
+            self.adoptStatus(parsed)
             self.recordStatusLine(line)
         }
     }

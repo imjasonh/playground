@@ -27,6 +27,32 @@ enum ESP32BLEProtocol {
     static let minBlinkMs: UInt32 = 50
     static let maxBlinkMs: UInt32 = 60_000
 
+    /// Fastest period the blink slider offers (firmware minimum is 50 ms).
+    static let sliderMinBlinkMs: UInt32 = 100
+
+    /// Slowest period the blink slider offers. The wire format still accepts
+    /// up to `maxBlinkMs` from the text field.
+    static let sliderMaxBlinkMs: UInt32 = 5_000
+
+    static let sliderBlinkStepMs: UInt32 = 50
+
+    static let sliderDefaultBlinkMs: UInt32 = 1_000
+
+    /// Snap a slider value onto the 100 ms…5 s, 50 ms-step grid.
+    static func clampSliderPeriodMs(_ raw: Double) -> UInt32 {
+        let lower = Double(sliderMinBlinkMs)
+        let upper = Double(sliderMaxBlinkMs)
+        let step = Double(sliderBlinkStepMs)
+        let clamped = min(max(raw, lower), upper)
+        let snapped = (clamped / step).rounded() * step
+        return UInt32(snapped.rounded())
+    }
+
+    /// Spoken and on-screen value for the blink slider, such as `every 1s`.
+    static func blinkPeriodLabel(_ periodMs: UInt32) -> String {
+        "every \(formatSeconds(periodMs))s"
+    }
+
     /// Parse a command written to the command characteristic.
     static func parseCommand(_ raw: String) -> ESP32BLECommand? {
         let parts = raw.split(whereSeparator: \.isWhitespace).map(String.init)

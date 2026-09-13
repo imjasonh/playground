@@ -309,6 +309,14 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["esp32BleAvailabilityBanner"].waitForExistence(timeout: 3)
             || app.staticTexts["Bluetooth is on."].waitForExistence(timeout: 3)
             || app.staticTexts["BLE needs a physical iPhone. The Simulator cannot talk to an ESP32."].waitForExistence(timeout: 3))
+        if !app.sliders["esp32BleBlinkSlider"].waitForExistence(timeout: 2) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(app.sliders["esp32BleBlinkSlider"].waitForExistence(timeout: 8)
+            || app.otherElements["esp32BleBlinkSlider"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["esp32BleBlinkValue"].waitForExistence(timeout: 8)
+            || app.otherElements["esp32BleBlinkValue"].waitForExistence(timeout: 3)
+            || app.staticTexts["every 1s"].waitForExistence(timeout: 3))
     }
 
     func testFaceSwapExperimentOpens() {

@@ -125,14 +125,12 @@ struct ESP32BLEView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Commands")
                 .font(.subheadline.bold())
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            HStack(spacing: 10) {
                 commandButton("LED on", systemImage: "lightbulb.fill", command: .ledOn)
                 commandButton("LED off", systemImage: "lightbulb", command: .ledOff)
-                commandButton("Blink 0.5s", systemImage: "metronome", command: .blink(periodMs: 500))
-                commandButton("Blink 1s", systemImage: "metronome.fill", command: .blink(periodMs: 1000))
-                commandButton("Blink 2s", systemImage: "clock", command: .blink(periodMs: 2000))
-                commandButton("Stop", systemImage: "stop.fill", command: .stop)
             }
+            commandButton("Stop", systemImage: "stop.fill", command: .stop)
+            blinkSlider
             HStack(spacing: 8) {
                 TextField("blink every 1s", text: $controller.commandDraft)
                     .textFieldStyle(.roundedBorder)
@@ -151,6 +149,36 @@ struct ESP32BLEView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .disabled(controller.phase != .connected)
+    }
+
+    private var blinkSlider: some View {
+        let periodMs = ESP32BLEProtocol.clampSliderPeriodMs(controller.blinkPeriodMs)
+        let valueLabel = ESP32BLEProtocol.blinkPeriodLabel(periodMs)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Blink")
+                    .font(.subheadline.bold())
+                Spacer()
+                Text(valueLabel)
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("esp32BleBlinkValue")
+            }
+            Slider(
+                value: Binding(
+                    get: { controller.blinkPeriodMs },
+                    set: { controller.updateBlinkPeriodMs($0) }
+                ),
+                in: Double(ESP32BLEProtocol.sliderMinBlinkMs)...Double(ESP32BLEProtocol.sliderMaxBlinkMs),
+                step: Double(ESP32BLEProtocol.sliderBlinkStepMs)
+            ) { editing in
+                controller.blinkSliderEditingChanged(editing)
+            }
+            .frame(minHeight: 44)
+            .accessibilityLabel("Blink speed")
+            .accessibilityValue(valueLabel)
+            .accessibilityIdentifier("esp32BleBlinkSlider")
+        }
     }
 
     private func commandButton(_ title: String, systemImage: String, command: ESP32BLECommand) -> some View {
