@@ -11,7 +11,7 @@ use esp32_ble::protocol::{
 use esp32_nimble::utilities::BleUuid;
 use esp32_nimble::{uuid128, BLEAdvertisementData, BLEDevice, NimbleProperties};
 use esp_idf_svc::hal::delay::FreeRtos;
-use esp_idf_svc::hal::gpio::{Output, OutputPin, PinDriver};
+use esp_idf_svc::hal::gpio::{Output, PinDriver};
 use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::sys::esp_get_free_heap_size;
 use log::info;
@@ -106,7 +106,8 @@ fn main() -> Result<()> {
     }
 }
 
-fn drive_led(led: &mut PinDriver<'_, impl OutputPin, Output>, on: bool) -> Result<()> {
+// esp-idf-hal 0.46 uses PinDriver<'d, MODE>. The pin type is erased into MODE.
+fn drive_led(led: &mut PinDriver<'_, Output>, on: bool) -> Result<()> {
     let level = if LED_ACTIVE_HIGH { on } else { !on };
     if level {
         led.set_high()?;
