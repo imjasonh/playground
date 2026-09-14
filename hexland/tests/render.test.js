@@ -13,6 +13,7 @@ import {
   pointInPolygon,
   project,
   rotateY,
+  screenToWorld,
   viewOrigin,
 } from "../src/render.js";
 
@@ -106,10 +107,27 @@ test("a raised neighbor projects as a sloped top, not a flat step", () => {
   assert.ok(Math.max(...ys) - Math.min(...ys) > 8);
 });
 
-test("fitZoom shrinks to keep a large map on screen", () => {
+test("fitZoom keeps hexes large enough to paint on a big map", () => {
   const terrain = createTerrain({ radius: 22 });
   const camera = createCamera();
   camera.zoom = 2;
   fitZoom(terrain, camera, { width: 800, height: 600 });
-  assert.ok(camera.zoom < 1);
+  assert.ok(camera.zoom >= 0.55);
+  assert.ok(camera.zoom <= 1.4);
+  assert.ok(camera.zoom < 2);
+});
+
+test("screenToWorld inverts project on the ground plane", () => {
+  const camera = createCamera();
+  camera.yaw = 0.2;
+  camera.elevation = 0.5;
+  camera.zoom = 1;
+  camera.panX = 0;
+  camera.panY = 0;
+  const view = { width: 800, height: 600 };
+  const origin = viewOrigin(view.width, view.height);
+  const screen = project(40, 0, -20, camera, origin);
+  const world = screenToWorld(camera, screen.x, screen.y, view, 0);
+  assert.ok(Math.abs(world.x - 40) < 1e-6);
+  assert.ok(Math.abs(world.z + 20) < 1e-6);
 });

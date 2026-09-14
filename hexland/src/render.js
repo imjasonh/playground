@@ -1,6 +1,7 @@
-import { axialToWorld, hexCornerWorld, hexKey } from "./hex.js";
+import { HEX_DIRS, axialToWorld, hexAdd, hexCornerWorld, hexKey, worldToAxial } from "./hex.js";
 import {
   getVertexHeight,
+  hasCell,
   hasRoad,
   hexIsUnderwater,
   hexMaxHeight,
@@ -22,10 +23,10 @@ export function createCamera() {
   return {
     yaw: 0.38,
     elevation: 0.54,
-    zoom: 0.62,
+    zoom: 0.95,
     panX: 0,
     panY: 0,
-    hexSize: 20,
+    hexSize: 22,
     heightScale: 12,
   };
 }
@@ -108,23 +109,51 @@ export function pointInPolygon(x, y, points) {
   return inside;
 }
 
-function hexScreenRadius(camera) {
-  return camera.hexSize * camera.zoom * 1.35 + 10;
+export function screenToWorld(camera, x, y, view, height = 0) {
+  const origin = viewOrigin(view.width, view.height);
+  const sinE = Math.sin(camera.elevation);
+  const cosE = Math.cos(camera.elevation);
+  const rx = (x - origin.x - camera.panX) / camera.zoom;
+  const ry = (y - origin.y - camera.panY) / camera.zoom;
+  if (Math.abs(sinE) < 1e-4) {
+    const rotated = rotateY(rx, 0, -camera.yaw);
+    return { x: rotated.x, z: rotated.z };
+  }
+  const rotatedX = rx;
+  const rotatedZ = (ry + height * cosE) / sinE;
+  const cos = Math.cos(camera.yaw);
+  const sin = Math.sin(camera.yaw);
+  return {
+    x: rotatedX * cos + rotatedZ * sin,
+    z: -rotatedX * sin + rotatedZ * cos,
+  };
+}
+
+function pickCandidates(terrain, camera, x, y, view) {
+  const seen = new Set();
+  const cells = [];
+  const heights = [0, 2, 4, 6, 8, 10, 12];
+  for (const height of heights) {
+    const world = screenToWorld(camera, x, y, view, height * camera.heightScale);
+    const axial = worldToAxial(world.x, world.z, camera.hexSize);
+    for (const dir of [{ q: 0, r: 0 }, ...HEX_DIRS]) {
+      const cell = hexAdd(axial, dir);
+      const key = hexKey(cell.q, cell.r);
+      if (seen.has(key) || !hasCell(terrain, cell.q, cell.r)) {
+        continue;
+      }
+      seen.add(key);
+      cells.push(cell);
+    }
+  }
+  cells.sort((a, b) => cellGroundDepth(b.q, b.r, camera) - cellGroundDepth(a.q, a.r, camera));
+  return cells;
 }
 
 export function pickCell(terrain, camera, x, y, view) {
   const origin = viewOrigin(view.width, view.height);
-  const ordered = [...terrain.cells].sort(
-    (a, b) => cellGroundDepth(b.q, b.r, camera) - cellGroundDepth(a.q, a.r, camera),
-  );
-  const reach = hexScreenRadius(camera);
-  for (const cell of ordered) {
-    const world = axialToWorld(cell.q, cell.r, camera.hexSize);
-    const meanY = hexMeanHeight(terrain, cell.q, cell.r) * camera.heightScale;
-    const center = project(world.x, meanY, world.z, camera, origin);
-    if (Math.hypot(center.x - x, center.y - y) > reach + 28) {
-      continue;
-    }
+  const candidates = pickCandidates(terrain, camera, x, y, view);
+  for (const cell of candidates) {
     const top = hexTopPoints(terrain, cell.q, cell.r, camera, origin);
     if (pointInPolygon(x, y, top)) {
       return { q: cell.q, r: cell.r, part: "top" };
@@ -140,6 +169,9 @@ export function pickCell(terrain, camera, x, y, view) {
         return { q: cell.q, r: cell.r, part: "side" };
       }
     }
+  }
+  if (candidates.length > 0) {
+    return { q: candidates[0].q, r: candidates[0].r, part: "top" };
   }
   return null;
 }
@@ -175,9 +207,9 @@ export function resizeCanvas(canvas, context) {
 }
 
 export function fitZoom(terrain, camera, view) {
-  const span = (terrain.radius * 2 + 1) * camera.hexSize * 1.55;
-  const next = Math.min(view.width / span, view.height / span) * 1.08;
-  camera.zoom = clamp(next, ZOOM_MIN, ZOOM_MAX);
+  const visible = Math.min(18, terrain.radius * 2 + 1);
+  const span = visible * camera.hexSize * Math.sqrt(3);
+  camera.zoom = clamp(Math.min(view.width / span, view.height / (span * 0.72)), 0.55, 1.4);
 }
 
 function mix(a, b, t) {
@@ -228,6 +260,14 @@ function flipToward(normal, x, y, z) {
     return { x: -normal.x, y: -normal.y, z: -normal.z };
   }
   return normal;
+}
+
+function softenNormal(normal, slope) {
+  if (slope > 1) {
+    return normal;
+  }
+  const t = 0.62;
+  return normalize(normal.x * (1 - t), normal.y * (1 - t) + t, normal.z * (1 - t));
 }
 
 function shade(color, normal) {
@@ -318,43 +358,46 @@ function cellOnScreen(q, r, camera, origin, view) {
   return mid.x >= -pad && mid.x <= view.width + pad && mid.y >= -pad && mid.y <= view.height + pad;
 }
 
-function drawRoad(context, terrain, q, r, camera, origin, topNormal) {
+function insetPoly(points, center, t) {
+  return points.map((point) => ({
+    x: center.x + (point.x - center.x) * t,
+    y: center.y + (point.y - center.y) * t,
+  }));
+}
+
+function drawRoad(context, terrain, q, r, camera, origin, top, topNormal) {
   const here = hexCenterWorld(terrain, q, r, camera);
   const hereScreen = project(here.x, here.y + 0.8, here.z, camera, origin);
-  const width = camera.hexSize * camera.zoom * 0.4;
-  const color = rgb(shade([166, 140, 98], topNormal));
-  const edge = rgb(shade([122, 98, 68], topNormal));
+  const width = Math.max(7, camera.hexSize * camera.zoom * 0.58);
+  const color = rgb(shade([176, 148, 104], topNormal));
+  const pad = rgb(shade([138, 110, 76], topNormal));
+  context.fillStyle = color;
+  fillPoly(context, insetPoly(top, hereScreen, 0.58));
+  context.fill();
   context.lineCap = "round";
   context.lineJoin = "round";
-  const links = roadNeighbors(terrain, q, r);
-  if (links.length === 0) {
-    context.beginPath();
-    context.fillStyle = color;
-    context.strokeStyle = edge;
-    context.lineWidth = Math.max(1, width * 0.18);
-    context.arc(hereScreen.x, hereScreen.y, width * 0.42, 0, Math.PI * 2);
-    context.fill();
-    context.stroke();
-    return;
-  }
-  context.strokeStyle = color;
+  context.strokeStyle = pad;
   context.lineWidth = width;
   context.beginPath();
   context.moveTo(hereScreen.x, hereScreen.y);
-  for (const next of links) {
+  for (const next of roadNeighbors(terrain, q, r)) {
     const there = hexCenterWorld(terrain, next.q, next.r, camera);
-    const midX = (here.x + there.x) / 2;
-    const midY = (here.y + there.y) / 2 + 0.8;
-    const midZ = (here.z + there.z) / 2;
-    const mid = project(midX, midY, midZ, camera, origin);
+    const mid = project((here.x + there.x) / 2, (here.y + there.y) / 2 + 0.8, (here.z + there.z) / 2, camera, origin);
     context.lineTo(mid.x, mid.y);
     context.moveTo(hereScreen.x, hereScreen.y);
   }
   context.stroke();
+  context.strokeStyle = color;
+  context.lineWidth = width * 0.62;
   context.beginPath();
-  context.fillStyle = color;
-  context.arc(hereScreen.x, hereScreen.y, width * 0.36, 0, Math.PI * 2);
-  context.fill();
+  context.moveTo(hereScreen.x, hereScreen.y);
+  for (const next of roadNeighbors(terrain, q, r)) {
+    const there = hexCenterWorld(terrain, next.q, next.r, camera);
+    const mid = project((here.x + there.x) / 2, (here.y + there.y) / 2 + 0.8, (here.z + there.z) / 2, camera, origin);
+    context.lineTo(mid.x, mid.y);
+    context.moveTo(hereScreen.x, hereScreen.y);
+  }
+  context.stroke();
 }
 
 function drawHex(context, terrain, cell, camera, origin, hoverKey, brushKeys) {
@@ -406,14 +449,14 @@ function drawHex(context, terrain, cell, camera, origin, hoverKey, brushKeys) {
     context.fill();
   }
 
-  const topNormal = flipToward(newellNormal(topWorld), 0, 1, 0);
+  const topNormal = softenNormal(flipToward(newellNormal(topWorld), 0, 1, 0), slope);
   const color = shade(grassColor(mean, slope, wet), topNormal);
   context.fillStyle = rgb(hovered || inBrush ? mix(color, [255, 236, 160], 0.28) : color);
   fillPoly(context, top);
   context.fill();
 
   if (hasRoad(terrain, q, r)) {
-    drawRoad(context, terrain, q, r, camera, origin, topNormal);
+    drawRoad(context, terrain, q, r, camera, origin, top, topNormal);
   }
 
   if (hovered || inBrush) {
