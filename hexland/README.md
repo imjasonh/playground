@@ -24,7 +24,7 @@ a global plane; anything below it floods.
 - **Tile** edits one hex. **Patch** edits the hex and its neighbors.
 - To pan without rotating, hold Alt or Space and drag. Middle-click also
   pans. Ctrl-drag or Command-drag orbits. Two fingers pan and pinch-zoom.
-- **Undo** and **Redo** sit at the top of the toolbar.
+- Tools sit in the toolbar above the map.
   `Ctrl`+`Z` undoes. `Ctrl`+`Shift`+`Z` or `Ctrl`+`Y` redoes.
 - Scroll zooms. Shift-scroll spins. Alt-scroll tilts.
 - **Q** / **E** spin. **R** / **F** tilt. **1**–**6** pick tools.
