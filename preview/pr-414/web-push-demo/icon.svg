@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" role="img" aria-label="Web Push bell">
+  <rect width="192" height="192" rx="40" fill="#4f46e5"/>
+  <path fill="#ffffff" d="M96 40a13 13 0 0 1 13 13v4.6a40 40 0 0 1 27 37.8V120l11 16a6 6 0 0 1-5 9.4H50a6 6 0 0 1-5-9.4l11-16V95.4a40 40 0 0 1 27-37.8V53a13 13 0 0 1 13-13Z"/>
+  <path fill="#ffffff" d="M80 156a16 16 0 0 0 32 0Z"/>
+</svg>
