@@ -291,7 +291,7 @@ function shade(color, normal) {
 function grassColor(height, slope, wet) {
   let color;
   if (isSnowHeight(height)) {
-    color = mix([196, 196, 118], [232, 228, 220], clamp((height - SNOW_HEIGHT) / 4, 0, 1));
+    color = mix([220, 222, 216], [240, 240, 236], clamp((height - SNOW_HEIGHT) / 4, 0, 1));
   } else if (height < 0) {
     color = mix([78, 96, 58], [62, 122, 48], clamp((height - MIN_HEIGHT) / -MIN_HEIGHT, 0, 1));
   } else {

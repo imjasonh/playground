@@ -655,7 +655,12 @@ fit();
 afterPaint(() => {
   terrain = createTerrain();
   sculptPreview(terrain);
-  setBusy(false);
+  view = resizeCanvas(canvas, context);
+  if (!didFitZoom) {
+    fitZoom(terrain, camera, view);
+    didFitZoom = true;
+  }
+  drawTerrain(context, terrain, camera, view, highlightState());
   formatReadout();
-  fit();
+  setBusy(false);
 });
