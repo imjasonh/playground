@@ -355,28 +355,26 @@ export function sculptPreview(terrain) {
   flattenTerrain(terrain, DEFAULT_BASE);
   terrain.roads.clear();
   terrain.waterLevel = DEFAULT_WATER;
-  const span = Math.max(6, terrain.radius);
-  liftCone(
-    terrain,
-    { q: -Math.round(span * 0.36), r: -Math.round(span * 0.18) },
-    Math.round(span * 0.36),
-    10,
-  );
-  liftCone(
-    terrain,
-    { q: Math.round(span * 0.32), r: -Math.round(span * 0.4) },
-    Math.round(span * 0.28),
-    8,
-  );
-  liftCone(
-    terrain,
-    { q: Math.round(span * 0.18), r: Math.round(span * 0.36) },
-    Math.round(span * 0.22),
-    6,
-  );
-  const lake = { q: Math.round(span * 0.08), r: Math.round(span * 0.14) };
-  const lakeReach = Math.max(3, Math.round(span * 0.18));
-  const lakeCore = Math.max(1, Math.floor(lakeReach / 3));
+  liftCone(terrain, { q: -3, r: -2 }, 7, 10);
+  liftCone(terrain, { q: 5, r: -4 }, 5, 8);
+  liftCone(terrain, { q: 2, r: 4 }, 4, 6);
+  if (terrain.radius >= 20) {
+    liftCone(
+      terrain,
+      { q: -Math.round(terrain.radius * 0.48), r: Math.round(terrain.radius * 0.12) },
+      10,
+      9,
+    );
+    liftCone(
+      terrain,
+      { q: Math.round(terrain.radius * 0.42), r: Math.round(terrain.radius * 0.22) },
+      11,
+      10,
+    );
+  }
+  const lake = { q: 1, r: 2 };
+  const lakeReach = 4;
+  const lakeCore = 1;
   smoothSlopes(terrain, true);
   for (const cell of cellsInBrush(terrain, lake, lakeReach)) {
     const distance = hexDistance(cell, lake);
@@ -387,10 +385,7 @@ export function sculptPreview(terrain) {
       levelHex(terrain, cell.q, cell.r, Math.max(MIN_HEIGHT, current - 8));
     }
   }
-  const roadStart = { q: -Math.round(span * 0.28), r: Math.round(span * 0.1) };
-  const roadMid = { q: Math.round(span * 0.04), r: -Math.round(span * 0.12) };
-  const roadEnd = { q: Math.round(span * 0.3), r: -Math.round(span * 0.36) };
-  for (const cell of [...hexLine(roadStart, roadMid), ...hexLine(roadMid, roadEnd)]) {
+  for (const cell of [...hexLine({ q: -6, r: 2 }, { q: 1, r: -1 }), ...hexLine({ q: 1, r: -1 }, { q: 7, r: -5 })]) {
     setRoad(terrain, cell.q, cell.r, true);
   }
 }
