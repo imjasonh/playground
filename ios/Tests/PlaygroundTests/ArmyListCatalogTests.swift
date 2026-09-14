@@ -472,6 +472,29 @@ final class ArmyListValidatorTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(list.updatedAt, before)
     }
 
+    func testMoveUnitsPreservesMultipleRowOrder() {
+        let units = (0..<5).map {
+            ListUnitInstance(datasheetID: "unit-\($0)", models: 1)
+        }
+        var list = ArmyListDocument(
+            name: "Reorder",
+            catalogVersion: "test",
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            units: units
+        )
+        var offsets = IndexSet()
+        offsets.insert(1)
+        offsets.insert(3)
+
+        list.moveUnits(fromOffsets: offsets, toOffset: 5)
+
+        XCTAssertEqual(
+            list.units.map(\.id),
+            [units[0].id, units[2].id, units[4].id, units[1].id, units[3].id]
+        )
+    }
+
     /// ~990 pt Brandfast Incursion list used as the golden legal sample.
     private func sampleLegalIncursion() -> ArmyListDocument {
         let kahl = ListUnitInstance(datasheetID: "leagues-of-votann--kahl", models: 1)

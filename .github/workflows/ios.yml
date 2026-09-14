@@ -53,6 +53,9 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Validate Army List stress tool
+        run: bash ios/scripts/stress-army-lists.sh
+
       # A push to main with signing secrets configured is the only case that
       # ships to TestFlight; everything else just builds and tests.
       - name: Determine mode
