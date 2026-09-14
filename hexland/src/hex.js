@@ -76,14 +76,21 @@ export function hexLine(a, b) {
 }
 
 /**
+ * The two neighbor directions that meet this hex at corner `vertexIndex`.
+ * Corner i sits at angle 60*i-30, between HEX_DIRS[-i] and HEX_DIRS[1-i].
+ */
+export function vertexNeighborDirs(vertexIndex) {
+  const i = mod6(vertexIndex);
+  return [HEX_DIRS[mod6(-i)], HEX_DIRS[mod6(1 - i)]];
+}
+
+/**
  * Stable id for the grid vertex at corner `vertexIndex` of hex (q, r).
  * The same meeting point from any of the three hexes that share it
  * produces the same string.
  */
 export function vertexId(q, r, vertexIndex) {
-  const i = mod6(vertexIndex);
-  const neighA = HEX_DIRS[i];
-  const neighB = HEX_DIRS[(i + 1) % 6];
+  const [neighA, neighB] = vertexNeighborDirs(vertexIndex);
   const hexes = [
     [q, r],
     [q + neighA.q, r + neighA.r],
@@ -125,5 +132,5 @@ export function hexCornerWorld(q, r, vertexIndex, size) {
  * Neighbor across the edge between vertex `edgeIndex` and the next vertex.
  */
 export function edgeNeighbor(q, r, edgeIndex) {
-  return hexAdd({ q, r }, HEX_DIRS[mod6(edgeIndex + 1)]);
+  return hexAdd({ q, r }, HEX_DIRS[mod6(-edgeIndex)]);
 }
