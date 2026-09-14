@@ -37,6 +37,7 @@ playground/
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
+├── hexland/               # hex-grid land sculptor, RCT-style raise/lower
 ├── onramp/             # offline Mac can’t-get-online triage (Sparkle CD)
 ├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
 ├── inkbot-esp32/          # Rust/ESP-IDF firmware: poll inkbot + signed OTA, or APP=maze, on Waveshare 7.5″
@@ -70,6 +71,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `cors-proxy-demo/` | yes | Static front-end for `cors-proxy`; HTML/JS, no build or tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
+| `hexland/` | yes | Hex-grid land sculptor; JS modules, npm scripts, tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
@@ -660,6 +662,7 @@ bundle exec fastlane test
 | `cors-proxy-demo/` | Browser playground for the `cors-proxy` Worker (send a request, inspect the CORS response) | none (static) |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
+| `hexland/` | Hex-grid land sculptor with RCT-style raise, lower, and slopes | Node test runner |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
