@@ -1,0 +1,14 @@
+{
+  "name": "hexland",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RCT-style terrain sculpting on a hex grid",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
