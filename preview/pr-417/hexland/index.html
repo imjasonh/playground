@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+    />
+    <meta name="theme-color" content="#8ec4e0" />
+    <meta
+      name="description"
+      content="Raise and lower hex terrain the way RollerCoaster Tycoon raises land, on a hex grid."
+    />
+    <title>Hexland</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="top">
+        <h1>Hexland</h1>
+        <p id="readout" class="readout" role="status" aria-live="polite">Water 2</p>
+      </header>
+
+      <div class="stage">
+        <canvas id="map" width="1200" height="800" aria-label="Hex terrain map"></canvas>
+      </div>
+
+      <div class="dock">
+        <div class="row" role="group" aria-label="Land tools">
+          <button type="button" data-tool="raise" aria-pressed="true">Raise</button>
+          <button type="button" data-tool="lower" aria-pressed="false">Lower</button>
+          <button type="button" data-tool="level" aria-pressed="false">Level</button>
+          <button type="button" data-tool="corner" aria-pressed="false">Corner</button>
+        </div>
+
+        <div class="row" role="group" aria-label="Brush">
+          <button type="button" data-brush="0" aria-pressed="true">Tile</button>
+          <button type="button" data-brush="1" aria-pressed="false">Patch</button>
+          <button type="button" id="smooth" aria-pressed="true">Smooth</button>
+        </div>
+
+        <label class="water">
+          Water
+          <input
+            id="water"
+            type="range"
+            min="0"
+            max="12"
+            step="1"
+            value="2"
+            aria-valuemin="0"
+            aria-valuemax="12"
+          />
+          <output id="water-output" for="water">2</output>
+        </label>
+
+        <div class="row" role="group" aria-label="Map actions">
+          <button type="button" id="undo">Undo</button>
+          <button type="button" id="redo">Redo</button>
+          <button type="button" id="hills">Hills</button>
+          <button type="button" id="flatten">Flatten</button>
+          <button type="button" id="spin-left" aria-label="Spin camera left">Spin left</button>
+          <button type="button" id="spin-right" aria-label="Spin camera right">Spin right</button>
+        </div>
+
+        <p class="keys">
+          Drag to sculpt. Right-click or Shift lowers. Two fingers or
+          <kbd>Space</kbd> pans. <kbd>Q</kbd><kbd>E</kbd> spin.
+          <kbd>1</kbd>–<kbd>4</kbd> tools.
+        </p>
+      </div>
+    </div>
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
