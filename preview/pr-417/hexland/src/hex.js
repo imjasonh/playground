@@ -105,6 +105,12 @@ export function axialToWorld(q, r, size) {
   };
 }
 
+export function worldToAxial(x, z, size) {
+  const r = z / (size * 1.5);
+  const q = x / (size * Math.sqrt(3)) - r / 2;
+  return hexRound(q, r);
+}
+
 export function hexCornerWorld(q, r, vertexIndex, size) {
   const center = axialToWorld(q, r, size);
   const i = mod6(vertexIndex);

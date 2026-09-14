@@ -15,6 +15,7 @@ import {
   hexesInRadius,
   mod6,
   vertexId,
+  worldToAxial,
 } from "../src/hex.js";
 
 test("hexCountInRadius matches the hex-number formula", () => {
@@ -77,6 +78,12 @@ test("edgeNeighbor is the hex across that side", () => {
     const next = edgeNeighbor(origin.q, origin.r, i);
     assert.equal(hexDistance(origin, next), 1);
   }
+});
+
+test("worldToAxial inverts axialToWorld", () => {
+  const size = 10;
+  const world = axialToWorld(3, -2, size);
+  assert.deepEqual(worldToAxial(world.x, world.z, size), { q: 3, r: -2 });
 });
 
 test("vertex index wraps and matches the geometric corner", () => {
