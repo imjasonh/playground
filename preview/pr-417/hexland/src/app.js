@@ -174,7 +174,13 @@ function requestDraw() {
     if (!terrain) {
       return;
     }
+    const started = performance.now();
     drawTerrain(context, terrain, camera, view, highlightState());
+    window.__hexlandStats = {
+      drawMs: performance.now() - started,
+      radius: terrain.radius,
+      cells: terrain.cells.length,
+    };
   });
 }
 
@@ -199,10 +205,27 @@ function hitFromEvent(event) {
   return { q: cell.q, r: cell.r, vertex, part: cell.part };
 }
 
+function sameHover(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (!a || !b) {
+    return false;
+  }
+  if (a.q !== b.q || a.r !== b.r) {
+    return false;
+  }
+  return tool !== "corner" || a.vertex === b.vertex;
+}
+
 function updateHover(event) {
-  hover = hitFromEvent(event);
+  const next = hitFromEvent(event);
+  const unchanged = sameHover(hover, next);
+  hover = next;
   formatReadout();
-  requestDraw();
+  if (!unchanged) {
+    requestDraw();
+  }
 }
 
 function wantsLower(event) {
@@ -399,6 +422,9 @@ function onPointerMove(event) {
   if (stroke) {
     applyPaint(hitFromEvent(event), stroke.lower);
     syncTools();
+    updateHover(event);
+    requestDraw();
+    return;
   }
   updateHover(event);
 }
@@ -663,4 +689,41 @@ afterPaint(() => {
   drawTerrain(context, terrain, camera, view, highlightState());
   formatReadout();
   setBusy(false);
+  if (new URLSearchParams(window.location.search).has("bench")) {
+    runDrawBench();
+  }
 });
+
+function runDrawBench() {
+  const samples = [];
+  let frame = 0;
+  const yaw0 = camera.yaw;
+  const pan0 = camera.panX;
+  const tick = () => {
+    camera.yaw = yaw0 + frame * 0.015;
+    camera.panX = pan0 + Math.sin(frame / 8) * 90;
+    const started = performance.now();
+    drawTerrain(context, terrain, camera, view, highlightState());
+    samples.push(performance.now() - started);
+    frame += 1;
+    if (frame < 90) {
+      requestAnimationFrame(tick);
+      return;
+    }
+    camera.yaw = yaw0;
+    camera.panX = pan0;
+    samples.sort((a, b) => a - b);
+    const avg = samples.reduce((sum, value) => sum + value, 0) / samples.length;
+    const p95 = samples[Math.floor(samples.length * 0.95)];
+    window.__hexlandBench = {
+      avgMs: avg,
+      p95Ms: p95,
+      fps: 1000 / avg,
+      frames: samples.length,
+      radius: terrain.radius,
+    };
+    readout.textContent = `Draw ${avg.toFixed(1)} ms avg, ${p95.toFixed(1)} ms p95, ${Math.round(1000 / avg)} fps`;
+    requestDraw();
+  };
+  requestAnimationFrame(tick);
+}

@@ -105,6 +105,14 @@ export function vertexId(q, r, vertexIndex) {
   return `${hexes[0][0]},${hexes[0][1]}|${hexes[1][0]},${hexes[1][1]}|${hexes[2][0]},${hexes[2][1]}`;
 }
 
+export const HEX_CORNER_X = [];
+export const HEX_CORNER_Z = [];
+for (let i = 0; i < 6; i += 1) {
+  const angle = ((60 * i - 30) * Math.PI) / 180;
+  HEX_CORNER_X.push(Math.cos(angle));
+  HEX_CORNER_Z.push(Math.sin(angle));
+}
+
 export function axialToWorld(q, r, size) {
   return {
     x: size * Math.sqrt(3) * (q + r / 2),
@@ -121,10 +129,9 @@ export function worldToAxial(x, z, size) {
 export function hexCornerWorld(q, r, vertexIndex, size) {
   const center = axialToWorld(q, r, size);
   const i = mod6(vertexIndex);
-  const angle = ((60 * i - 30) * Math.PI) / 180;
   return {
-    x: center.x + size * Math.cos(angle),
-    z: center.z + size * Math.sin(angle),
+    x: center.x + size * HEX_CORNER_X[i],
+    z: center.z + size * HEX_CORNER_Z[i],
   };
 }
 

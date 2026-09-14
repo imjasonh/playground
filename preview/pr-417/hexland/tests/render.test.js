@@ -6,6 +6,7 @@ import { MIN_HEIGHT, createTerrain, raiseHex } from "../src/terrain.js";
 import {
   cellGroundDepth,
   clamp,
+  collectVisibleCells,
   createCamera,
   fitZoom,
   hexBasePoints,
@@ -107,6 +108,20 @@ test("a raised neighbor projects as a sloped top, not a flat step", () => {
   const top = hexTopPoints(terrain, 1, 0, camera, origin);
   const ys = top.map((point) => point.y);
   assert.ok(Math.max(...ys) - Math.min(...ys) > 8);
+});
+
+test("collectVisibleCells keeps the opening view much smaller than the map", () => {
+  const terrain = createTerrain({ radius: 40 });
+  const camera = createCamera();
+  camera.yaw = 0;
+  camera.panX = 0;
+  camera.panY = 0;
+  const view = { width: 800, height: 600 };
+  fitZoom(terrain, camera, view);
+  const { cells } = collectVisibleCells(terrain, camera, view);
+  assert.ok(cells.length < terrain.cells.length / 4);
+  assert.ok(cells.length > 40);
+  assert.ok(cells.some((cell) => cell.q === 0 && cell.r === 0));
 });
 
 test("fitZoom keeps hexes large enough to paint on a big map", () => {
