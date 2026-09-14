@@ -451,9 +451,17 @@ function drawHex(context, terrain, cell, camera, origin, hoverKey, brushKeys) {
 
   const topNormal = softenNormal(flipToward(newellNormal(topWorld), 0, 1, 0), slope);
   const color = shade(grassColor(mean, slope, wet), topNormal);
-  context.fillStyle = rgb(hovered || inBrush ? mix(color, [255, 236, 160], 0.28) : color);
+  const fill = rgb(hovered || inBrush ? mix(color, [255, 236, 160], 0.28) : color);
+  context.fillStyle = fill;
+  for (let i = 0; i < 6; i += 1) {
+    fillPoly(context, [top[i], top[(i + 1) % 6], center]);
+    context.fill();
+  }
+  context.strokeStyle = fill;
+  context.lineJoin = "round";
+  context.lineWidth = 1.15;
   fillPoly(context, top);
-  context.fill();
+  context.stroke();
 
   if (hasRoad(terrain, q, r)) {
     drawRoad(context, terrain, q, r, camera, origin, top, topNormal);

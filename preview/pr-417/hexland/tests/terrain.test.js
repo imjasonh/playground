@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { HEX_DIRS, hexAdd, hexDistance, vertexId } from "../src/hex.js";
+import { HEX_DIRS, hexAdd, hexCornerWorld, hexDistance, vertexId, vertexNeighborDirs } from "../src/hex.js";
 import {
   DEFAULT_BASE,
   DEFAULT_WATER,
@@ -198,6 +198,29 @@ test("off-map edits are no-ops", () => {
   assert.equal(setRoad(terrain, 8, 8, true), false);
   assert.equal(DEFAULT_BASE, 3);
   assert.equal(DEFAULT_WATER, 2);
+});
+
+test("raising a hex lifts the corners it shares with each neighbor", () => {
+  const terrain = createTerrain({ radius: 1, base: 3 });
+  raiseHex(terrain, 0, 0, 1);
+  const size = 10;
+  for (let i = 0; i < 6; i += 1) {
+    const corner = hexCornerWorld(0, 0, i, size);
+    assert.equal(getVertexHeight(terrain, 0, 0, i), 4);
+    for (const dir of vertexNeighborDirs(i)) {
+      const hex = hexAdd({ q: 0, r: 0 }, dir);
+      let welded = false;
+      for (let v = 0; v < 6; v += 1) {
+        const other = hexCornerWorld(hex.q, hex.r, v, size);
+        if (Math.hypot(corner.x - other.x, corner.z - other.z) >= 1e-6) {
+          continue;
+        }
+        welded = true;
+        assert.equal(getVertexHeight(terrain, hex.q, hex.r, v), 4);
+      }
+      assert.equal(welded, true);
+    }
+  }
 });
 
 test("raising a hex tilts neighbors instead of leaving a cliff step", () => {

@@ -15,6 +15,7 @@ import {
   hexesInRadius,
   mod6,
   vertexId,
+  vertexNeighborDirs,
   worldToAxial,
 } from "../src/hex.js";
 
@@ -45,22 +46,52 @@ test("every neighbor sits at distance 1", () => {
 
 test("vertex ids are shared by the three hexes that meet there", () => {
   const origin = { q: 0, r: 0 };
+  const size = 10;
   for (let i = 0; i < 6; i += 1) {
     const id = vertexId(origin.q, origin.r, i);
-    const n0 = hexAdd(origin, HEX_DIRS[i]);
-    const n1 = hexAdd(origin, HEX_DIRS[(i + 1) % 6]);
-    const fromNeighbors = [n0, n1].map((hex) => {
+    const corner = hexCornerWorld(origin.q, origin.r, i, size);
+    const dirs = vertexNeighborDirs(i);
+    for (const dir of dirs) {
+      const hex = hexAdd(origin, dir);
+      let match = -1;
       for (let v = 0; v < 6; v += 1) {
         if (vertexId(hex.q, hex.r, v) === id) {
-          return v;
+          match = v;
+          break;
         }
       }
-      return -1;
-    });
-    assert.notEqual(fromNeighbors[0], -1, `neighbor ${hexKey(n0.q, n0.r)} missing ${id}`);
-    assert.notEqual(fromNeighbors[1], -1, `neighbor ${hexKey(n1.q, n1.r)} missing ${id}`);
-    assert.equal(vertexId(n0.q, n0.r, fromNeighbors[0]), id);
-    assert.equal(vertexId(n1.q, n1.r, fromNeighbors[1]), id);
+      assert.notEqual(match, -1, `neighbor ${hexKey(hex.q, hex.r)} missing ${id}`);
+      const other = hexCornerWorld(hex.q, hex.r, match, size);
+      assert.ok(
+        Math.hypot(corner.x - other.x, corner.z - other.z) < 1e-9,
+        `corner ${i} of 0,0 should sit on neighbor ${hexKey(hex.q, hex.r)}`,
+      );
+    }
+  }
+});
+
+test("every hex corner is welded to both adjacent neighbors", () => {
+  const size = 8;
+  for (let i = 0; i < 6; i += 1) {
+    const corner = hexCornerWorld(0, 0, i, size);
+    const near = [];
+    for (let d = 0; d < 6; d += 1) {
+      const center = axialToWorld(HEX_DIRS[d].q, HEX_DIRS[d].r, size);
+      if (Math.abs(Math.hypot(corner.x - center.x, corner.z - center.z) - size) < 1e-6) {
+        near.push(d);
+      }
+    }
+    assert.deepEqual(near.slice().sort(), vertexNeighborDirs(i).map((dir) => HEX_DIRS.indexOf(dir)).sort());
+    const edge = edgeNeighbor(0, 0, i);
+    const mid = {
+      x: (hexCornerWorld(0, 0, i, size).x + hexCornerWorld(0, 0, i + 1, size).x) / 2,
+      z: (hexCornerWorld(0, 0, i, size).z + hexCornerWorld(0, 0, i + 1, size).z) / 2,
+    };
+    const edgeCenter = axialToWorld(edge.q, edge.r, size);
+    const originCenter = axialToWorld(0, 0, size);
+    const toEdge = Math.hypot(mid.x - edgeCenter.x, mid.z - edgeCenter.z);
+    const toOrigin = Math.hypot(mid.x - originCenter.x, mid.z - originCenter.z);
+    assert.ok(Math.abs(toEdge - toOrigin) < 1e-6);
   }
 });
 
