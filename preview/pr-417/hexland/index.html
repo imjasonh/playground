@@ -24,16 +24,25 @@
 
       <div class="stage">
         <canvas id="map" width="1200" height="800" aria-label="Hex terrain map"></canvas>
+        <div id="loading" class="loading" aria-live="polite">Loading</div>
       </div>
 
       <div class="dock">
+        <div class="row" role="group" aria-label="History">
+          <button type="button" id="undo" disabled>Undo</button>
+          <button type="button" id="redo" disabled>Redo</button>
+        </div>
+
         <div class="row" role="group" aria-label="Land tools">
           <button type="button" data-tool="raise" aria-pressed="true">Raise</button>
           <button type="button" data-tool="lower" aria-pressed="false">Lower</button>
           <button type="button" data-tool="level" aria-pressed="false">Level</button>
           <button type="button" data-tool="corner" aria-pressed="false">Corner</button>
-          <button type="button" data-tool="path" aria-pressed="false">Path</button>
-          <button type="button" data-tool="clear-path" aria-pressed="false">Clear path</button>
+        </div>
+
+        <div class="row" role="group" aria-label="Roads">
+          <button type="button" data-tool="road" aria-pressed="false">Road</button>
+          <button type="button" data-tool="clear-road" aria-pressed="false">Clear road</button>
         </div>
 
         <div class="row" role="group" aria-label="Brush">
@@ -47,19 +56,17 @@
           <input
             id="water"
             type="range"
-            min="0"
-            max="12"
+            min="-10"
+            max="30"
             step="1"
             value="2"
-            aria-valuemin="0"
-            aria-valuemax="12"
+            aria-valuemin="-10"
+            aria-valuemax="30"
           />
           <output id="water-output" for="water">2</output>
         </label>
 
         <div class="row" role="group" aria-label="Map actions">
-          <button type="button" id="undo">Undo</button>
-          <button type="button" id="redo">Redo</button>
           <button type="button" id="hills">Hills</button>
           <button type="button" id="flatten">Flatten</button>
         </div>
@@ -72,8 +79,12 @@
         </div>
 
         <p class="keys">
-          Drag to sculpt. Right-click or Shift lowers or clears a path.
-          Ctrl-drag orbits. Two fingers or <kbd>Space</kbd> pans.
+          Drag to sculpt. Right-click or Shift lowers or clears a road.
+          To pan without rotating, hold <kbd>Alt</kbd> or <kbd>Space</kbd> and
+          drag. Ctrl-drag orbits. Two fingers pan and pinch-zoom.
+          <kbd>Ctrl</kbd><kbd>Z</kbd> undoes.
+          <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>Z</kbd> or <kbd>Ctrl</kbd><kbd>Y</kbd>
+          redoes.
           <kbd>Q</kbd><kbd>E</kbd> spin. <kbd>R</kbd><kbd>F</kbd> tilt.
           <kbd>1</kbd>–<kbd>6</kbd> tools.
         </p>

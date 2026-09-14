@@ -9,14 +9,24 @@ import {
   vertexId,
 } from "./hex.js";
 
-export const MIN_HEIGHT = 0;
-export const MAX_HEIGHT = 12;
-export const DEFAULT_RADIUS = 22;
+export const MIN_HEIGHT = -10;
+export const MAX_HEIGHT = 30;
+export const SNOW_HEIGHT = MAX_HEIGHT - 4;
+export const DEEP_WATER_HEIGHT = MIN_HEIGHT + 4;
+export const DEFAULT_RADIUS = 66;
 export const DEFAULT_BASE = 3;
 export const DEFAULT_WATER = 2;
 
 export function clampHeight(value) {
   return Math.max(MIN_HEIGHT, Math.min(MAX_HEIGHT, value));
+}
+
+export function isSnowHeight(height) {
+  return height >= SNOW_HEIGHT;
+}
+
+export function isDeepWaterHeight(height) {
+  return height <= DEEP_WATER_HEIGHT;
 }
 
 export function mulberry32(seed) {
@@ -335,11 +345,8 @@ export function redo(history, terrain) {
 }
 
 function liftCone(terrain, center, reach, lift) {
-  for (const cell of terrain.cells) {
+  for (const cell of cellsInBrush(terrain, center, reach)) {
     const distance = hexDistance(cell, center);
-    if (distance > reach) {
-      continue;
-    }
     raiseHex(terrain, cell.q, cell.r, Math.max(1, lift - distance));
   }
 }
@@ -353,29 +360,33 @@ export function sculptPreview(terrain) {
     terrain,
     { q: -Math.round(span * 0.36), r: -Math.round(span * 0.18) },
     Math.round(span * 0.36),
-    7,
+    10,
   );
   liftCone(
     terrain,
     { q: Math.round(span * 0.32), r: -Math.round(span * 0.4) },
     Math.round(span * 0.28),
-    6,
+    8,
   );
   liftCone(
     terrain,
     { q: Math.round(span * 0.18), r: Math.round(span * 0.36) },
     Math.round(span * 0.22),
-    4,
+    6,
   );
   const lake = { q: Math.round(span * 0.08), r: Math.round(span * 0.14) };
   const lakeReach = Math.max(3, Math.round(span * 0.18));
-  for (const cell of terrain.cells) {
+  const lakeCore = Math.max(1, Math.floor(lakeReach / 3));
+  smoothSlopes(terrain, true);
+  for (const cell of cellsInBrush(terrain, lake, lakeReach)) {
     const distance = hexDistance(cell, lake);
-    if (distance <= lakeReach) {
-      raiseHex(terrain, cell.q, cell.r, distance <= Math.floor(lakeReach / 3) ? -3 : -2);
+    if (distance <= lakeCore) {
+      levelHex(terrain, cell.q, cell.r, MIN_HEIGHT);
+    } else {
+      const current = Math.round(hexMeanHeight(terrain, cell.q, cell.r));
+      levelHex(terrain, cell.q, cell.r, Math.max(MIN_HEIGHT, current - 8));
     }
   }
-  smoothSlopes(terrain, true);
   const roadStart = { q: -Math.round(span * 0.28), r: Math.round(span * 0.1) };
   const roadMid = { q: Math.round(span * 0.04), r: -Math.round(span * 0.12) };
   const roadEnd = { q: Math.round(span * 0.3), r: -Math.round(span * 0.36) };
@@ -394,17 +405,16 @@ export function generateHills(terrain, rng = Math.random) {
       terrain,
       center,
       3 + Math.floor(rng() * Math.max(4, Math.floor(terrain.radius / 4))),
-      3 + Math.floor(rng() * 6),
+      8 + Math.floor(rng() * 10),
     );
   }
+  smoothSlopes(terrain, true);
   const basin = terrain.cells[Math.floor(rng() * terrain.cells.length)];
   const basinReach = 3 + Math.floor(rng() * 3);
-  for (const cell of terrain.cells) {
-    if (hexDistance(cell, basin) <= basinReach) {
-      raiseHex(terrain, cell.q, cell.r, -2);
-    }
+  for (const cell of cellsInBrush(terrain, basin, basinReach)) {
+    const current = Math.round(hexMeanHeight(terrain, cell.q, cell.r));
+    levelHex(terrain, cell.q, cell.r, Math.max(MIN_HEIGHT, current - 10));
   }
-  smoothSlopes(terrain, true);
 }
 
 export function heightsEqual(a, b) {

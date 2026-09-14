@@ -40,6 +40,7 @@ import {
 const canvas = document.querySelector("#map");
 const context = canvas.getContext("2d");
 const readout = document.querySelector("#readout");
+const loading = document.querySelector("#loading");
 const waterInput = document.querySelector("#water");
 const waterOutput = document.querySelector("#water-output");
 const toolButtons = [...document.querySelectorAll("[data-tool]")];
@@ -53,13 +54,22 @@ const spinLeftButton = document.querySelector("#spin-left");
 const spinRightButton = document.querySelector("#spin-right");
 const tiltUpButton = document.querySelector("#tilt-up");
 const tiltDownButton = document.querySelector("#tilt-down");
+const mapControls = [
+  ...toolButtons,
+  ...brushButtons,
+  smoothButton,
+  undoButton,
+  redoButton,
+  hillsButton,
+  flattenButton,
+  waterInput,
+];
 
-const terrain = createTerrain();
-sculptPreview(terrain);
 const history = createHistory();
 const camera = createCamera();
 const pointers = new Map();
 
+let terrain = null;
 let view = { width: 1, height: 1 };
 let tool = "raise";
 let brush = 0;
@@ -72,9 +82,31 @@ let pinch = null;
 let spaceHeld = false;
 let drawQueued = false;
 let didFitZoom = false;
+let busy = true;
 
-function isPathTool() {
-  return tool === "path" || tool === "clear-path";
+function afterPaint(fn) {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(fn);
+  });
+}
+
+function setBusy(next) {
+  busy = next;
+  loading.hidden = !next;
+  for (const control of mapControls) {
+    control.disabled = next;
+  }
+  if (!next) {
+    syncTools();
+  }
+}
+
+function isRoadTool() {
+  return tool === "road" || tool === "clear-road";
+}
+
+function wantsPan(event) {
+  return event.altKey || spaceHeld || event.button === 1;
 }
 
 function brushCells(hex) {
@@ -95,13 +127,19 @@ function syncTools() {
     button.setAttribute("aria-pressed", String(Number(button.dataset.brush) === brush));
   }
   smoothButton.setAttribute("aria-pressed", String(smooth));
-  undoButton.disabled = history.past.length === 0;
-  redoButton.disabled = history.future.length === 0;
-  waterInput.value = String(terrain.waterLevel);
-  waterOutput.textContent = String(terrain.waterLevel);
+  undoButton.disabled = busy || !terrain || history.past.length === 0;
+  redoButton.disabled = busy || !terrain || history.future.length === 0;
+  if (terrain) {
+    waterInput.value = String(terrain.waterLevel);
+    waterOutput.textContent = String(terrain.waterLevel);
+  }
 }
 
 function formatReadout() {
+  if (!terrain) {
+    readout.textContent = "Loading";
+    return;
+  }
   if (!hover) {
     readout.textContent = `Water ${terrain.waterLevel}`;
     return;
@@ -110,7 +148,7 @@ function formatReadout() {
   const low = hexMinHeight(terrain, hover.q, hover.r);
   let text = `${hover.q}, ${hover.r} · height ${height.toFixed(1)} · water ${terrain.waterLevel}`;
   if (hasRoad(terrain, hover.q, hover.r)) {
-    text += " · path";
+    text += " · road";
   }
   if (tool === "corner" && hover.vertex !== null && hover.vertex !== undefined) {
     text += ` · corner ${hover.vertex} (${low}–${Math.round(height)})`;
@@ -133,6 +171,9 @@ function requestDraw() {
   drawQueued = true;
   requestAnimationFrame(() => {
     drawQueued = false;
+    if (!terrain) {
+      return;
+    }
     drawTerrain(context, terrain, camera, view, highlightState());
   });
 }
@@ -146,6 +187,9 @@ function canvasPoint(event) {
 }
 
 function hitFromEvent(event) {
+  if (!terrain) {
+    return null;
+  }
   const point = canvasPoint(event);
   const cell = pickCell(terrain, camera, point.x, point.y, view);
   if (!cell) {
@@ -163,7 +207,7 @@ function updateHover(event) {
 
 function wantsLower(event) {
   const invert = event.button === 2 || event.shiftKey;
-  if (tool === "lower" || tool === "clear-path") {
+  if (tool === "lower" || tool === "clear-road") {
     return !invert;
   }
   return invert;
@@ -229,8 +273,8 @@ function applyPaint(target, lower) {
 
   const cells = strokeCells(target);
 
-  if (isPathTool()) {
-    const on = tool === "path" ? !lower : false;
+  if (isRoadTool()) {
+    const on = tool === "road" ? !lower : false;
     return paintCells(cells, (cell) => setRoadBrush(terrain, cell.q, cell.r, 0, on));
   }
 
@@ -250,6 +294,9 @@ function applyPaint(target, lower) {
 }
 
 function beginStroke(event) {
+  if (!terrain || busy) {
+    return;
+  }
   pushUndo(history, terrain);
   stroke = {
     lower: wantsLower(event),
@@ -282,15 +329,13 @@ function handlePinch() {
   const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
   const midX = (pts[0].x + pts[1].x) / 2;
   const midY = (pts[0].y + pts[1].y) / 2;
-  const angle = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
   if (pinch) {
     camera.zoom = clamp(camera.zoom * (dist / pinch.dist), ZOOM_MIN, ZOOM_MAX);
     camera.panX += midX - pinch.midX;
     camera.panY += midY - pinch.midY;
-    camera.yaw += angle - pinch.angle;
     requestDraw();
   }
-  pinch = { dist, midX, midY, angle };
+  pinch = { dist, midX, midY };
 }
 
 function onPointerDown(event) {
@@ -306,12 +351,13 @@ function onPointerDown(event) {
     orbiting = false;
     return;
   }
-  if (event.ctrlKey || event.metaKey) {
-    orbiting = true;
+  if (wantsPan(event)) {
+    panning = true;
+    orbiting = false;
     return;
   }
-  if (event.button === 1 || spaceHeld || event.altKey) {
-    panning = true;
+  if (event.ctrlKey || event.metaKey) {
+    orbiting = true;
     return;
   }
   beginStroke(event);
@@ -332,6 +378,14 @@ function onPointerMove(event) {
     handlePinch();
     return;
   }
+  if (panning || event.altKey || spaceHeld) {
+    panning = true;
+    orbiting = false;
+    camera.panX += event.clientX - prev.x;
+    camera.panY += event.clientY - prev.y;
+    requestDraw();
+    return;
+  }
   if (orbiting) {
     camera.yaw += (event.clientX - prev.x) * 0.008;
     camera.elevation = clamp(
@@ -339,12 +393,6 @@ function onPointerMove(event) {
       ELEVATION_MIN,
       ELEVATION_MAX,
     );
-    requestDraw();
-    return;
-  }
-  if (panning) {
-    camera.panX += event.clientX - prev.x;
-    camera.panY += event.clientY - prev.y;
     requestDraw();
     return;
   }
@@ -399,6 +447,9 @@ function setBrush(next) {
 }
 
 function mutateMap(fn) {
+  if (!terrain || busy) {
+    return;
+  }
   pushUndo(history, terrain);
   fn();
   syncTools();
@@ -425,18 +476,24 @@ function onKeyDown(event) {
     event.preventDefault();
     return;
   }
+  if (!terrain || busy) {
+    return;
+  }
   const key = event.key.toLowerCase();
-  if ((event.metaKey || event.ctrlKey) && key === "z") {
+  if ((event.metaKey || event.ctrlKey) && (key === "z" || key === "y")) {
     event.preventDefault();
-    if (event.shiftKey) {
+    const useRedo = key === "y" || (key === "z" && event.shiftKey);
+    if (useRedo) {
       if (redo(history, terrain)) {
         syncTools();
+        formatReadout();
         requestDraw();
       }
       return;
     }
     if (undo(history, terrain)) {
       syncTools();
+      formatReadout();
       requestDraw();
     }
     return;
@@ -445,8 +502,8 @@ function onKeyDown(event) {
   if (key === "2") setTool("lower");
   if (key === "3") setTool("level");
   if (key === "4") setTool("corner");
-  if (key === "5") setTool("path");
-  if (key === "6") setTool("clear-path");
+  if (key === "5") setTool("road");
+  if (key === "6") setTool("clear-road");
   if (key === "[") setBrush(0);
   if (key === "]") setBrush(1);
   if (key === "s") {
@@ -454,7 +511,7 @@ function onKeyDown(event) {
     syncTools();
   }
   if (key === "h") {
-    mutateMap(() => generateHills(terrain, mulberry32(Date.now())));
+    rebuildHills();
   }
   if (key === "q") {
     spin(-0.12);
@@ -503,11 +560,32 @@ function onKeyUp(event) {
 
 function fit() {
   view = resizeCanvas(canvas, context);
-  if (!didFitZoom) {
+  if (terrain && !didFitZoom) {
     fitZoom(terrain, camera, view);
     didFitZoom = true;
   }
   requestDraw();
+}
+
+function runHeavy(fn) {
+  if (!terrain || busy) {
+    return;
+  }
+  setBusy(true);
+  afterPaint(() => {
+    fn();
+    setBusy(false);
+    requestDraw();
+  });
+}
+
+function rebuildHills() {
+  runHeavy(() => {
+    pushUndo(history, terrain);
+    generateHills(terrain, mulberry32(Date.now()));
+    syncTools();
+    formatReadout();
+  });
 }
 
 for (const button of toolButtons) {
@@ -521,6 +599,9 @@ smoothButton.addEventListener("click", () => {
   syncTools();
 });
 undoButton.addEventListener("click", () => {
+  if (!terrain || busy) {
+    return;
+  }
   if (undo(history, terrain)) {
     syncTools();
     formatReadout();
@@ -528,6 +609,9 @@ undoButton.addEventListener("click", () => {
   }
 });
 redoButton.addEventListener("click", () => {
+  if (!terrain || busy) {
+    return;
+  }
   if (redo(history, terrain)) {
     syncTools();
     formatReadout();
@@ -535,7 +619,7 @@ redoButton.addEventListener("click", () => {
   }
 });
 hillsButton.addEventListener("click", () => {
-  mutateMap(() => generateHills(terrain, mulberry32(Date.now())));
+  rebuildHills();
 });
 flattenButton.addEventListener("click", () => {
   mutateMap(() => flattenTerrain(terrain, DEFAULT_BASE));
@@ -545,6 +629,9 @@ spinRightButton.addEventListener("click", () => spin(0.18));
 tiltUpButton.addEventListener("click", () => tilt(-0.1));
 tiltDownButton.addEventListener("click", () => tilt(0.1));
 waterInput.addEventListener("input", () => {
+  if (!terrain || busy) {
+    return;
+  }
   setWaterLevel(terrain, Number(waterInput.value));
   syncTools();
   formatReadout();
@@ -562,6 +649,13 @@ window.addEventListener("keyup", onKeyUp);
 window.addEventListener("resize", fit);
 new ResizeObserver(fit).observe(canvas);
 
-syncTools();
+setBusy(true);
 formatReadout();
 fit();
+afterPaint(() => {
+  terrain = createTerrain();
+  sculptPreview(terrain);
+  setBusy(false);
+  formatReadout();
+  fit();
+});

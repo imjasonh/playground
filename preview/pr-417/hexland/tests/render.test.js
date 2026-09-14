@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createTerrain, raiseHex } from "../src/terrain.js";
+import { hexCornerWorld } from "../src/hex.js";
+import { MIN_HEIGHT, createTerrain, raiseHex } from "../src/terrain.js";
 import {
   cellGroundDepth,
   clamp,
   createCamera,
   fitZoom,
+  hexBasePoints,
   hexTopPoints,
   nearestVertex,
   pickCell,
@@ -115,6 +117,31 @@ test("fitZoom keeps hexes large enough to paint on a big map", () => {
   assert.ok(camera.zoom >= 0.55);
   assert.ok(camera.zoom <= 1.4);
   assert.ok(camera.zoom < 2);
+});
+
+test("hex bases sit at the underwater floor", () => {
+  const camera = createCamera();
+  camera.yaw = 0;
+  camera.zoom = 1;
+  camera.panX = 0;
+  camera.panY = 0;
+  const origin = { x: 200, y: 200 };
+  const base = hexBasePoints(0, 0, camera, origin);
+  for (let i = 0; i < 6; i += 1) {
+    const corner = hexCornerWorld(0, 0, i, camera.hexSize);
+    const expected = project(
+      corner.x,
+      MIN_HEIGHT * camera.heightScale,
+      corner.z,
+      camera,
+      origin,
+    );
+    assert.ok(Math.abs(base[i].x - expected.x) < 1e-6);
+    assert.ok(Math.abs(base[i].y - expected.y) < 1e-6);
+  }
+  const floor = project(0, MIN_HEIGHT * camera.heightScale, 0, camera, origin);
+  const ground = project(0, 0, 0, camera, origin);
+  assert.ok(floor.y > ground.y);
 });
 
 test("screenToWorld inverts project on the ground plane", () => {

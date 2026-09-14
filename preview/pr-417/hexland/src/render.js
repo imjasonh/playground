@@ -1,5 +1,8 @@
 import { HEX_DIRS, axialToWorld, hexAdd, hexCornerWorld, hexKey, worldToAxial } from "./hex.js";
 import {
+  MAX_HEIGHT,
+  MIN_HEIGHT,
+  SNOW_HEIGHT,
   getVertexHeight,
   hasCell,
   hasRoad,
@@ -9,12 +12,14 @@ import {
   hexMinHeight,
   hexSlope,
   hexVertexHeights,
+  isDeepWaterHeight,
   isSkirtEdge,
+  isSnowHeight,
   roadNeighbors,
 } from "./terrain.js";
 
 export const LIGHT = normalize(-0.46, 0.82, 0.32);
-export const ZOOM_MIN = 0.22;
+export const ZOOM_MIN = 0.12;
 export const ZOOM_MAX = 3.2;
 export const ELEVATION_MIN = 0.22;
 export const ELEVATION_MAX = 1.18;
@@ -27,7 +32,7 @@ export function createCamera() {
     panX: 0,
     panY: 0,
     hexSize: 22,
-    heightScale: 12,
+    heightScale: 8,
   };
 }
 
@@ -85,10 +90,11 @@ export function hexTopPoints(terrain, q, r, camera, origin) {
 }
 
 export function hexBasePoints(q, r, camera, origin) {
+  const floorY = MIN_HEIGHT * camera.heightScale;
   const points = [];
   for (let i = 0; i < 6; i += 1) {
     const corner = hexCornerWorld(q, r, i, camera.hexSize);
-    points.push(project(corner.x, 0, corner.z, camera, origin));
+    points.push(project(corner.x, floorY, corner.z, camera, origin));
   }
   return points;
 }
@@ -132,7 +138,13 @@ export function screenToWorld(camera, x, y, view, height = 0) {
 function pickCandidates(terrain, camera, x, y, view) {
   const seen = new Set();
   const cells = [];
-  const heights = [0, 2, 4, 6, 8, 10, 12];
+  const heights = [];
+  for (let height = MIN_HEIGHT; height <= MAX_HEIGHT; height += 4) {
+    heights.push(height);
+  }
+  if (heights[heights.length - 1] !== MAX_HEIGHT) {
+    heights.push(MAX_HEIGHT);
+  }
   for (const height of heights) {
     const world = screenToWorld(camera, x, y, view, height * camera.heightScale);
     const axial = worldToAxial(world.x, world.z, camera.hexSize);
@@ -277,10 +289,13 @@ function shade(color, normal) {
 }
 
 function grassColor(height, slope, wet) {
-  const t = clamp(height / 10, 0, 1);
-  let color = mix([62, 122, 48], [196, 196, 118], t);
-  if (height >= 9) {
-    color = mix(color, [214, 216, 208], clamp((height - 9) / 3, 0, 1));
+  let color;
+  if (isSnowHeight(height)) {
+    color = mix([196, 196, 118], [232, 228, 220], clamp((height - SNOW_HEIGHT) / 4, 0, 1));
+  } else if (height < 0) {
+    color = mix([78, 96, 58], [62, 122, 48], clamp((height - MIN_HEIGHT) / -MIN_HEIGHT, 0, 1));
+  } else {
+    color = mix([62, 122, 48], [196, 196, 118], clamp(height / SNOW_HEIGHT, 0, 1));
   }
   if (slope >= 2) {
     color = mix(color, [128, 96, 62], 0.45);
@@ -353,7 +368,13 @@ const SCREEN_PAD = 80;
 
 function cellOnScreen(q, r, camera, origin, view) {
   const world = axialToWorld(q, r, camera.hexSize);
-  const mid = project(world.x, 4 * camera.heightScale, world.z, camera, origin);
+  const mid = project(
+    world.x,
+    ((MIN_HEIGHT + MAX_HEIGHT) / 2) * camera.heightScale,
+    world.z,
+    camera,
+    origin,
+  );
   const pad = camera.hexSize * camera.zoom * 3 + SCREEN_PAD;
   return mid.x >= -pad && mid.x <= view.width + pad && mid.y >= -pad && mid.y <= view.height + pad;
 }
@@ -405,7 +426,7 @@ function drawHex(context, terrain, cell, camera, origin, hoverKey, brushKeys) {
   const size = camera.hexSize;
   const heights = hexVertexHeights(terrain, q, r);
   const topWorld = heights.map((h, i) => worldCorner(q, r, i, h * camera.heightScale, size));
-  const baseWorld = heights.map((_, i) => worldCorner(q, r, i, 0, size));
+  const baseWorld = heights.map((_, i) => worldCorner(q, r, i, MIN_HEIGHT * camera.heightScale, size));
   const top = topWorld.map((p) => project(p.x, p.y, p.z, camera, origin));
   const base = baseWorld.map((p) => project(p.x, p.y, p.z, camera, origin));
   const mean = hexMeanHeight(terrain, q, r);
@@ -432,7 +453,7 @@ function drawHex(context, terrain, cell, camera, origin, hoverKey, brushKeys) {
     }
     const rise = Math.abs(heights[i] - heights[next]);
     const drop = Math.max(heights[i], heights[next]);
-    const steep = rise >= 2 || drop >= 7;
+    const steep = rise >= 2 || drop >= 18;
     const mid = {
       x: (a.x + b.x) / 2,
       y: (a.y + c.y) / 2,
@@ -481,15 +502,23 @@ function drawHex(context, terrain, cell, camera, origin, hoverKey, brushKeys) {
       const corner = hexCornerWorld(q, r, i, size);
       water.push(project(corner.x, waterY, corner.z, camera, origin));
     }
-    context.fillStyle = hexMinHeight(terrain, q, r) + 1 < terrain.waterLevel
-      ? "rgba(46, 112, 150, 0.55)"
-      : "rgba(72, 148, 176, 0.42)";
+    const floor = hexMinHeight(terrain, q, r);
+    context.fillStyle = isDeepWaterHeight(floor)
+      ? "rgba(18, 52, 82, 0.72)"
+      : floor + 1 < terrain.waterLevel
+        ? "rgba(46, 112, 150, 0.55)"
+        : "rgba(72, 148, 176, 0.42)";
     fillPoly(context, water);
     context.fill();
   }
 }
 
 export function drawTerrain(context, terrain, camera, view, highlight) {
+  if (!terrain) {
+    context.fillStyle = "#efe7d6";
+    context.fillRect(0, 0, view.width, view.height);
+    return;
+  }
   const origin = viewOrigin(view.width, view.height);
   drawSky(context, view.width, view.height);
   drawShadow(context, terrain, camera, origin);
