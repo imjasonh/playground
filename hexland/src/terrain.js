@@ -1,5 +1,6 @@
 import {
   HEX_DIRS,
+  axialToWorld,
   edgeNeighbor,
   hexAdd,
   hexDistance,
@@ -46,20 +47,36 @@ export function createTerrain({
   waterLevel = DEFAULT_WATER,
 } = {}) {
   const cells = hexesInRadius(radius);
-  const cellSet = new Set(cells.map((cell) => hexKey(cell.q, cell.r)));
+  const cellSet = new Set();
+  const cellMap = new Map();
   const heights = new Map();
   for (const cell of cells) {
+    const key = hexKey(cell.q, cell.r);
+    cellSet.add(key);
+    cellMap.set(key, cell);
+    const world = axialToWorld(cell.q, cell.r, 1);
+    cell.ux = world.x;
+    cell.uz = world.z;
+    cell.corners = [];
     for (let i = 0; i < 6; i += 1) {
       const id = vertexId(cell.q, cell.r, i);
+      cell.corners.push(id);
       if (!heights.has(id)) {
         heights.set(id, base);
       }
     }
   }
+  for (const cell of cells) {
+    cell.skirts = [0, 1, 2, 3, 4, 5].map((i) => {
+      const next = edgeNeighbor(cell.q, cell.r, i);
+      return !cellSet.has(hexKey(next.q, next.r));
+    });
+  }
   return {
     radius,
     cells,
     cellSet,
+    cellMap,
     heights,
     roads: new Set(),
     waterLevel: clampHeight(waterLevel),
@@ -67,36 +84,64 @@ export function createTerrain({
 }
 
 export function hasCell(terrain, q, r) {
-  return terrain.cellSet.has(hexKey(q, r));
+  return terrain.cellMap.has(hexKey(q, r));
 }
 
-export function getVertexHeight(terrain, q, r, vertexIndex) {
-  const value = terrain.heights.get(vertexId(q, r, vertexIndex));
+export function getCell(terrain, q, r) {
+  return terrain.cellMap.get(hexKey(q, r)) ?? null;
+}
+
+function heightFromId(terrain, id) {
+  const value = terrain.heights.get(id);
   if (value === null || value === undefined) {
     return MIN_HEIGHT;
   }
   return value;
 }
 
+export function getVertexHeight(terrain, q, r, vertexIndex) {
+  const cell = getCell(terrain, q, r);
+  if (!cell) {
+    return MIN_HEIGHT;
+  }
+  return heightFromId(terrain, cell.corners[vertexIndex]);
+}
+
 export function hexVertexHeights(terrain, q, r) {
-  return [0, 1, 2, 3, 4, 5].map((i) => getVertexHeight(terrain, q, r, i));
+  const cell = getCell(terrain, q, r);
+  if (!cell) {
+    return [MIN_HEIGHT, MIN_HEIGHT, MIN_HEIGHT, MIN_HEIGHT, MIN_HEIGHT, MIN_HEIGHT];
+  }
+  return cell.corners.map((id) => heightFromId(terrain, id));
+}
+
+export function hexHeightStats(terrain, q, r) {
+  const heights = hexVertexHeights(terrain, q, r);
+  let min = heights[0];
+  let max = heights[0];
+  let sum = 0;
+  for (const value of heights) {
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+    sum += value;
+  }
+  return { heights, min, max, mean: sum / heights.length, slope: max - min };
 }
 
 export function hexMeanHeight(terrain, q, r) {
-  const heights = hexVertexHeights(terrain, q, r);
-  return heights.reduce((sum, value) => sum + value, 0) / heights.length;
+  return hexHeightStats(terrain, q, r).mean;
 }
 
 export function hexMinHeight(terrain, q, r) {
-  return Math.min(...hexVertexHeights(terrain, q, r));
+  return hexHeightStats(terrain, q, r).min;
 }
 
 export function hexMaxHeight(terrain, q, r) {
-  return Math.max(...hexVertexHeights(terrain, q, r));
+  return hexHeightStats(terrain, q, r).max;
 }
 
 export function hexSlope(terrain, q, r) {
-  return hexMaxHeight(terrain, q, r) - hexMinHeight(terrain, q, r);
+  return hexHeightStats(terrain, q, r).slope;
 }
 
 export function hexIsUnderwater(terrain, q, r) {
@@ -123,12 +168,12 @@ function setVertex(terrain, id, value) {
 }
 
 export function raiseHex(terrain, q, r, delta = 1) {
-  if (!hasCell(terrain, q, r)) {
+  const cell = getCell(terrain, q, r);
+  if (!cell) {
     return false;
   }
   let changed = false;
-  for (let i = 0; i < 6; i += 1) {
-    const id = vertexId(q, r, i);
+  for (const id of cell.corners) {
     const current = terrain.heights.get(id) ?? MIN_HEIGHT;
     if (setVertex(terrain, id, current + delta)) {
       changed = true;
@@ -138,22 +183,24 @@ export function raiseHex(terrain, q, r, delta = 1) {
 }
 
 export function raiseVertex(terrain, q, r, vertexIndex, delta = 1) {
-  if (!hasCell(terrain, q, r)) {
+  const cell = getCell(terrain, q, r);
+  if (!cell) {
     return false;
   }
-  const id = vertexId(q, r, vertexIndex);
+  const id = cell.corners[vertexIndex];
   const current = terrain.heights.get(id) ?? MIN_HEIGHT;
   return setVertex(terrain, id, current + delta);
 }
 
 export function levelHex(terrain, q, r, height) {
-  if (!hasCell(terrain, q, r)) {
+  const cell = getCell(terrain, q, r);
+  if (!cell) {
     return false;
   }
   const target = clampHeight(height);
   let changed = false;
-  for (let i = 0; i < 6; i += 1) {
-    if (setVertex(terrain, vertexId(q, r, i), target)) {
+  for (const id of cell.corners) {
+    if (setVertex(terrain, id, target)) {
       changed = true;
     }
   }
@@ -202,8 +249,11 @@ export function roadNeighbors(terrain, q, r) {
 }
 
 export function isSkirtEdge(terrain, q, r, edgeIndex) {
-  const next = edgeNeighbor(q, r, edgeIndex);
-  return !hasCell(terrain, next.q, next.r);
+  const cell = getCell(terrain, q, r);
+  if (!cell) {
+    return false;
+  }
+  return cell.skirts[edgeIndex];
 }
 
 export function cellsInBrush(terrain, origin, radius) {
@@ -247,8 +297,8 @@ export function smoothSlopes(terrain, preferRaise) {
     let changed = false;
     for (const cell of terrain.cells) {
       for (let i = 0; i < 6; i += 1) {
-        const a = vertexId(cell.q, cell.r, i);
-        const b = vertexId(cell.q, cell.r, (i + 1) % 6);
+        const a = cell.corners[i];
+        const b = cell.corners[(i + 1) % 6];
         const ha = terrain.heights.get(a);
         const hb = terrain.heights.get(b);
         if (Math.abs(ha - hb) <= 1) {
