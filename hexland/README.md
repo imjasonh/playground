@@ -10,8 +10,13 @@ so a hillside is one mesh instead of a stack of hex boxes.
 
 Heights run from -10 through 30. The top five levels (26-30) are snow.
 Water over the bottom five levels (-10 through -6) is darker. The map is
-66 hexes from the center to the edge. Only hexes in the camera view are
-drawn, so panning and orbiting stay at an interactive frame rate.
+66 hexes from the center to the edge. On load, vertex heights come from
+Perlin noise, so each refresh is a different map. **Hills** samples a new
+field. Generated maps keep adjacent corners within one height step.
+Interior edges have no cliff walls, so a steeper drop would show as a hole.
+
+Only hexes in the camera view are drawn, so panning and orbiting stay at
+an interactive frame rate.
 
 **Road** paints a road. **Clear road** erases it. Right-click or Shift
 while **Road** is selected also clears. **Corner** moves one vertex.
