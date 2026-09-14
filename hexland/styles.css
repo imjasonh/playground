@@ -68,6 +68,7 @@ body {
 }
 
 .stage {
+  position: relative;
   min-height: 16rem;
   padding: 0 max(0.65rem, env(safe-area-inset-right)) 0
     max(0.65rem, env(safe-area-inset-left));
@@ -80,9 +81,28 @@ body {
   min-height: 16rem;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: #8ec4e0;
+  background: var(--paper);
   touch-action: none;
   cursor: crosshair;
+}
+
+.loading {
+  position: absolute;
+  inset: 0 max(0.65rem, env(safe-area-inset-right)) 0
+    max(0.65rem, env(safe-area-inset-left));
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--ink);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.loading[hidden] {
+  display: none;
 }
 
 .dock {
@@ -134,7 +154,7 @@ input:focus-visible {
 
 .water {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 1.6rem;
+  grid-template-columns: auto minmax(0, 1fr) 3ch;
   gap: 0.55rem;
   align-items: center;
   font-weight: 600;

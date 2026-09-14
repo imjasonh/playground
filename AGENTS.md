@@ -662,7 +662,7 @@ bundle exec fastlane test
 | `cors-proxy-demo/` | Browser playground for the `cors-proxy` Worker (send a request, inspect the CORS response) | none (static) |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
-| `hexland/` | Hex-grid land sculptor with RCT-style raise, lower, slopes, and paths | Node test runner |
+| `hexland/` | Hex-grid land sculptor with RCT-style raise, lower, slopes, and roads | Node test runner |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |

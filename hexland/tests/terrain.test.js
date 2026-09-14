@@ -5,8 +5,10 @@ import { HEX_DIRS, hexAdd, hexCornerWorld, hexDistance, vertexId, vertexNeighbor
 import {
   DEFAULT_BASE,
   DEFAULT_WATER,
+  DEEP_WATER_HEIGHT,
   MAX_HEIGHT,
   MIN_HEIGHT,
+  SNOW_HEIGHT,
   applyHeights,
   cellsInBrush,
   cloneHeights,
@@ -24,7 +26,9 @@ import {
   hexMeanHeight,
   hexMinHeight,
   hexVertexHeights,
+  isDeepWaterHeight,
   isSkirtEdge,
+  isSnowHeight,
   levelHex,
   mulberry32,
   pushUndo,
@@ -83,13 +87,29 @@ test("a shared vertex raised from one hex is visible from the others", () => {
 });
 
 test("raise and lower clamp to the height range", () => {
-  const terrain = createTerrain({ radius: 1, base: 0 });
+  const terrain = createTerrain({ radius: 1, base: MIN_HEIGHT });
   assert.equal(raiseHex(terrain, 0, 0, -4), false);
   assert.equal(hexMinHeight(terrain, 0, 0), MIN_HEIGHT);
 
   flattenTerrain(terrain, MAX_HEIGHT);
   assert.equal(raiseHex(terrain, 0, 0, 2), false);
   assert.equal(hexMaxHeight(terrain, 0, 0), MAX_HEIGHT);
+});
+
+test("snow covers the top five elevation levels", () => {
+  assert.equal(SNOW_HEIGHT, 26);
+  assert.equal(MAX_HEIGHT, 30);
+  assert.equal(isSnowHeight(25), false);
+  assert.equal(isSnowHeight(26), true);
+  assert.equal(isSnowHeight(30), true);
+});
+
+test("deep water is the bottom five elevation levels", () => {
+  assert.equal(MIN_HEIGHT, -10);
+  assert.equal(DEEP_WATER_HEIGHT, -6);
+  assert.equal(isDeepWaterHeight(-5), false);
+  assert.equal(isDeepWaterHeight(-6), true);
+  assert.equal(isDeepWaterHeight(-10), true);
 });
 
 test("levelHex flattens a tile to one height", () => {
@@ -168,7 +188,10 @@ test("undo and redo restore vertex heights", () => {
 test("sculptPreview and generateHills stay in range and are seeded", () => {
   const preview = createTerrain({ radius: 6, base: 3 });
   sculptPreview(preview);
-  assert.ok(allHeights(preview).every((value) => value >= MIN_HEIGHT && value <= MAX_HEIGHT));
+  const previewHeights = allHeights(preview);
+  assert.ok(previewHeights.every((value) => value >= MIN_HEIGHT && value <= MAX_HEIGHT));
+  assert.ok(previewHeights.some((value) => value >= SNOW_HEIGHT));
+  assert.ok(previewHeights.some((value) => value <= DEEP_WATER_HEIGHT));
   assert.notEqual(terrainFingerprint(preview), terrainFingerprint(createTerrain({ radius: 6 })));
 
   const a = createTerrain({ radius: 5 });
