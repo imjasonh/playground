@@ -16,6 +16,7 @@ import {
   generateHills,
   getVertexHeight,
   hasCell,
+  hasRoad,
   heightsEqual,
   hexIsShore,
   hexIsUnderwater,
@@ -23,6 +24,7 @@ import {
   hexMeanHeight,
   hexMinHeight,
   hexVertexHeights,
+  isSkirtEdge,
   levelHex,
   mulberry32,
   pushUndo,
@@ -31,6 +33,8 @@ import {
   raiseVertex,
   redo,
   sculptPreview,
+  setRoad,
+  setRoadBrush,
   setWaterLevel,
   smoothSlopes,
   terrainFingerprint,
@@ -191,6 +195,47 @@ test("off-map edits are no-ops", () => {
   assert.equal(raiseHex(terrain, 8, 8, 1), false);
   assert.equal(raiseVertex(terrain, 8, 8, 0, 1), false);
   assert.equal(levelHex(terrain, 8, 8, 1), false);
+  assert.equal(setRoad(terrain, 8, 8, true), false);
   assert.equal(DEFAULT_BASE, 3);
   assert.equal(DEFAULT_WATER, 2);
+});
+
+test("raising a hex tilts neighbors instead of leaving a cliff step", () => {
+  const terrain = createTerrain({ radius: 1, base: 3 });
+  raiseHex(terrain, 0, 0, 1);
+  const neighbor = hexVertexHeights(terrain, 1, 0);
+  assert.ok(new Set(neighbor).size >= 2);
+  assert.ok(neighbor.some((value) => value === 4));
+  assert.ok(neighbor.some((value) => value === 3));
+});
+
+test("interior hex edges are not skirt edges", () => {
+  const terrain = createTerrain({ radius: 1, base: 3 });
+  for (let i = 0; i < 6; i += 1) {
+    assert.equal(isSkirtEdge(terrain, 0, 0, i), false);
+  }
+  let skirts = 0;
+  for (let i = 0; i < 6; i += 1) {
+    if (isSkirtEdge(terrain, 1, 0, i)) {
+      skirts += 1;
+    }
+  }
+  assert.ok(skirts >= 3);
+});
+
+test("roads paint, clear, and undo", () => {
+  const terrain = createTerrain({ radius: 2, base: 3 });
+  const history = createHistory();
+  assert.equal(hasRoad(terrain, 0, 0), false);
+  pushUndo(history, terrain);
+  assert.equal(setRoad(terrain, 0, 0, true), true);
+  assert.equal(setRoadBrush(terrain, 1, 0, 0, true), true);
+  assert.equal(hasRoad(terrain, 0, 0), true);
+  assert.equal(hasRoad(terrain, 1, 0), true);
+  assert.equal(setRoad(terrain, 0, 0, true), false);
+  assert.equal(setRoad(terrain, 0, 0, false), true);
+  assert.equal(hasRoad(terrain, 0, 0), false);
+  assert.equal(undo(history, terrain), true);
+  assert.equal(hasRoad(terrain, 0, 0), false);
+  assert.equal(hasRoad(terrain, 1, 0), false);
 });

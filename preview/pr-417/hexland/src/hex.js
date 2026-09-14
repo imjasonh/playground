@@ -42,6 +42,39 @@ export function hexesInRadius(radius) {
   return cells;
 }
 
+export function hexRound(q, r) {
+  let x = q;
+  let z = r;
+  let y = -x - z;
+  let rx = Math.round(x);
+  let ry = Math.round(y);
+  let rz = Math.round(z);
+  const dx = Math.abs(rx - x);
+  const dy = Math.abs(ry - y);
+  const dz = Math.abs(rz - z);
+  if (dx > dy && dx > dz) {
+    rx = -ry - rz;
+  } else if (dy > dz) {
+    ry = -rx - rz;
+  } else {
+    rz = -rx - ry;
+  }
+  return { q: rx, r: rz };
+}
+
+export function hexLine(a, b) {
+  const n = hexDistance(a, b);
+  if (n === 0) {
+    return [{ q: a.q, r: a.r }];
+  }
+  const out = [];
+  for (let i = 0; i <= n; i += 1) {
+    const t = i / n;
+    out.push(hexRound(a.q + (b.q - a.q) * t, a.r + (b.r - a.r) * t));
+  }
+  return out;
+}
+
 /**
  * Stable id for the grid vertex at corner `vertexIndex` of hex (q, r).
  * The same meeting point from any of the three hexes that share it
@@ -49,12 +82,12 @@ export function hexesInRadius(radius) {
  */
 export function vertexId(q, r, vertexIndex) {
   const i = mod6(vertexIndex);
-  const a = HEX_DIRS[i];
-  const b = HEX_DIRS[(i + 1) % 6];
+  const neighA = HEX_DIRS[i];
+  const neighB = HEX_DIRS[(i + 1) % 6];
   const hexes = [
     [q, r],
-    [q + a.q, r + a.r],
-    [q + b.q, r + b.r],
+    [q + neighA.q, r + neighA.r],
+    [q + neighB.q, r + neighB.r],
   ];
   hexes.sort((left, right) => {
     if (left[0] !== right[0]) {
@@ -80,4 +113,11 @@ export function hexCornerWorld(q, r, vertexIndex, size) {
     x: center.x + size * Math.cos(angle),
     z: center.z + size * Math.sin(angle),
   };
+}
+
+/**
+ * Neighbor across the edge between vertex `edgeIndex` and the next vertex.
+ */
+export function edgeNeighbor(q, r, edgeIndex) {
+  return hexAdd({ q, r }, HEX_DIRS[mod6(edgeIndex + 1)]);
 }
