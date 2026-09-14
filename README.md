@@ -34,7 +34,7 @@ bump when the tests still pass, so old experiments don't rot.
   local `.bin`) to a USB ESP32 from Chrome or Edge.
 - **[`hello/`](hello/)** — a minimal static demo.
 - **[`hexland/`](hexland/)** — raise and lower hex terrain the way
-  RollerCoaster Tycoon raises land, on a hex grid.
+  RollerCoaster Tycoon raises land, on a hex grid, and paint paths.
 - **[`sundial/`](sundial/)** — a clock whose long shadow follows the sun, like
   a sundial. At night there is no shadow.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).

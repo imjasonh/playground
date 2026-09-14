@@ -32,6 +32,8 @@
           <button type="button" data-tool="lower" aria-pressed="false">Lower</button>
           <button type="button" data-tool="level" aria-pressed="false">Level</button>
           <button type="button" data-tool="corner" aria-pressed="false">Corner</button>
+          <button type="button" data-tool="path" aria-pressed="false">Path</button>
+          <button type="button" data-tool="clear-path" aria-pressed="false">Clear path</button>
         </div>
 
         <div class="row" role="group" aria-label="Brush">
@@ -60,14 +62,20 @@
           <button type="button" id="redo">Redo</button>
           <button type="button" id="hills">Hills</button>
           <button type="button" id="flatten">Flatten</button>
+        </div>
+
+        <div class="row" role="group" aria-label="Camera">
           <button type="button" id="spin-left" aria-label="Spin camera left">Spin left</button>
           <button type="button" id="spin-right" aria-label="Spin camera right">Spin right</button>
+          <button type="button" id="tilt-up" aria-label="Tilt camera up">Tilt up</button>
+          <button type="button" id="tilt-down" aria-label="Tilt camera down">Tilt down</button>
         </div>
 
         <p class="keys">
-          Drag to sculpt. Right-click or Shift lowers. Two fingers or
-          <kbd>Space</kbd> pans. <kbd>Q</kbd><kbd>E</kbd> spin.
-          <kbd>1</kbd>–<kbd>4</kbd> tools.
+          Drag to sculpt. Right-click or Shift lowers or clears a path.
+          Ctrl-drag orbits. Two fingers or <kbd>Space</kbd> pans.
+          <kbd>Q</kbd><kbd>E</kbd> spin. <kbd>R</kbd><kbd>F</kbd> tilt.
+          <kbd>1</kbd>–<kbd>6</kbd> tools.
         </p>
       </div>
     </div>

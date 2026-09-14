@@ -4,11 +4,14 @@ import assert from "node:assert/strict";
 import {
   HEX_DIRS,
   axialToWorld,
+  edgeNeighbor,
   hexAdd,
   hexCornerWorld,
   hexCountInRadius,
   hexDistance,
   hexKey,
+  hexLine,
+  hexRound,
   hexesInRadius,
   mod6,
   vertexId,
@@ -57,6 +60,22 @@ test("vertex ids are shared by the three hexes that meet there", () => {
     assert.notEqual(fromNeighbors[1], -1, `neighbor ${hexKey(n1.q, n1.r)} missing ${id}`);
     assert.equal(vertexId(n0.q, n0.r, fromNeighbors[0]), id);
     assert.equal(vertexId(n1.q, n1.r, fromNeighbors[1]), id);
+  }
+});
+
+test("hexLine walks inclusive axial steps", () => {
+  const line = hexLine({ q: 0, r: 0 }, { q: 3, r: 0 });
+  assert.equal(line.length, 4);
+  assert.deepEqual(line[0], { q: 0, r: 0 });
+  assert.deepEqual(line[3], { q: 3, r: 0 });
+  assert.deepEqual(hexRound(2, -1), { q: 2, r: -1 });
+});
+
+test("edgeNeighbor is the hex across that side", () => {
+  const origin = { q: 0, r: 0 };
+  for (let i = 0; i < 6; i += 1) {
+    const next = edgeNeighbor(origin.q, origin.r, i);
+    assert.equal(hexDistance(origin, next), 1);
   }
 });
 

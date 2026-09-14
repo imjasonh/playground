@@ -1,13 +1,17 @@
 import {
+  HEX_DIRS,
+  edgeNeighbor,
+  hexAdd,
   hexDistance,
   hexKey,
+  hexLine,
   hexesInRadius,
   vertexId,
 } from "./hex.js";
 
 export const MIN_HEIGHT = 0;
 export const MAX_HEIGHT = 12;
-export const DEFAULT_RADIUS = 10;
+export const DEFAULT_RADIUS = 22;
 export const DEFAULT_BASE = 3;
 export const DEFAULT_WATER = 2;
 
@@ -47,6 +51,7 @@ export function createTerrain({
     cells,
     cellSet,
     heights,
+    roads: new Set(),
     waterLevel: clampHeight(waterLevel),
   };
 }
@@ -152,6 +157,45 @@ export function flattenTerrain(terrain, height = DEFAULT_BASE) {
   }
 }
 
+export function hasRoad(terrain, q, r) {
+  return terrain.roads.has(hexKey(q, r));
+}
+
+export function setRoad(terrain, q, r, on) {
+  if (!hasCell(terrain, q, r)) {
+    return false;
+  }
+  const key = hexKey(q, r);
+  if (on) {
+    if (terrain.roads.has(key)) {
+      return false;
+    }
+    terrain.roads.add(key);
+    return true;
+  }
+  if (!terrain.roads.has(key)) {
+    return false;
+  }
+  terrain.roads.delete(key);
+  return true;
+}
+
+export function roadNeighbors(terrain, q, r) {
+  const links = [];
+  for (const dir of HEX_DIRS) {
+    const next = hexAdd({ q, r }, dir);
+    if (hasRoad(terrain, next.q, next.r)) {
+      links.push(next);
+    }
+  }
+  return links;
+}
+
+export function isSkirtEdge(terrain, q, r, edgeIndex) {
+  const next = edgeNeighbor(q, r, edgeIndex);
+  return !hasCell(terrain, next.q, next.r);
+}
+
 export function cellsInBrush(terrain, origin, radius) {
   if (radius <= 0) {
     if (hasCell(terrain, origin.q, origin.r)) {
@@ -166,6 +210,16 @@ export function raiseBrush(terrain, q, r, radius, delta) {
   let changed = false;
   for (const cell of cellsInBrush(terrain, { q, r }, radius)) {
     if (raiseHex(terrain, cell.q, cell.r, delta)) {
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+export function setRoadBrush(terrain, q, r, radius, on) {
+  let changed = false;
+  for (const cell of cellsInBrush(terrain, { q, r }, radius)) {
+    if (setRoad(terrain, cell.q, cell.r, on)) {
       changed = true;
     }
   }
@@ -219,12 +273,43 @@ export function applyHeights(terrain, snapshot) {
   terrain.heights = new Map(snapshot);
 }
 
+export function cloneState(terrain) {
+  return {
+    heights: new Map(terrain.heights),
+    roads: new Set(terrain.roads),
+    waterLevel: terrain.waterLevel,
+  };
+}
+
+export function applyState(terrain, snapshot) {
+  terrain.heights = new Map(snapshot.heights);
+  terrain.roads = new Set(snapshot.roads);
+  terrain.waterLevel = snapshot.waterLevel;
+}
+
+export function statesEqual(a, b) {
+  if (a.waterLevel !== b.waterLevel || a.heights.size !== b.heights.size || a.roads.size !== b.roads.size) {
+    return false;
+  }
+  for (const [id, value] of a.heights) {
+    if (b.heights.get(id) !== value) {
+      return false;
+    }
+  }
+  for (const key of a.roads) {
+    if (!b.roads.has(key)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function createHistory(limit = 48) {
   return { past: [], future: [], limit };
 }
 
 export function pushUndo(history, terrain) {
-  history.past.push(cloneHeights(terrain));
+  history.past.push(cloneState(terrain));
   if (history.past.length > history.limit) {
     history.past.shift();
   }
@@ -235,8 +320,8 @@ export function undo(history, terrain) {
   if (history.past.length === 0) {
     return false;
   }
-  history.future.push(cloneHeights(terrain));
-  applyHeights(terrain, history.past.pop());
+  history.future.push(cloneState(terrain));
+  applyState(terrain, history.past.pop());
   return true;
 }
 
@@ -244,48 +329,76 @@ export function redo(history, terrain) {
   if (history.future.length === 0) {
     return false;
   }
-  history.past.push(cloneHeights(terrain));
-  applyHeights(terrain, history.future.pop());
+  history.past.push(cloneState(terrain));
+  applyState(terrain, history.future.pop());
   return true;
+}
+
+function liftCone(terrain, center, reach, lift) {
+  for (const cell of terrain.cells) {
+    const distance = hexDistance(cell, center);
+    if (distance > reach) {
+      continue;
+    }
+    raiseHex(terrain, cell.q, cell.r, Math.max(1, lift - distance));
+  }
 }
 
 export function sculptPreview(terrain) {
   flattenTerrain(terrain, DEFAULT_BASE);
+  terrain.roads.clear();
   terrain.waterLevel = DEFAULT_WATER;
+  const span = Math.max(6, terrain.radius);
+  liftCone(
+    terrain,
+    { q: -Math.round(span * 0.36), r: -Math.round(span * 0.18) },
+    Math.round(span * 0.36),
+    7,
+  );
+  liftCone(
+    terrain,
+    { q: Math.round(span * 0.32), r: -Math.round(span * 0.4) },
+    Math.round(span * 0.28),
+    6,
+  );
+  liftCone(
+    terrain,
+    { q: Math.round(span * 0.18), r: Math.round(span * 0.36) },
+    Math.round(span * 0.22),
+    4,
+  );
+  const lake = { q: Math.round(span * 0.08), r: Math.round(span * 0.14) };
+  const lakeReach = Math.max(3, Math.round(span * 0.18));
   for (const cell of terrain.cells) {
-    const lake = hexDistance(cell, { q: 1, r: 3 });
-    if (lake <= 3) {
-      raiseHex(terrain, cell.q, cell.r, lake <= 1 ? -2 : -1);
-    }
-    const ridge = hexDistance(cell, { q: -4, r: -2 });
-    if (ridge <= 4) {
-      raiseHex(terrain, cell.q, cell.r, 4 - ridge);
-    }
-    const mesa = hexDistance(cell, { q: 5, r: -4 });
-    if (mesa <= 2) {
-      raiseHex(terrain, cell.q, cell.r, 3);
+    const distance = hexDistance(cell, lake);
+    if (distance <= lakeReach) {
+      raiseHex(terrain, cell.q, cell.r, distance <= Math.floor(lakeReach / 3) ? -3 : -2);
     }
   }
   smoothSlopes(terrain, true);
+  const roadStart = { q: -Math.round(span * 0.28), r: Math.round(span * 0.1) };
+  const roadMid = { q: Math.round(span * 0.04), r: -Math.round(span * 0.12) };
+  const roadEnd = { q: Math.round(span * 0.3), r: -Math.round(span * 0.36) };
+  for (const cell of [...hexLine(roadStart, roadMid), ...hexLine(roadMid, roadEnd)]) {
+    setRoad(terrain, cell.q, cell.r, true);
+  }
 }
 
 export function generateHills(terrain, rng = Math.random) {
   flattenTerrain(terrain, DEFAULT_BASE);
-  const peakCount = 3 + Math.floor(rng() * 4);
+  terrain.roads.clear();
+  const peakCount = 6 + Math.floor(rng() * 7) + Math.floor(terrain.radius / 8);
   for (let p = 0; p < peakCount; p += 1) {
     const center = terrain.cells[Math.floor(rng() * terrain.cells.length)];
-    const reach = 2 + Math.floor(rng() * 4);
-    const lift = 2 + Math.floor(rng() * 4);
-    for (const cell of terrain.cells) {
-      const distance = hexDistance(cell, center);
-      if (distance > reach) {
-        continue;
-      }
-      raiseHex(terrain, cell.q, cell.r, Math.max(1, lift - distance));
-    }
+    liftCone(
+      terrain,
+      center,
+      3 + Math.floor(rng() * Math.max(4, Math.floor(terrain.radius / 4))),
+      3 + Math.floor(rng() * 6),
+    );
   }
   const basin = terrain.cells[Math.floor(rng() * terrain.cells.length)];
-  const basinReach = 2 + Math.floor(rng() * 2);
+  const basinReach = 3 + Math.floor(rng() * 3);
   for (const cell of terrain.cells) {
     if (hexDistance(cell, basin) <= basinReach) {
       raiseHex(terrain, cell.q, cell.r, -2);
@@ -319,6 +432,6 @@ export function terrainFingerprint(terrain) {
   })) {
     parts.push(`${id}:${value}`);
   }
-  return parts.join(";");
+  const roadParts = [...terrain.roads].sort();
+  return `${parts.join(";")}#${roadParts.join(",")}#${terrain.waterLevel}`;
 }
-

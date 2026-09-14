@@ -6,6 +6,7 @@ import {
   cellGroundDepth,
   clamp,
   createCamera,
+  fitZoom,
   hexTopPoints,
   nearestVertex,
   pickCell,
@@ -89,4 +90,26 @@ test("farther cells have a smaller ground depth in the default yaw", () => {
   const camera = createCamera();
   camera.yaw = 0;
   assert.ok(cellGroundDepth(0, -3, camera) < cellGroundDepth(0, 3, camera));
+});
+
+test("a raised neighbor projects as a sloped top, not a flat step", () => {
+  const terrain = createTerrain({ radius: 1, base: 3 });
+  const camera = createCamera();
+  camera.yaw = 0;
+  camera.zoom = 1;
+  camera.panX = 0;
+  camera.panY = 0;
+  const origin = { x: 200, y: 200 };
+  raiseHex(terrain, 0, 0, 2);
+  const top = hexTopPoints(terrain, 1, 0, camera, origin);
+  const ys = top.map((point) => point.y);
+  assert.ok(Math.max(...ys) - Math.min(...ys) > 8);
+});
+
+test("fitZoom shrinks to keep a large map on screen", () => {
+  const terrain = createTerrain({ radius: 22 });
+  const camera = createCamera();
+  camera.zoom = 2;
+  fitZoom(terrain, camera, { width: 800, height: 600 });
+  assert.ok(camera.zoom < 1);
 });
