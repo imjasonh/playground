@@ -680,7 +680,7 @@ formatReadout();
 fit();
 afterPaint(() => {
   terrain = createTerrain();
-  sculptPreview(terrain);
+  sculptPreview(terrain, mulberry32(Date.now()));
   view = resizeCanvas(canvas, context);
   if (!didFitZoom) {
     fitZoom(terrain, camera, view);

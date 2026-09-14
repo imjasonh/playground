@@ -1,14 +1,16 @@
 import {
+  HEX_CORNER_X,
+  HEX_CORNER_Z,
   HEX_DIRS,
   axialToWorld,
   edgeNeighbor,
   hexAdd,
   hexDistance,
   hexKey,
-  hexLine,
   hexesInRadius,
   vertexId,
 } from "./hex.js";
+import { createPerlin2D, fbm2D } from "./noise.js";
 
 export const MIN_HEIGHT = -10;
 export const MAX_HEIGHT = 30;
@@ -394,72 +396,118 @@ export function redo(history, terrain) {
   return true;
 }
 
-function liftCone(terrain, center, reach, lift) {
-  for (const cell of cellsInBrush(terrain, center, reach)) {
-    const distance = hexDistance(cell, center);
-    raiseHex(terrain, cell.q, cell.r, Math.max(1, lift - distance));
-  }
-}
-
-export function sculptPreview(terrain) {
-  flattenTerrain(terrain, DEFAULT_BASE);
-  terrain.roads.clear();
-  terrain.waterLevel = DEFAULT_WATER;
-  liftCone(terrain, { q: -3, r: -2 }, 7, 10);
-  liftCone(terrain, { q: 5, r: -4 }, 5, 8);
-  liftCone(terrain, { q: 2, r: 4 }, 4, 6);
-  if (terrain.radius >= 20) {
-    liftCone(
-      terrain,
-      { q: -Math.round(terrain.radius * 0.48), r: Math.round(terrain.radius * 0.12) },
-      10,
-      9,
-    );
-    liftCone(
-      terrain,
-      { q: Math.round(terrain.radius * 0.42), r: Math.round(terrain.radius * 0.22) },
-      11,
-      10,
-    );
-  }
-  const lake = { q: 1, r: 2 };
-  const lakeReach = 4;
-  const lakeCore = 1;
-  smoothSlopes(terrain, true);
-  for (const cell of cellsInBrush(terrain, lake, lakeReach)) {
-    const distance = hexDistance(cell, lake);
-    if (distance <= lakeCore) {
-      levelHex(terrain, cell.q, cell.r, MIN_HEIGHT);
-    } else {
-      const current = Math.round(hexMeanHeight(terrain, cell.q, cell.r));
-      levelHex(terrain, cell.q, cell.r, Math.max(MIN_HEIGHT, current - 8));
+/**
+ * Largest |height| gap between adjacent corners of one hex.
+ * Generated maps keep this at most 1 so interior faces stay planar enough
+ * to draw without a cliff wall.
+ */
+export function maxHeightStep(terrain) {
+  let max = 0;
+  for (const cell of terrain.cells) {
+    for (let i = 0; i < 6; i += 1) {
+      const ha = terrain.heights.get(cell.corners[i]);
+      const hb = terrain.heights.get(cell.corners[(i + 1) % 6]);
+      max = Math.max(max, Math.abs(ha - hb));
     }
   }
-  for (const cell of [...hexLine({ q: -6, r: 2 }, { q: 1, r: -1 }), ...hexLine({ q: 1, r: -1 }, { q: 7, r: -5 })]) {
-    setRoad(terrain, cell.q, cell.r, true);
+  return max;
+}
+
+/**
+ * Pull neighboring vertices together until every hex edge differs by at most
+ * one step. Unlike `smoothSlopes`, this does not prefer raising or lowering.
+ */
+export function relaxSlopes(terrain) {
+  let any = false;
+  for (let guard = 0; guard < 500; guard += 1) {
+    let changed = false;
+    for (const cell of terrain.cells) {
+      for (let i = 0; i < 6; i += 1) {
+        const a = cell.corners[i];
+        const b = cell.corners[(i + 1) % 6];
+        const ha = terrain.heights.get(a);
+        const hb = terrain.heights.get(b);
+        const gap = ha - hb;
+        if (gap > 1) {
+          changed = setVertex(terrain, a, ha - 1) || changed;
+          changed = setVertex(terrain, b, hb + 1) || changed;
+        } else if (gap < -1) {
+          changed = setVertex(terrain, a, ha + 1) || changed;
+          changed = setVertex(terrain, b, hb - 1) || changed;
+        }
+      }
+    }
+    if (!changed) {
+      break;
+    }
+    any = true;
   }
+  return any;
+}
+
+function heightSpanForRadius(radius) {
+  return Math.min(MAX_HEIGHT - MIN_HEIGHT, Math.max(0, 2 * radius));
+}
+
+function vertexWorld(cell, cornerIndex) {
+  return {
+    x: cell.ux + HEX_CORNER_X[cornerIndex],
+    z: cell.uz + HEX_CORNER_Z[cornerIndex],
+  };
+}
+
+/**
+ * Sample Perlin noise at each unique vertex, stretch to the height range the
+ * hex radius can support, then relax edges so no step is steeper than 1.
+ */
+export function generateNoiseTerrain(terrain, rng) {
+  terrain.roads.clear();
+  terrain.waterLevel = DEFAULT_WATER;
+  const noise = createPerlin2D(rng);
+  const originX = rng() * 256;
+  const originZ = rng() * 256;
+  const freq = 1 / Math.max(10, terrain.radius * 1.15);
+  const samples = [];
+  let minN = Infinity;
+  let maxN = -Infinity;
+  const seen = new Set();
+  for (const cell of terrain.cells) {
+    for (let i = 0; i < 6; i += 1) {
+      const id = cell.corners[i];
+      if (seen.has(id)) {
+        continue;
+      }
+      seen.add(id);
+      const world = vertexWorld(cell, i);
+      const x = world.x * freq + originX;
+      const z = world.z * freq + originZ;
+      const n = fbm2D(noise, x, z, 4, 2, 0.35);
+      samples.push([id, n]);
+      if (n < minN) {
+        minN = n;
+      }
+      if (n > maxN) {
+        maxN = n;
+      }
+    }
+  }
+  const span = heightSpanForRadius(terrain.radius);
+  const lo = Math.round((MIN_HEIGHT + MAX_HEIGHT - span) / 2);
+  const hi = lo + span;
+  const range = maxN - minN;
+  for (const [id, n] of samples) {
+    const t = range === 0 ? 0.5 : (n - minN) / range;
+    terrain.heights.set(id, clampHeight(Math.round(lo + t * (hi - lo))));
+  }
+  relaxSlopes(terrain);
+}
+
+export function sculptPreview(terrain, rng = mulberry32(Date.now())) {
+  generateNoiseTerrain(terrain, rng);
 }
 
 export function generateHills(terrain, rng = Math.random) {
-  flattenTerrain(terrain, DEFAULT_BASE);
-  terrain.roads.clear();
-  const peakCount = 6 + Math.floor(rng() * 7) + Math.floor(terrain.radius / 8);
-  for (let p = 0; p < peakCount; p += 1) {
-    const center = terrain.cells[Math.floor(rng() * terrain.cells.length)];
-    liftCone(
-      terrain,
-      center,
-      3 + Math.floor(rng() * Math.max(4, Math.floor(terrain.radius / 4))),
-      8 + Math.floor(rng() * 10),
-    );
-  }
-  smoothSlopes(terrain, true);
-  const basin = terrain.cells[Math.floor(rng() * terrain.cells.length)];
-  const basinReach = 3 + Math.floor(rng() * 3);
-  for (const cell of cellsInBrush(terrain, basin, basinReach)) {
-    const current = Math.round(hexMeanHeight(terrain, cell.q, cell.r));
-    levelHex(terrain, cell.q, cell.r, Math.max(MIN_HEIGHT, current - 10));
-  }
+  generateNoiseTerrain(terrain, rng);
 }
 
 export function heightsEqual(a, b) {

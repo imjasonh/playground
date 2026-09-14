@@ -16,6 +16,7 @@ import {
   createTerrain,
   flattenTerrain,
   generateHills,
+  generateNoiseTerrain,
   getVertexHeight,
   hasCell,
   hasRoad,
@@ -30,12 +31,14 @@ import {
   isSkirtEdge,
   isSnowHeight,
   levelHex,
+  maxHeightStep,
   mulberry32,
   pushUndo,
   raiseBrush,
   raiseHex,
   raiseVertex,
   redo,
+  relaxSlopes,
   sculptPreview,
   setRoad,
   setRoadBrush,
@@ -185,13 +188,22 @@ test("undo and redo restore vertex heights", () => {
   assert.ok(heightsEqual(terrain.heights, afterRaise));
 });
 
+test("relaxSlopes collapses a cliff to one-step edges", () => {
+  const terrain = createTerrain({ radius: 2, base: 3 });
+  levelHex(terrain, 0, 0, 10);
+  assert.ok(maxHeightStep(terrain) > 1);
+  relaxSlopes(terrain);
+  assert.ok(maxHeightStep(terrain) <= 1);
+});
+
 test("sculptPreview and generateHills stay in range and are seeded", () => {
   const preview = createTerrain({ radius: 6, base: 3 });
-  sculptPreview(preview);
+  sculptPreview(preview, mulberry32(11));
   const previewHeights = allHeights(preview);
   assert.ok(previewHeights.every((value) => value >= MIN_HEIGHT && value <= MAX_HEIGHT));
-  assert.ok(previewHeights.some((value) => value >= SNOW_HEIGHT));
-  assert.ok(previewHeights.some((value) => value <= DEEP_WATER_HEIGHT));
+  assert.ok(previewHeights.some((value) => value !== previewHeights[0]));
+  assert.ok(maxHeightStep(preview) <= 1);
+  assert.equal(preview.roads.size, 0);
   assert.notEqual(terrainFingerprint(preview), terrainFingerprint(createTerrain({ radius: 6 })));
 
   const a = createTerrain({ radius: 5 });
@@ -202,7 +214,17 @@ test("sculptPreview and generateHills stay in range and are seeded", () => {
   generateHills(c, mulberry32(29));
   assert.equal(terrainFingerprint(a), terrainFingerprint(b));
   assert.notEqual(terrainFingerprint(a), terrainFingerprint(c));
+  assert.ok(maxHeightStep(a) <= 1);
   assert.equal(a.cells.length, 91);
+});
+
+test("noise terrain on a large map reaches snow and deep water without cliffs", () => {
+  const terrain = createTerrain({ radius: 24 });
+  generateNoiseTerrain(terrain, mulberry32(11));
+  const heights = allHeights(terrain);
+  assert.ok(heights.some((value) => value >= SNOW_HEIGHT));
+  assert.ok(heights.some((value) => value <= DEEP_WATER_HEIGHT));
+  assert.ok(maxHeightStep(terrain) <= 1);
 });
 
 test("applyHeights replaces the live map", () => {
