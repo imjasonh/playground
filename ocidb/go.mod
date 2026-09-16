@@ -7,12 +7,12 @@ require (
 	github.com/klauspost/compress v1.20.0
 	github.com/values-conflict/go-sqlite-fdw v0.0.0
 	github.com/values-conflict/go-sqlite-fdw/modernc v0.0.0-20260630071241-65cea68abcec
-	modernc.org/sqlite v1.58.0
+	modernc.org/sqlite v1.59.0
 )
 
 require (
 	github.com/containerd/stargz-snapshotter/estargz v0.18.2 // indirect
-	github.com/docker/cli v29.8.0+incompatible // indirect
+	github.com/docker/cli v29.8.1+incompatible // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.9 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
