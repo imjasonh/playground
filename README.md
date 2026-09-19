@@ -33,6 +33,10 @@ bump when the tests still pass, so old experiments don't rot.
 - **[`esp-flash/`](esp-flash/)** — flash `inkbot-esp32` / `maze-esp32` (or a
   local `.bin`) to a USB ESP32 from Chrome or Edge.
 - **[`hello/`](hello/)** — a minimal static demo.
+- **[`image-diff/`](image-diff/)** — drop two images and compare them pixel by
+  pixel. Matching pixels stay as they are; the more a pixel differs, the more
+  red it is tinted. Different sizes are resized. Different aspect ratios are
+  center-cropped to a shared canvas, with an outline of the compared region.
 - **[`sundial/`](sundial/)** — a clock whose long shadow follows the sun, like
   a sundial. At night there is no shadow.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
