@@ -1,0 +1,15 @@
+{
+  "name": "nypd-choppers",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Daily flight-path, flight-time, and fuel-cost estimates for NYPD helicopters from ADS-B data",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "scrape": "node scripts/scrape.js",
+    "start": "npx --yes serve . -p 3000"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
