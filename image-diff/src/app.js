@@ -20,14 +20,15 @@ const state = { a: null, b: null };
 
 function bindSlot(id) {
   const root = document.querySelector(`[data-slot="${id}"]`);
+  const article = root.closest(".slot");
   return {
     id,
     root,
-    input: root.querySelector("input[type='file']"),
+    input: article.querySelector("input[type='file']"),
     preview: root.querySelector(".preview"),
     image: root.querySelector(".preview img"),
     crop: root.querySelector(".crop"),
-    meta: root.querySelector(".slot-meta"),
+    meta: article.querySelector(".slot-meta"),
   };
 }
 
