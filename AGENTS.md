@@ -36,6 +36,7 @@ playground/
 ├── tank-commander/        # Rust CLI: Tank Commander balance/fun simulator (skirmish/platoon/combined)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
 ├── hello/                 # example static app (HTML only)
+├── image-diff/            # pixel-by-pixel image comparison (JS + Node tests)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
 ├── onramp/             # offline Mac can’t-get-online triage (Sparkle CD)
 ├── inkbot/                # Rust Cloudflare Worker: e-ink frame host + Slack @inkbot
@@ -70,6 +71,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `cors-proxy-demo/` | yes | Static front-end for `cors-proxy`; HTML/JS, no build or tests |
 | `git/` | yes | In-browser read-only git client; JS modules, npm scripts, tests |
 | `hello/` | yes | Static HTML; no build or tests |
+| `image-diff/` | yes | Pixel-by-pixel image comparison; JS modules, npm scripts, tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
@@ -660,6 +662,7 @@ bundle exec fastlane test
 | `cors-proxy-demo/` | Browser playground for the `cors-proxy` Worker (send a request, inspect the CORS response) | none (static) |
 | `git/` | In-browser read-only git client (clone, browse, branches, history) | Jest + Playwright |
 | `hello/` | Static demo | none |
+| `image-diff/` | Drop two images and compare them pixel by pixel; different pixels tint red | Node test runner |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
