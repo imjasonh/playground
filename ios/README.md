@@ -418,12 +418,16 @@ ids.
 Needs the App Attest App ID capability
 (`com.apple.developer.devicecheck.appattest-environment` = `production`), the
 Sign in with Apple capability (`com.apple.developer.applesignin` = `Default`),
-and a match profile refresh (`needs-ios-bootstrap`). Simulator cannot generate a
-Secure Enclave key; Register then uses `POST /v1/unattested-token`, which
-production keeps off (`ALLOW_UNATTESTED=0`). Sign in with Apple still works on
-the Simulator. Use a physical iPhone for a real handshake. Set the Worker
-`APP_ID` var to `<Team ID>.io.github.imjasonh.playground` before a device
-attestation can verify.
+and a match profile refresh (`needs-ios-bootstrap`). The App Store Connect API
+cannot enable App Attest (`APP_ATTEST` is not a valid `capabilityType`). Enable
+that checkbox on the host App ID in the Apple Developer portal, then let
+bootstrap refresh the profile. Sign in with Apple is enabled by bootstrap.
+Simulator cannot generate a Secure Enclave key; Register then uses
+`POST /v1/unattested-token`, which production keeps off (`ALLOW_UNATTESTED=0`).
+Sign in with Apple still works on the Simulator. Use a physical iPhone for a
+real handshake. Set the Worker `APP_ID` var to
+`<Team ID>.io.github.imjasonh.playground` before a device attestation can
+verify.
 
 ## Adding an experiment
 

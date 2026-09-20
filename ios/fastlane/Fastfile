@@ -107,6 +107,12 @@ end
 
 # Enable App Attest on an existing App ID so match profiles include
 # com.apple.developer.devicecheck.appattest-environment. Idempotent.
+#
+# The App Store Connect BundleIdCapabilities API this fastlane talks to
+# rejects `APP_ATTEST` (it is not in the capabilityType enum). Enable App
+# Attest once on the App ID in the Apple Developer portal, then re-run
+# bootstrap so match can refresh the profile. This helper must not abort
+# the lane on that API rejection, or Sign in with Apple never gets enabled.
 def ensure_app_attest!(identifier)
   require "spaceship"
   bundle_id = Spaceship::ConnectAPI::BundleId.find(identifier)
@@ -130,8 +136,21 @@ def ensure_app_attest!(identifier)
     else
       "APP_ATTEST"
     end
-  bundle_id.create_capability(app_attest_type)
-  UI.success("Enabled App Attest on '#{identifier}'")
+  begin
+    bundle_id.create_capability(app_attest_type)
+    UI.success("Enabled App Attest on '#{identifier}'")
+  rescue Spaceship::UnexpectedResponse => e
+    message = e.to_s
+    unless message.include?("not a valid value") && message.include?("APP_ATTEST")
+      raise
+    end
+    UI.important(
+      "App Store Connect cannot enable App Attest via the API (`APP_ATTEST` " \
+      "is not a valid capabilityType). Enable App Attest on '#{identifier}' " \
+      "in the Apple Developer portal, then re-run signing bootstrap so match " \
+      "can issue a profile that includes the entitlement."
+    )
+  end
 end
 
 # Enable Sign in with Apple on an existing App ID so match profiles include

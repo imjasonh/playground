@@ -71,8 +71,9 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 (then `match`). It also enables HealthKit on the host and Ride Monitor Watch
 App IDs when missing (needed for the Watch frontmost workout session), NFC
 Tag Reading on the host when missing (needed for the NFC Tags experiment),
-and App Attest and Sign in with Apple on the host when missing (needed for the
-App Attest experiment).
+and Sign in with Apple on the host when missing (needed for the App Attest
+experiment). App Attest itself must be enabled on the App ID in the Apple
+Developer portal; the App Store Connect API rejects `APP_ATTEST`.
 After the keyboard or any new extension is bootstrapped once, day-to-day
 experiment work does not touch signing.
 
