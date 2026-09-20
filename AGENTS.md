@@ -604,7 +604,8 @@ bundle exec fastlane test
 - **Keep all apps isolated**: do not add repo-root `package.json`, `go.mod`, `go.work`, or Cargo workspace files unless the maintainers explicitly request a monorepo toolchain.
 - **Minimize scope**: when fixing or extending one app, avoid unrelated changes in other directories.
 - **Comments and documentation**: follow the [Google developer documentation style guide](https://developers.google.com/style). Agents: read [`.cursor/skills/google-developer-style/SKILL.md`](.cursor/skills/google-developer-style/SKILL.md) before writing or editing comments, READMEs, or other docs.
-- **Unslop**: when you write comments, docs, HTML copy, or PR prose, read [`.cursor/skills/unslop/SKILL.md`](.cursor/skills/unslop/SKILL.md) ([unslop](https://github.com/cursor/plugins/blob/HEAD/pstack/skills/unslop/SKILL.md) from cursor/plugins) and strip AI tells. Google style still owns headings, code font, inclusive language, and procedures. First person is fine in README ledes and PR descriptions.
+- **pstack**: skills from [pstack](https://github.com/cursor/plugins/tree/main/pstack) are vendored under [`.cursor/skills/`](.cursor/skills/) (see [`.cursor/pstack-SOURCE`](.cursor/pstack-SOURCE)) so Cloud Agents load them from the checkout. Use `/poteto-mode` to route work. Refresh from upstream rather than editing the copies.
+- **Unslop**: when you write comments, docs, HTML copy, or PR prose, read [`.cursor/skills/unslop/SKILL.md`](.cursor/skills/unslop/SKILL.md) and strip AI tells. Google style still owns headings, code font, inclusive language, and procedures. First person is fine in README ledes and PR descriptions.
 - **Taglines**: do not invent taglines or slogans. If existing tagline copy should go, delete it and wait for an explicit replacement.
 - **No control helper text**: do not put small secondary / caption / footnote
   prose under a button, toggle, link, or section action that restates what the

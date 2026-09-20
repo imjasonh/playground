@@ -1,0 +1,8 @@
+source: https://github.com/cursor/plugins
+path: pstack
+version: 0.15.2
+commit: 6ed0f7a9504f577d7529064103cecce9be7dfc5e
+
+Skills are copied into .cursor/skills/ and agents into .cursor/agents/
+so Cloud Agents load them from the checkout. Refresh from that commit
+(or a newer pstack tag) rather than editing the copies.
