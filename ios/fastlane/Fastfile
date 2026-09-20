@@ -159,7 +159,13 @@ def ensure_sign_in_with_apple!(identifier)
     else
       "APPLE_ID_AUTH"
     end
-  bundle_id.create_capability(siwa_type)
+  # App Store Connect requires a consent configuration. Without it the API
+  # returns 409: "Please select at least one configuration for Sign In with Apple."
+  settings = [{
+    key: "APPLE_ID_AUTH_APP_CONSENT",
+    options: [{ key: "PRIMARY_APP_CONSENT" }]
+  }]
+  bundle_id.create_capability(siwa_type, settings: settings)
   UI.success("Enabled Sign in with Apple on '#{identifier}'")
 end
 
