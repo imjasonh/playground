@@ -1,0 +1,49 @@
+# Cloudflare Workers configuration for the App Attest handshake backend.
+#
+# This project has no index.html, so the GitHub Pages workflows skip it; it is
+# deployed to Cloudflare by `deploy-workers.yml` on pushes to `main` (using the
+# CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID repo secrets). The KV namespace
+# id below is a placeholder; deploy create-or-gets the real namespace.
+
+name = "app-attest"
+main = "build/worker/shim.mjs"
+compatibility_date = "2025-04-01"
+
+# Build the wasm Worker from Rust. `worker-build` wraps `cargo build
+# --target wasm32-unknown-unknown` and emits the JS shim referenced by `main`.
+#
+# worker-build is major-version-locked with `worker` (0.8.x ↔ 0.8.x) and bundles
+# wasm-bindgen CLI 0.2.125, which must match the library pin in Cargo.toml.
+# Build the *tool* with stable — its deps need a recent Cargo — while
+# worker-build compiles this crate with rust-toolchain.toml.
+[build]
+command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release"
+
+# Public configuration. APP_ID is `<Team ID>.<Bundle ID>` and must match the
+# Playground host app. Replace the 10-character Team ID with APPLE_TEAM_ID.
+[vars]
+APP_ID = "XXXXXXXXXX.io.github.imjasonh.playground"
+TOKEN_TTL_SECONDS = "3600"
+# Set to "1" only for local wrangler / Simulator testing. Production stays off.
+ALLOW_UNATTESTED = "0"
+
+# KV stores one-time challenges and attested device rows.
+[[kv_namespaces]]
+binding = "STORE"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
+
+# Secrets to set with `wrangler secret put`:
+#   JWT_SECRET   (random 32+ byte hex; see examples/gensecret.rs)
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 1

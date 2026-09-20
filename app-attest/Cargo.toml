@@ -1,0 +1,55 @@
+[package]
+name = "app-attest-worker"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "App Attest handshake and JWT issuer for Cloudflare Workers"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+# Dependencies that build on every target (native + wasm). Attestation
+# parsing, certificate checks, and JWT minting are pure Rust so native
+# `cargo test` exercises the same code the Worker runs.
+[dependencies]
+async-trait = "0.1"
+base64 = "0.22"
+ciborium = "0.2"
+der-parser = "10"
+hmac = "0.12"
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
+p384 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+x509-parser = "0.17"
+
+# The Cloudflare Workers runtime bindings are wasm-only. Gating them to the
+# wasm32 target keeps native `cargo test` free of the JS/wasm-bindgen glue.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+worker = "0.8"
+getrandom = { version = "0.2", features = ["js"] }
+wasm-bindgen = "=0.2.125"
+
+[dev-dependencies]
+futures = "0.3"
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic", "pkcs8"] }
+rcgen = "0.13"
+
+[[example]]
+name = "gensecret"
+path = "examples/gensecret.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+# worker-build 0.8.5 + wasm-bindgen 0.2.125 need the wasm `target_features`
+# custom section. `strip = true` drops that section (workers-rs#1014).
+strip = "debuginfo"
+
+[lints.rust]
+unused = "deny"

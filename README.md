@@ -75,6 +75,10 @@ them:
   over tree-sitter ASTs (Go CLI).
 - **[`sshapp/`](sshapp/)** — Wish SSH apps on GKE Autopilot behind one SSH mux
   (`hello`, `chess`; Terraform + `ko_build`).
+- **[`app-attest/`](app-attest/)** — Apple App Attest handshake and JWT issuer
+  for Cloudflare Workers, in Rust. The Playground iOS **App Attest** experiment
+  registers a device once; later calls send the JWT and `GET /v1/whoami`
+  returns the bound user id and device id.
 - **[`web-push/`](web-push/)** — a Web Push application-server backend
   (RFC 8030/8188/8291/8292) for Cloudflare Workers, in Rust.
 - **[`y/`](y/)** — a one-user microblog for Cloudflare Workers, in Rust

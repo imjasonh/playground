@@ -26,7 +26,7 @@ requires watchOS 10. Build the app with Xcode 27.
 Bootstrap is **not** per experiment. It is once for the host app, once more
 when you add a new extension Bundle ID (today: T9 keyboard, Ride Monitor
 widget, Ride Monitor Watch), and again when you add an App ID capability such
-as NFC Tag Reading.
+as NFC Tag Reading or App Attest.
 
 ## How it's structured
 
@@ -62,6 +62,7 @@ ios/
 | `nfc-tags` | NFC Tags | In-app Core NFC tag read/write (NDEF text/URL, blank NTAGs); needs NFC Tag Reading capability bootstrap |
 | `esp32-ble` | ESP32 BLE | In-app Core Bluetooth central for `esp32-ble/` firmware; no extra Bundle ID |
 | `face-swap` | Face Swap | On-device model chooses a targeted edit. The rest of the photo stays as it was. |
+| `app-attest` | App Attest | One-time DeviceCheck handshake with the `app-attest` Worker; needs App Attest capability bootstrap |
 
 ### Ride Monitor
 
@@ -404,6 +405,21 @@ Intelligence.
 
 Choose a photo from the library. The working copy is scaled so the long edge is
 at most 1024 px.
+
+### App Attest
+
+Register once with Apple App Attest, then call the [`app-attest/`](../app-attest/)
+Worker. The Worker checks the attestation, binds `userId` and `deviceId` to the
+hardware key, and issues a short-lived JWT. **Call whoami** sends that token
+and the Worker returns only those bound ids.
+
+Needs the App Attest App ID capability
+(`com.apple.developer.devicecheck.appattest-environment` = `production`) and a
+match profile refresh (`needs-ios-bootstrap`). Simulator cannot generate a
+Secure Enclave key; Register then uses `POST /v1/unattested-token`, which
+production keeps off (`ALLOW_UNATTESTED=0`). Use a physical iPhone for a real
+handshake. Set the Worker `APP_ID` var to `<Team ID>.io.github.imjasonh.playground`
+before a device attestation can verify.
 
 ## Adding an experiment
 
