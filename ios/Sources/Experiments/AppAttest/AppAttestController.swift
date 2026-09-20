@@ -1,10 +1,10 @@
 import DeviceCheck
 import Foundation
 
-/// Orchestrates the one-time App Attest handshake and later `whoami` calls.
+/// Orchestrates Sign in with Apple, the one-time App Attest handshake, and later `whoami` calls.
 @MainActor
 final class AppAttestController: ObservableObject {
-    @Published var userId: String
+    @Published private(set) var userId: String
     @Published private(set) var deviceId: String
     @Published private(set) var statusMessage: String
     @Published private(set) var lastWhoAmI: AppAttestWhoAmI?
@@ -12,34 +12,87 @@ final class AppAttestController: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var isSupported: Bool
 
+    var isSignedIn: Bool { !userId.isEmpty }
+
     private let keys: any AppAttestKeyGenerating
     private let api: AppAttestAPI
     private let store: any AppAttestStoring
+    private let appleID: any AppAttestAppleIDChecking
 
     init(
         keys: any AppAttestKeyGenerating = SystemAppAttestKeys(),
         api: AppAttestAPI = AppAttestAPI(),
-        store: (any AppAttestStoring)? = nil
+        store: (any AppAttestStoring)? = nil,
+        appleID: (any AppAttestAppleIDChecking)? = nil
     ) {
         self.keys = keys
         self.api = api
-        // Default args are evaluated off the main actor; construct the store here.
+        // Default args are evaluated off the main actor; construct isolated types here.
         let store = store ?? AppAttestUserDefaultsStore()
         self.store = store
+        self.appleID = appleID ?? SystemAppAttestAppleID()
         userId = store.userId
         deviceId = store.deviceId
         hasToken = store.token != nil
         isSupported = keys.isSupported
         statusMessage = Self.initialStatus(
             supported: keys.isSupported,
-            hasToken: store.token != nil
+            hasToken: store.token != nil,
+            signedIn: !store.userId.isEmpty
         )
+    }
+
+    func applyAppleSignIn(_ result: Result<String, AppAttestAppleSignInError>) {
+        switch result {
+        case .success(let appleUserID):
+            applyAppleUserID(appleUserID)
+        case .failure(.canceled):
+            statusMessage = "Sign in canceled."
+        case .failure(let error):
+            statusMessage = error.localizedDescription
+        }
+    }
+
+    func applyAppleUserID(_ appleUserID: String) {
+        let trimmed = appleUserID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            statusMessage = AppAttestAppleSignInError.missingUserID.localizedDescription
+            return
+        }
+        if trimmed != store.userId {
+            store.token = nil
+            hasToken = false
+            lastWhoAmI = nil
+        }
+        store.userId = trimmed
+        userId = trimmed
+        statusMessage = "Signed in with Apple. Register to bind this user id."
+    }
+
+    func signOut() {
+        store.userId = ""
+        store.token = nil
+        userId = ""
+        hasToken = false
+        lastWhoAmI = nil
+        statusMessage = "Signed out."
+    }
+
+    func refreshAppleIDState() async {
+        guard !store.userId.isEmpty else { return }
+        switch await appleID.credentialState(forUserID: store.userId) {
+        case .revoked, .notFound:
+            signOut()
+            statusMessage = "Sign in with Apple was revoked. Sign in again."
+        case .authorized, .unknown:
+            break
+        }
     }
 
     func register() async {
         let trimmed = userId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            statusMessage = "Enter a user id."
+            statusMessage = "Sign in with Apple first."
             return
         }
         guard !isBusy else { return }
@@ -143,9 +196,12 @@ final class AppAttestController: ObservableObject {
         return ns.domain == DCError.errorDomain && ns.code == DCError.invalidKey.rawValue
     }
 
-    private static func initialStatus(supported: Bool, hasToken: Bool) -> String {
+    private static func initialStatus(supported: Bool, hasToken: Bool, signedIn: Bool) -> String {
         if hasToken {
             return "A token is stored on this device."
+        }
+        if !signedIn {
+            return "Sign in with Apple to bind your Apple user id."
         }
         if supported {
             return "Register to attest this device and mint a token."

@@ -12,8 +12,9 @@ The iOS UI lives in [`ios/Sources/Experiments/AppAttest/`](../ios/Sources/Experi
 ## Handshake
 
 1. `POST /v1/challenge` returns a one-time nonce (5-minute KV TTL).
-2. The iOS app builds `{"challenge","userId","deviceId"}`, hashes those exact
-   JSON bytes, and calls `DCAppAttestService.attestKey`.
+2. The iOS app signs in with Apple, then builds `{"challenge","userId","deviceId"}`
+   using that Apple user identifier, hashes those exact JSON bytes, and calls
+   `DCAppAttestService.attestKey`.
 3. `POST /v1/token` sends `keyId`, the CBOR `attestationObject`, and the raw
    client JSON. The Worker checks the Apple certificate chain, the nonce
    extension, the App ID hash, and the bound identifiers, then stores the

@@ -348,8 +348,11 @@ final class PlaygroundUITests: XCTestCase {
         openExperiment("app-attest", title: "App Attest", in: app)
 
         XCTAssertTrue(app.navigationBars["App Attest"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.textFields["appAttestUserIdField"].waitForExistence(timeout: 8)
-            || app.otherElements["appAttestUserIdField"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["appAttestSignInButton"].waitForExistence(timeout: 8)
+            || app.otherElements["appAttestSignInButton"].waitForExistence(timeout: 3)
+            || app.buttons["Sign in with Apple"].waitForExistence(timeout: 3)
+            || app.staticTexts["appAttestAppleUserIdValue"].waitForExistence(timeout: 3)
+            || app.otherElements["appAttestAppleUserIdValue"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["appAttestRegisterButton"].waitForExistence(timeout: 8)
             || app.otherElements["appAttestRegisterButton"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["appAttestWhoamiButton"].waitForExistence(timeout: 8)

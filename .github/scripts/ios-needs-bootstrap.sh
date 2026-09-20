@@ -44,7 +44,7 @@ while IFS= read -r path; do
       ;;
     ios/fastlane/Fastfile)
       if git diff -U0 "$range" -- "$path" | grep -E '^[+-]' | grep -Ev '^[+-]{3} ' \
-        | grep -Eq 'SIGNING_IDENTIFIERS|ensure_bundle_ids!|ensure_healthkit!|ensure_nfc_tag_reading!|ensure_app_attest!|APP_IDENTIFIER|KEYBOARD_IDENTIFIER|RIDE_WIDGET_IDENTIFIER|WATCH_IDENTIFIER|app_identifier:|BundleId|signing_bootstrap'; then
+        | grep -Eq 'SIGNING_IDENTIFIERS|ensure_bundle_ids!|ensure_healthkit!|ensure_nfc_tag_reading!|ensure_app_attest!|ensure_sign_in_with_apple!|APP_IDENTIFIER|KEYBOARD_IDENTIFIER|RIDE_WIDGET_IDENTIFIER|WATCH_IDENTIFIER|app_identifier:|BundleId|signing_bootstrap'; then
         needed=true
         break
       fi

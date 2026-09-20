@@ -1,3 +1,4 @@
+import AuthenticationServices
 import CryptoKit
 import XCTest
 @testable import Playground
@@ -116,9 +117,10 @@ final class AppAttestTests: XCTestCase {
         let controller = AppAttestController(
             keys: keys,
             api: AppAttestAPI(baseURL: URL(string: "https://example.test")!, http: http),
-            store: store
+            store: store,
+            appleID: FakeAppAttestAppleID()
         )
-        controller.userId = "alice"
+        controller.applyAppleUserID("alice")
         await controller.register()
         XCTAssertTrue(controller.hasToken)
         XCTAssertEqual(controller.lastWhoAmI?.userId, "alice")
@@ -162,7 +164,8 @@ final class AppAttestTests: XCTestCase {
         let controller = AppAttestController(
             keys: keys,
             api: AppAttestAPI(baseURL: URL(string: "https://example.test")!, http: http),
-            store: store
+            store: store,
+            appleID: FakeAppAttestAppleID()
         )
         await controller.register()
         XCTAssertEqual(store.keyId, "key-xyz")
@@ -184,12 +187,102 @@ final class AppAttestTests: XCTestCase {
         let controller = AppAttestController(
             keys: FakeAppAttestKeys(isSupported: false),
             api: AppAttestAPI(baseURL: URL(string: "https://example.test")!, http: http),
-            store: store
+            store: store,
+            appleID: FakeAppAttestAppleID()
         )
-        controller.userId = "   "
         await controller.register()
         XCTAssertFalse(controller.hasToken)
-        XCTAssertEqual(controller.statusMessage, "Enter a user id.")
+        XCTAssertFalse(controller.isSignedIn)
+        XCTAssertEqual(controller.statusMessage, "Sign in with Apple first.")
+    }
+
+    @MainActor
+    func testApplyAppleUserIDEnablesRegister() {
+        let store = AppAttestMemoryStore(userId: "")
+        let controller = AppAttestController(
+            keys: FakeAppAttestKeys(isSupported: false),
+            store: store,
+            appleID: FakeAppAttestAppleID()
+        )
+        XCTAssertFalse(controller.isSignedIn)
+        controller.applyAppleSignIn(.success("001234.apple-user"))
+        XCTAssertTrue(controller.isSignedIn)
+        XCTAssertEqual(controller.userId, "001234.apple-user")
+        XCTAssertEqual(store.userId, "001234.apple-user")
+        XCTAssertEqual(controller.statusMessage, "Signed in with Apple. Register to bind this user id.")
+    }
+
+    func testAppleSignInMapsCanceledAuthorizationError() {
+        let mapped = AppAttestAppleSignIn.userID(from: .failure(ASAuthorizationError(.canceled)))
+        guard case .failure(.canceled) = mapped else {
+            return XCTFail("expected canceled, got \(mapped)")
+        }
+    }
+
+    @MainActor
+    func testCanceledSignInLeavesUserUnsigned() {
+        let store = AppAttestMemoryStore(userId: "")
+        let controller = AppAttestController(
+            keys: FakeAppAttestKeys(isSupported: false),
+            store: store,
+            appleID: FakeAppAttestAppleID()
+        )
+        controller.applyAppleSignIn(.failure(.canceled))
+        XCTAssertFalse(controller.isSignedIn)
+        XCTAssertEqual(controller.statusMessage, "Sign in canceled.")
+    }
+
+    @MainActor
+    func testSignOutClearsUserAndTokenKeepsKey() {
+        let store = AppAttestMemoryStore(userId: "apple-1")
+        store.token = "jwt"
+        store.keyId = "key-1"
+        let controller = AppAttestController(
+            keys: FakeAppAttestKeys(isSupported: false),
+            store: store,
+            appleID: FakeAppAttestAppleID()
+        )
+        controller.signOut()
+        XCTAssertFalse(controller.isSignedIn)
+        XCTAssertFalse(controller.hasToken)
+        XCTAssertEqual(store.userId, "")
+        XCTAssertNil(store.token)
+        XCTAssertEqual(store.keyId, "key-1")
+        XCTAssertEqual(controller.statusMessage, "Signed out.")
+    }
+
+    @MainActor
+    func testSwitchingAppleUserClearsOldToken() {
+        let store = AppAttestMemoryStore(userId: "apple-1")
+        store.token = "old-jwt"
+        let controller = AppAttestController(
+            keys: FakeAppAttestKeys(isSupported: false),
+            store: store,
+            appleID: FakeAppAttestAppleID()
+        )
+        XCTAssertTrue(controller.hasToken)
+        controller.applyAppleUserID("apple-2")
+        XCTAssertEqual(controller.userId, "apple-2")
+        XCTAssertFalse(controller.hasToken)
+        XCTAssertNil(store.token)
+    }
+
+    @MainActor
+    func testRevokedAppleIDClearsSession() async {
+        let store = AppAttestMemoryStore(userId: "apple-revoked")
+        store.token = "jwt"
+        store.keyId = "key-keep"
+        let appleID = FakeAppAttestAppleID(state: .revoked)
+        let controller = AppAttestController(
+            keys: FakeAppAttestKeys(isSupported: false),
+            store: store,
+            appleID: appleID
+        )
+        await controller.refreshAppleIDState()
+        XCTAssertFalse(controller.isSignedIn)
+        XCTAssertFalse(controller.hasToken)
+        XCTAssertEqual(store.keyId, "key-keep")
+        XCTAssertEqual(controller.statusMessage, "Sign in with Apple was revoked. Sign in again.")
     }
 
     @MainActor
@@ -199,7 +292,8 @@ final class AppAttestTests: XCTestCase {
         store.keyId = "k"
         let controller = AppAttestController(
             keys: FakeAppAttestKeys(isSupported: false),
-            store: store
+            store: store,
+            appleID: FakeAppAttestAppleID()
         )
         XCTAssertTrue(controller.hasToken)
         controller.forgetToken()
@@ -227,6 +321,14 @@ private final class FakeAppAttestHTTP: AppAttestHTTPClient, @unchecked Sendable 
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
         try onRequest(request)
+    }
+}
+
+private struct FakeAppAttestAppleID: AppAttestAppleIDChecking {
+    var state: AppAttestAppleIDState = .authorized
+
+    func credentialState(forUserID _: String) async -> AppAttestAppleIDState {
+        state
     }
 }
 

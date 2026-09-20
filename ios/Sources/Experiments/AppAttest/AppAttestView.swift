@@ -1,14 +1,16 @@
+import AuthenticationServices
 import SwiftUI
 
 /// Attest this device once, then call the Worker that echoes the bound ids.
 struct AppAttestView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var controller = AppAttestController()
 
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
                 availabilityBanner
-                identityForm
+                identitySection
                 actionButtons
                 Text(controller.statusMessage)
                     .font(.footnote)
@@ -20,6 +22,9 @@ struct AppAttestView: View {
                 howItWorks
             }
             .padding()
+        }
+        .task {
+            await controller.refreshAppleIDState()
         }
     }
 
@@ -47,13 +52,27 @@ struct AppAttestView: View {
         .accessibilityIdentifier("appAttestAvailabilityBanner")
     }
 
-    private var identityForm: some View {
+    @ViewBuilder
+    private var identitySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField("user-id", text: $controller.userId)
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .accessibilityIdentifier("appAttestUserIdField")
+            if controller.isSignedIn {
+                LabeledContent("Apple user id", value: controller.userId)
+                    .font(.subheadline.monospaced())
+                    .textSelection(.enabled)
+                    .accessibilityIdentifier("appAttestAppleUserIdValue")
+            } else {
+                SignInWithAppleButton(.signIn) { request in
+                    request.requestedScopes = []
+                } onCompletion: { result in
+                    let mapped = AppAttestAppleSignIn.userID(from: result)
+                    Task { @MainActor in
+                        controller.applyAppleSignIn(mapped)
+                    }
+                }
+                .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .accessibilityIdentifier("appAttestSignInButton")
+            }
 
             LabeledContent("Device id", value: controller.deviceId)
                 .font(.subheadline.monospaced())
@@ -72,7 +91,7 @@ struct AppAttestView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(controller.isBusy)
+            .disabled(controller.isBusy || !controller.isSignedIn)
             .accessibilityIdentifier("appAttestRegisterButton")
 
             Button {
@@ -84,6 +103,18 @@ struct AppAttestView: View {
             .buttonStyle(.bordered)
             .disabled(controller.isBusy || !controller.hasToken)
             .accessibilityIdentifier("appAttestWhoamiButton")
+
+            if controller.isSignedIn {
+                Button {
+                    controller.signOut()
+                } label: {
+                    Label("Sign out", systemImage: "person.crop.circle.badge.minus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(controller.isBusy)
+                .accessibilityIdentifier("appAttestSignOutButton")
+            }
 
             Button(role: .destructive) {
                 controller.forgetToken()
@@ -118,7 +149,7 @@ struct AppAttestView: View {
                 ContentUnavailableView(
                     "No whoami response yet",
                     systemImage: "person.crop.circle.badge.questionmark",
-                    description: Text("Register this device, then tap Call whoami.")
+                    description: Text("Sign in with Apple, register this device, then tap Call whoami.")
                 )
                 .accessibilityIdentifier("appAttestWhoamiEmpty")
             }
@@ -140,10 +171,11 @@ struct AppAttestView: View {
             Text("How it works")
                 .font(.subheadline.bold())
             Text(
-                "Register fetches a one-time challenge, hashes user id + device id into App Attest "
-                    + "client data, and exchanges the attestation for a JWT. Call whoami sends that "
-                    + "token to the app-attest Worker, which returns only the bound ids. The Simulator "
-                    + "uses an unattested path that production keeps off."
+                "Sign in with Apple provides the user id. Register fetches a one-time challenge, "
+                    + "hashes that Apple user id + device id into App Attest client data, and "
+                    + "exchanges the attestation for a JWT. Call whoami sends that token to the "
+                    + "app-attest Worker, which returns only the bound ids. The Simulator uses an "
+                    + "unattested path that production keeps off."
             )
             .font(.caption)
             .foregroundStyle(.secondary)
