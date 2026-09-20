@@ -407,6 +407,20 @@ final class PlaygroundUITests: XCTestCase {
             || app.staticTexts["App Attest is available on this device."].waitForExistence(timeout: 3))
     }
 
+    func testLayaExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("laya", title: "Laya", in: app)
+
+        XCTAssertTrue(app.navigationBars["Laya"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["layaStatus"].waitForExistence(timeout: 8)
+            || app.otherElements["layaStatus"].waitForExistence(timeout: 3))
+        // A fresh Simulator has no download, so the download button is the only action.
+        XCTAssertTrue(app.buttons["layaDownloadButton"].waitForExistence(timeout: 8)
+            || app.otherElements["layaDownloadButton"].waitForExistence(timeout: 3)
+            || app.buttons["layaAskButton"].waitForExistence(timeout: 3))
+    }
+
     func testArmyListExperimentOpens() {
         let app = launchApp()
 

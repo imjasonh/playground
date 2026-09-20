@@ -61,5 +61,6 @@ enum ExperimentCatalog {
         ESP32BLEExperiment.experiment,
         FaceSwapExperiment.experiment,
         AppAttestExperiment.experiment,
+        LayaExperiment.experiment,
     ]
 }

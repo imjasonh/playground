@@ -72,6 +72,10 @@ final class ExperimentCatalogTests: XCTestCase {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "app-attest" })
     }
 
+    func testIncludesLaya() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "laya" })
+    }
+
     func testIncludesDeviceAgent() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "device-agent" })
     }

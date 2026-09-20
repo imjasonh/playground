@@ -63,6 +63,7 @@ ios/
 | `esp32-ble` | ESP32 BLE | In-app Core Bluetooth central for `esp32-ble/` firmware; no extra Bundle ID |
 | `face-swap` | Face Swap | On-device model chooses a targeted edit. The rest of the photo stays as it was. |
 | `app-attest` | App Attest | Sign in with Apple, then a one-time DeviceCheck handshake with the `app-attest` Worker; needs App Attest and Sign in with Apple capability bootstrap |
+| `laya` | Laya | Swift port of the `laya-coreml` runtime; downloads the ANE bundle from Hugging Face on demand and answers choice / score / yes-no questions in one Core ML pass |
 
 ### Ride Monitor
 
@@ -424,6 +425,78 @@ production keeps off (`ALLOW_UNATTESTED=0`). Sign in with Apple still works on
 the Simulator. Use a physical iPhone for a real handshake. Set the Worker
 `APP_ID` var to `<Team ID>.io.github.imjasonh.playground` before a device
 attestation can verify.
+
+### Laya
+
+[laya-coreml](https://github.com/mizorewww/laya-coreml) is a typed-decision
+model: given a text (the *state*) and a `choice`, `score`, or `noul` (yes/no)
+question, it returns a probability per option in one forward pass. It never
+generates tokens. The upstream runtime is Python; this experiment is a Swift
+port of its ANE path, so the same bundle runs on the phone.
+
+The bundle is
+[`aac6fef/laya-multilingual-coreml-ane`](https://huggingface.co/aac6fef/laya-multilingual-coreml-ane)
+pinned to the 0.1.0 release revision. **Download model** fetches the same
+files `hub.py` allows (`coreml_config.json`, `rl_agent_config.json`,
+`encoder/config.json`, `tokenizer/*`, `model.mlpackage/*`,
+`host_weights.safetensors`, about 680 MB) into Application Support with the
+`Hub` module of [swift-transformers](https://github.com/huggingface/swift-transformers),
+checks each manifest SHA-256 once, compiles the `.mlpackage` with
+`MLModel.compileModel` and caches the `.mlmodelc`, then loads the graph with
+`.cpuAndNeuralEngine`. **Delete download** removes all of it.
+
+The ANE export is fixed at batch 1, 96 tokens, and 32 option slots, so it is
+for short decisions. The form shows the token count of the current draft
+against that limit; a state that does not fit is truncated from the end, the
+way `build_sequence` truncates, while the question head is kept whole.
+
+What runs where, matching `ane.py`:
+
+- The tokenizer is swift-transformers `AutoTokenizer` over the bundled
+  `tokenizer.json`. The prompt is `[CLS] <type> question: <instructions>
+  [SEP] [MASK] opt0 [MASK] opt1 … [SEP] <state> [SEP]`, with the same head
+  and option token caps as `common.py` and the same padding as `inputs.py`.
+- The token embedding table, type vectors, and attention masks are built on
+  the CPU from `host_weights.safetensors` (read with a small memory-mapped
+  safetensors parser; F16 / BF16 / F32) and handed to the Core ML graph as
+  five `Float16` inputs.
+- The graph returns marker logits and a pooled vector. The two-layer action
+  head (`act_head`) runs on the CPU with exact-erf GELU, then temperature
+  scaling, softmax, and normalized-entropy confidence follow `result.py`.
+
+The Simulator has no Neural Engine, so Core ML falls back to the CPU there;
+the answers are the same, just slower. On a physical iPhone, Core ML places
+the graph on the ANE. Nothing here needs a capability or signing bootstrap.
+Hugging Face is reached only for the download.
+
+#### Debugging a TestFlight build
+
+The Simulator cannot exercise the Neural Engine, so the screen is built to be
+debugged from a device without a debugger attached:
+
+- **Errors** show the stage that failed (`download`, `read bundle`,
+  `compile`, `load`, `predict`), the message, and the `NSError` domain, code,
+  file path, and underlying-error chain. Package signature and graph output
+  mismatches print the actual names and shapes Core ML reported. **Copy
+  error** puts that on the pasteboard.
+- **Load performance** lists download size and throughput, checksum time,
+  compile time and `.mlmodelc` size, and load time split into `MLModel.load`,
+  tokenizer, and host weights, plus the process resident memory before and
+  after the load.
+- **Compute units** switches between CPU + Neural Engine, all, CPU + GPU, and
+  CPU only; changing it unloads so **Load model** rebuilds with the new
+  setting. **Analyze compute plan** asks `MLComputePlan` where each ML Program
+  operation prefers to run and lists the operators that fall off the Neural
+  Engine.
+- Each answer shows the time spent in prepare (tokenize), host tensors,
+  float16 packing, `MLModel.prediction`, and the action head, with median and
+  p95 over recent asks. **Run 10×** repeats the current question and reports
+  the first (warm-up) run separately from steady-state order statistics.
+- Everything above is also appended to a diagnostics log that survives
+  relaunches and **Delete download** (`Application Support/Laya-diagnostics.log`).
+  **Copy report** and **Share report** bundle device facts, phase, stage
+  timings, model info, signature, compute plan, latency history, benchmark,
+  and the log into one text.
 
 ## Adding an experiment
 
