@@ -123,6 +123,7 @@ final class AppAttestTests: XCTestCase {
         controller.applyAppleUserID("alice")
         await controller.register()
         XCTAssertTrue(controller.hasToken)
+        XCTAssertFalse(controller.statusIsError)
         XCTAssertEqual(controller.lastWhoAmI?.userId, "alice")
         XCTAssertEqual(controller.lastWhoAmI?.deviceId, "dev-9")
         XCTAssertEqual(controller.lastWhoAmI?.unattested, true)
@@ -193,7 +194,37 @@ final class AppAttestTests: XCTestCase {
         await controller.register()
         XCTAssertFalse(controller.hasToken)
         XCTAssertFalse(controller.isSignedIn)
+        XCTAssertTrue(controller.statusIsError)
         XCTAssertEqual(controller.statusMessage, "Sign in with Apple first.")
+    }
+
+    @MainActor
+    func testRegisterSurfacesWorkerError() async {
+        let store = AppAttestMemoryStore(userId: "alice")
+        let http = FakeAppAttestHTTP()
+        http.onRequest = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/v1/challenge") {
+                return Self.json(
+                    #"{"challenge":"n","expiresAt":1}"#,
+                    status: 200
+                )
+            }
+            return Self.json(#"{"error":"certificate: issuer P-256 key"}"#, status: 400)
+        }
+        let controller = AppAttestController(
+            keys: FakeAppAttestKeys(isSupported: false),
+            api: AppAttestAPI(baseURL: URL(string: "https://example.test")!, http: http),
+            store: store,
+            appleID: FakeAppAttestAppleID()
+        )
+        await controller.register()
+        XCTAssertFalse(controller.hasToken)
+        XCTAssertTrue(controller.statusIsError)
+        XCTAssertEqual(
+            controller.statusMessage,
+            "Register failed: certificate: issuer P-256 key"
+        )
     }
 
     @MainActor
@@ -282,6 +313,7 @@ final class AppAttestTests: XCTestCase {
         XCTAssertFalse(controller.isSignedIn)
         XCTAssertFalse(controller.hasToken)
         XCTAssertEqual(store.keyId, "key-keep")
+        XCTAssertTrue(controller.statusIsError)
         XCTAssertEqual(controller.statusMessage, "Sign in with Apple was revoked. Sign in again.")
     }
 

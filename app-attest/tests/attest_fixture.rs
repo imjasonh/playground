@@ -8,7 +8,7 @@ use app_attest_worker::client_data;
 use app_attest_worker::store::{ChallengeStore, InMemoryStore};
 use rcgen::{
     BasicConstraints, CertificateParams, CustomExtension, DistinguishedName, DnType, IsCa, KeyPair,
-    KeyUsagePurpose, PKCS_ECDSA_P256_SHA256,
+    KeyUsagePurpose, PKCS_ECDSA_P256_SHA256, PKCS_ECDSA_P384_SHA384,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -99,6 +99,35 @@ fn mint_fixture(user_id: &str, device_id: &str, challenge: &str) -> Fixture {
         key_id: b64::encode_std(key_id_raw),
         client_raw,
     }
+}
+
+#[test]
+fn p384_intermediate_chain_verifies() {
+    let root_key = KeyPair::generate_for(&PKCS_ECDSA_P384_SHA384).expect("P-384 root");
+    let root_params = cn_params("Test App Attest Root P384", true);
+    let root_cert = root_params.self_signed(&root_key).expect("root");
+
+    let int_key = KeyPair::generate_for(&PKCS_ECDSA_P384_SHA384).expect("P-384 intermediate");
+    let int_params = cn_params("Test App Attest Intermediate P384", true);
+    let int_cert = int_params
+        .signed_by(&int_key, &root_cert, &root_key)
+        .expect("intermediate");
+
+    let leaf_key = keypair();
+    let public_key = public_key_bytes(&leaf_key);
+    let mut leaf_params = cn_params("credCert", false);
+    leaf_params.custom_extensions = vec![nonce_extension(&[0xab; 32])];
+    let leaf_cert = leaf_params
+        .signed_by(&leaf_key, &int_cert, &int_key)
+        .expect("leaf");
+
+    let leaf = certs::verify_chain(
+        &[leaf_cert.der().to_vec(), int_cert.der().to_vec()],
+        &[root_cert.der().to_vec()],
+        NOW,
+    )
+    .expect("P-384 CA chain should verify");
+    assert_eq!(leaf.public_key, public_key);
 }
 
 #[test]

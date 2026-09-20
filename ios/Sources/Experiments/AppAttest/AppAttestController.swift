@@ -7,6 +7,7 @@ final class AppAttestController: ObservableObject {
     @Published private(set) var userId: String
     @Published private(set) var deviceId: String
     @Published private(set) var statusMessage: String
+    @Published private(set) var statusIsError = false
     @Published private(set) var lastWhoAmI: AppAttestWhoAmI?
     @Published private(set) var hasToken: Bool
     @Published private(set) var isBusy = false
@@ -47,16 +48,16 @@ final class AppAttestController: ObservableObject {
         case .success(let appleUserID):
             applyAppleUserID(appleUserID)
         case .failure(.canceled):
-            statusMessage = "Sign in canceled."
+            setStatus("Sign in canceled.")
         case .failure(let error):
-            statusMessage = error.localizedDescription
+            setStatus(error.localizedDescription, isError: true)
         }
     }
 
     func applyAppleUserID(_ appleUserID: String) {
         let trimmed = appleUserID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            statusMessage = AppAttestAppleSignInError.missingUserID.localizedDescription
+            setStatus(AppAttestAppleSignInError.missingUserID.localizedDescription, isError: true)
             return
         }
         if trimmed != store.userId {
@@ -66,7 +67,7 @@ final class AppAttestController: ObservableObject {
         }
         store.userId = trimmed
         userId = trimmed
-        statusMessage = "Signed in with Apple. Register to bind this user id."
+        setStatus("Signed in with Apple. Register to bind this user id.")
     }
 
     func signOut() {
@@ -75,7 +76,7 @@ final class AppAttestController: ObservableObject {
         userId = ""
         hasToken = false
         lastWhoAmI = nil
-        statusMessage = "Signed out."
+        setStatus("Signed out.")
     }
 
     func refreshAppleIDState() async {
@@ -83,7 +84,7 @@ final class AppAttestController: ObservableObject {
         switch await appleID.credentialState(forUserID: store.userId) {
         case .revoked, .notFound:
             signOut()
-            statusMessage = "Sign in with Apple was revoked. Sign in again."
+            setStatus("Sign in with Apple was revoked. Sign in again.", isError: true)
         case .authorized, .unknown:
             break
         }
@@ -92,7 +93,7 @@ final class AppAttestController: ObservableObject {
     func register() async {
         let trimmed = userId.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            statusMessage = "Sign in with Apple first."
+            setStatus("Sign in with Apple first.", isError: true)
             return
         }
         guard !isBusy else { return }
@@ -123,17 +124,19 @@ final class AppAttestController: ObservableObject {
                 keyId: token.keyId,
                 unattested: token.unattested
             )
-            statusMessage = token.unattested
-                ? "Issued an unattested token for the Simulator."
-                : "Device attested. Token stored."
+            setStatus(
+                token.unattested
+                    ? "Issued an unattested token for the Simulator."
+                    : "Device attested. Token stored."
+            )
         } catch {
-            statusMessage = error.localizedDescription
+            setStatus("Register failed: \(error.localizedDescription)", isError: true)
         }
     }
 
     func whoami() async {
         guard let token = store.token else {
-            statusMessage = "Register this device first."
+            setStatus("Register this device first.", isError: true)
             return
         }
         guard !isBusy else { return }
@@ -142,11 +145,13 @@ final class AppAttestController: ObservableObject {
         do {
             let result = try await api.whoami(token: token)
             lastWhoAmI = result
-            statusMessage = result.unattested
-                ? "Worker accepted the unattested token."
-                : "Worker accepted the attested token."
+            setStatus(
+                result.unattested
+                    ? "Worker accepted the unattested token."
+                    : "Worker accepted the attested token."
+            )
         } catch {
-            statusMessage = error.localizedDescription
+            setStatus("Call whoami failed: \(error.localizedDescription)", isError: true)
         }
     }
 
@@ -154,7 +159,12 @@ final class AppAttestController: ObservableObject {
         store.clearSession()
         hasToken = false
         lastWhoAmI = nil
-        statusMessage = "Forgot the stored token and App Attest key id."
+        setStatus("Forgot the stored token and App Attest key id.")
+    }
+
+    private func setStatus(_ message: String, isError: Bool = false) {
+        statusMessage = message
+        statusIsError = isError
     }
 
     private func exchangeAttested(json: Data) async throws -> AppAttestTokenResponse {

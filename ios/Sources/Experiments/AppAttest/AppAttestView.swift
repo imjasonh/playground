@@ -12,14 +12,8 @@ struct AppAttestView: View {
                 availabilityBanner
                 identitySection
                 actionButtons
-                Text(controller.statusMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityIdentifier("appAttestStatusMessage")
+                statusLine
                 whoamiResults
-                howItWorks
             }
             .padding()
         }
@@ -128,6 +122,28 @@ struct AppAttestView: View {
     }
 
     @ViewBuilder
+    private var statusLine: some View {
+        Group {
+            if controller.statusIsError {
+                Label {
+                    Text(controller.statusMessage)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .foregroundStyle(.red)
+                .accessibilityLabel("Error: \(controller.statusMessage)")
+            } else {
+                Text(controller.statusMessage)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.body)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("appAttestStatusMessage")
+    }
+
+    @ViewBuilder
     private var whoamiResults: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Worker response")
@@ -164,22 +180,5 @@ struct AppAttestView: View {
                 .foregroundStyle(.secondary)
             Text(value)
         }
-    }
-
-    private var howItWorks: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("How it works")
-                .font(.subheadline.bold())
-            Text(
-                "Sign in with Apple provides the user id. Register fetches a one-time challenge, "
-                    + "hashes that Apple user id + device id into App Attest client data, and "
-                    + "exchanges the attestation for a JWT. Call whoami sends that token to the "
-                    + "app-attest Worker, which returns only the bound ids. The Simulator uses an "
-                    + "unattested path that production keeps off."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
