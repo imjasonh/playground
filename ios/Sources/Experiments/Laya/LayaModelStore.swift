@@ -237,11 +237,11 @@ final class LayaModelStore: ObservableObject {
             from: Hub.Repo(id: LayaModelSource.repoID),
             revision: LayaModelSource.revision,
             matching: LayaBundleFile.downloadGlobs
-        ) { progress in
+        ) { [weak self] progress in
             let fraction = progress.fractionCompleted
             let completed = progress.completedUnitCount
             let total = progress.totalUnitCount
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 guard let self, case .downloading = self.phase else { return }
                 self.phase = .downloading(fraction: fraction)
                 let tenth = Int(fraction * 10)
