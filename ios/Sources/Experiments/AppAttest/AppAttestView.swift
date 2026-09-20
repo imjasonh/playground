@@ -17,6 +17,7 @@ struct AppAttestView: View {
             }
             .padding()
         }
+        .accessibilityIdentifier("appAttestRoot")
         .task {
             await controller.refreshAppleIDState()
         }

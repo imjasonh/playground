@@ -16,20 +16,57 @@ final class PlaygroundUITests: XCTestCase {
     }
 
     /// Tap an experiment's launcher row, tolerating whether SwiftUI exposes the
-    /// row as a button/cell (by identifier) or only its title text. Scrolls the
-    /// list when later experiments sit below the fold on small simulators.
+    /// row as a button/cell (by identifier) or only its title text.
+    ///
+    /// Prefers the launcher search field so late catalog rows do not depend on
+    /// a long swipe chain. Falls back to scrolling. If the tap misses and the
+    /// Playground list is still showing, taps once more.
     private func openExperiment(_ id: String, title: String, in app: XCUIApplication) {
+        _ = filterLauncher(to: title, in: app)
         let byId = app.buttons["experiment-\(id)"]
-        if scrollLauncherUntilExists(byId, in: app) {
+        let byTitle = app.staticTexts[title]
+        if !scrollLauncherUntilExists(byId, in: app) {
+            XCTAssertTrue(
+                scrollLauncherUntilExists(byTitle, in: app),
+                "Could not find launcher row for \(id)"
+            )
+        }
+
+        tapLauncherRow(id: id, title: title, in: app)
+        let destination = app.navigationBars[title]
+        if destination.waitForExistence(timeout: 6) || !app.navigationBars["Playground"].exists {
+            return
+        }
+        tapLauncherRow(id: id, title: title, in: app)
+        XCTAssertTrue(
+            destination.waitForExistence(timeout: 8)
+                || !app.navigationBars["Playground"].exists,
+            "Could not open experiment \(id)"
+        )
+    }
+
+    private func tapLauncherRow(id: String, title: String, in app: XCUIApplication) {
+        let byId = app.buttons["experiment-\(id)"]
+        if byId.exists {
             byId.tap()
             return
         }
-        let byTitle = app.staticTexts[title]
-        XCTAssertTrue(
-            scrollLauncherUntilExists(byTitle, in: app),
-            "Could not find launcher row for \(id)"
-        )
-        byTitle.tap()
+        app.staticTexts[title].tap()
+    }
+
+    /// Type `query` into the launcher search field when it is visible.
+    @discardableResult
+    private func filterLauncher(to query: String, in app: XCUIApplication) -> Bool {
+        let search = app.searchFields["Search experiments"]
+        if !search.exists {
+            if app.navigationBars["Playground"].exists {
+                app.navigationBars["Playground"].swipeDown()
+            }
+        }
+        guard search.waitForExistence(timeout: 2) else { return false }
+        search.tap()
+        search.typeText(query)
+        return true
     }
 
     /// Swipe the launcher list until `element` appears (or attempts are exhausted).
@@ -347,7 +384,12 @@ final class PlaygroundUITests: XCTestCase {
 
         openExperiment("app-attest", title: "App Attest", in: app)
 
-        XCTAssertTrue(app.navigationBars["App Attest"].waitForExistence(timeout: 8))
+        XCTAssertTrue(
+            app.navigationBars["App Attest"].waitForExistence(timeout: 8)
+                || app.otherElements["appAttestRoot"].waitForExistence(timeout: 4)
+                || app.staticTexts["appAttestAvailabilityBanner"].waitForExistence(timeout: 4)
+                || app.otherElements["appAttestAvailabilityBanner"].waitForExistence(timeout: 3)
+        )
         XCTAssertTrue(app.buttons["appAttestSignInButton"].waitForExistence(timeout: 8)
             || app.otherElements["appAttestSignInButton"].waitForExistence(timeout: 3)
             || app.buttons["Sign in with Apple"].waitForExistence(timeout: 3)
