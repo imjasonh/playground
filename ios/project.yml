@@ -37,6 +37,14 @@ settings:
     # DEVELOPMENT_TEAM is injected by CI (fastlane / xcargs) at signing time so
     # the checked-in spec stays account-agnostic.
 
+packages:
+  # Laya Decisions: `Hub` downloads the Core ML bundle from Hugging Face and
+  # `Tokenizers` loads its tokenizer.json. Pinned exactly because the generated
+  # Package.resolved lives in the git-ignored .xcodeproj.
+  swift-transformers:
+    url: https://github.com/huggingface/swift-transformers
+    exactVersion: 1.3.4
+
 targets:
   Playground:
     type: application
@@ -60,6 +68,10 @@ targets:
         embed: true
       - target: RideMonitorWatch
         embed: true
+      - package: swift-transformers
+        product: Hub
+      - package: swift-transformers
+        product: Tokenizers
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.imjasonh.playground
