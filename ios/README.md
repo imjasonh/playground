@@ -412,8 +412,8 @@ at most 1024 px.
 string) and immediately runs Apple App Attest against the
 [`app-attest/`](../app-attest/) Worker. The Worker checks the attestation, binds
 that Apple user id and `deviceId` to the hardware key, and issues a short-lived
-JWT. **Sign out** drops that token. **Call whoami** sends a stored token and
-the Worker returns only those bound ids.
+JWT. Sign-in and opening the experiment then call **whoami** so the attested
+ids show up without another tap. **Sign out** drops that token.
 
 Needs the App Attest App ID capability
 (`com.apple.developer.devicecheck.appattest-environment` = `production`), the

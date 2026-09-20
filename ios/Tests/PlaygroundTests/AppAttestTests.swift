@@ -127,10 +127,7 @@ final class AppAttestTests: XCTestCase {
         XCTAssertEqual(controller.lastWhoAmI?.deviceId, "dev-9")
         XCTAssertEqual(controller.lastWhoAmI?.unattested, true)
         XCTAssertEqual(store.token, "jwt-1")
-
-        await controller.whoami()
-        XCTAssertEqual(controller.lastWhoAmI?.userId, "alice")
-        XCTAssertTrue(controller.statusMessage.contains("unattested"))
+        XCTAssertEqual(controller.statusMessage, "Worker accepted the unattested token.")
     }
 
     @MainActor
@@ -241,6 +238,13 @@ final class AppAttestTests: XCTestCase {
                     status: 200
                 )
             }
+            if path.hasSuffix("/v1/whoami") {
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer jwt-siwa")
+                return Self.json(
+                    #"{"userId":"001234.apple-user","deviceId":"device-test","keyId":"unattested","unattested":true}"#,
+                    status: 200
+                )
+            }
             return Self.json(#"{"error":"unexpected \(path)"}"#, status: 500)
         }
         let controller = AppAttestController(
@@ -256,8 +260,11 @@ final class AppAttestTests: XCTestCase {
         XCTAssertEqual(controller.userId, "001234.apple-user")
         XCTAssertEqual(store.userId, "001234.apple-user")
         XCTAssertEqual(store.token, "jwt-siwa")
+        XCTAssertEqual(controller.lastWhoAmI?.userId, "001234.apple-user")
+        XCTAssertEqual(controller.lastWhoAmI?.deviceId, "device-test")
+        XCTAssertEqual(controller.lastWhoAmI?.unattested, true)
         XCTAssertFalse(controller.statusIsError)
-        XCTAssertEqual(controller.statusMessage, "Issued an unattested token for the Simulator.")
+        XCTAssertEqual(controller.statusMessage, "Worker accepted the unattested token.")
     }
 
     @MainActor
@@ -347,6 +354,12 @@ final class AppAttestTests: XCTestCase {
                     status: 200
                 )
             }
+            if path.hasSuffix("/v1/whoami") {
+                return Self.json(
+                    #"{"userId":"apple-saved","deviceId":"device-test","keyId":"unattested","unattested":true}"#,
+                    status: 200
+                )
+            }
             return Self.json(#"{"error":"unexpected \(path)"}"#, status: 500)
         }
         let controller = AppAttestController(
@@ -359,7 +372,37 @@ final class AppAttestTests: XCTestCase {
         await controller.refreshAppleIDState()
         XCTAssertTrue(controller.hasToken)
         XCTAssertEqual(store.token, "jwt-refresh")
+        XCTAssertEqual(controller.lastWhoAmI?.userId, "apple-saved")
         XCTAssertFalse(controller.statusIsError)
+        XCTAssertEqual(controller.statusMessage, "Worker accepted the unattested token.")
+    }
+
+    @MainActor
+    func testRefreshWithStoredTokenCallsWhoami() async {
+        let store = AppAttestMemoryStore(userId: "apple-saved")
+        store.token = "jwt-stored"
+        let http = FakeAppAttestHTTP()
+        http.onRequest = { request in
+            let path = request.url?.path ?? ""
+            XCTAssertTrue(path.hasSuffix("/v1/whoami"), "expected whoami, got \(path)")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer jwt-stored")
+            return Self.json(
+                #"{"userId":"apple-saved","deviceId":"device-test","keyId":"key-1","unattested":false}"#,
+                status: 200
+            )
+        }
+        let controller = AppAttestController(
+            keys: FakeAppAttestKeys(isSupported: true),
+            api: AppAttestAPI(baseURL: URL(string: "https://example.test")!, http: http),
+            store: store,
+            appleID: FakeAppAttestAppleID()
+        )
+        await controller.refreshAppleIDState()
+        XCTAssertEqual(controller.lastWhoAmI?.userId, "apple-saved")
+        XCTAssertEqual(controller.lastWhoAmI?.deviceId, "device-test")
+        XCTAssertEqual(controller.lastWhoAmI?.keyId, "key-1")
+        XCTAssertEqual(controller.lastWhoAmI?.unattested, false)
+        XCTAssertEqual(controller.statusMessage, "Worker accepted the attested token.")
     }
 
     @MainActor

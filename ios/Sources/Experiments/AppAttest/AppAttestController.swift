@@ -47,7 +47,7 @@ final class AppAttestController: ObservableObject {
         switch result {
         case .success(let appleUserID):
             applyAppleUserID(appleUserID)
-            await register()
+            await registerThenWhoami()
         case .failure(.canceled):
             setStatus("Sign in canceled.")
         case .failure(let error):
@@ -83,10 +83,19 @@ final class AppAttestController: ObservableObject {
             signOut()
             setStatus("Sign in with Apple was revoked. Sign in again.", isError: true)
         case .authorized, .unknown:
-            if !hasToken {
-                await register()
+            if hasToken {
+                await whoami()
+            } else {
+                await registerThenWhoami()
             }
         }
+    }
+
+    /// Attest this device, then call `whoami` so the Worker echoes the bound ids.
+    func registerThenWhoami() async {
+        await register()
+        guard hasToken else { return }
+        await whoami()
     }
 
     func register() async {

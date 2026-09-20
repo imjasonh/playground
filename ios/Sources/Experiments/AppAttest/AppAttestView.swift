@@ -79,7 +79,7 @@ struct AppAttestView: View {
     private var actionButtons: some View {
         VStack(spacing: 10) {
             Button {
-                Task { await controller.register() }
+                Task { await controller.registerThenWhoami() }
             } label: {
                 Label("Register device", systemImage: "checkmark.shield")
                     .frame(maxWidth: .infinity)
@@ -146,14 +146,14 @@ struct AppAttestView: View {
     @ViewBuilder
     private var whoamiResults: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Worker response")
+            Text("Whoami")
                 .font(.subheadline.bold())
             if let result = controller.lastWhoAmI {
                 VStack(alignment: .leading, spacing: 6) {
                     labeledRow("User id", result.userId)
                     labeledRow("Device id", result.deviceId)
                     labeledRow("Key id", result.keyId)
-                    labeledRow("Unattested", result.unattested ? "yes" : "no")
+                    labeledRow("Attested", result.unattested ? "no" : "yes")
                 }
                 .font(.body.monospaced())
                 .textSelection(.enabled)
@@ -165,7 +165,7 @@ struct AppAttestView: View {
                 ContentUnavailableView(
                     "No whoami response yet",
                     systemImage: "person.crop.circle.badge.questionmark",
-                    description: Text("Sign in with Apple, then tap Call whoami.")
+                    description: Text("Sign in with Apple to load the attested ids.")
                 )
                 .accessibilityIdentifier("appAttestWhoamiEmpty")
             }
