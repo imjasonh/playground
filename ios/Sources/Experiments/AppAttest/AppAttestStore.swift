@@ -11,56 +11,60 @@ protocol AppAttestStoring: AnyObject {
     func clearSession()
 }
 
+enum AppAttestStorageKeys {
+    static let suiteName = "io.github.imjasonh.playground.app-attest"
+    static let deviceId = "deviceId"
+    static let userId = "userId"
+    static let token = "token"
+    static let keychainAccount = "keyId"
+}
+
 /// UserDefaults for ids/token, Keychain for the App Attest `keyId`.
 @MainActor
 final class AppAttestUserDefaultsStore: AppAttestStoring {
-    static let suiteName = "io.github.imjasonh.playground.app-attest"
-    private static let deviceIdKey = "deviceId"
-    private static let userIdKey = "userId"
-    private static let tokenKey = "token"
-    private static let keychainAccount = "keyId"
-
     private let defaults: UserDefaults
 
-    init(defaults: UserDefaults = UserDefaults(suiteName: AppAttestUserDefaultsStore.suiteName) ?? .standard) {
+    init(defaults: UserDefaults? = nil) {
         self.defaults = defaults
-        if defaults.string(forKey: Self.deviceIdKey) == nil {
-            defaults.set(UUID().uuidString, forKey: Self.deviceIdKey)
+            ?? UserDefaults(suiteName: AppAttestStorageKeys.suiteName)
+            ?? .standard
+        if self.defaults.string(forKey: AppAttestStorageKeys.deviceId) == nil {
+            self.defaults.set(UUID().uuidString, forKey: AppAttestStorageKeys.deviceId)
         }
     }
 
     var keyId: String? {
-        get { AppAttestKeychain.read(account: Self.keychainAccount) }
+        get { AppAttestKeychain.read(account: AppAttestStorageKeys.keychainAccount) }
         set {
             if let newValue {
-                AppAttestKeychain.write(account: Self.keychainAccount, value: newValue)
+                AppAttestKeychain.write(account: AppAttestStorageKeys.keychainAccount, value: newValue)
             } else {
-                AppAttestKeychain.delete(account: Self.keychainAccount)
+                AppAttestKeychain.delete(account: AppAttestStorageKeys.keychainAccount)
             }
         }
     }
 
     var deviceId: String {
-        if let existing = defaults.string(forKey: Self.deviceIdKey), !existing.isEmpty {
+        if let existing = defaults.string(forKey: AppAttestStorageKeys.deviceId), !existing.isEmpty {
             return existing
         }
         let created = UUID().uuidString
-        defaults.set(created, forKey: Self.deviceIdKey)
+        defaults.set(created, forKey: AppAttestStorageKeys.deviceId)
         return created
     }
 
     var userId: String {
-        get { defaults.string(forKey: Self.userIdKey) ?? "" }
-        set { defaults.set(newValue, forKey: Self.userIdKey) }
+        get { defaults.string(forKey: AppAttestStorageKeys.userId) ?? "" }
+        set { defaults.set(newValue, forKey: AppAttestStorageKeys.userId) }
     }
 
     var token: String? {
-        get { defaults.string(forKey: Self.tokenKey) }
-        set { defaults.set(newValue, forKey: Self.tokenKey) }
+        get { defaults.string(forKey: AppAttestStorageKeys.token) }
+        set { defaults.set(newValue, forKey: AppAttestStorageKeys.token) }
     }
 
     func clearSession() {
-        defaults.removeObject(forKey: Self.tokenKey)
+        defaults.removeObject(forKey: AppAttestStorageKeys.token)
         keyId = nil
     }
 }

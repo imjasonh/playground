@@ -19,10 +19,12 @@ final class AppAttestController: ObservableObject {
     init(
         keys: any AppAttestKeyGenerating = SystemAppAttestKeys(),
         api: AppAttestAPI = AppAttestAPI(),
-        store: any AppAttestStoring = AppAttestUserDefaultsStore()
+        store: (any AppAttestStoring)? = nil
     ) {
         self.keys = keys
         self.api = api
+        // Default args are evaluated off the main actor; construct the store here.
+        let store = store ?? AppAttestUserDefaultsStore()
         self.store = store
         userId = store.userId
         deviceId = store.deviceId
