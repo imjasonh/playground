@@ -469,6 +469,35 @@ the answers are the same, just slower. On a physical iPhone, Core ML places
 the graph on the ANE. Nothing here needs a capability or signing bootstrap.
 Hugging Face is reached only for the download.
 
+#### Debugging a TestFlight build
+
+The Simulator cannot exercise the Neural Engine, so the screen is built to be
+debugged from a device without a debugger attached:
+
+- **Errors** show the stage that failed (`download`, `read bundle`,
+  `compile`, `load`, `predict`), the message, and the `NSError` domain, code,
+  file path, and underlying-error chain. Package signature and graph output
+  mismatches print the actual names and shapes Core ML reported. **Copy
+  error** puts that on the pasteboard.
+- **Load performance** lists download size and throughput, checksum time,
+  compile time and `.mlmodelc` size, and load time split into `MLModel.load`,
+  tokenizer, and host weights, plus the process resident memory before and
+  after the load.
+- **Compute units** switches between CPU + Neural Engine, all, CPU + GPU, and
+  CPU only; changing it unloads so **Load model** rebuilds with the new
+  setting. **Analyze compute plan** asks `MLComputePlan` where each ML Program
+  operation prefers to run and lists the operators that fall off the Neural
+  Engine.
+- Each answer shows the time spent in prepare (tokenize), host tensors,
+  float16 packing, `MLModel.prediction`, and the action head, with median and
+  p95 over recent asks. **Run 10×** repeats the current question and reports
+  the first (warm-up) run separately from steady-state order statistics.
+- Everything above is also appended to a diagnostics log that survives
+  relaunches and **Delete download** (`Application Support/Laya-diagnostics.log`).
+  **Copy report** and **Share report** bundle device facts, phase, stage
+  timings, model info, signature, compute plan, latency history, benchmark,
+  and the log into one text.
+
 ## Adding an experiment
 
 1. `Sources/Experiments/<YourExperiment>/`

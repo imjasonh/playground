@@ -6,18 +6,34 @@ struct LayaPrediction {
     let decision: LayaDecision
     /// Real tokens in the sequence before padding (`usage.input_tokens`).
     let inputTokens: Int
-    /// Wall time for host tensors, the Core ML graph, and the action head.
-    let latency: TimeInterval
+    let timings: LayaTimings
+    /// Output feature names with shapes and element counts, as returned by Core ML.
+    let outputSummary: String
 }
 
-/// Facts about a loaded model for the status pane.
+/// Facts about a loaded model for the status pane and the report.
 struct LayaModelInfo: Equatable {
     let revision: String
     let sequenceLength: Int
     let width: Int
+    let maxOptions: Int
     let vocabularySize: Int
+    let hostWeightsDType: String
     let computeUnits: String
-    let loadSeconds: TimeInterval
+    let signature: LayaSignature
+    let modelLoadSeconds: TimeInterval
+    let tokenizerLoadSeconds: TimeInterval
+    let hostWeightsLoadSeconds: TimeInterval
+    let totalLoadSeconds: TimeInterval
+
+    var text: String {
+        """
+        revision \(revision), \(computeUnits)
+        sequence \(sequenceLength) tokens, width \(width), \(maxOptions) option slots, vocab \(vocabularySize), host weights \(hostWeightsDType)
+        load: model \(LayaFormat.seconds(modelLoadSeconds)), tokenizer \(LayaFormat.seconds(tokenizerLoadSeconds)), host weights \(LayaFormat.seconds(hostWeightsLoadSeconds)), total \(LayaFormat.seconds(totalLoadSeconds))
+        \(signature.text)
+        """
+    }
 }
 
 /// A loaded ANE bundle: tokenizer, host tensors, and the compiled Core ML graph.
@@ -41,13 +57,17 @@ final class LayaRuntime: @unchecked Sendable {
         let configuration = MLModelConfiguration()
         configuration.computeUnits = computeUnits
         let model = try await MLModel.load(contentsOf: compiledModelURL, configuration: configuration)
+        let modelLoaded = Date()
 
         let length = bundle.manifest.shape.maxLength
         let width = bundle.encoderConfig.hiddenSize
-        try Self.checkSignature(of: model, width: width, length: length, maxOptions: bundle.manifest.shape.maxOptions)
+        let signature = Self.signature(of: model)
+        try Self.checkSignature(signature, width: width, length: length, maxOptions: bundle.manifest.shape.maxOptions)
 
         let tokenizer = try await LayaHubTokenizer.load(from: bundle.tokenizerURL, specialTokens: bundle.specialTokens)
+        let tokenizerLoaded = Date()
         let weights = try LayaHostWeights(file: try LayaSafetensorsFile(url: bundle.hostWeightsURL))
+        let weightsLoaded = Date()
         guard weights.width == width else {
             throw LayaError.bundle("Embedding width \(weights.width) does not match hidden_size \(width).")
         }
@@ -70,14 +90,40 @@ final class LayaRuntime: @unchecked Sendable {
             revision: revision,
             sequenceLength: length,
             width: width,
+            maxOptions: bundle.manifest.shape.maxOptions,
             vocabularySize: weights.vocabularySize,
+            hostWeightsDType: weights.embedding.dtype.rawValue,
             computeUnits: Self.label(for: computeUnits),
-            loadSeconds: Date().timeIntervalSince(start)
+            signature: signature,
+            modelLoadSeconds: modelLoaded.timeIntervalSince(start),
+            tokenizerLoadSeconds: tokenizerLoaded.timeIntervalSince(modelLoaded),
+            hostWeightsLoadSeconds: weightsLoaded.timeIntervalSince(tokenizerLoaded),
+            totalLoadSeconds: Date().timeIntervalSince(start)
+        )
+    }
+
+    // MARK: Signature
+
+    static func signature(of model: MLModel) -> LayaSignature {
+        func describe(_ features: [String: MLFeatureDescription]) -> [LayaFeatureDescription] {
+            features.keys.sorted().map { name in
+                let feature = features[name]
+                let constraint = feature?.multiArrayConstraint
+                return LayaFeatureDescription(
+                    name: name,
+                    shape: constraint?.shape.map(\.intValue) ?? [],
+                    dataType: constraint.map { label(for: $0.dataType) } ?? label(for: feature?.type)
+                )
+            }
+        }
+        return LayaSignature(
+            inputs: describe(model.modelDescription.inputDescriptionsByName),
+            outputs: describe(model.modelDescription.outputDescriptionsByName)
         )
     }
 
     /// Same check as the Python agent: five fixed-shape inputs, nothing else.
-    private static func checkSignature(of model: MLModel, width: Int, length: Int, maxOptions: Int) throws {
+    static func checkSignature(_ signature: LayaSignature, width: Int, length: Int, maxOptions: Int) throws {
         let expected: [String: [Int]] = [
             "embeddings": [1, width, 1, length],
             "full_mask": [1, length, 1, length],
@@ -85,13 +131,15 @@ final class LayaRuntime: @unchecked Sendable {
             "type_vectors": [1, width, 1, 1],
             "marker_map": [1, length, 1, maxOptions],
         ]
-        let inputs = model.modelDescription.inputDescriptionsByName
         var actual: [String: [Int]] = [:]
-        for (name, description) in inputs {
-            actual[name] = description.multiArrayConstraint?.shape.map(\.intValue) ?? []
+        for input in signature.inputs {
+            actual[input.name] = input.shape
         }
         guard actual == expected else {
-            throw LayaError.model("Package signature mismatch: expected \(expected), got \(actual)")
+            let expectedText = expected.keys.sorted().map { "\($0): \(expected[$0] ?? [])" }.joined(separator: ", ")
+            throw LayaError.model(
+                "Package signature mismatch. Expected \(expectedText). Got \(signature.text.replacingOccurrences(of: "\n", with: " "))"
+            )
         }
     }
 
@@ -105,6 +153,34 @@ final class LayaRuntime: @unchecked Sendable {
         }
     }
 
+    static func label(for type: MLMultiArrayDataType) -> String {
+        switch type {
+        case .float16: return "float16"
+        case .float32: return "float32"
+        case .double: return "float64"
+        case .int32: return "int32"
+        @unknown default: return "dtype \(type.rawValue)"
+        }
+    }
+
+    static func label(for type: MLFeatureType?) -> String {
+        guard let type else { return "missing" }
+        switch type {
+        case .multiArray: return "multiArray"
+        case .double: return "double"
+        case .int64: return "int64"
+        case .string: return "string"
+        case .image: return "image"
+        case .dictionary: return "dictionary"
+        case .sequence: return "sequence"
+        case .state: return "state"
+        case .invalid: return "invalid"
+        @unknown default: return "type \(type.rawValue)"
+        }
+    }
+
+    // MARK: Inference
+
     /// Token count of the prepared sequence, for the budget readout.
     func tokenCount(state: String, question: LayaQuestion) throws -> Int {
         try builder.prepare(state: state, question: question).ids.count
@@ -113,11 +189,18 @@ final class LayaRuntime: @unchecked Sendable {
     var maxTokens: Int { shape.maxLength }
 
     func predict(state: String, question: LayaQuestion) throws -> LayaPrediction {
+        var timings = LayaTimings()
+        let start = Date()
+
         let item = try builder.prepare(state: state, question: question)
         let batch = try LayaCollator.collate(item, shape: shape, padTokenID: tokenizer.padTokenID)
+        let prepared = Date()
+        timings.prepare = prepared.timeIntervalSince(start)
 
-        let start = Date()
         let inputs = try host.graphInputs(for: batch)
+        let hosted = Date()
+        timings.hostTensors = hosted.timeIntervalSince(prepared)
+
         let embeddings = try Self.halfArray(inputs.embeddings, shape: [1, inputs.width, 1, inputs.length])
         let fullMask = try Self.halfArray(inputs.fullMask, shape: [1, inputs.length, 1, inputs.length])
         let localMask = try Self.halfArray(inputs.localMask, shape: [1, inputs.length, 1, inputs.length])
@@ -130,23 +213,36 @@ final class LayaRuntime: @unchecked Sendable {
             "type_vectors": MLFeatureValue(multiArray: typeVectors),
             "marker_map": MLFeatureValue(multiArray: markerMap),
         ])
+        let packed = Date()
+        timings.pack = packed.timeIntervalSince(hosted)
+
         let output = try model.prediction(from: provider)
+        let predicted = Date()
+        timings.graph = predicted.timeIntervalSince(packed)
 
         // Output names are traced identifiers; element counts tell the two apart
         // (`max_options` slots versus `hidden_size` pooled features).
         var logits: [Float]?
         var pooled: [Float]?
-        for name in output.featureNames {
-            guard let array = output.featureValue(for: name)?.multiArrayValue else { continue }
+        var summary: [String] = []
+        for name in output.featureNames.sorted() {
+            guard let array = output.featureValue(for: name)?.multiArrayValue else {
+                summary.append("\(name): not a multiArray")
+                continue
+            }
             let values = Self.floats(from: array)
+            summary.append("\(name): \(array.shape.map(\.intValue)) \(Self.label(for: array.dataType)) (\(values.count) values)")
             if values.count == shape.maxOptions {
                 logits = values
             } else if values.count == host.weights.width {
                 pooled = values
             }
         }
+        let outputSummary = summary.joined(separator: "; ")
         guard let logits, let pooled else {
-            throw LayaError.model("Graph did not return both marker logits and a pooled vector.")
+            throw LayaError.model(
+                "Graph did not return both \(shape.maxOptions) marker logits and a \(host.weights.width)-wide pooled vector. Outputs: \(outputSummary)"
+            )
         }
         let (masked, action) = try host.finish(logits: logits, pooled: pooled, markerMask: batch.markerMask)
         let decision = try LayaResultFormatter.decision(
@@ -155,10 +251,14 @@ final class LayaRuntime: @unchecked Sendable {
             question: question,
             calibration: calibration
         )
+        let finished = Date()
+        timings.head = finished.timeIntervalSince(predicted)
+        timings.total = finished.timeIntervalSince(start)
         return LayaPrediction(
             decision: decision,
             inputTokens: item.ids.count,
-            latency: Date().timeIntervalSince(start)
+            timings: timings,
+            outputSummary: outputSummary
         )
     }
 
@@ -177,7 +277,7 @@ final class LayaRuntime: @unchecked Sendable {
             expectedStride *= dimension
         }
         guard contiguous else {
-            throw LayaError.model("Core ML allocated a non-contiguous input array.")
+            throw LayaError.model("Core ML allocated a non-contiguous input array (strides \(array.strides)).")
         }
         array.withUnsafeMutableBytes { raw, _ in
             let halves = raw.bindMemory(to: UInt16.self)
@@ -190,5 +290,70 @@ final class LayaRuntime: @unchecked Sendable {
 
     static func floats(from array: MLMultiArray) -> [Float] {
         (0..<array.count).map { array[$0].floatValue }
+    }
+
+    // MARK: Compute plan
+
+    /// Asks Core ML where each operation of the compiled program would run
+    /// under `computeUnits`. Slow (it re-plans the model), so it is on demand.
+    static func computePlan(compiledModelURL: URL, computeUnits: MLComputeUnits) async throws -> LayaComputePlanSummary {
+        let start = Date()
+        let configuration = MLModelConfiguration()
+        configuration.computeUnits = computeUnits
+        let plan = try await MLComputePlan.load(contentsOf: compiledModelURL, configuration: configuration)
+        guard case .program(let program) = plan.modelStructure else {
+            throw LayaError.model("Compute plan is only available for ML Program models; this model is not one.")
+        }
+        guard let main = program.functions["main"] else {
+            throw LayaError.model("Program has no `main` function; functions: \(program.functions.keys.sorted()).")
+        }
+
+        var operationCount = 0
+        var operationsByDevice: [String: Int] = [:]
+        var costByDevice: [String: Double] = [:]
+        var offNeuralEngine: [String: Int] = [:]
+        var unplanned = 0
+
+        func walk(_ block: MLModelStructure.Program.Block) {
+            for operation in block.operations {
+                for nested in operation.blocks {
+                    walk(nested)
+                }
+                // `const` operations carry weights, not work; they would swamp the counts.
+                guard operation.operatorName != "const" else { continue }
+                operationCount += 1
+                guard let usage = plan.deviceUsage(for: operation) else {
+                    unplanned += 1
+                    continue
+                }
+                let device = label(for: usage.preferred)
+                operationsByDevice[device, default: 0] += 1
+                if let cost = plan.estimatedCost(of: operation) {
+                    costByDevice[device, default: 0] += cost.weight
+                }
+                if device != LayaComputePlanSummary.neuralEngine {
+                    offNeuralEngine[operation.operatorName, default: 0] += 1
+                }
+            }
+        }
+        walk(main.block)
+
+        return LayaComputePlanSummary(
+            operationCount: operationCount,
+            operationsByDevice: operationsByDevice,
+            costByDevice: costByDevice,
+            offNeuralEngineOperators: offNeuralEngine,
+            unplanned: unplanned,
+            seconds: Date().timeIntervalSince(start)
+        )
+    }
+
+    static func label(for device: MLComputeDevice) -> String {
+        // `if case` rather than `switch`: the enum's frozenness decides whether
+        // `default` or `@unknown default` warns, and warnings fail the build.
+        if case .neuralEngine = device { return LayaComputePlanSummary.neuralEngine }
+        if case .cpu = device { return LayaComputePlanSummary.cpu }
+        if case .gpu = device { return LayaComputePlanSummary.gpu }
+        return "Other"
     }
 }

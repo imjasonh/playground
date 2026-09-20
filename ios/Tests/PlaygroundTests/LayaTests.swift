@@ -599,3 +599,127 @@ final class LayaDraftTests: XCTestCase {
         XCTAssertThrowsError(try score.question())
     }
 }
+
+final class LayaDiagnosticsTests: XCTestCase {
+    func testLatencyStatsOrderStatistics() throws {
+        XCTAssertNil(LayaLatencyStats([]))
+        let stats = try XCTUnwrap(LayaLatencyStats([0.05, 0.01, 0.03, 0.02, 0.04]))
+        XCTAssertEqual(stats.count, 5)
+        XCTAssertEqual(stats.min, 0.01)
+        XCTAssertEqual(stats.max, 0.05)
+        XCTAssertEqual(stats.median, 0.03)
+        XCTAssertEqual(stats.mean, 0.03, accuracy: 1e-12)
+        XCTAssertEqual(stats.p95, 0.05)
+        let single = try XCTUnwrap(LayaLatencyStats([0.2]))
+        XCTAssertEqual(single.median, 0.2)
+        XCTAssertEqual(single.p95, 0.2)
+    }
+
+    func testBenchmarkReportSeparatesWarmup() {
+        var warm = LayaTimings()
+        warm.graph = 0.5
+        warm.total = 0.6
+        var steady = LayaTimings()
+        steady.graph = 0.02
+        steady.total = 0.03
+        let report = LayaBenchmarkReport(runs: [warm, steady, steady], inputTokens: 40, computeUnits: "CPU + Neural Engine")
+        XCTAssertEqual(report.first, warm)
+        XCTAssertEqual(report.steady.count, 2)
+        XCTAssertEqual(report.stats(\.graph)?.median, 0.02)
+        XCTAssertTrue(report.text.contains("first run: total 600.0 ms, graph 500.0 ms"))
+        XCTAssertTrue(report.text.contains("graph: n=2 min 20.0 ms"))
+
+        let one = LayaBenchmarkReport(runs: [warm], inputTokens: 1, computeUnits: "CPU only")
+        XCTAssertEqual(one.steady, [warm])
+    }
+
+    func testFailureUnwrapsUnderlyingErrors() {
+        let inner = NSError(domain: "com.example.inner", code: 7, userInfo: [NSLocalizedDescriptionKey: "disk full"])
+        let outer = NSError(
+            domain: NSCocoaErrorDomain,
+            code: 4,
+            userInfo: [
+                NSLocalizedDescriptionKey: "Could not write file.",
+                NSFilePathErrorKey: "/tmp/model.mlmodelc",
+                NSUnderlyingErrorKey: inner,
+            ]
+        )
+        let failure = LayaFailure(stage: "compile", error: outer, date: Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(failure.stage, "compile")
+        XCTAssertEqual(failure.message, "Could not write file.")
+        XCTAssertTrue(failure.details.contains("\(NSCocoaErrorDomain) code 4"))
+        XCTAssertTrue(failure.details.contains("NSFilePath: /tmp/model.mlmodelc"))
+        XCTAssertTrue(failure.details.contains("underlying: com.example.inner code 7 — disk full"))
+        XCTAssertTrue(failure.report.hasPrefix("[compile] Could not write file.\n  "))
+    }
+
+    func testFailureNamesLayaErrorCase() {
+        let failure = LayaFailure(stage: "predict", error: LayaError.tooManyOptions(count: 40, limit: 32))
+        XCTAssertEqual(failure.message, "40 options, but this export supports at most 32.")
+        XCTAssertEqual(failure.details.first, "LayaError.tooManyOptions")
+    }
+
+    func testFailureLabelsNetworkErrors() {
+        let error = NSError(domain: NSURLErrorDomain, code: NSURLErrorNotConnectedToInternet, userInfo: [NSLocalizedDescriptionKey: "offline"])
+        XCTAssertEqual(LayaFailure(stage: "download", error: error).message, "Download failed: offline")
+    }
+
+    func testLogBufferRoundTripsAndCaps() {
+        var buffer = LayaLogBuffer(limit: 3)
+        let base = Date(timeIntervalSince1970: 1_700_000_000.5)
+        for index in 0..<5 {
+            buffer.append("line \(index)", date: base.addingTimeInterval(Double(index)))
+        }
+        XCTAssertEqual(buffer.entries.map(\.message), ["line 2", "line 3", "line 4"])
+        XCTAssertEqual(buffer.tail(2).map(\.message), ["line 3", "line 4"])
+        XCTAssertTrue(buffer.text.hasPrefix("2023-11-14T22:13:22.500Z line 2\n"))
+
+        var restored = LayaLogBuffer(limit: 10)
+        restored.restore(from: buffer.text + "\nnot a timestamped line\n", fallbackDate: base)
+        XCTAssertEqual(restored.entries.count, 4)
+        XCTAssertEqual(restored.entries[0].date, base.addingTimeInterval(2))
+        XCTAssertEqual(restored.entries[0].message, "line 2")
+        XCTAssertEqual(restored.entries[3].message, "not a timestamped line")
+        XCTAssertEqual(restored.entries[3].date, base)
+    }
+
+    func testComputePlanSummaryText() {
+        let plan = LayaComputePlanSummary(
+            operationCount: 10,
+            operationsByDevice: [LayaComputePlanSummary.neuralEngine: 8, LayaComputePlanSummary.cpu: 2],
+            costByDevice: [LayaComputePlanSummary.neuralEngine: 0.9, LayaComputePlanSummary.cpu: 0.1],
+            offNeuralEngineOperators: ["cast": 1, "gather": 1],
+            unplanned: 0,
+            seconds: 1.5
+        )
+        XCTAssertEqual(plan.neuralEngineShare, 0.8)
+        XCTAssertEqual(plan.headline, "8 of 10 ops prefer the Neural Engine (80.0%)")
+        XCTAssertEqual(plan.deviceRows.map(\.device), [LayaComputePlanSummary.neuralEngine, LayaComputePlanSummary.cpu])
+        XCTAssertEqual(plan.fallbackRows.map(\.operator), ["cast", "gather"])
+        XCTAssertTrue(plan.text.contains("off Neural Engine: cast×1, gather×1"))
+        XCTAssertTrue(plan.text.hasPrefix("Compute plan (1.50 s): 8 of 10"))
+    }
+
+    func testSignatureText() {
+        let signature = LayaSignature(
+            inputs: [LayaFeatureDescription(name: "embeddings", shape: [1, 768, 1, 96], dataType: "float16")],
+            outputs: [LayaFeatureDescription(name: "var_1", shape: [1, 32], dataType: "float32")]
+        )
+        XCTAssertEqual(signature.text, "inputs:\n  embeddings: [1, 768, 1, 96] float16\noutputs:\n  var_1: [1, 32] float32")
+    }
+
+    func testFormatting() {
+        XCTAssertEqual(LayaFormat.seconds(0.0000125), "12 µs")
+        XCTAssertEqual(LayaFormat.seconds(0.0125), "12.5 ms")
+        XCTAssertEqual(LayaFormat.seconds(2.5), "2.50 s")
+        XCTAssertEqual(LayaFormat.bytes(512), "512 B")
+        XCTAssertEqual(LayaFormat.bytes(679_920_639), "679.9 MB")
+        XCTAssertEqual(LayaFormat.bytes(1_500_000_000), "1.5 GB")
+        XCTAssertEqual(LayaFormat.throughput(bytes: 100_000_000, seconds: 10), "10.0 MB/s")
+        XCTAssertEqual(LayaFormat.throughput(bytes: 1, seconds: 0), "—")
+        XCTAssertEqual(LayaFormat.percent(0.4567), "45.7%")
+        XCTAssertEqual(LayaFormat.timestamp(Date(timeIntervalSince1970: 0)), "1970-01-01T00:00:00.000Z")
+        XCTAssertEqual(LayaFormat.parseTimestamp("1970-01-01T00:00:00.000Z"), Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(LayaTimings.stageNames.count, LayaTimings().values.count)
+    }
+}
