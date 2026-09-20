@@ -78,6 +78,13 @@ targets:
         # Needs App ID capability + match profile refresh (bootstrap).
         com.apple.developer.nfc.readersession.formats:
           - TAG
+        # App Attest experiment: DeviceCheck hardware attestation.
+        # Needs App ID capability + match profile refresh (bootstrap).
+        com.apple.developer.devicecheck.appattest-environment: production
+        # App Attest experiment: Sign in with Apple supplies the bound user id.
+        # Needs App ID capability + match profile refresh (bootstrap).
+        com.apple.developer.applesignin:
+          - Default
     # Explicit Info.plist so CFBundleName and CFBundleDisplayName can
     # differ from the Xcode target name. Apple checks both for uniqueness
     # (ITMS-90129). "Playground" is taken, so neither key can be that.

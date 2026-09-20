@@ -60,5 +60,6 @@ enum ExperimentCatalog {
         NFCTagsExperiment.experiment,
         ESP32BLEExperiment.experiment,
         FaceSwapExperiment.experiment,
+        AppAttestExperiment.experiment,
     ]
 }

@@ -79,7 +79,9 @@ jobs:
             python3 "$GITHUB_WORKSPACE/.github/scripts/provision-worker-kv.py"
             python3 "$GITHUB_WORKSPACE/.github/scripts/provision-worker-r2.py"
             python3 "$GITHUB_WORKSPACE/.github/scripts/provision-worker-d1.py"
-          # After deploying (the script now exists), get-or-generate its
-          # VAPID_PRIVATE_KEY secret. Both commands inherit CLOUDFLARE_API_TOKEN
+          # After deploying (the script now exists), get-or-generate secrets
+          # declared by example generators. Both inherit CLOUDFLARE_API_TOKEN
           # and CLOUDFLARE_ACCOUNT_ID from wrangler-action and run in the app dir.
-          postCommands: bash "$GITHUB_WORKSPACE/.github/scripts/ensure-worker-vapid.sh"
+          postCommands: |
+            bash "$GITHUB_WORKSPACE/.github/scripts/ensure-worker-vapid.sh"
+            bash "$GITHUB_WORKSPACE/.github/scripts/ensure-worker-jwt-secret.sh"

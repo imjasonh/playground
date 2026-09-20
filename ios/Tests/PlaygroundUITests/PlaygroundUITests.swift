@@ -108,6 +108,10 @@ final class PlaygroundUITests: XCTestCase {
             scrollLauncherUntilExists(app.staticTexts["ESP32 BLE"], in: app),
             "ESP32 BLE should appear after scrolling the launcher"
         )
+        XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["App Attest"], in: app),
+            "App Attest should appear after scrolling the launcher"
+        )
     }
 
     func testRideMonitorExperimentOpens() {
@@ -336,6 +340,29 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["faceSwapStatus"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["faceSwapModelBanner"].waitForExistence(timeout: 8)
             || app.otherElements["faceSwapModelBanner"].waitForExistence(timeout: 3))
+    }
+
+    func testAppAttestExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("app-attest", title: "App Attest", in: app)
+
+        XCTAssertTrue(app.navigationBars["App Attest"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["appAttestSignInButton"].waitForExistence(timeout: 8)
+            || app.otherElements["appAttestSignInButton"].waitForExistence(timeout: 3)
+            || app.buttons["Sign in with Apple"].waitForExistence(timeout: 3)
+            || app.staticTexts["appAttestAppleUserIdValue"].waitForExistence(timeout: 3)
+            || app.otherElements["appAttestAppleUserIdValue"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["appAttestRegisterButton"].waitForExistence(timeout: 8)
+            || app.otherElements["appAttestRegisterButton"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["appAttestWhoamiButton"].waitForExistence(timeout: 8)
+            || app.otherElements["appAttestWhoamiButton"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["appAttestStatusMessage"].waitForExistence(timeout: 8)
+            || app.otherElements["appAttestStatusMessage"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["appAttestAvailabilityBanner"].waitForExistence(timeout: 8)
+            || app.otherElements["appAttestAvailabilityBanner"].waitForExistence(timeout: 3)
+            || app.staticTexts["App Attest needs a physical iPhone. The Simulator cannot generate a hardware key."].waitForExistence(timeout: 3)
+            || app.staticTexts["App Attest is available on this device."].waitForExistence(timeout: 3))
     }
 
     func testArmyListExperimentOpens() {

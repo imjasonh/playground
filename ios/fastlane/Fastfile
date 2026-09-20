@@ -105,6 +105,64 @@ def ensure_nfc_tag_reading!(identifier)
   UI.success("Enabled NFC Tag Reading on '#{identifier}'")
 end
 
+# Enable App Attest on an existing App ID so match profiles include
+# com.apple.developer.devicecheck.appattest-environment. Idempotent.
+def ensure_app_attest!(identifier)
+  require "spaceship"
+  bundle_id = Spaceship::ConnectAPI::BundleId.find(identifier)
+  UI.user_error!("Bundle ID '#{identifier}' not found — create it first") unless bundle_id
+
+  capabilities = bundle_id.get_capabilities
+  already = Array(capabilities).any? do |cap|
+    type = cap.respond_to?(:capability_type) ? cap.capability_type.to_s : cap.to_s
+    up = type.upcase
+    up.include?("APP_ATTEST") || up.include?("APPATTEST") || up.include?("DEVICE_CHECK")
+  end
+  if already
+    UI.success("App Attest already enabled on '#{identifier}'")
+    return
+  end
+
+  UI.message("Enabling App Attest on '#{identifier}'…")
+  app_attest_type =
+    if defined?(Spaceship::ConnectAPI::BundleIdCapability::Type::APP_ATTEST)
+      Spaceship::ConnectAPI::BundleIdCapability::Type::APP_ATTEST
+    else
+      "APP_ATTEST"
+    end
+  bundle_id.create_capability(app_attest_type)
+  UI.success("Enabled App Attest on '#{identifier}'")
+end
+
+# Enable Sign in with Apple on an existing App ID so match profiles include
+# com.apple.developer.applesignin. Idempotent.
+def ensure_sign_in_with_apple!(identifier)
+  require "spaceship"
+  bundle_id = Spaceship::ConnectAPI::BundleId.find(identifier)
+  UI.user_error!("Bundle ID '#{identifier}' not found — create it first") unless bundle_id
+
+  capabilities = bundle_id.get_capabilities
+  already = Array(capabilities).any? do |cap|
+    type = cap.respond_to?(:capability_type) ? cap.capability_type.to_s : cap.to_s
+    up = type.upcase
+    up.include?("APPLE_ID_AUTH") || up.include?("SIGN_IN_WITH_APPLE") || up.include?("APPLEIDAUTH")
+  end
+  if already
+    UI.success("Sign in with Apple already enabled on '#{identifier}'")
+    return
+  end
+
+  UI.message("Enabling Sign in with Apple on '#{identifier}'…")
+  siwa_type =
+    if defined?(Spaceship::ConnectAPI::BundleIdCapability::Type::APPLE_ID_AUTH)
+      Spaceship::ConnectAPI::BundleIdCapability::Type::APPLE_ID_AUTH
+    else
+      "APPLE_ID_AUTH"
+    end
+  bundle_id.create_capability(siwa_type)
+  UI.success("Enabled Sign in with Apple on '#{identifier}'")
+end
+
 def profile_name_for(identifier)
   ENV["sigh_#{identifier}_appstore_profile-name"] || "match AppStore #{identifier}"
 end
@@ -168,6 +226,14 @@ platform :ios do
     # NFC Tags uses Core NFC NDEF read/write — host App ID needs NFC Tag Reading
     # before match can issue a profile that includes the NFC entitlement.
     ensure_nfc_tag_reading!(APP_IDENTIFIER)
+
+    # App Attest uses DeviceCheck hardware keys — host App ID needs App Attest
+    # before match can issue a profile that includes the environment entitlement.
+    ensure_app_attest!(APP_IDENTIFIER)
+
+    # App Attest binds the Sign in with Apple user identifier — host App ID
+    # needs that capability before match can issue a profile that includes it.
+    ensure_sign_in_with_apple!(APP_IDENTIFIER)
 
     match(
       type: "appstore",

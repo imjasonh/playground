@@ -16,6 +16,7 @@ playground/
 │   ├── scripts/           # CI helpers: app discovery + index-page rendering
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
 ├── artillery/             # touch-first turn-based artillery duel (JS + Node tests)
+├── app-attest/            # Rust Cloudflare Worker: App Attest handshake + JWT (not a Pages app)
 ├── bun-image/             # bun compile + crane image (shell; not a Pages app)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
@@ -83,6 +84,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
 | `sshapp/` | no | GKE Autopilot Wish SSH apps (Go + Terraform); no `index.html` |
+| `app-attest/` | no | Rust Cloudflare Worker; no `index.html` |
 | `web-push/` | no | Rust Cloudflare Worker; no `index.html` |
 | `y/` | no | Rust Cloudflare Worker (one-user microblog); no `index.html` |
 | `cors-proxy/` | no | Rust Cloudflare Worker; no `index.html` |
@@ -185,7 +187,7 @@ discovery scripts.
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
 | `deploy.yml` | push to `main` | Publishes all browser apps to GitHub Pages production |
-| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs` |
+| `deploy-workers.yml` | push to `main`, manual | Deploys changed Cloudflare Worker apps (those with `wrangler.toml`) with `wrangler`, using the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repo secrets; a manual *Run workflow* (`workflow_dispatch`) redeploys all of them. Before deploy it create-or-gets each Worker's KV namespaces (substituting the placeholder ids in `wrangler.toml`), creates any declared R2 buckets that don't exist, and applies remote D1 migrations for declared `[[d1_databases]]`; after deploy it get-or-generates a `VAPID_PRIVATE_KEY` secret for any Worker shipping an `examples/genvapid.rs`, and a `JWT_SECRET` for any Worker shipping an `examples/gensecret.rs` |
 | `preview.yml` | pull request opened/sync | When a browser app, the posts catalog, or the Pages home-page index changed: deploys under `/preview/pr-<N>/` and comments the URL; otherwise no-ops |
 | `cleanup.yml` | pull request closed, manual | Removes closed-PR preview dirs from `gh-pages` (reconciles all open PRs) and refreshes the root index |
 | `test.yml` | push to `main`, pull requests | Tests changed browser, Go, and Rust apps, plus the pasta style leg, posts catalog, and site index, in one job |
@@ -511,7 +513,8 @@ go test ./...
   entries are created if absent, D1 databases declared in `[[d1_databases]]`
   have remote migrations applied, and a Worker that ships
  `examples/genvapid.rs` gets a `VAPID_PRIVATE_KEY` secret generated once (only
- if absent, so the key is stable across deploys). Every Worker must enable
+ if absent, so the key is stable across deploys). A Worker that ships
+ `examples/gensecret.rs` gets a `JWT_SECRET` the same way. Every Worker must enable
  Workers Logs (including invocation logs) and Workers Traces in its
  `wrangler.toml` — the `wrangler_observability` pasta rule enforces this.
  Head sampling is 100% at playground traffic; dial down before serious
@@ -701,6 +704,7 @@ bundle exec fastlane test
 | `tank-commander/` | Monte Carlo simulator for [Tank Commander](https://github.com/imjasonh/tank-commander) — skirmish 1v1, platoon 3v3, combined arms (drama + stalemate metrics) | `cargo test` + clippy |
 | `mapvelopes/` | envelope PDFs with the sender-to-recipient route as the background (requires a Google Maps key; sizes #10, #9, Monarch, #6¾, A7) | `cargo test` + clippy + wasm build |
 | `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
+| `app-attest/` | App Attest handshake + JWT issuer for the Playground iOS experiment — Cloudflare Worker | `cargo test` + clippy + wasm build |
 
 > **`git-server` has its own agent guide:** read
 > [`git-server/AGENTS.md`](git-server/AGENTS.md) before working in that
