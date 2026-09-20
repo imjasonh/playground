@@ -12,14 +12,8 @@ struct AppAttestView: View {
                 availabilityBanner
                 identitySection
                 actionButtons
-                Text(controller.statusMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityIdentifier("appAttestStatusMessage")
+                statusLine
                 whoamiResults
-                howItWorks
             }
             .padding()
         }
@@ -66,7 +60,7 @@ struct AppAttestView: View {
                 } onCompletion: { result in
                     let mapped = AppAttestAppleSignIn.userID(from: result)
                     Task { @MainActor in
-                        controller.applyAppleSignIn(mapped)
+                        await controller.applyAppleSignIn(mapped)
                     }
                 }
                 .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
@@ -85,7 +79,7 @@ struct AppAttestView: View {
     private var actionButtons: some View {
         VStack(spacing: 10) {
             Button {
-                Task { await controller.register() }
+                Task { await controller.registerThenWhoami() }
             } label: {
                 Label("Register device", systemImage: "checkmark.shield")
                     .frame(maxWidth: .infinity)
@@ -128,16 +122,38 @@ struct AppAttestView: View {
     }
 
     @ViewBuilder
+    private var statusLine: some View {
+        Group {
+            if controller.statusIsError {
+                Label {
+                    Text(controller.statusMessage)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .foregroundStyle(.red)
+                .accessibilityLabel("Error: \(controller.statusMessage)")
+            } else {
+                Text(controller.statusMessage)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.body)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("appAttestStatusMessage")
+    }
+
+    @ViewBuilder
     private var whoamiResults: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Worker response")
+            Text("Whoami")
                 .font(.subheadline.bold())
             if let result = controller.lastWhoAmI {
                 VStack(alignment: .leading, spacing: 6) {
                     labeledRow("User id", result.userId)
                     labeledRow("Device id", result.deviceId)
                     labeledRow("Key id", result.keyId)
-                    labeledRow("Unattested", result.unattested ? "yes" : "no")
+                    labeledRow("Attested", result.unattested ? "no" : "yes")
                 }
                 .font(.body.monospaced())
                 .textSelection(.enabled)
@@ -149,7 +165,7 @@ struct AppAttestView: View {
                 ContentUnavailableView(
                     "No whoami response yet",
                     systemImage: "person.crop.circle.badge.questionmark",
-                    description: Text("Sign in with Apple, register this device, then tap Call whoami.")
+                    description: Text("Sign in with Apple to load the attested ids.")
                 )
                 .accessibilityIdentifier("appAttestWhoamiEmpty")
             }
@@ -164,22 +180,5 @@ struct AppAttestView: View {
                 .foregroundStyle(.secondary)
             Text(value)
         }
-    }
-
-    private var howItWorks: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("How it works")
-                .font(.subheadline.bold())
-            Text(
-                "Sign in with Apple provides the user id. Register fetches a one-time challenge, "
-                    + "hashes that Apple user id + device id into App Attest client data, and "
-                    + "exchanges the attestation for a JWT. Call whoami sends that token to the "
-                    + "app-attest Worker, which returns only the bound ids. The Simulator uses an "
-                    + "unattested path that production keeps off."
-            )
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

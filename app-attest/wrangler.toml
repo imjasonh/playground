@@ -19,10 +19,10 @@ compatibility_date = "2025-04-01"
 [build]
 command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release"
 
-# Public configuration. APP_ID is `<Team ID>.<Bundle ID>` and must match the
-# Playground host app. Replace the 10-character Team ID with APPLE_TEAM_ID.
+# Public configuration. APP_ID is `<Team ID>.<Bundle ID>` for the Playground
+# host app. The Team ID is not a secret; it is in every signed build.
 [vars]
-APP_ID = "XXXXXXXXXX.io.github.imjasonh.playground"
+APP_ID = "W5LPA2QM2W.io.github.imjasonh.playground"
 TOKEN_TTL_SECONDS = "3600"
 # Set to "1" only for local wrangler / Simulator testing. Production stays off.
 ALLOW_UNATTESTED = "0"

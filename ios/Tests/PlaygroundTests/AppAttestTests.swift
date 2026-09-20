@@ -120,17 +120,14 @@ final class AppAttestTests: XCTestCase {
             store: store,
             appleID: FakeAppAttestAppleID()
         )
-        controller.applyAppleUserID("alice")
-        await controller.register()
+        await controller.applyAppleSignIn(.success("alice"))
         XCTAssertTrue(controller.hasToken)
+        XCTAssertFalse(controller.statusIsError)
         XCTAssertEqual(controller.lastWhoAmI?.userId, "alice")
         XCTAssertEqual(controller.lastWhoAmI?.deviceId, "dev-9")
         XCTAssertEqual(controller.lastWhoAmI?.unattested, true)
         XCTAssertEqual(store.token, "jwt-1")
-
-        await controller.whoami()
-        XCTAssertEqual(controller.lastWhoAmI?.userId, "alice")
-        XCTAssertTrue(controller.statusMessage.contains("unattested"))
+        XCTAssertEqual(controller.statusMessage, "Worker accepted the unattested token.")
     }
 
     @MainActor
@@ -193,11 +190,85 @@ final class AppAttestTests: XCTestCase {
         await controller.register()
         XCTAssertFalse(controller.hasToken)
         XCTAssertFalse(controller.isSignedIn)
+        XCTAssertTrue(controller.statusIsError)
         XCTAssertEqual(controller.statusMessage, "Sign in with Apple first.")
     }
 
     @MainActor
-    func testApplyAppleUserIDEnablesRegister() {
+    func testRegisterSurfacesWorkerError() async {
+        let store = AppAttestMemoryStore(userId: "alice")
+        let http = FakeAppAttestHTTP()
+        http.onRequest = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/v1/challenge") {
+                return Self.json(
+                    #"{"challenge":"n","expiresAt":1}"#,
+                    status: 200
+                )
+            }
+            return Self.json(#"{"error":"certificate: issuer P-256 key"}"#, status: 400)
+        }
+        let controller = AppAttestController(
+            keys: FakeAppAttestKeys(isSupported: false),
+            api: AppAttestAPI(baseURL: URL(string: "https://example.test")!, http: http),
+            store: store,
+            appleID: FakeAppAttestAppleID()
+        )
+        await controller.register()
+        XCTAssertFalse(controller.hasToken)
+        XCTAssertTrue(controller.statusIsError)
+        XCTAssertEqual(
+            controller.statusMessage,
+            "Register failed: certificate: issuer P-256 key"
+        )
+    }
+
+    @MainActor
+    func testSignInRegistersDevice() async {
+        let store = AppAttestMemoryStore(userId: "")
+        let http = FakeAppAttestHTTP()
+        http.onRequest = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/v1/challenge") {
+                return Self.json(#"{"challenge":"n","expiresAt":1}"#, status: 200)
+            }
+            if path.hasSuffix("/v1/unattested-token") {
+                return Self.json(
+                    #"{"token":"jwt-siwa","expiresAt":2,"userId":"001234.apple-user","deviceId":"device-test","keyId":"unattested","unattested":true}"#,
+                    status: 200
+                )
+            }
+            if path.hasSuffix("/v1/whoami") {
+                XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer jwt-siwa")
+                return Self.json(
+                    #"{"userId":"001234.apple-user","deviceId":"device-test","keyId":"unattested","unattested":true}"#,
+                    status: 200
+                )
+            }
+            return Self.json(#"{"error":"unexpected \(path)"}"#, status: 500)
+        }
+        let controller = AppAttestController(
+            keys: FakeAppAttestKeys(isSupported: false),
+            api: AppAttestAPI(baseURL: URL(string: "https://example.test")!, http: http),
+            store: store,
+            appleID: FakeAppAttestAppleID()
+        )
+        XCTAssertFalse(controller.isSignedIn)
+        await controller.applyAppleSignIn(.success("001234.apple-user"))
+        XCTAssertTrue(controller.isSignedIn)
+        XCTAssertTrue(controller.hasToken)
+        XCTAssertEqual(controller.userId, "001234.apple-user")
+        XCTAssertEqual(store.userId, "001234.apple-user")
+        XCTAssertEqual(store.token, "jwt-siwa")
+        XCTAssertEqual(controller.lastWhoAmI?.userId, "001234.apple-user")
+        XCTAssertEqual(controller.lastWhoAmI?.deviceId, "device-test")
+        XCTAssertEqual(controller.lastWhoAmI?.unattested, true)
+        XCTAssertFalse(controller.statusIsError)
+        XCTAssertEqual(controller.statusMessage, "Worker accepted the unattested token.")
+    }
+
+    @MainActor
+    func testApplyAppleUserIDDoesNotRegisterByItself() {
         let store = AppAttestMemoryStore(userId: "")
         let controller = AppAttestController(
             keys: FakeAppAttestKeys(isSupported: false),
@@ -205,11 +276,12 @@ final class AppAttestTests: XCTestCase {
             appleID: FakeAppAttestAppleID()
         )
         XCTAssertFalse(controller.isSignedIn)
-        controller.applyAppleSignIn(.success("001234.apple-user"))
+        controller.applyAppleUserID("001234.apple-user")
         XCTAssertTrue(controller.isSignedIn)
+        XCTAssertFalse(controller.hasToken)
         XCTAssertEqual(controller.userId, "001234.apple-user")
         XCTAssertEqual(store.userId, "001234.apple-user")
-        XCTAssertEqual(controller.statusMessage, "Signed in with Apple. Register to bind this user id.")
+        XCTAssertEqual(controller.statusMessage, "Signed in with Apple.")
     }
 
     func testAppleSignInMapsCanceledAuthorizationError() {
@@ -220,14 +292,14 @@ final class AppAttestTests: XCTestCase {
     }
 
     @MainActor
-    func testCanceledSignInLeavesUserUnsigned() {
+    func testCanceledSignInLeavesUserUnsigned() async {
         let store = AppAttestMemoryStore(userId: "")
         let controller = AppAttestController(
             keys: FakeAppAttestKeys(isSupported: false),
             store: store,
             appleID: FakeAppAttestAppleID()
         )
-        controller.applyAppleSignIn(.failure(.canceled))
+        await controller.applyAppleSignIn(.failure(.canceled))
         XCTAssertFalse(controller.isSignedIn)
         XCTAssertEqual(controller.statusMessage, "Sign in canceled.")
     }
@@ -268,6 +340,72 @@ final class AppAttestTests: XCTestCase {
     }
 
     @MainActor
+    func testRefreshRegistersWhenSignedInWithoutToken() async {
+        let store = AppAttestMemoryStore(userId: "apple-saved")
+        let http = FakeAppAttestHTTP()
+        http.onRequest = { request in
+            let path = request.url?.path ?? ""
+            if path.hasSuffix("/v1/challenge") {
+                return Self.json(#"{"challenge":"n","expiresAt":1}"#, status: 200)
+            }
+            if path.hasSuffix("/v1/unattested-token") {
+                return Self.json(
+                    #"{"token":"jwt-refresh","expiresAt":2,"userId":"apple-saved","deviceId":"device-test","keyId":"unattested","unattested":true}"#,
+                    status: 200
+                )
+            }
+            if path.hasSuffix("/v1/whoami") {
+                return Self.json(
+                    #"{"userId":"apple-saved","deviceId":"device-test","keyId":"unattested","unattested":true}"#,
+                    status: 200
+                )
+            }
+            return Self.json(#"{"error":"unexpected \(path)"}"#, status: 500)
+        }
+        let controller = AppAttestController(
+            keys: FakeAppAttestKeys(isSupported: false),
+            api: AppAttestAPI(baseURL: URL(string: "https://example.test")!, http: http),
+            store: store,
+            appleID: FakeAppAttestAppleID()
+        )
+        XCTAssertFalse(controller.hasToken)
+        await controller.refreshAppleIDState()
+        XCTAssertTrue(controller.hasToken)
+        XCTAssertEqual(store.token, "jwt-refresh")
+        XCTAssertEqual(controller.lastWhoAmI?.userId, "apple-saved")
+        XCTAssertFalse(controller.statusIsError)
+        XCTAssertEqual(controller.statusMessage, "Worker accepted the unattested token.")
+    }
+
+    @MainActor
+    func testRefreshWithStoredTokenCallsWhoami() async {
+        let store = AppAttestMemoryStore(userId: "apple-saved")
+        store.token = "jwt-stored"
+        let http = FakeAppAttestHTTP()
+        http.onRequest = { request in
+            let path = request.url?.path ?? ""
+            XCTAssertTrue(path.hasSuffix("/v1/whoami"), "expected whoami, got \(path)")
+            XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer jwt-stored")
+            return Self.json(
+                #"{"userId":"apple-saved","deviceId":"device-test","keyId":"key-1","unattested":false}"#,
+                status: 200
+            )
+        }
+        let controller = AppAttestController(
+            keys: FakeAppAttestKeys(isSupported: true),
+            api: AppAttestAPI(baseURL: URL(string: "https://example.test")!, http: http),
+            store: store,
+            appleID: FakeAppAttestAppleID()
+        )
+        await controller.refreshAppleIDState()
+        XCTAssertEqual(controller.lastWhoAmI?.userId, "apple-saved")
+        XCTAssertEqual(controller.lastWhoAmI?.deviceId, "device-test")
+        XCTAssertEqual(controller.lastWhoAmI?.keyId, "key-1")
+        XCTAssertEqual(controller.lastWhoAmI?.unattested, false)
+        XCTAssertEqual(controller.statusMessage, "Worker accepted the attested token.")
+    }
+
+    @MainActor
     func testRevokedAppleIDClearsSession() async {
         let store = AppAttestMemoryStore(userId: "apple-revoked")
         store.token = "jwt"
@@ -282,6 +420,7 @@ final class AppAttestTests: XCTestCase {
         XCTAssertFalse(controller.isSignedIn)
         XCTAssertFalse(controller.hasToken)
         XCTAssertEqual(store.keyId, "key-keep")
+        XCTAssertTrue(controller.statusIsError)
         XCTAssertEqual(controller.statusMessage, "Sign in with Apple was revoked. Sign in again.")
     }
 

@@ -5,7 +5,7 @@ enum AppAttestExperiment {
     static let experiment = Experiment(
         id: "app-attest",
         title: "App Attest",
-        summary: "Sign in with Apple, attest this device once, then call a Worker that returns the bound Apple user id and device id.",
+        summary: "Sign in with Apple. The Worker returns the attested Apple user id and device id.",
         icon: "checkmark.shield"
     ) {
         AppAttestView()

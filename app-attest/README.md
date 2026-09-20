@@ -64,9 +64,9 @@ The JWT `sub` is `userId`. Custom claims are `device_id` and `key_id`.
 | `ALLOW_UNATTESTED` | var | `1` to allow the Simulator path |
 | `JWT_SECRET` | secret | HS256 key. Generate with `cargo run --example gensecret` |
 
-Replace the `XXXXXXXXXX` Team ID in `wrangler.toml` with the 10-character
-`APPLE_TEAM_ID` before a real device can attest. The App ID hash in
-authenticator data is `SHA-256(APP_ID)`.
+`APP_ID` in `wrangler.toml` is `W5LPA2QM2W.io.github.imjasonh.playground`.
+The App ID hash in authenticator data is `SHA-256(APP_ID)`. The Team ID is
+public; it is in every signed Playground build.
 
 `deploy-workers.yml` generates `JWT_SECRET` on first deploy when
 `examples/gensecret.rs` is present, and leaves an existing secret alone.
