@@ -64,7 +64,7 @@ fn build_config(env: &Env) -> Result<ApiConfig, String> {
     let app_id = env
         .var("APP_ID")
         .map(|v| v.to_string())
-        .unwrap_or_else(|_| "XXXXXXXXXX.io.github.imjasonh.playground".into());
+        .unwrap_or_else(|_| "W5LPA2QM2W.io.github.imjasonh.playground".into());
 
     let token_ttl_seconds = env
         .var("TOKEN_TTL_SECONDS")
