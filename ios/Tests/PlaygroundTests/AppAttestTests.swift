@@ -93,10 +93,11 @@ final class AppAttestTests: XCTestCase {
                 )
             }
             if path.hasSuffix("/v1/unattested-token") {
-                let body = String(data: request.httpBody ?? Data(), encoding: .utf8) ?? ""
-                XCTAssertTrue(body.contains("\"challenge\":\"n\""))
-                XCTAssertTrue(body.contains("\"userId\":\"alice\""))
-                XCTAssertTrue(body.contains("\"deviceId\":\"dev-9\""))
+                let object = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+                XCTAssertEqual(
+                    object?["clientData"] as? String,
+                    #"{"challenge":"n","deviceId":"dev-9","userId":"alice"}"#
+                )
                 return Self.json(
                     #"{"token":"jwt-1","expiresAt":2,"userId":"alice","deviceId":"dev-9","keyId":"unattested","unattested":true}"#,
                     status: 200
