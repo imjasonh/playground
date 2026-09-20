@@ -43,10 +43,11 @@ final class AppAttestController: ObservableObject {
         )
     }
 
-    func applyAppleSignIn(_ result: Result<String, AppAttestAppleSignInError>) {
+    func applyAppleSignIn(_ result: Result<String, AppAttestAppleSignInError>) async {
         switch result {
         case .success(let appleUserID):
             applyAppleUserID(appleUserID)
+            await register()
         case .failure(.canceled):
             setStatus("Sign in canceled.")
         case .failure(let error):
@@ -61,21 +62,17 @@ final class AppAttestController: ObservableObject {
             return
         }
         if trimmed != store.userId {
-            store.token = nil
-            hasToken = false
-            lastWhoAmI = nil
+            forgetStoredToken()
         }
         store.userId = trimmed
         userId = trimmed
-        setStatus("Signed in with Apple. Register to bind this user id.")
+        setStatus("Signed in with Apple.")
     }
 
     func signOut() {
         store.userId = ""
-        store.token = nil
         userId = ""
-        hasToken = false
-        lastWhoAmI = nil
+        forgetStoredToken()
         setStatus("Signed out.")
     }
 
@@ -86,7 +83,9 @@ final class AppAttestController: ObservableObject {
             signOut()
             setStatus("Sign in with Apple was revoked. Sign in again.", isError: true)
         case .authorized, .unknown:
-            break
+            if !hasToken {
+                await register()
+            }
         }
     }
 
@@ -162,6 +161,12 @@ final class AppAttestController: ObservableObject {
         setStatus("Forgot the stored token and App Attest key id.")
     }
 
+    private func forgetStoredToken() {
+        store.token = nil
+        hasToken = false
+        lastWhoAmI = nil
+    }
+
     private func setStatus(_ message: String, isError: Bool = false) {
         statusMessage = message
         statusIsError = isError
@@ -211,10 +216,10 @@ final class AppAttestController: ObservableObject {
             return "A token is stored on this device."
         }
         if !signedIn {
-            return "Sign in with Apple to bind your Apple user id."
+            return "Sign in with Apple to attest this device."
         }
         if supported {
-            return "Register to attest this device and mint a token."
+            return "Signed in. Attesting this device."
         }
         return "App Attest is unavailable. Register uses the Simulator bypass."
     }

@@ -409,11 +409,11 @@ at most 1024 px.
 ### App Attest
 
 **Sign in with Apple** supplies the user id (the stable `ASAuthorizationAppleIDCredential.user`
-string). Register then runs Apple App Attest and calls the
+string) and immediately runs Apple App Attest against the
 [`app-attest/`](../app-attest/) Worker. The Worker checks the attestation, binds
 that Apple user id and `deviceId` to the hardware key, and issues a short-lived
-JWT. **Call whoami** sends that token and the Worker returns only those bound
-ids.
+JWT. **Sign out** drops that token. **Call whoami** sends a stored token and
+the Worker returns only those bound ids.
 
 Needs the App Attest App ID capability
 (`com.apple.developer.devicecheck.appattest-environment` = `production`), the

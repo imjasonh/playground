@@ -60,7 +60,7 @@ struct AppAttestView: View {
                 } onCompletion: { result in
                     let mapped = AppAttestAppleSignIn.userID(from: result)
                     Task { @MainActor in
-                        controller.applyAppleSignIn(mapped)
+                        await controller.applyAppleSignIn(mapped)
                     }
                 }
                 .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
@@ -165,7 +165,7 @@ struct AppAttestView: View {
                 ContentUnavailableView(
                     "No whoami response yet",
                     systemImage: "person.crop.circle.badge.questionmark",
-                    description: Text("Sign in with Apple, register this device, then tap Call whoami.")
+                    description: Text("Sign in with Apple, then tap Call whoami.")
                 )
                 .accessibilityIdentifier("appAttestWhoamiEmpty")
             }
