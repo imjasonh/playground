@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Kanoodle</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="header">
+        <h1>Kanoodle</h1>
+        <p class="subtitle">
+          Fit all 12 noodles on the 5×11 board. Starter pieces stay fixed; you place the rest.
+        </p>
+      </header>
+
+      <details class="settings-panel" open>
+        <summary>Game settings</summary>
+        <section class="controls">
+          <div class="control-group">
+            <label for="difficulty">Difficulty</label>
+            <select id="difficulty" aria-label="Difficulty level">
+              <option value="1">Level 1 — fill 1 piece</option>
+              <option value="2">Level 2 — fill 2 pieces</option>
+              <option value="3">Level 3 — fill 3 pieces</option>
+              <option value="4">Level 4 — fill 4 pieces</option>
+              <option value="5">Level 5 — fill 6 pieces</option>
+              <option value="6">Level 6 — free play</option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label for="puzzle-select">Classic puzzle</label>
+            <select id="puzzle-select" aria-label="Classic puzzle">
+              <option value="">Random (by difficulty)</option>
+            </select>
+          </div>
+
+          <button type="button" id="new-game" class="btn primary">New game</button>
+        </section>
+      </details>
+
+      <div class="action-buttons" aria-label="Piece actions">
+        <button type="button" id="rotate-btn" class="btn" title="Rotate selected piece">Rotate ↻</button>
+        <button type="button" id="flip-btn" class="btn" title="Flip selected piece">Flip ↔</button>
+        <button type="button" id="return-btn" class="btn" title="Return selected piece to tray">Return</button>
+      </div>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+
+      <main class="play-area">
+        <div class="board-wrap">
+          <div id="board" class="board" aria-label="Kanoodle board"></div>
+          <div id="ghost-layer" class="ghost-layer" hidden></div>
+        </div>
+
+        <aside class="tray-panel">
+          <h2>Pieces</h2>
+          <p id="interaction-hint" class="hint"></p>
+          <div id="tray" class="tray"></div>
+          <div id="selected-preview" class="selected-preview" hidden>
+            <h3>Selected</h3>
+            <div id="preview-shape"></div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script type="module" src="src/app.js"></script>
+  </body>
+</html>
