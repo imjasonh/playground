@@ -452,12 +452,14 @@ struct ArmyListNewSheet: View {
                     .accessibilityIdentifier("armyListFlavorField")
             }
 
-            Section("Laya") {
-                LayaModelStatusRow(
-                    store: laya,
-                    statusIdentifier: "armyListNewLayaStatus",
-                    downloadIdentifier: "armyListNewLayaDownload"
-                )
+            if laya.showsSetupRow, !isBuilding {
+                Section("Laya") {
+                    LayaModelStatusRow(
+                        store: laya,
+                        statusIdentifier: "armyListNewLayaStatus",
+                        downloadIdentifier: "armyListNewLayaDownload"
+                    )
+                }
             }
 
             if isBuilding, let buildProgress {
@@ -506,11 +508,6 @@ struct ArmyListNewSheet: View {
         }
         .navigationTitle("New list")
         .navigationBarTitleDisplayMode(.inline)
-        .task {
-            if laya.isDownloaded {
-                await laya.prepare()
-            }
-        }
         .task(id: isBuilding) {
             guard isBuilding else { return }
             while isBuilding, !Task.isCancelled {
@@ -572,7 +569,8 @@ struct ArmyListNewSheet: View {
         displayedFraction = 0
         lastStep = nil
         isBuilding = true
-        buildProgress = ArmyListStarterBuildProgress(phase: .preparing)
+        let needsModel = laya.isDownloaded && !laya.isReady
+        buildProgress = ArmyListStarterBuildProgress(phase: needsModel ? .loadingModel : .preparing)
         let theme = flavor
         let userName = trimmedName()
         buildBackgroundAssertion.begin(onExpiration: cancelBuild)

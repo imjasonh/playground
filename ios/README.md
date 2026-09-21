@@ -128,8 +128,9 @@ unique tags, and Leader join edges as versioned JSON, plus a deterministic
 validator, SwiftUI authoring UI, and share/export as plain text or `.army.json`.
 The editor focuses on units (drag to reorder); name, battle size, and
 detachments live on **Army settings**. **Build starter list** on the New list
-screen fills a roster from 0. When the shared Laya graph is loaded, Laya
-picks among legal catalog moves; otherwise a ranked greedy fill runs. The
+screen fills a roster from 0. Opening that screen does not load Laya. If a
+download is already on disk, the button loads the graph and then Laya picks
+among legal catalog moves. Otherwise a ranked greedy fill runs. The
 controller then assigns legal enhancements and spends leftover points.
 Apple Intelligence is not required for that button. List chat uses it for
 Theme and Weaknesses only.
@@ -153,8 +154,10 @@ bash ios/scripts/stress-army-lists.sh --write-fixtures
 ```
 
 **List chat** (toolbar bubble on a list) always offers Build, Fill, and Fix.
-Those chips run the Laya construction controller over legal catalog moves,
-or the greedy fallback. Optional theme text steers that ranking. Theme and
+Those chips load Laya when a download is already on disk, then run the
+construction controller over legal catalog moves. Otherwise they use the
+greedy fallback. Opening List chat does not load the graph. Optional theme
+text steers that ranking. Theme and
 Weaknesses still use on-device Foundation Models when Apple Intelligence is
 available. Those tools only summarize the list or rename it. Chat still
 compacts AFM context with TN3193 first and last entries, a rolling summary,
@@ -439,7 +442,9 @@ port of its ANE path, so the same bundle runs on the phone.
 
 The download, tokenizer, and Core ML runtime live in `Shared/Laya` so Army
 List can load the same bundle (`LayaModelStore.shared`). The Laya experiment
-is the diagnostics UI on top of that store.
+is the diagnostics UI on top of that store. Opening it loads a downloaded
+bundle. Army List does not: New list and List chat stay idle until Build,
+Fill, or Fix, and that request loads the graph.
 
 The bundle is
 [`aac6fef/laya-multilingual-coreml-ane`](https://huggingface.co/aac6fef/laya-multilingual-coreml-ane)
