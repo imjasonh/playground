@@ -58,3 +58,17 @@ struct LayaGreedyDecider: LayaDeciding {
         return (0..<count).map { $0 == 0 ? 1 : 0 }
     }
 }
+
+extension LayaDecision {
+    /// Winning choice label, if this is a choice answer.
+    var choiceLabel: String? {
+        if case .choice(let label, _) = answer { return label }
+        return nil
+    }
+
+    /// Whether a yes/no answer is at least 50% yes.
+    var noulHolds: Bool? {
+        if case .noul(let probability) = answer { return probability >= 0.5 }
+        return nil
+    }
+}

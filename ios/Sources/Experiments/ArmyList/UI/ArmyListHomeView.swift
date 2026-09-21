@@ -539,29 +539,11 @@ struct ArmyListNewSheet: View {
         onCreate(list)
     }
 
-    /// Builds a fresh list from 0 with the on-device model, steered by the
-    /// flavor text. Each run invents a new roster instead of the old
-    /// deterministic seeder that stamped out the same list every time.
-    ///
-    /// `ArmyListStarterBuilder` hands the model a self-contained prompt (valid
-    /// detachment and unit ids with points) and a builder-mode runtime with one
-    /// tool, then retries — a much more reliable fit for the model's context window
-    /// than chaining discovery tools.
+    /// Builds a fresh list from 0. Laya picks among legal catalog moves when
+    /// the shared graph is loaded; otherwise the ranked greedy decider fills
+    /// the roster. Apple Intelligence is not required.
     private func buildStarterList() {
         seedError = nil
-        let probe = ArmyListChatWorkspace(
-            list: ArmyListDocument(
-                name: "probe",
-                catalogVersion: catalog.version,
-                factionID: factionID,
-                battleSizeID: battleSizeID
-            ),
-            catalog: catalog
-        )
-        guard ArmyListChatRuntime(workspace: probe, mode: .builder).isModelAvailable else {
-            seedError = "Building a list needs Apple Intelligence. Turn it on, or tap Create for a blank list to edit."
-            return
-        }
         if let issue = ArmyListStarterPrompt.buildFeasibilityIssue(
             catalog: catalog,
             factionID: factionID,
@@ -572,11 +554,7 @@ struct ArmyListNewSheet: View {
         }
         displayedFraction = 0
         isBuilding = true
-        buildProgress = ArmyListStarterBuildProgress(
-            attempt: 0,
-            maxAttempts: 3,
-            phase: .preparing
-        )
+        buildProgress = ArmyListStarterBuildProgress(phase: .preparing)
         let theme = flavor
         let userName = trimmedName()
         buildBackgroundAssertion.begin(onExpiration: cancelBuild)
@@ -604,15 +582,13 @@ struct ArmyListNewSheet: View {
             if let built {
                 onCreate(built)
             } else {
-                seedError = "The model couldn’t build a list this time. Try again or tweak the theme."
+                seedError = "Couldn't build a list this time. Try again or tweak the theme."
             }
         }
     }
 
     /// Stops an in-flight starter build and returns the sheet to its idle state.
-    /// The on-device model may not interrupt a generation already in flight, so
-    /// the builder checks for cancellation at each attempt boundary and drops
-    /// whatever it produced.
+    /// The controller checks for cancellation between Laya questions.
     private func cancelBuild() {
         buildTask?.cancel()
         buildTask = nil
