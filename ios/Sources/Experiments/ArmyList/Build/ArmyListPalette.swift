@@ -41,6 +41,16 @@ enum ArmyListPalette {
         }
     }
 
+    /// One legal model count for a datasheet that still fits remaining points.
+    struct ModelCountMove: Equatable {
+        let models: Int
+        let points: Int
+
+        func option() -> LayaChoiceOption {
+            LayaChoiceOption("\(models)", "\(points)pt")
+        }
+    }
+
     /// One legal add: a datasheet at a model count that fits remaining points.
     struct AddMove: Equatable {
         let sheet: DatasheetDefinition
@@ -321,6 +331,27 @@ enum ArmyListPalette {
             return lhs.enhancement.name.localizedCaseInsensitiveCompare(rhs.enhancement.name) == .orderedAscending
         }
         return uniquedEnhancements(Array(moves.prefix(limit)))
+    }
+
+    /// Model counts that still fit remaining points, largest first so greedy
+    /// fill keeps packing.
+    static func legalModelCounts(
+        sheet: DatasheetDefinition,
+        list: ArmyListDocument,
+        remainingPoints: Int
+    ) -> [ModelCountMove] {
+        let copies = list.units.filter { $0.datasheetID == sheet.id }.count
+        let copyIndex = copies + 1
+        let moves: [ModelCountMove] = sheet.modelCounts.compactMap { models in
+            guard let cost = listCost(sheet: sheet, models: models, copyIndex: copyIndex),
+                  cost <= remainingPoints
+            else { return nil }
+            return ModelCountMove(models: models, points: cost)
+        }
+        return moves.sorted { lhs, rhs in
+            if lhs.points != rhs.points { return lhs.points > rhs.points }
+            return lhs.models > rhs.models
+        }
     }
 
     static func cheapestLegalAdd(

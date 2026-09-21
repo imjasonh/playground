@@ -28,14 +28,15 @@ struct ArmyListChatEntry: Identifiable, Equatable {
 @MainActor
 final class ArmyListChatRuntime: ObservableObject {
     /// How the session is configured. Chat keeps language tools only; builder
-    /// is unused by construction (Laya / greedy owns the roster).
+    /// is unused by construction (catalog / Laya / greedy owns the roster).
     enum Mode {
         case chat
         case builder
     }
 
-    /// Roster actions the Laya controller owns. A one-shot Foundation Models
-    /// session can write a theme brief for those chips. Theme / Weaknesses stay
+    /// Roster actions the construction loop owns. Catalog code lists legal
+    /// moves; Laya answers labeled choices; a one-shot Foundation Models
+    /// session can write a theme brief and a list name. Theme / Weaknesses stay
     /// on the chat session.
     enum ConstructionAction {
         case build
@@ -422,7 +423,7 @@ final class ArmyListChatRuntime: ObservableObject {
         """
         You help the user name and discuss a Warhammer 40,000 11th Edition army list inside the Playground app.
         Faction for this list is fixed to whatever getListSummary reports. Do not switch factions.
-        Construction (build, fill, fix) is done by the Laya controller, not by you. Do not invent datasheet ids or points.
+        Construction (build, fill, fix) is done by catalog code and Laya, not by you. Do not invent datasheet ids or points.
         Call getListSummary when you need the current roster, points, or issues.
         For Theme, suggest a name and a paint color scheme. If the user wants that name, call setListName.
         For Weaknesses, give matchup opinions and label them as opinions.
@@ -446,7 +447,7 @@ final class ArmyListChatRuntime: ObservableObject {
         makeFoundationTools().map(\.name)
     }
 
-    /// Runs Build / Fill / Fix through the Laya controller. Prepares the
+    /// Runs Build / Fill / Fix through the construction loop. Prepares the
     /// shared graph when a download is already on disk.
     func runConstruction(
         _ action: ConstructionAction,
@@ -545,7 +546,7 @@ final class ArmyListChatRuntime: ObservableObject {
     }
 
     private static let welcomeText =
-        "Build, Fill, and Fix pick among legal catalog moves. When Apple Intelligence is on, it writes a short theme brief that Laya classifies against. Theme and Weaknesses stay on Apple Intelligence for matchup write-ups."
+        "Build, Fill, and Fix use the catalog for legal moves and Laya for picks. When Apple Intelligence is on, it writes a short theme brief and a list name first. Theme and Weaknesses stay on Apple Intelligence for matchups."
 
     var armyListGateDetail: String {
         switch modelGate {

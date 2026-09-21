@@ -16,6 +16,9 @@ struct ArmyListThemeBrief: Equatable {
     var tokens: [String]
     var summary: String
     var source: Source
+    /// Short roster name from Apple Intelligence. Empty when the catalog
+    /// heuristic built the brief, or when the user already named the list.
+    var listName: String = ""
 
     /// Ranking string for ``ArmyListPalette``. Prompt words stay so a typed
     /// name still matches, and brief tokens cover AFM expansions such as
@@ -42,6 +45,7 @@ struct ArmyListThemeBrief: Equatable {
 enum ArmyListThemeBriefBuilder {
     static let maxTokens = 8
     static let maxSummaryCharacters = 80
+    static let maxListNameCharacters = 40
 
     /// When false, skip Apple Intelligence (unit tests).
     static var foundationModelsEnabled = true
@@ -114,7 +118,8 @@ enum ArmyListThemeBriefBuilder {
             prompt: trimmedPrompt,
             tokens: tokens,
             summary: summary,
-            source: source
+            source: source,
+            listName: ""
         )
     }
 
@@ -163,12 +168,14 @@ enum ArmyListThemeBriefBuilder {
             if tokens.count >= maxTokens { break }
         }
         let summary = model.summary.isEmpty ? heuristic.summary : model.summary
+        let listName = model.listName.isEmpty ? "" : model.listName
         return sanitize(
             ArmyListThemeBrief(
                 prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
                 tokens: tokens,
                 summary: summary,
-                source: .foundationModels
+                source: .foundationModels,
+                listName: listName
             ),
             prompt: prompt
         )
@@ -187,24 +194,9 @@ enum ArmyListThemeBriefBuilder {
             prompt: prompt.trimmingCharacters(in: .whitespacesAndNewlines),
             tokens: tokens,
             summary: clipSummary(brief.summary),
-            source: brief.source
+            source: brief.source,
+            listName: clipListName(brief.listName)
         )
-    }
-
-    static func clipSummary(_ raw: String) -> String {
-        var text = raw
-            .replacingOccurrences(of: "\"", with: "")
-            .replacingOccurrences(of: "\n", with: " ")
-            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if text.count > maxSummaryCharacters {
-            let end = text.index(text.startIndex, offsetBy: maxSummaryCharacters)
-            text = String(text[..<end]).trimmingCharacters(in: .whitespaces)
-            if let lastSpace = text.lastIndex(of: " "), lastSpace > text.startIndex {
-                text = String(text[..<lastSpace])
-            }
-        }
-        return text
     }
 
     private static func foundationModelBrief(input: Input) async -> ArmyListThemeBrief? {
@@ -216,6 +208,7 @@ enum ArmyListThemeBriefBuilder {
             Return 4 to 8 catalog unit-type tokens (bike, outrider, jump, monster, swarm).
             Prefer datasheet words over slogans.
             Write one line that names the theme from the prompt if it is present, otherwise from the roster.
+            Give a 2 to 5 word list name.
             """)
         do {
             let response = try await session.respond(to: prompt(for: input), generating: ModelTheme.self)
@@ -224,7 +217,8 @@ enum ArmyListThemeBriefBuilder {
                 prompt: input.prompt,
                 tokens: content.tokens,
                 summary: content.summary,
-                source: .foundationModels
+                source: .foundationModels,
+                listName: content.listName
             )
         } catch {
             return nil
@@ -241,8 +235,32 @@ enum ArmyListThemeBriefBuilder {
         } else {
             lines.append("Roster: " + input.rosterNames.joined(separator: ", "))
         }
-        lines.append("Return tokens that match datasheet names or roles, plus one summary line.")
+        lines.append("Return tokens that match datasheet names or roles, plus one summary line and a short list name.")
         return lines.joined(separator: "\n")
+    }
+
+    static func clipSummary(_ raw: String) -> String {
+        clip(raw, maxCharacters: maxSummaryCharacters)
+    }
+
+    static func clipListName(_ raw: String) -> String {
+        clip(raw, maxCharacters: maxListNameCharacters)
+    }
+
+    private static func clip(_ raw: String, maxCharacters: Int) -> String {
+        var text = raw
+            .replacingOccurrences(of: "\"", with: "")
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.count > maxCharacters {
+            let end = text.index(text.startIndex, offsetBy: maxCharacters)
+            text = String(text[..<end]).trimmingCharacters(in: .whitespaces)
+            if let lastSpace = text.lastIndex(of: " "), lastSpace > text.startIndex {
+                text = String(text[..<lastSpace])
+            }
+        }
+        return text
     }
 
     @Generable
@@ -252,5 +270,7 @@ enum ArmyListThemeBriefBuilder {
         var tokens: [String]
         @Guide(description: "One line naming the list theme")
         var summary: String
+        @Guide(description: "Short list name, 2 to 5 words")
+        var listName: String
     }
 }

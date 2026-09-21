@@ -36,6 +36,7 @@ final class ArmyListConstructionTests: XCTestCase {
         XCTAssertEqual(built.list.name, "Test list")
         XCTAssertFalse(built.usedLaya)
         XCTAssertFalse(built.steps.isEmpty)
+        XCTAssertFalse(built.steps.contains { $0.worker == .laya })
     }
 
     func testGreedyBuildsLegalCustodesIncursion() async {
@@ -449,6 +450,10 @@ final class ArmyListConstructionTests: XCTestCase {
         XCTAssertEqual(built.themeBrief.source, .foundationModels)
         XCTAssertTrue(built.themeBrief.tokens.contains("outrider"))
         XCTAssertTrue(built.summary.contains("White Scars"))
+        XCTAssertTrue(built.steps.contains { $0.worker == .foundationModels && $0.title == "Theme" })
+        XCTAssertNil(built.themeScoreLabel)
+        XCTAssertEqual(built.list.name, "White Scars bikes and jump troops")
+        XCTAssertFalse(built.steps.contains { $0.worker == .laya })
         let ranked = ArmyListPalette.rankedSheets(
             catalog: catalog,
             factionID: "space-marines",
@@ -487,16 +492,17 @@ final class ArmyListConstructionTests: XCTestCase {
             extras.allSatisfy { ArmyListPalette.matchesTheme(sheet: $0, tokens: ["hearthkyn"]) },
             "\(extras.map(\.name))"
         )
-        XCTAssertTrue(built.steps.contains { $0.title == "On theme" })
-        XCTAssertTrue(built.steps.contains { $0.decision.kind == .noul })
+        XCTAssertTrue(built.steps.contains { $0.title == "Theme" && $0.worker == .mechanical })
+        XCTAssertFalse(built.steps.contains { $0.title == "On theme" && $0.worker == .laya })
+        XCTAssertTrue(built.steps.contains { $0.title == "Add unit" })
     }
 
     func testLayaNoulRejectsNamedUnit() async {
         ArmyListThemeBriefBuilder.testOverride = { _ in
             ArmyListThemeBrief(
                 prompt: "",
-                tokens: ["kin"],
-                summary: "Kin infantry",
+                tokens: ["bike"],
+                summary: "Bikes",
                 source: .foundationModels
             )
         }
@@ -548,6 +554,7 @@ final class ArmyListConstructionTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Faction: Space Marines"), prompt)
         XCTAssertTrue(prompt.contains("white scars fast attack"), prompt)
         XCTAssertTrue(prompt.contains("Outrider Squad"), prompt)
+        XCTAssertTrue(prompt.contains("list name"), prompt)
         XCTAssertLessThan(prompt.count, 800)
     }
 
@@ -555,6 +562,247 @@ final class ArmyListConstructionTests: XCTestCase {
         let sheet = try! XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--kahl"))
         XCTAssertTrue(ArmyListPalette.matchesTheme(sheet: sheet, tokens: []))
         XCTAssertFalse(ArmyListPalette.matchesTheme(sheet: sheet, tokens: ["hearthkyn"]))
+    }
+
+    func testChoiceWorkerIsMechanicalForOneOption() {
+        XCTAssertEqual(ArmyListHarness.choiceWorker(optionCount: 1, usedLaya: true), .mechanical)
+        XCTAssertEqual(ArmyListHarness.choiceWorker(optionCount: 2, usedLaya: true), .laya)
+        XCTAssertEqual(ArmyListHarness.choiceWorker(optionCount: 2, usedLaya: false), .mechanical)
+    }
+
+    func testPreferThemedKeepsOnlyHitsWhenAnyExist() {
+        let warriors = try! XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--hearthkyn-warriors"))
+        let kahl = try! XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--kahl"))
+        let kept = ArmyListHarness.preferThemed([kahl, warriors], tokens: ["hearthkyn"]) { sheet in
+            ArmyListPalette.matchesTheme(sheet: sheet, tokens: ["hearthkyn"])
+        }
+        XCTAssertEqual(kept.map(\.id), [warriors.id])
+    }
+
+    func testPreferThemedLeavesPoolWhenNothingHits() {
+        let kahl = try! XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--kahl"))
+        let kept = ArmyListHarness.preferThemed([kahl], tokens: ["bike"]) { sheet in
+            ArmyListPalette.matchesTheme(sheet: sheet, tokens: ["bike"])
+        }
+        XCTAssertEqual(kept.map(\.id), [kahl.id])
+    }
+
+    func testThemeRouteFarmsOverlapToCatalog() {
+        let kahl = try! XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--kahl"))
+        let warriors = try! XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--hearthkyn-warriors"))
+        XCTAssertEqual(
+            ArmyListHarness.themeRoute(
+                sheet: warriors,
+                tokens: ["hearthkyn"],
+                usedLaya: true,
+                requireCharacter: false,
+                remainingAlternatives: 1
+            ),
+            .accept
+        )
+        XCTAssertEqual(
+            ArmyListHarness.themeRoute(
+                sheet: kahl,
+                tokens: ["hearthkyn"],
+                usedLaya: true,
+                requireCharacter: false,
+                remainingAlternatives: 1
+            ),
+            .askLaya
+        )
+        XCTAssertEqual(
+            ArmyListHarness.themeRoute(
+                sheet: kahl,
+                tokens: ["hearthkyn"],
+                usedLaya: false,
+                requireCharacter: false,
+                remainingAlternatives: 1
+            ),
+            .reject
+        )
+        XCTAssertEqual(
+            ArmyListHarness.themeRoute(
+                sheet: kahl,
+                tokens: ["hearthkyn"],
+                usedLaya: false,
+                requireCharacter: true,
+                remainingAlternatives: 0
+            ),
+            .accept
+        )
+    }
+
+    func testShouldAskToKeepAddingOnlyInLeftoverBand() {
+        XCTAssertFalse(
+            ArmyListHarness.shouldAskToKeepAdding(
+                hasCharacter: true,
+                remainingPoints: 20,
+                cheapestLegal: 40
+            )
+        )
+        XCTAssertTrue(
+            ArmyListHarness.shouldAskToKeepAdding(
+                hasCharacter: true,
+                remainingPoints: 50,
+                cheapestLegal: 40
+            )
+        )
+        XCTAssertFalse(
+            ArmyListHarness.shouldAskToKeepAdding(
+                hasCharacter: true,
+                remainingPoints: 200,
+                cheapestLegal: 40
+            )
+        )
+        XCTAssertFalse(
+            ArmyListHarness.shouldAskToKeepAdding(
+                hasCharacter: false,
+                remainingPoints: 50,
+                cheapestLegal: 40
+            )
+        )
+    }
+
+    func testCutCandidatesOrdersOffThemeBeforeOnTheme() {
+        let warlordID = UUID()
+        let fortressID = UUID()
+        let warriorsID = UUID()
+        var list = ArmyListDocument(
+            name: "Cut",
+            catalogVersion: catalog.version,
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion"
+        )
+        list.warlordUnitID = warlordID
+        list.units = [
+            ListUnitInstance(id: warlordID, datasheetID: "leagues-of-votann--kahl", models: 1),
+            ListUnitInstance(
+                id: fortressID,
+                datasheetID: "leagues-of-votann--hekaton-land-fortress",
+                models: 1
+            ),
+            ListUnitInstance(
+                id: warriorsID,
+                datasheetID: "leagues-of-votann--hearthkyn-warriors",
+                models: 10
+            ),
+        ]
+        let cut = ArmyListHarness.cutCandidates(
+            list: list,
+            catalog: catalog,
+            tokens: ["hearthkyn"],
+            limit: 8
+        )
+        XCTAssertEqual(cut.first?.id, fortressID, "\(cut.map(\.datasheetID))")
+        XCTAssertFalse(cut.contains { $0.id == warlordID })
+    }
+
+    func testUsedLayaRecordsThemeScore() async {
+        ArmyListThemeBriefBuilder.testOverride = { _ in
+            ArmyListThemeBrief(
+                prompt: "hearthkyn",
+                tokens: ["hearthkyn"],
+                summary: "Hearthkyn infantry",
+                source: .prompt
+            )
+        }
+        let result = await ArmyListDecisionController.build(
+            catalog: catalog,
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            theme: "hearthkyn",
+            userName: nil,
+            decider: LayaScoreStubDecider(),
+            usedLaya: true
+        )
+        let built = try! XCTUnwrap(result)
+        XCTAssertEqual(built.themeScoreLabel, "strong")
+        XCTAssertTrue(built.summary.contains("Theme score: strong"), built.summary)
+        XCTAssertTrue(built.steps.contains { $0.title == "Theme score" && $0.worker == .laya })
+    }
+
+    func testLegalModelCountsOffersBothSacresantSizes() {
+        let list = ArmyListDocument(
+            name: "Sizes",
+            catalogVersion: catalog.version,
+            factionID: "adepta-sororitas",
+            battleSizeID: "incursion"
+        )
+        let sheet = try! XCTUnwrap(catalog.datasheet(id: "adepta-sororitas--celestian-sacresants"))
+        let sizes = ArmyListPalette.legalModelCounts(
+            sheet: sheet,
+            list: list,
+            remainingPoints: 1000
+        )
+        XCTAssertEqual(sizes.map(\.models), [10, 5])
+        XCTAssertTrue(sizes[0].points > sizes[1].points)
+    }
+
+    func testListNamePrefersFoundationNameThenSummary() {
+        let named = ArmyListThemeBrief(
+            prompt: "white scars",
+            tokens: ["bike"],
+            summary: "White Scars bikes and jump troops",
+            source: .foundationModels,
+            listName: "White Scars Outriders"
+        )
+        XCTAssertEqual(
+            ArmyListDecisionController.listName(
+                catalog: catalog,
+                factionID: "space-marines",
+                battleSizeID: "incursion",
+                theme: "white scars",
+                userName: nil,
+                brief: named
+            ),
+            "White Scars Outriders"
+        )
+        let fromSummary = ArmyListThemeBrief(
+            prompt: "white scars",
+            tokens: ["bike"],
+            summary: "White Scars bikes and jump troops",
+            source: .foundationModels
+        )
+        XCTAssertEqual(
+            ArmyListDecisionController.listName(
+                catalog: catalog,
+                factionID: "space-marines",
+                battleSizeID: "incursion",
+                theme: "white scars",
+                userName: nil,
+                brief: fromSummary
+            ),
+            "White Scars bikes and jump troops"
+        )
+        XCTAssertEqual(
+            ArmyListDecisionController.listName(
+                catalog: catalog,
+                factionID: "space-marines",
+                battleSizeID: "incursion",
+                theme: "white scars",
+                userName: "My list",
+                brief: named
+            ),
+            "My list"
+        )
+    }
+
+    func testLayaCanSkipEnhancements() async {
+        let result = await ArmyListDecisionController.build(
+            catalog: catalog,
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            theme: "",
+            userName: nil,
+            decider: LayaNoulRejectDecider(rejectName: "Assign an enhancement"),
+            usedLaya: true
+        )
+        let built = try! XCTUnwrap(result)
+        XCTAssertFalse(
+            built.steps.contains { $0.title == "Enhancement" && $0.applied.contains(" on ") }
+        )
+        let validation = ArmyListValidator.validate(list: built.list, catalog: catalog)
+        XCTAssertTrue(validation.isLegal, "\(validation.errors.map(\.message))")
     }
 }
 
@@ -590,6 +838,26 @@ final class LayaNoulRejectDecider: LayaDeciding {
         if case .noul(let instructions, _, _) = question {
             let p: Double = instructions.localizedCaseInsensitiveContains(rejectName) ? 0.05 : 0.9
             return LayaGreedyDecider.noul(probability: p)
+        }
+        return try await LayaGreedyDecider().decide(state: state, question: question)
+    }
+}
+
+@MainActor
+final class LayaScoreStubDecider: LayaDeciding {
+    func decide(state: String, question: LayaQuestion) async throws -> LayaDecision {
+        if case .score = question {
+            let levels = ArmyListHarness.themeScoreLevels
+            return LayaDecision(
+                kind: .score,
+                answer: .score(
+                    value: 3,
+                    probabilities: [0, 0, 0, 1, 0],
+                    legend: levels
+                ),
+                confidence: 1,
+                actProbability: 1
+            )
         }
         return try await LayaGreedyDecider().decide(state: state, question: question)
     }
