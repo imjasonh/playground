@@ -31,7 +31,7 @@ struct LayaSnakeView: View {
             if let failure = session.failure {
                 failureSection(failure)
             }
-            nextMoveSection
+            estimatesSection
             performanceSection
             aboutSection
         }
@@ -48,6 +48,16 @@ struct LayaSnakeView: View {
                 .aspectRatio(CGFloat(game.width) / CGFloat(game.height), contentMode: .fit)
                 .accessibilityIdentifier("layaSnakeBoard")
                 .listRowInsets(EdgeInsets())
+            if let decision = session.decision {
+                ForEach(LayaSnakeDirection.allCases, id: \.rawValue) { direction in
+                    directionRow(direction, decision)
+                }
+                executingRow(decision)
+            } else {
+                Text("Play or Step to see the next move.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
             HStack(alignment: .firstTextBaseline) {
                 counter("Score", game.score, .green)
                 counter("Length", game.body.count, .primary)
@@ -159,51 +169,56 @@ struct LayaSnakeView: View {
     // MARK: Next move
 
     @ViewBuilder
-    private var nextMoveSection: some View {
-        Section("Next move") {
-            if let decision = session.decision {
-                ForEach(LayaSnakeDirection.allCases, id: \.rawValue) { direction in
-                    directionRow(direction, decision)
-                }
-                LabeledContent("Executing") {
-                    HStack(spacing: 8) {
-                        Text(decision.executed.rawValue)
-                            .font(.body.weight(.semibold))
-                            .foregroundStyle(.green)
-                        if decision.intervened {
-                            Text("SHIELD")
-                                .font(.caption2.weight(.bold))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.2), in: Capsule())
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                }
+    private var estimatesSection: some View {
+        if let decision = session.decision {
+            Section("Estimates") {
                 if let planner = decision.plannerBest {
                     LabeledContent("Planner best", value: planner.rawValue)
                 }
                 estimateRow("Dead-end risk", decision.deadEndRisk, decision.deadEndRisk < 0.5 ? .orange : .red)
                 estimateRow("Food reachable", decision.foodReachable, .cyan)
-            } else {
-                Text("Press Play or Step. The board shows the probabilities the model gave before each announced move.")
-                    .foregroundStyle(.secondary)
             }
         }
     }
 
+    private func executingRow(_ decision: LayaSnakeDecision) -> some View {
+        LabeledContent("Executing") {
+            HStack(spacing: 8) {
+                Text(decision.executed.rawValue)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.green)
+                if decision.intervened {
+                    Text("SHIELD")
+                        .font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.2), in: Capsule())
+                        .foregroundStyle(.orange)
+                }
+            }
+        }
+        .accessibilityIdentifier("layaSnakeNextMove")
+    }
+
+    @ViewBuilder
     private func directionRow(_ direction: LayaSnakeDirection, _ decision: LayaSnakeDecision) -> some View {
         let probability = decision.probabilities[direction] ?? 0
         let proposed = direction == decision.proposed
+        let next = direction == decision.executed
         let safe = decision.safeDirections.contains(direction)
-        return VStack(alignment: .leading, spacing: 2) {
+        let row = VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text(proposed ? "›" : " ")
+                Text(next ? "›" : " ")
                     .font(.body.monospaced().weight(.bold))
                     .foregroundStyle(.green)
                 Text(direction.rawValue)
-                    .font(.subheadline.monospaced())
-                    .foregroundStyle(proposed ? .primary : .secondary)
+                    .font(.subheadline.monospaced().weight(next ? .semibold : .regular))
+                    .foregroundStyle(next || proposed ? .primary : .secondary)
+                if proposed && !next {
+                    Text("proposed")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
                 if !safe {
                     Text("unsafe")
                         .font(.caption2)
@@ -211,11 +226,17 @@ struct LayaSnakeView: View {
                 }
                 Spacer()
                 Text(String(format: "%.2f", probability))
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(proposed ? .primary : .secondary)
+                    .font(.subheadline.monospacedDigit().weight(next ? .semibold : .regular))
+                    .foregroundStyle(next || proposed ? .primary : .secondary)
             }
             ProgressView(value: min(max(probability, 0), 1))
-                .tint(proposed ? .green : .gray)
+                .tint(next ? .green : .gray)
+        }
+        .accessibilityIdentifier("layaSnakeProb-\(direction.rawValue)")
+        if next {
+            row.listRowBackground(Color.green.opacity(0.18))
+        } else {
+            row
         }
     }
 
