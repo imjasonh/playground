@@ -50,7 +50,7 @@ ios/
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
 | `device-agent` | Device Agent | On-device model drives an in-app browser; App Intents/Shortcuts; voice; requires Apple Intelligence |
-| `army-list` | Army List | Build/validate 11th Edition lists (all factions in the bundled catalog); on-device chat tools edit via the validator |
+| `army-list` | Army List | Build/validate 11th Edition lists (all factions in the bundled catalog); Laya (or greedy) ranks legal moves; Apple Intelligence names and matchups |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
@@ -130,8 +130,8 @@ The editor focuses on units (drag to reorder); name, battle size, and
 detachments live on **Army settings**. **Build starter list** on the New list
 screen fills a roster from 0. When the shared Laya graph is loaded, Laya
 picks among legal catalog moves; otherwise a ranked greedy fill runs. Apple
-Intelligence is not required for that button. List chat still uses it for
-names and matchup write-ups.
+Intelligence is not required for that button. List chat uses it for Theme
+and Weaknesses only.
 
 Refresh the **bundled** catalog (no remote fetch at runtime):
 
@@ -151,14 +151,14 @@ Stress-test the validator by building ~50 lists in Swift (same
 bash ios/scripts/stress-army-lists.sh --write-fixtures
 ```
 
-**List chat** (toolbar bubble on a list) uses on-device Foundation Models when
-Apple Intelligence is available. Tools mutate the same document the
-editor shows; every tool result re-runs the validator. Optional theme text
-feeds the Build list / Fill points chips. Chat reads the model's context size
-and exact response usage. It compacts proactively using TN3193's first and last
-transcript entries, a rolling summary of older turns, and a list snapshot. It
-retries once on overflow. Without the model, chat shows an unavailable pane.
-Authoring and validation still work.
+**List chat** (toolbar bubble on a list) always offers Build, Fill, and Fix.
+Those chips run the Laya construction controller over legal catalog moves,
+or the greedy fallback. Optional theme text steers that ranking. Theme and
+Weaknesses still use on-device Foundation Models when Apple Intelligence is
+available. Those tools only summarize the list or rename it. Chat still
+compacts AFM context with TN3193 first and last entries, a rolling summary,
+and a list snapshot, and retries once on overflow. Without Apple Intelligence,
+the construction chips stay available.
 
 Unofficial fan experiment. Confirm points with Games Workshop for events.
 

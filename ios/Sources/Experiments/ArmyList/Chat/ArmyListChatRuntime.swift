@@ -27,13 +27,27 @@ struct ArmyListChatEntry: Identifiable, Equatable {
 /// Runs Army List prompts through on-device Foundation Models + list tools.
 @MainActor
 final class ArmyListChatRuntime: ObservableObject {
-    /// How the session is configured. Chat exposes the full tool set for
-    /// interactive editing; builder trims to one bulk tool for a self-contained
-    /// from-scratch build, which fits the model's context window more reliably
-    /// (see the `foundation-models-context` skill).
+    /// How the session is configured. Chat keeps language tools only; builder
+    /// is unused by construction (Laya / greedy owns the roster).
     enum Mode {
         case chat
         case builder
+    }
+
+    /// Roster actions the Laya controller owns. Theme / Weaknesses stay on
+    /// Foundation Models.
+    enum ConstructionAction {
+        case build
+        case fill
+        case fix
+
+        var title: String {
+            switch self {
+            case .build: return "Build list"
+            case .fill: return "Fill points"
+            case .fix: return "Fix errors"
+            }
+        }
     }
 
     /// Rough cost of the army-list tool schemas registered with the session.
@@ -44,6 +58,7 @@ final class ArmyListChatRuntime: ObservableObject {
     @Published var isRunning = false
     @Published private(set) var modelGate: AgentModelGate = .other("Checking Apple Intelligence availability.")
     @Published private(set) var contextUsage = AgentContextUsage.empty
+    @Published private(set) var lastConstructionStep: ArmyListDecisionStep?
 
     let workspace: ArmyListChatWorkspace
     let mode: Mode
@@ -69,11 +84,8 @@ final class ArmyListChatRuntime: ObservableObject {
             self?.objectWillChange.send()
         }
         refreshModelStatus()
-        if mode == .chat, isModelAvailable {
-            append(
-                .system,
-                text: "Ask me to build, critique, rename, or fix this list. Every edit is re-checked by the validator."
-            )
+        if mode == .chat {
+            append(.system, text: Self.welcomeText)
         }
         publishContextUsage()
     }
@@ -99,10 +111,7 @@ final class ArmyListChatRuntime: ObservableObject {
                 transcript.removeAll()
                 toolLog.removeAll()
                 resetLanguageSession()
-                append(
-                    .system,
-                    text: "Ask me to build, critique, rename, or fix this list. Every edit is re-checked by the validator."
-                )
+                append(.system, text: Self.welcomeText)
             }
         }
     }
@@ -111,12 +120,11 @@ final class ArmyListChatRuntime: ObservableObject {
         transcript.removeAll()
         toolLog.removeAll()
         resetLanguageSession()
-        if isModelAvailable {
-            append(
-                .system,
-                text: "Transcript cleared. The list itself is unchanged."
-            )
-        }
+        lastConstructionStep = nil
+        append(
+            .system,
+            text: "Transcript cleared. The list itself is unchanged."
+        )
     }
 
     func send(prompt: String, displayText: String? = nil) async {
@@ -157,7 +165,7 @@ final class ArmyListChatRuntime: ObservableObject {
 
     private func friendlyGenerationError(_ error: Error) -> String {
         if OnDeviceContextManager.isExceededContextWindow(error) {
-            return "The on-device model ran out of context while editing. Tap Clear, then Build 1k again (one applyRosterPlan call) or ask for a smaller change."
+            return "The on-device model ran out of context. Tap Clear, then ask Theme or Weaknesses again."
         }
         return error.localizedDescription
     }
@@ -401,71 +409,152 @@ final class ArmyListChatRuntime: ObservableObject {
         return chatInstructions
     }
 
-    /// Short instructions for a one-shot from-scratch build. The prompt carries
-    /// the faction, points limit, DP budget, and valid ids, so the model needs
-    /// only one `applyRosterPlan` call, which leaves context for the response.
+    /// Left in place for the unused builder session mode. Construction no longer
+    /// goes through Foundation Models.
     private var builderInstructions: String {
         """
-        You build exactly one Warhammer 40,000 army list, then stop.
-        The user message lists the faction, points limit, DP budget, valid detachment ids, and valid unit ids with points.
-        Call applyRosterPlan exactly once, using only ids from that message: one detachment within the DP budget and units totaling as close to the points limit as possible without exceeding it (aim to leave at most ~25 pts unused).
-        Use pts@models sizes and max copy counts from the unit table; repeat an id for another copy.
-        Honor any Theme line when picking units and the list name.
-        Include at least one Character so the list has a Warlord. Give the list a short themed name.
-        Do not call any other tool and do not write prose.
+        You discuss a Warhammer 40,000 army list. Do not call tools that change the roster.
         """
     }
 
     private var chatInstructions: String {
         """
-        You help the user build and discuss a Warhammer 40,000 11th Edition army list inside the Playground app.
+        You help the user name and discuss a Warhammer 40,000 11th Edition army list inside the Playground app.
         Faction for this list is fixed to whatever getListSummary reports. Do not switch factions.
-        Construction facts (points, Detachment Points, join edges, legality) come ONLY from tools. Never invent datasheet ids or points.
-        After mutating tools, read the returned Status line. If ILLEGAL, keep fixing with tools or explain what is still wrong.
-        For thematic questions (army name, color scheme, lore vibe, matchup opinions), answer helpfully and label opinions as opinions.
+        Construction (build, fill, fix) is done by the Laya controller, not by you. Do not invent datasheet ids or points.
+        Call getListSummary when you need the current roster, points, or issues.
+        For Theme, suggest a name and a paint color scheme. If the user wants that name, call setListName.
+        For Weaknesses, give matchup opinions and label them as opinions.
         Prefer short replies. Format with Markdown: put a blank line between paragraphs and between matchup/section blocks, use **bold** for headings, and put each Weakness / Countermeasure on its own line. Never run sections together on one line.
         Always answer the latest user message; do not keep talking about an earlier Theme/name request unless they ask again.
-        For from-scratch 1000/2000 point builds: invent a fresh theme each time (different units/detachment/name), call searchCatalog as needed, then applyRosterPlan once with your full plan spending as close to the points limit as possible. Do not loop addUnit for a full army — that overflows the on-device context window.
-        When fixing errors: keep the current battle size (never call setBattleSize). Prefer removeUnit / setUnitModels / setDetachments / setWarlord / attachCharacter. Respect datasheet duplicate limits for this battle size — addUnit rejects illegal copies.
-        When filling points: keep battle size and existing units; add thematic units until remaining points cannot fit another legal datasheet (aim to leave at most ~25 pts unused). Re-read Status after each mutation.
-        Use addUnit only for small targeted edits after a roster already exists.
-        Unit ids in tool results are UUIDs. Pass those UUIDs to removeUnit / attachCharacter / setWarlord / setEnhancement.
         """
     }
 
     private func makeFoundationTools() -> [any Tool] {
-        // A from-scratch build only needs the bulk roster tool. Fewer resident
-        // tool schemas leave more of the model's context window for the plan.
         if mode == .builder {
-            return [ArmyApplyRosterPlanFMTool(runtime: self)]
+            return []
         }
         return [
             ArmyGetListSummaryFMTool(runtime: self),
-            ArmySearchCatalogFMTool(runtime: self),
-            ArmyApplyRosterPlanFMTool(runtime: self),
-            ArmySetBattleSizeFMTool(runtime: self),
-            ArmySetDetachmentsFMTool(runtime: self),
-            ArmyAddUnitFMTool(runtime: self),
-            ArmyRemoveUnitFMTool(runtime: self),
-            ArmySetUnitModelsFMTool(runtime: self),
-            ArmyAttachCharacterFMTool(runtime: self),
-            ArmySetWarlordFMTool(runtime: self),
             ArmySetListNameFMTool(runtime: self),
-            ArmySetEnhancementFMTool(runtime: self),
-            ArmyClearUnitsFMTool(runtime: self),
         ]
     }
+
+    /// Tool names registered with the current session. Tests use this.
+    var foundationToolNames: [String] {
+        makeFoundationTools().map(\.name)
+    }
+
+    /// Runs Build / Fill / Fix through the Laya controller. Prepares the
+    /// shared graph when a download is already on disk.
+    func runConstruction(
+        _ action: ConstructionAction,
+        theme: String,
+        store: LayaModelStore = .shared
+    ) async {
+        guard !isRunning else { return }
+        beginConstruction(title: action.title)
+        lastConstructionStep = nil
+        defer {
+            if isRunning { isRunning = false }
+        }
+        if store.isDownloaded, !store.isReady {
+            await store.prepare()
+        }
+        if Task.isCancelled {
+            failConstruction("Cancelled.")
+            return
+        }
+        let decider = ArmyListDecisionController.activeDecider(store: store)
+        let usedLaya = ArmyListDecisionController.usedLaya(store: store)
+        let onStep: @MainActor (ArmyListDecisionStep) -> Void = { [weak self] step in
+            self?.noteConstructionStep(step)
+        }
+        let result: ArmyListConstructionResult?
+        switch action {
+        case .build:
+            result = await ArmyListDecisionController.build(
+                catalog: workspace.catalog,
+                factionID: workspace.list.factionID,
+                battleSizeID: workspace.list.battleSizeID,
+                theme: theme,
+                userName: keptListName(),
+                decider: decider,
+                usedLaya: usedLaya,
+                onStep: onStep
+            )
+            if let result {
+                workspace.replaceList(result.list)
+            }
+        case .fill:
+            result = await ArmyListDecisionController.fill(
+                workspace: workspace,
+                theme: theme,
+                decider: decider,
+                usedLaya: usedLaya,
+                onStep: onStep
+            )
+        case .fix:
+            result = await ArmyListDecisionController.fix(
+                workspace: workspace,
+                theme: theme,
+                decider: decider,
+                usedLaya: usedLaya,
+                onStep: onStep
+            )
+        }
+        if Task.isCancelled {
+            failConstruction("Cancelled.")
+            return
+        }
+        if let result {
+            lastConstructionStep = result.steps.last
+            finishConstruction(summary: result.summary)
+        } else {
+            failConstruction("Couldn't finish that construction pass.")
+        }
+    }
+
+    func beginConstruction(title: String) {
+        append(.user, text: title)
+        isRunning = true
+    }
+
+    func noteConstructionStep(_ step: ArmyListDecisionStep) {
+        lastConstructionStep = step
+        append(.tool, text: step.applied)
+        toolLog.append((name: step.title, detail: step.applied))
+    }
+
+    func finishConstruction(summary: String) {
+        append(.assistant, text: summary)
+        isRunning = false
+    }
+
+    func failConstruction(_ message: String) {
+        append(.system, text: message)
+        isRunning = false
+    }
+
+    private func keptListName() -> String? {
+        let name = workspace.list.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if name.isEmpty || name == "New list" { return nil }
+        return name
+    }
+
+    private static let welcomeText =
+        "Build, Fill, and Fix pick among legal catalog moves. Theme and Weaknesses use Apple Intelligence when it is available."
 
     var armyListGateDetail: String {
         switch modelGate {
         case .available:
             return modelGate.detail
         case .needsAppleIntelligence:
-            return "Army List chat uses the on-device model. Turn on Apple Intelligence in Settings, then come back."
+            return "Theme and Weaknesses need Apple Intelligence. Build, Fill, and Fix still run."
         case .modelNotReady:
-            return "Apple Intelligence is on, but the on-device model is still downloading. Check again when it finishes."
+            return "Apple Intelligence is still downloading. Theme and Weaknesses wait; Build, Fill, and Fix still run."
         case .deviceNotEligible:
-            return "This hardware doesn’t support Apple Intelligence, so Army List chat can’t run here. Authoring and validation still work."
+            return "This hardware does not support Apple Intelligence. Theme and Weaknesses are off; Build, Fill, and Fix still run."
         case .other(let reason):
             return reason
         }

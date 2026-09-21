@@ -369,24 +369,26 @@ private struct ArmyListRowView: View {
     }
 }
 
-/// Create a blank list, or build one from 0 with the on-device model using a
-/// few words of flavor text: faction, battle size, name, theme.
+/// Create a blank list, or build one from 0. Laya ranks legal moves when the
+/// shared graph is loaded; otherwise the greedy decider fills the roster.
 struct ArmyListNewSheet: View {
     let catalog: ArmyCatalog
     var onCreate: (ArmyListDocument) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var laya = LayaModelStore.shared
     @State private var name = "New list"
     @State private var factionID: String
     @State private var battleSizeID = "incursion"
     @State private var flavor = ""
     @State private var isBuilding = false
     @State private var buildProgress: ArmyListStarterBuildProgress?
+    @State private var lastStep: ArmyListDecisionStep?
     @State private var buildTask: Task<Void, Never>?
     @State private var buildBackgroundAssertion = ArmyListStarterBuildBackgroundAssertion()
     /// Smoothly animated bar value. A trickle loop nudges it toward the next
-    /// milestone so the long, opaque model call still looks like it is moving;
-    /// real milestones snap it forward.
+    /// milestone so a long Laya pass still looks like it is moving; real
+    /// milestones snap it forward.
     @State private var displayedFraction: Double = 0
     @State private var seedError: String?
 
@@ -450,6 +452,14 @@ struct ArmyListNewSheet: View {
                     .accessibilityIdentifier("armyListFlavorField")
             }
 
+            Section("Laya") {
+                LayaModelStatusRow(
+                    store: laya,
+                    statusIdentifier: "armyListNewLayaStatus",
+                    downloadIdentifier: "armyListNewLayaDownload"
+                )
+            }
+
             if isBuilding, let buildProgress {
                 Section {
                     VStack(alignment: .leading, spacing: 10) {
@@ -459,8 +469,10 @@ struct ArmyListNewSheet: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .animation(.easeInOut(duration: 0.25), value: buildProgress)
+                        if let lastStep {
+                            LayaDecisionBars(decision: lastStep.decision)
+                        }
                     }
-                    .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("armyListBuildStarterProgress")
                 }
             }
@@ -494,6 +506,11 @@ struct ArmyListNewSheet: View {
         }
         .navigationTitle("New list")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            if laya.isDownloaded {
+                await laya.prepare()
+            }
+        }
         .task(id: isBuilding) {
             guard isBuilding else { return }
             while isBuilding, !Task.isCancelled {
@@ -553,6 +570,7 @@ struct ArmyListNewSheet: View {
             return
         }
         displayedFraction = 0
+        lastStep = nil
         isBuilding = true
         buildProgress = ArmyListStarterBuildProgress(phase: .preparing)
         let theme = flavor
@@ -568,6 +586,9 @@ struct ArmyListNewSheet: View {
                 userName: userName,
                 onProgress: { progress in
                     buildProgress = progress
+                },
+                onStep: { step in
+                    lastStep = step
                 }
             )
             if Task.isCancelled {
@@ -595,6 +616,7 @@ struct ArmyListNewSheet: View {
         buildBackgroundAssertion.end()
         isBuilding = false
         buildProgress = nil
+        lastStep = nil
         displayedFraction = 0
     }
 }

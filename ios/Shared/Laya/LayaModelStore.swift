@@ -13,6 +13,10 @@ enum LayaModelSource {
     static let sourceURL = URL(string: "https://github.com/mizorewww/laya-coreml") ?? URL(fileURLWithPath: "/")
 
     static var shortRevision: String { String(revision.prefix(7)) }
+
+    static var sizeText: String {
+        ByteCountFormatter.string(fromByteCount: approximateBytes, countStyle: .file)
+    }
 }
 
 /// Lifecycle of the on-device bundle.

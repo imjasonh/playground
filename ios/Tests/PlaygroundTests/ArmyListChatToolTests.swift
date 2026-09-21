@@ -299,24 +299,39 @@ final class ArmyListChatToolTests: XCTestCase {
         )
     }
 
-    func testBuildPromptFoldsInTheme() {
-        let prompt = ArmyListChatPromptComposer.buildPrompt(theme: "night raiders")
-        XCTAssertTrue(prompt.contains("applyRosterPlan"))
-        XCTAssertTrue(prompt.contains("Theme to honor: night raiders"))
-        XCTAssertTrue(prompt.contains("as close to the points limit"))
+    func testLanguagePromptsStayOnThemeOrWeaknesses() {
+        XCTAssertTrue(ArmyListChatPromptComposer.themePrompt.contains("Theme only"))
+        XCTAssertTrue(ArmyListChatPromptComposer.themePrompt.contains("setListName"))
+        XCTAssertTrue(ArmyListChatPromptComposer.weaknessesPrompt.contains("Weaknesses only"))
+        XCTAssertTrue(ArmyListChatPromptComposer.weaknessesPrompt.contains("getListSummary"))
+        XCTAssertFalse(ArmyListChatPromptComposer.themePrompt.contains("applyRosterPlan"))
+        XCTAssertFalse(ArmyListChatPromptComposer.weaknessesPrompt.contains("addUnit"))
     }
 
-    func testFillPointsPromptFoldsInTheme() {
-        let prompt = ArmyListChatPromptComposer.fillPointsPrompt(theme: "veteran survivors")
-        XCTAssertTrue(prompt.contains("as completely as possible"))
-        XCTAssertTrue(prompt.contains("Theme to honor: veteran survivors"))
-        XCTAssertTrue(prompt.contains("as close to the points limit"))
-        XCTAssertFalse(prompt.contains("addUnit a few"))
+    func testChatFoundationToolsAreLanguageOnly() {
+        let runtime = ArmyListChatRuntime(workspace: workspace)
+        XCTAssertEqual(runtime.foundationToolNames, ["getListSummary", "setListName"])
     }
 
-    func testPromptsOmitThemeClauseWhenBlank() {
-        XCTAssertFalse(ArmyListChatPromptComposer.buildPrompt(theme: "   ").contains("Theme to honor"))
-        XCTAssertFalse(ArmyListChatPromptComposer.fillPointsPrompt(theme: "").contains("Theme to honor"))
+    func testRunConstructionFillWritesTranscript() async {
+        _ = ArmyListChatToolExecutor.setDetachments(
+            workspace: workspace,
+            detachmentIDsCSV: "leagues-of-votann--brandfast-oathband"
+        )
+        _ = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "leagues-of-votann--kahl",
+            models: 1
+        )
+        let runtime = ArmyListChatRuntime(workspace: workspace)
+        await runtime.runConstruction(.fill, theme: "hearthkyn")
+        XCTAssertEqual(runtime.transcript.last { $0.kind == .user }?.text, "Fill points")
+        XCTAssertTrue(
+            runtime.transcript.contains { $0.kind == .assistant && $0.text.contains("Filled") },
+            "\(runtime.transcript.map(\.text))"
+        )
+        XCTAssertFalse(runtime.isRunning)
+        XCTAssertGreaterThan(runtime.workspace.validation.totalPoints, 0)
     }
 
     func testStarterPromptListsFactsDetachmentsAndUnits() {
