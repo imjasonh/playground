@@ -29,6 +29,9 @@ pub struct VerifyInput<'a> {
 #[derive(Debug)]
 pub struct VerifiedAttestation {
     pub public_key: Vec<u8>,
+    /// Raw `attStmt.receipt` bytes (may be empty on a malformed object).
+    pub receipt: Vec<u8>,
+    pub development: bool,
 }
 
 /// Verify Apple's attestation object against `input`.
@@ -40,15 +43,18 @@ pub fn verify(input: &VerifyInput<'_>) -> Result<VerifiedAttestation, Error> {
     let leaf = certs::verify_chain(&parsed.x5c, input.roots, input.now_unix)?;
     check_nonce(&parsed.auth_data, input.client_data_hash, &leaf)?;
     check_key_id(input.key_id, &leaf)?;
-    check_auth_data(&parsed.auth_data, input.app_id, input.key_id)?;
+    let development = check_auth_data(&parsed.auth_data, input.app_id, input.key_id)?;
     Ok(VerifiedAttestation {
         public_key: leaf.public_key,
+        receipt: parsed.receipt,
+        development,
     })
 }
 
 struct ParsedAttestation {
     auth_data: Vec<u8>,
     x5c: Vec<Vec<u8>>,
+    receipt: Vec<u8>,
 }
 
 fn parse_attestation(bytes: &[u8]) -> Result<ParsedAttestation, Error> {
@@ -84,7 +90,15 @@ fn parse_attestation(bytes: &[u8]) -> Result<ParsedAttestation, Error> {
     if x5c.is_empty() {
         return Err(Error::Attestation("x5c is empty"));
     }
-    Ok(ParsedAttestation { auth_data, x5c })
+    let receipt = map_get(stmt, "receipt")
+        .and_then(Value::as_bytes)
+        .cloned()
+        .unwrap_or_default();
+    Ok(ParsedAttestation {
+        auth_data,
+        x5c,
+        receipt,
+    })
 }
 
 fn map_get<'a>(map: &'a [(Value, Value)], key: &str) -> Option<&'a Value> {
@@ -119,7 +133,7 @@ fn check_key_id(key_id: &str, leaf: &VerifiedLeaf) -> Result<(), Error> {
     Ok(())
 }
 
-fn check_auth_data(auth_data: &[u8], app_id: &str, key_id: &str) -> Result<(), Error> {
+fn check_auth_data(auth_data: &[u8], app_id: &str, key_id: &str) -> Result<bool, Error> {
     if auth_data.len() < 55 {
         return Err(Error::Attestation("authenticatorData too short"));
     }
@@ -160,15 +174,27 @@ fn check_auth_data(auth_data: &[u8], app_id: &str, key_id: &str) -> Result<(), E
     if cred_id != key_id_raw {
         return Err(Error::Binding("credential id does not match keyId"));
     }
-    Ok(())
+    Ok(aaguid == *AAGUID_DEVELOPMENT)
 }
 
 /// Encode an `apple-appattest` attestation object (tests and fixtures).
 pub fn encode_attestation_object(auth_data: &[u8], x5c: Vec<Vec<u8>>) -> Vec<u8> {
+    encode_attestation_object_with_receipt(auth_data, x5c, &[0])
+}
+
+/// Encode an attestation object with an explicit `attStmt.receipt`.
+pub fn encode_attestation_object_with_receipt(
+    auth_data: &[u8],
+    x5c: Vec<Vec<u8>>,
+    receipt: &[u8],
+) -> Vec<u8> {
     let x5c_values: Vec<Value> = x5c.into_iter().map(Value::Bytes).collect();
     let stmt = vec![
         (Value::Text("x5c".into()), Value::Array(x5c_values)),
-        (Value::Text("receipt".into()), Value::Bytes(vec![0])),
+        (
+            Value::Text("receipt".into()),
+            Value::Bytes(receipt.to_vec()),
+        ),
     ];
     let map = vec![
         (

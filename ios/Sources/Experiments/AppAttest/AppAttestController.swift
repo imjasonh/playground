@@ -1,7 +1,7 @@
 import DeviceCheck
 import Foundation
 
-/// Orchestrates Sign in with Apple, the one-time App Attest handshake, and later `whoami` calls.
+/// Orchestrates Sign in with Apple, the one-time App Attest handshake, and later `whoami` assertions.
 @MainActor
 final class AppAttestController: ObservableObject {
     @Published private(set) var userId: String
@@ -9,7 +9,7 @@ final class AppAttestController: ObservableObject {
     @Published private(set) var statusMessage: String
     @Published private(set) var statusIsError = false
     @Published private(set) var lastWhoAmI: AppAttestWhoAmI?
-    @Published private(set) var hasToken: Bool
+    @Published private(set) var isRegistered: Bool
     @Published private(set) var isBusy = false
     @Published private(set) var isSupported: Bool
 
@@ -34,11 +34,11 @@ final class AppAttestController: ObservableObject {
         self.appleID = appleID ?? SystemAppAttestAppleID()
         userId = store.userId
         deviceId = store.deviceId
-        hasToken = store.token != nil
+        isRegistered = store.isRegistered
         isSupported = keys.isSupported
         statusMessage = Self.initialStatus(
             supported: keys.isSupported,
-            hasToken: store.token != nil,
+            isRegistered: store.isRegistered,
             signedIn: !store.userId.isEmpty
         )
     }
@@ -62,7 +62,7 @@ final class AppAttestController: ObservableObject {
             return
         }
         if trimmed != store.userId {
-            forgetStoredToken()
+            forgetRegistration()
         }
         store.userId = trimmed
         userId = trimmed
@@ -73,7 +73,7 @@ final class AppAttestController: ObservableObject {
         store.userId = ""
         userId = ""
         store.clearSession()
-        hasToken = false
+        isRegistered = false
         lastWhoAmI = nil
         setStatus("Signed out.")
     }
@@ -85,7 +85,7 @@ final class AppAttestController: ObservableObject {
             signOut()
             setStatus("Sign in with Apple was revoked. Sign in again.", isError: true)
         case .authorized, .unknown:
-            if hasToken {
+            if isRegistered {
                 await whoami()
             } else {
                 await registerThenWhoami()
@@ -96,7 +96,7 @@ final class AppAttestController: ObservableObject {
     /// Attest this device, then call `whoami` so the Worker echoes the bound ids.
     func registerThenWhoami() async {
         await register()
-        guard hasToken else { return }
+        guard isRegistered else { return }
         await whoami()
     }
 
@@ -120,24 +120,27 @@ final class AppAttestController: ObservableObject {
                 deviceId: store.deviceId
             )
             let json = try client.jsonBytes()
-            let token: AppAttestTokenResponse
+            let registered: AppAttestRegisterResponse
             if keys.isSupported {
-                token = try await exchangeAttested(json: json)
+                registered = try await exchangeAttested(json: json)
             } else {
-                token = try await api.exchangeUnattestedToken(clientDataJSON: json)
+                registered = try await api.registerUnattested(clientDataJSON: json)
             }
-            store.token = token.token
-            hasToken = true
+            store.keyId = registered.keyId
+            store.isRegistered = true
+            isRegistered = true
             lastWhoAmI = AppAttestWhoAmI(
-                userId: token.userId,
-                deviceId: token.deviceId,
-                keyId: token.keyId,
-                unattested: token.unattested
+                userId: registered.userId,
+                deviceId: registered.deviceId,
+                keyId: registered.keyId,
+                unattested: registered.unattested,
+                counter: registered.counter,
+                riskMetric: registered.riskMetric
             )
             setStatus(
-                token.unattested
-                    ? "Issued an unattested token for the Simulator."
-                    : "Device attested. Token stored."
+                registered.unattested
+                    ? "Registered an unattested Simulator device."
+                    : "Device attested."
             )
         } catch {
             setStatus("Register failed: \(error.localizedDescription)", isError: true)
@@ -145,7 +148,7 @@ final class AppAttestController: ObservableObject {
     }
 
     func whoami() async {
-        guard let token = store.token else {
+        guard isRegistered, let keyId = store.keyId, !keyId.isEmpty else {
             setStatus("Register this device first.", isError: true)
             return
         }
@@ -153,21 +156,38 @@ final class AppAttestController: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         do {
-            let result = try await api.whoami(token: token)
+            let challenge = try await api.fetchChallenge()
+            let client = AppAttestAssertionClientData(
+                action: AppAttestAssertionClientData.whoami,
+                challenge: challenge.challenge
+            )
+            let json = try client.jsonBytes()
+            let assertion: Data?
+            if keys.isSupported {
+                assertion = try await generateAssertion(keyId: keyId, clientDataHash: AppAttestHashing.sha256(json))
+            } else {
+                assertion = nil
+            }
+            let result = try await api.whoami(
+                keyId: keyId,
+                assertionObject: assertion,
+                clientDataJSON: json
+            )
             lastWhoAmI = result
             setStatus(
                 result.unattested
-                    ? "Worker accepted the unattested token."
-                    : "Worker accepted the attested token."
+                    ? "Worker accepted the unattested whoami."
+                    : "Worker accepted the assertion."
             )
         } catch {
             setStatus("Whoami failed: \(error.localizedDescription)", isError: true)
         }
     }
 
-    private func forgetStoredToken() {
-        store.token = nil
-        hasToken = false
+    private func forgetRegistration() {
+        store.isRegistered = false
+        store.keyId = nil
+        isRegistered = false
         lastWhoAmI = nil
     }
 
@@ -176,12 +196,12 @@ final class AppAttestController: ObservableObject {
         statusIsError = isError
     }
 
-    private func exchangeAttested(json: Data) async throws -> AppAttestTokenResponse {
+    private func exchangeAttested(json: Data) async throws -> AppAttestRegisterResponse {
         let hash = AppAttestHashing.sha256(json)
         let keyId = try await existingOrNewKeyId()
         do {
             let attestation = try await keys.attestKey(keyId, clientDataHash: hash)
-            return try await api.exchangeToken(
+            return try await api.register(
                 keyId: keyId,
                 attestationObject: attestation,
                 clientDataJSON: json
@@ -191,11 +211,24 @@ final class AppAttestController: ObservableObject {
                 store.keyId = nil
                 let fresh = try await existingOrNewKeyId()
                 let attestation = try await keys.attestKey(fresh, clientDataHash: hash)
-                return try await api.exchangeToken(
+                return try await api.register(
                     keyId: fresh,
                     attestationObject: attestation,
                     clientDataJSON: json
                 )
+            }
+            throw error
+        }
+    }
+
+    private func generateAssertion(keyId: String, clientDataHash: Data) async throws -> Data {
+        do {
+            return try await keys.generateAssertion(keyId, clientDataHash: clientDataHash)
+        } catch {
+            if Self.isInvalidKey(error) {
+                store.keyId = nil
+                store.isRegistered = false
+                isRegistered = false
             }
             throw error
         }
@@ -215,9 +248,9 @@ final class AppAttestController: ObservableObject {
         return ns.domain == DCError.errorDomain && ns.code == DCError.invalidKey.rawValue
     }
 
-    private static func initialStatus(supported: Bool, hasToken: Bool, signedIn: Bool) -> String {
-        if hasToken {
-            return "A token is stored on this device."
+    private static func initialStatus(supported: Bool, isRegistered: Bool, signedIn: Bool) -> String {
+        if isRegistered {
+            return "This device is registered."
         }
         if !signedIn {
             return "Sign in with Apple to attest this device."

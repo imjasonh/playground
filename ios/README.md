@@ -62,7 +62,7 @@ ios/
 | `nfc-tags` | NFC Tags | In-app Core NFC tag read/write (NDEF text/URL, blank NTAGs); needs NFC Tag Reading capability bootstrap |
 | `esp32-ble` | ESP32 BLE | In-app Core Bluetooth central for `esp32-ble/` firmware; no extra Bundle ID |
 | `face-swap` | Face Swap | On-device model chooses a targeted edit. The rest of the photo stays as it was. |
-| `app-attest` | App Attest | Sign in with Apple, then a one-time DeviceCheck handshake with the `app-attest` Worker; needs App Attest and Sign in with Apple capability bootstrap |
+| `app-attest` | App Attest | Sign in with Apple, attest once, then `generateAssertion` on each whoami; needs App Attest and Sign in with Apple capability bootstrap |
 | `laya` | Laya | Swift port of the `laya-coreml` runtime; downloads the ANE bundle from Hugging Face on demand and answers choice / score / yes-no questions in one Core ML pass |
 
 ### Ride Monitor
@@ -413,11 +413,11 @@ at most 1024 px.
 
 **Sign in with Apple** supplies the user id (the stable `ASAuthorizationAppleIDCredential.user`
 string) and immediately runs Apple App Attest against the
-[`app-attest/`](../app-attest/) Worker. The Worker checks the attestation, binds
-that Apple user id and `deviceId` to the hardware key, and issues a short-lived
-JWT. Sign-in and opening the experiment then call **whoami** so the attested
-ids show up without another tap. **Sign out** drops the Apple user, token, and
-App Attest key.
+[`app-attest/`](../app-attest/) Worker. The Worker checks the attestation and
+binds that Apple user id and `deviceId` to the hardware key. Sign-in, opening
+the experiment, and **Whoami** each spend a new challenge and a
+`generateAssertion` so a reused token is not enough. **Sign out** drops the
+Apple user, registration, and App Attest key.
 
 Needs the App Attest App ID capability
 (`com.apple.developer.devicecheck.appattest-environment` = `production`), the

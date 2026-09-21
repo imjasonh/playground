@@ -6,6 +6,7 @@ protocol AppAttestKeyGenerating: Sendable {
     var isSupported: Bool { get }
     func generateKey() async throws -> String
     func attestKey(_ keyId: String, clientDataHash: Data) async throws -> Data
+    func generateAssertion(_ keyId: String, clientDataHash: Data) async throws -> Data
 }
 
 /// `DCAppAttestService` wrapper. Unsupported on Simulator.
@@ -20,6 +21,10 @@ struct SystemAppAttestKeys: AppAttestKeyGenerating {
 
     func attestKey(_ keyId: String, clientDataHash: Data) async throws -> Data {
         try await DCAppAttestService.shared.attestKey(keyId, clientDataHash: clientDataHash)
+    }
+
+    func generateAssertion(_ keyId: String, clientDataHash: Data) async throws -> Data {
+        try await DCAppAttestService.shared.generateAssertion(keyId, clientDataHash: clientDataHash)
     }
 }
 

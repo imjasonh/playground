@@ -37,9 +37,26 @@ pub struct DeviceRecord {
     pub user_id: String,
     pub device_id: String,
     /// Uncompressed P-256 public key (SEC1, 65 bytes), standard base64.
+    /// Empty for the Simulator unattested path.
+    #[serde(default)]
     pub public_key: String,
     pub counter: u32,
     pub created_at: u64,
+    /// Simulator / `ALLOW_UNATTESTED` row. Later `whoami` calls skip `generateAssertion`.
+    #[serde(default)]
+    pub unattested: bool,
+    /// Latest App Attest receipt (standard base64). Starts as the `attStmt` receipt.
+    #[serde(default)]
+    pub receipt: Option<String>,
+    /// Unique attested keys for this app on the device over 30 days, if refreshed.
+    #[serde(default)]
+    pub risk_metric: Option<u32>,
+    /// Unix seconds after which Apple allows another receipt refresh (field 19).
+    #[serde(default)]
+    pub risk_metric_not_before: Option<u64>,
+    /// Development AAGUID (`appattestdevelop`). Selects Apple's development data host.
+    #[serde(default)]
+    pub development: bool,
 }
 
 /// One-time challenge store. `take` deletes the row so a nonce cannot replay.
@@ -75,6 +92,10 @@ impl InMemoryStore {
 
     pub fn device_count(&self) -> usize {
         self.devices.borrow().len()
+    }
+
+    pub fn device(&self, key_id: &str) -> Option<DeviceRecord> {
+        self.devices.borrow().get(key_id).cloned()
     }
 }
 

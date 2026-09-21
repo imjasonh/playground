@@ -3,7 +3,7 @@ name = "app-attest-worker"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-description = "App Attest handshake and JWT issuer for Cloudflare Workers"
+description = "App Attest handshake and assertion verifier for Cloudflare Workers"
 repository = "https://github.com/imjasonh/playground"
 readme = "README.md"
 publish = false
@@ -19,8 +19,7 @@ async-trait = "0.1"
 base64 = "0.22"
 ciborium = "0.2"
 der-parser = "10"
-hmac = "0.12"
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic", "pkcs8", "pem"] }
 p384 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 serde = { version = "1", features = ["derive"] }
@@ -34,15 +33,12 @@ x509-parser = "0.17"
 worker = "0.8"
 getrandom = { version = "0.2", features = ["js"] }
 wasm-bindgen = "=0.2.125"
+js-sys = "0.3"
 
 [dev-dependencies]
 futures = "0.3"
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic", "pkcs8"] }
+p256 = { version = "0.13", default-features = false, features = ["ecdsa", "arithmetic", "pkcs8", "pem"] }
 rcgen = "0.13"
-
-[[example]]
-name = "gensecret"
-path = "examples/gensecret.rs"
 
 [profile.release]
 opt-level = "s"

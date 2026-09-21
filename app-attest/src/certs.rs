@@ -220,6 +220,11 @@ fn normalize_sec1(bytes: &[u8], coord_len: usize) -> Result<Vec<u8>, Error> {
     Err(Error::Certificate("issuer public key is not SEC1"))
 }
 
+/// Verify an ECDSA P-256 signature over `message` (SHA-256 then ECDSA).
+pub fn verify_p256_message(public_key: &[u8], message: &[u8], sig: &[u8]) -> Result<(), Error> {
+    verify_p256(public_key, message, sig)
+}
+
 fn verify_p256(public_key: &[u8], tbs: &[u8], sig: &[u8]) -> Result<(), Error> {
     let sec1 = normalize_sec1(public_key, 32)?;
     let vk = p256::ecdsa::VerifyingKey::from_sec1_bytes(&sec1)

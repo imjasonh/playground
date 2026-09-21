@@ -1,7 +1,7 @@
 import AuthenticationServices
 import SwiftUI
 
-/// Attest this device once, then call the Worker that echoes the bound ids.
+/// Attest this device once, then assert each whoami against the Worker.
 struct AppAttestView: View {
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var controller = AppAttestController()
@@ -112,12 +112,27 @@ struct AppAttestView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Whoami")
                 .font(.subheadline.bold())
+            Button {
+                Task { await controller.whoami() }
+            } label: {
+                Label("Whoami", systemImage: "person.crop.circle.badge.checkmark")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!controller.isRegistered || controller.isBusy)
+            .accessibilityIdentifier("appAttestWhoamiButton")
             if let result = controller.lastWhoAmI {
                 VStack(alignment: .leading, spacing: 6) {
                     labeledRow("User id", result.userId)
                     labeledRow("Device id", result.deviceId)
                     labeledRow("Key id", result.keyId)
                     labeledRow("Attested", result.unattested ? "no" : "yes")
+                    if let counter = result.counter {
+                        labeledRow("Assertion counter", String(counter))
+                    }
+                    if let risk = result.riskMetric {
+                        labeledRow("Risk metric", String(risk))
+                    }
                 }
                 .font(.body.monospaced())
                 .textSelection(.enabled)

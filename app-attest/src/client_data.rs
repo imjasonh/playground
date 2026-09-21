@@ -11,6 +11,9 @@ use crate::error::Error;
 const MAX_CLIENT_DATA_BYTES: usize = 2 * 1024;
 const MAX_FIELD_CHARS: usize = 128;
 
+/// Action string the iOS app binds into each `whoami` assertion.
+pub const WHOAMI_ACTION: &str = "whoami";
+
 /// Fields the iOS app binds into the attestation.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ClientData {
@@ -19,6 +22,13 @@ pub struct ClientData {
     pub user_id: String,
     #[serde(rename = "deviceId")]
     pub device_id: String,
+}
+
+/// Fields the iOS app hashes for `generateAssertion` on a later request.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct AssertionClientData {
+    pub challenge: String,
+    pub action: String,
 }
 
 impl ClientData {
@@ -49,7 +59,35 @@ impl ClientData {
     }
 }
 
-/// SHA-256 of the exact client JSON bytes passed to `attestKey`.
+impl AssertionClientData {
+    /// Parse raw JSON bytes and reject empty or oversized fields.
+    pub fn parse(raw: &[u8]) -> Result<Self, Error> {
+        if raw.is_empty() || raw.len() > MAX_CLIENT_DATA_BYTES {
+            return Err(Error::BadRequest(
+                "clientData is missing or too large".into(),
+            ));
+        }
+        let data: Self = serde_json::from_slice(raw)
+            .map_err(|_| Error::BadRequest("clientData is not JSON".into()))?;
+        if data.challenge.is_empty() || data.challenge.len() > MAX_FIELD_CHARS {
+            return Err(Error::BadRequest("challenge is empty or too long".into()));
+        }
+        if data.action.is_empty() || data.action.len() > MAX_FIELD_CHARS {
+            return Err(Error::BadRequest("action is empty or too long".into()));
+        }
+        Ok(data)
+    }
+
+    /// Reject an assertion bound to a different API action.
+    pub fn require_action(&self, want: &str) -> Result<(), Error> {
+        if self.action != want {
+            return Err(Error::Binding("clientData action does not match request"));
+        }
+        Ok(())
+    }
+}
+
+/// SHA-256 of the exact client JSON bytes passed to `attestKey` or `generateAssertion`.
 pub fn hash(raw: &[u8]) -> [u8; 32] {
     Sha256::digest(raw).into()
 }
@@ -71,6 +109,14 @@ mod tests {
     fn reject_empty_user() {
         let raw = br#"{"challenge":"abc","userId":"","deviceId":"d1"}"#;
         assert!(ClientData::parse(raw).is_err());
+    }
+
+    #[test]
+    fn parse_assertion_action() {
+        let raw = br#"{"action":"whoami","challenge":"abc"}"#;
+        let data = AssertionClientData::parse(raw).unwrap();
+        data.require_action(WHOAMI_ACTION).unwrap();
+        assert!(data.require_action("other").is_err());
     }
 
     #[test]

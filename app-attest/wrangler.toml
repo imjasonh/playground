@@ -23,9 +23,12 @@ command = "cargo +stable install -q worker-build@0.8.5 && worker-build --release
 # host app. The Team ID is not a secret; it is in every signed build.
 [vars]
 APP_ID = "W5LPA2QM2W.io.github.imjasonh.playground"
-TOKEN_TTL_SECONDS = "3600"
 # Set to "1" only for local wrangler / Simulator testing. Production stays off.
 ALLOW_UNATTESTED = "0"
+# Optional. When set, POST /v1/whoami returns 403 if Apple's 30-day key count
+# for this app on the device is above the number. Leave unset to record the
+# metric without rejecting.
+# MAX_RISK_METRIC = "8"
 
 # KV stores one-time challenges and attested device rows.
 [[kv_namespaces]]
@@ -33,8 +36,11 @@ binding = "STORE"
 id = "REPLACE_WITH_KV_NAMESPACE_ID"
 preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"
 
-# Secrets to set with `wrangler secret put`:
-#   JWT_SECRET   (random 32+ byte hex; see examples/gensecret.rs)
+# Optional secrets for Apple's fraud-metric refresh (`wrangler secret put`):
+#   DEVICECHECK_KEY_ID         App Store Connect DeviceCheck key id
+#   DEVICECHECK_PRIVATE_KEY    PKCS #8 PEM for that key
+# Without them the Worker still attests and verifies assertions; it just
+# cannot read the 30-day key-count metric.
 
 [observability]
 enabled = true

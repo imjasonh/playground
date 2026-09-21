@@ -16,7 +16,7 @@ playground/
 │   ├── scripts/           # CI helpers: app discovery + index-page rendering
 │   └── workflows/         # deploy, preview, test, cleanup, dependency updates
 ├── artillery/             # touch-first turn-based artillery duel (JS + Node tests)
-├── app-attest/            # Rust Cloudflare Worker: App Attest handshake + JWT (not a Pages app)
+├── app-attest/            # Rust Cloudflare Worker: App Attest handshake + assertions (not a Pages app)
 ├── bun-image/             # bun compile + crane image (shell; not a Pages app)
 ├── cold-climb/            # touch-first two-handle arcade game (JS + Node tests)
 ├── droneski/              # FPV drone filming a downhill skier (JS + three.js + Node tests)
@@ -704,7 +704,7 @@ bundle exec fastlane test
 | `tank-commander/` | Monte Carlo simulator for [Tank Commander](https://github.com/imjasonh/tank-commander) — skirmish 1v1, platoon 3v3, combined arms (drama + stalemate metrics) | `cargo test` + clippy |
 | `mapvelopes/` | envelope PDFs with the sender-to-recipient route as the background (requires a Google Maps key; sizes #10, #9, Monarch, #6¾, A7) | `cargo test` + clippy + wasm build |
 | `y/` | One-user microblog (D1 + R2); 260-char posts, images, RSS, passkeys | `cargo test` + clippy + wasm build |
-| `app-attest/` | App Attest handshake + JWT issuer for the Playground iOS experiment — Cloudflare Worker | `cargo test` + clippy + wasm build |
+| `app-attest/` | App Attest handshake + assertion verifier for the Playground iOS experiment — Cloudflare Worker | `cargo test` + clippy + wasm build |
 
 > **`git-server` has its own agent guide:** read
 > [`git-server/AGENTS.md`](git-server/AGENTS.md) before working in that

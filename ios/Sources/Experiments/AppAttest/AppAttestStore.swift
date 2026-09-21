@@ -7,7 +7,7 @@ protocol AppAttestStoring: AnyObject {
     var keyId: String? { get set }
     var deviceId: String { get }
     var userId: String { get set }
-    var token: String? { get set }
+    var isRegistered: Bool { get set }
     func clearSession()
 }
 
@@ -15,11 +15,11 @@ enum AppAttestStorageKeys {
     static let suiteName = "io.github.imjasonh.playground.app-attest"
     static let deviceId = "deviceId"
     static let userId = "userId"
-    static let token = "token"
+    static let registered = "registered"
     static let keychainAccount = "keyId"
 }
 
-/// UserDefaults for ids/token, Keychain for the App Attest `keyId`.
+/// UserDefaults for ids and registration, Keychain for the App Attest `keyId`.
 @MainActor
 final class AppAttestUserDefaultsStore: AppAttestStoring {
     private let defaults: UserDefaults
@@ -58,13 +58,13 @@ final class AppAttestUserDefaultsStore: AppAttestStoring {
         set { defaults.set(newValue, forKey: AppAttestStorageKeys.userId) }
     }
 
-    var token: String? {
-        get { defaults.string(forKey: AppAttestStorageKeys.token) }
-        set { defaults.set(newValue, forKey: AppAttestStorageKeys.token) }
+    var isRegistered: Bool {
+        get { defaults.bool(forKey: AppAttestStorageKeys.registered) }
+        set { defaults.set(newValue, forKey: AppAttestStorageKeys.registered) }
     }
 
     func clearSession() {
-        defaults.removeObject(forKey: AppAttestStorageKeys.token)
+        defaults.removeObject(forKey: AppAttestStorageKeys.registered)
         keyId = nil
     }
 }
@@ -75,15 +75,16 @@ final class AppAttestMemoryStore: AppAttestStoring {
     var keyId: String?
     let deviceId: String
     var userId: String
-    var token: String?
+    var isRegistered: Bool
 
     init(deviceId: String = "device-test", userId: String = "user-test") {
         self.deviceId = deviceId
         self.userId = userId
+        self.isRegistered = false
     }
 
     func clearSession() {
-        token = nil
+        isRegistered = false
         keyId = nil
     }
 }
