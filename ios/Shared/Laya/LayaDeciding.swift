@@ -31,7 +31,7 @@ struct LayaGreedyDecider: LayaDeciding {
                 actProbability: 1
             )
         case .noul:
-            return noul(probability: 1)
+            return Self.noul(probability: 1)
         }
     }
 
