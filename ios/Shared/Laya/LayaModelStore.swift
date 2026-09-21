@@ -133,6 +133,16 @@ final class LayaModelStore: ObservableObject {
         return false
     }
 
+    /// Army List shows a setup row only for a missing download, a failure, or
+    /// a load the user already asked for. A downloaded graph that is merely
+    /// idle stays hidden so New list and List chat can be submitted immediately.
+    var showsSetupRow: Bool {
+        if isReady { return false }
+        if case .failed = phase { return true }
+        if phase.isBusy { return true }
+        return !isDownloaded
+    }
+
     var maxTokens: Int? { runtime?.maxTokens }
 
     var lastPrediction: LayaPrediction? { history.last }

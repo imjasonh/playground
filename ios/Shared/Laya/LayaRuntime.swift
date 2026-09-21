@@ -30,7 +30,7 @@ struct LayaModelInfo: Equatable {
         """
         revision \(revision), \(computeUnits)
         sequence \(sequenceLength) tokens, width \(width), \(maxOptions) option slots, vocab \(vocabularySize), host weights \(hostWeightsDType)
-        load: model \(LayaFormat.seconds(modelLoadSeconds)), tokenizer \(LayaFormat.seconds(tokenizerLoadSeconds)), host weights \(LayaFormat.seconds(hostWeightsLoadSeconds)), total \(LayaFormat.seconds(totalLoadSeconds))
+        load total \(LayaFormat.seconds(totalLoadSeconds)) (model \(LayaFormat.seconds(modelLoadSeconds)), tokenizer \(LayaFormat.seconds(tokenizerLoadSeconds)), host weights \(LayaFormat.seconds(hostWeightsLoadSeconds)), overlapped)
         \(signature.text)
         """
     }
@@ -56,18 +56,35 @@ final class LayaRuntime: @unchecked Sendable {
         let start = Date()
         let configuration = MLModelConfiguration()
         configuration.computeUnits = computeUnits
-        let model = try await MLModel.load(contentsOf: compiledModelURL, configuration: configuration)
-        let modelLoaded = Date()
+        let weightsURL = bundle.hostWeightsURL
+        let tokenizerURL = bundle.tokenizerURL
+        let specialTokens = bundle.specialTokens
 
+        async let modelLoad: (MLModel, TimeInterval) = {
+            let started = Date()
+            let loaded = try await MLModel.load(contentsOf: compiledModelURL, configuration: configuration)
+            return (loaded, Date().timeIntervalSince(started))
+        }()
+        async let tokenizerLoad: (LayaHubTokenizer, TimeInterval) = {
+            let started = Date()
+            let loaded = try await LayaHubTokenizer.load(from: tokenizerURL, specialTokens: specialTokens)
+            return (loaded, Date().timeIntervalSince(started))
+        }()
+        async let weightsLoad: (LayaHostWeights, TimeInterval) = {
+            try await Task.detached(priority: .userInitiated) {
+                let started = Date()
+                let loaded = try LayaHostWeights(file: try LayaSafetensorsFile(url: weightsURL))
+                return (loaded, Date().timeIntervalSince(started))
+            }.value
+        }()
+
+        let (model, modelLoadSeconds) = try await modelLoad
+        let (tokenizer, tokenizerLoadSeconds) = try await tokenizerLoad
+        let (weights, hostWeightsLoadSeconds) = try await weightsLoad
         let length = bundle.manifest.shape.maxLength
         let width = bundle.encoderConfig.hiddenSize
         let signature = Self.signature(of: model)
         try Self.checkSignature(signature, width: width, length: length, maxOptions: bundle.manifest.shape.maxOptions)
-
-        let tokenizer = try await LayaHubTokenizer.load(from: bundle.tokenizerURL, specialTokens: bundle.specialTokens)
-        let tokenizerLoaded = Date()
-        let weights = try LayaHostWeights(file: try LayaSafetensorsFile(url: bundle.hostWeightsURL))
-        let weightsLoaded = Date()
         guard weights.width == width else {
             throw LayaError.bundle("Embedding width \(weights.width) does not match hidden_size \(width).")
         }
@@ -95,9 +112,9 @@ final class LayaRuntime: @unchecked Sendable {
             hostWeightsDType: weights.embedding.dtype.rawValue,
             computeUnits: Self.label(for: computeUnits),
             signature: signature,
-            modelLoadSeconds: modelLoaded.timeIntervalSince(start),
-            tokenizerLoadSeconds: tokenizerLoaded.timeIntervalSince(modelLoaded),
-            hostWeightsLoadSeconds: weightsLoaded.timeIntervalSince(tokenizerLoaded),
+            modelLoadSeconds: modelLoadSeconds,
+            tokenizerLoadSeconds: tokenizerLoadSeconds,
+            hostWeightsLoadSeconds: hostWeightsLoadSeconds,
             totalLoadSeconds: Date().timeIntervalSince(start)
         )
     }

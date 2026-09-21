@@ -103,6 +103,7 @@ enum ArmyListStarterPrompt {
 /// Milestones for the New list sheet while a starter build runs.
 struct ArmyListStarterBuildProgress: Equatable {
     enum Phase: Equatable {
+        case loadingModel
         case preparing
         case choosingDetachment
         case addingUnits
@@ -116,6 +117,7 @@ struct ArmyListStarterBuildProgress: Equatable {
     /// Determinate fraction for `ProgressView(value:total:)`.
     var fractionComplete: Double {
         switch phase {
+        case .loadingModel: return 0.02
         case .preparing: return 0.05
         case .choosingDetachment: return 0.18
         case .addingUnits: return 0.48
@@ -145,6 +147,8 @@ struct ArmyListStarterBuildProgress: Equatable {
 
     var statusText: String {
         switch phase {
+        case .loadingModel:
+            return "Loading Laya…"
         case .preparing:
             return "Preparing roster options…"
         case .choosingDetachment:
@@ -178,9 +182,11 @@ enum ArmyListStarterBuilder {
     ) async -> ArmyListDocument? {
         if Task.isCancelled { return nil }
         let store = store ?? LayaModelStore.shared
-        onProgress?(ArmyListStarterBuildProgress(phase: .preparing))
         if store.isDownloaded, !store.isReady {
+            onProgress?(ArmyListStarterBuildProgress(phase: .loadingModel))
             await store.prepare()
+        } else {
+            onProgress?(ArmyListStarterBuildProgress(phase: .preparing))
         }
         if Task.isCancelled { return nil }
         let engine = decider ?? ArmyListDecisionController.activeDecider(store: store)

@@ -689,6 +689,7 @@ final class ArmyListChatToolTests: XCTestCase {
     }
 
     func testStarterBuildProgressAdvancesAcrossPhases() {
+        let loading = ArmyListStarterBuildProgress(phase: .loadingModel)
         let preparing = ArmyListStarterBuildProgress(phase: .preparing)
         let choosing = ArmyListStarterBuildProgress(phase: .choosingDetachment)
         let adding = ArmyListStarterBuildProgress(phase: .addingUnits)
@@ -696,6 +697,7 @@ final class ArmyListChatToolTests: XCTestCase {
         let enhancing = ArmyListStarterBuildProgress(phase: .assigningEnhancements)
         let finishing = ArmyListStarterBuildProgress(phase: .finishing)
 
+        XCTAssertLessThan(loading.fractionComplete, preparing.fractionComplete)
         XCTAssertLessThan(preparing.fractionComplete, choosing.fractionComplete)
         XCTAssertLessThan(choosing.fractionComplete, adding.fractionComplete)
         XCTAssertLessThan(adding.fractionComplete, attaching.fractionComplete)
@@ -707,6 +709,10 @@ final class ArmyListChatToolTests: XCTestCase {
     func testStarterBuildProgressStatusTextNamesPhase() {
         let progress = ArmyListStarterBuildProgress(phase: .addingUnits)
         XCTAssertEqual(progress.statusText, "Adding units…")
+        XCTAssertEqual(
+            ArmyListStarterBuildProgress(phase: .loadingModel).statusText,
+            "Loading Laya…"
+        )
     }
 
     func testStarterBuildTrickleCreepsUpwardWithinPhase() {

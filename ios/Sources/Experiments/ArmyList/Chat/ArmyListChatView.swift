@@ -64,7 +64,7 @@ struct ArmyListChatView: View {
             if !runtime.isModelAvailable {
                 languageGate
             }
-            if !laya.isReady {
+            if laya.showsSetupRow {
                 layaStatus
             }
             transcript
@@ -127,11 +127,6 @@ struct ArmyListChatView: View {
             Button("OK", role: .cancel) {}
         } message: { message in
             Text(message)
-        }
-        .task {
-            if laya.isDownloaded {
-                await laya.prepare()
-            }
         }
         .onAppear {
             runtime.workspace.list = list
