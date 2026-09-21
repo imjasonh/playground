@@ -103,13 +103,13 @@ final class AppAttestTests: XCTestCase {
         let store = AppAttestMemoryStore(deviceId: "dev-9", userId: "")
         let keys = FakeAppAttestKeys(isSupported: false)
         let http = FakeAppAttestHTTP()
-        var challenges = 0
+        let challenges = IntBox()
         http.onRequest = { request in
             let path = request.url?.path ?? ""
             if path.hasSuffix("/v1/challenge") {
-                challenges += 1
+                let n = challenges.increment()
                 return Self.json(
-                    #"{"challenge":"n\(challenges)","expiresAt":1}"#,
+                    #"{"challenge":"n\(n)","expiresAt":1}"#,
                     status: 200
                 )
             }
@@ -298,12 +298,12 @@ final class AppAttestTests: XCTestCase {
     func testSignInRegistersDevice() async {
         let store = AppAttestMemoryStore(userId: "")
         let http = FakeAppAttestHTTP()
-        var challenges = 0
+        let challenges = IntBox()
         http.onRequest = { request in
             let path = request.url?.path ?? ""
             if path.hasSuffix("/v1/challenge") {
-                challenges += 1
-                return Self.json(#"{"challenge":"n\(challenges)","expiresAt":1}"#, status: 200)
+                let n = challenges.increment()
+                return Self.json(#"{"challenge":"n\(n)","expiresAt":1}"#, status: 200)
             }
             if path.hasSuffix("/v1/unattested-token") {
                 return Self.json(
@@ -418,12 +418,12 @@ final class AppAttestTests: XCTestCase {
     func testRefreshRegistersWhenSignedInWithoutRegistration() async {
         let store = AppAttestMemoryStore(userId: "apple-saved")
         let http = FakeAppAttestHTTP()
-        var challenges = 0
+        let challenges = IntBox()
         http.onRequest = { request in
             let path = request.url?.path ?? ""
             if path.hasSuffix("/v1/challenge") {
-                challenges += 1
-                return Self.json(#"{"challenge":"n\(challenges)","expiresAt":1}"#, status: 200)
+                let n = challenges.increment()
+                return Self.json(#"{"challenge":"n\(n)","expiresAt":1}"#, status: 200)
             }
             if path.hasSuffix("/v1/unattested-token") {
                 return Self.json(
@@ -562,4 +562,14 @@ private struct FakeAppAttestKeys: AppAttestKeyGenerating {
 /// Lets the fake keys record the digest without making the struct a class.
 private final class HashBox: @unchecked Sendable {
     var value: Data?
+}
+
+/// Lets a `@Sendable` HTTP stub increment a challenge count under Swift 6.
+private final class IntBox: @unchecked Sendable {
+    private var value = 0
+
+    func increment() -> Int {
+        value += 1
+        return value
+    }
 }
