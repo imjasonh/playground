@@ -115,6 +115,21 @@ enum ArmyListDecisionController {
             onStep: onStep
         ) else { return nil }
 
+        onPhase?(.assigningEnhancements)
+        guard await assignEnhancements(
+            workspace: workspace,
+            theme: theme,
+            decider: decider,
+            steps: &steps,
+            onStep: onStep
+        ) else { return nil }
+        guard await packRemaining(
+            workspace: workspace,
+            theme: theme,
+            steps: &steps,
+            onStep: onStep
+        ) else { return nil }
+
         if Task.isCancelled { return nil }
         list = workspace.list
         if let userName, !userName.isEmpty {
@@ -169,6 +184,20 @@ enum ArmyListDecisionController {
             workspace: workspace,
             theme: theme,
             decider: decider,
+            steps: &steps,
+            onStep: onStep
+        ) else { return nil }
+        onPhase?(.assigningEnhancements)
+        guard await assignEnhancements(
+            workspace: workspace,
+            theme: theme,
+            decider: decider,
+            steps: &steps,
+            onStep: onStep
+        ) else { return nil }
+        guard await packRemaining(
+            workspace: workspace,
+            theme: theme,
             steps: &steps,
             onStep: onStep
         ) else { return nil }
@@ -383,6 +412,141 @@ enum ArmyListDecisionController {
             record(
                 title: "Add unit",
                 instructions: instructions,
+                decision: decision,
+                applied: "Added \(move.sheet.name)×\(move.models)",
+                steps: &steps,
+                onStep: onStep
+            )
+        }
+        return !Task.isCancelled
+    }
+
+    private static func assignEnhancements(
+        workspace: ArmyListChatWorkspace,
+        theme: String,
+        decider: any LayaDeciding,
+        steps: inout [ArmyListDecisionStep],
+        onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
+    ) async -> Bool {
+        guard let battle = workspace.catalog.battleSize(id: workspace.list.battleSizeID) else {
+            return false
+        }
+        for _ in 0..<battle.enhancementPickLimit {
+            if Task.isCancelled { return false }
+            let remainingPoints = battle.pointsLimit - workspace.validation.totalPoints
+            let remainingPicks = battle.enhancementPickLimit - ArmyListPalette.enhancementPickSlots(
+                list: workspace.list,
+                catalog: workspace.catalog
+            )
+            let moves = ArmyListPalette.legalEnhancements(
+                catalog: workspace.catalog,
+                list: workspace.list,
+                theme: theme,
+                remainingPoints: remainingPoints,
+                remainingPicks: remainingPicks,
+                limit: ArmyListPalette.maxLayaOptions - 1
+            )
+            if moves.isEmpty { return true }
+            var options = moves.map { $0.option() }
+            options.append(LayaChoiceOption("none", "skip"))
+            let instructions = "Pick an enhancement"
+            let decision = await decide(
+                decider: decider,
+                state: ArmyListLayaSnapshot.text(
+                    list: workspace.list,
+                    catalog: workspace.catalog,
+                    theme: theme,
+                    validation: workspace.validation
+                ),
+                question: .choice(instructions: instructions, options: options)
+            )
+            if decision.choiceLabel == "none" {
+                record(
+                    title: "Enhancement",
+                    instructions: instructions,
+                    decision: decision,
+                    applied: "No more enhancements",
+                    steps: &steps,
+                    onStep: onStep
+                )
+                return true
+            }
+            let move = moves.first { $0.label == decision.choiceLabel } ?? moves[0]
+            let output = ArmyListChatToolExecutor.setEnhancement(
+                workspace: workspace,
+                unitID: move.unitID.uuidString,
+                enhancementID: move.enhancement.id
+            )
+            if output.hasPrefix("Unknown") || output.hasPrefix("No unit") {
+                record(
+                    title: "Enhancement",
+                    instructions: instructions,
+                    decision: decision,
+                    applied: "Skipped \(move.enhancement.name)",
+                    steps: &steps,
+                    onStep: onStep
+                )
+                return true
+            }
+            record(
+                title: "Enhancement",
+                instructions: instructions,
+                decision: decision,
+                applied: "\(move.enhancement.name) on \(move.unitName)",
+                steps: &steps,
+                onStep: onStep
+            )
+        }
+        return !Task.isCancelled
+    }
+
+    /// After Laya stops adding, spend leftover points on the next ranked unit
+    /// that still fits. No extra Laya question.
+    private static func packRemaining(
+        workspace: ArmyListChatWorkspace,
+        theme: String,
+        steps: inout [ArmyListDecisionStep],
+        onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
+    ) async -> Bool {
+        guard let battle = workspace.catalog.battleSize(id: workspace.list.battleSizeID) else {
+            return false
+        }
+        for _ in 0..<ArmyListPalette.maxAddSteps {
+            if Task.isCancelled { return false }
+            let remaining = battle.pointsLimit - workspace.validation.totalPoints
+            if remaining <= ArmyListPalette.goodEnoughSlack { return true }
+            if let cheapest = ArmyListPalette.cheapestLegalAdd(
+                catalog: workspace.catalog,
+                list: workspace.list,
+                remainingPoints: remaining
+            ), remaining < cheapest {
+                return true
+            }
+            let hasCharacter = ArmyListPalette.hasCharacter(list: workspace.list, catalog: workspace.catalog)
+            let moves = ArmyListPalette.legalAdds(
+                catalog: workspace.catalog,
+                list: workspace.list,
+                theme: theme,
+                remainingPoints: remaining,
+                hasCharacter: hasCharacter,
+                charactersOnly: false,
+                limit: 1
+            )
+            guard let move = moves.first else { return true }
+            let output = ArmyListChatToolExecutor.addUnit(
+                workspace: workspace,
+                datasheetID: move.sheet.id,
+                models: Double(move.models)
+            )
+            if output.hasPrefix("Rejected:") { return true }
+            let decision = LayaGreedyDecider.choice(
+                label: move.label,
+                options: [move.option()],
+                act: 1
+            )
+            record(
+                title: "Pack",
+                instructions: "Spend leftover points",
                 decision: decision,
                 applied: "Added \(move.sheet.name)×\(move.models)",
                 steps: &steps,
@@ -646,6 +810,15 @@ enum ArmyListDecisionController {
                 steps: &steps,
                 onStep: onStep
             )
+        case "enhancement.pickLimit", "enhancement.onePerUnit", "enhancement.unknown",
+             "enhancement.detachmentNotSelected", "enhancement.upgradeOnCharacter",
+             "enhancement.upgradeCap", "enhancement.requiresCharacter":
+            return clearOneEnhancement(
+                error: error,
+                workspace: workspace,
+                steps: &steps,
+                onStep: onStep
+            )
         default:
             return false
         }
@@ -690,6 +863,38 @@ enum ArmyListDecisionController {
             instructions: instructions,
             decision: decision,
             applied: "Removed \(name)",
+            steps: &steps,
+            onStep: onStep
+        )
+        return true
+    }
+
+    private static func clearOneEnhancement(
+        error: ValidationIssue,
+        workspace: ArmyListChatWorkspace,
+        steps: inout [ArmyListDecisionStep],
+        onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
+    ) -> Bool {
+        let target = error.unitID.flatMap { id in
+            workspace.list.units.first { $0.id == id && !$0.enhancementIDs.isEmpty }
+        } ?? workspace.list.units.first { !$0.enhancementIDs.isEmpty }
+        guard let target else { return false }
+        _ = ArmyListChatToolExecutor.setEnhancement(
+            workspace: workspace,
+            unitID: target.id.uuidString,
+            enhancementID: "none"
+        )
+        let name = workspace.catalog.datasheet(id: target.datasheetID)?.name ?? target.datasheetID
+        let decision = LayaGreedyDecider.choice(
+            label: "none",
+            options: [LayaChoiceOption("none")],
+            act: 1
+        )
+        record(
+            title: "Enhancement",
+            instructions: "Clear illegal enhancement",
+            decision: decision,
+            applied: "Cleared enhancement on \(name)",
             steps: &steps,
             onStep: onStep
         )

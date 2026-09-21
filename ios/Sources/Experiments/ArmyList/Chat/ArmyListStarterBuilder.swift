@@ -107,6 +107,7 @@ struct ArmyListStarterBuildProgress: Equatable {
         case choosingDetachment
         case addingUnits
         case attaching
+        case assigningEnhancements
         case finishing
     }
 
@@ -116,9 +117,10 @@ struct ArmyListStarterBuildProgress: Equatable {
     var fractionComplete: Double {
         switch phase {
         case .preparing: return 0.05
-        case .choosingDetachment: return 0.22
-        case .addingUnits: return 0.55
-        case .attaching: return 0.84
+        case .choosingDetachment: return 0.18
+        case .addingUnits: return 0.48
+        case .attaching: return 0.70
+        case .assigningEnhancements: return 0.86
         case .finishing: return 1.0
         }
     }
@@ -151,6 +153,8 @@ struct ArmyListStarterBuildProgress: Equatable {
             return "Adding units…"
         case .attaching:
             return "Attaching leaders…"
+        case .assigningEnhancements:
+            return "Choosing enhancements…"
         case .finishing:
             return "Opening list…"
         }

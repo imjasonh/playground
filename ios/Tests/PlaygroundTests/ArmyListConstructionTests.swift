@@ -201,6 +201,141 @@ final class ArmyListConstructionTests: XCTestCase {
         XCTAssertNil(built)
     }
 
+    func testLegalEnhancementsForVotannKahl() {
+        let workspace = ArmyListChatWorkspace(
+            list: ArmyListDocument(
+                name: "Enh",
+                catalogVersion: catalog.version,
+                factionID: "leagues-of-votann",
+                battleSizeID: "incursion"
+            ),
+            catalog: catalog
+        )
+        _ = ArmyListChatToolExecutor.setDetachments(
+            workspace: workspace,
+            detachmentIDsCSV: "leagues-of-votann--brandfast-oathband"
+        )
+        _ = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "leagues-of-votann--kahl",
+            models: 1
+        )
+        let kahl = try! XCTUnwrap(workspace.list.units.first)
+        var list = workspace.list
+        list.warlordUnitID = kahl.id
+        workspace.replaceList(list)
+
+        let moves = ArmyListPalette.legalEnhancements(
+            catalog: catalog,
+            list: workspace.list,
+            theme: "",
+            remainingPoints: 800,
+            remainingPicks: 2
+        )
+        XCTAssertFalse(moves.isEmpty)
+        XCTAssertTrue(moves.contains { $0.enhancement.id.contains("signature-restoration") })
+        XCTAssertEqual(Set(moves.map(\.label)).count, moves.count)
+        XCTAssertTrue(moves.allSatisfy { !$0.enhancement.isUpgrade })
+    }
+
+    func testGreedyBuildAssignsEnhancementWhenPointsRemain() async {
+        let result = await ArmyListDecisionController.build(
+            catalog: catalog,
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            theme: "",
+            userName: nil,
+            decider: LayaGreedyDecider()
+        )
+        let built = try! XCTUnwrap(result)
+        let picks = ArmyListPalette.enhancementPickSlots(list: built.list, catalog: catalog)
+        let leftover = ArmyListPalette.legalEnhancements(
+            catalog: catalog,
+            list: built.list,
+            theme: "",
+            remainingPoints: max(0, 1000 - ArmyListValidator.validate(list: built.list, catalog: catalog).totalPoints),
+            remainingPicks: 2 - picks
+        )
+        XCTAssertTrue(
+            picks > 0 || leftover.isEmpty,
+            "Expected a pick or no remaining legal enhancement: picks=\(picks) leftover=\(leftover.map(\.label))"
+        )
+        XCTAssertTrue(built.steps.contains { $0.title == "Enhancement" } || leftover.isEmpty)
+    }
+
+    func testFixClearsIllegalEnhancement() async {
+        let workspace = ArmyListChatWorkspace(
+            list: ArmyListDocument(
+                name: "Fix enh",
+                catalogVersion: catalog.version,
+                factionID: "leagues-of-votann",
+                battleSizeID: "incursion"
+            ),
+            catalog: catalog
+        )
+        _ = ArmyListChatToolExecutor.setDetachments(
+            workspace: workspace,
+            detachmentIDsCSV: "leagues-of-votann--brandfast-oathband"
+        )
+        _ = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "leagues-of-votann--kahl",
+            models: 1
+        )
+        _ = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "leagues-of-votann--hearthkyn-warriors",
+            models: 10
+        )
+        let kahl = try! XCTUnwrap(
+            workspace.list.units.first { $0.datasheetID == "leagues-of-votann--kahl" }
+        )
+        _ = ArmyListChatToolExecutor.setWarlord(
+            workspace: workspace,
+            unitID: kahl.id.uuidString
+        )
+        let warriors = try! XCTUnwrap(
+            workspace.list.units.first { $0.datasheetID == "leagues-of-votann--hearthkyn-warriors" }
+        )
+        _ = ArmyListChatToolExecutor.setEnhancement(
+            workspace: workspace,
+            unitID: warriors.id.uuidString,
+            enhancementID: "leagues-of-votann--brandfast-oathband--signature-restoration"
+        )
+        XCTAssertTrue(workspace.validation.errors.contains { $0.code == "enhancement.requiresCharacter" })
+
+        let result = await ArmyListDecisionController.fix(
+            workspace: workspace,
+            theme: "",
+            decider: LayaGreedyDecider()
+        )
+        XCTAssertNotNil(result)
+        XCTAssertFalse(workspace.validation.errors.contains { $0.code == "enhancement.requiresCharacter" })
+        XCTAssertTrue(workspace.list.units[0].enhancementIDs.isEmpty)
+    }
+
+    func testBattlelineBoostsWhenRosterHasNone() {
+        let list = ArmyListDocument(
+            name: "BL",
+            catalogVersion: catalog.version,
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion"
+        )
+        XCTAssertFalse(ArmyListPalette.hasBattleline(list: list, catalog: catalog))
+        let moves = ArmyListPalette.legalAdds(
+            catalog: catalog,
+            list: list,
+            theme: "",
+            remainingPoints: 1000,
+            hasCharacter: true,
+            charactersOnly: false
+        )
+        XCTAssertTrue(
+            moves.contains { $0.sheet.battleline },
+            "Empty-roster shortlist should include Battleline: \(moves.map(\.label))"
+        )
+    }
+
     func testScriptedDeciderPicksNamedDetachment() async {
         let decider = LayaScriptedDecider(preferredLabels: ["Farseekers"])
         let result = await ArmyListDecisionController.build(

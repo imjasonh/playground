@@ -693,12 +693,14 @@ final class ArmyListChatToolTests: XCTestCase {
         let choosing = ArmyListStarterBuildProgress(phase: .choosingDetachment)
         let adding = ArmyListStarterBuildProgress(phase: .addingUnits)
         let attaching = ArmyListStarterBuildProgress(phase: .attaching)
+        let enhancing = ArmyListStarterBuildProgress(phase: .assigningEnhancements)
         let finishing = ArmyListStarterBuildProgress(phase: .finishing)
 
         XCTAssertLessThan(preparing.fractionComplete, choosing.fractionComplete)
         XCTAssertLessThan(choosing.fractionComplete, adding.fractionComplete)
         XCTAssertLessThan(adding.fractionComplete, attaching.fractionComplete)
-        XCTAssertLessThan(attaching.fractionComplete, finishing.fractionComplete)
+        XCTAssertLessThan(attaching.fractionComplete, enhancing.fractionComplete)
+        XCTAssertLessThan(enhancing.fractionComplete, finishing.fractionComplete)
         XCTAssertEqual(finishing.fractionComplete, 1.0)
     }
 

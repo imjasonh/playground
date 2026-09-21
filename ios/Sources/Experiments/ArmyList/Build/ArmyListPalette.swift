@@ -27,6 +27,20 @@ enum ArmyListPalette {
         let score: Int
     }
 
+    /// One legal enhancement on a specific unit that still has a pick slot.
+    struct EnhancementMove: Equatable {
+        let unitID: UUID
+        let unitName: String
+        let enhancement: EnhancementDefinition
+        let points: Int
+        let score: Int
+        let label: String
+
+        func option() -> LayaChoiceOption {
+            LayaChoiceOption(label, "\(points)pt \(unitName)")
+        }
+    }
+
     /// One legal add: a datasheet at a model count that fits remaining points.
     struct AddMove: Equatable {
         let sheet: DatasheetDefinition
@@ -66,6 +80,10 @@ enum ArmyListPalette {
         if sheet.characterRole != nil { score += 10 }
         if sheet.battleline { score += 5 }
         return score
+    }
+
+    static func hasBattleline(list: ArmyListDocument, catalog: ArmyCatalog) -> Bool {
+        list.units.contains { catalog.datasheet(id: $0.datasheetID)?.battleline == true }
     }
 
     static func duplicateLimit(
@@ -165,6 +183,7 @@ enum ArmyListPalette {
     ) -> [AddMove] {
         guard let battle = catalog.battleSize(id: list.battleSizeID) else { return [] }
         let tokens = themeTokens(theme)
+        let needsBattleline = !hasBattleline(list: list, catalog: catalog)
         var moves: [AddMove] = []
         for sheet in catalog.datasheets {
             guard sheet.factionID == list.factionID, !sheet.legends else { continue }
@@ -191,6 +210,9 @@ enum ArmyListPalette {
             if hasCharacter, sheet.characterRole != nil {
                 score -= 30
             }
+            if needsBattleline, sheet.battleline {
+                score += 220
+            }
             score += best.1 / 25
             moves.append(
                 AddMove(
@@ -207,6 +229,90 @@ enum ArmyListPalette {
             return lhs.sheet.name.localizedCaseInsensitiveCompare(rhs.sheet.name) == .orderedAscending
         }
         return uniqued(Array(moves.prefix(limit)))
+    }
+
+    /// Enhancement pick slots the validator counts: each Character enhancement
+    /// is one pick; each distinct Upgrade id is one pick (up to three copies).
+    static func enhancementPickSlots(list: ArmyListDocument, catalog: ArmyCatalog) -> Int {
+        var slots = 0
+        var upgradeGroups = Set<String>()
+        for unit in list.units {
+            for enhancementID in unit.enhancementIDs {
+                guard let (_, enhancement) = catalog.enhancement(id: enhancementID) else { continue }
+                if enhancement.isUpgrade {
+                    if upgradeGroups.insert(enhancement.id).inserted {
+                        slots += 1
+                    }
+                } else {
+                    slots += 1
+                }
+            }
+        }
+        return slots
+    }
+
+    static func upgradeCopies(list: ArmyListDocument, enhancementID: String) -> Int {
+        list.units.reduce(0) { count, unit in
+            count + (unit.enhancementIDs.contains(enhancementID) ? 1 : 0)
+        }
+    }
+
+    /// Legal enhancement placements that fit remaining points and pick slots.
+    static func legalEnhancements(
+        catalog: ArmyCatalog,
+        list: ArmyListDocument,
+        theme: String,
+        remainingPoints: Int,
+        remainingPicks: Int,
+        limit: Int = maxLayaOptions
+    ) -> [EnhancementMove] {
+        guard remainingPicks > 0, remainingPoints > 0 else { return [] }
+        let tokens = themeTokens(theme)
+        var moves: [EnhancementMove] = []
+        for detachmentID in list.detachmentIDs {
+            guard let detachment = catalog.detachment(id: detachmentID) else { continue }
+            for enhancement in detachment.enhancements {
+                if enhancement.points > remainingPoints { continue }
+                let extraPick: Int
+                if enhancement.isUpgrade {
+                    let copies = upgradeCopies(list: list, enhancementID: enhancement.id)
+                    if copies >= 3 { continue }
+                    extraPick = copies == 0 ? 1 : 0
+                } else {
+                    extraPick = 1
+                }
+                if extraPick > remainingPicks { continue }
+                for unit in list.units {
+                    if !unit.enhancementIDs.isEmpty { continue }
+                    guard let sheet = catalog.datasheet(id: unit.datasheetID) else { continue }
+                    if enhancement.isUpgrade {
+                        if sheet.characterRole != nil { continue }
+                    } else if sheet.characterRole == nil {
+                        continue
+                    }
+                    var score = tokens.filter { enhancement.name.lowercased().contains($0) }.count * 100
+                    score += tokens.filter { sheet.name.lowercased().contains($0) }.count * 20
+                    if list.warlordUnitID == unit.id { score += 40 }
+                    score += enhancement.points / 10
+                    moves.append(
+                        EnhancementMove(
+                            unitID: unit.id,
+                            unitName: sheet.name,
+                            enhancement: enhancement,
+                            points: enhancement.points,
+                            score: score,
+                            label: enhancement.name
+                        )
+                    )
+                }
+            }
+        }
+        moves.sort { lhs, rhs in
+            if lhs.score != rhs.score { return lhs.score > rhs.score }
+            if lhs.points != rhs.points { return lhs.points < rhs.points }
+            return lhs.enhancement.name.localizedCaseInsensitiveCompare(rhs.enhancement.name) == .orderedAscending
+        }
+        return uniquedEnhancements(Array(moves.prefix(limit)))
     }
 
     static func cheapestLegalAdd(
@@ -297,6 +403,24 @@ enum ArmyListPalette {
             return sheet.name
         }
         return "\(sheet.name) \(models)"
+    }
+
+    private static func uniquedEnhancements(_ moves: [EnhancementMove]) -> [EnhancementMove] {
+        var seen = Set<String>()
+        return moves.map { move in
+            var label = move.label
+            if !seen.insert(label).inserted {
+                label = "\(move.enhancement.name) · \(move.unitName)"
+            }
+            return EnhancementMove(
+                unitID: move.unitID,
+                unitName: move.unitName,
+                enhancement: move.enhancement,
+                points: move.points,
+                score: move.score,
+                label: label
+            )
+        }
     }
 
     private static func uniqued(_ moves: [AddMove]) -> [AddMove] {
