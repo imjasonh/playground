@@ -109,7 +109,7 @@ final class AppAttestTests: XCTestCase {
             if path.hasSuffix("/v1/challenge") {
                 let n = challenges.increment()
                 return Self.json(
-                    #"{"challenge":"n\(n)","expiresAt":1}"#,
+                    #"{"challenge":"n\#(n)","expiresAt":1}"#,
                     status: 200
                 )
             }
@@ -303,7 +303,7 @@ final class AppAttestTests: XCTestCase {
             let path = request.url?.path ?? ""
             if path.hasSuffix("/v1/challenge") {
                 let n = challenges.increment()
-                return Self.json(#"{"challenge":"n\(n)","expiresAt":1}"#, status: 200)
+                return Self.json(#"{"challenge":"n\#(n)","expiresAt":1}"#, status: 200)
             }
             if path.hasSuffix("/v1/unattested-token") {
                 return Self.json(
@@ -423,7 +423,7 @@ final class AppAttestTests: XCTestCase {
             let path = request.url?.path ?? ""
             if path.hasSuffix("/v1/challenge") {
                 let n = challenges.increment()
-                return Self.json(#"{"challenge":"n\(n)","expiresAt":1}"#, status: 200)
+                return Self.json(#"{"challenge":"n\#(n)","expiresAt":1}"#, status: 200)
             }
             if path.hasSuffix("/v1/unattested-token") {
                 return Self.json(
