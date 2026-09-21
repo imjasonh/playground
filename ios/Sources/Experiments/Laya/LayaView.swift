@@ -3,11 +3,14 @@ import UIKit
 
 /// Download the Laya ANE bundle, then ask it typed questions about a text.
 ///
+/// Uses ``LayaModelStore/shared`` so a download here is the same graph Army
+/// List uses.
+///
 /// Every stage reports its timing, every failure is copyable with its
 /// underlying error chain, and **Copy report** gathers all of it for a
 /// TestFlight round trip.
 struct LayaView: View {
-    @StateObject private var store = LayaModelStore()
+    @ObservedObject private var store = LayaModelStore.shared
     @State private var draft = LayaDraft.examples[0]
     @State private var prediction: LayaPrediction?
     @State private var failure: LayaFailure?

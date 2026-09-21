@@ -723,3 +723,28 @@ final class LayaDiagnosticsTests: XCTestCase {
         XCTAssertEqual(LayaTimings.stageNames.count, LayaTimings().values.count)
     }
 }
+
+@MainActor
+final class LayaDecidingTests: XCTestCase {
+    func testGreedyPicksFirstChoiceOption() async throws {
+        let question = LayaQuestion.choice(
+            instructions: "pick",
+            options: [LayaChoiceOption("alpha"), LayaChoiceOption("beta")]
+        )
+        let decision = try await LayaGreedyDecider().decide(state: "state", question: question)
+        guard case .choice(let label, let probabilities) = decision.answer else {
+            return XCTFail("expected a choice")
+        }
+        XCTAssertEqual(label, "alpha")
+        XCTAssertEqual(probabilities.map(\.probability), [1, 0])
+        XCTAssertEqual(decision.actProbability, 1)
+    }
+
+    func testGreedyNoulHolds() async throws {
+        let decision = try await LayaGreedyDecider().decide(
+            state: "state",
+            question: .noul(instructions: "keep going")
+        )
+        XCTAssertEqual(decision.answer, .noul(probability: 1))
+    }
+}

@@ -435,6 +435,10 @@ question, it returns a probability per option in one forward pass. It never
 generates tokens. The upstream runtime is Python; this experiment is a Swift
 port of its ANE path, so the same bundle runs on the phone.
 
+The download, tokenizer, and Core ML runtime live in `Shared/Laya` so Army
+List can load the same bundle (`LayaModelStore.shared`). The Laya experiment
+is the diagnostics UI on top of that store.
+
 The bundle is
 [`aac6fef/laya-multilingual-coreml-ane`](https://huggingface.co/aac6fef/laya-multilingual-coreml-ane)
 pinned to the 0.1.0 release revision. **Download model** fetches the same
