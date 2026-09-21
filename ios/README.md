@@ -516,9 +516,11 @@ tail ahead on the cycle without passing the food, and whether the food is
 reachable through empty cells. Those facts become the upstream compact prompt:
 a `choice` over `UP`/`DOWN`/`LEFT`/`RIGHT` with one description per direction,
 a `noul` "Is a safe route available?", and a `noul` "Is food reachable through
-empty cells?". The panel shows the raw direction probabilities with the
-proposed move marked, the executed move, dead-end risk (`1 − P(safe route)`),
-and food reachability.
+empty cells?". Under the board, each direction shows its probability, and
+the executed move is highlighted. When the shield replaces that pick, the
+model's direction is marked `proposed`. Dead-end risk (`1 − P(safe route)`),
+food reachability, and the planner's best move stay in **Estimates**, below
+the controls.
 
 The **Cycle safety shield** (on by default) replaces an unsafe top-1 pick with
 the most probable safe move and counts the intervention; the probabilities on
