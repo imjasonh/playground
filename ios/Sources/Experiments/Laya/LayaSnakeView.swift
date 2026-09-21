@@ -58,9 +58,10 @@ struct LayaSnakeView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(game.alive ? Color.green : Color.red)
                         .accessibilityIdentifier("layaSnakeStatus")
-                    Text("Round \(session.round)")
+                    Text("Round \(session.round), seed \(game.seed)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("layaSnakeRound")
                 }
             }
             VStack(alignment: .leading, spacing: 4) {

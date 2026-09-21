@@ -525,9 +525,13 @@ the most probable safe move and counts the intervention; the probabilities on
 screen are never altered. Off, the model's top-1 runs as is and the snake can
 die. **Decisions per second** paces the loop; **Max speed** moves as soon as
 each decision is ready. **Step** plays one move while paused; **Next round**
-starts the next seeded board and keeps the best score. Food placement uses a
-seeded generator, so a round replays identically on any device (not the same
-sequence as the Python demo, which uses `random.Random`).
+starts the next seeded board and keeps the best score. The first round of a
+launch takes a random seed from 1 to 9999. **Next round** uses the previous
+seed plus one. The seed is shown under the status and written to the
+diagnostics log with every round summary, so a round that died or hit a model
+error can be reproduced from the log. Food placement is a seeded SplitMix64
+generator, so a seed replays identically on any device, but not the same
+sequence as the Python demo, which uses `random.Random`.
 
 The ANE bundle is batch 1, so a move costs three `MLModel.prediction` passes.
 The performance rows show inference time for the three questions and the graph

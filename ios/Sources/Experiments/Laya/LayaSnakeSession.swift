@@ -28,6 +28,7 @@ final class LayaSnakeSession: ObservableObject {
     }
 
     static let rateRange: ClosedRange<Double> = 1...30
+    static let seedRange: ClosedRange<Int> = 1...9999
     static let windowSize = 20
     static let inferenceSampleLimit = 600
 
@@ -37,8 +38,8 @@ final class LayaSnakeSession: ObservableObject {
     private var recentSteps: [Date] = []
     private var inferenceSamples: [TimeInterval] = []
 
-    init(seed: Int = 7, predictor: @escaping Predictor, note: @escaping @MainActor (String) -> Void = { _ in }) {
-        game = LayaSnakeGame.standard(seed: seed)
+    init(seed: Int? = nil, predictor: @escaping Predictor, note: @escaping @MainActor (String) -> Void = { _ in }) {
+        game = LayaSnakeGame.standard(seed: seed ?? Int.random(in: Self.seedRange))
         self.predictor = predictor
         self.note = note
     }
@@ -66,7 +67,7 @@ final class LayaSnakeSession: ObservableObject {
         failure = nil
         isRunning = true
         recentSteps = []
-        note("snake round \(round) \(game.ticks == 0 ? "started" : "resumed") at tick \(game.ticks), target \(Int(targetRate))/s\(maxSpeed ? " (max speed)" : ""), shield \(guarded ? "on" : "off")")
+        note("snake round \(round) (seed \(game.seed)) \(game.ticks == 0 ? "started" : "resumed") at tick \(game.ticks), target \(Int(targetRate))/s\(maxSpeed ? " (max speed)" : ""), shield \(guarded ? "on" : "off")")
         task = Task { [weak self] in
             await self?.run()
         }
@@ -189,7 +190,7 @@ final class LayaSnakeSession: ObservableObject {
 
     var summaryLine: String {
         var parts = [
-            "snake round \(round): \(game.won ? "board clear" : game.alive ? "paused" : "died (\(game.deathReason?.rawValue ?? "collision"))")",
+            "snake round \(round) (seed \(game.seed)): \(game.won ? "board clear" : game.alive ? "paused" : "died (\(game.deathReason?.rawValue ?? "collision"))")",
             "score \(game.score)", "length \(game.body.count)/\(game.capacity)", "\(game.ticks) ticks",
             "\(inferenceCalls) inference calls", "\(interventions) shield interventions",
             "\(LayaFormat.seconds(elapsed)) elapsed",
