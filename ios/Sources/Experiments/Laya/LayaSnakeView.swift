@@ -1,9 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// Snake played by the loaded model, after `laya-coreml-snake`: the board on
-/// top, then the model's direction probabilities, risk and reachability
-/// estimates, and the per-move timings.
 struct LayaSnakeView: View {
     @ObservedObject var store: LayaModelStore
     @StateObject private var session: LayaSnakeSession
@@ -313,7 +310,6 @@ struct LayaSnakeView: View {
     }
 }
 
-/// The board, drawn with the terminal demo's palette.
 struct LayaSnakeBoard: View {
     let game: LayaSnakeGame
 
@@ -357,7 +353,6 @@ struct LayaSnakeBoard: View {
         }
     }
 
-    /// Head is near white; the body fades from bright to dark green toward the tail.
     static func bodyColor(index: Int, count: Int) -> Color {
         if index == 0 { return head }
         let fraction = 1 - Double(index) / Double(max(1, count))

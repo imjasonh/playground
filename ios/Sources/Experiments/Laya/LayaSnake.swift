@@ -1,9 +1,5 @@
 import Foundation
 
-// Port of `laya_coreml/snake/game.py` and the prompt half of `policy.py`.
-// Plain Foundation: the game rules, the cycle safety planner, the compact
-// prompt, and the shield live here; the model calls live in the session.
-
 /// The four moves, in the order the prompt lists them.
 enum LayaSnakeDirection: String, CaseIterable, Equatable {
     case up = "UP"
@@ -35,7 +31,6 @@ struct LayaSnakeCell: Hashable {
     }
 }
 
-/// What the planner knows about one candidate move (`MoveInfo`).
 struct LayaSnakeMove: Equatable {
     let direction: LayaSnakeDirection
     let legal: Bool
@@ -43,8 +38,18 @@ struct LayaSnakeMove: Equatable {
     let safe: Bool
     /// Cycle positions gained by this move.
     let advance: Int
-    let reason: String
+    let reason: LayaSnakeVerdict
     let eats: Bool
+}
+
+/// Why a move is legal or not, in the words the game-over line shows.
+enum LayaSnakeVerdict: String, Equatable {
+    case legal
+    case wall
+    case reverse
+    case body
+    case crossesTail = "would cross the tail"
+    case skipsFood = "would skip the food on the safe route"
 }
 
 /// SplitMix64. Seeded food placement so a round replays exactly on any device.
@@ -68,7 +73,6 @@ struct LayaSnakeRandom: Equatable {
     }
 }
 
-/// Deterministic Snake on a board with a Hamiltonian cycle (`SnakeGame`).
 struct LayaSnakeGame: Equatable {
     let width: Int
     let height: Int
@@ -85,7 +89,7 @@ struct LayaSnakeGame: Equatable {
     private(set) var ticks = 0
     private(set) var alive = true
     private(set) var won = false
-    private(set) var deathReason: String?
+    private(set) var deathReason: LayaSnakeVerdict?
 
     var capacity: Int { width * height }
     var head: LayaSnakeCell { body[0] }
@@ -103,8 +107,6 @@ struct LayaSnakeGame: Equatable {
         self.init(width: width, height: height, seed: seed, initialLength: initialLength, cycle: cycle)
     }
 
-    /// The demo board, 24 x 16 with a length-6 snake. Cannot fail, so callers
-    /// that have no way to surface an error (view state) can use it directly.
     static func standard(seed: Int) -> LayaSnakeGame {
         LayaSnakeGame(
             width: standardWidth, height: standardHeight, seed: seed, initialLength: standardInitialLength,
@@ -131,7 +133,6 @@ struct LayaSnakeGame: Equatable {
         food = spawnFood()
     }
 
-    /// Visits each square once with adjacent steps, including the closing edge.
     static func hamiltonianCycle(width: Int, height: Int) throws -> [LayaSnakeCell] {
         guard min(width, height) >= 4, width % 2 == 0 || height % 2 == 0 else {
             throw LayaError.invalidQuestion("Board dimensions must be >= 4, with at least one even dimension")
@@ -142,9 +143,8 @@ struct LayaSnakeGame: Equatable {
         return serpentineCycle(width: width, height: height)
     }
 
-    /// Rows 1..width-1 snake back and forth, then column 0 returns to the origin.
-    /// Requires an even `height`.
     private static func serpentineCycle(width: Int, height: Int) -> [LayaSnakeCell] {
+        precondition(height.isMultiple(of: 2), "serpentine cycle needs an even height")
         var path = [LayaSnakeCell(0, 0)]
         for y in 0..<height {
             let xs: [Int] = y % 2 == 0 ? Array(1..<width) : Array(stride(from: width - 1, through: 1, by: -1))
@@ -154,7 +154,6 @@ struct LayaSnakeGame: Equatable {
         return path
     }
 
-    /// Places the snake and the food directly, for tests and replays.
     mutating func place(body: [LayaSnakeCell], food: LayaSnakeCell?) throws {
         guard body.count >= 2, body.allSatisfy(contains), Set(body).count == body.count else {
             throw LayaError.invalidQuestion("A placed body needs at least two distinct on-board cells.")
@@ -178,17 +177,15 @@ struct LayaSnakeGame: Equatable {
         (0..<width).contains(cell.x) && (0..<height).contains(cell.y)
     }
 
-    /// `"legal"`, or why the move kills: `"wall"`, `"reverse"`, `"body"`.
-    func legalReason(_ direction: LayaSnakeDirection) -> String {
+    func legalReason(_ direction: LayaSnakeDirection) -> LayaSnakeVerdict {
         let cell = target(direction)
-        guard contains(cell) else { return "wall" }
-        if cell == body[1] { return "reverse" }
+        guard contains(cell) else { return .wall }
+        if cell == body[1] { return .reverse }
         var occupied = Set(body)
         if cell != food, let tail = body.last {
-            // The tail moves on a non-growing step.
             occupied.remove(tail)
         }
-        return occupied.contains(cell) ? "body" : "legal"
+        return occupied.contains(cell) ? .body : .legal
     }
 
     /// Every direction with the planner's verdict. Empty once the game is over.
@@ -199,26 +196,24 @@ struct LayaSnakeGame: Equatable {
         let foodDistance = food.flatMap { indices[$0] }.map { ($0 - headIndex + capacity) % capacity } ?? 0
         return LayaSnakeDirection.allCases.map { direction in
             var reason = legalReason(direction)
-            let legal = reason == "legal"
+            let legal = reason == .legal
             let cell = target(direction)
             let advance = ((indices[cell] ?? headIndex) - headIndex + capacity) % capacity
             let eats = cell == food
             var safe = legal
             if safe, advance > tailDistance || (advance == tailDistance && eats) {
                 safe = false
-                reason = "would cross the tail"
+                reason = .crossesTail
             }
             if safe, advance == 0 || advance > foodDistance {
                 safe = false
-                reason = "would skip the food on the safe route"
+                reason = .skipsFood
             }
             return LayaSnakeMove(direction: direction, legal: legal, safe: safe, advance: advance, reason: reason, eats: eats)
         }
     }
 
-    /// Flood fill from the head over cells the body does not occupy.
-    ///
-    /// - Returns: Whether the food is in that region, and the region's size (head included).
+    /// Whether the food shares the head's empty region, and that region's size (head included).
     func foodReachability() -> (reachable: Bool, space: Int) {
         var blocked = Set(body)
         blocked.remove(head)
@@ -247,7 +242,7 @@ struct LayaSnakeGame: Equatable {
         }
         ticks += 1
         let reason = legalReason(direction)
-        guard reason == "legal" else {
+        guard reason == .legal else {
             alive = false
             deathReason = reason
             return false
@@ -268,7 +263,6 @@ struct LayaSnakeGame: Equatable {
         return false
     }
 
-    /// The body still sits on the cycle in order (the invariant the shield keeps).
     func cycleOrderValid() -> Bool {
         let order = body.reversed().map { indices[$0] ?? 0 }
         let distances = zip(order, order.dropFirst()).map { ($1 - $0 + capacity) % capacity }
@@ -276,7 +270,6 @@ struct LayaSnakeGame: Equatable {
     }
 }
 
-/// The three questions for one board, plus the planner facts behind them.
 struct LayaSnakeTurn: Equatable {
     let state: String
     let moveQuestion: LayaQuestion
@@ -289,7 +282,6 @@ struct LayaSnakeTurn: Equatable {
     let openCells: Int
 }
 
-/// One decided move (`Decision`), with the model's raw probabilities kept.
 struct LayaSnakeDecision: Equatable {
     let probabilities: [LayaSnakeDirection: Double]
     let proposed: LayaSnakeDirection
@@ -309,25 +301,19 @@ struct LayaSnakeDecision: Equatable {
     var inputTokens = 0
 }
 
-/// The compact prompt and the shield from `LayaPolicy.decide`.
 enum LayaSnakePolicy {
     static let moveInstructions = "Choose the best safe move toward food."
     static let riskInstructions = "Is a safe route available?"
     static let foodInstructions = "Is food reachable through empty cells?"
 
-    /// Builds the prompt for `game`. With the shield on, a board with no safe
-    /// move is an invariant failure, as upstream.
+    /// With the shield on, a board with no safe move throws.
     static func turn(for game: LayaSnakeGame, guarded: Bool) throws -> LayaSnakeTurn {
         let moves = game.moves()
         let safe = moves.filter(\.safe)
         if safe.isEmpty, guarded {
             throw LayaError.model("Cycle safety invariant violated: no safe action")
         }
-        // Python's max() keeps the first maximum in direction order.
-        var preferred: LayaSnakeMove?
-        for move in safe where preferred.map({ move.advance > $0.advance }) ?? true {
-            preferred = move
-        }
+        let preferred = safe.max { $0.advance < $1.advance }
         let (reachable, space) = game.foodReachability()
         let options = moves.map { move -> LayaChoiceOption in
             let text: String
@@ -400,12 +386,8 @@ enum LayaSnakePolicy {
         )
     }
 
-    /// First maximum in `candidates` order, like Python's `max(key=)`.
+    /// First maximum in `candidates` order.
     private static func argmax(_ candidates: [LayaSnakeDirection], _ probabilities: [LayaSnakeDirection: Double]) -> LayaSnakeDirection {
-        var best = candidates.first ?? .up
-        for candidate in candidates.dropFirst() where (probabilities[candidate] ?? 0) > (probabilities[best] ?? 0) {
-            best = candidate
-        }
-        return best
+        candidates.max { (probabilities[$0] ?? 0) < (probabilities[$1] ?? 0) } ?? .up
     }
 }

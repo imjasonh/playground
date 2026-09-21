@@ -1,8 +1,5 @@
 import Foundation
 
-/// One Snake run driven by the loaded model: the game, the last decision,
-/// pacing, and the counters the panel shows. The model is reached through a
-/// closure so the session does not depend on the store.
 @MainActor
 final class LayaSnakeSession: ObservableObject {
     typealias Predictor = @MainActor (String, LayaQuestion) async throws -> LayaPrediction
@@ -24,7 +21,6 @@ final class LayaSnakeSession: ObservableObject {
 
     /// Target decisions per second while paced.
     @Published var targetRate: Double = 6
-    /// Move as soon as each fresh decision is ready.
     @Published var maxSpeed = false
     /// Restrict executed moves to cycle-safe progress; off runs raw top-1.
     @Published var guarded = true {
@@ -50,7 +46,7 @@ final class LayaSnakeSession: ObservableObject {
     var statusText: String {
         if let failure { return "Stopped: \(failure.message)" }
         if game.won { return "Board clear" }
-        if !game.alive { return "Game over: \(game.deathReason ?? "collision")" }
+        if !game.alive { return "Game over: \(game.deathReason?.rawValue ?? "collision")" }
         if isRunning { return "Live" }
         return game.ticks == 0 ? "Ready" : "Paused"
     }
@@ -84,13 +80,11 @@ final class LayaSnakeSession: ObservableObject {
         stepsPerSecond = 0
     }
 
-    /// Decides and plays one move while paused.
     func stepOnce() async {
         guard !isRunning, !isDeciding, !game.finished else { return }
         await step()
     }
 
-    /// Starts the next seeded round and keeps the best score.
     func nextRound() {
         pause()
         if game.ticks > 0 {
@@ -160,7 +154,7 @@ final class LayaSnakeSession: ObservableObject {
             recordRate()
             recordInference(decided.inferenceSeconds)
             if !game.alive {
-                note("snake died: \(game.deathReason ?? "collision") after \(game.ticks) ticks; proposed \(decided.proposed.rawValue), executed \(decided.executed.rawValue)")
+                note("snake died: \(game.deathReason?.rawValue ?? "collision") after \(game.ticks) ticks; proposed \(decided.proposed.rawValue), executed \(decided.executed.rawValue)")
             }
         } catch {
             let failure = LayaFailure(stage: "snake", error: error)
@@ -195,7 +189,7 @@ final class LayaSnakeSession: ObservableObject {
 
     var summaryLine: String {
         var parts = [
-            "snake round \(round): \(game.won ? "board clear" : game.alive ? "paused" : "died (\(game.deathReason ?? "collision"))")",
+            "snake round \(round): \(game.won ? "board clear" : game.alive ? "paused" : "died (\(game.deathReason?.rawValue ?? "collision"))")",
             "score \(game.score)", "length \(game.body.count)/\(game.capacity)", "\(game.ticks) ticks",
             "\(inferenceCalls) inference calls", "\(interventions) shield interventions",
             "\(LayaFormat.seconds(elapsed)) elapsed",

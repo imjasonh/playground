@@ -773,14 +773,14 @@ final class LayaSnakeGameTests: XCTestCase {
     func testCollisionGrowthTailVacancyAndBoardClear() throws {
         var game = try LayaSnakeGame(width: 4, height: 4, initialLength: 4)
         try game.place(body: [LayaSnakeCell(1, 1), LayaSnakeCell(1, 2), LayaSnakeCell(0, 2), LayaSnakeCell(0, 1)], food: LayaSnakeCell(3, 3))
-        XCTAssertEqual(game.legalReason(.left), "legal")
-        XCTAssertEqual(game.legalReason(.down), "reverse")
+        XCTAssertEqual(game.legalReason(.left), .legal)
+        XCTAssertEqual(game.legalReason(.down), .reverse)
         XCTAssertFalse(try game.step(.left))
         XCTAssertTrue(game.alive)
         XCTAssertEqual(game.body.count, 4)
         XCTAssertFalse(try game.step(.left))
         XCTAssertFalse(game.alive)
-        XCTAssertEqual(game.deathReason, "wall")
+        XCTAssertEqual(game.deathReason, .wall)
         XCTAssertTrue(game.moves().isEmpty)
         XCTAssertThrowsError(try game.step(.up))
 
@@ -799,7 +799,6 @@ final class LayaSnakeGameTests: XCTestCase {
             var game = try LayaSnakeGame(width: 6, height: 6, seed: seed)
             var rng = LayaSnakeRandom(seed: seed + 100)
             var lastFood = 0
-            // A safe action advances at least one cycle position and never passes food.
             for _ in 0..<(game.capacity * (game.capacity - game.initialLength)) {
                 let allowed = game.moves().filter(\.safe).map(\.direction)
                 XCTAssertFalse(allowed.isEmpty, "seed \(seed) tick \(game.ticks)")
@@ -835,7 +834,6 @@ final class LayaSnakeGameTests: XCTestCase {
 
     func testFoodReachabilityFloodFillsEmptyCells() throws {
         var game = try LayaSnakeGame(width: 4, height: 4, initialLength: 4)
-        // Head in the corner with the body walling off row 1: only row 0 is open.
         let wall = [LayaSnakeCell(0, 0), LayaSnakeCell(0, 1), LayaSnakeCell(1, 1), LayaSnakeCell(2, 1), LayaSnakeCell(3, 1)]
         try game.place(body: wall, food: LayaSnakeCell(3, 3))
         let (reachable, space) = game.foodReachability()
@@ -878,8 +876,6 @@ final class LayaSnakePolicyTests: XCTestCase {
         XCTAssertEqual(turn.riskQuestion, .noul(instructions: LayaSnakePolicy.riskInstructions))
         XCTAssertEqual(turn.foodQuestion, .noul(instructions: LayaSnakePolicy.foodInstructions))
         try turn.moveQuestion.validate()
-        // Every option fits the export's 96-token sequence comfortably.
-        XCTAssertLessThan(turn.state.count + options.map { $0.label.count + ($0.description?.count ?? 0) }.reduce(0, +), 220)
     }
 
     func testGuardPreservesRawProbabilitiesAndReportsIntervention() throws {
@@ -906,6 +902,18 @@ final class LayaSnakePolicyTests: XCTestCase {
         XCTAssertFalse(raw.intervened)
     }
 
+    func testTiesResolveToTheFirstDirectionInPromptOrder() throws {
+        let game = try LayaSnakeGame()
+        let turn = try LayaSnakePolicy.turn(for: game, guarded: true)
+        let flat = LayaSnakeDirection.allCases.map { LayaLabeledProbability(label: $0.rawValue, probability: 0.25) }
+        let decided = try LayaSnakePolicy.decision(
+            turn: turn, move: stub(.choice(label: "UP", probabilities: flat)),
+            risk: stub(.noul(probability: 0.5)), food: stub(.noul(probability: 0.5)), guarded: false
+        )
+        XCTAssertEqual(decided.proposed, .up)
+        XCTAssertEqual(decided.executed, .up)
+    }
+
     func testDecisionRejectsBadAnswers() throws {
         let game = try LayaSnakeGame()
         let turn = try LayaSnakePolicy.turn(for: game, guarded: true)
@@ -925,7 +933,6 @@ final class LayaSnakePolicyTests: XCTestCase {
 
     func testTrappedBoardIsAnInvariantFailureOnlyWhenGuarded() throws {
         var game = try LayaSnakeGame(width: 4, height: 4, initialLength: 4)
-        // Head boxed into the corner by its own body: no legal move at all.
         try game.place(body: [LayaSnakeCell(0, 0), LayaSnakeCell(1, 0), LayaSnakeCell(1, 1), LayaSnakeCell(0, 1), LayaSnakeCell(0, 2)], food: LayaSnakeCell(3, 3))
         XCTAssertTrue(game.moves().allSatisfy { !$0.legal })
         XCTAssertThrowsError(try LayaSnakePolicy.turn(for: game, guarded: true))

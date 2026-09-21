@@ -193,7 +193,6 @@ final class LayaModelStore: ObservableObject {
         append("FAILED " + failure.report.replacingOccurrences(of: "\n", with: " | "))
     }
 
-    /// Appends a line from another driver of the model, such as the Snake demo.
     func note(_ message: String) {
         append(message)
     }
@@ -340,8 +339,7 @@ final class LayaModelStore: ObservableObject {
     /// Answers one question on a background task.
     ///
     /// - Parameter recording: Whether to keep the prediction in the latency
-    ///   history and log its timings. Drivers that ask many questions per
-    ///   second, like the Snake demo, pass `false` and log their own summary.
+    ///   history and log its timings.
     func predict(state: String, question: LayaQuestion, recording: Bool = true) async throws -> LayaPrediction {
         guard let runtime else {
             throw LayaError.model("The model is not loaded.")
