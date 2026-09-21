@@ -38,12 +38,13 @@ struct ArmyListConstructionResult: Equatable {
 enum ArmyListDecisionController {
     /// Laya when the shared graph is loaded; otherwise the first-option greedy
     /// decider (options are already ranked).
-    static func activeDecider(store: LayaModelStore = .shared) -> any LayaDeciding {
-        store.isReady ? store : LayaGreedyDecider()
+    static func activeDecider(store: LayaModelStore? = nil) -> any LayaDeciding {
+        let store = store ?? LayaModelStore.shared
+        return store.isReady ? store : LayaGreedyDecider()
     }
 
-    static func usedLaya(store: LayaModelStore = .shared) -> Bool {
-        store.isReady
+    static func usedLaya(store: LayaModelStore? = nil) -> Bool {
+        (store ?? LayaModelStore.shared).isReady
     }
 
     static func build(
@@ -907,8 +908,9 @@ enum ArmyListDecisionController {
         onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
     ) -> Bool {
         let counts = Dictionary(grouping: workspace.list.units, by: \.datasheetID)
-        guard let over = counts.first(where: { $0.value.count > 1 }) else { return false }
-        let victim = over.value.last!
+        guard let over = counts.first(where: { $0.value.count > 1 }),
+              let victim = over.value.last
+        else { return false }
         let name = workspace.catalog.datasheet(id: victim.datasheetID)?.name ?? victim.datasheetID
         _ = ArmyListChatToolExecutor.removeUnit(workspace: workspace, unitID: victim.id.uuidString)
         let decision = LayaGreedyDecider.choice(

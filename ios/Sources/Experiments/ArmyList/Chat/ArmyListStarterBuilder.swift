@@ -172,11 +172,12 @@ enum ArmyListStarterBuilder {
         theme: String,
         userName: String?,
         decider: (any LayaDeciding)? = nil,
-        store: LayaModelStore = .shared,
+        store: LayaModelStore? = nil,
         onProgress: (@MainActor (ArmyListStarterBuildProgress) -> Void)? = nil,
         onStep: (@MainActor (ArmyListDecisionStep) -> Void)? = nil
     ) async -> ArmyListDocument? {
         if Task.isCancelled { return nil }
+        let store = store ?? LayaModelStore.shared
         onProgress?(ArmyListStarterBuildProgress(phase: .preparing))
         if store.isDownloaded, !store.isReady {
             await store.prepare()

@@ -450,9 +450,10 @@ final class ArmyListChatRuntime: ObservableObject {
     func runConstruction(
         _ action: ConstructionAction,
         theme: String,
-        store: LayaModelStore = .shared
+        store: LayaModelStore? = nil
     ) async {
         guard !isRunning else { return }
+        let store = store ?? LayaModelStore.shared
         beginConstruction(title: action.title)
         lastConstructionStep = nil
         defer {
