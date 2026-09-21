@@ -299,24 +299,39 @@ final class ArmyListChatToolTests: XCTestCase {
         )
     }
 
-    func testBuildPromptFoldsInTheme() {
-        let prompt = ArmyListChatPromptComposer.buildPrompt(theme: "night raiders")
-        XCTAssertTrue(prompt.contains("applyRosterPlan"))
-        XCTAssertTrue(prompt.contains("Theme to honor: night raiders"))
-        XCTAssertTrue(prompt.contains("as close to the points limit"))
+    func testLanguagePromptsStayOnThemeOrWeaknesses() {
+        XCTAssertTrue(ArmyListChatPromptComposer.themePrompt.contains("Theme only"))
+        XCTAssertTrue(ArmyListChatPromptComposer.themePrompt.contains("setListName"))
+        XCTAssertTrue(ArmyListChatPromptComposer.weaknessesPrompt.contains("Weaknesses only"))
+        XCTAssertTrue(ArmyListChatPromptComposer.weaknessesPrompt.contains("getListSummary"))
+        XCTAssertFalse(ArmyListChatPromptComposer.themePrompt.contains("applyRosterPlan"))
+        XCTAssertFalse(ArmyListChatPromptComposer.weaknessesPrompt.contains("addUnit"))
     }
 
-    func testFillPointsPromptFoldsInTheme() {
-        let prompt = ArmyListChatPromptComposer.fillPointsPrompt(theme: "veteran survivors")
-        XCTAssertTrue(prompt.contains("as completely as possible"))
-        XCTAssertTrue(prompt.contains("Theme to honor: veteran survivors"))
-        XCTAssertTrue(prompt.contains("as close to the points limit"))
-        XCTAssertFalse(prompt.contains("addUnit a few"))
+    func testChatFoundationToolsAreLanguageOnly() {
+        let runtime = ArmyListChatRuntime(workspace: workspace)
+        XCTAssertEqual(runtime.foundationToolNames, ["getListSummary", "setListName"])
     }
 
-    func testPromptsOmitThemeClauseWhenBlank() {
-        XCTAssertFalse(ArmyListChatPromptComposer.buildPrompt(theme: "   ").contains("Theme to honor"))
-        XCTAssertFalse(ArmyListChatPromptComposer.fillPointsPrompt(theme: "").contains("Theme to honor"))
+    func testRunConstructionFillWritesTranscript() async {
+        _ = ArmyListChatToolExecutor.setDetachments(
+            workspace: workspace,
+            detachmentIDsCSV: "leagues-of-votann--brandfast-oathband"
+        )
+        _ = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "leagues-of-votann--kahl",
+            models: 1
+        )
+        let runtime = ArmyListChatRuntime(workspace: workspace)
+        await runtime.runConstruction(.fill, theme: "hearthkyn")
+        XCTAssertEqual(runtime.transcript.last { $0.kind == .user }?.text, "Fill points")
+        XCTAssertTrue(
+            runtime.transcript.contains { $0.kind == .assistant && $0.text.contains("Filled") },
+            "\(runtime.transcript.map(\.text))"
+        )
+        XCTAssertFalse(runtime.isRunning)
+        XCTAssertGreaterThan(runtime.workspace.validation.totalPoints, 0)
     }
 
     func testStarterPromptListsFactsDetachmentsAndUnits() {
@@ -674,60 +689,28 @@ final class ArmyListChatToolTests: XCTestCase {
     }
 
     func testStarterBuildProgressAdvancesAcrossPhases() {
-        let maxAttempts = 3
-        let preparing = ArmyListStarterBuildProgress(
-            attempt: 0,
-            maxAttempts: maxAttempts,
-            phase: .preparing
-        )
-        let generating = ArmyListStarterBuildProgress(
-            attempt: 1,
-            maxAttempts: maxAttempts,
-            phase: .generating
-        )
-        let applying = ArmyListStarterBuildProgress(
-            attempt: 1,
-            maxAttempts: maxAttempts,
-            phase: .applyingRoster
-        )
-        let checking = ArmyListStarterBuildProgress(
-            attempt: 1,
-            maxAttempts: maxAttempts,
-            phase: .checking
-        )
-        let secondAttempt = ArmyListStarterBuildProgress(
-            attempt: 2,
-            maxAttempts: maxAttempts,
-            phase: .generating
-        )
-        let finishing = ArmyListStarterBuildProgress(
-            attempt: maxAttempts,
-            maxAttempts: maxAttempts,
-            phase: .finishing
-        )
+        let preparing = ArmyListStarterBuildProgress(phase: .preparing)
+        let choosing = ArmyListStarterBuildProgress(phase: .choosingDetachment)
+        let adding = ArmyListStarterBuildProgress(phase: .addingUnits)
+        let attaching = ArmyListStarterBuildProgress(phase: .attaching)
+        let enhancing = ArmyListStarterBuildProgress(phase: .assigningEnhancements)
+        let finishing = ArmyListStarterBuildProgress(phase: .finishing)
 
-        XCTAssertLessThan(preparing.fractionComplete, generating.fractionComplete)
-        XCTAssertLessThan(generating.fractionComplete, applying.fractionComplete)
-        XCTAssertLessThan(applying.fractionComplete, checking.fractionComplete)
-        XCTAssertLessThan(checking.fractionComplete, secondAttempt.fractionComplete)
+        XCTAssertLessThan(preparing.fractionComplete, choosing.fractionComplete)
+        XCTAssertLessThan(choosing.fractionComplete, adding.fractionComplete)
+        XCTAssertLessThan(adding.fractionComplete, attaching.fractionComplete)
+        XCTAssertLessThan(attaching.fractionComplete, enhancing.fractionComplete)
+        XCTAssertLessThan(enhancing.fractionComplete, finishing.fractionComplete)
         XCTAssertEqual(finishing.fractionComplete, 1.0)
     }
 
-    func testStarterBuildProgressStatusTextMentionsAttemptCount() {
-        let progress = ArmyListStarterBuildProgress(
-            attempt: 2,
-            maxAttempts: 3,
-            phase: .generating
-        )
-        XCTAssertEqual(progress.statusText, "Generating roster (attempt 2 of 3)…")
+    func testStarterBuildProgressStatusTextNamesPhase() {
+        let progress = ArmyListStarterBuildProgress(phase: .addingUnits)
+        XCTAssertEqual(progress.statusText, "Adding units…")
     }
 
     func testStarterBuildTrickleCreepsUpwardWithinPhase() {
-        let milestone = ArmyListStarterBuildProgress(
-            attempt: 1,
-            maxAttempts: 3,
-            phase: .generating
-        )
+        let milestone = ArmyListStarterBuildProgress(phase: .addingUnits)
         var value = milestone.fractionComplete
         var ticks = 0
         while ticks < 200 {
@@ -736,26 +719,16 @@ final class ArmyListChatToolTests: XCTestCase {
             value = next
             ticks += 1
         }
-        // Creeps up but never claims completion mid-phase.
         XCTAssertGreaterThan(value, milestone.fractionComplete)
         XCTAssertLessThan(value, 0.95)
     }
 
     func testStarterBuildTrickleSnapsToFloorAndFinish() {
-        let generating = ArmyListStarterBuildProgress(
-            attempt: 2,
-            maxAttempts: 3,
-            phase: .generating
-        )
-        // A stale low displayed value snaps up to the new milestone floor.
-        let snapped = ArmyListStarterBuildProgress.trickle(from: 0.05, milestone: generating)
-        XCTAssertGreaterThanOrEqual(snapped, generating.fractionComplete)
+        let adding = ArmyListStarterBuildProgress(phase: .addingUnits)
+        let snapped = ArmyListStarterBuildProgress.trickle(from: 0.05, milestone: adding)
+        XCTAssertGreaterThanOrEqual(snapped, adding.fractionComplete)
 
-        let finishing = ArmyListStarterBuildProgress(
-            attempt: 3,
-            maxAttempts: 3,
-            phase: .finishing
-        )
+        let finishing = ArmyListStarterBuildProgress(phase: .finishing)
         XCTAssertEqual(
             ArmyListStarterBuildProgress.trickle(from: 0.5, milestone: finishing),
             1.0

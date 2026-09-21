@@ -142,6 +142,7 @@ ios/
 ├── fastlane/                # match lists host + extension ids
 ├── Shared/T9/               # shared by in-app T9 demo + keyboard extension
 ├── Shared/RideMonitor/      # live snapshot + ActivityAttributes + sparkline view
+├── Shared/Laya/             # typed-decision runtime; Laya experiment + Army List
 ├── T9Keyboard/              # Custom Keyboard appex (own Bundle ID)
 ├── RideMonitorWidget/       # Live Activity widget extension (own Bundle ID)
 ├── RideMonitorWatch/        # watchOS companion app (own Bundle ID)

@@ -1,15 +1,16 @@
 import SwiftUI
 import UIKit
 
-/// On-device chat over the current army list (Foundation Models + validator tools).
+/// Construction chips plus optional Foundation Models Theme / Weaknesses.
 struct ArmyListChatView: View {
     @Binding var list: ArmyListDocument
     let catalog: ArmyCatalog
     let store: ArmyListStore
 
     @StateObject private var runtime: ArmyListChatRuntime
+    @ObservedObject private var laya = LayaModelStore.shared
     @State private var draft = ""
-    /// A few words of theme the build/fill prompts fold into list generation.
+    /// A few words of theme Build / Fill fold into legal-move ranking.
     @State private var theme = ""
     @FocusState private var promptFocused: Bool
     @State private var exportShare: ExportShareItem?
@@ -28,58 +29,50 @@ struct ArmyListChatView: View {
         _runtime = StateObject(wrappedValue: ArmyListChatRuntime(workspace: workspace))
     }
 
+    private enum ChipKind {
+        case construct(ArmyListChatRuntime.ConstructionAction)
+        case language(String)
+    }
+
     private struct PromptChip: Identifiable {
         let id: String
         let title: String
-        let text: String
+        let kind: ChipKind
     }
 
     private var prompts: [PromptChip] {
         [
-            PromptChip(
-                id: "build-list",
-                title: "Build list",
-                text: ArmyListChatPromptComposer.buildPrompt(theme: theme)
-            ),
-            PromptChip(
-                id: "fix-errors",
-                title: "Fix errors",
-                text: """
-                Fix validation ERRORs only. Call getListSummary first. \
-                Keep the current battle size — never call setBattleSize. \
-                Prefer removeUnit, setUnitModels, setDetachments, setWarlord, or attachCharacter. \
-                Do not add more copies of a datasheet than the battle-size duplicate limit (addUnit will reject illegal copies). \
-                After each tool call, read Status; stop when LEGAL or explain what you cannot fix without changing battle size.
-                """
-            ),
-            PromptChip(
-                id: "fill-points",
-                title: "Fill points",
-                text: ArmyListChatPromptComposer.fillPointsPrompt(theme: theme)
-            ),
+            PromptChip(id: "build-list", title: "Build list", kind: .construct(.build)),
+            PromptChip(id: "fix-errors", title: "Fix errors", kind: .construct(.fix)),
+            PromptChip(id: "fill-points", title: "Fill points", kind: .construct(.fill)),
             PromptChip(
                 id: "weaknesses",
                 title: "Weaknesses",
-                text: "Weaknesses only (ignore prior theme/name talk): what matchups or unit types will give this list trouble? Opinion only. Call getListSummary for the facts."
+                kind: .language(ArmyListChatPromptComposer.weaknessesPrompt)
             ),
             PromptChip(
                 id: "theme",
                 title: "Theme",
-                text: "Theme only: suggest a good army name and a paint color scheme for this list. If the user likes a name, call setListName. Do not discuss matchup weaknesses."
+                kind: .language(ArmyListChatPromptComposer.themePrompt)
             ),
         ]
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            statusBar
+            if !runtime.isModelAvailable {
+                languageGate
+            }
+            if !laya.isReady {
+                layaStatus
+            }
+            transcript
+            lastDecision
+            themeField
+            promptChips
             if runtime.isModelAvailable {
-                statusBar
-                transcript
-                themeField
-                promptChips
                 composer
-            } else {
-                unavailablePane
             }
         }
         .navigationTitle("List chat")
@@ -135,6 +128,11 @@ struct ArmyListChatView: View {
         } message: { message in
             Text(message)
         }
+        .task {
+            if laya.isDownloaded {
+                await laya.prepare()
+            }
+        }
         .onAppear {
             runtime.workspace.list = list
             runtime.refreshModelStatus()
@@ -168,7 +166,16 @@ struct ArmyListChatView: View {
                 errors: result.errors.count,
                 warnings: result.warnings.count
             )
-            contextRing
+            Text(laya.isReady ? "Laya" : "Greedy")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("armyListChatEngine")
+            if runtime.isModelAvailable {
+                contextRing
+            } else if runtime.isRunning {
+                ProgressView()
+                    .controlSize(.mini)
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
@@ -327,8 +334,54 @@ struct ArmyListChatView: View {
         }
     }
 
-    /// Optional theme words that Build list and Fill points fold into the
-    /// generation prompt (for example "veteran survivors" or "night raiders").
+    private var languageGate: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(runtime.modelGate.title)
+                .font(.subheadline.weight(.semibold))
+            Text(runtime.armyListGateDetail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let action = runtime.modelGate.primaryAction {
+                Button(action.title) {
+                    Task { await runtime.performModelGateAction(action) }
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("armyListChatModelGateAction")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.10))
+        .accessibilityIdentifier("armyListChatLanguageGate")
+    }
+
+    private var layaStatus: some View {
+        LayaModelStatusRow(
+            store: laya,
+            statusIdentifier: "armyListChatLayaStatus",
+            downloadIdentifier: "armyListChatLayaDownload"
+        )
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+
+    private var lastDecision: some View {
+        Group {
+            if let step = runtime.lastConstructionStep {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(step.applied)
+                        .font(.subheadline)
+                    LayaDecisionBars(decision: step.decision)
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .accessibilityIdentifier("armyListChatLastDecision")
+            }
+        }
+    }
+
+    /// Optional theme words that Build and Fill fold into legal-move ranking.
     private var themeField: some View {
         HStack(spacing: 8) {
             Image(systemName: "paintpalette")
@@ -362,16 +415,21 @@ struct ArmyListChatView: View {
             HStack(spacing: 8) {
                 ForEach(prompts) { chip in
                     Button(chip.title) {
-                        // Copy before Task — deferred capture of ForEach locals can
-                        // stick on the last chip (Theme) and ignore Weaknesses/etc.
+                        // Copy before Task. Deferred capture of ForEach locals can
+                        // stick on the last chip (Theme) and ignore Weaknesses.
                         let title = chip.title
-                        let prompt = chip.text
+                        let kind = chip.kind
                         Task {
-                            await runtime.send(prompt: prompt, displayText: title)
+                            switch kind {
+                            case .construct(let action):
+                                await runtime.runConstruction(action, theme: theme)
+                            case .language(let prompt):
+                                await runtime.send(prompt: prompt, displayText: title)
+                            }
                         }
                     }
                     .buttonStyle(.bordered)
-                    .disabled(runtime.isRunning)
+                    .disabled(chipDisabled(chip))
                     .accessibilityIdentifier("armyListChatChip-\(chip.id)")
                 }
             }
@@ -402,80 +460,24 @@ struct ArmyListChatView: View {
         .background(Color(uiColor: .secondarySystemBackground))
     }
 
-    private var unavailablePane: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "sparkles")
-                .font(.largeTitle)
-                .foregroundStyle(.secondary)
-                .accessibilityHidden(true)
-            Text(runtime.modelGate.title)
-                .font(.headline)
-                .multilineTextAlignment(.center)
-            Text(runtime.armyListGateDetail)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            if let action = runtime.modelGate.primaryAction {
-                Button(action.title) {
-                    Task { await runtime.performModelGateAction(action) }
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityIdentifier("armyListChatModelGateAction")
-            }
-            Text("You can still build and validate lists without chat.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button {
-                exportConversation()
-            } label: {
-                Label("Export JSON", systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(.bordered)
-            .accessibilityIdentifier("armyListChatExportUnavailable")
+    private func chipDisabled(_ chip: PromptChip) -> Bool {
+        if runtime.isRunning { return true }
+        if case .language = chip.kind {
+            return !runtime.isModelAvailable
         }
-        .padding()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityIdentifier("armyListChatUnavailable")
+        return false
     }
 }
 
-/// Builds the Build list / Fill points prompts, folding in optional theme words.
+/// Theme and Weaknesses prompts sent to Foundation Models.
 ///
 /// Kept separate from the view so prompt composition is unit-testable.
 enum ArmyListChatPromptComposer {
-    /// Shared guidance: spend up to the battle-size cap while honoring theme.
-    static let maximizePointsGuidance =
-        "Spend as close to the points limit as possible without going over — aim to leave at most ~25 pts unused unless no legal unit fits."
+    static let weaknessesPrompt =
+        "Weaknesses only (ignore prior theme/name talk): what matchups or unit types will give this list trouble? Opinion only. Call getListSummary for the facts."
 
-    /// A trailing clause instructing the model to honor the user's theme, or
-    /// empty when no theme was given.
-    static func themeClause(_ theme: String) -> String {
-        let trimmed = theme.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-        return " Theme to honor: \(trimmed). Choose units, detachment, and army name that fit this theme while \(maximizePointsGuidance.lowercased())"
-    }
-
-    /// From-scratch build. One `applyRosterPlan` call to avoid context blowouts.
-    static func buildPrompt(theme: String) -> String {
-        "Build a fresh, legal army list from scratch for this faction at the current battle size. "
-            + maximizePointsGuidance + " "
-            + "Call getListSummary first for the faction and points limit, use searchCatalog as needed, "
-            + "then call applyRosterPlan ONCE with a full plan (battle size, detachments, units, name). "
-            + "Do not loop addUnit."
-            + themeClause(theme)
-    }
-
-    /// Fill remaining points on top of the existing roster.
-    static func fillPointsPrompt(theme: String) -> String {
-        "Fill remaining points on this list as completely as possible while keeping it thematic. "
-            + maximizePointsGuidance + " "
-            + "Keep battle size and existing units. Call getListSummary, note pts remaining, "
-            + "then addUnit thematic datasheets until remaining points are too small for another legal unit. "
-            + "Check copies N/limit in searchCatalog. Never exceed the points limit or duplicate caps. Never call setBattleSize. "
-            + "Re-read Status after each addUnit, then briefly say what you added and the final pts total."
-            + themeClause(theme)
-    }
+    static let themePrompt =
+        "Theme only: suggest a good army name and a paint color scheme for this list. If the user likes a name, call setListName. Do not discuss matchup weaknesses."
 }
 
 /// Parses assistant Markdown into an `AttributedString` for chat bubbles.

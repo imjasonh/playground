@@ -13,6 +13,10 @@ enum LayaModelSource {
     static let sourceURL = URL(string: "https://github.com/mizorewww/laya-coreml") ?? URL(fileURLWithPath: "/")
 
     static var shortRevision: String { String(revision.prefix(7)) }
+
+    static var sizeText: String {
+        ByteCountFormatter.string(fromByteCount: approximateBytes, countStyle: .file)
+    }
 }
 
 /// Lifecycle of the on-device bundle.
@@ -62,8 +66,13 @@ enum LayaComputeChoice: Int, CaseIterable, Identifiable {
 /// Downloads, verifies, compiles, and loads the ANE bundle; then answers
 /// questions. Every stage is timed and logged so a TestFlight run can be
 /// debugged from the copied report.
+///
+/// Army List and the Laya experiment share ``shared`` so a download in one
+/// place is the same graph the other uses.
 @MainActor
 final class LayaModelStore: ObservableObject {
+    /// One store for the host app. Tests can still construct an isolated store.
+    static let shared = LayaModelStore()
     @Published private(set) var phase: LayaModelPhase = .notDownloaded
     @Published private(set) var info: LayaModelInfo?
     @Published private(set) var isPredicting = false
@@ -116,6 +125,11 @@ final class LayaModelStore: ObservableObject {
 
     var isDownloaded: Bool {
         FileManager.default.fileExists(atPath: Self.verifiedMarker(baseDirectory).path)
+    }
+
+    var isReady: Bool {
+        if case .ready = phase { return true }
+        return false
     }
 
     var maxTokens: Int? { runtime?.maxTokens }

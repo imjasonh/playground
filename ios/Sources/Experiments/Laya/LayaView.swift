@@ -3,11 +3,14 @@ import UIKit
 
 /// Download the Laya ANE bundle, then ask it typed questions about a text.
 ///
+/// Uses ``LayaModelStore/shared`` so a download here is the same graph Army
+/// List uses.
+///
 /// Every stage reports its timing, every failure is copyable with its
 /// underlying error chain, and **Copy report** gathers all of it for a
 /// TestFlight round trip.
 struct LayaView: View {
-    @StateObject private var store = LayaModelStore()
+    @ObservedObject private var store = LayaModelStore.shared
     @State private var draft = LayaDraft.examples[0]
     @State private var prediction: LayaPrediction?
     @State private var failure: LayaFailure?
@@ -56,7 +59,7 @@ struct LayaView: View {
                     Task { await store.prepare() }
                 } label: {
                     Label(
-                        store.isDownloaded ? "Load model" : "Download model (\(Self.sizeText))",
+                        store.isDownloaded ? "Load model" : "Download model (\(LayaModelSource.sizeText))",
                         systemImage: store.isDownloaded ? "cpu" : "arrow.down.circle"
                     )
                 }
@@ -297,8 +300,7 @@ struct LayaView: View {
     private var resultSection: some View {
         if let prediction {
             Section("Answer") {
-                answerRows(prediction.decision)
-                LabeledContent("Confidence", value: LayaFormat.percent(prediction.decision.confidence))
+                LayaDecisionBars(decision: prediction.decision)
                 LabeledContent("Act probability", value: LayaFormat.percent(prediction.decision.actProbability))
                 LabeledContent("Input tokens", value: "\(prediction.inputTokens)")
             }
@@ -323,44 +325,6 @@ struct LayaView: View {
                     .textSelection(.enabled)
             }
             .accessibilityIdentifier("layaLatency")
-        }
-    }
-
-    @ViewBuilder
-    private func answerRows(_ decision: LayaDecision) -> some View {
-        switch decision.answer {
-        case .choice(let label, let probabilities):
-            LabeledContent("Choice", value: label)
-                .font(.headline)
-                .accessibilityIdentifier("layaAnswer")
-            ForEach(Array(probabilities.enumerated()), id: \.offset) { _, item in
-                probabilityBar(item.label, item.probability)
-            }
-        case .score(let value, let probabilities, let legend):
-            LabeledContent("Score", value: String(format: "%.2f", value))
-                .font(.headline)
-                .accessibilityIdentifier("layaAnswer")
-            ForEach(Array(probabilities.enumerated()), id: \.offset) { index, probability in
-                probabilityBar(index < legend.count ? legend[index] : "level \(index)", probability)
-            }
-        case .noul(let probability):
-            LabeledContent("Holds", value: probability >= 0.5 ? "Yes" : "No")
-                .font(.headline)
-                .accessibilityIdentifier("layaAnswer")
-            probabilityBar("true", probability)
-            probabilityBar("false", 1 - probability)
-        }
-    }
-
-    private func probabilityBar(_ label: String, _ probability: Double) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(label).lineLimit(1)
-                Spacer()
-                Text(LayaFormat.percent(probability)).monospacedDigit().foregroundStyle(.secondary)
-            }
-            .font(.subheadline)
-            ProgressView(value: min(max(probability, 0), 1))
         }
     }
 
@@ -497,11 +461,6 @@ struct LayaView: View {
         .accessibilityIdentifier(id)
     }
 
-    // MARK: Formatting
-
-    private static var sizeText: String {
-        ByteCountFormatter.string(fromByteCount: LayaModelSource.approximateBytes, countStyle: .file)
-    }
 }
 
 /// The whole diagnostics log, selectable, with copy and share.
