@@ -505,6 +505,38 @@ debugged from a device without a debugger attached:
   timings, model info, signature, compute plan, latency history, benchmark,
   and the log into one text.
 
+#### Snake demo
+
+**Demos › Snake** is a port of
+[`laya-coreml-snake`](https://github.com/mizorewww/laya-coreml/blob/main/docs/SNAKE_DEMO.md):
+the model plays Snake on a 24 × 16 board by answering three questions per move.
+Code owns the rules and a Hamiltonian-cycle safety planner (`LayaSnake.swift`,
+a port of `snake/game.py`); it computes which moves are legal, which keep the
+tail ahead on the cycle without passing the food, and whether the food is
+reachable through empty cells. Those facts become the upstream compact prompt:
+a `choice` over `UP`/`DOWN`/`LEFT`/`RIGHT` with one description per direction,
+a `noul` "Is a safe route available?", and a `noul` "Is food reachable through
+empty cells?". The panel shows the raw direction probabilities with the
+proposed move marked, the executed move, dead-end risk (`1 − P(safe route)`),
+and food reachability.
+
+The **Cycle safety shield** (on by default) replaces an unsafe top-1 pick with
+the most probable safe move and counts the intervention; the probabilities on
+screen are never altered. Off, the model's top-1 runs as is and the snake can
+die. **Decisions per second** paces the loop; **Max speed** moves as soon as
+each decision is ready. **Step** plays one move while paused; **Next round**
+starts the next seeded board and keeps the best score. Food placement uses a
+seeded generator, so a round replays identically on any device (not the same
+sequence as the Python demo, which uses `random.Random`).
+
+The ANE bundle is batch 1, so a move costs three `MLModel.prediction` passes.
+The performance rows show inference time for the three questions and the graph
+share of it, whole-decision time, median and p95 inference over the round,
+achieved decisions per second, and the engine. Snake predictions stay out of
+the Laya screen's per-ask history; round summaries, deaths, and failures are
+appended to the diagnostics log, and **Copy round summary** copies the last
+move, estimates, and timings with the device facts.
+
 ## Adding an experiment
 
 1. `Sources/Experiments/<YourExperiment>/`

@@ -27,6 +27,7 @@ struct LayaView: View {
                 questionSection
                 resultSection
                 benchmarkSection
+                demosSection
             }
             diagnosticsSection
             deviceSection
@@ -325,6 +326,19 @@ struct LayaView: View {
                     .textSelection(.enabled)
             }
             .accessibilityIdentifier("layaLatency")
+        }
+    }
+
+    // MARK: Demos
+
+    private var demosSection: some View {
+        Section("Demos") {
+            NavigationLink {
+                LayaSnakeView(store: store)
+            } label: {
+                Label("Snake", systemImage: "gamecontroller")
+            }
+            .accessibilityIdentifier("layaSnakeLink")
         }
     }
 
