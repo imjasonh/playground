@@ -10,7 +10,7 @@ struct ArmyListChatView: View {
     @StateObject private var runtime: ArmyListChatRuntime
     @ObservedObject private var laya = LayaModelStore.shared
     @State private var draft = ""
-    /// A few words of theme Build / Fill fold into legal-move ranking.
+    /// A few words of theme Build / Fill fold into ranking and the on-theme check.
     @State private var theme = ""
     @FocusState private var promptFocused: Bool
     @State private var exportShare: ExportShareItem?
@@ -376,7 +376,7 @@ struct ArmyListChatView: View {
         }
     }
 
-    /// Optional theme words that Build and Fill fold into legal-move ranking.
+    /// Optional theme words that Build and Fill fold into ranking and the on-theme check.
     private var themeField: some View {
         HStack(spacing: 8) {
             Image(systemName: "paintpalette")

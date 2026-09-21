@@ -34,8 +34,9 @@ final class ArmyListChatRuntime: ObservableObject {
         case builder
     }
 
-    /// Roster actions the Laya controller owns. Theme / Weaknesses stay on
-    /// Foundation Models.
+    /// Roster actions the Laya controller owns. A one-shot Foundation Models
+    /// session can write a theme brief for those chips. Theme / Weaknesses stay
+    /// on the chat session.
     enum ConstructionAction {
         case build
         case fill
@@ -544,7 +545,7 @@ final class ArmyListChatRuntime: ObservableObject {
     }
 
     private static let welcomeText =
-        "Build, Fill, and Fix pick among legal catalog moves. Theme and Weaknesses use Apple Intelligence when it is available."
+        "Build, Fill, and Fix pick among legal catalog moves. When Apple Intelligence is on, it writes a short theme brief that Laya classifies against. Theme and Weaknesses stay on Apple Intelligence for matchup write-ups."
 
     var armyListGateDetail: String {
         switch modelGate {

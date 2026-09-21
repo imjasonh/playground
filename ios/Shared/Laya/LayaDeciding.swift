@@ -31,13 +31,20 @@ struct LayaGreedyDecider: LayaDeciding {
                 actProbability: 1
             )
         case .noul:
-            return LayaDecision(
-                kind: .noul,
-                answer: .noul(probability: 1),
-                confidence: 1,
-                actProbability: 1
-            )
+            return noul(probability: 1)
         }
+    }
+
+    /// Builds a yes/no decision. Probability is P(yes).
+    static func noul(probability: Double) -> LayaDecision {
+        let p = min(max(probability, 0), 1)
+        let mass = max(p, 1 - p)
+        return LayaDecision(
+            kind: .noul,
+            answer: .noul(probability: p),
+            confidence: mass,
+            actProbability: mass
+        )
     }
 
     /// Builds a choice decision that puts all mass on `label`.

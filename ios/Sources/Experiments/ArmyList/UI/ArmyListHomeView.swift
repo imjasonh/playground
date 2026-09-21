@@ -555,7 +555,7 @@ struct ArmyListNewSheet: View {
 
     /// Builds a fresh list from 0. Laya picks among legal catalog moves when
     /// the shared graph is loaded; otherwise the ranked greedy decider fills
-    /// the roster. Apple Intelligence is not required.
+    /// the roster. Apple Intelligence can write a theme brief first.
     private func buildStarterList() {
         seedError = nil
         if let issue = ArmyListStarterPrompt.buildFeasibilityIssue(

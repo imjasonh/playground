@@ -29,6 +29,7 @@ struct ArmyListConstructionResult: Equatable {
     var steps: [ArmyListDecisionStep]
     var usedLaya: Bool
     var summary: String
+    var themeBrief: ArmyListThemeBrief
 }
 
 /// Builds, fills, and repairs lists by asking ``LayaDeciding`` to pick among
@@ -81,11 +82,18 @@ enum ArmyListDecisionController {
         )
         let workspace = ArmyListChatWorkspace(list: list, catalog: catalog)
         var steps: [ArmyListDecisionStep] = []
+        let brief = await ArmyListThemeBriefBuilder.make(
+            catalog: catalog,
+            factionID: factionID,
+            prompt: theme,
+            list: list
+        )
+        if Task.isCancelled { return nil }
 
         onPhase?(.choosingDetachment)
         guard await pickDetachments(
             workspace: workspace,
-            theme: theme,
+            brief: brief,
             decider: decider,
             steps: &steps,
             onStep: onStep
@@ -94,8 +102,9 @@ enum ArmyListDecisionController {
         onPhase?(.addingUnits)
         guard await addUnits(
             workspace: workspace,
-            theme: theme,
+            brief: brief,
             decider: decider,
+            usedLaya: usedLaya,
             steps: &steps,
             onStep: onStep
         ) else { return nil }
@@ -103,14 +112,14 @@ enum ArmyListDecisionController {
         onPhase?(.attaching)
         guard await assignWarlord(
             workspace: workspace,
-            theme: theme,
+            brief: brief,
             decider: decider,
             steps: &steps,
             onStep: onStep
         ) else { return nil }
         guard await attachLeaders(
             workspace: workspace,
-            theme: theme,
+            brief: brief,
             decider: decider,
             steps: &steps,
             onStep: onStep
@@ -119,14 +128,16 @@ enum ArmyListDecisionController {
         onPhase?(.assigningEnhancements)
         guard await assignEnhancements(
             workspace: workspace,
-            theme: theme,
+            brief: brief,
             decider: decider,
             steps: &steps,
             onStep: onStep
         ) else { return nil }
         guard await packRemaining(
             workspace: workspace,
-            theme: theme,
+            brief: brief,
+            decider: decider,
+            usedLaya: usedLaya,
             steps: &steps,
             onStep: onStep
         ) else { return nil }
@@ -141,7 +152,8 @@ enum ArmyListDecisionController {
             list: workspace.list,
             steps: steps,
             usedLaya: usedLaya,
-            summary: summary(workspace: workspace, action: "Built")
+            summary: summary(workspace: workspace, action: "Built", brief: brief),
+            themeBrief: brief
         )
     }
 
@@ -155,11 +167,18 @@ enum ArmyListDecisionController {
     ) async -> ArmyListConstructionResult? {
         if Task.isCancelled { return nil }
         var steps: [ArmyListDecisionStep] = []
+        let brief = await ArmyListThemeBriefBuilder.make(
+            catalog: workspace.catalog,
+            factionID: workspace.list.factionID,
+            prompt: theme,
+            list: workspace.list
+        )
+        if Task.isCancelled { return nil }
         if workspace.list.detachmentIDs.isEmpty {
             onPhase?(.choosingDetachment)
             guard await pickDetachments(
                 workspace: workspace,
-                theme: theme,
+                brief: brief,
                 decider: decider,
                 steps: &steps,
                 onStep: onStep
@@ -168,22 +187,23 @@ enum ArmyListDecisionController {
         onPhase?(.addingUnits)
         guard await addUnits(
             workspace: workspace,
-            theme: theme,
+            brief: brief,
             decider: decider,
+            usedLaya: usedLaya,
             steps: &steps,
             onStep: onStep
         ) else { return nil }
         onPhase?(.attaching)
         guard await assignWarlord(
             workspace: workspace,
-            theme: theme,
+            brief: brief,
             decider: decider,
             steps: &steps,
             onStep: onStep
         ) else { return nil }
         guard await attachLeaders(
             workspace: workspace,
-            theme: theme,
+            brief: brief,
             decider: decider,
             steps: &steps,
             onStep: onStep
@@ -191,14 +211,16 @@ enum ArmyListDecisionController {
         onPhase?(.assigningEnhancements)
         guard await assignEnhancements(
             workspace: workspace,
-            theme: theme,
+            brief: brief,
             decider: decider,
             steps: &steps,
             onStep: onStep
         ) else { return nil }
         guard await packRemaining(
             workspace: workspace,
-            theme: theme,
+            brief: brief,
+            decider: decider,
+            usedLaya: usedLaya,
             steps: &steps,
             onStep: onStep
         ) else { return nil }
@@ -207,7 +229,8 @@ enum ArmyListDecisionController {
             list: workspace.list,
             steps: steps,
             usedLaya: usedLaya,
-            summary: summary(workspace: workspace, action: "Filled")
+            summary: summary(workspace: workspace, action: "Filled", brief: brief),
+            themeBrief: brief
         )
     }
 
@@ -221,6 +244,11 @@ enum ArmyListDecisionController {
     ) async -> ArmyListConstructionResult? {
         if Task.isCancelled { return nil }
         var steps: [ArmyListDecisionStep] = []
+        let brief = ArmyListThemeBriefBuilder.heuristic(
+            catalog: workspace.catalog,
+            prompt: theme,
+            list: workspace.list
+        )
         onPhase?(.attaching)
         for _ in 0..<8 {
             if Task.isCancelled { return nil }
@@ -229,7 +257,7 @@ enum ArmyListDecisionController {
             let repaired = await repair(
                 error: errors[0],
                 workspace: workspace,
-                theme: theme,
+                brief: brief,
                 decider: decider,
                 steps: &steps,
                 onStep: onStep
@@ -241,7 +269,8 @@ enum ArmyListDecisionController {
             list: workspace.list,
             steps: steps,
             usedLaya: usedLaya,
-            summary: summary(workspace: workspace, action: "Repaired")
+            summary: summary(workspace: workspace, action: "Repaired", brief: brief),
+            themeBrief: brief
         )
     }
 
@@ -249,7 +278,7 @@ enum ArmyListDecisionController {
 
     private static func pickDetachments(
         workspace: ArmyListChatWorkspace,
-        theme: String,
+        brief: ArmyListThemeBrief,
         decider: any LayaDeciding,
         steps: inout [ArmyListDecisionStep],
         onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
@@ -262,7 +291,7 @@ enum ArmyListDecisionController {
             catalog: workspace.catalog,
             factionID: workspace.list.factionID,
             dpBudget: battle.detachmentPointsBudget,
-            theme: theme
+            theme: brief.rankingText
         )
         if candidates.isEmpty { return false }
         let shortlist = Array(candidates.prefix(ArmyListPalette.maxLayaOptions))
@@ -270,7 +299,7 @@ enum ArmyListDecisionController {
         let instructions = "Pick a detachment"
         let decision = await decide(
             decider: decider,
-            state: ArmyListLayaSnapshot.text(list: workspace.list, catalog: workspace.catalog, theme: theme),
+            state: snapshot(workspace: workspace, brief: brief),
             question: .choice(instructions: instructions, options: options)
         )
         let picked = shortlist.first { $0.name == decision.choiceLabel } ?? shortlist[0]
@@ -297,7 +326,7 @@ enum ArmyListDecisionController {
             extraOptions.append(contentsOf: extraList.map { LayaChoiceOption($0.name, "\($0.detachmentPoints) DP") })
             let extraDecision = await decide(
                 decider: decider,
-                state: ArmyListLayaSnapshot.text(list: workspace.list, catalog: workspace.catalog, theme: theme),
+                state: snapshot(workspace: workspace, brief: brief),
                 question: .choice(instructions: "Add a second detachment", options: extraOptions)
             )
             if let extra = extraList.first(where: { $0.name == extraDecision.choiceLabel }) {
@@ -329,14 +358,16 @@ enum ArmyListDecisionController {
 
     private static func addUnits(
         workspace: ArmyListChatWorkspace,
-        theme: String,
+        brief: ArmyListThemeBrief,
         decider: any LayaDeciding,
+        usedLaya: Bool,
         steps: inout [ArmyListDecisionStep],
         onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
     ) async -> Bool {
         guard let battle = workspace.catalog.battleSize(id: workspace.list.battleSizeID) else {
             return false
         }
+        var skippedSheetIDs: Set<String> = []
         for _ in 0..<ArmyListPalette.maxAddSteps {
             if Task.isCancelled { return false }
             let remaining = battle.pointsLimit - workspace.validation.totalPoints
@@ -351,22 +382,22 @@ enum ArmyListDecisionController {
             ), remaining < cheapest {
                 return true
             }
-            var moves = ArmyListPalette.legalAdds(
-                catalog: workspace.catalog,
-                list: workspace.list,
-                theme: theme,
+            var moves = legalAddShortlist(
+                workspace: workspace,
+                brief: brief,
                 remainingPoints: remaining,
                 hasCharacter: hasCharacter,
-                charactersOnly: !hasCharacter
+                charactersOnly: !hasCharacter,
+                skippedSheetIDs: skippedSheetIDs
             )
             if moves.isEmpty, !hasCharacter {
-                moves = ArmyListPalette.legalAdds(
-                    catalog: workspace.catalog,
-                    list: workspace.list,
-                    theme: theme,
+                moves = legalAddShortlist(
+                    workspace: workspace,
+                    brief: brief,
                     remainingPoints: remaining,
                     hasCharacter: hasCharacter,
-                    charactersOnly: false
+                    charactersOnly: false,
+                    skippedSheetIDs: skippedSheetIDs
                 )
             }
             if moves.isEmpty { return true }
@@ -374,12 +405,7 @@ enum ArmyListDecisionController {
             let instructions = hasCharacter ? "Add one unit" : "Add a Character"
             let decision = await decide(
                 decider: decider,
-                state: ArmyListLayaSnapshot.text(
-                    list: workspace.list,
-                    catalog: workspace.catalog,
-                    theme: theme,
-                    validation: workspace.validation
-                ),
+                state: snapshot(workspace: workspace, brief: brief),
                 question: .choice(instructions: instructions, options: moves.map { $0.option() })
             )
             if decision.actProbability < 0.35, hasCharacter, remaining <= 80 {
@@ -394,6 +420,23 @@ enum ArmyListDecisionController {
                 return true
             }
             let move = moves.first { $0.label == decision.choiceLabel } ?? moves[0]
+            let requireCharacter = !hasCharacter
+            let onTheme = await acceptThematicMove(
+                name: move.sheet.name,
+                sheet: move.sheet,
+                requireCharacter: requireCharacter,
+                remainingAlternatives: moves.count - 1,
+                brief: brief,
+                usedLaya: usedLaya,
+                decider: decider,
+                workspace: workspace,
+                steps: &steps,
+                onStep: onStep
+            )
+            if !onTheme {
+                skippedSheetIDs.insert(move.sheet.id)
+                continue
+            }
             let output = ArmyListChatToolExecutor.addUnit(
                 workspace: workspace,
                 datasheetID: move.sheet.id,
@@ -408,7 +451,8 @@ enum ArmyListDecisionController {
                     steps: &steps,
                     onStep: onStep
                 )
-                return true
+                skippedSheetIDs.insert(move.sheet.id)
+                continue
             }
             record(
                 title: "Add unit",
@@ -424,7 +468,7 @@ enum ArmyListDecisionController {
 
     private static func assignEnhancements(
         workspace: ArmyListChatWorkspace,
-        theme: String,
+        brief: ArmyListThemeBrief,
         decider: any LayaDeciding,
         steps: inout [ArmyListDecisionStep],
         onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
@@ -442,7 +486,7 @@ enum ArmyListDecisionController {
             let moves = ArmyListPalette.legalEnhancements(
                 catalog: workspace.catalog,
                 list: workspace.list,
-                theme: theme,
+                theme: brief.rankingText,
                 remainingPoints: remainingPoints,
                 remainingPicks: remainingPicks,
                 limit: ArmyListPalette.maxLayaOptions - 1
@@ -453,12 +497,7 @@ enum ArmyListDecisionController {
             let instructions = "Pick an enhancement"
             let decision = await decide(
                 decider: decider,
-                state: ArmyListLayaSnapshot.text(
-                    list: workspace.list,
-                    catalog: workspace.catalog,
-                    theme: theme,
-                    validation: workspace.validation
-                ),
+                state: snapshot(workspace: workspace, brief: brief),
                 question: .choice(instructions: instructions, options: options)
             )
             if decision.choiceLabel == "none" {
@@ -502,16 +541,19 @@ enum ArmyListDecisionController {
     }
 
     /// After Laya stops adding, spend leftover points on the next ranked unit
-    /// that still fits. No extra Laya question.
+    /// that still fits and still matches the theme.
     private static func packRemaining(
         workspace: ArmyListChatWorkspace,
-        theme: String,
+        brief: ArmyListThemeBrief,
+        decider: any LayaDeciding,
+        usedLaya: Bool,
         steps: inout [ArmyListDecisionStep],
         onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
     ) async -> Bool {
         guard let battle = workspace.catalog.battleSize(id: workspace.list.battleSizeID) else {
             return false
         }
+        var skippedSheetIDs: Set<String> = []
         for _ in 0..<ArmyListPalette.maxAddSteps {
             if Task.isCancelled { return false }
             let remaining = battle.pointsLimit - workspace.validation.totalPoints
@@ -524,16 +566,31 @@ enum ArmyListDecisionController {
                 return true
             }
             let hasCharacter = ArmyListPalette.hasCharacter(list: workspace.list, catalog: workspace.catalog)
-            let moves = ArmyListPalette.legalAdds(
-                catalog: workspace.catalog,
-                list: workspace.list,
-                theme: theme,
+            let moves = legalAddShortlist(
+                workspace: workspace,
+                brief: brief,
                 remainingPoints: remaining,
                 hasCharacter: hasCharacter,
                 charactersOnly: false,
-                limit: 1
+                skippedSheetIDs: skippedSheetIDs
             )
             guard let move = moves.first else { return true }
+            let onTheme = await acceptThematicMove(
+                name: move.sheet.name,
+                sheet: move.sheet,
+                requireCharacter: false,
+                remainingAlternatives: moves.count - 1,
+                brief: brief,
+                usedLaya: usedLaya,
+                decider: decider,
+                workspace: workspace,
+                steps: &steps,
+                onStep: onStep
+            )
+            if !onTheme {
+                skippedSheetIDs.insert(move.sheet.id)
+                continue
+            }
             let output = ArmyListChatToolExecutor.addUnit(
                 workspace: workspace,
                 datasheetID: move.sheet.id,
@@ -559,7 +616,7 @@ enum ArmyListDecisionController {
 
     private static func assignWarlord(
         workspace: ArmyListChatWorkspace,
-        theme: String,
+        brief: ArmyListThemeBrief,
         decider: any LayaDeciding,
         steps: inout [ArmyListDecisionStep],
         onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
@@ -584,7 +641,7 @@ enum ArmyListDecisionController {
         let instructions = "Pick the Warlord"
         let decision = await decide(
             decider: decider,
-            state: ArmyListLayaSnapshot.text(list: workspace.list, catalog: workspace.catalog, theme: theme),
+            state: snapshot(workspace: workspace, brief: brief),
             question: .choice(instructions: instructions, options: options)
         )
         let picked = shortlist.first {
@@ -605,7 +662,7 @@ enum ArmyListDecisionController {
 
     private static func attachLeaders(
         workspace: ArmyListChatWorkspace,
-        theme: String,
+        brief: ArmyListThemeBrief,
         decider: any LayaDeciding,
         steps: inout [ArmyListDecisionStep],
         onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
@@ -678,7 +735,7 @@ enum ArmyListDecisionController {
             let instructions = "Attach \(sheet.name)"
             let decision = await decide(
                 decider: decider,
-                state: ArmyListLayaSnapshot.text(list: workspace.list, catalog: workspace.catalog, theme: theme),
+                state: snapshot(workspace: workspace, brief: brief),
                 question: .choice(instructions: instructions, options: options)
             )
             if decision.choiceLabel == "none" {
@@ -716,7 +773,7 @@ enum ArmyListDecisionController {
     private static func repair(
         error: ValidationIssue,
         workspace: ArmyListChatWorkspace,
-        theme: String,
+        brief: ArmyListThemeBrief,
         decider: any LayaDeciding,
         steps: inout [ArmyListDecisionStep],
         onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
@@ -725,7 +782,7 @@ enum ArmyListDecisionController {
         case "warlord.missing":
             return await assignWarlord(
                 workspace: workspace,
-                theme: theme,
+                brief: brief,
                 decider: decider,
                 steps: &steps,
                 onStep: onStep
@@ -733,7 +790,7 @@ enum ArmyListDecisionController {
         case "detachment.required":
             return await pickDetachments(
                 workspace: workspace,
-                theme: theme,
+                brief: brief,
                 decider: decider,
                 steps: &steps,
                 onStep: onStep
@@ -741,7 +798,7 @@ enum ArmyListDecisionController {
         case "unit.mustAttach":
             return await attachLeaders(
                 workspace: workspace,
-                theme: theme,
+                brief: brief,
                 decider: decider,
                 steps: &steps,
                 onStep: onStep
@@ -772,7 +829,7 @@ enum ArmyListDecisionController {
         case "points.overLimit":
             return await cutForPoints(
                 workspace: workspace,
-                theme: theme,
+                brief: brief,
                 decider: decider,
                 steps: &steps,
                 onStep: onStep
@@ -806,8 +863,9 @@ enum ArmyListDecisionController {
         case "list.empty":
             return await addUnits(
                 workspace: workspace,
-                theme: theme,
+                brief: brief,
                 decider: decider,
+                usedLaya: false,
                 steps: &steps,
                 onStep: onStep
             )
@@ -827,7 +885,7 @@ enum ArmyListDecisionController {
 
     private static func cutForPoints(
         workspace: ArmyListChatWorkspace,
-        theme: String,
+        brief: ArmyListThemeBrief,
         decider: any LayaDeciding,
         steps: inout [ArmyListDecisionStep],
         onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
@@ -846,12 +904,7 @@ enum ArmyListDecisionController {
         let instructions = "Drop a unit"
         let decision = await decide(
             decider: decider,
-            state: ArmyListLayaSnapshot.text(
-                list: workspace.list,
-                catalog: workspace.catalog,
-                theme: theme,
-                validation: workspace.validation
-            ),
+            state: snapshot(workspace: workspace, brief: brief),
             question: .choice(instructions: instructions, options: options)
         )
         let picked = slice.first {
@@ -989,10 +1042,104 @@ enum ArmyListDecisionController {
         return "\(faction) \(battle)"
     }
 
-    private static func summary(workspace: ArmyListChatWorkspace, action: String) -> String {
+    private static func summary(
+        workspace: ArmyListChatWorkspace,
+        action: String,
+        brief: ArmyListThemeBrief
+    ) -> String {
         let result = workspace.validation
         let limit = workspace.catalog.battleSize(id: workspace.list.battleSizeID)?.pointsLimit ?? 0
         let legal = result.isLegal ? "Legal" : "Illegal"
-        return "\(action) \(workspace.list.name): \(result.totalPoints)/\(limit) pts, \(legal), \(workspace.list.units.count) units."
+        var text =
+            "\(action) \(workspace.list.name): \(result.totalPoints)/\(limit) pts, \(legal), \(workspace.list.units.count) units."
+        let themeBit = brief.snapshotTheme
+        if !themeBit.isEmpty {
+            text += " Theme: \(themeBit)."
+        }
+        return text
+    }
+
+    private static func snapshot(
+        workspace: ArmyListChatWorkspace,
+        brief: ArmyListThemeBrief
+    ) -> String {
+        ArmyListLayaSnapshot.text(
+            list: workspace.list,
+            catalog: workspace.catalog,
+            theme: brief.snapshotTheme,
+            validation: workspace.validation
+        )
+    }
+
+    private static func legalAddShortlist(
+        workspace: ArmyListChatWorkspace,
+        brief: ArmyListThemeBrief,
+        remainingPoints: Int,
+        hasCharacter: Bool,
+        charactersOnly: Bool,
+        skippedSheetIDs: Set<String>
+    ) -> [ArmyListPalette.AddMove] {
+        let pool = ArmyListPalette.legalAdds(
+            catalog: workspace.catalog,
+            list: workspace.list,
+            theme: brief.rankingText,
+            remainingPoints: remainingPoints,
+            hasCharacter: hasCharacter,
+            charactersOnly: charactersOnly,
+            limit: ArmyListPalette.maxLayaOptions + skippedSheetIDs.count
+        )
+        return Array(
+            pool.filter { !skippedSheetIDs.contains($0.sheet.id) }
+                .prefix(ArmyListPalette.maxLayaOptions)
+        )
+    }
+
+    /// Asks Laya whether the candidate fits the brief. When Laya is not loaded,
+    /// greedy noul is always yes, so token overlap on the datasheet decides.
+    private static func acceptThematicMove(
+        name: String,
+        sheet: DatasheetDefinition,
+        requireCharacter: Bool,
+        remainingAlternatives: Int,
+        brief: ArmyListThemeBrief,
+        usedLaya: Bool,
+        decider: any LayaDeciding,
+        workspace: ArmyListChatWorkspace,
+        steps: inout [ArmyListDecisionStep],
+        onStep: (@MainActor (ArmyListDecisionStep) -> Void)?
+    ) async -> Bool {
+        if brief.tokens.isEmpty, brief.snapshotTheme.isEmpty {
+            return true
+        }
+        let instructions = "Does \(name) fit the theme?"
+        let decision = await decide(
+            decider: decider,
+            state: snapshot(workspace: workspace, brief: brief),
+            question: .noul(
+                instructions: instructions,
+                falseText: "off-theme",
+                trueText: "on-theme"
+            )
+        )
+        let modelHolds = decision.noulHolds ?? true
+        var accepted = modelHolds
+        if accepted, !usedLaya, !brief.tokens.isEmpty, !requireCharacter {
+            accepted = ArmyListPalette.matchesTheme(sheet: sheet, tokens: brief.tokens)
+        }
+        if !accepted, requireCharacter, remainingAlternatives == 0 {
+            accepted = true
+        }
+        let shown = accepted == modelHolds
+            ? decision
+            : LayaGreedyDecider.noul(probability: accepted ? 0.9 : 0.1)
+        record(
+            title: "On theme",
+            instructions: instructions,
+            decision: shown,
+            applied: accepted ? "On-theme: \(name)" : "Off-theme: \(name)",
+            steps: &steps,
+            onStep: onStep
+        )
+        return accepted
     }
 }

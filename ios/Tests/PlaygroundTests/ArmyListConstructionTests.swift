@@ -7,6 +7,14 @@ final class ArmyListConstructionTests: XCTestCase {
 
     override func setUpWithError() throws {
         catalog = try ArmyListCatalogTests.loadCatalogFromRepo()
+        ArmyListThemeBriefBuilder.foundationModelsEnabled = false
+        ArmyListThemeBriefBuilder.testOverride = nil
+    }
+
+    override func tearDown() {
+        ArmyListThemeBriefBuilder.testOverride = nil
+        ArmyListThemeBriefBuilder.foundationModelsEnabled = true
+        super.tearDown()
     }
 
     func testGreedyBuildsLegalVotannIncursion() async {
@@ -352,6 +360,202 @@ final class ArmyListConstructionTests: XCTestCase {
             "\(built.list.detachmentIDs)"
         )
     }
+
+    func testHeuristicPromptTokensKeepMonsterSwarm() {
+        let brief = ArmyListThemeBriefBuilder.heuristic(
+            catalog: catalog,
+            prompt: "tyranid monster swarm",
+            list: ArmyListDocument(
+                name: "T",
+                catalogVersion: catalog.version,
+                factionID: "tyranids",
+                battleSizeID: "incursion"
+            )
+        )
+        XCTAssertEqual(brief.source, .prompt)
+        XCTAssertTrue(brief.tokens.contains("monster"), "\(brief.tokens)")
+        XCTAssertTrue(brief.tokens.contains("swarm"), "\(brief.tokens)")
+        XCTAssertTrue(brief.snapshotTheme.lowercased().contains("monster"))
+    }
+
+    func testHeuristicRosterTokensReadOutriders() {
+        let workspace = ArmyListChatWorkspace(
+            list: ArmyListDocument(
+                name: "Bikes",
+                catalogVersion: catalog.version,
+                factionID: "space-marines",
+                battleSizeID: "incursion"
+            ),
+            catalog: catalog
+        )
+        _ = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "space-marines--outrider-squad",
+            models: 3
+        )
+        let brief = ArmyListThemeBriefBuilder.heuristic(
+            catalog: catalog,
+            prompt: "",
+            list: workspace.list
+        )
+        XCTAssertEqual(brief.source, .roster)
+        XCTAssertTrue(brief.tokens.contains("outrider"), "\(brief.tokens)")
+        XCTAssertFalse(brief.tokens.contains("squad"), "\(brief.tokens)")
+    }
+
+    func testMakeUsesRosterWhenPromptBlankAndModelOff() async {
+        let workspace = ArmyListChatWorkspace(
+            list: ArmyListDocument(
+                name: "Bikes",
+                catalogVersion: catalog.version,
+                factionID: "space-marines",
+                battleSizeID: "incursion"
+            ),
+            catalog: catalog
+        )
+        _ = ArmyListChatToolExecutor.addUnit(
+            workspace: workspace,
+            datasheetID: "space-marines--outrider-squad",
+            models: 3
+        )
+        let brief = await ArmyListThemeBriefBuilder.make(
+            catalog: catalog,
+            factionID: "space-marines",
+            prompt: "",
+            list: workspace.list
+        )
+        XCTAssertEqual(brief.source, .roster)
+        XCTAssertTrue(brief.tokens.contains("outrider"), "\(brief.tokens)")
+    }
+
+    func testFoundationThemeBriefExpandsRankingTowardOutriders() async {
+        ArmyListThemeBriefBuilder.testOverride = { _ in
+            ArmyListThemeBrief(
+                prompt: "white scars fast attack",
+                tokens: ["bike", "outrider", "jump"],
+                summary: "White Scars bikes and jump troops",
+                source: .foundationModels
+            )
+        }
+        let result = await ArmyListDecisionController.build(
+            catalog: catalog,
+            factionID: "space-marines",
+            battleSizeID: "incursion",
+            theme: "white scars fast attack",
+            userName: nil,
+            decider: LayaGreedyDecider()
+        )
+        let built = try! XCTUnwrap(result)
+        XCTAssertEqual(built.themeBrief.source, .foundationModels)
+        XCTAssertTrue(built.themeBrief.tokens.contains("outrider"))
+        XCTAssertTrue(built.summary.contains("White Scars"))
+        let ranked = ArmyListPalette.rankedSheets(
+            catalog: catalog,
+            factionID: "space-marines",
+            theme: built.themeBrief.rankingText
+        )
+        XCTAssertTrue(
+            ranked.prefix(8).contains { $0.sheet.id.contains("outrider") },
+            "\(ranked.prefix(8).map(\.sheet.id))"
+        )
+    }
+
+    func testGreedySkipsOffThemeNonCharacters() async {
+        ArmyListThemeBriefBuilder.testOverride = { _ in
+            ArmyListThemeBrief(
+                prompt: "hearthkyn",
+                tokens: ["hearthkyn"],
+                summary: "Hearthkyn infantry",
+                source: .prompt
+            )
+        }
+        let result = await ArmyListDecisionController.build(
+            catalog: catalog,
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            theme: "hearthkyn",
+            userName: nil,
+            decider: LayaGreedyDecider()
+        )
+        let built = try! XCTUnwrap(result)
+        let extras = built.list.units.compactMap { unit -> DatasheetDefinition? in
+            guard let sheet = catalog.datasheet(id: unit.datasheetID) else { return nil }
+            return sheet.characterRole == nil ? sheet : nil
+        }
+        XCTAssertFalse(extras.isEmpty)
+        XCTAssertTrue(
+            extras.allSatisfy { ArmyListPalette.matchesTheme(sheet: $0, tokens: ["hearthkyn"]) },
+            "\(extras.map(\.name))"
+        )
+        XCTAssertTrue(built.steps.contains { $0.title == "On theme" })
+        XCTAssertTrue(built.steps.contains { $0.decision.kind == .noul })
+    }
+
+    func testLayaNoulRejectsNamedUnit() async {
+        ArmyListThemeBriefBuilder.testOverride = { _ in
+            ArmyListThemeBrief(
+                prompt: "",
+                tokens: ["kin"],
+                summary: "Kin infantry",
+                source: .foundationModels
+            )
+        }
+        let result = await ArmyListDecisionController.build(
+            catalog: catalog,
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion",
+            theme: "",
+            userName: nil,
+            decider: LayaNoulRejectDecider(rejectName: "Hearthkyn Warriors"),
+            usedLaya: true
+        )
+        let built = try! XCTUnwrap(result)
+        XCTAssertFalse(
+            built.list.units.contains { $0.datasheetID.contains("hearthkyn-warriors") },
+            "\(built.list.units.map(\.datasheetID))"
+        )
+        XCTAssertTrue(
+            built.steps.contains { $0.title == "On theme" && $0.applied.contains("Off-theme: Hearthkyn Warriors") }
+        )
+        let validation = ArmyListValidator.validate(list: built.list, catalog: catalog)
+        XCTAssertTrue(validation.isLegal, "\(validation.errors.map(\.message))")
+    }
+
+    func testSnapshotUsesThemeBriefSummary() {
+        let list = ArmyListDocument(
+            name: "Snap",
+            catalogVersion: catalog.version,
+            factionID: "leagues-of-votann",
+            battleSizeID: "incursion"
+        )
+        let text = ArmyListLayaSnapshot.text(
+            list: list,
+            catalog: catalog,
+            theme: "White Scars bikes and jump troops"
+        )
+        XCTAssertTrue(text.contains("White Scars bikes"), text)
+        XCTAssertLessThanOrEqual(text.count, ArmyListLayaSnapshot.maxCharacters)
+    }
+
+    func testThemeBriefPromptIsShort() {
+        let prompt = ArmyListThemeBriefBuilder.prompt(
+            for: ArmyListThemeBriefBuilder.Input(
+                factionName: "Space Marines",
+                prompt: "white scars fast attack",
+                rosterNames: ["Outrider Squad"]
+            )
+        )
+        XCTAssertTrue(prompt.contains("Faction: Space Marines"), prompt)
+        XCTAssertTrue(prompt.contains("white scars fast attack"), prompt)
+        XCTAssertTrue(prompt.contains("Outrider Squad"), prompt)
+        XCTAssertLessThan(prompt.count, 800)
+    }
+
+    func testMatchesThemeEmptyTokensAlwaysTrue() {
+        let sheet = try! XCTUnwrap(catalog.datasheet(id: "leagues-of-votann--kahl"))
+        XCTAssertTrue(ArmyListPalette.matchesTheme(sheet: sheet, tokens: []))
+        XCTAssertFalse(ArmyListPalette.matchesTheme(sheet: sheet, tokens: ["hearthkyn"]))
+    }
 }
 
 @MainActor
@@ -369,6 +573,23 @@ final class LayaScriptedDecider: LayaDeciding {
         {
             preferredLabels.removeFirst()
             return LayaGreedyDecider.choice(label: want, options: options, act: 1)
+        }
+        return try await LayaGreedyDecider().decide(state: state, question: question)
+    }
+}
+
+@MainActor
+final class LayaNoulRejectDecider: LayaDeciding {
+    let rejectName: String
+
+    init(rejectName: String) {
+        self.rejectName = rejectName
+    }
+
+    func decide(state: String, question: LayaQuestion) async throws -> LayaDecision {
+        if case .noul(let instructions, _, _) = question {
+            let p: Double = instructions.localizedCaseInsensitiveContains(rejectName) ? 0.05 : 0.9
+            return LayaGreedyDecider.noul(probability: p)
         }
         return try await LayaGreedyDecider().decide(state: state, question: question)
     }

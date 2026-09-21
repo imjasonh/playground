@@ -70,16 +70,24 @@ enum ArmyListPalette {
     /// Theme hits, plus a small Character / Battleline nudge. Matches the
     /// ranking ``ArmyListStarterPrompt`` used for the AFM shortlist.
     static func themeScore(sheet: DatasheetDefinition, tokens: [String]) -> Int {
-        var score = 0
-        if !tokens.isEmpty {
-            let haystack = ([sheet.name, sheet.id] + sheet.keywords + sheet.themeKeywords)
-                .joined(separator: " ")
-                .lowercased()
-            score += tokens.filter { haystack.contains($0) }.count * 100
-        }
+        var score = themeHitCount(sheet: sheet, tokens: tokens) * 100
         if sheet.characterRole != nil { score += 10 }
         if sheet.battleline { score += 5 }
         return score
+    }
+
+    /// Token overlaps in the datasheet name, id, keywords, and theme keywords.
+    static func themeHitCount(sheet: DatasheetDefinition, tokens: [String]) -> Int {
+        if tokens.isEmpty { return 0 }
+        let haystack = ([sheet.name, sheet.id] + sheet.keywords + sheet.themeKeywords)
+            .joined(separator: " ")
+            .lowercased()
+        return tokens.filter { haystack.contains($0) }.count
+    }
+
+    /// True when there is no theme, or the datasheet matches at least one token.
+    static func matchesTheme(sheet: DatasheetDefinition, tokens: [String]) -> Bool {
+        tokens.isEmpty || themeHitCount(sheet: sheet, tokens: tokens) > 0
     }
 
     static func hasBattleline(list: ArmyListDocument, catalog: ArmyCatalog) -> Bool {

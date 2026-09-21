@@ -166,7 +166,8 @@ struct ArmyListStarterBuildProgress: Equatable {
 }
 
 /// Builds a starter list with Laya when the shared graph is loaded, otherwise
-/// with the greedy first-option decider. Does not call Apple Intelligence.
+/// with the greedy first-option decider. Apple Intelligence can write a short
+/// theme brief first. Construction still runs when that model is off.
 @MainActor
 enum ArmyListStarterBuilder {
     static func build(
