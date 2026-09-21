@@ -748,3 +748,197 @@ final class LayaDecidingTests: XCTestCase {
         XCTAssertEqual(decision.answer, .noul(probability: 1))
     }
 }
+
+final class LayaSnakeGameTests: XCTestCase {
+    func testCycleVisitsEveryCellAndCloses() throws {
+        for (width, height) in [(4, 4), (4, 5), (5, 4), (24, 16)] {
+            let cycle = try LayaSnakeGame.hamiltonianCycle(width: width, height: height)
+            XCTAssertEqual(cycle.count, width * height, "\(width)x\(height)")
+            XCTAssertEqual(Set(cycle).count, width * height, "\(width)x\(height)")
+            XCTAssertTrue(cycle.allSatisfy { (0..<width).contains($0.x) && (0..<height).contains($0.y) })
+            for (a, b) in zip(cycle, cycle.dropFirst() + [cycle[0]]) {
+                XCTAssertEqual(abs(a.x - b.x) + abs(a.y - b.y), 1, "\(width)x\(height) \(a) -> \(b)")
+            }
+        }
+    }
+
+    func testSmallOrOddBoardsAreRejected() {
+        for (width, height) in [(3, 4), (4, 3), (5, 5)] {
+            XCTAssertThrowsError(try LayaSnakeGame(width: width, height: height))
+        }
+        XCTAssertThrowsError(try LayaSnakeGame(width: 4, height: 4, initialLength: 1))
+        XCTAssertThrowsError(try LayaSnakeGame(width: 4, height: 4, initialLength: 16))
+    }
+
+    func testCollisionGrowthTailVacancyAndBoardClear() throws {
+        var game = try LayaSnakeGame(width: 4, height: 4, initialLength: 4)
+        try game.place(body: [LayaSnakeCell(1, 1), LayaSnakeCell(1, 2), LayaSnakeCell(0, 2), LayaSnakeCell(0, 1)], food: LayaSnakeCell(3, 3))
+        XCTAssertEqual(game.legalReason(.left), .legal)
+        XCTAssertEqual(game.legalReason(.down), .reverse)
+        XCTAssertFalse(try game.step(.left))
+        XCTAssertTrue(game.alive)
+        XCTAssertEqual(game.body.count, 4)
+        XCTAssertFalse(try game.step(.left))
+        XCTAssertFalse(game.alive)
+        XCTAssertEqual(game.deathReason, .wall)
+        XCTAssertTrue(game.moves().isEmpty)
+        XCTAssertThrowsError(try game.step(.up))
+
+        var full = try LayaSnakeGame(width: 4, height: 4, initialLength: 15)
+        let move = try XCTUnwrap(full.moves().first { $0.safe })
+        XCTAssertTrue(try full.step(move.direction))
+        XCTAssertTrue(full.won)
+        XCTAssertNil(full.food)
+        XCTAssertEqual(full.body.count, 16)
+        XCTAssertEqual(full.score, 1)
+        XCTAssertTrue(full.moves().isEmpty)
+    }
+
+    func testArbitraryShieldedChoicesCompleteBoardWithoutStarving() throws {
+        for seed in 0..<12 {
+            var game = try LayaSnakeGame(width: 6, height: 6, seed: seed)
+            var rng = LayaSnakeRandom(seed: seed + 100)
+            var lastFood = 0
+            for _ in 0..<(game.capacity * (game.capacity - game.initialLength)) {
+                let allowed = game.moves().filter(\.safe).map(\.direction)
+                XCTAssertFalse(allowed.isEmpty, "seed \(seed) tick \(game.ticks)")
+                guard !allowed.isEmpty else { return }
+                let ate = try game.step(allowed[rng.index(below: allowed.count)])
+                XCTAssertTrue(game.alive)
+                XCTAssertTrue(game.cycleOrderValid())
+                XCTAssertEqual(Set(game.body).count, game.body.count)
+                XCTAssertEqual(game.body.count, game.initialLength + game.score)
+                XCTAssertLessThanOrEqual(game.ticks - lastFood, game.capacity)
+                if ate { lastFood = game.ticks }
+                if game.won { break }
+            }
+            XCTAssertTrue(game.won, "seed \(seed)")
+        }
+    }
+
+    func testSeedReproducesFoodsAndActions() throws {
+        var first = try LayaSnakeGame(seed: 71)
+        var second = try LayaSnakeGame(seed: 71)
+        XCTAssertEqual(first.body.count, 6)
+        XCTAssertEqual(first.head, LayaSnakeCell(12, 8))
+        for _ in 0..<100 {
+            let turn = try LayaSnakePolicy.turn(for: first, guarded: true)
+            let direction = try XCTUnwrap(turn.plannerBest)
+            try first.step(direction)
+            try second.step(direction)
+            XCTAssertEqual(first, second)
+        }
+        XCTAssertNotEqual(first, try LayaSnakeGame(seed: 72))
+        XCTAssertEqual(LayaSnakeGame.standard(seed: 71), try LayaSnakeGame(seed: 71))
+    }
+
+    func testFoodReachabilityFloodFillsEmptyCells() throws {
+        var game = try LayaSnakeGame(width: 4, height: 4, initialLength: 4)
+        let wall = [LayaSnakeCell(0, 0), LayaSnakeCell(0, 1), LayaSnakeCell(1, 1), LayaSnakeCell(2, 1), LayaSnakeCell(3, 1)]
+        try game.place(body: wall, food: LayaSnakeCell(3, 3))
+        let (reachable, space) = game.foodReachability()
+        XCTAssertFalse(reachable)
+        XCTAssertEqual(space, 4)
+        try game.place(body: wall, food: LayaSnakeCell(2, 0))
+        XCTAssertTrue(game.foodReachability().reachable)
+    }
+}
+
+final class LayaSnakePolicyTests: XCTestCase {
+    private func stub(_ answer: LayaAnswer) -> LayaDecision {
+        let kind: LayaQuestionKind
+        switch answer {
+        case .choice: kind = .choice
+        case .score: kind = .score
+        case .noul: kind = .noul
+        }
+        return LayaDecision(kind: kind, answer: answer, confidence: 1, actProbability: 1)
+    }
+
+    func testCompactPromptDescribesEveryDirection() throws {
+        let game = try LayaSnakeGame()
+        let turn = try LayaSnakePolicy.turn(for: game, guarded: true)
+        XCTAssertTrue(turn.state.hasPrefix("Safe route: yes. Food reachable through empty cells: "))
+        guard case .choice(let instructions, let options) = turn.moveQuestion else {
+            return XCTFail("move question is not a choice")
+        }
+        XCTAssertEqual(instructions, LayaSnakePolicy.moveInstructions)
+        XCTAssertEqual(options.map(\.label), ["UP", "DOWN", "LEFT", "RIGHT"])
+        let texts = Set(options.compactMap(\.description))
+        XCTAssertTrue(texts.isSubset(of: [
+            "Blocked. Collision.", "Unsafe. Traps the snake.", "Safe. Eat food now. Best.",
+            "Safe. Best route to food.", "Safe. Slower route.",
+        ]))
+        XCTAssertNotNil(turn.plannerBest)
+        XCTAssertTrue(turn.safeDirections.contains(try XCTUnwrap(turn.plannerBest)))
+        let best = try XCTUnwrap(options.first { $0.label == turn.plannerBest?.rawValue })
+        XCTAssertTrue(best.description == "Safe. Best route to food." || best.description == "Safe. Eat food now. Best.")
+        XCTAssertEqual(turn.riskQuestion, .noul(instructions: LayaSnakePolicy.riskInstructions))
+        XCTAssertEqual(turn.foodQuestion, .noul(instructions: LayaSnakePolicy.foodInstructions))
+        try turn.moveQuestion.validate()
+    }
+
+    func testGuardPreservesRawProbabilitiesAndReportsIntervention() throws {
+        let game = try LayaSnakeGame()
+        let turn = try LayaSnakePolicy.turn(for: game, guarded: true)
+        let unsafe = try XCTUnwrap(LayaSnakeDirection.allCases.first { !turn.safeDirections.contains($0) })
+        let labeled = LayaSnakeDirection.allCases.map {
+            LayaLabeledProbability(label: $0.rawValue, probability: $0 == unsafe ? 0.9 : 0.1 / 3)
+        }
+        let move = stub(.choice(label: unsafe.rawValue, probabilities: labeled))
+        let risk = stub(.noul(probability: 0.97))
+        let food = stub(.noul(probability: 0.92))
+
+        let guarded = try LayaSnakePolicy.decision(turn: turn, move: move, risk: risk, food: food, guarded: true)
+        XCTAssertEqual(guarded.proposed, unsafe)
+        XCTAssertTrue(turn.safeDirections.contains(guarded.executed))
+        XCTAssertTrue(guarded.intervened)
+        XCTAssertEqual(guarded.probabilities[unsafe], 0.9)
+        XCTAssertEqual(guarded.deadEndRisk, 0.03, accuracy: 1e-9)
+        XCTAssertEqual(guarded.foodReachable, 0.92)
+
+        let raw = try LayaSnakePolicy.decision(turn: turn, move: move, risk: risk, food: food, guarded: false)
+        XCTAssertEqual(raw.executed, unsafe)
+        XCTAssertFalse(raw.intervened)
+    }
+
+    func testTiesResolveToTheFirstDirectionInPromptOrder() throws {
+        let game = try LayaSnakeGame()
+        let turn = try LayaSnakePolicy.turn(for: game, guarded: true)
+        let flat = LayaSnakeDirection.allCases.map { LayaLabeledProbability(label: $0.rawValue, probability: 0.25) }
+        let decided = try LayaSnakePolicy.decision(
+            turn: turn, move: stub(.choice(label: "UP", probabilities: flat)),
+            risk: stub(.noul(probability: 0.5)), food: stub(.noul(probability: 0.5)), guarded: false
+        )
+        XCTAssertEqual(decided.proposed, .up)
+        XCTAssertEqual(decided.executed, .up)
+    }
+
+    func testDecisionRejectsBadAnswers() throws {
+        let game = try LayaSnakeGame()
+        let turn = try LayaSnakePolicy.turn(for: game, guarded: true)
+        let good = LayaSnakeDirection.allCases.map { LayaLabeledProbability(label: $0.rawValue, probability: 0.25) }
+        let move = stub(.choice(label: "UP", probabilities: good))
+        XCTAssertThrowsError(try LayaSnakePolicy.decision(
+            turn: turn, move: move, risk: stub(.noul(probability: .nan)), food: stub(.noul(probability: 0.5)), guarded: true
+        ))
+        XCTAssertThrowsError(try LayaSnakePolicy.decision(
+            turn: turn, move: stub(.choice(label: "UP", probabilities: Array(good.dropLast()))),
+            risk: stub(.noul(probability: 0.5)), food: stub(.noul(probability: 0.5)), guarded: true
+        ))
+        XCTAssertThrowsError(try LayaSnakePolicy.decision(
+            turn: turn, move: stub(.noul(probability: 0.5)), risk: stub(.noul(probability: 0.5)), food: stub(.noul(probability: 0.5)), guarded: true
+        ))
+    }
+
+    func testTrappedBoardIsAnInvariantFailureOnlyWhenGuarded() throws {
+        var game = try LayaSnakeGame(width: 4, height: 4, initialLength: 4)
+        try game.place(body: [LayaSnakeCell(0, 0), LayaSnakeCell(1, 0), LayaSnakeCell(1, 1), LayaSnakeCell(0, 1), LayaSnakeCell(0, 2)], food: LayaSnakeCell(3, 3))
+        XCTAssertTrue(game.moves().allSatisfy { !$0.legal })
+        XCTAssertThrowsError(try LayaSnakePolicy.turn(for: game, guarded: true))
+        let turn = try LayaSnakePolicy.turn(for: game, guarded: false)
+        XCTAssertTrue(turn.state.hasPrefix("Safe route: no."))
+        XCTAssertNil(turn.plannerBest)
+        XCTAssertTrue(turn.safeDirections.isEmpty)
+    }
+}

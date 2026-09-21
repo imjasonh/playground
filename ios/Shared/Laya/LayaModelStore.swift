@@ -11,6 +11,7 @@ enum LayaModelSource {
     static let approximateBytes: Int64 = 679_920_639
     static let hubURL = URL(string: "https://huggingface.co/\(repoID)") ?? URL(fileURLWithPath: "/")
     static let sourceURL = URL(string: "https://github.com/mizorewww/laya-coreml") ?? URL(fileURLWithPath: "/")
+    static let snakeDocsURL = URL(string: "https://github.com/mizorewww/laya-coreml/blob/main/docs/SNAKE_DEMO.md") ?? URL(fileURLWithPath: "/")
 
     static var shortRevision: String { String(revision.prefix(7)) }
 
@@ -192,6 +193,10 @@ final class LayaModelStore: ObservableObject {
         append("FAILED " + failure.report.replacingOccurrences(of: "\n", with: " | "))
     }
 
+    func note(_ message: String) {
+        append(message)
+    }
+
     func clearLog() {
         log = LayaLogBuffer()
         try? FileManager.default.removeItem(at: logURL)
@@ -331,7 +336,11 @@ final class LayaModelStore: ObservableObject {
 
     // MARK: Inference
 
-    func predict(state: String, question: LayaQuestion) async throws -> LayaPrediction {
+    /// Answers one question on a background task.
+    ///
+    /// - Parameter recording: Whether to keep the prediction in the latency
+    ///   history and log its timings.
+    func predict(state: String, question: LayaQuestion, recording: Bool = true) async throws -> LayaPrediction {
         guard let runtime else {
             throw LayaError.model("The model is not loaded.")
         }
@@ -341,6 +350,7 @@ final class LayaModelStore: ObservableObject {
             let prediction = try await Task.detached(priority: .userInitiated) {
                 try runtime.predict(state: state, question: question)
             }.value
+            guard recording else { return prediction }
             history.append(prediction)
             if history.count > Self.historyLimit {
                 history.removeFirst(history.count - Self.historyLimit)
