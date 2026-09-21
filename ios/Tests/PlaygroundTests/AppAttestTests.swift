@@ -305,7 +305,7 @@ final class AppAttestTests: XCTestCase {
     }
 
     @MainActor
-    func testSignOutClearsUserAndTokenKeepsKey() {
+    func testSignOutClearsUserTokenAndKey() {
         let store = AppAttestMemoryStore(userId: "apple-1")
         store.token = "jwt"
         store.keyId = "key-1"
@@ -319,7 +319,8 @@ final class AppAttestTests: XCTestCase {
         XCTAssertFalse(controller.hasToken)
         XCTAssertEqual(store.userId, "")
         XCTAssertNil(store.token)
-        XCTAssertEqual(store.keyId, "key-1")
+        XCTAssertNil(store.keyId)
+        XCTAssertNil(controller.lastWhoAmI)
         XCTAssertEqual(controller.statusMessage, "Signed out.")
     }
 
@@ -419,27 +420,9 @@ final class AppAttestTests: XCTestCase {
         await controller.refreshAppleIDState()
         XCTAssertFalse(controller.isSignedIn)
         XCTAssertFalse(controller.hasToken)
-        XCTAssertEqual(store.keyId, "key-keep")
+        XCTAssertNil(store.keyId)
         XCTAssertTrue(controller.statusIsError)
         XCTAssertEqual(controller.statusMessage, "Sign in with Apple was revoked. Sign in again.")
-    }
-
-    @MainActor
-    func testForgetClearsToken() async {
-        let store = AppAttestMemoryStore()
-        store.token = "keep"
-        store.keyId = "k"
-        let controller = AppAttestController(
-            keys: FakeAppAttestKeys(isSupported: false),
-            store: store,
-            appleID: FakeAppAttestAppleID()
-        )
-        XCTAssertTrue(controller.hasToken)
-        controller.forgetToken()
-        XCTAssertFalse(controller.hasToken)
-        XCTAssertNil(store.token)
-        XCTAssertNil(store.keyId)
-        XCTAssertNil(controller.lastWhoAmI)
     }
 
     private static func json(_ body: String, status: Int) -> (Data, URLResponse) {

@@ -11,7 +11,6 @@ struct AppAttestView: View {
             VStack(spacing: 20) {
                 availabilityBanner
                 identitySection
-                actionButtons
                 statusLine
                 whoamiResults
             }
@@ -55,6 +54,15 @@ struct AppAttestView: View {
                     .font(.subheadline.monospaced())
                     .textSelection(.enabled)
                     .accessibilityIdentifier("appAttestAppleUserIdValue")
+                Button {
+                    controller.signOut()
+                } label: {
+                    Label("Sign out", systemImage: "person.crop.circle.badge.minus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(controller.isBusy)
+                .accessibilityIdentifier("appAttestSignOutButton")
             } else {
                 SignInWithAppleButton(.signIn) { request in
                     request.requestedScopes = []
@@ -75,51 +83,6 @@ struct AppAttestView: View {
                 .accessibilityIdentifier("appAttestDeviceIdValue")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var actionButtons: some View {
-        VStack(spacing: 10) {
-            Button {
-                Task { await controller.registerThenWhoami() }
-            } label: {
-                Label("Register device", systemImage: "checkmark.shield")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(controller.isBusy || !controller.isSignedIn)
-            .accessibilityIdentifier("appAttestRegisterButton")
-
-            Button {
-                Task { await controller.whoami() }
-            } label: {
-                Label("Call whoami", systemImage: "person.text.rectangle")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .disabled(controller.isBusy || !controller.hasToken)
-            .accessibilityIdentifier("appAttestWhoamiButton")
-
-            if controller.isSignedIn {
-                Button {
-                    controller.signOut()
-                } label: {
-                    Label("Sign out", systemImage: "person.crop.circle.badge.minus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .disabled(controller.isBusy)
-                .accessibilityIdentifier("appAttestSignOutButton")
-            }
-
-            Button(role: .destructive) {
-                controller.forgetToken()
-            } label: {
-                Label("Forget token", systemImage: "trash")
-                    .frame(maxWidth: .infinity)
-            }
-            .disabled(!controller.hasToken)
-            .accessibilityIdentifier("appAttestForgetButton")
-        }
     }
 
     @ViewBuilder

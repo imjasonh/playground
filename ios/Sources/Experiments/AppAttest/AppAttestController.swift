@@ -72,7 +72,9 @@ final class AppAttestController: ObservableObject {
     func signOut() {
         store.userId = ""
         userId = ""
-        forgetStoredToken()
+        store.clearSession()
+        hasToken = false
+        lastWhoAmI = nil
         setStatus("Signed out.")
     }
 
@@ -159,15 +161,8 @@ final class AppAttestController: ObservableObject {
                     : "Worker accepted the attested token."
             )
         } catch {
-            setStatus("Call whoami failed: \(error.localizedDescription)", isError: true)
+            setStatus("Whoami failed: \(error.localizedDescription)", isError: true)
         }
-    }
-
-    func forgetToken() {
-        store.clearSession()
-        hasToken = false
-        lastWhoAmI = nil
-        setStatus("Forgot the stored token and App Attest key id.")
     }
 
     private func forgetStoredToken() {
@@ -230,6 +225,6 @@ final class AppAttestController: ObservableObject {
         if supported {
             return "Signed in. Attesting this device."
         }
-        return "App Attest is unavailable. Register uses the Simulator bypass."
+        return "App Attest is unavailable. The handshake uses the Simulator bypass."
     }
 }
