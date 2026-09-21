@@ -8,6 +8,8 @@ final class ArmyListChatToolTests: XCTestCase {
 
     override func setUpWithError() throws {
         catalog = try ArmyListCatalogTests.loadCatalogFromRepo()
+        ArmyListThemeBriefBuilder.foundationModelsEnabled = false
+        ArmyListThemeBriefBuilder.testOverride = nil
         let list = ArmyListDocument(
             name: "Chat test",
             catalogVersion: catalog.version,
@@ -15,6 +17,12 @@ final class ArmyListChatToolTests: XCTestCase {
             battleSizeID: "incursion"
         )
         workspace = ArmyListChatWorkspace(list: list, catalog: catalog)
+    }
+
+    override func tearDown() {
+        ArmyListThemeBriefBuilder.testOverride = nil
+        ArmyListThemeBriefBuilder.foundationModelsEnabled = true
+        super.tearDown()
     }
 
     func testAddUnitRejectsOverDuplicateLimit() {

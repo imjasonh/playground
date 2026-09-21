@@ -50,7 +50,7 @@ ios/
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
 | `device-agent` | Device Agent | On-device model drives an in-app browser; App Intents/Shortcuts; voice; requires Apple Intelligence |
-| `army-list` | Army List | Build/validate 11th Edition lists (all factions in the bundled catalog); Laya (or greedy) ranks legal moves; Apple Intelligence names and matchups |
+| `army-list` | Army List | Build/validate 11th Edition lists (all factions in the bundled catalog); catalog code lists legal moves and applies picks; Laya answers labeled choices and leftover yes/no; Apple Intelligence writes a theme brief, a list name, and matchup copy |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
 | `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
@@ -132,8 +132,16 @@ screen fills a roster from 0. Opening that screen does not load Laya. If a
 download is already on disk, the button loads the graph and then Laya picks
 among legal catalog moves. Otherwise a ranked greedy fill runs. The
 controller then assigns legal enhancements and spends leftover points.
-Apple Intelligence is not required for that button. List chat uses it for
-Theme and Weaknesses only.
+The construction loop farms work to three workers. Catalog code lists legal
+moves, applies picks, and answers when only one option remains. Laya answers
+when two or more options remain: detachments, units, model counts, warlord,
+attaches, enhancements, and points cuts. It also answers leftover yes/no
+questions: keep adding, pack leftover, and assign an enhancement. After the
+pass it scores the finished list against the theme. Apple Intelligence writes
+a short theme brief and a list name when it is available. Token overlap on
+datasheet names and keywords is catalog work. Laya only gets a yes/no when a
+candidate misses those tokens. Construction still runs without Apple
+Intelligence or Laya.
 
 Refresh the **bundled** catalog (no remote fetch at runtime):
 
@@ -157,9 +165,11 @@ bash ios/scripts/stress-army-lists.sh --write-fixtures
 Those chips load Laya when a download is already on disk, then run the
 construction controller over legal catalog moves. Otherwise they use the
 greedy fallback. Opening List chat does not load the graph. Optional theme
-text steers that ranking. Theme and
-Weaknesses still use on-device Foundation Models when Apple Intelligence is
-available. Those tools only summarize the list or rename it. Chat still
+text steers ranking. Catalog code drops off-token units when any unit hits
+the brief; Laya only classifies the leftovers. When Apple Intelligence is
+available, Build and Fill ask it for a theme brief and a list name first.
+Theme and Weaknesses still use on-device Foundation Models for matchup
+write-ups. Those tools only summarize the list or rename it. Chat still
 compacts AFM context with TN3193 first and last entries, a rolling summary,
 and a list snapshot, and retries once on overflow. Without Apple Intelligence,
 the construction chips stay available.

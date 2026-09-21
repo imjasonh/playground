@@ -472,7 +472,7 @@ struct ArmyListNewSheet: View {
                             .foregroundStyle(.secondary)
                             .animation(.easeInOut(duration: 0.25), value: buildProgress)
                         if let lastStep {
-                            LayaDecisionBars(decision: lastStep.decision)
+                            ArmyListConstructionStepView(step: lastStep)
                         }
                     }
                     .accessibilityIdentifier("armyListBuildStarterProgress")
@@ -553,9 +553,10 @@ struct ArmyListNewSheet: View {
         onCreate(list)
     }
 
-    /// Builds a fresh list from 0. Laya picks among legal catalog moves when
-    /// the shared graph is loaded; otherwise the ranked greedy decider fills
-    /// the roster. Apple Intelligence is not required.
+    /// Builds a fresh list from 0. Catalog code lists legal moves. Laya picks
+    /// when the shared graph is loaded; otherwise the ranked greedy decider
+    /// fills the roster. Apple Intelligence can write a theme brief and a list
+    /// name first.
     private func buildStarterList() {
         seedError = nil
         if let issue = ArmyListStarterPrompt.buildFeasibilityIssue(

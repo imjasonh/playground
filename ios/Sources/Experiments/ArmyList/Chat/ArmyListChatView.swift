@@ -10,7 +10,8 @@ struct ArmyListChatView: View {
     @StateObject private var runtime: ArmyListChatRuntime
     @ObservedObject private var laya = LayaModelStore.shared
     @State private var draft = ""
-    /// A few words of theme Build / Fill fold into legal-move ranking.
+    /// A few words of theme. Build / Fill send them to the catalog ranker and
+    /// the theme brief.
     @State private var theme = ""
     @FocusState private var promptFocused: Bool
     @State private var exportShare: ExportShareItem?
@@ -364,19 +365,16 @@ struct ArmyListChatView: View {
     private var lastDecision: some View {
         Group {
             if let step = runtime.lastConstructionStep {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(step.applied)
-                        .font(.subheadline)
-                    LayaDecisionBars(decision: step.decision)
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-                .accessibilityIdentifier("armyListChatLastDecision")
+                ArmyListConstructionStepView(step: step)
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .accessibilityIdentifier("armyListChatLastDecision")
             }
         }
     }
 
-    /// Optional theme words that Build and Fill fold into legal-move ranking.
+    /// Optional theme words that Build and Fill send to the catalog ranker and
+    /// the theme brief.
     private var themeField: some View {
         HStack(spacing: 8) {
             Image(systemName: "paintpalette")
