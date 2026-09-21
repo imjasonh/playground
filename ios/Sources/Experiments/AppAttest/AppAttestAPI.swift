@@ -31,15 +31,15 @@ struct AppAttestAPI: Sendable {
         try await post(path: "v1/challenge", body: Data("{}".utf8))
     }
 
-    func exchangeToken(
+    func register(
         keyId: String,
         attestationObject: Data,
         clientDataJSON: Data
-    ) async throws -> AppAttestTokenResponse {
+    ) async throws -> AppAttestRegisterResponse {
         guard let clientData = String(data: clientDataJSON, encoding: .utf8) else {
             throw AppAttestAPIError.invalidClientData
         }
-        let body = AppAttestTokenRequest(
+        let body = AppAttestRegisterRequest(
             keyId: keyId,
             attestationObject: attestationObject.base64EncodedString(),
             clientData: clientData
@@ -47,7 +47,7 @@ struct AppAttestAPI: Sendable {
         return try await post(path: "v1/token", body: try JSONEncoder().encode(body))
     }
 
-    func exchangeUnattestedToken(clientDataJSON: Data) async throws -> AppAttestTokenResponse {
+    func registerUnattested(clientDataJSON: Data) async throws -> AppAttestRegisterResponse {
         guard let clientData = String(data: clientDataJSON, encoding: .utf8) else {
             throw AppAttestAPIError.invalidClientData
         }
@@ -55,11 +55,20 @@ struct AppAttestAPI: Sendable {
         return try await post(path: "v1/unattested-token", body: try JSONEncoder().encode(body))
     }
 
-    func whoami(token: String) async throws -> AppAttestWhoAmI {
-        var request = URLRequest(url: baseURL.appending(path: "v1/whoami"))
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        return try await send(request)
+    func whoami(
+        keyId: String,
+        assertionObject: Data?,
+        clientDataJSON: Data
+    ) async throws -> AppAttestWhoAmI {
+        guard let clientData = String(data: clientDataJSON, encoding: .utf8) else {
+            throw AppAttestAPIError.invalidClientData
+        }
+        let body = AppAttestWhoAmIRequest(
+            keyId: keyId,
+            assertionObject: assertionObject?.base64EncodedString(),
+            clientData: clientData
+        )
+        return try await post(path: "v1/whoami", body: try JSONEncoder().encode(body))
     }
 
     private func post<T: Decodable>(path: String, body: Data) async throws -> T {
@@ -88,7 +97,7 @@ struct AppAttestChallenge: Decodable, Equatable {
     var expiresAt: UInt64
 }
 
-struct AppAttestTokenRequest: Encodable {
+struct AppAttestRegisterRequest: Encodable {
     var keyId: String
     var attestationObject: String
     var clientData: String
@@ -98,13 +107,30 @@ struct AppAttestUnattestedRequest: Encodable {
     var clientData: String
 }
 
-struct AppAttestTokenResponse: Decodable, Equatable {
-    var token: String
-    var expiresAt: UInt64
+struct AppAttestWhoAmIRequest: Encodable {
+    var keyId: String
+    var assertionObject: String?
+    var clientData: String
+
+    enum CodingKeys: String, CodingKey {
+        case keyId, assertionObject, clientData
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(keyId, forKey: .keyId)
+        try container.encodeIfPresent(assertionObject, forKey: .assertionObject)
+        try container.encode(clientData, forKey: .clientData)
+    }
+}
+
+struct AppAttestRegisterResponse: Decodable, Equatable {
     var userId: String
     var deviceId: String
     var keyId: String
     var unattested: Bool
+    var counter: UInt32?
+    var riskMetric: UInt32?
 }
 
 struct AppAttestWhoAmI: Decodable, Equatable {
@@ -112,6 +138,8 @@ struct AppAttestWhoAmI: Decodable, Equatable {
     var deviceId: String
     var keyId: String
     var unattested: Bool
+    var counter: UInt32?
+    var riskMetric: UInt32?
 }
 
 struct AppAttestAPIErrorBody: Decodable {

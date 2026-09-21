@@ -1,7 +1,8 @@
 //! Base64 helpers.
 //!
-//! Apple's `keyId` is standard base64. Client payloads and JWT segments use
-//! unpadded base64url. Decoding accepts either alphabet and optional padding.
+//! Apple's `keyId` is standard base64. Client payloads and DeviceCheck JWT
+//! segments use unpadded base64url. Decoding accepts either alphabet and
+//! optional padding.
 
 use base64::engine::general_purpose::{STANDARD, STANDARD_NO_PAD, URL_SAFE, URL_SAFE_NO_PAD};
 use base64::Engine;
