@@ -48,7 +48,7 @@ test("WordPiece encodes known words and falls back to unk", () => {
           "[MASK]": 3,
           hello: 10,
           world: 11,
-          "##ing": 12,
+          "##ning": 12,
           run: 13,
         },
       },
