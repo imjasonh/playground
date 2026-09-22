@@ -53,7 +53,7 @@ test("formatDecision writes System One answers", () => {
   assert.equal(billed.confidence, round4(confidenceFromProbs(softmax([3, 0]))));
 
   const score = makeQuestion("score", "rate", ["low", "high"]);
-  const rated = formatDecision([0, 4], [1], score);
+  const rated = formatDecision(new Float32Array([0, 4]), new Float32Array([1]), score);
   assert.ok(rated.score > 0.9);
   assert.equal(rated.legend["1"], "high");
 
