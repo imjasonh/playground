@@ -28,16 +28,8 @@
           <span>Checkpoint</span>
           <select id="model"></select>
         </label>
-        <label>
-          <span>Backend</span>
-          <select id="backend">
-            <option value="auto">Auto (WebGPU if available)</option>
-            <option value="webgpu">WebGPU</option>
-            <option value="wasm">WASM / CPU</option>
-          </select>
-        </label>
         <div class="row">
-          <button type="button" id="compile" class="primary">Fetch and compile</button>
+          <button type="button" id="compile" class="primary" disabled>Fetch and compile</button>
           <button type="button" id="unload" disabled>Unload</button>
         </div>
         <progress id="progress" hidden></progress>

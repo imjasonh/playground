@@ -4,10 +4,9 @@ import { formatBytes, getModel, listModels } from "./models.js";
 import { getPreset, PRESETS } from "./presets.js";
 import { questionFromDraft } from "./questions.js";
 import { systemOne } from "./systemone.js";
-import { detectWebGPU, preferWebGpu } from "./webgpu.js";
+import { detectWebGPU, requireWebGpu } from "./webgpu.js";
 
 const modelSelect = document.querySelector("#model");
-const backendSelect = document.querySelector("#backend");
 const compileButton = document.querySelector("#compile");
 const unloadButton = document.querySelector("#unload");
 const modelStatus = document.querySelector("#model-status");
@@ -211,6 +210,7 @@ async function compile() {
   progressEl.hidden = true;
   progressEl.removeAttribute("value");
   try {
+    requireWebGpu(state.detected);
     if (!model.files.some((file) => file.endsWith(".onnx"))) {
       throw new Error(`${model.title} has no ONNX graph to compile.`);
     }
@@ -231,12 +231,11 @@ async function compile() {
       },
     });
     logLine(`fetch ${model.id} ${formatMs(performance.now() - started)}`);
-    setStatus(`Compiling ${model.title} on ${backendSelect.value}…`);
+    setStatus(`Compiling ${model.title} on WebGPU…`);
     progressEl.hidden = true;
     const compiled = await compileModel({
       model,
       files,
-      backendChoice: backendSelect.value,
       detected: state.detected,
     });
     if (!compiled.tokenizer) {
@@ -308,12 +307,13 @@ async function start() {
   if (state.detected.available) {
     const info = state.detected.info;
     gpuStatus.textContent = `WebGPU ${info.description || info.vendor || "adapter"}`;
-  } else {
-    gpuStatus.textContent = state.detected.reason;
-    if (preferWebGpu("auto", state.detected) === false && backendSelect.value === "auto") {
-      backendSelect.value = "wasm";
-    }
+    compileButton.disabled = false;
+    return;
   }
+  gpuStatus.textContent = state.detected.reason;
+  setStatus(state.detected.reason);
+  compileButton.disabled = true;
+  logLine(`error ${state.detected.reason}`);
 }
 
 modelSelect.addEventListener("change", describeModel);

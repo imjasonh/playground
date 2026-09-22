@@ -1,7 +1,7 @@
 # Laya Web
 
-Fetch a published Laya checkpoint in this tab, compile it to WebGPU (or WASM),
-and answer typed System One questions. After the download, weights stay in the
+Fetch a published Laya checkpoint in this tab, compile it to WebGPU, and
+answer typed System One questions. After the download, weights stay in the
 browser cache. Nothing is uploaded.
 
 Laya is a non-autoregressive decision model. You give it a state and questions
@@ -25,9 +25,9 @@ directory.
 | Laya English | Downloads [receptron/laya-onnx](https://huggingface.co/receptron/laya-onnx) (~1.7 GB fp32) and creates an ONNX Runtime Web session. |
 | Laya multilingual | Downloads [mizchi/laya-multilingual-onnx](https://huggingface.co/mizchi/laya-multilingual-onnx) (mmBERT-base, float16) and creates an ONNX Runtime Web session. |
 
-Pick **Auto** to use WebGPU when `navigator.gpu` is present. **WASM / CPU**
-forces the ONNX wasm provider. Repeat downloads hit the Cache API
-(`laya-web-v1`).
+Compile uses the ONNX Runtime WebGPU provider only. If this browser has no
+WebGPU adapter, Fetch and compile stays disabled. Repeat downloads hit the
+Cache API (`laya-web-v1`).
 
 ONNX Runtime Web loads from jsDelivr (`onnxruntime-web` 1.23.0). Laya English
 is large enough to stress a phone tab. If a Hub download fails, the status

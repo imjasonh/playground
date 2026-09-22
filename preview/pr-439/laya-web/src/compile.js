@@ -1,7 +1,7 @@
 import { ORT_CDN, parseLayaConfig } from "./models.js";
 import { jsonFromBuffer } from "./fetch-bundle.js";
 import { createWordPieceTokenizer, kevSpecialIdsFromBundle } from "./tokenizer.js";
-import { preferWebGpu } from "./webgpu.js";
+import { requireWebGpu } from "./webgpu.js";
 
 export async function loadOrt(importOrt) {
   if (importOrt) {
@@ -33,12 +33,11 @@ export function pickOnnxFiles(files) {
 export async function compileModel({
   model,
   files = {},
-  backendChoice = "auto",
   detected,
   importOrt,
 } = {}) {
   const started = now();
-  const wantGpu = preferWebGpu(backendChoice, detected);
+  requireWebGpu(detected);
   const picked = pickOnnxFiles(files);
   if (!picked.graph) {
     throw new Error(
@@ -46,9 +45,8 @@ export async function compileModel({
     );
   }
   const ort = await loadOrt(importOrt);
-  const providers = wantGpu ? ["webgpu", "wasm"] : ["wasm"];
   const sessionOptions = {
-    executionProviders: providers,
+    executionProviders: ["webgpu"],
     graphOptimizationLevel: model.webgpuGraphOpt ?? "basic",
   };
   if (picked.weights && files[picked.weights]) {
@@ -57,7 +55,7 @@ export async function compileModel({
     ];
   }
   const onnxSession = await ort.InferenceSession.create(files[picked.graph], sessionOptions);
-  const backend = inferOrtBackend(onnxSession, wantGpu);
+  const backend = "webgpu";
   const config = parseLayaConfig(picked.config ? jsonFromBuffer(files[picked.config]) : null);
   const tokenizer = picked.tokenizer
     ? createWordPieceTokenizer(
@@ -74,14 +72,6 @@ export async function compileModel({
     backend,
     compileMs: now() - started,
   };
-}
-
-export function inferOrtBackend(session, wantedGpu) {
-  const providers = session.sessionOptions?.executionProviders;
-  if (Array.isArray(providers) && providers.some((p) => String(p).includes("webgpu"))) {
-    return "webgpu";
-  }
-  return wantedGpu ? "webgpu" : "wasm";
 }
 
 export function createOrtSession(ort, session, backend) {
