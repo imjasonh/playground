@@ -50,6 +50,8 @@ bump when the tests still pass, so old experiments don't rot.
 - **[`nypd-choppers/`](nypd-choppers/)** — daily flight paths, airborne hours,
   and estimated fuel cost for NYPD Aviation Unit helicopters, from public ADS-B
   data collected by an hourly scrape workflow.
+- **[`laya-web/`](laya-web/)** — fetch a Laya checkpoint in the browser,
+  compile it to WebGPU, and answer typed System One questions.
 - **[`population-rays/`](population-rays/)** — from any US point, how far a
   filled 5° slice must go in each direction to hit N people, using Meta/CIESIN
   high-resolution population grids.
