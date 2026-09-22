@@ -1,16 +1,17 @@
 import { optionLabels, QTYPE_IDS } from "./questions.js";
 
 export function softmax(values) {
-  if (values.length === 0) {
+  const list = Array.from(values, Number);
+  if (list.length === 0) {
     return [];
   }
-  let max = values[0];
-  for (const value of values) {
+  let max = list[0];
+  for (const value of list) {
     if (value > max) {
       max = value;
     }
   }
-  const exps = values.map((value) => Math.exp(value - max));
+  const exps = list.map((value) => Math.exp(value - max));
   const total = exps.reduce((sum, value) => sum + value, 0);
   return exps.map((value) => value / total);
 }
