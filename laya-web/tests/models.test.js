@@ -10,8 +10,7 @@ import {
   listModels,
   parseLayaConfig,
 } from "../src/models.js";
-import { preferWebGpu } from "../src/webgpu.js";
-import { detectWebGPU } from "../src/webgpu.js";
+import { detectWebGPU, requireWebGpu } from "../src/webgpu.js";
 import { concat, fetchBundle, fetchFile, memoryCache } from "../src/fetch-bundle.js";
 
 test("catalog lists the Laya ONNX checkpoints", () => {
@@ -59,11 +58,9 @@ test("pickOnnxFiles prefers rl_agent_config over onnx_config", () => {
   assert.equal(picked.config, "rl_agent_config.json");
 });
 
-test("preferWebGpu follows the user's backend choice", () => {
-  assert.equal(preferWebGpu("wasm", { available: true }), false);
-  assert.equal(preferWebGpu("webgpu", { available: false }), true);
-  assert.equal(preferWebGpu("auto", { available: true }), true);
-  assert.equal(preferWebGpu("auto", { available: false }), false);
+test("requireWebGpu throws when the adapter is missing", () => {
+  assert.throws(() => requireWebGpu({ available: false, reason: "No WebGPU adapter." }), /No WebGPU adapter/);
+  requireWebGpu({ available: true });
 });
 
 test("detectWebGPU reports missing navigator.gpu", async () => {

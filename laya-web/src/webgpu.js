@@ -22,12 +22,9 @@ export async function detectWebGPU(gpu = globalThis.navigator?.gpu) {
   }
 }
 
-export function preferWebGpu(choice, detected) {
-  if (choice === "wasm" || choice === "cpu") {
-    return false;
+export function requireWebGpu(detected) {
+  if (detected?.available) {
+    return;
   }
-  if (choice === "webgpu") {
-    return true;
-  }
-  return Boolean(detected?.available);
+  throw new Error(detected?.reason ?? "WebGPU is not available.");
 }

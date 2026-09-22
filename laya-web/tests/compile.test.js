@@ -9,14 +9,25 @@ import {
   pretokenizeBert,
 } from "../src/tokenizer.js";
 
+test("compileModel throws when WebGPU is unavailable", async () => {
+  await assert.rejects(
+    () =>
+      compileModel({
+        model: { title: "Laya English" },
+        files: { "laya.onnx": new ArrayBuffer(8) },
+        detected: { available: false, reason: "No WebGPU adapter." },
+      }),
+    /No WebGPU adapter/,
+  );
+});
+
 test("compileModel throws when the bundle has no ONNX graph", async () => {
   await assert.rejects(
     () =>
       compileModel({
         model: { title: "No graph" },
         files: { "readme.md": new ArrayBuffer(8) },
-        backendChoice: "auto",
-        detected: { available: false },
+        detected: { available: true },
       }),
     /no ONNX graph/,
   );
