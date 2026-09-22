@@ -41,6 +41,7 @@ export function packKev(encode, specialIds, state, questions, limits = {}) {
   const pos = stateIds.map((_, index) => index);
   const opt = Array(stateIds.length).fill(OPT_NONE);
   const decideIdx = [];
+  const optOpenIdx = [];
   const optIdx = [];
 
   const items = Array.isArray(questions) ? questions : Object.values(questions);
@@ -74,9 +75,11 @@ export function packKev(encode, specialIds, state, questions, limits = {}) {
     } else {
       branchPos = branch.map((_, i) => p0 + i);
     }
+    const opens = [];
     const ends = [];
     let cursor = instr.length;
     for (const span of spans) {
+      opens.push(cursor);
       cursor += span.length;
       ends.push(cursor - 1);
     }
@@ -85,6 +88,7 @@ export function packKev(encode, specialIds, state, questions, limits = {}) {
     pos.push(...branchPos);
     opt.push(...branchOpt);
     decideIdx.push(base + branch.length - 1);
+    optOpenIdx.push(opens.map((open) => base + open));
     optIdx.push(ends.map((end) => base + end));
   });
 
@@ -98,6 +102,7 @@ export function packKev(encode, specialIds, state, questions, limits = {}) {
     opt,
     optionIsolation,
     decideIdx,
+    optOpenIdx,
     optIdx,
     stateTruncated: stateTokens.length + 1 > maxState,
   };
