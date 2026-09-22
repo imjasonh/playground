@@ -116,6 +116,10 @@ them:
 - **[`its-not-jaws/`](its-not-jaws/)** — Cursor Agent SDK harness for It's Not
   Jaws: knower picks a movie, guesser uses shared-fact clues; tracks outcomes,
   leaks in published traces, game length, and token cost.
+- **[`fg-laya/`](fg-laya/)** — FlightGear addon that asks a System One model
+  (Laya or Jev) for every flight control. Starts airborne and holds a circle
+  or flies random waypoints. `npm start` runs the same loop over a built-in
+  kinematic airplane when FlightGear is not installed.
 - **[`nethack-agent/`](nethack-agent/)** — Cursor Agent SDK harness that plays
   NetHack from the terminal. The prompt does not name the game or list
   commands. Later lives see claims and short key sequences earlier lives wrote,

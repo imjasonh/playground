@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Laya autopilot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <h1>Laya autopilot</h1>
+      <p id="meta" class="meta">waiting for the pilot loop</p>
+    </header>
+    <main>
+      <section class="instruments" aria-label="Flight instruments">
+        <canvas id="horizon" width="420" height="320"></canvas>
+        <dl class="tapes">
+          <div><dt>IAS</dt><dd id="ias">—</dd></div>
+          <div><dt>ALT</dt><dd id="alt">—</dd></div>
+          <div><dt>HDG</dt><dd id="hdg">—</dd></div>
+          <div><dt>VSI</dt><dd id="vsi">—</dd></div>
+        </dl>
+      </section>
+      <section class="map-wrap" aria-label="Track">
+        <canvas id="map" width="420" height="320"></canvas>
+      </section>
+      <section class="decisions" aria-label="System One answers" id="decisions"></section>
+    </main>
+    <script src="app.js"></script>
+  </body>
+</html>

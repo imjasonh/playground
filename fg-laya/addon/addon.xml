@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PropertyList>
+  <min-FG-version>2018.1.0</min-FG-version>
+  <max-FG-version>2099.99.99</max-FG-version>
+  <name>Laya Autopilot</name>
+  <id>org.playground.fg-laya</id>
+  <version>
+    <major>1</major>
+    <minor>0</minor>
+    <patch>0</patch>
+  </version>
+  <authors>
+    <author>
+      <name>playground</name>
+    </author>
+  </authors>
+  <maintainer>
+    <name>playground</name>
+  </maintainer>
+  <short-description>System One (Laya or Jev) writes every flight control</short-description>
+  <long-description>
+    Publishes /laya properties and copies System One aileron, elevator, rudder,
+    and throttle commands onto the aircraft. The Node client in this directory
+    reads the instruments, asks Laya or Jev, and writes /laya/cmd/*.
+  </long-description>
+  <license>Apache-2.0</license>
+</PropertyList>

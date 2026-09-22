@@ -1,0 +1,16 @@
+{
+  "name": "fg-laya",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FlightGear addon that asks a System One model (Laya or Jev) for every flight control",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "start": "node scripts/fly.js --world sim --mode circle",
+    "fly": "node scripts/fly.js",
+    "fg": "bash scripts/start-fg.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
