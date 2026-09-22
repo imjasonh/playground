@@ -14,13 +14,11 @@ import { preferWebGpu } from "../src/webgpu.js";
 import { detectWebGPU } from "../src/webgpu.js";
 import { concat, fetchBundle, fetchFile, memoryCache } from "../src/fetch-bundle.js";
 
-test("catalog lists Laya and Kev", () => {
+test("catalog lists the Laya ONNX checkpoints", () => {
   const ids = listModels().map((model) => model.id);
-  assert.ok(ids.includes("laya-en"));
-  assert.ok(ids.includes("laya-ml"));
-  assert.ok(ids.includes("kev-0.5b"));
+  assert.deepEqual(ids, ["laya-en", "laya-ml"]);
   assert.equal(getModel("laya-en").engine, "ort");
-  assert.throws(() => getModel("fixture"), /Unknown model/);
+  assert.throws(() => getModel("kev-0.5b"), /Unknown model/);
 });
 
 test("hubFileUrl encodes repo paths", () => {

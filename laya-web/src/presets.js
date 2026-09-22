@@ -27,8 +27,8 @@ export const PRESETS = [
     options: "",
   },
   {
-    id: "kev-ticket",
-    title: "Kev ticket (three questions)",
+    id: "ticket-three",
+    title: "Support ticket (three questions)",
     kind: "choice",
     state: "Shoes arrived two weeks late and in the wrong size. Also I see two charges on my card.",
     instructions: "Which team should handle this?",

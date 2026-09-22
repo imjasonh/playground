@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { compileModel } from "../src/compile.js";
-import { getModel } from "../src/models.js";
 import {
   createWordPieceTokenizer,
   kevSpecialIdsFromBundle,
@@ -14,8 +13,8 @@ test("compileModel throws when the bundle has no ONNX graph", async () => {
   await assert.rejects(
     () =>
       compileModel({
-        model: getModel("kev-0.5b"),
-        files: { "adapter_config.json": new ArrayBuffer(8) },
+        model: { title: "No graph" },
+        files: { "readme.md": new ArrayBuffer(8) },
         backendChoice: "auto",
         detected: { available: false },
       }),

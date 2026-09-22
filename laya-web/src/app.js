@@ -268,16 +268,6 @@ async function unload() {
   logLine("unload");
 }
 
-function kevIdsFromCompiled(compiled) {
-  if (compiled.kevSpecialIds) {
-    return compiled.kevSpecialIds;
-  }
-  if (compiled.model.family === "kev") {
-    throw new Error(`${compiled.model.title} is missing Kev delimiter token ids.`);
-  }
-  return null;
-}
-
 async function run() {
   if (!state.compiled) {
     return;
@@ -292,7 +282,6 @@ async function run() {
       family: state.compiled.model.family,
       encode: (text) => tokenizer.encode(text),
       specialIds: tokenizer.ids,
-      kevSpecialIds: kevIdsFromCompiled(state.compiled),
       config: state.compiled.config,
       state: stateInput.value,
       questions: named,

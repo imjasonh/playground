@@ -1,6 +1,6 @@
-/** Published Laya / Kev bundles the tab can fetch and compile. */
+/** Published Laya ONNX bundles the tab can fetch and compile. */
 
-export const CACHE_NAME = "oss-jev-v1";
+export const CACHE_NAME = "laya-web-v1";
 
 export const ORT_VERSION = "1.23.0";
 
@@ -54,26 +54,6 @@ export const MODELS = {
     tokenizer: "tokenizer/tokenizer.json",
     tokenizerConfig: "tokenizer/tokenizer_config.json",
     webgpuGraphOpt: "basic",
-  },
-  "kev-0.5b": {
-    id: "kev-0.5b",
-    title: "Kev 0.5B",
-    family: "kev",
-    engine: "ort",
-    runnable: false,
-    repo: "jaredpalmer/kev-0.5b",
-    revision: "main",
-    bytes: 7_000,
-    description:
-      "jaredpalmer/kev-0.5b is a Qwen2.5-0.5B LoRA. There is no ONNX graph, so Fetch and compile fails.",
-    files: [
-      "adapter_config.json",
-      "added_tokens.json",
-      "tokenizer_config.json",
-      "special_tokens_map.json",
-    ],
-    graph: null,
-    config: null,
   },
 };
 
