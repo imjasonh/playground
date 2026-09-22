@@ -1,4 +1,3 @@
-import { createFixtureSession, compileFixtureWebGpu } from "./fixture.js";
 import { ORT_CDN, parseLayaConfig } from "./models.js";
 import { jsonFromBuffer } from "./fetch-bundle.js";
 import { createWordPieceTokenizer, kevSpecialIdsFromBundle } from "./tokenizer.js";
@@ -37,28 +36,14 @@ export async function compileModel({
   backendChoice = "auto",
   detected,
   importOrt,
-  gpu,
 } = {}) {
   const started = now();
   const wantGpu = preferWebGpu(backendChoice, detected);
-  if (model.engine === "fixture") {
-    const webgpu = wantGpu ? await compileFixtureWebGpu(gpu) : null;
-    const backend = webgpu ? "webgpu" : "cpu";
-    const session = createFixtureSession({ webgpu, backend });
-    const parsed = parsedJsonFiles(files);
-    return {
-      session,
-      tokenizer: null,
-      kevSpecialIds: kevSpecialIdsFromBundle(parsed),
-      config: parseLayaConfig(null),
-      backend,
-      compileMs: now() - started,
-    };
-  }
-
   const picked = pickOnnxFiles(files);
   if (!picked.graph) {
-    throw new Error("No ONNX graph in the fetched bundle.");
+    throw new Error(
+      `${model?.title ?? "This checkpoint"} has no ONNX graph to compile.`,
+    );
   }
   const ort = await loadOrt(importOrt);
   const providers = wantGpu ? ["webgpu", "wasm"] : ["wasm"];
@@ -84,6 +69,7 @@ export async function compileModel({
   return {
     session,
     tokenizer,
+    kevSpecialIds: kevSpecialIdsFromBundle(parsedJsonFiles(files)),
     config,
     backend,
     compileMs: now() - started,
@@ -102,6 +88,9 @@ export function createOrtSession(ort, session, backend) {
   return {
     backend,
     engine: "ort",
+    async runKev() {
+      throw new Error("This ONNX session is a Laya graph. Kev needs a Kev ONNX export.");
+    },
     async runLaya(batch) {
       const feeds = {
         input_ids: new ort.Tensor("int64", batch.inputIds, [batch.n, batch.length]),

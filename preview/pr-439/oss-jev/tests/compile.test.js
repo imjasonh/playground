@@ -5,34 +5,22 @@ import { compileModel } from "../src/compile.js";
 import { getModel } from "../src/models.js";
 import {
   createWordPieceTokenizer,
-  fixtureWord,
   kevSpecialIdsFromBundle,
   normalizeBert,
   pretokenizeBert,
 } from "../src/tokenizer.js";
 
-test("compileModel builds the fixture session on CPU when WebGPU is absent", async () => {
-  const compiled = await compileModel({
-    model: getModel("fixture"),
-    backendChoice: "auto",
-    detected: { available: false },
-    gpu: undefined,
-  });
-  assert.equal(compiled.backend, "cpu");
-  assert.equal(compiled.session.engine, "fixture");
-  const rows = await compiled.session.runLaya({
-    n: 1,
-    length: 4,
-    maxOptions: 2,
-    inputIds: BigInt64Array.from([1n, 2n, 2n, 3n]),
-    attention: BigInt64Array.from([1n, 1n, 1n, 1n]),
-    markerPos: BigInt64Array.from([1n, 3n]),
-    markerMask: Uint8Array.from([1, 1]),
-    qtype: BigInt64Array.from([0n]),
-    tokenCount: 4,
-  });
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].logits.length, 2);
+test("compileModel throws when the bundle has no ONNX graph", async () => {
+  await assert.rejects(
+    () =>
+      compileModel({
+        model: getModel("kev-0.5b"),
+        files: { "adapter_config.json": new ArrayBuffer(8) },
+        backendChoice: "auto",
+        detected: { available: false },
+      }),
+    /no ONNX graph/,
+  );
 });
 
 test("WordPiece encodes known words and falls back to unk", () => {
@@ -65,11 +53,6 @@ test("WordPiece encodes known words and falls back to unk", () => {
   assert.deepEqual(tok.encode("running"), [13, 12]);
   assert.deepEqual(tok.encode("xyzzy"), [0]);
   assert.equal(tok.ids.mask, 3);
-});
-
-test("fixtureWord collapses charge variants", () => {
-  assert.equal(fixtureWord("charged"), fixtureWord("charges"));
-  assert.equal(fixtureWord("charge"), fixtureWord("charges"));
 });
 
 test("Bert pretokenizer splits punctuation", () => {

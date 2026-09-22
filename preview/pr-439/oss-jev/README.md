@@ -1,15 +1,13 @@
 # OSS Jev
 
-Fetch a Laya or Kev checkpoint in this tab, compile it to WebGPU (or WASM/CPU),
-and answer typed System One questions. After the download, weights stay in the
-browser cache. Nothing is uploaded.
+Fetch a published Laya or Kev checkpoint in this tab, compile it to WebGPU
+(or WASM), and answer typed System One questions. After the download, weights
+stay in the browser cache. Nothing is uploaded.
 
 Laya is a non-autoregressive decision model. You give it a state and questions
 of type choice, score, or noul (yes/no). It returns calibrated probabilities.
 Kev is a Jev-style packer: one state, then isolated question branches with
-pointer readout. The published Kev 0.5B run is a LoRA adapter on Qwen2.5-0.5B
-and has no ONNX graph, so this app compiles a small fixture kernel onto
-Kev-packed tokens.
+pointer readout.
 
 ## Run locally
 
@@ -26,19 +24,18 @@ directory.
 
 | Checkpoint | What **Fetch and compile** does |
 | --- | --- |
-| Fixture | Compiles a bundled WGSL kernel. No download. |
 | Laya English | Downloads [receptron/laya-onnx](https://huggingface.co/receptron/laya-onnx) (~1.7 GB fp32) and creates an ONNX Runtime Web session. |
 | Laya multilingual | Downloads [mizchi/laya-multilingual-onnx](https://huggingface.co/mizchi/laya-multilingual-onnx) (mmBERT-base, float16) and creates an ONNX Runtime Web session. |
-| Kev 0.5B | Downloads tokenizer specials from [jaredpalmer/kev-0.5b](https://huggingface.co/jaredpalmer/kev-0.5b), packs tokens the published way, and compiles the fixture kernel. |
+| Kev 0.5B | Fails. [jaredpalmer/kev-0.5b](https://huggingface.co/jaredpalmer/kev-0.5b) is a Qwen2.5-0.5B LoRA, not an ONNX graph. |
 
 Pick **Auto** to use WebGPU when `navigator.gpu` is present. **WASM / CPU**
-forces the ONNX wasm provider or the fixture CPU path. Repeat downloads hit the
-Cache API (`oss-jev-v1`).
+forces the ONNX wasm provider. Repeat downloads hit the Cache API
+(`oss-jev-v1`).
 
-ONNX Runtime Web loads from jsDelivr (`onnxruntime-web` 1.23.0). The Laya
-English file is large enough to stress a phone tab. Prefer Fixture or
-multilingual when you want a shorter download. If a Hub download fails, use
-Fixture. The compile path is the same.
+ONNX Runtime Web loads from jsDelivr (`onnxruntime-web` 1.23.0). Laya English
+is large enough to stress a phone tab. If a Hub download fails, or the
+checkpoint has no ONNX graph, the status line shows the error and Run stays
+disabled.
 
 ## Prompt and answers
 
@@ -60,5 +57,5 @@ npm test
 ```
 
 Coverage includes option parsing, Laya prefix/sequence layout, Kev packing,
-calibration, WordPiece, bundle URL/cache helpers, and System One on the
-fixture session (CPU).
+calibration, WordPiece, bundle URL/cache helpers, and System One packing
+through a mock session.

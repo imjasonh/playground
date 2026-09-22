@@ -12,14 +12,15 @@ import {
 } from "../src/models.js";
 import { preferWebGpu } from "../src/webgpu.js";
 import { detectWebGPU } from "../src/webgpu.js";
-import { concat, fetchFile, memoryCache } from "../src/fetch-bundle.js";
+import { concat, fetchBundle, fetchFile, memoryCache } from "../src/fetch-bundle.js";
 
 test("catalog lists Laya and Kev", () => {
   const ids = listModels().map((model) => model.id);
   assert.ok(ids.includes("laya-en"));
   assert.ok(ids.includes("laya-ml"));
   assert.ok(ids.includes("kev-0.5b"));
-  assert.equal(getModel("fixture").engine, "fixture");
+  assert.equal(getModel("laya-en").engine, "ort");
+  assert.throws(() => getModel("fixture"), /Unknown model/);
 });
 
 test("hubFileUrl encodes repo paths", () => {
@@ -27,12 +28,11 @@ test("hubFileUrl encodes repo paths", () => {
     hubFileUrl("receptron/laya-onnx", "main", "tokenizer/tokenizer.json"),
     "https://huggingface.co/receptron/laya-onnx/resolve/main/tokenizer/tokenizer.json",
   );
-  assert.equal(bundleUrls(getModel("fixture")).length, 0);
   assert.ok(bundleUrls(getModel("laya-en")).length >= 5);
 });
 
 test("formatBytes and config defaults", () => {
-  assert.equal(formatBytes(0), "bundled");
+  assert.equal(formatBytes(0), "0 B");
   assert.match(formatBytes(1_700_000_000), /GB/);
   const config = parseLayaConfig({ max_len: 1024, temperature_by_options: { "choice:2": 1.2 } });
   assert.equal(config.max_len, 1024);
@@ -92,6 +92,23 @@ test("fetchFile uses the cache and reports progress", async () => {
   assert.equal(first.byteLength, 4);
   assert.equal(second.byteLength, 4);
   assert.equal(fetches, 1);
+});
+
+test("fetchFile throws on HTTP error", async () => {
+  await assert.rejects(
+    () =>
+      fetchFile("https://example.test/missing.bin", {
+        fetchImpl: async () => ({ ok: false, status: 404, statusText: "Not Found" }),
+      }),
+    /failed to download/,
+  );
+});
+
+test("fetchBundle throws when a model has no files", async () => {
+  await assert.rejects(
+    () => fetchBundle({ title: "Empty", repo: null, files: [] }),
+    /no files to fetch/,
+  );
 });
 
 test("concat joins streamed chunks", () => {

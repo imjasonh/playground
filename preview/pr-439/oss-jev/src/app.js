@@ -4,7 +4,6 @@ import { formatBytes, getModel, listModels } from "./models.js";
 import { getPreset, PRESETS } from "./presets.js";
 import { questionFromDraft } from "./questions.js";
 import { systemOne } from "./systemone.js";
-import { createWhitespaceTokenizer, kevSpecialIdsFromLookup } from "./tokenizer.js";
 import { detectWebGPU, preferWebGpu } from "./webgpu.js";
 
 const modelSelect = document.querySelector("#model");
@@ -212,26 +211,26 @@ async function compile() {
   progressEl.hidden = true;
   progressEl.removeAttribute("value");
   try {
-    let files = {};
-    if (model.files.length > 0) {
-      setStatus(`Fetching ${model.title}…`);
-      const started = performance.now();
-      files = await fetchBundle(model, {
-        cache: state.cache,
-        onProgress({ file, received, total, cached }) {
-          if (cached) {
-            return;
-          }
-          if (total) {
-            progressEl.hidden = false;
-            progressEl.max = 1;
-            progressEl.value = received / total;
-          }
-          setStatus(`Fetching ${file} (${formatBytes(received)}${total ? ` / ${formatBytes(total)}` : ""})`);
-        },
-      });
-      logLine(`fetch ${model.id} ${formatMs(performance.now() - started)}`);
+    if (!model.files.some((file) => file.endsWith(".onnx"))) {
+      throw new Error(`${model.title} has no ONNX graph to compile.`);
     }
+    setStatus(`Fetching ${model.title}…`);
+    const started = performance.now();
+    const files = await fetchBundle(model, {
+      cache: state.cache,
+      onProgress({ file, received, total, cached }) {
+        if (cached) {
+          return;
+        }
+        if (total) {
+          progressEl.hidden = false;
+          progressEl.max = 1;
+          progressEl.value = received / total;
+        }
+        setStatus(`Fetching ${file} (${formatBytes(received)}${total ? ` / ${formatBytes(total)}` : ""})`);
+      },
+    });
+    logLine(`fetch ${model.id} ${formatMs(performance.now() - started)}`);
     setStatus(`Compiling ${model.title} on ${backendSelect.value}…`);
     progressEl.hidden = true;
     const compiled = await compileModel({
@@ -240,15 +239,18 @@ async function compile() {
       backendChoice: backendSelect.value,
       detected: state.detected,
     });
+    if (!compiled.tokenizer) {
+      throw new Error(`${model.title} has no tokenizer in the fetched bundle.`);
+    }
     state.compiled = { ...compiled, model };
     state.files = files;
     logLine(`compile ${model.id} ${compiled.backend} ${formatMs(compiled.compileMs)}`);
-    setStatus(
-      `${model.title} ready on ${compiled.backend}. ${compiled.tokenizer ? `vocab ${compiled.tokenizer.vocabSize}.` : "Fixture tokenizer."}`,
-    );
+    setStatus(`${model.title} ready on ${compiled.backend}. vocab ${compiled.tokenizer.vocabSize}.`);
     runButton.disabled = false;
     unloadButton.disabled = false;
   } catch (error) {
+    runButton.disabled = !state.compiled;
+    unloadButton.disabled = !state.compiled;
     setStatus(error.message);
     logLine(`error ${error.message}`);
   } finally {
@@ -266,25 +268,14 @@ async function unload() {
   logLine("unload");
 }
 
-function encoderFor(compiled) {
-  if (compiled.tokenizer) {
-    return compiled.tokenizer;
-  }
-  return createWhitespaceTokenizer();
-}
-
-function kevIdsFromCompiled(compiled, tokenizer) {
+function kevIdsFromCompiled(compiled) {
   if (compiled.kevSpecialIds) {
     return compiled.kevSpecialIds;
   }
-  const known = {
-    "<|fim_prefix|>": 10,
-    "<|fim_middle|>": 11,
-    "<|box_start|>": 12,
-    "<|box_end|>": 13,
-    "<|fim_suffix|>": 14,
-  };
-  return kevSpecialIdsFromLookup((token) => known[token] ?? tokenizer.encode(token)[0]);
+  if (compiled.model.family === "kev") {
+    throw new Error(`${compiled.model.title} is missing Kev delimiter token ids.`);
+  }
+  return null;
 }
 
 async function run() {
@@ -295,13 +286,13 @@ async function run() {
   try {
     const questions = readQuestions();
     const named = Object.fromEntries(questions.map((question, index) => [`q${index + 1}`, question]));
-    const tokenizer = encoderFor(state.compiled);
+    const tokenizer = state.compiled.tokenizer;
     const result = await systemOne({
       session: state.compiled.session,
       family: state.compiled.model.family,
       encode: (text) => tokenizer.encode(text),
-      specialIds: tokenizer.ids ?? createWhitespaceTokenizer().ids,
-      kevSpecialIds: kevIdsFromCompiled(state.compiled, tokenizer),
+      specialIds: tokenizer.ids,
+      kevSpecialIds: kevIdsFromCompiled(state.compiled),
       config: state.compiled.config,
       state: stateInput.value,
       questions: named,

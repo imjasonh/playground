@@ -7,17 +7,6 @@ export const ORT_VERSION = "1.23.0";
 export const ORT_CDN = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
 
 export const MODELS = {
-  fixture: {
-    id: "fixture",
-    title: "Fixture",
-    family: "laya",
-    engine: "fixture",
-    runnable: true,
-    bytes: 0,
-    description:
-      "Bundled WebGPU kernel. Scores each option by how often its tokens appear in the state, so the compile path works without a Hub download.",
-    files: [],
-  },
   "laya-en": {
     id: "laya-en",
     title: "Laya English",
@@ -70,13 +59,13 @@ export const MODELS = {
     id: "kev-0.5b",
     title: "Kev 0.5B",
     family: "kev",
-    engine: "fixture",
-    runnable: true,
+    engine: "ort",
+    runnable: false,
     repo: "jaredpalmer/kev-0.5b",
     revision: "main",
     bytes: 7_000,
     description:
-      "Fetches Kev's published tokenizer specials. There is no ONNX graph for the Qwen backbone, so compile uses the fixture kernel on Kev-packed tokens.",
+      "jaredpalmer/kev-0.5b is a Qwen2.5-0.5B LoRA. There is no ONNX graph, so Fetch and compile fails.",
     files: [
       "adapter_config.json",
       "added_tokens.json",
@@ -121,7 +110,7 @@ export function bundleUrls(model) {
 
 export function formatBytes(bytes) {
   if (!bytes) {
-    return "bundled";
+    return "0 B";
   }
   if (bytes >= 1_000_000_000) {
     return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
