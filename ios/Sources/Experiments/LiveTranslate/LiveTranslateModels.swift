@@ -186,9 +186,9 @@ enum LiveTranslateResultBuilder {
     }
 
     static func shouldCopy(newPayload: String, lastCopied: String?) -> Bool {
-        let trimmed = normalize(newPayload)
+        let trimmed = newPayload.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
-        return trimmed != lastCopied
+        return trimmed != lastCopied?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     static func fittedFontSize(
