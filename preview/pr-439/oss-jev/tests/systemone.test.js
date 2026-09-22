@@ -63,8 +63,8 @@ test("systemOne on the fixture packs Kev delimiters", async () => {
 });
 
 test("fixture CPU logits prefer options that reuse state tokens", () => {
-  const ids = [1, 7, 8, 9, 7, 2, 8];
-  const markers = [4, 6];
+  const ids = [7, 7, 7, 9, 7, 8];
+  const markers = [3, 5];
   const logits = fixtureLogitsCpu(ids, markers);
   assert.ok(logits[0] > logits[1]);
 });
