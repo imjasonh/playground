@@ -174,6 +174,7 @@ final class LiveTranslateTests: XCTestCase {
         XCTAssertEqual(LiveTranslateResultBuilder.clipboardPayload(from: overlays), "Hello\nMundo")
         XCTAssertTrue(LiveTranslateResultBuilder.shouldCopy(newPayload: "Hello\nMundo", lastCopied: nil))
         XCTAssertFalse(LiveTranslateResultBuilder.shouldCopy(newPayload: "Hello\nMundo", lastCopied: "Hello\nMundo"))
+        XCTAssertFalse(LiveTranslateResultBuilder.shouldCopy(newPayload: " Hello\nMundo\n", lastCopied: "Hello\nMundo"))
         XCTAssertFalse(LiveTranslateResultBuilder.shouldCopy(newPayload: "   ", lastCopied: nil))
     }
 
