@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { createAircraft } from "../src/aircraft.js";
-import { createFgClient, fgProbe, fgReadSensors, fgWriteControls } from "../src/fg-client.js";
+import {
+  createFgClient,
+  fgPrepAirborne,
+  fgProbe,
+  fgReadSensors,
+  fgWriteControls,
+  needsAirborneReset,
+} from "../src/fg-client.js";
 import { createHudServer } from "../src/hud-server.js";
 import { createPilot, tickPilot } from "../src/loop.js";
 import { DEFAULT_ALT_FT, DEFAULT_HOME, DEFAULT_SPEED_KT } from "../src/nav.js";
@@ -44,6 +51,15 @@ if (world === "fg" || world === "auto") {
   try {
     const transport = await fgProbe(fg);
     console.log(`flightgear ${transport}`);
+    await fgPrepAirborne(fg, {
+      lat: ac.lat,
+      lon: ac.lon,
+      alt_ft: ac.alt_ft,
+      heading_deg: ac.heading_deg,
+      airspeed_kt: ac.airspeed_kt,
+    });
+    const raw = await fgReadSensors(fg);
+    seedControls(pilot, raw);
     pilot.world = "fg";
   } catch (err) {
     if (world === "fg") {
@@ -57,22 +73,41 @@ if (world === "fg" || world === "auto") {
 
 const started = Date.now();
 let running = true;
+let lastTick = Date.now();
+let recovering = false;
 process.on("SIGINT", () => {
   running = false;
 });
 
 while (running) {
   const tickStarted = Date.now();
+  const wallDt = Math.min(0.4, Math.max(dt, (tickStarted - lastTick) / 1000));
+  lastTick = tickStarted;
   const extras = {};
   if (fg) {
     try {
       extras.raw = await fgReadSensors(fg);
       extras.freezePhysics = true;
+      if (!recovering && needsAirborneReset(extras.raw)) {
+        recovering = true;
+        console.log("flightgear reset: airplane left the envelope");
+        await fgPrepAirborne(fg, {
+          lat: ac.lat,
+          lon: ac.lon,
+          alt_ft: ac.alt_ft,
+          heading_deg: ac.heading_deg,
+          airspeed_kt: ac.airspeed_kt,
+        });
+        extras.raw = await fgReadSensors(fg);
+        seedControls(pilot, extras.raw);
+        recovering = false;
+      }
     } catch (err) {
+      recovering = false;
       console.error("fg read failed", err.message);
     }
   }
-  const frame = await tickPilot(pilot, dt, extras);
+  const frame = await tickPilot(pilot, wallDt, extras);
   if (fg) {
     try {
       const choice = [
@@ -145,6 +180,16 @@ function parseArgs(argv) {
     i += 1;
   }
   return out;
+}
+
+function seedControls(pilot, raw) {
+  if (!raw) {
+    return;
+  }
+  if (Number.isFinite(raw.aileron)) pilot.controls.aileron = raw.aileron;
+  if (Number.isFinite(raw.elevator)) pilot.controls.elevator = raw.elevator;
+  if (Number.isFinite(raw.rudder)) pilot.controls.rudder = raw.rudder;
+  if (Number.isFinite(raw.throttle)) pilot.controls.throttle = raw.throttle;
 }
 
 function sleep(ms) {

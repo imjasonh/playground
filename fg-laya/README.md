@@ -64,9 +64,16 @@ Install FlightGear 2020.3 or later. The Ubuntu package is `flightgear`.
 bash scripts/start-fg.sh
 ```
 
-That starts a Cessna 172 already airborne over the water at 37.55 N, 122.65 W,
-loads `addon/` (`org.playground.fg-laya`), and opens Phi HTTP on port 9146 plus
-telnet on 5501.
+That starts a Cessna 172 already airborne over the water, and opens Phi HTTP on
+port 9146 plus telnet on 5501. After it connects, the Node loop freezes the
+FDM, starts the Lycoming (magnetos, mixture, JSBSim `set-running`), runs
+`reposition` at 3,500 ft / 105 kt, and switches to chase view.
+
+Ubuntu 2020.3 has no `--addon` switch; the loop writes `/controls/flight/*`
+over HTTP (`POST /json/<path>` with `{"value": ...}`). On a newer FlightGear
+that accepts `--addon`, pass `--addon=$PWD/addon` yourself so the Nasal side
+copies `/laya/cmd/*` as well. If the airplane leaves the envelope (below 400 ft,
+under 50 kt, or inverted), the loop repositions it and keeps flying.
 
 In a second terminal:
 
@@ -76,10 +83,6 @@ node scripts/fly.js --world fg --mode circle
 
 `--world auto` uses FlightGear when the property server answers, and the
 built-in model otherwise.
-
-The addon copies `/laya/cmd/*` onto `/controls/flight/*` while the command
-stamp is less than three seconds old. The Node process also writes the
-controls directly, so a missing addon still flies if telnet or HTTP is up.
 
 ## Point it at Jev or Laya
 

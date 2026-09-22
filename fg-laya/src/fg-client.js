@@ -19,9 +19,30 @@ const SENSOR_PATHS = {
   throttle: "/controls/engines/engine/throttle",
 };
 
+const ENGINE_PROPS = [
+  ["/controls/switches/master-bat", true],
+  ["/controls/switches/master-alt", true],
+  ["/controls/switches/magnetos", 3],
+  ["/controls/engines/engine/magnetos", 3],
+  ["/controls/engines/engine/mixture", 1],
+  ["/controls/engines/current-engine/mixture", 1],
+  ["/controls/engines/engine/throttle", 0.8],
+  ["/controls/engines/engine/primer", 4],
+  ["/controls/engines/engine/starter", true],
+  ["/controls/switches/starter", true],
+  ["/fdm/jsbsim/propulsion/engine[0]/set-running", 1],
+  ["/fdm/jsbsim/propulsion/set-running", -1],
+  ["/engines/active-engine/running", true],
+  ["/engines/engine/running", true],
+  ["/controls/gear/brake-parking", false],
+  ["/controls/gear/gear-down", false],
+  ["/controls/flight/flaps", 0],
+  ["/sim/crashed", false],
+];
+
 /**
  * FlightGear property tree over Phi HTTP, with a telnet fallback.
- * 2020.3 Phi serves /json/path and /set?/path=value.
+ * 2020.3 Phi serves GET/POST /json/path and GET /run.cgi?value=<fgcommand>.
  */
 export function createFgClient(options = {}) {
   return {
@@ -30,6 +51,7 @@ export function createFgClient(options = {}) {
     telnetPort: options.telnetPort ?? DEFAULT_TELNET_PORT,
     transport: options.transport ?? "auto",
     telnet: null,
+    writeAddon: options.writeAddon === true,
   };
 }
 
@@ -54,34 +76,122 @@ export async function fgProbe(client) {
 }
 
 export async function fgReadSensors(client) {
+  const entries = Object.entries(SENSOR_PATHS);
+  const values = client.transport === "http"
+    ? await Promise.all(entries.map(([, path]) => fgGet(client, path)))
+    : await mapSequential(entries, ([, path]) => fgGet(client, path));
   const raw = {};
-  for (const [key, path] of Object.entries(SENSOR_PATHS)) {
-    raw[key] = await fgGet(client, path);
-  }
-  if (Number.isFinite(raw.vsi_fpm)) {
-    // FG vertical-speed-fps → fpm
-    if (Math.abs(raw.vsi_fpm) < 80) {
-      raw.vsi_fpm = raw.vsi_fpm * 60;
-    }
+  entries.forEach(([key], i) => {
+    raw[key] = values[i];
+  });
+  if (Number.isFinite(raw.vsi_fpm) && Math.abs(raw.vsi_fpm) < 80) {
+    raw.vsi_fpm = raw.vsi_fpm * 60;
   }
   return raw;
 }
 
-export async function fgWriteControls(client, controls, meta = {}) {
-  await fgSet(client, "/controls/flight/aileron", controls.aileron);
-  await fgSet(client, "/controls/flight/elevator", controls.elevator);
-  await fgSet(client, "/controls/flight/rudder", controls.rudder);
-  await fgSet(client, "/controls/engines/engine/throttle", controls.throttle);
-  await fgSet(client, "/laya/cmd/aileron", controls.aileron);
-  await fgSet(client, "/laya/cmd/elevator", controls.elevator);
-  await fgSet(client, "/laya/cmd/rudder", controls.rudder);
-  await fgSet(client, "/laya/cmd/throttle", controls.throttle);
-  await fgSet(client, "/laya/cmd/stamp", Math.floor(Date.now() / 1000));
-  if (meta.backend) {
-    await fgSet(client, "/laya/backend", meta.backend);
+export function airbornePresets(options = {}) {
+  return [
+    ["/sim/presets/latitude-deg", options.lat ?? 37.576],
+    ["/sim/presets/longitude-deg", options.lon ?? -122.65],
+    ["/sim/presets/altitude-ft", options.alt_ft ?? 3500],
+    ["/sim/presets/airspeed-kt", options.airspeed_kt ?? 105],
+    ["/sim/presets/heading-deg", options.heading_deg ?? 90],
+    ["/sim/presets/pitch-deg", options.pitch_deg ?? 2],
+    ["/sim/presets/roll-deg", 0],
+    ["/sim/presets/offset-distance-nm", 0],
+    ["/sim/presets/airport-id", ""],
+    ["/sim/presets/runway", ""],
+  ];
+}
+
+export function engineProps() {
+  return ENGINE_PROPS.slice();
+}
+
+export function needsAirborneReset(raw) {
+  if (!raw) {
+    return false;
   }
-  if (meta.choice) {
-    await fgSet(client, "/laya/last-choice", meta.choice);
+  const alt = Number(raw.altitude_ft);
+  const ias = Number(raw.airspeed_kt);
+  const roll = Number(raw.roll_deg);
+  const pitch = Number(raw.pitch_deg);
+  if (Number.isFinite(alt) && alt < 400) {
+    return true;
+  }
+  if (Number.isFinite(ias) && ias < 50) {
+    return true;
+  }
+  if (Number.isFinite(roll) && Math.abs(roll) > 80) {
+    return true;
+  }
+  if (Number.isFinite(pitch) && Math.abs(pitch) > 50) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Freeze, start the C172 engine, put the airplane back at cruise, then
+ * unfreeze. Uses Phi /run.cgi reposition. Missing nodes are ignored so the
+ * same list works on a simpler aircraft.
+ */
+export async function fgPrepAirborne(client, options = {}) {
+  await setQuiet(client, "/sim/freeze/master", true);
+  await setQuiet(client, "/sim/freeze/clock", true);
+  await setQuiet(client, "/sim/crashed", false);
+  for (const [path, value] of ENGINE_PROPS) {
+    await setQuiet(client, path, value);
+  }
+  for (const [path, value] of airbornePresets(options)) {
+    await setQuiet(client, path, value);
+  }
+  try {
+    await fgRun(client, "reposition");
+  } catch {
+    // Older builds without /run.cgi still get the property writes above.
+  }
+  for (const [path, value] of ENGINE_PROPS) {
+    await setQuiet(client, path, value);
+  }
+  await setQuiet(client, "/sim/menubar/visibility", false);
+  await setQuiet(client, "/sim/current-view/view-number", options.view ?? 2);
+  await setQuiet(client, "/autopilot/locks/heading", "");
+  await setQuiet(client, "/autopilot/locks/altitude", "");
+  await setQuiet(client, "/autopilot/locks/speed", "");
+  await setQuiet(client, "/sim/freeze/master", false);
+  await setQuiet(client, "/sim/freeze/clock", false);
+}
+
+export async function fgWriteControls(client, controls, meta = {}) {
+  const writes = [
+    ["/controls/flight/aileron", controls.aileron],
+    ["/controls/flight/elevator", controls.elevator],
+    ["/controls/flight/rudder", controls.rudder],
+    ["/controls/engines/engine/throttle", controls.throttle],
+  ];
+  if (client.writeAddon) {
+    writes.push(
+      ["/laya/cmd/aileron", controls.aileron],
+      ["/laya/cmd/elevator", controls.elevator],
+      ["/laya/cmd/rudder", controls.rudder],
+      ["/laya/cmd/throttle", controls.throttle],
+      ["/laya/cmd/stamp", Math.floor(Date.now() / 1000)],
+    );
+    if (meta.backend) {
+      writes.push(["/laya/backend", meta.backend]);
+    }
+    if (meta.choice) {
+      writes.push(["/laya/last-choice", meta.choice]);
+    }
+  }
+  if (client.transport === "http") {
+    await Promise.all(writes.map(([path, value]) => setQuiet(client, path, value)));
+    return;
+  }
+  for (const [path, value] of writes) {
+    await setQuiet(client, path, value);
   }
 }
 
@@ -99,6 +209,17 @@ export async function fgSet(client, path, value) {
   return fgHttpSet(client.httpBase, path, value);
 }
 
+export async function fgRun(client, command) {
+  if (client.transport === "telnet") {
+    return client.telnet.cmd(`run ${command}`);
+  }
+  return fgHttpRun(client.httpBase, command);
+}
+
+export function runCgiUrl(base, command) {
+  return `${String(base).replace(/\/$/, "")}/run.cgi?value=${encodeURIComponent(command)}`;
+}
+
 export async function fgHttpGet(base, path) {
   const url = `${base.replace(/\/$/, "")}/json${path}`;
   const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
@@ -113,11 +234,42 @@ export async function fgHttpGet(base, path) {
 }
 
 export async function fgHttpSet(base, path, value) {
-  const url = `${base.replace(/\/$/, "")}/set?${path}=${encodeURIComponent(String(value))}`;
-  const response = await fetch(url, { signal: AbortSignal.timeout(2000) });
+  const url = `${base.replace(/\/$/, "")}/json${path}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+    signal: AbortSignal.timeout(2000),
+  });
   if (!response.ok) {
     throw new Error(`FG HTTP set ${path} ${response.status}`);
   }
+}
+
+export async function fgHttpRun(base, command) {
+  const response = await fetch(runCgiUrl(base, command), {
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!response.ok) {
+    throw new Error(`FG run ${command} ${response.status}`);
+  }
+  return response.text();
+}
+
+async function setQuiet(client, path, value) {
+  try {
+    await fgSet(client, path, value);
+  } catch {
+    // Aircraft-specific nodes (mixture, JSBSim set-running, locks) are optional.
+  }
+}
+
+async function mapSequential(items, fn) {
+  const out = [];
+  for (const item of items) {
+    out.push(await fn(item));
+  }
+  return out;
 }
 
 class FgTelnet {
@@ -141,7 +293,6 @@ class FgTelnet {
     this.socket = socket;
     this.buf = "";
     this.queue = [];
-    this.ready = Promise.resolve();
     socket.on("data", (chunk) => {
       this.buf += chunk.toString("utf8");
       this.flush();

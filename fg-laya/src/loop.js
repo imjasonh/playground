@@ -114,4 +114,8 @@ function overlayRaw(ac, raw) {
   ac.airspeed_kt = raw.airspeed_kt;
   ac.vsi_fpm = raw.vsi_fpm;
   ac.slip_deg = raw.slip_deg ?? 0;
+  if (Number.isFinite(raw.aileron)) ac.aileron = raw.aileron;
+  if (Number.isFinite(raw.elevator)) ac.elevator = raw.elevator;
+  if (Number.isFinite(raw.rudder)) ac.rudder = raw.rudder;
+  if (Number.isFinite(raw.throttle)) ac.throttle = raw.throttle;
 }
