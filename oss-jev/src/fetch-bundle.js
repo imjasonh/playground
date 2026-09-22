@@ -93,6 +93,9 @@ export function concat(chunks, length) {
 export async function fetchBundle(model, options = {}) {
   const files = {};
   const urls = bundleUrls(model);
+  if (urls.length === 0) {
+    throw new Error(`${model.title} has no files to fetch.`);
+  }
   for (const { file, url } of urls) {
     files[file] = await fetchFile(url, {
       cache: options.cache,

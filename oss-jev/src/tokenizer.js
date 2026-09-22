@@ -1,24 +1,3 @@
-/** Collapse charge / charged / charges so the fixture can overlap them. */
-export function fixtureWord(word) {
-  let out = String(word).toLowerCase().replace(/[^a-z0-9]+/g, "");
-  if (!out) {
-    return String(word).toLowerCase();
-  }
-  if (out.endsWith("ing") && out.length > 5) {
-    out = out.slice(0, -3);
-  } else if (out.endsWith("ed") && out.length > 4) {
-    out = out.slice(0, -2);
-  } else if (out.endsWith("es") && out.length > 4) {
-    out = out.slice(0, -2);
-  } else if (out.endsWith("s") && out.length > 3 && !out.endsWith("ss")) {
-    out = out.slice(0, -1);
-  }
-  if (out.endsWith("e") && out.length > 4) {
-    out = out.slice(0, -1);
-  }
-  return out;
-}
-
 /** Whitespace tokenizer used by tests. Special ids: pad 0, cls 1, sep 2, mask 3; words start at 100. */
 export function createWhitespaceTokenizer() {
   const vocabulary = new Map();
@@ -30,12 +9,11 @@ export function createWhitespaceTokenizer() {
         .split(/\s+/)
         .filter(Boolean)
         .map((word) => {
-          const key = fixtureWord(word);
-          if (vocabulary.has(key)) {
-            return vocabulary.get(key);
+          if (vocabulary.has(word)) {
+            return vocabulary.get(word);
           }
           const id = 100 + vocabulary.size;
-          vocabulary.set(key, id);
+          vocabulary.set(word, id);
           return id;
         });
     },
