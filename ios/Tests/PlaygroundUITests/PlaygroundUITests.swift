@@ -130,6 +130,10 @@ final class PlaygroundUITests: XCTestCase {
             "Local Lens should appear after scrolling the launcher"
         )
         XCTAssertTrue(
+            scrollLauncherUntilExists(app.staticTexts["Live Translate"], in: app),
+            "Live Translate should appear after scrolling the launcher"
+        )
+        XCTAssertTrue(
             scrollLauncherUntilExists(app.staticTexts["Voxel World"], in: app),
             "Voxel World should appear after scrolling the launcher"
         )
@@ -316,6 +320,26 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["localLensStatusMessage"].waitForExistence(timeout: 3)
             || app.staticTexts["localLensPrivacyBadge"].waitForExistence(timeout: 3)
             || app.otherElements["localLensPrivacyBadge"].waitForExistence(timeout: 3))
+    }
+
+    func testLiveTranslateExperimentOpens() {
+        let app = launchApp()
+
+        openExperiment("live-translate", title: "Live Translate", in: app)
+
+        XCTAssertTrue(app.navigationBars["Live Translate"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["liveTranslateLanguageButton"].waitForExistence(timeout: 8)
+            || app.otherElements["liveTranslateLanguageButton"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["liveTranslateCopyButton"].waitForExistence(timeout: 8)
+            || app.otherElements["liveTranslateCopyButton"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["liveTranslateFlipCameraButton"].waitForExistence(timeout: 8)
+            || app.otherElements["liveTranslateFlipCameraButton"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["liveTranslateStatusMessage"].waitForExistence(timeout: 8)
+            || app.otherElements["liveTranslateStatusMessage"].waitForExistence(timeout: 3)
+            || app.staticTexts["liveTranslateModelBadge"].waitForExistence(timeout: 3)
+            || app.otherElements["liveTranslateModelBadge"].waitForExistence(timeout: 3)
+            || app.staticTexts["liveTranslatePlaceholder"].waitForExistence(timeout: 3)
+            || app.otherElements["liveTranslatePlaceholder"].waitForExistence(timeout: 3))
     }
 
     func testNFCTagsExperimentOpens() {

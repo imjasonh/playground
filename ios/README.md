@@ -58,6 +58,7 @@ ios/
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
+| `live-translate` | Live Translate | In-app; live OCR plus on-device Foundation Models translation painted over the source text; copies the translation |
 | `doom-face` | Doom Face | Front camera + TrueDepth; stamp your face onto doomguy's sheet and export a GIF |
 | `nfc-tags` | NFC Tags | In-app Core NFC tag read/write (NDEF text/URL, blank NTAGs); needs NFC Tag Reading capability bootstrap |
 | `esp32-ble` | ESP32 BLE | In-app Core Bluetooth central for `esp32-ble/` firmware; no extra Bundle ID |
@@ -334,6 +335,21 @@ in portrait and landscape through aspect-fill. Needs camera permission
 bootstrap). Simulator opens the UI but has no camera; use a physical device to
 see live labels. True gaze / attention tracking would need ARKit face tracking
 on a TrueDepth front camera — not wired here yet.
+
+### Live Translate
+
+Point the camera at printed or on-screen text. On-device Vision reads the
+lines (`VNRecognizeTextRequest`). When the same lines hold for a short beat,
+a fresh `LanguageModelSession` translates them into the language you picked.
+The translation is painted over each source box using a sampled backdrop.
+The joined translation is copied to the pasteboard when it changes. To copy
+again, tap the copy control.
+
+Each model call starts a new session (no tools, eight lines max) so the live
+loop does not fill the 4096-token window. A context-window overflow retries
+once with fewer lines. Needs camera permission (extends the existing
+`NSCameraUsageDescription` — no new Bundle ID or signing bootstrap) and Apple
+Intelligence for translation. Simulator opens the UI but has no camera.
 
 ### Doom Face
 
