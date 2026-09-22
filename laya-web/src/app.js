@@ -307,6 +307,7 @@ async function start() {
   if (state.detected.available) {
     const info = state.detected.info;
     gpuStatus.textContent = `WebGPU ${info.description || info.vendor || "adapter"}`;
+    compileButton.disabled = false;
     return;
   }
   gpuStatus.textContent = state.detected.reason;
