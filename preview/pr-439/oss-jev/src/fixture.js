@@ -1,26 +1,30 @@
 /**
  * Tiny decision kernel used when no ONNX graph is available.
  *
- * Each option's logit is the sum of shared tokens between the state ids and
- * the tokens that follow that option's marker, plus a small bias from the
- * marker position. The WebGPU shader and the CPU path must stay identical.
+ * Each option's logit is how often its tokens (the words after the marker,
+ * up to the next marker or the options SEP) appear in the state span. The
+ * last option must not include the state. The WebGPU shader and the CPU
+ * path must stay identical.
  */
 
 export const FIXTURE_WGSL = `struct Counts {
   tokens: u32,
   options: u32,
+  state_start: u32,
+  state_end: u32,
 }
 
 @group(0) @binding(0) var<storage, read> ids: array<u32>;
-@group(0) @binding(1) var<storage, read> markers: array<u32>;
+@group(0) @binding(1) var<storage, read> spans: array<u32>;
 @group(0) @binding(2) var<uniform> counts: Counts;
 @group(0) @binding(3) var<storage, read_write> logits: array<f32>;
 
-fn option_end(start: u32, option: u32) -> u32 {
-  if (option + 1u < counts.options) {
-    return markers[option + 1u];
-  }
-  return counts.tokens;
+fn option_start(option: u32) -> u32 {
+  return spans[option * 2u];
+}
+
+fn option_end(option: u32) -> u32 {
+  return spans[option * 2u + 1u];
 }
 
 @compute @workgroup_size(32)
@@ -29,21 +33,21 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (k >= counts.options) {
     return;
   }
-  let start = markers[k];
-  let end = option_end(start, k);
-  var score = f32(k) * 0.01;
+  let start = option_start(k);
+  let end = option_end(k);
+  var score = 0.0;
   var t = start;
   loop {
     if (t >= end) {
       break;
     }
     let token = ids[t];
-    var i = 0u;
+    var i = counts.state_start;
     loop {
-      if (i >= counts.tokens) {
+      if (i >= counts.state_end) {
         break;
       }
-      if (i < start && ids[i] == token) {
+      if (ids[i] == token) {
         score = score + 1.0;
       }
       i = i + 1u;
@@ -54,15 +58,47 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 `;
 
-export function fixtureLogitsCpu(ids, markers) {
-  const logits = new Float32Array(markers.length);
+/** Exclusive option spans and the state range for a Laya-packed sequence. */
+export function layaFixtureSpans(ids, markers, sep) {
+  const spans = [];
   for (let k = 0; k < markers.length; k += 1) {
-    const start = markers[k];
-    const end = k + 1 < markers.length ? markers[k + 1] : ids.length;
-    let score = k * 0.01;
+    const start = markers[k] + 1;
+    let end = ids.length;
+    if (k + 1 < markers.length) {
+      end = markers[k + 1];
+    } else {
+      for (let i = start; i < ids.length; i += 1) {
+        if (ids[i] === sep) {
+          end = i;
+          break;
+        }
+      }
+    }
+    spans.push(start, end);
+  }
+  let stateStart = 0;
+  let stateEnd = 0;
+  if (spans.length > 0) {
+    const lastEnd = spans[spans.length - 1];
+    stateStart = Math.min(ids.length, lastEnd + 1);
+    stateEnd = ids.length;
+    if (stateEnd > stateStart && ids[stateEnd - 1] === sep) {
+      stateEnd -= 1;
+    }
+  }
+  return { spans, stateStart, stateEnd };
+}
+
+export function fixtureLogitsCpu(ids, spans, stateStart, stateEnd) {
+  const options = Math.floor(spans.length / 2);
+  const logits = new Float32Array(options);
+  for (let k = 0; k < options; k += 1) {
+    const start = spans[k * 2];
+    const end = spans[k * 2 + 1];
+    let score = 0;
     for (let t = start; t < end; t += 1) {
       const token = ids[t];
-      for (let i = 0; i < start; i += 1) {
+      for (let i = stateStart; i < stateEnd; i += 1) {
         if (ids[i] === token) {
           score += 1;
         }
@@ -94,15 +130,16 @@ export async function compileFixtureWebGpu(gpu = globalThis.navigator?.gpu) {
   return { device, pipeline };
 }
 
-export async function runFixtureWebGpu(compiled, ids, markers) {
+export async function runFixtureWebGpu(compiled, ids, spans, stateStart, stateEnd) {
   const { device, pipeline } = compiled;
+  const options = Math.floor(spans.length / 2);
   const idData = new Uint32Array(ids);
-  const markerData = new Uint32Array(markers);
-  const counts = new Uint32Array([ids.length, markers.length]);
-  const logits = new Float32Array(markers.length);
+  const spanData = new Uint32Array(spans.length ? spans : [0, 0]);
+  const counts = new Uint32Array([ids.length, options, stateStart, stateEnd]);
+  const logits = new Float32Array(Math.max(1, options));
 
   const idBuffer = writeBuffer(device, idData, GPUBufferUsage.STORAGE);
-  const markerBuffer = writeBuffer(device, markerData, GPUBufferUsage.STORAGE);
+  const spanBuffer = writeBuffer(device, spanData, GPUBufferUsage.STORAGE);
   const countBuffer = writeBuffer(device, counts, GPUBufferUsage.UNIFORM);
   const logitBuffer = device.createBuffer({
     size: Math.max(4, logits.byteLength),
@@ -117,7 +154,7 @@ export async function runFixtureWebGpu(compiled, ids, markers) {
     layout: pipeline.getBindGroupLayout(0),
     entries: [
       { binding: 0, resource: { buffer: idBuffer } },
-      { binding: 1, resource: { buffer: markerBuffer } },
+      { binding: 1, resource: { buffer: spanBuffer } },
       { binding: 2, resource: { buffer: countBuffer } },
       { binding: 3, resource: { buffer: logitBuffer } },
     ],
@@ -127,19 +164,31 @@ export async function runFixtureWebGpu(compiled, ids, markers) {
   const pass = encoder.beginComputePass();
   pass.setPipeline(pipeline);
   pass.setBindGroup(0, bindGroup);
-  pass.dispatchWorkgroups(Math.ceil(markers.length / 32));
+  pass.dispatchWorkgroups(Math.ceil(Math.max(1, options) / 32));
   pass.end();
-  encoder.copyBufferToBuffer(logitBuffer, 0, readBuffer, 0, logits.byteLength);
+  const copyBytes = options * 4;
+  if (copyBytes > 0) {
+    encoder.copyBufferToBuffer(logitBuffer, 0, readBuffer, 0, copyBytes);
+  }
   device.queue.submit([encoder.finish()]);
-  await readBuffer.mapAsync(GPUMapMode.READ);
-  logits.set(new Float32Array(readBuffer.getMappedRange().slice(0, logits.byteLength)));
-  readBuffer.unmap();
+  if (copyBytes > 0) {
+    await readBuffer.mapAsync(GPUMapMode.READ);
+    const out = new Float32Array(options);
+    out.set(new Float32Array(readBuffer.getMappedRange().slice(0, copyBytes)));
+    readBuffer.unmap();
+    idBuffer.destroy();
+    spanBuffer.destroy();
+    countBuffer.destroy();
+    logitBuffer.destroy();
+    readBuffer.destroy();
+    return out;
+  }
   idBuffer.destroy();
-  markerBuffer.destroy();
+  spanBuffer.destroy();
   countBuffer.destroy();
   logitBuffer.destroy();
   readBuffer.destroy();
-  return logits;
+  return new Float32Array();
 }
 
 function writeBuffer(device, data, usage) {
@@ -151,7 +200,14 @@ function writeBuffer(device, data, usage) {
   return buffer;
 }
 
-export function createFixtureSession({ webgpu = null, backend = "cpu" } = {}) {
+async function runFixture(webgpu, ids, spans, stateStart, stateEnd) {
+  if (webgpu) {
+    return runFixtureWebGpu(webgpu, ids, spans, stateStart, stateEnd);
+  }
+  return fixtureLogitsCpu(ids, spans, stateStart, stateEnd);
+}
+
+export function createFixtureSession({ webgpu = null, backend = "cpu", sep = 2 } = {}) {
   return {
     backend,
     engine: "fixture",
@@ -173,19 +229,24 @@ export function createFixtureSession({ webgpu = null, backend = "cpu" } = {}) {
           }
           markers.push(Number(batch.markerPos[row * batch.maxOptions + k]));
         }
-        const logits = webgpu
-          ? await runFixtureWebGpu(webgpu, ids, markers)
-          : fixtureLogitsCpu(ids, markers);
+        const { spans, stateStart, stateEnd } = layaFixtureSpans(ids, markers, sep);
+        const logits = await runFixture(webgpu, ids, spans, stateStart, stateEnd);
         rows.push({ logits, action: fixtureAction() });
       }
       return rows;
     },
     async runKev(encoding) {
+      const stateEnd = encoding.seg.filter((value) => value === 0).length;
       const rows = [];
-      for (const markers of encoding.optIdx) {
-        const logits = webgpu
-          ? await runFixtureWebGpu(webgpu, encoding.ids, markers)
-          : fixtureLogitsCpu(encoding.ids, markers);
+      const opens = encoding.optOpenIdx ?? [];
+      for (let index = 0; index < encoding.optIdx.length; index += 1) {
+        const closes = encoding.optIdx[index];
+        const starts = opens[index] ?? closes;
+        const spans = [];
+        starts.forEach((start, option) => {
+          spans.push(start + 1, closes[option]);
+        });
+        const logits = await runFixture(webgpu, encoding.ids, spans, 0, stateEnd);
         rows.push({ logits, action: fixtureAction() });
       }
       return rows;

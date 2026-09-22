@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createFixtureSession, fixtureLogitsCpu } from "../src/fixture.js";
+import { createFixtureSession, fixtureLogitsCpu, layaFixtureSpans } from "../src/fixture.js";
 import { defaultCalibration } from "../src/models.js";
-import { makeQuestion } from "../src/questions.js";
+import { getPreset } from "../src/presets.js";
+import { makeQuestion, questionFromDraft } from "../src/questions.js";
 import { systemOne } from "../src/systemone.js";
 import { createWhitespaceTokenizer } from "../src/tokenizer.js";
 
@@ -34,7 +35,7 @@ test("systemOne on the fixture returns a choice for Laya packing", async () => {
   });
   assert.equal(result.model, "laya");
   assert.equal(result.answers.team.type, "choice");
-  assert.ok(result.answers.team.choice);
+  assert.equal(result.answers.team.choice, "billing");
   assert.ok(result.usage.input_tokens > 0);
 });
 
@@ -63,10 +64,41 @@ test("systemOne on the fixture packs Kev delimiters", async () => {
 });
 
 test("fixture CPU logits prefer options that reuse state tokens", () => {
-  const ids = [7, 7, 7, 9, 7, 8];
+  const sep = 2;
+  const ids = [1, 10, sep, 3, 7, 3, 8, sep, 7, 7, sep];
   const markers = [3, 5];
-  const logits = fixtureLogitsCpu(ids, markers);
+  const { spans, stateStart, stateEnd } = layaFixtureSpans(ids, markers, sep);
+  const logits = fixtureLogitsCpu(ids, spans, stateStart, stateEnd);
   assert.ok(logits[0] > logits[1]);
+});
+
+test("last option does not eat the state", () => {
+  const sep = 2;
+  const ids = [1, 10, sep, 3, 8, 3, 9, sep, 8, 8, sep];
+  const markers = [3, 5];
+  const { spans, stateStart, stateEnd } = layaFixtureSpans(ids, markers, sep);
+  assert.deepEqual(spans, [4, 5, 6, 7]);
+  assert.equal(stateStart, 8);
+  assert.equal(stateEnd, 10);
+  const logits = fixtureLogitsCpu(ids, spans, stateStart, stateEnd);
+  assert.ok(logits[0] > logits[1]);
+});
+
+test("ticket preset prefers billing over other on the fixture", async () => {
+  const preset = getPreset("ticket");
+  const tok = createWhitespaceTokenizer();
+  const result = await systemOne({
+    session: createFixtureSession(),
+    family: "laya",
+    encode: tok.encode,
+    specialIds: tok.ids,
+    config: defaultCalibration(),
+    state: preset.state,
+    questions: {
+      team: questionFromDraft(preset.kind, preset.instructions, preset.options),
+    },
+  });
+  assert.equal(result.answers.team.choice, "billing");
 });
 
 test("systemOne refuses an empty question list", async () => {

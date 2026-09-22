@@ -5,6 +5,7 @@ import { compileModel } from "../src/compile.js";
 import { getModel } from "../src/models.js";
 import {
   createWordPieceTokenizer,
+  fixtureWord,
   kevSpecialIdsFromBundle,
   normalizeBert,
   pretokenizeBert,
@@ -64,6 +65,11 @@ test("WordPiece encodes known words and falls back to unk", () => {
   assert.deepEqual(tok.encode("running"), [13, 12]);
   assert.deepEqual(tok.encode("xyzzy"), [0]);
   assert.equal(tok.ids.mask, 3);
+});
+
+test("fixtureWord collapses charge variants", () => {
+  assert.equal(fixtureWord("charged"), fixtureWord("charges"));
+  assert.equal(fixtureWord("charge"), fixtureWord("charges"));
 });
 
 test("Bert pretokenizer splits punctuation", () => {

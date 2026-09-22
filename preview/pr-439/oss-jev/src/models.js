@@ -15,7 +15,7 @@ export const MODELS = {
     runnable: true,
     bytes: 0,
     description:
-      "Bundled WebGPU kernel. Scores each option by token overlap with the state so the compile path works without a Hub download.",
+      "Bundled WebGPU kernel. Scores each option by how often its tokens appear in the state, so the compile path works without a Hub download.",
     files: [],
   },
   "laya-en": {
