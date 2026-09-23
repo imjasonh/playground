@@ -30,6 +30,130 @@ body {
   padding: 1.25rem 1.5rem 2rem;
 }
 
+.tick-overlay {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.85rem 1rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.tick-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem 1.25rem;
+}
+
+.tick-kicker {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#tick-num {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 2.25rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.tick-meta {
+  margin: 0;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.95rem;
+}
+
+.tick-rows {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-top: 0.85rem;
+}
+
+.tick-row {
+  background: #10140e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem 0.65rem;
+}
+
+.tick-row.is-changed {
+  border-color: var(--good);
+}
+
+.tick-surface {
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tick-choice {
+  margin: 0.15rem 0 0;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 1.45rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.tick-applied {
+  margin: 0.2rem 0 0;
+  color: var(--good);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tick-p {
+  color: var(--muted);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 0.85rem;
+}
+
+.tick-overlay.is-fresh #tick-num,
+.tick-overlay.is-fresh .tick-choice {
+  color: var(--good);
+}
+
+body.overlay-only {
+  padding: 1rem;
+}
+
+body.overlay-only .top,
+body.overlay-only main {
+  display: none;
+}
+
+body.overlay-only .tick-overlay {
+  margin: 0;
+  min-height: calc(100vh - 2rem);
+}
+
+body.overlay-only #tick-num {
+  font-size: 3.25rem;
+}
+
+body.overlay-only .tick-choice {
+  font-size: 2rem;
+}
+
+body.overlay-only .tick-applied {
+  font-size: 1.35rem;
+}
+
+@media (max-width: 800px) {
+  .tick-rows {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 h1 {
   margin: 0;
   font-size: 1.5rem;

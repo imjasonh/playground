@@ -165,6 +165,16 @@ export async function fgPrepAirborne(client, options = {}) {
   await setQuiet(client, "/autopilot/locks/heading", "");
   await setQuiet(client, "/autopilot/locks/altitude", "");
   await setQuiet(client, "/autopilot/locks/speed", "");
+  await setQuiet(client, "/sim/hud/path[1]", "Huds/laya.xml");
+  await setQuiet(client, "/sim/hud/current-path", 1);
+  await setQuiet(client, "/sim/hud/visibility[1]", true);
+  await setQuiet(client, "/sim/hud/font/size", 14);
+  await setQuiet(client, "/laya/overlay/tick", "tick 0");
+  await setQuiet(client, "/laya/overlay/banner", "");
+  await setQuiet(client, "/laya/overlay/aileron", "");
+  await setQuiet(client, "/laya/overlay/elevator", "");
+  await setQuiet(client, "/laya/overlay/throttle", "");
+  await setQuiet(client, "/laya/overlay/rudder", "");
   await new Promise((resolve) => setTimeout(resolve, 400));
   await setQuiet(client, "/sim/freeze/master", false);
   await setQuiet(client, "/sim/freeze/clock", false);
@@ -179,6 +189,9 @@ export async function fgWriteControls(client, controls, meta = {}) {
     ["/controls/engines/engine/throttle", controls.throttle],
     ["/controls/engines/current-engine/throttle", controls.throttle],
   ];
+  if (meta.overlayWrites) {
+    writes.push(...meta.overlayWrites);
+  }
   if (client.writeAddon) {
     writes.push(
       ["/laya/cmd/aileron", controls.aileron],

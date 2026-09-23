@@ -10,6 +10,12 @@ var main = func(addon) {
     props.globals.initNode("/laya/enabled", 1, "BOOL");
     props.globals.initNode("/laya/backend", "waiting", "STRING");
     props.globals.initNode("/laya/last-choice", "", "STRING");
+    props.globals.initNode("/laya/overlay/banner", "", "STRING");
+    props.globals.initNode("/laya/overlay/tick", "tick 0", "STRING");
+    props.globals.initNode("/laya/overlay/aileron", "", "STRING");
+    props.globals.initNode("/laya/overlay/elevator", "", "STRING");
+    props.globals.initNode("/laya/overlay/throttle", "", "STRING");
+    props.globals.initNode("/laya/overlay/rudder", "", "STRING");
     props.globals.initNode("/laya/cmd/aileron", 0, "DOUBLE");
     props.globals.initNode("/laya/cmd/elevator", 0, "DOUBLE");
     props.globals.initNode("/laya/cmd/rudder", 0, "DOUBLE");

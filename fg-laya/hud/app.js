@@ -1,18 +1,64 @@
 const $ = (id) => document.getElementById(id);
+const overlayOnly = new URLSearchParams(location.search).get("mode") === "overlay";
+if (overlayOnly) {
+  document.body.classList.add("overlay-only");
+}
+
 const horizon = $("horizon");
 const map = $("map");
 const hz = horizon.getContext("2d");
 const mz = map.getContext("2d");
+let lastChoices = {};
 
 const source = new EventSource("/stream");
 source.onmessage = (event) => {
   const frame = JSON.parse(event.data);
+  renderTickOverlay(frame);
+  if (overlayOnly) {
+    return;
+  }
   renderMeta(frame);
   renderTapes(frame.aircraft);
   drawHorizon(frame.aircraft);
   drawMap(frame);
   renderDecisions(frame.answers);
 };
+
+function renderTickOverlay(frame) {
+  const overlay = frame.overlay;
+  const root = $("tick-overlay");
+  $("tick-num").textContent = String(overlay?.tick ?? frame.ticks ?? 0);
+  $("tick-meta").textContent =
+    `${frame.backend}${frame.model ? ` · ${frame.model}` : ""} · ` +
+    `applied this tick · ${frame.latency_ms ?? 0} ms`;
+  const rows = $("tick-rows");
+  rows.replaceChildren();
+  for (const row of overlay?.rows ?? []) {
+    const changed = lastChoices[row.surface] != null && lastChoices[row.surface] !== row.choice;
+    lastChoices[row.surface] = row.choice;
+    const card = document.createElement("div");
+    card.className = "tick-row" + (changed ? " is-changed" : "");
+    const surface = document.createElement("div");
+    surface.className = "tick-surface";
+    surface.textContent = row.surface;
+    const choice = document.createElement("div");
+    choice.className = "tick-choice";
+    choice.textContent = row.choice;
+    const applied = document.createElement("div");
+    applied.className = "tick-applied";
+    applied.textContent = Number.isFinite(row.applied) ? row.applied.toFixed(2) : "—";
+    const p = document.createElement("div");
+    p.className = "tick-p";
+    p.textContent = Number.isFinite(row.confidence)
+      ? `${Math.round(row.confidence * 100)}%`
+      : "";
+    card.append(surface, choice, applied, p);
+    rows.append(card);
+  }
+  root.classList.remove("is-fresh");
+  void root.offsetWidth;
+  root.classList.add("is-fresh");
+}
 
 function renderMeta(frame) {
   const a = frame.aircraft;

@@ -6,6 +6,7 @@ import {
   needsAirborneReset,
   runCgiUrl,
 } from "../src/fg-client.js";
+import { overlayPropertyWrites } from "../src/overlay.js";
 
 test("run.cgi URL encodes the fgcommand", () => {
   assert.equal(
@@ -28,6 +29,17 @@ test("engine props start magnetos, mixture, and JSBSim running", () => {
   assert.equal(paths["/controls/engines/engine/mixture"], 1);
   assert.equal(paths["/fdm/jsbsim/propulsion/set-running"], -1);
   assert.equal(paths["/engines/active-engine/running"], true);
+});
+
+test("overlay writes are property pairs the HUD can bind", () => {
+  const writes = overlayPropertyWrites({
+    tick: 9,
+    banner: "tick 9   AIL left -0.10",
+    rows: [{ surface: "aileron", line: "AIL left -0.10 80%" }],
+  });
+  const paths = Object.fromEntries(writes);
+  assert.equal(paths["/laya/overlay/tick"], "tick 9");
+  assert.equal(paths["/laya/overlay/aileron"], "AIL left -0.10 80%");
 });
 
 test("needsAirborneReset fires on a crash or inverted attitude", () => {

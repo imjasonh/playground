@@ -13,6 +13,16 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <section class="tick-overlay" id="tick-overlay" aria-live="polite" aria-label="Decisions this tick">
+      <div class="tick-head">
+        <div>
+          <span class="tick-kicker">Tick</span>
+          <span id="tick-num">0</span>
+        </div>
+        <p id="tick-meta" class="tick-meta">waiting for the first decision</p>
+      </div>
+      <div class="tick-rows" id="tick-rows"></div>
+    </section>
     <header class="top">
       <h1>Laya autopilot</h1>
       <p id="meta" class="meta">waiting for the pilot loop</p>

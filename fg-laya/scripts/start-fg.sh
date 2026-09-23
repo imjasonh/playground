@@ -11,6 +11,14 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-$USER}"
 export FG_HOME="${FG_HOME:-$ROOT/.fgfs-home}"
 mkdir -p "$FG_HOME" "$XDG_RUNTIME_DIR"
 
+# The Laya HUD reads /laya/overlay/* each frame. FlightGear loads HUD XML
+# from FG_ROOT/Huds, so copy ours there when the tree is writable.
+if [[ -d /usr/share/games/flightgear/Huds ]]; then
+  cp "$ROOT/addon/laya-hud.xml" /usr/share/games/flightgear/Huds/laya.xml 2>/dev/null \
+    || sudo cp "$ROOT/addon/laya-hud.xml" /usr/share/games/flightgear/Huds/laya.xml 2>/dev/null \
+    || true
+fi
+
 exec fgfs \
   --aircraft=c172p \
   --disable-terrasync \
@@ -36,6 +44,10 @@ exec fgfs \
   --prop:/controls/engines/engine/mixture=1 \
   --prop:/fdm/jsbsim/propulsion/set-running=-1 \
   --prop:/sim/current-view/view-number=2 \
+  --prop:/sim/hud/path[1]=Huds/laya.xml \
+  --prop:/sim/hud/current-path=1 \
+  --prop:/sim/hud/visibility[1]=true \
+  --prop:/sim/hud/font/size=14 \
   --httpd=9146 \
   --telnet=5501 \
   "$@"

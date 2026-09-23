@@ -47,8 +47,10 @@ npm test
 npm start
 ```
 
-Open http://127.0.0.1:8788. Default mission is a 1.6 nm left-hand orbit west of
-San Francisco, starting at 3,500 ft and 100 kt.
+Open http://127.0.0.1:8788. The top of the page is the tick overlay: the
+System One choice and the surface value written on that tick. Add
+`?mode=overlay` for that strip alone. Default mission is a 1.6 nm left-hand
+orbit west of San Francisco, starting at 3,500 ft and 100 kt.
 
 Random waypoints:
 
@@ -67,7 +69,9 @@ bash scripts/start-fg.sh
 That starts a Cessna 172 already airborne over the water, and opens Phi HTTP on
 port 9146 plus telnet on 5501. After it connects, the Node loop freezes the
 FDM, starts the Lycoming (magnetos, mixture, JSBSim `set-running`), runs
-`reposition` at 3,500 ft / 105 kt, and switches to chase view.
+`reposition` at 3,500 ft / 105 kt, and switches to chase view. Each tick also
+writes `/laya/overlay/*`. The Laya HUD (`Huds/laya.xml`) draws those strings
+on the FlightGear view.
 
 Ubuntu 2020.3 has no `--addon` switch; the loop writes `/controls/flight/*`
 over HTTP (`POST /json/<path>` with `{"value": ...}`). On a newer FlightGear
@@ -117,7 +121,7 @@ degrees around the circle.
 
 ```
 fg-laya/
-├── addon/           FlightGear addon (addon.xml + Nasal)
+├── addon/           FlightGear addon (addon.xml + Nasal + laya-hud.xml)
 ├── hud/             instrument + probability display
 ├── scripts/fly.js   decision loop
 ├── scripts/start-fg.sh

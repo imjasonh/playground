@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<PropertyList>
+  <name>Laya decisions</name>
+
+  <import>
+    <path>Huds/Sets/parameters.xml</path>
+  </import>
+
+  <import>
+    <path>Huds/Instruments/compass.xml</path>
+    <y-offset>190</y-offset>
+  </import>
+
+  <label>
+    <name>LayaTick</name>
+    <x>0</x>
+    <y>80</y>
+    <width>1</width>
+    <height>1</height>
+    <halign>center</halign>
+    <input>
+      <property>/laya/overlay/tick</property>
+    </input>
+  </label>
+
+  <label>
+    <name>LayaAileron</name>
+    <x>0</x>
+    <y>55</y>
+    <width>1</width>
+    <height>1</height>
+    <halign>center</halign>
+    <input>
+      <property>/laya/overlay/aileron</property>
+    </input>
+  </label>
+
+  <label>
+    <name>LayaElevator</name>
+    <x>0</x>
+    <y>35</y>
+    <width>1</width>
+    <height>1</height>
+    <halign>center</halign>
+    <input>
+      <property>/laya/overlay/elevator</property>
+    </input>
+  </label>
+
+  <label>
+    <name>LayaThrottle</name>
+    <x>0</x>
+    <y>15</y>
+    <width>1</width>
+    <height>1</height>
+    <halign>center</halign>
+    <input>
+      <property>/laya/overlay/throttle</property>
+    </input>
+  </label>
+
+  <label>
+    <name>LayaRudder</name>
+    <x>0</x>
+    <y>-5</y>
+    <width>1</width>
+    <height>1</height>
+    <halign>center</halign>
+    <input>
+      <property>/laya/overlay/rudder</property>
+    </input>
+  </label>
+</PropertyList>

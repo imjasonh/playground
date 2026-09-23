@@ -11,6 +11,7 @@ import {
 import { createHudServer } from "../src/hud-server.js";
 import { createPilot, tickPilot } from "../src/loop.js";
 import { DEFAULT_ALT_FT, DEFAULT_HOME, DEFAULT_SPEED_KT } from "../src/nav.js";
+import { buildOverlay, overlayPropertyWrites } from "../src/overlay.js";
 import { detectBackend } from "../src/systemone.js";
 
 const args = parseArgs(process.argv.slice(2));
@@ -108,6 +109,15 @@ while (running) {
     }
   }
   const frame = await tickPilot(pilot, wallDt, extras);
+  frame.overlay = buildOverlay({
+    ticks: pilot.ticks,
+    answers: frame.decision.answers,
+    controls: frame.controls,
+    target: frame.target,
+    backend: frame.decision.backend ?? backend,
+    model: frame.decision.model,
+    latency_ms: frame.decision.latency_ms ?? 0,
+  });
   if (fg) {
     try {
       const choice = [
@@ -119,6 +129,7 @@ while (running) {
       await fgWriteControls(fg, frame.controls, {
         backend: frame.decision.backend ?? backend,
         choice,
+        overlayWrites: overlayPropertyWrites(frame.overlay),
       });
     } catch (err) {
       console.error("fg write failed", err.message);
@@ -145,6 +156,15 @@ while (running) {
 await hud.close();
 
 function publicFrame(frame, pilot, backendName) {
+  const overlay = frame.overlay ?? buildOverlay({
+    ticks: pilot.ticks,
+    answers: frame.decision.answers,
+    controls: frame.controls,
+    target: frame.target,
+    backend: frame.decision.backend ?? backendName,
+    model: frame.decision.model,
+    latency_ms: frame.decision.latency_ms ?? 0,
+  });
   return {
     t: Date.now(),
     ticks: pilot.ticks,
@@ -157,6 +177,8 @@ function publicFrame(frame, pilot, backendName) {
     state: frame.state,
     answers: frame.decision.answers,
     controls: frame.controls,
+    target: frame.target,
+    overlay,
     trail: pilot.trail,
     latency_ms: frame.decision.latency_ms ?? 0,
     error: frame.decision.error ?? null,
