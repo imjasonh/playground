@@ -42,8 +42,8 @@ function updateCircle(nav, pos) {
   const bearingToCenter = bearingDeg(pos, nav.center);
   const dist = haversineNm(pos, nav.center);
   const radiusErr = dist - nav.radius_nm;
-  // Outside the ring, cut in toward the center. Inside, steer out.
-  const intercept = clamp(-radiusErr * 28, -50, 50);
+  // Left-hand orbit (left wing toward the center). Outside, cut in. Inside, steer out.
+  const intercept = clamp(-radiusErr * 40, -65, 65);
   const desired = wrap360(bearingToCenter + 90 + intercept);
   nav.desired_heading_deg = desired;
   nav.bearing_deg = desired;

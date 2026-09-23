@@ -24,7 +24,7 @@ exec fgfs \
   --in-air \
   --altitude=3500 \
   --vc=105 \
-  --heading=90 \
+  --heading=270 \
   --lat=37.576 \
   --lon=-122.65 \
   --geometry=1280x720 \

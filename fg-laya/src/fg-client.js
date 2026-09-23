@@ -96,7 +96,7 @@ export function airbornePresets(options = {}) {
     ["/sim/presets/longitude-deg", options.lon ?? -122.65],
     ["/sim/presets/altitude-ft", options.alt_ft ?? 3500],
     ["/sim/presets/airspeed-kt", options.airspeed_kt ?? 105],
-    ["/sim/presets/heading-deg", options.heading_deg ?? 90],
+    ["/sim/presets/heading-deg", options.heading_deg ?? 270],
     ["/sim/presets/pitch-deg", options.pitch_deg ?? 2],
     ["/sim/presets/roll-deg", 0],
     ["/sim/presets/offset-distance-nm", 0],
@@ -120,13 +120,13 @@ export function needsAirborneReset(raw) {
   if (Number.isFinite(alt) && alt < 400) {
     return true;
   }
-  if (Number.isFinite(ias) && ias < 50) {
+  if (Number.isFinite(roll) && Math.abs(roll) > 90) {
     return true;
   }
-  if (Number.isFinite(roll) && Math.abs(roll) > 80) {
+  if (Number.isFinite(pitch) && Math.abs(pitch) > 60) {
     return true;
   }
-  if (Number.isFinite(pitch) && Math.abs(pitch) > 50) {
+  if (Number.isFinite(ias) && ias < 35 && Number.isFinite(alt) && alt < 1500) {
     return true;
   }
   return false;
@@ -156,7 +156,9 @@ export async function fgPrepAirborne(client, options = {}) {
     await setQuiet(client, path, value);
   }
   await setQuiet(client, "/sim/menubar/visibility", false);
-  await setQuiet(client, "/sim/current-view/view-number", options.view ?? 2);
+  await setQuiet(client, "/sim/current-view/view-number", options.view ?? 1);
+  await setQuiet(client, "/sim/current-view/z-offset-m", options.viewZ ?? -28);
+  await setQuiet(client, "/sim/current-view/y-offset-m", 2);
   await setQuiet(client, "/autopilot/locks/heading", "");
   await setQuiet(client, "/autopilot/locks/altitude", "");
   await setQuiet(client, "/autopilot/locks/speed", "");
@@ -170,6 +172,7 @@ export async function fgWriteControls(client, controls, meta = {}) {
     ["/controls/flight/elevator", controls.elevator],
     ["/controls/flight/rudder", controls.rudder],
     ["/controls/engines/engine/throttle", controls.throttle],
+    ["/controls/engines/current-engine/throttle", controls.throttle],
   ];
   if (client.writeAddon) {
     writes.push(

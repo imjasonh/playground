@@ -13,7 +13,18 @@ test("right aileron choice becomes a positive aileron", () => {
     { aileron: 0, elevator: 0, rudder: 0, throttle: 0.7 },
     { heading_err_deg: 20, roll_deg: 0 },
   );
-  assert.ok(targets.aileron > 0);
+  assert.ok(targets.aileron > 0, `aileron ${targets.aileron}`);
+  const alreadyRight = answersToTargets(
+    {
+      aileron: { choice: "right-hard" },
+      elevator: { choice: "hold" },
+      throttle: { choice: "hold" },
+      rudder: { choice: "center" },
+    },
+    { aileron: 0, elevator: 0, rudder: 0, throttle: 0.7 },
+    { heading_err_deg: 40, roll_deg: 40, pitch_deg: 2, airspeed_kt: 100 },
+  );
+  assert.ok(alreadyRight.aileron < 0.05, `overbank aileron ${alreadyRight.aileron}`);
 });
 
 test("arrived noul is yes at 0.5", () => {

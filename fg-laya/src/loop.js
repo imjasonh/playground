@@ -18,7 +18,7 @@ export function createPilot(options = {}) {
     const onRing = offsetNm(nav.center, 0, nav.radius_nm);
     aircraft.lat = onRing.lat;
     aircraft.lon = onRing.lon;
-    aircraft.heading_deg = 90;
+    aircraft.heading_deg = 270;
   }
   return {
     aircraft,

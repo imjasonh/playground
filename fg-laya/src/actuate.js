@@ -1,51 +1,64 @@
 import { clamp } from "./geo.js";
 
-const AILERON = {
-  "left-hard": -0.7,
-  left: -0.32,
-  level: 0,
-  right: 0.32,
-  "right-hard": 0.7,
+const BANK = {
+  "left-hard": -28,
+  left: -18,
+  level: null,
+  right: 18,
+  "right-hard": 28,
 };
 
-const ELEVATOR = {
-  "down-hard": -0.45,
-  down: -0.18,
-  hold: 0,
-  up: 0.18,
-  "up-hard": 0.4,
+const PITCH = {
+  "down-hard": -6,
+  down: -2,
+  hold: 2,
+  up: 6,
+  "up-hard": 9,
 };
 
 const RUDDER = {
-  left: -0.28,
+  left: -0.18,
   center: 0,
-  right: 0.28,
+  right: 0.18,
 };
 
 const THROTTLE_ABS = {
-  cut: 0.28,
+  cut: 0.35,
   less: null,
   hold: null,
   more: null,
-  full: 0.95,
+  full: 0.92,
 };
 
 /**
  * Map one System One answer set onto control surfaces. The model picks labels.
- * This file only turns those labels into deflections, then slews so the
- * surfaces do not jump.
+ * Labels become bank and pitch targets, then a small P loop writes deflections
+ * so a "left-hard" at 40 degrees of bank rolls back toward 24 instead of
+ * adding more aileron.
  */
 export function answersToTargets(answers, current, state) {
-  const aileronChoice = answers.aileron?.choice ?? "level";
-  let aileron = AILERON[aileronChoice] ?? 0;
-  if (aileronChoice === "level") {
-    const roll = Number(state.roll_deg) || 0;
-    const headingErr = Number(state.heading_err_deg) || 0;
-    const desiredBank = clamp(headingErr * 0.75, -30, 30);
-    aileron = clamp((desiredBank - roll) / 40, -0.22, 0.22);
-  }
+  const roll = Number(state.roll_deg) || 0;
+  const pitch = Number(state.pitch_deg) || 0;
+  const headingErr = Number(state.heading_err_deg) || 0;
+  const ias = Number(state.airspeed_kt) || 100;
 
-  const elevator = ELEVATOR[answers.elevator?.choice] ?? 0;
+  const aileronChoice = answers.aileron?.choice ?? "level";
+  let desiredBank = BANK[aileronChoice];
+  if (desiredBank == null) {
+    desiredBank = clamp(headingErr * 0.65, -22, 22);
+  }
+  if (ias < 70) {
+    desiredBank = clamp(desiredBank, -12, 12);
+  }
+  const aileron = clamp((desiredBank - roll) / 22, -0.42, 0.42);
+
+  const elevatorChoice = answers.elevator?.choice ?? "hold";
+  let desiredPitch = PITCH[elevatorChoice] ?? 2;
+  if (ias < 65) {
+    desiredPitch = Math.min(desiredPitch, -2);
+  }
+  const elevator = clamp((desiredPitch - pitch) / 10, -0.28, 0.28);
+
   const rudder = RUDDER[answers.rudder?.choice] ?? 0;
 
   let throttle = current.throttle;
@@ -53,9 +66,12 @@ export function answersToTargets(answers, current, state) {
   if (thr === "cut" || thr === "full") {
     throttle = THROTTLE_ABS[thr];
   } else if (thr === "less") {
-    throttle = clamp(current.throttle - 0.07, 0.15, 1);
+    throttle = clamp(current.throttle - 0.05, 0.28, 1);
   } else if (thr === "more") {
-    throttle = clamp(current.throttle + 0.07, 0.15, 1);
+    throttle = clamp(current.throttle + 0.05, 0.28, 1);
+  }
+  if (ias < 65) {
+    throttle = Math.max(throttle, 0.85);
   }
 
   return {

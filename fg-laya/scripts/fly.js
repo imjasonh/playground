@@ -74,7 +74,7 @@ if (world === "fg" || world === "auto") {
 const started = Date.now();
 let running = true;
 let lastTick = Date.now();
-let recovering = false;
+let lastResetAt = 0;
 process.on("SIGINT", () => {
   running = false;
 });
@@ -88,8 +88,8 @@ while (running) {
     try {
       extras.raw = await fgReadSensors(fg);
       extras.freezePhysics = true;
-      if (!recovering && needsAirborneReset(extras.raw)) {
-        recovering = true;
+      if (needsAirborneReset(extras.raw) && Date.now() - lastResetAt > 8000) {
+        lastResetAt = Date.now();
         console.log("flightgear reset: airplane left the envelope");
         await fgPrepAirborne(fg, {
           lat: ac.lat,
@@ -100,10 +100,8 @@ while (running) {
         });
         extras.raw = await fgReadSensors(fg);
         seedControls(pilot, extras.raw);
-        recovering = false;
       }
     } catch (err) {
-      recovering = false;
       console.error("fg read failed", err.message);
     }
   }

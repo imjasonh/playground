@@ -170,20 +170,22 @@ function choiceLogit(state, id, label) {
 function aileronLogit(state, label) {
   const headingErr = Number(state.heading_err_deg) || 0;
   const roll = Number(state.roll_deg) || 0;
-  const desiredBank = clamp(headingErr * 0.75, -30, 30);
+  const ias = Number(state.airspeed_kt) || 100;
+  const maxBank = ias < 70 ? 12 : 26;
+  const desiredBank = clamp(headingErr * 0.65, -maxBank, maxBank);
   const bankErr = desiredBank - roll;
-  const overbank = Math.abs(roll) > 32;
+  const overbank = Math.abs(roll) > 26;
   switch (label) {
     case "left-hard":
-      return (bankErr < -12 ? 4.2 : -1.2) + (overbank && roll > 0 ? 2 : 0);
+      return (bankErr < -12 && roll > -maxBank ? 3.6 : -2) + (overbank && roll > 8 ? 3.2 : 0);
     case "left":
-      return (bankErr < -4 ? 3.4 : bankErr < 0 ? 1.2 : -0.8) + (roll > 20 ? 1.4 : 0);
+      return (bankErr < -4 && roll > -maxBank ? 3.4 : bankErr < 0 ? 1.0 : -0.8) + (roll > 16 ? 1.6 : 0);
     case "level":
-      return Math.abs(bankErr) < 5 ? 3.6 : Math.abs(bankErr) < 10 ? 1.5 : -1.5;
+      return Math.abs(bankErr) < 5 ? 3.8 : Math.abs(bankErr) < 10 ? 1.6 : -1.2;
     case "right":
-      return (bankErr > 4 ? 3.4 : bankErr > 0 ? 1.2 : -0.8) + (roll < -20 ? 1.4 : 0);
+      return (bankErr > 4 && roll < maxBank ? 3.4 : bankErr > 0 ? 1.0 : -0.8) + (roll < -16 ? 1.6 : 0);
     case "right-hard":
-      return (bankErr > 12 ? 4.2 : -1.2) + (overbank && roll < 0 ? 2 : 0);
+      return (bankErr > 12 && roll < maxBank ? 3.6 : -2) + (overbank && roll < -8 ? 3.2 : 0);
     default:
       return 0;
   }

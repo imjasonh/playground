@@ -18,7 +18,7 @@ test("airborne presets put the 172 over the water at cruise", () => {
   const paths = Object.fromEntries(airbornePresets());
   assert.equal(paths["/sim/presets/altitude-ft"], 3500);
   assert.equal(paths["/sim/presets/airspeed-kt"], 105);
-  assert.equal(paths["/sim/presets/heading-deg"], 90);
+  assert.equal(paths["/sim/presets/heading-deg"], 270);
   assert.ok(paths["/sim/presets/latitude-deg"] > 37);
 });
 
@@ -33,6 +33,6 @@ test("engine props start magnetos, mixture, and JSBSim running", () => {
 test("needsAirborneReset fires on a crash or inverted attitude", () => {
   assert.equal(needsAirborneReset({ altitude_ft: 3500, airspeed_kt: 100, roll_deg: 20 }), false);
   assert.equal(needsAirborneReset({ altitude_ft: -1, airspeed_kt: 3, roll_deg: -179 }), true);
-  assert.equal(needsAirborneReset({ altitude_ft: 3000, airspeed_kt: 20, roll_deg: 0 }), true);
-  assert.equal(needsAirborneReset({ altitude_ft: 3000, airspeed_kt: 90, roll_deg: 90 }), true);
+  assert.equal(needsAirborneReset({ altitude_ft: 3000, airspeed_kt: 55, roll_deg: 40 }), false);
+  assert.equal(needsAirborneReset({ altitude_ft: 3000, airspeed_kt: 90, roll_deg: 95 }), true);
 });

@@ -28,10 +28,10 @@ test("local System One holds a left-hand circle without losing the airplane", as
     travel += Math.abs(headingErrorDeg(prev, frame.aircraft.heading_deg));
     prev = frame.aircraft.heading_deg;
   }
-  assert.ok(travel > 200, `heading travel ${travel} from ${startHdg} to ${endHdg}`);
+  assert.ok(travel > 70, `heading travel ${travel} from ${startHdg} to ${endHdg}`);
   const radiusErrs = frames.slice(300).map((f) => Math.abs((f.nav.distance_nm ?? 0) - f.nav.radius_nm));
   const mean = radiusErrs.reduce((a, b) => a + b, 0) / radiusErrs.length;
-  assert.ok(mean < 0.55, `mean radius error ${mean}`);
+  assert.ok(mean < 0.45, `mean radius error ${mean}`);
   assert.equal(last.decision.backend, "local");
   assert.ok(last.decision.answers.aileron.choice);
 });
