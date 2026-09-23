@@ -1,13 +1,14 @@
 import { clamp } from "./geo.js";
+import { askLayaOrt, layaBundleReady } from "./laya-ort.js";
 import { choiceLabels, optionLabels, scoreLevels, validateQuestion } from "./questions.js";
 
 const OPENROUTER_DECISIONS = "https://openrouter.ai/api/alpha/decisions";
 const DEFAULT_JEV_MODEL = "typesafe/jev-1.13";
 
 /**
- * Answer every question. `local` always works. `jev` posts to OpenRouter's
- * Decisions API when OPENROUTER_API_KEY is set. `laya` posts to a local
- * System One HTTP server (the same JSON body as Jev).
+ * Answer every question. Default backend is in-process Laya (ONNX). `jev`
+ * posts to OpenRouter when OPENROUTER_API_KEY is set. `laya` can also POST
+ * to LAYA_URL. `local` is the in-process stand-in used by tests.
  */
 export async function askSystemOne(state, questions, options = {}) {
   const backend = options.backend ?? detectBackend();
@@ -21,7 +22,10 @@ export async function askSystemOne(state, questions, options = {}) {
     return askJev(state, questions, options);
   }
   if (backend === "laya") {
-    return askLayaHttp(state, questions, options);
+    if (options.layaUrl ?? process.env.LAYA_URL) {
+      return askLayaHttp(state, questions, options);
+    }
+    return askLayaOrt(state, questions, options);
   }
   return askLocal(state, questions);
 }
@@ -33,10 +37,11 @@ export function detectBackend() {
   if (process.env.OPENROUTER_API_KEY) {
     return "jev";
   }
-  if (process.env.LAYA_URL) {
-    return "laya";
-  }
-  return "local";
+  return "laya";
+}
+
+export function layaAvailable() {
+  return Boolean(process.env.LAYA_URL) || layaBundleReady();
 }
 
 export function askLocal(state, questions) {

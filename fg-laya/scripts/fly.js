@@ -12,6 +12,8 @@ import { createHudServer } from "../src/hud-server.js";
 import { createPilot, tickPilot } from "../src/loop.js";
 import { DEFAULT_ALT_FT, DEFAULT_HOME, DEFAULT_SPEED_KT } from "../src/nav.js";
 import { buildOverlay, overlayPropertyWrites } from "../src/overlay.js";
+import { ensureLayaBundle } from "../src/laya-fetch.js";
+import { startLayaServer } from "../src/laya-server.js";
 import { detectBackend } from "../src/systemone.js";
 
 const args = parseArgs(process.argv.slice(2));
@@ -38,6 +40,13 @@ const pilot = createPilot({
   world: world === "fg" ? "fg" : "sim",
   decideEvery: Number(args.decideEvery ?? 1),
 });
+
+if (backend === "laya" && !args.layaUrl && !process.env.LAYA_URL) {
+  const dir = await ensureLayaBundle();
+  const server = await startLayaServer({ modelDir: dir });
+  process.env.LAYA_URL = server.url;
+  console.log(`laya ${server.url}  ${dir}`);
+}
 
 const hud = createHudServer();
 await hud.listen(port);

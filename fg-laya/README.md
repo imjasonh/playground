@@ -2,9 +2,8 @@
 
 A FlightGear addon plus a Node loop that reads the instruments and asks a
 [System One](https://openrouter.ai/docs/guides/community/jev) model what to do
-with aileron, elevator, rudder, and throttle. The model is Laya or Jev when
-you have one. Otherwise the same questions run through a local System One
-backend so you can still fly.
+with aileron, elevator, rudder, and throttle. The model is Laya by default. Jev is used only when `OPENROUTER_API_KEY` is
+set. Tests can still run the local System One stand-in.
 
 The airplane starts in the air and holds a left-hand circle, or it flies to
 random waypoints and never stops.
@@ -30,11 +29,12 @@ Backends, in order of `SYSTEMONE_BACKEND` or autodetection:
 
 1. `jev` — `POST https://openrouter.ai/api/alpha/decisions` with
    `typesafe/jev-1.13` when `OPENROUTER_API_KEY` is set.
-2. `laya` — `POST $LAYA_URL` with the same `{ state, questions }` body. Point
-   this at a local Laya or `system-one` server.
-3. `local` — in-process System One that returns the same answer shapes
-   (choice + probabilities + confidence, noul). Used when the other two are
-   not configured.
+2. `laya` — in-process ONNX Runtime on the Laya multilingual graph (default).
+   `bash scripts/fetch-laya.sh` pulls the int8 bundle from GitHub (this
+   environment cannot reach Hugging Face). Set `LAYA_URL` to POST the same
+   `{ state, questions }` body to another System One server instead.
+3. `local` — in-process stand-in with the same answer shapes. Tests pass
+   `--backend local`.
 
 ## Run the built-in airplane
 
@@ -88,23 +88,15 @@ node scripts/fly.js --world fg --mode circle
 `--world auto` uses FlightGear when the property server answers, and the
 built-in model otherwise.
 
-## Point it at Jev or Laya
+## Point it at Jev
 
 ```bash
 export OPENROUTER_API_KEY=...
 node scripts/fly.js --world sim --backend jev
 ```
 
-```bash
-export LAYA_URL=http://127.0.0.1:8080/systemone
-node scripts/fly.js --world sim --backend laya
-```
-
-`LAYA_URL` must accept `POST` JSON `{ "state": ..., "questions": ... }` and
-return `{ "answers": { "aileron": { "type": "choice", "choice": "...", ... }, ... } }`.
-That is the OpenRouter Decisions / TypeSafe System One contract. A local
-`system-one` ONNX server from [PyPI](https://pypi.org/project/system-one/)
-works once you have fetched a Laya graph.
+Laya does not need that key. `npm start` and `node scripts/fly.js --world fg`
+download the graph into `.laya-cache/` on first run if it is missing.
 
 ## Tests
 
@@ -124,6 +116,7 @@ fg-laya/
 ├── addon/           FlightGear addon (addon.xml + Nasal + laya-hud.xml)
 ├── hud/             instrument + probability display
 ├── scripts/fly.js   decision loop
+├── scripts/fetch-laya.sh
 ├── scripts/start-fg.sh
 ├── src/             observe, questions, System One, nav, kinematics
 └── tests/

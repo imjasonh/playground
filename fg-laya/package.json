@@ -8,7 +8,8 @@
     "test": "node --test",
     "start": "node scripts/fly.js --world sim --mode circle",
     "fly": "node scripts/fly.js",
-    "fg": "bash scripts/start-fg.sh"
+    "fg": "bash scripts/start-fg.sh",
+    "laya": "bash scripts/fetch-laya.sh"
   },
   "engines": {
     "node": ">=20"

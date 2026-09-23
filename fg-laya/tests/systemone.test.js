@@ -1,7 +1,32 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { flightQuestions } from "../src/questions.js";
-import { askLocal, softmax } from "../src/systemone.js";
+import { askLocal, detectBackend, softmax } from "../src/systemone.js";
+
+test("detectBackend prefers Laya unless a Jev key is set", () => {
+  const prevBackend = process.env.SYSTEMONE_BACKEND;
+  const prevKey = process.env.OPENROUTER_API_KEY;
+  delete process.env.SYSTEMONE_BACKEND;
+  delete process.env.OPENROUTER_API_KEY;
+  try {
+    assert.equal(detectBackend(), "laya");
+    process.env.OPENROUTER_API_KEY = "test-key";
+    assert.equal(detectBackend(), "jev");
+    process.env.SYSTEMONE_BACKEND = "local";
+    assert.equal(detectBackend(), "local");
+  } finally {
+    if (prevBackend == null) {
+      delete process.env.SYSTEMONE_BACKEND;
+    } else {
+      process.env.SYSTEMONE_BACKEND = prevBackend;
+    }
+    if (prevKey == null) {
+      delete process.env.OPENROUTER_API_KEY;
+    } else {
+      process.env.OPENROUTER_API_KEY = prevKey;
+    }
+  }
+});
 
 test("softmax is a distribution", () => {
   const p = softmax([1, 2, 3]);
