@@ -221,18 +221,20 @@ function elevatorLogit(state, label) {
 
 function throttleLogit(state, label) {
   const speedErr = Number(state.airspeed_err_kt) || 0;
+  const altErr = Number(state.altitude_err_ft) || 0;
   const climb = (Number(state.vsi_fpm) || 0) > 400;
+  const low = altErr < -300;
   switch (label) {
     case "cut":
-      return speedErr > 14 ? 4 : -1.5;
+      return !low && speedErr > 14 ? 4 : -2;
     case "less":
-      return speedErr > 4 ? 3.3 : speedErr > 0 ? 0.8 : -0.8;
+      return !low && speedErr > 4 ? 3.3 : speedErr > 0 && !low ? 0.8 : -0.8;
     case "hold":
-      return Math.abs(speedErr) < 4 ? 3.7 : -0.4;
+      return Math.abs(speedErr) < 4 && !low ? 3.7 : -0.4;
     case "more":
-      return speedErr < -4 || (climb && speedErr < 0) ? 3.3 : speedErr < 0 ? 0.8 : -0.8;
+      return speedErr < -4 || low || (climb && speedErr < 0) ? 3.3 : speedErr < 0 ? 0.8 : -0.8;
     case "full":
-      return speedErr < -12 ? 4 : -1.5;
+      return speedErr < -12 || altErr < -500 ? 4 : -1.5;
     default:
       return 0;
   }

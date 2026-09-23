@@ -156,9 +156,9 @@ export async function fgPrepAirborne(client, options = {}) {
     await setQuiet(client, path, value);
   }
   await setQuiet(client, "/sim/menubar/visibility", false);
-  await setQuiet(client, "/sim/current-view/view-number", options.view ?? 1);
-  await setQuiet(client, "/sim/current-view/z-offset-m", options.viewZ ?? -28);
-  await setQuiet(client, "/sim/current-view/y-offset-m", 2);
+  await setQuiet(client, "/sim/current-view/view-number", options.view ?? 0);
+  await setQuiet(client, "/sim/current-view/pitch-offset-deg", 8);
+  await setQuiet(client, "/controls/flight/elevator-trim", 0.08);
   await setQuiet(client, "/autopilot/locks/heading", "");
   await setQuiet(client, "/autopilot/locks/altitude", "");
   await setQuiet(client, "/autopilot/locks/speed", "");

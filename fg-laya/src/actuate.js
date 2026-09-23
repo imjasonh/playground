@@ -54,10 +54,13 @@ export function answersToTargets(answers, current, state) {
 
   const elevatorChoice = answers.elevator?.choice ?? "hold";
   let desiredPitch = PITCH[elevatorChoice] ?? 2;
+  const altErr = Number(state.altitude_err_ft) || 0;
   if (ias < 65) {
     desiredPitch = Math.min(desiredPitch, -2);
+  } else if (altErr < -250) {
+    desiredPitch = Math.max(desiredPitch, 5);
   }
-  const elevator = clamp((desiredPitch - pitch) / 10, -0.28, 0.28);
+  const elevator = clamp((desiredPitch - pitch) / 6, -0.45, 0.55);
 
   const rudder = RUDDER[answers.rudder?.choice] ?? 0;
 
@@ -70,7 +73,7 @@ export function answersToTargets(answers, current, state) {
   } else if (thr === "more") {
     throttle = clamp(current.throttle + 0.05, 0.28, 1);
   }
-  if (ias < 65) {
+  if (ias < 65 || altErr < -300) {
     throttle = Math.max(throttle, 0.85);
   }
 
