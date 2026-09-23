@@ -54,6 +54,7 @@ enum ExperimentCatalog {
         SnoreLogExperiment.experiment,
         ZCameraExperiment.experiment,
         LocalLensExperiment.experiment,
+        LiveTranslateExperiment.experiment,
         VoxelWorldExperiment.experiment,
         WigglecamExperiment.experiment,
         DoomFaceExperiment.experiment,
