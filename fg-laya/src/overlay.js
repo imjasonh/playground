@@ -47,15 +47,17 @@ export function overlayRow(surface, answer = {}, controls = {}, target = {}) {
 }
 
 export function formatBanner(tick, rows) {
-  const body = (rows ?? []).map((row) => row.line).join("   ");
-  return `tick ${tick}   ${body}`;
+  const body = (rows ?? []).map((row) => row.line).join("  ");
+  return `tick|${tick}  ${body}`;
 }
 
 export function formatRow(shortName, choice, applied, confidence) {
   const n = finiteNumber(applied);
-  const value = n == null ? "—" : n.toFixed(2);
-  const pct = Number.isFinite(confidence) ? ` ${Math.round(confidence * 100)}%` : "";
-  return `${shortName} ${choice} ${value}${pct}`;
+  const value = n == null ? "-" : n.toFixed(2);
+  const pct = Number.isFinite(confidence) ? `${Math.round(confidence * 100)}pct` : "";
+  // FlightGear's HUD font drops ordinary spaces, so keep the tokens
+  // readable if they get concatenated.
+  return [shortName, choice, value, pct].filter(Boolean).join("|");
 }
 
 export function overlayPropertyWrites(overlay) {
@@ -64,7 +66,7 @@ export function overlayPropertyWrites(overlay) {
   }
   const writes = [
     ["/laya/overlay/banner", overlay.banner],
-    ["/laya/overlay/tick", `tick ${overlay.tick}`],
+    ["/laya/overlay/tick", `tick|${overlay.tick}`],
   ];
   for (const row of overlay.rows ?? []) {
     writes.push([`/laya/overlay/${row.surface}`, row.line]);

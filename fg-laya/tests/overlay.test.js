@@ -25,9 +25,9 @@ test("overlay lists each surface choice and the value written this tick", () => 
   assert.equal(overlay.rows.length, 4);
   assert.equal(overlay.rows[0].choice, "left");
   assert.equal(overlay.rows[0].applied, -0.14);
-  assert.match(overlay.banner, /tick 42/);
-  assert.match(overlay.banner, /AIL left -0.14 80%/);
-  assert.match(overlay.banner, /THR more 0.82 70%/);
+  assert.match(overlay.banner, /tick\|42/);
+  assert.match(overlay.banner, /AIL\|left\|-0.14\|80pct/);
+  assert.match(overlay.banner, /THR\|more\|0.82\|70pct/);
 });
 
 test("overlay property writes feed the FlightGear HUD labels", () => {
@@ -37,16 +37,16 @@ test("overlay property writes feed the FlightGear HUD labels", () => {
     controls: { aileron: 0.2, elevator: 0, throttle: 0.7, rudder: 0 },
   });
   const paths = Object.fromEntries(overlayPropertyWrites(overlay));
-  assert.equal(paths["/laya/overlay/tick"], "tick 7");
-  assert.match(paths["/laya/overlay/aileron"], /AIL right/);
-  assert.ok(paths["/laya/overlay/banner"].startsWith("tick 7"));
+  assert.equal(paths["/laya/overlay/tick"], "tick|7");
+  assert.match(paths["/laya/overlay/aileron"], /AIL\|right/);
+  assert.ok(paths["/laya/overlay/banner"].startsWith("tick|7"));
 });
 
 test("formatBanner stays one line", () => {
   const line = formatBanner(3, [
-    { line: "AIL left -0.10 70%" },
-    { line: "ELE hold 0.04 50%" },
+    { line: "AIL|left|-0.10|70pct" },
+    { line: "ELE|hold|0.04|50pct" },
   ]);
   assert.equal(line.includes("\n"), false);
-  assert.match(line, /tick 3/);
+  assert.match(line, /tick\|3/);
 });

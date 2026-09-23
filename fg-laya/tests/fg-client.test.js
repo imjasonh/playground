@@ -34,12 +34,12 @@ test("engine props start magnetos, mixture, and JSBSim running", () => {
 test("overlay writes are property pairs the HUD can bind", () => {
   const writes = overlayPropertyWrites({
     tick: 9,
-    banner: "tick 9   AIL left -0.10",
-    rows: [{ surface: "aileron", line: "AIL left -0.10 80%" }],
+    banner: "tick|9  AIL|left|-0.10",
+    rows: [{ surface: "aileron", line: "AIL|left|-0.10|80pct" }],
   });
   const paths = Object.fromEntries(writes);
-  assert.equal(paths["/laya/overlay/tick"], "tick 9");
-  assert.equal(paths["/laya/overlay/aileron"], "AIL left -0.10 80%");
+  assert.equal(paths["/laya/overlay/tick"], "tick|9");
+  assert.equal(paths["/laya/overlay/aileron"], "AIL|left|-0.10|80pct");
 });
 
 test("needsAirborneReset fires on a crash or inverted attitude", () => {

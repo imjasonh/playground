@@ -13,8 +13,8 @@
 
   <label>
     <name>LayaTick</name>
-    <x>0</x>
-    <y>80</y>
+    <x>-90</x>
+    <y>-150</y>
     <width>1</width>
     <height>1</height>
     <halign>center</halign>
@@ -25,8 +25,8 @@
 
   <label>
     <name>LayaAileron</name>
-    <x>0</x>
-    <y>55</y>
+    <x>-90</x>
+    <y>-170</y>
     <width>1</width>
     <height>1</height>
     <halign>center</halign>
@@ -37,8 +37,8 @@
 
   <label>
     <name>LayaElevator</name>
-    <x>0</x>
-    <y>35</y>
+    <x>-90</x>
+    <y>-185</y>
     <width>1</width>
     <height>1</height>
     <halign>center</halign>
@@ -49,8 +49,8 @@
 
   <label>
     <name>LayaThrottle</name>
-    <x>0</x>
-    <y>15</y>
+    <x>-90</x>
+    <y>-200</y>
     <width>1</width>
     <height>1</height>
     <halign>center</halign>
@@ -61,8 +61,8 @@
 
   <label>
     <name>LayaRudder</name>
-    <x>0</x>
-    <y>-5</y>
+    <x>-90</x>
+    <y>-215</y>
     <width>1</width>
     <height>1</height>
     <halign>center</halign>
