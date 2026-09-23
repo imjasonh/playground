@@ -68,6 +68,7 @@ if (world === "fg" || world === "auto") {
       alt_ft: ac.alt_ft,
       heading_deg: ac.heading_deg,
       airspeed_kt: ac.airspeed_kt,
+      view: 2,
     });
     const raw = await fgReadSensors(fg);
     seedControls(pilot, raw);
