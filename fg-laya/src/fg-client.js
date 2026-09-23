@@ -165,8 +165,10 @@ export async function fgPrepAirborne(client, options = {}) {
   await setQuiet(client, "/autopilot/locks/heading", "");
   await setQuiet(client, "/autopilot/locks/altitude", "");
   await setQuiet(client, "/autopilot/locks/speed", "");
+  await new Promise((resolve) => setTimeout(resolve, 400));
   await setQuiet(client, "/sim/freeze/master", false);
   await setQuiet(client, "/sim/freeze/clock", false);
+  await new Promise((resolve) => setTimeout(resolve, 400));
 }
 
 export async function fgWriteControls(client, controls, meta = {}) {

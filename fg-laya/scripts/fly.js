@@ -42,6 +42,7 @@ const hud = createHudServer();
 await hud.listen(port);
 console.log(`hud http://127.0.0.1:${port}  backend=${backend}  world=${world}  mode=${mission}`);
 
+let lastResetAt = 0;
 let fg = null;
 if (world === "fg" || world === "auto") {
   fg = createFgClient({
@@ -60,6 +61,7 @@ if (world === "fg" || world === "auto") {
     });
     const raw = await fgReadSensors(fg);
     seedControls(pilot, raw);
+    lastResetAt = Date.now();
     pilot.world = "fg";
   } catch (err) {
     if (world === "fg") {
@@ -74,7 +76,6 @@ if (world === "fg" || world === "auto") {
 const started = Date.now();
 let running = true;
 let lastTick = Date.now();
-let lastResetAt = 0;
 process.on("SIGINT", () => {
   running = false;
 });
