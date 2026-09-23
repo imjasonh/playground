@@ -100,6 +100,7 @@ while (running) {
         });
         extras.raw = await fgReadSensors(fg);
         seedControls(pilot, extras.raw);
+        pilot.lastDecision = null;
       }
     } catch (err) {
       console.error("fg read failed", err.message);

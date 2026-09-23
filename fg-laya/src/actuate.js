@@ -50,7 +50,8 @@ export function answersToTargets(answers, current, state) {
   if (ias < 70) {
     desiredBank = clamp(desiredBank, -12, 12);
   }
-  const aileron = clamp((desiredBank - roll) / 22, -0.42, 0.42);
+  const aileronLimit = ias < 75 ? 0.18 : 0.32;
+  const aileron = clamp((desiredBank - roll) / 22, -aileronLimit, aileronLimit);
 
   const elevatorChoice = answers.elevator?.choice ?? "hold";
   let desiredPitch = PITCH[elevatorChoice] ?? 2;

@@ -152,13 +152,16 @@ export async function fgPrepAirborne(client, options = {}) {
   } catch {
     // Older builds without /run.cgi still get the property writes above.
   }
-  for (const [path, value] of ENGINE_PROPS) {
-    await setQuiet(client, path, value);
-  }
+  // Do not write JSBSim set-running again. A second write zeroes airspeed.
   await setQuiet(client, "/sim/menubar/visibility", false);
   await setQuiet(client, "/sim/current-view/view-number", options.view ?? 0);
   await setQuiet(client, "/sim/current-view/pitch-offset-deg", 8);
   await setQuiet(client, "/controls/flight/elevator-trim", 0.08);
+  await setQuiet(client, "/controls/flight/aileron", 0);
+  await setQuiet(client, "/controls/flight/elevator", 0.04);
+  await setQuiet(client, "/controls/flight/rudder", 0);
+  await setQuiet(client, "/controls/engines/engine/throttle", 0.8);
+  await setQuiet(client, "/controls/engines/current-engine/throttle", 0.8);
   await setQuiet(client, "/autopilot/locks/heading", "");
   await setQuiet(client, "/autopilot/locks/altitude", "");
   await setQuiet(client, "/autopilot/locks/speed", "");
