@@ -65,6 +65,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	client.notify("initialized", struct{}{})
+	waitForAnalyzersLoaded(t, srv, rpcWait(t))
 
 	src := `package p
 
@@ -202,13 +203,7 @@ func TestInitializeRepliesBeforeRuleLoad(t *testing.T) {
 	}
 
 	client.notify("initialized", struct{}{})
-	deadline := time.Now().Add(rpcWait(t))
-	for time.Now().Before(deadline) && len(srv.analyzers()) == 0 {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if n := len(srv.analyzers()); n == 0 {
-		t.Fatal("rules were not loaded after initialized")
-	}
+	waitForAnalyzersLoaded(t, srv, rpcWait(t))
 
 	client.request(99, "shutdown", nil)
 	client.expectResponse(99)
@@ -274,6 +269,18 @@ func rpcWait(t *testing.T) time.Duration {
 		}
 	}
 	return want
+}
+
+func waitForAnalyzersLoaded(t *testing.T, srv *Server, wait time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(wait)
+	for time.Now().Before(deadline) {
+		if len(srv.analyzers()) > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("rules were not loaded after initialized; recent analyzers=%d", len(srv.analyzers()))
 }
 
 func (c *testClient) write(m jsonrpc.Message) {
