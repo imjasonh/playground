@@ -287,40 +287,15 @@ final class VoxelPaletteTests: XCTestCase {
     }
 }
 
-final class VoxelSizeMappingTests: XCTestCase {
-    func testEndpointsHitMinAndMax() {
-        XCTAssertEqual(VoxelSizeMapping.size(sliderValue: 0), VoxelSizeMapping.minimumSize, accuracy: 0.0001)
-        XCTAssertEqual(VoxelSizeMapping.size(sliderValue: 1), VoxelSizeMapping.maximumSize, accuracy: 0.0001)
+final class VoxelWorldConfigurationTests: XCTestCase {
+    func testVoxelEdgeIsSmallestChunkySize() {
+        // The 256×192 depth map can't support crisp blocks under 10 cm.
+        XCTAssertEqual(VoxelWorldSession.voxelEdgeMeters, 0.10, accuracy: 0.0001)
     }
 
-    func testRoundTrip() {
-        for slider in stride(from: 0.0, through: 1.0, by: 0.25) {
-            let size = VoxelSizeMapping.size(sliderValue: slider)
-            XCTAssertEqual(VoxelSizeMapping.sliderValue(for: size), slider, accuracy: 0.001)
-        }
-    }
-
-    func testMappingIsMonotonic() {
-        let small = VoxelSizeMapping.size(sliderValue: 0.2)
-        let large = VoxelSizeMapping.size(sliderValue: 0.8)
-        XCTAssertLessThan(small, large)
-    }
-
-    func testDefaultSizeIsInRange() {
-        XCTAssertGreaterThanOrEqual(VoxelSizeMapping.defaultSize, VoxelSizeMapping.minimumSize)
-        XCTAssertLessThanOrEqual(VoxelSizeMapping.defaultSize, VoxelSizeMapping.maximumSize)
-    }
-
-    func testLabels() {
-        XCTAssertEqual(VoxelSizeMapping.label(for: 0.1), "10 cm")
-        XCTAssertEqual(VoxelSizeMapping.label(for: 0.25), "25 cm")
-        XCTAssertEqual(VoxelSizeMapping.label(for: 0.5), "50 cm")
-        XCTAssertEqual(VoxelSizeMapping.label(for: 0.123), "12.3 cm")
-    }
-
-    func testFloorIsChunky() {
-        // The sensor can't support crisp small voxels; keep the floor ≥ 10 cm.
-        XCTAssertGreaterThanOrEqual(VoxelSizeMapping.minimumSize, 0.10)
+    func testDepthCapIsLiDARMaximum() {
+        // Apple's LiDAR scanner reports depth no farther than 5 m.
+        XCTAssertEqual(VoxelWorldSession.maxDepthMeters, 5, accuracy: 0.001)
     }
 }
 

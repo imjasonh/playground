@@ -278,14 +278,17 @@ final class PlaygroundUITests: XCTestCase {
         openExperiment("voxel-world", title: "Voxel World", in: app)
 
         XCTAssertTrue(app.navigationBars["Voxel World"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.sliders["voxelSizeSlider"].waitForExistence(timeout: 8)
-            || app.otherElements["voxelSizeSlider"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["voxelResetButton"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["voxelFreezeCheckbox"].waitForExistence(timeout: 8)
-            || app.otherElements["voxelFreezeCheckbox"].waitForExistence(timeout: 3))
+        let captureButton = app.buttons["voxelCaptureButton"]
+        XCTAssertTrue(captureButton.waitForExistence(timeout: 8)
+            || app.otherElements["voxelCaptureButton"].waitForExistence(timeout: 3))
+        let capture = captureButton.exists ? captureButton : app.otherElements["voxelCaptureButton"]
+        XCTAssertEqual(capture.label, "Take picture")
+        XCTAssertFalse(app.sliders["voxelSizeSlider"].exists)
+        XCTAssertFalse(app.buttons["voxelResetButton"].exists)
+        XCTAssertFalse(app.buttons["voxelFreezeCheckbox"].exists)
+        XCTAssertFalse(app.buttons["voxelCameraFeedCheckbox"].exists)
         XCTAssertTrue(app.staticTexts["voxelStatusMessage"].waitForExistence(timeout: 8)
-            || app.otherElements["voxelStatusMessage"].waitForExistence(timeout: 3)
-            || app.staticTexts["voxelSizeLabel"].waitForExistence(timeout: 3))
+            || app.otherElements["voxelStatusMessage"].waitForExistence(timeout: 3))
     }
 
     func testWigglecamExperimentOpens() {
