@@ -1,0 +1,8 @@
+{
+  "name": "palette-swap",
+  "private": true,
+  "scripts": {
+    "test": "node smoke.js",
+    "start": "python3 -m http.server 8080"
+  }
+}
