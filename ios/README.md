@@ -283,10 +283,11 @@ surface well behind it, several consecutive misses required), so moved objects
 and depth-noise floaters clean themselves up instead of leaving trails
 (LiDAR only). The block edge is fixed at 10 cm, the smallest size that stays
 crisp on the 256×192 depth map. LiDAR samples are kept out to 5 m, which is
-as far as Apple's scanner reports. Pixels with no depth, or depth past that,
-are drawn as chunky palette squares the size of a 10 cm block at 5 m. Closer
-pixels stay the live camera image, with the voxel mesh on top. The camera
-button saves the current frame, camera plus voxels, to Photos. Rendering is
+as far as Apple's scanner reports. The camera photo is not shown. Every pixel
+is drawn as a chunky palette square the size of a 10 cm block at that pixel's
+depth (5 m when the scanner has no reading), and the voxel mesh draws in
+front. The camera button saves the current frame, camera plus voxels, to
+Photos. Rendering is
 chunked SceneKit geometry with hidden interior faces culled and per-face
 shading baked into vertex colors. Needs
 camera permission (`NSCameraUsageDescription`) and add-only photo library
