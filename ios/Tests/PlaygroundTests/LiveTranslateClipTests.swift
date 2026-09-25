@@ -36,20 +36,19 @@ final class LiveTranslateClipTests: XCTestCase {
             track: track,
             outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA]
         )
-        reader.add(output)
-        guard reader.startReading() else {
-            throw reader.error ?? CocoaError(.fileReadCorruptFile)
-        }
+        let provider = reader.outputProvider(for: output)
+        try reader.start()
 
         var passes: [[LiveTranslateObservation]] = []
         var index = 0
-        while let sample = output.copyNextSampleBuffer() {
+        while let sample = try await provider.next() {
             defer { index += 1 }
-            guard index % frameStride == 0, let pixels = CMSampleBufferGetImageBuffer(sample) else { continue }
-            passes.append(try LiveTranslateRecognizer.recognize(pixelBuffer: pixels, orientation: .up))
-        }
-        if let error = reader.error {
-            throw error
+            guard index % frameStride == 0, case .pixelBuffer(let pixels) = sample.content else { continue }
+            // The decoder only lends the buffer inside this closure.
+            let readings = pixels.withUnsafeBuffer { buffer in
+                Result { try LiveTranslateRecognizer.recognize(pixelBuffer: buffer, orientation: .up) }
+            }
+            passes.append(try readings.get())
         }
         return passes
     }
