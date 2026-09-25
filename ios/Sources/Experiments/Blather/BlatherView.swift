@@ -68,6 +68,26 @@ struct BlatherView: View {
                 direction = ""
             }
         }
+        .confirmationDialog(
+            "Delete this episode?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let item = pendingDelete {
+                    session.delete(id: item.id)
+                }
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDelete = nil
+            }
+        } message: {
+            Text(pendingDelete?.topic ?? "")
+        }
     }
 
     private var showPage: some View {
@@ -105,25 +125,6 @@ struct BlatherView: View {
         }
         .listStyle(.insetGrouped)
         .accessibilityIdentifier("blatherSavedList")
-        .confirmationDialog(
-            "Delete this episode?",
-            isPresented: Binding(
-                get: { pendingDelete != nil },
-                set: { if !$0 { pendingDelete = nil } }
-            ),
-            titleVisibility: .visible,
-            presenting: pendingDelete
-        ) { item in
-            Button("Delete", role: .destructive) {
-                session.delete(id: item.id)
-                pendingDelete = nil
-            }
-            Button("Cancel", role: .cancel) {
-                pendingDelete = nil
-            }
-        } message: { item in
-            Text(item.topic)
-        }
     }
 
     private func episodeRow(_ item: BlatherEpisodeSummary) -> some View {
@@ -180,6 +181,7 @@ struct BlatherView: View {
             }
             .accessibilityLabel(session.episode?.topic ?? "Episode")
             .accessibilityIdentifier("blatherMiniPlayer")
+            speedControl
             miniPlayPause
         }
         .padding(.horizontal)
@@ -230,9 +232,8 @@ struct BlatherView: View {
                 }
                 .padding()
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityIdentifier("blatherPlayer")
-        }
-        .safeAreaInset(edge: .bottom) {
             controls
         }
     }
@@ -274,6 +275,11 @@ struct BlatherView: View {
                 playerPlayPause
                 Spacer()
                 skipButton(delta: BlatherTimeline.skipStep, systemName: "goforward.10", label: "Forward 10 seconds", identifier: "blatherSkipForwardButton")
+            }
+            HStack {
+                Spacer()
+                speedControl
+                Spacer()
             }
             if canRedirect {
                 HStack(alignment: .bottom, spacing: 8) {
@@ -346,6 +352,27 @@ struct BlatherView: View {
         .accessibilityLabel(session.isPlaying ? "Pause" : "Play")
         .accessibilityIdentifier("blatherPlayPauseButton")
         .disabled(!session.hasAudio)
+    }
+
+    private var speedControl: some View {
+        Menu {
+            Picker("Playback speed", selection: Binding(
+                get: { session.speed },
+                set: { session.setSpeed($0) }
+            )) {
+                ForEach(BlatherSpeed.allCases) { speed in
+                    Text(speed.label).tag(speed)
+                }
+            }
+        } label: {
+            Text(session.speed.label)
+                .font(.body.monospacedDigit())
+                .frame(minWidth: 72, minHeight: 44)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel("Playback speed")
+        .accessibilityValue(session.speed.label)
+        .accessibilityIdentifier("blatherSpeedButton")
     }
 
     private func togglePlayback() {

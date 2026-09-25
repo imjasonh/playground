@@ -29,17 +29,18 @@ protocol BlatherSynthesizer: AnyObject {
     func synthesize(_ text: String, to fileURL: URL) async throws -> TimeInterval
 }
 
-/// Plays the episode timeline. The session owns play, pause, and seek.
+/// Plays the episode timeline. The session owns play, pause, seek, and speed.
 @MainActor
 protocol BlatherPlaybackControlling: AnyObject {
     var onPlayhead: ((TimeInterval) -> Void)? { get set }
     var onEnded: (() -> Void)? { get set }
     var onInterruption: ((Bool, Bool) -> Void)? { get set }
-    func update(segments: [BlatherPlayable], playhead: TimeInterval, playing: Bool)
+    var onRouteLost: (() -> Void)? { get set }
+    func update(segments: [BlatherPlayable], playhead: TimeInterval, playing: Bool, rate: Double)
     func stop()
 }
 
-/// Lock-screen play, pause, and 10-second skip.
+/// Lock-screen play, pause, 10-second skip, and playback speed.
 @MainActor
 final class BlatherRemoteControl {
     enum Command {
@@ -48,6 +49,7 @@ final class BlatherRemoteControl {
         case toggle
         case skipForward
         case skipBackward
+        case setRate(Double)
     }
 
     private var tokens: [(MPRemoteCommand, Any)] = []
@@ -62,6 +64,10 @@ final class BlatherRemoteControl {
         center.togglePlayPauseCommand.isEnabled = true
         center.skipForwardCommand.isEnabled = true
         center.skipBackwardCommand.isEnabled = true
+        center.changePlaybackRateCommand.isEnabled = true
+        center.changePlaybackRateCommand.supportedPlaybackRates = BlatherSpeed.allCases.map {
+            NSNumber(value: $0.rawValue)
+        }
         tokens = [
             token(center.playCommand, command: .play, handler: handler),
             token(center.pauseCommand, command: .pause, handler: handler),
@@ -69,6 +75,14 @@ final class BlatherRemoteControl {
             token(center.skipForwardCommand, command: .skipForward, handler: handler),
             token(center.skipBackwardCommand, command: .skipBackward, handler: handler),
         ]
+        let rateToken = center.changePlaybackRateCommand.addTarget { event in
+            let rate = (event as? MPChangePlaybackRateCommandEvent)?.playbackRate ?? 1
+            Task { @MainActor in
+                handler(.setRate(Double(rate)))
+            }
+            return .success
+        }
+        tokens.append((center.changePlaybackRateCommand, rateToken))
     }
 
     private func token(
@@ -90,6 +104,13 @@ final class BlatherRemoteControl {
             command.removeTarget(token)
         }
         tokens = []
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.isEnabled = false
+        center.pauseCommand.isEnabled = false
+        center.togglePlayPauseCommand.isEnabled = false
+        center.skipForwardCommand.isEnabled = false
+        center.skipBackwardCommand.isEnabled = false
+        center.changePlaybackRateCommand.isEnabled = false
     }
 }
 
@@ -110,6 +131,7 @@ final class BlatherSession: ObservableObject {
     @Published private(set) var errorMessage: String?
     @Published private(set) var didCompact = false
     @Published private(set) var saved: [BlatherEpisodeSummary] = []
+    @Published private(set) var speed: BlatherSpeed = .x1
     @Published private(set) var modelGate: AgentModelGate
 
     private let narrator: any BlatherNarrator
@@ -135,7 +157,7 @@ final class BlatherSession: ObservableObject {
         synthesizer: any BlatherSynthesizer,
         store: BlatherStore,
         playback: any BlatherPlaybackControlling,
-        remote: BlatherRemoteControl = BlatherRemoteControl(),
+        remote: BlatherRemoteControl,
         modelGate: AgentModelGate = .available,
         gateProvider: @escaping () -> AgentModelGate = { .available }
     ) {
@@ -161,6 +183,11 @@ final class BlatherSession: ObservableObject {
                 self?.handleInterruption(began: began, shouldResume: shouldResume)
             }
         }
+        playback.onRouteLost = { [weak self] in
+            MainActor.assumeIsolated {
+                self?.pauseForRouteLoss()
+            }
+        }
     }
 
     static func live() -> BlatherSession {
@@ -169,6 +196,7 @@ final class BlatherSession: ObservableObject {
             synthesizer: BlatherSpeechRenderer(),
             store: BlatherStore.applicationSupport(),
             playback: BlatherAVPlayback(),
+            remote: BlatherRemoteControl(),
             modelGate: BlatherAvailability.current(),
             gateProvider: { BlatherAvailability.current() }
         )
@@ -212,8 +240,17 @@ final class BlatherSession: ObservableObject {
                 self.skip(by: BlatherTimeline.skipStep)
             case .skipBackward:
                 self.skip(by: -BlatherTimeline.skipStep)
+            case .setRate(let rate):
+                self.setSpeed(BlatherSpeed.nearest(rate))
             }
         }
+    }
+
+    func setSpeed(_ speed: BlatherSpeed) {
+        guard speed != self.speed else { return }
+        self.speed = speed
+        syncPlayback()
+        scheduleFill()
     }
 
     func performModelGateAction(_ action: AgentModelGateAction) async {
@@ -323,7 +360,7 @@ final class BlatherSession: ObservableObject {
             isPlaying = true
             syncPlayback()
         }
-        guard !hasAudio || BlatherTimeline.shouldPrefetch(playhead: playhead, duration: audibleDuration) else {
+        guard !hasAudio || shouldPrefetch(playhead: playhead, duration: audibleDuration) else {
             return
         }
         generation &+= 1
@@ -386,7 +423,7 @@ final class BlatherSession: ObservableObject {
         generationFailed = false
         didCompact = false
         planner = BlatherPlanner()
-        playback.update(segments: [], playhead: 0, playing: false)
+        playback.update(segments: [], playhead: 0, playing: false, rate: speed.rawValue)
         publishNowPlaying()
         deactivateAudio()
         saved = store.summaries()
@@ -418,8 +455,12 @@ final class BlatherSession: ObservableObject {
     }
 
     private func playbackEnded() {
-        guard !isGenerating else { return }
-        guard mode != .live || !BlatherTimeline.shouldPrefetch(playhead: playhead, duration: audibleDuration) else {
+        guard !isGenerating else {
+            publishNowPlaying()
+            return
+        }
+        guard mode != .live || !shouldPrefetch(playhead: playhead, duration: audibleDuration) else {
+            publishNowPlaying()
             return
         }
         isPlaying = false
@@ -441,9 +482,15 @@ final class BlatherSession: ObservableObject {
         resumeAfterInterruption = false
     }
 
+    /// Headphones unplugged. Pause, and do not start playback on the speaker later.
+    private func pauseForRouteLoss() {
+        resumeAfterInterruption = false
+        pause()
+    }
+
     private func scheduleFill() {
         guard mode == .live, isPlaying, !fillRunning, !generationFailed else { return }
-        guard BlatherTimeline.shouldPrefetch(playhead: playhead, duration: audibleDuration) else { return }
+        guard shouldPrefetch(playhead: playhead, duration: audibleDuration) else { return }
         let token = generation
         fillRunning = true
         let previous = chain
@@ -456,7 +503,7 @@ final class BlatherSession: ObservableObject {
                 }
                 return
             }
-            guard BlatherTimeline.shouldPrefetch(playhead: self.playhead, duration: self.audibleDuration) else {
+            guard self.shouldPrefetch(playhead: self.playhead, duration: self.audibleDuration) else {
                 self.fillRunning = false
                 return
             }
@@ -488,7 +535,7 @@ final class BlatherSession: ObservableObject {
         while generation == token, !Task.isCancelled {
             if produced > 0 {
                 guard mode == .live, !generationFailed else { return }
-                guard BlatherTimeline.shouldPrefetch(playhead: playhead, duration: audibleDuration) else { return }
+                guard shouldPrefetch(playhead: playhead, duration: audibleDuration) else { return }
             }
             if produced >= BlatherTimeline.maxSegmentsPerFill { return }
             let before = audibleDuration
@@ -578,7 +625,8 @@ final class BlatherSession: ObservableObject {
             return (narration, request.prompt)
         } catch {
             guard generation == token else { throw error }
-            guard case BlatherNarrationError.contextExceeded = error as? BlatherNarrationError else {
+            guard let narrationError = error as? BlatherNarrationError,
+                  case .contextExceeded = narrationError else {
                 throw error
             }
             planner.forceCompact()
@@ -616,7 +664,7 @@ final class BlatherSession: ObservableObject {
     private func fail(_ error: Error) {
         generationFailed = true
         wantsAutoplay = false
-        if !hasAudio {
+        if !hasAudio || playhead >= audibleDuration - 0.05 {
             isPlaying = false
             syncPlayback()
         }
@@ -644,8 +692,19 @@ final class BlatherSession: ObservableObject {
         }
     }
 
+    private func shouldPrefetch(playhead: TimeInterval, duration: TimeInterval) -> Bool {
+        BlatherTimeline.shouldPrefetch(playhead: playhead, duration: duration, rate: speed.rawValue)
+    }
+
+    /// Zero while paused or waiting on the next file, so the lock screen clock stops.
+    private var nowPlayingRate: Double {
+        let caughtUp = !hasAudio || playhead >= audibleDuration - 0.05
+        guard isPlaying, !caughtUp else { return 0 }
+        return speed.rawValue
+    }
+
     private func syncPlayback() {
-        playback.update(segments: playables, playhead: playhead, playing: isPlaying && hasAudio)
+        playback.update(segments: playables, playhead: playhead, playing: isPlaying && hasAudio, rate: speed.rawValue)
         publishNowPlaying()
     }
 
@@ -659,7 +718,7 @@ final class BlatherSession: ObservableObject {
             MPMediaItemPropertyArtist: "Blather",
             MPNowPlayingInfoPropertyElapsedPlaybackTime: playhead,
             MPMediaItemPropertyPlaybackDuration: audibleDuration,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyPlaybackRate: nowPlayingRate,
         ]
         if let art = nowPlayingArtwork(for: episode) {
             let bytes = art.data

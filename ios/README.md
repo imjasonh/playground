@@ -314,14 +314,15 @@ ffmpeg. It writes the clip and the JSON.
 The screen is a show page: cover, episode list, and a mini player. **New
 episode** asks for a topic. Blather asks the on-device Foundation Model for a
 spoken explainer, writes that speech to an audio file, and opens the player.
-When about 25 seconds of audio remain, it writes the next passage and keeps
-going.
+When about 25 seconds of listening time remain, it writes the next passage
+and keeps going. Faster playback starts that work earlier.
 
-The player shows the episode cover, a scrubber, and 10-second skip controls.
-Pause, then type a direction, to change what it says next. **Continue** on a
-saved episode writes more when you are near the end. Close the player and the
-audio keeps going in the mini player. The lock screen shows the cover, play,
-pause, and the same skip controls. Playback continues while the screen is
+The player shows the episode cover, a scrubber, 10-second skip controls, and
+a speed control for 1×, 1.5×, 1.75×, and 2×. Pause, then type a direction, to
+change what it says next. **Continue** on a saved episode writes more when you
+are near the end. Close the player and the audio keeps going in the mini
+player, which has the same speed control. The lock screen shows the cover,
+play, pause, skip, and playback speed. Playback continues while the screen is
 locked (`UIBackgroundModes` includes `audio`).
 
 Each episode stays on this device under Application Support: a JSON manifest,

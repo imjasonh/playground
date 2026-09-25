@@ -37,6 +37,30 @@ struct BlatherPlayable: Equatable {
     var duration: TimeInterval
 }
 
+/// Playback speeds the player offers. 1× is normal speech.
+enum BlatherSpeed: Double, CaseIterable, Identifiable, Hashable {
+    case x1 = 1
+    case x1_5 = 1.5
+    case x1_75 = 1.75
+    case x2 = 2
+
+    var id: Double { rawValue }
+
+    var label: String {
+        switch self {
+        case .x1: "1×"
+        case .x1_5: "1.5×"
+        case .x1_75: "1.75×"
+        case .x2: "2×"
+        }
+    }
+
+    /// Snaps a lock-screen rate to the nearest offered speed.
+    static func nearest(_ rate: Double) -> BlatherSpeed {
+        allCases.min { abs($0.rawValue - rate) < abs($1.rawValue - rate) } ?? .x1
+    }
+}
+
 /// Segments kept after a redirect, plus the files that should be deleted.
 struct BlatherCut: Equatable {
     var segments: [BlatherSegment]
@@ -189,9 +213,10 @@ enum BlatherScript {
 enum BlatherTimeline {
     /// How far Back and Forward move the playhead.
     static let skipStep: TimeInterval = 10
-    /// Start the next model call when less than this much audio remains.
-    /// A 160-word passage is about a minute of speech, so 25 seconds leaves
-    /// room to write and synthesize the next file before the player stops.
+    /// Listening time to keep in reserve before the next model call.
+    /// A 160-word passage is about a minute of speech, so 25 seconds at 1×
+    /// leaves room to write and synthesize the next file. Faster playback
+    /// multiplies this lead so the reserve stays about 25 seconds of waiting.
     static let prefetchLead: TimeInterval = 25
     /// Upper bound on passages written in one burst. Short clips chain until
     /// `prefetchLead` is satisfied; the cap stops a near-zero duration from
@@ -210,8 +235,13 @@ enum BlatherTimeline {
         clamped(time + delta, duration: duration)
     }
 
-    static func shouldPrefetch(playhead: TimeInterval, duration: TimeInterval) -> Bool {
-        duration - playhead <= prefetchLead
+    static func shouldPrefetch(
+        playhead: TimeInterval,
+        duration: TimeInterval,
+        rate: Double = 1
+    ) -> Bool {
+        let playbackRate = min(max(rate, 0.5), 2)
+        return duration - playhead <= prefetchLead * playbackRate
     }
 
     /// A time that lands on a boundary belongs to the following segment, except

@@ -81,6 +81,8 @@ final class BlatherTests: XCTestCase {
         XCTAssertEqual(BlatherTimeline.skipped(35, by: 10, duration: 40), 40)
         XCTAssertFalse(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 40))
         XCTAssertTrue(BlatherTimeline.shouldPrefetch(playhead: 20, duration: 40))
+        XCTAssertFalse(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 60, rate: 2))
+        XCTAssertTrue(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 40, rate: 2))
 
         let first = segment(text: "One.", duration: 30, fileName: "a.caf")
         let second = segment(text: "Two.", duration: 20, fileName: "b.caf")
@@ -205,6 +207,17 @@ final class BlatherTests: XCTestCase {
         } else {
             XCTFail("Missing episode")
         }
+
+        session.setSpeed(.x1_5)
+        XCTAssertEqual(session.speed, .x1_5)
+        XCTAssertEqual(playback.updates.last?.rate, 1.5)
+        session.setSpeed(.x1_75)
+        XCTAssertEqual(playback.updates.last?.rate, 1.75)
+        session.setSpeed(.x2)
+        XCTAssertEqual(playback.updates.last?.rate, 2)
+        session.setSpeed(.x1)
+        XCTAssertEqual(playback.updates.last?.rate, 1)
+        XCTAssertEqual(playback.updates.last?.playing, true as Bool?)
 
         session.seek(to: 12)
         XCTAssertEqual(session.playhead, 12)
@@ -383,8 +396,31 @@ final class BlatherTests: XCTestCase {
             narrator: narrator,
             synthesizer: synthesizer,
             store: store ?? BlatherStore(root: directory),
+            playback: playback,
+            remote: BlatherRemoteControl()
+        )
+    }
+
+    func testHeadphoneUnplugDoesNotResume() async {
+        let playback = FakePlayback()
+        let session = makeSession(
+            narrator: FakeNarrator(text: "Still talking."),
+            synthesizer: FakeSynthesizer(duration: 30),
             playback: playback
         )
+        await session.start(topic: "cables")
+        playback.onInterruption?(true, false)
+        XCTAssertFalse(session.isPlaying)
+        playback.onRouteLost?()
+        playback.onInterruption?(false, true)
+        XCTAssertFalse(session.isPlaying)
+    }
+
+    func testSpeedLabels() {
+        XCTAssertEqual(BlatherSpeed.allCases.map(\.label), ["1×", "1.5×", "1.75×", "2×"])
+        XCTAssertEqual(BlatherSpeed.nearest(1.6), .x1_5)
+        XCTAssertEqual(BlatherSpeed.nearest(1.8), .x1_75)
+        XCTAssertEqual(BlatherSpeed.nearest(1.9), .x2)
     }
 
     private func colorGrid(_ image: UIImage) -> [UInt32] {
@@ -462,11 +498,12 @@ private final class FakePlayback: BlatherPlaybackControlling {
     var onPlayhead: ((TimeInterval) -> Void)?
     var onEnded: (() -> Void)?
     var onInterruption: ((Bool, Bool) -> Void)?
-    var updates: [(segments: [BlatherPlayable], playhead: TimeInterval, playing: Bool)] = []
+    var onRouteLost: (() -> Void)?
+    var updates: [(segments: [BlatherPlayable], playhead: TimeInterval, playing: Bool, rate: Double)] = []
     var stopped = false
 
-    func update(segments: [BlatherPlayable], playhead: TimeInterval, playing: Bool) {
-        updates.append((segments, playhead, playing))
+    func update(segments: [BlatherPlayable], playhead: TimeInterval, playing: Bool, rate: Double) {
+        updates.append((segments, playhead, playing, rate))
     }
 
     func stop() {

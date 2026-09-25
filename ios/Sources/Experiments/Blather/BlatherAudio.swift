@@ -129,16 +129,21 @@ final class BlatherSpeechRenderer: BlatherSynthesizer {
 }
 
 /// Plays episode files in order and reports a single timeline playhead.
+///
+/// Speeds stay inside `AVAudioPlayer.rate` (0.5× through 2×). The player
+/// keeps the voice at the same pitch.
 @MainActor
 final class BlatherAVPlayback: NSObject, BlatherPlaybackControlling, AVAudioPlayerDelegate {
     var onPlayhead: ((TimeInterval) -> Void)?
     var onEnded: (() -> Void)?
     var onInterruption: ((Bool, Bool) -> Void)?
+    var onRouteLost: (() -> Void)?
 
     private var segments: [BlatherPlayable] = []
     private var index = 0
     private var player: AVAudioPlayer?
     private var playing = false
+    private var rate: Float = 1
     private var timer: Timer?
     private var reportedPlayhead: TimeInterval = 0
     private var didSignalEnd = false
@@ -149,12 +154,21 @@ final class BlatherAVPlayback: NSObject, BlatherPlaybackControlling, AVAudioPlay
         let center = NotificationCenter.default
         let session = AVAudioSession.sharedInstance()
         observers.append(center.addObserver(
-            forName: AVAudioSession.interruptionNotification,
+            forName: AVAudioSession.didBecomeInactiveNotification,
             object: session,
             queue: .main
         ) { [weak self] note in
             Task { @MainActor in
-                self?.handleInterruption(note)
+                self?.handleInactive(note)
+            }
+        })
+        observers.append(center.addObserver(
+            forName: AVAudioSession.resumptionRecommendationNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] note in
+            Task { @MainActor in
+                self?.handleResumption(note)
             }
         })
         observers.append(center.addObserver(
@@ -168,13 +182,14 @@ final class BlatherAVPlayback: NSObject, BlatherPlaybackControlling, AVAudioPlay
         })
     }
 
-    func update(segments: [BlatherPlayable], playhead: TimeInterval, playing: Bool) {
+    func update(segments: [BlatherPlayable], playhead: TimeInterval, playing: Bool, rate: Double) {
         let grew = segments.count > self.segments.count
         let rewound = playhead + 0.2 < reportedPlayhead
         if grew || rewound {
             didSignalEnd = false
         }
         self.segments = segments
+        self.rate = Float(rate)
         if segments.isEmpty {
             player?.stop()
             player = nil
@@ -188,10 +203,8 @@ final class BlatherAVPlayback: NSObject, BlatherPlaybackControlling, AVAudioPlay
         let drift = abs(playhead - reportedPlayhead)
         if player == nil || drift > 0.35 || location.index != index {
             load(index: location.index, offset: location.offset)
-        } else if let current = currentSegment, let player, player.currentTime > current.duration {
-            player.pause()
-            player.currentTime = min(player.currentTime, current.duration)
         }
+        applyRate()
         let finished = isFinished(playhead)
         self.playing = playing && !finished
         if self.playing {
@@ -241,6 +254,7 @@ final class BlatherAVPlayback: NSObject, BlatherPlaybackControlling, AVAudioPlay
         if index + 1 < segments.count {
             didSignalEnd = false
             load(index: index + 1, offset: 0)
+            applyRate()
             if playing {
                 self.player?.play()
             }
@@ -274,6 +288,16 @@ final class BlatherAVPlayback: NSObject, BlatherPlaybackControlling, AVAudioPlay
         return prior + max(0, local)
     }
 
+    private func applyRate() {
+        guard let player else { return }
+        if !player.enableRate {
+            player.enableRate = true
+        }
+        if player.rate != rate {
+            player.rate = rate
+        }
+    }
+
     private var currentSegment: BlatherPlayable? {
         guard segments.indices.contains(index) else { return nil }
         return segments[index]
@@ -291,11 +315,13 @@ final class BlatherAVPlayback: NSObject, BlatherPlaybackControlling, AVAudioPlay
         do {
             let player = try AVAudioPlayer(contentsOf: segment.url)
             player.delegate = self
+            player.enableRate = true
             player.prepareToPlay()
             if player.duration > 0 {
                 let upper = max(0, player.duration - 0.01)
                 player.currentTime = min(max(0, offset), upper)
             }
+            player.rate = rate
             self.player = player
         } catch {
             self.player = nil
@@ -324,21 +350,17 @@ final class BlatherAVPlayback: NSObject, BlatherPlaybackControlling, AVAudioPlay
         timer = nil
     }
 
-    private func handleInterruption(_ note: Notification) {
-        guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
-              let type = AVAudioSession.InterruptionType(rawValue: raw) else {
+    private func handleInactive(_ note: Notification) {
+        guard let context = note.userInfo?[AVAudioSession.deactivationContextKey] as? AVAudioSession.DeactivationContext,
+              context.source == .system else {
             return
         }
-        switch type {
-        case .began:
-            onInterruption?(true, false)
-        case .ended:
-            let optionsRaw = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
-            let options = AVAudioSession.InterruptionOptions(rawValue: optionsRaw)
-            onInterruption?(false, options.contains(.shouldResume))
-        @unknown default:
-            break
-        }
+        onInterruption?(true, false)
+    }
+
+    private func handleResumption(_ note: Notification) {
+        let context = note.userInfo?[AVAudioSession.resumptionContextKey] as? AVAudioSession.ResumptionContext
+        onInterruption?(false, context?.recommendation == .shouldResume)
     }
 
     private func handleRouteChange(_ note: Notification) {
@@ -347,7 +369,7 @@ final class BlatherAVPlayback: NSObject, BlatherPlaybackControlling, AVAudioPlay
               reason == .oldDeviceUnavailable else {
             return
         }
-        onInterruption?(true, false)
+        onRouteLost?()
     }
 }
 
