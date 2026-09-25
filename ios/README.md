@@ -365,6 +365,16 @@ the wait doubles each time. Needs camera permission (extends the existing
 `NSCameraUsageDescription` — no new Bundle ID or signing bootstrap) and Apple
 Intelligence for translation. Simulator opens the UI but has no camera.
 
+`LiveTranslateClipTests` plays
+`Tests/PlaygroundTests/Fixtures/LiveTranslate/moving-sign.mp4` through Vision
+and the tracking pipeline, with a fake model in place of Foundation Models. The
+clip is five seconds of a Spanish sign that pans, shakes, catches a glare, and
+zooms, with fine print and a room plate that OCR reads unreliably. Each line on
+the sign has to get a translation within the first three seconds and keep it on
+at least 9 of every 10 later frames that read it. To change the clip, edit and
+run `ios/scripts/make-live-translate-clip.py`, which needs Pillow, NumPy, and
+ffmpeg.
+
 ### Doom Face
 
 Front TrueDepth camera matches blend shapes to doomguy status-bar faces. Hold a

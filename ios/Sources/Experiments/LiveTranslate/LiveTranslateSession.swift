@@ -28,7 +28,6 @@ final class LiveTranslateSession: NSObject, ObservableObject {
     @Published private(set) var language: LiveTranslateLanguage = .english
     @Published private(set) var usingFrontCamera = false
     @Published private(set) var modelGate: AgentModelGate
-    @Published private(set) var isTranslating = false
     @Published private(set) var didCopy = false
 
     private let session = AVCaptureSession()
@@ -46,13 +45,9 @@ final class LiveTranslateSession: NSObject, ObservableObject {
     private var orientationObserver: NSObjectProtocol?
 
     // Main thread only.
-    private var tracker = LiveTranslateTracker()
-    private var memory = LiveTranslateMemory()
-    private var pins: [String: LiveTranslatePin] = [:]
-    private var backdrops: [String: LiveTranslateBackdrop] = [:]
+    private var pipeline = LiveTranslatePipeline()
     private var lastError: String?
     private var lastCopiedPayload: String?
-    private var translateGeneration = 0
     private var translateTask: Task<Void, Never>?
 
     override init() {
@@ -116,12 +111,13 @@ final class LiveTranslateSession: NSObject, ObservableObject {
         guard language != self.language else { return }
         self.language = language
         cancelTranslation()
+        pipeline.setLanguage(language)
         lastError = nil
         didCopy = false
         if runState == .running {
             statusMessage = "Translate to \(language.displayName)."
-            publishOverlays()
-            scheduleTranslation()
+            overlays = pipeline.overlays
+            startNextBatch()
         }
     }
 
@@ -341,134 +337,69 @@ final class LiveTranslateSession: NSObject, ObservableObject {
 
     private func handleOCR(observations: [LiveTranslateObservation], image: CGImage?) {
         guard runState == .running else { return }
-        tracker.update(with: observations)
+        pipeline.ingest(observations)
         if let image {
-            sampleBackdrops(from: image)
+            pipeline.sampleBackdrops { LiveTranslateColor.sample(image: image, visionBox: $0) }
         }
-        publishOverlays()
-        scheduleTranslation()
+        overlays = pipeline.overlays
+        startNextBatch()
         maybeCopy()
         refreshStatus()
     }
 
-    /// Forgets line positions after the frame changes shape. Translations stay in memory.
     private func clearTracking() {
-        tracker.reset()
-        pins = [:]
-        backdrops = [:]
+        pipeline.clearTracking()
         overlays = []
-    }
-
-    private func sampleBackdrops(from image: CGImage) {
-        var next: [String: LiveTranslateBackdrop] = [:]
-        for track in tracker.tracks {
-            let previous = backdrops[track.id]
-            guard track.misses == 0 else {
-                next[track.id] = previous
-                continue
-            }
-            let sample = LiveTranslateColor.sample(image: image, visionBox: track.boundingBox)
-            next[track.id] = previous?.blended(toward: sample, weight: 0.5) ?? sample
-        }
-        backdrops = next
-    }
-
-    private func publishOverlays() {
-        overlays = LiveTranslateResultBuilder.overlays(
-            tracks: tracker.tracks,
-            memory: memory,
-            language: language,
-            pins: &pins,
-            backdrops: backdrops
-        )
     }
 
     // MARK: - Translation
 
     /// Sends settled lines that have no stored translation to the model, one batch at a time.
-    private func scheduleTranslation() {
-        guard modelGate.isAvailable, translateTask == nil else { return }
-        let language = self.language
-        let sources = LiveTranslateResultBuilder.translationBatch(
-            tracks: tracker.tracks,
-            memory: memory,
-            language: language,
-            now: Date()
-        )
-        guard !sources.isEmpty else { return }
-        translateGeneration += 1
-        let generation = translateGeneration
-        isTranslating = true
+    private func startNextBatch() {
+        guard modelGate.isAvailable, let batch = pipeline.nextBatch(now: Date()) else { return }
         translateTask = Task { @MainActor [weak self] in
             var translated: [Int: String] = [:]
             var failure: Error?
             do {
                 translated = try await LiveTranslateTranslator.translate(
-                    sources: sources,
-                    language: language
+                    sources: batch.sources,
+                    language: batch.language
                 ) { progress in
-                    self?.showProgress(progress, sources: sources, language: language)
+                    self?.showProgress(progress, for: batch)
                 }
             } catch {
                 failure = error
             }
-            self?.finishBatch(
-                generation: generation,
-                sources: sources,
-                translated: translated,
-                language: language,
-                failure: failure
-            )
+            self?.finish(batch, translated: translated, failure: failure)
         }
     }
 
-    /// Stores finished lines even when the frame that asked for them is gone,
-    /// so the next frame that reads them shows the translation.
-    private func store(_ translations: [Int: String], sources: [String], language: LiveTranslateLanguage) {
-        for (index, translation) in translations where sources.indices.contains(index) {
-            memory.remember(source: sources[index], translation: translation, language: language)
-        }
-    }
-
-    private func showProgress(_ translations: [Int: String], sources: [String], language: LiveTranslateLanguage) {
-        store(translations, sources: sources, language: language)
-        guard !translations.isEmpty, language == self.language else { return }
+    private func showProgress(_ translations: [Int: String], for batch: LiveTranslatePipeline.Batch) {
+        pipeline.receive(translations, for: batch)
+        guard !translations.isEmpty, batch.language == language else { return }
         lastError = nil
-        publishOverlays()
+        overlays = pipeline.overlays
         refreshStatus()
     }
 
-    private func finishBatch(
-        generation: Int,
-        sources: [String],
-        translated: [Int: String],
-        language: LiveTranslateLanguage,
-        failure: Error?
-    ) {
-        store(translated, sources: sources, language: language)
-        guard generation == translateGeneration else { return }
+    private func finish(_ batch: LiveTranslatePipeline.Batch, translated: [Int: String], failure: Error?) {
+        guard pipeline.finish(batch, translations: translated, now: Date()) else { return }
         translateTask = nil
-        isTranslating = false
-        let now = Date()
-        for source in sources where memory.translation(for: source, language: language) == nil {
-            memory.recordFailure(source: source, language: language, at: now)
-        }
         if let failure {
             lastError = failure.localizedDescription
         } else if !translated.isEmpty {
             lastError = nil
         }
-        publishOverlays()
-        scheduleTranslation()
+        overlays = pipeline.overlays
+        startNextBatch()
         maybeCopy()
         refreshStatus()
     }
 
     private func cancelTranslation() {
-        translateGeneration += 1
+        pipeline.cancelBatch()
         translateTask?.cancel()
         translateTask = nil
-        isTranslating = false
     }
 
     // MARK: - Clipboard + status
@@ -481,7 +412,7 @@ final class LiveTranslateSession: NSObject, ObservableObject {
             return
         }
         if modelGate.isAvailable {
-            guard !isTranslating, overlays.contains(where: \.isTranslated) else { return }
+            guard !pipeline.isTranslating, overlays.contains(where: \.isTranslated) else { return }
         }
         writeClipboard(payload)
     }
@@ -492,7 +423,7 @@ final class LiveTranslateSession: NSObject, ObservableObject {
             statusMessage = modelUnavailableStatus()
             return
         }
-        statusMessage = isTranslating ? "Translating…" : countStatus()
+        statusMessage = pipeline.isTranslating ? "Translating…" : countStatus()
     }
 
     private func writeClipboard(_ payload: String) {
