@@ -143,7 +143,7 @@ private struct BlatherShowPage: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .accessibilityHidden(true)
             Text("Blather")
-                .font(.title.bold)
+                .font(.title.bold())
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 4)
@@ -272,7 +272,7 @@ private struct BlatherPlayer: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(episode.topic)
-                        .font(.title2.bold)
+                        .font(.title2.bold())
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text("Blather")
                         .font(.subheadline)
@@ -502,7 +502,7 @@ private struct BlatherTranscript: View {
         } else {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Transcript")
-                    .font(.title3.bold)
+                    .font(.title3.bold())
                     .accessibilityAddTraits(.isHeader)
                 LazyVStack(alignment: .leading, spacing: 16) {
                     ForEach(Array(episode.segments.enumerated()), id: \.element.id) { index, segment in
