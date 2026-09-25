@@ -1,31 +1,12 @@
-import CoreVideo
+import CoreGraphics
 import Foundation
 import Vision
 
 /// On-device OCR for Live Translate. No network.
 enum LiveTranslateRecognizer {
-    static func recognize(
-        pixelBuffer: CVPixelBuffer,
-        orientation: CGImagePropertyOrientation
-    ) throws -> [LiveTranslateObservation] {
-        let handler = VNImageRequestHandler(
-            cvPixelBuffer: pixelBuffer,
-            orientation: orientation,
-            options: [:]
-        )
-        return try recognize(handler: handler)
-    }
-
-    /// Test helper: recognize a CGImage the same way as a live frame.
-    static func recognize(
-        cgImage: CGImage,
-        orientation: CGImagePropertyOrientation = .up
-    ) throws -> [LiveTranslateObservation] {
-        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
-        return try recognize(handler: handler)
-    }
-
-    private static func recognize(handler: VNImageRequestHandler) throws -> [LiveTranslateObservation] {
+    /// Reads the lines in an upright frame, the same image the preview shows.
+    static func recognize(cgImage: CGImage) throws -> [LiveTranslateObservation] {
+        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
