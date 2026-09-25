@@ -73,12 +73,21 @@ async function main() {
     }
   }
 
-  const bench = api.bench("floss", "portable", 30);
+  const fromRun = new Uint8Array(width * height * 2);
+  const scalar = api.run("floss", "scalar", fromRun);
+  if (scalar.error) {
+    throw new Error(scalar.error);
+  }
+  const fromBench = new Uint8Array(width * height * 2);
+  const bench = api.bench("floss", "portable", 30, fromBench);
   if (bench.error) {
     throw new Error(bench.error);
   }
   if (bench.iters < 1 || bench.ms <= 0) {
     throw new Error("benchmark did not record a run");
+  }
+  if (!same(fromRun, fromBench)) {
+    throw new Error("benchmark indexes differ from the scalar mapping");
   }
   console.log(
     "smoke ok lanes=" + api.lanes + " floss portable " + bench.ms.toFixed(1) + " ms over " + bench.iters + " iters",
