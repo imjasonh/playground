@@ -213,14 +213,19 @@ enum BlatherScript {
 enum BlatherTimeline {
     /// How far Back and Forward move the playhead.
     static let skipStep: TimeInterval = 10
+    /// Spoken audio to finish before playback starts. At 1× a short first
+    /// passage can end before the next one is synthesized, so the opening
+    /// fill keeps writing until this much is ready. Later fills use
+    /// `prefetchLead`.
+    static let openingBuffer: TimeInterval = 40
     /// Listening time to keep in reserve before the next model call.
     /// A 160-word passage is about a minute of speech, so 25 seconds at 1×
     /// leaves room to write and synthesize the next file. Faster playback
     /// multiplies this lead so the reserve stays about 25 seconds of waiting.
     static let prefetchLead: TimeInterval = 25
-    /// Upper bound on passages written in one burst. Short clips chain until
-    /// `prefetchLead` is satisfied; the cap stops a near-zero duration from
-    /// looping.
+    /// Upper bound on passages written in one burst. The opening fill stops
+    /// at `openingBuffer` or this cap. Later fills stop once `prefetchLead`
+    /// is satisfied. The cap stops a near-zero duration from looping.
     static let maxSegmentsPerFill = 4
 
     static func duration(of segments: [BlatherSegment]) -> TimeInterval {
@@ -233,6 +238,10 @@ enum BlatherTimeline {
 
     static func skipped(_ time: TimeInterval, by delta: TimeInterval, duration: TimeInterval) -> TimeInterval {
         clamped(time + delta, duration: duration)
+    }
+
+    static func needsOpeningAudio(playhead: TimeInterval, duration: TimeInterval) -> Bool {
+        duration - playhead < openingBuffer
     }
 
     static func shouldPrefetch(

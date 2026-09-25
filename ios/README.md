@@ -314,8 +314,9 @@ ffmpeg. It writes the clip and the JSON.
 The screen is a show page: cover, episode list, and a mini player. **New
 episode** asks for a topic. Blather asks the on-device Foundation Model for a
 spoken explainer, writes that speech to an audio file, and opens the player.
-When about 25 seconds of listening time remain, it writes the next passage
-and keeps going. Faster playback starts that work earlier.
+Playback waits until about 40 seconds of speech are ready, then starts. When
+about 25 seconds of listening time remain, it writes the next passage and
+keeps going. Faster playback starts that later work earlier.
 
 The player shows the episode cover, a scrubber, 10-second skip controls, and
 a speed control for 1×, 1.5×, 1.75×, and 2×. Pause, then type a direction, to

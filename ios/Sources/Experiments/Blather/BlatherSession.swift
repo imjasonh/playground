@@ -145,6 +145,9 @@ final class BlatherSession: ObservableObject {
     private var generation = 0
     private var fillRunning = false
     private var wantsAutoplay = false
+    /// False until this episode has actually started. Resume stays held while
+    /// the opening buffer is still filling.
+    private var hasStartedPlayback = false
     private var generationFailed = false
     private var resumeAfterInterruption = false
     private var chain: Task<Void, Never>?
@@ -285,6 +288,7 @@ final class BlatherSession: ObservableObject {
         playhead = 0
         isPlaying = false
         wantsAutoplay = true
+        hasStartedPlayback = false
         errorMessage = nil
         generationFailed = false
         didCompact = false
@@ -302,7 +306,14 @@ final class BlatherSession: ObservableObject {
     func resume() {
         guard hasAudio, mode == .live || mode == .replay else { return }
         wantsAutoplay = mode == .live
-        isPlaying = true
+        let holdingOpening = mode == .live
+            && !hasStartedPlayback
+            && !generationFailed
+            && BlatherTimeline.needsOpeningAudio(playhead: playhead, duration: audibleDuration)
+        if !holdingOpening {
+            isPlaying = true
+            hasStartedPlayback = true
+        }
         syncPlayback()
         if mode == .live {
             scheduleFill()
@@ -338,6 +349,7 @@ final class BlatherSession: ObservableObject {
         mode = .live
         wantsAutoplay = true
         isPlaying = false
+        hasStartedPlayback = false
         errorMessage = nil
         generationFailed = false
         if persist(current) {
@@ -358,6 +370,7 @@ final class BlatherSession: ObservableObject {
         errorMessage = nil
         if hasAudio {
             isPlaying = true
+            hasStartedPlayback = true
             syncPlayback()
         }
         guard !hasAudio || shouldPrefetch(playhead: playhead, duration: audibleDuration) else {
@@ -389,6 +402,7 @@ final class BlatherSession: ObservableObject {
         mode = .replay
         isPlaying = false
         wantsAutoplay = false
+        hasStartedPlayback = false
         playhead = 0
         errorMessage = nil
         generationFailed = false
@@ -416,6 +430,7 @@ final class BlatherSession: ObservableObject {
         episode = nil
         isPlaying = false
         wantsAutoplay = false
+        hasStartedPlayback = false
         isGenerating = false
         fillRunning = false
         playhead = 0
@@ -529,13 +544,14 @@ final class BlatherSession: ObservableObject {
             if generation == token {
                 isGenerating = false
                 fillRunning = false
+                startPlayback(token: token, allowShort: true)
             }
         }
         var produced = 0
         while generation == token, !Task.isCancelled {
             if produced > 0 {
                 guard mode == .live, !generationFailed else { return }
-                guard shouldPrefetch(playhead: playhead, duration: audibleDuration) else { return }
+                guard shouldContinueFill(produced: produced) else { return }
             }
             if produced >= BlatherTimeline.maxSegmentsPerFill { return }
             let before = audibleDuration
@@ -543,7 +559,30 @@ final class BlatherSession: ObservableObject {
             if !wrote { return }
             produced += 1
             if audibleDuration <= before { return }
+            startPlayback(token: token, allowShort: false)
         }
+    }
+
+    /// The opening fill writes until about 40 seconds are ready. After
+    /// playback starts, the fill stops once the prefetch lead is covered.
+    private func shouldContinueFill(produced: Int) -> Bool {
+        guard produced < BlatherTimeline.maxSegmentsPerFill else { return false }
+        if !isPlaying, BlatherTimeline.needsOpeningAudio(playhead: playhead, duration: audibleDuration) {
+            return true
+        }
+        return shouldPrefetch(playhead: playhead, duration: audibleDuration)
+    }
+
+    /// Starts playback once the opening buffer is ready. `allowShort` covers
+    /// the segment cap, so a burst of very short clips still starts.
+    private func startPlayback(token: Int, allowShort: Bool) {
+        guard generation == token, wantsAutoplay, hasAudio, !isPlaying, !generationFailed else { return }
+        if !allowShort, BlatherTimeline.needsOpeningAudio(playhead: playhead, duration: audibleDuration) {
+            return
+        }
+        isPlaying = true
+        hasStartedPlayback = true
+        syncPlayback()
     }
 
     private func appendOne(token: Int) async -> Bool {
@@ -608,9 +647,6 @@ final class BlatherSession: ObservableObject {
         latest.updatedAt = Date()
         episode = latest
         planner.commit(prompt: prompt, speech: speech, measuredTotalTokens: narration.totalTokenCount)
-        if wantsAutoplay {
-            isPlaying = true
-        }
         persist(latest)
         syncPlayback()
         return true

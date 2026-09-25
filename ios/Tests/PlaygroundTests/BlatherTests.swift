@@ -81,6 +81,9 @@ final class BlatherTests: XCTestCase {
         XCTAssertEqual(BlatherTimeline.skipped(35, by: 10, duration: 40), 40)
         XCTAssertFalse(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 40))
         XCTAssertTrue(BlatherTimeline.shouldPrefetch(playhead: 20, duration: 40))
+        XCTAssertTrue(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 39))
+        XCTAssertFalse(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 40))
+        XCTAssertTrue(BlatherTimeline.needsOpeningAudio(playhead: 10, duration: 49))
         XCTAssertFalse(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 60, rate: 2))
         XCTAssertTrue(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 40, rate: 2))
 
@@ -230,6 +233,24 @@ final class BlatherTests: XCTestCase {
         XCTAssertEqual(narrator.prompts.count, 2)
         XCTAssertTrue(narrator.prompts[1].contains("Continue the explainer"))
         XCTAssertEqual(session.audibleDuration, 80)
+    }
+
+    func testStartBuffersAboutFortySecondsBeforePlayback() async {
+        let playback = FakePlayback()
+        let session = makeSession(
+            narrator: FakeNarrator(text: "A short passage."),
+            synthesizer: FakeSynthesizer(duration: 15),
+            playback: playback
+        )
+
+        await session.start(topic: "tides")
+        XCTAssertEqual(session.episode?.segments.count, 3)
+        XCTAssertEqual(session.audibleDuration, 45)
+        XCTAssertTrue(session.isPlaying)
+        XCTAssertFalse(session.isGenerating)
+        let firstPlaying = playback.updates.first { $0.playing }
+        XCTAssertEqual(firstPlaying?.segments.count, 3)
+        XCTAssertTrue(playback.updates.contains { !$0.playing && $0.segments.count == 2 })
     }
 
     func testRedirectCutsUnheardAudio() async throws {
