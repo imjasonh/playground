@@ -11,8 +11,9 @@ import simd
 /// quantized into a `VoxelGrid`, and colored from the camera image at that
 /// pixel. Chunks whose voxels changed are re-meshed and swapped into the
 /// SceneKit scene, so the voxel world accumulates and persists as you move.
-/// Pixels with no depth, or depth past the scanner maximum, are drawn as
-/// chunky palette blocks the size of a voxel at that distance.
+/// The camera photo is not shown. Every pixel is drawn as a chunky palette
+/// block the size of a voxel at that pixel's depth, and the voxel mesh
+/// draws in front.
 final class VoxelWorldSession: NSObject, ObservableObject {
     enum RunState: Equatable {
         case idle
@@ -59,6 +60,7 @@ final class VoxelWorldSession: NSObject, ObservableObject {
     private var hasRunBefore = false
     /// Keeps a save confirmation on screen while integration keeps publishing.
     private var suppressStatusUntil = Date.distantPast
+    private let cameraCover = VoxelCameraCover()
     private let farFieldQueue = DispatchQueue(label: "voxel-world.far-field", qos: .userInitiated)
     private let farFieldCompositor = FarFieldCompositor()
     /// Main-thread only.
@@ -75,6 +77,7 @@ final class VoxelWorldSession: NSObject, ObservableObject {
         view.accessibilityIdentifier = "voxelWorldARView"
         arView = view
         super.init()
+        view.delegate = cameraCover
     }
 
     // MARK: - Lifecycle
@@ -472,7 +475,16 @@ final class VoxelWorldSession: NSObject, ObservableObject {
     }
 }
 
-// MARK: - Camera frames (main thread)
+/// Clears the camera feed ARKit installs as the scene background each frame.
+/// `ARSCNView.delegate` is typed as `ARSCNViewDelegate`. Session updates stay
+/// on `VoxelWorldSession`.
+private final class VoxelCameraCover: NSObject, ARSCNViewDelegate {
+    func renderer(_: SCNSceneRenderer, willRenderScene scene: SCNScene, atTime _: TimeInterval) {
+        scene.background.contents = UIColor.black
+    }
+}
+
+// MARK: - Camera frames
 
 extension VoxelWorldSession: ARSessionDelegate {
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
@@ -523,9 +535,9 @@ extension VoxelWorldSession: ARSessionDelegate {
         }
     }
 
-    /// Places the latest far-shell texture on a camera-parented plane just
-    /// past the scanner maximum. In-range texels are transparent, so the live
-    /// camera and any nearer voxels stay in front.
+    /// Places the latest chunk texture on a camera-parented plane just past
+    /// the scanner maximum. The texture is opaque. Voxels in front of the
+    /// plane still draw; the camera photo does not.
     private func installPendingFarField() {
         guard let texture = pendingFarField else { return }
         guard let cameraNode = arView.pointOfView else { return }
@@ -553,7 +565,7 @@ extension VoxelWorldSession: ARSessionDelegate {
             let material = SCNMaterial()
             material.lightingModel = .constant
             material.isDoubleSided = false
-            material.transparencyMode = .aOne
+            material.readsFromDepthBuffer = true
             material.writesToDepthBuffer = false
             material.diffuse.magnificationFilter = .nearest
             material.diffuse.minificationFilter = .nearest

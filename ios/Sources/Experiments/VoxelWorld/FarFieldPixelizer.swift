@@ -4,11 +4,9 @@ import CoreVideo
 import simd
 import UIKit
 
-/// Turns the part of a camera frame that has no usable depth into chunky
-/// palette pixels. Each square is the on-screen size of a voxel sitting at
-/// the farthest depth the scanner reports, so the sky and everything past
-/// that distance read as the same blocks. Pixels inside the depth range are
-/// left alone.
+/// Replaces the camera image with chunky palette pixels so the photo never
+/// shows through. Each square is the on-screen size of a voxel at that
+/// pixel's depth. Samples with no depth use the scanner maximum.
 enum FarFieldPixelizer {
     /// Depth samples at or below this are not a surface. Voxel integration
     /// uses the same cutoff.
@@ -27,6 +25,15 @@ enum FarFieldPixelizer {
     /// Missing, non-finite, and farther-than-`maxDepth` samples are pixelized.
     static func isBeyondRange(depth: Float, maxDepth: Float, minimumDepth: Float = minimumDepth) -> Bool {
         !(depth.isFinite && depth > minimumDepth && depth <= maxDepth)
+    }
+
+    /// Depth used to size a chunk. Missing samples use `maxDepth`. Other
+    /// samples snap down to a multiple of `voxelEdge` so neighbors share a grid.
+    static func chunkDepth(sample: Float, maxDepth: Float, voxelEdge: Float) -> Float {
+        let edge = voxelEdge > 0 ? voxelEdge : minimumDepth
+        let capped = isBeyondRange(depth: sample, maxDepth: maxDepth) ? maxDepth : min(sample, maxDepth)
+        let steps = floor((capped / edge) + 0.001)
+        return min(max(1, steps) * edge, maxDepth)
     }
 
     /// Nearest depth sample for an image pixel. No depth map, or a short
@@ -52,13 +59,16 @@ enum FarFieldPixelizer {
         return depth[dy * depthWidth + dx]
     }
 
-    /// Replaces out-of-range pixels in `pixels` (row-major, RGB 0...1).
-    ///
-    /// Squares are centered on the principal point and sized with
-    /// `focalLength` at `maxDepth`, so a block matches a voxel at the far
-    /// shell. `depth` is packed row-major and may be lower resolution than
-    /// the image. Pass `nil` when the camera has no depth map. Then the
-    /// whole frame is beyond range.
+    private struct ChunkKey: Hashable {
+        var shellMillis: Int32
+        var x: Int32
+        var y: Int32
+    }
+
+    /// Replaces every pixel in `pixels` (row-major, RGB 0...1) with a palette
+    /// color. Squares are centered on the principal point. `depth` is packed
+    /// row-major and may be lower resolution than the image. Pass `nil` when
+    /// the camera has no depth map. Then every square is sized at `maxDepth`.
     static func apply(
         pixels: inout [SIMD3<Float>],
         width: Int,
@@ -72,56 +82,67 @@ enum FarFieldPixelizer {
         voxelEdge: Float
     ) {
         guard width > 0, height > 0, pixels.count == width * height else { return }
-        let blockX = blockEdgePixels(focalLength: focalLength.x, voxelEdge: voxelEdge, depth: maxDepth)
-        let blockY = blockEdgePixels(focalLength: focalLength.y, voxelEdge: voxelEdge, depth: maxDepth)
-        let firstX = blockIndex(pixel: 0, principal: principalPoint.x, block: blockX)
-        let lastX = blockIndex(pixel: width - 1, principal: principalPoint.x, block: blockX)
-        let firstY = blockIndex(pixel: 0, principal: principalPoint.y, block: blockY)
-        let lastY = blockIndex(pixel: height - 1, principal: principalPoint.y, block: blockY)
-        let spanX = lastX - firstX + 1
-        let spanY = lastY - firstY + 1
-        guard spanX > 0, spanY > 0, spanY <= Int.max / spanX else { return }
-
-        var sums = [SIMD3<Float>](repeating: .zero, count: spanX * spanY)
-        var counts = [Int](repeating: 0, count: spanX * spanY)
-
-        func slot(x: Int, y: Int) -> Int {
-            let bx = blockIndex(pixel: x, principal: principalPoint.x, block: blockX)
-            let by = blockIndex(pixel: y, principal: principalPoint.y, block: blockY)
-            return (by - firstY) * spanX + (bx - firstX)
-        }
-
-        func beyond(x: Int, y: Int) -> Bool {
-            let sample = depthSample(
-                depth: depth,
-                depthWidth: depthWidth,
-                depthHeight: depthHeight,
-                x: x,
-                y: y,
-                imageWidth: width,
-                imageHeight: height
-            )
-            return isBeyondRange(depth: sample, maxDepth: maxDepth)
-        }
 
         pixels.withUnsafeMutableBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return }
+            var sums: [ChunkKey: SIMD3<Float>] = [:]
+            var counts: [ChunkKey: Int] = [:]
+            var blockCache: [Int32: (Int, Int)] = [:]
+            sums.reserveCapacity(4096)
+            counts.reserveCapacity(4096)
+
+            func key(x: Int, y: Int) -> ChunkKey {
+                let sample = depthSample(
+                    depth: depth,
+                    depthWidth: depthWidth,
+                    depthHeight: depthHeight,
+                    x: x,
+                    y: y,
+                    imageWidth: width,
+                    imageHeight: height
+                )
+                let shell = chunkDepth(sample: sample, maxDepth: maxDepth, voxelEdge: voxelEdge)
+                let millis = Int32((shell * 1000).rounded())
+                let blocks: (Int, Int)
+                if let cached = blockCache[millis] {
+                    blocks = cached
+                } else {
+                    blocks = (
+                        blockEdgePixels(focalLength: focalLength.x, voxelEdge: voxelEdge, depth: shell),
+                        blockEdgePixels(focalLength: focalLength.y, voxelEdge: voxelEdge, depth: shell)
+                    )
+                    blockCache[millis] = blocks
+                }
+                return ChunkKey(
+                    shellMillis: millis,
+                    x: Int32(blockIndex(pixel: x, principal: principalPoint.x, block: blocks.0)),
+                    y: Int32(blockIndex(pixel: y, principal: principalPoint.y, block: blocks.1))
+                )
+            }
+
             for y in 0..<height {
-                for x in 0..<width where beyond(x: x, y: y) {
-                    let index = slot(x: x, y: y)
-                    sums[index] += base[y * width + x]
-                    counts[index] += 1
+                for x in 0..<width {
+                    let chunk = key(x: x, y: y)
+                    var sum = sums[chunk] ?? .zero
+                    sum += base[y * width + x]
+                    sums[chunk] = sum
+                    counts[chunk, default: 0] += 1
                 }
             }
 
-            var colors = [SIMD3<Float>](repeating: .zero, count: sums.count)
-            for index in sums.indices where counts[index] > 0 {
-                colors[index] = VoxelPalette.quantize(sums[index] / Float(counts[index]))
+            var colors: [ChunkKey: SIMD3<Float>] = [:]
+            colors.reserveCapacity(sums.count)
+            for (chunk, sum) in sums {
+                let count = Float(counts[chunk] ?? 1)
+                colors[chunk] = VoxelPalette.quantize(sum / count)
             }
 
             for y in 0..<height {
-                for x in 0..<width where beyond(x: x, y: y) {
-                    base[y * width + x] = colors[slot(x: x, y: y)]
+                for x in 0..<width {
+                    let chunk = key(x: x, y: y)
+                    if let color = colors[chunk] {
+                        base[y * width + x] = color
+                    }
                 }
             }
         }
@@ -133,8 +154,8 @@ enum FarFieldPixelizer {
     }
 }
 
-/// Camera-image texture for the far shell. In-range pixels are transparent
-/// so the live camera shows through. Out-of-range pixels are opaque blocks.
+/// Opaque camera-image texture. Every texel is a palette block, so the live
+/// photo cannot show through gaps in the voxel mesh.
 struct FarFieldTexture {
     var image: UIImage
     var intrinsics: simd_float3x3
@@ -198,14 +219,7 @@ final class FarFieldCompositor {
             voxelEdge: VoxelWorldSession.voxelEdgeMeters
         )
 
-        guard let image = Self.maskedImage(
-            pixels: rgb,
-            width: imageWidth,
-            height: imageHeight,
-            depth: depth?.values,
-            depthWidth: depth?.width ?? 0,
-            depthHeight: depth?.height ?? 0
-        ) else {
+        guard let image = Self.opaqueImage(pixels: rgb, width: imageWidth, height: imageHeight) else {
             return nil
         }
         return FarFieldTexture(
@@ -216,37 +230,15 @@ final class FarFieldCompositor {
         )
     }
 
-    private static func maskedImage(
-        pixels: [SIMD3<Float>],
-        width: Int,
-        height: Int,
-        depth: [Float]?,
-        depthWidth: Int,
-        depthHeight: Int
-    ) -> UIImage? {
+    private static func opaqueImage(pixels: [SIMD3<Float>], width: Int, height: Int) -> UIImage? {
         guard pixels.count == width * height else { return nil }
-        var rgba = [UInt8](repeating: 0, count: width * height * 4)
-        for y in 0..<height {
-            for x in 0..<width {
-                let sample = FarFieldPixelizer.depthSample(
-                    depth: depth,
-                    depthWidth: depthWidth,
-                    depthHeight: depthHeight,
-                    x: x,
-                    y: y,
-                    imageWidth: width,
-                    imageHeight: height
-                )
-                let offset = (y * width + x) * 4
-                guard FarFieldPixelizer.isBeyondRange(depth: sample, maxDepth: VoxelWorldSession.maxDepthMeters) else {
-                    continue
-                }
-                let pixel = pixels[y * width + x]
-                rgba[offset] = byte(pixel.x)
-                rgba[offset + 1] = byte(pixel.y)
-                rgba[offset + 2] = byte(pixel.z)
-                rgba[offset + 3] = 255
-            }
+        var rgba = [UInt8](repeating: 255, count: width * height * 4)
+        for index in pixels.indices {
+            let pixel = pixels[index]
+            let offset = index * 4
+            rgba[offset] = byte(pixel.x)
+            rgba[offset + 1] = byte(pixel.y)
+            rgba[offset + 2] = byte(pixel.z)
         }
         let info = CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue
         let image: CGImage? = rgba.withUnsafeMutableBytes { raw in
