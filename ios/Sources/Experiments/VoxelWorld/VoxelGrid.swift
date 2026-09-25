@@ -205,33 +205,3 @@ struct VoxelGrid {
         return quotient
     }
 }
-
-/// Maps a unit slider `0...1` onto a voxel edge length, log-scaled.
-///
-/// The floor is deliberately chunky (10 cm): the LiDAR depth map is only
-/// 256×192 with centimeter-level noise, so small voxels expose the sensor
-/// (fuzzy multi-voxel-thick walls) instead of looking Minecraft-crisp.
-enum VoxelSizeMapping {
-    static let minimumSize: Float = 0.10
-    static let maximumSize: Float = 0.50
-    static let defaultSize: Float = 0.25
-
-    static func size(sliderValue: Double) -> Float {
-        let t = Float(min(max(sliderValue, 0), 1))
-        return minimumSize * powf(maximumSize / minimumSize, t)
-    }
-
-    static func sliderValue(for size: Float) -> Double {
-        let clamped = min(max(size, minimumSize), maximumSize)
-        return Double(logf(clamped / minimumSize) / logf(maximumSize / minimumSize))
-    }
-
-    static func label(for size: Float) -> String {
-        let centimeters = size * 100
-        let rounded = centimeters.rounded()
-        if abs(centimeters - rounded) < 0.05 {
-            return String(format: "%.0f cm", rounded)
-        }
-        return String(format: "%.1f cm", centimeters)
-    }
-}

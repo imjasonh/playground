@@ -281,14 +281,17 @@ world is kept live two ways: re-observing a voxel refines its color, and a
 carve pass removes any voxel the camera can now see *through* (observed
 surface well behind it, several consecutive misses required), so moved objects
 and depth-noise floaters clean themselves up instead of leaving trails
-(LiDAR only). A log-scale slider dials the block edge from 10 cm to 50 cm —
-deliberately chunky, since the 256×192 depth map can't support crisp small
-voxels — and changing it clears and rescans. Freeze stops scanning so you can
-walk around what you built, Camera feed toggles the live passthrough, and
-Reset clears everything. Rendering is chunked SceneKit geometry with hidden
-interior faces culled and per-face shading baked into vertex colors. Needs
-camera permission (the existing `NSCameraUsageDescription` — no new Bundle ID,
-entitlement, or signing bootstrap) and works best on LiDAR devices
+(LiDAR only). The block edge is fixed at 10 cm, the smallest size that stays
+crisp on the 256×192 depth map. LiDAR samples are kept out to 5 m, which is
+as far as Apple's scanner reports. Pixels with no depth, or depth past that,
+are drawn as chunky palette squares the size of a 10 cm block at 5 m. Closer
+pixels stay the live camera image, with the voxel mesh on top. The camera
+button saves the current frame, camera plus voxels, to Photos. Rendering is
+chunked SceneKit geometry with hidden interior faces culled and per-face
+shading baked into vertex colors. Needs
+camera permission (`NSCameraUsageDescription`) and add-only photo library
+permission (`NSPhotoLibraryAddUsageDescription`). No new Bundle ID,
+entitlement, or signing bootstrap. Works best on LiDAR devices
 (iPhone/iPad Pro). Simulator opens the UI but ARKit tracking is unavailable
 there.
 
