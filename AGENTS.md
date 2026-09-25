@@ -49,6 +49,7 @@ playground/
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── laya-web/              # fetch Laya and compile the graph to WebGPU
 ├── packfile-explorer/     # fetch a git packfile via CORS proxy and explore it (JS + Node tests)
+├── palette-swap/          # nearest-color palette swap in Wasm (Go simd experiment)
 ├── pasta/                 # CUE + tree-sitter multi-language linters/fixers (Go CLI)
 ├── population-rays/       # directional 5° population-slice map (JS + Node tests)
 ├── sshapp/                # GKE Autopilot Wish SSH apps (Go + Terraform + ko_build)
@@ -79,6 +80,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
 | `laya-web/` | yes | Fetch Laya and compile to WebGPU; JS modules, npm scripts, tests |
 | `packfile-explorer/` | yes | Fetch a git packfile via the CORS proxy and explore objects/deltas; JS modules, npm scripts, tests |
+| `palette-swap/` | yes | Nearest-color palette swap in Wasm (scalar, portable simd, archsimd). Vendored wasm from `build-wasm.sh`. Go tests and a Node smoke test |
 | `population-rays/` | yes | Directional 5° population slices; JS modules, npm scripts, tests |
 | `sundial/` | yes | Sundial clock; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
@@ -674,6 +676,7 @@ bundle exec fastlane test
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
 | `laya-web/` | Fetch Laya and compile the graph to WebGPU | Node test runner |
 | `packfile-explorer/` | Fetch a git packfile through the CORS proxy; index objects/deltas in IndexedDB and browse contents | Node test runner |
+| `palette-swap/` | Nearest-color palette swap comparing scalar Go, portable simd, and Wasm archsimd | Node smoke test of the vendored Wasm module, plus `go test` |
 | `population-rays/` | Directional 5° population slices (distance to N people) over Meta/CIESIN HRSL grids | Node test runner |
 | `sundial/` | Clock whose long shadow follows the sun; no shadow at night | Node test runner |
 | `web-push-demo/` | Browser front-end for `web-push` (subscribe/unsubscribe/notify) | none (static) |
@@ -691,6 +694,7 @@ bundle exec fastlane test
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test -race ./...` |
+| `palette-swap/` | Nearest-color palette swap compiled to Wasm, also served as a Pages app. Scalar tests always run. `GOEXPERIMENT=simd` adds the portable mapper | `go test -race ./...` and `npm test` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
 | `sshapp/` | Wish SSH apps on GKE Autopilot (shared mux LB; `ssh user@ssh.domain <app>`; includes `hello` + `chess`); Terraform + `ko_build` | `go test -race ./...`; KinD e2e (`SSHAPP_KIND_E2E=1`) when the module changes |
 
