@@ -126,6 +126,9 @@ final class BlatherSession: ObservableObject {
     private var generationFailed = false
     private var resumeAfterInterruption = false
     private var chain: Task<Void, Never>?
+    /// JPEG bytes for the lock screen. `Data` can cross the artwork callback,
+    /// which may run off the main actor. `UIImage` cannot.
+    private var nowPlayingCover: (id: UUID, data: Data, size: CGSize)?
 
     init(
         narrator: any BlatherNarrator,
@@ -183,8 +186,13 @@ final class BlatherSession: ObservableObject {
         return BlatherTimeline.locate(playhead, durations: episode.segments.map(\.duration)).index
     }
 
+    func coverURL(for id: UUID) -> URL {
+        store.coverURL(episodeID: id)
+    }
+
     func refresh() {
         modelGate = gateProvider()
+        ensureCovers()
         saved = store.summaries()
         narrator.prepare()
         remote.attach { [weak self] command in
@@ -231,6 +239,10 @@ final class BlatherSession: ObservableObject {
             directions: [],
             segments: []
         )
+        planner = BlatherPlanner()
+        fillRunning = true
+        persist(created)
+        writeCover(topic: topic, episodeID: created.id)
         episode = created
         mode = .live
         playhead = 0
@@ -239,9 +251,6 @@ final class BlatherSession: ObservableObject {
         errorMessage = nil
         generationFailed = false
         didCompact = false
-        planner = BlatherPlanner()
-        fillRunning = true
-        persist(created)
         syncPlayback()
         await runFill(token: token, after: chain)
     }
@@ -264,8 +273,12 @@ final class BlatherSession: ObservableObject {
     }
 
     func skip(by delta: TimeInterval) {
+        seek(to: playhead + delta)
+    }
+
+    func seek(to time: TimeInterval) {
         guard hasAudio else { return }
-        playhead = BlatherTimeline.skipped(playhead, by: delta, duration: audibleDuration)
+        playhead = BlatherTimeline.clamped(time, duration: audibleDuration)
         syncPlayback()
         if isPlaying, mode == .live {
             scheduleFill()
@@ -641,12 +654,43 @@ final class BlatherSession: ObservableObject {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
         }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = [
+        var info: [String: Any] = [
             MPMediaItemPropertyTitle: episode.topic,
+            MPMediaItemPropertyArtist: "Blather",
             MPNowPlayingInfoPropertyElapsedPlaybackTime: playhead,
             MPMediaItemPropertyPlaybackDuration: audibleDuration,
             MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
         ]
+        if let art = nowPlayingArtwork(for: episode) {
+            let bytes = art.data
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: art.size) { _ in
+                UIImage(data: bytes) ?? UIImage()
+            }
+        }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func writeCover(topic: String, episodeID: UUID) {
+        nowPlayingCover = nil
+        try? store.saveCover(BlatherArtwork.jpeg(topic: topic), episodeID: episodeID)
+    }
+
+    private func ensureCovers() {
+        for summary in store.summaries() where !store.hasCover(episodeID: summary.id) {
+            try? store.saveCover(BlatherArtwork.jpeg(topic: summary.topic), episodeID: summary.id)
+        }
+    }
+
+    private func nowPlayingArtwork(for episode: BlatherEpisode) -> (data: Data, size: CGSize)? {
+        if nowPlayingCover?.id == episode.id, let cached = nowPlayingCover {
+            return (cached.data, cached.size)
+        }
+        let url = store.coverURL(episodeID: episode.id)
+        guard let data = try? Data(contentsOf: url), let image = UIImage(data: data) else {
+            return nil
+        }
+        nowPlayingCover = (episode.id, data, image.size)
+        return (data, image.size)
     }
 
     private func deactivateAudio() {

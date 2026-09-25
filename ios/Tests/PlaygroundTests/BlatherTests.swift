@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 @testable import Playground
 
@@ -116,6 +117,44 @@ final class BlatherTests: XCTestCase {
         XCTAssertTrue(compacted.prompt.contains("shorter sentences"))
     }
 
+    func testArtworkDependsOnTheTopic() {
+        let glaciers = BlatherArtwork.render(topic: "glaciers", pixels: 80)
+        let again = BlatherArtwork.render(topic: "glaciers", pixels: 80)
+        let kelp = BlatherArtwork.render(topic: "kelp", pixels: 80)
+        XCTAssertEqual(colorGrid(glaciers), colorGrid(again))
+        XCTAssertNotEqual(colorGrid(glaciers), colorGrid(kelp))
+        XCTAssertGreaterThan(Set(colorGrid(glaciers)).count, 1)
+        let jpeg = BlatherArtwork.jpeg(topic: "glaciers", pixels: 80)
+        XCTAssertTrue(jpeg.starts(with: [0xFF, 0xD8]))
+        XCTAssertEqual(UIImage(data: jpeg)?.size, CGSize(width: 80, height: 80))
+    }
+
+    func testRefreshBackfillsAMissingCover() throws {
+        let store = BlatherStore(root: directory)
+        let id = UUID()
+        let episode = BlatherEpisode(
+            id: id,
+            topic: "owls",
+            createdAt: Date(timeIntervalSince1970: 10),
+            updatedAt: Date(timeIntervalSince1970: 20),
+            directions: [],
+            segments: []
+        )
+        try store.save(episode)
+        XCTAssertFalse(store.hasCover(episodeID: id))
+        let session = makeSession(
+            narrator: FakeNarrator(text: "Hi."),
+            synthesizer: FakeSynthesizer(duration: 40),
+            playback: FakePlayback(),
+            store: store
+        )
+        session.refresh()
+        XCTAssertTrue(store.hasCover(episodeID: id))
+        let first = try Data(contentsOf: store.coverURL(episodeID: id))
+        session.refresh()
+        XCTAssertEqual(try Data(contentsOf: store.coverURL(episodeID: id)), first)
+    }
+
     func testStoreRoundTrip() throws {
         let store = BlatherStore(root: directory)
         let id = UUID()
@@ -161,7 +200,16 @@ final class BlatherTests: XCTestCase {
         XCTAssertTrue(narrator.prompts[0].contains("glaciers"))
         XCTAssertEqual(playback.updates.last?.playing, true as Bool?)
         XCTAssertEqual(session.saved.count, 1)
+        if let id = session.episode?.id {
+            XCTAssertTrue(BlatherStore(root: directory).hasCover(episodeID: id))
+        } else {
+            XCTFail("Missing episode")
+        }
 
+        session.seek(to: 12)
+        XCTAssertEqual(session.playhead, 12)
+        session.seek(to: -5)
+        XCTAssertEqual(session.playhead, 0)
         session.skip(by: 20)
         await session.waitForFill()
         XCTAssertEqual(session.playhead, 20)
@@ -337,6 +385,27 @@ final class BlatherTests: XCTestCase {
             store: store ?? BlatherStore(root: directory),
             playback: playback
         )
+    }
+
+    private func colorGrid(_ image: UIImage) -> [UInt32] {
+        guard let cg = image.cgImage,
+              let data = cg.dataProvider?.data,
+              let bytes = CFDataGetBytePtr(data) else {
+            return []
+        }
+        let bytesPerPixel = max(1, cg.bitsPerPixel / 8)
+        let length = CFDataGetLength(data)
+        let step = max(1, cg.width / 8)
+        var colors: [UInt32] = []
+        for y in stride(from: 0, to: cg.height, by: step) {
+            for x in stride(from: 0, to: cg.width, by: step) {
+                let offset = y * cg.bytesPerRow + x * bytesPerPixel
+                guard offset + 3 < length else { continue }
+                let packed = UInt32(bytes[offset]) << 16 | UInt32(bytes[offset + 1]) << 8 | UInt32(bytes[offset + 2])
+                colors.append(packed)
+            }
+        }
+        return colors
     }
 
     private func segment(text: String, duration: TimeInterval, fileName: String) -> BlatherSegment {

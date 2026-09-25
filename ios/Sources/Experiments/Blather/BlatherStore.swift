@@ -2,7 +2,8 @@ import Foundation
 
 /// On-disk episodes under Application Support / Blather / <id> /.
 ///
-/// Each episode is an `episode.json` manifest plus one `.caf` file per segment.
+/// Each episode is an `episode.json` manifest, a `cover.jpg`, and one `.caf`
+/// file per segment.
 struct BlatherStore: Sendable {
     let root: URL
 
@@ -32,6 +33,21 @@ struct BlatherStore: Sendable {
 
     func audioURL(episodeID: UUID, fileName: String) -> URL {
         episodeDirectory(episodeID).appendingPathComponent(fileName)
+    }
+
+    func coverURL(episodeID: UUID) -> URL {
+        episodeDirectory(episodeID).appendingPathComponent(BlatherArtwork.fileName)
+    }
+
+    func saveCover(_ data: Data, episodeID: UUID) throws {
+        guard !data.isEmpty else { return }
+        let directory = episodeDirectory(episodeID)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try data.write(to: coverURL(episodeID: episodeID), options: .atomic)
+    }
+
+    func hasCover(episodeID: UUID) -> Bool {
+        FileManager.default.fileExists(atPath: coverURL(episodeID: episodeID).path)
     }
 
     func save(_ episode: BlatherEpisode) throws {
