@@ -354,6 +354,16 @@ slowly. Motion blur or glare can swell OCR's box for a pass or two, and a
 partial reading can shrink it, so a size change counts only once it lasts
 three passes. The zoom estimate resizes the overlay right away.
 
+OCR runs on its own queue, a few times a second, so the preview updates on
+every camera frame. Between OCR passes, each overlay moves with its text:
+every pass anchors each overlay to a patch of the frame it read, and every
+later frame finds those patches again in a small grayscale copy of the frame.
+From the patches it finds, the app fits the camera's pan and zoom, which
+resizes the overlays and moves any overlay whose patch is lost to blur or
+glare. An OCR result is several frames old when it arrives, so the app keeps
+each frame's motion and starts looking for new patches where that motion puts
+them.
+
 After two passes read a line, a fresh `LanguageModelSession` translates it
 into the language you picked. The reply streams, so each line appears as soon
 as the model finishes it. The app stores each translation by its source text
@@ -374,17 +384,19 @@ the wait doubles each time. Needs camera permission (extends the existing
 Intelligence for translation. Simulator opens the UI but has no camera.
 
 `LiveTranslateClipTests` plays
-`Tests/PlaygroundTests/Fixtures/LiveTranslate/moving-sign.mp4` through Vision
-and the tracking pipeline, with a fake model in place of Foundation Models. The
-clip is five seconds of a Spanish sign that pans, shakes, catches a glare, and
-zooms, with fine print and a room plate that OCR reads unreliably. Each line on
-the sign has to get a translation within the first three seconds and keep it on
-at least 9 of every 10 later frames that read it. The test also compares each
-overlay with where the line really is, from `moving-sign.json` next to the
-clip: an overlay has to cover the line, and its height can't jump more than
-12% between passes. To change the clip, edit and run
-`ios/scripts/make-live-translate-clip.py`, which needs Pillow, NumPy, and
-ffmpeg. It writes the clip and the JSON.
+`Tests/PlaygroundTests/Fixtures/LiveTranslate/moving-sign.mp4` through Vision,
+the tracking pipeline, and the overlay follower, with a fake model in place of
+Foundation Models. The clip is five seconds of a Spanish sign that pans,
+shakes, catches a glare, and zooms, with fine print and a room plate that OCR
+reads unreliably. Each line on the sign has to get a translation within the
+first three seconds and keep it on at least 9 of every 10 later passes that
+read it. The test also compares each overlay with where the line really is,
+from `moving-sign.json` next to the clip. OCR reads every sixth frame and its
+result lands six frames later, and the overlay has to stay within 12 pixels of
+the line on 95% of frames (the clip is 720 pixels wide). An overlay also has to
+cover its line, and its height can't jump more than 12% between passes. To
+change the clip, edit and run `ios/scripts/make-live-translate-clip.py`, which
+needs Pillow, NumPy, and ffmpeg. It writes the clip and the JSON.
 
 ### Doom Face
 
