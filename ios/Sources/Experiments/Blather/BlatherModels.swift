@@ -213,20 +213,19 @@ enum BlatherScript {
 enum BlatherTimeline {
     /// How far Back and Forward move the playhead.
     static let skipStep: TimeInterval = 10
-    /// Spoken audio to finish before playback starts. At 1× a short first
-    /// passage can end before the next one is synthesized, so the opening
-    /// fill keeps writing until this much is ready. Later fills use
-    /// `prefetchLead`.
+    /// Listening time to finish before playback starts. At 1× that is 40
+    /// seconds of audio. Faster playback needs more audio for the same wait,
+    /// because the file ends sooner. Later fills use `prefetchLead`.
     static let openingBuffer: TimeInterval = 40
     /// Listening time to keep in reserve before the next model call.
     /// A 160-word passage is about a minute of speech, so 25 seconds at 1×
     /// leaves room to write and synthesize the next file. Faster playback
     /// multiplies this lead so the reserve stays about 25 seconds of waiting.
     static let prefetchLead: TimeInterval = 25
-    /// Upper bound on passages written in one burst. The opening fill stops
-    /// at `openingBuffer` or this cap. Later fills stop once `prefetchLead`
-    /// is satisfied. The cap stops a near-zero duration from looping.
-    static let maxSegmentsPerFill = 4
+    /// Upper bound on passages written in one burst. Short clips at 2× need
+    /// several files to cover the opening buffer. The cap stops a near-zero
+    /// duration from looping.
+    static let maxSegmentsPerFill = 8
 
     static func duration(of segments: [BlatherSegment]) -> TimeInterval {
         segments.reduce(0) { $0 + $1.duration }
@@ -240,8 +239,22 @@ enum BlatherTimeline {
         clamped(time + delta, duration: duration)
     }
 
-    static func needsOpeningAudio(playhead: TimeInterval, duration: TimeInterval) -> Bool {
-        duration - playhead < openingBuffer
+    /// Seconds of speech to assume before the file exists, so the next model
+    /// call can start while this passage is still being synthesized. The guess
+    /// is a little faster than a normal reading pace, so a long guess does not
+    /// skip a passage that faster playback still needs.
+    static func estimatedDuration(of speech: String) -> TimeInterval {
+        let words = speech.split(whereSeparator: \.isWhitespace).count
+        return Double(words) / 3
+    }
+
+    static func needsOpeningAudio(
+        playhead: TimeInterval,
+        duration: TimeInterval,
+        rate: Double = 1
+    ) -> Bool {
+        let playbackRate = min(max(rate, 0.5), 2)
+        return duration - playhead < openingBuffer * playbackRate
     }
 
     static func shouldPrefetch(

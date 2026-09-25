@@ -309,7 +309,11 @@ final class BlatherSession: ObservableObject {
         let holdingOpening = mode == .live
             && !hasStartedPlayback
             && !generationFailed
-            && BlatherTimeline.needsOpeningAudio(playhead: playhead, duration: audibleDuration)
+            && BlatherTimeline.needsOpeningAudio(
+                playhead: playhead,
+                duration: audibleDuration,
+                rate: speed.rawValue
+            )
         if !holdingOpening {
             isPlaying = true
             hasStartedPlayback = true
@@ -548,26 +552,83 @@ final class BlatherSession: ObservableObject {
             }
         }
         var produced = 0
+        var queued: DraftPassage?
         while generation == token, !Task.isCancelled {
             if produced > 0 {
                 guard mode == .live, !generationFailed else { return }
-                guard shouldContinueFill(produced: produced) else { return }
+                if !shouldContinueFill(produced: produced) {
+                    await finishQueued(queued, token: token, produced: produced)
+                    return
+                }
             }
-            if produced >= BlatherTimeline.maxSegmentsPerFill { return }
-            let before = audibleDuration
-            let wrote = await appendOne(token: token)
-            if !wrote { return }
-            produced += 1
-            if audibleDuration <= before { return }
-            startPlayback(token: token, allowShort: false)
+            if produced >= BlatherTimeline.maxSegmentsPerFill {
+                await finishQueued(queued, token: token, produced: produced)
+                return
+            }
+
+            let draft: DraftPassage
+            if let queuedDraft = queued {
+                queued = nil
+                draft = queuedDraft
+            } else if let prepared = await prepareDraft(token: token, pendingSpeech: nil) {
+                draft = prepared
+            } else {
+                return
+            }
+
+            let projected = audibleDuration + BlatherTimeline.estimatedDuration(of: draft.speech)
+            let overlap = produced + 1 < BlatherTimeline.maxSegmentsPerFill
+                && shouldProjectMore(projectedDuration: projected)
+            if overlap {
+                planner.commit(
+                    prompt: draft.prompt,
+                    speech: draft.speech,
+                    measuredTotalTokens: draft.totalTokenCount
+                )
+                let synthesis = Task { [weak self] () -> Bool in
+                    guard let self else { return false }
+                    return await self.finishDraft(draft, token: token, commit: false)
+                }
+                queued = await prepareDraft(token: token, pendingSpeech: draft.speech)
+                let wrote = await synthesis.value
+                guard wrote else { return }
+                produced += 1
+                startPlayback(token: token, allowShort: false)
+                if queued == nil { return }
+            } else {
+                let before = audibleDuration
+                let wrote = await finishDraft(draft, token: token, commit: true)
+                guard wrote else { return }
+                produced += 1
+                if audibleDuration <= before { return }
+                startPlayback(token: token, allowShort: false)
+            }
         }
     }
 
-    /// The opening fill writes until about 40 seconds are ready. After
-    /// playback starts, the fill stops once the prefetch lead is covered.
+    /// True when the audio on disk, plus this passage's estimated length, is
+    /// still short of the opening buffer or the prefetch lead.
+    private func shouldProjectMore(projectedDuration: TimeInterval) -> Bool {
+        if !isPlaying {
+            return BlatherTimeline.needsOpeningAudio(
+                playhead: playhead,
+                duration: projectedDuration,
+                rate: speed.rawValue
+            )
+        }
+        return shouldPrefetch(playhead: playhead, duration: projectedDuration)
+    }
+
+    /// The opening fill writes until about 40 seconds of listening time are
+    /// ready. After playback starts, the fill stops once the prefetch lead
+    /// is covered.
     private func shouldContinueFill(produced: Int) -> Bool {
         guard produced < BlatherTimeline.maxSegmentsPerFill else { return false }
-        if !isPlaying, BlatherTimeline.needsOpeningAudio(playhead: playhead, duration: audibleDuration) {
+        if !isPlaying, BlatherTimeline.needsOpeningAudio(
+            playhead: playhead,
+            duration: audibleDuration,
+            rate: speed.rawValue
+        ) {
             return true
         }
         return shouldPrefetch(playhead: playhead, duration: audibleDuration)
@@ -577,7 +638,11 @@ final class BlatherSession: ObservableObject {
     /// the segment cap, so a burst of very short clips still starts.
     private func startPlayback(token: Int, allowShort: Bool) {
         guard generation == token, wantsAutoplay, hasAudio, !isPlaying, !generationFailed else { return }
-        if !allowShort, BlatherTimeline.needsOpeningAudio(playhead: playhead, duration: audibleDuration) {
+        if !allowShort, BlatherTimeline.needsOpeningAudio(
+            playhead: playhead,
+            duration: audibleDuration,
+            rate: speed.rawValue
+        ) {
             return
         }
         isPlaying = true
@@ -585,12 +650,32 @@ final class BlatherSession: ObservableObject {
         syncPlayback()
     }
 
-    private func appendOne(token: Int) async -> Bool {
-        guard generation == token, let current = episode else { return false }
+    private struct DraftPassage {
+        var episodeID: UUID
+        var speech: String
+        var prompt: String
+        var totalTokenCount: Int?
+        var segmentID: UUID
+        var fileName: String
+    }
+
+    /// Writes a passage that was already narrated. Used when the buffer fills
+    /// while the next model call is still in flight.
+    private func finishQueued(_ draft: DraftPassage?, token: Int, produced: Int) async {
+        guard let draft, produced < BlatherTimeline.maxSegmentsPerFill else { return }
+        guard generation == token, mode == .live, !generationFailed else { return }
+        let before = audibleDuration
+        let wrote = await finishDraft(draft, token: token, commit: true)
+        guard wrote, audibleDuration > before else { return }
+        startPlayback(token: token, allowShort: false)
+    }
+
+    private func prepareDraft(token: Int, pendingSpeech: String?) async -> DraftPassage? {
+        guard generation == token, let current = episode else { return nil }
         let request = planner.makeRequest(
             topic: current.topic,
             directions: current.directions,
-            spoken: current.segments.map(\.text)
+            spoken: spokenLines(pending: pendingSpeech)
         )
         if request.didCompact {
             didCompact = true
@@ -599,62 +684,95 @@ final class BlatherSession: ObservableObject {
         let prompt: String
         do {
             let result = try await withBackgroundTime {
-                try await self.narrate(request, token: token)
+                try await self.narrate(request, token: token, pendingSpeech: pendingSpeech)
             }
             narration = result.narration
             prompt = result.prompt
         } catch {
-            guard generation == token else { return false }
+            guard generation == token else { return nil }
             if error is CancellationError {
-                return false
+                return nil
             }
             fail(error)
-            return false
+            return nil
         }
-        guard generation == token else { return false }
+        guard generation == token else { return nil }
         let speech = BlatherScript.clean(narration.text)
         guard !speech.isEmpty else {
             fail(BlatherNarrationError.failed("The model returned nothing to say."))
-            return false
+            return nil
         }
         let segmentID = UUID()
-        let fileName = "\(segmentID.uuidString).caf"
-        let url = store.audioURL(episodeID: current.id, fileName: fileName)
+        return DraftPassage(
+            episodeID: current.id,
+            speech: speech,
+            prompt: prompt,
+            totalTokenCount: narration.totalTokenCount,
+            segmentID: segmentID,
+            fileName: "\(segmentID.uuidString).caf"
+        )
+    }
+
+    private func finishDraft(_ draft: DraftPassage, token: Int, commit: Bool) async -> Bool {
+        let url = store.audioURL(episodeID: draft.episodeID, fileName: draft.fileName)
         let duration: TimeInterval
         do {
-            duration = try await synthesizer.synthesize(speech, to: url)
+            duration = try await synthesizer.synthesize(draft.speech, to: url)
         } catch {
-            store.removeAudio(episodeID: current.id, fileName: fileName)
+            store.removeAudio(episodeID: draft.episodeID, fileName: draft.fileName)
             guard generation == token else { return false }
             fail(BlatherNarrationError.failed("Couldn't build the audio."))
             return false
         }
         guard generation == token else {
-            store.removeAudio(episodeID: current.id, fileName: fileName)
+            store.removeAudio(episodeID: draft.episodeID, fileName: draft.fileName)
             return false
         }
         guard duration >= 0.05 else {
-            store.removeAudio(episodeID: current.id, fileName: fileName)
+            store.removeAudio(episodeID: draft.episodeID, fileName: draft.fileName)
             fail(BlatherNarrationError.failed("Couldn't build the audio."))
             return false
         }
-        guard var latest = episode, latest.id == current.id else {
-            store.removeAudio(episodeID: current.id, fileName: fileName)
+        guard var latest = episode, latest.id == draft.episodeID else {
+            store.removeAudio(episodeID: draft.episodeID, fileName: draft.fileName)
             return false
         }
-        let segment = BlatherSegment(id: segmentID, text: speech, fileName: fileName, duration: duration)
+        let segment = BlatherSegment(
+            id: draft.segmentID,
+            text: draft.speech,
+            fileName: draft.fileName,
+            duration: duration
+        )
         latest.segments.append(segment)
         latest.updatedAt = Date()
         episode = latest
-        planner.commit(prompt: prompt, speech: speech, measuredTotalTokens: narration.totalTokenCount)
+        if commit {
+            planner.commit(
+                prompt: draft.prompt,
+                speech: draft.speech,
+                measuredTotalTokens: draft.totalTokenCount
+            )
+        }
         persist(latest)
         syncPlayback()
         return true
     }
 
+    private func spokenLines(pending: String?) -> [String] {
+        var lines = episode?.segments.map(\.text) ?? []
+        if let pending {
+            let trimmed = pending.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                lines.append(trimmed)
+            }
+        }
+        return lines
+    }
+
     private func narrate(
         _ request: BlatherNarrationRequest,
-        token: Int
+        token: Int,
+        pendingSpeech: String?
     ) async throws -> (narration: BlatherNarration, prompt: String) {
         do {
             let narration = try await narrator.narrate(prompt: request.prompt, freshSession: request.freshSession)
@@ -671,7 +789,7 @@ final class BlatherSession: ObservableObject {
             let retry = planner.makeRequest(
                 topic: current.topic,
                 directions: current.directions,
-                spoken: current.segments.map(\.text)
+                spoken: spokenLines(pending: pendingSpeech)
             )
             let narration = try await narrator.narrate(prompt: retry.prompt, freshSession: true)
             return (narration, retry.prompt)

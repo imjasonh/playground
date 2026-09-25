@@ -84,6 +84,9 @@ final class BlatherTests: XCTestCase {
         XCTAssertTrue(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 39))
         XCTAssertFalse(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 40))
         XCTAssertTrue(BlatherTimeline.needsOpeningAudio(playhead: 10, duration: 49))
+        XCTAssertTrue(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 79, rate: 2))
+        XCTAssertFalse(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 80, rate: 2))
+        XCTAssertEqual(BlatherTimeline.estimatedDuration(of: "one two three"), 1, accuracy: 0.001)
         XCTAssertFalse(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 60, rate: 2))
         XCTAssertTrue(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 40, rate: 2))
 
@@ -188,7 +191,8 @@ final class BlatherTests: XCTestCase {
     }
 
     func testStartPlaysAndPrefetchesNearTheEnd() async {
-        let narrator = FakeNarrator(text: "The ice moves slowly.")
+        let speech = manyWords()
+        let narrator = FakeNarrator(text: speech)
         let synthesizer = FakeSynthesizer(duration: 40)
         let playback = FakePlayback()
         let session = makeSession(narrator: narrator, synthesizer: synthesizer, playback: playback)
@@ -197,7 +201,7 @@ final class BlatherTests: XCTestCase {
         XCTAssertEqual(session.mode, .live)
         XCTAssertEqual(session.episode?.topic, "glaciers")
         XCTAssertEqual(session.episode?.segments.count, 1)
-        XCTAssertEqual(session.episode?.segments.first?.text, "The ice moves slowly.")
+        XCTAssertEqual(session.episode?.segments.first?.text, speech)
         XCTAssertEqual(session.episode?.segments.first?.duration, 40)
         XCTAssertTrue(session.isPlaying)
         XCTAssertFalse(session.isGenerating)
@@ -244,17 +248,64 @@ final class BlatherTests: XCTestCase {
         )
 
         await session.start(topic: "tides")
-        XCTAssertEqual(session.episode?.segments.count, 3)
-        XCTAssertEqual(session.audibleDuration, 45)
+        XCTAssertGreaterThanOrEqual(session.audibleDuration, BlatherTimeline.openingBuffer)
         XCTAssertTrue(session.isPlaying)
         XCTAssertFalse(session.isGenerating)
         let firstPlaying = playback.updates.first { $0.playing }
-        XCTAssertEqual(firstPlaying?.segments.count, 3)
-        XCTAssertTrue(playback.updates.contains { !$0.playing && $0.segments.count == 2 })
+        let startedAt = firstPlaying?.segments.reduce(0.0) { $0 + $1.duration } ?? 0
+        XCTAssertGreaterThanOrEqual(startedAt, BlatherTimeline.openingBuffer)
+        XCTAssertTrue(playback.updates.contains { update in
+            !update.playing && update.segments.reduce(0.0) { $0 + $1.duration } < BlatherTimeline.openingBuffer
+        })
+    }
+
+    func testFasterPlaybackBuffersMoreListeningTime() async {
+        let playback = FakePlayback()
+        let session = makeSession(
+            narrator: FakeNarrator(text: "Hi."),
+            synthesizer: FakeSynthesizer(duration: 15),
+            playback: playback
+        )
+        session.setSpeed(.x2)
+
+        await session.start(topic: "gears")
+        let target = BlatherTimeline.openingBuffer * 2
+        XCTAssertGreaterThanOrEqual(session.audibleDuration, target)
+        let firstPlaying = playback.updates.first { $0.playing }
+        let startedAt = firstPlaying?.segments.reduce(0.0) { $0 + $1.duration } ?? 0
+        XCTAssertGreaterThanOrEqual(startedAt, target)
+        XCTAssertTrue(playback.updates.contains { update in
+            !update.playing && update.segments.reduce(0.0) { $0 + $1.duration } < target
+        })
+    }
+
+    func testNextPassageStartsWhileTheCurrentOneIsSynthesized() async {
+        let synthesizer = FakeSynthesizer(duration: 15)
+        synthesizer.pauses = 1
+        let narrator = FakeNarrator(text: "Hi.")
+        let session = makeSession(
+            narrator: narrator,
+            synthesizer: synthesizer,
+            playback: FakePlayback()
+        )
+        let running = Task { await session.start(topic: "wind") }
+        defer { synthesizer.resumeAll() }
+
+        var sawOverlap = false
+        for _ in 0..<100 {
+            if narrator.prompts.count >= 2, synthesizer.inFlight > 0 {
+                sawOverlap = true
+                break
+            }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        synthesizer.resumeAll()
+        await running.value
+        XCTAssertTrue(sawOverlap)
     }
 
     func testRedirectCutsUnheardAudio() async throws {
-        let narrator = FakeNarrator(text: "First passage.")
+        let narrator = FakeNarrator(text: manyWords())
         let synthesizer = FakeSynthesizer(duration: 40)
         let playback = FakePlayback()
         let store = BlatherStore(root: directory)
@@ -283,7 +334,7 @@ final class BlatherTests: XCTestCase {
     }
 
     func testRedirectShortensTheCurrentSegment() async throws {
-        let narrator = FakeNarrator(text: "Keep the start.")
+        let narrator = FakeNarrator(text: manyWords())
         let synthesizer = FakeSynthesizer(duration: 40)
         let session = makeSession(narrator: narrator, synthesizer: synthesizer, playback: FakePlayback())
 
@@ -303,9 +354,10 @@ final class BlatherTests: XCTestCase {
     }
 
     func testContextWindowRetriesOnce() async throws {
+        let speech = manyWords()
         let narrator = FakeNarrator(results: [
             .failure(BlatherNarrationError.contextExceeded),
-            .success(BlatherNarration(text: "Recovered sentence.", totalTokenCount: nil)),
+            .success(BlatherNarration(text: speech, totalTokenCount: nil)),
         ])
         let session = makeSession(
             narrator: narrator,
@@ -314,7 +366,7 @@ final class BlatherTests: XCTestCase {
         )
         await session.start(topic: "fog")
         XCTAssertTrue(session.didCompact)
-        XCTAssertEqual(session.episode?.segments.first?.text, "Recovered sentence.")
+        XCTAssertEqual(session.episode?.segments.first?.text, speech)
         XCTAssertEqual(narrator.freshSessions, [false, true])
         XCTAssertNil(session.errorMessage)
     }
@@ -355,7 +407,7 @@ final class BlatherTests: XCTestCase {
     }
 
     func testFinishReplayContinueAndDelete() async throws {
-        let narrator = FakeNarrator(text: "Saved line.")
+        let narrator = FakeNarrator(text: manyWords())
         let playback = FakePlayback()
         let store = BlatherStore(root: directory)
         let session = makeSession(
@@ -465,6 +517,10 @@ final class BlatherTests: XCTestCase {
         return colors
     }
 
+    private func manyWords() -> String {
+        String(repeating: "word ", count: 150).trimmingCharacters(in: .whitespaces)
+    }
+
     private func segment(text: String, duration: TimeInterval, fileName: String) -> BlatherSegment {
         BlatherSegment(id: UUID(), text: text, fileName: fileName, duration: duration)
     }
@@ -499,18 +555,35 @@ private final class FakeNarrator: BlatherNarrator {
 @MainActor
 private final class FakeSynthesizer: BlatherSynthesizer {
     var duration: TimeInterval
+    var pauses = 0
+    private(set) var inFlight = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
 
     init(duration: TimeInterval) {
         self.duration = duration
     }
 
     func synthesize(_ text: String, to fileURL: URL) async throws -> TimeInterval {
+        inFlight += 1
+        defer { inFlight -= 1 }
+        if pauses > 0 {
+            pauses -= 1
+            await withCheckedContinuation { waiters.append($0) }
+        }
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
         try Data(text.utf8).write(to: fileURL)
         return duration
+    }
+
+    func resumeAll() {
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending {
+            waiter.resume()
+        }
     }
 }
 
