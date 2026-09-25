@@ -1,0 +1,123 @@
+:root {
+  color-scheme: light;
+  font-family: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 100%;
+  line-height: 1.5;
+  background: #f7f5f2;
+  color: #1c1917;
+}
+
+body {
+  margin: 0;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+main {
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0 0 0.5rem;
+}
+
+h2,
+figcaption {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0 0 0.5rem;
+}
+
+.intro,
+#status {
+  max-width: 65ch;
+  font-size: 1.125rem;
+  margin: 0 0 1rem;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  align-items: end;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 1rem;
+}
+
+input,
+select,
+button {
+  font: inherit;
+  font-size: 1rem;
+  min-height: 2.75rem;
+}
+
+button,
+select {
+  padding: 0.4rem 0.75rem;
+}
+
+button {
+  cursor: pointer;
+}
+
+.swatches {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  max-width: 65ch;
+  margin: 0.75rem 0 0;
+}
+
+.swatches span {
+  display: block;
+  width: 0.75rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+}
+
+.results {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #fff;
+  border: 1px solid #d6d3d1;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  max-width: 40rem;
+  margin: 0.5rem 0 1rem;
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, Consolas, monospace;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.35rem 0.75rem 0.35rem 0;
+  border-bottom: 1px solid #d6d3d1;
+}
+
+td.num,
+th.num {
+  text-align: right;
+}

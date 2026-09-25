@@ -1,0 +1,394 @@
+:root {
+  --ink: #111;
+  --muted: #444;
+  --paper: #f7f4ef;
+  --rule: #111;
+  --banner: #c01818;
+  --banner-text: #fff;
+  --hl: #e8e4dc;
+  --hl-strong: #ddd6c8;
+  --wrong: #ecd6d6;
+  --font-sans: Helvetica, Arial, sans-serif;
+  --font-serif: Georgia, "Times New Roman", Times, serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100%;
+  color: var(--ink);
+  background: var(--paper);
+  font-family: var(--font-serif);
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.page {
+  width: min(720px, calc(100% - 1.5rem));
+  margin: 0 auto;
+  padding: 1.25rem 0 8.5rem;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--banner);
+  color: var(--banner-text);
+  padding: 0.45rem 0.7rem 0.4rem;
+}
+
+.masthead h1 {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: clamp(1.4rem, 5vw, 1.85rem);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rules {
+  margin: 0.85rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.55rem;
+  align-items: center;
+  margin-top: 0.85rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+}
+
+.field {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.toolbar select,
+.toolbar button {
+  font: inherit;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+}
+
+.toolbar button:hover,
+.toolbar select:hover {
+  background: #eee;
+}
+
+.toolbar button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.status {
+  color: var(--muted);
+  margin-left: auto;
+}
+
+.board {
+  position: relative;
+  margin: 1rem 0 1.25rem;
+}
+
+.spiral {
+  width: min(560px, 100%);
+  margin: 0 auto;
+  aspect-ratio: 1;
+  outline: none;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.spiral svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.cell {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.cell path {
+  fill: #fff;
+  stroke: var(--ink);
+  stroke-width: 1.4;
+  stroke-linejoin: miter;
+}
+
+.cell.is-clue path {
+  fill: var(--hl);
+}
+
+.cell.is-selected path {
+  fill: var(--hl-strong);
+}
+
+.cell.is-wrong path {
+  fill: var(--wrong);
+}
+
+.cell.is-correct path,
+.cell.is-revealed path {
+  fill: #fff;
+}
+
+.cell-num,
+.cell-letter {
+  pointer-events: none;
+}
+
+.cell-num {
+  fill: var(--ink);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  dominant-baseline: hanging;
+}
+
+.cell-letter {
+  fill: var(--ink);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.active-clue {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.55rem 0.75rem calc(0.55rem + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+  font-size: 0.95rem;
+  cursor: text;
+}
+
+.active-clue[hidden] {
+  display: none;
+}
+
+.active-clue-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  align-items: baseline;
+  width: min(560px, 100%);
+  margin: 0 auto;
+}
+
+.active-clue-dir {
+  font: inherit;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  background: var(--hl);
+  border: 1px solid var(--rule);
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+}
+
+.active-clue-range {
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.active-clue-text {
+  flex: 1 1 10rem;
+  line-height: 1.3;
+}
+
+.active-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: center;
+  width: min(560px, 100%);
+  margin: 0 auto;
+}
+
+.active-slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.15rem;
+  height: 2.4rem;
+  margin: 0;
+  padding: 0.55rem 0 0.15rem;
+  border: 1px solid var(--rule);
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.active-slot.is-selected {
+  background: var(--hl-strong);
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+.active-slot-num {
+  position: absolute;
+  top: 0.12rem;
+  left: 0.18rem;
+  font-size: 0.55rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--muted);
+}
+
+.active-slot-letter {
+  min-height: 1.1em;
+}
+
+/* Visually hidden but focusable; opens the phone keyboard. */
+.entry {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  /* 16px avoids iOS zoom-on-focus. */
+  font-size: 16px;
+}
+
+.clues {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 1.5rem;
+  border-top: 1px solid var(--rule);
+  padding-top: 0.75rem;
+}
+
+.clue-col h2 {
+  margin: 0 0 0.45rem;
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.clue-list {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.clue {
+  display: grid;
+  grid-template-columns: 3.4rem 1fr;
+  gap: 0.35rem;
+  align-items: baseline;
+  width: 100%;
+  margin: 0;
+  padding: 0.35rem 0.3rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 0.92rem;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.clue:hover {
+  background: #efeae2;
+}
+
+.clue.is-active {
+  background: var(--hl);
+}
+
+.clue.is-filled .clue-text {
+  text-decoration: line-through;
+}
+
+.clue-range {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.clue-text {
+  line-height: 1.3;
+}
+
+.footer-note {
+  margin: 1rem 0 0;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+}
+
+.confetti-layer {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding-bottom: 9rem;
+  }
+
+  .clues {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .status {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+
+  .clue {
+    min-height: 2.5rem;
+    padding: 0.45rem 0.35rem;
+  }
+}
