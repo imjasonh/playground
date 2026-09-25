@@ -57,5 +57,6 @@ enum ExperimentCatalog {
         ESP32BLEExperiment.experiment,
         AppAttestExperiment.experiment,
         LayaExperiment.experiment,
+        BlatherExperiment.experiment,
     ]
 }
