@@ -9,15 +9,24 @@ struct LiveTranslateTrack: Equatable, Identifiable {
     var text: String
     /// `LiveTranslateText.matchKey(text)`.
     var key: String
-    /// Vision-normalized box (origin bottom-left). After a missed pass, the last
-    /// box moved by the camera shift.
+    /// The latest reading's box, Vision-normalized (origin bottom-left). After a
+    /// missed pass, the last box moved with the camera.
     var boundingBox: CGRect
+    /// The box the overlay draws. It follows the reading's position, but its
+    /// size eases toward the reading's, so blur or glare that swells a box for a
+    /// pass doesn't resize the text, and a partial reading doesn't shrink it.
+    var displayBox: CGRect
     /// OCR passes that matched this line.
     var hits: Int
     /// Consecutive OCR passes that missed this line.
     var misses: Int
     /// Decaying confidence per normalized reading. The leader becomes `text`.
     var votes: [String: Double]
+    /// Consecutive passes the reading ran well wider (positive) or narrower
+    /// (negative) than `displayBox`.
+    var widthStreak = 0
+    /// The same for height.
+    var heightStreak = 0
 
     /// Read in enough passes to be worth a model call.
     var isSettled: Bool {
@@ -29,11 +38,11 @@ struct LiveTranslateTrack: Equatable, Identifiable {
 /// while the camera moves, Vision rereads it a little differently, or a pass
 /// misses it.
 ///
-/// Every pass first estimates the camera shift from readings that match an
-/// existing line almost exactly, and moves every line by it. A reading then
-/// continues a line when it has similar text near the moved box, or similar
-/// text over the same spot. A settled line that no reading continues survives
-/// two passes, so one missed OCR pass doesn't make its overlay flicker.
+/// Every pass first estimates the camera's pan and zoom from readings that
+/// match an existing line almost exactly, and moves every line by it. A reading
+/// then continues a line when it has similar text near the moved box, or
+/// similar text over the same spot. A settled line that no reading continues
+/// survives two passes, so one missed OCR pass doesn't make its overlay flicker.
 struct LiveTranslateTracker {
     /// Passes a line must match before it earns a model call or an untranslated outline.
     static let settleHits = 2
@@ -48,10 +57,16 @@ struct LiveTranslateTracker {
     static let rereadSimilarity = 0.5
     /// Intersection over union that counts as the same spot.
     static let rereadOverlap = 0.3
-    /// Readings at least this similar to a line vote on the camera shift.
+    /// Readings at least this similar to a line vote on the camera motion.
     static let anchorSimilarity = 0.9
     /// Largest per-pass camera shift trusted, in normalized image units.
     static let maximumShift = 0.5
+    /// Per-pass zoom trusted from the spread between lines.
+    static let zoomRange: ClosedRange<CGFloat> = 0.75...1.33
+    /// A reading this much larger or smaller than the display box is suspect
+    /// until the change lasts `lastingStreak` passes.
+    static let settleBand: CGFloat = 1.12
+    static let lastingStreak = 3
 
     private(set) var tracks: [LiveTranslateTrack] = []
     private var serial = 0
@@ -65,8 +80,8 @@ struct LiveTranslateTracker {
         let similarity = tracks.map { track in
             readings.map { LiveTranslateText.similarity(track.key, $0.key) }
         }
-        let shift = Self.cameraShift(tracks: tracks, readings: readings, similarity: similarity)
-        let predicted = tracks.map { $0.boundingBox.offsetBy(dx: shift.dx, dy: shift.dy) }
+        let motion = Self.cameraMotion(tracks: tracks, readings: readings, similarity: similarity)
+        let predicted = tracks.map { motion.apply(to: $0.boundingBox) }
 
         var pairs: [(track: Int, reading: Int, score: Double)] = []
         for trackIndex in tracks.indices {
@@ -97,10 +112,11 @@ struct LiveTranslateTracker {
         for trackIndex in tracks.indices {
             var track = tracks[trackIndex]
             if let readingIndex = readingForTrack[trackIndex] {
-                track.absorb(readings[readingIndex])
+                track.absorb(readings[readingIndex], motion: motion)
             } else {
                 track.misses += 1
                 track.boundingBox = predicted[trackIndex]
+                track.displayBox = motion.apply(to: track.displayBox)
                 // A reading seen once and then lost is usually OCR noise.
                 guard track.isSettled, track.misses <= Self.maximumMisses else { continue }
             }
@@ -129,38 +145,57 @@ struct LiveTranslateTracker {
         max(confidence, 0.1)
     }
 
-    /// Median displacement between readings and the nearest line with nearly identical text.
-    private static func cameraShift(
+    /// Eases a display size toward a measured one.
+    ///
+    /// A measurement within `settleBand` moves it 30% of the way. A bigger
+    /// change moves it 5% until it lasts `lastingStreak` passes, then half the
+    /// way: blur or glare swells a box for a pass or two, but a real change
+    /// persists. `streak` counts consecutive passes above (positive) or below
+    /// (negative) the band.
+    static func settle(_ current: CGFloat, toward measured: CGFloat, streak: inout Int) -> CGFloat {
+        guard current > 0 else {
+            streak = 0
+            return measured
+        }
+        let ratio = measured / current
+        let direction = ratio > settleBand ? 1 : (ratio < 1 / settleBand ? -1 : 0)
+        guard direction != 0 else {
+            streak = 0
+            return current + (measured - current) * 0.3
+        }
+        streak = streak.signum() == direction ? streak + direction : direction
+        let rate: CGFloat = abs(streak) >= lastingStreak ? 0.5 : 0.05
+        return current + (measured - current) * rate
+    }
+
+    /// Pan and zoom since the last pass, fit to readings that match an
+    /// existing line almost exactly. The zoom comes from how far apart those
+    /// lines moved, so blur that swells every box doesn't read as a zoom.
+    private static func cameraMotion(
         tracks: [LiveTranslateTrack],
         readings: [Reading],
         similarity: [[Double]]
-    ) -> (dx: CGFloat, dy: CGFloat) {
-        var dxs: [CGFloat] = []
-        var dys: [CGFloat] = []
+    ) -> LiveTranslateMotion {
+        var pairs: [(from: CGPoint, to: CGPoint)] = []
         for (readingIndex, reading) in readings.enumerated() {
-            var nearest: (distance: CGFloat, dx: CGFloat, dy: CGFloat)?
+            let to = CGPoint(x: reading.box.midX, y: reading.box.midY)
+            var nearest: (distance: CGFloat, from: CGPoint)?
             for (trackIndex, track) in tracks.enumerated() {
                 guard similarity[trackIndex][readingIndex] >= anchorSimilarity else { continue }
-                let dx = reading.box.midX - track.boundingBox.midX
-                let dy = reading.box.midY - track.boundingBox.midY
+                let from = CGPoint(x: track.boundingBox.midX, y: track.boundingBox.midY)
+                let dx = to.x - from.x
+                let dy = to.y - from.y
                 guard abs(dx) <= maximumShift, abs(dy) <= maximumShift else { continue }
                 let distance = hypot(dx, dy)
                 if nearest.map({ distance < $0.distance }) ?? true {
-                    nearest = (distance, dx, dy)
+                    nearest = (distance, from)
                 }
             }
             if let nearest {
-                dxs.append(nearest.dx)
-                dys.append(nearest.dy)
+                pairs.append((nearest.from, to))
             }
         }
-        guard !dxs.isEmpty else { return (0, 0) }
-        return (median(dxs), median(dys))
-    }
-
-    private static func median(_ values: [CGFloat]) -> CGFloat {
-        let sorted = values.sorted()
-        return sorted[sorted.count / 2]
+        return LiveTranslateMotion.fit(pairs, minimumSpan: 0.03, scaleRange: zoomRange)
     }
 
     private static func matchScore(similarity: Double, predicted: CGRect, reading: CGRect) -> Double? {
@@ -228,13 +263,30 @@ private extension LiveTranslateTrack {
             text: reading.text,
             key: reading.key,
             boundingBox: reading.box,
+            displayBox: reading.box,
             hits: 1,
             misses: 0,
             votes: [reading.text: LiveTranslateTracker.voteWeight(confidence: reading.confidence)]
         )
     }
 
-    mutating func absorb(_ reading: Reading) {
+    mutating func absorb(_ reading: Reading, motion: LiveTranslateMotion) {
+        let predicted = motion.apply(to: displayBox)
+        // Fewer characters in a narrower box: OCR read part of the line.
+        let partial = reading.key.count * 100 < key.count * 85 && reading.box.width < predicted.width * 0.85
+        if partial {
+            displayBox = predicted.offsetBy(dx: 0, dy: reading.box.midY - predicted.midY)
+        } else {
+            let width = LiveTranslateTracker.settle(predicted.width, toward: reading.box.width, streak: &widthStreak)
+            let height = LiveTranslateTracker.settle(predicted.height, toward: reading.box.height, streak: &heightStreak)
+            displayBox = CGRect(
+                x: reading.box.midX - width / 2,
+                y: reading.box.midY - height / 2,
+                width: width,
+                height: height
+            )
+        }
+
         var tally = votes
             .mapValues { $0 * LiveTranslateTracker.voteDecay }
             .filter { $0.value >= 0.05 }

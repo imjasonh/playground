@@ -342,9 +342,14 @@ Point the camera at printed or on-screen text. On-device Vision reads the
 lines (`VNRecognizeTextRequest`) and detects their language on each frame, so
 Japanese, Chinese, and Korean text is recognized too, not only English. A
 tracker follows each line from one OCR pass to the next. It estimates the
-camera shift from lines that read the same in both passes, then pairs each
-reading with the line that has similar text near its shifted box. A line keeps
-its identity through a misread, a missed pass, a pan, or a zoom.
+camera's pan and zoom from lines that read the same in both passes, then pairs
+each reading with the line that has similar text near its moved box. A line
+keeps its identity through a misread, a missed pass, a pan, or a zoom.
+
+Each line's overlay follows the reading's position, but its size changes
+slowly. Motion blur or glare can swell OCR's box for a pass or two, and a
+partial reading can shrink it, so a size change counts only once it lasts
+three passes. The zoom estimate resizes the overlay right away.
 
 After two passes read a line, a fresh `LanguageModelSession` translates it
 into the language you picked. The reply streams, so each line appears as soon
@@ -371,9 +376,12 @@ and the tracking pipeline, with a fake model in place of Foundation Models. The
 clip is five seconds of a Spanish sign that pans, shakes, catches a glare, and
 zooms, with fine print and a room plate that OCR reads unreliably. Each line on
 the sign has to get a translation within the first three seconds and keep it on
-at least 9 of every 10 later frames that read it. To change the clip, edit and
-run `ios/scripts/make-live-translate-clip.py`, which needs Pillow, NumPy, and
-ffmpeg.
+at least 9 of every 10 later frames that read it. The test also compares each
+overlay with where the line really is, from `moving-sign.json` next to the
+clip: an overlay has to cover the line, and its height can't jump more than
+12% between passes. To change the clip, edit and run
+`ios/scripts/make-live-translate-clip.py`, which needs Pillow, NumPy, and
+ffmpeg. It writes the clip and the JSON.
 
 ### Doom Face
 

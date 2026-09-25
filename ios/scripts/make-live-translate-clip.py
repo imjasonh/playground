@@ -6,7 +6,9 @@ camera holds, pans, shakes hard enough to blur, zooms in, and drifts back. OCR
 readings also churn the way they do on a real camera: fine print that is read
 only some of the time, a room plate cut off by the frame edge, and a glare that
 washes out part of the sign. The camera path and noise are fixed, so a rerun
-with the same Pillow and ffmpeg produces the same frames.
+with the same Pillow and ffmpeg produces the same frames. Next to the clip, it
+writes a JSON file with where each sign line sits in every frame, which tests
+use as ground truth.
 
 Requires Pillow, NumPy, and ffmpeg. From the repo root:
 
@@ -16,6 +18,7 @@ To also keep the PNG frames, pass --frames DIR.
 """
 
 import argparse
+import json
 import math
 import pathlib
 import shutil
@@ -53,7 +56,7 @@ def font(size, bold):
 
 
 def scene():
-    """Wall with a sign on it, in scene pixels."""
+    """Wall with a sign on it, in scene pixels, and the box of each line in LINES."""
     wall = np.zeros((SCENE_H, SCENE_W, 3), dtype=np.float32)
     rows = np.linspace(0, 1, SCENE_H, dtype=np.float32)[:, None]
     wall[..., 0] = 206 - 18 * rows
@@ -81,8 +84,9 @@ def scene():
         width=6,
     )
     y = top + 90
+    line_boxes = []
     for text, size, bold, color in LINES:
-        centered(draw, text, font(size, bold), left + SIGN_W / 2, y, color)
+        line_boxes.append(centered(draw, text, font(size, bold), left + SIGN_W / 2, y, color))
         y += int(size * 2.35)
     centered(draw, FINE_PRINT, font(24, False), left + SIGN_W / 2, top + SIGN_H - 70, (90, 90, 96))
 
@@ -94,12 +98,15 @@ def scene():
         fill=(52, 58, 70),
     )
     draw.text((plate_left + 30, plate_top + 28), "Sala 204", font=font(54, True), fill=(236, 236, 240))
-    return image
+    return image, line_boxes
 
 
 def centered(draw, text, face, center_x, y, color):
+    """Draws text centered on center_x and returns its ink box."""
     box = draw.textbbox((0, 0), text, font=face)
-    draw.text((center_x - (box[2] - box[0]) / 2 - box[0], y), text, font=face, fill=color)
+    origin = (center_x - (box[2] - box[0]) / 2 - box[0], y)
+    draw.text(origin, text, font=face, fill=color)
+    return draw.textbbox(origin, text, font=face)
 
 
 def smoothstep(edge0, edge1, t):
@@ -187,13 +194,47 @@ def frame(source, index, rng):
     return Image.fromarray(np.clip(noisy, 0, 255).astype(np.uint8))
 
 
+def truth(line_boxes):
+    """Where each sign line sits in every frame, in Vision-normalized space (origin bottom-left).
+
+    Each box is centered on the line and sized along the line's own axes, so the
+    camera's slight roll doesn't pad the height the way an axis-aligned box would.
+    """
+    frames = []
+    for index in range(FPS * SECONDS):
+        t = index / FPS
+        scale = camera(t)[2]
+        boxes = []
+        for left, top, right, bottom in line_boxes:
+            u, v = to_frame(t, (left + right) / 2, (top + bottom) / 2)
+            width = (right - left) * scale / WIDTH
+            height = (bottom - top) * scale / HEIGHT
+            boxes.append([
+                round(u / WIDTH - width / 2, 5),
+                round(1 - v / HEIGHT - height / 2, 5),
+                round(width, 5),
+                round(height, 5),
+            ])
+        frames.append(boxes)
+    return {
+        "fps": FPS,
+        "width": WIDTH,
+        "height": HEIGHT,
+        "lines": [text for text, *_ in LINES],
+        "boxes": frames,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--out", type=pathlib.Path, default=DEFAULT_OUT)
     parser.add_argument("--frames", type=pathlib.Path, help="also write PNG frames here")
     args = parser.parse_args()
 
-    source = scene()
+    source, line_boxes = scene()
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    truth_path = args.out.with_suffix(".json")
+    truth_path.write_text(json.dumps(truth(line_boxes), separators=(",", ":")) + "\n")
     rng = np.random.default_rng(11)
     with tempfile.TemporaryDirectory() as tmp:
         tmp_dir = pathlib.Path(tmp)
@@ -214,7 +255,7 @@ def main():
             ],
             check=True,
         )
-    print(f"wrote {args.out} ({args.out.stat().st_size // 1024} KB)")
+    print(f"wrote {args.out} ({args.out.stat().st_size // 1024} KB) and {truth_path.name}")
 
 
 if __name__ == "__main__":

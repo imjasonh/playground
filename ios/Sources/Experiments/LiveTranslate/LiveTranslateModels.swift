@@ -81,7 +81,8 @@ struct LiveTranslateBackdrop: Equatable {
     }
 }
 
-/// Overlay drawn on top of one tracked line. `id` is the track id, so it stays the same across frames.
+/// Overlay drawn on top of one tracked line. `id` is the track id, so it stays
+/// the same across frames, and `boundingBox` is the track's steadied display box.
 struct LiveTranslateOverlay: Equatable, Identifiable {
     let id: String
     let sourceText: String
@@ -179,16 +180,16 @@ enum LiveTranslateResultBuilder {
         }
         pins = kept
 
-        let fresh = shown.filter { $0.track.misses == 0 }.map(\.track.boundingBox)
+        let fresh = shown.filter { $0.track.misses == 0 }.map(\.track.displayBox)
         return shown.compactMap { track, translation in
-            if track.misses > 0, fresh.contains(where: { LiveTranslateTracker.covers(track.boundingBox, $0) }) {
+            if track.misses > 0, fresh.contains(where: { LiveTranslateTracker.covers(track.displayBox, $0) }) {
                 return nil
             }
             return LiveTranslateOverlay(
                 id: track.id,
                 sourceText: track.text,
                 displayText: translation ?? track.text,
-                boundingBox: track.boundingBox,
+                boundingBox: track.displayBox,
                 backdrop: backdrops[track.id] ?? .neutral,
                 isTranslated: translation != nil
             )

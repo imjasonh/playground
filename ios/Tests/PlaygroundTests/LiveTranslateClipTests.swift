@@ -11,12 +11,17 @@ final class LiveTranslateClipTests: XCTestCase {
     /// what the app finishes on a phone.
     private static let frameStride = 6
 
+    private static let fixtures = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .appendingPathComponent("Fixtures/LiveTranslate")
+
     func testMovingSignKeepsItsTranslations() async throws {
         let passes = try await Self.readClip()
         XCTAssertEqual(passes.count, 20)
         try XCTSkipIf(passes.allSatisfy(\.isEmpty), "Vision found no text in the clip on this simulator")
 
-        let replay = LiveTranslateClipReplay(passes: passes)
+        let truth = try LiveTranslateClipTruth.load(from: Self.fixtures.appendingPathComponent("moving-sign.json"))
+        let replay = LiveTranslateClipReplay(passes: passes, truth: truth, frameStride: Self.frameStride)
         XCTAssertTrue(
             replay.failures.isEmpty,
             (replay.failures + [replay.transcript]).joined(separator: "\n")
@@ -25,10 +30,7 @@ final class LiveTranslateClipTests: XCTestCase {
 
     /// OCR readings for every `frameStride`th frame, in order.
     private static func readClip() async throws -> [[LiveTranslateObservation]] {
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()
-            .appendingPathComponent("Fixtures/LiveTranslate/moving-sign.mp4")
-        let asset = AVURLAsset(url: url)
+        let asset = AVURLAsset(url: fixtures.appendingPathComponent("moving-sign.mp4"))
         let tracks = try await asset.loadTracks(withMediaType: .video)
         let track = try XCTUnwrap(tracks.first)
         let reader = try AVAssetReader(asset: asset)

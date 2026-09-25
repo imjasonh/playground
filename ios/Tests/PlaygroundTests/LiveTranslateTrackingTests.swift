@@ -90,6 +90,106 @@ final class LiveTranslateTrackingTests: XCTestCase {
         XCTAssertEqual(ids(tracker), before)
     }
 
+    func testMotionFitsPanAndZoomAndComposes() {
+        let points = [CGPoint(x: 0.2, y: 0.8), CGPoint(x: 0.6, y: 0.5), CGPoint(x: 0.3, y: 0.2)]
+        let truth = LiveTranslateMotion(scale: 1.2, dx: -0.05, dy: 0.03)
+        let fitted = LiveTranslateMotion.fit(
+            points.map { (from: $0, to: truth.apply(to: $0)) },
+            minimumSpan: 0.03,
+            scaleRange: 0.5...2
+        )
+        XCTAssertEqual(fitted.scale, 1.2, accuracy: 0.0001)
+        XCTAssertEqual(fitted.dx, -0.05, accuracy: 0.0001)
+        XCTAssertEqual(fitted.dy, 0.03, accuracy: 0.0001)
+
+        let single = LiveTranslateMotion.fit([(from: points[0], to: CGPoint(x: 0.25, y: 0.7))], minimumSpan: 0.03, scaleRange: 0.5...2)
+        XCTAssertEqual(single.scale, 1)
+        XCTAssertEqual(single.dx, 0.05, accuracy: 0.0001)
+        XCTAssertEqual(single.dy, -0.1, accuracy: 0.0001)
+        XCTAssertEqual(LiveTranslateMotion.fit([], minimumSpan: 0.03, scaleRange: 0.5...2), .identity)
+
+        let step = LiveTranslateMotion(scale: 1.1, dx: 0.02, dy: 0)
+        let point = CGPoint(x: 0.4, y: 0.6)
+        let twice = step.then(truth).apply(to: point)
+        let expected = truth.apply(to: step.apply(to: point))
+        XCTAssertEqual(twice.x, expected.x, accuracy: 0.0001)
+        XCTAssertEqual(twice.y, expected.y, accuracy: 0.0001)
+    }
+
+    func testDisplayBoxIgnoresBlurThatSwellsABoxForAPass() throws {
+        var tracker = LiveTranslateTracker()
+        let steady = line("Prohibido fumar", x: 0.3, y: 0.5, width: 0.35, height: 0.02)
+        for _ in 0..<3 {
+            tracker.update(with: [steady])
+        }
+        let settled = try XCTUnwrap(tracker.tracks.first?.displayBox)
+
+        // Blur swells the box 70% on one pass and 30% on the next, around the same center.
+        for swell in [1.7, 1.3] {
+            let box = steady.boundingBox
+            tracker.update(with: [line(
+                "Prohibido fumar",
+                x: box.midX - box.width * 0.55,
+                y: box.midY - box.height * swell / 2,
+                width: box.width * 1.1,
+                height: box.height * swell
+            )])
+            let shown = try XCTUnwrap(tracker.tracks.first?.displayBox)
+            XCTAssertEqual(shown.height / settled.height, 1, accuracy: 0.06, "swell \(swell)")
+            XCTAssertEqual(shown.midY, box.midY, accuracy: 0.001)
+        }
+        tracker.update(with: [steady])
+        tracker.update(with: [steady])
+        let after = try XCTUnwrap(tracker.tracks.first?.displayBox)
+        XCTAssertEqual(after.height / settled.height, 1, accuracy: 0.03)
+    }
+
+    func testDisplayBoxKeepsCoveringALinePartlyRead() throws {
+        var tracker = LiveTranslateTracker()
+        let full = line("Solo personal autorizado", x: 0.25, y: 0.4, width: 0.5, height: 0.025)
+        tracker.update(with: [full])
+        tracker.update(with: [full])
+
+        // Glare hides "autorizado": OCR returns the left part only.
+        tracker.update(with: [line("Solo personal", x: 0.25, y: 0.401, width: 0.28, height: 0.025)])
+        let shown = try XCTUnwrap(tracker.tracks.first?.displayBox)
+        XCTAssertEqual(tracker.tracks.count, 1)
+        XCTAssertEqual(shown.minX, 0.25, accuracy: 0.01)
+        XCTAssertEqual(shown.maxX, 0.75, accuracy: 0.01)
+        XCTAssertEqual(shown.midY, 0.401 + 0.0125, accuracy: 0.001)
+    }
+
+    func testDisplayBoxScalesWithZoomRightAway() throws {
+        var tracker = LiveTranslateTracker()
+        let menu = [
+            line("Menu del dia", x: 0.1, y: 0.8),
+            line("Sopa de ajo", x: 0.1, y: 0.5),
+            line("Pollo asado", x: 0.1, y: 0.2),
+        ]
+        tracker.update(with: menu)
+        tracker.update(with: menu)
+        let before = Dictionary(uniqueKeysWithValues: tracker.tracks.map { ($0.text, $0.displayBox.height) })
+
+        tracker.update(with: menu.map { zoomed($0, by: 1.3) })
+        for track in tracker.tracks {
+            let ratio = track.displayBox.height / (before[track.text] ?? 1)
+            XCTAssertEqual(ratio, 1.3, accuracy: 0.05, track.text)
+        }
+    }
+
+    func testDisplayBoxAdoptsALastingSizeChange() throws {
+        var tracker = LiveTranslateTracker()
+        let small = line("Salida", x: 0.4, y: 0.5, width: 0.2, height: 0.03)
+        tracker.update(with: [small])
+        tracker.update(with: [small])
+        let bigger = line("Salida", x: 0.38, y: 0.4925, width: 0.24, height: 0.045)
+        for _ in 0..<6 {
+            tracker.update(with: [bigger])
+        }
+        let shown = try XCTUnwrap(tracker.tracks.first?.displayBox)
+        XCTAssertEqual(shown.height, 0.045, accuracy: 0.0045)
+    }
+
     func testTrackerDropsOneOffReadingsAndExpiredLines() {
         var tracker = LiveTranslateTracker()
         tracker.update(with: [line("Hola", x: 0.1, y: 0.6), line("x7#", x: 0.5, y: 0.2, width: 0.1)])
@@ -416,11 +516,13 @@ final class LiveTranslateTrackingTests: XCTestCase {
         misses: Int = 0,
         y: Double = 0.5
     ) -> LiveTranslateTrack {
-        LiveTranslateTrack(
+        let box = CGRect(x: 0.1, y: y, width: 0.4, height: 0.05)
+        return LiveTranslateTrack(
             id: id,
             text: text,
             key: LiveTranslateText.matchKey(text),
-            boundingBox: CGRect(x: 0.1, y: y, width: 0.4, height: 0.05),
+            boundingBox: box,
+            displayBox: box,
             hits: hits,
             misses: misses,
             votes: [text: 1]
