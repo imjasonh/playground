@@ -474,7 +474,7 @@ final class VoxelWorldSession: NSObject, ObservableObject {
     }
 }
 
-// MARK: - Camera frames (main thread)
+// MARK: - Camera frames
 
 extension VoxelWorldSession: ARSCNViewDelegate {
     func renderer(_: SCNSceneRenderer, willRenderScene _: SCNScene, atTime _: TimeInterval) {
