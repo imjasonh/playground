@@ -339,15 +339,28 @@ on a TrueDepth front camera — not wired here yet.
 ### Live Translate
 
 Point the camera at printed or on-screen text. On-device Vision reads the
-lines (`VNRecognizeTextRequest`). When the same lines hold for a short beat,
-a fresh `LanguageModelSession` translates them into the language you picked.
-The translation is painted over each source box using a sampled backdrop.
-The joined translation is copied to the pasteboard when it changes. To copy
-again, tap the copy control.
+lines (`VNRecognizeTextRequest`). A tracker follows each line from one OCR
+pass to the next. It estimates the camera shift from lines that read the same
+in both passes, then pairs each reading with the line that has similar text
+near its shifted box. A line keeps its identity through a misread, a missed
+pass, a pan, or a zoom.
+
+After two passes read a line, a fresh `LanguageModelSession` translates it
+into the language you picked. The reply streams, so each line appears as soon
+as the model finishes it. The app stores each translation by its source text
+while the experiment is open. Any later frame that reads a stored line shows
+that translation without another model call, even after the camera looks away
+and back. Readings that differ only in case, accents, spacing, or punctuation
+share a translation. So do readings a letter or two apart whose digits match.
+Each translation is painted over its source box using a sampled backdrop.
+When every line in view is translated, the joined text is copied to the
+pasteboard. It copies again only when a new line shows up. To copy on demand,
+tap the copy control.
 
 Each model call starts a new session (no tools, eight lines max) so the live
 loop does not fill the 4096-token window. A context-window overflow retries
-once with fewer lines. Needs camera permission (extends the existing
+once with fewer lines. A line the model skips waits before its next try, and
+the wait doubles each time. Needs camera permission (extends the existing
 `NSCameraUsageDescription` — no new Bundle ID or signing bootstrap) and Apple
 Intelligence for translation. Simulator opens the UI but has no camera.
 

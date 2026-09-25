@@ -1,0 +1,459 @@
+import CoreGraphics
+import XCTest
+@testable import Playground
+
+final class LiveTranslateTrackingTests: XCTestCase {
+    // MARK: - Text keys
+
+    func testMatchKeyIgnoresCaseAccentsSpacingAndPunctuation() {
+        XCTAssertEqual(LiveTranslateText.matchKey("  Café, del  MAR! "), "cafedelmar")
+        XCTAssertEqual(LiveTranslateText.matchKey("CAFE DEL MAR"), "cafedelmar")
+        XCTAssertEqual(LiveTranslateText.matchKey("出口"), "出口")
+        XCTAssertEqual(LiveTranslateText.matchKey(" ¡¿ ?! "), "¡¿ ?!")
+        XCTAssertEqual(LiveTranslateText.digits("mesa12a3"), "123")
+    }
+
+    func testSimilarityScoresEditDistance() {
+        XCTAssertEqual(LiveTranslateText.similarity("salida", "salida"), 1)
+        XCTAssertEqual(LiveTranslateText.similarity("salida", "sal1da"), 1 - 1.0 / 6, accuracy: 0.0001)
+        XCTAssertEqual(LiveTranslateText.similarity("", ""), 1)
+        XCTAssertEqual(LiveTranslateText.similarity("abc", ""), 0)
+        XCTAssertEqual(
+            LiveTranslateText.editDistance(Array("kitten".unicodeScalars), Array("sitting".unicodeScalars)),
+            3
+        )
+    }
+
+    func testPinnedTranslationSurvivesRereadsButNotNewDigits() {
+        XCTAssertTrue(LiveTranslateText.canKeepTranslation(of: "Restaurante Mexicano", for: "Restaurante Mexicano Real"))
+        XCTAssertFalse(LiveTranslateText.canKeepTranslation(of: "Mesa 12", for: "Mesa 13"))
+        XCTAssertFalse(LiveTranslateText.canKeepTranslation(of: "Abierto", for: "Cerrado"))
+    }
+
+    // MARK: - Tracker
+
+    func testTrackerKeepsLineIdentityThroughJitterMisreadsAndMisses() {
+        var tracker = LiveTranslateTracker()
+        tracker.update(with: [line("Salida", x: 0.1, y: 0.7), line("Entrada", x: 0.1, y: 0.4)])
+        let first = ids(tracker)
+        XCTAssertEqual(first.count, 2)
+        XCTAssertFalse(tracker.tracks.contains(where: \.isSettled))
+
+        tracker.update(with: [line("Salida", x: 0.11, y: 0.705), line("Entrada", x: 0.095, y: 0.398)])
+        XCTAssertEqual(ids(tracker), first)
+        XCTAssertTrue(tracker.tracks.allSatisfy(\.isSettled))
+
+        tracker.update(with: [line("Sa1ida", x: 0.1, y: 0.7)])
+        XCTAssertEqual(ids(tracker), first, "A misread keeps the line and its settled text")
+        XCTAssertEqual(tracker.tracks.first { $0.id == first["Entrada"] }?.misses, 1)
+
+        tracker.update(with: [line("Salida", x: 0.1, y: 0.7), line("Entrada", x: 0.1, y: 0.4)])
+        XCTAssertEqual(ids(tracker), first)
+        XCTAssertTrue(tracker.tracks.allSatisfy { $0.misses == 0 })
+    }
+
+    func testTrackerFollowsCameraPan() {
+        var tracker = LiveTranslateTracker()
+        let menu = [
+            line("Menu del dia", x: 0.1, y: 0.8),
+            line("Sopa de ajo", x: 0.1, y: 0.6),
+            line("Pollo asado", x: 0.1, y: 0.4),
+        ]
+        tracker.update(with: menu)
+        tracker.update(with: menu)
+        let before = ids(tracker)
+
+        // Too far to match by position alone. The shared shift lines them up.
+        tracker.update(with: [
+            line("Menu del dia", x: 0.35, y: 0.6),
+            line("Sopa de ajo", x: 0.35, y: 0.4),
+            line("Pollo asad0", x: 0.35, y: 0.2),
+        ])
+        XCTAssertEqual(tracker.tracks.count, 3)
+        XCTAssertEqual(ids(tracker), before)
+    }
+
+    func testTrackerFollowsZoom() {
+        var tracker = LiveTranslateTracker()
+        let menu = [
+            line("Menu del dia", x: 0.1, y: 0.8),
+            line("Sopa de ajo", x: 0.1, y: 0.5),
+            line("Pollo asado", x: 0.1, y: 0.2),
+        ]
+        tracker.update(with: menu)
+        tracker.update(with: menu)
+        let before = ids(tracker)
+
+        // Outer lines spread apart by more than a line height, which one shared shift can't undo.
+        tracker.update(with: menu.map { zoomed($0, by: 1.3) })
+        XCTAssertEqual(tracker.tracks.count, 3)
+        XCTAssertEqual(ids(tracker), before)
+    }
+
+    func testTrackerDropsOneOffReadingsAndExpiredLines() {
+        var tracker = LiveTranslateTracker()
+        tracker.update(with: [line("Hola", x: 0.1, y: 0.6), line("x7#", x: 0.5, y: 0.2, width: 0.1)])
+        tracker.update(with: [line("Hola", x: 0.1, y: 0.6)])
+        XCTAssertEqual(tracker.tracks.map(\.text), ["Hola"])
+
+        for _ in 0..<LiveTranslateTracker.maximumMisses {
+            tracker.update(with: [])
+        }
+        XCTAssertEqual(tracker.tracks.map(\.text), ["Hola"])
+        tracker.update(with: [])
+        XCTAssertTrue(tracker.tracks.isEmpty)
+    }
+
+    func testTrackerStartsNewLineWhenTextChangesInPlace() {
+        var tracker = LiveTranslateTracker()
+        tracker.update(with: [line("Abierto", x: 0.2, y: 0.5)])
+        tracker.update(with: [line("Abierto", x: 0.2, y: 0.5)])
+        let openID = tracker.tracks.first?.id
+
+        tracker.update(with: [line("Cerrado", x: 0.2, y: 0.5)])
+        XCTAssertEqual(tracker.tracks.map(\.text), ["Cerrado"])
+        XCTAssertNotEqual(tracker.tracks.first?.id, openID)
+    }
+
+    func testTrackerKeepsRepeatedTextApart() throws {
+        var tracker = LiveTranslateTracker()
+        let prices = [
+            line("$5", x: 0.6, y: 0.7, width: 0.1),
+            line("$5", x: 0.6, y: 0.3, width: 0.1),
+        ]
+        tracker.update(with: prices)
+        tracker.update(with: prices)
+        let top = try XCTUnwrap(tracker.tracks.first?.id)
+        let bottom = try XCTUnwrap(tracker.tracks.last?.id)
+        XCTAssertNotEqual(top, bottom)
+
+        tracker.update(with: [
+            line("$5", x: 0.61, y: 0.68, width: 0.1),
+            line("$5", x: 0.61, y: 0.28, width: 0.1),
+        ])
+        XCTAssertEqual(tracker.tracks.map(\.id), [top, bottom])
+    }
+
+    // MARK: - Memory
+
+    func testMemoryMatchesCaseAccentsAndSpacingPerLanguage() {
+        var memory = LiveTranslateMemory()
+        memory.remember(source: "Café  del Mar", translation: " Sea  Cafe ", language: .english)
+        XCTAssertEqual(memory.translation(for: "CAFE DEL MAR", language: .english), "Sea Cafe")
+        XCTAssertEqual(memory.translation(for: "café del mar!", language: .english), "Sea Cafe")
+        XCTAssertNil(memory.translation(for: "Café del Mar", language: .french))
+        XCTAssertEqual(memory.count(for: .english), 1)
+    }
+
+    func testMemoryReusesNearReadingsOnlyWhenDigitsMatch() {
+        var memory = LiveTranslateMemory()
+        memory.remember(source: "Salida de emergencia", translation: "Emergency exit", language: .english)
+        memory.remember(source: "Mesa 12 reservada", translation: "Table 12 reserved", language: .english)
+        XCTAssertEqual(memory.translation(for: "Salida de emergencla", language: .english), "Emergency exit")
+        XCTAssertNil(memory.translation(for: "Mesa 13 reservada", language: .english))
+        XCTAssertNil(memory.translation(for: "Salida", language: .english))
+    }
+
+    func testMemoryDropsOldestEntryPastCapacity() {
+        var memory = LiveTranslateMemory()
+        for index in 0...LiveTranslateMemory.capacity {
+            memory.remember(source: "line \(index)", translation: "L\(index)", language: .english)
+        }
+        XCTAssertEqual(memory.count(for: .english), LiveTranslateMemory.capacity)
+        XCTAssertNil(memory.translation(for: "line 0", language: .english))
+        XCTAssertEqual(memory.translation(for: "line 1", language: .english), "L1")
+    }
+
+    func testMemoryBacksOffFailedLinesUntilTranslated() {
+        var memory = LiveTranslateMemory()
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        memory.recordFailure(source: "Zzz", language: .english, at: start)
+        XCTAssertTrue(memory.isBlocked(source: "zzz", language: .english, at: start.addingTimeInterval(1)))
+        XCTAssertFalse(memory.isBlocked(source: "zzz", language: .english, at: start.addingTimeInterval(2)))
+        XCTAssertFalse(memory.isBlocked(source: "zzz", language: .french, at: start))
+
+        memory.recordFailure(source: "Zzz", language: .english, at: start.addingTimeInterval(3))
+        XCTAssertTrue(memory.isBlocked(source: "Zzz", language: .english, at: start.addingTimeInterval(6.5)))
+        XCTAssertFalse(memory.isBlocked(source: "Zzz", language: .english, at: start.addingTimeInterval(7)))
+
+        memory.recordFailure(source: "Zzz", language: .english, at: start.addingTimeInterval(8))
+        memory.remember(source: "Zzz", translation: "Sleep", language: .english)
+        XCTAssertFalse(memory.isBlocked(source: "Zzz", language: .english, at: start.addingTimeInterval(8)))
+    }
+
+    // MARK: - Batches and overlays
+
+    func testTranslationBatchTakesSettledUntranslatedLinesOnce() {
+        var memory = LiveTranslateMemory()
+        let now = Date()
+        memory.remember(source: "Adiós", translation: "Goodbye", language: .english)
+        memory.recordFailure(source: "Gracias", language: .english, at: now)
+        let tracks = [
+            track("a", "Hola", y: 0.8),
+            track("b", "Adiós", y: 0.7),
+            track("c", "hola", y: 0.6),
+            track("d", "Gracias", y: 0.5),
+            track("e", "Nuevo", hits: 1, y: 0.4),
+            track("f", "Perdido", misses: 1, y: 0.3),
+            track("g", "Por favor", y: 0.2),
+        ]
+        XCTAssertEqual(
+            LiveTranslateResultBuilder.translationBatch(tracks: tracks, memory: memory, language: .english, now: now),
+            ["Hola", "Por favor"]
+        )
+        XCTAssertEqual(
+            LiveTranslateResultBuilder.translationBatch(
+                tracks: tracks,
+                memory: memory,
+                language: .english,
+                now: now,
+                maxCount: 1
+            ),
+            ["Hola"]
+        )
+    }
+
+    func testOverlaysShowStoredTranslationsAndHideUnsettledReadings() {
+        var memory = LiveTranslateMemory()
+        memory.remember(source: "Hola", translation: "Hello", language: .english)
+        var pins: [String: LiveTranslatePin] = [:]
+        let tracks = [
+            track("a", "Hola", hits: 1, y: 0.8),
+            track("b", "Mundo", y: 0.6),
+            track("c", "Ruido", hits: 1, y: 0.4),
+        ]
+        let overlays = LiveTranslateResultBuilder.overlays(
+            tracks: tracks,
+            memory: memory,
+            language: .english,
+            pins: &pins
+        )
+        XCTAssertEqual(overlays.map(\.id), ["a", "b"])
+        XCTAssertEqual(overlays.map(\.displayText), ["Hello", "Mundo"])
+        XCTAssertEqual(overlays.map(\.isTranslated), [true, false])
+        XCTAssertEqual(pins, ["a": LiveTranslatePin(source: "Hola", translation: "Hello", language: .english)])
+
+        let french = LiveTranslateResultBuilder.overlays(
+            tracks: tracks,
+            memory: memory,
+            language: .french,
+            pins: &pins
+        )
+        XCTAssertEqual(french.map(\.id), ["b"])
+        XCTAssertTrue(pins.isEmpty)
+    }
+
+    func testOverlaysKeepPinnedTranslationWhileChangedReadingWaits() {
+        var memory = LiveTranslateMemory()
+        memory.remember(source: "Restaurante Mexicano", translation: "Mexican Restaurant", language: .english)
+        var pins: [String: LiveTranslatePin] = [:]
+        _ = LiveTranslateResultBuilder.overlays(
+            tracks: [track("a", "Restaurante Mexicano")],
+            memory: memory,
+            language: .english,
+            pins: &pins
+        )
+
+        let grown = LiveTranslateResultBuilder.overlays(
+            tracks: [track("a", "Restaurante Mexicano Real")],
+            memory: memory,
+            language: .english,
+            pins: &pins
+        )
+        XCTAssertEqual(grown.first?.displayText, "Mexican Restaurant")
+        XCTAssertEqual(grown.first?.isTranslated, true)
+
+        let renumbered = LiveTranslateResultBuilder.overlays(
+            tracks: [track("a", "Restaurante Mexicano 2")],
+            memory: memory,
+            language: .english,
+            pins: &pins
+        )
+        XCTAssertEqual(renumbered.first?.isTranslated, false)
+        XCTAssertTrue(pins.isEmpty)
+    }
+
+    func testBackdropBlendMovesPartwayTowardSample() {
+        let dark = LiveTranslateBackdrop(red: 0, green: 0, blue: 0, luma: 0)
+        let light = LiveTranslateBackdrop(red: 1, green: 1, blue: 1, luma: 1)
+        let blended = dark.blended(toward: light, weight: 0.25)
+        XCTAssertEqual(blended.red, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(blended.luma, 0.25, accuracy: 0.0001)
+    }
+
+    // MARK: - Streamed replies
+
+    func testFinishedTranslationsWaitForTheNextItemWhileStreaming() {
+        let expected = ["Hola", "Mundo", "Adiós"]
+        let partial: [(source: String?, translation: String?)] = [
+            (source: "Hola", translation: "Hello"),
+            (source: "Mundo", translation: "Wor"),
+        ]
+        XCTAssertEqual(
+            LiveTranslateResultBuilder.finishedTranslations(items: partial, expected: expected, isFinal: false),
+            [0: "Hello"]
+        )
+        XCTAssertEqual(
+            LiveTranslateResultBuilder.finishedTranslations(items: partial, expected: expected, isFinal: true),
+            [0: "Hello", 1: "Wor"]
+        )
+        XCTAssertEqual(
+            LiveTranslateResultBuilder.finishedTranslations(items: [], expected: expected, isFinal: false),
+            [:]
+        )
+    }
+
+    func testFinishedTranslationsRealignWhenTheModelSkipsALine() {
+        let items: [(source: String?, translation: String?)] = [
+            (source: "Hola", translation: " Hello "),
+            (source: "Adios", translation: "Goodbye"),
+            (source: nil, translation: "   "),
+        ]
+        XCTAssertEqual(
+            LiveTranslateResultBuilder.finishedTranslations(
+                items: items,
+                expected: ["Hola", "Mundo", "Adiós"],
+                isFinal: true
+            ),
+            [0: "Hello", 2: "Goodbye"]
+        )
+    }
+
+    func testFinishedTranslationsFallBackToPositionWhenTheEchoIsOff() {
+        let items: [(source: String?, translation: String?)] = [
+            (source: "Hello", translation: "Hello"),
+            (source: "", translation: "World"),
+        ]
+        XCTAssertEqual(
+            LiveTranslateResultBuilder.finishedTranslations(items: items, expected: ["Hola", "Mundo"], isFinal: true),
+            [0: "Hello", 1: "World"]
+        )
+    }
+
+    // MARK: - Live loop
+
+    /// A hand-held camera rarely reads the same set of lines twice in a row. A
+    /// translation that lands several passes after it was requested still has
+    /// to show on every later pass that reads those lines.
+    func testTranslationsLandAndStayWhileFramesKeepChanging() {
+        let texts = ["Salida de emergencia", "No fumar", "Prohibido el paso"]
+        func frame(_ step: Int) -> [LiveTranslateObservation] {
+            let dx = 0.004 * Double(step) + 0.01 * Double(step % 3)
+            let dy = -0.006 * Double(step)
+            var lines: [LiveTranslateObservation] = []
+            for (row, text) in texts.enumerated() where (step + row) % 4 != 3 {
+                let reading = row == 0 && step % 5 == 2 ? "Salida de emergencla" : text
+                lines.append(line(
+                    reading,
+                    x: 0.1 + dx,
+                    y: 0.7 - 0.15 * Double(row) + dy,
+                    confidence: 0.6 + 0.1 * Double(row)
+                ))
+            }
+            return lines
+        }
+
+        var tracker = LiveTranslateTracker()
+        var memory = LiveTranslateMemory()
+        var pins: [String: LiveTranslatePin] = [:]
+        var inFlight: (sources: [String], landsAt: Int)?
+        var batches = 0
+        var firstLanded: Int?
+        for step in 0..<20 {
+            tracker.update(with: frame(step))
+            if let batch = inFlight, step >= batch.landsAt {
+                for source in batch.sources {
+                    memory.remember(source: source, translation: "EN \(source)", language: .english)
+                }
+                inFlight = nil
+                firstLanded = firstLanded ?? step
+            }
+            if inFlight == nil {
+                let sources = LiveTranslateResultBuilder.translationBatch(
+                    tracks: tracker.tracks,
+                    memory: memory,
+                    language: .english,
+                    now: Date()
+                )
+                if !sources.isEmpty {
+                    inFlight = (sources, step + 4)
+                    batches += 1
+                }
+            }
+            let overlays = LiveTranslateResultBuilder.overlays(
+                tracks: tracker.tracks,
+                memory: memory,
+                language: .english,
+                pins: &pins
+            )
+            let shown = Set(overlays.filter(\.isTranslated).map(\.displayText))
+            if let firstLanded, step >= firstLanded {
+                XCTAssertTrue(
+                    shown.isSuperset(of: ["EN Salida de emergencia", "EN No fumar"]),
+                    "step \(step): \(shown)"
+                )
+            }
+            if step >= 12 {
+                XCTAssertEqual(overlays.count, texts.count, "step \(step)")
+                XCTAssertEqual(shown, Set(texts.map { "EN \($0)" }), "step \(step)")
+            }
+        }
+        XCTAssertNotNil(firstLanded)
+        XCTAssertLessThanOrEqual(batches, 3)
+    }
+
+    // MARK: - Fixtures
+
+    private func line(
+        _ text: String,
+        x: Double,
+        y: Double,
+        width: Double = 0.4,
+        height: Double = 0.05,
+        confidence: Double = 0.9
+    ) -> LiveTranslateObservation {
+        LiveTranslateObservation(
+            text: text,
+            confidence: confidence,
+            boundingBox: CGRect(x: x, y: y, width: width, height: height)
+        )
+    }
+
+    /// `observation` as seen after the camera moves closer, scaling about the frame center.
+    private func zoomed(_ observation: LiveTranslateObservation, by scale: CGFloat) -> LiveTranslateObservation {
+        let box = observation.boundingBox
+        return LiveTranslateObservation(
+            text: observation.text,
+            confidence: observation.confidence,
+            boundingBox: CGRect(
+                x: 0.5 + (box.minX - 0.5) * scale,
+                y: 0.5 + (box.minY - 0.5) * scale,
+                width: box.width * scale,
+                height: box.height * scale
+            )
+        )
+    }
+
+    private func track(
+        _ id: String,
+        _ text: String,
+        hits: Int = LiveTranslateTracker.settleHits,
+        misses: Int = 0,
+        y: Double = 0.5
+    ) -> LiveTranslateTrack {
+        LiveTranslateTrack(
+            id: id,
+            text: text,
+            key: LiveTranslateText.matchKey(text),
+            boundingBox: CGRect(x: 0.1, y: y, width: 0.4, height: 0.05),
+            hits: hits,
+            misses: misses,
+            votes: [text: 1]
+        )
+    }
+
+    /// Track id by settled text. Only for frames whose lines all differ.
+    private func ids(_ tracker: LiveTranslateTracker) -> [String: String] {
+        Dictionary(uniqueKeysWithValues: tracker.tracks.map { ($0.text, $0.id) })
+    }
+}

@@ -4,7 +4,12 @@ import FoundationModels
 import QuartzCore
 import UIKit
 
-/// Live camera session that OCRs frames, translates stable text, and copies the result.
+/// Live camera session that OCRs frames, follows each line across frames,
+/// translates each line once, and copies the result.
+///
+/// A translation takes longer than the camera holds one frame, so results
+/// never wait on the frame that asked for them. They go into a memory keyed by
+/// source text, and every later frame that reads the same line shows them.
 final class LiveTranslateSession: NSObject, ObservableObject {
     enum RunState: Equatable {
         case idle
@@ -35,17 +40,17 @@ final class LiveTranslateSession: NSObject, ObservableObject {
     private let stateLock = NSLock()
     private var cameraPosition: AVCaptureDevice.Position = .back
     private var deviceOrientation: UIDeviceOrientation = .portrait
-    private var languageForProcessing: LiveTranslateLanguage = .english
     private var lastAnalyzeTime: CFTimeInterval = 0
     private let analyzeInterval: CFTimeInterval = 0.22
     private var isAnalyzing = false
     private var orientationObserver: NSObjectProtocol?
 
-    private var lastObservations: [LiveTranslateObservation] = []
-    private var lastItems: [LiveTranslateItem] = []
-    private var lastTranslatedFingerprint = ""
-    private var pendingFingerprint: String?
-    private var pendingSince: Date?
+    // Main thread only.
+    private var tracker = LiveTranslateTracker()
+    private var memory = LiveTranslateMemory()
+    private var pins: [String: LiveTranslatePin] = [:]
+    private var backdrops: [String: LiveTranslateBackdrop] = [:]
+    private var lastError: String?
     private var lastCopiedPayload: String?
     private var translateGeneration = 0
     private var translateTask: Task<Void, Never>?
@@ -84,8 +89,7 @@ final class LiveTranslateSession: NSObject, ObservableObject {
     }
 
     func stop() {
-        translateTask?.cancel()
-        translateTask = nil
+        cancelTranslation()
         endOrientationUpdates()
         sessionQueue.async { [session] in
             if session.isRunning {
@@ -96,7 +100,7 @@ final class LiveTranslateSession: NSObject, ObservableObject {
             guard let self else { return }
             self.previewImage = nil
             self.previewImageSize = .zero
-            self.overlays = []
+            self.clearTracking()
             if self.runState == .running {
                 self.runState = .idle
                 self.statusMessage = "Stopped."
@@ -109,21 +113,15 @@ final class LiveTranslateSession: NSObject, ObservableObject {
     }
 
     func setLanguage(_ language: LiveTranslateLanguage) {
+        guard language != self.language else { return }
         self.language = language
-        stateLock.lock()
-        languageForProcessing = language
-        stateLock.unlock()
-        lastTranslatedFingerprint = ""
-        lastItems = []
-        pendingFingerprint = nil
-        pendingSince = nil
+        cancelTranslation()
+        lastError = nil
         didCopy = false
         if runState == .running {
             statusMessage = "Translate to \(language.displayName)."
-            publishOverlays(observations: lastObservations, items: [], image: nil)
-            if !lastObservations.isEmpty {
-                requestTranslation(observations: lastObservations, language: language)
-            }
+            publishOverlays()
+            scheduleTranslation()
         }
     }
 
@@ -141,11 +139,7 @@ final class LiveTranslateSession: NSObject, ObservableObject {
                 try self.reconfigure(for: next)
                 DispatchQueue.main.async {
                     self.usingFrontCamera = next == .front
-                    self.lastObservations = []
-                    self.lastItems = []
-                    self.lastTranslatedFingerprint = ""
-                    self.pendingFingerprint = nil
-                    self.overlays = []
+                    self.clearTracking()
                     self.statusMessage = next == .front
                         ? "Front camera. Point at text."
                         : "Rear camera. Point at text."
@@ -172,6 +166,9 @@ final class LiveTranslateSession: NSObject, ObservableObject {
                     self.statusMessage = self.modelGate.isAvailable
                         ? "Point at printed or on-screen text."
                         : self.modelUnavailableStatus()
+                    if self.modelGate.isAvailable {
+                        LiveTranslateTranslator.prewarm(language: self.language)
+                    }
                 }
             } catch let error as LiveTranslateError where error == .noCamera {
                 DispatchQueue.main.async {
@@ -269,9 +266,7 @@ final class LiveTranslateSession: NSObject, ObservableObject {
             self.deviceOrientation = next
             self.stateLock.unlock()
             guard changed else { return }
-            self.overlays = []
-            self.lastObservations = []
-            self.lastTranslatedFingerprint = ""
+            self.clearTracking()
         }
     }
 
@@ -310,12 +305,6 @@ final class LiveTranslateSession: NSObject, ObservableObject {
         return (deviceOrientation, cameraPosition)
     }
 
-    private func currentLanguage() -> LiveTranslateLanguage {
-        stateLock.lock()
-        defer { stateLock.unlock() }
-        return languageForProcessing
-    }
-
     private static func readGate() -> AgentModelGate {
         switch SystemLanguageModel.default.availability {
         case .available:
@@ -348,40 +337,162 @@ final class LiveTranslateSession: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Overlay + clipboard
+    // MARK: - Tracking + overlays
 
-    private func publishOverlays(
-        observations: [LiveTranslateObservation],
-        items: [LiveTranslateItem],
-        image: CGImage?
-    ) {
-        let sampleImage = image ?? previewImage?.cgImage
-        var backdrops: [String: LiveTranslateBackdrop] = [:]
-        if let sampleImage {
-            for observation in observations {
-                backdrops[observation.id] = LiveTranslateColor.sample(
-                    image: sampleImage,
-                    visionBox: observation.boundingBox
-                )
-            }
+    private func handleOCR(observations: [LiveTranslateObservation], image: CGImage?) {
+        guard runState == .running else { return }
+        tracker.update(with: observations)
+        if let image {
+            sampleBackdrops(from: image)
         }
-        overlays = LiveTranslateResultBuilder.overlays(
-            observations: observations,
-            items: items,
-            backdrops: backdrops
-        )
-        maybeCopy(overlays)
+        publishOverlays()
+        scheduleTranslation()
+        maybeCopy()
+        refreshStatus()
     }
 
-    private func maybeCopy(_ overlays: [LiveTranslateOverlay]) {
+    /// Forgets line positions after the frame changes shape. Translations stay in memory.
+    private func clearTracking() {
+        tracker.reset()
+        pins = [:]
+        backdrops = [:]
+        overlays = []
+    }
+
+    private func sampleBackdrops(from image: CGImage) {
+        var next: [String: LiveTranslateBackdrop] = [:]
+        for track in tracker.tracks {
+            let previous = backdrops[track.id]
+            guard track.misses == 0 else {
+                next[track.id] = previous
+                continue
+            }
+            let sample = LiveTranslateColor.sample(image: image, visionBox: track.boundingBox)
+            next[track.id] = previous?.blended(toward: sample, weight: 0.5) ?? sample
+        }
+        backdrops = next
+    }
+
+    private func publishOverlays() {
+        overlays = LiveTranslateResultBuilder.overlays(
+            tracks: tracker.tracks,
+            memory: memory,
+            language: language,
+            pins: &pins,
+            backdrops: backdrops
+        )
+    }
+
+    // MARK: - Translation
+
+    /// Sends settled lines that have no stored translation to the model, one batch at a time.
+    private func scheduleTranslation() {
+        guard modelGate.isAvailable, translateTask == nil else { return }
+        let language = self.language
+        let sources = LiveTranslateResultBuilder.translationBatch(
+            tracks: tracker.tracks,
+            memory: memory,
+            language: language,
+            now: Date()
+        )
+        guard !sources.isEmpty else { return }
+        translateGeneration += 1
+        let generation = translateGeneration
+        isTranslating = true
+        translateTask = Task { @MainActor [weak self] in
+            var translated: [Int: String] = [:]
+            var failure: Error?
+            do {
+                translated = try await LiveTranslateTranslator.translate(
+                    sources: sources,
+                    language: language
+                ) { progress in
+                    self?.showProgress(progress, sources: sources, language: language)
+                }
+            } catch {
+                failure = error
+            }
+            self?.finishBatch(
+                generation: generation,
+                sources: sources,
+                translated: translated,
+                language: language,
+                failure: failure
+            )
+        }
+    }
+
+    /// Stores finished lines even when the frame that asked for them is gone,
+    /// so the next frame that reads them shows the translation.
+    private func store(_ translations: [Int: String], sources: [String], language: LiveTranslateLanguage) {
+        for (index, translation) in translations where sources.indices.contains(index) {
+            memory.remember(source: sources[index], translation: translation, language: language)
+        }
+    }
+
+    private func showProgress(_ translations: [Int: String], sources: [String], language: LiveTranslateLanguage) {
+        store(translations, sources: sources, language: language)
+        guard !translations.isEmpty, language == self.language else { return }
+        lastError = nil
+        publishOverlays()
+        refreshStatus()
+    }
+
+    private func finishBatch(
+        generation: Int,
+        sources: [String],
+        translated: [Int: String],
+        language: LiveTranslateLanguage,
+        failure: Error?
+    ) {
+        store(translated, sources: sources, language: language)
+        guard generation == translateGeneration else { return }
+        translateTask = nil
+        isTranslating = false
+        let now = Date()
+        for source in sources where memory.translation(for: source, language: language) == nil {
+            memory.recordFailure(source: source, language: language, at: now)
+        }
+        if let failure {
+            lastError = failure.localizedDescription
+        } else if !translated.isEmpty {
+            lastError = nil
+        }
+        publishOverlays()
+        scheduleTranslation()
+        maybeCopy()
+        refreshStatus()
+    }
+
+    private func cancelTranslation() {
+        translateGeneration += 1
+        translateTask?.cancel()
+        translateTask = nil
+        isTranslating = false
+    }
+
+    // MARK: - Clipboard + status
+
+    /// Copies once every line in view has its translation (or right away when
+    /// the model is unavailable), and only when a line is new since the last copy.
+    private func maybeCopy() {
         let payload = LiveTranslateResultBuilder.clipboardPayload(from: overlays)
         guard LiveTranslateResultBuilder.shouldCopy(newPayload: payload, lastCopied: lastCopiedPayload) else {
             return
         }
-        guard overlays.contains(where: \.isTranslated) || !modelGate.isAvailable else {
-            return
+        if modelGate.isAvailable {
+            guard !isTranslating, overlays.contains(where: \.isTranslated) else { return }
         }
         writeClipboard(payload)
+    }
+
+    private func refreshStatus() {
+        guard !didCopy else { return }
+        guard modelGate.isAvailable else {
+            statusMessage = modelUnavailableStatus()
+            return
+        }
+        statusMessage = isTranslating ? "Translating…" : countStatus()
     }
 
     private func writeClipboard(_ payload: String) {
@@ -402,6 +513,9 @@ final class LiveTranslateSession: NSObject, ObservableObject {
     private func countStatus() -> String {
         let translated = overlays.filter(\.isTranslated).count
         if translated == 0 {
+            if let lastError {
+                return lastError
+            }
             return modelGate.isAvailable
                 ? "Point at printed or on-screen text."
                 : modelUnavailableStatus()
@@ -410,45 +524,6 @@ final class LiveTranslateSession: NSObject, ObservableObject {
             return "1 line · \(language.displayName)"
         }
         return "\(translated) lines · \(language.displayName)"
-    }
-
-    private func requestTranslation(
-        observations: [LiveTranslateObservation],
-        language: LiveTranslateLanguage
-    ) {
-        guard modelGate.isAvailable else { return }
-        translateGeneration += 1
-        let generation = translateGeneration
-        translateTask?.cancel()
-        isTranslating = true
-        if !didCopy {
-            statusMessage = "Translating…"
-        }
-        translateTask = Task { [weak self] in
-            do {
-                let items = try await LiveTranslateTranslator.translate(
-                    observations: observations,
-                    language: language
-                )
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, generation == self.translateGeneration else { return }
-                    self.isTranslating = false
-                    self.lastItems = items
-                    self.lastTranslatedFingerprint = LiveTranslateResultBuilder.fingerprint(for: observations)
-                    self.publishOverlays(observations: self.lastObservations, items: items, image: nil)
-                    if !self.didCopy {
-                        self.statusMessage = self.countStatus()
-                    }
-                }
-            } catch {
-                let message = error.localizedDescription
-                DispatchQueue.main.async { [weak self] in
-                    guard let self, generation == self.translateGeneration else { return }
-                    self.isTranslating = false
-                    self.statusMessage = message
-                }
-            }
-        }
     }
 }
 
@@ -508,21 +583,13 @@ extension LiveTranslateSession: AVCaptureVideoDataOutputSampleBufferDelegate {
 
         guard shouldAnalyze else { return }
 
-        let language = currentLanguage()
         do {
             let observations = try LiveTranslateRecognizer.recognize(
                 pixelBuffer: pixelBuffer,
                 orientation: orientation
             )
-            let fingerprint = LiveTranslateResultBuilder.fingerprint(for: observations)
             DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                self.handleOCR(
-                    observations: observations,
-                    fingerprint: fingerprint,
-                    language: language,
-                    image: previewCGImage
-                )
+                self?.handleOCR(observations: observations, image: previewCGImage)
             }
         } catch {
             DispatchQueue.main.async { [weak self] in
@@ -533,56 +600,5 @@ extension LiveTranslateSession: AVCaptureVideoDataOutputSampleBufferDelegate {
         stateLock.lock()
         isAnalyzing = false
         stateLock.unlock()
-    }
-
-    private func handleOCR(
-        observations: [LiveTranslateObservation],
-        fingerprint: String,
-        language: LiveTranslateLanguage,
-        image: CGImage?
-    ) {
-        lastObservations = observations
-        let items = fingerprint == lastTranslatedFingerprint ? lastItems : []
-        publishOverlays(observations: observations, items: items, image: image)
-
-        if observations.isEmpty {
-            pendingFingerprint = nil
-            pendingSince = nil
-            if !isTranslating && !didCopy {
-                statusMessage = modelGate.isAvailable
-                    ? "Point at printed or on-screen text."
-                    : modelUnavailableStatus()
-            }
-            return
-        }
-
-        if fingerprint == lastTranslatedFingerprint {
-            return
-        }
-
-        if !modelGate.isAvailable {
-            if !didCopy {
-                statusMessage = modelUnavailableStatus()
-            }
-            return
-        }
-
-        let now = Date()
-        if fingerprint != pendingFingerprint {
-            pendingFingerprint = fingerprint
-            pendingSince = now
-            return
-        }
-
-        guard !isTranslating else { return }
-        guard LiveTranslateResultBuilder.shouldTranslate(
-            current: fingerprint,
-            pending: pendingFingerprint,
-            pendingSince: pendingSince,
-            now: now
-        ) else {
-            return
-        }
-        requestTranslation(observations: observations, language: language)
     }
 }
