@@ -32,8 +32,8 @@ struct LiveTranslateTrack: Equatable, Identifiable {
 /// Every pass first estimates the camera shift from readings that match an
 /// existing line almost exactly, and moves every line by it. A reading then
 /// continues a line when it has similar text near the moved box, or similar
-/// text over the same spot. A line that no reading continues survives a few
-/// passes, so one missed OCR pass doesn't flicker its overlay.
+/// text over the same spot. A settled line that no reading continues survives
+/// two passes, so one missed OCR pass doesn't make its overlay flicker.
 struct LiveTranslateTracker {
     /// Passes a line must match before it earns a model call or an untranslated outline.
     static let settleHits = 2
@@ -111,14 +111,15 @@ struct LiveTranslateTracker {
             next.append(LiveTranslateTrack(id: "line-\(serial)", reading: readings[readingIndex]))
         }
 
-        // A missed line under a fresh reading was reread as different text (or
-        // split or merged). Drop it now so two overlays never stack.
-        let seen = next.filter { $0.misses == 0 }.map(\.boundingBox)
+        // A missed line under a settled reading was reread as different text
+        // (or split or merged). A one-pass reading doesn't count, so OCR noise
+        // can't knock out a line that is still there.
+        let settled = next.filter { $0.misses == 0 && $0.isSettled }.map(\.boundingBox)
         let frame = CGRect(x: 0, y: 0, width: 1, height: 1)
         next.removeAll { track in
             guard track.misses > 0 else { return false }
             guard track.boundingBox.intersects(frame) else { return true }
-            return seen.contains { Self.overlapOfSmaller(track.boundingBox, $0) > 0.5 }
+            return settled.contains { Self.covers(track.boundingBox, $0) }
         }
         next.sort { LiveTranslateResultBuilder.readsBefore($0.boundingBox, $1.boundingBox) }
         tracks = next
@@ -183,7 +184,7 @@ struct LiveTranslateTracker {
             && abs(lhs.midY - rhs.midY) <= height * 2
     }
 
-    static func intersectionOverUnion(_ lhs: CGRect, _ rhs: CGRect) -> Double {
+    private static func intersectionOverUnion(_ lhs: CGRect, _ rhs: CGRect) -> Double {
         let intersection = lhs.intersection(rhs)
         guard !intersection.isNull else { return 0 }
         let shared = intersection.width * intersection.height
@@ -192,13 +193,14 @@ struct LiveTranslateTracker {
         return Double(shared / union)
     }
 
-    /// Shared area over the smaller box's area: 1 when one box sits inside the other.
-    static func overlapOfSmaller(_ lhs: CGRect, _ rhs: CGRect) -> Double {
+    /// Whether the boxes share more than half of the smaller one, as when one
+    /// reading of a line replaces another or a line splits in two.
+    static func covers(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
         let intersection = lhs.intersection(rhs)
-        guard !intersection.isNull else { return 0 }
+        guard !intersection.isNull else { return false }
         let smaller = min(lhs.width * lhs.height, rhs.width * rhs.height)
-        guard smaller > 0 else { return 0 }
-        return Double(intersection.width * intersection.height / smaller)
+        guard smaller > 0 else { return false }
+        return intersection.width * intersection.height / smaller > 0.5
     }
 }
 

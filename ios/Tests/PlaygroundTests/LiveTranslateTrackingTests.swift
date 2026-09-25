@@ -110,6 +110,10 @@ final class LiveTranslateTrackingTests: XCTestCase {
         tracker.update(with: [line("Abierto", x: 0.2, y: 0.5)])
         let openID = tracker.tracks.first?.id
 
+        // One pass of new text could be noise, so the old line stays for now.
+        tracker.update(with: [line("Cerrado", x: 0.2, y: 0.5)])
+        XCTAssertEqual(Set(tracker.tracks.map(\.text)), ["Abierto", "Cerrado"])
+
         tracker.update(with: [line("Cerrado", x: 0.2, y: 0.5)])
         XCTAssertEqual(tracker.tracks.map(\.text), ["Cerrado"])
         XCTAssertNotEqual(tracker.tracks.first?.id, openID)
@@ -213,6 +217,23 @@ final class LiveTranslateTrackingTests: XCTestCase {
         )
     }
 
+    func testTranslationBatchRetriesFailedLinesAlone() {
+        var memory = LiveTranslateMemory()
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        memory.recordFailure(source: "Uno", language: .english, at: start)
+        memory.recordFailure(source: "Dos", language: .english, at: start)
+        let tracks = [track("a", "Uno", y: 0.8), track("b", "Dos", y: 0.6), track("c", "Tres", y: 0.4)]
+        func batch(at now: Date) -> [String] {
+            LiveTranslateResultBuilder.translationBatch(tracks: tracks, memory: memory, language: .english, now: now)
+        }
+
+        XCTAssertEqual(batch(at: start), ["Tres"])
+        let later = start.addingTimeInterval(LiveTranslateMemory.firstRetryDelay)
+        XCTAssertEqual(batch(at: later), ["Uno"])
+        memory.remember(source: "Uno", translation: "One", language: .english)
+        XCTAssertEqual(batch(at: later), ["Dos"])
+    }
+
     func testOverlaysShowStoredTranslationsAndHideUnsettledReadings() {
         var memory = LiveTranslateMemory()
         memory.remember(source: "Hola", translation: "Hello", language: .english)
@@ -271,6 +292,32 @@ final class LiveTranslateTrackingTests: XCTestCase {
         )
         XCTAssertEqual(renumbered.first?.isTranslated, false)
         XCTAssertTrue(pins.isEmpty)
+    }
+
+    func testOverlaysHideMissedLineUnderShownReading() {
+        var memory = LiveTranslateMemory()
+        memory.remember(source: "Salida de emergencia", translation: "Emergency exit", language: .english)
+        memory.remember(source: "Salida de", translation: "Exit of", language: .english)
+        var pins: [String: LiveTranslatePin] = [:]
+        let missed = track("a", "Salida de emergencia", misses: 1)
+        let split = track("b", "Salida de", hits: 1)
+
+        let shown = LiveTranslateResultBuilder.overlays(
+            tracks: [missed, split],
+            memory: memory,
+            language: .english,
+            pins: &pins
+        )
+        XCTAssertEqual(shown.map(\.id), ["b"])
+
+        let noise = track("c", "Sxlxdx", hits: 1)
+        let kept = LiveTranslateResultBuilder.overlays(
+            tracks: [missed, noise],
+            memory: memory,
+            language: .english,
+            pins: &pins
+        )
+        XCTAssertEqual(kept.map(\.displayText), ["Emergency exit"], "A hidden one-pass reading doesn't cover it")
     }
 
     func testBackdropBlendMovesPartwayTowardSample() {

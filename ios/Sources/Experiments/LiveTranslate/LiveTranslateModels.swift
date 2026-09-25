@@ -150,8 +150,9 @@ enum LiveTranslateResultBuilder {
     /// A line shows its stored translation when the memory has one. Otherwise it
     /// keeps the translation last shown on it (its pin) while a changed reading
     /// waits for a new one. Untranslated lines appear only once settled, so a
-    /// one-pass misread never flashes a box. `pins` is updated in place and
-    /// pruned to the lines still tracked.
+    /// one-pass misread never flashes a box. A line missed this pass hides
+    /// under a line read this pass that covers it. `pins` is updated in place
+    /// and pruned to the lines still tracked.
     static func overlays(
         tracks: [LiveTranslateTrack],
         memory: LiveTranslateMemory,
@@ -160,7 +161,7 @@ enum LiveTranslateResultBuilder {
         backdrops: [String: LiveTranslateBackdrop] = [:]
     ) -> [LiveTranslateOverlay] {
         var kept: [String: LiveTranslatePin] = [:]
-        var result: [LiveTranslateOverlay] = []
+        var shown: [(track: LiveTranslateTrack, translation: String?)] = []
         for track in tracks {
             var translation: String?
             if let stored = memory.translation(for: track.text, language: language) {
@@ -174,24 +175,32 @@ enum LiveTranslateResultBuilder {
                 kept[track.id] = pin
             }
             guard translation != nil || track.isSettled else { continue }
-            result.append(
-                LiveTranslateOverlay(
-                    id: track.id,
-                    sourceText: track.text,
-                    displayText: translation ?? track.text,
-                    boundingBox: track.boundingBox,
-                    backdrop: backdrops[track.id] ?? .neutral,
-                    isTranslated: translation != nil
-                )
-            )
+            shown.append((track, translation))
         }
         pins = kept
-        return result
+
+        let fresh = shown.filter { $0.track.misses == 0 }.map(\.track.boundingBox)
+        return shown.compactMap { track, translation in
+            if track.misses > 0, fresh.contains(where: { LiveTranslateTracker.covers(track.boundingBox, $0) }) {
+                return nil
+            }
+            return LiveTranslateOverlay(
+                id: track.id,
+                sourceText: track.text,
+                displayText: translation ?? track.text,
+                boundingBox: track.boundingBox,
+                backdrop: backdrops[track.id] ?? .neutral,
+                isTranslated: translation != nil
+            )
+        }
     }
 
     /// Source text for the next model call: lines read this pass that settled
     /// and still lack a stored translation, in reading order, one per match key,
     /// skipping lines that failed recently.
+    ///
+    /// A line that failed before goes alone, so one line the model refuses
+    /// can't keep failing the batch for every other line in view.
     static func translationBatch(
         tracks: [LiveTranslateTrack],
         memory: LiveTranslateMemory,
@@ -207,6 +216,12 @@ enum LiveTranslateResultBuilder {
                   memory.translation(for: track.text, language: language) == nil,
                   !memory.isBlocked(source: track.text, language: language, at: now)
             else { continue }
+            if memory.hasFailed(source: track.text, language: language) {
+                if batch.isEmpty {
+                    return [track.text]
+                }
+                continue
+            }
             keys.insert(track.key)
             batch.append(track.text)
         }

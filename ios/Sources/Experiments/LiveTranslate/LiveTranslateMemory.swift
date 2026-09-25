@@ -104,6 +104,11 @@ struct LiveTranslateMemory {
         )
     }
 
+    /// Whether `source` failed since it was last translated.
+    func hasFailed(source: String, language: LiveTranslateLanguage) -> Bool {
+        failures[language]?[LiveTranslateText.matchKey(source)] != nil
+    }
+
     /// Whether `source` failed recently enough that the live loop skips it for now.
     func isBlocked(source: String, language: LiveTranslateLanguage, at now: Date) -> Bool {
         let key = LiveTranslateText.matchKey(source)
