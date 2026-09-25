@@ -71,6 +71,9 @@ them:
 
 - **[`gitdb/`](gitdb/)** — query a git repo's history, files, blame, and file
   contents with SQL, via SQLite virtual tables over go-git (Go CLI).
+- **[`go-embed-python/`](go-embed-python/)** — a running example of a Go
+  program that runs CPython inside its own process with cgo, the technique
+  behind gcloud's unreleased `gocloud` launcher (Go + cgo).
 - **[`ocidb/`](ocidb/)** — explore OCI container images on Docker Hub with SQL,
   via SQLite virtual tables over go-containerregistry (Go CLI).
 - **[`pasta/`](pasta/)** — multi-language linters and fixers described in CUE

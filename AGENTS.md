@@ -36,6 +36,7 @@ playground/
 ├── mapvelopes/            # Rust Cloudflare Worker: envelope PDFs with a route map
 ├── tank-commander/        # Rust CLI: Tank Commander balance/fun simulator (skirmish/platoon/combined)
 ├── gitdb/                 # Go CLI (Go module + Go tests)
+├── go-embed-python/       # Go + cgo example: run CPython inside a Go process (Go tests)
 ├── hello/                 # example static app (HTML only)
 ├── image-diff/            # pixel-by-pixel image comparison (JS + Node tests)
 ├── hello-macos/           # example macOS SwiftUI app (XcodeGen + Sparkle CD)
@@ -83,6 +84,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `sundial/` | yes | Sundial clock; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
+| `go-embed-python/` | no | Go example (cgo + libpython); no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
 | `sshapp/` | no | GKE Autopilot Wish SSH apps (Go + Terraform); no `index.html` |
@@ -690,6 +692,7 @@ bundle exec fastlane test
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
+| `go-embed-python/` | Runs CPython inside a Go process with cgo: `Py_BytesMain` (how gcloud's `gocloud` launcher runs gcloud) and a long-lived interpreter called from goroutines, with callbacks into Go. Builds with `#cgo pkg-config: python3-embed`, so it needs `python3-dev` (preinstalled on GitHub's Ubuntu runners) | `go test -race ./...` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
 | `sshapp/` | Wish SSH apps on GKE Autopilot (shared mux LB; `ssh user@ssh.domain <app>`; includes `hello` + `chess`); Terraform + `ko_build` | `go test -race ./...`; KinD e2e (`SSHAPP_KIND_E2E=1`) when the module changes |
