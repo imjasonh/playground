@@ -61,6 +61,9 @@ struct LiveTranslatePatch {
     /// Sample positions relative to the patch center, in pixels at zoom 1.
     let offsets: [(x: Int, y: Int)]
     let values: [Float]
+    /// How much of the patch's contrast sits between neighboring samples.
+    /// Blur lowers it.
+    let sharpness: Float
 
     /// Samples `frame` over a box of `size` around `center`, padded to take in
     /// the background above and below the line. Nil when the patch leaves the
@@ -91,8 +94,17 @@ struct LiveTranslatePatch {
         let norm = centered.reduce(0) { $0 + $1 * $1 }.squareRoot()
         // Less than about three gray levels of spread leaves nothing to lock onto.
         guard norm > 3 * Float(samples.count).squareRoot() else { return nil }
+        let values = centered.map { $0 / norm }
+        var sharpness: Float = 0
+        for row in 0..<rows {
+            for column in 1..<columns {
+                let step = values[row * columns + column] - values[row * columns + column - 1]
+                sharpness += step * step
+            }
+        }
         self.offsets = offsets
-        values = centered.map { $0 / norm }
+        self.values = values
+        self.sharpness = sharpness
     }
 
     /// The patch laid out for one frame size and zoom.
@@ -178,7 +190,9 @@ struct LiveTranslatePatch {
 ///
 /// OCR takes several frames, so an anchored frame is already old when its
 /// results arrive. The follower keeps the motion of each frame since, and
-/// starts each new patch's search where that motion puts it.
+/// starts each new patch's search where that motion puts it. When shake blurred
+/// the frame OCR read, its patches would match a few pixels off, so the
+/// follower keeps following the sharper patches it has.
 struct LiveTranslateFollower {
     /// Search reach per frame, in full-size pixels.
     static let searchRadius = 24
@@ -190,6 +204,10 @@ struct LiveTranslateFollower {
     static let minimumCoarseScore: Float = 0.35
     /// Frames of motion kept for OCR results that arrive late.
     static let logLength = 120
+    /// A new patch this much less sharp than the one it would replace is blurred.
+    static let blurRatio: Float = 0.75
+    /// Blurred OCR frames skipped in a row before re-anchoring anyway.
+    static let maximumSkippedRebases = 3
 
     private struct Anchor {
         let fine: LiveTranslatePatch?
@@ -224,6 +242,7 @@ struct LiveTranslateFollower {
     private var log: [Step] = []
     private var held: [Int: LiveTranslateGrayFrame] = [:]
     private var latest: Frame?
+    private var skippedRebases = 0
 
     /// Vision-normalized overlay boxes (origin bottom-left) in the latest frame, by track id.
     var positions: [String: CGRect] {
@@ -246,6 +265,7 @@ struct LiveTranslateFollower {
         motion = .identity
         log = []
         held = [:]
+        skippedRebases = 0
     }
 
     /// Keeps frame `number` until its OCR result comes back to `rebase`.
@@ -283,6 +303,12 @@ struct LiveTranslateFollower {
             return
         }
         held = held.filter { $0.key > number }
+        if isBlurrierThanAnchors(source, boxes: boxes), skippedRebases < Self.maximumSkippedRebases {
+            skippedRebases += 1
+            anchors = anchors.filter { boxes[$0.key] != nil }
+            return
+        }
+        skippedRebases = 0
 
         // Re-express the log from the new anchored frame.
         var predicted = LiveTranslateMotion.identity
@@ -335,6 +361,28 @@ struct LiveTranslateFollower {
             log.removeLast()
         }
         record(latest.number, measured: measured || !found.isEmpty)
+    }
+
+    /// Whether most lines already followed look blurrier in `source` than in
+    /// the patches the follower has.
+    private func isBlurrierThanAnchors(_ source: LiveTranslateGrayFrame, boxes: [String: CGRect]) -> Bool {
+        var compared = 0
+        var blurrier = 0
+        for (id, box) in boxes {
+            guard let current = anchors[id]?.fine else { continue }
+            let width = CGFloat(source.width)
+            let height = CGFloat(source.height)
+            guard let candidate = LiveTranslatePatch(
+                frame: source,
+                center: (Int((box.midX * width).rounded()), Int(((1 - box.midY) * height).rounded())),
+                size: CGSize(width: box.width * width, height: box.height * height)
+            ) else { continue }
+            compared += 1
+            if candidate.sharpness < current.sharpness * Self.blurRatio {
+                blurrier += 1
+            }
+        }
+        return compared > 0 && blurrier * 2 > compared
     }
 
     /// Fits the motion to the patches found, drops matches that disagree with
