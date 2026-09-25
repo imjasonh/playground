@@ -1,7 +1,7 @@
 import Foundation
 
 /// Tracks how full the on-device Foundation Model context window is, and caps
-/// text so Device Agent does not hit the hard limit mid-turn.
+/// text so a session does not hit the hard limit mid-turn.
 ///
 /// Before the framework reports exact context and usage values, the budget uses
 /// a conservative 4096-token window and three characters per estimated token.
@@ -11,14 +11,10 @@ struct AgentContextBudget: Equatable {
     static let charsPerToken = 3
     /// Leave room for the model's final answer.
     static let responseReserveTokens = 512
-    /// Rough cost of browser tool schemas registered with the session.
+    /// Rough cost of tool schemas registered with the session.
     static let defaultToolsReserveTokens = 1200
     /// Compact into a fresh session at or above this fill fraction.
     static let compactThreshold = 0.72
-    /// Refuse further large tool payloads at or above this fill fraction.
-    static let hardStopFraction = 0.90
-    /// Default max characters of page text scraped for extraction / dump.
-    static let defaultSnapshotTextChars = 1800
     /// Max characters returned to the model for a single tool result.
     static let defaultModelToolResultChars = 2400
 
@@ -63,10 +59,6 @@ struct AgentContextBudget: Equatable {
         fractionUsed >= Self.compactThreshold
     }
 
-    var isNearHardStop: Bool {
-        fractionUsed >= Self.hardStopFraction
-    }
-
     mutating func resetBaseline(instructions: String, toolsReserveTokens: Int = Self.defaultToolsReserveTokens) {
         self.instructionsTokens = Self.estimateTokens(instructions)
         self.toolsReserveTokens = toolsReserveTokens
@@ -98,12 +90,6 @@ struct AgentContextBudget: Equatable {
         max(0, tokens * charsPerToken)
     }
 
-    /// Caps scrape text length for this turn from remaining budget.
-    func snapshotTextCharBudget(default defaultChars: Int = Self.defaultSnapshotTextChars) -> Int {
-        let fromRemaining = Self.maxChars(forTokens: max(80, remainingTokens / 3))
-        return max(400, min(defaultChars, fromRemaining))
-    }
-
     /// Caps the model-facing tool result string.
     func modelToolResultCharBudget(default defaultChars: Int = Self.defaultModelToolResultChars) -> Int {
         let fromRemaining = Self.maxChars(forTokens: max(40, remainingTokens / 2))
@@ -123,71 +109,9 @@ struct AgentContextBudget: Equatable {
         let end = text.index(text.startIndex, offsetBy: maxChars - 1)
         return String(text[..<end]) + "…"
     }
-
-    /// Compact tool payload for the LanguageModelSession (omit bulky page text).
-    static func modelFacingSnapshot(
-        title: String,
-        url: String,
-        elements: [String],
-        headings: [String],
-        extractedFindings: [String],
-        maxChars: Int
-    ) -> String {
-        var lines: [String] = [
-            "title: \(title)",
-            "url: \(url)",
-        ]
-        if !extractedFindings.isEmpty {
-            lines.append("extractedFindings:")
-            lines.append(contentsOf: extractedFindings.map { "• \($0)" })
-        }
-        let elementCap = min(40, elements.count)
-        if elementCap > 0 {
-            lines.append("elements (\(elements.count), showing \(elementCap)):")
-            lines.append(contentsOf: elements.prefix(elementCap))
-        }
-        if !headings.isEmpty {
-            lines.append("headings:")
-            lines.append(contentsOf: headings.prefix(12).map { "- \($0)" })
-        }
-        lines.append("Page text omitted from model context; use extractedFindings and element refs.")
-        return truncateToChars(lines.joined(separator: "\n"), maxChars: maxChars)
-    }
-
-    /// Short carry-over for a compacted session so follow-ups keep page context.
-    /// Omits findings when `findingsURL` does not match the current page `url`.
-    static func compactionCarryOver(
-        url: String?,
-        title: String?,
-        findings: [String],
-        findingsURL: String? = nil,
-        recentUserPrompts: [String]
-    ) -> String {
-        var parts: [String] = ["Compacted prior context (keep using the open browser tab):"]
-        if let title, !title.isEmpty {
-            parts.append("Page title: \(title)")
-        }
-        if let url, !url.isEmpty {
-            parts.append("Page URL: \(url)")
-        }
-        let findingsMatchCurrentPage: Bool = {
-            guard !findings.isEmpty else { return false }
-            guard let findingsURL, !findingsURL.isEmpty else { return true }
-            return findingsURL == url
-        }()
-        if findingsMatchCurrentPage {
-            parts.append("Latest page findings:")
-            parts.append(contentsOf: findings.prefix(8).map { "• \($0)" })
-        }
-        if !recentUserPrompts.isEmpty {
-            parts.append("Recent user asks:")
-            parts.append(contentsOf: recentUserPrompts.suffix(3).map { "- \($0)" })
-        }
-        return truncateToChars(parts.joined(separator: "\n"), maxChars: 1200)
-    }
 }
 
-/// Published snapshot of context fill for the Device Agent UI.
+/// Published snapshot of context fill for a Foundation Models chat UI.
 struct AgentContextUsage: Equatable {
     var usedTokens: Int
     var windowTokens: Int

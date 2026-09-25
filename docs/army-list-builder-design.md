@@ -21,7 +21,7 @@ Apple Intelligence on device.
 | Rules data source | **Bundled construction catalog** (versioned in-app; no remote fetch). Generated from [BSData `wh40k-11e-mfm`](https://github.com/BSData/wh40k-11e-mfm) plus keywords from [BSData `wh40k-11e`](https://github.com/BSData/wh40k-11e). Refresh with `python3 ios/scripts/refresh-army-list-catalog.py` or the weekly `army-list-catalog.yml` workflow. |
 | Edition | **11th Edition** army construction (Detachment Points, multi-detachment, Leader/Support at list build, enhancement/upgrade limits, Force Disposition). |
 | Catalog coverage | **All factions** in the BSData points scrape (ids namespaced `{faction}--{slug}`, stable across refreshes when display names match; `idMigrations` remaps saved lists). Incursion (1000 pts) + Strike Force (2000 pts). |
-| LLM | Apple **Foundation Models** (same weak-link pattern as Device Agent / Ride Monitor). Tools edit the list; the validator accepts or rejects every change. |
+| LLM | Apple **Foundation Models** (same pattern as Ride Monitor). Tools edit the list; the validator accepts or rejects every change. |
 | Export | Versioned JSON (canonical) + plain-text roster + `ShareLink` / share sheet. |
 
 ---
@@ -64,8 +64,7 @@ or Watch companion is required for v1.
    codes and human-readable messages.
 4. **Authoring UI** that shows live points, DP spend, and validation state while
    editing.
-5. **Persistence** of lists on device (Codable store, like Ride Monitor / Snore
-   Log).
+5. **Persistence** of lists on device (Codable store, like Ride Monitor).
 6. **Export / share** of a simple, versioned format.
 7. **Unit tests** that encode the rules, not just the happy path.
 
@@ -347,7 +346,7 @@ account, no network upload.
 
 ## 8. LLM layer (v2, after validation is solid)
 
-Reuse the Device Agent / Ride Monitor approach:
+Reuse the Ride Monitor approach:
 
 - Import `FoundationModels` directly; the app requires iOS 27.
 - Gate on `SystemLanguageModel.default.availability`
@@ -434,7 +433,7 @@ on Simulator without looking at JSON.
 
 ### Phase 5 — Foundation Models chat
 
-- Chat UI gated like Device Agent.
+- Chat UI gated on Apple Intelligence availability.
 - Tools from §8.
 - Tests for tool executors with a mock list (no model required in CI).
 - Manual TestFlight check on an Apple Intelligence device.

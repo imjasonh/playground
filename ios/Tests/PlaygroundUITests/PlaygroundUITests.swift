@@ -113,18 +113,9 @@ final class PlaygroundUITests: XCTestCase {
         // Assert near-top rows before scrolling down — swipeUp-only helpers
         // cannot bring virtualized early rows back into view.
         XCTAssertTrue(app.staticTexts["Ride Monitor"].exists)
-        XCTAssertTrue(
-            scrollLauncherUntilExists(app.staticTexts["Device Agent"], in: app),
-            "Device Agent should appear in the launcher"
-        )
-        XCTAssertTrue(
-            scrollLauncherUntilExists(app.staticTexts["Army List"], in: app),
-            "Army List should appear near Device Agent in the launcher"
-        )
+        XCTAssertTrue(app.staticTexts["Army List"].exists)
         XCTAssertTrue(app.staticTexts["T9 Keyboard"].exists)
         XCTAssertTrue(app.staticTexts["Follow the Hum"].exists)
-        XCTAssertTrue(app.staticTexts["Snore Log"].exists)
-        XCTAssertTrue(app.staticTexts["Z-Camera"].exists)
         XCTAssertTrue(
             scrollLauncherUntilExists(app.staticTexts["Local Lens"], in: app),
             "Local Lens should appear after scrolling the launcher"
@@ -142,10 +133,6 @@ final class PlaygroundUITests: XCTestCase {
             "Wigglecam should appear after scrolling the launcher"
         )
         XCTAssertTrue(
-            scrollLauncherUntilExists(app.staticTexts["NFC Tags"], in: app),
-            "NFC Tags should appear after scrolling the launcher"
-        )
-        XCTAssertTrue(
             scrollLauncherUntilExists(app.staticTexts["ESP32 BLE"], in: app),
             "ESP32 BLE should appear after scrolling the launcher"
         )
@@ -161,51 +148,6 @@ final class PlaygroundUITests: XCTestCase {
         openExperiment("ride-monitor", title: "Ride Monitor", in: app)
 
         XCTAssertTrue(app.buttons["startRideButton"].waitForExistence(timeout: 8))
-    }
-
-    func testDeviceAgentExperimentOpens() {
-        let app = launchApp()
-
-        openExperiment("device-agent", title: "Device Agent", in: app)
-
-        XCTAssertTrue(app.navigationBars["Device Agent"].waitForExistence(timeout: 8))
-
-        // The Simulator may report Foundation Models as available or ineligible.
-        // Match either path in one wait.
-        let unavailable = app.descendants(matching: .any)["deviceAgentUnavailable"]
-        let unavailableTitle = app.descendants(matching: .any)["deviceAgentUnavailableTitle"]
-        let composer = app.descendants(matching: .any)["deviceAgentComposer"]
-        let prompt = app.descendants(matching: .any)["deviceAgentPromptField"]
-        let send = app.buttons["deviceAgentSendButton"]
-        let voice = app.buttons["deviceAgentVoiceModeButton"]
-        let modelStatus = app.descendants(matching: .any)["deviceAgentModelStatus"]
-        let root = app.descendants(matching: .any)["deviceAgentRoot"]
-
-        let marker = NSPredicate { _, _ in
-            unavailable.exists
-                || unavailableTitle.exists
-                || composer.exists
-                || prompt.exists
-                || send.exists
-                || modelStatus.exists
-                || root.exists
-        }
-        let ready = XCTNSPredicateExpectation(predicate: marker, object: app)
-        let waited = XCTWaiter.wait(for: [ready], timeout: 12)
-        XCTAssertEqual(waited, .completed, "Expected unavailable pane or Device Agent chat UI")
-
-        if unavailable.exists || unavailableTitle.exists {
-            XCTAssertTrue(
-                app.descendants(matching: .any)["deviceAgentUnavailableDetail"].waitForExistence(timeout: 3)
-                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Apple Intelligence")).firstMatch.exists
-                    || app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] %@", "Foundation")).firstMatch.exists
-            )
-        } else {
-            XCTAssertTrue(
-                send.waitForExistence(timeout: 8) || voice.waitForExistence(timeout: 2) || prompt.exists || composer.exists,
-                "Expected composer controls when the model gate is available"
-            )
-        }
     }
 
     func testT9KeyboardExperimentOpens() {
@@ -238,38 +180,6 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.otherElements["humStatusMessage"].waitForExistence(timeout: 8)
             || app.staticTexts["humStatusMessage"].waitForExistence(timeout: 3)
             || app.staticTexts["Put on AirPods, then start a hunt."].waitForExistence(timeout: 3))
-    }
-
-    func testSnoreLogExperimentOpens() {
-        let app = launchApp()
-
-        openExperiment("snore-log", title: "Snore Log", in: app)
-
-        XCTAssertTrue(app.navigationBars["Snore Log"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["startSnoreSessionButton"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["pastSnoreSessionsButton"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.sliders["snoreSensitivitySlider"].waitForExistence(timeout: 8)
-            || app.otherElements["snoreSensitivitySlider"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["snoreStatusMessage"].waitForExistence(timeout: 8)
-            || app.otherElements["snoreStatusMessage"].waitForExistence(timeout: 3)
-            || app.staticTexts["Ready"].waitForExistence(timeout: 3))
-    }
-
-    func testZCameraExperimentOpens() {
-        let app = launchApp()
-
-        openExperiment("z-camera", title: "Z-Camera", in: app)
-
-        XCTAssertTrue(app.navigationBars["Z-Camera"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.sliders["zCameraNearSlider"].waitForExistence(timeout: 8)
-            || app.otherElements["zCameraNearSlider"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.sliders["zCameraFarSlider"].waitForExistence(timeout: 8)
-            || app.otherElements["zCameraFarSlider"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["zCameraDepthOverlayCheckbox"].waitForExistence(timeout: 8)
-            || app.otherElements["zCameraDepthOverlayCheckbox"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["zCameraStatusMessage"].waitForExistence(timeout: 8)
-            || app.otherElements["zCameraStatusMessage"].waitForExistence(timeout: 3)
-            || app.staticTexts["zCameraBandSummary"].waitForExistence(timeout: 3))
     }
 
     func testVoxelWorldExperimentOpens() {
@@ -345,23 +255,6 @@ final class PlaygroundUITests: XCTestCase {
             || app.otherElements["liveTranslatePlaceholder"].waitForExistence(timeout: 3))
     }
 
-    func testNFCTagsExperimentOpens() {
-        let app = launchApp()
-
-        openExperiment("nfc-tags", title: "NFC Tags", in: app)
-
-        XCTAssertTrue(app.navigationBars["NFC Tags"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["nfcScanButton"].waitForExistence(timeout: 8)
-            || app.otherElements["nfcScanButton"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["nfcStatusMessage"].waitForExistence(timeout: 8)
-            || app.otherElements["nfcStatusMessage"].waitForExistence(timeout: 3)
-            || app.staticTexts["Hold an NFC tag near the top of the iPhone."].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["nfcAvailabilityBanner"].waitForExistence(timeout: 8)
-            || app.otherElements["nfcAvailabilityBanner"].waitForExistence(timeout: 3)
-            || app.staticTexts["NFC reader ready"].waitForExistence(timeout: 3)
-            || app.staticTexts["NFC needs a physical iPhone. The Simulator cannot scan tags."].waitForExistence(timeout: 3))
-    }
-
     func testESP32BLEExperimentOpens() {
         let app = launchApp()
 
@@ -385,25 +278,6 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["esp32BleBlinkValue"].waitForExistence(timeout: 8)
             || app.otherElements["esp32BleBlinkValue"].waitForExistence(timeout: 3)
             || app.staticTexts["every 1s"].waitForExistence(timeout: 3))
-    }
-
-    func testFaceSwapExperimentOpens() {
-        let app = launchApp()
-
-        openExperiment("face-swap", title: "Face Swap", in: app)
-
-        XCTAssertTrue(app.navigationBars["Face Swap"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["faceSwapChoosePhoto"].waitForExistence(timeout: 8)
-            || app.otherElements["faceSwapChoosePhoto"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.textFields["faceSwapPrompt"].waitForExistence(timeout: 8)
-            || app.textViews["faceSwapPrompt"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["faceSwapEditButton"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.staticTexts["faceSwapEmptyState"].waitForExistence(timeout: 8)
-            || app.otherElements["faceSwapEmptyState"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["faceSwapStatus"].waitForExistence(timeout: 8)
-            || app.otherElements["faceSwapStatus"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["faceSwapModelBanner"].waitForExistence(timeout: 8)
-            || app.otherElements["faceSwapModelBanner"].waitForExistence(timeout: 3))
     }
 
     func testAppAttestExperimentOpens() {
@@ -624,36 +498,6 @@ final class PlaygroundUITests: XCTestCase {
             XCTWaiter.wait(for: [shareExpectation], timeout: 8),
             .completed,
             "Share sheet was blank — expected roster text or Share chrome"
-        )
-    }
-
-    func testDeviceAgentExportSheetIsNeverBlank() {
-        let app = launchApp()
-
-        openExperiment("device-agent", title: "Device Agent", in: app)
-        XCTAssertTrue(app.navigationBars["Device Agent"].waitForExistence(timeout: 8))
-
-        let export = app.buttons["deviceAgentExportButton"]
-        XCTAssertTrue(
-            export.waitForExistence(timeout: 10),
-            "Export control should be available (chat status bar or unavailable pane)"
-        )
-        export.tap()
-
-        let shareLink = app.descendants(matching: .any)["deviceAgentExportShareLink"]
-        let exportSheet = app.descendants(matching: .any)["deviceAgentExportSheet"]
-        let failedAlert = app.alerts["Export failed"]
-        let exportReady = NSPredicate { _, _ in
-            shareLink.exists
-                || exportSheet.exists
-                || app.navigationBars["Export conversation"].exists
-                || failedAlert.exists
-        }
-        let expectation = XCTNSPredicateExpectation(predicate: exportReady, object: app)
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [expectation], timeout: 10),
-            .completed,
-            "Export presented a blank sheet — expected Share ZIP content or an explicit failure alert"
         )
     }
 

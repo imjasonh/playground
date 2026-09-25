@@ -49,9 +49,9 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
   optional the body `if let`s — that race showed up blank on TestFlight.
 - **Compiler warnings:** `project.yml` sets
   `SWIFT_TREAT_WARNINGS_AS_ERRORS` and `GCC_TREAT_WARNINGS_AS_ERRORS`. Fix
-  the warning when you can. If an Apple type is not `Sendable` (Core NFC
-  session objects), add an explicit `@unchecked Sendable` conformance next
-  to the hop and say why. Do not set `SWIFT_SUPPRESS_WARNINGS` on a target.
+  the warning when you can. If an Apple type is not `Sendable`, add an
+  explicit `@unchecked Sendable` conformance next to the hop and say why.
+  Do not set `SWIFT_SUPPRESS_WARNINGS` on a target.
 
 ## Will my change need re-bootstrap?
 
@@ -64,14 +64,13 @@ After adding or changing any of these targets, re-run **iOS signing bootstrap** 
 | On-device frameworks used from the host app (e.g. Foundation Models) | **No** |
 | macOS CLI / `type: tool` target under `ios/` (e.g. ArmyListStress) | **No** |
 | **First time** adding/changing an **app extension** target (keyboard, widget, Watch, …) | **Yes** — new Bundle ID + match profile |
-| New App ID **capability / entitlement** on an existing id (Push, HealthKit, NFC, App Attest, Sign in with Apple, …) | **Yes** — update App ID + refresh profile |
+| New App ID **capability / entitlement** on an existing id (Push, HealthKit, App Attest, Sign in with Apple, …) | **Yes** — update App ID + refresh profile |
 | Second top-level iOS app | **Forbidden** |
 
 `signing_bootstrap` creates missing Bundle IDs via the App Store Connect API
 (then `match`). It also enables HealthKit on the host and Ride Monitor Watch
-App IDs when missing (needed for the Watch frontmost workout session), NFC
-Tag Reading on the host when missing (needed for the NFC Tags experiment),
-and App Attest and Sign in with Apple on the host when missing (needed for the
+App IDs when missing (needed for the Watch frontmost workout session), and
+App Attest and Sign in with Apple on the host when missing (needed for the
 App Attest experiment).
 After the keyboard or any new extension is bootstrapped once, day-to-day
 experiment work does not touch signing.

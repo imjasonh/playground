@@ -32,14 +32,6 @@ final class ExperimentCatalogTests: XCTestCase {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "follow-the-hum" })
     }
 
-    func testIncludesSnoreLog() {
-        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "snore-log" })
-    }
-
-    func testIncludesZCamera() {
-        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "z-camera" })
-    }
-
     func testIncludesVoxelWorld() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "voxel-world" })
     }
@@ -56,18 +48,6 @@ final class ExperimentCatalogTests: XCTestCase {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "live-translate" })
     }
 
-    func testIncludesDoomFace() {
-        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "doom-face" })
-    }
-
-    func testIncludesFaceSwap() {
-        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "face-swap" })
-    }
-
-    func testIncludesNFCTags() {
-        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "nfc-tags" })
-    }
-
     func testIncludesESP32BLE() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "esp32-ble" })
     }
@@ -80,18 +60,7 @@ final class ExperimentCatalogTests: XCTestCase {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "laya" })
     }
 
-    func testIncludesDeviceAgent() {
-        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "device-agent" })
-    }
-
     func testIncludesArmyList() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "army-list" })
-    }
-
-    func testDeviceAgentIsListedRightUnderRideMonitor() throws {
-        let ids = ExperimentCatalog.all.map(\.id)
-        let rideIndex = try XCTUnwrap(ids.firstIndex(of: "ride-monitor"))
-        let agentIndex = try XCTUnwrap(ids.firstIndex(of: "device-agent"))
-        XCTAssertEqual(agentIndex, rideIndex + 1)
     }
 }
