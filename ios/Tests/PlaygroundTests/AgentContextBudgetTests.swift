@@ -1,6 +1,22 @@
 import XCTest
 @testable import Playground
 
+final class AgentModelGateTests: XCTestCase {
+    func testActionsForInstallStates() {
+        XCTAssertEqual(AgentModelGate.needsAppleIntelligence.primaryAction, .openAppleIntelligenceSettings)
+        XCTAssertEqual(AgentModelGate.modelNotReady.primaryAction, .checkAgain)
+        XCTAssertNil(AgentModelGate.deviceNotEligible.primaryAction)
+        XCTAssertEqual(
+            AgentModelGateAction.openAppleIntelligenceSettings.title,
+            "Open Apple Intelligence Settings"
+        )
+        XCTAssertEqual(AgentModelGateAction.checkAgain.title, "Check again")
+        XCTAssertFalse(AgentModelGate.available.detail.isEmpty)
+        XCTAssertTrue(AgentModelGate.available.isAvailable)
+        XCTAssertFalse(AgentModelGate.needsAppleIntelligence.isAvailable)
+    }
+}
+
 final class AgentContextBudgetTests: XCTestCase {
     func testEstimatesAndTruncates() {
         XCTAssertEqual(AgentContextBudget.estimateTokens(""), 0)
