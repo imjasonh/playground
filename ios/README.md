@@ -342,17 +342,49 @@ on a TrueDepth front camera — not wired here yet.
 ### Live Translate
 
 Point the camera at printed or on-screen text. On-device Vision reads the
-lines (`VNRecognizeTextRequest`). When the same lines hold for a short beat,
-a fresh `LanguageModelSession` translates them into the language you picked.
-The translation is painted over each source box using a sampled backdrop.
-The joined translation is copied to the pasteboard when it changes. To copy
-again, tap the copy control.
+lines (`VNRecognizeTextRequest`) and detects their language on each frame, so
+Japanese, Chinese, and Korean text is recognized too, not only English. A
+tracker follows each line from one OCR pass to the next. It estimates the
+camera's pan and zoom from lines that read the same in both passes, then pairs
+each reading with the line that has similar text near its moved box. A line
+keeps its identity through a misread, a missed pass, a pan, or a zoom.
+
+Each line's overlay follows the reading's position, but its size changes
+slowly. Motion blur or glare can swell OCR's box for a pass or two, and a
+partial reading can shrink it, so a size change counts only once it lasts
+three passes. The zoom estimate resizes the overlay right away.
+
+After two passes read a line, a fresh `LanguageModelSession` translates it
+into the language you picked. The reply streams, so each line appears as soon
+as the model finishes it. The app stores each translation by its source text
+while the experiment is open. Any later frame that reads a stored line shows
+that translation without another model call, even after the camera looks away
+and back. Readings that differ only in case, accents, spacing, or punctuation
+share a translation. So do readings a letter or two apart whose digits match.
+Each translation is painted over its source box using a sampled backdrop.
+When every line in view is translated, the joined text is copied to the
+pasteboard. It copies again only when a new line shows up. To copy on demand,
+tap the copy control.
 
 Each model call starts a new session (no tools, eight lines max) so the live
 loop does not fill the 4096-token window. A context-window overflow retries
-once with fewer lines. Needs camera permission (extends the existing
+once with fewer lines. A line the model skips waits before its next try, and
+the wait doubles each time. Needs camera permission (extends the existing
 `NSCameraUsageDescription` — no new Bundle ID or signing bootstrap) and Apple
 Intelligence for translation. Simulator opens the UI but has no camera.
+
+`LiveTranslateClipTests` plays
+`Tests/PlaygroundTests/Fixtures/LiveTranslate/moving-sign.mp4` through Vision
+and the tracking pipeline, with a fake model in place of Foundation Models. The
+clip is five seconds of a Spanish sign that pans, shakes, catches a glare, and
+zooms, with fine print and a room plate that OCR reads unreliably. Each line on
+the sign has to get a translation within the first three seconds and keep it on
+at least 9 of every 10 later frames that read it. The test also compares each
+overlay with where the line really is, from `moving-sign.json` next to the
+clip: an overlay has to cover the line, and its height can't jump more than
+12% between passes. To change the clip, edit and run
+`ios/scripts/make-live-translate-clip.py`, which needs Pillow, NumPy, and
+ffmpeg. It writes the clip and the JSON.
 
 ### Doom Face
 

@@ -68,9 +68,21 @@ struct LiveTranslateBackdrop: Equatable {
     var usesDarkText: Bool {
         LiveTranslateColor.usesDarkText(luma: luma)
     }
+
+    /// Moves `weight` of the way toward `sample`, so a line's fill doesn't flicker between passes.
+    func blended(toward sample: LiveTranslateBackdrop, weight: Double) -> LiveTranslateBackdrop {
+        let keep = 1 - weight
+        return LiveTranslateBackdrop(
+            red: red * keep + sample.red * weight,
+            green: green * keep + sample.green * weight,
+            blue: blue * keep + sample.blue * weight,
+            luma: luma * keep + sample.luma * weight
+        )
+    }
 }
 
-/// Overlay drawn on top of one OCR box.
+/// Overlay drawn on top of one tracked line. `id` is the track id, so it stays
+/// the same across frames, and `boundingBox` is the track's steadied display box.
 struct LiveTranslateOverlay: Equatable, Identifiable {
     let id: String
     let sourceText: String
@@ -80,18 +92,22 @@ struct LiveTranslateOverlay: Equatable, Identifiable {
     let isTranslated: Bool
 }
 
-/// One model translation keyed to a source line.
-struct LiveTranslateItem: Equatable {
+/// Last translation shown on a tracked line. It stays up while a changed
+/// reading of that line waits for its own translation.
+struct LiveTranslatePin: Equatable {
     let source: String
     let translation: String
+    let language: LiveTranslateLanguage
 }
 
-/// Pure helpers for OCR ranking, fingerprints, pairing, and clipboard text.
+/// Pure helpers for OCR ranking, overlays, translation batches, and clipboard text.
 enum LiveTranslateResultBuilder {
     static let minimumConfidence = 0.35
     static let minimumBoxArea = 0.0015
     static let maximumObservations = 8
-    static let holdInterval: TimeInterval = 0.4
+    static let maximumLineCharacters = 180
+    /// Echo similarity that moves a model item to a different source line than its position.
+    static let realignSimilarity = 0.8
 
     /// Filters, sorts into reading order (top-to-bottom, then left-to-right), and caps count.
     static func observations(
@@ -107,15 +123,16 @@ enum LiveTranslateResultBuilder {
                 && observation.confidence >= minimumConfidence
                 && area >= minimumBoxArea
         }
-        .sorted { lhs, rhs in
-            let ly = lhs.boundingBox.maxY
-            let ry = rhs.boundingBox.maxY
-            if abs(ly - ry) > 0.02 {
-                return ly > ry
-            }
-            return lhs.boundingBox.minX < rhs.boundingBox.minX
-        }
+        .sorted { readsBefore($0.boundingBox, $1.boundingBox) }
         return Array(kept.prefix(max(0, maxCount)))
+    }
+
+    /// Reading order for Vision boxes: top line first, then left to right within a line.
+    static func readsBefore(_ lhs: CGRect, _ rhs: CGRect) -> Bool {
+        if abs(lhs.maxY - rhs.maxY) > 0.02 {
+            return lhs.maxY > rhs.maxY
+        }
+        return lhs.minX < rhs.minX
     }
 
     static func normalize(_ text: String) -> String {
@@ -124,57 +141,145 @@ enum LiveTranslateResultBuilder {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Stable key for a set of OCR lines. Order is ignored so a reshuffle does not retrigger.
-    static func fingerprint(for observations: [LiveTranslateObservation]) -> String {
-        observations
-            .map { normalize($0.text) }
-            .filter { !$0.isEmpty }
-            .sorted()
-            .joined(separator: "\n")
+    static func clip(_ text: String, maxCharacters: Int = maximumLineCharacters) -> String {
+        guard text.count > maxCharacters else { return text }
+        return String(text.prefix(maxCharacters)).trimmingCharacters(in: .whitespaces)
     }
 
-    /// Hold the same fingerprint for `holdInterval` before spending a model call.
-    static func shouldTranslate(
-        current: String,
-        pending: String?,
-        pendingSince: Date?,
-        now: Date,
-        holdInterval: TimeInterval = holdInterval
-    ) -> Bool {
-        guard !current.isEmpty, current == pending, let pendingSince else {
-            return false
-        }
-        return now.timeIntervalSince(pendingSince) >= holdInterval
-    }
-
-    /// Pair live boxes with the latest model items. Exact source match first, then leftover order.
+    /// Overlays for tracked lines.
+    ///
+    /// A line shows its stored translation when the memory has one. Otherwise it
+    /// keeps the translation last shown on it (its pin) while a changed reading
+    /// waits for a new one. Untranslated lines appear only once settled, so a
+    /// one-pass misread never flashes a box. A line missed this pass hides
+    /// under a line read this pass that covers it. `pins` is updated in place
+    /// and pruned to the lines still tracked.
     static func overlays(
-        observations: [LiveTranslateObservation],
-        items: [LiveTranslateItem],
+        tracks: [LiveTranslateTrack],
+        memory: LiveTranslateMemory,
+        language: LiveTranslateLanguage,
+        pins: inout [String: LiveTranslatePin],
         backdrops: [String: LiveTranslateBackdrop] = [:]
     ) -> [LiveTranslateOverlay] {
-        var remaining = items.filter { !normalize($0.translation).isEmpty }
-        return observations.map { observation in
-            let key = normalize(observation.text)
-            let translation: String?
-            if let index = remaining.firstIndex(where: { normalize($0.source) == key }) {
-                translation = remaining.remove(at: index).translation
-            } else if !remaining.isEmpty {
-                translation = remaining.removeFirst().translation
-            } else {
-                translation = nil
+        var kept: [String: LiveTranslatePin] = [:]
+        var shown: [(track: LiveTranslateTrack, translation: String?)] = []
+        for track in tracks {
+            var translation: String?
+            if let stored = memory.translation(for: track.text, language: language) {
+                translation = stored
+                kept[track.id] = LiveTranslatePin(source: track.text, translation: stored, language: language)
+            } else if let pin = pins[track.id],
+                      pin.language == language,
+                      LiveTranslateText.canKeepTranslation(of: pin.source, for: track.text)
+            {
+                translation = pin.translation
+                kept[track.id] = pin
             }
-            let display = normalize(translation ?? "")
-            let isTranslated = !display.isEmpty
+            guard translation != nil || track.isSettled else { continue }
+            shown.append((track, translation))
+        }
+        pins = kept
+
+        let fresh = shown.filter { $0.track.misses == 0 }.map(\.track.displayBox)
+        return shown.compactMap { track, translation in
+            if track.misses > 0, fresh.contains(where: { LiveTranslateTracker.covers(track.displayBox, $0) }) {
+                return nil
+            }
             return LiveTranslateOverlay(
-                id: observation.id,
-                sourceText: observation.text,
-                displayText: isTranslated ? display : observation.text,
-                boundingBox: observation.boundingBox,
-                backdrop: backdrops[observation.id] ?? .neutral,
-                isTranslated: isTranslated
+                id: track.id,
+                sourceText: track.text,
+                displayText: translation ?? track.text,
+                boundingBox: track.displayBox,
+                backdrop: backdrops[track.id] ?? .neutral,
+                isTranslated: translation != nil
             )
         }
+    }
+
+    /// Source text for the next model call: lines read this pass that settled
+    /// and still lack a stored translation, in reading order, one per match key,
+    /// skipping lines that failed recently.
+    ///
+    /// A line that failed before goes alone, so one line the model refuses
+    /// can't keep failing the batch for every other line in view.
+    static func translationBatch(
+        tracks: [LiveTranslateTrack],
+        memory: LiveTranslateMemory,
+        language: LiveTranslateLanguage,
+        now: Date,
+        maxCount: Int = maximumObservations
+    ) -> [String] {
+        var keys: Set<String> = []
+        var batch: [String] = []
+        for track in tracks where track.isSettled && track.misses == 0 {
+            guard batch.count < maxCount else { break }
+            guard !keys.contains(track.key),
+                  memory.translation(for: track.text, language: language) == nil,
+                  !memory.isBlocked(source: track.text, language: language, at: now)
+            else { continue }
+            if memory.hasFailed(source: track.text, language: language) {
+                if batch.isEmpty {
+                    return [track.text]
+                }
+                continue
+            }
+            keys.insert(track.key)
+            batch.append(track.text)
+        }
+        return batch
+    }
+
+    /// Translations the model has finished, keyed by index into `expected`.
+    ///
+    /// While a reply streams, its last item can still be growing, so an item
+    /// counts as finished only once another item follows it, or when `isFinal`.
+    /// An item pairs with the source at its position unless its echoed source
+    /// clearly names a different line, which happens when the model skips or
+    /// reorders lines.
+    static func finishedTranslations(
+        items: [(source: String?, translation: String?)],
+        expected: [String],
+        isFinal: Bool
+    ) -> [Int: String] {
+        let finished = isFinal ? items.count : max(0, items.count - 1)
+        var result: [Int: String] = [:]
+        for (position, item) in items.prefix(finished).enumerated() {
+            let translation = clip(normalize(item.translation ?? ""))
+            guard !translation.isEmpty,
+                  let index = alignedIndex(
+                    reported: item.source,
+                    position: position,
+                    expected: expected,
+                    taken: Set(result.keys)
+                  )
+            else { continue }
+            result[index] = translation
+        }
+        return result
+    }
+
+    static func alignedIndex(
+        reported: String?,
+        position: Int,
+        expected: [String],
+        taken: Set<Int>
+    ) -> Int? {
+        let reportedKey = LiveTranslateText.matchKey(reported ?? "")
+        func echoSimilarity(_ index: Int) -> Double {
+            guard !reportedKey.isEmpty else { return 0 }
+            return LiveTranslateText.similarity(reportedKey, LiveTranslateText.matchKey(expected[index]))
+        }
+        let positional = expected.indices.contains(position) && !taken.contains(position) ? position : nil
+        var best = positional
+        var bestSimilarity = positional.map(echoSimilarity) ?? 0
+        for index in expected.indices where index != positional && !taken.contains(index) {
+            let similarity = echoSimilarity(index)
+            if similarity >= realignSimilarity, similarity > bestSimilarity {
+                best = index
+                bestSimilarity = similarity
+            }
+        }
+        return best
     }
 
     static func clipboardPayload(from overlays: [LiveTranslateOverlay]) -> String {
@@ -185,10 +290,23 @@ enum LiveTranslateResultBuilder {
             .joined(separator: "\n")
     }
 
+    /// Copies again only when the payload has a line the last copy didn't.
+    ///
+    /// Lines leave and reenter the frame as the camera moves. A line coming
+    /// back must not rewrite the pasteboard or fire another haptic.
     static func shouldCopy(newPayload: String, lastCopied: String?) -> Bool {
-        let trimmed = newPayload.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
-        return trimmed != lastCopied?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lines = payloadLines(newPayload)
+        guard !lines.isEmpty else { return false }
+        return !lines.isSubset(of: payloadLines(lastCopied ?? ""))
+    }
+
+    private static func payloadLines(_ payload: String) -> Set<String> {
+        Set(
+            payload
+                .split(separator: "\n")
+                .map { normalize(String($0)) }
+                .filter { !$0.isEmpty }
+        )
     }
 
     static func fittedFontSize(

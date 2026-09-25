@@ -4,10 +4,12 @@ import FoundationModels
 /// Asks the on-device Foundation Model to translate a short list of OCR lines.
 ///
 /// Each call starts a new `LanguageModelSession` so a live camera loop does not
-/// accumulate transcript. A context-window overflow retries once with fewer lines.
+/// accumulate transcript. The reply streams, and each line is reported as soon
+/// as the model finishes it. A context-window overflow retries once with fewer
+/// lines.
 enum LiveTranslateTranslator {
     static let maxItems = LiveTranslateResultBuilder.maximumObservations
-    static let maxSourceCharacters = 180
+    static let maxSourceCharacters = LiveTranslateResultBuilder.maximumLineCharacters
 
     enum Failure: Error, Equatable, LocalizedError {
         case modelUnavailable
@@ -35,12 +37,12 @@ enum LiveTranslateTranslator {
         """
     }
 
-    static func preparedSources(_ observations: [LiveTranslateObservation]) -> [String] {
-        observations
-            .map { clip(LiveTranslateResultBuilder.normalize($0.text)) }
-            .filter { !$0.isEmpty }
+    /// Prompt lines for `sources`: normalized, clipped, and capped. Index `i`
+    /// here is index `i` in `sources`.
+    static func promptLines(_ sources: [String]) -> [String] {
+        sources
             .prefix(maxItems)
-            .map { $0 }
+            .map { LiveTranslateResultBuilder.clip(LiveTranslateResultBuilder.normalize($0)) }
     }
 
     static func retrySources(_ sources: [String]) -> [String] {
@@ -58,26 +60,37 @@ enum LiveTranslateTranslator {
         return lines.joined(separator: "\n")
     }
 
+    /// Starts loading the model so the first batch doesn't wait for it.
+    static func prewarm(language: LiveTranslateLanguage) {
+        guard SystemLanguageModel.default.isAvailable else { return }
+        LanguageModelSession(instructions: instructions(language: language)).prewarm()
+    }
+
+    /// Translates `sources` and returns translations keyed by index into `sources`.
+    ///
+    /// `onProgress` receives each line's translation as soon as the model
+    /// finishes it, before the rest of the batch. Lines the model skipped are
+    /// missing from the result.
     static func translate(
-        observations: [LiveTranslateObservation],
-        language: LiveTranslateLanguage
-    ) async throws -> [LiveTranslateItem] {
-        let model = SystemLanguageModel.default
-        guard model.isAvailable else {
+        sources: [String],
+        language: LiveTranslateLanguage,
+        onProgress: @escaping @MainActor ([Int: String]) -> Void
+    ) async throws -> [Int: String] {
+        guard SystemLanguageModel.default.isAvailable else {
             throw Failure.modelUnavailable
         }
-        let sources = preparedSources(observations)
-        guard !sources.isEmpty else {
+        let lines = promptLines(sources)
+        guard lines.contains(where: { !$0.isEmpty }) else {
             throw Failure.emptySources
         }
         do {
-            return try await run(sources: sources, language: language)
+            return try await run(lines: lines, language: language, onProgress: onProgress)
         } catch {
-            guard OnDeviceContextManager.isExceededContextWindow(error), sources.count > 1 else {
+            guard OnDeviceContextManager.isExceededContextWindow(error), lines.count > 1 else {
                 throw mapped(error)
             }
             do {
-                return try await run(sources: retrySources(sources), language: language)
+                return try await run(lines: retrySources(lines), language: language, onProgress: onProgress)
             } catch {
                 throw mapped(error)
             }
@@ -85,46 +98,36 @@ enum LiveTranslateTranslator {
     }
 
     private static func run(
-        sources: [String],
-        language: LiveTranslateLanguage
-    ) async throws -> [LiveTranslateItem] {
+        lines: [String],
+        language: LiveTranslateLanguage,
+        onProgress: @escaping @MainActor ([Int: String]) -> Void
+    ) async throws -> [Int: String] {
         let session = LanguageModelSession(instructions: instructions(language: language))
-        session.prewarm()
-        let response = try await session.respond(
-            to: prompt(sources: sources, language: language),
+        let stream = session.streamResponse(
+            to: prompt(sources: lines, language: language),
             generating: Batch.self
         )
-        return sanitize(
-            pairs: response.content.items.map { ($0.source, $0.translation) },
-            expected: sources
-        )
-    }
-
-    static func sanitize(
-        pairs: [(source: String, translation: String)],
-        expected: [String]
-    ) -> [LiveTranslateItem] {
-        let capped = pairs.prefix(maxItems)
-        return zip(expected, capped).compactMap { source, pair in
-            let translation = LiveTranslateResultBuilder.normalize(pair.translation)
-            guard !translation.isEmpty else { return nil }
-            let reported = LiveTranslateResultBuilder.normalize(pair.source)
-            return LiveTranslateItem(
-                source: reported.isEmpty ? source : reported,
-                translation: clip(translation)
-            )
+        var latest: [(source: String?, translation: String?)] = []
+        var reported: [Int: String] = [:]
+        for try await snapshot in stream {
+            latest = (snapshot.content.items ?? []).map { item in
+                (source: item.source, translation: item.translation)
+            }
+            let fresh = LiveTranslateResultBuilder
+                .finishedTranslations(items: latest, expected: lines, isFinal: false)
+                .filter { reported[$0.key] == nil }
+            guard !fresh.isEmpty else { continue }
+            reported.merge(fresh) { current, _ in current }
+            await onProgress(fresh)
         }
-    }
-
-    private static func clip(_ raw: String) -> String {
-        if raw.count <= maxSourceCharacters {
-            return raw
-        }
-        let end = raw.index(raw.startIndex, offsetBy: maxSourceCharacters)
-        return String(raw[..<end]).trimmingCharacters(in: .whitespaces)
+        withExtendedLifetime(session) {}
+        return LiveTranslateResultBuilder.finishedTranslations(items: latest, expected: lines, isFinal: true)
     }
 
     private static func mapped(_ error: Error) -> Error {
+        if error is CancellationError {
+            return error
+        }
         if let failure = error as? Failure {
             return failure
         }

@@ -66,92 +66,6 @@ final class LiveTranslateTests: XCTestCase {
         XCTAssertEqual(result.last?.id, "n2")
     }
 
-    func testFingerprintIgnoresOrderAndWhitespace() {
-        let a = [
-            LiveTranslateObservation(text: "Hello  world", confidence: 0.9, boundingBox: CGRect(x: 0, y: 0.5, width: 0.4, height: 0.1)),
-            LiveTranslateObservation(text: "Cafe", confidence: 0.9, boundingBox: CGRect(x: 0, y: 0.2, width: 0.4, height: 0.1)),
-        ]
-        let b = [
-            LiveTranslateObservation(text: "Cafe", confidence: 0.8, boundingBox: CGRect(x: 0.1, y: 0.1, width: 0.3, height: 0.1)),
-            LiveTranslateObservation(text: " Hello world ", confidence: 0.7, boundingBox: CGRect(x: 0.2, y: 0.6, width: 0.3, height: 0.1)),
-        ]
-        XCTAssertEqual(
-            LiveTranslateResultBuilder.fingerprint(for: a),
-            LiveTranslateResultBuilder.fingerprint(for: b)
-        )
-    }
-
-    func testStabilityHoldRequiresSameFingerprint() {
-        let now = Date()
-        XCTAssertFalse(
-            LiveTranslateResultBuilder.shouldTranslate(
-                current: "hello",
-                pending: nil,
-                pendingSince: now,
-                now: now
-            )
-        )
-        XCTAssertFalse(
-            LiveTranslateResultBuilder.shouldTranslate(
-                current: "hello",
-                pending: "hello",
-                pendingSince: now,
-                now: now.addingTimeInterval(0.1)
-            )
-        )
-        XCTAssertTrue(
-            LiveTranslateResultBuilder.shouldTranslate(
-                current: "hello",
-                pending: "hello",
-                pendingSince: now,
-                now: now.addingTimeInterval(0.5)
-            )
-        )
-        XCTAssertFalse(
-            LiveTranslateResultBuilder.shouldTranslate(
-                current: "hello",
-                pending: "other",
-                pendingSince: now,
-                now: now.addingTimeInterval(1)
-            )
-        )
-    }
-
-    func testOverlaysMatchExactSourceThenFallBackToOrder() {
-        let observations = [
-            LiveTranslateObservation(id: "a", text: "Bonjour", confidence: 0.9, boundingBox: CGRect(x: 0, y: 0.7, width: 0.4, height: 0.1)),
-            LiveTranslateObservation(id: "b", text: "Monde", confidence: 0.9, boundingBox: CGRect(x: 0, y: 0.4, width: 0.4, height: 0.1)),
-        ]
-        let items = [
-            LiveTranslateItem(source: "Monde", translation: "World"),
-            LiveTranslateItem(source: "Bonjour", translation: "Hello"),
-        ]
-        let overlays = LiveTranslateResultBuilder.overlays(observations: observations, items: items)
-        XCTAssertEqual(overlays.map(\.displayText), ["Hello", "World"])
-        XCTAssertTrue(overlays.allSatisfy(\.isTranslated))
-
-        let ordered = LiveTranslateResultBuilder.overlays(
-            observations: observations,
-            items: [
-                LiveTranslateItem(source: "??", translation: "Hi"),
-                LiveTranslateItem(source: "??", translation: "Earth"),
-            ]
-        )
-        XCTAssertEqual(ordered.map(\.displayText), ["Hi", "Earth"])
-    }
-
-    func testOverlaysKeepSourceWhenUntranslated() {
-        let observation = LiveTranslateObservation(
-            id: "a",
-            text: "Hola",
-            confidence: 0.9,
-            boundingBox: CGRect(x: 0, y: 0.5, width: 0.4, height: 0.1)
-        )
-        let overlays = LiveTranslateResultBuilder.overlays(observations: [observation], items: [])
-        XCTAssertEqual(overlays.first?.displayText, "Hola")
-        XCTAssertFalse(overlays.first?.isTranslated ?? true)
-    }
-
     func testClipboardPayloadPrefersTranslations() {
         let overlays = [
             LiveTranslateOverlay(
@@ -176,6 +90,15 @@ final class LiveTranslateTests: XCTestCase {
         XCTAssertFalse(LiveTranslateResultBuilder.shouldCopy(newPayload: "Hello\nMundo", lastCopied: "Hello\nMundo"))
         XCTAssertFalse(LiveTranslateResultBuilder.shouldCopy(newPayload: " Hello\nMundo\n", lastCopied: "Hello\nMundo"))
         XCTAssertFalse(LiveTranslateResultBuilder.shouldCopy(newPayload: "   ", lastCopied: nil))
+        XCTAssertFalse(
+            LiveTranslateResultBuilder.shouldCopy(newPayload: "Mundo\nHello", lastCopied: "Hello\nMundo"),
+            "Reordered lines are not new"
+        )
+        XCTAssertFalse(
+            LiveTranslateResultBuilder.shouldCopy(newPayload: "Hello", lastCopied: "Hello\nMundo"),
+            "A line leaving the frame is not new"
+        )
+        XCTAssertTrue(LiveTranslateResultBuilder.shouldCopy(newPayload: "Hello\nWorld", lastCopied: "Hello\nMundo"))
     }
 
     func testFittedFontSizeStaysInRange() {
@@ -231,31 +154,14 @@ final class LiveTranslateTests: XCTestCase {
         XCTAssertEqual(LiveTranslateTranslator.retrySources(["a", "b", "c", "d"]), ["a", "b"])
     }
 
-    func testPreparedSourcesClipAndCap() {
+    func testPromptLinesClipCapAndKeepSourceIndexes() {
         let long = String(repeating: "a", count: 400)
-        let observations = (0..<12).map { index in
-            LiveTranslateObservation(
-                text: index == 0 ? long : "line \(index)",
-                confidence: 0.9,
-                boundingBox: CGRect(x: 0, y: Double(index) / 20.0, width: 0.5, height: 0.04)
-            )
-        }
-        let sources = LiveTranslateTranslator.preparedSources(observations)
-        XCTAssertEqual(sources.count, LiveTranslateTranslator.maxItems)
-        XCTAssertEqual(sources.first?.count, LiveTranslateTranslator.maxSourceCharacters)
-    }
-
-    func testSanitizePairsExpectedSources() {
-        let mapped = LiveTranslateTranslator.sanitize(
-            pairs: [
-                (source: "Hola", translation: " Hello "),
-                (source: "", translation: "World"),
-                (source: "x", translation: "   "),
-            ],
-            expected: ["Hola", "Mundo"]
-        )
-        XCTAssertEqual(mapped.map(\.source), ["Hola", "Mundo"])
-        XCTAssertEqual(mapped.map(\.translation), ["Hello", "World"])
+        let sources = [long] + (1..<12).map { "line  \($0)" }
+        let lines = LiveTranslateTranslator.promptLines(sources)
+        XCTAssertEqual(lines.count, LiveTranslateTranslator.maxItems)
+        XCTAssertEqual(lines.first?.count, LiveTranslateTranslator.maxSourceCharacters)
+        XCTAssertEqual(lines[1], "line 1")
+        XCTAssertEqual(lines.last, "line \(LiveTranslateTranslator.maxItems - 1)")
     }
 
     func testRecognizerReadsDrawnText() throws {
@@ -266,6 +172,19 @@ final class LiveTranslateTests: XCTestCase {
             joined.contains("HELLO") || observations.isEmpty,
             "Expected OCR to see HELLO or return empty on a sparse renderer; got \(joined)"
         )
+    }
+
+    func testRecognizerDetectsJapaneseText() throws {
+        let latin = try XCTUnwrap(Self.makeTextImage(text: "HELLO", size: CGSize(width: 320, height: 120)))
+        try XCTSkipIf(
+            try LiveTranslateRecognizer.recognize(cgImage: latin).isEmpty,
+            "Vision found no text in a plain Latin word on this simulator"
+        )
+
+        let image = try XCTUnwrap(Self.makeTextImage(text: "非常口", size: CGSize(width: 320, height: 120)))
+        let observations = try LiveTranslateRecognizer.recognize(cgImage: image)
+        let joined = observations.map(\.text).joined(separator: " ")
+        XCTAssertTrue(joined.contains("非常口"), "Expected 非常口 (emergency exit); got \(joined)")
     }
 
     func testRecognizerAcceptsEmptyFrame() throws {
