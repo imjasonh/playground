@@ -476,7 +476,9 @@ final class VoxelWorldSession: NSObject, ObservableObject {
 }
 
 /// Clears the camera feed ARKit installs as the scene background each frame.
-private final class VoxelCameraCover: NSObject, SCNSceneRendererDelegate {
+/// `ARSCNView.delegate` is typed as `ARSCNViewDelegate`. Session updates stay
+/// on `VoxelWorldSession`.
+private final class VoxelCameraCover: NSObject, ARSCNViewDelegate {
     func renderer(_: SCNSceneRenderer, willRenderScene scene: SCNScene, atTime _: TimeInterval) {
         scene.background.contents = UIColor.black
     }
