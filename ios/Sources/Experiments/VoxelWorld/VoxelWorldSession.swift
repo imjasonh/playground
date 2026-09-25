@@ -11,6 +11,8 @@ import simd
 /// quantized into a `VoxelGrid`, and colored from the camera image at that
 /// pixel. Chunks whose voxels changed are re-meshed and swapped into the
 /// SceneKit scene, so the voxel world accumulates and persists as you move.
+/// Pixels with no depth, or depth past the scanner maximum, are drawn as
+/// chunky palette blocks the size of a voxel at that distance.
 final class VoxelWorldSession: NSObject, ObservableObject {
     enum RunState: Equatable {
         case idle
@@ -57,6 +59,14 @@ final class VoxelWorldSession: NSObject, ObservableObject {
     private var hasRunBefore = false
     /// Keeps a save confirmation on screen while integration keeps publishing.
     private var suppressStatusUntil = Date.distantPast
+    private let farFieldQueue = DispatchQueue(label: "voxel-world.far-field", qos: .userInitiated)
+    private let farFieldCompositor = FarFieldCompositor()
+    /// Main-thread only.
+    private var pendingFarField: FarFieldTexture?
+    /// Main-thread only. The far shell, parented to the AR camera.
+    private var farFieldNode: SCNNode?
+    /// Main-thread only. Drops camera frames while one composite is in flight.
+    private var farFieldQueued = false
 
     override init() {
         let view = ARSCNView(frame: .zero)
@@ -140,6 +150,7 @@ final class VoxelWorldSession: NSObject, ObservableObject {
             statusMessage = "Camera isn't running."
             return
         }
+        installPendingFarField()
         let image = arView.snapshot()
         isSavingPhoto = true
         statusMessage = "Saving…"
@@ -260,7 +271,9 @@ final class VoxelWorldSession: NSObject, ObservableObject {
                     .assumingMemoryBound(to: Float32.self)
                 for depthX in stride(from: 0, to: depthWidth, by: Self.depthStride) {
                     let depth = depthRow[depthX]
-                    guard depth.isFinite, depth > 0.05, depth <= Self.maxDepthMeters else { continue }
+                    guard depth.isFinite,
+                          depth > FarFieldPixelizer.minimumDepth,
+                          depth <= Self.maxDepthMeters else { continue }
 
                     if let confidenceBase {
                         let confidence = confidenceBase[depthY * confidenceBytesPerRow + depthX]
@@ -459,10 +472,12 @@ final class VoxelWorldSession: NSObject, ObservableObject {
     }
 }
 
-// MARK: - ARSessionDelegate (main thread)
+// MARK: - Camera frames (main thread)
 
 extension VoxelWorldSession: ARSessionDelegate {
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        installPendingFarField()
+        scheduleFarField(frame)
         guard !isIntegrating else { return }
         guard frame.timestamp - lastIntegrationTime >= Self.integrationInterval else { return }
         lastIntegrationTime = frame.timestamp
@@ -490,6 +505,79 @@ extension VoxelWorldSession: ARSessionDelegate {
                 featurePoints: featurePoints
             )
         }
+    }
+
+    private func scheduleFarField(_ frame: ARFrame) {
+        guard !farFieldQueued else { return }
+        farFieldQueued = true
+        farFieldQueue.async { [weak self] in
+            let texture = self?.farFieldCompositor.texture(frame: frame)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let texture {
+                    self.pendingFarField = texture
+                    self.installPendingFarField()
+                }
+                self.farFieldQueued = false
+            }
+        }
+    }
+
+    /// Places the latest far-shell texture on a camera-parented plane just
+    /// past the scanner maximum. In-range texels are transparent, so the live
+    /// camera and any nearer voxels stay in front.
+    private func installPendingFarField() {
+        guard let texture = pendingFarField else { return }
+        guard let cameraNode = arView.pointOfView else { return }
+
+        let fx = texture.intrinsics[0][0]
+        let fy = texture.intrinsics[1][1]
+        let cx = texture.intrinsics[2][0]
+        let cy = texture.intrinsics[2][1]
+        guard fx > 0, fy > 0 else { return }
+
+        // Sit just behind the farthest voxel so a block at the depth cap
+        // occludes the shell instead of z-fighting it.
+        let shellDepth = Self.maxDepthMeters + Self.voxelEdgeMeters + 0.05
+        let imageWidth = Float(texture.imageWidth)
+        let imageHeight = Float(texture.imageHeight)
+        let planeWidth = imageWidth * shellDepth / fx
+        let planeHeight = imageHeight * shellDepth / fy
+        let centerX = (imageWidth * 0.5 - cx) * shellDepth / fx
+        let centerY = -(imageHeight * 0.5 - cy) * shellDepth / fy
+
+        let node: SCNNode
+        if let farFieldNode {
+            node = farFieldNode
+        } else {
+            let material = SCNMaterial()
+            material.lightingModel = .constant
+            material.isDoubleSided = false
+            material.transparencyMode = .aOne
+            material.writesToDepthBuffer = false
+            material.diffuse.magnificationFilter = .nearest
+            material.diffuse.minificationFilter = .nearest
+            material.diffuse.mipFilter = .none
+            material.diffuse.wrapS = .clamp
+            material.diffuse.wrapT = .clamp
+            let plane = SCNPlane(width: CGFloat(planeWidth), height: CGFloat(planeHeight))
+            plane.materials = [material]
+            let created = SCNNode(geometry: plane)
+            created.renderingOrder = 10
+            farFieldNode = created
+            node = created
+        }
+        if node.parent != cameraNode {
+            node.removeFromParentNode()
+            cameraNode.addChildNode(node)
+        }
+        if let plane = node.geometry as? SCNPlane {
+            plane.width = CGFloat(planeWidth)
+            plane.height = CGFloat(planeHeight)
+            plane.firstMaterial?.diffuse.contents = texture.image
+        }
+        node.position = SCNVector3(centerX, centerY, -shellDepth)
+        pendingFarField = nil
     }
 
     func session(_ session: ARSession, didFailWithError error: Error) {

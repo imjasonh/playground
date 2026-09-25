@@ -505,3 +505,113 @@ final class VoxelColorConversionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(simd_reduce_min(rgb), 0)
     }
 }
+
+final class FarFieldPixelizerTests: XCTestCase {
+    func testBlockEdgeMatchesVoxelAtFarDepth() {
+        // 10 cm at 5 m through a 1000 px focal length covers 20 px.
+        XCTAssertEqual(
+            FarFieldPixelizer.blockEdgePixels(focalLength: 1000, voxelEdge: 0.1, depth: 5),
+            20
+        )
+    }
+
+    func testInRangeDepthIsNotPixelized() {
+        XCTAssertFalse(FarFieldPixelizer.isBeyondRange(depth: 5, maxDepth: 5))
+        XCTAssertFalse(FarFieldPixelizer.isBeyondRange(depth: 1, maxDepth: 5))
+    }
+
+    func testMissingAndFarDepthArePixelized() {
+        XCTAssertTrue(FarFieldPixelizer.isBeyondRange(depth: .nan, maxDepth: 5))
+        XCTAssertTrue(FarFieldPixelizer.isBeyondRange(depth: 0, maxDepth: 5))
+        XCTAssertTrue(FarFieldPixelizer.isBeyondRange(depth: 5.01, maxDepth: 5))
+        XCTAssertTrue(FarFieldPixelizer.isBeyondRange(depth: .infinity, maxDepth: 5))
+    }
+
+    func testInRangePixelsStayPhotographic() {
+        let original = SIMD3<Float>(0.123, 0.456, 0.789)
+        var pixels = [SIMD3<Float>](repeating: original, count: 4)
+        FarFieldPixelizer.apply(
+            pixels: &pixels,
+            width: 2,
+            height: 2,
+            depth: [Float](repeating: 1, count: 4),
+            depthWidth: 2,
+            depthHeight: 2,
+            principalPoint: SIMD2(0, 0),
+            focalLength: SIMD2(repeating: 200),
+            maxDepth: 5,
+            voxelEdge: 0.1
+        )
+        XCTAssertEqual(pixels, [SIMD3<Float>](repeating: original, count: 4))
+    }
+
+    func testFarPixelsInOneBlockShareAPaletteColor() {
+        // Focal 200, 10 cm, 5 m → 4 px blocks. Principal point at the origin
+        // keeps this 4×1 image inside a single square.
+        var pixels = [SIMD3<Float>](repeating: SIMD3(1, 0, 0), count: 4)
+        pixels[2] = SIMD3(0, 1, 0)
+        pixels[3] = SIMD3(0, 1, 0)
+        FarFieldPixelizer.apply(
+            pixels: &pixels,
+            width: 4,
+            height: 1,
+            depth: nil,
+            depthWidth: 0,
+            depthHeight: 0,
+            principalPoint: SIMD2(0, 0),
+            focalLength: SIMD2(repeating: 200),
+            maxDepth: 5,
+            voxelEdge: 0.1
+        )
+        let expected = VoxelPalette.quantize(SIMD3(0.5, 0.5, 0))
+        XCTAssertEqual(pixels, [SIMD3<Float>](repeating: expected, count: 4))
+    }
+
+    func testNeighboringBlocksStayDistinct() {
+        var pixels = [SIMD3<Float>](repeating: SIMD3(1, 0, 0), count: 8)
+        for index in 4..<8 {
+            pixels[index] = SIMD3(0, 0, 1)
+        }
+        FarFieldPixelizer.apply(
+            pixels: &pixels,
+            width: 8,
+            height: 1,
+            depth: nil,
+            depthWidth: 0,
+            depthHeight: 0,
+            principalPoint: SIMD2(0, 0),
+            focalLength: SIMD2(repeating: 200),
+            maxDepth: 5,
+            voxelEdge: 0.1
+        )
+        let red = VoxelPalette.quantize(SIMD3(1, 0, 0))
+        let blue = VoxelPalette.quantize(SIMD3(0, 0, 1))
+        XCTAssertNotEqual(red, blue)
+        XCTAssertEqual(Array(pixels[0..<4]), [SIMD3<Float>](repeating: red, count: 4))
+        XCTAssertEqual(Array(pixels[4..<8]), [SIMD3<Float>](repeating: blue, count: 4))
+    }
+
+    func testDepthMapResolutionMasksOnlyTheFarHalf() {
+        let photo = SIMD3<Float>(0.2, 0.3, 0.4)
+        var pixels = [SIMD3<Float>](repeating: SIMD3(1, 0, 0), count: 4)
+        pixels[0] = photo
+        pixels[1] = photo
+        FarFieldPixelizer.apply(
+            pixels: &pixels,
+            width: 4,
+            height: 1,
+            depth: [1, .nan],
+            depthWidth: 2,
+            depthHeight: 1,
+            principalPoint: SIMD2(0, 0),
+            focalLength: SIMD2(repeating: 200),
+            maxDepth: 5,
+            voxelEdge: 0.1
+        )
+        XCTAssertEqual(pixels[0], photo)
+        XCTAssertEqual(pixels[1], photo)
+        let far = VoxelPalette.quantize(SIMD3(1, 0, 0))
+        XCTAssertEqual(pixels[2], far)
+        XCTAssertEqual(pixels[3], far)
+    }
+}
