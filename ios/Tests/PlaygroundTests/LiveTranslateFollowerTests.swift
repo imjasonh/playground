@@ -74,6 +74,23 @@ final class LiveTranslateFollowerTests: XCTestCase {
         try assertPositions(follower, match: cameras[8], tolerance: 1)
     }
 
+    func testKeepsItsSharpPatchesWhenOCRReadABlurredFrame() throws {
+        let cameras = (0...10).map { Camera(dx: 2 * Double($0), dy: Double($0)) }
+        var follower = start(with: cameras[0])
+        for number in 1...10 {
+            // Shake smears frame 4 while OCR reads it.
+            let frame = Self.render(cameras[number], blur: number == 4 ? 12 : 0)
+            follower.advance(to: frame, number: number)
+            if number == 4 {
+                follower.hold(frame, for: number)
+            }
+        }
+        // OCR's boxes for a smeared frame land a few pixels off.
+        let smeared = Self.boxes(cameras[4]).mapValues { $0.offsetBy(dx: 0, dy: 3 / Double(Self.height)) }
+        follower.rebase(smeared, from: 4)
+        try assertPositions(follower, match: cameras[10], tolerance: 0.5)
+    }
+
     func testForgetsEverythingOnReset() {
         var follower = start(with: Camera())
         follower.reset()
@@ -128,17 +145,22 @@ final class LiveTranslateFollowerTests: XCTestCase {
         return result
     }
 
-    private static func render(_ camera: Camera, hiding hidden: Int? = nil) -> LiveTranslateGrayFrame {
+    /// `blur` smears the frame across that many pixels sideways, like a fast pan.
+    private static func render(_ camera: Camera, hiding hidden: Int? = nil, blur: Double = 0) -> LiveTranslateGrayFrame {
+        let taps = blur > 0 ? 9 : 1
         var pixels = [UInt8](repeating: 0, count: width * height)
         for row in 0..<height {
             for column in 0..<width {
                 var total = 0.0
-                for sub in 0..<4 {
-                    let x = (Double(column) + 0.25 + 0.5 * Double(sub % 2) - camera.dx) / camera.scale
-                    let y = (Double(row) + 0.25 + 0.5 * Double(sub / 2) - camera.dy) / camera.scale
-                    total += brightness(x, y, hiding: hidden)
+                for tap in 0..<taps {
+                    let smear = taps == 1 ? 0 : blur * (Double(tap) / Double(taps - 1) - 0.5)
+                    for sub in 0..<4 {
+                        let x = (Double(column) + 0.25 + 0.5 * Double(sub % 2) - camera.dx - smear) / camera.scale
+                        let y = (Double(row) + 0.25 + 0.5 * Double(sub / 2) - camera.dy) / camera.scale
+                        total += brightness(x, y, hiding: hidden)
+                    }
                 }
-                pixels[row * width + column] = UInt8(total / 4)
+                pixels[row * width + column] = UInt8(total / Double(4 * taps))
             }
         }
         return LiveTranslateGrayFrame(width: width, height: height, pixels: pixels)

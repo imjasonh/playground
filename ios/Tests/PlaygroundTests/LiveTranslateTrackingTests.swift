@@ -139,7 +139,7 @@ final class LiveTranslateTrackingTests: XCTestCase {
                 height: box.height * swell
             )])
             let shown = try XCTUnwrap(tracker.tracks.first?.displayBox)
-            XCTAssertEqual(shown.height / settled.height, 1, accuracy: 0.06, "swell \(swell)")
+            XCTAssertEqual(shown.height / settled.height, 1, accuracy: 0.01, "swell \(swell)")
             XCTAssertEqual(shown.midY, box.midY, accuracy: 0.001)
         }
         tracker.update(with: [steady])
