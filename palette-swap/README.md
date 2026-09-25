@@ -21,7 +21,8 @@ Palettes, from shortest to longest:
 | Embroidery floss | 456 published sRGB approximations of DMC stranded cotton |
 
 A longer palette does more arithmetic per pixel, so the timing difference is
-easier to see. Upload an image to start the benchmark. Choosing another
+easier to see. The Scalar, Portable SIMD, and Wasm archsimd labels link to
+those functions on GitHub. Upload an image to start the benchmark. Choosing another
 palette runs it again. Uploaded images are scaled so the long edge is at most
 320 pixels. After the run, the fastest method is outlined.
 

@@ -112,7 +112,7 @@ function renderTimes(rows) {
       tr.className = "fastest";
     }
     const name = document.createElement("td");
-    name.textContent = row.label;
+    name.appendChild(sourceLink(row.which, row.label));
     tr.appendChild(name);
     const time = document.createElement("td");
     time.className = "num";
@@ -130,6 +130,23 @@ function renderTimes(rows) {
     table.appendChild(tr);
   }
   times.appendChild(table);
+}
+
+function sourceLink(which, text) {
+  const sourceAnchor = document.getElementById("src-" + which);
+  const link = document.createElement("a");
+  link.href = sourceAnchor.href;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.textContent = text;
+  return link;
+}
+
+function linkCaptions() {
+  for (const method of methods) {
+    const caption = results.querySelector("[data-method='" + method.which + "'] figcaption");
+    caption.replaceChildren(sourceLink(method.which, method.label));
+  }
 }
 
 function selectedPalette() {
@@ -311,4 +328,5 @@ fileInput.addEventListener("change", function () {
   }
 });
 
+linkCaptions();
 boot();
