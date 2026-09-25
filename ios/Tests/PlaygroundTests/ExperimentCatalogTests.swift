@@ -63,4 +63,8 @@ final class ExperimentCatalogTests: XCTestCase {
     func testIncludesArmyList() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "army-list" })
     }
+
+    func testIncludesBlather() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "blather" })
+    }
 }

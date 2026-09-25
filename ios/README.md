@@ -56,6 +56,7 @@ ios/
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
 | `live-translate` | Live Translate | In-app; live OCR plus on-device Foundation Models translation painted over the source text; copies the translation |
+| `blather` | Blather | In-app; Apple Intelligence writes spoken audio on a topic, keeps going near the end, and saves the files on this device |
 | `esp32-ble` | ESP32 BLE | In-app Core Bluetooth central for `esp32-ble/` firmware; no extra Bundle ID |
 | `app-attest` | App Attest | Sign in with Apple, attest once, then `generateAssertion` on each whoami; needs App Attest and Sign in with Apple capability bootstrap |
 | `laya` | Laya | Swift port of the `laya-coreml` runtime; downloads the ANE bundle from Hugging Face on demand and answers choice / score / yes-no questions in one Core ML pass |
@@ -307,6 +308,26 @@ clip: an overlay has to cover the line, and its height can't jump more than
 12% between passes. To change the clip, edit and run
 `ios/scripts/make-live-translate-clip.py`, which needs Pillow, NumPy, and
 ffmpeg. It writes the clip and the JSON.
+
+### Blather
+
+Type a topic. Blather asks the on-device Foundation Model for a spoken
+explainer, writes that speech to an audio file, and starts playback. When
+about 25 seconds of audio remain, it writes the next passage and keeps going.
+Pause, then type a direction, to change what it says next. Skip back and
+skip forward move the playhead 10 seconds. The lock screen has the same play,
+pause, and skip controls. Playback continues while the screen is locked
+(`UIBackgroundModes` includes `audio`).
+
+Each episode stays on this device under Application Support, as a JSON
+manifest plus one audio file per passage. **Saved** replays or deletes an
+episode. **Continue** plays a saved episode and writes more when you are near
+the end. **New topic** leaves the audio on disk and returns to the topic
+field.
+
+Needs Apple Intelligence, the same on-device model gate as Live Translate.
+The Simulator opens the screens. Generation and speech need a device that
+supports Apple Intelligence.
 
 ### ESP32 BLE
 

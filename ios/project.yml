@@ -121,9 +121,10 @@ targets:
         ITSAppUsesNonExemptEncryption: false
         # Ride Monitor Live Activity (Lock Screen / Dynamic Island).
         NSSupportsLiveActivities: true
-        # Ride Monitor: motion + background location. UIBackgroundModes is an
-        # Info.plist key only (no entitlement / App ID capability), so it ships
-        # to TestFlight without changing signing.
+        # Ride Monitor uses location. Blather uses audio so speech keeps
+        # playing with the screen locked. UIBackgroundModes is an Info.plist
+        # key only (no entitlement / App ID capability), so it ships to
+        # TestFlight without changing signing.
         NSMotionUsageDescription: Ride Monitor uses motion to detect jolts while you ride. Follow the Hum uses AirPods head tracking so the hum stays fixed in the world as you turn your head. Wigglecam uses the motion sensors to require a level landscape hold before capturing a stereo pair.
         NSLocationWhenInUseUsageDescription: Ride Monitor records where jolts happen. Follow the Hum uses your location and compass to hide a nearby spot and steer you with sound.
         NSLocationAlwaysAndWhenInUseUsageDescription: Records where jolts and crashes happen and keeps the ride recording while the screen is off.
@@ -134,6 +135,7 @@ targets:
         NSBluetoothAlwaysUsageDescription: ESP32 BLE scans for a nearby PlaygroundBLE board so you can send LED commands and read status.
         UIBackgroundModes:
           - location
+          - audio
         # iPad multitasking requires declared orientations or the upload is
         # rejected.
         UISupportedInterfaceOrientations:
