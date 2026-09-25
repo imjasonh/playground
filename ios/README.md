@@ -286,8 +286,9 @@ crisp on the 256×192 depth map. LiDAR samples are kept out to 5 m, which is
 as far as Apple's scanner reports. Pixels with no depth, or depth past that,
 are drawn as chunky palette squares the size of a 10 cm block at 5 m. Closer
 pixels stay the live camera image, with the voxel mesh on top. The camera
-button saves the current frame, camera plus voxels, to Photos. Rendering is chunked SceneKit geometry with hidden
-interior faces culled and per-face shading baked into vertex colors. Needs
+button saves the current frame, camera plus voxels, to Photos. Rendering is
+chunked SceneKit geometry with hidden interior faces culled and per-face
+shading baked into vertex colors. Needs
 camera permission (`NSCameraUsageDescription`) and add-only photo library
 permission (`NSPhotoLibraryAddUsageDescription`). No new Bundle ID,
 entitlement, or signing bootstrap. Works best on LiDAR devices
