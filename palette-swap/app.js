@@ -1,19 +1,21 @@
 "use strict";
 
-const sampleWidth = 240;
-const sampleHeight = 180;
 const maxEdge = 320;
 const budgetMs = 200;
+const methods = [
+  { which: "scalar", label: "Scalar" },
+  { which: "portable", label: "Portable SIMD" },
+  { which: "arch", label: "Wasm archsimd" },
+];
 
 const source = document.getElementById("source");
+const results = document.getElementById("results");
 const status = document.getElementById("status");
 const select = document.getElementById("palette");
 const swatches = document.getElementById("swatches");
 const times = document.getElementById("times");
-const swapButton = document.getElementById("swap");
 const benchButton = document.getElementById("bench");
 const fileInput = document.getElementById("file");
-const sampleButton = document.getElementById("sample");
 
 const canvases = {
   scalar: document.getElementById("scalar"),
@@ -23,9 +25,18 @@ const canvases = {
 
 const palettes = new Map();
 let api = null;
+let imageReady = false;
+let working = false;
 
 function setStatus(text) {
   status.textContent = text;
+}
+
+function setBusy(busy) {
+  working = busy;
+  benchButton.disabled = busy || !imageReady;
+  select.disabled = busy || !api;
+  fileInput.disabled = busy || !api;
 }
 
 function clearResults() {
@@ -35,93 +46,9 @@ function clearResults() {
     canvas.getContext("2d").clearRect(0, 0, canvas.width, canvas.height);
   }
   times.replaceChildren();
-}
-
-function putPixel(data, width, height, x, y, r, g, b) {
-  if (x < 0 || y < 0 || x >= width || y >= height) {
-    return;
+  for (const figure of results.querySelectorAll("figure")) {
+    figure.classList.remove("fastest");
   }
-  const i = (y * width + x) * 4;
-  data[i] = r;
-  data[i + 1] = g;
-  data[i + 2] = b;
-  data[i + 3] = 255;
-}
-
-function fillRect(data, width, height, x0, y0, x1, y1, r, g, b) {
-  const xa = Math.max(0, x0);
-  const ya = Math.max(0, y0);
-  const xb = Math.min(width, x1);
-  const yb = Math.min(height, y1);
-  for (let y = ya; y < yb; y++) {
-    for (let x = xa; x < xb; x++) {
-      putPixel(data, width, height, x, y, r, g, b);
-    }
-  }
-}
-
-function fillCircle(data, width, height, cx, cy, radius, r, g, b) {
-  const r2 = radius * radius;
-  for (let y = cy - radius; y <= cy + radius; y++) {
-    for (let x = cx - radius; x <= cx + radius; x++) {
-      const dx = x - cx;
-      const dy = y - cy;
-      if (dx * dx + dy * dy <= r2) {
-        putPixel(data, width, height, x, y, r, g, b);
-      }
-    }
-  }
-}
-
-function drawSample() {
-  source.width = sampleWidth;
-  source.height = sampleHeight;
-  const ctx = source.getContext("2d");
-  const image = ctx.createImageData(sampleWidth, sampleHeight);
-  const data = image.data;
-  const horizon = 100;
-  for (let y = 0; y < sampleHeight; y++) {
-    let r = 70;
-    let g = 140;
-    let b = 210;
-    if (y < horizon) {
-      const t = y / horizon;
-      r = 90 + t * 140;
-      g = 150 + t * 70;
-      b = 220 + t * 20;
-    } else {
-      const t = (y - horizon) / (sampleHeight - horizon);
-      r = 70 + t * 40;
-      g = 130 - t * 40;
-      b = 60;
-    }
-    for (let x = 0; x < sampleWidth; x++) {
-      putPixel(data, sampleWidth, sampleHeight, x, y, r, g, b);
-    }
-  }
-  fillCircle(data, sampleWidth, sampleHeight, 180, 48, 22, 250, 210, 70);
-  fillRect(data, sampleWidth, sampleHeight, 30, 110, 90, 165, 150, 70, 40);
-  fillRect(data, sampleWidth, sampleHeight, 22, 88, 98, 115, 170, 40, 35);
-  fillRect(data, sampleWidth, sampleHeight, 48, 125, 70, 165, 230, 180, 90);
-  fillCircle(data, sampleWidth, sampleHeight, 140, 130, 16, 40, 110, 50);
-  fillCircle(data, sampleWidth, sampleHeight, 168, 122, 20, 20, 80, 40);
-  const flowers = [
-    [40, 150, 220, 70, 90],
-    [70, 145, 240, 180, 40],
-    [200, 150, 190, 60, 170],
-    [214, 140, 230, 120, 160],
-    [110, 155, 230, 60, 50],
-  ];
-  for (const flower of flowers) {
-    fillCircle(data, sampleWidth, sampleHeight, flower[0], flower[1], 7, flower[2], flower[3], flower[4]);
-  }
-  ctx.putImageData(image, 0, 0);
-  return image;
-}
-
-function currentImage() {
-  const ctx = source.getContext("2d");
-  return ctx.getImageData(0, 0, source.width, source.height);
 }
 
 function bytesEqual(a, b) {
@@ -181,6 +108,9 @@ function renderTimes(rows) {
   const scalar = rows[0];
   for (const row of rows) {
     const tr = document.createElement("tr");
+    if (row.fastest) {
+      tr.className = "fastest";
+    }
     const name = document.createElement("td");
     name.textContent = row.label;
     tr.appendChild(name);
@@ -206,9 +136,27 @@ function selectedPalette() {
   return palettes.get(select.value);
 }
 
-function runAll() {
+function currentImage() {
+  return source.getContext("2d").getImageData(0, 0, source.width, source.height);
+}
+
+function markFastest(rows) {
+  let best = rows[0].nsPerPixel;
+  for (const row of rows) {
+    if (row.nsPerPixel < best) {
+      best = row.nsPerPixel;
+    }
+  }
+  for (const row of rows) {
+    row.fastest = row.nsPerPixel === best;
+    const figure = results.querySelector("[data-method='" + row.which + "']");
+    figure.classList.toggle("fastest", row.fastest);
+  }
+}
+
+function benchmark() {
   const palette = selectedPalette();
-  if (!api || !palette) {
+  if (!api || !palette || !imageReady) {
     return;
   }
   const image = currentImage();
@@ -217,18 +165,13 @@ function runAll() {
     setStatus(loaded.error);
     return;
   }
-  const order = ["scalar", "portable", "arch"];
-  const labels = {
-    scalar: "Scalar",
-    portable: "Portable SIMD",
-    arch: "Wasm archsimd",
-  };
+  clearResults();
   const rows = [];
   let first = null;
   let match = true;
-  for (const which of order) {
+  for (const method of methods) {
     const indices = new Uint8Array(image.data.length / 2);
-    const stat = api.run(palette.id, which, indices);
+    const stat = api.bench(palette.id, method.which, budgetMs, indices);
     if (stat.error) {
       setStatus(stat.error);
       return;
@@ -238,61 +181,20 @@ function runAll() {
     } else if (!bytesEqual(first, indices)) {
       match = false;
     }
-    paintResult(canvases[which], indices, palette.rgb);
+    paintResult(canvases[method.which], indices, palette.rgb);
     rows.push({
-      label: labels[which],
+      which: method.which,
+      label: method.label,
       ms: stat.ms,
       nsPerPixel: stat.nsPerPixel,
     });
   }
+  markFastest(rows);
   renderTimes(rows);
   const matchText = match ? "The index buffers match." : "The index buffers differ.";
   const simdText = api.emulated
     ? "Portable SIMD is emulated in this process."
     : "Portable SIMD is using " + api.lanes + " int32 lanes.";
-  setStatus(matchText + " " + simdText);
-}
-
-function benchmark() {
-  const palette = selectedPalette();
-  if (!api || !palette) {
-    return;
-  }
-  const image = currentImage();
-  const loaded = api.load(image.data);
-  if (loaded.error) {
-    setStatus(loaded.error);
-    return;
-  }
-  const order = ["scalar", "portable", "arch"];
-  const labels = {
-    scalar: "Scalar",
-    portable: "Portable SIMD",
-    arch: "Wasm archsimd",
-  };
-  const rows = [];
-  let match = true;
-  let scalarSum = null;
-  for (const which of order) {
-    const stat = api.bench(palette.id, which, budgetMs);
-    if (stat.error) {
-      setStatus(stat.error);
-      return;
-    }
-    if (scalarSum === null) {
-      scalarSum = stat.sum;
-    } else if (stat.sum !== scalarSum) {
-      match = false;
-    }
-    rows.push({
-      label: labels[which],
-      ms: stat.ms,
-      nsPerPixel: stat.nsPerPixel,
-      iters: stat.iters,
-    });
-  }
-  renderTimes(rows);
-  const matchText = match ? "Checksums match." : "Checksums differ.";
   setStatus(
     "Each method ran for at least " +
       budgetMs +
@@ -303,19 +205,22 @@ function benchmark() {
       " pixels and " +
       palette.count +
       " colors. " +
-      matchText,
+      matchText +
+      " " +
+      simdText,
   );
 }
 
 // The Wasm call blocks the page, so paint the status line first.
-function runSoon(label, work) {
-  setStatus(label);
-  swapButton.disabled = true;
-  benchButton.disabled = true;
+function runSoon() {
+  if (!imageReady || !api || working) {
+    return;
+  }
+  setStatus("Benchmark is running.");
+  setBusy(true);
   setTimeout(function () {
-    work();
-    swapButton.disabled = false;
-    benchButton.disabled = false;
+    benchmark();
+    setBusy(false);
   }, 0);
 }
 
@@ -353,8 +258,10 @@ function paintFile(file) {
     source.width = width;
     source.height = height;
     source.getContext("2d").drawImage(image, 0, 0, width, height);
+    results.hidden = false;
+    imageReady = true;
     clearResults();
-    setStatus("Image is " + width + " by " + height + " pixels.");
+    runSoon();
   };
   image.onerror = function () {
     URL.revokeObjectURL(url);
@@ -364,7 +271,6 @@ function paintFile(file) {
 }
 
 async function boot() {
-  drawSample();
   if (typeof WebAssembly === "undefined") {
     setStatus("This browser has no WebAssembly.");
     return;
@@ -384,9 +290,8 @@ async function boot() {
     return;
   }
   loadPaletteList();
-  swapButton.disabled = false;
-  benchButton.disabled = false;
-  setStatus("Ready. Portable SIMD reports " + api.lanes + " int32 lanes.");
+  setBusy(false);
+  setStatus("Upload an image.");
 }
 
 select.addEventListener("change", function () {
@@ -394,17 +299,10 @@ select.addEventListener("change", function () {
   if (palette) {
     showSwatches(palette.rgb);
   }
-});
-swapButton.addEventListener("click", function () {
-  runSoon("Swap is running.", runAll);
+  runSoon();
 });
 benchButton.addEventListener("click", function () {
-  runSoon("Benchmark is running.", benchmark);
-});
-sampleButton.addEventListener("click", function () {
-  drawSample();
-  clearResults();
-  setStatus("Sample picture is ready.");
+  runSoon();
 });
 fileInput.addEventListener("change", function () {
   const file = fileInput.files && fileInput.files[0];

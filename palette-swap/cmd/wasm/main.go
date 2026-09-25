@@ -139,20 +139,15 @@ func jsRun(_ js.Value, args []js.Value) any {
 	start := time.Now()
 	fn(indexes, planeR, planeG, planeB, p.Colors)
 	elapsed := time.Since(start)
-	packed := make([]byte, len(indexes)*2)
-	for i, v := range indexes {
-		packed[i*2] = byte(v)
-		packed[i*2+1] = byte(uint32(v) >> 8)
-	}
-	if js.CopyBytesToJS(args[2], packed) != len(packed) {
-		return map[string]any{"error": "index buffer is shorter than the image"}
+	if err := writeIndexes(args[2]); err != nil {
+		return map[string]any{"error": err.Error()}
 	}
 	return stat(elapsed, 1, palette.Checksum(indexes))
 }
 
 func jsBench(_ js.Value, args []js.Value) any {
-	if len(args) != 3 {
-		return map[string]any{"error": "bench expects a palette id, a method, and a budget in milliseconds"}
+	if len(args) != 3 && len(args) != 4 {
+		return map[string]any{"error": "bench expects a palette id, a method, a budget in milliseconds, and an optional index buffer"}
 	}
 	if planeR == nil {
 		return map[string]any{"error": "load an image first"}
@@ -176,7 +171,24 @@ func jsBench(_ js.Value, args []js.Value) any {
 		fn(indexes, planeR, planeG, planeB, p.Colors)
 		iters++
 	}
+	if len(args) == 4 {
+		if err := writeIndexes(args[3]); err != nil {
+			return map[string]any{"error": err.Error()}
+		}
+	}
 	return stat(time.Since(start), iters, palette.Checksum(indexes))
+}
+
+func writeIndexes(dst js.Value) error {
+	packed := make([]byte, len(indexes)*2)
+	for i, v := range indexes {
+		packed[i*2] = byte(v)
+		packed[i*2+1] = byte(uint32(v) >> 8)
+	}
+	if js.CopyBytesToJS(dst, packed) != len(packed) {
+		return fmt.Errorf("index buffer is shorter than the image")
+	}
+	return nil
 }
 
 func stat(elapsed time.Duration, iters int, sum uint64) map[string]any {

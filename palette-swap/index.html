@@ -12,34 +12,32 @@
     <p class="intro">Each pixel is replaced by the nearest color in a fixed palette. One Wasm binary runs that mapping as ordinary Go, as the portable simd package, and as Wasm archsimd.</p>
     <div class="controls">
       <label>Image
-        <input id="file" type="file" accept="image/*">
+        <input id="file" type="file" accept="image/*" disabled>
       </label>
-      <button id="sample" type="button">Sample picture</button>
       <label>Palette
-        <select id="palette"></select>
+        <select id="palette" disabled></select>
       </label>
-      <button id="swap" type="button" disabled>Swap</button>
       <button id="bench" type="button" disabled>Benchmark</button>
     </div>
     <div id="swatches" class="swatches" aria-hidden="true"></div>
     <p id="status" aria-live="polite">Loading Wasm.</p>
     <div id="times"></div>
-    <div class="results">
+    <div id="results" class="results" hidden>
       <figure>
         <figcaption>Source</figcaption>
-        <canvas id="source" width="240" height="180"></canvas>
+        <canvas id="source"></canvas>
       </figure>
-      <figure>
+      <figure data-method="scalar">
         <figcaption>Scalar</figcaption>
-        <canvas id="scalar" width="240" height="180"></canvas>
+        <canvas id="scalar"></canvas>
       </figure>
-      <figure>
+      <figure data-method="portable">
         <figcaption>Portable SIMD</figcaption>
-        <canvas id="portable" width="240" height="180"></canvas>
+        <canvas id="portable"></canvas>
       </figure>
-      <figure>
+      <figure data-method="arch">
         <figcaption>Wasm archsimd</figcaption>
-        <canvas id="arch" width="240" height="180"></canvas>
+        <canvas id="arch"></canvas>
       </figure>
     </div>
   </main>

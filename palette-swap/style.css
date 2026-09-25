@@ -92,12 +92,25 @@ button {
   margin-top: 1.5rem;
 }
 
+.results[hidden] {
+  display: none;
+}
+
 canvas {
   display: block;
   width: 100%;
   height: auto;
   background: #fff;
   border: 1px solid #d6d3d1;
+}
+
+figure.fastest canvas {
+  border-color: #1c1917;
+  box-shadow: 0 0 0 3px #1c1917;
+}
+
+tr.fastest td {
+  font-weight: 600;
 }
 
 table {
