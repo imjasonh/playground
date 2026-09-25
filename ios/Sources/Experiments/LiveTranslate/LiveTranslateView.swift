@@ -57,8 +57,11 @@ struct LiveTranslateView: View {
             viewSize: viewSize
         )
         return ZStack {
+            // An overlay waits for its first position, one frame after OCR returns.
             ForEach(session.overlays) { overlay in
-                overlayCard(overlay, transform: transform)
+                if let box = session.overlayPositions[overlay.id] {
+                    overlayCard(overlay, box: box, transform: transform)
+                }
             }
         }
         .allowsHitTesting(false)
@@ -67,11 +70,12 @@ struct LiveTranslateView: View {
 
     private func overlayCard(
         _ overlay: LiveTranslateOverlay,
+        box: CGRect,
         transform: LocalLensCoordinateMapper.ContentTransform
     ) -> some View {
         let rect = transform.viewRect(
             imageRect: LocalLensCoordinateMapper.imageRect(
-                fromVisionNormalized: overlay.boundingBox,
+                fromVisionNormalized: box,
                 imageSize: transform.imageSize
             )
         )

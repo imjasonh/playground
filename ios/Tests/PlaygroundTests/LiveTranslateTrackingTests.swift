@@ -114,6 +114,10 @@ final class LiveTranslateTrackingTests: XCTestCase {
         let expected = truth.apply(to: step.apply(to: point))
         XCTAssertEqual(twice.x, expected.x, accuracy: 0.0001)
         XCTAssertEqual(twice.y, expected.y, accuracy: 0.0001)
+
+        let undone = truth.then(truth.inverted()).apply(to: point)
+        XCTAssertEqual(undone.x, point.x, accuracy: 0.0001)
+        XCTAssertEqual(undone.y, point.y, accuracy: 0.0001)
     }
 
     func testDisplayBoxIgnoresBlurThatSwellsABoxForAPass() throws {
