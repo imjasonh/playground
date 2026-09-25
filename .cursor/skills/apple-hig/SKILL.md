@@ -18,7 +18,7 @@ when you design, edit, or review Apple-platform UI in this repository
 This skill is a working subset for playground apps. When this file does not
 cover a question, open the linked HIG topic and follow Apple's guidance. Prefer
 system controls and patterns over custom chrome unless the experiment *is* the
-custom chrome (for example Doom Face's intentional game aesthetic).
+custom chrome.
 
 ## When to use
 

@@ -20,13 +20,13 @@ requires watchOS 10. Build the app with Xcode 27.
 |--------------------|-----------|---------------------------|
 | In-app experiment (Ride Monitor–style) | Host only | **No** |
 | Info.plist privacy / background modes | Host only | **No** |
-| New App ID capability (HealthKit, NFC, …) | Host, plus extensions when they need it | **Yes** for a profile refresh |
+| New App ID capability (HealthKit, App Attest, …) | Host, plus extensions when they need it | **Yes** for a profile refresh |
 | Custom Keyboard / other **app extension** | Host + **extension id** (Apple requires it) | **Yes, once** for that extension |
 
 Bootstrap is **not** per experiment. It is once for the host app, once more
 when you add a new extension Bundle ID (today: T9 keyboard, Ride Monitor
 widget, Ride Monitor Watch), and again when you add an App ID capability such
-as NFC Tag Reading, App Attest, or Sign in with Apple.
+as App Attest or Sign in with Apple.
 
 ## How it's structured
 
@@ -49,20 +49,14 @@ ios/
 | Id | Title | Notes |
 |----|-------|-------|
 | `ride-monitor` | Ride Monitor | In-app; background motion + GPS; Live Activity + Watch companion |
-| `device-agent` | Device Agent | On-device model drives an in-app browser; App Intents/Shortcuts; voice; requires Apple Intelligence |
 | `army-list` | Army List | Build/validate 11th Edition lists (all factions in the bundled catalog); catalog code lists legal moves and applies picks; Laya answers labeled choices and leftover yes/no; Apple Intelligence writes a theme brief, a list name, and matchup copy |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
-| `snore-log` | Snore Log | In-app; mic buffer + snore clip logging |
-| `z-camera` | Z-Camera | In-app; depth-band live camera (near/far sliders) |
 | `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
 | `live-translate` | Live Translate | In-app; live OCR plus on-device Foundation Models translation painted over the source text; copies the translation |
-| `doom-face` | Doom Face | Front camera + TrueDepth; stamp your face onto doomguy's sheet and export a GIF |
-| `nfc-tags` | NFC Tags | In-app Core NFC tag read/write (NDEF text/URL, blank NTAGs); needs NFC Tag Reading capability bootstrap |
 | `esp32-ble` | ESP32 BLE | In-app Core Bluetooth central for `esp32-ble/` firmware; no extra Bundle ID |
-| `face-swap` | Face Swap | On-device model chooses a targeted edit. The rest of the photo stays as it was. |
 | `app-attest` | App Attest | Sign in with Apple, attest once, then `generateAssertion` on each whoami; needs App Attest and Sign in with Apple capability bootstrap |
 | `laya` | Laya | Swift port of the `laya-coreml` runtime; downloads the ANE bundle from Hugging Face on demand and answers choice / score / yes-no questions in one Core ML pass |
 
@@ -177,60 +171,6 @@ the construction chips stay available.
 
 Unofficial fan experiment. Confirm points with Games Workshop for events.
 
-### Device Agent
-
-On-device assistant that drives an in-app browser. The model can open http(s)
-pages, snapshot interactive elements, click/type by ref or visible text, and
-extract question-relevant bullets from the page. Mic/speech permissions are
-requested only for optional voice input.
-
-- Chat + tool transcript, plus a live WKWebView pane when a page is open
-- Browser tools: `browserOpen`, `browserRead`, `browserSnapshot`,
-  `browserFind`, `browserClick`, `browserClickText`, `browserType`,
-  `browserSelect`, `browserGet`, `browserScroll`, `browserBack` (plus
-  `getCurrentDateTime`). Find, click-by-text, get, and scroll return tiny
-  payloads so digs do not re-dump the page into the model context.
-- After each snapshot, Foundation Models guided generation extracts
-  question-relevant "From the page" bullets into chat. If extraction fails,
-  the tool fails with a visible error (no heuristic substitute). Diagnostics
-  land in the export ZIP.
-- Voice input (mic + speech, just-in-time) to editable text, then the same
-  agent loop
-- Export conversation: share a `.jsonl.zip` of the transcript (including
-  hidden tool args/results), browser replay, and AFM extraction diagnostics
-- Chat shows `Invoking <tool>…` only; raw tool I/O stays in the dump
-- Context budget: reads the model's context size and exact response token usage
-  ([TN3193](https://developer.apple.com/documentation/technotes/tn3193-managing-the-on-device-foundation-model-s-context-window)),
-  shows a Context meter in the status bar, returns slim tool payloads to the
-  model (page text stays in the export / chat findings), and compacts into a
-  fresh session (prefer transcript first+last via `OnDeviceContextManager`,
-  plus page carry-over) before the hard limit. Findings are bound to the page
-  URL, so a navigate + compact does not reuse the previous page's bullets. If
-  the framework still throws a context-window error, the run compacts and
-  retries once.
-- Shortcuts / App Intents / Siri:
-  - **Ask Device Agent** — queue a free-form prompt
-  - **Browse URL with Device Agent** — open an http(s) URL, then run an optional
-    prompt so the model drives the in-app browser
-  - **Summarize URL with Device Agent** — open a URL and summarize the page
-  - **Find on Page with Device Agent** — open a URL and search it for a query
-- Deep link: `playground://device-agent?prompt=…&url=https://…&voice=1`
-  (`url` is optional; when set, Device Agent opens it before running the prompt)
-- With the browser open, the composer collapses to an Ask follow-up control so
-  the keyboard stays out of the way
-
-When Apple Intelligence / Foundation Models is available, the
-on-device model chooses browser tools. If Apple Intelligence is off, the UI
-offers a button that opens Settings (Apple Intelligence & Siri when the deep
-link works). If the model is still downloading, it shows progress plus
-**Check again**. Unsupported hardware and the Simulator get a plain
-unavailable pane. There is no keyword-planner fallback.
-
-If page extraction quality is weak for a domain, a next step is Apple's
-Foundation Models adapter toolkit (LoRA). Adapters ship as small packages and
-must be retrained when Apple updates the base system model. Not wired up in
-this experiment yet.
-
 ### T9 Keyboard
 
 Old Nokia-style **multi-tap**. Same engine powers:
@@ -249,25 +189,6 @@ do not need that.
 
 Outdoor sound-hunt with AirPods head tracking. Needs a real device; see
 experiment UI for details.
-
-### Snore Log
-
-Overnight snore logger. Keeps a short rolling microphone buffer in memory and
-writes a clip only when loudness rises above an adaptive ambient floor. Needs
-microphone permission and the `audio` background mode (Info.plist only — no new
-Bundle ID or signing bootstrap). Best on a real device near the bed.
-
-### Z-Camera
-
-Live depth-band camera. Two sliders set a near/far interval (each from `0` to
-`∞`); pixels outside that slice go black. An optional depth-overlay checkbox
-adds a smooth blue gradient (lighter near, darker far). Capture prefers the
-highest practical depth resolution (up to about 720p) with bilinear depth
-sampling and calibration-aware alignment when the device provides it. Depth is
-measured from the camera, not fixed in the room. Needs camera permission
-(`NSCameraUsageDescription` only — no new Bundle ID or signing bootstrap) and
-a depth-capable device (TrueDepth, dual camera, or LiDAR). Simulator opens the
-UI but cannot stream depth.
 
 ### Voxel World
 
@@ -387,42 +308,6 @@ clip: an overlay has to cover the line, and its height can't jump more than
 `ios/scripts/make-live-translate-clip.py`, which needs Pillow, NumPy, and
 ffmpeg. It writes the clip and the JSON.
 
-### Doom Face
-
-Front TrueDepth camera matches blend shapes to doomguy status-bar faces. Hold a
-look, grin, or open mouth for about half a second and your cropped face lands
-in that cell. Unmatched cells stay grey.
-
-Square camera on top, sprite sheet below, Reset and Export GIF. The GIF uses
-the idle look cycle (left, center, right, center) when those faces exist,
-otherwise every captured cell in sheet order. Extends
-`NSCameraUsageDescription`. No new Bundle ID. Needs a TrueDepth iPhone;
-Simulator cannot track a face.
-
-### NFC Tags
-
-Read and write NDEF text or URL records with Core NFC (`NFCTagReaderSession`),
-including blank NTAG / Type 2 tags (UID + family, empty NDEF instead of an
-error). Write stores a Text or URI record on writable tags.
-
-Polls ISO 14443, ISO 15693, and FeliCa so chip-level discovery matches apps
-like NFC Tools. That needs the NFC Tag Reading App ID capability
-(`com.apple.developer.nfc.readersession.formats` = `TAG`),
-`NFCReaderUsageDescription`, plus Info.plist lists for
-`iso7816.select-identifiers` and `felica.systemcodes`. Without those lists,
-Core NFC fails immediately with "Missing required entitlement". The App ID
-capability change needs `needs-ios-bootstrap`; the Info.plist lists do not.
-Simulator opens the UI but cannot scan; use a physical iPhone. The screen
-shows the CFBundleVersion build number so TestFlight installs are easy to
-confirm.
-
-Today the UI covers NDEF text/URL read/write and blank-tag identity. NTAG /
-Ultralight writes use raw Type 2 page commands and EEPROM read-back, then a
-second NFC session after you remove and re-present the tag. Success means the
-chip bytes matched, not only a same-session Core NFC soft view. Broader NFC
-Tools features (lock bits, more record types) can build on the same Tag Reader
-session.
-
 ### ESP32 BLE
 
 Scan for a nearby board flashed with [`esp32-ble/`](../esp32-ble/), connect,
@@ -432,47 +317,6 @@ retries that same peripheral. **Disconnect** stops the retries. Needs
 `NSBluetoothAlwaysUsageDescription` only; Core Bluetooth central mode is not
 an App ID capability, so no signing bootstrap. The Simulator opens the UI but
 cannot see a real ESP32.
-
-### Face Swap
-
-Face Swap asks the on-device model to choose the edits a request names, then
-calls tools that write only inside those regions. The model does not redraw
-the photo.
-
-The photo is indexed first: face-skin contours, and person regions with a
-clothing color such as blue. A face lists the person it sits on, so a request
-like "the man in the blue shirt" can match that person and that face. The
-model receives those ids and calls tools:
-
-- `removeRegion` erases a person silhouette by extending nearby background
-  inward. A Vision rectangle is not a person outline, so that region is left
-  alone.
-- `copyRegion` adds copies of a person silhouette at new centers. The original
-  stays. Four centers leave five of that person. It does not paste a rectangle.
-- `replaceFaces` copies one face onto other face ids, inside those contours.
-  Eyes and mouth are lined up, then the source face is shifted toward the
-  destination's average color. The old face's shading is not painted over the
-  new one. A request to swap or place a face does not also copy or erase the
-  person.
-
-A tool cannot grow a region or change a pixel outside it. The model only
-chooses which ids to pass. Reconstruction stays in app code, so the on-device
-model is not asked to invent a lighting recipe.
-
-The session uses the model's reported context size: short instructions, three
-tools, capped tool results, and a catalog that keeps whole lines up to the
-tokens left after those schemas. On iOS 27, the prompt includes the selected
-photo as a Foundation Models image attachment alongside the region catalog.
-If the window fills, the next try is a new session with a shorter catalog. A
-second overflow stops and asks for a shorter request.
-
-**Result** shows the edited photo. **Diff** shows the original in gray and
-every changed pixel in red. The photo is not drawn over with region boxes.
-Long-press the image to save it to Photos or share it. Edit needs Apple
-Intelligence.
-
-Choose a photo from the library. The working copy is scaled so the long edge is
-at most 1024 px.
 
 ### App Attest
 

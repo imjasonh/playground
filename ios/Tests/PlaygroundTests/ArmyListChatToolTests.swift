@@ -158,7 +158,7 @@ final class ArmyListChatToolTests: XCTestCase {
             ]
         )
         XCTAssertFalse(ArmyListChatRuntime.isExceededContextWindow(err))
-        XCTAssertFalse(AgentRuntime.isExceededContextWindow(err))
+        XCTAssertFalse(OnDeviceContextManager.isExceededContextWindow(err))
     }
 
     func testMarkdownRendersBoldAndLists() {

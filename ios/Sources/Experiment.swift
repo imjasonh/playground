@@ -47,20 +47,14 @@ struct Experiment: Identifiable {
 enum ExperimentCatalog {
     static let all: [Experiment] = [
         RideMonitorExperiment.experiment,
-        DeviceAgentExperiment.experiment,
         ArmyListExperiment.experiment,
         T9KeyboardExperiment.experiment,
         FollowTheHumExperiment.experiment,
-        SnoreLogExperiment.experiment,
-        ZCameraExperiment.experiment,
         LocalLensExperiment.experiment,
         LiveTranslateExperiment.experiment,
         VoxelWorldExperiment.experiment,
         WigglecamExperiment.experiment,
-        DoomFaceExperiment.experiment,
-        NFCTagsExperiment.experiment,
         ESP32BLEExperiment.experiment,
-        FaceSwapExperiment.experiment,
         AppAttestExperiment.experiment,
         LayaExperiment.experiment,
     ]

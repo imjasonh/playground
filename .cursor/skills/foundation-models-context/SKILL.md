@@ -3,7 +3,7 @@ name: foundation-models-context
 description: >-
   Manage Apple Foundation Models LanguageModelSession context (4096-token
   window). Use when writing or changing on-device FM chat, tools, Generable
-  types, compaction, or AgentContextBudget in ios/ (Army List, Device Agent,
+  types, compaction, or AgentContextBudget in ios/ (Army List, Live Translate,
   or any new FM experiment).
 ---
 
@@ -14,8 +14,8 @@ Apply Apple's guidance from
 and
 [Managing the context window](https://developer.apple.com/documentation/foundationmodels/managing-the-context-window)
 when you add or change on-device Foundation Models code in this repo
-(`ios/Sources/Experiments/ArmyList/Chat/`, `ios/Sources/Experiments/DeviceAgent/`,
-and any future FM experiment).
+(`ios/Sources/Experiments/ArmyList/Chat/`, `ios/Sources/FoundationModels/`,
+`ios/Sources/Experiments/LiveTranslate/`, and any future FM experiment).
 
 The default on-device model has a **4096-token** window per
 `LanguageModelSession`. Everything in the session counts toward that budget:
@@ -75,7 +75,7 @@ the heuristic as exact.
 ### Tools
 
 Apple's doc: about **three to five tools** per request when you can. This repo
-ships denser tool sets for Army List and Device Agent; if you add more, pay for
+ships a dense tool set for Army List; if you add more, pay for
 them by shrinking descriptions and result payloads.
 
 - Short `name` / `description` / `@Guide` phrases.
@@ -106,8 +106,8 @@ treat every generic Foundation Models error as overflow.
 
 Then:
 
-1. Tell the user the context was compacted (Army List / Device Agent already
-   append a system line).
+1. Tell the user the context was compacted (Army List already appends a
+   system line).
 2. Start a **new** `LanguageModelSession` with the same tools.
 3. Carry only what the next turn needs.
 
@@ -128,10 +128,9 @@ func newContextualSession(
 ```
 
 Playground helpers live in `OnDeviceContextManager` (`rehydratedSession`). Army
-List and Device Agent call that on compact when a live session exists, then also
-inject a short app-state carry-over (list snapshot or page findings + recent
-turns) so the next turn keeps domain state Apple's first/last pair does not
-encode.
+List calls that on compact when a live session exists, then also injects a
+short list-snapshot carry-over so the next turn keeps domain state Apple's
+first/last pair does not encode.
 
 ### Sliding-window rolling summary
 
@@ -150,9 +149,8 @@ and ask the user to Clear or shrink the request.
 
 | Piece | Role |
 |-------|------|
-| `AgentContextBudget` | Shared estimate, reserves, truncate helpers |
+| `AgentContextBudget` | Shared estimate, reserves, truncate helpers (`ios/Sources/FoundationModels/`) |
 | `OnDeviceContextManager` | Overflow detect, transcript rehydrate, rolling summary |
-| `AgentRuntime` | Device Agent session, compact, tool result caps |
 | `ArmyListChatRuntime` | List chat session, overflow detect, chip display text |
 | Context ring in chat UI | Shows remaining fraction; yellow near compact threshold |
 
