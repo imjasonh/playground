@@ -60,6 +60,7 @@ final class VoxelWorldSession: NSObject, ObservableObject {
     private var hasRunBefore = false
     /// Keeps a save confirmation on screen while integration keeps publishing.
     private var suppressStatusUntil = Date.distantPast
+    private let cameraCover = VoxelCameraCover()
     private let farFieldQueue = DispatchQueue(label: "voxel-world.far-field", qos: .userInitiated)
     private let farFieldCompositor = FarFieldCompositor()
     /// Main-thread only.
@@ -76,7 +77,7 @@ final class VoxelWorldSession: NSObject, ObservableObject {
         view.accessibilityIdentifier = "voxelWorldARView"
         arView = view
         super.init()
-        view.delegate = self
+        view.delegate = cameraCover
     }
 
     // MARK: - Lifecycle
@@ -474,15 +475,16 @@ final class VoxelWorldSession: NSObject, ObservableObject {
     }
 }
 
+/// Clears the camera feed ARKit installs as the scene background each frame.
+private final class VoxelCameraCover: NSObject, SCNSceneRendererDelegate {
+    func renderer(_: SCNSceneRenderer, willRenderScene scene: SCNScene, atTime _: TimeInterval) {
+        scene.background.contents = UIColor.black
+    }
+}
+
 // MARK: - Camera frames
 
-extension VoxelWorldSession: ARSCNViewDelegate {
-    func renderer(_: SCNSceneRenderer, willRenderScene _: SCNScene, atTime _: TimeInterval) {
-        // ARKit puts the camera feed on the background every frame. The chunk
-        // plane covers the view; black keeps a gap from showing the photo.
-        arView.scene.background.contents = UIColor.black
-    }
-
+extension VoxelWorldSession: ARSessionDelegate {
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         installPendingFarField()
         scheduleFarField(frame)
