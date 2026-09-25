@@ -29,6 +29,9 @@ enum LiveTranslateRecognizer {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
+        // The default recognition language is English only, which garbles
+        // Japanese, Chinese, or Korean and corrects other text toward English.
+        request.automaticallyDetectsLanguage = true
         try handler.perform([request])
         let raw = (request.results ?? []).compactMap { observation -> LiveTranslateObservation? in
             guard let top = observation.topCandidates(1).first else { return nil }

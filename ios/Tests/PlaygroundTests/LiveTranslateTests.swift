@@ -174,6 +174,19 @@ final class LiveTranslateTests: XCTestCase {
         )
     }
 
+    func testRecognizerDetectsJapaneseText() throws {
+        let latin = try XCTUnwrap(Self.makeTextImage(text: "HELLO", size: CGSize(width: 320, height: 120)))
+        try XCTSkipIf(
+            try LiveTranslateRecognizer.recognize(cgImage: latin).isEmpty,
+            "Vision found no text in a plain Latin word on this simulator"
+        )
+
+        let image = try XCTUnwrap(Self.makeTextImage(text: "非常口", size: CGSize(width: 320, height: 120)))
+        let observations = try LiveTranslateRecognizer.recognize(cgImage: image)
+        let joined = observations.map(\.text).joined(separator: " ")
+        XCTAssertTrue(joined.contains("非常口"), "Expected 非常口 (emergency exit); got \(joined)")
+    }
+
     func testRecognizerAcceptsEmptyFrame() throws {
         let image = try XCTUnwrap(Self.makeSolidImage(color: .white, size: CGSize(width: 200, height: 200)))
         let observations = try LiveTranslateRecognizer.recognize(cgImage: image)

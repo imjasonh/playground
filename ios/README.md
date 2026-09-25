@@ -339,11 +339,12 @@ on a TrueDepth front camera — not wired here yet.
 ### Live Translate
 
 Point the camera at printed or on-screen text. On-device Vision reads the
-lines (`VNRecognizeTextRequest`). A tracker follows each line from one OCR
-pass to the next. It estimates the camera shift from lines that read the same
-in both passes, then pairs each reading with the line that has similar text
-near its shifted box. A line keeps its identity through a misread, a missed
-pass, a pan, or a zoom.
+lines (`VNRecognizeTextRequest`) and detects their language on each frame, so
+Japanese, Chinese, and Korean text is recognized too, not only English. A
+tracker follows each line from one OCR pass to the next. It estimates the
+camera shift from lines that read the same in both passes, then pairs each
+reading with the line that has similar text near its shifted box. A line keeps
+its identity through a misread, a missed pass, a pan, or a zoom.
 
 After two passes read a line, a fresh `LanguageModelSession` translates it
 into the language you picked. The reply streams, so each line appears as soon
