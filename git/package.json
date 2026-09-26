@@ -11,7 +11,7 @@
     "start": "npx --yes serve . -p 3000"
   },
   "dependencies": {
-    "@isomorphic-git/lightning-fs": "4.10.2",
+    "@isomorphic-git/lightning-fs": "4.10.3",
     "isomorphic-git": "1.42.2"
   },
   "devDependencies": {
