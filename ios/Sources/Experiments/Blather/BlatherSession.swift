@@ -14,12 +14,15 @@ enum BlatherNarrationError: Error, Equatable {
     case contextExceeded
     case modelUnavailable(String)
     case failed(String)
+    /// The model session was dropped, usually because the app was backgrounded.
+    case interrupted
 }
 
 /// Writes the next spoken passage. Tests substitute a fake.
 @MainActor
 protocol BlatherNarrator: AnyObject {
     func prepare()
+    func discardSession()
     func narrate(prompt: String, freshSession: Bool) async throws -> BlatherNarration
 }
 
@@ -149,6 +152,9 @@ final class BlatherSession: ObservableObject {
     /// the opening buffer is still filling.
     private var hasStartedPlayback = false
     private var generationFailed = false
+    /// Set when a model call dies in the background. Opening the app continues it.
+    private var resumeWhenActive = false
+    private var interruptionAttempts = 0
     private var resumeAfterInterruption = false
     private var chain: Task<Void, Never>?
     /// JPEG bytes for the lock screen. `Data` can cross the artwork callback,
@@ -221,6 +227,16 @@ final class BlatherSession: ObservableObject {
         store.coverURL(episodeID: id)
     }
 
+    /// Model availability, plus continuing a passage that the background
+    /// killed. Lock-screen play uses the same path.
+    func sceneBecameActive() async {
+        refresh()
+        guard resumeWhenActive else { return }
+        resumeWhenActive = false
+        interruptionAttempts = 0
+        await continueAfterInterruption()
+    }
+
     func refresh() {
         modelGate = gateProvider()
         ensureCovers()
@@ -291,6 +307,7 @@ final class BlatherSession: ObservableObject {
         hasStartedPlayback = false
         errorMessage = nil
         generationFailed = false
+        resumeWhenActive = false
         didCompact = false
         syncPlayback()
         await runFill(token: token, after: chain)
@@ -304,6 +321,10 @@ final class BlatherSession: ObservableObject {
     }
 
     func resume() {
+        if resumeWhenActive {
+            Task { await sceneBecameActive() }
+            return
+        }
         guard hasAudio, mode == .live || mode == .replay else { return }
         wantsAutoplay = mode == .live
         let holdingOpening = mode == .live
@@ -356,6 +377,7 @@ final class BlatherSession: ObservableObject {
         hasStartedPlayback = false
         errorMessage = nil
         generationFailed = false
+        resumeWhenActive = false
         if persist(current) {
             for name in cut.removedFileNames {
                 store.removeAudio(episodeID: current.id, fileName: name)
@@ -371,6 +393,7 @@ final class BlatherSession: ObservableObject {
         mode = .live
         wantsAutoplay = true
         generationFailed = false
+        resumeWhenActive = false
         errorMessage = nil
         if hasAudio {
             isPlaying = true
@@ -389,6 +412,7 @@ final class BlatherSession: ObservableObject {
     func retry() async {
         guard mode == .live || mode == .replay else { return }
         generationFailed = false
+        resumeWhenActive = false
         errorMessage = nil
         mode = .live
         wantsAutoplay = true
@@ -410,6 +434,7 @@ final class BlatherSession: ObservableObject {
         playhead = 0
         errorMessage = nil
         generationFailed = false
+        resumeWhenActive = false
         didCompact = false
         isGenerating = false
         fillRunning = false
@@ -440,6 +465,7 @@ final class BlatherSession: ObservableObject {
         playhead = 0
         errorMessage = nil
         generationFailed = false
+        resumeWhenActive = false
         didCompact = false
         planner = BlatherPlanner()
         playback.update(segments: [], playhead: 0, playing: false, rate: speed.rawValue)
@@ -454,6 +480,7 @@ final class BlatherSession: ObservableObject {
         chain?.cancel()
         isPlaying = false
         wantsAutoplay = false
+        resumeWhenActive = false
         isGenerating = false
         fillRunning = false
         playback.stop()
@@ -544,6 +571,13 @@ final class BlatherSession: ObservableObject {
     private func fillAhead(token: Int) async {
         fillRunning = true
         isGenerating = true
+        let background = BackgroundToken()
+        background.begin { [weak self] in
+            self?.interruptForBackground()
+        }
+        defer {
+            background.end()
+        }
         defer {
             if generation == token {
                 isGenerating = false
@@ -690,13 +724,17 @@ final class BlatherSession: ObservableObject {
             prompt = result.prompt
         } catch {
             guard generation == token else { return nil }
-            if error is CancellationError {
+            if error is CancellationError || resumeWhenActive {
                 return nil
+            }
+            if BlatherModelFailure.isInterrupted(error) {
+                return await handleInterruption(token: token, pendingSpeech: pendingSpeech)
             }
             fail(error)
             return nil
         }
-        guard generation == token else { return nil }
+        guard generation == token, !resumeWhenActive else { return nil }
+        interruptionAttempts = 0
         let speech = BlatherScript.clean(narration.text)
         guard !speech.isEmpty else {
             fail(BlatherNarrationError.failed("The model returned nothing to say."))
@@ -815,6 +853,64 @@ final class BlatherSession: ObservableObject {
         }
     }
 
+    /// iOS is about to suspend the process. Drop the in-flight model call and
+    /// continue it the next time the app is active.
+    func interruptForBackground() {
+        guard mode == .live, !resumeWhenActive else { return }
+        resumeWhenActive = true
+        generation &+= 1
+        generationFailed = false
+        errorMessage = nil
+        isGenerating = false
+        fillRunning = false
+        chain?.cancel()
+    }
+
+    private func handleInterruption(token: Int, pendingSpeech: String?) async -> DraftPassage? {
+        narrator.discardSession()
+        guard generation == token, !resumeWhenActive else { return nil }
+        if !isForeground {
+            parkForForeground()
+            return nil
+        }
+        guard interruptionAttempts < 1 else {
+            fail(BlatherNarrationError.interrupted)
+            return nil
+        }
+        interruptionAttempts += 1
+        return await prepareDraft(token: token, pendingSpeech: pendingSpeech)
+    }
+
+    private func parkForForeground() {
+        resumeWhenActive = true
+        generationFailed = true
+        errorMessage = nil
+    }
+
+    private var isForeground: Bool {
+        guard Bundle.main.bundlePath.hasSuffix(".app") else { return true }
+        return UIApplication.shared.applicationState == .active
+    }
+
+    private func continueAfterInterruption() async {
+        guard mode == .live || mode == .replay else { return }
+        narrator.discardSession()
+        generationFailed = false
+        errorMessage = nil
+        mode = .live
+        let play = wantsAutoplay || isPlaying
+        wantsAutoplay = play
+        if play, hasAudio {
+            isPlaying = true
+            hasStartedPlayback = true
+            syncPlayback()
+        }
+        generation &+= 1
+        let token = generation
+        fillRunning = true
+        await runFill(token: token, after: chain)
+    }
+
     private func fail(_ error: Error) {
         generationFailed = true
         wantsAutoplay = false
@@ -829,8 +925,16 @@ final class BlatherSession: ObservableObject {
             case .modelUnavailable(let message):
                 errorMessage = message
             case .failed(let message):
-                errorMessage = message
+                errorMessage = BlatherModelFailure.isInterrupted(domain: "", code: 0, description: message)
+                    ? "Writing paused. Try again."
+                    : message
+            case .interrupted:
+                errorMessage = "Writing paused. Try again."
             }
+            return
+        }
+        if BlatherModelFailure.isInterrupted(error) {
+            errorMessage = "Writing paused. Try again."
             return
         }
         errorMessage = "Couldn't write the next part."
@@ -930,16 +1034,26 @@ final class BlatherSession: ObservableObject {
 private final class BackgroundToken {
     private var id: UIBackgroundTaskIdentifier = .invalid
 
-    func begin() {
+    private var onExpiration: (@MainActor () -> Void)?
+
+    func begin(onExpiration: (@MainActor () -> Void)? = nil) {
         guard id == .invalid else { return }
+        self.onExpiration = onExpiration
         // Unit tests run in the test bundle, which has no UIApplication.
         // Hosted in the app, this keeps a model call alive if the phone locks.
         guard Bundle.main.bundlePath.hasSuffix(".app") else { return }
         id = UIApplication.shared.beginBackgroundTask(withName: "Blather") { [weak self] in
             Task { @MainActor in
-                self?.end()
+                self?.expire()
             }
         }
+    }
+
+    private func expire() {
+        let notify = onExpiration
+        onExpiration = nil
+        end()
+        notify?()
     }
 
     func end() {

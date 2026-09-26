@@ -41,6 +41,10 @@ final class BlatherOnDeviceNarrator: BlatherNarrator {
         }
     }
 
+    func discardSession() {
+        session = nil
+    }
+
     func narrate(prompt: String, freshSession: Bool) async throws -> BlatherNarration {
         let gate = BlatherAvailability.current()
         guard gate.isAvailable else {
@@ -59,12 +63,15 @@ final class BlatherOnDeviceNarrator: BlatherNarrator {
             let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
             return BlatherNarration(text: text, totalTokenCount: response.usage.totalTokenCount)
         } catch {
+            self.session = nil
             if OnDeviceContextManager.isExceededContextWindow(error) {
-                self.session = nil
                 throw BlatherNarrationError.contextExceeded
             }
             if error is CancellationError {
                 throw error
+            }
+            if BlatherModelFailure.isInterrupted(error) {
+                throw BlatherNarrationError.interrupted
             }
             throw BlatherNarrationError.failed(error.localizedDescription)
         }

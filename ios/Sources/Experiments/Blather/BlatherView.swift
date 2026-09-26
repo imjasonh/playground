@@ -56,7 +56,7 @@ struct BlatherView: View {
         .onDisappear { session.shutdown() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                session.refresh()
+                Task { await session.sceneBecameActive() }
             }
         }
         .onChange(of: session.mode) { _, mode in

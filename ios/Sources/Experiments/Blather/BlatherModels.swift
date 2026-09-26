@@ -209,6 +209,28 @@ enum BlatherScript {
     }
 }
 
+/// Failures that mean the on-device model session is unusable, not that the
+/// prompt was rejected. `LanguageModelError` code -1 is what iOS returns when
+/// a response is cut off in the background.
+enum BlatherModelFailure {
+    static func isInterrupted(_ error: Error) -> Bool {
+        if error is CancellationError { return false }
+        if let narration = error as? BlatherNarrationError, case .interrupted = narration {
+            return true
+        }
+        let ns = error as NSError
+        return isInterrupted(domain: ns.domain, code: ns.code, description: ns.localizedDescription)
+    }
+
+    static func isInterrupted(domain: String, code: Int, description: String) -> Bool {
+        let domain = domain.lowercased()
+        let description = description.lowercased()
+        if domain.contains("foundationmodels"), code == -1 { return true }
+        if description.contains("error -1") { return true }
+        return false
+    }
+}
+
 /// Playhead math for skip, prefetch, and redirect cuts.
 enum BlatherTimeline {
     /// How far Back and Forward move the playhead.

@@ -87,6 +87,16 @@ final class BlatherTests: XCTestCase {
         XCTAssertTrue(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 79, rate: 2))
         XCTAssertFalse(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 80, rate: 2))
         XCTAssertEqual(BlatherTimeline.estimatedDuration(of: "one two three"), 1, accuracy: 0.001)
+        XCTAssertTrue(BlatherModelFailure.isInterrupted(
+            domain: "FoundationModels.LanguageModelError",
+            code: -1,
+            description: "The operation couldn’t be completed. (FoundationModels.LanguageModelError error -1.)"
+        ))
+        XCTAssertFalse(BlatherModelFailure.isInterrupted(
+            domain: "FoundationModels.LanguageModelError",
+            code: 1,
+            description: "The context window was exceeded."
+        ))
         XCTAssertFalse(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 60, rate: 2))
         XCTAssertTrue(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 40, rate: 2))
 
@@ -371,6 +381,69 @@ final class BlatherTests: XCTestCase {
         XCTAssertNil(session.errorMessage)
     }
 
+    func testInterruptedModelCallRetriesOnce() async {
+        let narrator = FakeNarrator(results: [
+            .failure(BlatherNarrationError.interrupted),
+            .success(BlatherNarration(text: manyWords(), totalTokenCount: nil)),
+        ])
+        let session = makeSession(
+            narrator: narrator,
+            synthesizer: FakeSynthesizer(duration: 40),
+            playback: FakePlayback()
+        )
+        await session.start(topic: "seams")
+        XCTAssertEqual(session.episode?.segments.count, 1)
+        XCTAssertNil(session.errorMessage)
+        XCTAssertTrue(session.isPlaying)
+        XCTAssertEqual(narrator.discarded, 1)
+    }
+
+    func testRepeatedInterruptionSurfacesAPlainError() async {
+        let narrator = FakeNarrator(results: [
+            .failure(BlatherNarrationError.interrupted),
+            .failure(BlatherNarrationError.interrupted),
+        ])
+        let session = makeSession(
+            narrator: narrator,
+            synthesizer: FakeSynthesizer(duration: 40),
+            playback: FakePlayback()
+        )
+        await session.start(topic: "seams")
+        XCTAssertEqual(session.episode?.segments.count, 0)
+        XCTAssertEqual(session.errorMessage, "Writing paused. Try again.")
+        XCTAssertFalse(session.errorMessage?.contains("error -1") == true)
+        XCTAssertFalse(session.isPlaying)
+    }
+
+    func testForegroundContinuesAfterBackgroundExpiration() async {
+        let synthesizer = FakeSynthesizer(duration: 40)
+        synthesizer.pauses = 1
+        let narrator = FakeNarrator(text: manyWords())
+        let session = makeSession(
+            narrator: narrator,
+            synthesizer: synthesizer,
+            playback: FakePlayback()
+        )
+        let running = Task { await session.start(topic: "hems") }
+        defer { synthesizer.resumeAll() }
+        for _ in 0..<100 {
+            if synthesizer.inFlight > 0 { break }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        session.interruptForBackground()
+        synthesizer.pauses = 0
+        synthesizer.resumeAll()
+        await running.value
+        XCTAssertNil(session.errorMessage)
+        XCTAssertEqual(session.episode?.segments.count, 0)
+
+        await session.sceneBecameActive()
+        XCTAssertNil(session.errorMessage)
+        XCTAssertEqual(session.episode?.segments.count, 1)
+        XCTAssertTrue(session.isPlaying)
+        XCTAssertFalse(session.isGenerating)
+    }
+
     func testEmptySpeechSurfacesAnError() async {
         let narrator = FakeNarrator(text: "```\n# \n```")
         let session = makeSession(
@@ -540,7 +613,13 @@ private final class FakeNarrator: BlatherNarrator {
         self.results = results
     }
 
+    private(set) var discarded = 0
+
     func prepare() {}
+
+    func discardSession() {
+        discarded += 1
+    }
 
     func narrate(prompt: String, freshSession: Bool) async throws -> BlatherNarration {
         prompts.append(prompt)
@@ -568,7 +647,14 @@ private final class FakeSynthesizer: BlatherSynthesizer {
         defer { inFlight -= 1 }
         if pauses > 0 {
             pauses -= 1
-            await withCheckedContinuation { waiters.append($0) }
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { waiters.append($0) }
+            } onCancel: {
+                Task { @MainActor in
+                    self.resumeAll()
+                }
+            }
+            try Task.checkCancellation()
         }
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),

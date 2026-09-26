@@ -326,7 +326,9 @@ change what it says next. **Continue** on a saved episode writes more when you
 are near the end. Close the player and the audio keeps going in the mini
 player, which has the same speed control. The lock screen shows the cover,
 play, pause, skip, and playback speed. Playback continues while the screen is
-locked (`UIBackgroundModes` includes `audio`).
+locked (`UIBackgroundModes` includes `audio`). If a passage is still being
+written when the phone locks, Blather finishes it if iOS allows, and otherwise
+continues that passage when you open the app again.
 
 Each episode stays on this device under Application Support: a JSON manifest,
 a `cover.jpg`, and one audio file per passage. The cover is drawn on device
