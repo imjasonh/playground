@@ -61,6 +61,159 @@ enum BlatherSpeed: Double, CaseIterable, Identifiable, Hashable {
     }
 }
 
+/// An installed speech voice the listener can pick.
+///
+/// Compact system voices sound mechanical. Premium and Siri voices sound
+/// closer to conversation, but only after they are downloaded. Super-compact
+/// voices are the natural ones that ship on the device; the system still
+/// reports them as default quality, so the identifier is what distinguishes them.
+struct BlatherVoice: Equatable, Identifiable, Hashable {
+    /// Quality `AVSpeechSynthesisVoice` reports. Super-compact voices still
+    /// report `standard`.
+    enum ReportedQuality: Equatable {
+        case standard
+        case enhanced
+        case premium
+    }
+
+    /// How the voice sounds, from the identifier and the reported quality.
+    enum Tone: Int, Comparable, Equatable {
+        case compact
+        case standard
+        case natural
+        case enhanced
+        case premium
+        case conversational
+
+        static func < (lhs: Tone, rhs: Tone) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+
+        var label: String {
+            switch self {
+            case .compact, .standard:
+                "Standard"
+            case .natural:
+                "Natural"
+            case .enhanced:
+                "Enhanced"
+            case .premium:
+                "Premium"
+            case .conversational:
+                "Conversational"
+            }
+        }
+    }
+
+    var identifier: String
+    var name: String
+    var language: String
+    var tone: Tone
+
+    var id: String { identifier }
+
+    /// Menu row. The section already names the tone.
+    var optionLabel: String {
+        "\(name) · \(regionName)"
+    }
+
+    /// Spoken value for the voice control.
+    var accessibilityValue: String {
+        "\(name), \(tone.label), \(regionName)"
+    }
+
+    var regionName: String {
+        let normalized = language.replacingOccurrences(of: "_", with: "-")
+        let locale = Locale(identifier: normalized)
+        if let code = locale.region?.identifier,
+           let name = Locale.current.localizedString(forRegionCode: code) {
+            return name
+        }
+        return Locale.current.localizedString(forIdentifier: normalized) ?? language
+    }
+
+    static func make(
+        identifier: String,
+        name: String,
+        language: String,
+        quality: ReportedQuality = .standard,
+        personal: Bool = false
+    ) -> BlatherVoice {
+        BlatherVoice(
+            identifier: identifier,
+            name: name,
+            language: language,
+            tone: tone(identifier: identifier, quality: quality, personal: personal)
+        )
+    }
+
+    static func tone(identifier: String, quality: ReportedQuality, personal: Bool) -> Tone {
+        if personal {
+            return .conversational
+        }
+        let id = identifier.lowercased()
+        if id.contains("siri"), quality == .premium || id.contains("premium") {
+            return .conversational
+        }
+        if quality == .premium || id.contains("premium") {
+            return .premium
+        }
+        if quality == .enhanced || id.contains("enhanced") {
+            return .enhanced
+        }
+        // Checked before "compact": the substring "super-compact" contains "compact".
+        if id.contains("super-compact") || id.contains("supercompact") {
+            return .natural
+        }
+        if id.contains("compact") || id.contains("eloquence") {
+            return .compact
+        }
+        return .standard
+    }
+
+    /// Higher is more conversational. English, then US English, wins a tie.
+    static func rank(_ voice: BlatherVoice) -> Int {
+        var score = voice.tone.rawValue * 10
+        if voice.language.lowercased().hasPrefix("en") {
+            score += 2
+        }
+        if voice.language.lowercased().hasPrefix("en-us") || voice.language.lowercased().hasPrefix("en_us") {
+            score += 1
+        }
+        return score
+    }
+
+    /// English voices worth offering, most conversational first.
+    /// Novelty Eloquence voices stay out. If no English voice is installed,
+    /// the remaining non-novelty voices are offered instead.
+    static func choices(_ voices: [BlatherVoice]) -> [BlatherVoice] {
+        let spoken = voices.filter { !$0.identifier.lowercased().contains("eloquence") }
+        let pool = spoken.isEmpty ? voices : spoken
+        let english = pool.filter { $0.language.lowercased().hasPrefix("en") }
+        let picked = english.isEmpty ? pool : english
+        return picked.sorted { lhs, rhs in
+            let left = rank(lhs)
+            let right = rank(rhs)
+            if left != right {
+                return left > right
+            }
+            if lhs.name != rhs.name {
+                return lhs.name < rhs.name
+            }
+            return lhs.language < rhs.language
+        }
+    }
+
+    /// The stored choice when that voice is still installed, otherwise the
+    /// most conversational voice in the list.
+    static func select(stored: String?, from voices: [BlatherVoice]) -> BlatherVoice? {
+        if let stored, let match = voices.first(where: { $0.identifier == stored }) {
+            return match
+        }
+        return voices.max { rank($0) < rank($1) }
+    }
+}
+
 /// Segments kept after a redirect, plus the files that should be deleted.
 struct BlatherCut: Equatable {
     var segments: [BlatherSegment]
@@ -209,19 +362,45 @@ enum BlatherScript {
     }
 }
 
+/// Failures that mean the on-device model session is unusable, not that the
+/// prompt was rejected. `LanguageModelError` code -1 is what iOS returns when
+/// a response is cut off in the background.
+enum BlatherModelFailure {
+    static func isInterrupted(_ error: Error) -> Bool {
+        if error is CancellationError { return false }
+        if let narration = error as? BlatherNarrationError, case .interrupted = narration {
+            return true
+        }
+        let ns = error as NSError
+        return isInterrupted(domain: ns.domain, code: ns.code, description: ns.localizedDescription)
+    }
+
+    static func isInterrupted(domain: String, code: Int, description: String) -> Bool {
+        let domain = domain.lowercased()
+        let description = description.lowercased()
+        if domain.contains("foundationmodels"), code == -1 { return true }
+        if description.contains("error -1") { return true }
+        return false
+    }
+}
+
 /// Playhead math for skip, prefetch, and redirect cuts.
 enum BlatherTimeline {
     /// How far Back and Forward move the playhead.
     static let skipStep: TimeInterval = 10
+    /// Listening time to finish before playback starts. At 1× that is 40
+    /// seconds of audio. Faster playback needs more audio for the same wait,
+    /// because the file ends sooner. Later fills use `prefetchLead`.
+    static let openingBuffer: TimeInterval = 40
     /// Listening time to keep in reserve before the next model call.
     /// A 160-word passage is about a minute of speech, so 25 seconds at 1×
     /// leaves room to write and synthesize the next file. Faster playback
     /// multiplies this lead so the reserve stays about 25 seconds of waiting.
     static let prefetchLead: TimeInterval = 25
-    /// Upper bound on passages written in one burst. Short clips chain until
-    /// `prefetchLead` is satisfied; the cap stops a near-zero duration from
-    /// looping.
-    static let maxSegmentsPerFill = 4
+    /// Upper bound on passages written in one burst. Short clips at 2× need
+    /// several files to cover the opening buffer. The cap stops a near-zero
+    /// duration from looping.
+    static let maxSegmentsPerFill = 8
 
     static func duration(of segments: [BlatherSegment]) -> TimeInterval {
         segments.reduce(0) { $0 + $1.duration }
@@ -233,6 +412,24 @@ enum BlatherTimeline {
 
     static func skipped(_ time: TimeInterval, by delta: TimeInterval, duration: TimeInterval) -> TimeInterval {
         clamped(time + delta, duration: duration)
+    }
+
+    /// Seconds of speech to assume before the file exists, so the next model
+    /// call can start while this passage is still being synthesized. The guess
+    /// is a little faster than a normal reading pace, so a long guess does not
+    /// skip a passage that faster playback still needs.
+    static func estimatedDuration(of speech: String) -> TimeInterval {
+        let words = speech.split(whereSeparator: \.isWhitespace).count
+        return Double(words) / 3
+    }
+
+    static func needsOpeningAudio(
+        playhead: TimeInterval,
+        duration: TimeInterval,
+        rate: Double = 1
+    ) -> Bool {
+        let playbackRate = min(max(rate, 0.5), 2)
+        return duration - playhead < openingBuffer * playbackRate
     }
 
     static func shouldPrefetch(

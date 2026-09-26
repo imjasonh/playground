@@ -56,7 +56,7 @@ struct BlatherView: View {
         .onDisappear { session.shutdown() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
-                session.refresh()
+                Task { await session.sceneBecameActive() }
             }
         }
         .onChange(of: session.mode) { _, mode in
@@ -294,26 +294,20 @@ private struct BlatherTransport: View {
             scrubber
             HStack {
                 skipButton(delta: -BlatherTimeline.skipStep, systemName: "gobackward.10", label: "Back 10 seconds", identifier: "blatherSkipBackButton")
-                Spacer()
+                Spacer(minLength: 0)
+                BlatherSpeedControl(session: session, compact: true)
+                Spacer(minLength: 0)
                 BlatherPlayPauseButton(session: session, prominent: true)
-                Spacer()
+                Spacer(minLength: 0)
+                BlatherGenerateButton(session: session)
+                Spacer(minLength: 0)
                 skipButton(delta: BlatherTimeline.skipStep, systemName: "goforward.10", label: "Forward 10 seconds", identifier: "blatherSkipForwardButton")
             }
-            HStack {
-                Spacer()
-                BlatherSpeedControl(session: session)
-                Spacer()
+            if !session.voices.isEmpty {
+                BlatherVoiceControl(session: session, fillsWidth: true)
             }
             if canRedirect {
                 redirectField
-            }
-            if session.mode == .replay, session.modelGate.isAvailable, !session.isPlaying {
-                Button("Continue") {
-                    Task { await session.continueTalking() }
-                }
-                .buttonStyle(.bordered)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .accessibilityIdentifier("blatherContinueButton")
             }
         }
         .padding()
@@ -397,10 +391,107 @@ private struct BlatherCover: View {
     }
 }
 
-private struct BlatherSpeedControl: View {
+private struct BlatherVoiceControl: View {
+    @ObservedObject var session: BlatherSession
+    var fillsWidth = false
+
+    var body: some View {
+        Menu {
+            Picker("Voice", selection: selection) {
+                ForEach(groups) { group in
+                    Section(group.label) {
+                        ForEach(group.voices) { voice in
+                            Text(voice.optionLabel).tag(voice.identifier)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label(session.voice?.name ?? "Voice", systemImage: "person.wave.2")
+                .lineLimit(1)
+                .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 44)
+                .frame(minWidth: 44)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel("Voice")
+        .accessibilityValue(session.voice?.accessibilityValue ?? "")
+        .accessibilityIdentifier("blatherVoiceButton")
+    }
+
+    private var selection: Binding<String> {
+        Binding(
+            get: { session.voice?.identifier ?? "" },
+            set: { session.setVoice(identifier: $0) }
+        )
+    }
+
+    private var groups: [BlatherVoiceGroup] {
+        var grouped: [BlatherVoiceGroup] = []
+        for voice in session.voices {
+            if let index = grouped.firstIndex(where: { $0.label == voice.tone.label }) {
+                grouped[index].voices.append(voice)
+            } else {
+                grouped.append(BlatherVoiceGroup(label: voice.tone.label, voices: [voice]))
+            }
+        }
+        return grouped
+    }
+}
+
+private struct BlatherVoiceGroup: Identifiable {
+    var label: String
+    var voices: [BlatherVoice]
+
+    var id: String { label }
+}
+
+private struct BlatherGenerateButton: View {
     @ObservedObject var session: BlatherSession
 
     var body: some View {
+        if showsControl {
+            Button(action: session.toggleGeneration) {
+                Group {
+                    if session.isGenerating || session.isExtending {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "sparkles")
+                            .font(.title2)
+                    }
+                }
+                .frame(minWidth: 44, minHeight: 44)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(session.isGenerating || session.isExtending ? "Stop writing" : "Keep writing")
+            .accessibilityIdentifier("blatherKeepWritingButton")
+        } else {
+            Color.clear
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var showsControl: Bool {
+        guard session.modelGate.isAvailable else { return false }
+        if session.isGenerating || session.isExtending { return true }
+        if session.mode == .replay { return true }
+        return session.generationHeld
+    }
+}
+
+private struct BlatherSpeedControl: View {
+    @ObservedObject var session: BlatherSession
+    var compact = false
+
+    var body: some View {
+        if compact {
+            menu.buttonStyle(.plain)
+        } else {
+            menu.buttonStyle(.bordered)
+        }
+    }
+
+    private var menu: some View {
         Menu {
             Picker("Playback speed", selection: speed) {
                 ForEach(BlatherSpeed.allCases) { rate in
@@ -410,9 +501,8 @@ private struct BlatherSpeedControl: View {
         } label: {
             Text(session.speed.label)
                 .font(.body.monospacedDigit())
-                .frame(minWidth: 72, minHeight: 44)
+                .frame(minWidth: compact ? 44 : 72, minHeight: 44)
         }
-        .buttonStyle(.bordered)
         .accessibilityLabel("Playback speed")
         .accessibilityValue(session.speed.label)
         .accessibilityIdentifier("blatherSpeedButton")
@@ -561,6 +651,9 @@ private struct BlatherComposer: View {
                         .submitLabel(.go)
                         .onSubmit(start)
                         .accessibilityIdentifier("blatherTopicField")
+                    if !session.voices.isEmpty {
+                        BlatherVoiceControl(session: session, fillsWidth: true)
+                    }
                     Button(action: start) {
                         Label("Start", systemImage: "play.fill")
                             .frame(maxWidth: .infinity, minHeight: 44)

@@ -314,16 +314,31 @@ ffmpeg. It writes the clip and the JSON.
 The screen is a show page: cover, episode list, and a mini player. **New
 episode** asks for a topic. Blather asks the on-device Foundation Model for a
 spoken explainer, writes that speech to an audio file, and opens the player.
-When about 25 seconds of listening time remain, it writes the next passage
-and keeps going. Faster playback starts that work earlier.
+Playback waits until about 40 seconds of listening time are ready, then
+starts. At 1.5×, 1.75×, and 2× that is more audio, because the same file ends
+sooner. The next passage is written while the current one is turned into a
+file. When about 25 seconds of listening time remain, it writes another
+passage and keeps going. Faster playback starts that later work earlier.
 
-The player shows the episode cover, a scrubber, 10-second skip controls, and
-a speed control for 1×, 1.5×, 1.75×, and 2×. Pause, then type a direction, to
-change what it says next. **Continue** on a saved episode writes more when you
-are near the end. Close the player and the audio keeps going in the mini
+The new-episode screen and the player include a voice control. It lists the
+English voices installed on the device. Blather starts on the most
+conversational one: a Siri or premium voice when you have downloaded one,
+otherwise a natural voice ahead of the compact system voice. A voice you pick
+is used for the next passage. Audio already written keeps its voice. Download
+more voices under Accessibility, Spoken Content.
+
+The player shows the episode cover, a scrubber, and a row of back 10 seconds,
+playback speed (1×, 1.5×, 1.75×, 2×), play, keep writing, and forward 10
+seconds. Pause, then type a direction, to change what it says next. **Keep
+writing** on a saved episode appends more speech at the end and does not
+start, pause, or move playback. While that is running the button is a
+spinner, and tapping it stops writing. Close the player and the audio keeps
+going in the mini
 player, which has the same speed control. The lock screen shows the cover,
 play, pause, skip, and playback speed. Playback continues while the screen is
-locked (`UIBackgroundModes` includes `audio`).
+locked (`UIBackgroundModes` includes `audio`). If a passage is still being
+written when the phone locks, Blather finishes it if iOS allows, and otherwise
+continues that passage when you open the app again.
 
 Each episode stays on this device under Application Support: a JSON manifest,
 a `cover.jpg`, and one audio file per passage. The cover is drawn on device

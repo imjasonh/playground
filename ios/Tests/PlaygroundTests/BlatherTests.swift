@@ -81,6 +81,22 @@ final class BlatherTests: XCTestCase {
         XCTAssertEqual(BlatherTimeline.skipped(35, by: 10, duration: 40), 40)
         XCTAssertFalse(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 40))
         XCTAssertTrue(BlatherTimeline.shouldPrefetch(playhead: 20, duration: 40))
+        XCTAssertTrue(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 39))
+        XCTAssertFalse(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 40))
+        XCTAssertTrue(BlatherTimeline.needsOpeningAudio(playhead: 10, duration: 49))
+        XCTAssertTrue(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 79, rate: 2))
+        XCTAssertFalse(BlatherTimeline.needsOpeningAudio(playhead: 0, duration: 80, rate: 2))
+        XCTAssertEqual(BlatherTimeline.estimatedDuration(of: "one two three"), 1, accuracy: 0.001)
+        XCTAssertTrue(BlatherModelFailure.isInterrupted(
+            domain: "FoundationModels.LanguageModelError",
+            code: -1,
+            description: "The operation couldn’t be completed. (FoundationModels.LanguageModelError error -1.)"
+        ))
+        XCTAssertFalse(BlatherModelFailure.isInterrupted(
+            domain: "FoundationModels.LanguageModelError",
+            code: 1,
+            description: "The context window was exceeded."
+        ))
         XCTAssertFalse(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 60, rate: 2))
         XCTAssertTrue(BlatherTimeline.shouldPrefetch(playhead: 0, duration: 40, rate: 2))
 
@@ -185,7 +201,8 @@ final class BlatherTests: XCTestCase {
     }
 
     func testStartPlaysAndPrefetchesNearTheEnd() async {
-        let narrator = FakeNarrator(text: "The ice moves slowly.")
+        let speech = manyWords()
+        let narrator = FakeNarrator(text: speech)
         let synthesizer = FakeSynthesizer(duration: 40)
         let playback = FakePlayback()
         let session = makeSession(narrator: narrator, synthesizer: synthesizer, playback: playback)
@@ -194,7 +211,7 @@ final class BlatherTests: XCTestCase {
         XCTAssertEqual(session.mode, .live)
         XCTAssertEqual(session.episode?.topic, "glaciers")
         XCTAssertEqual(session.episode?.segments.count, 1)
-        XCTAssertEqual(session.episode?.segments.first?.text, "The ice moves slowly.")
+        XCTAssertEqual(session.episode?.segments.first?.text, speech)
         XCTAssertEqual(session.episode?.segments.first?.duration, 40)
         XCTAssertTrue(session.isPlaying)
         XCTAssertFalse(session.isGenerating)
@@ -232,8 +249,73 @@ final class BlatherTests: XCTestCase {
         XCTAssertEqual(session.audibleDuration, 80)
     }
 
+    func testStartBuffersAboutFortySecondsBeforePlayback() async {
+        let playback = FakePlayback()
+        let session = makeSession(
+            narrator: FakeNarrator(text: "A short passage."),
+            synthesizer: FakeSynthesizer(duration: 15),
+            playback: playback
+        )
+
+        await session.start(topic: "tides")
+        XCTAssertGreaterThanOrEqual(session.audibleDuration, BlatherTimeline.openingBuffer)
+        XCTAssertTrue(session.isPlaying)
+        XCTAssertFalse(session.isGenerating)
+        let firstPlaying = playback.updates.first { $0.playing }
+        let startedAt = firstPlaying?.segments.reduce(0.0) { $0 + $1.duration } ?? 0
+        XCTAssertGreaterThanOrEqual(startedAt, BlatherTimeline.openingBuffer)
+        XCTAssertTrue(playback.updates.contains { update in
+            !update.playing && update.segments.reduce(0.0) { $0 + $1.duration } < BlatherTimeline.openingBuffer
+        })
+    }
+
+    func testFasterPlaybackBuffersMoreListeningTime() async {
+        let playback = FakePlayback()
+        let session = makeSession(
+            narrator: FakeNarrator(text: "Hi."),
+            synthesizer: FakeSynthesizer(duration: 15),
+            playback: playback
+        )
+        session.setSpeed(.x2)
+
+        await session.start(topic: "gears")
+        let target = BlatherTimeline.openingBuffer * 2
+        XCTAssertGreaterThanOrEqual(session.audibleDuration, target)
+        let firstPlaying = playback.updates.first { $0.playing }
+        let startedAt = firstPlaying?.segments.reduce(0.0) { $0 + $1.duration } ?? 0
+        XCTAssertGreaterThanOrEqual(startedAt, target)
+        XCTAssertTrue(playback.updates.contains { update in
+            !update.playing && update.segments.reduce(0.0) { $0 + $1.duration } < target
+        })
+    }
+
+    func testNextPassageStartsWhileTheCurrentOneIsSynthesized() async {
+        let synthesizer = FakeSynthesizer(duration: 15)
+        synthesizer.pauses = 1
+        let narrator = FakeNarrator(text: "Hi.")
+        let session = makeSession(
+            narrator: narrator,
+            synthesizer: synthesizer,
+            playback: FakePlayback()
+        )
+        let running = Task { await session.start(topic: "wind") }
+        defer { synthesizer.resumeAll() }
+
+        var sawOverlap = false
+        for _ in 0..<100 {
+            if narrator.prompts.count >= 2, synthesizer.inFlight > 0 {
+                sawOverlap = true
+                break
+            }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        synthesizer.resumeAll()
+        await running.value
+        XCTAssertTrue(sawOverlap)
+    }
+
     func testRedirectCutsUnheardAudio() async throws {
-        let narrator = FakeNarrator(text: "First passage.")
+        let narrator = FakeNarrator(text: manyWords())
         let synthesizer = FakeSynthesizer(duration: 40)
         let playback = FakePlayback()
         let store = BlatherStore(root: directory)
@@ -262,7 +344,7 @@ final class BlatherTests: XCTestCase {
     }
 
     func testRedirectShortensTheCurrentSegment() async throws {
-        let narrator = FakeNarrator(text: "Keep the start.")
+        let narrator = FakeNarrator(text: manyWords())
         let synthesizer = FakeSynthesizer(duration: 40)
         let session = makeSession(narrator: narrator, synthesizer: synthesizer, playback: FakePlayback())
 
@@ -282,9 +364,10 @@ final class BlatherTests: XCTestCase {
     }
 
     func testContextWindowRetriesOnce() async throws {
+        let speech = manyWords()
         let narrator = FakeNarrator(results: [
             .failure(BlatherNarrationError.contextExceeded),
-            .success(BlatherNarration(text: "Recovered sentence.", totalTokenCount: nil)),
+            .success(BlatherNarration(text: speech, totalTokenCount: nil)),
         ])
         let session = makeSession(
             narrator: narrator,
@@ -293,9 +376,72 @@ final class BlatherTests: XCTestCase {
         )
         await session.start(topic: "fog")
         XCTAssertTrue(session.didCompact)
-        XCTAssertEqual(session.episode?.segments.first?.text, "Recovered sentence.")
+        XCTAssertEqual(session.episode?.segments.first?.text, speech)
         XCTAssertEqual(narrator.freshSessions, [false, true])
         XCTAssertNil(session.errorMessage)
+    }
+
+    func testInterruptedModelCallRetriesOnce() async {
+        let narrator = FakeNarrator(results: [
+            .failure(BlatherNarrationError.interrupted),
+            .success(BlatherNarration(text: manyWords(), totalTokenCount: nil)),
+        ])
+        let session = makeSession(
+            narrator: narrator,
+            synthesizer: FakeSynthesizer(duration: 40),
+            playback: FakePlayback()
+        )
+        await session.start(topic: "seams")
+        XCTAssertEqual(session.episode?.segments.count, 1)
+        XCTAssertNil(session.errorMessage)
+        XCTAssertTrue(session.isPlaying)
+        XCTAssertEqual(narrator.discarded, 1)
+    }
+
+    func testRepeatedInterruptionSurfacesAPlainError() async {
+        let narrator = FakeNarrator(results: [
+            .failure(BlatherNarrationError.interrupted),
+            .failure(BlatherNarrationError.interrupted),
+        ])
+        let session = makeSession(
+            narrator: narrator,
+            synthesizer: FakeSynthesizer(duration: 40),
+            playback: FakePlayback()
+        )
+        await session.start(topic: "seams")
+        XCTAssertEqual(session.episode?.segments.count, 0)
+        XCTAssertEqual(session.errorMessage, "Writing paused. Try again.")
+        XCTAssertFalse(session.errorMessage?.contains("error -1") == true)
+        XCTAssertFalse(session.isPlaying)
+    }
+
+    func testForegroundContinuesAfterBackgroundExpiration() async {
+        let synthesizer = FakeSynthesizer(duration: 40)
+        synthesizer.pauses = 1
+        let narrator = FakeNarrator(text: manyWords())
+        let session = makeSession(
+            narrator: narrator,
+            synthesizer: synthesizer,
+            playback: FakePlayback()
+        )
+        let running = Task { await session.start(topic: "hems") }
+        defer { synthesizer.resumeAll() }
+        for _ in 0..<100 {
+            if synthesizer.inFlight > 0 { break }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        session.interruptForBackground()
+        synthesizer.pauses = 0
+        synthesizer.resumeAll()
+        await running.value
+        XCTAssertNil(session.errorMessage)
+        XCTAssertEqual(session.episode?.segments.count, 0)
+
+        await session.sceneBecameActive()
+        XCTAssertNil(session.errorMessage)
+        XCTAssertEqual(session.episode?.segments.count, 1)
+        XCTAssertTrue(session.isPlaying)
+        XCTAssertFalse(session.isGenerating)
     }
 
     func testEmptySpeechSurfacesAnError() async {
@@ -334,7 +480,7 @@ final class BlatherTests: XCTestCase {
     }
 
     func testFinishReplayContinueAndDelete() async throws {
-        let narrator = FakeNarrator(text: "Saved line.")
+        let narrator = FakeNarrator(text: manyWords())
         let playback = FakePlayback()
         let store = BlatherStore(root: directory)
         let session = makeSession(
@@ -358,14 +504,24 @@ final class BlatherTests: XCTestCase {
         XCTAssertEqual(session.playhead, 0)
         XCTAssertEqual(session.episode?.segments.count, 1)
 
-        await session.continueTalking()
-        XCTAssertEqual(session.mode, .live)
-        XCTAssertTrue(session.isPlaying)
-        XCTAssertEqual(session.episode?.segments.count, 1)
+        let updatesBeforeExtend = playback.updates.count
+        session.setExtending(true)
+        await waitUntil { (session.episode?.segments.count ?? 0) > 1 }
+        XCTAssertGreaterThan(session.episode?.segments.count ?? 0, 1)
+        XCTAssertEqual(session.mode, .replay)
+        XCTAssertFalse(session.isPlaying)
+        XCTAssertEqual(session.playhead, 0)
+        XCTAssertFalse(playback.updates.dropFirst(updatesBeforeExtend).contains { $0.playing })
 
-        session.skip(by: 20)
+        session.setExtending(false)
         await session.waitForFill()
-        XCTAssertEqual(session.episode?.segments.count, 2)
+        XCTAssertFalse(session.isExtending)
+        XCTAssertTrue(session.generationHeld)
+        XCTAssertFalse(session.isPlaying)
+
+        session.resume()
+        XCTAssertTrue(session.isPlaying)
+        XCTAssertEqual(session.playhead, 0)
 
         session.delete(id: id)
         XCTAssertEqual(session.mode, .idle)
@@ -384,6 +540,12 @@ final class BlatherTests: XCTestCase {
         session.shutdown()
         XCTAssertTrue(playback.stopped)
         XCTAssertFalse(session.isPlaying)
+    }
+
+    private func waitUntil(attempts: Int = 50, _ predicate: () -> Bool) async {
+        for _ in 0..<attempts where !predicate() {
+            await Task.yield()
+        }
     }
 
     private func makeSession(
@@ -423,6 +585,93 @@ final class BlatherTests: XCTestCase {
         XCTAssertEqual(BlatherSpeed.nearest(1.9), .x2)
     }
 
+    func testVoicePrefersConversationalOverCompact() {
+        let samantha = BlatherVoice.make(
+            identifier: "com.apple.voice.compact.en-US.Samantha",
+            name: "Samantha",
+            language: "en-US"
+        )
+        let ava = BlatherVoice.make(
+            identifier: "com.apple.voice.super-compact.en-US.Ava",
+            name: "Ava",
+            language: "en-US"
+        )
+        let nora = BlatherVoice.make(
+            identifier: "com.apple.ttsbundle.siri_Nora_en-US_premium",
+            name: "Nora",
+            language: "en-US",
+            quality: .premium
+        )
+        let rocko = BlatherVoice.make(
+            identifier: "com.apple.eloquence.en-US.Rocko",
+            name: "Rocko",
+            language: "en-US"
+        )
+        let daniel = BlatherVoice.make(
+            identifier: "com.apple.voice.premium.en-GB.Daniel",
+            name: "Daniel",
+            language: "en-GB",
+            quality: .premium
+        )
+        XCTAssertEqual(samantha.tone, .compact)
+        XCTAssertEqual(ava.tone, .natural)
+        XCTAssertEqual(nora.tone, .conversational)
+        XCTAssertEqual(rocko.tone, .compact)
+        XCTAssertEqual(daniel.tone, .premium)
+
+        let choices = BlatherVoice.choices([samantha, ava, nora, rocko, daniel])
+        XCTAssertEqual(choices.map(\.name), ["Nora", "Daniel", "Ava", "Samantha"])
+        XCTAssertEqual(BlatherVoice.select(stored: nil, from: choices)?.name, "Nora")
+        XCTAssertEqual(BlatherVoice.select(stored: ava.identifier, from: choices)?.name, "Ava")
+        XCTAssertEqual(BlatherVoice.select(stored: "missing", from: choices)?.name, "Nora")
+        let installed = BlatherVoice.choices([samantha, ava, rocko])
+        XCTAssertEqual(BlatherVoice.select(stored: nil, from: installed)?.name, "Ava")
+    }
+
+    func testSelectedVoiceIsUsedForLaterSpeech() async {
+        let compact = BlatherVoice.make(
+            identifier: "com.apple.voice.compact.en-US.Samantha",
+            name: "Samantha",
+            language: "en-US"
+        )
+        let nora = BlatherVoice.make(
+            identifier: "com.apple.ttsbundle.siri_Nora_en-US_premium",
+            name: "Nora",
+            language: "en-US",
+            quality: .premium
+        )
+        let suite = "blather.voice.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let synthesizer = FakeSynthesizer(duration: 40)
+        let session = BlatherSession(
+            narrator: FakeNarrator(text: "Hello there."),
+            synthesizer: synthesizer,
+            store: BlatherStore(root: directory),
+            playback: FakePlayback(),
+            remote: BlatherRemoteControl(),
+            voiceCatalog: { BlatherVoice.choices([compact, nora]) },
+            defaults: defaults
+        )
+        XCTAssertEqual(session.voice?.identifier, nora.identifier)
+
+        session.setVoice(identifier: compact.identifier)
+        XCTAssertEqual(defaults.string(forKey: BlatherSession.voiceDefaultsKey), compact.identifier)
+        await session.start(topic: "voices")
+        XCTAssertEqual(synthesizer.voicesUsed.first, compact.identifier)
+
+        let restored = BlatherSession(
+            narrator: FakeNarrator(text: "Hello there."),
+            synthesizer: FakeSynthesizer(duration: 40),
+            store: BlatherStore(root: directory),
+            playback: FakePlayback(),
+            remote: BlatherRemoteControl(),
+            voiceCatalog: { BlatherVoice.choices([compact, nora]) },
+            defaults: defaults
+        )
+        XCTAssertEqual(restored.voice?.identifier, compact.identifier)
+    }
+
     private func colorGrid(_ image: UIImage) -> [UInt32] {
         guard let cg = image.cgImage,
               let data = cg.dataProvider?.data,
@@ -444,6 +693,10 @@ final class BlatherTests: XCTestCase {
         return colors
     }
 
+    private func manyWords() -> String {
+        String(repeating: "word ", count: 150).trimmingCharacters(in: .whitespaces)
+    }
+
     private func segment(text: String, duration: TimeInterval, fileName: String) -> BlatherSegment {
         BlatherSegment(id: UUID(), text: text, fileName: fileName, duration: duration)
     }
@@ -453,43 +706,84 @@ final class BlatherTests: XCTestCase {
 private final class FakeNarrator: BlatherNarrator {
     var prompts: [String] = []
     var freshSessions: [Bool] = []
+    /// Repeated after `results` run out. A two-word fallback estimates at under
+    /// a second, so the buffer starts another passage, then the fixed file
+    /// length turns that passage into an extra 40 seconds.
+    private let scriptedText: String?
     private var results: [Result<BlatherNarration, Error>]
 
     init(text: String) {
-        results = [.success(BlatherNarration(text: text, totalTokenCount: nil))]
+        scriptedText = text
+        results = []
     }
 
     init(results: [Result<BlatherNarration, Error>]) {
+        scriptedText = nil
         self.results = results
     }
 
+    private(set) var discarded = 0
+
     func prepare() {}
+
+    func discardSession() {
+        discarded += 1
+    }
 
     func narrate(prompt: String, freshSession: Bool) async throws -> BlatherNarration {
         prompts.append(prompt)
         freshSessions.append(freshSession)
-        let next = results.isEmpty
-            ? .success(BlatherNarration(text: "Another sentence.", totalTokenCount: nil))
-            : results.removeFirst()
-        return try next.get()
+        if !results.isEmpty {
+            return try results.removeFirst().get()
+        }
+        let text = scriptedText ?? "Another sentence."
+        return BlatherNarration(text: text, totalTokenCount: nil)
     }
 }
 
 @MainActor
 private final class FakeSynthesizer: BlatherSynthesizer {
     var duration: TimeInterval
+    var pauses = 0
+    private(set) var inFlight = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
 
     init(duration: TimeInterval) {
         self.duration = duration
     }
 
+    var voiceIdentifier: String?
+    private(set) var voicesUsed: [String?] = []
+
     func synthesize(_ text: String, to fileURL: URL) async throws -> TimeInterval {
+        voicesUsed.append(voiceIdentifier)
+        inFlight += 1
+        defer { inFlight -= 1 }
+        if pauses > 0 {
+            pauses -= 1
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { waiters.append($0) }
+            } onCancel: {
+                Task { @MainActor in
+                    self.resumeAll()
+                }
+            }
+            try Task.checkCancellation()
+        }
         try FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
         try Data(text.utf8).write(to: fileURL)
         return duration
+    }
+
+    func resumeAll() {
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending {
+            waiter.resume()
+        }
     }
 }
 
