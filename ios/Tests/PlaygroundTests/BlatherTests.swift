@@ -706,13 +706,19 @@ final class BlatherTests: XCTestCase {
 private final class FakeNarrator: BlatherNarrator {
     var prompts: [String] = []
     var freshSessions: [Bool] = []
+    /// Repeated after `results` run out. A two-word fallback estimates at under
+    /// a second, so the buffer starts another passage, then the fixed file
+    /// length turns that passage into an extra 40 seconds.
+    private let scriptedText: String?
     private var results: [Result<BlatherNarration, Error>]
 
     init(text: String) {
-        results = [.success(BlatherNarration(text: text, totalTokenCount: nil))]
+        scriptedText = text
+        results = []
     }
 
     init(results: [Result<BlatherNarration, Error>]) {
+        scriptedText = nil
         self.results = results
     }
 
@@ -727,10 +733,11 @@ private final class FakeNarrator: BlatherNarrator {
     func narrate(prompt: String, freshSession: Bool) async throws -> BlatherNarration {
         prompts.append(prompt)
         freshSessions.append(freshSession)
-        let next = results.isEmpty
-            ? .success(BlatherNarration(text: "Another sentence.", totalTokenCount: nil))
-            : results.removeFirst()
-        return try next.get()
+        if !results.isEmpty {
+            return try results.removeFirst().get()
+        }
+        let text = scriptedText ?? "Another sentence."
+        return BlatherNarration(text: text, totalTokenCount: nil)
     }
 }
 
