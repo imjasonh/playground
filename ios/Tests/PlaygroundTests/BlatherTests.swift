@@ -569,6 +569,93 @@ final class BlatherTests: XCTestCase {
         XCTAssertEqual(BlatherSpeed.nearest(1.9), .x2)
     }
 
+    func testVoicePrefersConversationalOverCompact() {
+        let samantha = BlatherVoice.make(
+            identifier: "com.apple.voice.compact.en-US.Samantha",
+            name: "Samantha",
+            language: "en-US"
+        )
+        let ava = BlatherVoice.make(
+            identifier: "com.apple.voice.super-compact.en-US.Ava",
+            name: "Ava",
+            language: "en-US"
+        )
+        let nora = BlatherVoice.make(
+            identifier: "com.apple.ttsbundle.siri_Nora_en-US_premium",
+            name: "Nora",
+            language: "en-US",
+            quality: .premium
+        )
+        let rocko = BlatherVoice.make(
+            identifier: "com.apple.eloquence.en-US.Rocko",
+            name: "Rocko",
+            language: "en-US"
+        )
+        let daniel = BlatherVoice.make(
+            identifier: "com.apple.voice.premium.en-GB.Daniel",
+            name: "Daniel",
+            language: "en-GB",
+            quality: .premium
+        )
+        XCTAssertEqual(samantha.tone, .compact)
+        XCTAssertEqual(ava.tone, .natural)
+        XCTAssertEqual(nora.tone, .conversational)
+        XCTAssertEqual(rocko.tone, .compact)
+        XCTAssertEqual(daniel.tone, .premium)
+
+        let choices = BlatherVoice.choices([samantha, ava, nora, rocko, daniel])
+        XCTAssertEqual(choices.map(\.name), ["Nora", "Daniel", "Ava", "Samantha"])
+        XCTAssertEqual(BlatherVoice.select(stored: nil, from: choices)?.name, "Nora")
+        XCTAssertEqual(BlatherVoice.select(stored: ava.identifier, from: choices)?.name, "Ava")
+        XCTAssertEqual(BlatherVoice.select(stored: "missing", from: choices)?.name, "Nora")
+        let installed = BlatherVoice.choices([samantha, ava, rocko])
+        XCTAssertEqual(BlatherVoice.select(stored: nil, from: installed)?.name, "Ava")
+    }
+
+    func testSelectedVoiceIsUsedForLaterSpeech() async {
+        let compact = BlatherVoice.make(
+            identifier: "com.apple.voice.compact.en-US.Samantha",
+            name: "Samantha",
+            language: "en-US"
+        )
+        let nora = BlatherVoice.make(
+            identifier: "com.apple.ttsbundle.siri_Nora_en-US_premium",
+            name: "Nora",
+            language: "en-US",
+            quality: .premium
+        )
+        let suite = "blather.voice.tests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let synthesizer = FakeSynthesizer(duration: 40)
+        let session = BlatherSession(
+            narrator: FakeNarrator(text: "Hello there."),
+            synthesizer: synthesizer,
+            store: BlatherStore(root: directory),
+            playback: FakePlayback(),
+            remote: BlatherRemoteControl(),
+            voiceCatalog: { BlatherVoice.choices([compact, nora]) },
+            defaults: defaults
+        )
+        XCTAssertEqual(session.voice?.identifier, nora.identifier)
+
+        session.setVoice(identifier: compact.identifier)
+        XCTAssertEqual(defaults.string(forKey: BlatherSession.voiceDefaultsKey), compact.identifier)
+        await session.start(topic: "voices")
+        XCTAssertEqual(synthesizer.voicesUsed.first, compact.identifier)
+
+        let restored = BlatherSession(
+            narrator: FakeNarrator(text: "Hello there."),
+            synthesizer: FakeSynthesizer(duration: 40),
+            store: BlatherStore(root: directory),
+            playback: FakePlayback(),
+            remote: BlatherRemoteControl(),
+            voiceCatalog: { BlatherVoice.choices([compact, nora]) },
+            defaults: defaults
+        )
+        XCTAssertEqual(restored.voice?.identifier, compact.identifier)
+    }
+
     private func colorGrid(_ image: UIImage) -> [UInt32] {
         guard let cg = image.cgImage,
               let data = cg.dataProvider?.data,
@@ -642,7 +729,11 @@ private final class FakeSynthesizer: BlatherSynthesizer {
         self.duration = duration
     }
 
+    var voiceIdentifier: String?
+    private(set) var voicesUsed: [String?] = []
+
     func synthesize(_ text: String, to fileURL: URL) async throws -> TimeInterval {
+        voicesUsed.append(voiceIdentifier)
         inFlight += 1
         defer { inFlight -= 1 }
         if pauses > 0 {

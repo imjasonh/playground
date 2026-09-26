@@ -320,6 +320,13 @@ sooner. The next passage is written while the current one is turned into a
 file. When about 25 seconds of listening time remain, it writes another
 passage and keeps going. Faster playback starts that later work earlier.
 
+The new-episode screen and the player include a voice control. It lists the
+English voices installed on the device. Blather starts on the most
+conversational one: a Siri or premium voice when you have downloaded one,
+otherwise a natural voice ahead of the compact system voice. A voice you pick
+is used for the next passage. Audio already written keeps its voice. Download
+more voices under Accessibility, Spoken Content.
+
 The player shows the episode cover, a scrubber, 10-second skip controls, and
 a speed control for 1×, 1.5×, 1.75×, and 2×. Pause, then type a direction, to
 change what it says next. **Continue** on a saved episode writes more when you

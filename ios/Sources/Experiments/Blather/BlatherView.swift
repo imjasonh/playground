@@ -300,9 +300,11 @@ private struct BlatherTransport: View {
                 skipButton(delta: BlatherTimeline.skipStep, systemName: "goforward.10", label: "Forward 10 seconds", identifier: "blatherSkipForwardButton")
             }
             HStack {
+                if !session.voices.isEmpty {
+                    BlatherVoiceControl(session: session)
+                }
                 Spacer()
                 BlatherSpeedControl(session: session)
-                Spacer()
             }
             if canRedirect {
                 redirectField
@@ -395,6 +397,60 @@ private struct BlatherCover: View {
             .resizable()
             .scaledToFill()
     }
+}
+
+private struct BlatherVoiceControl: View {
+    @ObservedObject var session: BlatherSession
+    var fillsWidth = false
+
+    var body: some View {
+        Menu {
+            Picker("Voice", selection: selection) {
+                ForEach(groups) { group in
+                    Section(group.label) {
+                        ForEach(group.voices) { voice in
+                            Text(voice.optionLabel).tag(voice.identifier)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Label(session.voice?.name ?? "Voice", systemImage: "person.wave.2")
+                .lineLimit(1)
+                .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: 44)
+                .frame(minWidth: 44)
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel("Voice")
+        .accessibilityValue(session.voice?.accessibilityValue ?? "")
+        .accessibilityIdentifier("blatherVoiceButton")
+    }
+
+    private var selection: Binding<String> {
+        Binding(
+            get: { session.voice?.identifier ?? "" },
+            set: { session.setVoice(identifier: $0) }
+        )
+    }
+
+    private var groups: [BlatherVoiceGroup] {
+        var grouped: [BlatherVoiceGroup] = []
+        for voice in session.voices {
+            if let index = grouped.firstIndex(where: { $0.label == voice.tone.label }) {
+                grouped[index].voices.append(voice)
+            } else {
+                grouped.append(BlatherVoiceGroup(label: voice.tone.label, voices: [voice]))
+            }
+        }
+        return grouped
+    }
+}
+
+private struct BlatherVoiceGroup: Identifiable {
+    var label: String
+    var voices: [BlatherVoice]
+
+    var id: String { label }
 }
 
 private struct BlatherSpeedControl: View {
@@ -561,6 +617,9 @@ private struct BlatherComposer: View {
                         .submitLabel(.go)
                         .onSubmit(start)
                         .accessibilityIdentifier("blatherTopicField")
+                    if !session.voices.isEmpty {
+                        BlatherVoiceControl(session: session, fillsWidth: true)
+                    }
                     Button(action: start) {
                         Label("Start", systemImage: "play.fill")
                             .frame(maxWidth: .infinity, minHeight: 44)

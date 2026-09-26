@@ -77,31 +77,6 @@ final class BlatherOnDeviceNarrator: BlatherNarrator {
         }
     }
 
-    /// Prefers a US English premium voice, then any enhanced English voice.
-    static func preferredVoice() -> AVSpeechSynthesisVoice? {
-        let voices = AVSpeechSynthesisVoice.speechVoices()
-        let english = voices.filter { $0.language.hasPrefix("en") }
-        let pool = english.isEmpty ? voices : english
-        return pool.max { lhs, rhs in
-            rank(lhs) < rank(rhs)
-        }
-    }
-
-    private static func rank(_ voice: AVSpeechSynthesisVoice) -> Int {
-        let quality: Int
-        switch voice.quality {
-        case .premium:
-            quality = 3
-        case .enhanced:
-            quality = 2
-        case .default:
-            quality = 1
-        @unknown default:
-            quality = 1
-        }
-        let unitedStates = voice.language == "en-US" ? 1 : 0
-        return quality * 2 + unitedStates
-    }
 }
 
 enum BlatherSpeechError: Error {
@@ -113,10 +88,11 @@ enum BlatherSpeechError: Error {
 @MainActor
 final class BlatherSpeechRenderer: BlatherSynthesizer {
     private let synthesizer = AVSpeechSynthesizer()
+    var voiceIdentifier: String?
 
     func synthesize(_ text: String, to fileURL: URL) async throws -> TimeInterval {
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = BlatherOnDeviceNarrator.preferredVoice()
+        utterance.voice = resolvedVoice()
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<TimeInterval, Error>) in
             let box = OnceResume(continuation)
@@ -131,6 +107,45 @@ final class BlatherSpeechRenderer: BlatherSynthesizer {
                     box.resume(throwing: error)
                 }
             }
+        }
+    }
+
+    private func resolvedVoice() -> AVSpeechSynthesisVoice? {
+        if let voiceIdentifier, let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
+            return voice
+        }
+        guard let identifier = BlatherVoice.installed().first?.identifier else {
+            return nil
+        }
+        return AVSpeechSynthesisVoice(identifier: identifier)
+    }
+}
+
+extension BlatherVoice {
+    /// Voices `AVSpeechSynthesizer` can speak with on this device, best first.
+    static func installed() -> [BlatherVoice] {
+        let mapped = AVSpeechSynthesisVoice.speechVoices().map { voice in
+            make(
+                identifier: voice.identifier,
+                name: voice.name,
+                language: voice.language,
+                quality: reported(voice.quality),
+                personal: voice.voiceTraits.contains(.isPersonalVoice)
+            )
+        }
+        return choices(mapped)
+    }
+
+    private static func reported(_ quality: AVSpeechSynthesisVoiceQuality) -> ReportedQuality {
+        switch quality {
+        case .premium:
+            return .premium
+        case .enhanced:
+            return .enhanced
+        case .default:
+            return .standard
+        @unknown default:
+            return .standard
         }
     }
 }

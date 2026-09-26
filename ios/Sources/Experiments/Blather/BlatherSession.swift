@@ -29,6 +29,9 @@ protocol BlatherNarrator: AnyObject {
 /// Renders speech to a file without playing it. Tests substitute a fake.
 @MainActor
 protocol BlatherSynthesizer: AnyObject {
+    /// Installed voice to speak with. Nil uses the most conversational voice
+    /// still on the device.
+    var voiceIdentifier: String? { get set }
     func synthesize(_ text: String, to fileURL: URL) async throws -> TimeInterval
 }
 
@@ -135,7 +138,11 @@ final class BlatherSession: ObservableObject {
     @Published private(set) var didCompact = false
     @Published private(set) var saved: [BlatherEpisodeSummary] = []
     @Published private(set) var speed: BlatherSpeed = .x1
+    @Published private(set) var voices: [BlatherVoice] = []
+    @Published private(set) var voice: BlatherVoice?
     @Published private(set) var modelGate: AgentModelGate
+
+    static let voiceDefaultsKey = "blather.voice.identifier"
 
     private let narrator: any BlatherNarrator
     private let synthesizer: any BlatherSynthesizer
@@ -143,6 +150,8 @@ final class BlatherSession: ObservableObject {
     private let playback: any BlatherPlaybackControlling
     private let remote: BlatherRemoteControl
     private let gateProvider: () -> AgentModelGate
+    private let voiceCatalog: () -> [BlatherVoice]
+    private let defaults: UserDefaults
 
     private var planner = BlatherPlanner()
     private var generation = 0
@@ -168,7 +177,9 @@ final class BlatherSession: ObservableObject {
         playback: any BlatherPlaybackControlling,
         remote: BlatherRemoteControl,
         modelGate: AgentModelGate = .available,
-        gateProvider: @escaping () -> AgentModelGate = { .available }
+        gateProvider: @escaping () -> AgentModelGate = { .available },
+        voiceCatalog: @escaping () -> [BlatherVoice] = { BlatherVoice.installed() },
+        defaults: UserDefaults = .standard
     ) {
         self.narrator = narrator
         self.synthesizer = synthesizer
@@ -177,6 +188,9 @@ final class BlatherSession: ObservableObject {
         self.remote = remote
         self.modelGate = modelGate
         self.gateProvider = gateProvider
+        self.voiceCatalog = voiceCatalog
+        self.defaults = defaults
+        applyVoiceCatalog()
         playback.onPlayhead = { [weak self] time in
             MainActor.assumeIsolated {
                 self?.notePlayhead(time)
@@ -239,6 +253,7 @@ final class BlatherSession: ObservableObject {
 
     func refresh() {
         modelGate = gateProvider()
+        applyVoiceCatalog()
         ensureCovers()
         saved = store.summaries()
         narrator.prepare()
@@ -270,6 +285,29 @@ final class BlatherSession: ObservableObject {
         self.speed = speed
         syncPlayback()
         scheduleFill()
+    }
+
+    /// Uses this voice for passages that have not been synthesized yet.
+    /// Audio already on disk keeps the voice it was written with.
+    func setVoice(identifier: String) {
+        guard let match = voices.first(where: { $0.identifier == identifier }) else { return }
+        guard match != voice else { return }
+        defaults.set(match.identifier, forKey: Self.voiceDefaultsKey)
+        voice = match
+        synthesizer.voiceIdentifier = match.identifier
+    }
+
+    private func applyVoiceCatalog() {
+        let installed = voiceCatalog()
+        if voices != installed {
+            voices = installed
+        }
+        let stored = defaults.string(forKey: Self.voiceDefaultsKey)
+        let selected = BlatherVoice.select(stored: stored, from: installed)
+        if voice != selected {
+            voice = selected
+        }
+        synthesizer.voiceIdentifier = selected?.identifier
     }
 
     func performModelGateAction(_ action: AgentModelGateAction) async {

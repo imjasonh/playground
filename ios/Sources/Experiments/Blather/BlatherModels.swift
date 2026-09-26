@@ -61,6 +61,159 @@ enum BlatherSpeed: Double, CaseIterable, Identifiable, Hashable {
     }
 }
 
+/// An installed speech voice the listener can pick.
+///
+/// Compact system voices sound mechanical. Premium and Siri voices sound
+/// closer to conversation, but only after they are downloaded. Super-compact
+/// voices are the natural ones that ship on the device; the system still
+/// reports them as default quality, so the identifier is what distinguishes them.
+struct BlatherVoice: Equatable, Identifiable, Hashable {
+    /// Quality `AVSpeechSynthesisVoice` reports. Super-compact voices still
+    /// report `standard`.
+    enum ReportedQuality: Equatable {
+        case standard
+        case enhanced
+        case premium
+    }
+
+    /// How the voice sounds, from the identifier and the reported quality.
+    enum Tone: Int, Comparable, Equatable {
+        case compact
+        case standard
+        case natural
+        case enhanced
+        case premium
+        case conversational
+
+        static func < (lhs: Tone, rhs: Tone) -> Bool {
+            lhs.rawValue < rhs.rawValue
+        }
+
+        var label: String {
+            switch self {
+            case .compact, .standard:
+                "Standard"
+            case .natural:
+                "Natural"
+            case .enhanced:
+                "Enhanced"
+            case .premium:
+                "Premium"
+            case .conversational:
+                "Conversational"
+            }
+        }
+    }
+
+    var identifier: String
+    var name: String
+    var language: String
+    var tone: Tone
+
+    var id: String { identifier }
+
+    /// Menu row. The section already names the tone.
+    var optionLabel: String {
+        "\(name) · \(regionName)"
+    }
+
+    /// Spoken value for the voice control.
+    var accessibilityValue: String {
+        "\(name), \(tone.label), \(regionName)"
+    }
+
+    var regionName: String {
+        let normalized = language.replacingOccurrences(of: "_", with: "-")
+        let locale = Locale(identifier: normalized)
+        if let code = locale.region?.identifier,
+           let name = Locale.current.localizedString(forRegionCode: code) {
+            return name
+        }
+        return Locale.current.localizedString(forIdentifier: normalized) ?? language
+    }
+
+    static func make(
+        identifier: String,
+        name: String,
+        language: String,
+        quality: ReportedQuality = .standard,
+        personal: Bool = false
+    ) -> BlatherVoice {
+        BlatherVoice(
+            identifier: identifier,
+            name: name,
+            language: language,
+            tone: tone(identifier: identifier, quality: quality, personal: personal)
+        )
+    }
+
+    static func tone(identifier: String, quality: ReportedQuality, personal: Bool) -> Tone {
+        if personal {
+            return .conversational
+        }
+        let id = identifier.lowercased()
+        if id.contains("siri"), quality == .premium || id.contains("premium") {
+            return .conversational
+        }
+        if quality == .premium || id.contains("premium") {
+            return .premium
+        }
+        if quality == .enhanced || id.contains("enhanced") {
+            return .enhanced
+        }
+        // Checked before "compact": the substring "super-compact" contains "compact".
+        if id.contains("super-compact") || id.contains("supercompact") {
+            return .natural
+        }
+        if id.contains("compact") || id.contains("eloquence") {
+            return .compact
+        }
+        return .standard
+    }
+
+    /// Higher is more conversational. English, then US English, wins a tie.
+    static func rank(_ voice: BlatherVoice) -> Int {
+        var score = voice.tone.rawValue * 10
+        if voice.language.lowercased().hasPrefix("en") {
+            score += 2
+        }
+        if voice.language.lowercased().hasPrefix("en-us") || voice.language.lowercased().hasPrefix("en_us") {
+            score += 1
+        }
+        return score
+    }
+
+    /// English voices worth offering, most conversational first.
+    /// Novelty Eloquence voices stay out. If no English voice is installed,
+    /// the remaining non-novelty voices are offered instead.
+    static func choices(_ voices: [BlatherVoice]) -> [BlatherVoice] {
+        let spoken = voices.filter { !$0.identifier.lowercased().contains("eloquence") }
+        let pool = spoken.isEmpty ? voices : spoken
+        let english = pool.filter { $0.language.lowercased().hasPrefix("en") }
+        let picked = english.isEmpty ? pool : english
+        return picked.sorted { lhs, rhs in
+            let left = rank(lhs)
+            let right = rank(rhs)
+            if left != right {
+                return left > right
+            }
+            if lhs.name != rhs.name {
+                return lhs.name < rhs.name
+            }
+            return lhs.language < rhs.language
+        }
+    }
+
+    /// The stored choice when that voice is still installed, otherwise the
+    /// most conversational voice in the list.
+    static func select(stored: String?, from voices: [BlatherVoice]) -> BlatherVoice? {
+        if let stored, let match = voices.first(where: { $0.identifier == stored }) {
+            return match
+        }
+        return voices.max { rank($0) < rank($1) }
+    }
+}
+
 /// Segments kept after a redirect, plus the files that should be deleted.
 struct BlatherCut: Equatable {
     var segments: [BlatherSegment]
