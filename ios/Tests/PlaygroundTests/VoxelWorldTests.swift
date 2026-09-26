@@ -507,6 +507,40 @@ final class VoxelColorConversionTests: XCTestCase {
 }
 
 final class FarFieldPixelizerTests: XCTestCase {
+    func testShellTextureCapsAFullCameraFrame() {
+        let sampled = FarFieldPixelizer.sampledSize(width: 1920, height: 1440)
+        XCTAssertEqual(sampled.scale, 4)
+        XCTAssertEqual(sampled.width, 480)
+        XCTAssertEqual(sampled.height, 360)
+        XCTAssertLessThanOrEqual(
+            max(sampled.width, sampled.height),
+            FarFieldPixelizer.maxTextureEdge
+        )
+    }
+
+    func testShellTextureKeepsAFrameWithinTheCap() {
+        let sampled = FarFieldPixelizer.sampledSize(width: 480, height: 360)
+        XCTAssertEqual(sampled.scale, 1)
+        XCTAssertEqual(sampled.width, 480)
+        XCTAssertEqual(sampled.height, 360)
+    }
+
+    func testScaledIntrinsicsPreserveShellPlaneSize() {
+        var intrinsics = matrix_identity_float3x3
+        intrinsics[0] = SIMD3<Float>(1600, 0, 0)
+        intrinsics[1] = SIMD3<Float>(0, 1600, 0)
+        intrinsics[2] = SIMD3<Float>(960, 720, 1)
+        let scaled = FarFieldPixelizer.scaledIntrinsics(intrinsics, scale: 4)
+        XCTAssertEqual(scaled[0][0], 400, accuracy: 0.01)
+        XCTAssertEqual(scaled[1][1], 400, accuracy: 0.01)
+        XCTAssertEqual(scaled[2][0], 240, accuracy: 0.01)
+        XCTAssertEqual(scaled[2][1], 180, accuracy: 0.01)
+        let shellDepth: Float = 5.15
+        let fullWidth = Float(1920) * shellDepth / intrinsics[0][0]
+        let scaledWidth = Float(480) * shellDepth / scaled[0][0]
+        XCTAssertEqual(fullWidth, scaledWidth, accuracy: 0.01)
+    }
+
     func testBlockEdgeMatchesVoxelAtFarDepth() {
         // 10 cm at 5 m through a 1000 px focal length covers 20 px.
         XCTAssertEqual(

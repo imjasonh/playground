@@ -52,7 +52,7 @@ ios/
 | `army-list` | Army List | Build/validate 11th Edition lists (all factions in the bundled catalog); catalog code lists legal moves and applies picks; Laya answers labeled choices and leftover yes/no; Apple Intelligence writes a theme brief, a list name, and matchup copy |
 | `t9-keyboard` | T9 Keyboard | In-app demo **and** system keyboard extension |
 | `follow-the-hum` | Follow the Hum | In-app; AirPods spatial hum hunt |
-| `voxel-world` | Voxel World | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
+| `voxel-world` | Voxel Eyes | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
 | `live-translate` | Live Translate | In-app; live OCR plus on-device Foundation Models translation painted over the source text; copies the translation |
@@ -191,7 +191,7 @@ do not need that.
 Outdoor sound-hunt with AirPods head tracking. Needs a real device; see
 experiment UI for details.
 
-### Voxel World
+### Voxel Eyes
 
 ARKit world tracking rebuilds the space around you as Minecraft-style blocks.
 Every few frames the LiDAR depth map (or, without LiDAR, ARKit's sparse
@@ -208,10 +208,10 @@ crisp on the 256×192 depth map. LiDAR samples are kept out to 5 m, which is
 as far as Apple's scanner reports. The camera photo is not shown. Every pixel
 is drawn as a chunky palette square the size of a 10 cm block at that pixel's
 depth (5 m when the scanner has no reading), and the voxel mesh draws in
-front. The camera button saves the current frame, camera plus voxels, to
-Photos. Rendering is
-chunked SceneKit geometry with hidden interior faces culled and per-face
-shading baked into vertex colors. Needs
+front. A camera button floats on the viewer and saves the current frame,
+camera plus voxels, to Photos. Rendering is chunked SceneKit geometry
+with hidden interior faces culled and per-face shading baked into vertex
+colors. Needs
 camera permission (`NSCameraUsageDescription`) and add-only photo library
 permission (`NSPhotoLibraryAddUsageDescription`). No new Bundle ID,
 entitlement, or signing bootstrap. Works best on LiDAR devices

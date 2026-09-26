@@ -21,7 +21,12 @@ final class PlaygroundUITests: XCTestCase {
     /// Prefers the launcher search field so late catalog rows do not depend on
     /// a long swipe chain. Falls back to scrolling. If the tap misses and the
     /// Playground list is still showing, taps once more.
-    private func openExperiment(_ id: String, title: String, in app: XCUIApplication) {
+    private func openExperiment(
+        _ id: String,
+        title: String,
+        in app: XCUIApplication,
+        navigationBarHidden: Bool = false
+    ) {
         _ = filterLauncher(to: title, in: app)
         let byId = app.buttons["experiment-\(id)"]
         let byTitle = app.staticTexts[title]
@@ -33,6 +38,17 @@ final class PlaygroundUITests: XCTestCase {
         }
 
         tapLauncherRow(id: id, title: title, in: app)
+        if navigationBarHidden {
+            if app.navigationBars["Playground"].waitForNonExistence(timeout: 6) {
+                return
+            }
+            tapLauncherRow(id: id, title: title, in: app)
+            XCTAssertTrue(
+                app.navigationBars["Playground"].waitForNonExistence(timeout: 8),
+                "Could not open experiment \(id)"
+            )
+            return
+        }
         let destination = app.navigationBars[title]
         if destination.waitForExistence(timeout: 6) || !app.navigationBars["Playground"].exists {
             return
@@ -125,8 +141,8 @@ final class PlaygroundUITests: XCTestCase {
             "Live Translate should appear after scrolling the launcher"
         )
         XCTAssertTrue(
-            scrollLauncherUntilExists(app.staticTexts["Voxel World"], in: app),
-            "Voxel World should appear after scrolling the launcher"
+            scrollLauncherUntilExists(app.staticTexts["Voxel Eyes"], in: app),
+            "Voxel Eyes should appear after scrolling the launcher"
         )
         XCTAssertTrue(
             scrollLauncherUntilExists(app.staticTexts["Wigglecam"], in: app),
@@ -185,9 +201,11 @@ final class PlaygroundUITests: XCTestCase {
     func testVoxelWorldExperimentOpens() {
         let app = launchApp()
 
-        openExperiment("voxel-world", title: "Voxel World", in: app)
+        openExperiment("voxel-world", title: "Voxel Eyes", in: app, navigationBarHidden: true)
 
-        XCTAssertTrue(app.navigationBars["Voxel World"].waitForExistence(timeout: 8))
+        let backButton = app.buttons["voxelBackButton"]
+        XCTAssertTrue(backButton.waitForExistence(timeout: 8))
+        XCTAssertEqual(backButton.label, "Back")
         let captureButton = app.buttons["voxelCaptureButton"]
         XCTAssertTrue(captureButton.waitForExistence(timeout: 8)
             || app.otherElements["voxelCaptureButton"].waitForExistence(timeout: 3))
@@ -197,8 +215,8 @@ final class PlaygroundUITests: XCTestCase {
         XCTAssertFalse(app.buttons["voxelResetButton"].exists)
         XCTAssertFalse(app.buttons["voxelFreezeCheckbox"].exists)
         XCTAssertFalse(app.buttons["voxelCameraFeedCheckbox"].exists)
-        XCTAssertTrue(app.staticTexts["voxelStatusMessage"].waitForExistence(timeout: 8)
-            || app.otherElements["voxelStatusMessage"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["voxelStatusMessage"].exists)
+        XCTAssertFalse(app.staticTexts["voxelCountLabel"].exists)
     }
 
     func testWigglecamExperimentOpens() {

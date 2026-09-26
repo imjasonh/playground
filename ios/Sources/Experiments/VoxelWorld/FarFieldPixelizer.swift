@@ -8,9 +8,55 @@ import UIKit
 /// shows through. Each square is the on-screen size of a voxel at that
 /// pixel's depth. Samples with no depth use the scanner maximum.
 enum FarFieldPixelizer {
+    /// Longest edge of the live shell texture, in pixels.
+    ///
+    /// A full ARKit camera frame is much finer than a 10 cm block. Compositing
+    /// that frame at native size makes the shell trail the phone. This cap
+    /// keeps the on-screen block size and drops the extra pixels.
+    static let maxTextureEdge = 480
+
     /// Depth samples at or below this are not a surface. Voxel integration
     /// uses the same cutoff.
     static let minimumDepth: Float = 0.05
+
+    /// Integer factor that brings the longer image edge down to `maxEdge`.
+    /// Returns 1 when the image is already within the cap.
+    static func sampleScale(width: Int, height: Int, maxEdge: Int = maxTextureEdge) -> Int {
+        guard width > 0, height > 0, maxEdge > 0 else { return 1 }
+        let longEdge = max(width, height)
+        guard longEdge > maxEdge else { return 1 }
+        return (longEdge + maxEdge - 1) / maxEdge
+    }
+
+    /// Width, height, and scale of the shell texture for a camera image.
+    static func sampledSize(
+        width: Int,
+        height: Int,
+        maxEdge: Int = maxTextureEdge
+    ) -> (width: Int, height: Int, scale: Int) {
+        let scale = sampleScale(width: width, height: height, maxEdge: maxEdge)
+        return (max(1, width / scale), max(1, height / scale), scale)
+    }
+
+    /// Intrinsics for an image downsampled by `scale` on both axes.
+    /// Dividing focal length and principal point by the same factor keeps
+    /// the shell plane the same size in the camera.
+    static func scaledIntrinsics(_ intrinsics: simd_float3x3, scale: Int) -> simd_float3x3 {
+        guard scale > 1 else { return intrinsics }
+        let factor = Float(scale)
+        var scaled = intrinsics
+        var xColumn = scaled[0]
+        xColumn.x /= factor
+        scaled[0] = xColumn
+        var yColumn = scaled[1]
+        yColumn.y /= factor
+        scaled[1] = yColumn
+        var principal = scaled[2]
+        principal.x /= factor
+        principal.y /= factor
+        scaled[2] = principal
+        return scaled
+    }
 
     /// Image-pixel edge of one voxel `voxelEdge` meters away at `depth`.
     static func blockEdgePixels(focalLength: Float, voxelEdge: Float, depth: Float) -> Int {
@@ -190,26 +236,37 @@ final class FarFieldCompositor {
         let chromaWidth = CVPixelBufferGetWidthOfPlane(pixelBuffer, 1)
         let chromaHeight = CVPixelBufferGetHeightOfPlane(pixelBuffer, 1)
 
-        if rgb.count != imageWidth * imageHeight {
-            rgb = [SIMD3<Float>](repeating: .zero, count: imageWidth * imageHeight)
+        let sampled = FarFieldPixelizer.sampledSize(width: imageWidth, height: imageHeight)
+        let scale = sampled.scale
+        let outWidth = sampled.width
+        let outHeight = sampled.height
+        // Center of each source bin. The shell is chunky enough that the
+        // half-bin shift against scaled intrinsics does not show.
+        let sampleOffset = scale / 2
+
+        if rgb.count != outWidth * outHeight {
+            rgb = [SIMD3<Float>](repeating: .zero, count: outWidth * outHeight)
         }
-        for y in 0..<imageHeight {
-            for x in 0..<imageWidth {
-                let lumaSample = luma[y * lumaBytesPerRow + x]
-                let cx = min(x / 2, chromaWidth - 1)
-                let cy = min(y / 2, chromaHeight - 1)
+        for y in 0..<outHeight {
+            let sourceY = min(y * scale + sampleOffset, imageHeight - 1)
+            let lumaRow = sourceY * lumaBytesPerRow
+            for x in 0..<outWidth {
+                let sourceX = min(x * scale + sampleOffset, imageWidth - 1)
+                let lumaSample = luma[lumaRow + sourceX]
+                let cx = min(sourceX / 2, chromaWidth - 1)
+                let cy = min(sourceY / 2, chromaHeight - 1)
                 let cb = chroma[cy * chromaBytesPerRow + cx * 2]
                 let cr = chroma[cy * chromaBytesPerRow + cx * 2 + 1]
-                rgb[y * imageWidth + x] = VoxelColorConversion.rgb(y: lumaSample, cb: cb, cr: cr)
+                rgb[y * outWidth + x] = VoxelColorConversion.rgb(y: lumaSample, cb: cb, cr: cr)
             }
         }
 
         let depth = Self.packedDepth(frame.smoothedSceneDepth?.depthMap ?? frame.sceneDepth?.depthMap)
-        let intrinsics = frame.camera.intrinsics
+        let intrinsics = FarFieldPixelizer.scaledIntrinsics(frame.camera.intrinsics, scale: scale)
         FarFieldPixelizer.apply(
             pixels: &rgb,
-            width: imageWidth,
-            height: imageHeight,
+            width: outWidth,
+            height: outHeight,
             depth: depth?.values,
             depthWidth: depth?.width ?? 0,
             depthHeight: depth?.height ?? 0,
@@ -219,14 +276,14 @@ final class FarFieldCompositor {
             voxelEdge: VoxelWorldSession.voxelEdgeMeters
         )
 
-        guard let image = Self.opaqueImage(pixels: rgb, width: imageWidth, height: imageHeight) else {
+        guard let image = Self.opaqueImage(pixels: rgb, width: outWidth, height: outHeight) else {
             return nil
         }
         return FarFieldTexture(
             image: image,
             intrinsics: intrinsics,
-            imageWidth: imageWidth,
-            imageHeight: imageHeight
+            imageWidth: outWidth,
+            imageHeight: outHeight
         )
     }
 

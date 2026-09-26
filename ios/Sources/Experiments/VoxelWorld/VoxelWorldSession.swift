@@ -6,7 +6,7 @@ import simd
 
 /// ARKit world-tracking session that voxelizes what the camera sees.
 ///
-/// Every ~0.2 s one frame is integrated: LiDAR depth pixels (or, without
+/// Every ~0.1 s one frame is integrated: LiDAR depth pixels (or, without
 /// LiDAR, sparse tracked feature points) are unprojected into world space,
 /// quantized into a `VoxelGrid`, and colored from the camera image at that
 /// pixel. Chunks whose voxels changed are re-meshed and swapped into the
@@ -32,7 +32,8 @@ final class VoxelWorldSession: NSObject, ObservableObject {
     /// Fixed block edge. 10 cm is the smallest size that stays crisp on the
     /// 256×192 depth map. Smaller blocks turn sensor noise into fuzzy walls.
     static let voxelEdgeMeters: Float = 0.10
-    static let integrationInterval: TimeInterval = 0.2
+    /// How often a frame is folded into the voxel grid.
+    static let integrationInterval: TimeInterval = 0.1
     /// Depth-map sampling stride (256×192 map → ~12k samples per tick).
     static let depthStride = 2
     /// Chunk meshes rebuilt per integration tick.
@@ -40,7 +41,6 @@ final class VoxelWorldSession: NSObject, ObservableObject {
 
     @Published private(set) var runState: RunState = .idle
     @Published private(set) var statusMessage = "Sweep the phone around to fill the world with voxels."
-    @Published private(set) var voxelCount = 0
     @Published private(set) var usingSceneDepth = false
     @Published private(set) var isSavingPhoto = false
 
@@ -61,7 +61,7 @@ final class VoxelWorldSession: NSObject, ObservableObject {
     /// Keeps a save confirmation on screen while integration keeps publishing.
     private var suppressStatusUntil = Date.distantPast
     private let cameraCover = VoxelCameraCover()
-    private let farFieldQueue = DispatchQueue(label: "voxel-world.far-field", qos: .userInitiated)
+    private let farFieldQueue = DispatchQueue(label: "voxel-world.far-field", qos: .userInteractive)
     private let farFieldCompositor = FarFieldCompositor()
     /// Main-thread only.
     private var pendingFarField: FarFieldTexture?
@@ -69,11 +69,15 @@ final class VoxelWorldSession: NSObject, ObservableObject {
     private var farFieldNode: SCNNode?
     /// Main-thread only. Drops camera frames while one composite is in flight.
     private var farFieldQueued = false
+    /// Processing-queue only. Last budget-full state already sent to the UI.
+    private var publishedBudgetHit = false
 
     override init() {
         let view = ARSCNView(frame: .zero)
         view.scene = SCNScene()
         view.automaticallyUpdatesLighting = false
+        // Palette faces are flat color, so multisampling only spends fill rate.
+        view.antialiasingMode = .none
         view.accessibilityIdentifier = "voxelWorldARView"
         arView = view
         super.init()
@@ -385,10 +389,10 @@ final class VoxelWorldSession: NSObject, ObservableObject {
     }
 
     private func publishStatus(budgetHit: Bool) {
-        let count = grid.voxelCount
+        guard budgetHit != publishedBudgetHit else { return }
+        publishedBudgetHit = budgetHit
         DispatchQueue.main.async { [weak self] in
             guard let self, self.runState == .running else { return }
-            self.voxelCount = count
             guard !self.isSavingPhoto, Date() >= self.suppressStatusUntil else { return }
             if budgetHit {
                 self.statusMessage = "Voxel budget full (\(Self.maxVoxels))."
