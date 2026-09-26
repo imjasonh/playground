@@ -468,6 +468,11 @@ final class BlatherTests: XCTestCase {
         XCTAssertFalse(session.isGenerating)
     }
 
+    func testUnitTestsLeaveTheSpeechServerAlone() {
+        XCTAssertTrue(BlatherRuntime.isUnitTest)
+        XCTAssertEqual(BlatherVoice.installed(), [])
+    }
+
     func testBlankTopicIsIgnored() async {
         let session = makeSession(
             narrator: FakeNarrator(text: "Nope."),

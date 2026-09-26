@@ -124,6 +124,7 @@ final class BlatherSpeechRenderer: BlatherSynthesizer {
 extension BlatherVoice {
     /// Voices `AVSpeechSynthesizer` can speak with on this device, best first.
     static func installed() -> [BlatherVoice] {
+        guard !BlatherRuntime.isUnitTest else { return [] }
         let mapped = AVSpeechSynthesisVoice.speechVoices().map { voice in
             make(
                 identifier: voice.identifier,
