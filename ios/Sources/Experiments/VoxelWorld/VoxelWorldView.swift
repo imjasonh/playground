@@ -2,37 +2,36 @@ import ARKit
 import SceneKit
 import SwiftUI
 
-/// Voxel World. ARKit rebuilds the room as colored voxels.
+/// Voxel Eyes. The voxel viewer fills the screen. Back and capture float on it.
 struct VoxelWorldView: View {
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var session = VoxelWorldSession()
 
     var body: some View {
-        VStack(spacing: 0) {
-            preview
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black)
-
-            controls
-                .padding()
-                .background(.ultraThinMaterial)
+        ZStack {
+            stage
+                .ignoresSafeArea()
+            floatingChrome
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.black.ignoresSafeArea())
+        .preferredColorScheme(.dark)
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
         .onAppear { session.start() }
         .onDisappear { session.stop() }
     }
 
-    private var preview: some View {
-        GeometryReader { geo in
-            ZStack {
-                if showsARView {
-                    VoxelARViewContainer(view: session.arView)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .accessibilityIdentifier("voxelWorldPreview")
-                } else {
-                    placeholder
-                        .frame(width: geo.size.width, height: geo.size.height)
-                }
+    private var stage: some View {
+        ZStack {
+            if showsARView {
+                VoxelARViewContainer(view: session.arView)
+                    .accessibilityIdentifier("voxelWorldPreview")
+            } else {
+                placeholder
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .contain)
     }
 
@@ -60,6 +59,7 @@ struct VoxelWorldView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
         }
+        .padding(.bottom, 72)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             LinearGradient(
@@ -73,37 +73,49 @@ struct VoxelWorldView: View {
         )
     }
 
-    private var controls: some View {
-        VStack(spacing: 12) {
+    private var floatingChrome: some View {
+        VStack {
             HStack {
-                Text(session.statusMessage)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .accessibilityIdentifier("voxelStatusMessage")
-                Text("\(session.voxelCount)")
-                    .font(.footnote.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("voxelCountLabel")
-            }
-
-            HStack {
-                Spacer()
-                Button {
-                    session.saveCurrentFrame()
-                } label: {
-                    Image(systemName: "camera.fill")
-                        .font(.title2)
-                        .frame(minWidth: 44, minHeight: 44)
-                }
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.circle)
-                .disabled(session.isSavingPhoto)
-                .accessibilityLabel("Take picture")
-                .accessibilityIdentifier("voxelCaptureButton")
+                backButton
                 Spacer()
             }
+            Spacer()
+            captureButton
         }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var backButton: some View {
+        Button {
+            dismiss()
+        } label: {
+            Image(systemName: "chevron.backward")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(minWidth: 44, minHeight: 44)
+                .background(.black.opacity(0.45), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back")
+        .accessibilityIdentifier("voxelBackButton")
+    }
+
+    private var captureButton: some View {
+        Button {
+            session.saveCurrentFrame()
+        } label: {
+            Image(systemName: "camera.fill")
+                .font(.title2)
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.circle)
+        .disabled(session.isSavingPhoto || session.runState != .running)
+        .accessibilityLabel("Take picture")
+        .accessibilityIdentifier("voxelCaptureButton")
     }
 
     private var placeholderSymbol: String {
@@ -130,7 +142,7 @@ struct VoxelWorldView: View {
         case .running:
             return "Waiting for frames…"
         case .idle:
-            return "Voxel World"
+            return "Voxel Eyes"
         }
     }
 }

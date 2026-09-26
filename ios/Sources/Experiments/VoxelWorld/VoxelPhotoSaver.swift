@@ -1,7 +1,7 @@
 import Photos
 import UIKit
 
-/// Saves a Voxel World frame into the photo library with add-only access.
+/// Saves a Voxel Eyes frame into the photo library with add-only access.
 enum VoxelPhotoSaver {
     enum SaveError: LocalizedError {
         case notAuthorized
