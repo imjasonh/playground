@@ -3,6 +3,17 @@ import Foundation
 import MediaPlayer
 import UIKit
 
+/// Unit tests run inside the app process, so `Bundle.main` is the `.app`.
+/// Speech and audio calls still run in that process. The first
+/// `AVSpeechSynthesisVoice` query in those tests takes about two minutes on
+/// the simulator. The servers stay up, and `xcodebuild` then waits 10 minutes
+/// collecting simulator diagnostics.
+enum BlatherRuntime {
+    static var isUnitTest: Bool {
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+    }
+}
+
 /// Text returned by the narrator. `totalTokenCount` is the model session's
 /// measured total when the on-device model reports one.
 struct BlatherNarration: Equatable {
@@ -62,6 +73,7 @@ final class BlatherRemoteControl {
 
     func attach(handler: @escaping @MainActor (Command) -> Void) {
         detach()
+        guard !BlatherRuntime.isUnitTest else { return }
         let center = MPRemoteCommandCenter.shared()
         center.skipForwardCommand.preferredIntervals = [NSNumber(value: BlatherTimeline.skipStep)]
         center.skipBackwardCommand.preferredIntervals = [NSNumber(value: BlatherTimeline.skipStep)]
@@ -110,6 +122,7 @@ final class BlatherRemoteControl {
             command.removeTarget(token)
         }
         tokens = []
+        guard !BlatherRuntime.isUnitTest else { return }
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.isEnabled = false
         center.pauseCommand.isEnabled = false
@@ -1081,6 +1094,7 @@ final class BlatherSession: ObservableObject {
     }
 
     private func publishNowPlaying() {
+        guard !BlatherRuntime.isUnitTest else { return }
         guard mode != .idle, let episode, hasAudio else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
             return
@@ -1125,6 +1139,7 @@ final class BlatherSession: ObservableObject {
     }
 
     private func deactivateAudio() {
+        guard !BlatherRuntime.isUnitTest else { return }
         try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
     }
 
@@ -1153,8 +1168,10 @@ private final class BackgroundToken {
     func begin(onExpiration: (@MainActor () -> Void)? = nil) {
         guard id == .invalid else { return }
         self.onExpiration = onExpiration
-        // Unit tests run in the test bundle, which has no UIApplication.
-        // Hosted in the app, this keeps a model call alive if the phone locks.
+        // Hosted unit tests still see the app bundle. Skip the task so the
+        // suite does not leave one running. In the app, this keeps a model
+        // call alive if the phone locks.
+        guard !BlatherRuntime.isUnitTest else { return }
         guard Bundle.main.bundlePath.hasSuffix(".app") else { return }
         id = UIApplication.shared.beginBackgroundTask(withName: "Blather") { [weak self] in
             Task { @MainActor in
