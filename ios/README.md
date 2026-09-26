@@ -329,8 +329,9 @@ more voices under Accessibility, Spoken Content.
 
 The player shows the episode cover, a scrubber, 10-second skip controls, and
 a speed control for 1×, 1.5×, 1.75×, and 2×. Pause, then type a direction, to
-change what it says next. **Continue** on a saved episode writes more when you
-are near the end. Close the player and the audio keeps going in the mini
+change what it says next. **Keep writing** on a saved episode appends more
+speech at the end and does not start, pause, or move playback. **Stop
+writing** ends that. Close the player and the audio keeps going in the mini
 player, which has the same speed control. The lock screen shows the cover,
 play, pause, skip, and playback speed. Playback continues while the screen is
 locked (`UIBackgroundModes` includes `audio`). If a passage is still being

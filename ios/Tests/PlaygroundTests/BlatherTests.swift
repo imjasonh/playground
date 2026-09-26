@@ -504,14 +504,23 @@ final class BlatherTests: XCTestCase {
         XCTAssertEqual(session.playhead, 0)
         XCTAssertEqual(session.episode?.segments.count, 1)
 
-        await session.continueTalking()
-        XCTAssertEqual(session.mode, .live)
-        XCTAssertTrue(session.isPlaying)
-        XCTAssertEqual(session.episode?.segments.count, 1)
+        let updatesBeforeExtend = playback.updates.count
+        session.setExtending(true)
+        await waitUntil { (session.episode?.segments.count ?? 0) > 1 }
+        XCTAssertGreaterThan(session.episode?.segments.count ?? 0, 1)
+        XCTAssertEqual(session.mode, .replay)
+        XCTAssertFalse(session.isPlaying)
+        XCTAssertEqual(session.playhead, 0)
+        XCTAssertFalse(playback.updates.dropFirst(updatesBeforeExtend).contains { $0.playing })
 
-        session.skip(by: 20)
+        session.setExtending(false)
         await session.waitForFill()
-        XCTAssertEqual(session.episode?.segments.count, 2)
+        XCTAssertFalse(session.isExtending)
+        XCTAssertFalse(session.isPlaying)
+
+        session.resume()
+        XCTAssertTrue(session.isPlaying)
+        XCTAssertEqual(session.playhead, 0)
 
         session.delete(id: id)
         XCTAssertEqual(session.mode, .idle)
@@ -530,6 +539,12 @@ final class BlatherTests: XCTestCase {
         session.shutdown()
         XCTAssertTrue(playback.stopped)
         XCTAssertFalse(session.isPlaying)
+    }
+
+    private func waitUntil(attempts: Int = 50, _ predicate: () -> Bool) async {
+        for _ in 0..<attempts where !predicate() {
+            await Task.yield()
+        }
     }
 
     private func makeSession(

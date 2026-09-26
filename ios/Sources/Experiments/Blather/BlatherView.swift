@@ -309,13 +309,13 @@ private struct BlatherTransport: View {
             if canRedirect {
                 redirectField
             }
-            if session.mode == .replay, session.modelGate.isAvailable, !session.isPlaying {
-                Button("Continue") {
-                    Task { await session.continueTalking() }
+            if session.mode == .replay, session.modelGate.isAvailable {
+                Button(session.isExtending ? "Stop writing" : "Keep writing") {
+                    session.setExtending(!session.isExtending)
                 }
                 .buttonStyle(.bordered)
                 .frame(maxWidth: .infinity, minHeight: 44)
-                .accessibilityIdentifier("blatherContinueButton")
+                .accessibilityIdentifier("blatherKeepWritingButton")
             }
         }
         .padding()

@@ -134,6 +134,8 @@ final class BlatherSession: ObservableObject {
     @Published private(set) var playhead: TimeInterval = 0
     @Published private(set) var isPlaying = false
     @Published private(set) var isGenerating = false
+    /// True while a saved episode is growing at the end. Playback is unchanged.
+    @Published private(set) var isExtending = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var didCompact = false
     @Published private(set) var saved: [BlatherEpisodeSummary] = []
@@ -341,6 +343,7 @@ final class BlatherSession: ObservableObject {
         mode = .live
         playhead = 0
         isPlaying = false
+        isExtending = false
         wantsAutoplay = true
         hasStartedPlayback = false
         errorMessage = nil
@@ -410,6 +413,7 @@ final class BlatherSession: ObservableObject {
         episode = current
         playhead = cut.playhead
         mode = .live
+        isExtending = false
         wantsAutoplay = true
         isPlaying = false
         hasStartedPlayback = false
@@ -425,30 +429,21 @@ final class BlatherSession: ObservableObject {
         await runFill(token: token, after: previous)
     }
 
-    func continueTalking() async {
-        guard mode == .replay || mode == .live else { return }
-        guard modelGate.isAvailable else { return }
-        mode = .live
-        wantsAutoplay = true
-        generationFailed = false
-        resumeWhenActive = false
-        errorMessage = nil
-        if hasAudio {
-            isPlaying = true
-            hasStartedPlayback = true
-            syncPlayback()
+    /// Appends passages at the end of a saved episode. Does not play, pause, or seek.
+    func setExtending(_ on: Bool) {
+        if on {
+            beginExtending()
+        } else {
+            isExtending = false
         }
-        guard !hasAudio || shouldPrefetch(playhead: playhead, duration: audibleDuration) else {
-            return
-        }
-        generation &+= 1
-        let token = generation
-        fillRunning = true
-        await runFill(token: token, after: chain)
     }
 
     func retry() async {
         guard mode == .live || mode == .replay else { return }
+        if mode == .replay {
+            setExtending(true)
+            return
+        }
         generationFailed = false
         resumeWhenActive = false
         errorMessage = nil
@@ -467,6 +462,7 @@ final class BlatherSession: ObservableObject {
         episode = loaded
         mode = .replay
         isPlaying = false
+        isExtending = false
         wantsAutoplay = false
         hasStartedPlayback = false
         playhead = 0
@@ -496,6 +492,7 @@ final class BlatherSession: ObservableObject {
         mode = .idle
         episode = nil
         isPlaying = false
+        isExtending = false
         wantsAutoplay = false
         hasStartedPlayback = false
         isGenerating = false
@@ -517,6 +514,7 @@ final class BlatherSession: ObservableObject {
         generation &+= 1
         chain?.cancel()
         isPlaying = false
+        isExtending = false
         wantsAutoplay = false
         resumeWhenActive = false
         isGenerating = false
@@ -525,6 +523,32 @@ final class BlatherSession: ObservableObject {
         remote.detach()
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         deactivateAudio()
+    }
+
+    /// Starts appending passages. The playhead and playing flag stay as they are.
+    private func beginExtending() {
+        guard mode == .replay, modelGate.isAvailable, episode != nil, !isExtending else { return }
+        isExtending = true
+        generationFailed = false
+        resumeWhenActive = false
+        errorMessage = nil
+        generation &+= 1
+        let token = generation
+        fillRunning = true
+        let previous = chain
+        let task = Task { [weak self] in
+            await previous?.value
+            guard let self else { return }
+            guard self.generation == token, self.isExtending else {
+                if self.generation == token {
+                    self.fillRunning = false
+                    self.isExtending = false
+                }
+                return
+            }
+            await self.fillAhead(token: token)
+        }
+        chain = task
     }
 
     /// Waits for the fill scheduled by the latest playhead or transport change.
@@ -620,6 +644,7 @@ final class BlatherSession: ObservableObject {
             if generation == token {
                 isGenerating = false
                 fillRunning = false
+                isExtending = false
                 startPlayback(token: token, allowShort: true)
             }
         }
@@ -627,13 +652,13 @@ final class BlatherSession: ObservableObject {
         var queued: DraftPassage?
         while generation == token, !Task.isCancelled {
             if produced > 0 {
-                guard mode == .live, !generationFailed else { return }
+                guard (mode == .live || isExtending), !generationFailed else { return }
                 if !shouldContinueFill(produced: produced) {
                     await finishQueued(queued, token: token, produced: produced)
                     return
                 }
             }
-            if produced >= BlatherTimeline.maxSegmentsPerFill {
+            if produced >= BlatherTimeline.maxSegmentsPerFill, !isExtending {
                 await finishQueued(queued, token: token, produced: produced)
                 return
             }
@@ -649,7 +674,7 @@ final class BlatherSession: ObservableObject {
             }
 
             let projected = audibleDuration + BlatherTimeline.estimatedDuration(of: draft.speech)
-            let overlap = produced + 1 < BlatherTimeline.maxSegmentsPerFill
+            let overlap = (isExtending || produced + 1 < BlatherTimeline.maxSegmentsPerFill)
                 && shouldProjectMore(projectedDuration: projected)
             if overlap {
                 planner.commit(
@@ -681,6 +706,9 @@ final class BlatherSession: ObservableObject {
     /// True when the audio on disk, plus this passage's estimated length, is
     /// still short of the opening buffer or the prefetch lead.
     private func shouldProjectMore(projectedDuration: TimeInterval) -> Bool {
+        if isExtending {
+            return true
+        }
         if !isPlaying {
             return BlatherTimeline.needsOpeningAudio(
                 playhead: playhead,
@@ -695,6 +723,9 @@ final class BlatherSession: ObservableObject {
     /// ready. After playback starts, the fill stops once the prefetch lead
     /// is covered.
     private func shouldContinueFill(produced: Int) -> Bool {
+        if isExtending {
+            return true
+        }
         guard produced < BlatherTimeline.maxSegmentsPerFill else { return false }
         if !isPlaying, BlatherTimeline.needsOpeningAudio(
             playhead: playhead,
@@ -734,8 +765,8 @@ final class BlatherSession: ObservableObject {
     /// Writes a passage that was already narrated. Used when the buffer fills
     /// while the next model call is still in flight.
     private func finishQueued(_ draft: DraftPassage?, token: Int, produced: Int) async {
-        guard let draft, produced < BlatherTimeline.maxSegmentsPerFill else { return }
-        guard generation == token, mode == .live, !generationFailed else { return }
+        guard let draft, isExtending || produced < BlatherTimeline.maxSegmentsPerFill else { return }
+        guard generation == token, (mode == .live || isExtending), !generationFailed else { return }
         let before = audibleDuration
         let wrote = await finishDraft(draft, token: token, commit: true)
         guard wrote, audibleDuration > before else { return }
@@ -894,7 +925,7 @@ final class BlatherSession: ObservableObject {
     /// iOS is about to suspend the process. Drop the in-flight model call and
     /// continue it the next time the app is active.
     func interruptForBackground() {
-        guard mode == .live, !resumeWhenActive else { return }
+        guard (mode == .live || isExtending), !resumeWhenActive else { return }
         resumeWhenActive = true
         generation &+= 1
         generationFailed = false
@@ -935,6 +966,16 @@ final class BlatherSession: ObservableObject {
         narrator.discardSession()
         generationFailed = false
         errorMessage = nil
+        if isExtending {
+            if isPlaying, hasAudio {
+                syncPlayback()
+            }
+            generation &+= 1
+            let token = generation
+            fillRunning = true
+            await runFill(token: token, after: chain)
+            return
+        }
         mode = .live
         let play = wantsAutoplay || isPlaying
         wantsAutoplay = play
