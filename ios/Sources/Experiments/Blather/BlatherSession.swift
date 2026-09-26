@@ -136,6 +136,8 @@ final class BlatherSession: ObservableObject {
     @Published private(set) var isGenerating = false
     /// True while a saved episode is growing at the end. Playback is unchanged.
     @Published private(set) var isExtending = false
+    /// True after you stop writing. Playback will not start another passage until you ask.
+    @Published private(set) var generationHeld = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var didCompact = false
     @Published private(set) var saved: [BlatherEpisodeSummary] = []
@@ -344,6 +346,7 @@ final class BlatherSession: ObservableObject {
         playhead = 0
         isPlaying = false
         isExtending = false
+        generationHeld = false
         wantsAutoplay = true
         hasStartedPlayback = false
         errorMessage = nil
@@ -414,6 +417,7 @@ final class BlatherSession: ObservableObject {
         playhead = cut.playhead
         mode = .live
         isExtending = false
+        generationHeld = false
         wantsAutoplay = true
         isPlaying = false
         hasStartedPlayback = false
@@ -432,10 +436,37 @@ final class BlatherSession: ObservableObject {
     /// Appends passages at the end of a saved episode. Does not play, pause, or seek.
     func setExtending(_ on: Bool) {
         if on {
+            generationHeld = false
             beginExtending()
         } else {
-            isExtending = false
+            stopGenerating()
         }
+    }
+
+    /// Starts writing when it is stopped, and stops it when a passage is in flight.
+    /// Playback is left alone.
+    func toggleGeneration() {
+        if isGenerating || isExtending {
+            stopGenerating()
+            return
+        }
+        generationHeld = false
+        if mode == .replay {
+            beginExtending()
+        } else if mode == .live {
+            scheduleFill()
+        }
+    }
+
+    /// Cancels the passage in flight. Does not pause or move playback.
+    func stopGenerating() {
+        generationHeld = true
+        isExtending = false
+        guard isGenerating || fillRunning else { return }
+        generation &+= 1
+        chain?.cancel()
+        isGenerating = false
+        fillRunning = false
     }
 
     func retry() async {
@@ -445,6 +476,7 @@ final class BlatherSession: ObservableObject {
             return
         }
         generationFailed = false
+        generationHeld = false
         resumeWhenActive = false
         errorMessage = nil
         mode = .live
@@ -463,6 +495,7 @@ final class BlatherSession: ObservableObject {
         mode = .replay
         isPlaying = false
         isExtending = false
+        generationHeld = false
         wantsAutoplay = false
         hasStartedPlayback = false
         playhead = 0
@@ -493,6 +526,7 @@ final class BlatherSession: ObservableObject {
         episode = nil
         isPlaying = false
         isExtending = false
+        generationHeld = false
         wantsAutoplay = false
         hasStartedPlayback = false
         isGenerating = false
@@ -515,6 +549,7 @@ final class BlatherSession: ObservableObject {
         chain?.cancel()
         isPlaying = false
         isExtending = false
+        generationHeld = false
         wantsAutoplay = false
         resumeWhenActive = false
         isGenerating = false
@@ -597,7 +632,7 @@ final class BlatherSession: ObservableObject {
     }
 
     private func scheduleFill() {
-        guard mode == .live, isPlaying, !fillRunning, !generationFailed else { return }
+        guard mode == .live, isPlaying, !fillRunning, !generationFailed, !generationHeld else { return }
         guard shouldPrefetch(playhead: playhead, duration: audibleDuration) else { return }
         let token = generation
         fillRunning = true

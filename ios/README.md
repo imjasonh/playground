@@ -327,11 +327,13 @@ otherwise a natural voice ahead of the compact system voice. A voice you pick
 is used for the next passage. Audio already written keeps its voice. Download
 more voices under Accessibility, Spoken Content.
 
-The player shows the episode cover, a scrubber, 10-second skip controls, and
-a speed control for 1×, 1.5×, 1.75×, and 2×. Pause, then type a direction, to
-change what it says next. **Keep writing** on a saved episode appends more
-speech at the end and does not start, pause, or move playback. **Stop
-writing** ends that. Close the player and the audio keeps going in the mini
+The player shows the episode cover, a scrubber, and a row of back 10 seconds,
+playback speed (1×, 1.5×, 1.75×, 2×), play, keep writing, and forward 10
+seconds. Pause, then type a direction, to change what it says next. **Keep
+writing** on a saved episode appends more speech at the end and does not
+start, pause, or move playback. While that is running the button is a
+spinner, and tapping it stops writing. Close the player and the audio keeps
+going in the mini
 player, which has the same speed control. The lock screen shows the cover,
 play, pause, skip, and playback speed. Playback continues while the screen is
 locked (`UIBackgroundModes` includes `audio`). If a passage is still being

@@ -516,6 +516,7 @@ final class BlatherTests: XCTestCase {
         session.setExtending(false)
         await session.waitForFill()
         XCTAssertFalse(session.isExtending)
+        XCTAssertTrue(session.generationHeld)
         XCTAssertFalse(session.isPlaying)
 
         session.resume()
