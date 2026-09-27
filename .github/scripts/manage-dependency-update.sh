@@ -58,6 +58,16 @@ _push_and_pr() {
   fi
 }
 
+_close_stale_pr_and_branch() {
+  local existing
+  existing=$(gh pr list --head "$BRANCH" --base "$BASE" --state open --json number --jq '.[0].number // empty')
+  if [[ -n "$existing" ]]; then
+    gh pr close "$existing" --comment "No dependency changes in this run; closing." || true
+  fi
+  _configure_push_auth
+  git push origin --delete "$BRANCH" 2>/dev/null || true
+}
+
 case "${1:-}" in
   enable-auto-merge)
     pr_number="${2:-}"
@@ -79,8 +89,9 @@ case "${1:-}" in
     _ensure_branch
     _stage_dep_paths
     if git diff --cached --quiet; then
-      echo "::error::open-success-pr expected staged dependency changes"
-      exit 1
+      echo "::notice::No staged dependency changes; closing any stale dependency-update PR."
+      _close_stale_pr_and_branch
+      exit 0
     fi
     git commit -m "chore(deps): update dependencies"
     _push_and_pr "chore(deps): update dependencies" "$(cat <<EOF
@@ -113,12 +124,7 @@ EOF
     ;;
   close-stale)
     # No dependency changes: close any open automation PR and delete its branch.
-    existing=$(gh pr list --head "$BRANCH" --base "$BASE" --state open --json number --jq '.[0].number // empty')
-    if [[ -n "$existing" ]]; then
-      gh pr close "$existing" --comment "No dependency changes in this run; closing." || true
-    fi
-    _configure_push_auth
-    git push origin --delete "$BRANCH" 2>/dev/null || true
+    _close_stale_pr_and_branch
     ;;
   report-failure)
     echo "::error title=Automatic dependency update failed::Review the failure pull request and workflow summary."
