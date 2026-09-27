@@ -49,7 +49,7 @@ use esp32_nimble::{uuid128, BLEAdvertisementData, BLECharacteristic, BLEDevice, 
 use knob::apps::{self, SdEntry, World};
 use knob::battery::{millivolts, percent};
 use knob::ble::{self, TextCmd, DEVICE_NAME, FIRMWARE_ID_S3};
-use knob::board::{self, PANEL_H, PANEL_W};
+use knob::board::{self, PANEL_W};
 use knob::canvas::Canvas;
 use knob::encoder::Encoder;
 use knob::haptic::{self, STRONG_CLICK};
@@ -257,7 +257,6 @@ fn main() -> anyhow::Result<()> {
     let boot = Instant::now();
 
     loop {
-        remote_knob = 0;
         if last_ping.elapsed() >= std::time::Duration::from_secs(2) {
             send_msg(&mut link, &Msg::Ping);
             last_ping = Instant::now();
