@@ -12,6 +12,6 @@ runner = "espflash flash --monitor"
 rustflags = ["--cfg", "espidf_time64"]
 
 [env]
-# 5.4.2 has the original-ESP32 controller fields esp-idf-svc 0.53
-# fills in, and the RMT flag layout esp-idf-hal 0.47 expects.
-ESP_IDF_VERSION = "v5.4.2"
+# 5.2.5 has the original-ESP32 controller fields esp-idf-svc 0.52
+# fills in. 5.2.6 adds an RMT flag that esp-idf-hal 0.46 does not pass.
+ESP_IDF_VERSION = "v5.2.5"
