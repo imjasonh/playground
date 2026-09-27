@@ -95,6 +95,11 @@ them:
 - **[`esp32-ble/`](esp32-ble/)** — Rust/ESP-IDF firmware that advertises as
   PlaygroundBLE. The Playground iOS **ESP32 BLE** experiment writes LED
   commands and displays status notifications.
+- **[`knob/`](knob/)** — Rust/ESP-IDF firmware for the Waveshare 1.8" round
+  knob. The ESP32-S3 drives the panel, touch, encoder, haptics, mic, battery,
+  TF card, and BLE. The companion ESP32 is the Classic Bluetooth audio
+  chip and drives the 3.5 mm jack. Flip the USB-C plug to flash either chip.
+  A later iOS app can push firmware over BLE. Ten example apps compile in or out.
 - **[`git-server/`](git-server/)** — a git smart-HTTP server for Cloudflare
   Workers, in Rust: repositories in R2, refs in Durable Objects, plus
   file/tree/blame APIs and streaming pack ingest.

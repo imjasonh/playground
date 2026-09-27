@@ -1,0 +1,17 @@
+# ESP32-S3R8, 16 MB flash. Two OTA slots so a BLE update can land in the
+# inactive slot and roll back if the new image never marks itself valid.
+#
+# 0x009000 nvs
+# 0x00F000 otadata
+# 0x011000 phy_init
+# 0x020000 ota_0  (6 MB)
+# 0x620000 ota_1  (6 MB)
+# 0xC20000 storage (3.875 MB, unused by the app; kept so the table fills the flash)
+#
+# Name, Type, SubType, Offset, Size
+nvs, data, nvs, 0x9000, 0x6000
+otadata, data, ota, 0xf000, 0x2000
+phy_init, data, phy, 0x11000, 0x1000
+ota_0, app, ota_0, 0x20000, 0x600000
+ota_1, app, ota_1, 0x620000, 0x600000
+storage, data, undefined, 0xC20000, 0x3E0000

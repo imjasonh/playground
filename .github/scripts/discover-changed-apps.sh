@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Discover changed testable browser apps, Go modules, Rust apps, iOS apps,
-# macOS apps, ESP32 firmware (inkbot-esp32, esp32-ble), whether the pasta style
+# macOS apps, ESP32 firmware (inkbot-esp32, esp32-ble, knob), whether the pasta style
 # leg should run, whether the posts catalog builder should run, and whether the
 # Pages home-page index renderer should run.
 set -euo pipefail
@@ -12,8 +12,8 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root"
 
 # ESP32 firmware crates are excluded from discover-rust-apps.sh (need espup).
-# Emit JSON arrays so inkbot-esp32.yml / esp32-ble.yml can gate host/firmware
-# jobs like ios/macos.
+# Emit JSON arrays so inkbot-esp32.yml, esp32-ble.yml, and knob.yml can gate
+# host/firmware jobs like ios/macos.
 inkbot_esp32_from_changes() {
   local path
   while IFS= read -r path; do
@@ -35,6 +35,21 @@ esp32_ble_from_changes() {
     case "$path" in
       esp32-ble/* | .github/workflows/esp32-ble.yml)
         echo '["esp32-ble"]'
+        return 0
+        ;;
+    esac
+  done <<EOF
+$1
+EOF
+  echo '[]'
+}
+
+knob_from_changes() {
+  local path
+  while IFS= read -r path; do
+    case "$path" in
+      knob/* | .github/workflows/knob.yml)
+        echo '["knob"]'
         return 0
         ;;
     esac
@@ -75,6 +90,7 @@ else
     macos=$(bash .github/scripts/discover-macos-apps.sh --all)
     inkbot_esp32='["inkbot-esp32"]'
     esp32_ble='["esp32-ble"]'
+    knob='["knob"]'
     pasta=true
     blog=true
     index=true
@@ -86,6 +102,7 @@ else
       echo "macos=${macos}"
       echo "inkbot_esp32=${inkbot_esp32}"
       echo "esp32_ble=${esp32_ble}"
+      echo "knob=${knob}"
       echo "pasta=${pasta}"
       echo "blog=${blog}"
       echo "index=${index}"
@@ -97,6 +114,7 @@ else
     echo "macOS apps: ${macos}"
     echo "inkbot-esp32: ${inkbot_esp32}"
     echo "esp32-ble: ${esp32_ble}"
+    echo "knob: ${knob}"
     echo "pasta: ${pasta}"
     echo "blog: ${blog}"
     echo "index: ${index}"
@@ -114,6 +132,7 @@ if [ -z "$changed" ]; then
   macos='[]'
   inkbot_esp32='[]'
   esp32_ble='[]'
+  knob='[]'
   pasta=false
   blog=false
   index=false
@@ -125,6 +144,7 @@ else
   macos=$(printf '%s\n' "$changed" | bash .github/scripts/discover-macos-apps.sh --from-changes)
   inkbot_esp32=$(inkbot_esp32_from_changes "$changed")
   esp32_ble=$(esp32_ble_from_changes "$changed")
+  knob=$(knob_from_changes "$changed")
   pasta=$(pasta_from_changes "$changed")
   blog=$(blog_from_changes "$changed")
   index=$(index_from_changes "$changed")
@@ -138,6 +158,7 @@ fi
   echo "macos=${macos}"
   echo "inkbot_esp32=${inkbot_esp32}"
   echo "esp32_ble=${esp32_ble}"
+  echo "knob=${knob}"
   echo "pasta=${pasta}"
   echo "blog=${blog}"
   echo "index=${index}"
@@ -152,6 +173,7 @@ echo "iOS apps: ${ios}"
 echo "macOS apps: ${macos}"
 echo "inkbot-esp32: ${inkbot_esp32}"
 echo "esp32-ble: ${esp32_ble}"
+echo "knob: ${knob}"
 echo "pasta: ${pasta}"
 echo "blog: ${blog}"
 echo "index: ${index}"

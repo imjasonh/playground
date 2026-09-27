@@ -1,0 +1,78 @@
+[package]
+name = "knob"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Rust firmware for the Waveshare ESP32-S3-Knob-Touch-LCD-1.8"
+repository = "https://github.com/imjasonh/playground"
+readme = "README.md"
+publish = false
+
+[lib]
+name = "knob"
+path = "src/lib.rs"
+
+[[bin]]
+name = "knob-s3"
+path = "src/s3_main.rs"
+harness = false
+required-features = ["firmware-s3"]
+
+[[bin]]
+name = "knob-esp32"
+path = "src/esp32_main.rs"
+harness = false
+required-features = ["firmware-esp32"]
+
+[features]
+default = [
+    "app-dial",
+    "app-clock",
+    "app-pomodoro",
+    "app-spectrum",
+    "app-tone",
+    "app-sketch",
+    "app-haptics",
+    "app-battery",
+    "app-card",
+    "app-remote",
+]
+# Device images. Host `cargo test` leaves both off.
+firmware-s3 = ["dep:esp32-nimble"]
+firmware-esp32 = []
+app-dial = []
+app-clock = []
+app-pomodoro = []
+app-spectrum = []
+app-tone = []
+app-sketch = []
+app-haptics = []
+app-battery = []
+app-card = []
+app-remote = []
+
+[dependencies]
+esp32-nimble = { version = "0.12", optional = true }
+
+[target.'cfg(target_os = "espidf")'.dependencies]
+anyhow = "1"
+enumset = "1.1"
+esp-idf-svc = { version = "0.52", features = ["std", "native", "binstart"] }
+log = "0.4"
+
+[build-dependencies]
+embuild = { version = "0.33", features = ["espidf"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[lints.rust]
+unused = "deny"

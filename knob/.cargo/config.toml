@@ -1,0 +1,15 @@
+# No default [build] target. Host `cargo test` stays on the host triple.
+# The Makefile passes `--target` and `-Z build-std=...` per chip.
+
+[target.xtensa-esp32s3-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+rustflags = ["--cfg", "espidf_time64"]
+
+[target.xtensa-esp32-espidf]
+linker = "ldproxy"
+runner = "espflash flash --monitor"
+rustflags = ["--cfg", "espidf_time64"]
+
+[env]
+ESP_IDF_VERSION = "v5.2.3"
