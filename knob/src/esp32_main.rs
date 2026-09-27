@@ -17,7 +17,6 @@ use esp_idf_svc::bt::avrc::controller::{AvrccEvent, EspAvrcc};
 use esp_idf_svc::bt::avrc::{KeyCode, MetadataId, Notification, NotificationType, PlaybackStatus};
 use esp_idf_svc::bt::gap::{
     Cod, CodMajorDeviceType, CodMode, CodServiceClass, DiscoveryMode, EspGap, GapEvent,
-    IOCapabilities,
 };
 use esp_idf_svc::bt::{BdAddr, BtClassic, BtDriver};
 use esp_idf_svc::hal::delay::{FreeRtos, NON_BLOCK};
@@ -102,7 +101,7 @@ fn main() -> anyhow::Result<()> {
     subscribe_avrc(&avrc)?;
     subscribe_a2dp(&a2dp)?;
     gap.set_device_name(CLASSIC_BT_NAME)?;
-    gap.set_ssp_io_cap(IOCapabilities::None)?;
+    set_io_cap_none();
     let _ = gap.set_pin("0000");
     let services = EnumSet::only(CodServiceClass::Audio) | CodServiceClass::Rendering;
     let _ = gap.set_cod(
@@ -164,7 +163,9 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-fn subscribe_gap(gap: &EspGap<'_, BtClassic, &BtDriver<'_, BtClassic>>) -> anyhow::Result<()> {
+fn subscribe_gap<'a>(
+    gap: &EspGap<'a, BtClassic, &'a BtDriver<'a, BtClassic>>,
+) -> anyhow::Result<()> {
     gap.subscribe(|event| match event {
         GapEvent::PairingUserConfirmationRequest { bd_addr, .. } => {
             post(Note::Confirm(bd_addr.addr()));
@@ -185,7 +186,9 @@ fn subscribe_gap(gap: &EspGap<'_, BtClassic, &BtDriver<'_, BtClassic>>) -> anyho
     Ok(())
 }
 
-fn subscribe_avrc(avrc: &EspAvrcc<'_, BtClassic, &BtDriver<'_, BtClassic>>) -> anyhow::Result<()> {
+fn subscribe_avrc<'a>(
+    avrc: &EspAvrcc<'a, BtClassic, &'a BtDriver<'a, BtClassic>>,
+) -> anyhow::Result<()> {
     avrc.subscribe(|event| match event {
         AvrccEvent::Metadata { id, text } => {
             if let Some(kind) = meta_kind(id) {
@@ -206,8 +209,8 @@ fn subscribe_avrc(avrc: &EspAvrcc<'_, BtClassic, &BtDriver<'_, BtClassic>>) -> a
     Ok(())
 }
 
-fn subscribe_a2dp(
-    a2dp: &EspA2dp<'_, BtClassic, &BtDriver<'_, BtClassic>, Sink>,
+fn subscribe_a2dp<'a>(
+    a2dp: &EspA2dp<'a, BtClassic, &'a BtDriver<'a, BtClassic>, Sink>,
 ) -> anyhow::Result<()> {
     a2dp.subscribe(|event| {
         match event {
@@ -297,9 +300,7 @@ fn drain_notes<'d, G, A>(
             }
             Note::Meta { kind, text } => send_msg(link, &Msg::Meta { kind, text }),
             Note::Device(name) => send_msg(link, &Msg::DeviceName(name)),
-            Note::Confirm(addr) => {
-                let _ = gap.reply_ssp_confirm(&BdAddr::from_bytes(addr), true);
-            }
+            Note::Confirm(addr) => confirm_pairing(addr),
             Note::Pin(addr) => {
                 let _ = gap.reply_variable_pin(&BdAddr::from_bytes(addr), Some(b"0000"));
             }
@@ -456,18 +457,18 @@ fn abort_flash(flash: &mut Option<EspOtaUpdate<'static>>) {
     }
 }
 
-fn arm_avrc<T>(avrc: &EspAvrcc<'_, BtClassic, T>)
+fn arm_avrc<'a, T>(avrc: &EspAvrcc<'a, BtClassic, T>)
 where
-    T: Borrow<BtDriver<'_, BtClassic>>,
+    T: Borrow<BtDriver<'a, BtClassic>>,
 {
     request_meta(avrc);
     let _ = avrc.register_notification(tl(), NotificationType::Playback, 0);
     let _ = avrc.register_notification(tl(), NotificationType::TrackChanged, 0);
 }
 
-fn request_meta<T>(avrc: &EspAvrcc<'_, BtClassic, T>)
+fn request_meta<'a, T>(avrc: &EspAvrcc<'a, BtClassic, T>)
 where
-    T: Borrow<BtDriver<'_, BtClassic>>,
+    T: Borrow<BtDriver<'a, BtClassic>>,
 {
     let mut meta = EnumSet::empty();
     meta.insert(MetadataId::Title);
@@ -476,9 +477,9 @@ where
     let _ = avrc.request_metadata(tl(), meta);
 }
 
-fn tap<T>(avrc: &EspAvrcc<'_, BtClassic, T>, key: KeyCode)
+fn tap<'a, T>(avrc: &EspAvrcc<'a, BtClassic, T>, key: KeyCode)
 where
-    T: Borrow<BtDriver<'_, BtClassic>>,
+    T: Borrow<BtDriver<'a, BtClassic>>,
 {
     let _ = avrc.send_passthrough(tl(), key, true);
     FreeRtos::delay_ms(30);
@@ -562,6 +563,29 @@ fn send_msg(uart: &mut UartDriver<'_>, msg: &Msg) {
     }
 }
 
+/// `ESP_BT_IO_CAP_NONE`: the stack asks us to confirm, and the phone
+/// shows its own dialog.
+fn set_io_cap_none() {
+    let cap = sys::ESP_BT_IO_CAP_NONE as u8;
+    unsafe {
+        let _ = esp!(sys::esp_bt_gap_set_security_param(
+            sys::esp_bt_sp_param_t_ESP_BT_SP_IOCAP_MODE,
+            &cap as *const u8 as *mut core::ffi::c_void,
+            1,
+        ));
+    }
+}
+
+fn confirm_pairing(addr: [u8; 6]) {
+    let bd = BdAddr::from_bytes(addr);
+    unsafe {
+        let _ = esp!(sys::esp_bt_gap_ssp_confirm_reply(
+            &bd as *const BdAddr as *mut _,
+            true,
+        ));
+    }
+}
+
 /// PCM5100A `XSMT` is active high. `unmuted` drives the pin high.
 fn set_unmuted(unmuted: bool) {
     unsafe {
@@ -573,7 +597,7 @@ fn set_unmuted(unmuted: bool) {
             intr_type: sys::gpio_int_type_t_GPIO_INTR_DISABLE,
         };
         let _ = sys::gpio_config(&cfg);
-        let _ = sys::gpio_set_level(pins::DAC_UNMUTE, i32::from(unmuted));
+        let _ = sys::gpio_set_level(pins::DAC_UNMUTE, u32::from(unmuted));
     }
 }
 
