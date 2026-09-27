@@ -40,16 +40,19 @@ default = [
 # Device images. Host `cargo test` leaves both off.
 firmware-s3 = ["dep:esp32-nimble"]
 firmware-esp32 = []
-app-dial = []
-app-clock = []
-app-pomodoro = []
-app-spectrum = []
-app-tone = []
-app-sketch = []
-app-haptics = []
-app-battery = []
-app-card = []
-app-remote = []
+# Set when any example app is compiled in. The companion image leaves
+# them all off, and the shared drawing helpers follow this flag.
+any-app = []
+app-dial = ["any-app"]
+app-clock = ["any-app"]
+app-pomodoro = ["any-app"]
+app-spectrum = ["any-app"]
+app-tone = ["any-app"]
+app-sketch = ["any-app"]
+app-haptics = ["any-app"]
+app-battery = ["any-app"]
+app-card = ["any-app"]
+app-remote = ["any-app"]
 
 [dependencies]
 esp32-nimble = { version = "0.12", optional = true }

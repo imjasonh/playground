@@ -2,7 +2,9 @@
 //! The default build includes all ten. `make build APPS=clock,tone` compiles
 //! only those two into the S3 image.
 
-use crate::canvas::{Canvas, AMBER, BLACK, WHITE};
+use crate::canvas::Canvas;
+#[cfg(feature = "any-app")]
+use crate::canvas::{AMBER, BLACK, WHITE};
 use crate::link::{BtState, Msg, PlayState};
 use crate::touch::Point;
 
@@ -89,6 +91,7 @@ mod tone;
 
 #[allow(clippy::vec_init_then_push)]
 pub fn catalog() -> Vec<Box<dyn App>> {
+    #[cfg_attr(not(feature = "any-app"), allow(unused_mut))]
     let mut apps: Vec<Box<dyn App>> = Vec::new();
     #[cfg(feature = "app-dial")]
     apps.push(Box::new(dial::Dial::new()));
@@ -114,6 +117,7 @@ pub fn catalog() -> Vec<Box<dyn App>> {
 }
 
 pub fn feature_count() -> usize {
+    #[cfg_attr(not(feature = "any-app"), allow(unused_mut))]
     let mut n = 0;
     #[cfg(feature = "app-dial")]
     {
@@ -158,6 +162,7 @@ pub fn feature_count() -> usize {
     n
 }
 
+#[cfg(feature = "any-app")]
 pub(super) fn redraw(slot: &mut Option<u64>, stamp: u64) -> bool {
     if *slot == Some(stamp) {
         false
@@ -167,6 +172,7 @@ pub(super) fn redraw(slot: &mut Option<u64>, stamp: u64) -> bool {
     }
 }
 
+#[cfg(feature = "any-app")]
 fn label(canvas: &mut Canvas, title: &str, line: &str) {
     canvas.clear(BLACK);
     let scale = if canvas.width() >= 200 { 3 } else { 1 };
