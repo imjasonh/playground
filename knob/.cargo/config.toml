@@ -12,4 +12,6 @@ runner = "espflash flash --monitor"
 rustflags = ["--cfg", "espidf_time64"]
 
 [env]
-ESP_IDF_VERSION = "v5.2.3"
+# esp-idf-svc 0.52 reads original-ESP32 controller fields that first
+# appear in IDF 5.2.6 (ble_llcp_disc_flag, BLE 5 connection types).
+ESP_IDF_VERSION = "v5.2.6"
