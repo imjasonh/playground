@@ -5,11 +5,15 @@ use crate::canvas::Canvas;
 
 pub struct Haptics {
     effect: u8,
+    drawn: Option<u64>,
 }
 
 impl Haptics {
     pub fn new() -> Self {
-        Self { effect: 1 }
+        Self {
+            effect: 1,
+            drawn: None,
+        }
     }
 }
 
@@ -29,6 +33,9 @@ impl App for Haptics {
             }
             Event::Tap(_) => fx.haptic = Some(self.effect),
             _ => {}
+        }
+        if !super::redraw(&mut self.drawn, u64::from(self.effect)) {
+            return;
         }
         label(canvas, "HAPTICS", &format!("EFFECT {:03}", self.effect));
     }

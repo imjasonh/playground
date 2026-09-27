@@ -13,8 +13,8 @@ use std::time::Instant;
 
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::fs::fatfs::Fatfs;
-use esp_idf_svc::hal::adc::attenuation::DB_11;
-use esp_idf_svc::hal::adc::oneshot::config::AdcChannelConfig;
+use esp_idf_svc::hal::adc::attenuation::DB_12;
+use esp_idf_svc::hal::adc::oneshot::config::{AdcChannelConfig, Calibration};
 use esp_idf_svc::hal::adc::oneshot::{AdcChannelDriver, AdcDriver};
 use esp_idf_svc::hal::adc::Resolution;
 use esp_idf_svc::hal::delay::{FreeRtos, BLOCK, NON_BLOCK};
@@ -27,14 +27,15 @@ use esp_idf_svc::hal::i2s::config::{
 use esp_idf_svc::hal::i2s::{I2sDriver, I2sRx};
 use esp_idf_svc::hal::ledc::config::TimerConfig;
 use esp_idf_svc::hal::ledc::{LedcDriver, LedcTimerDriver, Resolution as LedcBits};
-use esp_idf_svc::hal::prelude::*;
+use esp_idf_svc::hal::modem::Modem;
+use esp_idf_svc::hal::peripherals::Peripherals;
 use esp_idf_svc::hal::sd::mmc::{SdMmcHostConfiguration, SdMmcHostDriver};
 use esp_idf_svc::hal::sd::{SdCardConfiguration, SdCardDriver};
 use esp_idf_svc::hal::spi::config::{Config as SpiConfig, DriverConfig, Duplex, LineWidth};
 use esp_idf_svc::hal::spi::{Dma, Operation, SpiDeviceDriver, SpiDriver};
 use esp_idf_svc::hal::uart::config::Config as UartConfig;
 use esp_idf_svc::hal::uart::UartDriver;
-use esp_idf_svc::hal::units::Hertz;
+use esp_idf_svc::hal::units::{FromValueType, Hertz};
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs};
 use esp_idf_svc::ota::{EspOta, EspOtaUpdate};
 use esp_idf_svc::sys;
@@ -89,7 +90,7 @@ fn main() -> anyhow::Result<()> {
     let timer = LedcTimerDriver::new(
         peripherals.ledc.timer0,
         &TimerConfig::default()
-            .frequency(25.kHz().into())
+            .frequency(25_u32.kHz().into())
             .resolution(LedcBits::Bits10),
     )?;
     let mut backlight =
@@ -111,7 +112,7 @@ fn main() -> anyhow::Result<()> {
         &DriverConfig::new().dma(Dma::Auto(8192)),
     )?;
     let spi_config = SpiConfig::new()
-        .baudrate(40.MHz().into())
+        .baudrate(40_u32.MHz().into())
         .duplex(Duplex::Half)
         .write_only(true)
         .polling(true);
@@ -129,17 +130,14 @@ fn main() -> anyhow::Result<()> {
     FreeRtos::delay_ms(10);
     touch_reset.set_high()?;
     FreeRtos::delay_ms(50);
-    let mut touch_irq = PinDriver::input(peripherals.pins.gpio9)?;
-    touch_irq.set_pull(Pull::Up)?;
+    let touch_irq = PinDriver::input(peripherals.pins.gpio9, Pull::Up)?;
     // DRV2605 EN is tied to 3.3V on the schematic. GPIO38 is the UART TX.
     for write in haptic::boot() {
         let _ = i2c.write(haptic::ADDR, &[write.reg, write.val], BLOCK);
     }
 
-    let mut encoder_a = PinDriver::input(peripherals.pins.gpio8)?;
-    let mut encoder_b = PinDriver::input(peripherals.pins.gpio7)?;
-    encoder_a.set_pull(Pull::Up)?;
-    encoder_b.set_pull(Pull::Up)?;
+    let encoder_a = PinDriver::input(peripherals.pins.gpio8, Pull::Up)?;
+    let encoder_b = PinDriver::input(peripherals.pins.gpio7, Pull::Up)?;
 
     let mut dac_switch = PinDriver::output(peripherals.pins.gpio0)?;
     dac_switch.set_low()?;
@@ -165,9 +163,9 @@ fn main() -> anyhow::Result<()> {
         &adc,
         peripherals.pins.gpio1,
         &AdcChannelConfig {
-            attenuation: DB_11,
+            attenuation: DB_12,
             resolution: Resolution::Resolution12Bit,
-            calibration: true,
+            calibration: Calibration::None,
         },
     )?;
 
@@ -220,8 +218,8 @@ fn main() -> anyhow::Result<()> {
     let _ = PHONE.set(Mutex::new(phone_tx));
     let gatt = start_radio()?;
 
-    let mut modem = Some(peripherals.modem);
-    let mut wifi: Option<BlockingWifi<EspWifi>> = None;
+    let mut modem: Option<Modem<'static>> = Some(peripherals.modem);
+    let mut wifi: Option<BlockingWifi<EspWifi<'static>>> = None;
     let mut pending_wifi = load_wifi(&nvs);
     let mut sntp_on = false;
 
@@ -232,9 +230,10 @@ fn main() -> anyhow::Result<()> {
     let mut decoder = Decoder::new();
     let mut tone_hz: Option<u16> = None;
     let mut sent_tone: Option<u16> = None;
-    let mut mic_pcm = Vec::<i16>::new();
+    let mut mic_pcm = [0i16; 512];
+    let mut mic_at = 0usize;
     let mut mic_scratch = [0u8; 512];
-    let mut bands = vec![0u8; mic::BANDS];
+    let mut bands = [0u8; mic::BANDS];
     let mut sd_entries: Vec<SdEntry> = Vec::new();
     let mut battery_mv: u32 = 0;
     let mut battery_pct: u8 = 0;
@@ -250,6 +249,11 @@ fn main() -> anyhow::Result<()> {
     let mut release_hid = false;
     let mut rx = [0u8; 256];
     let mut remote_knob = 0i32;
+    let mut pending_detent = 0i32;
+    let mut link_msgs = Vec::new();
+    let mut decoded = Vec::new();
+    let mut strip = vec![0u8; usize::from(PANEL_W) * 4 * 2];
+    let mut last_frame = Instant::now() - std::time::Duration::from_millis(20);
     let boot = Instant::now();
 
     loop {
@@ -258,7 +262,14 @@ fn main() -> anyhow::Result<()> {
             send_msg(&mut link, &Msg::Ping);
             last_ping = Instant::now();
         }
-        for msg in read_link(&mut link, &mut rx, &mut decoder) {
+        read_link(
+            &mut link,
+            &mut rx,
+            &mut decoder,
+            &mut link_msgs,
+            &mut decoded,
+        );
+        for msg in link_msgs.drain(..) {
             last_link = Instant::now();
             link_up = true;
             match msg {
@@ -313,13 +324,29 @@ fn main() -> anyhow::Result<()> {
                     notify_ota(&gatt, &session);
                 }
                 Phone::OtaData { seq, bytes } => {
-                    on_ota_data(seq, &bytes, &mut session, &mut flash, &mut link);
+                    on_ota_data(seq, bytes, &mut session, &mut flash, &mut link);
                     notify_ota(&gatt, &session);
                 }
             }
         }
 
         let now_ms = boot.elapsed().as_millis() as u64;
+        pending_detent += encoder.update(encoder_a.is_high(), encoder_b.is_high(), now_ms);
+        pending_detent += remote_knob;
+        remote_knob = 0;
+        read_mic(
+            &mut mic_in,
+            &mut mic_scratch,
+            &mut mic_pcm,
+            &mut mic_at,
+            &mut bands,
+        );
+        if last_frame.elapsed() < std::time::Duration::from_millis(16) {
+            FreeRtos::delay_ms(2);
+            continue;
+        }
+        last_frame = Instant::now();
+
         if last_battery.elapsed() >= std::time::Duration::from_millis(500) {
             if let Ok(raw) = battery_pin.read_raw() {
                 battery_mv = millivolts(raw);
@@ -331,8 +358,6 @@ fn main() -> anyhow::Result<()> {
             sd_entries = list_sd();
             last_sd = Instant::now();
         }
-        read_mic(&mut mic_in, &mut mic_scratch, &mut mic_pcm, &mut bands);
-
         let world = World {
             now_ms,
             unix: unix_now(),
@@ -345,7 +370,8 @@ fn main() -> anyhow::Result<()> {
             track: &track,
         };
 
-        let detent = encoder.update(encoder_a.is_high(), encoder_b.is_high(), now_ms) + remote_knob;
+        let detent = pending_detent;
+        pending_detent = 0;
         if detent != 0 {
             let _ = i2c_effect(&mut i2c, STRONG_CLICK);
             dispatch(
@@ -400,8 +426,11 @@ fn main() -> anyhow::Result<()> {
             release_hid = false;
         }
 
-        if let Err(err) = blit(&mut panel, shell.canvas().pixels()) {
-            log::warn!("blit: {err}");
+        if let Some((y0, y1)) = shell.take_dirty() {
+            if let Err(err) = blit(&mut panel, shell.canvas().pixels(), y0, y1, &mut strip) {
+                log::warn!("blit: {err}");
+                shell.mark_all_dirty();
+            }
         }
 
         if last_status.elapsed() >= std::time::Duration::from_secs(1) {
@@ -418,7 +447,7 @@ fn main() -> anyhow::Result<()> {
             last_status = Instant::now();
         }
 
-        FreeRtos::delay_ms(16);
+        FreeRtos::delay_ms(2);
     }
 }
 
@@ -656,32 +685,26 @@ fn on_ota_control(
 
 fn on_ota_data(
     seq: u16,
-    bytes: &[u8],
+    bytes: Vec<u8>,
     session: &mut OtaSession,
     flash: &mut Option<EspOtaUpdate<'static>>,
     link: &mut UartDriver,
 ) {
-    if let Err(err) = session.push(seq, bytes) {
+    if let Err(err) = session.push(seq, &bytes) {
         log::warn!("ota chunk: {err:?}");
         return;
     }
     match session.target() {
         Some(OtaTarget::S3) => {
             if let Some(update) = flash.as_mut() {
-                if let Err(err) = update.write(bytes) {
+                if let Err(err) = update.write(&bytes) {
                     log::warn!("ota write: {err}");
                     session.note_error(ota::OtaError::State);
                 }
             }
         }
         Some(OtaTarget::Esp32) => {
-            send_msg(
-                link,
-                &Msg::OtaChunk {
-                    seq,
-                    data: bytes.to_vec(),
-                },
-            );
+            send_msg(link, &Msg::OtaChunk { seq, data: bytes });
         }
         None => {}
     }
@@ -735,8 +758,9 @@ fn read_touch(i2c: &mut I2cDriver) -> Option<TouchReport> {
 fn read_mic(
     mic_in: &mut I2sDriver<I2sRx>,
     scratch: &mut [u8],
-    pcm: &mut Vec<i16>,
-    bands: &mut Vec<u8>,
+    pcm: &mut [i16; 512],
+    at: &mut usize,
+    bands: &mut [u8],
 ) {
     let n = mic_in.read(scratch, NON_BLOCK).unwrap_or(0);
     if n < 2 {
@@ -744,24 +768,34 @@ fn read_mic(
     }
     let samples = &scratch[..n - (n % 2)];
     for chunk in samples.chunks_exact(2) {
-        pcm.push(i16::from_le_bytes([chunk[0], chunk[1]]));
-    }
-    if pcm.len() >= 512 {
-        *bands = mic::bands(&pcm[pcm.len() - 512..], mic::BANDS);
-        if pcm.len() > 1024 {
-            pcm.drain(..pcm.len() - 512);
+        if *at >= pcm.len() {
+            break;
         }
+        pcm[*at] = i16::from_le_bytes([chunk[0], chunk[1]]);
+        *at += 1;
+    }
+    if *at == pcm.len() {
+        mic::bands_into(pcm, bands);
+        *at = 0;
     }
 }
 
-fn read_link(uart: &mut UartDriver, buf: &mut [u8], decoder: &mut Decoder) -> Vec<Msg> {
-    let mut out = Vec::new();
+fn read_link(
+    uart: &mut UartDriver,
+    buf: &mut [u8],
+    decoder: &mut Decoder,
+    out: &mut Vec<Msg>,
+    decoded: &mut Vec<Result<Msg, knob::link::LinkError>>,
+) {
+    out.clear();
     loop {
         let n = match uart.read(buf, NON_BLOCK) {
             Ok(0) | Err(_) => break,
             Ok(n) => n,
         };
-        for item in decoder.push(&buf[..n]) {
+        decoded.clear();
+        decoder.drain_into(&buf[..n], decoded);
+        for item in decoded.drain(..) {
             if let Ok(msg) = item {
                 out.push(msg);
             }
@@ -770,13 +804,14 @@ fn read_link(uart: &mut UartDriver, buf: &mut [u8], decoder: &mut Decoder) -> Ve
             break;
         }
     }
-    out
 }
 
 fn send_msg(uart: &mut UartDriver, msg: &Msg) {
-    let Ok(frame) = link::encode(msg) else {
+    let mut frame = [0u8; link::MAX_FRAME];
+    let Ok(n) = link::encode_into(msg, &mut frame) else {
         return;
     };
+    let frame = &frame[..n];
     let mut off = 0;
     while off < frame.len() {
         match uart.write(&frame[off..]) {
@@ -786,7 +821,7 @@ fn send_msg(uart: &mut UartDriver, msg: &Msg) {
     }
 }
 
-fn init_panel(dev: &mut SpiDeviceDriver<SpiDriver>) -> anyhow::Result<()> {
+fn init_panel<'d>(dev: &mut SpiDeviceDriver<'d, SpiDriver<'d>>) -> anyhow::Result<()> {
     for cmd in st77916::INIT {
         lcd_cmd(dev, cmd.cmd, cmd.data)?;
         if cmd.delay_ms > 0 {
@@ -796,7 +831,11 @@ fn init_panel(dev: &mut SpiDeviceDriver<SpiDriver>) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn lcd_cmd(dev: &mut SpiDeviceDriver<SpiDriver>, cmd: u8, data: &[u8]) -> anyhow::Result<()> {
+fn lcd_cmd<'d>(
+    dev: &mut SpiDeviceDriver<'d, SpiDriver<'d>>,
+    cmd: u8,
+    data: &[u8],
+) -> anyhow::Result<()> {
     let header = st77916::header(st77916::CMD_WRITE, cmd);
     if data.is_empty() {
         dev.transaction(&mut [Operation::Write(&header)])?;
@@ -806,18 +845,23 @@ fn lcd_cmd(dev: &mut SpiDeviceDriver<SpiDriver>, cmd: u8, data: &[u8]) -> anyhow
     Ok(())
 }
 
-fn blit(dev: &mut SpiDeviceDriver<SpiDriver>, pixels: &[u16]) -> anyhow::Result<()> {
+fn blit<'d>(
+    dev: &mut SpiDeviceDriver<'d, SpiDriver<'d>>,
+    pixels: &[u16],
+    y0: u16,
+    y1: u16,
+    strip: &mut [u8],
+) -> anyhow::Result<()> {
     let width = usize::from(PANEL_W);
     let rows = 4usize;
-    let mut strip = vec![0u8; width * rows * 2];
-    let mut y = 0u16;
-    while y < PANEL_H {
-        let y1 = (y as usize + rows - 1).min(usize::from(PANEL_H) - 1) as u16;
-        let [xs, ys] = st77916::caset_raset(0, y, PANEL_W - 1, y1);
+    let mut y = y0;
+    while y <= y1 {
+        let row_end = (y as usize + rows - 1).min(usize::from(y1)) as u16;
+        let [xs, ys] = st77916::caset_raset(0, y, PANEL_W - 1, row_end);
         lcd_cmd(dev, CASET, &xs)?;
         lcd_cmd(dev, RASET, &ys)?;
         let start = usize::from(y) * width;
-        let end = (usize::from(y1) + 1) * width;
+        let end = (usize::from(row_end) + 1) * width;
         let mut n = 0;
         for px in &pixels[start..end] {
             let be = px.to_be_bytes();
@@ -830,7 +874,10 @@ fn blit(dev: &mut SpiDeviceDriver<SpiDriver>, pixels: &[u16]) -> anyhow::Result<
             Operation::Write(&header),
             Operation::WriteWithWidth(&strip[..n], LineWidth::Quad),
         ])?;
-        y = y1 + 1;
+        if row_end == y1 {
+            break;
+        }
+        y = row_end + 1;
     }
     Ok(())
 }
@@ -904,7 +951,7 @@ fn load_wifi(nvs: &EspDefaultNvsPartition) -> Option<(String, String)> {
 }
 
 fn save_wifi(nvs: &EspDefaultNvsPartition, ssid: &str, pass: &str) -> anyhow::Result<()> {
-    let mut ns = EspNvs::new(nvs.clone(), "knob", true)?;
+    let ns = EspNvs::new(nvs.clone(), "knob", true)?;
     ns.set_str("ssid", ssid)?;
     ns.set_str("pass", pass)?;
     Ok(())
@@ -912,7 +959,7 @@ fn save_wifi(nvs: &EspDefaultNvsPartition, ssid: &str, pass: &str) -> anyhow::Re
 
 fn connect_wifi(
     slot: &mut Option<BlockingWifi<EspWifi<'static>>>,
-    modem: &mut Option<esp_idf_svc::hal::modem::Modem>,
+    modem: &mut Option<Modem<'static>>,
     sysloop: &EspSystemEventLoop,
     nvs: &EspDefaultNvsPartition,
     ssid: &str,

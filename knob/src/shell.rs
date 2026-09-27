@@ -112,9 +112,16 @@ impl Shell {
         if self.inside {
             self.forward(Event::Tick, world)
         } else {
-            self.draw_launcher();
             Effects::default()
         }
+    }
+
+    pub fn take_dirty(&mut self) -> Option<(u16, u16)> {
+        self.canvas.take_dirty()
+    }
+
+    pub fn mark_all_dirty(&mut self) {
+        self.canvas.mark_all();
     }
 
     fn enter(&mut self, world: &World) {

@@ -87,10 +87,8 @@ fn main() -> anyhow::Result<()> {
             .tx_fifo_size(2048),
     )?;
 
-    let mut encoder_a = PinDriver::input(peripherals.pins.gpio19)?;
-    let mut encoder_b = PinDriver::input(peripherals.pins.gpio22)?;
-    encoder_a.set_pull(Pull::Up)?;
-    encoder_b.set_pull(Pull::Up)?;
+    let encoder_a = PinDriver::input(peripherals.pins.gpio19, Pull::Up)?;
+    let encoder_b = PinDriver::input(peripherals.pins.gpio22, Pull::Up)?;
     let mut encoder = Encoder::new();
 
     let (tx, rx) = mpsc::channel();
@@ -124,11 +122,20 @@ fn main() -> anyhow::Result<()> {
     let mut tone = Tone::new(440.0);
     let mut tone_buf = [0i16; 512];
     let mut uart_buf = [0u8; 256];
+    let mut link_msgs = Vec::new();
+    let mut decoded = Vec::new();
     let boot = Instant::now();
 
     loop {
         drain_notes(&rx, &mut link, &gap, &avrc);
-        for msg in read_link(&mut link, &mut uart_buf, &mut decoder) {
+        read_link(
+            &mut link,
+            &mut uart_buf,
+            &mut decoder,
+            &mut link_msgs,
+            &mut decoded,
+        );
+        for msg in link_msgs.drain(..) {
             on_link(msg, &mut link, &a2dp, &avrc, &gap, &mut session, &mut flash);
         }
 
@@ -152,7 +159,7 @@ fn main() -> anyhow::Result<()> {
             }
             FreeRtos::delay_ms(4);
         } else {
-            FreeRtos::delay_ms(10);
+            FreeRtos::delay_ms(2);
         }
     }
 }
@@ -514,14 +521,22 @@ fn play_state(status: PlaybackStatus) -> PlayState {
     }
 }
 
-fn read_link(uart: &mut UartDriver<'_>, buf: &mut [u8], decoder: &mut Decoder) -> Vec<Msg> {
-    let mut out = Vec::new();
+fn read_link(
+    uart: &mut UartDriver<'_>,
+    buf: &mut [u8],
+    decoder: &mut Decoder,
+    out: &mut Vec<Msg>,
+    decoded: &mut Vec<Result<Msg, knob::link::LinkError>>,
+) {
+    out.clear();
     loop {
         let n = match uart.read(buf, NON_BLOCK) {
             Ok(0) | Err(_) => break,
             Ok(n) => n,
         };
-        for item in decoder.push(&buf[..n]) {
+        decoded.clear();
+        decoder.drain_into(&buf[..n], decoded);
+        for item in decoded.drain(..) {
             if let Ok(msg) = item {
                 out.push(msg);
             }
@@ -530,13 +545,14 @@ fn read_link(uart: &mut UartDriver<'_>, buf: &mut [u8], decoder: &mut Decoder) -
             break;
         }
     }
-    out
 }
 
 fn send_msg(uart: &mut UartDriver<'_>, msg: &Msg) {
-    let Ok(frame) = link::encode(msg) else {
+    let mut frame = [0u8; link::MAX_FRAME];
+    let Ok(n) = link::encode_into(msg, &mut frame) else {
         return;
     };
+    let frame = &frame[..n];
     let mut off = 0;
     while off < frame.len() {
         match uart.write(&frame[off..]) {

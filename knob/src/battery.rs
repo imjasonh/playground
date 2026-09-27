@@ -1,6 +1,6 @@
 //! Battery divider math.
 //!
-//! GPIO 1 reads half the cell voltage. A 12-bit conversion at 11 dB
+//! GPIO 1 reads half the cell voltage. A 12-bit conversion at 12 dB
 //! attenuation covers about 0 to 3.3 V on the pin, so 0 to 6.6 V at the cell.
 //! The pack is a 3.7 V Li-ion. Percent is linear from 3.30 V to 4.20 V.
 

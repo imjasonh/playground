@@ -113,15 +113,39 @@ build-esp32: ensure-python-shim $(ESP32_SDKCONFIG_DEFAULTS)
 	    -Z build-std=std,panic_abort
 	@$(MAKE) --no-print-directory check-esp32
 
+# OTA slots from partitions-s3.csv (0x600000) and partitions-esp32.csv (0x180000).
+SLOT_S3 := 6291456
+SLOT_ESP32 := 1572864
+
 check-s3:
 	@test -f "$(S3_BIN)" || { echo "ERROR: missing $(S3_BIN)"; exit 1; }
 	@grep -a -F -q "$(S3_ID)" "$(S3_BIN)" || { echo "ERROR: $(S3_BIN) missing $(S3_ID)"; exit 1; }
 	@echo "firmware $(S3_ID) -> $(S3_BIN) ($$(wc -c < "$(S3_BIN)") bytes ELF) features=$(S3_FEATURES)"
+	@$(call check_slot,$(XTENSA_GCC_BIN)/xtensa-esp32s3-elf-size,$(S3_BIN),$(SLOT_S3))
 
 check-esp32:
 	@test -f "$(ESP32_BIN)" || { echo "ERROR: missing $(ESP32_BIN)"; exit 1; }
 	@grep -a -F -q "$(ESP32_ID)" "$(ESP32_BIN)" || { echo "ERROR: $(ESP32_BIN) missing $(ESP32_ID)"; exit 1; }
 	@echo "firmware $(ESP32_ID) -> $(ESP32_BIN) ($$(wc -c < "$(ESP32_BIN)") bytes ELF)"
+	@$(call check_slot,$(XTENSA_GCC_BIN)/xtensa-esp32-elf-size,$(ESP32_BIN),$(SLOT_ESP32))
+
+# text+data is the flash image. Fail the build when it does not fit the inactive OTA slot.
+define check_slot
+	@tool=""; \
+	for candidate in "$(1)" "$(XTENSA_GCC_BIN)/xtensa-esp-elf-size"; do \
+	  if [ -x "$$candidate" ]; then tool="$$candidate"; break; fi; \
+	done; \
+	if [ -n "$$tool" ]; then \
+	  flash=$$($$tool -d "$(2)" | awk 'NR==2 {print $$1+$$2}'); \
+	  echo "flash image $$flash bytes, slot $(3) bytes"; \
+	  if [ -z "$$flash" ] || [ "$$flash" -gt "$(3)" ]; then \
+	    echo "ERROR: flash image exceeds OTA slot"; \
+	    exit 1; \
+	  fi; \
+	else \
+	  echo "size tool $(1) missing; ELF byte count is the upper bound"; \
+	fi
+endef
 
 S3_BOOTLOADER := $(firstword $(wildcard $(S3_DIR)/$(S3_TARGET)/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))
 ESP32_BOOTLOADER := $(firstword $(wildcard $(ESP32_DIR)/$(ESP32_TARGET)/release/build/esp-idf-sys-*/out/build/bootloader/bootloader.bin))

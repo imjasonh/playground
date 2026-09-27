@@ -6,11 +6,13 @@ use crate::canvas::Canvas;
 use crate::hid::{PLAY_PAUSE, VOLUME_DOWN, VOLUME_UP};
 use crate::link::{BtState, Msg, PlayState};
 
-pub struct Remote;
+pub struct Remote {
+    drawn: Option<u64>,
+}
 
 impl Remote {
     pub fn new() -> Self {
-        Self
+        Self { drawn: None }
     }
 }
 
@@ -42,6 +44,10 @@ impl App for Remote {
             }
             _ => {}
         }
+        let stamp = (world.bt as u64) | ((world.play as u64) << 8) | (mix(world.track) << 16);
+        if !super::redraw(&mut self.drawn, stamp) {
+            return;
+        }
         let bt = match world.bt {
             BtState::Disconnected => "OFF",
             BtState::Discoverable => "PAIR",
@@ -55,4 +61,13 @@ impl App for Remote {
         };
         label(canvas, "REMOTE", &format!("{bt} {track}"));
     }
+}
+
+fn mix(text: &str) -> u64 {
+    let mut h = 0xcbf29ce484222325;
+    for b in text.bytes() {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    h
 }

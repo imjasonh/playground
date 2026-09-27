@@ -3,11 +3,13 @@
 use super::{label, App, Effects, Event, World};
 use crate::canvas::Canvas;
 
-pub struct BatteryApp;
+pub struct BatteryApp {
+    drawn: Option<u64>,
+}
 
 impl BatteryApp {
     pub fn new() -> Self {
-        Self
+        Self { drawn: None }
     }
 }
 
@@ -21,6 +23,10 @@ impl App for BatteryApp {
     }
 
     fn handle(&mut self, _ev: Event, world: &World, _fx: &mut Effects, canvas: &mut Canvas) {
+        let stamp = (u64::from(world.battery_mv) << 8) | u64::from(world.battery_pct);
+        if !super::redraw(&mut self.drawn, stamp) {
+            return;
+        }
         label(
             canvas,
             "BATTERY",

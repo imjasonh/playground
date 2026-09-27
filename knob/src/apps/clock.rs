@@ -6,11 +6,15 @@ use crate::canvas::Canvas;
 
 pub struct Clock {
     offset_min: i32,
+    drawn: Option<u64>,
 }
 
 impl Clock {
     pub fn new() -> Self {
-        Self { offset_min: 0 }
+        Self {
+            offset_min: 0,
+            drawn: None,
+        }
     }
 
     fn hm(&self, unix: u64) -> (u32, u32) {
@@ -34,13 +38,21 @@ impl App for Clock {
         if let Event::Knob(d) = ev {
             self.offset_min = (self.offset_min + d * 15).clamp(-12 * 60, 14 * 60);
         }
-        let line = match world.unix {
+        let (stamp, line) = match world.unix {
             Some(unix) => {
                 let (h, m) = self.hm(unix);
-                format!("{h:02}:{m:02} {:+03}", self.offset_min)
+                let stamp =
+                    (u64::from(h) << 32) | (u64::from(m) << 16) | (self.offset_min as u32 as u64);
+                (stamp, format!("{h:02}:{m:02} {:+03}", self.offset_min))
             }
-            None => format!("NO TIME {:+03}", self.offset_min),
+            None => (
+                (1 << 63) | (self.offset_min as u32 as u64),
+                format!("NO TIME {:+03}", self.offset_min),
+            ),
         };
+        if !super::redraw(&mut self.drawn, stamp) {
+            return;
+        }
         label(canvas, "CLOCK", &line);
     }
 }
@@ -51,7 +63,10 @@ mod tests {
 
     #[test]
     fn offset_moves_the_hour() {
-        let clock = Clock { offset_min: 60 };
+        let clock = Clock {
+            offset_min: 60,
+            drawn: None,
+        };
         assert_eq!(clock.hm(0), (1, 0));
     }
 }

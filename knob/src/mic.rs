@@ -7,18 +7,23 @@ pub const MIC_RATE: u32 = 16_000;
 pub const BANDS: usize = 16;
 
 pub fn bands(samples: &[i16], count: usize) -> Vec<u8> {
-    if count == 0 || samples.is_empty() {
-        return vec![0; count];
+    let mut out = vec![0; count];
+    bands_into(samples, &mut out);
+    out
+}
+
+/// Write one bar per `out` slot. Centers are 250 Hz, 500 Hz, and so on,
+/// so a 1 kHz tone lands on band 3.
+pub fn bands_into(samples: &[i16], out: &mut [u8]) {
+    if samples.is_empty() {
+        out.fill(0);
+        return;
     }
-    let mut out = Vec::with_capacity(count);
-    for i in 0..count {
-        // 250 Hz, 500 Hz, ... so a 1 kHz tone lands on band 3.
+    for (i, slot) in out.iter_mut().enumerate() {
         let freq = 250 * (i as u32 + 1);
         let mag = goertzel(samples, MIC_RATE, freq);
-        let scaled = (mag / 40.0).clamp(0.0, 255.0) as u8;
-        out.push(scaled);
+        *slot = (mag / 40.0).clamp(0.0, 255.0) as u8;
     }
-    out
 }
 
 fn goertzel(samples: &[i16], rate: u32, freq: u32) -> f32 {

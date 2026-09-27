@@ -5,11 +5,15 @@ use crate::canvas::{Canvas, BLACK, WHITE};
 
 pub struct Card {
     index: usize,
+    drawn: Option<u64>,
 }
 
 impl Card {
     pub fn new() -> Self {
-        Self { index: 0 }
+        Self {
+            index: 0,
+            drawn: None,
+        }
     }
 }
 
@@ -28,6 +32,9 @@ impl App for Card {
                 let n = world.sd.len() as i32;
                 self.index = (self.index as i32 + d).rem_euclid(n) as usize;
             }
+        }
+        if !super::redraw(&mut self.drawn, listing_stamp(self.index, world.sd)) {
+            return;
         }
         canvas.clear(BLACK);
         let scale = if canvas.width() >= 200 { 2 } else { 1 };
@@ -48,4 +55,16 @@ impl App for Card {
             );
         }
     }
+}
+
+fn listing_stamp(index: usize, sd: &[super::SdEntry]) -> u64 {
+    let mut h = index as u64 ^ ((sd.len() as u64) << 16);
+    for entry in sd.iter().skip(index).take(4) {
+        h = h.wrapping_mul(0x100000001b3) ^ entry.bytes ^ u64::from(entry.dir);
+        for b in entry.name.bytes() {
+            h ^= u64::from(b);
+            h = h.wrapping_mul(0x100000001b3);
+        }
+    }
+    h
 }

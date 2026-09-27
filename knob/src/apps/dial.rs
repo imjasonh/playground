@@ -5,11 +5,15 @@ use crate::canvas::{Canvas, WHITE};
 
 pub struct Dial {
     value: i32,
+    drawn: Option<u64>,
 }
 
 impl Dial {
     pub fn new() -> Self {
-        Self { value: 50 }
+        Self {
+            value: 50,
+            drawn: None,
+        }
     }
 }
 
@@ -26,8 +30,10 @@ impl App for Dial {
         match ev {
             Event::Knob(d) => self.value = (self.value + d).clamp(0, 100),
             Event::Tap(_) => self.value = 0,
-            Event::Point(_) => {}
-            Event::Tick => {}
+            Event::Point(_) | Event::Tick => {}
+        }
+        if !super::redraw(&mut self.drawn, self.value as u64) {
+            return;
         }
         label(canvas, "DIAL", &format!("{:03}", self.value));
         let r = i32::from(canvas.width()) / 3;

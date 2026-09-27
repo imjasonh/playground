@@ -8,6 +8,7 @@ const COLORS: [u16; 4] = [0xFFFF, 0xF800, 0x07E0, 0x001F];
 pub struct Sketch {
     color: usize,
     ready: bool,
+    swatch: Option<usize>,
 }
 
 impl Sketch {
@@ -15,7 +16,16 @@ impl Sketch {
         Self {
             color: 0,
             ready: false,
+            swatch: None,
         }
+    }
+
+    fn swatch(&mut self, canvas: &mut Canvas) {
+        if self.swatch == Some(self.color) {
+            return;
+        }
+        self.swatch = Some(self.color);
+        canvas.fill_rect(8, 8, 8, 8, COLORS[self.color]);
     }
 }
 
@@ -32,11 +42,13 @@ impl App for Sketch {
         if !self.ready {
             canvas.clear(BLACK);
             self.ready = true;
+            self.swatch(canvas);
         }
         match ev {
             Event::Knob(d) => {
                 let n = COLORS.len() as i32;
                 self.color = (self.color as i32 + d).rem_euclid(n) as usize;
+                self.swatch(canvas);
             }
             Event::Point(p) | Event::Tap(p) => {
                 let ink = COLORS[self.color];
@@ -44,10 +56,7 @@ impl App for Sketch {
                 let y = i32::from(p.y) * i32::from(canvas.height()) / 360;
                 canvas.fill_circle(x, y, 2, ink);
             }
-            Event::Tick => {
-                let ink = COLORS[self.color];
-                canvas.fill_rect(8, 8, 8, 8, ink);
-            }
+            Event::Tick => {}
         }
     }
 }

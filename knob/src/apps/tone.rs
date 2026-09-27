@@ -6,11 +6,16 @@ use crate::canvas::Canvas;
 pub struct ToneApp {
     hz: u16,
     on: bool,
+    drawn: Option<u64>,
 }
 
 impl ToneApp {
     pub fn new() -> Self {
-        Self { hz: 440, on: false }
+        Self {
+            hz: 440,
+            on: false,
+            drawn: None,
+        }
     }
 }
 
@@ -33,6 +38,10 @@ impl App for ToneApp {
         }
         if self.on {
             fx.tone_hz = Some(self.hz);
+        }
+        let stamp = u64::from(self.hz) | (u64::from(self.on) << 16);
+        if !super::redraw(&mut self.drawn, stamp) {
+            return;
         }
         let state = if self.on { "ON" } else { "OFF" };
         label(canvas, "TONE", &format!("{state} {} HZ", self.hz));

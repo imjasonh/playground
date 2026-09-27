@@ -11,6 +11,8 @@ pub const EOF: u8 = 0x7F;
 /// Largest payload. An OTA chunk is a `u16` sequence plus up to 240 bytes,
 /// so the frame has to clear that.
 pub const MAX_PAYLOAD: usize = 512;
+/// SOF + type + length + payload + crc + EOF.
+pub const MAX_FRAME: usize = 7 + MAX_PAYLOAD;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BtState {
@@ -163,75 +165,99 @@ pub enum LinkError {
 }
 
 pub fn encode(msg: &Msg) -> Result<Vec<u8>, LinkError> {
-    let (kind, payload) = encode_body(msg)?;
-    if payload.len() > MAX_PAYLOAD {
-        return Err(LinkError::TooLong);
-    }
-    let len = payload.len() as u16;
-    let mut covered = Vec::with_capacity(3 + payload.len());
-    covered.push(kind as u8);
-    covered.extend_from_slice(&len.to_le_bytes());
-    covered.extend_from_slice(&payload);
-    let crc = crc16(&covered);
-    let mut out = Vec::with_capacity(covered.len() + 4);
-    out.push(SOF);
-    out.extend_from_slice(&covered);
-    out.extend_from_slice(&crc.to_le_bytes());
-    out.push(EOF);
-    Ok(out)
+    let mut buf = vec![0u8; MAX_FRAME];
+    let n = encode_into(msg, &mut buf)?;
+    buf.truncate(n);
+    Ok(buf)
 }
 
-fn encode_body(msg: &Msg) -> Result<(Kind, Vec<u8>), LinkError> {
-    let pair = match msg {
-        Msg::Ping => (Kind::Ping, Vec::new()),
-        Msg::Pong => (Kind::Pong, Vec::new()),
-        Msg::Play => (Kind::Play, Vec::new()),
-        Msg::Pause => (Kind::Pause, Vec::new()),
-        Msg::Next => (Kind::Next, Vec::new()),
-        Msg::Prev => (Kind::Prev, Vec::new()),
-        Msg::VolUp => (Kind::VolUp, Vec::new()),
-        Msg::VolDown => (Kind::VolDown, Vec::new()),
-        Msg::Pair => (Kind::Pair, Vec::new()),
-        Msg::Disconnect => (Kind::Disconnect, Vec::new()),
-        Msg::Reboot => (Kind::Reboot, Vec::new()),
-        Msg::BtState(s) => (Kind::BtState, vec![*s as u8]),
-        Msg::PlayState(s) => (Kind::PlayState, vec![*s as u8]),
-        Msg::Meta { kind, text } => {
-            let mut p = vec![*kind as u8];
-            p.extend_from_slice(text.as_bytes());
-            (Kind::Meta, p)
+/// Write one frame into `out`. Returns the byte count.
+pub fn encode_into(msg: &Msg, out: &mut [u8]) -> Result<usize, LinkError> {
+    if out.len() < 7 {
+        return Err(LinkError::TooLong);
+    }
+    let (kind, n) = write_payload(msg, &mut out[4..])?;
+    if n > MAX_PAYLOAD {
+        return Err(LinkError::TooLong);
+    }
+    out[0] = SOF;
+    out[1] = kind;
+    out[2..4].copy_from_slice(&(n as u16).to_le_bytes());
+    let crc = crc16(&out[1..4 + n]);
+    out[4 + n..6 + n].copy_from_slice(&crc.to_le_bytes());
+    out[6 + n] = EOF;
+    Ok(7 + n)
+}
+
+fn write_payload(msg: &Msg, out: &mut [u8]) -> Result<(u8, usize), LinkError> {
+    let put = |src: &[u8], out: &mut [u8]| -> Result<usize, LinkError> {
+        if src.len() > out.len() {
+            return Err(LinkError::TooLong);
         }
-        Msg::DeviceName(text) => (Kind::DeviceName, text.as_bytes().to_vec()),
-        Msg::Knob(delta) => (Kind::Knob, vec![*delta as u8]),
-        Msg::Jack { release } => (Kind::Jack, vec![u8::from(*release)]),
-        Msg::Tone { hz } => (Kind::Tone, hz.to_le_bytes().to_vec()),
+        out[..src.len()].copy_from_slice(src);
+        Ok(src.len())
+    };
+    let (kind, n) = match msg {
+        Msg::Ping => (Kind::Ping, 0),
+        Msg::Pong => (Kind::Pong, 0),
+        Msg::Play => (Kind::Play, 0),
+        Msg::Pause => (Kind::Pause, 0),
+        Msg::Next => (Kind::Next, 0),
+        Msg::Prev => (Kind::Prev, 0),
+        Msg::VolUp => (Kind::VolUp, 0),
+        Msg::VolDown => (Kind::VolDown, 0),
+        Msg::Pair => (Kind::Pair, 0),
+        Msg::Disconnect => (Kind::Disconnect, 0),
+        Msg::Reboot => (Kind::Reboot, 0),
+        Msg::OtaFinish => (Kind::OtaFinish, 0),
+        Msg::OtaAbort => (Kind::OtaAbort, 0),
+        Msg::BtState(s) => (Kind::BtState, put(&[*s as u8], out)?),
+        Msg::PlayState(s) => (Kind::PlayState, put(&[*s as u8], out)?),
+        Msg::Knob(delta) => (Kind::Knob, put(&[*delta as u8], out)?),
+        Msg::Jack { release } => (Kind::Jack, put(&[u8::from(*release)], out)?),
+        Msg::Ack(kind) => (Kind::Ack, put(&[*kind], out)?),
+        Msg::Tone { hz } => (Kind::Tone, put(&hz.to_le_bytes(), out)?),
         Msg::OtaBegin { size, crc } => {
-            let mut p = Vec::with_capacity(8);
-            p.extend_from_slice(&size.to_le_bytes());
-            p.extend_from_slice(&crc.to_le_bytes());
-            (Kind::OtaBegin, p)
+            let mut p = [0u8; 8];
+            p[..4].copy_from_slice(&size.to_le_bytes());
+            p[4..].copy_from_slice(&crc.to_le_bytes());
+            (Kind::OtaBegin, put(&p, out)?)
+        }
+        Msg::OtaAck { seq, err } => {
+            let mut p = [0u8; 3];
+            p[..2].copy_from_slice(&seq.to_le_bytes());
+            p[2] = *err;
+            (Kind::OtaAck, put(&p, out)?)
         }
         Msg::OtaChunk { seq, data } => {
-            let mut p = Vec::with_capacity(2 + data.len());
-            p.extend_from_slice(&seq.to_le_bytes());
-            p.extend_from_slice(data);
-            (Kind::OtaChunk, p)
+            if out.len() < 2 + data.len() {
+                return Err(LinkError::TooLong);
+            }
+            out[..2].copy_from_slice(&seq.to_le_bytes());
+            out[2..2 + data.len()].copy_from_slice(data);
+            (Kind::OtaChunk, 2 + data.len())
         }
-        Msg::OtaFinish => (Kind::OtaFinish, Vec::new()),
-        Msg::OtaAbort => (Kind::OtaAbort, Vec::new()),
-        Msg::OtaAck { seq, err } => {
-            let mut p = seq.to_le_bytes().to_vec();
-            p.push(*err);
-            (Kind::OtaAck, p)
+        Msg::Meta { kind, text } => {
+            let b = text.as_bytes();
+            if out.len() < 1 + b.len() {
+                return Err(LinkError::TooLong);
+            }
+            out[0] = *kind as u8;
+            out[1..1 + b.len()].copy_from_slice(b);
+            (Kind::Meta, 1 + b.len())
         }
-        Msg::Ack(kind) => (Kind::Ack, vec![*kind]),
+        Msg::DeviceName(text) => (Kind::DeviceName, put(text.as_bytes(), out)?),
         Msg::Error { code, text } => {
-            let mut p = vec![*code];
-            p.extend_from_slice(text.as_bytes());
-            (Kind::Error, p)
+            let b = text.as_bytes();
+            if out.len() < 1 + b.len() {
+                return Err(LinkError::TooLong);
+            }
+            out[0] = *code;
+            out[1..1 + b.len()].copy_from_slice(b);
+            (Kind::Error, 1 + b.len())
         }
     };
-    Ok(pair)
+    Ok((kind as u8, n))
 }
 
 pub fn decode(frame: &[u8]) -> Result<Msg, LinkError> {
@@ -334,8 +360,14 @@ impl Decoder {
     }
 
     pub fn push(&mut self, bytes: &[u8]) -> Vec<Result<Msg, LinkError>> {
-        self.buf.extend_from_slice(bytes);
         let mut out = Vec::new();
+        self.drain_into(bytes, &mut out);
+        out
+    }
+
+    /// Append decoded frames to `out` without allocating a frame buffer.
+    pub fn drain_into(&mut self, bytes: &[u8], out: &mut Vec<Result<Msg, LinkError>>) {
+        self.buf.extend_from_slice(bytes);
         loop {
             let Some(start) = self.buf.iter().position(|b| *b == SOF) else {
                 self.buf.clear();
@@ -357,10 +389,10 @@ impl Decoder {
             if self.buf.len() < total {
                 break;
             }
-            let frame: Vec<u8> = self.buf.drain(..total).collect();
-            out.push(decode(&frame));
+            let decoded = decode(&self.buf[..total]);
+            self.buf.drain(..total);
+            out.push(decoded);
         }
-        out
     }
 }
 

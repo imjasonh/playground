@@ -158,7 +158,16 @@ pub fn feature_count() -> usize {
     n
 }
 
-pub(crate) fn label(canvas: &mut Canvas, title: &str, line: &str) {
+pub(super) fn redraw(slot: &mut Option<u64>, stamp: u64) -> bool {
+    if *slot == Some(stamp) {
+        false
+    } else {
+        *slot = Some(stamp);
+        true
+    }
+}
+
+fn label(canvas: &mut Canvas, title: &str, line: &str) {
     canvas.clear(BLACK);
     let scale = if canvas.width() >= 200 { 3 } else { 1 };
     canvas.text(8, 8, title, AMBER, scale);

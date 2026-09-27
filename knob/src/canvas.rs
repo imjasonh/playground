@@ -23,6 +23,9 @@ pub struct Canvas {
     h: u16,
     round: bool,
     px: Vec<u16>,
+    /// Inclusive row range that changed since the last blit. `None` means
+    /// the panel already shows this buffer.
+    dirty: Option<(u16, u16)>,
 }
 
 impl Canvas {
@@ -32,6 +35,7 @@ impl Canvas {
             h,
             round,
             px: vec![0; usize::from(w) * usize::from(h)],
+            dirty: None,
         }
     }
 
@@ -51,24 +55,32 @@ impl Canvas {
         &self.px
     }
 
+    /// Rows to send to the panel, then forget them.
+    pub fn take_dirty(&mut self) -> Option<(u16, u16)> {
+        self.dirty.take()
+    }
+
+    pub fn mark_all(&mut self) {
+        if self.h > 0 {
+            self.dirty = Some((0, self.h - 1));
+        }
+    }
+
     pub fn clear(&mut self, color: u16) {
-        self.px.fill(color);
-        if self.round {
-            let cx = i32::from(self.w) / 2;
-            let cy = i32::from(self.h) / 2;
-            let r = cx.min(cy);
-            let r2 = r * r;
-            for y in 0..self.h {
-                for x in 0..self.w {
-                    let dx = i32::from(x) - cx;
-                    let dy = i32::from(y) - cy;
-                    if dx * dx + dy * dy > r2 {
-                        let i = self.idx(x, y);
-                        self.px[i] = BLACK;
-                    }
-                }
+        if !self.round || color == BLACK {
+            self.px.fill(color);
+        } else {
+            self.px.fill(BLACK);
+            let h = i32::from(self.h);
+            for y in 0..h {
+                let Some((lo, hi)) = self.row_limits(y) else {
+                    continue;
+                };
+                let start = self.idx(lo as u16, y as u16);
+                self.px[start..start + (hi - lo) as usize].fill(color);
             }
         }
+        self.mark_all();
     }
 
     pub fn get(&self, x: i32, y: i32) -> Option<u16> {
@@ -82,14 +94,31 @@ impl Canvas {
         if self.inside(x, y) {
             let i = self.idx(x as u16, y as u16);
             self.px[i] = color;
+            self.mark(y, y);
         }
     }
 
     pub fn fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: u16) {
-        for yy in y..y.saturating_add(h) {
-            for xx in x..x.saturating_add(w) {
-                self.pixel(xx, yy, color);
+        if w <= 0 || h <= 0 {
+            return;
+        }
+        let y1 = y.saturating_add(h);
+        let mut touched = false;
+        for yy in y..y1 {
+            let Some((lo, hi)) = self.row_limits(yy) else {
+                continue;
+            };
+            let a = x.max(lo);
+            let b = x.saturating_add(w).min(hi);
+            if a >= b {
+                continue;
             }
+            let start = self.idx(a as u16, yy as u16);
+            self.px[start..start + (b - a) as usize].fill(color);
+            touched = true;
+        }
+        if touched {
+            self.mark(y, y1 - 1);
         }
     }
 
@@ -183,6 +212,41 @@ impl Canvas {
         }
     }
 
+    fn mark(&mut self, y0: i32, y1: i32) {
+        if self.h == 0 {
+            return;
+        }
+        let max = i32::from(self.h) - 1;
+        let y0 = y0.clamp(0, max) as u16;
+        let y1 = y1.clamp(0, max) as u16;
+        let (a, b) = if y0 <= y1 { (y0, y1) } else { (y1, y0) };
+        self.dirty = Some(match self.dirty {
+            Some((lo, hi)) => (lo.min(a), hi.max(b)),
+            None => (a, b),
+        });
+    }
+
+    /// Half-open x range of the visible part of row `y`.
+    fn row_limits(&self, y: i32) -> Option<(i32, i32)> {
+        if y < 0 || y >= i32::from(self.h) {
+            return None;
+        }
+        let w = i32::from(self.w);
+        if !self.round {
+            return Some((0, w));
+        }
+        let cx = w / 2;
+        let cy = i32::from(self.h) / 2;
+        let r = cx.min(cy);
+        let dy = y - cy;
+        let rem = r * r - dy * dy;
+        if rem < 0 {
+            return None;
+        }
+        let dx = isqrt(rem);
+        Some(((cx - dx).max(0), (cx + dx + 1).min(w)))
+    }
+
     fn inside(&self, x: i32, y: i32) -> bool {
         if x < 0 || y < 0 || x >= i32::from(self.w) || y >= i32::from(self.h) {
             return false;
@@ -201,6 +265,23 @@ impl Canvas {
     fn idx(&self, x: u16, y: u16) -> usize {
         usize::from(y) * usize::from(self.w) + usize::from(x)
     }
+}
+
+fn isqrt(n: i32) -> i32 {
+    if n <= 0 {
+        return 0;
+    }
+    let mut x = (n as f32).sqrt() as i32;
+    if x < 0 {
+        x = 0;
+    }
+    while x < n && (x + 1).saturating_mul(x + 1) <= n {
+        x += 1;
+    }
+    while x > 0 && x.saturating_mul(x) > n {
+        x -= 1;
+    }
+    x
 }
 
 /// Big-endian bytes for the ST77916 RAM write.
@@ -232,5 +313,24 @@ mod tests {
         assert!(c.pixels().contains(&WHITE));
         assert_eq!(to_be_bytes(&[0x1234]), vec![0x12, 0x34]);
         assert_eq!(rgb(255, 0, 0), RED);
+    }
+
+    #[test]
+    fn a_small_fill_dirties_only_its_rows() {
+        let mut c = Canvas::new(32, 32, false);
+        assert_eq!(c.take_dirty(), None);
+        c.fill_rect(2, 4, 3, 2, WHITE);
+        assert_eq!(c.take_dirty(), Some((4, 5)));
+        assert_eq!(c.get(2, 4), Some(WHITE));
+        assert_eq!(c.get(1, 4), Some(BLACK));
+        assert_eq!(c.take_dirty(), None);
+    }
+
+    #[test]
+    fn round_fill_stays_inside_the_glass() {
+        let mut c = Canvas::new(32, 32, true);
+        c.fill_rect(0, 0, 32, 32, WHITE);
+        assert_eq!(c.get(0, 0), None);
+        assert_eq!(c.get(16, 16), Some(WHITE));
     }
 }
