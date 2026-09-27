@@ -38,21 +38,23 @@ impl App for Clock {
         if let Event::Knob(d) = ev {
             self.offset_min = (self.offset_min + d * 15).clamp(-12 * 60, 14 * 60);
         }
-        let (stamp, line) = match world.unix {
+        let stamp = match world.unix {
             Some(unix) => {
                 let (h, m) = self.hm(unix);
-                let stamp =
-                    (u64::from(h) << 32) | (u64::from(m) << 16) | (self.offset_min as u32 as u64);
-                (stamp, format!("{h:02}:{m:02} {:+03}", self.offset_min))
+                (u64::from(h) << 32) | (u64::from(m) << 16) | (self.offset_min as u32 as u64)
             }
-            None => (
-                (1 << 63) | (self.offset_min as u32 as u64),
-                format!("NO TIME {:+03}", self.offset_min),
-            ),
+            None => (1 << 63) | (self.offset_min as u32 as u64),
         };
         if !super::redraw(&mut self.drawn, stamp) {
             return;
         }
+        let line = match world.unix {
+            Some(unix) => {
+                let (h, m) = self.hm(unix);
+                format!("{h:02}:{m:02} {:+03}", self.offset_min)
+            }
+            None => format!("NO TIME {:+03}", self.offset_min),
+        };
         label(canvas, "CLOCK", &line);
     }
 }
