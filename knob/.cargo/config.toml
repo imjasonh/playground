@@ -12,6 +12,6 @@ runner = "espflash flash --monitor"
 rustflags = ["--cfg", "espidf_time64"]
 
 [env]
-# esp-idf-svc 0.52 reads original-ESP32 controller fields that first
-# appear in IDF 5.2.6 (ble_llcp_disc_flag, BLE 5 connection types).
-ESP_IDF_VERSION = "v5.2.6"
+# 5.4.2 has the original-ESP32 controller fields esp-idf-svc 0.53
+# fills in, and the RMT flag layout esp-idf-hal 0.47 expects.
+ESP_IDF_VERSION = "v5.4.2"

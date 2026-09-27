@@ -52,12 +52,12 @@ app-card = []
 app-remote = []
 
 [dependencies]
-esp32-nimble = { version = "0.12", optional = true }
+esp32-nimble = { version = "0.13", optional = true }
 
 [target.'cfg(target_os = "espidf")'.dependencies]
 anyhow = "1"
 enumset = "1.1"
-esp-idf-svc = { version = "0.52", features = ["std", "native", "binstart"] }
+esp-idf-svc = { version = "0.53", features = ["std", "native", "binstart"] }
 log = "0.4"
 
 [build-dependencies]
