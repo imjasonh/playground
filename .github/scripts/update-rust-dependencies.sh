@@ -81,21 +81,26 @@ for app in "${apps[@]}"; do
 
   # Cloudflare Worker apps: same deploy build path as test-rust-apps.sh (wasm
   # clippy/build plus wrangler [build] command with a decoy package.json).
+  # Bash ignores `set -e` inside an `if` condition, so run the subshell as its
+  # own command and check its status afterward.
   if [ -f "$app/wrangler.toml" ]; then
-    if (
+    (
       set -euo pipefail
       cd "$app"
       rustup target add wasm32-unknown-unknown
       cargo clippy --target wasm32-unknown-unknown -- -D warnings
       cargo build --release --target wasm32-unknown-unknown
+      # A leftover decoy would be committed with the failure pull request.
+      trap 'rm -f package.json package-lock.json' EXIT
       printf '%s\n' '{"dependencies":{"wrangler":"4.107.0"}}' > package.json
       build_cmd=$(
         python3 -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('wrangler.toml').read_text())['build']['command'])"
       )
       bash -c "$build_cmd"
-      rm -f package.json package-lock.json
       test -f build/worker/shim.mjs
-    ); then
+    )
+    worker_status=$?
+    if [ "$worker_status" -eq 0 ]; then
       echo "- ✅ \`${app}\`: wasm + worker-build passed" >> "$GITHUB_STEP_SUMMARY"
     else
       result=failure
