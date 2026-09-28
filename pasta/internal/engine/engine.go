@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -45,6 +46,7 @@ type Result struct {
 	//   - "too complex to analyze" — parse timeout
 	//   - "parse errors" — ERROR-heavy tree (dense ERROR/missing nodes)
 	//   - "memory budget exceeded" — run-level memory_budget cap
+	//   - "file not found" — Path was removed before it could be read
 	// Light HasError trees are still analyzed (see Stats.ParseDegraded)
 	// and are not skipped. Prefilter misses leave SkipReason empty
 	// (Stats.PrefilterSkipped).
@@ -393,6 +395,12 @@ func processFile(
 	src, err := loadSource(f)
 	if err != nil {
 		o.syncAdmit(index, 0)
+		// Another process can delete a listed file before a worker reads
+		// it (build scratch files, for example).
+		if errors.Is(err, fs.ErrNotExist) {
+			out.SkipReason = "file not found"
+			return nil
+		}
 		return err
 	}
 	f.Src = src
@@ -619,6 +627,11 @@ func runInMemory(
 	for i, f := range files {
 		src, err := loadSource(f)
 		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				results[i].SkipReason = "file not found"
+				o.syncAdmit(i, 0)
+				continue
+			}
 			return nil, err
 		}
 		f.Src = src

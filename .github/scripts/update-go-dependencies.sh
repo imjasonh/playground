@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Update, build, and test every top-level Go module.
 #
-# Writes "result" and "has_changes" step outputs for the dependency workflow.
+# Writes a "result" step output for the dependency workflow.
 set -uo pipefail
 
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT must be set}"
@@ -92,11 +92,4 @@ for module in "${modules[@]}"; do
   echo "::endgroup::"
 done
 
-if [ -n "$(git status --porcelain -- ':(glob)*/go.mod' ':(glob)*/go.sum')" ]; then
-  has_changes=true
-else
-  has_changes=false
-fi
-
 echo "result=${result}" >> "$GITHUB_OUTPUT"
-echo "has_changes=${has_changes}" >> "$GITHUB_OUTPUT"

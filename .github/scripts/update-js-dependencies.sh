@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Update and test every testable top-level JavaScript app.
 #
-# Writes "result" and "has_changes" step outputs for the dependency workflow.
+# Writes a "result" step output for the dependency workflow.
 set -uo pipefail
 
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT must be set}"
@@ -44,13 +44,17 @@ fi
 for app in "${apps[@]}"; do
   echo "::group::Update and verify ${app}"
 
-  if (
+  # Bash ignores `set -e` inside an `if` condition, so run each multi-command
+  # subshell as its own command and check its status afterward.
+  (
     set -euo pipefail
     cd "$app"
     npx --yes npm-check-updates@latest --upgrade
     npm install
     npm run vendor --if-present
-  ); then
+  )
+  update_status=$?
+  if [ "$update_status" -eq 0 ]; then
     echo "- ✅ \`${app}\`: dependencies updated" >> "$GITHUB_STEP_SUMMARY"
   else
     result=failure
@@ -59,7 +63,6 @@ for app in "${apps[@]}"; do
   fi
 
   if (
-    set -euo pipefail
     cd "$app"
     npm test
   ); then
@@ -74,13 +77,15 @@ for app in "${apps[@]}"; do
     cd "$app"
     node -e "const s=require('./package.json').scripts||{}; process.exit(s['test:e2e']?0:1)"
   ); then
-    if (
+    (
       set -euo pipefail
       cd "$app"
       read -r -a playwright_browsers <<< "$(node -p "(require('./package.json').playwrightBrowsers || ['chromium']).join(' ')")"
       npx playwright install --with-deps "${playwright_browsers[@]}"
       npm run test:e2e
-    ); then
+    )
+    e2e_status=$?
+    if [ "$e2e_status" -eq 0 ]; then
       echo "- ✅ \`${app}\`: end-to-end tests passed" >> "$GITHUB_STEP_SUMMARY"
     else
       result=failure
@@ -94,11 +99,4 @@ for app in "${apps[@]}"; do
   echo "::endgroup::"
 done
 
-if [ -n "$(git status --porcelain -- ':(glob)*/package.json' ':(glob)*/package-lock.json' ':(glob)*/vendor/**')" ]; then
-  has_changes=true
-else
-  has_changes=false
-fi
-
 echo "result=${result}" >> "$GITHUB_OUTPUT"
-echo "has_changes=${has_changes}" >> "$GITHUB_OUTPUT"
