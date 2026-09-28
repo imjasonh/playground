@@ -56,6 +56,23 @@ func TestLoadRuntime_compilationCache(t *testing.T) {
 	}
 }
 
+func TestPrewarmLeavesIdleParser(t *testing.T) {
+	gpool.mu.Lock()
+	for _, e := range gpool.free {
+		e.close()
+	}
+	gpool.free = nil
+	gpool.mu.Unlock()
+
+	Prewarm()
+	gpool.mu.Lock()
+	idle := len(gpool.free)
+	gpool.mu.Unlock()
+	if idle != 1 {
+		t.Fatalf("Prewarm left %d idle parsers, want 1", idle)
+	}
+}
+
 func TestLoadRuntime_unusableCacheDir(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "file")
 	if err := os.WriteFile(file, nil, 0o644); err != nil {

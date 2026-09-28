@@ -80,6 +80,16 @@ type Match struct {
 // nil OR p.Node is empty (match-any-type), falls back to a tree walk.
 func FindAll(p *dsl.Pattern, root tsutil.Node, env *Env) []Match {
 	var matches []Match
+	// Most candidates fail to match, so they share one scratch map and
+	// each match gets its own copy.
+	caps := Captures{}
+	try := func(n tsutil.Node) {
+		clear(caps)
+		caps["_root"] = n
+		if matchPattern(p, n, env, caps) {
+			matches = append(matches, Match{Anchor: n, Captures: caps.Clone()})
+		}
+	}
 
 	if env.Index != nil && len(p.Node) > 0 {
 		seen := map[[2]uint32]bool{}
@@ -90,22 +100,15 @@ func FindAll(p *dsl.Pattern, root tsutil.Node, env *Env) []Match {
 					continue
 				}
 				seen[key] = true
-				caps := Captures{"_root": n}
-				if matchPattern(p, n, env, caps) {
-					matches = append(matches, Match{Anchor: n, Captures: caps})
-				}
+				try(n)
 			}
 		}
 		return matches
 	}
 
 	tsutil.Walk(root, func(n tsutil.Node) bool {
-		if !typeMatches(p.Node, n.Type()) {
-			return true
-		}
-		caps := Captures{"_root": n}
-		if matchPattern(p, n, env, caps) {
-			matches = append(matches, Match{Anchor: n, Captures: caps})
+		if typeMatches(p.Node, n.Type()) {
+			try(n)
 		}
 		return true
 	})

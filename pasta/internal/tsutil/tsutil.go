@@ -226,6 +226,12 @@ func DrainArenaPools() {
 	tswasm.DrainArenaPools()
 }
 
+// Prewarm loads the parser runtime ahead of the first parse; see
+// tswasm.Prewarm.
+func Prewarm() {
+	tswasm.Prewarm()
+}
+
 // Walk invokes fn pre-order on every named descendant of n, including n.
 // fn returning false skips traversal of n's children.
 func Walk(n Node, fn func(Node) bool) {

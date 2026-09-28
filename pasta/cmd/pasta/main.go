@@ -69,6 +69,7 @@ import (
 	"github.com/imjasonh/playground/pasta/internal/parsecache"
 	"github.com/imjasonh/playground/pasta/internal/remote"
 	"github.com/imjasonh/playground/pasta/internal/runner"
+	"github.com/imjasonh/playground/pasta/internal/tsutil"
 )
 
 func main() {
@@ -143,6 +144,16 @@ func runFix(args []string) int {
 			passes = *fixPasses
 		}
 	}
+
+	// Load the parser runtime while the rules load. Waiting for it
+	// before returning lets a first run finish writing the compiled
+	// code cache even when there's nothing to parse.
+	prewarmed := make(chan struct{})
+	go func() {
+		tsutil.Prewarm()
+		close(prewarmed)
+	}()
+	defer func() { <-prewarmed }()
 
 	analyzers, cfg, rawSources, code := selectRules(*rulesDir, fs.Args())
 	if code != 0 {
