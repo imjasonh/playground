@@ -5,22 +5,30 @@ set -euo pipefail
 BRANCH="${DEPENDENCY_UPDATE_BRANCH:-automation/dependency-updates}"
 BASE="${DEPENDENCY_UPDATE_BASE:-main}"
 
+# Match the former create-pull-request add-paths globs.
+DEP_PATHSPECS=(
+  ':(glob)*/go.mod'
+  ':(glob)*/go.sum'
+  ':(glob)*/package.json'
+  ':(glob)*/package-lock.json'
+  ':(glob)*/vendor/**'
+  ':(glob)*/Cargo.toml'
+  ':(glob)*/Cargo.lock'
+)
+
 _git_identity() {
   git config user.name  "github-actions[bot]"
   git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 }
 
 _stage_dep_paths() {
-  # Match the former create-pull-request add-paths globs.
-  git add -A -- \
-    ':(glob)*/go.mod' \
-    ':(glob)*/go.sum' \
-    ':(glob)*/package.json' \
-    ':(glob)*/package-lock.json' \
-    ':(glob)*/vendor/**' \
-    ':(glob)*/Cargo.toml' \
-    ':(glob)*/Cargo.lock' \
-    || true
+  # `git add` stages nothing if any one pathspec matches no file, so list the
+  # changed paths first and add exactly those.
+  local changed
+  changed=$(git ls-files --modified --others --exclude-standard -- "${DEP_PATHSPECS[@]}")
+  if [[ -n "$changed" ]]; then
+    git --literal-pathspecs add -A --pathspec-from-file=- <<< "$changed"
+  fi
 }
 
 _ensure_branch() {
