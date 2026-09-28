@@ -347,6 +347,16 @@ func (p *enginePool) discard(e *engine) {
 	p.closed.Add(1)
 }
 
+// Prewarm loads the compiled module and leaves one idle parser in the
+// pool, so the first Parse doesn't wait for either. Call it in the
+// background while doing other startup work. Errors surface from the
+// next Parse instead.
+func Prewarm() {
+	if e, err := gpool.acquire(); err == nil {
+		gpool.release(e, false)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Parse
 // ---------------------------------------------------------------------------
