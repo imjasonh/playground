@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,6 +12,7 @@ import (
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/engine"
 	"github.com/imjasonh/playground/pasta/internal/loader"
+	"github.com/imjasonh/playground/pasta/internal/runner"
 )
 
 func TestWalkSources_skipsVendorTrees(t *testing.T) {
@@ -85,6 +88,60 @@ func TestWalkSources_skipsSymlink(t *testing.T) {
 	}
 	if len(got) != 1 || filepath.Base(got[0]) != "real.go" {
 		t.Fatalf("got %v, want only real.go", got)
+	}
+}
+
+func TestExpandSources_explicitPathMustExist(t *testing.T) {
+	dir := t.TempDir()
+	present := filepath.Join(dir, "present.go")
+	if err := os.WriteFile(present, []byte("package p\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := expandSources([]string{present}, parseSkipDirs("", nil), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, []string{present}) {
+		t.Fatalf("got %v, want [%s]", got, present)
+	}
+	_, _, err = expandSources([]string{filepath.Join(dir, "typo.go")}, parseSkipDirs("", nil), 0)
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("mistyped explicit path: err=%v, want fs.ErrNotExist", err)
+	}
+}
+
+// TestWalkThenRemove_skipsFile covers a file that another process deletes
+// after the ./... walk lists it, such as the package.json that the Worker
+// build check writes and removes while other CI steps run.
+func TestWalkThenRemove_skipsFile(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"kept.json", "scratch.json"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("{}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	paths, _, err := expandSources([]string{dir + "/..."}, parseSkipDirs("", nil), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "scratch.json")); err != nil {
+		t.Fatal(err)
+	}
+	specs := make([]runner.FileSpec, 0, len(paths))
+	for _, p := range paths {
+		specs = append(specs, runner.FileSpec{Path: p})
+	}
+	results, err := runner.RunGroup(t.Context(), specs, nil, false)
+	if err != nil {
+		t.Fatalf("RunGroup: %v", err)
+	}
+	skips := map[string]string{}
+	for _, r := range results {
+		skips[filepath.Base(r.Path)] = r.SkipReason
+	}
+	want := map[string]string{"kept.json": "", "scratch.json": "file not found"}
+	if !reflect.DeepEqual(skips, want) {
+		t.Fatalf("skip reasons %v, want %v", skips, want)
 	}
 }
 
