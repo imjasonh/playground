@@ -344,6 +344,11 @@ pasta test path/to/rule-dir
 # Defaults to ./.pasta/.
 pasta sync
 pasta sync path/to/rule-dir
+
+# Install or remove a git pre-commit hook that runs pasta before each
+# commit (see "Pre-commit hook").
+pasta install
+pasta uninstall
 ```
 
 When more than one source file is supplied (directly or via `./...`
@@ -388,6 +393,33 @@ Files directly under `testdata/` are run as independent single-file
 groups. Each subdirectory of `testdata/` is run as one multi-file
 group sharing a fact store — use subdirs to test cross-file analyzers
 with realistic multi-file inputs.
+
+## Pre-commit hook
+
+`pasta install` writes a git pre-commit hook that runs
+`pasta -fail-on=warning` before each commit, so a commit fails when
+pasta reports a warning or an error. Run it from the directory that
+holds `.pasta/`, usually the repository root:
+
+```
+pasta install                  # block commits on warnings and errors
+pasta install -fail-on=error   # block only on errors
+pasta install -rules lint      # load rules from ./lint instead of ./.pasta
+pasta uninstall                # remove the hook
+```
+
+The hook changes into the directory where you ran `pasta install` and
+checks everything under it, the same as running `pasta` there
+yourself. Unstaged changes and untracked files count too.
+
+`pasta install` writes the hook where git looks for it, so
+`core.hooksPath` and linked worktrees work. It refuses to replace a
+pre-commit hook that it didn't write; pass `-force` to replace that
+hook. `pasta uninstall` removes only a hook that `pasta install` wrote.
+
+The hook runs the pasta binary that installed it. If that binary is
+gone, the hook uses `pasta` from your `PATH`. To skip the hook for one
+commit, run `git commit --no-verify`.
 
 ## Remote rule imports
 

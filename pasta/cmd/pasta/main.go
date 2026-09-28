@@ -6,6 +6,8 @@
 //	pasta [-fix] <rule.cue> <source> [<source>...]   single-rule form
 //	pasta test [<rule-dir>...]                       run rules on their testdata/
 //	pasta sync [<rule-dir>]                          fetch remote imports declared in <rule-dir>/pasta.cue
+//	pasta install [-fail-on <level>] [-rules <dir>]  install a git pre-commit hook that runs pasta
+//	pasta uninstall                                  remove the hook that `pasta install` wrote
 //
 // With no positional rule argument, pasta loads every rule in
 // `./.pasta/` (override with `-rules`) and analyzes the given sources.
@@ -29,6 +31,12 @@
 // `-fix` rewrites every source file in place with its fixed bytes —
 // files whose fixed bytes are unchanged are left alone (mtime is not
 // touched), so running over a clean tree is a no-op.
+//
+// `pasta install` writes a git pre-commit hook that runs pasta with
+// -fail-on (default warning) from the current directory, so a commit
+// with findings fails. The hook goes wherever git looks for hooks
+// (core.hooksPath included), and pasta won't replace a hook it didn't
+// write unless you pass -force. `pasta uninstall` removes that hook.
 package main
 
 import (
@@ -74,6 +82,10 @@ func main() {
 			os.Exit(runSync(os.Args[2:]))
 		case "bump":
 			os.Exit(runBump(os.Args[2:]))
+		case "install":
+			os.Exit(runInstall(os.Args[2:]))
+		case "uninstall":
+			os.Exit(runUninstall(os.Args[2:]))
 		}
 	}
 	os.Exit(runFix(os.Args[1:]))

@@ -157,9 +157,9 @@ and the runner registers them at startup.
 ## The `.pasta/` convention
 
 Projects keep their rules in `./.pasta/` at the repo root. Bare
-`pasta` / `pasta -fix` / `pasta sync` / `pasta test` all default to
-this directory; pass `-rules <dir>` (or, for sync/test, an explicit
-positional dir) to override. `.pasta` is added to the `./...` walk's
+`pasta` / `pasta -fix` / `pasta sync` / `pasta test` / `pasta install`
+all default to this directory; pass `-rules <dir>` (or, for sync/test,
+an explicit positional dir) to override. `.pasta` is added to the `./...` walk's
 default skip list so the rules and their testdata aren't picked up
 as project sources.
 
