@@ -294,6 +294,13 @@ tested. The **pasta** leg builds the `pasta/` CLI, runs `pasta test` over the
 enrolled `.pasta/` analyzers, and lints the monorepo with `-fail-on=warning`
 (see `.github/scripts/test-pasta.sh`).
 
+Cloud Agents also check each commit with pasta. `.cursor/environment.json`
+runs `.cursor/install.sh` when the VM starts, which builds pasta and installs
+its pre-commit hook (`pasta -fail-on=warning -quiet -staged`). If the hook
+blocks a commit, fix the findings; the pasta leg would fail on them too. After
+you change pasta's Go code, rerun `.cursor/install.sh` so the hook uses your
+build.
+
 Discovery is by **top-level directory**: a change under `kanoodle/` selects
 `kanoodle`, a change under `web-push/` selects `web-push`, and so on. Hidden
 directories (names starting with `.`) and changes outside any app directory
