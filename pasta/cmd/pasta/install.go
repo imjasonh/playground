@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,10 +24,11 @@ var executable = os.Executable
 
 // runInstall writes a git pre-commit hook that runs pasta from the
 // current directory, so a commit fails when pasta reports a finding at
-// the -fail-on severity or higher. The hook passes -quiet, so findings
-// that can't block the commit stay out of its output. runInstall
-// refuses to replace a hook that `pasta install` didn't write unless
-// -force is set.
+// the -fail-on severity or higher. The hook passes -staged, so pasta
+// checks only the staged contents of staged files, and -quiet, so
+// findings that can't block the commit stay out of its output.
+// runInstall refuses to replace a hook that `pasta install` didn't
+// write unless -force is set.
 func runInstall(args []string) int {
 	flags := flag.NewFlagSet("pasta install", flag.ExitOnError)
 	failOn := flags.String("fail-on", "warning", "block the commit when a finding at this severity or higher is found: none, hint, info, warning, error")
@@ -64,7 +66,7 @@ func runInstall(args []string) int {
 		return 1
 	}
 
-	pastaArgs := []string{"-fail-on=" + *failOn, "-quiet"}
+	pastaArgs := []string{"-fail-on=" + *failOn, "-quiet", "-staged"}
 	if *rulesDir != "" {
 		pastaArgs = append(pastaArgs, "-rules="+*rulesDir)
 	}
@@ -150,19 +152,31 @@ func runUninstall(args []string) int {
 func locatePreCommitHook() (hookPath, prefix string, err error) {
 	// --show-toplevel makes git fail outside a working tree (including
 	// bare repositories and .git/ itself); its value isn't needed.
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel", "--show-prefix", "--git-path", "hooks/pre-commit").Output()
+	out, err := gitOutput(nil, "rev-parse", "--show-toplevel", "--show-prefix", "--git-path", "hooks/pre-commit")
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
-			return "", "", fmt.Errorf("git rev-parse: %s", strings.TrimSpace(string(exitErr.Stderr)))
-		}
-		return "", "", fmt.Errorf("git rev-parse: %w", err)
+		return "", "", err
 	}
 	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
 	if len(lines) != 3 {
 		return "", "", fmt.Errorf("git rev-parse: unexpected output %q", out)
 	}
 	return lines[2], lines[1], nil
+}
+
+// gitOutput runs git with args in the current directory and returns its
+// standard output. When git fails, the error carries git's stderr.
+func gitOutput(stdin io.Reader, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Stdin = stdin
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) && len(exitErr.Stderr) > 0 {
+			return nil, fmt.Errorf("git %s: %s", args[0], strings.TrimSpace(string(exitErr.Stderr)))
+		}
+		return nil, fmt.Errorf("git %s: %w", args[0], err)
+	}
+	return out, nil
 }
 
 // preCommitHook returns the hook script. The hook prefers exe, the

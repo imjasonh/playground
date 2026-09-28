@@ -134,15 +134,24 @@ func TestParseFailOn(t *testing.T) {
 	}
 }
 
-func TestRunFix_quiet(t *testing.T) {
+// analyzerRules copies the named shipped analyzers into a new rule
+// directory and returns its path. It reads them relative to the package
+// directory, so call it before a test changes directories.
+func analyzerRules(t *testing.T, names ...string) string {
+	t.Helper()
 	rules := t.TempDir()
-	for _, name := range []string{"js_debugger", "js_no_ternary"} {
+	for _, name := range names {
 		cue, err := os.ReadFile(filepath.Join("..", "..", "analyzers", name, name+".cue"))
 		if err != nil {
 			t.Fatal(err)
 		}
 		writeFile(t, filepath.Join(rules, name, name+".cue"), string(cue), 0o644)
 	}
+	return rules
+}
+
+func TestRunFix_quiet(t *testing.T) {
+	rules := analyzerRules(t, "js_debugger", "js_no_ternary")
 	src := filepath.Join(t.TempDir(), "a.js")
 	writeFile(t, src, "debugger;\nconst x = a ? b : c;\n", 0o644)
 	run := func(flags ...string) (string, int) {

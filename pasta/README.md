@@ -314,6 +314,7 @@ pasta              # report (exit 0 even when findings are printed)
 pasta -fail-on=error   # CI-friendly: exit 1 on error-severity findings
 pasta -fail-on=warning # exit 1 on warning or error
 pasta -fail-on=warning -quiet  # print only findings at warning or error
+pasta -staged      # only files staged for commit, as staged (no -fix)
 pasta -fix         # apply fixes (atomic rewrite; skips symlinks)
 pasta -fix -fix-until-clean   # multipass until no file changes (nested rewrites)
 pasta -stats                     # also print walk / prefilter / parse / skip counters
@@ -398,11 +399,11 @@ with realistic multi-file inputs.
 ## Pre-commit hook
 
 `pasta install` writes a git pre-commit hook that runs
-`pasta -fail-on=warning -quiet` before each commit, so a commit fails
-when pasta reports a warning or an error. `-quiet` keeps findings that
-can't block the commit, such as hints, out of the output. Run
-`pasta install` from the directory that holds `.pasta/`, usually the
-repository root:
+`pasta -fail-on=warning -quiet -staged` before each commit, so a commit
+fails when pasta reports a warning or an error in what you're
+committing. `-quiet` keeps findings that can't block the commit, such
+as hints, out of the output. Run `pasta install` from the directory
+that holds `.pasta/`, usually the repository root:
 
 ```
 pasta install                  # block commits on warnings and errors
@@ -412,8 +413,11 @@ pasta uninstall                # remove the hook
 ```
 
 The hook changes into the directory where you ran `pasta install` and
-checks everything under it, the same as running `pasta` there
-yourself. Unstaged changes and untracked files count too.
+checks only the files staged for commit under it. `-staged` reads each
+file's contents from the git index, so unstaged edits and untracked
+files don't count. Rules that use facts from other files, such as
+`go_errcheck` and the `*_taint` rules, see only the staged files, so
+they can miss findings that a full `pasta` run reports.
 
 `pasta install` writes the hook where git looks for it, so
 `core.hooksPath` and linked worktrees work. It refuses to replace a

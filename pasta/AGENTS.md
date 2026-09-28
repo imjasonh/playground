@@ -174,7 +174,8 @@ Hint-severity rules stay enrolled. The CLI prints `hint:` on those
 findings (and `warning:` / `error:` / `info:` on the others);
 `-fail-on=warning` does not fail the job on hints, and `-quiet` stops
 printing findings below the `-fail-on` level. The `pasta install`
-pre-commit hook passes `-quiet`. `pastals`
+pre-commit hook passes `-quiet` and `-staged`, which analyzes only the
+staged files, reading their contents from the git index. `pastals`
 publishes them as LSP `DiagnosticSeverity.Hint`.
 
 The single-rule shortcut still works: when the first positional arg
