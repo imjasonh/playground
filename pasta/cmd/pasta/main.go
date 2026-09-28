@@ -489,8 +489,9 @@ func selectRules(rulesDirFlag string, positional []string) ([]*dsl.Analyzer, *lo
 // An argument ending in `/...` (or the literal `./...` / `...`) is
 // expanded to every file under that directory whose extension maps
 // to a registered language; .golden files are excluded. Plain paths
-// pass through unchanged. Directory basenames in skip are pruned
-// during the walk.
+// pass through unchanged but must exist: the engine skips a file that
+// disappears before it is read, so a mistyped path has to fail here.
+// Directory basenames in skip are pruned during the walk.
 //
 // The `./...` form also applies maxFileSize: files larger than that
 // many bytes are dropped from the result. Explicit positional paths
@@ -520,6 +521,9 @@ func expandSources(args []string, skip map[string]bool, maxFileSize int64) ([]st
 			continue
 		}
 		if !seen[a] {
+			if _, err := os.Stat(a); err != nil {
+				return nil, nil, err
+			}
 			seen[a] = true
 			out = append(out, a)
 		}
