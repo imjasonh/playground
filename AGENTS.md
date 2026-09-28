@@ -404,9 +404,15 @@ Publishing is all-or-nothing, so a green run never lands a half-broken bump:
   failed.
 
 Each ecosystem's work lives in its own script (`update-go-dependencies.sh`,
-`update-js-dependencies.sh`, `update-rust-dependencies.sh`), and
-`manage-dependency-update.sh` handles auto-merge / failure reporting. New apps
-are discovered automatically — no workflow edits are needed.
+`update-js-dependencies.sh`, `update-rust-dependencies.sh`). The three scripts
+run in parallel in one checkout and write temporary files into it, so each one
+reports only pass or fail. After all three exit,
+`manage-dependency-update.sh detect-changes` decides whether there is anything
+to publish, from the same paths that the publish step commits.
+`manage-dependency-update.sh` also handles the pull request, auto-merge, and
+failure reporting. To test change detection, run
+`bash .github/scripts/manage-dependency-update_test.sh`. New apps are
+discovered automatically — no workflow edits are needed.
 
 ## Adding a new browser app
 

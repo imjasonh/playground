@@ -3,7 +3,7 @@
 #
 # Runs `cargo update` (the lockfile-level analog of `go get -u`) then verifies
 # the app the same way the test workflow gates it, so an update is only pushed
-# when it still passes. Writes "result" and "has_changes" step outputs.
+# when it still passes. Writes a "result" step output.
 set -uo pipefail
 
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT must be set}"
@@ -107,11 +107,4 @@ for app in "${apps[@]}"; do
   echo "::endgroup::"
 done
 
-if [ -n "$(git status --porcelain -- ':(glob)*/Cargo.toml' ':(glob)*/Cargo.lock')" ]; then
-  has_changes=true
-else
-  has_changes=false
-fi
-
 echo "result=${result}" >> "$GITHUB_OUTPUT"
-echo "has_changes=${has_changes}" >> "$GITHUB_OUTPUT"

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Update and test every testable top-level JavaScript app.
 #
-# Writes "result" and "has_changes" step outputs for the dependency workflow.
+# Writes a "result" step output for the dependency workflow.
 set -uo pipefail
 
 : "${GITHUB_OUTPUT:?GITHUB_OUTPUT must be set}"
@@ -94,11 +94,4 @@ for app in "${apps[@]}"; do
   echo "::endgroup::"
 done
 
-if [ -n "$(git status --porcelain -- ':(glob)*/package.json' ':(glob)*/package-lock.json' ':(glob)*/vendor/**')" ]; then
-  has_changes=true
-else
-  has_changes=false
-fi
-
 echo "result=${result}" >> "$GITHUB_OUTPUT"
-echo "has_changes=${has_changes}" >> "$GITHUB_OUTPUT"

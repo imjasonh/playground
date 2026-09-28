@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Helpers for the dependency update workflow's publish / report steps.
+# Helpers for the dependency update workflow's detect / publish / report steps.
 set -euo pipefail
 
 BRANCH="${DEPENDENCY_UPDATE_BRANCH:-automation/dependency-updates}"
@@ -67,6 +67,18 @@ _push_and_pr() {
 }
 
 case "${1:-}" in
+  detect-changes)
+    # The updaters share one checkout and write temporary files while they
+    # run, so call this only after all of them exit. The publish steps stage
+    # the same paths again, so the result matches what they commit.
+    _stage_dep_paths
+    git diff --cached --name-status
+    if git diff --cached --quiet; then
+      echo "has_changes=false" >> "$GITHUB_OUTPUT"
+    else
+      echo "has_changes=true" >> "$GITHUB_OUTPUT"
+    fi
+    ;;
   enable-auto-merge)
     pr_number="${2:-}"
     if [[ -z "$pr_number" ]]; then
@@ -133,7 +145,7 @@ EOF
     exit 1
     ;;
   *)
-    echo "Usage: $0 enable-auto-merge <pr-number> | open-success-pr | open-failure-pr | close-stale | report-failure" >&2
+    echo "Usage: $0 detect-changes | enable-auto-merge <pr-number> | open-success-pr | open-failure-pr | close-stale | report-failure" >&2
     exit 2
     ;;
 esac
