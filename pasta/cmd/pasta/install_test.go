@@ -118,8 +118,8 @@ func TestInstallUninstall(t *testing.T) {
 		t.Fatalf("install: exit %d", code)
 	}
 	first := readFile(t, hook)
-	if !strings.Contains(first, preCommitHookMarker) || !strings.Contains(first, `"$pasta" -fail-on=warning`+"\n") {
-		t.Fatalf("hook does not run pasta -fail-on=warning:\n%s", first)
+	if !strings.Contains(first, preCommitHookMarker) || !strings.Contains(first, `"$pasta" -fail-on=warning -quiet`+"\n") {
+		t.Fatalf("hook does not run pasta -fail-on=warning -quiet:\n%s", first)
 	}
 	if info, err := os.Stat(hook); err != nil || info.Mode().Perm()&0o100 == 0 {
 		t.Fatalf("hook is not executable: %v", err)
@@ -134,7 +134,7 @@ func TestInstallUninstall(t *testing.T) {
 	if code := runInstall([]string{"-fail-on=error"}); code != 0 {
 		t.Fatalf("install -fail-on=error: exit %d", code)
 	}
-	if got := readFile(t, hook); !strings.Contains(got, `"$pasta" -fail-on=error`+"\n") {
+	if got := readFile(t, hook); !strings.Contains(got, `"$pasta" -fail-on=error -quiet`+"\n") {
 		t.Fatalf("hook not updated to -fail-on=error:\n%s", got)
 	}
 
@@ -221,7 +221,7 @@ func TestInstall_rulesDir(t *testing.T) {
 	if code := runInstall([]string{"-rules", "lint rules"}); code != 0 {
 		t.Fatalf("install -rules: exit %d", code)
 	}
-	if got := readFile(t, hook); !strings.Contains(got, `"$pasta" -fail-on=warning '-rules=lint rules'`+"\n") {
+	if got := readFile(t, hook); !strings.Contains(got, `"$pasta" -fail-on=warning -quiet '-rules=lint rules'`+"\n") {
 		t.Fatalf("hook doesn't pass -rules:\n%s", got)
 	}
 }
@@ -284,7 +284,7 @@ func TestPreCommitHook_blocksCommitWhenPastaFails(t *testing.T) {
 	if got := strings.TrimSpace(runGit(t, repo, "rev-list", "--count", "HEAD")); got != "1" {
 		t.Errorf("got %s commits, want 1", got)
 	}
-	if got, want := readFile(t, log), stubLog(t, repo, "-fail-on=warning"); got != want {
+	if got, want := readFile(t, log), stubLog(t, repo, "-fail-on=warning", "-quiet"); got != want {
 		t.Errorf("stub pasta log:\n%s\nwant:\n%s", got, want)
 	}
 }
@@ -301,7 +301,7 @@ func TestPreCommitHook_runsInInstallDir(t *testing.T) {
 	writeFile(t, filepath.Join(sub, "a.go"), "package a\n", 0o644)
 	runGit(t, repo, "add", ".")
 	runGit(t, repo, "commit", "--quiet", "-m", "x")
-	if got, want := readFile(t, log), stubLog(t, sub, "-fail-on=warning"); got != want {
+	if got, want := readFile(t, log), stubLog(t, sub, "-fail-on=warning", "-quiet"); got != want {
 		t.Errorf("stub pasta log:\n%s\nwant:\n%s", got, want)
 	}
 }
@@ -332,7 +332,7 @@ func TestPreCommitHook_fallsBackToPath(t *testing.T) {
 	if out, err := runHook(); err != nil {
 		t.Fatalf("hook with pasta on PATH: %v\n%s", err, out)
 	}
-	if got, want := readFile(t, log), stubLog(t, repo, "-fail-on=warning"); got != want {
+	if got, want := readFile(t, log), stubLog(t, repo, "-fail-on=warning", "-quiet"); got != want {
 		t.Errorf("stub pasta log:\n%s\nwant:\n%s", got, want)
 	}
 }

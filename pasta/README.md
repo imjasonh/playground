@@ -313,6 +313,7 @@ mkdir -p .pasta && cp path/to/some-rule.cue .pasta/
 pasta              # report (exit 0 even when findings are printed)
 pasta -fail-on=error   # CI-friendly: exit 1 on error-severity findings
 pasta -fail-on=warning # exit 1 on warning or error
+pasta -fail-on=warning -quiet  # print only findings at warning or error
 pasta -fix         # apply fixes (atomic rewrite; skips symlinks)
 pasta -fix -fix-until-clean   # multipass until no file changes (nested rewrites)
 pasta -stats                     # also print walk / prefilter / parse / skip counters
@@ -397,9 +398,11 @@ with realistic multi-file inputs.
 ## Pre-commit hook
 
 `pasta install` writes a git pre-commit hook that runs
-`pasta -fail-on=warning` before each commit, so a commit fails when
-pasta reports a warning or an error. Run it from the directory that
-holds `.pasta/`, usually the repository root:
+`pasta -fail-on=warning -quiet` before each commit, so a commit fails
+when pasta reports a warning or an error. `-quiet` keeps findings that
+can't block the commit, such as hints, out of the output. Run
+`pasta install` from the directory that holds `.pasta/`, usually the
+repository root:
 
 ```
 pasta install                  # block commits on warnings and errors

@@ -32,11 +32,14 @@
 // files whose fixed bytes are unchanged are left alone (mtime is not
 // touched), so running over a clean tree is a no-op.
 //
-// `pasta install` writes a git pre-commit hook that runs pasta with
-// -fail-on (default warning) from the current directory, so a commit
-// with findings fails. The hook goes wherever git looks for hooks
-// (core.hooksPath included), and pasta won't replace a hook it didn't
-// write unless you pass -force. `pasta uninstall` removes that hook.
+// `-quiet` prints only the findings at or above the -fail-on severity.
+//
+// `pasta install` writes a git pre-commit hook that runs
+// `pasta -fail-on=warning -quiet` (or the -fail-on and -rules you pass)
+// from the current directory, so a commit with findings fails. The hook
+// goes wherever git looks for hooks (core.hooksPath included), and
+// pasta won't replace a hook it didn't write unless you pass -force.
+// `pasta uninstall` removes that hook.
 package main
 
 import (
@@ -108,6 +111,7 @@ func runFix(args []string) int {
 	memoryBudgetFlag := fs.Int64("memory-budget", -1, "cumulative parsed-source byte budget across the whole run; 0 disables. Default unlimited, or memory_budget from pasta.cue")
 	showStats := fs.Bool("stats", false, "print walk/prefilter/parse/skip counters on stderr")
 	failOn := fs.String("fail-on", "none", "exit 1 when a diagnostic at this severity or higher is found: none, hint, info, warning, error")
+	quiet := fs.Bool("quiet", false, "print only diagnostics at or above the -fail-on severity")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -218,6 +222,11 @@ func runFix(args []string) int {
 			}
 			if pass == 0 {
 				for _, d := range res.Diagnostics {
+					// Every severity is at least failOnNone, so -quiet
+					// without -fail-on still prints everything.
+					if *quiet && !severityAtLeast(d.Severity, failThreshold) {
+						continue
+					}
 					fmt.Fprintln(os.Stderr, formatDiagnostic(res.Path, d.Line(), d.Severity, d.Message, d.Rule))
 					if failThreshold != failOnNone && severityAtLeast(d.Severity, failThreshold) {
 						exit = 1

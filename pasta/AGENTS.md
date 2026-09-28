@@ -172,7 +172,9 @@ expands to every enrolled child that has `testdata/`.
 
 Hint-severity rules stay enrolled. The CLI prints `hint:` on those
 findings (and `warning:` / `error:` / `info:` on the others);
-`-fail-on=warning` does not fail the job on hints. `pastals`
+`-fail-on=warning` does not fail the job on hints, and `-quiet` stops
+printing findings below the `-fail-on` level. The `pasta install`
+pre-commit hook passes `-quiet`. `pastals`
 publishes them as LSP `DiagnosticSeverity.Hint`.
 
 The single-rule shortcut still works: when the first positional arg

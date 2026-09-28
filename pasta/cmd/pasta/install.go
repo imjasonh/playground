@@ -23,8 +23,10 @@ var executable = os.Executable
 
 // runInstall writes a git pre-commit hook that runs pasta from the
 // current directory, so a commit fails when pasta reports a finding at
-// the -fail-on severity or higher. It refuses to replace a hook that
-// `pasta install` didn't write unless -force is set.
+// the -fail-on severity or higher. The hook passes -quiet, so findings
+// that can't block the commit stay out of its output. runInstall
+// refuses to replace a hook that `pasta install` didn't write unless
+// -force is set.
 func runInstall(args []string) int {
 	flags := flag.NewFlagSet("pasta install", flag.ExitOnError)
 	failOn := flags.String("fail-on", "warning", "block the commit when a finding at this severity or higher is found: none, hint, info, warning, error")
@@ -62,7 +64,7 @@ func runInstall(args []string) int {
 		return 1
 	}
 
-	pastaArgs := []string{"-fail-on=" + *failOn}
+	pastaArgs := []string{"-fail-on=" + *failOn, "-quiet"}
 	if *rulesDir != "" {
 		pastaArgs = append(pastaArgs, "-rules="+*rulesDir)
 	}
