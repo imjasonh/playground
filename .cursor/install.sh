@@ -3,7 +3,7 @@
 # runs it when an agent's VM starts, after pulling the latest changes.
 #
 # Builds pasta from this checkout and installs its git pre-commit hook,
-# so agent commits get the same pasta check as the pasta leg of CI.
+# which runs pasta on the staged files of every agent commit.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
