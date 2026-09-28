@@ -19,6 +19,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -163,26 +165,56 @@ func initRuntime() {
 		n = 4
 	}
 	instLim = newConcLimiter(n)
-	cfg := wazero.NewRuntimeConfigCompiler()
-	if MemLimitPages > 0 {
-		cfg = cfg.WithMemoryLimitPages(MemLimitPages)
-	}
-	wz := wazero.NewRuntimeWithConfig(ctx, cfg)
-	if _, err := wasi_snapshot_preview1.Instantiate(ctx, wz); err != nil {
-		rtErr = fmt.Errorf("wasi: %w", err)
-		return
-	}
 	raw, err := io.ReadAll(brotli.NewReader(bytes.NewReader(wasmBrotli)))
 	if err != nil {
 		rtErr = fmt.Errorf("decompress ts-core.wasm.br: %w", err)
 		return
 	}
+	cacheDir := ""
+	if dir, err := os.UserCacheDir(); err == nil {
+		cacheDir = filepath.Join(dir, "pasta", "wazero")
+	}
+	rt, rtErr = loadRuntime(ctx, raw, cacheDir)
+}
+
+// loadRuntime compiles the tree-sitter module. Compiling takes most of
+// a second, so when cacheDir isn't empty loadRuntime keeps the compiled
+// code there for later processes. wazero fails the compile when a cache
+// entry is damaged or the directory can't be written, so loadRuntime
+// then removes the directory and compiles without a cache.
+func loadRuntime(ctx context.Context, raw []byte, cacheDir string) (*runtime, error) {
+	if cacheDir != "" {
+		if cache, err := wazero.NewCompilationCacheWithDir(cacheDir); err == nil {
+			if r, err := newRuntime(ctx, raw, cache); err == nil {
+				return r, nil
+			}
+			_ = os.RemoveAll(cacheDir)
+		}
+	}
+	return newRuntime(ctx, raw, nil)
+}
+
+// newRuntime returns a wazero runtime with WASI and the compiled
+// tree-sitter module, using cache for compiled code when it isn't nil.
+func newRuntime(ctx context.Context, raw []byte, cache wazero.CompilationCache) (*runtime, error) {
+	cfg := wazero.NewRuntimeConfigCompiler()
+	if MemLimitPages > 0 {
+		cfg = cfg.WithMemoryLimitPages(MemLimitPages)
+	}
+	if cache != nil {
+		cfg = cfg.WithCompilationCache(cache)
+	}
+	wz := wazero.NewRuntimeWithConfig(ctx, cfg)
+	if _, err := wasi_snapshot_preview1.Instantiate(ctx, wz); err != nil {
+		_ = wz.Close(ctx)
+		return nil, fmt.Errorf("wasi: %w", err)
+	}
 	cm, err := wz.CompileModule(ctx, raw)
 	if err != nil {
-		rtErr = fmt.Errorf("compile ts-core.wasm: %w", err)
-		return
+		_ = wz.Close(ctx)
+		return nil, fmt.Errorf("compile ts-core.wasm: %w", err)
 	}
-	rt = &runtime{ctx: ctx, wz: wz, cm: cm}
+	return &runtime{ctx: ctx, wz: wz, cm: cm}, nil
 }
 
 type engine struct {
