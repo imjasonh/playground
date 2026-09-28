@@ -54,14 +54,15 @@ func (n *Node) Children() []*Node {
 
 // ChildByFieldName returns the first child bound to fieldName, or nil.
 func (n *Node) ChildByFieldName(fieldName string) *Node {
-	if !n.IsValid() || n.n.fieldIndex == nil {
+	if !n.IsValid() || fieldName == "" {
 		return nil
 	}
-	c := n.n.fieldIndex[fieldName]
-	if c == nil {
-		return nil
+	for _, c := range n.n.children {
+		if c.fieldName == fieldName {
+			return &Node{n: c, tree: n.tree}
+		}
 	}
-	return &Node{n: c, tree: n.tree}
+	return nil
 }
 
 // FieldNameForChild returns the field name for the i-th child (including

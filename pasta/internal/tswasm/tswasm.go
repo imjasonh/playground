@@ -100,7 +100,6 @@ type node struct {
 	parent              *node
 	children            []*node
 	namedChildren       []*node
-	fieldIndex          map[string]*node // first child per field name
 }
 
 // ---------------------------------------------------------------------------
@@ -384,14 +383,14 @@ func Parse(ctx context.Context, lang *Language, src []byte, fileID string, opts 
 	if err != nil {
 		return nil, err
 	}
-	root, perr := e.parseRoot(ctx, ExportName(lang.Grammar), src, opts)
-	// Nodes are copied into Go; return the engine immediately so parse
-	// concurrency is not limited by how long analysis holds the tree.
+	d, perr := e.parseDump(ctx, ExportName(lang.Grammar), src, opts)
+	// The dump is a copy, so the engine goes back to the pool before the
+	// Go graph is built and another parse can start on it.
 	gpool.release(e, perr != nil)
 	if perr != nil {
 		return nil, perr
 	}
-	return &Tree{root: root, src: src, fileID: fileID, lang: lang}, nil
+	return &Tree{root: buildGraph(d), src: src, fileID: fileID, lang: lang}, nil
 }
 
 // HasGrammar reports whether the embedded module exports the grammar.
@@ -469,7 +468,17 @@ func (e *engine) fieldNames(export string, lang uint32) map[uint32]string {
 	return m
 }
 
-func (e *engine) parseRoot(ctx context.Context, langExport string, src []byte, opts ParseOptions) (root *node, err error) {
+// treeDump is a parse tree as ts_dump_tree records, copied out of guest
+// memory, plus the grammar's symbol and field names.
+type treeDump struct {
+	raw           []byte
+	n             uint32
+	kinds, fields map[uint32]string
+}
+
+// parseDump parses src and returns the tree's records. An empty dump
+// (n == 0) stands for a tree with no nodes.
+func (e *engine) parseDump(ctx context.Context, langExport string, src []byte, opts ParseOptions) (d treeDump, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%w: wasm trap: %v", ErrResourceLimit, r)
@@ -478,7 +487,7 @@ func (e *engine) parseRoot(ctx context.Context, langExport string, src []byte, o
 
 	lang, ok := e.language(langExport)
 	if !ok {
-		return nil, fmt.Errorf("unknown grammar export %q", langExport)
+		return d, fmt.Errorf("unknown grammar export %q", langExport)
 	}
 	parser := e.call(e.parserNew)
 	defer e.call(e.parserDelete, parser)
@@ -494,7 +503,7 @@ func (e *engine) parseRoot(ctx context.Context, langExport string, src []byte, o
 
 	sp := uint32(e.call(e.malloc, uint64(len(src)+1)))
 	if sp == 0 {
-		return nil, fmt.Errorf("%w: malloc source failed", ErrResourceLimit)
+		return d, fmt.Errorf("%w: malloc source failed", ErrResourceLimit)
 	}
 	e.mem.Write(sp, src)
 	e.mem.WriteByte(sp+uint32(len(src)), 0)
@@ -505,50 +514,69 @@ func (e *engine) parseRoot(ctx context.Context, langExport string, src []byte, o
 	// work with opts.Timeout; if ctx is done, discard the result.
 	tree := e.call(e.parse, parser, 0, uint64(sp), uint64(len(src)))
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return d, ctx.Err()
 	}
 	if tree == 0 {
 		if opts.Timeout > 0 {
-			return nil, fmt.Errorf("%w: null tree", ErrTimeout)
+			return d, fmt.Errorf("%w: null tree", ErrTimeout)
 		}
-		return nil, fmt.Errorf("parse returned null tree")
+		return d, fmt.Errorf("parse returned null tree")
 	}
 	defer e.call(e.treeDelete, tree)
 
 	n := uint32(e.call(e.dumpTree, tree, 0, 0))
 	if n == 0 {
-		return &node{kind: "ERROR"}, nil
+		return d, nil
 	}
 	buf := uint32(e.call(e.malloc, uint64(n)*recSize))
 	if buf == 0 {
-		return nil, fmt.Errorf("%w: malloc dump failed", ErrResourceLimit)
+		return d, fmt.Errorf("%w: malloc dump failed", ErrResourceLimit)
 	}
 	defer e.call(e.free, uint64(buf))
 	got := uint32(e.call(e.dumpTree, tree, uint64(buf), uint64(n)))
 	if got != n {
-		return nil, fmt.Errorf("dump count changed: %d vs %d", n, got)
+		return d, fmt.Errorf("dump count changed: %d vs %d", n, got)
 	}
 	raw, ok2 := e.mem.Read(buf, n*recSize)
 	if !ok2 {
-		return nil, fmt.Errorf("read dump buffer failed")
+		return d, fmt.Errorf("read dump buffer failed")
 	}
 
 	kinds := e.symbolNames(langExport, lang)
 	fields := e.fieldNames(langExport, lang)
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return d, ctx.Err()
 	}
-	return buildGraph(raw, n, kinds, fields), nil
+	// Read returns a view of guest memory, which the next parse on this
+	// engine overwrites.
+	return treeDump{raw: bytes.Clone(raw), n: n, kinds: kinds, fields: fields}, nil
 }
 
-func buildGraph(raw []byte, n uint32, kinds, fields map[uint32]string) *node {
-	nodes := make([]*node, n)
+// buildGraph rebuilds d as a Go node graph and returns its root. All
+// nodes share one slice, and each parent's child slices are carved at
+// their exact size from two shared buffers.
+func buildGraph(d treeDump) *node {
+	n, raw := d.n, d.raw
+	if n == 0 {
+		return &node{kind: "ERROR"}
+	}
+	const noParent = ^uint32(0)
+	nodes := make([]node, n)
+	parent := make([]uint32, n)
+	childCount := make([]uint32, n)
+	namedCount := make([]uint32, n)
+	// Reconstruct parent/child from pre-order depths.
+	type frame struct {
+		idx   uint32
+		depth uint32
+	}
+	stack := make([]frame, 0, 64)
 	for i := uint32(0); i < n; i++ {
 		o := i * recSize
 		kindID := binary.LittleEndian.Uint32(raw[o:])
 		flags := binary.LittleEndian.Uint32(raw[o+36:])
 		fieldID := binary.LittleEndian.Uint32(raw[o+32:])
-		kind := kinds[kindID]
+		kind := d.kinds[kindID]
 		isErr := flags&2 != 0
 		isMissing := flags&4 != 0
 		// ERROR/MISSING nodes' TSSymbol often has an empty
@@ -558,50 +586,63 @@ func buildGraph(raw []byte, n uint32, kinds, fields map[uint32]string) *node {
 		} else if isMissing && kind == "" {
 			kind = "MISSING"
 		}
-		nodes[i] = &node{
+		nodes[i] = node{
 			kind:      kind,
 			start:     binary.LittleEndian.Uint32(raw[o+4:]),
 			end:       binary.LittleEndian.Uint32(raw[o+8:]),
-			fieldName: fields[fieldID],
+			fieldName: d.fields[fieldID],
 			named:     flags&1 != 0,
 			err:       isErr,
 			missing:   isMissing,
 			extra:     flags&8 != 0,
 			hasError:  flags&16 != 0,
 		}
-	}
-	// Reconstruct parent/child from pre-order depths.
-	type frame struct {
-		idx   uint32
-		depth uint32
-	}
-	stack := make([]frame, 0, 64)
-	for i := uint32(0); i < n; i++ {
-		o := i * recSize
 		depth := binary.LittleEndian.Uint32(raw[o+28:])
 		for len(stack) > 0 && stack[len(stack)-1].depth >= depth {
 			stack = stack[:len(stack)-1]
 		}
+		parent[i] = noParent
 		if len(stack) > 0 {
-			p := nodes[stack[len(stack)-1].idx]
-			c := nodes[i]
-			c.parent = p
-			p.children = append(p.children, c)
-			if c.named {
-				p.namedChildren = append(p.namedChildren, c)
-			}
-			if c.fieldName != "" {
-				if p.fieldIndex == nil {
-					p.fieldIndex = map[string]*node{}
-				}
-				if _, exists := p.fieldIndex[c.fieldName]; !exists {
-					p.fieldIndex[c.fieldName] = c
-				}
+			p := stack[len(stack)-1].idx
+			parent[i] = p
+			childCount[p]++
+			if nodes[i].named {
+				namedCount[p]++
 			}
 		}
 		stack = append(stack, frame{idx: i, depth: depth})
 	}
-	return nodes[0]
+	var totalChildren, totalNamed uint32
+	for i := range n {
+		totalChildren += childCount[i]
+		totalNamed += namedCount[i]
+	}
+	childBuf := make([]*node, totalChildren)
+	namedBuf := make([]*node, totalNamed)
+	var co, no uint32
+	for i := range n {
+		if c := childCount[i]; c > 0 {
+			nodes[i].children = childBuf[co : co : co+c]
+			co += c
+		}
+		if c := namedCount[i]; c > 0 {
+			nodes[i].namedChildren = namedBuf[no : no : no+c]
+			no += c
+		}
+	}
+	for i := range n {
+		p := parent[i]
+		if p == noParent {
+			continue
+		}
+		c, pn := &nodes[i], &nodes[p]
+		c.parent = pn
+		pn.children = append(pn.children, c)
+		if c.named {
+			pn.namedChildren = append(pn.namedChildren, c)
+		}
+	}
+	return &nodes[0]
 }
 
 func (e *engine) readCStr(ptr uint32) string {
