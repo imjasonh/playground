@@ -29,6 +29,35 @@ func goEnv() *Env {
 	}
 }
 
+// TestFindAllMatchesKeepOwnCaptures checks that each match keeps its own
+// captures while FindAll goes on to try later candidates, both with a
+// node index and with a tree walk.
+func TestFindAllMatchesKeepOwnCaptures(t *testing.T) {
+	root := parseGo(t, `package p
+func alpha() {}
+var skipped = 1
+func beta() {}
+`)
+	pat := &dsl.Pattern{
+		Node:   []string{"function_declaration"},
+		Fields: map[string]dsl.Child{"name": {Capture: "name"}},
+	}
+	indexed := goEnv()
+	indexed.Index = BuildIndex(root)
+	for name, env := range map[string]*Env{"walk": goEnv(), "index": indexed} {
+		var got []string
+		for _, m := range FindAll(pat, root, env) {
+			got = append(got, m.Captures["name"].Text())
+			if m.Captures["_root"].StartByte() != m.Anchor.StartByte() {
+				t.Errorf("%s: _root capture isn't the anchor", name)
+			}
+		}
+		if len(got) != 2 || got[0] != "alpha" || got[1] != "beta" {
+			t.Errorf("%s: captured names %q, want [alpha beta]", name, got)
+		}
+	}
+}
+
 func TestMatchSimpleField(t *testing.T) {
 	root := parseGo(t, `package p
 func f() {
