@@ -48,9 +48,10 @@ jobs:
             --target wasm32-unknown-unknown
           rustup default stable
 
-      # Ecosystems are independent (distinct lockfiles); run them concurrently.
-      # Nested step ids remain addressable after the group so later publish
-      # steps can read result / has_changes outputs.
+      # Ecosystems have distinct lockfiles, so run them concurrently. They share
+      # this checkout and write temporary files into it while they run, so each
+      # leg reports only its result output. Nested step ids remain addressable
+      # after the group.
       - parallel:
           - name: Update, build, and test every Go app
             id: update_go
@@ -63,6 +64,12 @@ jobs:
           - name: Update, build, and test every Rust app
             id: update_rust
             run: bash .github/scripts/update-rust-dependencies.sh
+
+      # Decide whether there is anything to publish once every leg has exited,
+      # from the same paths that the publish steps commit.
+      - name: Detect dependency changes
+        id: changes
+        run: bash .github/scripts/manage-dependency-update.sh detect-changes
 
       # App token (not GITHUB_TOKEN) so the automation PR triggers required
       # checks and can enable auto-merge onto protected main.
@@ -80,11 +87,7 @@ jobs:
             steps.update_go.outputs.result == 'success' &&
             steps.update_js.outputs.result == 'success' &&
             steps.update_rust.outputs.result == 'success' &&
-            (
-              steps.update_go.outputs.has_changes == 'true' ||
-              steps.update_js.outputs.has_changes == 'true' ||
-              steps.update_rust.outputs.has_changes == 'true'
-            )
+            steps.changes.outputs.has_changes == 'true'
           }}
         env:
           GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
@@ -96,11 +99,7 @@ jobs:
             steps.update_go.outputs.result == 'success' &&
             steps.update_js.outputs.result == 'success' &&
             steps.update_rust.outputs.result == 'success' &&
-            (
-              steps.update_go.outputs.has_changes == 'true' ||
-              steps.update_js.outputs.has_changes == 'true' ||
-              steps.update_rust.outputs.has_changes == 'true'
-            )
+            steps.changes.outputs.has_changes == 'true'
           }}
         env:
           GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
@@ -138,9 +137,7 @@ jobs:
             steps.update_go.outputs.result == 'success' &&
             steps.update_js.outputs.result == 'success' &&
             steps.update_rust.outputs.result == 'success' &&
-            steps.update_go.outputs.has_changes != 'true' &&
-            steps.update_js.outputs.has_changes != 'true' &&
-            steps.update_rust.outputs.has_changes != 'true'
+            steps.changes.outputs.has_changes == 'false'
           }}
         env:
           GH_TOKEN: ${{ steps.octo-sts.outputs.token }}
