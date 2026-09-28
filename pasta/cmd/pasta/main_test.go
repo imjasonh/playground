@@ -2,10 +2,12 @@ package main
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -187,6 +189,71 @@ func TestParseFailOn(t *testing.T) {
 	if severityAtLeast("hint", failOnWarning) {
 		t.Error("hint should not fail on warning threshold")
 	}
+}
+
+// analyzerRules copies the named shipped analyzers into a new rule
+// directory and returns its path. It reads them relative to the package
+// directory, so call it before a test changes directories.
+func analyzerRules(t *testing.T, names ...string) string {
+	t.Helper()
+	rules := t.TempDir()
+	for _, name := range names {
+		cue, err := os.ReadFile(filepath.Join("..", "..", "analyzers", name, name+".cue"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(rules, name, name+".cue"), string(cue), 0o644)
+	}
+	return rules
+}
+
+func TestRunFix_quiet(t *testing.T) {
+	rules := analyzerRules(t, "js_debugger", "js_no_ternary")
+	src := filepath.Join(t.TempDir(), "a.js")
+	writeFile(t, src, "debugger;\nconst x = a ? b : c;\n", 0o644)
+	run := func(flags ...string) (string, int) {
+		t.Helper()
+		var code int
+		out := captureStderr(t, func() {
+			code = runFix(append(append([]string{"-nocache", "-rules", rules}, flags...), src))
+		})
+		return out, code
+	}
+
+	out, code := run("-fail-on=warning")
+	if code != 1 || !strings.Contains(out, "warning: debugger statement") || !strings.Contains(out, "hint: ternary expression") {
+		t.Errorf("-fail-on=warning: exit %d, want 1 with the warning and the hint:\n%s", code, out)
+	}
+	out, code = run("-fail-on=warning", "-quiet")
+	if code != 1 || !strings.Contains(out, "warning: debugger statement") || strings.Contains(out, "ternary") {
+		t.Errorf("-fail-on=warning -quiet: exit %d, want 1 with only the warning:\n%s", code, out)
+	}
+	out, code = run("-quiet")
+	if code != 0 || !strings.Contains(out, "hint: ternary expression") {
+		t.Errorf("-quiet without -fail-on: exit %d, want 0 with every finding:\n%s", code, out)
+	}
+}
+
+// captureStderr returns what f writes to os.Stderr.
+func captureStderr(t *testing.T, f func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make(chan string)
+	go func() {
+		b, _ := io.ReadAll(r)
+		out <- string(b)
+	}()
+	orig := os.Stderr
+	os.Stderr = w
+	func() {
+		defer func() { os.Stderr = orig }()
+		f()
+	}()
+	w.Close()
+	return <-out
 }
 
 func TestWriteFixedFile_refusesSymlink(t *testing.T) {

@@ -157,9 +157,9 @@ and the runner registers them at startup.
 ## The `.pasta/` convention
 
 Projects keep their rules in `./.pasta/` at the repo root. Bare
-`pasta` / `pasta -fix` / `pasta sync` / `pasta test` all default to
-this directory; pass `-rules <dir>` (or, for sync/test, an explicit
-positional dir) to override. `.pasta` is added to the `./...` walk's
+`pasta` / `pasta -fix` / `pasta sync` / `pasta test` / `pasta install`
+all default to this directory; pass `-rules <dir>` (or, for sync/test,
+an explicit positional dir) to override. `.pasta` is added to the `./...` walk's
 default skip list so the rules and their testdata aren't picked up
 as project sources.
 
@@ -172,7 +172,10 @@ expands to every enrolled child that has `testdata/`.
 
 Hint-severity rules stay enrolled. The CLI prints `hint:` on those
 findings (and `warning:` / `error:` / `info:` on the others);
-`-fail-on=warning` does not fail the job on hints. `pastals`
+`-fail-on=warning` does not fail the job on hints, and `-quiet` stops
+printing findings below the `-fail-on` level. The `pasta install`
+pre-commit hook passes `-quiet` and `-staged`, which analyzes only the
+staged files, reading their contents from the git index. `pastals`
 publishes them as LSP `DiagnosticSeverity.Hint`.
 
 The single-rule shortcut still works: when the first positional arg

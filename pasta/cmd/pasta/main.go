@@ -3,9 +3,12 @@
 // Usage:
 //
 //	pasta [-fix] [-skip <dirs>] [-rules <dir>] [<source>...]
+//	pasta -staged [-skip <dirs>] [-rules <dir>]      only files staged for commit
 //	pasta [-fix] <rule.cue> <source> [<source>...]   single-rule form
 //	pasta test [<rule-dir>...]                       run rules on their testdata/
 //	pasta sync [<rule-dir>]                          fetch remote imports declared in <rule-dir>/pasta.cue
+//	pasta install [-fail-on <level>] [-rules <dir>]  install a git pre-commit hook that runs pasta
+//	pasta uninstall                                  remove the hook that `pasta install` wrote
 //
 // With no positional rule argument, pasta loads every rule in
 // `./.pasta/` (override with `-rules`) and analyzes the given sources.
@@ -29,6 +32,20 @@
 // `-fix` rewrites every source file in place with its fixed bytes —
 // files whose fixed bytes are unchanged are left alone (mtime is not
 // touched), so running over a clean tree is a no-op.
+//
+// `-quiet` prints only the findings at or above the -fail-on severity.
+//
+// `-staged` analyzes only the files staged for commit under the current
+// directory, reading their contents from the git index, so unstaged
+// edits neither hide nor cause findings. Rules that use facts from
+// other files see only the staged files.
+//
+// `pasta install` writes a git pre-commit hook that runs
+// `pasta -fail-on=warning -quiet -staged` (or the -fail-on and -rules
+// you pass) from the current directory, so a commit with findings
+// fails. The hook goes wherever git looks for hooks (core.hooksPath
+// included), and pasta won't replace a hook it didn't write unless you
+// pass -force. `pasta uninstall` removes that hook.
 package main
 
 import (
@@ -74,6 +91,10 @@ func main() {
 			os.Exit(runSync(os.Args[2:]))
 		case "bump":
 			os.Exit(runBump(os.Args[2:]))
+		case "install":
+			os.Exit(runInstall(os.Args[2:]))
+		case "uninstall":
+			os.Exit(runUninstall(os.Args[2:]))
 		}
 	}
 	os.Exit(runFix(os.Args[1:]))
@@ -96,12 +117,18 @@ func runFix(args []string) int {
 	memoryBudgetFlag := fs.Int64("memory-budget", -1, "cumulative parsed-source byte budget across the whole run; 0 disables. Default unlimited, or memory_budget from pasta.cue")
 	showStats := fs.Bool("stats", false, "print walk/prefilter/parse/skip counters on stderr")
 	failOn := fs.String("fail-on", "none", "exit 1 when a diagnostic at this severity or higher is found: none, hint, info, warning, error")
+	quiet := fs.Bool("quiet", false, "print only diagnostics at or above the -fail-on severity")
+	staged := fs.Bool("staged", false, "analyze only the files staged for commit, using their staged contents; takes no source arguments")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	failThreshold, err := parseFailOn(*failOn)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
+		return 2
+	}
+	if *staged && *fix {
+		fmt.Fprintln(os.Stderr, "-staged can't be combined with -fix")
 		return 2
 	}
 	passes := 1
@@ -121,28 +148,42 @@ func runFix(args []string) int {
 	if code != 0 {
 		return code
 	}
-	if len(rawSources) == 0 {
-		// No sources given: default to "./..." so `pasta` from a
-		// project root with a .pasta/ dir Just Works.
-		rawSources = []string{"./..."}
-	}
-
-	expanded, skippedBySize, err := expandSources(rawSources, parseSkipDirs(*skip, cfg), resolveMaxFileSize(cfg))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
-		return 1
+	skipDirs, maxFileSize := parseSkipDirs(*skip, cfg), resolveMaxFileSize(cfg)
+	var specs []runner.FileSpec
+	var skippedBySize []string
+	if *staged {
+		if len(rawSources) > 0 {
+			fmt.Fprintln(os.Stderr, "-staged takes no source arguments")
+			return 2
+		}
+		specs, skippedBySize, err = stagedSources(skipDirs, maxFileSize)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return 1
+		}
+	} else {
+		if len(rawSources) == 0 {
+			// No sources given: default to "./..." so `pasta` from a
+			// project root with a .pasta/ dir Just Works.
+			rawSources = []string{"./..."}
+		}
+		var expanded []string
+		expanded, skippedBySize, err = expandSources(rawSources, skipDirs, maxFileSize)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			return 1
+		}
+		// Paths only — workers read each file as they process it.
+		// Holding every source's bytes in a []FileSpec is what pushed
+		// multi-GB RSS on large trees; the streaming engine keeps peak
+		// memory to O(workers × file).
+		specs = make([]runner.FileSpec, 0, len(expanded))
+		for _, src := range expanded {
+			specs = append(specs, runner.FileSpec{Path: src})
+		}
 	}
 	for _, p := range skippedBySize {
 		fmt.Fprintf(os.Stderr, "%s: skipped (over max_file_size)\n", p)
-	}
-
-	// Paths only — workers read each file as they process it. Holding
-	// every source's bytes in a []FileSpec is what pushed multi-GB RSS
-	// on large trees; the streaming engine keeps peak memory to
-	// O(workers × file).
-	specs := make([]runner.FileSpec, 0, len(expanded))
-	for _, src := range expanded {
-		specs = append(specs, runner.FileSpec{Path: src})
 	}
 	if len(specs) == 0 {
 		fmt.Fprintln(os.Stderr, formatCompletionReport(0, countRules(analyzers), 0, 0))
@@ -206,6 +247,11 @@ func runFix(args []string) int {
 			}
 			if pass == 0 {
 				for _, d := range res.Diagnostics {
+					// Every severity is at least failOnNone, so -quiet
+					// without -fail-on still prints everything.
+					if *quiet && !severityAtLeast(d.Severity, failThreshold) {
+						continue
+					}
 					fmt.Fprintln(os.Stderr, formatDiagnostic(res.Path, d.Line(), d.Severity, d.Message, d.Rule))
 					if failThreshold != failOnNone && severityAtLeast(d.Severity, failThreshold) {
 						exit = 1
@@ -617,10 +663,7 @@ func walkSources(root string, skip map[string]bool, maxFileSize int64) ([]string
 		if !info.Mode().IsRegular() {
 			return nil
 		}
-		if strings.HasSuffix(name, ".golden") || runner.IsGeneratedLockfile(name) {
-			return nil
-		}
-		if _, ok := lang.ByExt(filepath.Ext(name)); !ok {
+		if !isSourceFile(name) {
 			return nil
 		}
 		if maxFileSize > 0 && info.Size() > maxFileSize {
@@ -631,6 +674,17 @@ func walkSources(root string, skip map[string]bool, maxFileSize int64) ([]string
 		return nil
 	})
 	return out, oversized, err
+}
+
+// isSourceFile reports whether a file named name is one pasta analyzes
+// during a walk: its extension maps to a registered language, and it
+// isn't a .golden file or a generated lockfile.
+func isSourceFile(name string) bool {
+	if strings.HasSuffix(name, ".golden") || runner.IsGeneratedLockfile(name) {
+		return false
+	}
+	_, ok := lang.ByExt(filepath.Ext(name))
+	return ok
 }
 
 // runSync resolves the manifest in each rule directory: fetches every
