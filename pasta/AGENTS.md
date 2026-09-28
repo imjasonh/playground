@@ -51,13 +51,13 @@ than `go test`.
 | `internal/loader/cuemod/`     | The embedded built-in CUE module: `schema/`, `lang/<name>/`, `patterns/<name>/`. |
 | `internal/remote/`            | Remote rule imports: `pasta.cue` manifest + `pasta.lock` lockfile, git-based fetcher, on-disk cache under `$XDG_CACHE_HOME/pasta/modules/`. Flat deps only — a remote module declaring its own remote imports is rejected. |
 | `internal/lang/`              | Runtime language registry. `grammars.go` maps grammar name → WASM tree-sitter language handle. |
-| `internal/tswasm/`            | Official C tree-sitter + grammars as embedded `ts-core.wasm.br`, hosted by wazero. Rebuild with `internal/tswasm/build.sh`. |
+| `internal/tswasm/`            | Official C tree-sitter + grammars as embedded `ts-core.wasm.br`, hosted by wazero. Rebuild with `internal/tswasm/build.sh`. Compiled code is cached under `os.UserCacheDir()/pasta/wazero/`; a damaged cache is removed and the module recompiled. |
 | `internal/tsutil/`            | Tree-sitter `Node` wrapper that carries source bytes + language + file-id, so callers don't have to thread them. |
 | `internal/match/`             | Pattern matcher: node unions, fields, adjacent windows, preceding, predicates (positional), checks (named). |
 | `internal/factstore/`         | Per-run fact store with dual indexing — by (kind, file-id, byte-range) and by (kind, identifier-text). The by-name index is file-agnostic so facts propagate across files in a multi-file group. |
 | `internal/effect/`            | Compiles edits to byte-range ops, handles `@capture` interpolation, comment preservation, and `trim_start`/`trim_end`. |
 | `internal/apply/`             | Applies ops to source bytes with conflict detection. |
-| `internal/engine/`            | Top-level orchestrator. SCC scheduler with fixpoint groups for cyclic rule deps. `Run` is the single-file entry point; `RunGroup` runs a set of files with a shared fact store. |
+| `internal/engine/`            | Top-level orchestrator. SCC scheduler with fixpoint groups for cyclic rule deps. `Run` is the single-file entry point; `RunGroup` runs a set of files with a shared fact store. The cross-file (in-memory) path parses in parallel and runs each dependency level (`groupLevels`) across files in parallel, then restores schedule order per file. |
 | `internal/runner/`            | Programmatic API used by both the CLI and Go tests. `LoadRules`, `RunFile`, `RunGroup`, `TestDir`. |
 | `analyzers/<name>/`      | A shipped analyzer: a `<name>.cue` rule + `testdata/` (sources and `.golden` files). |
 | `testdata/<name>/`       | Extension/integration demos (e.g. `notgo_alias` showing user-supplied language modules). |

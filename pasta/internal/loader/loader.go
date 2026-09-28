@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -22,6 +23,7 @@ import (
 	"cuelang.org/go/cue/cuecontext"
 	"cuelang.org/go/cue/errors"
 	"cuelang.org/go/cue/load"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
 	"github.com/imjasonh/playground/pasta/internal/remote"
@@ -106,43 +108,51 @@ func LoadDir(dir string) (LoadResult, error) {
 		Overlay: overlay,
 	}
 
-	var local LoadResult
-	// Load each top-level file as its own instance. Passing every
-	// file to one load.Instances call fails when two files declare
-	// different package names ("found packages X and Y in …").
+	// Load each file as its own instance. Passing every file to one
+	// load.Instances call fails when two files declare different
+	// package names ("found packages X and Y in …").
+	var files []string
 	for _, m := range matches {
 		af, err := filepath.Abs(m)
 		if err != nil {
 			return LoadResult{}, err
 		}
-		extracted, err := buildAndExtract(af, cfg)
-		if err != nil {
-			return LoadResult{}, err
-		}
-		local.Analyzers = append(local.Analyzers, extracted.Analyzers...)
-		local.Languages = append(local.Languages, extracted.Languages...)
+		files = append(files, af)
 	}
 	for _, sub := range subPkgs {
-		files, err := filepath.Glob(filepath.Join(sub, "*.cue"))
+		subFiles, err := filepath.Glob(filepath.Join(sub, "*.cue"))
 		if err != nil {
 			return LoadResult{}, err
 		}
-		files = filterManifest(files)
-		if len(files) == 0 {
-			continue
-		}
-		for _, f := range files {
+		for _, f := range filterManifest(subFiles) {
 			af, err := filepath.Abs(f)
 			if err != nil {
 				return LoadResult{}, err
 			}
-			extracted, err := buildAndExtract(af, cfg)
-			if err != nil {
-				return LoadResult{}, err
-			}
-			local.Analyzers = append(local.Analyzers, extracted.Analyzers...)
-			local.Languages = append(local.Languages, extracted.Languages...)
+			files = append(files, af)
 		}
+	}
+	// Each file gets its own CUE context, and load.Instances only reads
+	// cfg, so files load in parallel. Results are merged in file order,
+	// and the first failing file's error wins, as in a serial load.
+	extracted := make([]LoadResult, len(files))
+	errs := make([]error, len(files))
+	var g errgroup.Group
+	g.SetLimit(runtime.GOMAXPROCS(0))
+	for i, f := range files {
+		g.Go(func() error {
+			extracted[i], errs[i] = buildAndExtract(f, cfg)
+			return nil
+		})
+	}
+	g.Wait()
+	var local LoadResult
+	for i := range files {
+		if errs[i] != nil {
+			return LoadResult{}, errs[i]
+		}
+		local.Analyzers = append(local.Analyzers, extracted[i].Analyzers...)
+		local.Languages = append(local.Languages, extracted[i].Languages...)
 	}
 
 	// Auto-enroll analyzers from every imported remote module. This

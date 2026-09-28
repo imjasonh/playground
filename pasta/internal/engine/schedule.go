@@ -91,6 +91,42 @@ func scheduleGroups(analyzers []*dsl.Analyzer) ([]ruleGroup, error) {
 	return groups, nil
 }
 
+// groupLevels buckets the indexes of groups, which must be in the
+// topological order scheduleGroups returns, by dependency depth. A
+// group's level is one more than the deepest other group that provides
+// a fact it requires, or 0 when no other group does. Groups in the same
+// level don't depend on each other, so they can run in any order, or
+// concurrently, once every earlier level has finished. Each level lists
+// its groups in ascending order.
+func groupLevels(groups []ruleGroup) [][]int {
+	providers := map[string][]int{}
+	for gi, g := range groups {
+		for _, sr := range g.rules {
+			for _, f := range sr.rule.Provides {
+				providers[f] = append(providers[f], gi)
+			}
+		}
+	}
+	level := make([]int, len(groups))
+	var levels [][]int
+	for gi, g := range groups {
+		for _, sr := range g.rules {
+			for _, f := range sr.rule.Requires {
+				for _, p := range providers[f] {
+					if p != gi {
+						level[gi] = max(level[gi], level[p]+1)
+					}
+				}
+			}
+		}
+		for len(levels) <= level[gi] {
+			levels = append(levels, nil)
+		}
+		levels[level[gi]] = append(levels[level[gi]], gi)
+	}
+	return levels
+}
+
 // tarjanSCCs finds strongly-connected components in the directed graph
 // g. Returns SCCs in reverse topological order — the first SCC has no
 // outgoing edges to a later SCC.

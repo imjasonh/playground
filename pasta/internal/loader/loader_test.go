@@ -1,8 +1,10 @@
 package loader
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/imjasonh/playground/pasta/internal/dsl"
@@ -363,6 +365,62 @@ rule_b: schema.#Analyzer & {
 	}
 	if res.Config == nil || len(res.Config.Skip) != 1 || res.Config.Skip[0] != "dist" {
 		t.Fatalf("nested: expected skip from pasta.cue, got %+v", res.Config)
+	}
+}
+
+// TestLoadDir_fileOrder checks that analyzers come back in file order
+// and that, when several files are broken, the error names the first
+// one, even though LoadDir loads files in parallel.
+func TestLoadDir_fileOrder(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, src string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name+".cue"), []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var want []string
+	for i := range 12 {
+		name := fmt.Sprintf("r%02d", i)
+		want = append(want, name)
+		write(name, fmt.Sprintf(`package %[1]s
+
+import "github.com/imjasonh/pasta/schema"
+
+%[1]s: schema.#Analyzer & {
+	name: "%[1]s"
+	version: "0.1.0"
+	facts: {}
+	rules: only: {
+		name: "only_%[1]s"
+		doc: "x"
+		languages: ["go"]
+		requires: []
+		provides: []
+		match: {node: "identifier"}
+		diagnose: {message: "%[1]s", severity: "hint"}
+	}
+}
+`, name))
+	}
+	res, err := LoadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, a := range res.Analyzers {
+		got = append(got, a.Name)
+	}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("analyzers %v, want file order %v", got, want)
+	}
+
+	write("r03", "package broken\n\nthis is not cue {\n")
+	write("r09", "package broken\n\nthis is not cue {\n")
+	for range 5 {
+		if _, err := LoadDir(dir); err == nil || !strings.Contains(err.Error(), "r03.cue") {
+			t.Fatalf("LoadDir error %v, want one naming r03.cue", err)
+		}
 	}
 }
 

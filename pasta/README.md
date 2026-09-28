@@ -282,6 +282,15 @@ Cold runs over large trees are tuned for sparse style rules:
 6. **Arena pool drain** — parser host pools are drained every ~100
    files so the Go GC can reclaim them on big cold runs.
 
+Rules that read facts from other files (`go_errcheck` and the
+`*_deprecated_use` and `*_taint` rules) make pasta hold every parsed
+file in memory instead of streaming. Pasta still parses those files in
+parallel and runs each level of dependent rules across files in
+parallel. Only fixpoint groups, such as taint propagation, run one file
+at a time. Rule files also load in parallel, and pasta keeps wazero's
+compiled tree-sitter code under `$XDG_CACHE_HOME/pasta/wazero/` (about
+7 MB), which saves about 0.6 seconds per run.
+
 ## Autofix guardrails
 
 - **Innermost nested edits** — when one rewrite fully contains another

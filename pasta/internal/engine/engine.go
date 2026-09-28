@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -339,14 +340,7 @@ func runStreaming(
 ) ([]Result, error) {
 	store := factstore.New()
 	results := make([]Result, len(files))
-
-	workers := runtime.GOMAXPROCS(0)
-	if workers > len(files) {
-		workers = len(files)
-	}
-	if workers < 1 {
-		workers = 1
-	}
+	workers := workerCount(len(files))
 
 	// errgroup gives us: bounded concurrency (SetLimit), automatic
 	// context cancellation on the first error (WithContext), and
@@ -594,10 +588,16 @@ func releaseParse(o *runOpts, n int64) {
 	o.parsedBytes.Add(-n)
 }
 
-// runInMemory is the legacy path used when the schedule has cross-file
-// or fixpoint dependencies. Every file's tree is held in memory while
-// the engine walks the rule groups in topo order, so a consumer group
-// sees facts emitted by every producer group on every file.
+// runInMemory is the path used when the schedule has cross-file or
+// fixpoint dependencies. Every file's tree is held in memory while the
+// engine runs the rule groups, so a consumer group sees facts emitted
+// by every producer group on every file.
+//
+// Files are parsed in parallel. Rule groups then run one dependency
+// level at a time (see groupLevels): a level's non-fixpoint groups run
+// across files in parallel, and its fixpoint groups iterate over every
+// file in order. Each file's diagnostics and ops are reassembled in
+// schedule order, so the output doesn't depend on goroutine timing.
 func runInMemory(
 	ctx context.Context,
 	files []FileInput,
@@ -605,137 +605,207 @@ func runInMemory(
 	o *runOpts,
 ) ([]Result, error) {
 	store := factstore.New()
-	states := make([]fileState, 0, len(files))
-	stateIdx := make([]int, 0, len(files))
 	results := make([]Result, len(files))
 	parseTimeout := time.Duration(0)
 	if o != nil {
 		parseTimeout = o.parseTimeout
 	}
+	workers := workerCount(len(files))
 
-	// Register the release defer up front so a parse failure mid-loop
-	// still cleans up the trees we already parsed — `states` is the
-	// closed-over slice, so anything appended before the failure is
-	// covered.
+	// parsed[i] is nil when file i needs no rule pass. The deferred
+	// release runs after every parse goroutine has returned.
+	parsed := make([]*fileState, len(files))
 	defer func() {
-		for _, s := range states {
-			s.tree.Release()
+		for _, s := range parsed {
+			if s != nil {
+				s.tree.Release()
+			}
 		}
 		tsutil.DrainArenaPools()
 	}()
-
-	for i, f := range files {
-		src, err := loadSource(f)
-		if err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				results[i].SkipReason = "file not found"
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(workers)
+	for i := range files {
+		g.Go(func() error {
+			if err := gctx.Err(); err != nil {
 				o.syncAdmit(i, 0)
-				continue
+				return err
 			}
-			return nil, err
-		}
-		f.Src = src
-		results[i].Src = src
-		applicable := applicableRules(groups, f.Lang, fileName(f))
-		if len(applicable) == 0 {
-			if hasPastaIgnore(src) {
-				if err := emitUnusedIgnoresOnly(ctx, f, &results[i], o); err != nil {
-					return nil, err
-				}
-			}
-			o.syncAdmit(i, 0)
-			continue
-		}
-		if o != nil && o.stats != nil {
-			o.stats.Walked.Add(1)
-		}
-		if !prefilter.MayMatch(src, prefilter.ForRules(applicable)) {
-			if hasPastaIgnore(src) {
-				if err := emitUnusedIgnoresOnly(ctx, f, &results[i], o); err != nil {
-					return nil, err
-				}
-			}
-			if o != nil && o.stats != nil {
-				o.stats.PrefilterSkipped.Add(1)
-			}
-			o.syncAdmit(i, 0)
-			continue
-		}
-		if !o.syncAdmit(i, int64(len(src))) {
-			results[i].SkipReason = "memory budget exceeded"
-			if o != nil && o.stats != nil {
-				o.stats.MemorySkipped.Add(1)
-			}
-			continue
-		}
-		s, err := newFileState(ctx, f, store, parseTimeout)
-		if err != nil {
-			releaseParse(o, int64(len(src)))
-			if errors.Is(err, tsutil.ErrParseTimeout) || errors.Is(err, tsutil.ErrParseResourceLimit) {
-				results[i].SkipReason = "too complex to analyze"
-				if o != nil && o.stats != nil {
-					o.stats.TimedOut.Add(1)
-				}
-				continue
-			}
-			return nil, err
-		}
-		if tsutil.ErrorHeavy(s.root) {
-			releaseParse(o, int64(len(src)))
-			results[i].SkipReason = "parse errors"
-			if o != nil && o.stats != nil {
-				o.stats.ParseErrors.Add(1)
-			}
-			s.tree.Release()
-			continue
-		}
-		if s.root.HasError() && o != nil && o.stats != nil {
-			o.stats.ParseDegraded.Add(1)
-		}
-		states = append(states, s)
-		stateIdx = append(stateIdx, i)
-		if o != nil && o.stats != nil {
-			o.stats.Parsed.Add(1)
+			s, err := parseInMemory(gctx, i, files[i], groups, store, &results[i], parseTimeout, o)
+			parsed[i] = s
+			return err
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	var states []*fileState
+	var stateIdx []int
+	for i, s := range parsed {
+		if s != nil {
+			states = append(states, s)
+			stateIdx = append(stateIdx, i)
 		}
 	}
 
-	for _, group := range groups {
-		if !group.fixpoint {
-			for j, s := range states {
-				if err := runGroupOnFile(group, s, store, &results[stateIdx[j]]); err != nil {
-					return nil, err
-				}
-			}
-			continue
-		}
-		// Fixpoint: re-run emit-only across all files until the store
-		// stops growing, then do one final collection pass on each
-		// file. We don't accumulate diagnostics or edit ops during the
-		// emit loop to avoid duplicates.
-		for iter := 0; iter < MaxFixpointIterations; iter++ {
-			before := store.Len()
-			for _, s := range states {
-				if err := runGroupOnFile(group, s, store, nil); err != nil {
-					return nil, err
-				}
-			}
-			if store.Len() == before {
-				break
-			}
-		}
+	// outs[j] holds what each group produced for states[j] until it's
+	// reassembled in schedule order.
+	outs := make([][]groupOutput, len(states))
+	for _, level := range groupLevels(groups) {
+		lg, _ := errgroup.WithContext(ctx)
+		lg.SetLimit(workers)
 		for j, s := range states {
-			if err := runGroupOnFile(group, s, store, &results[stateIdx[j]]); err != nil {
-				return nil, err
+			lg.Go(func() error {
+				for _, gi := range level {
+					if groups[gi].fixpoint {
+						continue
+					}
+					var r Result
+					if err := runGroupOnFile(groups[gi], *s, store, &r); err != nil {
+						return err
+					}
+					outs[j] = appendGroupOutput(outs[j], gi, r)
+				}
+				return nil
+			})
+		}
+		if err := lg.Wait(); err != nil {
+			return nil, err
+		}
+		for _, gi := range level {
+			if !groups[gi].fixpoint {
+				continue
+			}
+			// Re-run emit-only across all files until the store stops
+			// growing, then do one final collection pass on each file.
+			// Diagnostics and ops aren't collected during the emit loop
+			// to avoid duplicates.
+			for iter := 0; iter < MaxFixpointIterations; iter++ {
+				before := store.Len()
+				for _, s := range states {
+					if err := runGroupOnFile(groups[gi], *s, store, nil); err != nil {
+						return nil, err
+					}
+				}
+				if store.Len() == before {
+					break
+				}
+			}
+			for j, s := range states {
+				var r Result
+				if err := runGroupOnFile(groups[gi], *s, store, &r); err != nil {
+					return nil, err
+				}
+				outs[j] = appendGroupOutput(outs[j], gi, r)
 			}
 		}
 	}
 	for j, s := range states {
-		results[stateIdx[j]].Diagnostics = append(
-			results[stateIdx[j]].Diagnostics,
-			unusedIgnoreDiagnostics(s.suppress)...,
-		)
+		out := &results[stateIdx[j]]
+		sort.SliceStable(outs[j], func(a, b int) bool { return outs[j][a].group < outs[j][b].group })
+		for _, part := range outs[j] {
+			out.Diagnostics = append(out.Diagnostics, part.diagnostics...)
+			out.Ops = append(out.Ops, part.ops...)
+		}
+		out.Diagnostics = append(out.Diagnostics, unusedIgnoreDiagnostics(s.suppress)...)
 	}
 	return results, nil
+}
+
+// parseInMemory loads and parses one file for runInMemory. It returns
+// nil when the file needs no rule pass: no applicable rules, a
+// prefilter miss, or a skip recorded in out.SkipReason. Every path
+// calls o.syncAdmit exactly once, so a memory budget can't stall the
+// files after this one.
+func parseInMemory(ctx context.Context, index int, f FileInput, groups []ruleGroup, store *factstore.Store, out *Result, parseTimeout time.Duration, o *runOpts) (*fileState, error) {
+	src, err := loadSource(f)
+	if err != nil {
+		o.syncAdmit(index, 0)
+		if errors.Is(err, fs.ErrNotExist) {
+			out.SkipReason = "file not found"
+			return nil, nil
+		}
+		return nil, err
+	}
+	f.Src = src
+	out.Src = src
+	applicable := applicableRules(groups, f.Lang, fileName(f))
+	if len(applicable) == 0 {
+		o.syncAdmit(index, 0)
+		if hasPastaIgnore(src) {
+			return nil, emitUnusedIgnoresOnly(ctx, f, out, o)
+		}
+		return nil, nil
+	}
+	if o != nil && o.stats != nil {
+		o.stats.Walked.Add(1)
+	}
+	if !prefilter.MayMatch(src, prefilter.ForRules(applicable)) {
+		o.syncAdmit(index, 0)
+		if o != nil && o.stats != nil {
+			o.stats.PrefilterSkipped.Add(1)
+		}
+		if hasPastaIgnore(src) {
+			return nil, emitUnusedIgnoresOnly(ctx, f, out, o)
+		}
+		return nil, nil
+	}
+	if !o.syncAdmit(index, int64(len(src))) {
+		out.SkipReason = "memory budget exceeded"
+		if o != nil && o.stats != nil {
+			o.stats.MemorySkipped.Add(1)
+		}
+		return nil, nil
+	}
+	s, err := newFileState(ctx, f, store, parseTimeout)
+	if err != nil {
+		releaseParse(o, int64(len(src)))
+		if errors.Is(err, tsutil.ErrParseTimeout) || errors.Is(err, tsutil.ErrParseResourceLimit) {
+			out.SkipReason = "too complex to analyze"
+			if o != nil && o.stats != nil {
+				o.stats.TimedOut.Add(1)
+			}
+			return nil, nil
+		}
+		return nil, err
+	}
+	if tsutil.ErrorHeavy(s.root) {
+		releaseParse(o, int64(len(src)))
+		out.SkipReason = "parse errors"
+		if o != nil && o.stats != nil {
+			o.stats.ParseErrors.Add(1)
+		}
+		s.tree.Release()
+		return nil, nil
+	}
+	if o != nil && o.stats != nil {
+		if s.root.HasError() {
+			o.stats.ParseDegraded.Add(1)
+		}
+		o.stats.Parsed.Add(1)
+	}
+	return &s, nil
+}
+
+// groupOutput is what one rule group produced for one file.
+type groupOutput struct {
+	group       int
+	diagnostics []effect.Diagnostic
+	ops         []effect.Op
+}
+
+// appendGroupOutput appends r to outs, tagged with group, when r has
+// any diagnostics or ops.
+func appendGroupOutput(outs []groupOutput, group int, r Result) []groupOutput {
+	if len(r.Diagnostics) == 0 && len(r.Ops) == 0 {
+		return outs
+	}
+	return append(outs, groupOutput{group: group, diagnostics: r.Diagnostics, ops: r.Ops})
+}
+
+// workerCount returns the number of goroutines to use for n files.
+func workerCount(n int) int {
+	return max(1, min(runtime.GOMAXPROCS(0), n))
 }
 
 func loadSource(f FileInput) ([]byte, error) {
