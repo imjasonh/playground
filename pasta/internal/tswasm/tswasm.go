@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -44,9 +45,10 @@ func ExportName(grammar string) string {
 }
 
 var (
-	// MaxConcurrentInstances caps live engines (each holds grammar tables in
-	// its own linear memory). 0 → 4.
-	MaxConcurrentInstances = 4
+	// MaxConcurrentInstances caps live engines. Each holds about 34 MB
+	// of grammar tables in its own linear memory, so the default is one
+	// per CPU but at most 8. 0 → 4.
+	MaxConcurrentInstances = min(goruntime.GOMAXPROCS(0), 8)
 	// MemLimitPages caps linear memory (64 KiB pages). 4096 = 256 MiB.
 	MemLimitPages uint32 = 4096
 	// RecycleGrowthBytes closes instances that grew this far above baseline.
