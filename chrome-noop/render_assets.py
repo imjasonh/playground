@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render toolbar icons and the 1280x800 store screenshot.
+"""Render toolbar icons, the store icon, and the 1280x800 screenshot.
 
 Requires Pillow. The checked-in PNGs are the files the zip and the
 dashboard listing use. Run this only to regenerate them.
@@ -34,6 +34,14 @@ def render_icon(size):
     return image
 
 
+def render_store_icon():
+    # Chrome Web Store wants a 128px image whose mark is 96px, centered.
+    art = render_icon(96)
+    image = Image.new("RGBA", (128, 128), (0, 0, 0, 0))
+    image.paste(art, (16, 16), art)
+    return image
+
+
 def render_screenshot(icon):
     image = Image.new("RGB", (1280, 800), (241, 243, 244))
     draw = ImageDraw.Draw(image)
@@ -64,6 +72,7 @@ def main():
             icon128 = icon
     screenshot = render_screenshot(icon128)
     screenshot.save(os.path.join(HERE, "store", "screenshot.png"), "PNG")
+    render_store_icon().save(os.path.join(HERE, "store", "icon-128.png"))
 
 
 if __name__ == "__main__":

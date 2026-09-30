@@ -12,7 +12,10 @@ From this directory:
 bash pack.sh /tmp/chrome-noop.zip
 ```
 
-`manifest.json` is at the root of the archive. The dashboard rejects a zip that wraps the files in an extra folder. `store/screenshot.png` stays out of the zip. Upload that file on the store listing tab. It is 1280 by 800 pixels, 24-bit RGB, with no alpha channel.
+`manifest.json` is at the root of the archive. The dashboard rejects a zip that wraps the files in an extra folder. Two listing images stay out of the zip:
+
+- `store/icon-128.png` is the store icon. It is 128 by 128 pixels. The mark is 96 by 96, centered, with 16 pixels of transparent padding on each side.
+- `store/screenshot.png` is the screenshot. It is 1280 by 800 pixels, 24-bit RGB, with no alpha channel.
 
 To regenerate the icons and the screenshot, install Pillow and run `python3 render_assets.py`.
 

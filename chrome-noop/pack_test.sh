@@ -43,6 +43,13 @@ for size in (16, 32, 48, 128):
     if (width, height) != (size, size):
         raise SystemExit(f"icons/{size}.png is {width}x{height}")
 
+icon = Path("store/icon-128.png").read_bytes()
+width, height, bit_depth, color = png_info(icon)
+if (width, height, bit_depth, color) != (128, 128, 8, 6):
+    raise SystemExit(
+        f"store icon is {width}x{height} depth {bit_depth} color {color}, want 128x128 8-bit RGBA"
+    )
+
 shot = Path("store/screenshot.png").read_bytes()
 width, height, bit_depth, color = png_info(shot)
 if (width, height, bit_depth, color) != (1280, 800, 8, 2):
