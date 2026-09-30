@@ -5,7 +5,7 @@ enum HairColorExperiment {
     static let experiment = Experiment(
         id: "hair-color",
         title: "Hair Color",
-        summary: "Live camera hair tint. Vision isolates hair on device and Core Image dyes those pixels.",
+        summary: "Live camera hair tint. Dyes pixels that match the hair above your face, including bangs and long hair.",
         icon: "paintpalette.fill"
     ) {
         HairColorView()

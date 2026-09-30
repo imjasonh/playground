@@ -22,93 +22,84 @@ final class HairColorTests: XCTestCase {
         }
     }
 
-    func testCrownIsHairAndFaceIsNot() throws {
-        let box = CGRect(x: 0.30, y: 0.20, width: 0.40, height: 0.40)
+    func testForeheadStaysOutsideTheProtectedFace() throws {
+        let box = CGRect(x: 0.30, y: 0.40, width: 0.40, height: 0.28)
         let region = try XCTUnwrap(
-            HairRegionBuilder.region(for: FaceHairGuide(boundingBox: box, eyebrowY: nil))
+            HairRegionBuilder.region(for: FaceHairGuide(boundingBox: box, eyebrowY: 0.58))
         )
-        let hairline = box.maxY - (box.height * HairRegionBuilder.hairlineInset)
-        XCTAssertEqual(region.hairlineY, hairline, accuracy: 0.0001)
-
-        XCTAssertTrue(region.contains(x: 0.50, y: hairline + 0.05))
-        XCTAssertFalse(region.contains(x: 0.50, y: box.minY + 0.05))
-        XCTAssertFalse(region.contains(x: 0.50, y: hairline - (box.height * 0.2)))
-
-        let sideburnX = box.minX - (box.width * HairRegionBuilder.sideScale * 0.5)
-        let sideburnY = hairline - (box.height * HairRegionBuilder.sideburnScale * 0.5)
-        XCTAssertTrue(region.contains(x: sideburnX, y: sideburnY))
-        XCTAssertFalse(region.contains(x: 0.50, y: sideburnY))
-        XCTAssertFalse(region.contains(x: 0.02, y: 0.90))
+        XCTAssertTrue(region.crown.contains(CGPoint(x: 0.50, y: 0.80)))
+        XCTAssertFalse(region.protected.contains(CGPoint(x: 0.50, y: 0.63)))
+        XCTAssertTrue(region.protected.contains(CGPoint(x: 0.50, y: 0.48)))
+        XCTAssertTrue(region.search.contains(CGPoint(x: 0.20, y: 0.15)))
+        XCTAssertNil(
+            HairRegionBuilder.region(
+                for: FaceHairGuide(boundingBox: CGRect(x: 0.1, y: 0.1, width: 0.01, height: 0.4), eyebrowY: nil)
+            )
+        )
     }
 
-    func testTinyFaceIsDropped() {
-        let guide = FaceHairGuide(
-            boundingBox: CGRect(x: 0.1, y: 0.1, width: 0.01, height: 0.4),
-            eyebrowY: nil
-        )
-        XCTAssertNil(HairRegionBuilder.region(for: guide))
-    }
-
-    func testEyebrowsDoNotPaintTheForehead() throws {
+    func testEyebrowLineMapsIntoTheFaceBox() {
         let box = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
         let eyebrow = HairFaceGuideBuilder.averageEyebrowY(landmarkYs: [0.55, 0.65], box: box)
         XCTAssertEqual(eyebrow ?? -1, 0.44, accuracy: 0.0001)
         XCTAssertNil(HairFaceGuideBuilder.averageEyebrowY(landmarkYs: [], box: box))
-
-        let region = try XCTUnwrap(
-            HairRegionBuilder.region(for: FaceHairGuide(boundingBox: box, eyebrowY: eyebrow))
-        )
-        let hairline = box.maxY - (box.height * HairRegionBuilder.hairlineInset)
-        XCTAssertEqual(region.hairlineY, hairline, accuracy: 0.0001)
-        XCTAssertGreaterThan(hairline, eyebrow ?? 0)
-
-        let foreheadY = ((eyebrow ?? 0) + hairline) / 2
-        XCTAssertTrue(region.contains(x: 0.40, y: hairline + 0.03))
-        XCTAssertFalse(region.contains(x: 0.40, y: foreheadY))
-        XCTAssertFalse(region.contains(x: box.minX + 0.01, y: foreheadY))
-        let sideX = box.minX - (box.width * 0.15)
-        XCTAssertTrue(region.contains(x: sideX, y: foreheadY))
     }
 
-    func testRasterizerKeepsPersonPixelsInsideTheHairWindow() {
-        let region = HairRegion(
-            window: CGRect(x: 0.2, y: 0.4, width: 0.6, height: 0.5),
-            hairlineY: 0.6,
-            faceInterior: CGRect(x: 0.35, y: 0.4, width: 0.3, height: 0.2),
-            sideburnMinY: 0.45,
-            foreheadMinY: nil,
-            faceMinX: 0,
-            faceMaxX: 0
-        )
-        let width = 10
-        let height = 10
-        var person = [UInt8](repeating: 255, count: width * height)
-        person[(2 * width) + 4] = 0
-
-        let mask = HairMaskRasterizer.maskBytes(
-            person: person,
-            width: width,
-            height: height,
-            regions: [region]
-        )
-
-        func index(x: Int, y: Int) -> Int { (y * width) + x }
-        // Row 0 is the top of the buffer. Samples are pixel centers in Vision space (Y up).
-        XCTAssertEqual(mask[index(x: 5, y: 2)], 255)
-        XCTAssertEqual(mask[index(x: 4, y: 2)], 0)
-        XCTAssertEqual(mask[index(x: 5, y: 4)], 0)
-        XCTAssertEqual(mask[index(x: 2, y: 4)], 255)
-        XCTAssertEqual(mask[index(x: 2, y: 5)], 0)
-        XCTAssertEqual(mask[index(x: 0, y: 2)], 0)
+    func testBareForeheadIsNotDyed() throws {
+        let (colors, person) = try portrait(bangs: false, longHair: false, shirtMatchesHair: false)
+        let mask = try affinityMask(colors: colors, person: person)
+        XCTAssertEqual(mask[index(x: 20, y: 4)], 255)
+        XCTAssertEqual(mask[index(x: 20, y: 18)], 0)
+        XCTAssertEqual(mask[index(x: 20, y: 24)], 0)
+        XCTAssertEqual(mask[index(x: 20, y: 42)], 0)
     }
 
-    func testRasterizerIsEmptyWithoutAFace() {
-        let person = [UInt8](repeating: 255, count: 4)
-        let mask = HairMaskRasterizer.maskBytes(person: person, width: 2, height: 2, regions: [])
-        XCTAssertEqual(mask, [0, 0, 0, 0])
+    func testBangsAndLongHairAreDyed() throws {
+        let (colors, person) = try portrait(bangs: true, longHair: true, shirtMatchesHair: false)
+        let mask = try affinityMask(colors: colors, person: person)
+        XCTAssertEqual(mask[index(x: 20, y: 4)], 255)
+        XCTAssertEqual(mask[index(x: 20, y: 18)], 255)
+        XCTAssertEqual(mask[index(x: 20, y: 24)], 0)
+        XCTAssertEqual(mask[index(x: 8, y: 35)], 255)
+        XCTAssertEqual(mask[index(x: 20, y: 32)], 0)
+        XCTAssertEqual(mask[index(x: 20, y: 42)], 0)
+    }
+
+    func testHairColoredBeardStaysOut() throws {
+        var (colors, person) = try portrait(bangs: false, longHair: true, shirtMatchesHair: false)
+        // Beard matches the crown, and still sits inside the protected face.
+        fill(&colors, person: &person, x0: 0.36, y0: 0.40, x1: 0.64, y1: 0.50, color: hairColor)
+        let mask = try affinityMask(colors: colors, person: person)
+        XCTAssertEqual(mask[index(x: 20, y: 27)], 0)
+        XCTAssertEqual(mask[index(x: 8, y: 20)], 255)
+    }
+
+    func testBaldHeadIsNotDyed() throws {
+        let width = 40
+        let height = 50
+        var colors = [HairRGB](repeating: background, count: width * height)
+        var person = [UInt8](repeating: 0, count: width * height)
+        fill(&colors, person: &person, x0: 0.22, y0: 0.05, x1: 0.78, y1: 0.95, color: skinColor, value: 255)
+        let mask = try affinityMask(colors: colors, person: person)
+        XCTAssertFalse(mask.contains { $0 > 0 })
+    }
+
+    func testSameColorClothesTouchingTheHairAreDyed() throws {
+        let (colors, person) = try portrait(bangs: false, longHair: true, shirtMatchesHair: true)
+        let mask = try affinityMask(colors: colors, person: person)
+        XCTAssertEqual(mask[index(x: 20, y: 18)], 0)
+        XCTAssertEqual(mask[index(x: 20, y: 44)], 255)
+    }
+
+    func testAffinityMaskRejectsAMismatchedBuffer() {
+        let colors = [HairRGB](repeating: skinColor, count: 4)
         XCTAssertEqual(
-            HairMaskRasterizer.maskBytes(person: [1], width: 2, height: 2, regions: []),
+            HairAffinity.maskBytes(colors: colors, person: [255], width: 2, height: 2, regions: []),
             []
+        )
+        XCTAssertEqual(
+            HairAffinity.maskBytes(colors: colors, person: [UInt8](repeating: 255, count: 4), width: 2, height: 2, regions: []),
+            [0, 0, 0, 0]
         )
     }
 
@@ -203,6 +194,119 @@ final class HairColorTests: XCTestCase {
         XCTAssertLessThanOrEqual(abs(plain.0 - 128), 12)
         XCTAssertLessThanOrEqual(abs(plain.1 - 128), 12)
         XCTAssertLessThanOrEqual(abs(plain.2 - 128), 12)
+    }
+
+    func testSamplerRowZeroIsTheTopOfTheImage() throws {
+        let width = 8
+        let height = 8
+        guard let bitmap = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            XCTFail("Could not make a bitmap")
+            return
+        }
+        bitmap.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 1))
+        bitmap.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        bitmap.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        bitmap.fill(CGRect(x: 0, y: 4, width: width, height: 4))
+        let rendered = try XCTUnwrap(bitmap.makeImage())
+        let image = CIImage(cgImage: rendered)
+        let colors = try XCTUnwrap(HairImageSampler.colors(from: image, width: width, height: height))
+        let context = CIContext(options: [
+            .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
+            .outputColorSpace: CGColorSpaceCreateDeviceRGB(),
+        ])
+        let top = try XCTUnwrap(pixel(image, x: 1, y: 6, context: context))
+        let bottom = try XCTUnwrap(pixel(image, x: 1, y: 1, context: context))
+        XCTAssertGreaterThan(top.0, 200)
+        XCTAssertLessThan(top.2, 40)
+        XCTAssertGreaterThan(bottom.2, 200)
+        XCTAssertLessThanOrEqual(abs(Int((colors[0].r * 255).rounded()) - top.0), 2)
+        XCTAssertLessThanOrEqual(abs(Int((colors[(7 * width)].b * 255).rounded()) - bottom.2), 2)
+    }
+
+    private let skinColor = HairRGB(r: 0.82, g: 0.63, b: 0.51)
+    private let hairColor = HairRGB(r: 0.16, g: 0.09, b: 0.06)
+    private let shirtColor = HairRGB(r: 0.15, g: 0.25, b: 0.55)
+    private let background = HairRGB(r: 0.20, g: 0.55, b: 0.20)
+    private let portraitWidth = 40
+    private let portraitHeight = 50
+
+    private func portrait(
+        bangs: Bool,
+        longHair: Bool,
+        shirtMatchesHair: Bool
+    ) throws -> ([HairRGB], [UInt8]) {
+        let width = portraitWidth
+        let height = portraitHeight
+        var colors = [HairRGB](repeating: background, count: width * height)
+        var person = [UInt8](repeating: 0, count: width * height)
+        fill(&colors, person: &person, x0: 0.22, y0: 0.05, x1: 0.78, y1: 0.95, color: skinColor, value: 255)
+        fill(&colors, person: &person, x0: 0.18, y0: 0.68, x1: 0.82, y1: 0.95, color: hairColor, value: 255)
+        let shirt = shirtMatchesHair ? hairColor : shirtColor
+        let shirtTop: CGFloat = shirtMatchesHair ? 0.32 : 0.28
+        fill(&colors, person: &person, x0: 0.32, y0: 0.05, x1: 0.68, y1: shirtTop, color: shirt, value: 255)
+        if bangs {
+            fill(&colors, person: &person, x0: 0.32, y0: 0.58, x1: 0.68, y1: 0.68, color: hairColor, value: 255)
+        }
+        if longHair {
+            fill(&colors, person: &person, x0: 0.12, y0: 0.05, x1: 0.28, y1: 0.95, color: hairColor, value: 255)
+            fill(&colors, person: &person, x0: 0.72, y0: 0.05, x1: 0.88, y1: 0.95, color: hairColor, value: 255)
+        }
+        if shirtMatchesHair {
+            fill(&colors, person: &person, x0: 0.28, y0: 0.02, x1: 0.72, y1: 0.32, color: hairColor, value: 255)
+        }
+        return (colors, person)
+    }
+
+    private func affinityMask(colors: [HairRGB], person: [UInt8]) throws -> [UInt8] {
+        let region = try XCTUnwrap(
+            HairRegionBuilder.region(
+                for: FaceHairGuide(
+                    boundingBox: CGRect(x: 0.30, y: 0.40, width: 0.40, height: 0.28),
+                    eyebrowY: 0.58
+                )
+            )
+        )
+        return HairAffinity.maskBytes(
+            colors: colors,
+            person: person,
+            width: portraitWidth,
+            height: portraitHeight,
+            regions: [region]
+        )
+    }
+
+    private func index(x: Int, y: Int) -> Int {
+        (y * portraitWidth) + x
+    }
+
+    private func fill(
+        _ colors: inout [HairRGB],
+        person: inout [UInt8],
+        x0: CGFloat,
+        y0: CGFloat,
+        x1: CGFloat,
+        y1: CGFloat,
+        color: HairRGB,
+        value: UInt8 = 255
+    ) {
+        for y in 0..<portraitHeight {
+            for x in 0..<portraitWidth {
+                let nx = (CGFloat(x) + 0.5) / CGFloat(portraitWidth)
+                let ny = 1 - ((CGFloat(y) + 0.5) / CGFloat(portraitHeight))
+                guard nx >= x0, nx <= x1, ny >= y0, ny <= y1 else { continue }
+                let slot = (y * portraitWidth) + x
+                colors[slot] = color
+                person[slot] = value
+            }
+        }
     }
 
     /// Samples one pixel. `x` and `y` are CIImage coordinates, origin bottom-left.

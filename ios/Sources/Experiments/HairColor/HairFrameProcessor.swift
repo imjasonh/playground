@@ -1,7 +1,7 @@
 import CoreImage
 import Vision
 
-/// Runs person segmentation and face landmarks, then keeps only scalp pixels.
+/// Runs person segmentation and face landmarks, then keeps pixels that match the hair.
 enum HairFrameProcessor {
     static func makeRequests() -> (person: VNGeneratePersonSegmentationRequest, face: VNDetectFaceLandmarksRequest) {
         let person = VNGeneratePersonSegmentationRequest()
@@ -24,16 +24,17 @@ enum HairFrameProcessor {
         }
         guard let faces = faceRequest.results, !faces.isEmpty else { return nil }
         guard let personBuffer = personRequest.results?.first?.pixelBuffer else { return nil }
-        return hairMask(personBuffer: personBuffer, faces: faces)
+        return hairMask(personBuffer: personBuffer, faces: faces, image: image)
     }
 
-    static func hairMask(personBuffer: CVPixelBuffer, faces: [VNFaceObservation]) -> CIImage? {
+    static func hairMask(personBuffer: CVPixelBuffer, faces: [VNFaceObservation], image: CIImage) -> CIImage? {
         let regions = HairRegionBuilder.regions(for: HairFaceGuideBuilder.guides(from: faces))
         guard !regions.isEmpty else { return nil }
 
         let width = CVPixelBufferGetWidth(personBuffer)
         let height = CVPixelBufferGetHeight(personBuffer)
         guard width > 0, height > 0 else { return nil }
+        guard let colors = HairImageSampler.colors(from: image, width: width, height: height) else { return nil }
 
         CVPixelBufferLockBaseAddress(personBuffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(personBuffer, .readOnly) }
@@ -46,7 +47,8 @@ enum HairFrameProcessor {
                 person[(y * width) + x] = row.load(fromByteOffset: x, as: UInt8.self)
             }
         }
-        let bytes = HairMaskRasterizer.maskBytes(
+        let bytes = HairAffinity.maskBytes(
+            colors: colors,
             person: person,
             width: width,
             height: height,

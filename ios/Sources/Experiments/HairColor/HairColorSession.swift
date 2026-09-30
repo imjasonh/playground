@@ -5,8 +5,8 @@ import UIKit
 
 /// Live camera that dyes hair on device. Frames are not uploaded.
 ///
-/// The preview uses Vision person segmentation limited to the scalp. A still
-/// photo uses `AVSemanticSegmentationMatte.hair` when the device offers it.
+/// The preview matches pixels to the hair color above the face. A still photo
+/// uses `AVSemanticSegmentationMatte.hair` when the device offers it.
 final class HairColorSession: NSObject, ObservableObject {
     enum RunState: Equatable {
         case idle
