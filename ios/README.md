@@ -267,7 +267,7 @@ on a TrueDepth front camera — not wired here yet.
 
 Live front camera that dyes hair on device. Core Image's color blend keeps the hair's luminance and takes hue from the swatch you pick. Vision and Core Image run on device.
 
-Apple's hair semantic segmentation matte (`AVSemanticSegmentationMatte.hair`) arrives with still photos, not with `AVCaptureVideoDataOutput`. The live mask is therefore a Vision person matte (`VNGeneratePersonSegmentationRequest`, `.balanced`) limited to the scalp around `VNDetectFaceLandmarksRequest` eyebrows. Face, clothes, and background stay untinted. If no face is in frame, the preview stays undyed.
+Apple's hair semantic segmentation matte (`AVSemanticSegmentationMatte.hair`) arrives with still photos, not with `AVCaptureVideoDataOutput`. The live mask is a Vision person matte (`VNGeneratePersonSegmentationRequest`, `.balanced`) cut to the scalp. The hairline is the top of the face box from `VNDetectFaceLandmarksRequest`. Eyebrows mark the bottom of the forehead, and that skin stays undyed, along with the rest of the face, clothes, and background. If no face is in frame, the preview stays undyed.
 
 The shutter takes a still. When the device offers a hair matte, that matte is the mask. Otherwise the still uses the same scalp window. Retake returns to the live preview.
 

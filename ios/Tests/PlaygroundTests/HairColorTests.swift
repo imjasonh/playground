@@ -25,13 +25,14 @@ final class HairColorTests: XCTestCase {
     func testCrownIsHairAndFaceIsNot() throws {
         let box = CGRect(x: 0.30, y: 0.20, width: 0.40, height: 0.40)
         let region = try XCTUnwrap(
-            HairRegionBuilder.region(for: FaceHairGuide(boundingBox: box, hairlineY: nil))
+            HairRegionBuilder.region(for: FaceHairGuide(boundingBox: box, eyebrowY: nil))
         )
-        let hairline = box.maxY - (box.height * HairRegionBuilder.fallbackHairlineInset)
+        let hairline = box.maxY - (box.height * HairRegionBuilder.hairlineInset)
         XCTAssertEqual(region.hairlineY, hairline, accuracy: 0.0001)
 
         XCTAssertTrue(region.contains(x: 0.50, y: hairline + 0.05))
         XCTAssertFalse(region.contains(x: 0.50, y: box.minY + 0.05))
+        XCTAssertFalse(region.contains(x: 0.50, y: hairline - (box.height * 0.2)))
 
         let sideburnX = box.minX - (box.width * HairRegionBuilder.sideScale * 0.5)
         let sideburnY = hairline - (box.height * HairRegionBuilder.sideburnScale * 0.5)
@@ -43,21 +44,30 @@ final class HairColorTests: XCTestCase {
     func testTinyFaceIsDropped() {
         let guide = FaceHairGuide(
             boundingBox: CGRect(x: 0.1, y: 0.1, width: 0.01, height: 0.4),
-            hairlineY: nil
+            eyebrowY: nil
         )
         XCTAssertNil(HairRegionBuilder.region(for: guide))
     }
 
-    func testEyebrowHairlineMapsIntoTheFaceBox() throws {
+    func testEyebrowsDoNotPaintTheForehead() throws {
         let box = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
-        let hairline = HairFaceGuideBuilder.averageHairlineY(landmarkYs: [0.9, 1.0], box: box)
-        XCTAssertEqual(hairline ?? -1, 0.58, accuracy: 0.0001)
-        XCTAssertNil(HairFaceGuideBuilder.averageHairlineY(landmarkYs: [], box: box))
+        let eyebrow = HairFaceGuideBuilder.averageEyebrowY(landmarkYs: [0.55, 0.65], box: box)
+        XCTAssertEqual(eyebrow ?? -1, 0.44, accuracy: 0.0001)
+        XCTAssertNil(HairFaceGuideBuilder.averageEyebrowY(landmarkYs: [], box: box))
 
         let region = try XCTUnwrap(
-            HairRegionBuilder.region(for: FaceHairGuide(boundingBox: box, hairlineY: hairline))
+            HairRegionBuilder.region(for: FaceHairGuide(boundingBox: box, eyebrowY: eyebrow))
         )
-        XCTAssertEqual(region.hairlineY, 0.58, accuracy: 0.0001)
+        let hairline = box.maxY - (box.height * HairRegionBuilder.hairlineInset)
+        XCTAssertEqual(region.hairlineY, hairline, accuracy: 0.0001)
+        XCTAssertGreaterThan(hairline, eyebrow ?? 0)
+
+        let foreheadY = ((eyebrow ?? 0) + hairline) / 2
+        XCTAssertTrue(region.contains(x: 0.40, y: hairline + 0.03))
+        XCTAssertFalse(region.contains(x: 0.40, y: foreheadY))
+        XCTAssertFalse(region.contains(x: box.minX + 0.01, y: foreheadY))
+        let sideX = box.minX - (box.width * 0.15)
+        XCTAssertTrue(region.contains(x: sideX, y: foreheadY))
     }
 
     func testRasterizerKeepsPersonPixelsInsideTheHairWindow() {
@@ -65,7 +75,10 @@ final class HairColorTests: XCTestCase {
             window: CGRect(x: 0.2, y: 0.4, width: 0.6, height: 0.5),
             hairlineY: 0.6,
             faceInterior: CGRect(x: 0.35, y: 0.4, width: 0.3, height: 0.2),
-            sideburnMinY: 0.45
+            sideburnMinY: 0.45,
+            foreheadMinY: nil,
+            faceMinX: 0,
+            faceMaxX: 0
         )
         let width = 10
         let height = 10
