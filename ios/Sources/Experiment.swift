@@ -51,6 +51,7 @@ enum ExperimentCatalog {
         T9KeyboardExperiment.experiment,
         FollowTheHumExperiment.experiment,
         LocalLensExperiment.experiment,
+        HairColorExperiment.experiment,
         LiveTranslateExperiment.experiment,
         VoxelWorldExperiment.experiment,
         WigglecamExperiment.experiment,

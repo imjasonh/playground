@@ -44,6 +44,10 @@ final class ExperimentCatalogTests: XCTestCase {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "local-lens" })
     }
 
+    func testIncludesHairColor() {
+        XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "hair-color" })
+    }
+
     func testIncludesLiveTranslate() {
         XCTAssertTrue(ExperimentCatalog.all.contains { $0.id == "live-translate" })
     }
