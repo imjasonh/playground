@@ -79,11 +79,14 @@ final class HairColorTests: XCTestCase {
             regions: [region]
         )
 
-        XCTAssertEqual(mask[(2 * width) + 5], 255)
-        XCTAssertEqual(mask[(2 * width) + 4], 0)
-        XCTAssertEqual(mask[(5 * width) + 5], 0)
-        XCTAssertEqual(mask[(5 * width) + 2], 255)
-        XCTAssertEqual(mask[(2 * width) + 0], 0)
+        func index(x: Int, y: Int) -> Int { (y * width) + x }
+        // Row 0 is the top of the buffer. Samples are pixel centers in Vision space (Y up).
+        XCTAssertEqual(mask[index(x: 5, y: 2)], 255)
+        XCTAssertEqual(mask[index(x: 4, y: 2)], 0)
+        XCTAssertEqual(mask[index(x: 5, y: 4)], 0)
+        XCTAssertEqual(mask[index(x: 2, y: 4)], 255)
+        XCTAssertEqual(mask[index(x: 2, y: 5)], 0)
+        XCTAssertEqual(mask[index(x: 0, y: 2)], 0)
     }
 
     func testRasterizerIsEmptyWithoutAFace() {
