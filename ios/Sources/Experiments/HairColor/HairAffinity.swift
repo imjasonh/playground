@@ -248,7 +248,7 @@ enum HairImageSampler {
             .transformed(by: CGAffineTransform(translationX: -extent.origin.x, y: -extent.origin.y))
             .transformed(by: CGAffineTransform(
                 scaleX: CGFloat(width) / extent.width,
-                scaleY: CGFloat(height) / extent.height
+                y: CGFloat(height) / extent.height
             ))
             .cropped(to: bounds)
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
