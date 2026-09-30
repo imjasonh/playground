@@ -69,6 +69,9 @@ Cloudflare Workers live here too. CI still builds and tests them when they
 change. They have no `index.html`, so GitHub Pages deploy and preview skip
 them:
 
+- **[`chrome-noop/`](chrome-noop/)** — a Chrome extension that shows one sentence
+  and does nothing else. The zip is a manual Chrome Web Store upload. It
+  is not a Pages app and CI does not publish it.
 - **[`gitdb/`](gitdb/)** — query a git repo's history, files, blame, and file
   contents with SQL, via SQLite virtual tables over go-git (Go CLI).
 - **[`ocidb/`](ocidb/)** — explore OCI container images on Docker Hub with SQL,
