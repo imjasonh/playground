@@ -20,6 +20,24 @@ enum HairColorOrientation {
         }
     }
 
+    /// Clockwise degrees for `AVCaptureConnection.videoRotationAngle`.
+    /// Portrait is 90, upside down is 270, and the landscape cases swap
+    /// the same way `captureOrientation` does.
+    static func photoRotationAngle(for deviceOrientation: UIDeviceOrientation) -> CGFloat {
+        switch captureOrientation(for: deviceOrientation) {
+        case .portrait:
+            return 90
+        case .portraitUpsideDown:
+            return 270
+        case .landscapeRight:
+            return 0
+        case .landscapeLeft:
+            return 180
+        @unknown default:
+            return 90
+        }
+    }
+
     static func visionOrientation(
         deviceOrientation: UIDeviceOrientation,
         cameraPosition: AVCaptureDevice.Position

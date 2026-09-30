@@ -109,6 +109,11 @@ final class HairColorTests: XCTestCase {
             HairColorOrientation.captureOrientation(for: .landscapeLeft),
             .landscapeRight
         )
+        XCTAssertEqual(HairColorOrientation.photoRotationAngle(for: .portrait), 90)
+        XCTAssertEqual(HairColorOrientation.photoRotationAngle(for: .portraitUpsideDown), 270)
+        XCTAssertEqual(HairColorOrientation.photoRotationAngle(for: .landscapeLeft), 0)
+        XCTAssertEqual(HairColorOrientation.photoRotationAngle(for: .landscapeRight), 180)
+        XCTAssertEqual(HairColorOrientation.photoRotationAngle(for: .faceUp), 90)
     }
 
     func testDownscaleCapsTheLongEdge() {

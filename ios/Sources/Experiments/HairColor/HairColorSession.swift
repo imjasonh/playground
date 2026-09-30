@@ -269,8 +269,9 @@ final class HairColorSession: NSObject, ObservableObject {
     private func orientPhotoConnection() {
         guard let connection = photoOutput.connection(with: .video) else { return }
         let (orientation, position) = currentOrientationAndCamera()
-        if connection.isVideoOrientationSupported {
-            connection.videoOrientation = HairColorOrientation.captureOrientation(for: orientation)
+        let angle = HairColorOrientation.photoRotationAngle(for: orientation)
+        if connection.isVideoRotationAngleSupported(angle) {
+            connection.videoRotationAngle = angle
         }
         if connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
