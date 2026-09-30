@@ -55,7 +55,6 @@ ios/
 | `voxel-world` | Voxel Eyes | In-app; ARKit rebuilds the room as Minecraft-style palette blocks |
 | `wigglecam` | Wigglecam | In-app; dual-wide wigglegrams saved as GIF to Photos |
 | `local-lens` | Local Lens | In-app; live on-device Vision (classify / OCR / face landmarks / body & hand pose / barcodes) |
-| `hair-color` | Hair Color | In-app; live hair tint with on-device Vision and Core Image. Still photos use the hair semantic segmentation matte when the device provides one |
 | `live-translate` | Live Translate | In-app; live OCR plus on-device Foundation Models translation painted over the source text; copies the translation |
 | `blather` | Blather | In-app; Apple Intelligence writes spoken episodes on a topic, draws a cover, and saves the audio on this device |
 | `esp32-ble` | ESP32 BLE | In-app Core Bluetooth central for `esp32-ble/` firmware; no extra Bundle ID |
@@ -262,16 +261,6 @@ in portrait and landscape through aspect-fill. Needs camera permission
 bootstrap). Simulator opens the UI but has no camera; use a physical device to
 see live labels. True gaze / attention tracking would need ARKit face tracking
 on a TrueDepth front camera — not wired here yet.
-
-### Hair Color
-
-Live front camera that dyes hair on device. Core Image's color blend keeps the hair's luminance and takes hue from the swatch you pick. Vision and Core Image run on device.
-
-Apple's hair semantic segmentation matte (`AVSemanticSegmentationMatte.hair`) arrives with still photos, not with `AVCaptureVideoDataOutput`. The live mask is therefore a Vision person matte (`VNGeneratePersonSegmentationRequest`, `.balanced`) limited to the scalp around `VNDetectFaceLandmarksRequest` eyebrows. Face, clothes, and background stay untinted. If no face is in frame, the preview stays undyed.
-
-The shutter takes a still. When the device offers a hair matte, that matte is the mask. Otherwise the still uses the same scalp window. Retake returns to the live preview.
-
-Needs camera permission (extends the existing `NSCameraUsageDescription`, no new Bundle ID or signing bootstrap). The Simulator opens the screen and has no camera.
 
 ### Live Translate
 
