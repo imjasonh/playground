@@ -114,6 +114,10 @@ final class LiveTranslateTrackingTests: XCTestCase {
         let expected = truth.apply(to: step.apply(to: point))
         XCTAssertEqual(twice.x, expected.x, accuracy: 0.0001)
         XCTAssertEqual(twice.y, expected.y, accuracy: 0.0001)
+
+        let undone = truth.then(truth.inverted()).apply(to: point)
+        XCTAssertEqual(undone.x, point.x, accuracy: 0.0001)
+        XCTAssertEqual(undone.y, point.y, accuracy: 0.0001)
     }
 
     func testDisplayBoxIgnoresBlurThatSwellsABoxForAPass() throws {
@@ -135,7 +139,7 @@ final class LiveTranslateTrackingTests: XCTestCase {
                 height: box.height * swell
             )])
             let shown = try XCTUnwrap(tracker.tracks.first?.displayBox)
-            XCTAssertEqual(shown.height / settled.height, 1, accuracy: 0.06, "swell \(swell)")
+            XCTAssertEqual(shown.height / settled.height, 1, accuracy: 0.01, "swell \(swell)")
             XCTAssertEqual(shown.midY, box.midY, accuracy: 0.001)
         }
         tracker.update(with: [steady])
