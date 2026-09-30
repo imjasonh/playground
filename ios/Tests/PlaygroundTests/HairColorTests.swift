@@ -22,7 +22,7 @@ final class HairColorTests: XCTestCase {
         }
     }
 
-    func testCrownIsHairAndFaceIsNot() {
+    func testCrownIsHairAndFaceIsNot() throws {
         let box = CGRect(x: 0.30, y: 0.20, width: 0.40, height: 0.40)
         let region = try XCTUnwrap(
             HairRegionBuilder.region(for: FaceHairGuide(boundingBox: box, hairlineY: nil))
@@ -48,7 +48,7 @@ final class HairColorTests: XCTestCase {
         XCTAssertNil(HairRegionBuilder.region(for: guide))
     }
 
-    func testEyebrowHairlineMapsIntoTheFaceBox() {
+    func testEyebrowHairlineMapsIntoTheFaceBox() throws {
         let box = CGRect(x: 0.2, y: 0.2, width: 0.4, height: 0.4)
         let hairline = HairFaceGuideBuilder.averageHairlineY(landmarkYs: [0.9, 1.0], box: box)
         XCTAssertEqual(hairline ?? -1, 0.58, accuracy: 0.0001)
