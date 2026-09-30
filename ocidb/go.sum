@@ -72,6 +72,8 @@ github.com/mitchellh/go-homedir v1.1.0 h1:lukF9ziXFxDFPkA1vsr5zpc1XuPDn/wFntq5mG
 github.com/mitchellh/go-homedir v1.1.0/go.mod h1:SfyaCUpYCn1Vlf4IUYiD9fPX4A5wJrkLzIz1N1q0pr0=
 github.com/ncruces/go-strftime v1.0.0 h1:HMFp8mLCTPp341M/ZnA4qaf7ZlsbTc+miZjCLOFAw7w=
 github.com/ncruces/go-strftime v1.0.0/go.mod h1:Fwc5htZGVVkseilnfgOVb9mKy6w1naJmn9CehxcKcls=
+github.com/ncruces/go-strftime v1.1.0 h1:vtPmPWMkb539RGV9WpWT9EwJGvrOCKvMNI4obWL47Hk=
+github.com/ncruces/go-strftime v1.1.0/go.mod h1:yVaq7iwCN09vHRrKBrrflXT0M9tTMG2KmZ9Fj7xeG/g=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
@@ -217,6 +219,8 @@ modernc.org/sqlite v1.59.0 h1:X1es1GpqBlS/5T+vbM4HLUdaa8OtQx468DF2vrx+38A=
 modernc.org/sqlite v1.59.0/go.mod h1:+paeT2A3iPRHkQDwG7oA6Tk0zQd5woMEI8q7orfry8k=
 modernc.org/sqlite v1.60.0 h1:7AZh8lREDo8x3j7aSdF7KGpAKUkJExJ1p67tcRnmttM=
 modernc.org/sqlite v1.60.0/go.mod h1:1dIoEagfDE72QytD5scH1lxARtaUgKgHC/NuApA27r0=
+modernc.org/sqlite v1.60.1 h1:/blz53O951KWFOso4QQvEs/Fq6cDBKLtMVrYNSeJVKw=
+modernc.org/sqlite v1.60.1/go.mod h1:1dIoEagfDE72QytD5scH1lxARtaUgKgHC/NuApA27r0=
 modernc.org/strutil v1.2.1 h1:UneZBkQA+DX2Rp35KcM69cSsNES9ly8mQWD71HKlOA0=
 modernc.org/strutil v1.2.1/go.mod h1:EHkiggD70koQxjVdSBM3JKM7k6L0FbGE5eymy9i3B9A=
 modernc.org/token v1.1.0 h1:Xl7Ap9dKaEs5kLoOQeQmPWevfnk/DM5qcLcYlA8ys6Y=

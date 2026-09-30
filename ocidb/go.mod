@@ -7,7 +7,7 @@ require (
 	github.com/klauspost/compress v1.20.1
 	github.com/values-conflict/go-sqlite-fdw v0.0.0
 	github.com/values-conflict/go-sqlite-fdw/modernc v0.0.0-20260630071241-65cea68abcec
-	modernc.org/sqlite v1.60.0
+	modernc.org/sqlite v1.60.1
 )
 
 require (
@@ -19,7 +19,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
-	github.com/ncruces/go-strftime v1.0.0 // indirect
+	github.com/ncruces/go-strftime v1.1.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
