@@ -52,7 +52,7 @@ def render_screenshot(icon):
     font = ImageFont.truetype(FONT, 22)
     draw.text(
         (524, 376),
-        "This extension shows one sentence\nand does nothing else.",
+        "This extension opens this popup.\nIt requests no permissions\nand collects no data.",
         fill=(26, 26, 26),
         font=font,
         spacing=6,

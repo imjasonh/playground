@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Playground no-op",
-  "version": "0.0.1",
-  "description": "Shows one sentence and does nothing else.",
+  "version": "0.0.2",
+  "description": "Opens a toolbar popup. It requests no permissions and collects no data.",
   "action": {
     "default_title": "Playground no-op",
     "default_popup": "popup.html",

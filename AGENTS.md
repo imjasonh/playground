@@ -750,7 +750,7 @@ auto-discover them. Run their local tests when you change them.
 | `esp32-ble/` | Rust/ESP-IDF firmware: BLE GATT LED control for the iOS ESP32 BLE experiment. USB flash only. Agent guide: [`esp32-ble/AGENTS.md`](esp32-ble/AGENTS.md) | host protocol tests + Xtensa cross-build via `esp32-ble.yml` |
 | `life-scad/` | OpenSCAD Life sculpture (Z = time) plus optional Python reverse-history search | `python3 life-scad/reverse_life_test.py` (needs `pip install -r life-scad/requirements.txt`) |
 | `life-qr/` | Parametric OpenSCAD Life sculpture with a QR-code roof for any text/height | `python3 life-qr/life_qr_test.py` (optional `pip install segno`) |
-| `chrome-noop/` | Manifest V3 Chrome extension that shows one sentence and does nothing else. The zip is a manual Chrome Web Store upload. It is not published by CI. | `bash chrome-noop/pack_test.sh` |
+| `chrome-noop/` | Manifest V3 Chrome extension with one toolbar popup and no permissions. The zip is a manual Chrome Web Store upload. Item ID `canmakefmjmnhhaobdeipbamnalcloap`. It is not published by CI. | `bash chrome-noop/pack_test.sh` |
 
 ## The iOS app
 

@@ -27,8 +27,11 @@ if any(name.endswith("/") or name.startswith("/") for name in names):
 manifest = json.loads(archive.read("manifest.json"))
 if manifest["manifest_version"] != 3:
     raise SystemExit("manifest_version must be 3")
-if manifest["version"] != "0.0.1":
-    raise SystemExit("version must be 0.0.1")
+if manifest["version"] != "0.0.2":
+    raise SystemExit("version must be 0.0.2")
+description = manifest["description"]
+if len(description) > 132 or "popup" not in description:
+    raise SystemExit(f"manifest description is {len(description)} characters and must name the popup")
 if "permissions" in manifest or "host_permissions" in manifest:
     raise SystemExit("no-op package must not declare permissions")
 
