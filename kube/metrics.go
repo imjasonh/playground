@@ -46,6 +46,8 @@ var help = map[string]string{
 	"kube_watch_events_total":         "Watch events received, by type.",
 	"kube_watch_errors_total":         "Failed lists and watches, by type.",
 	"kube_cache_relists_total":        "Relists after a watch's resource version expired.",
+	"kube_webhook_requests_total":     "Admission and conversion webhook requests, by path and result.",
+	"kube_webhook_duration_seconds":   "Time spent answering webhook requests, by path.",
 }
 
 func newMetrics() *metrics {

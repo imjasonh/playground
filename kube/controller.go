@@ -49,10 +49,16 @@ type Finalizer[T any] interface {
 }
 
 // Controller is a reconciler configured to run in a Manager. Create one
-// with For.
+// with For, or with Webhooks for admission webhooks alone.
 type Controller interface {
+	// prepare runs on every replica before leader election. It checks the
+	// controller and registers its webhooks.
+	prepare(ctx context.Context, m *Manager) error
+	// setup and run start the reconcile loop, on a replica that holds the
+	// lease.
 	setup(ctx context.Context, m *Manager) error
 	run(ctx context.Context) error
+	reconciles() bool
 	controllerName() string
 	synced() bool
 }
@@ -67,6 +73,7 @@ type options struct {
 	selector  string
 	resync    time.Duration
 	owns      []func() (*typeInfo, error)
+	versions  []versionOption
 }
 
 // Named sets the controller's name. The name appears in logs and metrics,
@@ -218,6 +225,10 @@ type controller[T any, P Resource[T]] struct {
 	opts    options
 	m       *Manager
 	primary *informer[T, P]
+	// versions are the type's other served versions. conversion is set
+	// when any of them converts itself, through a webhook.
+	versions   []servedVersion
+	conversion bool
 }
 
 var nameRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9.]{0,48}[a-z0-9])?$`)
@@ -226,7 +237,9 @@ func (c *controller[T, P]) controllerName() string { return c.name }
 
 func (c *controller[T, P]) synced() bool { return c.primary != nil && c.primary.hasSynced.Load() }
 
-func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
+func (c *controller[T, P]) reconciles() bool { return true }
+
+func (c *controller[T, P]) prepare(ctx context.Context, m *Manager) error {
 	ti, err := typeInfoFor[T, P]()
 	if err != nil {
 		return err
@@ -242,7 +255,18 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 	c.labels = newLabelKeys(m.Domain)
 	c.finalizer = m.Domain + "/" + c.name
 	c.log = m.log.With("controller", c.name)
-	if c.res, err = m.ensureType(ctx, ti); err != nil {
+	if err := c.prepareVersions(m); err != nil {
+		return err
+	}
+	v, _ := c.r.(Validator[T])
+	d, _ := c.r.(Defaulter[T])
+	return registerAdmission[T, P](ctx, m, ti, v, d)
+}
+
+func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
+	ti := c.ti
+	var err error
+	if c.res, err = m.ensureType(ctx, c.crd()); err != nil {
 		return fmt.Errorf("controller %s: %w", c.name, err)
 	}
 	ns := m.Namespace

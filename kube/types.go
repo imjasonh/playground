@@ -27,6 +27,8 @@ type typeInfo struct {
 	custom     bool
 	shortNames []string
 	categories []string
+	// deprecated makes the API server warn clients that use this version.
+	deprecated bool
 
 	// status is the index of the top-level status field, or nil.
 	status []int
@@ -127,6 +129,10 @@ func parseType(t reflect.Type) (*typeInfo, error) {
 	for part := range strings.SplitSeq(tag.Get("kube"), ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
+			continue
+		}
+		if part == "deprecated" {
+			ti.deprecated = true
 			continue
 		}
 		k, v, ok := strings.Cut(part, "=")

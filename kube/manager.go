@@ -34,8 +34,9 @@ type Manager struct {
 	// uses $KUBECONFIG, then the pod's service account, then
 	// $HOME/.kube/config.
 	Kubeconfig string
-	// Namespace limits every cache of a namespaced type to one namespace.
-	// Empty means all namespaces.
+	// Namespace limits every cache of a namespaced type to one namespace,
+	// and admission webhooks for namespaced types to objects in it. Empty
+	// means all namespaces.
 	Namespace string
 	// Domain prefixes the labels, annotations, and finalizers that the
 	// framework adds to objects. It defaults to "kube.imjasonh.github.io".
@@ -64,17 +65,36 @@ type Manager struct {
 	// the cluster; turn it on over slow links.
 	Compression bool
 
+	// WebhookAddr is where the manager serves admission and conversion
+	// webhooks over HTTPS, when a controller has them. It defaults to
+	// ":9443". Every replica serves webhooks, whether or not it holds a
+	// lease.
+	WebhookAddr string
+	// WebhookService is the Service through which the API server reaches
+	// the webhooks, as "name" in the manager's namespace or
+	// "namespace/name". It must select the controller's pods and route port
+	// 443 to WebhookAddr. The manager makes and renews the certificate,
+	// keeps it in a Secret that replicas share, and registers the webhooks
+	// with the API server.
+	WebhookService string
+	// WebhookURL is the base URL through which the API server reaches the
+	// webhooks of a manager that runs outside the cluster, for example
+	// "https://192.0.2.10:9443". It takes precedence over WebhookService.
+	WebhookURL string
+
 	client  *client.Client
 	log     *slog.Logger
 	metrics *metrics
 	tracker *tracker
 	ids     atomic.Int64
 	runCtx  context.Context
+	started atomic.Bool
 
 	mu          sync.Mutex
 	caches      map[cacheKey]cache
 	resolved    map[*typeInfo]resolved
 	controllers []Controller
+	hooks       *webhookServer
 }
 
 type cacheKey struct {
@@ -90,14 +110,17 @@ func Run(ctx context.Context, controllers ...Controller) error {
 
 // Main is a main function for a controller program. It reads flags,
 // stops on SIGINT or SIGTERM, runs controllers, and exits with status 1 if
-// they fail. Flags: -kubeconfig, -namespace, -leader-elect, -addr, and -v
-// for debug logs.
+// they fail. Flags: -kubeconfig, -namespace, -leader-elect, -addr,
+// -webhook-addr, -webhook-service, -webhook-url, and -v for debug logs.
 func Main(controllers ...Controller) {
 	m := &Manager{}
 	flag.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
 	flag.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
 	flag.BoolVar(&m.LeaderElection, "leader-elect", false, "run controllers only while holding a Lease")
 	flag.StringVar(&m.Addr, "addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
+	flag.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
+	flag.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
+	flag.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
 	verbose := flag.Bool("v", false, "log debug messages")
 	flag.Parse()
 	level := slog.LevelInfo
@@ -175,23 +198,43 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		}
 		defer srv.Close()
 	}
-	if m.LeaderElection {
+	for _, c := range controllers {
+		if err := c.prepare(ctx, m); err != nil {
+			return err
+		}
+	}
+	if m.needsWebhooks() {
+		if err := m.hooks.start(ctx); err != nil {
+			return err
+		}
+		defer m.hooks.stop()
+	}
+	var reconcilers []Controller
+	for _, c := range controllers {
+		if c.reconciles() {
+			reconcilers = append(reconcilers, c)
+		}
+	}
+	if len(reconcilers) > 0 && m.LeaderElection {
 		if err := m.lead(ctx, cancel); err != nil {
 			return err
 		}
 	}
-	for _, c := range controllers {
-		if err := c.setup(ctx, m); err != nil {
-			return err
-		}
-	}
 	var wg sync.WaitGroup
-	for _, c := range controllers {
-		wg.Go(func() {
-			if err := c.run(ctx); err != nil {
-				cancel(fmt.Errorf("controller %s: %w", c.controllerName(), err))
+	if ctx.Err() == nil {
+		for _, c := range reconcilers {
+			if err := c.setup(ctx, m); err != nil {
+				return err
 			}
-		})
+		}
+		m.started.Store(true)
+		for _, c := range reconcilers {
+			wg.Go(func() {
+				if err := c.run(ctx); err != nil {
+					cancel(fmt.Errorf("controller %s: %w", c.controllerName(), err))
+				}
+			})
+		}
 	}
 	<-ctx.Done()
 	wg.Wait()
@@ -204,11 +247,22 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 func (m *Manager) serve() (*http.Server, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
+	// A standby replica is ready once its webhooks serve: the Service must
+	// send webhook requests to it, though it doesn't reconcile.
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
-		for _, c := range m.controllers {
-			if !c.synced() {
-				http.Error(w, "controller "+c.controllerName()+" is not synced", http.StatusServiceUnavailable)
-				return
+		m.mu.Lock()
+		hooks := m.hooks
+		m.mu.Unlock()
+		if !hooks.serving() {
+			http.Error(w, "webhooks are not serving", http.StatusServiceUnavailable)
+			return
+		}
+		if m.started.Load() {
+			for _, c := range m.controllers {
+				if c.reconciles() && !c.synced() {
+					http.Error(w, "controller "+c.controllerName()+" is not synced", http.StatusServiceUnavailable)
+					return
+				}
 			}
 		}
 		fmt.Fprintln(w, "ok")
@@ -272,16 +326,25 @@ func (m *Manager) resolve(ctx context.Context, ti *typeInfo) (resolved, error) {
 
 // ensureType makes sure the cluster serves a controller's primary type,
 // installing a CustomResourceDefinition for types the program defines.
-func (m *Manager) ensureType(ctx context.Context, ti *typeInfo) (resolved, error) {
-	if ti.custom {
-		if err := m.installCRD(ctx, ti); err != nil {
+func (m *Manager) ensureType(ctx context.Context, crd crdSpec) (resolved, error) {
+	if crd.ti.custom {
+		if err := m.installCRD(ctx, crd); err != nil {
 			return resolved{}, err
 		}
 	}
-	return m.resolve(ctx, ti)
+	return m.resolve(ctx, crd.ti)
 }
 
-func (m *Manager) installCRD(ctx context.Context, ti *typeInfo) error {
+// crdSpec describes a CustomResourceDefinition: the stored version, other
+// served versions, and how to convert between them.
+type crdSpec struct {
+	ti         *typeInfo
+	versions   []*typeInfo
+	conversion map[string]any
+}
+
+func (m *Manager) installCRD(ctx context.Context, spec crdSpec) error {
+	ti := spec.ti
 	keys := newLabelKeys(m.Domain)
 	name := ti.plural + "." + ti.group
 	path := "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/" + name
@@ -296,11 +359,16 @@ func (m *Manager) installCRD(ctx context.Context, ti *typeInfo) error {
 	case err != nil && !client.IsNotFound(err):
 		return fmt.Errorf("reading CustomResourceDefinition %s: %w", name, err)
 	}
-	crd, err := schema.CRD(ti.goType, schema.CRDSpec{
+	cs := schema.CRDSpec{
 		Group: ti.group, Version: ti.version, Kind: ti.kind, Plural: ti.plural, Singular: ti.singular,
 		ShortNames: ti.shortNames, Categories: ti.categories, Namespaced: ti.scope == "Namespaced",
-		Labels: map[string]string{keys.managedBy: labelValue(m.Name)},
-	})
+		Labels:     map[string]string{keys.managedBy: labelValue(m.Name)},
+		Deprecated: ti.deprecated, Conversion: spec.conversion,
+	}
+	for _, v := range spec.versions {
+		cs.Versions = append(cs.Versions, schema.VersionSpec{Name: v.version, Type: v.goType, Deprecated: v.deprecated})
+	}
+	crd, err := schema.CRD(ti.goType, cs)
 	if err != nil {
 		return err
 	}

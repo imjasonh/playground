@@ -392,14 +392,32 @@ type CRDSpec struct {
 	ShortNames, Categories                 []string
 	Namespaced                             bool
 	Labels                                 map[string]string
+	// Deprecated marks Version deprecated.
+	Deprecated bool
+	// Versions are other versions that the API server serves, each with
+	// its own struct type. Version is the one it stores.
+	Versions []VersionSpec
+	// Conversion is spec.conversion, or nil to leave it out.
+	Conversion map[string]any
+}
+
+// VersionSpec is a served version of a CustomResourceDefinition.
+type VersionSpec struct {
+	Name       string
+	Type       reflect.Type
+	Deprecated bool
 }
 
 // CRD returns a CustomResourceDefinition for objects of struct type t, as a
 // document ready for server-side apply.
 func CRD(t reflect.Type, spec CRDSpec) (map[string]any, error) {
-	r, err := Generate(t)
-	if err != nil {
-		return nil, err
+	versions := []any{}
+	for i, v := range append([]VersionSpec{{Name: spec.Version, Type: t, Deprecated: spec.Deprecated}}, spec.Versions...) {
+		version, err := crdVersion(v, i == 0)
+		if err != nil {
+			return nil, err
+		}
+		versions = append(versions, version)
 	}
 	scope := "Cluster"
 	if spec.Namespaced {
@@ -417,11 +435,41 @@ func CRD(t reflect.Type, spec CRDSpec) (map[string]any, error) {
 	if len(spec.Categories) > 0 {
 		names["categories"] = spec.Categories
 	}
+	meta := map[string]any{"name": spec.Plural + "." + spec.Group}
+	if len(spec.Labels) > 0 {
+		meta["labels"] = spec.Labels
+	}
+	crdSpec := map[string]any{
+		"group":    spec.Group,
+		"names":    names,
+		"scope":    scope,
+		"versions": versions,
+	}
+	if spec.Conversion != nil {
+		crdSpec["conversion"] = spec.Conversion
+	}
+	return map[string]any{
+		"apiVersion": "apiextensions.k8s.io/v1",
+		"kind":       "CustomResourceDefinition",
+		"metadata":   meta,
+		"spec":       crdSpec,
+	}, nil
+}
+
+// crdVersion returns the spec.versions entry for one version.
+func crdVersion(v VersionSpec, storage bool) (map[string]any, error) {
+	r, err := Generate(v.Type)
+	if err != nil {
+		return nil, err
+	}
 	version := map[string]any{
-		"name":    spec.Version,
+		"name":    v.Name,
 		"served":  true,
-		"storage": true,
+		"storage": storage,
 		"schema":  map[string]any{"openAPIV3Schema": r.Schema},
+	}
+	if v.Deprecated {
+		version["deprecated"] = true
 	}
 	if r.HasStatus {
 		version["subresources"] = map[string]any{"status": map[string]any{}}
@@ -430,19 +478,5 @@ func CRD(t reflect.Type, spec CRDSpec) (map[string]any, error) {
 		cols := append(slices.Clone(r.Columns), Column{Name: "Age", Type: "date", JSONPath: ".metadata.creationTimestamp"})
 		version["additionalPrinterColumns"] = cols
 	}
-	meta := map[string]any{"name": spec.Plural + "." + spec.Group}
-	if len(spec.Labels) > 0 {
-		meta["labels"] = spec.Labels
-	}
-	return map[string]any{
-		"apiVersion": "apiextensions.k8s.io/v1",
-		"kind":       "CustomResourceDefinition",
-		"metadata":   meta,
-		"spec": map[string]any{
-			"group":    spec.Group,
-			"names":    names,
-			"scope":    scope,
-			"versions": []any{version},
-		},
-	}, nil
+	return version, nil
 }

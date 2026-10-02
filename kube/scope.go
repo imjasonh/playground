@@ -59,6 +59,8 @@ type scope struct {
 	requeue  time.Duration
 	err      error
 	cancel   context.CancelCauseFunc
+	// webhook scopes can read, but don't track reads or accept intents.
+	webhook bool
 }
 
 func newScope(ctx context.Context, w world, c *core, key Key) (context.Context, *scope) {
@@ -67,10 +69,26 @@ func newScope(ctx context.Context, w world, c *core, key Key) (context.Context, 
 	return ctx, s
 }
 
+// newWebhookScope returns a context in which Get, List, and Fetch read from
+// the manager, for admission and conversion webhooks.
+func newWebhookScope(ctx context.Context, w world) (context.Context, *scope) {
+	s := &scope{w: w, webhook: true}
+	ctx, s.cancel = context.WithCancelCause(context.WithValue(ctx, scopeKey{}, s))
+	return ctx, s
+}
+
+// readOnly fails a webhook scope that's asked to change something.
+func (s *scope) readOnly(verb string) bool {
+	if s.webhook {
+		s.fail(fmt.Errorf("kube.%s can't be called in a webhook, which can only read", verb))
+	}
+	return s.webhook
+}
+
 func scopeFrom(ctx context.Context, verb string) *scope {
 	s, _ := ctx.Value(scopeKey{}).(*scope)
 	if s == nil {
-		panic(fmt.Sprintf("kube.%s called outside a reconcile: pass it the context that Reconcile or Finalize received, or a context from kube.Fake in a test", verb))
+		panic(fmt.Sprintf("kube.%s called outside a reconcile or webhook: pass it the context that Reconcile, Finalize, Validate, or Default received, or a context from kube.Fake in a test", verb))
 	}
 	return s
 }
@@ -88,6 +106,9 @@ func (s *scope) fail(err error) {
 func (s *scope) self() ref { return ref{c: s.c, key: s.key} }
 
 func (s *scope) track(d dep, sel selector) {
+	if s.webhook {
+		return
+	}
 	s.deps[d] = struct{}{}
 	s.w.deps().add(s.self(), d, sel)
 }
@@ -274,6 +295,9 @@ func (s *scope) prepare(ctx context.Context, verb string, ti *typeInfo, m *Objec
 // Use pointers or omitempty for optional fields, so a zero value isn't sent.
 func Own[T any, P Resource[T]](ctx context.Context, desired P) P {
 	s := scopeFrom(ctx, "Own")
+	if s.readOnly("Own") {
+		return nil
+	}
 	ti := typeFor[T, P](s)
 	m := &desired.object().ObjectMeta
 	res, ok := s.prepare(ctx, "Own", ti, m)
@@ -301,6 +325,9 @@ func Own[T any, P Resource[T]](ctx context.Context, desired P) P {
 // reconcile stops applying are removed.
 func Apply[T any, P Resource[T]](ctx context.Context, desired P) {
 	s := scopeFrom(ctx, "Apply")
+	if s.readOnly("Apply") {
+		return
+	}
 	ti := typeFor[T, P](s)
 	m := &desired.object().ObjectMeta
 	res, ok := s.prepare(ctx, "Apply", ti, m)
@@ -318,6 +345,9 @@ func Apply[T any, P Resource[T]](ctx context.Context, desired P) {
 // the framework deletes it, if it still has the same UID.
 func Delete[T any, P Resource[T]](ctx context.Context, obj P) {
 	s := scopeFrom(ctx, "Delete")
+	if s.readOnly("Delete") {
+		return
+	}
 	ti := typeFor[T, P](s)
 	if ti == nil {
 		return
@@ -336,6 +366,9 @@ func Delete[T any, P Resource[T]](ctx context.Context, obj P) {
 // once, the shortest duration wins.
 func RequeueAfter(ctx context.Context, d time.Duration) {
 	s := scopeFrom(ctx, "RequeueAfter")
+	if s.readOnly("RequeueAfter") {
+		return
+	}
 	if d > 0 && (s.requeue == 0 || d < s.requeue) {
 		s.requeue = d
 	}
