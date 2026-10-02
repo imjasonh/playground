@@ -31,6 +31,9 @@ import (
 type Env struct {
 	// URL is the API server's address.
 	URL string
+	// EtcdURL is etcd's client address, for tests that check what the API
+	// server stores.
+	EtcdURL string
 	// Kubeconfig is the path of a kubeconfig file for an administrator.
 	Kubeconfig string
 
@@ -69,6 +72,7 @@ func (env *Env) boot(ctx context.Context, assets string) error {
 		return err
 	}
 	etcdURL := "http://127.0.0.1:" + strconv.Itoa(ports[0])
+	env.EtcdURL = etcdURL
 	if err := env.start(filepath.Join(assets, "etcd"), "etcd.log",
 		"--data-dir="+filepath.Join(dir, "etcd"),
 		"--listen-client-urls="+etcdURL,
