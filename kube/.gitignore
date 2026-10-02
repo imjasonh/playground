@@ -1,0 +1,10 @@
+# Go test and coverage artifacts
+*.test
+*.out
+coverage.txt
+
+# Downloaded kube-apiserver and etcd binaries for end-to-end tests
+.envtest/
+
+# Built example binaries
+/bin/
