@@ -43,7 +43,7 @@ func (e Event) Err() error {
 // Watcher reads events from one watch stream.
 type Watcher struct {
 	body   io.ReadCloser
-	dec    *json.Decoder
+	frames *frameReader
 	cancel context.CancelFunc
 }
 
@@ -60,15 +60,49 @@ func (c *Client) Watch(ctx context.Context, path string, query url.Values, accep
 		cancel()
 		return nil, err
 	}
-	return &Watcher{body: resp.Body, dec: json.NewDecoder(resp.Body), cancel: cancel}, nil
+	return &Watcher{body: resp.Body, frames: newFrameReader(resp.Body), cancel: cancel}, nil
 }
 
 // Next blocks until the next event. It returns io.EOF when the server ends
 // the stream, which it does after the request's timeoutSeconds.
 func (w *Watcher) Next() (Event, error) {
+	frame, err := w.frames.next()
+	if err != nil {
+		return Event{}, err
+	}
 	var e Event
-	err := w.dec.Decode(&e)
-	return e, err
+	return e, json.Unmarshal(frame, &e)
+}
+
+// NextFrame blocks until the next event and returns its type and its raw
+// JSON, undecoded, so the caller can decode the object straight into its
+// final type, on another goroutine if it likes. It returns io.EOF when the
+// server ends the stream.
+func (w *Watcher) NextFrame() (typ string, frame []byte, err error) {
+	if frame, err = w.frames.next(); err != nil {
+		return "", nil, err
+	}
+	if typ = eventType(frame); typ == "" {
+		var e struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(frame, &e); err != nil {
+			return "", nil, err
+		}
+		typ = e.Type
+	}
+	return typ, frame, nil
+}
+
+// FrameError decodes the Status in an ERROR event frame into an *APIError.
+func FrameError(frame []byte) error {
+	var e struct {
+		Object status `json:"object"`
+	}
+	if err := json.Unmarshal(frame, &e); err != nil {
+		return fmt.Errorf("decoding watch error event: %w", err)
+	}
+	return &APIError{Code: e.Object.Code, Reason: e.Object.Reason, Message: e.Object.Message}
 }
 
 // Close stops the watch.

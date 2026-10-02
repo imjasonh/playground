@@ -215,6 +215,89 @@ func TestWatch(t *testing.T) {
 	}
 }
 
+func memWatcher(stream string) *Watcher {
+	r := strings.NewReader(stream)
+	return &Watcher{body: io.NopCloser(r), frames: newFrameReader(r), cancel: func() {}}
+}
+
+func TestWatcherNextFrame(t *testing.T) {
+	w := memWatcher(`{"type":"ADDED","object":{"metadata":{"name":"a"}}}
+{"object":{"metadata":{"name":"b"}},"type":"MODIFIED","extra":[1,2]}
+{"type":"ERROR","object":{"kind":"Status","code":410,"reason":"Expired","message":"too old"}}
+`)
+	var got []string
+	for {
+		typ, frame, err := w.NextFrame()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if typ == Error {
+			if err := FrameError(frame); !IsGone(err) {
+				t.Errorf("error event = %v", err)
+			}
+			got = append(got, typ)
+			continue
+		}
+		var e struct {
+			Object item `json:"object"`
+		}
+		if err := json.Unmarshal(frame, &e); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, typ+" "+e.Object.Metadata.Name)
+	}
+	if want := "ADDED a,MODIFIED b,ERROR"; strings.Join(got, ",") != want {
+		t.Errorf("events = %v, want %s", got, want)
+	}
+}
+
+func BenchmarkWatchDecode(b *testing.B) {
+	type pod struct {
+		Metadata struct {
+			Name   string            `json:"name"`
+			Labels map[string]string `json:"labels"`
+		} `json:"metadata"`
+		Spec struct {
+			NodeName string `json:"nodeName"`
+		} `json:"spec"`
+	}
+	event := `{"type":"MODIFIED","object":{"metadata":{"name":"web-1","labels":{"app":"web","tier":"frontend"},"managedFields":[{"manager":"kubelet","fieldsV1":{"f:status":{"f:phase":{},"f:conditions":{}}}}]},"spec":{"nodeName":"node-7","containers":[{"name":"app","image":"nginx"}]},"status":{"phase":"Running"}}}` + "\n"
+	stream := strings.Repeat(event, 1000)
+	b.Run("envelope-then-object", func(b *testing.B) {
+		b.SetBytes(int64(len(stream)))
+		for b.Loop() {
+			w := memWatcher(stream)
+			for {
+				e, err := w.Next()
+				if err != nil {
+					break
+				}
+				var p pod
+				_ = json.Unmarshal(e.Object, &p)
+			}
+		}
+	})
+	b.Run("frame-then-typed-event", func(b *testing.B) {
+		b.SetBytes(int64(len(stream)))
+		for b.Loop() {
+			w := memWatcher(stream)
+			for {
+				_, frame, err := w.NextFrame()
+				if err != nil {
+					break
+				}
+				var e struct {
+					Object pod `json:"object"`
+				}
+				_ = json.Unmarshal(frame, &e)
+			}
+		}
+	})
+}
+
 func TestDiscoveryRefetchesOnMiss(t *testing.T) {
 	var calls atomic.Int32
 	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {

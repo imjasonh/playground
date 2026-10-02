@@ -30,6 +30,10 @@ type Config struct {
 	Namespace string
 	// Source describes where the configuration came from, for logs.
 	Source string
+	// Compression asks the API server for gzip-compressed responses. It
+	// saves bandwidth on slow links, but the API server then compresses
+	// every streaming list, which costs its CPU and delays the client.
+	Compression bool
 
 	tlsConfig *tls.Config
 	proxyURL  *url.URL

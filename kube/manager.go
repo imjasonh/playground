@@ -58,6 +58,11 @@ type Manager struct {
 	// DisableInterning stops caches from sharing one copy of strings that
 	// repeat across objects, such as label keys and namespaces.
 	DisableInterning bool
+	// Compression asks the API server to gzip responses. It cuts the bytes
+	// of a streaming list of Pods about tenfold, but the API server spends
+	// CPU compressing every one. Leave it off for controllers that run in
+	// the cluster; turn it on over slow links.
+	Compression bool
 
 	client  *client.Client
 	log     *slog.Logger
@@ -125,6 +130,7 @@ func (m *Manager) init() error {
 		if err != nil {
 			return err
 		}
+		cfg.Compression = m.Compression
 		if m.client, err = client.New(cfg, m.Name+" (kube; github.com/imjasonh/playground/kube)"); err != nil {
 			return err
 		}

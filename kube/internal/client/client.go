@@ -43,6 +43,7 @@ func New(cfg *Config, userAgent string) (*Client, error) {
 		DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ForceAttemptHTTP2:     true,
+		DisableCompression:    !cfg.Compression,
 		MaxIdleConnsPerHost:   25,
 		IdleConnTimeout:       90 * time.Second,
 		ExpectContinueTimeout: time.Second,

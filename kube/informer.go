@@ -349,7 +349,7 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 	}
 	synced := !initial
 	for {
-		e, err := w.Next()
+		typ, frame, err := w.NextFrame()
 		if first != nil {
 			first.Stop()
 			if err == nil {
@@ -369,62 +369,65 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 			}
 		}
 		inf.m.inc("kube_watch_events_total", "type", inf.ti.String())
-		switch e.Type {
-		case client.Added, client.Modified:
-			obj, err := inf.decode(e.Object)
+		switch typ {
+		case client.Added, client.Modified, client.Deleted:
+			obj, err := inf.decodeEvent(frame)
 			if err != nil {
 				return rv, synced, err
 			}
 			m := metaOf[T, P](obj)
 			rv = m.ResourceVersion
 			if items != nil {
-				items[m.Key()] = obj
+				if typ == client.Deleted {
+					delete(items, m.Key())
+				} else {
+					items[m.Key()] = obj
+				}
+				continue
+			}
+			if typ == client.Deleted {
+				if old := inf.store.remove(m.Key()); old != nil {
+					obj = old
+				}
+				inf.notify(obj, nil, false)
 				continue
 			}
 			old := inf.store.put(obj)
 			inf.notify(old, obj, false)
-		case client.Deleted:
-			obj, err := inf.decode(e.Object)
-			if err != nil {
-				return rv, synced, err
-			}
-			m := metaOf[T, P](obj)
-			rv = m.ResourceVersion
-			if items != nil {
-				delete(items, m.Key())
-				continue
-			}
-			if old := inf.store.remove(m.Key()); old != nil {
-				obj = old
-			}
-			inf.notify(obj, nil, false)
 		case client.Bookmark:
-			var b bookmark
-			if err := json.Unmarshal(e.Object, &b); err != nil {
+			var b struct {
+				Object bookmark `json:"object"`
+			}
+			if err := json.Unmarshal(frame, &b); err != nil {
 				return rv, synced, err
 			}
-			rv = b.Metadata.ResourceVersion
-			if items != nil && b.Metadata.Annotations[client.InitialEventsEndAnnotation] == "true" {
+			rv = b.Object.Metadata.ResourceVersion
+			if items != nil && b.Object.Metadata.Annotations[client.InitialEventsEndAnnotation] == "true" {
 				inf.replaceAll(items)
 				items, synced = nil, true
 			}
 		case client.Error:
-			err := e.Err()
-			if initial && !synced && (client.IsBadRequest(err) || client.IsInvalid(err)) {
+			apiErr := client.FrameError(frame)
+			if initial && !synced && (client.IsBadRequest(apiErr) || client.IsInvalid(apiErr)) {
 				return "", false, errStreamingUnsupported
 			}
-			return rv, synced, err
+			return rv, synced, apiErr
 		}
 	}
 }
 
-func (inf *informer[T, P]) decode(raw []byte) (*T, error) {
-	obj := new(T)
-	if err := inf.check(json.Unmarshal(raw, obj)); err != nil {
+// decodeEvent decodes the object in a watch event frame straight into T, in
+// one pass. Decoding the event into json.RawMessage first and then the
+// object nearly doubles the cost.
+func (inf *informer[T, P]) decodeEvent(frame []byte) (*T, error) {
+	e := struct {
+		Object *T `json:"object"`
+	}{Object: new(T)}
+	if err := inf.check(json.Unmarshal(frame, &e)); err != nil {
 		return nil, err
 	}
-	inf.normalize(obj)
-	return obj, nil
+	inf.normalize(e.Object)
+	return e.Object, nil
 }
 
 // check tolerates a field whose JSON type doesn't match the Go type: the rest
