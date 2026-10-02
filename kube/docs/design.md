@@ -725,7 +725,10 @@ hand. These rules change when the calls do.
 only dependency, builds and pushes the image. For each platform, `generate`
 builds the program with `CGO_ENABLED=0`, adds one layer that holds it at
 `/app/PROGRAM` to the base's image for that platform, sets the entrypoint and
-a non-root user, and pushes an index of the images. Timestamps are the Unix
+a non-root user, and pushes an index of the images. Each image names its base
+with the `org.opencontainers.image.base.name` and `.digest` annotations, and
+leaves out the base's own annotations, such as its title and source
+repository, which describe the base. Timestamps are the Unix
 epoch, so the same source and base give the same digest, and the Deployment
 names the image by digest. The copy of the program in the image is built with
 the `kube_nogenerate` build tag, which leaves out `generate` and
