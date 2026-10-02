@@ -37,6 +37,18 @@ for module in "${modules[@]}"; do
     fi
   fi
 
+  # kube end-to-end tests run a real kube-apiserver and etcd, and skip
+  # without KUBEBUILDER_ASSETS, so download the binaries first.
+  kube_assets=""
+  if [ "$module" = "kube" ]; then
+    if kube_assets=$(bash kube/fetch-envtest.sh); then
+      echo "kube: running end-to-end tests with binaries from ${kube_assets}"
+    else
+      echo "::error title=kube envtest::kube/fetch-envtest.sh could not download kube-apiserver and etcd"
+      result=1
+    fi
+  fi
+
   if (
     cd "$module"
     # -race is the Go equivalent of a data-race detector. Always on in CI.
@@ -46,6 +58,8 @@ for module in "${modules[@]}"; do
     # sshapp KinD e2e is separate (see below) so unit tests stay fast.
     if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
       go test -race -v -timeout 30m ./...
+    elif [ "$module" = "kube" ]; then
+      KUBEBUILDER_ASSETS="$kube_assets" go test -race -v ./...
     else
       go test -race -v ./...
     fi
