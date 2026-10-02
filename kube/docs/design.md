@@ -204,7 +204,24 @@ With leader election, one replica does all the work and the others wait.
 "Typically, Kubernetes controllers use a leader election mechanism to
 determine a single active controller instance"
 ([kubernetes-controller-sharding](https://github.com/timebertt/kubernetes-controller-sharding)),
-and that project shards objects across replicas to remove the limit.
+and that project shards objects across replicas to remove the limit. It
+assigns each object to a replica by labeling it, with a separate sharder
+component. Knative's [`leaderelection`](https://github.com/knative/pkg/tree/main/leaderelection)
+package instead splits each controller's keys into buckets and runs a leader
+election for each bucket, so no object needs a label.
+
+### Webhooks
+
+Admission and conversion webhooks are HTTPS servers that the API server
+calls, so they need a serving certificate whose CA bundle is in each webhook
+configuration and CustomResourceDefinition. Kubebuilder projects get both
+from [cert-manager](https://book.kubebuilder.io/cronjob-tutorial/cert-manager),
+whose [CA injector](https://cert-manager.io/docs/concepts/ca-injector/) copies
+the bundle into those objects, which is another component to install and keep
+running. For conversion, Kubebuilder uses a
+[hub-and-spoke model](https://book.kubebuilder.io/multiversion-tutorial/conversion-concepts):
+one version is the hub, and each other version converts to and from it, so
+adding a version doesn't mean writing a conversion for every pair.
 
 ## Prior art
 
@@ -314,8 +331,8 @@ once per type with reflection, instead of generated `DeepCopy` methods.
 A manager keeps one informer for each type, namespace, and label selector that
 its controllers use, and controllers that read the same type with the same
 filters share it. An informer starts the first time a reconcile reads its
-type. On a replica with leader election, informers start only after the
-replica becomes leader, so standby replicas hold no caches.
+type. On a replica with leader election or shards, informers start only after
+the replica first holds a shard, so standby replicas hold no caches.
 
 The informer first tries a streaming list, which is a watch with
 `sendInitialEvents=true`, `resourceVersionMatch=NotOlderThan`, and
@@ -329,9 +346,11 @@ last resource version they saw. A `410 Gone` starts a new list. Replacing the
 cache's contents computes which objects were added, changed, or deleted while
 the informer was disconnected, and notifies controllers of exactly those.
 
-A watch is a stream of JSON events, each `{"type":"ADDED","object":{...}}`.
-Decoding each event into a struct with a `json.RawMessage` field and then
-decoding the object costs two passes over the bytes. The informer instead
+For built-in types, the informer asks for protobuf, as the
+[Protobuf](#protobuf) section describes. For custom types, a watch is a stream
+of JSON events, each `{"type":"ADDED","object":{...}}`. Decoding each event
+into a struct with a `json.RawMessage` field and then decoding the object
+costs two passes over the bytes. The informer instead
 scans each event's boundaries with a byte scanner at about 500 MB/s, reads
 the type from the event's prefix, and decodes the object straight into `T`.
 That uses 30% less CPU and allocates a third fewer bytes than decoding twice.
@@ -461,14 +480,118 @@ it `Established`, and labels it as installed by the framework. If something
 else installed the CRD, for example a Helm chart, the controller leaves it
 alone.
 
-### Leader election
+### Shards and leader election
 
-Leader election uses a `coordination.k8s.io/v1` Lease with a 15-second
-duration, renewed every 2 seconds. A replica that can't renew for 10 seconds
-stops its controllers. Candidates measure a lease's expiry from when they saw
-its holder or renew time change, on their own clock, so clock skew between
-replicas doesn't cause two leaders. A leader that stops releases the lease, so a
-standby takes over in about one retry period instead of a lease duration.
+Leader election and sharding are one mechanism. The keys of every controller
+in a manager are divided into shards by an FNV hash of namespace and name, and
+each shard is a `coordination.k8s.io/v1` Lease with a 15-second duration,
+renewed every 2 seconds. A worker reconciles a key only while its replica
+holds the key's shard, and a replica that acquires a shard enqueues every
+cached key in it and forgets what it last wrote for them, because another
+replica may have reconciled them since. Leader election is the case of one
+shard. Candidates measure a lease's expiry from when they saw its holder or
+renew time change, on their own clock, so clock skew between replicas doesn't
+give a shard two holders.
+
+With more than one shard, each replica also renews a membership Lease, and
+every replica lists the manager's Leases each retry period. Each computes the
+same assignment of shards to live members with rendezvous hashing: a shard
+goes to the member with the highest hash of its identity and the shard
+number, mixed with MurmurHash3's finalizer, because FNV alone barely changes
+its high bits for the last bytes it hashes and gave every shard to one member.
+A member joining or leaving moves only the shards assigned to it. A replica
+that holds a shard assigned to another live member stops starting reconciles
+in it, keeps renewing it until the reconciles in progress finish, and then
+releases it, so a key is never reconciled by two replicas at once while
+leases work. A free shard that its member doesn't take within a lease
+duration goes to any replica, so a member that can't take shards doesn't
+strand them.
+
+A replica that can't renew a shard for 10 seconds stops starting reconciles in
+it, but keeps running, because its webhooks must keep answering. Reconciles
+already running finish, as with any lease-based election. On shutdown,
+`Manager.Run` stops reconciles first and then releases its shards, so another
+replica takes over in about one retry period.
+
+Sharding by lease, as Knative does, needs no component that labels objects,
+but every replica caches every object. Labeling objects with their shard, as
+kubernetes-controller-sharding does, would let each replica watch only its
+shard's objects, at the cost of a sharder and a write to every object.
+
+### Admission webhooks
+
+A reconciler with a `Validate` or `Default` method, or a handler passed to
+`kube.Webhooks`, gets a validating or mutating webhook for its type, for
+`CREATE` and `UPDATE` with `matchPolicy: Equivalent`, so requests for other
+versions are converted first. Both methods receive the old object on updates.
+The webhook decodes the request's object into the projection, so a mutating
+webhook can't send the whole object back without dropping the fields the
+projection lacks. Instead, it encodes the projection before and after
+`Default`, and `jsonpatch.Overlay` applies only the differences to the
+request's original JSON, matching list items by position, so fields that the
+projection leaves out, including fields inside list items, keep their values.
+The patch is the difference between the original and the result.
+
+Webhooks run inside a read-only scope. `Get` and `List` read caches without
+recording dependencies, and `Own`, `Apply`, `Delete`, and `RequeueAfter`
+reject the request with an error.
+
+Every replica serves webhooks, before it competes for shards. The first
+replica to start makes an ECDSA certificate authority valid for ten years and
+a serving certificate valid for one, and creates a Secret with both. The
+others read the Secret, including a replica that loses the race to create it.
+Each replica rereads the Secret every minute. The first to see the serving
+certificate within 30 days of expiry, or missing a host name it needs, writes
+a new one with the Secret's resource version as a precondition, so replicas
+agree. Replacing the CA keeps the old one in the bundle until it expires, so
+servers still using a certificate it signed keep working. Each replica applies
+the webhook configurations with the bundle, which is idempotent, and deletes
+configurations that its program no longer needs, so that a dropped webhook
+doesn't fail every request for its type.
+
+### Versions and conversion
+
+`kube.Version[V]` adds a served version to the CustomResourceDefinition, with
+a schema from `V`. The reconciled type is the hub and the stored version, as
+in Kubebuilder, and versions convert through it with `ConvertTo` and
+`ConvertFrom` methods. The framework finds the methods by asserting
+`converter[T]`, an interface with the hub type as its parameter. A version
+without them converts by copying fields with the same JSON names. If no
+version has methods, the CustomResourceDefinition uses the `None` strategy and
+no webhook. The conversion webhook copies each object's metadata from the
+request, because the API server rejects conversions that change it and the
+projection's metadata has fewer fields than the object's.
+
+### Protobuf
+
+`internal/protobuf` decodes protobuf into the same projections that JSON
+decodes into, without generated code. The API server sends an object as the
+bytes `k8s\x00` followed by a `runtime.Unknown` message that holds the type and
+the encoded object, a list as a list message whose items field holds encoded
+objects, and a watch as length-prefixed `WatchEvent` messages, each holding an
+object in the same envelope. Errors come back as encoded `Status` messages.
+
+The decoder needs each field's number. `schema.txt` lists them for every
+stable kind, by JSON name, about 100 KB. The `gen` command writes it from the
+`protobuf` struct tags on the Go types in `k8s.io/api`, in a separate module,
+so the kube module never depends on `k8s.io/api`. Field numbers never change
+once Kubernetes assigns them, so an old schema decodes newer servers'
+objects, skipping fields it doesn't know. A plan matches a struct's fields to
+the schema by JSON name, the way `encoding/json` matches them, and fails if
+the struct declares a field the schema lacks, so a newer field never decodes
+as empty: the cache reads that type as JSON. The schema is parsed lazily, one
+kind and the messages it contains at a time.
+
+Some fields differ between the two encodings. A struct that `encoding/json`
+inlines, such as a Volume's VolumeSource, is a nested message. Times,
+quantities, and int-or-string values are messages in protobuf but strings or
+numbers in JSON. A few lists, such as a user's extra values, are messages that
+wrap a repeated field. The decoder sets times and quantities directly, and
+converts other such values, or any field whose Go type has an `UnmarshalJSON`
+method, to the JSON value that the API server would send, and decodes that
+with `encoding/json`. A test creates an object of every type in the `k8s`
+package on a real API server and checks that its JSON and protobuf decode to
+equal structs.
 
 ### The client
 
@@ -477,7 +600,9 @@ kubeconfig files with a parser for the subset of YAML they use, supports
 in-cluster service account tokens, client certificates, and exec credential
 plugins, and uses HTTP/2 with pings to detect dead connections. It turns API
 errors into Go errors with `IsNotFound`, `IsConflict`, `IsGone`, and similar
-functions, and finds resource names through discovery.
+functions, from JSON or protobuf `Status` responses, and finds resource names
+through discovery. Caches ask for protobuf with JSON as a fallback, and the
+client decodes whichever the response's `Content-Type` names.
 
 ### Testing
 
@@ -488,11 +613,24 @@ records its intents for the test to check with `kube.Owned`,
 there's no fake behavior that can differ from a real server's.
 
 End-to-end tests start `etcd` and `kube-apiserver` from the controller-tools
-envtest release, with no kubelet or controller manager. Every example has
-end-to-end tests, and the framework's tests check that a converged controller
-makes no writes when its objects' labels change and none after a restart,
-that panics and permanent errors are reported and retried correctly, and that
-leader election fails over.
+envtest release, with no kubelet or controller manager. The API server calls
+webhooks at a loopback address with the manager's CA bundle, as it would
+call a Service in a cluster. Every example has end-to-end tests. The
+framework's tests check that:
+
+- A converged controller makes no writes when its objects' labels change, and
+  none after a restart.
+- Panics and permanent errors are reported and retried correctly.
+- Leader election fails over.
+- Three replicas with 32 shards split the work, hand shards over when one
+  stops and another starts, and never reconcile one object at the same time.
+- Admission webhooks reject and default objects, including a metadata-only
+  webhook whose patch keeps a ConfigMap's data, and a later version of the
+  program removes the webhooks it dropped.
+- Objects written in one version read back in another, through the
+  conversion webhook or without one.
+- The JSON and protobuf encodings of every type in the `k8s` package decode
+  to equal structs.
 
 ## Measurements
 
@@ -520,19 +658,21 @@ syncs:
 
 | Cache | Heap for 5,000 Pods | Per Pod |
 | --- | --- | --- |
-| `client-go` informer | 70.0 MiB | 14,687 B |
+| `client-go` informer | 70.0 MiB | 14,685 B |
 | `client-go` informer without `managedFields` | 51.9 MiB | 10,894 B |
-| kube with `k8s.Pod` | 25.3 MiB | 5,314 B |
-| kube with `k8s.Pod`, interning off | 26.7 MiB | 5,600 B |
-| kube with a two-field type | 6.9 MiB | 1,453 B |
-| kube, metadata only | 6.7 MiB | 1,399 B |
+| kube with `k8s.Pod` | 25.9 MiB | 5,442 B |
+| kube with `k8s.Pod`, JSON | 25.7 MiB | 5,392 B |
+| kube with `k8s.Pod`, interning off | 27.4 MiB | 5,747 B |
+| kube with a two-field type | 7.4 MiB | 1,551 B |
+| kube, metadata only | 6.6 MiB | 1,390 B |
 
 `managedFields` is 26% of `client-go`'s heap per Pod. `k8s.Pod` declares the
-Pod fields that controllers commonly use, and kube stores it in 36% of the
-memory of a `client-go` Pod, or 49% of a `client-go` Pod without
+Pod fields that controllers commonly use, and kube stores it in 37% of the
+memory of a `client-go` Pod, or 50% of a `client-go` Pod without
 `managedFields`. A type with only `spec.nodeName` and `status.phase`, enough
-for a controller that counts Pods per node, uses a tenth of the memory of a
-`client-go` Pod.
+for a controller that counts Pods per node, uses a ninth of the memory of a
+`client-go` Pod. The heap includes the protobuf schema of the kinds read,
+which is 179 KiB for Pods, about 37 bytes per Pod at this count.
 
 Metadata only saves bandwidth as well as memory. Listing 1,000 Secrets of
 8 KiB each transfers 10.8 MiB in full and 0.40 MiB as metadata only.
@@ -542,32 +682,39 @@ Metadata only saves bandwidth as well as memory. Listing 1,000 Secrets of
 | Cache | Initial sync of 5,000 Pods |
 | --- | --- |
 | `client-go` informer, protobuf | 0.20 s |
-| kube, streaming list | 0.49 s |
-| kube, paginated list | 0.41 s |
-| kube, metadata only | 0.35 s |
+| kube, streaming list, protobuf | 0.18 s |
+| kube, streaming list, JSON | 0.51 s |
+| kube, paginated list, protobuf | 0.31 s |
+| kube, metadata only, protobuf | 0.12 s |
 
-`client-go`'s generated clients ask for protobuf for built-in types. To see
-where time goes, the benchmark also reads the Pods without decoding them:
+Across four runs, kube's protobuf sync took 0.18 to 0.23 seconds and
+`client-go`'s 0.20 to 0.30 seconds. To see where time goes, the benchmark also
+reads the Pods without decoding them:
 
 | Request | Size | Time |
 | --- | --- | --- |
-| Streaming list, JSON | 39.5 MiB | 0.47 s |
-| List, JSON | 39.3 MiB | 0.28 s |
-| List, protobuf | 28.5 MiB | 0.18 s |
+| Streaming list, JSON | 39.5 MiB | 0.49 s |
+| Streaming list, protobuf | 28.6 MiB | 0.18 s |
+| List, JSON | 39.3 MiB | 0.26 s |
+| List, protobuf | 28.5 MiB | 0.15 s |
 
-kube's streaming sync takes as long as the API server takes to send the
-stream, so the server's JSON encoding sets the sync time, not kube's decoding.
-For this Kubernetes version and size, a paginated JSON list is faster for the
-server than a streaming list, but a streaming list keeps the server's memory
-bounded, which KEP-3157 is about. CRDs have no protobuf encoding, so for custom
-resources, `client-go` and kube both use JSON.
+A streaming sync takes as long as the API server takes to send the stream, so
+the server's encoding sets the sync time, and protobuf is what closes the gap
+with `client-go`. For this Kubernetes version and size, a paginated list is
+faster for the server than a streaming list in JSON, but a streaming list
+keeps the server's memory bounded, which KEP-3157 is about. CRDs have no
+protobuf encoding, so for custom resources, `client-go` and kube both use
+JSON.
 
 Decoding is still worth making fast, because it runs on every watch event.
-On one core, decoding the benchmark's Pod JSON into a type with metadata,
-containers, and environment variables runs at 118 MB/s, and into a type with
-metadata and `spec.nodeName` at 138 MB/s. Go 1.26's experimental JSON
-implementation, with `GOEXPERIMENT=jsonv2`, raises these to 228 MB/s and
-274 MB/s and cuts allocations per Pod from 74 to 21, without code changes.
+On one core, decoding the benchmark's Pod into a type with metadata,
+containers, and environment variables takes 17.7 µs from JSON and 4.8 µs
+from protobuf. Into a type with metadata and `spec.nodeName`, it takes
+15.2 µs from JSON and 2.5 µs from protobuf, because the protobuf decoder skips
+undeclared fields by their length instead of scanning them. Go 1.26's
+experimental JSON implementation, with `GOEXPERIMENT=jsonv2`, roughly doubles
+JSON decoding speed without code changes, which still leaves it behind
+protobuf.
 
 ### Writes
 
@@ -580,7 +727,7 @@ that starts over the converged Widget makes no applies and no status writes.
 
 | Program | Stripped binary | Modules in the build |
 | --- | --- | --- |
-| kube, [`examples/website`](../examples/website/main.go) | 7.7 MiB | 1 |
+| kube, [`examples/website`](../examples/website/main.go) | 8.3 MiB | 1 |
 | `controller-runtime`, [`bench/crsize`](../bench/crsize/main.go) | 30.6 MiB | 61 |
 
 The module counts include each program's own module. kube's one module is
@@ -591,15 +738,17 @@ itself.
 kube is an experiment, and it leaves out much of what `controller-runtime`
 offers:
 
-- JSON only. The API server sends built-in types as protobuf faster than as
-  JSON, and a protobuf decoder that fills only declared fields can close the
-  sync gap for built-in types. CBOR is a binary encoding that also covers
-  custom resources, but `kube-apiserver` v1.37.0 with default flags answers a
-  CBOR request for Pods with `406 Not Acceptable`.
-- One version per custom type, and no conversion or admission webhooks.
+- Custom resources are JSON only. CBOR is a binary encoding that covers them,
+  but `kube-apiserver` v1.37.0 with default flags answers a CBOR request for
+  Pods with `406 Not Acceptable`.
+- The protobuf schema covers stable versions of built-in kinds as of
+  `k8s.io/api` v0.37.1. Regenerating it picks up new fields and kinds.
+- Shards divide reconciles, not memory. Labeling objects with their shard
+  would let replicas watch only their own objects.
 - No generated RBAC rules or deployment manifests. The framework knows every
   type a controller reads and writes only at run time.
-- One cluster per manager, and one active replica per controller.
+- One cluster per manager.
+- Webhooks run for creates and updates, not deletes or connections.
 - `Fetch` isn't tracked, by design, so a change to a fetched object doesn't
   run the reconcile again.
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
