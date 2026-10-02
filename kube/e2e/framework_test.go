@@ -222,6 +222,43 @@ func TestRestartMakesNoWrites(t *testing.T) {
 	}
 }
 
+func TestRestoresStatusThatSomeoneElseChanged(t *testing.T) {
+	c := e2e.Client(t)
+	r := &counter{}
+	e2e.Run(t, &kube.Manager{Name: "status-e2e"}, kube.For[Widget](r, kube.Named("status")))
+	ns := e2e.Namespace(t, c)
+	createWidget(t, c, ns, "w", 3)
+	size := func(want int) func() error {
+		return func() error {
+			w, err := widget(t, c, ns, "w")
+			if err != nil {
+				return err
+			}
+			if w.Status.Size != want {
+				return fmt.Errorf("status.size = %d, want %d", w.Status.Size, want)
+			}
+			return nil
+		}
+	}
+	e2e.Eventually(t, 10*time.Second, size(3))
+	time.Sleep(500 * time.Millisecond)
+	before := r.count(ns + "/w")
+
+	t.Log("Another client overwrites the status, and the controller writes it back.")
+	patch := []byte(`{"status":{"size":7}}`)
+	if err := c.Patch(t.Context(), client.Path(group+"/v1", "widgets", ns, "w", "status"), client.MergePatch, map[string][]string{"fieldManager": {"someone-else"}}, patch, nil); err != nil {
+		t.Fatal(err)
+	}
+	e2e.Eventually(t, 10*time.Second, size(3))
+	time.Sleep(500 * time.Millisecond)
+	// One reconcile for the other client's change. The controller's own
+	// status write is ignored, unless its watch event arrives before the
+	// write's response, which costs one more.
+	if got := r.count(ns + "/w"); got-before > 2 {
+		t.Errorf("reconciled %d times to restore the status, want at most 2", got-before)
+	}
+}
+
 func TestPanicsAndPermanentErrorsAreContained(t *testing.T) {
 	c := e2e.Client(t)
 	r := &counter{panicOn: "explodes", permanent: "invalid"}

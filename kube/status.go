@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 )
@@ -31,6 +32,11 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 	if err != nil {
 		return err
 	}
+	// Record the status before writing it, because the watch event for the
+	// write can arrive before the response and mustn't look like someone
+	// else's change.
+	key := m.Key()
+	c.setStatus(key, hashJSON(after), true)
 	if bytes.Equal(before, after) {
 		return nil
 	}
@@ -46,14 +52,26 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 		"metadata":   meta,
 		"status":     json.RawMessage(after),
 	}
-	err = c.m.client.Apply(ctx, c.res.path(m.Namespace, m.Name, "status"), c.name, true, body, nil)
-	if err != nil && replaced(err) {
-		return nil
+	var resp json.RawMessage
+	err = c.m.client.Apply(ctx, c.res.path(m.Namespace, m.Name, "status"), c.name, true, body, &resp)
+	if err != nil {
+		if replaced(err) {
+			return nil
+		}
+		return err
 	}
-	if err == nil {
-		c.m.metrics.inc("kube_status_writes_total", "controller", c.name)
+	c.m.metrics.inc("kube_status_writes_total", "controller", c.name)
+	// The API server can store a different status than was sent, for example
+	// with defaults or another manager's fields, so record what it stored.
+	// Like the cache, tolerate fields whose JSON type doesn't match.
+	var written T
+	var te *json.UnmarshalTypeError
+	if err := json.Unmarshal(resp, &written); err == nil || errors.As(err, &te) {
+		if b, err := json.Marshal(reflect.ValueOf(&written).Elem().FieldByIndex(c.ti.status).Interface()); err == nil {
+			c.setStatus(key, hashJSON(b), true)
+		}
 	}
-	return err
+	return nil
 }
 
 // syncedCondition reports the result of the last reconcile.

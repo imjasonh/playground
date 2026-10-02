@@ -125,6 +125,9 @@ type core struct {
 	mu       sync.Mutex
 	children map[*typeInfo]source
 	applied  map[Key]map[appliedKey]uint64
+	// statuses holds a hash of each object's status as this controller last
+	// wrote or confirmed it, to tell its own status writes from others'.
+	statuses map[Key]uint64
 }
 
 type appliedKey struct {
@@ -184,6 +187,28 @@ func (c *core) setApplied(parent Key, m map[appliedKey]uint64) {
 		return
 	}
 	c.applied[parent] = m
+}
+
+func (c *core) lastStatus(k Key) (uint64, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	h, ok := c.statuses[k]
+	return h, ok
+}
+
+// setStatus records h as the hash of k's status, or forgets k's if ok is
+// false.
+func (c *core) setStatus(k Key, h uint64, ok bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !ok {
+		delete(c.statuses, k)
+		return
+	}
+	if c.statuses == nil {
+		c.statuses = map[Key]uint64{}
+	}
+	c.statuses[k] = h
 }
 
 type controller[T any, P Resource[T]] struct {
@@ -296,8 +321,8 @@ func (c *controller[T, P]) resyncLoop(ctx context.Context) {
 	}
 }
 
-// onPrimary enqueues changed objects. Changes to only status or the resource
-// version (most often this controller's own status writes) are ignored.
+// onPrimary enqueues changed objects. It ignores changes to only the resource
+// version, and status changes that this controller made.
 func (c *controller[T, P]) onPrimary(old, new *T, initial bool) {
 	p := queue.High
 	if initial {
@@ -306,9 +331,28 @@ func (c *controller[T, P]) onPrimary(old, new *T, initial bool) {
 	switch {
 	case new == nil:
 		c.q.Add(metaOf[T, P](old).Key(), queue.High)
-	case old == nil || c.specChanged(old, new):
+	case old == nil || c.specChanged(old, new) || c.statusChanged(old, new):
 		c.q.Add(metaOf[T, P](new).Key(), p)
 	}
+}
+
+// statusChanged reports whether something other than this controller changed
+// the status, for example a person who cleared it. Reconciling then writes the
+// status back.
+func (c *controller[T, P]) statusChanged(old, new *T) bool {
+	if c.ti.status == nil {
+		return false
+	}
+	ns := reflect.ValueOf(new).Elem().FieldByIndex(c.ti.status).Interface()
+	if reflect.DeepEqual(reflect.ValueOf(old).Elem().FieldByIndex(c.ti.status).Interface(), ns) {
+		return false
+	}
+	b, err := json.Marshal(ns)
+	if err != nil {
+		return true
+	}
+	h, ok := c.lastStatus(metaOf[T, P](new).Key())
+	return !ok || h != hashJSON(b)
 }
 
 // specChanged reports whether a field that the type declares changed,
@@ -364,6 +408,7 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 	if cached == nil {
 		c.m.tracker.forget(ref{c: &c.core, key: key})
 		c.setApplied(key, nil)
+		c.setStatus(key, 0, false)
 		return 0, nil
 	}
 	obj := clone.Of(cached)
@@ -773,6 +818,12 @@ func hashOf(body map[string]any, manager string) uint64 {
 	b, _ := json.Marshal(body)
 	h := fnv.New64a()
 	h.Write([]byte(manager))
+	h.Write(b)
+	return h.Sum64()
+}
+
+func hashJSON(b []byte) uint64 {
+	h := fnv.New64a()
 	h.Write(b)
 	return h.Sum64()
 }
