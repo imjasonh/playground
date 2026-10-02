@@ -59,7 +59,9 @@ for module in "${modules[@]}"; do
     if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
       go test -race -v -timeout 30m ./...
     elif [ "$module" = "kube" ]; then
-      KUBEBUILDER_ASSETS="$kube_assets" go test -race -v ./...
+      # -count=1: the end-to-end tests run examples with go run, and the test
+      # cache doesn't track the files that a subprocess reads.
+      KUBEBUILDER_ASSETS="$kube_assets" go test -race -v -count=1 ./...
     else
       go test -race -v ./...
     fi
@@ -104,7 +106,7 @@ for module in "${modules[@]}"; do
       result=1
     elif (
       cd "$module"
-      KUBE_KIND_E2E=1 go test -v -timeout 20m ./e2e/kind/
+      KUBE_KIND_E2E=1 go test -v -count=1 -timeout 20m ./e2e/kind/
     ); then
       echo "${module}: kind e2e passed"
     else

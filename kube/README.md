@@ -542,8 +542,12 @@ One more test installs the website and podpolicy examples with `generate` in a
 registry. It needs Docker and `kubectl`, and installs kind if it's missing:
 
 ```sh
-KUBE_KIND_E2E=1 go test -v ./e2e/kind/
+KUBE_KIND_E2E=1 go test -v -count=1 ./e2e/kind/
 ```
+
+The test runs a script and the examples in other processes, so `go test`
+can't tell when they change. `-count=1` keeps it from reusing a cached
+result.
 
 CI runs it when kube changes. To keep the cluster afterward, set
 `KUBE_KIND_KEEP=1`. If your network can't reach `cgr.dev`, set
