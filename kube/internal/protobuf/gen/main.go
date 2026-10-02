@@ -85,7 +85,25 @@ func main() {
 	for _, k := range slices.Sorted(maps.Keys(g.kinds)) {
 		fmt.Fprintf(w, "kind %s %s\n", k, g.kinds[k])
 	}
-	for _, name := range slices.Sorted(maps.Keys(g.msgs)) {
+	// Kinds that were left out still added their messages; write only the
+	// messages that the kinds in the schema use.
+	used := map[string]bool{}
+	var use func(name string)
+	use = func(name string) {
+		if used[name] {
+			return
+		}
+		used[name] = true
+		for _, f := range g.msgs[name].fields {
+			if _, ref, ok := strings.Cut(f.typ, "msg:"); ok {
+				use(ref)
+			}
+		}
+	}
+	for _, name := range g.kinds {
+		use(name)
+	}
+	for _, name := range slices.Sorted(maps.Keys(used)) {
 		m := g.msgs[name]
 		if m.wrapper {
 			fmt.Fprintf(w, "message %s wrapper\n", name)

@@ -129,14 +129,24 @@ type obj struct {
 	Timeout   string              `json:"timeout"`
 }
 
-func testPlan[T any](t *testing.T) *Plan {
+func testMessage(t *testing.T) *Message {
 	t.Helper()
-	s, err := parseSchema(testSchema)
+	s, err := newSchema(testSchema)
 	if err != nil {
 		t.Fatal(err)
 	}
+	m, err := s.kind("t/v1", "Obj")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func testPlan[T any](t *testing.T) *Plan {
+	t.Helper()
+	msg := testMessage(t)
 	b := &builder{plans: map[planKey]*Plan{}}
-	p, err := b.plan(reflect.TypeFor[T](), s.kinds["t/v1 Obj"], true)
+	p, err := b.plan(reflect.TypeFor[T](), msg, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,9 +208,9 @@ func TestPlanRejectsFieldsTheSchemaLacks(t *testing.T) {
 		Name string `json:"name"`
 		Warp int    `json:"warpDrive"`
 	}
-	s, _ := parseSchema(testSchema)
+	msg := testMessage(t)
 	b := &builder{plans: map[planKey]*Plan{}}
-	if _, err := b.plan(reflect.TypeFor[future](), s.kinds["t/v1 Obj"], true); err == nil || !strings.Contains(err.Error(), "warpDrive") {
+	if _, err := b.plan(reflect.TypeFor[future](), msg, true); err == nil || !strings.Contains(err.Error(), "warpDrive") {
 		t.Errorf("err = %v", err)
 	}
 	type top struct {
@@ -208,7 +218,7 @@ func TestPlanRejectsFieldsTheSchemaLacks(t *testing.T) {
 		Kind       string `json:"kind"`
 		Name       string `json:"name"`
 	}
-	if _, err := b.plan(reflect.TypeFor[top](), s.kinds["t/v1 Obj"], true); err != nil {
+	if _, err := b.plan(reflect.TypeFor[top](), msg, true); err != nil {
 		t.Errorf("apiVersion and kind are in the envelope, not the object: %v", err)
 	}
 }
@@ -273,6 +283,48 @@ func TestTruncatedMessages(t *testing.T) {
 		if err := p.Unmarshal(b, &got); err == nil {
 			t.Errorf("Unmarshal(%x) succeeded", []byte(b))
 		}
+	}
+}
+
+func TestEveryKindParses(t *testing.T) {
+	s, err := newSchema(schemaText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k := range s.kinds {
+		apiVersion, kind, _ := strings.Cut(k, " ")
+		if _, err := s.kind(apiVersion, kind); err != nil {
+			t.Error(err)
+		}
+	}
+	if len(s.msgs) != len(s.blocks) {
+		t.Errorf("parsed %d of %d messages; some aren't reachable from any kind", len(s.msgs), len(s.blocks))
+	}
+}
+
+func TestSchemaParsesOnlyWhatAKindUses(t *testing.T) {
+	s, err := newSchema(schemaText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.kind("v1", "ConfigMap"); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.msgs) > 10 {
+		t.Errorf("reading ConfigMaps parsed %d messages", len(s.msgs))
+	}
+	if _, err := newSchema("message a\n\tname 1 nope\n"); err != nil {
+		t.Fatal(err)
+	}
+	bad, _ := newSchema("kind v1 A a\nmessage a\n\tname 1 nope\n")
+	if _, err := bad.kind("v1", "A"); err == nil {
+		t.Error("a field with an unknown type parsed")
+	}
+	if _, err := bad.kind("v1", "A"); err == nil {
+		t.Error("a message that failed to parse was cached")
+	}
+	if _, err := newSchema("bogus line"); err == nil {
+		t.Error("a bogus line parsed")
 	}
 }
 

@@ -1399,8 +1399,6 @@ message core.v1.NodeList
 	items 2 []msg:core.v1.Node
 message core.v1.NodePodPreemptionPolicy
 	disableResizePreemption 1 []string
-message core.v1.NodeProxyOptions
-	path 1 string
 message core.v1.NodeRuntimeHandler
 	name 1 string
 	features 2 msg:core.v1.NodeRuntimeHandlerFeatures
@@ -1572,12 +1570,6 @@ message core.v1.PodAffinityTerm
 message core.v1.PodAntiAffinity
 	requiredDuringSchedulingIgnoredDuringExecution 1 []msg:core.v1.PodAffinityTerm
 	preferredDuringSchedulingIgnoredDuringExecution 2 []msg:core.v1.WeightedPodAffinityTerm
-message core.v1.PodAttachOptions
-	stdin 1 bool
-	stdout 2 bool
-	stderr 3 bool
-	tty 4 bool
-	container 5 string
 message core.v1.PodCertificateProjection
 	signerName 1 string
 	keyType 2 string
@@ -1602,13 +1594,6 @@ message core.v1.PodDNSConfig
 message core.v1.PodDNSConfigOption
 	name 1 string
 	value 2 string
-message core.v1.PodExecOptions
-	stdin 1 bool
-	stdout 2 bool
-	stderr 3 bool
-	tty 4 bool
-	container 5 string
-	command 6 []string
 message core.v1.PodExtendedResourceClaimStatus
 	requestMappings 1 []msg:core.v1.ContainerExtendedResourceRequest
 	resourceClaimName 2 string
@@ -1617,23 +1602,8 @@ message core.v1.PodIP
 message core.v1.PodList
 	metadata 1 msg:meta.v1.ListMeta
 	items 2 []msg:core.v1.Pod
-message core.v1.PodLogOptions
-	container 1 string
-	follow 2 bool
-	previous 3 bool
-	sinceSeconds 4 int64
-	sinceTime 5 msg:meta.v1.Time
-	timestamps 6 bool
-	tailLines 7 int64
-	limitBytes 8 int64
-	insecureSkipTLSVerifyBackend 9 bool
-	stream 10 string
 message core.v1.PodOS
 	name 1 string
-message core.v1.PodPortForwardOptions
-	ports 1 []int32
-message core.v1.PodProxyOptions
-	path 1 string
 message core.v1.PodReadinessGate
 	conditionType 1 string
 message core.v1.PodResourceClaim
@@ -1933,8 +1903,6 @@ message core.v1.SecurityContext
 	windowsOptions 10 msg:core.v1.WindowsSecurityContextOptions
 	seccompProfile 11 msg:core.v1.SeccompProfile
 	appArmorProfile 12 msg:core.v1.AppArmorProfile
-message core.v1.SerializedReference
-	reference 1 msg:core.v1.ObjectReference
 message core.v1.Service
 	metadata 1 msg:meta.v1.ObjectMeta
 	spec 2 msg:core.v1.ServiceSpec
@@ -1962,8 +1930,6 @@ message core.v1.ServicePort
 	targetPort 4 msg:intstr.IntOrString
 	nodePort 5 int32
 	appProtocol 6 string
-message core.v1.ServiceProxyOptions
-	path 1 string
 message core.v1.ServiceSpec
 	ports 1 []msg:core.v1.ServicePort
 	selector 2 map:string:string
@@ -2272,30 +2238,6 @@ message intstr.IntOrString
 	type 1 int64
 	intVal 2 int32
 	strVal 3 string
-message meta.v1.APIGroup
-	name 1 string
-	versions 2 []msg:meta.v1.GroupVersionForDiscovery
-	preferredVersion 3 msg:meta.v1.GroupVersionForDiscovery
-	serverAddressByClientCIDRs 4 []msg:meta.v1.ServerAddressByClientCIDR
-message meta.v1.APIGroupList
-	groups 1 []msg:meta.v1.APIGroup
-message meta.v1.APIResource
-	name 1 string
-	namespaced 2 bool
-	kind 3 string
-	verbs 4 msg:meta.v1.Verbs
-	shortNames 5 []string
-	singularName 6 string
-	categories 7 []string
-	group 8 string
-	version 9 string
-	storageVersionHash 10 string
-message meta.v1.APIResourceList
-	groupVersion 1 string
-	resources 2 []msg:meta.v1.APIResource
-message meta.v1.APIVersions
-	versions 1 []string
-	serverAddressByClientCIDRs 2 []msg:meta.v1.ServerAddressByClientCIDR
 message meta.v1.Condition
 	type 1 string
 	status 2 string
@@ -2303,10 +2245,6 @@ message meta.v1.Condition
 	lastTransitionTime 4 msg:meta.v1.Time
 	reason 5 string
 	message 6 string
-message meta.v1.CreateOptions
-	dryRun 1 []string
-	fieldManager 3 string
-	fieldValidation 4 string
 message meta.v1.DeleteOptions
 	gracePeriodSeconds 1 int64
 	preconditions 2 msg:meta.v1.Preconditions
@@ -2320,14 +2258,9 @@ message meta.v1.FieldSelectorRequirement
 	values 3 []string
 message meta.v1.FieldsV1
 	raw 1 bytes
-message meta.v1.GetOptions
-	resourceVersion 1 string
 message meta.v1.GroupResource
 	group 1 string
 	resource 2 string
-message meta.v1.GroupVersionForDiscovery
-	groupVersion 1 string
-	version 2 string
 message meta.v1.LabelSelector
 	matchLabels 1 map:string:string
 	matchExpressions 2 []msg:meta.v1.LabelSelectorRequirement
@@ -2341,18 +2274,6 @@ message meta.v1.ListMeta
 	continue 3 string
 	remainingItemCount 4 int64
 	shardInfo 5 msg:meta.v1.ShardInfo
-message meta.v1.ListOptions
-	labelSelector 1 string
-	fieldSelector 2 string
-	watch 3 bool
-	resourceVersion 4 string
-	timeoutSeconds 5 int64
-	limit 7 int64
-	continue 8 string
-	allowWatchBookmarks 9 bool
-	resourceVersionMatch 10 string
-	sendInitialEvents 11 bool
-	shardSelector 15 string
 message meta.v1.ManagedFieldsEntry
 	manager 1 string
 	operation 2 string
@@ -2392,17 +2313,9 @@ message meta.v1.PartialObjectMetadata
 message meta.v1.PartialObjectMetadataList
 	metadata 1 msg:meta.v1.ListMeta
 	items 2 []msg:meta.v1.PartialObjectMetadata
-message meta.v1.PatchOptions
-	dryRun 1 []string
-	force 2 bool
-	fieldManager 3 string
-	fieldValidation 4 string
 message meta.v1.Preconditions
 	uid 1 string
 	resourceVersion 2 string
-message meta.v1.ServerAddressByClientCIDR
-	clientCIDR 1 string
-	serverAddress 2 string
 message meta.v1.ShardInfo
 	selector 1 string
 message meta.v1.Status
@@ -2426,15 +2339,6 @@ message meta.v1.StatusDetails
 message meta.v1.Time
 	seconds 1 int64
 	nanos 2 int32
-message meta.v1.UpdateOptions
-	dryRun 1 []string
-	fieldManager 2 string
-	fieldValidation 3 string
-message meta.v1.Verbs wrapper
-	items 1 []string
-message meta.v1.WatchEvent
-	type 1 string
-	object 2 msg:runtime.RawExtension
 message networking.v1.HTTPIngressPath
 	path 1 string
 	backend 2 msg:networking.v1.IngressBackend
