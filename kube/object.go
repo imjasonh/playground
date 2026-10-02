@@ -18,8 +18,10 @@ import (
 //	}
 //
 // The kind defaults to the Go type name and the version to v1. When a
-// controller reconciles a type with a group tag and the cluster doesn't know
-// the type yet, the controller installs a CustomResourceDefinition for it.
+// controller that reconciles a type with a group tag starts, it installs a
+// CustomResourceDefinition generated from the struct, or updates the one it
+// installed before. If something else installed the CustomResourceDefinition,
+// the controller uses it as it is.
 //
 // For a type that already exists, give its apiVersion and kind, and declare
 // only the fields you use. The cache stores only those fields:
