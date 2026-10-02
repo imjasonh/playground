@@ -355,6 +355,9 @@ func (c *controller[T, P]) run(ctx context.Context) error {
 	if c.opts.resync > 0 {
 		wg.Go(func() { c.resyncLoop(ctx) })
 	}
+	if c.ti.custom {
+		wg.Go(func() { c.maintainCRD(ctx) })
+	}
 	<-ctx.Done()
 	c.q.ShutDown()
 	wg.Wait()

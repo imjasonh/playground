@@ -35,6 +35,14 @@ import (
 // Without the methods, the API server converts by changing only the
 // apiVersion, which works when the versions have the same fields. Conversion
 // can't change metadata.
+//
+// When the stored version changes, the framework rewrites objects stored in
+// older versions and records that in the CustomResourceDefinition. To retire
+// a version, first add unserved to its tag: the API server stops serving it,
+// and the framework removes field ownership records that name it from every
+// object, because they break server-side apply once the version is gone.
+// After that release has run, delete the version's kube.Version; the
+// framework refuses to remove a version that objects might still depend on.
 func Version[V any, PV Resource[V]]() Option {
 	return func(o *options) {
 		o.versions = append(o.versions, versionOption{
@@ -64,6 +72,9 @@ type converter[T any] interface {
 // prepareVersions checks the controller's other versions and, when any of
 // them converts itself, registers the conversion webhook.
 func (c *controller[T, P]) prepareVersions(m *Manager) error {
+	if c.ti.unserved {
+		return fmt.Errorf("kube: %v is the version the API server stores, so it must be served; remove unserved from its tag", c.ti.goType)
+	}
 	if len(c.opts.versions) == 0 {
 		return nil
 	}
@@ -95,7 +106,9 @@ func (c *controller[T, P]) prepareVersions(m *Manager) error {
 	}
 	ws := m.webhooks()
 	ws.handle(c.conversionPath(), c.serveConversion)
-	ws.whenBundleChanges(func(ctx context.Context) error { return m.installCRD(ctx, c.crd()) })
+	ws.whenBundleChanges(func(ctx context.Context) error {
+		return m.updateConversionBundle(ctx, c.ti, ws.clientConfig(c.conversionPath()))
+	})
 	return nil
 }
 

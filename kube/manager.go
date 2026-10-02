@@ -21,7 +21,6 @@ import (
 
 	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/queue"
-	"github.com/imjasonh/playground/kube/internal/schema"
 )
 
 // Manager runs controllers against one cluster. The zero value is ready to
@@ -393,72 +392,6 @@ func (m *Manager) ensureType(ctx context.Context, crd crdSpec) (resolved, error)
 		}
 	}
 	return m.resolve(ctx, crd.ti)
-}
-
-// crdSpec describes a CustomResourceDefinition: the stored version, other
-// served versions, and how to convert between them.
-type crdSpec struct {
-	ti         *typeInfo
-	versions   []*typeInfo
-	conversion map[string]any
-}
-
-func (m *Manager) installCRD(ctx context.Context, spec crdSpec) error {
-	ti := spec.ti
-	keys := newLabelKeys(m.Domain)
-	name := ti.plural + "." + ti.group
-	path := "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/" + name
-	var existing struct {
-		Metadata ObjectMeta `json:"metadata"`
-	}
-	err := m.client.Get(ctx, path, &existing)
-	switch {
-	case err == nil && existing.Metadata.Labels[keys.managedBy] == "":
-		m.log.Info("using CustomResourceDefinition that something else installed", "crd", name)
-		return nil
-	case err != nil && !client.IsNotFound(err):
-		return fmt.Errorf("reading CustomResourceDefinition %s: %w", name, err)
-	}
-	cs := schema.CRDSpec{
-		Group: ti.group, Version: ti.version, Kind: ti.kind, Plural: ti.plural, Singular: ti.singular,
-		ShortNames: ti.shortNames, Categories: ti.categories, Namespaced: ti.scope == "Namespaced",
-		Labels:     map[string]string{keys.managedBy: labelValue(m.Name)},
-		Deprecated: ti.deprecated, Conversion: spec.conversion,
-	}
-	for _, v := range spec.versions {
-		cs.Versions = append(cs.Versions, schema.VersionSpec{Name: v.version, Type: v.goType, Deprecated: v.deprecated})
-	}
-	crd, err := schema.CRD(ti.goType, cs)
-	if err != nil {
-		return err
-	}
-	if err := m.client.Apply(ctx, path, m.Name, true, crd, nil); err != nil {
-		return fmt.Errorf("installing CustomResourceDefinition %s: %w", name, err)
-	}
-	deadline := time.Now().Add(time.Minute)
-	for {
-		var got struct {
-			Status struct {
-				Conditions []Condition `json:"conditions"`
-			} `json:"status"`
-		}
-		if err := m.client.Get(ctx, path, &got); err != nil {
-			return err
-		}
-		if c := FindCondition(got.Status.Conditions, "Established"); c != nil && c.Status == True {
-			break
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("CustomResourceDefinition %s was not established after a minute", name)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
-	m.log.Info("installed CustomResourceDefinition", "crd", name)
-	return nil
 }
 
 // labelValue makes s a valid label value.

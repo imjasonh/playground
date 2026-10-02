@@ -401,11 +401,14 @@ type CRDSpec struct {
 	Conversion map[string]any
 }
 
-// VersionSpec is a served version of a CustomResourceDefinition.
+// VersionSpec is a version of a CustomResourceDefinition.
 type VersionSpec struct {
 	Name       string
 	Type       reflect.Type
 	Deprecated bool
+	// Unserved versions stay in the CustomResourceDefinition, but the API
+	// server doesn't serve them.
+	Unserved bool
 }
 
 // CRD returns a CustomResourceDefinition for objects of struct type t, as a
@@ -464,7 +467,7 @@ func crdVersion(v VersionSpec, storage bool) (map[string]any, error) {
 	}
 	version := map[string]any{
 		"name":    v.Name,
-		"served":  true,
+		"served":  !v.Unserved,
 		"storage": storage,
 		"schema":  map[string]any{"openAPIV3Schema": r.Schema},
 	}

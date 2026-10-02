@@ -140,12 +140,43 @@ func TestVersionsWithoutConversionMethods(t *testing.T) {
 	}
 }
 
+// gizmoV1alpha1 is a retired version.
+type gizmoV1alpha1 struct {
+	Object `kube:"group=test.kube.imjasonh.github.io,kind=Gizmo,version=v1alpha1,unserved"`
+	Spec   struct {
+		Replicas int `json:"replicas"`
+	} `json:"spec"`
+}
+
+func TestUnservedVersion(t *testing.T) {
+	m := testManager()
+	c := For[gizmo](gizmoReconciler{}, Version[gizmoV1alpha1]()).(*controller[gizmo, *gizmo])
+	if err := c.prepare(t.Context(), m); err != nil {
+		t.Fatal(err)
+	}
+	crd, err := m.desiredCRD(c.crd())
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := map[string]bool{}
+	for _, v := range crd["spec"].(map[string]any)["versions"].([]any) {
+		v := v.(map[string]any)
+		served[v["name"].(string)] = v["served"].(bool)
+	}
+	if want := map[string]bool{"v2": true, "v1alpha1": false}; !reflect.DeepEqual(served, want) {
+		t.Errorf("served = %v, want %v", served, want)
+	}
+}
+
 func TestVersionErrors(t *testing.T) {
 	type other struct {
 		Object `kube:"group=test.kube.imjasonh.github.io,kind=Other,version=v1"`
 	}
 	type deployment struct {
 		Object `kube:"apiVersion=apps/v1,kind=Deployment"`
+	}
+	type retired struct {
+		Object `kube:"group=test.kube.imjasonh.github.io,kind=Retired,version=v1,unserved"`
 	}
 	for _, tc := range []struct {
 		c    Controller
@@ -154,6 +185,7 @@ func TestVersionErrors(t *testing.T) {
 		{For[gizmo](gizmoReconciler{}, Version[other]()), "same group and kind"},
 		{For[gizmo](gizmoReconciler{}, Version[gizmoV1](), Version[gizmoV1]()), "twice"},
 		{For[deployment](nop[deployment]{}, Version[gizmoV1]()), "already exists"},
+		{For[retired](nop[retired]{}), "must be served"},
 	} {
 		err := tc.c.prepare(t.Context(), testManager())
 		if err == nil || !strings.Contains(err.Error(), tc.want) {

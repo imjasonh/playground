@@ -29,6 +29,9 @@ type typeInfo struct {
 	categories []string
 	// deprecated makes the API server warn clients that use this version.
 	deprecated bool
+	// unserved keeps this version in the CustomResourceDefinition without
+	// serving it, so it can be removed safely in a later release.
+	unserved bool
 
 	// status is the index of the top-level status field, or nil.
 	status []int
@@ -131,8 +134,12 @@ func parseType(t reflect.Type) (*typeInfo, error) {
 		if part == "" {
 			continue
 		}
-		if part == "deprecated" {
+		switch part {
+		case "deprecated":
 			ti.deprecated = true
+			continue
+		case "unserved":
+			ti.unserved = true
 			continue
 		}
 		k, v, ok := strings.Cut(part, "=")
