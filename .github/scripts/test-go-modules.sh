@@ -92,6 +92,28 @@ for module in "${modules[@]}"; do
     echo "::endgroup::"
   fi
 
+  # kube: install the examples in a kind cluster with generate, which
+  # pushes their images to a local registry. Needs Docker.
+  if [ "$module" = "kube" ]; then
+    echo "::group::kind e2e for kube"
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "::error title=kube kind e2e::docker is required"
+      result=1
+    elif ! docker info >/dev/null 2>&1; then
+      echo "::error title=kube kind e2e::docker daemon is not reachable"
+      result=1
+    elif (
+      cd "$module"
+      KUBE_KIND_E2E=1 go test -v -timeout 20m ./e2e/kind/
+    ); then
+      echo "${module}: kind e2e passed"
+    else
+      echo "::error title=kube kind e2e failed::${module}: KUBE_KIND_E2E=1 go test ./e2e/kind/"
+      result=1
+    fi
+    echo "::endgroup::"
+  fi
+
   echo "::endgroup::"
 done
 
