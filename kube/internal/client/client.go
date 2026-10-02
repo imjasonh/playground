@@ -13,6 +13,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/imjasonh/playground/kube/internal/protobuf"
 )
 
 // Client sends requests to one API server.
@@ -297,9 +299,14 @@ func decodeError(resp *http.Response) error {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	e := &APIError{Code: resp.StatusCode}
 	var s status
-	if json.Unmarshal(b, &s) == nil && s.Kind == "Status" {
+	switch {
+	case bytes.HasPrefix(b, protobuf.Magic):
+		if _, kind, raw, err := protobuf.Unwrap(b); err == nil && kind == "Status" {
+			_, e.Reason, e.Message, _ = protobuf.Status(raw)
+		}
+	case json.Unmarshal(b, &s) == nil && s.Kind == "Status":
 		e.Reason, e.Message = s.Reason, s.Message
-	} else {
+	default:
 		e.Message = strings.TrimSpace(string(b))
 	}
 	if e.Reason == "" {

@@ -16,6 +16,7 @@ import (
 
 	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/clone"
+	"github.com/imjasonh/playground/kube/internal/protobuf"
 )
 
 // resolved is how the API server serves a type.
@@ -56,11 +57,19 @@ type informerConfig struct {
 	streaming bool
 	pageSize  int
 	intern    bool
+	// protobuf reads built-in types as protobuf, when the type's fields are
+	// all in the schema.
+	protobuf bool
 }
 
 const (
 	listAccept  = "application/json;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1,application/json"
 	watchAccept = "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1,application/json"
+	// The protobuf forms list JSON last, for servers that can't send
+	// protobuf, such as some aggregated API servers.
+	protoAccept      = "application/vnd.kubernetes.protobuf,application/json"
+	protoListAccept  = "application/vnd.kubernetes.protobuf;as=PartialObjectMetadataList;g=meta.k8s.io;v=v1," + listAccept
+	protoWatchAccept = "application/vnd.kubernetes.protobuf;as=PartialObjectMetadata;g=meta.k8s.io;v=v1," + watchAccept
 	// firstEventTimeout bounds how long a streaming list may go without its
 	// first event before the informer decides the server doesn't support
 	// streaming lists. Servers that do send at least the end bookmark at once.
@@ -81,6 +90,8 @@ type informer[T any, P Resource[T]] struct {
 	m   *metrics
 
 	store store[T, P]
+	// pb decodes protobuf responses; nil means read JSON.
+	pb *protobuf.Plan
 
 	hmu      sync.RWMutex
 	handlers []func(old, new *T, initial bool)
@@ -115,6 +126,9 @@ func newInformer[T any, P Resource[T]](id int, ti *typeInfo, res resolved, c *cl
 	}
 	if cfg.selector != "" {
 		inf.log = inf.log.With("selector", cfg.selector)
+	}
+	if cfg.protobuf {
+		inf.pb = protoPlan(ti, inf.log)
 	}
 	return inf
 }
@@ -268,13 +282,36 @@ func (inf *informer[T, P]) query() url.Values {
 }
 
 func (inf *informer[T, P]) accept(list bool) string {
-	if !inf.ti.metadataOnly {
-		return ""
-	}
-	if list {
+	switch {
+	case inf.pb != nil && inf.ti.metadataOnly && list:
+		return protoListAccept
+	case inf.pb != nil && inf.ti.metadataOnly:
+		return protoWatchAccept
+	case inf.pb != nil:
+		return protoAccept
+	case inf.ti.metadataOnly && list:
 		return listAccept
+	case inf.ti.metadataOnly:
+		return watchAccept
 	}
-	return watchAccept
+	return ""
+}
+
+// protoPlan returns the plan to decode ti from protobuf, or nil if the
+// schema doesn't have the kind or a field that ti declares.
+func protoPlan(ti *typeInfo, log *slog.Logger) *protobuf.Plan {
+	apiVersion, kind := ti.apiVersion, ti.kind
+	if ti.metadataOnly {
+		apiVersion, kind = "meta.k8s.io/v1", "PartialObjectMetadata"
+	} else if ti.custom {
+		return nil
+	}
+	p, err := protobuf.For(ti.goType, apiVersion, kind)
+	if err != nil {
+		log.Debug("reading as JSON", "reason", err)
+		return nil
+	}
+	return p
 }
 
 func (inf *informer[T, P]) path() string {
@@ -284,20 +321,34 @@ func (inf *informer[T, P]) path() string {
 // relist does a paginated list and replaces the store's contents.
 func (inf *informer[T, P]) relist(ctx context.Context) (string, error) {
 	items := map[Key]*T{}
-	decode := func(dec *json.Decoder) error {
-		obj := new(T)
-		if err := inf.check(dec.Decode(obj)); err != nil {
-			return err
-		}
-		inf.normalize(obj)
-		items[metaOf[T, P](obj).Key()] = obj
-		return nil
+	decode := client.Items{
+		JSON: func(dec *json.Decoder) error {
+			obj := new(T)
+			if err := inf.check(dec.Decode(obj)); err != nil {
+				return err
+			}
+			inf.normalize(obj)
+			items[metaOf[T, P](obj).Key()] = obj
+			return nil
+		},
+		Proto: func(raw []byte) error {
+			if inf.pb == nil {
+				return errors.New("the server sent protobuf without being asked")
+			}
+			obj := new(T)
+			if err := inf.pb.Unmarshal(raw, obj); err != nil {
+				return err
+			}
+			inf.normalize(obj)
+			items[metaOf[T, P](obj).Key()] = obj
+			return nil
+		},
 	}
-	rv, err := inf.c.ListAll(ctx, inf.path(), inf.query(), inf.accept(true), inf.cfg.pageSize, decode)
+	rv, err := inf.c.ListItems(ctx, inf.path(), inf.query(), inf.accept(true), inf.cfg.pageSize, decode)
 	if client.IsGone(err) {
 		// The continue token expired between pages. List everything at once.
 		clear(items)
-		rv, err = inf.c.ListAll(ctx, inf.path(), inf.query(), inf.accept(true), 0, decode)
+		rv, err = inf.c.ListItems(ctx, inf.path(), inf.query(), inf.accept(true), 0, decode)
 	}
 	if err != nil {
 		return "", err
@@ -371,7 +422,7 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 		inf.m.inc("kube_watch_events_total", "type", inf.ti.String())
 		switch typ {
 		case client.Added, client.Modified, client.Deleted:
-			obj, err := inf.decodeEvent(frame)
+			obj, err := inf.decodeEvent(frame, w.Proto)
 			if err != nil {
 				return rv, synced, err
 			}
@@ -395,14 +446,25 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 			old := inf.store.put(obj)
 			inf.notify(old, obj, false)
 		case client.Bookmark:
-			var b struct {
-				Object bookmark `json:"object"`
+			var annotations map[string]string
+			if w.Proto {
+				_, _, raw, err := protobuf.Unwrap(frame)
+				if err == nil {
+					rv, annotations, err = protobuf.Meta(raw)
+				}
+				if err != nil {
+					return rv, synced, err
+				}
+			} else {
+				var b struct {
+					Object bookmark `json:"object"`
+				}
+				if err := json.Unmarshal(frame, &b); err != nil {
+					return rv, synced, err
+				}
+				rv, annotations = b.Object.Metadata.ResourceVersion, b.Object.Metadata.Annotations
 			}
-			if err := json.Unmarshal(frame, &b); err != nil {
-				return rv, synced, err
-			}
-			rv = b.Object.Metadata.ResourceVersion
-			if items != nil && b.Object.Metadata.Annotations[client.InitialEventsEndAnnotation] == "true" {
+			if items != nil && annotations[client.InitialEventsEndAnnotation] == "true" {
 				inf.replaceAll(items)
 				items, synced = nil, true
 			}
@@ -419,7 +481,22 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 // decodeEvent decodes the object in a watch event frame straight into T, in
 // one pass. Decoding the event into json.RawMessage first and then the
 // object nearly doubles the cost.
-func (inf *informer[T, P]) decodeEvent(frame []byte) (*T, error) {
+func (inf *informer[T, P]) decodeEvent(frame []byte, proto bool) (*T, error) {
+	if proto {
+		if inf.pb == nil {
+			return nil, errors.New("the server sent protobuf without being asked")
+		}
+		_, _, raw, err := protobuf.Unwrap(frame)
+		if err != nil {
+			return nil, err
+		}
+		obj := new(T)
+		if err := inf.pb.Unmarshal(raw, obj); err != nil {
+			return nil, err
+		}
+		inf.normalize(obj)
+		return obj, nil
+	}
 	e := struct {
 		Object *T `json:"object"`
 	}{Object: new(T)}

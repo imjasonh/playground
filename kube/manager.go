@@ -69,6 +69,11 @@ type Manager struct {
 	// DisableInterning stops caches from sharing one copy of strings that
 	// repeat across objects, such as label keys and namespaces.
 	DisableInterning bool
+	// DisableProtobuf makes caches read built-in types as JSON. By default
+	// they read protobuf, which the API server encodes faster, when every
+	// field the Go type declares is in the framework's schema of built-in
+	// types; other types, and every custom type, are read as JSON.
+	DisableProtobuf bool
 	// Compression asks the API server to gzip responses. It cuts the bytes
 	// of a streaming list of Pods about tenfold, but the API server spends
 	// CPU compressing every one. Leave it off for controllers that run in
@@ -339,6 +344,7 @@ func (m *Manager) informerConfig(res resolved, namespace, selector, ownerKey str
 		ownerKey:  ownerKey,
 		streaming: !m.DisableStreamingLists,
 		intern:    !m.DisableInterning,
+		protobuf:  !m.DisableProtobuf,
 	}
 }
 

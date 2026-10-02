@@ -79,29 +79,32 @@ func main() {
 }
 
 // probe times how long the API server takes to send the bench Pods, without
-// decoding them: as a JSON streaming list, a JSON list, and a protobuf list.
-// It separates the server's encoding time from the client's decoding time.
+// decoding them: as JSON and protobuf streaming lists, and as JSON and
+// protobuf lists. It separates the server's encoding time from the client's
+// decoding time.
 func probe(c *client.Client) error {
 	ctx := context.Background()
 	q := map[string][]string{"sendInitialEvents": {"true"}, "resourceVersionMatch": {"NotOlderThan"}, "allowWatchBookmarks": {"true"}}
-	start := time.Now()
-	w, err := c.Watch(ctx, client.Path("v1", "pods", ns, ""), q, "")
-	if err != nil {
-		return err
-	}
-	n := 0
-	for {
-		typ, frame, err := w.NextFrame()
+	for _, accept := range []string{"application/json", "application/vnd.kubernetes.protobuf"} {
+		start := time.Now()
+		w, err := c.Watch(ctx, client.Path("v1", "pods", ns, ""), q, accept)
 		if err != nil {
 			return err
 		}
-		n += len(frame)
-		if typ == client.Bookmark && strings.Contains(string(frame), client.InitialEventsEndAnnotation) {
-			break
+		n := 0
+		for {
+			typ, frame, err := w.NextFrame()
+			if err != nil {
+				return err
+			}
+			n += len(frame)
+			if typ == client.Bookmark && strings.Contains(string(frame), client.InitialEventsEndAnnotation) {
+				break
+			}
 		}
+		w.Close()
+		fmt.Printf("Reading a streaming list as %s: %.1f MiB in %v.\n", accept, float64(n)/(1<<20), time.Since(start).Round(time.Millisecond))
 	}
-	w.Close()
-	fmt.Printf("Reading the streaming list without decoding: %.1f MiB in %v.\n", float64(n)/(1<<20), time.Since(start).Round(time.Millisecond))
 	for _, accept := range []string{"application/json", "application/vnd.kubernetes.protobuf"} {
 		start := time.Now()
 		resp, err := c.Do(ctx, client.Request{Method: http.MethodGet, Path: client.Path("v1", "pods", ns, ""), Query: map[string][]string{"resourceVersion": {"0"}}, Accept: accept, Stream: true})
@@ -165,7 +168,7 @@ func run() error {
 	}
 	fmt.Println("| Cache | Objects | Heap | Per object | Sync |")
 	fmt.Println("|---|---|---|---|---|")
-	for _, m := range []string{"client-go", "client-go-strip-managed-fields", "kube-k8s.Pod", "kube-k8s.Pod-paginated", "kube-k8s.Pod-no-interning", "kube-small-projection", "kube-metadata-only"} {
+	for _, m := range []string{"client-go", "client-go-strip-managed-fields", "kube-k8s.Pod", "kube-k8s.Pod-json", "kube-k8s.Pod-paginated", "kube-k8s.Pod-no-interning", "kube-small-projection", "kube-metadata-only"} {
 		out, err := exec.Command(self, "-mode", m, "-kubeconfig", env.Kubeconfig, "-namespace", ns).Output() // #nosec G204 -- runs this program.
 		if err != nil {
 			return fmt.Errorf("%s: %w", m, err)
@@ -446,10 +449,11 @@ func measure(mode, kubeconfig, namespace string) (*result, error) {
 		ln.Close()
 		m := &kube.Manager{Kubeconfig: kubeconfig, Namespace: namespace, Addr: addr, DisableInterning: strings.HasSuffix(mode, "no-interning"),
 			DisableStreamingLists: strings.HasSuffix(mode, "paginated"),
+			DisableProtobuf:       strings.HasSuffix(mode, "-json"),
 			Logger:                slog.New(slog.NewTextHandler(io.Discard, nil))}
 		var c kube.Controller
 		switch mode {
-		case "kube-k8s.Pod", "kube-k8s.Pod-paginated", "kube-k8s.Pod-no-interning":
+		case "kube-k8s.Pod", "kube-k8s.Pod-json", "kube-k8s.Pod-paginated", "kube-k8s.Pod-no-interning":
 			c = kube.For[k8s.Pod](noop[k8s.Pod]{}, kube.Named("bench"), kube.Workers(1), kube.Resync(0))
 		case "kube-small-projection":
 			c = kube.For[smallPod](noop[smallPod]{}, kube.Named("bench"), kube.Workers(1), kube.Resync(0))

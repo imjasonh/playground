@@ -371,6 +371,50 @@ func TestInformerToleratesFieldTypeMismatch(t *testing.T) {
 	}
 }
 
+func TestInformersReadProtobufWhenTheSchemaHasTheirFields(t *testing.T) {
+	type futurePod struct {
+		Object `kube:"apiVersion=v1,kind=Pod"`
+		Spec   struct {
+			WarpDrive bool `json:"warpDrive"`
+		} `json:"spec"`
+	}
+	type podMeta struct {
+		Object `kube:"apiVersion=v1,kind=Pod"`
+	}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, tc := range []struct {
+		name  string
+		info  func() (*typeInfo, error)
+		proto bool
+	}{
+		{"Pod", typeInfoFor[benchPodFull, *benchPodFull], true},
+		{"ConfigMap", typeInfoFor[cfgMap, *cfgMap], true},
+		{"metadata only", typeInfoFor[podMeta, *podMeta], true},
+		{"a field the schema lacks", typeInfoFor[futurePod, *futurePod], false},
+		{"custom type", typeInfoFor[gizmo, *gizmo], false},
+	} {
+		ti, err := tc.info()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := protoPlan(ti, log) != nil; got != tc.proto {
+			t.Errorf("%s: protobuf = %v, want %v", tc.name, got, tc.proto)
+		}
+	}
+	ti, _ := typeInfoFor[cfgMap, *cfgMap]()
+	res := resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}
+	if got := newInformer[cfgMap, *cfgMap](1, ti, res, nil, informerConfig{protobuf: true}, log, nil).accept(true); got != protoAccept {
+		t.Errorf("Accept = %q, want %q", got, protoAccept)
+	}
+	if got := newInformer[cfgMap, *cfgMap](1, ti, res, nil, informerConfig{}, log, nil).accept(true); got != "" {
+		t.Errorf("with protobuf off, Accept = %q", got)
+	}
+	mi, _ := typeInfoFor[podMeta, *podMeta]()
+	if got := newInformer[podMeta, *podMeta](1, mi, res, nil, informerConfig{protobuf: true}, log, nil).accept(false); got != protoWatchAccept {
+		t.Errorf("metadata-only watch Accept = %q, want %q", got, protoWatchAccept)
+	}
+}
+
 func TestWaitSyncedReportsFirstFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
