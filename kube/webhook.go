@@ -51,7 +51,6 @@ type webhookServer struct {
 	validating map[string]registered // by webhook name
 	mutating   map[string]registered
 	onBundle   []func(context.Context) error
-	builtinNS  []string
 }
 
 // registered is a webhook definition without its clientConfig, and the path
@@ -166,10 +165,6 @@ func (ws *webhookServer) start(ctx context.Context) error {
 		return errors.New("kube: a controller has webhooks, so the API server needs a way to reach this program: " +
 			"set Manager.WebhookService (-webhook-service) to a Service that routes port 443 to the webhook port, " +
 			"or Manager.WebhookURL (-webhook-url) when running outside the cluster")
-	}
-	ws.builtinNS = []string{"kube-system"}
-	if own := ws.service.namespace; own != "" && own != "kube-system" {
-		ws.builtinNS = append(ws.builtinNS, own)
 	}
 	ws.secret = Key{Namespace: m.ownNamespace(), Name: labelValue(m.Name) + "-webhook-tls"}
 	if err := ws.refresh(ctx); err != nil {
@@ -467,10 +462,29 @@ func (ws *webhookServer) admissionRule(ti *typeInfo, res resolved, builtin bool)
 		// while the webhook is down. Skip the namespaces where the
 		// controller and the cluster's system components run.
 		hook["namespaceSelector"] = map[string]any{"matchExpressions": []any{map[string]any{
-			"key": "kubernetes.io/metadata.name", "operator": "NotIn", "values": slices.Clone(ws.builtinNS),
+			"key": "kubernetes.io/metadata.name", "operator": "NotIn", "values": ws.systemNamespaces(),
 		}}}
 	}
 	return hook
+}
+
+// systemNamespaces are the namespaces that webhooks for built-in types
+// skip: kube-system, and the namespace of the webhook Service, where the
+// program's own pods run.
+func (ws *webhookServer) systemNamespaces() []string {
+	m := ws.m
+	namespaces := []string{"kube-system"}
+	if m.WebhookURL != "" || m.WebhookService == "" {
+		return namespaces
+	}
+	own, _, ok := strings.Cut(m.WebhookService, "/")
+	if !ok {
+		own = m.ownNamespace()
+	}
+	if own != "kube-system" {
+		namespaces = append(namespaces, own)
+	}
+	return namespaces
 }
 
 func groupOrCore(g string) string {

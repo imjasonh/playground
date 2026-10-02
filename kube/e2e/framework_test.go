@@ -182,12 +182,14 @@ func TestRestartMakesNoWrites(t *testing.T) {
 	ns := e2e.Namespace(t, c)
 	run := func(r *counter) (addr string, stop func()) {
 		addr = freeAddr(t)
-		ctx, cancel := context.WithCancel(t.Context())
+		ctx, cancel := context.WithCancelCause(t.Context())
 		done := make(chan error, 1)
 		m := &kube.Manager{Name: "restart-e2e", Kubeconfig: env.Kubeconfig, Namespace: ns, Addr: addr, Logger: e2e.Logger(t)}
 		go func() { done <- m.Run(ctx, kube.For[Widget](r, kube.Named("restart"))) }()
 		return addr, func() {
-			cancel()
+			// Like signal.NotifyContext, which kube.Main uses, stop with
+			// a cause; stopping is still not a failure.
+			cancel(errors.New("terminated signal received"))
 			if err := <-done; err != nil {
 				t.Errorf("manager: %v", err)
 			}

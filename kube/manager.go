@@ -201,6 +201,7 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 	if err := m.init(); err != nil {
 		return err
 	}
+	parent := ctx
 	ctx, cancel := context.WithCancelCause(ctx)
 	m.runCtx = ctx
 	m.controllers = controllers
@@ -286,10 +287,12 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		}
 	}
 	<-ctx.Done()
-	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
-		return cause
+	if parent.Err() != nil {
+		// The caller stopped the manager, perhaps with a cause, such as the
+		// signal that signal.NotifyContext received.
+		return nil
 	}
-	return nil
+	return context.Cause(ctx)
 }
 
 // waitForCaches waits for every cache's goroutine to return.

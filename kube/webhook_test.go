@@ -168,6 +168,24 @@ func TestUnservedVersion(t *testing.T) {
 	}
 }
 
+func TestAdmissionRuleSkipsSystemNamespaces(t *testing.T) {
+	for _, tc := range []struct {
+		m    *Manager
+		want []string
+	}{
+		{&Manager{WebhookService: "policy/podpolicy"}, []string{"kube-system", "policy"}},
+		{&Manager{WebhookURL: "https://127.0.0.1:9443"}, []string{"kube-system"}},
+		{&Manager{WebhookService: "kube-system/podpolicy"}, []string{"kube-system"}},
+	} {
+		ti := &typeInfo{version: "v1", apiVersion: "v1", kind: "Pod"}
+		hook := tc.m.webhooks().admissionRule(ti, resolved{plural: "pods", namespaced: true}, true)
+		sel := hook["namespaceSelector"].(map[string]any)["matchExpressions"].([]any)[0].(map[string]any)
+		if sel["operator"] != "NotIn" || !reflect.DeepEqual(sel["values"], tc.want) {
+			t.Errorf("%+v: selector = %v, want NotIn %v", tc.m, sel, tc.want)
+		}
+	}
+}
+
 func TestVersionErrors(t *testing.T) {
 	type other struct {
 		Object `kube:"group=test.kube.imjasonh.github.io,kind=Other,version=v1"`
