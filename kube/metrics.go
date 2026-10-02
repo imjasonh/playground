@@ -48,6 +48,7 @@ var help = map[string]string{
 	"kube_cache_relists_total":        "Relists after a watch's resource version expired.",
 	"kube_webhook_requests_total":     "Admission and conversion webhook requests, by path and result.",
 	"kube_webhook_duration_seconds":   "Time spent answering webhook requests, by path.",
+	"kube_shard_transitions_total":    "Shards this replica acquired, released to another replica, or lost.",
 }
 
 func newMetrics() *metrics {
@@ -125,35 +126,50 @@ func (m *metrics) counter(name string, labels ...string) float64 {
 	return m.counters[name][labelString(labels)]
 }
 
+// series names one series of a metric in the text format.
+func series(name, labels string) string {
+	if labels == "" {
+		return name
+	}
+	return name + "{" + labels + "}"
+}
+
 func (m *metrics) write(w io.Writer) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	for _, name := range slices.Sorted(maps.Keys(m.counters)) {
 		fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s counter\n", name, help[name], name)
 		for _, ls := range slices.Sorted(maps.Keys(m.counters[name])) {
-			fmt.Fprintf(w, "%s{%s} %s\n", name, ls, strconv.FormatFloat(m.counters[name][ls], 'g', -1, 64))
+			fmt.Fprintf(w, "%s %s\n", series(name, ls), strconv.FormatFloat(m.counters[name][ls], 'g', -1, 64))
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(m.hists)) {
 		fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s histogram\n", name, help[name], name)
 		for _, ls := range slices.Sorted(maps.Keys(m.hists[name])) {
 			h := m.hists[name][ls]
-			for i, b := range buckets {
-				fmt.Fprintf(w, "%s_bucket{%s,le=\"%s\"} %d\n", name, ls, strconv.FormatFloat(b, 'g', -1, 64), h.counts[i])
+			sep := ""
+			if ls != "" {
+				sep = ","
 			}
-			fmt.Fprintf(w, "%s_bucket{%s,le=\"+Inf\"} %d\n", name, ls, h.count)
-			fmt.Fprintf(w, "%s_sum{%s} %s\n%s_count{%s} %d\n", name, ls, strconv.FormatFloat(h.sum, 'g', -1, 64), name, ls, h.count)
+			for i, b := range buckets {
+				fmt.Fprintf(w, "%s_bucket{%s%sle=\"%s\"} %d\n", name, ls, sep, strconv.FormatFloat(b, 'g', -1, 64), h.counts[i])
+			}
+			fmt.Fprintf(w, "%s_bucket{%s%sle=\"+Inf\"} %d\n", name, ls, sep, h.count)
+			fmt.Fprintf(w, "%s %s\n%s %d\n", series(name+"_sum", ls), strconv.FormatFloat(h.sum, 'g', -1, 64), series(name+"_count", ls), h.count)
 		}
 	}
+	gauges := slices.Clone(m.gauges)
+	m.mu.Unlock()
+	// Gauge functions take other locks, so they run without m.mu, which
+	// code holding those locks may also take.
 	byName := map[string][]gaugeDef{}
-	for _, g := range m.gauges {
+	for _, g := range gauges {
 		byName[g.name] = append(byName[g.name], g)
 	}
 	for _, name := range slices.Sorted(maps.Keys(byName)) {
 		fmt.Fprintf(w, "# HELP %s %s\n# TYPE %s gauge\n", name, byName[name][0].help, name)
 		for _, g := range byName[name] {
 			for _, s := range g.fn() {
-				fmt.Fprintf(w, "%s{%s} %s\n", name, labelString(s.labels), strconv.FormatFloat(s.value, 'g', -1, 64))
+				fmt.Fprintf(w, "%s %s\n", series(name, labelString(s.labels)), strconv.FormatFloat(s.value, 'g', -1, 64))
 			}
 		}
 	}
