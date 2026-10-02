@@ -168,6 +168,60 @@ func TestSteadyStateMakesNoWrites(t *testing.T) {
 	}
 }
 
+func TestRestartMakesNoWrites(t *testing.T) {
+	c := e2e.Client(t)
+	env := e2e.Env(t)
+	ns := e2e.Namespace(t, c)
+	run := func(r *counter) (addr string, stop func()) {
+		addr = freeAddr(t)
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		m := &kube.Manager{Name: "restart-e2e", Kubeconfig: env.Kubeconfig, Namespace: ns, Addr: addr, Logger: e2e.Logger(t)}
+		go func() { done <- m.Run(ctx, kube.For[Widget](r, kube.Named("restart"))) }()
+		return addr, func() {
+			cancel()
+			if err := <-done; err != nil {
+				t.Errorf("manager: %v", err)
+			}
+		}
+	}
+
+	_, stop := run(&counter{})
+	createWidget(t, c, ns, "w", 3)
+	e2e.Eventually(t, 10*time.Second, func() error {
+		w, err := widget(t, c, ns, "w")
+		if err != nil {
+			return err
+		}
+		if w.Status.Size != 3 {
+			return fmt.Errorf("status.size = %d", w.Status.Size)
+		}
+		return e2e.Get(t.Context(), c, client.Path("v1", "configmaps", ns, "w"), &k8s.ConfigMap{})
+	})
+	stop()
+
+	t.Log("A new manager finds the ConfigMap and status already right, and writes nothing.")
+	r := &counter{}
+	addr, stop := run(r)
+	defer stop()
+	e2e.Eventually(t, 10*time.Second, func() error {
+		if r.count(ns+"/w") == 0 {
+			return errors.New("the new manager hasn't reconciled the widget")
+		}
+		return nil
+	})
+	time.Sleep(500 * time.Millisecond)
+	if got := scrape(t, addr, `kube_apply_total{controller="restart",result="applied"}`); got != 0 {
+		t.Errorf("applies after restart = %v, want 0", got)
+	}
+	if got := scrape(t, addr, `kube_apply_total{controller="restart",result="skipped"}`); got < 1 {
+		t.Errorf("skipped applies after restart = %v, want at least 1", got)
+	}
+	if got := scrape(t, addr, `kube_status_writes_total{controller="restart"}`); got != 0 {
+		t.Errorf("status writes after restart = %v, want 0", got)
+	}
+}
+
 func TestPanicsAndPermanentErrorsAreContained(t *testing.T) {
 	c := e2e.Client(t)
 	r := &counter{panicOn: "explodes", permanent: "invalid"}

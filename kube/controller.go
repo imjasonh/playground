@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -137,6 +138,7 @@ type labelKeys struct {
 	controller string // label: controller name, on owned objects
 	ownerUID   string // label: owner UID, on owned objects
 	owner      string // annotation: owner namespace/name, on owned objects
+	applied    string // annotation: hash of the last applied body, on owned objects
 	cleanup    string // annotation: owned kinds to delete on finalize, on owners
 	managedBy  string // label: on CustomResourceDefinitions the framework installs
 }
@@ -146,6 +148,7 @@ func newLabelKeys(domain string) labelKeys {
 		controller: domain + "/controller",
 		ownerUID:   domain + "/owner-uid",
 		owner:      domain + "/owner",
+		applied:    domain + "/applied",
 		cleanup:    domain + "/cleanup",
 		managedBy:  domain + "/managed-by",
 	}
@@ -452,10 +455,19 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 				}
 				declared[in.ti][m.Key()] = true
 			}
-			if last, ok := c.lastApplied(key, ak); ok && last == h && in.observed != nil && matches(in.observed, body) {
-				applied[ak] = h
-				c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "skipped")
-				continue
+			// An observed object that has every field of body needs no write,
+			// unless the last apply set fields that body drops: those must
+			// be removed. An owned object's body carries the hash of the rest
+			// of it in an annotation, so matching it means the last apply
+			// sent this same body, even if this process didn't send it.
+			// Apply doesn't annotate objects that it doesn't own, and relies
+			// on what this process last applied.
+			if in.observed != nil && matches(in.observed, body) {
+				if last, ok := c.lastApplied(key, ak); in.kind == intentOwn || ok && last == h {
+					applied[ak] = h
+					c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "skipped")
+					continue
+				}
 			}
 			if err := c.m.client.Apply(ctx, in.res.path(m.Namespace, m.Name), manager, true, body, nil); err != nil {
 				return fmt.Errorf("applying %v %s: %w", in.ti, m.Key(), err)
@@ -596,6 +608,7 @@ func (c *controller[T, P]) body(in intent, parent *T) (map[string]any, error) {
 		})
 		meta["ownerReferences"] = refs
 	}
+	anns[c.labels.applied] = strconv.FormatUint(hashOf(doc, c.name), 16)
 	return doc, nil
 }
 
