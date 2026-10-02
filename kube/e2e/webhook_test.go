@@ -37,7 +37,7 @@ func (gadgets) Validate(_ context.Context, g, old *Gadget) error {
 	return nil
 }
 
-func (gadgets) Default(_ context.Context, g *Gadget) error {
+func (gadgets) Default(_ context.Context, g, _ *Gadget) error {
 	if g.Spec.Color == "" {
 		g.Spec.Color = "blue"
 	}
@@ -51,7 +51,7 @@ type ConfigMapMeta struct {
 
 type stamper struct{}
 
-func (stamper) Default(_ context.Context, cm *ConfigMapMeta) error {
+func (stamper) Default(_ context.Context, cm, _ *ConfigMapMeta) error {
 	if cm.Labels == nil {
 		cm.Labels = map[string]string{}
 	}

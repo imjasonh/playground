@@ -173,7 +173,7 @@ type configMapMeta struct {
 
 type labeler struct{}
 
-func (labeler) Default(_ context.Context, cm *configMapMeta) error {
+func (labeler) Default(_ context.Context, cm, _ *configMapMeta) error {
 	if cm.Labels == nil {
 		cm.Labels = map[string]string{}
 	}

@@ -31,12 +31,13 @@ type Validator[T any] interface {
 // example to fill in defaults that depend on other fields. The framework
 // registers a mutating admission webhook for the type and calls Default for
 // every create and update, on every replica.
-//
-// Default changes obj in place. The framework sends the API server a patch
-// of only the fields that changed, so fields that T doesn't declare keep
-// their values.
 type Defaulter[T any] interface {
-	Default(ctx context.Context, obj *T) error
+	// Default changes obj in place. The framework sends the API server a
+	// patch of only the fields that changed, so fields that T doesn't
+	// declare keep their values. On a create, old is nil. On an update,
+	// change only fields that an update may change: a Pod's containers, for
+	// example, are fixed once it exists. Returning an error rejects obj.
+	Default(ctx context.Context, obj, old *T) error
 }
 
 // Webhooks returns a Controller that serves admission webhooks for T without
@@ -221,13 +222,17 @@ func mutate[T any, P Resource[T]](ctx context.Context, m *Manager, ti *typeInfo,
 	if err != nil || obj == nil {
 		return deny(fmt.Errorf("decoding the object: %v", err))
 	}
+	old, err := decodeAs[T, P](ti, req.OldObject)
+	if err != nil {
+		return deny(fmt.Errorf("decoding the old object: %w", err))
+	}
 	before, err := generic(obj)
 	if err != nil {
 		return deny(err)
 	}
 	ctx, s := newWebhookScope(ctx, m)
 	defer s.cancel(nil)
-	err = d.Default(ctx, obj)
+	err = d.Default(ctx, obj, old)
 	if s.err != nil {
 		err = s.err
 	}
