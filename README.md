@@ -83,7 +83,8 @@ them:
   reconcile reads, applies declared objects with server-side apply, and caches
   only the fields that a type declares. It also serves admission and
   conversion webhooks, splits work across replicas, and reads built-in types
-  as protobuf (Go library).
+  as protobuf. `generate` pushes a program's image with go-containerregistry
+  and writes its install YAML, RBAC rules included (Go library).
 - **[`app-attest/`](app-attest/)** — Apple App Attest handshake and assertion
   verifier for Cloudflare Workers, in Rust. The Playground iOS **App Attest**
   experiment registers a device once; later `POST /v1/whoami` calls send a

@@ -15,6 +15,11 @@ framework makes and renews the webhook certificates, puts every version in the
 CustomResourceDefinition, and holds the Leases that divide the work. Caches
 read built-in types as protobuf without generated code.
 
+To install a program, run `go run . generate -registry=REGISTRY | kubectl
+apply -f -`. The program builds itself into an image, pushes it, and writes
+the Deployment and the RBAC rules that it needs, which it finds by
+type-checking its own source.
+
 For the research behind it, the internals, and measurements against
 `client-go` and `controller-runtime`, see [the design document](docs/design.md).
 
@@ -93,7 +98,7 @@ When the program starts, it does the following:
    reconcile stops declaring it.
 
 The program has no scheme, no generated deep-copy code, no CRD manifest, and
-no watch setup. Its stripped binary is 8.3 MiB.
+no watch setup. The stripped binary in its image is 8.4 MiB.
 
 ## Read the real state, declare the desired state
 
@@ -395,6 +400,62 @@ For more control, set the fields of a `kube.Manager` and call its `Run`
 method. `kube.For` takes options such as `kube.Workers(n)`,
 `kube.WatchSelector(selector)`, and `kube.Resync(duration)`.
 
+### Install in a cluster
+
+`kube.Main` also has a `generate` command, which pushes an image of the
+program and writes the YAML that installs it. Run it from the program's module
+with `go run`, and pipe its output to `kubectl`:
+
+```sh
+go run ./examples/website generate -registry=ghcr.io/you | kubectl apply -f -
+```
+
+The command does the following:
+
+1. Finds the types that the program reads and writes. Each controller reports
+   its type, the types that it owns, and its webhooks. The command also
+   type-checks the program's packages to find every call to `Get`, `List`,
+   `Fetch`, `Own`, `Apply`, and `Delete`, and the type that each call uses,
+   including calls inside generic helpers.
+1. Builds the program for each platform with `CGO_ENABLED=0`.
+1. Builds an image for each platform on `cgr.dev/chainguard/static`, with the
+   program at `/app/PROGRAM` as the entrypoint, running as user 65532. It
+   pushes the images and an index of them to `REGISTRY/PROGRAM` with
+   [go-containerregistry](https://github.com/google/go-containerregistry),
+   using the credentials from `docker login` or `podman login`.
+1. Writes YAML that installs the image by digest: a Namespace, a
+   ServiceAccount, a ClusterRole and a Role with only the rules that the
+   program needs, their bindings, a Deployment, a PodDisruptionBudget, and a
+   Service for webhooks. With more than one replica, the Deployment runs the
+   program with `-leader-elect`, or with `-shards` when you set `-shards`.
+
+The images have fixed timestamps, so the same source gives the same digest,
+and running `generate` again without changes leaves the cluster as it was.
+When the program starts in the cluster, it installs its own
+CustomResourceDefinitions and webhook configurations.
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-registry` | Required | Registry, and optionally a repository prefix, to push to |
+| `-base` | `cgr.dev/chainguard/static:latest` | Base image |
+| `-platform` | `linux/amd64,linux/arm64` | Platforms to build for |
+| `-namespace` | The program's name | Namespace to install in |
+| `-replicas` | 2 | Pods to run |
+| `-shards` | 1 | Shards to split reconciles across |
+| `-tag` | `latest` | Tag for the image, in addition to its digest |
+
+Flags after `--` go to the program in the Deployment:
+
+```sh
+go run ./examples/podpolicy generate -registry=ghcr.io/you -- -registries=ghcr.io/you/ |
+  kubectl apply -f -
+```
+
+go-containerregistry is kube's only dependency, and only `generate` uses it.
+The command builds the copy of the program for the image with the
+`kube_nogenerate` build tag, which leaves the command out, so the program in
+the cluster links only kube and the standard library.
+
 ### Replicas
 
 With `-leader-elect`, replicas take turns. The replica that holds a Lease
@@ -420,8 +481,8 @@ to standby replicas too.
 
 ### Permissions
 
-kube doesn't generate RBAC rules. The controller's service account needs
-these permissions:
+The `generate` command writes these rules. If you install the program another
+way, its service account needs these permissions:
 
 - `get`, `list`, and `watch` on every type that it reads.
 - `create`, `patch`, and `delete` on every type that it declares with `Own`,
@@ -476,6 +537,19 @@ go test -race ./...
 Without `KUBEBUILDER_ASSETS`, the end-to-end tests skip. CI downloads the
 binaries and runs them.
 
+One more test installs the website and podpolicy examples with `generate` in a
+[kind](https://kind.sigs.k8s.io/) cluster, and pushes their images to a local
+registry. It needs Docker and `kubectl`, and installs kind if it's missing:
+
+```sh
+KUBE_KIND_E2E=1 go test -v ./e2e/kind/
+```
+
+CI runs it when kube changes. To keep the cluster afterward, set
+`KUBE_KIND_KEEP=1`. If your network can't reach `cgr.dev`, set
+`KUBE_KIND_CHAINGUARD=docker.io/chainguard` to pull Chainguard's images
+from Docker Hub.
+
 ## Examples
 
 Each example is a controller modeled on a project that people run, with unit
@@ -499,8 +573,8 @@ On a local `kube-apiserver` with 5,000 Pods of 8.2 KB each, compared with
 | --- | --- | --- |
 | Heap per cached Pod | 14,685 B; 10,894 B without `managedFields` | 5,442 B with `k8s.Pod`; 1,551 B with a two-field type; 1,390 B for metadata only |
 | Initial sync of 5,000 Pods | 0.20 s | 0.18 s; 0.51 s with protobuf off |
-| Stripped controller binary | 30.6 MiB | 8.3 MiB |
-| Modules in the build | 61 | 1 |
+| Stripped controller binary | 30.6 MiB | 8.4 MiB in its image; 11.7 MiB with `generate` |
+| Modules in the build | 61 | 1 in its image; 10 with `generate` |
 
 Both read the Pods as protobuf, which the API server sends in 0.18 s as a
 streaming list, against 0.49 s as JSON. For the methodology and more results,
@@ -514,8 +588,14 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 
 ## Limitations
 
-- kube doesn't generate RBAC rules or deployment manifests, including the
-  Service for webhooks.
+- `generate` follows the type parameters of generic functions to the types
+  that the program calls them with. It can't follow the type parameter of a
+  generic type, as in a method of `reconciler[T]`, or a type argument that
+  contains a type parameter, such as `Item[T]`. For those calls it prints a
+  warning, and you add the permissions yourself.
+- `generate` needs the program's source and the `go` command, so the copy of
+  the program in the image can't run it. The image holds only the program.
+  To ship other files, embed them with `embed`.
 - Shards divide reconciles, not memory. Every replica caches every object.
 - Webhooks run on create and update. There's no validation of deletes.
 - Conversion can't change metadata.
@@ -539,7 +619,7 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 | `*.go` | The `kube` package: types, caches, dependency tracking, controllers, status, webhooks, versions, shards, metrics, and fakes |
 | `k8s/` | Types for common built-in objects |
 | `examples/` | Example controllers and webhooks with unit and end-to-end tests |
-| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, panics, permanent errors |
+| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, panics, permanent errors, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
 | `internal/client/` | REST client, kubeconfig, authentication, discovery, and JSON and protobuf watch decoding |
 | `internal/protobuf/` | Protobuf decoding of built-in types into partial structs, and its schema; `gen/` is the separate module that generates the schema |
 | `internal/certs/` | Certificate authority and serving certificates for webhooks |
@@ -548,6 +628,8 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 | `internal/schema/` | OpenAPI schemas and CustomResourceDefinitions from Go types |
 | `internal/clone/` | Deep copy of any Go value, compiled once per type |
 | `internal/subset/` | Checks whether one JSON document's fields are a subset of another's |
-| `internal/yaml/` | The YAML subset that kubeconfig files use |
+| `internal/yaml/` | The YAML subset that kubeconfig files use, and the YAML that `generate` writes |
+| `internal/analysis/` | Type-checks a program to find the types that it passes to kube's generic functions, for `generate`'s RBAC rules |
+| `internal/image/` | Builds and pushes images with go-containerregistry, for `generate` |
 | `internal/envtest/`, `internal/e2e/` | Start `etcd` and `kube-apiserver` for tests |
 | `bench/` | Benchmark against `client-go` and `controller-runtime`, in its own module |

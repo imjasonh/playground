@@ -332,7 +332,8 @@ predates. Its goals:
   retries, and leader election.
 - Caches hold only what controllers read, by default.
 - A converged controller makes no writes, including after a restart.
-- No dependencies beyond the Go standard library.
+- No dependencies beyond the Go standard library in the program that runs in
+  the cluster.
 - `Reconcile` is testable without a cluster, a fake client, or a mock.
 
 ## Design
@@ -698,6 +699,44 @@ functions, from JSON or protobuf `Status` responses, and finds resource names
 through discovery. Caches ask for protobuf with JSON as a fallback, and the
 client decodes whichever the response's `Content-Type` names.
 
+### Installation
+
+`PROGRAM generate -registry=REGISTRY` builds the program that runs it into an
+image and writes the YAML that installs it, the way [ko](https://ko.build)
+builds Go programs into images without a Dockerfile.
+
+The RBAC rules come from the program. Each controller's `describe` method
+reports its type, the types that it owns, and whether it serves webhooks,
+without a cluster. The types that `Reconcile` reads and writes are known only
+at run time, so `internal/analysis` finds them in the source. It runs `go list
+-deps -export` for the program's package, parses the packages that import
+kube, and type-checks them with `go/types`, importing every other package from
+the compiler's export data. Each instantiation of `Get`, `List`, `Fetch`,
+`Own`, `Apply`, or `Delete` names a type, or a type parameter of the generic
+function that contains the call. The analysis follows type parameters back
+through generic helpers to the types that the program passes, and reads each
+type's `kube` tag. `Get` and `List` need `list` and `watch`, `Fetch` needs
+`get`, `Own` needs `list`, `watch`, `create`, `patch`, and `delete`, `Apply`
+needs `create` and `patch`, and `Delete` needs `delete`. `controller-gen`
+reads `+kubebuilder:rbac` comment markers, which people write and update by
+hand. These rules change when the calls do.
+
+[go-containerregistry](https://github.com/google/go-containerregistry), kube's
+only dependency, builds and pushes the image. For each platform, `generate`
+builds the program with `CGO_ENABLED=0`, adds one layer that holds it at
+`/app/PROGRAM` to the base's image for that platform, sets the entrypoint and
+a non-root user, and pushes an index of the images. Timestamps are the Unix
+epoch, so the same source and base give the same digest, and the Deployment
+names the image by digest. The copy of the program in the image is built with
+the `kube_nogenerate` build tag, which leaves out `generate` and
+go-containerregistry with it, so the program in the cluster links only kube.
+
+`internal/yaml` writes the YAML from ordered JSON, so the output is stable. It
+quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
+`1:20`, and `.5`. The Deployment runs the program with probes on `/readyz` and
+`/healthz`, as a non-root user with a read-only root file system, and with
+`-leader-elect` or `-shards` when it has more than one replica.
+
 ### Testing
 
 `kube.Fake` gives `Reconcile` a scope backed by a list of objects instead of
@@ -725,6 +764,17 @@ framework's tests check that:
   conversion webhook or without one.
 - The JSON and protobuf encodings of every type in the `k8s` package decode
   to equal structs.
+- The program in the image that `generate` pushes runs with the token of the
+  service account that `generate` installs, so it has only the RBAC rules
+  that `generate` wrote.
+
+A test in `e2e/kind` runs the whole installation in a
+[kind](https://kind.sigs.k8s.io/) cluster, which has a kubelet and
+kube-proxy. It pushes to a local registry as kind's
+[guide](https://kind.sigs.k8s.io/docs/user/local-registry/) describes, pipes
+`generate` to `kubectl apply`, and checks that a Website's Service serves,
+that reconciles continue after every controller pod is replaced, and that the
+podpolicy webhooks deny and default pods through their Service.
 
 ## Measurements
 
@@ -821,11 +871,14 @@ that starts over the converged Widget makes no applies and no status writes.
 
 | Program | Stripped binary | Modules in the build |
 | --- | --- | --- |
-| kube, [`examples/website`](../examples/website/main.go) | 8.3 MiB | 1 |
+| kube, [`examples/website`](../examples/website/main.go), in its image | 8.4 MiB | 1 |
+| kube, `examples/website`, with `generate` | 11.7 MiB | 10 |
 | `controller-runtime`, [`bench/crsize`](../bench/crsize/main.go) | 30.6 MiB | 61 |
 
-The module counts include each program's own module. kube's one module is
-itself.
+The module counts include each program's own module. The image's copy of the
+program is built with `-tags=kube_nogenerate`, so its one module is kube
+itself. A plain `go build` includes `generate`, with go-containerregistry and
+the eight modules it needs.
 
 ## Limitations and future work
 
@@ -839,8 +892,11 @@ offers:
   `k8s.io/api` v0.37.1. Regenerating it picks up new fields and kinds.
 - Shards divide reconciles, not memory. Labeling objects with their shard
   would let replicas watch only their own objects.
-- No generated RBAC rules or deployment manifests. The framework knows every
-  type a controller reads and writes only at run time.
+- `generate` can't follow the type parameter of a generic type, or a type
+  argument that contains a type parameter, to the types that it stands for.
+  It warns about those calls instead.
+- `generate` builds images that hold only the program. ko copies a `kodata`
+  directory into the image; kube programs use `embed` instead.
 - One cluster per manager.
 - Webhooks run for creates and updates, not deletes or connections.
 - `Fetch` isn't tracked, by design, so a change to a fetched object doesn't
