@@ -230,9 +230,55 @@ version without the two methods needs no webhook. The API server then changes
 only the `apiVersion`, which works when both versions have the same fields.
 `deprecated` makes the API server warn clients that use the version.
 
-The API server refuses a CustomResourceDefinition that drops a version it has
-stored objects in, so an older program that doesn't know the new version
-fails to start instead of losing objects.
+### Change a type
+
+The manager installs each CustomResourceDefinition when it starts, so a new
+release of the program updates it. Before it does, the manager compares the
+new CRD with the one in the cluster and with the objects that exist, and
+changes the CRD only in ways that lose no data:
+
+- If objects set a field that the new type doesn't declare, or whose type the
+  new type changes, the CRD keeps the field as it was, and the manager logs a
+  warning. A field that leaves the CRD loses its values the next time anything
+  writes each object. To remove such a field, clear it in the objects first,
+  or add a version without it.
+- If the CRD has a version newer than every version the program declares, the
+  manager leaves the CRD as it is. That happens when an older release starts
+  after a newer one, in a rollback or a rolling update.
+- If the new type requires a field that objects don't set, the manager logs a
+  warning, because changes to those objects' `spec` fail until they set it.
+  Give the field a default with `kube:"default=..."`, or make it optional.
+
+Other changes, such as new optional fields, new versions, and new validation,
+apply as they are. Since Kubernetes 1.33, [validation
+ratcheting](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#validation-ratcheting)
+accepts an update that leaves an invalid value unchanged.
+
+To change the version that the API server stores and retire the old one, ship
+these releases in order, each after the previous one has run:
+
+1. Reconcile the old version and add the new one with `kube.Version`. Clients
+   can start to use the new version, and a rollback from the next release
+   still has a program that converts both.
+2. Reconcile the new version and pass the old one to `kube.Version`. The API
+   server stores the new version from then on. The manager rewrites objects
+   stored in older versions, then removes those versions from the CRD's
+   `status.storedVersions`, and logs `migrated stored objects`.
+3. Add `unserved` to the old version's tag. The API server stops serving it,
+   and the manager removes the entries that name it from each object's
+   `metadata.managedFields`. Once a version is gone from the CRD, server-side
+   apply fails on any object with such an entry, and the entry can't be
+   removed anymore
+   ([kubernetes/kubernetes#111937](https://github.com/kubernetes/kubernetes/issues/111937)).
+4. Delete the old version. If objects might still be stored in it or have
+   `managedFields` entries for it, the manager doesn't start, and its error
+   names the release to run first.
+
+The first release is optional, but without it a rollback from the second has
+no program that knows the new version. If something else installed the CRD,
+such as Helm, the manager doesn't change it, and that tool or a
+[StorageVersionMigration](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/storage-version-migration/)
+handles the upgrade.
 
 ### Built-in types
 
@@ -383,8 +429,10 @@ these permissions:
   don't exist yet.
 - `patch` on the reconciled type and its `status` subresource, for finalizers
   and status.
-- `get`, `create`, and `patch` on `customresourcedefinitions`, for its own
-  types.
+- `get`, `create`, and `patch` on `customresourcedefinitions`, and `patch` on
+  `customresourcedefinitions/status`, for its own types. To check and migrate
+  objects when a type changes, it also needs `list` on its own types in every
+  namespace.
 - `get`, `list`, `create`, `update`, and `delete` on `leases`, with
   `-leader-elect` or `-shards`.
 - `get`, `create`, and `update` on `secrets` in its namespace, and `get`,
@@ -471,6 +519,8 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - Shards divide reconciles, not memory. Every replica caches every object.
 - Webhooks run on create and update. There's no validation of deletes.
 - Conversion can't change metadata.
+- Before it updates a CRD, the manager compares field names, types, and
+  required fields, not validation such as enums and bounds.
 - The manager makes its own webhook certificates and doesn't use
   cert-manager. Its certificate authority lasts ten years. In the last year,
   the manager replaces it and trusts both until the old one expires.

@@ -223,6 +223,49 @@ running. For conversion, Kubebuilder uses a
 one version is the hub, and each other version converts to and from it, so
 adding a version doesn't mean writing a conversion for every pair.
 
+### Upgrading custom resource definitions
+
+Changing a CRD's stored version doesn't rewrite the objects already in etcd.
+The [Kubernetes v1.37 storage version migration
+announcement](https://kubernetes.io/blog/2026/08/31/kubernetes-v1-37-storage-version-migration-ga/)
+puts it this way: "You cannot safely remove `v1alpha1` from the CRD's
+`.status.storedVersions` or drop serving support until every single resource
+in storage has been re-written." Version 1.37 makes the StorageVersionMigration
+API and its controller in `kube-controller-manager` generally available. A
+migration is an object that someone creates, and its controller updates
+`status.storedVersions` only "if the generation of the CRD has not been
+updated during the migration"
+([KEP-4192](https://www.kubernetes.dev/resources/keps/4192/)).
+
+Removing a version takes more than that. "Kubernetes stores field ownership
+information by apiVersion in managedFields. Unfortunately, there is no builtin
+logic that removes managedFields of an apiVersion when that apiVersion is
+removed from the CRD. If there are still managedFields with a removed
+apiVersion any subsequent apply requests will fail"
+([cluster-api#11894](https://github.com/kubernetes-sigs/cluster-api/issues/11894)).
+The bug, [kubernetes#111937](https://github.com/kubernetes/kubernetes/issues/111937),
+is open. Cluster API's answer is a
+[CRD migrator](https://github.com/kubernetes-sigs/cluster-api/tree/main/controllers/crdmigrator)
+that each controller runs. It applies a no-op patch with the object's resource
+version to every object when `status.storedVersions` isn't just the storage
+version, optionally through the status subresource "to avoid mutating &
+validation webhook errors". It then updates `status.storedVersions` with
+optimistic locking, and removes `managedFields` entries for versions that
+aren't served. Cluster API keeps a retired version in the CRD as
+`served: false` for several releases so that the cleanup runs before the
+version goes. Since [kubernetes#130704](https://github.com/kubernetes/kubernetes/pull/130704)
+in Kubernetes 1.35, the API server doesn't watch or convert versions that are
+neither served nor stored, so keeping them costs nothing.
+
+Changes inside a version have their own risks.
+[OLM v1](https://operator-framework.github.io/operator-controller/concepts/crd-upgrade-safety/)
+blocks CRD upgrades that remove a field or a stored version, change a field's
+type, add a required field, change defaults, or narrow enums and bounds.
+[Validation ratcheting](https://kubernetes.io/docs/tasks/extend-kubernetes/custom-resources/custom-resource-definitions/#validation-ratcheting),
+generally available since 1.33, accepts updates that leave invalid values
+unchanged, but "Errors arising from changing the list of required fields will
+not be ratcheted."
+
 ## Prior art
 
 Other projects solved parts of these problems, and kube borrows from them.
@@ -478,7 +521,8 @@ becomes the validation rule `self == oldSelf`. When a controller for a custom
 type starts, it applies the generated CRD, waits until the API server reports
 it `Established`, and labels it as installed by the framework. If something
 else installed the CRD, for example a Helm chart, the controller leaves it
-alone.
+alone. [CRD upgrades](#crd-upgrades) describes how it updates a CRD that
+already exists.
 
 ### Shards and leader election
 
@@ -561,6 +605,56 @@ version has methods, the CustomResourceDefinition uses the `None` strategy and
 no webhook. The conversion webhook copies each object's metadata from the
 request, because the API server rejects conversions that change it and the
 projection's metadata has fewer fields than the object's.
+
+### CRD upgrades
+
+A program that installs its own CRDs updates them with every release, and
+during a rolling update or a rollback, an older release can start after a
+newer one. Tests against `kube-apiserver` v1.37.0, reading etcd directly,
+showed what can go wrong:
+
+- When a field leaves a version's schema, reads stop returning it at once,
+  and the next write of any kind, including a status update, stores the
+  object without it. Restoring the field doesn't bring the values back.
+- When a version's schema newly requires a field, updates that change
+  `spec` fail for objects without it. Status and metadata updates succeed.
+- A no-op merge patch with the object's resource version, sent to the status
+  subresource, stores the object in the current storage version. A second
+  one doesn't write, and a stale resource version gets `409 Conflict`.
+- After a version leaves the CRD, server-side apply fails with `request to
+  convert CR to an invalid group/version` on objects that have
+  `managedFields` entries for it, including the controller's own status
+  updates. Patches that remove the entries report success and change
+  nothing. While the version is in the CRD but unserved, the API server still
+  converts objects to it for server-side apply, so its conversion must work
+  until the entries are gone.
+
+So before applying a CRD over one that the framework installed, `installCRD`
+compares them. If the cluster's CRD has a version that sorts after all of the
+program's versions in Kubernetes version priority, a newer release installed
+it, and the framework leaves it alone. For each served version in both, it
+diffs the schemas for removed fields, changed types, and newly required fields
+without defaults, and lists the objects at that version to see which changes
+touch data. It keeps the cluster's schema for removed and retyped fields that
+some object sets, warns about required fields that some object lacks, and
+applies the rest. If it can't list the objects, it keeps every removed and
+retyped field. A version that the program no longer declares is removed only
+if it isn't in `status.storedVersions` and no object's `managedFields` names
+it. Otherwise the program fails to start with an error that names the
+release to run first.
+
+After the controller's cache syncs, the replica that holds the shard of the
+CRD's name runs Cluster API's two phases. If `status.storedVersions` isn't just
+the storage version, it applies the no-op patch to every object, through the
+status subresource when there is one, ignoring `404` and `409`. Then it sets
+`status.storedVersions` with the CRD's resource version from before the
+patches as a precondition, so a CRD that changed meanwhile means another
+pass. For each unserved version, it removes that version's `managedFields`
+entries with a JSON patch that also replaces the resource version, and, like
+Cluster API, leaves a minimal entry for the same manager when none would
+remain, because server-side apply infers an owner for every field of an
+object without entries. It retries failures with backoff. The `unserved` tag
+option is the step between serving a version and deleting it.
 
 ### Protobuf
 
@@ -755,3 +849,10 @@ offers:
   stop matching looks deleted, so its finalizer is never removed.
 - After a restart, each object declared with `Apply` is applied once, because
   the framework doesn't annotate objects it doesn't own.
+- The CRD checks compare field names, types, and required fields, not
+  validation such as enums or bounds, and they need permission to list
+  objects in every namespace.
+- Storage migration doesn't wait for every API server in a highly available
+  control plane to see a new storage version. Like Cluster API's migrator, it
+  relies on the resource version precondition and on running after the cache
+  syncs.
