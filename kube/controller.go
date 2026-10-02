@@ -308,7 +308,14 @@ func (c *controller[T, P]) onPrimary(old, new *T, initial bool) {
 	}
 }
 
+// specChanged reports whether a field that the type declares changed,
+// ignoring status and resourceVersion. A metadata-only type can't see the
+// fields that matter (often its reconciler fetches them), so for those types
+// every new resource version counts.
 func (c *controller[T, P]) specChanged(old, new *T) bool {
+	if c.ti.metadataOnly {
+		return metaOf[T, P](old).ResourceVersion != metaOf[T, P](new).ResourceVersion
+	}
 	a, b := *old, *new
 	ma, mb := metaOf[T, P](&a), metaOf[T, P](&b)
 	ma.ResourceVersion, mb.ResourceVersion = "", ""
@@ -336,7 +343,7 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 		log.Debug("reconciled", "requeueAfter", requeue)
 	case ctx.Err() != nil:
 		return
-	case isPermanent(err):
+	case IsPermanent(err):
 		c.q.Forget(key)
 		result = "permanent_error"
 		log.Warn("reconcile failed; waiting for the object to change", "err", err)
@@ -480,6 +487,25 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 			c.log.Debug("pruned", "key", key.String(), "object", ti.String()+" "+om.Key().String())
 		}
 	}
+
+	// The finalizer was only for owned objects that garbage collection
+	// can't delete. Once none are declared, delete any that remain and
+	// remove the finalizer, so the owner can be deleted without this
+	// controller running.
+	if len(cleanup) == 0 && c.fin == nil && slices.Contains(pm.Finalizers, c.finalizer) {
+		keep := map[string]bool{}
+		for ti, keys := range declared {
+			for k := range keys {
+				keep[ti.apiVersion+"/"+ti.kind+" "+k.String()] = true
+			}
+		}
+		if err := c.cleanupOwned(ctx, parent, keep); err != nil {
+			return err
+		}
+		if err := c.setFinalizer(ctx, parent, false, ""); err != nil {
+			return fmt.Errorf("removing finalizer: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -533,6 +559,15 @@ func (c *controller[T, P]) body(in intent, parent *T) (map[string]any, error) {
 		delete(meta, k)
 	}
 	if in.kind != intentOwn {
+		// Apply changes an existing object. With its UID, the apply fails
+		// rather than creating the object if it's gone.
+		uid := metaOfAny(in.obj).UID
+		if uid == "" && in.observed != nil {
+			uid = metaOfAny(in.observed).UID
+		}
+		if uid != "" {
+			meta["uid"] = uid
+		}
 		return doc, nil
 	}
 	pm := metaOf[T, P](parent)
@@ -567,9 +602,13 @@ func (c *controller[T, P]) body(in intent, parent *T) (map[string]any, error) {
 // setFinalizer adds or removes this controller's finalizer with a dedicated
 // field manager, so it never conflicts with other managers' finalizers.
 // cleanup, when not empty, records the owned kinds to delete on finalize.
+//
+// Server-side apply creates objects that don't exist. The UID in the body
+// makes the apply fail instead, so a reconcile working from a stale cache
+// can't recreate an object that was just deleted.
 func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present bool, cleanup string) error {
 	m := metaOf[T, P](obj)
-	meta := map[string]any{"name": m.Name}
+	meta := map[string]any{"name": m.Name, "uid": m.UID}
 	if m.Namespace != "" {
 		meta["namespace"] = m.Namespace
 	}
@@ -585,6 +624,9 @@ func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present boo
 	}
 	path := c.res.path(m.Namespace, m.Name)
 	if err := c.m.client.Apply(ctx, path, c.name+"-finalizer", true, body, &out); err != nil {
+		if !present && replaced(err) {
+			return nil
+		}
 		return err
 	}
 	if present {
@@ -620,7 +662,7 @@ func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T
 		}
 	}
 	if err == nil {
-		err = c.cleanupOwned(ctx, obj)
+		err = c.cleanupOwned(ctx, obj, nil)
 	}
 	if err == nil {
 		err = c.setFinalizer(ctx, obj, false, "")
@@ -637,7 +679,10 @@ func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T
 	return 0, nil
 }
 
-func (c *controller[T, P]) cleanupOwned(ctx context.Context, obj *T) error {
+// cleanupOwned deletes the owned objects of the kinds recorded in obj's
+// cleanup annotation, except those in keep, which holds "apiVersion/kind
+// namespace/name" strings.
+func (c *controller[T, P]) cleanupOwned(ctx context.Context, obj *T, keep map[string]bool) error {
 	m := metaOf[T, P](obj)
 	for _, kind := range splitList(m.Annotations[c.labels.cleanup]) {
 		i := strings.LastIndex(kind, "/")
@@ -666,12 +711,25 @@ func (c *controller[T, P]) cleanupOwned(ctx context.Context, obj *T) error {
 		}
 		ti := &typeInfo{apiVersion: kind[:i], kind: kind[i+1:]}
 		for _, om := range owned {
+			if keep[kind+" "+om.Key().String()] || om.Deleting() {
+				continue
+			}
 			if err := c.delete(ctx, ti, res, &om); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
+}
+
+// replaced reports whether a forced apply with a UID failed because the
+// object no longer exists (409) or was recreated with a new UID (422).
+// Forced applies never fail with field manager conflicts.
+func replaced(err error) bool {
+	if client.IsConflict(err) || client.IsNotFound(err) {
+		return true
+	}
+	return client.IsInvalid(err) && strings.Contains(err.Error(), "metadata.uid")
 }
 
 func toMap(obj any) (map[string]any, error) {

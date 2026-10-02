@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"reflect"
 	"strings"
-
-	"github.com/imjasonh/playground/kube/internal/client"
 )
 
 // writeStatus fills in the status fields the framework manages, then writes
@@ -36,7 +34,9 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 	if bytes.Equal(before, after) {
 		return nil
 	}
-	meta := map[string]any{"name": m.Name}
+	// The UID keeps status computed for a deleted object from landing on a
+	// new object with the same name.
+	meta := map[string]any{"name": m.Name, "uid": m.UID}
 	if m.Namespace != "" {
 		meta["namespace"] = m.Namespace
 	}
@@ -47,7 +47,7 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 		"status":     json.RawMessage(after),
 	}
 	err = c.m.client.Apply(ctx, c.res.path(m.Namespace, m.Name, "status"), c.name, true, body, nil)
-	if client.IsNotFound(err) {
+	if err != nil && replaced(err) {
 		return nil
 	}
 	if err == nil {
@@ -61,7 +61,7 @@ func syncedCondition(err error, generation int64) Condition {
 	c := Condition{Type: "Synced", Status: True, Reason: "Reconciled", ObservedGeneration: generation}
 	if err != nil {
 		c.Status, c.Reason = False, "ReconcileError"
-		if isPermanent(err) {
+		if IsPermanent(err) {
 			c.Reason = "PermanentError"
 		}
 		c.Message = err.Error()

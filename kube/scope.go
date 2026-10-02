@@ -179,7 +179,7 @@ func List[T any, P Resource[T]](ctx context.Context, opts ...ListOption) []*T {
 	if lo.selector != "" {
 		parsed, err := parseSelector(lo.selector)
 		if err != nil {
-			s.fail(err)
+			s.fail(Permanent(err))
 			return nil
 		}
 		sel = append(sel, parsed...)
@@ -356,7 +356,8 @@ type permanentError struct{ err error }
 func (e *permanentError) Error() string { return e.err.Error() }
 func (e *permanentError) Unwrap() error { return e.err }
 
-func isPermanent(err error) bool {
+// IsPermanent reports whether err, or an error it wraps, came from Permanent.
+func IsPermanent(err error) bool {
 	var p *permanentError
 	return errors.As(err, &p)
 }
