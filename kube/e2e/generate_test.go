@@ -268,7 +268,9 @@ func (in installation) runInstalled(t *testing.T, exe, kubeconfig string) *syncB
 
 func noPermissionErrors(t *testing.T, out *syncBuffer) {
 	t.Helper()
-	if s := out.String(); strings.Contains(s, "forbidden") || strings.Contains(s, "403") {
+	// The client reports a denial as "... is forbidden: ... (403 Forbidden)".
+	// A bare "403" could be part of a port or a timestamp.
+	if s := out.String(); strings.Contains(strings.ToLower(s), "forbidden") {
 		t.Errorf("the program was denied something:\n%s", s)
 	}
 }
