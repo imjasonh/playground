@@ -148,6 +148,37 @@ func TestAdmissionWebhooks(t *testing.T) {
 	}
 }
 
+func TestRemovesWebhooksThatTheProgramDropped(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	path := client.Path("admissionregistration.k8s.io/v1", "validatingwebhookconfigurations", "", "dropped-e2e")
+	m := webhookManager(t, "dropped-e2e", ns)
+	m.Kubeconfig, m.Logger = e2e.Env(t).Kubeconfig, e2e.Logger(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- m.Run(ctx, kube.For[Gadget](gadgets{})) }()
+	e2e.Eventually(t, 30*time.Second, func() error {
+		select {
+		case err := <-done:
+			t.Fatalf("the first manager stopped: %v", err)
+		default:
+		}
+		return e2e.Get(t.Context(), c, path, &struct{}{})
+	})
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("The next version of the program has no webhooks, and deletes the configuration.")
+	e2e.Run(t, &kube.Manager{Name: "dropped-e2e", Namespace: ns}, kube.For[Gadget](noWebhooks{}))
+	e2e.Eventually(t, 30*time.Second, func() error { return e2e.Gone(t.Context(), c, path) })
+}
+
+type noWebhooks struct{}
+
+func (noWebhooks) Reconcile(context.Context, *Gadget) error { return nil }
+
 type Thing struct {
 	kube.Object `kube:"group=e2e.kube.imjasonh.github.io,version=v2"`
 	Spec        struct {

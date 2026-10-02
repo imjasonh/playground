@@ -214,6 +214,14 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 			stops[i]()
 		}
 	}()
+	// startFailed reports a failure to start, unless ctx was canceled
+	// meanwhile, which stops the manager cleanly.
+	startFailed := func(err error) error {
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
 	if m.Addr != "" {
 		srv, err := m.serve()
 		if err != nil {
@@ -224,14 +232,18 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 	stops = append(stops, m.waitForCaches)
 	for _, c := range controllers {
 		if err := c.prepare(ctx, m); err != nil {
-			return err
+			return startFailed(err)
 		}
 	}
 	if m.needsWebhooks() {
 		if err := m.hooks.start(ctx); err != nil {
-			return err
+			return startFailed(err)
 		}
 		stops = append(stops, m.hooks.stop)
+	} else if err := (&webhookServer{m: m}).applyConfigurations(ctx); err != nil {
+		// An earlier version of the program may have left webhook
+		// configurations whose webhooks no longer answer.
+		m.log.Warn("removing stale webhook configurations failed", "err", err)
 	}
 	var reconcilers []Controller
 	for _, c := range controllers {
@@ -262,7 +274,7 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 	if ctx.Err() == nil {
 		for _, c := range reconcilers {
 			if err := c.setup(ctx, m); err != nil {
-				return err
+				return startFailed(err)
 			}
 		}
 		m.started.Store(true)
