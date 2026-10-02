@@ -29,9 +29,9 @@ type tree struct {
 }
 
 type withAny struct {
-	Extra any
-	Raw   json.RawMessage
-	Grid  [2][]int
+	Extra  any
+	Raw    json.RawMessage
+	Grid   [2][]int
 	hidden []int
 }
 

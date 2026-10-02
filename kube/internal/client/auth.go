@@ -28,7 +28,7 @@ type authenticator interface {
 
 type staticAuth string
 
-func (s staticAuth) authorization(context.Context) (string, error)        { return string(s), nil }
+func (s staticAuth) authorization(context.Context) (string, error)       { return string(s), nil }
 func (staticAuth) certificate(context.Context) (*tls.Certificate, error) { return nil, nil }
 func (staticAuth) reset()                                                {}
 

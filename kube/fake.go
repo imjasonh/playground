@@ -124,11 +124,11 @@ type memSource struct {
 	objs map[Key]any
 }
 
-func (s *memSource) id() int                            { return s.idn }
-func (s *memSource) typeInfo() *typeInfo                { return s.ti }
-func (s *memSource) waitSynced(context.Context) error   { return nil }
-func (s *memSource) owned(string) []any                 { return nil }
-func (s *memSource) peek(k Key) any                     { return s.objs[k] }
+func (s *memSource) id() int                          { return s.idn }
+func (s *memSource) typeInfo() *typeInfo              { return s.ti }
+func (s *memSource) waitSynced(context.Context) error { return nil }
+func (s *memSource) owned(string) []any               { return nil }
+func (s *memSource) peek(k Key) any                   { return s.objs[k] }
 func (s *memSource) get(k Key) any {
 	o, ok := s.objs[k]
 	if !ok {
