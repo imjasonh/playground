@@ -162,6 +162,9 @@ func addExecutable(base v1.Image, path, file, baseName, baseDigest string) (v1.I
 	if err != nil {
 		return nil, err
 	}
+	if base, err = withoutAnnotations(base); err != nil {
+		return nil, err
+	}
 	img, err := mutate.Append(base, mutate.Addendum{
 		Layer:     layer,
 		MediaType: layerType,
@@ -195,6 +198,33 @@ func addExecutable(base v1.Image, path, file, baseName, baseDigest string) (v1.I
 		}).(v1.Image)
 	}
 	return img, nil
+}
+
+// withoutAnnotations returns base's layers and config in a manifest without
+// base's annotations. Those describe base, such as its title and source
+// repository, so an image built on it mustn't repeat them.
+func withoutAnnotations(base v1.Image) (v1.Image, error) {
+	man, err := base.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	cf, err := base.ConfigFile()
+	if err != nil {
+		return nil, err
+	}
+	layers, err := base.Layers()
+	if err != nil {
+		return nil, err
+	}
+	adds := make([]mutate.Addendum, len(layers))
+	for i, l := range layers {
+		adds[i] = mutate.Addendum{Layer: l, MediaType: man.Layers[i].MediaType}
+	}
+	img, err := mutate.Append(mutate.ConfigMediaType(mutate.MediaType(empty.Image, man.MediaType), man.Config.MediaType), adds...)
+	if err != nil {
+		return nil, err
+	}
+	return mutate.ConfigFile(img, cf)
 }
 
 func layerFrom(b []byte, mt types.MediaType) (v1.Layer, error) {

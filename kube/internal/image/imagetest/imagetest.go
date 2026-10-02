@@ -71,6 +71,12 @@ func Image(t testing.TB, platform string, mt types.MediaType) v1.Image {
 	if img, err = mutate.ConfigFile(img, cf); err != nil {
 		t.Fatal(err)
 	}
+	if mt == types.OCIManifestSchema1 {
+		img = mutate.Annotations(img, map[string]string{
+			"org.opencontainers.image.title":  "static",
+			"org.opencontainers.image.source": "https://github.com/chainguard-images/images",
+		}).(v1.Image)
+	}
 	return img
 }
 

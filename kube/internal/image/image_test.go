@@ -26,6 +26,21 @@ func mustRef(t *testing.T, s string) name.Reference {
 	return r
 }
 
+func baseManifest(t *testing.T, idx v1.ImageIndex, arch string) v1.Hash {
+	t.Helper()
+	man, err := idx.IndexManifest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range man.Manifests {
+		if d.Platform.Architecture == arch {
+			return d.Digest
+		}
+	}
+	t.Fatalf("the base has no image for %s", arch)
+	return v1.Hash{}
+}
+
 func executables(t *testing.T, platforms ...string) []Executable {
 	t.Helper()
 	dir := t.TempDir()
@@ -82,14 +97,30 @@ func TestPush(t *testing.T) {
 	if err != nil || tagged.Digest.String() != strings.TrimPrefix(ref, reg+"/you/app@") {
 		t.Errorf("the tag names %v, %v, not the index", tagged, err)
 	}
+	baseIndex, err := baseDesc.ImageIndex()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, d := range man.Manifests {
 		img, err := idx.Image(d.Digest)
 		if err != nil {
 			t.Fatal(err)
 		}
 		m, _ := img.Manifest()
-		if m.Annotations["org.opencontainers.image.base.name"] != baseRef || m.Annotations["org.opencontainers.image.base.digest"] != baseDesc.Digest.String() {
-			t.Errorf("annotations = %v", m.Annotations)
+		wantAnnotations := map[string]string{
+			"org.opencontainers.image.base.name":   baseRef,
+			"org.opencontainers.image.base.digest": baseDesc.Digest.String(),
+		}
+		if !reflect.DeepEqual(m.Annotations, wantAnnotations) {
+			t.Errorf("annotations = %v, want only the base's name and digest", m.Annotations)
+		}
+		baseImage, err := baseIndex.Image(baseManifest(t, baseIndex, d.Platform.Architecture))
+		if err != nil {
+			t.Fatal(err)
+		}
+		bm, _ := baseImage.Manifest()
+		if m.Layers[0].Digest != bm.Layers[0].Digest {
+			t.Errorf("first layer %s, want the base's %s", m.Layers[0].Digest, bm.Layers[0].Digest)
 		}
 		cf, _ := img.ConfigFile()
 		if cf.Architecture != d.Platform.Architecture || !cf.Created.Time.Equal(epoch.Time) || cf.Config.User != "65532" ||
