@@ -128,6 +128,9 @@ type core struct {
 	finalizer string
 	labels    labelKeys
 	log       *slog.Logger
+	// sh decides which keys this replica reconciles, or is nil when it
+	// reconciles every key.
+	sh *sharder
 
 	mu       sync.Mutex
 	children map[*typeInfo]source
@@ -150,7 +153,9 @@ type labelKeys struct {
 	owner      string // annotation: owner namespace/name, on owned objects
 	applied    string // annotation: hash of the last applied body, on owned objects
 	cleanup    string // annotation: owned kinds to delete on finalize, on owners
-	managedBy  string // label: on CustomResourceDefinitions the framework installs
+	managedBy  string // label: on objects the framework installs for itself
+	leaseGroup string // label: the manager whose shard and membership Leases these are
+	leaseRole  string // label: shard or member
 }
 
 func newLabelKeys(domain string) labelKeys {
@@ -161,11 +166,15 @@ func newLabelKeys(domain string) labelKeys {
 		applied:    domain + "/applied",
 		cleanup:    domain + "/cleanup",
 		managedBy:  domain + "/managed-by",
+		leaseGroup: domain + "/lease-group",
+		leaseRole:  domain + "/lease-role",
 	}
 }
 
+// enqueue adds k to the queue if this replica reconciles it. A replica that
+// acquires a shard later enqueues its keys then.
 func (c *core) enqueue(k Key, p queue.Priority) {
-	if c.q != nil {
+	if c.q != nil && c.sh.owns(k) {
 		c.q.Add(k, p)
 	}
 }
@@ -277,6 +286,19 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 	cfg := m.informerConfig(c.res, ns, c.opts.selector, "")
 	c.primary = newInformer[T, P](m.newID(), ti, c.res, m.client, cfg, m.log, m.metrics)
 	c.primary.addHandler(c.onPrimary)
+	c.sh = m.sharder
+	// Another replica may have reconciled a shard's keys since this one
+	// last held it, so forget what this replica last wrote for them.
+	c.sh.onAcquire(func(i int) {
+		c.primary.store.each("", func(o *T) bool {
+			if k := metaOf[T, P](o).Key(); c.sh.shardOf(k) == i {
+				c.setApplied(k, nil)
+				c.setStatus(k, 0, false)
+				c.q.Add(k, queue.Low)
+			}
+			return true
+		})
+	})
 	m.adopt(ti, c.res, cfg, c.primary)
 	for _, own := range c.opts.owns {
 		oti, err := own()
@@ -299,7 +321,12 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 }
 
 func (c *controller[T, P]) run(ctx context.Context) error {
-	go c.primary.run(ctx)
+	informed := make(chan struct{})
+	go func() {
+		defer close(informed)
+		c.primary.run(ctx)
+	}()
+	defer func() { <-informed }()
 	select {
 	case <-c.primary.synced:
 	case <-ctx.Done():
@@ -315,7 +342,12 @@ func (c *controller[T, P]) run(ctx context.Context) error {
 				if !ok {
 					return
 				}
-				c.process(ctx, key)
+				if i, mine := c.sh.begin(key); mine {
+					c.process(ctx, key)
+					c.sh.end(i)
+				} else {
+					c.q.Forget(key)
+				}
 				c.q.Done(key)
 			}
 		})
@@ -339,7 +371,7 @@ func (c *controller[T, P]) resyncLoop(ctx context.Context) {
 		case <-t.C:
 		}
 		c.primary.store.each("", func(o *T) bool {
-			c.q.Add(metaOf[T, P](o).Key(), queue.Low)
+			c.enqueue(metaOf[T, P](o).Key(), queue.Low)
 			return true
 		})
 	}
@@ -354,9 +386,9 @@ func (c *controller[T, P]) onPrimary(old, new *T, initial bool) {
 	}
 	switch {
 	case new == nil:
-		c.q.Add(metaOf[T, P](old).Key(), queue.High)
+		c.enqueue(metaOf[T, P](old).Key(), queue.High)
 	case old == nil || c.specChanged(old, new) || c.statusChanged(old, new):
-		c.q.Add(metaOf[T, P](new).Key(), p)
+		c.enqueue(metaOf[T, P](new).Key(), p)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,11 +43,20 @@ type Manager struct {
 	// framework adds to objects. It defaults to "kube.imjasonh.github.io".
 	Domain string
 	// LeaderElection makes replicas take turns: only the replica that holds
-	// a Lease runs controllers. Caches start only after the replica becomes
-	// leader, so standby replicas use almost no memory.
+	// a Lease reconciles. Caches start only after the replica first holds
+	// it, so standby replicas use almost no memory. A replica that loses the
+	// Lease stops reconciling and tries to take it back; it keeps serving
+	// webhooks.
 	LeaderElection bool
-	// LeaseNamespace is where the Lease lives. It defaults to the
-	// configuration's namespace, or "default".
+	// Shards splits the objects that controllers reconcile into this many
+	// groups, each held by one replica at a time through its own Lease, so
+	// replicas share the work and a failed replica's groups move to the
+	// others. Each object is reconciled by one replica at a time. Setting it
+	// above 1 turns on LeaderElection. Every replica caches every object, so
+	// shards divide reconcile work, not memory.
+	Shards int
+	// LeaseNamespace is where the Leases live, and the webhook certificate
+	// Secret. It defaults to the configuration's namespace, or "default".
 	LeaseNamespace string
 	// Addr, when set, serves /healthz, /readyz, and Prometheus /metrics at
 	// this address, for example ":8080".
@@ -89,9 +99,11 @@ type Manager struct {
 	ids     atomic.Int64
 	runCtx  context.Context
 	started atomic.Bool
+	sharder *sharder
 
 	mu          sync.Mutex
 	caches      map[cacheKey]cache
+	cacheDone   []chan struct{}
 	resolved    map[*typeInfo]resolved
 	controllers []Controller
 	hooks       *webhookServer
@@ -110,13 +122,14 @@ func Run(ctx context.Context, controllers ...Controller) error {
 
 // Main is a main function for a controller program. It reads flags,
 // stops on SIGINT or SIGTERM, runs controllers, and exits with status 1 if
-// they fail. Flags: -kubeconfig, -namespace, -leader-elect, -addr,
+// they fail. Flags: -kubeconfig, -namespace, -leader-elect, -shards, -addr,
 // -webhook-addr, -webhook-service, -webhook-url, and -v for debug logs.
 func Main(controllers ...Controller) {
 	m := &Manager{}
 	flag.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
 	flag.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
-	flag.BoolVar(&m.LeaderElection, "leader-elect", false, "run controllers only while holding a Lease")
+	flag.BoolVar(&m.LeaderElection, "leader-elect", false, "reconcile only while holding a Lease")
+	flag.IntVar(&m.Shards, "shards", 1, "split reconciles across replicas in this many shards, each held through a Lease")
 	flag.StringVar(&m.Addr, "addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
 	flag.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
 	flag.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
@@ -178,26 +191,32 @@ func (m *Manager) init() error {
 	return nil
 }
 
-var errLostLease = errors.New("lost the leader election lease")
-
 // Run connects to the cluster and runs controllers until ctx is done. It
-// returns nil when ctx is canceled, or an error if setup fails or the
-// manager loses its leader election lease.
+// returns nil when ctx is canceled, or an error if setup fails.
 func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 	if err := m.init(); err != nil {
 		return err
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(nil)
 	m.runCtx = ctx
 	m.controllers = controllers
+	// stops run in reverse order once ctx is canceled, so each part stops
+	// after the parts that use it.
+	var stops []func()
+	defer func() {
+		cancel(nil)
+		for i := len(stops) - 1; i >= 0; i-- {
+			stops[i]()
+		}
+	}()
 	if m.Addr != "" {
 		srv, err := m.serve()
 		if err != nil {
 			return err
 		}
-		defer srv.Close()
+		stops = append(stops, func() { srv.Close() })
 	}
+	stops = append(stops, m.waitForCaches)
 	for _, c := range controllers {
 		if err := c.prepare(ctx, m); err != nil {
 			return err
@@ -207,7 +226,7 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		if err := m.hooks.start(ctx); err != nil {
 			return err
 		}
-		defer m.hooks.stop()
+		stops = append(stops, m.hooks.stop)
 	}
 	var reconcilers []Controller
 	for _, c := range controllers {
@@ -215,12 +234,26 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 			reconcilers = append(reconcilers, c)
 		}
 	}
-	if len(reconcilers) > 0 && m.LeaderElection {
-		if err := m.lead(ctx, cancel); err != nil {
-			return err
+	if len(reconcilers) > 0 && (m.LeaderElection || m.Shards > 1) {
+		m.sharder = newSharder(m)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			m.sharder.run(ctx)
+		}()
+		// Release the shards after reconciles stop, so the replica that
+		// takes a shard over never overlaps a reconcile still running here.
+		stops = append(stops, func() {
+			<-done
+			m.sharder.releaseAll()
+		})
+		select {
+		case <-m.sharder.first:
+		case <-ctx.Done():
 		}
 	}
 	var wg sync.WaitGroup
+	stops = append(stops, wg.Wait)
 	if ctx.Err() == nil {
 		for _, c := range reconcilers {
 			if err := c.setup(ctx, m); err != nil {
@@ -237,11 +270,20 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		}
 	}
 	<-ctx.Done()
-	wg.Wait()
 	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
 		return cause
 	}
 	return nil
+}
+
+// waitForCaches waits for every cache's goroutine to return.
+func (m *Manager) waitForCaches() {
+	m.mu.Lock()
+	done := slices.Clone(m.cacheDone)
+	m.mu.Unlock()
+	for _, d := range done {
+		<-d
+	}
 }
 
 func (m *Manager) serve() (*http.Server, error) {
@@ -433,7 +475,12 @@ func (m *Manager) cacheFor(key cacheKey, res resolved, ownerKey string, onCreate
 		onCreate(c)
 	}
 	m.caches[key] = c
-	go c.run(m.runCtx)
+	done := make(chan struct{})
+	m.cacheDone = append(m.cacheDone, done)
+	go func() {
+		defer close(done)
+		c.run(m.runCtx)
+	}()
 	return c
 }
 

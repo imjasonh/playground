@@ -35,6 +35,10 @@ type webhookServer struct {
 	srv    *http.Server
 	hosts  []string
 	secret Key
+	// stopRefresh stops the certificate refresh loop, which closes
+	// refreshed when it returns.
+	stopRefresh context.CancelFunc
+	refreshed   chan struct{}
 	// Exactly one of url and service is set.
 	url     string
 	service struct {
@@ -198,11 +202,21 @@ func (ws *webhookServer) start(ctx context.Context) error {
 		return err
 	}
 	ws.ready.Store(true)
-	go ws.refreshLoop(ctx)
+	var rctx context.Context
+	rctx, ws.stopRefresh = context.WithCancel(ctx)
+	ws.refreshed = make(chan struct{})
+	go func() {
+		defer close(ws.refreshed)
+		ws.refreshLoop(rctx)
+	}()
 	return nil
 }
 
 func (ws *webhookServer) stop() {
+	if ws.stopRefresh != nil {
+		ws.stopRefresh()
+		<-ws.refreshed
+	}
 	if ws.srv != nil {
 		ws.srv.Close()
 	}

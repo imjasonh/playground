@@ -95,19 +95,27 @@ func freeAddr(t *testing.T) string {
 // scrape returns the value of one metric sample from /metrics, or 0.
 func scrape(t *testing.T, addr, sample string) float64 {
 	t.Helper()
-	resp, err := http.Get("http://" + addr + "/metrics")
+	v, err := tryScrape(addr, sample)
 	if err != nil {
 		t.Fatal(err)
+	}
+	return v
+}
+
+func tryScrape(addr, sample string) (float64, error) {
+	resp, err := http.Get("http://" + addr + "/metrics")
+	if err != nil {
+		return 0, err
 	}
 	defer resp.Body.Close()
 	s := bufio.NewScanner(resp.Body)
 	for s.Scan() {
 		if v, ok := strings.CutPrefix(s.Text(), sample+" "); ok {
 			f, _ := strconv.ParseFloat(v, 64)
-			return f
+			return f, nil
 		}
 	}
-	return 0
+	return 0, nil
 }
 
 func TestSteadyStateMakesNoWrites(t *testing.T) {
