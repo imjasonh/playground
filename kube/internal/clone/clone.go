@@ -24,6 +24,17 @@ func Of[T any](v *T) *T {
 	return out
 }
 
+// Value returns a deep copy of v, which must be a non-nil pointer.
+func Value(v any) any {
+	rv := reflect.ValueOf(v)
+	out := reflect.New(rv.Type().Elem())
+	out.Elem().Set(rv.Elem())
+	if c := copierFor(rv.Type().Elem()); c != nil {
+		c(out.Elem(), rv.Elem())
+	}
+	return out.Interface()
+}
+
 // copier deep-copies src into dst. dst is settable and already holds a
 // shallow copy of src.
 type copier func(dst, src reflect.Value)

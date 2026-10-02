@@ -1,0 +1,477 @@
+package kube
+
+import (
+	"context"
+	"errors"
+	"flag"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"syscall"
+	"time"
+
+	"github.com/imjasonh/playground/kube/internal/client"
+	"github.com/imjasonh/playground/kube/internal/queue"
+	"github.com/imjasonh/playground/kube/internal/schema"
+)
+
+// Manager runs controllers against one cluster. The zero value is ready to
+// use; every field is optional.
+type Manager struct {
+	// Name identifies the program. It names the leader election lease and
+	// appears in the User-Agent and on CustomResourceDefinitions the manager
+	// installs. It defaults to the executable's name.
+	Name string
+	// Kubeconfig is the path of a kubeconfig file. When empty, the manager
+	// uses $KUBECONFIG, then the pod's service account, then
+	// $HOME/.kube/config.
+	Kubeconfig string
+	// Namespace limits every cache of a namespaced type to one namespace.
+	// Empty means all namespaces.
+	Namespace string
+	// Domain prefixes the labels, annotations, and finalizers that the
+	// framework adds to objects. It defaults to "kube.imjasonh.github.io".
+	Domain string
+	// LeaderElection makes replicas take turns: only the replica that holds
+	// a Lease runs controllers. Caches start only after the replica becomes
+	// leader, so standby replicas use almost no memory.
+	LeaderElection bool
+	// LeaseNamespace is where the Lease lives. It defaults to the
+	// configuration's namespace, or "default".
+	LeaseNamespace string
+	// Addr, when set, serves /healthz, /readyz, and Prometheus /metrics at
+	// this address, for example ":8080".
+	Addr string
+	// Logger receives the framework's logs. It defaults to slog.Default().
+	Logger *slog.Logger
+	// DisableStreamingLists makes caches use paginated lists instead of
+	// trying streaming lists (watches with sendInitialEvents) first.
+	DisableStreamingLists bool
+	// DisableInterning stops caches from sharing one copy of strings that
+	// repeat across objects, such as label keys and namespaces.
+	DisableInterning bool
+
+	client  *client.Client
+	log     *slog.Logger
+	metrics *metrics
+	tracker *tracker
+	ids     atomic.Int64
+	runCtx  context.Context
+
+	mu          sync.Mutex
+	caches      map[cacheKey]cache
+	resolved    map[*typeInfo]resolved
+	controllers []Controller
+}
+
+type cacheKey struct {
+	ti        *typeInfo
+	namespace string
+	selector  string
+}
+
+// Run runs controllers with a zero Manager until ctx is done.
+func Run(ctx context.Context, controllers ...Controller) error {
+	return (&Manager{}).Run(ctx, controllers...)
+}
+
+// Main is a main function for a controller program. It reads flags,
+// stops on SIGINT or SIGTERM, runs controllers, and exits with status 1 if
+// they fail. Flags: -kubeconfig, -namespace, -leader-elect, -addr, and -v
+// for debug logs.
+func Main(controllers ...Controller) {
+	m := &Manager{}
+	flag.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
+	flag.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
+	flag.BoolVar(&m.LeaderElection, "leader-elect", false, "run controllers only while holding a Lease")
+	flag.StringVar(&m.Addr, "addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
+	verbose := flag.Bool("v", false, "log debug messages")
+	flag.Parse()
+	level := slog.LevelInfo
+	if *verbose {
+		level = slog.LevelDebug
+	}
+	m.Logger = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := m.Run(ctx, controllers...); err != nil {
+		m.Logger.Error("exiting", "err", err)
+		stop()
+		os.Exit(1)
+	}
+}
+
+func (m *Manager) init() error {
+	if m.Name == "" {
+		m.Name = filepath.Base(os.Args[0])
+	}
+	if m.Domain == "" {
+		m.Domain = "kube.imjasonh.github.io"
+	}
+	m.log = m.Logger
+	if m.log == nil {
+		m.log = slog.Default()
+	}
+	if m.client == nil {
+		cfg, err := client.Load(m.Kubeconfig)
+		if err != nil {
+			return err
+		}
+		if m.client, err = client.New(cfg, m.Name+" (kube; github.com/imjasonh/playground/kube)"); err != nil {
+			return err
+		}
+		m.log.Info("connecting", "host", cfg.Host, "config", cfg.Source)
+	}
+	m.metrics = newMetrics()
+	m.tracker = newTracker()
+	m.caches = map[cacheKey]cache{}
+	m.resolved = map[*typeInfo]resolved{}
+	m.metrics.gauge("kube_cache_objects", "Objects held in each cache.", func() []sample {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		var out []sample
+		for k, c := range m.caches {
+			out = append(out, sample{labels: []string{"type", k.ti.String(), "namespace", k.namespace, "selector", k.selector}, value: float64(c.size())})
+		}
+		return out
+	})
+	m.metrics.gauge("kube_tracked_dependencies", "Objects and queries that reconciles read.", func() []sample {
+		return []sample{{value: float64(m.tracker.size())}}
+	})
+	return nil
+}
+
+var errLostLease = errors.New("lost the leader election lease")
+
+// Run connects to the cluster and runs controllers until ctx is done. It
+// returns nil when ctx is canceled, or an error if setup fails or the
+// manager loses its leader election lease.
+func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
+	if err := m.init(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
+	m.runCtx = ctx
+	m.controllers = controllers
+	if m.Addr != "" {
+		srv, err := m.serve()
+		if err != nil {
+			return err
+		}
+		defer srv.Close()
+	}
+	if m.LeaderElection {
+		if err := m.lead(ctx, cancel); err != nil {
+			return err
+		}
+	}
+	for _, c := range controllers {
+		if err := c.setup(ctx, m); err != nil {
+			return err
+		}
+	}
+	var wg sync.WaitGroup
+	for _, c := range controllers {
+		wg.Go(func() {
+			if err := c.run(ctx); err != nil {
+				cancel(fmt.Errorf("controller %s: %w", c.controllerName(), err))
+			}
+		})
+	}
+	<-ctx.Done()
+	wg.Wait()
+	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
+		return cause
+	}
+	return nil
+}
+
+func (m *Manager) serve() (*http.Server, error) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		for _, c := range m.controllers {
+			if !c.synced() {
+				http.Error(w, "controller "+c.controllerName()+" is not synced", http.StatusServiceUnavailable)
+				return
+			}
+		}
+		fmt.Fprintln(w, "ok")
+	})
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+		m.metrics.write(w)
+	})
+	ln, err := net.Listen("tcp", m.Addr)
+	if err != nil {
+		return nil, err
+	}
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	go func() {
+		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			m.log.Error("health server failed", "err", err)
+		}
+	}()
+	m.log.Info("serving health and metrics", "addr", ln.Addr().String())
+	return srv, nil
+}
+
+func (m *Manager) newID() int { return int(m.ids.Add(1)) }
+
+func (m *Manager) informerConfig(res resolved, namespace, selector, ownerKey string) informerConfig {
+	if !res.namespaced {
+		namespace = ""
+	}
+	return informerConfig{
+		namespace: namespace,
+		selector:  selector,
+		ownerKey:  ownerKey,
+		streaming: !m.DisableStreamingLists,
+		intern:    !m.DisableInterning,
+	}
+}
+
+// resolve finds how the server serves ti, using discovery unless the type's
+// tag already says.
+func (m *Manager) resolve(ctx context.Context, ti *typeInfo) (resolved, error) {
+	m.mu.Lock()
+	r, ok := m.resolved[ti]
+	m.mu.Unlock()
+	if ok {
+		return r, nil
+	}
+	if ti.plural != "" && ti.scope != "" {
+		r = resolved{apiVersion: ti.apiVersion, plural: ti.plural, namespaced: ti.scope == "Namespaced"}
+	} else {
+		ar, err := m.client.Resource(ctx, ti.apiVersion, ti.kind)
+		if err != nil {
+			return resolved{}, err
+		}
+		r = resolved{apiVersion: ti.apiVersion, plural: ar.Name, namespaced: ar.Namespaced}
+	}
+	m.mu.Lock()
+	m.resolved[ti] = r
+	m.mu.Unlock()
+	return r, nil
+}
+
+// ensureType makes sure the cluster serves a controller's primary type,
+// installing a CustomResourceDefinition for types the program defines.
+func (m *Manager) ensureType(ctx context.Context, ti *typeInfo) (resolved, error) {
+	if ti.custom {
+		if err := m.installCRD(ctx, ti); err != nil {
+			return resolved{}, err
+		}
+	}
+	return m.resolve(ctx, ti)
+}
+
+func (m *Manager) installCRD(ctx context.Context, ti *typeInfo) error {
+	keys := newLabelKeys(m.Domain)
+	name := ti.plural + "." + ti.group
+	path := "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/" + name
+	var existing struct {
+		Metadata ObjectMeta `json:"metadata"`
+	}
+	err := m.client.Get(ctx, path, &existing)
+	switch {
+	case err == nil && existing.Metadata.Labels[keys.managedBy] == "":
+		m.log.Info("using CustomResourceDefinition that something else installed", "crd", name)
+		return nil
+	case err != nil && !client.IsNotFound(err):
+		return fmt.Errorf("reading CustomResourceDefinition %s: %w", name, err)
+	}
+	crd, err := schema.CRD(ti.goType, schema.CRDSpec{
+		Group: ti.group, Version: ti.version, Kind: ti.kind, Plural: ti.plural, Singular: ti.singular,
+		ShortNames: ti.shortNames, Categories: ti.categories, Namespaced: ti.scope == "Namespaced",
+		Labels: map[string]string{keys.managedBy: labelValue(m.Name)},
+	})
+	if err != nil {
+		return err
+	}
+	if err := m.client.Apply(ctx, path, m.Name, true, crd, nil); err != nil {
+		return fmt.Errorf("installing CustomResourceDefinition %s: %w", name, err)
+	}
+	deadline := time.Now().Add(time.Minute)
+	for {
+		var got struct {
+			Status struct {
+				Conditions []Condition `json:"conditions"`
+			} `json:"status"`
+		}
+		if err := m.client.Get(ctx, path, &got); err != nil {
+			return err
+		}
+		if c := FindCondition(got.Status.Conditions, "Established"); c != nil && c.Status == True {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("CustomResourceDefinition %s was not established after a minute", name)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+	m.log.Info("installed CustomResourceDefinition", "crd", name)
+	return nil
+}
+
+// labelValue makes s a valid label value.
+func labelValue(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
+			return r
+		}
+		return '-'
+	}, s)
+	if len(s) > 63 {
+		s = s[:63]
+	}
+	return strings.Trim(s, "-_.")
+}
+
+// cache returns the cache for key, creating and starting it if needed.
+func (m *Manager) cacheFor(key cacheKey, res resolved, ownerKey string, onCreate func(cache)) cache {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if c, ok := m.caches[key]; ok {
+		return c
+	}
+	id := m.newID()
+	c := key.ti.newCache(id, res, m.client, m.informerConfig(res, key.namespace, key.selector, ownerKey), m.log, m.metrics)
+	c.onChange(func(old, new *ObjectMeta, initial bool) {
+		if !initial {
+			m.tracker.changed(id, old, new)
+		}
+	})
+	if onCreate != nil {
+		onCreate(c)
+	}
+	m.caches[key] = c
+	go c.run(m.runCtx)
+	return c
+}
+
+// adopt registers a controller's primary informer as the shared cache for
+// its type when it watches the same objects that Get and List would.
+func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cache) {
+	key := cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace}
+	if cfg.namespace != key.namespace || cfg.selector != "" {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.caches[key]; ok {
+		return
+	}
+	id := inf.id()
+	inf.onChange(func(old, new *ObjectMeta, initial bool) {
+		if !initial {
+			m.tracker.changed(id, old, new)
+		}
+	})
+	m.caches[key] = inf
+}
+
+func (m *Manager) source(ctx context.Context, ti *typeInfo) (source, error) {
+	res, err := m.resolve(ctx, ti)
+	if err != nil {
+		return nil, err
+	}
+	c := m.cacheFor(cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace}, res, "", nil)
+	return c, c.waitSynced(ctx)
+}
+
+func (m *Manager) existing(ti *typeInfo) source {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	res, ok := m.resolved[ti]
+	if !ok {
+		return nil
+	}
+	if c, ok := m.caches[cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace}]; ok {
+		return c
+	}
+	return nil
+}
+
+func (m *Manager) children(ctx context.Context, c *core, ti *typeInfo) (source, error) {
+	return m.childSource(ctx, c, ti, true)
+}
+
+// childSource returns the cache of ti objects that controller c owns. It
+// selects them by the controller label, so it holds only those objects.
+func (m *Manager) childSource(ctx context.Context, c *core, ti *typeInfo, wait bool) (source, error) {
+	res, err := m.resolve(ctx, ti)
+	if err != nil {
+		return nil, err
+	}
+	key := cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace, selector: c.labels.controller + "=" + c.name}
+	src := m.cacheFor(key, res, c.labels.owner, func(cc cache) {
+		cc.onChange(func(old, new *ObjectMeta, initial bool) {
+			p := priorityFor(initial)
+			for _, om := range []*ObjectMeta{old, new} {
+				if om == nil {
+					continue
+				}
+				if owner, ok := om.Annotations[c.labels.owner]; ok {
+					c.enqueue(parseKey(owner), p)
+				}
+			}
+		})
+	})
+	c.mu.Lock()
+	if c.children == nil {
+		c.children = map[*typeInfo]source{}
+	}
+	c.children[ti] = src
+	c.mu.Unlock()
+	if !wait {
+		return src, nil
+	}
+	return src, src.waitSynced(ctx)
+}
+
+func (m *Manager) fetch(ctx context.Context, ti *typeInfo, k Key) (any, error) {
+	res, err := m.resolve(ctx, ti)
+	if err != nil {
+		return nil, err
+	}
+	obj := reflect.New(ti.goType).Interface()
+	if err := m.client.Get(ctx, res.path(k.Namespace, k.Name), obj); err != nil {
+		if client.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	o := obj.(interface{ object() *Object }).object()
+	o.APIVersion, o.Kind = ti.apiVersion, ti.kind
+	return obj, nil
+}
+
+func (m *Manager) deps() *tracker { return m.tracker }
+
+func priorityFor(initial bool) queue.Priority {
+	if initial {
+		return queue.Low
+	}
+	return queue.High
+}
+
+func parseKey(s string) Key {
+	if ns, name, ok := strings.Cut(s, "/"); ok {
+		return Key{Namespace: ns, Name: name}
+	}
+	return Key{Name: s}
+}

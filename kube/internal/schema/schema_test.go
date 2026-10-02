@@ -123,6 +123,7 @@ func TestGenerate(t *testing.T) {
 			t.Errorf("schema is missing\n%s\n\nfull schema:\n%s", want, got)
 		}
 	}
+	_ = website{}.ignored // Unexported fields must not appear in the schema.
 	for _, bad := range []string{`"Skip"`, `"ignored"`, `"name"`} {
 		if strings.Contains(got, bad) {
 			t.Errorf("schema contains %s", bad)
