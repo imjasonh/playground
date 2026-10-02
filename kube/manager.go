@@ -128,8 +128,31 @@ func Run(ctx context.Context, controllers ...Controller) error {
 // stops on SIGINT or SIGTERM, runs controllers, and exits with status 1 if
 // they fail. Flags: -kubeconfig, -namespace, -leader-elect, -shards, -addr,
 // -webhook-addr, -webhook-service, -webhook-url, and -v for debug logs.
+//
+// Run as "PROGRAM generate -registry=REGISTRY", from the program's module,
+// Main instead builds the program into an image on Chainguard's static
+// base image, pushes it to REGISTRY, and writes YAML for kubectl apply that
+// installs it: a namespace, a service account, RBAC rules for the types the
+// program uses, a Deployment, and a Service for its webhooks.
 func Main(controllers ...Controller) {
+	if len(os.Args) > 1 && os.Args[1] == "generate" {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		err := generate(ctx, os.Args[2:], controllers, os.Stdout, os.Stderr)
+		stop()
+		switch {
+		case errors.Is(err, flag.ErrHelp):
+		case err != nil:
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	m := &Manager{}
+	flag.Usage = func() {
+		name := filepath.Base(os.Args[0])
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [flags]\n       %s generate -registry=REGISTRY [flags] | kubectl apply -f -\n\nFlags:\n", name, name)
+		flag.PrintDefaults()
+	}
 	flag.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
 	flag.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
 	flag.BoolVar(&m.LeaderElection, "leader-elect", false, "reconcile only while holding a Lease")

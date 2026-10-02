@@ -61,6 +61,43 @@ type Controller interface {
 	reconciles() bool
 	controllerName() string
 	synced() bool
+	// describe reports what the controller declares, without a cluster.
+	describe() (declared, error)
+}
+
+// declared is what a controller says about the API it uses before it
+// runs. The generate command turns it into RBAC rules.
+type declared struct {
+	ti         *typeInfo
+	reconciles bool
+	// webhooks is set when the controller serves admission or conversion
+	// webhooks.
+	webhooks bool
+	owns     []*typeInfo
+}
+
+func (c *controller[T, P]) describe() (declared, error) {
+	ti, err := typeInfoFor[T, P]()
+	if err != nil {
+		return declared{}, err
+	}
+	d := declared{ti: ti, reconciles: true}
+	_, validates := c.r.(Validator[T])
+	_, defaults := c.r.(Defaulter[T])
+	d.webhooks = validates || defaults
+	for _, vo := range c.opts.versions {
+		if _, ok := vo.newObj().(converter[T]); ok {
+			d.webhooks = true
+		}
+	}
+	for _, own := range c.opts.owns {
+		oti, err := own()
+		if err != nil {
+			return declared{}, err
+		}
+		d.owns = append(d.owns, oti)
+	}
+	return d, nil
 }
 
 // Option configures a controller.

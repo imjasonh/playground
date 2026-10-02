@@ -69,6 +69,11 @@ func (w *webhookController[T, P]) prepare(ctx context.Context, m *Manager) error
 	return registerAdmission[T, P](ctx, m, ti, v, d)
 }
 
+func (w *webhookController[T, P]) describe() (declared, error) {
+	ti, err := typeInfoFor[T, P]()
+	return declared{ti: ti, webhooks: true}, err
+}
+
 func (w *webhookController[T, P]) setup(context.Context, *Manager) error { return nil }
 func (w *webhookController[T, P]) run(context.Context) error             { return nil }
 func (w *webhookController[T, P]) reconciles() bool                      { return false }

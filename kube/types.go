@@ -129,7 +129,17 @@ func parseType(t reflect.Type) (*typeInfo, error) {
 	if !found {
 		return nil, fmt.Errorf("kube: %v doesn't embed kube.Object", t)
 	}
-	for part := range strings.SplitSeq(tag.Get("kube"), ",") {
+	if err := ti.parseTag(t.String(), t.Name(), tag.Get("kube")); err != nil {
+		return nil, err
+	}
+	return ti, nil
+}
+
+// parseTag sets ti from the kube tag of a type's embedded Object. typeName
+// names the type in errors, and name is its name without the package,
+// which is the default kind.
+func (ti *typeInfo) parseTag(typeName, name, tag string) error {
+	for part := range strings.SplitSeq(tag, ",") {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -144,7 +154,7 @@ func parseType(t reflect.Type) (*typeInfo, error) {
 		}
 		k, v, ok := strings.Cut(part, "=")
 		if !ok || v == "" {
-			return nil, fmt.Errorf("kube: %v: tag option %q needs a value", t, part)
+			return fmt.Errorf("kube: %s: tag option %q needs a value", typeName, part)
 		}
 		switch k {
 		case "group":
@@ -161,7 +171,7 @@ func parseType(t reflect.Type) (*typeInfo, error) {
 			ti.singular = v
 		case "scope":
 			if v != "Namespaced" && v != "Cluster" {
-				return nil, fmt.Errorf("kube: %v: scope must be Namespaced or Cluster, not %q", t, v)
+				return fmt.Errorf("kube: %s: scope must be Namespaced or Cluster, not %q", typeName, v)
 			}
 			ti.scope = v
 		case "shortName":
@@ -169,15 +179,15 @@ func parseType(t reflect.Type) (*typeInfo, error) {
 		case "category":
 			ti.categories = append(ti.categories, v)
 		default:
-			return nil, fmt.Errorf("kube: %v: unknown tag option %q", t, k)
+			return fmt.Errorf("kube: %s: unknown tag option %q", typeName, k)
 		}
 	}
 	if ti.kind == "" {
-		ti.kind = t.Name()
+		ti.kind = name
 	}
 	switch {
 	case ti.apiVersion != "" && (ti.group != "" || ti.version != ""):
-		return nil, fmt.Errorf("kube: %v: give either apiVersion or group and version, not both", t)
+		return fmt.Errorf("kube: %s: give either apiVersion or group and version, not both", typeName)
 	case ti.apiVersion != "":
 		if g, v, ok := strings.Cut(ti.apiVersion, "/"); ok {
 			ti.group, ti.version = g, v
@@ -186,7 +196,7 @@ func parseType(t reflect.Type) (*typeInfo, error) {
 		}
 	case ti.group != "":
 		if !strings.Contains(ti.group, ".") {
-			return nil, fmt.Errorf("kube: %v: group %q must be a domain name with a dot, like example.dev", t, ti.group)
+			return fmt.Errorf("kube: %s: group %q must be a domain name with a dot, like example.dev", typeName, ti.group)
 		}
 		ti.custom = true
 		if ti.version == "" {
@@ -197,7 +207,7 @@ func parseType(t reflect.Type) (*typeInfo, error) {
 			ti.scope = "Namespaced"
 		}
 	default:
-		return nil, fmt.Errorf(`kube: %v: the embedded kube.Object needs a kube struct tag: kube:"group=example.dev" for a type you define, or kube:"apiVersion=apps/v1,kind=Deployment" for one that exists`, t)
+		return fmt.Errorf(`kube: %s: the embedded kube.Object needs a kube struct tag: kube:"group=example.dev" for a type you define, or kube:"apiVersion=apps/v1,kind=Deployment" for one that exists`, typeName)
 	}
 	if ti.singular == "" {
 		ti.singular = strings.ToLower(ti.kind)
@@ -205,7 +215,7 @@ func parseType(t reflect.Type) (*typeInfo, error) {
 	if ti.plural == "" && ti.custom {
 		ti.plural = pluralize(ti.kind)
 	}
-	return ti, nil
+	return nil
 }
 
 func findStatusFields(ti *typeInfo, st reflect.Type) {
