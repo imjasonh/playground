@@ -77,6 +77,11 @@ them:
   over tree-sitter ASTs (Go CLI).
 - **[`sshapp/`](sshapp/)** — Wish SSH apps on GKE Autopilot behind one SSH mux
   (`hello`, `chess`; Terraform + `ko_build`).
+- **[`kube/`](kube/)** — a Kubernetes controller runtime written on the Go
+  standard library alone, without `client-go`. A controller is one struct and
+  one `Reconcile` method. The framework generates CRDs, tracks what each
+  reconcile reads, applies declared objects with server-side apply, and caches
+  only the fields that a type declares (Go library).
 - **[`app-attest/`](app-attest/)** — Apple App Attest handshake and assertion
   verifier for Cloudflare Workers, in Rust. The Playground iOS **App Attest**
   experiment registers a device once; later `POST /v1/whoami` calls send a

@@ -45,6 +45,7 @@ playground/
 ├── esp32-ble/             # Rust/ESP-IDF firmware: BLE GATT LED control for the iOS experiment
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
+├── kube/                  # Go library: Kubernetes controller runtime on the standard library alone
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
 ├── laya-web/              # fetch Laya and compile the graph to WebGPU
@@ -85,6 +86,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `sundial/` | yes | Sundial clock; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
+| `kube/` | no | Go library (Kubernetes controller runtime) and example controllers; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
 | `sshapp/` | no | GKE Autopilot Wish SSH apps (Go + Terraform); no `index.html` |
@@ -706,6 +708,7 @@ bundle exec fastlane test
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
+| `kube/` | Kubernetes controller runtime written on the standard library alone: one struct and one `Reconcile` method per controller, generated CRDs, server-side apply, projection caches. No third-party dependencies; keep it that way. Example controllers in `examples/`. The benchmark in `kube/bench/` is a separate module that imports `client-go`, and CI doesn't build it. Design and measurements: [`kube/docs/design.md`](kube/docs/design.md) | `go test -race ./...`. End-to-end tests need `kube-apiserver` and `etcd` and skip without `KUBEBUILDER_ASSETS`; CI sets it from `kube/fetch-envtest.sh` |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `palette-swap/` | Nearest-color palette swap compiled to Wasm, also served as a Pages app. Scalar tests always run. `GOEXPERIMENT=simd` adds the portable mapper | `go test -race ./...` and `npm test` |
 | `pasta/` | CUE-described multi-language linters/fixers over tree-sitter ASTs; see [`pasta/AGENTS.md`](pasta/AGENTS.md). Playground style rules are enrolled via `.pasta/examples` → `pasta/analyzers` and gated by the pasta leg of `test.yml` | `go test -race ./...` (incl. e2e shallow-clone smoke); CI also runs `pasta test` + monorepo lint |
