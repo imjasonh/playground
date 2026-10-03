@@ -33,9 +33,17 @@ GitHub, and any other forge, is a downstream copy:
   that people push there.
 - Checks and test Pods fetch only from the mirror, and checks push fixes only
   to it. The mirror reads the commands at the start of each
-  `git-receive-pack` request, and allows a check to update only a branch that
-  has a parent, never a parent, and only from the old commit that the push
-  names. Only the merge controller lands branches.
+  `git-receive-pack` request and applies its caller's push rules. A check can
+  update only a branch that has a parent, never a parent, and only from the
+  old commit that the push names. A controller that starts branches, such as
+  the [dependency update controller](#update-dependencies-with-a-controller),
+  can also create branches under its own prefix. Only the merge controller
+  updates parents.
+- When a branch changes on both sides between syncs, such as a person's push
+  to GitHub and a check's fix pushed to the mirror, the mirror overwrites
+  neither. It keeps the external repository's head under a separate ref,
+  reports the branch as diverged, and leaves it to the
+  [conflict resolution controller](#resolve-conflicts-in-a-controller).
 - The mirror holds the only credentials for external repositories, so no
   other program reads Secrets.
 - Every ref change passes through the mirror, so it tells git-k8s about each
@@ -46,14 +54,11 @@ GitHub, and any other forge, is a downstream copy:
 
 Questions to settle first:
 
-- What happens when a branch changes on both sides between syncs, such as a
-  person's push to GitHub and a check's fix pushed to the mirror. One rule is
-  that parents change only through the mirror, which GitHub branch rules can
-  enforce, and that the mirror takes a push from GitHub only when it
-  fast-forwards the branch, and reports the branch as diverged otherwise.
 - When the mirror acknowledges a push from a check or the merge controller.
   Acknowledging it before syncing it to GitHub keeps git-k8s working through
   a GitHub outage, and acknowledging it after keeps the two from differing.
+  The conflict resolution controller coalesces branches that differ, so
+  acknowledging first fits GitHub's role as a downstream copy.
 - How callers prove who they are. A projected service account token with an
   audience such as `git-k8s`, checked with a TokenReview, maps a caller to
   `check-NAME`. A test Pod runs without a service account token, so its init
@@ -126,6 +131,44 @@ Questions to settle first:
   needs a fake token service.
 - Whether to support GitHub Enterprise Server, which the public service
   doesn't reach.
+
+## Resolve conflicts in a controller
+
+Two kinds of conflict stop a branch, and nothing resolves either one:
+
+- `check-base` merges a branch's parent into it when the branch falls behind.
+  When that merge conflicts, the check fails with the conflicting paths in
+  its `conflicts` output, and the branch waits for a person.
+- With the mirror, a branch can change both in the mirror and in the
+  external repository between syncs. The mirror overwrites neither, so the
+  branch stays diverged.
+
+The decided fix is a separate conflict resolution controller that tries to
+coalesce both kinds. For a merge that conflicts, it pushes a merge of the
+parent that resolves the conflicts. For a diverged branch, it pushes a
+commit to the mirror that contains both heads, and the mirror then
+fast-forwards the external repository to it. Each resolution is a new head,
+so every check runs again on it, and it counts toward the branch's
+`maxAutomatedCommits`.
+
+The controller tries a resolution that git can make by itself first, such as
+one that `git rerere` recorded earlier. Otherwise, an agent can resolve the
+conflict, as described in [Add agentic operators](#add-agentic-operators). A
+local agent in a Pod that has both commits checked out from the mirror edits
+the conflicting files, builds the result, and pushes it. When neither works,
+the branch stays as it is, and the controller reports why.
+
+Questions to settle first:
+
+- How to resolve a diverged parent. A resolution commit on a parent would
+  skip the merge gates, so the controller could push it to a new child
+  branch that lands through the gates like any other. GitHub branch rules
+  that let only the mirror push to parents make this rare.
+- Whether to merge or rebase. A merge keeps both histories, while a rebase
+  rewrites commits that someone already pushed.
+- Where the mirror reports divergence, such as a condition and the external
+  repository's head in the `GitBranch`'s status, which the controller
+  reconciles.
 
 ## Land branches through a merge queue
 
@@ -228,31 +271,39 @@ round of checks or a rule about which results still count.
 ## Add agentic operators
 
 Some checks and controllers are better written as an AI agent than as code:
-a check that reviews a branch's change and passes or fails it, a check that
-fixes a failing test and pushes the fix, or a controller that writes a pull
-request's description. The first design called for the review check, but
-`check-approval` only reads a person's approval. The Cursor SDK
-(`@cursor/sdk`), which this repository's `nethack-agent` and `its-not-jaws`
-use, runs an agent with a Cursor API token.
 
-There are two ways to run the agent:
+- A check that reviews a branch's change and passes or fails it. The first
+  design called for one, but `check-approval` only reads a person's
+  approval.
+- A check that fixes a failing test and pushes the fix.
+- A controller that writes a pull request's description.
+- The [conflict resolution controller](#resolve-conflicts-in-a-controller),
+  when git can't resolve a conflict by itself.
+- The [dependency update controller](#update-dependencies-with-a-controller),
+  when an update breaks the build.
 
-- A local agent runs in the cluster, in a sandboxed Pod for each branch like
-  `check-gotest`'s, with the branch checked out from the mirror as its
-  working directory. It sees only the files and tools that the check gives
-  it.
-- A cloud agent runs on Cursor's machines, against a repository that it can
-  clone. The mirror is in the cluster, so a cloud agent works on GitHub, the
-  downstream copy, and its pushes have to reach the mirror before git-k8s
-  sees them.
+The Cursor SDK (`@cursor/sdk`), which this repository's `nethack-agent` and
+`its-not-jaws` use, runs an agent with a Cursor API token.
 
-Local agents fit the mirror better. They work on it directly, and the
-sandbox limits what an agent can do when the code that it reads tries to
-steer it.
+The decision is to start with local agents in Pods, and to add cloud agents
+later. A local agent runs in a sandboxed Pod for each branch, like
+`check-gotest`'s, with the branch checked out from the mirror as its working
+directory. The SDK is a Node package, so the Pod's image holds Node and a
+small runner, and the operator creates the Pod and reads its result, as
+`check-gotest` does with its test Pods. The agent sees only the files and
+tools that the operator gives it, which limits what it can do when the code
+that it reads tries to steer it.
+
+A cloud agent runs on Cursor's machines, against a repository that it can
+clone. The mirror is in the cluster, so a cloud agent would work on GitHub,
+the downstream copy. Its pushes reach git-k8s through the mirror's sync, and
+the conflict resolution controller coalesces any that race a change in the
+mirror. An interface that hides where the agent runs, with a fake for tests
+like `its-not-jaws`'s mock backend, lets operators move to cloud agents
+without other changes.
 
 Questions to settle first:
 
-- Local agents, cloud agents, or both.
 - What it costs. The SDK reports each run's token usage, which
   `nethack-agent` turns into a dollar cost. A budget for each branch, like
   `maxAutomatedCommits`, and for each day, keeps a loop of runs from costing
@@ -265,6 +316,46 @@ Questions to settle first:
   mounts keeps it from every other program.
 - What to do when two runs disagree. An agent can give a different answer
   each time, so a result for a commit stays until the commit changes.
+- How an operator follows a cloud agent's run, which happens outside the
+  cluster, and which GitHub branches a cloud agent may push to.
+
+## Update dependencies with a controller
+
+This repository's dependency workflow updates every app's dependencies each
+day, and opens a pull request that merges when the tests pass. A dependency
+update controller could do the same for each repository that git-k8s tracks.
+
+The proposed fix is a controller that polls for new versions of a
+repository's dependencies, such as with `go list -m -u all` for Go modules,
+on an interval that it sets with kube's `RequeueAfter`. When it finds
+updates, it applies them and pushes the result to a new branch in the mirror
+under its own prefix, such as `deps/`. The `GitRepository` tracks that prefix
+with the updated branch, such as `main`, as its parent. Checks then run on
+the branch as on any other, and it lands when its merge gate passes.
+
+When an update breaks the build or the tests, a local agent can change the
+code to fit the dependency's new API, as described in
+[Add agentic operators](#add-agentic-operators), and push the change to the
+branch, within the branch's budget for automated commits. When the agent
+can't fix it, the branch waits for a person.
+
+Questions to settle first:
+
+- Whether to update every dependency on one branch, as the dependency
+  workflow does, or each on its own branch, so that one bad update doesn't
+  hold back the rest.
+- How a merge gate tells a dependency branch apart, for example to land it
+  without a person's approval when its tests pass. `when` sees only
+  `checks`. It could also get the branch's name, which the mirror's prefix
+  rules make trustworthy, or the controller could report a check that passes
+  on the branches that it made.
+- Which ecosystems to support first. This repository's
+  `update-go-dependencies.sh`, `update-js-dependencies.sh`, and
+  `update-rust-dependencies.sh` show what each takes.
+- How long to wait before taking a new version. Compromised releases are
+  often pulled within days, so a delay keeps most of them out.
+- What happens to a branch that hasn't landed when newer versions come out.
+  The controller could push the newer versions to the same branch.
 
 ## kube changes that git-k8s would use
 
