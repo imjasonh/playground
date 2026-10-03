@@ -13,6 +13,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
+	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 )
@@ -32,7 +33,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-var check = checks.Check{Name: "base", UsesParent: true, Run: run}
+var check = checks.Check{Name: "base", UsesParent: true, Remote: credentials.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	repo, err := in.Repo(ctx)

@@ -54,6 +54,11 @@ type Check struct {
 	// Always runs the check on every reconcile, instead of only when the
 	// heads change. Use it for checks that read only the GitBranch object.
 	Always bool
+	// Remote returns a repository's URL and credentials. A check that calls
+	// Input.Repo or returns a Fix sets it to credentials.Remote. A check
+	// that leaves it nil doesn't link that package, so its program can't
+	// read Secrets.
+	Remote func(context.Context, *gitk8s.Repository) (git.Remote, error)
 	// Run examines the branch.
 	Run func(ctx context.Context, in *Input) (Verdict, error)
 }
@@ -162,7 +167,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		return fmt.Errorf("GitRepository %s/%s doesn't exist", meta.Namespace, spec.Repository)
 	}
 	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir} })
-	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Identity: r.cfg.Identity, Previous: cur, cache: r.cache}
+	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Identity: r.cfg.Identity, Previous: cur, check: &r.check, cache: r.cache}
 	defer in.release()
 
 	res := &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit}
@@ -240,6 +245,7 @@ type Input struct {
 	// Previous is the check's last result, which can be for other commits.
 	Previous *gitk8s.CheckResult
 
+	check     *Check
 	cache     *gitk8s.Cache
 	remote    *git.Remote
 	local     *git.Repo
@@ -247,10 +253,13 @@ type Input struct {
 	mergeBase *string
 }
 
-// Remote returns the repository's URL and credentials.
+// Remote returns the repository's URL and credentials, from Check.Remote.
 func (in *Input) Remote(ctx context.Context) (git.Remote, error) {
 	if in.remote == nil {
-		r, err := gitk8s.RemoteFor(ctx, in.Repository)
+		if in.check.Remote == nil {
+			return git.Remote{}, fmt.Errorf("the %s check can't reach the repository: set Check.Remote to credentials.Remote", in.check.Name)
+		}
+		r, err := in.check.Remote(ctx, in.Repository)
 		if err != nil {
 			return r, err
 		}

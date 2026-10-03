@@ -10,37 +10,7 @@ import (
 	"sync"
 
 	"github.com/imjasonh/playground/git-k8s/internal/git"
-	"github.com/imjasonh/playground/kube"
-	"github.com/imjasonh/playground/kube/k8s"
 )
-
-// RemoteFor returns a repository's URL and credentials. It reads the
-// Secret that SecretRef names with kube.Fetch, so it must run in a
-// reconcile, and the Secret isn't cached.
-func RemoteFor(ctx context.Context, repo *Repository) (git.Remote, error) {
-	r := git.Remote{URL: repo.Spec.URL}
-	if repo.Spec.SecretRef == nil {
-		return r, nil
-	}
-	name := repo.Spec.SecretRef.Name
-	s, err := kube.Fetch[k8s.Secret](ctx, repo.Namespace, name)
-	if err != nil {
-		return r, fmt.Errorf("reading Secret %s: %w", name, err)
-	}
-	if s == nil {
-		return r, fmt.Errorf("Secret %s doesn't exist", name)
-	}
-	password := string(s.Data["password"])
-	if password == "" {
-		return r, fmt.Errorf("Secret %s has no password key", name)
-	}
-	username := string(s.Data["username"])
-	if username == "" {
-		username = "git"
-	}
-	r.Auth = &git.Auth{Username: username, Password: password}
-	return r, nil
-}
 
 // DefaultCacheDir is the default of the -cache-dir flags. The Deployments
 // that kube's generate writes have a read-only root file system and a

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 )
@@ -42,7 +43,7 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository
 		}
 	}
 
-	remote, err := gitk8s.RemoteFor(ctx, &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec})
+	remote, err := credentials.Remote(ctx, &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec})
 	if err != nil {
 		ready.Reason, ready.Message = "CredentialsUnavailable", err.Error()
 		return err

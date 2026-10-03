@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 )
@@ -164,7 +165,7 @@ func (m *merger) open(ctx context.Context, b *gitk8s.GitBranch) (*git.Repo, git.
 	if repo == nil {
 		return nil, git.Remote{}, nil, fmt.Errorf("GitRepository %s/%s doesn't exist", b.Namespace, b.Spec.Repository)
 	}
-	remote, err := gitk8s.RemoteFor(ctx, repo)
+	remote, err := credentials.Remote(ctx, repo)
 	if err != nil {
 		return nil, remote, nil, err
 	}

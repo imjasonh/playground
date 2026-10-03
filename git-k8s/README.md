@@ -149,11 +149,17 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	return checks.Fail("needs a README.md"), nil
 }
 
-func main() { checks.Main[Branch](checks.Check{Name: "readme", Run: run}) }
+func main() {
+	checks.Main[Branch](checks.Check{Name: "readme", Remote: credentials.Remote, Run: run})
+}
 ```
 
 `in.Repo` fetches the branch and its parent into the program's local
 repository. A verdict with a `Fix` commit asks the framework to push it.
+Both need `Remote: credentials.Remote`, which reads the repository's
+Secret. `generate` grants a program what its packages call, so a check that
+reads only the `GitBranch`, such as `check-approval`, leaves `Remote` out,
+and its program can't read Secrets.
 
 ### Sandboxed checks
 

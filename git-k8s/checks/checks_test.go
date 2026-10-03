@@ -7,6 +7,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
+	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/kube"
@@ -30,7 +31,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 // touch passes branches that have a TOUCHED file, and otherwise proposes a
 // commit that adds one.
 func touch(runs *int) checks.Check {
-	return checks.Check{Name: "touch", Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+	return checks.Check{Name: "touch", Remote: credentials.Remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		*runs++
 		repo, err := in.Repo(ctx)
 		if err != nil {
@@ -110,6 +111,20 @@ func (f *fixture) reconcile(t *testing.T, check checks.Check) error {
 	t.Helper()
 	ctx, _ := kube.Fake(t.Context(), f.branch, f.repo, f.secret)
 	return checks.NewReconciler[Branch](check, f.cfg).Reconcile(ctx, f.branch)
+}
+
+func TestRepoNeedsRemote(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
+	runs := 0
+	check := touch(&runs)
+	check.Remote = nil
+	err := f.reconcile(t, check)
+	if err == nil || !strings.Contains(err.Error(), "set Check.Remote to credentials.Remote") {
+		t.Fatalf("err = %v, want one that says to set Check.Remote", err)
+	}
+	if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error {
+		t.Errorf("result = %+v, want Error", res)
+	}
 }
 
 func TestPushesFixThenPasses(t *testing.T) {

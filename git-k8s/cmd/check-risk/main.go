@@ -18,6 +18,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
+	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -41,7 +42,7 @@ var (
 	sensitive = flag.String("sensitive", "", "comma-separated globs of paths that make a change high risk, such as auth/**,**/*.pem")
 )
 
-var check = checks.Check{Name: "risk", UsesParent: true, Run: run}
+var check = checks.Check{Name: "risk", UsesParent: true, Remote: credentials.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	repo, err := in.Repo(ctx)
