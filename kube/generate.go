@@ -402,6 +402,9 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 			{"readOnlyRootFilesystem", true},
 			{"capabilities", object{{"drop", []string{"ALL"}}}},
 		}},
+		// The root file system is read-only, so give os.TempDir somewhere to
+		// write.
+		{"volumeMounts", []any{object{{"name", "tmp"}, {"mountPath", "/tmp"}}}},
 	}
 	docs = append(docs, object{
 		{"apiVersion", "apps/v1"}, {"kind", "Deployment"}, {"metadata", meta(o.name, true)},
@@ -414,6 +417,7 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 					{"serviceAccountName", o.name},
 					{"securityContext", object{{"runAsNonRoot", true}, {"seccompProfile", object{{"type", "RuntimeDefault"}}}}},
 					{"containers", []any{container}},
+					{"volumes", []any{object{{"name", "tmp"}, {"emptyDir", object{}}}}},
 				}},
 			}},
 		}},

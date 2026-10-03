@@ -2,6 +2,8 @@ package kube
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"reflect"
 	"time"
 
@@ -13,6 +15,11 @@ import (
 // Fetch, and Own read from world, which holds pointers to objects. Nothing is
 // sent to a cluster; the returned Recorder holds what the reconciler asked
 // for.
+//
+// As in a cluster, a read sees the world's objects of every type of a kind.
+// A reconcile that reads a smaller type of Deployment sees each
+// k8s.Deployment in world, with only the fields that its type declares. An
+// object of the type itself hides one of another type with the same name.
 //
 //	ctx, rec := kube.Fake(t.Context(), site, &k8s.Deployment{...})
 //	if err := r.Reconcile(ctx, site); err != nil {
@@ -70,7 +77,9 @@ func intentsOf[T any](r *Recorder, kind intentKind) []*T {
 
 type fakeWorld struct {
 	byType map[reflect.Type]*memSource
-	tr     *tracker
+	// types holds byType's keys in the order that the world added them.
+	types []reflect.Type
+	tr    *tracker
 }
 
 func (w *fakeWorld) src(t reflect.Type, ti *typeInfo) *memSource {
@@ -78,9 +87,46 @@ func (w *fakeWorld) src(t reflect.Type, ti *typeInfo) *memSource {
 	if s == nil {
 		s = &memSource{idn: len(w.byType) + 1, objs: map[Key]any{}}
 		w.byType[t] = s
+		w.types = append(w.types, t)
 	}
 	if s.ti == nil {
 		s.ti = ti
+	}
+	return s
+}
+
+// read returns the source for reads of ti. The first read of a type copies
+// in the world's objects of other types of the same kind, converted to ti
+// through JSON, except where an object of ti has the same name.
+func (w *fakeWorld) read(ti *typeInfo) *memSource {
+	s := w.src(ti.goType, ti)
+	if s.merged {
+		return s
+	}
+	s.merged = true
+	for _, t := range w.types {
+		if t == ti.goType {
+			continue
+		}
+		if oti, err := parseType(t); err != nil || oti.apiVersion != ti.apiVersion || oti.kind != ti.kind {
+			continue
+		}
+		for k, o := range w.byType[t].objs {
+			if _, ok := s.objs[k]; ok {
+				continue
+			}
+			b, err := json.Marshal(o)
+			if err != nil {
+				continue
+			}
+			v := reflect.New(ti.goType)
+			// Like the cache, tolerate fields whose JSON type doesn't match.
+			var te *json.UnmarshalTypeError
+			if err := json.Unmarshal(b, v.Interface()); err != nil && !errors.As(err, &te) {
+				continue
+			}
+			s.objs[k] = v.Interface()
+		}
 	}
 	return s
 }
@@ -94,17 +140,17 @@ func (w *fakeWorld) add(o any) {
 }
 
 func (w *fakeWorld) source(_ context.Context, ti *typeInfo) (source, error) {
-	return w.src(ti.goType, ti), nil
+	return w.read(ti), nil
 }
 
-func (w *fakeWorld) existing(ti *typeInfo) source { return w.src(ti.goType, ti) }
+func (w *fakeWorld) existing(ti *typeInfo) source { return w.read(ti) }
 
 func (w *fakeWorld) children(_ context.Context, _ *core, ti *typeInfo) (source, error) {
-	return w.src(ti.goType, ti), nil
+	return w.read(ti), nil
 }
 
 func (w *fakeWorld) fetch(_ context.Context, ti *typeInfo, k Key) (any, error) {
-	return w.src(ti.goType, ti).get(k), nil
+	return w.read(ti).get(k), nil
 }
 
 func (w *fakeWorld) resolve(_ context.Context, ti *typeInfo) (resolved, error) {
@@ -122,6 +168,9 @@ type memSource struct {
 	idn  int
 	ti   *typeInfo
 	objs map[Key]any
+	// merged reports whether objs holds the world's objects of other types
+	// of the same kind.
+	merged bool
 }
 
 func (s *memSource) id() int                          { return s.idn }

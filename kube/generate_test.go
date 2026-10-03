@@ -147,6 +147,8 @@ func TestManifests(t *testing.T) {
 		`"serviceAccountName":"web-site"`,
 		`"runAsNonRoot":true`,
 		`"readOnlyRootFilesystem":true`,
+		`"volumeMounts":[{"mountPath":"/tmp","name":"tmp"}]`,
+		`"volumes":[{"emptyDir":{},"name":"tmp"}]`,
 	} {
 		if !strings.Contains(string(b), s) {
 			t.Errorf("the Deployment lacks %s: %s", s, b)

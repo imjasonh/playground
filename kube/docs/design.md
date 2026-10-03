@@ -419,19 +419,25 @@ and label selector. After the reconcile, the framework replaces the
 reconcile's previous dependencies with the new ones, so a reconcile that stops
 reading an object stops depending on it.
 
-When an informer sees a change, it finds the reconciles that read the object
-by name, and the reconciles whose lists match the object's old or new labels.
-Matching either catches objects that start or stop matching a selector. Those
-reconciles go back in the queue. The `kube_tracked_dependencies` metric counts
-the recorded dependencies.
+An informer passes on a change only if it changes a field that the informer's
+type declares. Every change has a new `metadata.resourceVersion`, and one that
+changes only that, or only fields that the type doesn't declare, can't change
+what a reconcile reads. So declaring fewer fields means fewer reconciles, as
+well as less memory. Metadata-only types can't see the fields that matter, so
+for them every new resource version counts.
+
+When an informer passes on a change, the framework finds the reconciles that
+read the object by name, and the reconciles whose lists match the object's old
+or new labels. Matching either catches objects that start or stop matching a
+selector. Those reconciles go back in the queue. The
+`kube_tracked_dependencies` metric counts the recorded dependencies.
 
 Owned objects carry their owner in a label and an annotation, and each type's
-cache indexes objects by owner. A change to an owned object, including its
+cache indexes objects by owner. A change to an owned object, including to its
 status, runs its owner's reconcile again. A change to the reconciled object
-runs its reconcile only when a declared field other than `status` or
-`metadata.resourceVersion` changed, so the controller's own status writes
-don't cause another reconcile. Metadata-only types can't see the fields that
-matter, so for them every new resource version counts.
+runs its reconcile only when a declared field other than `status` changed, or
+someone else changed the status, so the controller's own status writes don't
+cause another reconcile.
 
 ### The work queue
 
@@ -488,6 +494,15 @@ the cached one, and writes it with server-side apply only if it differs.
 characters. `kube.SetCondition` keeps `lastTransitionTime` when a condition's
 status doesn't change, so a reconcile that observes the same state writes
 nothing.
+
+Several managers can write one status, each to its own fields. A status
+write manages every field it sends, so a reconcile that reads a field that
+another manager writes clears it before returning, and the status then never
+equals the cached one. The framework skips such a write by the same rule as for
+`Apply`. If the cached status has every field of the new one, and the
+controller's last status write sent the same status, there's nothing to add
+or remove. Server-side apply ignores annotations sent to the status
+subresource, so the record of the last write is in memory.
 
 A reconcile that returns an error is retried with backoff, and its intents are
 discarded. An error wrapped with `kube.Permanent` isn't retried; the object
@@ -738,15 +753,18 @@ go-containerregistry with it, so the program in the cluster links only kube.
 quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
 `1:20`, and `.5`. The Deployment runs the program with probes on `/readyz` and
 `/healthz`, as a non-root user with a read-only root file system, and with
-`-leader-elect` or `-shards` when it has more than one replica.
+`-leader-elect` or `-shards` when it has more than one replica. An `emptyDir`
+volume at `/tmp` gives `os.TempDir` somewhere to write.
 
 ### Testing
 
 `kube.Fake` gives `Reconcile` a scope backed by a list of objects instead of
 caches. The reconcile runs the same code as in a cluster, and the scope
 records its intents for the test to check with `kube.Owned`,
-`kube.Applied`, and `kube.Deleted`. A test doesn't fake an API server, so
-there's no fake behavior that can differ from a real server's.
+`kube.Applied`, and `kube.Deleted`. In a cluster, every type of a kind reads
+the same objects, so the fake converts the listed objects of one type through
+JSON for reads of another type of the same kind. A test doesn't fake an API
+server, so there's no fake behavior that can differ from a real server's.
 
 End-to-end tests start `etcd` and `kube-apiserver` from the controller-tools
 envtest release, with no kubelet or controller manager. The API server calls
@@ -869,6 +887,10 @@ The end-to-end tests count writes with the `kube_apply_total` and
 `kube_status_writes_total` metrics. After a Widget converges, five label
 changes cause five reconciles, no applies, and no status writes. A new manager
 that starts over the converged Widget makes no applies and no status writes.
+A controller that totals the votes that other managers write into a Poll's
+status makes no status writes for votes that leave the total as it was. A
+change to a ConfigMap field that a reconcile's type doesn't declare doesn't
+run the reconcile again.
 
 ### Binary size and dependencies
 
@@ -907,7 +929,9 @@ offers:
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
   stop matching looks deleted, so its finalizer is never removed.
 - After a restart, each object declared with `Apply` is applied once, because
-  the framework doesn't annotate objects it doesn't own.
+  the framework doesn't annotate objects it doesn't own. A status that leaves
+  out other managers' fields is also written once, because the record of the
+  last status write is in memory.
 - The CRD checks compare field names, types, and required fields, not
   validation such as enums or bounds, and they need permission to list
   objects in every namespace.

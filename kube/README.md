@@ -149,6 +149,12 @@ status has a `Conditions []kube.Condition` field, the framework keeps a
 `lastTransitionTime` when its status doesn't change, so a reconcile that
 observes the same state doesn't write status.
 
+Several writers can share one status, each with its own fields. A status
+write manages every field that the status has when `Reconcile` returns, so
+clear the fields that other writers own before returning. The framework
+writes status only when a field that the controller sets changes, so reading
+the other writers' fields costs no writes.
+
 A reconciler that also has a `Finalize(ctx context.Context, obj *T) error`
 method gets a finalizer on each object. The framework calls `Finalize` when the
 object is deleted and removes the finalizer when `Finalize` returns `nil`. Use
@@ -309,9 +315,16 @@ uses. Writing with a partial type is safe because every write is a server-side
 apply of the fields you set. The framework never sends a whole object with an
 update, so it can't clear fields that your struct doesn't declare.
 
+A smaller type also runs fewer reconciles. A change to an object runs a
+reconcile again only if it changes a field that the type declares, so a
+controller that reads this `Pod` type doesn't reconcile again when a Pod's
+status changes.
+
 A struct that declares no fields besides `kube.Object` gets metadata only. The
 API server sends `PartialObjectMetadata`, so a controller that reconciles
-every Secret by its annotations never receives or caches Secret data.
+every Secret by its annotations never receives or caches Secret data. Every
+change to a metadata-only object counts, because the type can't see the
+fields that its reconciler fetches.
 
 Caches read built-in types as protobuf, which the API server encodes in about
 half the time of JSON. kube has no generated protobuf code. A schema of the
@@ -428,6 +441,8 @@ The command does the following:
    program needs, their bindings, a Deployment, a PodDisruptionBudget, and a
    Service for webhooks. With more than one replica, the Deployment runs the
    program with `-leader-elect`, or with `-shards` when you set `-shards`.
+   The container's root file system is read-only, with an `emptyDir` volume
+   at `/tmp` for temporary files.
 
 The images have fixed timestamps, so the same source gives the same digest,
 and running `generate` again without changes leaves the cluster as it was.
@@ -520,6 +535,10 @@ func TestReconcile(t *testing.T) {
 	}
 }
 ```
+
+As in a cluster, a read sees the objects of every type of its kind. A
+reconcile that reads your own smaller `Deployment` type sees each
+`k8s.Deployment` that you pass to `kube.Fake`.
 
 To test `Validate`, `Default`, `ConvertTo`, and `ConvertFrom`, call them
 directly. With a context from `kube.Fake`, `Validate` and `Default` can read
@@ -623,7 +642,7 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 | `*.go` | The `kube` package: types, caches, dependency tracking, controllers, status, webhooks, versions, shards, metrics, and fakes |
 | `k8s/` | Types for common built-in objects |
 | `examples/` | Example controllers and webhooks with unit and end-to-end tests |
-| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, panics, permanent errors, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
+| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, shared status, changes that types can't see, panics, permanent errors, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
 | `internal/client/` | REST client, kubeconfig, authentication, discovery, and JSON and protobuf watch decoding |
 | `internal/protobuf/` | Protobuf decoding of built-in types into partial structs, and its schema; `gen/` is the separate module that generates the schema |
 | `internal/certs/` | Certificate authority and serving certificates for webhooks |

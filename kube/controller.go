@@ -175,6 +175,9 @@ type core struct {
 	// statuses holds a hash of each object's status as this controller last
 	// wrote or confirmed it, to tell its own status writes from others'.
 	statuses map[Key]uint64
+	// statusApplies holds a hash of the status that this controller last
+	// applied to each object.
+	statusApplies map[Key]uint64
 }
 
 type appliedKey struct {
@@ -249,19 +252,36 @@ func (c *core) lastStatus(k Key) (uint64, bool) {
 	return h, ok
 }
 
-// setStatus records h as the hash of k's status, or forgets k's if ok is
-// false.
+// setStatus records h as the hash of k's status. If ok is false, it forgets
+// k's status, and the status that this controller last applied to k.
 func (c *core) setStatus(k Key, h uint64, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !ok {
 		delete(c.statuses, k)
+		delete(c.statusApplies, k)
 		return
 	}
 	if c.statuses == nil {
 		c.statuses = map[Key]uint64{}
 	}
 	c.statuses[k] = h
+}
+
+func (c *core) lastStatusApply(k Key) (uint64, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	h, ok := c.statusApplies[k]
+	return h, ok
+}
+
+func (c *core) setStatusApply(k Key, h uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.statusApplies == nil {
+		c.statusApplies = map[Key]uint64{}
+	}
+	c.statusApplies[k] = h
 }
 
 type controller[T any, P Resource[T]] struct {
