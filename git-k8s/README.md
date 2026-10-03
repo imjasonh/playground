@@ -245,6 +245,3 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
 - `when` is a subset of CEL, not all of it.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
   NetworkPolicy, so a test can reach anything that the namespace's Pods can.
-- The merge controller writes status on every reconcile while a branch has
-  check results, because it must leave `status.checks` out of its status. The
-  API server doesn't store a write that changes nothing.
