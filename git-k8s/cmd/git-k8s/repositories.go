@@ -9,6 +9,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/credentials"
+	"github.com/imjasonh/playground/git-k8s/gate"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 )
@@ -36,7 +37,7 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository
 		if rule.Merge == nil || rule.Merge.When == "" {
 			continue
 		}
-		if _, err := gitk8s.ParseGate(rule.Merge.When); err != nil {
+		if _, err := gate.Parse(rule.Merge.When); err != nil {
 			ready.Reason = "InvalidMergePolicy"
 			ready.Message = fmt.Sprintf("branches rule %q: when: %v", rule.Match, err)
 			return kube.Permanent(errors.New(ready.Message))

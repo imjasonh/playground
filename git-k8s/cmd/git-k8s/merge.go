@@ -10,6 +10,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/credentials"
+	"github.com/imjasonh/playground/git-k8s/gate"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 )
@@ -81,7 +82,7 @@ func evaluate(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) (b
 		}
 		return true, nil
 	}
-	g, err := gitk8s.ParseGate(policy.When)
+	g, err := gate.Parse(policy.When)
 	if err != nil {
 		return false, err
 	}

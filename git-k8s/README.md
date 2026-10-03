@@ -184,15 +184,20 @@ under a sandboxing runtime such as gVisor, and `-go-image`, `-git-image`,
 
 ## Merge gates
 
-`when` is a subset of [CEL](https://cel.dev). It has one variable, `checks`,
-which maps each check that the policy lists to an object with `passed`
-(bool), `state` (string), and `outputs` (map of strings). A check without a
-result for the branch's current commits has state `Pending`. The language
-has string literals, `true` and `false`, field selection, indexing with a
-string (`checks["my-check"]`), `has()`, `==`, `!=`, `!`, `&&`, `||`, and
-parentheses. As in CEL, `&&` and `||` give a result when one side decides it,
-even if the other side is an error, such as a missing output. Without `when`,
-every listed check must pass.
+`when` is a [CEL](https://cel.dev) expression. It has one variable,
+`checks`, which maps each check that the policy lists to an object with
+`passed` (bool), `state` (string), and `outputs` (map of strings). A check
+without a result for the branch's current commits has state `Pending`. All of
+CEL works, for example `int(checks.risk.outputs.lines) < 500` or
+`checks.all(c, checks[c].passed)`. In CEL, `&&` and `||` give a result when
+one side decides it, even if the other side is an error, such as a missing
+output. Without `when`, every listed check must pass.
+
+The repository controller compiles each `when` when it reads the
+`GitRepository`, so a syntax error or a misspelled field, such as
+`checks.gofmt.pased`, makes the `GitRepository` not `Ready` instead of
+holding branches back later. Each evaluation can cost at most 100,000, which
+stops an expression that loops over the checks many times.
 
 ## Install
 
@@ -253,6 +258,5 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
   write runs the repositories controller again, so a check's fix is listed
   soon after the check pushes it.
 - Remotes authenticate with HTTP basic auth only.
-- `when` is a subset of CEL, not all of it.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
   NetworkPolicy, so a test can reach anything that the namespace's Pods can.

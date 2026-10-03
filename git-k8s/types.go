@@ -69,7 +69,7 @@ type BranchRule struct {
 // MergePolicy is what a branch needs before it lands on its parent.
 type MergePolicy struct {
 	Checks              []CheckPolicy `json:"checks,omitempty" doc:"Checks that run on every branch proposed to this one."`
-	When                string        `json:"when,omitempty" doc:"Expression that must be true to land a branch, in a subset of CEL. The checks variable maps each check name to an object with passed (bool), state (string), and outputs (map of strings). A check with no result for the branch's current commits has state Pending. Without an expression, every listed check must pass."`
+	When                string        `json:"when,omitempty" doc:"CEL expression that must be true to land a branch. The checks variable maps each check name to an object with passed (bool), state (string), and outputs (map of strings). A check with no result for the branch's current commits has state Pending. Without an expression, every listed check must pass."`
 	Landing             string        `json:"landing,omitempty" kube:"enum=FastForward,default=FastForward" doc:"How to land a branch. FastForward moves the parent to the branch's head, so the parent ends up at the commit that the checks saw."`
 	MaxAutomatedCommits *int32        `json:"maxAutomatedCommits,omitempty" kube:"min=0,max=100,default=5" doc:"Most commits that checks can push to one branch, counted by the Git-K8s-Fixer trailer. The limit stops two checks that disagree from pushing forever."`
 	// DeleteMergedBranches deletes a branch from the remote after it lands.
