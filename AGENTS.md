@@ -27,6 +27,7 @@ playground/
 ├── git/                   # in-browser read-only git client (JS + Jest + Playwright)
 ├── git-fuse/              # Rust CLI: read-only FUSE adapter for git-server (not a Pages app)
 ├── git-server/            # Rust Cloudflare Worker: git smart-HTTP server on R2/DO (not a Pages app)
+├── git-k8s/               # Go: kube controllers that track git branches, run checks, and fast-forward merges
 ├── life-lab/              # browser front-end for life-stl (wasm + three.js + Node tests)
 ├── its-not-jaws/          # Cursor SDK harness: knower/guesser secret-guessing game
 ├── nethack-agent/         # Cursor SDK harness: learn a terminal game from the screen and its own notes
@@ -86,6 +87,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `sundial/` | yes | Sundial clock; JS modules, npm scripts, tests |
 | `web-push-demo/` | yes | Static front-end for `web-push`; HTML/JS, no build or tests |
 | `gitdb/` | no | Go CLI; no `index.html` |
+| `git-k8s/` | no | Go Kubernetes controllers built on `kube`; no `index.html` |
 | `kube/` | no | Go library (Kubernetes controller runtime) and example controllers; no `index.html` |
 | `ocidb/` | no | Go CLI; no `index.html` |
 | `pasta/` | no | Go CLI (CUE + tree-sitter linters); no `index.html` |
@@ -122,7 +124,10 @@ do not receive PR preview deployments.
 
 Each Go app is an isolated module. Keep its Go sources, tests, `go.mod`, and
 `go.sum` inside its own top-level directory; do not add a repo-root Go module or
-`go.work` file.
+`go.work` file. A Go app can import a library module from this repository, such
+as `kube`, with a `replace` directive to the library's directory
+(`replace github.com/imjasonh/playground/kube => ../kube` in `git-k8s/go.mod`),
+so that it builds against the library at head.
 
 ### Rust apps
 
@@ -307,7 +312,9 @@ Discovery is by **top-level directory**: a change under `kanoodle/` selects
 `kanoodle`, a change under `web-push/` selects `web-push`, and so on. Hidden
 directories (names starting with `.`) and changes outside any app directory
 (e.g. a lone top-level file) select nothing — so a PR that only edits CI scripts
-or the root `README.md` runs no app tests. `inkbot-esp32/` and `esp32-ble/` have
+or the root `README.md` runs no app tests. A Go module whose `go.mod` replaces
+another top-level module with a relative path is also selected when that
+directory changes, so a change under `kube/` tests `git-k8s` too. `inkbot-esp32/` and `esp32-ble/` have
 a `Cargo.toml` but are excluded from Rust discovery because they need the espup
 Xtensa toolchain. `inkbot-esp32.yml` and `esp32-ble.yml` run those host lib
 tests and firmware cross-builds instead.
@@ -614,7 +621,7 @@ bundle exec fastlane test
 
 - **Browser apps are client-side**: they must be static sites suitable for GitHub Pages (no server-side runtime in production).
 - **Prefer plain HTML + JS** for browser apps unless an app already uses a framework; match the style of neighboring code in that app directory.
-- **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports.
+- **Go apps are independent modules**: each app owns its `go.mod` and `go.sum`; avoid cross-app imports, except of library modules such as `kube`, which an app imports with a `replace` directive.
 - **Rust apps are independent crates**: each app owns its `Cargo.toml`, `Cargo.lock`, and `rust-toolchain.toml`; avoid cross-app imports. Each crate sets `[lints.rust] unused = "deny"` so unused methods, imports, and variables fail `cargo test` / `cargo build` (CI clippy also uses `-D warnings`, which includes rustc `dead_code` and clippy unused-* lints). Do not `#[allow(dead_code)]` to keep dead methods.
 - **There is one iOS host app** (`ios/`, the "Playground" container): add
   features as **experiments** inside it (same Bundle ID, no re-bootstrap). A
@@ -708,6 +715,7 @@ bundle exec fastlane test
 | Directory | Type | Tests |
 |-----------|------|-------|
 | `gitdb/` | git repository explorer backed by SQLite virtual tables | `go test -race ./...` |
+| `git-k8s/` | Kubernetes controllers built on `kube` (imported at head with `replace ../kube`). The core program lists each `GitRepository`'s branches with `git ls-remote` and owns a `GitBranch` for each tracked branch, and fast-forwards a branch's parent when the parent's merge gate passes. Check programs (`check-base`, `check-gofmt`, `check-risk`, `check-approval`) each own one `status.checks` key through server-side apply; `config/policy.yaml` enforces that with a ValidatingAdmissionPolicy. Git objects stay in local bare repositories, so `generate`'s Deployments need a writable cache volume (see `git-k8s/README.md`) | `go test -race ./...` (uses an in-process smart-HTTP git server). `GIT_K8S_KIND_E2E=1 go test -count=1 ./e2e/kind/` installs the programs with `generate` in a kind cluster and pushes branches to a git server on the host (needs Docker and git; CI runs it when `git-k8s/` or `kube/` changes) |
 | `kube/` | Kubernetes controller runtime written on the standard library alone: one struct and one `Reconcile` method per controller, generated CRDs with more than one version and conversion webhooks, CRD upgrades that migrate stored objects and refuse changes that lose data, admission webhooks, server-side apply, projection caches that read built-in types as protobuf, and replicas that split work with shard Leases. The runtime imports only the standard library; keep it that way. The one dependency, go-containerregistry, is for the `generate` command (builds, pushes, and writes install YAML with RBAC rules found by type-checking the program); `generate` builds the image's copy of the program with the `kube_nogenerate` tag, which leaves the command and go-containerregistry out. Example controllers and webhooks in `examples/`. Two directories are separate modules that CI doesn't build: the benchmark in `kube/bench/`, which imports `client-go`, and `kube/internal/protobuf/gen/`, which writes `kube/internal/protobuf/schema.txt` from `k8s.io/api` (after changing its `k8s.io/api` version, run `go run . -o ../schema.txt` there). Design and measurements: [`kube/docs/design.md`](kube/docs/design.md) | `go test -race ./...`. End-to-end tests need `kube-apiserver` and `etcd` and skip without `KUBEBUILDER_ASSETS`; CI sets it from `kube/fetch-envtest.sh`. `KUBE_KIND_E2E=1 go test -count=1 ./e2e/kind/` installs the examples with `generate` in a kind cluster with a local registry (needs Docker; CI runs it when `kube/` changes) |
 | `ocidb/` | OCI registry explorer backed by SQLite virtual tables | `go test -race ./...` |
 | `palette-swap/` | Nearest-color palette swap compiled to Wasm, also served as a Pages app. Scalar tests always run. `GOEXPERIMENT=simd` adds the portable mapper | `go test -race ./...` and `npm test` |
