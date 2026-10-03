@@ -1,10 +1,11 @@
 # Each check controller can write only its own entry in a GitBranch's
-# status.checks, and the merge controller can't write status.checks at all.
-# generate installs each program in a namespace with a service account of
-# the program's name, so check-gofmt runs as
-# system:serviceaccount:check-gofmt:check-gofmt and owns status.checks.gofmt.
-# Server-side apply already keeps well-behaved controllers apart; this
-# policy stops a buggy or compromised one from writing another's result.
+# status.checks, and no other service account, including the core
+# program's, can write status.checks at all. generate installs each program
+# in a namespace with a service account of the program's name, so
+# check-gofmt runs as system:serviceaccount:check-gofmt:check-gofmt and owns
+# status.checks.gofmt. A check installed under another name can't write
+# results. Server-side apply already keeps well-behaved controllers apart;
+# this policy stops a buggy or compromised one from writing another's result.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -27,8 +28,6 @@ spec:
       expression: >-
         size(variables.user) == 4 && variables.user[2] == variables.user[3] &&
         variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
-    - name: core
-      expression: size(variables.user) == 4 && variables.user[2] == "git-k8s" && variables.user[3] == "git-k8s"
     - name: old
       expression: >-
         has(oldObject.status) && has(oldObject.status.checks) ? oldObject.status.checks : {}
@@ -48,8 +47,8 @@ spec:
         (has(object.status) && has(object.status.conditions) ? object.status.conditions : []) ==
         (has(oldObject.status) && has(oldObject.status.conditions) ? oldObject.status.conditions : []))
       messageExpression: '"the " + variables.check + " check can only write status.checks." + variables.check'
-    - expression: '!variables.core || variables.new == variables.old'
-      message: the git-k8s controllers can't write status.checks
+    - expression: variables.check != "" || variables.new == variables.old
+      messageExpression: request.userInfo.username + " isn't a check's service account, so it can't write status.checks"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

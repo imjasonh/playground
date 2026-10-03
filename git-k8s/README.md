@@ -209,9 +209,12 @@ after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensi
 
 `config/policy.yaml` holds two ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
-stops the core program from changing `status.checks`. Server-side apply
-already keeps the controllers' writes apart; the policy stops a buggy or
-compromised check from writing another check's result. The second stops
+stops every other service account, including the core program's, from
+changing `status.checks`. A check must run as the service account
+`check-NAME` in the namespace `check-NAME`, as `generate` installs it, to
+write results. Server-side apply already keeps the controllers' writes
+apart; the policy stops a buggy or compromised check from writing another
+check's result. The second stops
 every git-k8s service account from setting the approve annotation, which is
 for people, and stops checks from changing `GitBranch` objects at all.
 

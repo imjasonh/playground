@@ -329,7 +329,7 @@ token="$(k -n check-gofmt create token check-gofmt)"
 status_url="${server}/apis/git-k8s.imjasonh.com/v1alpha1/namespaces/${NS}/gitbranches/$(branch_object main)/status?dryRun=All"
 patch_status() {
   curl -sS --cacert "${WORKDIR}/ca.crt" -o "${WORKDIR}/patch.json" -w '%{http_code}' -X PATCH \
-    -H "Authorization: Bearer ${token}" -H 'Content-Type: application/merge-patch+json' \
+    -H "Authorization: Bearer ${2:-${token}}" -H 'Content-Type: application/merge-patch+json' \
     --data "$1" "${status_url}"
 }
 code="$(patch_status '{"status":{"checks":{"risk":{"commit":"0000000","state":"Passed"}}}}')"
@@ -339,7 +339,17 @@ echo
 grep -q 'the gofmt check can only write status.checks.gofmt' "${WORKDIR}/patch.json"
 code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}')"
 [[ "${code}" == 200 ]]
-echo "check-gofmt can write status.checks.gofmt but not status.checks.risk."
+# A service account with check-gofmt's permissions but another name isn't a
+# check, so it can't write any result.
+k -n "${NS}" create serviceaccount rogue
+k create clusterrolebinding git-k8s-e2e-rogue --clusterrole=check-gofmt --serviceaccount="${NS}:rogue"
+rogue_token="$(k -n "${NS}" create token rogue)"
+code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}' "${rogue_token}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q "isn't a check's service account, so it can't write status.checks" "${WORKDIR}/patch.json"
+echo "check-gofmt can write status.checks.gofmt but not status.checks.risk, and other service accounts can't write either."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
