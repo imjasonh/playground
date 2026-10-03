@@ -92,15 +92,15 @@ func TestDescribe(t *testing.T) {
 	}{
 		{"reconciler", For[gizmo](gizmoReconciler{}, Owns[deployment]()), declared{reconciles: true, owns: []*typeInfo{{kind: "Deployment"}}}},
 		{"validator", For[gizmo](validatingReconciler{}), declared{reconciles: true, webhooks: true}},
-		{"conversion", For[conversionHub](nop[conversionHub]{}, Version[conversionSpoke]()), declared{reconciles: true, webhooks: true}},
-		{"no conversion", For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()), declared{reconciles: true}},
+		{"conversion", For[conversionHub](nop[conversionHub]{}, Version[conversionSpoke]()), declared{reconciles: true, webhooks: true, versioned: true}},
+		{"no conversion", For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()), declared{reconciles: true, versioned: true}},
 		{"webhooks", Webhooks[configMapMeta](labeler{}), declared{webhooks: true}},
 	} {
 		got, err := tc.c.describe()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.ti == nil || got.reconciles != tc.want.reconciles || got.webhooks != tc.want.webhooks || len(got.owns) != len(tc.want.owns) {
+		if got.ti == nil || got.reconciles != tc.want.reconciles || got.webhooks != tc.want.webhooks || got.versioned != tc.want.versioned || len(got.owns) != len(tc.want.owns) {
 			t.Errorf("%s: describe = %+v, want %+v", tc.name, got, tc.want)
 		}
 		for i, o := range got.owns {
@@ -158,6 +158,13 @@ func TestManifests(t *testing.T) {
 		t.Errorf("Service = %s", b)
 	}
 
+	o.tmpSize = "1Gi"
+	docs = o.manifests("ref", p)
+	if b, _ := json.Marshal(docs[len(docs)-2]); !strings.Contains(string(b), `"volumes":[{"name":"tmp","emptyDir":{"sizeLimit":"1Gi"}}]`) {
+		t.Errorf("with -tmp-size=1Gi, the Deployment = %s", b)
+	}
+	o.tmpSize = ""
+
 	o.replicas, o.shards = 1, 1
 	docs = o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}})
 	kinds = nil
@@ -173,6 +180,58 @@ func TestManifests(t *testing.T) {
 	}
 }
 
+func TestGrantsFor(t *testing.T) {
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}}
+	same := func(a, b grants) bool {
+		return reflect.ValueOf(a).UnsafePointer() == reflect.ValueOf(b).UnsafePointer()
+	}
+	for _, tc := range []struct {
+		name     string
+		ti       *typeInfo
+		watching bool
+		want     grants
+	}{
+		{"a namespaced type in a program that watches one namespace", &typeInfo{scope: "Namespaced"}, true, p.watched},
+		{"a namespaced type in a program that watches every namespace", &typeInfo{scope: "Namespaced"}, false, p.cluster},
+		{"a cluster-scoped type", &typeInfo{scope: "Cluster"}, true, p.cluster},
+		{"a type whose scope discovery decides", &typeInfo{}, true, p.cluster},
+	} {
+		if got := p.grantsFor(tc.ti, tc.watching); !same(got, tc.want) {
+			t.Errorf("%s: got the wrong grants", tc.name)
+		}
+	}
+}
+
+func TestManifestsForOneNamespace(t *testing.T) {
+	o := &generateOptions{program: "app", name: "app", namespace: "app-system", replicas: 1, shards: 1, watchNamespace: "team"}
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}}
+	p.cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")
+	p.watched.add("", "secrets", "", "get")
+	byKind := map[string]map[string]any{}
+	for _, d := range o.manifests("ref", p) {
+		b, _ := json.Marshal(d)
+		var m map[string]any
+		_ = json.Unmarshal(b, &m)
+		byKind[m["kind"].(string)] = m
+	}
+	role, binding := byKind["Role"], byKind["RoleBinding"]
+	if role == nil || role["metadata"].(map[string]any)["namespace"] != "team" {
+		t.Fatalf("Role = %v, want one in team", role)
+	}
+	if b, _ := json.Marshal(role["rules"]); string(b) != `[{"apiGroups":[""],"resources":["secrets"],"verbs":["get"]}]` {
+		t.Errorf("Role rules = %s", b)
+	}
+	if b, _ := json.Marshal(binding["subjects"]); string(b) != `[{"kind":"ServiceAccount","name":"app","namespace":"app-system"}]` {
+		t.Errorf("RoleBinding subjects = %s", b)
+	}
+	if b, _ := json.Marshal(byKind["ClusterRole"]["rules"]); strings.Contains(string(b), "secrets") {
+		t.Errorf("ClusterRole rules = %s, want no secrets", b)
+	}
+	if b, _ := json.Marshal(byKind["Deployment"]); !strings.Contains(string(b), `"args":["-addr=:8080","-namespace=team"]`) {
+		t.Errorf("Deployment = %s, want -namespace=team", b)
+	}
+}
+
 func TestGenerateArguments(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
@@ -182,6 +241,8 @@ func TestGenerateArguments(t *testing.T) {
 		{[]string{"-registry=ghcr.io/you", "extra"}, `unexpected argument "extra"`},
 		{[]string{"-registry=ghcr.io/you", "-platform=linux"}, "isn't os/architecture"},
 		{[]string{"-registry=ghcr.io/you", "-replicas=0"}, "at least 1"},
+		{[]string{"-registry=ghcr.io/you", "-tmp-size=lots"}, "isn't a quantity"},
+		{[]string{"-registry=ghcr.io/you", "-watch-namespace=Team_A"}, "isn't a namespace name"},
 		{[]string{"-registry=ghcr.io/you", "-nope"}, "flag provided but not defined"},
 	} {
 		var stderr bytes.Buffer
