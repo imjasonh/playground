@@ -40,6 +40,8 @@ bump when the tests still pass, so old experiments don't rot.
 - **[`sundial/`](sundial/)** — a clock whose long shadow follows the sun, like
   a sundial. At night there is no shadow.
 - **[`kanoodle/`](kanoodle/)** — the Kanoodle puzzle game (5×11 board, 12 pieces).
+- **[`qr-quine/`](qr-quine/)** — a QR symbol whose payload is a `data:` URL that
+  draws the same symbol.
 - **[`kubescheduler-the-game/`](kubescheduler-the-game/)** — play the Kubernetes
   scheduler and cluster operator: bin-pack pods onto nodes, handle spot
   reclaims and rolling upgrades, and keep utilization high without overspending.
