@@ -78,6 +78,7 @@ func (r *repositories) remember(key, url string, heads map[string]string) {
 func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository) error {
 	ready := kube.Condition{Type: "Ready", Status: kube.False}
 	defer func() { kube.SetCondition(&repo.Status.Conditions, ready) }()
+	kube.SetCondition(&repo.Status.Conditions, policiesCondition(ctx))
 
 	interval, err := time.ParseDuration(cmp.Or(repo.Spec.PollInterval, "30s"))
 	if err != nil || interval < time.Second {

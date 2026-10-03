@@ -103,6 +103,43 @@ func TestReusesARecentListing(t *testing.T) {
 	}
 }
 
+func TestReportsAdmissionPolicies(t *testing.T) {
+	srv := gittest.NewServer(t, "pw")
+	w := srv.NewWork(t, "app")
+	w.Commit("main")
+	w.Push("main")
+	repo, secret := srv.Repository("app", rules()...)
+	reconcile := func(world ...any) *kube.Condition {
+		t.Helper()
+		ctx, _ := kube.Fake(t.Context(), repo, append([]any{secret}, world...)...)
+		if err := (&repositories{git: &git.Git{}}).Reconcile(ctx, repo); err != nil {
+			t.Fatal(err)
+		}
+		return kube.FindCondition(repo.Status.Conditions, "PoliciesInstalled")
+	}
+	if c := reconcile(); c == nil || c.Status != kube.False || !strings.Contains(c.Message, "git-k8s-check-results and git-k8s-branches") {
+		t.Errorf("without the policies, PoliciesInstalled = %+v", c)
+	}
+
+	var world []any
+	var bindings []*admissionPolicyBinding
+	for _, name := range policyNames {
+		b := &admissionPolicyBinding{Object: kube.Meta(name, nil)}
+		b.Spec.PolicyName, b.Spec.ValidationActions = name, []string{"Warn"}
+		bindings = append(bindings, b)
+		world = append(world, &admissionPolicy{Object: kube.Meta(name, nil)}, b)
+	}
+	if c := reconcile(world...); c.Status != kube.False {
+		t.Errorf("with bindings that only warn, PoliciesInstalled = %+v", c)
+	}
+	for _, b := range bindings {
+		b.Spec.ValidationActions = []string{"Deny"}
+	}
+	if c := reconcile(world...); c.Status != kube.True {
+		t.Errorf("with the policies installed, PoliciesInstalled = %+v", c)
+	}
+}
+
 func TestListFailureKeepsBranches(t *testing.T) {
 	srv := gittest.NewServer(t, "pw")
 	repo, secret := srv.Repository("app", rules()...)
