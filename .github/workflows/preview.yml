@@ -149,6 +149,8 @@ jobs:
       - name: Wait for GitHub Pages deployment
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
+          # A 503 from getRef or the Pages poll fails the job when this is 0.
+          retries: 3
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
