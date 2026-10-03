@@ -1,0 +1,14 @@
+body {
+  margin: 0;
+  width: 320px;
+  padding: 16px;
+  background: #fff;
+  color: #1a1a1a;
+  font-family: system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+p {
+  margin: 0;
+}
