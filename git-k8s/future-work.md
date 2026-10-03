@@ -45,6 +45,80 @@ Questions to settle first:
   and push. Every replica can serve the proxy, even though only the leader
   reconciles.
 
+## Authenticate check results with tokens
+
+The check-results admission policy keeps each check to its own entry in
+`status.checks` by looking at the service account that makes each write. That
+leaves two gaps. The policy covers only service accounts, so a person who can
+write a `GitBranch`'s status can write any check's result. And a result
+carries no proof of which check wrote it, so the merge controller can trust it
+only as far as it trusts the policy, which might not be installed.
+
+The proposed fix is for each check to authenticate its results with a JWT
+that the merge controller verifies before it counts them. The claims name the
+check, the branch, the commits that the result is for, and the state, so a
+token can't move to another result. Some ways to do it:
+
+- The check attaches a projected service account token, a JWT that the
+  cluster signs, with an audience that nothing else accepts, such as
+  `git-k8s-results`. The merge controller verifies it against the cluster's
+  OIDC keys or with a TokenReview. These tokens expire after hours, while a
+  result lasts as long as its commits do, so the merge controller has to
+  verify each result when it first sees it and record that it did.
+- The check signs the claims, for example keylessly through Sigstore with its
+  service account's identity, so that the signature stays verifiable after
+  the signing certificate expires.
+- The check sends each result to an endpoint in the core program with its
+  service account token, and the core program verifies the token and writes
+  the result. Then only the core program can write `status.checks`, and the
+  policy's naming rule stops mattering, because the core program maps service
+  accounts to checks.
+
+Questions to settle first:
+
+- Which attack matters more: a compromised check, or a person with write
+  access to `GitBranch` status.
+- Whether people can still write a result, for example to unblock a branch
+  whose check is broken.
+- Which approach to take. A results endpoint fits with the git proxy, which
+  needs the same token checks.
+
+## Get GitHub credentials from Octo STS
+
+For a GitHub repository, git-k8s uses a long-lived basic-auth Secret, such as
+a personal access token, that every program that fetches or pushes can read.
+[Octo STS](https://github.com/octo-sts/app) exchanges an OIDC token for a
+GitHub App installation token that expires within an hour. The token gets the
+permissions that a trust policy in the repository's `.github/chainguard/`
+directory grants to the identity in the OIDC token. This repository's
+dependency workflow uses it.
+
+The proposed fix is for each program to exchange its projected service
+account token for a GitHub token, and to get a new one before the old one
+expires. The service account token's subject is
+`system:serviceaccount:NAMESPACE:NAME`, so each program can have its own
+trust policy. A `GitRepository` names the trust policies to use instead of a
+Secret. Each program then gets only what its trust policy grants:
+
+- Checks that only read get `contents: read`.
+- The core program gets `contents: write`, to land and delete branches.
+- Checks that report results to GitHub get `checks: write`, so each result
+  also shows as a check run on its commit and on the commit's pull request.
+
+GitHub grants `contents: write` for a whole repository, not for branches, and
+every token comes from the same Octo STS app, so branch rulesets can't tell a
+check's push from a landing. Checks that push fixes need `contents: write`
+until the git proxy pushes for them.
+
+Questions to settle first:
+
+- Whether to use the public Octo STS service or run one. Octo STS fetches the
+  cluster's OIDC discovery document and keys, so the cluster's issuer has to
+  be reachable from it, as on GKE and EKS. A kind cluster's issuer isn't, so
+  the end-to-end test needs a fake.
+- Whether check runs on GitHub only copy git-k8s's results, or can also
+  change them, for example when someone reruns a check from a pull request.
+
 ## Land branches through a merge queue
 
 Branches land by fast-forward only. Each landing moves the parent, so no
@@ -125,24 +199,43 @@ Possible fixes, which work together:
   to the namespace that holds the repositories, with the landing credential
   in another namespace.
 
-## Receive webhooks
+## Send reconcile events from a git mirror
 
 The controllers poll remotes, so a person's push takes up to `pollInterval`,
 30 seconds by default, to show up. Each poll lists every branch of the
-repository.
+repository. Push webhooks from GitHub would avoid polling, but they need an
+endpoint in the cluster that GitHub can reach, a secret for each repository,
+and a forge that sends them.
 
-The proposed fix is an endpoint in the core program for push webhooks from
-forges such as GitHub, GitLab, and Gitea. It checks each webhook's signature
-against a secret for its repository, then reconciles the matching
-`GitRepository` at once. Polling stays as the fallback.
+The proposed fix is a git mirror that people push to instead of the external
+repository. The mirror forwards each push to the external repository. Every
+push passes through it, so it can tell git-k8s about each ref change as it
+happens. git-k8s opens a long-lived connection to the mirror and reconciles a
+repository when one of its refs moves, so the cluster needs no public
+endpoint, and polling becomes a rare fallback.
+
+This repository's [`git-server`](../git-server/README.md) is a starting
+point. It stores repositories in R2, with a Durable Object for each
+repository that applies every ref update, so that object can forward pushes
+and stream ref changes, for example over a WebSocket. The core program, which
+the git proxy turns into a git server anyway, is another place for the
+mirror.
 
 Questions to settle first:
 
-- How a webhook starts a reconcile. kube can't queue a key from outside a
-  reconcile, so either kube adds an API for it, or the endpoint patches an
+- Which way the mirror syncs. If people can still push to the external
+  repository, or merge pull requests on GitHub, the mirror doesn't see those
+  pushes. It has to fetch them from the external repository too, and the two
+  can diverge.
+- When the mirror acknowledges a push. Forwarding a push to the external
+  repository before acknowledging it keeps the two in step. But then every
+  push waits on GitHub, and fails when GitHub rejects it, for example because
+  of branch protection.
+- How git-k8s and the mirror authenticate to each other. `git-server` has no
+  authentication yet.
+- How a ref change starts a reconcile. kube can't queue a key from outside a
+  reconcile, so either kube adds an API for it, or git-k8s patches an
   annotation on the `GitRepository`.
-- How to expose the endpoint, through an Ingress or a Gateway route, and its
-  TLS.
 
 ## Start waiting go test Pods in order
 
@@ -170,11 +263,12 @@ the namespace `check-NAME`. An install that puts checks in other namespaces,
 such as one install for each team, can't write results. A policy parameter
 that lists the check service accounts would remove that constraint.
 
-## Support more ways to authenticate
+## Support SSH keys
 
-Remotes authenticate with HTTP basic auth only. SSH keys, and GitHub App
-installation tokens, which expire after an hour, need support in
-`credentials.Remote` and in the test Pods' fetch.
+Remotes authenticate with HTTP basic auth only. SSH keys need support in
+`credentials.Remote` and in the test Pods' fetch. For GitHub, Octo STS, as
+described earlier, replaces long-lived tokens with ones that expire within an
+hour.
 
 ## Support more ways to land
 
@@ -209,5 +303,6 @@ These belong in kube, in their own pull requests:
   status only by reconciling a view of its type, as each check does.
 - The cache lags a controller's own writes, so a reconcile that runs just
   after a write can repeat work.
-- The proxy needs a TokenReview client, and webhooks need a way to queue a
-  reconcile from outside one.
+- The proxy and token-authenticated check results need a TokenReview client,
+  and events from a git mirror need a way to queue a reconcile from outside
+  one.
