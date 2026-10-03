@@ -27,8 +27,8 @@ func branch() (*Branch, *gitk8s.GitRepository) {
 	return b, repo
 }
 
-// reconcile runs the check with world holding the Pods that exist.
-func reconcile(t *testing.T, b *Branch, repo *gitk8s.GitRepository, pods ...*Pod) *kube.Recorder {
+// reconcileWith runs the check with world holding the Pods that exist.
+func reconcileWith(t *testing.T, b *Branch, repo *gitk8s.GitRepository, pods ...*Pod) *kube.Recorder {
 	t.Helper()
 	world := []any{repo}
 	for _, p := range pods {
@@ -43,7 +43,7 @@ func reconcile(t *testing.T, b *Branch, repo *gitk8s.GitRepository, pods ...*Pod
 
 func TestStartsSandboxedPod(t *testing.T) {
 	b, repo := branch()
-	rec := reconcile(t, b, repo)
+	rec := reconcileWith(t, b, repo)
 	res := b.Status.Checks.Result
 	if res.State != gitk8s.Running || res.Outputs["attempt"] != "1" {
 		t.Fatalf("result = %+v, want Running on attempt 1", res)
@@ -89,7 +89,7 @@ func pod(phase string, init, test *Terminated) *Pod {
 
 func TestReportsPodResult(t *testing.T) {
 	b, repo := branch()
-	rec := reconcile(t, b, repo, pod("Succeeded", &Terminated{}, &Terminated{}))
+	rec := reconcileWith(t, b, repo, pod("Succeeded", &Terminated{}, &Terminated{}))
 	if res := b.Status.Checks.Result; res.State != gitk8s.Passed {
 		t.Errorf("result = %+v, want Passed", res)
 	}
@@ -98,7 +98,7 @@ func TestReportsPodResult(t *testing.T) {
 	}
 
 	b, repo = branch()
-	reconcile(t, b, repo, pod("Failed", &Terminated{}, &Terminated{ExitCode: 1, Message: "--- FAIL: TestAdd\nFAIL\texample.com/app\t0.01s"}))
+	reconcileWith(t, b, repo, pod("Failed", &Terminated{}, &Terminated{ExitCode: 1, Message: "--- FAIL: TestAdd\nFAIL\texample.com/app\t0.01s"}))
 	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "--- FAIL: TestAdd") {
 		t.Errorf("result = %+v, want Failed with the test output", res)
 	}
@@ -106,13 +106,13 @@ func TestReportsPodResult(t *testing.T) {
 
 func TestRetriesFailedFetch(t *testing.T) {
 	b, repo := branch()
-	reconcile(t, b, repo, pod("Failed", &Terminated{ExitCode: 128, Message: "fatal: unable to access"}, nil))
+	reconcileWith(t, b, repo, pod("Failed", &Terminated{ExitCode: 128, Message: "fatal: unable to access"}, nil))
 	res := b.Status.Checks.Result
 	if res.State != gitk8s.Running || res.Outputs["attempt"] != "2" {
 		t.Fatalf("result = %+v, want Running on attempt 2", res)
 	}
 	// The next attempt declares a new Pod, so kube deletes the failed one.
-	rec := reconcile(t, b, repo)
+	rec := reconcileWith(t, b, repo)
 	if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != podName("app-c-x", head, 2) {
 		t.Errorf("owned Pods = %+v, want the attempt 2 Pod", pods)
 	}
@@ -120,7 +120,7 @@ func TestRetriesFailedFetch(t *testing.T) {
 	b.Status.Checks.Result.Outputs["attempt"] = "3"
 	last := pod("Failed", &Terminated{ExitCode: 128, Message: "fatal: unable to access"}, nil)
 	last.Name = podName("app-c-x", head, 3)
-	reconcile(t, b, repo, last)
+	reconcileWith(t, b, repo, last)
 	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "in 3 attempts") {
 		t.Errorf("result = %+v, want Failed after 3 attempts", res)
 	}
