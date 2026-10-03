@@ -1,29 +1,26 @@
 // Q builds a version-40 symbol (level L, mask 0, byte mode) and D paints it.
-// build.js copies both into a data:text/html URL. That URL has to fit in the
-// symbol, 2953 bytes, so comments and spare whitespace stay out of the copy.
-// Chrome leaves this script's bytes in location.href only after "%" "?" "#"
-// "<" ">" and backticks are percent-encoded. D(location.href) draws that URL.
+// build.js copies both into a data:text/html URL. That copy has to fit in
+// 2953 bytes, so comments stay out of it. A loop tests `i^n`, which is zero
+// when i reaches n. That keeps "<" out of the URL. Chrome percent-encodes it.
 
 const N = 177;
+
 export function Q(h) {
   const E = [];
   const L = [];
-  for (let x = 1, i = 0; i < 255; i++) {
+  for (let x = 1, i = 0; i ^ 255; i++) {
     E[i] = x;
     L[x] = i;
-    x <<= 1;
-    if (x > 255) {
-      x ^= 285;
-    }
+    x = x * 2 ^ (x >> 7) * 285;
   }
-  const mul = (a, b) => (a && b ? E[(L[a] + L[b]) % 255] : 0);
+  const mul = (a, b) => a && b && E[(L[a] + L[b]) % 255];
   function rs(d) {
-    let g = [1, 212, 246, 77, 73, 195, 192, 75, 98, 5, 70, 103, 177, 22, 217, 138, 51, 181, 246, 72, 25, 18, 46, 228, 74, 216, 195, 11, 106, 130, 150];
+    const g = [1, 212, 246, 77, 73, 195, 192, 75, 98, 5, 70, 103, 177, 22, 217, 138, 51, 181, 246, 72, 25, 18, 46, 228, 74, 216, 195, 11, 106, 130, 150];
     const m = d.concat(Array(30));
-    for (let i = 0; i < d.length; i++) {
+    for (let i = 0; i ^ d.length; i++) {
       const f = m[i];
       if (f) {
-        for (let j = 0; j < g.length; j++) {
+        for (let j = g.length; j--; ) {
           m[i + j] ^= mul(g[j], f);
         }
       }
@@ -32,65 +29,62 @@ export function Q(h) {
   }
   const M = new Uint8Array(N * N);
   const set = (r, c, v) => {
-    if (r < 0 || c < 0 || r >= N || c >= N) {
-      return;
-    }
-    M[r * N + c] = (v ? 1 : 0) | 2;
+    M[r * N + c] = (v && 1) | 2;
   };
-  const finder = (y, x) => {
-    for (let r = -1; r < 8; r++) {
-      for (let c = -1; c < 8; c++) {
-        const o = r < 0 || c < 0 || r > 6 || c > 6;
-        const e = r === 0 || c === 0 || r === 6 || c === 6;
-        const k = r > 1 && r < 5 && c > 1 && c < 5;
-        set(y + r, x + c, !o && (e || k));
+  // Finder rows. The low bit is the left module. Each row is a palindrome,
+  // so the same table works from every corner. The eighth step is the white
+  // separator, drawn toward the inside of the symbol.
+  const F = [127, 65, 93, 93, 93, 65, 127];
+  const finder = (y, x, dy, dx) => {
+    for (let r = 8; r--; ) {
+      for (let c = 8; c--; ) {
+        set(y + r * dy, x + c * dx, r - 7 && c - 7 && (F[r] >> c) & 1);
       }
     }
   };
-  finder(0, 0);
-  finder(0, N - 7);
-  finder(N - 7, 0);
-  for (let i = 8; i < N - 8; i++) {
-    const on = i % 2 === 0;
+  finder(0, 0, 1, 1);
+  finder(0, N - 1, 1, -1);
+  finder(N - 1, 0, -1, 1);
+  for (let i = 8; i ^ (N - 8); i++) {
+    const on = !(i & 1);
     set(i, 6, on);
     set(6, i, on);
   }
-  const ap = [6, 30, 58, 86, 114, 142, 170];
-  for (let i = 0; i < 7; i++) {
-    for (let j = 0; j < 7; j++) {
-      if ((i === 0 && j === 0) || (i === 0 && j === 6) || (i === 6 && j === 0)) {
-        continue;
-      }
-      for (let r = -2; r < 3; r++) {
-        for (let c = -2; c < 3; c++) {
-          set(ap[i] + r, ap[j] + c, r === -2 || r === 2 || c === -2 || c === 2 || (r === 0 && c === 0));
+  // Alignment rows, same bit order. The three corners belong to the finders.
+  const A = [31, 17, 21, 17, 31];
+  const P = [6, 30, 58, 86, 114, 142, 170];
+  for (let i = 7; i--; ) {
+    for (let j = 7; j--; ) {
+      // Draw every center except (0,0), (0,6), and (6,0), which sit on a finder.
+      if (i * j || (i + j - 6 && i + j)) {
+        for (let r = 5; r--; ) {
+          for (let c = 5; c--; ) {
+            set(P[i] + r - 2, P[j] + c - 2, (A[r] >> c) & 1);
+          }
         }
       }
     }
   }
-  const bitsAt = (bits, len, place) => {
-    for (let i = 0; i < len; i++) {
-      place(i, (bits >> i) & 1);
+  const bits = (n, len, place) => {
+    for (let i = len; i--; ) {
+      place(i, (n >> i) & 1);
     }
   };
-  bitsAt(30660, 15, (i, on) => {
-    if (i < 6) {
-      set(i, 8, on);
-    } else if (i < 8) {
-      set(i + 1, 8, on);
-    } else {
-      set(N - 15 + i, 8, on);
+  // 30660 is level L, mask 0. 167017 is version 40.
+  bits(30660, 15, (i, on) => {
+    let row = i;
+    if (i > 5) {
+      row += i > 7 ? N - 15 : 1;
     }
-    if (i < 8) {
-      set(8, N - i - 1, on);
-    } else if (i < 9) {
-      set(8, 15 - i, on);
-    } else {
-      set(8, 14 - i, on);
+    let col = N - 1 - i;
+    if (i > 7) {
+      col = i > 8 ? 14 - i : 7;
     }
+    set(row, 8, on);
+    set(8, col, on);
   });
   set(N - 8, 8, 1);
-  bitsAt(167017, 18, (i, on) => {
+  bits(167017, 18, (i, on) => {
     const y = (i / 3) | 0;
     const x = (i % 3) + N - 11;
     set(y, x, on);
@@ -99,49 +93,45 @@ export function Q(h) {
   const bytes = [];
   let acc = 0;
   let nb = 0;
-  const put = (v, l) => {
-    for (let i = l - 1; i >= 0; i--) {
-      acc = (acc << 1) | ((v >>> i) & 1);
-      nb++;
-      if (nb === 8) {
+  const put = (v, len) => {
+    for (let i = len; i--; ) {
+      acc = (acc << 1) | ((v >> i) & 1);
+      if (++nb === 8) {
         bytes.push(acc);
-        acc = 0;
-        nb = 0;
+        acc = nb = 0;
       }
     }
   };
   put(4, 4);
   put(h.length, 16);
-  for (let i = 0; i < h.length; i++) {
+  for (let i = 0; i ^ h.length; i++) {
     put(h.charCodeAt(i), 8);
   }
   put(0, Math.min(4, 23648 - bytes.length * 8 - nb));
   if (nb) {
     put(0, 8 - nb);
   }
-  for (let p = 236; bytes.length < 2956; p ^= 253) {
+  for (let p = 236; bytes.length ^ 2956; p ^= 253) {
     put(p, 8);
   }
   const blocks = [];
   const ecs = [];
   let off = 0;
-  for (let b = 0; b < 25; b++) {
-    const len = b < 19 ? 118 : 119;
-    const block = bytes.slice(off, off + len);
-    off += len;
+  for (let b = 0; b ^ 25; b++) {
+    const block = bytes.slice(off, (off += 118 + (b > 18)));
     blocks.push(block);
     ecs.push(rs(block));
   }
   const out = [];
-  for (let i = 0; i < 119; i++) {
-    for (let b = 0; b < 25; b++) {
-      if (i < blocks[b].length) {
+  for (let i = 0; i ^ 119; i++) {
+    for (let b = 0; b ^ 25; b++) {
+      if (blocks[b][i] != null) {
         out.push(blocks[b][i]);
       }
     }
   }
-  for (let i = 0; i < 30; i++) {
-    for (let b = 0; b < 25; b++) {
+  for (let i = 0; i ^ 30; i++) {
+    for (let b = 0; b ^ 25; b++) {
       out.push(ecs[b][i]);
     }
   }
@@ -149,50 +139,46 @@ export function Q(h) {
   let bp = 7;
   let row = N - 1;
   let dir = -1;
-  for (let col = N - 1; col > 0; col -= 2) {
+  for (let col = N - 1; col > 0; ) {
     if (col === 6) {
       col--;
     }
     for (;;) {
-      for (let c = 0; c < 2; c++) {
+      for (let c = 0; c ^ 2; c++) {
         const id = row * N + col - c;
-        if (M[id] < 2) {
-          let on = bi < out.length && ((out[bi] >>> bp) & 1);
-          if (!((row + col - c) & 1)) {
-            on ^= 1;
-          }
-          M[id] = on;
-          bp--;
-          if (bp < 0) {
-            bi++;
-            bp = 7;
-          }
+        if (M[id] >> 1) {
+          continue;
+        }
+        M[id] = ((out[bi] >> bp) & 1) ^ 1 ^ ((row + col - c) & 1);
+        if (!bp--) {
+          bp = 7;
+          bi++;
         }
       }
       row += dir;
-      if (row < 0 || row >= N) {
+      if (row >> 31 || row === N) {
         row -= dir;
         dir = -dir;
         break;
       }
     }
+    col -= 2;
   }
   return M;
 }
+
 export function D(h) {
   const c = document.createElement("canvas");
-  c.width = c.height = 740;
   const g = c.getContext("2d");
-  g.fillStyle = "#fff";
+  c.width = c.height = 740;
+  g.fillStyle = "white";
   g.fillRect(0, 0, 740, 740);
-  g.fillStyle = "#000";
+  g.fillStyle = "black";
   const M = Q(h);
-  for (let r = 0; r < N; r++) {
-    for (let k = 0; k < N; k++) {
-      if (M[r * N + k] & 1) {
-        g.fillRect(k * 4 + 16, r * 4 + 16, 4, 4);
-      }
+  for (let r = N; r--; ) {
+    for (let k = N; k--; ) {
+      M[r * N + k] & 1 && g.fillRect(k * 4 + 16, r * 4 + 16, 4, 4);
     }
   }
-  document.documentElement.appendChild(c);
+  document.documentElement.append(c);
 }
