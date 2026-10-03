@@ -207,11 +207,13 @@ Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
 after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
 
-`config/policy.yaml` is a ValidatingAdmissionPolicy. It lets the service
-account of `check-NAME` change only `status.checks.NAME`, and stops the core
-program from changing `status.checks`. Server-side apply already keeps the
-controllers' writes apart; the policy stops a buggy or compromised check from
-writing another check's result.
+`config/policy.yaml` holds two ValidatingAdmissionPolicies. The first lets
+the service account of `check-NAME` change only `status.checks.NAME`, and
+stops the core program from changing `status.checks`. Server-side apply
+already keeps the controllers' writes apart; the policy stops a buggy or
+compromised check from writing another check's result. The second stops
+every git-k8s service account from setting the approve annotation, which is
+for people, and stops checks from changing `GitBranch` objects at all.
 
 ## Test
 

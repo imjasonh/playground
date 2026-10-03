@@ -58,3 +58,61 @@ metadata:
 spec:
   policyName: git-k8s-check-results
   validationActions: [Deny]
+---
+# The approve annotation on a GitBranch records a person's approval, so no
+# git-k8s service account can set or change it. kube lets each controller
+# patch the type that it reconciles, which for a check is GitBranch, so this
+# policy also stops checks from changing a GitBranch's spec, labels, or
+# annotations.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: git-k8s-branches
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["git-k8s.imjasonh.com"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["gitbranches"]
+  matchConditions:
+    - name: service-accounts
+      expression: request.userInfo.username.startsWith("system:serviceaccount:")
+  variables:
+    - name: user
+      expression: request.userInfo.username.split(":")
+    - name: check
+      expression: >-
+        size(variables.user) == 4 && variables.user[2] == variables.user[3] &&
+        variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
+    - name: core
+      expression: size(variables.user) == 4 && variables.user[2] == "git-k8s" && variables.user[3] == "git-k8s"
+    - name: approval
+      expression: >-
+        has(object.metadata.annotations) && "git-k8s.imjasonh.com/approve" in object.metadata.annotations ?
+        object.metadata.annotations["git-k8s.imjasonh.com/approve"] : ""
+    - name: oldApproval
+      expression: >-
+        oldObject != null && has(oldObject.metadata.annotations) &&
+        "git-k8s.imjasonh.com/approve" in oldObject.metadata.annotations ?
+        oldObject.metadata.annotations["git-k8s.imjasonh.com/approve"] : ""
+  validations:
+    - expression: '!(variables.core || variables.check != "") || variables.approval == variables.oldApproval'
+      message: git-k8s controllers can't approve branches
+    - expression: >-
+        variables.check == "" ||
+        (oldObject != null && object.spec == oldObject.spec &&
+        (has(object.metadata.labels) ? object.metadata.labels : {}) ==
+        (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) &&
+        (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
+        (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
+      messageExpression: '"the " + variables.check + " check can''t change GitBranch objects"'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: git-k8s-branches
+spec:
+  policyName: git-k8s-branches
+  validationActions: [Deny]

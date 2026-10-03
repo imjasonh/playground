@@ -342,6 +342,28 @@ code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"
 echo "check-gofmt can write status.checks.gofmt but not status.checks.risk."
 echo "::endgroup::"
 
+echo "::group::Controllers can't approve branches"
+branch_url="${server}/apis/git-k8s.imjasonh.com/v1alpha1/namespaces/${NS}/gitbranches/$(branch_object main)?dryRun=All"
+patch_branch() {
+  curl -sS --cacert "${WORKDIR}/ca.crt" -o "${WORKDIR}/patch.json" -w '%{http_code}' -X PATCH \
+    -H "Authorization: Bearer $1" -H 'Content-Type: application/merge-patch+json' \
+    --data "$2" "${branch_url}"
+}
+approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
+core_token="$(k -n git-k8s create token git-k8s)"
+for bearer in "${token}" "${core_token}"; do
+  code="$(patch_branch "${bearer}" "${approve}")"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 422 ]]
+  grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
+done
+code="$(patch_branch "${token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
+[[ "${code}" == 422 ]]
+grep -q "the gofmt check can't change GitBranch objects" "${WORKDIR}/patch.json"
+echo "Neither a check nor the core controller can approve a branch, and a check can't change one."
+echo "::endgroup::"
+
 echo "::group::Tests run in a sandboxed Pod"
 TESTED="${WORKDIR}/tested"
 git init -q -b main "${TESTED}"
