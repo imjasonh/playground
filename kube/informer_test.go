@@ -180,22 +180,27 @@ type notification struct {
 
 func startInformer(t *testing.T, c *client.Client, streaming bool) (*informer[cfgMap, *cfgMap], func() []notification) {
 	t.Helper()
-	ti, err := typeInfoFor[cfgMap, *cfgMap]()
+	return startInformerFor[cfgMap](t, c, streaming)
+}
+
+func startInformerFor[T any, P Resource[T]](t *testing.T, c *client.Client, streaming bool) (*informer[T, P], func() []notification) {
+	t.Helper()
+	ti, err := typeInfoFor[T, P]()
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := informerConfig{streaming: streaming, pageSize: 2, intern: true}
-	inf := newInformer[cfgMap, *cfgMap](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, c, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	inf := newInformer[T, P](1, ti, resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}, c, cfg, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	var mu sync.Mutex
 	var got []notification
-	inf.addHandler(func(old, new *cfgMap, initial bool) {
+	inf.addHandler(func(old, new *T, initial bool) {
 		mu.Lock()
 		defer mu.Unlock()
 		if new == nil {
-			got = append(got, notification{key: old.Name, initial: initial, deleted: true})
+			got = append(got, notification{key: metaOf[T, P](old).Name, initial: initial, deleted: true})
 			return
 		}
-		got = append(got, notification{key: new.Name, initial: initial})
+		got = append(got, notification{key: metaOf[T, P](new).Name, initial: initial})
 	})
 	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
@@ -349,6 +354,56 @@ func TestInformerRelistsWhenResourceVersionExpires(t *testing.T) {
 	if want := []notification{{key: "a", deleted: true}, {key: "c"}}; !slices.Equal(after, want) {
 		t.Errorf("relist notifications = %+v, want %+v", after, want)
 	}
+}
+
+func TestInformerIgnoresChangesThatTheTypeCantSee(t *testing.T) {
+	f, c := newFakeAPI(t, false)
+	f.set("a", map[string]string{"v": "1"})
+	inf, notes := startInformer(t, c, false)
+	waitFor(t, "first watch", func() bool { _, w := f.calls(); return len(w) == 1 })
+	watched := func() []notification { return notes()[1:] }
+
+	t.Log("A new resource version alone, or a change to binaryData, which cfgMap doesn't declare, notifies no one.")
+	f.put("a", map[string]string{"v": "1"})
+	o := f.set("a", map[string]string{"v": "1"})
+	o["binaryData"] = map[string]string{"b": "AA=="}
+	f.send(client.Modified, o)
+	f.put("a", map[string]string{"v": "2"})
+	waitFor(t, "the change to data", func() bool { return len(watched()) > 0 })
+	if want := []notification{{key: "a"}}; !slices.Equal(watched(), want) {
+		t.Errorf("watch notifications = %+v, want only %+v for the change to data", watched(), want)
+	}
+	f.mu.Lock()
+	rv := f.objs["a"]["metadata"].(map[string]any)["resourceVersion"]
+	f.mu.Unlock()
+	if got := inf.get(Key{"ns", "a"}).(*cfgMap).ResourceVersion; got != rv {
+		t.Errorf("cached resourceVersion = %s, want %s: the cache keeps every version", got, rv)
+	}
+
+	t.Log("A relist that finds a new resource version and nothing else new notifies no one.")
+	f.set("a", map[string]string{"v": "2"})
+	f.set("b", nil)
+	f.mu.Lock()
+	f.expire = true
+	f.mu.Unlock()
+	f.drop <- struct{}{}
+	waitFor(t, "relist", func() bool { return slices.Equal(keys(inf), []string{"a", "b"}) })
+	if want := []notification{{key: "a"}, {key: "b"}}; !slices.Equal(watched(), want) {
+		t.Errorf("notifications after relist = %+v, want %+v", watched(), want)
+	}
+}
+
+type cfgMeta struct {
+	Object `kube:"apiVersion=v1,kind=ConfigMap,plural=configmaps,scope=Namespaced"`
+}
+
+func TestMetadataOnlyInformerSeesEveryResourceVersion(t *testing.T) {
+	f, c := newFakeAPI(t, false)
+	f.set("a", map[string]string{"v": "1"})
+	_, notes := startInformerFor[cfgMeta](t, c, false)
+	waitFor(t, "first watch", func() bool { _, w := f.calls(); return len(w) == 1 })
+	f.put("a", map[string]string{"v": "1"})
+	waitFor(t, "a notification for the new resource version", func() bool { return len(notes()) == 2 })
 }
 
 func compare(a, b string) int {

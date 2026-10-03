@@ -398,6 +398,66 @@ func TestSharedStatusMakesNoWrites(t *testing.T) {
 	e2e.Eventually(t, 10*time.Second, total(0))
 }
 
+// settings declares only a ConfigMap's data.
+type settings struct {
+	kube.Object `kube:"apiVersion=v1,kind=ConfigMap,plural=configmaps,scope=Namespaced"`
+	Data        map[string]string `json:"data,omitempty"`
+}
+
+// reader reads the ConfigMap named settings in each Widget's namespace.
+type reader struct{ calls atomic.Int64 }
+
+func (r *reader) Reconcile(ctx context.Context, w *Widget) error {
+	r.calls.Add(1)
+	kube.Get[settings](ctx, w.Namespace, "settings")
+	return nil
+}
+
+func TestReconcilesOnlyForChangesTheTypeDeclares(t *testing.T) {
+	c := e2e.Client(t)
+	r := &reader{}
+	e2e.Run(t, &kube.Manager{Name: "reader-e2e"}, kube.For[Widget](r, kube.Named("reader")))
+	ns := e2e.Namespace(t, c)
+	if err := c.Create(t.Context(), client.Path("v1", "configmaps", ns, ""), map[string]any{
+		"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "settings"}, "data": map[string]any{"color": "blue"},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	createWidget(t, c, ns, "w", 1)
+	e2e.Eventually(t, 10*time.Second, func() error {
+		if r.calls.Load() == 0 {
+			return errors.New("the widget hasn't been reconciled")
+		}
+		return nil
+	})
+	time.Sleep(500 * time.Millisecond)
+	base := r.calls.Load()
+	patch := func(p string) {
+		t.Helper()
+		if err := c.Patch(t.Context(), client.Path("v1", "configmaps", ns, "settings"), client.MergePatch, nil, []byte(p), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Log("A change to binaryData, which settings doesn't declare, doesn't reconcile the widget again.")
+	patch(`{"binaryData":{"logo":"AA=="}}`)
+	e2e.Never(t, time.Second, func() error {
+		if got := r.calls.Load(); got != base {
+			return fmt.Errorf("reconciled %d more times after a change to binaryData", got-base)
+		}
+		return nil
+	})
+
+	t.Log("A change to data does.")
+	patch(`{"data":{"color":"green"}}`)
+	e2e.Eventually(t, 5*time.Second, func() error {
+		if r.calls.Load() == base {
+			return errors.New("a change to data didn't reconcile the widget")
+		}
+		return nil
+	})
+}
+
 func TestPanicsAndPermanentErrorsAreContained(t *testing.T) {
 	c := e2e.Client(t)
 	r := &counter{panicOn: "explodes", permanent: "invalid"}

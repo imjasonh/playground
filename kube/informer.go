@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/url"
+	"reflect"
 	"slices"
 	"strconv"
 	"sync"
@@ -222,8 +223,25 @@ func (inf *informer[T, P]) replaceAll(items map[Key]*T) {
 	inf.attemptOnce.Do(func() { close(inf.attempted) })
 	inf.log.Debug("cache synced", "objects", len(items), "changes", len(changes))
 	for _, c := range changes {
-		inf.notify(c.old, c.new, initial)
+		if inf.changed(c.old, c.new) {
+			inf.notify(c.old, c.new, initial)
+		}
 	}
+}
+
+// changed reports whether a change to an object is one that T can see. Every
+// change has a new resource version, and one that changes only that, or only
+// fields that T doesn't declare, can't change what a reconcile reads. A
+// metadata-only type can't see the fields that matter (often its reconciler
+// fetches them), so for those types every new resource version counts.
+func (inf *informer[T, P]) changed(old, new *T) bool {
+	if old == nil || new == nil || inf.ti.metadataOnly {
+		return true
+	}
+	a, b := *old, *new
+	ma, mb := metaOf[T, P](&a), metaOf[T, P](&b)
+	ma.ResourceVersion, mb.ResourceVersion = "", ""
+	return !reflect.DeepEqual(a, b)
 }
 
 func (inf *informer[T, P]) run(ctx context.Context) {
@@ -443,8 +461,9 @@ func (inf *informer[T, P]) stream(ctx context.Context, rv string, initial bool) 
 				inf.notify(obj, nil, false)
 				continue
 			}
-			old := inf.store.put(obj)
-			inf.notify(old, obj, false)
+			if old := inf.store.put(obj); inf.changed(old, obj) {
+				inf.notify(old, obj, false)
+			}
 		case client.Bookmark:
 			var annotations map[string]string
 			if w.Proto {

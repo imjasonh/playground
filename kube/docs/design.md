@@ -419,19 +419,25 @@ and label selector. After the reconcile, the framework replaces the
 reconcile's previous dependencies with the new ones, so a reconcile that stops
 reading an object stops depending on it.
 
-When an informer sees a change, it finds the reconciles that read the object
-by name, and the reconciles whose lists match the object's old or new labels.
-Matching either catches objects that start or stop matching a selector. Those
-reconciles go back in the queue. The `kube_tracked_dependencies` metric counts
-the recorded dependencies.
+An informer passes on a change only if it changes a field that the informer's
+type declares. Every change has a new `metadata.resourceVersion`, and one that
+changes only that, or only fields that the type doesn't declare, can't change
+what a reconcile reads. So declaring fewer fields means fewer reconciles, as
+well as less memory. Metadata-only types can't see the fields that matter, so
+for them every new resource version counts.
+
+When an informer passes on a change, the framework finds the reconciles that
+read the object by name, and the reconciles whose lists match the object's old
+or new labels. Matching either catches objects that start or stop matching a
+selector. Those reconciles go back in the queue. The
+`kube_tracked_dependencies` metric counts the recorded dependencies.
 
 Owned objects carry their owner in a label and an annotation, and each type's
-cache indexes objects by owner. A change to an owned object, including its
+cache indexes objects by owner. A change to an owned object, including to its
 status, runs its owner's reconcile again. A change to the reconciled object
-runs its reconcile only when a declared field other than `status` or
-`metadata.resourceVersion` changed, so the controller's own status writes
-don't cause another reconcile. Metadata-only types can't see the fields that
-matter, so for them every new resource version counts.
+runs its reconcile only when a declared field other than `status` changed, or
+someone else changed the status, so the controller's own status writes don't
+cause another reconcile.
 
 ### The work queue
 
@@ -880,7 +886,9 @@ The end-to-end tests count writes with the `kube_apply_total` and
 changes cause five reconciles, no applies, and no status writes. A new manager
 that starts over the converged Widget makes no applies and no status writes.
 A controller that totals the votes that other managers write into a Poll's
-status makes no status writes for votes that leave the total as it was.
+status makes no status writes for votes that leave the total as it was. A
+change to a ConfigMap field that a reconcile's type doesn't declare doesn't
+run the reconcile again.
 
 ### Binary size and dependencies
 

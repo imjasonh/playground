@@ -315,9 +315,16 @@ uses. Writing with a partial type is safe because every write is a server-side
 apply of the fields you set. The framework never sends a whole object with an
 update, so it can't clear fields that your struct doesn't declare.
 
+A smaller type also runs fewer reconciles. A change to an object runs a
+reconcile again only if it changes a field that the type declares, so a
+controller that reads this `Pod` type doesn't reconcile again when a Pod's
+status changes.
+
 A struct that declares no fields besides `kube.Object` gets metadata only. The
 API server sends `PartialObjectMetadata`, so a controller that reconciles
-every Secret by its annotations never receives or caches Secret data.
+every Secret by its annotations never receives or caches Secret data. Every
+change to a metadata-only object counts, because the type can't see the
+fields that its reconciler fetches.
 
 Caches read built-in types as protobuf, which the API server encodes in about
 half the time of JSON. kube has no generated protobuf code. A schema of the
@@ -631,7 +638,7 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 | `*.go` | The `kube` package: types, caches, dependency tracking, controllers, status, webhooks, versions, shards, metrics, and fakes |
 | `k8s/` | Types for common built-in objects |
 | `examples/` | Example controllers and webhooks with unit and end-to-end tests |
-| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, shared status, panics, permanent errors, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
+| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, shared status, changes that types can't see, panics, permanent errors, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
 | `internal/client/` | REST client, kubeconfig, authentication, discovery, and JSON and protobuf watch decoding |
 | `internal/protobuf/` | Protobuf decoding of built-in types into partial structs, and its schema; `gen/` is the separate module that generates the schema |
 | `internal/certs/` | Certificate authority and serving certificates for webhooks |
