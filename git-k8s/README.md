@@ -268,3 +268,6 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
 - Remotes authenticate with HTTP basic auth only.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
   NetworkPolicy, so a test can reach anything that the namespace's Pods can.
+
+[`future-work.md`](future-work.md) proposes fixes for these, and lists the
+other known gaps.
