@@ -21,7 +21,7 @@ func main() {
 	g := &git.Git{}
 	cache := &gitk8s.Cache{Git: g}
 	flag.StringVar(&g.Bin, "git", "git", "git executable")
-	flag.StringVar(&cache.Dir, "cache-dir", "/var/cache/git-k8s", "writable directory for local copies of repositories")
+	flag.StringVar(&cache.Dir, "cache-dir", gitk8s.DefaultCacheDir, "writable directory for local copies of repositories")
 	kube.Main(
 		kube.For[gitk8s.GitRepository](&repositories{git: g}, kube.Named("repositories")),
 		kube.For[gitk8s.GitBranch](&merger{cache: cache}, kube.Named("merge")),

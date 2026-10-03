@@ -92,7 +92,7 @@ type Config struct {
 // and -identity-email.
 func (c *Config) AddFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.Git.Bin, "git", "git", "git executable")
-	fs.StringVar(&c.CacheDir, "cache-dir", "/var/cache/git-k8s", "writable directory for local copies of repositories")
+	fs.StringVar(&c.CacheDir, "cache-dir", gitk8s.DefaultCacheDir, "writable directory for local copies of repositories")
 	fs.StringVar(&c.Identity.Name, "identity-name", "git-k8s", "author and committer name of commits that the controller pushes")
 	fs.StringVar(&c.Identity.Email, "identity-email", "git-k8s@users.noreply.github.com", "author and committer email of commits that the controller pushes")
 }

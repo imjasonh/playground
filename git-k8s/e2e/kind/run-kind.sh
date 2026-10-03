@@ -168,18 +168,8 @@ generate() {
   go run "./cmd/${program}" generate -registry="localhost:${PORT}/git-k8s-e2e" \
     -base="${CHAINGUARD}/git:latest" -platform="${PLATFORM}" -replicas=1 "$@"
 }
-# generate's Deployments have read-only root file systems, and git needs a
-# writable directory for its copies of repositories.
-cache_volume='[
-  {"op": "add", "path": "/spec/template/spec/volumes", "value": [{"name": "cache", "emptyDir": {}}]},
-  {"op": "add", "path": "/spec/template/spec/containers/0/volumeMounts",
-   "value": [{"name": "cache", "mountPath": "/var/cache/git-k8s"}]}
-]'
 install() {
-  local program=$1
-  shift
-  generate "${program}" "$@" | k apply -f -
-  k -n "${program}" patch deployment "${program}" --type=json -p "${cache_volume}"
+  generate "$@" | k apply -f -
 }
 # The gotest check's Pods use these images. Copying them into the local
 # registry lets the nodes pull them without reaching the internet.

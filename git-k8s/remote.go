@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 
@@ -40,6 +41,11 @@ func RemoteFor(ctx context.Context, repo *GitRepository) (git.Remote, error) {
 	r.Auth = &git.Auth{Username: username, Password: password}
 	return r, nil
 }
+
+// DefaultCacheDir is the default of the -cache-dir flags. The Deployments
+// that kube's generate writes have a read-only root file system and a
+// writable /tmp.
+var DefaultCacheDir = filepath.Join(os.TempDir(), "git-k8s")
 
 // Cache keeps a local bare repository for each GitRepository, so that
 // controllers fetch only objects they don't have yet.

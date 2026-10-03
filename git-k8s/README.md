@@ -189,15 +189,12 @@ every listed check must pass.
 Each program installs with kube's `generate` command, which builds an image,
 pushes it, and writes the YAML for its namespace, service account, RBAC
 rules, and Deployment. The programs run `git`, so build them on an image
-that has it, and give each Deployment a writable volume for its local
-repositories, because `generate` makes the root file system read-only:
+that has it. They keep local copies of repositories in `/tmp/git-k8s`, on
+the `emptyDir` volume that `generate` mounts at `/tmp`:
 
 ```sh
-cache='[{"op": "add", "path": "/spec/template/spec/volumes", "value": [{"name": "cache", "emptyDir": {}}]},
-  {"op": "add", "path": "/spec/template/spec/containers/0/volumeMounts", "value": [{"name": "cache", "mountPath": "/var/cache/git-k8s"}]}]'
 for program in git-k8s check-base check-gofmt check-risk check-approval check-gotest; do
   go run "./cmd/${program}" generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest | kubectl apply -f -
-  kubectl -n "${program}" patch deployment "${program}" --type=json -p "${cache}"
 done
 kubectl apply -f config/policy.yaml
 ```
