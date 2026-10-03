@@ -230,19 +230,35 @@ func TestParentMovedAfterListing(t *testing.T) {
 	}
 }
 
-func TestAlreadyMerged(t *testing.T) {
-	srv := gittest.NewServer(t, "")
-	b, w := branches(t, srv)
-	w.Push("main")
-	b.Spec.ParentHead = b.Spec.Head
-	if err := merge(t, srv, b); err != nil {
-		t.Fatal(err)
-	}
-	if b.Status.State != reasonMerged {
-		t.Errorf("state = %q, want %s", b.Status.State, reasonMerged)
-	}
-	if _, ok := srv.Heads(t, "app")["c/x"]; ok {
-		t.Error("the merged branch wasn't deleted")
+// A branch that's already merged, such as one just created from its parent,
+// isn't deleted, because the merge controller didn't land it.
+func TestAlreadyMergedBranchesStay(t *testing.T) {
+	for name, setup := range map[string]func(*gitk8s.GitBranch, *gittest.Work){
+		"at the parent's head": func(b *gitk8s.GitBranch, w *gittest.Work) {
+			w.Push("main")
+			b.Spec.ParentHead = b.Spec.Head
+		},
+		"behind the parent": func(b *gitk8s.GitBranch, w *gittest.Work) {
+			w.Write("y.txt", "y\n")
+			b.Spec.ParentHead = w.Commit("main moves past the branch")
+			w.Push("main")
+			b.Status.Checks["base"] = gitk8s.CheckResult{Commit: b.Spec.Head, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			b, w := branches(t, srv)
+			setup(b, w)
+			if err := merge(t, srv, b); err != nil {
+				t.Fatal(err)
+			}
+			if b.Status.State != reasonMerged {
+				t.Errorf("state = %q, want %s", b.Status.State, reasonMerged)
+			}
+			if _, ok := srv.Heads(t, "app")["c/x"]; !ok {
+				t.Error("deleted a branch that the merge controller didn't land")
+			}
+		})
 	}
 }
 

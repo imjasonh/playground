@@ -50,8 +50,11 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 		report(b, reasonParentMissing, false, "%s doesn't exist on the remote", spec.Parent)
 		return nil
 	case spec.Head == spec.ParentHead:
+		// A branch that's already merged can be new, such as one just
+		// created from the parent, so only a branch that this controller
+		// lands is deleted.
 		report(b, reasonMerged, true, "%s is at %s", spec.Parent, gitk8s.Short(spec.Head))
-		return m.deleteMerged(ctx, b)
+		return nil
 	}
 
 	checks := gitk8s.GateChecks(spec.Merge, results, spec.Head, spec.ParentHead)
@@ -135,7 +138,7 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch) error {
 	}
 	if contained {
 		report(b, reasonMerged, true, "%s already contains %s", spec.Parent, gitk8s.Short(spec.Head))
-		return deleteBranch(ctx, local, remote, b)
+		return nil
 	}
 	ff, err := local.IsAncestor(ctx, spec.ParentHead, spec.Head)
 	if err != nil {
@@ -156,20 +159,6 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch) error {
 	return deleteBranch(ctx, local, remote, b)
 }
 
-// deleteMerged deletes a branch whose head the parent already points to, if
-// the merge policy deletes merged branches.
-func (m *merger) deleteMerged(ctx context.Context, b *gitk8s.GitBranch) error {
-	if !b.Spec.Merge.DeleteMergedBranches {
-		return nil
-	}
-	local, remote, unlock, err := m.open(ctx, b)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	return deleteBranch(ctx, local, remote, b)
-}
-
 func (m *merger) open(ctx context.Context, b *gitk8s.GitBranch) (*git.Repo, git.Remote, func(), error) {
 	repo := kube.Get[gitk8s.GitRepository](ctx, b.Namespace, b.Spec.Repository)
 	if repo == nil {
@@ -186,8 +175,8 @@ func (m *merger) open(ctx context.Context, b *gitk8s.GitBranch) (*git.Repo, git.
 	return local, remote, unlock, nil
 }
 
-// deleteBranch deletes a merged branch from the remote if the merge policy
-// says to, with a lease so that a branch that moved since it merged stays.
+// deleteBranch deletes a branch that just landed if the merge policy says
+// to, with a lease so that a branch that moved since it landed stays.
 func deleteBranch(ctx context.Context, local *git.Repo, remote git.Remote, b *gitk8s.GitBranch) error {
 	if !b.Spec.Merge.DeleteMergedBranches {
 		return nil
