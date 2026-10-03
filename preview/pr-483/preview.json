@@ -1,1 +1,1 @@
-{"number": 483, "title": "Add a QR code whose payload is a data URL of itself", "apps": ["qr-quine"], "posts": false, "index": false}
+{"number": 483, "title": "Add a QR code whose payload is a data URL of itself", "apps": ["qr-quine"], "posts": false, "index": true}
