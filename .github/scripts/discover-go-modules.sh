@@ -8,7 +8,10 @@
 #     List every Go app module in the repo.
 #
 #   discover-go-modules.sh --from-changes [path...]
-#     List Go app modules touched by the given paths (or stdin when no args).
+#     List Go app modules touched by the given paths (or stdin when no args),
+#     and the modules whose go.mod replaces a touched directory's module with
+#     a relative path (git-k8s builds against ../kube), so a change to a
+#     library also tests the apps that use it at head.
 set -euo pipefail
 
 is_go_module() {
@@ -41,6 +44,19 @@ collect_all_go_modules() {
   emit_json modules
 }
 
+# dependents prints the Go modules whose go.mod has a replace directive that
+# points at the top-level directory $1.
+dependents() {
+  local lib="$1" dir
+  for dir in */; do
+    dir="${dir%/}"
+    if [[ "$dir" != "$lib" ]] && is_go_module "$dir" &&
+      grep -Eq "=>[[:space:]]*\.\./${lib}/?([[:space:]]|$)" "$dir/go.mod"; then
+      echo "$dir"
+    fi
+  done
+}
+
 collect_go_modules_from_changes() {
   local paths=()
   if (("$#" > 0)); then
@@ -65,6 +81,9 @@ collect_go_modules_from_changes() {
     if is_go_module "$name"; then
       modules+=("$name")
     fi
+    while IFS= read -r dependent; do
+      modules+=("$dependent")
+    done < <(dependents "$name")
   done
   emit_json modules
 }

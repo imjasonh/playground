@@ -1,0 +1,117 @@
+# Each check controller can write only its own entry in a GitBranch's
+# status.checks, and no other service account, including the core
+# program's, can write status.checks at all. generate installs each program
+# in a namespace with a service account of the program's name, so
+# check-gofmt runs as system:serviceaccount:check-gofmt:check-gofmt and owns
+# status.checks.gofmt. A check installed under another name can't write
+# results. Server-side apply already keeps well-behaved controllers apart;
+# this policy stops a buggy or compromised one from writing another's result.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: git-k8s-check-results
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["git-k8s.imjasonh.com"]
+        apiVersions: ["*"]
+        operations: ["UPDATE"]
+        resources: ["gitbranches/status"]
+  matchConditions:
+    - name: service-accounts
+      expression: request.userInfo.username.startsWith("system:serviceaccount:")
+  variables:
+    - name: user
+      expression: request.userInfo.username.split(":")
+    - name: check
+      expression: >-
+        size(variables.user) == 4 && variables.user[2] == variables.user[3] &&
+        variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
+    - name: old
+      expression: >-
+        has(oldObject.status) && has(oldObject.status.checks) ? oldObject.status.checks : {}
+    - name: new
+      expression: >-
+        has(object.status) && has(object.status.checks) ? object.status.checks : {}
+  validations:
+    - expression: >-
+        variables.check == "" ||
+        (variables.new.all(k, k == variables.check || (k in variables.old && variables.new[k] == variables.old[k])) &&
+        variables.old.all(k, k == variables.check || k in variables.new))
+      messageExpression: '"the " + variables.check + " check can only write status.checks." + variables.check'
+    - expression: >-
+        variables.check == "" ||
+        ((has(object.status) && has(object.status.state) ? object.status.state : "") ==
+        (has(oldObject.status) && has(oldObject.status.state) ? oldObject.status.state : "") &&
+        (has(object.status) && has(object.status.conditions) ? object.status.conditions : []) ==
+        (has(oldObject.status) && has(oldObject.status.conditions) ? oldObject.status.conditions : []))
+      messageExpression: '"the " + variables.check + " check can only write status.checks." + variables.check'
+    - expression: variables.check != "" || variables.new == variables.old
+      messageExpression: request.userInfo.username + " isn't a check's service account, so it can't write status.checks"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: git-k8s-check-results
+spec:
+  policyName: git-k8s-check-results
+  validationActions: [Deny]
+---
+# The approve annotation on a GitBranch records a person's approval, so no
+# git-k8s service account can set or change it. kube lets each controller
+# patch the type that it reconciles, which for a check is GitBranch, so this
+# policy also stops checks from changing a GitBranch's spec, labels, or
+# annotations.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: git-k8s-branches
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["git-k8s.imjasonh.com"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["gitbranches"]
+  matchConditions:
+    - name: service-accounts
+      expression: request.userInfo.username.startsWith("system:serviceaccount:")
+  variables:
+    - name: user
+      expression: request.userInfo.username.split(":")
+    - name: check
+      expression: >-
+        size(variables.user) == 4 && variables.user[2] == variables.user[3] &&
+        variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
+    - name: core
+      expression: size(variables.user) == 4 && variables.user[2] == "git-k8s" && variables.user[3] == "git-k8s"
+    - name: approval
+      expression: >-
+        has(object.metadata.annotations) && "git-k8s.imjasonh.com/approve" in object.metadata.annotations ?
+        object.metadata.annotations["git-k8s.imjasonh.com/approve"] : ""
+    - name: oldApproval
+      expression: >-
+        oldObject != null && has(oldObject.metadata.annotations) &&
+        "git-k8s.imjasonh.com/approve" in oldObject.metadata.annotations ?
+        oldObject.metadata.annotations["git-k8s.imjasonh.com/approve"] : ""
+  validations:
+    - expression: '!(variables.core || variables.check != "") || variables.approval == variables.oldApproval'
+      message: git-k8s controllers can't approve branches
+    - expression: >-
+        variables.check == "" ||
+        (oldObject != null && object.spec == oldObject.spec &&
+        (has(object.metadata.labels) ? object.metadata.labels : {}) ==
+        (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) &&
+        (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
+        (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
+      messageExpression: '"the " + variables.check + " check can''t change GitBranch objects"'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: git-k8s-branches
+spec:
+  policyName: git-k8s-branches
+  validationActions: [Deny]
