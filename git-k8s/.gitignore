@@ -1,0 +1,3 @@
+# Binaries from go build ./cmd/...
+/git-k8s
+/check-*
