@@ -476,14 +476,15 @@ type deploymentFull struct {
 func TestFakeReadsEveryTypeOfAKind(t *testing.T) {
 	parent := &widget{}
 	parent.Namespace, parent.Name = "shop", "w1"
+	two, three, four, five := int32(2), int32(3), int32(4), int32(5)
 	full := &deploymentFull{Object: Meta("full", nil)}
-	full.Spec.Replicas, full.Spec.Paused = new(int32(2)), true
+	full.Spec.Replicas, full.Spec.Paused = &two, true
 	small := &deploymentProjection{Object: Meta("small", nil)}
-	small.Spec.Replicas = new(int32(3))
+	small.Spec.Replicas = &three
 	hidden := &deploymentFull{Object: Meta("both", nil)}
-	hidden.Spec.Replicas = new(int32(4))
+	hidden.Spec.Replicas = &four
 	shown := &deploymentProjection{Object: Meta("both", nil)}
-	shown.Spec.Replicas = new(int32(5))
+	shown.Spec.Replicas = &five
 	pod := &podMeta{Object: Meta("pod", nil)}
 	for _, m := range []*ObjectMeta{&full.ObjectMeta, &small.ObjectMeta, &hidden.ObjectMeta, &shown.ObjectMeta, &pod.ObjectMeta} {
 		m.Namespace = "shop"
