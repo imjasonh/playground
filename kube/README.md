@@ -428,6 +428,8 @@ The command does the following:
    program needs, their bindings, a Deployment, a PodDisruptionBudget, and a
    Service for webhooks. With more than one replica, the Deployment runs the
    program with `-leader-elect`, or with `-shards` when you set `-shards`.
+   The container's root file system is read-only, with an `emptyDir` volume
+   at `/tmp` for temporary files.
 
 The images have fixed timestamps, so the same source gives the same digest,
 and running `generate` again without changes leaves the cluster as it was.
