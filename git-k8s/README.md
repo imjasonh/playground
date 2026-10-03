@@ -259,7 +259,8 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
 
 - The controllers poll remotes; they don't receive webhooks. A check's status
   write runs the repositories controller again, so a check's fix is listed
-  soon after the check pushes it.
+  soon after the check pushes it. The controller lists a repository at most
+  once every 5 seconds, or every `pollInterval` if that's shorter.
 - Remotes authenticate with HTTP basic auth only.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
   NetworkPolicy, so a test can reach anything that the namespace's Pods can.

@@ -61,6 +61,48 @@ func TestListsBranches(t *testing.T) {
 	}
 }
 
+func TestReusesARecentListing(t *testing.T) {
+	srv := gittest.NewServer(t, "pw")
+	w := srv.NewWork(t, "app")
+	main := w.Commit("main")
+	w.Push("main")
+	w.Branch("c/add", main)
+	add := w.Commit("add")
+	w.Push("c/add")
+	repo, secret := srv.Repository("app", rules()...)
+	now := time.Unix(1000, 0)
+	r := &repositories{git: &git.Git{}, now: func() time.Time { return now }}
+	reconcile := func() (head string, requeue time.Duration) {
+		t.Helper()
+		ctx, rec := kube.Fake(t.Context(), repo, secret)
+		if err := r.Reconcile(ctx, repo); err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range kube.Owned[gitk8s.GitBranch](rec) {
+			if b.Spec.Branch == "c/add" {
+				head = b.Spec.Head
+			}
+		}
+		return head, rec.RequeueAfter()
+	}
+	if head, _ := reconcile(); head != add {
+		t.Fatalf("c/add = %s, want %s", head, add)
+	}
+
+	t.Log("A check pushes a fix. Its result runs the reconcile a second later, which reuses the listing and runs again once the listing is 5s old.")
+	w.Write("fix.txt", "fix\n")
+	fix := w.Commit("fix")
+	w.Push("c/add")
+	now = now.Add(time.Second)
+	if head, requeue := reconcile(); head != add || requeue != 4*time.Second {
+		t.Errorf("c/add = %s, requeue = %v; want the listed head %s and a requeue in 4s", head, requeue, add)
+	}
+	now = now.Add(4 * time.Second)
+	if head, requeue := reconcile(); head != fix || requeue != 30*time.Second {
+		t.Errorf("c/add = %s, requeue = %v; want the fix %s and the poll interval", head, requeue, fix)
+	}
+}
+
 func TestListFailureKeepsBranches(t *testing.T) {
 	srv := gittest.NewServer(t, "pw")
 	repo, secret := srv.Repository("app", rules()...)
