@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"maps"
 	"strconv"
 	"time"
 
@@ -49,7 +50,20 @@ var (
 	runtimeClass = flag.String("runtime-class", "", "RuntimeClass for test Pods, such as gvisor")
 	timeout      = flag.Duration("timeout", 10*time.Minute, "longest a test Pod can run")
 	goProxy      = flag.String("goproxy", "off", "GOPROXY for go test; off keeps tests from downloading modules")
+	maxPods      = flag.Int("max-pods", 10, "most test Pods to run at once, in all namespaces; 0 means no limit")
 )
+
+// testPodLabels are the labels on every test Pod.
+var testPodLabels = map[string]string{"app.kubernetes.io/name": "check-gotest"}
+
+// podPhase is what the check counts running test Pods by. Declaring only
+// the phase means that other changes to Pods don't run the check again.
+type podPhase struct {
+	kube.Object `kube:"apiVersion=v1,kind=Pod,plural=pods,scope=Namespaced"`
+	Status      struct {
+		Phase string `json:"phase,omitempty"`
+	} `json:"status"`
+}
 
 // fetchAttempts is how many Pods the check starts for one head when
 // fetching the source fails.
@@ -65,11 +79,16 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		}
 	}
 	name := podName(in.Meta.Name, in.Spec.Head, attempt)
-	pod := kube.Own(ctx, testPod(in, name))
 	outputs := map[string]string{"pod": name, "attempt": strconv.Itoa(attempt)}
 	running := func(format string, args ...any) checks.Verdict {
 		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Outputs: outputs}
 	}
+	if n := unfinishedPods(ctx, in.Meta.Namespace, name); *maxPods > 0 && n >= *maxPods {
+		// Listing the Pods runs this again when one of them finishes.
+		kube.RequeueAfter(ctx, time.Minute)
+		return running("waiting to start a Pod: %d test Pods are running, and -max-pods is %d", n, *maxPods), nil
+	}
+	pod := kube.Own(ctx, testPod(in, name))
 	if pod == nil {
 		return running("started Pod %s", name), nil
 	}
@@ -96,6 +115,22 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		return v, nil
 	}
 	return running("Pod %s is %s", name, cmp.Or(pod.Status.Phase, "Pending")), nil
+}
+
+// unfinishedPods counts the test Pods in all namespaces that haven't
+// finished, or returns 0 if the Pod named name in namespace ns already
+// exists, because that Pod needs no new place.
+func unfinishedPods(ctx context.Context, ns, name string) int {
+	if *maxPods <= 0 || kube.Get[podPhase](ctx, ns, name) != nil {
+		return 0
+	}
+	n := 0
+	for _, p := range kube.List[podPhase](ctx, kube.MatchingLabels(testPodLabels)) {
+		if p.Status.Phase != "Succeeded" && p.Status.Phase != "Failed" {
+			n++
+		}
+	}
+	return n
 }
 
 // podName names the Pod for one attempt at one head of a branch.
@@ -165,7 +200,7 @@ func testPod(in *checks.Input, name string) *Pod {
 			EnvVar{Name: "GIT_PASSWORD", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "password"}}},
 		)
 	}
-	p := &Pod{Object: kube.Meta(name, map[string]string{"app.kubernetes.io/name": "check-gotest"})}
+	p := &Pod{Object: kube.Meta(name, maps.Clone(testPodLabels))}
 	p.Spec = PodSpec{
 		RestartPolicy:                "Never",
 		AutomountServiceAccountToken: &no,

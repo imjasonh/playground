@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -101,6 +102,43 @@ func TestReportsPodResult(t *testing.T) {
 	reconcileWith(t, b, repo, pod("Failed", &Terminated{}, &Terminated{ExitCode: 1, Message: "--- FAIL: TestAdd\nFAIL\texample.com/app\t0.01s"}))
 	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "--- FAIL: TestAdd") {
 		t.Errorf("result = %+v, want Failed with the test output", res)
+	}
+}
+
+func runningPod(ns, name string) *Pod {
+	p := &Pod{Object: kube.Meta(name, maps.Clone(testPodLabels))}
+	p.Namespace = ns
+	p.Status.Phase = "Running"
+	return p
+}
+
+func TestWaitsForAPlaceToRun(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 2
+	b, repo := branch()
+	others := []*Pod{runningPod("default", "gotest-other1"), runningPod("other", "gotest-other2")}
+	rec := reconcileWith(t, b, repo, others...)
+	if pods := kube.Owned[Pod](rec); len(pods) != 0 {
+		t.Fatalf("owned Pods = %+v, want none while 2 test Pods run", pods)
+	}
+	res := b.Status.Checks.Result
+	if res.State != gitk8s.Running || !strings.Contains(res.Message, "-max-pods is 2") || rec.RequeueAfter() == 0 {
+		t.Fatalf("result = %+v, RequeueAfter = %v; want Running, waiting, and a requeue", res, rec.RequeueAfter())
+	}
+
+	t.Log("A finished Pod doesn't take a place.")
+	others[1].Status.Phase = "Succeeded"
+	rec = reconcileWith(t, b, repo, others...)
+	if pods := kube.Owned[Pod](rec); len(pods) != 1 {
+		t.Fatalf("owned Pods = %+v, want the branch's Pod once a place is free", pods)
+	}
+
+	t.Log("A branch keeps the Pod that it already runs when the limit is reached.")
+	others[1].Status.Phase = "Running"
+	mine := pod("Running", nil, nil)
+	rec = reconcileWith(t, b, repo, append(others, mine)...)
+	if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != mine.Name {
+		t.Fatalf("owned Pods = %+v, want the branch's running Pod", pods)
 	}
 }
 

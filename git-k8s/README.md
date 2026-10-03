@@ -175,6 +175,9 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   account token, no privileges, a read-only root file system, and
   `GOPROXY=off`, so tests can't download modules.
 - If fetching fails, the check starts a new Pod, up to three times.
+- At most `-max-pods` test Pods, 10 by default, run at once across all
+  namespaces. A branch that would start another reports `Running` and waits
+  until one finishes.
 
 kube deletes a Pod when the check stops declaring it: after the check records
 the Pod's result, or when the branch moves to a new head. Owner references
