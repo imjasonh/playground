@@ -1,3 +1,6 @@
-# Binaries from go build ./cmd/...
+# Binaries from go build, in the module root or in a command's directory
 /git-k8s
 /check-*
+/cmd/*/git-k8s
+/cmd/*/check-*
+/e2e/gitserver/gitserver
