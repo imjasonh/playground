@@ -42,7 +42,7 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository
 		}
 	}
 
-	remote, err := gitk8s.RemoteFor(ctx, repo)
+	remote, err := gitk8s.RemoteFor(ctx, &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec})
 	if err != nil {
 		ready.Reason, ready.Message = "CredentialsUnavailable", err.Error()
 		return err

@@ -68,6 +68,10 @@ program. Each controller is a `kube.For` reconciler:
   meantime is never overwritten. It then deletes the branch if the policy
   says to.
 
+The checks and the merge controller read each branch's repository as a
+`gitk8s.Repository`, a `GitRepository` without its status, so the
+repositories controller's status writes don't run them again.
+
 Git objects stay in local bare repositories, one for each `GitRepository`
 in each program. Only commit SHAs go into Kubernetes objects, and no object
 records a single push or check run, so the API server holds a bounded amount

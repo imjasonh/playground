@@ -160,7 +160,7 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch) error {
 }
 
 func (m *merger) open(ctx context.Context, b *gitk8s.GitBranch) (*git.Repo, git.Remote, func(), error) {
-	repo := kube.Get[gitk8s.GitRepository](ctx, b.Namespace, b.Spec.Repository)
+	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
 	if repo == nil {
 		return nil, git.Remote{}, nil, fmt.Errorf("GitRepository %s/%s doesn't exist", b.Namespace, b.Spec.Repository)
 	}

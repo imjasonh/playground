@@ -17,7 +17,7 @@ import (
 // RemoteFor returns a repository's URL and credentials. It reads the
 // Secret that SecretRef names with kube.Fetch, so it must run in a
 // reconcile, and the Secret isn't cached.
-func RemoteFor(ctx context.Context, repo *GitRepository) (git.Remote, error) {
+func RemoteFor(ctx context.Context, repo *Repository) (git.Remote, error) {
 	r := git.Remote{URL: repo.Spec.URL}
 	if repo.Spec.SecretRef == nil {
 		return r, nil
@@ -60,7 +60,7 @@ type Cache struct {
 
 // Open returns the local repository for repo, locked so that no other
 // reconcile in this process uses it until unlock is called.
-func (c *Cache) Open(ctx context.Context, repo *GitRepository) (r *git.Repo, unlock func(), err error) {
+func (c *Cache) Open(ctx context.Context, repo *Repository) (r *git.Repo, unlock func(), err error) {
 	sum := sha256.Sum256([]byte(repo.Spec.URL))
 	dir := filepath.Join(c.Dir, repo.Namespace, repo.Name+"-"+hex.EncodeToString(sum[:4])+".git")
 	c.mu.Lock()

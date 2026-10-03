@@ -157,7 +157,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		return nil
 	}
 
-	repo := kube.Get[gitk8s.GitRepository](ctx, meta.Namespace, spec.Repository)
+	repo := kube.Get[gitk8s.Repository](ctx, meta.Namespace, spec.Repository)
 	if repo == nil {
 		return fmt.Errorf("GitRepository %s/%s doesn't exist", meta.Namespace, spec.Repository)
 	}
@@ -234,7 +234,7 @@ type Input struct {
 	Meta       *kube.ObjectMeta
 	Spec       *gitk8s.GitBranchSpec
 	Policy     gitk8s.CheckPolicy
-	Repository *gitk8s.GitRepository
+	Repository *gitk8s.Repository
 	// Identity is the author and committer for fix commits.
 	Identity git.Identity
 	// Previous is the check's last result, which can be for other commits.

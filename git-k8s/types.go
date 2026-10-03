@@ -111,6 +111,14 @@ type GitRepositoryStatus struct {
 	Conditions         []kube.Condition `json:"conditions,omitempty"`
 }
 
+// Repository is a GitRepository without its status. Controllers that fetch
+// from and push to a repository read this type, so that the repository
+// controller's status writes don't run them again.
+type Repository struct {
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitRepository,plural=gitrepositories,scope=Namespaced"`
+	Spec        GitRepositorySpec `json:"spec"`
+}
+
 // GitBranch is one branch that a GitRepository tracks. The repository
 // controller owns these objects and writes their spec from what it lists on
 // the remote, so don't edit them by hand.
