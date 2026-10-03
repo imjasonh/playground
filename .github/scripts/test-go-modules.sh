@@ -37,6 +37,18 @@ for module in "${modules[@]}"; do
     fi
   fi
 
+  # kube end-to-end tests run a real kube-apiserver and etcd, and skip
+  # without KUBEBUILDER_ASSETS, so download the binaries first.
+  kube_assets=""
+  if [ "$module" = "kube" ]; then
+    if kube_assets=$(bash kube/fetch-envtest.sh); then
+      echo "kube: running end-to-end tests with binaries from ${kube_assets}"
+    else
+      echo "::error title=kube envtest::kube/fetch-envtest.sh could not download kube-apiserver and etcd"
+      result=1
+    fi
+  fi
+
   if (
     cd "$module"
     # -race is the Go equivalent of a data-race detector. Always on in CI.
@@ -46,6 +58,10 @@ for module in "${modules[@]}"; do
     # sshapp KinD e2e is separate (see below) so unit tests stay fast.
     if [ "$module" = "node-image" ] || [ "$module" = "pasta" ]; then
       go test -race -v -timeout 30m ./...
+    elif [ "$module" = "kube" ]; then
+      # -count=1: the end-to-end tests run examples with go run, and the test
+      # cache doesn't track the files that a subprocess reads.
+      KUBEBUILDER_ASSETS="$kube_assets" go test -race -v -count=1 ./...
     else
       go test -race -v ./...
     fi
@@ -73,6 +89,28 @@ for module in "${modules[@]}"; do
       echo "${module}: KinD e2e passed"
     else
       echo "::error title=sshapp KinD e2e failed::${module}: SSHAPP_KIND_E2E=1 go test ./e2e/"
+      result=1
+    fi
+    echo "::endgroup::"
+  fi
+
+  # kube: install the examples in a kind cluster with generate, which
+  # pushes their images to a local registry. Needs Docker.
+  if [ "$module" = "kube" ]; then
+    echo "::group::kind e2e for kube"
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "::error title=kube kind e2e::docker is required"
+      result=1
+    elif ! docker info >/dev/null 2>&1; then
+      echo "::error title=kube kind e2e::docker daemon is not reachable"
+      result=1
+    elif (
+      cd "$module"
+      KUBE_KIND_E2E=1 go test -v -count=1 -timeout 20m ./e2e/kind/
+    ); then
+      echo "${module}: kind e2e passed"
+    else
+      echo "::error title=kube kind e2e failed::${module}: KUBE_KIND_E2E=1 go test ./e2e/kind/"
       result=1
     fi
     echo "::endgroup::"
