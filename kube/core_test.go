@@ -465,6 +465,55 @@ func TestFakeWorld(t *testing.T) {
 	}
 }
 
+type deploymentFull struct {
+	Object `kube:"apiVersion=apps/v1,kind=Deployment"`
+	Spec   struct {
+		Replicas *int32 `json:"replicas,omitempty"`
+		Paused   bool   `json:"paused,omitempty"`
+	} `json:"spec"`
+}
+
+func TestFakeReadsEveryTypeOfAKind(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+	full := &deploymentFull{Object: Meta("full", nil)}
+	full.Spec.Replicas, full.Spec.Paused = new(int32(2)), true
+	small := &deploymentProjection{Object: Meta("small", nil)}
+	small.Spec.Replicas = new(int32(3))
+	hidden := &deploymentFull{Object: Meta("both", nil)}
+	hidden.Spec.Replicas = new(int32(4))
+	shown := &deploymentProjection{Object: Meta("both", nil)}
+	shown.Spec.Replicas = new(int32(5))
+	pod := &podMeta{Object: Meta("pod", nil)}
+	for _, m := range []*ObjectMeta{&full.ObjectMeta, &small.ObjectMeta, &hidden.ObjectMeta, &shown.ObjectMeta, &pod.ObjectMeta} {
+		m.Namespace = "shop"
+	}
+
+	r := fakeReconciler{reconcile: func(ctx context.Context, w *widget) error {
+		if d := Get[deploymentProjection](ctx, "shop", "full"); d == nil || *d.Spec.Replicas != 2 {
+			t.Errorf("Get[deploymentProjection](full) = %+v, want the deploymentFull as a deploymentProjection", d)
+		}
+		if d := Get[deploymentFull](ctx, "shop", "small"); d == nil || *d.Spec.Replicas != 3 || d.Spec.Paused {
+			t.Errorf("Get[deploymentFull](small) = %+v, want the deploymentProjection as a deploymentFull", d)
+		}
+		if d := Get[deploymentProjection](ctx, "shop", "both"); d == nil || *d.Spec.Replicas != 5 {
+			t.Errorf("Get[deploymentProjection](both) = %+v, want the deploymentProjection, not the deploymentFull", d)
+		}
+		var names []string
+		for _, d := range List[deploymentProjection](ctx, InNamespace("shop")) {
+			names = append(names, d.Name)
+		}
+		if want := []string{"both", "full", "small"}; !slices.Equal(names, want) {
+			t.Errorf("List[deploymentProjection] = %v, want %v", names, want)
+		}
+		return nil
+	}}
+	ctx, _ := Fake(t.Context(), parent, full, small, hidden, shown, pod)
+	if err := r.Reconcile(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestVerbsOutsideReconcilePanic(t *testing.T) {
 	defer func() {
 		r := recover()

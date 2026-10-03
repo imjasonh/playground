@@ -761,8 +761,10 @@ volume at `/tmp` gives `os.TempDir` somewhere to write.
 `kube.Fake` gives `Reconcile` a scope backed by a list of objects instead of
 caches. The reconcile runs the same code as in a cluster, and the scope
 records its intents for the test to check with `kube.Owned`,
-`kube.Applied`, and `kube.Deleted`. A test doesn't fake an API server, so
-there's no fake behavior that can differ from a real server's.
+`kube.Applied`, and `kube.Deleted`. In a cluster, every type of a kind reads
+the same objects, so the fake converts the listed objects of one type through
+JSON for reads of another type of the same kind. A test doesn't fake an API
+server, so there's no fake behavior that can differ from a real server's.
 
 End-to-end tests start `etcd` and `kube-apiserver` from the controller-tools
 envtest release, with no kubelet or controller manager. The API server calls

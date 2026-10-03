@@ -536,6 +536,10 @@ func TestReconcile(t *testing.T) {
 }
 ```
 
+As in a cluster, a read sees the objects of every type of its kind. A
+reconcile that reads your own smaller `Deployment` type sees each
+`k8s.Deployment` that you pass to `kube.Fake`.
+
 To test `Validate`, `Default`, `ConvertTo`, and `ConvertFrom`, call them
 directly. With a context from `kube.Fake`, `Validate` and `Default` can read
 objects with `Get` and `List`.
