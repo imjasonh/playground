@@ -92,6 +92,7 @@ example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`
 | `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` when the change is larger than `-max-lines` or touches a path that matches a `-sensitive` glob, and to `low` otherwise. |
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head. A push after the approval needs a new one. |
+| `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
 
 A check with `mayPush: true` pushes its fix commit to the branch, which moves
 the head and runs the checks again. Fix commits have a `Git-K8s-Fixer:
@@ -150,6 +151,27 @@ func main() { checks.Main[Branch](checks.Check{Name: "readme", Run: run}) }
 `in.Repo` fetches the branch and its parent into the program's local
 repository. A verdict with a `Fix` commit asks the framework to push it.
 
+### Sandboxed checks
+
+The checks that read files run in their controller's process. A check that
+runs the branch's code, such as `go test`, runs it in a Pod instead.
+`check-gotest` declares one Pod for each head with `kube.Own`, and reports
+`Running` until the Pod finishes:
+
+- An init container fetches the head from the repository. It's the only
+  container that gets the repository's credentials, as environment
+  variables from the Secret.
+- The test container runs `go test ./...` as user 65532 with no service
+  account token, no privileges, a read-only root file system, and
+  `GOPROXY=off`, so tests can't download modules.
+- If fetching fails, the check starts a new Pod, up to three times.
+
+kube deletes a Pod when the check stops declaring it: after the check records
+the Pod's result, or when the branch moves to a new head. Owner references
+delete the Pods with their `GitBranch`. Set `-runtime-class` to run the Pods
+under a sandboxing runtime such as gVisor, and `-go-image`, `-git-image`,
+`-timeout`, and `-goproxy` to change the rest.
+
 ## Merge gates
 
 `when` is a subset of [CEL](https://cel.dev). It has one variable, `checks`,
@@ -173,7 +195,7 @@ repositories, because `generate` makes the root file system read-only:
 ```sh
 cache='[{"op": "add", "path": "/spec/template/spec/volumes", "value": [{"name": "cache", "emptyDir": {}}]},
   {"op": "add", "path": "/spec/template/spec/containers/0/volumeMounts", "value": [{"name": "cache", "mountPath": "/var/cache/git-k8s"}]}]'
-for program in git-k8s check-base check-gofmt check-risk check-approval; do
+for program in git-k8s check-base check-gofmt check-risk check-approval check-gotest; do
   go run "./cmd/${program}" generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest | kubectl apply -f -
   kubectl -n "${program}" patch deployment "${program}" --type=json -p "${cache}"
 done
@@ -220,9 +242,8 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
   soon after the check pushes it.
 - Remotes authenticate with HTTP basic auth only.
 - `when` is a subset of CEL, not all of it.
-- Checks run in their controller's process. A check that runs untrusted code,
-  such as `go test`, belongs in a sandboxed Pod that the check declares with
-  `kube.Own`, which none of these checks does yet.
+- `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
+  NetworkPolicy, so a test can reach anything that the namespace's Pods can.
 - The merge controller writes status on every reconcile while a branch has
   check results, because it must leave `status.checks` out of its status. The
   API server doesn't store a write that changes nothing.

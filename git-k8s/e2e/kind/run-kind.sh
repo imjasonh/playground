@@ -22,7 +22,7 @@ GIT_PORT="${GIT_K8S_KIND_GIT_PORT:-18418}"
 CHAINGUARD="${GIT_K8S_KIND_CHAINGUARD:-cgr.dev/chainguard}"
 PLATFORM="linux/$(go env GOARCH)"
 NS=git-k8s-e2e
-CHECKS=(check-base check-gofmt check-risk check-approval)
+CHECKS=(check-base check-gofmt check-risk check-approval check-gotest)
 WORKDIR="$(mktemp -d)"
 WORK="${WORKDIR}/work"
 PASSWORD="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
@@ -42,6 +42,8 @@ diagnose() {
   echo "::group::Cluster state"
   k get nodes -o wide || true
   k -n "${NS}" get gitrepositories,gitbranches -o yaml || true
+  k -n "${NS}" get pods -o wide || true
+  k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
   for program in git-k8s "${CHECKS[@]}"; do
     k -n "${program}" describe pods || true
     k -n "${program}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
@@ -179,15 +181,24 @@ install() {
   generate "${program}" "$@" | k apply -f -
   k -n "${program}" patch deployment "${program}" --type=json -p "${cache_volume}"
 }
+# The gotest check's Pods use these images. Copying them into the local
+# registry lets the nodes pull them without reaching the internet.
+GO_IMAGE="localhost:${PORT}/chainguard/go:latest"
+GIT_IMAGE="localhost:${PORT}/chainguard/git:latest"
+crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; }
+crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
+crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # git-k8s installs the CustomResourceDefinitions that the checks watch.
 install git-k8s
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
 for program in "${CHECKS[@]}"; do
-  if [[ "${program}" == check-risk ]]; then
-    install "${program}" -- '-sensitive=auth/**'
-  else
-    install "${program}"
-  fi
+  case "${program}" in
+    check-risk) install "${program}" -- '-sensitive=auth/**' ;;
+    check-gotest)
+      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m
+      ;;
+    *) install "${program}" ;;
+  esac
 done
 for program in "${CHECKS[@]}"; do
   k -n "${program}" rollout status "deployment/${program}" --timeout=180s
@@ -241,8 +252,13 @@ eventually 120 repository_ready
 k -n "${NS}" get gitrepositories,gitbranches
 echo "::endgroup::"
 
-remote_head() { git ls-remote "${HOST_URL}/app.git" "refs/heads/$1" | cut -f1; }
-branch_object() { k -n "${NS}" get gitbranches -o jsonpath="{.items[?(@.spec.branch==\"$1\")].metadata.name}"; }
+# remote_head prints a branch's commit in repository $2, or app.
+remote_head() { git ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
+# branch_object prints the GitBranch for a branch of repository $2, or app.
+branch_object() {
+  k -n "${NS}" get gitbranches -l "git-k8s.imjasonh.com/repository=${2:-app}" \
+    -o jsonpath="{.items[?(@.spec.branch==\"$1\")].metadata.name}"
+}
 fetch_main() { g fetch -q "${HOST_URL}/app.git" main; }
 branch_gone() { [[ -z "$(remote_head "$1")" && -z "$(branch_object "$1")" ]]; }
 
@@ -334,6 +350,77 @@ grep -q 'the gofmt check can only write status.checks.gofmt' "${WORKDIR}/patch.j
 code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}')"
 [[ "${code}" == 200 ]]
 echo "check-gofmt can write status.checks.gofmt but not status.checks.risk."
+echo "::endgroup::"
+
+echo "::group::Tests run in a sandboxed Pod"
+TESTED="${WORKDIR}/tested"
+git init -q -b main "${TESTED}"
+t() {
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${TESTED}" \
+    -c user.name=e2e -c user.email=e2e@example.com "$@"
+}
+printf 'module example.com/tested\n\ngo 1.24\n' >"${TESTED}/go.mod"
+printf 'package tested\n\nfunc Add(a, b int) int { return a + b }\n' >"${TESTED}/add.go"
+cat >"${TESTED}/add_test.go" <<'GO'
+package tested
+
+import "testing"
+
+func TestAdd(t *testing.T) {
+	if got := Add(2, 3); got != 5 {
+		t.Errorf("Add(2, 3) = %d, want 5", got)
+	}
+}
+GO
+t add -A
+t commit -qm "Add Add"
+t push -q "${HOST_URL}/tested.git" HEAD:main
+tested_main="$(t rev-parse HEAD)"
+k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: tested
+  namespace: ${NS}
+spec:
+  url: ${CLUSTER_URL}/tested.git
+  secretRef:
+    name: app-creds
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: gotest
+        deleteMergedBranches: true
+    - match: c/**
+      parent: main
+EOF
+
+t checkout -q -b c/broken
+printf 'package tested\n\nfunc Add(a, b int) int { return a - b }\n' >"${TESTED}/add.go"
+t commit -qam "Break Add"
+t push -q "${HOST_URL}/tested.git" HEAD:c/broken
+gotest() { k -n "${NS}" get gitbranch "$(branch_object "$1" tested)" -o jsonpath="{.status.checks.gotest.$2}"; }
+broken_failed() { [[ -n "$(branch_object c/broken tested)" && "$(gotest c/broken state)" == Failed ]]; }
+eventually 300 broken_failed
+gotest c/broken message
+echo
+gotest c/broken message | grep -q -- '--- FAIL: TestAdd'
+[[ "$(remote_head main tested)" == "${tested_main}" ]]
+# kube deletes a test Pod once the check stops declaring it.
+no_test_pods() { [[ -z "$(k -n "${NS}" get pods -l app.kubernetes.io/name=check-gotest -o name)" ]]; }
+eventually 60 no_test_pods
+
+t checkout -q -b c/fixed main
+printf 'package tested\n\n// Add returns the sum of a and b.\nfunc Add(a, b int) int { return a + b }\n' >"${TESTED}/add.go"
+t commit -qam "Document Add"
+fixed="$(t rev-parse HEAD)"
+t push -q "${HOST_URL}/tested.git" HEAD:c/fixed
+fixed_landed() { [[ "$(remote_head main tested)" == "${fixed}" ]]; }
+eventually 300 fixed_landed
+eventually 60 no_test_pods
+echo "A branch that breaks a test failed in a sandboxed Pod, and a fixed branch landed."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"

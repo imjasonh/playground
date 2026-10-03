@@ -162,7 +162,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		return fmt.Errorf("GitRepository %s/%s doesn't exist", meta.Namespace, spec.Repository)
 	}
 	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir} })
-	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Identity: r.cfg.Identity, cache: r.cache}
+	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Identity: r.cfg.Identity, Previous: cur, cache: r.cache}
 	defer in.release()
 
 	res := &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit}
@@ -237,6 +237,8 @@ type Input struct {
 	Repository *gitk8s.GitRepository
 	// Identity is the author and committer for fix commits.
 	Identity git.Identity
+	// Previous is the check's last result, which can be for other commits.
+	Previous *gitk8s.CheckResult
 
 	cache     *gitk8s.Cache
 	remote    *git.Remote
