@@ -7,6 +7,8 @@ import (
 	"errors"
 	"reflect"
 	"strings"
+
+	"github.com/imjasonh/playground/kube/internal/subset"
 )
 
 // writeStatus fills in the status fields the framework manages, then writes
@@ -36,8 +38,17 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 	// write can arrive before the response and mustn't look like someone
 	// else's change.
 	key := m.Key()
-	c.setStatus(key, hashJSON(after), true)
+	h := hashJSON(after)
+	c.setStatus(key, h, true)
 	if bytes.Equal(before, after) {
+		return nil
+	}
+	// A reconcile can clear a status field that another manager writes, so
+	// that this write doesn't take it over. Then the status never equals the
+	// cached one. It needs no write when the cached status has every field of
+	// it, and this controller's last write applied the same status, which
+	// leaves no field that the reconcile stopped setting to remove.
+	if last, ok := c.lastStatusApply(key); ok && last == h && containsJSON(before, after) {
 		return nil
 	}
 	// The UID keeps status computed for a deleted object from landing on a
@@ -61,6 +72,7 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 		return err
 	}
 	c.m.metrics.inc("kube_status_writes_total", "controller", c.name)
+	c.setStatusApply(key, h)
 	// The API server can store a different status than was sent, for example
 	// with defaults or another manager's fields, so record what it stored.
 	// Like the cache, tolerate fields whose JSON type doesn't match.
@@ -72,6 +84,23 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 		}
 	}
 	return nil
+}
+
+// containsJSON reports whether the JSON document have has every field of the
+// JSON document want.
+func containsJSON(have, want []byte) bool {
+	var h, w any
+	for _, d := range []struct {
+		b []byte
+		v *any
+	}{{have, &h}, {want, &w}} {
+		dec := json.NewDecoder(bytes.NewReader(d.b))
+		dec.UseNumber()
+		if err := dec.Decode(d.v); err != nil {
+			return false
+		}
+	}
+	return subset.Contains(h, w)
 }
 
 // syncedCondition reports the result of the last reconcile.

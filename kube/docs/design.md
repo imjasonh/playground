@@ -489,6 +489,15 @@ characters. `kube.SetCondition` keeps `lastTransitionTime` when a condition's
 status doesn't change, so a reconcile that observes the same state writes
 nothing.
 
+Several managers can write one status, each to its own fields. A status
+write manages every field it sends, so a reconcile that reads a field that
+another manager writes clears it before returning, and the status then never
+equals the cached one. The framework skips such a write by the same rule as for
+`Apply`. If the cached status has every field of the new one, and the
+controller's last status write sent the same status, there's nothing to add
+or remove. Server-side apply ignores annotations sent to the status
+subresource, so the record of the last write is in memory.
+
 A reconcile that returns an error is retried with backoff, and its intents are
 discarded. An error wrapped with `kube.Permanent` isn't retried; the object
 waits for its next change, and `Synced` has the reason `PermanentError`. A
@@ -870,6 +879,8 @@ The end-to-end tests count writes with the `kube_apply_total` and
 `kube_status_writes_total` metrics. After a Widget converges, five label
 changes cause five reconciles, no applies, and no status writes. A new manager
 that starts over the converged Widget makes no applies and no status writes.
+A controller that totals the votes that other managers write into a Poll's
+status makes no status writes for votes that leave the total as it was.
 
 ### Binary size and dependencies
 
@@ -908,7 +919,9 @@ offers:
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
   stop matching looks deleted, so its finalizer is never removed.
 - After a restart, each object declared with `Apply` is applied once, because
-  the framework doesn't annotate objects it doesn't own.
+  the framework doesn't annotate objects it doesn't own. A status that leaves
+  out other managers' fields is also written once, because the record of the
+  last status write is in memory.
 - The CRD checks compare field names, types, and required fields, not
   validation such as enums or bounds, and they need permission to list
   objects in every namespace.

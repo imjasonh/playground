@@ -5,6 +5,7 @@ package e2e_test
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -267,6 +269,133 @@ func TestRestoresStatusThatSomeoneElseChanged(t *testing.T) {
 	if got := r.count(ns + "/w"); got-before > 2 {
 		t.Errorf("reconciled %d times to restore the status, want at most 2", got-before)
 	}
+}
+
+// Poll's status has two kinds of writers. Each voter applies its own entry in
+// status.votes, with its own field manager, and the tally controller writes
+// status.total.
+type Poll struct {
+	kube.Object `kube:"group=e2e.kube.imjasonh.github.io"`
+	Spec        struct {
+		Question string `json:"question,omitempty"`
+	} `json:"spec"`
+	Status struct {
+		Total      int              `json:"total,omitempty"`
+		Votes      map[string]int   `json:"votes,omitempty"`
+		Conditions []kube.Condition `json:"conditions,omitempty"`
+	} `json:"status,omitzero"`
+}
+
+type tally struct{ calls atomic.Int64 }
+
+func (r *tally) Reconcile(ctx context.Context, p *Poll) error {
+	r.calls.Add(1)
+	p.Status.Total = 0
+	for _, n := range p.Status.Votes {
+		p.Status.Total += n
+	}
+	// The voters own their votes, so the status write leaves them out.
+	p.Status.Votes = nil
+	return nil
+}
+
+func TestSharedStatusMakesNoWrites(t *testing.T) {
+	c := e2e.Client(t)
+	addr := freeAddr(t)
+	r := &tally{}
+	e2e.Run(t, &kube.Manager{Name: "tally-e2e", Addr: addr}, kube.For[Poll](r, kube.Named("tally")))
+	ns := e2e.Namespace(t, c)
+	path := client.Path(group+"/v1", "polls", ns, "p")
+	e2e.Eventually(t, 30*time.Second, func() error {
+		return c.Create(t.Context(), client.Path(group+"/v1", "polls", ns, ""), map[string]any{
+			"apiVersion": group + "/v1", "kind": "Poll", "metadata": map[string]any{"name": "p"}, "spec": map[string]any{"question": "Tabs?"},
+		}, nil)
+	})
+	type managedFields struct {
+		Manager     string         `json:"manager"`
+		Subresource string         `json:"subresource"`
+		FieldsV1    map[string]any `json:"fieldsV1"`
+	}
+	var poll struct {
+		Metadata struct {
+			ManagedFields []managedFields `json:"managedFields"`
+		} `json:"metadata"`
+		Status map[string]any `json:"status"`
+	}
+	status := func(check func(map[string]any) error) func() error {
+		return func() error {
+			if err := e2e.Get(t.Context(), c, path, &poll); err != nil {
+				return err
+			}
+			return check(poll.Status)
+		}
+	}
+	total := func(want float64) func() error {
+		return status(func(s map[string]any) error {
+			got, ok := s["total"]
+			switch {
+			case want == 0 && ok:
+				return fmt.Errorf("status.total = %v, want none", got)
+			case want != 0 && got != want:
+				return fmt.Errorf("status.total = %v, want %v", got, want)
+			}
+			return nil
+		})
+	}
+	vote := func(voter string, n int) {
+		t.Helper()
+		before := r.calls.Load()
+		if err := c.Apply(t.Context(), client.Path(group+"/v1", "polls", ns, "p", "status"), voter, true, map[string]any{
+			"apiVersion": group + "/v1", "kind": "Poll", "metadata": map[string]any{"name": "p", "namespace": ns},
+			"status": map[string]any{"votes": map[string]any{voter: n}},
+		}, nil); err != nil {
+			t.Fatal(err)
+		}
+		e2e.Eventually(t, 5*time.Second, func() error {
+			if r.calls.Load() == before {
+				return fmt.Errorf("%s's vote hasn't been reconciled", voter)
+			}
+			return nil
+		})
+	}
+	e2e.Eventually(t, 10*time.Second, status(func(s map[string]any) error {
+		if s["conditions"] == nil {
+			return errors.New("no conditions yet")
+		}
+		return nil
+	}))
+	vote("alice", 1)
+	e2e.Eventually(t, 10*time.Second, total(1))
+	writes := `kube_status_writes_total{controller="tally"}`
+	time.Sleep(500 * time.Millisecond)
+	base := scrape(t, addr, writes)
+
+	t.Log("Votes that leave the total as it was reconcile again, but write nothing.")
+	for _, voter := range []string{"bob", "carol", "dave"} {
+		vote(voter, 0)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if got := scrape(t, addr, writes); got != base {
+		t.Errorf("status writes = %v after votes that leave the total as it was, want %v", got, base)
+	}
+	e2e.Eventually(t, 10*time.Second, total(1))
+	if votes, _ := poll.Status["votes"].(map[string]any); len(votes) != 4 {
+		t.Errorf("status.votes = %v, want four votes", poll.Status["votes"])
+	}
+	for _, mf := range poll.Metadata.ManagedFields {
+		if mf.Manager != "tally" {
+			continue
+		}
+		if b, _ := json.Marshal(mf.FieldsV1); strings.Contains(string(b), "f:votes") {
+			t.Errorf("the tally manages votes: %s", b)
+		}
+	}
+
+	t.Log("The tally writes a new total, and removes the total when it stops setting one.")
+	vote("alice", 2)
+	e2e.Eventually(t, 10*time.Second, total(2))
+	vote("alice", 0)
+	e2e.Eventually(t, 10*time.Second, total(0))
 }
 
 func TestPanicsAndPermanentErrorsAreContained(t *testing.T) {

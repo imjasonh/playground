@@ -149,6 +149,12 @@ status has a `Conditions []kube.Condition` field, the framework keeps a
 `lastTransitionTime` when its status doesn't change, so a reconcile that
 observes the same state doesn't write status.
 
+Several writers can share one status, each with its own fields. A status
+write manages every field that the status has when `Reconcile` returns, so
+clear the fields that other writers own before returning. The framework
+writes status only when a field that the controller sets changes, so reading
+the other writers' fields costs no writes.
+
 A reconciler that also has a `Finalize(ctx context.Context, obj *T) error`
 method gets a finalizer on each object. The framework calls `Finalize` when the
 object is deleted and removes the finalizer when `Finalize` returns `nil`. Use
@@ -625,7 +631,7 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 | `*.go` | The `kube` package: types, caches, dependency tracking, controllers, status, webhooks, versions, shards, metrics, and fakes |
 | `k8s/` | Types for common built-in objects |
 | `examples/` | Example controllers and webhooks with unit and end-to-end tests |
-| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, panics, permanent errors, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
+| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, shared status, panics, permanent errors, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
 | `internal/client/` | REST client, kubeconfig, authentication, discovery, and JSON and protobuf watch decoding |
 | `internal/protobuf/` | Protobuf decoding of built-in types into partial structs, and its schema; `gen/` is the separate module that generates the schema |
 | `internal/certs/` | Certificate authority and serving certificates for webhooks |
