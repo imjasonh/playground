@@ -116,6 +116,29 @@ for module in "${modules[@]}"; do
     echo "::endgroup::"
   fi
 
+  # git-k8s: install the controllers and checks in a kind cluster with
+  # kube's generate command, and push branches to a git server that runs on
+  # the runner. Needs Docker and git.
+  if [ "$module" = "git-k8s" ]; then
+    echo "::group::kind e2e for git-k8s"
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "::error title=git-k8s kind e2e::docker is required"
+      result=1
+    elif ! docker info >/dev/null 2>&1; then
+      echo "::error title=git-k8s kind e2e::docker daemon is not reachable"
+      result=1
+    elif (
+      cd "$module"
+      GIT_K8S_KIND_E2E=1 go test -v -count=1 -timeout 20m ./e2e/kind/
+    ); then
+      echo "${module}: kind e2e passed"
+    else
+      echo "::error title=git-k8s kind e2e failed::${module}: GIT_K8S_KIND_E2E=1 go test ./e2e/kind/"
+      result=1
+    fi
+    echo "::endgroup::"
+  fi
+
   echo "::endgroup::"
 done
 
