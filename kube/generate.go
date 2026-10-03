@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -57,10 +58,15 @@ type generateOptions struct {
 	replicas      int
 	shards        int
 	tag           string
+	// tmpSize is the size limit of the volume at /tmp, or empty for none.
+	tmpSize string
 	// args are more arguments for the program in the Deployment.
 	args   []string
 	stderr io.Writer
 }
+
+// quantity matches the Kubernetes quantities that people write for sizes.
+var quantity = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?([eE][0-9]+|Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$`)
 
 func (o *generateOptions) logf(format string, args ...any) {
 	fmt.Fprintf(o.stderr, format+"\n", args...)
@@ -82,6 +88,7 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	fs.IntVar(&o.replicas, "replicas", 2, "pods to run; more than one turns on leader election")
 	fs.IntVar(&o.shards, "shards", 1, "split reconciles across replicas in this many shards")
 	fs.StringVar(&o.tag, "tag", "latest", "tag for the image, in addition to its digest")
+	fs.StringVar(&o.tmpSize, "tmp-size", "", "size limit of the emptyDir volume at /tmp, such as 1Gi; empty means no limit")
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, "Usage: %s generate -registry=REGISTRY [flags] [-- PROGRAM_FLAGS] | kubectl apply -f -\n\n", o.program)
 		fmt.Fprintf(stderr, "Builds the program into an image, pushes it to REGISTRY/%s, and writes the YAML that installs it.\n", o.name)
@@ -102,6 +109,8 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 		return errors.New("generate: -registry is required")
 	case o.replicas < 1 || o.shards < 1:
 		return errors.New("generate: -replicas and -shards must be at least 1")
+	case o.tmpSize != "" && !quantity.MatchString(o.tmpSize):
+		return fmt.Errorf("generate: -tmp-size %q isn't a quantity, such as 512Mi or 2Gi", o.tmpSize)
 	}
 	o.registry = strings.TrimSuffix(o.registry, "/")
 	for _, s := range strings.Split(*platforms, ",") {
@@ -406,6 +415,10 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		// write.
 		{"volumeMounts", []any{object{{"name", "tmp"}, {"mountPath", "/tmp"}}}},
 	}
+	tmp := object{}
+	if o.tmpSize != "" {
+		tmp = object{{"sizeLimit", o.tmpSize}}
+	}
 	docs = append(docs, object{
 		{"apiVersion", "apps/v1"}, {"kind", "Deployment"}, {"metadata", meta(o.name, true)},
 		{"spec", object{
@@ -417,7 +430,7 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 					{"serviceAccountName", o.name},
 					{"securityContext", object{{"runAsNonRoot", true}, {"seccompProfile", object{{"type", "RuntimeDefault"}}}}},
 					{"containers", []any{container}},
-					{"volumes", []any{object{{"name", "tmp"}, {"emptyDir", object{}}}}},
+					{"volumes", []any{object{{"name", "tmp"}, {"emptyDir", tmp}}}},
 				}},
 			}},
 		}},

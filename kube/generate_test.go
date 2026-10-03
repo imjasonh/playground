@@ -158,6 +158,13 @@ func TestManifests(t *testing.T) {
 		t.Errorf("Service = %s", b)
 	}
 
+	o.tmpSize = "1Gi"
+	docs = o.manifests("ref", p)
+	if b, _ := json.Marshal(docs[len(docs)-2]); !strings.Contains(string(b), `"volumes":[{"name":"tmp","emptyDir":{"sizeLimit":"1Gi"}}]`) {
+		t.Errorf("with -tmp-size=1Gi, the Deployment = %s", b)
+	}
+	o.tmpSize = ""
+
 	o.replicas, o.shards = 1, 1
 	docs = o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}})
 	kinds = nil
@@ -182,6 +189,7 @@ func TestGenerateArguments(t *testing.T) {
 		{[]string{"-registry=ghcr.io/you", "extra"}, `unexpected argument "extra"`},
 		{[]string{"-registry=ghcr.io/you", "-platform=linux"}, "isn't os/architecture"},
 		{[]string{"-registry=ghcr.io/you", "-replicas=0"}, "at least 1"},
+		{[]string{"-registry=ghcr.io/you", "-tmp-size=lots"}, "isn't a quantity"},
 		{[]string{"-registry=ghcr.io/you", "-nope"}, "flag provided but not defined"},
 	} {
 		var stderr bytes.Buffer

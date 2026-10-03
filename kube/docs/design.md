@@ -754,7 +754,9 @@ quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
 `1:20`, and `.5`. The Deployment runs the program with probes on `/readyz` and
 `/healthz`, as a non-root user with a read-only root file system, and with
 `-leader-elect` or `-shards` when it has more than one replica. An `emptyDir`
-volume at `/tmp` gives `os.TempDir` somewhere to write.
+volume at `/tmp` gives `os.TempDir` somewhere to write. With `-tmp-size`, the
+volume has a size limit, and the kubelet evicts a Pod that writes more instead
+of letting it fill the node's disk.
 
 ### Testing
 

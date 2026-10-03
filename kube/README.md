@@ -442,7 +442,7 @@ The command does the following:
    Service for webhooks. With more than one replica, the Deployment runs the
    program with `-leader-elect`, or with `-shards` when you set `-shards`.
    The container's root file system is read-only, with an `emptyDir` volume
-   at `/tmp` for temporary files.
+   at `/tmp` for temporary files. `-tmp-size` limits the volume's size.
 
 The images have fixed timestamps, so the same source gives the same digest,
 and running `generate` again without changes leaves the cluster as it was.
