@@ -736,6 +736,15 @@ needs `create` and `patch`, and `Delete` needs `delete`. `controller-gen`
 reads `+kubebuilder:rbac` comment markers, which people write and update by
 hand. These rules change when the calls do.
 
+The rules go in a ClusterRole, because a program watches every namespace,
+except those for the program's own Leases and webhook certificate, which go in
+a Role in its namespace. With `-watch-namespace`, the program runs with
+`-namespace`, and the rules for a type whose `kube` tag says
+`scope=Namespaced`, or that the program defines without `scope=Cluster`, go in
+a Role in the watched namespace. A reconciled type with more than one version
+keeps its rules in the ClusterRole, because migrating its stored objects to a
+new version lists and patches them in every namespace.
+
 [go-containerregistry](https://github.com/google/go-containerregistry), kube's
 only dependency, builds and pushes the image. For each platform, `generate`
 builds the program with `CGO_ENABLED=0`, adds one layer that holds it at

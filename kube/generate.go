@@ -60,6 +60,9 @@ type generateOptions struct {
 	tag           string
 	// tmpSize is the size limit of the volume at /tmp, or empty for none.
 	tmpSize string
+	// watchNamespace is the one namespace that the program watches, or
+	// empty for every namespace.
+	watchNamespace string
 	// args are more arguments for the program in the Deployment.
 	args   []string
 	stderr io.Writer
@@ -89,6 +92,7 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	fs.IntVar(&o.shards, "shards", 1, "split reconciles across replicas in this many shards")
 	fs.StringVar(&o.tag, "tag", "latest", "tag for the image, in addition to its digest")
 	fs.StringVar(&o.tmpSize, "tmp-size", "", "size limit of the emptyDir volume at /tmp, such as 1Gi; empty means no limit")
+	fs.StringVar(&o.watchNamespace, "watch-namespace", "", "namespace for the program to watch instead of every namespace; the rules for namespaced resources go in a Role there")
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, "Usage: %s generate -registry=REGISTRY [flags] [-- PROGRAM_FLAGS] | kubectl apply -f -\n\n", o.program)
 		fmt.Fprintf(stderr, "Builds the program into an image, pushes it to REGISTRY/%s, and writes the YAML that installs it.\n", o.name)
@@ -111,6 +115,8 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 		return errors.New("generate: -replicas and -shards must be at least 1")
 	case o.tmpSize != "" && !quantity.MatchString(o.tmpSize):
 		return fmt.Errorf("generate: -tmp-size %q isn't a quantity, such as 512Mi or 2Gi", o.tmpSize)
+	case o.watchNamespace != "" && objectName(o.watchNamespace) != o.watchNamespace:
+		return fmt.Errorf("generate: -watch-namespace %q isn't a namespace name", o.watchNamespace)
 	}
 	o.registry = strings.TrimSuffix(o.registry, "/")
 	for _, s := range strings.Split(*platforms, ",") {
@@ -260,20 +266,39 @@ func resourceName(ti *typeInfo) (string, string) {
 
 // installPlan is what the installation must allow and run.
 type installPlan struct {
-	// cluster holds cluster-wide permissions, and local those in the
-	// program's own namespace.
-	cluster, local grants
-	webhooks       bool
+	// cluster holds cluster-wide permissions, local those in the program's
+	// own namespace, and watched those in the namespace that it watches,
+	// when it watches one.
+	cluster, local, watched grants
+	webhooks                bool
 	// electLeader is set when replicas must take turns reconciling.
 	electLeader bool
+}
+
+// grantsFor returns where the permissions for ti's resources go. A program
+// that watches one namespace needs a namespaced resource only there.
+func (p *installPlan) grantsFor(ti *typeInfo, watching bool) grants {
+	if watching && ti.scope == "Namespaced" {
+		return p.watched
+	}
+	return p.cluster
 }
 
 // plan works out what the program needs. Controllers declare their types,
 // and the program's source shows the types its reconciles and webhooks
 // read and write.
 func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pkg string) (*installPlan, error) {
-	p := &installPlan{cluster: grants{}, local: grants{}}
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}}
 	cluster := p.cluster
+	watching := o.watchNamespace != ""
+	warned := map[string]bool{}
+	grantsFor := func(ti *typeInfo) grants {
+		if watching && ti.scope == "" && !warned[ti.apiVersion+"/"+ti.kind] {
+			warned[ti.apiVersion+"/"+ti.kind] = true
+			o.logf("warning: %s %s doesn't say whether it's namespaced, so its rules stay in the ClusterRole; add scope=Namespaced or scope=Cluster to its kube tag", ti.apiVersion, ti.kind)
+		}
+		return p.grantsFor(ti, watching)
+	}
 	var crds []string
 	for _, c := range controllers {
 		d, err := c.describe()
@@ -286,18 +311,25 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		}
 		p.electLeader = o.replicas > 1 || o.shards > 1
 		group, plural := resourceName(d.ti)
-		cluster.add(group, plural, "", "get", "list", "watch", "patch")
+		own := grantsFor(d.ti)
+		if watching && d.versioned {
+			// Migrating stored objects to a new version lists and patches
+			// them in every namespace.
+			o.logf("%s has more than one version, so its rules stay in the ClusterRole", d.ti.kind)
+			own = cluster
+		}
+		own.add(group, plural, "", "get", "list", "watch", "patch")
 		if d.ti.status != nil {
-			cluster.add(group, plural+"/status", "", "patch")
+			own.add(group, plural+"/status", "", "patch")
 		}
 		// Owner references that block the owner's deletion need this.
-		cluster.add(group, plural+"/finalizers", "", "update")
+		own.add(group, plural+"/finalizers", "", "update")
 		if d.ti.custom {
 			crds = append(crds, plural+"."+group)
 		}
 		for _, oti := range d.owns {
 			g, r := resourceName(oti)
-			cluster.add(g, r, "", "list", "watch", "delete")
+			grantsFor(oti).add(g, r, "", "list", "watch", "delete")
 		}
 	}
 	funcs := slices.Sorted(maps.Keys(scopeVerbs))
@@ -318,7 +350,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			return nil, err
 		}
 		g, r := resourceName(ti)
-		cluster.add(g, r, "", scopeVerbs[u.Func]...)
+		grantsFor(ti).add(g, r, "", scopeVerbs[u.Func]...)
 	}
 	for _, crd := range crds {
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")
@@ -341,6 +373,14 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	}
 	if p.electLeader {
 		p.local.add("coordination.k8s.io", "leases", "", "get", "list", "create", "update", "delete")
+	}
+	if o.watchNamespace == o.namespace {
+		for k, verbs := range p.watched {
+			for v := range verbs {
+				p.local.add(k.group, k.resource, k.name, v)
+			}
+		}
+		clear(p.watched)
 	}
 	return p, nil
 }
@@ -366,14 +406,21 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 			{"subjects", subjects},
 		},
 	}
-	if len(p.local) > 0 {
-		docs = append(docs,
-			object{{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "Role"}, {"metadata", meta(o.name, true)}, {"rules", p.local.rules()}},
-			object{
-				{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "RoleBinding"}, {"metadata", meta(o.name, true)},
+	role := func(m object, g grants) []object {
+		return []object{
+			{{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "Role"}, {"metadata", m}, {"rules", g.rules()}},
+			{
+				{"apiVersion", "rbac.authorization.k8s.io/v1"}, {"kind", "RoleBinding"}, {"metadata", m},
 				{"roleRef", object{{"apiGroup", "rbac.authorization.k8s.io"}, {"kind", "Role"}, {"name", o.name}}},
 				{"subjects", subjects},
-			})
+			},
+		}
+	}
+	if len(p.local) > 0 {
+		docs = append(docs, role(meta(o.name, true), p.local)...)
+	}
+	if len(p.watched) > 0 {
+		docs = append(docs, role(object{{"name", o.name}, {"namespace", o.watchNamespace}, {"labels", labels}}, p.watched)...)
 	}
 	args := []string{"-addr=:8080"}
 	switch {
@@ -381,6 +428,9 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		args = append(args, fmt.Sprintf("-shards=%d", o.shards))
 	case p.electLeader:
 		args = append(args, "-leader-elect")
+	}
+	if o.watchNamespace != "" {
+		args = append(args, "-namespace="+o.watchNamespace)
 	}
 	ports := []any{object{{"name", "http"}, {"containerPort", 8080}}}
 	if p.webhooks {

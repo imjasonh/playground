@@ -73,7 +73,10 @@ type declared struct {
 	// webhooks is set when the controller serves admission or conversion
 	// webhooks.
 	webhooks bool
-	owns     []*typeInfo
+	// versioned is set when the type has more than one version, so the
+	// framework migrates stored objects in every namespace.
+	versioned bool
+	owns      []*typeInfo
 }
 
 func (c *controller[T, P]) describe() (declared, error) {
@@ -85,6 +88,7 @@ func (c *controller[T, P]) describe() (declared, error) {
 	_, validates := c.r.(Validator[T])
 	_, defaults := c.r.(Defaulter[T])
 	d.webhooks = validates || defaults
+	d.versioned = len(c.opts.versions) > 0
 	for _, vo := range c.opts.versions {
 		if _, ok := vo.newObj().(converter[T]); ok {
 			d.webhooks = true

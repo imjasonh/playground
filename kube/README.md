@@ -449,6 +449,15 @@ and running `generate` again without changes leaves the cluster as it was.
 When the program starts in the cluster, it installs its own
 CustomResourceDefinitions and webhook configurations.
 
+A program watches every namespace unless you set `-watch-namespace`. Then
+it watches one namespace, and the rules for namespaced resources go in a
+Role there instead of the ClusterRole, so a program that reads Secrets, for
+example, can read them only in that namespace. Rules for cluster-scoped
+resources, such as CustomResourceDefinitions, stay in the ClusterRole. So do
+the rules for a reconciled type with more than one version, because the
+program migrates its stored objects in every namespace, and for a type whose
+`kube` tag doesn't say `scope=Namespaced` or `scope=Cluster`.
+
 | Flag | Default | Description |
 | --- | --- | --- |
 | `-registry` | Required | Registry, and optionally a repository prefix, to push to |
@@ -458,6 +467,8 @@ CustomResourceDefinitions and webhook configurations.
 | `-replicas` | 2 | Pods to run |
 | `-shards` | 1 | Shards to split reconciles across |
 | `-tag` | `latest` | Tag for the image, in addition to its digest |
+| `-tmp-size` | No limit | Size limit of the `emptyDir` volume at `/tmp`, such as `1Gi` |
+| `-watch-namespace` | Every namespace | Namespace for the program to watch; the rules for namespaced resources go in a Role there |
 
 Flags after `--` go to the program in the Deployment:
 

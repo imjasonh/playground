@@ -326,6 +326,51 @@ func TestGenerateWebsite(t *testing.T) {
 	noPermissionErrors(t, out)
 }
 
+// TestGenerateOneNamespace installs the website example to watch one
+// namespace. The rules for namespaced resources are in a Role there, and
+// the API server enforces them, so the program reconciles Websites in that
+// namespace with no rules for any other.
+func TestGenerateOneNamespace(t *testing.T) {
+	c := e2e.Client(t)
+	reg := imagetest.Registry(t)
+	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
+	watched, other := e2e.Namespace(t, c), e2e.Namespace(t, c)
+	in := generateExample(t, reg, "website", "website-one", "-replicas=1", "-watch-namespace="+watched)
+	if !slices.Contains(in.args, "-namespace="+watched) {
+		t.Errorf("args = %q, want -namespace=%s", in.args, watched)
+	}
+	for _, obj := range in.objects {
+		b, _ := json.Marshal(obj)
+		if obj["kind"] == "ClusterRole" && strings.Contains(string(b), `"deployments"`) {
+			t.Errorf("the ClusterRole has rules for Deployments, which are namespaced: %s", b)
+		}
+	}
+	in.apply(t, c)
+	exe := in.executable(t, "website")
+	out := in.runInstalled(t, exe, serviceAccountKubeconfig(t, c, "website-one", "website"))
+
+	for _, ns := range []string{watched, other} {
+		if err := c.Create(t.Context(), client.Path("examples.kube.imjasonh.github.io/v1", "websites", ns, ""), map[string]any{
+			"apiVersion": "examples.kube.imjasonh.github.io/v1", "kind": "Website",
+			"metadata": map[string]any{"name": "blog"}, "spec": map[string]any{"image": "nginx", "port": 8080},
+		}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e2e.Eventually(t, 30*time.Second, func() error {
+		for _, p := range []string{client.Path("apps/v1", "deployments", watched, "blog"), client.Path("v1", "services", watched, "blog")} {
+			if err := c.Get(t.Context(), p, &map[string]any{}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err := e2e.Get(t.Context(), c, client.Path("apps/v1", "deployments", other, "blog"), &map[string]any{}); err == nil {
+		t.Errorf("the program reconciled a Website in %s, which it doesn't watch", other)
+	}
+	noPermissionErrors(t, out)
+}
+
 // TestGenerateWebhooks installs the podpolicy example, whose admission
 // webhooks need a Service, a certificate Secret, and webhook
 // configurations, and passes it a flag after --.
