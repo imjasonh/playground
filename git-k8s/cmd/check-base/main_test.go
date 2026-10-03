@@ -71,6 +71,26 @@ func TestMergesParentIn(t *testing.T) {
 	}
 }
 
+func TestPassesWhenParentContainsBranch(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w := setup(t, srv, "main\n", "branch\n")
+	// main merges the branch and moves on, so it contains the branch.
+	w.Branch("main", b.Spec.Head)
+	w.Write("c.txt", "later\n")
+	b.Spec.ParentHead = w.Commit("main moves past the branch")
+	w.Push("main")
+	head := b.Spec.Head
+	if err := reconcile(t, srv, b); err != nil {
+		t.Fatal(err)
+	}
+	if res := b.Status.Checks.Result; res.State != gitk8s.Passed || !strings.Contains(res.Message, "already contains") {
+		t.Errorf("result = %+v, want Passed because main contains the branch", res)
+	}
+	if got := srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s; a contained branch needs no merge", got)
+	}
+}
+
 func TestConflictFails(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	b, w := setup(t, srv, "main\n", "branch\n")

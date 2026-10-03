@@ -47,6 +47,11 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if ok {
 		return checks.Pass("contains %s at %s", in.Spec.Parent, gitk8s.Short(parentHead)), nil
 	}
+	// Merging the parent into a branch that it already contains would make
+	// a merge commit with no changes, which would then land on the parent.
+	if merged, err := repo.IsAncestor(ctx, head, parentHead); err != nil || merged {
+		return checks.Pass("%s already contains %s", in.Spec.Parent, gitk8s.Short(head)), err
+	}
 	tree, conflicts, err := repo.MergeTree(ctx, head, parentHead)
 	if err != nil {
 		return checks.Verdict{}, err
