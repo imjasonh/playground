@@ -228,9 +228,13 @@ changing `status.checks`. A check must run as the service account
 `check-NAME` in the namespace `check-NAME`, as `generate` installs it, to
 write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
-check's result. The second stops
-every git-k8s service account from setting the approve annotation, which is
-for people, and stops checks from changing `GitBranch` objects at all.
+check's result. The second stops every git-k8s service account from setting
+the approve annotation, which is for people, and stops checks from changing
+`GitBranch` objects at all.
+
+Without the policies, none of that holds, so the repositories controller
+sets a `PoliciesInstalled` condition on each `GitRepository`. It's `False`
+until both policies are installed with bindings that deny.
 
 ## Test
 
