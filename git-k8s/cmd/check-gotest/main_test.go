@@ -103,6 +103,13 @@ func TestReportsPodResult(t *testing.T) {
 	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "--- FAIL: TestAdd") {
 		t.Errorf("result = %+v, want Failed with the test output", res)
 	}
+
+	b, repo = branch()
+	offline := "add_test.go:3:8: example.com/dep@v1.0.0: module lookup disabled by GOPROXY=off"
+	reconcileWith(t, b, repo, pod("Failed", &Terminated{}, &Terminated{ExitCode: 1, Message: offline}))
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "vendor the dependencies, or set -goproxy") {
+		t.Errorf("result = %+v, want Failed with advice about -goproxy", res)
+	}
 }
 
 func runningPod(ns, name string) *Pod {

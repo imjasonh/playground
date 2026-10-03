@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"maps"
 	"strconv"
+	"strings"
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -110,7 +111,11 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 			return checks.Fail("couldn't fetch the source in %d attempts: %s", fetchAttempts, msg), nil
 		}
 		msg, _ := terminated(pod.Status.ContainerStatuses, "test")
-		v := checks.Fail("go test failed in Pod %s: %s", name, tail(cmp.Or(msg, pod.Status.Message, pod.Status.Reason), 900))
+		out := tail(cmp.Or(msg, pod.Status.Message, pod.Status.Reason), 900)
+		v := checks.Fail("go test failed in Pod %s: %s", name, out)
+		if strings.Contains(out, "lookup disabled by GOPROXY=off") {
+			v = checks.Fail("go test couldn't download modules in Pod %s, because -goproxy is off; vendor the dependencies, or set -goproxy: %s", name, out)
+		}
 		v.Outputs = map[string]string{"pod": name}
 		return v, nil
 	}
