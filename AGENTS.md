@@ -46,6 +46,7 @@ playground/
 ├── esp32-ble/             # Rust/ESP-IDF firmware: BLE GATT LED control for the iOS experiment
 ├── ios/                   # the single "Playground" iOS app (SwiftUI; TestFlight CD)
 ├── kanoodle/              # example app with tests (JS + Jest + Playwright)
+├── qr-quine/              # QR symbol that encodes a data URL of itself
 ├── kube/                  # Go library: Kubernetes controller runtime on the standard library alone
 ├── nypd-choppers/         # NYPD helicopter ADS-B tracker (JS + Node tests)
 ├── ocidb/                 # Go CLI (Go module + Go tests)
@@ -78,6 +79,7 @@ its root. This is the same rule used by deploy and preview workflows.
 | `hello/` | yes | Static HTML; no build or tests |
 | `image-diff/` | yes | Pixel-by-pixel image comparison; JS modules, npm scripts, tests |
 | `kanoodle/` | yes | Client-side JS modules, npm scripts, tests |
+| `qr-quine/` | yes | QR symbol whose payload is a data URL of itself; JS modules, npm scripts, tests |
 | `life-lab/` | yes | Game of Life sculpture lab; vendored wasm built from `life-stl/` |
 | `nypd-choppers/` | yes | NYPD helicopter tracker; JS modules, npm scripts, tests |
 | `laya-web/` | yes | Fetch Laya and compile to WebGPU; JS modules, npm scripts, tests |
@@ -694,6 +696,7 @@ bundle exec fastlane test
 | `hello/` | Static demo | none |
 | `image-diff/` | Drop two images and compare them pixel by pixel; different pixels tint red | Node test runner |
 | `kanoodle/` | Kanoodle puzzle game (5×11 board, 12 pieces) | Jest + Playwright |
+| `qr-quine/` | QR symbol that encodes a `data:` URL of itself | Node test runner |
 | `life-lab/` | Draw Life gen 0, preview the printable Z-stack in 3D, export STL / Bambu 3MF (wasm from `life-stl/`; rebuild via `life-lab/build-wasm.sh`) | Node test runner |
 | `nypd-choppers/` | NYPD helicopter daily flight paths, hours, and fuel-cost estimates from ADS-B | Node test runner |
 | `laya-web/` | Fetch Laya and compile the graph to WebGPU | Node test runner |
