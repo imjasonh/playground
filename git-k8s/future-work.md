@@ -330,8 +330,14 @@ repository's dependencies, such as with `go list -m -u all` for Go modules,
 on an interval that it sets with kube's `RequeueAfter`. When it finds
 updates, it applies them and pushes the result to a new branch in the mirror
 under its own prefix, such as `deps/`. The `GitRepository` tracks that prefix
-with the updated branch, such as `main`, as its parent. Checks then run on
-the branch as on any other, and it lands when its merge gate passes.
+with the updated branch, such as `main`, as its parent.
+
+The decision is that dependency branches pass the same checks as any other
+branch, and land as soon as they do. They need a person's approval only when
+the change is risky, which the parent's merge gate already says, for example
+`checks.risk.outputs.level == "low" || checks.approval.passed`. So
+dependency branches need no gate of their own, and `when` doesn't need to
+tell them apart from other branches.
 
 When an update breaks the build or the tests, a local agent can change the
 code to fit the dependency's new API, as described in
@@ -341,14 +347,14 @@ can't fix it, the branch waits for a person.
 
 Questions to settle first:
 
+- How `check-risk` rates a dependency update. It counts changed lines today,
+  and lines in `go.sum` say little about risk. A new major version, a new
+  module, or code that the agent changed to fit a new API should make a
+  change high risk, and a patch release shouldn't.
 - Whether to update every dependency on one branch, as the dependency
-  workflow does, or each on its own branch, so that one bad update doesn't
-  hold back the rest.
-- How a merge gate tells a dependency branch apart, for example to land it
-  without a person's approval when its tests pass. `when` sees only
-  `checks`. It could also get the branch's name, which the mirror's prefix
-  rules make trustworthy, or the controller could report a check that passes
-  on the branches that it made.
+  workflow does, or each on its own branch. Separate branches keep one bad
+  update from holding back the rest, and keep each change small enough to
+  rate low risk.
 - Which ecosystems to support first. This repository's
   `update-go-dependencies.sh`, `update-js-dependencies.sh`, and
   `update-rust-dependencies.sh` show what each takes.
