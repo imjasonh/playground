@@ -1,12 +1,17 @@
 package main
 
 import (
+	"cmp"
+	"flag"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -57,10 +62,10 @@ func TestReportsCheckRunsToken(t *testing.T) {
 	}
 }
 
-// resultsOf returns c/x's GitBranch, as the check-runs controller sees it,
-// with checks.
-func resultsOf(checks map[string]gitk8s.CheckResult) *branchResults {
-	b := &branchResults{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/x"), nil)}
+// resultsOf returns the GitBranch of acme/app's branch, as the check-runs
+// controller sees it, with checks.
+func resultsOf(branch string, checks map[string]gitk8s.CheckResult) *branchResults {
+	b := &branchResults{Object: kube.Meta(gitk8s.BranchObjectName("app", branch), map[string]string{gitk8s.RepositoryLabel: "app"})}
 	b.Namespace = "default"
 	b.Spec.Repository = "app"
 	b.Status.Checks = checks
@@ -83,10 +88,7 @@ type publisher struct {
 func (p *publisher) publish(checks map[string]gitk8s.CheckResult) ([]string, error) {
 	p.t.Helper()
 	before := len(p.gh.Fake.Requests())
-	b := resultsOf(checks)
-	if p.branch != "" {
-		b.Name = gitk8s.BranchObjectName("app", p.branch)
-	}
+	b := resultsOf(cmp.Or(p.branch, "c/x"), checks)
 	want := b.Status
 	ctx, rec := kube.Fake(p.t.Context(), b, p.repo)
 	err := p.c.Reconcile(ctx, b)
@@ -300,7 +302,7 @@ func TestCheckRunsFromOtherApps(t *testing.T) {
 	}
 
 	t.Log("When GitHub can't find the check run that the controller remembers, the controller creates another.")
-	p.c.remember(runKey{"default", "app", resultsOf(nil).Name, "gofmt"}, publishedRun{commit: next, id: 99, shows: runFor(gitk8s.CheckResult{State: gitk8s.Running})})
+	p.c.remember(runKey{"default", "app", gitk8s.BranchObjectName("app", "c/x"), "gofmt"}, publishedRun{commit: next, id: 99, shows: runFor(gitk8s.CheckResult{State: gitk8s.Running})})
 	got, err = p.publish(map[string]gitk8s.CheckResult{"gofmt": {Commit: next, State: gitk8s.Passed}})
 	if want := []string{"PATCH " + api + "check-runs/99", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
 		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
@@ -381,7 +383,7 @@ func TestCancelsSupersededCheckRuns(t *testing.T) {
 	}
 
 	t.Log("When GitHub can't find the old commit's check run, the controller moves on.")
-	p.c.remember(runKey{"default", "app", resultsOf(nil).Name, "gofmt"}, publishedRun{commit: head, id: 99, shows: runFor(running)})
+	p.c.remember(runKey{"default", "app", gitk8s.BranchObjectName("app", "c/x"), "gofmt"}, publishedRun{commit: head, id: 99, shows: runFor(running)})
 	got, err = p.publish(moved)
 	if want := []string{"PATCH " + api + "check-runs/99", "GET " + api + "commits/" + next + "/check-runs"}; err != nil || !slices.Equal(got, want) {
 		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
@@ -475,6 +477,153 @@ func TestBranchesShareCheckRuns(t *testing.T) {
 	}
 }
 
+// front puts handler in front of the fake GitHub and points the programs at
+// it until the test ends. It returns acme/app's GitRepository at the front's
+// URL. handler passes a request on to the fake by calling next.
+func front(t *testing.T, gh *gittest.GitHub, handler func(w http.ResponseWriter, r *http.Request, next http.Handler)) *gitk8s.GitRepository {
+	t.Helper()
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler(w, r, gh.Fake)
+	}))
+	t.Cleanup(s.Close)
+	f := flag.Lookup("fake-github")
+	old := f.Value.String()
+	if err := f.Value.Set(s.URL); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Value.Set(old) })
+	repo := gh.Repository("app", sts, rules()...)
+	repo.Spec.URL = s.URL + "/acme/app.git"
+	return repo
+}
+
+func TestBranchesTakeTurns(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	var commits []string
+	for _, f := range []string{"a", "b", "c"} {
+		w.Write(f+".go", "package x\n")
+		commits = append(commits, w.Commit("add "+f))
+	}
+	w.Push("c/x")
+	// In a round, GitHub holds the first request until another request
+	// arrives, or for 200ms, so that reconciles that don't wait for each
+	// other send requests at the same time.
+	type round struct {
+		held, arrived         chan struct{}
+		heldOnce, arrivedOnce sync.Once
+		hold, overlapped      atomic.Bool
+		inFlight              atomic.Int32
+	}
+	var current atomic.Pointer[round]
+	repo := front(t, gh, func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		rd := current.Load()
+		if rd == nil || !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if rd.inFlight.Add(1) > 1 {
+			rd.overlapped.Store(true)
+			rd.arrivedOnce.Do(func() { close(rd.arrived) })
+		}
+		defer rd.inFlight.Add(-1)
+		if rd.hold.CompareAndSwap(true, false) {
+			rd.heldOnce.Do(func() { close(rd.held) })
+			select {
+			case <-rd.arrived:
+			case <-time.After(200 * time.Millisecond):
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+	// together runs first and second at once, starting second when GitHub
+	// holds first's first request.
+	together := func(first, second func() error) {
+		t.Helper()
+		rd := &round{held: make(chan struct{}), arrived: make(chan struct{})}
+		rd.hold.Store(true)
+		current.Store(rd)
+		defer current.Store(nil)
+		done := make(chan error, 1)
+		go func() { done <- first() }()
+		select {
+		case <-rd.held:
+		case err := <-done:
+			t.Fatalf("the first reconcile sent no request: %v", err)
+		}
+		if err := second(); err != nil {
+			t.Error(err)
+		}
+		if err := <-done; err != nil {
+			t.Error(err)
+		}
+		if rd.overlapped.Load() {
+			t.Error("the reconciles sent requests to GitHub at the same time")
+		}
+	}
+	c := &checkRuns{}
+	// reconcile reconciles branch in a cluster where acme/app's branches
+	// have the results in cluster.
+	reconcile := func(branch string, cluster map[string]map[string]gitk8s.CheckResult) error {
+		var b *branchResults
+		world := []any{repo}
+		for name, checks := range cluster {
+			if o := resultsOf(name, checks); name == branch {
+				b = o
+			} else {
+				world = append(world, o)
+			}
+		}
+		ctx, _ := kube.Fake(t.Context(), b, world...)
+		return c.Reconcile(ctx, b)
+	}
+	result := func(i int, state, msg string) map[string]gitk8s.CheckResult {
+		return map[string]gitk8s.CheckResult{"gotest": {Commit: commits[i], State: state, Message: msg}}
+	}
+	short := func(i int) string { return gitk8s.Short(commits[i]) }
+
+	t.Log("A branch leaves a commit while another branch's check on the commit passes.")
+	runningY := result(0, gitk8s.Running, "started Pod y")
+	if err := reconcile("c/y", map[string]map[string]gitk8s.CheckResult{"c/y": runningY}); err != nil {
+		t.Fatal(err)
+	}
+	if err := reconcile("c/x", map[string]map[string]gitk8s.CheckResult{"c/x": result(0, gitk8s.Running, "started Pod x"), "c/y": runningY}); err != nil {
+		t.Fatal(err)
+	}
+	movedX := result(1, gitk8s.Running, "started Pod x")
+	together(
+		func() error {
+			return reconcile("c/x", map[string]map[string]gitk8s.CheckResult{"c/x": movedX, "c/y": runningY})
+		},
+		func() error {
+			return reconcile("c/y", map[string]map[string]gitk8s.CheckResult{"c/x": movedX, "c/y": result(0, gitk8s.Passed, "passed on c/y")})
+		},
+	)
+	if got, want := runs(gh), []string{
+		"git-k8s/gotest@" + short(0) + " completed success: passed on c/y",
+		"git-k8s/gotest@" + short(1) + " in_progress : started Pod x",
+	}; !slices.Equal(got, want) {
+		t.Errorf("check runs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+
+	t.Log("Two branches publish their first results on a commit at once, and GitHub shows the later one's next result.")
+	atC := map[string]map[string]gitk8s.CheckResult{"c/x": result(2, gitk8s.Running, "started Pod x"), "c/y": result(2, gitk8s.Passed, "passed on c/y")}
+	together(
+		func() error { return reconcile("c/x", atC) },
+		func() error { return reconcile("c/y", atC) },
+	)
+	if err := reconcile("c/x", map[string]map[string]gitk8s.CheckResult{"c/x": result(2, gitk8s.Failed, "failed on c/x"), "c/y": atC["c/y"]}); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := runs(gh), []string{
+		"git-k8s/gotest@" + short(0) + " completed success: passed on c/y",
+		"git-k8s/gotest@" + short(1) + " completed cancelled: The branch moved to " + short(2) + " before the check finished.",
+		"git-k8s/gotest@" + short(2) + " completed failure: failed on c/x",
+	}; !slices.Equal(got, want) {
+		t.Errorf("check runs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
 func TestCheckRunErrors(t *testing.T) {
 	gh, w, main := newGitHub(t)
 	w.Branch("c/x", main)
@@ -501,7 +650,7 @@ func TestCheckRunErrors(t *testing.T) {
 	if got, err := publish(gitk8s.OctoSTS{GitIdentity: "git"}); err != nil || len(got) != 0 || len(gh.Fake.Exchanges()) != before {
 		t.Errorf("requests = %q, err = %v, %d new exchanges; want nothing", got, err, len(gh.Fake.Exchanges())-before)
 	}
-	b := resultsOf(checks)
+	b := resultsOf("c/x", checks)
 	ctx, _ := kube.Fake(t.Context(), b)
 	if err := (&checkRuns{}).Reconcile(ctx, b); err != nil {
 		t.Errorf("without the GitRepository: %v", err)

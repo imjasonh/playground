@@ -55,6 +55,12 @@ type checkRuns struct {
 	app atomic.Int64
 
 	mu sync.Mutex
+	// locks holds a lock for each repository, by namespace and name. A
+	// reconcile holds its repository's lock from its first request to
+	// GitHub to its last, because the repository's branches share check
+	// runs, and a reconcile decides what to send from what the others
+	// sent.
+	locks map[string]*sync.Mutex
 	// runs holds, for each check on each branch, the check run that the
 	// branch's results go to and what the controller last wrote or found
 	// there for the branch, so that a result that stays the same costs no
@@ -124,6 +130,9 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 	if repo == nil || repo.Spec.OctoSTS == nil || repo.Spec.OctoSTS.CheckRunsIdentity == "" || len(b.Status.Checks) == 0 {
 		return nil
 	}
+	lock := c.lock(b.Namespace + "/" + b.Spec.Repository)
+	lock.Lock()
+	defer lock.Unlock()
 	apiURL, token, err := credentials.GitHubAPI(ctx, repo, repo.Spec.OctoSTS.CheckRunsIdentity)
 	if err != nil {
 		return err
@@ -329,6 +338,18 @@ func (c *checkRuns) remember(k runKey, r publishedRun) {
 	}
 	r.at = now
 	c.runs[k] = r
+}
+
+func (c *checkRuns) lock(repo string) *sync.Mutex {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.locks == nil {
+		c.locks = map[string]*sync.Mutex{}
+	}
+	if c.locks[repo] == nil {
+		c.locks[repo] = new(sync.Mutex)
+	}
+	return c.locks[repo]
 }
 
 func (c *checkRuns) pausedFor(owner string) time.Duration {
