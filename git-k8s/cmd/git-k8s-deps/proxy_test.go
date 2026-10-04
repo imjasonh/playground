@@ -400,6 +400,7 @@ func TestRaisedOldEnoughAt(t *testing.T) {
 	fp.publish(mod, "v1.0.0", longAgo, "")
 	fp.publish(mod, "v1.1.0", today.Add(100*time.Hour), "")
 	fp.set(mod, pseudo+".info", `{"Version":"`+pseudo+`","Time":"2025-12-01T00:00:00Z"}`)
+	fp.set(mod, "v1.2.0.info", `{"Version":"v1.2.0","Time":"2025-12-01T00:00:00Z"}`)
 	clock := today
 	p := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return clock })
 	check := func(version string, want time.Time) {
@@ -413,18 +414,34 @@ func TestRaisedOldEnoughAt(t *testing.T) {
 	check("v1.0.0", today.Add(minAge))
 	check("v1.1.0", today.Add(100*time.Hour+minAge))
 	check(pseudo, today.Add(minAge))
+	check("v1.2.0", today.Add(minAge))
 
-	t.Log("A pseudo-version keeps its first-seen time, though no list holds it.")
+	t.Log("A pseudo-version keeps its first-seen time, though no list holds it, and so does a version that the proxy serves but doesn't list.")
 	clock = today.Add(minAge)
 	check(pseudo, today.Add(minAge))
+	check("v1.2.0", today.Add(minAge))
 	check("v1.0.0", today.Add(minAge))
 
-	t.Log("encode keeps the times of all three.")
+	t.Log("encode keeps the times of all four, and marks the unlisted version's.")
 	line := func(v string) string { return fp.URL + " " + mod + " " + v + " " + today.Format(time.RFC3339) + "\n" }
-	want := line(pseudo) + line("v1.0.0") + line("v1.1.0")
+	want := line(pseudo) + line("v1.0.0") + line("v1.1.0") + strings.TrimSuffix(line("v1.2.0"), "\n") + " unlisted\n"
 	if got, _ := p.encode(); got != want {
 		t.Errorf("encode() = %q, want %q", got, want)
 	}
+
+	t.Log("Once the proxy lists the version, it keeps its time, unmarked.")
+	fp.list(mod, "v1.2.0")
+	clock = clock.Add(time.Hour)
+	check("v1.2.0", today.Add(minAge))
+	want = line(pseudo) + line("v1.0.0") + line("v1.1.0") + line("v1.2.0")
+	if got, _ := p.encode(); got != want {
+		t.Errorf("encode() = %q, want %q", got, want)
+	}
+
+	t.Log("So when the proxy stops listing it, it waits again, as a listed version does.")
+	fp.set(mod, "list", "v1.0.0\nv1.1.0\n")
+	clock = clock.Add(time.Hour)
+	check("v1.2.0", clock.Add(minAge))
 }
 
 func TestFirstSeenKeepsOnlyCandidates(t *testing.T) {
@@ -569,18 +586,49 @@ func TestEncode(t *testing.T) {
 	}
 }
 
+func TestEncodeKeepsUnlistedVersions(t *testing.T) {
+	const (
+		a   = "https://a.example.com"
+		mod = "example.com/greet"
+		old = "example.com/old"
+	)
+	line := func(path, version, mark string) string {
+		return a + " " + path + " " + version + " " + longAgo.Format(time.RFC3339) + mark + "\n"
+	}
+	p := newProxy([]string{a}, time.Hour, func() time.Time { return today })
+	p.lists[mod] = versionList{versions: []string{"v1.0.0"}, proxy: a, at: today}
+	p.seen = map[seenKey]time.Time{{a, mod, "v1.1.0"}: longAgo, {a, mod, "v1.2.0"}: longAgo}
+	p.unlisted = map[seenKey]bool{{a, mod, "v1.1.0"}: true}
+	p.stored = map[seenKey]time.Time{{a, mod, "v1.0.0"}: longAgo, {a, mod, "v1.3.0"}: longAgo, {a, mod, "v1.4.0"}: longAgo, {a, old, "v1.0.0"}: longAgo}
+	p.storedUnlisted = map[seenKey]bool{{a, mod, "v1.0.0"}: true, {a, mod, "v1.3.0"}: true, {a, old, "v1.0.0"}: true}
+	got, dropped := p.encode()
+	want := line(mod, "v1.0.0", "") + line(mod, "v1.1.0", " unlisted") + line(mod, "v1.3.0", " unlisted") + line(old, "v1.0.0", " unlisted")
+	if got != want || dropped != 0 {
+		t.Errorf("encode() = %q, %d, want %q, 0: the unlisted versions that this process or the last load knows, marked, without the mark of a version that a fresh list holds", got, dropped, want)
+	}
+	q := newProxy([]string{a}, time.Hour, func() time.Time { return today })
+	q.load(got)
+	if again, dropped := q.encode(); again != got || dropped != 0 {
+		t.Errorf("after load(%q), encode() = %q, %d", got, again, dropped)
+	}
+}
+
 func TestLoad(t *testing.T) {
 	const a = "https://a.example.com"
 	p := newProxy([]string{a}, time.Hour, func() time.Time { return today })
 	p.stored = map[seenKey]time.Time{{a, "example.com/old", "v1.0.0"}: longAgo}
+	p.storedUnlisted = map[seenKey]bool{{a, "example.com/old", "v1.0.0"}: true}
 	p.load(strings.Join([]string{
 		a + " example.com/greet v1.1.0 2026-01-03T00:00:00Z",
 		a + " example.com/greet v1.1.0 2026-01-02T00:00:00Z",
 		a + " example.com/greet v1.2.0 2026-01-04T00:00:00.5Z",
+		a + " example.com/greet v1.4.0 2026-01-05T00:00:00Z unlisted",
 		"https://b.example.com example.com/greet v1.1.0 2026-01-01T00:00:00Z",
 		a + " example.com/greet v1.1.0",
 		a + " example.com/greet v1.1.0 2026-01-01T00:00:00Z more",
+		a + " example.com/greet v1.5.0 2026-01-01T00:00:00Z unlisted more",
 		a + " example.com/greet 1.1.0 2026-01-01T00:00:00Z",
+		a + " example.com/greet 1.5.0 2026-01-01T00:00:00Z unlisted",
 		a + " greet v1.1.0 2026-01-01T00:00:00Z",
 		a + " example.com/greet v1.3.0 yesterday",
 		"",
@@ -588,9 +636,13 @@ func TestLoad(t *testing.T) {
 	want := map[seenKey]time.Time{
 		{a, "example.com/greet", "v1.1.0"}: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
 		{a, "example.com/greet", "v1.2.0"}: time.Date(2026, 1, 4, 0, 0, 0, 5e8, time.UTC),
+		{a, "example.com/greet", "v1.4.0"}: time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC),
 	}
 	if !maps.EqualFunc(p.stored, want, time.Time.Equal) {
 		t.Errorf("after load(), the stored times = %v, want %v", p.stored, want)
+	}
+	if want := map[seenKey]bool{{a, "example.com/greet", "v1.4.0"}: true}; !maps.Equal(p.storedUnlisted, want) {
+		t.Errorf("after load(), the stored unlisted versions = %v, want %v", p.storedUnlisted, want)
 	}
 }
 

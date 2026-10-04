@@ -71,9 +71,14 @@ type proxy struct {
 	// holds the times that load read last, which other processes may have
 	// written.
 	seen, stored map[seenKey]time.Time
+	// unlisted holds the versions that an update raised a requirement to
+	// while their proxy didn't list them, and that no list from the proxy
+	// has held since, and storedUnlisted holds the ones that load read
+	// last. Like pseudo-versions, they keep their first-seen times.
+	unlisted, storedUnlisted map[seenKey]bool
 }
 
-// seenKey is a version that a proxy listed.
+// seenKey is a version and the proxy that listed its module's versions.
 type seenKey struct {
 	proxy, path, version string
 }
@@ -90,6 +95,7 @@ func newProxy(urls []string, ttl time.Duration, now func() time.Time) *proxy {
 		urls: urls, client: &http.Client{Timeout: 30 * time.Second}, ttl: ttl, now: now,
 		lists: map[string]versionList{}, times: map[module.Version]time.Time{}, retracts: map[module.Version][]modfile.VersionInterval{},
 		seen: map[seenKey]time.Time{}, stored: map[seenKey]time.Time{},
+		unlisted: map[seenKey]bool{}, storedUnlisted: map[seenKey]bool{},
 	}
 }
 
@@ -130,7 +136,8 @@ func (p *proxy) get(ctx context.Context, path, file string, limit int64) (body [
 // versions returns a module's versions other than pseudo-versions, in
 // semver order, from the first proxy that has the module. It forgets when
 // this process first saw the versions that the proxy no longer lists, other
-// than pseudo-versions, which proxies don't list.
+// than pseudo-versions, which proxies don't list, and unlisted versions
+// that an update raised a requirement to.
 func (p *proxy) versions(ctx context.Context, path string) (versionList, error) {
 	p.mu.Lock()
 	l, ok := p.lists[path]
@@ -156,8 +163,11 @@ func (p *proxy) versions(ctx context.Context, path string) (versionList, error) 
 	l = versionList{versions: vs, proxy: from, at: p.now()}
 	p.mu.Lock()
 	p.lists[path] = l
+	maps.DeleteFunc(p.unlisted, func(k seenKey, _ bool) bool {
+		return k.proxy == from && k.path == path && slices.Contains(vs, k.version)
+	})
 	maps.DeleteFunc(p.seen, func(k seenKey, _ time.Time) bool {
-		return k.proxy == from && k.path == path && !slices.Contains(vs, k.version) && !module.IsPseudoVersion(k.version)
+		return k.proxy == from && k.path == path && !slices.Contains(vs, k.version) && !module.IsPseudoVersion(k.version) && !p.unlisted[k]
 	})
 	p.mu.Unlock()
 	return l, nil
@@ -308,11 +318,17 @@ func (p *proxy) oldEnoughAt(ctx context.Context, path, version string, seen, now
 // requirement to is minAge old, both by its time and since it showed up in
 // its module's list, which it records as target does. Proxies don't list
 // pseudo-versions, so a pseudo-version waits from when an update first
-// raised a requirement to it.
+// raised a requirement to it. So does a version that the module's list
+// doesn't hold, which keeps that time until the proxy lists it.
 func (p *proxy) raisedOldEnoughAt(ctx context.Context, path, version string, minAge time.Duration) (time.Time, error) {
 	list, err := p.versions(ctx, path)
 	if err != nil {
 		return time.Time{}, err
+	}
+	if !module.IsPseudoVersion(version) && !slices.Contains(list.versions, version) {
+		p.mu.Lock()
+		p.unlisted[seenKey{proxy: list.proxy, path: strings.Clone(path), version: strings.Clone(version)}] = true
+		p.mu.Unlock()
 	}
 	seen := p.firstSeen(list.proxy, path, []string{version})[version]
 	// Looking at a raised version again takes another update Pod, so this
@@ -385,31 +401,43 @@ func (p *proxy) firstSeen(proxy, path string, versions []string) map[string]time
 // most 1 MiB.
 var maxStored = 256 << 10
 
+// unlistedMark ends a line of encode's for an unlisted version that an
+// update raised a requirement to.
+const unlistedMark = "unlisted"
+
 // encode returns the first-seen times that this process and the last load
 // know, a line each, for load to read. It leaves out a version that a
 // fresh list from its proxy doesn't have, and a version that only this
 // process knows when there's no fresh list from its proxy: another process
 // may have left that out for being unlisted. It keeps pseudo-versions,
-// which proxies don't list. When the lines don't fit in maxStored bytes,
-// encode leaves out the oldest times, and returns how many it left out.
+// which proxies don't list, and unlisted versions that an update raised a
+// requirement to, whose lines it marks. When the lines don't fit in
+// maxStored bytes, encode leaves out the oldest times, and returns how many
+// it left out.
 func (p *proxy) encode() (string, int) {
 	now := p.now()
 	p.mu.Lock()
-	keep := func(k seenKey) bool {
-		if module.IsPseudoVersion(k.version) {
-			return true
+	keep := func(k seenKey) (keep, unlisted bool) {
+		if module.IsPseudoVersion(k.version) || p.unlisted[k] {
+			return true, p.unlisted[k]
 		}
 		if l, ok := p.lists[k.path]; ok && l.proxy == k.proxy && now.Sub(l.at) < p.ttl {
-			return slices.Contains(l.versions, k.version)
+			if slices.Contains(l.versions, k.version) {
+				return true, false
+			}
+			return p.storedUnlisted[k], p.storedUnlisted[k]
 		}
 		_, ok := p.stored[k]
-		return ok
+		return ok, p.storedUnlisted[k]
 	}
-	times := map[seenKey]time.Time{}
+	times, unlisted := map[seenKey]time.Time{}, map[seenKey]bool{}
 	for _, m := range []map[seenKey]time.Time{p.stored, p.seen} {
 		for k, t := range m {
-			if s, ok := times[k]; (!ok || t.Before(s)) && keep(k) {
-				times[k] = t
+			if s, ok := times[k]; ok && !t.Before(s) {
+				continue
+			}
+			if ok, u := keep(k); ok {
+				times[k], unlisted[k] = t, u
 			}
 		}
 	}
@@ -420,7 +448,11 @@ func (p *proxy) encode() (string, int) {
 	var lines []string
 	size := 0
 	for _, k := range keys {
-		line := fmt.Sprintf("%s %s %s %s\n", k.proxy, k.path, k.version, times[k].UTC().Format(time.RFC3339Nano))
+		mark := ""
+		if unlisted[k] {
+			mark = " " + unlistedMark
+		}
+		line := fmt.Sprintf("%s %s %s %s%s\n", k.proxy, k.path, k.version, times[k].UTC().Format(time.RFC3339Nano), mark)
 		if size += len(line); size > maxStored {
 			break
 		}
@@ -430,13 +462,17 @@ func (p *proxy) encode() (string, int) {
 	return strings.Join(lines, ""), len(keys) - len(lines)
 }
 
-// load reads lines that encode returned, in place of the times that it
-// read before. It skips lines for proxies that the controller doesn't read
-// from and lines that it can't parse.
+// load reads lines that encode returned, in place of the times and unlisted
+// versions that it read before. It skips lines for proxies that the
+// controller doesn't read from and lines that it can't parse.
 func (p *proxy) load(raw string) {
-	stored := map[seenKey]time.Time{}
+	stored, unlisted := map[seenKey]time.Time{}, map[seenKey]bool{}
 	for line := range strings.Lines(raw) {
 		f := strings.Fields(line)
+		marked := len(f) == 5 && f[4] == unlistedMark
+		if marked {
+			f = f[:4]
+		}
 		if len(f) != 4 || !slices.Contains(p.urls, f[0]) || module.Check(f[1], f[2]) != nil {
 			continue
 		}
@@ -448,8 +484,11 @@ func (p *proxy) load(raw string) {
 		if s, ok := stored[k]; !ok || t.Before(s) {
 			stored[k] = t
 		}
+		if marked {
+			unlisted[k] = true
+		}
 	}
 	p.mu.Lock()
-	p.stored = stored
+	p.stored, p.storedUnlisted = stored, unlisted
 	p.mu.Unlock()
 }

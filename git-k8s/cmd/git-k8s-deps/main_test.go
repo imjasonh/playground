@@ -779,6 +779,86 @@ func TestFailsAnUpdateThatRaisesAVersionThatNoProxyHas(t *testing.T) {
 	}
 }
 
+func TestKeepsTheFirstSeenTimeOfARaisedVersionThatTheProxyDoesntList(t *testing.T) {
+	const late = "example.com/late"
+	for _, tc := range []struct {
+		name      string
+		configMap string
+	}{
+		{name: "in memory"},
+		{name: "in a ConfigMap, across a restart", configMap: "first-seen"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			inNamespace(t, "git-k8s-deps")
+			f := newFixture(t)
+			f.u.interval, f.u.minAge, f.u.seenConfigMap = 100*time.Hour, 72*time.Hour, tc.configMap
+			f.proxy.set(late, "list", "")
+			f.proxy.set(late, "v1.0.0.info", `{"Version":"v1.0.0","Time":"2026-01-01T00:00:00Z"}`)
+			f.proxy.set(late, "v1.0.0.mod", "module "+late+"\n")
+			body := result(withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", late, "v1.0.0"), "go.sum", sumAt("v1.1.0")))
+			var world []any
+			reconcile := func(objs ...any) *kube.Recorder {
+				t.Helper()
+				rec := f.reconcile(append(objs, world...)...)
+				if cms := kube.Applied[configMap](rec); len(cms) > 0 {
+					world = []any{cms[len(cms)-1]}
+				}
+				return rec
+			}
+			// update reports whether a reconcile starts a Pod for greet's
+			// update, and finishes the Pod.
+			update := func() bool {
+				t.Helper()
+				pods := kube.Owned[agent.Pod](reconcile())
+				if len(pods) == 0 {
+					return false
+				}
+				p := pods[0]
+				p.Namespace, p.UID, p.CreationTimestamp = "default", "uid-"+p.Name, f.clock
+				reconcile(finished(p, f.serve(body, p.UID)))
+				return true
+			}
+			pushed := func() bool { return f.srv.Heads(t, "app")[greetBranch] != "" }
+			if update() {
+				t.Fatal("the controller made greet's update before v1.1.0 is old enough")
+			}
+
+			t.Log("Once greet's v1.1.0 is old enough, the controller updates greet, and waits for late v1.0.0, which the proxy serves but doesn't list.")
+			f.clock = today.Add(72 * time.Hour)
+			if !update() || pushed() {
+				t.Fatal("at 72h, the controller didn't make greet's update, or pushed it")
+			}
+			if tc.configMap != "" {
+				want := f.proxy.URL + " " + greet + " v1.1.0 2026-03-01T00:00:00Z\n" + f.proxy.URL + " " + late + " v1.0.0 2026-03-04T00:00:00Z unlisted\n"
+				got := ""
+				if len(world) == 1 {
+					got = world[0].(*configMap).Data[seenData]
+				}
+				if got != want {
+					t.Fatalf("the ConfigMap holds %q, want %q", got, want)
+				}
+
+				t.Log("After a restart, the controller makes the update again, and late v1.0.0 still waits from 72h.")
+				f.restart()
+				f.clock = today.Add(100 * time.Hour)
+				if !update() || pushed() {
+					t.Fatal("after a restart at 100h, the controller didn't make greet's update again, or pushed it")
+				}
+			}
+
+			t.Log("It pushes the update once late v1.0.0 is -min-age past when an update first raised a requirement to it.")
+			f.clock = today.Add(144*time.Hour - time.Second)
+			if update() {
+				t.Errorf("the controller made greet's update at %v, before late v1.0.0 is old enough", f.clock.Sub(today))
+			}
+			f.clock = today.Add(144 * time.Hour)
+			if !update() || !pushed() {
+				t.Error("at 144h, the controller didn't make greet's update and push it")
+			}
+		})
+	}
+}
+
 func TestKeepsItsBranchesAfterARestart(t *testing.T) {
 	for _, tc := range []struct {
 		name string

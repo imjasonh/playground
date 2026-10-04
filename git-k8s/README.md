@@ -633,7 +633,9 @@ version, as it does for the versions that it updates to. Proxies don't list
 pseudo-versions, so a pseudo-version waits from when an update first raises a
 requirement to it. The controller doesn't look for versions of indirect
 requirements or new modules ahead of time, so their versions usually wait
-from then too, and the update takes a second update Pod.
+from then too, and the update takes a second update Pod. A version that the
+proxy serves but doesn't list also waits from when an update first raises a
+requirement to it, and keeps that time until the proxy lists it.
 
 `go get` also raises a requirement to a version that its module retracts,
 with only a warning. The controller doesn't push such an update. It logs
@@ -666,17 +668,19 @@ ConfigMap in its own namespace that `-seen-configmap` names,
 `git-k8s-deps-first-seen` by default, so that a restart, or another replica
 taking over, doesn't restart their wait. Each line of the ConfigMap's
 `first-seen` key holds a proxy URL, a module path, a version, and when the
-controller first saw the version in that proxy's list. The controller reads
-the ConfigMap before it looks for newer versions, and writes it when the
-times change. It records only versions that it could update to and versions
-that an update raises a requirement to. It drops a version when the proxy
-that listed it stops listing it, and if the version comes back, it waits
-again. It keeps the times of pseudo-versions, which proxies don't list. When
-the controller can't read the ConfigMap, it logs a warning, uses the times
-in its memory, and doesn't write the ConfigMap. `generate` lets the
-controller read and write ConfigMaps only in its own namespace. With
-`-seen-configmap=`, the controller keeps the times only in memory, so after
-a restart, each of these versions waits `-min-age` again.
+controller first saw the version in that proxy's list. A line ends with
+`unlisted` when an update raised a requirement to the version while the proxy's
+list left the version out. The controller reads the ConfigMap before it looks
+for newer versions, and writes it when the times change. It records only
+versions that it could update to and versions that an update raises a
+requirement to. It drops a version when the proxy that listed it stops listing
+it, and if the version comes back, it waits again. It keeps the times of
+pseudo-versions, which proxies don't list, and of `unlisted` versions until the
+proxy lists them. When the controller can't read the ConfigMap, it logs a
+warning, uses the times in its memory, and doesn't write the ConfigMap.
+`generate` lets the controller read and write ConfigMaps only in its own
+namespace. With `-seen-configmap=`, the controller keeps the times only in
+memory, so after a restart, each of these versions waits `-min-age` again.
 
 The controller also skips prereleases, versions that a `go.mod` file
 excludes, and versions that the module retracts. To keep the controller from
