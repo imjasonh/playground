@@ -849,6 +849,40 @@ func TestWarnsWhenFirstSeenTimesDontFit(t *testing.T) {
 	}
 }
 
+func TestWritesFirstSeenTimesAfterTheUpdatePod(t *testing.T) {
+	inNamespace(t, "git-k8s-deps")
+	f := newFixture(t)
+	f.u.interval, f.u.minAge, f.u.seenConfigMap = 100*time.Hour, 72*time.Hour, "first-seen"
+	stored := kube.Applied[configMap](f.checkStays(""))
+	if len(stored) != 1 {
+		t.Fatalf("written ConfigMaps = %d, want 1", len(stored))
+	}
+
+	t.Log("Once v1.1.0 is old enough, v1.2.0 comes out, so the reconcile that starts the update Pod also writes the times.")
+	f.clock = f.clock.Add(f.u.minAge)
+	f.proxy.publish(greet, "v1.2.0", f.clock, "")
+	repo, secret := f.srv.Repository("app", f.rules...)
+	ctx, rec := kube.Fake(t.Context(), f.b, repo, secret, stored[0])
+	podsBefore := -1
+	f.u.applyConfigMap = func(ctx context.Context, cm *configMap) {
+		podsBefore = len(kube.Owned[agent.Pod](rec))
+		kube.Apply(ctx, cm)
+	}
+	if err := f.u.Reconcile(ctx, f.b); err != nil {
+		t.Fatal(err)
+	}
+	pods, written := kube.Owned[agent.Pod](rec), kube.Applied[configMap](rec)
+	if len(pods) != 1 || len(written) != 1 || !strings.Contains(written[0].Data[seenData], " v1.2.0 ") {
+		t.Fatalf("the reconcile declared %d Pods and wrote %+v, want 1 Pod and the times with v1.2.0", len(pods), written)
+	}
+	// kube writes objects in the order that they're declared and stops at
+	// an error, so a ConfigMap that it can't write would keep the Pod from
+	// starting if the Pod came second.
+	if podsBefore != 1 {
+		t.Errorf("the reconcile declared %d Pods before it wrote the times, want 1", podsBefore)
+	}
+}
+
 func TestDeletesABranchWhoseVersionGoesBad(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

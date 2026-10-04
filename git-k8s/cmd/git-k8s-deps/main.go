@@ -123,8 +123,10 @@ type updater struct {
 
 	// now is time.Now, except in tests.
 	now func() time.Time
-	// fetchConfigMap is kube.Fetch, except in tests.
+	// fetchConfigMap is kube.Fetch, and applyConfigMap is kube.Apply,
+	// except in tests.
 	fetchConfigMap func(ctx context.Context, namespace, name string) (*configMap, error)
+	applyConfigMap func(ctx context.Context, cm *configMap)
 	// resultPort is the port that result containers serve on, 8080 except
 	// in tests.
 	resultPort int
@@ -410,7 +412,11 @@ func (u *updater) storeSeen(ctx context.Context, stored string, log *slog.Logger
 		log.Warn("the ConfigMap leaves out the oldest first-seen times, which don't fit, so a restart would restart the wait for their versions", "configmap", u.seenObject.String(), "dropped", dropped)
 	}
 	if times != stored {
-		kube.Apply(ctx, &configMap{
+		apply := kube.Apply[configMap]
+		if u.applyConfigMap != nil {
+			apply = u.applyConfigMap
+		}
+		apply(ctx, &configMap{
 			Object: kube.Object{ObjectMeta: kube.ObjectMeta{Namespace: u.seenObject.Namespace, Name: u.seenObject.Name}},
 			Data:   map[string]string{seenData: times},
 		})
