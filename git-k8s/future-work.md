@@ -221,16 +221,34 @@ Questions to settle first:
 - Who can approve. A policy parameter, such as a ConfigMap of groups, could
   limit approvals to the people in them.
 
-## Sign commits and respect protected branches
+## Sign commits in the mirror
 
-Fix commits, merges of a parent into a branch, and landings aren't signed. A
-forge that requires signed commits rejects them. With the mirror, every
-change reaches GitHub as a push from the mirror's Octo STS identity, so
-GitHub's branch rules have to let that identity push to protected branches.
+`check-base` and `check-gofmt` sign their commits with a key that they read
+from a Secret, so a compromised check can sign anything with it. With the
+[mirror](#run-an-in-cluster-git-mirror), the mirror can hold the key
+instead and sign for the checks, for example through a program that git's
+`gpg.ssh.program` setting runs, so that no check reads the Secret.
 
-The proposed fix is for the mirror to sign the commits that git-k8s makes,
-with [gitsign](https://github.com/sigstore/gitsign), which signs keylessly
-through Sigstore, or with an SSH key that only the mirror holds.
+With the mirror, every change reaches GitHub as a push from the mirror's
+[Octo STS](#get-github-credentials-from-octo-sts) identity, a GitHub App.
+Branch protection rules and rulesets have to let that App push to protected
+branches without a pull request, by adding it to their bypass lists. An App
+can't have a signing key, so the commits stay signed with a bot account's
+key, with that account's email address as their committer.
+
+## Sign commits with gitsign
+
+[gitsign](https://github.com/sigstore/gitsign) signs keylessly, with a
+short-lived certificate from Sigstore for an OIDC identity such as a service
+account token, so there's no long-lived key to protect. git-k8s doesn't
+support it because:
+
+- GitHub doesn't show gitsign signatures as verified, so a ruleset that
+  requires signed commits rejects them.
+- The public Sigstore service accepts tokens only from OIDC issuers that it
+  knows, such as GKE and EKS clusters. A kind cluster's issuer isn't one, so
+  the end-to-end test would need its own Sigstore services.
+- Its signatures differ every time, so a retried fix is a different commit.
 
 ## Start waiting go test Pods in order
 

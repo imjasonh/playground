@@ -157,9 +157,11 @@ func main() {
 `in.Repo` fetches the branch and its parent into the program's local
 repository. A verdict with a `Fix` commit asks the framework to push it.
 Both need `Remote: credentials.Remote`, which reads the repository's
-Secret. `generate` grants a program what its packages call, so a check that
-reads only the `GitBranch`, such as `check-approval`, leaves `Remote` out,
-and its program can't read Secrets.
+Secret. A check makes a `Fix` commit with `in.CommitTree`, which also needs
+`SigningKey: signing.Key` to [sign it](#sign-commits). `generate` grants a
+program what its packages call, so a check that reads only the `GitBranch`,
+such as `check-approval`, leaves both out, and its program can't read
+Secrets.
 
 ### Sandboxed checks
 
@@ -201,6 +203,95 @@ The repository controller compiles each `when` when it reads the
 `checks.gofmt.pased`, makes the `GitRepository` not `Ready` instead of
 holding branches back later. Each evaluation can cost at most 100,000, which
 stops an expression that loops over the checks many times.
+
+## Sign commits
+
+`check-base` and `check-gofmt` make commits: merges of a parent into a
+branch, and formatting fixes. Landing makes none, because it fast-forwards
+the parent to a commit that's already on the branch. To sign the checks'
+commits, make an SSH key for signing only, put it in its own Secret in the
+`GitRepository`'s namespace, and name the Secret in the `GitRepository`:
+
+```sh
+ssh-keygen -t ed25519 -N '' -C git-k8s -f git-k8s-signing
+kubectl create secret generic app-signing --type=kubernetes.io/ssh-auth \
+  --from-file=ssh-privatekey=git-k8s-signing
+```
+
+```yaml
+spec:
+  url: https://git.example.com/app.git
+  secretRef:
+    name: app-creds
+  signingKeyRef:
+    name: app-signing       # ssh-privatekey key, for signing commits
+```
+
+The checks sign with git's SSH signature format, `gpg.format=ssh`. Git runs
+`ssh-keygen` to sign, so the checks' image needs it, and the
+`cgr.dev/chainguard/git` image that [Install](#install) uses has it. The key
+must be unencrypted, in the OpenSSH format that `ssh-keygen` writes. Ed25519
+and RSA signatures come out the same every time, so a check still makes the
+same fix commit from the same inputs; ECDSA signatures don't. Without
+`signingKeyRef`, the checks' commits aren't signed. Keyless signing with
+[gitsign](https://github.com/sigstore/gitsign) isn't supported; see
+[future work](future-work.md#sign-commits-with-gitsign).
+
+Only `check-base` and `check-gofmt` read the signing Secret, through the
+`signing` package, which no other program links. They already read the
+`secretRef` Secret, so `generate` grants them nothing new. For each commit,
+a check writes the key to a file with mode 0600 in a new directory with mode
+0700 under `/tmp`, passes git the file's path, and removes the directory
+when the commit is done. The key never appears in a command's arguments or
+environment, in a log, or in an error. A test Pod's init container gets the
+credentials in the `secretRef` Secret, but no part of a test Pod gets the
+signing key, so keep the key out of that Secret.
+
+### Set up the forge
+
+A forge shows a commit as verified when the key that signed it belongs to
+the commit's committer. On GitHub:
+
+1. As the account that git-k8s commits as, such as a bot account, go to
+   **Settings** > **SSH and GPG keys** > **New SSH key**, set **Key type**
+   to **Signing Key**, and add `git-k8s-signing.pub`. Or run
+   `gh ssh-key add git-k8s-signing.pub --type signing` as that account.
+2. Set the `-identity-email` flag of `check-base` and `check-gofmt` to an
+   email address that the account has verified, such as its
+   `ID+USERNAME@users.noreply.github.com` address. GitHub marks a commit
+   **Verified** only when its committer email belongs to the account that
+   has the key. To pass a flag, add it after `--` in the `generate`
+   command, as in [Install](#install).
+
+A GitHub App can't have a signing key. GitHub signs the commits that an App
+makes through its API, but the checks make commits with git, so they sign
+them with an account's key even when they push with an App's token. GitHub
+verifies a signature no matter which credential pushed the commit.
+
+### Protected branches
+
+Checks push their commits to the branch that they check, and the merge
+controller pushes the parent when a branch lands. GitHub's branch
+protection rules and rulesets apply to those pushes:
+
+- Rules that limit who can push to the parent, such as **Require a pull
+  request before merging** and **Restrict updates**, reject a landing
+  unless the account that git-k8s pushes as can bypass them. In a ruleset,
+  add the account, or a team or role that it has, to the bypass list. In a
+  classic branch protection rule, add it to **Allow specified actors to
+  bypass required pull requests**, and to **Restrict who can push to
+  matching branches** if that's on.
+- **Require status checks to pass** rejects a landing unless the branch's
+  head already passed those checks, for example in CI that runs on the
+  branch. git-k8s doesn't report its own results to GitHub yet.
+- **Require signed commits** applies to every commit that a push adds, so
+  people have to sign the commits that they push to branches, too.
+- **Require linear history** rejects the merge commits that `check-base`
+  makes. Leave it off for a parent whose merge policy lets `base` push.
+- **Block force pushes** doesn't affect git-k8s, which pushes only
+  fast-forwards and deletions.
+- **Restrict deletions** on a branch stops `deleteMergedBranches` from
+  deleting it after it lands.
 
 ## Install
 
@@ -248,8 +339,11 @@ go test -race ./...
 The end-to-end test installs every program with `generate` in a
 [kind](https://kind.sigs.k8s.io/) cluster with a local registry. It runs a
 git server on this machine, which Pods reach through the kind network's
-gateway, and pushes branches to it. It needs Docker, `kubectl`, and `git`,
-and installs kind if it's missing:
+gateway, and pushes branches to it. The git server accepts only commits
+signed with their committer's key, as a forge that requires signed commits
+does, so the test fails if git-k8s pushes an unsigned commit. It needs
+Docker, `kubectl`, `git`, and `ssh-keygen`, and installs kind if it's
+missing:
 
 ```sh
 GIT_K8S_KIND_E2E=1 go test -v -count=1 ./e2e/kind/
