@@ -1209,6 +1209,16 @@ offers:
   `k8s.io/api` v0.37.1. Regenerating it picks up new fields and kinds.
 - Shards divide reconciles, not memory. Labeling objects with their shard
   would let replicas watch only their own objects.
+- A replica that loses its lease lets running reconciles finish, so a late
+  status write can replace a newer one from the next holder. Canceling a
+  shard's reconciles when the lease is lost, and checking before each write
+  that the replica still holds the shard in the same tenure, would narrow the
+  window to one API call. Making every status write require the resource
+  version that the reconcile read would close it for status, at the cost of a
+  `409 Conflict` whenever another writer gets there first.
+- A status write that doesn't require the cached resource version can land on
+  an object that was deleted and recreated with the same name, because the API
+  server ignores the UID on status writes to custom resources.
 - `generate` can't follow the type parameter of a generic type, or a type
   argument that contains a type parameter, to the types that it stands for.
   It warns about those calls instead.
