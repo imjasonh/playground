@@ -32,8 +32,8 @@ var fakeGitHub = flag.String("fake-github", "", "base URL of a fake GitHub and O
 const audiencePrefix = "octo-sts.dev/"
 
 const (
-	// GitHub's installation tokens last an hour, and Octo STS doesn't say
-	// when the ones it issues expire.
+	// GitHub's installation tokens last an hour. Octo STS's answer has an
+	// optional expiry, which it leaves empty.
 	tokenLifetime = time.Hour
 	// A token is replaced when it has less than refreshBefore left. When
 	// the exchange fails, a token with more than minRemaining left is used
