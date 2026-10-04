@@ -45,7 +45,9 @@ spec:
         ((has(object.status) && has(object.status.state) ? object.status.state : "") ==
         (has(oldObject.status) && has(oldObject.status.state) ? oldObject.status.state : "") &&
         (has(object.status) && has(object.status.conditions) ? object.status.conditions : []) ==
-        (has(oldObject.status) && has(oldObject.status.conditions) ? oldObject.status.conditions : []))
+        (has(oldObject.status) && has(oldObject.status.conditions) ? oldObject.status.conditions : []) &&
+        (has(object.status) && has(object.status.diverged) ? [object.status.diverged] : []) ==
+        (has(oldObject.status) && has(oldObject.status.diverged) ? [oldObject.status.diverged] : []))
       messageExpression: '"the " + variables.check + " check can only write status.checks." + variables.check'
     - expression: variables.check != "" || variables.new == variables.old
       messageExpression: request.userInfo.username + " isn't a check's service account, so it can't write status.checks"

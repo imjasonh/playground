@@ -158,6 +158,16 @@ type GitBranchStatus struct {
 	State              string                 `json:"state,omitempty" kube:"column=State" doc:"Why the branch has or hasn't landed on its parent, the same as the Merged condition's reason."`
 	ObservedGeneration int64                  `json:"observedGeneration,omitempty"`
 	Conditions         []kube.Condition       `json:"conditions,omitempty"`
+	Diverged           *Divergence            `json:"diverged,omitempty" doc:"The external repository's head of the branch, while the branch has changed both in the mirror and in the external repository since they last synced. The core program writes it."`
+}
+
+// Divergence says that a branch changed in both the mirror and the
+// external repository since they last synced.
+type Divergence struct {
+	// Commit is the external repository's head of the branch.
+	Commit string `json:"commit"`
+	// Ref is the ref in the mirror that holds Commit.
+	Ref string `json:"ref"`
 }
 
 // Check result states.

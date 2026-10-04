@@ -344,6 +344,11 @@ echo
 grep -q 'the gofmt check can only write status.checks.gofmt' "${WORKDIR}/patch.json"
 code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}')"
 [[ "${code}" == 200 ]]
+code="$(patch_status '{"status":{"diverged":{"commit":"0000000","ref":"refs/git-k8s/downstream/heads/main"}}}')"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q 'the gofmt check can only write status.checks.gofmt' "${WORKDIR}/patch.json"
 # A service account with check-gofmt's permissions but another name isn't a
 # check, so it can't write any result.
 k -n "${NS}" create serviceaccount rogue
@@ -354,7 +359,7 @@ cat "${WORKDIR}/patch.json"
 echo
 [[ "${code}" == 422 ]]
 grep -q "isn't a check's service account, so it can't write status.checks" "${WORKDIR}/patch.json"
-echo "check-gofmt can write status.checks.gofmt but not status.checks.risk, and other service accounts can't write either."
+echo "check-gofmt can write status.checks.gofmt but not status.checks.risk or status.diverged, and other service accounts can't write either."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
