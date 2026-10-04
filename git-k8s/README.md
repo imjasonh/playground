@@ -661,6 +661,14 @@ yours. When no update is left for a module, for example because its branch
 landed or someone updated the module on another branch, the controller
 deletes the module's branch.
 
+The controller doesn't authenticate committers. Anyone who can push to the
+repository can make commits that look like updates and fixes, and the
+controller then treats the branch as its own: it replaces or deletes the
+branch, and takes the version that the update's trailer names as old enough.
+That gives nothing beyond push access, because the parent's merge policy
+decides what lands, and it treats the branch as it would the same change
+pushed under the person's own name.
+
 ### Agent fixes
 
 `check-deps` passes on branches outside its `-prefix`, so the parent's policy
