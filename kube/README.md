@@ -406,14 +406,19 @@ whether or not it holds a lease, and `/readyz` reports ready once it
 serves. As in a webhook, the handler can read with `Get`, `List`, and
 `Fetch` through the request's context, and calling `Own`, `Apply`, or
 `Delete` cancels the context with an error. To change the cluster in
-response to a request, trigger a reconcile and make the change there. When
-the program stops, it cancels the contexts of requests in progress and
-waits up to 10 seconds for them to finish. A program can have one
-`kube.Serve`, so serve every path from one handler, such as an
-`http.ServeMux`.
+response to a request, trigger a reconcile and make the change there. A
+program can have one `kube.Serve`, so serve every path from one handler,
+such as an `http.ServeMux`.
+
+When the program stops, it stops accepting connections, and requests in
+progress have up to 10 seconds to finish before their contexts are
+canceled. `kube.Trigger` returns false during that time.
 
 The `generate` command runs the program with `-serve-addr=:8081` and adds
-port 80 to the program's Service, which routes to the handler. It writes no
+port 80 to the program's Service, which routes to the handler. It also
+gives the container a `preStop` hook that sleeps for 5 seconds, so the
+Service stops sending the Pod connections before the program stops. The
+hook's `sleep` action needs Kubernetes 1.30 or later. `generate` writes no
 NetworkPolicy. If NetworkPolicies in the program's namespace deny traffic by
 default, allow the callers to reach port 8081 of the program's Pods.
 

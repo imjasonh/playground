@@ -487,6 +487,12 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		// write.
 		{"volumeMounts", []any{object{{"name", "tmp"}, {"mountPath", "/tmp"}}}},
 	}
+	if p.serves {
+		// The Service sends a Pod that's stopping new connections until its
+		// endpoints drop the Pod, and the program refuses them once it
+		// stops. The kubelet sleeps before it signals the program.
+		container = append(container, field{"lifecycle", object{{"preStop", object{{"sleep", object{{"seconds", 5}}}}}}})
+	}
 	tmp := object{}
 	if o.tmpSize != "" {
 		tmp = object{{"sizeLimit", o.tmpSize}}

@@ -132,14 +132,26 @@ func TestServeRun(t *testing.T) {
 	m := testManager()
 	m.Addr = "127.0.0.1:0"
 	m.ServeAddr = "127.0.0.1:0"
-	waiting := make(chan struct{})
+	grace := serveGrace
+	serveGrace = time.Second
+	t.Cleanup(func() { serveGrace = grace })
+	started := make(chan struct{}, 2)
+	finish, canceled := make(chan struct{}), make(chan struct{})
 	s := Serve(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/wait" {
-			close(waiting)
+		switch r.URL.Path {
+		case "/finish":
+			started <- struct{}{}
+			<-finish
+			if r.Context().Err() == nil {
+				_, _ = io.WriteString(w, "finished")
+			}
+		case "/hang":
+			started <- struct{}{}
 			<-r.Context().Done()
-			return
+			close(canceled)
+		default:
+			_, _ = io.WriteString(w, "served")
 		}
-		_, _ = io.WriteString(w, "served")
 	})).(*server)
 	m.controllers = []Controller{s}
 	if err := s.prepare(t.Context(), m); err != nil {
@@ -182,16 +194,48 @@ func TestServeRun(t *testing.T) {
 		t.Errorf("body = %q", body)
 	}
 
-	answered := make(chan struct{})
-	go func() {
-		defer close(answered)
-		if resp, err := http.Get("http://" + addr + "/wait"); err == nil {
-			resp.Body.Close()
-		}
-	}()
-	<-waiting
+	get := func(path string) <-chan string {
+		body := make(chan string, 1)
+		go func() {
+			resp, err := http.Get("http://" + addr + path)
+			if err != nil {
+				body <- err.Error()
+				return
+			}
+			defer resp.Body.Close()
+			b, _ := io.ReadAll(resp.Body)
+			body <- string(b)
+		}()
+		return body
+	}
+	finished := get("/finish")
+	get("/hang")
+	<-started
+	<-started
 	stopped := time.Now()
 	cancel()
+	waitFor(t, "Serve to stop accepting connections", func() bool {
+		c, err := net.Dial("tcp", addr)
+		if err == nil {
+			c.Close()
+		}
+		return err != nil
+	})
+	if code := readyz(); code != http.StatusServiceUnavailable {
+		t.Errorf("/readyz once Serve stops = %d, want 503", code)
+	}
+	close(finish)
+	if body := <-finished; body != "finished" {
+		t.Errorf("a request in progress when Serve stopped got %q, want it to finish", body)
+	}
+	select {
+	case <-canceled:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the context of a request that didn't finish wasn't canceled")
+	}
+	if d := time.Since(stopped); d < serveGrace {
+		t.Errorf("a request's context was canceled %v after Serve stopped, want %v", d, serveGrace)
+	}
 	select {
 	case err := <-done:
 		if err != nil {
@@ -199,12 +243,5 @@ func TestServeRun(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("run didn't return")
-	}
-	if d := time.Since(stopped); d > 5*time.Second {
-		t.Errorf("run took %v to return, want the request in progress canceled", d)
-	}
-	<-answered
-	if code := readyz(); code != http.StatusServiceUnavailable {
-		t.Errorf("/readyz after Serve stopped = %d, want 503", code)
 	}
 }

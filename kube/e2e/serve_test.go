@@ -64,6 +64,7 @@ func TestGenerateProbe(t *testing.T) {
 		"ClusterRole": `{"apiGroups":["authentication.k8s.io"],"resources":["tokenreviews"],"verbs":["create"]}`,
 		"Role":        `{"apiGroups":[""],"resourceNames":["probe"],"resources":["serviceaccounts/token"],"verbs":["create"]}`,
 		"Service":     `{"name":"serve","port":80,"targetPort":"serve"}`,
+		"Deployment":  `"lifecycle":{"preStop":{"sleep":{"seconds":5}}}`,
 	} {
 		if !strings.Contains(byKind[kind], want) {
 			t.Errorf("%s = %s, want %s", kind, byKind[kind], want)

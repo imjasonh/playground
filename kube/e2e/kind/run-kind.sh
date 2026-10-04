@@ -286,6 +286,37 @@ eventually 60 triggered
 checked_again() { [[ "$(k -n probe-e2e get probe self -o jsonpath='{.status.checkedAt}')" != "${checked}" ]]; }
 eventually 60 checked_again
 echo "The replica that holds the lease triggers a check, and the other refuses."
+
+# The client calls the API through the Service, in a loop that runs in its
+# Pod, while every replica is replaced. None of its requests may fail.
+k -n probe-e2e exec client -- sh -c 'rm -f /tmp/stop /tmp/done /tmp/codes /tmp/errors
+(while [ ! -e /tmp/stop ]; do
+  curl -sS -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $(cat /var/run/secrets/probe/token)" http://probe.probe.svc/whoami >>/tmp/codes 2>>/tmp/errors
+done; touch /tmp/done) >/dev/null 2>&1 &'
+old_pods="$(k -n probe get pods -l app.kubernetes.io/name=probe -o name)"
+k -n probe rollout restart deployment/probe
+k -n probe rollout status deployment/probe --timeout=180s
+old_pods_gone() {
+  local pod
+  for pod in ${old_pods}; do
+    if k -n probe get "${pod}" >/dev/null 2>&1; then
+      return 1
+    fi
+  done
+}
+eventually 120 old_pods_gone
+k -n probe-e2e exec client -- touch /tmp/stop
+loop_done() { k -n probe-e2e exec client -- test -e /tmp/done; }
+eventually 30 loop_done
+codes="$(k -n probe-e2e exec client -- cat /tmp/codes)"
+failed="$(grep -cv '^200$' <<<"${codes}" || true)"
+echo "$(wc -l <<<"${codes}") requests while the replicas were replaced; ${failed} failed"
+if ((failed > 0)); then
+  sort <<<"${codes}" | uniq -c
+  k -n probe-e2e exec client -- cat /tmp/errors
+  exit 1
+fi
+echo "Requests through the Service succeed while every replica is replaced."
 echo "::endgroup::"
 
 echo "::group::Install the podpolicy example"

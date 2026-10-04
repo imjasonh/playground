@@ -615,10 +615,22 @@ doesn't fail every request for its type.
 it on every replica, not only on replicas that hold shards. It starts after the
 webhooks serve and before the replica competes for shards, and `/readyz` fails
 until it listens, so the Service sends requests only to replicas that can answer
-them. When the program stops, the server stops accepting connections, cancels
-the contexts of requests in progress, and waits up to 10 seconds for them to
-return. Until the Service's endpoints drop the Pod, connections to it are
-refused, so clients need to retry.
+them.
+
+A Pod that's stopping stays in the Service's endpoints until the endpoints
+controller and kube-proxy notice. If the program stopped listening first, the
+connections that arrive in that time would be refused, and clients such as git
+don't retry. So `generate` gives a program that serves a `preStop` hook whose
+`sleep` action waits 5 seconds before the kubelet sends `SIGTERM`. The kubelet
+runs the sleep itself, so the image needs no shell, and the action is on by
+default in Kubernetes 1.30 and later. When the program stops, the server stops
+accepting connections and waits up to 10 seconds for requests in progress. Their
+contexts don't derive from the manager's, so they're canceled only when that
+time runs out. `Trigger` returns false once the manager's context is done, so a
+request that triggers a reconcile in that time answers `503`. A read whose cache
+hasn't synced waits until the time runs out and fails, because caches stop with
+the manager. The Pod's termination grace period, 30 seconds by default, covers
+the sleep, the wait, and the rest of stopping.
 
 The handler runs in the webhooks' read-only scope. Every replica serves, so a
 handler that wrote objects could race the reconcile on the replica that holds
@@ -864,10 +876,11 @@ go-containerregistry with it, so the program in the cluster links only kube.
 quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
 `1:20`, and `.5`. The Deployment runs the program with probes on `/readyz` and
 `/healthz`, as a non-root user with a read-only root file system, and with
-`-leader-elect` or `-shards` when it has more than one replica. An `emptyDir`
-volume at `/tmp` gives `os.TempDir` somewhere to write. With `-tmp-size`, the
-volume has a size limit, and the kubelet evicts a Pod that writes more instead
-of letting it fill the node's disk.
+`-leader-elect` or `-shards` when it has more than one replica. A program that
+serves gets the `preStop` sleep that [HTTP endpoints](#http-endpoints)
+describes. An `emptyDir` volume at `/tmp` gives `os.TempDir` somewhere to
+write. With `-tmp-size`, the volume has a size limit, and the kubelet evicts a
+Pod that writes more instead of letting it fill the node's disk.
 
 ### Testing
 
@@ -923,7 +936,9 @@ It also calls the probe example's API from a Pod with a projected token, and
 checks that each replica names the caller's Pod and refuses tokens for other
 audiences, that a Probe of the program's own `/whoami` succeeds with a token
 bound to the program's Pod, and that a trigger runs a check on the replica
-that holds the lease while the other answers `503`.
+that holds the lease while the other answers `503`. Then it replaces every
+replica while the client calls the API through the Service in a loop, and
+checks that none of those requests fail.
 
 ## Measurements
 

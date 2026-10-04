@@ -25,12 +25,22 @@ import (
 // Apply, Delete, or RequeueAfter cancels the request's context, with the
 // error as its cause. So does a Get or List that can't read, for example
 // because the program may not list a type. To change the cluster in response
-// to a request, call Trigger, and make the change in the reconcile. When the
-// program stops, the contexts of requests in progress are canceled too.
+// to a request, call Trigger, and make the change in the reconcile.
+//
+// When the program stops, the server stops accepting connections, and
+// requests in progress have 10 seconds to finish before their contexts are
+// canceled. Trigger returns false during that time. The generate command
+// has the kubelet wait 5 seconds before it stops the program, so that the
+// program's Service stops sending it connections first.
 //
 // A program can have one Serve. To serve several paths, use one handler,
 // such as an http.ServeMux.
 func Serve(h http.Handler) Controller { return &server{h: h} }
+
+// serveGrace is how long requests in progress have to finish once the
+// program stops. The Pod's termination grace period, 30 seconds by default,
+// must cover it and the preStop sleep that generate adds.
+var serveGrace = 10 * time.Second
 
 type server struct {
 	h  http.Handler
@@ -80,10 +90,12 @@ func (s *server) run(ctx context.Context) error {
 		return nil
 	}
 	ln := s.ln
+	reqs, cancelReqs := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelReqs()
 	srv := &http.Server{
 		Handler:           http.HandlerFunc(s.serveHTTP),
 		ReadHeaderTimeout: 10 * time.Second,
-		BaseContext:       func(net.Listener) context.Context { return ctx },
+		BaseContext:       func(net.Listener) context.Context { return reqs },
 	}
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
@@ -96,9 +108,10 @@ func (s *server) run(ctx context.Context) error {
 	case <-ctx.Done():
 	}
 	s.ready.Store(false)
-	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	sctx, cancel := context.WithTimeout(context.Background(), serveGrace)
 	defer cancel()
 	if err := srv.Shutdown(sctx); err != nil {
+		cancelReqs()
 		srv.Close()
 	}
 	return nil

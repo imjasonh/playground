@@ -218,6 +218,14 @@ func TestManifestsServe(t *testing.T) {
 		if !strings.Contains(byKind["Service"], tc.service) {
 			t.Errorf("webhooks %v: Service = %s, want %s", tc.webhooks, byKind["Service"], tc.service)
 		}
+		if want := `"lifecycle":{"preStop":{"sleep":{"seconds":5}}}`; !strings.Contains(byKind["Deployment"], want) {
+			t.Errorf("webhooks %v: the Deployment lacks %s: %s", tc.webhooks, want, byKind["Deployment"])
+		}
+	}
+	for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, webhooks: true}) {
+		if b, _ := json.Marshal(d); strings.Contains(string(b), "preStop") {
+			t.Errorf("a program that doesn't serve waits before it stops: %s", b)
+		}
 	}
 }
 
