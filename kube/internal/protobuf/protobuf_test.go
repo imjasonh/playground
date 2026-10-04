@@ -256,6 +256,13 @@ func TestTimesDecodeLikeJSON(t *testing.T) {
 			}
 		}
 	}
+	// A field sent twice keeps its last value, so the empty message has to
+	// clear the time decoded before it.
+	var p asPointer
+	dup := enc{}.msg(7, enc{}.uint(1, later).uint(2, 0)).msg(7, enc{})
+	if err := testPlan[asPointer](t).Unmarshal(dup, &p); err != nil || p.When != nil {
+		t.Errorf("a time, then an empty message: When = %v, %v; want nil", p.When, err)
+	}
 }
 
 func TestPlanRejectsFieldsTheSchemaLacks(t *testing.T) {
