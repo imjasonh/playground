@@ -230,10 +230,12 @@ write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
 check's result. The second stops every git-k8s service account from setting
 the approve annotation, which is for people, and stops checks from changing
-`GitBranch` objects at all. RBAC also keeps every check except `check-gotest`
-from patching `GitBranch` objects. `generate` grants that permission only to a
-check that owns objects, because an owned object in another namespace needs a
-finalizer on its owner. `check-gotest` owns the Pods that run tests.
+`GitBranch` objects at all. RBAC also keeps every check except `check-gotest`,
+which owns the Pods that run tests, from patching `GitBranch` objects.
+`generate` grants that permission to a check that owns objects, because it
+can't tell whether an owned object needs a finalizer on its owner. The second
+policy denies the annotation that kube adds with that finalizer, so a check
+can own only namespaced objects in the branch's namespace.
 
 Without the policies, most of that doesn't hold, so the repositories
 controller sets a `PoliciesInstalled` condition on each `GitRepository`. It's

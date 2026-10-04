@@ -59,11 +59,13 @@ spec:
   validationActions: [Deny]
 ---
 # The approve annotation on a GitBranch records a person's approval, so no
-# git-k8s service account can set or change it. kube can add a finalizer to
-# an object whose controller owns other objects, so generate lets a check
-# that owns objects, such as check-gotest with its Pods, patch GitBranch
-# objects. This policy also stops checks from changing a GitBranch's spec,
-# labels, or annotations.
+# git-k8s service account can set or change it. This policy also stops
+# checks from changing a GitBranch's spec, labels, or annotations. RBAC lets
+# a check that owns objects, such as check-gotest, patch GitBranch objects,
+# because generate can't tell whether an owned object needs a finalizer on
+# its owner. kube adds that finalizer with a cleanup annotation, which this
+# policy denies, so a check can own only namespaced objects in the branch's
+# namespace.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
