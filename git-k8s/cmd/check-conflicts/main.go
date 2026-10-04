@@ -146,7 +146,7 @@ func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]str
 		}
 		t = target{commit: d.Commit, branch: in.Spec.Branch, ref: d.Ref, name: "the external repository's " + in.Spec.Branch, diverged: true}
 	}
-	if v, ok := follow(ctx, in, t); ok {
+	if v, ok := follow(ctx, in, t, outputs); ok {
 		return v
 	}
 	repo, err := targetRepo(ctx, in, t)

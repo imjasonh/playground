@@ -71,8 +71,9 @@ func (t target) job(in *checks.Input, base string) *agent.Job {
 // commit that it started with, so that a parent that keeps moving doesn't
 // start a new run each time. The check starts over instead when -union
 // changed, because git might then resolve every conflict, or when the run
-// waits for a commit that t already has.
-func follow(ctx context.Context, in *checks.Input, t target) (checks.Verdict, bool) {
+// waits for a commit that t already has. Then it updates the runs in
+// outputs, which the new run counts from.
+func follow(ctx context.Context, in *checks.Input, t target, outputs map[string]string) (checks.Verdict, bool) {
 	prev := in.Previous
 	if prev == nil || prev.State != gitk8s.Running || prev.Commit != in.Spec.Head || prev.Outputs["pod"] == "" ||
 		(prev.Outputs["diverged"] != "") != t.diverged || !isCommit(prev.Outputs["merge"]) || !isCommit(prev.Outputs["base"]) ||
@@ -84,6 +85,8 @@ func follow(ctx context.Context, in *checks.Input, t target) (checks.Verdict, bo
 	st := jobState(prev.Outputs)
 	s := runJob(ctx, pinned.job(in, base), st)
 	if s.Moved && pinned.commit != t.commit {
+		// RunJob gave back the run whose Pod found the branch moved.
+		outputs["runs"] = strconv.Itoa(st.Runs)
 		return checks.Verdict{}, false
 	}
 	v := report(ctx, in, pinned, base, st, s)
@@ -181,8 +184,11 @@ func report(ctx context.Context, in *checks.Input, t target, base string, st *ag
 	} else {
 		repo, err := targetRepo(ctx, in, t)
 		if err != nil {
-			// The Pod still serves the result, so the next reconcile fetches
-			// it again.
+			// The Pod still serves the result, and RunJob declared it in
+			// this reconcile. Leaving the run undone in the outputs makes
+			// the next reconcile follow the Pod and fetch the result again,
+			// instead of RunJob reporting the run as done without it.
+			st.Done = false
 			kube.RequeueAfter(ctx, 30*time.Second)
 			return running("fetching the branch and %s to commit the agent's resolution: %v", t.name, err)
 		}
@@ -211,6 +217,12 @@ func runOutputs(t target, base string, st *agent.JobState) map[string]string {
 	if st.UID != "" {
 		o["podUID"] = st.UID
 	}
+	if st.Refunded != "" {
+		o["refunded"] = st.Refunded
+	}
+	if st.Done {
+		o["done"] = "true"
+	}
 	if len(union) > 0 {
 		o["union"] = union.String()
 	}
@@ -220,7 +232,7 @@ func runOutputs(t target, base string, st *agent.JobState) map[string]string {
 // jobState reads the state of the agent's run from the outputs that
 // runOutputs wrote.
 func jobState(outputs map[string]string) *agent.JobState {
-	st := &agent.JobState{Pod: outputs["pod"], UID: outputs["podUID"]}
+	st := &agent.JobState{Pod: outputs["pod"], UID: outputs["podUID"], Refunded: outputs["refunded"], Done: outputs["done"] == "true"}
 	st.Runs, _ = strconv.Atoi(outputs["runs"])
 	st.Attempt, _ = strconv.Atoi(outputs["attempt"])
 	return st

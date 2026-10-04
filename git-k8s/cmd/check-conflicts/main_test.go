@@ -114,10 +114,14 @@ func withJobs(t *testing.T, fn func(job *agent.Job, st *agent.JobState) agent.Jo
 }
 
 // finish finishes each run with res, as RunJob does once it fetches the
-// agent's result.
+// agent's result. Like RunJob, it reports a run whose JobState is done as
+// done without its result.
 func finish(res *agent.Result) func(*agent.Job, *agent.JobState) agent.JobStatus {
 	return func(_ *agent.Job, st *agent.JobState) agent.JobStatus {
-		st.Runs, st.Pod, st.Attempt = st.Runs+1, "conflicts-app-c-x-1", 1
+		if st.Done {
+			return agent.JobStatus{Done: true, Message: "the run in Pod " + st.Pod + " already finished"}
+		}
+		st.Runs, st.Pod, st.Attempt, st.Done = st.Runs+1, "conflicts-app-c-x-1", 1, true
 		return agent.JobStatus{Done: true, Message: cmp.Or(res.Reasoning, res.Summary), Result: res}
 	}
 }
@@ -463,49 +467,117 @@ func TestStartsOverWhenTheRunCantGoOn(t *testing.T) {
 }
 
 func TestStartsOverWhenMainMovesBeforeThePodFetchesIt(t *testing.T) {
-	withAgent(t)
-	srv := gittest.NewServer(t, "")
+	for _, tc := range []struct {
+		name string
+		// waits is how many reconciles see the Pod's exit before the spec
+		// holds main's new head.
+		waits int
+	}{{name: "after the spec holds main's new head", waits: 2}, {name: "when the spec already holds it"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			withAgent(t)
+			srv := gittest.NewServer(t, "")
+			b, w, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+			started := b.Spec.ParentHead
+			rec, err := reconcile(t, srv, b, rules)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p := kube.Owned[agent.Pod](rec)[0]
+			p.Namespace, p.UID = "default", "uid-1"
+			msg := "main no longer points to " + started
+			p.Status = agent.PodStatus{Phase: "Failed", InitContainerStatuses: []agent.ContainerStatus{
+				{Name: "prepare", State: agent.ContainerState{Terminated: &agent.Terminated{ExitCode: 3, Message: msg}}},
+			}}
+			w.Branch("main", started)
+			moved := commit(w, "main moves", map[string]string{"d.txt": "d\n"})
+			w.Push("main")
+
+			// The run gives back its place once, however many reconciles
+			// see the Pod's exit.
+			for range tc.waits {
+				rec, err = reconcile(t, srv, b, rules, p)
+				if err != nil {
+					t.Fatal(err)
+				}
+				res := b.Status.Checks.Result
+				if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+msg || len(pods) != 1 || pods[0].Name != p.Name {
+					t.Fatalf("result = %+v and Pods %v, want Running with Pod %s", res, pods, p.Name)
+				}
+				if res.Outputs["merge"] != started || res.Outputs["podUID"] != "uid-1" || res.Outputs["refunded"] != "uid-1" || res.Outputs["runs"] != "0" {
+					t.Errorf("outputs = %v, want the run that merges main at %s, given back", res.Outputs, started)
+				}
+			}
+
+			b.Spec.ParentHead = moved
+			rec, err = reconcile(t, srv, b, rules, p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			res := b.Status.Checks.Result
+			if res.State != gitk8s.Running || res.Outputs["merge"] != moved || res.Outputs["runs"] != "1" || res.Outputs["pod"] == p.Name || res.Outputs["refunded"] != "" {
+				t.Fatalf("result = %+v, want Running with a new run that merges main at %s and counts once", res, moved)
+			}
+			if !slices.ContainsFunc(kube.Owned[agent.Pod](rec), func(q *agent.Pod) bool { return q.Name == res.Outputs["pod"] }) {
+				t.Errorf("the check didn't declare the new run's Pod %s", res.Outputs["pod"])
+			}
+		})
+	}
+}
+
+func TestKeepsTheRunsStateInItsOutputs(t *testing.T) {
+	st := agent.JobState{Runs: 2, Pod: "conflicts-app-c-x-2", Attempt: 2, UID: "uid-2", Refunded: "uid-1", Done: true}
+	got := jobState(runOutputs(target{commit: strings.Repeat("a", 40)}, strings.Repeat("b", 40), &st))
+	if *got != st {
+		t.Errorf("state after the outputs = %+v, want %+v", *got, st)
+	}
+}
+
+func TestFetchesTheResultAgainWhenGitFails(t *testing.T) {
+	// Like RunJob, the fake reports a run whose JobState is done as done
+	// without its result.
+	withJobs(t, func(_ *agent.Job, st *agent.JobState) agent.JobStatus {
+		switch {
+		case st.Done:
+			return agent.JobStatus{Done: true, Message: "the run in Pod " + st.Pod + " already finished"}
+		case st.Pod == "":
+			st.Runs, st.Pod, st.Attempt = st.Runs+1, "conflicts-app-c-x-1", 1
+			return agent.JobStatus{Message: "started Pod " + st.Pod}
+		}
+		st.Done = true
+		return agent.JobStatus{Done: true, Message: "Both sides change the second line.", Result: resolution(resolvedA)}
+	})
+	srv := gittest.NewServer(t, "pw")
 	b, w, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
-	started := b.Spec.ParentHead
-	rec, err := reconcile(t, srv, b, rules)
-	if err != nil {
+	if _, err := reconcile(t, srv, b, rules); err != nil {
 		t.Fatal(err)
 	}
-	p := kube.Owned[agent.Pod](rec)[0]
-	p.Namespace, p.UID = "default", "uid-1"
-	msg := "main no longer points to " + started
-	p.Status = agent.PodStatus{Phase: "Failed", InitContainerStatuses: []agent.ContainerStatus{
-		{Name: "prepare", State: agent.ContainerState{Terminated: &agent.Terminated{ExitCode: 3, Message: msg}}},
-	}}
-	w.Branch("main", started)
-	moved := commit(w, "main moves", map[string]string{"d.txt": "d\n"})
-	w.Push("main")
+	if res := b.Status.Checks.Result; res.State != gitk8s.Running || res.Outputs["pod"] == "" {
+		t.Fatalf("result = %+v, want Running with the agent's Pod", res)
+	}
 
-	t.Log("Until the spec holds main's new head, the run waits.")
-	rec, err = reconcile(t, srv, b, rules, p)
-	if err != nil {
+	t.Log("The run finishes while git fails.")
+	repo, secret := srv.Repository("app", rules...)
+	secret.Data["password"] = []byte("wrong")
+	ctx, _ := kube.Fake(t.Context(), b, repo, secret)
+	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
+	if err := newReconciler(cfg).Reconcile(ctx, b); err != nil {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+msg || len(pods) != 1 || pods[0].Name != p.Name {
-		t.Fatalf("result = %+v and Pods %v, want Running with Pod %s", res, pods, p.Name)
-	}
-	if res.Outputs["merge"] != started || res.Outputs["podUID"] != "uid-1" || res.Outputs["runs"] != "1" {
-		t.Errorf("outputs = %v, want the run that merges main at %s", res.Outputs, started)
+	if res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "fetching the branch and main to commit the agent's resolution: ") || res.Outputs["done"] != "" {
+		t.Fatalf("result = %+v, want Running with the run not done", res)
 	}
 
-	t.Log("Then the check starts a run on main's new head.")
-	b.Spec.ParentHead = moved
-	rec, err = reconcile(t, srv, b, rules, p)
-	if err != nil {
+	t.Log("Then the check fetches the result again and commits it.")
+	if _, err := reconcile(t, srv, b, rules); err != nil {
 		t.Fatal(err)
 	}
 	res = b.Status.Checks.Result
-	if res.State != gitk8s.Running || res.Outputs["merge"] != moved || res.Outputs["runs"] != "2" || res.Outputs["pod"] == p.Name {
-		t.Fatalf("result = %+v, want Running with a second run that merges main at %s", res, moved)
+	if res.State != gitk8s.Fixed || res.Outputs["runs"] != "1" {
+		t.Fatalf("result = %+v, want Fixed by the agent's one run", res)
 	}
-	if !slices.ContainsFunc(kube.Owned[agent.Pod](rec), func(q *agent.Pod) bool { return q.Name == res.Outputs["pod"] }) {
-		t.Errorf("the check didn't declare the new run's Pod %s", res.Outputs["pod"])
+	if got := w.Fetch("c/x"); got != res.Outputs["fix"] {
+		t.Errorf("c/x = %s, want the merge %s", got, res.Outputs["fix"])
 	}
 }
 
