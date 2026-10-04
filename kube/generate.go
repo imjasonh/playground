@@ -348,15 +348,16 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	}
 	funcs := slices.Sorted(maps.Keys(scopeVerbs))
 	o.logf("finding the types that %s reads and writes", pkg)
-	uses, warnings, err := analysis.Find(ctx, analysis.Config{
+	uses, unresolved, err := analysis.Find(ctx, analysis.Config{
 		Dir: ".", Env: buildEnv(o.platforms[0]), Pattern: pkg,
 		Package: reflect.TypeFor[Object]().PkgPath(), Funcs: funcs, Marker: "Object",
 	})
 	if err != nil {
 		return nil, err
 	}
-	for _, w := range warnings {
-		o.logf("warning: %s; add its permissions to the ClusterRole yourself", w)
+	for _, u := range unresolved {
+		o.logf("warning: %s: can't tell which types kube.%s is called with; add its permissions to the ClusterRole yourself", u.Pos, u.Func)
+		owns = owns || u.Func == "Own"
 	}
 	for _, u := range uses {
 		ti := &typeInfo{}

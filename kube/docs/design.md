@@ -756,9 +756,10 @@ controller's finalizer, as [Finalizers and cleanup](#finalizers-and-cleanup)
 describes, or to migrate the stored objects of a type with more than one
 version. The `describe` method reports whether a controller has a `Finalize`
 method, the `kube.RemovesFinalizer` option, owned types, or more than one
-version, and the analysis reports whether the program calls `Own`. A
-controller that only writes status gets no permission to change the spec,
-labels, or annotations of the objects that it reconciles.
+version, and the analysis reports whether the program calls `Own`, including
+calls whose type arguments it can't tell. A controller that only writes status
+gets no permission to change the spec, labels, or annotations of the objects
+that it reconciles.
 
 The rules go in a ClusterRole, because a program watches every namespace,
 except those for the program's own Leases and webhook certificate, which go in

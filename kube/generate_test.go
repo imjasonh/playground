@@ -126,8 +126,9 @@ func TestPlanPatch(t *testing.T) {
 		Object `kube:"apiVersion=v1,kind=Namespace,scope=Cluster"`
 	}
 	const (
-		deletes = "github.com/imjasonh/playground/kube/examples/janitor"
-		owns    = "github.com/imjasonh/playground/kube/examples/website"
+		deletes      = "github.com/imjasonh/playground/kube/examples/janitor"
+		owns         = "github.com/imjasonh/playground/kube/examples/website"
+		genericOwner = "github.com/imjasonh/playground/kube/testdata/genericowner"
 	)
 	for _, tc := range []struct {
 		name  string
@@ -141,6 +142,7 @@ func TestPlanPatch(t *testing.T) {
 		{"more than one version", For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()), deletes, true},
 		{"declared owned type", For[gizmo](gizmoReconciler{}, Owns[deployment]()), deletes, true},
 		{"program that owns objects", For[gizmo](gizmoReconciler{}), owns, true},
+		{"program that owns objects of types that generate can't tell", For[gizmo](gizmoReconciler{}), genericOwner, true},
 		{"cluster-scoped type in a program that owns objects", For[namespace](nop[namespace]{}), owns, false},
 	} {
 		o := &generateOptions{program: "test", platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, shards: 1, stderr: io.Discard}
