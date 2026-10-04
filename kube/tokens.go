@@ -73,11 +73,11 @@ type services interface {
 }
 
 // ReviewToken asks the API server whether token, a bearer token that a
-// client sent, is valid for audience or one of more, and whose it is. Pass
-// the audiences that your server accepts, such as the audience that clients
-// put in their projected service account tokens. A token meant for another
-// server, or for the API server, doesn't pass, so a token that your server
-// receives can't call the API server.
+// client sent, is valid for audience or for any audience in more, and whose
+// it is. Pass the audiences that your server accepts, such as the audience
+// that clients put in their projected service account tokens. A token meant
+// for another server, or for the API server, doesn't pass, so a token that
+// your server receives can't call the API server.
 //
 // An invalid or expired token isn't an error. The review then has
 // Authenticated false and the reason in Error. ReviewToken returns an error
