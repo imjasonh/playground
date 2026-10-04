@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 	"unicode/utf8"
 
@@ -485,6 +486,38 @@ func TestCheckRunsOfSeveralApps(t *testing.T) {
 	}
 }
 
+func TestCheckRunsAfterIdentityChanges(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Write(".github/chainguard/other.sts.yaml", gittest.TrustPolicy(map[string]string{"checks": "write"}))
+	main = w.Commit("add the identity other")
+	w.Push("main")
+	w.Branch("c/x", main)
+	head := w.Commit("add x")
+	next := w.Commit("add y")
+	w.Push("c/x")
+	gh.Fake.RouteApp("acme/app", "other", gitserver.SecondOctoSTSApp)
+	p := &publisher{t: t, gh: gh, repo: gh.Repository("app", sts, rules()...), c: &checkRuns{}}
+	api := "/api/v3/repos/acme/app/"
+	passed := func(commit string) map[string]gitk8s.CheckResult {
+		return map[string]gitk8s.CheckResult{"gotest": {Commit: commit, State: gitk8s.Passed}}
+	}
+	for _, commit := range []string{head, next} {
+		if _, err := p.publish(passed(commit)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	t.Log("When the GitRepository names an identity whose tokens act for another app, the controller writes that app's check run instead of trusting the first app's, which shows the result.")
+	p.repo.Spec.OctoSTS.CheckRunsIdentity = "other"
+	got, err := p.publish(passed(head))
+	if want := []string{"GET " + api + "commits/" + head + "/check-runs", "PATCH " + api + "check-runs/1", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+	if all := gh.Fake.CheckRuns("acme/app"); len(all) != 3 || all[2].App.ID != gitserver.SecondOctoSTSApp {
+		t.Errorf("check runs %q; want a third of app %d", runs(gh), gitserver.SecondOctoSTSApp)
+	}
+}
+
 func TestLearnsAppFromCancelling(t *testing.T) {
 	gh, w, main := newGitHub(t)
 	w.Branch("c/x", main)
@@ -563,6 +596,21 @@ func TestCheckRunsSpreadRetries(t *testing.T) {
 	}
 	if len(limited) < 2 || len(paused) < 2 {
 		t.Errorf("requeues = %v at the limit and %v during it; want different ones", slices.Sorted(maps.Keys(limited)), slices.Sorted(maps.Keys(paused)))
+	}
+}
+
+func TestCheckRunsForgetEndedRateLimits(t *testing.T) {
+	at := time.Unix(1_000_000, 0)
+	c := &checkRuns{now: func() time.Time { return at }}
+	c.pause("https://api.github.com/repos/acme", time.Minute)
+	c.pause("https://api.github.com/repos/beta", 2*time.Minute)
+
+	t.Log("Pausing an owner's check runs forgets the rate limits that ended.")
+	at = at.Add(time.Minute)
+	c.pause("https://api.github.com/repos/gamma", time.Minute)
+	want := []string{"https://api.github.com/repos/beta", "https://api.github.com/repos/gamma"}
+	if got := slices.Sorted(maps.Keys(c.paused)); !slices.Equal(got, want) {
+		t.Errorf("paused owners = %q, want %q", got, want)
 	}
 }
 
@@ -1286,6 +1334,80 @@ func TestCheckRunsPauseWaitingReconciles(t *testing.T) {
 	if len(sent) > 0 {
 		t.Errorf("the reconciles sent %q during the rate limit", sent)
 	}
+}
+
+func TestCheckRunsForgetRepositories(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	head := w.Commit("add x")
+	w.Push("c/x")
+	p := &publisher{t: t, gh: gh, repo: gh.Repository("app", sts, rules()...), c: &checkRuns{}}
+	running := map[string]gitk8s.CheckResult{"gotest": {Commit: head, State: gitk8s.Running}}
+	known := func() bool {
+		p.c.mu.Lock()
+		defer p.c.mu.Unlock()
+		return p.c.repos["default/app"] != nil
+	}
+	if _, err := p.publish(running); err != nil || !known() {
+		t.Fatalf("err = %v, known = %v; want the controller to know acme/app's check runs", err, known())
+	}
+
+	t.Log("When the GitRepository is gone, the controller drops what it knew of the repository's check runs.")
+	if _, err := reconcileIn(t.Context(), p.c, "app", "c/x", p.branches); err != nil || known() {
+		t.Errorf("err = %v, known = %v; want the controller to know nothing of acme/app", err, known())
+	}
+	if _, err := p.publish(running); err != nil || !known() {
+		t.Fatalf("err = %v, known = %v; want the controller to know acme/app's check runs", err, known())
+	}
+
+	t.Log("When the GitRepository names no check-runs identity, the controller drops it too.")
+	p.repo.Spec.OctoSTS.CheckRunsIdentity = ""
+	if _, err := p.reconcile("c/x"); err != nil || known() {
+		t.Errorf("err = %v, known = %v; want the controller to know nothing of acme/app", err, known())
+	}
+}
+
+func TestCheckRunsForgetWhileReconcilesWait(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c := &checkRuns{}
+		held, err := c.lock(t.Context(), "default/app")
+		if err != nil {
+			t.Fatal(err)
+		}
+		go func() {
+			if err := c.forget(t.Context(), "default/app"); err != nil {
+				t.Error(err)
+			}
+		}()
+		synctest.Wait()
+		next := make(chan *repoRuns, 1)
+		go func() {
+			rr, err := c.lock(t.Context(), "default/app")
+			if err != nil {
+				t.Error(err)
+			}
+			next <- rr
+		}()
+		synctest.Wait()
+		select {
+		case <-next:
+			t.Fatal("a reconcile got the repository's lock while another held it")
+		default:
+		}
+
+		t.Log("A reconcile that waited for the lock while the controller forgot the repository gets the lock of what the controller knows of it now.")
+		held.unlock()
+		rr := <-next
+		if rr == nil {
+			return
+		}
+		defer rr.unlock()
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if rr == held || c.repos["default/app"] != rr {
+			t.Error("the reconcile got the lock of what the controller forgot")
+		}
+	})
 }
 
 func TestCheckRunErrors(t *testing.T) {

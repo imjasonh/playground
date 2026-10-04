@@ -50,15 +50,9 @@ type checkRuns struct {
 
 	mu sync.Mutex
 	// repos holds what the controller knows of each repository's check
-	// runs, by namespace and name.
+	// runs, by namespace and name, until the GitRepository is gone or names
+	// no check-runs identity.
 	repos map[string]*repoRuns
-	// apps holds the ID of the GitHub App that the controller's tokens act
-	// for, by repository and Octo STS identity, once the controller creates
-	// or updates a check run with them. GitHub lets only the app that
-	// created a check run update it, so the controller looks only for that
-	// app's check runs. Octo STS with several GitHub Apps can route each
-	// repository and identity to a different app, and to another app later.
-	apps map[appKey]int64
 	// paused holds when each repository owner's rate limit ends. GitHub
 	// limits each installation of a GitHub App, and an installation is one
 	// owner's. With several apps, the limit of one app's installation
@@ -80,6 +74,14 @@ type repoRuns struct {
 	// locked holds a value while a reconcile holds the lock. Unlike a
 	// mutex, a channel lets a reconcile stop waiting when its context ends.
 	locked chan struct{}
+	// app is the ID of the GitHub App that the tokens for appKey act for,
+	// once the controller creates or updates a check run with them, or 0.
+	// GitHub lets only the app that created a check run update it, so the
+	// controller looks only for that app's check runs. Octo STS with
+	// several GitHub Apps can route each repository and identity to a
+	// different app, and to another app later.
+	app    int64
+	appKey appKey
 	// results holds the result that each branch last published for each
 	// check.
 	results map[branchCheck]branchResult
@@ -153,8 +155,8 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 	var rr *repoRuns
 	var listed []*branchResults
 	if publishing {
-		rr = c.repository(key)
-		if err := rr.lock(ctx); err != nil {
+		var err error
+		if rr, err = c.lock(ctx, key); err != nil {
 			return err
 		}
 		defer rr.unlock()
@@ -192,7 +194,10 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 		kube.RequeueAfter(ctx, spread(wait))
 		return nil
 	}
-	s := &runSync{repoRuns: rr, c: c, gh: &githubAPI{repo: apiURL, token: token, now: c.clock}, app: appKey{apiURL, repo.Spec.OctoSTS.CheckRunsIdentity}, external: key, branches: branches}
+	if k := (appKey{apiURL, repo.Spec.OctoSTS.CheckRunsIdentity}); rr.appKey != k {
+		rr.appKey, rr.app = k, 0
+	}
+	s := &runSync{repoRuns: rr, gh: &githubAPI{repo: apiURL, token: token, now: c.clock}, external: key, branches: branches}
 	err = s.sync(ctx, b.Name)
 	var limited *rateLimited
 	if errors.As(err, &limited) {
@@ -208,10 +213,7 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 // while the reconcile holds the repository's lock.
 type runSync struct {
 	*repoRuns
-	c  *checkRuns
 	gh *githubAPI
-	// app is the key of the GitHub App that gh's token acts for.
-	app appKey
 	// external is the check runs' external ID, the repository's namespace
 	// and name.
 	external string
@@ -319,13 +321,12 @@ func (s *runSync) publish(ctx context.Context, branch, check string, res gitk8s.
 	// it shows want, and creates its own if GitHub refuses.
 	trusted := known
 	if !known {
-		app := s.c.appFor(s.app)
-		found, err := s.gh.find(ctx, checkRun{Name: "git-k8s/" + check, HeadSHA: res.Commit, ExternalID: s.external}, app)
+		found, err := s.gh.find(ctx, checkRun{Name: "git-k8s/" + check, HeadSHA: res.Commit, ExternalID: s.external}, s.app)
 		if err != nil {
 			return err
 		}
 		if found != nil {
-			run, known, trusted = shownRun{id: found.ID, shows: found.runState}, true, app != 0
+			run, known, trusted = shownRun{id: found.ID, shows: found.runState}, true, s.app != 0
 		}
 	}
 	switch {
@@ -355,7 +356,7 @@ func (s *runSync) write(ctx context.Context, cc commitCheck, run shownRun, known
 	if known && (run.shows.Status != "completed" || want.Status == "completed") {
 		updated, err := s.gh.update(ctx, run.id, want)
 		if err == nil {
-			s.c.learnApp(s.app, updated.App.ID)
+			s.learnApp(updated.App.ID)
 			s.runs[cc] = shownRun{id: run.id, shows: want, by: branch}
 			return nil
 		}
@@ -373,7 +374,7 @@ func (s *runSync) write(ctx context.Context, cc commitCheck, run shownRun, known
 	if err != nil {
 		return err
 	}
-	s.c.learnApp(s.app, created.App.ID)
+	s.learnApp(created.App.ID)
 	s.runs[cc] = shownRun{id: created.ID, shows: want, by: branch}
 	return nil
 }
@@ -412,7 +413,7 @@ func (s *runSync) settle(ctx context.Context, cc commitCheck, why string) error 
 			by, want = "", run.shows
 			break
 		}
-		s.c.learnApp(s.app, updated.App.ID)
+		s.learnApp(updated.App.ID)
 	}
 	s.runs[cc] = shownRun{id: run.id, shows: want, by: by}
 	return nil
@@ -528,6 +529,25 @@ func (c *checkRuns) repository(key string) *repoRuns {
 	return c.repos[key]
 }
 
+// lock returns what the controller knows of a repository's check runs, by
+// namespace and name, once it holds the repository's lock.
+func (c *checkRuns) lock(ctx context.Context, key string) (*repoRuns, error) {
+	for {
+		rr := c.repository(key)
+		if err := rr.lock(ctx); err != nil {
+			return nil, err
+		}
+		c.mu.Lock()
+		current := c.repos[key] == rr
+		c.mu.Unlock()
+		if current {
+			return rr, nil
+		}
+		// forget dropped rr while the reconcile waited for its lock.
+		rr.unlock()
+	}
+}
+
 // lock waits for rr's lock until ctx ends.
 func (rr *repoRuns) lock(ctx context.Context) error {
 	select {
@@ -544,40 +564,31 @@ func (rr *repoRuns) unlock() { <-rr.locked }
 // or names no check-runs identity.
 func (c *checkRuns) forget(ctx context.Context, key string) error {
 	c.mu.Lock()
-	rr := c.repos[key]
+	_, known := c.repos[key]
 	c.mu.Unlock()
-	if rr == nil {
+	if !known {
 		return nil
 	}
-	if err := rr.lock(ctx); err != nil {
+	// The reconcile that holds the lock keeps using what the controller
+	// knows, so forget drops it only once it holds the lock. Otherwise
+	// another reconcile of the repository could start before that one ends.
+	rr, err := c.lock(ctx, key)
+	if err != nil {
 		return err
 	}
 	defer rr.unlock()
-	clear(rr.results)
-	clear(rr.runs)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.repos, key)
 	return nil
 }
 
-// appFor returns the ID of the GitHub App that k's tokens act for, or 0
-// when the controller doesn't know it.
-func (c *checkRuns) appFor(k appKey) int64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.apps[k]
-}
-
-// learnApp records that k's tokens act for app, the app of a check run
-// that one of them created or updated.
-func (c *checkRuns) learnApp(k appKey, app int64) {
-	if app == 0 {
-		return
+// learnApp records that the tokens for rr's appKey act for app, the app of
+// a check run that one of them created or updated.
+func (rr *repoRuns) learnApp(app int64) {
+	if app != 0 {
+		rr.app = app
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.apps == nil {
-		c.apps = map[appKey]int64{}
-	}
-	c.apps[k] = app
 }
 
 func (c *checkRuns) pausedFor(owner string) time.Duration {
@@ -589,10 +600,12 @@ func (c *checkRuns) pausedFor(owner string) time.Duration {
 func (c *checkRuns) pause(owner string, d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	now := c.clock()
+	maps.DeleteFunc(c.paused, func(_ string, until time.Time) bool { return !until.After(now) })
 	if c.paused == nil {
 		c.paused = map[string]time.Time{}
 	}
-	c.paused[owner] = c.clock().Add(d)
+	c.paused[owner] = now.Add(d)
 }
 
 // spread returns a time from d to a quarter longer than d, so that the
