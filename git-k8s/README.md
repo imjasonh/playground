@@ -233,13 +233,14 @@ branches land through a queue for each parent instead:
    fast-forwards the parent to the branch, and the next branch moves to the
    front.
 
-The branches behind the front keep their heads, so each landing runs the
-checks again on one branch. The parent's `status.queue` lists its queue,
-front first. Each queued branch's `status.queued` records when it joined,
-the head that the merge controller last kept in the queue, and its place,
-from 1 at the front, which the `QUEUE` column shows. A queued branch's
-state is `Queued`, and the `Merged` condition's message says what it waits
-for, such as `2 of 3 in main's queue`.
+The branches behind the front keep their heads, so each landing runs every
+check again on one branch, and only the checks that set `UsesParent`, such
+as `base` and `risk`, on the others. The parent's `status.queue` lists its
+queue, front first. Each queued branch's `status.queued` records when it
+joined, the head that the merge controller last kept in the queue, and its
+place, from 1 at the front, which the `QUEUE` column shows. A queued
+branch's state is `Queued`, and the `Merged` condition's message says what
+it waits for, such as `2 of 3 in main's queue`.
 
 A branch leaves the queue when one of these happens:
 
@@ -356,8 +357,7 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
 - An approval names one head, so a branch that needs one needs another after
   the `base` check merges its parent in at the front of the queue. The
   branch leaves the queue until someone approves the merge, then joins at
-  the back, so while other branches keep landing, it can need several
-  approvals.
+  the back. While other branches keep landing, it might never land.
 - A check that doesn't finish at the front of a queue holds up the branches
   behind it while the front can still land.
 
