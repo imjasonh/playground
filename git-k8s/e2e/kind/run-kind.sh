@@ -540,7 +540,9 @@ echo "::group::Tests run in a sandboxed Pod"
 # egress tries to reach the git server until it can't. The plugin can take a
 # few seconds to apply the policy to a new Pod, so the test decides that the
 # cluster doesn't enforce NetworkPolicies only if the Pod still reaches the
-# git server after 30 seconds.
+# git server after 30 seconds. The test's own Pods, like check-gotest's,
+# meet the restricted Pod Security Standard, so they start in a namespace
+# that enforces it.
 k apply -f - <<EOF
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -563,11 +565,13 @@ metadata:
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false
+  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
   containers:
     - name: probe
       image: ${GIT_IMAGE}
       command: [dash, -c, "read -r _"]
       stdin: true
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
       env:
         - {name: HOME, value: /tmp}
         - {name: GIT_TERMINAL_PROMPT, value: "0"}
@@ -726,16 +730,19 @@ metadata:
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false
+  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
   initContainers:
     - name: fetch
       image: ${GIT_IMAGE}
       command: [dash, -c, "trap '' TERM; read -r _"]
       stdin: true
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
   containers:
     - name: test
       image: ${GIT_IMAGE}
       command: [dash, -c, "read -r _"]
       stdin: true
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
 ---
 apiVersion: v1
 kind: Pod
@@ -747,11 +754,13 @@ metadata:
 spec:
   restartPolicy: Never
   automountServiceAccountToken: false
+  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
   containers:
     - name: test
       image: ${GIT_IMAGE}
       command: [dash, -c, "read -r _"]
       stdin: true
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
 EOF
 named_waits() {
   [[ -n "$(k -n "${NS}" get pod gotest-named -o jsonpath='{.status.initContainerStatuses[0].state.running.startedAt}')" ]]
