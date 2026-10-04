@@ -1,3 +1,13 @@
+# The program installs the CustomResourceDefinition for Cactus before it
+# applies this manifest.
+apiVersion: e2e.kube.imjasonh.github.io/v1
+kind: Cactus
+metadata:
+  name: saguaro
+  namespace: installer-params
+spec:
+  height: 12
+---
 # The policy's parameter: data.forbidden is a color that ConfigMaps labeled
 # installer-test can't have.
 apiVersion: v1

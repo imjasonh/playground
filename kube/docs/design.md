@@ -551,13 +551,13 @@ document, so a manifest is limited to the subset of YAML that kubeconfig
 files use.
 
 Install's controller doesn't reconcile. Its `setup` runs after the
-reconcilers' `setup`, which installs their CRDs, so an installed policy can
-match a type that the program defines. With leader election or shards, a
-replica applies the objects when it first holds a shard. It server-side
-applies each object in order and labels it with the program's name, as it
-labels CRDs. It doesn't watch the objects or delete those that a later
-manifest leaves out, so it needs no `list`, `watch`, or `delete` permission
-on them.
+reconcilers' `setup`, which installs their CRDs, so the manifest can hold
+objects of the types that the program defines. With leader election or
+shards, a replica applies the objects when it first holds a shard. It
+server-side applies each object in order and labels it with the program's
+name, as it labels CRDs. It doesn't watch the objects or delete those that a
+later manifest leaves out, so it needs no `list`, `watch`, or `delete`
+permission on them.
 
 `generate` calls the manifest function after it parses the arguments after
 `--` into the program's flags, and grants `create` and `patch` on each object
@@ -833,7 +833,8 @@ framework's tests check that:
   program removes the webhooks it dropped.
 - `kube.Install` applies its objects again after a restart and keeps fields
   that others set, and a program installs an admission policy with
-  parameters using only the RBAC rules that `generate` wrote.
+  parameters, and an object of a type that it reconciles, using only the RBAC
+  rules that `generate` wrote.
 - Objects written in one version read back in another, through the
   conversion webhook or without one.
 - The JSON and protobuf encodings of every type in the `k8s` package decode

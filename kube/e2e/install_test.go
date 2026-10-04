@@ -14,7 +14,7 @@ import (
 	"github.com/imjasonh/playground/kube/internal/image/imagetest"
 )
 
-type installedConfigMap struct {
+type installedObject struct {
 	Metadata struct {
 		Labels map[string]string `json:"labels"`
 	} `json:"metadata"`
@@ -30,7 +30,7 @@ func TestInstall(t *testing.T) {
 	install := kube.Install(func() []byte { return []byte(manifest) })
 	path := client.Path("v1", "configmaps", ns, "settings")
 	stop := release(t, &kube.Manager{Name: "installer"}, install)
-	var cm installedConfigMap
+	var cm installedObject
 	e2e.Eventually(t, 30*time.Second, func() error { return e2e.Get(t.Context(), c, path, &cm) })
 	if cm.Metadata.Labels["kube.imjasonh.github.io/managed-by"] != "installer" || cm.Data["color"] != "blue" {
 		t.Errorf("installed ConfigMap = %+v", cm)
@@ -63,7 +63,9 @@ func TestInstall(t *testing.T) {
 // with parameters, from what its generate command wrote, and runs it with
 // the generated RBAC rules. The API server lets only someone who can read a
 // policy's parameters create the policy and its binding, so a missing rule
-// fails the test.
+// fails the test. The program also installs an object of a type that it
+// reconciles, which needs the type's CustomResourceDefinition first, and
+// whose plural generate can't guess from its kind.
 func TestGenerateInstall(t *testing.T) {
 	c := e2e.Client(t)
 	reg := imagetest.Registry(t)
@@ -96,6 +98,7 @@ func TestGenerateInstall(t *testing.T) {
 		},
 		"Role installer-params": {
 			`{"apiGroups":[""],"resourceNames":["installer-colors"],"resources":["configmaps"],"verbs":["create","get","patch"]}`,
+			`{"apiGroups":["e2e.kube.imjasonh.github.io"],"resourceNames":["saguaro"],"resources":["cacti"],"verbs":["create","patch"]}`,
 		},
 	} {
 		for _, w := range want {
@@ -117,6 +120,12 @@ func TestGenerateInstall(t *testing.T) {
 	e2e.Eventually(t, 30*time.Second, func() error {
 		return e2e.Get(t.Context(), c, client.Path("admissionregistration.k8s.io/v1", "validatingadmissionpolicybindings", "", "installer-colors"), &map[string]any{})
 	})
+	var cactus installedObject
+	if err := e2e.Get(t.Context(), c, client.Path("e2e.kube.imjasonh.github.io/v1", "cacti", "installer-params", "saguaro"), &cactus); err != nil {
+		t.Errorf("getting the installed Cactus: %v", err)
+	} else if cactus.Metadata.Labels["kube.imjasonh.github.io/managed-by"] != "installer" {
+		t.Errorf("installed Cactus labels = %v", cactus.Metadata.Labels)
+	}
 	params := client.Path("v1", "configmaps", "installer-params", "installer-colors")
 	if err := c.Patch(t.Context(), params, "application/merge-patch+json", nil, []byte(`{"data":{"forbidden":"red"}}`), nil); err != nil {
 		t.Fatal(err)
