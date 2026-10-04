@@ -221,7 +221,10 @@ func (k *keeper) patches(ctx context.Context, a, b string, paths []string) (map[
 	return ids, err
 }
 
-// files returns the paths of the files that commits change.
+// files returns the paths of the files that commits change, sorted, so
+// that each chunk of paths that revs passes to git covers one contiguous
+// part of the tree, and git skips the directories outside it when it
+// compares a commit with its parent.
 func (k *keeper) files(ctx context.Context, commits []string) ([]string, error) {
 	out, err := k.run(ctx, []byte(strings.Join(commits, "\n")+"\n"), "diff-tree", "--stdin", "--root", "-r", "--no-commit-id", "--name-only", "-z")
 	if err != nil {
@@ -235,6 +238,7 @@ func (k *keeper) files(ctx context.Context, commits []string) ([]string, error) 
 			paths = append(paths, p)
 		}
 	}
+	slices.Sort(paths)
 	return paths, nil
 }
 
