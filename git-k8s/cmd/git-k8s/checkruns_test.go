@@ -769,6 +769,54 @@ func TestCancelsSupersededCheckRuns(t *testing.T) {
 	)
 }
 
+// TestCheckRunsStopSettlingAtRateLimits checks that a reconcile stops at a
+// rate limit while it settles the check runs that branches left, and
+// settles the rest after the limit.
+func TestCheckRunsStopSettlingAtRateLimits(t *testing.T) {
+	s := newSharing(t, 3)
+	at := time.Unix(1_000_000, 0)
+	s.p.c.now = func() time.Time { return at }
+	running := func(i int, msg string) map[string]gitk8s.CheckResult {
+		return map[string]gitk8s.CheckResult{
+			"gofmt":  {Commit: s.commits[i], State: gitk8s.Running, Message: msg},
+			"gotest": {Commit: s.commits[i], State: gitk8s.Running, Message: msg},
+		}
+	}
+	limited := func(branch string, want ...string) {
+		t.Helper()
+		s.gh.Fake.RateLimit(time.Minute)
+		s.again(branch, want...)
+		if s.p.requeue < time.Minute {
+			t.Errorf("requeue = %v, want one after the limit", s.p.requeue)
+		}
+		at = at.Add(2 * time.Minute)
+	}
+
+	t.Log("At a rate limit, the reconcile stops settling the check runs that a deleted branch left.")
+	s.step("c/y", running(0, "started Pod y"), s.get(0), post, s.get(0), post)
+	s.p.remove("c/y")
+	s.p.set("c/x", map[string]gitk8s.CheckResult{})
+	limited("c/x", patch+"1")
+	s.again("c/x", patch+"1", patch+"2")
+
+	t.Log("So it does with the check runs that show results that the controller never published.")
+	s.step("c/x", running(1, "started Pod x"), s.get(1), post, s.get(1), post)
+	s.p.set("c/y", running(1, "started Pod y"))
+	s.step("c/x", running(2, "started Pod x"), patch+"3", s.get(2), post, patch+"4", s.get(2), post)
+	s.p.remove("c/y")
+	limited("c/x", patch+"3")
+	s.again("c/x", patch+"3", patch+"4")
+	s.wantRuns(
+		"git-k8s/gofmt@"+s.short(0)+" completed cancelled: The branch was deleted before the check finished.",
+		"git-k8s/gotest@"+s.short(0)+" completed cancelled: The branch was deleted before the check finished.",
+		"git-k8s/gofmt@"+s.short(1)+" completed cancelled: The branch was deleted before the check finished.",
+		"git-k8s/gotest@"+s.short(1)+" completed cancelled: The branch was deleted before the check finished.",
+		"git-k8s/gofmt@"+s.short(2)+" in_progress : started Pod x",
+		"git-k8s/gotest@"+s.short(2)+" in_progress : started Pod x",
+	)
+	s.again("c/x")
+}
+
 // TestBranchesShareCheckRuns runs against a fake GitHub that refuses to
 // start a completed check run again and against one that accepts, because
 // GitHub's documentation doesn't say which GitHub does.
