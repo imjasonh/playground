@@ -7,6 +7,7 @@ import (
 	"maps"
 	"math/rand/v2"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"slices"
@@ -768,6 +769,110 @@ func (s *sharing) wantRun(id int, want string) {
 	}
 }
 
+// succeeds reconciles branch and checks that the reconcile succeeded,
+// whatever it sent.
+func (s *sharing) succeeds(branch string) {
+	s.t.Helper()
+	if _, err := s.p.reconcile(branch); err != nil {
+		s.t.Fatalf("reconciling %s: %v", branch, err)
+	}
+}
+
+// wantAgreement checks that every check run but the newest on a commit is
+// completed, and that the newest shows the result that changed last, in
+// the order that the controller saw the changes, of the branches at the
+// commit in cluster, or is completed when no branch is there.
+func (s *sharing) wantAgreement(cluster map[string]map[string]gitk8s.CheckResult) {
+	s.t.Helper()
+	all := s.gh.Fake.CheckRuns("acme/app")
+	newest := map[string]gitserver.CheckRun{}
+	for _, run := range all {
+		if n, ok := newest[run.HeadSHA]; !ok || run.ID > n.ID {
+			newest[run.HeadSHA] = run
+		}
+	}
+	for _, run := range all {
+		if n := newest[run.HeadSHA]; run.ID != n.ID && run.Status != "completed" {
+			s.t.Errorf("check run %d on %s is %s, but check run %d is newer", run.ID, gitk8s.Short(run.HeadSHA), run.Status, n.ID)
+		}
+	}
+	var results map[branchCheck]branchResult
+	if rr := s.p.c.repos["default/app"]; rr != nil {
+		results = rr.results
+	}
+	commits := slices.Collect(maps.Keys(newest))
+	for _, checks := range cluster {
+		if res, ok := checks["gotest"]; ok {
+			commits = append(commits, res.Commit)
+		}
+	}
+	slices.Sort(commits)
+	for _, commit := range slices.Compact(commits) {
+		latest, seq := "", int64(-1)
+		var at []string
+		for _, name := range slices.Sorted(maps.Keys(cluster)) {
+			res := cluster[name]["gotest"]
+			if res.Commit != commit {
+				continue
+			}
+			at = append(at, fmt.Sprintf("%s=%s/%s", name, res.State, res.Message))
+			var n int64
+			if r, ok := results[branchCheck{gitk8s.BranchObjectName("app", name), "gotest"}]; ok && r.commit == commit {
+				n = r.seq
+			}
+			if n > seq {
+				latest, seq = name, n
+			}
+		}
+		run, ok := newest[commit]
+		shows := runState{Status: run.Status, Conclusion: run.Conclusion, Output: runOutput(run.Output)}
+		switch {
+		case !ok:
+			s.t.Errorf("no check run on %s, where the results are %q", gitk8s.Short(commit), at)
+		case latest == "" && run.Status != "completed":
+			s.t.Errorf("check run %d on %s, where no branch is, is %s", run.ID, gitk8s.Short(commit), run.Status)
+		case latest != "" && shows != runFor(cluster[latest]["gotest"]):
+			s.t.Errorf("check run %d on %s shows %s %s %q, want the result of %s, which changed last of %q", run.ID, gitk8s.Short(commit), run.Status, run.Conclusion, run.Output.Summary, latest, at)
+		}
+	}
+}
+
+// losing puts a front in front of the fake GitHub that loses the answer to
+// the next request that lost matches once lose holds true: GitHub carries
+// out the request, and then the front drops the connection, or, with
+// badGateway, answers 502 as a proxy would.
+func (s *sharing) losing(badGateway bool, lost func(*http.Request) bool) (lose *atomic.Bool) {
+	lose = new(atomic.Bool)
+	s.p.repo = front(s.t, s.gh, func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		if !lost(r) || !lose.CompareAndSwap(true, false) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(httptest.NewRecorder(), r)
+		if badGateway {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			s.t.Error(err)
+			return
+		}
+		conn.Close()
+	})
+	return lose
+}
+
+// loses reconciles branch, and checks that the front lost the answer to
+// one of the reconcile's requests and that the reconcile failed.
+func (s *sharing) loses(branch string, lose *atomic.Bool) {
+	s.t.Helper()
+	lose.Store(true)
+	if _, err := s.p.reconcile(branch); lose.Load() || err == nil {
+		s.t.Fatalf("reconciling %s: lost an answer = %v, err = %v; want a lost answer and an error", branch, !lose.Load(), err)
+	}
+}
+
 func TestCancelsSupersededCheckRuns(t *testing.T) {
 	s := newSharing(t, 4)
 	at := time.Unix(1_000_000, 0)
@@ -1279,41 +1384,7 @@ func checkRunsAgreeAfter(t *testing.T, seed uint64) {
 			reconcileSeeing(branch, cluster)
 		}
 	}
-
-	all := s.gh.Fake.CheckRuns("acme/app")
-	newest := map[string]gitserver.CheckRun{}
-	for _, run := range all {
-		if n, ok := newest[run.HeadSHA]; !ok || run.ID > n.ID {
-			newest[run.HeadSHA] = run
-		}
-	}
-	for _, run := range all {
-		if n := newest[run.HeadSHA]; run.ID != n.ID && run.Status != "completed" {
-			t.Errorf("check run %d on %s is %s, but check run %d is newer", run.ID, gitk8s.Short(run.HeadSHA), run.Status, n.ID)
-		}
-	}
-	results := s.p.c.repos["default/app"].results
-	for commit, run := range newest {
-		latest, seq := "", int64(-1)
-		var at []string
-		for _, name := range slices.Sorted(maps.Keys(cluster)) {
-			res := cluster[name]["gotest"]
-			if res.Commit != commit {
-				continue
-			}
-			at = append(at, fmt.Sprintf("%s=%s/%s", name, res.State, res.Message))
-			if n := results[branchCheck{gitk8s.BranchObjectName("app", name), "gotest"}].seq; n > seq {
-				latest, seq = name, n
-			}
-		}
-		shows := runState{Status: run.Status, Conclusion: run.Conclusion, Output: runOutput(run.Output)}
-		switch {
-		case latest == "" && run.Status != "completed":
-			t.Errorf("check run %d on %s, where no branch is, is %s", run.ID, gitk8s.Short(commit), run.Status)
-		case latest != "" && shows != runFor(cluster[latest]["gotest"]):
-			t.Errorf("check run %d on %s shows %s %s %q, want the result of %s, which changed last of %q", run.ID, gitk8s.Short(commit), run.Status, run.Conclusion, run.Output.Summary, latest, at)
-		}
-	}
+	s.wantAgreement(cluster)
 }
 
 func TestCheckRunsSurviveFailedReads(t *testing.T) {
@@ -1581,6 +1652,129 @@ func TestCheckRunsStopAtUnansweredRequests(t *testing.T) {
 	defer mu.Unlock()
 	if got := slices.Sorted(maps.Keys(asked)); !slices.Equal(got, []string{"git-k8s/base"}) {
 		t.Errorf("the reconcile asked GitHub for the check runs named %q, want only git-k8s/base", got)
+	}
+}
+
+// TestCheckRunsCreatedWithoutAnswers checks the check runs after GitHub
+// creates one but its answer is lost: the connection drops, or a proxy
+// answers 502. GitHub shows the newest check run of each name on a commit,
+// so the newest has to end up showing the latest result of the branches at
+// the commit, and no check run can stay in progress under it or where no
+// branch is.
+func TestCheckRunsCreatedWithoutAnswers(t *testing.T) {
+	moves := func(s *sharing) {
+		s.t.Log("c/x moves on before its reconcile tries again.")
+		s.p.set("c/x", s.result(1, gitk8s.Running, "3"))
+		s.succeeds("c/x")
+	}
+	for _, lost := range []string{"Dropped", "BadGateway"} {
+		t.Run(lost, func(t *testing.T) {
+			for _, tc := range []struct {
+				name string
+				// first makes the check run that GitHub creates the commit's
+				// first, and shared puts c/y at the commit with the result
+				// that c/x had, which c/y keeps.
+				first, shared bool
+				// then changes the results and reconciles after the lost
+				// answer.
+				then func(s *sharing)
+			}{
+				{name: "Completes", then: func(s *sharing) {
+					s.t.Log("c/x's check finishes before its reconcile tries again.")
+					s.p.set("c/x", s.result(0, gitk8s.Passed, "3"))
+					s.succeeds("c/x")
+				}},
+				{name: "StillRunning", then: func(s *sharing) {
+					s.t.Log("c/x's reconcile tries again while the check runs, and then the check finishes.")
+					s.succeeds("c/x")
+					s.p.set("c/x", s.result(0, gitk8s.Passed, "3"))
+					s.succeeds("c/x")
+				}},
+				{name: "Restarts", then: func(s *sharing) {
+					s.t.Log("The program restarts, and then c/x's check finishes.")
+					s.p.c = &checkRuns{}
+					s.p.set("c/x", s.result(0, gitk8s.Passed, "3"))
+					s.succeeds("c/x")
+				}},
+				{name: "Moves", then: moves},
+				{name: "MovesFromSharedCommit", shared: true, then: func(s *sharing) {
+					moves(s)
+					s.succeeds("c/y")
+				}},
+				{name: "MovesAfterFirstCheckRun", first: true, then: moves},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					s := newSharing(t, 2)
+					lose := s.losing(lost == "BadGateway", func(r *http.Request) bool {
+						return r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/check-runs")
+					})
+					if !tc.first {
+						if tc.shared {
+							s.p.set("c/y", s.result(0, gitk8s.Passed, "1"))
+						}
+						s.p.set("c/x", s.result(0, gitk8s.Passed, "1"))
+						s.succeeds("c/x")
+					}
+
+					t.Log("c/x's check starts on the commit, and GitHub creates a check run for it, but the answer is lost.")
+					s.p.set("c/x", s.result(0, gitk8s.Running, "2"))
+					s.loses("c/x", lose)
+					tc.then(s)
+					for _, branch := range slices.Sorted(maps.Keys(s.p.branches)) {
+						s.succeeds(branch)
+					}
+					s.wantAgreement(s.p.branches)
+				})
+			}
+		})
+	}
+}
+
+// TestCheckRunsUpdatedWithoutAnswers checks the check runs after GitHub
+// updates one but its answer is lost, so the controller doesn't know what
+// the check run shows. GitHub still has to end up showing the latest result
+// at each commit where a branch is.
+func TestCheckRunsUpdatedWithoutAnswers(t *testing.T) {
+	for _, lost := range []string{"Dropped", "BadGateway"} {
+		t.Run(lost, func(t *testing.T) {
+			for _, tc := range []struct {
+				name string
+				// then changes the results and reconciles, losing the
+				// answer to an update.
+				then func(s *sharing, lose *atomic.Bool)
+			}{
+				{"Publishing", func(s *sharing, lose *atomic.Bool) {
+					s.t.Log("GitHub updates the check run that c/y shares with c/x to show c/y's result, but the answer is lost, and c/y moves on before its reconcile tries again.")
+					s.p.set("c/y", s.result(0, gitk8s.Failed, "2"))
+					s.loses("c/y", lose)
+					s.p.set("c/y", s.result(1, gitk8s.Passed, "3"))
+					s.succeeds("c/y")
+					s.succeeds("c/x")
+				}},
+				{"Settling", func(s *sharing, lose *atomic.Bool) {
+					s.t.Log("GitHub cancels the check run on the commit that c/x left, but the answer is lost, and then c/y arrives at the commit with c/x's old result.")
+					s.p.set("c/x", s.result(1, gitk8s.Running, "3"))
+					s.loses("c/x", lose)
+					s.p.set("c/y", s.result(0, gitk8s.Running, "1"))
+					s.succeeds("c/y")
+					s.succeeds("c/x")
+				}},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					s := newSharing(t, 2)
+					lose := s.losing(lost == "BadGateway", func(r *http.Request) bool {
+						return r.Method == http.MethodPatch
+					})
+					s.p.set("c/x", s.result(0, gitk8s.Running, "1"))
+					s.succeeds("c/x")
+					tc.then(s, lose)
+					for _, branch := range slices.Sorted(maps.Keys(s.p.branches)) {
+						s.succeeds(branch)
+					}
+					s.wantAgreement(s.p.branches)
+				})
+			}
+		})
 	}
 }
 
