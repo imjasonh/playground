@@ -131,7 +131,8 @@ func (m *merger) fixedAfterSquash(spec *gitk8s.GitBranchSpec, log []git.LogEntry
 // the change, the squashed commit takes its author and message. Otherwise
 // the message lists every commit's subject, keeps the trailers of the
 // commits that aren't fixes, such as Signed-off-by, and credits the other
-// authors with Co-authored-by trailers.
+// authors with Co-authored-by trailers. The message never has the fixer
+// trailer, so the squashed commit doesn't count as a fix.
 func squashMessage(log []git.LogEntry) (git.Signature, string) {
 	var commits, people []git.LogEntry
 	for _, c := range log {
@@ -151,7 +152,7 @@ func squashMessage(log []git.LogEntry) (git.Signature, string) {
 	}
 	first := people[0]
 	if len(people) == 1 {
-		return first.Author, first.Message
+		return first.Author, withoutFixerTrailers(first.Message)
 	}
 	var msg strings.Builder
 	msg.WriteString(first.Subject() + "\n\n")
@@ -178,7 +179,22 @@ func squashMessage(log []git.LogEntry) (git.Signature, string) {
 	if len(trailers) > 0 {
 		msg.WriteString("\n" + strings.Join(trailers, "\n") + "\n")
 	}
-	return first.Author, msg.String()
+	return first.Author, withoutFixerTrailers(msg.String())
+}
+
+// withoutFixerTrailers returns msg without the lines that git's trailer
+// parser reads as the fixer trailer. The parser ignores the key's case and
+// spaces before the colon, and prints such a trailer as "Git-K8s-Fixer: x".
+func withoutFixerTrailers(msg string) string {
+	lines := strings.Split(msg, "\n")
+	kept := slices.DeleteFunc(slices.Clone(lines), func(line string) bool {
+		key, _, ok := strings.Cut(line, ":")
+		return ok && strings.EqualFold(strings.TrimSpace(key), git.FixerTrailer)
+	})
+	if len(kept) == len(lines) {
+		return msg
+	}
+	return strings.TrimRight(strings.Join(kept, "\n"), "\n") + "\n"
 }
 
 // rebase copies each of the branch's commits that isn't a merge onto the

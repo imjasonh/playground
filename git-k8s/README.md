@@ -236,9 +236,10 @@ a merge or a check's fix. When the branch has several such commits, the
 message starts with the first one's subject and lists the subject of every
 commit that isn't a merge. It ends with the trailers of the commits that
 aren't fixes, such as `Signed-off-by`, and a `Co-authored-by` trailer for
-each of their authors besides the first. A rebase keeps each commit's author
-and message, and leaves out a commit that changes nothing, such as a change
-that the parent already has.
+each of their authors besides the first. The squashed message never has a
+`Git-K8s-Fixer` trailer, so the commit doesn't count as a fix. A rebase keeps
+each commit's author and message, and leaves out a commit that changes
+nothing, such as a change that the parent already has.
 
 The merge controller commits as
 `git-k8s <git-k8s@users.noreply.github.com>`, which its `-identity-name` and

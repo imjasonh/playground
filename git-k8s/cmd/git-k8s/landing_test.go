@@ -153,10 +153,35 @@ func TestSquashMessage(t *testing.T) {
 		message: "Add y\n\n* Add y\n* Add z\n* Fix y\n* Format Go files with gofmt\n\n" +
 			anaSigned + "\nCo-authored-by: Cy Diaz <cy@example.com>\nFixes: #12\nCo-authored-by: Bo Chen <bo@example.com>\n",
 	}, {
-		name:    "only fixes",
+		name:    "only a fix",
 		log:     []git.LogEntry{merge, fix},
 		author:  bo,
-		message: fix.Message,
+		message: "Format Go files with gofmt\n",
+	}, {
+		name: "only fixes",
+		log: []git.LogEntry{fix, {
+			Parents:  []string{"p"},
+			Author:   ana,
+			Message:  "Add license headers\n\nGit-K8s-Fixer: license\n",
+			Trailers: []string{"Git-K8s-Fixer: license"},
+		}},
+		author:  bo,
+		message: "Format Go files with gofmt\n\n* Format Go files with gofmt\n* Add license headers\n\nCo-authored-by: Ana Lima <ana@example.com>\n",
+	}, {
+		// git reads "Git-K8s-Fixer : x" and "git-k8s-fixer: y" as the
+		// fixer trailer, though the commits don't count as fixes.
+		name:    "one person's commit with a trailer like the fixer trailer",
+		log:     []git.LogEntry{{Parents: []string{"p"}, Author: ana, Message: "Add y\n\nGit-K8s-Fixer : x\n" + anaSigned + "\n"}, fix},
+		author:  ana,
+		message: "Add y\n\n" + anaSigned + "\n",
+	}, {
+		name: "several commits with trailers like the fixer trailer",
+		log: []git.LogEntry{
+			{Parents: []string{"p"}, Author: ana, Message: "Add y\n\nGit-K8s-Fixer : x\n", Trailers: []string{"Git-K8s-Fixer: x"}},
+			{Parents: []string{"p"}, Author: bo, Message: "Add z\n\ngit-k8s-fixer: y\n" + anaSigned + "\n", Trailers: []string{"git-k8s-fixer: y", anaSigned}},
+		},
+		author:  ana,
+		message: "Add y\n\n* Add y\n* Add z\n\n" + anaSigned + "\nCo-authored-by: Bo Chen <bo@example.com>\n",
 	}, {
 		name:    "only a merge",
 		log:     []git.LogEntry{{Parents: []string{"p", "q"}, Author: ana, Message: "Merge feature\n"}},
