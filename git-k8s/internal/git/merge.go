@@ -53,7 +53,7 @@ func (r *Repo) Merge(ctx context.Context, ours, theirs string, o MergeOptions) (
 	if o.Base != "" {
 		args = append(args, "--merge-base="+o.Base)
 	}
-	res, err := r.git.exec(ctx, r.Dir, append(args, ours, theirs), opts{})
+	res, err := r.git.exec(ctx, r.Dir, append(args, "--end-of-options", ours, theirs), opts{})
 	if err != nil {
 		return "", nil, err
 	}
@@ -110,7 +110,7 @@ func UnionAttributes(patterns []string) (string, error) {
 // MergeBases returns every best common ancestor of two commits. A merge of
 // commits with more than one depends on how git combines them.
 func (r *Repo) MergeBases(ctx context.Context, a, b string) ([]string, error) {
-	res, err := r.git.exec(ctx, r.Dir, []string{"merge-base", "--all", a, b}, opts{})
+	res, err := r.git.exec(ctx, r.Dir, []string{"merge-base", "--all", "--end-of-options", a, b}, opts{})
 	switch {
 	case err != nil:
 		return nil, err
@@ -129,6 +129,8 @@ func (r *Repo) FetchRef(ctx context.Context, remote Remote, ref string) (string,
 	if !strings.HasPrefix(ref, "refs/") {
 		return "", fmt.Errorf("%q isn't a full ref name", ref)
 	}
+	// check-ref-format takes no --end-of-options, and the refs/ prefix
+	// keeps ref from reading as an option.
 	if _, err := r.run(ctx, "check-ref-format", ref); err != nil {
 		return "", fmt.Errorf("%q isn't a full ref name", ref)
 	}
@@ -136,9 +138,9 @@ func (r *Repo) FetchRef(ctx context.Context, remote Remote, ref string) (string,
 	if b, ok := strings.CutPrefix(ref, "refs/heads/"); ok {
 		local = "refs/remotes/origin/" + b
 	}
-	args := []string{"fetch", "--quiet", "--no-tags", "--no-write-fetch-head", remote.URL, "+" + ref + ":" + local}
-	if _, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth}); err != nil {
+	args := []string{"fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--end-of-options", remote.URL, "+" + ref + ":" + local}
+	if _, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth, env: []string{"GIT_ALLOW_PROTOCOL=http:https:git:ssh"}}); err != nil {
 		return "", err
 	}
-	return r.text(ctx, "rev-parse", "--verify", local+"^{commit}")
+	return r.text(ctx, "rev-parse", "--verify", "--end-of-options", local+"^{commit}")
 }

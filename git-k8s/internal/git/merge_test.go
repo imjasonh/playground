@@ -186,4 +186,9 @@ func TestFetchRef(t *testing.T) {
 			t.Errorf("FetchRef(%q) = %s; want an error", ref, got)
 		}
 	}
+	for _, url := range []string{w.Dir, "file://" + w.Dir} {
+		if got, err := repo.FetchRef(ctx, git.Remote{URL: url}, "refs/heads/main"); err == nil {
+			t.Errorf("FetchRef from %s = %s; want an error, because it fetches only over the network", url, got)
+		}
+	}
 }
