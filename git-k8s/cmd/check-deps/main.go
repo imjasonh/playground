@@ -24,6 +24,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/credentials"
+	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -77,6 +78,9 @@ var runAgent = func(ctx context.Context, in *checks.Input, task agent.Task) (che
 var check = checks.Check{Name: "deps", Remote: credentials.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+	if !strings.HasSuffix(*prefix, "/") || !git.ValidBranch(*prefix+"go") {
+		return keepRuns(in, gitk8s.Running, "-prefix is %q, but it must be a branch-name prefix that ends with /, such as deps/", *prefix), nil
+	}
 	if !strings.HasPrefix(in.Spec.Branch, *prefix) {
 		return checks.Pass("%s isn't a dependency branch", in.Spec.Branch), nil
 	}

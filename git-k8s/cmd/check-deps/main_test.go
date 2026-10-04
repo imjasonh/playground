@@ -139,6 +139,33 @@ func TestPassesOtherBranches(t *testing.T) {
 	}
 }
 
+func TestNeedsAValidPrefix(t *testing.T) {
+	defer func(p string) { *prefix = p }(*prefix)
+	for p, want := range map[string]string{
+		"":         `-prefix is "", but it must be a branch-name prefix that ends with /, such as deps/`,
+		"deps":     `-prefix is "deps", but it must be a branch-name prefix that ends with /, such as deps/`,
+		"deps//":   `-prefix is "deps//", but it must be a branch-name prefix that ends with /, such as deps/`,
+		"-deps/":   `-prefix is "-deps/", but it must be a branch-name prefix that ends with /, such as deps/`,
+		"updates/": "deps/go/example.com/greet isn't a dependency branch",
+	} {
+		t.Run(p, func(t *testing.T) {
+			noAgent(t)
+			*prefix = p
+			f := newFixture(t, depsBranch)
+			f.b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123abcd", State: gitk8s.Failed, Outputs: map[string]string{"runs": "2"}}
+			rec := f.reconcile()
+			res := f.result()
+			state, runs := gitk8s.Running, "2"
+			if p == "updates/" {
+				state, runs = gitk8s.Passed, ""
+			}
+			if res.State != state || res.Message != want || res.Outputs["runs"] != runs || len(kube.Owned[agent.Pod](rec)) != 0 {
+				t.Errorf("result = %+v, want %s with %q, %q runs, and no Pod", res, state, want, runs)
+			}
+		})
+	}
+}
+
 func TestFollowsTheTests(t *testing.T) {
 	waiting := "waiting for the gotest check"
 	for _, tc := range []struct {
