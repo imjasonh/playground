@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 // FixerTrailer is the commit trailer that marks commits pushed by checks.
@@ -42,6 +43,31 @@ type Remote struct {
 type Identity struct {
 	Name  string
 	Email string
+}
+
+// Written returns the identity as git writes it in a commit. git drops
+// spaces, ASCII control characters other than DEL, and ,:;<>"\' from the
+// start and the end of the name and the email, and <, >, and newlines from
+// the rest. Then it reads each byte that isn't part of valid UTF-8 as
+// Latin-1, and treats the bytes of noncharacters, such as U+FFFE, the same
+// way.
+func (id Identity) Written() Identity {
+	return Identity{Name: written(id.Name), Email: written(id.Email)}
+}
+
+func written(s string) string {
+	s = strings.TrimFunc(s, func(r rune) bool { return r <= ' ' || strings.ContainsRune(`,:;<>"\'`, r) })
+	s = strings.NewReplacer("\n", "", "<", "", ">", "").Replace(s)
+	var b strings.Builder
+	for len(s) > 0 {
+		r, n := utf8.DecodeRuneInString(s)
+		if r == utf8.RuneError && n == 1 || r&0xfffe == 0xfffe || r >= 0xfdd0 && r <= 0xfdef {
+			r, n = rune(s[0]), 1
+		}
+		b.WriteRune(r)
+		s = s[n:]
+	}
+	return b.String()
 }
 
 // Git runs git commands. The zero value runs "git" from PATH with a
@@ -369,6 +395,44 @@ func (r *Repo) CountCommits(ctx context.Context, base, head string, trailers ...
 		return 0, err
 	}
 	return strconv.Atoi(out)
+}
+
+// ListedCommit is one commit that ListCommits lists.
+type ListedCommit struct {
+	SHA string
+	// Committer is the committer's name and email as the commit has them,
+	// which match Identity.Written of the identity that made the commit.
+	Committer Identity
+	// Trailers are the trailers at the end of the message, as git parses
+	// them, such as "Git-K8s-Fixer: gofmt".
+	Trailers []string
+}
+
+// ListCommits lists the commits in head but not in base. It lists at most
+// limit commits, so a caller that asks for one more than it wants can tell
+// when there are too many.
+func (r *Repo) ListCommits(ctx context.Context, base, head string, limit int) ([]ListedCommit, error) {
+	out, err := r.run(ctx, "log", "-z", "--no-use-mailmap", "--max-count="+strconv.Itoa(limit),
+		"--format=%H%x00%cn%x00%ce%x00%(trailers:only,unfold)", "--end-of-options", head, "^"+base)
+	if err != nil {
+		return nil, err
+	}
+	// Each commit is 4 fields, each followed by a NUL. git stops printing a
+	// name or a trailer at a NUL inside it, so a commit can't add fields.
+	const n = 4
+	fields := strings.Split(string(out), "\x00")
+	if len(fields)%n != 1 {
+		return nil, fmt.Errorf("git log: unexpected output")
+	}
+	var commits []ListedCommit
+	for f := fields; len(f) > 1; f = f[n:] {
+		commits = append(commits, ListedCommit{
+			SHA:       f[0],
+			Committer: Identity{Name: f[1], Email: f[2]},
+			Trailers:  strings.FieldsFunc(f[3], func(r rune) bool { return r == '\n' }),
+		})
+	}
+	return commits, nil
 }
 
 // FileStat is one file's line counts from git diff --numstat. Binary files

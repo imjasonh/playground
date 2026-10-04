@@ -576,10 +576,15 @@ cleanly with the parent and has automated commits left under
 in. A newer version still replaces the branch and its fixes.
 
 The controller changes and deletes only branches whose commits beyond the
-parent all have its trailer or a `Git-K8s-Fixer` trailer. To take over a
-branch, push a commit of your own to it. When no update is left for a
-module, for example because its branch landed or someone updated the module
-on another branch, the controller deletes the module's branch.
+parent are all its updates and checks' fixes. An update is a commit that the
+controller committed, as its `-identity-email`, with its trailer at the end
+of the message. A fix is a commit that a check committed, as
+`-check-identity-email`, with a `Git-K8s-Fixer` trailer at the end. To take
+over a branch, push a commit of your own to it. Amending or squashing the
+branch's commits also makes you their committer, so the branch becomes
+yours. When no update is left for a module, for example because its branch
+landed or someone updated the module on another branch, the controller
+deletes the module's branch.
 
 ### Agent fixes
 
@@ -678,6 +683,8 @@ flags in the `check-review` table. `git-k8s-deps` takes these flags:
 | --- | --- | --- |
 | `-result-image` | Required | Image that serves update results, built from `agent/runner/Dockerfile` |
 | `-prefix` | `deps/` | Branch-name prefix of the controller's branches, ending with `/` |
+| `-identity-email` | `git-k8s@users.noreply.github.com` | Author and committer email of the controller's updates |
+| `-check-identity-email` | `git-k8s@users.noreply.github.com` | Committer email of the fixes that checks push: the checks' `-identity-email` |
 | `-interval` | `1h` | How often to look for newer versions |
 | `-min-age` | `72h` | How old a version must be, by the time that the module proxy reports for it, before the controller takes it |
 | `-goproxy` | `https://proxy.golang.org` | Comma-separated URLs of the module proxies to read modules from; `direct` and `off` aren't allowed |

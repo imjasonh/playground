@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +30,9 @@ const (
 	greetBranch = "deps/go/example.com/greet@v1"
 	agentFix    = "Apply changes from the deps agent\n\nGit-K8s-Fixer: deps\nGit-K8s-Agent: deps"
 )
+
+// checksID is the identity that checks commit their fixes as.
+var checksID = git.Identity{Name: "git-k8s", Email: "checks@example.com"}
 
 // modAt returns the app's go.mod file, which requires greet at version.
 func modAt(version string) string {
@@ -91,8 +95,9 @@ func newFixture(t *testing.T) *fixture {
 		t.Fatal(err)
 	}
 	f.u = &updater{
-		cfg:    checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s-deps", Email: "deps@example.com"}},
-		prefix: "deps/", goProxy: fp.URL, goSumDB: "off",
+		cfg:        checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s-deps", Email: "deps@example.com"}},
+		checkEmail: checksID.Email,
+		prefix:     "deps/", goProxy: fp.URL, goSumDB: "off",
 		goImage: "registry.example.com/go:test", gitImage: "registry.example.com/git:test", resultImage: "registry.example.com/agent-runner:test",
 		timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi", maxPods: 10, interval: time.Hour, minAge: 72 * time.Hour,
 		now: func() time.Time { return f.clock }, resultPort: port,
@@ -267,6 +272,36 @@ func (f *fixture) pushTo(branch, path, content, message string) string {
 	head := f.work.Commit(message)
 	f.work.Push(branch)
 	return head
+}
+
+// commitAs commits the working repository's index on parents as id, with
+// message, and checks the commit out.
+func (f *fixture) commitAs(id git.Identity, message string, parents ...string) string {
+	f.t.Helper()
+	ctx := f.t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(f.work.Dir, ".git"))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	commit, err := repo.CommitTree(ctx, f.work.Git("write-tree"), parents, message, id, f.clock.Unix())
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	f.work.Git("reset", "--quiet", "--hard", commit)
+	return commit
+}
+
+// pushFix commits a file on greet's branch as a check would, with message,
+// pushes it, and returns the branch's new head.
+func (f *fixture) pushFix(path, content, message string) string {
+	f.t.Helper()
+	head := f.work.Fetch(greetBranch)
+	f.work.Branch("work", head)
+	f.work.Write(path, content)
+	f.work.Git("add", "-A")
+	fix := f.commitAs(checksID, message, head)
+	f.work.Push(greetBranch)
+	return fix
 }
 
 // checkBranch checks that a reconcile leaves greet's branch at head, or
@@ -485,15 +520,15 @@ func TestBranchesWithFixes(t *testing.T) {
 				f.rules[0].Merge.MaxAutomatedCommits = &tc.limit
 			}
 			f.update("v1.1.0")
-			fix := f.pushTo(greetBranch, "app.go", "package app\n\n// fixed\n", agentFix)
+			fix := f.pushFix("app.go", "package app\n\n// fixed\n", agentFix)
 			main := f.moveMain("README.md", "# app\n")
 			if tc.conflict {
 				main = f.moveMain("app.go", "package app\n\n// main\n")
 			}
 			if tc.merge {
 				f.work.Branch("work", fix)
-				f.work.Git("merge", "--quiet", "--no-ff", "-m", "Merge main into "+greetBranch+"\n\nGit-K8s-Fixer: base", main)
-				fix = f.work.Git("rev-parse", "HEAD")
+				f.work.Git("merge", "--quiet", "--no-ff", "--no-commit", main)
+				fix = f.commitAs(checksID, "Merge main into "+greetBranch+"\n\nGit-K8s-Fixer: base\n", fix, main)
 				f.work.Push(greetBranch)
 			}
 			if tc.kept {
@@ -558,6 +593,87 @@ func TestLeavesPeoplesBranchesAlone(t *testing.T) {
 		f.work.Push(greetBranch)
 		f.checkStays(head)
 	})
+	for _, tc := range []struct {
+		name string
+		// change changes greet's branch after the controller updates greet
+		// to v1.1.0, and returns the branch's new head.
+		change func(f *fixture, update string) string
+	}{{
+		name: "an update that a person amended",
+		change: func(f *fixture, update string) string {
+			f.work.Branch("work", update)
+			f.work.Write("app.go", "package app\n\n// Greet takes a name.\n")
+			f.work.Git("add", "-A")
+			f.work.Git("commit", "--quiet", "--amend", "--no-edit")
+			f.work.Push(greetBranch)
+			return f.work.Git("rev-parse", "HEAD")
+		},
+	}, {
+		name: "a fix that a person squashed with their own",
+		change: func(f *fixture, update string) string {
+			f.pushFix("app.go", "package app\n\n// fixed\n", agentFix)
+			f.pushTo(greetBranch, "app.go", "package app\n\n// fixed by a person\n", "Fix Greet by hand")
+			f.work.Git("reset", "--quiet", "--soft", update)
+			head := f.work.Commit("Fix Greet by hand\n\n" + agentFix)
+			f.work.Push(greetBranch)
+			return head
+		},
+	}, {
+		name: "a commit as a check whose trailer isn't at the end",
+		change: func(f *fixture, update string) string {
+			f.work.Branch("work", update)
+			f.work.Write("app.go", "package app\n\n// fixed\n")
+			f.work.Git("add", "-A")
+			head := f.commitAs(checksID, "Fix Greet\n\nGit-K8s-Fixer: deps\n\nA person wrote this commit.\n", update)
+			f.work.Push(greetBranch)
+			return head
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			head := tc.change(f, f.update("v1.1.0"))
+			f.proxy.publish(greet, "v1.2.0", longAgo, "")
+			f.clock = f.clock.Add(f.u.interval / 2)
+			f.checkStays(head)
+			f.moveMain("README.md", "# app\n")
+			f.checkStays(head)
+		})
+	}
+}
+
+func TestLeavesBranchesWithTooManyCommitsAlone(t *testing.T) {
+	for _, tc := range []struct {
+		fixes int
+		owned bool
+	}{{fixes: maxOwned - 1, owned: true}, {fixes: maxOwned}} {
+		t.Run(strconv.Itoa(tc.fixes)+" fixes", func(t *testing.T) {
+			f := newFixture(t)
+			head := f.update("v1.1.0")
+			f.work.Branch("work", head)
+			for i := range tc.fixes {
+				head = f.commitAs(checksID, "Fix "+strconv.Itoa(i)+"\n\nGit-K8s-Fixer: gofmt\n", head)
+			}
+			f.work.Push(greetBranch)
+			f.moveMain("README.md", "# app\n")
+			if tc.owned {
+				f.update("v1.1.0")
+				return
+			}
+			f.checkStays(head)
+		})
+	}
+}
+
+func TestComparesIdentitiesAsGitWritesThem(t *testing.T) {
+	f := newFixture(t)
+	f.u.cfg.Identity.Email = " <deps@example.com>"
+	f.u.checkEmail = checksID.Email + "\n"
+	f.update("v1.1.0")
+	f.pushFix("app.go", "package app\n\n// fixed\n", agentFix)
+	main := f.moveMain("app.go", "package app\n\n// main\n")
+	if head := f.update("v1.1.0"); f.work.Git("rev-parse", head+"^") != main {
+		t.Errorf("%s = %s, want an update on main at %s", greetBranch, head, main)
+	}
 }
 
 func TestSkipsModulesThatAnEarlierRuleClaims(t *testing.T) {
@@ -822,10 +938,12 @@ func TestFlags(t *testing.T) {
 		t.Fatalf("setup() with the defaults = %v", err)
 	}
 	if u.prefix != "deps/" || u.interval != time.Hour || u.minAge != 72*time.Hour || u.proxy.urls[0] != "https://proxy.golang.org" || u.proxy.ttl != 30*time.Minute ||
-		u.sourceSize != "2Gi" || u.goCacheSize != "4Gi" {
+		u.sourceSize != "2Gi" || u.goCacheSize != "4Gi" || u.checkEmail != u.cfg.Identity.Email || u.checkEmail != "git-k8s@users.noreply.github.com" {
 		t.Errorf("the defaults = %+v", u)
 	}
 	for _, args := range [][]string{
+		{"-identity-email=<>"},
+		{"-check-identity-email="},
 		{"-prefix=deps"},
 		{"-prefix="},
 		{"-prefix=deps..x/"},

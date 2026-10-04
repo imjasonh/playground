@@ -62,6 +62,11 @@ type Branch struct {
 // depsTrailer marks the commits that the controller pushes.
 const depsTrailer = "Git-K8s-Deps"
 
+// maxOwned is the most commits beyond the parent that a branch can have
+// while the controller owns it: its update and up to 100 fixes, the most
+// that maxAutomatedCommits allows.
+const maxOwned = 101
+
 // How long the controller waits to try again after fetching a result from a
 // Pod fails, after a push is rejected because the branch moved, and after
 // other errors.
@@ -73,6 +78,7 @@ const (
 
 type updater struct {
 	cfg          checks.Config
+	checkEmail   string
 	prefix       string
 	goProxy      string
 	goSumDB      string
@@ -104,6 +110,7 @@ type updater struct {
 
 func (u *updater) addFlags(fs *flag.FlagSet) {
 	u.cfg.AddFlags(fs)
+	fs.StringVar(&u.checkEmail, "check-identity-email", "git-k8s@users.noreply.github.com", "committer email of the fixes that checks push, their -identity-email")
 	fs.StringVar(&u.prefix, "prefix", "deps/", "branch-name prefix of the branches that the controller pushes, ending with /")
 	fs.StringVar(&u.goProxy, "goproxy", "https://proxy.golang.org", "comma-separated URLs of the module proxies to read modules from")
 	fs.StringVar(&u.goSumDB, "gosumdb", "sum.golang.org", "GOSUMDB for go get, or off")
@@ -139,6 +146,8 @@ func (u *updater) init() error {
 		return fmt.Errorf("-source-size is %q, but it must be a size such as 2Gi", u.sourceSize)
 	case parseSize(u.goCacheSize) == 0:
 		return fmt.Errorf("-go-cache-size is %q, but it must be a size such as 4Gi", u.goCacheSize)
+	case u.cfg.Identity.Written().Email == "" || git.Identity{Email: u.checkEmail}.Written().Email == "":
+		return errors.New("-identity-email and -check-identity-email need values")
 	}
 	urls, err := parseProxies(u.goProxy)
 	if err != nil {
@@ -547,7 +556,7 @@ func (u *updater) plan(ctx context.Context, repo *git.Repo, parentHead string, m
 			}
 			continue
 		}
-		owned, fixes, err := ownership(ctx, repo, parentHead, head)
+		owned, fixes, err := u.ownership(ctx, repo, parentHead, head)
 		switch {
 		case err != nil:
 			return nil, nil, err
@@ -569,21 +578,30 @@ func (u *updater) plan(ctx context.Context, repo *git.Repo, parentHead string, m
 }
 
 // ownership reports whether every commit that a branch has and its parent
-// doesn't is the controller's or a check's fix, and counts the fixes.
-func ownership(ctx context.Context, repo *git.Repo, parentHead, head string) (owned bool, fixes int, err error) {
-	all, err := repo.CountCommits(ctx, parentHead, head)
-	if err != nil {
+// doesn't is the controller's or a check's fix, and counts the fixes. The
+// controller committed its commits, which end with its trailer, and a check
+// committed each fix, which ends with the fixer trailer. Someone who amends
+// or squashes those commits becomes their committer, so the branch is
+// theirs.
+func (u *updater) ownership(ctx context.Context, repo *git.Repo, parentHead, head string) (owned bool, fixes int, err error) {
+	commits, err := repo.ListCommits(ctx, parentHead, head, maxOwned+1)
+	if err != nil || len(commits) > maxOwned {
 		return false, 0, err
 	}
-	managed, err := repo.CountCommits(ctx, parentHead, head, depsTrailer, git.FixerTrailer)
-	if err != nil {
-		return false, 0, err
+	mine, checks := u.cfg.Identity.Written().Email, git.Identity{Email: u.checkEmail}.Written().Email
+	for _, c := range commits {
+		switch {
+		case c.Committer.Email == checks && hasTrailer(c, git.FixerTrailer):
+			fixes++
+		case c.Committer.Email != mine || !hasTrailer(c, depsTrailer):
+			return false, 0, nil
+		}
 	}
-	fixes, err = repo.CountFixerCommits(ctx, parentHead, head)
-	if err != nil {
-		return false, 0, err
-	}
-	return all == managed, fixes, nil
+	return true, fixes, nil
+}
+
+func hasTrailer(c git.ListedCommit, key string) bool {
+	return slices.ContainsFunc(c.Trailers, func(t string) bool { return strings.HasPrefix(t, key+":") })
 }
 
 // current reports whether a branch's head already makes an update on the

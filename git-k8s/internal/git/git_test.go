@@ -146,6 +146,67 @@ func TestCountCommits(t *testing.T) {
 	}
 }
 
+func TestListCommits(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	base := w.Commit("base")
+	update := w.Commit("Update a module\n\nGit-K8s-Deps: go example.com/a v1.0.1")
+	fix := w.Commit("Fix the tests\n\n" + git.FixerTrailer + ": deps\n" + git.AgentTrailer + ":\n  deps")
+	head := w.Commit("Edit by hand\n\n" + git.FixerTrailer + ": deps\n\nThis paragraph isn't a trailer.")
+	w.Push("main")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	author := git.Identity{Name: "Test Author", Email: "author@example.com"}
+	want := []git.ListedCommit{
+		{SHA: head, Committer: author},
+		{SHA: fix, Committer: author, Trailers: []string{git.FixerTrailer + ": deps", git.AgentTrailer + ": deps"}},
+		{SHA: update, Committer: author, Trailers: []string{"Git-K8s-Deps: go example.com/a v1.0.1"}},
+	}
+	for limit, want := range map[int][]git.ListedCommit{4: want, 3: want, 2: want[:2]} {
+		got, err := repo.ListCommits(ctx, base, head, limit)
+		if err != nil || !slices.EqualFunc(got, want, func(a, b git.ListedCommit) bool {
+			return a.SHA == b.SHA && a.Committer == b.Committer && slices.Equal(a.Trailers, b.Trailers)
+		}) {
+			t.Errorf("ListCommits(limit %d) = %+v, %v; want %+v", limit, got, err, want)
+		}
+	}
+	if got, err := repo.ListCommits(ctx, head, head, 1); err != nil || len(got) != 0 {
+		t.Errorf("ListCommits of no commits = %+v, %v", got, err)
+	}
+	if got, err := repo.ListCommits(ctx, base, "--all", 4); err == nil {
+		t.Errorf("ListCommits of --all = %+v, want an error for a revision that doesn't exist", got)
+	}
+
+	c, err := repo.Commit(ctx, head)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []git.Identity{
+		{Name: "git-k8s", Email: "git-k8s@example.com"},
+		{Name: "git-k8s ", Email: "<git-k8s@example.com>"},
+		{Name: `"git-k8s"`, Email: " git-k8s@example.com\n"},
+		{Name: "git\n-k8s", Email: "git-k8s@<example>.com"},
+		{Name: "Ana Lima\xff", Email: "\x01ana@example.com"},
+		{Name: "git-k8s", Email: ""},
+	} {
+		commit, err := repo.CommitTree(ctx, c.Tree, []string{head}, "edit", id, c.Time)
+		if err != nil {
+			t.Fatalf("CommitTree as %q: %v", id, err)
+		}
+		got, err := repo.ListCommits(ctx, head, commit, 1)
+		if err != nil || len(got) != 1 || got[0].SHA != commit || got[0].Committer != id.Written() {
+			t.Errorf("ListCommits of a commit as %q = %+v, %v; want the committer %q", id, got, err, id.Written())
+		}
+	}
+}
+
 func TestMergeTreeConflicts(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")
