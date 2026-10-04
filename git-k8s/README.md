@@ -697,7 +697,7 @@ update Pods run at once across all namespaces, and kube deletes each one once
 the controller has its result. When an update fails, the controller logs why
 and tries again after `-interval`. An update also fails when an image's name
 isn't valid, and when a Secret is still missing or an image still can't be
-pulled 5 minutes after kube creates the update Pod.
+pulled 5 minutes after the container can start.
 
 Each update Pod's volumes have size limits. The repository can use up to
 `-source-size`, 2Gi by default, and the home directory, which holds Go's

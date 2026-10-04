@@ -862,6 +862,57 @@ func TestGivesAStuckPodTime(t *testing.T) {
 	}
 }
 
+func TestCountsTheGraceFromWhenAContainerCanStart(t *testing.T) {
+	pull := func(name string) agent.ContainerStatus {
+		return agent.ContainerStatus{Name: name, State: agent.ContainerState{Waiting: &agent.Waiting{Reason: "ErrImagePull", Message: "unexpected status code 503 Service Unavailable"}}}
+	}
+	done := func(name string, at time.Time) agent.ContainerStatus {
+		return agent.ContainerStatus{Name: name, State: terminated(&agent.Terminated{Reason: "Completed", FinishedAt: at})}
+	}
+	for _, tc := range []struct {
+		name   string
+		status agent.PodStatus
+		// left is how long the container has before the updates fail, or 0
+		// if they fail now.
+		left time.Duration
+	}{{
+		name:   "prepare in a Pod that waited for a node",
+		status: agent.PodStatus{Phase: "Pending", StartTime: today.Add(-30 * time.Second), InitContainerStatuses: []agent.ContainerStatus{pull("prepare")}},
+		left:   stuckAfter - 30*time.Second,
+	}, {
+		name:   "prepare in a Pod that started long ago",
+		status: agent.PodStatus{Phase: "Pending", StartTime: today.Add(-stuckAfter), InitContainerStatuses: []agent.ContainerStatus{pull("prepare")}},
+	}, {
+		name:   "update after prepare finished",
+		status: agent.PodStatus{Phase: "Pending", StartTime: today.Add(-9 * time.Minute), InitContainerStatuses: []agent.ContainerStatus{done("prepare", today.Add(-time.Minute)), pull("update")}},
+		left:   stuckAfter - time.Minute,
+	}, {
+		name:   "update long after prepare finished",
+		status: agent.PodStatus{Phase: "Pending", StartTime: today.Add(-9 * time.Minute), InitContainerStatuses: []agent.ContainerStatus{done("prepare", today.Add(-stuckAfter)), pull("update")}},
+	}, {
+		name: "result after update finished",
+		status: agent.PodStatus{Phase: "Pending", StartTime: today.Add(-9 * time.Minute),
+			InitContainerStatuses: []agent.ContainerStatus{done("prepare", today.Add(-8*time.Minute)), done("update", today.Add(-2*time.Minute))},
+			ContainerStatuses:     []agent.ContainerStatus{pull("result")}},
+		left: stuckAfter - 2*time.Minute,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			p := f.start()
+			p.CreationTimestamp = today.Add(-10 * time.Minute)
+			p.Status = tc.status
+			rec := f.checkBranch("", p)
+			got, d := f.failure("v1.1.0"), rec.RequeueAfter()
+			switch {
+			case tc.left == 0 && !strings.Contains(got, "couldn't start in 5 minutes"):
+				t.Errorf("the update failed with %q, want it to fail", got)
+			case tc.left > 0 && (got != "" || d != tc.left):
+				t.Errorf("the update failed with %q and RequeueAfter() = %v, want no failure and a reconcile in %v", got, d, tc.left)
+			}
+		})
+	}
+}
+
 func TestCheckResult(t *testing.T) {
 	const parent = `module example.com/app
 

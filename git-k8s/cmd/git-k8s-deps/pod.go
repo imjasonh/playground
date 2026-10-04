@@ -69,12 +69,13 @@ const allowProtocol = "http:https:git:ssh"
 // them instead of holding a -max-pods slot until the Pod's deadline. Only a
 // new Pod fixes InvalidImageName, so an update fails on it at once. The
 // others also come from a registry that's down for a moment or a Secret
-// that's created after the Pod, so an update fails on them once the Pod is
-// stuckAfter old.
+// that's created after the Pod, so an update fails on them once the
+// container has waited stuckAfter from when it could start.
 var stuckReasons = []string{"CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "InvalidImageName"}
 
-// stuckAfter is how old an update Pod gets before its updates fail on a
-// reason in stuckReasons other than InvalidImageName.
+// stuckAfter is how long an update Pod waits before its updates fail on a
+// container that waits for a reason in stuckReasons other than
+// InvalidImageName, counted from when the container can start.
 const stuckAfter = 5 * time.Minute
 
 // prepareScript runs in the prepare container. It checks out the parent at
@@ -359,8 +360,11 @@ func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []upda
 	if st.Phase == "Failed" && st.Reason == "Evicted" {
 		return failAll("Pod %s was evicted: %s", pod.Name, cmp.Or(strings.TrimSpace(st.Message), "no reason given"))
 	}
-	if msg, reason := stuck(st); msg != "" {
-		wait := stuckAfter - u.clock().Sub(pod.CreationTimestamp)
+	if msg, reason, since := stuck(st); msg != "" {
+		if since.IsZero() {
+			since = pod.CreationTimestamp
+		}
+		wait := stuckAfter - u.clock().Sub(since)
 		switch {
 		case reason == "InvalidImageName":
 			return failAll("Pod %s can't start: %s", pod.Name, msg)
@@ -406,14 +410,22 @@ func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []upda
 }
 
 // stuck returns why a container in the Pod waits for a Secret or an image
-// that it can't get, and the reason that it waits, or "" and "".
-func stuck(st *agent.PodStatus) (msg, reason string) {
+// that it can't get, the reason that it waits, and when it could start, or
+// the zero time if the Pod's status doesn't say. When no container waits
+// for one, it returns empty strings.
+func stuck(st *agent.PodStatus) (msg, reason string, since time.Time) {
+	since = st.StartTime
 	for _, s := range slices.Concat(st.InitContainerStatuses, st.ContainerStatuses) {
 		if w := s.State.Waiting; w != nil && slices.Contains(stuckReasons, w.Reason) {
-			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message)), w.Reason
+			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message)), w.Reason, since
+		}
+		// An update Pod has one container that isn't an init container, so
+		// each of its containers starts when the one before it finishes.
+		if t := s.State.Terminated; t != nil {
+			since = t.FinishedAt
 		}
 	}
-	return "", ""
+	return "", "", time.Time{}
 }
 
 func container(statuses []agent.ContainerStatus, name string) agent.ContainerState {
