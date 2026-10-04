@@ -95,6 +95,29 @@ func getCRD(t *testing.T, c *client.Client, name string) crdStatus {
 	return crd
 }
 
+// waitEstablished waits until the API server serves the CRD at path, with n
+// versions.
+func waitEstablished(t *testing.T, c *client.Client, path string, n int) {
+	t.Helper()
+	e2e.Eventually(t, 30*time.Second, func() error {
+		var got struct {
+			Spec struct {
+				Versions []any `json:"versions"`
+			} `json:"spec"`
+			Status struct {
+				Conditions []kube.Condition `json:"conditions"`
+			} `json:"status"`
+		}
+		if err := e2e.Get(t.Context(), c, path, &got); err != nil {
+			return err
+		}
+		if c := kube.FindCondition(got.Status.Conditions, "Established"); len(got.Spec.Versions) != n || c == nil || c.Status != kube.True {
+			return fmt.Errorf("the CRD isn't established with %d versions: %+v", n, got)
+		}
+		return nil
+	})
+}
+
 // stored returns what etcd holds for a key.
 func stored(t *testing.T, key string) string {
 	t.Helper()
@@ -636,23 +659,7 @@ func TestCRDForOwnedTypeLeavesExistingCRD(t *testing.T) {
 
 	t.Log("A program that reconciles Ledgers installs their CRD, with v2 and v1, and stops.")
 	stop := release(t, &kube.Manager{Name: "ledgers-e2e"}, kube.For[Ledger](ledgers{}, kube.Version[LedgerV1]()))
-	e2e.Eventually(t, 30*time.Second, func() error {
-		var got struct {
-			Spec struct {
-				Versions []any `json:"versions"`
-			} `json:"spec"`
-			Status struct {
-				Conditions []kube.Condition `json:"conditions"`
-			} `json:"status"`
-		}
-		if err := e2e.Get(ctx, c, crdPath, &got); err != nil {
-			return err
-		}
-		if c := kube.FindCondition(got.Status.Conditions, "Established"); len(got.Spec.Versions) != 2 || c == nil || c.Status != kube.True {
-			return fmt.Errorf("the CRD isn't established with two versions: %+v", got)
-		}
-		return nil
-	})
+	waitEstablished(t, c, crdPath, 2)
 	if err := stop(); err != nil {
 		t.Fatal(err)
 	}
@@ -782,5 +789,84 @@ func TestCRDNotCreatedByReader(t *testing.T) {
 	}
 	if meta.managedBy() != "memos-e2e" {
 		t.Errorf("the CRD is managed by %q, want memos-e2e", meta.managedBy())
+	}
+}
+
+// Voucher is a type that a program owns without reconciling it.
+type Voucher struct {
+	kube.Object `kube:"group=e2e.kube.imjasonh.github.io"`
+	Spec        struct {
+		ConfigMap string `json:"configMap"`
+	} `json:"spec"`
+}
+
+// VoucherV2 is Voucher in a program that reconciles only v2 of it.
+type VoucherV2 struct {
+	kube.Object `kube:"group=e2e.kube.imjasonh.github.io,kind=Voucher,version=v2"`
+	Spec        struct {
+		ConfigMap string `json:"configMap"`
+	} `json:"spec"`
+}
+
+type vouchersV2 struct{}
+
+func (vouchersV2) Reconcile(context.Context, *VoucherV2) error { return nil }
+
+// voucherIssuer owns a Voucher for each ConfigMap.
+type voucherIssuer struct{ runs atomic.Int64 }
+
+func (i *voucherIssuer) Reconcile(ctx context.Context, cm *ConfigMapMeta) error {
+	i.runs.Add(1)
+	v := &Voucher{Object: kube.Meta(cm.Name, nil)}
+	v.Spec.ConfigMap = cm.Name
+	kube.Own(ctx, v)
+	return nil
+}
+
+func TestCRDForOwnedTypeDoesntBlockStartup(t *testing.T) {
+	c := e2e.Client(t)
+	ctx := t.Context()
+	ns := e2e.Namespace(t, c)
+	const crd = "vouchers." + group
+	crdPath := "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/" + crd
+
+	t.Log("A program that reconciles only v2 of Vouchers installs their CRD, and stops.")
+	stop := release(t, &kube.Manager{Name: "vouchers-e2e"}, kube.For[VoucherV2](vouchersV2{}))
+	waitEstablished(t, c, crdPath, 1)
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("A program that owns v1 Vouchers with kube.Owns can't create their CRD, because it exists without v1. The program starts anyway, and its reconciles fail and retry.")
+	issuer := &voucherIssuer{}
+	e2e.Run(t, &kube.Manager{Name: "voucher-issuer-e2e", Namespace: ns}, kube.For[ConfigMapMeta](issuer, kube.Named("voucher-issuer"), kube.Owns[Voucher]()))
+	cm := map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "cm"}}
+	if err := c.Create(ctx, client.Path("v1", "configmaps", ns, ""), cm, nil); err != nil {
+		t.Fatal(err)
+	}
+	e2e.Eventually(t, 30*time.Second, func() error {
+		if n := issuer.runs.Load(); n < 2 {
+			return fmt.Errorf("the issuer reconciled %d times", n)
+		}
+		return nil
+	})
+
+	t.Log("Once the CRD is deleted, the next Own creates it with v1, and the program writes the Voucher.")
+	if err := c.Delete(ctx, crdPath, client.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	e2e.Eventually(t, time.Minute, func() error {
+		var v Voucher
+		return e2e.Get(ctx, c, client.Path(group+"/v1", "vouchers", ns, "cm"), &v)
+	})
+	var meta crdMeta
+	if err := e2e.Get(ctx, c, crdPath, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.managedBy() != "voucher-issuer-e2e" {
+		t.Errorf("the CRD is managed by %q, want voucher-issuer-e2e", meta.managedBy())
+	}
+	if got := getCRD(t, c, crd); len(got.Spec.Versions) != 1 || got.Spec.Versions[0].Name != "v1" {
+		t.Errorf("CRD versions = %+v, want v1 alone", got.Spec.Versions)
 	}
 }

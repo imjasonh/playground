@@ -207,9 +207,11 @@ type](#change-a-type) describes. A program can also own a type that none of
 its controllers reconciles, such as the reports that
 [`examples/imagereport`](examples/imagereport/main.go) writes for people to
 read. If the cluster doesn't have the CRD, such a program creates it the first
-time that it owns an object of the type, or at startup with `kube.Owns`. It
-never changes a CRD that exists, because only a program that reconciles the
-type knows all of the type's versions.
+time that it owns an object of the type, or at startup with `kube.Owns`. If
+that fails at startup, the program logs the error and starts anyway, and its
+next `Own` of the type tries again. It never changes a CRD that exists,
+because only a program that reconciles the type knows all of the type's
+versions.
 
 A program that only reads a type never creates its CRD. While the CRD is
 missing, a reconcile that calls `Get` or `List` for the type fails, and the

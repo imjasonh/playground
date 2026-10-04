@@ -558,6 +558,9 @@ func (m *Manager) existing(ti *typeInfo) source {
 }
 
 func (m *Manager) children(ctx context.Context, c *core, ti *typeInfo) (source, error) {
+	if err := m.ensureCRD(ctx, ti); err != nil {
+		return nil, err
+	}
 	return m.childSource(ctx, c, ti, true)
 }
 
@@ -566,9 +569,6 @@ func (m *Manager) children(ctx context.Context, c *core, ti *typeInfo) (source, 
 func (m *Manager) childSource(ctx context.Context, c *core, ti *typeInfo, wait bool) (source, error) {
 	res, err := m.resolve(ctx, ti)
 	if err != nil {
-		return nil, err
-	}
-	if err := m.ensureCRD(ctx, ti); err != nil {
 		return nil, err
 	}
 	key := cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace, selector: c.labels.controller + "=" + c.name}

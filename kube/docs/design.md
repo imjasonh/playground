@@ -543,19 +543,22 @@ already exists.
 A program can also own a custom type that none of its controllers reconciles,
 such as a report that it writes. It knows only the versions that it declares,
 so applying its CRD could drop the others, or replace a schema that a newer
-release of the reconciling program installed. Instead, the first time that the
-program starts the cache of its owned objects of the type, at startup with
-`kube.Owns` or at its first `Own`, `createCRD` gets the CRD. If it's missing,
-`createCRD` creates it with a plain `POST` and the label that marks a CRD as
-installed by the framework, then waits until it's `Established`. It never
-updates a CRD. A `POST` fails with `AlreadyExists` when the CRD exists, so if
-two programs create it at once, one succeeds, the other waits for the same
-CRD, and neither changes what the other created. Because of the label, a
-program that reconciles the type later treats the CRD as its own and updates
-it. If the CRD doesn't serve the program's version of the type, `Own` fails
-with an error. If the program can't get CRDs, for example because it runs with
-the rules of an earlier release, it logs a warning and uses the type without
-creating its CRD.
+release of the reconciling program installed. Instead, at startup with
+`kube.Owns`, or at the program's first `Own` of the type, `createCRD` gets the
+CRD. If it's missing, `createCRD` creates it with a plain `POST` and the label
+that marks a CRD as installed by the framework, then waits until it's
+`Established`. It never updates a CRD. A `POST` fails with `AlreadyExists`
+when the CRD exists, so if two programs create it at once, one succeeds, the
+other waits for the same CRD, and neither changes what the other created.
+Because of the label, a program that reconciles the type later treats the CRD
+as its own and updates it. If the CRD doesn't serve the program's version of
+the type, `Own` fails with an error. At startup, `kube.Owns` logs an error
+from `createCRD` instead of returning it, so that a CRD without the program's
+version, or a failed request, doesn't stop the program's other controllers
+and webhooks. `ensureCRD` keeps only a success, so the next `Own` tries again.
+If the program can't get CRDs, for example because it runs with the rules of
+an earlier release, it logs a warning and uses the type without creating its
+CRD.
 
 Only owning a type creates its CRD. A program that only reads the type gains
 nothing from creating it, because there are no objects to read until something
@@ -828,7 +831,8 @@ framework's tests check that:
   once, one creates the type's missing CRD and both use it, and a program that
   reconciles the type then takes it over. A program that knows fewer of the
   type's versions leaves an existing CRD as it is, and a program that only
-  reads the type doesn't create its CRD.
+  reads the type doesn't create its CRD. A program that can't create the CRD
+  at startup starts anyway, and creates it at a later `Own`.
 - The JSON and protobuf encodings of every type in the `k8s` package decode
   to equal structs.
 - The program in the image that `generate` pushes runs with the token of the
