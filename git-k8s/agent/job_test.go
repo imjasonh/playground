@@ -38,7 +38,7 @@ func TestRunsAJob(t *testing.T) {
 	st := &JobState{}
 	s, rec := f.runJob(job, st)
 	pods := kube.Owned[Pod](rec)
-	if s.Done || len(pods) != 1 || *st != (JobState{Runs: 1, Pod: pods[0].Name, Attempt: 1}) || s.Message != "started Pod "+pods[0].Name {
+	if s.Done || s.Moved || len(pods) != 1 || *st != (JobState{Runs: 1, Pod: pods[0].Name, Attempt: 1}) || s.Message != "started Pod "+pods[0].Name {
 		t.Fatalf("RunJob = %+v with state %+v and %d Pods, want a started Pod", s, st, len(pods))
 	}
 	p := pods[0]
@@ -188,9 +188,15 @@ func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	}}
 	for _, uid := range []string{p.UID, p.UID, "uid-again"} {
 		p.UID = uid
-		if s, _ := f.runJob(job, st, p); s.Done || *st != (JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: uid, Refunded: uid}) {
+		if s, _ := f.runJob(job, st, p); s.Done || !s.Moved || *st != (JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: uid, Refunded: uid}) {
 			t.Fatalf("RunJob = %+v with state %+v, want the run of Pod UID %s given back once", s, st, uid)
 		}
+	}
+
+	t.Log("A deploy doesn't start a Pod that would find the branch moved, too.")
+	f.r.Image = "registry.example.com/agent-runner:new"
+	if s, rec := f.runJob(job, st, p); s.Done || !s.Moved || len(kube.Owned[Pod](rec)) != 0 || s.Message != "waiting for a run on the new commits: c/x no longer points to "+job.Checkout.Head {
+		t.Errorf("RunJob = %+v, want the moved run to wait without a Pod", s)
 	}
 }
 

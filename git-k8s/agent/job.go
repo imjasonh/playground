@@ -113,6 +113,9 @@ type JobStatus struct {
 	// Failed is the runner's report on a run that failed after the agent
 	// started, with the Error and what the agent used, or nil.
 	Failed *Result
+	// Moved is true when the run waits because a branch moved before the
+	// Pod fetched it.
+	Moved bool
 }
 
 // RunJob starts or follows job's run, and reports how it stands. It
@@ -191,7 +194,9 @@ func (x *run) restart(ctx context.Context, p *Pod) JobStatus {
 	if st := x.st; st.Refunded != "" && st.Refunded == st.UID {
 		// A new Pod would find that the branch moved, too.
 		c := x.job.Checkout
-		return x.status("waiting for a run on the new commits: %s no longer points to %s", c.Branch, c.Head)
+		s := x.status("waiting for a run on the new commits: %s no longer points to %s", c.Branch, c.Head)
+		s.Moved = true
+		return s
 	}
 	if wait, ok := x.r.day.take(time.Now(), x.r.MaxRunsPerDay); !ok {
 		kube.RequeueAfter(ctx, wait)
@@ -310,7 +315,9 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 				st.Runs--
 				x.r.day.giveBack()
 			}
-			return x.status("waiting for a run on the new commits: %s", msg)
+			s := x.status("waiting for a run on the new commits: %s", msg)
+			s.Moved = true
+			return s
 		case st.Attempt < prepareAttempts:
 			st.Attempt++
 			next := x.r.jobPod(x.job, st.Attempt)

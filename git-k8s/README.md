@@ -464,7 +464,8 @@ starts a new run, up to the job's `MaxRuns`. A deploy that changes the
 agent Pods' spec starts an unfinished run again in a new Pod, which takes
 a place in `-max-runs-per-day` but doesn't count toward `MaxRuns`. If the
 Pod finds that the branch moved, the agent doesn't run, and `RunJob` gives
-the run back and waits for a `Job` with the new head. If the run's Pod is
+the run back and waits for a `Job` with the new head. While the run waits,
+the status's `Moved` is true. If the run's Pod is
 deleted before the run is `Done`, kube creates it again and the agent runs
 again, so `RunJob` counts another run. When `MaxRuns` or
 `-max-runs-per-day` allows no more, `RunJob` ends the run instead, and
