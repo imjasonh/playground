@@ -253,6 +253,19 @@ func TestDoesNotPushWithoutPermission(t *testing.T) {
 	}
 }
 
+func TestDoesNotReadSigningKeyWithoutPermission(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	// Reading the key would fail, because its Secret doesn't exist.
+	f.repo.Spec.SigningKeyRef = &gitk8s.SecretRef{Name: "app-signing"}
+	runs := 0
+	if err := f.reconcile(t, touch(&runs)); err != nil {
+		t.Fatal(err)
+	}
+	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "doesn't let this check push") {
+		t.Errorf("result = %+v, want Failed because of the policy", res)
+	}
+}
+
 func TestStopsAtAutomatedCommitLimit(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
 	zero := int32(0)

@@ -316,8 +316,10 @@ func (in *Input) MergeBase(ctx context.Context) (string, error) {
 }
 
 // CommitTree makes a commit in Repo's repository, with the controller's
-// identity as its author and committer, and signs it with the key from
-// Check.SigningKey, if the repository names one.
+// identity as its author and committer. If the check's policy lets it
+// push, CommitTree signs the commit with the key from Check.SigningKey, if
+// the repository names one. Otherwise the framework doesn't push the
+// commit, so CommitTree neither reads the key nor signs the commit.
 func (in *Input) CommitTree(ctx context.Context, tree string, parents []string, message string, unix int64) (string, error) {
 	if in.check.SigningKey == nil {
 		return "", fmt.Errorf("the %s check can't make commits: set Check.SigningKey to signing.Key", in.check.Name)
@@ -326,9 +328,11 @@ func (in *Input) CommitTree(ctx context.Context, tree string, parents []string, 
 	if err != nil {
 		return "", err
 	}
-	key, err := in.check.SigningKey(ctx, in.Repository)
-	if err != nil {
-		return "", err
+	var key *git.SigningKey
+	if in.Policy.MayPush {
+		if key, err = in.check.SigningKey(ctx, in.Repository); err != nil {
+			return "", err
+		}
 	}
 	return local.CommitTree(ctx, tree, parents, message, in.identity, unix, key)
 }
