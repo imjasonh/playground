@@ -1048,9 +1048,21 @@ func TestRejectsAnInvalidDivergence(t *testing.T) {
 		},
 	}, {
 		name: "ref",
-		want: `status.diverged.ref is "--upload-pack=touch /tmp/x", which isn't a full ref name`,
+		want: `status.diverged.ref is "--upload-pack=touch /tmp/x", but the mirror keeps the external repository's c/x at refs/git-k8s/downstream/heads/c/x`,
 		d: func(head string) gitk8s.Divergence {
 			return gitk8s.Divergence{Commit: head, Ref: "--upload-pack=touch /tmp/x"}
+		},
+	}, {
+		name: "another ref",
+		want: `status.diverged.ref is "refs/pull/1/head", but the mirror keeps the external repository's c/x at refs/git-k8s/downstream/heads/c/x`,
+		d: func(head string) gitk8s.Divergence {
+			return gitk8s.Divergence{Commit: head, Ref: "refs/pull/1/head"}
+		},
+	}, {
+		name: "another branch's ref",
+		want: `status.diverged.ref is "refs/git-k8s/downstream/heads/main", but the mirror keeps the external repository's c/x at refs/git-k8s/downstream/heads/c/x`,
+		d: func(head string) gitk8s.Divergence {
+			return gitk8s.Divergence{Commit: head, Ref: downstream + "main"}
 		},
 	}, {
 		name: "base",
@@ -2150,7 +2162,7 @@ func TestLeavesADivergedParent(t *testing.T) {
 		name:  "with an invalid ref",
 		rules: rules,
 		edit:  func(o *observed) { o.Status.Diverged.Ref = "main" },
-		want:  `status.diverged.ref is "main", which isn't a full ref name`,
+		want:  `status.diverged.ref is "main", but the mirror keeps the external repository's main at refs/git-k8s/downstream/heads/main`,
 	}, {
 		name:  "when the external repository deleted it",
 		rules: rules,

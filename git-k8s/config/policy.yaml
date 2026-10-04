@@ -51,6 +51,13 @@ spec:
       messageExpression: '"the " + variables.check + " check can only write status.checks." + variables.check'
     - expression: variables.check != "" || variables.new == variables.old
       messageExpression: request.userInfo.username + " isn't a check's service account, so it can't write status.checks"
+    # The conflicts check merges or replays the commit that status.diverged
+    # names, so only the core program, which runs the mirror, writes it.
+    - expression: >-
+        request.userInfo.username == "system:serviceaccount:git-k8s:git-k8s" ||
+        (has(object.status) && has(object.status.diverged) ? [object.status.diverged] : []) ==
+        (has(oldObject.status) && has(oldObject.status.diverged) ? [oldObject.status.diverged] : [])
+      messageExpression: request.userInfo.username + " isn't the core program's service account, so it can't write status.diverged"
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding

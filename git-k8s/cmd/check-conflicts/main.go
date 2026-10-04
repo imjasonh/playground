@@ -171,7 +171,7 @@ func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]str
 	t := target{commit: in.Spec.ParentHead, ref: "refs/heads/" + in.Spec.Parent, name: in.Spec.Parent}
 	if d := divergence(ctx, in.Meta); d != nil {
 		recordDivergence(d, outputs)
-		if err := validate(d); err != nil {
+		if err := validate(d, in.Spec.Branch); err != nil {
 			return checks.Fail("%v", err)
 		}
 		if d.Commit == "" {
@@ -370,17 +370,22 @@ func recordDivergence(d *gitk8s.Divergence, outputs map[string]string) {
 	}
 }
 
-// validate returns an error if d can't be a divergence that the core
-// program wrote.
-func validate(d *gitk8s.Divergence) error {
+// downstreamPrefix starts the refs in the mirror that hold the external
+// repository's heads.
+const downstreamPrefix = "refs/git-k8s/downstream/heads/"
+
+// validate returns an error if d can't be a divergence of branch that the
+// core program wrote.
+func validate(d *gitk8s.Divergence, branch string) error {
 	deleted := d.Commit == "" && d.Ref == ""
 	switch {
 	case !deleted && !isCommit(d.Commit):
 		return fmt.Errorf("status.diverged.commit is %q, which isn't a commit ID", d.Commit)
-	case !deleted && !strings.HasPrefix(d.Ref, "refs/"):
-		// The ref reaches git in the agent's Pod, which would read a ref
-		// that starts with a dash as an option.
-		return fmt.Errorf("status.diverged.ref is %q, which isn't a full ref name", d.Ref)
+	case !deleted && d.Ref != downstreamPrefix+branch:
+		// The check merges or replays whatever the ref holds, such as
+		// another branch or a pull request's head on the external
+		// repository, and the ref reaches git in the agent's Pod.
+		return fmt.Errorf("status.diverged.ref is %q, but the mirror keeps the external repository's %s at %s", d.Ref, branch, downstreamPrefix+branch)
 	case d.Base != "" && !isCommit(d.Base), deleted && d.Base == "":
 		// The mirror pushes a branch that the external repository never
 		// had, so only a branch that the two sides synced can diverge by
@@ -474,7 +479,7 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 		res.State, res.Message = gitk8s.Error, shorten(err.Error())
 		return err
 	}
-	if err := validate(d); err != nil {
+	if err := validate(d, branch); err != nil {
 		return report(gitk8s.Failed, "%v", err)
 	}
 	if d.Commit == "" {
