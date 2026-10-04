@@ -313,6 +313,19 @@ with a projected service account token and stops reading Secrets, and its
 update Pods fetch from the mirror with tokens bound to the Pods, like test
 Pods.
 
+## Update npm and Cargo dependencies
+
+[`git-k8s-deps`](README.md#dependency-updates) updates only Go modules. This
+repository's `.github/scripts/update-js-dependencies.sh` and
+`.github/scripts/update-rust-dependencies.sh` show what npm and Cargo take.
+The first raises the version ranges in `package.json` with
+`npm-check-updates` and runs `npm install`. The second runs `cargo update`,
+which changes only `Cargo.lock`, within the ranges in `Cargo.toml`. Each
+ecosystem needs a source of versions and their times for `-min-age`, an image
+with its tools for update Pods, a list of the files that the controller
+accepts from a Pod and that `check-deps`'s agent can't change, and
+`check-risk` rules for its manifests.
+
 ## kube changes that git-k8s would use
 
 These belong in kube, in their own pull requests:
