@@ -2,6 +2,7 @@ package mirror
 
 import (
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/caller"
@@ -66,6 +68,43 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("%s may not push to %s/%s", who, namespace, name), http.StatusForbidden)
 		return
 	}
+
+	w.Header().Set("Cache-Control", "no-cache")
+	body := io.Reader(r.Body)
+	var p *pushRequest
+	if op != "info/refs" {
+		rc := http.NewResponseController(w)
+		// git writes its response while it reads the request.
+		_ = rc.EnableFullDuplex()
+		_ = rc.SetReadDeadline(time.Now().Add(cmp.Or(m.readTimeout, m.Git.MaxDuration())))
+		if r.Header.Get("Content-Encoding") == "gzip" {
+			zr, err := gzip.NewReader(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			defer zr.Close()
+			body = zr
+		}
+		if service == "receive-pack" {
+			// The mirror judges a push before it opens the copy, so that a
+			// slow client doesn't hold the copy open: while it's open, the
+			// mirror can't replace or delete it, and once that waits,
+			// nothing else can open it.
+			var start bytes.Buffer
+			if p, err = readPush(io.TeeReader(body, &start)); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			if reasons := m.refusals(who, repo, p); reasons != nil {
+				refuseAll(w, r, p, reasons)
+				slog.Info("refused a push", "repository", namespace+"/"+name, "caller", who.String(), "refs", len(p.commands), "reason", reasons[0])
+				return
+			}
+			body = io.MultiReader(&start, body)
+		}
+	}
+
 	cp, err := m.Open(ctx, repo)
 	switch {
 	case errors.Is(err, ErrNotSynced):
@@ -83,7 +122,6 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if service == "upload-pack" && strings.Contains(r.Header.Get("Git-Protocol"), "version=2") {
 		protocol = "version=2"
 	}
-	w.Header().Set("Cache-Control", "no-cache")
 	if op == "info/refs" {
 		w.Header().Set("Content-Type", "application/x-git-"+service+"-advertisement")
 		if protocol == "" {
@@ -93,33 +131,6 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			slog.Warn("advertising refs failed", "repository", namespace+"/"+name, "err", err)
 		}
 		return
-	}
-
-	// git writes its response while it reads the request.
-	_ = http.NewResponseController(w).EnableFullDuplex()
-	body := io.Reader(r.Body)
-	if r.Header.Get("Content-Encoding") == "gzip" {
-		zr, err := gzip.NewReader(r.Body)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		defer zr.Close()
-		body = zr
-	}
-	var p *pushRequest
-	if service == "receive-pack" {
-		var start bytes.Buffer
-		if p, err = readPush(io.TeeReader(body, &start)); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if reasons := m.refusals(who, repo, p); reasons != nil {
-			refuseAll(w, r, p, reasons)
-			slog.Info("refused a push", "repository", namespace+"/"+name, "caller", who.String(), "refs", len(p.commands), "reason", reasons[0])
-			return
-		}
-		body = io.MultiReader(&start, body)
 	}
 	w.Header().Set("Content-Type", "application/x-git-"+service+"-result")
 	if err := m.Git.Serve(ctx, service, cp.Dir, protocol, body, w); err != nil {
@@ -157,8 +168,10 @@ func (m *Mirror) refusals(who caller.Caller, repo *gitk8s.Repository, p *pushReq
 
 // refuseAll answers a push with a refusal of every update in it.
 func refuseAll(w http.ResponseWriter, r *http.Request, p *pushRequest, reasons []string) {
-	// The client reads the response only after it sends the whole pack.
-	_, _ = io.Copy(io.Discard, r.Body)
+	// The client reads the response only after it sends the whole pack. A
+	// client that sends a bigger pack than a copy takes gets an error
+	// instead of the reasons.
+	_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxPushSize))
 	if !p.has("report-status") && !p.has("report-status-v2") {
 		http.Error(w, strings.Join(reasons, "; "), http.StatusForbidden)
 		return

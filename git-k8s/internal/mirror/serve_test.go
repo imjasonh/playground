@@ -10,10 +10,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/kube"
@@ -377,4 +379,110 @@ func TestServeReadsPushLikeReceivePack(t *testing.T) {
 	if got := f.takeTriggered(); len(got) > 0 {
 		t.Errorf("refused pushes triggered %v", got)
 	}
+}
+
+// zeros is a request body of n zero bytes that counts the bytes read.
+type zeros struct{ n, read int64 }
+
+func (z *zeros) Read(p []byte) (int, error) {
+	if z.read == z.n {
+		return 0, io.EOF
+	}
+	n := int(min(int64(len(p)), z.n-z.read))
+	clear(p[:n])
+	z.read += int64(n)
+	return n, nil
+}
+
+// TestRefuseAllStopsReading refuses a push whose pack is bigger than a copy
+// takes.
+func TestRefuseAllStopsReading(t *testing.T) {
+	body := &zeros{n: maxPushSize + 1<<20}
+	rec := httptest.NewRecorder()
+	p := &pushRequest{commands: []command{{Old: oidA, New: oidB, Ref: "refs/heads/main"}}, caps: []string{"report-status"}}
+	refuseAll(rec, httptest.NewRequest(http.MethodPost, "/default/app.git/git-receive-pack", body), p, []string{"main is a parent branch"})
+	if body.read > maxPushSize {
+		t.Errorf("read %d bytes of a refused push; want at most %d", body.read, maxPushSize)
+	}
+	if got, want := rec.Body.String(), "ng refs/heads/main main is a parent branch"; !strings.Contains(got, want) {
+		t.Errorf("response %q; want %q", got, want)
+	}
+}
+
+// TestServeStopsWaitingForPush sends the start of a push and then nothing.
+// The mirror gives up on the push, and doesn't hold the copy open while it
+// waits.
+func TestServeStopsWaitingForPush(t *testing.T) {
+	f := newFixture(t)
+	f.m.readTimeout = time.Second
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { pw.Close() })
+	start := pkt(f.feature + " " + f.base + " refs/heads/feature\x00report-status\n")
+	go pw.Write([]byte(start[:20]))
+
+	type result struct {
+		status int
+		body   string
+		err    error
+	}
+	done := make(chan result, 1)
+	go func() {
+		req, err := http.NewRequest(http.MethodPost, f.srv.URL+"/default/app.git/git-receive-pack", pr)
+		if err != nil {
+			done <- result{err: err}
+			return
+		}
+		req.Header.Set("Authorization", "Bearer gofmt")
+		resp, err := f.srv.Client().Do(req)
+		if err != nil {
+			done <- result{err: err}
+			return
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		done <- result{status: resp.StatusCode, body: string(b), err: err}
+	}()
+
+	e := f.m.entry(f.repo)
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	timeout := time.After(30 * time.Second)
+	for {
+		select {
+		case res := <-done:
+			if res.err != nil {
+				t.Fatal(res.err)
+			}
+			if res.status != http.StatusBadRequest || !strings.Contains(res.body, "i/o timeout") {
+				t.Errorf("status %d with body %q; want %d with a timeout", res.status, res.body, http.StatusBadRequest)
+			}
+			return
+		case <-tick.C:
+			if !e.mu.TryLock() {
+				t.Fatal("the mirror holds the copy open while it waits for a push")
+			}
+			e.mu.Unlock()
+		case <-timeout:
+			t.Fatal("the mirror still waits for the push after 30s")
+		}
+	}
+}
+
+// TestServeRefusesBigPack pushes a bigger pack than the copy takes.
+func TestServeRefusesBigPack(t *testing.T) {
+	f := newFixture(t)
+	if got, want := f.work.Git("--git-dir="+f.copyDir(), "config", "receive.maxInputSize"), strconv.Itoa(maxPushSize); got != want {
+		t.Fatalf("the copy takes packs of up to %s bytes; want %s", got, want)
+	}
+	// Pushing maxPushSize bytes takes too long for a test.
+	f.work.Git("--git-dir="+f.copyDir(), "config", "receive.maxInputSize", "100000")
+	f.work.Git("checkout", "--quiet", "--detach", f.feature)
+	big := make([]byte, 600<<10)
+	rand.Read(big)
+	f.work.Write("big.txt", base64.StdEncoding.EncodeToString(big))
+	fix := f.work.Commit("fix")
+	if out, err := f.git("gofmt", "push", f.url("app"), fix+":refs/heads/feature"); err == nil || !strings.Contains(err.Error(), "pack exceeds maximum allowed size") {
+		t.Fatalf("push = %v\n%s; want an error about the pack's size", err, out)
+	}
+	wantHeads(t, "the copy's branches", f.copyRefs("refs/heads/"), map[string]string{"main": f.base, "feature": f.feature})
 }

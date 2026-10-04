@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,6 +37,9 @@ const (
 	syncedPrefix     = "refs/git-k8s/synced/heads/"
 )
 
+// maxPushSize is the largest pack, in bytes, that a copy takes in a push.
+const maxPushSize = 256 << 20
+
 // ErrNotSynced is wrapped by errors about a copy that hasn't fetched the
 // external repository yet, which the mirror doesn't serve.
 var ErrNotSynced = errors.New("the mirror hasn't fetched the repository from its external repository yet")
@@ -48,6 +52,11 @@ type Mirror struct {
 	Dir string
 	// Prefixes let controllers other than checks start branches.
 	Prefixes []Prefix
+
+	// readTimeout is the longest that the mirror waits for the body of a
+	// request. Zero means Git.MaxDuration, by when git has stopped reading
+	// the body anyway.
+	readTimeout time.Duration
 
 	mu      sync.Mutex
 	entries map[string]*entry
@@ -204,6 +213,7 @@ func (m *Mirror) create(ctx context.Context, e *entry, repo *gitk8s.Repository) 
 		// them, to resolve a divergence.
 		{"receive.hideRefs", "refs/git-k8s"},
 		{"receive.fsckObjects", "true"},
+		{"receive.maxInputSize", strconv.Itoa(maxPushSize)},
 		{"gitk8s.url", repo.Spec.URL},
 		{"gitk8s.uid", repo.UID},
 	} {

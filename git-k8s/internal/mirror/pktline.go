@@ -13,9 +13,11 @@ import (
 const (
 	// maxPacket is the longest pkt-line, with its length.
 	maxPacket = 65520
-	// maxCommands is the most ref updates that the mirror takes in one
-	// push.
-	maxCommands = 1000
+	// maxCommands is the most lines, ref updates and the shallow commits
+	// before them, that the mirror reads at the start of a push, and
+	// maxCommandBytes is the most bytes.
+	maxCommands     = 1000
+	maxCommandBytes = 1 << 20
 )
 
 // command is one ref update in a push. Old or New is all zeros when the
@@ -40,19 +42,22 @@ func (p *pushRequest) has(capability string) bool { return slices.Contains(p.cap
 // first NUL, and capabilities follow the NUL on any line.
 func readPush(r io.Reader) (*pushRequest, error) {
 	p := &pushRequest{}
-	for {
+	for lines, size := 0, 0; ; lines++ {
 		line, flush, err := readPacket(r)
+		size += 4 + len(line)
 		switch {
 		case err != nil:
 			return nil, err
 		case flush:
 			return p, nil
+		case lines == maxCommands:
+			return nil, fmt.Errorf("the mirror takes at most %d ref updates and shallow commits in one push", maxCommands)
+		case size > maxCommandBytes:
+			return nil, fmt.Errorf("the mirror takes at most %d bytes of ref updates and shallow commits in one push", maxCommandBytes)
 		case strings.HasPrefix(line, "shallow "):
 			continue
 		case strings.HasPrefix(line, "push-cert"):
 			return nil, errors.New("the mirror doesn't take signed pushes")
-		case len(p.commands) == maxCommands:
-			return nil, fmt.Errorf("the mirror takes at most %d ref updates in one push", maxCommands)
 		}
 		line, caps, _ := strings.Cut(strings.TrimSuffix(line, "\n"), "\x00")
 		p.caps = append(p.caps, strings.Fields(caps)...)

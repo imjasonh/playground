@@ -22,6 +22,10 @@ var (
 func TestReadPush(t *testing.T) {
 	update := func(old, new, ref string) string { return pkt(old + " " + new + " " + ref + "\n") }
 	many := strings.Repeat(update(oidA, oidB, "refs/heads/x"), maxCommands+1) + "0000"
+	shallow := func(n int) string { return strings.Repeat(pkt("shallow "+oidA+"\n"), n) }
+	// An update of longRef takes 64000 bytes, so the mirror reads 16 of them.
+	longRef := "refs/heads/" + strings.Repeat("x", 64000-4-83-11)
+	long := func(n int) string { return strings.Repeat(update(oidA, oidB, longRef), n) + "0000" }
 	for _, tc := range []struct {
 		name     string
 		in       string
@@ -74,6 +78,14 @@ func TestReadPush(t *testing.T) {
 		},
 		{name: "a signed push", in: pkt("push-cert\x00report-status\n") + pkt("certificate version 0.1\n"), err: "signed pushes"},
 		{name: "too many updates", in: many, err: "at most 1000 ref updates"},
+		{
+			name:     "as many lines as the mirror reads",
+			in:       shallow(maxCommands-1) + update(oidA, oidB, "refs/heads/main") + "0000",
+			commands: []command{{Old: oidA, New: oidB, Ref: "refs/heads/main"}},
+		},
+		{name: "too many shallow commits", in: shallow(maxCommands) + update(oidA, oidB, "refs/heads/main") + "0000", err: "at most 1000 ref updates and shallow commits"},
+		{name: "as many bytes as the mirror reads", in: long(16), commands: slices.Repeat([]command{{Old: oidA, New: oidB, Ref: longRef}}, 16)},
+		{name: "too many bytes", in: long(17), err: "at most 1048576 bytes of ref updates"},
 		{name: "not an update", in: pkt("hello\n") + "0000", err: "malformed ref update"},
 		{name: "an uppercase object name", in: update(strings.ToUpper(oidA), oidB, "refs/heads/main") + "0000", err: "malformed ref update"},
 		{name: "a short object name", in: update("abc", oidB, "refs/heads/main") + "0000", err: "malformed ref update"},
@@ -88,8 +100,11 @@ func TestReadPush(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p, err := readPush(strings.NewReader(tc.in))
 			if tc.err != "" {
-				if err == nil || !strings.Contains(err.Error(), tc.err) {
-					t.Fatalf("readPush = %+v, %v; want an error with %q", p, err, tc.err)
+				switch {
+				case err == nil:
+					t.Fatalf("readPush read %d updates; want an error with %q", len(p.commands), tc.err)
+				case !strings.Contains(err.Error(), tc.err):
+					t.Fatalf("readPush = %v; want an error with %q", err, tc.err)
 				}
 				return
 			}

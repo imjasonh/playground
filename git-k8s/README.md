@@ -197,6 +197,11 @@ the external repository's heads under `refs/git-k8s/downstream/heads/`, and
 the heads where the copy and the external repository last synced under
 `refs/git-k8s/synced/heads/`.
 
+The mirror reads at most 1,000 ref updates and shallow commits, in at most
+1 MiB, at the start of a push, and a copy takes a pack of at most 256 MiB.
+The mirror stops reading a request that takes longer than git's 5-minute
+timeout plus 10 seconds.
+
 To let a controller start branches, pass the core program
 `-branch-prefix=NAMESPACE/SERVICEACCOUNT=PREFIX` for the controller's
 service account, and repeat the flag for more controllers. For example, for
