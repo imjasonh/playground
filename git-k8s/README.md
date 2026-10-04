@@ -489,13 +489,15 @@ head:
   to bring back what the rewind removed.
 - If the branch rewound in git-k8s, the check replays the external
   repository's commits onto the branch's head one at a time. It pushes the
-  result to the side that rewound, so each commit that the external
-  repository added needs a replay in it. A replay is a commit that removes
-  and adds the same lines in the same files as the original, ignoring the
-  unchanged lines around them. A merge commit, and a commit that changes no
-  file, have no replay. So the check resolves no conflicts here, and fails
-  and leaves the divergence for a person when a commit has no replay or
-  doesn't replay unchanged.
+  result to the side that rewound, so the result needs a replay of each
+  commit that the external repository added, and every change that the
+  external repository made. A replay is a commit that removes and adds the
+  same lines in the same files as the original, ignoring the unchanged lines
+  around them, and a commit replays at most one commit. A merge commit, and
+  a commit that changes no file, have no replay. So the check resolves no
+  conflicts here, and fails and leaves the divergence for a person when a
+  commit has no replay or doesn't replay unchanged, or when the result
+  doesn't have every change that the external repository made.
 - If both sides rewound, the check replays the branch's commits onto the
   external repository's head if that head has none of the commits that the
   branch removed. Otherwise, it replays the external repository's commits onto
@@ -503,10 +505,13 @@ head:
   repository removed. In this case, it never replays the branch's whole
   change as one commit, and fails when neither replay works.
 
-A head keeps a side's changes when it has none of the commits that the side
-removed, and has each commit that the side added, or a replay of it if the
-head doesn't contain `base`. The check passes when one side's head already
-keeps every change that the other side made.
+A head keeps a side's changes when it has none of the commits the side
+removed, a replay of each commit it added, and every change it made since
+`base`: merging the side into the head with `base` as the merge base is
+clean and changes nothing. A head built on a side that rewound to a new
+commit keeps that side's changes even where it resolved conflicts. The
+check passes when one side's head already keeps every change that the other
+side made.
 
 Branches diverge only with the in-cluster mirror that
 [Future work](future-work.md#run-an-in-cluster-git-mirror) proposes, so the
@@ -621,15 +626,15 @@ resolve a rewind, and the check pushes nothing when a side of a diverged
 parent rewound. The merge controller only moves a parent to a commit that
 contains the parent's head, so a parent that rewound in the external
 repository resolves only there, with a replay of each commit that landed on
-the parent since `base`. If a commit can't be replayed unchanged, for
-example because it changes lines that the rewind removed, the parent stays
-diverged until the external repository's head contains the parent's head
-again. If the parent rewound in git-k8s instead, replay the external
-repository's commits onto the parent's head, and push the result to the
-external repository with a lease on its head. The check fails, and says
-which of these to do, until either side's head keeps every change that the
-other side made. Then it passes, because the mirror moves the other side to
-that head.
+the parent since `base`, and every change that those commits made. If a
+commit can't be replayed unchanged, for example because it changes lines
+that the rewind removed, the parent stays diverged until the external
+repository's head contains the parent's head again. If the parent rewound
+in git-k8s instead, replay the external repository's commits onto the
+parent's head, and push the result to the external repository with a lease
+on its head. The check fails, and says which of these to do, until either
+side's head keeps every change that the other side made. Then it passes,
+because the mirror moves the other side to that head.
 
 Checks push with the repository's credentials, which can push to any
 branch. The mirror lets a check update only a branch that has a parent, so
