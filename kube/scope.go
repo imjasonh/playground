@@ -273,8 +273,15 @@ func (s *scope) prepare(ctx context.Context, verb string, ti *typeInfo, m *Objec
 		if in.kind == intentDelete || !in.ti.sameKind(ti) || metaOfAny(in.obj).Key() != m.Key() {
 			continue
 		}
+		first := "Apply"
+		if in.kind == intentOwn {
+			first = "Own"
+		}
 		msg := fmt.Sprintf("kube.%s: %v %s was declared twice in one reconcile", verb, ti, m.Key())
-		if in.ti != ti {
+		switch {
+		case first != verb:
+			msg += fmt.Sprintf(", with %s and %s; Own doesn't apply a status, and Apply is for objects that the reconciled object doesn't own", first, verb)
+		case in.ti != ti:
 			msg += fmt.Sprintf(", as %v and %v; declare it with one type", in.ti.goType, ti.goType)
 		}
 		s.fail(errors.New(msg))
@@ -291,8 +298,8 @@ func (s *scope) prepare(ctx context.Context, verb string, ti *typeInfo, m *Objec
 // object with server-side apply and deletes objects it created for this owner
 // in an earlier reconcile that weren't declared this time. It skips the write
 // when the observed object already matches. Owned objects are deleted when
-// their owner is. Changes to an owned object, including its status, run the
-// owner's reconcile again.
+// their owner is. The framework doesn't apply desired's status, but changes
+// to an owned object, including its status, run the owner's reconcile again.
 //
 // The namespace of desired defaults to the owner's. An owned object may be in
 // another namespace, or cluster-scoped; the framework then adds a finalizer

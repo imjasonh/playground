@@ -471,7 +471,10 @@ Server-side apply takes each request as the field manager's whole intent, so
 if two declarations of one object shared a manager, the second request would
 remove the fields that only the first sent. For example, a type that sets a
 label, followed by a type that declares only the status, would remove the
-label.
+label. Declaring an object with both `Own` and `Apply` fails too, because
+`Apply` is for objects that the reconciled object doesn't own. The error also
+says that `Own` doesn't apply a status, so that a program doesn't move the
+status into the `Own` declaration and lose it unnoticed.
 
 The framework skips an apply when the cached object already has every field
 of the document. That alone isn't enough, because server-side apply removes

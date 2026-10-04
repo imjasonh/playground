@@ -105,12 +105,22 @@ func TestDeclareOneObjectThroughTwoTypes(t *testing.T) {
 		t.Errorf("Applied = %+v, want only the first declaration", got)
 	}
 
-	t.Log("Owning an object and applying it through another type fails too.")
+	t.Log("Owning an object and applying it fails too, through two types or one, and the error says that Own doesn't apply a status.")
 	ctx, rec = Fake(t.Context(), parent)
 	Own(ctx, &deploymentProjection{Object: Meta("web", nil)})
 	Apply(ctx, &deploymentFull{Object: Meta("web", nil)})
-	if err := rec.Err(); err == nil || !strings.Contains(err.Error(), "declare it with one type") {
-		t.Errorf("Err = %v, want a declaration through two types", err)
+	want = "kube.Apply: Deployment.apps/v1 shop/web was declared twice in one reconcile, with Own and Apply; Own doesn't apply a status, and Apply is for objects that the reconciled object doesn't own"
+	if err := rec.Err(); err == nil || err.Error() != want {
+		t.Errorf("Err = %v, want %q", err, want)
+	}
+	ctx, rec = Fake(t.Context(), parent)
+	d = &deploymentStatus{Object: Meta("web", nil)}
+	d.Status.Conditions = checked()
+	Apply(ctx, d)
+	Own(ctx, &deploymentStatus{Object: Meta("web", nil)})
+	want = "kube.Own: Deployment.apps/v1 shop/web was declared twice in one reconcile, with Apply and Own; Own doesn't apply a status, and Apply is for objects that the reconciled object doesn't own"
+	if err := rec.Err(); err == nil || err.Error() != want {
+		t.Errorf("Err = %v, want %q", err, want)
 	}
 
 	t.Log("One kind in two namespaces, or two kinds with one name, are different objects.")
