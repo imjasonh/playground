@@ -32,13 +32,19 @@ func parentOf(b *gitk8s.GitBranch, queue ...string) *gitk8s.GitBranch {
 	return p
 }
 
+// repository returns the GitRepository app with rules, at an address where
+// nothing listens.
+func repository(rules ...gitk8s.BranchRule) *gitk8s.GitRepository {
+	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil), Spec: gitk8s.GitRepositorySpec{URL: "http://127.0.0.1:1/app.git", Branches: rules}}
+	repo.Namespace = "default"
+	return repo
+}
+
 // queueOf reconciles parent among the GitBranches in world, and returns its
 // merge queue.
 func queueOf(t *testing.T, parent *gitk8s.GitBranch, world ...any) []string {
 	t.Helper()
-	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil), Spec: gitk8s.GitRepositorySpec{URL: "http://127.0.0.1:1/app.git", Branches: rules()}}
-	repo.Namespace = "default"
-	ctx, _ := kube.Fake(t.Context(), parent, append([]any{repo}, world...)...)
+	ctx, _ := kube.Fake(t.Context(), parent, append([]any{repository(rules()...)}, world...)...)
 	if err := (&merger{}).Reconcile(ctx, parent); err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +83,20 @@ func TestOnlyParentsHaveQueues(t *testing.T) {
 	release.Spec.Merge = nil
 	if got := queueOf(t, release, proposal("app", "c/x", "release", &gitk8s.Queued{Head: "abc"})); got != nil {
 		t.Errorf("queue = %q, but no rule names release as a parent", got)
+	}
+
+	p := *policy
+	p.Checks = []gitk8s.CheckPolicy{{Name: "base"}, {Name: "gofmt", MayPush: true}}
+	x := proposal("app", "c/x", "main", &gitk8s.Queued{Head: "abc"})
+	x.Spec.Merge = &p
+	main := parentOf(x, "c/x")
+	repo := repository(gitk8s.BranchRule{Match: "main", Merge: &p}, gitk8s.BranchRule{Match: "c/**", Parent: "main"})
+	ctx, _ := kube.Fake(t.Context(), main, repo, x)
+	if err := (&merger{}).Reconcile(ctx, main); err != nil {
+		t.Fatal(err)
+	}
+	if main.Status.Queue != nil {
+		t.Errorf("queue = %q, but main's merge policy doesn't let the base check push", main.Status.Queue)
 	}
 }
 

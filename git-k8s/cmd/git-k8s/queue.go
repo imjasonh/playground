@@ -37,11 +37,16 @@ func queues(policy *gitk8s.MergePolicy) bool {
 
 // queue returns the branches in b's merge queue, front first. Branches keep
 // their places, so the front stays the front until it leaves. Branches that
-// join go to the back, in the order that they joined, then by name.
+// join go to the back, in the order that they joined, then by name. Only a
+// parent whose merge policy queues branches has a queue.
 func queue(ctx context.Context, b *gitk8s.GitBranch) ([]string, error) {
 	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
+	if repo == nil {
+		return nil, nil
+	}
+	rule := gitk8s.FindRule(repo.Spec.Branches, b.Spec.Branch)
 	isParent := func(r gitk8s.BranchRule) bool { return r.Parent == b.Spec.Branch }
-	if repo == nil || !slices.ContainsFunc(repo.Spec.Branches, isParent) {
+	if rule == nil || !queues(rule.Merge) || !slices.ContainsFunc(repo.Spec.Branches, isParent) {
 		return nil, nil
 	}
 	// Only reconciles of b write its queue, one at a time, so each starts
