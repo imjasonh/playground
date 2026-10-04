@@ -424,12 +424,15 @@ func TestFirstSeenForgetsUnlistedVersions(t *testing.T) {
 	b.publish(mod, "v1.1.0", longAgo, "")
 	clock = clock.Add(time.Hour)
 	target("", minAge)
+	t.Log("So when the first proxy answers again, v1.2.0 waits from when that proxy first listed it.")
+	a.fail(mod, "list", 0)
+	clock = today.Add(minAge)
+	target("v1.2.0", 0)
 
 	t.Log("When the first proxy stops listing v1.2.0, its time goes.")
-	a.fail(mod, "list", 0)
 	a.set(mod, "list", "v1.0.0\nv1.1.0\n")
-	clock = clock.Add(time.Hour)
-	target("", minAge-2*time.Hour)
+	clock = clock.Add(2 * time.Hour)
+	target("v1.1.0", 0)
 	want := map[seenKey]time.Time{{a.URL, mod, "v1.1.0"}: today, {b.URL, mod, "v1.1.0"}: today.Add(time.Hour)}
 	if !maps.EqualFunc(p.seen, want, time.Time.Equal) {
 		t.Errorf("kept %v, want %v", p.seen, want)
@@ -437,7 +440,7 @@ func TestFirstSeenForgetsUnlistedVersions(t *testing.T) {
 
 	t.Log("So when v1.2.0 comes back, it waits again.")
 	a.list(mod, "v1.2.0")
-	clock = today.Add(minAge)
+	clock = clock.Add(2 * time.Hour)
 	target("v1.1.0", minAge)
 }
 
@@ -481,6 +484,7 @@ func TestEncode(t *testing.T) {
 		{a, mod, "v1.1.0"}:   day(2),
 		{a, mod, "v1.3.0"}:   day(1),
 		{b, mod, "v1.1.0"}:   day(1),
+		{b, mod, "v1.3.0"}:   day(2),
 		{a, other, "v1.1.0"}: day(3),
 	}
 	p.seen = map[seenKey]time.Time{
@@ -490,9 +494,9 @@ func TestEncode(t *testing.T) {
 		{a, other, "v1.2.0"}: day(5),
 	}
 	got := p.encode()
-	want := line(a, mod, "v1.1.0", 1) + line(a, mod, "v1.2.0", 4) + line(a, other, "v1.1.0", 3) + line(b, mod, "v1.1.0", 0)
+	want := line(a, mod, "v1.1.0", 1) + line(a, mod, "v1.2.0", 4) + line(a, other, "v1.1.0", 3) + line(b, mod, "v1.1.0", 0) + line(b, mod, "v1.3.0", 2)
 	if got != want {
-		t.Errorf("encode() = %q, want %q: the earliest times, without versions that a fresh list leaves out or that only memory has without one", got, want)
+		t.Errorf("encode() = %q, want %q: the earliest times, without versions that a fresh list from their proxy leaves out or that only memory has without one", got, want)
 	}
 	q := newProxy([]string{a, b}, time.Hour, func() time.Time { return today })
 	if q.load(got); q.encode() != got {
@@ -501,7 +505,7 @@ func TestEncode(t *testing.T) {
 
 	t.Log("When the lines don't fit, encode leaves out the oldest times.")
 	maxStored = len(want) - 1
-	if got, want := p.encode(), line(a, mod, "v1.1.0", 1)+line(a, mod, "v1.2.0", 4)+line(a, other, "v1.1.0", 3); got != want {
+	if got, want := p.encode(), line(a, mod, "v1.1.0", 1)+line(a, mod, "v1.2.0", 4)+line(a, other, "v1.1.0", 3)+line(b, mod, "v1.3.0", 2); got != want {
 		t.Errorf("encode() = %q, want %q", got, want)
 	}
 

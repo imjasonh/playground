@@ -122,6 +122,8 @@ type updater struct {
 
 	// now is time.Now, except in tests.
 	now func() time.Time
+	// fetchConfigMap is kube.Fetch, except in tests.
+	fetchConfigMap func(ctx context.Context, namespace, name string) (*configMap, error)
 	// resultPort is the port that result containers serve on, 8080 except
 	// in tests.
 	resultPort int
@@ -378,7 +380,11 @@ func (u *updater) loadSeen(ctx context.Context, need bool, log *slog.Logger) (st
 	if u.minAge == 0 || u.seenObject.Name == "" || !need {
 		return "", false
 	}
-	cm, err := kube.Fetch[configMap](ctx, u.seenObject.Namespace, u.seenObject.Name)
+	fetch := kube.Fetch[configMap]
+	if u.fetchConfigMap != nil {
+		fetch = u.fetchConfigMap
+	}
+	cm, err := fetch(ctx, u.seenObject.Namespace, u.seenObject.Name)
 	if err != nil {
 		log.Warn("reading first-seen times failed, so a restart would restart the wait for the versions that this reconcile sees", "configmap", u.seenObject.String(), "error", err)
 		return "", false

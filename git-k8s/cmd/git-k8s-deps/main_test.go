@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"net/http"
 	"net/http/httptest"
@@ -600,6 +602,43 @@ func TestKeepsFirstSeenTimesAcrossAFailover(t *testing.T) {
 			f.clock = f.clock.Add(tc.wait)
 			f.update("v1.1.0")
 		})
+	}
+}
+
+func TestWritesFirstSeenTimesOnlyAfterReadingThem(t *testing.T) {
+	f := newFixture(t)
+	f.u.interval, f.u.minAge, f.u.seenConfigMap = 100*time.Hour, 72*time.Hour, "git-k8s-deps/first-seen"
+	reads := 0
+	var readErr error
+	f.u.fetchConfigMap = func(ctx context.Context, namespace, name string) (*configMap, error) {
+		reads++
+		if readErr != nil {
+			return nil, readErr
+		}
+		return kube.Fetch[configMap](ctx, namespace, name)
+	}
+
+	t.Log("When the controller can't read the times, it uses the ones in its memory and doesn't write them.")
+	readErr = errors.New(`configmaps "first-seen" is forbidden`)
+	rec := f.checkStays("")
+	if n := len(kube.Applied[configMap](rec)); reads != 1 || n != 0 || rec.RequeueAfter() != 72*time.Hour {
+		t.Errorf("after %d reads, the controller wrote %d ConfigMaps and waits %v, want 1 read, none written, and 72h", reads, n, rec.RequeueAfter())
+	}
+
+	t.Log("Once it can read them, it writes the times that it kept in memory.")
+	readErr = nil
+	f.clock = f.clock.Add(time.Hour)
+	rec = f.checkStays("")
+	want := f.proxy.URL + " " + greet + " v1.1.0 " + today.Format(time.RFC3339) + "\n"
+	if stored := kube.Applied[configMap](rec); len(stored) != 1 || stored[0].Data[seenData] != want || rec.RequeueAfter() != 71*time.Hour {
+		t.Errorf("written ConfigMaps = %+v, and the controller waits %v, want %q and 71h", stored, rec.RequeueAfter(), want)
+	}
+
+	t.Log("A reconcile of a branch whose modules require nothing doesn't read the times.")
+	reads = 0
+	f.moveMain("go.mod", "module example.com/app\n\ngo 1.24\n")
+	if n := len(kube.Applied[configMap](f.checkStays(""))); reads != 0 || n != 0 {
+		t.Errorf("the controller read the times %d times and wrote %d ConfigMaps, want neither", reads, n)
 	}
 }
 
@@ -1381,6 +1420,7 @@ func TestFlags(t *testing.T) {
 		"-seen-configmap=deps/times": {Namespace: "deps", Name: "times"},
 		"-seen-configmap=":           {},
 		"-min-age=0":                 {},
+		"-seen-configmap=" + strings.Repeat("a", 63) + "/" + strings.Repeat("b", 253): {Namespace: strings.Repeat("a", 63), Name: strings.Repeat("b", 253)},
 	} {
 		u := parse(arg)
 		if err := u.setup(); err != nil || u.seenObject != want {
@@ -1394,6 +1434,8 @@ func TestFlags(t *testing.T) {
 		{"-seen-configmap=deps/"},
 		{"-seen-configmap=times..v1"},
 		{"-seen-configmap=deps.x/times"},
+		{"-seen-configmap=" + strings.Repeat("a", 64) + "/times"},
+		{"-seen-configmap=" + strings.Repeat("b", 254)},
 		{"-identity-email=<>"},
 		{"-check-identity-email="},
 		{"-prefix=deps"},
