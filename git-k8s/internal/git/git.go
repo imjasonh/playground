@@ -364,14 +364,23 @@ type FileStat struct {
 	Removed int
 }
 
-// Numstat lists the files that differ between two commits.
+// Numstat lists the files that differ between two commits. The diff reads
+// attributes from the empty tree, so that no .gitattributes file can make a
+// text file count as binary.
 func (r *Repo) Numstat(ctx context.Context, base, head string) ([]FileStat, error) {
-	out, err := r.run(ctx, "diff", "--numstat", "-z", "--no-renames", base, head)
+	noAttrs, err := r.noAttributes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res, err := r.git.exec(ctx, r.Dir, []string{noAttrs, "diff", "--numstat", "-z", "--no-renames", "--end-of-options", base, head}, opts{env: remoteProtocols})
+	if err == nil && res.code != 0 {
+		err = &Error{Command: "diff", Code: res.code, Stderr: res.stderr}
+	}
 	if err != nil {
 		return nil, err
 	}
 	var stats []FileStat
-	for rec := range strings.SplitSeq(string(out), "\x00") {
+	for rec := range strings.SplitSeq(string(res.stdout), "\x00") {
 		parts := strings.SplitN(rec, "\t", 3)
 		if len(parts) != 3 {
 			continue

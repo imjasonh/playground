@@ -190,6 +190,25 @@ func TestTreeEditing(t *testing.T) {
 	}
 }
 
+func TestNumstatIgnoresAttributes(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	w.Write("a.txt", "1\n2\n3\n")
+	base := w.Commit("base")
+	w.Write("a.txt", "1\ntwo\n3\nfour\n")
+	head := w.Commit("change")
+	w.Write(".gitattributes", "*.txt -diff\n")
+	binary := w.Commit("mark text files binary")
+	w.Push("main")
+	repo := fetched(t, srv, "main")
+	readAttributesFrom(t, repo, binary)
+
+	stats, err := repo.Numstat(t.Context(), base, head)
+	if err != nil || len(stats) != 1 || stats[0] != (git.FileStat{Path: "a.txt", Added: 2, Removed: 1}) {
+		t.Errorf("Numstat with attributes that mark a.txt binary = %+v, %v; want 2 lines added and 1 removed in a.txt", stats, err)
+	}
+}
+
 func mustEntry(t *testing.T, repo *git.Repo, commit, path string) string {
 	t.Helper()
 	entries, err := repo.LsTree(t.Context(), commit)
