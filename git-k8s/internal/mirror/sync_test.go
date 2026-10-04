@@ -320,7 +320,12 @@ func TestDecideRewrittenCommits(t *testing.T) {
 	both := w.commitFiles(line10, "line 50 too", file(map[int]string{10: "bar", 50: "bar"}))
 	line50NoS := w.commitFiles(p, "line 50 without s", file(map[int]string{10: "foo", 50: "bar"}))
 	line10NoS := w.commitFiles(p, "line 10 without s", file(map[int]string{10: "bar", 50: "foo"}))
-	line10And11NoS := w.commitFiles(p, "lines 10 and 11 without s", file(map[int]string{10: "bar", 11: "eleven", 50: "foo"}))
+	// afterLine11 and afterLine12 replay the copy's change to line 10 in a
+	// commit of its own, after a commit that changes line 11 or line 12.
+	afterLine11 := w.commitFiles(w.commitFiles(p, "line 11 without s", file(map[int]string{10: "foo", 11: "eleven", 50: "foo"})),
+		"line 10 after line 11", file(map[int]string{10: "bar", 11: "eleven", 50: "foo"}))
+	afterLine12 := w.commitFiles(w.commitFiles(p, "line 12 without s", file(map[int]string{10: "foo", 12: "twelve", 50: "foo"})),
+		"line 10 after line 12", file(map[int]string{10: "bar", 12: "twelve", 50: "foo"}))
 	line50 := w.commitFiles(s, "line 50", file(map[int]string{10: "foo", 50: "bar"}))
 	sOnLine10 := w.replay(s, line10NoS)
 	// line10 then baz changes line 10 twice; onMain replays s and both
@@ -383,9 +388,11 @@ func TestDecideRewrittenCommits(t *testing.T) {
 		want    action
 	}{
 		{name: "the external repository rewound and replayed the copy's change", m: line10, d: line10NoS, s: s, want: take},
-		// git conflicts on adjacent lines, so a replay next to another
-		// change diverges even though it keeps the copy's change.
-		{name: "the external repository rewound and replayed the copy's change next to a change of its own", m: line10, d: line10And11NoS, s: s, want: diverged},
+		// git conflicts on adjacent lines, so a replay of the copy's change
+		// diverges if the external repository also changed the next line,
+		// even though it keeps the copy's change.
+		{name: "the external repository rewound, changed line 11, and replayed the copy's change to line 10", m: line10, d: afterLine11, s: s, want: diverged},
+		{name: "the external repository rewound, changed line 12, and replayed the copy's change to line 10", m: line10, d: afterLine12, s: s, want: take},
 		{name: "the external repository rewound and made the copy's change on another line", m: line10, d: line50NoS, s: s, want: diverged},
 		{name: "the external repository rewound and made one of the copy's two changes", m: both, d: line10NoS, s: s, want: diverged},
 		{name: "the copy rebased onto a main that made the external repository's change on another line", m: sOnLine10, d: line50, s: s, want: diverged},
