@@ -418,8 +418,8 @@ also runs:
 cd agent/runner && npm ci && npm test
 ```
 
-The repository's daily dependency updates skip the runner, so update its npm
-dependencies by hand.
+The repository's daily dependency update upgrades the runner's npm
+dependencies too, and runs these tests.
 
 The end-to-end test installs every program with `generate` in a
 [kind](https://kind.sigs.k8s.io/) cluster with a local registry. It runs a
