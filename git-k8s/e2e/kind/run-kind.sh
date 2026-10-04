@@ -537,8 +537,10 @@ echo "::endgroup::"
 echo "::group::Tests run in a sandboxed Pod"
 # kindnet, kind's network plugin, enforces NetworkPolicies only where the
 # kernel has nfnetlink_queue. To find out, a Pod that a policy denies all
-# egress tries to reach the git server, once the plugin knows the Pod's
-# address.
+# egress tries to reach the git server until it can't. The plugin can take a
+# few seconds to apply the policy to a new Pod, so the test decides that the
+# cluster doesn't enforce NetworkPolicies only if the Pod still reaches the
+# git server after 30 seconds.
 k apply -f - <<EOF
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -572,10 +574,12 @@ spec:
         - {name: GIT_ALLOW_PROTOCOL, value: "http:https:git:ssh"}
 EOF
 k -n "${NS}" wait --for=condition=Ready pod/no-egress --timeout=120s
-sleep 5
+no_egress() {
+  ! timeout 20 kubectl --context "${CONTEXT}" -n "${NS}" exec no-egress -- \
+    git ls-remote --end-of-options "http://git-k8s:${PASSWORD}@${GATEWAY}:${GIT_PORT}/app.git" >/dev/null 2>&1
+}
 ENFORCED=1
-if timeout 20 kubectl --context "${CONTEXT}" -n "${NS}" exec no-egress -- \
-  git ls-remote --end-of-options "http://git-k8s:${PASSWORD}@${GATEWAY}:${GIT_PORT}/app.git" >/dev/null 2>&1; then
+if ! eventually 30 no_egress 2>/dev/null; then
   ENFORCED=0
   echo "This cluster doesn't enforce NetworkPolicies, so the test doesn't check what test Pods can reach."
 fi
