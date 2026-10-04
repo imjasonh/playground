@@ -87,7 +87,6 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 
 	var res gitk8s.CheckResult
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxResultSize))
-	dec.DisallowUnknownFields()
 	if err := dec.Decode(&res); err != nil {
 		http.Error(w, "decoding the result: "+err.Error(), http.StatusBadRequest)
 		return

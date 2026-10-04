@@ -88,7 +88,7 @@ func TestResultsEndpointRejects(t *testing.T) {
 		{"a person", gofmt, "admin", fresh, http.StatusForbidden, "kubernetes-admin isn't a check's service account"},
 		{"another check's entry", gofmt, "base", fresh, http.StatusForbidden, "system:serviceaccount:check-base:check-base is the base check, so it can't write the gofmt check's result"},
 		{"invalid JSON", gofmt, "gofmt", `{"commit":`, http.StatusBadRequest, "decoding the result"},
-		{"an unknown field", gofmt, "gofmt", `{"commit":"h1","state":"Passed","approved":true}`, http.StatusBadRequest, `unknown field "approved"`},
+		{"a field that the core program doesn't know", "/results/default/app-c-x/base?generation=3", "base", `{"commit":"h1","parentCommit":"p1","state":"Passed","approved":true}`, http.StatusNoContent, ""},
 		{"a body that's too large", gofmt, "gofmt", `{"commit":"h1","state":"Passed","message":"` + strings.Repeat("x", maxResultSize) + `"}`, http.StatusBadRequest, "too large"},
 		{"a state that checks can't send", gofmt, "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Pending}, http.StatusBadRequest, `state "Pending" isn't`},
 		{"an invalid generation", "/results/default/app-c-x/gofmt?generation=new", "gofmt", fresh, http.StatusBadRequest, "generation"},
