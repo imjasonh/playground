@@ -154,6 +154,7 @@ func TestKeeps(t *testing.T) {
 		{"a head that replays a side that rewound", replayed, rewound, base, true},
 		{"a head with a commit that a side that rewound removed, though not its change", revived, rewound, base, false},
 		{"a head with a copy of what a side that reset removed", copied, start, base, false},
+		{"a head that contains base, with a side that rebuilt base as another commit with the same change", side, copied, base, false},
 		{"a head with another commit than what a side that reset removed", other, start, base, true},
 		{"a head built on a side that rewound, with replays of two commits that it removed, which undo each other", tokens, rewound, revoked, false},
 		{"a head built on a side that rewound, with a replay of a commit that it removed, whose change another removed commit undid", leaked, rewound, revoked, false},
