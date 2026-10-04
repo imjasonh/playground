@@ -6,9 +6,11 @@
 // allow.
 //
 // The repositories controller syncs each copy with the external repository
-// and owns a GitBranch for every branch that the repository's rules select.
-// The merge controller reads the check results on each GitBranch, and when
-// the parent's merge policy passes, fast-forwards the parent to the branch.
+// and owns a GitBranch for every branch that the repository's rules select,
+// and a NetworkPolicy that limits what check-gotest's test Pods in the
+// repository's namespace can reach. The merge controller reads the check
+// results on each GitBranch, and when the parent's merge policy passes,
+// fast-forwards the parent to the branch.
 //
 // Check controllers run as separate programs, such as check-gofmt.
 package main

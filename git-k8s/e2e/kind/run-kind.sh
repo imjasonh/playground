@@ -605,7 +605,7 @@ func TestAdd(t *testing.T) {
 }
 GO
 if [[ ${ENFORCED} -eq 1 ]]; then
-  # The test Pod's NetworkPolicy lets it reach only the mirror and CoreDNS,
+  # The test Pods' NetworkPolicy lets them reach only the mirror and CoreDNS,
   # so this test passes only in a Pod that can't reach the git server,
   # CoreDNS's metrics port, or, if the node can reach the internet, a public
   # DNS server. kindnet doesn't filter a Pod's connections to its own node,
@@ -680,14 +680,30 @@ t push -q "${HOST_URL}/tested.git" HEAD:c/fixed
 fixed_landed() { [[ "$(remote_head main tested)" == "${fixed}" ]]; }
 eventually 300 fixed_landed
 eventually 60 no_test_pods
-no_test_policies() { [[ -z "$(k -n "${NS}" get networkpolicies -l app.kubernetes.io/name=check-gotest -o name)" ]]; }
-eventually 60 no_test_policies
 echo "A branch that breaks a test failed in a sandboxed Pod, and a fixed branch landed."
 if [[ ${ENFORCED} -eq 1 ]]; then
   echo "The test Pods fetched from the mirror, and could resolve names but couldn't reach the git server, CoreDNS's metrics port, or a public DNS server."
 else
   echo "The test Pods fetched from the mirror."
 fi
+# The core program owns a NetworkPolicy for each GitRepository that selects
+# the Pods with check-gotest's controller label. The mirror lets only Pods
+# with that label fetch, so the test Pods that fetched have it, even where
+# the cluster doesn't enforce the policy.
+selects_test_pods() {
+  [[ "$(k -n "${NS}" get networkpolicy "$1-test-pods" --ignore-not-found \
+    -o jsonpath='{.spec.podSelector.matchLabels.kube\.imjasonh\.github\.io/controller}')" == check-gotest ]]
+}
+selects_test_pods app
+selects_test_pods tested
+can_i() { k auth can-i "$1" networkpolicies -n "${NS}" --as="system:serviceaccount:$2:$2" || true; }
+for verb in create patch delete; do
+  [[ "$(can_i "${verb}" check-gotest)" == no && "$(can_i "${verb}" git-k8s)" == yes ]]
+done
+k -n "${NS}" delete networkpolicy tested-test-pods
+tested_selects_test_pods() { selects_test_pods tested; }
+eventually 60 tested_selects_test_pods
+echo "Each GitRepository's NetworkPolicy selects check-gotest's Pods, check-gotest can't change NetworkPolicies, and the core program created a deleted policy again."
 echo "::endgroup::"
 
 echo "::group::The mirror checks a test Pod, not just its name"

@@ -21,7 +21,8 @@ import (
 
 // repositories reconciles GitRepository objects. Each reconcile syncs the
 // repository's copy in the mirror with the external repository, and owns a
-// GitBranch for each of the copy's branches that the rules select.
+// GitBranch for each of the copy's branches that the rules select, and the
+// NetworkPolicy of the test Pods in the repository's namespace.
 //
 // The mirror triggers a reconcile after each push to it, and the merge
 // controller after each landing, so a reconcile reads the copy, which is
@@ -153,6 +154,9 @@ func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository
 	}
 	p = r.polled(key, p, now, interval, rep, push)
 
+	// kube applies declarations in order, so the test Pods' NetworkPolicy
+	// exists before the GitBranches that check-gotest starts test Pods for.
+	kube.Own(ctx, testPodsPolicy(repo))
 	specs := gitk8s.DesiredBranches(repo.Name, repo.Spec.Branches, rep.Heads)
 	for _, spec := range specs {
 		kube.Own(ctx, &gitk8s.GitBranch{

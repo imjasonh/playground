@@ -106,8 +106,9 @@ namespace `team` is at `http://git-k8s.git-k8s.svc/team/app.git`. The
 Service's port 80 forwards to port 8081 of the core program's Pod, where
 `kube.Serve` listens. If you install the core program under another name or
 in another namespace, set `-mirror` to the mirror's base URL on `check-base`,
-`check-gofmt`, `check-risk`, and `check-gotest`, and set `-mirror-namespace`
-and `-mirror-labels` on `check-gotest`.
+`check-gofmt`, `check-risk`, and `check-gotest`. Also set the core program's
+`-mirror-namespace` and `-mirror-labels` to its own namespace and labels,
+which it uses in the [test Pods' NetworkPolicy](#sandboxed-checks).
 
 ### Sync with the external repository
 
@@ -452,13 +453,14 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
 - The test container runs `go test ./...` as user 65532 with no service
   account token, no privileges, a read-only root file system, and
   `GOPROXY=off`, so tests can't download modules.
-- A NetworkPolicy for each Pod lets it reach only the mirror and the
-  cluster's DNS servers, and lets nothing reach it. When `-goproxy` isn't
-  `off`, the policy also lets the Pod reach ports 80 and 443 on IPv4
-  addresses outside the private ranges (`10.0.0.0/8`, `172.16.0.0/12`, and
-  `192.168.0.0/16`), the shared address space (`100.64.0.0/10`), and the
-  link-local range (`169.254.0.0/16`). Those ranges usually hold the
-  cluster's Pods, Services, and nodes, and a cloud's metadata server.
+- A NetworkPolicy that the core program owns lets the Pod reach only the
+  mirror and the cluster's DNS servers, and lets nothing reach it. When the
+  core program's `-goproxy` isn't `off`, the policy also lets the Pod reach
+  ports 80 and 443 on IPv4 addresses outside the private ranges
+  (`10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`), the shared address
+  space (`100.64.0.0/10`), and the link-local range (`169.254.0.0/16`).
+  Those ranges usually hold the cluster's Pods, Services, and nodes, and a
+  cloud's metadata server.
 - If fetching fails, the check starts a new Pod 30 seconds later, and 60
   seconds after a second failure, so its three Pods outlast a restart of the
   core program.
@@ -466,19 +468,35 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   namespaces. A branch that would start another reports `Running` and waits
   until one finishes.
 
-kube deletes a Pod and its NetworkPolicy when the check stops declaring
-them: after the check records the Pod's result, or when the branch moves to
-a new head. Owner references delete them with their `GitBranch`. Set
-`-runtime-class` to run the Pods under a sandboxing runtime such as gVisor,
-and `-go-image`, `-git-image`, `-timeout`, and `-goproxy` to change the
-rest.
+kube deletes a Pod when the check stops declaring it: after the check
+records the Pod's result, or when the branch moves to a new head. Owner
+references delete the Pods with their `GitBranch`. Set `-runtime-class` to
+run the Pods under a sandboxing runtime such as gVisor, and `-go-image`,
+`-git-image`, `-timeout`, and `-goproxy` to change the rest. If you set
+`-goproxy`, set the same value on the core program.
+
+The core program owns the NetworkPolicy so that `check-gotest`, which
+creates Pods in every namespace that has a `GitBranch`, can't change
+NetworkPolicies. Each `GitRepository` owns one policy, `NAME-test-pods`. It
+selects the Pods in the repository's namespace that have kube's controller
+label for `check-gotest`, `kube.imjasonh.github.io/controller=check-gotest`,
+which are the Pods that the mirror lets fetch. The policies of the
+`GitRepository` objects in a namespace are the same, so each one covers every
+test Pod there. The repositories controller declares the policy before the
+`GitBranch` objects, so it exists before `check-gotest` starts the first test
+Pod for a new `GitRepository`. If someone deletes the policy, the next
+reconcile of the `GitRepository` that succeeds creates it again. When you
+delete the last `GitRepository` in a namespace, garbage collection deletes
+the policy with the `GitBranch` objects, before the test Pods that they own,
+so a test Pod that's still running loses the policy's limits until it stops.
 
 The policy selects the cluster's DNS servers as the Pods labeled
 `k8s-app=kube-dns` in the namespace `kube-system`, which is where kubeadm
 and kind run CoreDNS. If your cluster's DNS Pods have other labels or run in
-another namespace, set `-dns-labels` and `-dns-namespace`. If Pods send DNS
-queries to an address that isn't a Pod's, such as NodeLocal DNSCache's
-`169.254.20.10`, set `-dns-cidrs`, for example to `169.254.20.10/32`.
+another namespace, set the core program's `-dns-labels` and
+`-dns-namespace`. If Pods send DNS queries to an address that isn't a Pod's,
+such as NodeLocal DNSCache's `169.254.20.10`, set its `-dns-cidrs`, for
+example to `169.254.20.10/32`.
 
 The NetworkPolicy needs a network plugin that enforces NetworkPolicies, such
 as Calico or Cilium. Kubernetes allows a connection that any policy for the
@@ -595,10 +613,11 @@ a change:
   gate. It can't read Secrets or reach external repositories, and the
   admission policies keep it to its own result.
 - The test container, which runs the branch's code, has no token and no
-  credentials, and its NetworkPolicy lets it reach only the mirror and the
-  cluster's DNS servers. The init container's token can fetch only the
-  branch's repository, only while the Pod runs, and stops working when the
-  Pod is deleted.
+  credentials, and the core program's NetworkPolicy lets it reach only the
+  mirror and the cluster's DNS servers. `check-gotest` creates the Pod but
+  can't change NetworkPolicies. The init container's token can fetch only
+  the branch's repository, only while the Pod runs, and stops working when
+  the Pod is deleted.
 - Tokens for the mirror have their own audience, `git-k8s-mirror`, so the
   API server doesn't accept them, and the mirror doesn't accept tokens for
   the API server. The kubelet renews each check's token, which lasts an
@@ -607,9 +626,9 @@ a change:
   comes from a `GitRepository` or a push, and doesn't sync or list branches
   whose names start with `-`, so neither can pass git an option.
 
-The core program is the only program that reads Secrets, which it does in
-every namespace. It holds the external repositories' credentials and decides
-what lands.
+The core program is the only program that reads Secrets or changes
+NetworkPolicies, which it does in every namespace. It holds the external
+repositories' credentials and decides what lands.
 
 Kubernetes RBAC is the trust boundary. Anyone who can write a
 `GitRepository` in a namespace chooses the external repository and the

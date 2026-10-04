@@ -8,14 +8,14 @@
 // The mirror lets the token fetch only the branch's repository, and only
 // while the check's running result names the Pod and the Pod that has the
 // token's UID carries kube's controller label for this check. A
-// NetworkPolicy lets the Pod reach only the mirror and the cluster's DNS
-// servers. The check reports the Pod's result, with the end of the test
-// output when the tests fail.
+// NetworkPolicy that the core program owns lets the Pods with that label
+// reach only the mirror and the cluster's DNS servers, so this program needs
+// no permission to change NetworkPolicies. The check reports the Pod's
+// result, with the end of the test output when the tests fail.
 //
-// kube deletes a Pod and its NetworkPolicy when the check stops declaring
-// them, which happens after the check records the Pod's result and when the
-// branch moves to a new head. Owner references delete them with their
-// GitBranch.
+// kube deletes a Pod when the check stops declaring it, which happens after
+// the check records the Pod's result and when the branch moves to a new
+// head. Owner references delete the Pods with their GitBranch.
 package main
 
 import (
@@ -26,7 +26,6 @@ import (
 	"flag"
 	"fmt"
 	"maps"
-	"net/netip"
 	"slices"
 	"strconv"
 	"strings"
@@ -59,93 +58,13 @@ var (
 	gitImage     = flag.String("git-image", "cgr.dev/chainguard/git:latest", "image that fetches the source; it needs git and sh")
 	runtimeClass = flag.String("runtime-class", "", "RuntimeClass for test Pods, such as gvisor")
 	timeout      = flag.Duration("timeout", 10*time.Minute, "longest a test Pod can run")
-	goProxy      = flag.String("goproxy", "off", "GOPROXY for go test; off keeps tests from downloading modules")
+	goProxy      = flag.String("goproxy", "off", "GOPROXY for go test; off keeps tests from downloading modules, and other values need the same -goproxy on the core program")
 	maxPods      = flag.Int("max-pods", 10, "most test Pods to run at once, in all namespaces; 0 means no limit")
 	mirrorURL    = flag.String("mirror", gitk8s.MirrorURL, "base URL of the git-k8s mirror, which test Pods fetch from")
-	mirrorNS     = flag.String("mirror-namespace", "git-k8s", "namespace of the git-k8s core program, which serves the mirror")
-	dnsNS        = flag.String("dns-namespace", "kube-system", "namespace of the cluster's DNS Pods")
 )
-
-var (
-	mirrorLabels = labels{"app.kubernetes.io/name": "git-k8s"}
-	dnsLabels    = labels{"k8s-app": "kube-dns"}
-	dnsCIDRs     cidrs
-)
-
-func init() {
-	flag.Var(&mirrorLabels, "mirror-labels", "labels of the git-k8s core program's Pods, as KEY=VALUE[,KEY=VALUE]")
-	flag.Var(&dnsLabels, "dns-labels", "labels of the cluster's DNS Pods, as KEY=VALUE[,KEY=VALUE]")
-	flag.Var(&dnsCIDRs, "dns-cidrs", "CIDRs of DNS servers that test Pods can also reach, such as NodeLocal DNSCache's 169.254.20.10/32, separated by commas")
-}
-
-// labels is a flag that holds the labels that a selector matches.
-type labels map[string]string
-
-func (l labels) String() string {
-	var s []string
-	for _, k := range slices.Sorted(maps.Keys(l)) {
-		s = append(s, k+"="+l[k])
-	}
-	return strings.Join(s, ",")
-}
-
-// Set requires at least one label, because a selector with none matches
-// every Pod in the namespace.
-func (l *labels) Set(s string) error {
-	m := labels{}
-	for kv := range strings.SplitSeq(s, ",") {
-		k, v, ok := strings.Cut(kv, "=")
-		if !ok || k == "" {
-			return fmt.Errorf("%q isn't KEY=VALUE", kv)
-		}
-		m[k] = v
-	}
-	*l = m
-	return nil
-}
-
-// cidrs is a flag that holds CIDRs.
-type cidrs []netip.Prefix
-
-func (c cidrs) String() string {
-	s := make([]string, len(c))
-	for i, p := range c {
-		s[i] = p.String()
-	}
-	return strings.Join(s, ",")
-}
-
-func (c *cidrs) Set(s string) error {
-	var ps cidrs
-	if s == "" {
-		*c = ps
-		return nil
-	}
-	for v := range strings.SplitSeq(s, ",") {
-		p, err := netip.ParsePrefix(v)
-		if err != nil {
-			return err
-		}
-		if p != p.Masked() {
-			return fmt.Errorf("%s has bits set after its prefix length; did you mean %s?", p, p.Masked())
-		}
-		ps = append(ps, p)
-	}
-	*c = ps
-	return nil
-}
 
 // testPodLabels are the labels on every test Pod.
 var testPodLabels = map[string]string{"app.kubernetes.io/name": "check-gotest"}
-
-// podLabel holds a test Pod's name, so that the Pod's NetworkPolicy selects
-// only that Pod.
-const podLabel = gitk8s.Group + "/test-pod"
-
-// mirrorPort is the port of the core program's Pods that serves the mirror.
-// A NetworkPolicy matches the port of the Pod that a Service sends a
-// connection to, not the Service's port.
-const mirrorPort = 8081
 
 // tokenDir holds the init container's token for the mirror.
 const tokenDir = "/var/run/secrets/git-k8s"
@@ -194,8 +113,6 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		kube.RequeueAfter(ctx, time.Second)
 		return running("starting Pod %s", name), nil
 	}
-	// kube applies these in order, so the policy exists before the Pod.
-	kube.Own(ctx, testPolicy(name))
 	pod := kube.Own(ctx, testPod(in, name))
 	if pod == nil {
 		return running("started Pod %s", name), nil
@@ -300,47 +217,6 @@ fi
 git checkout -q --detach FETCH_HEAD
 `
 
-// privateRanges are the IPv4 ranges where a cluster's Pods, Services, and
-// nodes, and a cloud's metadata server, usually are: the private ranges,
-// the shared address space, and the link-local range.
-var privateRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10", "169.254.0.0/16"}
-
-// testPolicy declares the NetworkPolicy of the test Pod named name. It lets
-// the Pod reach the mirror's port on the core program's Pods, and port 53
-// on the DNS Pods and -dns-cidrs, and lets nothing reach the Pod. With
-// -goproxy, it also lets the Pod reach ports 80 and 443 on IPv4 addresses
-// outside privateRanges, which is where a public module proxy is.
-func testPolicy(name string) *NetworkPolicy {
-	dns := []NetworkPolicyPeer{{NamespaceSelector: namespace(*dnsNS), PodSelector: &LabelSelector{MatchLabels: maps.Clone(dnsLabels)}}}
-	for _, c := range dnsCIDRs {
-		dns = append(dns, NetworkPolicyPeer{IPBlock: &IPBlock{CIDR: c.String()}})
-	}
-	p := &NetworkPolicy{Object: kube.Meta(name, maps.Clone(testPodLabels))}
-	p.Spec = NetworkPolicySpec{
-		PodSelector: LabelSelector{MatchLabels: map[string]string{podLabel: name}},
-		PolicyTypes: []string{"Ingress", "Egress"},
-		Egress: []NetworkPolicyRule{{
-			To:    []NetworkPolicyPeer{{NamespaceSelector: namespace(*mirrorNS), PodSelector: &LabelSelector{MatchLabels: maps.Clone(mirrorLabels)}}},
-			Ports: []NetworkPolicyPort{{Protocol: "TCP", Port: mirrorPort}},
-		}, {
-			To:    dns,
-			Ports: []NetworkPolicyPort{{Protocol: "UDP", Port: 53}, {Protocol: "TCP", Port: 53}},
-		}},
-	}
-	if *goProxy != "off" {
-		p.Spec.Egress = append(p.Spec.Egress, NetworkPolicyRule{
-			To:    []NetworkPolicyPeer{{IPBlock: &IPBlock{CIDR: "0.0.0.0/0", Except: slices.Clone(privateRanges)}}},
-			Ports: []NetworkPolicyPort{{Protocol: "TCP", Port: 80}, {Protocol: "TCP", Port: 443}},
-		})
-	}
-	return p
-}
-
-// namespace selects the namespace named name.
-func namespace(name string) *LabelSelector {
-	return &LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": name}}
-}
-
 func testPod(in *checks.Input, name string) *Pod {
 	yes, no := true, false
 	user := int64(65532)
@@ -361,9 +237,7 @@ func testPod(in *checks.Input, name string) *Pod {
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
 		{Name: "GIT_ALLOW_PROTOCOL", Value: git.AllowProtocol},
 	}
-	labels := maps.Clone(testPodLabels)
-	labels[podLabel] = name
-	p := &Pod{Object: kube.Meta(name, labels)}
+	p := &Pod{Object: kube.Meta(name, maps.Clone(testPodLabels))}
 	p.Spec = PodSpec{
 		RestartPolicy:                "Never",
 		AutomountServiceAccountToken: &no,

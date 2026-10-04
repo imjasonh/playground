@@ -201,6 +201,19 @@ func owned(rec *kube.Recorder) map[string]*gitk8s.GitBranch {
 	return got
 }
 
+// ownedPolicies describes the NetworkPolicies that a reconcile declared. A
+// reconcile of default/app that returns nil must declare wantPolicy, or
+// kube deletes the test Pods' NetworkPolicy.
+func ownedPolicies(rec *kube.Recorder) string {
+	var s []string
+	for _, p := range kube.Owned[NetworkPolicy](rec) {
+		s = append(s, p.Name+" selecting "+labels(p.Spec.PodSelector.MatchLabels).String())
+	}
+	return strings.Join(s, "; ")
+}
+
+const wantPolicy = "app-test-pods selecting kube.imjasonh.github.io/controller=check-gotest"
+
 func TestListsBranches(t *testing.T) {
 	f := newFixture(t)
 	w := f.work
@@ -225,6 +238,9 @@ func TestListsBranches(t *testing.T) {
 	}
 	if got["main"] == nil || got["main"].Spec.Parent != "" {
 		t.Errorf("main = %+v", got["main"])
+	}
+	if got := ownedPolicies(rec); got != wantPolicy {
+		t.Errorf("owned NetworkPolicies: %q, want %q", got, wantPolicy)
 	}
 	if f.repo.Status.Branches != 2 || rec.RequeueAfter() != 30*time.Second {
 		t.Errorf("status branches = %d, requeue = %v", f.repo.Status.Branches, rec.RequeueAfter())
@@ -363,6 +379,9 @@ func TestExternalFailureBacksOff(t *testing.T) {
 	rec := f.reconcile()
 	if len(owned(rec)) != 2 || rec.RequeueAfter() != 30*time.Second {
 		t.Errorf("owned %d GitBranches, requeue = %v; want 2 and a retry in 30s", len(owned(rec)), rec.RequeueAfter())
+	}
+	if got := ownedPolicies(rec); got != wantPolicy {
+		t.Errorf("while the external repository fails, owned NetworkPolicies: %q, want %q", got, wantPolicy)
 	}
 	if c := f.condition("Ready"); c.Status != kube.True {
 		t.Errorf("Ready = %+v", c)
