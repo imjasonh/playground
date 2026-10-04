@@ -81,14 +81,17 @@ require (
 replace example.com/fork => example.com/forked v1.0.0
 `
 
+const toolsMod = "module example.com/app/tools\n\ngo 1.24\n\nrequire example.com/t v1.0.0\n\nreplace example.com/t => ../t\n"
+
 func TestRiskOfModules(t *testing.T) {
 	*maxLines, *sensitive = 10, ""
-	base := map[string]string{
-		"go.mod":       goMod,
-		"tools/go.mod": "module example.com/app/tools\n\ngo 1.24\n\nrequire example.com/t v1.0.0\n",
-	}
+	base := map[string]string{"go.mod": goMod, "tools/go.mod": toolsMod}
 	edit := func(old, new string) map[string]string {
 		return map[string]string{"go.mod": strings.Replace(goMod, old, new, 1)}
+	}
+	with := func(change map[string]string, path, content string) map[string]string {
+		change[path] = content
+		return change
 	}
 	sums := edit("a v1.2.3", "a v1.2.4")
 	sums["go.sum"] = strings.Repeat("example.com/a v1.2.4 h1:abc=\n", 12)
@@ -103,6 +106,41 @@ func TestRiskOfModules(t *testing.T) {
 		{name: "minor release of v0", change: edit("b v0.4.0", "b v0.5.0"), level: "low", reason: "changes 2 lines in 1 files"},
 		{name: "module that another go.mod requires", change: edit(")", "\texample.com/t v1.1.0\n)"), level: "low"},
 		{name: "local replacement", change: edit("replace", "replace example.com/b => ./b\nreplace"), level: "low"},
+		{name: "local replacement in a subdirectory", change: map[string]string{"tools/go.mod": toolsMod + "replace example.com/u => ../u\n"}, level: "low"},
+		{name: "module that a go.mod file at the merge base declares", change: edit(")", "\texample.com/app/tools v0.1.0\n)"), level: "low"},
+		{
+			name:   "new module in a directory in the repository",
+			change: with(edit(")", "\texample.com/app/svc v0.0.0\n)\n\nreplace example.com/app/svc => ./svc\n"), "svc/go.mod", "module example.com/app/svc\n\ngo 1.24\n"),
+			level:  "low",
+		},
+		{
+			name:   "outside module that a new go.mod file declares",
+			change: with(edit(")", "\tgithub.com/attacker/evil v1.0.0\n)"), "x/go.mod", "module github.com/attacker/evil\n"),
+			level:  "high", reason: "adds module github.com/attacker/evil",
+		},
+		{
+			name:   "new module in a directory outside the repository",
+			change: edit(")", "\texample.com/evil v1.0.0\n)\n\nreplace example.com/evil => ../evil\n"),
+			level:  "high", reason: "adds module example.com/evil; replaces example.com/evil with ../evil, which is outside the repository",
+		},
+		{
+			name:   "replacement of another version with a directory in the repository",
+			change: edit(")", "\texample.com/c v1.1.0\n)\n\nreplace example.com/c v1.0.0 => ./c\n"),
+			level:  "high", reason: "adds module example.com/c",
+		},
+		{name: "replacement with a directory outside the repository", change: edit("replace", "replace example.com/a => ../../outside/a\nreplace"), level: "high", reason: "replaces example.com/a with ../../outside/a, which is outside the repository"},
+		{name: "replacement with the parent directory", change: map[string]string{"tools/go.mod": toolsMod + "replace example.com/u => ../..\n"}, level: "high", reason: "replaces example.com/u with ../.., which is outside the repository"},
+		{name: "replacement with an absolute directory", change: edit("replace", "replace example.com/a => /go/pkg/mod/github.com/attacker/a@v1.0.0\nreplace"), level: "high", reason: "which is outside the repository"},
+		{name: "replacement with a directory on a Windows drive", change: edit("replace", "replace example.com/a => C:/mods/a\nreplace"), level: "high", reason: "which is outside the repository"},
+		{name: "replacement that another directory makes", change: edit("replace", "replace example.com/t => ../t\nreplace"), level: "high", reason: "replaces example.com/t with ../t, which is outside the repository"},
+		{
+			name: "go.work",
+			change: map[string]string{
+				"go.work":     "go 1.24\n\nuse .\n\nreplace example.com/a => github.com/attacker/a v1.0.0\n",
+				"go.work.sum": "github.com/attacker/a v1.0.0 h1:abc=\n",
+			},
+			level: "high", reason: "changes go.work",
+		},
 		{name: "new go.mod", change: map[string]string{"svc/go.mod": "module example.com/app/svc\n\ngo 1.26\n\nrequire example.com/a v1.2.3\n"}, level: "low"},
 		{name: "new module", change: edit(")", "\texample.com/c v1.0.0\n)"), level: "high", reason: "adds module example.com/c"},
 		{name: "major version path", change: edit("example.com/a v1.2.3", "example.com/a/v2 v2.0.0"), level: "high", reason: "moves example.com/a to example.com/a/v2"},

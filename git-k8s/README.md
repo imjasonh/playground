@@ -125,9 +125,15 @@ and rates the change `high` when any of these is true:
 - A `go.mod` file that it changes requires a module that no `go.mod` file
   at the merge base requires, moves a module to a new major version or to a
   version that isn't a release, such as a pseudo-version, replaces a module
-  with code from outside the repository or stops replacing one, or changes
-  the `go` or `toolchain` line. A `go.mod` file that the check can't parse
-  also counts.
+  with another module or with a directory outside the repository, stops
+  replacing one, or changes the `go` or `toolchain` line. A directory is
+  outside the repository when its path is absolute or leads out of the
+  repository from the `go.mod` file's directory. A `go.mod` file that the
+  check can't parse also counts. Requiring a module that a `go.mod` file at
+  the merge base declares, or that the file replaces with a directory in
+  the repository, is fine, because that code is in the repository.
+- It changes a `go.work` file, whose directives apply to every module in
+  the workspace.
 - It has commits from AI agents, which carry a `Git-K8s-Agent: CHECK`
   trailer, because no person wrote that code.
 

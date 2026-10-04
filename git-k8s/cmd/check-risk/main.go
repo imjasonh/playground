@@ -9,9 +9,14 @@
 //   - It touches a path that matches a -sensitive glob.
 //   - A go.mod file that it changes requires a module that no go.mod file
 //     at the merge base requires, moves a module to another major version
-//     or to a version that isn't a release, replaces a module with code from
-//     outside the repository or stops replacing one, or changes the go or
-//     toolchain line.
+//     or to a version that isn't a release, replaces a module with another
+//     module or with a directory outside the repository, stops replacing
+//     one, or changes the go or toolchain line. Modules that a go.mod file
+//     at the merge base declares, and modules that the file replaces with a
+//     directory in the repository, are the repository's own, so requiring
+//     them is fine.
+//   - It changes a go.work file, whose directives apply to every module in
+//     the workspace.
 //   - It has commits from AI agents, which carry the Git-K8s-Agent trailer.
 //
 // Otherwise it's low risk, so a patch or minor release of a module that the
@@ -86,7 +91,7 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		return checks.Verdict{}, err
 	}
 	lines, sums := 0, false
-	var hits, mods []string
+	var hits, mods, works []string
 	for _, s := range stats {
 		if name := path.Base(s.Path); name == "go.sum" || name == "go.work.sum" {
 			sums = true
@@ -95,6 +100,9 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		}
 		if gomod.IsModFile(s.Path) {
 			mods = append(mods, s.Path)
+		}
+		if path.Base(s.Path) == "go.work" {
+			works = append(works, s.Path)
 		}
 		for p := range strings.SplitSeq(*sensitive, ",") {
 			if p = strings.TrimSpace(p); p != "" && gitk8s.Match(p, s.Path) {
@@ -116,6 +124,9 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 			return checks.Verdict{}, err
 		}
 		reasons = append(reasons, r...)
+	}
+	if len(works) > 0 {
+		reasons = append(reasons, "changes "+strings.Join(works, ", "))
 	}
 	switch n, err := repo.CountCommits(ctx, base, in.Spec.Head, git.AgentTrailer); {
 	case err != nil:
@@ -181,12 +192,9 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 	if err != nil {
 		return nil, err
 	}
+	// local holds the module paths that the repository declares, and
+	// replaced the replacements that it makes, before the change.
 	local := map[string]bool{}
-	for _, f := range slices.Concat(before, after) {
-		if f.file != nil && f.file.Module != nil {
-			local[f.file.Module.Mod.Path] = true
-		}
-	}
 	required := map[string][]string{}
 	replaced := map[string]bool{}
 	previous := map[string]*modfile.File{}
@@ -195,11 +203,14 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 			continue
 		}
 		previous[f.path] = f.file
+		if f.file.Module != nil {
+			local[f.file.Module.Mod.Path] = true
+		}
 		for _, r := range f.file.Require {
 			required[r.Mod.Path] = append(required[r.Mod.Path], r.Mod.Version)
 		}
 		for _, r := range f.file.Replace {
-			replaced[replacement(r)] = true
+			replaced[replacement(f.path, r)] = true
 		}
 	}
 	// majors maps a module path without its major version suffix to the
@@ -228,7 +239,7 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 			versions := required[p]
 			prefix, _, _ := module.SplitPathVersion(p)
 			switch {
-			case local[p] || slices.Contains(versions, v):
+			case local[p] || replacedInRepo(f, p, v) || slices.Contains(versions, v):
 			case len(versions) == 0 && majors[prefix] != "":
 				add("moves %s to %s", majors[prefix], p)
 			case len(versions) == 0:
@@ -241,9 +252,15 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 		}
 		now := map[string]bool{}
 		for _, r := range f.file.Replace {
-			now[replacement(r)] = true
-			if r.New.Version != "" && !replaced[replacement(r)] {
+			key := replacement(f.path, r)
+			now[key] = true
+			_, inRepo := replaceDir(f.path, r)
+			switch {
+			case replaced[key]:
+			case r.New.Version != "":
 				add("replaces %s with %s", r.Old, r.New)
+			case !inRepo:
+				add("replaces %s with %s, which is outside the repository", r.Old, r.New.Path)
 			}
 		}
 		old := previous[f.path]
@@ -251,7 +268,7 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 			continue
 		}
 		for _, r := range old.Replace {
-			if !now[replacement(r)] {
+			if !now[replacement(f.path, r)] {
 				add("stops replacing %s with %s", r.Old, r.New)
 			}
 		}
@@ -265,7 +282,46 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 	return reasons, nil
 }
 
-func replacement(r *modfile.Replace) string { return r.Old.String() + " => " + r.New.String() }
+// replacement returns a replace directive in the go.mod file at file as a
+// string, with a directory as replaceDir returns it, so that the same
+// directive in two directories differs.
+func replacement(file string, r *modfile.Replace) string {
+	if r.New.Version != "" {
+		return r.Old.String() + " => " + r.New.String()
+	}
+	dir, _ := replaceDir(file, r)
+	return r.Old.String() + " => " + dir
+}
+
+// replaceDir returns the directory, from the repository's root, that a
+// replace directive in the go.mod file at file points to, and reports
+// whether it's in the repository. A directive that names a module has no
+// directory.
+func replaceDir(file string, r *modfile.Replace) (dir string, inRepo bool) {
+	p := r.New.Path
+	switch {
+	case r.New.Version != "":
+		return "", false
+	case path.IsAbs(p) || len(p) > 1 && p[1] == ':':
+		// modfile reads a path that starts with a drive letter, such as
+		// C:/mods, as a directory.
+		return p, false
+	}
+	dir = path.Join(path.Dir(file), p)
+	if dir == ".." || strings.HasPrefix(dir, "../") {
+		return dir, false
+	}
+	return "./" + dir, true
+}
+
+// replacedInRepo reports whether f replaces mod at version with a directory
+// in the repository.
+func replacedInRepo(f modFile, mod, version string) bool {
+	return slices.ContainsFunc(f.file.Replace, func(r *modfile.Replace) bool {
+		_, inRepo := replaceDir(f.path, r)
+		return inRepo && r.Old.Path == mod && (r.Old.Version == "" || r.Old.Version == version)
+	})
+}
 
 func goLine(f *modfile.File) string {
 	if f.Go == nil {
