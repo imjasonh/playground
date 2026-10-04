@@ -262,9 +262,10 @@ type state struct {
 	// head is the parent's head. The outcomes are for updates on it.
 	head     string
 	outcomes map[module.Version]*outcome
-	// waits holds when the versions that each update raises requirements
-	// to will be old enough. The parent moving doesn't make them older, so
-	// waits outlast the head.
+	// waits holds when runPod can make each update again that waits: when
+	// the versions that it raises requirements to will be old enough, or
+	// -interval after it failed because no module proxy has one of them.
+	// The parent moving changes neither, so waits outlast the head.
 	waits map[module.Version]time.Time
 	// attempt goes up when an update fails or waits, so that trying again
 	// starts a new Pod.
@@ -810,9 +811,10 @@ func requires(f *modfile.File, mod, version string) bool {
 
 // runPod starts or follows the Pod that makes the updates that writes need
 // and that have no outcome yet, and records the outcomes that it reports. A
-// failed update gets no new Pod until -interval after it failed, and an
-// update that waits for the versions that it raises gets none until they're
-// old enough.
+// failed update gets no new Pod until -interval after it failed. Neither
+// does an update that raises a requirement to a version that no module
+// proxy has, even when the parent moves, and an update that waits for the
+// versions that it raises gets none until they're old enough.
 func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository, st *state, writes []change, log *slog.Logger) {
 	now := u.clock()
 	wanted := map[module.Version]bool{}
@@ -888,11 +890,13 @@ func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote,
 	raises := raised(mods, w.up, o.files)
 	for _, m := range raises {
 		retracted, err := u.proxy.retracted(ctx, m.Path, m.Version)
+		if errors.Is(err, errNotFound) {
+			u.failMissing(st, w, m, log)
+			return
+		}
 		if err != nil {
 			log.Warn("reading the retractions of a module that an update raises failed", "branch", w.branch, "module", w.up.module, "version", w.up.version, "raises", m.String(), "error", err)
-			if !errors.Is(err, errNotFound) {
-				kube.RequeueAfter(ctx, errorRetry)
-			}
+			kube.RequeueAfter(ctx, errorRetry)
 			return
 		}
 		if retracted {
@@ -1036,11 +1040,13 @@ func (u *updater) waitsForRaised(ctx context.Context, st *state, w change, raise
 	var last module.Version
 	for _, m := range raised {
 		at, err := u.proxy.raisedOldEnoughAt(ctx, m.Path, m.Version, u.minAge)
+		if errors.Is(err, errNotFound) {
+			u.failMissing(st, w, m, log)
+			return true
+		}
 		if err != nil {
 			log.Warn("reading the age of a version that an update raises failed", "branch", w.branch, "module", w.up.module, "version", w.up.version, "raises", m.String(), "error", err)
-			if !errors.Is(err, errNotFound) {
-				kube.RequeueAfter(ctx, errorRetry)
-			}
+			kube.RequeueAfter(ctx, errorRetry)
 			return true
 		}
 		if at.After(until) {
@@ -1057,6 +1063,19 @@ func (u *updater) waitsForRaised(ctx context.Context, st *state, w change, raise
 	kube.RequeueAfter(ctx, until.Sub(now))
 	log.Info("waiting to push an update until the versions that it raises are old enough", "branch", w.branch, "module", w.up.module, "version", w.up.version, "raises", last.String(), "until", until)
 	return true
+}
+
+// failMissing fails an update that raises a requirement to a module or
+// version that no module proxy has, so the controller can't check it. The
+// parent moving doesn't put the version in a proxy, so the update also
+// waits -interval, and runPod makes it again then.
+func (u *updater) failMissing(st *state, w change, m module.Version, log *slog.Logger) {
+	now := u.clock()
+	o := st.outcomes[w.up.key()]
+	o.err, o.files, o.at = fmt.Sprintf("the update raises %s to %s, which no module proxy has", m.Path, m.Version), nil, now
+	st.waits[w.up.key()] = now.Add(u.interval)
+	st.attempt++
+	log.Warn("updating a module failed", "module", w.up.module, "version", w.up.version, "error", o.err)
 }
 
 // sameDirectives reports whether two lists of directives hold the same

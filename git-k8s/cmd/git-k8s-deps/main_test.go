@@ -676,22 +676,20 @@ func TestDoesntPushAnUpdateWhoseRaisedVersionsItCantRead(t *testing.T) {
 	const fresh = "example.com/fresh"
 	for _, tc := range []struct {
 		name string
-		// The proxy answers requests for fresh's file with code.
+		// The proxy fails requests for fresh's file.
 		file string
-		code int
 		// until is when fresh v1.0.0 is old enough: -min-age after the
 		// controller first read fresh's list.
 		until time.Time
 	}{
-		{name: "the proxy fails", file: "list", code: http.StatusInternalServerError, until: today.Add(144*time.Hour + errorRetry)},
-		{name: "no proxy has the module", file: "list", code: http.StatusNotFound, until: today.Add(144*time.Hour + errorRetry)},
-		{name: "the proxy fails to serve the version's time", file: "v1.0.0.info", code: http.StatusInternalServerError, until: today.Add(144 * time.Hour)},
+		{name: "the proxy fails", file: "list", until: today.Add(144*time.Hour + errorRetry)},
+		{name: "the proxy fails to serve the version's time", file: "v1.0.0.info", until: today.Add(144 * time.Hour)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
 			f.u.interval, f.u.minAge = 100*time.Hour, 72*time.Hour
 			f.proxy.publish(fresh, "v1.0.0", longAgo, "")
-			f.proxy.fail(fresh, tc.file, tc.code)
+			f.proxy.fail(fresh, tc.file, http.StatusInternalServerError)
 			mod := modWith(greet, "v1.1.0", fresh, "v1.0.0")
 			f.checkStays("")
 			f.clock = today.Add(72 * time.Hour)
@@ -700,8 +698,7 @@ func TestDoesntPushAnUpdateWhoseRaisedVersionsItCantRead(t *testing.T) {
 			if head := f.srv.Heads(t, "app")[greetBranch]; head != "" {
 				t.Fatalf("the controller pushed %s to %s without reading %s's %s", head, greetBranch, fresh, tc.file)
 			}
-			rec := f.checkStays("")
-			if tc.code != http.StatusNotFound && rec.RequeueAfter() != errorRetry {
+			if rec := f.checkStays(""); rec.RequeueAfter() != errorRetry {
 				t.Errorf("RequeueAfter() = %v, want %v", rec.RequeueAfter(), errorRetry)
 			}
 
@@ -709,14 +706,74 @@ func TestDoesntPushAnUpdateWhoseRaisedVersionsItCantRead(t *testing.T) {
 			f.proxy.fail(fresh, tc.file, 0)
 			f.clock = f.clock.Add(errorRetry)
 			f.checkStays("")
-			until := tc.until
-			f.clock = until.Add(-time.Second)
+			f.clock = tc.until.Add(-time.Second)
 			f.checkStays("")
-			f.clock = until
+			f.clock = tc.until
 			p = f.start()
 			f.finish(p, result(withFiles("v1.1.0", "go.mod", mod, "go.sum", sumAt("v1.1.0"))))
 			if f.srv.Heads(t, "app")[greetBranch] == "" {
 				t.Errorf("the controller didn't push %s once %s v1.0.0 is old enough", greetBranch, fresh)
+			}
+		})
+	}
+}
+
+func TestFailsAnUpdateThatRaisesAVersionThatNoProxyHas(t *testing.T) {
+	const fresh = "example.com/fresh"
+	for _, tc := range []struct {
+		name string
+		// No proxy has fresh's file.
+		file string
+		// pushed is when the controller pushes greet's update: once it
+		// makes the update again and fresh v1.0.0 is old enough.
+		pushed time.Time
+	}{
+		{name: "the module", file: "list", pushed: today.Add(244 * time.Hour)},
+		{name: "the version", file: "v1.0.0.info", pushed: today.Add(172 * time.Hour)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.u.interval, f.u.minAge = 100*time.Hour, 72*time.Hour
+			f.proxy.publish(fresh, "v1.0.0", longAgo, "")
+			f.proxy.fail(fresh, tc.file, http.StatusNotFound)
+			mod := modWith(greet, "v1.1.0", fresh, "v1.0.0")
+			f.checkStays("")
+			f.clock = today.Add(72 * time.Hour)
+			p := f.start()
+			f.finish(p, result(withFiles("v1.1.0", "go.mod", mod, "go.sum", sumAt("v1.1.0"))))
+			if head := f.srv.Heads(t, "app")[greetBranch]; head != "" {
+				t.Fatalf("the controller pushed %s to %s, though no proxy has %s's %s", head, greetBranch, fresh, tc.file)
+			}
+			if got, want := f.failure("v1.1.0"), "the update raises example.com/fresh to v1.0.0, which no module proxy has"; got != want {
+				t.Errorf("the update's failure = %q, want %q", got, want)
+			}
+
+			t.Log("The controller starts no Pod for the update until -interval later, even when main moves.")
+			if rec := f.checkStays(""); rec.RequeueAfter() != f.u.interval {
+				t.Errorf("RequeueAfter() = %v, want %v", rec.RequeueAfter(), f.u.interval)
+			}
+			f.clock = today.Add(80 * time.Hour)
+			f.moveMain("README.md", "# app\n")
+			f.checkStays("")
+			f.proxy.fail(fresh, tc.file, 0)
+			retry := today.Add(172 * time.Hour)
+			f.clock = retry.Add(-time.Second)
+			f.checkStays("")
+
+			t.Log("Then it makes the update again, and pushes it once fresh v1.0.0 is old enough.")
+			f.clock = retry
+			p = f.start()
+			f.finish(p, result(withFiles("v1.1.0", "go.mod", mod, "go.sum", sumAt("v1.1.0"))))
+			if tc.pushed.After(retry) {
+				f.checkStays("")
+				f.clock = tc.pushed.Add(-time.Second)
+				f.checkStays("")
+				f.clock = tc.pushed
+				p = f.start()
+				f.finish(p, result(withFiles("v1.1.0", "go.mod", mod, "go.sum", sumAt("v1.1.0"))))
+			}
+			if f.srv.Heads(t, "app")[greetBranch] == "" {
+				t.Errorf("the controller didn't push %s at %v", greetBranch, tc.pushed.Sub(today))
 			}
 		})
 	}

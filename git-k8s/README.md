@@ -643,6 +643,11 @@ to a retracted version too, for example because the controller pushed the
 branch before the module retracted the version, the controller deletes the
 branch.
 
+When no module proxy has a module or version that an update raises a
+requirement to, the controller can't check the version, so it doesn't push
+the update either. It logs that the update failed, and starts no update Pod
+for the update until `-interval` later, even when the parent moves.
+
 While an update waits, the controller doesn't push it. It logs the version
 that the update waits for and until when, and starts no update Pod for the
 update until then, even when the parent moves. Then it makes the update again
