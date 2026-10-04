@@ -37,6 +37,10 @@ func TestVolume(t *testing.T) {
 		"/var/run/secrets/kubernetes.io":                     "overlaps /var/run/secrets/kubernetes.io/serviceaccount,",
 		"/var/run/secrets":                                   "overlaps /var/run/secrets/kubernetes.io/serviceaccount,",
 		"/var":                                               "overlaps /var/run/secrets/kubernetes.io/serviceaccount,",
+		"/run/secrets/tokens":                                "overlaps /run/secrets/tokens,",
+		"/run/secrets/kubernetes.io/serviceaccount/x":        "overlaps /run/secrets/kubernetes.io/serviceaccount,",
+		"/run/secrets":                                       "overlaps /run/secrets/kubernetes.io/serviceaccount,",
+		"/run":                                               "overlaps /run/secrets/kubernetes.io/serviceaccount,",
 	} {
 		v := Volume(dir)
 		m.controllers = []Controller{v}
@@ -47,7 +51,7 @@ func TestVolume(t *testing.T) {
 			t.Errorf("describe Volume(%q): err = %v, want %q", dir, err, want)
 		}
 	}
-	for _, dir := range []string{"/var/lib/app", "/var/run/secrets/tokens-cache", "/var/run/secrets/app", "/srv/tmp"} {
+	for _, dir := range []string{"/var/lib/app", "/var/run/secrets/tokens-cache", "/var/run/secrets/app", "/srv/tmp", "/run/app", "/run/secrets/app"} {
 		if _, err := Volume(dir).describe(); err != nil {
 			t.Errorf("describe Volume(%q): %v", dir, err)
 		}

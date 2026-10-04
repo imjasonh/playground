@@ -23,8 +23,10 @@ import (
 // root file system, the program, and temporary files use. It can't be
 // /var/run/secrets/kubernetes.io/serviceaccount or /var/run/secrets/tokens,
 // where the Pod's tokens are mounted, or a directory inside or above them.
-// To run the program outside a cluster, give it a flag for the directory
-// that defaults to dir.
+// In many images, /var/run is a symbolic link to /run, so the same rule
+// applies to /run/secrets/kubernetes.io/serviceaccount and
+// /run/secrets/tokens. To run the program outside a cluster, give it a flag
+// for the directory that defaults to dir.
 //
 // A program can have one Volume.
 func Volume(dir string) Controller { return &volume{dir: dir} }
@@ -43,8 +45,13 @@ func (v *volume) check() error {
 	// install. A volume inside either would be inside a read-only volume,
 	// and one above them would hold their mount points.
 	for _, tokens := range []string{serviceAccountDir, tokenDir} {
-		if within(v.dir, tokens) || within(tokens, v.dir) {
-			return fmt.Errorf("kube.Volume: %s overlaps %s, where the Pod's tokens are mounted; use a directory such as /var/lib/program", v.dir, tokens)
+		// In chainguard/static and many other images, /var/run is a
+		// symbolic link to /run, so the tokens are also under /run, where
+		// their read-only volume hides a volume at the same directory.
+		for _, dir := range []string{tokens, strings.TrimPrefix(tokens, "/var")} {
+			if within(v.dir, dir) || within(dir, v.dir) {
+				return fmt.Errorf("kube.Volume: %s overlaps %s, where the Pod's tokens are mounted; use a directory such as /var/lib/program", v.dir, dir)
+			}
 		}
 	}
 	return nil

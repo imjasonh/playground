@@ -655,7 +655,9 @@ StorageClass unless you set `-volume-size` or `-storage-class`, which
 `generate` refuses for a program without a volume. The kubelet makes the
 volume writable by the program's non-root user with `fsGroup`. The directory
 can't be one that the installation uses for something else, such as `/tmp`
-or the directories where the Pod's tokens are mounted.
+or the directories under `/var/run/secrets` where the Pod's tokens are
+mounted. In many images, `/var/run` is a symbolic link to `/run`, so
+`kube.Volume` refuses the same directories under `/run/secrets` too.
 
 A program with a volume runs one replica, without leader election, so its
 reconciles and its `kube.Serve` handler are the only writers and can share

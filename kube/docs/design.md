@@ -1031,8 +1031,12 @@ every file on each start. `Volume` refuses the directories that the
 installation already uses, including the two where the Pod's tokens are
 mounted and the directories inside and above them, because a volume at the
 service account's directory stops Kubernetes from mounting the token there.
-`generate` refuses `-volume-size` and `-storage-class` for a program without
-a volume, instead of ignoring them.
+`Volume` also refuses those directories under `/run`. In
+`cgr.dev/chainguard/static`, the default base image, and many others,
+`/var/run` is a symbolic link to `/run`, so the read-only token volume at
+`/var/run/secrets/tokens` hides a volume at `/run/secrets/tokens`, and the
+program's writes there fail. `generate` refuses `-volume-size` and
+`-storage-class` for a program without a volume, instead of ignoring them.
 
 `Recreate` waits for the old Pod only during a rollout. A Pod that's deleted
 otherwise, by `kubectl delete pod` or a node drain, gets a replacement from
