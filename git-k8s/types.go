@@ -175,6 +175,7 @@ type CheckResult struct {
 	State        string            `json:"state" kube:"enum=Running|Passed|Failed|Fixed|Error"`
 	Message      string            `json:"message,omitempty"`
 	Outputs      map[string]string `json:"outputs,omitempty" doc:"Values that merge gates can read, such as a risk level."`
+	UsesHistory  bool              `json:"usesHistory,omitempty" doc:"The result depends on the branch's commits, such as their messages or authors, and not only on the files at its head and the parent's head, so it doesn't count for a commit that a squash or rebase landing makes."`
 }
 
 // Fresh reports whether r is for these branch and parent heads. A result

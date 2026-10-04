@@ -51,6 +51,12 @@ type Check struct {
 	// UsesParent says the check's result depends on the parent's head as
 	// well as the branch's, so the check runs again when the parent moves.
 	UsesParent bool
+	// UsesHistory says the check's result depends on the branch's commits,
+	// such as their messages, authors, or signatures, and not only on the
+	// files at the branch's and the parent's heads. The merge controller
+	// doesn't count such a result for the commits that squash and rebase
+	// landings make.
+	UsesHistory bool
 	// Always runs the check on every reconcile, instead of only when the
 	// heads change. Use it for checks that read only the GitBranch object.
 	Always bool
@@ -158,7 +164,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		parentCommit = spec.ParentHead
 	}
 	cur := *result
-	if !r.check.Always && cur.Final() && cur.Commit == spec.Head && cur.ParentCommit == parentCommit {
+	if !r.check.Always && cur.Final() && cur.Commit == spec.Head && cur.ParentCommit == parentCommit && cur.UsesHistory == r.check.UsesHistory {
 		return nil
 	}
 
@@ -170,7 +176,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Identity: r.cfg.Identity, Previous: cur, check: &r.check, cache: r.cache}
 	defer in.release()
 
-	res := &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit}
+	res := &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit, UsesHistory: r.check.UsesHistory}
 	v, err := r.check.Run(ctx, in)
 	if err != nil {
 		res.State, res.Message = gitk8s.Error, truncate(err.Error())

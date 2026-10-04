@@ -164,6 +164,30 @@ func TestPushesFixThenPasses(t *testing.T) {
 	}
 }
 
+func TestRecordsUsesHistory(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
+	runs := 0
+	check := touch(&runs)
+	if err := f.reconcile(t, check); err != nil {
+		t.Fatal(err)
+	}
+	if res := f.branch.Status.Checks.Result; res == nil || !res.Final() || res.UsesHistory {
+		t.Fatalf("result = %+v, want a final result without usesHistory", res)
+	}
+
+	// A final result from before the check set UsesHistory doesn't say that
+	// it uses the branch's history, so the check runs again to record it.
+	check.UsesHistory = true
+	for range 2 {
+		if err := f.reconcile(t, check); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if res := f.branch.Status.Checks.Result; !res.UsesHistory || runs != 2 {
+		t.Errorf("result = %+v after %d runs, want usesHistory after 2 runs", res, runs)
+	}
+}
+
 func TestRemovesResultWhenNotListed(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "other"})
 	f.branch.Status.Checks.Result = &gitk8s.CheckResult{Commit: "old", State: gitk8s.Passed}
