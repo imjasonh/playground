@@ -335,7 +335,10 @@ func Own[T any, P Resource[T]](ctx context.Context, desired P) P {
 // If desired's type has a status, the framework then applies the status to
 // the object's status subresource, in a second request with the same field
 // manager, so the status fields that a later reconcile stops applying are
-// removed too. If the cluster doesn't serve a status subresource for the
+// removed too, unless another manager also set them. The framework applies
+// the status with force, so the controller takes over every field in it. Set
+// only your own fields, and build a fresh object rather than editing one that
+// Get returned. If the cluster doesn't serve a status subresource for the
 // type, the framework skips an empty status and fails the reconcile for any
 // other.
 //

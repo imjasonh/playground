@@ -144,10 +144,17 @@ with the reconciled object.
 If the type that you pass to `Apply` has a status, the framework applies the
 status too, so a controller can write its own fields in another controller's
 status. The status goes to the object's status subresource in a second
-request, with the same field manager, unless the first request fails. Status
-fields that a later reconcile stops applying are removed too, so an empty
-status removes every status field that earlier reconciles applied. If the
-cluster doesn't serve a status subresource for the object, the framework
+request, with the same field manager, unless the first request fails. The
+framework applies the status with force, so the controller takes over every
+field in it, including zero values in fields without `omitempty` or
+`omitzero`. A value that another manager also set becomes shared, and neither
+manager can remove it alone. So set only your own fields, and build a fresh
+object rather than editing one that `Get` returned.
+
+When a later reconcile stops applying a status field, the controller gives it
+up, and the API server removes it unless another manager also set it. So an
+empty status gives up every status field that earlier reconciles applied. If
+the cluster doesn't serve a status subresource for the object, the framework
 skips an empty status and fails the reconcile for any other. To leave status
 alone, apply a type that declares no status, as
 [`examples/reloader`](examples/reloader/main.go) does.
