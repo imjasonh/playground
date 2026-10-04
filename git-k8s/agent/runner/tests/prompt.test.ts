@@ -62,8 +62,9 @@ test("lists the paths that the change touches", () => {
     { status: "R", path: "new name", from: "old" },
     { status: "A", path: "x\nM fake" },
     { status: "D", path: "a -> b" },
+    { status: "A", path: "line\u2028paragraph\u2029end" },
   ]);
-  assert.match(prompt, /or T \(changed type\):\n\nM a\nR old -> new name\nA "x\\nM fake"\nD "a -> b"\n\nThe change from/);
+  assert.match(prompt, /or T \(changed type\):\n\nM a\nR old -> new name\nA "x\\nM fake"\nD "a -> b"\nA "line\\u2028paragraph\\u2029end"\n\nThe change from/);
   assert.doesNotMatch(prompt, /not in the diff/);
   assert.doesNotMatch(buildPrompt(preparePod({}, {}), "", ""), /paths that the change touches/);
   assert.match(buildPrompt(preparePod({}, {}), "", "", []), /changed type\):\n\n\(none\)\n/);
@@ -92,19 +93,6 @@ test("marks the paths that a long diff leaves out", () => {
     list,
     'changed type):\n\nM after (not in the diff below)\nM big (the diff below may stop partway through this file)\nM "ctl\\u0001"\nM first\nR old -> new\nM "tab\\there"\n\n',
   );
-});
-
-test("explains a merge, its conflicts, and the merged commits", () => {
-  const task = preparePod({}, {}, { head: "def", base: "abc", mergeBranch: "main", mergeHead: "fed", edit: true });
-  const prompt = buildPrompt(task, "", "def Add x\n", undefined, { conflicts: ["a.txt", "tab\there"], log: `fed Change main${" ".repeat(50)}\n` });
-  assert.match(prompt, /You're merging another branch into one of them\.\n\nBranch: c\/x\nParent branch: main\nHead commit: def\nMerged branch: main\nMerged commit: fed\nMerge base: abc\n\n/);
-  assert.match(prompt, /a line "<<<<<<< def", the head commit's lines, a line "\|\|\|\|\|\|\| abc", the merge base's lines, a line "=======", the merged commit's lines, and a line ">>>>>>> fed"\./);
-  assert.match(prompt, /\nThe paths that conflict:\n\na\.txt\n"tab\\there"\n\nYour task:\n/);
-  assert.match(prompt, / newest first:\n\ndef Add x\n\nThe merged branch's commits since the merge base, newest first:\n\nfed Change main\n\nThe change from/);
-  assert.match(prompt, /The files that you leave become the merge's files/);
-  assert.doesNotMatch(prompt, /one of those checks|a commit on the branch/);
-  assert.match(buildPrompt(task, "", "", undefined, { conflicts: [], log: "" }), /The paths that conflict:\n\n\(none\)\n/);
-  assert.match(buildPrompt({ ...task, edit: false }, "", "", undefined, { conflicts: [], log: "" }), /Don't change any files\./);
 });
 
 test("shortens a long commit log", () => {

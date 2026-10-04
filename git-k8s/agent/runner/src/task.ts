@@ -21,29 +21,18 @@ export interface Task {
   branch: string;
   parent: string;
   head: string;
-  /**
-   * The merge base of the branch and its parent, or of head and mergeHead,
-   * or "" if they have none.
-   */
+  /** The merge base of the branch and its parent, or "" if they have none. */
   base: string;
-  /** A branch to merge into head. */
-  mergeBranch?: string;
-  /** The commit of mergeBranch to merge. Then workTree holds the merge's files, with conflict markers. */
-  mergeHead?: string;
-  /** The head commit's files, or the merge's. It isn't a git repository. */
+  /** The head commit's files. It isn't a git repository. */
   workTree: string;
   /** The change from base to head, from git diff. */
   diffFile: string;
   /** The branch's commits since base, one per line. */
   logFile: string;
-  /** The index of workTree's files, from git ls-files -s -z. */
+  /** The head commit's index, from git ls-files -s -z. */
   filesFile: string;
   /** The paths that the change touches, from git diff --name-status -z. */
   changesFile?: string;
-  /** The merge's tree and the paths that conflict, from git merge-tree --name-only -z. */
-  conflictsFile?: string;
-  /** The merged branch's commits since base, one per line. */
-  mergeLogFile?: string;
   /** Holds the Cursor API key. The runner deletes it before the agent starts. */
   keyFile: string;
   resultFile: string;
@@ -66,7 +55,7 @@ const STRING_FIELDS = [
   "terminationLog",
 ] as const;
 
-const OPTIONAL_STRING_FIELDS = ["changesFile", "mergeBranch", "mergeHead", "conflictsFile", "mergeLogFile"] as const;
+const OPTIONAL_STRING_FIELDS = ["changesFile"] as const;
 
 /** Parses and checks a task from its JSON. */
 export function parseTask(json: string): Task {
@@ -108,13 +97,6 @@ export function parseTask(json: string): Task {
   for (const field of ["model", "instructions", "branch", "head", "workTree", "resultFile"] as const) {
     if (!task[field]) {
       throw new Error(`AGENT_TASK.${field} can't be empty`);
-    }
-  }
-  if (task.mergeHead !== undefined) {
-    for (const field of ["mergeBranch", "mergeHead", "base", "conflictsFile", "mergeLogFile"] as const) {
-      if (!task[field]) {
-        throw new Error(`AGENT_TASK.${field} can't be empty in a merge`);
-      }
     }
   }
   return task;

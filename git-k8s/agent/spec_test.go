@@ -136,6 +136,19 @@ func TestSizesTheSourceVolumes(t *testing.T) {
 	}
 }
 
+func TestRequestsStorage(t *testing.T) {
+	for request, want := range map[string]string{"": "1Gi", "4Gi": "4Gi"} {
+		f := newFixture(t, "")
+		f.r.StorageRequest = request
+		p := f.start()
+		for _, c := range p.Spec.InitContainers {
+			if got := c.Resources.Requests["ephemeral-storage"]; string(got) != want {
+				t.Errorf("with -storage-request %q, %s requests %s of ephemeral storage, want %s", request, c.Name, got, want)
+			}
+		}
+	}
+}
+
 func TestSizes(t *testing.T) {
 	for s, want := range map[string]int64{
 		"2Gi": 2 << 30, "500M": 500e6, "1": 1, "1k": 1000, "64Ki": 64 << 10, "3Ti": 3 << 40, "2097151Ti": 2097151 << 40,
@@ -220,8 +233,9 @@ func TestMatchesTheRunner(t *testing.T) {
 // runPrepare runs the script of c, a prepare container, with c's
 // environment and its volumes in a temporary directory, which it returns.
 // secrets holds the Secret keys that c reads. Like the kubelet, it leaves
-// out an optional key that secrets doesn't hold.
-func runPrepare(t *testing.T, c Container, secrets map[string][]byte) (string, string, error) {
+// out an optional key that secrets doesn't hold. The script's PATH also
+// holds commands, the paths of more programs.
+func runPrepare(t *testing.T, c Container, secrets map[string][]byte, commands ...string) (string, string, error) {
 	t.Helper()
 	sh, err := exec.LookPath("sh")
 	if err != nil {
@@ -234,8 +248,10 @@ func runPrepare(t *testing.T, c Container, secrets map[string][]byte) (string, s
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	if err := os.Symlink(git, filepath.Join(bin, "git")); err != nil {
-		t.Fatal(err)
+	for _, cmd := range append([]string{git}, commands...) {
+		if err := os.Symlink(cmd, filepath.Join(bin, filepath.Base(cmd))); err != nil {
+			t.Fatal(err)
+		}
 	}
 	dir := t.TempDir()
 	for _, m := range c.VolumeMounts {
@@ -292,12 +308,19 @@ func TestPrepareScript(t *testing.T) {
 	repo, secret := srv.Repository("app")
 	data := maps.Clone(secret.Data)
 	data["api-key"] = []byte("key-123")
+	// The script's PATH has no touch, so the commands that a test tries to
+	// smuggle in write the marker with a shell builtin.
+	marker := filepath.Join(t.TempDir(), "ran")
+	evil := filepath.Join(t.TempDir(), "git-remote-evil")
+	if err := os.WriteFile(evil, []byte("#!/bin/sh\necho >"+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	prepare := func(t *testing.T, head, base string) (string, string, error) {
 		r := &Runner{Name: "review", Image: "agent", GitImage: "git", Backend: "fake", Model: "m", Secret: "cursor-api-key", Timeout: time.Minute}
 		spec := &gitk8s.GitBranchSpec{Branch: "c/x", Parent: "main", Head: head}
 		in := &checks.Input{Meta: &kube.ObjectMeta{Name: "app-c-x"}, Spec: spec, Repository: &gitk8s.Repository{Spec: repo.Spec}}
-		return runPrepare(t, r.jobPod(r.checkJob(in, Task{}, base), 1).Spec.InitContainers[0], data)
+		return runPrepare(t, r.jobPod(r.checkJob(in, Task{}, base), 1).Spec.InitContainers[0], data, evil)
 	}
 	read := func(path string) string {
 		t.Helper()
@@ -370,19 +393,28 @@ func TestPrepareScript(t *testing.T) {
 		t.Errorf("prepare = %v\n%s; want status 3", err, out)
 	}
 
-	t.Log("A URL that looks like an option is still a URL.")
-	marker := filepath.Join(t.TempDir(), "ran")
-	repo.Spec.URL = "--upload-pack=echo >" + marker
-	if _, out, err = prepare(t, head, base); err == nil {
-		t.Errorf("prepare succeeded with an option for a URL\n%s", out)
+	t.Log("A merge base that looks like an option is still a commit name.")
+	if _, out, err = prepare(t, head, "--output="+marker); err == nil {
+		t.Errorf("prepare succeeded with an option for a merge base\n%s", out)
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
-		t.Errorf("prepare ran the URL's --upload-pack: %v", err)
+		t.Fatalf("git read the merge base as an option: %v", err)
 	}
 
-	t.Log("A URL can't use another git transport, such as FTP.")
-	repo.Spec.URL = "ftp://127.0.0.1:1/app.git"
-	if _, out, err = prepare(t, head, base); err == nil || !strings.Contains(out, "transport 'ftp' not allowed") {
-		t.Errorf("prepare = %v\n%s; want git to refuse the ftp transport", err, out)
+	t.Log("A URL that looks like an option is still a URL, and a URL can't use another git transport.")
+	for _, tc := range []struct{ url, want string }{
+		{"--upload-pack=echo >" + marker + "; false", "blocked"},
+		{"evil::x", "transport 'evil' not allowed"},
+		{"ftp://127.0.0.1:1/app.git", "transport 'ftp' not allowed"},
+		{"file://" + t.TempDir(), "transport 'file' not allowed"},
+		{t.TempDir(), "transport 'file' not allowed"},
+	} {
+		repo.Spec.URL = tc.url
+		if _, out, err = prepare(t, head, base); err == nil || !strings.Contains(out, tc.want) {
+			t.Errorf("prepare with URL %q = %v\n%s; want %q", tc.url, err, out, tc.want)
+		}
+		if _, err := os.Stat(marker); !os.IsNotExist(err) {
+			t.Fatalf("prepare with URL %q ran a command: %v", tc.url, err)
+		}
 	}
 }

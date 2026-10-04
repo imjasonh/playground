@@ -43,35 +43,23 @@ type Job struct {
 
 // Checkout is the commits that a job's agent works on.
 type Checkout struct {
-	// Branch points to Head. If the Pod finds it elsewhere, the run waits
-	// for a Job with the new head.
+	// Branch points to Head. If the Pod finds it elsewhere, the agent
+	// doesn't run, and the run waits for a Job with the new head without
+	// counting toward the run limits.
 	Branch string
 	Head   string
 	// Parent names the branch that Branch lands on.
 	Parent string
-	// Base is the merge base of Head and Parent's head, or of Head and
-	// Merge's commit, or empty if they share no history. The agent reads
-	// the change from Base to Head.
+	// Base is the merge base of Head and Parent's head, or empty if they
+	// share no history. The agent reads the change from Base to Head.
 	Base string
-	// Merge, if set, is a branch of the same repository to merge into
-	// Head, and Base can't be empty. The agent's files are then the tree
-	// that git merge-tree --write-tree --merge-base=Base writes with
-	// merge.conflictStyle=diff3, instead of Head's, so the files that
-	// conflict hold conflict markers. A Result's Files change that tree.
-	Merge *Ref
-}
-
-// Ref is a branch and the commit that it points to.
-type Ref struct {
-	Branch string
-	Commit string
 }
 
 // JobState is what RunJob needs to follow a job's run from one call to the
 // next. Keep it with the object that the job is for, such as in a check's
 // outputs, and pass it to each call.
 type JobState struct {
-	// Runs counts the runs that RunJob started.
+	// Runs counts the runs that RunJob started and didn't give back.
 	Runs int
 	// Pod names the run's Pod, and Attempt counts its attempts at
 	// preparing the source.
@@ -80,12 +68,19 @@ type JobState struct {
 	// UID is the UID of the run's Pod when RunJob last saw it, so RunJob
 	// can tell when kube created the Pod again.
 	UID string
+	// Refunded is the UID of the run's Pod that found that the branch
+	// moved. Its agent didn't run, so RunJob gave back the run, once.
+	Refunded string
+	// Done is true once RunJob reported that the run finished. Later calls
+	// for the same job report the run as done again, without its result,
+	// and don't declare its Pod.
+	Done bool
 }
 
 // JobStatus is how a job's run stands.
 type JobStatus struct {
-	// Done is true once the run finished. Then stop calling RunJob for the
-	// run, and kube deletes its Pod.
+	// Done is true once the run finished. Then kube deletes its Pod, and
+	// RunJob reports the run as done until the job changes.
 	Done bool
 	// Message says how the run is going, or why it failed.
 	Message string
@@ -98,16 +93,24 @@ type JobStatus struct {
 
 // RunJob starts or follows job's run, and reports how it stands. It
 // declares the run's Pod with kube.Own, so call it on each reconcile until
-// the run is done. A JobState whose Pod was for other commits, another
-// task, or other flags starts a new run. If the run's Pod is deleted
-// before the run finishes, kube creates it again, which runs the agent
-// again, so RunJob counts another run.
+// the run is done. A JobState whose Pod was for another job, such as one
+// with other commits or another task, starts a new run. One whose Pod has
+// another spec, such as after a deploy with other flags, starts an
+// unfinished run again in a new Pod, which doesn't count as another run.
+// If the run's Pod is deleted before the run finishes, kube creates it
+// again, which runs the agent again, so RunJob counts another run.
 func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
+	if st.Done && sameJob(r.jobPod(job, max(st.Attempt, 1)).Name, st.Pod) {
+		return JobStatus{Done: true, Message: fmt.Sprintf("the run in Pod %s already finished", st.Pod)}
+	}
 	s := r.runJob(ctx, job, st)
 	if s.Done {
-		// The caller stops declaring the Pod once the run is done, so kube
-		// deletes it on the next reconcile.
-		kube.RequeueAfter(ctx, time.Second)
+		st.Done = true
+		if st.Pod != "" {
+			// RunJob doesn't declare a done run's Pod, so kube deletes it
+			// on the next reconcile.
+			kube.RequeueAfter(ctx, time.Second)
+		}
 	}
 	return s
 }
@@ -123,12 +126,18 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 		return JobStatus{Message: fmt.Sprintf("can't start agents: %v", err)}
 	}
 	if err := job.validate(); err != nil {
+		// RunJob marks st done, so it can't keep naming another job's Pod.
+		*st = JobState{Runs: st.Runs}
 		return x.fail("can't run the agent: %v", err)
 	}
 	if st.Pod != "" {
-		if p := r.jobPod(job, max(st.Attempt, 1)); p.Name == st.Pod {
+		p := r.jobPod(job, max(st.Attempt, 1))
+		switch {
+		case p.Name == st.Pod:
 			st.Attempt = max(st.Attempt, 1)
 			return x.follow(ctx, p)
+		case sameJob(p.Name, st.Pod):
+			return x.restart(ctx, p)
 		}
 	}
 	*st = JobState{Runs: st.Runs}
@@ -146,6 +155,27 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 		return JobStatus{Message: fmt.Sprintf("waiting to start the agent: %d agent runs started in the last 24 hours, the -max-runs-per-day limit", r.MaxRunsPerDay)}
 	}
 	*st = JobState{Runs: st.Runs + 1, Pod: p.Name, Attempt: 1}
+	x.started = true
+	return x.follow(ctx, p)
+}
+
+// restart starts the run again in p, a Pod for the same job and attempt
+// with another spec, such as after a deploy with other flags. The agent
+// starts over, so the restart takes a place in -max-runs-per-day, but it
+// doesn't count toward the job's runs, so a deploy can't stop a run whose
+// job has none left.
+func (x *run) restart(ctx context.Context, p *Pod) JobStatus {
+	if st := x.st; st.Refunded != "" && st.Refunded == st.UID {
+		// A new Pod would find that the branch moved, too.
+		c := x.job.Checkout
+		return x.status("waiting for a run on the new commits: %s no longer points to %s", c.Branch, c.Head)
+	}
+	if wait, ok := x.r.day.take(time.Now(), x.r.MaxRunsPerDay); !ok {
+		kube.RequeueAfter(ctx, wait)
+		return x.status("waiting to start the agent again: %d agent runs started in the last 24 hours, the -max-runs-per-day limit", x.r.MaxRunsPerDay)
+	}
+	x.st.Pod, x.st.UID = p.Name, ""
+	x.started = true
 	return x.follow(ctx, p)
 }
 
@@ -179,8 +209,6 @@ func (j *Job) validate() error {
 		return errors.New("the job needs a name, a namespace, a repository URL, and a branch")
 	case !isCommit(c.Head) || c.Base != "" && !isCommit(c.Base):
 		return errors.New("the job's head and merge base must be commit SHAs")
-	case c.Merge != nil && (c.Merge.Branch == "" || !isCommit(c.Merge.Commit) || c.Base == ""):
-		return errors.New("a merge needs a branch, its commit's SHA, and the merge base")
 	case strings.TrimSpace(j.Task.Instructions) == "":
 		return errors.New("the job needs instructions")
 	}
@@ -205,10 +233,27 @@ func isCommit(s string) bool {
 // follow declares desired, the run's Pod, and reports how the run stands.
 func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 	st := x.st
+	// kube creates a deleted Pod again, which runs the agent again, so the
+	// run declares a Pod that's gone only if it can count another run.
+	if st.UID != "" && kube.Get[podPhase](ctx, x.job.Namespace, st.Pod) == nil {
+		if why := x.usedAll(); why != "" {
+			return x.fail("Pod %s was deleted, but %s", st.Pod, why)
+		}
+		if x.r.day.full(time.Now(), x.r.MaxRunsPerDay) {
+			return x.fail("Pod %s was deleted, but %d agent runs started in the last 24 hours, the -max-runs-per-day limit", st.Pod, x.r.MaxRunsPerDay)
+		}
+	}
 	pod := kube.Own(ctx, desired)
 	if pod == nil {
 		if st.UID != "" {
 			return x.status("creating Pod %s again, because it was deleted", st.Pod)
+		}
+		// kube creates a Pod right after the reconcile that declares it, so
+		// a Pod that an earlier reconcile declared and that doesn't exist
+		// means that creating it failed. Get runs this again once the Pod
+		// exists.
+		if !x.started && kube.Get[podPhase](ctx, x.job.Namespace, st.Pod) == nil {
+			return x.status("kube can't create Pod %s: the program's log says why, such as a ResourceQuota or LimitRange that doesn't allow its ephemeral-storage limit of %s", st.Pod, formatSize(x.r.podDisk()))
 		}
 		return x.status("started Pod %s", st.Pod)
 	}
@@ -224,6 +269,11 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		}
 		st.UID = pod.UID
 	}
+	if pod.Deleting() {
+		// Deleting a Pod stops its containers, so their exit codes say
+		// nothing about the agent.
+		return x.status("Pod %s is being deleted, so kube creates it again once it's gone", st.Pod)
+	}
 	s := &pod.Status
 	if s.Phase == "Failed" && s.Reason == "Evicted" {
 		return x.fail("Pod %s was evicted: %s", st.Pod, cmp.Or(strings.TrimSpace(s.Message), "no reason given"))
@@ -232,12 +282,19 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		msg := exitMessage(t)
 		switch {
 		case t.ExitCode == movedStatus:
+			if st.Refunded != pod.UID {
+				st.Refunded = pod.UID
+				st.Runs--
+				x.r.day.giveBack()
+			}
 			return x.status("waiting for a run on the new commits: %s", msg)
 		case st.Attempt < prepareAttempts:
 			st.Attempt++
-			st.Pod = x.r.jobPod(x.job, st.Attempt).Name
-			st.UID = ""
-			kube.RequeueAfter(ctx, time.Second)
+			next := x.r.jobPod(x.job, st.Attempt)
+			st.Pod, st.UID = next.Name, ""
+			// A later reconcile takes a missing Pod to mean that kube
+			// couldn't create it, so declare the Pod in this one.
+			kube.Own(ctx, next)
 			return x.status("preparing the source failed, so trying again: %s", msg)
 		}
 		return x.fail("couldn't prepare the source in %d attempts: %s", prepareAttempts, msg)
@@ -254,9 +311,15 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 	}
 	if t == nil {
 		msg, reason := blocked(s)
+		wait := stuckAfter - time.Since(pod.CreationTimestamp)
 		switch {
-		case slices.Contains(stuck, reason):
+		case reason == "InvalidImageName":
 			return x.fail("Pod %s can't start: %s", st.Pod, msg)
+		case slices.Contains(stuck, reason) && wait <= 0:
+			return x.fail("Pod %s couldn't start in %d minutes: %s", st.Pod, int(stuckAfter/time.Minute), msg)
+		case slices.Contains(stuck, reason):
+			kube.RequeueAfter(ctx, wait)
+			return x.status("Pod %s can't start: %s", st.Pod, msg)
 		case reason != "":
 			return x.status("Pod %s can't start: %s", st.Pod, msg)
 		}

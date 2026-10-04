@@ -51,6 +51,13 @@ test("leaves .cursorignore files out", async () => {
   assert.deepEqual(await changedFiles(task.workTree, index), []);
 });
 
+test("never reports a .cursorignore file as deleted", async () => {
+  const { workTree, index } = layout();
+  const record = (path: string) => Buffer.from(`100644 ce013625030ba8dba906f756967f9e9ca394464a 0\t${path}\0`);
+  const listed = Buffer.concat([index(), record(".cursorignore"), record("dir/.cursorignore")]);
+  assert.deepEqual(await changedFiles(workTree, listed), []);
+});
+
 test("skips submodule directories", async () => {
   const task = preparePod({ "a.txt": "a\n" }, {});
   const repo = join(task.workTree, "..", "git");

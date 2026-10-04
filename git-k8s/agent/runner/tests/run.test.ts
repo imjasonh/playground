@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, symlinkSync, truncateSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fakeBackend } from "../src/backends/fake.js";
@@ -10,7 +10,7 @@ import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
 import type { Task } from "../src/task.js";
 import { MAX_PATHS } from "../src/touched.js";
-import { prepareMerge, preparePod } from "./pod.js";
+import { preparePod } from "./pod.js";
 
 const quiet: RunOptions = { log: () => undefined };
 
@@ -46,10 +46,15 @@ test("passes a clean change", async () => {
   assert.equal(readResult(task).verdict, "pass");
 });
 
-test("reads only the start of a long diff and commit log", async () => {
+test("reads only the start of a long diff and commit log", async (t) => {
   const task = preparePod({}, { "a.txt": "a\n" });
   writeFileSync(task.diffFile, `diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,100001 @@\n${"+x\n".repeat(100_000)}+DO NOT MERGE\n`);
   writeFileSync(task.logFile, `abc1234 ${"x".repeat(100)}\n`.repeat(2 * MAX_LOG));
+  // Node's readFile refuses files over 2 GiB.
+  for (const file of [task.diffFile, task.logFile]) {
+    truncateSync(file, 3 * 2 ** 30);
+    t.after(() => unlinkSync(file));
+  }
   let request: AgentRequest | undefined;
   const capture: Backend = async (r) => {
     request = r;
@@ -129,37 +134,6 @@ test("doesn't apply fixes when it can't edit", async () => {
   const result = readResult(task);
   assert.equal(result.summary, "no added lines hold DO NOT MERGE");
   assert.deepEqual(result.files, []);
-});
-
-test("resolves a merge, and reports the files of the merge that the agent changed", async () => {
-  const task = prepareMerge(
-    { "a.txt": "one\ntwo\nthree\n", "keep.txt": "keep\n" },
-    { "a.txt": "one\nours\nthree\n" },
-    { "a.txt": "one\ntheirs\nthree\n", "new.txt": "new\n" },
-    { edit: true, tools: ["read", "edit"] },
-  );
-  const conflict = `one\n<<<<<<< ${task.head}\nours\n||||||| ${task.base}\ntwo\n=======\ntheirs\n>>>>>>> ${task.mergeHead}\nthree\n`;
-  assert.equal(readFileSync(join(task.workTree, "a.txt"), "utf8"), conflict);
-  assert.equal(readFileSync(join(task.workTree, "new.txt"), "utf8"), "new\n");
-  let request: AgentRequest | undefined;
-  const resolve: Backend = async (r) => {
-    request = r;
-    writeFileSync(join(r.cwd, "a.txt"), "one\nours and theirs\nthree\n");
-    return {
-      text: '{"verdict": "pass", "summary": "merged"}',
-      model: r.model,
-      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    };
-  };
-  assert.equal(await runTask(task, { ...quiet, backends: { fake: resolve } }), 0);
-  assert.ok(request);
-  assert.deepEqual(request.tools, ["read", "edit"]);
-  assert.match(request.prompt, /\nThe paths that conflict:\n\na\.txt\n\n/);
-  assert.match(request.prompt, /\nThe merged branch's commits since the merge base, newest first:\n\n[0-9a-f]+ Theirs\n\n/);
-  assert.deepEqual(
-    readResult(task).files.map((f) => [f.path, Buffer.from(f.content ?? "", "base64").toString()]),
-    [["a.txt", "one\nours and theirs\nthree\n"]],
-  );
 });
 
 test("offers the tools that the task allows", async () => {

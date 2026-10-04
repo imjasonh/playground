@@ -21,22 +21,12 @@ const valid: Task = {
   terminationLog: "/dev/termination-log",
 };
 
-const merge: Task = {
-  ...valid,
-  edit: true,
-  tools: ["read", "edit"],
-  base: "fedcba9876543210fedcba9876543210fedcba98",
-  mergeBranch: "main",
-  mergeHead: "1111111111111111111111111111111111111111",
-  conflictsFile: "/input/conflicts",
-  mergeLogFile: "/input/merge-log.txt",
-};
-
 test("parses a task", () => {
   assert.deepEqual(parseTask(JSON.stringify(valid)), valid);
   const full = { ...valid, changesFile: "/input/changes" };
   assert.deepEqual(parseTask(JSON.stringify(full)), full);
-  assert.deepEqual(parseTask(JSON.stringify(merge)), merge);
+  const editing = { ...valid, edit: true, tools: ["read", "edit"] };
+  assert.deepEqual(parseTask(JSON.stringify(editing)), editing);
 });
 
 test("rejects tasks that aren't valid", () => {
@@ -55,10 +45,6 @@ test("rejects tasks that aren't valid", () => {
     [JSON.stringify({ ...valid, tools: ["read", "shell"] }), /tools can hold only read, grep, glob, ls, edit, delete/],
     [JSON.stringify({ ...valid, tools: [7] }), /tools can hold only/],
     [JSON.stringify({ ...valid, tools: ["read", "edit"] }), /tools can't hold edit unless the task edits files/],
-    [JSON.stringify({ ...merge, base: "" }), /base can't be empty in a merge/],
-    [JSON.stringify({ ...merge, mergeHead: "" }), /mergeHead can't be empty in a merge/],
-    [JSON.stringify({ ...merge, conflictsFile: undefined }), /conflictsFile can't be empty in a merge/],
-    [JSON.stringify({ ...merge, mergeBranch: 7 }), /mergeBranch must be a string/],
   ];
   for (const [json, want] of cases) {
     assert.throws(() => parseTask(json), want, json);

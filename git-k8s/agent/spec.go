@@ -35,6 +35,10 @@ const podSlack = 30 * time.Minute
 // defaultSourceSize is the SourceSize of a Runner that doesn't set one.
 const defaultSourceSize = "2Gi"
 
+// defaultStorageRequest is the StorageRequest of a Runner that doesn't set
+// one.
+const defaultStorageRequest = "1Gi"
+
 // The sizes of the agent Pod's volumes other than the source's, and the
 // room that the Pod leaves for its containers' logs.
 const (
@@ -47,6 +51,15 @@ func (r *Runner) resultPort() int { return cmp.Or(r.port, 8080) }
 
 // sourceBytes is the Runner's SourceSize in bytes, or 0 if it isn't a size.
 func (r *Runner) sourceBytes() int64 { return parseSize(cmp.Or(r.SourceSize, defaultSourceSize)) }
+
+// storageBytes is the Runner's StorageRequest in bytes, or 0 if it isn't a
+// size.
+func (r *Runner) storageBytes() int64 {
+	return parseSize(cmp.Or(r.StorageRequest, defaultStorageRequest))
+}
+
+// podDisk is each agent Pod's ephemeral-storage limit in bytes.
+func (r *Runner) podDisk() int64 { return 3*r.sourceBytes() + tmpSize + resultSize + logSize }
 
 // podTask is the task that runner/src/task.ts reads from AGENT_TASK.
 type podTask struct {
@@ -69,11 +82,7 @@ type podTask struct {
 	TerminationLog string `json:"terminationLog"`
 
 	// Only some jobs set these.
-	Tools         []string `json:"tools,omitempty"`
-	MergeBranch   string   `json:"mergeBranch,omitempty"`
-	MergeHead     string   `json:"mergeHead,omitempty"`
-	ConflictsFile string   `json:"conflictsFile,omitempty"`
-	MergeLogFile  string   `json:"mergeLogFile,omitempty"`
+	Tools []string `json:"tools,omitempty"`
 }
 
 // movedStatus is prepareScript's exit status when a branch no longer points
@@ -84,16 +93,13 @@ const movedStatus = 3
 // HEAD, or exits with status 3 if the branch moved, and writes the head's
 // files, its index, the change from BASE, the paths that the change
 // touches, the commit log, and the API key, if the Secret holds one, for
-// the agent container. With MERGE_HEAD, it also fetches MERGE_BRANCH, or
-// exits with status 3 if that moved, and writes the files and index of
-// HEAD's merge with MERGE_HEAD instead of the head's, the paths that
-// conflict, and the merged commits' log. It leaves .cursorignore files out
-// of the files and index, because Cursor reads them to hide files from the
-// agent. The git image has no commands but git and sh, so the script uses
-// only those and the shell's builtins, and git init's templates make
-// .git/info. The repository goes in a directory that git init creates,
-// because git refuses to use one that another user owns, such as the root
-// of an emptyDir volume. The attributes file makes the files match their
+// the agent container. It leaves .cursorignore files out of the head's
+// files and index, because Cursor reads them to hide files from the agent.
+// The git image has no commands but git and sh, so the script uses only
+// those and the shell's builtins, and git init's templates make .git/info.
+// The repository goes in a directory that git init creates, because git
+// refuses to use one that another user owns, such as the root of an
+// emptyDir volume. The attributes file makes the files match their
 // blobs, so the runner can tell which ones the agent changed.
 const prepareScript = `set -eu
 git init -q "$REPO"
@@ -106,30 +112,11 @@ if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3
 fi
-if [ -n "${MERGE_HEAD:-}" ]; then
-  git fetch -q --depth=50 --end-of-options "$URL" "refs/heads/$MERGE_BRANCH"
-  if [ "$(git rev-parse FETCH_HEAD)" != "$MERGE_HEAD" ]; then
-    echo "$MERGE_BRANCH no longer points to $MERGE_HEAD" >&2
-    exit 3
-  fi
-fi
-if [ -n "${BASE:-}" ] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+if [ -n "${BASE:-}" ] && ! git cat-file -e --end-of-options "$BASE^{commit}" 2>/dev/null; then
   git fetch -q --unshallow --end-of-options "$URL" "refs/heads/$BRANCH"
 fi
 printf '* -text -eol -ident -filter -working-tree-encoding\n' >.git/info/attributes
-tree="$HEAD"
-if [ -n "${MERGE_HEAD:-}" ]; then
-  merge_tree() {
-    git -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages --name-only "$@" --merge-base="$BASE" "$HEAD" "$MERGE_HEAD"
-  }
-  code=0
-  merge_tree >.git/merge || code=$?
-  [ "$code" -le 1 ] || exit "$code"
-  read -r tree <.git/merge
-  merge_tree -z >"$INPUT/conflicts" || [ "$?" -eq 1 ]
-  git log --format='%h %<(200,trunc)%s' -n 50 "$BASE..$MERGE_HEAD" >"$INPUT/merge-log.txt"
-fi
-git read-tree "$tree"
+git read-tree --end-of-options "$HEAD"
 git rm -q --cached --ignore-unmatch -- ':(glob)**/.cursorignore'
 git checkout-index -a -f --prefix="$WORK_TREE/"
 git ls-files -s -z >"$INPUT/files"
@@ -138,15 +125,15 @@ range="$HEAD"
 if [ -n "${BASE:-}" ]; then
   range="$BASE..$HEAD"
 fi
-git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv "$from" "$HEAD" >"$INPUT/change.diff"
-git diff --name-status -z "$from" "$HEAD" >"$INPUT/changes"
-git log --format='%h %<(200,trunc)%s' -n 50 "$range" >"$INPUT/log.txt"
+git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv --end-of-options "$from" "$HEAD" >"$INPUT/change.diff"
+git diff --name-status -z --end-of-options "$from" "$HEAD" >"$INPUT/changes"
+git log --format='%h %<(200,trunc)%s' -n 50 --end-of-options "$range" >"$INPUT/log.txt"
 umask 077
 printf '%s' "${CURSOR_API_KEY:-}" >"$KEY_FILE"
 `
 
 // jobPod declares the Pod for one attempt at job's run. Its name covers
-// the job's name, the attempt, and the Pod's spec.
+// the job, the attempt, and the Pod's spec.
 func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 	c := job.Checkout
 	yes, no := true, false
@@ -189,12 +176,7 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 		{Name: "KEY_FILE", Value: keyFile},
 		{Name: "HOME", Value: "/git"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
-		{Name: "GIT_ALLOW_PROTOCOL", Value: "http:https:git:ssh:file"},
-	}
-	if m := c.Merge; m != nil {
-		task.MergeBranch, task.MergeHead = m.Branch, m.Commit
-		task.ConflictsFile, task.MergeLogFile = inputDir+"/conflicts", inputDir+"/merge-log.txt"
-		prepareEnv = append(prepareEnv, EnvVar{Name: "MERGE_BRANCH", Value: m.Branch}, EnvVar{Name: "MERGE_HEAD", Value: m.Commit})
+		{Name: "GIT_ALLOW_PROTOCOL", Value: "http:https:git:ssh"},
 	}
 	agentTask, _ := json.Marshal(task)
 	if ref := job.Credentials; ref != nil {
@@ -210,10 +192,11 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 	port := r.resultPort()
 	image := cmp.Or(job.Image, r.Image)
 	source := cmp.Or(r.SourceSize, defaultSourceSize)
+	request := k8s.Quantity(cmp.Or(r.StorageRequest, defaultStorageRequest))
 	// The kubelet evicts a Pod whose volumes and logs use more than the
 	// Pod's ephemeral-storage limit, which is its init containers' limit, so
 	// that limit covers every volume.
-	disk := k8s.Quantity(formatSize(3*r.sourceBytes() + tmpSize + resultSize + logSize))
+	disk := k8s.Quantity(formatSize(r.podDisk()))
 
 	p := &Pod{Object: kube.Meta("", map[string]string{"app.kubernetes.io/name": "git-k8s-agent", agentLabel: r.Name})}
 	p.Spec = PodSpec{
@@ -252,7 +235,7 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "128Mi", "ephemeral-storage": "1Gi"},
+				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "128Mi", "ephemeral-storage": request},
 				Limits:   map[string]k8s.Quantity{"memory": "1Gi", "ephemeral-storage": disk},
 			},
 		}, {
@@ -274,7 +257,7 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "256Mi", "ephemeral-storage": "1Gi"},
+				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "256Mi", "ephemeral-storage": request},
 				Limits:   map[string]k8s.Quantity{"memory": "2Gi", "ephemeral-storage": disk},
 			},
 		}},
@@ -298,10 +281,27 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			},
 		}},
 	}
+	// The name's first half covers the job and the attempt, and its second
+	// half covers the spec, so a run can tell a Pod whose spec changed with
+	// the Runner's flags from another job's Pod. A job's MaxRuns doesn't
+	// change its runs, and nil Tools are the same as none.
+	id := *job
+	id.MaxRuns = 0
+	if len(id.Tools) == 0 {
+		id.Tools = nil
+	}
+	idJSON, _ := json.Marshal(id)
 	spec, _ := json.Marshal(p.Spec)
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s", job.Name, attempt, spec))
-	p.Name = r.Name + "-" + hex.EncodeToString(sum[:8])
+	jobSum := sha256.Sum256(fmt.Appendf(nil, "%d\x00%s", attempt, idJSON))
+	specSum := sha256.Sum256(spec)
+	p.Name = r.Name + "-" + hex.EncodeToString(jobSum[:4]) + hex.EncodeToString(specSum[:4])
 	return p
+}
+
+// sameJob reports whether the Pods that jobPod named a and b are for the
+// same job and attempt, whatever their specs.
+func sameJob(a, b string) bool {
+	return len(a) == len(b) && len(a) > 8 && a[:len(a)-8] == b[:len(b)-8]
 }
 
 // parseSize returns the bytes in a size such as 2Gi or 500M. It returns 0

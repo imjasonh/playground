@@ -261,10 +261,24 @@ symbolic link, more than 1,000 files, or more than 8 MiB of file content.
 
 Each agent Pod's volumes have size limits. The repository, the head's
 files, and the agent's input can each use up to `-source-size`, 2Gi by
-default, and the agent's home directory up to 1Gi. The init containers
-request 1Gi of ephemeral storage, and their limits cover all the volumes.
-When a Pod uses more than a limit, the kubelet evicts it, and the check
-fails with the kubelet's reason.
+default, and the agent's home directory up to 1Gi. The init containers'
+ephemeral-storage limit covers all the volumes and the logs. It's three
+times `-source-size` plus 1344Mi, which is 7488Mi by default. When a Pod
+uses more than a limit, the kubelet evicts it.
+
+The scheduler reserves only a Pod's requests on its node, and the init
+containers request `-storage-request` of ephemeral storage, 1Gi by
+default. So a node can run low on disk space or memory while each Pod
+stays within its limits, and then the kubelet evicts Pods, first those
+that use more than they request. Either way, the check fails with the
+kubelet's reason. If agent Pods often fail because their nodes run low on
+disk space, raise `-storage-request`.
+
+A ResourceQuota on `limits.ephemeral-storage` counts each agent Pod's
+limit, and one on `requests.ephemeral-storage` counts `-storage-request`.
+A LimitRange with a smaller maximum for ephemeral storage rejects every
+agent Pod. When kube can't create a Pod, the check says so, and the
+program's log says why.
 
 The agent's prompt holds the first 200,000 bytes of the diff and lists
 every path that the change touches, so the agent can read the files that
@@ -291,9 +305,10 @@ An agent can answer differently each time, so a result stays until the
 branch's head changes, and the check doesn't run again when only the parent
 moves. When the agent fails, for example because the API key is missing or
 wrong or the run takes longer than `-timeout`, the check fails with the
-agent's error. It also fails when the Pod can't start because a Secret
-doesn't exist or an image can't be pulled, and when fetching the head fails
-in three Pods in a row. The next head runs the agent again. To run it again
+agent's error. It also fails when an image's name isn't valid, when a
+Secret is still missing or an image still can't be pulled 5 minutes after
+kube creates the Pod, and when fetching the head fails in three Pods in a
+row. The next head runs the agent again. To run it again
 on the same change, such as after a transient error, push an empty commit
 with `git commit --allow-empty`.
 
@@ -311,11 +326,24 @@ tokens:
 - `-max-pods`, 10 by default, is the most agent Pods that run at once
   across all namespaces.
 
+If the branch moves before the agent's Pod fetches it, the agent doesn't
+run, so the run doesn't count toward `maxAgentRuns` or `-max-runs-per-day`,
+and the new head starts a run of its own.
+
 If an agent Pod is deleted before its run finishes, kube creates it again,
-and the agent runs again. The check counts that as another run, or fails
-when `maxAgentRuns` or `-max-runs-per-day` allows no more. A run that fails
-after the agent starts still reports the `model`, the token counts, and the
-costs in the check's outputs.
+and the agent runs again. The check counts that as another run. When
+`maxAgentRuns` or `-max-runs-per-day` allows no more, the check fails
+instead, and kube doesn't create the Pod again. A run that fails after the
+agent starts still reports the `model`, the token counts, and the costs in
+the check's outputs.
+
+A deploy can also run agents again. A Pod's spec can't change, so after a
+deploy that changes the agent Pods' spec, such as one with another
+`-agent-image` or `-model` or with a version of `check-review` that builds
+Pods differently, the check starts each run in progress again in a new
+Pod, and kube deletes the old one. The agent starts over and costs as much
+as in a new run. A restarted run takes a place in `-max-runs-per-day`, or
+waits for one, but it doesn't count toward `maxAgentRuns`.
 
 The check counts a branch's runs in its outputs on the branch's
 `GitBranch`, so a branch that's deleted and then pushed again can start
@@ -346,6 +374,15 @@ kubectl -n NAMESPACE create secret generic cursor-api-key --from-literal=api-key
 
 In a namespace without the Secret, each run fails before the agent starts.
 
+To change a flag or upgrade `check-review`, run `generate` again. A deploy
+that changes the agent Pods' spec starts every run in progress again, and
+each agent starts over, so deploy when few agent Pods are running. To list
+them, run the following command:
+
+```sh
+kubectl get pods --all-namespaces -l git-k8s.imjasonh.com/agent=review
+```
+
 `check-review` takes these flags, which `agent.Runner.AddFlags` registers:
 
 | Flag | Default | Description |
@@ -360,6 +397,7 @@ In a namespace without the Secret, each run fails before the agent starts.
 | `-max-runs-per-day` | 100 | Most agent runs to start in any 24 hours; 0 means no limit |
 | `-runtime-class` | None | RuntimeClass for agent Pods, such as `gvisor` |
 | `-source-size` | `2Gi` | Most disk space that each of an agent Pod's repository, files, and input can use |
+| `-storage-request` | `1Gi` | Ephemeral storage that each agent Pod requests, which the scheduler reserves on the Pod's node |
 
 Agent Pods need to reach the repository and Cursor's API over HTTPS, and
 the check needs to reach the agent Pods on TCP port 8080. A NetworkPolicy
@@ -443,25 +481,21 @@ with `kube.Own` and returns a `JobStatus`. Until the run is `Done`, the
 status's `Message` says how the run is going. Once it's `Done`, `Result`
 holds the agent's result, or is nil if the run failed, and `Message` says
 why. If the run failed after the agent started, `Failed` holds the runner's
-report, with its `Error` and what the agent used. Then stop calling
-`RunJob` for the run, and kube deletes the Pod. A `Job` with other commits,
-another task, other tools, or another image starts a new run, up to the
-job's `MaxRuns`. If the run's Pod is deleted before the run is `Done`, kube
-creates it again and the agent runs again, so `RunJob` counts another run,
-or ends the run when `MaxRuns` or `-max-runs-per-day` allows no more.
+report, with its `Error` and what the agent used. `RunJob` reports that
+once and sets the state's `Done`. Later calls for the same `Job` report
+the run as `Done` without a `Result` or `Failed` and don't declare the
+Pod, so kube deletes it.
 
-For an agent that resolves a merge, set `Checkout.Merge` to the branch to
-merge into the head, and `Checkout.Base` to their merge base. The `prepare`
-container then writes the files of the merge that `git merge-tree
---write-tree` makes with `merge.conflictStyle=diff3`, instead of the
-head's. Each conflict in a file holds the head's lines, the merge base's
-lines, and the merged branch's lines between conflict markers. A file that
-one side deleted and the other changed holds the changed version. The
-prompt lists the paths that conflict and the merged branch's commits. With
-`Task.Edit`, the result's `Files` change the merge's files, and the
-controller builds the merge commit from them. If either branch moved before
-the Pod fetched it, the agent doesn't run, and the run waits for a `Job`
-with the new commits, which starts a new run.
+A `Job` with other commits, another task, other tools, or another image
+starts a new run, up to the job's `MaxRuns`. A deploy that changes the
+agent Pods' spec starts an unfinished run again in a new Pod, which takes
+a place in `-max-runs-per-day` but doesn't count toward `MaxRuns`. If the
+Pod finds that the branch moved, the agent doesn't run, and `RunJob` gives
+the run back and waits for a `Job` with the new head. If the run's Pod is
+deleted before the run is `Done`, kube creates it again and the agent runs
+again, so `RunJob` counts another run. When `MaxRuns` or
+`-max-runs-per-day` allows no more, `RunJob` ends the run instead, and
+kube doesn't create the Pod again.
 
 Agents get no shell. The tools that an agent can have are `read`, `grep`,
 `glob`, and `ls`, plus `edit` and `delete` when the task edits files, and

@@ -362,23 +362,45 @@ func TestReportsPodsThatFail(t *testing.T) {
 	done := ContainerStatus{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})}
 	for _, tc := range []struct {
 		name   string
+		age    time.Duration
 		status PodStatus
 		state  string
 		want   string
 	}{{
 		name:   "missing Secret",
+		age:    stuckAfter,
 		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "CreateContainerConfigError", `secret "app-creds" not found`)}},
 		state:  gitk8s.Failed,
+		want:   `couldn't start in 5 minutes: container prepare is waiting: CreateContainerConfigError: secret "app-creds" not found`,
+	}, {
+		name:   "missing Secret in a new Pod",
+		age:    stuckAfter - time.Minute,
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "CreateContainerConfigError", `secret "app-creds" not found`)}},
+		state:  gitk8s.Running,
 		want:   `can't start: container prepare is waiting: CreateContainerConfigError: secret "app-creds" not found`,
 	}, {
 		name:   "image that can't be pulled",
+		age:    stuckAfter,
 		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{done, waiting("agent", "ErrImagePull", "not found")}},
 		state:  gitk8s.Failed,
+		want:   "couldn't start in 5 minutes: container agent is waiting: ErrImagePull: not found",
+	}, {
+		name:   "image that can't be pulled in a new Pod",
+		age:    stuckAfter - time.Minute,
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{done, waiting("agent", "ErrImagePull", "not found")}},
+		state:  gitk8s.Running,
 		want:   "can't start: container agent is waiting: ErrImagePull: not found",
 	}, {
 		name:   "backing off pulling an image",
+		age:    stuckAfter,
 		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "ImagePullBackOff", "Back-off pulling image")}},
 		state:  gitk8s.Failed,
+		want:   "couldn't start in 5 minutes: container prepare is waiting: ImagePullBackOff: Back-off pulling image",
+	}, {
+		name:   "backing off pulling an image in a new Pod",
+		age:    stuckAfter - time.Minute,
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "ImagePullBackOff", "Back-off pulling image")}},
+		state:  gitk8s.Running,
 		want:   "can't start: container prepare is waiting: ImagePullBackOff: Back-off pulling image",
 	}, {
 		name:   "invalid image",
@@ -437,10 +459,14 @@ func TestReportsPodsThatFail(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t, "")
 			p := f.start()
+			p.CreationTimestamp = time.Now().Add(-tc.age)
 			p.Status = tc.status
-			f.reconcile(p)
+			rec := f.reconcile(p)
 			if res := f.state(); res.State != tc.state || !strings.Contains(res.Message, tc.want) || res.Outputs["runs"] != "1" {
 				t.Errorf("result = %+v, want %s with %q", res, tc.state, tc.want)
+			}
+			if d := rec.RequeueAfter(); tc.age == stuckAfter-time.Minute && (d <= 0 || d > time.Minute) {
+				t.Errorf("RequeueAfter = %v, want a reconcile when the Pod is %v old", d, stuckAfter)
 			}
 		})
 	}
@@ -480,6 +506,9 @@ func TestReportsWhatAFailedRunUsed(t *testing.T) {
 
 func TestCountsAPodThatsCreatedAgain(t *testing.T) {
 	f := newFixture(t, "")
+	two := int32(2)
+	f.b.Spec.Merge.MaxAgentRuns = &two
+	f.r.MaxRunsPerDay = 2
 	p := f.start()
 	f.reconcile(p)
 	if res := f.state(); res.Outputs["podUID"] != p.UID {
@@ -499,6 +528,53 @@ func TestCountsAPodThatsCreatedAgain(t *testing.T) {
 	f.reconcile(finished(p, f.serve(review(Pass), p.UID)))
 	if res := f.state(); res.State != gitk8s.Passed || res.Outputs["runs"] != "2" {
 		t.Errorf("result = %+v, want Passed after 2 runs", res)
+	}
+}
+
+func TestWaitsForADeletedPodToGo(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	f.reconcile(p)
+
+	t.Log("Deleting a Pod stops its agent, which doesn't fail the run.")
+	deleted := time.Now()
+	p.DeletionTimestamp = &deleted
+	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
+		{Name: "agent", State: terminated(&Terminated{ExitCode: 143, Reason: "Error"})},
+	}}
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "Pod "+p.Name+" is being deleted, so kube creates it again once it's gone" || res.Outputs["runs"] != "1" {
+		t.Fatalf("result = %+v, want Running after 1 run", res)
+	}
+
+	t.Log("Once the Pod is gone, kube creates it again, and the agent runs again.")
+	if rec := f.reconcile(); len(kube.Owned[Pod](rec)) != 1 {
+		t.Fatal("the check must declare the Pod again")
+	}
+	p.DeletionTimestamp, p.Status, p.UID = nil, PodStatus{}, "uid-again"
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Outputs["runs"] != "2" || res.Outputs["podUID"] != p.UID {
+		t.Fatalf("result = %+v, want run 2 in the new Pod", res)
+	}
+}
+
+func TestSaysWhenKubeCantCreateAPod(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	if res := f.state(); res.Message != "started Pod "+p.Name {
+		t.Fatalf("result = %+v, want the Pod started", res)
+	}
+
+	t.Log("A Pod that kube couldn't create, such as one that a LimitRange rejects, still doesn't exist on the next reconcile.")
+	rec := f.reconcile()
+	want := "kube can't create Pod " + p.Name + ": the program's log says why, such as a ResourceQuota or LimitRange that doesn't allow its ephemeral-storage limit of 7488Mi"
+	if res := f.state(); res.State != gitk8s.Running || res.Message != want || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 1 {
+		t.Fatalf("result = %+v, want Running with the Pod declared", res)
+	}
+	f.reconcile(p)
+	if res := f.state(); res.Message != "Pod "+p.Name+" is Pending" {
+		t.Errorf("result = %+v, want the Pod Pending once it exists", res)
 	}
 }
 
@@ -530,6 +606,30 @@ func TestEndsARunWhenItsNewPodPassesALimit(t *testing.T) {
 	}
 }
 
+func TestWontCreateADeletedPodAgainPastALimit(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		maxAgentRuns  int32
+		maxRunsPerDay int
+		want          string
+	}{
+		{"maxAgentRuns", 1, 0, "the branch used all 1 agent runs that maxAgentRuns allows"},
+		{"-max-runs-per-day", 10, 1, "1 agent runs started in the last 24 hours, the -max-runs-per-day limit"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			f.b.Spec.Merge.MaxAgentRuns = &tc.maxAgentRuns
+			f.r.MaxRunsPerDay = tc.maxRunsPerDay
+			p := f.start()
+			f.reconcile(p)
+			rec := f.reconcile()
+			if res := f.state(); res.State != gitk8s.Failed || res.Message != "Pod "+p.Name+" was deleted, but "+tc.want || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 0 {
+				t.Errorf("result = %+v with %d owned Pods, want Failed without the Pod", res, len(kube.Owned[Pod](rec)))
+			}
+		})
+	}
+}
+
 func TestRetriesPreparingTheSource(t *testing.T) {
 	f := newFixture(t, "")
 	p := f.start()
@@ -538,12 +638,15 @@ func TestRetriesPreparingTheSource(t *testing.T) {
 		p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
 			{Name: "prepare", State: terminated(&Terminated{ExitCode: 128, Message: "fatal: unable to access the repository"})},
 		}}
-		f.reconcile(p)
+		rec := f.reconcile(p)
 		res := f.state()
-		if res.State != gitk8s.Running || res.Outputs["attempt"] != strconv.Itoa(attempt) || names[res.Outputs["pod"]] || res.Outputs["runs"] != "1" {
-			t.Fatalf("result = %+v, want attempt %d in a new Pod of the same run", res, attempt)
+		pods := kube.Owned[Pod](rec)
+		if res.State != gitk8s.Running || res.Outputs["attempt"] != strconv.Itoa(attempt) || names[res.Outputs["pod"]] || res.Outputs["runs"] != "1" ||
+			len(pods) != 2 || pods[1].Name != res.Outputs["pod"] {
+			t.Fatalf("result = %+v with %d owned Pods, want attempt %d in a new Pod of the same run, declared at once", res, len(pods), attempt)
 		}
-		p = f.start()
+		p = pods[1]
+		p.Namespace, p.UID = "default", "uid-"+p.Name
 		names[p.Name] = true
 	}
 	p.Status.InitContainerStatuses = []ContainerStatus{{Name: "prepare", State: terminated(&Terminated{ExitCode: 128, Message: "fatal: couldn't find remote ref"})}}
@@ -555,20 +658,40 @@ func TestRetriesPreparingTheSource(t *testing.T) {
 
 func TestWaitsForTheNewHeadWhenTheBranchMoved(t *testing.T) {
 	f := newFixture(t, "")
+	two := int32(2)
+	f.b.Spec.Merge.MaxAgentRuns = &two
+	f.r.MaxRunsPerDay = 2
+	first := f.start()
+	f.reconcile(finished(first, f.serve(review(Fail), first.UID)))
+	f.work.Write("a.txt", "one\nretry\n")
+	f.b.Spec.Head = f.work.Commit("retry")
+	f.work.Push("c/x")
 	p := f.start()
+
+	t.Log("The agent doesn't run on a branch that moved, so the run doesn't count, once.")
 	moved := "c/x no longer points to " + f.b.Spec.Head
 	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
 		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved})},
 	}}
-	rec := f.reconcile(p)
-	if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["pod"] != p.Name || res.Outputs["attempt"] != "1" {
-		t.Fatalf("result = %+v, want Running in the same Pod", res)
-	}
-	if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || rec.RequeueAfter() != 0 {
-		t.Fatalf("owned Pods = %d and RequeueAfter = %v, want the same Pod and no retry", len(pods), rec.RequeueAfter())
+	for range 2 {
+		rec := f.reconcile(p)
+		if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["pod"] != p.Name || res.Outputs["attempt"] != "1" ||
+			res.Outputs["runs"] != "1" || res.Outputs["refunded"] != p.UID {
+			t.Fatalf("result = %+v, want Running in the same Pod with the run given back", res)
+		}
+		if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || rec.RequeueAfter() != 0 {
+			t.Fatalf("owned Pods = %d and RequeueAfter = %v, want the same Pod and no retry", len(pods), rec.RequeueAfter())
+		}
 	}
 
-	t.Log("The new head starts a new run.")
+	t.Log("A deploy doesn't start the run again in a new Pod, which would find the branch moved too.")
+	f.r.Model = "composer-3"
+	rec := f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 0 {
+		t.Fatalf("result = %+v, want Running without a Pod", res)
+	}
+
+	t.Log("The new head starts a new run, which the limits still allow.")
 	f.work.Write("a.txt", "one\nmoved\n")
 	f.b.Spec.Head = f.work.Commit("move")
 	f.work.Push("c/x")
@@ -612,6 +735,44 @@ func TestChangedTaskStartsANewRun(t *testing.T) {
 	second := f.start()
 	if second.Name == first.Name || f.state().Outputs["runs"] != "2" {
 		t.Errorf("Pods %s and %s with outputs %v, want a new Pod for run 2", first.Name, second.Name, f.state().Outputs)
+	}
+}
+
+func TestRestartsARunWhenAFlagChanges(t *testing.T) {
+	f := newFixture(t, "")
+	one := int32(1)
+	f.b.Spec.Merge.MaxAgentRuns = &one
+	f.r.MaxRunsPerDay = 2
+	p := f.start()
+	f.reconcile(p)
+
+	t.Log("A deploy with another -model starts the run again in a new Pod, though the branch used all of its runs.")
+	f.r.Model = "composer-3"
+	rec := f.reconcile(p)
+	pods := kube.Owned[Pod](rec)
+	if res := f.state(); len(pods) != 1 || pods[0].Name == p.Name || res.State != gitk8s.Running || res.Message != "started Pod "+pods[0].Name ||
+		res.Outputs["pod"] != pods[0].Name || res.Outputs["runs"] != "1" || res.Outputs["podUID"] != "" {
+		t.Fatalf("result = %+v with %d owned Pods, want run 1 in a new Pod", res, len(pods))
+	}
+	q := pods[0]
+	q.Namespace, q.UID = "default", "uid-"+q.Name
+
+	t.Log("Another restart waits for a place in -max-runs-per-day without a Pod.")
+	f.r.Model = "composer-4"
+	rec = f.reconcile(q)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting to start the agent again: 2 agent runs started in the last 24 hours, the -max-runs-per-day limit" ||
+		res.Outputs["pod"] != q.Name || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 0 {
+		t.Fatalf("result = %+v, want Running without a Pod", res)
+	}
+	if d := rec.RequeueAfter(); d < 23*time.Hour || d > 24*time.Hour {
+		t.Errorf("RequeueAfter = %v, want about a day", d)
+	}
+
+	t.Log("With the flag back, the run finishes in the restarted Pod.")
+	f.r.Model = "composer-3"
+	f.reconcile(finished(q, f.serve(review(Pass), q.UID)))
+	if res := f.state(); res.State != gitk8s.Passed || res.Outputs["runs"] != "1" {
+		t.Errorf("result = %+v, want Passed after 1 run", res)
 	}
 }
 
@@ -672,6 +833,19 @@ func TestNeedsFlags(t *testing.T) {
 	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, `-source-size is "2GB", but it must be a size such as 2Gi`) || len(kube.Owned[Pod](rec)) != 0 {
 		t.Errorf("result = %+v, want Running without a Pod", res)
 	}
+
+	t.Log("Nor does a -storage-request that isn't a size or that's more than the Pod's limit.")
+	for request, want := range map[string]string{
+		"1GB": `-storage-request is "1GB", but it must be a size such as 1Gi`,
+		"8Gi": "-storage-request is 8Gi, but it can't be more than 7488Mi, each agent Pod's ephemeral-storage limit",
+	} {
+		f = newFixture(t, "")
+		f.r.StorageRequest = request
+		rec = f.reconcile()
+		if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, want) || len(kube.Owned[Pod](rec)) != 0 {
+			t.Errorf("-storage-request %s: result = %+v, want Running without a Pod", request, res)
+		}
+	}
 }
 
 func TestWindow(t *testing.T) {
@@ -685,10 +859,14 @@ func TestWindow(t *testing.T) {
 	if wait, ok := w.take(t0.Add(2*time.Hour), 2); ok || wait != 22*time.Hour {
 		t.Errorf("take = %v, %v; want a wait of 22h", wait, ok)
 	}
+	if !w.full(t0.Add(2*time.Hour), 2) || w.full(t0.Add(2*time.Hour), 3) || w.full(t0, 0) {
+		t.Error("full must report a limit that 2 runs reach, without recording a run")
+	}
 	if _, ok := w.take(t0.Add(24*time.Hour+time.Second), 2); !ok {
 		t.Error("the first run is more than a day old, so another can start")
 	}
-	if _, ok := w.take(t0, 0); !ok {
-		t.Error("a limit of 0 means no limit")
+	n := len(w.starts)
+	if _, ok := w.take(t0, 0); !ok || len(w.starts) != n {
+		t.Error("a limit of 0 means no limit, so take records nothing")
 	}
 }
