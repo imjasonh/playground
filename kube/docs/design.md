@@ -609,6 +609,103 @@ the webhook configurations with the bundle, which is idempotent, and deletes
 configurations that its program no longer needs, so that a dropped webhook
 doesn't fail every request for its type.
 
+### HTTP endpoints
+
+`kube.Serve` returns a `Controller` that doesn't reconcile, so the manager runs
+it on every replica, not only on replicas that hold shards. It starts after the
+webhooks serve and before the replica competes for shards, and `/readyz` fails
+until it listens, so the Service sends requests only to replicas that can answer
+them. When the program stops, the server stops accepting connections, cancels
+the contexts of requests in progress, and waits up to 10 seconds for them to
+return. Until the Service's endpoints drop the Pod, connections to it are
+refused, so clients need to retry.
+
+The handler runs in the webhooks' read-only scope. Every replica serves, so a
+handler that wrote objects could race the reconcile on the replica that holds
+the object's shard. Writes stay in reconciles, where one replica at a time
+carries out the intents for an object. A handler that needs a change triggers a
+reconcile instead. As in a webhook, `Get` and `List` in a handler read the
+type's cache, and start it on a replica that doesn't have it yet, such as a
+standby.
+
+A program has one `kube.Serve`, so `generate` knows the one port to route, and
+one mux can serve many paths. `generate` runs the program with
+`-serve-addr=:8081` and routes port 80 of the program's Service there, so
+callers use `http://NAME.NAMESPACE.svc/`. It writes no NetworkPolicy, because it
+can't know which Pods call the program. A hook for any long-running function,
+like `controller-runtime`'s `Runnable`, would cover more uses, but `generate`
+couldn't tell whether the function listens, or on which port, and its scope
+would last as long as the program instead of one request.
+
+The server uses plain HTTP. The webhook server has TLS, but its certificate
+comes from a CA that only the API server is given, so callers couldn't verify
+it. Without TLS, tokens cross the Pod network unencrypted, and the audience
+check in `ReviewToken` limits a captured token to the server that it was issued
+for, until it expires.
+
+### Service account tokens
+
+`ReviewToken` creates a TokenReview. The API server authenticates a token that's
+valid for any audience in the review, and returns the audiences that the review
+and the token share. A token issued without an audience is valid for the API
+server's own audiences, so a server that names its own audience rejects the
+tokens that Pods use to call the API server, and a token issued for the server
+can't call the API server. The TokenReview API tells clients to treat a review
+that's authenticated without audiences as valid only for the API server, so
+`ReviewToken` reports it as unauthenticated when the caller passed audiences.
+`ReviewToken` doesn't cache reviews, so a token stops working as soon as the API
+server rejects it, for example when its Pod is deleted.
+
+`RequestToken` creates a TokenRequest for the program's own service account. The
+program learns which account that is from a SelfSubjectReview, which every
+authenticated user can create in Kubernetes 1.28 and later, and caches the
+answer. Reading the namespace from the in-cluster token's directory and the
+account's name from the downward API would work only in a Pod, and would need a
+change to the Deployment. Decoding the program's own token would depend on the
+token's format, and the API server's answer doesn't. When the review names a
+Pod, because the program authenticates with its Pod's token, the new token is
+bound to that Pod, so it stops working when the Pod is deleted, like the tokens
+that the kubelet projects.
+
+`generate` grants `create` on `tokenreviews` in the ClusterRole when the program
+refers to `ReviewToken`, and `create` on `serviceaccounts/token` in the Role in
+the program's namespace when it refers to `RequestToken`, with the program's own
+service account as the only resource name. RBAC can limit a `create` to one name
+here because the name is in the request's path. A `RequestToken` that took any
+account's name would need the rule for every account in the namespace, which
+would let the program act as any of them. Projected token volumes would need no
+rule, but the Deployment would have to list each audience when `generate` writes
+it, and the probe example reads its audiences from its objects.
+
+### Triggered reconciles
+
+`kube.Trigger` adds a key at high priority to the work queue of each controller
+in the program that reconciles the type's group and kind, so the reconcile
+starts ahead of resyncs and doesn't wait out a backoff. It adds the key only
+where the controller's cache holds the object and the replica holds the object's
+shard, and returns true if any controller added it. A trigger writes nothing to
+the API server, so it needs no RBAC rule.
+
+On a replica that doesn't hold the shard, `Trigger` returns false and doesn't
+pass the trigger on. That replica's workers would drop the key anyway, because
+they forget keys outside the replica's shards, and a standby that has never held
+a shard has no controller caches. An HTTP handler answers `503` with
+`Connection: close`, so the client's next try opens a new connection, which the
+Service can send to the replica that holds the shard. Two other designs would
+reach that replica from any replica. Patching an annotation on the object would
+let the watch deliver the trigger, but every trigger would be a write that each
+watcher of the type receives, and the program would need `patch` on the type
+even where it only reads. Forwarding the trigger to the shard's holder, found
+from its Lease, would need each replica's address in the Lease and an
+authenticated endpoint between replicas.
+
+A true result holds even if the replica loses the shard before a worker takes
+the key, because the replica that acquires a shard enqueues every cached key in
+it. That replica doesn't have data that a handler kept in memory, though. So a
+handler that hands data to the reconcile, such as a result that a client posts,
+answers the client once the reconcile has used the data, and answers `503` if
+that doesn't happen in time.
+
 ### Versions and conversion
 
 `kube.Version[V]` adds a served version to the CustomResourceDefinition, with
@@ -745,6 +842,11 @@ a Role in the watched namespace. A reconciled type with more than one version
 keeps its rules in the ClusterRole, because migrating its stored objects to a
 new version lists and patches them in every namespace.
 
+`ReviewToken` and `RequestToken` aren't generic, so the analysis reports the
+first reference to each, and `generate` adds the rules that
+[Service account tokens](#service-account-tokens) describes. Any reference
+counts, so a program that passes one of them as a value still gets its rule.
+
 [go-containerregistry](https://github.com/google/go-containerregistry), kube's
 only dependency, builds and pushes the image. For each platform, `generate`
 builds the program with `CGO_ENABLED=0`, adds one layer that holds it at
@@ -777,6 +879,12 @@ the same objects, so the fake converts the listed objects of one type through
 JSON for reads of another type of the same kind. A test doesn't fake an API
 server, so there's no fake behavior that can differ from a real server's.
 
+Token reviews are the one exception. `ReviewToken` accepts each
+`kube.FakeToken` in the list for the token's audiences, by the API server's
+rules for audiences, and `RequestToken` adds a token for the requested
+audience to the list. `Trigger` records the key for `kube.Triggered` when the
+list holds the object.
+
 End-to-end tests start `etcd` and `kube-apiserver` from the controller-tools
 envtest release, with no kubelet or controller manager. The API server calls
 webhooks at a loopback address with the manager's CA bundle, as it would
@@ -799,6 +907,10 @@ framework's tests check that:
 - The program in the image that `generate` pushes runs with the token of the
   service account that `generate` installs, so it has only the RBAC rules
   that `generate` wrote.
+- Two replicas of the probe example, with the rules that `generate` writes,
+  both serve, accept tokens for their own audience and refuse others, request
+  a token for their own service account and review it, and queue a trigger
+  on the replica that holds the lease while the other answers `503`.
 
 A test in `e2e/kind` runs the whole installation in a
 [kind](https://kind.sigs.k8s.io/) cluster, which has a kubelet and
@@ -807,6 +919,11 @@ kube-proxy. It pushes to a local registry as kind's
 `generate` to `kubectl apply`, and checks that a Website's Service serves,
 that reconciles continue after every controller pod is replaced, and that the
 podpolicy webhooks deny and default pods through their Service.
+It also calls the probe example's API from a Pod with a projected token, and
+checks that each replica names the caller's Pod and refuses tokens for other
+audiences, that a Probe of the program's own `/whoami` succeeds with a token
+bound to the program's Pod, and that a trigger runs a check on the replica
+that holds the lease while the other answers `503`.
 
 ## Measurements
 
@@ -935,6 +1052,12 @@ offers:
   directory into the image; kube programs use `embed` instead.
 - One cluster per manager.
 - Webhooks run for creates and updates, not deletes or connections.
+- `kube.Serve` serves plain HTTP, because its callers have no CA that would
+  let them verify a certificate.
+- `kube.Trigger` doesn't pass a trigger to the replica that holds the
+  object's shard, so clients retry until they reach it.
+- `ReviewToken` asks the API server on every call. A short cache would save
+  requests, but would accept a token for that long after its Pod is deleted.
 - `Fetch` isn't tracked, by design, so a change to a fetched object doesn't
   run the reconcile again.
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels

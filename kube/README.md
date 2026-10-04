@@ -10,7 +10,8 @@ declares with server-side apply, deletes what it stops declaring, and writes
 status back.
 
 The same program can validate and default objects with admission webhooks,
-serve older versions of its types, and split its work across replicas. The
+serve older versions of its types, run an HTTP API that checks its callers'
+service account tokens, and split its work across replicas. The
 framework makes and renews the webhook certificates, puts every version in the
 CustomResourceDefinition, and holds the Leases that divide the work. Caches
 read built-in types as protobuf without generated code.
@@ -391,6 +392,133 @@ to an `https` URL at which the API server reaches the program. When a later
 version of the program has fewer webhooks, the manager deletes the webhook
 configuration it no longer needs.
 
+## Serve an HTTP API
+
+A program can serve HTTP next to its controllers, for endpoints that other
+programs call. Pass a handler to `kube.Serve`:
+
+```go
+kube.Main(kube.For[Probe](&reconciler{}), kube.Serve(api.handler()))
+```
+
+Every replica serves the handler at `-serve-addr`, `:8081` by default,
+whether or not it holds a lease, and `/readyz` reports ready once it
+serves. As in a webhook, the handler can read with `Get`, `List`, and
+`Fetch` through the request's context, and calling `Own`, `Apply`, or
+`Delete` cancels the context with an error. To change the cluster in
+response to a request, trigger a reconcile and make the change there. When
+the program stops, it cancels the contexts of requests in progress and
+waits up to 10 seconds for them to finish. A program can have one
+`kube.Serve`, so serve every path from one handler, such as an
+`http.ServeMux`.
+
+The `generate` command runs the program with `-serve-addr=:8081` and adds
+port 80 to the program's Service, which routes to the handler. It writes no
+NetworkPolicy. If NetworkPolicies in the program's namespace deny traffic by
+default, allow the callers to reach port 8081 of the program's Pods.
+
+The server uses plain HTTP and doesn't authenticate requests. Check each
+caller's token with `kube.ReviewToken`. Tokens cross the Pod network
+unencrypted, so have callers send tokens for your server's audience, which
+the API server rejects.
+
+[`examples/probe`](examples/probe/main.go) serves an API that uses each
+function in this section.
+
+### Check a caller's token
+
+A caller proves who it is with a service account token. Give the caller's
+Pod a projected token for an audience that names your server:
+
+```yaml
+volumes:
+- name: token
+  projected:
+    sources:
+    - serviceAccountToken:
+        audience: probe
+        path: token
+```
+
+The caller sends the token in an `Authorization: Bearer` header, and the
+handler asks the API server about it with `kube.ReviewToken`:
+
+```go
+token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+review, err := kube.ReviewToken(r.Context(), token, "probe")
+switch {
+case err != nil:
+	http.Error(w, err.Error(), http.StatusInternalServerError)
+case !review.Authenticated:
+	http.Error(w, review.Error, http.StatusUnauthorized)
+default:
+	namespace, name, _ := review.User.ServiceAccount()
+	fmt.Fprintf(w, "hello, %s in %s\n", name, namespace)
+}
+```
+
+A token passes only if it's valid for one of the audiences that you pass, so
+a token for another server or for the API server fails. A token that the
+kubelet projects into a Pod also names the Pod in `review.User.Extra`, and
+stops working when the Pod is deleted. An invalid token isn't an error.
+`ReviewToken` returns an error only when it can't ask, for example because
+the program may not create TokenReviews. Each call asks the API server.
+
+### Request a token for the program
+
+`kube.RequestToken` returns a token for the program's own service account,
+for a server that trusts the cluster's tokens, such as
+[Octo STS](https://github.com/octo-sts/app) or another program that calls
+`ReviewToken`:
+
+```go
+token, expires, err := kube.RequestToken(ctx, "octo-sts.dev", time.Hour)
+```
+
+The program asks the API server which service account it runs as, so
+`RequestToken` works in a Pod and with a kubeconfig that holds a service
+account's token. In a Pod, the new token is bound to the Pod. The API
+server issues tokens that last at least 10 minutes and can shorten long
+ones, so use the returned expiry. Each call makes a new token, so reuse one
+until shortly before it expires. Call `RequestToken` in a reconcile or in a
+`kube.Serve` handler.
+
+### Trigger a reconcile
+
+When a handler learns that something outside Kubernetes changed, it can
+reconcile an object at once, instead of at the next resync or requeue, with
+`kube.Trigger`:
+
+```go
+if kube.Trigger[Probe](r.Context(), namespace, name) {
+	w.WriteHeader(http.StatusAccepted)
+	return
+}
+w.Header().Set("Connection", "close")
+http.Error(w, "try again", http.StatusServiceUnavailable)
+```
+
+`Trigger` adds the object to the work queue of each controller that
+reconciles its kind and returns true. The reconcile starts soon, even if
+the object is waiting to retry an error. `Trigger` writes nothing to the
+API server, so it needs no permissions.
+
+On a replica that doesn't reconcile the object, `Trigger` returns false and
+does nothing. That's the case before the controllers start or after they
+stop, when the object isn't in the controller's cache, and, with
+`-leader-elect` or `-shards`, when another replica holds the object's shard.
+`Trigger` doesn't send the request to that replica. Instead, as in the
+example, answer `503` and close the connection, so that the client's next
+try can reach another replica through the Service. A true result holds even
+if the replica loses the shard before the reconcile starts, because the
+replica that takes the shard reconciles all of its objects.
+
+To hand data from a request to the reconcile, such as a result that a
+client posts, keep the data in memory under the object's key and call
+`Trigger`. The reconcile runs on this replica unless the replica loses the
+shard first, so answer the client after the reconcile has used the data,
+and answer `503` if that takes too long.
+
 ## Run a controller
 
 `kube.Main` runs controllers with these flags:
@@ -405,6 +533,8 @@ configuration it no longer needs.
 - `-webhook-url`: an `https` URL through which the API server reaches the
   webhooks of a program outside the cluster.
 - `-webhook-addr`: where to serve webhooks. The default is `:9443`.
+- `-serve-addr`: where to serve the handler passed to `kube.Serve`. The
+  default is `:8081`.
 - `-addr`: serve `/healthz`, `/readyz`, and Prometheus `/metrics`, for
   example on `:8080`.
 - `-v`: log debug messages.
@@ -429,7 +559,8 @@ The command does the following:
    its type, the types that it owns, and its webhooks. The command also
    type-checks the program's packages to find every call to `Get`, `List`,
    `Fetch`, `Own`, `Apply`, and `Delete`, and the type that each call uses,
-   including calls inside generic helpers.
+   including calls inside generic helpers, and whether the program calls
+   `ReviewToken` or `RequestToken`.
 1. Builds the program for each platform with `CGO_ENABLED=0`.
 1. Builds an image for each platform on `cgr.dev/chainguard/static`, with the
    program at `/app/PROGRAM` as the entrypoint, running as user 65532. It
@@ -439,10 +570,11 @@ The command does the following:
 1. Writes YAML that installs the image by digest: a Namespace, a
    ServiceAccount, a ClusterRole and a Role with only the rules that the
    program needs, their bindings, a Deployment, a PodDisruptionBudget, and a
-   Service for webhooks. With more than one replica, the Deployment runs the
-   program with `-leader-elect`, or with `-shards` when you set `-shards`.
-   The container's root file system is read-only, with an `emptyDir` volume
-   at `/tmp` for temporary files. `-tmp-size` limits the volume's size.
+   Service for webhooks and the `kube.Serve` handler. With more than one
+   replica, the Deployment runs the program with `-leader-elect`, or with
+   `-shards` when you set `-shards`. The container's root file system is
+   read-only, with an `emptyDir` volume at `/tmp` for temporary files.
+   `-tmp-size` limits the volume's size.
 
 The images have fixed timestamps, so the same source gives the same digest,
 and running `generate` again without changes leaves the cluster as it was.
@@ -501,9 +633,9 @@ caches every object. Each held shard writes its Lease every 2 seconds, so pick
 N a few times the number of replicas, such as 16 for 4 replicas.
 
 A replica that loses its Leases stops reconciling and tries to take them back.
-It keeps serving webhooks, and `/readyz` reports ready once the webhooks serve
-and the controllers it runs have synced, so the webhook Service sends requests
-to standby replicas too.
+It keeps serving webhooks and the `kube.Serve` handler, and `/readyz` reports
+ready once they serve and the controllers it runs have synced, so the Service
+sends requests to standby replicas too.
 
 ### Permissions
 
@@ -525,6 +657,9 @@ way, its service account needs these permissions:
 - `get`, `create`, and `update` on `secrets` in its namespace, and `get`,
   `patch`, and `delete` on `validatingwebhookconfigurations` and
   `mutatingwebhookconfigurations`, for webhooks.
+- `create` on `tokenreviews`, to check tokens with `ReviewToken`.
+- `create` on `serviceaccounts/token` for its own service account, in its
+  namespace, to request tokens with `RequestToken`.
 
 ## Test a controller
 
@@ -555,6 +690,28 @@ To test `Validate`, `Default`, `ConvertTo`, and `ConvertFrom`, call them
 directly. With a context from `kube.Fake`, `Validate` and `Default` can read
 objects with `Get` and `List`.
 
+To test a `kube.Serve` handler, pass it a request with a context from
+`kube.Fake`. `ReviewToken` accepts each `kube.FakeToken` that you pass to
+`kube.Fake` for the token's audiences, and `kube.Triggered` returns the keys
+of the objects that `Trigger` queued:
+
+```go
+ctx, rec := kube.Fake(t.Context(), probe, kube.FakeToken{
+	Token:     "ci",
+	User:      kube.UserInfo{Username: "system:serviceaccount:team:ci"},
+	Audiences: []string{"probe"},
+})
+req := httptest.NewRequest("POST", "/probes/team/api", nil).WithContext(ctx)
+req.Header.Set("Authorization", "Bearer ci")
+handler.ServeHTTP(httptest.NewRecorder(), req)
+if got := kube.Triggered[Probe](rec); len(got) != 1 {
+	t.Errorf("triggered %v, want the probe", got)
+}
+```
+
+`RequestToken` returns the tokens `fake-token-1`, `fake-token-2`, and so on,
+which `ReviewToken` accepts for the requested audience.
+
 The end-to-end tests run each example against a real `kube-apiserver` and
 `etcd`, without a kubelet or controller manager. To run them, download the
 binaries with the `fetch-envtest.sh` script:
@@ -567,9 +724,10 @@ go test -race ./...
 Without `KUBEBUILDER_ASSETS`, the end-to-end tests skip. CI downloads the
 binaries and runs them.
 
-One more test installs the website and podpolicy examples with `generate` in a
-[kind](https://kind.sigs.k8s.io/) cluster, and pushes their images to a local
-registry. It needs Docker and `kubectl`, and installs kind if it's missing:
+One more test installs the website, podpolicy, and probe examples with
+`generate` in a [kind](https://kind.sigs.k8s.io/) cluster, and pushes their
+images to a local registry. It needs Docker and `kubectl`, and installs kind
+if it's missing:
 
 ```sh
 KUBE_KIND_E2E=1 go test -v -count=1 ./e2e/kind/
@@ -597,6 +755,7 @@ tests and end-to-end tests:
 | [`dnsrecord`](examples/dnsrecord/main.go) | external-dns, Crossplane | External resources, `Finalize`, `Permanent`, drift checks |
 | [`janitor`](examples/janitor/main.go) | hjacobs/kube-janitor | Time-based desired state with `RequeueAfter`, `Delete` |
 | [`podpolicy`](examples/podpolicy/main.go) | Kyverno and OPA Gatekeeper policies | Admission webhooks for Pods with `kube.Webhooks`, a patch that keeps undeclared fields |
+| [`probe`](examples/probe/main.go) | Prometheus Blackbox Exporter | An HTTP API on every replica with `kube.Serve`, `ReviewToken`, `RequestToken`, and `Trigger` |
 
 ## Measurements
 
@@ -645,6 +804,9 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
   stop matching looks deleted to the controller, so its finalizer is never
   removed.
+- `kube.Trigger` queues a reconcile only on the replica that reconciles the
+  object. It doesn't send the request to that replica.
+- `kube.Serve` serves plain HTTP, without TLS.
 
 ## Layout
 
@@ -663,7 +825,7 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 | `internal/clone/` | Deep copy of any Go value, compiled once per type |
 | `internal/subset/` | Checks whether one JSON document's fields are a subset of another's |
 | `internal/yaml/` | The YAML subset that kubeconfig files use, and the YAML that `generate` writes |
-| `internal/analysis/` | Type-checks a program to find the types that it passes to kube's generic functions, for `generate`'s RBAC rules |
+| `internal/analysis/` | Type-checks a program to find the types that it passes to kube's generic functions, and its calls of `ReviewToken` and `RequestToken`, for `generate`'s RBAC rules |
 | `internal/image/` | Builds and pushes images with go-containerregistry, for `generate` |
 | `internal/envtest/`, `internal/e2e/` | Start `etcd` and `kube-apiserver` for tests |
 | `bench/` | Benchmark against `client-go` and `controller-runtime`, in its own module |
