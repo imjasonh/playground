@@ -240,12 +240,39 @@ until both policies are installed with bindings that deny.
 The core program installs `config/policy.yaml` when it starts, before it
 reconciles. It labels the policies, their bindings, and their ConfigMap with
 `kube.imjasonh.github.io/managed-by=git-k8s`, and applies them again each
-time it starts, but doesn't watch them. If a policy or its binding goes
-missing, or the binding stops denying requests, `PoliciesInstalled` turns
-`False`, and its message says to restart the core program. The policies name
-the core program's service account and keep their ConfigMap in the `git-k8s`
-namespace, so install the core program in that namespace, as `generate` does
-unless you set `-namespace`.
+time it starts, but doesn't watch them. The policies name the core program's
+service account and keep their ConfigMap in the `git-k8s` namespace, so
+install the core program in that namespace, as `generate` does unless you set
+`-namespace`.
+
+If a policy or its binding goes missing, `PoliciesInstalled` turns `False`,
+and its message says to restart the core program. Only the replica that
+holds the leader election lease installs `config/policy.yaml`, so deleting a
+standby replica's Pod doesn't install it again. Restart the Deployment:
+
+```sh
+kubectl -n git-k8s rollout restart deployment/git-k8s
+```
+
+If a binding stops denying the requests that its policy rejects,
+`PoliciesInstalled` turns `False`, and its message gives a `kubectl patch`
+command that makes the binding deny them again, without a restart. For a
+binding that someone set to `Warn`, the command is:
+
+```sh
+kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge \
+  -p '{"spec":{"validationActions":["Deny"]}}'
+```
+
+A binding set to `Warn` stops the core program the next time that it
+starts, whether you restart it or a node drain or an upgrade does. The core
+program's apply keeps the entries that others add to a binding's
+`validationActions`, so it adds `Deny` next to `Warn`, and the API server
+rejects a binding that has both. The core program exits, each replica that
+takes the lease after it exits too, and nothing lands until you patch or
+delete the binding. To install the binding from `config/policy.yaml` again
+instead of patching it, delete the binding, and then restart the core
+program.
 
 `generate` grants the core program `create` and `patch` on the two policies,
 their bindings, and the `git-k8s-checks` ConfigMap, by name, and `get` on the
@@ -271,7 +298,7 @@ kubectl apply -f config/policy.yaml
 ```
 
 With `-install-policies=false`, the message of a `False` `PoliciesInstalled`
-says to apply `config/policy.yaml`.
+says to apply `config/policy.yaml` instead of restarting the core program.
 
 ### Check service accounts
 

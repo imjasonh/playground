@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -118,12 +119,13 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		}
 		return kube.FindCondition(repo.Status.Conditions, "PoliciesInstalled")
 	}
-	if c := reconcile(); c == nil || c.Status != kube.False || !strings.Contains(c.Message, "git-k8s-check-results and git-k8s-branches") ||
-		!strings.HasPrefix(c.Message, "apply config/policy.yaml:") {
+	if c := reconcile(); c == nil || c.Status != kube.False || c.Reason != "Missing" ||
+		c.Message != "git-k8s-check-results and git-k8s-branches aren't fully installed, so checks can write each other's results; apply config/policy.yaml" {
 		t.Errorf("without the policies, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = true
-	if c := reconcile(); c.Status != kube.False || !strings.HasPrefix(c.Message, "restart the core program to install config/policy.yaml again:") {
+	if c := reconcile(); c.Status != kube.False ||
+		!strings.HasSuffix(c.Message, "; run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again") {
 		t.Errorf("without the policies that the program installs, PoliciesInstalled = %+v", c)
 	}
 
@@ -135,8 +137,17 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		bindings = append(bindings, b)
 		world = append(world, &admissionPolicy{Object: kube.Meta(name, nil)}, b)
 	}
-	if c := reconcile(world...); c.Status != kube.False {
+	// A restart would add Deny next to Warn in these bindings' validationActions,
+	// which the API server rejects, so the fix patches them instead.
+	warns := `kubectl patch validatingadmissionpolicybinding %s --type=merge -p '{"spec":{"validationActions":["Deny"]}}'`
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "NotDenying" ||
+		!strings.HasSuffix(c.Message, "; run "+fmt.Sprintf(warns, "git-k8s-check-results")+" and "+fmt.Sprintf(warns, "git-k8s-branches")) ||
+		strings.Contains(c.Message, "restart") {
 		t.Errorf("with bindings that only warn, PoliciesInstalled = %+v", c)
+	}
+	if c := reconcile(world[1:]...); c.Status != kube.False || c.Reason != "Missing" ||
+		!strings.HasSuffix(c.Message, fmt.Sprintf(warns, "git-k8s-branches")+", then run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again") {
+		t.Errorf("without a policy whose binding only warns, PoliciesInstalled = %+v", c)
 	}
 	for _, b := range bindings {
 		b.Spec.ValidationActions = []string{"Deny"}
@@ -147,7 +158,8 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	for _, b := range bindings {
 		b.Spec.ParamRef = &paramRef{ParameterNotFoundAction: "Allow"}
 	}
-	if c := reconcile(world...); c.Status != kube.False {
+	if c := reconcile(world...); c.Status != kube.False ||
+		!strings.Contains(c.Message, `kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge -p '{"spec":{"paramRef":{"parameterNotFoundAction":"Deny"}}}'`) {
 		t.Errorf("with bindings that allow requests while their parameters are missing, PoliciesInstalled = %+v", c)
 	}
 	for _, b := range bindings {

@@ -36,28 +36,82 @@ type paramRef struct {
 // program installs the policies when it starts.
 func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
-	var missing []string
+	var missing, weak, patches []string
 	for _, name := range policyNames {
-		denies := func(b *admissionPolicyBinding) bool {
-			return b.Spec.PolicyName == name && slices.Contains(b.Spec.ValidationActions, "Deny") &&
-				(b.Spec.ParamRef == nil || b.Spec.ParamRef.ParameterNotFoundAction == "Deny")
+		var own *admissionPolicyBinding
+		denies := false
+		for _, b := range bindings {
+			if b.Spec.PolicyName == name {
+				denies = denies || denyPatch(b) == ""
+				if b.Name == name {
+					own = b
+				}
+			}
 		}
-		if kube.Get[admissionPolicy](ctx, "", name) == nil || !slices.ContainsFunc(bindings, denies) {
+		policy := kube.Get[admissionPolicy](ctx, "", name)
+		if policy != nil && denies {
+			continue
+		}
+		if own != nil {
+			if patch := denyPatch(own); patch != "" {
+				weak = append(weak, name)
+				patches = append(patches, fmt.Sprintf("kubectl patch validatingadmissionpolicybinding %s --type=merge -p '%s'", name, patch))
+			}
+		}
+		if policy == nil || own == nil {
 			missing = append(missing, name)
 		}
 	}
-	if len(missing) > 0 {
-		fix := "apply config/policy.yaml"
-		if installs {
-			fix = "restart the core program to install config/policy.yaml again"
-		}
+	if len(missing) == 0 && len(weak) == 0 {
 		return kube.Condition{
-			Type: "PoliciesInstalled", Status: kube.False, Reason: "Missing",
-			Message: fmt.Sprintf("%s: %s isn't installed with a binding that denies, so checks can write each other's results", fix, strings.Join(missing, " and ")),
+			Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
+			Message: "the admission policies keep checks to their own results",
+		}
+	}
+	// The patches come before the restart, because restarting the core
+	// program while a binding warns stops it. The binding's validationActions
+	// would then hold both Warn and Deny, which the API server rejects.
+	var problems, fixes []string
+	reason := "NotDenying"
+	if len(weak) > 0 {
+		problem := "the binding %s doesn't deny every request that its policy rejects"
+		if len(weak) > 1 {
+			problem = "the bindings %s don't deny every request that their policies reject"
+		}
+		problems = append(problems, fmt.Sprintf(problem, strings.Join(weak, " and ")))
+		fixes = append(fixes, "run "+strings.Join(patches, " and "))
+	}
+	if len(missing) > 0 {
+		reason = "Missing"
+		problem := "%s isn't fully installed"
+		if len(missing) > 1 {
+			problem = "%s aren't fully installed"
+		}
+		problems = append(problems, fmt.Sprintf(problem, strings.Join(missing, " and ")))
+		if installs {
+			fixes = append(fixes, "run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again")
+		} else {
+			fixes = append(fixes, "apply config/policy.yaml")
 		}
 	}
 	return kube.Condition{
-		Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
-		Message: "the admission policies keep checks to their own results",
+		Type: "PoliciesInstalled", Status: kube.False, Reason: reason,
+		Message: fmt.Sprintf("%s, so checks can write each other's results; %s", strings.Join(problems, ", and "), strings.Join(fixes, ", then ")),
 	}
+}
+
+// denyPatch returns a merge patch that makes a binding deny every request that
+// its policy rejects, or "" if it already does.
+func denyPatch(b *admissionPolicyBinding) string {
+	var fields []string
+	if !slices.Contains(b.Spec.ValidationActions, "Deny") {
+		fields = append(fields, `"validationActions":["Deny"]`)
+	}
+	if b.Spec.ParamRef != nil && b.Spec.ParamRef.ParameterNotFoundAction != "Deny" {
+		fields = append(fields, `"paramRef":{"parameterNotFoundAction":"Deny"}`)
+	}
+	if len(fields) == 0 {
+		return ""
+	}
+	return `{"spec":{` + strings.Join(fields, ",") + `}}`
 }
