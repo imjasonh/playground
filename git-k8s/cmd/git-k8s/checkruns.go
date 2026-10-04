@@ -40,9 +40,9 @@ type branchResults struct {
 // checkRuns copies the check results on each GitBranch to GitHub as check
 // runs on the commits that they're for, for repositories that name an Octo
 // STS identity for check runs. A check's check run on a commit is named
-// git-k8s/CHECK. The controller updates it as the result changes, and
-// creates another when a check that finished starts again. Nothing on GitHub
-// changes a result.
+// git-k8s/CHECK, and branches at the same commit share it. The controller
+// updates it as the result changes, and creates another when a check that
+// finished starts again. Nothing on GitHub changes a result.
 type checkRuns struct {
 	// now is time.Now, except in tests.
 	now func() time.Time
@@ -55,9 +55,10 @@ type checkRuns struct {
 	app atomic.Int64
 
 	mu sync.Mutex
-	// runs holds the check run that the controller last wrote or found for
-	// each check on each branch, so that a result that stays the same costs
-	// no requests.
+	// runs holds, for each check on each branch, the check run that the
+	// branch's results go to and what the controller last wrote or found
+	// there for the branch, so that a result that stays the same costs no
+	// requests.
 	runs map[runKey]publishedRun
 	// paused holds when each repository owner's rate limit ends. GitHub
 	// limits each installation of a GitHub App, and an installation is one
@@ -65,7 +66,13 @@ type checkRuns struct {
 	paused map[string]time.Time
 }
 
-type runKey struct{ namespace, branch, check string }
+type runKey struct{ namespace, repository, branch, check string }
+
+// shares reports whether branches k and o, when they're at the same commit,
+// share a check run.
+func (k runKey) shares(o runKey) bool {
+	return k.namespace == o.namespace && k.repository == o.repository && k.check == o.check
+}
 
 type publishedRun struct {
 	commit string
@@ -149,7 +156,7 @@ func (c *checkRuns) publish(ctx context.Context, gh *githubAPI, b *branchResults
 	if res.Commit == "" {
 		return nil
 	}
-	k := runKey{b.Namespace, b.Name, check}
+	k := runKey{b.Namespace, b.Spec.Repository, b.Name, check}
 	want := runFor(res)
 	last, ok := c.last(k)
 	if ok && last.commit == res.Commit && last.shows == want {
@@ -186,8 +193,10 @@ func (c *checkRuns) publish(ctx context.Context, gh *githubAPI, b *branchResults
 			return nil
 		}
 		// Until the controller knows its app, it can find another app's
-		// check run, which only that app can update.
-		if !notOurs(err) {
+		// check run, which only that app can update. And another branch at
+		// the same commit can complete the check run after this branch last
+		// wrote it.
+		if !notOurs(err) && !reopening(err, want) {
 			return err
 		}
 	}
@@ -202,21 +211,42 @@ func (c *checkRuns) publish(ctx context.Context, gh *githubAPI, b *branchResults
 
 // supersede completes the check run for a commit that the branch moved
 // away from before the check finished. Check controllers don't finish
-// checks on old commits, so the run would otherwise stay in progress.
+// checks on old commits, so the run would otherwise stay in progress. When
+// another branch at that commit has a result for the check, the check run
+// shows that result again instead of being cancelled.
 func (c *checkRuns) supersede(ctx context.Context, gh *githubAPI, k runKey, last publishedRun, commit string) error {
 	last.shows = runState{Status: "completed", Conclusion: "cancelled", Output: runOutput{
 		Title:   "Superseded",
 		Summary: fmt.Sprintf("The branch moved to %s before the check finished.", gitk8s.Short(commit)),
 	}}
+	if result, ok := c.finished(k, last.commit); ok {
+		last.shows = result
+	}
 	switch err := gh.update(ctx, last.id, last.shows); {
 	case notOurs(err):
 		// GitHub won't change this check run, so trying again can't help.
-		slog.Warn("couldn't cancel a superseded check run", "namespace", k.namespace, "gitbranch", k.branch, "check", k.check, "id", last.id, "error", err)
+		slog.Warn("couldn't complete a superseded check run", "namespace", k.namespace, "gitbranch", k.branch, "check", k.check, "id", last.id, "error", err)
 	case err != nil:
-		return fmt.Errorf("cancelling the check run on %s: %w", gitk8s.Short(last.commit), err)
+		return fmt.Errorf("completing the check run on %s: %w", gitk8s.Short(last.commit), err)
 	}
 	c.remember(k, last)
 	return nil
+}
+
+// finished returns the latest finished result for k's check that another
+// branch at commit has.
+func (c *checkRuns) finished(k runKey, commit string) (runState, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var latest publishedRun
+	for o, r := range c.runs {
+		// A cancelled check run is from a branch that moved away, not a result.
+		done := r.shows.Status == "completed" && r.shows.Conclusion != "cancelled"
+		if o != k && k.shares(o) && r.commit == commit && done && r.at.After(latest.at) {
+			latest = r
+		}
+	}
+	return latest.shows, !latest.at.IsZero()
 }
 
 // runFor returns what the check run for a result shows.
@@ -284,8 +314,14 @@ func (c *checkRuns) remember(k runKey, r publishedRun) {
 	defer c.mu.Unlock()
 	now := c.clock()
 	for key, old := range c.runs {
-		if now.Sub(old.at) >= forgetAfter {
+		switch {
+		case now.Sub(old.at) >= forgetAfter:
 			delete(c.runs, key)
+		case k.shares(key) && old.commit == r.commit && old.id < r.id:
+			// GitHub shows the newest check run with a name, so the other
+			// branches at the commit write to it too.
+			old.id = r.id
+			c.runs[key] = old
 		}
 	}
 	if c.runs == nil {
@@ -349,6 +385,13 @@ func (e *githubError) Error() string { return e.msg }
 func notOurs(err error) bool {
 	var e *githubError
 	return errors.As(err, &e) && (e.status == http.StatusForbidden || e.status == http.StatusNotFound)
+}
+
+// reopening reports whether err is GitHub refusing to update a check run
+// to want because want would start the completed check run again.
+func reopening(err error, want runState) bool {
+	var e *githubError
+	return want.Status != "completed" && errors.As(err, &e) && e.status == http.StatusUnprocessableEntity
 }
 
 // find returns the newest check run that has run's name, commit, and

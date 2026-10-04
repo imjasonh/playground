@@ -67,13 +67,15 @@ func resultsOf(checks map[string]gitk8s.CheckResult) *branchResults {
 	return b
 }
 
-// publisher runs a check-runs controller on c/x for a repository and
+// publisher runs a check-runs controller on a branch of a repository and
 // returns the REST API requests that each reconcile sent.
 type publisher struct {
 	t    *testing.T
 	gh   *gittest.GitHub
 	repo *gitk8s.GitRepository
 	c    *checkRuns
+	// branch is the branch, or c/x if it's empty.
+	branch string
 	// requeue is the last reconcile's requeue.
 	requeue time.Duration
 }
@@ -82,6 +84,9 @@ func (p *publisher) publish(checks map[string]gitk8s.CheckResult) ([]string, err
 	p.t.Helper()
 	before := len(p.gh.Fake.Requests())
 	b := resultsOf(checks)
+	if p.branch != "" {
+		b.Name = gitk8s.BranchObjectName("app", p.branch)
+	}
 	want := b.Status
 	ctx, rec := kube.Fake(p.t.Context(), b, p.repo)
 	err := p.c.Reconcile(ctx, b)
@@ -295,7 +300,7 @@ func TestCheckRunsFromOtherApps(t *testing.T) {
 	}
 
 	t.Log("When GitHub can't find the check run that the controller remembers, the controller creates another.")
-	p.c.remember(runKey{"default", resultsOf(nil).Name, "gofmt"}, publishedRun{commit: next, id: 99, shows: runFor(gitk8s.CheckResult{State: gitk8s.Running})})
+	p.c.remember(runKey{"default", "app", resultsOf(nil).Name, "gofmt"}, publishedRun{commit: next, id: 99, shows: runFor(gitk8s.CheckResult{State: gitk8s.Running})})
 	got, err = p.publish(map[string]gitk8s.CheckResult{"gofmt": {Commit: next, State: gitk8s.Passed}})
 	if want := []string{"PATCH " + api + "check-runs/99", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
 		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
@@ -376,10 +381,97 @@ func TestCancelsSupersededCheckRuns(t *testing.T) {
 	}
 
 	t.Log("When GitHub can't find the old commit's check run, the controller moves on.")
-	p.c.remember(runKey{"default", resultsOf(nil).Name, "gofmt"}, publishedRun{commit: head, id: 99, shows: runFor(running)})
+	p.c.remember(runKey{"default", "app", resultsOf(nil).Name, "gofmt"}, publishedRun{commit: head, id: 99, shows: runFor(running)})
 	got, err = p.publish(moved)
 	if want := []string{"PATCH " + api + "check-runs/99", "GET " + api + "commits/" + next + "/check-runs"}; err != nil || !slices.Equal(got, want) {
 		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+}
+
+func TestBranchesShareCheckRuns(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	var commits []string
+	for _, f := range []string{"a", "b", "c", "d", "e"} {
+		w.Write(f+".go", "package x\n")
+		commits = append(commits, w.Commit("add "+f))
+	}
+	w.Push("c/x")
+	repo := gh.Repository("app", sts, rules()...)
+	c := &checkRuns{}
+	x := &publisher{t: t, gh: gh, repo: repo, c: c}
+	y := &publisher{t: t, gh: gh, repo: repo, c: c, branch: "c/y"}
+	api := "/api/v3/repos/acme/app/"
+	get := func(i int) string { return "GET " + api + "commits/" + commits[i] + "/check-runs" }
+	post, patch := "POST "+api+"check-runs", "PATCH "+api+"check-runs/"
+	short := func(i int) string { return gitk8s.Short(commits[i]) }
+	step := func(p *publisher, res gitk8s.CheckResult, want ...string) {
+		t.Helper()
+		got, err := p.publish(map[string]gitk8s.CheckResult{"gotest": res})
+		if err != nil || !slices.Equal(got, want) {
+			t.Errorf("%s: requests = %q, err = %v; want %q", res.Message, got, err, want)
+		}
+	}
+	result := func(i int, state, msg string) gitk8s.CheckResult {
+		return gitk8s.CheckResult{Commit: commits[i], State: state, Message: msg}
+	}
+	wantRuns := func(want ...string) {
+		t.Helper()
+		if got := runs(gh); !slices.Equal(got, want) {
+			t.Errorf("check runs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+		}
+	}
+
+	t.Log("A check that starts on a commit where another branch's check finished gets a new check run.")
+	step(x, result(0, gitk8s.Passed, "passed on c/x"), get(0), post)
+	step(y, result(0, gitk8s.Running, "started Pod y"), get(0), post)
+
+	t.Log("When that branch moves before its check finishes, the check run shows the other branch's result again.")
+	step(y, result(1, gitk8s.Running, "started Pod y"), patch+"2", get(1), post)
+	wantRuns(
+		"git-k8s/gotest@"+short(0)+" completed success: passed on c/x",
+		"git-k8s/gotest@"+short(0)+" completed success: passed on c/x",
+		"git-k8s/gotest@"+short(1)+" in_progress : started Pod y",
+	)
+	t.Log("And the other branch writes to the check run that GitHub shows.")
+	step(x, result(0, gitk8s.Failed, "failed on c/x"), patch+"2")
+	wantRuns(
+		"git-k8s/gotest@"+short(0)+" completed success: passed on c/x",
+		"git-k8s/gotest@"+short(0)+" completed failure: failed on c/x",
+		"git-k8s/gotest@"+short(1)+" in_progress : started Pod y",
+	)
+
+	t.Log("When another branch completes a check run while this branch's check runs, this branch's next result gets a new check run.")
+	step(x, result(1, gitk8s.Running, "started Pod x"), get(1), patch+"3")
+	step(y, result(1, gitk8s.Passed, "passed on c/y"), patch+"3")
+	step(x, result(1, gitk8s.Running, "trying again"), patch+"3", post)
+
+	t.Log("The last branch to leave a commit before its check finishes cancels the check run.")
+	step(y, result(2, gitk8s.Running, "started Pod y"), get(2), post)
+	step(x, result(2, gitk8s.Running, "started Pod x"), patch+"4", get(2), patch+"5")
+
+	t.Log("When the other branch's check hasn't finished, the check run is cancelled until that branch's next result.")
+	step(x, result(3, gitk8s.Running, "started Pod x"), patch+"5", get(3), post)
+	wantRuns(
+		"git-k8s/gotest@"+short(0)+" completed success: passed on c/x",
+		"git-k8s/gotest@"+short(0)+" completed failure: failed on c/x",
+		"git-k8s/gotest@"+short(1)+" completed success: passed on c/y",
+		"git-k8s/gotest@"+short(1)+" completed cancelled: The branch moved to "+short(2)+" before the check finished.",
+		"git-k8s/gotest@"+short(2)+" completed cancelled: The branch moved to "+short(3)+" before the check finished.",
+		"git-k8s/gotest@"+short(3)+" in_progress : started Pod x",
+	)
+	step(y, result(2, gitk8s.Passed, "passed on c/y"), patch+"5")
+	if got := runs(gh)[4]; got != "git-k8s/gotest@"+short(2)+" completed success: passed on c/y" {
+		t.Errorf("check run 5 = %s, want c/y's result", got)
+	}
+
+	t.Log("Another branch's cancellation, left when it moved away and hasn't published on its new head yet, isn't a result.")
+	c.remember(runKey{"default", "app", gitk8s.BranchObjectName("app", "c/y"), "gotest"}, publishedRun{commit: commits[3], id: 6, shows: runState{
+		Status: "completed", Conclusion: "cancelled", Output: runOutput{Title: "Superseded", Summary: "The branch moved elsewhere before the check finished."},
+	}})
+	step(x, result(4, gitk8s.Running, "started Pod x"), patch+"6", get(4), post)
+	if got := runs(gh)[5]; got != "git-k8s/gotest@"+short(3)+" completed cancelled: The branch moved to "+short(4)+" before the check finished." {
+		t.Errorf("check run 6 = %s, want c/x's cancellation", got)
 	}
 }
 
