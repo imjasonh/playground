@@ -227,6 +227,15 @@ func (g grants) add(group, resource, name string, verbs ...string) {
 	}
 }
 
+// addAll adds the permissions in other to g.
+func (g grants) addAll(other grants) {
+	for k, verbs := range other {
+		for v := range verbs {
+			g.add(k.group, k.resource, k.name, v)
+		}
+	}
+}
+
 // rules turns grants into RBAC rules, combining resources of a group that
 // need the same verbs.
 func (g grants) rules() []any {
@@ -273,6 +282,9 @@ type installPlan struct {
 	webhooks                bool
 	// electLeader is set when replicas must take turns reconciling.
 	electLeader bool
+	// defaultNS holds permissions in the default namespace, where events
+	// about cluster-scoped objects go.
+	defaultNS grants
 }
 
 // grantsFor returns where the permissions for ti's resources go. A program
@@ -284,11 +296,20 @@ func (p *installPlan) grantsFor(ti *typeInfo, watching bool) grants {
 	return p.cluster
 }
 
+// eventGrantsFor returns where the permissions to record events about ti's
+// objects go.
+func (p *installPlan) eventGrantsFor(ti *typeInfo, watching bool) grants {
+	if ti.scope == "Cluster" {
+		return p.defaultNS
+	}
+	return p.grantsFor(ti, watching)
+}
+
 // plan works out what the program needs. Controllers declare their types,
 // and the program's source shows the types its reconciles and webhooks
 // read and write.
 func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pkg string) (*installPlan, error) {
-	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}}
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, defaultNS: grants{}}
 	cluster := p.cluster
 	watching := o.watchNamespace != ""
 	warned := map[string]bool{}
@@ -300,6 +321,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		return p.grantsFor(ti, watching)
 	}
 	var crds []string
+	var reconciled []*typeInfo
 	for _, c := range controllers {
 		d, err := c.describe()
 		if err != nil {
@@ -309,6 +331,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		if !d.reconciles {
 			continue
 		}
+		reconciled = append(reconciled, d.ti)
 		p.electLeader = o.replicas > 1 || o.shards > 1
 		group, plural := resourceName(d.ti)
 		own := grantsFor(d.ti)
@@ -337,6 +360,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	uses, warnings, err := analysis.Find(ctx, analysis.Config{
 		Dir: ".", Env: buildEnv(o.platforms[0]), Pattern: pkg,
 		Package: reflect.TypeFor[Object]().PkgPath(), Funcs: funcs, Marker: "Object",
+		Calls: []string{"Eventf"},
 	})
 	if err != nil {
 		return nil, err
@@ -345,6 +369,14 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		o.logf("warning: %s; add its permissions to the ClusterRole yourself", w)
 	}
 	for _, u := range uses {
+		if u.Func == "Eventf" {
+			// Eventf records events about the object being reconciled, and
+			// any controller's reconcile may call it.
+			for _, ti := range reconciled {
+				p.eventGrantsFor(ti, watching).add("events.k8s.io", "events", "", "create", "patch")
+			}
+			continue
+		}
 		ti := &typeInfo{}
 		if err := ti.parseTag(u.Type, u.Name, reflect.StructTag(u.Tag).Get("kube")); err != nil {
 			return nil, err
@@ -373,6 +405,14 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	}
 	if p.electLeader {
 		p.local.add("coordination.k8s.io", "leases", "", "get", "list", "create", "update", "delete")
+	}
+	switch {
+	case o.watchNamespace == "default":
+		p.watched.addAll(p.defaultNS)
+		clear(p.defaultNS)
+	case o.namespace == "default":
+		p.local.addAll(p.defaultNS)
+		clear(p.defaultNS)
 	}
 	if o.watchNamespace == o.namespace {
 		for k, verbs := range p.watched {
@@ -421,6 +461,9 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 	}
 	if len(p.watched) > 0 {
 		docs = append(docs, role(object{{"name", o.name}, {"namespace", o.watchNamespace}, {"labels", labels}}, p.watched)...)
+	}
+	if len(p.defaultNS) > 0 {
+		docs = append(docs, role(object{{"name", o.name}, {"namespace", "default"}, {"labels", labels}}, p.defaultNS)...)
 	}
 	args := []string{"-addr=:8080"}
 	switch {

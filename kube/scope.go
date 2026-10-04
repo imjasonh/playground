@@ -56,6 +56,7 @@ type scope struct {
 	parentNS bool
 	deps     map[dep]struct{}
 	intents  []intent
+	events   []eventIntent
 	requeue  time.Duration
 	err      error
 	cancel   context.CancelCauseFunc

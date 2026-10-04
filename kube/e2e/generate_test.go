@@ -275,6 +275,29 @@ func noPermissionErrors(t *testing.T, out *syncBuffer) {
 	}
 }
 
+// eventFrom waits for an Event in namespace from controller. The program
+// writes events in the background, so a denial can come after its other
+// writes succeed.
+func eventFrom(t *testing.T, c *client.Client, namespace, controller string) {
+	t.Helper()
+	e2e.Eventually(t, 30*time.Second, func() error {
+		var events struct {
+			Items []struct {
+				ReportingController string `json:"reportingController"`
+			} `json:"items"`
+		}
+		if err := c.Get(t.Context(), client.Path("events.k8s.io/v1", "events", namespace, ""), &events); err != nil {
+			return err
+		}
+		for _, e := range events.Items {
+			if e.ReportingController == controller {
+				return nil
+			}
+		}
+		return fmt.Errorf("no Events from %s in %s", controller, namespace)
+	})
+}
+
 // TestGenerateWebsite installs the website example from what its generate
 // command wrote, and runs the image's program with the generated RBAC
 // rules: the API server enforces them, so a missing rule fails the test.
@@ -323,6 +346,7 @@ func TestGenerateWebsite(t *testing.T) {
 	if err := c.Get(t.Context(), client.Path("coordination.k8s.io/v1", "leases", "website-system", ""), &leases); err != nil || len(leases.Items) == 0 {
 		t.Errorf("leases in website-system: %d, %v", len(leases.Items), err)
 	}
+	eventFrom(t, c, ns, "website")
 	noPermissionErrors(t, out)
 }
 
@@ -368,6 +392,7 @@ func TestGenerateOneNamespace(t *testing.T) {
 	if err := e2e.Get(t.Context(), c, client.Path("apps/v1", "deployments", other, "blog"), &map[string]any{}); err == nil {
 		t.Errorf("the program reconciled a Website in %s, which it doesn't watch", other)
 	}
+	eventFrom(t, c, watched, "website")
 	noPermissionErrors(t, out)
 }
 
@@ -382,6 +407,9 @@ func TestGenerateWebhooks(t *testing.T) {
 	kinds := map[string]bool{}
 	for _, obj := range in.objects {
 		kinds[obj["kind"].(string)] = true
+		if b, _ := json.Marshal(obj); strings.Contains(string(b), `"events.k8s.io"`) {
+			t.Errorf("podpolicy records no events, but its %s has a rule for them: %s", obj["kind"], b)
+		}
 	}
 	if !kinds["Service"] || !kinds["Role"] || slices.Contains(in.args, "-leader-elect") || !slices.Contains(in.args, "-registries=ghcr.io/example/") {
 		t.Errorf("kinds = %v, args = %q", kinds, in.args)

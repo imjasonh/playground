@@ -114,6 +114,56 @@ func main() {
 	}
 }
 
+func TestFindCalls(t *testing.T) {
+	dir := writeModule(t, map[string]string{
+		"go.mod": "module example.com/prog\n\ngo 1.26.0\n",
+		"fw/fw.go": `package fw
+
+type Object struct{}
+
+type Recorder struct{}
+
+func Eventf(format string, args ...any)          {}
+func (Recorder) Eventf(format string, args ...any) {}
+func Unused()                                     {}
+`,
+		"helpers/helpers.go": `package helpers
+
+import "example.com/prog/fw"
+
+// Record is fw.Eventf, passed as a value.
+var Record = fw.Eventf
+`,
+		"main.go": `package main
+
+import (
+	"example.com/prog/fw"
+	"example.com/prog/helpers"
+)
+
+func main() {
+	fw.Eventf("a")
+	fw.Recorder{}.Eventf("b")
+	helpers.Record("c")
+}
+`,
+	})
+	uses, warnings, err := Find(t.Context(), Config{
+		Dir: dir, Env: append(os.Environ(), "CGO_ENABLED=0", "GOFLAGS=-mod=mod"), Pattern: "example.com/prog",
+		Package: "example.com/prog/fw", Calls: []string{"Eventf", "Unused", "Missing"}, Marker: "Object",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, u := range uses {
+		got = append(got, u.String())
+	}
+	if len(got) != 2 || !strings.HasPrefix(got[0], "Eventf at ") || !strings.HasSuffix(got[0], filepath.Join("helpers", "helpers.go")+":6:17") || !strings.HasSuffix(got[1], "main.go:9:5") || len(warnings) != 0 {
+		t.Errorf("uses = %q, warnings = %q, want the function's two uses and not the method's", got, warnings)
+	}
+}
+
 func TestFindInExamples(t *testing.T) {
 	for _, tc := range []struct {
 		pkg  string

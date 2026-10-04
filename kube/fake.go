@@ -56,6 +56,16 @@ func (r *Recorder) RequeueAfter() time.Duration { return r.s.requeue }
 // example a struct that doesn't embed Object.
 func (r *Recorder) Err() error { return r.s.err }
 
+// Events returns the events that the reconciler recorded with Eventf, in
+// order.
+func (r *Recorder) Events() []Event {
+	var out []Event
+	for _, e := range r.s.events {
+		out = append(out, e.Event)
+	}
+	return out
+}
+
 // Owned returns the objects of type T passed to Own, in order.
 func Owned[T any](r *Recorder) []*T { return intentsOf[T](r, intentOwn) }
 

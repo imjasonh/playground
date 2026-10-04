@@ -116,6 +116,7 @@ minutes.
 | `kube.Own(ctx, desired)` | Declares an object that the reconciled object owns, and returns it as observed |
 | `kube.Apply(ctx, desired)` | Declares fields on an object that something else owns |
 | `kube.Delete(ctx, object)` | Declares that an object must be deleted |
+| `kube.Eventf(ctx, eventType, reason, format, args...)` | Records an event about the reconciled object; see [Record events](#record-events) |
 | `kube.RequeueAfter(ctx, duration)` | Asks for another reconcile after a delay |
 | `kube.Permanent(err)` | Marks an error that retrying won't fix |
 
@@ -160,6 +161,62 @@ method gets a finalizer on each object. The framework calls `Finalize` when the
 object is deleted and removes the finalizer when `Finalize` returns `nil`. Use
 it to clean up outside Kubernetes, as [`examples/dnsrecord`](examples/dnsrecord/main.go)
 does for DNS records.
+
+## Record events
+
+`kube.Eventf` records an event about the object being reconciled, which
+`kubectl describe` and `kubectl get events` show. Record an event when the
+controller does something that people want to know about, such as a change
+outside Kubernetes, rather than on every reconcile. The
+[`website`](examples/website/main.go) example records one each time the
+reason of its `Ready` condition changes:
+
+```go
+if old := kube.FindCondition(site.Status.Conditions, "Ready"); old == nil || old.Reason != ready.Reason {
+	kube.Eventf(ctx, kube.Normal, ready.Reason, "%d of %d replicas are ready", site.Status.ReadyReplicas, site.Spec.Replicas)
+}
+```
+
+The event's type is `kube.Normal` or `kube.Warning`, and its reason is a
+CamelCase word such as `Serving`. The framework formats the note with
+`fmt.Sprintf` and cuts it to 1,024 bytes. After `Reconcile` or `Finalize`
+returns, the framework writes the events as `events.k8s.io/v1` Events in the
+object's namespace, or in `default` for a cluster-scoped object. It writes
+them when the reconcile returns an error too, so a Warning can explain the
+error. Each Event names the controller as its reporting controller, and
+`Reconcile` or `Finalize` as its action. In `kubectl describe website blog`,
+the events look like this:
+
+```
+Events:
+  Type    Reason    Age   From     Message
+  ----    ------    ----  ----     -------
+  Normal  Creating  95s   website  0 of 2 replicas are ready
+  Normal  Updating  95s   website  0 of 2 replicas are ready
+  Normal  Serving   80s   website  2 of 2 replicas are ready
+```
+
+An event with the same type, reason, and note as one that the controller
+recorded about the same object less than 6 minutes earlier is a repeat. The
+first repeat sets the Event's count to 2 right away. The framework counts
+later repeats in memory, and writes the count every 6 minutes and when the
+manager stops. `kubectl describe` shows the count, as in `3m (x35 over 2h)`.
+However often a reconcile repeats an event, for example while it fails and
+retries, the framework makes two writes for it and then at most one every 6
+minutes. A note that changes every time, such as one with a timestamp, makes
+every event a new Event, so keep values like that in status.
+
+Recording an event never fails or delays a reconcile. The framework writes
+events in the background from a queue of 1,000 events. When the queue is
+full, it drops events, and when a write fails, it logs the error. The
+`kube_events_total` metric counts events by controller and result: `created`,
+`updated` with a new count, `failed`, or `dropped`.
+
+Events are only about the reconciled object, which is the object that people
+describe to see what the controller did. To report something about an owned
+object, name it in the note. Once a call such as `Get` has failed the
+reconcile, `Eventf` does nothing, because what the reconcile saw is
+incomplete. Webhooks can't record events.
 
 ## Types
 
@@ -429,7 +486,8 @@ The command does the following:
    its type, the types that it owns, and its webhooks. The command also
    type-checks the program's packages to find every call to `Get`, `List`,
    `Fetch`, `Own`, `Apply`, and `Delete`, and the type that each call uses,
-   including calls inside generic helpers.
+   including calls inside generic helpers. Only a program that calls
+   `Eventf` gets permission to write events.
 1. Builds the program for each platform with `CGO_ENABLED=0`.
 1. Builds an image for each platform on `cgr.dev/chainguard/static`, with the
    program at `/app/PROGRAM` as the entrypoint, running as user 65532. It
@@ -522,6 +580,9 @@ way, its service account needs these permissions:
   namespace.
 - `get`, `list`, `create`, `update`, and `delete` on `leases`, with
   `-leader-elect` or `-shards`.
+- `create` and `patch` on `events` in the `events.k8s.io` group, for a program
+  that calls `Eventf`, in the namespaces of the reconciled objects, or in
+  `default` for cluster-scoped ones.
 - `get`, `create`, and `update` on `secrets` in its namespace, and `get`,
   `patch`, and `delete` on `validatingwebhookconfigurations` and
   `mutatingwebhookconfigurations`, for webhooks.
@@ -550,6 +611,9 @@ func TestReconcile(t *testing.T) {
 As in a cluster, a read sees the objects of every type of its kind. A
 reconcile that reads your own smaller `Deployment` type sees each
 `k8s.Deployment` that you pass to `kube.Fake`.
+
+`rec.Events()` returns the events that the reconciler recorded with
+`Eventf`, in order, as `kube.Event` values with a type, a reason, and a note.
 
 To test `Validate`, `Default`, `ConvertTo`, and `ConvertFrom`, call them
 directly. With a context from `kube.Fake`, `Validate` and `Default` can read
@@ -591,7 +655,7 @@ tests and end-to-end tests:
 
 | Example | Modeled on | Shows |
 | --- | --- | --- |
-| [`website`](examples/website/main.go) | Most operators | Owned Deployment and Service, pruning, status from an owned object |
+| [`website`](examples/website/main.go) | Most operators | Owned Deployment and Service, pruning, status from an owned object, events |
 | [`replicator`](examples/replicator/main.go) | emberstack/reflector, mittwald/kubernetes-replicator | Metadata-only cache, `Fetch`, owned objects in other namespaces |
 | [`reloader`](examples/reloader/main.go) | stakater/Reloader | Dependency tracking through `Get`, `Apply` on someone else's object |
 | [`dnsrecord`](examples/dnsrecord/main.go) | external-dns, Crossplane | External resources, `Finalize`, `Permanent`, drift checks |
@@ -645,15 +709,18 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
   stop matching looks deleted to the controller, so its finalizer is never
   removed.
+- Events are only about the reconciled object. The count of an event's
+  repeats reaches the API server up to 6 minutes late, and a replica that
+  crashes loses the counts that it hasn't written.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
-| `*.go` | The `kube` package: types, caches, dependency tracking, controllers, status, webhooks, versions, shards, metrics, and fakes |
+| `*.go` | The `kube` package: types, caches, dependency tracking, controllers, status, events, webhooks, versions, shards, metrics, and fakes |
 | `k8s/` | Types for common built-in objects |
 | `examples/` | Example controllers and webhooks with unit and end-to-end tests |
-| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, shared status, changes that types can't see, panics, permanent errors, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
+| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, shared status, changes that types can't see, panics, permanent errors, events, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
 | `internal/client/` | REST client, kubeconfig, authentication, discovery, and JSON and protobuf watch decoding |
 | `internal/protobuf/` | Protobuf decoding of built-in types into partial structs, and its schema; `gen/` is the separate module that generates the schema |
 | `internal/certs/` | Certificate authority and serving certificates for webhooks |
@@ -663,7 +730,7 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 | `internal/clone/` | Deep copy of any Go value, compiled once per type |
 | `internal/subset/` | Checks whether one JSON document's fields are a subset of another's |
 | `internal/yaml/` | The YAML subset that kubeconfig files use, and the YAML that `generate` writes |
-| `internal/analysis/` | Type-checks a program to find the types that it passes to kube's generic functions, for `generate`'s RBAC rules |
+| `internal/analysis/` | Type-checks a program to find the types that it passes to kube's generic functions, and its calls to `Eventf`, for `generate`'s RBAC rules |
 | `internal/image/` | Builds and pushes images with go-containerregistry, for `generate` |
 | `internal/envtest/`, `internal/e2e/` | Start `etcd` and `kube-apiserver` for tests |
 | `bench/` | Benchmark against `client-go` and `controller-runtime`, in its own module |

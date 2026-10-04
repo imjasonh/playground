@@ -99,6 +99,7 @@ type Manager struct {
 	client  *client.Client
 	log     *slog.Logger
 	metrics *metrics
+	events  *eventWriter
 	tracker *tracker
 	ids     atomic.Int64
 	runCtx  context.Context
@@ -200,6 +201,7 @@ func (m *Manager) init() error {
 		m.log.Info("connecting", "host", cfg.Host, "config", cfg.Source)
 	}
 	m.metrics = newMetrics()
+	m.events = newEventWriter(m.client, m.log, m.metrics)
 	m.tracker = newTracker()
 	m.caches = map[cacheKey]cache{}
 	m.resolved = map[*typeInfo]resolved{}
@@ -252,7 +254,7 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		}
 		stops = append(stops, func() { srv.Close() })
 	}
-	stops = append(stops, m.waitForCaches)
+	stops = append(stops, m.waitForCaches, m.events.start())
 	for _, c := range controllers {
 		if err := c.prepare(ctx, m); err != nil {
 			return startFailed(err)

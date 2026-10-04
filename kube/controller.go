@@ -546,6 +546,7 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 	}
 	rctx, s := newScope(ctx, c.m, &c.core, key)
 	defer s.cancel(nil)
+	defer c.m.events.send(&c.core, metaOf[T, P](cached), "Reconcile", s)
 	err := c.call(rctx, func(ctx context.Context) error { return c.r.Reconcile(ctx, obj) })
 	if s.err != nil {
 		err = s.err
@@ -832,6 +833,7 @@ func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present boo
 func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T) (time.Duration, error) {
 	rctx, s := newScope(ctx, c.m, &c.core, key)
 	defer s.cancel(nil)
+	defer c.m.events.send(&c.core, metaOf[T, P](cached), "Finalize", s)
 	var err error
 	if c.fin != nil {
 		err = c.call(rctx, func(ctx context.Context) error { return c.fin.Finalize(ctx, obj) })

@@ -5,6 +5,7 @@ package analysis
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -36,17 +37,22 @@ type Config struct {
 	// Funcs are the names of generic functions whose first type argument
 	// to report.
 	Funcs []string
+	// Calls are the names of functions without type parameters whose uses
+	// to report.
+	Calls []string
 	// Marker is a struct type in Package. Find reports the tag of the field
 	// through which a type argument embeds it.
 	Marker string
 }
 
-// A Use is a call of one of Funcs with a type argument.
+// A Use is a call of one of Funcs with a type argument, or a use of one of
+// Calls.
 type Use struct {
 	// Func is the function's name, such as "Get".
 	Func string
 	// Type is the type argument, such as "example.com/app.Widget", and Name
-	// is its name without the package, such as "Widget".
+	// is its name without the package, such as "Widget". Both are empty for
+	// a use of one of Calls.
 	Type, Name string
 	// Tag is the struct tag of the field that embeds Marker.
 	Tag string
@@ -70,7 +76,8 @@ type listedPackage struct {
 // whose type argument embeds Marker. A call inside a generic function
 // counts once for each type that the function is instantiated with
 // anywhere in those packages. Find also returns warnings about calls whose
-// type arguments it can't tell.
+// type arguments it can't tell. After the calls of Funcs, it returns each
+// use of one of Calls.
 func Find(ctx context.Context, cfg Config) ([]Use, []string, error) {
 	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-export", "-json=ImportPath,Dir,GoFiles,Export,Standard,ImportMap,Imports,Error", "--", cfg.Pattern) // #nosec G204 -- the go command with a package pattern.
 	cmd.Dir, cmd.Env = cfg.Dir, cfg.Env
@@ -149,6 +156,7 @@ type analyzer struct {
 	// concrete holds the types that each type parameter is instantiated
 	// with, by type string.
 	concrete map[node]map[string]typeArg
+	calls    []Use
 	warnings []string
 }
 
@@ -239,6 +247,12 @@ func (a *analyzer) check(p *listedPackage) error {
 			a.add(to, typeArg{arg, pos})
 		}
 	}
+	for id, obj := range info.Uses {
+		fn, ok := obj.(*types.Func)
+		if ok && fn.Pkg() != nil && fn.Pkg().Path() == a.cfg.Package && fn.Signature().Recv() == nil && slices.Contains(a.cfg.Calls, fn.Name()) {
+			a.calls = append(a.calls, Use{Func: fn.Name(), Pos: fset.Position(id.Pos()).String()})
+		}
+	}
 	return nil
 }
 
@@ -316,7 +330,8 @@ func (a *analyzer) uses() []Use {
 			}
 		}
 	}
-	return out
+	slices.SortFunc(a.calls, func(x, y Use) int { return cmp.Or(cmp.Compare(x.Func, y.Func), cmp.Compare(x.Pos, y.Pos)) })
+	return append(out, a.calls...)
 }
 
 // use describes a call of f with type argument t, if t embeds Marker.
@@ -344,5 +359,8 @@ func (a *analyzer) use(f string, t typeArg) (Use, bool) {
 
 // String formats a use for messages.
 func (u Use) String() string {
+	if u.Type == "" {
+		return fmt.Sprintf("%s at %s", u.Func, u.Pos)
+	}
 	return fmt.Sprintf("%s[%s] at %s", u.Func, strings.TrimPrefix(u.Type, "*"), u.Pos)
 }
