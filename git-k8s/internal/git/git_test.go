@@ -2,6 +2,7 @@ package git_test
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -33,6 +34,46 @@ func TestLsRemoteNeedsCredentials(t *testing.T) {
 	wrong.Auth.Password = "nope"
 	if _, err := g.LsRemote(t.Context(), wrong); err == nil {
 		t.Error("ls-remote with the wrong password succeeded")
+	}
+}
+
+func TestOptionURLsDontRunCommands(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	head := w.Commit("first")
+	w.Push("main")
+
+	ctx := t.Context()
+	g := &git.Git{}
+	repo, err := g.Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	for name, run := range map[string]func(command string) error{
+		"ls-remote": func(command string) error {
+			_, err := g.LsRemote(ctx, git.Remote{URL: "--upload-pack=" + command})
+			return err
+		},
+		"fetch": func(command string) error {
+			return repo.Fetch(ctx, git.Remote{URL: "--upload-pack=" + command}, "main")
+		},
+		"push": func(command string) error {
+			return repo.Push(ctx, git.Remote{URL: "--receive-pack=" + command}, git.RefUpdate{Ref: "refs/heads/x", New: head})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "ran")
+			err := run("touch " + marker + "; false")
+			if _, statErr := os.Stat(marker); statErr == nil {
+				t.Fatal("git ran the command in the URL")
+			}
+			if err == nil || !strings.Contains(err.Error(), "blocked") {
+				t.Errorf("err = %v, want git to block the URL", err)
+			}
+		})
 	}
 }
 
