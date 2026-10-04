@@ -364,6 +364,17 @@ func TestDecideRewrittenCommits(t *testing.T) {
 	secretLine := w.commitFiles(p, "secret line", file(map[int]string{10: "foo", 30: "secret", 50: "foo"}))
 	scrubbed := w.commitFiles(p, "scrubbed", file(map[int]string{10: "foo", 30: "scrubbed", 50: "foo"}))
 	kOnScrubbed := w.commit(scrubbed, "k")
+	// A force push to e purges token and its revert, revoked, from one
+	// side, as a person does to remove a leaked token from the history.
+	// The other side made afterToken on revoked. rebased replays
+	// afterToken onto e, and leaked replays token and revoked with it.
+	// token and revoked undo each other, so leaked's tree doesn't have the
+	// token, and only patch IDs tell leaked from rebased.
+	token := w.commitFiles(p, "add a token", map[string]string{"t.txt": "token\n"})
+	revoked := w.commitFiles(token, "remove the token", map[string]string{"t.txt": ""})
+	afterToken := w.commit(revoked, "after the token")
+	rebased := w.replay(afterToken, e)
+	leaked := w.replay(afterToken, w.replay(revoked, w.replay(token, e)))
 
 	bin1, bin2 := "\x00\x01\x02\x03\x04\x05\x00\xff", "\x00\x09\x09\x09\x04\x05\x00\xfe"
 	q := w.commitFiles(p, "q", map[string]string{"A": "a content\n", "X.bin": bin1, "S.sh": "echo hi\n"})
@@ -423,6 +434,11 @@ func TestDecideRewrittenCommits(t *testing.T) {
 		{name: "a rewind in the external repository, merged in the copy with a change to the next line", m: merged, d: e, s: secret, want: diverged},
 		{name: "a rewind in the copy, merged in the external repository with a change to the next line", m: e, d: merged, s: secret, want: diverged},
 		{name: "a rewind in the external repository, merged in the copy with a change two lines away", m: mergedApart, d: e, s: secret, want: push},
+
+		{name: "the external repository purged a token and its revert, and the copy rebased its commit", m: rebased, d: e, s: revoked, want: push},
+		{name: "the copy purged a token and its revert, and the external repository rebased its commit", m: e, d: rebased, s: revoked, want: take},
+		{name: "the external repository purged a token and its revert, and the copy rebased them with its commit", m: leaked, d: e, s: revoked, want: diverged},
+		{name: "the copy purged a token and its revert, and the external repository rebased them with its commit", m: e, d: leaked, s: revoked, want: diverged},
 
 		{name: "an empty commit in the copy, and the external repository rewound", m: empty, d: noSq, s: sq, want: diverged},
 		{name: "an empty commit in the copy, replayed in the external repository", m: empty, d: emptyOnNewer, s: sq, want: diverged},
