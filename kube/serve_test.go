@@ -20,9 +20,11 @@ func TestServePrepare(t *testing.T) {
 		t.Errorf("Serve(nil): err = %v", err)
 	}
 	a, b := Serve(http.NotFoundHandler()), Serve(http.NotFoundHandler())
-	m.controllers = []Controller{a, b}
-	if err := a.prepare(t.Context(), m); err == nil || !strings.Contains(err.Error(), "more than one handler") {
-		t.Errorf("two Serves: err = %v", err)
+	for name, cs := range map[string][]Controller{"two Serves": {a, b}, "one Serve twice": {a, a}} {
+		m.controllers = cs
+		if err := a.prepare(t.Context(), m); err == nil || !strings.Contains(err.Error(), "more than one handler") {
+			t.Errorf("%s: err = %v", name, err)
+		}
 	}
 	m.controllers = []Controller{a}
 	ctx, cancel := context.WithCancel(t.Context())

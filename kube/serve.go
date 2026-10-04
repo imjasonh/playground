@@ -46,10 +46,14 @@ func (s *server) prepare(ctx context.Context, m *Manager) error {
 	if s.h == nil {
 		return errors.New("kube.Serve: the handler is nil")
 	}
+	n := 0
 	for _, c := range m.controllers {
-		if o, ok := c.(*server); ok && o != s {
-			return errors.New("kube.Serve: the program serves more than one handler; serve every path from one handler, such as an http.ServeMux")
+		if _, ok := c.(*server); ok {
+			n++
 		}
+	}
+	if n > 1 {
+		return errors.New("kube.Serve: the program serves more than one handler; serve every path from one handler, such as an http.ServeMux")
 	}
 	addr := m.ServeAddr
 	if addr == "" {
