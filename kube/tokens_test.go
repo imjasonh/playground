@@ -90,9 +90,6 @@ func (a *authAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for _, a := range audiences {
 			want = append(want, a.(string))
 		}
-		if len(want) == 0 {
-			want = []string{"https://kubernetes.default.svc"}
-		}
 		switch spec["token"] {
 		case "valid":
 			if !slices.Contains(want, "git-k8s") {
@@ -135,26 +132,26 @@ func TestReviewToken(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name, token string
-		audiences   []string
-		want        string
+		name, token, audience string
+		want                  string
 	}{
-		{"a token for another audience", "valid", []string{"other"}, "is invalid for the target audiences"},
-		{"a token for another audience, with none asked for", "valid", nil, "is invalid for the target audiences"},
-		{"a token from an authenticator that ignores audiences", "unaware", []string{"git-k8s"}, `the token isn't valid for the audiences ["git-k8s"]`},
-		{"an invalid token", "garbage", []string{"git-k8s"}, "invalid bearer token"},
-		{"no token", "", []string{"git-k8s"}, "no token"},
+		{"a token for another audience", "valid", "other", "is invalid for the target audiences"},
+		{"a token from an authenticator that ignores audiences", "unaware", "git-k8s", `the token isn't valid for the audiences ["git-k8s"]`},
+		{"an invalid token", "garbage", "git-k8s", "invalid bearer token"},
+		{"no token", "", "git-k8s", "no token"},
 	} {
-		r, err := ReviewToken(ctx, tc.token, tc.audiences...)
+		r, err := ReviewToken(ctx, tc.token, tc.audience)
 		if err != nil || r.Authenticated || r.User.Username != "" || !strings.Contains(r.Error, tc.want) {
 			t.Errorf("%s: ReviewToken = %+v, %v, want an error containing %q", tc.name, r, err, tc.want)
 		}
 	}
-	if n := len(a.sent()); n != 5 {
-		t.Errorf("sent %d requests, want 5: none for an empty token", n)
+	for _, audiences := range [][]string{{""}, {"git-k8s", ""}} {
+		if r, err := ReviewToken(ctx, "valid", audiences[0], audiences[1:]...); err == nil || r.Authenticated || !strings.Contains(err.Error(), "an audience is empty") {
+			t.Errorf("ReviewToken(valid, %q) = %+v, %v, want an error", audiences, r, err)
+		}
 	}
-	if r, err := ReviewToken(ctx, "unaware"); err != nil || !r.Authenticated {
-		t.Errorf("ReviewToken(unaware) with no audiences = %+v, %v, want it authenticated", r, err)
+	if n := len(a.sent()); n != 4 {
+		t.Errorf("sent %d requests, want 4: none for an empty token or audience", n)
 	}
 	if _, err := ReviewToken(ctx, "denied", "git-k8s"); err == nil || !strings.Contains(err.Error(), "kube.ReviewToken") || !strings.Contains(err.Error(), "forbidden") {
 		t.Errorf("ReviewToken without permission: err = %v", err)
@@ -248,12 +245,12 @@ func TestFakeTokens(t *testing.T) {
 		{"check", []string{"git-k8s"}, []string{"git-k8s"}},
 		{"check", []string{"other", "git-k8s"}, []string{"git-k8s"}},
 		{"check", []string{"other"}, nil},
-		{"check", nil, nil},
-		{"api", nil, []string{"https://kubernetes.default.svc"}},
+		{"check", []string{"https://kubernetes.default.svc"}, nil},
+		{"api", []string{"https://kubernetes.default.svc"}, []string{"https://kubernetes.default.svc"}},
 		{"api", []string{"git-k8s"}, nil},
 		{"unknown", []string{"git-k8s"}, nil},
 	} {
-		r, err := ReviewToken(ctx, tc.token, tc.audiences...)
+		r, err := ReviewToken(ctx, tc.token, tc.audiences[0], tc.audiences[1:]...)
 		if err != nil {
 			t.Fatal(err)
 		}

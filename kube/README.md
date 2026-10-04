@@ -462,11 +462,12 @@ default:
 }
 ```
 
-A token passes only if it's valid for one of the audiences that you pass, so
-a token for another server or for the API server fails. A token that the
-kubelet projects into a Pod also names the Pod in `review.User.Extra`, and
-stops working when the Pod is deleted. An invalid token isn't an error.
-`ReviewToken` returns an error only when it can't ask, for example because
+`ReviewToken` needs at least one audience. A token passes only if it's
+valid for one of the audiences that you pass, so a token for another server
+or for the API server fails. A token that the kubelet projects into a Pod
+also names the Pod in `review.User.Extra`, and stops working when the Pod is
+deleted. An invalid token isn't an error. `ReviewToken` returns an error
+only when an audience is empty or when it can't ask, for example because
 the program may not create TokenReviews. Each call asks the API server.
 
 ### Request a token for the program

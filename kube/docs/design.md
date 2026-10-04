@@ -664,9 +664,12 @@ server's own audiences, so a server that names its own audience rejects the
 tokens that Pods use to call the API server, and a token issued for the server
 can't call the API server. The TokenReview API tells clients to treat a review
 that's authenticated without audiences as valid only for the API server, so
-`ReviewToken` reports it as unauthenticated when the caller passed audiences.
-`ReviewToken` doesn't cache reviews, so a token stops working as soon as the API
-server rejects it, for example when its Pod is deleted.
+`ReviewToken` reports it as unauthenticated. `ReviewToken` requires an audience.
+A review without one checks the token against the API server's audiences, so the
+server would accept any token that can call the API server, and over plain HTTP,
+anyone who captured one could act as the caller. `ReviewToken` doesn't cache
+reviews, so a token stops working as soon as the API server rejects it, for
+example when its Pod is deleted.
 
 `RequestToken` creates a TokenRequest for the program's own service account. The
 program learns which account that is from a SelfSubjectReview, which every

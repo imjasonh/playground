@@ -98,7 +98,8 @@ func Triggered[T any](r *Recorder) []Key {
 
 // FakeToken is a bearer token for ReviewToken to accept in a Fake context.
 // It's valid for Audiences, or, when Audiences is empty, only for the API
-// server, like a token that the API server issues without audiences.
+// server's audience, "https://kubernetes.default.svc", like a token that
+// the API server issues without audiences.
 type FakeToken struct {
 	Token     string
 	User      UserInfo
@@ -214,11 +215,7 @@ func (w *fakeWorld) deps() *tracker { return w.tr }
 // fakeAPIAudience is the API server's audience in a Fake context.
 const fakeAPIAudience = "https://kubernetes.default.svc"
 
-func (w *fakeWorld) reviewToken(_ context.Context, token string, audiences []string) (TokenReview, error) {
-	want := audiences
-	if len(want) == 0 {
-		want = []string{fakeAPIAudience}
-	}
+func (w *fakeWorld) reviewToken(_ context.Context, token string, want []string) (TokenReview, error) {
 	for _, t := range w.tokens {
 		if t.Token != token {
 			continue

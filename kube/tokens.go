@@ -19,8 +19,7 @@ type TokenReview struct {
 	// User is the user or service account that the token belongs to.
 	User UserInfo `json:"user,omitzero"`
 	// Audiences are the audiences that ReviewToken asked for that the token
-	// is valid for. When ReviewToken asks for none, they're the API
-	// server's own audiences.
+	// is valid for.
 	Audiences []string `json:"audiences,omitempty"`
 	// Error says why the token isn't authenticated.
 	Error string `json:"error,omitempty"`
@@ -67,21 +66,23 @@ type services interface {
 }
 
 // ReviewToken asks the API server whether token, a bearer token that a
-// client sent, is valid, and whose it is. Pass the audiences that your
-// server accepts, such as the audience that clients put in their projected
-// service account tokens. The token is then authenticated only if it's
-// valid for one of them, so a token meant for another server, or for the
-// API server, doesn't pass. With no audiences, the API server checks the
-// token against its own audiences, and any token that can call the API
-// server passes.
+// client sent, is valid for audience or one of more, and whose it is. Pass
+// the audiences that your server accepts, such as the audience that clients
+// put in their projected service account tokens. A token meant for another
+// server, or for the API server, doesn't pass, so a token that your server
+// receives can't call the API server.
 //
 // An invalid or expired token isn't an error. The review then has
 // Authenticated false and the reason in Error. ReviewToken returns an error
-// when it can't ask, for example because the program may not create
-// TokenReviews. The generate command grants that permission to a program
-// that calls ReviewToken.
-func ReviewToken(ctx context.Context, token string, audiences ...string) (TokenReview, error) {
+// when an audience is empty, and when it can't ask, for example because the
+// program may not create TokenReviews. The generate command grants that
+// permission to a program that calls ReviewToken.
+func ReviewToken(ctx context.Context, token, audience string, more ...string) (TokenReview, error) {
 	s := scopeFrom(ctx, "ReviewToken")
+	audiences := append([]string{audience}, more...)
+	if slices.Contains(audiences, "") {
+		return TokenReview{}, errors.New("kube.ReviewToken: an audience is empty")
+	}
 	if token == "" {
 		return TokenReview{Error: "no token"}, nil
 	}
@@ -91,7 +92,7 @@ func ReviewToken(ctx context.Context, token string, audiences ...string) (TokenR
 	}
 	// A token from an authenticator that doesn't check audiences comes back
 	// with none, and might be meant for any server.
-	if len(audiences) > 0 && r.Authenticated && !slices.ContainsFunc(r.Audiences, func(a string) bool { return slices.Contains(audiences, a) }) {
+	if r.Authenticated && !slices.ContainsFunc(r.Audiences, func(a string) bool { return slices.Contains(audiences, a) }) {
 		return TokenReview{Error: fmt.Sprintf("the token isn't valid for the audiences %q", audiences)}, nil
 	}
 	return r, nil
