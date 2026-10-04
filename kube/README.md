@@ -184,7 +184,11 @@ the status has an `ObservedGeneration` field, the framework sets it. If the
 status has a `Conditions []kube.Condition` field, the framework keeps a
 `Synced` condition in it. `kube.SetCondition` keeps a condition's
 `lastTransitionTime` when its status doesn't change, so a reconcile that
-observes the same state doesn't write status.
+observes the same state doesn't write status. It can keep only a time that
+the slice already holds. So for a condition that you apply to another object,
+start from your own condition as the cached target has it, which
+`kube.FindCondition` returns, rather than from the target's whole list, which
+would apply other managers' conditions too.
 
 Several writers can share one status, each with its own fields, including
 controllers that write their fields with `Apply`. A status write manages
