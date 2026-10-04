@@ -438,7 +438,11 @@ func TestEventWriterStopsInSecondsWhenTheAPIServerHangs(t *testing.T) {
 	for _, reason := range []string{"Pushed", "Rejected", "Merged"} {
 		w.queue <- widgetEvent(reason, "n", t0)
 	}
-	<-srv.hung
+	select {
+	case <-srv.hung:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the writer to send an event")
+	}
 	start := time.Now()
 	stop()
 	if d := time.Since(start); d < 5*time.Second || d > 10*time.Second {
@@ -469,8 +473,11 @@ func TestEventWriterKeepsASeriesWhoseWriteWasCanceled(t *testing.T) {
 	}()
 	ended := t0.Add(2*time.Second + w.finish)
 	w.flush(ctx, ended)
+	if ctx.Err() == nil {
+		t.Fatal("the flush didn't write the count")
+	}
 	if len(w.series) != 1 {
-		t.Fatalf("a flush whose write was canceled forgot the series")
+		t.Fatal("a flush whose write was canceled forgot the series")
 	}
 
 	srv.hang.Store(false)
