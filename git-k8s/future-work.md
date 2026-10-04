@@ -45,7 +45,13 @@ GitHub, and any other forge, is a downstream copy:
   reports the branch as diverged, and leaves it to the
   [conflict resolution controller](#resolve-conflicts-in-a-controller).
 - The mirror holds the only credentials for external repositories, so no
-  other program reads Secrets.
+  other program reads Secrets. For a repository that gets
+  [tokens from Octo STS](README.md#github-repositories), only the mirror
+  requests tokens for the `GitRepository`'s `gitIdentity`, so the trust
+  policy's `subject_pattern` narrows to the mirror's service account. The
+  checks stop requesting tokens for Octo STS, so `generate` stops granting
+  them `create` on `serviceaccounts/token`, and the risk that
+  [Security](README.md#security) describes no longer applies to them.
 - Every ref change passes through the mirror, so it tells git-k8s about each
   one as it happens, and git-k8s reconciles the repository at once. Only the
   mirror polls, and only the external repository, to find pushes that people
