@@ -812,6 +812,43 @@ func TestWritesFirstSeenTimesOnlyAfterReadingThem(t *testing.T) {
 	}
 }
 
+func TestWarnsWhenFirstSeenTimesDontFit(t *testing.T) {
+	defer func(old int) { maxStored = old }(maxStored)
+	inNamespace(t, "git-k8s-deps")
+	f := newFixture(t)
+	f.u.interval, f.u.minAge, f.u.seenConfigMap = 100*time.Hour, 72*time.Hour, "first-seen"
+	f.proxy.publish(greet, "v1.2.0", longAgo, "")
+	line := func(v string) string {
+		return f.proxy.URL + " " + greet + " " + v + " " + today.Format(time.RFC3339) + "\n"
+	}
+	maxStored = len(line("v1.1.0"))
+	logs := captureLogs(t)
+	const warning = "the ConfigMap leaves out the oldest first-seen times"
+
+	t.Log("The controller writes the times that fit, and warns how many it left out.")
+	stored := kube.Applied[configMap](f.checkStays(""))
+	if len(stored) != 1 || stored[0].Data[seenData] != line("v1.1.0") {
+		t.Fatalf("written ConfigMaps = %+v, want one with %q", stored, line("v1.1.0"))
+	}
+	if !strings.Contains(logs.String(), warning) || !strings.Contains(logs.String(), "configmap=git-k8s-deps/first-seen dropped=1") {
+		t.Errorf("logs = %q, want a warning that the ConfigMap left out 1 time", logs)
+	}
+
+	t.Log("It warns again while they don't fit, though the ConfigMap already holds the times that do.")
+	logs.Reset()
+	f.clock = f.clock.Add(time.Hour)
+	if n := len(kube.Applied[configMap](f.checkStays("", stored[0]))); n != 0 || !strings.Contains(logs.String(), "dropped=1") {
+		t.Errorf("the controller wrote %d ConfigMaps and logged %q, want none written and a warning", n, logs)
+	}
+
+	t.Log("Once they fit, it writes them all without a warning.")
+	logs.Reset()
+	maxStored = 2 * len(line("v1.1.0"))
+	if again := kube.Applied[configMap](f.checkStays("", stored[0])); len(again) != 1 || again[0].Data[seenData] != line("v1.1.0")+line("v1.2.0") || strings.Contains(logs.String(), warning) {
+		t.Errorf("written ConfigMaps = %+v, and logs = %q, want both times written without a warning", again, logs)
+	}
+}
+
 func TestDeletesABranchWhoseVersionGoesBad(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

@@ -384,7 +384,8 @@ func TestTargetWaitsFromWhenAVersionShowsUp(t *testing.T) {
 
 	t.Log("Unless the restart loads the times that encode returned before it.")
 	restored := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return clock })
-	restored.load(p.encode())
+	times, _ := p.encode()
+	restored.load(times)
 	target(restored, "v1.2.0", 23*time.Hour)
 }
 
@@ -420,7 +421,8 @@ func TestRaisedOldEnoughAt(t *testing.T) {
 
 	t.Log("encode keeps the times of all three.")
 	line := func(v string) string { return fp.URL + " " + mod + " " + v + " " + today.Format(time.RFC3339) + "\n" }
-	if got, want := p.encode(), line(pseudo)+line("v1.0.0")+line("v1.1.0"); got != want {
+	want := line(pseudo) + line("v1.0.0") + line("v1.1.0")
+	if got, _ := p.encode(); got != want {
 		t.Errorf("encode() = %q, want %q", got, want)
 	}
 }
@@ -538,27 +540,32 @@ func TestEncode(t *testing.T) {
 		{b, mod, "v1.1.0"}:   day(0),
 		{a, other, "v1.2.0"}: day(5),
 	}
-	got := p.encode()
+	got, dropped := p.encode()
 	want := line(a, mod, "v1.1.0", 1) + line(a, mod, "v1.2.0", 4) + line(a, other, "v1.1.0", 3) + line(b, mod, "v1.1.0", 0) + line(b, mod, "v1.3.0", 2)
-	if got != want {
-		t.Errorf("encode() = %q, want %q: the earliest times, without versions that a fresh list from their proxy leaves out or that only memory has without one", got, want)
+	if got != want || dropped != 0 {
+		t.Errorf("encode() = %q, %d, want %q, 0: the earliest times, without versions that a fresh list from their proxy leaves out or that only memory has without one", got, dropped, want)
 	}
 	q := newProxy([]string{a, b}, time.Hour, func() time.Time { return today })
-	if q.load(got); q.encode() != got {
-		t.Errorf("after load(%q), encode() = %q", got, q.encode())
+	q.load(got)
+	if again, dropped := q.encode(); again != got || dropped != 0 {
+		t.Errorf("after load(%q), encode() = %q, %d", got, again, dropped)
 	}
 
-	t.Log("When the lines don't fit, encode leaves out the oldest times.")
+	t.Log("When the lines don't fit, encode leaves out the oldest times, and says how many.")
 	maxStored = len(want) - 1
-	if got, want := p.encode(), line(a, mod, "v1.1.0", 1)+line(a, mod, "v1.2.0", 4)+line(a, other, "v1.1.0", 3)+line(b, mod, "v1.3.0", 2); got != want {
-		t.Errorf("encode() = %q, want %q", got, want)
+	if got, dropped := p.encode(); got != line(a, mod, "v1.1.0", 1)+line(a, mod, "v1.2.0", 4)+line(a, other, "v1.1.0", 3)+line(b, mod, "v1.3.0", 2) || dropped != 1 {
+		t.Errorf("encode() = %q, %d, want all but the oldest line, 1", got, dropped)
+	}
+	maxStored = len(line(a, mod, "v1.2.0", 4))
+	if got, dropped := p.encode(); got != line(a, mod, "v1.2.0", 4) || dropped != 4 {
+		t.Errorf("encode() = %q, %d, want the newest line, 4", got, dropped)
 	}
 
 	t.Log("Among the same times, it keeps the first by proxy, module, and version.")
 	q.stored = map[seenKey]time.Time{{b, mod, "v1.1.0"}: day(1), {a, other, "v1.1.0"}: day(1), {a, mod, "v1.2.0"}: day(1)}
 	maxStored = 2 * len(line(a, mod, "v1.2.0", 1))
-	if got, want := q.encode(), line(a, mod, "v1.2.0", 1)+line(a, other, "v1.1.0", 1); got != want {
-		t.Errorf("encode() = %q, want %q", got, want)
+	if got, dropped := q.encode(); got != line(a, mod, "v1.2.0", 1)+line(a, other, "v1.1.0", 1) || dropped != 1 {
+		t.Errorf("encode() = %q, %d, want the first two lines by proxy, module, and version, 1", got, dropped)
 	}
 }
 

@@ -375,8 +375,8 @@ var maxStored = 256 << 10
 // process knows when there's no fresh list from its proxy: another process
 // may have left that out for being unlisted. It keeps pseudo-versions,
 // which proxies don't list. When the lines don't fit in maxStored bytes,
-// encode leaves out the oldest times.
-func (p *proxy) encode() string {
+// encode leaves out the oldest times, and returns how many it left out.
+func (p *proxy) encode() (string, int) {
 	now := p.now()
 	p.mu.Lock()
 	keep := func(k seenKey) bool {
@@ -411,7 +411,7 @@ func (p *proxy) encode() string {
 		lines = append(lines, line)
 	}
 	slices.Sort(lines)
-	return strings.Join(lines, "")
+	return strings.Join(lines, ""), len(keys) - len(lines)
 }
 
 // load reads lines that encode returned, in place of the times that it

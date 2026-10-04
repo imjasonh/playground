@@ -373,7 +373,7 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 	if loaded {
 		// kube writes objects in the order that they're declared and
 		// stops at an error, so this comes after the update Pod.
-		u.storeSeen(ctx, stored)
+		u.storeSeen(ctx, stored, log)
 	}
 	return nil
 }
@@ -404,8 +404,12 @@ func (u *updater) loadSeen(ctx context.Context, need bool, log *slog.Logger) (st
 
 // storeSeen writes the first-seen times to the ConfigMap that keeps them,
 // if they're not what it held.
-func (u *updater) storeSeen(ctx context.Context, stored string) {
-	if times := u.proxy.encode(); times != stored {
+func (u *updater) storeSeen(ctx context.Context, stored string, log *slog.Logger) {
+	times, dropped := u.proxy.encode()
+	if dropped > 0 {
+		log.Warn("the ConfigMap leaves out the oldest first-seen times, which don't fit, so a restart would restart the wait for their versions", "configmap", u.seenObject.String(), "dropped", dropped)
+	}
+	if times != stored {
 		kube.Apply(ctx, &configMap{
 			Object: kube.Object{ObjectMeta: kube.ObjectMeta{Namespace: u.seenObject.Namespace, Name: u.seenObject.Name}},
 			Data:   map[string]string{seenData: times},

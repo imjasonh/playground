@@ -928,11 +928,12 @@ that `git-k8s-deps` keeps when it first saw a version through a restart.
   every namespace. Only its own code keeps its pushes under its prefix.
 - `git-k8s-deps` keeps at most 256 KiB of first-seen times in its ConfigMap,
   and drops the oldest first, so after a restart, a version whose time it
-  dropped waits `-min-age` again. With more than one shard, or for a moment
-  while a Deployment with one replica rolls out, two controllers can write
-  the ConfigMap at once, and the last write wins. Each one writes its times
-  again the next time that it reads the module's versions, so a time is lost
-  only when the controller that saw the version stops first.
+  dropped waits `-min-age` again. While it drops times, it logs a warning
+  that says how many. With more than one shard, or for a moment while a
+  Deployment with one replica rolls out, two controllers can write the
+  ConfigMap at once, and the last write wins. Each one writes its times again
+  the next time that it reads the module's versions, so a time is lost only
+  when the controller that saw the version stops first.
 
 [`future-work.md`](future-work.md) proposes fixes for these, and lists the
 other known gaps.
