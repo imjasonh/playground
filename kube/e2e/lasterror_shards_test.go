@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -59,7 +60,8 @@ func (l *roundTripLog) has(key, replica string, size int, failed bool) (roundTri
 // TestLastErrorAfterShardRoundTrip deletes Widgets while another replica
 // holds their shard, gives the shard back, and recreates the Widgets under
 // the same names. The new Widgets' first reconciles must not see the old
-// Widgets' errors.
+// Widgets' errors, and Widgets in the shards that never moved must still see
+// theirs.
 func TestLastErrorAfterShardRoundTrip(t *testing.T) {
 	c := e2e.Client(t)
 	env := e2e.Env(t)
@@ -125,25 +127,30 @@ func TestLastErrorAfterShardRoundTrip(t *testing.T) {
 		h.Write([]byte(ns + "/" + name))
 		return int(h.Sum32() % shards)
 	}
-	// One Widget in each shard, so some move to b and some stay on a.
-	var names []string
-	taken := map[int]bool{}
-	for i := 0; len(names) < shards; i++ {
-		n := fmt.Sprintf("w-%d", i)
-		if s := shardOf(n); !taken[s] {
-			taken[s] = true
-			names = append(names, n)
+	onePerShard := func(prefix string) []string {
+		var out []string
+		taken := map[int]bool{}
+		for i := 0; len(out) < shards; i++ {
+			n := fmt.Sprintf("%s-%d", prefix, i)
+			if s := shardOf(n); !taken[s] {
+				taken[s] = true
+				out = append(out, n)
+			}
 		}
+		return out
 	}
+	// One Widget in each shard, so some move to b and some stay on a, and
+	// one more in each shard that's never deleted.
+	names, kept := onePerShard("w"), onePerShard("k")
 
 	t.Log("Replica a alone fails to reconcile every Widget and retries with the error.")
 	start("a")
 	balanced()
-	for _, n := range names {
+	for _, n := range slices.Concat(names, kept) {
 		createWidget(t, c, ns, n, 64)
 	}
 	e2e.Eventually(t, 30*time.Second, func() error {
-		for _, n := range names {
+		for _, n := range slices.Concat(names, kept) {
 			if _, ok := log.has(ns+"/"+n, "a", 64, true); !ok {
 				return fmt.Errorf("%s: no retry on a has seen an error yet", n)
 			}
@@ -197,6 +204,38 @@ func TestLastErrorAfterShardRoundTrip(t *testing.T) {
 	t.Log("Replica b stops, so a takes back the shard while the Widgets don't exist.")
 	stop("b")
 	balanced()
+
+	t.Log("The kept Widgets that b never reconciled still see their errors on a.")
+	var stayed []string
+	for _, n := range kept {
+		if _, ok := log.has(ns+"/"+n, "b", 64, false); !ok {
+			stayed = append(stayed, n)
+		}
+	}
+	if len(stayed) == 0 {
+		t.Fatal("b reconciled every kept Widget; want some to stay on a")
+	}
+	// Patching each Widget makes a reconcile it now, and the new size marks
+	// that reconcile in the log. Each retry at size 64 stores the error
+	// again, so a later retry would see an error even if a had forgotten it.
+	for _, n := range stayed {
+		if err := c.Patch(t.Context(), client.Path(group+"/v1", "widgets", ns, n), client.MergePatch, nil, []byte(`{"spec":{"size":65}}`), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e2e.Eventually(t, 30*time.Second, func() error {
+		for _, n := range stayed {
+			if _, ok := log.has(ns+"/"+n, "a", 65, false); !ok {
+				return fmt.Errorf("%s: a hasn't reconciled size 65 yet", n)
+			}
+		}
+		return nil
+	})
+	for _, n := range stayed {
+		if a, _ := log.has(ns+"/"+n, "a", 65, false); a.err == nil {
+			t.Errorf("%s: the first reconcile at size 65 saw LastError = nil, want the error from size 64", n)
+		}
+	}
 
 	t.Log("The Widgets come back under the same names with a size that works.")
 	for _, n := range names {
