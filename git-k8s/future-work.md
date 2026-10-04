@@ -382,5 +382,3 @@ These belong in kube, in their own pull requests:
   status only by reconciling a view of its type, as each check does today.
 - The cache lags a controller's own writes, so a reconcile that runs just
   after a write can repeat work.
-- The mirror and the results endpoint need a TokenReview client, and events
-  from the mirror need a way to queue a reconcile from outside one.
