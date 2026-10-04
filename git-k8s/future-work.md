@@ -70,33 +70,6 @@ Questions to settle first:
   reconcile, so either kube adds an API for it, or the mirror patches an
   annotation on the `GitRepository`.
 
-## Authenticate check results with tokens
-
-The check-results admission policy keeps each check to its own entry in
-`status.checks` by looking at the service account that makes each write. A
-result carries no proof of which check wrote it, so the merge controller can
-trust results only as far as it trusts the policy. The policy might not be
-installed, and it recognizes checks only by their service account names.
-
-The decided fix is for checks to stop writing `status.checks`. A check sends
-each result to an endpoint in the core program, next to the mirror, with a
-projected service account token. The core program verifies the token with a
-TokenReview, and writes the result to the entry of the check that the token
-proves, and no other. A check can't write another check's result, by mistake
-or on purpose, because it can't write results at all:
-
-- Checks lose write access to `GitBranch` status. They reconcile a view of
-  `GitBranch` that declares no status, so kube doesn't write one and
-  `generate` doesn't grant them access, and they read their earlier results
-  through a second view.
-- The core program maps service accounts to checks, so a check no longer has
-  to run as `check-NAME` in the namespace `check-NAME`.
-- The admission policy stays as a backstop. People with write access to
-  `GitBranch` status can still write a result, for example to unblock a
-  branch whose check is broken.
-
-The endpoint uses the same token check as the mirror, so the two share it.
-
 ## Get GitHub credentials from Octo STS
 
 For a GitHub repository, git-k8s uses a long-lived basic-auth Secret, such as
@@ -251,9 +224,21 @@ condition reports when it's missing, but nothing installs it. The core
 program could apply the policies when it starts, the way kube installs CRDs.
 That needs RBAC to write ValidatingAdmissionPolicies, which a compromised
 core program could use to weaken them. The core program already decides
-what lands, so that may be acceptable. Once checks send results to the core
-program instead of writing them, the check-results policy is a backstop, and
-the policy that stops controllers from approving branches matters most.
+what lands, so that may be acceptable. Checks send results to the core
+program instead of writing them, so the check-results policy is a backstop,
+and the policy that stops controllers from approving branches matters most.
+
+## Map any service account to a check
+
+The results endpoint identifies a check only by the name of its service
+account. The service account `check-NAME` in the namespace `check-NAME`, as
+`generate` installs it, runs the check `NAME`, so a check that runs as
+another service account can't send results.
+
+The proposed fix is for `checkFor`, the one function in the core program
+that maps service accounts to checks, to read a ConfigMap of check service
+accounts. The admission policies can take the same ConfigMap as a
+parameter, so that the two agree.
 
 ## Support SSH keys
 
@@ -379,6 +364,7 @@ These belong in kube, in their own pull requests:
   conditions. An event intent that kube carries out after a reconcile, and
   that groups repeats, would show them in `kubectl describe`.
 - `Apply` drops `status`, so a controller can write another controller's
-  status only by reconciling a view of its type, as each check does today.
+  status only by reconciling a view of its type, as the results controller
+  does.
 - The cache lags a controller's own writes, so a reconcile that runs just
   after a write can repeat work.
