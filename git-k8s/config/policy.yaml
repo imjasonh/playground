@@ -63,6 +63,9 @@ spec:
 # patch the type that it reconciles, which for a check is GitBranch, so this
 # policy also stops checks from changing a GitBranch's spec, labels, or
 # annotations.
+#
+# git-k8s-deps reconciles each parent's GitBranch, so the policy stops it the
+# same way.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -87,6 +90,8 @@ spec:
         variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
     - name: core
       expression: size(variables.user) == 4 && variables.user[2] == "git-k8s" && variables.user[3] == "git-k8s"
+    - name: deps
+      expression: size(variables.user) == 4 && variables.user[2] == "git-k8s-deps" && variables.user[3] == "git-k8s-deps"
     - name: approval
       expression: >-
         has(object.metadata.annotations) && "git-k8s.imjasonh.com/approve" in object.metadata.annotations ?
@@ -107,6 +112,14 @@ spec:
         (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
         (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
       messageExpression: '"the " + variables.check + " check can''t change GitBranch objects"'
+    - expression: >-
+        !variables.deps ||
+        (oldObject != null && object.spec == oldObject.spec &&
+        (has(object.metadata.labels) ? object.metadata.labels : {}) ==
+        (has(oldObject.metadata.labels) ? oldObject.metadata.labels : {}) &&
+        (has(object.metadata.annotations) ? object.metadata.annotations : {}) ==
+        (has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}))
+      message: git-k8s-deps can't change GitBranch objects
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
