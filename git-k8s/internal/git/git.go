@@ -200,6 +200,11 @@ func (r *Repo) Fetch(ctx context.Context, remote Remote, branches ...string) err
 	return err
 }
 
+// Fetched returns the commit that the last Fetch of a branch found.
+func (r *Repo) Fetched(ctx context.Context, branch string) (string, error) {
+	return r.text(ctx, "rev-parse", "--verify", "refs/remotes/origin/"+branch+"^{commit}")
+}
+
 // HasCommit reports whether the repository has the commit.
 func (r *Repo) HasCommit(ctx context.Context, sha string) (bool, error) {
 	res, err := r.git.exec(ctx, r.Dir, []string{"cat-file", "-e", sha + "^{commit}"}, opts{})

@@ -60,6 +60,12 @@ func TestFetchMergePush(t *testing.T) {
 	if err := repo.Fetch(ctx, remote, "main", "c/x"); err != nil {
 		t.Fatal(err)
 	}
+	if got, err := repo.Fetched(ctx, "main"); err != nil || got != parent {
+		t.Errorf("Fetched(main) = %q, %v; want %s", got, err, parent)
+	}
+	if got, err := repo.Fetched(ctx, "c/missing"); err == nil {
+		t.Errorf("Fetched(c/missing) = %q, want an error", got)
+	}
 	if ok, err := repo.HasCommit(ctx, head); err != nil || !ok {
 		t.Fatalf("HasCommit(head) = %v, %v", ok, err)
 	}
