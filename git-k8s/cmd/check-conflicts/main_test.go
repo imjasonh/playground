@@ -1844,6 +1844,34 @@ func TestLeavesAFileThatTheRewoundBranchBringsBack(t *testing.T) {
 	}
 }
 
+func TestLeavesReplaysThatBringBackAFileThatTheRewindRemoved(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	// c/x deletes s.txt, which synced's commit added, and then adds s.txt
+	// back with other content. Each commit replays cleanly onto the
+	// external head, which drops synced's commit, but the replays bring
+	// s.txt back, which conflicts with the external repository's removal
+	// of it.
+	b, w, base, synced := rewound(t, srv, func(w *gittest.Work, _ *Branch) {
+		w.Git("rm", "--quiet", "--end-of-options", "s.txt")
+		w.Commit("delete s.txt")
+		commit(w, "add s.txt back", map[string]string{"s.txt": "branch\n"})
+	})
+	head := b.Spec.Head
+	_, o := diverge(w, b.Name, "c/x", base, map[string]string{"d.txt": "external\n"})
+	syncedAt(w, o, "c/x", synced)
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	want := "the replays of the branch's commits onto the external repository's c/x don't have every change that both sides made; " +
+		"replaying the branch onto the external repository's c/x conflicts in s.txt; git can't resolve them, and the check runs no agent without -agent-image"
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != "external" {
+		t.Errorf("result = %+v, want Failed with %q", res, want)
+	}
+	if got := srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s", got)
+	}
+}
+
 func TestLeavesACopyOfARemovedCommit(t *testing.T) {
 	// rebase copies synced's commit, which adds s.txt on top of base, onto
 	// another commit on top of the current one, and reword copies the
