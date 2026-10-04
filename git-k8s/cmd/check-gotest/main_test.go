@@ -167,6 +167,19 @@ func TestWaitsForAPlaceToRun(t *testing.T) {
 	}
 }
 
+func TestCountsOnlyTestPods(t *testing.T) {
+	defer func(n int) { *maxPods = n }(*maxPods)
+	*maxPods = 1
+	b, repo := branch()
+	// generate labels the check's own Pods like this.
+	self := &Pod{Object: kube.Meta("check-gotest-5d8f7c9b4-x2x7q", map[string]string{"app.kubernetes.io/name": "check-gotest"})}
+	self.Namespace = "check-gotest"
+	self.Status.Phase = "Running"
+	if pods := kube.Owned[Pod](reconcileWith(t, b, repo, self)); len(pods) != 1 {
+		t.Errorf("owned Pods = %+v, want a test Pod while only the check's own Pod runs", pods)
+	}
+}
+
 // waitingBranch returns a branch named name that has waited since the given
 // time to start its Pod.
 func waitingBranch(name string, since time.Time) *Branch {

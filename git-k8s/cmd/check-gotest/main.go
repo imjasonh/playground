@@ -55,8 +55,10 @@ var (
 	maxPods      = flag.Int("max-pods", 10, "most test Pods to run at once, in all namespaces; 0 means no limit")
 )
 
-// testPodLabels are the labels on every test Pod.
-var testPodLabels = map[string]string{"app.kubernetes.io/name": "check-gotest"}
+// testPodLabels are the labels on every test Pod. generate gives the
+// check's own Pods the same app.kubernetes.io/name, so the component label
+// is what keeps the check from counting them.
+var testPodLabels = map[string]string{"app.kubernetes.io/name": "check-gotest", "app.kubernetes.io/component": "test"}
 
 // podPhase is what the check counts running test Pods by. Declaring only
 // the phase means that other changes to Pods don't run the check again.
