@@ -211,18 +211,8 @@ func TestCheckRunsSurviveRestarts(t *testing.T) {
 	}
 
 	t.Log("When something else changed the check run on GitHub, the controller puts the result back.")
-	req, err := http.NewRequest(http.MethodPatch, strings.TrimSuffix(gh.URL, "/acme")+api+"check-runs/1", strings.NewReader(`{"conclusion": "failure", "output": {"title": "Failed", "summary": "changed on GitHub"}}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.SetBasicAuth(gh.Username, gh.Password)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("changing the check run: %s", resp.Status)
+	if status := asAdmin(t, gh, http.MethodPatch, api+"check-runs/1", `{"conclusion": "failure", "output": {"title": "Failed", "summary": "changed on GitHub"}}`); status != http.StatusOK {
+		t.Fatalf("changing the check run: %d", status)
 	}
 	got, err = (&publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}).publish(checks)
 	if want := []string{get, "PATCH " + api + "check-runs/1"}; err != nil || !slices.Equal(got, want) {
@@ -240,6 +230,73 @@ func TestCheckRunsSurviveRestarts(t *testing.T) {
 	}
 	got, err = (&publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}).publish(checks)
 	if want := []string{get, "PATCH " + api + "check-runs/2"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+}
+
+// asAdmin sends a REST API request to the fake GitHub with its
+// administrator's credentials, which act for another app than the tokens
+// from Octo STS, and returns the response's status.
+func asAdmin(t *testing.T, gh *gittest.GitHub, method, path, body string) int {
+	t.Helper()
+	req, err := http.NewRequest(method, strings.TrimSuffix(gh.URL, "/acme")+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.SetBasicAuth(gh.Username, gh.Password)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+func TestCheckRunsFromOtherApps(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	head := w.Commit("add x")
+	next := w.Commit("add y")
+	w.Push("c/x")
+	p := &publisher{t: t, gh: gh, repo: gh.Repository("app", sts, rules()...), c: &checkRuns{}}
+	api := "/api/v3/repos/acme/app/"
+	h, n := gitk8s.Short(head), gitk8s.Short(next)
+	// spoof creates a check run on commit that looks like the
+	// controller's, as another app, with the JSON fields in state.
+	spoof := func(commit, state string) {
+		t.Helper()
+		body := `{"name": "git-k8s/gofmt", "head_sha": "` + commit + `", "external_id": "default/app", ` + state + `}`
+		if status := asAdmin(t, gh, http.MethodPost, api+"check-runs", body); status != http.StatusCreated {
+			t.Fatalf("creating another app's check run: %d", status)
+		}
+	}
+
+	t.Log("Before the controller knows its app, it creates a check run when GitHub refuses to update another app's.")
+	spoof(head, `"conclusion": "success", "output": {"title": "Passed", "summary": "spoofed"}`)
+	got, err := p.publish(map[string]gitk8s.CheckResult{"gofmt": {Commit: head, State: gitk8s.Failed, Message: "x.go isn't formatted"}})
+	if want := []string{"GET " + api + "commits/" + head + "/check-runs", "PATCH " + api + "check-runs/1", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+
+	t.Log("Then it looks only at its app's check runs.")
+	spoof(next, `"status": "in_progress", "output": {"title": "Running", "summary": "spoofed"}`)
+	got, err = p.publish(map[string]gitk8s.CheckResult{"gofmt": {Commit: next, State: gitk8s.Failed, Message: "y.go isn't formatted"}})
+	if want := []string{"GET " + api + "commits/" + next + "/check-runs", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+	if got, want := runs(gh), []string{
+		"git-k8s/gofmt@" + h + " completed success: spoofed",
+		"git-k8s/gofmt@" + h + " completed failure: x.go isn't formatted",
+		"git-k8s/gofmt@" + n + " in_progress : spoofed",
+		"git-k8s/gofmt@" + n + " completed failure: y.go isn't formatted",
+	}; !slices.Equal(got, want) {
+		t.Errorf("check runs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+
+	t.Log("When GitHub can't find the check run that the controller remembers, the controller creates another.")
+	p.c.remember(runKey{"default", resultsOf(nil).Name, "gofmt"}, publishedRun{commit: next, id: 99, shows: runFor(gitk8s.CheckResult{State: gitk8s.Running})})
+	got, err = p.publish(map[string]gitk8s.CheckResult{"gofmt": {Commit: next, State: gitk8s.Passed}})
+	if want := []string{"PATCH " + api + "check-runs/99", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
 		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
 	}
 }

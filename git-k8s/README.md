@@ -219,7 +219,9 @@ check run as `cancelled`.
 
 Check runs only copy results. The controller reads a check run only to see
 whether it already shows the result, so nothing that happens on GitHub, such
-as re-running a check run, changes a result or a merge. The controller
+as re-running a check run, changes a result or a merge. GitHub lets only the
+app that created a check run update it, so the controller creates its own
+beside a check run with the same name from another app. The controller
 remembers what it wrote, and writes a check run again only when the result
 changes or the program restarts, so a change that someone else makes to a
 check run can stay until then.

@@ -31,11 +31,15 @@ import (
 // The exchange reads trust policies from the main branch. It reads them as
 // JSON, which is also YAML that Octo STS reads, and supports the fields
 // issuer, subject, subject_pattern, audience, and permissions.
+//
+// The tokens from the exchange act for the GitHub App OctoSTSApp, and the
+// administrator acts for OtherApp. As on GitHub, a token can update only its
+// app's check runs, but the administrator can update any.
 type GitHub struct {
 	// Root holds the repositories.
 	Root string
 	// Username and Password are an administrator's credentials, which can
-	// fetch, push, and list check runs in every repository.
+	// fetch and push, and read and write check runs, in every repository.
 	Username, Password string
 	// Verify checks a bearer token that the exchange receives and returns
 	// its claims.
@@ -69,8 +73,20 @@ type CheckRun struct {
 	Status     string         `json:"status"`
 	Conclusion string         `json:"conclusion"`
 	Output     CheckRunOutput `json:"output"`
+	App        CheckRunApp    `json:"app"`
 	repo       string
 }
+
+// CheckRunApp is the GitHub App that created a check run.
+type CheckRunApp struct {
+	ID int64 `json:"id"`
+}
+
+// The GitHub Apps that check runs belong to.
+const (
+	OctoSTSApp int64 = 1
+	OtherApp   int64 = 2
+)
 
 // CheckRunOutput is what a check run shows.
 type CheckRunOutput struct {
@@ -304,7 +320,10 @@ func (g *GitHub) api(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		level = "read"
 	}
-	if !g.admin(r) {
+	admin, app := g.admin(r), OctoSTSApp
+	if admin {
+		app = OtherApp
+	} else {
 		auth := r.Header.Get("Authorization")
 		token, ok := strings.CutPrefix(auth, "Bearer ")
 		if !ok {
@@ -319,29 +338,33 @@ func (g *GitHub) api(w http.ResponseWriter, r *http.Request) {
 	case sha != "" && r.Method == http.MethodGet:
 		g.listCheckRuns(w, r, repo, sha)
 	case sha == "" && id == "" && r.Method == http.MethodPost:
-		g.writeCheckRun(w, r, repo, nil)
+		g.writeCheckRun(w, r, repo, app, nil)
 	case id != "" && r.Method == http.MethodPatch:
 		n, _ := strconv.ParseInt(id, 10, 64)
 		var old *CheckRun
+		var owner int64
 		g.mu.Lock()
 		if i := slices.IndexFunc(g.runs, func(c *CheckRun) bool { return c.ID == n && c.repo == repo }); i >= 0 {
-			old = g.runs[i]
+			old, owner = g.runs[i], g.runs[i].App.ID
 		}
 		g.mu.Unlock()
-		if old == nil {
+		switch {
+		case old == nil:
 			apiError(w, http.StatusNotFound, "Not Found")
-			return
+		case !admin && owner != app:
+			apiError(w, http.StatusForbidden, "Resource not accessible by integration")
+		default:
+			g.writeCheckRun(w, r, repo, app, old)
 		}
-		g.writeCheckRun(w, r, repo, old)
 	default:
 		apiError(w, http.StatusNotFound, "Not Found")
 	}
 }
 
-// writeCheckRun creates a check run, or updates old, with GitHub's
+// writeCheckRun creates a check run for app, or updates old, with GitHub's
 // validation of the request. GitHub doesn't support starting a completed
 // check run again, so neither does the fake.
-func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo string, old *CheckRun) {
+func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo string, app int64, old *CheckRun) {
 	var in checkRunRequest
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		apiError(w, http.StatusBadRequest, "Problems parsing JSON")
@@ -349,7 +372,7 @@ func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo stri
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	c := &CheckRun{Status: "queued", repo: repo}
+	c := &CheckRun{Status: "queued", App: CheckRunApp{ID: app}, repo: repo}
 	if old != nil {
 		c = new(CheckRun)
 		*c = *old
@@ -407,7 +430,8 @@ func (g *GitHub) listCheckRuns(w http.ResponseWriter, r *http.Request, repo, sha
 	runs := []*CheckRun{}
 	seen := map[string]bool{}
 	for _, c := range slices.Backward(g.runs) {
-		if c.repo != repo || c.HeadSHA != sha || (q.Has("check_name") && c.Name != q.Get("check_name")) {
+		if c.repo != repo || c.HeadSHA != sha || (q.Has("check_name") && c.Name != q.Get("check_name")) ||
+			(q.Has("app_id") && strconv.FormatInt(c.App.ID, 10) != q.Get("app_id")) {
 			continue
 		}
 		if q.Get("filter") != "all" && seen[c.Name] {

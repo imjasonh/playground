@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -45,6 +46,13 @@ type branchResults struct {
 type checkRuns struct {
 	// now is time.Now, except in tests.
 	now func() time.Time
+
+	// app is the ID of the GitHub App that the controller's tokens act for,
+	// or 0 until the controller creates a check run. Every token from Octo
+	// STS acts for the Octo STS app, and GitHub lets only the app that
+	// created a check run update it, so the controller looks only for its
+	// app's check runs.
+	app atomic.Int64
 
 	mu sync.Mutex
 	// runs holds the check run that the controller last wrote or found for
@@ -85,6 +93,9 @@ type checkRun struct {
 	Name       string `json:"name,omitempty"`
 	HeadSHA    string `json:"head_sha,omitempty"`
 	ExternalID string `json:"external_id,omitempty"`
+	App        struct {
+		ID int64 `json:"id"`
+	} `json:"app,omitzero"`
 	runState
 }
 
@@ -153,7 +164,7 @@ func (c *checkRuns) publish(ctx context.Context, gh *githubAPI, b *branchResults
 	if ok && last.commit == res.Commit {
 		old = &checkRun{ID: last.id, runState: last.shows}
 	} else {
-		found, err := gh.find(ctx, run)
+		found, err := gh.find(ctx, run, c.app.Load())
 		if err != nil {
 			return err
 		}
@@ -167,17 +178,23 @@ func (c *checkRuns) publish(ctx context.Context, gh *githubAPI, b *branchResults
 	// check that starts again gets a new check run, which GitHub shows
 	// instead of the old one.
 	if old != nil && (old.Status != "completed" || want.Status == "completed") {
-		if err := gh.update(ctx, old.ID, want); err != nil {
+		err := gh.update(ctx, old.ID, want)
+		if err == nil {
+			c.remember(k, publishedRun{commit: res.Commit, id: old.ID, shows: want})
+			return nil
+		}
+		// Until the controller knows its app, it can find another app's
+		// check run, which only that app can update.
+		if !notOurs(err) {
 			return err
 		}
-		c.remember(k, publishedRun{commit: res.Commit, id: old.ID, shows: want})
-		return nil
 	}
-	id, err := gh.create(ctx, run)
+	created, err := gh.create(ctx, run)
 	if err != nil {
 		return err
 	}
-	c.remember(k, publishedRun{commit: res.Commit, id: id, shows: want})
+	c.app.Store(created.App.ID)
+	c.remember(k, publishedRun{commit: res.Commit, id: created.ID, shows: want})
 	return nil
 }
 
@@ -284,10 +301,30 @@ func (e *rateLimited) Error() string {
 	return fmt.Sprintf("GitHub's rate limit asks to wait %v", e.wait)
 }
 
+// githubError is an answer from GitHub that's neither a success nor a rate
+// limit.
+type githubError struct {
+	status int
+	msg    string
+}
+
+func (e *githubError) Error() string { return e.msg }
+
+// notOurs reports whether err is GitHub refusing to update a check run, as
+// it does when another app created the check run or the check run doesn't
+// exist.
+func notOurs(err error) bool {
+	var e *githubError
+	return errors.As(err, &e) && (e.status == http.StatusForbidden || e.status == http.StatusNotFound)
+}
+
 // find returns the newest check run that has run's name, commit, and
-// external ID, or nil.
-func (gh *githubAPI) find(ctx context.Context, run checkRun) (*checkRun, error) {
+// external ID, or nil. Unless app is 0, it looks only at app's check runs.
+func (gh *githubAPI) find(ctx context.Context, run checkRun, app int64) (*checkRun, error) {
 	q := url.Values{"check_name": {run.Name}, "filter": {"all"}, "per_page": {"100"}}
+	if app != 0 {
+		q.Set("app_id", strconv.FormatInt(app, 10))
+	}
 	var list struct {
 		CheckRuns []checkRun `json:"check_runs"`
 	}
@@ -303,12 +340,10 @@ func (gh *githubAPI) find(ctx context.Context, run checkRun) (*checkRun, error) 
 	return found, nil
 }
 
-func (gh *githubAPI) create(ctx context.Context, run checkRun) (int64, error) {
+func (gh *githubAPI) create(ctx context.Context, run checkRun) (checkRun, error) {
 	var created checkRun
-	if err := gh.do(ctx, http.MethodPost, "/check-runs", run, &created); err != nil {
-		return 0, err
-	}
-	return created.ID, nil
+	err := gh.do(ctx, http.MethodPost, "/check-runs", run, &created)
+	return created, err
 }
 
 func (gh *githubAPI) update(ctx context.Context, id int64, s runState) error {
@@ -359,7 +394,7 @@ func (gh *githubAPI) do(ctx context.Context, method, path string, in, out any) e
 	if wait, ok := rateLimitWait(resp, e.Message, gh.now()); ok {
 		return &rateLimited{wait: wait}
 	}
-	return fmt.Errorf("GitHub answered %s %s with %s: %s", method, req.URL.Path, resp.Status, e.Message)
+	return &githubError{resp.StatusCode, fmt.Sprintf("GitHub answered %s %s with %s: %s", method, req.URL.Path, resp.Status, e.Message)}
 }
 
 // rateLimitWait reports whether resp is a rate limit error, and how long
