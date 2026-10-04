@@ -56,6 +56,44 @@ test("drops the spaces that pad the commit log", () => {
   assert.match(prompt, /newest first:\n\nabc1234 Fix it\ndef5678 Add a long subj\.\.\n\n/);
 });
 
+test("lists the paths that the change touches", () => {
+  const prompt = buildPrompt(preparePod({}, {}), "diff --git a/a b/a\n", "", [
+    { status: "M", path: "a" },
+    { status: "R", path: "new name", from: "old" },
+    { status: "A", path: "x\nM fake" },
+    { status: "D", path: "a -> b" },
+  ]);
+  assert.match(prompt, /or T \(changed type\):\n\nM a\nR old -> new name\nA "x\\nM fake"\nD "a -> b"\n\nThe change from/);
+  assert.doesNotMatch(prompt, /not in the diff/);
+  assert.doesNotMatch(buildPrompt(preparePod({}, {}), "", ""), /paths that the change touches/);
+  assert.match(buildPrompt(preparePod({}, {}), "", "", []), /changed type\):\n\n\(none\)\n/);
+});
+
+test("marks the paths that a long diff leaves out", () => {
+  const section = (a: string, b: string) => `diff --git ${a} ${b}\n--- ${a}\n+++ ${b}\n@@ -1 +1 @@\n-x\n+y\n`;
+  const diff =
+    section("a/first", "b/first") +
+    section('"a/tab\\there"', '"b/tab\\there"') +
+    section('"a/ctl\\001"', '"b/ctl\\001"') +
+    section("a/old", "b/new") +
+    section("a/big", "b/big") +
+    "+x\n".repeat(MAX_DIFF) +
+    section("a/after", "b/after");
+  const prompt = buildPrompt(preparePod({}, {}), diff, "", [
+    { status: "M", path: "after" },
+    { status: "M", path: "big" },
+    { status: "M", path: "ctl\x01" },
+    { status: "M", path: "first" },
+    { status: "R", path: "new", from: "old" },
+    { status: "M", path: "tab\there" },
+  ]);
+  const list = prompt.slice(prompt.indexOf("changed type):"), prompt.indexOf("The change from"));
+  assert.equal(
+    list,
+    'changed type):\n\nM after (not in the diff below)\nM big (the diff below may stop partway through this file)\nM "ctl\\u0001"\nM first\nR old -> new\nM "tab\\there"\n\n',
+  );
+});
+
 test("shortens a long commit log", () => {
   const prompt = buildPrompt(preparePod({}, {}), "", `abc1234 ${"x".repeat(100)}\n`.repeat(1000));
   assert.ok(prompt.length < MAX_LOG + 5000);

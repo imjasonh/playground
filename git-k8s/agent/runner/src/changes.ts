@@ -7,6 +7,16 @@ export const MAX_BYTES = 8 << 20;
 
 const GITLINK = "160000";
 
+/**
+ * Cursor reads these files to hide other files from the agent. The Pod
+ * leaves them out of the work tree, so a fix leaves them as they are.
+ */
+const IGNORE_FILE = ".cursorignore";
+
+function isIgnoreFile(path: string): boolean {
+  return path === IGNORE_FILE || path.endsWith(`/${IGNORE_FILE}`);
+}
+
 /** A file that the agent changed, before encoding. */
 export type Change =
   | { path: string; mode: "100644" | "100755" | "120000"; content: Buffer; deleted?: undefined }
@@ -60,6 +70,9 @@ export async function changedFiles(workTree: string, index: Buffer): Promise<Cha
         }
         continue;
       }
+      if (isIgnoreFile(path)) {
+        continue;
+      }
       let mode: "100644" | "100755" | "120000";
       let content: Buffer;
       if (d.isSymbolicLink()) {
@@ -84,7 +97,7 @@ export async function changedFiles(workTree: string, index: Buffer): Promise<Cha
   await visit("");
 
   for (const [path, entry] of entries) {
-    if (entry.mode !== GITLINK && !seen.has(path)) {
+    if (entry.mode !== GITLINK && !seen.has(path) && !isIgnoreFile(path)) {
       changes.push({ path, deleted: true });
       check(changes.length, bytes);
     }

@@ -90,7 +90,7 @@ func TestStartsALockedDownPod(t *testing.T) {
 		Backend: "fake", Model: "composer-2.5", Instructions: "Review the change.", TimeoutSeconds: 60,
 		Branch: "c/x", Parent: "main", Head: f.b.Spec.Head, Base: f.base, WorkTree: "/src",
 		DiffFile: "/input/change.diff", LogFile: "/input/log.txt", FilesFile: "/input/files", KeyFile: "/key/api-key",
-		ResultFile: "/result/result.json", TerminationLog: "/dev/termination-log",
+		ResultFile: "/result/result.json", TerminationLog: "/dev/termination-log", ChangesFile: "/input/changes",
 	}
 	if got != wantTask {
 		t.Errorf("AGENT_TASK = %+v, want %+v", got, wantTask)
@@ -172,6 +172,7 @@ func TestPrepareScript(t *testing.T) {
 	w := srv.NewWork(t, "app")
 	w.Write(".gitattributes", "* text eol=crlf\n")
 	w.Write("a.txt", "one\ntwo\n")
+	w.Write(".cursorignore", "a.txt\n")
 	base := w.Commit("main")
 	w.Push("main")
 	w.Branch("c/x", base)
@@ -184,6 +185,7 @@ func TestPrepareScript(t *testing.T) {
 		w.Commit(msg)
 	}
 	w.Write("dir/b.txt", "b\n")
+	w.Write("dir/.cursorignore", "b.txt\n")
 	head := w.Commit("add b")
 	w.Push("c/x")
 	repo, secret := srv.Repository("app")
@@ -241,6 +243,14 @@ func TestPrepareScript(t *testing.T) {
 	}
 	if _, err := os.Stat(dir + "/src/.git"); !os.IsNotExist(err) {
 		t.Errorf("the work tree has a .git: %v", err)
+	}
+	for _, path := range []string{"/src/.cursorignore", "/src/dir/.cursorignore"} {
+		if _, err := os.Stat(dir + path); !os.IsNotExist(err) {
+			t.Errorf("the work tree has %s: %v", path, err)
+		}
+	}
+	if got, want := read(dir+"/input/changes"), "M\x00a.txt\x00A\x00dir/.cursorignore\x00A\x00dir/b.txt\x00"; got != want {
+		t.Errorf("changes = %q, want %q", got, want)
 	}
 	if files := read(dir + "/input/files"); strings.Count(files, "\x00") != 3 || !strings.Contains(files, " 0\tdir/b.txt\x00") {
 		t.Errorf("files = %q, want the head's 3 files", files)

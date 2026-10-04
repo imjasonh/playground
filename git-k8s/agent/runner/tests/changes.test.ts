@@ -41,6 +41,16 @@ test("reports changed, added, deleted, and relinked files", async () => {
   );
 });
 
+test("leaves .cursorignore files out", async () => {
+  const task = preparePod({ ".cursorignore": "a.txt\n", "a.txt": "a\n", "dir/.cursorignore": "*\n" }, {});
+  const index = readFileSync(task.filesFile);
+  assert.deepEqual([...parseIndex(index).keys()], ["a.txt"]);
+  writeFileSync(join(task.workTree, ".cursorignore"), "b.txt\n");
+  mkdirSync(join(task.workTree, "new"));
+  writeFileSync(join(task.workTree, "new", ".cursorignore"), "*\n");
+  assert.deepEqual(await changedFiles(task.workTree, index), []);
+});
+
 test("skips submodule directories", async () => {
   const task = preparePod({ "a.txt": "a\n" }, {});
   const repo = join(task.workTree, "..", "git");

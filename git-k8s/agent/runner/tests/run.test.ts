@@ -9,6 +9,7 @@ import { MAX_DIFF, MAX_LOG } from "../src/prompt.js";
 import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
 import type { Task } from "../src/task.js";
+import { MAX_PATHS } from "../src/touched.js";
 import { preparePod } from "./pod.js";
 
 const quiet: RunOptions = { log: () => undefined };
@@ -60,6 +61,27 @@ test("reads only the start of a long diff and commit log", async () => {
   assert.ok(Buffer.byteLength(request.diff) <= MAX_DIFF && request.diff.endsWith("+x\n"));
   assert.ok(request.prompt.length < MAX_DIFF + MAX_LOG + 5000);
   assert.match(request.prompt, /longer than 200000 bytes/);
+});
+
+test("lists every path that the change touches, and hides no files", async () => {
+  const task = preparePod({ ".cursorignore": "", "a.txt": "a\n" }, { ".cursorignore": "secret/\n", "secret/x.txt": "x\n" });
+  assert.equal(existsSync(join(task.workTree, ".cursorignore")), false);
+  assert.equal(readFileSync(join(task.workTree, "secret", "x.txt"), "utf8"), "x\n");
+  let prompt = "";
+  const capture: Backend = async (r) => {
+    prompt = r.prompt;
+    return fakeBackend(r);
+  };
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: capture } }), 0);
+  assert.match(prompt, /changed type\):\n\nM \.cursorignore\nA secret\/x\.txt\n\n/);
+});
+
+test("refuses a change that touches too many paths", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const task = preparePod({}, { "a.txt": "a\n" });
+  writeFileSync(task.changesFile ?? "", "A\0a.txt\0".repeat(MAX_PATHS + 1));
+  assert.equal(await runTask(task), 1);
+  assert.equal(readFileSync(task.terminationLog, "utf8"), "the change touches more than 1000 paths, more than an agent can check");
 });
 
 test("reports the files that the agent changed", async () => {
