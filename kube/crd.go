@@ -162,10 +162,10 @@ func (m *Manager) installCRD(ctx context.Context, spec crdSpec) error {
 }
 
 // createCRD creates the CustomResourceDefinition for a type that the program
-// defines and reads or owns, but doesn't reconcile, if the cluster doesn't
-// have one, and waits until the API server serves it. It never changes a CRD
-// that exists, because only a program that reconciles the type knows all of
-// the type's versions. That program installs its own CRD over this one.
+// defines and owns, but doesn't reconcile, if the cluster doesn't have one,
+// and waits until the API server serves it. It never changes a CRD that
+// exists, because only a program that reconciles the type knows all of the
+// type's versions. That program installs its own CRD over this one.
 func (m *Manager) createCRD(ctx context.Context, ti *typeInfo) error {
 	spec := crdSpec{ti: ti}
 	name := spec.name()

@@ -540,28 +540,35 @@ else installed the CRD, for example a Helm chart, the controller leaves it
 alone. [CRD upgrades](#crd-upgrades) describes how it updates a CRD that
 already exists.
 
-A program can also read or own a custom type that none of its controllers
-reconciles, such as a report that it writes. It knows only the versions that
-it declares, so applying its CRD could drop the others, or replace a schema
-that a newer release of the reconciling program installed. Instead, the first
-time that the program starts a cache for the type or fetches an object of it,
-`createCRD` gets the CRD. If it's missing, `createCRD` creates it with a plain
-`POST` and the label that marks a CRD as installed by the framework, then
-waits until it's `Established`. It never updates a CRD. A `POST` fails with
-`AlreadyExists` when the CRD exists, so if two programs create it at once, one
-succeeds, the other waits for the same CRD, and neither changes what the other
-created. Because of the label, a program that reconciles the type later treats
-the CRD as its own and updates it. If the CRD doesn't serve the program's
-version of the type, the read fails with an error. If the program can't get
-CRDs, for example because it runs with the rules of an earlier release, it
-logs a warning and uses the type without creating its CRD.
+A program can also own a custom type that none of its controllers reconciles,
+such as a report that it writes. It knows only the versions that it declares,
+so applying its CRD could drop the others, or replace a schema that a newer
+release of the reconciling program installed. Instead, the first time that the
+program starts the cache of its owned objects of the type, at startup with
+`kube.Owns` or at its first `Own`, `createCRD` gets the CRD. If it's missing,
+`createCRD` creates it with a plain `POST` and the label that marks a CRD as
+installed by the framework, then waits until it's `Established`. It never
+updates a CRD. A `POST` fails with `AlreadyExists` when the CRD exists, so if
+two programs create it at once, one succeeds, the other waits for the same
+CRD, and neither changes what the other created. Because of the label, a
+program that reconciles the type later treats the CRD as its own and updates
+it. If the CRD doesn't serve the program's version of the type, `Own` fails
+with an error. If the program can't get CRDs, for example because it runs with
+the rules of an earlier release, it logs a warning and uses the type without
+creating its CRD.
 
-Programs create missing CRDs by default, because a program that gives a type a
-group defines the type's schema either way. The cost is two rules that
-`generate` writes: `create` on `customresourcedefinitions`, and `get` on the
+Only owning a type creates its CRD. A program that only reads the type gains
+nothing from creating it, because there are no objects to read until something
+writes them. A struct that reads a type is a
+[projection](#types-are-projections) that needn't declare every field, so a
+CRD created from it could prune fields that other programs write. A reading
+struct with the wrong scope or version would also create a CRD that the
+reconciling program can't take over. A program that owns the type can't write
+its objects without the CRD. The cost is two rules that `generate` writes for
+each owned type: `create` on `customresourcedefinitions`, and `get` on the
 CRD's name. RBAC can't limit `create` to a name, so this is the same `create`
-rule that reconciled types need. There's no `patch`. To opt out, declare the
-type with `apiVersion` and `kind`.
+rule that reconciled types need. There's no `patch`. To own a type without
+creating its CRD, declare it with `apiVersion` and `kind`.
 
 ### Shards and leader election
 
@@ -820,7 +827,8 @@ framework's tests check that:
 - When two programs that own a custom type without reconciling it start at
   once, one creates the type's missing CRD and both use it, and a program that
   reconciles the type then takes it over. A program that knows fewer of the
-  type's versions leaves an existing CRD as it is.
+  type's versions leaves an existing CRD as it is, and a program that only
+  reads the type doesn't create its CRD.
 - The JSON and protobuf encodings of every type in the `k8s` package decode
   to equal structs.
 - The program in the image that `generate` pushes runs with the token of the
@@ -975,9 +983,9 @@ offers:
 - The CRD checks compare field names, types, and required fields, not
   validation such as enums or bounds, and they need permission to list
   objects in every namespace.
-- A program that reads or owns a type without reconciling it creates the
-  type's CRD but never updates it, so a later release that changes the type
-  leaves the CRD as it was.
+- A program that owns a type without reconciling it creates the type's CRD
+  but never updates it, so a later release that changes the type leaves the
+  CRD as it was.
 - Storage migration doesn't wait for every API server in a highly available
   control plane to see a new storage version. Like Cluster API's migrator, it
   relies on the resource version precondition and on running after the cache

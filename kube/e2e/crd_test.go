@@ -689,3 +689,98 @@ func TestCRDForOwnedTypeLeavesExistingCRD(t *testing.T) {
 		t.Errorf("CRD versions = %+v, want v2, stored, and v1", got.Spec.Versions)
 	}
 }
+
+// Memo is a type that one program reconciles and another reads.
+type Memo struct {
+	kube.Object `kube:"group=e2e.kube.imjasonh.github.io"`
+	Spec        struct {
+		Title string `json:"title"`
+		Body  string `json:"body,omitempty"`
+	} `json:"spec"`
+	Status struct {
+		Read bool `json:"read,omitempty"`
+	} `json:"status,omitzero"`
+}
+
+// MemoTitle declares only the title of a Memo.
+type MemoTitle struct {
+	kube.Object `kube:"group=e2e.kube.imjasonh.github.io,kind=Memo"`
+	Spec        struct {
+		Title string `json:"title"`
+	} `json:"spec"`
+}
+
+type memos struct{}
+
+func (memos) Reconcile(_ context.Context, m *Memo) error {
+	m.Status.Read = true
+	return nil
+}
+
+// memoReader counts the Memos in each ConfigMap's namespace, and reads the
+// one with the ConfigMap's name, without owning or reconciling Memos.
+type memoReader struct{ runs, seen atomic.Int64 }
+
+func (r *memoReader) Reconcile(ctx context.Context, cm *ConfigMapMeta) error {
+	r.runs.Add(1)
+	if _, err := kube.Fetch[MemoTitle](ctx, cm.Namespace, cm.Name); err != nil {
+		return err
+	}
+	r.seen.Store(int64(len(kube.List[MemoTitle](ctx, kube.InNamespace(cm.Namespace)))))
+	return nil
+}
+
+func TestCRDNotCreatedByReader(t *testing.T) {
+	c := e2e.Client(t)
+	ctx := t.Context()
+	ns := e2e.Namespace(t, c)
+	crdPath := "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/memos." + group
+	if err := e2e.Gone(ctx, c, crdPath); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("A program that reads only the titles of Memos starts first. Its reconciles fail and retry, and it doesn't create the CRD.")
+	r := &memoReader{}
+	e2e.Run(t, &kube.Manager{Name: "memo-reader-e2e", Namespace: ns}, kube.For[ConfigMapMeta](r, kube.Named("memo-reader")))
+	cm := map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "cm"}}
+	if err := c.Create(ctx, client.Path("v1", "configmaps", ns, ""), cm, nil); err != nil {
+		t.Fatal(err)
+	}
+	e2e.Eventually(t, 30*time.Second, func() error {
+		if err := e2e.Gone(ctx, c, crdPath); err != nil {
+			t.Fatalf("after %d reconciles of the reader: %v", r.runs.Load(), err)
+		}
+		if n := r.runs.Load(); n < 3 {
+			return fmt.Errorf("the reader reconciled %d times", n)
+		}
+		return nil
+	})
+
+	t.Log("A program that reconciles Memos installs their CRD. A Memo keeps its body, the program reconciles it, and the reader lists it.")
+	e2e.Run(t, &kube.Manager{Name: "memos-e2e"}, kube.For[Memo](memos{}))
+	e2e.Eventually(t, 30*time.Second, func() error {
+		return c.Create(ctx, client.Path(group+"/v1", "memos", ns, ""), map[string]any{
+			"apiVersion": group + "/v1", "kind": "Memo", "metadata": map[string]any{"name": "cm"}, "spec": map[string]any{"title": "Lunch", "body": "Noon"},
+		}, nil)
+	})
+	e2e.Eventually(t, time.Minute, func() error {
+		var m Memo
+		if err := e2e.Get(ctx, c, client.Path(group+"/v1", "memos", ns, "cm"), &m); err != nil {
+			return err
+		}
+		if m.Spec.Body != "Noon" || !m.Status.Read {
+			return fmt.Errorf("the Memo has body %q and status.read %v", m.Spec.Body, m.Status.Read)
+		}
+		if n := r.seen.Load(); n != 1 {
+			return fmt.Errorf("the reader listed %d Memos, want 1", n)
+		}
+		return nil
+	})
+	var meta crdMeta
+	if err := e2e.Get(ctx, c, crdPath, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if meta.managedBy() != "memos-e2e" {
+		t.Errorf("the CRD is managed by %q, want memos-e2e", meta.managedBy())
+	}
+}

@@ -300,8 +300,8 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		return p.grantsFor(ti, watching)
 	}
 	var crds []string
-	// creates holds the CRDs of types that the program defines and reads or
-	// owns, which it creates if they're missing.
+	// creates holds the CRDs of types that the program defines and owns,
+	// which it creates if they're missing.
 	creates := map[string]bool{}
 	for _, c := range controllers {
 		d, err := c.describe()
@@ -357,7 +357,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		}
 		g, r := resourceName(ti)
 		grantsFor(ti).add(g, r, "", scopeVerbs[u.Func]...)
-		if ti.custom && slices.Contains([]string{"Get", "List", "Fetch", "Own"}, u.Func) {
+		if ti.custom && u.Func == "Own" {
 			creates[r+"."+g] = true
 		}
 	}

@@ -203,13 +203,20 @@ validation and display hints to the generated schema:
 
 A controller that reconciles the type installs its CustomResourceDefinition
 when the program starts, and later releases update it, as [Change a
-type](#change-a-type) describes. A program can also read or own a type that
-none of its controllers reconciles, such as the reports that
+type](#change-a-type) describes. A program can also own a type that none of
+its controllers reconciles, such as the reports that
 [`examples/imagereport`](examples/imagereport/main.go) writes for people to
-read. Such a program creates the CRD the first time that it uses the type,
-if the cluster doesn't have the CRD. It never changes a CRD that exists,
-because only a program that reconciles the type knows all of the type's
-versions.
+read. If the cluster doesn't have the CRD, such a program creates it the first
+time that it owns an object of the type, or at startup with `kube.Owns`. It
+never changes a CRD that exists, because only a program that reconciles the
+type knows all of the type's versions.
+
+A program that only reads a type never creates its CRD. While the CRD is
+missing, a reconcile that calls `Get` or `List` for the type fails, and the
+framework retries it. `Fetch` returns `nil`. So a reconcile that reads a type
+before it first owns an object of the type never reaches `Own` while the CRD
+is missing. Declare such a type with `kube.Owns`, so that the program creates
+the CRD when it starts.
 
 When a program that reconciles the type starts, it installs its own CRD over
 the created one. Until then, the CRD keeps the schema that it was created with,
@@ -220,10 +227,11 @@ program's version of the type, the program reports an error instead of using
 it. If two programs try to create the CRD at the same time, one of them creates
 it and both use it.
 
-The created CRD has the schema of the program's struct, so declare every field
-of the type. To read or own a type without creating its CRD, for example with
-a struct that declares only some of the type's fields, give its `apiVersion`
-and `kind` instead of a group, as for a [built-in type](#built-in-types).
+The created CRD has the schema of the owning program's struct, so declare every
+field of a type that you own. A struct that only reads the type can declare
+only the fields that it uses. To own a type without creating its CRD, give its
+`apiVersion` and `kind` instead of a group, as for a [built-in
+type](#built-in-types).
 
 ### More than one version
 
@@ -545,8 +553,8 @@ way, its service account needs these permissions:
   objects when a type changes, it also needs `list` on its own types in every
   namespace.
 - `get` and `create` on `customresourcedefinitions`, for the types that it
-  defines and reads or owns without reconciling them, so that it can create
-  their CRDs. Without `get`, it logs a warning and doesn't create them.
+  defines and owns without reconciling them, so that it can create their
+  CRDs. Without `get`, it logs a warning and doesn't create them.
 - `get`, `list`, `create`, `update`, and `delete` on `leases`, with
   `-leader-elect` or `-shards`.
 - `get`, `create`, and `update` on `secrets` in its namespace, and `get`,

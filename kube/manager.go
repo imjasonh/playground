@@ -423,8 +423,7 @@ func (m *Manager) ensureType(ctx context.Context, crd crdSpec) (resolved, error)
 }
 
 // ensureCRD creates the CustomResourceDefinition of a type that the program
-// defines but doesn't reconcile, if it's missing, the first time that the
-// program reads or owns the type.
+// defines and owns but doesn't reconcile, if it's missing.
 func (m *Manager) ensureCRD(ctx context.Context, ti *typeInfo) error {
 	if !ti.custom {
 		return nil
@@ -522,9 +521,6 @@ func (m *Manager) source(ctx context.Context, ti *typeInfo) (source, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := m.ensureCRD(ctx, ti); err != nil {
-		return nil, err
-	}
 	c := m.cacheFor(cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace}, res, "", nil)
 	return c, c.waitSynced(ctx)
 }
@@ -585,9 +581,6 @@ func (m *Manager) childSource(ctx context.Context, c *core, ti *typeInfo, wait b
 func (m *Manager) fetch(ctx context.Context, ti *typeInfo, k Key) (any, error) {
 	res, err := m.resolve(ctx, ti)
 	if err != nil {
-		return nil, err
-	}
-	if err := m.ensureCRD(ctx, ti); err != nil {
 		return nil, err
 	}
 	obj := reflect.New(ti.goType).Interface()
