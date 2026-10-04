@@ -3,6 +3,7 @@ package checks
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -73,13 +74,15 @@ type sendFixture struct {
 	view    *view
 	repo    *gitk8s.GitRepository
 	verdict Verdict
+	err     error
 	runs    int
 	r       kube.Reconciler[view]
 	s       *sender
 }
 
 // newSendFixture returns a fixture whose check, lint, returns the
-// fixture's verdict for c/x at generation 4, and sends results to e.
+// fixture's verdict and error for c/x at generation 4, and sends results to
+// e.
 func newSendFixture(t *testing.T, e *endpoint) *sendFixture {
 	srv := httptest.NewServer(e)
 	t.Cleanup(srv.Close)
@@ -94,7 +97,7 @@ func newSendFixture(t *testing.T, e *endpoint) *sendFixture {
 	f.repo.Namespace = "default"
 	check := Check{Name: "lint", Run: func(context.Context, *Input) (Verdict, error) {
 		f.runs++
-		return f.verdict, nil
+		return f.verdict, f.err
 	}}
 	cfg := &Config{ResultsURL: srv.URL + "/results/"}
 	f.r = NewReconciler[view](check, cfg)
@@ -158,6 +161,22 @@ func TestSendsNothingWhenNotListed(t *testing.T) {
 	}
 	if got := e.requests(); len(got) != 0 || f.runs != 0 {
 		t.Errorf("%d runs sent %+v; the core program removes the result of a check that the policy doesn't list", f.runs, got)
+	}
+}
+
+// A check that can't run sends an Error result, and its reconcile still
+// fails, so that kube runs the check again.
+func TestSendsErrorAndFails(t *testing.T) {
+	e := &endpoint{}
+	f := newSendFixture(t, e)
+	f.err = errors.New("can't fetch c/x")
+	if err := f.runAndSend(f.context(t)); err == nil || !strings.Contains(err.Error(), "can't fetch c/x") || kube.IsPermanent(err) {
+		t.Errorf("err = %v, want the check's error, which kube retries", err)
+	}
+	got := e.requests()
+	want := gitk8s.CheckResult{Commit: "h1", State: gitk8s.Error, Message: "can't fetch c/x"}
+	if len(got) != 1 || !got[0].result.Equal(&want) {
+		t.Errorf("received %+v, want %+v", got, want)
 	}
 }
 
