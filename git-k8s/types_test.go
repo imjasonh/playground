@@ -1,6 +1,7 @@
 package gitk8s
 
 import (
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -33,6 +34,48 @@ func TestBranchObjectName(t *testing.T) {
 	}
 	if names[1] != BranchObjectName("app", "c/add") {
 		t.Error("BranchObjectName isn't deterministic")
+	}
+}
+
+// The API server matches a CustomResourceDefinition's patterns with Go's
+// regexp package, so this is what it accepts.
+func TestURLPattern(t *testing.T) {
+	field, _ := reflect.TypeFor[GitRepositorySpec]().FieldByName("URL")
+	pattern := regexp.MustCompile(field.Tag.Get("pattern"))
+	for _, u := range []string{
+		"https://git.example.com/app.git",
+		"http://172.18.0.1:18418/app.git",
+		"git://git.example.com/app.git",
+		"ssh://git@git.example.com:2222/app.git",
+		"https://git-k8s:token@git.example.com/app.git",
+		"file:///srv/git/app.git",
+		"git@github.com:imjasonh/playground.git",
+		"git@[172.18.0.1:2222]:app.git",
+	} {
+		if !pattern.MatchString(u) {
+			t.Errorf("the pattern rejects %q", u)
+		}
+	}
+	for _, u := range []string{
+		"--upload-pack=touch /tmp/pwned",
+		"-oProxyCommand=touch /tmp/pwned",
+		"-git@git.example.com:app.git",
+		"git@-oProxyCommand=touch:app.git",
+		"ssh://-oProxyCommand=touch/app.git",
+		"ssh://git@-oProxyCommand=touch/app.git",
+		"ssh://-git@git.example.com/app.git",
+		"ext::sh -c touch% /tmp/pwned",
+		"fd::3",
+		"s3://bucket/app.git",
+		"HTTPS://git.example.com/app.git",
+		"git.example.com:app.git",
+		"/srv/git/app.git",
+		"app.git",
+		"",
+	} {
+		if pattern.MatchString(u) {
+			t.Errorf("the pattern accepts %q", u)
+		}
 	}
 }
 

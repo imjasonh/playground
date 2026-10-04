@@ -46,7 +46,7 @@ type GitRepository struct {
 
 // GitRepositorySpec says where a repository is and which branches to track.
 type GitRepositorySpec struct {
-	URL       string     `json:"url" kube:"minLength=1,column=URL" doc:"Remote URL. Controllers pass it to git, so https, http, git, and file URLs work."`
+	URL       string     `json:"url" kube:"minLength=1,column=URL" pattern:"^((https?|git|ssh|file)://(([^-@/][^@/]*@)?[^-@/][^@/]*)?(/|$)|[^-@/:][^@/:]*@[^-@/:][^@/:]*:)" doc:"Remote URL: an https, http, git, ssh, or file URL, or an scp-like address such as git@example.com:app.git."`
 	SecretRef *SecretRef `json:"secretRef,omitempty" doc:"Secret in the same namespace with username and password keys for HTTP basic authentication, such as a kubernetes.io/basic-auth Secret. Without a username, controllers send git."`
 	// PollInterval is a Go duration.
 	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often to list the remote's branches, such as 30s or 5m."`
