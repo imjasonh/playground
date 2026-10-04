@@ -800,7 +800,8 @@ type Voucher struct {
 	} `json:"spec"`
 }
 
-// VoucherV2 is Voucher in a program that reconciles only v2 of it.
+// VoucherV2 is Voucher in a program that reconciles v2 of it. They have the
+// same fields, so the API server converts between them without a webhook.
 type VoucherV2 struct {
 	kube.Object `kube:"group=e2e.kube.imjasonh.github.io,kind=Voucher,version=v2"`
 	Spec        struct {
@@ -823,7 +824,7 @@ func (i *voucherIssuer) Reconcile(ctx context.Context, cm *ConfigMapMeta) error 
 	return nil
 }
 
-func TestCRDForOwnedTypeDoesntBlockStartup(t *testing.T) {
+func TestCRDForOwnedTypeOfAnotherVersion(t *testing.T) {
 	c := e2e.Client(t)
 	ctx := t.Context()
 	ns := e2e.Namespace(t, c)
@@ -869,4 +870,24 @@ func TestCRDForOwnedTypeDoesntBlockStartup(t *testing.T) {
 	if got := getCRD(t, c, crd); len(got.Spec.Versions) != 1 || got.Spec.Versions[0].Name != "v1" {
 		t.Errorf("CRD versions = %+v, want v1 alone", got.Spec.Versions)
 	}
+
+	t.Log("The program that reconciles only v2 can't take over the created CRD, and its error names the program that created it.")
+	err := failedRelease(t, &kube.Manager{Name: "vouchers-e2e"}, kube.For[VoucherV2](vouchersV2{}))
+	t.Log(err)
+	if !strings.Contains(err.Error(), "voucher-issuer-e2e installed the CustomResourceDefinition") {
+		t.Error("the error doesn't name the program that created the CRD")
+	}
+
+	t.Log("Once it declares v1 with kube.Version, it takes over the CRD, and the Voucher reads as v2.")
+	e2e.Run(t, &kube.Manager{Name: "vouchers-e2e"}, kube.For[VoucherV2](vouchersV2{}, kube.Version[Voucher]()))
+	e2e.Eventually(t, 30*time.Second, func() error {
+		if err := e2e.Get(ctx, c, crdPath, &meta); err != nil {
+			return err
+		}
+		if meta.managedBy() != "vouchers-e2e" {
+			return fmt.Errorf("the CRD is managed by %q", meta.managedBy())
+		}
+		var v VoucherV2
+		return e2e.Get(ctx, c, client.Path(group+"/v2", "vouchers", ns, "cm"), &v)
+	})
 }

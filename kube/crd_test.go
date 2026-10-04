@@ -283,6 +283,40 @@ func TestCreateCRD(t *testing.T) {
 	}
 }
 
+// TestPlanCRDOfAnotherProgram checks the errors about a version that the
+// program doesn't declare, in a CRD that the program installed or that
+// another program created.
+func TestPlanCRDOfAnotherProgram(t *testing.T) {
+	gizmos, err := typeInfoFor[gizmo]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := testManager()
+	m.Name = "gizmos"
+	const other = "owner installed the CustomResourceDefinition and may own the type without reconciling it"
+	for _, tc := range []struct {
+		name, by, version, want string
+	}{
+		{"an older version that the program installed", "gizmos", "v1", "keep its kube.Version"},
+		{"an older version that another program created", "owner", "v1", other + "; declare v1 with kube.Version"},
+		{"a newer version that the program installed", "gizmos", "v3", "which is newer than this program's versions"},
+		{"a newer version that another program created", "owner", "v3", other + "; declare v3 with kube.Version"},
+	} {
+		var live liveCRD
+		live.Metadata.Labels = map[string]string{newLabelKeys(m.Domain).managedBy: tc.by}
+		live.Spec.Versions = []map[string]any{{"name": tc.version, "served": true, "storage": true}}
+		live.Status.StoredVersions = []string{tc.version}
+		_, err := m.planCRD(t.Context(), crdSpec{ti: gizmos}, &live, map[string]any{})
+		if err == nil {
+			t.Errorf("%s: planCRD succeeded", tc.name)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.want) || tc.by == m.Name && strings.Contains(err.Error(), "installed the CustomResourceDefinition") {
+			t.Errorf("%s: planCRD = %v, want an error containing %q", tc.name, err, tc.want)
+		}
+	}
+}
+
 func TestEnsureCRD(t *testing.T) {
 	a := &crdAPI{}
 	m := newCRDManager(t, a)

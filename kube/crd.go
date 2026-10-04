@@ -101,6 +101,18 @@ func (m *Manager) ownsCRD(live *liveCRD) bool {
 	return live != nil && live.Metadata.Labels[newLabelKeys(m.Domain).managedBy] != ""
 }
 
+// installedElsewhere explains, for an error about a version of live that
+// this program doesn't declare, that another program installed live, if its
+// label names one. A program that owns the type without reconciling it
+// creates the CRD with only its own version.
+func (m *Manager) installedElsewhere(live *liveCRD, version string) string {
+	by := live.Metadata.Labels[newLabelKeys(m.Domain).managedBy]
+	if by == labelValue(m.Name) {
+		return ""
+	}
+	return fmt.Sprintf("%s installed the CustomResourceDefinition and may own the type without reconciling it; declare %s with kube.Version, or delete the CustomResourceDefinition while it has no objects", by, version)
+}
+
 // desiredCRD generates the CustomResourceDefinition for spec, in the form
 // encoding/json decodes so that it compares with what the API server
 // returns.
@@ -259,7 +271,11 @@ func (m *Manager) planCRD(ctx context.Context, spec crdSpec, live *liveCRD, desi
 		}
 		if compareVersions(v, newest) > 0 {
 			if hub := live.version(spec.ti.version); hub == nil || !served(hub) {
-				return false, fmt.Errorf("kube: CustomResourceDefinition %s has version %s, which is newer than this program's versions, and doesn't serve %s, which this program reconciles", name, v, spec.ti.version)
+				err := fmt.Errorf("kube: CustomResourceDefinition %s has version %s, which is newer than this program's versions, and doesn't serve %s, which this program reconciles", name, v, spec.ti.version)
+				if hint := m.installedElsewhere(live, v); hint != "" {
+					err = fmt.Errorf("%w; %s", err, hint)
+				}
+				return false, err
 			}
 			m.log.Warn("leaving CustomResourceDefinition as a newer version of this program installed it", "crd", name, "version", v)
 			return false, nil
@@ -352,6 +368,9 @@ func (m *Manager) checkDropped(ctx context.Context, spec crdSpec, live *liveCRD,
 	name := spec.name()
 	for _, v := range dropped {
 		if slices.Contains(live.Status.StoredVersions, v) {
+			if hint := m.installedElsewhere(live, v); hint != "" {
+				return fmt.Errorf("kube: can't remove version %s from CustomResourceDefinition %s yet: objects may still be stored as %s; %s", v, name, v, hint)
+			}
 			return fmt.Errorf("kube: can't remove version %s from CustomResourceDefinition %s yet: objects may still be stored as %s; keep its kube.Version until the framework rewrites them, which it records by removing %s from the CustomResourceDefinition's status.storedVersions", v, name, v, v)
 		}
 	}

@@ -209,9 +209,14 @@ its controllers reconciles, such as the reports that
 read. If the cluster doesn't have the CRD, such a program creates it the first
 time that it owns an object of the type, or at startup with `kube.Owns`. If
 that fails at startup, the program logs the error and starts anyway, and its
-next `Own` of the type tries again. It never changes a CRD that exists,
-because only a program that reconciles the type knows all of the type's
-versions.
+next `Own` of the type tries again.
+
+A program that owns a type without reconciling it never changes a CRD that
+exists, because only a program that reconciles the type knows all of the
+type's versions. If the CRD doesn't serve the owning program's version of the
+type, `Own` fails, and the framework retries the reconcile. If two programs
+try to create the CRD at the same time, one of them creates it, and both use
+it if it serves both of their versions.
 
 A program that only reads a type never creates its CRD. While the CRD is
 missing, a reconcile that calls `Get` or `List` for the type fails, and the
@@ -224,10 +229,22 @@ When a program that reconciles the type starts, it installs its own CRD over
 the created one. Until then, the CRD keeps the schema that it was created with,
 even when a later release of the program that created it changes the type. To
 update the CRD along with the type, reconcile the type, even with a
-`Reconcile` method that does nothing. If the CRD exists but doesn't serve the
-program's version of the type, the program reports an error instead of using
-it. If two programs try to create the CRD at the same time, one of them creates
-it and both use it.
+`Reconcile` method that does nothing. The reconciling program can't take over
+the created CRD if the two programs disagree about the type:
+
+- If they declare different scopes, the reconciling program fails to start,
+  because a CRD's scope can't change.
+- If the created version isn't one that the reconciling program declares, as
+  its own version or with `kube.Version`, the reconciling program fails to
+  start.
+- If they set the `Domain` field of `kube.Manager` differently, the
+  reconciling program doesn't recognize the created CRD as the framework's. It
+  uses the CRD as it is and never updates it.
+
+To recover, make the declarations agree, and then delete the created CRD while
+it has no objects, because deleting a CRD deletes its objects. If only the
+version differs, you can instead declare the created version in the
+reconciling program with `kube.Version`, which keeps the objects.
 
 The created CRD has the schema of the owning program's struct, so declare every
 field of a type that you own. A struct that only reads the type can declare

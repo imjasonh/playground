@@ -549,16 +549,37 @@ CRD. If it's missing, `createCRD` creates it with a plain `POST` and the label
 that marks a CRD as installed by the framework, then waits until it's
 `Established`. It never updates a CRD. A `POST` fails with `AlreadyExists`
 when the CRD exists, so if two programs create it at once, one succeeds, the
-other waits for the same CRD, and neither changes what the other created.
-Because of the label, a program that reconciles the type later treats the CRD
-as its own and updates it. If the CRD doesn't serve the program's version of
-the type, `Own` fails with an error. At startup, `kube.Owns` logs an error
-from `createCRD` instead of returning it, so that a CRD without the program's
-version, or a failed request, doesn't stop the program's other controllers
-and webhooks. `ensureCRD` keeps only a success, so the next `Own` tries again.
-If the program can't get CRDs, for example because it runs with the rules of
-an earlier release, it logs a warning and uses the type without creating its
-CRD.
+other waits for the same CRD, and neither changes what the other created. If
+the CRD, whether it existed or another program created it first, doesn't
+serve the program's version of the type, `Own` fails with an error. At
+startup, `kube.Owns` logs an error from `createCRD` instead of returning it,
+so that a CRD without the program's version, or a failed request, doesn't
+stop the program's other controllers and webhooks. `ensureCRD` keeps only a
+success, so the next `Own` tries again. If the program can't get CRDs, for
+example because it runs with the rules of an earlier release, it logs a
+warning and uses the type without creating its CRD.
+
+Because of the label, a program that reconciles the type later treats the
+created CRD as its own and installs its CRD over it. That fails when the two
+programs disagree about the type:
+
+- A CRD's `spec.scope` is immutable, so if the reconciling program declares
+  another scope, the API server rejects its CRD, and the program doesn't
+  start.
+- If the created version isn't one of the reconciling program's versions, the
+  program doesn't start. `planCRD` refuses a newer version, because the CRD
+  doesn't serve the program's own version. `checkDropped` refuses an older
+  one, because the API server lists a new CRD's storage version in
+  `status.storedVersions` before the CRD has objects.
+- `ownsCRD` looks for the label under the reconciling program's own
+  `Manager.Domain`, so a program with another `Domain` uses the CRD as
+  something else installed it, and never updates it.
+
+The remedy is to make the declarations agree and delete the created CRD while
+it has no objects, or, if only the version differs, to declare the created
+version in the reconciling program with `kube.Version`. When the label names
+another program, the errors from `planCRD` and `checkDropped` name it and
+suggest these remedies.
 
 Only owning a type creates its CRD. A program that only reads the type gains
 nothing from creating it, because there are no objects to read until something
@@ -832,7 +853,9 @@ framework's tests check that:
   reconciles the type then takes it over. A program that knows fewer of the
   type's versions leaves an existing CRD as it is, and a program that only
   reads the type doesn't create its CRD. A program that can't create the CRD
-  at startup starts anyway, and creates it at a later `Own`.
+  at startup starts anyway, and creates it at a later `Own`. A program that
+  reconciles the type doesn't start while it lacks the created CRD's version,
+  and takes the CRD over once it declares the version with `kube.Version`.
 - The JSON and protobuf encodings of every type in the `k8s` package decode
   to equal structs.
 - The program in the image that `generate` pushes runs with the token of the
@@ -990,6 +1013,9 @@ offers:
 - A program that owns a type without reconciling it creates the type's CRD
   but never updates it, so a later release that changes the type leaves the
   CRD as it was.
+- A program that reconciles a type takes over the CRD that another program
+  created only if both programs declare the same scope and `Manager.Domain`,
+  and the reconciling program declares the created version.
 - Storage migration doesn't wait for every API server in a highly available
   control plane to see a new storage version. Like Cluster API's migrator, it
   relies on the resource version precondition and on running after the cache
