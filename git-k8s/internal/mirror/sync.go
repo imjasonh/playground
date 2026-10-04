@@ -61,6 +61,7 @@ func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOption
 	e := m.entry(repo)
 	e.syncing.Lock()
 	defer e.syncing.Unlock()
+	m.removeStaleLocks(e.dir)
 	refetch, err := m.load(ctx, e, repo, !o.Final)
 	switch {
 	case o.Final && errors.Is(err, ErrNotSynced):

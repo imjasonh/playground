@@ -510,6 +510,18 @@ lose only the changes that the external repositories don't have yet, and
 the core program fetches each repository again. Deleting the installation,
 for example with `kubectl delete -f`, deletes the claim.
 
+A git that's killed while it holds a lock, for example when the Pod runs
+out of memory, leaves the lock file, and git can't update what the file
+locks until it's gone. A git command that runs past its 5-minute timeout,
+or whose request ends, gets `SIGTERM` and removes its own locks. Before
+each sync, the mirror removes the copy's lock files that are older than 6
+minutes and 10 seconds: the longest that a git command can take, plus a
+minute in case the volume's clock differs from the node's. A newer lock
+might belong to the other Pod. Until the mirror removes a lock, a sync or a
+landing that needs the locked ref fails and tries again later. When a sync
+fails, the `GitRepository`'s `Ready` condition (reason `MirrorFailed`) or
+`ExternalSynced` condition (reason `SyncFailed`) names the lock.
+
 The checks keep local copies of repositories in `/tmp/git-k8s`, on the
 `emptyDir` volume that `generate` mounts at `/tmp`.
 

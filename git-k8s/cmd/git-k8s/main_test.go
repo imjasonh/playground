@@ -398,6 +398,36 @@ func TestExternalFailureBacksOff(t *testing.T) {
 	}
 }
 
+// A lock that a killed git left in the mirror's copy stops the copy from
+// taking the external repository's changes, and a condition says why.
+func TestReportsStaleLock(t *testing.T) {
+	for _, tc := range []struct {
+		ref, condition, reason string
+		fails                  bool
+	}{
+		{ref: "refs/heads/c/x", condition: "Ready", reason: "MirrorFailed", fails: true},
+		{ref: "refs/git-k8s/downstream/heads/c/x", condition: "ExternalSynced", reason: "SyncFailed"},
+	} {
+		t.Run(tc.ref, func(t *testing.T) {
+			f := newFixture(t)
+			f.branches()
+			if err := os.WriteFile(filepath.Join(f.copyDir(), filepath.FromSlash(tc.ref)+".lock"), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			f.work.Write("person.txt", "person\n")
+			f.work.Commit("a person's change")
+			f.work.Push("c/x")
+			f.now = f.now.Add(time.Hour)
+			if _, err := f.tryReconcile(); (err != nil) != tc.fails {
+				t.Errorf("reconcile = %v, want an error: %t", err, tc.fails)
+			}
+			if c := f.condition(tc.condition); c == nil || c.Status != kube.False || c.Reason != tc.reason || !strings.Contains(c.Message, "x.lock") {
+				t.Errorf("%s = %+v, want %s and a message that names the lock", tc.condition, c, tc.reason)
+			}
+		})
+	}
+}
+
 func TestInvalidPolicyIsPermanent(t *testing.T) {
 	for _, mod := range []func(*gitk8s.GitRepository){
 		func(r *gitk8s.GitRepository) { r.Spec.PollInterval = "1ms" },

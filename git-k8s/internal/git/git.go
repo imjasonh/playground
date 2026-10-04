@@ -14,9 +14,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -60,6 +62,22 @@ type Git struct {
 	Timeout time.Duration
 }
 
+// stopDelay is how long a command has to exit after its context ends and
+// it gets SIGTERM, before it gets SIGKILL. git removes its lock files when
+// it gets SIGTERM, but not when it gets SIGKILL.
+const stopDelay = 10 * time.Second
+
+// MaxDuration returns the longest that a command that g runs can take. By
+// then, the command has exited or been killed.
+func (g *Git) MaxDuration() time.Duration { return g.timeout() + stopDelay }
+
+func (g *Git) timeout() time.Duration {
+	if g.Timeout == 0 {
+		return 5 * time.Minute
+	}
+	return g.Timeout
+}
+
 // Error is a git command that failed.
 type Error struct {
 	Command string
@@ -95,17 +113,15 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 	if bin == "" {
 		bin = "git"
 	}
-	timeout := g.Timeout
-	if timeout == 0 {
-		timeout = 5 * time.Minute
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := context.WithTimeout(ctx, g.timeout())
 	defer cancel()
 
 	if dir != "" {
 		args = append([]string{"-C", dir}, args...)
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = stopDelay
 	env := []string{
 		// Never prompt, and ignore system and user configuration so that
 		// results don't depend on the machine.
@@ -268,7 +284,9 @@ func (r *Repo) Refs(ctx context.Context, patterns ...string) (map[string]string,
 // UpdateRefs changes refs in the repository in one transaction. Each
 // update carries a lease: either every ref points at the commit that its
 // update expects and they all change, or nothing changes and the error
-// wraps ErrRejected.
+// wraps ErrRejected. Other errors, such as a lock file that a killed git
+// left, don't wrap ErrRejected, because they last until someone fixes
+// them.
 func (r *Repo) UpdateRefs(ctx context.Context, updates ...RefUpdate) error {
 	var in strings.Builder
 	for _, u := range updates {
@@ -296,11 +314,16 @@ func (r *Repo) UpdateRefs(ctx context.Context, updates ...RefUpdate) error {
 		return err
 	case res.code == 0:
 		return nil
-	case strings.Contains(res.stderr, "cannot lock ref"):
+	case leaseFailed.MatchString(res.stderr):
 		return fmt.Errorf("%w: %s", ErrRejected, res.stderr)
 	}
 	return &Error{Command: "update-ref", Code: res.code, Stderr: res.stderr}
 }
+
+// leaseFailed matches update-ref's message when a ref doesn't point at the
+// commit that its update expects, or exists when the update expects it not
+// to. A ref name can't hold a colon.
+var leaseFailed = regexp.MustCompile(`cannot lock ref '[^:]*': (is at [0-9a-f]+ but expected [0-9a-f]+|reference already exists|reference is missing but expected [0-9a-f]+|unable to resolve reference)`)
 
 func (r *Repo) run(ctx context.Context, args ...string) ([]byte, error) {
 	return r.git.run(ctx, r.Dir, args, opts{})

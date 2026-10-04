@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -604,6 +605,42 @@ func TestSyncWhenExternalRepositoryFails(t *testing.T) {
 		t.Fatalf("Open = %v", err)
 	}
 	r.Close()
+}
+
+// A git that's killed while it updates a ref leaves the ref's lock file,
+// which git never removes. Sync fails while a running git could hold the
+// lock, and removes the lock once it's older than a git command can take.
+func TestSyncRemovesStaleLocks(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.sync(SyncOptions{})
+	next := w.commit(base, "next")
+	w.pushExternal("main", next)
+	lock := filepath.Join(w.copyDir(), "refs", "heads", "main.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 2 {
+		if _, err := w.trySync(SyncOptions{Fetch: true}); err == nil || !strings.Contains(err.Error(), "main.lock") {
+			t.Errorf("with a new lock, Sync = %v; want an error about the lock", err)
+		}
+	}
+	if got := w.copyRefs("refs/heads/")["main"]; got != base {
+		t.Errorf("with a new lock, the copy has main at %.7s, want %.7s", got, base)
+	}
+
+	old := time.Now().Add(-w.m.Git.MaxDuration() - 2*time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if rep := w.sync(SyncOptions{Fetch: true}); rep.Heads["main"] != next {
+		t.Errorf("with a stale lock, Report.Heads = %v; want main at the external head %.7s", rep.Heads, next)
+	}
+	if _, err := os.Stat(lock); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the stale lock is still there: %v", err)
+	}
 }
 
 // TestSyncRefusesLocalURLs points GitRepositories in another namespace at

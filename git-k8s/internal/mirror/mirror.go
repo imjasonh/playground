@@ -15,10 +15,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -210,6 +213,46 @@ func (m *Mirror) create(ctx context.Context, e *entry, repo *gitk8s.Repository) 
 	}
 	e.repo, e.uid, e.url = r, repo.UID, repo.Spec.URL
 	return nil
+}
+
+// removeStaleLocks removes the lock files that a killed git left in the
+// copy at dir, which keep git from changing the refs, packed-refs, or
+// config that they lock. A lock is stale once it's older than the longest
+// that a git command can take. A newer one may belong to a git that's still
+// running, in this process or in the one that it replaces, which can run
+// beside it for a few seconds.
+func (m *Mirror) removeStaleLocks(dir string) {
+	// A network volume's clock can differ from the node's.
+	cutoff := time.Now().Add(-m.Git.MaxDuration() - time.Minute)
+	remove := func(path string, d fs.DirEntry) {
+		if d.IsDir() || !strings.HasSuffix(d.Name(), ".lock") {
+			return
+		}
+		info, err := d.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			return
+		}
+		if err := os.Remove(path); err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				slog.Warn("removing a stale lock failed", "path", path, "err", err)
+			}
+			return
+		}
+		slog.Warn("removed a stale lock", "path", path, "modified", info.ModTime())
+	}
+	top, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, d := range top {
+		remove(filepath.Join(dir, d.Name()), d)
+	}
+	_ = filepath.WalkDir(filepath.Join(dir, "refs"), func(path string, d fs.DirEntry, err error) error {
+		if err == nil {
+			remove(path, d)
+		}
+		return nil
+	})
 }
 
 // markSeeded records that e's copy has fetched the external repository, so

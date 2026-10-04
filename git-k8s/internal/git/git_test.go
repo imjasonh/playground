@@ -53,8 +53,8 @@ func TestRefTransactions(t *testing.T) {
 	if err := repo.UpdateRefs(ctx,
 		git.RefUpdate{Ref: "refs/heads/a", New: one},
 		git.RefUpdate{Ref: "refs/heads/a/b", New: two},
-	); err == nil {
-		t.Fatal("created refs/heads/a and refs/heads/a/b together")
+	); err == nil || errors.Is(err, git.ErrRejected) {
+		t.Fatalf("creating refs/heads/a and refs/heads/a/b together: err = %v, want an error that isn't ErrRejected", err)
 	}
 	if err := repo.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/a", New: one}, git.RefUpdate{Ref: "refs/x/b", New: two}); err != nil {
 		t.Fatal(err)
@@ -88,6 +88,20 @@ func TestRefTransactions(t *testing.T) {
 			t.Errorf("UpdateRefs(%+v) = %v, want ErrRejected", u, err)
 		}
 	}
+
+	t.Log("A lock that a killed git left isn't a lease that failed.")
+	lock := filepath.Join(repo.Dir, "refs", "heads", "a.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err = repo.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/a", New: two, Old: one})
+	if err == nil || errors.Is(err, git.ErrRejected) || !strings.Contains(err.Error(), "a.lock") {
+		t.Errorf("with a stale lock, err = %v; want one about the lock that doesn't wrap ErrRejected", err)
+	}
+	if err := os.Remove(lock); err != nil {
+		t.Fatal(err)
+	}
+
 	if err := repo.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/missing"}, git.RefUpdate{Ref: "refs/heads/a", New: two, Old: one}, git.RefUpdate{Ref: "refs/x/b", Old: two}); err != nil {
 		t.Fatal(err)
 	}
