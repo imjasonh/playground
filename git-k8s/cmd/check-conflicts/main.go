@@ -544,7 +544,8 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	case ok:
 		return report(gitk8s.Passed, "the external repository's head %s already contains %s's head", gitk8s.Short(d.Commit), branch)
 	}
-	switch cr := gitk8s.FindRule(repo.Spec.Branches, child); {
+	cr := gitk8s.FindRule(repo.Spec.Branches, child)
+	switch {
 	case !policy.MayPush:
 		return report(gitk8s.Failed, "%s diverged from the external repository at %s, and the policy doesn't let this check push %s to resolve it", branch, gitk8s.Short(d.Commit), child)
 	case cr == nil || cr.Parent != branch:
@@ -578,7 +579,7 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	if err != nil {
 		return fail(err)
 	}
-	if limit := rule.Merge.MaxCommits(); n >= limit {
+	if limit := cr.Merge.MaxCommits(); n >= limit {
 		return report(gitk8s.Failed, "%s diverged from the external repository at %s, which has %d automated commits, so %s would have more than the limit of %d", branch, gitk8s.Short(d.Commit), n, child, limit)
 	}
 	c, err := local.Commit(ctx, d.Commit)

@@ -2152,8 +2152,8 @@ func TestWaitsForAnUnlandedResolveBranch(t *testing.T) {
 
 func TestLeavesADivergedParent(t *testing.T) {
 	limited := []gitk8s.BranchRule{
-		{Match: "main", Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "conflicts", MayPush: true}}, MaxAutomatedCommits: new(int32(0))}},
-		{Match: "**", Parent: "main"},
+		{Match: "main", Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "conflicts", MayPush: true}}}},
+		{Match: "**", Parent: "main", Merge: &gitk8s.MergePolicy{MaxAutomatedCommits: new(int32(0))}},
 	}
 	for _, tc := range []struct {
 		name  string
@@ -2218,6 +2218,24 @@ func TestLeavesADivergedParent(t *testing.T) {
 				t.Error("pushed resolve/main")
 			}
 		})
+	}
+}
+
+func TestLimitsAResolveBranchByItsOwnRule(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, _, _, o := parent(t, srv, map[string]string{"a.txt": "main\n"}, map[string]string{"a.txt": "external\n"})
+	// The check's commit lands on resolve/main, which allows the default
+	// number of automated commits, so main's limit doesn't apply.
+	limited := []gitk8s.BranchRule{
+		{Match: "main", Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "conflicts", MayPush: true}}, MaxAutomatedCommits: new(int32(0))}},
+		{Match: "**", Parent: "main"},
+	}
+	if _, err := reconcile(t, srv, b, limited, o); err != nil {
+		t.Fatal(err)
+	}
+	pushed := srv.Heads(t, "app")["resolve/main"]
+	if res := b.Status.Checks.Result; res.State != gitk8s.Running || pushed == "" || !strings.HasPrefix(res.Message, "pushed "+gitk8s.Short(pushed)+" to resolve/main") {
+		t.Errorf("result = %+v and resolve/main at %q, want Running after a push", res, pushed)
 	}
 }
 

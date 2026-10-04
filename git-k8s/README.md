@@ -590,7 +590,8 @@ pushed to it would skip every check. When such a branch diverges, the check
 pushes the external repository's head to the branch `resolve/BRANCH`
 instead, with an empty commit on top that says why. The empty commit has the
 `Git-K8s-Fixer: conflicts` trailer, so the push follows the same rules as a
-check's fix. `resolve/BRANCH` then lands on `BRANCH` through `BRANCH`'s
+check's fix to `resolve/BRANCH`, including the `maxAutomatedCommits` of the
+rule that matches it. `resolve/BRANCH` then lands on `BRANCH` through `BRANCH`'s
 merge gate, like any other branch. `check-base` merges `BRANCH` into it, or
 the conflicts check resolves that merge when it conflicts. The check waits
 while `resolve/BRANCH` holds work that hasn't landed, and passes once
