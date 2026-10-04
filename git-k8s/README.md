@@ -327,7 +327,9 @@ diverge.
 The merges can't see a replay of a removed commit whose change other
 removed commits undid, such as a secret and its revert that a force push
 dropped, so the rule also looks for replays of the removed commits. It
-can't find one inside a larger commit, such as a squash.
+can't find one inside a larger commit, such as a squash. No merge checks
+these replays, so a commit that makes a removed commit's change on another
+line also counts as one, and the branch diverges.
 
 Comparing the heads can take a long time when both sides rewrote the same
 long stretch of history between two syncs. The mirror stops comparing a
