@@ -600,6 +600,16 @@ landing that needs the locked ref fails and tries again later. When a sync
 fails, the `GitRepository`'s `Ready` condition (reason `MirrorFailed`) or
 `ExternalSynced` condition (reason `SyncFailed`) names the lock.
 
+Git packs a copy's objects in its maintenance. A fetch or a push would
+start maintenance in the background, where git's timeout doesn't apply, so
+the mirror turns that off and runs maintenance itself at the end of each
+sync, when git says the copy needs it, and logs any failure. The sync
+waits for it. Maintenance that runs past the timeout gets `SIGTERM`, but
+the repack that it started keeps running until it finishes or the Pod
+stops. A killed maintenance leaves `objects/maintenance.lock`, which makes
+later maintenance skip the copy without an error, so the mirror removes
+that lock once it's stale, like the others.
+
 The checks keep local copies of repositories in `/tmp/git-k8s`, on the
 `emptyDir` volume that `generate` mounts at `/tmp`.
 

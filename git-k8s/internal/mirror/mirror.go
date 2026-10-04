@@ -214,6 +214,10 @@ func (m *Mirror) create(ctx context.Context, e *entry, repo *gitk8s.Repository) 
 		{"receive.hideRefs", "refs/git-k8s"},
 		{"receive.fsckObjects", "true"},
 		{"receive.maxInputSize", strconv.Itoa(maxPushSize)},
+		// Fetches and pushes would start maintenance in the background,
+		// where git's timeout doesn't apply. Sync runs it instead.
+		{"maintenance.auto", "false"},
+		{"receive.autogc", "false"},
 		{"gitk8s.url", repo.Spec.URL},
 		{"gitk8s.uid", repo.UID},
 	} {
@@ -227,10 +231,11 @@ func (m *Mirror) create(ctx context.Context, e *entry, repo *gitk8s.Repository) 
 
 // removeStaleLocks removes the lock files that a killed git left in the
 // copy at dir, which keep git from changing the refs, packed-refs, or
-// config that they lock. A lock is stale once it's older than the longest
-// that a git command can take. A newer one may belong to a git that's still
-// running, in this process or in the one that it replaces, which can run
-// beside it for a few seconds.
+// config that they lock, and make maintenance skip the copy without an
+// error. A lock is stale once it's older than the longest that a git
+// command can take. A newer one may belong to a git that's still running,
+// in this process or in the one that it replaces, which can run beside it
+// for a few seconds.
 func (m *Mirror) removeStaleLocks(dir string) {
 	// A network volume's clock can differ from the node's.
 	cutoff := time.Now().Add(-m.Git.MaxDuration() - time.Minute)
@@ -257,12 +262,25 @@ func (m *Mirror) removeStaleLocks(dir string) {
 	for _, d := range top {
 		remove(filepath.Join(dir, d.Name()), d)
 	}
-	_ = filepath.WalkDir(filepath.Join(dir, "refs"), func(path string, d fs.DirEntry, err error) error {
-		if err == nil {
-			remove(path, d)
-		}
-		return nil
-	})
+	for _, sub := range []string{"refs", "objects"} {
+		_ = filepath.WalkDir(filepath.Join(dir, sub), func(path string, d fs.DirEntry, err error) error {
+			switch {
+			case err != nil:
+			case d.IsDir() && sub == "objects" && isLooseObjectDir(d.Name()):
+				// Thousands of loose objects, and never a lock.
+				return filepath.SkipDir
+			default:
+				remove(path, d)
+			}
+			return nil
+		})
+	}
+}
+
+// isLooseObjectDir reports whether name is one of the directories under
+// objects/ that hold loose objects, 00 to ff.
+func isLooseObjectDir(name string) bool {
+	return len(name) == 2 && strings.Trim(name, "0123456789abcdef") == ""
 }
 
 // markSeeded records that e's copy has fetched the external repository, so

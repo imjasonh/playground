@@ -910,6 +910,66 @@ func TestSyncRemovesStaleLocks(t *testing.T) {
 	}
 }
 
+// Fetches and pushes don't start git's maintenance, which would run in the
+// background. Sync runs it in the foreground, even after a killed
+// maintenance left its lock, which makes maintenance skip the copy without
+// an error.
+func TestSyncMaintainsCopy(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.sync(SyncOptions{})
+	config := func(args ...string) string {
+		t.Helper()
+		return w.work.Git(append([]string{"--git-dir=" + w.copyDir(), "config"}, args...)...)
+	}
+	for key, want := range map[string]string{"maintenance.auto": "false", "receive.autogc": "false"} {
+		if got := config(key); got != want {
+			t.Errorf("the copy has %s = %q, want %q", key, got, want)
+		}
+	}
+
+	// With gc.auto at 1, maintenance packs the copy once objects/17/ holds
+	// two loose objects, and the fetch leaves every object loose.
+	config("gc.auto", "1")
+	config("fetch.unpackLimit", "1000000")
+	w.work.Git("checkout", "--quiet", "--detach", base)
+	for i := range 2000 {
+		w.work.Write(fmt.Sprintf("many/%d.txt", i), fmt.Sprintf("file %d\n", i))
+	}
+	many := w.work.Commit("many")
+	w.pushExternal("main", many)
+	lock := filepath.Join(w.copyDir(), "objects", "maintenance.lock")
+	if err := os.WriteFile(lock, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-w.m.Git.MaxDuration() - 2*time.Minute)
+	if err := os.Chtimes(lock, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if rep := w.sync(SyncOptions{Fetch: true}); rep.Heads["main"] != many {
+		t.Fatalf("Report.Heads = %v; want main at %.7s", rep.Heads, many)
+	}
+	under17 := 0
+	for line := range strings.SplitSeq(w.work.Git("--git-dir="+w.copyDir(), "rev-list", "--objects", "--all"), "\n") {
+		if strings.HasPrefix(line, "17") {
+			under17++
+		}
+	}
+	if under17 < 2 {
+		t.Fatalf("only %d of the fetched objects go under objects/17/, too few to need maintenance", under17)
+	}
+	if got := w.work.Git("--git-dir="+w.copyDir(), "count-objects"); !strings.HasPrefix(got, "0 objects,") {
+		t.Errorf("after Sync, git count-objects = %q, want no loose objects", got)
+	}
+	for _, path := range []string{lock, filepath.Join(w.copyDir(), "gc.pid")} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("after Sync, %s is there: %v", filepath.Base(path), err)
+		}
+	}
+}
+
 // TestSyncRefusesLocalURLs points GitRepositories in another namespace at
 // default/app's copy on the mirror's disk. Fetching from the copy would let
 // that namespace read default/app, and pushing to it would skip the push
