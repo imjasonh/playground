@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/kube"
 )
@@ -197,6 +198,29 @@ func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	f.r.Image = "registry.example.com/agent-runner:new"
 	if s, rec := f.runJob(job, st, p); s.Done || !s.Moved || len(kube.Owned[Pod](rec)) != 0 || s.Message != "waiting for a run on the new commits: c/x no longer points to "+job.Checkout.Head {
 		t.Errorf("RunJob = %+v, want the moved run to wait without a Pod", s)
+	}
+}
+
+func TestGivesBackARunOnceForAStateWithoutRefunded(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	for range 3 {
+		f.r.day.take(time.Now(), f.r.MaxRunsPerDay)
+	}
+	job := f.reviewJob()
+	job.MaxRuns = 1
+	st := &JobState{}
+	p := f.startJob(job, st)
+	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: "c/x no longer points to " + job.Checkout.Head})},
+	}}
+	for range 5 {
+		kept := &JobState{Runs: st.Runs, Pod: st.Pod, Attempt: st.Attempt, UID: st.UID}
+		f.runJob(job, kept, p)
+		st = kept
+	}
+	if st.Runs != 0 || len(f.r.day.starts) != 3 {
+		t.Errorf("runs = %d and runs started in the last day = %d, want the run given back once: 0 and 3", st.Runs, len(f.r.day.starts))
 	}
 }
 

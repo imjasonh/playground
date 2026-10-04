@@ -389,6 +389,9 @@ func blocked(st *PodStatus) (msg, reason string) {
 type window struct {
 	mu     sync.Mutex
 	starts []time.Time
+	// given holds when the run of each Pod UID was given back, so it's
+	// given back once even for a JobState that doesn't keep Refunded.
+	given map[string]time.Time
 }
 
 // take records a run that starts at now, unless limit runs started in the
@@ -406,13 +409,28 @@ func (w *window) take(now time.Time, limit int) (time.Duration, bool) {
 	return 0, true
 }
 
-// giveBack forgets the latest run that started.
-func (w *window) giveBack() {
+// giveBack forgets the latest run that started, for the run of the Pod
+// with UID uid, and reports whether it did. It gives back a Pod's run once
+// in 24 hours.
+func (w *window) giveBack(now time.Time, uid string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	for k, at := range w.given {
+		if !at.After(now.Add(-24 * time.Hour)) {
+			delete(w.given, k)
+		}
+	}
+	if _, ok := w.given[uid]; ok {
+		return false
+	}
+	if w.given == nil {
+		w.given = map[string]time.Time{}
+	}
+	w.given[uid] = now
 	if n := len(w.starts); n > 0 {
 		w.starts = w.starts[:n-1]
 	}
+	return true
 }
 
 // full reports whether limit runs started in the 24 hours before now,

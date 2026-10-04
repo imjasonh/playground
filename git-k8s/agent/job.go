@@ -312,8 +312,9 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		case t.ExitCode == movedStatus:
 			if st.Refunded != pod.UID {
 				st.Refunded = pod.UID
-				st.Runs--
-				x.r.day.giveBack()
+				if x.r.day.giveBack(time.Now(), pod.UID) {
+					st.Runs--
+				}
 			}
 			s := x.status("waiting for a run on the new commits: %s", msg)
 			s.Moved = true

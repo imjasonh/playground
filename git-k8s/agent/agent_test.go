@@ -901,4 +901,15 @@ func TestWindow(t *testing.T) {
 	if _, ok := w.take(t0, 0); !ok || len(w.starts) != n {
 		t.Error("a limit of 0 means no limit, so take records nothing")
 	}
+
+	t.Log("giveBack forgets a run once for each Pod, and forgets the Pod after a day.")
+	if !w.giveBack(t0.Add(25*time.Hour), "uid-1") || len(w.starts) != n-1 {
+		t.Fatalf("giveBack didn't forget a run: %d runs, want %d", len(w.starts), n-1)
+	}
+	if w.giveBack(t0.Add(26*time.Hour), "uid-1") || len(w.starts) != n-1 {
+		t.Errorf("giveBack forgot another run for the same Pod: %d runs, want %d", len(w.starts), n-1)
+	}
+	if !w.giveBack(t0.Add(49*time.Hour), "uid-2") || len(w.given) != 1 {
+		t.Errorf("giveBack holds %d Pods, want only the one from the last day", len(w.given))
+	}
 }
