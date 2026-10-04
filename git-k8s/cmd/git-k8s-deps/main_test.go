@@ -628,6 +628,16 @@ func TestLeavesPeoplesBranchesAlone(t *testing.T) {
 			f.work.Push(greetBranch)
 			return head
 		},
+	}, {
+		name: "a commit as the controller without its trailer",
+		change: func(f *fixture, update string) string {
+			f.work.Branch("work", update)
+			f.work.Write("app.go", "package app\n\n// Greet takes a name.\n")
+			f.work.Git("add", "-A")
+			head := f.commitAs(f.u.cfg.Identity, "Make Greet take a name\n", update)
+			f.work.Push(greetBranch)
+			return head
+		},
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)

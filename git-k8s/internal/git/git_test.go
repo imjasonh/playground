@@ -151,7 +151,7 @@ func TestListCommits(t *testing.T) {
 	w := srv.NewWork(t, "app")
 	base := w.Commit("base")
 	update := w.Commit("Update a module\n\nGit-K8s-Deps: go example.com/a v1.0.1")
-	fix := w.Commit("Fix the tests\n\n" + git.FixerTrailer + ": deps\n" + git.AgentTrailer + ":\n  deps")
+	fix := w.Commit("Fix the tests\n\n" + git.FixerTrailer + ": deps\n" + git.AgentTrailer + ": deps\n  agent")
 	head := w.Commit("Edit by hand\n\n" + git.FixerTrailer + ": deps\n\nThis paragraph isn't a trailer.")
 	w.Push("main")
 
@@ -166,7 +166,7 @@ func TestListCommits(t *testing.T) {
 	author := git.Identity{Name: "Test Author", Email: "author@example.com"}
 	want := []git.ListedCommit{
 		{SHA: head, Committer: author},
-		{SHA: fix, Committer: author, Trailers: []string{git.FixerTrailer + ": deps", git.AgentTrailer + ": deps"}},
+		{SHA: fix, Committer: author, Trailers: []string{git.FixerTrailer + ": deps", git.AgentTrailer + ": deps agent"}},
 		{SHA: update, Committer: author, Trailers: []string{"Git-K8s-Deps: go example.com/a v1.0.1"}},
 	}
 	for limit, want := range map[int][]git.ListedCommit{4: want, 3: want, 2: want[:2]} {
