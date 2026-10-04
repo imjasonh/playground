@@ -232,7 +232,7 @@ func (p *proxy) retractions(ctx context.Context, path, version string) ([]modfil
 // one, isn't in excluded, isn't retracted, and is at least minAge old, both
 // by its time and since it showed up in the module's list, unless it's
 // vetted, a version that was old enough before. wait is how long until a
-// newer version is old enough.
+// newer version might be old enough.
 func (p *proxy) target(ctx context.Context, path string, from []string, excluded map[string]bool, minAge time.Duration, vetted string) (version string, wait time.Duration, err error) {
 	if len(from) == 0 {
 		return "", 0, nil
@@ -268,17 +268,11 @@ func (p *proxy) target(ctx context.Context, path string, from []string, excluded
 			continue
 		}
 		if minAge > 0 && v != vetted {
-			t, err := p.time(ctx, path, v)
+			at, err := p.oldEnoughAt(ctx, path, v, seen[v], now, minAge)
 			if err != nil {
 				return "", 0, err
 			}
-			// A proxy reports the time of the version's commit, which
-			// whoever made the commit picks, so the version also waits
-			// from when it showed up.
-			if seen[v].After(t) {
-				t = seen[v]
-			}
-			if d := t.Add(minAge).Sub(now); d > 0 {
+			if d := at.Sub(now); d > 0 {
 				if wait == 0 || d < wait {
 					wait = d
 				}
@@ -288,6 +282,26 @@ func (p *proxy) target(ctx context.Context, path string, from []string, excluded
 		return v, wait, nil
 	}
 	return "", wait, nil
+}
+
+// oldEnoughAt returns when a version is minAge old, both by its time and
+// since seen, when it first showed up. It reads the version's time only
+// once seen is at least minAge before now.
+func (p *proxy) oldEnoughAt(ctx context.Context, path, version string, seen, now time.Time, minAge time.Duration) (time.Time, error) {
+	at := seen.Add(minAge)
+	if at.After(now) {
+		return at, nil
+	}
+	t, err := p.time(ctx, path, version)
+	if err != nil {
+		return time.Time{}, err
+	}
+	// A proxy reports the time of the version's commit, which whoever made
+	// the commit picks, so the version also waits from when it showed up.
+	if t = t.Add(minAge); t.After(at) {
+		at = t
+	}
+	return at, nil
 }
 
 // latest returns the version whose go.mod file holds a module's

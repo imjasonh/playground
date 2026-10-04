@@ -350,6 +350,9 @@ func TestTargetWaitsFromWhenAVersionShowsUp(t *testing.T) {
 	t.Log("v1.1.0 comes out with a backdated commit, so the proxy reports a time long ago.")
 	fp.publish(mod, "v1.1.0", longAgo, "")
 	target(p, "", minAge)
+	if n := fp.hitsOf(mod, "v1.1.0.info"); n != 0 {
+		t.Errorf("v1.1.0.info was read %d times, want none while v1.1.0 waits from when it showed up", n)
+	}
 	clock = clock.Add(minAge - time.Second)
 	target(p, "", time.Second)
 	clock = clock.Add(time.Second)
@@ -362,22 +365,27 @@ func TestTargetWaitsFromWhenAVersionShowsUp(t *testing.T) {
 	clock = clock.Add(minAge)
 	target(p, "v1.2.0", 0)
 
-	t.Log("A version whose time is later than when it showed up waits from its time.")
+	t.Log("A version whose time is later than when it showed up also waits from its time, once it has waited from when it showed up.")
 	fp.publish(mod, "v1.3.0", clock.Add(24*time.Hour), "")
 	clock = clock.Add(time.Hour)
-	target(p, "v1.2.0", minAge+23*time.Hour)
+	target(p, "v1.2.0", minAge)
+	if n := fp.hitsOf(mod, "v1.3.0.info"); n != 0 {
+		t.Errorf("v1.3.0.info was read %d times, want none while v1.3.0 waits from when it showed up", n)
+	}
+	clock = clock.Add(minAge)
+	target(p, "v1.2.0", 23*time.Hour)
 
 	t.Log("After a restart, every version waits again.")
 	restarted := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return clock })
 	target(restarted, "", minAge)
-	if n := fp.hitsOf(mod, "v1.1.0.info"); n != 2 {
-		t.Errorf("v1.1.0.info was read %d times, want once by each proxy", n)
+	if n := fp.hitsOf(mod, "v1.1.0.info"); n != 1 {
+		t.Errorf("v1.1.0.info was read %d times, want once, before the restart", n)
 	}
 
 	t.Log("Unless the restart loads the times that encode returned before it.")
 	restored := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return clock })
 	restored.load(p.encode())
-	target(restored, "v1.2.0", minAge+23*time.Hour)
+	target(restored, "v1.2.0", 23*time.Hour)
 }
 
 func TestFirstSeenKeepsOnlyCandidates(t *testing.T) {
