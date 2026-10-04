@@ -13,8 +13,9 @@
 // that compiles a branch, and the token that writes to a container that
 // uploads what the compiler built, before any of the branch's code runs.
 // go-cache accepts a token that writes only if the token is bound to a Pod
-// that check-gotest owns and that hasn't finished. Set -controller if
-// check-gotest runs under another name.
+// that check-gotest owns and that is Pending. The container that uploads
+// is an init container, which runs while its Pod is Pending. Set
+// -controller if check-gotest runs under another name.
 //
 // go-cache keeps modules and outputs in -dir, and keeps them, with the
 // writes in progress, under -max-size. A write reserves room for its bytes

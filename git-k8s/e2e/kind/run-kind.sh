@@ -632,9 +632,10 @@ echo "With the module proxy stopped, c/greet-docs's Pod got the module from go-c
 k -n "${NS}" delete networkpolicy test-pods
 echo "::endgroup::"
 
-echo "::group::Only check-gotest's Pods write to the build caches"
-# A Pod that check-gotest doesn't own gets a token that can write tested's
-# build cache. A scheduling gate keeps the Pod Pending, so it never runs.
+echo "::group::Only check-gotest's Pending Pods write to the build caches"
+# Two Pods get tokens that can write tested's build cache. check-gotest
+# doesn't own cache-writer, and a scheduling gate keeps it Pending, so it
+# never runs. cache-runner has check-gotest's label, and runs.
 k apply -f - <<EOF
 apiVersion: v1
 kind: Pod
@@ -657,37 +658,76 @@ spec:
         allowPrivilegeEscalation: false
         capabilities:
           drop: [ALL]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cache-runner
+  namespace: ${NS}
+  labels:
+    kube.imjasonh.github.io/controller: check-gotest
+spec:
+  automountServiceAccountToken: false
+  terminationGracePeriodSeconds: 1
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: runner
+      image: ${GO_IMAGE}
+      command: [sleep, "600"]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
 EOF
-writer_token="$(k -n "${NS}" create token default --duration=10m \
-  --audience="git-k8s.imjasonh.com/go-cache/write/${NS}/tested" \
-  --bound-object-kind=Pod --bound-object-name=cache-writer)"
+# write_token prints a token that can write tested's build cache, bound to
+# the Pod named $1.
+write_token() {
+  k -n "${NS}" create token default --duration=10m \
+    --audience="git-k8s.imjasonh.com/go-cache/write/${NS}/tested" \
+    --bound-object-kind=Pod --bound-object-name="$1"
+}
+writer_token="$(write_token cache-writer)"
 cache_ip="$(k -n go-cache get service go-cache -o jsonpath='{.spec.clusterIP}')"
 probe_output="$(printf probe | sha256sum | cut -d ' ' -f 1)"
-# put_probe uploads an output with the Pod's token while the Pod is $1, from
-# a node, which reaches go-cache's Service like a test Pod. It writes the
+# put_probe uploads an output with token $2 while its Pod is $1, from a
+# node, which reaches go-cache's Service like a test Pod. It writes the
 # response to /tmp/probe.txt on the node, logs the status and the body, and
 # prints the status.
 put_probe() {
   local action code
   action="$(printf '%s' "$1" | sha256sum | cut -d ' ' -f 1)"
   code="$(docker exec "${CLUSTER}-control-plane" curl -sS -o /tmp/probe.txt -w '%{http_code}' -X PUT \
-    -H "Authorization: Bearer ${writer_token}" -H "Go-Output-Id: ${probe_output}" \
+    -H "Authorization: Bearer $2" -H "Go-Output-Id: ${probe_output}" \
     --data-binary probe "http://${cache_ip}/cache/${NS}/tested/${action}")"
   echo "A write while the Pod is $1: ${code} $(docker exec "${CLUSTER}-control-plane" cat /tmp/probe.txt)" >&2
   echo "${code}"
 }
-code="$(put_probe unlabeled)"
+pod_phase() { k -n "${NS}" get pod "$1" -o jsonpath='{.status.phase}'; }
+code="$(put_probe unlabeled "${writer_token}")"
 [[ "${code}" == 403 ]]
 docker exec "${CLUSTER}-control-plane" grep -q "Pod ${NS}/cache-writer isn't check-gotest's" /tmp/probe.txt
 # Anyone who can create Pods in the namespace can set check-gotest's label.
 # go-cache remembers for 10 seconds that the Pod failed the check.
 k -n "${NS}" label pod cache-writer kube.imjasonh.github.io/controller=check-gotest
-labeled() { [[ "$(put_probe labeled)" == 201 ]]; }
+[[ "$(pod_phase cache-writer)" == Pending ]]
+labeled() { [[ "$(put_probe labeled "${writer_token}")" == 201 ]]; }
 eventually 30 labeled
 k -n "${NS}" delete pod cache-writer
-code="$(put_probe deleted)"
+code="$(put_probe deleted "${writer_token}")"
 [[ "${code}" == 403 ]]
-echo "go-cache turned away a token from a Pod without check-gotest's label, took it once the Pod had the label, and turned it away once the Pod was gone."
+# check-gotest's Pods upload from an init container, while they're Pending.
+runner_running() { [[ "$(pod_phase cache-runner)" == Running ]]; }
+eventually 120 runner_running
+runner_token="$(write_token cache-runner)"
+code="$(put_probe running "${runner_token}")"
+[[ "${code}" == 403 ]]
+docker exec "${CLUSTER}-control-plane" grep -q "Pod ${NS}/cache-runner is Running, not Pending" /tmp/probe.txt
+k -n "${NS}" delete pod cache-runner
+echo "go-cache turned away a token from a Pod without check-gotest's label, took it once the Pending Pod had the label, and turned it away once the Pod was gone. It turned away a token from a Running Pod with the label."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"

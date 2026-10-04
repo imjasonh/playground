@@ -65,8 +65,10 @@ const (
 // maxReviews TokenReviews at once.
 //
 // A token that writes must also be bound to a Pod that writer owns, and
-// that hasn't finished. tokenReviewer gets the Pod for each write, at most
-// maxPodGets at once, so writes stop once the Pod finishes.
+// that is Pending, as it is while its init containers run. writer's Pods
+// write only from init containers. tokenReviewer gets the Pod for each
+// write, at most maxPodGets at once, so a token stops writing once its Pod
+// leaves Pending.
 type tokenReviewer struct {
 	server    string
 	tokenFile string
@@ -82,9 +84,9 @@ type tokenReviewer struct {
 	asking chan struct{}
 	// pods holds the Pod checks in progress, by Pod.
 	pods singleflight.Group
-	// podsDenied remembers the Pods that failed a check. Only a Pod without
-	// writer's label could pass a later check, and kube labels writer's
-	// Pods when it creates them.
+	// podsDenied remembers the Pods that failed a check. None of writer's
+	// Pods fails a check while it still writes, because kube labels each
+	// when it creates it, and each writes only while it's Pending.
 	podsDenied *reviewCache
 	// getting holds a value for each Pod get in progress, up to its
 	// capacity. Pod gets don't share slots with TokenReviews, so tokens that
@@ -294,9 +296,10 @@ func (t *tokenReviewer) take(ctx context.Context, slots chan struct{}, kind stri
 }
 
 // checkWriter checks that the token that id came from is bound to a Pod
-// that t.writer owns, and that hasn't finished. Checks of one Pod that
-// overlap share one get of the Pod, which goes on if the request that
-// started it ends.
+// that t.writer owns, and that is Pending. Checks of one Pod that overlap
+// share one get of the Pod, which goes on if the request that started it
+// ends. A Pod that failed a check fails the next ones for a while, without
+// a get.
 func (t *tokenReviewer) checkWriter(ctx context.Context, id identity) error {
 	if id.pod == "" || id.podUID == "" {
 		return fmt.Errorf("%w: the token isn't bound to a Pod", errDenied)
@@ -363,8 +366,8 @@ func (t *tokenReviewer) checkPod(ctx context.Context, id identity) error {
 		return fmt.Errorf("%w: Pod %s isn't %s's", errDenied, name, t.writer)
 	case p.Metadata.DeletionTimestamp != "":
 		return fmt.Errorf("%w: Pod %s is being deleted", errDenied, name)
-	case p.Status.Phase == "Succeeded" || p.Status.Phase == "Failed":
-		return fmt.Errorf("%w: Pod %s has finished", errDenied, name)
+	case p.Status.Phase != "Pending":
+		return fmt.Errorf("%w: Pod %s is %s, not Pending", errDenied, name, p.Status.Phase)
 	}
 	return nil
 }

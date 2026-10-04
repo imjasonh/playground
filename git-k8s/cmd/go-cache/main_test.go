@@ -892,12 +892,12 @@ func TestTokenReviewerLimits(t *testing.T) {
 	}
 }
 
-// ownedPod returns a running Pod with uid that check-gotest owns.
+// ownedPod returns a Pending Pod with uid that check-gotest owns.
 func ownedPod(uid string) *pod {
 	p := &pod{}
 	p.Metadata.UID = uid
 	p.Metadata.Labels = map[string]string{controllerLabel: "check-gotest"}
-	p.Status.Phase = "Running"
+	p.Status.Phase = "Pending"
 	return p
 }
 
@@ -911,11 +911,13 @@ func TestWritesNeedOwnedPod(t *testing.T) {
 		reviews, gets int
 		pods          = map[string]*pod{
 			"ns/builder":      ownedPod("uid-builder"),
-			"ns/pending":      with(ownedPod("uid-pending"), func(p *pod) { p.Status.Phase = "Pending" }),
+			"ns/pending":      ownedPod("uid-pending"),
 			"ns/replaced":     ownedPod("uid-new"),
 			"ns/unlabeled":    with(ownedPod("uid-unlabeled"), func(p *pod) { p.Metadata.Labels = nil }),
 			"ns/gofmt":        with(ownedPod("uid-gofmt"), func(p *pod) { p.Metadata.Labels[controllerLabel] = "check-gofmt" }),
 			"other/elsewhere": ownedPod("uid-elsewhere"),
+			"ns/running":      with(ownedPod("uid-running"), func(p *pod) { p.Status.Phase = "Running" }),
+			"ns/unknown":      with(ownedPod("uid-unknown"), func(p *pod) { p.Status.Phase = "Unknown" }),
 			"ns/succeeded":    with(ownedPod("uid-succeeded"), func(p *pod) { p.Status.Phase = "Succeeded" }),
 			"ns/failed":       with(ownedPod("uid-failed"), func(p *pod) { p.Status.Phase = "Failed" }),
 			"ns/deleting":     with(ownedPod("uid-deleting"), func(p *pod) { p.Metadata.DeletionTimestamp = "2026-10-04T00:00:00Z" }),
@@ -974,15 +976,16 @@ func TestWritesNeedOwnedPod(t *testing.T) {
 		msg     string
 	}{
 		{"builder/uid-builder", http.StatusCreated, ""},
-		{"pending/uid-pending", http.StatusCreated, ""},
 		{"", http.StatusForbidden, "the token isn't bound to a Pod"},
 		{"builder", http.StatusForbidden, "the token isn't bound to a Pod"},
 		{"replaced/uid-old", http.StatusForbidden, "the token is bound to another Pod named ns/replaced"},
 		{"unlabeled/uid-unlabeled", http.StatusForbidden, "Pod ns/unlabeled isn't check-gotest's"},
 		{"gofmt/uid-gofmt", http.StatusForbidden, "Pod ns/gofmt isn't check-gotest's"},
 		{"elsewhere/uid-elsewhere", http.StatusForbidden, "the token's Pod ns/elsewhere doesn't exist"},
-		{"succeeded/uid-succeeded", http.StatusForbidden, "Pod ns/succeeded has finished"},
-		{"failed/uid-failed", http.StatusForbidden, "Pod ns/failed has finished"},
+		{"running/uid-running", http.StatusForbidden, "Pod ns/running is Running, not Pending"},
+		{"unknown/uid-unknown", http.StatusForbidden, "Pod ns/unknown is Unknown, not Pending"},
+		{"succeeded/uid-succeeded", http.StatusForbidden, "Pod ns/succeeded is Succeeded, not Pending"},
+		{"failed/uid-failed", http.StatusForbidden, "Pod ns/failed is Failed, not Pending"},
 		{"deleting/uid-deleting", http.StatusForbidden, "Pod ns/deleting is being deleted"},
 		{"gone/uid-gone", http.StatusForbidden, "the token's Pod ns/gone doesn't exist"},
 		{"broken/uid-broken", http.StatusServiceUnavailable, "couldn't check the token"},
@@ -991,17 +994,17 @@ func TestWritesNeedOwnedPod(t *testing.T) {
 			t.Errorf("PUT with a token bound to %q: %d %q, want %d %q", tc.subject, code, msg, tc.want, tc.msg)
 		}
 	}
-	if _, n := counts(); n != 11 {
-		t.Errorf("%d Pod gets for 11 writes with tokens that name a Pod, want 11", n)
+	if _, n := counts(); n != 12 {
+		t.Errorf("%d Pod gets for 12 writes with tokens that name a Pod, want 12", n)
 	}
 
-	t.Log("Writes stop once the Pod finishes, though go-cache remembers the token's review.")
+	t.Log("Writes stop once the Pod is Running, though go-cache remembers the token's review.")
 	mu.Lock()
-	pods["ns/builder"] = with(ownedPod("uid-builder"), func(p *pod) { p.Status.Phase = "Succeeded" })
+	pods["ns/builder"] = with(ownedPod("uid-builder"), func(p *pod) { p.Status.Phase = "Running" })
 	mu.Unlock()
 	reviewsBefore, getsBefore := counts()
-	if code, msg := put("builder/uid-builder"); code != http.StatusForbidden || !strings.Contains(msg, "Pod ns/builder has finished") {
-		t.Errorf("PUT after the Pod finished: %d %q, want 403", code, msg)
+	if code, msg := put("builder/uid-builder"); code != http.StatusForbidden || !strings.Contains(msg, "Pod ns/builder is Running, not Pending") {
+		t.Errorf("PUT after the Pod started running: %d %q, want 403", code, msg)
 	}
 	if reviews, gets := counts(); reviews != reviewsBefore || gets != getsBefore+1 {
 		t.Errorf("%d TokenReviews and %d Pod gets for a write with a token that go-cache accepted before, want 0 and 1", reviews-reviewsBefore, gets-getsBefore)
