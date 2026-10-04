@@ -488,11 +488,17 @@ counts applies by result, `applied` or `skipped`.
 After the intents, the framework deletes owned objects that the reconcile
 didn't declare. It finds them in the owner index of each owned type's cache.
 
-Every write that targets an object that must already exist carries its UID:
-status writes, finalizer changes, `Apply`, and deletes. An apply with a UID
-fails instead of creating an object, and a delete with a UID precondition
-fails if the name now belongs to a new object. A write based on a stale cache
-can't bring back a deleted object or touch its replacement.
+Finalizer changes, `Apply`, and deletes target an object that must already
+exist, so they carry its UID. An apply with a UID fails instead of creating an
+object, and a delete with a UID precondition fails if the name now belongs to
+a new object. Such a write based on a stale cache can't bring back a deleted
+object or touch its replacement. Status writes carry the UID too, but the API
+server ignores it on status writes to custom resources. A status write that
+requires the cached resource version, as
+[Shards and leader election](#shards-and-leader-election) describes, fails on
+a new object with the same name. Other status writes, including every one
+without leader election or shards, can land a status computed for a deleted
+object on a new object with the same name.
 
 `Reconcile` can change the reconciled object's status. After every reconcile,
 whether it succeeded or not, the framework sets `observedGeneration` and a
