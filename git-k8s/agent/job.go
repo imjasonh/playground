@@ -133,6 +133,7 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 		return JobStatus{Message: fmt.Sprintf("waiting to start the agent: %d agent runs started in the last 24 hours, the -max-runs-per-day limit", r.MaxRunsPerDay)}
 	}
 	*st = JobState{Runs: st.Runs + 1, Pod: p.Name, Attempt: 1}
+	x.started = true
 	return x.follow(ctx, p)
 }
 
@@ -195,6 +196,13 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		if st.UID != "" {
 			return x.status("creating Pod %s again, because it was deleted", st.Pod)
 		}
+		// kube creates a Pod right after the reconcile that declares it, so
+		// a Pod that an earlier reconcile declared and that doesn't exist
+		// means that creating it failed. Get runs this again once the Pod
+		// exists.
+		if !x.started && kube.Get[podPhase](ctx, x.job.Namespace, st.Pod) == nil {
+			return x.status("kube can't create Pod %s: the program's log says why, such as a ResourceQuota or LimitRange that doesn't allow its ephemeral-storage limit of %s", st.Pod, formatSize(x.r.podDisk()))
+		}
 		return x.status("started Pod %s", st.Pod)
 	}
 	if pod.UID != st.UID {
@@ -225,9 +233,11 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 			return x.status("waiting for a run on the new commits: %s", msg)
 		case st.Attempt < prepareAttempts:
 			st.Attempt++
-			st.Pod = x.r.jobPod(x.job, st.Attempt).Name
-			st.UID = ""
-			kube.RequeueAfter(ctx, time.Second)
+			next := x.r.jobPod(x.job, st.Attempt)
+			st.Pod, st.UID = next.Name, ""
+			// A later reconcile takes a missing Pod to mean that kube
+			// couldn't create it, so declare the Pod in this one.
+			kube.Own(ctx, next)
 			return x.status("preparing the source failed, so trying again: %s", msg)
 		}
 		return x.fail("couldn't prepare the source in %d attempts: %s", prepareAttempts, msg)

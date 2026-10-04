@@ -227,10 +227,24 @@ symbolic link, more than 1,000 files, or more than 8 MiB of file content.
 
 Each agent Pod's volumes have size limits. The repository, the head's
 files, and the agent's input can each use up to `-source-size`, 2Gi by
-default, and the agent's home directory up to 1Gi. The init containers
-request 1Gi of ephemeral storage, and their limits cover all the volumes.
-When a Pod uses more than a limit, the kubelet evicts it, and the check
-fails with the kubelet's reason.
+default, and the agent's home directory up to 1Gi. The init containers'
+ephemeral-storage limit covers all the volumes and the logs. It's three
+times `-source-size` plus 1344Mi, which is 7488Mi by default. When a Pod
+uses more than a limit, the kubelet evicts it.
+
+The scheduler reserves only a Pod's requests on its node, and the init
+containers request `-storage-request` of ephemeral storage, 1Gi by
+default. So a node can run low on disk space or memory while each Pod
+stays within its limits, and then the kubelet evicts Pods, first those
+that use more than they request. Either way, the check fails with the
+kubelet's reason. If agent Pods often fail because their nodes run low on
+disk space, raise `-storage-request`.
+
+A ResourceQuota on `limits.ephemeral-storage` counts each agent Pod's
+limit, and one on `requests.ephemeral-storage` counts `-storage-request`.
+A LimitRange with a smaller maximum for ephemeral storage rejects every
+agent Pod. When kube can't create a Pod, the check says so, and the
+program's log says why.
 
 The agent's prompt holds the first 200,000 bytes of the diff and lists
 every path that the change touches, so the agent can read the files that
@@ -326,6 +340,7 @@ In a namespace without the Secret, each run fails before the agent starts.
 | `-max-runs-per-day` | 100 | Most agent runs to start in any 24 hours; 0 means no limit |
 | `-runtime-class` | None | RuntimeClass for agent Pods, such as `gvisor` |
 | `-source-size` | `2Gi` | Most disk space that each of an agent Pod's repository, files, and input can use |
+| `-storage-request` | `1Gi` | Ephemeral storage that each agent Pod requests, which the scheduler reserves on the Pod's node |
 
 Agent Pods need to reach the repository and Cursor's API over HTTPS, and
 the check needs to reach the agent Pods on TCP port 8080. A NetworkPolicy

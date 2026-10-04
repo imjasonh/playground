@@ -83,6 +83,10 @@ type Runner struct {
 	// SourceSize is the most disk space, such as 2Gi, that each of an agent
 	// Pod's repository, files, and input can use. Empty means 2Gi.
 	SourceSize string
+	// StorageRequest is the ephemeral storage, such as 1Gi, that each agent
+	// Pod requests, which the scheduler reserves on the Pod's node. Empty
+	// means 1Gi.
+	StorageRequest string
 
 	port int
 	day  window
@@ -100,6 +104,7 @@ func (r *Runner) AddFlags(fs *flag.FlagSet) {
 	fs.IntVar(&r.MaxPods, "max-pods", 10, "most agent Pods to run at once, in all namespaces; 0 means no limit")
 	fs.IntVar(&r.MaxRunsPerDay, "max-runs-per-day", 100, "most agent runs to start in any 24 hours; 0 means no limit")
 	fs.StringVar(&r.SourceSize, "source-size", defaultSourceSize, "most disk space that each of an agent Pod's repository, files, and input can use")
+	fs.StringVar(&r.StorageRequest, "storage-request", defaultStorageRequest, "ephemeral storage that each agent Pod requests, which the scheduler reserves on the Pod's node")
 }
 
 func (r *Runner) validate() error {
@@ -112,6 +117,10 @@ func (r *Runner) validate() error {
 		return errors.New("-model, -git-image, -api-key-secret, and -timeout need values")
 	case r.sourceBytes() == 0:
 		return fmt.Errorf("-source-size is %q, but it must be a size such as 2Gi", r.SourceSize)
+	case r.storageBytes() == 0:
+		return fmt.Errorf("-storage-request is %q, but it must be a size such as 1Gi", r.StorageRequest)
+	case r.storageBytes() > r.podDisk():
+		return fmt.Errorf("-storage-request is %s, but it can't be more than %s, each agent Pod's ephemeral-storage limit", r.StorageRequest, formatSize(r.podDisk()))
 	}
 	return nil
 }
@@ -213,12 +222,14 @@ func (r *Runner) unfinishedPods(ctx context.Context, ns, name string) int {
 }
 
 // run is one reconcile's view of one run. in is nil for a job that isn't a
-// check's.
+// check's. started is true when the reconcile starts the run, so kube
+// hasn't tried to create its Pod yet.
 type run struct {
-	r   *Runner
-	in  *checks.Input
-	job *Job
-	st  *JobState
+	r       *Runner
+	in      *checks.Input
+	job     *Job
+	st      *JobState
+	started bool
 }
 
 // outputs hold what the next reconcile needs to follow the run.

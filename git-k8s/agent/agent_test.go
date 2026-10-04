@@ -556,6 +556,25 @@ func TestWaitsForADeletedPodToGo(t *testing.T) {
 	}
 }
 
+func TestSaysWhenKubeCantCreateAPod(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	if res := f.state(); res.Message != "started Pod "+p.Name {
+		t.Fatalf("result = %+v, want the Pod started", res)
+	}
+
+	t.Log("A Pod that kube couldn't create, such as one that a LimitRange rejects, still doesn't exist on the next reconcile.")
+	rec := f.reconcile()
+	want := "kube can't create Pod " + p.Name + ": the program's log says why, such as a ResourceQuota or LimitRange that doesn't allow its ephemeral-storage limit of 7488Mi"
+	if res := f.state(); res.State != gitk8s.Running || res.Message != want || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 1 {
+		t.Fatalf("result = %+v, want Running with the Pod declared", res)
+	}
+	f.reconcile(p)
+	if res := f.state(); res.Message != "Pod "+p.Name+" is Pending" {
+		t.Errorf("result = %+v, want the Pod Pending once it exists", res)
+	}
+}
+
 func TestEndsARunWhenItsNewPodPassesALimit(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -592,12 +611,15 @@ func TestRetriesPreparingTheSource(t *testing.T) {
 		p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
 			{Name: "prepare", State: terminated(&Terminated{ExitCode: 128, Message: "fatal: unable to access the repository"})},
 		}}
-		f.reconcile(p)
+		rec := f.reconcile(p)
 		res := f.state()
-		if res.State != gitk8s.Running || res.Outputs["attempt"] != strconv.Itoa(attempt) || names[res.Outputs["pod"]] || res.Outputs["runs"] != "1" {
-			t.Fatalf("result = %+v, want attempt %d in a new Pod of the same run", res, attempt)
+		pods := kube.Owned[Pod](rec)
+		if res.State != gitk8s.Running || res.Outputs["attempt"] != strconv.Itoa(attempt) || names[res.Outputs["pod"]] || res.Outputs["runs"] != "1" ||
+			len(pods) != 2 || pods[1].Name != res.Outputs["pod"] {
+			t.Fatalf("result = %+v with %d owned Pods, want attempt %d in a new Pod of the same run, declared at once", res, len(pods), attempt)
 		}
-		p = f.start()
+		p = pods[1]
+		p.Namespace, p.UID = "default", "uid-"+p.Name
 		names[p.Name] = true
 	}
 	p.Status.InitContainerStatuses = []ContainerStatus{{Name: "prepare", State: terminated(&Terminated{ExitCode: 128, Message: "fatal: couldn't find remote ref"})}}
@@ -725,6 +747,19 @@ func TestNeedsFlags(t *testing.T) {
 	rec = f.reconcile()
 	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, `-source-size is "2GB", but it must be a size such as 2Gi`) || len(kube.Owned[Pod](rec)) != 0 {
 		t.Errorf("result = %+v, want Running without a Pod", res)
+	}
+
+	t.Log("Nor does a -storage-request that isn't a size or that's more than the Pod's limit.")
+	for request, want := range map[string]string{
+		"1GB": `-storage-request is "1GB", but it must be a size such as 1Gi`,
+		"8Gi": "-storage-request is 8Gi, but it can't be more than 7488Mi, each agent Pod's ephemeral-storage limit",
+	} {
+		f = newFixture(t, "")
+		f.r.StorageRequest = request
+		rec = f.reconcile()
+		if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, want) || len(kube.Owned[Pod](rec)) != 0 {
+			t.Errorf("-storage-request %s: result = %+v, want Running without a Pod", request, res)
+		}
 	}
 }
 

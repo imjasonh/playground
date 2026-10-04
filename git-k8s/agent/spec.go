@@ -35,6 +35,10 @@ const podSlack = 30 * time.Minute
 // defaultSourceSize is the SourceSize of a Runner that doesn't set one.
 const defaultSourceSize = "2Gi"
 
+// defaultStorageRequest is the StorageRequest of a Runner that doesn't set
+// one.
+const defaultStorageRequest = "1Gi"
+
 // The sizes of the agent Pod's volumes other than the source's, and the
 // room that the Pod leaves for its containers' logs.
 const (
@@ -47,6 +51,15 @@ func (r *Runner) resultPort() int { return cmp.Or(r.port, 8080) }
 
 // sourceBytes is the Runner's SourceSize in bytes, or 0 if it isn't a size.
 func (r *Runner) sourceBytes() int64 { return parseSize(cmp.Or(r.SourceSize, defaultSourceSize)) }
+
+// storageBytes is the Runner's StorageRequest in bytes, or 0 if it isn't a
+// size.
+func (r *Runner) storageBytes() int64 {
+	return parseSize(cmp.Or(r.StorageRequest, defaultStorageRequest))
+}
+
+// podDisk is each agent Pod's ephemeral-storage limit in bytes.
+func (r *Runner) podDisk() int64 { return 3*r.sourceBytes() + tmpSize + resultSize + logSize }
 
 // podTask is the task that runner/src/task.ts reads from AGENT_TASK.
 type podTask struct {
@@ -179,10 +192,11 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 	port := r.resultPort()
 	image := cmp.Or(job.Image, r.Image)
 	source := cmp.Or(r.SourceSize, defaultSourceSize)
+	request := k8s.Quantity(cmp.Or(r.StorageRequest, defaultStorageRequest))
 	// The kubelet evicts a Pod whose volumes and logs use more than the
 	// Pod's ephemeral-storage limit, which is its init containers' limit, so
 	// that limit covers every volume.
-	disk := k8s.Quantity(formatSize(3*r.sourceBytes() + tmpSize + resultSize + logSize))
+	disk := k8s.Quantity(formatSize(r.podDisk()))
 
 	p := &Pod{Object: kube.Meta("", map[string]string{"app.kubernetes.io/name": "git-k8s-agent", agentLabel: r.Name})}
 	p.Spec = PodSpec{
@@ -221,7 +235,7 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "128Mi", "ephemeral-storage": "1Gi"},
+				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "128Mi", "ephemeral-storage": request},
 				Limits:   map[string]k8s.Quantity{"memory": "1Gi", "ephemeral-storage": disk},
 			},
 		}, {
@@ -243,7 +257,7 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "256Mi", "ephemeral-storage": "1Gi"},
+				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "256Mi", "ephemeral-storage": request},
 				Limits:   map[string]k8s.Quantity{"memory": "2Gi", "ephemeral-storage": disk},
 			},
 		}},

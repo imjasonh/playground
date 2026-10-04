@@ -136,6 +136,19 @@ func TestSizesTheSourceVolumes(t *testing.T) {
 	}
 }
 
+func TestRequestsStorage(t *testing.T) {
+	for request, want := range map[string]string{"": "1Gi", "4Gi": "4Gi"} {
+		f := newFixture(t, "")
+		f.r.StorageRequest = request
+		p := f.start()
+		for _, c := range p.Spec.InitContainers {
+			if got := c.Resources.Requests["ephemeral-storage"]; string(got) != want {
+				t.Errorf("with -storage-request %q, %s requests %s of ephemeral storage, want %s", request, c.Name, got, want)
+			}
+		}
+	}
+}
+
 func TestSizes(t *testing.T) {
 	for s, want := range map[string]int64{
 		"2Gi": 2 << 30, "500M": 500e6, "1": 1, "1k": 1000, "64Ki": 64 << 10, "3Ti": 3 << 40, "2097151Ti": 2097151 << 40,
