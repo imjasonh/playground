@@ -1,5 +1,5 @@
 import type { Task } from "./task.js";
-import type { TouchedPath } from "./touched.js";
+import type { TouchedPaths } from "./touched.js";
 
 /** The most bytes of the diff that a prompt holds. */
 export const MAX_DIFF = 200_000;
@@ -16,7 +16,7 @@ export interface MergeInput {
   /** The change from the merge base to mergeHead, from git diff. */
   diff: string | Buffer;
   /** The paths that the change from the merge base to mergeHead touches. */
-  paths: TouchedPath[];
+  paths: TouchedPaths;
 }
 
 const STATUSES = "marked A (added), C (copied), D (deleted), M (modified), R (renamed), or T (changed type)";
@@ -36,10 +36,11 @@ export function diffLimits(diff: string | Buffer, mergeDiff?: string | Buffer): 
 
 /**
  * Builds the agent's prompt from the task and the files that the Pod
- * prepared. paths, when given, lists every path that the change touches,
- * because the diff can stop early.
+ * prepared. paths, when given, lists the paths that the change touches,
+ * because the diff can stop early. Only a merge's lists can leave paths
+ * out.
  */
-export function buildPrompt(task: Task, diff: string | Buffer, log: string | Buffer, paths?: TouchedPath[], merge?: MergeInput): string {
+export function buildPrompt(task: Task, diff: string | Buffer, log: string | Buffer, paths?: TouchedPaths, merge?: MergeInput): string {
   const [limit, mergeLimit] = diffLimits(diff, merge?.diff);
   const shown = firstLines(diff, limit);
   const fence = fenceFor(shown.text);
@@ -149,12 +150,12 @@ export function firstLines(text: string | Buffer, limit: number): { text: string
 }
 
 /**
- * Lists the paths, one per line. When the diff stops early, it marks the
- * paths that the diff leaves out, which it finds by the header that git
- * diff writes for each path.
+ * Lists the paths, one per line, and says when the list leaves paths out.
+ * When the diff stops early, it marks the paths that the diff leaves out,
+ * which it finds by the header that git diff writes for each path.
  */
-function listPaths(paths: TouchedPath[], shown: { text: string; cut: boolean }): string[] {
-  if (paths.length === 0) {
+function listPaths({ paths, more }: TouchedPaths, shown: { text: string; cut: boolean }): string[] {
+  if (paths.length === 0 && !more) {
     return ["(none)"];
   }
   const headers = new Set<string>();
@@ -167,7 +168,7 @@ function listPaths(paths: TouchedPath[], shown: { text: string; cut: boolean }):
       }
     }
   }
-  return paths.map((p) => {
+  const lines = paths.map((p) => {
     let line = `${p.status} ${p.from === undefined ? showPath(p.path) : `${showPath(p.from)} -> ${showPath(p.path)}`}`;
     if (shown.cut) {
       const header = `diff --git ${cQuote(`a/${p.from ?? p.path}`)} ${cQuote(`b/${p.path}`)}`;
@@ -179,6 +180,10 @@ function listPaths(paths: TouchedPath[], shown: { text: string; cut: boolean }):
     }
     return line;
   });
+  if (more) {
+    lines.push("(the change touches more paths, which this list leaves out)");
+  }
+  return lines;
 }
 
 /** Quotes a path that holds characters that could break up the list. */

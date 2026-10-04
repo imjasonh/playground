@@ -615,12 +615,16 @@ the other changed holds the changed version. The work tree leaves out
 fails the run before the agent starts. The prompt lists the paths that conflict,
 and holds the change from the merge base to the merged commit, its paths, and
 its commits, as well as the head's. The two diffs share the prompt's 200,000
-bytes for a diff, and each gets at least half of them. With `Task.Edit`, the
-result's `Files` change the merge's files, and the controller builds the merge
-commit from them. The result's `MergeTree` names the tree of the Pod's merge. To
-build the commit, make the same merge, such as with `git.Repo.Merge`, and check
-that its tree is `MergeTree`, so that the commit holds the files that the agent
-saw.
+bytes for a diff, and each gets at least half of them. A review needs every path
+that its change touches, but a merge's agent needs only the conflicts, which the
+prompt lists in full. So a merge's prompt lists only the first 1,000 paths of
+each side's change, within 128 KiB, and says when it leaves some out. The run
+fails when more than 1,000 paths conflict, the most files that a result can
+change. With `Task.Edit`, the result's `Files` change the merge's files, and the
+controller builds the merge commit from them. The result's `MergeTree` names the
+tree of the Pod's merge. To build the commit, make the same merge, such as with
+`git.Repo.Merge`, and check that its tree is `MergeTree`, so that the commit
+holds the files that the agent saw.
 
 The branch must still point to the head when the Pod fetches it, because
 the controller pushes what the agent changes onto the head with a lease,

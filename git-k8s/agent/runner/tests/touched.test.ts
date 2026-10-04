@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { MAX_PATHS, MAX_PATHS_BYTES, parseConflicts, parseNameStatus } from "../src/touched.js";
+import { firstNameStatus, MAX_PATHS, MAX_PATHS_BYTES, parseConflicts, parseNameStatus } from "../src/touched.js";
 import { gitBuffer, prepareMerge, preparePod } from "./pod.js";
 
 test("parses what git diff --name-status -z writes", () => {
@@ -31,7 +31,40 @@ test("refuses a change that touches too many paths", () => {
 test("refuses output that it can't parse", () => {
   for (const data of ["Q\0a\0", "M\0\0", "R100\0old\0", "R100\0\0new\0"]) {
     assert.throws(() => parseNameStatus(Buffer.from(data)), /isn't git diff --name-status -z output/, JSON.stringify(data));
+    assert.throws(() => firstNameStatus(Buffer.from(data)), /isn't git diff --name-status -z output/, JSON.stringify(data));
   }
+});
+
+test("parses the paths at the start of a long list", () => {
+  assert.deepEqual(firstNameStatus(Buffer.from("M\0a\0R100\0b\0c\0")), {
+    paths: [
+      { status: "M", path: "a" },
+      { status: "R", path: "c", from: "b" },
+    ],
+    more: false,
+  });
+  const many = firstNameStatus(Buffer.from("M\0a\0".repeat(MAX_PATHS + 1)));
+  assert.equal(many.paths.length, MAX_PATHS);
+  assert.equal(many.more, true);
+  assert.equal(firstNameStatus(Buffer.from("M\0a\0".repeat(MAX_PATHS))).more, false);
+
+  // long takes all but the last 17 of the first MAX_PATHS_BYTES, which end
+  // in a rename's new path, in its old path, in a path, and after a status.
+  const first = { status: "M", path: "p".repeat(MAX_PATHS_BYTES - 20) };
+  const long = `M\0${first.path}\0`;
+  for (const [rest, wantPaths] of [
+    [`R100\0old\0${"n".repeat(100)}\0`, [first]],
+    [`R100\0${"o".repeat(100)}\0n\0`, [first]],
+    [`M\0${"q".repeat(100)}\0`, [first]],
+    [`M\0${"y".repeat(12)}\0M\0z\0`, [first, { status: "M", path: "y".repeat(12) }]],
+  ] as const) {
+    const data = Buffer.from(long + rest);
+    assert.deepEqual(firstNameStatus(data.subarray(0, MAX_PATHS_BYTES + 1)), { paths: wantPaths, more: true }, JSON.stringify(rest.slice(0, 20)));
+  }
+  const exact = `M\0${"p".repeat(MAX_PATHS_BYTES - 3)}\0`;
+  assert.equal(firstNameStatus(Buffer.from(`${exact}M\0next\0`)).paths.length, 1);
+  assert.equal(firstNameStatus(Buffer.from(`${exact}M\0next\0`)).more, true);
+  assert.equal(firstNameStatus(Buffer.from(exact)).more, false);
 });
 
 test("parses the paths that conflict from what git merge-tree -z writes", () => {

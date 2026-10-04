@@ -9,7 +9,7 @@ import { MAX_DIFF, MAX_LOG } from "../src/prompt.js";
 import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
 import type { Task } from "../src/task.js";
-import { MAX_PATHS } from "../src/touched.js";
+import { MAX_PATHS, MAX_PATHS_BYTES } from "../src/touched.js";
 import { gitBuffer, prepareMerge, preparePod } from "./pod.js";
 
 const quiet: RunOptions = { log: () => undefined };
@@ -159,6 +159,22 @@ test("names the tree of the merge in each result of a merge", async (t) => {
     assert.equal(await runTask(review, { ...quiet, backends: { fake: backend } }), 0);
     assert.equal(readResult(review).mergeTree, undefined);
   }
+});
+
+test("lists the start of each side's paths in a merge, instead of refusing a long list", async () => {
+  const task = prepareMerge({ "a.txt": "one\n" }, { "a.txt": "ours\n" }, { "a.txt": "theirs\n" }, { edit: true });
+  writeFileSync(task.changesFile ?? "", "A\0a.txt\0".repeat(MAX_PATHS + 1));
+  writeFileSync(task.mergeChangesFile ?? "", `M\0${"m".repeat(200)}\0`.repeat(1000));
+  let prompt = "";
+  const capture: Backend = async (r) => {
+    prompt = r.prompt;
+    return fakeBackend(r);
+  };
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: capture } }), 0);
+  assert.equal(readResult(task).verdict, "pass");
+  assert.equal(prompt.match(/^A a\.txt$/gm)?.length, MAX_PATHS);
+  assert.equal(prompt.match(/^M m+$/gm)?.length, Math.floor(MAX_PATHS_BYTES / 203));
+  assert.equal(prompt.match(/^\(the change touches more paths, which this list leaves out\)$/gm)?.length, 2);
 });
 
 test("the fake agent resolves a merge's conflicts by keeping both sides", async () => {

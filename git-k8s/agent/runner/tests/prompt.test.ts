@@ -57,17 +57,18 @@ test("drops the spaces that pad the commit log", () => {
 });
 
 test("lists the paths that the change touches", () => {
-  const prompt = buildPrompt(preparePod({}, {}), "diff --git a/a b/a\n", "", [
+  const paths = [
     { status: "M", path: "a" },
     { status: "R", path: "new name", from: "old" },
     { status: "A", path: "x\nM fake" },
     { status: "D", path: "a -> b" },
     { status: "A", path: "line\u2028paragraph\u2029end" },
-  ]);
+  ];
+  const prompt = buildPrompt(preparePod({}, {}), "diff --git a/a b/a\n", "", { paths, more: false });
   assert.match(prompt, /or T \(changed type\):\n\nM a\nR old -> new name\nA "x\\nM fake"\nD "a -> b"\nA "line\\u2028paragraph\\u2029end"\n\nThe change from/);
   assert.doesNotMatch(prompt, /not in the diff/);
   assert.doesNotMatch(buildPrompt(preparePod({}, {}), "", ""), /paths that the change touches/);
-  assert.match(buildPrompt(preparePod({}, {}), "", "", []), /changed type\):\n\n\(none\)\n/);
+  assert.match(buildPrompt(preparePod({}, {}), "", "", { paths: [], more: false }), /changed type\):\n\n\(none\)\n/);
 });
 
 test("marks the paths that a long diff leaves out", () => {
@@ -80,14 +81,15 @@ test("marks the paths that a long diff leaves out", () => {
     section("a/big", "b/big") +
     "+x\n".repeat(MAX_DIFF) +
     section("a/after", "b/after");
-  const prompt = buildPrompt(preparePod({}, {}), diff, "", [
+  const paths = [
     { status: "M", path: "after" },
     { status: "M", path: "big" },
     { status: "M", path: "ctl\x01" },
     { status: "M", path: "first" },
     { status: "R", path: "new", from: "old" },
     { status: "M", path: "tab\there" },
-  ]);
+  ];
+  const prompt = buildPrompt(preparePod({}, {}), diff, "", { paths, more: false });
   const list = prompt.slice(prompt.indexOf("changed type):"), prompt.indexOf("The change from"));
   assert.equal(
     list,
@@ -101,9 +103,9 @@ test("explains a merge, its conflicts, and both sides' changes", () => {
     conflicts: ["a.txt", "tab\there"],
     log: `fed Change main${" ".repeat(50)}\n`,
     diff: "diff --git a/m b/m\n+```\n+main's line\n",
-    paths: [{ status: "A", path: "m" }],
+    paths: { paths: [{ status: "A", path: "m" }], more: false },
   };
-  const prompt = buildPrompt(task, "diff --git a/x b/x\n+x\n", "def Add x\n", [{ status: "M", path: "x" }], merge);
+  const prompt = buildPrompt(task, "diff --git a/x b/x\n+x\n", "def Add x\n", { paths: [{ status: "M", path: "x" }], more: false }, merge);
   assert.match(prompt, /You're merging another branch into one of them\.\n\nBranch: c\/x\nParent branch: main\nHead commit: def\nMerged branch: main\nMerged commit: fed\nMerge base: abc\n\n/);
   assert.match(prompt, /a line "<<<<<<< def", the head commit's lines, a line "\|\|\|\|\|\|\| abc", the merge base's lines, a line "=======", the merged commit's lines, and a line ">>>>>>> fed"\./);
   assert.match(prompt, /\nThe paths that conflict:\n\na\.txt\n"tab\\there"\n\nYour task:\n/);
@@ -114,20 +116,28 @@ test("explains a merge, its conflicts, and both sides' changes", () => {
   );
   assert.match(prompt, /The files that you leave become the merge's files/);
   assert.doesNotMatch(prompt, /one of those checks|a commit on the branch|stops early/);
-  const empty = { conflicts: [], log: "", diff: "", paths: [] };
+  const empty = { conflicts: [], log: "", diff: "", paths: { paths: [], more: false } };
   assert.match(buildPrompt(task, "", "", undefined, empty), /The paths that conflict:\n\n\(none\)\n/);
   assert.match(buildPrompt(task, "", "", undefined, empty), /The paths that the merged commit's change touches, [^\n]*:\n\n\(none\)\n/);
   assert.match(buildPrompt({ ...task, edit: false }, "", "", undefined, empty), /Don't change any files\./);
 });
 
+test("says when a merge's lists leave paths out", () => {
+  const task = preparePod({}, {}, { mergeName: "main", mergeHead: "fed", edit: true });
+  const merge = { conflicts: ["a"], log: "", diff: "", paths: { paths: [{ status: "M", path: "a" }], more: true } };
+  const prompt = buildPrompt(task, "", "", { paths: [], more: true }, merge);
+  assert.match(prompt, /\nThe paths that the head commit's change touches, [^\n]*:\n\n\(the change touches more paths, which this list leaves out\)\n\n/);
+  assert.match(prompt, /\nThe paths that the merged commit's change touches, [^\n]*:\n\nM a\n\(the change touches more paths, which this list leaves out\)\n\n/);
+});
+
 test("shares the diff limit between a merge's two diffs", () => {
   const task = preparePod({}, {}, { mergeName: "main", mergeHead: "fed", edit: true });
   const long = "+x\n".repeat(MAX_DIFF);
-  const both = buildPrompt(task, long, "", undefined, { conflicts: [], log: "", diff: long, paths: [] });
+  const both = buildPrompt(task, long, "", undefined, { conflicts: [], log: "", diff: long, paths: { paths: [], more: false } });
   assert.ok(both.length < MAX_DIFF + 5000);
   assert.equal(both.match(/The diff is longer than 100000 bytes, so it stops early\./g)?.length, 2);
 
-  const one = buildPrompt(task, long, "", undefined, { conflicts: [], log: "", diff: "+y\n", paths: [] });
+  const one = buildPrompt(task, long, "", undefined, { conflicts: [], log: "", diff: "+y\n", paths: { paths: [], more: false } });
   assert.match(one, new RegExp(`The diff is longer than ${MAX_DIFF - 3} bytes, so it stops early\\.`));
   assert.match(one, /merged commit:\n\n```diff\n\+y\n\n```\n/);
   assert.deepEqual(diffLimits(long), [MAX_DIFF, 0]);

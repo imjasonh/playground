@@ -9,7 +9,7 @@ import { buildPrompt, diffLimits, firstLines, MAX_DIFF, MAX_LOG } from "./prompt
 import type { ChangedFile, Result } from "./result.js";
 import { parseTask, type BackendName, type Task } from "./task.js";
 import { toolsFor } from "./tools.js";
-import { MAX_PATHS_BYTES, parseConflicts, parseNameStatus } from "./touched.js";
+import { firstNameStatus, MAX_PATHS_BYTES, parseConflicts, parseNameStatus } from "./touched.js";
 import { errorMessage, redact, truncate } from "./text.js";
 import { parseVerdict } from "./verdict.js";
 
@@ -75,7 +75,10 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   }
   const diff = await readStart(task.diffFile, MAX_DIFF + 1);
   const commits = await readStart(task.logFile, MAX_LOG + 1);
-  const paths = task.changesFile ? parseNameStatus(await readStart(task.changesFile, MAX_PATHS_BYTES + 1)) : undefined;
+  const changes = task.changesFile ? await readStart(task.changesFile, MAX_PATHS_BYTES + 1) : undefined;
+  // A merge's agent resolves the conflicts, so it needs only the start of
+  // each side's list of paths, while a review needs the whole change.
+  const paths = changes && (task.mergeHead ? firstNameStatus(changes) : { paths: parseNameStatus(changes), more: false });
   const merged = task.mergeHead && task.conflictsFile ? parseConflicts(await readStart(task.conflictsFile, MAX_PATHS_BYTES + 1)) : undefined;
   const merge =
     merged && task.mergeLogFile && task.mergeDiffFile && task.mergeChangesFile
@@ -83,7 +86,7 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
           conflicts: merged.paths,
           log: await readStart(task.mergeLogFile, MAX_LOG + 1),
           diff: await readStart(task.mergeDiffFile, MAX_DIFF + 1),
-          paths: parseNameStatus(await readStart(task.mergeChangesFile, MAX_PATHS_BYTES + 1)),
+          paths: firstNameStatus(await readStart(task.mergeChangesFile, MAX_PATHS_BYTES + 1)),
         }
       : undefined;
   const ignored = merge?.conflicts.find((path) => posix.basename(path) === ".cursorignore");
