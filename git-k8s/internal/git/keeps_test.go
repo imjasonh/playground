@@ -130,6 +130,12 @@ func TestKeeps(t *testing.T) {
 	replayedToken := pick(other, rewound, token)
 	tokenAgain := pick(rewound, token)
 	leakedAgain := pick(commit(rewound, "add h", map[string]string{"h.txt": "h\n"}), token)
+	// The same, with a token line in a file that the head changed first,
+	// so that the head's replay of the line has other blobs.
+	tokenLine := commit(start, "add a token line", map[string]string{"d.txt": "d\ntoken\n"})
+	revokedLine := commit(tokenLine, "remove the token line", map[string]string{"d.txt": "d\n"})
+	leakedLine := pick(commit(rewound, "add a line before d", map[string]string{"d.txt": "x\nd\n"}), tokenLine)
+	binary := commit(start, "mark text files binary", map[string]string{".gitattributes": "*.txt -diff\n"})
 	undone := commit(side, "change the first bar back", map[string]string{"c.txt": "foo\nb\nc\nd\nfoo\n"})
 	// A side that rewound to a commit that changed what it removed and the
 	// last foo, and a head built on it that changes the last foo again.
@@ -199,6 +205,7 @@ func TestKeeps(t *testing.T) {
 		{"a head that makes, on another line, the change of a commit that a side that reset removed", elsewhere, start, side, false},
 		{"a head built on a side that rewound, with replays of two commits that it removed, which undo each other", tokens, rewound, revoked, false},
 		{"a head built on a side that rewound, with a replay of a commit that it removed, whose change another removed commit undid", leaked, rewound, revoked, false},
+		{"a head built on a side that rewound, with a replay of a line that it removed, whose change another removed commit undid", leakedLine, rewound, revokedLine, false},
 		{"a head that merges a side that rewound with replays of two commits that it removed, which undo each other", mergedTokens, rewound, revoked, false},
 		{"a head that replays a side that rewound next to a replay of a commit that it removed", replayedToken, rewound, revoked, false},
 		{"a head with a replay of a commit that a side that rewound removed and replayed", leakedAgain, tokenAgain, revoked, true},
@@ -224,7 +231,11 @@ func TestKeeps(t *testing.T) {
 		}
 	})
 
-	t.Run("a union attribute in the head's tree", func(t *testing.T) {
+	// attrRepo returns another copy of the repository, whose attr.tree makes
+	// git read attributes from tree, as some versions do from HEAD in a bare
+	// repository.
+	attrRepo := func(t *testing.T, tree string) *git.Repo {
+		t.Helper()
 		repo, err := (&git.Git{}).Open(t.Context(), filepath.Join(t.TempDir(), "app.git"))
 		if err != nil {
 			t.Fatal(err)
@@ -232,18 +243,31 @@ func TestKeeps(t *testing.T) {
 		if err := repo.Fetch(t.Context(), srv.Remote("app"), branches...); err != nil {
 			t.Fatal(err)
 		}
-		// attr.tree makes git read attributes from the head's tree, as some
-		// versions do from HEAD in a bare repository.
 		config := filepath.Join(repo.Dir, "config")
 		b, err := os.ReadFile(config)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(config, append(b, "[attr]\n\ttree = "+union+"\n"...), 0o644); err != nil {
+		if err := os.WriteFile(config, append(b, "[attr]\n\ttree = "+tree+"\n"...), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		return repo
+	}
+
+	t.Run("a union attribute in the head's tree", func(t *testing.T) {
+		repo := attrRepo(t, union)
 		if got, err := repo.Keeps(t.Context(), union, cut, base); err != nil || got {
 			t.Errorf("Keeps = %t, %v; want false", got, err)
+		}
+	})
+
+	t.Run("a diff attribute that marks the text files binary", func(t *testing.T) {
+		repo := attrRepo(t, binary)
+		if got, err := repo.Keeps(t.Context(), nearby, side, base); err != nil || !got {
+			t.Errorf("Keeps of a head that replays the side next to a change of its own = %t, %v; want true", got, err)
+		}
+		if got, err := repo.Keeps(t.Context(), leakedLine, rewound, revokedLine); err != nil || got {
+			t.Errorf("Keeps of a head with a replay of a token line that the side removed = %t, %v; want false", got, err)
 		}
 	})
 }

@@ -86,6 +86,15 @@ func (k *keeper) exec(ctx context.Context, stdin []byte, args ...string) (result
 	return k.git.exec(ctx, k.Dir, args, opts{stdin: stdin, env: []string{"GIT_ALLOW_PROTOCOL=http:https:git:ssh"}})
 }
 
+// noAttributes returns the option that makes git read attributes from the
+// empty tree. Without it, git reads them from the tree that attr.tree names
+// or, in some versions such as 2.43, from HEAD in a bare repository, and a
+// .gitattributes file there changes what Keeps says about every branch.
+func (k *keeper) noAttributes(ctx context.Context) (string, error) {
+	empty, err := k.run(ctx, []byte{}, "hash-object", "-t", "tree", "--stdin")
+	return "--attr-source=" + strings.TrimSpace(string(empty)), err
+}
+
 func (k *keeper) run(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
 	res, err := k.exec(ctx, stdin, args...)
 	if err == nil && res.code != 0 {
@@ -299,11 +308,11 @@ func (k *keeper) leavesOut(ctx context.Context, head, side, base string) (bool, 
 // .gitattributes file, such as one that union-merges a file, can change how
 // it merges.
 func (k *keeper) changes(ctx context.Context, head, side, base string) (bool, error) {
-	empty, err := k.run(ctx, []byte{}, "hash-object", "-t", "tree", "--stdin")
+	noAttrs, err := k.noAttributes(ctx)
 	if err != nil {
 		return false, err
 	}
-	res, err := k.exec(ctx, nil, "--attr-source="+strings.TrimSpace(string(empty)),
+	res, err := k.exec(ctx, nil, noAttrs,
 		"merge-tree", "--write-tree", "--no-messages", "--merge-base="+base, "--end-of-options", head, side)
 	switch {
 	case err != nil:
@@ -371,12 +380,23 @@ func (k *keeper) replays(ctx context.Context, head, side, base string) (bool, er
 // diff-tree doesn't diff, and a commit that changes no file map to "".
 // patch-id identifies a binary file's change by the blobs' full names,
 // which --full-index prints, so the diff needn't carry the files' contents.
+// The diff reads attributes from the empty tree, so that no .gitattributes
+// file, such as one that marks text files binary, can keep a replay from
+// matching.
 func (k *keeper) changeIDs(ctx context.Context, commits []string) (map[string]string, error) {
-	diffs, err := k.run(ctx, []byte(strings.Join(commits, "\n")+"\n"), "diff-tree", "--stdin", "--root", "-p", "-U0", "--full-index")
+	noAttrs, err := k.noAttributes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out, err := k.run(ctx, diffs, "patch-id", "--stable")
+	res, err := k.exec(ctx, []byte(strings.Join(commits, "\n")+"\n"), noAttrs,
+		"diff-tree", "--stdin", "--root", "-p", "-U0", "--full-index")
+	if err == nil && res.code != 0 {
+		err = &Error{Command: "diff-tree", Code: res.code, Stderr: res.stderr}
+	}
+	if err != nil {
+		return nil, err
+	}
+	out, err := k.run(ctx, res.stdout, "patch-id", "--stable")
 	if err != nil {
 		return nil, err
 	}

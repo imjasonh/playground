@@ -289,9 +289,10 @@ since `base`:
   contain `base`, a replay of the commit also counts. A replay is a commit
   other than a merge that removes and adds the same lines in the same files
   as the original, as `git patch-id --stable` compares them, which ignores
-  whitespace and where in each file the lines are. Each commit in the head
-  replays at most one commit, and a commit that changes no file has no
-  replay.
+  whitespace and where in each file the lines are. The comparison ignores
+  `.gitattributes` files, so that an attribute such as `-diff` can't hide a
+  replay. Each commit in the head replays at most one commit, and a commit
+  that changes no file has no replay.
 - If the moving side removed commits, or the head doesn't contain the
   moving side's head, merging the moving side's head into the head, with
   `base` as the merge base, is clean and changes nothing. The merge ignores
