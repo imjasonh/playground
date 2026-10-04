@@ -72,7 +72,7 @@ func (s *labelSelector) selects() bool {
 // program installs the policies when it starts.
 func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
-	var missing, weak, patches, exposures []string
+	var missing, weak, warns, patches, exposures []string
 	for _, p := range policies {
 		var own *admissionPolicyBinding
 		denies := false
@@ -86,29 +86,31 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 		}
 		policy := kube.Get[admissionPolicy](ctx, "", p.name)
 		if policy != nil && denies {
+			// Another binding enforces the policy, but the core program still
+			// stops the next time it starts, when its apply adds Deny next to the
+			// Warn in its own binding.
+			if installs && own != nil && slices.Contains(own.Spec.ValidationActions, "Warn") {
+				warns = append(warns, p.name)
+				patches = append(patches, patchCommand(own))
+			}
 			continue
 		}
 		exposures = append(exposures, p.exposures...)
-		if own != nil {
-			if patch := denyPatch(own); patch != "" {
-				weak = append(weak, p.name)
-				patches = append(patches, fmt.Sprintf("kubectl patch validatingadmissionpolicybinding %s --type=merge -p '%s'", p.name, patch))
-			}
+		if own != nil && denyPatch(own) != "" {
+			weak = append(weak, p.name)
+			patches = append(patches, patchCommand(own))
 		}
 		if policy == nil || own == nil {
 			missing = append(missing, p.name)
 		}
 	}
-	if len(missing) == 0 && len(weak) == 0 {
+	if len(missing) == 0 && len(weak) == 0 && len(warns) == 0 {
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
 			Message: "the admission policies keep checks to their own results",
 		}
 	}
-	// The patches come before the restart, because restarting the core
-	// program while a binding warns stops it. The binding's validationActions
-	// would then hold both Warn and Deny, which the API server rejects.
-	var problems, fixes []string
+	var problems, sentences, fixes []string
 	reason := "NotDenying"
 	if len(weak) > 0 {
 		problem := "the binding %s doesn't deny every request that its policy rejects"
@@ -116,7 +118,6 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 			problem = "the bindings %s don't deny every request that their policies reject"
 		}
 		problems = append(problems, fmt.Sprintf(problem, strings.Join(weak, " and ")))
-		fixes = append(fixes, "run "+strings.Join(patches, " and "))
 	}
 	if len(missing) > 0 {
 		reason = "Missing"
@@ -125,6 +126,24 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 			problem = "%s aren't fully installed"
 		}
 		problems = append(problems, fmt.Sprintf(problem, strings.Join(missing, " and ")))
+	}
+	if len(problems) > 0 {
+		sentences = append(sentences, strings.Join(problems, ", and ")+", so "+clauses(exposures))
+	}
+	if len(warns) > 0 {
+		warn := "the binding %s warns"
+		if len(warns) > 1 {
+			warn = "the bindings %s warn"
+		}
+		sentences = append(sentences, fmt.Sprintf(warn, strings.Join(warns, " and "))+", so the core program stops the next time it starts")
+	}
+	// The patches come before the restart, because restarting the core
+	// program while a binding warns stops it. The binding's validationActions
+	// would then hold both Warn and Deny, which the API server rejects.
+	if len(patches) > 0 {
+		fixes = append(fixes, "run "+strings.Join(patches, " and "))
+	}
+	if len(missing) > 0 {
 		if installs {
 			fixes = append(fixes, "run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again")
 		} else {
@@ -133,8 +152,13 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	}
 	return kube.Condition{
 		Type: "PoliciesInstalled", Status: kube.False, Reason: reason,
-		Message: fmt.Sprintf("%s, so %s; %s", strings.Join(problems, ", and "), clauses(exposures), strings.Join(fixes, ", then ")),
+		Message: strings.Join(sentences, "; ") + "; " + strings.Join(fixes, ", then "),
 	}
+}
+
+// patchCommand returns the kubectl command that applies b's denyPatch.
+func patchCommand(b *admissionPolicyBinding) string {
+	return fmt.Sprintf("kubectl patch validatingadmissionpolicybinding %s --type=merge -p '%s'", b.Name, denyPatch(b))
 }
 
 // clauses joins independent clauses as "a", "a, and b", or "a, b, and c".

@@ -161,6 +161,23 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts can approve branches, and checks can change GitBranch objects; run "+fmt.Sprintf(warns, "git-k8s-branches") {
 		t.Errorf("with only git-k8s-branches warning, PoliciesInstalled = %+v", c)
 	}
+	// Another binding that denies enforces git-k8s-branches, but the next start
+	// still adds Deny next to Warn in the binding from config/policy.yaml.
+	admin := &admissionPolicyBinding{Object: kube.Meta("admin-branches", nil)}
+	admin.Spec.PolicyName, admin.Spec.ValidationActions = "git-k8s-branches", []string{"Deny"}
+	if c := reconcile(append([]any{admin}, world...)...); c.Status != kube.False || c.Reason != "NotDenying" ||
+		c.Message != "the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
+		t.Errorf("with git-k8s-branches warning while admin-branches denies, PoliciesInstalled = %+v", c)
+	}
+	if c := reconcile(append([]any{admin}, world[2:]...)...); c.Status != kube.False || c.Reason != "Missing" ||
+		!strings.HasSuffix(c.Message, "; run "+fmt.Sprintf(warns, "git-k8s-branches")+", then run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again") {
+		t.Errorf("without git-k8s-check-results, and with git-k8s-branches warning while admin-branches denies, PoliciesInstalled = %+v", c)
+	}
+	r.installPolicies = false
+	if c := reconcile(append([]any{admin}, world...)...); c.Status != kube.True {
+		t.Errorf("with git-k8s-branches warning while admin-branches denies, and policies that the program doesn't install, PoliciesInstalled = %+v", c)
+	}
+	r.installPolicies = true
 	bindings[1].Spec.ValidationActions = []string{"Deny"}
 	for _, b := range bindings {
 		b.Spec.ParamRef = &paramRef{ParameterNotFoundAction: "Allow"}

@@ -274,7 +274,9 @@ program's apply keeps the entries that others add to a binding's
 `validationActions`, so it adds `Deny` next to `Warn`, and the API server
 rejects a binding that has both. The core program exits, each replica that
 takes the lease after it exits too, and nothing lands until you patch or
-delete the binding. To install the binding from `config/policy.yaml` again
+delete the binding. `PoliciesInstalled` reports a binding from
+`config/policy.yaml` set to `Warn` even while another binding for the same
+policy denies. To install the binding from `config/policy.yaml` again
 instead of patching it, delete the binding, and then restart the core
 program.
 
