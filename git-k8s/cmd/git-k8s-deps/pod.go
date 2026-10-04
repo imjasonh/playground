@@ -74,6 +74,7 @@ const allowProtocol = "http:https:git:ssh"
 var stuckReasons = []string{"CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "InvalidImageName"}
 
 // stuckAfter is how long an update Pod waits before its updates fail on a
+// Pod that kube can't schedule, counted from the Pod's creation, or on a
 // container that waits for a reason in stuckReasons other than
 // InvalidImageName, counted from when the container can start.
 const stuckAfter = 5 * time.Minute
@@ -359,6 +360,19 @@ func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []upda
 	st := &pod.Status
 	if st.Phase == "Failed" && st.Reason == "Evicted" {
 		return failAll("Pod %s was evicted: %s", pod.Name, cmp.Or(strings.TrimSpace(st.Message), "no reason given"))
+	}
+	for _, c := range st.Conditions {
+		if c.Type != "PodScheduled" || c.Status != "False" {
+			continue
+		}
+		// activeDeadlineSeconds counts from when a Pod starts on a node, so
+		// a Pod that isn't scheduled holds a -max-pods slot until it is.
+		if wait := stuckAfter - u.clock().Sub(pod.CreationTimestamp); wait > 0 {
+			kube.RequeueAfter(ctx, wait)
+			return nil
+		}
+		why := cmp.Or(strings.TrimSpace(c.Message), c.Reason, "no reason given")
+		return failAll("Pod %s couldn't be scheduled in %d minutes: %s", pod.Name, int(stuckAfter/time.Minute), why)
 	}
 	if msg, reason, since := stuck(st); msg != "" {
 		if since.IsZero() {

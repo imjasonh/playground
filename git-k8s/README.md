@@ -696,7 +696,8 @@ checks the `go.sum` checksums when it builds the branch. At most `-max-pods`
 update Pods run at once across all namespaces, and kube deletes each one once
 the controller has its result. When an update fails, the controller logs why
 and tries again after `-interval`. An update also fails when an image's name
-isn't valid, and when a Secret is still missing or an image still can't be
+isn't valid, when kube still can't schedule the update Pod 5 minutes after
+creating it, and when a Secret is still missing or an image still can't be
 pulled 5 minutes after the container can start.
 
 Each update Pod's volumes have size limits. The repository can use up to

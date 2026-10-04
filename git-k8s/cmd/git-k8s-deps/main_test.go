@@ -862,6 +862,44 @@ func TestGivesAStuckPodTime(t *testing.T) {
 	}
 }
 
+func TestFailsAPodThatCantBeScheduled(t *testing.T) {
+	f := newFixture(t)
+	p := f.start()
+	why := "0/3 nodes are available: 3 Insufficient ephemeral-storage."
+	p.Status = agent.PodStatus{Phase: "Pending", Conditions: []agent.PodCondition{{Type: "PodScheduled", Status: "False", Reason: "Unschedulable", Message: why}}}
+	f.clock = f.clock.Add(time.Minute)
+	rec := f.checkBranch("", p)
+	if pods := kube.Owned[agent.Pod](rec); len(pods) != 1 || pods[0].Name != p.Name {
+		t.Errorf("owned Pods = %d, want Pod %s", len(pods), p.Name)
+	}
+	if got := f.failure("v1.1.0"); got != "" {
+		t.Errorf("the update failed a minute after kube created its Pod: %s", got)
+	}
+	if d := rec.RequeueAfter(); d != stuckAfter-time.Minute {
+		t.Errorf("RequeueAfter() = %v, want a reconcile when the Pod is %v old", d, stuckAfter)
+	}
+
+	t.Log("A scheduled Pod that's still pending isn't stuck.")
+	f.clock = f.clock.Add(stuckAfter)
+	p.Status.Conditions[0].Status = "True"
+	if pods := kube.Owned[agent.Pod](f.checkBranch("", p)); len(pods) != 1 {
+		t.Errorf("owned Pods = %d, want 1", len(pods))
+	}
+	if got := f.failure("v1.1.0"); got != "" {
+		t.Errorf("the update of a scheduled Pod failed: %s", got)
+	}
+
+	t.Log("Once a Pod that isn't scheduled is stuckAfter old, its updates fail, and the next reconcile doesn't declare it, so kube deletes it and frees its place in -max-pods.")
+	p.Status.Conditions[0].Status = "False"
+	if rec := f.checkBranch("", p); rec.RequeueAfter() != time.Second {
+		t.Errorf("RequeueAfter() = %v, want 1s, to stop declaring the Pod", rec.RequeueAfter())
+	}
+	if got, want := f.failure("v1.1.0"), "Pod "+p.Name+" couldn't be scheduled in 5 minutes: "+why; got != want {
+		t.Errorf("the update failed with %q, want %q", got, want)
+	}
+	f.checkStays("", p)
+}
+
 func TestCountsTheGraceFromWhenAContainerCanStart(t *testing.T) {
 	pull := func(name string) agent.ContainerStatus {
 		return agent.ContainerStatus{Name: name, State: agent.ContainerState{Waiting: &agent.Waiting{Reason: "ErrImagePull", Message: "unexpected status code 503 Service Unavailable"}}}
