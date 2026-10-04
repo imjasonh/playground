@@ -193,15 +193,6 @@ Questions to settle first:
 - Whether queued branches merge the parent in, as `check-base` does, or
   rebase onto it.
 
-## Share build caches
-
-Each test Pod fetches its branch and builds it with an empty Go build cache.
-The mirror gives test Pods a nearby place to fetch from, but not what earlier
-Pods built. An in-cluster Go module proxy, and a shared build cache through
-`GOCACHEPROG` or a ReadWriteMany volume, let a test Pod reuse what earlier
-Pods downloaded and compiled. A module proxy in the cluster also lets tests
-with dependencies run without giving them the internet through `-goproxy`.
-
 ## Record who approved a branch
 
 An approval is the `git-k8s.imjasonh.com/approve` annotation. Nothing
