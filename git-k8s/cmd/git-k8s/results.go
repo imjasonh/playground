@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -89,6 +90,10 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxResultSize))
 	if err := dec.Decode(&res); err != nil {
 		http.Error(w, "decoding the result: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		http.Error(w, "the request has data after the result", http.StatusBadRequest)
 		return
 	}
 	if err := res.Validate(); err != nil {
