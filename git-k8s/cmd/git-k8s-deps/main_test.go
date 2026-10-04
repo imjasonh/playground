@@ -1914,6 +1914,110 @@ func TestDeletesABranchThatRaisesARetractedVersion(t *testing.T) {
 	}
 }
 
+func TestKeepsABranchWhoseRetractionsItCantRead(t *testing.T) {
+	const other, third = "example.com/other", "example.com/third"
+	for _, tc := range []struct {
+		name    string
+		breakIt func(f *fixture)
+	}{
+		{name: "listing third fails", breakIt: func(f *fixture) { f.proxy.fail(third, "list", 500) }},
+		{name: "no proxy has third", breakIt: func(f *fixture) { f.proxy.fail(third, "list", 404) }},
+		{name: "reading third's retractions fails", breakIt: func(f *fixture) {
+			f.proxy.publish(third, "v1.0.1", longAgo, "")
+			f.proxy.fail(third, "v1.0.1.mod", 500)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.u.interval = 100 * time.Hour
+			f.proxy.publish(third, "v1.0.0", longAgo, "")
+			f.proxy.publish(other, "v1.5.0", longAgo, "")
+			p := f.start()
+			f.finish(p, result(withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", third, "v1.0.0", other, "v1.5.0"))))
+			head := f.srv.Heads(t, "app")[greetBranch]
+			if head == "" {
+				t.Fatalf("the controller didn't push %s", greetBranch)
+			}
+
+			t.Log("other v1.6.0 retracts v1.5.0, and main moves. The controller refuses the update that it makes again, and can't read the retractions of third, which the branch raises before other, so it keeps the branch.")
+			logs := captureLogs(t)
+			f.proxy.publish(other, "v1.6.0", longAgo, "retract v1.5.0\n")
+			tc.breakIt(f)
+			f.moveMain("README.md", "# app\n")
+			f.clock = f.clock.Add(f.u.interval / 2)
+			p = f.start()
+			f.finish(p, result(withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", other, "v1.5.0"))))
+			if got, want := f.failure("v1.1.0"), "the update raises example.com/other to v1.5.0, which the module retracts"; got != want {
+				t.Errorf("the update failed with %q, want %q", got, want)
+			}
+			if got := f.srv.Heads(t, "app")[greetBranch]; got != head {
+				t.Errorf("%s = %q, want it kept at %q", greetBranch, got, head)
+			}
+			if !strings.Contains(logs.String(), "reading the retractions of a module that a branch raises failed") {
+				t.Errorf("logs = %q, want a warning", logs)
+			}
+		})
+	}
+}
+
+func TestKeepsABranchWhoseUpdateFailsForAnotherReason(t *testing.T) {
+	const other = "example.com/other"
+	for _, tc := range []struct {
+		name  string
+		setup func(f *fixture)
+		up    updateJSON
+	}{{
+		name: "the update Pod fails",
+		up:   updateJSON{Module: greet, Version: "v1.1.0", Output: []byte("go: boom\n")},
+	}, {
+		name: "the result isn't valid",
+		up:   withFiles("v1.1.0", "go.mod", modWith(greet, "v1.0.9", other, "v1.5.0")),
+	}, {
+		name: "no proxy has a module that the update raises before other",
+		up:   withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", "example.com/missing", "v1.0.0", other, "v1.5.0")),
+	}, {
+		name: "listing a module that the update raises before other fails",
+		setup: func(f *fixture) {
+			f.proxy.publish("example.com/flaky", "v1.0.0", longAgo, "")
+			f.proxy.fail("example.com/flaky", "list", 500)
+		},
+		up: withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", "example.com/flaky", "v1.0.0", other, "v1.5.0")),
+	}, {
+		name:  "the update raises other past the retraction, and waits",
+		setup: func(f *fixture) { f.u.minAge = 72 * time.Hour },
+		up:    withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", other, "v1.6.0")),
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.u.interval = 100 * time.Hour
+			f.proxy.publish(other, "v1.5.0", longAgo, "")
+			p := f.start()
+			f.finish(p, result(withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", other, "v1.5.0"))))
+			head := f.srv.Heads(t, "app")[greetBranch]
+			if head == "" {
+				t.Fatalf("the controller didn't push %s", greetBranch)
+			}
+
+			t.Log("other v1.6.0 retracts v1.5.0, which the branch raises, and main moves. The update that the controller makes again fails for another reason, so it keeps the branch.")
+			logs := captureLogs(t)
+			f.proxy.publish(other, "v1.6.0", longAgo, "retract v1.5.0\n")
+			if tc.setup != nil {
+				tc.setup(f)
+			}
+			f.moveMain("README.md", "# app\n")
+			f.clock = f.clock.Add(f.u.interval / 2)
+			p = f.start()
+			f.finish(p, result(tc.up))
+			if got := f.srv.Heads(t, "app")[greetBranch]; got != head {
+				t.Errorf("%s = %q, want it kept at %q", greetBranch, got, head)
+			}
+			if strings.Contains(logs.String(), "deleted a branch") {
+				t.Errorf("logs = %q, want no deletion", logs)
+			}
+		})
+	}
+}
+
 func TestWaitsForFreePods(t *testing.T) {
 	f := newFixture(t)
 	f.u.maxPods = 2
