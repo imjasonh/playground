@@ -50,9 +50,10 @@ const (
 // well under agent.FetchResult's limit.
 const maxBatch = 10
 
-// allowProtocol is GIT_ALLOW_PROTOCOL for git in update Pods. It keeps a
-// repository URL from naming a remote helper, which git runs as a program.
-const allowProtocol = "http:https:git:ssh:file"
+// allowProtocol is GIT_ALLOW_PROTOCOL for git in update Pods: the
+// transports that a GitRepository's URL can name. It leaves out remote
+// helpers, which git runs as programs, and file, which covers local paths.
+const allowProtocol = "http:https:git:ssh"
 
 // stuckReasons are the reasons that a container waits until someone fixes
 // a Secret or an image, which agent runs end on too. An update fails on
@@ -67,19 +68,19 @@ var stuckReasons = []string{"CreateContainerConfigError", "ErrImagePull", "Image
 // because git refuses to use one that another user owns, such as the root
 // of an emptyDir volume.
 const prepareScript = `set -eu
-git init -q "$REPO"
+git init -q --end-of-options "$REPO"
 cd "$REPO"
 if [ -n "${GIT_PASSWORD:-}" ]; then
   git config credential.helper '!f() { echo "username=${GIT_USERNAME:-git}"; echo "password=${GIT_PASSWORD}"; }; f'
 fi
 git fetch -q --depth=1 --end-of-options "$URL" "refs/heads/$BRANCH"
-if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
+if [ "$(git rev-parse --verify --end-of-options FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3
 fi
 git config --unset credential.helper || true
 printf '* -text -eol -ident -filter -working-tree-encoding\n' >.git/info/attributes
-git checkout -q --detach FETCH_HEAD
+git switch -q --detach --end-of-options FETCH_HEAD
 `
 
 // updateScript runs in the update container. UPDATES has a line for each
@@ -99,7 +100,7 @@ printf '{"updates":[' >"$RESULT_FILE" || exit 1
 sep=
 while read -r module version dirs; do
   [ -n "$module" ] || continue
-  git reset -q --hard HEAD && git clean -q -fdx || exit 1
+  git reset -q --hard && git clean -q -fdx || exit 1
   : >"$LOG_FILE"
   ok=true
   for dir in $dirs; do

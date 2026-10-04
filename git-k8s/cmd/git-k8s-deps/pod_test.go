@@ -3,6 +3,8 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,7 +47,7 @@ func TestPod(t *testing.T) {
 }
 
 // TestScripts runs the update Pod's scripts with git and the go command,
-// against a git server and a module proxy in a directory.
+// against a git server and a module proxy over HTTP.
 func TestScripts(t *testing.T) {
 	for _, bin := range []string{"sh", "git", "go", "base64", "sha256sum", "tail", "cut"} {
 		if _, err := exec.LookPath(bin); err != nil {
@@ -66,12 +68,14 @@ func TestScripts(t *testing.T) {
 	publish(greet, "v1.1.0", "package greet\n\nfunc Hello() string { return \"hello!\" }\n")
 	publish("example.com/other", "v1.0.0", "package other\n")
 	publish("example.com/other", "v1.0.1", "package other\n\nconst X = 1\n")
+	proxy := httptest.NewServer(http.FileServer(http.Dir(root)))
+	t.Cleanup(proxy.Close)
 
 	home := t.TempDir()
 	base := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=" + allowProtocol}
 	goEnv := append(base,
 		"GOPATH="+filepath.Join(home, "go"), "GOCACHE="+filepath.Join(home, "go-build"),
-		"GOTOOLCHAIN=local", "GOWORK=off", "GOPROXY=file://"+filepath.ToSlash(root), "GOSUMDB=off", "CGO_ENABLED=0",
+		"GOTOOLCHAIN=local", "GOWORK=off", "GOPROXY="+proxy.URL, "GOSUMDB=off", "CGO_ENABLED=0",
 		// The test's cleanup can't delete a read-only module cache.
 		"GOFLAGS=-modcacherw",
 	)
@@ -135,6 +139,13 @@ func TestScripts(t *testing.T) {
 	}
 	if _, err := os.Stat(ran); !os.IsNotExist(err) {
 		t.Errorf("prepare ran the remote helper: %v", err)
+	}
+	t.Log("A URL can't name a repository on the Pod's file system.")
+	for _, url := range []string{w.Dir, "file://" + filepath.ToSlash(w.Dir)} {
+		local := append(prepare[:len(prepare):len(prepare)], "URL="+url, "HEAD="+head, "REPO="+filepath.Join(src, "local"))
+		if out, err := run(src, prepareScript, local); err == nil || !strings.Contains(out, "transport 'file' not allowed") {
+			t.Errorf("prepare with the URL %s = %v, want git to refuse the file transport\n%s", url, err, out)
+		}
 	}
 	if out, err := run(src, prepareScript, append(prepare, "HEAD="+head)); err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
