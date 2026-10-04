@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 )
 
 // Volume returns a Controller that declares a persistent volume at dir, for
@@ -19,8 +20,11 @@ import (
 // and reconciles and its kube.Serve handler can share what's on disk.
 //
 // dir must be an absolute path, other than /, /app, and /tmp, which the
-// root file system, the program, and temporary files use. To run the program
-// outside a cluster, give it a flag for the directory that defaults to dir.
+// root file system, the program, and temporary files use. It can't be
+// /var/run/secrets/kubernetes.io/serviceaccount or /var/run/secrets/tokens,
+// where the Pod's tokens are mounted, or a directory inside or above them.
+// To run the program outside a cluster, give it a flag for the directory
+// that defaults to dir.
 //
 // A program can have one Volume.
 func Volume(dir string) Controller { return &volume{dir: dir} }
@@ -34,7 +38,22 @@ func (v *volume) check() error {
 	case v.dir == "/" || v.dir == "/app" || v.dir == "/tmp":
 		return fmt.Errorf("kube.Volume: the installation uses %s for something else; use a directory such as /var/lib/program", v.dir)
 	}
+	// A volume at the service account's directory stops Kubernetes from
+	// mounting the token there, and one at the token directory fails to
+	// install. A volume inside either would be inside a read-only volume,
+	// and one above them would hold their mount points.
+	for _, tokens := range []string{serviceAccountDir, tokenDir} {
+		if within(v.dir, tokens) || within(tokens, v.dir) {
+			return fmt.Errorf("kube.Volume: %s overlaps %s, where the Pod's tokens are mounted; use a directory such as /var/lib/program", v.dir, tokens)
+		}
+	}
 	return nil
+}
+
+// within reports whether path is dir or a path inside it. Both paths are
+// clean.
+func within(path, dir string) bool {
+	return path == dir || strings.HasPrefix(path, dir+"/")
 }
 
 func (v *volume) prepare(_ context.Context, m *Manager) error {

@@ -449,10 +449,6 @@ func (o *generateOptions) oneWriter(dir string) error {
 	return nil
 }
 
-// tokenDir is where the program's container mounts its tokens for
-// RequestToken.
-const tokenDir = "/var/run/secrets/tokens"
-
 // manifests returns the objects that install the program.
 func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 	labels := map[string]string{"app.kubernetes.io/name": o.name}
