@@ -499,6 +499,11 @@ asks the API server which service account it runs as, so this works in a Pod
 and with a kubeconfig that holds a service account's token. In a Pod, the
 new token is bound to the Pod.
 
+If there's no mounted token and the program may not request one,
+`RequestToken` returns an error that names the missing token file, or says
+that `-token-dir` isn't set. Rerun `generate` and apply its output instead
+of granting the permission by hand.
+
 A token lasts about an hour, so use the returned expiry. Call `RequestToken`
 each time you need a token, or reuse one until shortly before it expires.
 Call it in a reconcile or in a `kube.Serve` handler.

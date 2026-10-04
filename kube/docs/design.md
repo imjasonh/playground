@@ -742,7 +742,10 @@ anyone who holds one of the account's tokens, such as the token in the
 program's Pod, create tokens for any audience. Those tokens needn't be bound to
 the Pod, and they can last as long as the API server allows. A projected token
 needs no rule, is always bound to the Pod, and lasts an hour, so `generate`
-mounts one for every audience that it can see in the source.
+mounts one for every audience that it can see in the source. For the same
+reason, when a TokenRequest is forbidden, `RequestToken`'s error names the token
+file that's missing, or the unset `-token-dir` flag, and says to rerun
+`generate`, instead of leaving a `403` whose obvious fix is to grant that rule.
 
 A program never requests a token for an audience that a less trusted user
 chooses along with the destination. Whoever chooses both can have the program

@@ -87,6 +87,11 @@ func (a *authAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": status})
 	}
+	forbidden := func(message string) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(map[string]any{"kind": "Status", "apiVersion": "v1", "status": "Failure", "reason": "Forbidden", "code": 403, "message": message})
+	}
 	switch r.URL.Path {
 	case "/apis/authentication.k8s.io/v1/tokenreviews":
 		var want []string
@@ -104,9 +109,7 @@ func (a *authAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case "unaware":
 			reply(map[string]any{"authenticated": true, "user": reviewer})
 		case "denied":
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-			_, _ = w.Write([]byte(`{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"Forbidden","code":403,"message":"tokenreviews.authentication.k8s.io is forbidden"}`))
+			forbidden("tokenreviews.authentication.k8s.io is forbidden")
 		default:
 			reply(map[string]any{"error": "invalid bearer token"})
 		}
@@ -114,6 +117,8 @@ func (a *authAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(map[string]any{"userInfo": a.self})
 	case "/api/v1/namespaces/prog/serviceaccounts/prog/token":
 		reply(map[string]any{"token": "requested", "expirationTimestamp": "2030-01-02T03:04:05Z"})
+	case "/api/v1/namespaces/prog/serviceaccounts/denied/token":
+		forbidden(`serviceaccounts "denied" is forbidden: User "system:serviceaccount:prog:denied" cannot create resource "serviceaccounts/token" in API group "" in the namespace "prog"`)
 	default:
 		http.NotFound(w, r)
 	}
@@ -276,6 +281,33 @@ func TestRequestTokenWithoutAPod(t *testing.T) {
 	ctx, _ = newWebhookScope(t.Context(), m)
 	if _, _, err := RequestToken(ctx, "octo-sts.dev"); err == nil || !strings.Contains(err.Error(), `runs as "kubernetes-admin", not as a service account`) {
 		t.Errorf("RequestToken as a person: err = %v", err)
+	}
+}
+
+// TestRequestTokenForbidden checks that when a program has neither a mounted
+// token nor permission to request one, the error names the missing token
+// and points to generate, not to the permission.
+func TestRequestTokenForbidden(t *testing.T) {
+	_, m := newAuthAPI(t, UserInfo{Username: "system:serviceaccount:prog:denied"})
+	ctx, _ := newWebhookScope(t.Context(), m)
+	for _, dir := range []string{"", t.TempDir()} {
+		m.TokenDir = dir
+		missing := `-token-dir isn't set, so there's no mounted token for "octo-sts.dev"`
+		if dir != "" {
+			missing = `there's no token for "octo-sts.dev" in ` + filepath.Join(dir, tokenFile("octo-sts.dev"))
+		}
+		token, _, err := RequestToken(ctx, "octo-sts.dev")
+		if err == nil || token != "" {
+			t.Fatalf("RequestToken with -token-dir=%q = %q, %v, want an error", dir, token, err)
+		}
+		for _, want := range []string{missing, "rerun the generate command", `cannot create resource "serviceaccounts/token"`} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("RequestToken with -token-dir=%q: err = %v, want it to contain %q", dir, err, want)
+			}
+		}
+		if !client.IsForbidden(err) {
+			t.Errorf("RequestToken with -token-dir=%q: err = %v, want it to wrap the 403", dir, err)
+		}
 	}
 }
 

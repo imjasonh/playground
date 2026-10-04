@@ -125,7 +125,9 @@ func ReviewToken(ctx context.Context, token, audience string, more ...string) (T
 // token. When the program uses its Pod's token, the new token is bound to
 // the Pod too. The generate command grants permission to request tokens for
 // the program's own service account, and no other, only to a program that
-// passes RequestToken an audience that isn't a constant.
+// passes RequestToken an audience that isn't a constant. If the program may
+// not request a token either, the error says which mounted token is missing.
+// Rerun generate and apply its output instead of granting the permission.
 //
 // A token lasts about an hour, so rely on the returned expiry. The kubelet
 // renews a mounted token when 80% of that time has passed, and a
@@ -241,6 +243,15 @@ func (m *Manager) requestToken(ctx context.Context, audience string) (string, ti
 	if err := m.client.Create(ctx, client.Path("v1", "serviceaccounts", ns, name, "token"), map[string]any{
 		"apiVersion": "authentication.k8s.io/v1", "kind": "TokenRequest", "spec": spec,
 	}, &out); err != nil {
+		// Granting serviceaccounts/token by hand would let anyone with the
+		// service account's token make tokens, which mounted tokens avoid.
+		if client.IsForbidden(err) {
+			missing := fmt.Sprintf("-token-dir isn't set, so there's no mounted token for %q", audience)
+			if m.TokenDir != "" {
+				missing = fmt.Sprintf("there's no token for %q in %s", audience, filepath.Join(m.TokenDir, tokenFile(audience)))
+			}
+			return "", time.Time{}, fmt.Errorf("kube.RequestToken: %s, and the program may not request tokens; rerun the generate command, which mounts a token for each constant audience, and apply its output: %w", missing, err)
+		}
 		return "", time.Time{}, fmt.Errorf("kube.RequestToken: %w", err)
 	}
 	return out.Status.Token, out.Status.ExpirationTimestamp, nil
