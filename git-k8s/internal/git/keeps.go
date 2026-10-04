@@ -1,0 +1,257 @@
+package git
+
+import (
+	"context"
+	"slices"
+	"strings"
+)
+
+// Keeps reports whether head keeps every change that one side of a branch
+// made since the two sides last agreed at base. side is that side's head:
+// the side removed the commits in base but not in side, and added the
+// commits in side but not in base. head keeps those changes when it has
+// none of the removed commits, each added commit or a replay of it, and
+// every change that the side made since base: merging side into head, with
+// base as the merge base, is clean and changes nothing.
+//
+// A replay is a commit in head but not in side that removes and adds the
+// same lines in the same files, ignoring whitespace and where in each file
+// the lines are. Each commit in head replays at most one commit, and a
+// merge commit, or a commit that changes no file, has no replay. When side
+// and head both contain base, neither rewound, so head must contain side:
+// a replay would rewrite history that didn't rewind.
+//
+// A head built on a side that rewound to a new commit keeps that side's
+// changes even where it resolved conflicts with them, because whoever made
+// head started from the side after it rewound.
+//
+// An empty head or side means that the branch doesn't exist on that side,
+// and an empty base means that the sides never agreed. head, side, and
+// base differ.
+func (r *Repo) Keeps(ctx context.Context, head, side, base string) (bool, error) {
+	k := (*keeper)(r)
+	switch {
+	case base == "":
+		return k.isAncestor(ctx, side, head)
+	case head == "":
+		return k.isAncestor(ctx, side, base)
+	case side == "":
+		bases, err := k.mergeBases(ctx, head, base)
+		return len(bases) == 0, err
+	}
+	switch forward, err := k.isAncestor(ctx, base, side); {
+	case err != nil:
+		return false, err
+	case forward:
+		if ok, err := k.isAncestor(ctx, side, head); err != nil || ok {
+			return ok, err
+		}
+		if ok, err := k.isAncestor(ctx, base, head); err != nil || ok {
+			return false, err
+		}
+	default:
+		if ok, err := k.removedNone(ctx, head, side, base); err != nil || !ok {
+			return false, err
+		}
+		if ok, err := k.builtOn(ctx, head, side, base); err != nil || ok {
+			return ok, err
+		}
+	}
+	// The merge runs first because it's cheap: the replays hash the commits
+	// that head has and side doesn't, which after a rebase can be all of
+	// main's new commits.
+	if ok, err := k.changes(ctx, head, side, base); err != nil || !ok {
+		return false, err
+	}
+	return k.replays(ctx, head, side, base)
+}
+
+// keeper runs the git commands that Keeps needs.
+type keeper Repo
+
+// exec runs git in the repository. It limits git to the transports that a
+// GitRepository's URL can name, even though these commands read only local
+// objects, because a repository with a promisor remote fetches the objects
+// that it lacks.
+func (k *keeper) exec(ctx context.Context, stdin []byte, args ...string) (result, error) {
+	return k.git.exec(ctx, k.Dir, args, opts{stdin: stdin, env: []string{"GIT_ALLOW_PROTOCOL=http:https:git:ssh"}})
+}
+
+func (k *keeper) run(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
+	res, err := k.exec(ctx, stdin, args...)
+	if err == nil && res.code != 0 {
+		err = &Error{Command: args[0], Code: res.code, Stderr: res.stderr}
+	}
+	return res.stdout, err
+}
+
+func (k *keeper) isAncestor(ctx context.Context, ancestor, descendant string) (bool, error) {
+	res, err := k.exec(ctx, nil, "merge-base", "--is-ancestor", "--end-of-options", ancestor, descendant)
+	switch {
+	case err != nil:
+		return false, err
+	case res.code == 0:
+		return true, nil
+	case res.code == 1:
+		return false, nil
+	}
+	return false, &Error{Command: "merge-base", Code: res.code, Stderr: res.stderr}
+}
+
+// mergeBases returns the best common ancestors of a and b, or none if they
+// have no common ancestor.
+func (k *keeper) mergeBases(ctx context.Context, a, b string) ([]string, error) {
+	res, err := k.exec(ctx, nil, "merge-base", "--all", "--end-of-options", a, b)
+	switch {
+	case err != nil:
+		return nil, err
+	case res.code == 0:
+		return strings.Fields(string(res.stdout)), nil
+	case res.code == 1:
+		return nil, nil
+	}
+	return nil, &Error{Command: "merge-base", Code: res.code, Stderr: res.stderr}
+}
+
+// removedNone reports whether head has none of the commits that the side
+// removed, which are in base but not in side. The commits that head and
+// base share are their merge bases and the merge bases' ancestors, so side
+// must contain each merge base.
+func (k *keeper) removedNone(ctx context.Context, head, side, base string) (bool, error) {
+	bases, err := k.mergeBases(ctx, head, base)
+	if err != nil {
+		return false, err
+	}
+	for _, b := range bases {
+		if ok, err := k.isAncestor(ctx, b, side); err != nil || !ok {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
+// builtOn reports whether side rewound to a new commit, which base doesn't
+// have, and each commit in head but not in side was made on top of side or
+// on top of another such commit. A side that rewound to an older commit
+// doesn't count, because a head that contains it can have been made before
+// it rewound.
+func (k *keeper) builtOn(ctx context.Context, head, side, base string) (bool, error) {
+	if ok, err := k.isAncestor(ctx, side, base); err != nil || ok {
+		return false, err
+	}
+	if ok, err := k.isAncestor(ctx, side, head); err != nil || !ok {
+		return false, err
+	}
+	out, err := k.run(ctx, nil, "rev-list", "--reverse", "--topo-order", "--parents", "--end-of-options", head, "^"+side)
+	if err != nil {
+		return false, err
+	}
+	on := map[string]bool{side: true}
+	for line := range strings.Lines(string(out)) {
+		f := strings.Fields(line)
+		if len(f) == 0 {
+			continue
+		}
+		if !slices.ContainsFunc(f[1:], func(p string) bool { return on[p] }) {
+			return false, nil
+		}
+		on[f[0]] = true
+	}
+	return true, nil
+}
+
+// changes reports whether head has every change from base to side: merging
+// side into head, with base as the merge base, is clean and leaves head's
+// tree as it is. The merge reads attributes from the empty tree, so that no
+// .gitattributes file, such as one that union-merges a file, can change how
+// it merges.
+func (k *keeper) changes(ctx context.Context, head, side, base string) (bool, error) {
+	empty, err := k.run(ctx, []byte{}, "hash-object", "-t", "tree", "--stdin")
+	if err != nil {
+		return false, err
+	}
+	res, err := k.exec(ctx, nil, "--attr-source="+strings.TrimSpace(string(empty)),
+		"merge-tree", "--write-tree", "--no-messages", "--merge-base="+base, "--end-of-options", head, side)
+	switch {
+	case err != nil:
+		return false, err
+	case res.code == 1:
+		return false, nil
+	case res.code != 0:
+		return false, &Error{Command: "merge-tree", Code: res.code, Stderr: res.stderr}
+	}
+	tree, _, _ := strings.Cut(string(res.stdout), "\n")
+	headTree, err := k.run(ctx, nil, "rev-parse", "--verify", "--end-of-options", head+"^{tree}")
+	return err == nil && tree == strings.TrimSpace(string(headTree)), err
+}
+
+// replays reports whether head has a replay of each commit in side but not
+// in head or base. rev-list lists the newest commits first, and replays are
+// usually the newest, so it hashes head's commits in growing batches and
+// stops once each commit has a replay: head can hold thousands of commits
+// that side doesn't, such as a main branch that it was rebased onto.
+func (k *keeper) replays(ctx context.Context, head, side, base string) (bool, error) {
+	out, err := k.run(ctx, nil, "rev-list", "--end-of-options", side, "^"+head, "^"+base)
+	if err != nil {
+		return false, err
+	}
+	commits := strings.Fields(string(out))
+	if len(commits) == 0 {
+		return true, nil
+	}
+	need, err := k.changeIDs(ctx, commits)
+	if err != nil {
+		return false, err
+	}
+	missing := map[string]int{}
+	for _, c := range commits {
+		if need[c] == "" {
+			return false, nil
+		}
+		missing[need[c]]++
+	}
+	out, err = k.run(ctx, nil, "rev-list", "--no-merges", "--end-of-options", head, "^"+side)
+	if err != nil {
+		return false, err
+	}
+	have := strings.Fields(string(out))
+	for n := 64; len(have) > 0 && len(missing) > 0; n *= 2 {
+		batch := have[:min(n, len(have))]
+		have = have[len(batch):]
+		ids, err := k.changeIDs(ctx, batch)
+		if err != nil {
+			return false, err
+		}
+		for _, c := range batch {
+			if id := ids[c]; missing[id] > 1 {
+				missing[id]--
+			} else {
+				delete(missing, id)
+			}
+		}
+	}
+	return len(missing) == 0, nil
+}
+
+// changeIDs maps each commit to the patch ID of its change from its parent,
+// computed from a diff without context lines. A merge commit, which
+// diff-tree doesn't diff, and a commit that changes no file map to "".
+// patch-id identifies a binary file's change by the blobs' full names,
+// which --full-index prints, so the diff needn't carry the files' contents.
+func (k *keeper) changeIDs(ctx context.Context, commits []string) (map[string]string, error) {
+	diffs, err := k.run(ctx, []byte(strings.Join(commits, "\n")+"\n"), "diff-tree", "--stdin", "--root", "-p", "-U0", "--full-index")
+	if err != nil {
+		return nil, err
+	}
+	out, err := k.run(ctx, diffs, "patch-id", "--stable")
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]string, len(commits))
+	for line := range strings.Lines(string(out)) {
+		if id, commit, ok := strings.Cut(strings.TrimSpace(line), " "); ok {
+			ids[commit] = id
+		}
+	}
+	return ids, nil
+}
