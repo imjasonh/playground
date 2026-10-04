@@ -374,4 +374,29 @@ func TestPrepareScript(t *testing.T) {
 	if !errors.As(err, &exit) || exit.ExitCode() != 3 || !strings.Contains(out, "refs/heads/main no longer holds "+merge) {
 		t.Errorf("prepare = %v\n%s; want status 3", err, out)
 	}
+
+	t.Log("A URL that looks like an option is still a URL.")
+	marker := filepath.Join(t.TempDir(), "ran")
+	repo.Spec.URL = "--upload-pack=echo >" + marker
+	if _, out, err = prepare(t, Task{}, head, base); err == nil {
+		t.Errorf("prepare succeeded with an option for a URL\n%s", out)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("prepare ran the URL's --upload-pack: %v", err)
+	}
+
+	t.Log("A merge ref that looks like an option is still a ref.")
+	// git runs a fetch's --upload-pack for a file URL, but not for an HTTP
+	// one.
+	local := filepath.Join(t.TempDir(), "app.git")
+	w.Git("clone", "--quiet", "--bare", w.Dir, local)
+	repo.Spec.URL = "file://" + local
+	marker = filepath.Join(t.TempDir(), "ran")
+	task.Merge.Ref = "--upload-pack=echo >" + marker
+	if _, out, err = prepare(t, task, head, base); err == nil {
+		t.Errorf("prepare succeeded with an option for a merge ref\n%s", out)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("prepare ran the merge ref's --upload-pack: %v", err)
+	}
 }

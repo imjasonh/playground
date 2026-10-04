@@ -90,15 +90,15 @@ cd "$REPO"
 if [ -n "${GIT_PASSWORD:-}" ]; then
   git config credential.helper '!f() { echo "username=${GIT_USERNAME:-git}"; echo "password=${GIT_PASSWORD}"; }; f'
 fi
-git fetch -q --depth=50 "$URL" "refs/heads/$BRANCH"
+git fetch -q --depth=50 --end-of-options "$URL" "refs/heads/$BRANCH"
 if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3
 fi
 if [ -n "${MERGE:-}" ]; then
-  git fetch -q --depth=50 "$URL" "$MERGE_REF"
+  git fetch -q --depth=50 --end-of-options "$URL" "$MERGE_REF"
   if ! git cat-file -e "$MERGE^{commit}" 2>/dev/null && [ "$(git rev-parse --is-shallow-repository)" = true ]; then
-    git fetch -q --unshallow "$URL" "$MERGE_REF"
+    git fetch -q --unshallow --end-of-options "$URL" "$MERGE_REF"
   fi
   if ! git cat-file -e "$MERGE^{commit}" 2>/dev/null; then
     echo "$MERGE_REF no longer holds $MERGE" >&2
@@ -106,7 +106,7 @@ if [ -n "${MERGE:-}" ]; then
   fi
 fi
 if [ -n "${BASE:-}" ] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
-  git fetch -q --unshallow "$URL" "refs/heads/$BRANCH"
+  git fetch -q --unshallow --end-of-options "$URL" "refs/heads/$BRANCH"
 fi
 printf '* -text -eol -ident -filter -working-tree-encoding\n' >.git/info/attributes
 tree="$HEAD"

@@ -268,6 +268,18 @@ at the commit that the checks tested. Squash and rebase landings, which many
 forges offer, make a commit that no check saw, so they need either another
 round of checks or a rule about which results still count.
 
+## Run more agents
+
+Other checks and controllers could run agents with the `agent` package that
+[Agentic checks](README.md#agentic-checks) describes:
+
+- A check that fixes failing tests and pushes the fix. Its agent can't run
+  the tests, because agents get no shell, so it works from the failures that
+  `check-gotest` reports, and `check-gotest` tests the fix on the new head.
+- A controller that writes a pull request's description from the branch's
+  change and commit log, and rewrites it when the head moves. It needs the
+  forge's API, such as GitHub's, which git-k8s doesn't call.
+
 ## Run agents in Cursor's cloud
 
 [Agentic checks](README.md#agentic-checks) run a local agent in a Pod for

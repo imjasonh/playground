@@ -203,23 +203,25 @@ containers:
   Secret.
 - The `agent` init container runs the runner in `agent/runner`, a small
   Node program. The runner reads the key and deletes its file, then runs the
-  agent in the directory of the head's files, with tools that read and
-  search them. The agent gets no shell, MCP servers, or web access. The
-  runner writes the agent's verdict, summary, reasoning, and token usage to
-  a result file, and the file's SHA-256 digest as the container's
-  termination message.
-- The `result` container serves the result file over HTTP, but only to
-  requests whose bearer token is the Pod's UID.
+  agent in the directory of the head's files. The agent is offered only
+  tools that read and search the files, plus tools that edit and delete them
+  when the check can push, and Cursor's backend enforces that list. Apart
+  from the key in the runner's memory, the container holds no credentials
+  once the key file is gone. The runner writes the agent's verdict, summary,
+  reasoning, and token usage to a result file, and the file's SHA-256 digest
+  as the container's termination message.
+- The `result` container serves the result file over HTTP to requests whose
+  bearer token is the Pod's UID.
 
 The check reads the digest and the UID from the API server, fetches the
 result from the Pod's IP over plain HTTP, and rejects it unless it matches
 the digest. So the agent's containers get no Kubernetes or git credentials,
 a check that restarts fetches the result again, and a result can hold the
 files that the agent changed, which don't fit in a termination message.
-Someone who can watch the cluster's network can read a result, but can't
-change it. The check also rejects a result with an unknown verdict, an
-invalid path, a file mode other than a regular file or a symbolic link, more
-than 1,000 files, or more than 8 MiB of file content.
+Anyone who can read the Pod or watch the cluster's network can read a
+result, but can't change it. The check also rejects a result with an
+unknown verdict, an invalid path, a file mode other than a regular file or a
+symbolic link, more than 1,000 files, or more than 8 MiB of file content.
 
 When the policy lets the check push, the agent can also edit the files.
 The check commits what changed on the head, and pushes it like any other
@@ -418,8 +420,8 @@ also runs:
 cd agent/runner && npm ci && npm test
 ```
 
-The repository's daily dependency updates skip the runner, so update its npm
-dependencies by hand.
+The repository's daily dependency update upgrades the runner's npm
+dependencies too, and runs these tests.
 
 The end-to-end test installs every program with `generate` in a
 [kind](https://kind.sigs.k8s.io/) cluster with a local registry. It runs a
