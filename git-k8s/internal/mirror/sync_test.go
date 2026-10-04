@@ -252,9 +252,9 @@ func TestDecide(t *testing.T) {
 	// into e with -X theirs, so it contains e but has qux's a.txt.
 	e := w.commitFiles(a, "e", map[string]string{"a.txt": "external\n"})
 	qux := w.commitFiles(a, "qux", map[string]string{"a.txt": "qux\n"})
-	w.work.Git("checkout", "--quiet", "--detach", e)
-	w.work.Git("merge", "--quiet", "--no-ff", "--no-edit", "-X", "theirs", qux)
-	overridden := w.work.Git("rev-parse", "HEAD")
+	w.work.Git("switch", "--quiet", "--detach", "--end-of-options", e)
+	w.work.Git("merge", "--quiet", "--no-ff", "--no-edit", "-X", "theirs", "--end-of-options", qux)
+	overridden := w.work.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
 	r, err := w.m.Git.Open(t.Context(), filepath.Join(w.work.Dir, ".git"))
 	if err != nil {
 		t.Fatal(err)
