@@ -19,7 +19,10 @@ export interface AgentResponse {
   text: string;
   model: string;
   usage: Usage;
+  /** The run's model token cost before discounts, the SDK's rawCostCents. */
   costCents?: number;
+  /** What Cursor charged for the run, the SDK's chargedCents. */
+  chargedCents?: number;
 }
 
 /**

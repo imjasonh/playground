@@ -151,11 +151,11 @@ func (f *fixture) start() *Pod {
 func (f *fixture) state() *gitk8s.CheckResult { return f.b.Status.Checks.Result }
 
 func review(verdict string, files ...File) []byte {
-	cost := 1.25
+	cost, charged := 1.25, 0.5
 	b, _ := json.Marshal(Result{
 		Verdict: verdict, Summary: "1 added line holds DO NOT MERGE", Reasoning: "The change adds DO NOT MERGE at a.txt:2.",
 		Model: "fake:composer-2.5", Usage: Usage{InputTokens: 1200, OutputTokens: 80, CacheReadTokens: 300, CacheWriteTokens: 5},
-		CostCents: &cost, DurationMS: 42, Files: files,
+		CostCents: &cost, ChargedCents: &charged, DurationMS: 42, Files: files,
 	})
 	return b
 }
@@ -201,7 +201,7 @@ func TestReportsTheAgentsVerdict(t *testing.T) {
 	}
 	want := map[string]string{
 		"summary": "1 added line holds DO NOT MERGE", "model": "fake:composer-2.5", "inputTokens": "1200", "outputTokens": "80",
-		"cacheReadTokens": "300", "cacheWriteTokens": "5", "costCents": "1.25", "runs": "1", "pod": p.Name,
+		"cacheReadTokens": "300", "cacheWriteTokens": "5", "costCents": "1.25", "chargedCents": "0.5", "runs": "1", "pod": p.Name,
 	}
 	for k, v := range want {
 		if res.Outputs[k] != v {
@@ -277,6 +277,7 @@ func TestRejectsResultsThatDontCheckOut(t *testing.T) {
 		{name: "not JSON", body: []byte("pass"), want: "isn't valid: invalid character"},
 		{name: "verdict", body: []byte(`{"verdict":"maybe"}`), want: `its verdict is "maybe"`},
 		{name: "usage", body: []byte(`{"verdict":"pass","usage":{"inputTokens":-1}}`), want: "negative usage"},
+		{name: "charge", body: []byte(`{"verdict":"pass","chargedCents":-1}`), want: "negative usage"},
 		{name: "files", body: review(Pass, File{Path: "a.txt", Mode: "100644"}), want: "it changes files, which its task doesn't allow"},
 		{name: "git dir", edit: true, body: review(Pass, File{Path: "sub/.GIT/config", Mode: "100644"}), want: "invalid path"},
 		{name: "mode", edit: true, body: review(Pass, File{Path: "sub", Mode: "160000"}), want: `the mode "160000"`},

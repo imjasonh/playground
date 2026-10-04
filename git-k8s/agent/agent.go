@@ -323,6 +323,9 @@ func (x *run) verdict(ctx context.Context, res *Result) (checks.Verdict, *Result
 	if res.CostCents != nil {
 		v.Outputs["costCents"] = strconv.FormatFloat(*res.CostCents, 'f', -1, 64)
 	}
+	if res.ChargedCents != nil {
+		v.Outputs["chargedCents"] = strconv.FormatFloat(*res.ChargedCents, 'f', -1, 64)
+	}
 	return x.done(ctx, v), res
 }
 

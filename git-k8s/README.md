@@ -238,8 +238,11 @@ starts. Without `mayPush`, the agent's files are read-only.
 
 The check's outputs hold the agent's `summary`, the `model`, the run's
 `inputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`,
-and `costCents` when the SDK reports a cost. `runs` counts the agent runs
-on the branch.
+and two costs in cents when the SDK reports them. `costCents` is the model
+token cost before discounts, the SDK's `rawCostCents`. `chargedCents` is
+what Cursor charged, with discounts and fees, the SDK's `chargedCents`; it's
+0 for usage that a Cursor plan includes. `runs` counts the agent runs on
+the branch.
 
 An agent can answer differently each time, so a result stays until the
 branch's head changes, and the check doesn't run again when only the parent

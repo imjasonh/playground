@@ -110,6 +110,9 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   if (response.costCents !== undefined) {
     result.costCents = response.costCents;
   }
+  if (response.chargedCents !== undefined) {
+    result.chargedCents = response.chargedCents;
+  }
   return result;
 }
 

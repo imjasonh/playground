@@ -24,8 +24,16 @@ export interface Result {
   reasoning: string;
   model: string;
   usage: Usage;
-  /** The SDK's cost of the run in cents, when it reported one. */
+  /**
+   * The run's model token cost in cents before discounts, the SDK's
+   * rawCostCents, when it reported one. It's 0 for usage priced by request.
+   */
   costCents?: number;
+  /**
+   * What Cursor charged for the run in cents, with discounts and fees, the
+   * SDK's chargedCents. It's 0 for usage that a plan includes.
+   */
+  chargedCents?: number;
   durationMs: number;
   files: ChangedFile[];
 }
