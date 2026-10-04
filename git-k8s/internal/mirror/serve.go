@@ -184,9 +184,9 @@ func (m *Mirror) refusals(who caller.Caller, repo *gitk8s.Repository, p *pushReq
 
 // refuseAll answers a push with a refusal of every update in it.
 func refuseAll(w http.ResponseWriter, r *http.Request, p *pushRequest, reasons []string) {
-	// The client reads the response only after it sends the whole pack. A
-	// client that sends a bigger pack than a copy takes gets an error
-	// instead of the reasons.
+	// The client reads the response only after it sends the whole pack, so
+	// the mirror reads as much of the pack as a copy takes first. A client
+	// that sends more than that may get an error instead of the reasons.
 	_, _ = io.Copy(io.Discard, io.LimitReader(r.Body, maxPushSize))
 	if !p.has("report-status") && !p.has("report-status-v2") {
 		http.Error(w, strings.Join(reasons, "; "), http.StatusForbidden)

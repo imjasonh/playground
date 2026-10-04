@@ -23,9 +23,13 @@ func TestReadPush(t *testing.T) {
 	update := func(old, new, ref string) string { return pkt(old + " " + new + " " + ref + "\n") }
 	many := strings.Repeat(update(oidA, oidB, "refs/heads/x"), maxCommands+1) + "0000"
 	shallow := func(n int) string { return strings.Repeat(pkt("shallow "+oidA+"\n"), n) }
-	// An update of longRef takes 64000 bytes, so the mirror reads 16 of them.
+	// An update of longRef takes 64000 bytes, and an update of lastRef(n)
+	// takes n bytes, so upTo(24576) sends 1 MiB of updates.
 	longRef := "refs/heads/" + strings.Repeat("x", 64000-4-83-11)
-	long := func(n int) string { return strings.Repeat(update(oidA, oidB, longRef), n) + "0000" }
+	lastRef := func(n int) string { return "refs/heads/" + strings.Repeat("y", n-4-83-11) }
+	upTo := func(last int) string {
+		return strings.Repeat(update(oidA, oidB, longRef), 16) + update(oidA, oidB, lastRef(last)) + "0000"
+	}
 	for _, tc := range []struct {
 		name     string
 		in       string
@@ -84,8 +88,12 @@ func TestReadPush(t *testing.T) {
 			commands: []command{{Old: oidA, New: oidB, Ref: "refs/heads/main"}},
 		},
 		{name: "too many shallow commits", in: shallow(maxCommands) + update(oidA, oidB, "refs/heads/main") + "0000", err: "at most 1000 ref updates and shallow commits"},
-		{name: "as many bytes as the mirror reads", in: long(16), commands: slices.Repeat([]command{{Old: oidA, New: oidB, Ref: longRef}}, 16)},
-		{name: "too many bytes", in: long(17), err: "at most 1048576 bytes of ref updates"},
+		{
+			name:     "as many bytes as the mirror reads",
+			in:       upTo(24576),
+			commands: append(slices.Repeat([]command{{Old: oidA, New: oidB, Ref: longRef}}, 16), command{Old: oidA, New: oidB, Ref: lastRef(24576)}),
+		},
+		{name: "a byte more than the mirror reads", in: upTo(24577), err: "at most 1048576 bytes of ref updates"},
 		{name: "not an update", in: pkt("hello\n") + "0000", err: "malformed ref update"},
 		{name: "an uppercase object name", in: update(strings.ToUpper(oidA), oidB, "refs/heads/main") + "0000", err: "malformed ref update"},
 		{name: "a short object name", in: update("abc", oidB, "refs/heads/main") + "0000", err: "malformed ref update"},

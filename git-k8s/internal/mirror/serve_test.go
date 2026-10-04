@@ -449,6 +449,24 @@ func TestRefuseAllStopsReading(t *testing.T) {
 	}
 }
 
+// TestServeRefusesPushWithBigPack refuses a push whose pack is bigger than
+// the 256 KiB of a request that Go's server reads after the handler
+// returns. git reads the response only after it sends the whole pack, so
+// git gets the reasons only if the mirror reads the pack.
+func TestServeRefusesPushWithBigPack(t *testing.T) {
+	f := newFixture(t)
+	f.work.Git("checkout", "--quiet", "--detach", f.base)
+	big := make([]byte, 8<<20)
+	rand.Read(big)
+	f.work.Write("big.bin", string(big))
+	fix := f.work.Commit("big")
+	out, err := f.git("gofmt", "push", f.url("app"), fix+":refs/heads/main")
+	if err == nil || !strings.Contains(err.Error(), "main is a parent branch") {
+		t.Fatalf("push = %v\n%s; want the reason for refusing it", err, out)
+	}
+	wantHeads(t, "the copy's branches", f.copyRefs("refs/heads/"), map[string]string{"main": f.base, "feature": f.feature})
+}
+
 // TestServeStopsWaitingForPush sends the start of a push and then nothing.
 // The mirror gives up on the push, and doesn't hold the copy open while it
 // waits.

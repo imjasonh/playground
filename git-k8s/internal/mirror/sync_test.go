@@ -910,6 +910,43 @@ func TestSyncRemovesStaleLocks(t *testing.T) {
 	}
 }
 
+// When a push moved a branch since plan read it, applyLocal applies each
+// branch's updates alone. Another error, such as a lock that a killed git
+// left, still fails the sync.
+func TestApplyLocalAfterAMovedBranch(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	next := w.commit(base, "next")
+	w.pushExternal("main", next)
+	w.sync(SyncOptions{})
+	for _, name := range []string{"a", "b", "c"} {
+		w.work.Git("--git-dir="+w.copyDir(), "update-ref", headsPrefix+name, base)
+		w.work.Git("--git-dir="+w.copyDir(), "update-ref", syncedPrefix+name, base)
+	}
+	// A push moved a after plan read it, so the updates of every branch
+	// at once fail. A killed git left c's lock.
+	w.work.Git("--git-dir="+w.copyDir(), "update-ref", headsPrefix+"a", next)
+	if err := os.WriteFile(filepath.Join(w.copyDir(), "refs", "heads", "c.lock"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := w.m.Open(t.Context(), w.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	err = (&syncer{repo: r.Repo}).applyLocal(t.Context(), []branch{
+		{name: "a", act: take, m: base, d: next, s: base},
+		{name: "b", act: take, m: base, d: next, s: base},
+		{name: "c", act: take, m: base, d: next, s: base},
+	})
+	if err == nil || !strings.Contains(err.Error(), "c.lock") {
+		t.Errorf("applyLocal = %v; want an error about c's lock", err)
+	}
+	wantHeads(t, "the copy's branches", w.copyRefs(headsPrefix), map[string]string{"a": next, "b": next, "c": base, "main": next})
+	wantHeads(t, "the copy's synced refs", w.copyRefs(syncedPrefix), map[string]string{"a": base, "b": next, "c": base, "main": next})
+}
+
 // A lock is stale once it's older than the longest that a git command can
 // take, 5 minutes 10 seconds by default, plus a minute in case the volume's
 // clock differs from the node's. Sync keeps a newer lock, which a running
