@@ -634,6 +634,19 @@ func (s *sharing) wantRuns(want ...string) {
 	}
 }
 
+// wantRun checks that the check run with ID id shows want, as runs lists
+// it.
+func (s *sharing) wantRun(id int, want string) {
+	s.t.Helper()
+	got := "nothing"
+	if all := runs(s.gh); id <= len(all) {
+		got = all[id-1]
+	}
+	if got != want {
+		s.t.Errorf("check run %d = %s, want %s", id, got, want)
+	}
+}
+
 func TestCancelsSupersededCheckRuns(t *testing.T) {
 	s := newSharing(t, 4)
 	at := time.Unix(1_000_000, 0)
@@ -859,6 +872,67 @@ func TestCheckRunsOfUnpublishedResults(t *testing.T) {
 		s.wantRuns("git-k8s/gotest@" + s.short(0) + " completed cancelled: The branch was deleted before the check finished.")
 		s.again("c/x")
 	})
+}
+
+// TestCheckRunsAfterDepartures checks what a shared check run shows after
+// branches leave its commit, in either order of the other branches'
+// reconciles.
+func TestCheckRunsAfterDepartures(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		order []string
+	}{
+		{"XFirst", []string{"c/x", "c/y", "c/z"}},
+		{"ZFirst", []string{"c/z", "c/x", "c/y"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSharing(t, 4)
+			t.Log("When the branch whose result changed last leaves the commit, the check run shows the result that changed last of the branches still there.")
+			s.step("c/x", s.result(0, gitk8s.Passed, "passed on c/x"), s.get(0), post)
+			s.step("c/y", s.result(0, gitk8s.Failed, "failed on c/y"), patch+"1")
+			s.step("c/w", s.result(0, gitk8s.Passed, "passed on c/w"), patch+"1")
+			s.again("c/x")
+			s.step("c/w", s.result(1, gitk8s.Running, "started Pod w"), patch+"1", s.get(1), post)
+			s.wantRun(1, "git-k8s/gotest@"+s.short(0)+" completed failure: failed on c/y")
+
+			t.Log("When the branch leaves while another branch's check runs on the commit, the check run keeps its finished result, and of the other branches' reconciles, only the running branch's writes.")
+			s.step("c/z", s.result(0, gitk8s.Running, "started Pod z"), post)
+			s.step("c/v", s.result(0, gitk8s.Failed, "failed on c/v"), patch+"3")
+			s.step("c/v", s.result(2, gitk8s.Running, "started Pod v"), s.get(2), post)
+			for _, branch := range tc.order {
+				if branch == "c/z" {
+					s.again(branch, post)
+				} else {
+					s.again(branch)
+				}
+			}
+			s.wantRun(3, "git-k8s/gotest@"+s.short(0)+" completed failure: failed on c/v")
+			s.wantRun(5, "git-k8s/gotest@"+s.short(0)+" in_progress : started Pod z")
+
+			t.Log("A result that the controller published for another commit doesn't count, however late it changed.")
+			s.p.set("c/v", s.result(0, gitk8s.Passed, "passed on c/v"))
+			s.step("c/z", s.result(3, gitk8s.Running, "started Pod z"), patch+"5", s.get(3), post)
+			s.wantRun(5, "git-k8s/gotest@"+s.short(0)+" completed failure: failed on c/y")
+			s.again("c/v", patch+"4", patch+"5")
+
+			t.Log("Of the results that the controller hasn't published, the result of the branch whose name sorts first counts.")
+			s.p.set("c/a", s.result(1, gitk8s.Failed, "failed on c/a"))
+			s.p.set("c/b", s.result(1, gitk8s.Passed, "passed on c/b"))
+			s.step("c/w", s.result(2, gitk8s.Running, "started Pod w"), patch+"2", s.get(2), post)
+			s.wantRun(2, "git-k8s/gotest@"+s.short(1)+" completed failure: failed on c/a")
+			s.again("c/a")
+			s.again("c/b", patch+"2")
+			s.wantRuns(
+				"git-k8s/gotest@"+s.short(0)+" completed failure: failed on c/y",
+				"git-k8s/gotest@"+s.short(1)+" completed success: passed on c/b",
+				"git-k8s/gotest@"+s.short(0)+" completed failure: failed on c/v",
+				"git-k8s/gotest@"+s.short(2)+" completed cancelled: The branch moved to "+s.short(0)+" before the check finished.",
+				"git-k8s/gotest@"+s.short(0)+" completed success: passed on c/v",
+				"git-k8s/gotest@"+s.short(3)+" in_progress : started Pod z",
+				"git-k8s/gotest@"+s.short(2)+" in_progress : started Pod w",
+			)
+		})
+	}
 }
 
 func TestCheckRunsSurviveFailedReads(t *testing.T) {

@@ -289,8 +289,8 @@ func (s *runSync) left(branch, check string) string {
 }
 
 // publish makes the check run for one check's result on a branch show it,
-// unless the result stayed the same and the check run shows a later result
-// of another branch at the commit.
+// unless the result stayed the same and another branch's result at the
+// commit changed later.
 func (s *runSync) publish(ctx context.Context, branch, check string, res gitk8s.CheckResult) error {
 	if res.Commit == "" {
 		return nil
@@ -316,7 +316,7 @@ func (s *runSync) publish(ctx context.Context, branch, check string, res gitk8s.
 	switch {
 	case known && run.shows == want:
 		s.runs[cc] = shownRun{id: run.id, shows: want, by: branch}
-	case !changed && run.by != branch && s.has(run.by, cc):
+	case !changed && s.latest(cc) != branch:
 		// Another branch at the commit changed its result later.
 	default:
 		if err := s.write(ctx, cc, run, known, want, branch); err != nil {
@@ -406,7 +406,8 @@ func (s *runSync) settle(ctx context.Context, cc commitCheck, why string) error 
 // latest returns the branch at cc's commit whose result for cc's check
 // changed last, or "" when no branch at the commit has a result for the
 // check. A result that the controller hasn't published yet counts as the
-// oldest.
+// oldest, and of several such results, the one of the branch whose name
+// sorts first counts.
 func (s *runSync) latest(cc commitCheck) string {
 	branch, seq := "", int64(-1)
 	for _, name := range slices.Sorted(maps.Keys(s.branches)) {
