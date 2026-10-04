@@ -294,6 +294,14 @@ func TestDoesntPushWhatDoesntFixTheTests(t *testing.T) {
 		files:   []agent.File{{Path: "tools/go.sum", Deleted: true}},
 		message: "the agent changed a go.sum file, so a person needs to finish the update: " + reasoning,
 	}, {
+		name: "the agent adds go.work", verdict: agent.Pass,
+		files:   []agent.File{code, {Path: "go.work", Mode: "100644", Content: []byte("go 1.24\n\nuse .\n\nreplace example.com/greet => ./greet\n")}},
+		message: "the agent changed a go.work file, so a person needs to finish the update: " + reasoning,
+	}, {
+		name: "the agent changes a nested go.work.sum", verdict: agent.Pass,
+		files:   []agent.File{code, {Path: "tools/go.work.sum", Mode: "100644", Content: []byte("example.com/greet v1.0.0 h1:x=\n")}},
+		message: "the agent changed a go.work.sum file, so a person needs to finish the update: " + reasoning,
+	}, {
 		name: "the agent changes nothing", verdict: agent.Pass,
 		message: "the agent didn't change any files: " + reasoning,
 	}} {
