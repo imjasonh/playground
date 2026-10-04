@@ -497,11 +497,13 @@ head:
   commit that the external repository added, and every change that the
   external repository made. A replay is a commit that removes and adds the
   same lines in the same files as the original, ignoring the unchanged lines
-  around them, and a commit replays at most one commit. A merge commit, and
-  a commit that changes no file, have no replay. So the check resolves no
-  conflicts here, and fails and leaves the divergence for a person when a
-  commit has no replay or doesn't replay unchanged, or when the result
-  doesn't have every change that the external repository made.
+  around them, and a commit replays at most one commit. The comparison
+  ignores `.gitattributes` files, so that an attribute such as `-diff` can't
+  hide a replay. A merge commit, and a commit that changes no file, have no
+  replay. So the check resolves no conflicts here, and fails and leaves the
+  divergence for a person when a commit has no replay or doesn't replay
+  unchanged, or when the result doesn't have every change that the external
+  repository made.
 - If both sides rewound, the check replays the branch's commits onto the
   external repository's head if that head has none of the commits that the
   branch removed. Otherwise, it replays the external repository's commits onto

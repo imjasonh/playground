@@ -1,6 +1,7 @@
 package git_test
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -22,6 +23,21 @@ func fetched(t *testing.T, srv *gittest.Server, branches ...string) *git.Repo {
 		t.Fatal(err)
 	}
 	return repo
+}
+
+// readAttributesFrom sets attr.tree in the repository's config, which makes
+// git read attributes from tree, as some versions do from HEAD in a bare
+// repository.
+func readAttributesFrom(t *testing.T, repo *git.Repo, tree string) {
+	t.Helper()
+	config := filepath.Join(repo.Dir, "config")
+	b, err := os.ReadFile(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config, append(b, "[attr]\n\ttree = "+tree+"\n"...), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRevsAndPatchIDs(t *testing.T) {
@@ -46,6 +62,10 @@ func TestRevsAndPatchIDs(t *testing.T) {
 	w.Write("a.txt", "0\n1\ntwo\n3\n")
 	again := w.Commit("change again")
 	w.Push("moved")
+	w.Branch("attributes", base)
+	w.Write(".gitattributes", "*.txt -diff\n")
+	binary := w.Commit("mark text files binary")
+	w.Push("attributes")
 	ctx := t.Context()
 	repo := fetched(t, srv, "main", "moved")
 
@@ -89,6 +109,15 @@ func TestRevsAndPatchIDs(t *testing.T) {
 	if ids, err := repo.PatchIDs(ctx, nil); err != nil || len(ids) != 0 {
 		t.Errorf("PatchIDs(nil) = %v, %v", ids, err)
 	}
+
+	t.Run("a diff attribute that marks the text files binary", func(t *testing.T) {
+		repo := fetched(t, srv, "main", "moved", "attributes")
+		readAttributesFrom(t, repo, binary)
+		ids, err := repo.PatchIDs(t.Context(), []string{change, again})
+		if err != nil || ids[change] == "" || ids[change] != ids[again] {
+			t.Errorf("patch IDs of the same change at other lines = %q and %q, %v; want the same ID", ids[change], ids[again], err)
+		}
+	})
 }
 
 func TestReplay(t *testing.T) {

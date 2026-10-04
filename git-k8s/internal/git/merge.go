@@ -37,11 +37,11 @@ type Conflict struct {
 // conflict. Attributes from the commits' .gitattributes files don't apply,
 // so a branch can't choose how its own conflicts merge.
 func (r *Repo) Merge(ctx context.Context, ours, theirs string, o MergeOptions) (tree string, conflicts []Conflict, err error) {
-	empty, err := r.git.run(ctx, r.Dir, []string{"hash-object", "-t", "tree", "--stdin"}, opts{stdin: []byte{}, env: remoteProtocols})
+	noAttrs, err := r.noAttributes(ctx)
 	if err != nil {
 		return "", nil, err
 	}
-	args := []string{"--attr-source=" + strings.TrimSpace(string(empty)), "-c", "merge.conflictStyle=diff3"}
+	args := []string{noAttrs, "-c", "merge.conflictStyle=diff3"}
 	if len(o.Union) > 0 {
 		attrs, err := UnionAttributes(o.Union)
 		if err != nil {
@@ -96,6 +96,14 @@ func (r *Repo) Merge(ctx context.Context, ours, theirs string, o MergeOptions) (
 		return "", nil, fmt.Errorf("git merge-tree reported conflicts in %s and %s without listing any", ours, theirs)
 	}
 	return fields[0], conflicts, nil
+}
+
+// noAttributes returns the option that makes git read attributes from the
+// empty tree. Without it, git reads them from the tree that attr.tree names
+// or, in some versions such as 2.43, from HEAD in a bare repository.
+func (r *Repo) noAttributes(ctx context.Context) (string, error) {
+	empty, err := r.git.run(ctx, r.Dir, []string{"hash-object", "-t", "tree", "--stdin"}, opts{stdin: []byte{}, env: remoteProtocols})
+	return "--attr-source=" + strings.TrimSpace(string(empty)), err
 }
 
 // UnionAttributes returns a gitattributes file that sets merge=union for

@@ -40,18 +40,27 @@ func (r *Repo) Revs(ctx context.Context, head string, excluded ...string) ([]Rev
 // computed from a diff without context lines, so that the ID doesn't
 // change when a commit is replayed onto a parent that changed the lines
 // around its change. A merge commit, and a commit that changes no file,
-// map to "".
+// map to "". The diff reads attributes from the empty tree, so that no
+// .gitattributes file, such as one that marks text files binary, can keep
+// a replay from matching.
 func (r *Repo) PatchIDs(ctx context.Context, commits []string) (map[string]string, error) {
 	ids := make(map[string]string, len(commits))
 	if len(commits) == 0 {
 		return ids, nil
 	}
-	diffs, err := r.git.run(ctx, r.Dir, []string{"diff-tree", "--stdin", "--root", "-p", "-U0", "--full-index"},
-		opts{stdin: []byte(strings.Join(commits, "\n") + "\n"), env: remoteProtocols})
+	noAttrs, err := r.noAttributes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out, err := r.git.run(ctx, r.Dir, []string{"patch-id", "--stable"}, opts{stdin: diffs, env: remoteProtocols})
+	res, err := r.git.exec(ctx, r.Dir, []string{noAttrs, "diff-tree", "--stdin", "--root", "-p", "-U0", "--full-index"},
+		opts{stdin: []byte(strings.Join(commits, "\n") + "\n"), env: remoteProtocols})
+	if err == nil && res.code != 0 {
+		err = &Error{Command: "diff-tree", Code: res.code, Stderr: res.stderr}
+	}
+	if err != nil {
+		return nil, err
+	}
+	out, err := r.git.run(ctx, r.Dir, []string{"patch-id", "--stable"}, opts{stdin: res.stdout, env: remoteProtocols})
 	if err != nil {
 		return nil, err
 	}
