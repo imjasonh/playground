@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { lstat, readdir, readFile, readlink } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -49,7 +50,8 @@ export function blobSha(algorithm: "sha1" | "sha256", content: Buffer): string {
  * Compares a work tree with the index that the Pod checked it out from, and
  * returns what changed, sorted by path. The work tree has no .git
  * directory, so this needs no git, and nothing that the agent writes can
- * configure one.
+ * configure one. It reads only the changed files into memory, and throws
+ * before it reads more than MAX_FILES files or MAX_BYTES bytes.
  */
 export async function changedFiles(workTree: string, index: Buffer): Promise<Change[]> {
   const entries = parseIndex(index);
@@ -73,25 +75,32 @@ export async function changedFiles(workTree: string, index: Buffer): Promise<Cha
       if (isIgnoreFile(path)) {
         continue;
       }
-      let mode: "100644" | "100755" | "120000";
-      let content: Buffer;
+      seen.add(path);
+      const old = entries.get(path);
       if (d.isSymbolicLink()) {
-        mode = "120000";
-        content = await readlink(full, { encoding: "buffer" });
+        const target = await readlink(full, { encoding: "buffer" });
+        if (old?.mode === "120000" && old.sha === blobSha(algorithm, target)) {
+          continue;
+        }
+        check(changes.length + 1, bytes + target.length);
+        bytes += target.length;
+        changes.push({ path, mode: "120000", content: target });
       } else if (d.isFile()) {
-        mode = ((await lstat(full)).mode & 0o111) !== 0 ? "100755" : "100644";
-        content = await readFile(full);
+        const stat = await lstat(full);
+        const mode = (stat.mode & 0o111) !== 0 ? "100755" : "100644";
+        if (old?.mode === mode && old.sha === (await fileSha(algorithm, full, path, stat.size))) {
+          continue;
+        }
+        check(changes.length + 1, bytes + stat.size);
+        const content = await readFile(full);
+        if (content.length !== stat.size) {
+          throw new Error(`${path} changed while the runner read it`);
+        }
+        bytes += content.length;
+        changes.push({ path, mode, content });
       } else {
         throw new Error(`${path} isn't a file, a directory, or a symbolic link`);
       }
-      seen.add(path);
-      const old = entries.get(path);
-      if (old && old.mode === mode && old.sha === blobSha(algorithm, content)) {
-        continue;
-      }
-      bytes += content.length;
-      changes.push({ path, mode, content });
-      check(changes.length, bytes);
     }
   };
   await visit("");
@@ -103,6 +112,45 @@ export async function changedFiles(workTree: string, index: Buffer): Promise<Cha
     }
   }
   return changes.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+}
+
+/**
+ * Returns the SHA of the blob for a file of the given size, reading the
+ * file a piece at a time, so a large file that the agent left alone takes
+ * no memory.
+ */
+async function fileSha(algorithm: "sha1" | "sha256", full: string, path: string, size: number): Promise<string> {
+  const hash = createHash(algorithm).update(`blob ${size}\0`);
+  let read = 0;
+  for await (const chunk of createReadStream(full) as AsyncIterable<Buffer>) {
+    read += chunk.length;
+    hash.update(chunk);
+  }
+  if (read !== size) {
+    throw new Error(`${path} changed while the runner read it`);
+  }
+  return hash.digest("hex");
+}
+
+/**
+ * Throws unless every path in the index is valid UTF-8. The runner finds
+ * the files that the agent changed by their paths, which it reads as
+ * UTF-8.
+ */
+export function checkPaths(index: Buffer): void {
+  const strict = new TextDecoder("utf-8", { fatal: true });
+  for (let start = 0; start < index.length; ) {
+    const nul = index.indexOf(0, start);
+    const end = nul < 0 ? index.length : nul;
+    const record = index.subarray(start, end);
+    try {
+      strict.decode(record);
+    } catch {
+      const path = record.subarray(record.indexOf(0x09) + 1).toString();
+      throw new Error(`the agent can't edit files because the path ${JSON.stringify(path)} isn't valid UTF-8`);
+    }
+    start = end + 1;
+  }
 }
 
 function check(files: number, bytes: number): void {

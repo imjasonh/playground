@@ -104,6 +104,21 @@ test("reports the files that the agent changed", async () => {
   );
 });
 
+test("won't edit a tree with a path that isn't UTF-8", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const task = preparePod({ "a.txt": "a\n" }, {}, { edit: true });
+  const record = Buffer.from("100644 ce013625030ba8dba906f756967f9e9ca394464a 0\tb\xff\0", "latin1");
+  writeFileSync(task.filesFile, Buffer.concat([readFileSync(task.filesFile), record]));
+  let ran = false;
+  const agent: Backend = async (r) => {
+    ran = true;
+    return fakeBackend(r);
+  };
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: agent } }), 1);
+  assert.equal(ran, false);
+  assert.match(readFileSync(task.terminationLog, "utf8"), /the path "b\uFFFD" isn't valid UTF-8/);
+});
+
 test("reports no files when the agent changes none", async () => {
   const task = preparePod({ "a.txt": "one\n" }, { "a.txt": "two\n" }, { edit: true });
   assert.equal(await runTask(task), 0);

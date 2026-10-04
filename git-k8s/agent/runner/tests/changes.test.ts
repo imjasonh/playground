@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, symlinkSync, truncateSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { blobSha, changedFiles, MAX_FILES, parseIndex } from "../src/changes.js";
+import { blobSha, changedFiles, checkPaths, MAX_BYTES, MAX_FILES, parseIndex } from "../src/changes.js";
 import { git, preparePod } from "./pod.js";
 
 function layout() {
@@ -63,6 +63,34 @@ test("skips submodule directories", async () => {
   assert.deepEqual(await changedFiles(task.workTree, readFileSync(task.filesFile)), []);
   rmSync(join(task.workTree, "sub"), { recursive: true });
   assert.deepEqual(await changedFiles(task.workTree, readFileSync(task.filesFile)), []);
+});
+
+test("refuses a large file before reading it", async (t) => {
+  if (process.getuid?.() === 0) {
+    t.skip("root can read any file");
+    return;
+  }
+  const { workTree, index } = layout();
+  const big = join(workTree, "big.bin");
+  writeFileSync(big, "");
+  truncateSync(big, MAX_BYTES + 1);
+  chmodSync(big, 0);
+  await assert.rejects(changedFiles(workTree, index()), /hold more than 8 MiB/);
+});
+
+test("leaves alone a large file that the agent didn't change", async () => {
+  const task = preparePod({ "big.txt": "x".repeat(MAX_BYTES + 1), "a.txt": "a\n" }, {});
+  assert.deepEqual(await changedFiles(task.workTree, readFileSync(task.filesFile)), []);
+  writeFileSync(join(task.workTree, "big.txt"), "y".repeat(MAX_BYTES + 1));
+  await assert.rejects(changedFiles(task.workTree, readFileSync(task.filesFile)), /hold more than 8 MiB/);
+});
+
+test("checks that paths are valid UTF-8", () => {
+  const record = (path: Buffer) => Buffer.concat([Buffer.from("100644 ce013625030ba8dba906f756967f9e9ca394464a 0\t"), path, Buffer.from([0])]);
+  checkPaths(Buffer.concat([record(Buffer.from("café.txt")), record(Buffer.from("a"))]));
+  checkPaths(Buffer.alloc(0));
+  const bad = Buffer.concat([record(Buffer.from("a")), record(Buffer.from([0x62, 0xff]))]);
+  assert.throws(() => checkPaths(bad), /the path "b\uFFFD" isn't valid UTF-8/);
 });
 
 test("refuses too many changed files", async () => {

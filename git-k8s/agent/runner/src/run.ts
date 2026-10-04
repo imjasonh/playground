@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { cursorBackend } from "./backends/cursor.js";
 import { fakeBackend } from "./backends/fake.js";
 import type { Backend } from "./backends/types.js";
-import { changedFiles } from "./changes.js";
+import { changedFiles, checkPaths } from "./changes.js";
 import { buildPrompt, firstLines, MAX_DIFF, MAX_LOG } from "./prompt.js";
 import type { ChangedFile, Result } from "./result.js";
 import { parseTask, type BackendName, type Task } from "./task.js";
@@ -69,6 +69,10 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   const diff = await readStart(task.diffFile, MAX_DIFF + 1);
   const commits = await readStart(task.logFile, MAX_LOG + 1);
   const paths = task.changesFile ? parseNameStatus(await readStart(task.changesFile, MAX_PATHS_BYTES + 1)) : undefined;
+  const index = task.edit ? await readFile(task.filesFile) : undefined;
+  if (index) {
+    checkPaths(index);
+  }
   const started = Date.now();
   const response = await backends[task.backend]({
     prompt: buildPrompt(task, diff, commits, paths),
@@ -82,8 +86,8 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   });
   const verdict = parseVerdict(response.text);
   const files: ChangedFile[] = [];
-  if (task.edit) {
-    for (const change of await changedFiles(task.workTree, await readFile(task.filesFile))) {
+  if (index) {
+    for (const change of await changedFiles(task.workTree, index)) {
       if (change.deleted) {
         files.push({ path: change.path, deleted: true });
         continue;
