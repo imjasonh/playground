@@ -6,10 +6,10 @@
 // and the merge policy lets the deps check push, the check runs a Cursor
 // agent in a sandboxed Pod with the agent package. The agent gets the test
 // output, the update's change from the merge base, and the head's files,
-// and can edit the code but not go.mod or go.sum files. The check pushes
-// the agent's changes as a fix, within the branch's maxAutomatedCommits,
-// and the tests run again on the new head. The check passes when the tests
-// pass, and on branches outside the prefix.
+// and can edit the code but not go.mod, go.sum, go.work, or go.work.sum
+// files. The check pushes the agent's changes as a fix, within the branch's
+// maxAutomatedCommits, and the tests run again on the new head. The check
+// passes when the tests pass, and on branches outside the prefix.
 package main
 
 import (
@@ -77,7 +77,7 @@ func (p *branchPrefix) Set(s string) error {
 // instructions returns the agent's task for a branch whose tests fail with
 // the gotest check's message.
 func instructions(message string) string {
-	return `The branch updates Go modules that the code requires, and go test fails on the head commit. Change the code so that it builds and its tests pass with the new versions, for example where a module's API changed. Don't change go.mod or go.sum files, and don't undo the update.
+	return `The branch updates Go modules that the code requires, and go test fails on the head commit. Change the code so that it builds and its tests pass with the new versions, for example where a module's API changed. Don't change go.mod, go.sum, go.work, or go.work.sum files, and don't undo the update.
 
 Answer pass when you've changed the code to fix the failures, and fail when you can't fix them that way.
 

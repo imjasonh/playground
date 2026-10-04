@@ -649,10 +649,11 @@ commit whose tests failed.
 
 The check fails, and the branch waits for a person, when the policy doesn't
 let it push, when the branch has no automated commits left, and when the
-agent can't fix the tests, changes a `go.mod` or `go.sum` file, or changes no
-files. The limits in [Agentic checks](#agentic-checks), such as
-`maxAgentRuns`, cap its agent runs. Its fix commit makes `check-risk` rate
-the branch `high`, so a person approves the fix before it lands.
+agent can't fix the tests, changes a `go.mod`, `go.sum`, `go.work`, or
+`go.work.sum` file, or changes no files. The limits in
+[Agentic checks](#agentic-checks), such as `maxAgentRuns`, cap its agent
+runs. Its fix commit makes `check-risk` rate the branch `high`, so a person
+approves the fix before it lands.
 
 ### Update Pods
 
