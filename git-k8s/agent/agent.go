@@ -158,6 +158,7 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 		st.Pod = prev.Outputs["pod"]
 		st.Attempt, _ = strconv.Atoi(prev.Outputs["attempt"])
 		st.UID = prev.Outputs["podUID"]
+		st.Refunded = prev.Outputs["refunded"]
 		x.job.Checkout.Base = prev.Outputs["base"]
 	}
 	// A Pod's name covers its job, so a changed policy starts a new run
@@ -241,6 +242,9 @@ func (x *run) outputs() map[string]string {
 		o["attempt"] = strconv.Itoa(x.st.Attempt)
 		if x.st.UID != "" {
 			o["podUID"] = x.st.UID
+		}
+		if x.st.Refunded != "" {
+			o["refunded"] = x.st.Refunded
 		}
 		if base := x.job.Checkout.Base; base != "" {
 			o["base"] = base
@@ -404,6 +408,15 @@ func (w *window) take(now time.Time, limit int) (time.Duration, bool) {
 		w.starts = append(w.starts, now)
 	}
 	return 0, true
+}
+
+// giveBack forgets the latest run that started.
+func (w *window) giveBack() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if n := len(w.starts); n > 0 {
+		w.starts = w.starts[:n-1]
+	}
 }
 
 // full reports whether limit runs started in the 24 hours before now,

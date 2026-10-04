@@ -43,8 +43,9 @@ type Job struct {
 
 // Checkout is the commits that a job's agent works on.
 type Checkout struct {
-	// Branch points to Head. If the Pod finds it elsewhere, the run waits
-	// for a Job with the new head.
+	// Branch points to Head. If the Pod finds it elsewhere, the agent
+	// doesn't run, and the run waits for a Job with the new head without
+	// counting toward the run limits.
 	Branch string
 	Head   string
 	// Parent names the branch that Branch lands on.
@@ -58,7 +59,7 @@ type Checkout struct {
 // next. Keep it with the object that the job is for, such as in a check's
 // outputs, and pass it to each call.
 type JobState struct {
-	// Runs counts the runs that RunJob started.
+	// Runs counts the runs that RunJob started and didn't give back.
 	Runs int
 	// Pod names the run's Pod, and Attempt counts its attempts at
 	// preparing the source.
@@ -67,6 +68,9 @@ type JobState struct {
 	// UID is the UID of the run's Pod when RunJob last saw it, so RunJob
 	// can tell when kube created the Pod again.
 	UID string
+	// Refunded is the UID of the run's Pod that found that the branch
+	// moved. Its agent didn't run, so RunJob gave back the run, once.
+	Refunded string
 }
 
 // JobStatus is how a job's run stands.
@@ -149,6 +153,11 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 // doesn't count toward the job's runs, so a deploy can't stop a run whose
 // job has none left.
 func (x *run) restart(ctx context.Context, p *Pod) JobStatus {
+	if st := x.st; st.Refunded != "" && st.Refunded == st.UID {
+		// A new Pod would find that the branch moved, too.
+		c := x.job.Checkout
+		return x.status("waiting for a run on the new commits: %s no longer points to %s", c.Branch, c.Head)
+	}
 	if wait, ok := x.r.day.take(time.Now(), x.r.MaxRunsPerDay); !ok {
 		kube.RequeueAfter(ctx, wait)
 		return x.status("waiting to start the agent again: %d agent runs started in the last 24 hours, the -max-runs-per-day limit", x.r.MaxRunsPerDay)
@@ -261,6 +270,11 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		msg := exitMessage(t)
 		switch {
 		case t.ExitCode == movedStatus:
+			if st.Refunded != pod.UID {
+				st.Refunded = pod.UID
+				st.Runs--
+				x.r.day.giveBack()
+			}
 			return x.status("waiting for a run on the new commits: %s", msg)
 		case st.Attempt < prepareAttempts:
 			st.Attempt++

@@ -658,20 +658,40 @@ func TestRetriesPreparingTheSource(t *testing.T) {
 
 func TestWaitsForTheNewHeadWhenTheBranchMoved(t *testing.T) {
 	f := newFixture(t, "")
+	two := int32(2)
+	f.b.Spec.Merge.MaxAgentRuns = &two
+	f.r.MaxRunsPerDay = 2
+	first := f.start()
+	f.reconcile(finished(first, f.serve(review(Fail), first.UID)))
+	f.work.Write("a.txt", "one\nretry\n")
+	f.b.Spec.Head = f.work.Commit("retry")
+	f.work.Push("c/x")
 	p := f.start()
+
+	t.Log("The agent doesn't run on a branch that moved, so the run doesn't count, once.")
 	moved := "c/x no longer points to " + f.b.Spec.Head
 	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
 		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved})},
 	}}
-	rec := f.reconcile(p)
-	if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["pod"] != p.Name || res.Outputs["attempt"] != "1" {
-		t.Fatalf("result = %+v, want Running in the same Pod", res)
-	}
-	if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || rec.RequeueAfter() != 0 {
-		t.Fatalf("owned Pods = %d and RequeueAfter = %v, want the same Pod and no retry", len(pods), rec.RequeueAfter())
+	for range 2 {
+		rec := f.reconcile(p)
+		if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["pod"] != p.Name || res.Outputs["attempt"] != "1" ||
+			res.Outputs["runs"] != "1" || res.Outputs["refunded"] != p.UID {
+			t.Fatalf("result = %+v, want Running in the same Pod with the run given back", res)
+		}
+		if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || rec.RequeueAfter() != 0 {
+			t.Fatalf("owned Pods = %d and RequeueAfter = %v, want the same Pod and no retry", len(pods), rec.RequeueAfter())
+		}
 	}
 
-	t.Log("The new head starts a new run.")
+	t.Log("A deploy doesn't start the run again in a new Pod, which would find the branch moved too.")
+	f.r.Model = "composer-3"
+	rec := f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 0 {
+		t.Fatalf("result = %+v, want Running without a Pod", res)
+	}
+
+	t.Log("The new head starts a new run, which the limits still allow.")
 	f.work.Write("a.txt", "one\nmoved\n")
 	f.b.Spec.Head = f.work.Commit("move")
 	f.work.Push("c/x")

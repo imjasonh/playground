@@ -177,6 +177,22 @@ func TestRestartsAJobsRunWhenAFlagChanges(t *testing.T) {
 	}
 }
 
+func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	st := &JobState{Runs: 1}
+	p := f.startJob(job, st)
+	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: "c/x no longer points to " + job.Checkout.Head})},
+	}}
+	for _, uid := range []string{p.UID, p.UID, "uid-again"} {
+		p.UID = uid
+		if s, _ := f.runJob(job, st, p); s.Done || *st != (JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: uid, Refunded: uid}) {
+			t.Fatalf("RunJob = %+v with state %+v, want the run of Pod UID %s given back once", s, st, uid)
+		}
+	}
+}
+
 func TestReportsWhatAFailedJobUsed(t *testing.T) {
 	f := newFixture(t, "")
 	job := f.reviewJob()
