@@ -1877,6 +1877,12 @@ func TestDeletesABranchThatRaisesARetractedVersion(t *testing.T) {
 		pushed:  modWith(greet, "v1.1.0", other, "v1.4.0"),
 		again:   func(f *fixture) { f.proxy.publish(greet, "v1.2.0", longAgo, "") },
 		version: "v1.2.0",
+	}, {
+		name:    "a newer version that retracts the branch's own version comes out",
+		pushed:  modAt("v1.1.0"),
+		again:   func(f *fixture) { f.proxy.publish(greet, "v1.2.0", longAgo, "retract v1.1.0\n") },
+		version: "v1.2.0",
+		deleted: true,
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)

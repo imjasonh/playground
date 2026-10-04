@@ -927,9 +927,10 @@ func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote,
 
 // deleteIfRetracted deletes the branch that an update would replace when
 // the branch's go.mod files raise a requirement to a version that its
-// module retracts, as the controller deletes a branch whose own version the
-// module retracts. The controller pushed such a branch before the module
-// retracted the version.
+// module retracts, the branch's own module included. Otherwise, plan
+// deletes a branch whose own version the module retracts only when target
+// finds no version to update to. The controller pushed such a branch before
+// the module retracted the version.
 func (u *updater) deleteIfRetracted(ctx context.Context, local *git.Repo, remote git.Remote, mods map[string]*modFile, w change, log *slog.Logger) {
 	if w.old == "" {
 		return
@@ -943,7 +944,7 @@ func (u *updater) deleteIfRetracted(ctx context.Context, local *git.Repo, remote
 	for dir, f := range old {
 		files[path.Join(dir, "go.mod")] = f.data
 	}
-	for _, m := range raised(mods, w.up, files) {
+	for _, m := range raised(mods, update{}, files) {
 		retracted, err := u.proxy.retracted(ctx, m.Path, m.Version)
 		if err != nil {
 			log.Warn("reading the retractions of a module that a branch raises failed", "branch", w.branch, "raises", m.String(), "error", err)

@@ -641,9 +641,9 @@ too, and keep that time until the proxy lists them.
 with only a warning. The controller doesn't push such an update. It logs
 that the update failed, and makes the update again after `-interval`. When
 the update would replace a branch whose `go.mod` files raise a requirement
-to a retracted version too, for example because the controller pushed the
-branch before the module retracted the version, the controller deletes the
-branch.
+to a retracted version too, including the version of the branch's own
+module, for example because the controller pushed the branch before the
+module retracted the version, the controller deletes the branch.
 
 When no module proxy has a module or version that an update raises a
 requirement to, the controller can't check the version, so it doesn't push
