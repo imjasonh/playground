@@ -486,7 +486,9 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
   (`10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`), the shared address
   space (`100.64.0.0/10`), and the link-local range (`169.254.0.0/16`).
   Those ranges usually hold the cluster's Pods, Services, and nodes, and a
-  cloud's metadata server.
+  cloud's metadata server. If your cluster gives Pods, Services, or nodes
+  addresses outside those ranges, the policy lets test Pods reach those
+  addresses on ports 80 and 443 too, so leave `-goproxy` `off` there.
 - If fetching fails, the check starts a new Pod 30 seconds later, and 60
   seconds after a second failure, so its three Pods outlast a restart of the
   core program.

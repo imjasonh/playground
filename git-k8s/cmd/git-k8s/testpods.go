@@ -108,7 +108,9 @@ var privateRanges = []string{"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "1
 // reach the mirror's port on this program's Pods, and port 53 on the DNS
 // Pods and -dns-cidrs, and lets nothing reach them. With -goproxy, it also
 // lets them reach ports 80 and 443 on IPv4 addresses outside privateRanges,
-// which is where a public module proxy is.
+// which is where a public module proxy is. On a cluster that gives Pods,
+// Services, or nodes addresses outside privateRanges, that rule lets test
+// Pods reach them too.
 func testPodsPolicy(repo *gitk8s.GitRepository) *NetworkPolicy {
 	dns := []NetworkPolicyPeer{{NamespaceSelector: namespace(*dnsNS), PodSelector: &LabelSelector{MatchLabels: maps.Clone(dnsLabels)}}}
 	for _, c := range dnsCIDRs {
