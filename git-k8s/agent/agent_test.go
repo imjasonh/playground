@@ -506,6 +506,9 @@ func TestReportsWhatAFailedRunUsed(t *testing.T) {
 
 func TestCountsAPodThatsCreatedAgain(t *testing.T) {
 	f := newFixture(t, "")
+	two := int32(2)
+	f.b.Spec.Merge.MaxAgentRuns = &two
+	f.r.MaxRunsPerDay = 2
 	p := f.start()
 	f.reconcile(p)
 	if res := f.state(); res.Outputs["podUID"] != p.UID {
@@ -598,6 +601,30 @@ func TestEndsARunWhenItsNewPodPassesALimit(t *testing.T) {
 			}
 			if rec := f.reconcile(p); len(kube.Owned[Pod](rec)) != 0 {
 				t.Error("the next reconcile must stop declaring the Pod")
+			}
+		})
+	}
+}
+
+func TestWontCreateADeletedPodAgainPastALimit(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		maxAgentRuns  int32
+		maxRunsPerDay int
+		want          string
+	}{
+		{"maxAgentRuns", 1, 0, "the branch used all 1 agent runs that maxAgentRuns allows"},
+		{"-max-runs-per-day", 10, 1, "1 agent runs started in the last 24 hours, the -max-runs-per-day limit"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			f.b.Spec.Merge.MaxAgentRuns = &tc.maxAgentRuns
+			f.r.MaxRunsPerDay = tc.maxRunsPerDay
+			p := f.start()
+			f.reconcile(p)
+			rec := f.reconcile()
+			if res := f.state(); res.State != gitk8s.Failed || res.Message != "Pod "+p.Name+" was deleted, but "+tc.want || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 0 {
+				t.Errorf("result = %+v with %d owned Pods, want Failed without the Pod", res, len(kube.Owned[Pod](rec)))
 			}
 		})
 	}
@@ -812,10 +839,14 @@ func TestWindow(t *testing.T) {
 	if wait, ok := w.take(t0.Add(2*time.Hour), 2); ok || wait != 22*time.Hour {
 		t.Errorf("take = %v, %v; want a wait of 22h", wait, ok)
 	}
+	if !w.full(t0.Add(2*time.Hour), 2) || w.full(t0.Add(2*time.Hour), 3) || w.full(t0, 0) {
+		t.Error("full must report a limit that 2 runs reach, without recording a run")
+	}
 	if _, ok := w.take(t0.Add(24*time.Hour+time.Second), 2); !ok {
 		t.Error("the first run is more than a day old, so another can start")
 	}
-	if _, ok := w.take(t0, 0); !ok {
-		t.Error("a limit of 0 means no limit")
+	n := len(w.starts)
+	if _, ok := w.take(t0, 0); !ok || len(w.starts) != n {
+		t.Error("a limit of 0 means no limit, so take records nothing")
 	}
 }

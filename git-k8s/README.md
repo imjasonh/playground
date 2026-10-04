@@ -292,10 +292,11 @@ tokens:
   across all namespaces.
 
 If an agent Pod is deleted before its run finishes, kube creates it again,
-and the agent runs again. The check counts that as another run, or fails
-when `maxAgentRuns` or `-max-runs-per-day` allows no more. A run that fails
-after the agent starts still reports the `model`, the token counts, and the
-costs in the check's outputs.
+and the agent runs again. The check counts that as another run. When
+`maxAgentRuns` or `-max-runs-per-day` allows no more, the check fails
+instead, and kube doesn't create the Pod again. A run that fails after the
+agent starts still reports the `model`, the token counts, and the costs in
+the check's outputs.
 
 A deploy can also run agents again. A Pod's spec can't change, so after a
 deploy that changes the agent Pods' spec, such as one with another
@@ -448,8 +449,8 @@ job's `MaxRuns`. A deploy that changes the agent Pods' spec starts the run
 again in a new Pod, which takes a place in `-max-runs-per-day` but doesn't
 count toward `MaxRuns`. If the run's Pod is deleted before the run is
 `Done`, kube creates it again and the agent runs again, so `RunJob` counts
-another run, or ends the run when `MaxRuns` or `-max-runs-per-day` allows
-no more.
+another run. When `MaxRuns` or `-max-runs-per-day` allows no more,
+`RunJob` ends the run instead, and kube doesn't create the Pod again.
 
 Agents get no shell. The tools that an agent can have are `read`, `grep`,
 `glob`, and `ls`, plus `edit` and `delete` when the task edits files, and

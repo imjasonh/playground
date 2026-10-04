@@ -395,20 +395,40 @@ type window struct {
 // 24 hours before. Then it returns how long until one of those is older
 // than 24 hours. A limit of 0 means no limit.
 func (w *window) take(now time.Time, limit int) (time.Duration, bool) {
-	if limit <= 0 {
-		return 0, true
-	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if wait := w.wait(now, limit); wait > 0 {
+		return wait, false
+	}
+	if limit > 0 {
+		w.starts = append(w.starts, now)
+	}
+	return 0, true
+}
+
+// full reports whether limit runs started in the 24 hours before now,
+// without recording a run.
+func (w *window) full(now time.Time, limit int) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.wait(now, limit) > 0
+}
+
+// wait forgets the runs that started 24 hours or more before now, and
+// returns how long until a run can start, or 0 if one can start now. The
+// caller holds w.mu.
+func (w *window) wait(now time.Time, limit int) time.Duration {
+	if limit <= 0 {
+		return 0
+	}
 	cutoff := now.Add(-24 * time.Hour)
 	i := 0
 	for i < len(w.starts) && !w.starts[i].After(cutoff) {
 		i++
 	}
 	w.starts = w.starts[i:]
-	if len(w.starts) >= limit {
-		return w.starts[len(w.starts)-limit].Sub(cutoff), false
+	if len(w.starts) < limit {
+		return 0
 	}
-	w.starts = append(w.starts, now)
-	return 0, true
+	return w.starts[len(w.starts)-limit].Sub(cutoff)
 }

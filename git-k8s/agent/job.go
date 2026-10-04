@@ -212,6 +212,16 @@ func isCommit(s string) bool {
 // follow declares desired, the run's Pod, and reports how the run stands.
 func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 	st := x.st
+	// kube creates a deleted Pod again, which runs the agent again, so the
+	// run declares a Pod that's gone only if it can count another run.
+	if st.UID != "" && kube.Get[podPhase](ctx, x.job.Namespace, st.Pod) == nil {
+		if why := x.usedAll(); why != "" {
+			return x.fail("Pod %s was deleted, but %s", st.Pod, why)
+		}
+		if x.r.day.full(time.Now(), x.r.MaxRunsPerDay) {
+			return x.fail("Pod %s was deleted, but %d agent runs started in the last 24 hours, the -max-runs-per-day limit", st.Pod, x.r.MaxRunsPerDay)
+		}
+	}
 	pod := kube.Own(ctx, desired)
 	if pod == nil {
 		if st.UID != "" {

@@ -134,6 +134,10 @@ func TestCountsAJobsPodThatsCreatedAgain(t *testing.T) {
 			t.Fatalf("RunJob = %+v with state %+v, want %+v", s, st, want)
 		}
 	}
+	gone := *st
+	if s, rec := f.runJob(job, &gone); !s.Done || s.Result != nil || len(kube.Owned[Pod](rec)) != 0 || s.Message != "Pod "+p.Name+" was deleted, but the job used all 2 of its runs" {
+		t.Errorf("RunJob = %+v, want the run to end at the job's limit without the Pod", s)
+	}
 	p.UID = "uid-3"
 	if s, _ := f.runJob(job, st, p); !s.Done || s.Result != nil || s.Message != "Pod "+p.Name+" was deleted and created again, but the job used all 2 of its runs" {
 		t.Errorf("RunJob = %+v, want the run to end at the job's limit", s)
