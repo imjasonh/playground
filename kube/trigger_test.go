@@ -2,8 +2,12 @@ package kube
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/imjasonh/playground/kube/internal/queue"
@@ -29,6 +33,99 @@ func TestTrigger(t *testing.T) {
 	}
 	if got, want := Triggered[policy](rec), []Key{{Name: "p"}}; !slices.Equal(got, want) {
 		t.Errorf("Triggered[policy] = %v, want %v", got, want)
+	}
+}
+
+func TestFakeRequest(t *testing.T) {
+	w := &widget{}
+	w.Namespace, w.Name = "shop", "w1"
+	user := UserInfo{Username: "system:serviceaccount:shop:client"}
+	ctx, rec := FakeRequest(t.Context(), w, FakeToken{Token: "t", User: user, Audiences: []string{"shop"}})
+	if got := Get[widget](ctx, "shop", "w1"); got == nil || got.Name != "w1" {
+		t.Errorf("Get = %+v", got)
+	}
+	if r, err := ReviewToken(ctx, "t", "shop"); err != nil || !r.Authenticated || r.User.Username != user.Username {
+		t.Errorf("ReviewToken = %+v, %v", r, err)
+	}
+	if !Trigger[widget](ctx, "shop", "w1") {
+		t.Error("Trigger of a widget in the world returned false")
+	}
+	if got, want := Triggered[widget](rec), []Key{{Namespace: "shop", Name: "w1"}}; !slices.Equal(got, want) {
+		t.Errorf("Triggered = %v, want %v", got, want)
+	}
+	if err := rec.Err(); err != nil {
+		t.Fatalf("Err after reads and a trigger = %v", err)
+	}
+	Apply(ctx, w)
+	if err := rec.Err(); err == nil || !strings.Contains(err.Error(), "kube.Apply can't be called") || context.Cause(ctx) != err {
+		t.Errorf("Err after Apply = %v, and the context's cause = %v; want the error that a handler gets in a cluster", err, context.Cause(ctx))
+	}
+	if got := Applied[widget](rec); len(got) != 0 {
+		t.Errorf("Applied = %v, want nothing from a handler", got)
+	}
+
+	for _, standby := range []any{FakeStandby{}, &FakeStandby{}} {
+		ctx, rec := FakeRequest(t.Context(), w, standby)
+		if Trigger[widget](ctx, "shop", "w1") || len(Triggered[widget](rec)) != 0 {
+			t.Errorf("Trigger with %T queued a reconcile", standby)
+		}
+		if Get[widget](ctx, "shop", "w1") == nil {
+			t.Errorf("Get with %T found nothing", standby)
+		}
+	}
+	ctx, rec = Fake(t.Context(), w, FakeStandby{})
+	if Trigger[widget](ctx, "shop", "w1") || len(Triggered[widget](rec)) != 0 {
+		t.Error("Trigger in a Fake context with FakeStandby queued a reconcile")
+	}
+}
+
+func TestFakeRequestConcurrent(t *testing.T) {
+	w := &widget{}
+	w.Namespace, w.Name = "shop", "w1"
+	d := &deploymentFull{Object: Meta("d", nil)}
+	d.Namespace = "shop"
+	user := UserInfo{Username: "system:serviceaccount:shop:client"}
+	ctx, rec := FakeRequest(t.Context(), w, d, FakeToken{Token: "t", User: user, Audiences: []string{"shop"}})
+	h := http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		if Get[deploymentProjection](ctx, "shop", "d") == nil || len(List[widget](ctx)) != 1 {
+			http.Error(rw, "a read missed an object", http.StatusInternalServerError)
+			return
+		}
+		if review, _ := ReviewToken(ctx, "t", "shop"); !review.Authenticated {
+			http.Error(rw, review.Error, http.StatusUnauthorized)
+			return
+		}
+		token, _, err := RequestToken(ctx, "shop")
+		if err != nil || !Trigger[widget](ctx, "shop", "w1") {
+			http.Error(rw, fmt.Sprintf("RequestToken: %v, or Trigger returned false", err), http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprint(rw, token)
+	})
+	const n = 8
+	tokens := make([]string, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() {
+			resp := httptest.NewRecorder()
+			h.ServeHTTP(resp, httptest.NewRequest(http.MethodPost, "/", nil).WithContext(ctx))
+			if resp.Code != http.StatusOK {
+				t.Errorf("request %d = %d %q", i, resp.Code, resp.Body)
+			}
+			tokens[i] = resp.Body.String()
+		})
+	}
+	wg.Wait()
+	slices.Sort(tokens)
+	if got := slices.Compact(slices.Clone(tokens)); len(got) != n {
+		t.Errorf("tokens = %q, want %d different ones", tokens, n)
+	}
+	if got := Triggered[widget](rec); len(got) != n {
+		t.Errorf("Triggered = %v, want %d keys", got, n)
+	}
+	if err := rec.Err(); err != nil {
+		t.Error(err)
 	}
 }
 

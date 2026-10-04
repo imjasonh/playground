@@ -289,6 +289,9 @@ type installPlan struct {
 	// volume is where the persistent volume that Volume declares is
 	// mounted, or empty for none.
 	volume string
+	// tokens are the audiences that the program passes to RequestToken as
+	// constants, sorted.
+	tokens []string
 }
 
 // grantsFor returns where the permissions for ti's resources go. A program
@@ -364,7 +367,8 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	o.logf("finding the types that %s reads and writes", pkg)
 	uses, warnings, err := analysis.Find(ctx, analysis.Config{
 		Dir: ".", Env: buildEnv(o.platforms[0]), Pattern: pkg,
-		Package: reflect.TypeFor[Object]().PkgPath(), Funcs: funcs, Marker: "Object",
+		Package: reflect.TypeFor[Object]().PkgPath(), Funcs: funcs,
+		Consts: map[string]int{"RequestToken": 1}, Marker: "Object",
 	})
 	if err != nil {
 		return nil, err
@@ -378,8 +382,17 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			cluster.add("authentication.k8s.io", "tokenreviews", "", "create")
 			continue
 		case "RequestToken":
+			if u.Constant {
+				// RequestToken rejects an empty audience, and a projected
+				// token without one is for the API server.
+				if u.Value != "" {
+					p.tokens = append(p.tokens, u.Value)
+				}
+				continue
+			}
 			// RequestToken asks only for the service account that the
 			// program runs as, which the Deployment names.
+			o.logf("%s: RequestToken's audience isn't a constant, so the program may request tokens for its service account", u.Pos)
 			p.local.add("", "serviceaccounts/token", o.name, "create")
 			continue
 		}
@@ -435,6 +448,10 @@ func (o *generateOptions) oneWriter(dir string) error {
 	o.replicas = 1
 	return nil
 }
+
+// tokenDir is where the program's container mounts its tokens for
+// RequestToken.
+const tokenDir = "/var/run/secrets/tokens"
 
 // manifests returns the objects that install the program.
 func (o *generateOptions) manifests(ref string, p *installPlan) []object {
@@ -504,6 +521,9 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 			}},
 		})
 	}
+	if len(p.tokens) > 0 {
+		args = append(args, "-token-dir="+tokenDir)
+	}
 	args = append(args, o.args...)
 	probe := func(path string) object {
 		return object{{"httpGet", object{{"path", path}, {"port", "http"}}}}
@@ -522,14 +542,26 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 			{"capabilities", object{{"drop", []string{"ALL"}}}},
 		}},
 	}
+	// The root file system is read-only, so give os.TempDir somewhere to
+	// write.
+	mounts := []any{object{{"name", "tmp"}, {"mountPath", "/tmp"}}}
 	tmp := object{}
 	if o.tmpSize != "" {
 		tmp = object{{"sizeLimit", o.tmpSize}}
 	}
-	// The root file system is read-only, so give os.TempDir somewhere to
-	// write.
-	mounts := []any{object{{"name", "tmp"}, {"mountPath", "/tmp"}}}
 	volumes := []any{object{{"name", "tmp"}, {"emptyDir", tmp}}}
+	if len(p.tokens) > 0 {
+		var sources []any
+		for _, aud := range p.tokens {
+			// The API server stretches a token of exactly 3607 seconds to
+			// a year, so don't ask for that.
+			sources = append(sources, object{{"serviceAccountToken", object{
+				{"audience", aud}, {"expirationSeconds", 3600}, {"path", tokenFile(aud)},
+			}}})
+		}
+		mounts = append(mounts, object{{"name", "tokens"}, {"mountPath", tokenDir}, {"readOnly", true}})
+		volumes = append(volumes, object{{"name", "tokens"}, {"projected", object{{"sources", sources}}}})
+	}
 	deployment := object{{"replicas", o.replicas}}
 	podSecurity := object{{"runAsNonRoot", true}, {"seccompProfile", object{{"type", "RuntimeDefault"}}}}
 	if p.volume != "" {
@@ -549,6 +581,12 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		podSecurity = append(podSecurity, field{"fsGroup", 65532}, field{"fsGroupChangePolicy", "OnRootMismatch"})
 	}
 	container = append(container, field{"volumeMounts", mounts})
+	if p.serves {
+		// The Service sends a Pod that's stopping new connections until its
+		// endpoints drop the Pod, and the program refuses them once it
+		// stops. The kubelet sleeps before it signals the program.
+		container = append(container, field{"lifecycle", object{{"preStop", object{{"sleep", object{{"seconds", 5}}}}}}})
+	}
 	docs = append(docs, object{
 		{"apiVersion", "apps/v1"}, {"kind", "Deployment"}, {"metadata", meta(o.name, true)},
 		{"spec", append(deployment,

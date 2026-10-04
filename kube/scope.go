@@ -89,7 +89,7 @@ func (s *scope) readOnly(verb string) bool {
 func scopeFrom(ctx context.Context, verb string) *scope {
 	s, _ := ctx.Value(scopeKey{}).(*scope)
 	if s == nil {
-		panic(fmt.Sprintf("kube.%s called outside a reconcile, webhook, or kube.Serve handler: pass it the context that Reconcile, Finalize, Validate, or Default received, the context of a kube.Serve request, or a context from kube.Fake in a test", verb))
+		panic(fmt.Sprintf("kube.%s called outside a reconcile, webhook, or kube.Serve handler: pass it the context that Reconcile, Finalize, Validate, or Default received, the context of a kube.Serve request, or a context from kube.Fake or kube.FakeRequest in a test", verb))
 	}
 	return s
 }
