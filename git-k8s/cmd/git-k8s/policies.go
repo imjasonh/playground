@@ -24,8 +24,8 @@ type admissionPolicyBinding struct {
 	} `json:"spec"`
 }
 
-// policiesCondition reports whether the admission policies that keep checks
-// apart are installed, with bindings that deny the requests they reject.
+// policiesCondition reports whether the admission policies are installed,
+// with bindings that deny the requests they reject.
 // Reading them through the cache runs the reconcile again when they change.
 func policiesCondition(ctx context.Context) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
@@ -41,11 +41,11 @@ func policiesCondition(ctx context.Context) kube.Condition {
 	if len(missing) > 0 {
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.False, Reason: "Missing",
-			Message: fmt.Sprintf("apply config/policy.yaml: %s isn't installed with a binding that denies, so checks can write each other's results", strings.Join(missing, " and ")),
+			Message: fmt.Sprintf("apply config/policy.yaml: %s isn't installed with a binding that denies", strings.Join(missing, " and ")),
 		}
 	}
 	return kube.Condition{
 		Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
-		Message: "the admission policies keep checks to their own results",
+		Message: "the admission policies let no service account but the core program's write check results, and stop git-k8s controllers from approving branches",
 	}
 }

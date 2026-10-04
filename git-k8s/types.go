@@ -3,14 +3,16 @@
 //
 // People write GitRepository objects. The repository controller lists each
 // repository's branches and owns one GitBranch object for every branch that
-// the repository's rules select. Check controllers each write their own
-// entry in a GitBranch's status, and the merge controller fast-forwards a
-// branch's parent when the parent's merge policy allows.
+// the repository's rules select. Check controllers send their results to
+// the core program, which writes them to each GitBranch's status, and the
+// merge controller fast-forwards a branch's parent when the parent's merge
+// policy allows.
 package gitk8s
 
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"maps"
 	"strings"
 
 	"github.com/imjasonh/playground/kube"
@@ -123,10 +125,10 @@ type Repository struct {
 // controller owns these objects and writes their spec from what it lists on
 // the remote, so don't edit them by hand.
 //
-// Several controllers write a GitBranch's status, each a different part:
-// every check controller writes its own entry in Status.Checks, and the
-// merge controller writes the rest. Server-side apply keeps their writes
-// apart.
+// Two controllers write a GitBranch's status, each a different part: the
+// core program's results controller writes Status.Checks with the results
+// that checks send it, and the merge controller writes the rest.
+// Server-side apply keeps their writes apart.
 type GitBranch struct {
 	kube.Object `kube:"group=git-k8s.imjasonh.com,version=v1alpha1,shortName=gitbr,category=git-k8s"`
 	Spec        GitBranchSpec   `json:"spec"`
@@ -145,7 +147,7 @@ type GitBranchSpec struct {
 
 // GitBranchStatus holds check results and the merge controller's state.
 type GitBranchStatus struct {
-	Checks             map[string]CheckResult `json:"checks,omitempty" doc:"Check results by check name. Each check controller writes only its own entry."`
+	Checks             map[string]CheckResult `json:"checks,omitempty" kube:"mapType=atomic" doc:"Check results by check name. Checks send their results to the core program, which writes each one to the entry of the check that sent it."`
 	State              string                 `json:"state,omitempty" kube:"column=State" doc:"Why the branch has or hasn't landed on its parent, the same as the Merged condition's reason."`
 	ObservedGeneration int64                  `json:"observedGeneration,omitempty"`
 	Conditions         []kube.Condition       `json:"conditions,omitempty"`
@@ -164,8 +166,22 @@ const (
 	// Error means the check couldn't run. Its controller retries.
 	Error = "Error"
 	// Pending is the state that merge gates see for a check with no result
-	// for the branch's current commits. Check controllers don't write it.
+	// for the branch's current commits. Checks can't send it.
 	Pending = "Pending"
+)
+
+// ResultsAudience is the audience of the service account tokens that checks
+// send with their results, and the only audience that the core program
+// accepts.
+const ResultsAudience = "git-k8s-results"
+
+// Limits on a result that the core program accepts from a check. The checks
+// package shortens messages and output values to fit.
+const (
+	MaxMessageLength     = 1024
+	MaxOutputs           = 16
+	MaxOutputNameLength  = 63
+	MaxOutputValueLength = 1024
 )
 
 // CheckResult is one check's result for one commit.
@@ -186,6 +202,16 @@ func (r *CheckResult) Fresh(head, parentHead string) bool {
 // Final reports whether r's state won't change for its commits.
 func (r *CheckResult) Final() bool {
 	return r != nil && (r.State == Passed || r.State == Failed || r.State == Fixed)
+}
+
+// Equal reports whether r and o are the same result. A nil result equals
+// only nil, and empty outputs equal no outputs.
+func (r *CheckResult) Equal(o *CheckResult) bool {
+	if r == nil || o == nil {
+		return r == o
+	}
+	return r.Commit == o.Commit && r.ParentCommit == o.ParentCommit && r.State == o.State &&
+		r.Message == o.Message && maps.Equal(r.Outputs, o.Outputs)
 }
 
 // Short returns the first 12 characters of a commit SHA, for messages.

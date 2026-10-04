@@ -1,0 +1,282 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/kube"
+)
+
+// maxResultSize bounds the body of a request to the results endpoint.
+const maxResultSize = 256 << 10
+
+// resultsBranch is the part of a GitBranch that the results controller
+// writes. status.checks is an atomic map, so each write replaces all of its
+// entries, and this controller is the only manager of any of them.
+type resultsBranch struct {
+	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
+	Spec        gitk8s.GitBranchSpec `json:"spec"`
+	Status      struct {
+		Checks map[string]gitk8s.CheckResult `json:"checks"`
+	} `json:"status,omitzero"`
+}
+
+// results is the results endpoint, which checks send their results to, and
+// the controller that writes the results to status.checks. A check proves
+// which check it is with a token for its service account, so it can write
+// only its own entry.
+//
+// A handler can't write, so it holds each result for the controller,
+// triggers a reconcile of the branch, and answers once the cache shows the
+// result written.
+type results struct {
+	// timeout is how long a request waits for its result to be written.
+	timeout time.Duration
+	// poll is how often a waiting request looks for its result in the
+	// cache.
+	poll time.Duration
+
+	mu   sync.Mutex
+	held map[kube.Key]map[string]*gitk8s.CheckResult
+}
+
+func (rs *results) handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("PUT /results/{namespace}/{name}/{check}", rs.put)
+	return mux
+}
+
+// put sets one check's result on a GitBranch. The request's generation is
+// the GitBranch's generation that the check read.
+func (rs *results) put(w http.ResponseWriter, r *http.Request) {
+	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	review, err := kube.ReviewToken(r.Context(), token, gitk8s.ResultsAudience)
+	switch {
+	case err != nil:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	case !review.Authenticated:
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		http.Error(w, review.Error, http.StatusUnauthorized)
+		return
+	}
+	entry := r.PathValue("check")
+	check, ok := checkFor(review.User)
+	switch {
+	case !ok:
+		http.Error(w, review.User.Username+" isn't a check's service account", http.StatusForbidden)
+		return
+	case check != entry:
+		http.Error(w, fmt.Sprintf("%s is the %s check, so it can't write the %s check's result", review.User.Username, check, entry), http.StatusForbidden)
+		return
+	}
+
+	var res gitk8s.CheckResult
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxResultSize))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&res); err != nil {
+		http.Error(w, "decoding the result: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := validate(&res); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var generation int64
+	if g := r.URL.Query().Get("generation"); g != "" {
+		if generation, err = strconv.ParseInt(g, 10, 64); err != nil {
+			http.Error(w, "generation: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	rs.write(w, r, kube.Key{Namespace: r.PathValue("namespace"), Name: r.PathValue("name")}, check, &res, generation)
+}
+
+// write holds res for the results controller and answers once the cache
+// shows it in the branch's status, or with 503 if that takes too long.
+func (rs *results) write(w http.ResponseWriter, r *http.Request, k kube.Key, check string, res *gitk8s.CheckResult, generation int64) {
+	ctx := r.Context()
+	timeout := time.NewTimer(rs.timeout)
+	defer timeout.Stop()
+	poll := time.NewTicker(rs.poll)
+	defer poll.Stop()
+	held := false
+	defer func() {
+		if held {
+			rs.release(k, check, res)
+		}
+	}()
+	for {
+		b := kube.Get[resultsBranch](ctx, k.Namespace, k.Name)
+		if b == nil {
+			http.Error(w, fmt.Sprintf("GitBranch %s doesn't exist", k), http.StatusNotFound)
+			return
+		}
+		// Until this replica's cache has the spec that the check read, the
+		// result would look stale.
+		if b.Generation >= generation {
+			if reason := rejection(&b.Spec, check, res); reason != "" {
+				http.Error(w, reason, http.StatusConflict)
+				return
+			}
+			if cur, ok := b.Status.Checks[check]; ok && res.Equal(&cur) {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			if !held {
+				rs.hold(k, check, res)
+				held = true
+				if !kube.Trigger[resultsBranch](ctx, k.Namespace, k.Name) {
+					unavailable(w, "this replica doesn't write the branch's results")
+					return
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-timeout.C:
+			unavailable(w, "the result wasn't written in time")
+			return
+		case <-poll.C:
+		}
+	}
+}
+
+// unavailable answers 503 and closes the connection, so that the client's
+// next try can reach the replica that writes the branch's results.
+func unavailable(w http.ResponseWriter, msg string) {
+	w.Header().Set("Connection", "close")
+	http.Error(w, msg+"; try again", http.StatusServiceUnavailable)
+}
+
+func (rs *results) hold(k kube.Key, check string, res *gitk8s.CheckResult) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.held == nil {
+		rs.held = map[kube.Key]map[string]*gitk8s.CheckResult{}
+	}
+	if rs.held[k] == nil {
+		rs.held[k] = map[string]*gitk8s.CheckResult{}
+	}
+	rs.held[k][check] = res
+}
+
+// release stops holding res, unless a later request replaced it.
+func (rs *results) release(k kube.Key, check string, res *gitk8s.CheckResult) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	if rs.held[k][check] != res {
+		return
+	}
+	delete(rs.held[k], check)
+	if len(rs.held[k]) == 0 {
+		delete(rs.held, k)
+	}
+}
+
+func (rs *results) heldFor(k kube.Key) map[string]*gitk8s.CheckResult {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+	return maps.Clone(rs.held[k])
+}
+
+// Reconcile writes the results that requests hold for b, and removes the
+// results of checks that b's merge policy doesn't list.
+func (rs *results) Reconcile(ctx context.Context, b *resultsBranch) error {
+	held := rs.heldFor(kube.Key{Namespace: b.Namespace, Name: b.Name})
+	// A request stops holding its result once the cache shows it written,
+	// which can be after kube read b from the cache. Reading the branch
+	// after taking the held results sees every result that a request
+	// stopped holding.
+	cur := kube.Get[resultsBranch](ctx, b.Namespace, b.Name)
+	if cur == nil {
+		return nil
+	}
+	checks := map[string]gitk8s.CheckResult{}
+	for name, r := range cur.Status.Checks {
+		if listed(&cur.Spec, name) {
+			checks[name] = r
+		}
+	}
+	for name, r := range held {
+		if rejection(&cur.Spec, name, r) == "" {
+			checks[name] = *r
+		}
+	}
+	// An empty map, rather than none, removes the last entry.
+	if len(checks) > 0 || len(cur.Status.Checks) > 0 {
+		b.Status.Checks = checks
+	}
+	return nil
+}
+
+// checkFor returns the name of the check that runs as user. generate
+// installs each program in a namespace with a service account of the
+// program's name, so the gofmt check runs as the service account
+// check-gofmt in the namespace check-gofmt. Keep every mapping from service
+// accounts to checks in this function.
+func checkFor(user kube.UserInfo) (string, bool) {
+	ns, name, ok := user.ServiceAccount()
+	check, isCheck := strings.CutPrefix(name, "check-")
+	if !ok || !isCheck || ns != name || check == "" {
+		return "", false
+	}
+	return check, true
+}
+
+// validate checks that a result has a state that a check can send and
+// bounded sizes.
+func validate(r *gitk8s.CheckResult) error {
+	switch r.State {
+	case gitk8s.Running, gitk8s.Passed, gitk8s.Failed, gitk8s.Fixed, gitk8s.Error:
+	default:
+		return fmt.Errorf("state %q isn't Running, Passed, Failed, Fixed, or Error", r.State)
+	}
+	switch {
+	case r.Commit == "":
+		return errors.New("the result has no commit")
+	case len(r.Message) > gitk8s.MaxMessageLength:
+		return fmt.Errorf("the message is longer than %d bytes", gitk8s.MaxMessageLength)
+	case len(r.Outputs) > gitk8s.MaxOutputs:
+		return fmt.Errorf("the result has more than %d outputs", gitk8s.MaxOutputs)
+	}
+	for k, v := range r.Outputs {
+		switch {
+		case k == "" || len(k) > gitk8s.MaxOutputNameLength:
+			return fmt.Errorf("an output name isn't 1 to %d bytes long", gitk8s.MaxOutputNameLength)
+		case len(v) > gitk8s.MaxOutputValueLength:
+			return fmt.Errorf("output %s is longer than %d bytes", k, gitk8s.MaxOutputValueLength)
+		}
+	}
+	return nil
+}
+
+// listed reports whether spec's merge policy lists the check, so that a
+// result for it belongs in status.checks.
+func listed(spec *gitk8s.GitBranchSpec, check string) bool {
+	return spec.Parent != "" && spec.Merge.Check(check) != nil
+}
+
+// rejection returns why a branch with spec can't take r as the check's
+// result, or "" if it can.
+func rejection(spec *gitk8s.GitBranchSpec, check string, r *gitk8s.CheckResult) string {
+	switch {
+	case spec.Parent == "":
+		return fmt.Sprintf("%s has no parent, so it takes no check results", spec.Branch)
+	case !listed(spec, check):
+		return fmt.Sprintf("the merge policy for %s doesn't list the %s check", spec.Branch, check)
+	case !r.Fresh(spec.Head, spec.ParentHead):
+		return fmt.Sprintf("the result isn't for %s at %s and %s at %s", spec.Branch, gitk8s.Short(spec.Head), spec.Parent, gitk8s.Short(spec.ParentHead))
+	}
+	return ""
+}

@@ -1,6 +1,6 @@
 // Package checks runs check controllers.
 //
-// A check controller reconciles GitBranch objects through its own view type,
+// A check controller reads GitBranch objects through its own view type,
 // which declares the branch's spec and only the check's entry in
 // status.checks:
 //
@@ -18,10 +18,13 @@
 //		return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 //	}
 //
-// kube writes the status that a reconcile leaves with server-side apply, so
-// each check controller manages exactly its own entry. Other checks' entries
-// never pass through it, and because its cache doesn't decode them, their
-// changes don't make it reconcile.
+// The controller reconciles a view of GitBranch without a status, so it
+// can't write status. It reads the check's last result through the check's
+// view, and sends each new result to the core program with a token for the
+// check's service account. The core program writes the result to the
+// check's entry and no other. Other checks' entries never pass through the
+// controller, and because its caches don't decode them, their changes don't
+// make it reconcile.
 package checks
 
 import (
@@ -31,7 +34,11 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
+	"strings"
 	"sync"
+	"time"
+	"unicode/utf8"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -86,20 +93,24 @@ func Fail(format string, args ...any) Verdict {
 	return Verdict{State: gitk8s.Failed, Message: fmt.Sprintf(format, args...)}
 }
 
-// Config holds what check controllers need to work with git.
+// Config holds what check controllers need to work with git and to send
+// results.
 type Config struct {
 	Git      git.Git
 	CacheDir string
 	Identity git.Identity
+	// ResultsURL is the core program's results endpoint.
+	ResultsURL string
 }
 
 // AddFlags registers flags that set c: -git, -cache-dir, -identity-name,
-// and -identity-email.
+// -identity-email, and -results-url.
 func (c *Config) AddFlags(fs *flag.FlagSet) {
 	fs.StringVar(&c.Git.Bin, "git", "git", "git executable")
 	fs.StringVar(&c.CacheDir, "cache-dir", gitk8s.DefaultCacheDir, "writable directory for local copies of repositories")
 	fs.StringVar(&c.Identity.Name, "identity-name", "git-k8s", "author and committer name of commits that the controller pushes")
 	fs.StringVar(&c.Identity.Email, "identity-email", "git-k8s@users.noreply.github.com", "author and committer email of commits that the controller pushes")
+	fs.StringVar(&c.ResultsURL, "results-url", defaultResultsURL, "URL of the core program's results endpoint")
 }
 
 // Main runs a check controller with flags from Config.AddFlags and kube.Main.
@@ -113,17 +124,22 @@ func Main[V any, P interface {
 }
 
 // For returns a controller that runs check on every GitBranch whose merge
-// policy lists it. The controller's name, and so its field manager, is
-// check- followed by the check's name.
+// policy lists it, and sends each new result to the core program. The
+// controller's name is check- followed by the check's name.
 func For[V any, P interface {
 	kube.Resource[V]
 	View
 }](check Check, cfg *Config, opts ...kube.Option) kube.Controller {
-	return kube.For[V, P](NewReconciler[V, P](check, cfg), append([]kube.Option{kube.Named("check-" + check.Name)}, opts...)...)
+	r := NewReconciler[V, P](check, cfg)
+	s := &sender{check: check.Name, cfg: cfg, client: &http.Client{Timeout: 30 * time.Second}, delay: 100 * time.Millisecond}
+	return kube.For[branch](reconcileFunc(func(ctx context.Context, b *branch) error {
+		return runAndSend[V, P](ctx, r, s, b)
+	}), append([]kube.Option{kube.Named("check-" + check.Name)}, opts...)...)
 }
 
-// NewReconciler returns the reconciler that For runs, for tests that call
-// Reconcile directly with a context from kube.Fake.
+// NewReconciler returns the reconciler that For runs on the check's view of
+// each branch, for tests that call Reconcile directly with a context from
+// kube.Fake. It sets the check's result in the view and doesn't send it.
 func NewReconciler[V any, P interface {
 	kube.Resource[V]
 	View
@@ -145,8 +161,8 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	meta, spec, result := P(obj).Parts()
 	policy := spec.Merge.Check(r.check.Name)
 	if spec.Parent == "" || policy == nil {
-		// Leaving the entry empty removes it: this controller stops
-		// managing a field it no longer applies.
+		// The core program removes the results of checks that the policy
+		// doesn't list, so there's no result to send.
 		*result = nil
 		return nil
 	}
@@ -177,7 +193,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		*result = res
 		return err
 	}
-	res.State, res.Message, res.Outputs = v.State, truncate(v.Message), v.Outputs
+	res.State, res.Message, res.Outputs = v.State, truncate(v.Message), truncateOutputs(v.Outputs)
 	if v.Fix != "" {
 		if err := r.push(ctx, in, v, res); err != nil {
 			return err
@@ -318,10 +334,33 @@ func (in *Input) release() {
 	}
 }
 
-// truncate keeps messages to a size that fits comfortably in an object.
-func truncate(s string) string {
-	if len(s) > 1024 {
-		return s[:1021] + "..."
+// truncate keeps messages to the size that the core program accepts.
+func truncate(s string) string { return shorten(s, gitk8s.MaxMessageLength) }
+
+// truncateOutputs keeps output values to the size that the core program
+// accepts.
+func truncateOutputs(outputs map[string]string) map[string]string {
+	if outputs == nil {
+		return nil
 	}
-	return s
+	out := make(map[string]string, len(outputs))
+	for k, v := range outputs {
+		out[k] = shorten(v, gitk8s.MaxOutputValueLength)
+	}
+	return out
+}
+
+// shorten returns s as valid UTF-8 of at most n bytes, ending in "..." if
+// it's cut. The core program measures a result after decoding it from JSON,
+// which turns each invalid byte into a three-byte replacement character.
+func shorten(s string, n int) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
+	if len(s) <= n {
+		return s
+	}
+	n -= len("...")
+	for n > 0 && !utf8.RuneStart(s[n]) {
+		n--
+	}
+	return s[:n] + "..."
 }

@@ -29,6 +29,7 @@ PASSWORD="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
 CREATED_CLUSTER=0
 CREATED_REGISTRY=0
 GIT_SERVER_PID=""
+PORT_FORWARD_PID=""
 
 k() { kubectl --context "${CONTEXT}" "$@"; }
 
@@ -57,6 +58,9 @@ finish() {
   local status=$?
   if [[ ${status} -ne 0 ]]; then
     diagnose
+  fi
+  if [[ -n "${PORT_FORWARD_PID}" ]]; then
+    kill "${PORT_FORWARD_PID}" 2>/dev/null || true
   fi
   if [[ "${GIT_K8S_KIND_KEEP:-}" == 1 ]]; then
     echo "Kept the cluster ${CLUSTER}, the registry ${REGISTRY}, and the git server in ${WORKDIR}"
@@ -160,8 +164,12 @@ eventually 30 listening
 echo "Pods reach the git server at ${CLUSTER_URL}"
 echo "::endgroup::"
 
-echo "::group::Install git-k8s and the checks with generate"
+echo "::group::Install the admission policies and git-k8s with generate"
 cd "${ROOT}"
+# The policies go first. In an upgrade, they stop the old checks' status
+# writes before git-k8s makes status.checks an atomic map, and let the new
+# git-k8s write results.
+k apply -f "${ROOT}/config/policy.yaml"
 generate() {
   local program=$1
   shift
@@ -178,9 +186,74 @@ GIT_IMAGE="localhost:${PORT}/chainguard/git:latest"
 crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; }
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
-# git-k8s installs the CustomResourceDefinitions that the checks watch.
-install git-k8s
+# git-k8s installs the CustomResourceDefinitions that the checks watch. Its
+# second replica is a standby, which answers some of the checks' results
+# with 503, so they try again.
+install git-k8s -replicas=2
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
+echo "::endgroup::"
+
+echo "::group::Upgrading moves check results to the core program"
+# Before the results endpoint, status.checks was a granular map, and each
+# check controller applied its own entry. Stop the core program, put the map
+# back the way an older release installed it, and apply two entries as the
+# old check controllers did, one for a check that the policy doesn't list.
+k -n git-k8s scale deployment/git-k8s --replicas=0
+no_core_pods() { [[ -z "$(k -n git-k8s get pods -l app.kubernetes.io/name=git-k8s -o name)" ]]; }
+eventually 120 no_core_pods
+k patch crd gitbranches.git-k8s.imjasonh.com --type=json -p \
+  '[{"op":"remove","path":"/spec/versions/0/schema/openAPIV3Schema/properties/status/properties/checks/x-kubernetes-map-type"}]'
+OLD=1111111111111111111111111111111111111111
+k create namespace git-k8s-upgrade
+k -n git-k8s-upgrade apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitBranch
+metadata:
+  name: app-c-old
+spec:
+  repository: app
+  branch: c/old
+  head: "${OLD}"
+  parent: main
+  parentHead: "2222222222222222222222222222222222222222"
+  merge:
+    checks:
+      - name: gofmt
+EOF
+for check in gofmt risk; do
+  k -n git-k8s-upgrade apply --server-side --subresource=status --field-manager="check-${check}" -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitBranch
+metadata:
+  name: app-c-old
+status:
+  checks:
+    ${check}:
+      commit: "${OLD}"
+      state: Failed
+EOF
+done
+status_managers() {
+  k -n git-k8s-upgrade get gitbranch app-c-old \
+    -o jsonpath='{range .metadata.managedFields[?(@.subresource=="status")]}{.manager} {end}'
+}
+echo "Status managers before the upgrade: $(status_managers)"
+k -n git-k8s scale deployment/git-k8s --replicas=2
+k -n git-k8s rollout status deployment/git-k8s --timeout=180s
+old_field() { k -n git-k8s-upgrade get gitbranch app-c-old -o jsonpath="$1"; }
+upgraded() {
+  local managers
+  managers=" $(status_managers) "
+  [[ "${managers}" == *" results "* && "${managers}" != *" check-"* ]] &&
+    [[ "$(old_field '{.status.checks.gofmt.commit}')" == "${OLD}" && -z "$(old_field '{.status.checks.risk}')" ]]
+}
+eventually 60 upgraded
+echo "Status managers after the upgrade: $(status_managers)"
+k delete namespace git-k8s-upgrade --wait=false
+echo "The core program's results controller took over status.checks from the old check managers, kept the gofmt result, and removed the risk result."
+echo "::endgroup::"
+
+echo "::group::Install the checks"
 for program in "${CHECKS[@]}"; do
   case "${program}" in
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
@@ -193,7 +266,6 @@ done
 for program in "${CHECKS[@]}"; do
   k -n "${program}" rollout status "deployment/${program}" --timeout=180s
 done
-k apply -f "${ROOT}/config/policy.yaml"
 echo "::endgroup::"
 
 echo "::group::Track a repository"
@@ -325,7 +397,7 @@ g log --graph --oneline FETCH_HEAD
 echo "One branch landed, the base check merged main into the other, and it landed too."
 echo "::endgroup::"
 
-echo "::group::A check can write only its own result"
+echo "::group::Only the core program writes check results"
 server="$(k config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
 k config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' |
   base64 -d >"${WORKDIR}/ca.crt"
@@ -336,24 +408,83 @@ patch_status() {
     -H "Authorization: Bearer ${2:-${token}}" -H 'Content-Type: application/merge-patch+json' \
     --data "$1" "${status_url}"
 }
-code="$(patch_status '{"status":{"checks":{"risk":{"commit":"0000000","state":"Passed"}}}}')"
+result='{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}'
+code="$(patch_status "${result}")"
 cat "${WORKDIR}/patch.json"
 echo
-[[ "${code}" == 422 ]]
-grep -q 'the gofmt check can only write status.checks.gofmt' "${WORKDIR}/patch.json"
-code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}')"
-[[ "${code}" == 200 ]]
-# A service account with check-gofmt's permissions but another name isn't a
-# check, so it can't write any result.
+[[ "${code}" == 403 ]]
+grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
+grep -q 'gitbranches/status' "${WORKDIR}/patch.json"
+
+# The results endpoint takes a check's result only with a token for the
+# check's own service account and the endpoint's audience.
+k -n git-k8s port-forward svc/git-k8s 0:80 >"${WORKDIR}/port-forward.log" 2>&1 &
+PORT_FORWARD_PID=$!
+forwarding() { grep -q '^Forwarding from 127.0.0.1:' "${WORKDIR}/port-forward.log"; }
+eventually 30 forwarding
+forward_port="$(sed -n 's/^Forwarding from 127[.]0[.]0[.]1:\([0-9]*\) .*/\1/p' "${WORKDIR}/port-forward.log" | head -n 1)"
+send_result() {
+  curl -sS -o "${WORKDIR}/result.txt" -w '%{http_code}' -X PUT -H "Authorization: Bearer $1" \
+    -H 'Content-Type: application/json' --data '{"commit":"0000000","state":"Passed"}' \
+    "http://127.0.0.1:${forward_port}/results/${NS}/$(branch_object main)/$2"
+}
+risk_token="$(k -n check-risk create token check-risk --audience=git-k8s-results)"
+code="$(send_result "${risk_token}" gofmt)"
+cat "${WORKDIR}/result.txt"
+[[ "${code}" == 403 ]]
+grep -q "check-risk is the risk check, so it can't write the gofmt check's result" "${WORKDIR}/result.txt"
+code="$(send_result "${token}" gofmt)"
+cat "${WORKDIR}/result.txt"
+[[ "${code}" == 401 ]]
+code="$(send_result "${risk_token}" risk)"
+cat "${WORKDIR}/result.txt"
+[[ "${code}" == 409 ]]
+grep -q "main has no parent, so it takes no check results" "${WORKDIR}/result.txt"
+kill "${PORT_FORWARD_PID}"
+PORT_FORWARD_PID=""
+
+# If a role lets a check or another service account write status anyway,
+# the admission policy still lets only the core program write results.
 k -n "${NS}" create serviceaccount rogue
-k create clusterrolebinding git-k8s-e2e-rogue --clusterrole=check-gofmt --serviceaccount="${NS}:rogue"
+k apply -f - <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: git-k8s-e2e-status
+rules:
+  - apiGroups: [git-k8s.imjasonh.com]
+    resources: [gitbranches/status]
+    verbs: [patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: git-k8s-e2e-status
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: git-k8s-e2e-status
+subjects:
+  - kind: ServiceAccount
+    namespace: check-gofmt
+    name: check-gofmt
+  - kind: ServiceAccount
+    namespace: ${NS}
+    name: rogue
+EOF
 rogue_token="$(k -n "${NS}" create token rogue)"
-code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}' "${rogue_token}")"
+rejected() { [[ "$(patch_status "${result}" "$1")" == 422 ]] && grep -q "$2" "${WORKDIR}/patch.json"; }
+eventually 30 rejected "${token}" "the gofmt check can't write GitBranch status"
 cat "${WORKDIR}/patch.json"
 echo
-[[ "${code}" == 422 ]]
-grep -q "isn't a check's service account, so it can't write status.checks" "${WORKDIR}/patch.json"
-echo "check-gofmt can write status.checks.gofmt but not status.checks.risk, and other service accounts can't write either."
+eventually 30 rejected "${rogue_token}" "system:serviceaccount:${NS}:rogue isn't the core program's service account"
+cat "${WORKDIR}/patch.json"
+echo
+core_token="$(k -n git-k8s create token git-k8s)"
+[[ "$(patch_status "${result}" "${core_token}")" == 200 ]]
+k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge --dry-run=server -p "${result}"
+k delete clusterrolebinding,clusterrole git-k8s-e2e-status
+echo "Checks can't write GitBranch status, the results endpoint refuses a check's token for another check's entry, and only the core program and people can write status.checks."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
