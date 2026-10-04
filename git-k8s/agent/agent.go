@@ -22,9 +22,9 @@
 // Run turns those files into a fix commit, which the checks framework pushes
 // when the check's policy and the branch's maxAutomatedCommits allow.
 //
-// A controller that isn't a check calls Runner.RunJob with a Job, which
-// names the repository, the commits to check out, the task, and the agent's
-// tools. Run builds a Job from the check's branch.
+// A controller, or a check that needs a Job that Run doesn't build, calls
+// Runner.RunJob. A Job names the repository, the commits to check out, the
+// task, and the agent's tools, and Run builds one from the check's branch.
 package agent
 
 import (

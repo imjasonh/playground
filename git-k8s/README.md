@@ -435,8 +435,8 @@ another kind of commit from them with `agent.ApplyFiles`.
 
 ### Run agents from a controller
 
-A controller that isn't a check, such as one that resolves merge conflicts,
-runs an agent with `Runner.RunJob`. Its `Job` names the repository, the
+A controller, or a check that needs a `Job` that `Run` doesn't build, runs
+an agent with `Runner.RunJob`. Its `Job` names the repository, the
 Secret with the repository's credentials, the commits to check out, the
 task, the agent's tools, and the runner's image if it isn't
 `-agent-image`. `Run` builds a `Job` from a check's branch, so both start
