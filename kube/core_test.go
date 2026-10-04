@@ -539,6 +539,10 @@ func TestLocalTypes(t *testing.T) {
 		"Get":  func(ctx context.Context) { Get[localConfigMap](ctx, "system", "state") },
 		"List": func(ctx context.Context) { List[localConfigMap](ctx, InNamespace("system")) },
 		"Own":  func(ctx context.Context) { Own(ctx, &localConfigMap{Object: Meta("state", nil)}) },
+		// The reconciled object's namespace isn't the program's, and the
+		// Role doesn't cover it.
+		"Apply without a namespace": func(ctx context.Context) { Apply(ctx, &localConfigMap{Object: Meta("state", nil)}) },
+		"Fetch without a namespace": func(ctx context.Context) { Fetch[localConfigMap](ctx, "", "state") },
 	} {
 		ctx, rec := Fake(t.Context(), parent, state)
 		use(ctx)

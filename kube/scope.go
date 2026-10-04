@@ -241,6 +241,10 @@ func Fetch[T any, P Resource[T]](ctx context.Context, namespace, name string) (*
 	if ti == nil {
 		return nil, s.err
 	}
+	if ti.local && namespace == "" {
+		s.fail(Permanent(fmt.Errorf("kube.Fetch: %v is local, so %q needs the program's own namespace", ti, name)))
+		return nil, s.err
+	}
 	o, err := s.w.fetch(ctx, ti, Key{Namespace: namespace, Name: name})
 	if err != nil || o == nil {
 		return nil, err
@@ -260,6 +264,9 @@ func (s *scope) prepare(ctx context.Context, verb string, ti *typeInfo, m *Objec
 	switch {
 	case !res.namespaced:
 		m.Namespace = ""
+	case m.Namespace == "" && ti.local:
+		s.fail(Permanent(fmt.Errorf("kube.%s: %v is local, so %q needs the program's own namespace", verb, ti, m.Name)))
+		return resolved{}, false
 	case m.Namespace == "" && s.parentNS:
 		m.Namespace = s.key.Namespace
 	case m.Namespace == "":
