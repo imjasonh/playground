@@ -7,6 +7,9 @@
 #
 # The git server runs on this machine and requires a password. Pods reach it
 # through the kind network's gateway, so the nodes need no internet access.
+# Like a forge that requires signed commits, it rejects a push that adds a
+# commit that isn't signed with its committer's key, so this test signs its
+# own commits, and git-k8s signs the commits that it makes.
 #
 # GIT_K8S_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
@@ -26,16 +29,25 @@ CHECKS=(check-base check-gofmt check-risk check-approval check-gotest)
 WORKDIR="$(mktemp -d)"
 WORK="${WORKDIR}/work"
 PASSWORD="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
+# IDENTITY is the checks' default -identity-email, the committer of their
+# commits.
+IDENTITY=git-k8s@users.noreply.github.com
+ALLOWED_SIGNERS="${WORKDIR}/allowed_signers"
 CREATED_CLUSTER=0
 CREATED_REGISTRY=0
 GIT_SERVER_PID=""
 
 k() { kubectl --context "${CONTEXT}" "$@"; }
 
+# SIGN makes git sign this test's commits with the e2e key, and check
+# signatures against the git server's allowed signers.
+SIGN=(-c gpg.format=ssh -c "user.signingKey=${WORKDIR}/e2e-key" -c commit.gpgSign=true
+  -c "gpg.ssh.allowedSignersFile=${ALLOWED_SIGNERS}")
+
 # g runs git in the working repository, without the machine's git config.
 g() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${WORK}" \
-    -c user.name=e2e -c user.email=e2e@example.com "$@"
+    -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
 }
 
 diagnose() {
@@ -113,6 +125,7 @@ need docker
 need kubectl
 need go
 need git
+need ssh-keygen
 need curl
 install_kind
 docker info >/dev/null
@@ -150,8 +163,12 @@ GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{
   grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)"
 (cd "${ROOT}" && go build -o "${WORKDIR}/gitserver" ./e2e/gitserver)
 mkdir -p "${WORKDIR}/repos"
+ssh-keygen -q -t ed25519 -N '' -C e2e@example.com -f "${WORKDIR}/e2e-key"
+ssh-keygen -q -t ed25519 -N '' -C "${IDENTITY}" -f "${WORKDIR}/git-k8s-key"
+printf 'e2e@example.com namespaces="git" %s\n%s namespaces="git" %s\n' \
+  "$(cat "${WORKDIR}/e2e-key.pub")" "${IDENTITY}" "$(cat "${WORKDIR}/git-k8s-key.pub")" >"${ALLOWED_SIGNERS}"
 GITSERVER_PASSWORD="${PASSWORD}" "${WORKDIR}/gitserver" -addr="0.0.0.0:${GIT_PORT}" -root="${WORKDIR}/repos" \
-  >"${WORKDIR}/gitserver.log" 2>&1 &
+  -allowed-signers="${ALLOWED_SIGNERS}" >"${WORKDIR}/gitserver.log" 2>&1 &
 GIT_SERVER_PID=$!
 HOST_URL="http://git-k8s:${PASSWORD}@127.0.0.1:${GIT_PORT}"
 CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
@@ -207,6 +224,8 @@ g push -q "${HOST_URL}/app.git" HEAD:main
 k create namespace "${NS}"
 k -n "${NS}" create secret generic app-creds --type=kubernetes.io/basic-auth \
   --from-literal=username=git-k8s --from-literal=password="${PASSWORD}"
+k -n "${NS}" create secret generic app-signing --type=kubernetes.io/ssh-auth \
+  --from-file=ssh-privatekey="${WORKDIR}/git-k8s-key"
 k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
 kind: GitRepository
@@ -217,6 +236,8 @@ spec:
   url: ${CLUSTER_URL}/app.git
   secretRef:
     name: app-creds
+  signingKeyRef:
+    name: app-signing
   pollInterval: 2s
   branches:
     - match: main
@@ -255,6 +276,27 @@ branch_object() {
 }
 fetch_main() { g fetch -q "${HOST_URL}/app.git" main; }
 branch_gone() { [[ -z "$(remote_head "$1")" && -z "$(branch_object "$1")" ]]; }
+# signed_by_git_k8s checks that commit $1 has a good signature from git-k8s's
+# key, and git-k8s as its committer.
+signed_by_git_k8s() {
+  g verify-commit "$1"
+  [[ "$(g log -1 --format='%G? %GS %ce' "$1")" == "G ${IDENTITY} ${IDENTITY}" ]]
+}
+
+echo "::group::The git server rejects unsigned commits"
+g checkout -q -b c/unsigned
+echo unsigned >"${WORK}/unsigned.txt"
+g add -A
+g -c commit.gpgSign=false commit -qm "Add unsigned.txt"
+if g push -q "${HOST_URL}/app.git" HEAD:c/unsigned 2>"${WORKDIR}/push.log"; then
+  echo "the git server accepted an unsigned commit" >&2
+  exit 1
+fi
+cat "${WORKDIR}/push.log"
+grep -q "isn't signed with its committer's key" "${WORKDIR}/push.log"
+g checkout -q main
+echo "The git server rejected an unsigned commit, so git-k8s's commits land only if they're signed."
+echo "::endgroup::"
 
 echo "::group::A branch with unformatted Go lands formatted"
 g checkout -q -b c/fmt
@@ -269,9 +311,10 @@ func Add(a, b int) int { return a + b }'
 formatted_on_main() { fetch_main && [[ "$(g show FETCH_HEAD:util/add.go 2>/dev/null)" == "${formatted}" ]]; }
 eventually 120 formatted_on_main
 g log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: gofmt'
+signed_by_git_k8s FETCH_HEAD
 eventually 60 branch_gone c/fmt
 g log --oneline FETCH_HEAD
-echo "The gofmt check pushed a fix, main fast-forwarded to it, and c/fmt was deleted."
+echo "The gofmt check pushed a signed fix, main fast-forwarded to it, and c/fmt was deleted."
 echo "::endgroup::"
 
 echo "::group::A risky branch waits for approval"
@@ -320,9 +363,11 @@ both_landed() {
     g cat-file -e FETCH_HEAD:one.txt && g cat-file -e FETCH_HEAD:two.txt
 }
 eventually 180 both_landed
-g log --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: base'
-g log --graph --oneline FETCH_HEAD
-echo "One branch landed, the base check merged main into the other, and it landed too."
+merge="$(g log --format=%H --grep='^Git-K8s-Fixer: base$' -1 FETCH_HEAD)"
+[[ -n "${merge}" ]]
+signed_by_git_k8s "${merge}"
+g log --graph --format='%h %G? %GS %s' FETCH_HEAD
+echo "One branch landed, the base check merged main into the other with a signed merge, and it landed too."
 echo "::endgroup::"
 
 echo "::group::A check can write only its own result"
@@ -383,7 +428,7 @@ TESTED="${WORKDIR}/tested"
 git init -q -b main "${TESTED}"
 t() {
   GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${TESTED}" \
-    -c user.name=e2e -c user.email=e2e@example.com "$@"
+    -c user.name=e2e -c user.email=e2e@example.com "${SIGN[@]}" "$@"
 }
 printf 'module example.com/tested\n\ngo 1.24\n' >"${TESTED}/go.mod"
 printf 'package tested\n\nfunc Add(a, b int) int { return a + b }\n' >"${TESTED}/add.go"
