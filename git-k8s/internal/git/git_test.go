@@ -109,6 +109,40 @@ func TestFetchMergePush(t *testing.T) {
 	}
 }
 
+func TestCountCommits(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	base := w.Commit("base")
+	w.Commit("Update a module\n\nGit-K8s-Deps: go example.com/a v1.0.1")
+	w.Commit("Fix the tests\n\n" + git.FixerTrailer + ": deps\n" + git.AgentTrailer + ": deps")
+	head := w.Commit("Edit by hand\n\nThis isn't a " + git.AgentTrailer + ": trailer.")
+	w.Push("main")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		base     string
+		trailers []string
+		want     int
+	}{
+		{base: base, want: 3},
+		{want: 4},
+		{base: base, trailers: []string{git.AgentTrailer}, want: 1},
+		{base: base, trailers: []string{"Git-K8s-Deps", git.FixerTrailer}, want: 2},
+		{base: head, want: 0},
+	} {
+		if n, err := repo.CountCommits(ctx, c.base, head, c.trailers...); err != nil || n != c.want {
+			t.Errorf("CountCommits(%.7s, %v) = %d, %v; want %d", c.base, c.trailers, n, err, c.want)
+		}
+	}
+}
+
 func TestMergeTreeConflicts(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")

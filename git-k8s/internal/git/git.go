@@ -22,6 +22,10 @@ import (
 // FixerTrailer is the commit trailer that marks commits pushed by checks.
 const FixerTrailer = "Git-K8s-Fixer"
 
+// AgentTrailer is the commit trailer that marks commits with changes that
+// an AI agent made.
+const AgentTrailer = "Git-K8s-Agent"
+
 // Auth is a username and password for HTTP basic authentication.
 type Auth struct {
 	Username string
@@ -345,7 +349,18 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 // CountFixerCommits counts the commits in head but not in base that carry
 // the fixer trailer. With base "", it counts every commit in head.
 func (r *Repo) CountFixerCommits(ctx context.Context, base, head string) (int, error) {
-	args := []string{"rev-list", "--count", "--grep=^" + FixerTrailer + ":", head}
+	return r.CountCommits(ctx, base, head, FixerTrailer)
+}
+
+// CountCommits counts the commits in head but not in base that carry any
+// of the trailers, or every such commit if there are no trailers. With
+// base "", it counts commits in all of head's history.
+func (r *Repo) CountCommits(ctx context.Context, base, head string, trailers ...string) (int, error) {
+	args := []string{"rev-list", "--count"}
+	for _, t := range trailers {
+		args = append(args, "--grep=^"+t+":")
+	}
+	args = append(args, head)
 	if base != "" {
 		args = append(args, "^"+base)
 	}
