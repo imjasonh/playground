@@ -134,18 +134,24 @@ func TestPlanPatch(t *testing.T) {
 		name  string
 		c     Controller
 		pkg   string
+		watch string
 		patch bool
+		// role says that the rules for the reconciled type go in the Role
+		// in the watched namespace instead of the ClusterRole.
+		role bool
 	}{
-		{"status only", For[gizmo](gizmoReconciler{}), deletes, false},
-		{"finalizer", For[gizmo](finalizingReconciler{}), deletes, true},
-		{"finalizer from an earlier version", For[gizmo](gizmoReconciler{}, RemovesFinalizer()), deletes, true},
-		{"more than one version", For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()), deletes, true},
-		{"declared owned type", For[gizmo](gizmoReconciler{}, Owns[deployment]()), deletes, true},
-		{"program that owns objects", For[gizmo](gizmoReconciler{}), owns, true},
-		{"program that owns objects of types that generate can't tell", For[gizmo](gizmoReconciler{}), genericOwner, true},
-		{"cluster-scoped type in a program that owns objects", For[namespace](nop[namespace]{}), owns, false},
+		{"status only", For[gizmo](gizmoReconciler{}), deletes, "", false, false},
+		{"finalizer", For[gizmo](finalizingReconciler{}), deletes, "", true, false},
+		{"finalizer from an earlier version", For[gizmo](gizmoReconciler{}, RemovesFinalizer()), deletes, "", true, false},
+		{"more than one version", For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()), deletes, "", true, false},
+		{"declared owned type", For[gizmo](gizmoReconciler{}, Owns[deployment]()), deletes, "", true, false},
+		{"program that owns objects", For[gizmo](gizmoReconciler{}), owns, "", true, false},
+		{"program that owns objects of types that generate can't tell", For[gizmo](gizmoReconciler{}), genericOwner, "", true, false},
+		{"cluster-scoped type in a program that owns objects", For[namespace](nop[namespace]{}), owns, "", false, false},
+		{"program that owns objects and watches one namespace", For[gizmo](gizmoReconciler{}), owns, "sites", true, true},
+		{"more than one version in a program that watches one namespace", For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()), deletes, "sites", true, false},
 	} {
-		o := &generateOptions{program: "test", platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, shards: 1, stderr: io.Discard}
+		o := &generateOptions{program: "test", watchNamespace: tc.watch, platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, shards: 1, stderr: io.Discard}
 		p, err := o.plan(t.Context(), []Controller{tc.c}, tc.pkg)
 		if err != nil {
 			t.Fatal(err)
@@ -155,11 +161,18 @@ func TestPlanPatch(t *testing.T) {
 			t.Fatal(err)
 		}
 		g, r := resourceName(d.ti)
-		if got := p.cluster[grantKey{g, r, ""}]["patch"]; got != tc.patch {
-			t.Errorf("%s: patch on %s = %t, want %t", tc.name, r, got, tc.patch)
+		rules, other, where := p.cluster, p.watched, "ClusterRole"
+		if tc.role {
+			rules, other, where = p.watched, p.cluster, "Role"
 		}
-		if d.ti.status != nil && !p.cluster[grantKey{g, r + "/status", ""}]["patch"] {
-			t.Errorf("%s: no patch on %s/status", tc.name, r)
+		if got := rules[grantKey{g, r, ""}]["patch"]; got != tc.patch {
+			t.Errorf("%s: patch on %s in the %s = %t, want %t", tc.name, r, where, got, tc.patch)
+		}
+		if other[grantKey{g, r, ""}]["patch"] {
+			t.Errorf("%s: patch on %s outside the %s", tc.name, r, where)
+		}
+		if d.ti.status != nil && !rules[grantKey{g, r + "/status", ""}]["patch"] {
+			t.Errorf("%s: no patch on %s/status in the %s", tc.name, r, where)
 		}
 	}
 }
