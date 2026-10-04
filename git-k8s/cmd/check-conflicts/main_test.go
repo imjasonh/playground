@@ -332,6 +332,26 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 		},
 		want: "merging main conflicts on b.bin, which git can't mark with conflict markers, such as a binary file",
 	}, {
+		name:  "in a symbolic link",
+		agent: true,
+		edit: func(b *Branch, w *gittest.Work) {
+			for _, side := range []struct {
+				branch string
+				head   *string
+			}{{"main", &b.Spec.ParentHead}, {"c/x", &b.Spec.Head}} {
+				w.Branch(side.branch, *side.head)
+				// Work.Write writes only regular files, so this stages the
+				// link and checks it out over the file.
+				w.Write("b.link", side.branch+".txt")
+				blob := w.Git("hash-object", "-w", "--end-of-options", "b.link")
+				w.Git("update-index", "--add", "--cacheinfo", "120000,"+blob+",b.link")
+				w.Git("checkout-index", "--force", "--end-of-options", "b.link")
+				*side.head = w.Commit("link b.link to " + side.branch + ".txt")
+				w.Push(side.branch)
+			}
+		},
+		want: "merging main conflicts on b.link, which isn't a file on both sides, so the agent can't resolve it",
+	}, {
 		name:  "in a .cursorignore file",
 		agent: true,
 		edit: func(b *Branch, w *gittest.Work) {
