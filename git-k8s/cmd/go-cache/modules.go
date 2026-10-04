@@ -181,7 +181,15 @@ func (s *server) passThrough(w http.ResponseWriter, r *http.Request, module, fil
 	}
 	s.metrics.moduleRequest(result)
 	w.Header().Set("Content-Type", moduleContentType(file))
-	io.Copy(w, resp.Body)
+	if resp.ContentLength >= 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(resp.ContentLength, 10))
+	}
+	if _, err := io.Copy(w, resp.Body); err != nil {
+		s.log.Warn("module proxy", "err", fmt.Errorf("GET %s: %w", resp.Request.URL, err))
+		// Ending the response normally would give the client part of the
+		// file as all of it.
+		panic(http.ErrAbortHandler)
+	}
 }
 
 func (s *server) fetch(ctx context.Context, url string) (*http.Response, error) {

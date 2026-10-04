@@ -1132,8 +1132,12 @@ func TestStoreUnavailable(t *testing.T) {
 // TestModulesWhenStoreUnavailable checks that go-cache serves a module file
 // that its store can't take from the upstream at once, without keeping it.
 func TestModulesWhenStoreUnavailable(t *testing.T) {
-	mod := bytes.Repeat([]byte("m"), 200)
+	// The file is too large for a server to buffer whole, so go-cache's
+	// response has a Content-Length only if go-cache passes on the
+	// upstream's.
+	mod := bytes.Repeat([]byte("m"), 10000)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(mod)))
 		w.Write(mod)
 	}))
 	t.Cleanup(upstream.Close)
@@ -1170,6 +1174,9 @@ func TestModulesWhenStoreUnavailable(t *testing.T) {
 			if resp.StatusCode != http.StatusOK || err != nil || !bytes.Equal(body, mod) {
 				t.Errorf("GET: %s, %v; body matches the upstream's: %v", resp.Status, err, bytes.Equal(body, mod))
 			}
+			if resp.ContentLength != int64(len(mod)) {
+				t.Errorf("GET: Content-Length %d, want the upstream's %d", resp.ContentLength, len(mod))
+			}
 			if files, err := tc.s.store.files(); err != nil || len(files) != 0 {
 				t.Errorf("the store holds %d files, %v; want none", len(files), err)
 			}
@@ -1177,6 +1184,36 @@ func TestModulesWhenStoreUnavailable(t *testing.T) {
 				if got := tc.s.metrics.count(result); got != want {
 					t.Errorf("%s module requests: %d, want %d", result, got, want)
 				}
+			}
+		})
+	}
+}
+
+// TestPassThroughCutShort checks that a client can tell when the upstream
+// cuts short a module file that go-cache passes through.
+func TestPassThroughCutShort(t *testing.T) {
+	for name, length := range map[string]string{"with Content-Length": "100000", "chunked": ""} {
+		t.Run(name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if length != "" {
+					w.Header().Set("Content-Length", length)
+				}
+				w.Write(bytes.Repeat([]byte("z"), 50000))
+				w.(http.Flusher).Flush()
+				panic(http.ErrAbortHandler)
+			}))
+			t.Cleanup(upstream.Close)
+			// No file fits under a maximum of 1 byte, so go-cache passes
+			// every one through.
+			_, srv := newTestServer(t, upstream.URL, nil, func(st *store) { st.max = 1 })
+			resp, err := http.Get(srv.URL + "/mod/example.com/m/@v/v1.0.0.zip")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if resp.StatusCode == http.StatusOK && err == nil {
+				t.Errorf("GET of a zip that the upstream cut short after 50000 bytes: %s, %d bytes, no error", resp.Status, len(body))
 			}
 		})
 	}
