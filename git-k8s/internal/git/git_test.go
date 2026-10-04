@@ -2,6 +2,7 @@ package git_test
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -206,6 +207,42 @@ func TestNumstatIgnoresAttributes(t *testing.T) {
 	stats, err := repo.Numstat(t.Context(), base, head)
 	if err != nil || len(stats) != 1 || stats[0] != (git.FileStat{Path: "a.txt", Added: 2, Removed: 1}) {
 		t.Errorf("Numstat with attributes that mark a.txt binary = %+v, %v; want 2 lines added and 1 removed in a.txt", stats, err)
+	}
+}
+
+func TestNumstatReportsBadCommits(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	w.Write("a.txt", "a\n")
+	head := w.Commit("add a.txt")
+	w.Push("main")
+	repo := fetched(t, srv, "main")
+
+	output := filepath.Join(t.TempDir(), "output")
+	for _, base := range []string{strings.Repeat("1", 40), "--output=" + output} {
+		if stats, err := repo.Numstat(t.Context(), base, head); err == nil || !strings.HasPrefix(err.Error(), "git diff: exit status 128") {
+			t.Errorf("Numstat(%q, head) = %+v, %v; want diff's exit status", base, stats, err)
+		}
+	}
+	if _, err := os.Stat(output); !os.IsNotExist(err) {
+		t.Errorf("Numstat read a base as an option and wrote %s", output)
+	}
+}
+
+func TestNumstatAllowsOnlyRemoteTransports(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	base := w.Commit("base")
+	w.Write("a.txt", "a\n")
+	head := w.Commit("add a.txt")
+	w.Push("main")
+	repo, commands := logged(t, fetched(t, srv, "main"))
+
+	if _, err := repo.Numstat(t.Context(), base, head); err != nil {
+		t.Fatal(err)
+	}
+	if got := commands(); len(got) != 2 {
+		t.Errorf("Numstat ran git %q; want hash-object and diff", got)
 	}
 }
 
