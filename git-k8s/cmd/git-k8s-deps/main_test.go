@@ -672,6 +672,50 @@ func TestWaitsForTheVersionsThatAnUpdateRaises(t *testing.T) {
 	}
 }
 
+func TestDoesntPushAnUpdateWhoseRaisedVersionsItCantRead(t *testing.T) {
+	const fresh = "example.com/fresh"
+	for _, tc := range []struct {
+		name string
+		code int
+	}{
+		{name: "the proxy fails", code: http.StatusInternalServerError},
+		{name: "no proxy has the module", code: http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.u.interval, f.u.minAge = 100*time.Hour, 72*time.Hour
+			f.proxy.publish(fresh, "v1.0.0", longAgo, "")
+			f.proxy.fail(fresh, "list", tc.code)
+			mod := modWith(greet, "v1.1.0", fresh, "v1.0.0")
+			f.checkStays("")
+			f.clock = today.Add(72 * time.Hour)
+			p := f.start()
+			f.finish(p, result(withFiles("v1.1.0", "go.mod", mod, "go.sum", sumAt("v1.1.0"))))
+			if head := f.srv.Heads(t, "app")[greetBranch]; head != "" {
+				t.Fatalf("the controller pushed %s to %s without reading %s's versions", head, greetBranch, fresh)
+			}
+			rec := f.checkStays("")
+			if tc.code != http.StatusNotFound && rec.RequeueAfter() != errorRetry {
+				t.Errorf("RequeueAfter() = %v, want %v", rec.RequeueAfter(), errorRetry)
+			}
+
+			t.Log("Once the proxy lists the module, the update waits from then.")
+			f.proxy.fail(fresh, "list", 0)
+			f.clock = f.clock.Add(errorRetry)
+			f.checkStays("")
+			until := f.clock.Add(f.u.minAge)
+			f.clock = until.Add(-time.Second)
+			f.checkStays("")
+			f.clock = until
+			p = f.start()
+			f.finish(p, result(withFiles("v1.1.0", "go.mod", mod, "go.sum", sumAt("v1.1.0"))))
+			if f.srv.Heads(t, "app")[greetBranch] == "" {
+				t.Errorf("the controller didn't push %s once %s v1.0.0 is old enough", greetBranch, fresh)
+			}
+		})
+	}
+}
+
 func TestKeepsItsBranchesAfterARestart(t *testing.T) {
 	for _, tc := range []struct {
 		name string
