@@ -17,16 +17,19 @@ import (
 // no token that's valid for the audience.
 var ErrUnauthenticated = errors.New("unauthenticated")
 
-// podNameExtra is the extra field of a token that's bound to a Pod that
-// holds the Pod's name.
-const podNameExtra = "authentication.kubernetes.io/pod-name"
+// podNameExtra and podUIDExtra are the extra fields of a token that's bound
+// to a Pod that hold the Pod's name and UID.
+const (
+	podNameExtra = "authentication.kubernetes.io/pod-name"
+	podUIDExtra  = "authentication.kubernetes.io/pod-uid"
+)
 
 // Caller is the service account that sent a request.
 type Caller struct {
 	Namespace, Name string
-	// Pod is the name of the Pod that the token is bound to, or "" if it
-	// isn't bound to a Pod.
-	Pod string
+	// Pod and PodUID are the name and UID of the Pod that the token is
+	// bound to, or "" if it isn't bound to a Pod.
+	Pod, PodUID string
 }
 
 func (c Caller) String() string { return c.Namespace + "/" + c.Name }
@@ -66,8 +69,8 @@ func Identify(ctx context.Context, r *http.Request, audience string) (Caller, er
 		return Caller{}, fmt.Errorf("%w: %s isn't a service account", ErrUnauthenticated, review.User.Username)
 	}
 	c := Caller{Namespace: ns, Name: name}
-	if pods := review.User.Extra[podNameExtra]; len(pods) == 1 {
-		c.Pod = pods[0]
+	if pods, uids := review.User.Extra[podNameExtra], review.User.Extra[podUIDExtra]; len(pods) == 1 && len(uids) == 1 {
+		c.Pod, c.PodUID = pods[0], uids[0]
 	}
 	return c, nil
 }

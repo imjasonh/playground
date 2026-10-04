@@ -20,6 +20,14 @@ func TestIdentify(t *testing.T) {
 			Token: "pod",
 			User: kube.UserInfo{
 				Username: "system:serviceaccount:team:default",
+				Extra:    map[string][]string{podNameExtra: {"gotest-1"}, podUIDExtra: {"uid-1"}},
+			},
+			Audiences: []string{gitk8s.MirrorAudience},
+		},
+		kube.FakeToken{
+			Token: "pod-without-uid",
+			User: kube.UserInfo{
+				Username: "system:serviceaccount:team:default",
 				Extra:    map[string][]string{podNameExtra: {"gotest-1"}},
 			},
 			Audiences: []string{gitk8s.MirrorAudience},
@@ -34,7 +42,8 @@ func TestIdentify(t *testing.T) {
 	}{
 		{name: "check", header: "Bearer gofmt", want: Caller{Namespace: "check-gofmt", Name: "check-gofmt"}, check: "gofmt"},
 		{name: "lowercase scheme", header: "bearer gofmt", want: Caller{Namespace: "check-gofmt", Name: "check-gofmt"}, check: "gofmt"},
-		{name: "pod", header: "Bearer pod", want: Caller{Namespace: "team", Name: "default", Pod: "gotest-1"}},
+		{name: "pod", header: "Bearer pod", want: Caller{Namespace: "team", Name: "default", Pod: "gotest-1", PodUID: "uid-1"}},
+		{name: "pod without a UID", header: "Bearer pod-without-uid", want: Caller{Namespace: "team", Name: "default"}},
 		{name: "no header"},
 		{name: "basic auth", header: "Basic Z2l0OnB3"},
 		{name: "unknown token", header: "Bearer nope"},
@@ -55,7 +64,7 @@ func TestIdentify(t *testing.T) {
 				return
 			}
 			if err != nil || got != tc.want {
-				t.Fatalf("Identify = %+v, %v; want %+v", got, err, tc.want)
+				t.Fatalf("Identify = %#v, %v; want %#v", got, err, tc.want)
 			}
 			if check, ok := got.Check(); check != tc.check || ok != (tc.check != "") {
 				t.Errorf("Check() = %q, %v; want %q", check, ok, tc.check)

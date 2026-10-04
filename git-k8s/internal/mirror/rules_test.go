@@ -3,10 +3,12 @@ package mirror
 import (
 	"strings"
 	"testing"
+	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/kube"
+	"github.com/imjasonh/playground/kube/k8s"
 )
 
 func TestParsePrefix(t *testing.T) {
@@ -120,17 +122,48 @@ func TestMayFetchAndPush(t *testing.T) {
 	m := &Mirror{Prefixes: []Prefix{{Namespace: "git-k8s-deps", ServiceAccount: "git-k8s-deps", Prefix: "deps/"}}}
 	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil), Spec: rulesRepo.Spec}
 	repo.Namespace = "team"
-	branch := func(name, repository, state, pod string) *gitk8s.GitBranch {
+	branch := func(name, repository, check, state, pod string) *gitk8s.GitBranch {
 		b := &gitk8s.GitBranch{Object: kube.Meta(name, map[string]string{gitk8s.RepositoryLabel: repository})}
 		b.Namespace = "team"
-		b.Status.Checks = map[string]gitk8s.CheckResult{"gotest": {State: state, Outputs: map[string]string{"pod": pod}}}
+		b.Status.Checks = map[string]gitk8s.CheckResult{check: {State: state, Outputs: map[string]string{"pod": pod}}}
 		return b
 	}
+	// testPod returns a Pod in team with the UID uid-NAME, and with kube's
+	// controller label set to controller, unless controller is "".
+	testPod := func(name, controller, phase string) *k8s.Pod {
+		p := &k8s.Pod{Object: kube.Meta(name, nil)}
+		p.Namespace, p.UID = "team", "uid-"+name
+		if controller != "" {
+			p.Labels = map[string]string{gitk8s.ControllerLabel: controller}
+		}
+		p.Status.Phase = phase
+		return p
+	}
+	deleting := testPod("gotest-deleting", gitk8s.GoTestController, "Running")
+	deleting.DeletionTimestamp = &time.Time{}
 	ctx, _ := kube.FakeRequest(t.Context(), repo,
-		branch("app-feature", "app", gitk8s.Running, "gotest-1"),
-		branch("app-done", "app", gitk8s.Passed, "gotest-2"),
-		branch("other-feature", "other", gitk8s.Running, "gotest-3"))
-	pod := func(ns, name string) caller.Caller { return caller.Caller{Namespace: ns, Name: "default", Pod: name} }
+		branch("app-feature", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-1"),
+		testPod("gotest-1", gitk8s.GoTestController, "Running"),
+		branch("app-pending", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-pending"),
+		testPod("gotest-pending", gitk8s.GoTestController, "Pending"),
+		branch("app-done", "app", gitk8s.GoTestCheck, gitk8s.Passed, "gotest-2"),
+		testPod("gotest-2", gitk8s.GoTestController, "Running"),
+		branch("other-feature", "other", gitk8s.GoTestCheck, gitk8s.Running, "gotest-3"),
+		testPod("gotest-3", gitk8s.GoTestController, "Running"),
+		branch("app-squatted", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-squatted"),
+		testPod("gotest-squatted", "check-other", "Running"),
+		branch("app-unlabeled", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-unlabeled"),
+		testPod("gotest-unlabeled", "", "Running"),
+		branch("app-deleting", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-deleting"),
+		deleting,
+		branch("app-finished", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-finished"),
+		testPod("gotest-finished", gitk8s.GoTestController, "Failed"),
+		branch("app-starting", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-starting"),
+		branch("app-other-check", "app", "other", gitk8s.Running, "gotest-other-check"),
+		testPod("gotest-other-check", gitk8s.GoTestController, "Running"))
+	pod := func(ns, name string) caller.Caller {
+		return caller.Caller{Namespace: ns, Name: "default", Pod: name, PodUID: "uid-" + name}
+	}
 	r := &gitk8s.Repository{Object: repo.Object, Spec: repo.Spec}
 	for _, tc := range []struct {
 		name              string
@@ -145,15 +178,25 @@ func TestMayFetchAndPush(t *testing.T) {
 		{name: "a check's name in another namespace", who: impostor},
 		{name: "a controller's name in another namespace", who: depsImpostor},
 		{name: "another service account in a controller's namespace", who: depsNeighbor},
-		{name: "a check's running Pod", who: pod("team", "gotest-1"), mayFetch: true},
+		{name: "the gotest check's running Pod", who: pod("team", "gotest-1"), mayFetch: true},
+		{name: "the gotest check's Pod before it runs", who: pod("team", "gotest-pending"), mayFetch: true},
 		{name: "a Pod whose result is final", who: pod("team", "gotest-2")},
 		{name: "a Pod for another repository", who: pod("team", "gotest-3")},
 		{name: "a Pod in another namespace", who: pod("elsewhere", "gotest-1")},
 		{name: "a service account without a Pod", who: caller.Caller{Namespace: "team", Name: "default"}},
+		{name: "a token with a Pod's name and no UID", who: caller.Caller{Namespace: "team", Name: "default", Pod: "gotest-1"}},
+		{name: "a token bound to an earlier Pod with the same name", who: caller.Caller{Namespace: "team", Name: "default", Pod: "gotest-1", PodUID: "uid-earlier"}},
+		{name: "a Pod with another check's label", who: pod("team", "gotest-squatted")},
+		{name: "a Pod without the controller label", who: pod("team", "gotest-unlabeled")},
+		{name: "a Pod that's being deleted", who: pod("team", "gotest-deleting")},
+		{name: "a Pod that has finished", who: pod("team", "gotest-finished")},
+		{name: "a Pod that doesn't exist yet", who: pod("team", "gotest-starting")},
+		{name: "a Pod that another check's result names", who: pod("team", "gotest-other-check")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := m.mayFetch(ctx, tc.who, r); got != tc.mayFetch {
-				t.Errorf("mayFetch = %v; want %v", got, tc.mayFetch)
+			got, err := m.mayFetch(ctx, tc.who, r)
+			if err != nil || got != tc.mayFetch {
+				t.Errorf("mayFetch = %v, %v; want %v", got, err, tc.mayFetch)
 			}
 			if got := m.mayPushAny(tc.who, r); got != tc.mayPush {
 				t.Errorf("mayPushAny = %v; want %v", got, tc.mayPush)

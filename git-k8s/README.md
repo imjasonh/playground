@@ -175,7 +175,7 @@ do:
 | --- | --- | --- |
 | The check `NAME`, which runs as the service account `check-NAME` in the namespace `check-NAME` | Each repository whose merge policies list the check | Each branch that has a parent whose merge policy gives the check `mayPush: true` |
 | A controller that starts branches, which the core program's `-branch-prefix` flag names | Every repository | The branches under its prefix, except parents |
-| A test Pod, with a token that's bound to the Pod | The repository of the branch that the Pod tests, while the check's result names the Pod | Nothing |
+| A test Pod of `check-gotest`, with a token that's bound to the Pod | The repository of the branch that the Pod tests, while the `gotest` check's result names the Pod and the Pod runs | Nothing |
 
 The merge controller is part of the core program and updates the copy
 directly, so it's the only thing that moves a parent.
@@ -223,9 +223,19 @@ administrators should control the namespace.
 
 A test Pod's token is bound to the Pod, so it stops working when the Pod is
 deleted, and it expires after 10 minutes. The mirror lets the Pod fetch only
-while a `Running` result of a check on one of the repository's branches
-names the Pod in its `pod` output, so `check-gotest` records the Pod's name
-before it starts the Pod.
+while a `Running` result of the `gotest` check on one of the repository's
+branches names the Pod in its `pod` output, so `check-gotest` records the
+Pod's name before it starts the Pod. Because the name is known before the
+Pod exists, another program that creates Pods in the namespace could create
+a Pod with that name first. So the mirror also checks the Pod itself: it
+reads the name and UID of the token's Pod from the TokenReview, gets that
+Pod, and refuses the request unless the Pod has that UID and kube's label
+`kube.imjasonh.github.io/controller=check-gotest`, which kube puts on the
+Pods that `check-gotest` declares, and hasn't finished or started to shut
+down. That's why `generate` lets the core program get Pods. Any program that
+can create Pods in the namespace can set the label, so the label means
+`check-gotest` only as long as the other programs that create Pods there
+don't set it.
 
 ### Divergence
 
@@ -587,7 +597,8 @@ a change:
 - The test container, which runs the branch's code, has no token and no
   credentials, and its NetworkPolicy lets it reach only the mirror and the
   cluster's DNS servers. The init container's token can fetch only the
-  branch's repository, and stops working when the Pod is deleted.
+  branch's repository, only while the Pod runs, and stops working when the
+  Pod is deleted.
 - Tokens for the mirror have their own audience, `git-k8s-mirror`, so the
   API server doesn't accept them, and the mirror doesn't accept tokens for
   the API server. The kubelet renews each check's token, which lasts an
@@ -602,13 +613,16 @@ what lands.
 
 Kubernetes RBAC is the trust boundary. Anyone who can write a
 `GitRepository` in a namespace chooses the external repository and the
-Secret that the core program uses there. Anyone who can write `GitBranch`
-status in a namespace can name a Pod there that the mirror lets fetch the
-repository. Only a Pod in that namespace can use it, and such a Pod can
-already mount the repository's Secret. Anyone who can create tokens for a
-check's service account can push as that check, and anyone who can create
-tokens for a controller's service account can do what its `-branch-prefix`
-allows.
+Secret that the core program uses there. Of the service accounts, only
+`check-gotest`'s can write the `gotest` result, but people who can write
+`GitBranch` status in a namespace can write it too. Such a result can name a
+Pod in that namespace for the mirror to let fetch the repository, but the
+mirror accepts only a running Pod with `check-gotest`'s controller label.
+Making such a Pod takes the right to create Pods in that namespace, which
+already lets a Pod mount the repository's Secret. Anyone who can create
+tokens for a check's service account can push as that check, and anyone who
+can create tokens for a controller's service account can do what its
+`-branch-prefix` allows.
 
 The mirror serves plain HTTP inside the cluster, so anything that can read
 Pod traffic can read tokens and repositories, and a token that leaks works

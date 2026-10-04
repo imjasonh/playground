@@ -690,6 +690,53 @@ else
 fi
 echo "::endgroup::"
 
+echo "::group::The mirror checks a test Pod, not just its name"
+# A person writes a gotest result that names a Pod, as only check-gotest's
+# service account or a person can. The mirror lets a token that's bound to
+# the Pod fetch only while the Pod has check-gotest's controller label and
+# isn't being deleted. The Pod ignores SIGTERM, so a deleted Pod stays in
+# its 30-second grace period, while the API server still accepts its token.
+k apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gotest-named
+  namespace: ${NS}
+  labels:
+    kube.imjasonh.github.io/controller: check-gotest
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  containers:
+    - name: idle
+      image: ${GIT_IMAGE}
+      command: [dash, -c, "trap '' TERM; read -r _"]
+      stdin: true
+EOF
+k -n "${NS}" wait --for=condition=Ready pod/gotest-named --timeout=120s
+named_result() {
+  k -n "${NS}" patch gitbranch "$(branch_object main)" --subresource=status --type=merge -p "$1" >/dev/null
+}
+named_result '{"status":{"checks":{"gotest":{"commit":"0000000","state":"Running","outputs":{"pod":"gotest-named"}}}}}'
+named_token="$(k -n "${NS}" create token default --audience=git-k8s-mirror --bound-object-kind=Pod \
+  --bound-object-name=gotest-named --bound-object-uid="$(k -n "${NS}" get pod gotest-named -o jsonpath='{.metadata.uid}')")"
+named_fetch() { info_refs -H "Authorization: Bearer ${named_token}"; }
+named_fetches() { [[ "$(named_fetch)" == 200 ]]; }
+eventually 30 named_fetches
+k -n "${NS}" label pod gotest-named --overwrite kube.imjasonh.github.io/controller=check-other
+[[ "$(named_fetch)" == 404 ]]
+k -n "${NS}" label pod gotest-named kube.imjasonh.github.io/controller-
+[[ "$(named_fetch)" == 404 ]]
+[[ "$(info_refs -H "Authorization: Bearer $(mirror_token "${NS}" default)")" == 404 ]]
+k -n "${NS}" label pod gotest-named kube.imjasonh.github.io/controller=check-gotest
+[[ "$(named_fetch)" == 200 ]]
+k -n "${NS}" delete pod gotest-named --wait=false
+[[ "$(named_fetch)" == 404 ]]
+k -n "${NS}" delete pod gotest-named --grace-period=0 --force --ignore-not-found 2>/dev/null
+named_result '{"status":{"checks":{"gotest":null}}}'
+echo "A Pod that a gotest result names fetched with check-gotest's label, and not with another check's label, without the label, or while it was being deleted. The same service account's token without a Pod couldn't fetch."
+echo "::endgroup::"
+
 echo "::group::Nothing writes while nothing changes"
 snapshot() {
   k -n "${NS}" get gitrepositories,gitbranches \

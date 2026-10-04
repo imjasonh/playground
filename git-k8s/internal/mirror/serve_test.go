@@ -19,9 +19,13 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/kube"
+	"github.com/imjasonh/playground/kube/k8s"
 )
 
-const podNameExtra = "authentication.kubernetes.io/pod-name"
+const (
+	podNameExtra = "authentication.kubernetes.io/pod-name"
+	podUIDExtra  = "authentication.kubernetes.io/pod-uid"
+)
 
 // fixture serves a mirror whose copy of default/app has main at base and
 // feature at feature. Main's merge policy lets the gofmt check push and
@@ -57,23 +61,49 @@ func newFixture(t *testing.T) *fixture {
 	repo := &gitk8s.GitRepository{Object: w.repo.Object, Spec: w.repo.Spec}
 	unsynced := &gitk8s.GitRepository{Object: kube.Meta("unsynced", nil), Spec: gitk8s.GitRepositorySpec{URL: "https://example.com/unsynced.git"}}
 	unsynced.Namespace, unsynced.UID = "default", "uid-unsynced"
-	branch := &gitk8s.GitBranch{Object: kube.Meta("app-feature", map[string]string{gitk8s.RepositoryLabel: "app"})}
-	branch.Namespace = "default"
-	branch.Status.Checks = map[string]gitk8s.CheckResult{"gotest": {State: gitk8s.Running, Outputs: map[string]string{"pod": "gotest-1"}}}
+	// The gotest check runs the Pod gotest-1 on feature. On the branch
+	// squatted, another check made the Pod that the gotest check's result
+	// names.
+	branch := func(name, pod string) *gitk8s.GitBranch {
+		b := &gitk8s.GitBranch{Object: kube.Meta(name, map[string]string{gitk8s.RepositoryLabel: "app"})}
+		b.Namespace = "default"
+		b.Status.Checks = map[string]gitk8s.CheckResult{gitk8s.GoTestCheck: {State: gitk8s.Running, Outputs: map[string]string{"pod": pod}}}
+		return b
+	}
+	pod := func(name, controller string) *k8s.Pod {
+		p := &k8s.Pod{Object: kube.Meta(name, map[string]string{gitk8s.ControllerLabel: controller})}
+		p.Namespace, p.UID = "default", "uid-"+name
+		p.Status.Phase = "Running"
+		return p
+	}
 	token := func(token, user string, extra map[string][]string) kube.FakeToken {
 		return kube.FakeToken{Token: token, User: kube.UserInfo{Username: user, Extra: extra}, Audiences: []string{gitk8s.MirrorAudience}}
+	}
+	podToken := func(token, namespace, pod, uid string) kube.FakeToken {
+		return kube.FakeToken{
+			Token:     token,
+			User:      kube.UserInfo{Username: "system:serviceaccount:" + namespace + ":default", Extra: map[string][]string{podNameExtra: {pod}, podUIDExtra: {uid}}},
+			Audiences: []string{gitk8s.MirrorAudience},
+		}
 	}
 	objects := []any{
 		repo,
 		unsynced,
-		branch,
+		branch("app-feature", "gotest-1"),
+		pod("gotest-1", gitk8s.GoTestController),
+		branch("app-squatted", "gotest-squatted"),
+		pod("gotest-squatted", "check-other"),
 		token("gofmt", "system:serviceaccount:check-gofmt:check-gofmt", nil),
 		token("approval", "system:serviceaccount:check-approval:check-approval", nil),
 		token("other", "system:serviceaccount:check-other:check-other", nil),
 		token("deps", "system:serviceaccount:git-k8s-deps:git-k8s-deps", nil),
-		token("pod", "system:serviceaccount:default:default", map[string][]string{podNameExtra: {"gotest-1"}}),
-		token("stray-pod", "system:serviceaccount:default:default", map[string][]string{podNameExtra: {"gotest-2"}}),
-		token("team-pod", "system:serviceaccount:team:default", map[string][]string{podNameExtra: {"gotest-1"}}),
+		podToken("pod", "default", "gotest-1", "uid-gotest-1"),
+		podToken("stray-pod", "default", "gotest-2", "uid-gotest-2"),
+		podToken("team-pod", "team", "gotest-1", "uid-gotest-1"),
+		podToken("earlier-pod", "default", "gotest-1", "uid-earlier"),
+		podToken("squatter", "default", "gotest-squatted", "uid-gotest-squatted"),
+		token("no-uid-pod", "system:serviceaccount:default:default", map[string][]string{podNameExtra: {"gotest-1"}}),
+		token("unbound", "system:serviceaccount:default:default", nil),
 		token("person", "jane@example.com", nil),
 		kube.FakeToken{Token: "api", User: kube.UserInfo{Username: "system:serviceaccount:check-gofmt:check-gofmt"}},
 	}
@@ -160,6 +190,10 @@ func TestServeHTTPStatus(t *testing.T) {
 		{name: "a test Pod pushes", path: push, token: "pod", want: http.StatusForbidden},
 		{name: "a Pod that no check runs", path: fetch, token: "stray-pod", want: http.StatusNotFound},
 		{name: "a Pod in another namespace", path: fetch, token: "team-pod", want: http.StatusNotFound},
+		{name: "an earlier Pod with a test Pod's name", path: fetch, token: "earlier-pod", want: http.StatusNotFound},
+		{name: "a Pod with another check's label", path: fetch, token: "squatter", want: http.StatusNotFound},
+		{name: "a token with a Pod's name and no UID", path: fetch, token: "no-uid-pod", want: http.StatusNotFound},
+		{name: "a token that isn't bound to a Pod", path: fetch, token: "unbound", want: http.StatusNotFound},
 		{name: "a repository that doesn't exist", path: "/default/nope.git/info/refs?service=git-upload-pack", token: "deps", want: http.StatusNotFound},
 		{name: "a repository that the mirror hasn't fetched", path: "/default/unsynced.git/info/refs?service=git-upload-pack", token: "deps", want: http.StatusServiceUnavailable, body: "hasn't fetched"},
 		{name: "dumb HTTP", path: "/default/app.git/info/refs", token: "gofmt", want: http.StatusForbidden},
@@ -306,7 +340,7 @@ func TestServeTestPods(t *testing.T) {
 	if got := f.work.Git("rev-parse", "FETCH_HEAD"); got != f.feature {
 		t.Errorf("fetched %s; want %s", got, f.feature)
 	}
-	for _, token := range []string{"stray-pod", "team-pod"} {
+	for _, token := range []string{"stray-pod", "team-pod", "earlier-pod", "squatter", "no-uid-pod", "unbound"} {
 		if _, err := f.git(token, "fetch", "--quiet", f.url("app"), "refs/heads/feature"); err == nil || !strings.Contains(err.Error(), "not found") {
 			t.Errorf("fetch with %s = %v; want not found", token, err)
 		}

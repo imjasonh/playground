@@ -3,12 +3,14 @@ package mirror
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/caller"
 	"github.com/imjasonh/playground/kube"
+	"github.com/imjasonh/playground/kube/k8s"
 )
 
 // Prefix lets a controller start branches: its service account may fetch
@@ -56,15 +58,19 @@ func (m *Mirror) prefixes(who caller.Caller) []string {
 
 // mayFetch reports whether who may fetch repo: a controller with a branch
 // prefix, a check that one of repo's merge policies lists, or a Pod in
-// repo's namespace that a check runs on one of repo's branches.
-func (m *Mirror) mayFetch(ctx context.Context, who caller.Caller, repo *gitk8s.Repository) bool {
+// repo's namespace that the gotest check runs on one of repo's branches. An
+// error means that the mirror couldn't get the Pod.
+func (m *Mirror) mayFetch(ctx context.Context, who caller.Caller, repo *gitk8s.Repository) (bool, error) {
 	if len(m.prefixes(who)) > 0 {
-		return true
+		return true, nil
 	}
 	if check, ok := who.Check(); ok && listed(repo, check, false) {
-		return true
+		return true, nil
 	}
-	return who.Pod != "" && who.Namespace == repo.Namespace && runsPod(ctx, repo, who.Pod)
+	if who.Pod == "" || who.PodUID == "" || who.Namespace != repo.Namespace || !runsPod(ctx, repo, who.Pod) {
+		return false, nil
+	}
+	return isTestPod(ctx, who)
 }
 
 // mayPushAny reports whether who may push some branch of repo.
@@ -87,19 +93,48 @@ func listed(repo *gitk8s.Repository, check string, mayPush bool) bool {
 	return false
 }
 
-// runsPod reports whether a check's running result on a branch of repo
-// names pod, which the check started to work on the branch.
+// runsPod reports whether the gotest check's running result on a branch of
+// repo names pod, which the check started to work on the branch. Of the
+// service accounts, config/policy.yaml lets only the check's write that
+// result, but the check names its Pod before it creates the Pod, so
+// isTestPod checks the Pod itself.
 func runsPod(ctx context.Context, repo *gitk8s.Repository, pod string) bool {
 	branches := kube.List[gitk8s.GitBranch](ctx, kube.InNamespace(repo.Namespace),
 		kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: repo.Name}))
 	for _, b := range branches {
-		for _, r := range b.Status.Checks {
-			if r.State == gitk8s.Running && r.Outputs["pod"] == pod {
-				return true
-			}
+		if r, ok := b.Status.Checks[gitk8s.GoTestCheck]; ok && r.State == gitk8s.Running && r.Outputs["pod"] == pod {
+			return true
 		}
 	}
 	return false
+}
+
+// isTestPod reports whether who's token is bound to a Pod of the gotest
+// check that hasn't finished. The Pod must have the token's UID, so it isn't
+// another Pod with the same name, and kube's controller label on it must
+// name the check's controller.
+func isTestPod(ctx context.Context, who caller.Caller) (bool, error) {
+	pod, err := kube.Fetch[k8s.Pod](ctx, who.Namespace, who.Pod)
+	if err != nil {
+		return false, fmt.Errorf("getting Pod %s/%s: %w", who.Namespace, who.Pod, err)
+	}
+	var reason string
+	switch {
+	case pod == nil:
+		reason = "the Pod doesn't exist"
+	case pod.UID != who.PodUID:
+		reason = "the token is bound to another Pod with the same name"
+	case pod.Labels[gitk8s.ControllerLabel] != gitk8s.GoTestController:
+		reason = fmt.Sprintf("the Pod's %s label isn't %s", gitk8s.ControllerLabel, gitk8s.GoTestController)
+	case pod.Deleting():
+		reason = "the Pod is being deleted"
+	case pod.Status.Phase == "Succeeded" || pod.Status.Phase == "Failed":
+		reason = "the Pod has finished"
+	default:
+		return true, nil
+	}
+	slog.Info("refused a Pod that a running result names", "pod", who.Namespace+"/"+who.Pod, "reason", reason)
+	return false, nil
 }
 
 // refuse returns why who may not make update c to repo, or "" if it may.

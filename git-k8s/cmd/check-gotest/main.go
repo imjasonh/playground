@@ -4,11 +4,13 @@
 // init container fetches the head from the repository's copy on the mirror,
 // with a token that's bound to the Pod, and the test container runs go test
 // ./... as a non-root user, with no service account token, no privileges,
-// and a read-only root file system. Only the init container sees the token,
-// and the mirror lets it fetch only the branch's repository, only while a
-// running result names the Pod. A NetworkPolicy lets the Pod reach only the
-// mirror and the cluster's DNS servers. The check reports the Pod's result,
-// with the end of the test output when the tests fail.
+// and a read-only root file system. Only the init container sees the token.
+// The mirror lets the token fetch only the branch's repository, and only
+// while the check's running result names the Pod and the Pod that has the
+// token's UID carries kube's controller label for this check. A
+// NetworkPolicy lets the Pod reach only the mirror and the cluster's DNS
+// servers. The check reports the Pod's result, with the end of the test
+// output when the tests fail.
 //
 // kube deletes a Pod and its NetworkPolicy when the check stops declaring
 // them, which happens after the check records the Pod's result and when the
@@ -166,7 +168,7 @@ const fetchAttempts = 3
 // that the attempts outlast a restart of the mirror.
 const fetchRetryDelay = 30 * time.Second
 
-var check = checks.Check{Name: "gotest", Run: run}
+var check = checks.Check{Name: gitk8s.GoTestCheck, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	attempt, named := 1, ""

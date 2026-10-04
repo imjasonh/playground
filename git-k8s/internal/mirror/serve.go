@@ -24,8 +24,8 @@ var pathRE = regexp.MustCompile(`^/([a-z0-9]([-a-z0-9]*[a-z0-9])?)/([a-z0-9]([-a
 // gitk8s.MirrorPath. Every request needs a service account token whose
 // audience is gitk8s.MirrorAudience as a bearer token. Run it with
 // kube.Serve: it reads GitRepository and GitBranch objects, checks tokens
-// with kube.ReviewToken, and calls kube.Trigger for a GitRepository after
-// a push.
+// with kube.ReviewToken, gets the Pod that a test Pod's token is bound to
+// with kube.Fetch, and calls kube.Trigger for a GitRepository after a push.
 func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	match := pathRE.FindStringSubmatch(r.URL.Path)
 	if match == nil {
@@ -60,7 +60,15 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	repo := kube.Get[gitk8s.Repository](ctx, namespace, name)
-	if repo == nil || !m.mayFetch(ctx, who, repo) {
+	may := false
+	if repo != nil {
+		if may, err = m.mayFetch(ctx, who, repo); err != nil {
+			slog.Warn("checking a caller failed", "repository", namespace+"/"+name, "caller", who.String(), "err", err)
+			http.Error(w, "the mirror couldn't check the caller; try again", http.StatusServiceUnavailable)
+			return
+		}
+	}
+	if !may {
 		http.Error(w, fmt.Sprintf("no GitRepository %s/%s that %s may fetch", namespace, name, who), http.StatusNotFound)
 		return
 	}
