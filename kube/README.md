@@ -477,7 +477,7 @@ go run ./examples/podpolicy generate -registry=ghcr.io/you -- -registries=ghcr.i
   kubectl apply -f -
 ```
 
-`generate` parses these flags as the program would, so it stops at a flag
+`generate` parses these flags as the program would, so it fails on a flag
 that the program doesn't define, and the function that you pass to
 [`kube.Install`](#install-other-objects) sees their values.
 
@@ -520,8 +520,11 @@ CustomResourceDefinitions and before they reconcile, it applies the objects in
 order with server-side apply and labels them with the program's name. It
 applies them again each time it starts, but doesn't watch them. Server-side
 apply sets only the fields in the manifest, so fields that others set keep
-their values. The program doesn't delete an object that a later manifest
-leaves out.
+their values. Entries that others add to a list that merges by key or value,
+such as a binding's `validationActions`, also stay. If the merged object isn't
+valid, such as a binding whose `validationActions` would hold both `Deny` and
+`Warn`, the apply fails and the program exits when it starts. The program
+doesn't delete an object that a later manifest leaves out.
 
 `generate` calls the function after it parses the flags after `--`, so
 `-- -install-policy=false` leaves out the policy and the permissions to apply
@@ -535,11 +538,14 @@ exist before you apply the YAML.
 
 An admission policy with a `paramKind` needs more permissions. The API server
 lets you create the policy only if you can get every object of its
-`paramKind`, which it checks as `get` on an object named `*`. ConfigMaps and
-custom resources can't have that name, so `generate` grants `get` on the name
-`*`, which passes the check without letting the program read the parameters.
-For a binding with a `paramRef`, `generate` grants `get` on the parameter
-object that the binding names.
+`paramKind`, which it checks as `get` on an object named `*`. When the
+`paramKind` is ConfigMap or a custom type that the program defines, `generate`
+grants `get` on the name `*`. Objects of those kinds can't have that name, so
+the rule passes the check without letting the program read the parameters.
+Objects of some other kinds, such as ClusterRoles, can have the name `*`, so
+for any other `paramKind`, `generate` prints a warning, and you give the
+program the permission yourself. For a binding with a `paramRef`, `generate`
+grants `get` on the parameter object that the binding names.
 
 ### Replicas
 

@@ -551,13 +551,17 @@ document, so a manifest is limited to the subset of YAML that kubeconfig
 files use.
 
 Install's controller doesn't reconcile. Its `setup` runs after the
-reconcilers' `setup`, which installs their CRDs, so an installed policy can
-match a type that the program defines. With leader election or shards, a
-replica applies the objects when it first holds a shard. It server-side
-applies each object in order and labels it with the program's name, as it
-labels CRDs. It doesn't watch the objects or delete those that a later
-manifest leaves out, so it needs no `list`, `watch`, or `delete` permission
-on them.
+reconcilers' `setup`, which installs their CRDs, so the manifest can hold
+objects of the types that the program defines. With leader election or
+shards, a replica applies the objects when it first holds a shard. It
+server-side applies each object in order and labels it with the program's
+name, as it labels CRDs. The forced apply takes over the fields that the
+manifest sets and keeps the rest, including entries that others add to a list
+that merges by key or value, such as a binding's `validationActions`. If the
+merged object isn't valid, the apply fails, `setup` returns the error, and the
+program exits when it starts. The controller doesn't watch the objects or
+delete those that a later manifest leaves out, so it needs no `list`,
+`watch`, or `delete` permission on them.
 
 `generate` calls the manifest function after it parses the arguments after
 `--` into the program's flags, and grants `create` and `patch` on each object
@@ -568,12 +572,16 @@ needs one more rule. The API server lets a user create the policy, or change
 its `paramKind`, only if they can get every object of that kind, which it
 checks as `get` on the name `*` in the namespace `*`. RBAC matches resource
 names exactly, and ConfigMaps and custom resources can't have the name `*`, so
-a ClusterRole rule for that name passes the check without letting the program
-read any object. A binding with a `paramRef` needs `get` on the object that
-it names, and `generate` finds that object's resource from the `paramKind` of
-the policy earlier in the manifest. Rules for objects in a namespace other
-than the program's own and the one that it watches go in a Role in that
-namespace.
+for those kinds a ClusterRole rule for that name passes the check without
+letting the program read any object. Objects of some other kinds, such as
+ClusterRoles, can have the name `*`, and `generate` can't tell a custom
+resource from an aggregated API's kind by its API version, so it grants the
+rule only when the `paramKind` is ConfigMap or a custom type that the program
+defines, and warns otherwise. A binding with a `paramRef` needs `get` on the
+object that it names, and `generate` finds that object's resource from the
+`paramKind` of the policy earlier in the manifest. Rules for objects in a
+namespace other than the program's own and the one that it watches go in a
+Role in that namespace.
 
 ### Shards and leader election
 
@@ -829,7 +837,8 @@ framework's tests check that:
   program removes the webhooks it dropped.
 - `kube.Install` applies its objects again after a restart and keeps fields
   that others set, and a program installs an admission policy with
-  parameters using only the RBAC rules that `generate` wrote.
+  parameters, and an object of a type that it reconciles, using only the RBAC
+  rules that `generate` wrote.
 - Objects written in one version read back in another, through the
   conversion webhook or without one.
 - The JSON and protobuf encodings of every type in the `k8s` package decode
