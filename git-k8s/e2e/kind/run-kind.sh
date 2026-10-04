@@ -550,6 +550,107 @@ no_agent_pods
 echo "The agent's fix landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
 echo "::endgroup::"
 
+echo "::group::Conflicts with a parent that moved are resolved before branches land"
+# Git merges go.sum with its union driver. The fake agent resolves other
+# conflicts by keeping the branch's lines and then the parent's, and fails a
+# conflict that holds DO NOT MERGE.
+CHECKS+=(check-conflicts)
+install check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
+k -n check-conflicts rollout status deployment/check-conflicts --timeout=180s
+CONFLICTED="${WORKDIR}/conflicted"
+git init -q -b main "${CONFLICTED}"
+cf() {
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${CONFLICTED}" \
+    -c user.name=e2e -c user.email=e2e@example.com "$@"
+}
+printf 'example.com/a v1.0.0 h1:a=\n' >"${CONFLICTED}/go.sum"
+printf 'Notes\n' >"${CONFLICTED}/notes.txt"
+cf add -A
+cf commit -qm "Add go.sum and notes"
+cf push -q "${HOST_URL}/conflicted.git" HEAD:main
+k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: conflicted
+  namespace: ${NS}
+spec:
+  url: ${CLUSTER_URL}/conflicted.git
+  secretRef:
+    name: app-creds
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: base
+            mayPush: true
+          - name: conflicts
+            mayPush: true
+        deleteMergedBranches: true
+    - match: c/**
+      parent: main
+EOF
+result() { k -n "${NS}" get gitbranch "$(branch_object "$1" conflicted)" -o jsonpath="{.status.checks.$2.$3}"; }
+# race_main sets the file $2 to $3 and then $4 on a new branch $1 from main,
+# and to $3 and then $5 on main. It pushes main first, so that the branch
+# conflicts with main when git-k8s first sees it.
+race_main() {
+  cf checkout -q -b "$1" main
+  printf '%b%s\n' "$3" "$4" >"${CONFLICTED}/$2"
+  cf commit -qam "Change $2 on $1"
+  cf checkout -q main
+  printf '%b%s\n' "$3" "$5" >"${CONFLICTED}/$2"
+  cf commit -qam "Change $2 on main"
+  cf push -q "${HOST_URL}/conflicted.git" main:main
+  cf push -q "${HOST_URL}/conflicted.git" "$1:$1"
+}
+# landed_with reports whether the branch $1 landed and is gone, and main's
+# file $2 holds $3.
+landed_with() {
+  [[ -z "$(remote_head "$1" conflicted)" && -z "$(branch_object "$1" conflicted)" ]] &&
+    cf fetch -q "${HOST_URL}/conflicted.git" main &&
+    [[ "$(cf show FETCH_HEAD:"$2")" == "$3" ]]
+}
+# merged_main checks that main's head, in FETCH_HEAD, is the conflicts
+# check's merge of the main that race_main pushed into the branch $1.
+merged_main() {
+  cf log -1 --format=%B FETCH_HEAD
+  cf log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: conflicts'
+  [[ "$(cf rev-parse FETCH_HEAD^1 FETCH_HEAD^2)" == "$(cf rev-parse "$1" main)" ]]
+}
+
+race_main c/sum go.sum 'example.com/a v1.0.0 h1:a=\n' 'example.com/b v1.0.0 h1:b=' 'example.com/c v1.0.0 h1:c='
+eventually 300 landed_with c/sum go.sum "$(printf 'example.com/a v1.0.0 h1:a=\nexample.com/b v1.0.0 h1:b=\nexample.com/c v1.0.0 h1:c=')"
+merged_main c/sum
+echo "Git merged the go.sum conflict with its union driver, and c/sum landed."
+
+cf checkout -q -B main FETCH_HEAD
+race_main c/text notes.txt 'Notes\n' 'The branch adds this line.' 'Main adds this line.'
+eventually 300 landed_with c/text notes.txt "$(printf 'Notes\nThe branch adds this line.\nMain adds this line.')"
+merged_main c/text
+eventually 60 no_agent_pods
+echo "The agent resolved the notes.txt conflict, and c/text landed."
+
+cf checkout -q -B main FETCH_HEAD
+race_main c/refused notes.txt 'Notes\nThe branch adds this line.\nMain adds this line.\n' 'DO NOT MERGE' 'Main adds another line.'
+refused="$(cf rev-parse c/refused)"
+moved="$(cf rev-parse main)"
+refused_failed() {
+  [[ -n "$(branch_object c/refused conflicted)" && "$(result c/refused conflicts state)" == Failed &&
+    "$(result c/refused base outputs.conflicts)" == notes.txt ]]
+}
+eventually 300 refused_failed
+k -n "${NS}" get gitbranch "$(branch_object c/refused conflicted)" -o jsonpath='{.status.checks}'
+echo
+[[ "$(result c/refused conflicts message)" == "the agent couldn't resolve the conflicts: The conflicts in notes.txt hold DO NOT MERGE or aren't well formed, so the fake agent changed no files." ]]
+[[ "$(result c/refused conflicts outputs.runs)" == 1 ]]
+[[ "$(remote_head c/refused conflicted)" == "${refused}" ]]
+[[ "$(remote_head main conflicted)" == "${moved}" ]]
+eventually 60 no_agent_pods
+echo "The base check reported the notes.txt conflict on c/refused, and the agent refused to resolve it, so c/refused stays as it is."
+echo "::endgroup::"
+
 echo "::group::Nothing writes while nothing changes"
 snapshot() {
   k -n "${NS}" get gitrepositories,gitbranches \
