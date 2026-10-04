@@ -5,8 +5,9 @@
 # fast-forwarded. go test ./e2e/kind runs this when GIT_K8S_KIND_E2E=1,
 # which CI sets when git-k8s changes.
 #
-# The git server runs on this machine and requires a password. Pods reach it
-# through the kind network's gateway, so the nodes need no internet access.
+# The git server runs on this machine and requires a password over HTTP, or
+# a key over SSH. Pods reach it through the kind network's gateway, so the
+# nodes need no internet access.
 #
 # GIT_K8S_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
@@ -19,6 +20,7 @@ CONTEXT="kind-${CLUSTER}"
 REGISTRY="${GIT_K8S_KIND_REGISTRY:-git-k8s-e2e-registry}"
 PORT="${GIT_K8S_KIND_REGISTRY_PORT:-5002}"
 GIT_PORT="${GIT_K8S_KIND_GIT_PORT:-18418}"
+SSH_PORT="${GIT_K8S_KIND_SSH_PORT:-$((GIT_PORT + 1000))}"
 CHAINGUARD="${GIT_K8S_KIND_CHAINGUARD:-cgr.dev/chainguard}"
 PLATFORM="linux/$(go env GOARCH)"
 NS=git-k8s-e2e
@@ -114,6 +116,7 @@ need kubectl
 need go
 need git
 need curl
+need ssh-keygen
 install_kind
 docker info >/dev/null
 
@@ -149,15 +152,20 @@ k version
 GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | tr ' ' '\n' |
   grep -E '^[0-9]+[.][0-9]+[.][0-9]+[.][0-9]+$' | head -n 1)"
 (cd "${ROOT}" && go build -o "${WORKDIR}/gitserver" ./e2e/gitserver)
-mkdir -p "${WORKDIR}/repos"
+mkdir -p "${WORKDIR}/repos" "${WORKDIR}/ssh"
+ssh-keygen -q -t ed25519 -N '' -C '' -f "${WORKDIR}/ssh/host"
+ssh-keygen -q -t ed25519 -N '' -C '' -f "${WORKDIR}/ssh/client"
 GITSERVER_PASSWORD="${PASSWORD}" "${WORKDIR}/gitserver" -addr="0.0.0.0:${GIT_PORT}" -root="${WORKDIR}/repos" \
+  -ssh-addr="0.0.0.0:${SSH_PORT}" -ssh-host-key="${WORKDIR}/ssh/host" -ssh-authorized-keys="${WORKDIR}/ssh/client.pub" \
   >"${WORKDIR}/gitserver.log" 2>&1 &
 GIT_SERVER_PID=$!
 HOST_URL="http://git-k8s:${PASSWORD}@127.0.0.1:${GIT_PORT}"
 CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
-listening() { (echo >"/dev/tcp/127.0.0.1/${GIT_PORT}") 2>/dev/null; }
-eventually 30 listening
-echo "Pods reach the git server at ${CLUSTER_URL}"
+CLUSTER_SSH_URL="ssh://git@${GATEWAY}:${SSH_PORT}"
+listening() { (echo >"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+eventually 30 listening "${GIT_PORT}"
+eventually 30 listening "${SSH_PORT}"
+echo "Pods reach the git server at ${CLUSTER_URL} and ${CLUSTER_SSH_URL}"
 echo "::endgroup::"
 
 echo "::group::Install git-k8s and the checks with generate"
@@ -447,6 +455,92 @@ fixed_landed() { [[ "$(remote_head main tested)" == "${fixed}" ]]; }
 eventually 300 fixed_landed
 eventually 60 no_test_pods
 echo "A branch that breaks a test failed in a sandboxed Pod, and a fixed branch landed."
+echo "::endgroup::"
+
+echo "::group::A repository over SSH"
+# The SSH server serves the same repositories as the HTTP server.
+t push -q "${HOST_URL}/overssh.git" main:main
+host_key="$(cut -d' ' -f1,2 "${WORKDIR}/ssh/host.pub")"
+printf '[%s]:%s %s\n' "${GATEWAY}" "${SSH_PORT}" "${host_key}" >"${WORKDIR}/ssh/known_hosts"
+k -n "${NS}" create secret generic ssh-creds --type=kubernetes.io/ssh-auth \
+  --from-file=ssh-privatekey="${WORKDIR}/ssh/client" --from-file=known_hosts="${WORKDIR}/ssh/known_hosts"
+k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: overssh
+  namespace: ${NS}
+spec:
+  url: ${CLUSTER_SSH_URL}/overssh.git
+  secretRef:
+    name: ssh-creds
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: base
+            mayPush: true
+          - name: gofmt
+            mayPush: true
+          - name: gotest
+        deleteMergedBranches: true
+    - match: c/**
+      parent: main
+EOF
+t checkout -q -b c/ssh main
+printf 'package tested\nfunc  Sub(a,b int)int{return a-b}\n' >"${TESTED}/sub.go"
+t add -A
+t commit -qm "Add Sub"
+t push -q "${HOST_URL}/overssh.git" HEAD:c/ssh
+sub_formatted='package tested
+
+func Sub(a, b int) int { return a - b }'
+ssh_landed() {
+  t fetch -q "${HOST_URL}/overssh.git" main && [[ "$(t show FETCH_HEAD:sub.go 2>/dev/null)" == "${sub_formatted}" ]]
+}
+eventually 300 ssh_landed
+t log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: gofmt'
+ssh_branch_gone() { [[ -z "$(remote_head c/ssh overssh)" && -z "$(branch_object c/ssh overssh)" ]]; }
+eventually 60 ssh_branch_gone
+echo "Over SSH, the gofmt check pushed a fix, go test passed, and the fix landed."
+
+# A known_hosts entry with another key for the server's address fails the
+# listing instead of trusting the server.
+printf '[%s]:%s %s\n' "${GATEWAY}" "${SSH_PORT}" "$(cut -d' ' -f1,2 "${WORKDIR}/ssh/client.pub")" \
+  >"${WORKDIR}/ssh/wrong_known_hosts"
+k -n "${NS}" create secret generic wrong-host --type=kubernetes.io/ssh-auth \
+  --from-file=ssh-privatekey="${WORKDIR}/ssh/client" --from-file=known_hosts="${WORKDIR}/ssh/wrong_known_hosts"
+k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: wronghost
+  namespace: ${NS}
+spec:
+  url: "git@[${GATEWAY}:${SSH_PORT}]:overssh.git"
+  secretRef:
+    name: wrong-host
+  pollInterval: 2s
+EOF
+ready() { k -n "${NS}" get gitrepository wronghost -o jsonpath="{.status.conditions[?(@.type==\"Ready\")].$1}"; }
+host_rejected() {
+  [[ "$(ready reason)" == ListFailed && "$(ready message)" == *"REMOTE HOST IDENTIFICATION HAS CHANGED"* ]]
+}
+eventually 60 host_rejected
+ready message
+echo
+
+# No program logs the private key.
+grep -v -e '^-' -e '^$' "${WORKDIR}/ssh/client" >"${WORKDIR}/ssh/client.lines"
+for program in git-k8s "${CHECKS[@]}"; do
+  k -n "${program}" logs --all-containers --tail=-1 -l "app.kubernetes.io/name=${program}" >"${WORKDIR}/logs.txt"
+  if grep -qF -f "${WORKDIR}/ssh/client.lines" "${WORKDIR}/logs.txt"; then
+    echo "${program} logged the private key" >&2
+    exit 1
+  fi
+done
+echo "A changed host key failed the listing, and no program logged the private key."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
