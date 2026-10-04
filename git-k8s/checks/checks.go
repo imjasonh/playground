@@ -116,9 +116,9 @@ func Main[V any, P interface {
 	cfg.AddFlags(flag.CommandLine)
 	// A container that's killed while it signs a commit leaves the key in
 	// os.TempDir, which generate puts on a volume that outlives the
-	// container. generate itself runs on people's machines, where another
-	// process can be signing.
-	if check.SigningKey != nil && (len(os.Args) < 2 || os.Args[1] != "generate") {
+	// container. Outside a Pod, as in generate or a controller run with
+	// -kubeconfig, other processes can be signing in the same directory.
+	if check.SigningKey != nil && os.Getenv("KUBERNETES_SERVICE_HOST") != "" {
 		if err := git.RemoveSigningKeys(); err != nil {
 			slog.Warn("removing signing keys that an earlier run left", "err", err)
 		}
