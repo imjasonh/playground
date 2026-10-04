@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -38,12 +40,27 @@ type SeccompProfile struct {
 }
 
 type Volume struct {
-	Name     string    `json:"name"`
-	EmptyDir *EmptyDir `json:"emptyDir,omitempty"`
+	Name      string     `json:"name"`
+	EmptyDir  *EmptyDir  `json:"emptyDir,omitempty"`
+	Projected *Projected `json:"projected,omitempty"`
 }
 
 type EmptyDir struct {
 	SizeLimit string `json:"sizeLimit,omitempty"`
+}
+
+type Projected struct {
+	Sources []VolumeProjection `json:"sources"`
+}
+
+type VolumeProjection struct {
+	ServiceAccountToken *ServiceAccountToken `json:"serviceAccountToken,omitempty"`
+}
+
+type ServiceAccountToken struct {
+	Audience          string `json:"audience"`
+	ExpirationSeconds *int64 `json:"expirationSeconds,omitempty"`
+	Path              string `json:"path"`
 }
 
 type Container struct {
@@ -60,24 +77,14 @@ type Container struct {
 }
 
 type EnvVar struct {
-	Name      string        `json:"name"`
-	Value     string        `json:"value,omitempty"`
-	ValueFrom *EnvVarSource `json:"valueFrom,omitempty"`
-}
-
-type EnvVarSource struct {
-	SecretKeyRef *SecretKeySelector `json:"secretKeyRef,omitempty"`
-}
-
-type SecretKeySelector struct {
-	Name     string `json:"name"`
-	Key      string `json:"key"`
-	Optional *bool  `json:"optional,omitempty"`
+	Name  string `json:"name"`
+	Value string `json:"value,omitempty"`
 }
 
 type VolumeMount struct {
 	Name      string `json:"name"`
 	MountPath string `json:"mountPath"`
+	ReadOnly  bool   `json:"readOnly,omitempty"`
 }
 
 type SecurityContext struct {
@@ -111,7 +118,40 @@ type ContainerStatus struct {
 }
 
 type Terminated struct {
-	ExitCode int32  `json:"exitCode"`
-	Reason   string `json:"reason,omitempty"`
-	Message  string `json:"message,omitempty"`
+	ExitCode   int32     `json:"exitCode"`
+	Reason     string    `json:"reason,omitempty"`
+	Message    string    `json:"message,omitempty"`
+	FinishedAt time.Time `json:"finishedAt,omitzero"`
+}
+
+// NetworkPolicy declares the fields of a NetworkPolicy that a test Pod's
+// policy sets.
+type NetworkPolicy struct {
+	kube.Object `kube:"apiVersion=networking.k8s.io/v1,kind=NetworkPolicy,plural=networkpolicies,scope=Namespaced"`
+	Spec        NetworkPolicySpec `json:"spec"`
+}
+
+type NetworkPolicySpec struct {
+	PodSelector LabelSelector       `json:"podSelector"`
+	PolicyTypes []string            `json:"policyTypes"`
+	Egress      []NetworkPolicyRule `json:"egress,omitempty"`
+}
+
+type LabelSelector struct {
+	MatchLabels map[string]string `json:"matchLabels,omitempty"`
+}
+
+type NetworkPolicyRule struct {
+	To    []NetworkPolicyPeer `json:"to,omitempty"`
+	Ports []NetworkPolicyPort `json:"ports,omitempty"`
+}
+
+type NetworkPolicyPeer struct {
+	NamespaceSelector *LabelSelector `json:"namespaceSelector,omitempty"`
+	PodSelector       *LabelSelector `json:"podSelector,omitempty"`
+}
+
+type NetworkPolicyPort struct {
+	Protocol string `json:"protocol"`
+	Port     int32  `json:"port"`
 }
