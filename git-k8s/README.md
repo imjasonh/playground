@@ -97,6 +97,7 @@ example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` when the change is larger than `-max-lines` or touches a path that matches a `-sensitive` glob, and to `low` otherwise. |
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head. A push after the approval needs a new one. |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
+| `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and sets `outputs.summary` and the run's token counts. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
 
 A check with `mayPush: true` pushes its fix commit to the branch, which moves
 the head and runs the checks again. Fix commits have a `Git-K8s-Fixer:
@@ -185,6 +186,171 @@ delete the Pods with their `GitBranch`. Set `-runtime-class` to run the Pods
 under a sandboxing runtime such as gVisor, and `-go-image`, `-git-image`,
 `-timeout`, and `-goproxy` to change the rest.
 
+### Agentic checks
+
+`check-review` runs an AI agent with the
+[Cursor SDK](https://www.npmjs.com/package/@cursor/sdk). Like
+`check-gotest`, it declares a Pod for each head with `kube.Own`, and
+reports `Running` until the Pod finishes. The `agent` package declares the
+Pods, so other checks can run agents the same way. Each Pod has three
+containers:
+
+- The `prepare` init container fetches the head with the repository's
+  credentials. It writes the head's files to a directory that isn't a git
+  repository, and writes the change from the merge base and the commit log
+  next to it. It also copies the Cursor API key from a Secret to a memory
+  volume. It's the only container that gets the credentials or reads a
+  Secret.
+- The `agent` init container runs the runner in `agent/runner`, a small
+  Node program. The runner reads the key and deletes its file, then runs the
+  agent in the directory of the head's files, with tools that read and
+  search them. The agent gets no shell, MCP servers, or web access. The
+  runner writes the agent's verdict, summary, reasoning, and token usage to
+  a result file, and the file's SHA-256 digest as the container's
+  termination message.
+- The `result` container serves the result file over HTTP, but only to
+  requests whose bearer token is the Pod's UID.
+
+The check reads the digest and the UID from the API server, fetches the
+result from the Pod's IP over plain HTTP, and rejects it unless it matches
+the digest. So the agent's containers get no Kubernetes or git credentials,
+a check that restarts fetches the result again, and a result can hold the
+files that the agent changed, which don't fit in a termination message.
+Someone who can watch the cluster's network can read a result, but can't
+change it. The check also rejects a result with an unknown verdict, an
+invalid path, a file mode other than a regular file or a symbolic link, more
+than 1,000 files, or more than 8 MiB of file content.
+
+When the policy lets the check push, the agent can also edit the files.
+The check commits what changed on the head, and pushes it like any other
+fix, with a `Git-K8s-Fixer: review` trailer and within
+`maxAutomatedCommits`. Without `mayPush`, the agent's files are read-only.
+
+The check's outputs hold the agent's `summary`, the `model`, the run's
+`inputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`,
+and `costCents` when the SDK reports a cost. `runs` counts the agent runs
+on the branch.
+
+An agent can answer differently each time, so a result stays until the
+branch's head changes, and the check doesn't run again when only the parent
+moves. When the agent fails, for example because the API key is wrong or
+the run takes longer than `-timeout`, the check fails with the agent's
+error. The next head runs the agent again.
+
+Agent runs cost money. Three limits cap them, and they count runs, not
+tokens:
+
+- `maxAgentRuns` in the merge policy, 10 by default, is the most runs that
+  each agentic check can start on one branch. Every new head needs a run,
+  including the check's own fixes and `check-base`'s merges of the parent.
+  A branch that has used them all reports `Running` until you raise the
+  limit.
+- `-max-runs-per-day`, 100 by default, is the most runs that the program
+  starts in any 24 hours. The program counts them in memory, so the count
+  starts over when it restarts, and each shard keeps its own count.
+- `-max-pods`, 10 by default, is the most agent Pods that run at once
+  across all namespaces.
+
+The agent reads the branch's code, which can tell it what to do. Its
+verdict goes through the same result path as any check's result, and its
+fixes through the same push rules, but neither is a person's review. We
+recommend a gate that also needs a person's approval for a risky change,
+such as `checks.review.passed && (checks.risk.outputs.level == "low" ||
+checks.approval.passed)`.
+
+To install `check-review`, build the runner's image from
+`agent/runner/Dockerfile`, push it, and pass its digest to the check with
+`-agent-image`. Then create a Secret named `cursor-api-key` that holds a
+Cursor API key under the key `api-key`, in each namespace with branches to
+review:
+
+```sh
+docker build -t REGISTRY/agent-runner agent/runner
+docker push REGISTRY/agent-runner
+image="$(docker inspect -f '{{index .RepoDigests 0}}' REGISTRY/agent-runner)"
+go run ./cmd/check-review generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
+kubectl -n NAMESPACE create secret generic cursor-api-key --from-literal=api-key=KEY
+```
+
+`check-review` takes these flags, which `agent.Runner.AddFlags` registers:
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `-agent-image` | Required | Image that runs the agent, built from `agent/runner/Dockerfile` |
+| `-git-image` | `cgr.dev/chainguard/git:latest` | Image that fetches the source; it needs `git` and `sh` |
+| `-backend` | `cursor` | Where the agent runs: `cursor`, with the Cursor SDK in the Pod, or `fake`, for tests |
+| `-model` | `composer-2.5` | Model that the agent uses |
+| `-api-key-secret` | `cursor-api-key` | Secret, in each branch's namespace, whose `api-key` key holds the API key |
+| `-timeout` | `15m` | Longest that an agent can run |
+| `-max-pods` | 10 | Most agent Pods to run at once, in all namespaces; 0 means no limit |
+| `-max-runs-per-day` | 100 | Most agent runs to start in any 24 hours; 0 means no limit |
+| `-runtime-class` | None | RuntimeClass for agent Pods, such as `gvisor` |
+
+Agent Pods need to reach the repository and Cursor's API over HTTPS, and
+the check needs to reach the agent Pods on TCP port 8080. A NetworkPolicy
+matches IP addresses, not host names, so by itself it can't limit agent
+Pods to Cursor's API. This policy allows the agent Pods DNS, HTTPS to any
+address, and requests from `check-review`:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: git-k8s-agents
+  namespace: NAMESPACE
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: git-k8s-agent
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: check-review
+      ports:
+        - port: 8080
+  egress:
+    - ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    - ports:
+        - port: 443
+```
+
+If the repository's URL has another port, allow that port too. To allow
+only Cursor's API and the repository, use a CNI plugin with DNS-based
+rules, such as Cilium's `toFQDNs`.
+
+To write an agentic check, give an `agent.Runner` the check's name, register
+its flags, and call its `Run` method with a task. With a view type like the
+one in [Write a check](#write-a-check), but with the key `docs`, this is a
+complete check:
+
+```go
+var runner = &agent.Runner{Name: "docs"}
+
+func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+	v, _ := runner.Run(ctx, in, agent.Task{
+		Instructions: "Check that the change documents each flag that it adds.",
+		Edit:         in.Policy.MayPush,
+	})
+	return v, nil
+}
+
+func main() {
+	runner.AddFlags(flag.CommandLine)
+	checks.Main[Branch](checks.Check{Name: "docs", Remote: credentials.Remote, Run: run})
+}
+```
+
+`Run` never returns an error, because a check that returns one loses its
+outputs, which count the branch's runs. It also returns the agent's
+`Result`, with the files that the agent changed, so a check can build
+another kind of commit from them with `agent.ApplyFiles`.
+
 ## Merge gates
 
 `when` is a [CEL](https://cel.dev) expression. It has one variable,
@@ -245,6 +411,16 @@ that runs in the test process:
 go test -race ./...
 ```
 
+The agent runner in `agent/runner` has its own tests, which its image build
+also runs:
+
+```sh
+cd agent/runner && npm ci && npm test
+```
+
+The repository's daily dependency updates skip the runner, so update its npm
+dependencies by hand.
+
 The end-to-end test installs every program with `generate` in a
 [kind](https://kind.sigs.k8s.io/) cluster with a local registry. It runs a
 git server on this machine, which Pods reach through the kind network's
@@ -259,6 +435,11 @@ CI runs it when `git-k8s/` or `kube/` changes. To keep the cluster
 afterward, set `GIT_K8S_KIND_KEEP=1`. If your network can't reach `cgr.dev`,
 set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
 
+The end-to-end test builds the agent runner's image with Docker, and runs
+`check-review` with the `fake` backend, which needs no API key. The fake
+agent fails a change that adds a line with `DO NOT MERGE` in it, and deletes
+those lines when the check can push.
+
 ## Limitations
 
 - The controllers poll remotes; they don't receive webhooks. A check's status
@@ -268,6 +449,10 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
 - Remotes authenticate with HTTP basic auth only.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
   NetworkPolicy, so a test can reach anything that the namespace's Pods can.
+- `check-review` reads repository credentials, so `generate` lets it read
+  every Secret, including the Cursor API key, which only its agent Pods use.
+  Like `check-gotest`, it can also create Pods in every namespace. Installing
+  it with `generate -watch-namespace` limits both to one namespace.
 
 [`future-work.md`](future-work.md) proposes fixes for these, and lists the
 other known gaps.

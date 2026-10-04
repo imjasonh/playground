@@ -153,7 +153,7 @@ so every check runs again on it, and it counts toward the branch's
 
 The controller tries a resolution that git can make by itself first, such as
 one that `git rerere` recorded earlier. Otherwise, an agent can resolve the
-conflict, as described in [Add agentic operators](#add-agentic-operators). A
+conflict, as described in [Agentic checks](README.md#agentic-checks). A
 local agent in a Pod that has both commits checked out from the mirror edits
 the conflicting files, builds the result, and pushes it. When neither works,
 the branch stays as it is, and the controller reports why.
@@ -268,56 +268,22 @@ at the commit that the checks tested. Squash and rebase landings, which many
 forges offer, make a commit that no check saw, so they need either another
 round of checks or a rule about which results still count.
 
-## Add agentic operators
+## Run agents in Cursor's cloud
 
-Some checks and controllers are better written as an AI agent than as code:
-
-- A check that reviews a branch's change and passes or fails it. The first
-  design called for one, but `check-approval` only reads a person's
-  approval.
-- A check that fixes a failing test and pushes the fix.
-- A controller that writes a pull request's description.
-- The [conflict resolution controller](#resolve-conflicts-in-a-controller),
-  when git can't resolve a conflict by itself.
-- The [dependency update controller](#update-dependencies-with-a-controller),
-  when an update breaks the build.
-
-The Cursor SDK (`@cursor/sdk`), which this repository's `nethack-agent` and
-`its-not-jaws` use, runs an agent with a Cursor API token.
-
-The decision is to start with local agents in Pods, and to add cloud agents
-later. A local agent runs in a sandboxed Pod for each branch, like
-`check-gotest`'s, with the branch checked out from the mirror as its working
-directory. The SDK is a Node package, so the Pod's image holds Node and a
-small runner, and the operator creates the Pod and reads its result, as
-`check-gotest` does with its test Pods. The agent sees only the files and
-tools that the operator gives it, which limits what it can do when the code
-that it reads tries to steer it.
-
-A cloud agent runs on Cursor's machines, against a repository that it can
-clone. The mirror is in the cluster, so a cloud agent would work on GitHub,
-the downstream copy. Its pushes reach git-k8s through the mirror's sync, and
-the conflict resolution controller coalesces any that race a change in the
-mirror. An interface that hides where the agent runs, with a fake for tests
-like `its-not-jaws`'s mock backend, lets operators move to cloud agents
-without other changes.
+[Agentic checks](README.md#agentic-checks) run a local agent in a Pod for
+each branch head. A cloud agent runs on Cursor's machines instead, against a
+repository that it can clone. The mirror is in the cluster, so a cloud agent
+would work on GitHub, the downstream copy. Its pushes reach git-k8s through
+the mirror's sync, and the conflict resolution controller coalesces any that
+race a change in the mirror. The runner runs agents through a backend, so a
+cloud backend can start a run from an agent Pod and report its verdict
+through the same result transport, without changes to the checks.
 
 Questions to settle first:
 
-- What it costs. The SDK reports each run's token usage, which
-  `nethack-agent` turns into a dollar cost. A budget for each branch, like
-  `maxAutomatedCommits`, and for each day, keeps a loop of runs from costing
-  too much.
-- How much to trust an agent. It reads code from the branch, which can tell
-  it what to do, so its results and fixes need the same limits as any
-  check's: token-authenticated results, the budget for automated commits,
-  and no credentials beyond the mirror.
-- Where the Cursor API token lives. A Secret that only the agent's Pod
-  mounts keeps it from every other program.
-- What to do when two runs disagree. An agent can give a different answer
-  each time, so a result for a commit stays until the commit changes.
-- How an operator follows a cloud agent's run, which happens outside the
-  cluster, and which GitHub branches a cloud agent may push to.
+- Whether an agent Pod waits for a cloud agent's run, which happens outside
+  the cluster, or the check follows the run itself.
+- Which GitHub branches a cloud agent may push to.
 
 ## Update dependencies with a controller
 
@@ -341,7 +307,7 @@ tell them apart from other branches.
 
 When an update breaks the build or the tests, a local agent can change the
 code to fit the dependency's new API, as described in
-[Add agentic operators](#add-agentic-operators), and push the change to the
+[Agentic checks](README.md#agentic-checks), and push the change to the
 branch, within the branch's budget for automated commits. When the agent
 can't fix it, the branch waits for a person.
 
