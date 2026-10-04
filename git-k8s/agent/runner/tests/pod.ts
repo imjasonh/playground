@@ -40,7 +40,8 @@ function write(root: string, files: Files): void {
 /**
  * Lays out what the agent container sees, the way the Pod's prepare
  * container does: the head's files in a directory that isn't a repository,
- * the diff, the commit log, the head's index, and the key file.
+ * the diff, the paths that it touches, the commit log, the head's index,
+ * and the key file.
  */
 export function preparePod(base: Files, change: Files, task: Partial<Task> = {}): Task {
   const root = mkdtempSync(join(tmpdir(), "agent-runner-"));
@@ -60,9 +61,11 @@ export function preparePod(base: Files, change: Files, task: Partial<Task> = {})
     mkdirSync(join(root, dir));
   }
   git(repo, "read-tree", head);
+  git(repo, "rm", "-q", "--cached", "--ignore-unmatch", "--", ":(glob)**/.cursorignore");
   git(repo, "checkout-index", "-a", "-f", `--prefix=${join(root, "src")}/`);
   writeFileSync(join(root, "input", "files"), gitBuffer(repo, "ls-files", "-s", "-z"));
   writeFileSync(join(root, "input", "change.diff"), gitBuffer(repo, "diff", "--no-color", baseSha, head));
+  writeFileSync(join(root, "input", "changes"), gitBuffer(repo, "diff", "--name-status", "-z", baseSha, head));
   writeFileSync(join(root, "input", "log.txt"), git(repo, "log", "--format=%h %s", `${baseSha}..${head}`));
   writeFileSync(join(root, "key", "api-key"), "test-key-123\n");
   return {
@@ -79,6 +82,7 @@ export function preparePod(base: Files, change: Files, task: Partial<Task> = {})
     diffFile: join(root, "input", "change.diff"),
     logFile: join(root, "input", "log.txt"),
     filesFile: join(root, "input", "files"),
+    changesFile: join(root, "input", "changes"),
     keyFile: join(root, "key", "api-key"),
     resultFile: join(root, "result", "result.json"),
     terminationLog: join(root, "termination-log"),
@@ -114,10 +118,12 @@ export function prepareMergePod(base: Files, ours: Files, theirs: Files, task: P
     mkdirSync(join(root, dir));
   }
   git(repo, "read-tree", conflicts.toString().split("\0")[0]);
+  git(repo, "rm", "-q", "--cached", "--ignore-unmatch", "--", ":(glob)**/.cursorignore");
   git(repo, "checkout-index", "-a", "-f", `--prefix=${join(root, "src")}/`);
   writeFileSync(join(root, "input", "files"), gitBuffer(repo, "ls-files", "-s", "-z"));
   writeFileSync(join(root, "input", "conflicts"), conflicts);
   writeFileSync(join(root, "input", "change.diff"), gitBuffer(repo, "diff", "--no-color", baseSha, head));
+  writeFileSync(join(root, "input", "changes"), gitBuffer(repo, "diff", "--name-status", "-z", baseSha, head));
   writeFileSync(join(root, "input", "log.txt"), git(repo, "log", "--format=%h %s", `${baseSha}..${head}`));
   writeFileSync(join(root, "input", "merge.diff"), gitBuffer(repo, "diff", "--no-color", baseSha, merged));
   writeFileSync(join(root, "input", "merge-log.txt"), git(repo, "log", "--format=%h %s", `${baseSha}..${merged}`));
@@ -136,6 +142,7 @@ export function prepareMergePod(base: Files, ours: Files, theirs: Files, task: P
     diffFile: join(root, "input", "change.diff"),
     logFile: join(root, "input", "log.txt"),
     filesFile: join(root, "input", "files"),
+    changesFile: join(root, "input", "changes"),
     keyFile: join(root, "key", "api-key"),
     resultFile: join(root, "result", "result.json"),
     terminationLog: join(root, "termination-log"),

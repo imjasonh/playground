@@ -94,7 +94,7 @@ func TestStartsALockedDownPod(t *testing.T) {
 		Backend: "fake", Model: "composer-2.5", Instructions: "Review the change.", TimeoutSeconds: 60,
 		Branch: "c/x", Parent: "main", Head: f.b.Spec.Head, Base: f.base, WorkTree: "/src",
 		DiffFile: "/input/change.diff", LogFile: "/input/log.txt", FilesFile: "/input/files", KeyFile: "/key/api-key",
-		ResultFile: "/result/result.json", TerminationLog: "/dev/termination-log",
+		ResultFile: "/result/result.json", TerminationLog: "/dev/termination-log", ChangesFile: "/input/changes",
 	}
 	if got != wantTask {
 		t.Errorf("AGENT_TASK = %+v, want %+v", got, wantTask)
@@ -227,14 +227,20 @@ func TestPrepareScript(t *testing.T) {
 	w := srv.NewWork(t, "app")
 	w.Write(".gitattributes", "* text eol=crlf\n")
 	w.Write("a.txt", "one\ntwo\n")
+	w.Write(".cursorignore", "a.txt\n")
 	base := w.Commit("main")
 	w.Push("main")
 	w.Branch("c/x", base)
 	for i := range 60 {
 		w.Write("a.txt", fmt.Sprintf("one\ntwo\n%d\n", i))
-		w.Commit(fmt.Sprintf("change %d", i))
+		msg := fmt.Sprintf("change %d", i)
+		if i == 59 {
+			msg += strings.Repeat(" long", 100)
+		}
+		w.Commit(msg)
 	}
 	w.Write("dir/b.txt", "b\n")
+	w.Write("dir/.cursorignore", "b.txt\n")
 	head := w.Commit("add b")
 	w.Push("c/x")
 	repo, secret := srv.Repository("app")
@@ -293,14 +299,24 @@ func TestPrepareScript(t *testing.T) {
 	if _, err := os.Stat(dir + "/src/.git"); !os.IsNotExist(err) {
 		t.Errorf("the work tree has a .git: %v", err)
 	}
+	for _, path := range []string{"/src/.cursorignore", "/src/dir/.cursorignore"} {
+		if _, err := os.Stat(dir + path); !os.IsNotExist(err) {
+			t.Errorf("the work tree has %s: %v", path, err)
+		}
+	}
+	if got, want := read(dir+"/input/changes"), "M\x00a.txt\x00A\x00dir/.cursorignore\x00A\x00dir/b.txt\x00"; got != want {
+		t.Errorf("changes = %q, want %q", got, want)
+	}
 	if files := read(dir + "/input/files"); strings.Count(files, "\x00") != 3 || !strings.Contains(files, " 0\tdir/b.txt\x00") {
 		t.Errorf("files = %q, want the head's 3 files", files)
 	}
 	if diff := read(dir + "/input/change.diff"); !strings.Contains(diff, "+59") || !strings.Contains(diff, "diff --git a/dir/b.txt b/dir/b.txt") {
 		t.Errorf("change.diff =\n%s", diff)
 	}
-	if log := strings.Split(strings.TrimSpace(read(dir+"/input/log.txt")), "\n"); len(log) != 50 || !strings.HasSuffix(log[0], " add b") {
+	if log := strings.Split(strings.TrimSpace(read(dir+"/input/log.txt")), "\n"); len(log) != 50 || !strings.HasSuffix(strings.TrimRight(log[0], " "), " add b") {
 		t.Errorf("log.txt = %q, want the newest 50 commits", log)
+	} else if long := log[1]; len(long) > 220 || !strings.HasSuffix(long, " long lon..") {
+		t.Errorf("log.txt has %q, want its subject cut at 200 columns", long)
 	}
 	if fi, err := os.Stat(dir + "/key/api-key"); err != nil || fi.Mode().Perm() != 0o600 || read(dir+"/key/api-key") != "key-123" {
 		t.Errorf("api-key = %v, %v; want key-123 that only its owner can read", fi, err)
@@ -326,7 +342,7 @@ func TestPrepareScript(t *testing.T) {
 	w.Branch("main", base)
 	w.Write("a.txt", "one\ntwo\nmain\n")
 	w.Write("go.sum", "y v2\n")
-	merge := w.Commit("change main")
+	merge := w.Commit("change main" + strings.Repeat(" long", 100))
 	for i := range 55 {
 		w.Write("later.txt", fmt.Sprintf("%d\n", i))
 		w.Commit(fmt.Sprintf("later %d", i))
@@ -354,14 +370,21 @@ func TestPrepareScript(t *testing.T) {
 	if _, err := os.Stat(dir + "/src/later.txt"); !os.IsNotExist(err) {
 		t.Errorf("the work tree has later.txt, from after the merge's commit: %v", err)
 	}
+	for _, path := range []string{"/src/.cursorignore", "/src/dir/.cursorignore"} {
+		if _, err := os.Stat(dir + path); !os.IsNotExist(err) {
+			t.Errorf("the merge's work tree has %s: %v", path, err)
+		}
+	}
 	if files := read(dir + "/input/files"); strings.Count(files, "\x00") != 4 || !strings.Contains(files, "\tgo.sum\x00") {
 		t.Errorf("files = %q, want the merge's 4 files", files)
 	}
 	if diff := read(dir + "/input/merge.diff"); !strings.Contains(diff, "+main") || !strings.Contains(diff, "+y v2") || strings.Contains(diff, "later.txt") {
 		t.Errorf("merge.diff =\n%s", diff)
 	}
-	if log := strings.Split(strings.TrimSpace(read(dir+"/input/merge-log.txt")), "\n"); len(log) != 1 || !strings.HasSuffix(log[0], " change main") {
+	if log := strings.Split(strings.TrimSpace(read(dir+"/input/merge-log.txt")), "\n"); len(log) != 1 || !strings.Contains(log[0], " change main long") {
 		t.Errorf("merge-log.txt = %q, want main's commit since the merge base", log)
+	} else if len(log[0]) > 220 || !strings.HasSuffix(log[0], "..") {
+		t.Errorf("merge-log.txt has %q, want its subject cut at 200 columns", log[0])
 	}
 	if diff := read(dir + "/input/change.diff"); !strings.Contains(diff, "+z v3") || strings.Contains(diff, "+y v2") {
 		t.Errorf("change.diff =\n%s\nwant the branch's change", diff)

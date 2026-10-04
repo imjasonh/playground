@@ -51,6 +51,7 @@ type podTask struct {
 	DiffFile       string `json:"diffFile"`
 	LogFile        string `json:"logFile"`
 	FilesFile      string `json:"filesFile"`
+	ChangesFile    string `json:"changesFile"`
 	KeyFile        string `json:"keyFile"`
 	ResultFile     string `json:"resultFile"`
 	TerminationLog string `json:"terminationLog"`
@@ -69,14 +70,16 @@ type podMerge struct {
 
 // prepareScript runs in the prepare container. It fetches the branch at
 // HEAD, or exits with status 3 if the branch moved, and writes the head's
-// files, its index, the change from BASE, the commit log, and the API key
-// for the agent container. The git image has no commands but git and sh,
-// so the script uses only those and the shell's builtins, and git init's
-// templates make .git/info. The repository goes in a directory that git
-// init creates, because git refuses to use one that another user owns,
-// such as the root of an emptyDir volume. The attributes file makes the
-// files match their blobs, so the runner can tell which ones the agent
-// changed.
+// files, its index, the change from BASE, the paths that the change
+// touches, the commit log, and the API key for the agent container. It
+// leaves .cursorignore files out of the head's files and index, because
+// Cursor reads them to hide files from the agent. The git image has no
+// commands but git and sh, so the script uses only those and the shell's
+// builtins, and git init's templates make .git/info. The repository goes
+// in a directory that git init creates, because git refuses to use one
+// that another user owns, such as the root of an emptyDir volume. The
+// attributes file makes the files match their blobs, so the runner can
+// tell which ones the agent changed.
 //
 // With MERGE, it also fetches MERGE_REF, or exits with status 3 if it still
 // doesn't have MERGE, and writes the files and index of merging MERGE into
@@ -122,9 +125,10 @@ if [ -n "${MERGE:-}" ]; then
 '
   tree="${out%%"$nl"*}"
   git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv "$BASE" "$MERGE" >"$INPUT/merge.diff"
-  git log --format='%h %s' -n 50 "$BASE..$MERGE" >"$INPUT/merge-log.txt"
+  git log --format='%h %<(200,trunc)%s' -n 50 "$BASE..$MERGE" >"$INPUT/merge-log.txt"
 fi
 git read-tree "$tree"
+git rm -q --cached --ignore-unmatch -- ':(glob)**/.cursorignore'
 git checkout-index -a -f --prefix="$WORK_TREE/"
 git ls-files -s -z >"$INPUT/files"
 from="${BASE:-$(git hash-object -t tree /dev/null)}"
@@ -133,7 +137,8 @@ if [ -n "${BASE:-}" ]; then
   range="$BASE..$HEAD"
 fi
 git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv "$from" "$HEAD" >"$INPUT/change.diff"
-git log --format='%h %s' -n 50 "$range" >"$INPUT/log.txt"
+git diff --name-status -z "$from" "$HEAD" >"$INPUT/changes"
+git log --format='%h %<(200,trunc)%s' -n 50 "$range" >"$INPUT/log.txt"
 umask 077
 printf '%s' "$CURSOR_API_KEY" >"$KEY_FILE"
 `
@@ -164,6 +169,7 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 		DiffFile:       inputDir + "/change.diff",
 		LogFile:        inputDir + "/log.txt",
 		FilesFile:      inputDir + "/files",
+		ChangesFile:    inputDir + "/changes",
 		KeyFile:        keyFile,
 		ResultFile:     resultFile,
 		TerminationLog: "/dev/termination-log",

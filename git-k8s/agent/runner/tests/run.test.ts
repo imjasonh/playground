@@ -3,10 +3,13 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { fakeBackend } from "../src/backends/fake.js";
 import type { AgentRequest, Backend } from "../src/backends/types.js";
+import { MAX_DIFF, MAX_LOG } from "../src/prompt.js";
 import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
 import type { Task } from "../src/task.js";
+import { MAX_PATHS } from "../src/touched.js";
 import { prepareMergePod, preparePod } from "./pod.js";
 
 const quiet: RunOptions = { log: () => undefined };
@@ -43,6 +46,44 @@ test("passes a clean change", async () => {
   assert.equal(readResult(task).verdict, "pass");
 });
 
+test("reads only the start of a long diff and commit log", async () => {
+  const task = preparePod({}, { "a.txt": "a\n" });
+  writeFileSync(task.diffFile, `diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,100001 @@\n${"+x\n".repeat(100_000)}+DO NOT MERGE\n`);
+  writeFileSync(task.logFile, `abc1234 ${"x".repeat(100)}\n`.repeat(2 * MAX_LOG));
+  let request: AgentRequest | undefined;
+  const capture: Backend = async (r) => {
+    request = r;
+    return fakeBackend(r);
+  };
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: capture } }), 0);
+  assert.equal(readResult(task).verdict, "pass", "the marker is past the part of the diff that the agent sees");
+  assert.ok(request);
+  assert.ok(Buffer.byteLength(request.diff) <= MAX_DIFF && request.diff.endsWith("+x\n"));
+  assert.ok(request.prompt.length < MAX_DIFF + MAX_LOG + 5000);
+  assert.match(request.prompt, /longer than 200000 bytes/);
+});
+
+test("lists every path that the change touches, and hides no files", async () => {
+  const task = preparePod({ ".cursorignore": "", "a.txt": "a\n" }, { ".cursorignore": "secret/\n", "secret/x.txt": "x\n" });
+  assert.equal(existsSync(join(task.workTree, ".cursorignore")), false);
+  assert.equal(readFileSync(join(task.workTree, "secret", "x.txt"), "utf8"), "x\n");
+  let prompt = "";
+  const capture: Backend = async (r) => {
+    prompt = r.prompt;
+    return fakeBackend(r);
+  };
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: capture } }), 0);
+  assert.match(prompt, /changed type\):\n\nM \.cursorignore\nA secret\/x\.txt\n\n/);
+});
+
+test("refuses a change that touches too many paths", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const task = preparePod({}, { "a.txt": "a\n" });
+  writeFileSync(task.changesFile ?? "", "A\0a.txt\0".repeat(MAX_PATHS + 1));
+  assert.equal(await runTask(task), 1);
+  assert.equal(readFileSync(task.terminationLog, "utf8"), "the change touches more than 1000 paths, more than an agent can check");
+});
+
 test("reports the files that the agent changed", async () => {
   const task = preparePod(
     { "a.txt": "one\n", "keep.txt": "keep\n" },
@@ -61,6 +102,21 @@ test("reports the files that the agent changed", async () => {
       ["new.txt", "100644", ""],
     ],
   );
+});
+
+test("won't edit a tree with a path that isn't UTF-8", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const task = preparePod({ "a.txt": "a\n" }, {}, { edit: true });
+  const record = Buffer.from("100644 ce013625030ba8dba906f756967f9e9ca394464a 0\tb\xff\0", "latin1");
+  writeFileSync(task.filesFile, Buffer.concat([readFileSync(task.filesFile), record]));
+  let ran = false;
+  const agent: Backend = async (r) => {
+    ran = true;
+    return fakeBackend(r);
+  };
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: agent } }), 1);
+  assert.equal(ran, false);
+  assert.match(readFileSync(task.terminationLog, "utf8"), /the path "b\uFFFD" isn't valid UTF-8/);
 });
 
 test("reports no files when the agent changes none", async () => {
@@ -182,6 +238,24 @@ test("gives the backend the merge's prompt and the files that conflict", async (
   assert.deepEqual(request?.conflicts, ["a.txt", "sp ace.txt"]);
   assert.match(request?.prompt ?? "", /\nThe files that conflict:\n\n- a\.txt\n- sp ace\.txt\n/);
   assert.match(readFileSync(join(task.workTree, "a.txt"), "utf8"), /^<<<<<<< [0-9a-f]{40}\nours\n\|\|\|\|\|\|\| [0-9a-f]{40}\none\n=======\ntheirs\n>>>>>>> [0-9a-f]{40}\n$/);
+});
+
+test("reads only the start of a merge's long diff and commit log, and lists no paths for it", async () => {
+  const task = prepareMergePod({ "a.txt": "one\n" }, { "a.txt": "one\nours\n" }, { "a.txt": "one\ntheirs\n" });
+  writeFileSync(task.merge?.diffFile ?? "", `diff --git a/a.txt b/a.txt\n${"+x\n".repeat(100_000)}`);
+  writeFileSync(task.merge?.logFile ?? "", `abc1234 ${"x".repeat(100)}\n`.repeat(2 * MAX_LOG));
+  writeFileSync(task.changesFile ?? "", "A\0a.txt\0".repeat(MAX_PATHS + 1));
+  let request: AgentRequest | undefined;
+  const capture: Backend = async (r) => {
+    request = r;
+    return fakeBackend(r);
+  };
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: capture } }), 0);
+  assert.equal(readResult(task).verdict, "pass");
+  assert.ok(request);
+  assert.ok(request.prompt.length < MAX_DIFF / 2 + MAX_LOG / 2 + 5000);
+  assert.match(request.prompt, /longer than 100000 bytes/);
+  assert.doesNotMatch(request.prompt, /paths that the change touches/);
 });
 
 test("refuses a merge without conflicts", async (t) => {

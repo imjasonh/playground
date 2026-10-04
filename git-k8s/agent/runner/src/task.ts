@@ -27,6 +27,8 @@ export interface Task {
   logFile: string;
   /** The head commit's index, from git ls-files -s -z. */
   filesFile: string;
+  /** The paths that the change touches, from git diff --name-status -z. */
+  changesFile?: string;
   /** Holds the Cursor API key. The runner deletes it before the agent starts. */
   keyFile: string;
   resultFile: string;
@@ -71,6 +73,8 @@ const STRING_FIELDS = [
   "terminationLog",
 ] as const;
 
+const OPTIONAL_STRING_FIELDS = ["changesFile"] as const;
+
 /** Parses and checks a task from its JSON. */
 export function parseTask(json: string): Task {
   let value: unknown;
@@ -85,6 +89,11 @@ export function parseTask(json: string): Task {
   const raw = value as Record<string, unknown>;
   for (const field of STRING_FIELDS) {
     if (typeof raw[field] !== "string") {
+      throw new Error(`AGENT_TASK.${field} must be a string`);
+    }
+  }
+  for (const field of OPTIONAL_STRING_FIELDS) {
+    if (raw[field] !== undefined && typeof raw[field] !== "string") {
       throw new Error(`AGENT_TASK.${field} must be a string`);
     }
   }

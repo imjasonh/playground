@@ -1,13 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { cursorBackend } from "./backends/cursor.js";
 import { fakeBackend } from "./backends/fake.js";
 import type { Backend } from "./backends/types.js";
-import { changedFiles } from "./changes.js";
-import { buildMergePrompt, buildPrompt } from "./prompt.js";
+import { changedFiles, checkPaths } from "./changes.js";
+import { buildMergePrompt, buildPrompt, firstLines, MAX_DIFF, MAX_LOG } from "./prompt.js";
 import type { ChangedFile, Result } from "./result.js";
 import { parseTask, type BackendName, type Task } from "./task.js";
+import { MAX_PATHS_BYTES, parseNameStatus } from "./touched.js";
 import { errorMessage, redact, truncate } from "./text.js";
 import { parseVerdict } from "./verdict.js";
 
@@ -65,8 +66,14 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   if (task.backend === "cursor" && !key) {
     throw new Error(`${task.keyFile} holds no Cursor API key; check the Secret that the Pod reads it from`);
   }
-  const diff = await readFile(task.diffFile, "utf8");
-  const commits = await readFile(task.logFile, "utf8");
+  const diff = await readStart(task.diffFile, MAX_DIFF + 1);
+  const commits = await readStart(task.logFile, MAX_LOG + 1);
+  // A merge's prompt lists the paths that conflict instead.
+  const paths = task.changesFile && !task.merge ? parseNameStatus(await readStart(task.changesFile, MAX_PATHS_BYTES + 1)) : undefined;
+  const index = task.edit ? await readFile(task.filesFile) : undefined;
+  if (index) {
+    checkPaths(index);
+  }
   let prompt: string;
   let conflicts: string[] | undefined;
   if (task.merge) {
@@ -74,15 +81,15 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
     if (conflicts.length === 0) {
       throw new Error("the merge that the Pod prepared has no conflicts");
     }
-    const theirs = { diff: await readFile(task.merge.diffFile, "utf8"), log: await readFile(task.merge.logFile, "utf8") };
+    const theirs = { diff: await readStart(task.merge.diffFile, MAX_DIFF + 1), log: await readStart(task.merge.logFile, MAX_LOG + 1) };
     prompt = buildMergePrompt(task, task.merge, conflicts, { diff, log: commits }, theirs);
   } else {
-    prompt = buildPrompt(task, diff, commits);
+    prompt = buildPrompt(task, diff, commits, paths);
   }
   const started = Date.now();
   const response = await backends[task.backend]({
     prompt,
-    diff,
+    diff: firstLines(diff, MAX_DIFF).text,
     conflicts,
     cwd: task.workTree,
     edit: task.edit,
@@ -93,8 +100,8 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   });
   const verdict = parseVerdict(response.text);
   const files: ChangedFile[] = [];
-  if (task.edit) {
-    for (const change of await changedFiles(task.workTree, await readFile(task.filesFile))) {
+  if (index) {
+    for (const change of await changedFiles(task.workTree, index)) {
       if (change.deleted) {
         files.push({ path: change.path, deleted: true });
         continue;
@@ -117,7 +124,29 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   if (response.costCents !== undefined) {
     result.costCents = response.costCents;
   }
+  if (response.chargedCents !== undefined) {
+    result.chargedCents = response.chargedCents;
+  }
   return result;
+}
+
+/** Reads at most limit bytes from the start of a file. */
+async function readStart(path: string, limit: number): Promise<Buffer> {
+  const file = await open(path);
+  try {
+    const buf = Buffer.alloc(limit);
+    let n = 0;
+    while (n < limit) {
+      const { bytesRead } = await file.read(buf, n, limit - n, n);
+      if (bytesRead === 0) {
+        break;
+      }
+      n += bytesRead;
+    }
+    return buf.subarray(0, n);
+  } finally {
+    await file.close();
+  }
 }
 
 /**

@@ -23,6 +23,8 @@ const valid: Task = {
 
 test("parses a task", () => {
   assert.deepEqual(parseTask(JSON.stringify(valid)), valid);
+  const full = { ...valid, changesFile: "/input/changes" };
+  assert.deepEqual(parseTask(JSON.stringify(full)), full);
 });
 
 test("rejects tasks that aren't valid", () => {
@@ -34,6 +36,7 @@ test("rejects tasks that aren't valid", () => {
     [JSON.stringify({ ...valid, timeoutSeconds: 0 }), /timeoutSeconds must be a positive integer/],
     [JSON.stringify({ ...valid, timeoutSeconds: 1.5 }), /timeoutSeconds must be a positive integer/],
     [JSON.stringify({ ...valid, head: 7 }), /head must be a string/],
+    [JSON.stringify({ ...valid, changesFile: 7 }), /changesFile must be a string/],
     [JSON.stringify({ ...valid, instructions: "" }), /instructions can't be empty/],
   ];
   for (const [json, want] of cases) {
