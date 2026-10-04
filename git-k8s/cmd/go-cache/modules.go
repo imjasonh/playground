@@ -75,7 +75,7 @@ func (s *server) module(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !canonicalRE.MatchString(file) {
-		s.passThrough(w, r, module, file)
+		s.passThrough(w, r, module, file, "passthrough")
 		return
 	}
 	sum := sha256.Sum256([]byte(module + "/" + file))
@@ -89,6 +89,12 @@ func (s *server) module(w http.ResponseWriter, r *http.Request) {
 			result = "fetched"
 			return s.fetchModule(context.WithoutCancel(r.Context()), module, file, key)
 		})
+		if why, ok := storeUnavailable(ferr); ok {
+			// The go command doesn't retry a download, and a test Pod's
+			// GOPROXY lists only go-cache, so an error would fail the Pod.
+			s.passThrough(w, r, module, file, why)
+			return
+		}
 		if ferr != nil {
 			s.moduleFailed(w, ferr)
 			return
@@ -118,8 +124,8 @@ type upstreamMiss struct {
 }
 
 // fetchModule fetches a canonical version's file from the upstream into the
-// store. It returns the upstream's answer if the upstream doesn't have the
-// file.
+// store, if the store has a free slot for the write and room for the file.
+// It returns the upstream's answer if the upstream doesn't have the file.
 func (s *server) fetchModule(ctx context.Context, module, file, key string) (*upstreamMiss, error) {
 	resp, err := s.fetch(ctx, s.upstream+"/"+module+"/"+file)
 	if err != nil {
@@ -137,7 +143,7 @@ func (s *server) fetchModule(ctx context.Context, module, file, key string) (*up
 	if resp.ContentLength > maxModuleFile {
 		return nil, fmt.Errorf("GET %s: it's larger than %d bytes", resp.Request.URL, maxModuleFile)
 	}
-	_, err = s.store.put(ctx, key, resp.ContentLength, func(f io.Writer) error {
+	_, err = s.store.tryPut(ctx, key, resp.ContentLength, func(f io.Writer) error {
 		n, err := io.Copy(f, io.LimitReader(resp.Body, maxModuleFile+1))
 		if err == nil && n > maxModuleFile {
 			err = fmt.Errorf("it's larger than %d bytes", maxModuleFile)
@@ -150,9 +156,10 @@ func (s *server) fetchModule(ctx context.Context, module, file, key string) (*up
 	return nil, nil
 }
 
-// passThrough serves a file that can change, such as a module's list of
-// versions, from the upstream without keeping it.
-func (s *server) passThrough(w http.ResponseWriter, r *http.Request, module, file string) {
+// passThrough serves a file from the upstream without keeping it, and counts
+// the request under result. It serves files that can change, such as a
+// module's list of versions, and files that the store can't take now.
+func (s *server) passThrough(w http.ResponseWriter, r *http.Request, module, file, result string) {
 	resp, err := s.fetch(r.Context(), s.upstream+"/"+module+"/"+file)
 	if err != nil {
 		s.moduleFailed(w, err)
@@ -172,7 +179,7 @@ func (s *server) passThrough(w http.ResponseWriter, r *http.Request, module, fil
 		s.moduleFailed(w, fmt.Errorf("GET %s: %s", resp.Request.URL, resp.Status))
 		return
 	}
-	s.metrics.moduleRequest("passthrough")
+	s.metrics.moduleRequest(result)
 	w.Header().Set("Content-Type", moduleContentType(file))
 	io.Copy(w, resp.Body)
 }
@@ -186,13 +193,9 @@ func (s *server) fetch(ctx context.Context, url string) (*http.Response, error) 
 }
 
 func (s *server) moduleFailed(w http.ResponseWriter, err error) {
-	status, result := http.StatusBadGateway, "error"
-	if r, ok := storeUnavailable(err); ok {
-		status, result = http.StatusServiceUnavailable, r
-	}
-	s.metrics.moduleRequest(result)
+	s.metrics.moduleRequest("error")
 	s.log.Warn("module proxy", "err", err)
-	http.Error(w, err.Error(), status)
+	http.Error(w, err.Error(), http.StatusBadGateway)
 }
 
 // storeUnavailable returns the metrics result for an error that means the

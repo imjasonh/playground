@@ -1080,18 +1080,32 @@ func TestStoreReservesRoom(t *testing.T) {
 			t.Errorf("put after the slot was free: %v", err)
 		}
 	})
+
+	t.Run("tryPut doesn't wait for a slot", func(t *testing.T) {
+		s := newStore(t)
+		s.writes = make(chan struct{}, 1)
+		s.writeWait = time.Hour
+		finish := slowPut(t, s, "mod/slow", 10)
+		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+		defer cancel()
+		if _, err := s.tryPut(ctx, "mod/tries", 10, write(10)); !errors.Is(err, errBusy) {
+			t.Errorf("tryPut while another write holds the only slot: %v, want errBusy", err)
+		}
+		if err := finish(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.tryPut(t.Context(), "mod/after", 10, write(10)); err != nil {
+			t.Errorf("tryPut after the slot was free: %v", err)
+		}
+	})
 }
 
-// TestStoreUnavailable checks that go-cache answers writes that its store
+// TestStoreUnavailable checks that go-cache answers uploads that its store
 // can't take with 503.
 func TestStoreUnavailable(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(bytes.Repeat([]byte("m"), 200))
-	}))
-	t.Cleanup(upstream.Close)
 	rev := fakeReviewer{"writer": {"ns", []string{gocache.WriteAudience("ns", "app")}}}
-	full, fullSrv := newTestServer(t, upstream.URL, rev, func(st *store) { st.max = 100 })
-	busy, busySrv := newTestServer(t, upstream.URL, rev, func(st *store) {
+	full, fullSrv := newTestServer(t, "", rev, func(st *store) { st.max = 100 })
+	busy, busySrv := newTestServer(t, "", rev, func(st *store) {
 		st.writes = make(chan struct{}, 1)
 		st.writes <- struct{}{}
 		st.writeWait = time.Millisecond
@@ -1109,15 +1123,62 @@ func TestStoreUnavailable(t *testing.T) {
 		if resp.StatusCode != http.StatusServiceUnavailable {
 			t.Errorf("PUT to a %s store: %s %q, want 503", tc.result, resp.Status, msg)
 		}
-		resp, msg = do(t, http.MethodGet, tc.url+"/mod/example.com/m/@v/v1.0.0.mod", "", nil, nil)
-		if resp.StatusCode != http.StatusServiceUnavailable {
-			t.Errorf("module fetch to a %s store: %s %q, want 503", tc.result, resp.Status, msg)
+		if got := tc.s.metrics.count("PUT " + tc.result); got != 1 {
+			t.Errorf("PUT %s requests: %d, want 1", tc.result, got)
 		}
-		for _, key := range []string{"PUT " + tc.result, tc.result} {
-			if got := tc.s.metrics.count(key); got != 1 {
-				t.Errorf("%q requests to a %s store: %d, want 1", key, tc.result, got)
+	}
+}
+
+// TestModulesWhenStoreUnavailable checks that go-cache serves a module file
+// that its store can't take from the upstream at once, without keeping it.
+func TestModulesWhenStoreUnavailable(t *testing.T) {
+	mod := bytes.Repeat([]byte("m"), 200)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(mod)
+	}))
+	t.Cleanup(upstream.Close)
+	full, fullSrv := newTestServer(t, upstream.URL, nil, func(st *store) { st.max = 100 })
+	busy, busySrv := newTestServer(t, upstream.URL, nil, func(st *store) {
+		st.writes = make(chan struct{}, 1)
+		st.writes <- struct{}{}
+		// A fetch that waited for the slot would outlast the request.
+		st.writeWait = time.Hour
+	})
+	// If a fetch waits for the slot, freeing it lets the server close.
+	t.Cleanup(func() { <-busy.store.writes })
+	for _, tc := range []struct {
+		result string
+		s      *server
+		url    string
+	}{
+		{"full", full, fullSrv.URL},
+		{"busy", busy, busySrv.URL},
+	} {
+		t.Run(tc.result, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, tc.url+"/mod/example.com/m/@v/v1.0.0.mod", nil)
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if resp.StatusCode != http.StatusOK || err != nil || !bytes.Equal(body, mod) {
+				t.Errorf("GET: %s, %v; body matches the upstream's: %v", resp.Status, err, bytes.Equal(body, mod))
+			}
+			if files, err := tc.s.store.files(); err != nil || len(files) != 0 {
+				t.Errorf("the store holds %d files, %v; want none", len(files), err)
+			}
+			for result, want := range map[string]int64{tc.result: 1, "fetched": 0, "error": 0} {
+				if got := tc.s.metrics.count(result); got != want {
+					t.Errorf("%s module requests: %d, want %d", result, got, want)
+				}
+			}
+		})
 	}
 }
 

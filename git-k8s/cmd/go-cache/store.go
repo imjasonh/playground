@@ -127,18 +127,22 @@ func (s *store) open(key string) (*os.File, error) {
 // other writes keep it waiting for longer than writeWait, and with errFull
 // if it can't reserve room for what write writes.
 func (s *store) put(ctx context.Context, key string, size int64, write func(io.Writer) error) (bool, error) {
+	return s.putWithin(ctx, s.writeWait, key, size, write)
+}
+
+// tryPut is put, but fails with errBusy at once if other writes are using
+// every slot.
+func (s *store) tryPut(ctx context.Context, key string, size int64, write func(io.Writer) error) (bool, error) {
+	return s.putWithin(ctx, 0, key, size, write)
+}
+
+func (s *store) putWithin(ctx context.Context, wait time.Duration, key string, size int64, write func(io.Writer) error) (bool, error) {
 	path := s.path(key)
 	if _, err := os.Stat(path); err == nil {
 		return false, nil
 	}
-	wait := time.NewTimer(s.writeWait)
-	defer wait.Stop()
-	select {
-	case s.writes <- struct{}{}:
-	case <-wait.C:
-		return false, errBusy
-	case <-ctx.Done():
-		return false, ctx.Err()
+	if err := s.takeSlot(ctx, wait); err != nil {
+		return false, err
 	}
 	defer func() { <-s.writes }()
 	w := &reservedWriter{s: s, fixed: size >= 0}
@@ -177,6 +181,28 @@ func (s *store) put(ctx context.Context, key string, size int64, write func(io.W
 	s.metrics.stored.Store(s.size)
 	s.mu.Unlock()
 	return true, nil
+}
+
+// takeSlot takes a slot for a write, waiting up to wait for one.
+func (s *store) takeSlot(ctx context.Context, wait time.Duration) error {
+	select {
+	case s.writes <- struct{}{}:
+		return nil
+	default:
+	}
+	if wait <= 0 {
+		return errBusy
+	}
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case s.writes <- struct{}{}:
+		return nil
+	case <-timer.C:
+		return errBusy
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // reservedWriter writes a store's temporary file, and reserves room for

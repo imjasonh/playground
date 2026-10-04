@@ -221,12 +221,14 @@ go run ./cmd/check-gotest generate -registry=REGISTRY \
 `/tmp`, and keeps their total size, with the writes in progress, under
 `-max-size`, 4Gi by default. Before it writes a file, `go-cache` reserves
 room for it, and removes the least recently used files to make room. It
-answers a write with `503 Service Unavailable` when writes in progress
-hold the room, or when the write waits more than 30 seconds behind 16
-others. A test Pod fails if a module download gets a 503, but a failed
-upload only means that later Pods compile the output again. `go-cache`
-doesn't keep build outputs larger than 256 MiB. The kubelet evicts a Pod
-whose volume passes `-tmp-size`, so keep `-max-size` a little below it.
+runs at most 16 writes at once. When writes in progress hold the room or
+all 16 slots, `go-cache` serves a module that it doesn't have from
+`-upstream` without keeping it, and answers an upload with
+`503 Service Unavailable`. An upload waits up to 30 seconds for a slot
+first. After a 503, the test Pod stops uploading, which only means that
+later Pods compile those outputs again. `go-cache` doesn't keep build
+outputs larger than 256 MiB. The kubelet evicts a Pod whose volume passes
+`-tmp-size`, so keep `-max-size` a little below it.
 Each replica would have its own store, so `-replicas=1` runs one. The
 volume survives restarts of `go-cache`'s container, but a new Pod, such as
 one that replaces a deleted or evicted Pod, starts with an empty store.
@@ -348,8 +350,9 @@ The design leaves these risks:
 - A write holds its room in the store until it ends. A namespace that
   uploads slowly can take all 16 of `go-cache`'s concurrent writes, with
   up to 256 MiB of room each, for up to 5 minutes, `go-cache`'s read
-  timeout. Meanwhile `go-cache` answers other writes, including downloads
-  of modules that it doesn't have, with 503.
+  timeout. Meanwhile `go-cache` answers other uploads with 503, and serves
+  modules that it doesn't have without keeping them. That slows other
+  namespaces' test Pods, but doesn't fail them.
 
 ### Restrict test Pods' network
 
