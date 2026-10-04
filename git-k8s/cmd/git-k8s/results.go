@@ -116,7 +116,8 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 }
 
 // write holds res for the results controller and answers once the cache
-// shows it in the branch's status, or with 503 if that takes too long.
+// shows it in the branch's status. It answers 503 if that takes too long,
+// or 404 if the cache doesn't have the branch by then.
 func (rs *results) write(w http.ResponseWriter, r *http.Request, k kube.Key, check string, res *gitk8s.CheckResult, generation int64) {
 	ctx := r.Context()
 	timeout := time.NewTimer(rs.timeout)
@@ -131,18 +132,14 @@ func (rs *results) write(w http.ResponseWriter, r *http.Request, k kube.Key, che
 	}()
 	for {
 		b := kube.Get[resultsBranch](ctx, k.Namespace, k.Name)
-		switch {
-		case b == nil && ctx.Err() != nil:
+		if b == nil && ctx.Err() != nil {
 			// A Get that can't read cancels the request's context.
 			unavailable(w, "can't read the branch now")
 			return
-		case b == nil:
-			http.Error(w, fmt.Sprintf("GitBranch %s doesn't exist", k), http.StatusNotFound)
-			return
 		}
-		// Until this replica's cache has the spec that the check read, the
-		// result would look stale.
-		if b.Generation >= generation {
+		// Until this replica's cache has the branch at the generation that
+		// the check read, the branch can look missing or the result stale.
+		if b != nil && b.Generation >= generation {
 			if reason := rejection(&b.Spec, check, res); reason != "" {
 				http.Error(w, reason, http.StatusConflict)
 				return
@@ -164,6 +161,10 @@ func (rs *results) write(w http.ResponseWriter, r *http.Request, k kube.Key, che
 		case <-ctx.Done():
 			return
 		case <-timeout.C:
+			if b == nil {
+				http.Error(w, fmt.Sprintf("GitBranch %s doesn't exist", k), http.StatusNotFound)
+				return
+			}
 			unavailable(w, "the result wasn't written in time")
 			return
 		case <-poll.C:

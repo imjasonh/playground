@@ -207,7 +207,8 @@ to the core program's results endpoint:
    `RESULTS_URL/NAMESPACE/GITBRANCH/CHECK`. `RESULTS_URL` is the check's
    `-results-url` flag, `http://git-k8s.git-k8s.svc/results` by default. The
    request also names the `GitBranch` generation that the check read, and
-   the core program waits until its cache has that generation.
+   the core program waits until its cache has the `GitBranch` at that
+   generation.
 3. The core program verifies the token with a TokenReview for that
    audience, and maps the token's service account to a check. `generate`
    installs each check with the service account `check-NAME` in the

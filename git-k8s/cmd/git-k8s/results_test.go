@@ -102,7 +102,6 @@ func TestResultsEndpointRejects(t *testing.T) {
 		{"a body that's too large", gofmt, "gofmt", `{"commit":"h1","state":"Passed","message":"` + strings.Repeat("x", maxResultSize) + `"}`, http.StatusBadRequest, "too large"},
 		{"a state that checks can't send", gofmt, "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Pending}, http.StatusBadRequest, `state "Pending" isn't`},
 		{"an invalid generation", "/results/default/app-c-x/gofmt?generation=new", "gofmt", fresh, http.StatusBadRequest, "generation"},
-		{"a branch that doesn't exist", "/results/default/app-c-y/gofmt?generation=1", "gofmt", fresh, http.StatusNotFound, "GitBranch default/app-c-y doesn't exist"},
 		{"a check that the policy doesn't list", "/results/default/app-c-x/risk?generation=3", "risk", fresh, http.StatusConflict, "the merge policy for c/x doesn't list the risk check"},
 		{"a branch without a parent", "/results/default/app-main/gofmt", "gofmt", fresh, http.StatusConflict, "main has no parent, so it takes no check results"},
 		{"another head", gofmt, "gofmt", &gitk8s.CheckResult{Commit: "h0", State: gitk8s.Passed}, http.StatusConflict, "the result isn't for c/x at h1 and main at p1"},
@@ -199,6 +198,28 @@ func TestResultsEndpointWaitsForGeneration(t *testing.T) {
 	}
 	if got := kube.Triggered[resultsBranch](rec); len(got) != 0 {
 		t.Errorf("triggered %v before the cache had the spec that the check read", got)
+	}
+	if err := rec.Err(); err != nil {
+		t.Error(err)
+	}
+}
+
+// A check can read a branch that this replica's cache doesn't have yet, so
+// the endpoint waits for the cache before it answers 404. The fake can't add
+// the branch during the request, so the test checks the wait.
+func TestResultsEndpointWaitsForBranch(t *testing.T) {
+	ctx, rec := kube.FakeRequest(t.Context(), checkToken("gofmt"))
+	rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond}
+	start := time.Now()
+	w := sendResult(ctx, rs, "/results/default/app-c-y/gofmt?generation=1", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
+	if w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "GitBranch default/app-c-y doesn't exist") {
+		t.Errorf("got %d %q, want 404", w.Code, w.Body)
+	}
+	if elapsed := time.Since(start); elapsed < rs.timeout {
+		t.Errorf("answered after %v, want a wait of %v for the cache to have the branch", elapsed, rs.timeout)
+	}
+	if got := kube.Triggered[resultsBranch](rec); len(got) != 0 {
+		t.Errorf("triggered %v for a branch that the cache doesn't have", got)
 	}
 	if err := rec.Err(); err != nil {
 		t.Error(err)
