@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"path"
@@ -123,7 +124,7 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 	}
 	owner := apiURL[:strings.LastIndex(apiURL, "/")]
 	if wait := c.pausedFor(owner); wait > 0 {
-		kube.RequeueAfter(ctx, wait)
+		kube.RequeueAfter(ctx, spread(wait))
 		return nil
 	}
 	gh := &githubAPI{repo: apiURL, token: token, now: c.clock}
@@ -134,7 +135,7 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 		if errors.As(err, &limited) {
 			slog.Info("pausing check runs for GitHub's rate limit", "owner", path.Base(owner), "for", limited.wait)
 			c.pause(owner, limited.wait)
-			kube.RequeueAfter(ctx, limited.wait)
+			kube.RequeueAfter(ctx, spread(limited.wait))
 			return nil
 		}
 		if err != nil {
@@ -288,6 +289,12 @@ func (c *checkRuns) pause(owner string, d time.Duration) {
 		c.paused = map[string]time.Time{}
 	}
 	c.paused[owner] = c.clock().Add(d)
+}
+
+// spread returns a time from d to a quarter longer than d, so that the
+// branches that wait out one rate limit don't all send requests at once.
+func spread(d time.Duration) time.Duration {
+	return d + rand.N(d/4+1) // #nosec G404 -- jitter needs no cryptographic randomness.
 }
 
 // githubAPI sends requests to GitHub's REST API for one repository.

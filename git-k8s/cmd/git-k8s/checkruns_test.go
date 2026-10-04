@@ -311,18 +311,32 @@ func TestCheckRunsWaitOutRateLimits(t *testing.T) {
 	checks := map[string]gitk8s.CheckResult{"base": {Commit: head, ParentCommit: main, State: gitk8s.Passed}}
 	gh.Fake.RateLimit(90 * time.Second)
 	got, err := p.publish(checks)
-	if err != nil || len(got) != 1 || p.requeue != 90*time.Second {
-		t.Fatalf("requests = %q, err = %v, requeue = %v; want one request and a requeue in 90s", got, err, p.requeue)
+	if err != nil || len(got) != 1 || p.requeue < 90*time.Second || p.requeue > 90*time.Second*5/4 {
+		t.Fatalf("requests = %q, err = %v, requeue = %v; want one request and a requeue in 90s to a quarter longer", got, err, p.requeue)
 	}
 
 	t.Log("Until the limit ends, the owner's branches send no requests.")
 	at = at.Add(30 * time.Second)
-	if got, err := p.publish(checks); err != nil || len(got) != 0 || p.requeue != time.Minute {
-		t.Errorf("30s later: requests = %q, err = %v, requeue = %v; want none and a requeue in 1m", got, err, p.requeue)
+	if got, err := p.publish(checks); err != nil || len(got) != 0 || p.requeue < time.Minute || p.requeue > time.Minute*5/4 {
+		t.Errorf("30s later: requests = %q, err = %v, requeue = %v; want none and a requeue in 1m to a quarter longer", got, err, p.requeue)
 	}
 	at = at.Add(time.Minute)
 	if got, err := p.publish(checks); err != nil || len(got) != 2 || len(runs(gh)) != 1 {
 		t.Errorf("after the limit: requests = %q, err = %v, check runs %q; want the check run", got, err, runs(gh))
+	}
+}
+
+func TestSpread(t *testing.T) {
+	seen := map[time.Duration]bool{}
+	for range 100 {
+		d := spread(time.Minute)
+		if d < time.Minute || d > 75*time.Second {
+			t.Fatalf("spread(1m) = %v, want 1m to 1m15s", d)
+		}
+		seen[d] = true
+	}
+	if len(seen) < 2 {
+		t.Errorf("spread(1m) always returned %v", seen)
 	}
 }
 
