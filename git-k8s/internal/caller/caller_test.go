@@ -10,7 +10,6 @@ import (
 )
 
 func TestIdentify(t *testing.T) {
-	repo := &gitk8s.GitRepository{Object: kube.Meta("app", nil)}
 	world := []any{
 		kube.FakeToken{
 			Token:     "gofmt",
@@ -43,7 +42,7 @@ func TestIdentify(t *testing.T) {
 		{name: "not a service account", header: "Bearer person"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, _ := kube.Fake(t.Context(), repo, world...)
+			ctx, _ := kube.FakeRequest(t.Context(), world...)
 			r := httptest.NewRequest("GET", "/", nil)
 			if tc.header != "" {
 				r.Header.Set("Authorization", tc.header)

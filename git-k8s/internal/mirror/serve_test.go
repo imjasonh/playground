@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -28,6 +29,9 @@ type fixture struct {
 	*world
 	srv           *httptest.Server
 	base, feature string
+	// standby makes the server act as a replica that reconciles nothing,
+	// so kube.Trigger returns false.
+	standby atomic.Bool
 
 	mu        sync.Mutex
 	triggered []kube.Key
@@ -58,6 +62,7 @@ func newFixture(t *testing.T) *fixture {
 		return kube.FakeToken{Token: token, User: kube.UserInfo{Username: user, Extra: extra}, Audiences: []string{gitk8s.MirrorAudience}}
 	}
 	objects := []any{
+		repo,
 		unsynced,
 		branch,
 		token("gofmt", "system:serviceaccount:check-gofmt:check-gofmt", nil),
@@ -71,10 +76,15 @@ func newFixture(t *testing.T) *fixture {
 		kube.FakeToken{Token: "api", User: kube.UserInfo{Username: "system:serviceaccount:check-gofmt:check-gofmt"}},
 	}
 	f.srv = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		// A Fake context isn't safe for concurrent use, so each request
-		// gets its own.
-		ctx, rec := kube.Fake(r.Context(), repo, objects...)
+		world := objects
+		if f.standby.Load() {
+			world = append(slices.Clip(world), kube.FakeStandby{})
+		}
+		ctx, rec := kube.FakeRequest(r.Context(), world...)
 		w.m.ServeHTTP(rw, r.WithContext(ctx))
+		if err := rec.Err(); err != nil {
+			t.Errorf("the handler did what a kube.Serve handler can't: %v", err)
+		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.triggered = append(f.triggered, kube.Triggered[gitk8s.GitRepository](rec)...)
@@ -266,6 +276,24 @@ func TestServeLetsControllersStartBranches(t *testing.T) {
 	if got := f.takeTriggered(); len(got) != 3 {
 		t.Errorf("3 pushes triggered %v; want 3 triggers", got)
 	}
+}
+
+// TestServeTakesPushWithoutTrigger pushes to a replica that can't trigger a
+// reconcile, as while its controllers start. git doesn't retry a push, so
+// the mirror takes it and leaves it for the next poll.
+func TestServeTakesPushWithoutTrigger(t *testing.T) {
+	f := newFixture(t)
+	f.standby.Store(true)
+	fix := f.commit(f.feature, "fix")
+	if out, err := f.git("gofmt", "push", f.url("app"), fix+":refs/heads/feature"); err != nil {
+		t.Fatalf("push: %v\n%s", err, out)
+	}
+	wantHeads(t, "the copy's branches", f.copyRefs("refs/heads/"), map[string]string{"main": f.base, "feature": fix})
+	if got := f.takeTriggered(); len(got) > 0 {
+		t.Errorf("a replica that reconciles nothing triggered %v", got)
+	}
+	f.sync(SyncOptions{Push: true})
+	wantHeads(t, "after a sync, the external repository's branches", f.externalHeads(), map[string]string{"main": f.base, "feature": fix})
 }
 
 func TestServeTestPods(t *testing.T) {

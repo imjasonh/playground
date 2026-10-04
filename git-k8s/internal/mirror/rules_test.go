@@ -119,7 +119,7 @@ func TestMayFetchAndPush(t *testing.T) {
 		b.Status.Checks = map[string]gitk8s.CheckResult{"gotest": {State: state, Outputs: map[string]string{"pod": pod}}}
 		return b
 	}
-	ctx, _ := kube.Fake(t.Context(), repo,
+	ctx, _ := kube.FakeRequest(t.Context(), repo,
 		branch("app-feature", "app", gitk8s.Running, "gotest-1"),
 		branch("app-done", "app", gitk8s.Passed, "gotest-2"),
 		branch("other-feature", "other", gitk8s.Running, "gotest-3"))
