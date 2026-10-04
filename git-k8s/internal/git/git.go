@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -144,7 +145,9 @@ func (g *Git) run(ctx context.Context, dir string, args []string, o opts) ([]byt
 }
 
 // LsRemote lists a remote's branches as a map from branch name to commit
-// SHA, without fetching any objects.
+// SHA, without fetching any objects. It leaves out branches whose names
+// start with "-" or aren't valid ref names, and lines without a SHA, which a
+// server can add by putting a newline in a ref name.
 func (g *Git) LsRemote(ctx context.Context, r Remote) (map[string]string, error) {
 	out, err := g.run(ctx, "", []string{"ls-remote", "--end-of-options", r.URL, "refs/heads/*"}, opts{auth: r.Auth})
 	if err != nil {
@@ -152,12 +155,36 @@ func (g *Git) LsRemote(ctx context.Context, r Remote) (map[string]string, error)
 	}
 	heads := map[string]string{}
 	for line := range strings.SplitSeq(string(out), "\n") {
-		sha, ref, ok := strings.Cut(line, "\t")
-		if branch, isHead := strings.CutPrefix(ref, "refs/heads/"); ok && isHead {
+		sha, ref, _ := strings.Cut(line, "\t")
+		branch, isHead := strings.CutPrefix(ref, "refs/heads/")
+		if isHead && objectID(sha) && validBranch(branch) {
 			heads[branch] = sha
 		}
 	}
 	return heads, nil
+}
+
+// objectID reports whether s is a SHA-1 or SHA-256 object ID in hex.
+func objectID(s string) bool {
+	_, err := hex.DecodeString(s)
+	return err == nil && (len(s) == 40 || len(s) == 64)
+}
+
+// validBranch reports whether refs/heads/name is a valid ref name, as git
+// check-ref-format checks, and name doesn't start with "-".
+func validBranch(name string) bool {
+	if name == "" || name[0] == '-' || strings.HasSuffix(name, ".") ||
+		strings.Contains(name, "..") || strings.Contains(name, "@{") ||
+		strings.ContainsAny(name, " ~^:?*[\\\x7f") ||
+		strings.ContainsFunc(name, func(r rune) bool { return r < ' ' }) {
+		return false
+	}
+	for seg := range strings.SplitSeq(name, "/") {
+		if seg == "" || seg[0] == '.' || strings.HasSuffix(seg, ".lock") {
+			return false
+		}
+	}
+	return true
 }
 
 // Open returns the bare repository at dir, creating it if it doesn't exist.
