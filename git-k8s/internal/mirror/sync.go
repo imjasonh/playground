@@ -244,6 +244,11 @@ func (s *syncer) plan(ctx context.Context) ([]branch, error) {
 		default:
 			continue
 		}
+		// git could read such a name as an option, so the mirror neither
+		// syncs nor lists the branch.
+		if strings.HasPrefix(name, "-") {
+			continue
+		}
 		b := byName[name]
 		if b == nil {
 			b = &branch{name: name}

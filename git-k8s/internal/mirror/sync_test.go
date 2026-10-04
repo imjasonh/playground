@@ -378,14 +378,12 @@ func TestSyncFetchesAgainWhenExternalRepositoryMoves(t *testing.T) {
 }
 
 func TestSyncReportsRefusedPushes(t *testing.T) {
-	ext := filepath.Join(t.TempDir(), "app.git")
-	work := gittest.NewServer(t, "").NewWork(t, "unused")
-	work.Git("init", "--quiet", "--bare", ext)
-	work.Git("--git-dir="+ext, "config", "receive.denyDeletes", "true")
-	w := newWorldAt(t, work, git.Remote{URL: ext}, ext)
+	ext := gittest.NewServer(t, "")
+	w := newWorldAt(t, ext.NewWork(t, "app"), ext.Remote("app"), ext.Remote("app").URL)
 	base := w.commit("", "base")
 	w.pushExternal("main", base)
 	w.pushExternal("old", base)
+	w.work.Git("--git-dir="+filepath.Join(ext.Root, "app.git"), "config", "receive.denyDeletes", "true")
 	w.sync(SyncOptions{})
 
 	w.pushCopy("old", "")
@@ -441,6 +439,50 @@ func TestSyncWhenExternalRepositoryFails(t *testing.T) {
 		t.Fatalf("Open = %v", err)
 	}
 	r.Close()
+}
+
+// TestSyncRefusesLocalURLs points GitRepositories in another namespace at
+// default/app's copy on the mirror's disk. Fetching from the copy would let
+// that namespace read default/app, and pushing to it would skip the push
+// rules.
+func TestSyncRefusesLocalURLs(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.sync(SyncOptions{})
+	before := w.copyRefs("refs/")
+	for _, url := range []string{w.copyDir(), "file://" + w.copyDir()} {
+		thief := &gitk8s.Repository{Object: kube.Meta("thief", nil), Spec: gitk8s.GitRepositorySpec{URL: url}}
+		thief.Namespace, thief.UID = "other", "uid-"+url
+		_, err := w.m.Sync(t.Context(), thief, SyncOptions{Remote: func() (git.Remote, error) { return git.Remote{URL: url}, nil }})
+		if !errors.Is(err, ErrNotSynced) || !strings.Contains(err.Error(), "not allowed") {
+			t.Errorf("Sync from %s = %v; want ErrNotSynced, because git may not use the file transport", url, err)
+		}
+		if r, err := w.m.Open(t.Context(), thief); err == nil {
+			r.Close()
+			t.Errorf("Open of a copy of %s succeeded; want ErrNotSynced", url)
+		} else if !errors.Is(err, ErrNotSynced) {
+			t.Errorf("Open of a copy of %s = %v; want ErrNotSynced", url, err)
+		}
+	}
+	wantHeads(t, "default/app's refs", w.copyRefs("refs/"), before)
+}
+
+// TestSyncSkipsBranchesThatLookLikeOptions has a branch whose name git
+// could read as an option. A server accepts a push to it, though git branch
+// refuses the name.
+func TestSyncSkipsBranchesThatLookLikeOptions(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.pushExternal("-x", base)
+	rep := w.sync(SyncOptions{})
+	want := map[string]string{"main": base}
+	wantHeads(t, "Report.Heads", rep.Heads, want)
+	wantHeads(t, "the copy's branches", w.copyRefs("refs/heads/"), want)
+	if len(rep.Pending) > 0 || len(rep.Diverged) > 0 {
+		t.Errorf("Sync = %+v; want nothing pending or diverged", rep)
+	}
 }
 
 func TestSyncAdoptsNewURL(t *testing.T) {

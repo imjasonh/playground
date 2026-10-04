@@ -23,6 +23,10 @@ import (
 // FixerTrailer is the commit trailer that marks commits pushed by checks.
 const FixerTrailer = "Git-K8s-Fixer"
 
+// AllowProtocol is the GIT_ALLOW_PROTOCOL setting that git-k8s runs git
+// with. It allows only the transports that a GitRepository's URL can name.
+const AllowProtocol = "http:https:git:ssh:file"
+
 // Auth is a username and password for HTTP basic authentication, or a
 // bearer token.
 type Auth struct {
@@ -106,6 +110,7 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL=" + os.DevNull,
+		"GIT_ALLOW_PROTOCOL=" + AllowProtocol,
 		"LC_ALL=C",
 	}
 	for _, kv := range os.Environ() {
@@ -209,7 +214,7 @@ func (g *Git) service(ctx context.Context, service, dir, protocol string, r io.R
 	if service != "upload-pack" && service != "receive-pack" {
 		return fmt.Errorf("git: no service %q", service)
 	}
-	args := append(append([]string{service, "--stateless-rpc"}, extra...), dir)
+	args := append(append([]string{service, "--stateless-rpc"}, extra...), "--end-of-options", dir)
 	_, err := g.run(ctx, "", args, opts{in: r, out: w, env: []string{"GIT_PROTOCOL=" + protocol}})
 	return err
 }
@@ -223,7 +228,7 @@ type Repo struct {
 // Config returns the value of a key in the repository's configuration, or
 // false if the key isn't set.
 func (r *Repo) Config(ctx context.Context, key string) (string, bool, error) {
-	res, err := r.git.exec(ctx, r.Dir, []string{"config", "--get", key}, opts{})
+	res, err := r.git.exec(ctx, r.Dir, []string{"config", "--get", "--end-of-options", key}, opts{})
 	switch {
 	case err != nil:
 		return "", false, err
@@ -237,7 +242,7 @@ func (r *Repo) Config(ctx context.Context, key string) (string, bool, error) {
 
 // SetConfig sets a key in the repository's configuration.
 func (r *Repo) SetConfig(ctx context.Context, key, value string) error {
-	_, err := r.run(ctx, "config", key, value)
+	_, err := r.run(ctx, "config", "--end-of-options", key, value)
 	return err
 }
 
@@ -245,7 +250,7 @@ func (r *Repo) SetConfig(ctx context.Context, key, value string) error {
 // from ref name to commit SHA. A pattern matches a ref with that name and
 // the refs under it.
 func (r *Repo) Refs(ctx context.Context, patterns ...string) (map[string]string, error) {
-	out, err := r.run(ctx, append([]string{"for-each-ref", "--format=%(objectname) %(refname)"}, patterns...)...)
+	out, err := r.run(ctx, append([]string{"for-each-ref", "--format=%(objectname) %(refname)", "--end-of-options"}, patterns...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -265,6 +270,13 @@ func (r *Repo) Refs(ctx context.Context, patterns ...string) (map[string]string,
 func (r *Repo) UpdateRefs(ctx context.Context, updates ...RefUpdate) error {
 	var in strings.Builder
 	for _, u := range updates {
+		// update-ref reads one command per line, its fields separated by
+		// spaces.
+		for _, s := range []string{u.Ref, u.New, u.Old} {
+			if strings.ContainsFunc(s, func(c rune) bool { return c <= ' ' || c == 0x7f }) {
+				return fmt.Errorf("git: %q has a space or a control character", s)
+			}
+		}
 		switch {
 		case u.New != "" && u.Old != "":
 			fmt.Fprintf(&in, "update %s %s %s\n", u.Ref, u.New, u.Old)
@@ -307,12 +319,17 @@ func (r *Repo) Fetch(ctx context.Context, remote Remote, branches ...string) err
 	return err
 }
 
+// networkProtocols are AllowProtocol's transports without file, so that a
+// URL can't name a repository on the local disk.
+const networkProtocols = "http:https:git:ssh"
+
 // FetchPrune fetches the refs that refspec maps from the remote, such as
 // +refs/heads/*:refs/copy/*, and deletes the local refs that it maps to
-// that the remote no longer has.
+// that the remote no longer has. It reaches the remote only over the
+// network.
 func (r *Repo) FetchPrune(ctx context.Context, remote Remote, refspec string) error {
-	args := []string{"fetch", "--quiet", "--no-tags", "--prune", "--no-write-fetch-head", remote.URL, refspec}
-	_, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth})
+	args := []string{"fetch", "--quiet", "--no-tags", "--prune", "--no-write-fetch-head", "--end-of-options", remote.URL, refspec}
+	_, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth, env: []string{"GIT_ALLOW_PROTOCOL=" + networkProtocols}})
 	return err
 }
 
@@ -462,19 +479,21 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 // PushEach pushes updates to the remote, each with its own lease, so that a
 // rejected update doesn't stop the others. It returns why the remote
 // rejected each update that it rejected, by ref. An error means that the
-// push didn't happen.
+// push didn't happen. Like FetchPrune, it reaches the remote only over the
+// network.
 func (r *Repo) PushEach(ctx context.Context, remote Remote, updates ...RefUpdate) (map[string]string, error) {
 	if len(updates) == 0 {
 		return nil, nil
 	}
-	args := []string{"push", "--porcelain", remote.URL}
+	args := []string{"push", "--porcelain"}
 	for _, u := range updates {
 		args = append(args, "--force-with-lease="+u.Ref+":"+u.Old)
 	}
+	args = append(args, "--end-of-options", remote.URL)
 	for _, u := range updates {
 		args = append(args, u.New+":"+u.Ref)
 	}
-	res, err := r.git.exec(ctx, r.Dir, args, opts{auth: remote.Auth})
+	res, err := r.git.exec(ctx, r.Dir, args, opts{auth: remote.Auth, env: []string{"GIT_ALLOW_PROTOCOL=" + networkProtocols}})
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -66,6 +67,14 @@ func TestRefTransactions(t *testing.T) {
 		t.Errorf("Refs(refs/heads, refs/x/b) = %v, %v", refs, err)
 	}
 
+	t.Log("A ref can't add a command to the transaction.")
+	if err := repo.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/c " + one + "\ncreate refs/heads/d", New: one}); err == nil {
+		t.Error("UpdateRefs took a ref with a newline in it")
+	}
+	if refs, _ := repo.Refs(ctx); !maps.Equal(refs, want) {
+		t.Fatalf("after a ref with a newline, refs = %v, want %v", refs, want)
+	}
+
 	t.Log("One stale lease leaves every ref as it was.")
 	err = repo.UpdateRefs(ctx,
 		git.RefUpdate{Ref: "refs/heads/a", New: two, Old: one},
@@ -94,6 +103,12 @@ func TestRefTransactions(t *testing.T) {
 	}
 	if v, ok, err := repo.Config(ctx, "gitk8s.uid"); err != nil || !ok || v != "1234" {
 		t.Errorf("Config = %q, %v, %v; want 1234", v, ok, err)
+	}
+	if err := repo.SetConfig(ctx, "gitk8s.url", "--upload-pack=x"); err != nil {
+		t.Fatal(err)
+	}
+	if v, _, err := repo.Config(ctx, "gitk8s.url"); err != nil || v != "--upload-pack=x" {
+		t.Errorf("Config = %q, %v; want --upload-pack=x", v, err)
 	}
 }
 
@@ -157,6 +172,46 @@ func TestFetchPruneAndPushEach(t *testing.T) {
 	bad.Auth = &git.Auth{Username: "git-k8s", Password: "wrong"}
 	if _, err := repo.PushEach(ctx, bad, git.RefUpdate{Ref: "refs/heads/main", New: next, Old: main}); err == nil {
 		t.Error("PushEach with the wrong password succeeded")
+	}
+}
+
+func TestFetchPruneAndPushEachReachOnlyTheNetwork(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	main := w.Commit("main")
+	w.Push("main")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "copy.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(srv.Root, "app.git")
+	marker := filepath.Join(t.TempDir(), "ran")
+	for _, url := range []string{
+		dir,
+		"file://" + dir,
+		"--upload-pack=touch " + marker + ";false",
+		"--receive-pack=touch " + marker + ";false",
+	} {
+		if err := repo.FetchPrune(ctx, git.Remote{URL: url}, "+refs/heads/*:refs/stolen/*"); err == nil {
+			t.Errorf("FetchPrune from %q succeeded", url)
+		}
+		if _, err := repo.PushEach(ctx, git.Remote{URL: url}, git.RefUpdate{Ref: "refs/heads/planted", New: main}); err == nil {
+			t.Errorf("PushEach to %q succeeded", url)
+		}
+	}
+	if refs, _ := repo.Refs(ctx, "refs/stolen"); len(refs) != 0 {
+		t.Errorf("fetched %v from a repository on the local disk", refs)
+	}
+	if heads := srv.Heads(t, "app"); !maps.Equal(heads, map[string]string{"main": main}) {
+		t.Errorf("heads = %v, want only main", heads)
+	}
+	if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("git ran a command from a URL: %v", err)
 	}
 }
 

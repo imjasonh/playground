@@ -26,6 +26,9 @@ type Server struct {
 	// Username and Password are the credentials it requires, if Password
 	// is set.
 	Username, Password string
+	// Root holds the repositories, each at Root/NAME.git from the first
+	// push to it.
+	Root string
 }
 
 // NewServer starts a git server that requires password, unless password is
@@ -38,7 +41,7 @@ func NewServer(t testing.TB, password string) *Server {
 	s := &gitserver.Server{Root: t.TempDir(), Username: "git-k8s", Password: password}
 	hs := httptest.NewServer(s)
 	t.Cleanup(hs.Close)
-	return &Server{URL: hs.URL, Username: s.Username, Password: password}
+	return &Server{URL: hs.URL, Username: s.Username, Password: password, Root: s.Root}
 }
 
 // Remote returns the URL and credentials of a repository on the server.
