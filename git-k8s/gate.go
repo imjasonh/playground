@@ -30,12 +30,12 @@ func GateChecks(policy *MergePolicy, results map[string]CheckResult, head, paren
 // RewrittenGateChecks returns what a merge gate sees of the checks that
 // policy lists, for a commit that a squash or rebase landing makes from a
 // branch at head whose parent is at parentHead. The commit has head's files
-// and builds on parentHead, so a fresh result for head counts for it, unless
-// the result uses the branch's history.
+// and builds on parentHead, so a fresh result for head counts for it when the
+// result has FilesOnly.
 func RewrittenGateChecks(policy *MergePolicy, results map[string]CheckResult, head, parentHead string) map[string]GateCheck {
 	out := GateChecks(policy, results, head, parentHead)
 	for name := range out {
-		if results[name].UsesHistory {
+		if !results[name].FilesOnly {
 			out[name] = GateCheck{State: Pending}
 		}
 	}

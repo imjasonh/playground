@@ -161,11 +161,12 @@ Secret. `generate` grants a program what its packages call, so a check that
 reads only the `GitBranch`, such as `check-approval`, leaves `Remote` out,
 and its program can't read Secrets.
 
-If a check's result depends on the branch's commits and not only on their
-files, such as on their messages or authors, set `UsesHistory` in its
-`checks.Check`. Squash and rebase landings then don't count its results for
-the commits that they make, as [Which results count](#which-results-count)
-describes.
+Set `FilesOnly` in a check's `checks.Check` when its result for the branch's
+head also holds for any commit with the same files that builds on the same
+parent head, because the result doesn't depend on the branch's commits, such
+as their messages or authors. Squash and rebase landings count only such
+results for the commits that they make, as
+[Which results count](#which-results-count) describes.
 
 ### Sandboxed checks
 
@@ -270,35 +271,38 @@ Squash and rebase landings make commits that no check saw. A squashed commit
 has the files at the branch's head, on top of the parent's head, and so does
 the last commit of a rebase. Those are the files and the parent head that the
 checks saw, so a check that reads only files gives the new commit the same
-result. The merge controller lets the results for the branch's head count for
-the new commit, and lands it without another round of checks. As with a
-fast-forward, no check sees a rebase's earlier commits.
+result. As with a fast-forward, no check sees a rebase's earlier commits.
 
-Some results depend on more than the files, such as those of a check that
+Other results depend on more than the files, such as those of a check that
 reads the commits' messages, authors, signatures, or trailers like
 `Signed-off-by`, or that counts the branch's commits. An agent that reviews
-commit messages as well as the change is another. Such a check sets
-`UsesHistory` in its `checks.Check`, so its results have
-`usesHistory: true`, and they don't count for the new commit.
+commit messages as well as the change is another. So a result for the
+branch's head counts for the new commit only when its check sets `FilesOnly`
+in its `checks.Check`, which gives its results `filesOnly: true`. A check
+without `FilesOnly` costs one more round of checks, as the end of this section
+describes.
 
-The built-in checks' results count. `check-base` passes for any commit on top
-of the parent's head, and the other built-in checks read only files and the
-`GitBranch`. `maxAutomatedCommits` counts fix commits by their trailer, but
-it limits what checks push, and the gate doesn't read it.
+The built-in checks set `FilesOnly`. `check-base` passes for any commit that
+builds on the parent's head, `check-gofmt` and `check-gotest` read only the
+files, and `check-risk` compares them with the parent's head.
+`check-approval` reads only the `GitBranch`, and an approval is for the
+change, which the new commit makes too. `maxAutomatedCommits` counts fix
+commits by their trailer, but it limits what checks push, and the gate
+doesn't read it.
 
-When the counted results pass the gate, the controller pushes the new commit
-to the parent, with a lease on the parent's head. The same atomic push
-deletes the branch, with a lease on its head, or moves the branch to the new
-commit when `deleteMergedBranches` is off. A branch that stays is then at its
-parent's head, so it shows `Merged` instead of commits that the parent
-doesn't have. If the parent or the branch moved since the repositories
-controller listed them, the push changes neither, and the controller tries
-again.
+When the counted results pass the gate, the controller lands the new commit
+without another round of checks. It pushes the commit to the parent, with a
+lease on the parent's head. The same atomic push deletes the branch, with a
+lease on its head, or moves the branch to the new commit when
+`deleteMergedBranches` is off. A branch that stays is then at its parent's
+head, so it shows `Merged` instead of commits that the parent doesn't have.
+If the parent or the branch moved since the repositories controller listed
+them, the push changes neither, and the controller tries again.
 
-When the gate doesn't pass without the results that don't count, the
-controller pushes the new commit to the branch instead, with a lease on the
-branch's head, and sets the branch's state to `Rewritten`. The checks run on
-the new commit, and when the gate passes, the parent fast-forwards to it.
+When the gate doesn't pass on the counted results alone, the controller
+pushes the new commit to the branch instead, with a lease on the branch's
+head, and sets the branch's state to `Rewritten`. The checks run on the new
+commit, and when the gate passes, the parent fast-forwards to it.
 `check-approval` passes only for the head that the annotation names, so a
 rewritten branch needs a new approval.
 

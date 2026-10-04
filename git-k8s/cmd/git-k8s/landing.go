@@ -18,7 +18,7 @@ const (
 	reasonNeedsRebase = "NeedsRebase"
 	// reasonRewritten means the merge controller pushed the squashed or
 	// rebased commits to the branch instead of the parent, so that the
-	// checks whose results use the branch's history run on them.
+	// checks whose results don't have filesOnly run on them.
 	reasonRewritten = "Rewritten"
 )
 
@@ -60,10 +60,10 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 	}
 
 	if pass, err := evaluate(spec.Merge, gitk8s.RewrittenGateChecks(spec.Merge, results, spec.Head, spec.ParentHead)); err != nil || !pass {
-		var history []string
+		var rerun []string
 		for _, c := range spec.Merge.Checks {
-			if r, ok := results[c.Name]; ok && r.UsesHistory && r.Fresh(spec.Head, spec.ParentHead) {
-				history = append(history, c.Name)
+			if r, ok := results[c.Name]; ok && !r.FilesOnly && r.Fresh(spec.Head, spec.ParentHead) {
+				rerun = append(rerun, c.Name)
 			}
 		}
 		if err := local.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + spec.Branch, New: landed, Old: spec.Head}); err != nil {
@@ -71,8 +71,8 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 		}
 		slog.Info("rewrote a branch", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch,
 			"landing", spec.Merge.Landing, "from", gitk8s.Short(spec.Head), "to", gitk8s.Short(landed))
-		report(b, reasonRewritten, false, "%s %s onto %s at %s as %s and pushed it to %s, because the results of %s use the branch's history",
-			verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed), spec.Branch, strings.Join(history, ", "))
+		report(b, reasonRewritten, false, "%s %s onto %s at %s as %s and pushed it to %s, because the results of %s might depend on the branch's commits",
+			verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed), spec.Branch, strings.Join(rerun, ", "))
 		return true, nil
 	}
 

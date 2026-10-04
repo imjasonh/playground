@@ -38,18 +38,18 @@ func refresh(t *testing.T, b *gitk8s.GitBranch, w *gittest.Work) {
 	w.Push("c/x")
 	b.Spec.Head = w.Git("rev-parse", "HEAD")
 	b.Status.Checks = map[string]gitk8s.CheckResult{
-		"base":  {Commit: b.Spec.Head, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed},
-		"gofmt": {Commit: b.Spec.Head, State: gitk8s.Passed},
+		"base":  {Commit: b.Spec.Head, ParentCommit: b.Spec.ParentHead, State: gitk8s.Passed, FilesOnly: true},
+		"gofmt": {Commit: b.Spec.Head, State: gitk8s.Passed, FilesOnly: true},
 	}
 }
 
-// withHistoryCheck adds dco, a check whose passing result uses the branch's
-// history, to b's merge policy.
+// withHistoryCheck adds dco, a check whose passing result doesn't have
+// filesOnly, such as one that reads commit messages, to b's merge policy.
 func withHistoryCheck(b *gitk8s.GitBranch) {
 	p := *b.Spec.Merge
 	p.Checks = append(p.Checks[:len(p.Checks):len(p.Checks)], gitk8s.CheckPolicy{Name: "dco"})
 	b.Spec.Merge = &p
-	b.Status.Checks["dco"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Passed, UsesHistory: true}
+	b.Status.Checks["dco"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Passed}
 }
 
 // moveParent pushes a commit that writes a file to main, and leaves w on c/x.
@@ -383,7 +383,7 @@ func TestRebaseNeedsRebase(t *testing.T) {
 	}
 }
 
-// When a check's result uses the branch's history, a squash landing pushes the
+// When a check's result doesn't have filesOnly, a squash landing pushes the
 // squashed commit to the branch for the checks to run on, and lands it by
 // fast-forward once they pass.
 func TestHistoryResultsRewriteTheBranch(t *testing.T) {
@@ -407,7 +407,7 @@ func TestHistoryResultsRewriteTheBranch(t *testing.T) {
 		t.Errorf("squashed commit's parent and tree = %q, want %q", got, want)
 	}
 	c := kube.FindCondition(b.Status.Conditions, "Merged")
-	msg := fmt.Sprintf("squashed c/x onto main at %s as %s and pushed it to c/x, because the results of dco use the branch's history",
+	msg := fmt.Sprintf("squashed c/x onto main at %s as %s and pushed it to c/x, because the results of dco might depend on the branch's commits",
 		gitk8s.Short(main), gitk8s.Short(squashed))
 	if c == nil || c.Status != kube.False || c.Message != msg || b.Status.State != reasonRewritten {
 		t.Errorf("Merged = %+v, state %q", c, b.Status.State)

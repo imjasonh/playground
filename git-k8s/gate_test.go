@@ -25,22 +25,22 @@ func TestGateChecks(t *testing.T) {
 func TestRewrittenGateChecks(t *testing.T) {
 	policy := &MergePolicy{Checks: []CheckPolicy{{Name: "base"}, {Name: "gofmt"}, {Name: "dco"}, {Name: "risk"}}}
 	results := map[string]CheckResult{
-		"base":  {Commit: "h1", ParentCommit: "p1", State: Passed},
-		"gofmt": {Commit: "h1", State: Passed},
-		"dco":   {Commit: "h1", State: Passed, UsesHistory: true},
-		"risk":  {Commit: "h0", State: Passed},
+		"base":  {Commit: "h1", ParentCommit: "p1", State: Passed, FilesOnly: true},
+		"gofmt": {Commit: "h1", State: Passed, FilesOnly: true},
+		"dco":   {Commit: "h1", State: Passed},
+		"risk":  {Commit: "h0", State: Passed, FilesOnly: true},
 	}
 	got := RewrittenGateChecks(policy, results, "h1", "p1")
 	if !got["base"].Passed || !got["gofmt"].Passed {
-		t.Errorf("results for the head must count for a commit with the same files on the same parent: %+v", got)
+		t.Errorf("filesOnly results for the head must count for a commit with the same files on the same parent: %+v", got)
 	}
 	if got["dco"].State != Pending || got["dco"].Passed {
-		t.Errorf("dco = %+v, want Pending because its result uses the branch's history", got["dco"])
+		t.Errorf("dco = %+v, want Pending because its result doesn't have filesOnly", got["dco"])
 	}
 	if got["risk"].State != Pending {
 		t.Errorf("risk = %+v, want Pending because its result is stale", got["risk"])
 	}
 	if !GateChecks(policy, results, "h1", "p1")["dco"].Passed {
-		t.Error("usesHistory must not change what the gate sees of the head itself")
+		t.Error("filesOnly must not change what the gate sees of the head itself")
 	}
 }

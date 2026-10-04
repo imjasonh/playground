@@ -164,27 +164,38 @@ func TestPushesFixThenPasses(t *testing.T) {
 	}
 }
 
-func TestRecordsUsesHistory(t *testing.T) {
+func TestRecordsFilesOnly(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
 	runs := 0
 	check := touch(&runs)
+	check.FilesOnly = true
 	if err := f.reconcile(t, check); err != nil {
 		t.Fatal(err)
 	}
-	if res := f.branch.Status.Checks.Result; res == nil || !res.Final() || res.UsesHistory {
-		t.Fatalf("result = %+v, want a final result without usesHistory", res)
+	if res := f.branch.Status.Checks.Result; res == nil || !res.Final() || !res.FilesOnly {
+		t.Fatalf("result = %+v, want a final result with filesOnly", res)
 	}
 
-	// A final result from before the check set UsesHistory doesn't say that
-	// it uses the branch's history, so the check runs again to record it.
-	check.UsesHistory = true
+	// A result with filesOnly from before the check stopped setting it
+	// must not count for a squashed commit, so the check runs again.
+	check.FilesOnly = false
 	for range 2 {
 		if err := f.reconcile(t, check); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if res := f.branch.Status.Checks.Result; !res.UsesHistory || runs != 2 {
-		t.Errorf("result = %+v after %d runs, want usesHistory after 2 runs", res, runs)
+	if res := f.branch.Status.Checks.Result; res.FilesOnly || runs != 2 {
+		t.Fatalf("result = %+v after %d runs, want no filesOnly after 2 runs", res, runs)
+	}
+
+	// A result without filesOnly only costs a landing a round of checks, so
+	// a check that starts setting FilesOnly doesn't run again for it.
+	check.FilesOnly = true
+	if err := f.reconcile(t, check); err != nil {
+		t.Fatal(err)
+	}
+	if res := f.branch.Status.Checks.Result; res.FilesOnly || runs != 2 {
+		t.Errorf("result = %+v after %d runs, want the same result without filesOnly", res, runs)
 	}
 }
 
