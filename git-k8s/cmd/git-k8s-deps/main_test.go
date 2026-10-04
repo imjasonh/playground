@@ -362,6 +362,19 @@ func (f *fixture) failure(version string) string {
 	return ""
 }
 
+// waiting reports whether the controller holds back greet's update to
+// version.
+func (f *fixture) waiting(version string) bool {
+	f.u.mu.Lock()
+	defer f.u.mu.Unlock()
+	for _, st := range f.u.states {
+		if _, ok := st.waits[module.Version{Path: greet, Version: version}]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // checkStays checks that a reconcile declares no Pod and leaves greet's
 // branch at head, or absent if head is "".
 func (f *fixture) checkStays(head string, world ...any) *kube.Recorder {
@@ -1769,6 +1782,42 @@ func TestStartsANewPodOnceAnUpdateHasWaited(t *testing.T) {
 		t.Fatalf("the controller declared Pod %s again and recorded %q, want a new Pod", p.Name, f.failure("v1.1.0"))
 	}
 	f.finish(p, result(withFiles("v1.1.0", "go.mod", mod)))
+	if f.srv.Heads(t, "app")[greetBranch] == "" {
+		t.Errorf("the controller didn't push %s", greetBranch)
+	}
+}
+
+func TestForgetsTheWaitOfAnUpdateThatItNoLongerMakes(t *testing.T) {
+	const future = "example.com/future"
+	f := newFixture(t)
+	f.u.interval, f.u.minAge = 2*time.Hour, 72*time.Hour
+	f.proxy.publish(future, "v1.0.0", time.Date(2200, 1, 1, 0, 0, 0, 0, time.UTC), "")
+	f.checkStays("")
+	f.clock = today.Add(72 * time.Hour)
+	p := f.start()
+	f.finish(p, result(withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", future, "v1.0.0"), "go.sum", sumAt("v1.1.0"))))
+	if !f.waiting("v1.1.0") {
+		t.Fatal("greet's update to v1.1.0 doesn't wait for future v1.0.0")
+	}
+
+	t.Log("While the controller still makes the update, the wait stays.")
+	f.proxy.publish(greet, "v1.2.0", longAgo, "")
+	f.clock = today.Add(74 * time.Hour)
+	f.checkStays("")
+	if !f.waiting("v1.1.0") {
+		t.Fatal("the controller forgot the wait of greet's update to v1.1.0, which it still makes")
+	}
+
+	t.Log("Once greet v1.2.0 is old enough, the controller makes that update instead, and forgets v1.1.0's wait.")
+	f.clock = today.Add(146 * time.Hour)
+	p = f.start()
+	if got, want := env(p.Spec.InitContainers[1], "UPDATES"), greet+" v1.2.0 .\n"; got != want {
+		t.Fatalf("UPDATES = %q, want %q", got, want)
+	}
+	if f.waiting("v1.1.0") {
+		t.Error("the controller still holds the wait of greet's update to v1.1.0, which it no longer makes")
+	}
+	f.finish(p, result(updated("v1.2.0")))
 	if f.srv.Heads(t, "app")[greetBranch] == "" {
 		t.Errorf("the controller didn't push %s", greetBranch)
 	}

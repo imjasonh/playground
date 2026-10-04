@@ -814,7 +814,8 @@ func requires(f *modfile.File, mod, version string) bool {
 // failed update gets no new Pod until -interval after it failed. Neither
 // does an update that raises a requirement to a version that no module
 // proxy has, even when the parent moves, and an update that waits for the
-// versions that it raises gets none until they're old enough.
+// versions that it raises gets none until they're old enough. runPod
+// forgets the outcomes and waits of updates that writes don't need.
 func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository, st *state, writes []change, log *slog.Logger) {
 	now := u.clock()
 	wanted := map[module.Version]bool{}
@@ -832,9 +833,9 @@ func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository
 	}
 	for k, until := range st.waits {
 		switch {
-		case !now.Before(until):
+		case !wanted[k], !now.Before(until):
 			delete(st.waits, k)
-		case wanted[k]:
+		default:
 			kube.RequeueAfter(ctx, until.Sub(now))
 		}
 	}

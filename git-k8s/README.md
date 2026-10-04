@@ -656,7 +656,8 @@ update until then, even when the parent moves. Then it makes the update again
 in a new Pod, and pushes it if every version that it raises is old enough.
 The wait holds back only that version of the module. Once a newer version is
 old enough, the controller makes that update in its own Pod, and it can wait
-too.
+too. The controller forgets the wait of an update that it no longer needs,
+such as the older version's.
 
 The version of a branch that the controller owns, which the trailer of the
 branch's update names, was old enough when the controller pushed it, so it
