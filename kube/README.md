@@ -201,6 +201,29 @@ validation and display hints to the generated schema:
 | `pattern:"^[a-z]+$"` | Regular expression for a string |
 | `doc:"..."` | Description shown by `kubectl explain` |
 
+A controller that reconciles the type installs its CustomResourceDefinition
+when the program starts, and later releases update it, as [Change a
+type](#change-a-type) describes. A program can also read or own a type that
+none of its controllers reconciles, such as a report that it writes for people
+to read. Such a program creates the CRD the first time that it uses the type,
+if the cluster doesn't have the CRD. It never changes a CRD that exists,
+because only a program that reconciles the type knows all of the type's
+versions.
+
+When a program that reconciles the type starts, it installs its own CRD over
+the created one. Until then, the CRD keeps the schema that it was created with,
+even when a later release of the program that created it changes the type. To
+update the CRD along with the type, reconcile the type, even with a
+`Reconcile` method that does nothing. If the CRD exists but doesn't serve the
+program's version of the type, the program reports an error instead of using
+it. If two programs try to create the CRD at the same time, one of them creates
+it and both use it.
+
+The created CRD has the schema of the program's struct, so declare every field
+of the type. To read or own a type without creating its CRD, for example with
+a struct that declares only some of the type's fields, give its `apiVersion`
+and `kind` instead of a group, as for a [built-in type](#built-in-types).
+
 ### More than one version
 
 When a type's fields change, clients of the old version can keep using it.
@@ -520,6 +543,9 @@ way, its service account needs these permissions:
   `customresourcedefinitions/status`, for its own types. To check and migrate
   objects when a type changes, it also needs `list` on its own types in every
   namespace.
+- `get` and `create` on `customresourcedefinitions`, for the types that it
+  defines and reads or owns without reconciling them, so that it can create
+  their CRDs. Without `get`, it logs a warning and doesn't create them.
 - `get`, `list`, `create`, `update`, and `delete` on `leases`, with
   `-leader-elect` or `-shards`.
 - `get`, `create`, and `update` on `secrets` in its namespace, and `get`,
@@ -597,7 +623,6 @@ tests and end-to-end tests:
 | [`dnsrecord`](examples/dnsrecord/main.go) | external-dns, Crossplane | External resources, `Finalize`, `Permanent`, drift checks |
 | [`janitor`](examples/janitor/main.go) | hjacobs/kube-janitor | Time-based desired state with `RequeueAfter`, `Delete` |
 | [`podpolicy`](examples/podpolicy/main.go) | Kyverno and OPA Gatekeeper policies | Admission webhooks for Pods with `kube.Webhooks`, a patch that keeps undeclared fields |
-
 ## Measurements
 
 On a local `kube-apiserver` with 5,000 Pods of 8.2 KB each, compared with

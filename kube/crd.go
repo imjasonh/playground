@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -152,26 +154,87 @@ func (m *Manager) installCRD(ctx context.Context, spec crdSpec) error {
 	if err := m.client.Apply(ctx, crdPath(name), m.Name, true, desired, nil); err != nil {
 		return fmt.Errorf("installing CustomResourceDefinition %s: %w", name, err)
 	}
+	if _, err := m.waitEstablished(ctx, name); err != nil {
+		return err
+	}
+	m.log.Info("installed CustomResourceDefinition", "crd", name)
+	return nil
+}
+
+// createCRD creates the CustomResourceDefinition for a type that the program
+// defines and reads or owns, but doesn't reconcile, if the cluster doesn't
+// have one, and waits until the API server serves it. It never changes a CRD
+// that exists, because only a program that reconciles the type knows all of
+// the type's versions. That program installs its own CRD over this one.
+func (m *Manager) createCRD(ctx context.Context, ti *typeInfo) error {
+	spec := crdSpec{ti: ti}
+	name := spec.name()
+	live, err := m.getCRD(ctx, name)
+	switch {
+	case client.IsForbidden(err):
+		m.log.Warn("can't check for CustomResourceDefinition without permission to get it", "crd", name, "err", err)
+		return nil
+	case err != nil:
+		return fmt.Errorf("reading CustomResourceDefinition %s: %w", name, err)
+	case live == nil:
+		desired, err := m.desiredCRD(spec)
+		if err != nil {
+			return err
+		}
+		body, err := json.Marshal(desired)
+		if err != nil {
+			return err
+		}
+		err = m.client.Call(ctx, client.Request{
+			Method: http.MethodPost, Path: client.Path("apiextensions.k8s.io/v1", "customresourcedefinitions", "", ""),
+			Query: url.Values{"fieldManager": {m.Name}}, Body: body, ContentType: "application/json",
+		}, nil)
+		switch {
+		case err == nil:
+			m.log.Info("created CustomResourceDefinition", "crd", name)
+		case client.IsAlreadyExists(err):
+			// Another program created it first.
+		default:
+			return fmt.Errorf("creating CustomResourceDefinition %s: %w", name, err)
+		}
+	}
+	if live == nil || !established(live) {
+		if live, err = m.waitEstablished(ctx, name); err != nil {
+			return err
+		}
+	}
+	if v := live.version(ti.version); v == nil || !served(v) {
+		return fmt.Errorf("kube: CustomResourceDefinition %s doesn't serve version %s, which %v uses", name, ti.version, ti.goType)
+	}
+	return nil
+}
+
+// waitEstablished waits until the API server serves the named
+// CustomResourceDefinition, and returns it.
+func (m *Manager) waitEstablished(ctx context.Context, name string) (*liveCRD, error) {
 	deadline := time.Now().Add(time.Minute)
 	for {
 		got, err := m.getCRD(ctx, name)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		if c := FindCondition(got.Status.Conditions, "Established"); c != nil && c.Status == True {
-			break
+		if got != nil && established(got) {
+			return got, nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("CustomResourceDefinition %s was not established after a minute", name)
+			return nil, fmt.Errorf("CustomResourceDefinition %s was not established after a minute", name)
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil, ctx.Err()
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
-	m.log.Info("installed CustomResourceDefinition", "crd", name)
-	return nil
+}
+
+func established(l *liveCRD) bool {
+	c := FindCondition(l.Status.Conditions, "Established")
+	return c != nil && c.Status == True
 }
 
 // planCRD checks an update to a CustomResourceDefinition that the framework

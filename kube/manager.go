@@ -109,6 +109,7 @@ type Manager struct {
 	caches      map[cacheKey]cache
 	cacheDone   []chan struct{}
 	resolved    map[*typeInfo]resolved
+	ensuredCRDs map[*typeInfo]bool
 	controllers []Controller
 	hooks       *webhookServer
 }
@@ -203,6 +204,7 @@ func (m *Manager) init() error {
 	m.tracker = newTracker()
 	m.caches = map[cacheKey]cache{}
 	m.resolved = map[*typeInfo]resolved{}
+	m.ensuredCRDs = map[*typeInfo]bool{}
 	m.metrics.gauge("kube_cache_objects", "Objects held in each cache.", func() []sample {
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -420,6 +422,39 @@ func (m *Manager) ensureType(ctx context.Context, crd crdSpec) (resolved, error)
 	return m.resolve(ctx, crd.ti)
 }
 
+// ensureCRD creates the CustomResourceDefinition of a type that the program
+// defines but doesn't reconcile, if it's missing, the first time that the
+// program reads or owns the type.
+func (m *Manager) ensureCRD(ctx context.Context, ti *typeInfo) error {
+	if !ti.custom {
+		return nil
+	}
+	m.mu.Lock()
+	ensured := m.ensuredCRDs[ti]
+	m.mu.Unlock()
+	if ensured {
+		return nil
+	}
+	if !m.reconciled(ti) {
+		if err := m.createCRD(ctx, ti); err != nil {
+			return err
+		}
+	}
+	m.mu.Lock()
+	m.ensuredCRDs[ti] = true
+	m.mu.Unlock()
+	return nil
+}
+
+// reconciled reports whether a controller in the program reconciles ti's
+// type, and so installs the type's CustomResourceDefinition.
+func (m *Manager) reconciled(ti *typeInfo) bool {
+	return slices.ContainsFunc(m.controllers, func(c Controller) bool {
+		d, err := c.describe()
+		return err == nil && d.reconciles && d.ti.custom && d.ti.group == ti.group && d.ti.plural == ti.plural
+	})
+}
+
 // labelValue makes s a valid label value.
 func labelValue(s string) string {
 	s = strings.Map(func(r rune) rune {
@@ -487,6 +522,9 @@ func (m *Manager) source(ctx context.Context, ti *typeInfo) (source, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := m.ensureCRD(ctx, ti); err != nil {
+		return nil, err
+	}
 	c := m.cacheFor(cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace}, res, "", nil)
 	return c, c.waitSynced(ctx)
 }
@@ -513,6 +551,9 @@ func (m *Manager) children(ctx context.Context, c *core, ti *typeInfo) (source, 
 func (m *Manager) childSource(ctx context.Context, c *core, ti *typeInfo, wait bool) (source, error) {
 	res, err := m.resolve(ctx, ti)
 	if err != nil {
+		return nil, err
+	}
+	if err := m.ensureCRD(ctx, ti); err != nil {
 		return nil, err
 	}
 	key := cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace, selector: c.labels.controller + "=" + c.name}
@@ -544,6 +585,9 @@ func (m *Manager) childSource(ctx context.Context, c *core, ti *typeInfo, wait b
 func (m *Manager) fetch(ctx context.Context, ti *typeInfo, k Key) (any, error) {
 	res, err := m.resolve(ctx, ti)
 	if err != nil {
+		return nil, err
+	}
+	if err := m.ensureCRD(ctx, ti); err != nil {
 		return nil, err
 	}
 	obj := reflect.New(ti.goType).Interface()

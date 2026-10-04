@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -480,5 +481,211 @@ func TestCRDFromNewerRelease(t *testing.T) {
 	got := getCRD(t, c, crd)
 	if len(got.Spec.Versions) != 2 || got.Spec.Versions[0].Name != "v2" || !got.Spec.Versions[0].Storage {
 		t.Errorf("CRD versions after the rollback = %+v", got.Spec.Versions)
+	}
+}
+
+// crdMeta is the metadata of a CustomResourceDefinition.
+type crdMeta struct {
+	Metadata struct {
+		ResourceVersion string            `json:"resourceVersion"`
+		Labels          map[string]string `json:"labels"`
+		ManagedFields   []struct {
+			Manager string `json:"manager"`
+		} `json:"managedFields"`
+	} `json:"metadata"`
+}
+
+func (m crdMeta) managedBy() string { return m.Metadata.Labels["kube.imjasonh.github.io/managed-by"] }
+
+// Receipt is a type that programs own without reconciling it.
+type Receipt struct {
+	kube.Object `kube:"group=e2e.kube.imjasonh.github.io"`
+	Spec        struct {
+		ConfigMap string `json:"configMap"`
+	} `json:"spec"`
+}
+
+// CheckedReceipt is Receipt in a program that reconciles it.
+type CheckedReceipt struct {
+	kube.Object `kube:"group=e2e.kube.imjasonh.github.io,kind=Receipt"`
+	Spec        struct {
+		ConfigMap string `json:"configMap"`
+	} `json:"spec"`
+	Status struct {
+		Checked bool `json:"checked,omitempty"`
+	} `json:"status,omitzero"`
+}
+
+type receipts struct{}
+
+func (receipts) Reconcile(ctx context.Context, cm *ConfigMapMeta) error {
+	r := &Receipt{Object: kube.Meta(cm.Name, nil)}
+	r.Spec.ConfigMap = cm.Name
+	kube.Own(ctx, r)
+	return nil
+}
+
+type receiptChecker struct{}
+
+func (receiptChecker) Reconcile(_ context.Context, r *CheckedReceipt) error {
+	r.Status.Checked = true
+	return nil
+}
+
+func TestCRDForOwnedType(t *testing.T) {
+	c := e2e.Client(t)
+	ctx := t.Context()
+	crdPath := "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/receipts." + group
+	if err := e2e.Gone(ctx, c, crdPath); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("Two programs that own Receipts without reconciling them start at once, each in its own namespace. One creates the CRD, and both write Receipts.")
+	owners := map[string]string{}
+	for _, name := range []string{"receipts-a-e2e", "receipts-b-e2e"} {
+		ns := e2e.Namespace(t, c)
+		owners[name] = ns
+		e2e.Run(t, &kube.Manager{Name: name, Namespace: ns}, kube.For[ConfigMapMeta](receipts{}, kube.Named("receipts"), kube.Owns[Receipt]()))
+	}
+	for _, ns := range owners {
+		cm := map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "cm"}}
+		if err := c.Create(ctx, client.Path("v1", "configmaps", ns, ""), cm, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e2e.Eventually(t, 30*time.Second, func() error {
+		for _, ns := range owners {
+			var r Receipt
+			if err := e2e.Get(ctx, c, client.Path(group+"/v1", "receipts", ns, "cm"), &r); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	var meta crdMeta
+	if err := e2e.Get(ctx, c, crdPath, &meta); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := owners[meta.managedBy()]; !ok {
+		t.Errorf("the CRD is managed by %q, want one of the programs that own Receipts", meta.managedBy())
+	}
+	if got := getCRD(t, c, "receipts."+group); len(got.Spec.Versions) != 1 || got.Spec.Versions[0].Name != "v1" || !got.Spec.Versions[0].Storage {
+		t.Errorf("CRD versions = %+v, want v1 alone", got.Spec.Versions)
+	}
+
+	t.Log("A program that reconciles Receipts installs its own CRD over the created one, and reconciles the Receipts that exist.")
+	e2e.Run(t, &kube.Manager{Name: "receipt-checker-e2e"}, kube.For[CheckedReceipt](receiptChecker{}))
+	e2e.Eventually(t, 30*time.Second, func() error {
+		if err := e2e.Get(ctx, c, crdPath, &meta); err != nil {
+			return err
+		}
+		if meta.managedBy() != "receipt-checker-e2e" {
+			return fmt.Errorf("the CRD is managed by %q", meta.managedBy())
+		}
+		for _, ns := range owners {
+			var r CheckedReceipt
+			if err := e2e.Get(ctx, c, client.Path(group+"/v1", "receipts", ns, "cm"), &r); err != nil {
+				return err
+			}
+			if !r.Status.Checked {
+				return fmt.Errorf("the Receipt in %s isn't checked", ns)
+			}
+		}
+		return nil
+	})
+}
+
+// Ledger and LedgerV1 have the same fields, so the API server converts
+// between them without a webhook.
+type Ledger struct {
+	kube.Object `kube:"group=e2e.kube.imjasonh.github.io,version=v2"`
+	Spec        struct {
+		ConfigMap string `json:"configMap"`
+	} `json:"spec"`
+}
+
+type LedgerV1 struct {
+	kube.Object `kube:"group=e2e.kube.imjasonh.github.io,kind=Ledger,version=v1"`
+	Spec        struct {
+		ConfigMap string `json:"configMap"`
+	} `json:"spec"`
+}
+
+type ledgers struct{}
+
+func (ledgers) Reconcile(context.Context, *Ledger) error { return nil }
+
+// ledgerKeeper owns a v1 Ledger for each ConfigMap, and counts the Ledgers
+// in the ConfigMap's namespace.
+type ledgerKeeper struct{ seen atomic.Int64 }
+
+func (k *ledgerKeeper) Reconcile(ctx context.Context, cm *ConfigMapMeta) error {
+	k.seen.Store(int64(len(kube.List[LedgerV1](ctx, kube.InNamespace(cm.Namespace)))))
+	l := &LedgerV1{Object: kube.Meta(cm.Name, nil)}
+	l.Spec.ConfigMap = cm.Name
+	kube.Own(ctx, l)
+	return nil
+}
+
+func TestCRDForOwnedTypeLeavesExistingCRD(t *testing.T) {
+	c := e2e.Client(t)
+	ctx := t.Context()
+	ns := e2e.Namespace(t, c)
+	const crd = "ledgers." + group
+	crdPath := "/apis/apiextensions.k8s.io/v1/customresourcedefinitions/" + crd
+
+	t.Log("A program that reconciles Ledgers installs their CRD, with v2 and v1, and stops.")
+	stop := release(t, &kube.Manager{Name: "ledgers-e2e"}, kube.For[Ledger](ledgers{}, kube.Version[LedgerV1]()))
+	e2e.Eventually(t, 30*time.Second, func() error {
+		var got struct {
+			Spec struct {
+				Versions []any `json:"versions"`
+			} `json:"spec"`
+			Status struct {
+				Conditions []kube.Condition `json:"conditions"`
+			} `json:"status"`
+		}
+		if err := e2e.Get(ctx, c, crdPath, &got); err != nil {
+			return err
+		}
+		if c := kube.FindCondition(got.Status.Conditions, "Established"); len(got.Spec.Versions) != 2 || c == nil || c.Status != kube.True {
+			return fmt.Errorf("the CRD isn't established with two versions: %+v", got)
+		}
+		return nil
+	})
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	var before crdMeta
+	if err := e2e.Get(ctx, c, crdPath, &before); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("A program that knows only v1, and owns and lists Ledgers without reconciling them, uses the CRD as it is.")
+	k := &ledgerKeeper{}
+	e2e.Run(t, &kube.Manager{Name: "ledger-keeper-e2e", Namespace: ns}, kube.For[ConfigMapMeta](k, kube.Named("ledger-keeper")))
+	cm := map[string]any{"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "cm"}}
+	if err := c.Create(ctx, client.Path("v1", "configmaps", ns, ""), cm, nil); err != nil {
+		t.Fatal(err)
+	}
+	e2e.Eventually(t, 30*time.Second, func() error {
+		var l LedgerV1
+		if err := e2e.Get(ctx, c, client.Path(group+"/v1", "ledgers", ns, "cm"), &l); err != nil {
+			return err
+		}
+		if n := k.seen.Load(); n != 1 {
+			return fmt.Errorf("the program listed %d Ledgers, want 1", n)
+		}
+		return nil
+	})
+	var after crdMeta
+	if err := e2e.Get(ctx, c, crdPath, &after); err != nil {
+		t.Fatal(err)
+	}
+	if after.Metadata.ResourceVersion != before.Metadata.ResourceVersion {
+		t.Errorf("the CRD changed: managed by %q, managers %+v", after.managedBy(), after.Metadata.ManagedFields)
+	}
+	if got := getCRD(t, c, crd); len(got.Spec.Versions) != 2 || got.Spec.Versions[0].Name != "v2" || !got.Spec.Versions[0].Storage {
+		t.Errorf("CRD versions = %+v, want v2, stored, and v1", got.Spec.Versions)
 	}
 }

@@ -300,6 +300,9 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		return p.grantsFor(ti, watching)
 	}
 	var crds []string
+	// creates holds the CRDs of types that the program defines and reads or
+	// owns, which it creates if they're missing.
+	creates := map[string]bool{}
 	for _, c := range controllers {
 		d, err := c.describe()
 		if err != nil {
@@ -330,6 +333,9 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		for _, oti := range d.owns {
 			g, r := resourceName(oti)
 			grantsFor(oti).add(g, r, "", "list", "watch", "delete")
+			if oti.custom {
+				creates[r+"."+g] = true
+			}
 		}
 	}
 	funcs := slices.Sorted(maps.Keys(scopeVerbs))
@@ -351,11 +357,19 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		}
 		g, r := resourceName(ti)
 		grantsFor(ti).add(g, r, "", scopeVerbs[u.Func]...)
+		if ti.custom && slices.Contains([]string{"Get", "List", "Fetch", "Own"}, u.Func) {
+			creates[r+"."+g] = true
+		}
 	}
 	for _, crd := range crds {
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", crd, "get", "patch")
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions/status", crd, "patch")
+		delete(creates, crd)
+	}
+	for crd := range creates {
+		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")
+		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", crd, "get")
 	}
 	// The program deletes webhook configurations that an earlier version
 	// of it left, even when it has no webhooks itself.
