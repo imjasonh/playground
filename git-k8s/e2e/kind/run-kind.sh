@@ -124,6 +124,7 @@ need kubectl
 need go
 need git
 need curl
+need timeout
 install_kind
 docker info >/dev/null
 
@@ -534,6 +535,52 @@ echo "A commit with both heads cleared the divergence, and the mirror fast-forwa
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"
+# kindnet, kind's network plugin, enforces NetworkPolicies only where the
+# kernel has nfnetlink_queue. To find out, a Pod that a policy denies all
+# egress tries to reach the git server, once the plugin knows the Pod's
+# address.
+k apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: no-egress
+  namespace: ${NS}
+spec:
+  podSelector:
+    matchLabels:
+      e2e: no-egress
+  policyTypes: [Egress]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: no-egress
+  namespace: ${NS}
+  labels:
+    e2e: no-egress
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  containers:
+    - name: probe
+      image: ${GIT_IMAGE}
+      command: [dash, -c, "read -r _"]
+      stdin: true
+      env:
+        - {name: HOME, value: /tmp}
+        - {name: GIT_TERMINAL_PROMPT, value: "0"}
+        - {name: GIT_ALLOW_PROTOCOL, value: "http:https:git:ssh:file"}
+EOF
+k -n "${NS}" wait --for=condition=Ready pod/no-egress --timeout=120s
+sleep 5
+ENFORCED=1
+if timeout 20 kubectl --context "${CONTEXT}" -n "${NS}" exec no-egress -- \
+  git ls-remote --end-of-options "http://git-k8s:${PASSWORD}@${GATEWAY}:${GIT_PORT}/app.git" >/dev/null 2>&1; then
+  ENFORCED=0
+  echo "This cluster doesn't enforce NetworkPolicies, so the test doesn't check what test Pods can reach."
+fi
+k -n "${NS}" delete pod/no-egress networkpolicy/no-egress --wait=false
+
 TESTED="${WORKDIR}/tested"
 git init -q -b main "${TESTED}"
 t() {
@@ -553,10 +600,12 @@ func TestAdd(t *testing.T) {
 	}
 }
 GO
-# The test Pod's NetworkPolicy lets it reach only the mirror and DNS, so
-# this test passes only in a Pod that can't reach the git server or the API
-# server.
-cat >"${TESTED}/sandbox_test.go" <<GO
+if [[ ${ENFORCED} -eq 1 ]]; then
+  # The test Pod's NetworkPolicy lets it reach only the mirror and DNS, so
+  # this test passes only in a Pod that can't reach the git server or
+  # CoreDNS's metrics port. kindnet doesn't filter a Pod's connections to
+  # its own node, which on a one-node cluster include the API server.
+  cat >"${TESTED}/sandbox_test.go" <<GO
 package tested
 
 import (
@@ -566,10 +615,10 @@ import (
 )
 
 func TestSandbox(t *testing.T) {
-	if _, err := net.LookupHost("kubernetes.default.svc.cluster.local"); err != nil {
-		t.Fatalf("looking up the API server: %v", err)
+	if _, err := net.LookupHost("kube-dns.kube-system.svc.cluster.local"); err != nil {
+		t.Fatalf("looking up CoreDNS: %v", err)
 	}
-	for _, addr := range []string{"${GATEWAY}:${GIT_PORT}", "kubernetes.default.svc.cluster.local:443"} {
+	for _, addr := range []string{"${GATEWAY}:${GIT_PORT}", "kube-dns.kube-system.svc.cluster.local:9153"} {
 		if c, err := net.DialTimeout("tcp", addr, 3*time.Second); err == nil {
 			c.Close()
 			t.Errorf("the test Pod reached %s", addr)
@@ -577,6 +626,7 @@ func TestSandbox(t *testing.T) {
 	}
 }
 GO
+fi
 t add -A
 t commit -qm "Add Add"
 t push -q "${HOST_URL}/tested.git" HEAD:main
@@ -628,7 +678,11 @@ eventually 60 no_test_pods
 no_test_policies() { [[ -z "$(k -n "${NS}" get networkpolicies -l app.kubernetes.io/name=check-gotest -o name)" ]]; }
 eventually 60 no_test_policies
 echo "A branch that breaks a test failed in a sandboxed Pod, and a fixed branch landed."
-echo "The test Pods fetched from the mirror, and could resolve names but couldn't reach the git server or the API server."
+if [[ ${ENFORCED} -eq 1 ]]; then
+  echo "The test Pods fetched from the mirror, and could resolve names but couldn't reach the git server or CoreDNS's metrics port."
+else
+  echo "The test Pods fetched from the mirror."
+fi
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
