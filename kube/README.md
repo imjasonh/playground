@@ -554,8 +554,19 @@ the data is safe only once the object holds it:
   `503` so that the client tries again. Either way, it drops the data when
   it answers.
 - The reconcile reads the data without removing it, so a retry on the same
-  replica still finds it. It adds the data to what the object already
-  holds, because later reconciles run without it.
+  replica still finds it. Then it reads the object with `kube.Get` and adds
+  the data to what that copy holds, because later reconciles run without
+  the data.
+
+Don't add the data to the object that `Reconcile` receives. The framework
+read that object before `Reconcile` ran, often before the cache had the
+previous reconcile's write. In between, a handler can see that write,
+answer, and drop its data, so writing back the older object would remove
+data that a client was told was saved. Reading the data first avoids that.
+A handler drops data only once `kube.Get` shows it, and `kube.Get` reads
+one cache in handlers and reconciles. That cache never goes back to an
+older version of an object, so data that's no longer pending is in the
+object that `kube.Get` returns afterward.
 
 In the handler, where `unavailable` answers `503` and closes the connection
 as in the previous example:
@@ -584,7 +595,13 @@ for {
 In `Reconcile`:
 
 ```go
-for _, result := range pending.get(key) {
+results := pending.get(key)
+cur := kube.Get[Report](ctx, rep.Namespace, rep.Name)
+if cur == nil {
+	return nil
+}
+rep.Status.Results = cur.Status.Results
+for _, result := range results {
 	if !slices.Contains(rep.Status.Results, result) {
 		rep.Status.Results = append(rep.Status.Results, result)
 	}
