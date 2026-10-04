@@ -255,6 +255,24 @@ func TestLimitsAJobsRunsWithANegativeCount(t *testing.T) {
 	}
 }
 
+func TestCountsAJobsRunAgainWhenItsPodIsGone(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	job := f.reviewJob()
+	st := &JobState{}
+	p := f.startJob(job, st)
+	f.runJob(job, st, p)
+	other := *job
+	other.Checkout.Head = f.base
+	f.startJob(&other, st)
+
+	t.Log("The Runner noted the first job's Pod, but kube deleted it, so going back to that job creates the Pod again, which runs the agent again and counts as a run.")
+	s, rec := f.runJob(job, st)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || pods[0].Name != p.Name || st.Pod != p.Name || st.Runs != 3 || len(f.r.day.starts) != 3 {
+		t.Errorf("RunJob = %+v with state %+v, %d owned Pods, and %d runs in the last day, want run 3 in Pod %s", s, st, len(pods), len(f.r.day.starts), p.Name)
+	}
+}
+
 func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	f := newFixture(t, "")
 	job := f.reviewJob()
