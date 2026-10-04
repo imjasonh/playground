@@ -811,7 +811,7 @@ func TestKeepsTheFirstSeenTimeOfARaisedVersionThatTheProxyDoesntList(t *testing.
 			f.proxy.set(late, "v1.0.0.mod", "module "+late+"\n")
 			body := result(withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", late, "v1.0.0"), "go.sum", sumAt("v1.1.0")))
 			var world []any
-			reconcile := func(objs ...any) *kube.Recorder {
+			reconcileWithStored := func(objs ...any) *kube.Recorder {
 				t.Helper()
 				rec := f.reconcile(append(objs, world...)...)
 				if cms := kube.Applied[configMap](rec); len(cms) > 0 {
@@ -823,13 +823,13 @@ func TestKeepsTheFirstSeenTimeOfARaisedVersionThatTheProxyDoesntList(t *testing.
 			// update, and finishes the Pod.
 			update := func() bool {
 				t.Helper()
-				pods := kube.Owned[agent.Pod](reconcile())
+				pods := kube.Owned[agent.Pod](reconcileWithStored())
 				if len(pods) == 0 {
 					return false
 				}
 				p := pods[0]
 				p.Namespace, p.UID, p.CreationTimestamp = "default", "uid-"+p.Name, f.clock
-				reconcile(finished(p, f.serve(body, p.UID)))
+				reconcileWithStored(finished(p, f.serve(body, p.UID)))
 				return true
 			}
 			pushed := func() bool { return f.srv.Heads(t, "app")[greetBranch] != "" }
