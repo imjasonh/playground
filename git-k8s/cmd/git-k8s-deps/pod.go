@@ -63,7 +63,7 @@ cd "$REPO"
 if [ -n "${GIT_PASSWORD:-}" ]; then
   git config credential.helper '!f() { echo "username=${GIT_USERNAME:-git}"; echo "password=${GIT_PASSWORD}"; }; f'
 fi
-git fetch -q --depth=1 "$URL" "refs/heads/$BRANCH"
+git fetch -q --depth=1 --end-of-options "$URL" "refs/heads/$BRANCH"
 if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3

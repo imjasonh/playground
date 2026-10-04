@@ -110,6 +110,15 @@ func TestScripts(t *testing.T) {
 	if out, err := run(src, prepareScript, moved); err == nil || !strings.Contains(out, "main no longer points to 4567cdef") {
 		t.Fatalf("prepare with another head = %v\n%s", err, out)
 	}
+	t.Log("A URL that looks like an option is still a URL.")
+	marker := filepath.Join(t.TempDir(), "ran")
+	option := append(prepare[:len(prepare):len(prepare)], "URL=--upload-pack=echo >"+marker, "HEAD="+head, "REPO="+filepath.Join(src, "option"))
+	if out, err := run(src, prepareScript, option); err == nil {
+		t.Errorf("prepare succeeded with an option for a URL\n%s", out)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("prepare ran the URL's --upload-pack: %v", err)
+	}
 	if out, err := run(src, prepareScript, append(prepare, "HEAD="+head)); err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
 	}
