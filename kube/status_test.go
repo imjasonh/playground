@@ -159,11 +159,13 @@ func TestStatusBody(t *testing.T) {
 
 // statusAPI serves discovery for Deployments, which have a status
 // subresource, and ConfigMaps, which don't, and records patches. With forbid
-// set, it refuses patches, as RBAC does.
+// set, it refuses patches, as RBAC does. With dropped set, Deployments have
+// no status subresource.
 type statusAPI struct {
 	mu        sync.Mutex
 	discovery int
 	forbid    bool
+	dropped   bool
 	patches   []statusPatch
 }
 
@@ -179,7 +181,11 @@ func (a *statusAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/apis/apps/v1":
 		a.discovery++
-		fmt.Fprint(w, `{"resources":[{"name":"deployments","namespaced":true,"kind":"Deployment"},{"name":"deployments/status","namespaced":true,"kind":"Deployment"}]}`)
+		status := `,{"name":"deployments/status","namespaced":true,"kind":"Deployment"}`
+		if a.dropped {
+			status = ""
+		}
+		fmt.Fprintf(w, `{"resources":[{"name":"deployments","namespaced":true,"kind":"Deployment"}%s]}`, status)
 	case r.URL.Path == "/api/v1":
 		a.discovery++
 		fmt.Fprint(w, `{"resources":[{"name":"configmaps","namespaced":true,"kind":"ConfigMap"}]}`)
@@ -190,11 +196,14 @@ func (a *statusAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.patches = append(a.patches, statusPatch{path: r.URL.Path, query: r.URL.Query(), body: body})
-		if a.forbid {
+		switch {
+		case a.forbid:
 			http.Error(w, "forbidden", http.StatusForbidden)
-			return
+		case a.dropped && strings.HasPrefix(r.URL.Path, "/apis/apps/v1/"):
+			http.NotFound(w, r)
+		default:
+			fmt.Fprint(w, "{}")
 		}
-		fmt.Fprint(w, "{}")
 	default:
 		http.NotFound(w, r)
 	}
@@ -204,6 +213,12 @@ func (a *statusAPI) setForbid(forbid bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.forbid = forbid
+}
+
+func (a *statusAPI) dropStatus() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.dropped = true
 }
 
 func (a *statusAPI) sent() []statusPatch {
@@ -343,10 +358,26 @@ func TestApplyStatus(t *testing.T) {
 	}
 	sends(5)
 
+	t.Log("After a status request fails with 404, the next one checks discovery again.")
+	api.setForbid(false)
+	api.dropStatus()
+	before = api.discoveries()
+	if err := reconcile(in); !client.IsNotFound(err) {
+		t.Errorf("err = %v, want a 404", err)
+	}
+	sends(6)
+	if err := reconcile(in); err == nil || !strings.Contains(err.Error(), "doesn't serve deployments/status") {
+		t.Errorf("err = %v, want an error that names the missing subresource", err)
+	}
+	sends(6)
+	if got := api.discoveries() - before; got != 1 {
+		t.Errorf("made %d discovery requests, want 1 after the 404", got)
+	}
+
 	t.Log("An intent without a status sends nothing.")
 	in.status = false
 	if err := reconcile(in); err != nil {
 		t.Fatal(err)
 	}
-	sends(5)
+	sends(6)
 }

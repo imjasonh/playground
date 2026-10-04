@@ -520,6 +520,16 @@ API server rejects a document with a field that the kind doesn't declare, so
 for a kind without a status, the rest of the object wouldn't be applied
 either.
 
+The client caches discovery results and fetches them again when they don't
+list the subresource, so it finds one that a CRD gains. When a status request
+fails with `404`, the framework drops the cached results for the kind's API
+version, so the next status request finds out whether the kind lost the
+subresource. The client doesn't remember a missing subresource, because that
+would hide one that a CRD gains later. So each status that the framework
+checks for such a kind costs a discovery request: once for an empty status,
+which the framework then skips, and once per retry for any other, which
+fails the reconcile.
+
 The framework writes the reconciled object's status with the controller's
 name as the field manager. If `Apply` wrote it too, under the name derived
 from the reconciled object, both managers would own every field that both

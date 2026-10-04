@@ -315,12 +315,16 @@ func TestDiscoveryRefetchesOnMiss(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	})
+	var nk *NoKindError
+	if _, err := c.Resource(t.Context(), "example.dev/v1", "Website"); !errors.As(err, &nk) || calls.Load() != 1 {
+		t.Errorf("Resource before Website is served = %v with %d calls, want a NoKindError after one call", err, calls.Load())
+	}
 	r, err := c.Resource(t.Context(), "example.dev/v1", "Website")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Name != "websites" || !r.Namespaced {
-		t.Errorf("resource = %+v", r)
+	if r.Name != "websites" || !r.Namespaced || calls.Load() != 2 {
+		t.Errorf("resource = %+v after %d calls, want websites after one refetch", r, calls.Load())
 	}
 	before := calls.Load()
 	if _, err := c.Resource(t.Context(), "example.dev/v1", "Website"); err != nil || calls.Load() != before {
@@ -329,9 +333,9 @@ func TestDiscoveryRefetchesOnMiss(t *testing.T) {
 	if r, err := c.Resource(t.Context(), "v1", "Namespace"); err != nil || r.Namespaced {
 		t.Errorf("namespace: %+v %v", r, err)
 	}
-	var nk *NoKindError
-	if _, err := c.Resource(t.Context(), "nope.dev/v1", "Thing"); !errors.As(err, &nk) {
-		t.Errorf("unknown group: %v", err)
+	before = calls.Load()
+	if _, err := c.Resource(t.Context(), "nope.dev/v1", "Thing"); !errors.As(err, &nk) || calls.Load() != before+1 {
+		t.Errorf("unknown group: %v with %d calls, want a NoKindError after one call", err, calls.Load()-before)
 	}
 
 	before = calls.Load()
@@ -341,7 +345,13 @@ func TestDiscoveryRefetchesOnMiss(t *testing.T) {
 	if ok, err := c.Serves(t.Context(), "v1", "namespaces/status"); ok || err != nil || calls.Load() != before+1 {
 		t.Errorf("Serves(namespaces/status) = %v, %v with %d calls, want false after one refetch", ok, err, calls.Load()-before)
 	}
-	if ok, err := c.Serves(t.Context(), "nope.dev/v1", "things"); ok || err != nil {
-		t.Errorf("Serves(things) in an unknown group = %v, %v", ok, err)
+	before = calls.Load()
+	if ok, err := c.Serves(t.Context(), "other.dev/v1", "things"); ok || err != nil || calls.Load() != before+1 {
+		t.Errorf("Serves(things) in an unknown group = %v, %v with %d calls, want false after one call", ok, err, calls.Load()-before)
+	}
+	c.Forget("example.dev/v1")
+	before = calls.Load()
+	if ok, err := c.Serves(t.Context(), "example.dev/v1", "websites/status"); !ok || err != nil || calls.Load() != before+1 {
+		t.Errorf("Serves(websites/status) after Forget = %v, %v with %d calls, want true after one call", ok, err, calls.Load()-before)
 	}
 }

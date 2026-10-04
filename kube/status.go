@@ -125,13 +125,18 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 		return nil
 	}
 	if err := c.m.client.Apply(ctx, in.res.path(m.Namespace, m.Name, "status"), manager, true, body, nil); err != nil {
+		switch {
 		// A manager that may not patch the status can't have applied the
 		// status fields that an empty status gives up, unless it lost the
 		// permission after it did.
-		if empty && client.IsForbidden(err) {
+		case empty && client.IsForbidden(err):
 			record("skipped")
 			c.log.Debug("skipped forbidden empty status", "key", key.String(), "object", in.ti.String()+" "+m.Key().String(), "err", err)
 			return nil
+		// The kind may have stopped serving a status subresource since its
+		// discovery results were cached.
+		case client.IsNotFound(err):
+			c.m.client.Forget(in.res.apiVersion)
 		}
 		return fmt.Errorf("applying status of %v %s: %w", in.ti, m.Key(), err)
 	}
