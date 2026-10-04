@@ -225,10 +225,15 @@ func TestSendAnswers(t *testing.T) {
 }
 
 func TestRejectedResultIsPermanent(t *testing.T) {
-	f := newSendFixture(t, &endpoint{codes: []int{400}})
-	f.verdict = Pass("clean")
-	if err := f.runAndSend(f.context(t)); !kube.IsPermanent(err) {
-		t.Errorf("err = %v, want a permanent error, because sending the same result again won't help", err)
+	for code, msg := range map[int]string{
+		http.StatusBadRequest: "the core program rejected the lint check's result",
+		http.StatusForbidden:  "the core program doesn't accept the lint check's results from this service account",
+	} {
+		f := newSendFixture(t, &endpoint{codes: []int{code}})
+		f.verdict = Pass("clean")
+		if err := f.runAndSend(f.context(t)); !kube.IsPermanent(err) || !strings.Contains(err.Error(), msg) {
+			t.Errorf("after %d, err = %v, want a permanent error that says %q, because sending the same result again won't help", code, err, msg)
+		}
 	}
 }
 

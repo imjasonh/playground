@@ -231,7 +231,10 @@ within 10 seconds, the core program answers `503 Service Unavailable`, and the
 check tries again. If 10 tries fail, the check's reconcile fails, and kube
 retries it, which runs the check again. If the branch changed since the check
 read it, the core program answers `409 Conflict`, and the check drops the
-result, because the change runs the check again.
+result, because the change runs the check again. If the core program rejects
+the result with `400 Bad Request`, or the token's service account with
+`403 Forbidden`, the check logs why and sends nothing more for that branch
+until the branch changes or the check restarts.
 
 ### Security model
 

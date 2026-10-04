@@ -99,6 +99,8 @@ func (s *sender) send(ctx context.Context, meta *kube.ObjectMeta, res *gitk8s.Ch
 			return nil
 		case err == nil && code == http.StatusBadRequest:
 			return kube.Permanent(fmt.Errorf("the core program rejected the %s check's result: %s", s.check, msg))
+		case err == nil && code == http.StatusForbidden:
+			return kube.Permanent(fmt.Errorf("the core program doesn't accept the %s check's results from this service account: %s", s.check, msg))
 		case err == nil && code != http.StatusServiceUnavailable:
 			return fmt.Errorf("sending the %s check's result to the core program: %s: %s", s.check, http.StatusText(code), msg)
 		case err == nil:
