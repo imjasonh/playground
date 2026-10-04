@@ -58,11 +58,11 @@ spec:
   policyName: git-k8s-check-results
   validationActions: [Deny]
 ---
-# The approve annotation on a GitBranch records a person's approval, so no
-# git-k8s service account can set or change it. kube lets each controller
-# patch the type that it reconciles, which for a check is GitBranch, so this
-# policy also stops checks from changing a GitBranch's spec, labels, or
-# annotations.
+# The approve and approved-by annotations on a GitBranch record a person's
+# approval, so no git-k8s service account can set or change them, even one
+# that holds the approve verb. kube lets each controller patch the type that
+# it reconciles, which for a check is GitBranch, so this policy also stops
+# checks from changing a GitBranch's spec, labels, or annotations.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -96,8 +96,19 @@ spec:
         oldObject != null && has(oldObject.metadata.annotations) &&
         "git-k8s.imjasonh.com/approve" in oldObject.metadata.annotations ?
         oldObject.metadata.annotations["git-k8s.imjasonh.com/approve"] : ""
+    - name: approver
+      expression: >-
+        has(object.metadata.annotations) && "git-k8s.imjasonh.com/approved-by" in object.metadata.annotations ?
+        object.metadata.annotations["git-k8s.imjasonh.com/approved-by"] : ""
+    - name: oldApprover
+      expression: >-
+        oldObject != null && has(oldObject.metadata.annotations) &&
+        "git-k8s.imjasonh.com/approved-by" in oldObject.metadata.annotations ?
+        oldObject.metadata.annotations["git-k8s.imjasonh.com/approved-by"] : ""
   validations:
-    - expression: '!(variables.core || variables.check != "") || variables.approval == variables.oldApproval'
+    - expression: >-
+        !(variables.core || variables.check != "") ||
+        (variables.approval == variables.oldApproval && variables.approver == variables.oldApprover)
       message: git-k8s controllers can't approve branches
     - expression: >-
         variables.check == "" ||

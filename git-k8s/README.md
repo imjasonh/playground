@@ -282,9 +282,9 @@ changing `status.checks`. A check must run as the service account
 write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
 check's result. The second stops every git-k8s service account from setting
-the approve annotation, which is for people, and stops checks from changing
-`GitBranch` objects at all. The third checks who approves, as
-[Approve a branch](#approve-a-branch) describes.
+the `approve` and `approved-by` annotations, which are for people, and stops
+checks from changing `GitBranch` objects at all. The third checks who
+approves, as [Approve a branch](#approve-a-branch) describes.
 
 Without the policies, none of that holds, so the repositories controller
 sets a `PoliciesInstalled` condition on each `GitRepository`. It's `False`

@@ -449,18 +449,31 @@ controllers_can_approve() {
   done
 }
 eventually 30 controllers_can_approve
-for sa in check-gofmt git-k8s; do
-  approve="{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
-  code="$(patch_branch "$(k -n "${sa}" create token "${sa}")" "${approve}")"
+# cant_approve passes if the API server rejects the service account $1's
+# patch $2 because controllers can't approve.
+cant_approve() {
+  local code
+  code="$(patch_branch "$(k -n "$1" create token "$1")" "$2")"
   cat "${WORKDIR}/patch.json"
   echo
-  [[ "${code}" == 422 ]]
-  grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
+  [[ "${code}" == 422 ]] && grep -q "git-k8s controllers can't approve branches" "${WORKDIR}/patch.json"
+}
+for sa in check-gofmt git-k8s; do
+  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
 done
+# git-k8s-approvals lets anyone with the approve verb take over an approval,
+# so on an approved branch only git-k8s-branches stops a controller that
+# names itself in approved-by.
+annotate_main() { k -n "${NS}" annotate --overwrite gitbranch "$(branch_object main)" "$@"; }
+annotate_main "${APPROVE}=$(remote_head main)" "${APPROVED_BY}=${admin}"
+for sa in check-gofmt git-k8s; do
+  cant_approve "${sa}" "{\"metadata\":{\"annotations\":{\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
+done
+annotate_main "${APPROVE}-" "${APPROVED_BY}-"
 code="$(patch_branch "${token}" '{"metadata":{"labels":{"e2e":"changed"}}}')"
 [[ "${code}" == 422 ]]
 grep -q "the gofmt check can't change GitBranch objects" "${WORKDIR}/patch.json"
-echo "Neither a check nor the core controller can approve a branch, and a check can't change one."
+echo "Neither a check nor the core controller can approve a branch or take over its approval, and a check can't change one."
 echo "::endgroup::"
 
 echo "::group::Tests run in a sandboxed Pod"
