@@ -179,13 +179,13 @@ if old := kube.FindCondition(site.Status.Conditions, "Ready"); old == nil || old
 
 The event's type is `kube.Normal` or `kube.Warning`, and its reason is a
 CamelCase word such as `Serving`. The framework formats the note with
-`fmt.Sprintf` and cuts it to 1,024 bytes. After `Reconcile` or `Finalize`
-returns, the framework writes the events as `events.k8s.io/v1` Events in the
-object's namespace, or in `default` for a cluster-scoped object. It writes
-them when the reconcile returns an error too, so a Warning can explain the
-error. Each Event names the controller as its reporting controller, and
-`Reconcile` or `Finalize` as its action. In `kubectl describe website blog`,
-the events look like this:
+`fmt.Sprintf`, replaces invalid UTF-8 in it with U+FFFD, and cuts it to 1,024
+bytes. After `Reconcile` or `Finalize` returns, the framework writes the events
+as `events.k8s.io/v1` Events in the object's namespace, or in `default` for a
+cluster-scoped object. It writes them when the reconcile returns an error too,
+so a Warning can explain the error. Each Event names the controller as its
+reporting controller, and `Reconcile` or `Finalize` as its action. In
+`kubectl describe website blog`, the events look like this:
 
 ```
 Events:

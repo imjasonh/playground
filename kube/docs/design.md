@@ -538,6 +538,11 @@ such as `Get` has failed the reconcile, `Eventf` adds nothing, because the
 reconcile saw an incomplete state. In a webhook, `Eventf` fails the request,
 as `Own` does, because a webhook can only read.
 
+`Eventf` cuts the note to 1,024 bytes, the most that the API server accepts. It
+first replaces invalid UTF-8 with U+FFFD, because a note that quotes untrusted
+text, such as a file name, can hold any bytes, and JSON encodes each invalid
+byte as U+FFFD, which takes 3 bytes.
+
 The writer is one goroutine per manager, which reads a channel with room for
 1,000 events. When the channel is full, the framework drops the event instead
 of waiting, so a slow or unavailable API server delays only events. The

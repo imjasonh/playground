@@ -36,7 +36,8 @@ type Event struct {
 // Eventf records an event about the object being reconciled, which people
 // see in kubectl describe and kubectl get events. eventType is Normal or
 // Warning, reason is a CamelCase word such as Created or Rejected, and the
-// note is format and args as fmt.Sprintf formats them, cut to 1,024 bytes.
+// note is format and args as fmt.Sprintf formats them, with invalid UTF-8
+// replaced by U+FFFD and cut to 1,024 bytes.
 //
 // After Reconcile or Finalize returns, even with an error, the framework
 // writes the events as events.k8s.io/v1 Events in the object's namespace,
@@ -68,15 +69,25 @@ type eventIntent struct {
 // maxNote is the most bytes that the API server accepts in a note.
 const maxNote = 1024
 
+// truncateNote cuts s to maxNote bytes. It first replaces invalid UTF-8,
+// because JSON turns each invalid byte into U+FFFD, which is 3 bytes.
 func truncateNote(s string) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
 	if len(s) <= maxNote {
 		return s
 	}
-	n := maxNote - len("...")
+	return truncate(s, maxNote-len("...")) + "..."
+}
+
+// truncate cuts s to at most n bytes without splitting a character.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
 	for n > 0 && !utf8.RuneStart(s[n]) {
 		n--
 	}
-	return s[:n] + "..."
+	return s[:n]
 }
 
 // eventRef is an Event's regarding field. It leaves out the object's

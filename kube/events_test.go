@@ -508,13 +508,33 @@ func TestEventNames(t *testing.T) {
 }
 
 func TestTruncateNote(t *testing.T) {
-	if got := truncateNote("pushed"); got != "pushed" {
-		t.Errorf("truncateNote(pushed) = %q", got)
+	for note, want := range map[string]string{
+		"pushed":            "pushed",
+		"bad \xff\xfe path": "bad \uFFFD path",
+	} {
+		if got := truncateNote(note); got != want {
+			t.Errorf("truncateNote(%q) = %q, want %q", note, got, want)
+		}
 	}
-	for _, s := range []string{strings.Repeat("a", 2000), strings.Repeat("é", 600)} {
+	for _, s := range []string{
+		strings.Repeat("a", 2000),
+		strings.Repeat("é", 600),
+		strings.Repeat("a\xff", 600),
+		strings.Repeat("a", maxNote-1) + "\xff",
+	} {
 		got := truncateNote(s)
 		if len(got) > maxNote || len(got) < maxNote-3 || !utf8.ValidString(got) || !strings.HasSuffix(got, "...") {
 			t.Errorf("truncateNote of %d bytes = %d bytes that end %q", len(s), len(got), got[max(0, len(got)-5):])
+		}
+	}
+	for _, s := range []string{
+		strings.Repeat("a", 1000) + strings.Repeat("\xff", 20),
+		strings.Repeat("\xff", 600),
+	} {
+		b, _ := json.Marshal(truncateNote(s))
+		var note string
+		if err := json.Unmarshal(b, &note); err != nil || len(note) > maxNote {
+			t.Errorf("a note of %d bytes is %d bytes after JSON, want at most %d", len(s), len(note), maxNote)
 		}
 	}
 }
