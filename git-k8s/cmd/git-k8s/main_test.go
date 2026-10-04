@@ -482,6 +482,19 @@ func TestReportsBranchesItCantCompare(t *testing.T) {
 	}
 }
 
+// A sync with a branch that the mirror couldn't compare and a branch that
+// diverged reports CompareFailed. The GitBranch records a divergence, but
+// only this condition names a branch that the mirror couldn't compare.
+func TestCompareFailedComesBeforeDiverged(t *testing.T) {
+	rep := &mirror.Report{
+		Failed:   map[string]error{"c/x": errors.New("git merge-base: exit status 128")},
+		Diverged: map[string]string{"c/y": "0123456789abcdef0123456789abcdef01234567"},
+	}
+	if c := syncedCondition(poll{}, rep); c.Reason != "CompareFailed" || !strings.Contains(c.Message, "c/x (") {
+		t.Errorf("ExternalSynced = %+v, want the reason CompareFailed, naming c/x", c)
+	}
+}
+
 func TestInvalidPolicyIsPermanent(t *testing.T) {
 	for _, mod := range []func(*gitk8s.GitRepository){
 		func(r *gitk8s.GitRepository) { r.Spec.PollInterval = "1ms" },

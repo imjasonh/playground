@@ -925,6 +925,49 @@ func TestDecideForgetsACanceledComparison(t *testing.T) {
 	}
 }
 
+// TestPlanReturnsWhenItsContextEnds ends plan's context while git compares
+// a branch's heads, as when the process stops, and checks that plan returns
+// the error instead of reporting the branches as failed.
+func TestPlanReturnsWhenItsContextEnds(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.sync(SyncOptions{})
+	w.pushCopy("main", w.commit(base, "ours"))
+	w.pushExternal("main", w.commit(base, "theirs"))
+	w.sync(SyncOptions{Fetch: true})
+
+	// git merge-base, which comparing the heads runs, says that it started
+	// and then waits.
+	dir := t.TempDir()
+	started := filepath.Join(dir, "started")
+	bin := filepath.Join(dir, "git")
+	script := "#!/bin/sh\ncase \" $* \" in\n*\" merge-base \"*) touch " + started + "; exec sleep 600 ;;\nesac\nexec git \"$@\"\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r, err := w.m.Open(t.Context(), w.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	w.m.Git.Bin = bin
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		for ctx.Err() == nil {
+			if _, err := os.Stat(started); err == nil {
+				cancel()
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	s := &syncer{repo: r.Repo, memo: &memo{}, timeout: time.Hour}
+	if branches, err := s.plan(ctx); !errors.Is(err, context.Canceled) || branches != nil {
+		t.Errorf("plan = %+v, %v; want no branches and context.Canceled", branches, err)
+	}
+}
+
 // TestSyncKeepsDeletions deletes a branch on one side while the other side
 // changes it. A deletion removes every commit, so the branch diverges.
 func TestSyncKeepsDeletions(t *testing.T) {
@@ -1176,14 +1219,19 @@ func TestSyncRemovesOnlyStaleLocks(t *testing.T) {
 }
 
 // Fetches and pushes don't start git's maintenance, which would run in the
-// background. Sync runs it in the foreground, even after a killed
-// maintenance left its lock, which makes maintenance skip the copy without
-// an error.
+// background. Sync runs it in the foreground when the copy needs it, even
+// after a killed maintenance left its lock, which makes maintenance skip
+// the copy without an error.
 func TestSyncMaintainsCopy(t *testing.T) {
 	w := newWorld(t)
 	base := w.commit("", "base")
 	w.pushExternal("main", base)
 	w.sync(SyncOptions{})
+	// The first fetch leaves its few objects loose, too few to need
+	// maintenance.
+	if got := w.work.Git("--git-dir="+w.copyDir(), "count-objects"); strings.HasPrefix(got, "0 objects,") {
+		t.Errorf("after the first Sync, git count-objects = %q, want the fetched objects loose", got)
+	}
 	config := func(args ...string) string {
 		t.Helper()
 		return w.work.Git(append([]string{"--git-dir=" + w.copyDir(), "config"}, args...)...)
