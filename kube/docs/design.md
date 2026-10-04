@@ -1004,12 +1004,16 @@ Token reviews are the one exception. `ReviewToken` accepts each
 rules for audiences, and `RequestToken` adds a token for the requested
 audience to the list. `Trigger` records the key for `kube.Triggered` when the
 list holds the object, unless the list holds `kube.FakeStandby`, which stands
-for a replica that holds no shard.
+for a replica that holds no shard. `kube.Triggered` matches the object's group
+and kind, as a controller does. The fake can't tell whether the program runs a
+controller for that kind, so `Trigger` doesn't check.
 
 `kube.FakeRequest` gives a `kube.Serve` handler the same read-only scope that
 `Serve` gives each request, backed by the list. A handler that calls `Apply`
 fails its unit test as it would fail in a cluster, which it wouldn't with the
-scope of a reconcile.
+scope of a reconcile. Each fake context has its own list, and a reconcile's
+intents don't change any list, so only the end-to-end tests can follow data
+from a handler through a reconcile.
 
 End-to-end tests start `etcd` and `kube-apiserver` from the controller-tools
 envtest release, with no kubelet or controller manager. The API server calls

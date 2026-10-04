@@ -805,10 +805,11 @@ objects with `Get` and `List`.
 To test a `kube.Serve` handler, pass it a request with a context from
 `kube.FakeRequest`, which gives the handler the scope that a request has in a
 cluster. Pass it the objects that the handler reads and a `kube.FakeToken`
-for each token that `ReviewToken` accepts. `kube.Triggered` returns the keys
-of the objects that `Trigger` queued, and `rec.Err` returns the error from a
-call that a handler can't make, such as `Apply`. With `kube.FakeStandby{}`,
-`Trigger` returns false, as on a replica that doesn't hold the lease:
+for each token that `ReviewToken` accepts. `kube.Triggered[T]` returns the
+keys of the objects of `T`'s kind that `Trigger` queued, and `rec.Err`
+returns the error from a call that a handler can't make, such as `Apply`.
+With `kube.FakeStandby{}`, `Trigger` returns false, as on a replica that
+doesn't hold the lease:
 
 ```go
 ctx, rec := kube.FakeRequest(t.Context(), probe, kube.FakeToken{
@@ -832,6 +833,17 @@ in a cluster has its own.
 
 `RequestToken` returns the tokens `fake-token-1`, `fake-token-2`, and so on,
 which `ReviewToken` accepts for the requested audience.
+
+The fakes differ from a cluster in two ways:
+
+- `Trigger` doesn't check that a controller in the program reconciles the
+  object's kind, so it returns true for any object in the world unless the
+  world holds `kube.FakeStandby{}`.
+- Nothing that a reconcile in a `kube.Fake` context declares reaches the world
+  of a `kube.FakeRequest` context, so a unit test can't follow data from a
+  handler through a reconcile to the handler's next `Get`. Test the hand-off
+  in [Trigger a reconcile](#trigger-a-reconcile) against a real API server, as
+  `TestServeHandsDataToReconcile` in `e2e/serve_test.go` does.
 
 The end-to-end tests run each example against a real `kube-apiserver` and
 `etcd`, without a kubelet or controller manager. To run them, download the
