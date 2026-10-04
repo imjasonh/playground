@@ -57,6 +57,11 @@ func TestKey(t *testing.T) {
 	if key, err := signing.Key(ctx, repo); key == nil || err != nil {
 		t.Errorf("Key = %v, %v; want the key", key, err)
 	}
+
+	repo.Spec.SecretRef = &gitk8s.SecretRef{Name: "app-signing"}
+	if key, err := signing.Key(ctx, repo); key != nil || err == nil || !strings.Contains(err.Error(), "put the signing key in a Secret of its own") {
+		t.Errorf("Key with secretRef and signingKeyRef naming the same Secret = %v, %v; want an error that says to use separate Secrets", key, err)
+	}
 }
 
 // TestOnlyCommitMakersImport checks that only the programs that make commits

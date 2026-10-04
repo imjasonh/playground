@@ -53,7 +53,7 @@ type GitRepositorySpec struct {
 	Branches     []BranchRule `json:"branches,omitempty" doc:"Rules that select branches to track. For each remote branch, the first rule whose match pattern matches applies. Branches that match no rule aren't tracked."`
 	// Only the programs that make commits read the Secret that SigningKeyRef
 	// names, through package signing.
-	SigningKeyRef *SecretRef `json:"signingKeyRef,omitempty" doc:"Secret in the same namespace with an ssh-privatekey key that holds an unencrypted private key in OpenSSH format, such as a kubernetes.io/ssh-auth Secret. Checks use it to sign the commits that they push. Without it, those commits aren't signed."`
+	SigningKeyRef *SecretRef `json:"signingKeyRef,omitempty" doc:"Secret in the same namespace with an ssh-privatekey key that holds an unencrypted private key in OpenSSH format, such as a kubernetes.io/ssh-auth Secret. It must name a different Secret from secretRef, because test Pods get keys from that Secret. Checks use it to sign the commits that they push. Without it, those commits aren't signed."`
 }
 
 // SecretRef names a Secret in the same namespace.

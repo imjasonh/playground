@@ -237,15 +237,18 @@ same fix commit from the same inputs; ECDSA signatures don't. Without
 [gitsign](https://github.com/sigstore/gitsign) isn't supported; see
 [future work](future-work.md#sign-commits-with-gitsign).
 
+The key needs a Secret of its own, because the `secretRef` Secret holds the
+credentials for the remote, and each test Pod's init container gets some of
+its keys. A check reports an error instead of signing if `signingKeyRef`
+names the `secretRef` Secret.
+
 Only `check-base` and `check-gofmt` read the signing Secret, through the
 `signing` package, which no other program links. They already read the
 `secretRef` Secret, so `generate` grants them nothing new. For each commit,
 a check writes the key to a file with mode 0600 in a new directory with mode
 0700 under `/tmp`, passes git the file's path, and removes the directory
 when the commit is done. The key never appears in a command's arguments or
-environment, in a log, or in an error. A test Pod's init container gets the
-credentials in the `secretRef` Secret, but no part of a test Pod gets the
-signing key, so keep the key out of that Secret.
+environment, in a log, or in an error.
 
 ### Set up the forge
 

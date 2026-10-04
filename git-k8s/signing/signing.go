@@ -19,12 +19,15 @@ import (
 // Key returns the key that signs a repository's commits, or nil if the
 // repository doesn't name one. It reads the Secret that SigningKeyRef names
 // with kube.Fetch, so it must run in a reconcile, and the Secret isn't
-// cached.
+// cached. It returns an error if SigningKeyRef names the SecretRef Secret.
 func Key(ctx context.Context, repo *gitk8s.Repository) (*git.SigningKey, error) {
 	if repo.Spec.SigningKeyRef == nil {
 		return nil, nil
 	}
 	name := repo.Spec.SigningKeyRef.Name
+	if ref := repo.Spec.SecretRef; ref != nil && ref.Name == name {
+		return nil, fmt.Errorf("signingKeyRef names Secret %s, which secretRef also names; put the signing key in a Secret of its own, because test Pods get keys from the secretRef Secret", name)
+	}
 	s, err := kube.Fetch[k8s.Secret](ctx, repo.Namespace, name)
 	if err != nil {
 		return nil, fmt.Errorf("reading Secret %s: %w", name, err)
