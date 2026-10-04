@@ -381,9 +381,13 @@ k -n eventlog-e2e delete event hello
 first="$(k -n eventlog get pods -l app.kubernetes.io/name=eventlog -o jsonpath='{.items[0].metadata.name}')"
 k -n eventlog rollout restart deployment/eventlog
 k -n eventlog rollout status deployment/eventlog --timeout=180s
+# The rollout can finish while the old Pod, which has completed, is still
+# listed.
+first_gone() { ! k -n eventlog get pod "${first}" >/dev/null 2>&1; }
+eventually 120 first_gone
 pods="$(k -n eventlog get pods -l app.kubernetes.io/name=eventlog -o jsonpath='{.items[*].metadata.name}')"
 echo "pods after the restart: ${pods}"
-[[ "${pods}" != *"${first}"* ]]
+[[ -n "${pods}" ]]
 eventually 60 kept_hello
 echo "A new Pod mounts the same volume and serves the copy of a deleted Event."
 echo "::endgroup::"
