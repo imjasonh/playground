@@ -3,11 +3,13 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +23,10 @@ import (
 )
 
 func TestPod(t *testing.T) {
-	u := &updater{goImage: "go", gitImage: "git", resultImage: "agent-runner", timeout: time.Minute, proxy: newProxy([]string{"https://proxy.example.com"}, time.Hour, time.Now)}
+	u := &updater{
+		goImage: "go", gitImage: "git", resultImage: "agent-runner", timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi",
+		proxy: newProxy([]string{"https://proxy.example.com"}, time.Hour, time.Now),
+	}
 	b := &Branch{Object: kube.Meta("app-main", nil)}
 	b.Spec.Branch = "main"
 	repo := &gitk8s.Repository{Spec: gitk8s.GitRepositorySpec{URL: "https://git.example.com/app.git"}}
@@ -42,6 +47,47 @@ func TestPod(t *testing.T) {
 	for _, q := range []string{u.pod(b, repo, "0123abcd", 1, ups).Name, u.pod(b, repo, "4567cdef", 0, ups).Name, u.pod(b, repo, "0123abcd", 0, other).Name} {
 		if q == p.Name {
 			t.Errorf("a Pod with another attempt, head, or update has the name %s", q)
+		}
+	}
+
+	sizes := map[string]string{}
+	for _, v := range p.Spec.Volumes {
+		sizes[v.Name] = v.EmptyDir.SizeLimit
+	}
+	if want := map[string]string{"src": "2Gi", "tmp": "4Gi", "result": "64Mi"}; !maps.Equal(sizes, want) {
+		t.Errorf("volume sizes = %v, want %v", sizes, want)
+	}
+	for _, c := range slices.Concat(p.Spec.InitContainers, p.Spec.Containers) {
+		want := "6464Mi"
+		if c.Name == "result" {
+			want = "256Mi"
+		}
+		if r := c.Resources; r.Requests["ephemeral-storage"] == "" || string(r.Limits["ephemeral-storage"]) != want {
+			t.Errorf("the %s container requests %q of ephemeral storage and limits it to %q, want a limit of %s", c.Name, r.Requests["ephemeral-storage"], r.Limits["ephemeral-storage"], want)
+		}
+	}
+	u.sourceSize, u.goCacheSize = "10Gi", "6Gi"
+	p = u.pod(b, repo, "0123abcd", 0, ups)
+	if src, tmp := p.Spec.Volumes[0].EmptyDir.SizeLimit, p.Spec.Volumes[1].EmptyDir.SizeLimit; src != "10Gi" || tmp != "6Gi" {
+		t.Errorf("with -source-size=10Gi and -go-cache-size=6Gi, the src and tmp volumes hold %s and %s", src, tmp)
+	}
+	if got := p.Spec.InitContainers[0].Resources.Limits["ephemeral-storage"]; got != "16704Mi" {
+		t.Errorf("ephemeral-storage limit = %s, want 16704Mi, which holds every volume and the logs", got)
+	}
+}
+
+func TestSizes(t *testing.T) {
+	for s, want := range map[string]int64{
+		"2Gi": 2 << 30, "500M": 500e6, "1": 1, "1k": 1000, "64Ki": 64 << 10, "3Ti": 3 << 40, "2097151Ti": 2097151 << 40,
+		"": 0, "0": 0, "-1Gi": 0, "+1Gi": 0, "1.5Gi": 0, "2GB": 0, "2gi": 0, "Gi": 0, "1e9": 0, "2Pi": 0, "2097152Ti": 0,
+	} {
+		if got := parseSize(s); got != want {
+			t.Errorf("parseSize(%q) = %d, want %d", s, got, want)
+		}
+	}
+	for n, want := range map[int64]string{1000: "1000", 2048: "2Ki", 1536 << 20: "1536Mi", 1 << 30: "1Gi", 5 << 40: "5Ti", 1 << 50: "1024Ti"} {
+		if got := formatSize(n); got != want {
+			t.Errorf("formatSize(%d) = %q, want %q", n, got, want)
 		}
 	}
 }

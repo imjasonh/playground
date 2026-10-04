@@ -635,6 +635,13 @@ fails, the controller logs why and tries again after `-interval`. An update
 also fails right away when its Pod can't start because a Secret doesn't exist
 or an image can't be pulled.
 
+Each update Pod's volumes have size limits. The repository can use up to
+`-source-size`, 2Gi by default, and the home directory, which holds Go's
+module and build caches, up to `-go-cache-size`, 4Gi by default. The init
+containers request 1Gi of ephemeral storage, and their limits cover all the
+volumes. When a Pod uses more than a limit, the kubelet evicts it, and its
+updates fail with the kubelet's reason.
+
 Update Pods need to reach the repository, the module proxies, and the
 checksum database in `-gosumdb`, and the controller needs to reach them on
 TCP port 8080. A NetworkPolicy like the one in
@@ -678,6 +685,8 @@ flags in the `check-review` table. `git-k8s-deps` takes these flags:
 | `-go-image` | `cgr.dev/chainguard/go:latest` | Image that runs `go get`; it needs `go`, `git`, `sh`, `base64`, `sha256sum`, `tail`, and `cut` |
 | `-git-image` | `cgr.dev/chainguard/git:latest` | Image that fetches the source; it needs `git` and `sh` |
 | `-timeout` | `15m` | Longest that an update Pod can run |
+| `-source-size` | `2Gi` | Most disk space that an update Pod's copy of the repository can use |
+| `-go-cache-size` | `4Gi` | Most disk space that an update Pod's Go module and build caches can use |
 | `-max-pods` | 10 | Most update Pods to run at once, in all namespaces; 0 means no limit |
 | `-runtime-class` | None | RuntimeClass for update Pods, such as `gvisor` |
 

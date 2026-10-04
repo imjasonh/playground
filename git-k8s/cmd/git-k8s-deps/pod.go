@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"path"
 	"slices"
 	"strconv"
@@ -49,6 +50,13 @@ const (
 // maxBatch is the most updates that one Pod makes, which keeps its result
 // well under agent.FetchResult's limit.
 const maxBatch = 10
+
+// The size of an update Pod's result volume, and the room that the Pod
+// leaves for its containers' logs.
+const (
+	resultSize = 64 << 20
+	logSize    = 256 << 20
+)
 
 // allowProtocol is GIT_ALLOW_PROTOCOL for git in update Pods: the
 // transports that a GitRepository's URL can name. It leaves out remote
@@ -181,6 +189,10 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 		)
 	}
 	port := u.port()
+	// The kubelet evicts a Pod whose volumes and logs use more than the
+	// Pod's ephemeral-storage limit, which is its init containers' limit, so
+	// that limit covers every volume.
+	disk := k8s.Quantity(formatSize(parseSize(u.sourceSize) + parseSize(u.goCacheSize) + resultSize + logSize))
 	p := &agent.Pod{Object: kube.Meta("", maps.Clone(podLabels))}
 	p.Spec = agent.PodSpec{
 		RestartPolicy:                "Never",
@@ -196,9 +208,9 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 			SeccompProfile: &agent.SeccompProfile{Type: "RuntimeDefault"},
 		},
 		Volumes: []agent.Volume{
-			{Name: "src", EmptyDir: &agent.EmptyDir{}},
-			{Name: "tmp", EmptyDir: &agent.EmptyDir{}},
-			{Name: "result", EmptyDir: &agent.EmptyDir{SizeLimit: "64Mi"}},
+			{Name: "src", EmptyDir: &agent.EmptyDir{SizeLimit: u.sourceSize}},
+			{Name: "tmp", EmptyDir: &agent.EmptyDir{SizeLimit: u.goCacheSize}},
+			{Name: "result", EmptyDir: &agent.EmptyDir{SizeLimit: formatSize(resultSize)}},
 		},
 		InitContainers: []agent.Container{{
 			Name:                     "prepare",
@@ -210,8 +222,8 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &agent.Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "128Mi"},
-				Limits:   map[string]k8s.Quantity{"memory": "1Gi"},
+				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "128Mi", "ephemeral-storage": "1Gi"},
+				Limits:   map[string]k8s.Quantity{"memory": "1Gi", "ephemeral-storage": disk},
 			},
 		}, {
 			Name:            "update",
@@ -243,8 +255,8 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &agent.Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "256Mi"},
-				Limits:   map[string]k8s.Quantity{"memory": "2Gi"},
+				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "256Mi", "ephemeral-storage": "1Gi"},
+				Limits:   map[string]k8s.Quantity{"memory": "2Gi", "ephemeral-storage": disk},
 			},
 		}},
 		Containers: []agent.Container{{
@@ -262,8 +274,8 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &agent.Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "10m", "memory": "32Mi"},
-				Limits:   map[string]k8s.Quantity{"memory": "256Mi"},
+				Requests: map[string]k8s.Quantity{"cpu": "10m", "memory": "32Mi", "ephemeral-storage": "64Mi"},
+				Limits:   map[string]k8s.Quantity{"memory": "256Mi", "ephemeral-storage": "256Mi"},
 			},
 		}},
 	}
@@ -271,6 +283,35 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s", b.Name, attempt, spec))
 	p.Name = "deps-" + hex.EncodeToString(sum[:8])
 	return p
+}
+
+// parseSize returns the bytes in a size such as 2Gi or 500M. It returns 0
+// for a size that isn't a positive whole number with a suffix of at most T
+// or Ti, and for one so big that adding up the Pod's volumes could
+// overflow.
+func parseSize(s string) int64 {
+	i := 0
+	for i < len(s) && '0' <= s[i] && s[i] <= '9' {
+		i++
+	}
+	unit := map[string]int64{"": 1, "k": 1e3, "M": 1e6, "G": 1e9, "T": 1e12, "Ki": 1 << 10, "Mi": 1 << 20, "Gi": 1 << 30, "Ti": 1 << 40}[s[i:]]
+	n, err := strconv.ParseInt(s[:i], 10, 64)
+	if unit == 0 || err != nil || n <= 0 || n > math.MaxInt64/4/unit {
+		return 0
+	}
+	return n * unit
+}
+
+// formatSize writes n bytes as a size in the largest binary unit that
+// divides it.
+func formatSize(n int64) string {
+	units := []string{"", "Ki", "Mi", "Gi", "Ti"}
+	i := 0
+	for i < len(units)-1 && n%1024 == 0 {
+		n /= 1024
+		i++
+	}
+	return strconv.FormatInt(n, 10) + units[i]
 }
 
 // unfinishedPods counts the update Pods in all namespaces that haven't
@@ -306,6 +347,9 @@ func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []upda
 		return out
 	}
 	st := &pod.Status
+	if st.Phase == "Failed" && st.Reason == "Evicted" {
+		return failAll("Pod %s was evicted: %s", pod.Name, cmp.Or(strings.TrimSpace(st.Message), "no reason given"))
+	}
 	if msg := stuck(st); msg != "" {
 		return failAll("Pod %s can't start: %s", pod.Name, msg)
 	}

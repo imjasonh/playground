@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/mod/module"
+
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
@@ -92,7 +94,7 @@ func newFixture(t *testing.T) *fixture {
 		cfg:    checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s-deps", Email: "deps@example.com"}},
 		prefix: "deps/", goProxy: fp.URL, goSumDB: "off",
 		goImage: "registry.example.com/go:test", gitImage: "registry.example.com/git:test", resultImage: "registry.example.com/agent-runner:test",
-		timeout: time.Minute, maxPods: 10, interval: time.Hour, minAge: 72 * time.Hour,
+		timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi", maxPods: 10, interval: time.Hour, minAge: 72 * time.Hour,
 		now: func() time.Time { return f.clock }, resultPort: port,
 	}
 	return f
@@ -276,6 +278,18 @@ func (f *fixture) checkBranch(head string, world ...any) *kube.Recorder {
 		f.t.Errorf("%s = %q, want %q", greetBranch, got, head)
 	}
 	return rec
+}
+
+// failure returns why the update to greet's version failed, or "".
+func (f *fixture) failure(version string) string {
+	f.u.mu.Lock()
+	defer f.u.mu.Unlock()
+	for _, st := range f.u.states {
+		if o := st.outcomes[module.Version{Path: greet, Version: version}]; o != nil {
+			return o.err
+		}
+	}
+	return ""
 }
 
 // checkStays checks that a reconcile declares no Pod and leaves greet's
@@ -564,6 +578,8 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 		// status makes the Pod fail instead of serving result.
 		status func(p *agent.Pod)
 		digest string
+		// want is part of why the update failed, if the case checks it.
+		want string
 	}{
 		{name: "go fails", result: result(updateJSON{Module: greet, Version: "v1.1.0", Output: []byte("go: example.com/greet@v1.1.0: missing go.sum entry\n")})},
 		{name: "another version", result: result(withFiles("v1.1.0", "go.mod", modAt("v1.0.0")))},
@@ -613,6 +629,17 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 			finished(p, "sha256:"+strings.Repeat("0", 64))
 			p.Status.ContainerStatuses[0].State = agent.ContainerState{Waiting: &agent.Waiting{Reason: "ErrImagePull"}}
 		}},
+		{name: "go fills the cache volume", status: func(p *agent.Pod) {
+			p.Status = agent.PodStatus{Phase: "Failed", Reason: "Evicted", Message: `Usage of EmptyDir volume "tmp" exceeds the limit "4Gi". `, InitContainerStatuses: []agent.ContainerStatus{
+				{Name: "prepare", State: terminated(&agent.Terminated{Reason: "Completed"})},
+				{Name: "update", State: terminated(&agent.Terminated{ExitCode: 137, Reason: "Error"})},
+			}}
+		}, want: `was evicted: Usage of EmptyDir volume "tmp" exceeds the limit "4Gi".`},
+		{name: "the Pod is evicted before the result is fetched", status: func(p *agent.Pod) {
+			finished(p, "sha256:"+strings.Repeat("0", 64))
+			p.Status.Phase, p.Status.Reason = "Failed", "Evicted"
+			p.Status.Message = "Pod ephemeral local storage usage exceeds the total limit of containers 6464Mi. "
+		}, want: "was evicted: Pod ephemeral local storage usage exceeds the total limit of containers 6464Mi."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
@@ -628,6 +655,9 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 			}
 			if rec := f.checkBranch("", p); rec.RequeueAfter() != time.Second {
 				t.Errorf("RequeueAfter() = %v, want 1s, to stop declaring the Pod", rec.RequeueAfter())
+			}
+			if got := f.failure("v1.1.0"); got == "" || !strings.Contains(got, tc.want) {
+				t.Errorf("the update failed with %q, want %q", got, tc.want)
 			}
 
 			t.Log("Until -interval passes, the controller doesn't try again.")
@@ -791,7 +821,8 @@ func TestFlags(t *testing.T) {
 	if err := u.setup(); err != nil {
 		t.Fatalf("setup() with the defaults = %v", err)
 	}
-	if u.prefix != "deps/" || u.interval != time.Hour || u.minAge != 72*time.Hour || u.proxy.urls[0] != "https://proxy.golang.org" || u.proxy.ttl != 30*time.Minute {
+	if u.prefix != "deps/" || u.interval != time.Hour || u.minAge != 72*time.Hour || u.proxy.urls[0] != "https://proxy.golang.org" || u.proxy.ttl != 30*time.Minute ||
+		u.sourceSize != "2Gi" || u.goCacheSize != "4Gi" {
 		t.Errorf("the defaults = %+v", u)
 	}
 	for _, args := range [][]string{
@@ -805,6 +836,8 @@ func TestFlags(t *testing.T) {
 		{"-min-age=-1s"},
 		{"-interval=1ms"},
 		{"-timeout=0s"},
+		{"-source-size=2GB"},
+		{"-go-cache-size=0"},
 	} {
 		u := parse(args...)
 		if err := u.setup(); err == nil {

@@ -81,6 +81,8 @@ type updater struct {
 	resultImage  string
 	runtimeClass string
 	timeout      time.Duration
+	sourceSize   string
+	goCacheSize  string
 	maxPods      int
 	interval     time.Duration
 	minAge       time.Duration
@@ -110,6 +112,8 @@ func (u *updater) addFlags(fs *flag.FlagSet) {
 	fs.StringVar(&u.resultImage, "result-image", "", "image that serves the result, built from agent/runner/Dockerfile (required)")
 	fs.StringVar(&u.runtimeClass, "runtime-class", "", "RuntimeClass for update Pods, such as gvisor")
 	fs.DurationVar(&u.timeout, "timeout", 15*time.Minute, "longest that an update Pod can run")
+	fs.StringVar(&u.sourceSize, "source-size", "2Gi", "most disk space that an update Pod's copy of the repository can use")
+	fs.StringVar(&u.goCacheSize, "go-cache-size", "4Gi", "most disk space that an update Pod's Go module and build caches can use")
 	fs.IntVar(&u.maxPods, "max-pods", 10, "most update Pods to run at once, in all namespaces; 0 means no limit")
 	fs.DurationVar(&u.interval, "interval", time.Hour, "how often to look for new versions")
 	fs.DurationVar(&u.minAge, "min-age", 72*time.Hour, "how old a version must be, by the time that the module proxy reports for it, before the controller updates to it")
@@ -131,6 +135,10 @@ func (u *updater) init() error {
 		return errors.New("-go-image, -git-image, and -gosumdb need values")
 	case u.timeout < time.Second || u.interval < time.Second || u.minAge < 0:
 		return errors.New("-timeout and -interval must be at least 1s, and -min-age can't be negative")
+	case parseSize(u.sourceSize) == 0:
+		return fmt.Errorf("-source-size is %q, but it must be a size such as 2Gi", u.sourceSize)
+	case parseSize(u.goCacheSize) == 0:
+		return fmt.Errorf("-go-cache-size is %q, but it must be a size such as 4Gi", u.goCacheSize)
 	}
 	urls, err := parseProxies(u.goProxy)
 	if err != nil {
