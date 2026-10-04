@@ -328,6 +328,60 @@ spec:
 	}
 }
 
+// TestGrantParamKinds grants get on the name "*" only for a paramKind whose
+// objects can't have that name.
+func TestGrantParamKinds(t *testing.T) {
+	objs, err := parseManifest([]byte(`apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: cacti
+spec:
+  paramKind:
+    apiVersion: example.dev/v1
+    kind: Cactus
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: roles
+spec:
+  paramKind:
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: roles
+spec:
+  policyName: roles
+  paramRef:
+    name: readers
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cactus := &typeInfo{}
+	if err := cactus.parseTag("Cactus", "Cactus", "group=example.dev,plural=cacti"); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	o := &generateOptions{program: "app", name: "app", namespace: "app-system", stderr: &stderr}
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, namespaces: map[string]grants{}}
+	o.grantInstalls(p, objs, map[string]*typeInfo{"example.dev/Cactus": cactus})
+	want := `[` +
+		`{"apiGroups":["admissionregistration.k8s.io"],"resources":["validatingadmissionpolicies"],"resourceNames":["cacti"],"verbs":["create","patch"]},` +
+		`{"apiGroups":["admissionregistration.k8s.io"],"resources":["validatingadmissionpolicies","validatingadmissionpolicybindings"],"resourceNames":["roles"],"verbs":["create","patch"]},` +
+		`{"apiGroups":["example.dev"],"resources":["cacti"],"resourceNames":["*"],"verbs":["get"]},` +
+		`{"apiGroups":["rbac.authorization.k8s.io"],"resources":["clusterroles"],"resourceNames":["readers"],"verbs":["get"]}]`
+	if b, _ := json.Marshal(p.cluster.rules()); string(b) != want {
+		t.Errorf("cluster rules =\n%s\nwant\n%s", b, want)
+	}
+	if !strings.Contains(stderr.String(), "warning: the API server lets only someone who can get every rbac.authorization.k8s.io/v1 ClusterRole create ValidatingAdmissionPolicy roles") {
+		t.Errorf("stderr = %q, want a warning about the ClusterRole paramKind", stderr.String())
+	}
+}
+
 func TestManifestsForInstalledObjects(t *testing.T) {
 	o := &generateOptions{program: "app", name: "app", namespace: "app-system", replicas: 1, shards: 1}
 	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, namespaces: map[string]grants{"policies": {}, "other": {}}}

@@ -568,12 +568,16 @@ needs one more rule. The API server lets a user create the policy, or change
 its `paramKind`, only if they can get every object of that kind, which it
 checks as `get` on the name `*` in the namespace `*`. RBAC matches resource
 names exactly, and ConfigMaps and custom resources can't have the name `*`, so
-a ClusterRole rule for that name passes the check without letting the program
-read any object. A binding with a `paramRef` needs `get` on the object that
-it names, and `generate` finds that object's resource from the `paramKind` of
-the policy earlier in the manifest. Rules for objects in a namespace other
-than the program's own and the one that it watches go in a Role in that
-namespace.
+for those kinds a ClusterRole rule for that name passes the check without
+letting the program read any object. Objects of some other kinds, such as
+ClusterRoles, can have the name `*`, and `generate` can't tell a custom
+resource from an aggregated API's kind by its API version, so it grants the
+rule only when the `paramKind` is ConfigMap or a custom type that the program
+defines, and warns otherwise. A binding with a `paramRef` needs `get` on the
+object that it names, and `generate` finds that object's resource from the
+`paramKind` of the policy earlier in the manifest. Rules for objects in a
+namespace other than the program's own and the one that it watches go in a
+Role in that namespace.
 
 ### Shards and leader election
 

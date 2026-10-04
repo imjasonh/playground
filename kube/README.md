@@ -535,11 +535,14 @@ exist before you apply the YAML.
 
 An admission policy with a `paramKind` needs more permissions. The API server
 lets you create the policy only if you can get every object of its
-`paramKind`, which it checks as `get` on an object named `*`. ConfigMaps and
-custom resources can't have that name, so `generate` grants `get` on the name
-`*`, which passes the check without letting the program read the parameters.
-For a binding with a `paramRef`, `generate` grants `get` on the parameter
-object that the binding names.
+`paramKind`, which it checks as `get` on an object named `*`. When the
+`paramKind` is ConfigMap or a custom type that the program defines, `generate`
+grants `get` on the name `*`. Objects of those kinds can't have that name, so
+the rule passes the check without letting the program read the parameters.
+Objects of some other kinds, such as ClusterRoles, can have the name `*`, so
+for any other `paramKind`, `generate` prints a warning, and you give the
+program the permission yourself. For a binding with a `paramRef`, `generate`
+grants `get` on the parameter object that the binding names.
 
 ### Replicas
 

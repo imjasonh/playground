@@ -466,14 +466,20 @@ func (o *generateOptions) grantInstalls(p *installPlan, objs []installObject, ty
 		if kind, ok := spec["paramKind"].(map[string]any); ok && strings.HasSuffix(obj.kind, "AdmissionPolicy") {
 			apiVersion, _ := kind["apiVersion"].(string)
 			k, _ := kind["kind"].(string)
-			pg, pr := resourceName(lookupType(types, apiVersion, k))
+			ti := lookupType(types, apiVersion, k)
+			pg, pr := resourceName(ti)
 			params[obj.kind+"/"+obj.name] = grantKey{group: pg, resource: pr}
 			// The API server lets only someone who can get every object of a
 			// policy's paramKind create the policy. It checks get on the
-			// object named "*" in the namespace "*", a name that ConfigMaps
-			// and custom resources can't have, so this rule passes the check
-			// without letting the program read them.
-			p.cluster.add(pg, pr, "*", "get")
+			// object named "*" in the namespace "*". ConfigMaps and custom
+			// resources can't have that name, so for them this rule passes the
+			// check without letting the program read any object. Objects of
+			// some other kinds, such as ClusterRoles, can have it.
+			if ti.custom || pg == "" && k == "ConfigMap" {
+				p.cluster.add(pg, pr, "*", "get")
+			} else {
+				o.logf("warning: the API server lets only someone who can get every %[1]s %[2]s create %[3]s %[4]s, and generate passes that check only for ConfigMaps and the program's custom types, so give the program get permission on every %[1]s %[2]s yourself", apiVersion, k, obj.kind, obj.name)
+			}
 		}
 		ref, ok := spec["paramRef"].(map[string]any)
 		if !ok || !strings.HasSuffix(obj.kind, "AdmissionPolicyBinding") {
