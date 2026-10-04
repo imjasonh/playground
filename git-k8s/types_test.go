@@ -48,7 +48,6 @@ func TestURLPattern(t *testing.T) {
 		"git://git.example.com/app.git",
 		"ssh://git@git.example.com:2222/app.git",
 		"https://git-k8s:token@git.example.com/app.git",
-		"file:///srv/git/app.git",
 		"git@github.com:imjasonh/playground.git",
 		"git@[172.18.0.1:2222]:app.git",
 	} {
@@ -69,6 +68,7 @@ func TestURLPattern(t *testing.T) {
 		"s3://bucket/app.git",
 		"HTTPS://git.example.com/app.git",
 		"git.example.com:app.git",
+		"file:///srv/git/app.git",
 		"/srv/git/app.git",
 		"app.git",
 		"",

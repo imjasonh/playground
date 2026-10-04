@@ -89,12 +89,19 @@ func TestOtherTransportsDontRun(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	_, err := (&git.Git{}).LsRemote(t.Context(), git.Remote{URL: "evil::x"})
-	if _, statErr := os.Stat(marker); statErr == nil {
-		t.Fatal("git ran the remote helper")
+	g := &git.Git{}
+	local, err := g.Open(t.Context(), filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if err == nil || !strings.Contains(err.Error(), "not allowed") {
-		t.Errorf("err = %v, want git to refuse the transport", err)
+	for _, url := range []string{"evil::x", local.Dir, "file://" + local.Dir} {
+		_, err := g.LsRemote(t.Context(), git.Remote{URL: url})
+		if _, statErr := os.Stat(marker); statErr == nil {
+			t.Fatal("git ran the remote helper")
+		}
+		if err == nil || !strings.Contains(err.Error(), "not allowed") {
+			t.Errorf("ls-remote %s: err = %v, want git to refuse the transport", url, err)
+		}
 	}
 }
 

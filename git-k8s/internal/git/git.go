@@ -25,7 +25,9 @@ const FixerTrailer = "Git-K8s-Fixer"
 
 // AllowProtocol is the GIT_ALLOW_PROTOCOL setting that git-k8s runs git
 // with. It allows only the transports that a GitRepository's URL can name.
-const AllowProtocol = "http:https:git:ssh:file"
+// It leaves out file, which also covers plain paths, so git can't read a
+// local repository such as another GitRepository's cache.
+const AllowProtocol = "http:https:git:ssh"
 
 // Auth is a username and password for HTTP basic authentication.
 type Auth struct {
