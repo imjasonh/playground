@@ -354,7 +354,7 @@ approved_by_annotation() {
 mutating_policy_ready() { approved_by_annotation "${APPROVE}-" --dry-run=server >/dev/null 2>&1; }
 eventually 60 mutating_policy_ready
 revoked="$(approved_by_annotation "${APPROVE}-")"
-# The mutating policy keeps an approved-by that the request sets.
+# The mutating policy keeps an approved-by that the request changes.
 rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
 approved="$(approved_by_annotation "${APPROVE}=${AUTH}")"
 echo "approved-by was '${revoked}' after alice removed approve, and '${approved}' after she set it"

@@ -1,8 +1,8 @@
 # When a request sets or changes a GitBranch's approve annotation, this
 # policy sets the approved-by annotation to the request's username, and when
 # a request removes approve, it removes approved-by, so people can approve
-# with one annotation. A request that sets approved-by itself keeps its
-# value. MutatingAdmissionPolicy needs Kubernetes 1.36 or later. The
+# with one annotation. It leaves approved-by alone when the request changes
+# that too. MutatingAdmissionPolicy needs Kubernetes 1.36 or later. The
 # git-k8s-approvals policy in policy.yaml checks approvals either way, so
 # this policy ignores its own failures.
 apiVersion: admissionregistration.k8s.io/v1

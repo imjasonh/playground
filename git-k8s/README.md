@@ -140,8 +140,8 @@ so one annotation approves:
 kubectl annotate gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA
 ```
 
-The mutating policy leaves an `approved-by` that the request sets, and
-`git-k8s-approvals` checks every approval either way.
+The mutating policy leaves `approved-by` alone when the request changes it
+as well, and `git-k8s-approvals` checks every approval either way.
 
 `check-approval` reports `approved-by` as `outputs.approver`, so a merge gate
 can require particular approvers:
