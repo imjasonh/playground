@@ -356,7 +356,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		return nil, err
 	}
 	for _, u := range unresolved {
-		o.logf("warning: %s: can't tell which types kube.%s is called with; add its permissions to the ClusterRole yourself", u.Pos, u.Func)
+		o.logf("warning: %s: can't tell which types this call passes to kube.%s; add its permissions to the ClusterRole yourself", u.Pos, u.Func)
 		owns = owns || u.Func == "Own"
 	}
 	for _, u := range uses {

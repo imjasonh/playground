@@ -641,11 +641,12 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - `generate` follows the type parameters of generic functions to the types
   that the program calls them with. It can't follow the type parameter of a
   generic type, as in a method of `reconciler[T]`, or a type argument that
-  contains a type parameter, such as `Item[T]`. For a call of a `kube`
-  function that it can't follow, it prints a warning, and you add the
-  permissions for the call's types yourself. Such a call of `kube.Own` still
-  counts as declaring owned objects, so the program gets `patch` on the
-  namespaced types that it reconciles.
+  contains a type parameter, such as `Item[T]`. When it can't tell which
+  types a call passes to a `kube` function, directly or through the
+  program's own generic helpers, it prints a warning at that call, and you
+  add the permissions for those types yourself. Such a call that reaches
+  `kube.Own` still counts as declaring owned objects, so the program gets
+  `patch` on the namespaced types that it reconciles.
 - `generate` needs the program's source and the `go` command, so the copy of
   the program in the image can't run it. The image holds only the program.
   To ship other files, embed them with `embed`.
