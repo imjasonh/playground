@@ -220,6 +220,20 @@ func TestRollsBackAJobsRunToAPodThatStillExists(t *testing.T) {
 	}
 }
 
+func TestCountsAJobsRunOnceWithTheStateFromBeforeItsPod(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	job := f.reviewJob()
+	p := f.startJob(job, &JobState{})
+
+	t.Log("A caller that couldn't store the state that started the Pod passes the state from before it, so RunJob follows the Pod, whose run counted once.")
+	st := &JobState{}
+	s, rec := f.runJob(job, st, p)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || pods[0].Name != p.Name || st.Pod != p.Name || st.Runs != 1 || len(f.r.day.starts) != 1 {
+		t.Errorf("RunJob = %+v with state %+v, %d owned Pods, and %d runs in the last day, want run 1 in Pod %s", s, st, len(pods), len(f.r.day.starts), p.Name)
+	}
+}
+
 func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	f := newFixture(t, "")
 	job := f.reviewJob()

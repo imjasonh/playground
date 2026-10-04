@@ -158,6 +158,7 @@ func (r *Runner) runJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 // startOrFollow starts or follows the run, as RunJob does.
 func (x *run) startOrFollow(ctx context.Context) JobStatus {
 	r, job, st := x.r, x.job, x.st
+	defer r.day.note(time.Now(), job.Namespace, st)
 	if err := r.validate(); err != nil {
 		return JobStatus{Message: fmt.Sprintf("can't start agents: %v", err)}
 	}
@@ -182,9 +183,11 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 	}
 	p := r.jobPod(job, 1)
 	// The Pod can still exist, such as when the branch moved back before
-	// kube deleted it, and its run counted when it started.
+	// kube deleted it, and its run counted when it started. st can be from
+	// before then, such as when a reconcile reads the branch before the
+	// last reconcile's write reaches the cache.
 	if kube.Get[podPhase](ctx, job.Namespace, p.Name) != nil {
-		*st = JobState{Runs: st.Runs, Pod: p.Name, Attempt: 1}
+		*st = JobState{Runs: max(st.Runs, r.day.runs(job.Namespace, p.Name)), Pod: p.Name, Attempt: 1}
 		return x.follow(ctx, p)
 	}
 	if n := r.unfinishedPods(ctx, job.Namespace, p.Name); r.MaxPods > 0 && n >= r.MaxPods {

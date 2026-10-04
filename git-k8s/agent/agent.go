@@ -435,6 +435,43 @@ type window struct {
 	// given holds when the run of each Pod UID was given back, so it's
 	// given back once even for a JobState that doesn't keep Refunded.
 	given map[string]time.Time
+	// counted holds the runs that each Pod's JobState counted when a call
+	// last followed the Pod, by namespace and name, so a call with a
+	// JobState from before the Pod started counts the Pod's run once.
+	counted map[string]podRuns
+}
+
+// podRuns is the runs that a Pod's JobState counted, and when.
+type podRuns struct {
+	runs int
+	at   time.Time
+}
+
+// note records the runs that st counted at now, if it names a Pod in
+// namespace ns, and forgets the Pods that no call noted in 24 hours.
+func (w *window) note(now time.Time, ns string, st *JobState) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for k, c := range w.counted {
+		if !c.at.After(now.Add(-24 * time.Hour)) {
+			delete(w.counted, k)
+		}
+	}
+	if st.Pod == "" {
+		return
+	}
+	if w.counted == nil {
+		w.counted = map[string]podRuns{}
+	}
+	w.counted[ns+"/"+st.Pod] = podRuns{st.Runs, now}
+}
+
+// runs returns the runs that the JobState following the Pod named pod in
+// namespace ns counted when a call last noted it, or 0.
+func (w *window) runs(ns, pod string) int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.counted[ns+"/"+pod].runs
 }
 
 // take records a run that starts at now, unless limit runs started in the

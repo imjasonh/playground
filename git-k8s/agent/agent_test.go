@@ -1035,6 +1035,19 @@ func TestWindow(t *testing.T) {
 	if !w.giveBack(t0.Add(49*time.Hour), "uid-2") || len(w.given) != 1 {
 		t.Errorf("giveBack holds %d Pods, want only the one from the last day", len(w.given))
 	}
+
+	t.Log("note keeps the runs that each Pod's state last counted, by namespace, and forgets a Pod that no call noted in a day.")
+	w.note(t0, "default", &JobState{Runs: 2, Pod: "review-a"})
+	w.note(t0, "other", &JobState{Runs: 3, Pod: "review-a"})
+	w.note(t0.Add(time.Hour), "other", &JobState{Runs: 1, Pod: "review-a"})
+	w.note(t0.Add(time.Hour), "default", &JobState{Runs: 4})
+	if a, b := w.runs("default", "review-a"), w.runs("other", "review-a"); a != 2 || b != 1 || w.runs("default", "review-b") != 0 {
+		t.Errorf("runs = %d and %d, want 2 and 1 for Pods with the same name in two namespaces", a, b)
+	}
+	w.note(t0.Add(24*time.Hour), "default", &JobState{})
+	if w.runs("default", "review-a") != 0 || w.runs("other", "review-a") != 1 || len(w.counted) != 1 {
+		t.Errorf("note holds %d Pods, want only the one noted in the last day", len(w.counted))
+	}
 }
 
 // movedPod sets p's status to that of a Pod that found, at finished, that
@@ -1212,4 +1225,50 @@ func TestLimitsRunsPerBranchWithABrokenState(t *testing.T) {
 			t.Errorf("state = %+v, want the run in Pod %s after 0 runs", st, p.Name)
 		}
 	})
+}
+
+func TestCountsARunOnceWhenAReconcileReadsAnOldResult(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		runs int
+	}{{"first run", 0}, {"run after another head's", 1}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			f.r.MaxRunsPerDay = 10
+			if tc.runs > 0 {
+				p := f.start()
+				f.reconcile(finished(p, f.serve(review(Fail), p.UID)))
+				f.newHead("one\nnext\n")
+			}
+			old := f.state()
+			p := f.start()
+
+			t.Log("Creating the Pod can run the next reconcile before the result that the last one wrote reaches the cache, so that reconcile follows the Pod, whose run counted once.")
+			f.b.Status.Checks.Result = old
+			f.reconcile(p)
+			if st := f.jobState(); st.Pod != p.Name || st.Runs != tc.runs+1 || len(f.r.day.starts) != tc.runs+1 {
+				t.Errorf("state = %+v with %d runs in the last day, want Pod %s after %d runs", st, len(f.r.day.starts), p.Name, tc.runs+1)
+			}
+		})
+	}
+}
+
+func TestCountsAGivenBackRunOnceWhenTheBranchMovesBack(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	head := f.b.Spec.Head
+	p := f.start()
+	f.reconcile(movedPod(p, head, time.Now()))
+	f.b.Spec.Head = f.base
+	f.reconcile()
+	if res := f.state(); res.State != gitk8s.Passed || f.jobState().Runs != 0 {
+		t.Fatalf("result = %+v, want Passed after 0 runs on a head without changes", res)
+	}
+
+	t.Log("The branch moves back while the first head's Pod still exists, and that Pod's run was given back, so the source is prepared again as run 1.")
+	f.b.Spec.Head = head
+	rec := f.reconcile(movedPod(p, head, time.Now().Add(-2*movedWait)))
+	if st, pods := f.jobState(), kube.Owned[Pod](rec); st.Runs != 1 || st.Attempt != 2 || len(pods) != 2 || st.Pod != pods[1].Name || len(f.r.day.starts) != 1 {
+		t.Errorf("state = %+v with %d owned Pods and %d runs in the last day, want attempt 2 as run 1 in a new Pod", st, len(pods), len(f.r.day.starts))
+	}
 }
