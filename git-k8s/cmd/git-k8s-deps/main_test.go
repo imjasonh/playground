@@ -692,10 +692,11 @@ func TestDoesntPushAnUpdateWhoseRaisedVersionsItCantRead(t *testing.T) {
 		// The proxy fails requests for fresh's file.
 		file string
 		// until is when fresh v1.0.0 is old enough: -min-age after the
-		// controller first read fresh's list.
+		// controller first read fresh's list and retractions.
 		until time.Time
 	}{
 		{name: "the proxy fails", file: "list", until: today.Add(144*time.Hour + errorRetry)},
+		{name: "the proxy fails to serve the module's retractions", file: "v1.0.0.mod", until: today.Add(144*time.Hour + errorRetry)},
 		{name: "the proxy fails to serve the version's time", file: "v1.0.0.info", until: today.Add(144 * time.Hour)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
