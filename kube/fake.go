@@ -27,8 +27,8 @@ import (
 // returns the tokens "fake-token-1", "fake-token-2", and so on, for the
 // service account test in the namespace default, and ReviewToken accepts
 // them for the requested audience. Trigger queues a reconcile of an object
-// that world holds, which Triggered reports. To test a Serve handler, pass
-// it a request with the context, using http.Request.WithContext.
+// that world holds, which Triggered reports, unless world holds
+// FakeStandby. To test a Serve handler, use FakeRequest instead.
 //
 //	ctx, rec := kube.Fake(t.Context(), site, &k8s.Deployment{...})
 //	if err := r.Reconcile(ctx, site); err != nil {
@@ -36,10 +36,7 @@ import (
 //	}
 //	deps := kube.Owned[k8s.Deployment](rec)
 func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (context.Context, *Recorder) {
-	w := &fakeWorld{byType: map[reflect.Type]*memSource{}, tr: newTracker()}
-	for _, o := range append([]any{obj}, world...) {
-		w.add(o)
-	}
+	w := newFakeWorld(append([]any{obj}, world...))
 	ti, err := typeInfoFor[T, P]()
 	c := &core{name: "test", labels: newLabelKeys("test")}
 	if err == nil {
@@ -53,7 +50,30 @@ func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (conte
 	return ctx, &Recorder{s: s}
 }
 
-// Recorder holds what a reconciler asked for in a Fake context.
+// FakeRequest returns a context for one request to a Serve handler in a unit
+// test. In it, Get, List, Fetch, ReviewToken, RequestToken, and Trigger use
+// world, as in a Fake context. As in a cluster, the handler can only read. A
+// call of Own, Apply, Delete, or RequeueAfter cancels the context, and the
+// returned Recorder's Err returns the error.
+//
+//	ctx, rec := kube.FakeRequest(t.Context(), probe, kube.FakeToken{...})
+//	req := httptest.NewRequest("POST", "/probes/team/api", nil).WithContext(ctx)
+//	handler.ServeHTTP(httptest.NewRecorder(), req)
+//	if err := rec.Err(); err != nil {
+//		t.Error(err)
+//	}
+func FakeRequest(ctx context.Context, world ...any) (context.Context, *Recorder) {
+	ctx, s := newWebhookScope(ctx, newFakeWorld(world))
+	return ctx, &Recorder{s: s}
+}
+
+// FakeStandby, in the world of a Fake or FakeRequest context, makes the
+// context act as a replica that reconciles no objects, such as one that
+// doesn't hold the lease, so Trigger returns false.
+type FakeStandby struct{}
+
+// Recorder holds what a reconciler or a handler asked for in a Fake or
+// FakeRequest context.
 type Recorder struct {
 	s *scope
 }
@@ -61,8 +81,9 @@ type Recorder struct {
 // RequeueAfter returns the shortest duration passed to RequeueAfter, or zero.
 func (r *Recorder) RequeueAfter() time.Duration { return r.s.requeue }
 
-// Err returns the error that canceled the reconcile's context, if any, for
-// example a struct that doesn't embed Object.
+// Err returns the error that canceled the context, if any, for example
+// because a reconciled struct doesn't embed Object, or because a handler
+// called Apply.
 func (r *Recorder) Err() error { return r.s.err }
 
 // Owned returns the objects of type T passed to Own, in order.
@@ -116,6 +137,16 @@ type fakeWorld struct {
 	tokens    []FakeToken
 	requested int
 	triggers  []triggered
+	// standby is set when the world holds FakeStandby.
+	standby bool
+}
+
+func newFakeWorld(objs []any) *fakeWorld {
+	w := &fakeWorld{byType: map[reflect.Type]*memSource{}, tr: newTracker()}
+	for _, o := range objs {
+		w.add(o)
+	}
+	return w
 }
 
 type triggered struct {
@@ -182,6 +213,9 @@ func (w *fakeWorld) add(o any) {
 		return
 	case *FakeToken:
 		w.tokens = append(w.tokens, *clone.Of(t))
+		return
+	case FakeStandby, *FakeStandby:
+		w.standby = true
 		return
 	}
 	m := metaOfAny(o)
@@ -253,6 +287,9 @@ func (w *fakeWorld) requestToken(_ context.Context, audience string) (string, ti
 }
 
 func (w *fakeWorld) trigger(ti *typeInfo, k Key) bool {
+	if w.standby {
+		return false
+	}
 	if res, _ := w.resolve(context.Background(), ti); !res.namespaced {
 		k.Namespace = ""
 	}

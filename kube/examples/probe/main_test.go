@@ -58,44 +58,62 @@ func TestReconcileSendsAToken(t *testing.T) {
 func TestAPI(t *testing.T) {
 	ci := kube.UserInfo{Username: "system:serviceaccount:team:ci"}
 	inPod := kube.UserInfo{Username: ci.Username, Extra: map[string][]string{"authentication.kubernetes.io/pod-name": {"ci-1"}}}
-	p := newProbe("team", "api", "http://api.team.svc/healthz")
-	ctx, rec := kube.Fake(t.Context(), p,
+	world := []any{
+		newProbe("team", "api", "http://api.team.svc/healthz"),
 		kube.FakeToken{Token: "ci", User: ci, Audiences: []string{"probe"}},
 		kube.FakeToken{Token: "ci-elsewhere", User: ci, Audiences: []string{"other"}},
 		kube.FakeToken{Token: "pod", User: inPod, Audiences: []string{"probe"}},
 		kube.FakeToken{Token: "admin", User: kube.UserInfo{Username: "kubernetes-admin"}, Audiences: []string{"probe"}},
-	)
+	}
 	audience := "probe"
 	h := (&api{audience: &audience}).handler()
 	for _, tc := range []struct {
 		method, path, token string
+		standby             bool
 		code                int
 		body                string
 	}{
-		{http.MethodGet, "/whoami", "", http.StatusUnauthorized, "no token"},
-		{http.MethodGet, "/whoami", "ci-elsewhere", http.StatusUnauthorized, "is invalid for the target audiences"},
-		{http.MethodGet, "/whoami", "ci", http.StatusOK, "system:serviceaccount:team:ci\n"},
-		{http.MethodGet, "/whoami", "pod", http.StatusOK, "system:serviceaccount:team:ci in Pod ci-1\n"},
-		{http.MethodPost, "/probes/team/api", "ci", http.StatusAccepted, ""},
-		{http.MethodPost, "/probes/team/missing", "ci", http.StatusNotFound, ""},
-		{http.MethodPost, "/probes/other/api", "ci", http.StatusForbidden, "can't run probes in other"},
-		{http.MethodPost, "/probes/team/api", "admin", http.StatusForbidden, "kubernetes-admin can't run probes"},
+		{http.MethodGet, "/whoami", "", false, http.StatusUnauthorized, "no token"},
+		{http.MethodGet, "/whoami", "ci-elsewhere", false, http.StatusUnauthorized, "is invalid for the target audiences"},
+		{http.MethodGet, "/whoami", "ci", false, http.StatusOK, "system:serviceaccount:team:ci\n"},
+		{http.MethodGet, "/whoami", "pod", false, http.StatusOK, "system:serviceaccount:team:ci in Pod ci-1\n"},
+		{http.MethodPost, "/probes/team/api", "ci", false, http.StatusAccepted, ""},
+		{http.MethodPost, "/probes/team/api", "ci", true, http.StatusServiceUnavailable, "try again"},
+		{http.MethodPost, "/probes/team/missing", "ci", false, http.StatusNotFound, ""},
+		{http.MethodPost, "/probes/other/api", "ci", false, http.StatusForbidden, "can't run probes in other"},
+		{http.MethodPost, "/probes/team/api", "admin", false, http.StatusForbidden, "kubernetes-admin can't run probes"},
 	} {
+		w := world
+		if tc.standby {
+			w = append(slices.Clip(world), kube.FakeStandby{})
+		}
+		ctx, rec := kube.FakeRequest(t.Context(), w...)
 		req := httptest.NewRequest(tc.method, tc.path, nil).WithContext(ctx)
 		if tc.token != "" {
 			req.Header.Set("Authorization", "Bearer "+tc.token)
 		}
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, req)
-		if w.Code != tc.code || !strings.Contains(w.Body.String(), tc.body) {
-			t.Errorf("%s %s with %q = %d %q, want %d %q", tc.method, tc.path, tc.token, w.Code, w.Body, tc.code, tc.body)
+		resp := httptest.NewRecorder()
+		h.ServeHTTP(resp, req)
+		if resp.Code != tc.code || !strings.Contains(resp.Body.String(), tc.body) {
+			t.Errorf("%s %s with %q, standby %v = %d %q, want %d %q", tc.method, tc.path, tc.token, tc.standby, resp.Code, resp.Body, tc.code, tc.body)
 		}
-	}
-	if got, want := kube.Triggered[Probe](rec), []kube.Key{{Namespace: "team", Name: "api"}}; !slices.Equal(got, want) {
-		t.Errorf("Triggered = %v, want %v", got, want)
+		var want []kube.Key
+		if tc.code == http.StatusAccepted {
+			want = []kube.Key{{Namespace: "team", Name: "api"}}
+		}
+		if got := kube.Triggered[Probe](rec); !slices.Equal(got, want) {
+			t.Errorf("%s %s with %q, standby %v: Triggered = %v, want %v", tc.method, tc.path, tc.token, tc.standby, got, want)
+		}
+		if tc.code == http.StatusServiceUnavailable && resp.Header().Get("Connection") != "close" {
+			t.Errorf("a 503 asks the client to keep the connection, so its next try reaches the same replica")
+		}
+		if err := rec.Err(); err != nil {
+			t.Errorf("%s %s with %q: the handler made a call that a handler can't: %v", tc.method, tc.path, tc.token, err)
+		}
 	}
 
 	empty := ""
+	ctx, _ := kube.FakeRequest(t.Context(), world...)
 	req := httptest.NewRequest(http.MethodGet, "/whoami", nil).WithContext(ctx)
 	req.Header.Set("Authorization", "Bearer ci")
 	w := httptest.NewRecorder()

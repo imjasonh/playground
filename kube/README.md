@@ -725,12 +725,15 @@ directly. With a context from `kube.Fake`, `Validate` and `Default` can read
 objects with `Get` and `List`.
 
 To test a `kube.Serve` handler, pass it a request with a context from
-`kube.Fake`. `ReviewToken` accepts each `kube.FakeToken` that you pass to
-`kube.Fake` for the token's audiences, and `kube.Triggered` returns the keys
-of the objects that `Trigger` queued:
+`kube.FakeRequest`, which gives the handler the scope that a request has in a
+cluster. Pass it the objects that the handler reads and a `kube.FakeToken`
+for each token that `ReviewToken` accepts. `kube.Triggered` returns the keys
+of the objects that `Trigger` queued, and `rec.Err` returns the error from a
+call that a handler can't make, such as `Apply`. With `kube.FakeStandby{}`,
+`Trigger` returns false, as on a replica that doesn't hold the lease:
 
 ```go
-ctx, rec := kube.Fake(t.Context(), probe, kube.FakeToken{
+ctx, rec := kube.FakeRequest(t.Context(), probe, kube.FakeToken{
 	Token:     "ci",
 	User:      kube.UserInfo{Username: "system:serviceaccount:team:ci"},
 	Audiences: []string{"probe"},
@@ -741,7 +744,13 @@ handler.ServeHTTP(httptest.NewRecorder(), req)
 if got := kube.Triggered[Probe](rec); len(got) != 1 {
 	t.Errorf("triggered %v, want the probe", got)
 }
+if err := rec.Err(); err != nil {
+	t.Error(err)
+}
 ```
+
+Use a new context from `kube.FakeRequest` for each request, as each request
+in a cluster has its own.
 
 `RequestToken` returns the tokens `fake-token-1`, `fake-token-2`, and so on,
 which `ReviewToken` accepts for the requested audience.
