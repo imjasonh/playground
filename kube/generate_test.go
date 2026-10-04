@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -198,6 +200,29 @@ func TestGrantsFor(t *testing.T) {
 	} {
 		if got := p.grantsFor(tc.ti, tc.watching); !same(got, tc.want) {
 			t.Errorf("%s: got the wrong grants", tc.name)
+		}
+	}
+}
+
+func TestPlanGrantsStatusOfAppliedTypes(t *testing.T) {
+	o := &generateOptions{platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, shards: 1, stderr: io.Discard}
+	p, err := o.plan(t.Context(), nil, "./testdata/applystatus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		group, resource string
+		want            []string
+	}{
+		{"apps", "deployments", []string{"create", "patch"}},
+		{"apps", "deployments/status", []string{"patch"}},
+		{"", "configmaps", []string{"create", "patch"}},
+		{"", "configmaps/status", nil},
+		{"", "pods", []string{"list", "watch"}},
+		{"", "pods/status", nil},
+	} {
+		if got := slices.Sorted(maps.Keys(p.cluster[grantKey{tc.group, tc.resource, ""}])); !slices.Equal(got, tc.want) {
+			t.Errorf("verbs on %s = %q, want %q", tc.resource, got, tc.want)
 		}
 	}
 }

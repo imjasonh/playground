@@ -185,8 +185,9 @@ type core struct {
 }
 
 type appliedKey struct {
-	ti  *typeInfo
-	key Key
+	ti     *typeInfo
+	key    Key
+	status bool
 }
 
 // labelKeys are the label and annotation keys the framework uses, under a
@@ -631,6 +632,9 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 				if last, ok := c.lastApplied(key, ak); in.kind == intentOwn || ok && last == h {
 					applied[ak] = h
 					c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "skipped")
+					if err := c.applyStatus(ctx, key, in, manager, applied); err != nil {
+						return err
+					}
 					continue
 				}
 			}
@@ -640,6 +644,9 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 			applied[ak] = h
 			c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "applied")
 			c.log.Debug("applied", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
+			if err := c.applyStatus(ctx, key, in, manager, applied); err != nil {
+				return err
+			}
 		case intentDelete:
 			if err := c.delete(ctx, in.ti, in.res, m); err != nil {
 				return err

@@ -55,6 +55,29 @@ func (c *Client) Resource(ctx context.Context, apiVersion, kind string) (APIReso
 	return APIResource{}, &NoKindError{APIVersion: apiVersion, Kind: kind}
 }
 
+// Serves reports whether the server serves the resource or subresource
+// name, such as "deployments/status", in apiVersion. Like Resource, it
+// refetches discovery results once when they don't list name.
+func (c *Client) Serves(ctx context.Context, apiVersion, name string) (bool, error) {
+	for attempt := range 2 {
+		c.disco.mu.Lock()
+		list, ok := c.disco.lists[apiVersion]
+		c.disco.mu.Unlock()
+		if !ok || attempt > 0 {
+			var err error
+			if list, err = c.fetchResources(ctx, apiVersion); err != nil {
+				return false, err
+			}
+		}
+		for _, r := range list {
+			if r.Name == name {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 func (c *Client) fetchResources(ctx context.Context, apiVersion string) ([]APIResource, error) {
 	path := "/apis/" + apiVersion
 	if !strings.Contains(apiVersion, "/") {

@@ -141,6 +141,22 @@ doesn't own, such as one annotation on someone else's Deployment. Fields that
 a later reconcile stops applying are removed, and the object isn't deleted
 with the reconciled object.
 
+If the type that you pass to `Apply` has a status, the framework applies the
+status too, so a controller can write its own fields in another controller's
+status. The status goes to the object's status subresource in a second
+request, with the same field manager, unless the first request fails. Status
+fields that a later reconcile stops applying are removed too, so an empty
+status removes every status field that earlier reconciles applied. If the
+cluster doesn't serve a status subresource for the object, the framework
+skips an empty status and fails the reconcile for any other. To leave status
+alone, apply a type that declares no status, as
+[`examples/reloader`](examples/reloader/main.go) does.
+
+The framework writes the reconciled object's status from the object that
+`Reconcile` received, not with `Apply`. When the reconciled type has a
+status, applying a status to the reconciled object itself fails the
+reconcile, unless the status is empty.
+
 `Reconcile` can change the reconciled object's status. The framework writes
 status changes with server-side apply and ignores changes to other fields. If
 the status has an `ObservedGeneration` field, the framework sets it. If the
@@ -149,11 +165,12 @@ status has a `Conditions []kube.Condition` field, the framework keeps a
 `lastTransitionTime` when its status doesn't change, so a reconcile that
 observes the same state doesn't write status.
 
-Several writers can share one status, each with its own fields. A status
-write manages every field that the status has when `Reconcile` returns, so
-clear the fields that other writers own before returning. The framework
-writes status only when a field that the controller sets changes, so reading
-the other writers' fields costs no writes.
+Several writers can share one status, each with its own fields, including
+controllers that write their fields with `Apply`. A status write manages
+every field that the status has when `Reconcile` returns, so clear the fields
+that other writers own before returning. The framework writes status only
+when a field that the controller sets changes, so reading the other writers'
+fields costs no writes.
 
 A reconciler that also has a `Finalize(ctx context.Context, obj *T) error`
 method gets a finalizer on each object. The framework calls `Finalize` when the
@@ -516,6 +533,8 @@ way, its service account needs these permissions:
   don't exist yet.
 - `patch` on the reconciled type and its `status` subresource, for finalizers
   and status.
+- `patch` on the `status` subresource of every type with a status that it
+  declares with `Apply`.
 - `get`, `create`, and `patch` on `customresourcedefinitions`, and `patch` on
   `customresourcedefinitions/status`, for its own types. To check and migrate
   objects when a type changes, it also needs `list` on its own types in every
@@ -550,6 +569,10 @@ func TestReconcile(t *testing.T) {
 As in a cluster, a read sees the objects of every type of its kind. A
 reconcile that reads your own smaller `Deployment` type sees each
 `k8s.Deployment` that you pass to `kube.Fake`.
+
+`kube.Applied` returns each object with its status, which the framework
+applies too. A status that `Apply` rejects for the reconciled object fails the
+reconcile, as in a cluster, and the recorder's `Err` method returns the error.
 
 To test `Validate`, `Default`, `ConvertTo`, and `ConvertFrom`, call them
 directly. With a context from `kube.Fake`, `Validate` and `Default` can read
@@ -645,6 +668,9 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
   stop matching looks deleted to the controller, so its finalizer is never
   removed.
+- Fields that `Apply` wrote, including status fields, stay on an object when
+  a reconcile stops calling `Apply` for it, and when the reconciled object is
+  deleted.
 
 ## Layout
 
@@ -653,7 +679,7 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 | `*.go` | The `kube` package: types, caches, dependency tracking, controllers, status, webhooks, versions, shards, metrics, and fakes |
 | `k8s/` | Types for common built-in objects |
 | `examples/` | Example controllers and webhooks with unit and end-to-end tests |
-| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, shared status, changes that types can't see, panics, permanent errors, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
+| `e2e/` | End-to-end tests of the framework: shards and leader election, webhooks, versions, protobuf, steady-state writes, shared status, status that `Apply` writes, changes that types can't see, panics, permanent errors, and `generate`; `e2e/kind/` installs the examples in a kind cluster |
 | `internal/client/` | REST client, kubeconfig, authentication, discovery, and JSON and protobuf watch decoding |
 | `internal/protobuf/` | Protobuf decoding of built-in types into partial structs, and its schema; `gen/` is the separate module that generates the schema |
 | `internal/certs/` | Certificate authority and serving certificates for webhooks |

@@ -59,7 +59,8 @@ func (r *Recorder) Err() error { return r.s.err }
 // Owned returns the objects of type T passed to Own, in order.
 func Owned[T any](r *Recorder) []*T { return intentsOf[T](r, intentOwn) }
 
-// Applied returns the objects of type T passed to Apply, in order.
+// Applied returns the objects of type T passed to Apply, in order. The
+// framework applies the status of each one too, as Apply describes.
 func Applied[T any](r *Recorder) []*T { return intentsOf[T](r, intentApply) }
 
 // Deleted returns the objects of type T passed to Delete, in order.

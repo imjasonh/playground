@@ -333,4 +333,15 @@ func TestDiscoveryRefetchesOnMiss(t *testing.T) {
 	if _, err := c.Resource(t.Context(), "nope.dev/v1", "Thing"); !errors.As(err, &nk) {
 		t.Errorf("unknown group: %v", err)
 	}
+
+	before = calls.Load()
+	if ok, err := c.Serves(t.Context(), "example.dev/v1", "websites/status"); !ok || err != nil || calls.Load() != before {
+		t.Errorf("Serves(websites/status) = %v, %v with %d calls, want true from the cache", ok, err, calls.Load()-before)
+	}
+	if ok, err := c.Serves(t.Context(), "v1", "namespaces/status"); ok || err != nil || calls.Load() != before+1 {
+		t.Errorf("Serves(namespaces/status) = %v, %v with %d calls, want false after one refetch", ok, err, calls.Load()-before)
+	}
+	if ok, err := c.Serves(t.Context(), "nope.dev/v1", "things"); ok || err != nil {
+		t.Errorf("Serves(things) in an unknown group = %v, %v", ok, err)
+	}
 }

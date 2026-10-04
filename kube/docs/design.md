@@ -477,6 +477,41 @@ the framework doesn't annotate objects it doesn't own, and skips only when
 this process applied the same document before. The `kube_apply_total` metric
 counts applies by result, `applied` or `skipped`.
 
+For a kind with a status subresource, server-side apply tracks the status
+fields apart from the object's other fields, and a request to the object
+itself ignores the status. So when the type passed to `Apply` has a status,
+the framework sends a second document to the status subresource, with the
+same field manager, that holds the object's name, namespace, UID, and status.
+It sends the status after the first request succeeds or is skipped, and not
+at all when the first request fails. When the status request fails, the
+reconcile fails and is retried, and the first request's fields stay. A status
+request is skipped by the same rule as the first request, and counts in
+`kube_apply_total` the same way. An empty status goes without a `status`
+field, so the manager gives up every status field that it owns, and the API
+server removes each one that no other manager owns. The manager then owns no
+status fields, so after this process sends an empty status, it skips the next
+one without checking the cache.
+
+A request to a subresource that the API server doesn't serve fails with the
+same `404 Not Found` as a request for an object that was deleted, so before it
+sends a status, the framework checks discovery for the status subresource.
+Without one, the framework skips an empty status and fails the reconcile for
+any other. Such a kind either has no status, as with ConfigMaps, or is a
+custom resource whose definition keeps the status with the other fields. The
+framework doesn't put the status in the first request instead, because the
+API server rejects a document with a field that the kind doesn't declare, so
+for a kind without a status, the rest of the object wouldn't be applied
+either.
+
+The framework writes the reconciled object's status with the controller's
+name as the field manager. If `Apply` wrote it too, under the name derived
+from the reconciled object, both managers would own every field that both
+send, and neither could remove one alone. So when the reconciled type has a
+status, `Apply` fails the reconcile when it's given a status for the
+reconciled object, and ignores an empty one. A reconciled type without a
+status, such as a view of another controller's type, can apply the status of
+its own object.
+
 After the intents, the framework deletes owned objects that the reconcile
 didn't declare. It finds them in the owner index of each owned type's cache.
 
@@ -732,9 +767,11 @@ function that contains the call. The analysis follows type parameters back
 through generic helpers to the types that the program passes, and reads each
 type's `kube` tag. `Get` and `List` need `list` and `watch`, `Fetch` needs
 `get`, `Own` needs `list`, `watch`, `create`, `patch`, and `delete`, `Apply`
-needs `create` and `patch`, and `Delete` needs `delete`. `controller-gen`
-reads `+kubebuilder:rbac` comment markers, which people write and update by
-hand. These rules change when the calls do.
+needs `create` and `patch`, and `Delete` needs `delete`. When a type passed to
+`Apply` has a field whose `json` tag names it `status`, the rules also grant
+`patch` on the type's `status` subresource. `controller-gen` reads
+`+kubebuilder:rbac` comment markers, which people write and update by hand.
+These rules change when the calls do.
 
 The rules go in a ClusterRole, because a program watches every namespace,
 except those for the program's own Leases and webhook certificate, which go in
@@ -772,10 +809,13 @@ of letting it fill the node's disk.
 `kube.Fake` gives `Reconcile` a scope backed by a list of objects instead of
 caches. The reconcile runs the same code as in a cluster, and the scope
 records its intents for the test to check with `kube.Owned`,
-`kube.Applied`, and `kube.Deleted`. In a cluster, every type of a kind reads
-the same objects, so the fake converts the listed objects of one type through
-JSON for reads of another type of the same kind. A test doesn't fake an API
-server, so there's no fake behavior that can differ from a real server's.
+`kube.Applied`, and `kube.Deleted`. `kube.Applied` returns each object with
+the status that the framework would apply, and the scope rejects a status for
+the reconciled object as it does in a cluster. In a cluster, every type of a
+kind reads the same objects, so the fake converts the listed objects of one
+type through JSON for reads of another type of the same kind. A test doesn't
+fake an API server, so there's no fake behavior that can differ from a real
+server's.
 
 End-to-end tests start `etcd` and `kube-apiserver` from the controller-tools
 envtest release, with no kubelet or controller manager. The API server calls
@@ -785,6 +825,10 @@ framework's tests check that:
 
 - A converged controller makes no writes when its objects' labels change, and
   none after a restart.
+- Reconciles that apply their own entries in another object's status own
+  only those entries, make no writes when they run again, and remove an entry
+  when they stop applying it. A status for a kind without a status
+  subresource fails the reconcile after the rest of the object is applied.
 - Panics and permanent errors are reported and retried correctly.
 - Leader election fails over.
 - Three replicas with 32 shards split the work, hand shards over when one
@@ -899,9 +943,11 @@ The end-to-end tests count writes with the `kube_apply_total` and
 changes cause five reconciles, no applies, and no status writes. A new manager
 that starts over the converged Widget makes no applies and no status writes.
 A controller that totals the votes that other managers write into a Poll's
-status makes no status writes for votes that leave the total as it was. A
-change to a ConfigMap field that a reconcile's type doesn't declare doesn't
-run the reconcile again.
+status makes no status writes for votes that leave the total as it was.
+A controller that applies each Ballot's vote to a Poll's status with `Apply`
+makes no applies when label changes reconcile the Ballots again. A change to
+a ConfigMap field that a reconcile's type doesn't declare doesn't run the
+reconcile again.
 
 ### Binary size and dependencies
 
@@ -939,10 +985,16 @@ offers:
   run the reconcile again.
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
   stop matching looks deleted, so its finalizer is never removed.
-- After a restart, each object declared with `Apply` is applied once, because
-  the framework doesn't annotate objects it doesn't own. A status that leaves
-  out other managers' fields is also written once, because the record of the
-  last status write is in memory.
+- After a restart, each object declared with `Apply` is applied once, with
+  its status if its type has one, because the framework doesn't annotate
+  objects it doesn't own. A status that leaves out other managers' fields is
+  also written once, because the record of the last status write is in
+  memory.
+- Fields that `Apply` wrote, including status fields, stay on an object when
+  a reconcile stops declaring it, and when the reconciled object is deleted.
+  Giving them up would take a durable record of what each reconcile applied.
+- `Apply` can't write the status of a custom resource whose definition keeps
+  the status with the other fields, without a status subresource.
 - The CRD checks compare field names, types, and required fields, not
   validation such as enums or bounds, and they need permission to list
   objects in every namespace.

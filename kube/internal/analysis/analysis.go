@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 )
@@ -50,6 +51,9 @@ type Use struct {
 	Type, Name string
 	// Tag is the struct tag of the field that embeds Marker.
 	Tag string
+	// Fields are the names in the json tags of the type's exported fields,
+	// other than the field that embeds Marker.
+	Fields []string
 	// Pos is where the call is.
 	Pos string
 }
@@ -336,10 +340,24 @@ func (a *analyzer) use(f string, t typeArg) (Use, bool) {
 		}
 		ft, ok := types.Unalias(field.Type()).(*types.Named)
 		if ok && ft.Obj().Pkg() != nil && ft.Obj().Pkg().Path() == a.cfg.Package && ft.Obj().Name() == a.cfg.Marker {
-			return Use{Func: f, Type: types.TypeString(named, nil), Name: named.Obj().Name(), Tag: st.Tag(i), Pos: t.pos}, true
+			return Use{Func: f, Type: types.TypeString(named, nil), Name: named.Obj().Name(), Tag: st.Tag(i), Fields: jsonFields(st, i), Pos: t.pos}, true
 		}
 	}
 	return Use{}, false
+}
+
+// jsonFields returns the names in the json tags of st's exported fields,
+// other than field skip.
+func jsonFields(st *types.Struct, skip int) []string {
+	var out []string
+	for i := range st.NumFields() {
+		name, _, _ := strings.Cut(reflect.StructTag(st.Tag(i)).Get("json"), ",")
+		if i == skip || !st.Field(i).Exported() || name == "" || name == "-" {
+			continue
+		}
+		out = append(out, name)
+	}
+	return out
 }
 
 // String formats a use for messages.

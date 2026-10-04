@@ -351,6 +351,9 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		}
 		g, r := resourceName(ti)
 		grantsFor(ti).add(g, r, "", scopeVerbs[u.Func]...)
+		if u.Func == "Apply" && slices.Contains(u.Fields, "status") {
+			grantsFor(ti).add(g, r+"/status", "", "patch")
+		}
 	}
 	for _, crd := range crds {
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")

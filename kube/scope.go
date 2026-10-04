@@ -46,6 +46,9 @@ type intent struct {
 	res      resolved
 	obj      any // desired object, or the object to delete
 	observed any // the cached object, shared; nil if unknown
+	// status is set when the framework also applies obj's status to the
+	// status subresource.
+	status bool
 }
 
 // scope is the state of one reconcile. Reconcile's context carries it.
@@ -323,6 +326,18 @@ func Own[T any, P Resource[T]](ctx context.Context, desired P) P {
 // returns nil, the framework applies the fields with server-side apply. The
 // object isn't deleted with the reconciled object, and fields that a later
 // reconcile stops applying are removed.
+//
+// If desired's type has a status, the framework then applies the status to
+// the object's status subresource, in a second request with the same field
+// manager, so the status fields that a later reconcile stops applying are
+// removed too. If the cluster doesn't serve a status subresource for the
+// type, the framework skips an empty status and fails the reconcile for any
+// other.
+//
+// When the reconciled type has a status, the framework writes the status of
+// the object being reconciled from the object that Reconcile received. So
+// when desired is that object, Apply ignores an empty status and fails the
+// reconcile for any other.
 func Apply[T any, P Resource[T]](ctx context.Context, desired P) {
 	s := scopeFrom(ctx, "Apply")
 	if s.readOnly("Apply") {
@@ -334,11 +349,34 @@ func Apply[T any, P Resource[T]](ctx context.Context, desired P) {
 	if !ok {
 		return
 	}
+	status := ti.status != nil
+	if status && s.writesStatus(ti, m.Key()) {
+		st, err := statusOf(desired)
+		if err != nil {
+			s.fail(err)
+			return
+		}
+		if st != nil {
+			s.fail(fmt.Errorf("kube.Apply: %v %s is the object being reconciled, so the framework writes its status; set the status on the object that Reconcile received", ti, m.Key()))
+			return
+		}
+		status = false
+	}
 	var observed any
 	if src := s.w.existing(ti); src != nil {
 		observed = src.peek(m.Key())
 	}
-	s.intents = append(s.intents, intent{kind: intentApply, ti: ti, res: res, obj: desired, observed: observed})
+	s.intents = append(s.intents, intent{kind: intentApply, ti: ti, res: res, obj: desired, observed: observed, status: status})
+}
+
+// writesStatus reports whether the framework writes the status of the object
+// of type ti with key k after the reconcile, because it's the object being
+// reconciled.
+func (s *scope) writesStatus(ti *typeInfo, k Key) bool {
+	if s.c == nil || s.c.ti == nil || s.c.ti.status == nil {
+		return false
+	}
+	return ti.group == s.c.ti.group && ti.kind == s.c.ti.kind && k == s.key
 }
 
 // Delete declares that obj should be deleted. After Reconcile returns nil,
