@@ -84,7 +84,7 @@ func checkPrivateKey(key []byte) error {
 		return errors.New("must end with a newline and have no carriage returns")
 	}
 	block, _ := pem.Decode(key)
-	if block == nil {
+	if block == nil || !strings.HasSuffix(block.Type, "PRIVATE KEY") {
 		return errors.New("isn't a PEM-encoded private key")
 	}
 	encrypted := block.Type == "ENCRYPTED PRIVATE KEY" || strings.Contains(block.Headers["Proc-Type"], "ENCRYPTED")
