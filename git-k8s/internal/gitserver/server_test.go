@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -102,6 +103,40 @@ func TestRequiresSignatures(t *testing.T) {
 	}
 	if heads := srv.Heads(t, "app"); len(heads) != 1 || heads["main"] != signed {
 		t.Errorf("heads = %v, want main at the signed commit %s", heads, signed)
+	}
+}
+
+func TestRemovesRepositoryWhoseSetupFailed(t *testing.T) {
+	signer := gittest.NewSigner(t, "git-k8s@example.com")
+	root := t.TempDir()
+	hook := filepath.Join(root, "app.git", "hooks", "pre-receive")
+	// A directory where the hook goes makes writing the hook fail.
+	if err := os.MkdirAll(hook, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hs := httptest.NewServer(&gitserver.Server{Root: root, AllowedSigners: signer.AllowedSigners})
+	t.Cleanup(hs.Close)
+	get := func() int {
+		t.Helper()
+		resp, err := http.Get(hs.URL + "/app.git/info/refs?service=git-receive-pack")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if status := get(); status == http.StatusOK {
+		t.Errorf("status = %d, want an error because the hook couldn't be written", status)
+	}
+	if _, err := os.Stat(filepath.Join(root, "app.git")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("app.git is still there after its setup failed (%v)", err)
+	}
+	if status := get(); status != http.StatusOK {
+		t.Errorf("status = %d, want 200 once the repository can be set up", status)
+	}
+	if fi, err := os.Stat(hook); err != nil || !fi.Mode().IsRegular() {
+		t.Errorf("the hook isn't a file after the repository was set up again: %v", err)
 	}
 }
 

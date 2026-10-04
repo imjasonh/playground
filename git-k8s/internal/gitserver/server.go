@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -106,11 +107,13 @@ func (s *Server) ensure(dir string, create bool) error {
 	if !create {
 		return fmt.Errorf("no repository %s", filepath.Base(dir))
 	}
-	if err := Init(dir); err != nil {
-		return err
+	err := Init(dir)
+	if err == nil && s.AllowedSigners != "" {
+		err = requireSignatures(dir, s.AllowedSigners)
 	}
-	if s.AllowedSigners != "" {
-		return requireSignatures(dir, s.AllowedSigners)
+	if err != nil {
+		// The check above takes any directory with a HEAD as set up.
+		return errors.Join(err, os.RemoveAll(dir))
 	}
 	return nil
 }
