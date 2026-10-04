@@ -247,8 +247,10 @@ it copies, so making the same landing again makes the same commits.
 When the branch is one commit on top of the parent's head, a squash
 fast-forwards the parent to it. A rebase does the same for a branch with no
 merge commits after the parent's head, because copying its commits changes
-nothing. When the parent already has the files at the branch's head, the
-controller sets the branch's state to `Merged` and pushes nothing.
+nothing. When the parent already has the files at the branch's head, a squash
+sets the branch's state to `Merged` and pushes nothing. A rebase does that
+only when the parent already has every commit's change, because it leaves out
+each commit that changes nothing.
 
 A rebase can't copy every branch. It sets the branch's state to
 `NeedsRebase`, with a message that says why, when one of these happens:

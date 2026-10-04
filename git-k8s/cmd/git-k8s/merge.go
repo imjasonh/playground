@@ -149,7 +149,7 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch, results map[stri
 		return err
 	}
 	if !ff {
-		report(b, reasonNotFastForward, false, "%s doesn't contain %s at %s, so %s can't fast-forward to it",
+		report(b, reasonNotFastForward, false, "%s doesn't contain %s at %s, so it can't land on %s",
 			spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), spec.Parent)
 		return nil
 	}

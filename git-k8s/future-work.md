@@ -172,11 +172,11 @@ Questions to settle first:
 
 ## Land branches through a merge queue
 
-Branches land by fast-forward only. Each landing moves the parent, so no
-other open branch contains the parent's head anymore. `check-base` merges the
-parent into each of them, which changes their heads and runs every check
-again, including a `go test` Pod. With N open branches, each landing costs
-about N runs of every check.
+A branch lands only when it contains its parent's head. Each landing moves
+the parent, so no other open branch contains the parent's head anymore.
+`check-base` merges the parent into each of them, which changes their heads
+and runs every check again, including a `go test` Pod. With N open branches,
+each landing costs about N runs of every check.
 
 The proposed fix is a queue for each parent. A branch whose checks pass,
 apart from being behind its parent, joins the queue. Only the branch at the
