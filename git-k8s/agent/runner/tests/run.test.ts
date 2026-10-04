@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, symlinkSync, truncateSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fakeBackend } from "../src/backends/fake.js";
@@ -10,7 +10,7 @@ import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
 import type { Task } from "../src/task.js";
 import { MAX_PATHS } from "../src/touched.js";
-import { prepareMerge, preparePod } from "./pod.js";
+import { preparePod } from "./pod.js";
 
 const quiet: RunOptions = { log: () => undefined };
 
@@ -46,10 +46,15 @@ test("passes a clean change", async () => {
   assert.equal(readResult(task).verdict, "pass");
 });
 
-test("reads only the start of a long diff and commit log", async () => {
+test("reads only the start of a long diff and commit log", async (t) => {
   const task = preparePod({}, { "a.txt": "a\n" });
   writeFileSync(task.diffFile, `diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,100001 @@\n${"+x\n".repeat(100_000)}+DO NOT MERGE\n`);
   writeFileSync(task.logFile, `abc1234 ${"x".repeat(100)}\n`.repeat(2 * MAX_LOG));
+  // Node's readFile refuses files over 2 GiB.
+  for (const file of [task.diffFile, task.logFile]) {
+    truncateSync(file, 3 * 2 ** 30);
+    t.after(() => unlinkSync(file));
+  }
   let request: AgentRequest | undefined;
   const capture: Backend = async (r) => {
     request = r;

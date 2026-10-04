@@ -24,8 +24,7 @@
 //
 // A controller that isn't a check calls Runner.RunJob with a Job, which
 // names the repository, the commits to check out, the task, and the agent's
-// tools, and can have the agent resolve a merge's conflicts. Run builds a
-// Job from the check's branch.
+// tools. Run builds a Job from the check's branch.
 package agent
 
 import (
@@ -84,6 +83,10 @@ type Runner struct {
 	// SourceSize is the most disk space, such as 2Gi, that each of an agent
 	// Pod's repository, files, and input can use. Empty means 2Gi.
 	SourceSize string
+	// StorageRequest is the ephemeral storage, such as 1Gi, that each agent
+	// Pod requests, which the scheduler reserves on the Pod's node. Empty
+	// means 1Gi.
+	StorageRequest string
 
 	port int
 	day  window
@@ -101,6 +104,7 @@ func (r *Runner) AddFlags(fs *flag.FlagSet) {
 	fs.IntVar(&r.MaxPods, "max-pods", 10, "most agent Pods to run at once, in all namespaces; 0 means no limit")
 	fs.IntVar(&r.MaxRunsPerDay, "max-runs-per-day", 100, "most agent runs to start in any 24 hours; 0 means no limit")
 	fs.StringVar(&r.SourceSize, "source-size", defaultSourceSize, "most disk space that each of an agent Pod's repository, files, and input can use")
+	fs.StringVar(&r.StorageRequest, "storage-request", defaultStorageRequest, "ephemeral storage that each agent Pod requests, which the scheduler reserves on the Pod's node")
 }
 
 func (r *Runner) validate() error {
@@ -113,6 +117,10 @@ func (r *Runner) validate() error {
 		return errors.New("-model, -git-image, -api-key-secret, and -timeout need values")
 	case r.sourceBytes() == 0:
 		return fmt.Errorf("-source-size is %q, but it must be a size such as 2Gi", r.SourceSize)
+	case r.storageBytes() == 0:
+		return fmt.Errorf("-storage-request is %q, but it must be a size such as 1Gi", r.StorageRequest)
+	case r.storageBytes() > r.podDisk():
+		return fmt.Errorf("-storage-request is %s, but it can't be more than %s, each agent Pod's ephemeral-storage limit", r.StorageRequest, formatSize(r.podDisk()))
 	}
 	return nil
 }
@@ -150,11 +158,13 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 		st.Pod = prev.Outputs["pod"]
 		st.Attempt, _ = strconv.Atoi(prev.Outputs["attempt"])
 		st.UID = prev.Outputs["podUID"]
+		st.Refunded = prev.Outputs["refunded"]
 		x.job.Checkout.Base = prev.Outputs["base"]
 	}
-	// A Pod's name covers its spec, so a changed flag or policy starts a
-	// new run instead of changing a Pod that can't change.
-	if st.Pod == "" || r.jobPod(x.job, max(st.Attempt, 1)).Name != st.Pod {
+	// A Pod's name covers its job, so a changed policy starts a new run
+	// instead of changing a Pod that can't change. startOrFollow restarts
+	// a run whose Pod's spec changed with a flag.
+	if st.Pod == "" || !sameJob(r.jobPod(x.job, max(st.Attempt, 1)).Name, st.Pod) {
 		*st = JobState{Runs: st.Runs}
 		if why := x.usedAll(); why != "" {
 			return x.running("not starting the agent: %s", why), nil
@@ -214,12 +224,14 @@ func (r *Runner) unfinishedPods(ctx context.Context, ns, name string) int {
 }
 
 // run is one reconcile's view of one run. in is nil for a job that isn't a
-// check's.
+// check's. started is true when the reconcile starts the run, so kube
+// hasn't tried to create its Pod yet.
 type run struct {
-	r   *Runner
-	in  *checks.Input
-	job *Job
-	st  *JobState
+	r       *Runner
+	in      *checks.Input
+	job     *Job
+	st      *JobState
+	started bool
 }
 
 // outputs hold what the next reconcile needs to follow the run.
@@ -230,6 +242,9 @@ func (x *run) outputs() map[string]string {
 		o["attempt"] = strconv.Itoa(x.st.Attempt)
 		if x.st.UID != "" {
 			o["podUID"] = x.st.UID
+		}
+		if x.st.Refunded != "" {
+			o["refunded"] = x.st.Refunded
 		}
 		if base := x.job.Checkout.Base; base != "" {
 			o["base"] = base
@@ -352,9 +367,16 @@ var starting = []string{"", "PodInitializing", "ContainerCreating"}
 
 // stuck are the reasons that a container waits until someone fixes a
 // Secret or an image. A run ends on them instead of holding a -max-pods
-// slot until the Pod's deadline. Other reasons, such as
+// slot until the Pod's deadline. Only a new Pod fixes InvalidImageName, so
+// a run ends on it at once. The others also come from a registry that's
+// down for a moment or a Secret that's created after the Pod, so a run
+// ends on them once the Pod is stuckAfter old. Other reasons, such as
 // CreateContainerError, often pass by themselves.
 var stuck = []string{"CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "InvalidImageName"}
+
+// stuckAfter is how old a Pod gets before a run ends on a reason in stuck
+// other than InvalidImageName.
+const stuckAfter = 5 * time.Minute
 
 // blocked reports why a container can't start, such as a missing Secret or
 // an image that can't be pulled, and the reason that it waits.
@@ -378,20 +400,49 @@ type window struct {
 // 24 hours before. Then it returns how long until one of those is older
 // than 24 hours. A limit of 0 means no limit.
 func (w *window) take(now time.Time, limit int) (time.Duration, bool) {
-	if limit <= 0 {
-		return 0, true
-	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if wait := w.wait(now, limit); wait > 0 {
+		return wait, false
+	}
+	if limit > 0 {
+		w.starts = append(w.starts, now)
+	}
+	return 0, true
+}
+
+// giveBack forgets the latest run that started.
+func (w *window) giveBack() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if n := len(w.starts); n > 0 {
+		w.starts = w.starts[:n-1]
+	}
+}
+
+// full reports whether limit runs started in the 24 hours before now,
+// without recording a run.
+func (w *window) full(now time.Time, limit int) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.wait(now, limit) > 0
+}
+
+// wait forgets the runs that started 24 hours or more before now, and
+// returns how long until a run can start, or 0 if one can start now. The
+// caller holds w.mu.
+func (w *window) wait(now time.Time, limit int) time.Duration {
+	if limit <= 0 {
+		return 0
+	}
 	cutoff := now.Add(-24 * time.Hour)
 	i := 0
 	for i < len(w.starts) && !w.starts[i].After(cutoff) {
 		i++
 	}
 	w.starts = w.starts[i:]
-	if len(w.starts) >= limit {
-		return w.starts[len(w.starts)-limit].Sub(cutoff), false
+	if len(w.starts) < limit {
+		return 0
 	}
-	w.starts = append(w.starts, now)
-	return 0, true
+	return w.starts[len(w.starts)-limit].Sub(cutoff)
 }

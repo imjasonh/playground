@@ -2,11 +2,6 @@ package agent
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
-	"maps"
-	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"testing"
@@ -35,10 +30,10 @@ func TestRunsAJob(t *testing.T) {
 	main := f.base
 	job := &Job{
 		Name: "app-c-x", Namespace: "default", URL: repo.Spec.URL, Credentials: repo.Spec.SecretRef,
-		Checkout: Checkout{Branch: "c/x", Head: f.b.Spec.Head, Parent: "main", Base: main, Merge: &Ref{Branch: "main", Commit: main}},
-		Task:     Task{Instructions: "Merge main into c/x.", Edit: true},
+		Checkout: Checkout{Branch: "c/x", Head: f.b.Spec.Head, Parent: "main", Base: main},
+		Task:     Task{Instructions: "Fix the change.", Edit: true},
 		Tools:    []string{"read", "edit"},
-		Image:    "registry.example.com/agent-runner:merge",
+		Image:    "registry.example.com/agent-runner:fix",
 		MaxRuns:  1,
 	}
 	st := &JobState{}
@@ -61,7 +56,7 @@ func TestRunsAJob(t *testing.T) {
 		}
 		env[e.Name] = e.Value
 	}
-	if env["URL"] != repo.Spec.URL || env["HEAD"] != job.Checkout.Head || env["BASE"] != main || env["MERGE_BRANCH"] != "main" || env["MERGE_HEAD"] != main {
+	if env["URL"] != repo.Spec.URL || env["HEAD"] != job.Checkout.Head || env["BASE"] != main {
 		t.Errorf("prepare's environment = %v, want the job's commits", env)
 	}
 	if want := []string{"app-creds/username", "app-creds/password", "cursor-api-key/api-key"}; !slices.Equal(secrets, want) {
@@ -75,9 +70,8 @@ func TestRunsAJob(t *testing.T) {
 			}
 		}
 	}
-	if !slices.Equal(task.Tools, job.Tools) || !task.Edit || task.Instructions != job.Task.Instructions || task.MergeBranch != "main" || task.MergeHead != main ||
-		task.ConflictsFile != "/input/conflicts" || task.MergeLogFile != "/input/merge-log.txt" {
-		t.Errorf("AGENT_TASK = %+v, want the job's task, tools, and merge", task)
+	if !slices.Equal(task.Tools, job.Tools) || !task.Edit || task.Instructions != job.Task.Instructions || task.Head != job.Checkout.Head || task.Base != main {
+		t.Errorf("AGENT_TASK = %+v, want the job's task, tools, and commits", task)
 	}
 
 	t.Log("RunJob follows the Pod until it serves the agent's result.")
@@ -142,6 +136,10 @@ func TestCountsAJobsPodThatsCreatedAgain(t *testing.T) {
 			t.Fatalf("RunJob = %+v with state %+v, want %+v", s, st, want)
 		}
 	}
+	gone := *st
+	if s, rec := f.runJob(job, &gone); !s.Done || s.Result != nil || len(kube.Owned[Pod](rec)) != 0 || s.Message != "Pod "+p.Name+" was deleted, but the job used all 2 of its runs" {
+		t.Errorf("RunJob = %+v, want the run to end at the job's limit without the Pod", s)
+	}
 	p.UID = "uid-3"
 	if s, _ := f.runJob(job, st, p); !s.Done || s.Result != nil || s.Message != "Pod "+p.Name+" was deleted and created again, but the job used all 2 of its runs" {
 		t.Errorf("RunJob = %+v, want the run to end at the job's limit", s)
@@ -160,6 +158,104 @@ func TestReportsABranchThatMoved(t *testing.T) {
 	s, rec := f.runJob(job, st, p)
 	if s.Done || !s.Moved || s.Message != "waiting for a run on the new commits: "+moved || len(kube.Owned[Pod](rec)) != 1 {
 		t.Errorf("RunJob = %+v, want a run that waits because c/x moved", s)
+	}
+}
+
+func TestRestartsAJobsRunWhenAFlagChanges(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	job.MaxRuns = 1
+	st := &JobState{}
+	p := f.startJob(job, st)
+	f.runJob(job, st, p)
+
+	t.Log("Another -agent-image starts the run again in a new Pod, which isn't another run.")
+	f.r.Image = "registry.example.com/agent-runner:new"
+	s, rec := f.runJob(job, st, p)
+	pods := kube.Owned[Pod](rec)
+	if s.Done || len(pods) != 1 || pods[0].Name == p.Name || *st != (JobState{Runs: 1, Pod: pods[0].Name, Attempt: 1}) || s.Message != "started Pod "+pods[0].Name {
+		t.Fatalf("RunJob = %+v with state %+v and %d Pods, want run 1 in a new Pod", s, st, len(pods))
+	}
+	q := pods[0]
+	q.Namespace, q.UID = "default", "uid-"+q.Name
+
+	t.Log("Neither MaxRuns nor empty Tools changes the job.")
+	job.MaxRuns, job.Tools = 2, []string{}
+	s, rec = f.runJob(job, st, q)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || pods[0].Name != q.Name || st.Runs != 1 {
+		t.Fatalf("RunJob = %+v with state %+v, want the same run in the same Pod", s, st)
+	}
+
+	t.Log("Another image in the job is another job, so it starts a new run.")
+	job.Image = "registry.example.com/agent-runner:fix"
+	s, rec = f.runJob(job, st, q)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || pods[0].Name == q.Name || st.Runs != 2 {
+		t.Errorf("RunJob = %+v with state %+v, want run 2 in a new Pod", s, st)
+	}
+}
+
+func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	st := &JobState{Runs: 1}
+	p := f.startJob(job, st)
+	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: "c/x no longer points to " + job.Checkout.Head})},
+	}}
+	for _, uid := range []string{p.UID, p.UID, "uid-again"} {
+		p.UID = uid
+		if s, _ := f.runJob(job, st, p); s.Done || *st != (JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: uid, Refunded: uid}) {
+			t.Fatalf("RunJob = %+v with state %+v, want the run of Pod UID %s given back once", s, st, uid)
+		}
+	}
+}
+
+func TestKeepsAFinishedJobDone(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	st := &JobState{}
+	first := f.startJob(job, st)
+	first.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: 128, Message: "fatal: unable to access the repository"})},
+	}}
+	_, rec := f.runJob(job, st, first)
+	pods := kube.Owned[Pod](rec)
+	p := pods[len(pods)-1]
+	p.Namespace, p.UID = "default", "uid-"+p.Name
+	s, _ := f.runJob(job, st, finished(p, f.serve(review(Pass), p.UID)))
+	done := JobState{Runs: 1, Pod: p.Name, Attempt: 2, UID: p.UID, Done: true}
+	if !s.Done || s.Result == nil || *st != done {
+		t.Fatalf("RunJob = %+v with state %+v, want the agent's result and %+v", s, st, done)
+	}
+
+	t.Log("Later calls declare no Pod, so neither a deleted Pod nor a deploy runs the agent again.")
+	for _, tc := range []struct {
+		model string
+		pods  []*Pod
+	}{
+		{f.r.Model, []*Pod{p}},
+		{f.r.Model, nil},
+		{"composer-3", nil},
+	} {
+		f.r.Model = tc.model
+		s, rec := f.runJob(job, st, tc.pods...)
+		if !s.Done || s.Result != nil || s.Failed != nil || s.Message != "the run in Pod "+p.Name+" already finished" || len(kube.Owned[Pod](rec)) != 0 || *st != done {
+			t.Fatalf("RunJob = %+v with state %+v, want the run done without its Pod", s, st)
+		}
+	}
+
+	t.Log("A job for another head starts a new run.")
+	job.Checkout.Head = f.base
+	s, rec = f.runJob(job, st)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || *st != (JobState{Runs: 2, Pod: pods[0].Name, Attempt: 1}) {
+		t.Fatalf("RunJob = %+v with state %+v, want run 2", s, st)
+	}
+
+	t.Log("A job that isn't valid ends its run at once, without a Pod to wait for.")
+	job.Tools = []string{"shell"}
+	s, rec = f.runJob(job, st)
+	if !s.Done || len(kube.Owned[Pod](rec)) != 0 || rec.RequeueAfter() != 0 || *st != (JobState{Runs: 2, Done: true}) {
+		t.Errorf("RunJob = %+v with state %+v and RequeueAfter = %v, want the run done without a Pod", s, st, rec.RequeueAfter())
 	}
 }
 
@@ -192,7 +288,6 @@ func TestValidatesJobs(t *testing.T) {
 		func(j *Job) {
 			j.Checkout.Head = strings.Repeat("c", 64)
 			j.Checkout.Base = sha
-			j.Checkout.Merge = &Ref{Branch: "main", Commit: sha}
 			j.Tools = []string{"read", "delete"}
 		},
 		func(j *Job) {
