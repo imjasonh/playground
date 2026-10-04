@@ -271,10 +271,11 @@ An agent can answer differently each time, so a result stays until the
 branch's head changes, and the check doesn't run again when only the parent
 moves. When the agent fails, for example because the API key is missing or
 wrong or the run takes longer than `-timeout`, the check fails with the
-agent's error. It also fails when an image's name isn't valid, when a
-Secret is still missing or an image still can't be pulled 5 minutes after
-the container can start, and when fetching the head fails in three Pods in
-a row. The next head runs the agent again. To run it again
+agent's error. It also fails when an image's name isn't valid, when kube
+still can't schedule the Pod 5 minutes after creating it, when a Secret is
+still missing or an image still can't be pulled 5 minutes after the
+container can start, and when fetching the head fails in three Pods in a
+row. The next head runs the agent again. To run it again
 on the same change, such as after a transient error, push an empty commit
 with `git commit --allow-empty`.
 

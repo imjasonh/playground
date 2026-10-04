@@ -341,6 +341,20 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		return x.fail("Pod %s stopped before the agent finished: %s", st.Pod, cmp.Or(s.Message, s.Reason, "no reason given"))
 	}
 	if t == nil {
+		for _, c := range s.Conditions {
+			if c.Type != "PodScheduled" || c.Status != "False" {
+				continue
+			}
+			// activeDeadlineSeconds counts from when a Pod starts on a
+			// node, so a Pod that isn't scheduled holds a -max-pods slot
+			// until the run ends.
+			why := cmp.Or(strings.TrimSpace(c.Message), c.Reason, "no reason given")
+			if wait := stuckAfter - time.Since(pod.CreationTimestamp); wait > 0 {
+				kube.RequeueAfter(ctx, wait)
+				return x.status("Pod %s can't be scheduled: %s", st.Pod, why)
+			}
+			return x.fail("Pod %s couldn't be scheduled in %d minutes: %s", st.Pod, int(stuckAfter/time.Minute), why)
+		}
 		msg, reason, since := blocked(s)
 		if since.IsZero() {
 			since = pod.CreationTimestamp

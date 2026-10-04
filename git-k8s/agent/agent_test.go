@@ -559,6 +559,39 @@ func TestCountsTheGraceFromWhenAContainerCanStart(t *testing.T) {
 	}
 }
 
+func TestEndsARunWhosePodCantBeScheduled(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	why := "0/3 nodes are available: 3 Insufficient ephemeral-storage."
+	p.CreationTimestamp = time.Now().Add(-time.Minute)
+	p.Status = PodStatus{Phase: "Pending", Conditions: []PodCondition{{Type: "PodScheduled", Status: "False", Reason: "Unschedulable", Message: why}}}
+	rec := f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "Pod "+p.Name+" can't be scheduled: "+why {
+		t.Fatalf("result = %+v, want Running with the scheduler's message", res)
+	}
+	if d := rec.RequeueAfter(); d > stuckAfter-time.Minute || d < stuckAfter-time.Minute-10*time.Second {
+		t.Errorf("RequeueAfter = %v, want a reconcile when the Pod is %v old", d, stuckAfter)
+	}
+
+	t.Log("A scheduled Pod that's still pending isn't stuck.")
+	p.Status.Conditions[0].Status = "True"
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "Pod "+p.Name+" is Pending" {
+		t.Fatalf("result = %+v, want the Pod Pending", res)
+	}
+
+	t.Log("Once the Pod is stuckAfter old, the run ends, and the next reconcile doesn't declare the Pod, so kube deletes it and frees its place in -max-pods.")
+	p.Status.Conditions[0].Status = "False"
+	p.CreationTimestamp = time.Now().Add(-2 * time.Hour)
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Failed || res.Message != "Pod "+p.Name+" couldn't be scheduled in 5 minutes: "+why || res.Outputs["runs"] != "1" {
+		t.Fatalf("result = %+v, want Failed after 1 run", res)
+	}
+	if rec := f.reconcile(p); len(kube.Owned[Pod](rec)) != 0 {
+		t.Error("the next reconcile must stop declaring the Pod")
+	}
+}
+
 func TestReportsWhatAFailedRunUsed(t *testing.T) {
 	f := newFixture(t, "")
 	p := f.start()

@@ -118,8 +118,16 @@ type PodStatus struct {
 	Message               string            `json:"message,omitempty"`
 	PodIP                 string            `json:"podIP,omitempty"`
 	StartTime             time.Time         `json:"startTime,omitzero"`
+	Conditions            []PodCondition    `json:"conditions,omitempty"`
 	InitContainerStatuses []ContainerStatus `json:"initContainerStatuses,omitempty"`
 	ContainerStatuses     []ContainerStatus `json:"containerStatuses,omitempty"`
+}
+
+type PodCondition struct {
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 type ContainerStatus struct {

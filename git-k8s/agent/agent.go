@@ -370,8 +370,10 @@ var starting = []string{"", "PodInitializing", "ContainerCreating"}
 // themselves.
 var stuck = []string{"CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "InvalidImageName"}
 
-// stuckAfter is how long a container waits, from when it can start, before
-// a run ends on a reason in stuck other than InvalidImageName.
+// stuckAfter is how long a run waits before it ends on a Pod that kube
+// can't schedule, counted from the Pod's creation, or on a container that
+// waits for a reason in stuck other than InvalidImageName, counted from
+// when the container can start.
 const stuckAfter = 5 * time.Minute
 
 // blocked reports why a container can't start, such as a missing Secret or
