@@ -219,11 +219,11 @@ try to create the CRD at the same time, one of them creates it, and both use
 it if it serves both of their versions.
 
 A program that only reads a type never creates its CRD. While the CRD is
-missing, a reconcile that calls `Get` or `List` for the type fails, and the
-framework retries it. `Fetch` returns `nil`. So a reconcile that reads a type
-before it first owns an object of the type never reaches `Own` while the CRD
-is missing. Declare such a type with `kube.Owns`, so that the program creates
-the CRD when it starts.
+missing, `Get` and `List` of the type fail the reconcile, so a later `Own` in
+it does nothing, and the framework retries it. `Fetch` returns `nil` and
+doesn't fail the reconcile. If a reconcile calls `Get` or `List` for a type
+before it first owns an object of the type, declare the type with `kube.Owns`,
+so that the program creates the CRD when it starts.
 
 When a program that reconciles the type starts, it installs its own CRD over
 the created one. Until then, the CRD keeps the schema that it was created with,

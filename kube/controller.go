@@ -145,9 +145,10 @@ func Resync(d time.Duration) Option { return func(o *options) { o.resync = d } }
 // example after a code change, and to start that cache before the first
 // reconcile. If the program defines T but doesn't reconcile it, starting the
 // cache also creates T's CustomResourceDefinition if it's missing, so use
-// Owns when a reconcile reads T before it first owns an object of type T. If
-// creating the CustomResourceDefinition fails at startup, the program logs
-// the error and starts anyway, and the next Own of T tries again.
+// Owns when a reconcile calls Get or List for T before it first owns an
+// object of type T. If creating the CustomResourceDefinition fails at
+// startup, the program logs the error and starts anyway, and the next Own of
+// T tries again.
 func Owns[T any, P Resource[T]]() Option {
 	return func(o *options) { o.owns = append(o.owns, typeInfoFor[T, P]) }
 }
