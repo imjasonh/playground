@@ -359,10 +359,12 @@ The design leaves these risks:
   writes stops working when its Pod finishes, because `go-cache` gets the
   Pod for each write. `go-cache` denies a token that isn't a JWT for the
   request's audience without a TokenReview, remembers denials apart from
-  the tokens that it accepts, and sends at most 8 TokenReviews at once. It
-  gets at most 8 Pods at once, in slots of their own. A flood of bad
-  tokens can hold up reviews of new tokens, but not requests with tokens
-  that it accepted in the last minute.
+  the tokens that it accepts, and sends at most 8 TokenReviews at once. A
+  flood of bad tokens can hold up reviews of new tokens, but not requests
+  with tokens that it accepted in the last minute. It gets at most 8 Pods
+  at once, in slots of their own. Tokens bound to Pods that fail the check
+  can hold up writes, but `go-cache` remembers up to 1024 such Pods for 10
+  seconds each, so each costs at most one get every 10 seconds.
 - A namespace can fill the store and push other namespaces' entries out,
   which slows their builds. Its tokens can name any repository, even one
   that doesn't exist, so it can write as many entries as it likes.

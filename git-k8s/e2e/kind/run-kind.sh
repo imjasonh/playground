@@ -680,9 +680,10 @@ code="$(put_probe unlabeled)"
 [[ "${code}" == 403 ]]
 docker exec "${CLUSTER}-control-plane" grep -q "Pod ${NS}/cache-writer isn't check-gotest's" /tmp/probe.txt
 # Anyone who can create Pods in the namespace can set check-gotest's label.
+# go-cache remembers for 10 seconds that the Pod failed the check.
 k -n "${NS}" label pod cache-writer kube.imjasonh.github.io/controller=check-gotest
-code="$(put_probe labeled)"
-[[ "${code}" == 201 ]]
+labeled() { [[ "$(put_probe labeled)" == 201 ]]; }
+eventually 30 labeled
 k -n "${NS}" delete pod cache-writer
 code="$(put_probe deleted)"
 [[ "${code}" == 403 ]]

@@ -1025,7 +1025,7 @@ func TestWritesNeedOwnedPod(t *testing.T) {
 	}
 
 	t.Log("The Pods of the controller that -controller names write.")
-	r.writer = "check-gofmt"
+	r = newTokenReviewer(r.server, r.tokenFile, r.client, "check-gofmt")
 	if err := r.checkWriter(t.Context(), identity{namespace: "ns", pod: "gofmt", podUID: "uid-gofmt"}); err != nil {
 		t.Errorf("check of check-gofmt's Pod with -controller=check-gofmt = %v, want nil", err)
 	}
@@ -1134,6 +1134,62 @@ func TestPodChecks(t *testing.T) {
 	wg.Wait()
 	if current != nil || !errors.Is(earlier, errDenied) {
 		t.Errorf("overlapping checks of Pod ns/builder and an earlier Pod with its name = %v, %v; want nil and a denial", current, earlier)
+	}
+}
+
+func TestPodCheckDenials(t *testing.T) {
+	var (
+		gets   atomic.Int32
+		broken atomic.Bool
+	)
+	r := newTokenAPI(t, nil, func(_, name string) (*pod, error) {
+		gets.Add(1)
+		if broken.Load() {
+			return nil, errors.New("etcd is down")
+		}
+		p := ownedPod("uid-" + name)
+		if name == "intruder" {
+			p.Metadata.Labels = nil
+		}
+		return p, nil
+	})
+	check := func(name string, n int) (denials, errs int) {
+		t.Helper()
+		for range n {
+			switch err := r.checkWriter(t.Context(), identity{namespace: "ns", pod: name, podUID: "uid-" + name}); {
+			case errors.Is(err, errDenied):
+				denials++
+			case err != nil:
+				errs++
+			}
+		}
+		return denials, errs
+	}
+
+	t.Log("go-cache remembers a Pod that failed the check.")
+	if denials, _ := check("intruder", 100); denials != 100 || gets.Load() != 1 {
+		t.Errorf("100 checks of a Pod without check-gotest's label: %d denials after %d Pod gets, want 100 after 1", denials, gets.Load())
+	}
+
+	t.Log("It doesn't remember a Pod that passed, or an error.")
+	gets.Store(0)
+	if denials, errs := check("builder", 3); denials != 0 || errs != 0 || gets.Load() != 3 {
+		t.Errorf("3 checks of check-gotest's Pod: %d denials and %d errors after %d Pod gets, want none after 3", denials, errs, gets.Load())
+	}
+	broken.Store(true)
+	gets.Store(0)
+	if denials, errs := check("unlucky", 2); denials != 0 || errs != 2 || gets.Load() != 2 {
+		t.Errorf("2 checks while the API server fails: %d denials and %d errors after %d Pod gets, want 2 errors after 2", denials, errs, gets.Load())
+	}
+
+	t.Log("It forgets a denial after a while.")
+	broken.Store(false)
+	r.podsDenied = newReviewCache(1, time.Millisecond)
+	gets.Store(0)
+	check("intruder", 1)
+	time.Sleep(10 * time.Millisecond)
+	if denials, _ := check("intruder", 1); denials != 1 || gets.Load() != 2 {
+		t.Errorf("check of a Pod that failed a check that expired: %d denials after %d Pod gets, want 1 after 2", denials, gets.Load())
 	}
 }
 

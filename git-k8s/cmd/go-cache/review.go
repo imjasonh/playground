@@ -82,9 +82,16 @@ type tokenReviewer struct {
 	asking chan struct{}
 	// pods holds the Pod checks in progress, by Pod.
 	pods singleflight.Group
+	// podsDenied remembers the Pods that failed a check. Only a Pod without
+	// writer's label could pass a later check, and kube labels writer's
+	// Pods when it creates them.
+	podsDenied *reviewCache
 	// getting holds a value for each Pod get in progress, up to its
-	// capacity. Pod gets don't share slots with TokenReviews, so a flood of
-	// bad tokens can't hold up writes with tokens that go-cache accepted.
+	// capacity. Pod gets don't share slots with TokenReviews, so tokens that
+	// fail their reviews can't hold up writes with tokens that passed
+	// theirs. Tokens bound to Pods that fail the check can, but podsDenied
+	// remembers each such Pod for 10 seconds, so each costs at most one get
+	// every 10 seconds.
 	getting chan struct{}
 	// askWait is how long a request to the API server waits for others to
 	// finish.
@@ -202,15 +209,16 @@ func inCluster(writer string) (*tokenReviewer, error) {
 
 func newTokenReviewer(server, tokenFile string, client *http.Client, writer string) *tokenReviewer {
 	return &tokenReviewer{
-		server:    server,
-		tokenFile: tokenFile,
-		client:    client,
-		writer:    writer,
-		allowed:   newReviewCache(4096, time.Minute),
-		denied:    newReviewCache(1024, 10*time.Second),
-		asking:    make(chan struct{}, maxReviews),
-		getting:   make(chan struct{}, maxPodGets),
-		askWait:   10 * time.Second,
+		server:     server,
+		tokenFile:  tokenFile,
+		client:     client,
+		writer:     writer,
+		allowed:    newReviewCache(4096, time.Minute),
+		denied:     newReviewCache(1024, 10*time.Second),
+		podsDenied: newReviewCache(1024, 10*time.Second),
+		asking:     make(chan struct{}, maxReviews),
+		getting:    make(chan struct{}, maxPodGets),
+		askWait:    10 * time.Second,
 	}
 }
 
@@ -289,13 +297,22 @@ func (t *tokenReviewer) checkWriter(ctx context.Context, id identity) error {
 	if id.pod == "" || id.podUID == "" {
 		return fmt.Errorf("%w: the token isn't bound to a Pod", errDenied)
 	}
-	_, err, _ := t.pods.Do(id.namespace+"/"+id.pod+"/"+id.podUID, func() (any, error) {
+	name := id.namespace + "/" + id.pod + "/" + id.podUID
+	key := sha256.Sum256([]byte(name))
+	if r, ok := t.podsDenied.get(key, time.Now()); ok {
+		return r.err
+	}
+	_, err, _ := t.pods.Do(name, func() (any, error) {
 		ctx := context.WithoutCancel(ctx)
 		if err := t.take(ctx, t.getting, "Pod gets"); err != nil {
 			return nil, err
 		}
 		defer func() { <-t.getting }()
-		return nil, t.checkPod(ctx, id)
+		err := t.checkPod(ctx, id)
+		if errors.Is(err, errDenied) {
+			t.podsDenied.add(key, review{err: err}, time.Now())
+		}
+		return nil, err
 	})
 	return err
 }
