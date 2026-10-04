@@ -379,13 +379,13 @@ const stuckAfter = 5 * time.Minute
 // could start, or the zero time if the Pod's status doesn't say.
 func blocked(st *PodStatus) (msg, reason string, since time.Time) {
 	since = st.StartTime
-	for i, s := range slices.Concat(st.InitContainerStatuses, st.ContainerStatuses) {
+	for _, s := range slices.Concat(st.InitContainerStatuses, st.ContainerStatuses) {
 		if w := s.State.Waiting; w != nil && !slices.Contains(starting, w.Reason) {
 			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message)), w.Reason, since
 		}
-		// Each init container starts when the one before it finishes, and
-		// the other containers start when the last one finishes.
-		if t := s.State.Terminated; t != nil && i < len(st.InitContainerStatuses) {
+		// An agent Pod has one container that isn't an init container, so
+		// each of its containers starts when the one before it finishes.
+		if t := s.State.Terminated; t != nil {
 			since = t.FinishedAt
 		}
 	}
