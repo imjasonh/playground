@@ -14,6 +14,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"path"
@@ -55,7 +56,23 @@ type testResult struct {
 	} `json:"status,omitzero"`
 }
 
-var prefix = flag.String("prefix", "deps/", "branch-name prefix of dependency branches, the same as git-k8s-deps's -prefix")
+// prefix's default doesn't go through Set, so it has to be valid too.
+var prefix branchPrefix = "deps/"
+
+// branchPrefix is a -prefix flag, which must be a branch-name prefix that
+// ends with /, as git-k8s-deps requires of its own. Flag parsing stops on any
+// other value, so check-deps exits at startup.
+type branchPrefix string
+
+func (p *branchPrefix) String() string { return string(*p) }
+
+func (p *branchPrefix) Set(s string) error {
+	if !strings.HasSuffix(s, "/") || !git.ValidBranch(s+"go") {
+		return errors.New("it must be a branch-name prefix that ends with /, such as deps/")
+	}
+	*p = branchPrefix(s)
+	return nil
+}
 
 // instructions returns the agent's task for a branch whose tests fail with
 // the gotest check's message.
@@ -78,10 +95,7 @@ var runAgent = func(ctx context.Context, in *checks.Input, task agent.Task) (che
 var check = checks.Check{Name: "deps", Remote: credentials.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
-	if !strings.HasSuffix(*prefix, "/") || !git.ValidBranch(*prefix+"go") {
-		return keepRuns(in, gitk8s.Running, "-prefix is %q, but it must be a branch-name prefix that ends with /, such as deps/", *prefix), nil
-	}
-	if !strings.HasPrefix(in.Spec.Branch, *prefix) {
+	if !strings.HasPrefix(in.Spec.Branch, string(prefix)) {
 		return checks.Pass("%s isn't a dependency branch", in.Spec.Branch), nil
 	}
 	if in.Spec.Merge.Check("gotest") == nil {
@@ -168,7 +182,12 @@ func keepRuns(in *checks.Input, state, format string, args ...any) checks.Verdic
 	return v
 }
 
+func addFlags(fs *flag.FlagSet) {
+	fs.Var(&prefix, "prefix", "branch-name prefix of dependency branches, ending with /, the same as git-k8s-deps's -prefix")
+	runner.AddFlags(fs)
+}
+
 func main() {
-	runner.AddFlags(flag.CommandLine)
+	addFlags(flag.CommandLine)
 	checks.Main[Branch](check)
 }

@@ -721,7 +721,8 @@ go run ./cmd/check-deps generate -registry=REGISTRY -base=cgr.dev/chainguard/git
 ```
 
 `check-deps` takes `-prefix`, which must match the controller's, and the
-flags in the `check-review` table. `git-k8s-deps` takes these flags:
+flags in the `check-review` table. It exits at startup when `-prefix` isn't a
+branch-name prefix that ends with `/`. `git-k8s-deps` takes these flags:
 
 | Flag | Default | Description |
 | --- | --- | --- |

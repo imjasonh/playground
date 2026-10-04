@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
 	"maps"
 	"testing"
 	"time"
@@ -140,29 +143,33 @@ func TestPassesOtherBranches(t *testing.T) {
 }
 
 func TestNeedsAValidPrefix(t *testing.T) {
-	defer func(p string) { *prefix = p }(*prefix)
-	for p, want := range map[string]string{
-		"":         `-prefix is "", but it must be a branch-name prefix that ends with /, such as deps/`,
-		"deps":     `-prefix is "deps", but it must be a branch-name prefix that ends with /, such as deps/`,
-		"deps//":   `-prefix is "deps//", but it must be a branch-name prefix that ends with /, such as deps/`,
-		"-deps/":   `-prefix is "-deps/", but it must be a branch-name prefix that ends with /, such as deps/`,
-		"updates/": "deps/go/example.com/greet isn't a dependency branch",
-	} {
-		t.Run(p, func(t *testing.T) {
-			noAgent(t)
-			*prefix = p
-			f := newFixture(t, depsBranch)
-			f.b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123abcd", State: gitk8s.Failed, Outputs: map[string]string{"runs": "2"}}
-			rec := f.reconcile()
-			res := f.result()
-			state, runs := gitk8s.Running, "2"
-			if p == "updates/" {
-				state, runs = gitk8s.Passed, ""
-			}
-			if res.State != state || res.Message != want || res.Outputs["runs"] != runs || len(kube.Owned[agent.Pod](rec)) != 0 {
-				t.Errorf("result = %+v, want %s with %q, %q runs, and no Pod", res, state, want, runs)
-			}
-		})
+	t.Cleanup(func() { prefix = "deps/" })
+	if err := new(branchPrefix).Set(string(prefix)); err != nil {
+		t.Errorf("the default -prefix, %q, isn't valid: %v", prefix, err)
+	}
+	parse := func(value string) error {
+		fs := flag.NewFlagSet("check-deps", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		addFlags(fs)
+		return fs.Parse([]string{"-prefix=" + value})
+	}
+	for _, p := range []string{"", "deps", "/", "deps//", "-deps/", "deps..x/", ".deps/", "deps.lock/", "de ps/"} {
+		want := fmt.Sprintf("invalid value %q for flag -prefix: it must be a branch-name prefix that ends with /, such as deps/", p)
+		if err := parse(p); err == nil || err.Error() != want {
+			t.Errorf("parsing -prefix=%q = %v, want %s", p, err, want)
+		}
+		if prefix != "deps/" {
+			t.Fatalf("parsing -prefix=%q set the prefix to %q", p, prefix)
+		}
+	}
+	if err := parse("updates/"); err != nil {
+		t.Fatalf("parsing -prefix=updates/ = %v", err)
+	}
+	noAgent(t)
+	f := newFixture(t, depsBranch)
+	rec := f.reconcile()
+	if res := f.result(); res.State != gitk8s.Passed || res.Message != depsBranch+" isn't a dependency branch" || len(kube.Owned[agent.Pod](rec)) != 0 {
+		t.Errorf("with -prefix=updates/, result = %+v, want Passed without a Pod because %s isn't a dependency branch", res, depsBranch)
 	}
 }
 
