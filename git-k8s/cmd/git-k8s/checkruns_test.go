@@ -1025,22 +1025,22 @@ func TestCheckRunsRetryRefusedCreations(t *testing.T) {
 	s := newSharing(t, 1)
 	missing := strings.Repeat("ab", 20)
 	checks := map[string]gitk8s.CheckResult{
-		"gofmt":  {Commit: s.commits[0], State: gitk8s.Passed},
-		"gotest": {Commit: missing, State: gitk8s.Running},
+		"gofmt":  {Commit: missing, State: gitk8s.Running},
+		"gotest": {Commit: s.commits[0], State: gitk8s.Passed},
 	}
 
 	t.Log("When GitHub refuses to create a check run on a commit that it doesn't have, the controller publishes the branch's other check runs, and tries again on every reconcile.")
 	getMissing := "GET /api/v3/repos/acme/app/commits/" + missing + "/check-runs"
-	for i, want := range [][]string{{s.get(0), post, getMissing, post}, {getMissing, post}, {getMissing, post}} {
+	for i, want := range [][]string{{getMissing, post, s.get(0), post}, {getMissing, post}, {getMissing, post}} {
 		got, err := s.p.publishOn("c/x", checks)
 		if err == nil || !strings.Contains(err.Error(), "422 Unprocessable Entity: No commit found for SHA: "+missing) || !slices.Equal(got, want) {
 			t.Errorf("reconcile %d: requests = %q, err = %v; want %q and GitHub's refusal", i+1, got, err, want)
 		}
 	}
-	s.wantRuns("git-k8s/gofmt@" + s.short(0) + " completed success: Passed")
+	s.wantRuns("git-k8s/gotest@" + s.short(0) + " completed success: Passed")
 
 	t.Log("Once the result is for a commit that GitHub has, the controller stops trying.")
-	s.step("c/x", map[string]gitk8s.CheckResult{"gofmt": checks["gofmt"], "gotest": {Commit: s.commits[0], State: gitk8s.Running}}, s.get(0), post)
+	s.step("c/x", map[string]gitk8s.CheckResult{"gofmt": {Commit: s.commits[0], State: gitk8s.Running}, "gotest": checks["gotest"]}, s.get(0), post)
 	s.again("c/x")
 }
 
