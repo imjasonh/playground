@@ -136,6 +136,9 @@ generate() {
 echo "::group::Install the website example"
 generate website | k apply -f -
 k -n website rollout status deployment/website --timeout=180s
+container() { k -n website get deployment website -o jsonpath="{.spec.template.spec.containers[0].$1}"; }
+[[ "$(container 'env[?(@.name=="KUBE_IMAGE")].value')" == "$(container image)" ]]
+echo "KUBE_IMAGE names the controller's image: $(container image)"
 
 website_ready() {
   [[ "$(k get website hello -o jsonpath='{.status.readyReplicas}')" == "$1" ]]
