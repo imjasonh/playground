@@ -65,6 +65,11 @@ var (
 	builder  = caller.Caller{Namespace: "team", Name: "builder"}
 	// impostor has a check's name, but not in the check's namespace.
 	impostor = caller.Caller{Namespace: "team", Name: "check-gofmt"}
+	// depsImpostor has the controller's name, but not in the controller's
+	// namespace, and depsNeighbor is another service account in the
+	// controller's namespace.
+	depsImpostor = caller.Caller{Namespace: "team", Name: "git-k8s-deps"}
+	depsNeighbor = caller.Caller{Namespace: "git-k8s-deps", Name: "default"}
 )
 
 func TestRefuse(t *testing.T) {
@@ -99,6 +104,8 @@ func TestRefuse(t *testing.T) {
 		{name: "a controller updates a parent", who: deps, c: update("refs/heads/main"), want: "main is a parent branch"},
 		{name: "another service account", who: builder, c: update("refs/heads/feature"), want: "team/builder may not push"},
 		{name: "a check's name in another namespace", who: impostor, c: update("refs/heads/feature"), want: "team/check-gofmt may not push"},
+		{name: "a controller's name in another namespace", who: depsImpostor, c: create("refs/heads/deps/bump"), want: "team/git-k8s-deps may not push"},
+		{name: "another service account in a controller's namespace", who: depsNeighbor, c: create("refs/heads/deps/bump"), want: "git-k8s-deps/default may not push"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := m.refuse(tc.who, rulesRepo, tc.c)
@@ -136,6 +143,8 @@ func TestMayFetchAndPush(t *testing.T) {
 		{name: "a controller with a prefix", who: deps, mayFetch: true, mayPush: true},
 		{name: "another service account", who: builder},
 		{name: "a check's name in another namespace", who: impostor},
+		{name: "a controller's name in another namespace", who: depsImpostor},
+		{name: "another service account in a controller's namespace", who: depsNeighbor},
 		{name: "a check's running Pod", who: pod("team", "gotest-1"), mayFetch: true},
 		{name: "a Pod whose result is final", who: pod("team", "gotest-2")},
 		{name: "a Pod for another repository", who: pod("team", "gotest-3")},
