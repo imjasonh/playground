@@ -573,10 +573,10 @@ at most 6 minutes behind.
 A 404 on a patch means that someone deleted the Event, so the writer creates
 it again. A 409 on a create means that an earlier create succeeded although
 its response was lost, so the writer goes on as if this one had. The writer
-logs and counts other errors. After a 429
-or a 5xx, it tries again at its next tick. After any other error, such as a
-403 when RBAC doesn't allow events in the namespace, it stops writing the
-series, because the same write would fail again.
+logs and counts other errors. After a 429 or a 5xx, it tries again at its next
+tick. After any other error, such as a 403 when RBAC doesn't allow events in
+the namespace, it stops writing the series, because the same write would fail
+again.
 
 The Event goes in the object's namespace. The API server accepts an Event
 about a cluster-scoped object only in `default` or `kube-system`, so the
