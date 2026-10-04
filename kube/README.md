@@ -583,7 +583,11 @@ Right after a takeover, a reconcile can fail this way. So can the first
 reconcile of a new object, if something else writes the object while it
 runs. The framework logs the failure at the info level, counts it in
 `kube_reconcile_total` with `result="stale"` rather than as an error, and
-retries the reconcile, which succeeds once the caches catch up.
+retries the reconcile, which succeeds once the caches catch up. This covers
+a hand-off, where the previous holder finishes its reconciles before it
+releases the shard, but not a lost Lease. A replica that can't renew its
+Lease lets running reconciles finish, and a late status write from one of
+them can still remove data that a client was told was saved.
 
 In the handler, where `unavailable` answers `503` and closes the connection
 as in the previous example:

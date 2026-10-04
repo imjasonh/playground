@@ -94,8 +94,9 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 	if pre.diverged {
 		return fmt.Errorf("%w: the cache that kube.Get reads has another version of the object than the controller's cache", errStale)
 	}
-	// The UID keeps status computed for a deleted object from landing on a
-	// new object with the same name.
+	// The API server ignores the UID on status writes to custom resources,
+	// so only a resource version keeps status computed for a deleted object
+	// from landing on a new object with the same name.
 	meta := map[string]any{"name": m.Name, "uid": m.UID}
 	if m.Namespace != "" {
 		meta["namespace"] = m.Namespace

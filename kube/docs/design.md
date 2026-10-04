@@ -488,11 +488,17 @@ counts applies by result, `applied` or `skipped`.
 After the intents, the framework deletes owned objects that the reconcile
 didn't declare. It finds them in the owner index of each owned type's cache.
 
-Every write that targets an object that must already exist carries its UID:
-status writes, finalizer changes, `Apply`, and deletes. An apply with a UID
-fails instead of creating an object, and a delete with a UID precondition
-fails if the name now belongs to a new object. A write based on a stale cache
-can't bring back a deleted object or touch its replacement.
+Finalizer changes, `Apply`, and deletes target an object that must already
+exist, so they carry its UID. An apply with a UID fails instead of creating an
+object, and a delete with a UID precondition fails if the name now belongs to
+a new object. Such a write based on a stale cache can't bring back a deleted
+object or touch its replacement. Status writes carry the UID too, but the API
+server ignores it on status writes to custom resources. A status write that
+requires the cached resource version, as
+[Shards and leader election](#shards-and-leader-election) describes, fails on
+a new object with the same name. Other status writes, including every one
+without leader election or shards, can land a status computed for a deleted
+object on a new object with the same name.
 
 `Reconcile` can change the reconciled object's status. After every reconcile,
 whether it succeeded or not, the framework sets `observedGeneration` and a
@@ -596,8 +602,12 @@ tells apart from a deleted object, and the reconcile is retried. Such a
 retry is expected, so the framework logs it at the info level and counts it
 in `kube_reconcile_total` with `result="stale"` instead of `result="error"`.
 One success is enough. It shows that the cache had every earlier write when
-that reconcile started, and from then on this replica is the only one that
-writes the object's status.
+that reconcile started. After a hand-off, this replica is then the only one
+that writes the object's status, because the previous holder finished its
+reconciles before it released the shard. That isn't so after a lease loss.
+The previous holder's running reconciles finish, and a late status write from
+one of them replaces a newer status, because both replicas apply it with the
+same field manager.
 
 The precondition covers the controller's cache. A reconcile can also read the
 object with `kube.Get`, which reads the same cache unless the controller
@@ -608,7 +618,11 @@ two caches when the reconcile starts. If the cache that `kube.Get` reads holds
 another version of the object, the framework doesn't write the status and
 retries the reconcile. A reconcile that read the object with `kube.Get` also
 runs again when that cache catches up. A cache that doesn't hold the object's
-namespace can't return the object, so the framework doesn't compare it.
+namespace can't return the object, so the framework doesn't compare it. The
+framework finds the cache that `kube.Get` reads by the controller's Go type. A
+reconcile that reads the object as another Go type of the same kind reads
+another cache, which the framework doesn't compare, so the precondition
+doesn't cover that read.
 
 Waiting for the cache to catch up before queuing the shard's keys would need a
 way to tell that it has. Clients may compare resource versions only for
@@ -1231,6 +1245,16 @@ offers:
   `k8s.io/api` v0.37.1. Regenerating it picks up new fields and kinds.
 - Shards divide reconciles, not memory. Labeling objects with their shard
   would let replicas watch only their own objects.
+- A replica that loses its lease lets running reconciles finish, so a late
+  status write can replace a newer one from the next holder. Canceling a
+  shard's reconciles when the lease is lost, and checking before each write
+  that the replica still holds the shard in the same tenure, would narrow the
+  window to one API call. Making every status write require the resource
+  version that the reconcile read would close it for status, at the cost of a
+  `409 Conflict` whenever another writer gets there first.
+- A status write that doesn't require the cached resource version can land on
+  an object that was deleted and recreated with the same name, because the API
+  server ignores the UID on status writes to custom resources.
 - `generate` can't follow the type parameter of a generic type, or a type
   argument that contains a type parameter, to the types that it stands for.
   It warns about those calls instead.
