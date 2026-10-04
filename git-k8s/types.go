@@ -147,8 +147,18 @@ type GitBranchSpec struct {
 type GitBranchStatus struct {
 	Checks             map[string]CheckResult `json:"checks,omitempty" doc:"Check results by check name. Each check controller writes only its own entry."`
 	State              string                 `json:"state,omitempty" kube:"column=State" doc:"Why the branch has or hasn't landed on its parent, the same as the Merged condition's reason."`
+	Diverged           *Divergence            `json:"diverged,omitempty" doc:"Set when the branch changed in both the mirror and the external repository since they last synced. The mirror overwrites neither, and the branch doesn't land until the two agree."`
 	ObservedGeneration int64                  `json:"observedGeneration,omitempty"`
 	Conditions         []kube.Condition       `json:"conditions,omitempty"`
+}
+
+// Divergence says that a branch changed in both the mirror and the
+// external repository since they last synced.
+type Divergence struct {
+	// Commit is the external repository's head of the branch.
+	Commit string `json:"commit"`
+	// Ref is the ref in the mirror that holds Commit.
+	Ref string `json:"ref"`
 }
 
 // Check result states.
