@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/imjasonh/playground/kube"
 )
@@ -79,8 +78,8 @@ func TestRunsAJob(t *testing.T) {
 	p.UID = "uid-" + p.Name
 	digest := f.serve(review(Pass, File{Path: "a.txt", Mode: "100644", Content: []byte("merged\n")}), p.UID)
 	s, rec = f.runJob(job, st, finished(p, digest))
-	if !s.Done || s.Result == nil || len(s.Result.Files) != 1 || s.Message != "The change adds DO NOT MERGE at a.txt:2." || rec.RequeueAfter() != time.Second {
-		t.Fatalf("RunJob = %+v and RequeueAfter = %v, want the agent's result and a reconcile that deletes the Pod", s, rec.RequeueAfter())
+	if !s.Done || s.Result == nil || len(s.Result.Files) != 1 || s.Message != "The change adds DO NOT MERGE at a.txt:2." || rec.RequeueAfter() != 0 {
+		t.Fatalf("RunJob = %+v and RequeueAfter = %v, want the agent's result, with the requeue left to the caller", s, rec.RequeueAfter())
 	}
 
 	t.Log("A job for another head starts a new run, unless the job used all of its runs.")
@@ -244,6 +243,32 @@ func TestKeepsAFinishedJobDone(t *testing.T) {
 	}
 }
 
+func TestReportsAJobsResultAgainWithoutDone(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	st := &JobState{}
+	p := f.startJob(job, st)
+	f.runJob(job, st, p)
+	p = finished(p, f.serve(review(Pass), p.UID))
+	done := JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: p.UID, Done: true}
+
+	t.Log("A caller that stores the state without Done, such as when acting on the result failed, gets the result again.")
+	for range 2 {
+		kept := *st
+		kept.Done = false
+		s, rec := f.runJob(job, &kept, p)
+		if !s.Done || s.Result == nil || len(kube.Owned[Pod](rec)) != 1 || rec.RequeueAfter() != 0 || kept != done {
+			t.Fatalf("RunJob = %+v with state %+v and RequeueAfter = %v, want the agent's result again and %+v", s, kept, rec.RequeueAfter(), done)
+		}
+		*st = kept
+	}
+
+	t.Log("Once the caller stores Done, the next call declares no Pod, so kube deletes it.")
+	if s, rec := f.runJob(job, st, p); !s.Done || s.Result != nil || len(kube.Owned[Pod](rec)) != 0 || *st != done {
+		t.Errorf("RunJob = %+v with state %+v, want the run done without its Pod", s, st)
+	}
+}
+
 func TestReportsWhatAFailedJobUsed(t *testing.T) {
 	f := newFixture(t, "")
 	job := f.reviewJob()
@@ -251,7 +276,7 @@ func TestReportsWhatAFailedJobUsed(t *testing.T) {
 	p := f.startJob(job, st)
 	body, _ := json.Marshal(Result{Verdict: Fail, Model: "fake:composer-2.5", Usage: Usage{InputTokens: 9}, Error: "the agent's run ended with status error: rate limited"})
 	s, rec := f.runJob(job, st, finished(p, f.serve(body, p.UID)))
-	if !s.Done || s.Result != nil || s.Failed == nil || s.Failed.Usage.InputTokens != 9 || rec.RequeueAfter() != time.Second ||
+	if !s.Done || s.Result != nil || s.Failed == nil || s.Failed.Usage.InputTokens != 9 || rec.RequeueAfter() != 0 ||
 		s.Message != "the agent failed in Pod "+p.Name+": the agent's run ended with status error: rate limited" {
 		t.Errorf("RunJob = %+v, want a failed run with what the agent used", s)
 	}

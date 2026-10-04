@@ -75,7 +75,9 @@ type JobState struct {
 	Refunded string `json:"refunded,omitempty"`
 	// Done is true once RunJob reported that the run finished. Later calls
 	// for the same job report the run as done again, without its result,
-	// and don't declare its Pod.
+	// and don't declare its Pod. To get the result again from the next
+	// call, such as when acting on it failed, store the state with Done
+	// set to false.
 	Done bool `json:"done,omitempty"`
 }
 
@@ -101,8 +103,8 @@ type jobState JobState
 
 // JobStatus is how a job's run stands.
 type JobStatus struct {
-	// Done is true once the run finished. Then kube deletes its Pod, and
-	// RunJob reports the run as done until the job changes.
+	// Done is true once the run finished. Later calls with the stored state
+	// report the run as done until the job changes.
 	Done bool
 	// Message says how the run is going, or why it failed.
 	Message string
@@ -114,13 +116,17 @@ type JobStatus struct {
 }
 
 // RunJob starts or follows job's run, and reports how it stands. It
-// declares the run's Pod with kube.Own, so call it on each reconcile until
-// the run is done. A JobState whose Pod was for another job, such as one
-// with other commits or another task, starts a new run. One whose Pod has
-// another spec, such as after a deploy with other flags, starts an
-// unfinished run again in a new Pod, which doesn't count as another run.
-// If the run's Pod is deleted before the run finishes, kube creates it
-// again, which runs the agent again, so RunJob counts another run.
+// declares the run's Pod with kube.Own, so call it on each reconcile, with
+// the state that the last call left, until the run is done. Then calls
+// with the stored state don't declare the Pod, so kube deletes it in the
+// next reconcile. RunJob doesn't ask for that reconcile, so call
+// kube.RequeueAfter to delete the Pod soon. A JobState whose Pod was for
+// another job, such as one with other commits or another task, starts a
+// new run. One whose Pod has another spec, such as after a deploy with
+// other flags, starts an unfinished run again in a new Pod, which doesn't
+// count as another run. If the run's Pod is deleted before the run
+// finishes, kube creates it again, which runs the agent again, so RunJob
+// counts another run.
 func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 	if st.Done && sameJob(r.jobPod(job, max(st.Attempt, 1)).Name, st.Pod) {
 		return JobStatus{Done: true, Message: fmt.Sprintf("the run in Pod %s already finished", st.Pod)}
@@ -128,11 +134,6 @@ func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 	s := r.runJob(ctx, job, st)
 	if s.Done {
 		st.Done = true
-		if st.Pod != "" {
-			// RunJob doesn't declare a done run's Pod, so kube deletes it
-			// on the next reconcile.
-			kube.RequeueAfter(ctx, time.Second)
-		}
 	}
 	return s
 }

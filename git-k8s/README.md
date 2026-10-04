@@ -453,7 +453,11 @@ why. If the run failed after the agent started, `Failed` holds the runner's
 report, with its `Error` and what the agent used. `RunJob` reports that
 once and sets the state's `Done`. Later calls for the same `Job` report
 the run as `Done` without a `Result` or `Failed` and don't declare the
-Pod, so kube deletes it.
+Pod, so kube deletes it in the next reconcile. `RunJob` doesn't ask for
+that reconcile, so call `kube.RequeueAfter` to delete the Pod soon. Until
+you store the state with `Done`, each call reports the result again and
+keeps the Pod. So if acting on the result fails, store the state with
+`Done` set to false, and the next call reports the result again.
 
 A `Job` with other commits, another task, other tools, or another image
 starts a new run, up to the job's `MaxRuns`. A deploy that changes the
