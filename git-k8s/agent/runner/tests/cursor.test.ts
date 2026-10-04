@@ -94,6 +94,7 @@ test("creates the agent with only the tools that the task allows", async () => {
   const { backend, calls } = fakeSdk({ events: [text("ok")] });
   await backend(request());
   await backend(request({ edit: true, cwd: "/work" }));
+  await backend(request({ edit: true, tools: ["read", "edit"] }));
   const want = (tools: string[], cwd: string): AgentOptions => ({
     apiKey: "key-123",
     model: { id: "composer-2.5" },
@@ -101,9 +102,13 @@ test("creates the agent with only the tools that the task allows", async () => {
     tools: tools as AgentOptions["tools"],
     local: { cwd, settingSources: [], sandboxOptions: { enabled: false } },
   });
-  assert.deepEqual(calls.create, [want(["read", "grep", "glob", "ls"], "/src"), want(["read", "grep", "glob", "ls", "edit", "delete"], "/work")]);
-  assert.deepEqual(calls.sent, ["Review the change.", "Review the change."]);
-  assert.equal(calls.disposes, 2);
+  assert.deepEqual(calls.create, [
+    want(["read", "grep", "glob", "ls"], "/src"),
+    want(["read", "grep", "glob", "ls", "edit", "delete"], "/work"),
+    want(["read", "edit"], "/src"),
+  ]);
+  assert.deepEqual(calls.sent, ["Review the change.", "Review the change.", "Review the change."]);
+  assert.equal(calls.disposes, 3);
 });
 
 test("returns the agent's text, its usage, and both costs", async () => {

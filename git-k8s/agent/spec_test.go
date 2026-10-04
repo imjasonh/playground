@@ -92,7 +92,7 @@ func TestStartsALockedDownPod(t *testing.T) {
 		DiffFile: "/input/change.diff", LogFile: "/input/log.txt", FilesFile: "/input/files", KeyFile: "/key/api-key",
 		ResultFile: "/result/result.json", TerminationLog: "/dev/termination-log", ChangesFile: "/input/changes",
 	}
-	if got != wantTask {
+	if !reflect.DeepEqual(got, wantTask) {
 		t.Errorf("AGENT_TASK = %+v, want %+v", got, wantTask)
 	}
 
@@ -151,9 +151,29 @@ func TestMatchesTheRunner(t *testing.T) {
 			t.Errorf("%T has JSON fields %v, but %s in runner/src/%s has %v", tc.v, got, tc.iface, tc.file, want)
 		}
 	}
+
+	src, err := os.ReadFile(filepath.Join("runner", "src", "tools.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string][]string{"READ_TOOLS": readTools, "EDIT_TOOLS": editTools} {
+		var got []string
+		if m := regexp.MustCompile(`export const ` + name + ` = (\[.*\]) as const;`).FindSubmatch(src); m != nil {
+			if err := json.Unmarshal(m[1], &got); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("runner/src/tools.ts has %s = %q, want %q", name, got, want)
+		}
+	}
 }
 
-func TestPrepareScript(t *testing.T) {
+// runPrepare runs the script of c, a prepare container, with c's
+// environment and its volumes in a temporary directory, which it returns.
+// secrets holds the Secret keys that c reads.
+func runPrepare(t *testing.T, c Container, secrets map[string][]byte) (string, string, error) {
+	t.Helper()
 	sh, err := exec.LookPath("sh")
 	if err != nil {
 		t.Skip("sh isn't installed")
@@ -168,6 +188,31 @@ func TestPrepareScript(t *testing.T) {
 	if err := os.Symlink(git, filepath.Join(bin, "git")); err != nil {
 		t.Fatal(err)
 	}
+	dir := t.TempDir()
+	for _, m := range c.VolumeMounts {
+		if err := os.MkdirAll(dir+m.MountPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if c.Command[0] != "sh" {
+		t.Fatalf("prepare runs %q, want sh", c.Command)
+	}
+	cmd := exec.Command(sh, c.Command[1:]...)
+	cmd.Env = []string{"PATH=" + bin, "GIT_CONFIG_NOSYSTEM=1"}
+	for _, e := range c.Env {
+		v := e.Value
+		if e.ValueFrom != nil {
+			v = string(secrets[e.ValueFrom.SecretKeyRef.Key])
+		} else if strings.HasPrefix(v, "/") {
+			v = dir + v
+		}
+		cmd.Env = append(cmd.Env, e.Name+"="+v)
+	}
+	out, err := cmd.CombinedOutput()
+	return dir, string(out), err
+}
+
+func TestPrepareScript(t *testing.T) {
 	srv := gittest.NewServer(t, "s3cret")
 	w := srv.NewWork(t, "app")
 	w.Write(".gitattributes", "* text eol=crlf\n")
@@ -189,38 +234,14 @@ func TestPrepareScript(t *testing.T) {
 	head := w.Commit("add b")
 	w.Push("c/x")
 	repo, secret := srv.Repository("app")
+	data := maps.Clone(secret.Data)
+	data["api-key"] = []byte("key-123")
 
-	// prepare runs the script with the prepare container's environment,
-	// with its volumes in a temporary directory.
 	prepare := func(t *testing.T, head, base string) (string, string, error) {
 		r := &Runner{Name: "review", Image: "agent", GitImage: "git", Backend: "fake", Model: "m", Secret: "cursor-api-key", Timeout: time.Minute}
 		spec := &gitk8s.GitBranchSpec{Branch: "c/x", Parent: "main", Head: head}
 		in := &checks.Input{Meta: &kube.ObjectMeta{Name: "app-c-x"}, Spec: spec, Repository: &gitk8s.Repository{Spec: repo.Spec}}
-		c := r.pod(in, Task{}, base, 1).Spec.InitContainers[0]
-		dir := t.TempDir()
-		for _, m := range c.VolumeMounts {
-			if err := os.MkdirAll(dir+m.MountPath, 0o755); err != nil {
-				t.Fatal(err)
-			}
-		}
-		data := maps.Clone(secret.Data)
-		data["api-key"] = []byte("key-123")
-		if c.Command[0] != "sh" {
-			t.Fatalf("prepare runs %q, want sh", c.Command)
-		}
-		cmd := exec.Command(sh, c.Command[1:]...)
-		cmd.Env = []string{"PATH=" + bin, "GIT_CONFIG_NOSYSTEM=1"}
-		for _, e := range c.Env {
-			v := e.Value
-			if e.ValueFrom != nil {
-				v = string(data[e.ValueFrom.SecretKeyRef.Key])
-			} else if strings.HasPrefix(v, "/") {
-				v = dir + v
-			}
-			cmd.Env = append(cmd.Env, e.Name+"="+v)
-		}
-		out, err := cmd.CombinedOutput()
-		return dir, string(out), err
+		return runPrepare(t, r.jobPod(r.checkJob(in, Task{}, base), 1).Spec.InitContainers[0], data)
 	}
 	read := func(path string) string {
 		t.Helper()

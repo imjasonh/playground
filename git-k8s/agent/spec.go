@@ -11,7 +11,6 @@ import (
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
-	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -54,13 +53,23 @@ type podTask struct {
 	KeyFile        string `json:"keyFile"`
 	ResultFile     string `json:"resultFile"`
 	TerminationLog string `json:"terminationLog"`
+
+	// Only some jobs set these.
+	Tools         []string `json:"tools,omitempty"`
+	MergeBranch   string   `json:"mergeBranch,omitempty"`
+	MergeHead     string   `json:"mergeHead,omitempty"`
+	ConflictsFile string   `json:"conflictsFile,omitempty"`
+	MergeLogFile  string   `json:"mergeLogFile,omitempty"`
 }
 
 // prepareScript runs in the prepare container. It fetches the branch at
 // HEAD, or exits with status 3 if the branch moved, and writes the head's
 // files, its index, the change from BASE, the paths that the change
-// touches, the commit log, and the API key for the agent container. It
-// leaves .cursorignore files out of the head's files and index, because
+// touches, the commit log, and the API key for the agent container. With
+// MERGE_HEAD, it also fetches MERGE_BRANCH, or exits with status 3 if that
+// moved, and writes the files and index of HEAD's merge with MERGE_HEAD
+// instead of the head's, the paths that conflict, and the merged commits'
+// log. It leaves .cursorignore files out of the files and index, because
 // Cursor reads them to hide files from the agent. The git image has no
 // commands but git and sh, so the script uses only those and the shell's
 // builtins, and git init's templates make .git/info. The repository goes
@@ -79,11 +88,30 @@ if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3
 fi
+if [ -n "${MERGE_HEAD:-}" ]; then
+  git fetch -q --depth=50 --end-of-options "$URL" "refs/heads/$MERGE_BRANCH"
+  if [ "$(git rev-parse FETCH_HEAD)" != "$MERGE_HEAD" ]; then
+    echo "$MERGE_BRANCH no longer points to $MERGE_HEAD" >&2
+    exit 3
+  fi
+fi
 if [ -n "${BASE:-}" ] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
   git fetch -q --unshallow --end-of-options "$URL" "refs/heads/$BRANCH"
 fi
 printf '* -text -eol -ident -filter -working-tree-encoding\n' >.git/info/attributes
-git read-tree "$HEAD"
+tree="$HEAD"
+if [ -n "${MERGE_HEAD:-}" ]; then
+  merge_tree() {
+    git -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages --name-only "$@" --merge-base="$BASE" "$HEAD" "$MERGE_HEAD"
+  }
+  code=0
+  merge_tree >.git/merge || code=$?
+  [ "$code" -le 1 ] || exit "$code"
+  read -r tree <.git/merge
+  merge_tree -z >"$INPUT/conflicts" || [ "$?" -eq 1 ]
+  git log --format='%h %<(200,trunc)%s' -n 50 "$BASE..$MERGE_HEAD" >"$INPUT/merge-log.txt"
+fi
+git read-tree "$tree"
 git rm -q --cached --ignore-unmatch -- ':(glob)**/.cursorignore'
 git checkout-index -a -f --prefix="$WORK_TREE/"
 git ls-files -s -z >"$INPUT/files"
@@ -99,9 +127,10 @@ umask 077
 printf '%s' "$CURSOR_API_KEY" >"$KEY_FILE"
 `
 
-// pod declares the Pod for one attempt at a run on base..head. Its name
-// covers the branch, the attempt, and the Pod's spec.
-func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod {
+// jobPod declares the Pod for one attempt at job's run. Its name covers
+// the job's name, the attempt, and the Pod's spec.
+func (r *Runner) jobPod(job *Job, attempt int) *Pod {
+	c := job.Checkout
 	yes, no := true, false
 	user := int64(65532)
 	timeout := max(1, int64(math.Ceil(r.Timeout.Seconds())))
@@ -111,16 +140,16 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 		ReadOnlyRootFilesystem:   &yes,
 		Capabilities:             &Capabilities{Drop: []string{"ALL"}},
 	}
-	agentTask, _ := json.Marshal(podTask{
+	task := podTask{
 		Backend:        r.Backend,
 		Model:          r.Model,
-		Instructions:   task.Instructions,
-		Edit:           task.Edit,
+		Instructions:   job.Task.Instructions,
+		Edit:           job.Task.Edit,
 		TimeoutSeconds: timeout,
-		Branch:         in.Spec.Branch,
-		Parent:         in.Spec.Parent,
-		Head:           in.Spec.Head,
-		Base:           base,
+		Branch:         c.Branch,
+		Parent:         c.Parent,
+		Head:           c.Head,
+		Base:           c.Base,
 		WorkTree:       workTree,
 		DiffFile:       inputDir + "/change.diff",
 		LogFile:        inputDir + "/log.txt",
@@ -129,12 +158,13 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 		KeyFile:        keyFile,
 		ResultFile:     resultFile,
 		TerminationLog: "/dev/termination-log",
-	})
+		Tools:          job.Tools,
+	}
 	prepareEnv := []EnvVar{
-		{Name: "URL", Value: in.Repository.Spec.URL},
-		{Name: "BRANCH", Value: in.Spec.Branch},
-		{Name: "HEAD", Value: in.Spec.Head},
-		{Name: "BASE", Value: base},
+		{Name: "URL", Value: job.URL},
+		{Name: "BRANCH", Value: c.Branch},
+		{Name: "HEAD", Value: c.Head},
+		{Name: "BASE", Value: c.Base},
 		{Name: "REPO", Value: "/git/repo"},
 		{Name: "WORK_TREE", Value: workTree},
 		{Name: "INPUT", Value: inputDir},
@@ -142,7 +172,13 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 		{Name: "HOME", Value: "/git"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
 	}
-	if ref := in.Repository.Spec.SecretRef; ref != nil {
+	if m := c.Merge; m != nil {
+		task.MergeBranch, task.MergeHead = m.Branch, m.Commit
+		task.ConflictsFile, task.MergeLogFile = inputDir+"/conflicts", inputDir+"/merge-log.txt"
+		prepareEnv = append(prepareEnv, EnvVar{Name: "MERGE_BRANCH", Value: m.Branch}, EnvVar{Name: "MERGE_HEAD", Value: m.Commit})
+	}
+	agentTask, _ := json.Marshal(task)
+	if ref := job.Credentials; ref != nil {
 		prepareEnv = append(prepareEnv,
 			EnvVar{Name: "GIT_USERNAME", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "username", Optional: &yes}}},
 			EnvVar{Name: "GIT_PASSWORD", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "password"}}},
@@ -150,6 +186,7 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 	}
 	prepareEnv = append(prepareEnv, EnvVar{Name: "CURSOR_API_KEY", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: r.Secret, Key: "api-key"}}})
 	port := r.resultPort()
+	image := cmp.Or(job.Image, r.Image)
 
 	p := &Pod{Object: kube.Meta("", map[string]string{"app.kubernetes.io/name": "git-k8s-agent", agentLabel: r.Name})}
 	p.Spec = PodSpec{
@@ -193,7 +230,7 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 			},
 		}, {
 			Name:            "agent",
-			Image:           r.Image,
+			Image:           image,
 			ImagePullPolicy: "IfNotPresent",
 			Args:            []string{"run"},
 			Env: []EnvVar{
@@ -201,7 +238,7 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 				{Name: "HOME", Value: "/tmp"},
 			},
 			VolumeMounts: []VolumeMount{
-				{Name: "src", MountPath: "/src", ReadOnly: !task.Edit},
+				{Name: "src", MountPath: "/src", ReadOnly: !job.Task.Edit},
 				{Name: "input", MountPath: inputDir, ReadOnly: true},
 				{Name: "key", MountPath: "/key"},
 				{Name: "result", MountPath: "/result"},
@@ -216,7 +253,7 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 		}},
 		Containers: []Container{{
 			Name:            "result",
-			Image:           r.Image,
+			Image:           image,
 			ImagePullPolicy: "IfNotPresent",
 			Args:            []string{"serve"},
 			Env: []EnvVar{
@@ -235,7 +272,7 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 		}},
 	}
 	spec, _ := json.Marshal(p.Spec)
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s", in.Meta.Name, attempt, spec))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s", job.Name, attempt, spec))
 	p.Name = r.Name + "-" + hex.EncodeToString(sum[:8])
 	return p
 }

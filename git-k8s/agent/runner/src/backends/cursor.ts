@@ -1,13 +1,7 @@
 import type { AgentOptions, AgentUsage, RunResult, SDKMessage } from "@cursor/sdk";
 import type { Usage } from "../result.js";
+import { toolsFor } from "../tools.js";
 import type { AgentResponse, Backend } from "./types.js";
-
-/**
- * The only tools that the agent is offered. Cursor's backend enforces the
- * list, and none of these tools runs commands.
- */
-const READ_TOOLS = ["read", "grep", "glob", "ls"];
-const EDIT_TOOLS = [...READ_TOOLS, "edit", "delete"];
 
 const USAGE_ATTEMPTS = 4;
 const USAGE_DELAY_MS = 1500;
@@ -49,7 +43,7 @@ export function newCursorBackend(options: CursorBackendOptions = {}): Backend {
       apiKey: request.apiKey,
       model: { id: request.model },
       name: "git-k8s-agent",
-      tools: request.edit ? EDIT_TOOLS : READ_TOOLS,
+      tools: toolsFor(request),
       local: {
         cwd: request.cwd,
         settingSources: [],
