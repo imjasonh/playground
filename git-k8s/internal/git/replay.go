@@ -62,13 +62,13 @@ var ErrLogTooBig = fmt.Errorf("git log: more than %d MiB of output", MaxLogBytes
 
 // HasMerge reports whether head has a merge commit that base doesn't have.
 func (r *Repo) HasMerge(ctx context.Context, base, head string) (bool, error) {
-	out, err := r.text(ctx, "rev-list", "--merges", "--max-count=1", head, "^"+base)
+	out, err := r.text(ctx, "rev-list", "--merges", "--max-count=1", "--end-of-options", head, "^"+base)
 	return out != "", err
 }
 
 // Parents returns a commit's parents.
 func (r *Repo) Parents(ctx context.Context, sha string) ([]string, error) {
-	out, err := r.text(ctx, "show", "-s", "--format=%P", sha)
+	out, err := r.text(ctx, "show", "-s", "--format=%P", "--end-of-options", sha)
 	return strings.Fields(out), err
 }
 
@@ -79,7 +79,7 @@ func (r *Repo) Parents(ctx context.Context, sha string) ([]string, error) {
 // other fields have more than MaxLogBytes.
 func (r *Repo) Log(ctx context.Context, base, head string, limit int) ([]LogEntry, error) {
 	args := []string{"log", "-z", "--reverse", "--topo-order", "--date=raw", "--max-count=" + strconv.Itoa(limit),
-		"--format=%H%x00%T%x00%P%x00%an%x00%ae%x00%ad%x00%cn%x00%ce%x00%ct%x00%B%x00%(trailers:only,unfold)", head, "^" + base}
+		"--format=%H%x00%T%x00%P%x00%an%x00%ae%x00%ad%x00%cn%x00%ce%x00%ct%x00%B%x00%(trailers:only,unfold)", "--end-of-options", head, "^" + base}
 	out := &limitedWriter{n: MaxLogBytes}
 	_, err := r.git.run(ctx, r.Dir, args, opts{stdout: out})
 	if out.full {
@@ -156,7 +156,7 @@ func objectNames(names []string) bool {
 // without a worktree. It returns the resulting tree, or the paths that
 // conflict.
 func (r *Repo) CherryPick(ctx context.Context, commit, parent, onto string) (tree string, conflicts []string, err error) {
-	args := []string{"merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", "--merge-base=" + parent, onto, commit}
+	args := []string{"merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", "--merge-base=" + parent, "--end-of-options", onto, commit}
 	res, err := r.git.exec(ctx, r.Dir, args, opts{})
 	if err != nil {
 		return "", nil, err
@@ -188,11 +188,11 @@ type NewCommit struct {
 // WriteCommit makes a commit object and returns its SHA. Unlike CommitTree,
 // it sets the author and committer separately, with their time zones.
 func (r *Repo) WriteCommit(ctx context.Context, c NewCommit) (string, error) {
-	args := []string{"commit-tree", c.Tree}
+	args := []string{"commit-tree"}
 	for _, p := range c.Parents {
 		args = append(args, "-p", p)
 	}
-	args = append(args, "-F", "-")
+	args = append(args, "-F", "-", "--end-of-options", c.Tree)
 	env := []string{
 		"GIT_AUTHOR_NAME=" + c.Author.Name, "GIT_AUTHOR_EMAIL=" + c.Author.Email, "GIT_AUTHOR_DATE=@" + c.Author.Date,
 		"GIT_COMMITTER_NAME=" + c.Committer.Name, "GIT_COMMITTER_EMAIL=" + c.Committer.Email, "GIT_COMMITTER_DATE=@" + c.Committer.Date,
