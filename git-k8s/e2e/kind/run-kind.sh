@@ -476,8 +476,6 @@ gotest_pod() {
 EOF
 }
 code="$(pod_request POST "${NS}/pods" "$(gotest_pod default)")"
-cat "${WORKDIR}/pod.json"
-echo
 [[ "${code}" == 201 ]]
 code="$(pod_request POST check-gofmt/pods "$(gotest_pod check-gofmt)")"
 cat "${WORKDIR}/pod.json"
