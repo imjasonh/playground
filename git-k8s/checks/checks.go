@@ -27,7 +27,6 @@ package checks
 import (
 	"cmp"
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -185,6 +184,8 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 	res.State, res.Message, res.Outputs = v.State, truncate(v.Message), v.Outputs
 	if v.Fix != "" {
 		if err := r.push(ctx, in, v, res); err != nil {
+			res.State, res.Message = gitk8s.Error, truncate(err.Error())
+			*result = res
 			return err
 		}
 	}
@@ -221,13 +222,11 @@ func (r *reconciler[V, P]) push(ctx context.Context, in *Input, v Verdict, res *
 		return err
 	}
 	err = local.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + in.Spec.Branch, New: v.Fix, Old: in.Spec.Head})
-	if errors.Is(err, git.ErrRejected) {
-		// The branch moved since the repository controller listed it. The
-		// next listing changes the spec, which runs the check again.
-		return fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(v.Fix), in.Spec.Branch, err)
-	}
 	if err != nil {
-		return err
+		// If the push was rejected because the branch moved since the
+		// repository controller listed it, the next listing changes the
+		// spec, which runs the check on the new head.
+		return fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(v.Fix), in.Spec.Branch, err)
 	}
 	slog.Info("pushed a fix", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "from", gitk8s.Short(in.Spec.Head), "to", gitk8s.Short(v.Fix))
 	res.State = gitk8s.Fixed

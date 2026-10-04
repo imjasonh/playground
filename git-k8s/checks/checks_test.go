@@ -2,6 +2,8 @@ package checks_test
 
 import (
 	"context"
+	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/internal/gitserver"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
@@ -83,7 +86,12 @@ type fixture struct {
 // GitBranch view for c/x whose policy runs the touch check.
 func newFixture(t *testing.T, policy gitk8s.CheckPolicy) *fixture {
 	srv := gittest.NewServer(t, "pw")
-	w := srv.NewWork(t, "app")
+	return newFixtureOn(t, srv, srv.NewWork(t, "app"), policy)
+}
+
+// newFixtureOn is newFixture with a server, and a working repository for
+// the repository app on it.
+func newFixtureOn(t *testing.T, srv *gittest.Server, w *gittest.Work, policy gitk8s.CheckPolicy) *fixture {
 	w.Write("README.md", "hello\n")
 	main := w.Commit("main")
 	w.Push("main")
@@ -273,8 +281,42 @@ func TestStaleHeadIsRetried(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "push rejected") {
 		t.Fatalf("err = %v, want a rejected push", err)
 	}
-	if f.branch.Status.Checks.Result != nil {
-		t.Errorf("result = %+v, want none until the check runs on the new head", f.branch.Status.Checks.Result)
+	first := f.branch.Status.Checks.Result
+	if first == nil || first.State != gitk8s.Error || first.Commit != f.branch.Spec.Head || !strings.Contains(first.Message, "stale info") {
+		t.Fatalf("result = %+v, want Error for the listed head because the branch moved", first)
+	}
+
+	// kube retries until the next listing changes the head. Each retry
+	// leaves the same result, so kube doesn't write the status again.
+	if err := f.reconcile(t, touch(&runs)); err == nil {
+		t.Fatal("retrying the stale head succeeded")
+	}
+	if got := f.branch.Status.Checks.Result; !reflect.DeepEqual(got, first) {
+		t.Errorf("result after a retry = %+v, want the same as before, %+v", got, first)
+	}
+}
+
+func TestRefusedPushIsReported(t *testing.T) {
+	signer := gittest.NewSigner(t, "author@example.com")
+	hs := httptest.NewServer(&gitserver.Server{Root: t.TempDir(), Username: "git-k8s", Password: "pw", AllowedSigners: signer.AllowedSigners})
+	t.Cleanup(hs.Close)
+	srv := &gittest.Server{URL: hs.URL, Username: "git-k8s", Password: "pw"}
+	w := srv.NewWork(t, "app")
+	w.SignWith(signer)
+	f := newFixtureOn(t, srv, w, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
+	head := f.branch.Spec.Head
+
+	// The server requires signed commits, and the repository names no
+	// signing key, so the server refuses the fix.
+	runs := 0
+	if err := f.reconcile(t, touch(&runs)); err == nil {
+		t.Fatal("reconcile succeeded though the server refused the fix")
+	}
+	if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error || !strings.Contains(res.Message, "isn't signed with its committer's key") {
+		t.Errorf("result = %+v, want Error with the server's reason", res)
+	}
+	if got := f.srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s", got)
 	}
 }
 

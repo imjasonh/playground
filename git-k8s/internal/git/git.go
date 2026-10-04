@@ -321,8 +321,11 @@ type RefUpdate struct {
 	Old string
 }
 
-// ErrRejected is wrapped by errors from Push when the remote refused an
-// update, usually because a ref no longer pointed at the expected commit.
+// ErrRejected is wrapped by errors from Push when an update is refused,
+// because a ref no longer points at the expected commit or because the
+// remote declines it, as a forge does for a push that breaks a branch
+// protection rule. The error ends with the remote's messages, which usually
+// say why.
 var ErrRejected = errors.New("push rejected")
 
 // Push updates refs on the remote atomically. Each update carries a lease,
@@ -343,10 +346,15 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 	var rejected []string
 	for line := range strings.SplitSeq(string(res.stdout), "\n") {
 		if rest, ok := strings.CutPrefix(line, "!\t"); ok {
-			rejected = append(rejected, rest)
+			rejected = append(rejected, strings.ReplaceAll(rest, "\t", " "))
 		}
 	}
 	if len(rejected) > 0 {
+		for line := range strings.SplitSeq(res.stderr, "\n") {
+			if msg, ok := strings.CutPrefix(line, "remote:"); ok && strings.TrimSpace(msg) != "" {
+				rejected = append(rejected, "remote: "+strings.TrimSpace(msg))
+			}
+		}
 		return fmt.Errorf("%w: %s", ErrRejected, strings.Join(rejected, "; "))
 	}
 	if res.code != 0 {

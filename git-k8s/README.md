@@ -293,6 +293,12 @@ protection rules and rulesets apply to those pushes:
 - **Restrict deletions** on a branch stops `deleteMergedBranches` from
   deleting it after it lands.
 
+When GitHub refuses a push, the reason that it gives shows up on the
+`GitBranch`. For a check's commit, the check's result in `status.checks` has
+state `Error` and the reason in its message. For a landing, the `Synced`
+condition is `False` and has the reason in its message. git-k8s retries
+refused pushes, waiting longer each time, up to about 5 minutes.
+
 ## Install
 
 Each program installs with kube's `generate` command, which builds an image,

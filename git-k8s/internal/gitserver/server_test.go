@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -85,8 +86,9 @@ func TestRequiresSignatures(t *testing.T) {
 		{"another-committer", commit([]string{signed}, "someone@example.com", key)},
 		{"unknown-key", commit([]string{signed}, signer.Email, other)},
 	} {
-		if err := push(git.RefUpdate{Ref: "refs/heads/" + tc.branch, New: tc.commit}); !errors.Is(err, git.ErrRejected) {
-			t.Errorf("pushing %s: err = %v, want a rejected push", tc.branch, err)
+		err := push(git.RefUpdate{Ref: "refs/heads/" + tc.branch, New: tc.commit})
+		if !errors.Is(err, git.ErrRejected) || !strings.Contains(err.Error(), "remote: refs/heads/"+tc.branch+": commit ") {
+			t.Errorf("pushing %s: err = %v, want a rejected push that gives the server's reason", tc.branch, err)
 		}
 	}
 	if err := push(git.RefUpdate{Ref: "refs/heads/main", New: signed}); err != nil {

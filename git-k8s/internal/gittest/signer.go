@@ -66,6 +66,20 @@ func (s *Signer) Sign(repo *gitk8s.GitRepository) *k8s.Secret {
 	return secret
 }
 
+// SignWith makes w sign the commits that it makes with s's key. A server
+// that requires signatures accepts them only if s.Email is w's committer
+// email, author@example.com.
+func (w *Work) SignWith(s *Signer) {
+	w.t.Helper()
+	key := filepath.Join(w.t.TempDir(), "key")
+	if err := os.WriteFile(key, s.Key, 0o600); err != nil {
+		w.t.Fatal(err)
+	}
+	w.Git("config", "gpg.format", "ssh")
+	w.Git("config", "user.signingKey", key)
+	w.Git("config", "commit.gpgSign", "true")
+}
+
 // Verify checks commit in the repository at dir with git verify-commit and
 // the allowed signers file. It returns an error unless the commit has a good
 // signature from the key and its committer email is s.Email, which forges
