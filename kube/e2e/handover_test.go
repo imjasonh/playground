@@ -259,13 +259,15 @@ func TestServeHandOverWithAStaleCache(t *testing.T) {
 	if n := scrape(t, b.m.Addr, stale) - start; n > 20 {
 		t.Errorf("%v stale reconciles in 3s while the cache stayed behind, want at most 20", n)
 	}
-	e2e.Eventually(t, 30*time.Second, func() error {
-		if b.log.staleWarnings.Load() == 0 {
-			return errors.New("the second replica hasn't warned about a stale reconcile")
-		}
-		return nil
-	})
-	if n := b.log.staleInfos.Load(); n < 5 {
+	// This check doesn't stop the test, so that the post of b gets its
+	// answer before the test ends.
+	deadline := time.Now().Add(30 * time.Second)
+	for b.log.staleWarnings.Load() == 0 && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if b.log.staleWarnings.Load() == 0 {
+		t.Error("the second replica didn't warn about a stale reconcile within 30s")
+	} else if n := b.log.staleInfos.Load(); n < 5 {
 		t.Errorf("the second replica warned after %d stale reconciles at the info level, want at least 5", n)
 	}
 	watches.release()

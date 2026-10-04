@@ -267,6 +267,66 @@ func TestFinalizerPatchRequiresTheAppliedResourceVersion(t *testing.T) {
 	}
 }
 
+// TestFinalizerRemovalShowsTheCacheCaughtUp reconciles an object whose status
+// needs no write and whose finalizer the framework removes, while writes to
+// the object require the cached resource version. The removal succeeds,
+// which shows that the controller's cache had caught up, so later writes
+// needn't require a version. But if the cache that Get reads holds an older
+// version, the reconcile may have read out-of-date data there, and later
+// writes still must.
+func TestFinalizerRemovalShowsTheCacheCaughtUp(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		getRV    string
+		caughtUp bool
+	}{
+		{name: "Get agrees", getRV: "5", caughtUp: true},
+		{name: "Get is behind", getRV: "4", caughtUp: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Content-Type") != client.ApplyPatch {
+					http.Error(rw, "unexpected request", http.StatusMethodNotAllowed)
+					return
+				}
+				_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+					"name": "w1", "namespace": "shop", "uid": "u1", "resourceVersion": "6",
+				}})
+			}))
+			t.Cleanup(srv.Close)
+			cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := testManager()
+			m.client, m.tracker = cl, newTracker()
+			res := resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}
+			c := triggerable[widget](t, m, res)
+			c.sh = &sharder{n: 1, shards: []*shard{{}}}
+			w := &widget{}
+			w.Namespace, w.Name, w.UID, w.ResourceVersion = "shop", "w1", "u1", "5"
+			w.Finalizers = []string{c.finalizer}
+			synced := syncedCondition(nil, 0)
+			synced.LastTransitionTime = time.Unix(1, 0).UTC()
+			w.Status.Conditions = []Condition{synced}
+			c.primary.store.put(w)
+			viaGet := *w
+			viaGet.ResourceVersion = tt.getRV
+			get := newInformer[widget, *widget](2, c.ti, res, nil, informerConfig{}, m.log, m.metrics)
+			get.store.put(&viaGet)
+			m.resolved = map[*typeInfo]resolved{c.ti: res}
+			m.caches = map[cacheKey]cache{{ti: c.ti}: get}
+
+			if _, err := c.reconcileKey(t.Context(), w.Key()); err != nil {
+				t.Fatal(err)
+			}
+			if got := c.hasCaughtUp(w.Key(), 0); got != tt.caughtUp {
+				t.Errorf("caught up = %v, want %v", got, tt.caughtUp)
+			}
+		})
+	}
+}
+
 // TestDeleteForgetsAnObjectInAShardThatIsntHeld deletes an object in a shard
 // that this replica doesn't hold, so the replica doesn't reconcile it. The
 // replica must still forget what it recorded for the object, or it keeps
