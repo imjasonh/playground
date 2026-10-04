@@ -596,8 +596,12 @@ tells apart from a deleted object, and the reconcile is retried. Such a
 retry is expected, so the framework logs it at the info level and counts it
 in `kube_reconcile_total` with `result="stale"` instead of `result="error"`.
 One success is enough. It shows that the cache had every earlier write when
-that reconcile started, and from then on this replica is the only one that
-writes the object's status.
+that reconcile started. After a hand-off, this replica is then the only one
+that writes the object's status, because the previous holder finished its
+reconciles before it released the shard. That isn't so after a lease loss.
+The previous holder's running reconciles finish, and a late status write from
+one of them replaces a newer status, because both replicas apply it with the
+same field manager.
 
 The precondition covers the controller's cache. A reconcile can also read the
 object with `kube.Get`, which reads the same cache unless the controller
