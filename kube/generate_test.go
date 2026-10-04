@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"reflect"
 	"slices"
 	"strings"
@@ -321,6 +322,45 @@ func TestManifestsVolume(t *testing.T) {
 	}
 }
 
+func TestPlanVolume(t *testing.T) {
+	const pkg = "github.com/imjasonh/playground/kube/examples/eventlog"
+	options := func(volumeFlags ...string) *generateOptions {
+		return &generateOptions{
+			program: "prog", name: "prog", namespace: "prog", replicas: 2, shards: 1, volumeSize: "1Gi", volumeFlags: volumeFlags,
+			platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, stderr: io.Discard,
+		}
+	}
+	o := options()
+	p, err := o.plan(t.Context(), []Controller{For[gizmo](gizmoReconciler{}), Volume("/var/lib/prog")}, pkg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.volume != "/var/lib/prog" || p.electLeader || o.replicas != 1 {
+		t.Errorf("volume = %q, electLeader = %v, replicas = %d; want /var/lib/prog, one replica, and no leader election", p.volume, p.electLeader, o.replicas)
+	}
+	if rules, _ := json.Marshal(p.local.rules()); strings.Contains(string(rules), "leases") {
+		t.Errorf("Role rules = %s, want none for leases", rules)
+	}
+
+	for _, tc := range []struct {
+		name        string
+		controllers []Controller
+		flags       []string
+		want        string
+	}{
+		{"two volumes", []Controller{Volume("/var/lib/a"), For[gizmo](gizmoReconciler{}), Volume("/var/lib/b")}, nil, "declares more than one kube.Volume"},
+		{"-volume-size without a volume", nil, []string{"-volume-size"}, "has no kube.Volume, so leave out -volume-size"},
+		{"both flags without a volume", []Controller{For[gizmo](gizmoReconciler{})}, []string{"-storage-class", "-volume-size"}, "leave out -storage-class and -volume-size"},
+	} {
+		if _, err := options(tc.flags...).plan(t.Context(), tc.controllers, pkg); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want %q", tc.name, err, tc.want)
+		}
+	}
+	if _, err := options("-storage-class", "-volume-size").plan(t.Context(), []Controller{Volume("/var/lib/prog")}, pkg); err != nil {
+		t.Errorf("a volume with -storage-class and -volume-size: %v", err)
+	}
+}
+
 func TestOneWriter(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
@@ -414,6 +454,7 @@ func TestGenerateArguments(t *testing.T) {
 		{[]string{"-registry=ghcr.io/you", "-replicas=0"}, "at least 1"},
 		{[]string{"-registry=ghcr.io/you", "-tmp-size=lots"}, "isn't a quantity"},
 		{[]string{"-registry=ghcr.io/you", "-volume-size=lots"}, "-volume-size \"lots\" isn't a quantity"},
+		{[]string{"-registry=ghcr.io/you", "-volume-size=2Gi", "-storage-class=fast"}, "has no kube.Volume, so leave out -storage-class and -volume-size"},
 		{[]string{"-registry=ghcr.io/you", "-watch-namespace=Team_A"}, "isn't a namespace name"},
 		{[]string{"-registry=ghcr.io/you", "-nope"}, "flag provided but not defined"},
 	} {

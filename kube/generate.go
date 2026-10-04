@@ -66,6 +66,8 @@ type generateOptions struct {
 	// and storageClass is its StorageClass, or empty for the cluster's
 	// default.
 	volumeSize, storageClass string
+	// volumeFlags are the flags for the volume that the command line sets.
+	volumeFlags []string
 	// watchNamespace is the one namespace that the program watches, or
 	// empty for every namespace.
 	watchNamespace string
@@ -113,7 +115,14 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	fs.Visit(func(f *flag.Flag) { o.replicasSet = o.replicasSet || f.Name == "replicas" })
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "replicas":
+			o.replicasSet = true
+		case "storage-class", "volume-size":
+			o.volumeFlags = append(o.volumeFlags, "-"+f.Name)
+		}
+	})
 	switch {
 	case fs.NArg() > 0:
 		return fmt.Errorf("generate: unexpected argument %q; put the program's own flags after --", fs.Arg(0))
@@ -359,6 +368,9 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			grantsFor(oti).add(g, r, "", "list", "watch", "delete")
 		}
 	}
+	if p.volume == "" && len(o.volumeFlags) > 0 {
+		return nil, fmt.Errorf("generate: the program has no kube.Volume, so leave out %s", strings.Join(o.volumeFlags, " and "))
+	}
 	if err := o.oneWriter(p.volume); err != nil {
 		return nil, err
 	}
@@ -443,7 +455,7 @@ func (o *generateOptions) oneWriter(dir string) error {
 		return nil
 	}
 	if (o.replicasSet && o.replicas > 1) || o.shards > 1 {
-		return fmt.Errorf("generate: the program keeps state in a volume at %s, which one replica writes; leave out -replicas and -shards", dir)
+		return fmt.Errorf("generate: the program keeps state in a volume at %s, which one replica writes; -replicas and -shards can't be above 1", dir)
 	}
 	o.replicas = 1
 	return nil
