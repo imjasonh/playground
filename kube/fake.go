@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/imjasonh/playground/kube/internal/clone"
@@ -108,8 +109,11 @@ func intentsOf[T any](r *Recorder, kind intentKind) []*T {
 // Triggered returns the keys of the objects of type T that Trigger queued a
 // reconcile for, in order.
 func Triggered[T any](r *Recorder) []Key {
+	w := r.s.w.(*fakeWorld)
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	var out []Key
-	for _, t := range r.s.w.(*fakeWorld).triggers {
+	for _, t := range w.triggers {
 		if t.t == reflect.TypeFor[T]() {
 			out = append(out, t.key)
 		}
@@ -128,17 +132,22 @@ type FakeToken struct {
 }
 
 type fakeWorld struct {
+	tr *tracker
+	// standby is set when the world holds FakeStandby.
+	standby bool
+
+	// mu guards the fields below and each memSource's ti, merged, and
+	// objs. A memSource's objs don't change once merged is set, so its
+	// methods read them without mu.
+	mu     sync.Mutex
 	byType map[reflect.Type]*memSource
 	// types holds byType's keys in the order that the world added them.
 	types []reflect.Type
-	tr    *tracker
 	// tokens are the tokens that ReviewToken accepts, and requested counts
 	// the calls of RequestToken.
 	tokens    []FakeToken
 	requested int
 	triggers  []triggered
-	// standby is set when the world holds FakeStandby.
-	standby bool
 }
 
 func newFakeWorld(objs []any) *fakeWorld {
@@ -154,6 +163,8 @@ type triggered struct {
 	key Key
 }
 
+// src returns the source of type t, adding it if needed. The caller holds
+// w.mu.
 func (w *fakeWorld) src(t reflect.Type, ti *typeInfo) *memSource {
 	s := w.byType[t]
 	if s == nil {
@@ -171,6 +182,8 @@ func (w *fakeWorld) src(t reflect.Type, ti *typeInfo) *memSource {
 // in the world's objects of other types of the same kind, converted to ti
 // through JSON, except where an object of ti has the same name.
 func (w *fakeWorld) read(ti *typeInfo) *memSource {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	s := w.src(ti.goType, ti)
 	if s.merged {
 		return s
@@ -207,6 +220,8 @@ func (w *fakeWorld) add(o any) {
 	if o == nil {
 		return
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	switch t := o.(type) {
 	case FakeToken:
 		w.tokens = append(w.tokens, *clone.Of(&t))
@@ -250,6 +265,8 @@ func (w *fakeWorld) deps() *tracker { return w.tr }
 const fakeAPIAudience = "https://kubernetes.default.svc"
 
 func (w *fakeWorld) reviewToken(_ context.Context, token string, want []string) (TokenReview, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	for _, t := range w.tokens {
 		if t.Token != token {
 			continue
@@ -273,6 +290,8 @@ func (w *fakeWorld) reviewToken(_ context.Context, token string, want []string) 
 }
 
 func (w *fakeWorld) requestToken(_ context.Context, audience string) (string, time.Time, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.requested++
 	t := FakeToken{
 		Token: fmt.Sprintf("fake-token-%d", w.requested),
@@ -296,6 +315,8 @@ func (w *fakeWorld) trigger(ti *typeInfo, k Key) bool {
 	if w.read(ti).peek(k) == nil {
 		return false
 	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.triggers = append(w.triggers, triggered{t: ti.goType, key: k})
 	return true
 }

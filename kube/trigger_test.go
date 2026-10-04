@@ -2,9 +2,12 @@ package kube
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/imjasonh/playground/kube/internal/queue"
@@ -73,6 +76,56 @@ func TestFakeRequest(t *testing.T) {
 	ctx, rec = Fake(t.Context(), w, FakeStandby{})
 	if Trigger[widget](ctx, "shop", "w1") || len(Triggered[widget](rec)) != 0 {
 		t.Error("Trigger in a Fake context with FakeStandby queued a reconcile")
+	}
+}
+
+func TestFakeRequestConcurrent(t *testing.T) {
+	w := &widget{}
+	w.Namespace, w.Name = "shop", "w1"
+	d := &deploymentFull{Object: Meta("d", nil)}
+	d.Namespace = "shop"
+	user := UserInfo{Username: "system:serviceaccount:shop:client"}
+	ctx, rec := FakeRequest(t.Context(), w, d, FakeToken{Token: "t", User: user, Audiences: []string{"shop"}})
+	h := http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		if Get[deploymentProjection](ctx, "shop", "d") == nil || len(List[widget](ctx)) != 1 {
+			http.Error(rw, "a read missed an object", http.StatusInternalServerError)
+			return
+		}
+		if review, _ := ReviewToken(ctx, "t", "shop"); !review.Authenticated {
+			http.Error(rw, review.Error, http.StatusUnauthorized)
+			return
+		}
+		token, _, err := RequestToken(ctx, "shop")
+		if err != nil || !Trigger[widget](ctx, "shop", "w1") {
+			http.Error(rw, fmt.Sprintf("RequestToken: %v, or Trigger returned false", err), http.StatusServiceUnavailable)
+			return
+		}
+		fmt.Fprint(rw, token)
+	})
+	const n = 8
+	tokens := make([]string, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() {
+			resp := httptest.NewRecorder()
+			h.ServeHTTP(resp, httptest.NewRequest(http.MethodPost, "/", nil).WithContext(ctx))
+			if resp.Code != http.StatusOK {
+				t.Errorf("request %d = %d %q", i, resp.Code, resp.Body)
+			}
+			tokens[i] = resp.Body.String()
+		})
+	}
+	wg.Wait()
+	slices.Sort(tokens)
+	if got := slices.Compact(slices.Clone(tokens)); len(got) != n {
+		t.Errorf("tokens = %q, want %d different ones", tokens, n)
+	}
+	if got := Triggered[widget](rec); len(got) != n {
+		t.Errorf("Triggered = %v, want %d keys", got, n)
+	}
+	if err := rec.Err(); err != nil {
+		t.Error(err)
 	}
 }
 
