@@ -244,6 +244,10 @@ func TestPublishesCheckRuns(t *testing.T) {
 		"git-k8s/gofmt@" + f + " completed cancelled: The branch moved to " + n + " before the check finished.",
 		"git-k8s/gofmt@" + n + " completed failure: fetching c/x: exit status 128",
 	})
+
+	t.Log("The controller forgets the check runs on a commit that the branch left, and when the branch comes back, the controller finds them on GitHub.")
+	checks = map[string]gitk8s.CheckResult{"gofmt": {Commit: head, State: gitk8s.Fixed, Message: "x.go isn't formatted; pushed " + f, Outputs: map[string]string{"fix": fix}}}
+	step(checks, []string{"GET " + api + "commits/" + head + "/check-runs"}, runs(gh))
 }
 
 func TestCheckRunsSurviveRestarts(t *testing.T) {
@@ -793,6 +797,68 @@ func TestCompletedCheckRunsOfDepartedBranches(t *testing.T) {
 			)
 		})
 	}
+}
+
+// TestCheckRunsOfUnpublishedResults checks the check runs that show a
+// result that the controller hasn't published, after the result's branch
+// leaves the commit before the controller publishes the result.
+func TestCheckRunsOfUnpublishedResults(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// leave makes c/y leave commit 0 and returns the summary of the
+		// cancelled check run.
+		leave func(s *sharing) string
+	}{
+		{"Moved", func(s *sharing) string {
+			s.p.set("c/y", s.result(2, gitk8s.Running, "started Pod y"))
+			return "The branch moved to " + s.short(2) + " before the check finished."
+		}},
+		{"Deleted", func(s *sharing) string {
+			s.p.remove("c/y")
+			return "The branch was deleted before the check finished."
+		}},
+		{"Dropped", func(s *sharing) string {
+			s.p.set("c/y", map[string]gitk8s.CheckResult{})
+			return "The branch dropped the check before it finished."
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSharing(t, 3)
+			t.Log("When a branch moves, the check run on the commit that it left shows another branch's result there, which the controller hasn't published.")
+			s.step("c/x", s.result(0, gitk8s.Running, "started Pod x"), s.get(0), post)
+			s.p.set("c/y", s.result(0, gitk8s.Running, "started Pod y"))
+			s.step("c/x", s.result(1, gitk8s.Running, "started Pod x"), patch+"1", s.get(1), post)
+			s.wantRuns(
+				"git-k8s/gotest@"+s.short(0)+" in_progress : started Pod y",
+				"git-k8s/gotest@"+s.short(1)+" in_progress : started Pod x",
+			)
+
+			t.Log("When the other branch leaves the commit before the controller publishes its result, the check run is cancelled, and when GitHub fails, the controller tries again.")
+			why := tc.leave(s)
+			s.gh.Fake.Fail(http.StatusBadGateway)
+			s.failing("c/x", patch+"1")
+			s.again("c/x", patch+"1")
+			s.wantRuns(
+				"git-k8s/gotest@"+s.short(0)+" completed cancelled: "+why,
+				"git-k8s/gotest@"+s.short(1)+" in_progress : started Pod x",
+			)
+			s.again("c/x")
+		})
+	}
+
+	t.Run("FromBranchWithoutChecks", func(t *testing.T) {
+		s := newSharing(t, 1)
+		t.Log("When a branch drops a check, the check run shows another branch's result at the commit, which the controller hasn't published.")
+		s.step("c/x", s.result(0, gitk8s.Running, "started Pod x"), s.get(0), post)
+		s.p.set("c/y", s.result(0, gitk8s.Running, "started Pod y"))
+		s.step("c/x", map[string]gitk8s.CheckResult{}, patch+"1")
+
+		t.Log("When the other branch is deleted, the reconcile of a branch without checks cancels the check run.")
+		s.p.remove("c/y")
+		s.again("c/x", patch+"1")
+		s.wantRuns("git-k8s/gotest@" + s.short(0) + " completed cancelled: The branch was deleted before the check finished.")
+		s.again("c/x")
+	})
 }
 
 func TestCheckRunsSurviveFailedReads(t *testing.T) {

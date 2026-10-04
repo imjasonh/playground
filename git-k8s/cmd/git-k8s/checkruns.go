@@ -104,8 +104,9 @@ type branchResult struct {
 type shownRun struct {
 	id    int64
 	shows runState
-	// by is the branch whose result the check run shows, or "" when it
-	// shows a cancellation.
+	// by is the branch whose result the check run shows, so that the check
+	// run is settled when that branch leaves the commit, or "" when nothing
+	// has to settle the check run, as after a cancellation.
 	by string
 }
 
@@ -176,7 +177,7 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 		}
 	}
 	branches[b.Name] = b.Status.Checks
-	if len(b.Status.Checks) == 0 && len(rr.results) == 0 {
+	if len(b.Status.Checks) == 0 && len(rr.results) == 0 && len(rr.runs) == 0 {
 		return nil
 	}
 	apiURL, token, err := credentials.GitHubAPI(ctx, repo, repo.Spec.OctoSTS.CheckRunsIdentity)
@@ -217,7 +218,9 @@ type runSync struct {
 }
 
 // sync publishes branch's results, and then settles the check runs of the
-// branches that were deleted or dropped a check. It stops at a rate limit.
+// branches that were deleted or dropped a check, and the check runs that
+// show a result that the controller never published before its branch left
+// the commit. It stops at a rate limit.
 func (s *runSync) sync(ctx context.Context, branch string) error {
 	var errs []error
 	checks := s.branches[branch]
@@ -234,14 +237,10 @@ func (s *runSync) sync(ctx context.Context, branch string) error {
 		return cmp.Or(cmp.Compare(a.branch, b.branch), cmp.Compare(a.check, b.check))
 	})
 	for _, k := range departed {
-		why := "The branch was deleted before the check finished."
-		if checks, ok := s.branches[k.branch]; ok {
-			if checks[k.check].Commit != "" {
-				continue
-			}
-			why = "The branch dropped the check before it finished."
+		if s.branches[k.branch][k.check].Commit != "" {
+			continue
 		}
-		err := s.settle(ctx, commitCheck{s.results[k].commit, k.check}, why)
+		err := s.settle(ctx, commitCheck{s.results[k].commit, k.check}, s.left(k.branch, k.check))
 		if isRateLimited(err) {
 			return err
 		}
@@ -251,8 +250,42 @@ func (s *runSync) sync(ctx context.Context, branch string) error {
 		}
 		delete(s.results, k)
 	}
+	orphans := slices.SortedFunc(maps.Keys(s.runs), func(a, b commitCheck) int {
+		return cmp.Or(cmp.Compare(a.commit, b.commit), cmp.Compare(a.check, b.check))
+	})
+	for _, cc := range orphans {
+		// settle can make a check run show the result of a branch that the
+		// controller hasn't published yet, and then nothing in results
+		// settles the check run when that branch leaves the commit.
+		run := s.runs[cc]
+		if run.by == "" || s.has(run.by, cc) || s.results[branchCheck{run.by, cc.check}].commit == cc.commit {
+			continue
+		}
+		err := s.settle(ctx, cc, s.left(run.by, cc.check))
+		if isRateLimited(err) {
+			return err
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("completing the %s check run on %s: %w", cc.check, gitk8s.Short(cc.commit), err))
+		}
+	}
 	s.forgetRuns()
 	return errors.Join(errs...)
+}
+
+// left returns why the check run that showed branch's result for check
+// stops showing it, when the result is no longer for the check run's
+// commit.
+func (s *runSync) left(branch, check string) string {
+	checks, ok := s.branches[branch]
+	switch {
+	case !ok:
+		return "The branch was deleted before the check finished."
+	case checks[check].Commit == "":
+		return "The branch dropped the check before it finished."
+	default:
+		return fmt.Sprintf("The branch moved to %s before the check finished.", gitk8s.Short(checks[check].Commit))
+	}
 }
 
 // publish makes the check run for one check's result on a branch show it,
@@ -265,7 +298,7 @@ func (s *runSync) publish(ctx context.Context, branch, check string, res gitk8s.
 	k, cc, want := branchCheck{branch, check}, commitCheck{res.Commit, check}, runFor(res)
 	last, ok := s.results[k]
 	if ok && last.commit != res.Commit {
-		if err := s.settle(ctx, commitCheck{last.commit, check}, fmt.Sprintf("The branch moved to %s before the check finished.", gitk8s.Short(res.Commit))); err != nil {
+		if err := s.settle(ctx, commitCheck{last.commit, check}, s.left(branch, check)); err != nil {
 			return err
 		}
 	}
@@ -353,7 +386,7 @@ func (s *runSync) settle(ctx context.Context, cc commitCheck, why string) error 
 		// A finished check's result still holds for the commit. A check run
 		// doesn't start again, so for a result in progress, the other
 		// branch's next reconcile creates one.
-		return nil
+		by, want = "", run.shows
 	default:
 		updated, err := s.gh.update(ctx, run.id, want)
 		if retryable(err) {
@@ -361,7 +394,8 @@ func (s *runSync) settle(ctx context.Context, cc commitCheck, why string) error 
 		}
 		if err != nil {
 			slog.Warn("couldn't update a check run that a branch left", "repository", s.external, "check", cc.check, "commit", cc.commit, "id", run.id, "error", err)
-			return nil
+			by, want = "", run.shows
+			break
 		}
 		s.c.learnApp(s.app, updated.App.ID)
 	}
@@ -396,7 +430,8 @@ func (s *runSync) has(branch string, cc commitCheck) bool {
 }
 
 // forgetRuns forgets the check runs on commits that no branch's result is
-// for. If one is again, the controller finds its check run on GitHub.
+// for, unless a branch still has to settle them. If a result is for the
+// commit again, the controller finds its check run on GitHub.
 func (s *runSync) forgetRuns() {
 	keep := map[commitCheck]bool{}
 	for k, r := range s.results {
@@ -407,7 +442,7 @@ func (s *runSync) forgetRuns() {
 			keep[commitCheck{res.Commit, check}] = true
 		}
 	}
-	maps.DeleteFunc(s.runs, func(cc commitCheck, _ shownRun) bool { return !keep[cc] })
+	maps.DeleteFunc(s.runs, func(cc commitCheck, run shownRun) bool { return !keep[cc] && run.by == "" })
 }
 
 // runFor returns what the check run for a result shows.
