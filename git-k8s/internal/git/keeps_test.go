@@ -98,6 +98,10 @@ func TestKeeps(t *testing.T) {
 	brought := merge(rewound, copied)
 	other := commit(start, "add u", map[string]string{"u.txt": "u\n"})
 	joined := merge(rewound, other)
+	qux := commit(start, "change the first foo to qux", map[string]string{"c.txt": "qux\nb\nc\nd\nfoo\n"})
+	w.Branch("work", rewound)
+	w.Git("merge", "--quiet", "--no-edit", "-X", "theirs", "--end-of-options", qux)
+	overridden := keep()
 	revived := pick(commit(base, "remove the secret", map[string]string{"r.txt": ""}), side)
 	w.Git("checkout", "--quiet", "--orphan", "lone")
 	w.Commit("start over")
@@ -133,6 +137,7 @@ func TestKeeps(t *testing.T) {
 		{"a head built on a side that rewound and changed what it removed", onReplaced, replaced, base, true},
 		{"a head that merges a side that rewound with a copy of what it removed", brought, rewound, base, false},
 		{"a head that merges a side that rewound with another commit", joined, rewound, base, true},
+		{"a head that merges a side that rewound with a commit that overrides the side's change", overridden, rewound, base, false},
 		{"a head that replays a side that rewound", replayed, rewound, base, true},
 		{"a head with a commit that a side that rewound removed, though not its change", revived, rewound, base, false},
 		{"a head with a copy of what a side that reset removed", copied, start, base, false},
