@@ -109,8 +109,8 @@ func (m *Manager) patch(ctx context.Context, ti *typeInfo, k Key, path, patchTyp
 
 // delete deletes the object at path. If the delete has a UID precondition
 // and finds no object, caches show the object with that UID as gone. A
-// conflict doesn't show that the object is gone, because the API server
-// also returns one for a namespace that's already being deleted.
+// conflict doesn't show that the object is gone, because an admission
+// webhook can deny a delete with one.
 func (m *Manager) delete(ctx context.Context, ti *typeInfo, k Key, path string, opts client.DeleteOptions) error {
 	return m.track(ti, k, func() (*written, error) {
 		var resp json.RawMessage

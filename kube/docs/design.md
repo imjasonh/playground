@@ -583,9 +583,8 @@ cache can't tell whether the list holds it. If the list doesn't, it would
 replace the write with an older version, and if it does, the watch never
 delivers the write's event. A write that fails changes no cache, except a
 delete with a UID precondition that finds no object, which shows that the
-object with that UID is gone. A conflict doesn't, because the API server
-also returns `409 Conflict` for a delete of a namespace that's already being
-deleted.
+object with that UID is gone. A conflict doesn't show that the object is
+gone, because an admission webhook can deny a delete with one.
 
 Reads return a write for at most a minute. An API server whose watch doesn't
 deliver the resource version that a write's response carries would otherwise
