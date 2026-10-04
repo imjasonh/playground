@@ -2,6 +2,8 @@ package agent
 
 import (
 	"encoding/json"
+	"math"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -252,6 +254,49 @@ func TestReportsWhatAFailedJobUsed(t *testing.T) {
 	if !s.Done || s.Result != nil || s.Failed == nil || s.Failed.Usage.InputTokens != 9 || rec.RequeueAfter() != time.Second ||
 		s.Message != "the agent failed in Pod "+p.Name+": the agent's run ended with status error: rate limited" {
 		t.Errorf("RunJob = %+v, want a failed run with what the agent used", s)
+	}
+}
+
+func TestEncodesTheWholeJobState(t *testing.T) {
+	var st JobState
+	v := reflect.ValueOf(&st).Elem()
+	for i := range v.NumField() {
+		field, fv := v.Type().Field(i), v.Field(i)
+		switch {
+		case !field.IsExported():
+			t.Fatalf("JobState.%s isn't exported, so MarshalText can't encode it", field.Name)
+		case fv.Kind() == reflect.Int:
+			fv.SetInt(int64(-1 - i))
+		case fv.Kind() == reflect.String:
+			fv.SetString("value of " + field.Name)
+		case fv.Kind() == reflect.Bool:
+			fv.SetBool(true)
+		default:
+			t.Fatalf("give JobState.%s, a %s, a value in this test", field.Name, fv.Kind())
+		}
+	}
+	text, err := st.MarshalText()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got JobState
+	if err := got.UnmarshalText(text); err != nil || got != st {
+		t.Errorf("UnmarshalText(%s) = %+v, %v; want %+v", text, got, err, st)
+	}
+
+	t.Log("Empty text is the zero state, and other text that isn't a state is an error.")
+	if err := got.UnmarshalText(nil); err != nil || got != (JobState{}) {
+		t.Errorf("UnmarshalText(nil) = %+v, %v; want the zero state", got, err)
+	}
+	if err := got.UnmarshalText([]byte("1")); err == nil {
+		t.Error("UnmarshalText(1) succeeded")
+	}
+
+	t.Log("The largest state, with the longest Pod name that a check's name allows, fits in a 1,024-byte output value.")
+	uid := "0b5f4b5e-5c1c-4b8e-9a7e-0123456789ab"
+	big := JobState{Runs: math.MinInt, Pod: strings.Repeat("a", 40) + "-0123456789abcdef", Attempt: math.MaxInt, UID: uid, Refunded: uid, Done: true}
+	if text, _ := big.MarshalText(); len(text) > 1024 {
+		t.Errorf("MarshalText = %d bytes, want at most 1,024", len(text))
 	}
 }
 

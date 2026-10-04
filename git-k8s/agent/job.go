@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -56,26 +57,47 @@ type Checkout struct {
 }
 
 // JobState is what RunJob needs to follow a job's run from one call to the
-// next. Keep it with the object that the job is for, such as in a check's
-// outputs, and pass it to each call.
+// next. RunJob changes it on each call, so store all of it after each
+// call, such as in one of a check's outputs with MarshalText, and pass it
+// to the next call.
 type JobState struct {
 	// Runs counts the runs that RunJob started and didn't give back.
-	Runs int
+	Runs int `json:"runs,omitempty"`
 	// Pod names the run's Pod, and Attempt counts its attempts at
 	// preparing the source.
-	Pod     string
-	Attempt int
+	Pod     string `json:"pod,omitempty"`
+	Attempt int    `json:"attempt,omitempty"`
 	// UID is the UID of the run's Pod when RunJob last saw it, so RunJob
 	// can tell when kube created the Pod again.
-	UID string
+	UID string `json:"uid,omitempty"`
 	// Refunded is the UID of the run's Pod that found that the branch
 	// moved. Its agent didn't run, so RunJob gave back the run, once.
-	Refunded string
+	Refunded string `json:"refunded,omitempty"`
 	// Done is true once RunJob reported that the run finished. Later calls
 	// for the same job report the run as done again, without its result,
 	// and don't declare its Pod.
-	Done bool
+	Done bool `json:"done,omitempty"`
 }
+
+// MarshalText encodes all of the state as one value, which UnmarshalText
+// decodes.
+func (s JobState) MarshalText() ([]byte, error) { return json.Marshal(jobState(s)) }
+
+// UnmarshalText decodes a state that MarshalText encoded, or the zero
+// state from empty text, such as an output that a check hasn't written.
+func (s *JobState) UnmarshalText(text []byte) error {
+	v := jobState{}
+	if len(text) > 0 {
+		if err := json.Unmarshal(text, &v); err != nil {
+			return fmt.Errorf("decoding an agent's job state: %w", err)
+		}
+	}
+	*s = JobState(v)
+	return nil
+}
+
+// jobState is JobState without its methods, so json encodes its fields.
+type jobState JobState
 
 // JobStatus is how a job's run stands.
 type JobStatus struct {

@@ -264,7 +264,8 @@ and two costs in cents when the SDK reports them. `costCents` is the model
 token cost before discounts, the SDK's `rawCostCents`. `chargedCents` is
 what Cursor charged, with discounts and fees, the SDK's `chargedCents`; it's
 0 for usage that a Cursor plan includes. `runs` counts the agent runs on
-the branch.
+the branch, and `pod` names the run's Pod. `state` holds what the check
+needs to follow the run.
 
 An agent can answer differently each time, so a result stays until the
 branch's head changes, and the check doesn't run again when only the parent
@@ -438,10 +439,13 @@ task, the agent's tools, and the runner's image if it isn't
 `-agent-image`. `Run` builds a `Job` from a check's branch, so both start
 the same Pods, within the same `-max-pods` and `-max-runs-per-day` limits.
 
-Call `RunJob` on each reconcile with the same `JobState`, which names the
-run's Pod and counts the runs that it started. Keep the state with the
-object that the job is for, such as in the object's status, so a
-controller that restarts follows the same run. `RunJob` declares the Pod
+Call `RunJob` on each reconcile with the `JobState` that the last call
+left. The state names the run's Pod and counts the runs that `RunJob`
+started and didn't give back. `RunJob` changes it on each call, so store
+all of it after each call with the object that the job is for, such as in
+the object's status, so a controller that restarts follows the same run.
+`MarshalText` encodes the state as one string, such as for one of a check's
+outputs, and `UnmarshalText` decodes it. `RunJob` declares the Pod
 with `kube.Own` and returns a `JobStatus`. Until the run is `Done`, the
 status's `Message` says how the run is going. Once it's `Done`, `Result`
 holds the agent's result, or is nil if the run failed, and `Message` says

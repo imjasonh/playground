@@ -145,21 +145,20 @@ type Task struct {
 // maxAgentRuns. A check that calls Run needs Check.Remote.
 func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.Verdict, *Result) {
 	st := &JobState{}
-	prev := in.Previous
-	if prev != nil {
-		st.Runs, _ = strconv.Atoi(prev.Outputs["runs"])
-	}
 	x := &run{r: r, in: in, job: r.checkJob(in, task, ""), st: st}
+	head := in.Spec.Head
+	if prev := in.Previous; prev != nil {
+		var last JobState
+		// A state that doesn't decode starts over, like a missing one.
+		_ = last.UnmarshalText([]byte(prev.Outputs["state"]))
+		st.Runs = last.Runs
+		if prev.State == gitk8s.Running && prev.Commit == head && last.Pod != "" {
+			*st = last
+			x.job.Checkout.Base = prev.Outputs["base"]
+		}
+	}
 	if err := r.validate(); err != nil {
 		return x.running("can't start agents: %v", err), nil
-	}
-	head := in.Spec.Head
-	if prev != nil && prev.State == gitk8s.Running && prev.Commit == head && prev.Outputs["pod"] != "" {
-		st.Pod = prev.Outputs["pod"]
-		st.Attempt, _ = strconv.Atoi(prev.Outputs["attempt"])
-		st.UID = prev.Outputs["podUID"]
-		st.Refunded = prev.Outputs["refunded"]
-		x.job.Checkout.Base = prev.Outputs["base"]
 	}
 	// A Pod's name covers its job, so a changed policy starts a new run
 	// instead of changing a Pod that can't change. startOrFollow restarts
@@ -234,18 +233,13 @@ type run struct {
 	started bool
 }
 
-// outputs hold what the next reconcile needs to follow the run.
+// outputs hold the run's state and merge base, which the next reconcile
+// follows the run with, and its runs and Pod for people to read.
 func (x *run) outputs() map[string]string {
-	o := map[string]string{"runs": strconv.Itoa(x.st.Runs)}
+	state, _ := x.st.MarshalText()
+	o := map[string]string{"state": string(state), "runs": strconv.Itoa(x.st.Runs)}
 	if x.st.Pod != "" {
 		o["pod"] = x.st.Pod
-		o["attempt"] = strconv.Itoa(x.st.Attempt)
-		if x.st.UID != "" {
-			o["podUID"] = x.st.UID
-		}
-		if x.st.Refunded != "" {
-			o["refunded"] = x.st.Refunded
-		}
 		if base := x.job.Checkout.Base; base != "" {
 			o["base"] = base
 		}
@@ -266,6 +260,8 @@ func (x *run) done(ctx context.Context, v checks.Verdict) checks.Verdict {
 	if v.Outputs == nil {
 		v.Outputs = map[string]string{}
 	}
+	state, _ := x.st.MarshalText()
+	v.Outputs["state"] = string(state)
 	v.Outputs["runs"] = strconv.Itoa(x.st.Runs)
 	v.Outputs["pod"] = x.st.Pod
 	return v
