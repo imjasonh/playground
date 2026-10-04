@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/subset"
 )
 
@@ -115,16 +116,26 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 		}
 		skip = !served
 	}
-	if skip {
+	record := func(result string) {
 		applied[ak] = h
-		c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "skipped")
+		c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", result)
+	}
+	if skip {
+		record("skipped")
 		return nil
 	}
 	if err := c.m.client.Apply(ctx, in.res.path(m.Namespace, m.Name, "status"), manager, true, body, nil); err != nil {
+		// A manager that may not patch the status can't have applied the
+		// status fields that an empty status gives up, unless it lost the
+		// permission after it did.
+		if empty && client.IsForbidden(err) {
+			record("skipped")
+			c.log.Debug("skipped forbidden empty status", "key", key.String(), "object", in.ti.String()+" "+m.Key().String(), "err", err)
+			return nil
+		}
 		return fmt.Errorf("applying status of %v %s: %w", in.ti, m.Key(), err)
 	}
-	applied[ak] = h
-	c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "applied")
+	record("applied")
 	c.log.Debug("applied status", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
 	return nil
 }

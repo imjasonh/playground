@@ -158,10 +158,12 @@ func TestStatusBody(t *testing.T) {
 }
 
 // statusAPI serves discovery for Deployments, which have a status
-// subresource, and ConfigMaps, which don't, and records patches.
+// subresource, and ConfigMaps, which don't, and records patches. With forbid
+// set, it refuses patches, as RBAC does.
 type statusAPI struct {
 	mu        sync.Mutex
 	discovery int
+	forbid    bool
 	patches   []statusPatch
 }
 
@@ -188,10 +190,20 @@ func (a *statusAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		a.patches = append(a.patches, statusPatch{path: r.URL.Path, query: r.URL.Query(), body: body})
+		if a.forbid {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		fmt.Fprint(w, "{}")
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (a *statusAPI) setForbid(forbid bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.forbid = forbid
 }
 
 func (a *statusAPI) sent() []statusPatch {
@@ -313,10 +325,28 @@ func TestApplyStatus(t *testing.T) {
 	}
 	sends(3)
 
+	t.Log("An empty status that the server forbids is skipped, once, and any other status fails.")
+	api.setForbid(true)
+	other := &deploymentStatus{Object: Meta("api", nil)}
+	other.Namespace = "shop"
+	in = intent{kind: intentApply, ti: dti, res: deployments, obj: other, status: true}
+	for range 2 {
+		if err := reconcile(in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sends(4)
+	applies(3, 6)
+	other.Status.Conditions = checked()
+	if err := reconcile(in); !client.IsForbidden(err) {
+		t.Errorf("err = %v, want a 403", err)
+	}
+	sends(5)
+
 	t.Log("An intent without a status sends nothing.")
 	in.status = false
 	if err := reconcile(in); err != nil {
 		t.Fatal(err)
 	}
-	sends(3)
+	sends(5)
 }

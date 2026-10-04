@@ -15,6 +15,7 @@ import (
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/e2e"
+	"github.com/imjasonh/playground/kube/k8s"
 )
 
 // Ballot is one vote in a Poll. Its voter applies the vote to the poll's
@@ -275,4 +276,82 @@ func TestApplyOneObjectThroughTwoTypes(t *testing.T) {
 	if err := e2e.Gone(t.Context(), c, client.Path("v1", "configmaps", ns, "w-notes")); err != nil {
 		t.Errorf("the failed reconcile wrote the ConfigMap: %v", err)
 	}
+}
+
+// labeler labels the Deployment named after each Widget with the widget's
+// size, through k8s.Deployment, which has a status.
+type labeler struct{}
+
+func (labeler) Reconcile(ctx context.Context, w *Widget) error {
+	if kube.Get[k8s.Deployment](ctx, w.Namespace, w.Name) == nil {
+		return nil
+	}
+	kube.Apply(ctx, &k8s.Deployment{Object: kube.Meta(w.Name, map[string]string{"size": strconv.Itoa(w.Spec.Size)})})
+	return nil
+}
+
+func TestApplyWithoutStatusPermission(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	const rbac = "rbac.authorization.k8s.io/v1"
+	role := ns + "-labeler"
+	remove(t, c, client.Path(group+"/v1", "widgets", ns, "w"), client.Path("apps/v1", "deployments", ns, "w"),
+		client.Path(rbac, "clusterrolebindings", "", role), client.Path(rbac, "clusterroles", "", role))
+	app := map[string]string{"app": "w"}
+	for _, o := range []struct {
+		path string
+		obj  map[string]any
+	}{
+		{client.Path("v1", "serviceaccounts", ns, ""), map[string]any{"apiVersion": "v1", "kind": "ServiceAccount", "metadata": map[string]any{"name": "labeler"}}},
+		{client.Path(rbac, "clusterroles", "", ""), map[string]any{"apiVersion": rbac, "kind": "ClusterRole", "metadata": map[string]any{"name": role}, "rules": []any{
+			map[string]any{"apiGroups": []string{"apiextensions.k8s.io", group}, "resources": []string{"*"}, "verbs": []string{"*"}},
+			map[string]any{"apiGroups": []string{"apps"}, "resources": []string{"deployments"}, "verbs": []string{"*"}},
+		}}},
+		{client.Path(rbac, "clusterrolebindings", "", ""), map[string]any{"apiVersion": rbac, "kind": "ClusterRoleBinding", "metadata": map[string]any{"name": role},
+			"roleRef":  map[string]any{"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": role},
+			"subjects": []any{map[string]any{"kind": "ServiceAccount", "name": "labeler", "namespace": ns}},
+		}},
+		{client.Path("apps/v1", "deployments", ns, ""), map[string]any{"apiVersion": "apps/v1", "kind": "Deployment", "metadata": map[string]any{"name": "w"}, "spec": map[string]any{
+			"selector": map[string]any{"matchLabels": app},
+			"template": map[string]any{"metadata": map[string]any{"labels": app}, "spec": map[string]any{"containers": []any{map[string]any{"name": "app", "image": "nginx"}}}},
+		}}},
+	} {
+		if err := c.Create(t.Context(), o.path, o.obj, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kubeconfig := serviceAccountKubeconfig(t, c, ns, "labeler")
+	cfg, err := client.LoadKubeconfig([]string{kubeconfig}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sa, err := client.New(cfg, "e2e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The API server's authorizer sees a new binding a moment after it's
+	// created.
+	e2e.Eventually(t, 30*time.Second, func() error {
+		return sa.Get(t.Context(), client.Path("apps/v1", "deployments", ns, "w"), &map[string]any{})
+	})
+
+	e2e.Run(t, &kube.Manager{Name: "labeler-e2e", Namespace: ns, Kubeconfig: kubeconfig}, kube.For[Widget](labeler{}, kube.Named("labeler")))
+	createWidget(t, c, ns, "w", 3)
+	e2e.Eventually(t, 10*time.Second, func() error {
+		var d k8s.Deployment
+		if err := e2e.Get(t.Context(), c, client.Path("apps/v1", "deployments", ns, "w"), &d); err != nil {
+			return err
+		}
+		if d.Labels["size"] != "3" {
+			return fmt.Errorf("labels = %v", d.Labels)
+		}
+		w, err := widget(t, c, ns, "w")
+		if err != nil {
+			return err
+		}
+		if s := kube.FindCondition(w.Status.Conditions, "Synced"); s == nil || s.Status != kube.True {
+			return fmt.Errorf("Synced = %+v", s)
+		}
+		return nil
+	})
 }

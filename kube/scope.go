@@ -339,8 +339,8 @@ func Own[T any, P Resource[T]](ctx context.Context, desired P) P {
 // the status with force, so the controller takes over every field in it. Set
 // only your own fields, and build a fresh object rather than editing one that
 // Get returned. If the cluster doesn't serve a status subresource for the
-// type, the framework skips an empty status and fails the reconcile for any
-// other.
+// type, or doesn't let the controller patch it, the framework skips an empty
+// status and fails the reconcile for any other.
 //
 // When the reconciled type has a status, the framework writes the status of
 // the object being reconciled from the object that Reconcile received. So

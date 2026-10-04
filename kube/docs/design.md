@@ -500,6 +500,15 @@ server removes each one that no other manager owns. The manager then owns no
 status fields, so after this process sends an empty status, it skips the next
 one without checking the cache.
 
+The framework sends the status request even when the program sets only a
+label on a type with a status, such as `k8s.Deployment`, so `generate` grants
+`patch` on the status subresource. With hand-written rules that leave that
+out, every such reconcile would fail with `403 Forbidden`, though the program
+never sets a status. So when the API server forbids an empty status, the
+framework treats the request as sent and skips the next one. A manager that
+may not patch the status can't have applied status fields, unless it lost the
+permission after it did. Then those fields stay.
+
 A request to a subresource that the API server doesn't serve fails with the
 same `404 Not Found` as a request for an object that was deleted, so before it
 sends a status, the framework checks discovery for the status subresource.
@@ -838,7 +847,8 @@ framework's tests check that:
   when they stop applying it. A status for a kind without a status
   subresource fails the reconcile after the rest of the object is applied. A
   reconcile that applies one object through two types fails and writes
-  nothing.
+  nothing. A controller that may not patch a Deployment's status still
+  applies a label to it.
 - Panics and permanent errors are reported and retried correctly.
 - Leader election fails over.
 - Three replicas with 32 shards split the work, hand shards over when one
@@ -1003,6 +1013,9 @@ offers:
 - Fields that `Apply` wrote, including status fields, stay on an object when
   a reconcile stops declaring it, and when the reconciled object is deleted.
   Giving them up would take a durable record of what each reconcile applied.
+- Status fields that `Apply` wrote stay after the controller loses permission
+  to patch the status subresource, because the framework skips an empty
+  status that the API server forbids.
 - `Apply` can't write the status of a custom resource whose definition keeps
   the status with the other fields, without a status subresource.
 - The CRD checks compare field names, types, and required fields, not

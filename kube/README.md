@@ -155,9 +155,17 @@ When a later reconcile stops applying a status field, the controller gives it
 up, and the API server removes it unless another manager also set it. So an
 empty status gives up every status field that earlier reconciles applied. If
 the cluster doesn't serve a status subresource for the object, the framework
-skips an empty status and fails the reconcile for any other. To leave status
-alone, apply a type that declares no status, as
-[`examples/reloader`](examples/reloader/main.go) does.
+skips an empty status and fails the reconcile for any other.
+
+Applying a status, even an empty one, sends a request that needs permission
+to patch the object's status subresource, and `generate` grants it for each
+type with a status that the program applies. In `kube/k8s`, `Deployment`,
+`Job`, `Namespace`, `Node`, `Pod`, and `Service` have a status. To leave
+status alone and need no extra permission, apply a type that declares no
+status, as [`examples/reloader`](examples/reloader/main.go) does. If the API
+server forbids an empty status, the framework skips it, so a program that
+never sets a status works without the permission. But if the controller loses
+the permission after it applied status fields, those fields stay.
 
 A reconcile can pass each object to `Own` or `Apply` only once, whatever type
 it uses, and a second call fails the reconcile. To apply fields and a status
@@ -547,7 +555,7 @@ way, its service account needs these permissions:
 - `patch` on the reconciled type and its `status` subresource, for finalizers
   and status.
 - `patch` on the `status` subresource of every type with a status that it
-  declares with `Apply`.
+  declares with `Apply`, unless it never sets that status.
 - `get`, `create`, and `patch` on `customresourcedefinitions`, and `patch` on
   `customresourcedefinitions/status`, for its own types. To check and migrate
   objects when a type changes, it also needs `list` on its own types in every
