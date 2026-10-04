@@ -222,62 +222,127 @@ func pod(controller, serviceAccount string) map[string]any {
 	return map[string]any{"metadata": meta, "spec": spec}
 }
 
+// gotestPod returns a Pod that check-gotest owns, after edit changes its
+// spec.
+func gotestPod(edit func(spec map[string]any)) map[string]any {
+	p := pod("check-gotest", "")
+	edit(p["spec"].(map[string]any))
+	return p
+}
+
+// withContext returns check-gotest's Pod whose test container has the
+// security context sc.
+func withContext(sc map[string]any) map[string]any {
+	return gotestPod(func(spec map[string]any) {
+		spec["containers"].([]any)[0].(map[string]any)["securityContext"] = sc
+	})
+}
+
+// labels returns the labels of a namespace that runs check Pods, changed by
+// kv, a list of keys and values. An empty value removes the key.
+func labels(kv ...string) map[string]string {
+	l := map[string]string{
+		"git-k8s.imjasonh.com/check-pods":    "true",
+		"pod-security.kubernetes.io/enforce": "restricted",
+	}
+	for i := 0; i < len(kv); i += 2 {
+		if kv[i+1] == "" {
+			delete(l, kv[i])
+		} else {
+			l[kv[i]] = kv[i+1]
+		}
+	}
+	return l
+}
+
 func TestCheckPods(t *testing.T) {
 	p := compile(t, find(t, "ValidatingAdmissionPolicy", "git-k8s-check-pods"))
 	const (
 		gotest = "system:serviceaccount:check-gotest:check-gotest"
 		review = "system:serviceaccount:check-review:check-review"
 	)
-	restricted := map[string]string{"pod-security.kubernetes.io/enforce": "restricted"}
-	baseline := map[string]string{"pod-security.kubernetes.io/enforce": "baseline"}
+	ready := labels()
 	own := pod("check-gotest", "default")
 	deprecated := pod("check-gotest", "")
 	deprecated["spec"].(map[string]any)["serviceAccount"] = "rogue"
 	appLabel := pod("", "")
 	appLabel["metadata"].(map[string]any)["labels"] = map[string]any{"app.kubernetes.io/name": "check-gotest"}
+	scheduled := gotestPod(func(spec map[string]any) { spec["nodeName"] = "node-a" })
+	escape := gotestPod(func(spec map[string]any) {
+		spec["hostPID"], spec["hostNetwork"], spec["runtimeClassName"] = true, true, "gvisor"
+		spec["volumes"] = []any{map[string]any{"name": "root", "hostPath": map[string]any{"path": "/"}}}
+		spec["containers"].([]any)[0].(map[string]any)["securityContext"] = map[string]any{"privileged": true}
+	})
+	initContainer := func(sc map[string]any) map[string]any {
+		return gotestPod(func(spec map[string]any) {
+			spec["initContainers"] = []any{map[string]any{"name": "fetch", "image": "cgr.dev/chainguard/git", "securityContext": sc}}
+		})
+	}
+	ephemeral := gotestPod(func(spec map[string]any) {
+		spec["ephemeralContainers"] = []any{map[string]any{"name": "debug", "image": "busybox", "securityContext": map[string]any{"privileged": true}}}
+	})
 	const (
 		programs   = "the gotest check can't change Pods in the namespaces of git-k8s programs"
 		others     = "the gotest check can change or delete only its own Pods, which have the label kube.imjasonh.github.io/controller=check-gotest"
 		label      = "the gotest check's Pods need the label kube.imjasonh.github.io/controller=check-gotest"
+		optedOut   = "the gotest check can't create or change Pods in namespace repos, which doesn't have the label git-k8s.imjasonh.com/check-pods=true"
+		unenforced = "the gotest check can't create or change Pods in namespace repos, which doesn't enforce the restricted Pod Security Standard at the latest version"
 		account    = "the gotest check's Pods must run as their namespace's default service account"
-		unenforced = "the gotest check can't run Pods in namespace repos, which doesn't enforce the baseline or restricted Pod Security Standard"
+		node       = "the gotest check can't assign its Pods to a node"
+		host       = "the gotest check's Pods can't use the node's network, PID, or IPC namespace, hostPath volumes, or host ports"
+		privilege  = "the gotest check's containers can't be privileged, add capabilities, unmask /proc, use the Unconfined seccomp profile, or run as host processes"
 	)
+	notCheck := func(user string) string { return user + " isn't a check's service account, so it can't write Pods" }
 	for _, tt := range []struct {
 		name string
 		r    request
 		want string
 	}{{
-		name: "creates its Pod in a namespace that enforces restricted",
-		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: restricted, object: own},
+		name: "creates its Pod in a namespace that opts in and enforces restricted",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: own},
 	}, {
-		name: "creates its Pod in a namespace that enforces baseline",
-		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: baseline, object: own},
+		name: "creates its Pod in a namespace that enforces the latest version of restricted",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: labels("pod-security.kubernetes.io/enforce-version", "latest"), object: own},
 	}, {
 		name: "creates its Pod without naming a service account",
-		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: restricted, object: pod("check-gotest", "")},
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: pod("check-gotest", "")},
 	}, {
-		name: "patches its Pod",
-		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: restricted, object: own, oldObject: own},
+		name: "creates its Pod with an emptyDir volume, a container port, and the restricted security context",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["hostNetwork"], spec["hostPID"], spec["hostIPC"] = false, false, false
+			spec["volumes"] = []any{map[string]any{"name": "src", "emptyDir": map[string]any{}}}
+			spec["securityContext"] = map[string]any{"runAsNonRoot": true, "seccompProfile": map[string]any{"type": "RuntimeDefault"}, "windowsOptions": map[string]any{"hostProcess": false}}
+			c := spec["containers"].([]any)[0].(map[string]any)
+			c["ports"] = []any{map[string]any{"containerPort": 8080}, map[string]any{"containerPort": 8081, "hostPort": 0}}
+			c["securityContext"] = map[string]any{
+				"privileged": false, "allowPrivilegeEscalation": false, "procMount": "Default",
+				"capabilities":   map[string]any{"drop": []any{"ALL"}, "add": []any{}},
+				"seccompProfile": map[string]any{"type": "RuntimeDefault"}, "windowsOptions": map[string]any{"hostProcess": false},
+			}
+		})},
+	}, {
+		name: "patches its scheduled Pod",
+		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: ready, object: scheduled, oldObject: scheduled},
 	}, {
 		name: "deletes its Pod",
-		r:    request{user: gotest, operation: "DELETE", namespace: "repos", nsLabels: restricted, oldObject: own},
+		r:    request{user: gotest, operation: "DELETE", namespace: "repos", nsLabels: ready, oldObject: own},
 	}, {
-		name: "deletes its Pod after the namespace stops enforcing Pod Security",
+		name: "deletes its Pod after the namespace drops both labels",
 		r:    request{user: gotest, operation: "DELETE", namespace: "repos", oldObject: own},
 	}, {
 		name: "another check creates its own Pod",
-		r:    request{user: review, operation: "CREATE", namespace: "repos", nsLabels: restricted, object: pod("check-review", "")},
+		r:    request{user: review, operation: "CREATE", namespace: "repos", nsLabels: ready, object: pod("check-review", "")},
 	}, {
 		name: "creates a Pod in its own namespace",
-		r:    request{user: gotest, operation: "CREATE", namespace: "check-gotest", nsLabels: restricted, object: own},
+		r:    request{user: gotest, operation: "CREATE", namespace: "check-gotest", nsLabels: ready, object: own},
 		want: programs,
 	}, {
 		name: "creates a Pod in another check's namespace",
-		r:    request{user: gotest, operation: "CREATE", namespace: "check-gofmt", nsLabels: restricted, object: pod("check-gotest", "check-gofmt")},
+		r:    request{user: gotest, operation: "CREATE", namespace: "check-gofmt", nsLabels: ready, object: pod("check-gotest", "check-gofmt")},
 		want: programs,
 	}, {
 		name: "creates a Pod in the core program's namespace",
-		r:    request{user: gotest, operation: "CREATE", namespace: "git-k8s", nsLabels: restricted, object: pod("check-gotest", "git-k8s")},
+		r:    request{user: gotest, operation: "CREATE", namespace: "git-k8s", nsLabels: ready, object: pod("check-gotest", "git-k8s")},
 		want: programs,
 	}, {
 		name: "deletes the core program's Pod",
@@ -285,95 +350,228 @@ func TestCheckPods(t *testing.T) {
 		want: programs,
 	}, {
 		name: "creates a Pod without its label",
-		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: restricted, object: pod("", "")},
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: pod("", "")},
 		want: label,
 	}, {
 		name: "creates a Pod with only check-gotest's app label",
-		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: restricted, object: appLabel},
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: appLabel},
 		want: label,
 	}, {
 		name: "creates a Pod with another check's label",
-		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: restricted, object: pod("check-gofmt", "")},
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: pod("check-gofmt", "")},
 		want: label,
 	}, {
-		name: "creates a Pod that runs as another service account",
-		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: restricted, object: pod("check-gotest", "rogue")},
-		want: account,
+		name: "creates a Pod in a namespace without the opt-in label",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: labels("git-k8s.imjasonh.com/check-pods", ""), object: own},
+		want: optedOut,
 	}, {
-		name: "creates a Pod that names another service account in the deprecated field",
-		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: restricted, object: deprecated},
-		want: account,
+		name: "creates a Pod in a namespace that opts out",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: labels("git-k8s.imjasonh.com/check-pods", "false"), object: own},
+		want: optedOut,
+	}, {
+		name: "creates a Pod in a namespace without labels",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", object: own},
+		want: optedOut,
+	}, {
+		name: "patches its Pod after the namespace drops the opt-in label",
+		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: labels("git-k8s.imjasonh.com/check-pods", ""), object: own, oldObject: own},
+		want: optedOut,
 	}, {
 		name: "creates a Pod in a namespace without Pod Security labels",
-		r:    request{user: gotest, operation: "CREATE", namespace: "repos", object: own},
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: labels("pod-security.kubernetes.io/enforce", ""), object: own},
+		want: unenforced,
+	}, {
+		name: "creates a Pod in a namespace that enforces baseline",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: labels("pod-security.kubernetes.io/enforce", "baseline"), object: own},
 		want: unenforced,
 	}, {
 		name: "creates a Pod in a namespace that enforces privileged",
-		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: map[string]string{"pod-security.kubernetes.io/enforce": "privileged"}, object: own},
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: labels("pod-security.kubernetes.io/enforce", "privileged"), object: own},
 		want: unenforced,
 	}, {
 		name: "creates a Pod in a namespace that only warns",
-		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: map[string]string{"pod-security.kubernetes.io/warn": "restricted"}, object: own},
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: labels("pod-security.kubernetes.io/enforce", "", "pod-security.kubernetes.io/warn", "restricted"), object: own},
+		want: unenforced,
+	}, {
+		name: "creates a Pod in a namespace that pins an old version of restricted",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: labels("pod-security.kubernetes.io/enforce-version", "v1.18"), object: own},
 		want: unenforced,
 	}, {
 		name: "patches its Pod after the namespace stops enforcing Pod Security",
-		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", object: own, oldObject: own},
+		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: labels("pod-security.kubernetes.io/enforce", ""), object: own, oldObject: own},
 		want: unenforced,
 	}, {
+		name: "creates a Pod that runs as another service account",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: pod("check-gotest", "rogue")},
+		want: account,
+	}, {
+		name: "creates a Pod that names another service account in the deprecated field",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: deprecated},
+		want: account,
+	}, {
+		name: "creates a Pod on a node that it names",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: scheduled},
+		want: node,
+	}, {
+		name: "creates a Pod that shares the node's network",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) { spec["hostNetwork"] = true })},
+		want: host,
+	}, {
+		name: "creates a Pod that shares the node's PID namespace",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) { spec["hostPID"] = true })},
+		want: host,
+	}, {
+		name: "creates a Pod that shares the node's IPC namespace",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) { spec["hostIPC"] = true })},
+		want: host,
+	}, {
+		name: "creates a Pod that mounts a hostPath volume",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["volumes"] = []any{map[string]any{"name": "src", "emptyDir": map[string]any{}}, map[string]any{"name": "root", "hostPath": map[string]any{"path": "/"}}}
+		})},
+		want: host,
+	}, {
+		name: "creates a Pod with a host port",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["containers"].([]any)[0].(map[string]any)["ports"] = []any{map[string]any{"containerPort": 8080, "hostPort": 8080}}
+		})},
+		want: host,
+	}, {
+		name: "creates a Pod with a host port on an init container",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["initContainers"] = []any{map[string]any{"name": "fetch", "image": "cgr.dev/chainguard/git", "ports": []any{map[string]any{"containerPort": 22, "hostPort": 2222}}}}
+		})},
+		want: host,
+	}, {
+		name: "creates a privileged Pod that a Pod Security exemption for its RuntimeClass would admit",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: escape},
+		want: host,
+	}, {
+		name: "creates a Pod with a privileged container",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContext(map[string]any{"privileged": true})},
+		want: privilege,
+	}, {
+		name: "creates a Pod with a privileged init container",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: initContainer(map[string]any{"privileged": true})},
+		want: privilege,
+	}, {
+		name: "adds a privileged ephemeral container to its Pod",
+		r:    request{user: gotest, operation: "UPDATE", subresource: "ephemeralcontainers", namespace: "repos", nsLabels: ready, object: ephemeral, oldObject: own},
+		want: privilege,
+	}, {
+		name: "creates a Pod that adds a capability",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContext(map[string]any{"capabilities": map[string]any{"add": []any{"SYS_ADMIN"}}})},
+		want: privilege,
+	}, {
+		name: "creates a Pod whose init container adds the capability that restricted allows",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: initContainer(map[string]any{"capabilities": map[string]any{"add": []any{"NET_BIND_SERVICE"}}})},
+		want: privilege,
+	}, {
+		name: "creates a Pod with an unmasked /proc",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContext(map[string]any{"procMount": "Unmasked"})},
+		want: privilege,
+	}, {
+		name: "creates a Pod with an unconfined container",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContext(map[string]any{"seccompProfile": map[string]any{"type": "Unconfined"}})},
+		want: privilege,
+	}, {
+		name: "creates an unconfined Pod",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["securityContext"] = map[string]any{"seccompProfile": map[string]any{"type": "Unconfined"}}
+		})},
+		want: privilege,
+	}, {
+		name: "creates a Pod with a host process container",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContext(map[string]any{"windowsOptions": map[string]any{"hostProcess": true}})},
+		want: privilege,
+	}, {
+		name: "creates a host process Pod",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["securityContext"] = map[string]any{"windowsOptions": map[string]any{"hostProcess": true}}
+		})},
+		want: privilege,
+	}, {
 		name: "patches another check's Pod",
-		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: restricted, object: pod("check-review", ""), oldObject: pod("check-review", "")},
+		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: ready, object: pod("check-review", ""), oldObject: pod("check-review", "")},
 		want: others,
 	}, {
 		name: "patches a Pod that no check owns",
-		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: restricted, object: pod("", ""), oldObject: pod("", "")},
+		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: ready, object: pod("", ""), oldObject: pod("", "")},
 		want: others,
 	}, {
 		name: "labels a Pod that it doesn't own as its own",
-		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: restricted, object: own, oldObject: pod("", "")},
+		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: ready, object: own, oldObject: pod("", "")},
 		want: others,
 	}, {
 		name: "gives its Pod another check's label",
-		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: restricted, object: pod("check-review", ""), oldObject: own},
+		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: ready, object: pod("check-review", ""), oldObject: own},
 		want: label,
 	}, {
 		name: "removes its label from its Pod",
-		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: restricted, object: pod("", ""), oldObject: own},
+		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: ready, object: pod("", ""), oldObject: own},
 		want: label,
 	}, {
 		name: "deletes another check's Pod",
-		r:    request{user: gotest, operation: "DELETE", namespace: "repos", nsLabels: restricted, oldObject: pod("check-review", "")},
+		r:    request{user: gotest, operation: "DELETE", namespace: "repos", nsLabels: ready, oldObject: pod("check-review", "")},
 		want: others,
 	}, {
 		name: "deletes a Pod that no check owns",
-		r:    request{user: gotest, operation: "DELETE", namespace: "repos", nsLabels: restricted, oldObject: pod("", "")},
+		r:    request{user: gotest, operation: "DELETE", namespace: "repos", nsLabels: ready, oldObject: pod("", "")},
 		want: others,
 	}, {
 		name: "adds an ephemeral container to another check's Pod",
-		r:    request{user: gotest, operation: "UPDATE", subresource: "ephemeralcontainers", namespace: "repos", nsLabels: restricted, object: pod("check-review", ""), oldObject: pod("check-review", "")},
+		r:    request{user: gotest, operation: "UPDATE", subresource: "ephemeralcontainers", namespace: "repos", nsLabels: ready, object: pod("check-review", ""), oldObject: pod("check-review", "")},
 		want: others,
 	}, {
 		name: "writes the status of another check's Pod",
-		r:    request{user: gotest, operation: "UPDATE", subresource: "status", namespace: "repos", nsLabels: restricted, object: pod("check-review", ""), oldObject: pod("check-review", "")},
+		r:    request{user: gotest, operation: "UPDATE", subresource: "status", namespace: "repos", nsLabels: ready, object: pod("check-review", ""), oldObject: pod("check-review", "")},
 		want: others,
 	}, {
 		name: "resizes another check's Pod",
-		r:    request{user: gotest, operation: "UPDATE", subresource: "resize", namespace: "repos", nsLabels: restricted, object: pod("check-review", ""), oldObject: pod("check-review", "")},
+		r:    request{user: gotest, operation: "UPDATE", subresource: "resize", namespace: "repos", nsLabels: ready, object: pod("check-review", ""), oldObject: pod("check-review", "")},
 		want: others,
+	}, {
+		name: "an account named after the check in another check's namespace",
+		r:    request{user: "system:serviceaccount:check-gofmt:check-gotest", operation: "CREATE", namespace: "repos", nsLabels: ready, object: own},
+		want: notCheck("system:serviceaccount:check-gofmt:check-gotest"),
+	}, {
+		name: "an account named after the check in a namespace that isn't a check's",
+		r:    request{user: "system:serviceaccount:ci:check-gotest", operation: "CREATE", namespace: "default", object: escape},
+		want: notCheck("system:serviceaccount:ci:check-gotest"),
+	}, {
+		name: "an account named after the check in a shared check-* namespace",
+		r:    request{user: "system:serviceaccount:check-shared:check-gotest", operation: "CREATE", namespace: "git-k8s", object: pod("", "git-k8s")},
+		want: notCheck("system:serviceaccount:check-shared:check-gotest"),
+	}, {
+		name: "another account in a check's namespace",
+		r:    request{user: "system:serviceaccount:check-gotest:default", operation: "CREATE", namespace: "check-gofmt", object: pod("", "check-gofmt")},
+		want: notCheck("system:serviceaccount:check-gotest:default"),
+	}, {
+		name: "another account in a check's namespace deletes the check's Pod",
+		r:    request{user: "system:serviceaccount:check-gotest:rogue", operation: "DELETE", namespace: "repos", nsLabels: ready, oldObject: own},
+		want: notCheck("system:serviceaccount:check-gotest:rogue"),
+	}, {
+		name: "a username that only looks like a check's service account",
+		r:    request{user: "system:serviceaccount:check-gotest", operation: "CREATE", namespace: "repos", nsLabels: ready, object: own},
+		want: notCheck("system:serviceaccount:check-gotest"),
 	}, {
 		name: "the core program creates a Pod in its namespace",
 		r:    request{user: "system:serviceaccount:git-k8s:git-k8s", operation: "CREATE", namespace: "git-k8s", object: pod("", "git-k8s")},
 	}, {
+		name: "an unrelated service account creates a privileged Pod",
+		r:    request{user: "system:serviceaccount:payments:deployer", operation: "CREATE", namespace: "payments", object: escape},
+	}, {
+		name: "the ReplicaSet controller creates a Pod",
+		r:    request{user: "system:serviceaccount:kube-system:replicaset-controller", operation: "CREATE", namespace: "repos", object: pod("", "")},
+	}, {
 		name: "a person creates a Pod with check-gotest's label in a check's namespace",
 		r:    request{user: "alice@example.com", operation: "CREATE", namespace: "check-gofmt", object: pod("check-gotest", "check-gofmt")},
 	}, {
+		name: "a person whose name starts with check- creates a Pod",
+		r:    request{user: "check-admin", operation: "CREATE", namespace: "check-gofmt", object: pod("check-gotest", "check-gofmt")},
+	}, {
 		name: "the garbage collector deletes a check's Pod",
 		r:    request{user: "system:serviceaccount:kube-system:generic-garbage-collector", operation: "DELETE", namespace: "repos", oldObject: own},
-	}, {
-		name: "another account in a check's namespace isn't the check",
-		r:    request{user: "system:serviceaccount:check-gotest:default", operation: "CREATE", namespace: "check-gofmt", object: pod("", "check-gofmt")},
-	}, {
-		name: "an account named after a check in another namespace isn't the check",
-		r:    request{user: "system:serviceaccount:repos:check-gotest", operation: "CREATE", namespace: "check-gofmt", object: pod("", "check-gofmt")},
 	}} {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := p.admit(t, tt.r); got != tt.want {

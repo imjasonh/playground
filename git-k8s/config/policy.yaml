@@ -123,12 +123,12 @@ spec:
 # kube sets the label kube.imjasonh.github.io/controller on each object that a
 # controller owns to the controller's name, which is check-NAME for the NAME
 # check. This policy lets a check change or delete only Pods with its own
-# label, and its new Pods must have it. A check's Pods also can't run in the
-# namespaces of git-k8s programs or as any service account but their
-# namespace's default. They run only in namespaces where Pod Security
-# admission enforces the baseline or restricted standard, which forbids the
-# privileged and hostPath Pods that could read other programs' tokens on a
-# node.
+# label, and its new Pods must have it. A check creates and changes Pods only
+# in namespaces labeled git-k8s.imjasonh.com/check-pods=true that enforce the
+# latest restricted Pod Security Standard, and never in the namespaces of
+# git-k8s programs. The policy itself also denies the Pod fields that break a
+# container's isolation from its node, because Pod Security admission skips
+# the Pods that its exemptions cover.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -142,13 +142,17 @@ spec:
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["pods", "pods/ephemeralcontainers", "pods/resize", "pods/status"]
   # Every Pod write in the cluster matches, so this condition skips service
-  # accounts outside the check-* namespaces where generate installs checks.
-  # Like variables.check, it relies on generate's convention, but it reads the
-  # account's namespace, not its name. If checks run under other accounts,
-  # widen it to every service account, like the other policies' condition.
+  # accounts whose namespace and name don't start with check-. Of the rest,
+  # only system:serviceaccount:check-NAME:check-NAME, which is how generate
+  # installs the NAME check, can write Pods. A check that runs under another
+  # account needs a policy of its own. If that policy reads params, its
+  # binding needs parameterNotFoundAction: Allow, for the reason given at
+  # this policy's binding.
   matchConditions:
-    - name: check-namespaces
-      expression: request.userInfo.username.startsWith("system:serviceaccount:check-")
+    - name: check-accounts
+      expression: >-
+        request.userInfo.username.startsWith("system:serviceaccount:") &&
+        request.userInfo.username.split(":").exists(part, part.startsWith("check-"))
   variables:
     - name: user
       expression: request.userInfo.username.split(":")
@@ -168,34 +172,82 @@ spec:
         oldObject != null && has(oldObject.metadata.labels) &&
         "kube.imjasonh.github.io/controller" in oldObject.metadata.labels ?
         oldObject.metadata.labels["kube.imjasonh.github.io/controller"] : ""
+    - name: namespaceLabels
+      expression: 'has(namespaceObject.metadata.labels) ? namespaceObject.metadata.labels : {}'
+    - name: containers
+      expression: >-
+        object == null ? [] :
+        object.spec.containers + (has(object.spec.initContainers) ? object.spec.initContainers : [])
+    - name: securityContexts
+      expression: >-
+        variables.containers.map(c, has(c.securityContext), c.securityContext) +
+        (object != null && has(object.spec.ephemeralContainers) ?
+        object.spec.ephemeralContainers.map(c, has(c.securityContext), c.securityContext) : [])
   validations:
-    - expression: >-
-        variables.check == "" ||
-        request.namespace != "git-k8s" && !request.namespace.startsWith("check-")
+    - expression: variables.check != ""
+      messageExpression: request.userInfo.username + " isn't a check's service account, so it can't write Pods"
+    - expression: request.namespace != "git-k8s" && !request.namespace.startsWith("check-")
       messageExpression: >-
         "the " + variables.check + " check can't change Pods in the namespaces of git-k8s programs"
-    - expression: variables.check == "" || oldObject == null || variables.oldOwner == variables.controller
+    - expression: oldObject == null || variables.oldOwner == variables.controller
       messageExpression: >-
         "the " + variables.check + " check can change or delete only its own Pods, which have the label " +
         "kube.imjasonh.github.io/controller=" + variables.controller
-    - expression: variables.check == "" || object == null || variables.owner == variables.controller
+    - expression: object == null || variables.owner == variables.controller
       messageExpression: >-
         "the " + variables.check + " check's Pods need the label " +
         "kube.imjasonh.github.io/controller=" + variables.controller
     - expression: >-
-        variables.check == "" || object == null ||
+        object == null ||
+        "git-k8s.imjasonh.com/check-pods" in variables.namespaceLabels &&
+        variables.namespaceLabels["git-k8s.imjasonh.com/check-pods"] == "true"
+      messageExpression: >-
+        "the " + variables.check + " check can't create or change Pods in namespace " + request.namespace +
+        ", which doesn't have the label git-k8s.imjasonh.com/check-pods=true"
+    - expression: >-
+        object == null ||
+        "pod-security.kubernetes.io/enforce" in variables.namespaceLabels &&
+        variables.namespaceLabels["pod-security.kubernetes.io/enforce"] == "restricted" &&
+        (!("pod-security.kubernetes.io/enforce-version" in variables.namespaceLabels) ||
+        variables.namespaceLabels["pod-security.kubernetes.io/enforce-version"] == "latest")
+      messageExpression: >-
+        "the " + variables.check + " check can't create or change Pods in namespace " + request.namespace +
+        ", which doesn't enforce the restricted Pod Security Standard at the latest version"
+    - expression: >-
+        object == null ||
         (!has(object.spec.serviceAccountName) || object.spec.serviceAccountName in ["", "default"]) &&
         (!has(object.spec.serviceAccount) || object.spec.serviceAccount in ["", "default"])
       messageExpression: >-
         "the " + variables.check + " check's Pods must run as their namespace's default service account"
+    - expression: request.operation != "CREATE" || !has(object.spec.nodeName) || object.spec.nodeName == ""
+      messageExpression: '"the " + variables.check + " check can''t assign its Pods to a node"'
     - expression: >-
-        variables.check == "" || object == null ||
-        has(namespaceObject.metadata.labels) &&
-        "pod-security.kubernetes.io/enforce" in namespaceObject.metadata.labels &&
-        namespaceObject.metadata.labels["pod-security.kubernetes.io/enforce"] in ["baseline", "restricted"]
+        object == null ||
+        !(has(object.spec.hostNetwork) && object.spec.hostNetwork) &&
+        !(has(object.spec.hostPID) && object.spec.hostPID) &&
+        !(has(object.spec.hostIPC) && object.spec.hostIPC) &&
+        (!has(object.spec.volumes) || object.spec.volumes.all(v, !has(v.hostPath))) &&
+        variables.containers.all(c, !has(c.ports) || c.ports.all(p, !has(p.hostPort) || p.hostPort == 0))
       messageExpression: >-
-        "the " + variables.check + " check can't run Pods in namespace " + request.namespace +
-        ", which doesn't enforce the baseline or restricted Pod Security Standard"
+        "the " + variables.check + " check's Pods can't use the node's network, PID, or IPC namespace, " +
+        "hostPath volumes, or host ports"
+    - expression: >-
+        object == null ||
+        (!has(object.spec.securityContext) ||
+        (!has(object.spec.securityContext.seccompProfile) ||
+        object.spec.securityContext.seccompProfile.type != "Unconfined") &&
+        (!has(object.spec.securityContext.windowsOptions) ||
+        !has(object.spec.securityContext.windowsOptions.hostProcess) ||
+        !object.spec.securityContext.windowsOptions.hostProcess)) &&
+        variables.securityContexts.all(s,
+        !(has(s.privileged) && s.privileged) &&
+        (!has(s.capabilities) || !has(s.capabilities.add) || size(s.capabilities.add) == 0) &&
+        (!has(s.procMount) || s.procMount == "Default") &&
+        (!has(s.seccompProfile) || s.seccompProfile.type != "Unconfined") &&
+        (!has(s.windowsOptions) || !has(s.windowsOptions.hostProcess) || !s.windowsOptions.hostProcess))
+      messageExpression: >-
+        "the " + variables.check + " check's containers can't be privileged, add capabilities, unmask /proc, " +
+        "use the Unconfined seccomp profile, or run as host processes"
 ---
 # The API server looks up a binding's params before it evaluates
 # matchConditions. If this binding names params with
