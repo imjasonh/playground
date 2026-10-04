@@ -50,12 +50,20 @@ type GitRepositorySpec struct {
 	SecretRef *SecretRef `json:"secretRef,omitempty" doc:"Secret in the same namespace with username and password keys for HTTP basic authentication, such as a kubernetes.io/basic-auth Secret. Without a username, controllers send git."`
 	// PollInterval is a Go duration.
 	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often to list the remote's branches, such as 30s or 5m."`
+	OctoSTS      *OctoSTS     `json:"octoSTS,omitempty" doc:"Trust policies that controllers use to exchange their service account tokens for GitHub tokens with Octo STS. The URL must be the https URL of a github.com repository, such as https://github.com/OWNER/REPO.git."`
 	Branches     []BranchRule `json:"branches,omitempty" doc:"Rules that select branches to track. For each remote branch, the first rule whose match pattern matches applies. Branches that match no rule aren't tracked."`
 }
 
 // SecretRef names a Secret in the same namespace.
 type SecretRef struct {
 	Name string `json:"name" kube:"minLength=1"`
+}
+
+// OctoSTS names trust policies in a GitHub repository. Each identity is the
+// name of a trust policy file, .github/chainguard/IDENTITY.sts.yaml, on the
+// repository's default branch.
+type OctoSTS struct {
+	GitIdentity string `json:"gitIdentity,omitempty" pattern:"^[A-Za-z0-9][-A-Za-z0-9_.]*$" kube:"maxLength=100" doc:"Identity whose token fetches and pushes, instead of a Secret, so secretRef must be empty. Its trust policy needs contents: write."`
 }
 
 // BranchRule selects branches by name and says what they propose changes
