@@ -712,7 +712,8 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
   removed.
 - Events are only about the reconciled object. The count of an event's
   repeats reaches the API server up to 6 minutes late, and a replica that
-  crashes loses the counts that it hasn't written.
+  crashes loses the counts that it hasn't written. A replica that stops
+  loses the events and counts that it can't write in 5 seconds.
 
 ## Layout
 

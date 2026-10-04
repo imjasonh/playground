@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -31,9 +33,24 @@ type eventServer struct {
 	// lose makes the server store the Events it's sent but answer 500, as
 	// when a response is lost.
 	lose bool
+	// hang makes the server answer nothing until the client gives up. It
+	// sends each request that it doesn't answer to hung.
+	hang atomic.Bool
+	hung chan string
 }
 
 func (s *eventServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if s.hang.Load() {
+		// The server notices that the client gave up only after it reads
+		// the whole body.
+		_, _ = io.Copy(io.Discard, r.Body)
+		select {
+		case s.hung <- r.Method + " " + r.URL.Path:
+		default:
+		}
+		<-r.Context().Done()
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.reqs = append(s.reqs, r.Method+" "+r.URL.Path)
@@ -111,7 +128,7 @@ func (s *eventServer) clear() {
 
 func newTestEventWriter(t *testing.T) (*eventWriter, *eventServer, *bytes.Buffer) {
 	t.Helper()
-	srv := &eventServer{events: map[string]map[string]any{}}
+	srv := &eventServer{events: map[string]map[string]any{}, hung: make(chan string, 16)}
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
 	c, err := client.New(&client.Config{Host: ts.URL}, "test")
@@ -411,6 +428,64 @@ func TestEventWriterWritesQueuedEventsWhenItStops(t *testing.T) {
 	events := srv.stored()
 	if len(events) != 1 || !reflect.DeepEqual(seriesOf(events[0]), wantSeries(3, t0.Add(2*time.Second))) {
 		t.Errorf("Events = %v, want one with a count of 3", events)
+	}
+}
+
+func TestEventWriterStopsInSecondsWhenTheAPIServerHangs(t *testing.T) {
+	w, srv, logs := newTestEventWriter(t)
+	srv.hang.Store(true)
+	stop := w.start()
+	for _, reason := range []string{"Pushed", "Rejected", "Merged"} {
+		w.queue <- widgetEvent(reason, "n", t0)
+	}
+	<-srv.hung
+	start := time.Now()
+	stop()
+	if d := time.Since(start); d < 5*time.Second || d > 10*time.Second {
+		t.Errorf("stopping took %v, want about 5s", d)
+	}
+	// Stopping cancels the first write, and the 5 seconds run out during the
+	// second.
+	if n := strings.Count(logs.String(), "writing event failed"); n != 1 || !strings.Contains(logs.String(), "context deadline exceeded") {
+		t.Errorf("logs = %s, want one write that ran out of time", logs)
+	}
+	if strings.Contains(logs.String(), "context canceled") {
+		t.Errorf("logs = %s, want no canceled writes", logs)
+	}
+}
+
+func TestEventWriterKeepsASeriesWhoseWriteWasCanceled(t *testing.T) {
+	w, srv, logs := newTestEventWriter(t)
+	for i := range 3 {
+		w.record(t.Context(), widgetEvent("Pushed", "pushed", t0.Add(time.Duration(i)*time.Second)))
+	}
+	srv.take()
+	srv.hang.Store(true)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	go func() {
+		<-srv.hung
+		cancel()
+	}()
+	ended := t0.Add(2*time.Second + w.finish)
+	w.flush(ctx, ended)
+	if len(w.series) != 1 {
+		t.Fatalf("a flush whose write was canceled forgot the series")
+	}
+
+	srv.hang.Store(false)
+	w.flush(t.Context(), ended)
+	if reqs := srv.take(); !slices.Equal(methods(reqs), []string{"PATCH"}) {
+		t.Errorf("requests = %q, want the count written", reqs)
+	}
+	if got, want := seriesOf(srv.stored()[0]), wantSeries(3, t0.Add(2*time.Second)); !reflect.DeepEqual(got, want) {
+		t.Errorf("series = %v, want %v", got, want)
+	}
+	if len(w.series) != 0 {
+		t.Errorf("flush kept a series that ended after writing its count")
+	}
+	if got := w.metrics.counter("kube_events_total", "controller", "widgets", "result", "failed"); got != 0 || logs.Len() != 0 {
+		t.Errorf("a canceled write counted as a failure: kube_events_total{result=\"failed\"} = %v, logs = %s", got, logs)
 	}
 }
 

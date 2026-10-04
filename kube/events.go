@@ -159,33 +159,33 @@ func (w *eventWriter) send(c *core, obj *ObjectMeta, action string, s *scope) {
 }
 
 // start writes queued events until the returned function is called. That
-// function writes the events still queued and the counts of series, for at
-// most a few seconds, then returns.
+// function cancels any write in progress, spends at most 5 seconds writing
+// the events still queued and the counts of series, then returns.
 func (w *eventWriter) start() func() {
-	stop, done := make(chan struct{}), make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		t := time.NewTicker(w.finish)
 		defer t.Stop()
-		for {
+		for ctx.Err() == nil {
 			select {
 			case r := <-w.queue:
-				w.record(context.Background(), r)
+				w.record(ctx, r)
 			case now := <-t.C:
-				w.flush(context.Background(), now)
-			case <-stop:
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				for len(w.queue) > 0 && ctx.Err() == nil {
-					w.record(ctx, <-w.queue)
-				}
-				w.flush(ctx, time.Now())
-				cancel()
-				return
+				w.flush(ctx, now)
+			case <-ctx.Done():
 			}
 		}
+		drain, cancelDrain := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancelDrain()
+		for len(w.queue) > 0 && drain.Err() == nil {
+			w.record(drain, <-w.queue)
+		}
+		w.flush(drain, time.Now())
 	}()
 	return func() {
-		close(stop)
+		cancel()
 		<-done
 	}
 }
@@ -221,12 +221,14 @@ func (w *eventWriter) record(ctx context.Context, r eventRecord) {
 
 // flush writes the counts that changed since the last write, and forgets
 // series that ended because their last repeat was w.finish or more earlier.
+// Once ctx is done, it forgets nothing, so that the writer can still write
+// the counts when it stops.
 func (w *eventWriter) flush(ctx context.Context, now time.Time) {
 	for k, s := range w.series {
 		if s.written != s.count && !s.failed && ctx.Err() == nil {
 			w.write(ctx, k, s)
 		}
-		if now.Sub(s.last) >= w.finish {
+		if now.Sub(s.last) >= w.finish && ctx.Err() == nil {
 			delete(w.series, k)
 		}
 	}
@@ -237,6 +239,11 @@ func (w *eventWriter) flush(ctx context.Context, now time.Time) {
 
 func (w *eventWriter) write(ctx context.Context, k eventKey, s *eventSeries) {
 	created, err := w.put(ctx, k, s)
+	if err != nil && errors.Is(ctx.Err(), context.Canceled) {
+		// Only stopping the writer cancels ctx, which is no reason to log a
+		// failure or to stop writing the series.
+		return
+	}
 	if err != nil {
 		w.metrics.inc("kube_events_total", "controller", k.controller, "result", "failed")
 		w.log.Warn("writing event failed", "controller", k.controller, "object", k.regarding.Kind+" "+Key{Namespace: k.regarding.Namespace, Name: k.regarding.Name}.String(), "reason", k.reason, "err", err)

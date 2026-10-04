@@ -552,10 +552,11 @@ than 6 minutes earlier is a repeat. The first repeat patches the Event's
 the writer counts later repeats in memory. Every 6 minutes, the writer patches
 each series whose count changed and forgets each series that had no repeat in
 that time, so a later repeat creates a new Event. When the manager stops,
-after its reconciles finish, the writer spends up to 5 seconds writing the
-events left in the channel and the counts that it hasn't written. However
-often a reconcile repeats an event, the writer makes two writes for it and
-then at most one every 6 minutes.
+after its reconciles finish, the writer cancels any write in progress and
+spends up to 5 seconds writing the events left in the channel and the counts
+that it hasn't written, so an API server that doesn't answer delays stopping
+by at most 5 seconds. However often a reconcile repeats an event, the writer
+makes two writes for it and then at most one every 6 minutes.
 
 `client-go` keys a series on the controller, action, reason, and object
 references, which include the object's resource version, and the series
@@ -1028,4 +1029,5 @@ offers:
 - Events are only about the reconciled object, and every type that a program
   reconciles gets the rule for events when any of its code calls `Eventf`. A
   replica that crashes loses the counts of repeats that it hasn't written,
-  which cover up to 6 minutes.
+  which cover up to 6 minutes. A replica that stops loses the events and
+  counts that it can't write in 5 seconds.
