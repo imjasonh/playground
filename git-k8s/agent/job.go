@@ -49,22 +49,9 @@ type Checkout struct {
 	Head   string
 	// Parent names the branch that Branch lands on.
 	Parent string
-	// Base is the merge base of Head and Parent's head, or of Head and
-	// Merge's commit, or empty if they share no history. The agent reads
-	// the change from Base to Head.
+	// Base is the merge base of Head and Parent's head, or empty if they
+	// share no history. The agent reads the change from Base to Head.
 	Base string
-	// Merge, if set, is a branch of the same repository to merge into
-	// Head, and Base can't be empty. The agent's files are then the tree
-	// that git merge-tree --write-tree --merge-base=Base writes with
-	// merge.conflictStyle=diff3, instead of Head's, so the files that
-	// conflict hold conflict markers. A Result's Files change that tree.
-	Merge *Ref
-}
-
-// Ref is a branch and the commit that it points to.
-type Ref struct {
-	Branch string
-	Commit string
 }
 
 // JobState is what RunJob needs to follow a job's run from one call to the
@@ -179,8 +166,6 @@ func (j *Job) validate() error {
 		return errors.New("the job needs a name, a namespace, a repository URL, and a branch")
 	case !isCommit(c.Head) || c.Base != "" && !isCommit(c.Base):
 		return errors.New("the job's head and merge base must be commit SHAs")
-	case c.Merge != nil && (c.Merge.Branch == "" || !isCommit(c.Merge.Commit) || c.Base == ""):
-		return errors.New("a merge needs a branch, its commit's SHA, and the merge base")
 	case strings.TrimSpace(j.Task.Instructions) == "":
 		return errors.New("the job needs instructions")
 	}

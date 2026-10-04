@@ -2,17 +2,11 @@ package agent
 
 import (
 	"encoding/json"
-	"errors"
-	"fmt"
-	"maps"
-	"os"
-	"os/exec"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -34,10 +28,10 @@ func TestRunsAJob(t *testing.T) {
 	main := f.base
 	job := &Job{
 		Name: "app-c-x", Namespace: "default", URL: repo.Spec.URL, Credentials: repo.Spec.SecretRef,
-		Checkout: Checkout{Branch: "c/x", Head: f.b.Spec.Head, Parent: "main", Base: main, Merge: &Ref{Branch: "main", Commit: main}},
-		Task:     Task{Instructions: "Merge main into c/x.", Edit: true},
+		Checkout: Checkout{Branch: "c/x", Head: f.b.Spec.Head, Parent: "main", Base: main},
+		Task:     Task{Instructions: "Fix the change.", Edit: true},
 		Tools:    []string{"read", "edit"},
-		Image:    "registry.example.com/agent-runner:merge",
+		Image:    "registry.example.com/agent-runner:fix",
 		MaxRuns:  1,
 	}
 	st := &JobState{}
@@ -60,7 +54,7 @@ func TestRunsAJob(t *testing.T) {
 		}
 		env[e.Name] = e.Value
 	}
-	if env["URL"] != repo.Spec.URL || env["HEAD"] != job.Checkout.Head || env["BASE"] != main || env["MERGE_BRANCH"] != "main" || env["MERGE_HEAD"] != main {
+	if env["URL"] != repo.Spec.URL || env["HEAD"] != job.Checkout.Head || env["BASE"] != main {
 		t.Errorf("prepare's environment = %v, want the job's commits", env)
 	}
 	if want := []string{"app-creds/username", "app-creds/password", "cursor-api-key/api-key"}; !slices.Equal(secrets, want) {
@@ -74,9 +68,8 @@ func TestRunsAJob(t *testing.T) {
 			}
 		}
 	}
-	if !slices.Equal(task.Tools, job.Tools) || !task.Edit || task.Instructions != job.Task.Instructions || task.MergeBranch != "main" || task.MergeHead != main ||
-		task.ConflictsFile != "/input/conflicts" || task.MergeLogFile != "/input/merge-log.txt" {
-		t.Errorf("AGENT_TASK = %+v, want the job's task, tools, and merge", task)
+	if !slices.Equal(task.Tools, job.Tools) || !task.Edit || task.Instructions != job.Task.Instructions || task.Head != job.Checkout.Head || task.Base != main {
+		t.Errorf("AGENT_TASK = %+v, want the job's task, tools, and commits", task)
 	}
 
 	t.Log("RunJob follows the Pod until it serves the agent's result.")
@@ -176,7 +169,6 @@ func TestValidatesJobs(t *testing.T) {
 		func(j *Job) {
 			j.Checkout.Head = strings.Repeat("c", 64)
 			j.Checkout.Base = sha
-			j.Checkout.Merge = &Ref{Branch: "main", Commit: sha}
 			j.Tools = []string{"read", "delete"}
 		},
 	} {
@@ -194,8 +186,6 @@ func TestValidatesJobs(t *testing.T) {
 		{"short head", func(j *Job) { j.Checkout.Head = "aaaaaaa" }, "must be commit SHAs"},
 		{"option head", func(j *Job) { j.Checkout.Head = "--" + sha[2:] }, "must be commit SHAs"},
 		{"uppercase base", func(j *Job) { j.Checkout.Base = strings.ToUpper(strings.Repeat("b", 40)) }, "must be commit SHAs"},
-		{"merge without base", func(j *Job) { j.Checkout.Merge = &Ref{Branch: "main", Commit: sha} }, "needs a branch, its commit's SHA, and the merge base"},
-		{"merge without branch", func(j *Job) { j.Checkout.Base, j.Checkout.Merge = sha, &Ref{Commit: sha} }, "needs a branch, its commit's SHA, and the merge base"},
 		{"no instructions", func(j *Job) { j.Task.Instructions = " \n" }, "needs instructions"},
 		{"edit tool", func(j *Job) { j.Task.Edit, j.Tools = false, []string{"read", "edit"} }, "the edit tool needs a task that edits files"},
 		{"shell", func(j *Job) { j.Tools = []string{"read", "shell"} }, `agents can't have the "shell" tool, only read, grep, glob, ls, edit, delete`},
@@ -203,80 +193,5 @@ func TestValidatesJobs(t *testing.T) {
 		if err := job(tc.change).validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s: validate = %v, want %q", tc.name, err, tc.want)
 		}
-	}
-}
-
-func TestPrepareScriptMerges(t *testing.T) {
-	srv := gittest.NewServer(t, "s3cret")
-	w := srv.NewWork(t, "app")
-	w.Write("f.txt", "one\ntwo\nthree\n")
-	w.Write("k.txt", "keep\n")
-	w.Write(".cursorignore", "secret/\n")
-	base := w.Commit("base")
-	w.Push("main")
-	w.Branch("c/x", base)
-	w.Write("f.txt", "one\nours\nthree\n")
-	w.Git("rm", "-q", "k.txt")
-	head := w.Commit("ours")
-	w.Push("c/x")
-	w.Branch("main", base)
-	w.Write("f.txt", "one\ntheirs\nthree\n")
-	w.Write("k.txt", "changed\n")
-	w.Write("h.txt", "new\n")
-	merged := w.Commit("theirs")
-	w.Push("main")
-	repo, secret := srv.Repository("app")
-	data := maps.Clone(secret.Data)
-	data["api-key"] = []byte("key-123")
-
-	r := &Runner{Name: "merge", Image: "agent", GitImage: "git", Backend: "fake", Model: "m", Secret: "cursor-api-key", Timeout: time.Minute}
-	job := &Job{
-		Name: "app-c-x", Namespace: "default", URL: repo.Spec.URL, Credentials: repo.Spec.SecretRef,
-		Checkout: Checkout{Branch: "c/x", Head: head, Parent: "main", Base: base, Merge: &Ref{Branch: "main", Commit: merged}},
-		Task:     Task{Instructions: "Merge main.", Edit: true},
-	}
-	dir, out, err := runPrepare(t, r.jobPod(job, 1).Spec.InitContainers[0], data)
-	if err != nil {
-		t.Fatalf("prepare: %v\n%s", err, out)
-	}
-	read := func(path string) string {
-		t.Helper()
-		b, err := os.ReadFile(dir + path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return string(b)
-	}
-	if got, want := read("/src/f.txt"), fmt.Sprintf("one\n<<<<<<< %s\nours\n||||||| %s\ntwo\n=======\ntheirs\n>>>>>>> %s\nthree\n", head, base, merged); got != want {
-		t.Errorf("f.txt =\n%s\nwant\n%s", got, want)
-	}
-	if got := read("/src/k.txt"); got != "changed\n" {
-		t.Errorf("k.txt = %q, want main's change to the file that c/x deleted", got)
-	}
-	if got := read("/src/h.txt"); got != "new\n" {
-		t.Errorf("h.txt = %q, want the file that main added", got)
-	}
-	if _, err := os.Stat(dir + "/src/.cursorignore"); !os.IsNotExist(err) {
-		t.Errorf("the work tree has .cursorignore: %v", err)
-	}
-	if tree, paths, _ := strings.Cut(read("/input/conflicts"), "\x00"); !isCommit(tree) || paths != "f.txt\x00k.txt\x00" {
-		t.Errorf("conflicts = %q and %q, want the merge's tree and f.txt and k.txt", tree, paths)
-	}
-	if files := read("/input/files"); strings.Count(files, "\x00") != 3 || !strings.Contains(files, "\tk.txt\x00") || !strings.Contains(files, "\th.txt\x00") {
-		t.Errorf("files = %q, want the merge's 3 files", files)
-	}
-	if got := read("/input/changes"); got != "M\x00f.txt\x00D\x00k.txt\x00" {
-		t.Errorf("changes = %q, want c/x's change", got)
-	}
-	if log := strings.Fields(read("/input/merge-log.txt")); len(log) != 2 || !strings.HasPrefix(merged, log[0]) || log[1] != "theirs" {
-		t.Errorf("merge-log.txt = %q, want main's commit since the merge base", log)
-	}
-
-	t.Log("A merged branch that moved fails with status 3.")
-	job.Checkout.Merge.Commit = base
-	_, out, err = runPrepare(t, r.jobPod(job, 1).Spec.InitContainers[0], data)
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.ExitCode() != movedStatus || !strings.Contains(out, "main no longer points to "+base) {
-		t.Errorf("prepare = %v\n%s; want status 3", err, out)
 	}
 }

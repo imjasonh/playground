@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { MAX_PATHS, MAX_PATHS_BYTES, parseConflicts, parseNameStatus } from "../src/touched.js";
-import { gitBuffer, prepareMerge, preparePod } from "./pod.js";
+import { MAX_PATHS, MAX_PATHS_BYTES, parseNameStatus } from "../src/touched.js";
+import { gitBuffer, preparePod } from "./pod.js";
 
 test("parses what git diff --name-status -z writes", () => {
   const task = preparePod(
@@ -32,25 +31,4 @@ test("refuses output that it can't parse", () => {
   for (const data of ["Q\0a\0", "M\0\0", "R100\0old\0", "R100\0\0new\0"]) {
     assert.throws(() => parseNameStatus(Buffer.from(data)), /isn't git diff --name-status -z output/, JSON.stringify(data));
   }
-});
-
-test("parses the paths that conflict from what git merge-tree -z writes", () => {
-  const task = prepareMerge(
-    { "a.txt": "a\n", "b.txt": "b\n", "c.txt": "c\n" },
-    { "a.txt": "ours\n", 'we"ird\tname': "ours\n", "c.txt": null },
-    { "a.txt": "theirs\n", 'we"ird\tname': "theirs\n", "c.txt": "changed\n", "b.txt": "b2\n" },
-  );
-  assert.deepEqual(parseConflicts(readFileSync(task.conflictsFile ?? "")), ["a.txt", "c.txt", 'we"ird\tname']);
-  const clean = prepareMerge({ "a.txt": "a\n" }, { "b.txt": "b\n" }, { "c.txt": "c\n" });
-  assert.deepEqual(parseConflicts(readFileSync(clean.conflictsFile ?? "")), []);
-});
-
-test("refuses a list of conflicts that it can't parse or that's too long", () => {
-  const tree = "0123456789abcdef0123456789abcdef01234567";
-  for (const data of ["", `${tree}`, `${tree}\0a.txt`, `${tree}\0\0`, "tree\0a.txt\0", `${tree.toUpperCase()}\0`]) {
-    assert.throws(() => parseConflicts(Buffer.from(data)), /isn't git merge-tree --name-only -z output/, JSON.stringify(data));
-  }
-  assert.deepEqual(parseConflicts(Buffer.from(`${tree}${"0".repeat(24)}\0a\0`)), ["a"]);
-  assert.throws(() => parseConflicts(Buffer.from(`${tree}\0${"a\0".repeat(MAX_PATHS + 1)}`)), /more than 1000 paths conflict/);
-  assert.throws(() => parseConflicts(Buffer.from(`${tree}\0${"a".repeat(MAX_PATHS_BYTES)}\0`)), /paths take more than 128 KiB/);
 });

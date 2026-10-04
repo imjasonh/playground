@@ -69,11 +69,7 @@ type podTask struct {
 	TerminationLog string `json:"terminationLog"`
 
 	// Only some jobs set these.
-	Tools         []string `json:"tools,omitempty"`
-	MergeBranch   string   `json:"mergeBranch,omitempty"`
-	MergeHead     string   `json:"mergeHead,omitempty"`
-	ConflictsFile string   `json:"conflictsFile,omitempty"`
-	MergeLogFile  string   `json:"mergeLogFile,omitempty"`
+	Tools []string `json:"tools,omitempty"`
 }
 
 // movedStatus is prepareScript's exit status when a branch no longer points
@@ -84,16 +80,13 @@ const movedStatus = 3
 // HEAD, or exits with status 3 if the branch moved, and writes the head's
 // files, its index, the change from BASE, the paths that the change
 // touches, the commit log, and the API key, if the Secret holds one, for
-// the agent container. With MERGE_HEAD, it also fetches MERGE_BRANCH, or
-// exits with status 3 if that moved, and writes the files and index of
-// HEAD's merge with MERGE_HEAD instead of the head's, the paths that
-// conflict, and the merged commits' log. It leaves .cursorignore files out
-// of the files and index, because Cursor reads them to hide files from the
-// agent. The git image has no commands but git and sh, so the script uses
-// only those and the shell's builtins, and git init's templates make
-// .git/info. The repository goes in a directory that git init creates,
-// because git refuses to use one that another user owns, such as the root
-// of an emptyDir volume. The attributes file makes the files match their
+// the agent container. It leaves .cursorignore files out of the head's
+// files and index, because Cursor reads them to hide files from the agent.
+// The git image has no commands but git and sh, so the script uses only
+// those and the shell's builtins, and git init's templates make .git/info.
+// The repository goes in a directory that git init creates, because git
+// refuses to use one that another user owns, such as the root of an
+// emptyDir volume. The attributes file makes the files match their
 // blobs, so the runner can tell which ones the agent changed.
 const prepareScript = `set -eu
 git init -q "$REPO"
@@ -106,30 +99,11 @@ if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3
 fi
-if [ -n "${MERGE_HEAD:-}" ]; then
-  git fetch -q --depth=50 --end-of-options "$URL" "refs/heads/$MERGE_BRANCH"
-  if [ "$(git rev-parse FETCH_HEAD)" != "$MERGE_HEAD" ]; then
-    echo "$MERGE_BRANCH no longer points to $MERGE_HEAD" >&2
-    exit 3
-  fi
-fi
 if [ -n "${BASE:-}" ] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
   git fetch -q --unshallow --end-of-options "$URL" "refs/heads/$BRANCH"
 fi
 printf '* -text -eol -ident -filter -working-tree-encoding\n' >.git/info/attributes
-tree="$HEAD"
-if [ -n "${MERGE_HEAD:-}" ]; then
-  merge_tree() {
-    git -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages --name-only "$@" --merge-base="$BASE" "$HEAD" "$MERGE_HEAD"
-  }
-  code=0
-  merge_tree >.git/merge || code=$?
-  [ "$code" -le 1 ] || exit "$code"
-  read -r tree <.git/merge
-  merge_tree -z >"$INPUT/conflicts" || [ "$?" -eq 1 ]
-  git log --format='%h %<(200,trunc)%s' -n 50 "$BASE..$MERGE_HEAD" >"$INPUT/merge-log.txt"
-fi
-git read-tree "$tree"
+git read-tree "$HEAD"
 git rm -q --cached --ignore-unmatch -- ':(glob)**/.cursorignore'
 git checkout-index -a -f --prefix="$WORK_TREE/"
 git ls-files -s -z >"$INPUT/files"
@@ -190,11 +164,6 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 		{Name: "HOME", Value: "/git"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
 		{Name: "GIT_ALLOW_PROTOCOL", Value: "http:https:git:ssh:file"},
-	}
-	if m := c.Merge; m != nil {
-		task.MergeBranch, task.MergeHead = m.Branch, m.Commit
-		task.ConflictsFile, task.MergeLogFile = inputDir+"/conflicts", inputDir+"/merge-log.txt"
-		prepareEnv = append(prepareEnv, EnvVar{Name: "MERGE_BRANCH", Value: m.Branch}, EnvVar{Name: "MERGE_HEAD", Value: m.Commit})
 	}
 	agentTask, _ := json.Marshal(task)
 	if ref := job.Credentials; ref != nil {

@@ -10,7 +10,7 @@ import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
 import type { Task } from "../src/task.js";
 import { MAX_PATHS } from "../src/touched.js";
-import { prepareMerge, preparePod } from "./pod.js";
+import { preparePod } from "./pod.js";
 
 const quiet: RunOptions = { log: () => undefined };
 
@@ -101,37 +101,6 @@ test("reports the files that the agent changed", async () => {
       ["a.txt", "100644", "one\nthree\n"],
       ["new.txt", "100644", ""],
     ],
-  );
-});
-
-test("resolves a merge, and reports the files of the merge that the agent changed", async () => {
-  const task = prepareMerge(
-    { "a.txt": "one\ntwo\nthree\n", "keep.txt": "keep\n" },
-    { "a.txt": "one\nours\nthree\n" },
-    { "a.txt": "one\ntheirs\nthree\n", "new.txt": "new\n" },
-    { edit: true, tools: ["read", "edit"] },
-  );
-  const conflict = `one\n<<<<<<< ${task.head}\nours\n||||||| ${task.base}\ntwo\n=======\ntheirs\n>>>>>>> ${task.mergeHead}\nthree\n`;
-  assert.equal(readFileSync(join(task.workTree, "a.txt"), "utf8"), conflict);
-  assert.equal(readFileSync(join(task.workTree, "new.txt"), "utf8"), "new\n");
-  let request: AgentRequest | undefined;
-  const resolve: Backend = async (r) => {
-    request = r;
-    writeFileSync(join(r.cwd, "a.txt"), "one\nours and theirs\nthree\n");
-    return {
-      text: '{"verdict": "pass", "summary": "merged"}',
-      model: r.model,
-      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    };
-  };
-  assert.equal(await runTask(task, { ...quiet, backends: { fake: resolve } }), 0);
-  assert.ok(request);
-  assert.deepEqual(request.tools, ["read", "edit"]);
-  assert.match(request.prompt, /\nThe paths that conflict:\n\na\.txt\n\n/);
-  assert.match(request.prompt, /\nThe merged branch's commits since the merge base, newest first:\n\n[0-9a-f]+ Theirs\n\n/);
-  assert.deepEqual(
-    readResult(task).files.map((f) => [f.path, Buffer.from(f.content ?? "", "base64").toString()]),
-    [["a.txt", "one\nours and theirs\nthree\n"]],
   );
 });
 

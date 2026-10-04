@@ -24,8 +24,7 @@
 //
 // A controller that isn't a check calls Runner.RunJob with a Job, which
 // names the repository, the commits to check out, the task, and the agent's
-// tools, and can have the agent resolve a merge's conflicts. Run builds a
-// Job from the check's branch.
+// tools. Run builds a Job from the check's branch.
 package agent
 
 import (
