@@ -47,7 +47,12 @@ func TestStartsALockedDownPod(t *testing.T) {
 		for _, e := range c.Env {
 			switch {
 			case e.ValueFrom != nil && e.ValueFrom.SecretKeyRef != nil:
-				secrets[c.Name] = append(secrets[c.Name], e.ValueFrom.SecretKeyRef.Name+"/"+e.ValueFrom.SecretKeyRef.Key)
+				ref := e.ValueFrom.SecretKeyRef
+				key := ref.Name + "/" + ref.Key
+				if ref.Optional != nil && *ref.Optional {
+					key += "?"
+				}
+				secrets[c.Name] = append(secrets[c.Name], key)
 			case e.ValueFrom != nil:
 				uid = c.Name + " " + e.Name + " " + e.ValueFrom.FieldRef.FieldPath
 			case e.Name == "AGENT_TASK":
@@ -64,8 +69,8 @@ func TestStartsALockedDownPod(t *testing.T) {
 			mounts[c.Name] = append(mounts[c.Name], mount)
 		}
 	}
-	if want := map[string][]string{"prepare": {"app-creds/username", "app-creds/password", "cursor-api-key/api-key"}}; !reflect.DeepEqual(secrets, want) {
-		t.Errorf("Secrets = %v, want only the prepare container to read them", secrets)
+	if want := map[string][]string{"prepare": {"app-creds/username?", "app-creds/password", "cursor-api-key/api-key?"}}; !reflect.DeepEqual(secrets, want) {
+		t.Errorf("Secrets = %v, want only the prepare container to read them, and the username and the API key to be optional", secrets)
 	}
 	want := map[string][]string{
 		"prepare": {"git:/git", "src:/src", "input:/input", "key:/key"},
@@ -171,7 +176,8 @@ func TestMatchesTheRunner(t *testing.T) {
 
 // runPrepare runs the script of c, a prepare container, with c's
 // environment and its volumes in a temporary directory, which it returns.
-// secrets holds the Secret keys that c reads.
+// secrets holds the Secret keys that c reads. Like the kubelet, it leaves
+// out an optional key that secrets doesn't hold.
 func runPrepare(t *testing.T, c Container, secrets map[string][]byte) (string, string, error) {
 	t.Helper()
 	sh, err := exec.LookPath("sh")
@@ -201,8 +207,15 @@ func runPrepare(t *testing.T, c Container, secrets map[string][]byte) (string, s
 	cmd.Env = []string{"PATH=" + bin, "GIT_CONFIG_NOSYSTEM=1"}
 	for _, e := range c.Env {
 		v := e.Value
-		if e.ValueFrom != nil {
-			v = string(secrets[e.ValueFrom.SecretKeyRef.Key])
+		if ref := e.ValueFrom; ref != nil {
+			b, ok := secrets[ref.SecretKeyRef.Key]
+			switch {
+			case !ok && ref.SecretKeyRef.Optional != nil && *ref.SecretKeyRef.Optional:
+				continue
+			case !ok:
+				t.Fatalf("the Pod can't start without Secret key %s", ref.SecretKeyRef.Key)
+			}
+			v = string(b)
 		} else if strings.HasPrefix(v, "/") {
 			v = dir + v
 		}
@@ -295,6 +308,16 @@ func TestPrepareScript(t *testing.T) {
 	}
 	if diff := read(dir + "/input/change.diff"); !strings.Contains(diff, "new file mode 100644\nindex 0000000..") || !strings.Contains(diff, "+one") {
 		t.Errorf("change.diff =\n%s", diff)
+	}
+
+	t.Log("Without the API key's Secret, the key file is empty.")
+	delete(data, "api-key")
+	dir, out, err = prepare(t, head, base)
+	if err != nil {
+		t.Fatalf("prepare: %v\n%s", err, out)
+	}
+	if got := read(dir + "/key/api-key"); got != "" {
+		t.Errorf("api-key = %q, want it empty", got)
 	}
 
 	t.Log("A branch that moved fails with status 3.")

@@ -183,7 +183,10 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 	s := &pod.Status
 	if t := state(s.InitContainerStatuses, "prepare").Terminated; t != nil && t.ExitCode != 0 {
 		msg := exitMessage(t)
-		if st.Attempt < prepareAttempts {
+		switch {
+		case t.ExitCode == movedStatus:
+			return x.status("waiting for a run on the new commits: %s", msg)
+		case st.Attempt < prepareAttempts:
 			st.Attempt++
 			st.Pod = x.r.jobPod(x.job, st.Attempt).Name
 			kube.RequeueAfter(ctx, time.Second)
@@ -202,7 +205,11 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		return x.fail("Pod %s stopped before the agent finished: %s", st.Pod, cmp.Or(s.Message, s.Reason, "no reason given"))
 	}
 	if t == nil {
-		if msg, ok := blocked(s); ok {
+		msg, reason := blocked(s)
+		switch {
+		case slices.Contains(stuck, reason):
+			return x.fail("Pod %s can't start: %s", st.Pod, msg)
+		case reason != "":
 			return x.status("Pod %s can't start: %s", st.Pod, msg)
 		}
 		if agent.Running != nil {

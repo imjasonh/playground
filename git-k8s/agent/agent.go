@@ -329,15 +329,21 @@ func exitMessage(t *Terminated) string {
 // starting are the reasons that a container waits while it starts normally.
 var starting = []string{"", "PodInitializing", "ContainerCreating"}
 
+// stuck are the reasons that a container waits until someone fixes a
+// Secret or an image. A run ends on them instead of holding a -max-pods
+// slot until the Pod's deadline. Other reasons, such as
+// CreateContainerError, often pass by themselves.
+var stuck = []string{"CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "InvalidImageName"}
+
 // blocked reports why a container can't start, such as a missing Secret or
-// an image that can't be pulled.
-func blocked(st *PodStatus) (string, bool) {
+// an image that can't be pulled, and the reason that it waits.
+func blocked(st *PodStatus) (msg, reason string) {
 	for _, s := range slices.Concat(st.InitContainerStatuses, st.ContainerStatuses) {
 		if w := s.State.Waiting; w != nil && !slices.Contains(starting, w.Reason) {
-			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message)), true
+			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message)), w.Reason
 		}
 	}
-	return "", false
+	return "", ""
 }
 
 // window counts the runs that started in the last 24 hours. It's in

@@ -62,21 +62,25 @@ type podTask struct {
 	MergeLogFile  string   `json:"mergeLogFile,omitempty"`
 }
 
+// movedStatus is prepareScript's exit status when a branch no longer points
+// to the job's commit.
+const movedStatus = 3
+
 // prepareScript runs in the prepare container. It fetches the branch at
 // HEAD, or exits with status 3 if the branch moved, and writes the head's
 // files, its index, the change from BASE, the paths that the change
-// touches, the commit log, and the API key for the agent container. With
-// MERGE_HEAD, it also fetches MERGE_BRANCH, or exits with status 3 if that
-// moved, and writes the files and index of HEAD's merge with MERGE_HEAD
-// instead of the head's, the paths that conflict, and the merged commits'
-// log. It leaves .cursorignore files out of the files and index, because
-// Cursor reads them to hide files from the agent. The git image has no
-// commands but git and sh, so the script uses only those and the shell's
-// builtins, and git init's templates make .git/info. The repository goes
-// in a directory that git init creates, because git refuses to use one
-// that another user owns, such as the root of an emptyDir volume. The
-// attributes file makes the files match their blobs, so the runner can
-// tell which ones the agent changed.
+// touches, the commit log, and the API key, if the Secret holds one, for
+// the agent container. With MERGE_HEAD, it also fetches MERGE_BRANCH, or
+// exits with status 3 if that moved, and writes the files and index of
+// HEAD's merge with MERGE_HEAD instead of the head's, the paths that
+// conflict, and the merged commits' log. It leaves .cursorignore files out
+// of the files and index, because Cursor reads them to hide files from the
+// agent. The git image has no commands but git and sh, so the script uses
+// only those and the shell's builtins, and git init's templates make
+// .git/info. The repository goes in a directory that git init creates,
+// because git refuses to use one that another user owns, such as the root
+// of an emptyDir volume. The attributes file makes the files match their
+// blobs, so the runner can tell which ones the agent changed.
 const prepareScript = `set -eu
 git init -q "$REPO"
 cd "$REPO"
@@ -124,7 +128,7 @@ git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv "$from" 
 git diff --name-status -z "$from" "$HEAD" >"$INPUT/changes"
 git log --format='%h %<(200,trunc)%s' -n 50 "$range" >"$INPUT/log.txt"
 umask 077
-printf '%s' "$CURSOR_API_KEY" >"$KEY_FILE"
+printf '%s' "${CURSOR_API_KEY:-}" >"$KEY_FILE"
 `
 
 // jobPod declares the Pod for one attempt at job's run. Its name covers
@@ -184,7 +188,10 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			EnvVar{Name: "GIT_PASSWORD", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "password"}}},
 		)
 	}
-	prepareEnv = append(prepareEnv, EnvVar{Name: "CURSOR_API_KEY", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: r.Secret, Key: "api-key"}}})
+	// Without the Secret, the runner fails a cursor backend's run and says to
+	// check the Secret, instead of the Pod waiting for it until its deadline.
+	// The fake backend needs no key.
+	prepareEnv = append(prepareEnv, EnvVar{Name: "CURSOR_API_KEY", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: r.Secret, Key: "api-key", Optional: &yes}}})
 	port := r.resultPort()
 	image := cmp.Or(job.Image, r.Image)
 

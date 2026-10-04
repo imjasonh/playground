@@ -219,7 +219,7 @@ func TestPrepareScriptMerges(t *testing.T) {
 	job.Checkout.Merge.Commit = base
 	_, out, err = runPrepare(t, r.jobPod(job, 1).Spec.InitContainers[0], data)
 	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.ExitCode() != 3 || !strings.Contains(out, "main no longer points to "+base) {
+	if !errors.As(err, &exit) || exit.ExitCode() != movedStatus || !strings.Contains(out, "main no longer points to "+base) {
 		t.Errorf("prepare = %v\n%s; want status 3", err, out)
 	}
 }
