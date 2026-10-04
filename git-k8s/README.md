@@ -278,10 +278,13 @@ removed the commits that `base` has and its head doesn't. A side that
 removed commits rewound, for example with a force push, and deleting a
 branch removes every commit. The mirror moves one side to the other side's
 head only if that head keeps every change that the moving side made. A head
-keeps a side's changes when it has none of the commits the side removed, a
-replay of each commit it added, and every change it made since `base`:
+keeps a side's changes when it has none of the commits the side removed and
+no replay of one, a replay of each commit it added, and every change it made
+since `base`:
 
-- The head has none of the commits that the moving side removed.
+- The head has none of the commits that the moving side removed, and no
+  replay of one unless the moving side made the same change again, as a
+  rebase does.
 - The head has each commit that the moving side added. If the head doesn't
   contain `base`, a replay of the commit also counts. A replay is a commit
   other than a merge that removes and adds the same lines in the same files
@@ -305,13 +308,14 @@ A head built on a side that rewound to a new commit keeps that side's
 changes even where it resolved conflicts. The side's head is then a commit
 that `base` doesn't have, and each commit that the head has and the side's
 head doesn't has the side's head or another such commit as a parent. In
-that case, merging the commit where the side's head and `base` meet, their
-only merge base, into the head, with `base` as the merge base, also counts
-if it's clean and changes nothing, so that the head can't bring back what
-the side removed. A merge of the side's head with another commit is built
-on the side's head only if that commit is too. So a merge with a commit that
-overrides the side's change, such as one that `git merge -X theirs` makes,
-doesn't keep the side's changes, and the branch diverges.
+that case, merging either the side's head or the commit where the side's
+head and `base` meet, their only merge base, into the head, with `base` as
+the merge base, must be clean and change nothing, so that the head brings
+back no change that the side removed. A merge of the side's head with
+another commit is built on the side's head only if that commit is too. So a
+merge with a commit that overrides the side's change, such as one that
+`git merge -X theirs` makes, doesn't keep the side's changes, and the
+branch diverges.
 
 Because a replay can match the same change on another line, the merge is
 what stops a commit from counting as the replay of a different change, and
@@ -319,6 +323,11 @@ stops a rebased or reworded copy of a removed commit from bringing the
 removed change back. git merges conservatively, so changes to the same line
 or to adjacent lines conflict, and a head that keeps every change can still
 diverge.
+
+The merges can't see a replay of a removed commit whose change other
+removed commits undid, such as a secret and its revert that a force push
+dropped, so the rule also looks for replays of the removed commits. It
+can't find one inside a larger commit, such as a squash.
 
 A diverged branch doesn't land, because landing the copy's head leaves out
 the external repository's changes. To resolve a divergence, push a head
