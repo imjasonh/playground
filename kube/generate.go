@@ -318,6 +318,14 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	}
 	var crds []string
 	var installs []installObject
+	// types holds the program's types by API group and kind, so the rules
+	// for the objects that Install applies use the plurals that they declare.
+	types := map[string]*typeInfo{}
+	addType := func(ti *typeInfo) {
+		if k := ti.group + "/" + ti.kind; types[k] == nil || types[k].plural == "" {
+			types[k] = ti
+		}
+	}
 	for _, c := range controllers {
 		d, err := c.describe()
 		if err != nil {
@@ -328,6 +336,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		if !d.reconciles {
 			continue
 		}
+		addType(d.ti)
 		p.electLeader = o.replicas > 1 || o.shards > 1
 		group, plural := resourceName(d.ti)
 		own := grantsFor(d.ti)
@@ -347,6 +356,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			crds = append(crds, plural+"."+group)
 		}
 		for _, oti := range d.owns {
+			addType(oti)
 			g, r := resourceName(oti)
 			grantsFor(oti).add(g, r, "", "list", "watch", "delete")
 		}
@@ -368,6 +378,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		if err := ti.parseTag(u.Type, u.Name, reflect.StructTag(u.Tag).Get("kube")); err != nil {
 			return nil, err
 		}
+		addType(ti)
 		g, r := resourceName(ti)
 		grantsFor(ti).add(g, r, "", scopeVerbs[u.Func]...)
 	}
@@ -393,7 +404,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	if p.electLeader {
 		p.local.add("coordination.k8s.io", "leases", "", "get", "list", "create", "update", "delete")
 	}
-	o.grantInstalls(p, installs)
+	o.grantInstalls(p, installs, types)
 	if o.watchNamespace == o.namespace {
 		for k, verbs := range p.watched {
 			for v := range verbs {
@@ -422,26 +433,31 @@ func (o *generateOptions) grantsIn(p *installPlan, ns string) grants {
 	return p.namespaces[ns]
 }
 
-// groupResource returns the API group and resource of a kind in an API
-// version.
-func groupResource(apiVersion, kind string) (string, string) {
+// lookupType returns the program's type for a kind in an API version, whose
+// plural may be one that resourceName can't guess. For a kind that isn't one
+// of the program's types, it returns a type with only the group and kind.
+func lookupType(types map[string]*typeInfo, apiVersion, kind string) *typeInfo {
 	group, _, ok := strings.Cut(apiVersion, "/")
 	if !ok {
 		group = ""
 	}
-	return resourceName(&typeInfo{group: group, kind: kind})
+	if ti := types[group+"/"+kind]; ti != nil {
+		return ti
+	}
+	return &typeInfo{group: group, kind: kind}
 }
 
 // grantInstalls grants the permissions to apply the objects that Install
 // applies: create and patch on each object by name. A server-side apply
 // names the object in its URL, so the API server checks create on that
-// name when the object doesn't exist yet.
-func (o *generateOptions) grantInstalls(p *installPlan, objs []installObject) {
+// name when the object doesn't exist yet. types holds the program's types
+// by API group and kind.
+func (o *generateOptions) grantInstalls(p *installPlan, objs []installObject, types map[string]*typeInfo) {
 	// params holds the group and resource of each policy's paramKind, by
 	// the policy's kind and name.
 	params := map[string]grantKey{}
 	for _, obj := range objs {
-		group, resource := groupResource(obj.apiVersion, obj.kind)
+		group, resource := resourceName(lookupType(types, obj.apiVersion, obj.kind))
 		o.grantsIn(p, obj.namespace).add(group, resource, obj.name, "create", "patch")
 		if group != "admissionregistration.k8s.io" {
 			continue
@@ -450,7 +466,7 @@ func (o *generateOptions) grantInstalls(p *installPlan, objs []installObject) {
 		if kind, ok := spec["paramKind"].(map[string]any); ok && strings.HasSuffix(obj.kind, "AdmissionPolicy") {
 			apiVersion, _ := kind["apiVersion"].(string)
 			k, _ := kind["kind"].(string)
-			pg, pr := groupResource(apiVersion, k)
+			pg, pr := resourceName(lookupType(types, apiVersion, k))
 			params[obj.kind+"/"+obj.name] = grantKey{group: pg, resource: pr}
 			// The API server lets only someone who can get every object of a
 			// policy's paramKind create the policy. It checks get on the

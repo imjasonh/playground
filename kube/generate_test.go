@@ -253,6 +253,12 @@ metadata:
   name: settings
   namespace: team
 ---
+apiVersion: example.dev/v1
+kind: Cactus
+metadata:
+  name: saguaro
+  namespace: app-system
+---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -288,7 +294,11 @@ spec:
 	var stderr bytes.Buffer
 	o := &generateOptions{program: "app", name: "app", namespace: "app-system", watchNamespace: "team", stderr: &stderr}
 	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, namespaces: map[string]grants{}}
-	o.grantInstalls(p, objs)
+	cactus := &typeInfo{}
+	if err := cactus.parseTag("Cactus", "Cactus", "group=example.dev,plural=cacti"); err != nil {
+		t.Fatal(err)
+	}
+	o.grantInstalls(p, objs, map[string]*typeInfo{"example.dev/Cactus": cactus})
 	for _, tc := range []struct {
 		name string
 		g    grants
@@ -299,7 +309,8 @@ spec:
 			`{"apiGroups":["admissionregistration.k8s.io"],"resources":["validatingadmissionpolicies","validatingadmissionpolicybindings"],"resourceNames":["limits"],"verbs":["create","patch"]},` +
 			`{"apiGroups":["admissionregistration.k8s.io"],"resources":["validatingadmissionpolicybindings"],"resourceNames":["elsewhere"],"verbs":["create","patch"]}]`},
 		{"local", p.local, `[` +
-			`{"apiGroups":[""],"resources":["configmaps"],"resourceNames":["settings"],"verbs":["create","patch"]}]`},
+			`{"apiGroups":[""],"resources":["configmaps"],"resourceNames":["settings"],"verbs":["create","patch"]},` +
+			`{"apiGroups":["example.dev"],"resources":["cacti"],"resourceNames":["saguaro"],"verbs":["create","patch"]}]`},
 		{"watched", p.watched, `[` +
 			`{"apiGroups":[""],"resources":["configmaps"],"resourceNames":["settings"],"verbs":["create","patch"]}]`},
 		{"policies", p.namespaces["policies"], `[` +
