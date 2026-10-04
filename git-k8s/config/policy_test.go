@@ -520,6 +520,12 @@ func TestCheckPods(t *testing.T) {
 		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContexts(map[string]any{"privileged": false}, map[string]any{"privileged": true})},
 		want: privilege,
 	}, {
+		name: "creates a Pod whose second container is privileged",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["containers"] = append(spec["containers"].([]any), map[string]any{"name": "sidecar", "image": "cgr.dev/chainguard/go", "securityContext": map[string]any{"privileged": true}})
+		})},
+		want: privilege,
+	}, {
 		name: "adds a privileged ephemeral container to its Pod",
 		r:    request{user: gotest, operation: "UPDATE", subresource: "ephemeralcontainers", namespace: "repos", nsLabels: ready, object: ephemeral, oldObject: own},
 		want: privilege,
