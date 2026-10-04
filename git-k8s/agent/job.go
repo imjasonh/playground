@@ -341,8 +341,11 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		return x.fail("Pod %s stopped before the agent finished: %s", st.Pod, cmp.Or(s.Message, s.Reason, "no reason given"))
 	}
 	if t == nil {
-		msg, reason := blocked(s)
-		wait := stuckAfter - time.Since(pod.CreationTimestamp)
+		msg, reason, since := blocked(s)
+		if since.IsZero() {
+			since = pod.CreationTimestamp
+		}
+		wait := stuckAfter - time.Since(since)
 		switch {
 		case reason == "InvalidImageName":
 			return x.fail("Pod %s can't start: %s", st.Pod, msg)

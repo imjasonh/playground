@@ -513,6 +513,52 @@ func TestReportsPodsThatFail(t *testing.T) {
 	})
 }
 
+func TestCountsTheGraceFromWhenAContainerCanStart(t *testing.T) {
+	now := time.Now()
+	pull := func(name string) ContainerStatus {
+		return ContainerStatus{Name: name, State: ContainerState{Waiting: &Waiting{Reason: "ErrImagePull", Message: "unexpected status code 503 Service Unavailable"}}}
+	}
+	prepared := func(at time.Time) ContainerStatus {
+		return ContainerStatus{Name: "prepare", State: terminated(&Terminated{Reason: "Completed", FinishedAt: at})}
+	}
+	for _, tc := range []struct {
+		name   string
+		status PodStatus
+		// left is how long the container has before the run fails, or 0
+		// if the run fails now.
+		left time.Duration
+	}{{
+		name:   "prepare in a Pod that waited for a node",
+		status: PodStatus{Phase: "Pending", StartTime: now.Add(-30 * time.Second), InitContainerStatuses: []ContainerStatus{pull("prepare")}},
+		left:   stuckAfter - 30*time.Second,
+	}, {
+		name:   "prepare in a Pod that started long ago",
+		status: PodStatus{Phase: "Pending", StartTime: now.Add(-stuckAfter), InitContainerStatuses: []ContainerStatus{pull("prepare")}},
+	}, {
+		name:   "agent after prepare finished",
+		status: PodStatus{Phase: "Pending", StartTime: now.Add(-9 * time.Minute), InitContainerStatuses: []ContainerStatus{prepared(now.Add(-time.Minute)), pull("agent")}},
+		left:   stuckAfter - time.Minute,
+	}, {
+		name:   "agent long after prepare finished",
+		status: PodStatus{Phase: "Pending", StartTime: now.Add(-9 * time.Minute), InitContainerStatuses: []ContainerStatus{prepared(now.Add(-stuckAfter)), pull("agent")}},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			p := f.start()
+			p.CreationTimestamp = now.Add(-10 * time.Minute)
+			p.Status = tc.status
+			rec := f.reconcile(p)
+			res, d := f.state(), rec.RequeueAfter()
+			switch {
+			case tc.left == 0 && (res.State != gitk8s.Failed || !strings.Contains(res.Message, "couldn't start in 5 minutes")):
+				t.Errorf("result = %+v, want Failed", res)
+			case tc.left > 0 && (res.State != gitk8s.Running || d > tc.left || d < tc.left-10*time.Second):
+				t.Errorf("result = %+v and RequeueAfter = %v, want Running and a reconcile in %v", res, d, tc.left)
+			}
+		})
+	}
+}
+
 func TestReportsWhatAFailedRunUsed(t *testing.T) {
 	f := newFixture(t, "")
 	p := f.start()

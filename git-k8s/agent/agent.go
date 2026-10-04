@@ -365,23 +365,31 @@ var starting = []string{"", "PodInitializing", "ContainerCreating"}
 // slot until the Pod's deadline. Only a new Pod fixes InvalidImageName, so
 // a run ends on it at once. The others also come from a registry that's
 // down for a moment or a Secret that's created after the Pod, so a run
-// ends on them once the Pod is stuckAfter old. Other reasons, such as
-// CreateContainerError, often pass by themselves.
+// ends on them once the container has waited stuckAfter from when it could
+// start. Other reasons, such as CreateContainerError, often pass by
+// themselves.
 var stuck = []string{"CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "InvalidImageName"}
 
-// stuckAfter is how old a Pod gets before a run ends on a reason in stuck
-// other than InvalidImageName.
+// stuckAfter is how long a container waits, from when it can start, before
+// a run ends on a reason in stuck other than InvalidImageName.
 const stuckAfter = 5 * time.Minute
 
 // blocked reports why a container can't start, such as a missing Secret or
-// an image that can't be pulled, and the reason that it waits.
-func blocked(st *PodStatus) (msg, reason string) {
-	for _, s := range slices.Concat(st.InitContainerStatuses, st.ContainerStatuses) {
+// an image that can't be pulled, the reason that it waits, and when it
+// could start, or the zero time if the Pod's status doesn't say.
+func blocked(st *PodStatus) (msg, reason string, since time.Time) {
+	since = st.StartTime
+	for i, s := range slices.Concat(st.InitContainerStatuses, st.ContainerStatuses) {
 		if w := s.State.Waiting; w != nil && !slices.Contains(starting, w.Reason) {
-			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message)), w.Reason
+			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message)), w.Reason, since
+		}
+		// Each init container starts when the one before it finishes, and
+		// the other containers start when the last one finishes.
+		if t := s.State.Terminated; t != nil && i < len(st.InitContainerStatuses) {
+			since = t.FinishedAt
 		}
 	}
-	return "", ""
+	return "", "", time.Time{}
 }
 
 // window counts the runs that started in the last 24 hours. It's in
