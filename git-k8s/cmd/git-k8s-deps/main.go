@@ -876,7 +876,24 @@ func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote,
 		log.Warn("updating a module failed", "module", w.up.module, "version", w.up.version, "error", o.err)
 		return
 	}
-	if u.waitsForRaised(ctx, st, w, raised(mods, w.up, o.files), log) {
+	raises := raised(mods, w.up, o.files)
+	for _, m := range raises {
+		retracted, err := u.proxy.retracted(ctx, m.Path, m.Version)
+		if err != nil {
+			log.Warn("reading the retractions of a module that an update raises failed", "branch", w.branch, "module", w.up.module, "version", w.up.version, "raises", m.String(), "error", err)
+			if !errors.Is(err, errNotFound) {
+				kube.RequeueAfter(ctx, errorRetry)
+			}
+			return
+		}
+		if retracted {
+			o.err, o.files, o.at = fmt.Sprintf("the update raises %s to %s, which the module retracts", m.Path, m.Version), nil, u.clock()
+			st.attempt++
+			log.Warn("updating a module failed", "module", w.up.module, "version", w.up.version, "error", o.err)
+			return
+		}
+	}
+	if u.waitsForRaised(ctx, st, w, raises, log) {
 		return
 	}
 	commit, err := u.commit(ctx, local, st.head, w.up, o.files)

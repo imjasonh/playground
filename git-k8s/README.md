@@ -635,6 +635,10 @@ requirement to it. The controller doesn't look for versions of indirect
 requirements or new modules ahead of time, so their versions usually wait
 from then too, and the update takes a second update Pod.
 
+`go get` also raises a requirement to a version that its module retracts,
+with only a warning. The controller doesn't push such an update. It logs
+that the update failed, and makes the update again after `-interval`.
+
 While an update waits, the controller doesn't push it. It logs the version
 that the update waits for and until when, and starts no update Pod for the
 update until then, even when the parent moves. Then it makes the update again

@@ -264,9 +264,7 @@ func (p *proxy) target(ctx context.Context, path string, from []string, excluded
 	}
 	now := p.now()
 	for _, v := range slices.Backward(candidates) {
-		if slices.ContainsFunc(retracted, func(r modfile.VersionInterval) bool {
-			return semver.Compare(r.Low, v) <= 0 && semver.Compare(v, r.High) <= 0
-		}) {
+		if retracts(retracted, v) {
 			continue
 		}
 		if minAge > 0 && v != vetted {
@@ -321,6 +319,24 @@ func (p *proxy) raisedOldEnoughAt(ctx context.Context, path, version string, min
 	// reads the version's time now, as if the version had already waited
 	// from when it showed up.
 	return p.oldEnoughAt(ctx, path, version, seen, seen.Add(minAge), minAge)
+}
+
+// retracted reports whether a module retracts a version. go get raises a
+// requirement to a retracted version with only a warning.
+func (p *proxy) retracted(ctx context.Context, path, version string) (bool, error) {
+	list, err := p.versions(ctx, path)
+	if err != nil || len(list.versions) == 0 {
+		return false, err
+	}
+	rs, err := p.retractions(ctx, path, latest(list.versions))
+	return retracts(rs, version), err
+}
+
+// retracts reports whether rs holds version.
+func retracts(rs []modfile.VersionInterval, version string) bool {
+	return slices.ContainsFunc(rs, func(r modfile.VersionInterval) bool {
+		return semver.Compare(r.Low, version) <= 0 && semver.Compare(version, r.High) <= 0
+	})
 }
 
 // latest returns the version whose go.mod file holds a module's

@@ -1587,6 +1587,32 @@ func TestStartsANewPodOnceAnUpdateHasWaited(t *testing.T) {
 	}
 }
 
+func TestRefusesAnUpdateThatRaisesARequirementToARetractedVersion(t *testing.T) {
+	const other = "example.com/other"
+	f := newFixture(t)
+	f.u.interval = 100 * time.Hour
+	f.proxy.publish(other, "v1.5.0", longAgo, "")
+	f.proxy.publish(other, "v1.6.0", longAgo, "retract v1.5.0 // Corrupts data.\n")
+	p := f.start()
+	f.finish(p, result(withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", other, "v1.5.0"))))
+	if head := f.srv.Heads(t, "app")[greetBranch]; head != "" {
+		t.Errorf("the controller pushed %s to %s, want no push", greetBranch, head)
+	}
+	if got, want := f.failure("v1.1.0"), "the update raises example.com/other to v1.5.0, which the module retracts"; got != want {
+		t.Errorf("the update failed with %q, want %q", got, want)
+	}
+
+	t.Log("After -interval, the controller tries again, and pushes an update that raises other past the retraction.")
+	f.clock = f.clock.Add(f.u.interval - time.Second)
+	f.checkStays("")
+	f.clock = f.clock.Add(time.Second)
+	p = f.start()
+	f.finish(p, result(withFiles("v1.1.0", "go.mod", modWith(greet, "v1.1.0", other, "v1.6.0"))))
+	if f.srv.Heads(t, "app")[greetBranch] == "" {
+		t.Errorf("the controller didn't push %s", greetBranch)
+	}
+}
+
 func TestWaitsForFreePods(t *testing.T) {
 	f := newFixture(t)
 	f.u.maxPods = 2
