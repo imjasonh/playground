@@ -140,15 +140,15 @@ external repository has every change in the copy:
 | `True` | `InSync` | The external repository has every change in the copy. |
 | `False` | `Pending` | The external repository doesn't have the changes to the branches that the message lists yet. |
 | `False` | `Diverged` | The branches that the message lists changed on both sides. See [Divergence](#divergence). |
-| `False` | `CompareFailed` | The mirror couldn't compare the heads of the branches that the message lists, for the reasons in the message, such as git timing out. It leaves those branches as they are on each side, and they don't land. |
+| `False` | `CompareFailed` | The mirror couldn't compare the heads of the branches that the message lists, for the reasons in the message, such as a comparison that took too long. It leaves those branches as they are on each side, and they don't land. See [Divergence](#divergence). |
 | `False` | `SyncFailed` | Fetching from or pushing to the external repository failed, for the reason in the message. |
 
-After a failure, the controller tries again within 30 seconds, or within
-`pollInterval` if that's shorter, and doesn't push until then. Until a copy
-has fetched from its external repository once, the mirror answers requests
-for it with `503 Service Unavailable`, and the `GitRepository`'s `Ready`
-condition says why, with the reason `FetchFailed` or
-`CredentialsUnavailable`.
+After a fetch or a push fails, the controller tries again within 30
+seconds, or within `pollInterval` if that's shorter, and doesn't push until
+then. Until a copy has fetched from its external repository once, the
+mirror answers requests for it with `503 Service Unavailable`, and the
+`GitRepository`'s `Ready` condition says why, with the reason `FetchFailed`
+or `CredentialsUnavailable`.
 
 When you delete a `GitRepository`, the controller pushes the copy's last
 changes to the external repository and then deletes the copy. While the
@@ -328,6 +328,16 @@ The merges can't see a replay of a removed commit whose change other
 removed commits undid, such as a secret and its revert that a force push
 dropped, so the rule also looks for replays of the removed commits. It
 can't find one inside a larger commit, such as a squash.
+
+Comparing the heads can take a long time when both sides rewrote the same
+long stretch of history between two syncs. The mirror stops comparing a
+branch's heads after 10 minutes 20 seconds, twice the longest that one git
+command can take, and leaves the branch as it is on each side, with the
+reason `CompareFailed`. It remembers what it decided about each branch,
+including a comparison that failed or took too long, and doesn't compare
+that branch's heads again until either side's head moves or the core
+program restarts. To resolve a branch whose comparison took too long, push
+the same commit to the branch in the mirror and in the external repository.
 
 A diverged branch doesn't land, because landing the copy's head leaves out
 the external repository's changes. To resolve a divergence, push a head
