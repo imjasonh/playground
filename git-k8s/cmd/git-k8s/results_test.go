@@ -162,7 +162,11 @@ func TestResultsHandOff(t *testing.T) {
 		sendResult(ctx, rs, path, "gofmt", res)
 	}()
 	for rs.heldFor(branchKey)["gofmt"] == nil {
-		time.Sleep(time.Millisecond)
+		select {
+		case <-done:
+			t.Fatal("the request ended without holding its result")
+		case <-time.After(time.Millisecond):
+		}
 	}
 
 	b := listedBranch()
