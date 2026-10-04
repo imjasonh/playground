@@ -282,16 +282,22 @@ protection rules and rulesets apply to those pushes:
 
 - Rules that limit who can push to the parent, such as **Require a pull
   request before merging** and **Restrict updates**, reject a landing
-  unless the account that git-k8s pushes as can bypass them. In a ruleset,
-  add the account, or a team or role that it has, to the bypass list. In a
-  classic branch protection rule, add it to **Allow specified actors to
-  bypass required pull requests**, and to **Restrict who can push to
-  matching branches** if that's on.
+  unless the account or GitHub App that git-k8s pushes as can bypass them.
+  In a ruleset, add the account or App to the bypass list, set to **Always
+  allow**. If the bypass list doesn't offer individual accounts, add a team
+  whose only member is git-k8s's account. A bypass applies to every rule in
+  its ruleset, so put the rules that git-k8s has to follow, such as
+  **Require signed commits**, in another ruleset, without git-k8s in its
+  bypass list. In a classic branch protection rule, add the account or App
+  to **Allow specified actors to bypass required pull requests**, and to
+  **Restrict who can push to matching branches** if that's on.
 - **Require status checks to pass** rejects a landing unless the branch's
   head already passed those checks, for example in CI that runs on the
   branch. git-k8s doesn't report its own results to GitHub yet.
-- **Require signed commits** applies to every commit that a push adds, so
-  people have to sign the commits that they push to branches, too.
+- **Require signed commits** refuses a landing unless GitHub verifies the
+  signature of every commit that it adds to the parent, so people have to
+  sign with a key on their GitHub account and use a committer email that
+  the account has verified.
 - **Require linear history** rejects the merge commits that `check-base`
   makes. Leave it off for a parent whose merge policy lets `base` push.
 - **Block force pushes** doesn't affect git-k8s, which pushes only
