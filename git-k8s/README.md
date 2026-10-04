@@ -327,8 +327,10 @@ who can install checks.
 
 While the ConfigMap is missing, the API server denies every create and update
 of a `GitBranch` or its status, including people's, with a message that says
-`no params found for policy binding`. To create the ConfigMap again, restart
-the core program, or apply `config/policy.yaml`.
+`no params found for policy binding`. To create the ConfigMap again, run
+`kubectl -n git-k8s create configmap git-k8s-checks`, or restart the core
+program with `kubectl -n git-k8s rollout restart deployment/git-k8s`. With
+`-install-policies=false`, apply `config/policy.yaml` instead.
 
 ## Test
 
