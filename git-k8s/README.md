@@ -244,12 +244,13 @@ delete Pods in every namespace, because RBAC can't limit those verbs to the
 Pods that a program created. kube labels each Pod that `check-NAME` declares
 with `kube.imjasonh.github.io/controller=check-NAME`. The policy lets the
 check change or delete only Pods with that label, and its new Pods must have
-it. The check creates and changes Pods only in namespaces that have the label
+it. The check can't write Pods in the `git-k8s` or `check-*` namespaces.
+Elsewhere, it creates and changes Pods only in namespaces that have the label
 `git-k8s.imjasonh.com/check-pods=true` and enforce the `restricted` Pod
-Security Standard at version `latest`, and never in the `git-k8s` or `check-*`
-namespaces. It can delete its Pods anywhere, so it can clean up after a
-namespace drops the labels. Its Pods must run as their namespace's `default`
-service account, and a new Pod can't name its node.
+Security Standard at version `latest`. It can delete its Pods in a namespace
+without those labels, so it can clean up after a namespace drops them. Its
+Pods must run as their namespace's `default` service account, and a new Pod
+can't set `spec.nodeName`.
 
 The policy itself denies the Pod fields that break a container's isolation
 from its node, in containers, init containers, and ephemeral containers:
@@ -263,10 +264,11 @@ from its node, in containers, init containers, and ephemeral containers:
 Pod Security admission enforces the rest of `restricted`, such as running as
 a non-root user. An exemption in the cluster's Pod Security admission
 configuration that covers a check's Pods, by user, RuntimeClass, or
-namespace, weakens only that rest. The policy doesn't limit tolerations or
-`runtimeClassName`, so a compromised check can start Pods without the
-RuntimeClass that `-runtime-class` sets. To require that RuntimeClass, add a
-ValidatingAdmissionPolicy that denies a Pod with the label
+namespace, weakens only that rest. The policy doesn't limit node selectors,
+affinity, tolerations, or `runtimeClassName`, so a compromised check can
+schedule Pods onto any node, including tainted ones, and start them without
+the RuntimeClass that `-runtime-class` sets. To require that RuntimeClass,
+add a ValidatingAdmissionPolicy that denies a Pod with the label
 `kube.imjasonh.github.io/controller=check-gotest` unless its
 `spec.runtimeClassName` is the RuntimeClass.
 
