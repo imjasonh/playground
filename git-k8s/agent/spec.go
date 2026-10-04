@@ -32,7 +32,21 @@ const (
 // to fetch the result.
 const podSlack = 30 * time.Minute
 
+// defaultSourceSize is the SourceSize of a Runner that doesn't set one.
+const defaultSourceSize = "2Gi"
+
+// The sizes of the agent Pod's volumes other than the source's, and the
+// room that the Pod leaves for its containers' logs.
+const (
+	tmpSize    = 1 << 30
+	resultSize = 64 << 20
+	logSize    = 256 << 20
+)
+
 func (r *Runner) resultPort() int { return cmp.Or(r.port, 8080) }
+
+// sourceBytes is the Runner's SourceSize in bytes, or 0 if it isn't a size.
+func (r *Runner) sourceBytes() int64 { return parseSize(cmp.Or(r.SourceSize, defaultSourceSize)) }
 
 // podTask is the task that runner/src/task.ts reads from AGENT_TASK.
 type podTask struct {
@@ -194,6 +208,11 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 	prepareEnv = append(prepareEnv, EnvVar{Name: "CURSOR_API_KEY", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: r.Secret, Key: "api-key", Optional: &yes}}})
 	port := r.resultPort()
 	image := cmp.Or(job.Image, r.Image)
+	source := cmp.Or(r.SourceSize, defaultSourceSize)
+	// The kubelet evicts a Pod whose volumes and logs use more than the
+	// Pod's ephemeral-storage limit, which is its init containers' limit, so
+	// that limit covers every volume.
+	disk := k8s.Quantity(formatSize(3*r.sourceBytes() + tmpSize + resultSize + logSize))
 
 	p := &Pod{Object: kube.Meta("", map[string]string{"app.kubernetes.io/name": "git-k8s-agent", agentLabel: r.Name})}
 	p.Spec = PodSpec{
@@ -210,12 +229,12 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			SeccompProfile: &SeccompProfile{Type: "RuntimeDefault"},
 		},
 		Volumes: []Volume{
-			{Name: "git", EmptyDir: &EmptyDir{}},
-			{Name: "src", EmptyDir: &EmptyDir{}},
-			{Name: "input", EmptyDir: &EmptyDir{}},
+			{Name: "git", EmptyDir: &EmptyDir{SizeLimit: source}},
+			{Name: "src", EmptyDir: &EmptyDir{SizeLimit: source}},
+			{Name: "input", EmptyDir: &EmptyDir{SizeLimit: source}},
 			{Name: "key", EmptyDir: &EmptyDir{Medium: "Memory", SizeLimit: "1Mi"}},
-			{Name: "result", EmptyDir: &EmptyDir{SizeLimit: "64Mi"}},
-			{Name: "tmp", EmptyDir: &EmptyDir{}},
+			{Name: "result", EmptyDir: &EmptyDir{SizeLimit: formatSize(resultSize)}},
+			{Name: "tmp", EmptyDir: &EmptyDir{SizeLimit: formatSize(tmpSize)}},
 		},
 		InitContainers: []Container{{
 			Name:            "prepare",
@@ -232,8 +251,8 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "128Mi"},
-				Limits:   map[string]k8s.Quantity{"memory": "1Gi"},
+				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "128Mi", "ephemeral-storage": "1Gi"},
+				Limits:   map[string]k8s.Quantity{"memory": "1Gi", "ephemeral-storage": disk},
 			},
 		}, {
 			Name:            "agent",
@@ -254,8 +273,8 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "256Mi"},
-				Limits:   map[string]k8s.Quantity{"memory": "2Gi"},
+				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "256Mi", "ephemeral-storage": "1Gi"},
+				Limits:   map[string]k8s.Quantity{"memory": "2Gi", "ephemeral-storage": disk},
 			},
 		}},
 		Containers: []Container{{
@@ -273,8 +292,8 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "10m", "memory": "32Mi"},
-				Limits:   map[string]k8s.Quantity{"memory": "256Mi"},
+				Requests: map[string]k8s.Quantity{"cpu": "10m", "memory": "32Mi", "ephemeral-storage": "64Mi"},
+				Limits:   map[string]k8s.Quantity{"memory": "256Mi", "ephemeral-storage": "256Mi"},
 			},
 		}},
 	}
@@ -282,4 +301,33 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s", job.Name, attempt, spec))
 	p.Name = r.Name + "-" + hex.EncodeToString(sum[:8])
 	return p
+}
+
+// parseSize returns the bytes in a size such as 2Gi or 500M. It returns 0
+// for a size that isn't a positive whole number with a suffix of at most T
+// or Ti, and for one so big that adding up the Pod's volumes could
+// overflow.
+func parseSize(s string) int64 {
+	i := 0
+	for i < len(s) && '0' <= s[i] && s[i] <= '9' {
+		i++
+	}
+	unit := map[string]int64{"": 1, "k": 1e3, "M": 1e6, "G": 1e9, "T": 1e12, "Ki": 1 << 10, "Mi": 1 << 20, "Gi": 1 << 30, "Ti": 1 << 40}[s[i:]]
+	n, err := strconv.ParseInt(s[:i], 10, 64)
+	if unit == 0 || err != nil || n <= 0 || n > math.MaxInt64/4/unit {
+		return 0
+	}
+	return n * unit
+}
+
+// formatSize writes n bytes as a size in the largest binary unit that
+// divides it.
+func formatSize(n int64) string {
+	units := []string{"", "Ki", "Mi", "Gi", "Ti"}
+	i := 0
+	for i < len(units)-1 && n%1024 == 0 {
+		n /= 1024
+		i++
+	}
+	return strconv.FormatInt(n, 10) + units[i]
 }

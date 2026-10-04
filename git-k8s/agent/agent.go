@@ -81,6 +81,9 @@ type Runner struct {
 	// MaxRunsPerDay is the most runs that the Runner starts in any 24
 	// hours, or 0 for no limit.
 	MaxRunsPerDay int
+	// SourceSize is the most disk space, such as 2Gi, that each of an agent
+	// Pod's repository, files, and input can use. Empty means 2Gi.
+	SourceSize string
 
 	port int
 	day  window
@@ -97,6 +100,7 @@ func (r *Runner) AddFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&r.Timeout, "timeout", 15*time.Minute, "longest that an agent can run")
 	fs.IntVar(&r.MaxPods, "max-pods", 10, "most agent Pods to run at once, in all namespaces; 0 means no limit")
 	fs.IntVar(&r.MaxRunsPerDay, "max-runs-per-day", 100, "most agent runs to start in any 24 hours; 0 means no limit")
+	fs.StringVar(&r.SourceSize, "source-size", defaultSourceSize, "most disk space that each of an agent Pod's repository, files, and input can use")
 }
 
 func (r *Runner) validate() error {
@@ -107,6 +111,8 @@ func (r *Runner) validate() error {
 		return fmt.Errorf("-backend is %q, but it must be cursor or fake", r.Backend)
 	case r.Model == "" || r.GitImage == "" || r.Secret == "" || r.Timeout < time.Second:
 		return errors.New("-model, -git-image, -api-key-secret, and -timeout need values")
+	case r.sourceBytes() == 0:
+		return fmt.Errorf("-source-size is %q, but it must be a size such as 2Gi", r.SourceSize)
 	}
 	return nil
 }

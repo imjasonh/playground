@@ -225,6 +225,13 @@ result, but can't change it. The check also rejects a result with an
 unknown verdict, an invalid path, a file mode other than a regular file or a
 symbolic link, more than 1,000 files, or more than 8 MiB of file content.
 
+Each agent Pod's volumes have size limits. The repository, the head's
+files, and the agent's input can each use up to `-source-size`, 2Gi by
+default, and the agent's home directory up to 1Gi. The init containers
+request 1Gi of ephemeral storage, and their limits cover all the volumes.
+When a Pod uses more than a limit, the kubelet evicts it, and the check
+fails with the kubelet's reason.
+
 The agent's prompt holds the first 200,000 bytes of the diff and lists
 every path that the change touches, so the agent can read the files that
 the diff leaves out. The check fails a change that touches more than 1,000
@@ -317,6 +324,7 @@ In a namespace without the Secret, each run fails before the agent starts.
 | `-max-pods` | 10 | Most agent Pods to run at once, in all namespaces; 0 means no limit |
 | `-max-runs-per-day` | 100 | Most agent runs to start in any 24 hours; 0 means no limit |
 | `-runtime-class` | None | RuntimeClass for agent Pods, such as `gvisor` |
+| `-source-size` | `2Gi` | Most disk space that each of an agent Pod's repository, files, and input can use |
 
 Agent Pods need to reach the repository and Cursor's API over HTTPS, and
 the check needs to reach the agent Pods on TCP port 8080. A NetworkPolicy
