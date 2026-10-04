@@ -1,11 +1,12 @@
 // Package gitk8s defines the git-k8s API and the code that its controllers
 // share.
 //
-// People write GitRepository objects. The repository controller lists each
-// repository's branches and owns one GitBranch object for every branch that
-// the repository's rules select. Check controllers each write their own
-// entry in a GitBranch's status, and the merge controller fast-forwards a
-// branch's parent when the parent's merge policy allows.
+// People write GitRepository objects. The mirror in the core program keeps a
+// copy of each repository, and the repository controller syncs the copy with
+// the external repository and owns one GitBranch object for every branch
+// that the repository's rules select. Check controllers each write their
+// own entry in a GitBranch's status, and the merge controller fast-forwards
+// a branch's parent when the parent's merge policy allows.
 package gitk8s
 
 import (
@@ -50,8 +51,8 @@ func MirrorPath(namespace, name string) string {
 	return "/" + namespace + "/" + name + ".git"
 }
 
-// GitRepository is a remote git repository and the rules that select which
-// of its branches to track.
+// GitRepository is an external git repository, which the mirror keeps a copy
+// of, and the rules that select which of its branches to track.
 type GitRepository struct {
 	kube.Object `kube:"group=git-k8s.imjasonh.com,version=v1alpha1,shortName=gitrepo,category=git-k8s"`
 	Spec        GitRepositorySpec   `json:"spec"`
@@ -60,11 +61,11 @@ type GitRepository struct {
 
 // GitRepositorySpec says where a repository is and which branches to track.
 type GitRepositorySpec struct {
-	URL       string     `json:"url" kube:"minLength=1,column=URL" doc:"Remote URL. Controllers pass it to git, so https, http, git, and file URLs work."`
-	SecretRef *SecretRef `json:"secretRef,omitempty" doc:"Secret in the same namespace with username and password keys for HTTP basic authentication, such as a kubernetes.io/basic-auth Secret. Without a username, controllers send git."`
+	URL       string     `json:"url" kube:"minLength=1,column=URL" doc:"URL of the external repository. The mirror passes it to git, so https, http, git, and file URLs work."`
+	SecretRef *SecretRef `json:"secretRef,omitempty" doc:"Secret in the same namespace with username and password keys for HTTP basic authentication, such as a kubernetes.io/basic-auth Secret. Without a username, the mirror sends git."`
 	// PollInterval is a Go duration.
-	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often to list the remote's branches, such as 30s or 5m."`
-	Branches     []BranchRule `json:"branches,omitempty" doc:"Rules that select branches to track. For each remote branch, the first rule whose match pattern matches applies. Branches that match no rule aren't tracked."`
+	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often the mirror fetches the external repository's branches, such as 30s or 5m."`
+	Branches     []BranchRule `json:"branches,omitempty" doc:"Rules that select branches to track. For each branch, the first rule whose match pattern matches applies. Branches that match no rule aren't tracked."`
 }
 
 // SecretRef names a Secret in the same namespace.
@@ -86,8 +87,8 @@ type MergePolicy struct {
 	When                string        `json:"when,omitempty" doc:"CEL expression that must be true to land a branch. The checks variable maps each check name to an object with passed (bool), state (string), and outputs (map of strings). A check with no result for the branch's current commits has state Pending. Without an expression, every listed check must pass."`
 	Landing             string        `json:"landing,omitempty" kube:"enum=FastForward,default=FastForward" doc:"How to land a branch. FastForward moves the parent to the branch's head, so the parent ends up at the commit that the checks saw."`
 	MaxAutomatedCommits *int32        `json:"maxAutomatedCommits,omitempty" kube:"min=0,max=100,default=5" doc:"Most commits that checks can push to one branch, counted by the Git-K8s-Fixer trailer. The limit stops two checks that disagree from pushing forever."`
-	// DeleteMergedBranches deletes a branch from the remote after it lands.
-	DeleteMergedBranches bool `json:"deleteMergedBranches,omitempty" doc:"Delete a branch from the remote after it lands."`
+	// DeleteMergedBranches deletes a branch after it lands.
+	DeleteMergedBranches bool `json:"deleteMergedBranches,omitempty" doc:"Delete a branch after it lands."`
 }
 
 // Check returns the policy for the named check, or nil if the policy doesn't
@@ -134,8 +135,8 @@ type Repository struct {
 }
 
 // GitBranch is one branch that a GitRepository tracks. The repository
-// controller owns these objects and writes their spec from what it lists on
-// the remote, so don't edit them by hand.
+// controller owns these objects and writes their spec from the mirror's copy
+// of the repository, so don't edit them by hand.
 //
 // Several controllers write a GitBranch's status, each a different part:
 // every check controller writes its own entry in Status.Checks, and the
@@ -151,9 +152,9 @@ type GitBranch struct {
 type GitBranchSpec struct {
 	Repository string       `json:"repository" doc:"Name of the GitRepository in the same namespace."`
 	Branch     string       `json:"branch" kube:"column=Branch" doc:"Branch name without refs/heads/."`
-	Head       string       `json:"head" kube:"column=Head" doc:"Commit that the branch points to on the remote."`
+	Head       string       `json:"head" kube:"column=Head" doc:"Commit that the branch points to in the mirror."`
 	Parent     string       `json:"parent,omitempty" kube:"column=Parent" doc:"Branch that this branch proposes changes to."`
-	ParentHead string       `json:"parentHead,omitempty" doc:"Commit that the parent points to on the remote, listed at the same time as head."`
+	ParentHead string       `json:"parentHead,omitempty" doc:"Commit that the parent points to in the mirror, listed at the same time as head."`
 	Merge      *MergePolicy `json:"merge,omitempty" doc:"The parent's merge policy, copied from the repository rule that matches the parent."`
 }
 
