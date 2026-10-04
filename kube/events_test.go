@@ -586,6 +586,24 @@ func TestEventfInFake(t *testing.T) {
 	}
 }
 
+func TestEventfDropsEventsThatTheAPIServerWouldReject(t *testing.T) {
+	w := &widget{}
+	w.Namespace, w.Name = "shop", "w1"
+	ctx, rec := Fake(t.Context(), w)
+	var logs bytes.Buffer
+	rec.s.c.log = slog.New(slog.NewTextHandler(&logs, nil))
+	Eventf(ctx, "Info", "Created", "created")
+	Eventf(ctx, Normal, "", "created")
+	Eventf(ctx, Warning, strings.Repeat("A", maxReason+1), "rejected")
+	Eventf(ctx, Warning, strings.Repeat("A", maxReason), "rejected")
+	if got := rec.Events(); len(got) != 1 || got[0].Reason != strings.Repeat("A", maxReason) {
+		t.Errorf("Events = %+v, want only the one with a 128-byte reason", got)
+	}
+	if n := strings.Count(logs.String(), "dropped an event that the API server would reject"); n != 3 || !strings.Contains(logs.String(), "key=shop/w1 type=Info reason=Created") {
+		t.Errorf("logs = %s, want 3 warnings", logs.String())
+	}
+}
+
 type eventfValidator struct{}
 
 func (eventfValidator) Validate(ctx context.Context, _, _ *configMapMeta) error {

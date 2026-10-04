@@ -35,9 +35,11 @@ type Event struct {
 
 // Eventf records an event about the object being reconciled, which people
 // see in kubectl describe and kubectl get events. eventType is Normal or
-// Warning, reason is a CamelCase word such as Created or Rejected, and the
-// note is format and args as fmt.Sprintf formats them, with invalid UTF-8
-// replaced by U+FFFD and cut to 1,024 bytes.
+// Warning, and reason is a CamelCase word such as Created or Rejected. If
+// eventType is anything else, or reason is empty or longer than 128 bytes,
+// Eventf records nothing and logs a warning, because the API server would
+// reject the event. The note is format and args as fmt.Sprintf formats them,
+// with invalid UTF-8 replaced by U+FFFD and cut to 1,024 bytes.
 //
 // After Reconcile or Finalize returns, even with an error, the framework
 // writes the events as events.k8s.io/v1 Events in the object's namespace,
@@ -57,6 +59,10 @@ func Eventf(ctx context.Context, eventType, reason, format string, args ...any) 
 	if s.readOnly("Eventf") || s.err != nil {
 		return
 	}
+	if eventType != Normal && eventType != Warning || reason == "" || len(reason) > maxReason {
+		s.c.log.Warn("dropped an event that the API server would reject", "key", s.key.String(), "type", eventType, "reason", reason)
+		return
+	}
 	note := truncateNote(fmt.Sprintf(format, args...))
 	s.events = append(s.events, eventIntent{Event: Event{Type: eventType, Reason: reason, Note: note}, at: time.Now()})
 }
@@ -66,8 +72,12 @@ type eventIntent struct {
 	at time.Time
 }
 
-// maxNote is the most bytes that the API server accepts in a note.
-const maxNote = 1024
+// maxReason and maxNote are the most bytes that the API server accepts in a
+// reason and a note.
+const (
+	maxReason = 128
+	maxNote   = 1024
+)
 
 // truncateNote cuts s to maxNote bytes. It first replaces invalid UTF-8,
 // because JSON turns each invalid byte into U+FFFD, which is 3 bytes.

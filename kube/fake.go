@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"reflect"
 	"time"
 
@@ -32,7 +33,7 @@ func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (conte
 		w.add(o)
 	}
 	ti, err := typeInfoFor[T, P]()
-	c := &core{name: "test", labels: newLabelKeys("test")}
+	c := &core{name: "test", labels: newLabelKeys("test"), log: slog.Default()}
 	if err == nil {
 		c.ti = ti
 		c.res, _ = w.resolve(ctx, ti)
