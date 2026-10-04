@@ -69,10 +69,11 @@ func TestGenerateInstall(t *testing.T) {
 	reg := imagetest.Registry(t)
 	imagetest.Base(t, reg+"/chainguard/static:latest", "linux/amd64")
 	// The policy's parameter is in this namespace, so the YAML has a Role
-	// there.
+	// there. envtest has no namespace controller to delete it, so an earlier
+	// run may have created it.
 	if err := c.Create(t.Context(), "/api/v1/namespaces", map[string]any{
 		"apiVersion": "v1", "kind": "Namespace", "metadata": map[string]any{"name": "installer-params"},
-	}, nil); err != nil {
+	}, nil); err != nil && !client.IsAlreadyExists(err) {
 		t.Fatal(err)
 	}
 	rules := func(in installation) map[string]string {
