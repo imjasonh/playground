@@ -94,4 +94,13 @@ func TestAPI(t *testing.T) {
 	if got, want := kube.Triggered[Probe](rec), []kube.Key{{Namespace: "team", Name: "api"}}; !slices.Equal(got, want) {
 		t.Errorf("Triggered = %v, want %v", got, want)
 	}
+
+	empty := ""
+	req := httptest.NewRequest(http.MethodGet, "/whoami", nil).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer ci")
+	w := httptest.NewRecorder()
+	(&api{audience: &empty}).handler().ServeHTTP(w, req)
+	if w.Code != http.StatusInternalServerError || strings.Contains(w.Body.String(), "kube.ReviewToken") {
+		t.Errorf("GET /whoami when the review fails = %d %q, want 500 without the error", w.Code, w.Body)
+	}
 }

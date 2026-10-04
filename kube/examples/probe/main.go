@@ -29,6 +29,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -114,7 +115,10 @@ func (a *api) caller(w http.ResponseWriter, r *http.Request) (kube.UserInfo, boo
 	review, err := kube.ReviewToken(r.Context(), token, *a.audience)
 	switch {
 	case err != nil:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// The error can name the program's service account and the
+		// permission that it lacks.
+		slog.ErrorContext(r.Context(), "reviewing a caller's token failed", "err", err)
+		http.Error(w, "can't check the token now", http.StatusInternalServerError)
 	case !review.Authenticated:
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		http.Error(w, review.Error, http.StatusUnauthorized)

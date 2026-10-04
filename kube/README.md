@@ -453,7 +453,8 @@ token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 review, err := kube.ReviewToken(r.Context(), token, "probe")
 switch {
 case err != nil:
-	http.Error(w, err.Error(), http.StatusInternalServerError)
+	slog.Error("reviewing a token failed", "err", err)
+	http.Error(w, "can't check the token now", http.StatusInternalServerError)
 case !review.Authenticated:
 	http.Error(w, review.Error, http.StatusUnauthorized)
 default:
@@ -468,7 +469,9 @@ or for the API server fails. A token that the kubelet projects into a Pod
 also names the Pod in `review.User.Extra`, and stops working when the Pod is
 deleted. An invalid token isn't an error. `ReviewToken` returns an error
 only when an audience is empty or when it can't ask, for example because
-the program may not create TokenReviews. Each call asks the API server.
+the program may not create TokenReviews. Log the error instead of sending
+it to the caller, because it can name the program's service account and the
+permission that it lacks. Each call asks the API server.
 
 ### Request a token for the program
 
