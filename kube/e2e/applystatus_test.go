@@ -240,3 +240,39 @@ func TestApplyStatusWithoutSubresource(t *testing.T) {
 	}
 	e2e.Eventually(t, 10*time.Second, state("9", kube.False, "doesn't serve configmaps/status"))
 }
+
+// noteLabels declares only a ConfigMap's labels.
+type noteLabels struct {
+	kube.Object `kube:"apiVersion=v1,kind=ConfigMap,plural=configmaps,scope=Namespaced"`
+}
+
+// twoTypes applies a label and the data of one ConfigMap through two types.
+type twoTypes struct{}
+
+func (twoTypes) Reconcile(ctx context.Context, w *Widget) error {
+	size := strconv.Itoa(w.Spec.Size)
+	kube.Apply(ctx, &noteLabels{Object: kube.Meta(w.Name+"-notes", map[string]string{"size": size})})
+	kube.Apply(ctx, &noteMap{Object: kube.Meta(w.Name+"-notes", nil), Data: map[string]string{"size": size}})
+	return nil
+}
+
+func TestApplyOneObjectThroughTwoTypes(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	e2e.Run(t, &kube.Manager{Name: "two-types-e2e", Namespace: ns}, kube.For[Widget](twoTypes{}, kube.Named("two-types")))
+	remove(t, c, client.Path(group+"/v1", "widgets", ns, "w"))
+	createWidget(t, c, ns, "w", 1)
+	e2e.Eventually(t, 10*time.Second, func() error {
+		w, err := widget(t, c, ns, "w")
+		if err != nil {
+			return err
+		}
+		if s := kube.FindCondition(w.Status.Conditions, "Synced"); s == nil || s.Status != kube.False || !strings.Contains(s.Message, "declare it with one type") {
+			return fmt.Errorf("Synced = %+v", s)
+		}
+		return nil
+	})
+	if err := e2e.Gone(t.Context(), c, client.Path("v1", "configmaps", ns, "w-notes")); err != nil {
+		t.Errorf("the failed reconcile wrote the ConfigMap: %v", err)
+	}
+}

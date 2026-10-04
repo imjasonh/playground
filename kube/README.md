@@ -152,6 +152,12 @@ skips an empty status and fails the reconcile for any other. To leave status
 alone, apply a type that declares no status, as
 [`examples/reloader`](examples/reloader/main.go) does.
 
+A reconcile can pass each object to `Own` or `Apply` only once, whatever type
+it uses, and a second call fails the reconcile. To apply fields and a status
+to one object, use one type that declares both. Two `Apply` calls for one
+object would share a field manager, so the second request would remove the
+fields that the first applied.
+
 The framework writes the reconciled object's status from the object that
 `Reconcile` received, not with `Apply`. When the reconciled type has a
 status, applying a status to the reconciled object itself fails the

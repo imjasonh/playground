@@ -465,6 +465,14 @@ target don't remove each other's fields. An owned object's document also gets
 the owner label and annotation and, when Kubernetes allows it, an owner
 reference.
 
+A reconcile can pass an object to `Own` or `Apply` only once, and the
+framework compares the objects by group, kind, and key, not by Go type.
+Server-side apply takes each request as the field manager's whole intent, so
+if two declarations of one object shared a manager, the second request would
+remove the fields that only the first sent. For example, a type that sets a
+label, followed by a type that declares only the status, would remove the
+label.
+
 The framework skips an apply when the cached object already has every field
 of the document. That alone isn't enough, because server-side apply removes
 fields that a manager stops sending, and a desired object that drops a field
@@ -828,7 +836,9 @@ framework's tests check that:
 - Reconciles that apply their own entries in another object's status own
   only those entries, make no writes when they run again, and remove an entry
   when they stop applying it. A status for a kind without a status
-  subresource fails the reconcile after the rest of the object is applied.
+  subresource fails the reconcile after the rest of the object is applied. A
+  reconcile that applies one object through two types fails and writes
+  nothing.
 - Panics and permanent errors are reported and retried correctly.
 - Leader election fails over.
 - Three replicas with 32 shards split the work, hand shards over when one

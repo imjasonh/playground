@@ -87,6 +87,44 @@ func TestFakeAppliesStatus(t *testing.T) {
 	}
 }
 
+func TestDeclareOneObjectThroughTwoTypes(t *testing.T) {
+	parent := &widget{}
+	parent.Namespace, parent.Name = "shop", "w1"
+
+	t.Log("Labels through one type and a status through another would share a field manager, so the second declaration fails.")
+	ctx, rec := Fake(t.Context(), parent)
+	Apply(ctx, &deploymentProjection{Object: Meta("web", map[string]string{"checked": "true"})})
+	d := &deploymentStatus{Object: Meta("web", nil)}
+	d.Status.Conditions = checked()
+	Apply(ctx, d)
+	want := "kube.Apply: Deployment.apps/v1 shop/web was declared twice in one reconcile, as kube.deploymentProjection and kube.deploymentStatus; declare it with one type"
+	if err := rec.Err(); err == nil || err.Error() != want {
+		t.Errorf("Err = %v, want %q", err, want)
+	}
+	if got := Applied[deploymentStatus](rec); len(got) != 0 {
+		t.Errorf("Applied = %+v, want only the first declaration", got)
+	}
+
+	t.Log("Owning an object and applying it through another type fails too.")
+	ctx, rec = Fake(t.Context(), parent)
+	Own(ctx, &deploymentProjection{Object: Meta("web", nil)})
+	Apply(ctx, &deploymentFull{Object: Meta("web", nil)})
+	if err := rec.Err(); err == nil || !strings.Contains(err.Error(), "declare it with one type") {
+		t.Errorf("Err = %v, want a declaration through two types", err)
+	}
+
+	t.Log("One kind in two namespaces, or two kinds with one name, are different objects.")
+	ctx, rec = Fake(t.Context(), parent)
+	Apply(ctx, &deploymentProjection{Object: Meta("web", nil)})
+	elsewhere := &deploymentStatus{Object: Meta("web", nil)}
+	elsewhere.Namespace = "lab"
+	Apply(ctx, elsewhere)
+	Apply(ctx, &podMeta{Object: Meta("web", nil)})
+	if err := rec.Err(); err != nil || len(rec.s.intents) != 3 {
+		t.Errorf("Err = %v with %d intents, want 3 intents", err, len(rec.s.intents))
+	}
+}
+
 func TestStatusBody(t *testing.T) {
 	ti, _ := typeInfoFor[deploymentStatus, *deploymentStatus]()
 	target := &deploymentStatus{Object: Meta("web", map[string]string{"app": "web"})}

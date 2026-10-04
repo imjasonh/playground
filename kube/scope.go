@@ -270,10 +270,15 @@ func (s *scope) prepare(ctx context.Context, verb string, ti *typeInfo, m *Objec
 		return resolved{}, false
 	}
 	for _, in := range s.intents {
-		if in.kind != intentDelete && in.ti == ti && metaOfAny(in.obj).Key() == m.Key() {
-			s.fail(fmt.Errorf("kube.%s: %v %s was declared twice in one reconcile", verb, ti, m.Key()))
-			return resolved{}, false
+		if in.kind == intentDelete || !in.ti.sameKind(ti) || metaOfAny(in.obj).Key() != m.Key() {
+			continue
 		}
+		msg := fmt.Sprintf("kube.%s: %v %s was declared twice in one reconcile", verb, ti, m.Key())
+		if in.ti != ti {
+			msg += fmt.Sprintf(", as %v and %v; declare it with one type", in.ti.goType, ti.goType)
+		}
+		s.fail(errors.New(msg))
+		return resolved{}, false
 	}
 	return res, true
 }
@@ -376,7 +381,7 @@ func (s *scope) writesStatus(ti *typeInfo, k Key) bool {
 	if s.c == nil || s.c.ti == nil || s.c.ti.status == nil {
 		return false
 	}
-	return ti.group == s.c.ti.group && ti.kind == s.c.ti.kind && k == s.key
+	return ti.sameKind(s.c.ti) && k == s.key
 }
 
 // Delete declares that obj should be deleted. After Reconcile returns nil,
