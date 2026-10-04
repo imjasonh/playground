@@ -169,8 +169,9 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
 `Running` until the Pod finishes:
 
 - An init container fetches the head from the repository. It's the only
-  container that gets the repository's credentials, as environment
-  variables from the Secret.
+  container that gets the repository's credentials. For an HTTP URL, it
+  gets them as environment variables from the Secret. For an SSH URL, it
+  gets them as files from a Secret volume that only it mounts.
 - The test container runs `go test ./...` as user 65532 with no service
   account token, no privileges, a read-only root file system, and
   `GOPROXY=off`, so tests can't download modules.
@@ -202,13 +203,65 @@ The repository controller compiles each `when` when it reads the
 holding branches back later. Each evaluation can cost at most 100,000, which
 stops an expression that loops over the checks many times.
 
+## Credentials
+
+A `GitRepository`'s `secretRef` names a Secret in the same namespace that
+holds the repository's credentials. The keys that the Secret needs depend on
+the URL:
+
+- An HTTP URL needs a `password` key and an optional `username` key, as in a
+  `kubernetes.io/basic-auth` Secret. Without a username, the programs send
+  `git`.
+- An SSH URL, such as `ssh://git@git.example.com/app.git` or the scp-like
+  `git@git.example.com:app.git`, needs an `ssh-privatekey` key, as in a
+  `kubernetes.io/ssh-auth` Secret, and a `known_hosts` key. An SSH URL
+  without a `secretRef` is an error.
+
+`known_hosts` holds the server's host keys, in the format of OpenSSH's
+`known_hosts` file. The programs connect only to a server whose key it lists.
+No setting turns that check off, and the programs never add keys to the
+list. When the server's key changes, every fetch and push fails until you
+update `known_hosts`, and the `GitRepository`'s `Ready` condition shows
+ssh's error.
+
+To get a server's keys, run `ssh-keyscan`. It accepts whatever key the server
+sends, so before you use the keys, compare the fingerprints that
+`ssh-keygen -l` prints with the ones that the server's operator publishes,
+such as
+[GitHub's](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints):
+
+```sh
+ssh-keyscan git.example.com > known_hosts
+ssh-keygen -l -f known_hosts
+kubectl create secret generic app-creds --type=kubernetes.io/ssh-auth \
+  --from-file=ssh-privatekey=KEY_FILE --from-file=known_hosts
+```
+
+Replace `KEY_FILE` with the path of a private key that the server accepts.
+The key can't have a passphrase, because the programs can't enter one. For a
+server on a port other than 22, run `ssh-keyscan -p PORT HOST`, which writes
+lines that start with `[HOST]:PORT`.
+
+The programs check the Secret before they run git. If the Secret lacks a key
+that the URL needs, or the private key has a passphrase or isn't
+PEM-encoded, the `Ready` condition's reason is `CredentialsUnavailable`, and
+its message says what's wrong.
+
+Because ssh reads keys only from files, the programs write the key and
+`known_hosts` for each git command to a new directory under `/tmp` that only
+their user can open, and delete the directory when the command ends. They
+run ssh without configuration files or an agent. The key never appears in
+process arguments, logs, or status messages. `check-gotest` mounts the key
+only in its test Pods' fetch container. See
+[Sandboxed checks](#sandboxed-checks).
+
 ## Install
 
 Each program installs with kube's `generate` command, which builds an image,
 pushes it, and writes the YAML for its namespace, service account, RBAC
-rules, and Deployment. The programs run `git`, so build them on an image
-that has it. They keep local copies of repositories in `/tmp/git-k8s`, on
-the `emptyDir` volume that `generate` mounts at `/tmp`:
+rules, and Deployment. The programs run `git`, and `ssh` for SSH URLs, so
+build them on an image that has both. They keep local copies of repositories
+in `/tmp/git-k8s`, on the `emptyDir` volume that `generate` mounts at `/tmp`:
 
 ```sh
 for program in git-k8s check-base check-gofmt check-risk check-approval check-gotest; do
@@ -239,7 +292,8 @@ until both policies are installed with bindings that deny.
 ## Test
 
 The unit tests call each reconciler with `kube.Fake` and a real git server
-that runs in the test process:
+that runs in the test process and serves HTTP and SSH. The SSH tests run
+`ssh`, and skip if it's missing:
 
 ```sh
 go test -race ./...
@@ -248,8 +302,8 @@ go test -race ./...
 The end-to-end test installs every program with `generate` in a
 [kind](https://kind.sigs.k8s.io/) cluster with a local registry. It runs a
 git server on this machine, which Pods reach through the kind network's
-gateway, and pushes branches to it. It needs Docker, `kubectl`, and `git`,
-and installs kind if it's missing:
+gateway over HTTP and SSH, and pushes branches to it. It needs Docker,
+`kubectl`, `git`, and `ssh-keygen`, and installs kind if it's missing:
 
 ```sh
 GIT_K8S_KIND_E2E=1 go test -v -count=1 ./e2e/kind/
@@ -265,7 +319,6 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
   write runs the repositories controller again, so a check's fix is listed
   soon after the check pushes it. The controller lists a repository at most
   once every 5 seconds, or every `pollInterval` if that's shorter.
-- Remotes authenticate with HTTP basic auth only.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
   NetworkPolicy, so a test can reach anything that the namespace's Pods can.
 
