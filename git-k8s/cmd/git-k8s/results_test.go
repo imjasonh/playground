@@ -35,7 +35,8 @@ func checkToken(check string) kube.FakeToken {
 }
 
 // sendResult sends body, a result or raw JSON, to the results endpoint
-// with token, in a request context from kube.FakeRequest.
+// with token, in a request context from kube.FakeRequest. A token with a
+// space in it is the whole Authorization header.
 func sendResult(ctx context.Context, rs *results, path, token string, body any) *httptest.ResponseRecorder {
 	raw, ok := body.(string)
 	if !ok {
@@ -44,7 +45,10 @@ func sendResult(ctx context.Context, rs *results, path, token string, body any) 
 	}
 	req := httptest.NewRequest(http.MethodPut, path, strings.NewReader(raw)).WithContext(ctx)
 	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
+		if !strings.Contains(token, " ") {
+			token = "Bearer " + token
+		}
+		req.Header.Set("Authorization", token)
 	}
 	w := httptest.NewRecorder()
 	rs.handler().ServeHTTP(w, req)
@@ -81,7 +85,10 @@ func TestResultsEndpointRejects(t *testing.T) {
 		code              int
 		msg               string
 	}{
-		{"no token", gofmt, "", fresh, http.StatusUnauthorized, "no token"},
+		{"no Authorization header", gofmt, "", fresh, http.StatusUnauthorized, "the request has no Bearer token"},
+		{"another scheme", gofmt, "Basic Z29mbXQ6", fresh, http.StatusUnauthorized, "the request has no Bearer token"},
+		{"no token", gofmt, "Bearer ", fresh, http.StatusUnauthorized, "no token"},
+		{"a lowercase scheme", "/results/default/app-main/gofmt", "bearer gofmt", fresh, http.StatusConflict, "main has no parent, so it takes no check results"},
 		{"a token for the API server", gofmt, "api", fresh, http.StatusUnauthorized, "is invalid for the target audiences"},
 		{"a service account that isn't a check", gofmt, "ci", fresh, http.StatusForbidden, "system:serviceaccount:default:ci isn't a check's service account"},
 		{"a check's account name in another namespace", gofmt, "elsewhere", fresh, http.StatusForbidden, "isn't a check's service account"},

@@ -427,7 +427,7 @@ forwarding() { grep -q '^Forwarding from 127.0.0.1:' "${WORKDIR}/port-forward.lo
 eventually 30 forwarding
 forward_port="$(sed -n 's/^Forwarding from 127[.]0[.]0[.]1:\([0-9]*\) .*/\1/p' "${WORKDIR}/port-forward.log" | head -n 1)"
 send_result() {
-  curl -sS -o "${WORKDIR}/result.txt" -w '%{http_code}' -X PUT -H "Authorization: Bearer $1" \
+  curl -sS -o "${WORKDIR}/result.txt" -w '%{http_code}' -X PUT -H "Authorization: ${3:-Bearer} $1" \
     -H 'Content-Type: application/json' --data '{"commit":"0000000","state":"Passed"}' \
     "http://127.0.0.1:${forward_port}/results/${NS}/$(branch_object main)/$2"
 }
@@ -439,7 +439,8 @@ grep -q "check-risk is the risk check, so it can't write the gofmt check's resul
 code="$(send_result "${token}" gofmt)"
 cat "${WORKDIR}/result.txt"
 [[ "${code}" == 401 ]]
-code="$(send_result "${risk_token}" risk)"
+# The scheme is case-insensitive.
+code="$(send_result "${risk_token}" risk bearer)"
 cat "${WORKDIR}/result.txt"
 [[ "${code}" == 409 ]]
 grep -q "main has no parent, so it takes no check results" "${WORKDIR}/result.txt"

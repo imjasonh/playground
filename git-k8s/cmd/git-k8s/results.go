@@ -61,8 +61,13 @@ func (rs *results) handler() http.Handler {
 // put sets one check's result on a GitBranch. The request's generation is
 // the GitBranch's generation that the check read.
 func (rs *results) put(w http.ResponseWriter, r *http.Request) {
-	token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	review, err := kube.ReviewToken(r.Context(), token, gitk8s.ResultsAudience)
+	scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+	if !strings.EqualFold(scheme, "Bearer") {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		http.Error(w, "the request has no Bearer token", http.StatusUnauthorized)
+		return
+	}
+	review, err := kube.ReviewToken(r.Context(), strings.TrimLeft(token, " "), gitk8s.ResultsAudience)
 	switch {
 	case err != nil:
 		// The error can name the core program's service account and the
