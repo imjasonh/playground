@@ -25,7 +25,9 @@ const FixerTrailer = "Git-K8s-Fixer"
 
 // AllowProtocol is the GIT_ALLOW_PROTOCOL setting that git-k8s runs git
 // with. It allows only the transports that a GitRepository's URL can name.
-const AllowProtocol = "http:https:git:ssh:file"
+// It leaves out file, which also covers plain paths, so git can't read a
+// local repository such as another GitRepository's cache.
+const AllowProtocol = "http:https:git:ssh"
 
 // Auth is a username and password for HTTP basic authentication, or a
 // bearer token.
@@ -319,17 +321,12 @@ func (r *Repo) Fetch(ctx context.Context, remote Remote, branches ...string) err
 	return err
 }
 
-// networkProtocols are AllowProtocol's transports without file, so that a
-// URL can't name a repository on the local disk.
-const networkProtocols = "http:https:git:ssh"
-
 // FetchPrune fetches the refs that refspec maps from the remote, such as
 // +refs/heads/*:refs/copy/*, and deletes the local refs that it maps to
-// that the remote no longer has. It reaches the remote only over the
-// network.
+// that the remote no longer has.
 func (r *Repo) FetchPrune(ctx context.Context, remote Remote, refspec string) error {
 	args := []string{"fetch", "--quiet", "--no-tags", "--prune", "--no-write-fetch-head", "--end-of-options", remote.URL, refspec}
-	_, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth, env: []string{"GIT_ALLOW_PROTOCOL=" + networkProtocols}})
+	_, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth})
 	return err
 }
 
@@ -566,8 +563,7 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 // PushEach pushes updates to the remote, each with its own lease, so that a
 // rejected update doesn't stop the others. It returns why the remote
 // rejected each update that it rejected, by ref. An error means that the
-// push didn't happen. Like FetchPrune, it reaches the remote only over the
-// network.
+// push didn't happen.
 func (r *Repo) PushEach(ctx context.Context, remote Remote, updates ...RefUpdate) (map[string]string, error) {
 	if len(updates) == 0 {
 		return nil, nil
@@ -580,7 +576,7 @@ func (r *Repo) PushEach(ctx context.Context, remote Remote, updates ...RefUpdate
 	for _, u := range updates {
 		args = append(args, u.New+":"+u.Ref)
 	}
-	res, err := r.git.exec(ctx, r.Dir, args, opts{auth: remote.Auth, env: []string{"GIT_ALLOW_PROTOCOL=" + networkProtocols}})
+	res, err := r.git.exec(ctx, r.Dir, args, opts{auth: remote.Auth})
 	if err != nil {
 		return nil, err
 	}

@@ -88,10 +88,6 @@ type Repository struct {
 // Close releases the copy.
 func (r *Repository) Close() { r.close() }
 
-// Remote returns the copy as a remote that git reaches without a network,
-// for code in the program that holds the mirror.
-func (r *Repository) Remote() git.Remote { return git.Remote{URL: r.Dir} }
-
 // Open returns repo's copy. It fails with ErrNotSynced until Sync has
 // fetched the external repository into it.
 func (m *Mirror) Open(ctx context.Context, repo *gitk8s.Repository) (*Repository, error) {

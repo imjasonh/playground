@@ -569,7 +569,7 @@ spec:
       env:
         - {name: HOME, value: /tmp}
         - {name: GIT_TERMINAL_PROMPT, value: "0"}
-        - {name: GIT_ALLOW_PROTOCOL, value: "http:https:git:ssh:file"}
+        - {name: GIT_ALLOW_PROTOCOL, value: "http:https:git:ssh"}
 EOF
 k -n "${NS}" wait --for=condition=Ready pod/no-egress --timeout=120s
 sleep 5

@@ -3,6 +3,8 @@ package mirror
 import (
 	"errors"
 	"maps"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -30,6 +32,12 @@ type world struct {
 	pushURL string
 	// remotes counts the calls of the Remote function that sync passes.
 	remotes int
+
+	// srv runs the mirror's handler, which finds served as the
+	// GitRepository.
+	srv    *httptest.Server
+	mu     sync.Mutex
+	served *gitk8s.GitRepository
 }
 
 // newWorld returns a world whose external repository is on a git server
@@ -111,10 +119,42 @@ func (w *world) pushExternal(branch, commit string) {
 func (w *world) copyDir() string { return filepath.Join(w.m.Dir, "default", "app.git") }
 
 // pushCopy sets branch to commit in the copy, or deletes it if commit is "",
-// as a check does through the mirror's server.
+// through the mirror's handler.
 func (w *world) pushCopy(branch, commit string) {
 	w.t.Helper()
-	w.work.Git("push", "--quiet", "--force", w.copyDir(), commit+":refs/heads/"+branch)
+	w.mirrorGit("push", "--quiet", "--force", w.serve(), commit+":refs/heads/"+branch)
+}
+
+// mirrorGit runs git with the token pusher, which belongs to a controller
+// whose empty branch prefix lets it fetch, and push every branch.
+func (w *world) mirrorGit(args ...string) string {
+	w.t.Helper()
+	return w.work.Git(append([]string{"-c", "http.extraHeader=Authorization: Bearer pusher"}, args...)...)
+}
+
+// serve returns the copy's URL on a server that runs the mirror's handler.
+func (w *world) serve() string {
+	w.t.Helper()
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.served = &gitk8s.GitRepository{Object: kube.Meta(w.repo.Name, nil), Spec: gitk8s.GitRepositorySpec{URL: w.repo.Spec.URL}}
+	w.served.Namespace, w.served.UID = w.repo.Namespace, w.repo.UID
+	if w.srv == nil {
+		w.m.Prefixes = append(w.m.Prefixes, Prefix{Namespace: "test", ServiceAccount: "pusher"})
+		token := kube.FakeToken{Token: "pusher", User: kube.UserInfo{Username: "system:serviceaccount:test:pusher"}, Audiences: []string{gitk8s.MirrorAudience}}
+		w.srv = httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+			w.mu.Lock()
+			repo := w.served
+			w.mu.Unlock()
+			ctx, rec := kube.FakeRequest(r.Context(), repo, token)
+			w.m.ServeHTTP(rw, r.WithContext(ctx))
+			if err := rec.Err(); err != nil {
+				w.t.Errorf("the handler did what a kube.Serve handler can't: %v", err)
+			}
+		}))
+		w.t.Cleanup(w.srv.Close)
+	}
+	return w.srv.URL + "/" + w.repo.Namespace + "/" + w.repo.Name + ".git"
 }
 
 // copyRefs lists the copy's refs under prefix, by name below prefix.
@@ -345,15 +385,15 @@ func TestSyncRecordsDivergence(t *testing.T) {
 
 			// Fetches see the external head and where the sides last
 			// agreed.
-			refs := w.work.Git("ls-remote", w.copyDir())
+			refs := w.mirrorGit("ls-remote", w.serve())
 			if !strings.Contains(refs, theirs+"\trefs/git-k8s/downstream/heads/main") || !strings.Contains(refs, base+"\trefs/git-k8s/synced/heads/main") {
-				t.Errorf("the copy advertises\n%s\nwant downstream and synced refs", refs)
+				t.Errorf("the mirror advertises\n%s\nwant downstream and synced refs", refs)
 			}
 
-			// A resolver fetches the external head from the copy and
-			// pushes a commit to the copy that holds both heads, or the
+			// A resolver fetches the external head from the mirror and
+			// pushes a commit to the mirror that holds both heads, or the
 			// external head itself.
-			w.work.Git("fetch", "--quiet", w.copyDir(), want.Ref)
+			w.mirrorGit("fetch", "--quiet", w.serve(), want.Ref)
 			resolved := theirs
 			if resolve == "merge" {
 				w.work.Git("checkout", "--quiet", "--detach", ours)

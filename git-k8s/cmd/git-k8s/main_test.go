@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,18 +29,21 @@ func rules() []gitk8s.BranchRule {
 }
 
 // fixture is the GitRepository default/app, its external repository on a
-// git server, and the mirror's copy of it.
+// git server, and the mirror's copy of it, which a server serves.
 type fixture struct {
 	t   *testing.T
 	srv *gittest.Server
 	// work makes commits, and pushes them to the external repository with
-	// Push or to the mirror's copy with pushToMirror.
+	// Push or to the mirror with pushToMirror.
 	work   *gittest.Work
 	repo   *gitk8s.GitRepository
 	secret *k8s.Secret
 	mirror *mirror.Mirror
-	r      *repositories
-	now    time.Time
+	// mirrorURL is the copy's URL on a server that runs the mirror's
+	// handler.
+	mirrorURL string
+	r         *repositories
+	now       time.Time
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -46,16 +51,31 @@ func newFixture(t *testing.T) *fixture {
 	srv := gittest.NewServer(t, "pw")
 	repo, secret := srv.Repository("app", rules()...)
 	repo.UID = "uid-1"
+	m := &mirror.Mirror{Git: &git.Git{}, Dir: t.TempDir(), Prefixes: []mirror.Prefix{{Namespace: "test", ServiceAccount: "pusher", Prefix: "c/"}}}
 	f := &fixture{
 		t:      t,
 		srv:    srv,
 		work:   srv.NewWork(t, "app"),
 		repo:   repo,
 		secret: secret,
-		mirror: &mirror.Mirror{Git: &git.Git{}, Dir: t.TempDir()},
+		mirror: m,
 		now:    time.Unix(1000, 0),
 	}
-	f.r = &repositories{mirror: f.mirror, now: func() time.Time { return f.now }}
+	f.r = &repositories{mirror: m, now: func() time.Time { return f.now }}
+
+	// The handler gets its own GitRepository, which reconciles don't write.
+	served := &gitk8s.GitRepository{Object: kube.Meta("app", nil), Spec: gitk8s.GitRepositorySpec{URL: repo.Spec.URL, Branches: rules()}}
+	served.Namespace, served.UID = repo.Namespace, repo.UID
+	token := kube.FakeToken{Token: "pusher", User: kube.UserInfo{Username: "system:serviceaccount:test:pusher"}, Audiences: []string{gitk8s.MirrorAudience}}
+	hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx, rec := kube.FakeRequest(r.Context(), served, token)
+		m.ServeHTTP(w, r.WithContext(ctx))
+		if err := rec.Err(); err != nil {
+			t.Errorf("the handler did what a kube.Serve handler can't: %v", err)
+		}
+	}))
+	t.Cleanup(hs.Close)
+	f.mirrorURL = hs.URL + "/default/app.git"
 	return f
 }
 
@@ -102,20 +122,42 @@ func (f *fixture) finalize() error {
 
 func (f *fixture) copyDir() string { return filepath.Join(f.mirror.Dir, "default", "app.git") }
 
-// pushToMirror pushes the working repository's HEAD to branch in the
-// mirror's copy, as a check's push through the mirror does.
+// pushToMirror pushes the working repository's HEAD to branch through the
+// mirror's handler, as the controller that starts branches under c/.
 func (f *fixture) pushToMirror(branch string) {
 	f.t.Helper()
-	f.work.Git("push", "--quiet", "--force", f.copyDir(), "HEAD:refs/heads/"+branch)
+	f.mirrorGit("push", "--quiet", "--force", f.mirrorURL, "HEAD:refs/heads/"+branch)
+}
+
+// mirrorGit runs git in the working repository with the token of the
+// controller that starts branches under c/, which may fetch too.
+func (f *fixture) mirrorGit(args ...string) string {
+	f.t.Helper()
+	return f.work.Git(append([]string{"-c", "http.extraHeader=Authorization: Bearer pusher"}, args...)...)
 }
 
 func (f *fixture) mirrorHeads() map[string]string {
 	f.t.Helper()
-	heads, err := (&git.Git{}).LsRemote(f.t.Context(), git.Remote{URL: f.copyDir()})
+	heads, err := (&git.Git{}).LsRemote(f.t.Context(), git.Remote{URL: f.mirrorURL, Auth: &git.Auth{Token: "pusher"}})
 	if err != nil {
 		f.t.Fatal(err)
 	}
 	return heads
+}
+
+// landInMirror moves main to commit in the mirror's copy, which only the
+// merge controller can do: it pushes commit to c/landing, and lands it.
+func (f *fixture) landInMirror(commit string) {
+	f.t.Helper()
+	parent := f.mirrorHeads()["main"]
+	f.mirrorGit("push", "--quiet", f.mirrorURL, commit+":refs/heads/c/landing")
+	b := &gitk8s.GitBranch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/landing"), map[string]string{gitk8s.RepositoryLabel: "app"})}
+	b.Namespace = "default"
+	b.Spec = gitk8s.GitBranchSpec{Repository: "app", Branch: "c/landing", Head: commit, Parent: "main", ParentHead: parent, Merge: policy}
+	pass(b)
+	if _, err := f.merge(b); err != nil || b.Status.State != reasonLanded {
+		f.t.Fatalf("landing %s on main: err = %v, state = %q", gitk8s.Short(commit), err, b.Status.State)
+	}
 }
 
 func (f *fixture) condition(typ string) *kube.Condition {
@@ -403,8 +445,8 @@ func TestRecordsDivergence(t *testing.T) {
 	if got := f.srv.Heads(t, "app")["c/x"]; got != person {
 		t.Errorf("the external repository has c/x at %s, want the person's %s", got, person)
 	}
-	if got := w.Git("ls-remote", f.copyDir(), "refs/git-k8s/downstream/heads/c/x"); !strings.HasPrefix(got, person) {
-		t.Errorf("the mirror's copy has %q, want the external repository's head %s", got, person)
+	if got := f.mirrorGit("ls-remote", f.mirrorURL, "refs/git-k8s/downstream/heads/c/x"); !strings.HasPrefix(got, person) {
+		t.Errorf("the mirror advertises %q, want the external repository's head %s", got, person)
 	}
 
 	t.Log("The merge controller records the divergence and holds the branch.")
@@ -494,7 +536,7 @@ func TestLandsOnDivergedParent(t *testing.T) {
 	w.Branch("landed", base)
 	w.Write("landed.txt", "landed\n")
 	landed := w.Commit("a landing in the mirror")
-	f.pushToMirror("main")
+	f.landInMirror(landed)
 	w.Write("x.txt", "x\n")
 	head := w.Commit("add x")
 	f.pushToMirror("c/x")
@@ -643,7 +685,7 @@ func TestParentMovedAfterListing(t *testing.T) {
 	w.Branch("main", b.Spec.Head)
 	w.Write("z.txt", "z\n")
 	moved := w.Commit("main moves past the branch")
-	f.pushToMirror("main")
+	f.landInMirror(moved)
 	if _, err := f.merge(b); !errors.Is(err, git.ErrRejected) {
 		t.Errorf("err = %v, want a rejected update", err)
 	}
