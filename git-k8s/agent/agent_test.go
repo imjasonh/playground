@@ -240,7 +240,17 @@ func TestFollowsARunByItsState(t *testing.T) {
 	res.Outputs["runs"], res.Outputs["pod"] = "0", "review-0000000000000000"
 	rec := f.reconcile(p)
 	if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || f.jobState() != (JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: p.UID}) {
-		t.Errorf("state = %+v with %d owned Pods, want run 1 in the same Pod, whatever the runs and pod outputs say", f.jobState(), len(pods))
+		t.Fatalf("state = %+v with %d owned Pods, want run 1 in the same Pod, whatever the runs and pod outputs say", f.jobState(), len(pods))
+	}
+
+	t.Log("The next head's run counts on from the state too.")
+	f.reconcile(finished(p, f.serve(review(Fail), p.UID)))
+	f.state().Outputs["runs"] = "0"
+	f.work.Write("a.txt", "one\nnext\n")
+	f.b.Spec.Head = f.work.Commit("next")
+	f.work.Push("c/x")
+	if f.start(); f.jobState().Runs != 2 {
+		t.Errorf("state = %+v, want run 2", f.jobState())
 	}
 }
 
