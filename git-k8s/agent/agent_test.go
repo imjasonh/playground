@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -316,6 +317,7 @@ func TestRejectsResultsThatDontCheckOut(t *testing.T) {
 		{name: "usage", body: []byte(`{"verdict":"pass","usage":{"inputTokens":-1}}`), want: "negative usage"},
 		{name: "charge", body: []byte(`{"verdict":"pass","chargedCents":-1}`), want: "negative usage"},
 		{name: "files", body: review(Pass, File{Path: "a.txt", Mode: "100644"}), want: "it changes files, which its task doesn't allow"},
+		{name: "error with files", edit: true, body: []byte(`{"verdict":"fail","error":"broke","files":[{"path":"a.txt","mode":"100644"}]}`), want: "it reports an error but also changes files"},
 		{name: "git dir", edit: true, body: review(Pass, File{Path: "sub/.GIT/config", Mode: "100644"}), want: "invalid path"},
 		{name: "mode", edit: true, body: review(Pass, File{Path: "sub", Mode: "160000"}), want: `the mode "160000"`},
 	} {
@@ -440,6 +442,80 @@ func TestReportsPodsThatFail(t *testing.T) {
 			t.Errorf("message = %q", res.Message)
 		}
 	})
+}
+
+func TestReportsWhatAFailedRunUsed(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	cost := 0.75
+	body, _ := json.Marshal(Result{
+		Verdict: Fail, Model: "fake:composer-2.5", Usage: Usage{InputTokens: 900, OutputTokens: 10},
+		CostCents: &cost, DurationMS: 7, Error: "the agent didn't finish in 900s\x00",
+	})
+	f.reconcile(finished(p, f.serve(body, p.UID)))
+	res := f.state()
+	if res.State != gitk8s.Failed || res.Message != "the agent failed in Pod "+p.Name+": the agent didn't finish in 900s" || f.result != nil {
+		t.Fatalf("result = %+v and Run returned %+v, want Failed with the error and no result", res, f.result)
+	}
+	want := map[string]string{
+		"model": "fake:composer-2.5", "inputTokens": "900", "outputTokens": "10", "cacheReadTokens": "0", "cacheWriteTokens": "0",
+		"costCents": "0.75", "runs": "1", "pod": p.Name,
+	}
+	if !maps.Equal(res.Outputs, want) {
+		t.Errorf("outputs = %v, want %v", res.Outputs, want)
+	}
+}
+
+func TestCountsAPodThatsCreatedAgain(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	f.reconcile(p)
+	if res := f.state(); res.Outputs["podUID"] != p.UID {
+		t.Fatalf("outputs = %v, want the Pod's UID", res.Outputs)
+	}
+
+	t.Log("kube creates a deleted Pod again, which runs the agent again.")
+	rec := f.reconcile()
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "creating Pod "+p.Name+" again, because it was deleted" || len(kube.Owned[Pod](rec)) != 1 {
+		t.Fatalf("result = %+v, want Running with the Pod declared", res)
+	}
+	p.UID = "uid-again"
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Outputs["runs"] != "2" || res.Outputs["podUID"] != p.UID {
+		t.Fatalf("outputs = %v, want run 2 in the new Pod", res.Outputs)
+	}
+	f.reconcile(finished(p, f.serve(review(Pass), p.UID)))
+	if res := f.state(); res.State != gitk8s.Passed || res.Outputs["runs"] != "2" {
+		t.Errorf("result = %+v, want Passed after 2 runs", res)
+	}
+}
+
+func TestEndsARunWhenItsNewPodPassesALimit(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		maxAgentRuns  int32
+		maxRunsPerDay int
+		want          string
+	}{
+		{"maxAgentRuns", 1, 0, "the branch used all 1 agent runs that maxAgentRuns allows"},
+		{"-max-runs-per-day", 10, 1, "1 agent runs started in the last 24 hours, the -max-runs-per-day limit"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			f.b.Spec.Merge.MaxAgentRuns = &tc.maxAgentRuns
+			f.r.MaxRunsPerDay = tc.maxRunsPerDay
+			p := f.start()
+			f.reconcile(p)
+			p.UID = "uid-again"
+			f.reconcile(p)
+			if res := f.state(); res.State != gitk8s.Failed || res.Message != "Pod "+p.Name+" was deleted and created again, but "+tc.want || res.Outputs["runs"] != "1" {
+				t.Errorf("result = %+v, want Failed after 1 run", res)
+			}
+			if rec := f.reconcile(p); len(kube.Owned[Pod](rec)) != 0 {
+				t.Error("the next reconcile must stop declaring the Pod")
+			}
+		})
+	}
 }
 
 func TestRetriesPreparingTheSource(t *testing.T) {

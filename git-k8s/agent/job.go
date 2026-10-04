@@ -77,6 +77,9 @@ type JobState struct {
 	// preparing the source.
 	Pod     string
 	Attempt int
+	// UID is the UID of the run's Pod when RunJob last saw it, so RunJob
+	// can tell when kube created the Pod again.
+	UID string
 }
 
 // JobStatus is how a job's run stands.
@@ -88,12 +91,17 @@ type JobStatus struct {
 	Message string
 	// Result is the agent's result, when the run finished with one.
 	Result *Result
+	// Failed is the runner's report on a run that failed after the agent
+	// started, with the Error and what the agent used, or nil.
+	Failed *Result
 }
 
 // RunJob starts or follows job's run, and reports how it stands. It
 // declares the run's Pod with kube.Own, so call it on each reconcile until
 // the run is done. A JobState whose Pod was for other commits, another
-// task, or other flags starts a new run.
+// task, or other flags starts a new run. If the run's Pod is deleted
+// before the run finishes, kube creates it again, which runs the agent
+// again, so RunJob counts another run.
 func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 	s := r.runJob(ctx, job, st)
 	if s.Done {
@@ -105,10 +113,15 @@ func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 }
 
 func (r *Runner) runJob(ctx context.Context, job *Job, st *JobState) JobStatus {
+	return (&run{r: r, job: job, st: st}).startOrFollow(ctx)
+}
+
+// startOrFollow starts or follows the run, as RunJob does.
+func (x *run) startOrFollow(ctx context.Context) JobStatus {
+	r, job, st := x.r, x.job, x.st
 	if err := r.validate(); err != nil {
 		return JobStatus{Message: fmt.Sprintf("can't start agents: %v", err)}
 	}
-	x := &run{r: r, job: job, st: st}
 	if err := job.validate(); err != nil {
 		return x.fail("can't run the agent: %v", err)
 	}
@@ -119,8 +132,8 @@ func (r *Runner) runJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 		}
 	}
 	*st = JobState{Runs: st.Runs}
-	if job.MaxRuns > 0 && st.Runs >= job.MaxRuns {
-		return JobStatus{Message: fmt.Sprintf("not starting the agent: the job used all %d of its runs", job.MaxRuns)}
+	if why := x.usedAll(); why != "" {
+		return JobStatus{Message: "not starting the agent: " + why}
 	}
 	p := r.jobPod(job, 1)
 	if n := r.unfinishedPods(ctx, job.Namespace, p.Name); r.MaxPods > 0 && n >= r.MaxPods {
@@ -134,6 +147,22 @@ func (r *Runner) runJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 	}
 	*st = JobState{Runs: st.Runs + 1, Pod: p.Name, Attempt: 1}
 	return x.follow(ctx, p)
+}
+
+// usedAll says why the run can't start another Pod, if it used all the runs
+// that it may start. A check's run counts against maxAgentRuns instead of
+// the job's MaxRuns.
+func (x *run) usedAll() string {
+	if x.in != nil {
+		if limit := x.in.Spec.Merge.MaxRuns(); x.st.Runs >= limit {
+			return fmt.Sprintf("the branch used all %d agent runs that maxAgentRuns allows", limit)
+		}
+		return ""
+	}
+	if limit := x.job.MaxRuns; limit > 0 && x.st.Runs >= limit {
+		return fmt.Sprintf("the job used all %d of its runs", limit)
+	}
+	return ""
 }
 
 // readTools read and search files, and editTools change them, so only a
@@ -178,7 +207,22 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 	st := x.st
 	pod := kube.Own(ctx, desired)
 	if pod == nil {
+		if st.UID != "" {
+			return x.status("creating Pod %s again, because it was deleted", st.Pod)
+		}
 		return x.status("started Pod %s", st.Pod)
+	}
+	if pod.UID != st.UID {
+		if st.UID != "" {
+			if why := x.usedAll(); why != "" {
+				return x.fail("Pod %s was deleted and created again, but %s", st.Pod, why)
+			}
+			if _, ok := x.r.day.take(time.Now(), x.r.MaxRunsPerDay); !ok {
+				return x.fail("Pod %s was deleted and created again, but %d agent runs started in the last 24 hours, the -max-runs-per-day limit", st.Pod, x.r.MaxRunsPerDay)
+			}
+			st.Runs++
+		}
+		st.UID = pod.UID
 	}
 	s := &pod.Status
 	if t := state(s.InitContainerStatuses, "prepare").Terminated; t != nil && t.ExitCode != 0 {
@@ -189,6 +233,7 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		case st.Attempt < prepareAttempts:
 			st.Attempt++
 			st.Pod = x.r.jobPod(x.job, st.Attempt).Name
+			st.UID = ""
 			kube.RequeueAfter(ctx, time.Second)
 			return x.status("preparing the source failed, so trying again: %s", msg)
 		}
@@ -243,6 +288,9 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 	res, err := parseResult(body, digest, x.job.Task.Edit)
 	if err != nil {
 		return x.fail("the agent's result from Pod %s isn't valid: %v", st.Pod, err)
+	}
+	if res.Error != "" {
+		return JobStatus{Done: true, Message: fmt.Sprintf("the agent failed in Pod %s: %s", st.Pod, res.Error), Failed: res}
 	}
 	return JobStatus{Done: true, Message: cmp.Or(res.Reasoning, res.Summary), Result: res}
 }

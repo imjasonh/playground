@@ -3,7 +3,7 @@ import { open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { cursorBackend } from "./backends/cursor.js";
 import { fakeBackend } from "./backends/fake.js";
-import type { Backend } from "./backends/types.js";
+import { AgentError, type AgentResponse, type Backend, type Spent } from "./backends/types.js";
 import { changedFiles, checkPaths } from "./changes.js";
 import { buildPrompt, firstLines, MAX_DIFF, MAX_LOG } from "./prompt.js";
 import type { ChangedFile, Result } from "./result.js";
@@ -30,7 +30,9 @@ const defaultBackends: Record<BackendName, Backend> = { cursor: cursorBackend, f
  * Runs the task in AGENT_TASK, writes the result file, and writes the
  * result's SHA-256 digest as the container's termination message, which the
  * operator reads from the API server to check the result that it fetches.
- * On failure, the termination message is the error. Returns the exit code.
+ * A run that fails after the agent started has a result with the error, so
+ * the operator learns what the agent used. On a failure before that, the
+ * termination message is the error. Returns the exit code.
  */
 export async function runFromEnv(env: NodeJS.ProcessEnv, options: RunOptions = {}): Promise<number> {
   const log = options.log ?? ((line: string) => console.log(line));
@@ -48,7 +50,11 @@ export async function runFromEnv(env: NodeJS.ProcessEnv, options: RunOptions = {
     const body = Buffer.from(JSON.stringify(result));
     await writeAtomic(task.resultFile, body);
     await writeFile(task.terminationLog, `sha256:${createHash("sha256").update(body).digest("hex")}`);
-    log(`verdict ${result.verdict}: ${result.summary}`);
+    if (result.error) {
+      console.error(result.error);
+    } else {
+      log(`verdict ${result.verdict}: ${result.summary}`);
+    }
     return 0;
   } catch (err) {
     const message = truncate(redact(errorMessage(err), key), MAX_MESSAGE);
@@ -79,17 +85,34 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
     checkPaths(index);
   }
   const started = Date.now();
-  const response = await backends[task.backend]({
-    prompt: buildPrompt(task, diff, commits, paths, merge),
-    diff: firstLines(diff, MAX_DIFF).text,
-    cwd: task.workTree,
-    edit: task.edit,
-    tools: toolsFor(task),
-    model: task.model,
-    apiKey: key,
-    timeoutMs: task.timeoutSeconds * 1000,
-    log,
-  });
+  let response: AgentResponse;
+  try {
+    response = await backends[task.backend]({
+      prompt: buildPrompt(task, diff, commits, paths, merge),
+      diff: firstLines(diff, MAX_DIFF).text,
+      cwd: task.workTree,
+      edit: task.edit,
+      tools: toolsFor(task),
+      model: task.model,
+      apiKey: key,
+      timeoutMs: task.timeoutSeconds * 1000,
+      log,
+    });
+  } catch (err) {
+    if (err instanceof AgentError) {
+      return failure(err.message, err.spent, started, key);
+    }
+    throw err;
+  }
+  try {
+    return await report(task, key, response, index, started);
+  } catch (err) {
+    return failure(errorMessage(err), response, started, key);
+  }
+}
+
+/** Builds the result of an agent's run from its response. */
+async function report(task: Task, key: string, response: AgentResponse, index: Buffer | undefined, started: number): Promise<Result> {
   const verdict = parseVerdict(response.text);
   const files: ChangedFile[] = [];
   if (index) {
@@ -118,6 +141,27 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   }
   if (response.chargedCents !== undefined) {
     result.chargedCents = response.chargedCents;
+  }
+  return result;
+}
+
+/** The result of a run that failed after the agent started, with what the agent used. */
+function failure(message: string, spent: Spent, started: number, key: string): Result {
+  const result: Result = {
+    verdict: "fail",
+    summary: "",
+    reasoning: "",
+    error: truncate(redact(message, key), MAX_MESSAGE) || "no reason given",
+    model: spent.model,
+    usage: spent.usage,
+    durationMs: Date.now() - started,
+    files: [],
+  };
+  if (spent.costCents !== undefined) {
+    result.costCents = spent.costCents;
+  }
+  if (spent.chargedCents !== undefined) {
+    result.chargedCents = spent.chargedCents;
   }
   return result;
 }

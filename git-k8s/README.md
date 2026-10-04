@@ -210,7 +210,8 @@ containers:
   from the key in the runner's memory, the container holds no credentials
   once the key file is gone. The runner writes the agent's verdict, summary,
   reasoning, and token usage to a result file, and the file's SHA-256 digest
-  as the container's termination message.
+  as the container's termination message. A run that fails after the agent
+  starts writes the error and the token usage instead.
 - The `result` container serves the result file over HTTP to requests whose
   bearer token is the Pod's UID.
 
@@ -267,6 +268,18 @@ tokens:
   starts over when it restarts, and each shard keeps its own count.
 - `-max-pods`, 10 by default, is the most agent Pods that run at once
   across all namespaces.
+
+If an agent Pod is deleted before its run finishes, kube creates it again,
+and the agent runs again. The check counts that as another run, or fails
+when `maxAgentRuns` or `-max-runs-per-day` allows no more. A run that fails
+after the agent starts still reports the `model`, the token counts, and the
+costs in the check's outputs.
+
+The check counts a branch's runs in its outputs on the branch's
+`GitBranch`, so a branch that's deleted and then pushed again can start
+over at 0, and so can a branch with a new name. To cap what agents cost in
+money, also set a spend limit for the Cursor team or account that owns the
+API key.
 
 The agent reads the branch's code, which can tell it what to do. Its
 verdict goes through the same result path as any check's result, and its
@@ -386,9 +399,13 @@ controller that restarts follows the same run. `RunJob` declares the Pod
 with `kube.Own` and returns a `JobStatus`. Until the run is `Done`, the
 status's `Message` says how the run is going. Once it's `Done`, `Result`
 holds the agent's result, or is nil if the run failed, and `Message` says
-why. Then stop calling `RunJob` for the run, and kube deletes the Pod. A
-`Job` with other commits, another task, other tools, or another image
-starts a new run, up to the job's `MaxRuns`.
+why. If the run failed after the agent started, `Failed` holds the runner's
+report, with its `Error` and what the agent used. Then stop calling
+`RunJob` for the run, and kube deletes the Pod. A `Job` with other commits,
+another task, other tools, or another image starts a new run, up to the
+job's `MaxRuns`. If the run's Pod is deleted before the run is `Done`, kube
+creates it again and the agent runs again, so `RunJob` counts another run,
+or ends the run when `MaxRuns` or `-max-runs-per-day` allows no more.
 
 For an agent that resolves a merge, set `Checkout.Merge` to the branch to
 merge into the head, and `Checkout.Base` to their merge base. The `prepare`
