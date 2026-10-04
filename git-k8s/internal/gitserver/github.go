@@ -490,6 +490,9 @@ func (g *GitHub) listCheckRuns(w http.ResponseWriter, r *http.Request, repo, sha
 		seen[c.Name] = true
 		runs = append(runs, c)
 	}
+	// GitHub doesn't document the list's order. Listing the oldest first
+	// catches a client that takes the first match as the newest.
+	slices.Reverse(runs)
 	writeJSON(w, http.StatusOK, map[string]any{"total_count": len(runs), "check_runs": runs})
 }
 
