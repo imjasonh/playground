@@ -342,12 +342,27 @@ eventually 60 gate_saw_approval
 [[ "$(remote_head main)" == "${main_before}" ]]
 rejected "remove ${APPROVED_BY} when you remove ${APPROVE}" annotate --as=alice "${APPROVE}-"
 rejected "${APPROVED_BY} can change only when ${APPROVE} does" annotate --as=alice "${APPROVED_BY}-"
-annotate --as=alice "${APPROVE}-" "${APPROVED_BY}-"
-annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=alice"
+echo "The policy rejected bad approvals, and c/auth waited through ${admin}'s."
+echo "::endgroup::"
+
+echo "::group::A MutatingAdmissionPolicy sets approved-by"
+k apply -f "${ROOT}/config/approved-by.yaml"
+approved_by_annotation() {
+  annotate --as=alice "$@" -o jsonpath='{.metadata.annotations.git-k8s\.imjasonh\.com/approved-by}'
+}
+# Without the mutating policy, removing approve alone is rejected.
+mutating_policy_ready() { approved_by_annotation "${APPROVE}-" --dry-run=server >/dev/null 2>&1; }
+eventually 60 mutating_policy_ready
+revoked="$(approved_by_annotation "${APPROVE}-")"
+# The mutating policy keeps an approved-by that the request sets.
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+approved="$(approved_by_annotation "${APPROVE}=${AUTH}")"
+echo "approved-by was '${revoked}' after alice removed approve, and '${approved}' after she set it"
+[[ -z "${revoked}" && "${approved}" == alice ]]
 auth_landed() { [[ "$(remote_head main)" == "${AUTH}" ]]; }
 eventually 120 auth_landed
 eventually 60 branch_gone c/auth
-echo "The policy rejected bad approvals, and c/auth landed only once alice approved it."
+echo "alice removed and set approve alone, the policy did the same to approved-by, and c/auth landed."
 echo "::endgroup::"
 
 echo "::group::Two branches from the same commit both land"

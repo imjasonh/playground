@@ -131,6 +131,18 @@ The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
 - A request that removes `approve` must remove `approved-by` too.
 - `approved-by` can't change by itself.
 
+On Kubernetes 1.36 or later, `kubectl apply -f config/approved-by.yaml`
+installs a MutatingAdmissionPolicy that sets `approved-by` to your username
+when you set or change `approve`, and removes it when you remove `approve`,
+so one annotation approves:
+
+```sh
+kubectl annotate gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA
+```
+
+The mutating policy leaves an `approved-by` that the request sets, and
+`git-k8s-approvals` checks every approval either way.
+
 `check-approval` reports `approved-by` as `outputs.approver`, so a merge gate
 can require particular approvers:
 
