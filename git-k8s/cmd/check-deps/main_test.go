@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"testing"
 	"time"
 
@@ -281,5 +282,24 @@ func TestDoesntPushWhatDoesntFixTheTests(t *testing.T) {
 				t.Errorf("%s = %s, want it to stay at %s", depsBranch, got, head)
 			}
 		})
+	}
+}
+
+func TestReportsWhatAFailedRunUsed(t *testing.T) {
+	f := newFixture(t, depsBranch)
+	failed := checks.Verdict{
+		State:   gitk8s.Failed,
+		Message: "the agent failed in Pod deps-0123abcd: the Cursor API returned 429",
+		Outputs: map[string]string{
+			"runs": "1", "pod": "deps-0123abcd", "model": "composer-2.5", "inputTokens": "1200", "outputTokens": "300",
+			"cacheReadTokens": "0", "cacheWriteTokens": "0", "costCents": "4",
+		},
+	}
+	replaceAgent(t, func(context.Context, *checks.Input, agent.Task) (checks.Verdict, *agent.Result) {
+		return failed, nil
+	})
+	f.reconcile()
+	if res := f.result(); res.State != gitk8s.Failed || res.Message != failed.Message || !maps.Equal(res.Outputs, failed.Outputs) {
+		t.Errorf("result = %+v, want the runner's verdict with what the run used", res)
 	}
 }
