@@ -351,10 +351,14 @@ controller clears `status.diverged`:
   removal. Replay the commits that the other side added since `base` onto
   the rewound side's head, and push the result with a lease. If you push it
   to the side that didn't rewind, it resolves the divergence even if you
-  changed commits to resolve conflicts, unless your changes are on lines
-  that the removed commits changed or next to them. If you push it to the
-  side that rewound, each commit that the other side added needs a replay
-  in it. If the branch still diverges, push the result to both sides.
+  changed commits to resolve conflicts, as long as none of its commits
+  replays a commit that the rewound side removed, you didn't change lines
+  that the removed commits changed, and either you didn't change lines
+  that the rewound side changed, or the rewound side didn't change lines
+  that the removed commits changed. A line next to a changed line counts
+  as changed. If you push it to the side that rewound, each commit that
+  the other side added needs a replay in it. If the branch still diverges,
+  push the result to both sides.
 
 To keep one side's head instead, and drop the other side's changes, push
 that head to the other side.
