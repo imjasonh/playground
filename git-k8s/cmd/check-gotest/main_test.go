@@ -366,6 +366,10 @@ func TestStopsCountingAPodThatNeverAppears(t *testing.T) {
 
 		t.Log("The API server never creates app-c-a's Pod.")
 		time.Sleep(declaredFor)
+		// app-c-a goes first, while the check still holds its expired entry.
+		if pods := kube.Owned[Pod](reconcileIn(t, r, first, repo, first, second)); len(pods) != 0 {
+			t.Errorf("owned Pods = %+v, want app-c-a to wait behind app-c-b once its Pod stops counting", pods)
+		}
 		if pods := kube.Owned[Pod](reconcileIn(t, r, second, repo, first, second)); len(pods) != 1 {
 			t.Errorf("owned Pods = %+v, want app-c-b's Pod", pods)
 		}
