@@ -278,6 +278,13 @@ func TestCheckPods(t *testing.T) {
 			spec["initContainers"] = []any{map[string]any{"name": "fetch", "image": "cgr.dev/chainguard/git", "securityContext": sc}}
 		})
 	}
+	// withContexts returns check-gotest's Pod whose test container has the
+	// security context first, and whose init container has second.
+	withContexts := func(first, second map[string]any) map[string]any {
+		p := initContainer(second)
+		p["spec"].(map[string]any)["containers"].([]any)[0].(map[string]any)["securityContext"] = first
+		return p
+	}
 	ephemeral := gotestPod(func(spec map[string]any) {
 		spec["ephemeralContainers"] = []any{map[string]any{"name": "debug", "image": "busybox", "securityContext": map[string]any{"privileged": true}}}
 	})
@@ -509,6 +516,10 @@ func TestCheckPods(t *testing.T) {
 		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: initContainer(map[string]any{"privileged": true})},
 		want: privilege,
 	}, {
+		name: "creates a Pod whose container isn't privileged and whose init container is",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContexts(map[string]any{"privileged": false}, map[string]any{"privileged": true})},
+		want: privilege,
+	}, {
 		name: "adds a privileged ephemeral container to its Pod",
 		r:    request{user: gotest, operation: "UPDATE", subresource: "ephemeralcontainers", namespace: "repos", nsLabels: ready, object: ephemeral, oldObject: own},
 		want: privilege,
@@ -551,6 +562,13 @@ func TestCheckPods(t *testing.T) {
 			spec["containers"].([]any)[0].(map[string]any)["securityContext"] = map[string]any{"seLinuxOptions": map[string]any{"level": "s0:c1,c2"}, "appArmorProfile": map[string]any{"type": "Localhost", "localhostProfile": "k8s-default"}}
 		})},
 	}, {
+		name: "creates its Pod with the other SELinux types that baseline allows",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["securityContext"] = map[string]any{"seLinuxOptions": map[string]any{"type": "container_init_t"}}
+			spec["containers"].([]any)[0].(map[string]any)["securityContext"] = map[string]any{"seLinuxOptions": map[string]any{"type": "container_kvm_t"}}
+			spec["initContainers"] = []any{map[string]any{"name": "fetch", "image": "cgr.dev/chainguard/git", "securityContext": map[string]any{"seLinuxOptions": map[string]any{"type": "container_engine_t"}}}}
+		})},
+	}, {
 		name: "creates a Pod whose container runs as the spc_t SELinux type",
 		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContext(map[string]any{"seLinuxOptions": map[string]any{"type": "spc_t"}})},
 		want: confinement,
@@ -563,6 +581,10 @@ func TestCheckPods(t *testing.T) {
 	}, {
 		name: "creates a Pod whose init container sets an SELinux role",
 		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: initContainer(map[string]any{"seLinuxOptions": map[string]any{"role": "system_r"}})},
+		want: confinement,
+	}, {
+		name: "creates a Pod whose container runs as container_t and whose init container runs as spc_t",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContexts(map[string]any{"seLinuxOptions": map[string]any{"type": "container_t"}}, map[string]any{"seLinuxOptions": map[string]any{"type": "spc_t"}})},
 		want: confinement,
 	}, {
 		name: "creates a Pod whose container sets an SELinux user",
@@ -634,6 +656,13 @@ func TestCheckPods(t *testing.T) {
 	}, {
 		name: "creates a Pod whose sidecar's liveness probe sets a host",
 		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["initContainers"] = []any{map[string]any{"name": "proxy", "image": "cgr.dev/chainguard/go", "restartPolicy": "Always", "livenessProbe": metadataGet}}
+		})},
+		want: probeHost,
+	}, {
+		name: "creates a Pod whose container's liveness probe doesn't set a host and whose sidecar's does",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["containers"].([]any)[0].(map[string]any)["livenessProbe"] = map[string]any{"httpGet": map[string]any{"path": "/healthz", "port": 8080}}
 			spec["initContainers"] = []any{map[string]any{"name": "proxy", "image": "cgr.dev/chainguard/go", "restartPolicy": "Always", "livenessProbe": metadataGet}}
 		})},
 		want: probeHost,
