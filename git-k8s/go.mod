@@ -8,6 +8,7 @@ replace github.com/imjasonh/playground/kube => ../kube
 require (
 	cel.dev/cel-go v0.32.0
 	github.com/imjasonh/playground/kube v0.0.0-00010101000000-000000000000
+	golang.org/x/mod v0.41.0
 )
 
 require (

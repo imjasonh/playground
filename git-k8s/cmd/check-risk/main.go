@@ -1,24 +1,47 @@
 // Command check-risk rates how risky a branch's change is.
 //
 // The risk check compares the branch's head with its merge base on the
-// parent. A change is high risk when it changes more lines than -max-lines,
-// or touches a path that matches a -sensitive glob; otherwise it's low risk.
-// The check always passes and reports the rating in its outputs, so a merge
-// gate decides what to do with it:
+// parent. A change is high risk when any of these is true:
+//
+//   - It changes more lines than -max-lines. Lines in go.sum and go.work.sum
+//     files don't count, because they're checksums that the go command
+//     checks, and the versions that they cover show in go.mod.
+//   - It touches a path that matches a -sensitive glob.
+//   - A go.mod file that it changes requires a module that no go.mod file
+//     at the merge base requires, moves a module to another major version
+//     or to a version that isn't a release, replaces a module with code from
+//     outside the repository or stops replacing one, or changes the go or
+//     toolchain line.
+//   - It has commits from AI agents, which carry the Git-K8s-Agent trailer.
+//
+// Otherwise it's low risk, so a patch or minor release of a module that the
+// repository already requires is low risk. The check always passes and
+// reports the rating in its outputs, so a merge gate decides what to do with
+// it:
 //
 //	when: checks.risk.outputs.level == "low" || checks.approval.passed
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
+	"maps"
+	"path"
+	"slices"
 	"strconv"
 	"strings"
+
+	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
+	"golang.org/x/mod/semver"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/credentials"
+	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/internal/gomod"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -38,7 +61,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 }
 
 var (
-	maxLines  = flag.Int("max-lines", 200, "changed lines above which a change is high risk")
+	maxLines  = flag.Int("max-lines", 200, "changed lines above which a change is high risk, not counting go.sum files")
 	sensitive = flag.String("sensitive", "", "comma-separated globs of paths that make a change high risk, such as auth/**,**/*.pem")
 )
 
@@ -62,10 +85,17 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if err != nil {
 		return checks.Verdict{}, err
 	}
-	lines := 0
-	var hits []string
+	lines, sums := 0, false
+	var hits, mods []string
 	for _, s := range stats {
-		lines += max(s.Added, 0) + max(s.Removed, 0)
+		if name := path.Base(s.Path); name == "go.sum" || name == "go.work.sum" {
+			sums = true
+		} else {
+			lines += max(s.Added, 0) + max(s.Removed, 0)
+		}
+		if gomod.IsModFile(s.Path) {
+			mods = append(mods, s.Path)
+		}
 		for p := range strings.SplitSeq(*sensitive, ",") {
 			if p = strings.TrimSpace(p); p != "" && gitk8s.Match(p, s.Path) {
 				hits = append(hits, s.Path)
@@ -80,15 +110,175 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if len(hits) > 0 {
 		reasons = append(reasons, "touches "+strings.Join(hits, ", "))
 	}
+	if len(mods) > 0 {
+		r, err := moduleReasons(ctx, repo, base, in.Spec.Head, mods)
+		if err != nil {
+			return checks.Verdict{}, err
+		}
+		reasons = append(reasons, r...)
+	}
+	switch n, err := repo.CountCommits(ctx, base, in.Spec.Head, git.AgentTrailer); {
+	case err != nil:
+		return checks.Verdict{}, err
+	case n == 1:
+		reasons = append(reasons, "has 1 commit from an AI agent")
+	case n > 1:
+		reasons = append(reasons, fmt.Sprintf("has %d commits from AI agents", n))
+	}
 	level := "low"
 	if len(reasons) > 0 {
 		level = "high"
 	} else {
-		reasons = []string{fmt.Sprintf("changes %d lines in %d files", lines, len(stats))}
+		summary := fmt.Sprintf("changes %d lines in %d files", lines, len(stats))
+		if sums {
+			summary += ", not counting go.sum"
+		}
+		reasons = []string{summary}
 	}
 	v := checks.Pass("risk is %s: %s", level, strings.Join(reasons, "; "))
 	v.Outputs = map[string]string{"level": level, "lines": strconv.Itoa(lines), "files": strconv.Itoa(len(stats))}
 	return v, nil
+}
+
+// modFile is a go.mod file, or why it can't be parsed.
+type modFile struct {
+	path string
+	file *modfile.File
+	err  error
+}
+
+// readModFiles parses the go.mod files in a commit, or only those at paths
+// when paths isn't nil.
+func readModFiles(ctx context.Context, repo *git.Repo, commit string, paths []string) ([]modFile, error) {
+	entries, err := gomod.Files(ctx, repo, commit)
+	if err != nil {
+		return nil, err
+	}
+	var files []modFile
+	for _, e := range entries {
+		if paths != nil && !slices.Contains(paths, e.Path) {
+			continue
+		}
+		data, err := repo.ReadBlob(ctx, e.SHA)
+		if err != nil {
+			return nil, err
+		}
+		f, err := modfile.Parse(e.Path, data, nil)
+		files = append(files, modFile{path: e.Path, file: f, err: err})
+	}
+	return files, nil
+}
+
+// moduleReasons says what makes the changes to the go.mod files at paths
+// high risk. It compares each file with every go.mod file at base, so a
+// module that another part of the repository required isn't new.
+func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths []string) ([]string, error) {
+	before, err := readModFiles(ctx, repo, base, nil)
+	if err != nil {
+		return nil, err
+	}
+	after, err := readModFiles(ctx, repo, head, paths)
+	if err != nil {
+		return nil, err
+	}
+	local := map[string]bool{}
+	for _, f := range slices.Concat(before, after) {
+		if f.file != nil && f.file.Module != nil {
+			local[f.file.Module.Mod.Path] = true
+		}
+	}
+	required := map[string][]string{}
+	replaced := map[string]bool{}
+	previous := map[string]*modfile.File{}
+	for _, f := range before {
+		if f.file == nil {
+			continue
+		}
+		previous[f.path] = f.file
+		for _, r := range f.file.Require {
+			required[r.Mod.Path] = append(required[r.Mod.Path], r.Mod.Version)
+		}
+		for _, r := range f.file.Replace {
+			replaced[replacement(r)] = true
+		}
+	}
+	// majors maps a module path without its major version suffix to the
+	// first such path that the repository required.
+	majors := map[string]string{}
+	for _, p := range slices.Sorted(maps.Keys(required)) {
+		prefix, _, _ := module.SplitPathVersion(p)
+		if _, ok := majors[prefix]; !ok {
+			majors[prefix] = p
+		}
+	}
+
+	var reasons []string
+	add := func(format string, args ...any) {
+		if r := fmt.Sprintf(format, args...); !slices.Contains(reasons, r) {
+			reasons = append(reasons, r)
+		}
+	}
+	for _, f := range after {
+		if f.err != nil {
+			add("changes %s, which check-risk can't read: %v", f.path, f.err)
+			continue
+		}
+		for _, r := range f.file.Require {
+			p, v := r.Mod.Path, r.Mod.Version
+			versions := required[p]
+			prefix, _, _ := module.SplitPathVersion(p)
+			switch {
+			case local[p] || slices.Contains(versions, v):
+			case len(versions) == 0 && majors[prefix] != "":
+				add("moves %s to %s", majors[prefix], p)
+			case len(versions) == 0:
+				add("adds module %s", p)
+			case semver.Prerelease(v) != "":
+				add("moves %s to %s, which isn't a release", p, v)
+			case !slices.ContainsFunc(versions, func(old string) bool { return semver.Major(old) == semver.Major(v) }):
+				add("moves %s to %s, a new major version", p, v)
+			}
+		}
+		now := map[string]bool{}
+		for _, r := range f.file.Replace {
+			now[replacement(r)] = true
+			if r.New.Version != "" && !replaced[replacement(r)] {
+				add("replaces %s with %s", r.Old, r.New)
+			}
+		}
+		old := previous[f.path]
+		if old == nil {
+			continue
+		}
+		for _, r := range old.Replace {
+			if !now[replacement(r)] {
+				add("stops replacing %s with %s", r.Old, r.New)
+			}
+		}
+		if a, b := goLine(old), goLine(f.file); a != b {
+			add("changes the go line in %s from %s to %s", f.path, cmp.Or(a, "none"), cmp.Or(b, "none"))
+		}
+		if a, b := toolchainLine(old), toolchainLine(f.file); a != b {
+			add("changes the toolchain line in %s from %s to %s", f.path, cmp.Or(a, "none"), cmp.Or(b, "none"))
+		}
+	}
+	return reasons, nil
+}
+
+func replacement(r *modfile.Replace) string { return r.Old.String() + " => " + r.New.String() }
+
+func goLine(f *modfile.File) string {
+	if f.Go == nil {
+		return ""
+	}
+	return f.Go.Version
+}
+
+func toolchainLine(f *modfile.File) string {
+	if f.Toolchain == nil {
+		return ""
+	}
+	return f.Toolchain.Name
 }
 
 func main() { checks.Main[Branch](check) }

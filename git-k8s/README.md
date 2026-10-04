@@ -94,7 +94,7 @@ example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`
 | --- | --- | --- |
 | `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. |
 | `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
-| `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` when the change is larger than `-max-lines` or touches a path that matches a `-sensitive` glob, and to `low` otherwise. |
+| `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` for a large change, a change to a sensitive path, a new or unreleased dependency, or code from an AI agent, and to `low` otherwise. See [Risk ratings](#risk-ratings). |
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head. A push after the approval needs a new one. |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
 | `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and sets `outputs.summary` and the run's token counts. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
@@ -111,6 +111,32 @@ To approve a branch:
 ```sh
 kubectl annotate gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA
 ```
+
+### Risk ratings
+
+`check-risk` compares the branch's head with its merge base on the parent,
+and rates the change `high` when any of these is true:
+
+- It changes more lines than `-max-lines`, 200 by default. Lines in `go.sum`
+  and `go.work.sum` files don't count, because they're checksums that the
+  `go` command checks, and the versions that they cover show in `go.mod`.
+- It touches a path that matches a `-sensitive` glob.
+- A `go.mod` file that it changes requires a module that no `go.mod` file
+  at the merge base requires, moves a module to a new major version or to a
+  version that isn't a release, such as a pseudo-version, replaces a module
+  with code from outside the repository or stops replacing one, or changes
+  the `go` or `toolchain` line. A `go.mod` file that the check can't parse
+  also counts.
+- It has commits from AI agents, which carry a `Git-K8s-Agent: CHECK`
+  trailer, because no person wrote that code.
+
+Otherwise the change is `low` risk. So a patch or minor release of a module
+that any part of the repository already requires is low risk, and lands
+without approval under a gate such as
+`checks.risk.outputs.level == "low" || checks.approval.passed`. The check
+skips `go.mod` files in `testdata` and `vendor` directories. Its message
+lists every reason, for example `risk is high: adds module example.com/c;
+has 1 commit from an AI agent`.
 
 ### Write a check
 
@@ -223,8 +249,9 @@ than 1,000 files, or more than 8 MiB of file content.
 
 When the policy lets the check push, the agent can also edit the files.
 The check commits what changed on the head, and pushes it like any other
-fix, with a `Git-K8s-Fixer: review` trailer and within
-`maxAutomatedCommits`. Without `mayPush`, the agent's files are read-only.
+fix, with `Git-K8s-Fixer: review` and `Git-K8s-Agent: review` trailers and
+within `maxAutomatedCommits`. The second trailer makes `check-risk` rate the
+branch high. Without `mayPush`, the agent's files are read-only.
 
 The check's outputs hold the agent's `summary`, the `model`, the run's
 `inputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`,
