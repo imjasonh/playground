@@ -205,6 +205,8 @@ g commit -qm "Initial commit"
 g push -q "${HOST_URL}/app.git" HEAD:main
 
 k create namespace "${NS}"
+# The gotest check runs Pods only in namespaces that enforce Pod Security.
+k label namespace "${NS}" pod-security.kubernetes.io/enforce=restricted
 k -n "${NS}" create secret generic app-creds --type=kubernetes.io/basic-auth \
   --from-literal=username=git-k8s --from-literal=password="${PASSWORD}"
 k apply -f - <<EOF
@@ -447,6 +449,79 @@ fixed_landed() { [[ "$(remote_head main tested)" == "${fixed}" ]]; }
 eventually 300 fixed_landed
 eventually 60 no_test_pods
 echo "A branch that breaks a test failed in a sandboxed Pod, and a fixed branch landed."
+echo "::endgroup::"
+
+echo "::group::A check can change only its own Pods"
+gotest_token="$(k -n check-gotest create token check-gotest)"
+# pod_request sends request $1 for the Pods path $2 under
+# /api/v1/namespaces/, with body $3, as check-gotest, without changing
+# anything.
+pod_request() {
+  local type=application/json
+  [[ "$1" == PATCH ]] && type=application/merge-patch+json
+  curl -sS --cacert "${WORKDIR}/ca.crt" -o "${WORKDIR}/pod.json" -w '%{http_code}' -X "$1" \
+    -H "Authorization: Bearer ${gotest_token}" -H "Content-Type: ${type}" \
+    --data "${3:-}" "${server}/api/v1/namespaces/$2?dryRun=All"
+}
+# gotest_pod prints a Pod that meets the restricted Pod Security Standard,
+# with the gotest check's label, that runs as service account $1.
+gotest_pod() {
+  cat <<EOF
+{"apiVersion": "v1", "kind": "Pod",
+ "metadata": {"name": "gotest-e2e", "labels": {"kube.imjasonh.github.io/controller": "check-gotest"}},
+ "spec": {"serviceAccountName": "$1", "restartPolicy": "Never", "automountServiceAccountToken": false,
+  "securityContext": {"runAsNonRoot": true, "runAsUser": 65532, "seccompProfile": {"type": "RuntimeDefault"}},
+  "containers": [{"name": "test", "image": "${GO_IMAGE}", "command": ["go", "version"],
+   "securityContext": {"allowPrivilegeEscalation": false, "capabilities": {"drop": ["ALL"]}}}]}}
+EOF
+}
+code="$(pod_request POST "${NS}/pods" "$(gotest_pod default)")"
+cat "${WORKDIR}/pod.json"
+echo
+[[ "${code}" == 201 ]]
+code="$(pod_request POST check-gofmt/pods "$(gotest_pod check-gofmt)")"
+cat "${WORKDIR}/pod.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q "the gotest check can't change Pods in the namespaces of git-k8s programs" "${WORKDIR}/pod.json"
+code="$(pod_request POST "${NS}/pods" "$(gotest_pod rogue)")"
+[[ "${code}" == 422 ]]
+grep -q "the gotest check's Pods must run as their namespace's default service account" "${WORKDIR}/pod.json"
+code="$(pod_request POST default/pods "$(gotest_pod default)")"
+[[ "${code}" == 422 ]]
+grep -q "which doesn't enforce the baseline or restricted Pod Security Standard" "${WORKDIR}/pod.json"
+k -n "${NS}" apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: other
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: other
+      image: ${GO_IMAGE}
+      command: [go, version]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+EOF
+code="$(pod_request PATCH "${NS}/pods/other" '{"metadata":{"labels":{"kube.imjasonh.github.io/controller":"check-gotest"}}}')"
+cat "${WORKDIR}/pod.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q "the gotest check can change or delete only its own Pods" "${WORKDIR}/pod.json"
+code="$(pod_request DELETE "${NS}/pods/other")"
+[[ "${code}" == 422 ]]
+grep -q "the gotest check can change or delete only its own Pods" "${WORKDIR}/pod.json"
+k -n "${NS}" delete pod other
+echo "check-gotest can't run Pods in a program's namespace, as another service account, or where Pod Security isn't enforced, and can't change or delete a Pod that it didn't create."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
