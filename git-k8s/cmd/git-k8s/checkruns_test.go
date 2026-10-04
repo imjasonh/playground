@@ -498,6 +498,35 @@ func TestCheckRunsWaitOutRateLimits(t *testing.T) {
 	}
 }
 
+// TestCheckRunsSpreadRetries checks that the branches that wait out one
+// rate limit don't all send requests at once, both when GitHub answers with
+// the limit and when the controller already knows it.
+func TestCheckRunsSpreadRetries(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	head := w.Commit("add x")
+	w.Push("c/x")
+	at := time.Unix(1_000_000, 0)
+	p := &publisher{t: t, gh: gh, repo: gh.Repository("app", sts, rules()...), c: &checkRuns{now: func() time.Time { return at }}}
+	checks := map[string]gitk8s.CheckResult{"base": {Commit: head, ParentCommit: main, State: gitk8s.Passed}}
+	limited, paused := map[time.Duration]bool{}, map[time.Duration]bool{}
+	for range 5 {
+		gh.Fake.RateLimit(time.Minute)
+		if got, err := p.publish(checks); err != nil || len(got) != 1 {
+			t.Fatalf("requests = %q, err = %v; want one request", got, err)
+		}
+		limited[p.requeue] = true
+		if got, err := p.publish(checks); err != nil || len(got) != 0 {
+			t.Fatalf("during the limit: requests = %q, err = %v; want none", got, err)
+		}
+		paused[p.requeue] = true
+		at = at.Add(2 * time.Minute)
+	}
+	if len(limited) < 2 || len(paused) < 2 {
+		t.Errorf("requeues = %v at the limit and %v during it; want different ones", slices.Sorted(maps.Keys(limited)), slices.Sorted(maps.Keys(paused)))
+	}
+}
+
 func TestSpread(t *testing.T) {
 	seen := map[time.Duration]bool{}
 	for range 100 {
