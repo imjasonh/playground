@@ -23,6 +23,9 @@ CHAINGUARD="${GIT_K8S_KIND_CHAINGUARD:-cgr.dev/chainguard}"
 PLATFORM="linux/$(go env GOARCH)"
 NS=git-k8s-e2e
 CHECKS=(check-base check-gofmt check-risk check-approval check-gotest)
+# check-approval runs in another namespace, so the admission policies
+# recognize it only through its entry in the git-k8s-checks ConfigMap.
+APPROVAL_NS=checks
 WORKDIR="$(mktemp -d)"
 WORK="${WORKDIR}/work"
 PASSWORD="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
@@ -31,6 +34,15 @@ CREATED_REGISTRY=0
 GIT_SERVER_PID=""
 
 k() { kubectl --context "${CONTEXT}" "$@"; }
+
+# namespace_of prints the namespace of program $1.
+namespace_of() {
+  if [[ "$1" == check-approval ]]; then
+    echo "${APPROVAL_NS}"
+  else
+    echo "$1"
+  fi
+}
 
 # g runs git in the working repository, without the machine's git config.
 g() {
@@ -45,9 +57,10 @@ diagnose() {
   k -n "${NS}" get pods -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
   k get validatingadmissionpolicies,validatingadmissionpolicybindings --show-labels || true
+  k -n git-k8s get configmap git-k8s-checks -o yaml || true
   for program in git-k8s "${CHECKS[@]}"; do
-    k -n "${program}" describe pods || true
-    k -n "${program}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
+    k -n "$(namespace_of "${program}")" describe pods || true
+    k -n "$(namespace_of "${program}")" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
   done
   echo "--- git server log"
   cat "${WORKDIR}/gitserver.log" || true
@@ -186,7 +199,8 @@ k apply -f "${WORKDIR}/git-k8s.yaml"
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
 policies_applied() {
   [[ "$(k get validatingadmissionpolicies,validatingadmissionpolicybindings \
-    -l kube.imjasonh.github.io/managed-by=git-k8s -o name | wc -l)" -eq 4 ]]
+    -l kube.imjasonh.github.io/managed-by=git-k8s -o name | wc -l)" -eq 4 ]] &&
+    [[ -n "$(k -n git-k8s get configmaps -l kube.imjasonh.github.io/managed-by=git-k8s -o name)" ]]
 }
 eventually 60 policies_applied
 k get validatingadmissionpolicies,validatingadmissionpolicybindings --show-labels
@@ -194,21 +208,24 @@ k get validatingadmissionpolicies,validatingadmissionpolicybindings --show-label
 # that installs them.
 grep -q git-k8s-check-results "${WORKDIR}/git-k8s.yaml"
 generate git-k8s -- -install-policies=false >"${WORKDIR}/git-k8s-without-policies.yaml"
-if grep git-k8s-check-results "${WORKDIR}/git-k8s-without-policies.yaml"; then
+if grep -E 'configmaps|git-k8s-check-results' "${WORKDIR}/git-k8s-without-policies.yaml"; then
   echo "generate -- -install-policies=false still grants permissions to install the policies" >&2
   exit 1
 fi
+k -n git-k8s patch configmap git-k8s-checks --type=merge \
+  -p "{\"data\":{\"${APPROVAL_NS}.check-approval\":\"approval\"}}"
 for program in "${CHECKS[@]}"; do
   case "${program}" in
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
     check-gotest)
       install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m
       ;;
+    check-approval) install "${program}" -namespace="${APPROVAL_NS}" ;;
     *) install "${program}" ;;
   esac
 done
 for program in "${CHECKS[@]}"; do
-  k -n "${program}" rollout status "deployment/${program}" --timeout=180s
+  k -n "$(namespace_of "${program}")" rollout status "deployment/${program}" --timeout=180s
 done
 echo "::endgroup::"
 
@@ -359,6 +376,16 @@ echo
 grep -q 'the gofmt check can only write status.checks.gofmt' "${WORKDIR}/patch.json"
 code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}')"
 [[ "${code}" == 200 ]]
+approval_token="$(k -n "${APPROVAL_NS}" create token check-approval)"
+code="$(patch_status '{"status":{"checks":{"approval":{"commit":"0000000","state":"Passed"}}}}' "${approval_token}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 200 ]]
+code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}' "${approval_token}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q 'the approval check can only write status.checks.approval' "${WORKDIR}/patch.json"
 # A service account with check-gofmt's permissions but another name isn't a
 # check, so it can't write any result.
 k -n "${NS}" create serviceaccount rogue
@@ -369,7 +396,7 @@ cat "${WORKDIR}/patch.json"
 echo
 [[ "${code}" == 422 ]]
 grep -q "isn't a check's service account, so it can't write status.checks" "${WORKDIR}/patch.json"
-echo "check-gofmt can write status.checks.gofmt but not status.checks.risk, and other service accounts can't write either."
+echo "check-gofmt can write status.checks.gofmt but not status.checks.risk, check-approval in the namespace ${APPROVAL_NS} can write status.checks.approval through its ConfigMap entry, and other service accounts can't write either."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
@@ -381,7 +408,7 @@ patch_branch() {
 }
 approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
 core_token="$(k -n git-k8s create token git-k8s)"
-for bearer in "${token}" "${core_token}"; do
+for bearer in "${token}" "${approval_token}" "${core_token}"; do
   code="$(patch_branch "${bearer}" "${approve}")"
   cat "${WORKDIR}/patch.json"
   echo

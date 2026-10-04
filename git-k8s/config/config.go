@@ -4,7 +4,8 @@ package config
 import _ "embed"
 
 // Policy is policy.yaml, which holds the admission policies that keep each
-// check to its own result. The core program installs it when it starts.
+// check to its own result and the ConfigMap that they read. The core
+// program installs it when it starts.
 //
 //go:embed policy.yaml
 var Policy []byte

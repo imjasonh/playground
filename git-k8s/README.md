@@ -223,8 +223,8 @@ after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensi
 `config/policy.yaml` holds two ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
 stops every other service account, including the core program's, from
-changing `status.checks`. A check must run as the service account
-`check-NAME` in the namespace `check-NAME`, as `generate` installs it, to
+changing `status.checks`. A check that doesn't run as `check-NAME` in the
+namespace `check-NAME` needs an entry in the `git-k8s-checks` ConfigMap to
 write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
 check's result. The second stops every git-k8s service account from setting
@@ -238,25 +238,31 @@ until both policies are installed with bindings that deny.
 ### Admission policies
 
 The core program installs `config/policy.yaml` when it starts, before it
-reconciles. It labels the policies and their bindings with
+reconciles. It labels the policies, their bindings, and their ConfigMap with
 `kube.imjasonh.github.io/managed-by=git-k8s`, and applies them again each
 time it starts, but doesn't watch them. If a policy or its binding goes
 missing, or the binding stops denying requests, `PoliciesInstalled` turns
 `False`, and its message says to restart the core program. The policies name
-the core program's service account in the `git-k8s` namespace, so install
-the core program in that namespace, as `generate` does unless you set
-`-namespace`.
+the core program's service account and keep their ConfigMap in the `git-k8s`
+namespace, so install the core program in that namespace, as `generate` does
+unless you set `-namespace`.
 
-`generate` grants the core program `create` and `patch` on the two policies
-and their bindings, by name.
+`generate` grants the core program `create` and `patch` on the two policies,
+their bindings, and the `git-k8s-checks` ConfigMap, by name, and `get` on the
+ConfigMap, which the bindings name as their parameter. The API server lets
+only someone who can read every ConfigMap create a policy whose parameter is
+a ConfigMap, and it checks that as `get` on a ConfigMap named `*`. No
+ConfigMap can have that name, so `generate` also grants `get` on the name
+`*`, and the core program still can't read any other ConfigMap.
 
 The core program can't create other admission policies, but a compromised
-core program could rewrite these policies and their bindings, to weaken
-them or to deny other requests in the cluster. It already decides what
-lands, so it could land a branch without its checks anyway. To keep the
-policies out of its reach, for example in a cluster that manages admission
-policies separately, install it with `-install-policies=false`, which also
-leaves out the permissions, and apply `config/policy.yaml` yourself:
+core program could rewrite these policies, their bindings, and their
+ConfigMap, to weaken them or to deny other requests in the cluster. It
+already decides what lands, so it could land a branch without its checks
+anyway. To keep the policies out of its reach, for example in a cluster that
+manages admission policies separately, install it with
+`-install-policies=false`, which also leaves out the permissions, and apply
+`config/policy.yaml` yourself:
 
 ```sh
 go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -install-policies=false |
@@ -266,6 +272,33 @@ kubectl apply -f config/policy.yaml
 
 With `-install-policies=false`, the message of a `False` `PoliciesInstalled`
 says to apply `config/policy.yaml`.
+
+### Check service accounts
+
+The policies recognize a check by the service account that makes each
+write. `generate` installs `check-NAME` with the service account
+`check-NAME` in the namespace `check-NAME`, and the policies treat that
+service account as the check `NAME`. For a check that runs as another
+service account, such as a check installed with `generate -namespace=checks`,
+add an entry to the `git-k8s-checks` ConfigMap in the `git-k8s` namespace.
+Each key is `NAMESPACE.SERVICE_ACCOUNT`, and its value is the check's name:
+
+```sh
+kubectl -n git-k8s patch configmap git-k8s-checks --type=merge \
+  -p '{"data":{"checks.check-approval":"approval"}}'
+```
+
+An entry overrides the `check-NAME` convention, so an entry with an empty
+value stops that service account from writing results. The core program
+applies the ConfigMap without data, so restarting it keeps your entries.
+Anyone who can change ConfigMaps in the `git-k8s` namespace can decide which
+service accounts write which results, so give that permission only to people
+who can install checks.
+
+While the ConfigMap is missing, the API server denies every create and update
+of a `GitBranch` or its status, including people's, with a message that says
+`no params found for policy binding`. To create the ConfigMap again, restart
+the core program, or apply `config/policy.yaml`.
 
 ## Test
 

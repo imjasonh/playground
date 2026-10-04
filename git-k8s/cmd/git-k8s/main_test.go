@@ -144,6 +144,18 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	if c := reconcile(world...); c.Status != kube.True {
 		t.Errorf("with the policies installed, PoliciesInstalled = %+v", c)
 	}
+	for _, b := range bindings {
+		b.Spec.ParamRef = &paramRef{ParameterNotFoundAction: "Allow"}
+	}
+	if c := reconcile(world...); c.Status != kube.False {
+		t.Errorf("with bindings that allow requests while their parameters are missing, PoliciesInstalled = %+v", c)
+	}
+	for _, b := range bindings {
+		b.Spec.ParamRef.ParameterNotFoundAction = "Deny"
+	}
+	if c := reconcile(world...); c.Status != kube.True {
+		t.Errorf("with bindings that deny requests while their parameters are missing, PoliciesInstalled = %+v", c)
+	}
 }
 
 func TestListFailureKeepsBranches(t *testing.T) {
