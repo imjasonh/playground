@@ -191,9 +191,10 @@ the events look like this:
 Events:
   Type    Reason    Age   From     Message
   ----    ------    ----  ----     -------
-  Normal  Creating  95s   website  0 of 2 replicas are ready
-  Normal  Updating  95s   website  0 of 2 replicas are ready
-  Normal  Serving   80s   website  2 of 2 replicas are ready
+  Normal  Creating  12s   website  0 of 2 replicas are ready
+  Normal  Updating  12s   website  0 of 2 replicas are ready
+  Normal  Starting  12s   website  0 of 2 replicas are ready
+  Normal  Serving   10s   website  2 of 2 replicas are ready
 ```
 
 An event with the same type, reason, and note as one that the controller
