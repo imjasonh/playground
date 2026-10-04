@@ -763,6 +763,38 @@ func TestCheckRunsOfDepartedBranches(t *testing.T) {
 	s.again("c/x")
 }
 
+// TestCompletedCheckRunsOfDepartedBranches runs against both fakes, because
+// the controller can't rely on GitHub refusing to start a completed check
+// run again.
+func TestCompletedCheckRunsOfDepartedBranches(t *testing.T) {
+	for _, accept := range []bool{false, true} {
+		t.Run("AcceptReopening="+strconv.FormatBool(accept), func(t *testing.T) {
+			s := newSharing(t, 2)
+			if accept {
+				s.gh.Fake.AcceptReopening()
+			}
+
+			t.Log("When a branch leaves a commit where its check finished, the check run keeps the result, and another branch that's still running the check there gets a new check run.")
+			s.step("c/y", s.result(0, gitk8s.Running, "started Pod y"), s.get(0), post)
+			s.step("c/x", s.result(0, gitk8s.Passed, "passed on c/x"), patch+"1")
+			s.step("c/x", s.result(1, gitk8s.Running, "started Pod x"), s.get(1), post)
+			s.again("c/y", post)
+
+			t.Log("When the branch whose finished result the check run shows leaves the commit, the check run shows the finished result of another branch at the commit.")
+			s.step("c/y", s.result(0, gitk8s.Failed, "failed on c/y"), patch+"3")
+			s.step("c/z", s.result(0, gitk8s.Passed, "passed on c/z"), patch+"3")
+			s.p.remove("c/z")
+			s.again("c/x", patch+"3")
+			s.again("c/y")
+			s.wantRuns(
+				"git-k8s/gotest@"+s.short(0)+" completed success: passed on c/x",
+				"git-k8s/gotest@"+s.short(1)+" in_progress : started Pod x",
+				"git-k8s/gotest@"+s.short(0)+" completed failure: failed on c/y",
+			)
+		})
+	}
+}
+
 func TestCheckRunsSurviveFailedReads(t *testing.T) {
 	s := newSharing(t, 2)
 	s.step("c/x", s.result(0, gitk8s.Running, ""), s.get(0), post)

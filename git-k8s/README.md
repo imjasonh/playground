@@ -228,9 +228,11 @@ before the check finishes, the controller updates the check run on the
 commit that the branch left. If another branch at that commit has a result
 for the check, the check run shows it, or the one that changed last if
 several do. Otherwise, the controller completes the check run as
-`cancelled`. A check run that a check completed keeps its result. Every
-change to one of a repository's branches reconciles all of them, so this
-happens right away, unless the deleted branch was the repository's last.
+`cancelled`. A completed check run doesn't start again or become
+`cancelled`, so for another branch's result in progress, the controller
+creates a new check run. Every change to one of a repository's branches
+reconciles all of them, so this happens right away, unless the deleted
+branch was the repository's last.
 
 The controller keeps what it wrote only in memory. If the program restarts,
 or another replica takes over, after a branch leaves a commit and before the
