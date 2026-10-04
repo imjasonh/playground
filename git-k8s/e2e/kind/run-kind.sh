@@ -212,8 +212,11 @@ if grep -E 'configmaps|git-k8s-check-results' "${WORKDIR}/git-k8s-without-polici
   echo "generate -- -install-policies=false still grants permissions to install the policies" >&2
   exit 1
 fi
+# The policies ignore the entry for the core program. Without that, it would
+# make the core program the gofmt check, which can't create or change GitBranch
+# objects, so nothing would land.
 k -n git-k8s patch configmap git-k8s-checks --type=merge \
-  -p "{\"data\":{\"${APPROVAL_NS}.check-approval\":\"approval\"}}"
+  -p "{\"data\":{\"${APPROVAL_NS}.check-approval\":\"approval\",\"git-k8s.git-k8s\":\"gofmt\"}}"
 for program in "${CHECKS[@]}"; do
   case "${program}" in
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
@@ -386,6 +389,12 @@ cat "${WORKDIR}/patch.json"
 echo
 [[ "${code}" == 422 ]]
 grep -q 'the approval check can only write status.checks.approval' "${WORKDIR}/patch.json"
+core_token="$(k -n git-k8s create token git-k8s)"
+code="$(patch_status '{"status":{"checks":{"gofmt":{"commit":"0000000","state":"Passed"}}}}' "${core_token}")"
+cat "${WORKDIR}/patch.json"
+echo
+[[ "${code}" == 422 ]]
+grep -q "isn't a check's service account, so it can't write status.checks" "${WORKDIR}/patch.json"
 # A service account with check-gofmt's permissions but another name isn't a
 # check, so it can't write any result.
 k -n "${NS}" create serviceaccount rogue
@@ -396,7 +405,7 @@ cat "${WORKDIR}/patch.json"
 echo
 [[ "${code}" == 422 ]]
 grep -q "isn't a check's service account, so it can't write status.checks" "${WORKDIR}/patch.json"
-echo "check-gofmt can write status.checks.gofmt but not status.checks.risk, check-approval in the namespace ${APPROVAL_NS} can write status.checks.approval through its ConfigMap entry, and other service accounts can't write either."
+echo "check-gofmt can write status.checks.gofmt but not status.checks.risk, check-approval in the namespace ${APPROVAL_NS} can write status.checks.approval through its ConfigMap entry, the core program can't write a result despite its entry, and other service accounts can't write either."
 echo "::endgroup::"
 
 echo "::group::Controllers can't approve branches"
@@ -407,7 +416,6 @@ patch_branch() {
     --data "$2" "${branch_url}"
 }
 approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
-core_token="$(k -n git-k8s create token git-k8s)"
 for bearer in "${token}" "${approval_token}" "${core_token}"; do
   code="$(patch_branch "${bearer}" "${approve}")"
   cat "${WORKDIR}/patch.json"
