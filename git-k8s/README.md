@@ -570,7 +570,7 @@ stops an expression that loops over the checks many times.
 Each program installs with kube's `generate` command, which builds an image,
 pushes it, and writes the YAML for its namespace, service account, RBAC
 rules, and Deployment. The programs run `git`, so build them on an image
-that has git 2.40 or later:
+that has git 2.43 or later:
 
 ```sh
 for program in git-k8s check-base check-gofmt check-risk check-approval check-gotest; do
