@@ -247,17 +247,18 @@ k -n "${NS}" get gitrepositories,gitbranches
 echo "::endgroup::"
 
 # remote_head prints a branch's commit in repository $2, or app.
-remote_head() {
-  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 \
-    git ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1
-}
+remote_head() { g ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
 # branch_object prints the GitBranch for a branch of repository $2, or app.
 branch_object() {
   k -n "${NS}" get gitbranches -l "git-k8s.imjasonh.com/repository=${2:-app}" \
     -o jsonpath="{.items[?(@.spec.branch==\"$1\")].metadata.name}"
 }
 fetch_main() { g fetch -q "${HOST_URL}/app.git" main; }
-branch_gone() { [[ -z "$(remote_head "$1")" && -z "$(branch_object "$1")" ]]; }
+# A failed ls-remote prints nothing too, so it must not count as gone.
+branch_gone() {
+  local head
+  head="$(remote_head "$1")" && [[ -z "${head}" && -z "$(branch_object "$1")" ]]
+}
 
 echo "::group::A branch with unformatted Go lands formatted"
 g checkout -q -b c/fmt
