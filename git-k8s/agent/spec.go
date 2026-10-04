@@ -99,11 +99,11 @@ if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3
 fi
-if [ -n "${BASE:-}" ] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+if [ -n "${BASE:-}" ] && ! git cat-file -e --end-of-options "$BASE^{commit}" 2>/dev/null; then
   git fetch -q --unshallow --end-of-options "$URL" "refs/heads/$BRANCH"
 fi
 printf '* -text -eol -ident -filter -working-tree-encoding\n' >.git/info/attributes
-git read-tree "$HEAD"
+git read-tree --end-of-options "$HEAD"
 git rm -q --cached --ignore-unmatch -- ':(glob)**/.cursorignore'
 git checkout-index -a -f --prefix="$WORK_TREE/"
 git ls-files -s -z >"$INPUT/files"
@@ -112,9 +112,9 @@ range="$HEAD"
 if [ -n "${BASE:-}" ]; then
   range="$BASE..$HEAD"
 fi
-git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv "$from" "$HEAD" >"$INPUT/change.diff"
-git diff --name-status -z "$from" "$HEAD" >"$INPUT/changes"
-git log --format='%h %<(200,trunc)%s' -n 50 "$range" >"$INPUT/log.txt"
+git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv --end-of-options "$from" "$HEAD" >"$INPUT/change.diff"
+git diff --name-status -z --end-of-options "$from" "$HEAD" >"$INPUT/changes"
+git log --format='%h %<(200,trunc)%s' -n 50 --end-of-options "$range" >"$INPUT/log.txt"
 umask 077
 printf '%s' "${CURSOR_API_KEY:-}" >"$KEY_FILE"
 `
@@ -163,7 +163,7 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 		{Name: "KEY_FILE", Value: keyFile},
 		{Name: "HOME", Value: "/git"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
-		{Name: "GIT_ALLOW_PROTOCOL", Value: "http:https:git:ssh:file"},
+		{Name: "GIT_ALLOW_PROTOCOL", Value: "http:https:git:ssh"},
 	}
 	agentTask, _ := json.Marshal(task)
 	if ref := job.Credentials; ref != nil {
