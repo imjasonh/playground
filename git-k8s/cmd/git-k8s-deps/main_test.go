@@ -1778,6 +1778,16 @@ func TestFlags(t *testing.T) {
 	if err := parse().setup(); err == nil || !strings.Contains(err.Error(), "Not_A_Namespace") {
 		t.Errorf("setup() with a bad namespace file = %v, want an error that names what it holds", err)
 	}
+	ns := strings.Repeat("a", 63)
+	inNamespace(t, ns)
+	u = parse()
+	if err := u.setup(); err != nil || u.seenObject.Namespace != ns {
+		t.Errorf("setup() with a 63-character namespace = %v and the ConfigMap in %q, want %q", err, u.seenObject.Namespace, ns)
+	}
+	inNamespace(t, ns+"a")
+	if err := parse().setup(); err == nil {
+		t.Error("setup() with a 64-character namespace = nil, want an error")
+	}
 
 	t.Log("Outside a Pod, there is no namespace for the ConfigMap, unless the controller doesn't wait.")
 	namespaceFile = filepath.Join(t.TempDir(), "namespace")
