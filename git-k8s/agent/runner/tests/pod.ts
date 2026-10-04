@@ -96,12 +96,14 @@ function commit(repo: string, files: Files, message: string): string {
 
 /** Checks out tree, and writes the change from baseSha to head, as preparePod describes. */
 function layOut(root: string, repo: string, baseSha: string, head: string, tree: string, task: Partial<Task>): Task {
-  for (const dir of ["src", "input", "key", "result"]) {
+  for (const dir of ["src", "input", "key", "result", "empty"]) {
     mkdirSync(join(root, dir));
   }
-  git(repo, "read-tree", tree);
-  git(repo, "rm", "-q", "--cached", "--ignore-unmatch", "--", ":(glob)**/.cursorignore");
-  git(repo, "checkout-index", "-a", "-f", `--prefix=${join(root, "src")}/`);
+  // Like the Pod's repository, the index's work tree holds no files.
+  const index = (...args: string[]) => git(join(root, "empty"), `--git-dir=${join(repo, ".git")}`, "--work-tree=.", ...args);
+  index("read-tree", "--end-of-options", tree);
+  index("rm", "-q", "--cached", "--ignore-unmatch", "--", ":(glob)**/.cursorignore");
+  index("checkout-index", "-a", "-f", `--prefix=${join(root, "src")}/`);
   writeFileSync(join(root, "input", "files"), gitBuffer(repo, "ls-files", "-s", "-z"));
   writeFileSync(join(root, "input", "change.diff"), gitBuffer(repo, "diff", "--no-color", baseSha, head));
   writeFileSync(join(root, "input", "changes"), gitBuffer(repo, "diff", "--name-status", "-z", baseSha, head));

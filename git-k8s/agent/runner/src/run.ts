@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { open, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, posix } from "node:path";
 import { cursorBackend } from "./backends/cursor.js";
 import { fakeBackend } from "./backends/fake.js";
 import { AgentError, type AgentResponse, type Backend, type Spent } from "./backends/types.js";
@@ -85,6 +85,10 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
           paths: parseNameStatus(await readStart(task.mergeChangesFile, MAX_PATHS_BYTES + 1)),
         }
       : undefined;
+  const ignored = merge?.conflicts.find((path) => posix.basename(path) === ".cursorignore");
+  if (ignored !== undefined) {
+    throw new Error(`the merge conflicts on ${ignored}, which the agent can't see, because its work tree leaves out .cursorignore files`);
+  }
   const index = task.edit ? await readFile(task.filesFile) : undefined;
   if (index) {
     checkPaths(index);

@@ -179,6 +179,28 @@ test("the fake agent fails a merge that it can't resolve, and changes no files",
   assert.deepEqual(result.files, []);
 });
 
+test("refuses a merge whose .cursorignore conflicts, before the agent starts", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const task = prepareMerge(
+    { "a.txt": "one\n", "sub/.cursorignore": "x\n" },
+    { "sub/.cursorignore": "ours\n" },
+    { "a.txt": "theirs\n", "sub/.cursorignore": "theirs\n" },
+    { edit: true },
+  );
+  let called = false;
+  const capture: Backend = async (r) => {
+    called = true;
+    return fakeBackend(r);
+  };
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: capture } }), 1);
+  assert.equal(called, false);
+  assert.equal(
+    readFileSync(task.terminationLog, "utf8"),
+    "the merge conflicts on sub/.cursorignore, which the agent can't see, because its work tree leaves out .cursorignore files",
+  );
+  assert.equal(existsSync(task.resultFile), false);
+});
+
 test("the fake agent leaves a merge's files alone when it can't edit", async () => {
   const task = prepareMerge({ "a.txt": "one\n" }, { "a.txt": "ours\n" }, { "a.txt": "theirs\n" });
   const before = readFileSync(join(task.workTree, "a.txt"), "utf8");

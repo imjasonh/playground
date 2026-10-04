@@ -609,12 +609,14 @@ head's, which is the same merge as `git.Repo.Merge` with those patterns in
 `.gitattributes` files, so only `Checkout.Union` changes how files merge. Each
 conflict in a file holds the head's lines, the merge base's lines, and the
 merged commit's lines between conflict markers. A file that one side deleted and
-the other changed holds the changed version. The prompt lists the paths that
-conflict, and holds the change from the merge base to the merged commit, its
-paths, and its commits, as well as the head's. The two diffs share the prompt's
-200,000 bytes for a diff, and each gets at least half of them. With `Task.Edit`,
-the result's `Files` change the merge's files, and the controller builds the
-merge commit from them.
+the other changed holds the changed version. The work tree leaves out
+`.cursorignore` files, as in any task, so when one of them conflicts, the runner
+fails the run before the agent starts. The prompt lists the paths that conflict,
+and holds the change from the merge base to the merged commit, its paths, and
+its commits, as well as the head's. The two diffs share the prompt's 200,000
+bytes for a diff, and each gets at least half of them. With `Task.Edit`, the
+result's `Files` change the merge's files, and the controller builds the merge
+commit from them.
 
 The branch must still point to the head when the Pod fetches it, because
 the controller pushes what the agent changes onto the head with a lease,
