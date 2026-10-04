@@ -203,6 +203,61 @@ func TestDecode(t *testing.T) {
 	}
 }
 
+func TestTimesDecodeLikeJSON(t *testing.T) {
+	type asTime struct {
+		When  time.Time `json:"when"`
+		Micro time.Time `json:"micro"`
+	}
+	type asPointer struct {
+		When  *time.Time `json:"when"`
+		Micro *time.Time `json:"micro"`
+	}
+	type asJSON struct {
+		When  json.RawMessage `json:"when"`
+		Micro json.RawMessage `json:"micro"`
+	}
+	types := []struct {
+		name string
+		plan *Plan
+		new  func() any
+	}{
+		{"time.Time", testPlan[asTime](t), func() any { return new(asTime) }},
+		{"*time.Time", testPlan[asPointer](t), func() any { return new(asPointer) }},
+		{"json.RawMessage", testPlan[asJSON](t), func() any { return new(asJSON) }},
+	}
+	later := uint64(time.Date(2026, 10, 2, 20, 41, 7, 0, time.UTC).Unix())
+	// The API server sends the zero time as an empty message, and as null in
+	// JSON. It writes both fields of any other time, so the epoch's message
+	// isn't empty.
+	for _, tc := range []struct {
+		name        string
+		when, micro enc
+		js          string
+	}{
+		{"zero", enc{}, enc{}, `{"when":null,"micro":null}`},
+		{"epoch", enc{}.uint(1, 0).uint(2, 0), enc{}.uint(1, 0).uint(2, 0),
+			`{"when":"1970-01-01T00:00:00Z","micro":"1970-01-01T00:00:00.000000Z"}`},
+		{"later", enc{}.uint(1, later).uint(2, 0), enc{}.uint(1, later).uint(2, 123456000),
+			`{"when":"2026-10-02T20:41:07Z","micro":"2026-10-02T20:41:07.123456Z"}`},
+	} {
+		raw := enc{}.msg(7, tc.when).msg(17, tc.micro)
+		for _, ty := range types {
+			fromJSON, fromProto := ty.new(), ty.new()
+			if err := json.Unmarshal([]byte(tc.js), fromJSON); err != nil {
+				t.Fatal(err)
+			}
+			if err := ty.plan.Unmarshal(raw, fromProto); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(fromJSON, fromProto) {
+				jb, _ := json.Marshal(fromJSON)
+				pb, _ := json.Marshal(fromProto)
+				t.Errorf("%s time into %s: JSON %s, protobuf %s", tc.name, ty.name, jb, pb)
+			}
+		}
+	}
+}
+
 func TestPlanRejectsFieldsTheSchemaLacks(t *testing.T) {
 	type future struct {
 		Name string `json:"name"`
