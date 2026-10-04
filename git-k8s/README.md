@@ -214,7 +214,6 @@ the `emptyDir` volume that `generate` mounts at `/tmp`:
 for program in git-k8s check-base check-gofmt check-risk check-approval check-gotest; do
   go run "./cmd/${program}" generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest | kubectl apply -f -
 done
-kubectl apply -f config/policy.yaml
 ```
 
 Replace `REGISTRY` with a registry and repository prefix that your cluster
@@ -235,6 +234,38 @@ the approve annotation, which is for people, and stops checks from changing
 Without the policies, none of that holds, so the repositories controller
 sets a `PoliciesInstalled` condition on each `GitRepository`. It's `False`
 until both policies are installed with bindings that deny.
+
+### Admission policies
+
+The core program installs `config/policy.yaml` when it starts, before it
+reconciles. It labels the policies and their bindings with
+`kube.imjasonh.github.io/managed-by=git-k8s`, and applies them again each
+time it starts, but doesn't watch them. If a policy or its binding goes
+missing, or the binding stops denying requests, `PoliciesInstalled` turns
+`False`, and its message says to restart the core program. The policies name
+the core program's service account in the `git-k8s` namespace, so install
+the core program in that namespace, as `generate` does unless you set
+`-namespace`.
+
+`generate` grants the core program `create` and `patch` on the two policies
+and their bindings, by name.
+
+The core program can't create other admission policies, but a compromised
+core program could rewrite these policies and their bindings, to weaken
+them or to deny other requests in the cluster. It already decides what
+lands, so it could land a branch without its checks anyway. To keep the
+policies out of its reach, for example in a cluster that manages admission
+policies separately, install it with `-install-policies=false`, which also
+leaves out the permissions, and apply `config/policy.yaml` yourself:
+
+```sh
+go run ./cmd/git-k8s generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -install-policies=false |
+  kubectl apply -f -
+kubectl apply -f config/policy.yaml
+```
+
+With `-install-policies=false`, the message of a `False` `PoliciesInstalled`
+says to apply `config/policy.yaml`.
 
 ## Test
 

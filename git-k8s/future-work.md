@@ -244,17 +244,6 @@ check's outputs, and start the branch that has waited longest. Counting the
 Pods that the process has created until the cache shows them keeps the cap
 exact.
 
-## Install the admission policies with the core program
-
-`config/policy.yaml` is a separate install step. The `PoliciesInstalled`
-condition reports when it's missing, but nothing installs it. The core
-program could apply the policies when it starts, the way kube installs CRDs.
-That needs RBAC to write ValidatingAdmissionPolicies, which a compromised
-core program could use to weaken them. The core program already decides
-what lands, so that may be acceptable. Once checks send results to the core
-program instead of writing them, the check-results policy is a backstop, and
-the policy that stops controllers from approving branches matters most.
-
 ## Support SSH keys
 
 The mirror authenticates to external repositories with HTTP basic auth, or

@@ -24,6 +24,8 @@ type repositories struct {
 	git *git.Git
 	// now is time.Now, except in tests.
 	now func() time.Time
+	// installPolicies is the -install-policies flag.
+	installPolicies bool
 
 	mu     sync.Mutex
 	listed map[string]listing
@@ -78,7 +80,7 @@ func (r *repositories) remember(key, url string, heads map[string]string) {
 func (r *repositories) Reconcile(ctx context.Context, repo *gitk8s.GitRepository) error {
 	ready := kube.Condition{Type: "Ready", Status: kube.False}
 	defer func() { kube.SetCondition(&repo.Status.Conditions, ready) }()
-	kube.SetCondition(&repo.Status.Conditions, policiesCondition(ctx))
+	kube.SetCondition(&repo.Status.Conditions, policiesCondition(ctx, r.installPolicies))
 
 	interval, err := time.ParseDuration(cmp.Or(repo.Spec.PollInterval, "30s"))
 	if err != nil || interval < time.Second {

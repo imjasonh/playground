@@ -109,16 +109,22 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	w.Commit("main")
 	w.Push("main")
 	repo, secret := srv.Repository("app", rules()...)
+	r := &repositories{git: &git.Git{}}
 	reconcile := func(world ...any) *kube.Condition {
 		t.Helper()
 		ctx, _ := kube.Fake(t.Context(), repo, append([]any{secret}, world...)...)
-		if err := (&repositories{git: &git.Git{}}).Reconcile(ctx, repo); err != nil {
+		if err := r.Reconcile(ctx, repo); err != nil {
 			t.Fatal(err)
 		}
 		return kube.FindCondition(repo.Status.Conditions, "PoliciesInstalled")
 	}
-	if c := reconcile(); c == nil || c.Status != kube.False || !strings.Contains(c.Message, "git-k8s-check-results and git-k8s-branches") {
+	if c := reconcile(); c == nil || c.Status != kube.False || !strings.Contains(c.Message, "git-k8s-check-results and git-k8s-branches") ||
+		!strings.HasPrefix(c.Message, "apply config/policy.yaml:") {
 		t.Errorf("without the policies, PoliciesInstalled = %+v", c)
+	}
+	r.installPolicies = true
+	if c := reconcile(); c.Status != kube.False || !strings.HasPrefix(c.Message, "restart the core program to install config/policy.yaml again:") {
+		t.Errorf("without the policies that the program installs, PoliciesInstalled = %+v", c)
 	}
 
 	var world []any

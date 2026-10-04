@@ -27,7 +27,8 @@ type admissionPolicyBinding struct {
 // policiesCondition reports whether the admission policies that keep checks
 // apart are installed, with bindings that deny the requests they reject.
 // Reading them through the cache runs the reconcile again when they change.
-func policiesCondition(ctx context.Context) kube.Condition {
+// installs is set when the program installs the policies when it starts.
+func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
 	var missing []string
 	for _, name := range policyNames {
@@ -39,9 +40,13 @@ func policiesCondition(ctx context.Context) kube.Condition {
 		}
 	}
 	if len(missing) > 0 {
+		fix := "apply config/policy.yaml"
+		if installs {
+			fix = "restart the core program to install config/policy.yaml again"
+		}
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.False, Reason: "Missing",
-			Message: fmt.Sprintf("apply config/policy.yaml: %s isn't installed with a binding that denies, so checks can write each other's results", strings.Join(missing, " and ")),
+			Message: fmt.Sprintf("%s: %s isn't installed with a binding that denies, so checks can write each other's results", fix, strings.Join(missing, " and ")),
 		}
 	}
 	return kube.Condition{

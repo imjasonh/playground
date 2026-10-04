@@ -44,6 +44,7 @@ diagnose() {
   k -n "${NS}" get gitrepositories,gitbranches -o yaml || true
   k -n "${NS}" get pods -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
+  k get validatingadmissionpolicies,validatingadmissionpolicybindings --show-labels || true
   for program in git-k8s "${CHECKS[@]}"; do
     k -n "${program}" describe pods || true
     k -n "${program}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
@@ -178,9 +179,25 @@ GIT_IMAGE="localhost:${PORT}/chainguard/git:latest"
 crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; }
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
-# git-k8s installs the CustomResourceDefinitions that the checks watch.
-install git-k8s
+# git-k8s installs the CustomResourceDefinitions that the checks watch, and
+# the admission policies in config/policy.yaml.
+generate git-k8s >"${WORKDIR}/git-k8s.yaml"
+k apply -f "${WORKDIR}/git-k8s.yaml"
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
+policies_applied() {
+  [[ "$(k get validatingadmissionpolicies,validatingadmissionpolicybindings \
+    -l kube.imjasonh.github.io/managed-by=git-k8s -o name | wc -l)" -eq 4 ]]
+}
+eventually 60 policies_applied
+k get validatingadmissionpolicies,validatingadmissionpolicybindings --show-labels
+# generate grants the permissions to install the policies only to a program
+# that installs them.
+grep -q git-k8s-check-results "${WORKDIR}/git-k8s.yaml"
+generate git-k8s -- -install-policies=false >"${WORKDIR}/git-k8s-without-policies.yaml"
+if grep git-k8s-check-results "${WORKDIR}/git-k8s-without-policies.yaml"; then
+  echo "generate -- -install-policies=false still grants permissions to install the policies" >&2
+  exit 1
+fi
 for program in "${CHECKS[@]}"; do
   case "${program}" in
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
@@ -193,7 +210,6 @@ done
 for program in "${CHECKS[@]}"; do
   k -n "${program}" rollout status "deployment/${program}" --timeout=180s
 done
-k apply -f "${ROOT}/config/policy.yaml"
 echo "::endgroup::"
 
 echo "::group::Track a repository"
