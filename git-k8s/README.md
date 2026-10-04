@@ -299,18 +299,20 @@ and two costs in cents when the SDK reports them. `costCents` is the model
 token cost before discounts, the SDK's `rawCostCents`. `chargedCents` is
 what Cursor charged, with discounts and fees, the SDK's `chargedCents`; it's
 0 for usage that a Cursor plan includes. `runs` counts the agent runs on
-the branch.
+the branch, and `pod` names the run's Pod. `state` holds what the check
+needs to follow the run.
 
 An agent can answer differently each time, so a result stays until the
 branch's head changes, and the check doesn't run again when only the parent
 moves. When the agent fails, for example because the API key is missing or
 wrong or the run takes longer than `-timeout`, the check fails with the
-agent's error. It also fails when an image's name isn't valid, when a
-Secret is still missing or an image still can't be pulled 5 minutes after
-kube creates the Pod, and when fetching the head fails in three Pods in a
-row. The next head runs the agent again. To run it again
-on the same change, such as after a transient error, push an empty commit
-with `git commit --allow-empty`.
+agent's error. It also fails when an image's name isn't valid, when kube
+still can't schedule the Pod 5 minutes after creating it, when a Secret is
+still missing or an image still can't be pulled 5 minutes after the
+container can start, and when three Pods in a row fail to fetch the head
+or find that the branch no longer points to it. The next head runs the
+agent again. To run it again on the same change, such as after a transient
+error, push an empty commit with `git commit --allow-empty`.
 
 Agent runs cost money. Three limits cap them, and they count runs, not
 tokens:
@@ -328,7 +330,9 @@ tokens:
 
 If the branch moves before the agent's Pod fetches it, the agent doesn't
 run, so the run doesn't count toward `maxAgentRuns` or `-max-runs-per-day`,
-and the new head starts a run of its own.
+and the new head starts a run of its own. If the branch's head is the same
+a minute later, such as when the branch moved back, the check fetches it
+again in a new Pod, which counts as a run.
 
 If an agent Pod is deleted before its run finishes, kube creates it again,
 and the agent runs again. The check counts that as another run. When
@@ -466,17 +470,20 @@ another kind of commit from them with `agent.ApplyFiles`.
 
 ### Run agents from a controller
 
-A controller that isn't a check, such as one that resolves merge conflicts,
-runs an agent with `Runner.RunJob`. Its `Job` names the repository, the
+A controller, or a check that needs a `Job` that `Run` doesn't build, runs
+an agent with `Runner.RunJob`. Its `Job` names the repository, the
 Secret with the repository's credentials, the commits to check out, the
 task, the agent's tools, and the runner's image if it isn't
 `-agent-image`. `Run` builds a `Job` from a check's branch, so both start
 the same Pods, within the same `-max-pods` and `-max-runs-per-day` limits.
 
-Call `RunJob` on each reconcile with the same `JobState`, which names the
-run's Pod and counts the runs that it started. Keep the state with the
-object that the job is for, such as in the object's status, so a
-controller that restarts follows the same run. `RunJob` declares the Pod
+Call `RunJob` on each reconcile with the `JobState` that the last call
+left. The state names the run's Pod and counts the runs that `RunJob`
+started and didn't give back. `RunJob` changes it on each call, so store
+all of it after each call with the object that the job is for, such as in
+the object's status, so a controller that restarts follows the same run.
+`MarshalText` encodes the state as one string, such as for one of a check's
+outputs, and `UnmarshalText` decodes it. `RunJob` declares the Pod
 with `kube.Own` and returns a `JobStatus`. Until the run is `Done`, the
 status's `Message` says how the run is going. Once it's `Done`, `Result`
 holds the agent's result, or is nil if the run failed, and `Message` says
@@ -484,18 +491,25 @@ why. If the run failed after the agent started, `Failed` holds the runner's
 report, with its `Error` and what the agent used. `RunJob` reports that
 once and sets the state's `Done`. Later calls for the same `Job` report
 the run as `Done` without a `Result` or `Failed` and don't declare the
-Pod, so kube deletes it.
+Pod, so kube deletes it in the next reconcile. `RunJob` doesn't ask for
+that reconcile, so call `kube.RequeueAfter` to delete the Pod soon. Until
+you store the state with `Done`, each call reports the result again and
+keeps the Pod. So if acting on the result fails, store the state with
+`Done` set to false, and the next call reports the result again.
 
 A `Job` with other commits, another task, other tools, or another image
 starts a new run, up to the job's `MaxRuns`. A deploy that changes the
 agent Pods' spec starts an unfinished run again in a new Pod, which takes
 a place in `-max-runs-per-day` but doesn't count toward `MaxRuns`. If the
 Pod finds that the branch moved, the agent doesn't run, and `RunJob` gives
-the run back and waits for a `Job` with the new head. If the run's Pod is
-deleted before the run is `Done`, kube creates it again and the agent runs
-again, so `RunJob` counts another run. When `MaxRuns` or
-`-max-runs-per-day` allows no more, `RunJob` ends the run instead, and
-kube doesn't create the Pod again.
+the run back and waits a minute for a `Job` with the new head. While the
+run waits, the status's `Moved` is true. If a call after that minute has
+the same `Job`, `RunJob` fetches the commits again in a new Pod, which
+counts as a run. A run ends after three Pods fail to fetch the commits or
+find that the branch moved. If the run's Pod is deleted before the run is
+`Done`, kube creates it again and the agent runs again, so `RunJob` counts
+another run. When `MaxRuns` or `-max-runs-per-day` allows no more,
+`RunJob` ends the run instead, and kube doesn't create the Pod again.
 
 Agents get no shell. The tools that an agent can have are `read`, `grep`,
 `glob`, and `ls`, plus `edit` and `delete` when the task edits files, and

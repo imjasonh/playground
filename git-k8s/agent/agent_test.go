@@ -152,6 +152,16 @@ func (f *fixture) start() *Pod {
 
 func (f *fixture) state() *gitk8s.CheckResult { return f.b.Status.Checks.Result }
 
+// jobState decodes the run's state from the check's outputs.
+func (f *fixture) jobState() JobState {
+	f.t.Helper()
+	var st JobState
+	if err := st.UnmarshalText([]byte(f.state().Outputs["state"])); err != nil {
+		f.t.Fatal(err)
+	}
+	return st
+}
+
 func review(verdict string, files ...File) []byte {
 	cost, charged := 1.25, 0.5
 	b, _ := json.Marshal(Result{
@@ -181,7 +191,7 @@ func finished(p *Pod, digest string) *Pod {
 func TestReportsTheAgentsVerdict(t *testing.T) {
 	f := newFixture(t, "")
 	p := f.start()
-	if res := f.state(); res.Outputs["runs"] != "1" || res.Outputs["attempt"] != "1" || res.Outputs["base"] != f.base {
+	if res := f.state(); res.Outputs["runs"] != "1" || f.jobState() != (JobState{Runs: 1, Pod: p.Name, Attempt: 1}) || res.Outputs["base"] != f.base {
 		t.Fatalf("outputs = %v, want run 1, attempt 1, and the merge base", res.Outputs)
 	}
 
@@ -220,6 +230,27 @@ func TestReportsTheAgentsVerdict(t *testing.T) {
 	rec = f.reconcile(p)
 	if pods := kube.Owned[Pod](rec); len(pods) != 0 || f.state().State != gitk8s.Failed {
 		t.Errorf("owned Pods = %d and result = %+v, want the final result and no Pod", len(pods), f.state())
+	}
+}
+
+func TestFollowsARunByItsState(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	res := f.state()
+	res.Outputs["runs"], res.Outputs["pod"] = "0", "review-0000000000000000"
+	rec := f.reconcile(p)
+	if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || f.jobState() != (JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: p.UID}) {
+		t.Fatalf("state = %+v with %d owned Pods, want run 1 in the same Pod, whatever the runs and pod outputs say", f.jobState(), len(pods))
+	}
+
+	t.Log("The next head's run counts on from the state too.")
+	f.reconcile(finished(p, f.serve(review(Fail), p.UID)))
+	f.state().Outputs["runs"] = "0"
+	f.work.Write("a.txt", "one\nnext\n")
+	f.b.Spec.Head = f.work.Commit("next")
+	f.work.Push("c/x")
+	if f.start(); f.jobState().Runs != 2 {
+		t.Errorf("state = %+v, want run 2", f.jobState())
 	}
 }
 
@@ -482,6 +513,85 @@ func TestReportsPodsThatFail(t *testing.T) {
 	})
 }
 
+func TestCountsTheGraceFromWhenAContainerCanStart(t *testing.T) {
+	now := time.Now()
+	pull := func(name string) ContainerStatus {
+		return ContainerStatus{Name: name, State: ContainerState{Waiting: &Waiting{Reason: "ErrImagePull", Message: "unexpected status code 503 Service Unavailable"}}}
+	}
+	prepared := func(at time.Time) ContainerStatus {
+		return ContainerStatus{Name: "prepare", State: terminated(&Terminated{Reason: "Completed", FinishedAt: at})}
+	}
+	for _, tc := range []struct {
+		name   string
+		status PodStatus
+		// left is how long the container has before the run fails, or 0
+		// if the run fails now.
+		left time.Duration
+	}{{
+		name:   "prepare in a Pod that waited for a node",
+		status: PodStatus{Phase: "Pending", StartTime: now.Add(-30 * time.Second), InitContainerStatuses: []ContainerStatus{pull("prepare")}},
+		left:   stuckAfter - 30*time.Second,
+	}, {
+		name:   "prepare in a Pod that started long ago",
+		status: PodStatus{Phase: "Pending", StartTime: now.Add(-stuckAfter), InitContainerStatuses: []ContainerStatus{pull("prepare")}},
+	}, {
+		name:   "agent after prepare finished",
+		status: PodStatus{Phase: "Pending", StartTime: now.Add(-9 * time.Minute), InitContainerStatuses: []ContainerStatus{prepared(now.Add(-time.Minute)), pull("agent")}},
+		left:   stuckAfter - time.Minute,
+	}, {
+		name:   "agent long after prepare finished",
+		status: PodStatus{Phase: "Pending", StartTime: now.Add(-9 * time.Minute), InitContainerStatuses: []ContainerStatus{prepared(now.Add(-stuckAfter)), pull("agent")}},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			p := f.start()
+			p.CreationTimestamp = now.Add(-10 * time.Minute)
+			p.Status = tc.status
+			rec := f.reconcile(p)
+			res, d := f.state(), rec.RequeueAfter()
+			switch {
+			case tc.left == 0 && (res.State != gitk8s.Failed || !strings.Contains(res.Message, "couldn't start in 5 minutes")):
+				t.Errorf("result = %+v, want Failed", res)
+			case tc.left > 0 && (res.State != gitk8s.Running || d > tc.left || d < tc.left-10*time.Second):
+				t.Errorf("result = %+v and RequeueAfter = %v, want Running and a reconcile in %v", res, d, tc.left)
+			}
+		})
+	}
+}
+
+func TestEndsARunWhosePodCantBeScheduled(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	why := "0/3 nodes are available: 3 Insufficient ephemeral-storage."
+	p.CreationTimestamp = time.Now().Add(-time.Minute)
+	p.Status = PodStatus{Phase: "Pending", Conditions: []PodCondition{{Type: "PodScheduled", Status: "False", Reason: "Unschedulable", Message: why}}}
+	rec := f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "Pod "+p.Name+" can't be scheduled: "+why {
+		t.Fatalf("result = %+v, want Running with the scheduler's message", res)
+	}
+	if d := rec.RequeueAfter(); d > stuckAfter-time.Minute || d < stuckAfter-time.Minute-10*time.Second {
+		t.Errorf("RequeueAfter = %v, want a reconcile when the Pod is %v old", d, stuckAfter)
+	}
+
+	t.Log("A scheduled Pod that's still pending isn't stuck.")
+	p.Status.Conditions[0].Status = "True"
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "Pod "+p.Name+" is Pending" {
+		t.Fatalf("result = %+v, want the Pod Pending", res)
+	}
+
+	t.Log("Once the Pod is stuckAfter old, the run ends, and the next reconcile doesn't declare the Pod, so kube deletes it and frees its place in -max-pods.")
+	p.Status.Conditions[0].Status = "False"
+	p.CreationTimestamp = time.Now().Add(-2 * time.Hour)
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Failed || res.Message != "Pod "+p.Name+" couldn't be scheduled in 5 minutes: "+why || res.Outputs["runs"] != "1" {
+		t.Fatalf("result = %+v, want Failed after 1 run", res)
+	}
+	if rec := f.reconcile(p); len(kube.Owned[Pod](rec)) != 0 {
+		t.Error("the next reconcile must stop declaring the Pod")
+	}
+}
+
 func TestReportsWhatAFailedRunUsed(t *testing.T) {
 	f := newFixture(t, "")
 	p := f.start()
@@ -495,9 +605,10 @@ func TestReportsWhatAFailedRunUsed(t *testing.T) {
 	if res.State != gitk8s.Failed || res.Message != "the agent failed in Pod "+p.Name+": the agent didn't finish in 900s" || f.result != nil {
 		t.Fatalf("result = %+v and Run returned %+v, want Failed with the error and no result", res, f.result)
 	}
+	state, _ := JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: p.UID}.MarshalText()
 	want := map[string]string{
 		"model": "fake:composer-2.5", "inputTokens": "900", "outputTokens": "10", "cacheReadTokens": "0", "cacheWriteTokens": "0",
-		"costCents": "0.75", "runs": "1", "pod": p.Name,
+		"costCents": "0.75", "runs": "1", "pod": p.Name, "state": string(state),
 	}
 	if !maps.Equal(res.Outputs, want) {
 		t.Errorf("outputs = %v, want %v", res.Outputs, want)
@@ -511,8 +622,8 @@ func TestCountsAPodThatsCreatedAgain(t *testing.T) {
 	f.r.MaxRunsPerDay = 2
 	p := f.start()
 	f.reconcile(p)
-	if res := f.state(); res.Outputs["podUID"] != p.UID {
-		t.Fatalf("outputs = %v, want the Pod's UID", res.Outputs)
+	if st := f.jobState(); st.UID != p.UID {
+		t.Fatalf("state = %+v, want the Pod's UID", st)
 	}
 
 	t.Log("kube creates a deleted Pod again, which runs the agent again.")
@@ -522,7 +633,7 @@ func TestCountsAPodThatsCreatedAgain(t *testing.T) {
 	}
 	p.UID = "uid-again"
 	f.reconcile(p)
-	if res := f.state(); res.State != gitk8s.Running || res.Outputs["runs"] != "2" || res.Outputs["podUID"] != p.UID {
+	if res := f.state(); res.State != gitk8s.Running || res.Outputs["runs"] != "2" || f.jobState().UID != p.UID {
 		t.Fatalf("outputs = %v, want run 2 in the new Pod", res.Outputs)
 	}
 	f.reconcile(finished(p, f.serve(review(Pass), p.UID)))
@@ -554,8 +665,16 @@ func TestWaitsForADeletedPodToGo(t *testing.T) {
 	}
 	p.DeletionTimestamp, p.Status, p.UID = nil, PodStatus{}, "uid-again"
 	f.reconcile(p)
-	if res := f.state(); res.State != gitk8s.Running || res.Outputs["runs"] != "2" || res.Outputs["podUID"] != p.UID {
+	if res := f.state(); res.State != gitk8s.Running || res.Outputs["runs"] != "2" || f.jobState().UID != p.UID {
 		t.Fatalf("result = %+v, want run 2 in the new Pod", res)
+	}
+
+	t.Log("A Pod that kube created again is another run, even if it's being deleted when the check first sees it.")
+	p.DeletionTimestamp, p.UID = &deleted, "uid-third"
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "Pod "+p.Name+" is being deleted, so kube creates it again once it's gone" ||
+		res.Outputs["runs"] != "3" || f.jobState().UID != p.UID {
+		t.Errorf("result = %+v, want run 3 in the Pod that's being deleted", res)
 	}
 }
 
@@ -641,7 +760,7 @@ func TestRetriesPreparingTheSource(t *testing.T) {
 		rec := f.reconcile(p)
 		res := f.state()
 		pods := kube.Owned[Pod](rec)
-		if res.State != gitk8s.Running || res.Outputs["attempt"] != strconv.Itoa(attempt) || names[res.Outputs["pod"]] || res.Outputs["runs"] != "1" ||
+		if res.State != gitk8s.Running || f.jobState().Attempt != attempt || names[res.Outputs["pod"]] || res.Outputs["runs"] != "1" ||
 			len(pods) != 2 || pods[1].Name != res.Outputs["pod"] {
 			t.Fatalf("result = %+v with %d owned Pods, want attempt %d in a new Pod of the same run, declared at once", res, len(pods), attempt)
 		}
@@ -671,24 +790,17 @@ func TestWaitsForTheNewHeadWhenTheBranchMoved(t *testing.T) {
 	t.Log("The agent doesn't run on a branch that moved, so the run doesn't count, once.")
 	moved := "c/x no longer points to " + f.b.Spec.Head
 	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
-		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved})},
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved, FinishedAt: time.Now()})},
 	}}
 	for range 2 {
 		rec := f.reconcile(p)
-		if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["pod"] != p.Name || res.Outputs["attempt"] != "1" ||
-			res.Outputs["runs"] != "1" || res.Outputs["refunded"] != p.UID {
+		if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting up to a minute for a run on the new commits: "+moved || res.Outputs["pod"] != p.Name ||
+			f.jobState() != (JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: p.UID, Refunded: p.UID}) {
 			t.Fatalf("result = %+v, want Running in the same Pod with the run given back", res)
 		}
-		if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || rec.RequeueAfter() != 0 {
-			t.Fatalf("owned Pods = %d and RequeueAfter = %v, want the same Pod and no retry", len(pods), rec.RequeueAfter())
+		if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || rec.RequeueAfter() < 59*time.Second || rec.RequeueAfter() > time.Minute {
+			t.Fatalf("owned Pods = %d and RequeueAfter = %v, want the same Pod and a retry in about a minute", len(pods), rec.RequeueAfter())
 		}
-	}
-
-	t.Log("A deploy doesn't start the run again in a new Pod, which would find the branch moved too.")
-	f.r.Model = "composer-3"
-	rec := f.reconcile(p)
-	if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 0 {
-		t.Fatalf("result = %+v, want Running without a Pod", res)
 	}
 
 	t.Log("The new head starts a new run, which the limits still allow.")
@@ -697,6 +809,44 @@ func TestWaitsForTheNewHeadWhenTheBranchMoved(t *testing.T) {
 	f.work.Push("c/x")
 	if q := f.start(); q.Name == p.Name || f.state().Outputs["runs"] != "2" {
 		t.Errorf("outputs = %v, want run 2 in a new Pod", f.state().Outputs)
+	}
+}
+
+func TestPreparesTheSourceAgainWhenTheHeadStaysTheSame(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 1
+	p := f.start()
+	moved := "c/x no longer points to " + f.b.Spec.Head
+	for attempt := 1; ; attempt++ {
+		t.Logf("Attempt %d finds that the branch moved, and then the branch moves back.", attempt)
+		exited := &Terminated{ExitCode: movedStatus, Message: moved, FinishedAt: time.Now()}
+		p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{{Name: "prepare", State: terminated(exited)}}}
+		rec := f.reconcile(p)
+		if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting up to a minute for a run on the new commits: "+moved ||
+			res.Outputs["runs"] != "0" || len(f.r.day.starts) != 0 || rec.RequeueAfter() < 59*time.Second || rec.RequeueAfter() > time.Minute {
+			t.Fatalf("result = %+v with %d runs in the last day and RequeueAfter = %v, want the run given back and a retry in about a minute", res, len(f.r.day.starts), rec.RequeueAfter())
+		}
+
+		exited.FinishedAt = time.Now().Add(-movedWait)
+		rec = f.reconcile(p)
+		res := f.state()
+		if attempt == prepareAttempts {
+			if res.State != gitk8s.Failed || res.Message != "couldn't prepare the source in 3 attempts: "+moved || res.Outputs["runs"] != "0" || len(f.r.day.starts) != 0 {
+				t.Errorf("result = %+v with %d runs in the last day, want Failed without a run", res, len(f.r.day.starts))
+			}
+			return
+		}
+		pods := kube.Owned[Pod](rec)
+		if len(pods) != 2 || pods[1].Name != res.Outputs["pod"] {
+			t.Fatalf("owned Pods = %d and outputs = %v, want the old Pod and the new one", len(pods), res.Outputs)
+		}
+		next := pods[1]
+		want := "preparing the source again in Pod " + next.Name + ", because the run is still for the same commits after Pod " + p.Name + " found that " + moved
+		if st := f.jobState(); res.State != gitk8s.Running || res.Message != want || st.Runs != 1 || st.Attempt != attempt+1 || st.UID != "" || len(f.r.day.starts) != 1 {
+			t.Fatalf("result = %+v with %d runs in the last day, want attempt %d as a new run", res, len(f.r.day.starts), attempt+1)
+		}
+		p = next
+		p.Namespace, p.UID = "default", "uid-"+p.Name
 	}
 }
 
@@ -751,7 +901,7 @@ func TestRestartsARunWhenAFlagChanges(t *testing.T) {
 	rec := f.reconcile(p)
 	pods := kube.Owned[Pod](rec)
 	if res := f.state(); len(pods) != 1 || pods[0].Name == p.Name || res.State != gitk8s.Running || res.Message != "started Pod "+pods[0].Name ||
-		res.Outputs["pod"] != pods[0].Name || res.Outputs["runs"] != "1" || res.Outputs["podUID"] != "" {
+		res.Outputs["pod"] != pods[0].Name || res.Outputs["runs"] != "1" || f.jobState().UID != "" {
 		t.Fatalf("result = %+v with %d owned Pods, want run 1 in a new Pod", res, len(pods))
 	}
 	q := pods[0]
@@ -868,5 +1018,16 @@ func TestWindow(t *testing.T) {
 	n := len(w.starts)
 	if _, ok := w.take(t0, 0); !ok || len(w.starts) != n {
 		t.Error("a limit of 0 means no limit, so take records nothing")
+	}
+
+	t.Log("giveBack forgets a run once for each Pod, and forgets the Pod after a day.")
+	if !w.giveBack(t0.Add(25*time.Hour), "uid-1") || len(w.starts) != n-1 {
+		t.Fatalf("giveBack didn't forget a run: %d runs, want %d", len(w.starts), n-1)
+	}
+	if w.giveBack(t0.Add(26*time.Hour), "uid-1") || len(w.starts) != n-1 {
+		t.Errorf("giveBack forgot another run for the same Pod: %d runs, want %d", len(w.starts), n-1)
+	}
+	if !w.giveBack(t0.Add(49*time.Hour), "uid-2") || len(w.given) != 1 {
+		t.Errorf("giveBack holds %d Pods, want only the one from the last day", len(w.given))
 	}
 }

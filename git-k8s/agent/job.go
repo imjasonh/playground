@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -44,8 +45,9 @@ type Job struct {
 // Checkout is the commits that a job's agent works on.
 type Checkout struct {
 	// Branch points to Head. If the Pod finds it elsewhere, the agent
-	// doesn't run, and the run waits for a Job with the new head without
-	// counting toward the run limits.
+	// doesn't run, so the run doesn't count toward the run limits, and the
+	// run waits a minute for a Job with the new head before it fetches
+	// Head again in a new Pod.
 	Branch string
 	Head   string
 	// Parent names the branch that Branch lands on.
@@ -56,31 +58,54 @@ type Checkout struct {
 }
 
 // JobState is what RunJob needs to follow a job's run from one call to the
-// next. Keep it with the object that the job is for, such as in a check's
-// outputs, and pass it to each call.
+// next. RunJob changes it on each call, so store all of it after each
+// call, such as in one of a check's outputs with MarshalText, and pass it
+// to the next call.
 type JobState struct {
 	// Runs counts the runs that RunJob started and didn't give back.
-	Runs int
+	Runs int `json:"runs,omitempty"`
 	// Pod names the run's Pod, and Attempt counts its attempts at
 	// preparing the source.
-	Pod     string
-	Attempt int
+	Pod     string `json:"pod,omitempty"`
+	Attempt int    `json:"attempt,omitempty"`
 	// UID is the UID of the run's Pod when RunJob last saw it, so RunJob
 	// can tell when kube created the Pod again.
-	UID string
+	UID string `json:"uid,omitempty"`
 	// Refunded is the UID of the run's Pod that found that the branch
 	// moved. Its agent didn't run, so RunJob gave back the run, once.
-	Refunded string
+	Refunded string `json:"refunded,omitempty"`
 	// Done is true once RunJob reported that the run finished. Later calls
 	// for the same job report the run as done again, without its result,
-	// and don't declare its Pod.
-	Done bool
+	// and don't declare its Pod. To get the result again from the next
+	// call, such as when acting on it failed, store the state with Done
+	// set to false.
+	Done bool `json:"done,omitempty"`
 }
+
+// MarshalText encodes all of the state as one value, which UnmarshalText
+// decodes.
+func (s JobState) MarshalText() ([]byte, error) { return json.Marshal(jobState(s)) }
+
+// UnmarshalText decodes a state that MarshalText encoded, or the zero
+// state from empty text, such as an output that a check hasn't written.
+func (s *JobState) UnmarshalText(text []byte) error {
+	v := jobState{}
+	if len(text) > 0 {
+		if err := json.Unmarshal(text, &v); err != nil {
+			return fmt.Errorf("decoding an agent's job state: %w", err)
+		}
+	}
+	*s = JobState(v)
+	return nil
+}
+
+// jobState is JobState without its methods, so json encodes its fields.
+type jobState JobState
 
 // JobStatus is how a job's run stands.
 type JobStatus struct {
-	// Done is true once the run finished. Then kube deletes its Pod, and
-	// RunJob reports the run as done until the job changes.
+	// Done is true once the run finished. Later calls with the stored state
+	// report the run as done until the job changes.
 	Done bool
 	// Message says how the run is going, or why it failed.
 	Message string
@@ -89,16 +114,23 @@ type JobStatus struct {
 	// Failed is the runner's report on a run that failed after the agent
 	// started, with the Error and what the agent used, or nil.
 	Failed *Result
+	// Moved is true when the run waits because a branch moved before the
+	// Pod fetched it.
+	Moved bool
 }
 
 // RunJob starts or follows job's run, and reports how it stands. It
-// declares the run's Pod with kube.Own, so call it on each reconcile until
-// the run is done. A JobState whose Pod was for another job, such as one
-// with other commits or another task, starts a new run. One whose Pod has
-// another spec, such as after a deploy with other flags, starts an
-// unfinished run again in a new Pod, which doesn't count as another run.
-// If the run's Pod is deleted before the run finishes, kube creates it
-// again, which runs the agent again, so RunJob counts another run.
+// declares the run's Pod with kube.Own, so call it on each reconcile, with
+// the state that the last call left, until the run is done. Then calls
+// with the stored state don't declare the Pod, so kube deletes it in the
+// next reconcile. RunJob doesn't ask for that reconcile, so call
+// kube.RequeueAfter to delete the Pod soon. A JobState whose Pod was for
+// another job, such as one with other commits or another task, starts a
+// new run. One whose Pod has another spec, such as after a deploy with
+// other flags, starts an unfinished run again in a new Pod, which doesn't
+// count as another run. If the run's Pod is deleted before the run
+// finishes, kube creates it again, which runs the agent again, so RunJob
+// counts another run.
 func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 	if st.Done && sameJob(r.jobPod(job, max(st.Attempt, 1)).Name, st.Pod) {
 		return JobStatus{Done: true, Message: fmt.Sprintf("the run in Pod %s already finished", st.Pod)}
@@ -106,11 +138,6 @@ func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 	s := r.runJob(ctx, job, st)
 	if s.Done {
 		st.Done = true
-		if st.Pod != "" {
-			// RunJob doesn't declare a done run's Pod, so kube deletes it
-			// on the next reconcile.
-			kube.RequeueAfter(ctx, time.Second)
-		}
 	}
 	return s
 }
@@ -163,12 +190,12 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 // with another spec, such as after a deploy with other flags. The agent
 // starts over, so the restart takes a place in -max-runs-per-day, but it
 // doesn't count toward the job's runs, so a deploy can't stop a run whose
-// job has none left.
+// job has none left. A run whose Pod found that the branch moved has no
+// agent to start over, so it prepares the source again at once.
 func (x *run) restart(ctx context.Context, p *Pod) JobStatus {
 	if st := x.st; st.Refunded != "" && st.Refunded == st.UID {
-		// A new Pod would find that the branch moved, too.
 		c := x.job.Checkout
-		return x.status("waiting for a run on the new commits: %s no longer points to %s", c.Branch, c.Head)
+		return x.prepareAgain(ctx, fmt.Sprintf("%s no longer points to %s", c.Branch, c.Head))
 	}
 	if wait, ok := x.r.day.take(time.Now(), x.r.MaxRunsPerDay); !ok {
 		kube.RequeueAfter(ctx, wait)
@@ -177,6 +204,37 @@ func (x *run) restart(ctx context.Context, p *Pod) JobStatus {
 	x.st.Pod, x.st.UID = p.Name, ""
 	x.started = true
 	return x.follow(ctx, p)
+}
+
+// prepareAgain starts the run's next attempt at preparing the source in a
+// new Pod, after the run's Pod found that the branch moved, as msg says,
+// and the job is still for the same commits, such as when the branch moved
+// back. That Pod's run was given back, so the attempt is a new run.
+func (x *run) prepareAgain(ctx context.Context, msg string) JobStatus {
+	r, st := x.r, x.st
+	if st.Attempt >= prepareAttempts {
+		return x.fail("couldn't prepare the source in %d attempts: %s", prepareAttempts, msg)
+	}
+	if why := x.usedAll(); why != "" {
+		return x.moved("not preparing the source again: %s", why)
+	}
+	next := r.jobPod(x.job, st.Attempt+1)
+	if n := r.unfinishedPods(ctx, x.job.Namespace, next.Name); r.MaxPods > 0 && n >= r.MaxPods {
+		kube.RequeueAfter(ctx, time.Minute)
+		return x.moved("waiting to start a Pod: %d agent Pods are running, and -max-pods is %d", n, r.MaxPods)
+	}
+	if wait, ok := r.day.take(time.Now(), r.MaxRunsPerDay); !ok {
+		kube.RequeueAfter(ctx, wait)
+		return x.moved("waiting to prepare the source again: %d agent runs started in the last 24 hours, the -max-runs-per-day limit", r.MaxRunsPerDay)
+	}
+	old := st.Pod
+	st.Runs++
+	st.Attempt++
+	st.Pod, st.UID = next.Name, ""
+	// A later reconcile takes a missing Pod to mean that kube couldn't
+	// create it, so declare the Pod in this one.
+	kube.Own(ctx, next)
+	return x.status("preparing the source again in Pod %s, because the run is still for the same commits after Pod %s found that %s", next.Name, old, msg)
 }
 
 // usedAll says why the run can't start another Pod, if it used all the runs
@@ -284,10 +342,19 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		case t.ExitCode == movedStatus:
 			if st.Refunded != pod.UID {
 				st.Refunded = pod.UID
-				st.Runs--
-				x.r.day.giveBack()
+				if x.r.day.giveBack(time.Now(), pod.UID) {
+					st.Runs--
+				}
 			}
-			return x.status("waiting for a run on the new commits: %s", msg)
+			since := t.FinishedAt
+			if since.IsZero() {
+				since = pod.CreationTimestamp
+			}
+			if wait := movedWait - time.Since(since); wait > 0 {
+				kube.RequeueAfter(ctx, wait)
+				return x.moved("waiting up to a minute for a run on the new commits: %s", msg)
+			}
+			return x.prepareAgain(ctx, msg)
 		case st.Attempt < prepareAttempts:
 			st.Attempt++
 			next := x.r.jobPod(x.job, st.Attempt)
@@ -310,8 +377,25 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		return x.fail("Pod %s stopped before the agent finished: %s", st.Pod, cmp.Or(s.Message, s.Reason, "no reason given"))
 	}
 	if t == nil {
-		msg, reason := blocked(s)
-		wait := stuckAfter - time.Since(pod.CreationTimestamp)
+		for _, c := range s.Conditions {
+			if c.Type != "PodScheduled" || c.Status != "False" {
+				continue
+			}
+			// activeDeadlineSeconds counts from when a Pod starts on a
+			// node, so a Pod that isn't scheduled holds a -max-pods slot
+			// until the run ends.
+			why := cmp.Or(strings.TrimSpace(c.Message), c.Reason, "no reason given")
+			if wait := stuckAfter - time.Since(pod.CreationTimestamp); wait > 0 {
+				kube.RequeueAfter(ctx, wait)
+				return x.status("Pod %s can't be scheduled: %s", st.Pod, why)
+			}
+			return x.fail("Pod %s couldn't be scheduled in %d minutes: %s", st.Pod, int(stuckAfter/time.Minute), why)
+		}
+		msg, reason, since := blocked(s)
+		if since.IsZero() {
+			since = pod.CreationTimestamp
+		}
+		wait := stuckAfter - time.Since(since)
 		switch {
 		case reason == "InvalidImageName":
 			return x.fail("Pod %s can't start: %s", st.Pod, msg)
@@ -363,6 +447,13 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 
 func (x *run) status(format string, args ...any) JobStatus {
 	return JobStatus{Message: fmt.Sprintf(format, args...)}
+}
+
+// moved is the status of a run that waits because the branch moved.
+func (x *run) moved(format string, args ...any) JobStatus {
+	s := x.status(format, args...)
+	s.Moved = true
+	return s
 }
 
 // fail finishes the run without a result.
