@@ -1839,6 +1839,40 @@ func TestCheckRunsUpdatedWithoutAnswers(t *testing.T) {
 	}
 }
 
+// TestCheckRunsListedWithoutAnswers checks the check run that GitHub
+// creates without its answer arriving, after the branch moves on and the
+// answer to the list of the check runs on the commit that it left is lost
+// too. The next reconcile has to list them again and cancel that check
+// run, which would otherwise stay in progress where no branch is.
+func TestCheckRunsListedWithoutAnswers(t *testing.T) {
+	for _, lost := range []string{"Dropped", "BadGateway"} {
+		t.Run(lost, func(t *testing.T) {
+			s := newSharing(t, 2)
+			var listing atomic.Bool
+			lose := s.losing(lost == "BadGateway", func(r *http.Request) bool {
+				if listing.Load() {
+					return r.Method+" "+r.URL.Path == s.get(0)
+				}
+				return r.Method+" "+r.URL.Path == post
+			})
+			s.step("c/x", s.result(0, gitk8s.Passed, "1"), s.get(0), post)
+
+			t.Log("c/x's check starts again, and GitHub creates a check run for it, but the answer is lost.")
+			s.p.set("c/x", s.result(0, gitk8s.Running, "2"))
+			s.loses("c/x", lose)
+
+			t.Log("c/x moves on, and the answer is lost when its reconcile lists the check runs on the commit that it left.")
+			listing.Store(true)
+			s.p.set("c/x", s.result(1, gitk8s.Running, "3"))
+			s.loses("c/x", lose)
+
+			t.Log("The next reconcile lists them again and cancels the check run that GitHub created.")
+			s.again("c/x", s.get(0), patch+"2", s.get(1), post)
+			s.wantAgreement(s.p.branches)
+		})
+	}
+}
+
 func TestCheckRunsPauseWaitingReconciles(t *testing.T) {
 	gh, w, main := newGitHub(t)
 	w.Branch("c/x", main)
