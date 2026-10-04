@@ -157,6 +157,24 @@ exit 255
 	}
 }
 
+func TestSSHNeedsPlainTMPDIR(t *testing.T) {
+	key := &git.SSHKey{PrivateKey: []byte("private key\n"), KnownHosts: []byte("known hosts\n")}
+	for _, c := range []string{`"`, `\`, "%", "$"} {
+		tmp := filepath.Join(t.TempDir(), "a"+c+"b")
+		if err := os.Mkdir(tmp, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("TMPDIR", tmp)
+		_, err := (&git.Git{}).LsRemote(t.Context(), git.Remote{URL: "ssh://git@127.0.0.1:1/app.git", SSH: key})
+		if err == nil || !strings.Contains(err.Error(), "ssh can't use key files in "+tmp+",") {
+			t.Errorf("TMPDIR %s: err = %v, want one that names it", tmp, err)
+		}
+		if left, err := os.ReadDir(tmp); err != nil || len(left) != 0 {
+			t.Errorf("%s holds %v, %v after the command; want nothing", tmp, left, err)
+		}
+	}
+}
+
 func TestTimeoutWithSilentServer(t *testing.T) {
 	// This server accepts connections and never answers.
 	l, err := net.Listen("tcp", "127.0.0.1:0")

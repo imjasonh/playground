@@ -174,6 +174,9 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 			return result{}, err
 		}
 		defer os.RemoveAll(dir)
+		if strings.ContainsAny(dir, `"\%$`) {
+			return result{}, fmt.Errorf("ssh can't use key files in %s, because ssh treats \", \\, %%, and $ in paths specially", filepath.Dir(dir))
+		}
 		// ssh's errors name these files, so they're named after a Secret's
 		// keys.
 		key, hosts := filepath.Join(dir, "ssh-privatekey"), filepath.Join(dir, "known_hosts")
