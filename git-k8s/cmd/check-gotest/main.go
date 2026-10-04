@@ -91,7 +91,12 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	}
 	pod := kube.Own(ctx, testPod(in, name))
 	if pod == nil {
-		return running("started Pod %s", name), nil
+		// kube creates the Pod after run returns, and retries with backoff
+		// when it can't, for example because an admission policy denies it.
+		if err := kube.LastError(ctx); err != nil {
+			return running("starting Pod %s; the last try failed: %v", name, err), nil
+		}
+		return running("starting Pod %s", name), nil
 	}
 	switch pod.Status.Phase {
 	case "Succeeded":
