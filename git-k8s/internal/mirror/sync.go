@@ -1,6 +1,7 @@
 package mirror
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -83,7 +85,7 @@ func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOption
 		return &Report{}, nil
 	}
 
-	s := &syncer{repo: e.repo, remote: sync.OnceValues(remoteOrError(o.Remote))}
+	s := &syncer{repo: e.repo, remote: sync.OnceValues(remoteOrError(o.Remote)), memo: &e.memo, timeout: m.compareLimit()}
 	rep := &Report{}
 	if o.Fetch || refetch || !e.seeded.Load() {
 		if err := s.fetch(ctx); err != nil && !e.seeded.Load() {
@@ -154,7 +156,9 @@ func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOption
 // Divergence returns how branch diverged between repo's copy and the
 // external repository, or nil if it didn't. A branch diverges when each
 // side changed it since they last agreed, and neither side's head keeps
-// the other side's changes.
+// the other side's changes. Divergence shares each branch's last decision
+// with Sync, so it doesn't compare heads that a sync compared, and returns
+// the same error for heads that a sync couldn't compare.
 func (m *Mirror) Divergence(ctx context.Context, repo *gitk8s.Repository, branch string) (*gitk8s.Divergence, error) {
 	r, err := m.Open(ctx, repo)
 	if err != nil {
@@ -166,7 +170,7 @@ func (m *Mirror) Divergence(ctx context.Context, repo *gitk8s.Repository, branch
 		return nil, err
 	}
 	head, down, synced := refs[headsPrefix+branch], refs[downstreamPrefix+branch], refs[syncedPrefix+branch]
-	act, err := decide(ctx, r.Repo, head, down, synced)
+	act, err := m.entry(repo).memo.decide(ctx, r.Repo, m.compareLimit(), branch, head, down, synced)
 	if err != nil || act != diverged {
 		return nil, err
 	}
@@ -220,9 +224,82 @@ func decide(ctx context.Context, r *git.Repo, m, d, s string) (action, error) {
 	return diverged, nil
 }
 
+// compareLimit returns the longest that deciding what to do with one
+// branch may take.
+func (m *Mirror) compareLimit() time.Duration {
+	return cmp.Or(m.compareTimeout, 2*m.Git.MaxDuration())
+}
+
+// memo remembers the last decision for each of a copy's branches.
+type memo struct {
+	mu   sync.Mutex
+	last map[string]decision
+}
+
+// decision is what decide said about a branch whose heads were m, d, and
+// s.
+type decision struct {
+	m, d, s string
+	act     action
+	err     error
+}
+
+// decide returns what to do with branch name, whose heads in r are m, d,
+// and s, as the package's decide says, or failed and why if comparing the
+// heads fails or takes longer than timeout. While the heads stay the same,
+// it returns the branch's last decision again, even failed, so a branch
+// that's slow to compare costs one comparison until a head moves or the
+// process restarts. If ctx ends first, decide returns the error and
+// remembers nothing.
+func (mo *memo) decide(ctx context.Context, r *git.Repo, timeout time.Duration, name, m, d, s string) (action, error) {
+	mo.mu.Lock()
+	last, ok := mo.last[name]
+	mo.mu.Unlock()
+	if ok && last.m == m && last.d == d && last.s == s {
+		return last.act, last.err
+	}
+	dctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	act, err := decide(dctx, r, m, d, s)
+	switch {
+	case err == nil:
+	case ctx.Err() != nil:
+		return failed, err
+	case dctx.Err() != nil:
+		act, err = failed, fmt.Errorf("comparing the heads took longer than %v; to resolve it, push the same commit to the branch in the mirror and in the external repository", timeout)
+	default:
+		act = failed
+	}
+	mo.mu.Lock()
+	defer mo.mu.Unlock()
+	if mo.last == nil {
+		mo.last = map[string]decision{}
+	}
+	mo.last[name] = decision{m: m, d: d, s: s, act: act, err: err}
+	return act, err
+}
+
+// keep forgets the decisions about the branches that keep returns false
+// for.
+func (mo *memo) keep(keep func(name string) bool) {
+	mo.mu.Lock()
+	defer mo.mu.Unlock()
+	maps.DeleteFunc(mo.last, func(name string, _ decision) bool { return !keep(name) })
+}
+
+// reset forgets every decision.
+func (mo *memo) reset() {
+	mo.mu.Lock()
+	defer mo.mu.Unlock()
+	mo.last = nil
+}
+
 type syncer struct {
 	repo   *git.Repo
 	remote func() (git.Remote, error)
+	// memo is the copy's, and timeout limits each decision.
+	memo    *memo
+	timeout time.Duration
 }
 
 // branch is one branch's heads, as decide takes them, and what to do.
@@ -248,7 +325,8 @@ func (s *syncer) fetch(ctx context.Context) error {
 // plan reads every branch's heads and decides what to do with each. If
 // deciding fails for a branch, such as when git times out on a long
 // history, plan records the error on that branch, so one branch doesn't
-// keep the others from syncing.
+// keep the others from syncing. plan forgets the decisions about branches
+// that no longer exist.
 func (s *syncer) plan(ctx context.Context) ([]branch, error) {
 	refs, err := s.repo.Refs(ctx, "refs/heads", "refs/git-k8s/downstream/heads", "refs/git-k8s/synced/heads")
 	if err != nil {
@@ -283,14 +361,13 @@ func (s *syncer) plan(ctx context.Context) ([]branch, error) {
 	var out []branch
 	for _, name := range slices.Sorted(maps.Keys(byName)) {
 		b := byName[name]
-		if b.act, b.err = decide(ctx, s.repo, b.m, b.d, b.s); b.err != nil {
-			if ctx.Err() != nil {
-				return nil, b.err
-			}
-			b.act = failed
+		b.act, b.err = s.memo.decide(ctx, s.repo, s.timeout, name, b.m, b.d, b.s)
+		if b.err != nil && ctx.Err() != nil {
+			return nil, b.err
 		}
 		out = append(out, *b)
 	}
+	s.memo.keep(func(name string) bool { return byName[name] != nil })
 	return out, nil
 }
 

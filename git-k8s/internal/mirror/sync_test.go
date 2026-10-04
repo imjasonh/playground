@@ -1,6 +1,7 @@
 package mirror
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -783,6 +784,144 @@ func TestSyncReportsABranchItCantCompare(t *testing.T) {
 	wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"bad": extHead, "main": newer})
 	if d, err := w.m.Divergence(t.Context(), w.repo, "bad"); err == nil {
 		t.Errorf("Divergence = %+v; want an error, so the merge controller holds the branch", d)
+	}
+}
+
+// TestSyncDecidesAgainOnlyWhenAHeadMoves gives comparisons a deadline that
+// each one passes once a branch diverged, so deciding about the branch
+// again fails, and checks that Sync and Divergence don't decide again until
+// a head moves.
+func TestSyncDecidesAgainOnlyWhenAHeadMoves(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.pushExternal("gone", base)
+	w.sync(SyncOptions{})
+
+	ours, theirs := w.commit(base, "ours"), w.commit(base, "theirs")
+	w.pushCopy("main", ours)
+	w.pushExternal("main", theirs)
+	rep := w.sync(SyncOptions{Fetch: true, Push: true})
+	wantHeads(t, "Report.Diverged", rep.Diverged, map[string]string{"main": theirs})
+
+	w.m.compareTimeout = time.Nanosecond
+	rep = w.sync(SyncOptions{Fetch: true, Push: true})
+	wantHeads(t, "with the same heads, Report.Diverged", rep.Diverged, map[string]string{"main": theirs})
+	if len(rep.Failed) > 0 {
+		t.Errorf("with the same heads, Report.Failed = %v; want none", rep.Failed)
+	}
+	if d, err := w.m.Divergence(t.Context(), w.repo, "main"); err != nil || d == nil || d.Commit != theirs {
+		t.Errorf("with the same heads, Divergence(main) = %+v, %v; want the external head", d, err)
+	}
+
+	// A person merges the copy's head in the external repository, which
+	// moves the external head.
+	merged := w.merge(theirs, ours)
+	w.pushExternal("main", merged)
+	rep = w.sync(SyncOptions{Fetch: true, Push: true})
+	if err := rep.Failed["main"]; err == nil || len(rep.Diverged) > 0 {
+		t.Errorf("after the external head moved, Sync = %+v; want main failed, because deciding again passes the deadline", rep)
+	}
+
+	// With time to compare, a commit on top of the merge in the copy moves
+	// the copy's head, and Sync pushes it.
+	w.m.compareTimeout = 0
+	top := w.commit(merged, "top")
+	w.pushCopy("main", top)
+	rep = w.sync(SyncOptions{Fetch: true, Push: true})
+	if len(rep.Failed) > 0 || len(rep.Diverged) > 0 || len(rep.Pending) > 0 || rep.Err != nil {
+		t.Errorf("after the copy's head moved, Sync = %+v; want nothing failed, diverged, or pending", rep)
+	}
+	wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"gone": base, "main": top})
+
+	// A branch that's gone from both sides leaves no decision behind.
+	if _, ok := w.m.entry(w.repo).memo.last["gone"]; !ok {
+		t.Fatal("the mirror has no decision about gone")
+	}
+	w.pushExternal("gone", "")
+	w.pushCopy("gone", "")
+	w.sync(SyncOptions{Fetch: true, Push: true})
+	if _, ok := w.m.entry(w.repo).memo.last["gone"]; ok {
+		t.Error("after both sides deleted gone, the mirror still has a decision about it")
+	}
+}
+
+// TestSyncReportsAComparisonThatTakesTooLong gives comparisons a deadline
+// that each one passes. Sync reports the branch as failed, with how to
+// resolve it, and reports it again while the heads stay the same, even
+// with time to compare them. A restart, or a head that moves, decides
+// again.
+func TestSyncReportsAComparisonThatTakesTooLong(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.pushExternal("other", base)
+	w.sync(SyncOptions{})
+
+	ours, theirs := w.commit(base, "ours"), w.commit(base, "theirs")
+	w.pushCopy("main", ours)
+	w.pushExternal("main", theirs)
+	next := w.commit(base, "next")
+	w.pushExternal("other", next)
+	w.m.compareTimeout = time.Nanosecond
+	rep := w.sync(SyncOptions{Fetch: true, Push: true})
+	err := rep.Failed["main"]
+	if len(rep.Failed) != 1 || err == nil || !strings.Contains(err.Error(), "took longer than 1ns") || !strings.Contains(err.Error(), "push the same commit to the branch in the mirror and in the external repository") {
+		t.Fatalf("Report.Failed = %v; want main, for taking longer than 1ns, with how to resolve it", rep.Failed)
+	}
+	// A branch that needs no comparison still syncs.
+	wantHeads(t, "the copy's branches", w.copyRefs("refs/heads/"), map[string]string{"main": ours, "other": next})
+	wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"main": theirs, "other": next})
+
+	w.m.compareTimeout = 0
+	rep = w.sync(SyncOptions{Fetch: true, Push: true})
+	if got := rep.Failed["main"]; got == nil || got.Error() != err.Error() || len(rep.Diverged) > 0 {
+		t.Errorf("with time to compare the same heads, Sync = %+v; want main's failure again", rep)
+	}
+	if d, got := w.m.Divergence(t.Context(), w.repo, "main"); got == nil || got.Error() != err.Error() {
+		t.Errorf("Divergence(main) = %+v, %v; want main's failure", d, got)
+	}
+
+	restarted := &Mirror{Git: &git.Git{}, Dir: w.m.Dir}
+	if d, got := restarted.Divergence(t.Context(), w.repo, "main"); got != nil || d == nil || d.Commit != theirs {
+		t.Errorf("after a restart, Divergence(main) = %+v, %v; want the external head", d, got)
+	}
+
+	// Pushing the external head to the copy puts the same commit on both
+	// sides.
+	w.pushCopy("main", theirs)
+	rep = w.sync(SyncOptions{Fetch: true, Push: true})
+	if len(rep.Failed) > 0 || len(rep.Diverged) > 0 || len(rep.Pending) > 0 || rep.Err != nil {
+		t.Errorf("after pushing the external head to the copy, Sync = %+v; want nothing failed, diverged, or pending", rep)
+	}
+	wantHeads(t, "the copy's synced refs", w.copyRefs(syncedPrefix), map[string]string{"main": theirs, "other": next})
+}
+
+// TestDecideForgetsACanceledComparison checks that a comparison that ends
+// because its context ends, as when the process stops, isn't remembered.
+func TestDecideForgetsACanceledComparison(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.sync(SyncOptions{})
+	ours, theirs := w.commit(base, "ours"), w.commit(base, "theirs")
+	w.pushCopy("main", ours)
+	w.pushExternal("main", theirs)
+	w.sync(SyncOptions{Fetch: true})
+
+	r, err := w.m.Open(t.Context(), w.repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	var mo memo
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if act, err := mo.decide(ctx, r.Repo, time.Hour, "main", ours, theirs, base); err == nil {
+		t.Fatalf("decide with a canceled context = %v; want an error", act)
+	}
+	if act, err := mo.decide(t.Context(), r.Repo, time.Hour, "main", ours, theirs, base); err != nil || act != diverged {
+		t.Errorf("decide after a canceled one = %v, %v; want diverged", act, err)
 	}
 }
 

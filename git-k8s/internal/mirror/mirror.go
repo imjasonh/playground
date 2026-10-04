@@ -57,6 +57,10 @@ type Mirror struct {
 	// request. Zero means Git.MaxDuration, by when git has stopped reading
 	// the body anyway.
 	readTimeout time.Duration
+	// compareTimeout is the longest that deciding what to do with one
+	// branch may take, which bounds how long a sync holds the copy. Zero
+	// means twice Git.MaxDuration.
+	compareTimeout time.Duration
 
 	mu      sync.Mutex
 	entries map[string]*entry
@@ -74,6 +78,9 @@ type entry struct {
 	repo     *git.Repo
 	uid, url string
 	seeded   atomic.Bool
+	// memo holds the copy's last decision for each branch. A new copy or
+	// URL starts with none.
+	memo memo
 }
 
 func (m *Mirror) entry(repo *gitk8s.Repository) *entry {
@@ -165,6 +172,7 @@ func (m *Mirror) load(ctx context.Context, e *entry, repo *gitk8s.Repository, cr
 		return false, err
 	}
 	e.url = repo.Spec.URL
+	e.memo.reset()
 	return true, nil
 }
 
@@ -174,6 +182,7 @@ func (m *Mirror) load(ctx context.Context, e *entry, repo *gitk8s.Repository, cr
 func (m *Mirror) read(ctx context.Context, e *entry, uid string) (string, error) {
 	e.repo, e.uid, e.url = nil, "", ""
 	e.seeded.Store(false)
+	e.memo.reset()
 	if _, err := os.Stat(filepath.Join(e.dir, "HEAD")); errors.Is(err, fs.ErrNotExist) {
 		return "", nil
 	} else if err != nil {
@@ -313,6 +322,7 @@ func (m *Mirror) Delete(ctx context.Context, repo *gitk8s.Repository) error {
 	}
 	e.repo, e.uid, e.url = nil, "", ""
 	e.seeded.Store(false)
+	e.memo.reset()
 	if err := os.RemoveAll(e.dir); err != nil {
 		return err
 	}
