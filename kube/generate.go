@@ -332,7 +332,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			grantsFor(oti).add(g, r, "", "list", "watch", "delete")
 		}
 	}
-	funcs := slices.Sorted(maps.Keys(scopeVerbs))
+	funcs := append(slices.Sorted(maps.Keys(scopeVerbs)), "RequestToken", "ReviewToken")
 	o.logf("finding the types that %s reads and writes", pkg)
 	uses, warnings, err := analysis.Find(ctx, analysis.Config{
 		Dir: ".", Env: buildEnv(o.platforms[0]), Pattern: pkg,
@@ -345,6 +345,16 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		o.logf("warning: %s; add its permissions to the ClusterRole yourself", w)
 	}
 	for _, u := range uses {
+		switch u.Func {
+		case "ReviewToken":
+			cluster.add("authentication.k8s.io", "tokenreviews", "", "create")
+			continue
+		case "RequestToken":
+			// RequestToken asks only for the service account that the
+			// program runs as, which the Deployment names.
+			p.local.add("", "serviceaccounts/token", o.name, "create")
+			continue
+		}
 		ti := &typeInfo{}
 		if err := ti.parseTag(u.Type, u.Name, reflect.StructTag(u.Tag).Get("kube")); err != nil {
 			return nil, err

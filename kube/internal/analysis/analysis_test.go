@@ -35,6 +35,14 @@ type Resource[T any] interface{ *T }
 func Get[T any, P Resource[T]]() *T     { return nil }
 func Own[T any, P Resource[T]](p P) P   { return p }
 func Other[T any]()                     {}
+
+func Review() {}
+
+func Unreferenced() {}
+
+type Client struct{}
+
+func (Client) Request() {}
 `,
 		"types/types.go": `package types
 
@@ -65,6 +73,14 @@ func fetch[T any, P fw.Resource[T]]() *T { return fw.Get[T, P]() }
 
 // Twice reaches fw.Get through another generic function.
 func Twice[T any, P fw.Resource[T]]() { fetch[T, P](); fetch[T, P]() }
+
+// Review refers to fw.Review twice, and calls a method with the name of
+// one of Funcs.
+func Review() func() {
+	fw.Client{}.Request()
+	fw.Review()
+	return fw.Review
+}
 `,
 		"main.go": `package main
 
@@ -89,7 +105,7 @@ func main() {
 	})
 	uses, warnings, err := Find(t.Context(), Config{
 		Dir: dir, Env: append(os.Environ(), "CGO_ENABLED=0", "GOFLAGS=-mod=mod"), Pattern: "example.com/prog",
-		Package: "example.com/prog/fw", Funcs: []string{"Get", "Own"}, Marker: "Object",
+		Package: "example.com/prog/fw", Funcs: []string{"Get", "Own", "Review", "Request", "Unreferenced"}, Marker: "Object",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -102,6 +118,7 @@ func main() {
 		"Get example.com/prog/types.Gizmo Gizmo kube:\"group=example.dev,plural=gizmoes\"",
 		"Get example.com/prog/types.Widget Widget kube:\"group=example.dev\"",
 		"Own example.com/prog/types.ConfigMap ConfigMap kube:\"apiVersion=v1,kind=ConfigMap\"",
+		"Review   ",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("uses =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
@@ -111,6 +128,9 @@ func main() {
 	}
 	if !strings.HasSuffix(uses[1].Pos, "main.go:14:5") {
 		t.Errorf("position = %s", uses[1].Pos)
+	}
+	if len(uses) == 4 && !strings.HasSuffix(uses[3].Pos, "helpers.go:14:5") {
+		t.Errorf("position of the first reference to fw.Review = %s", uses[3].Pos)
 	}
 }
 
@@ -124,7 +144,7 @@ func TestFindInExamples(t *testing.T) {
 	} {
 		uses, warnings, err := Find(t.Context(), Config{
 			Dir: ".", Env: append(os.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=amd64"), Pattern: tc.pkg,
-			Package: "github.com/imjasonh/playground/kube", Funcs: []string{"Get", "List", "Fetch", "Own", "Apply", "Delete"}, Marker: "Object",
+			Package: "github.com/imjasonh/playground/kube", Funcs: []string{"Get", "List", "Fetch", "Own", "Apply", "Delete", "RequestToken", "ReviewToken"}, Marker: "Object",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -132,7 +152,7 @@ func TestFindInExamples(t *testing.T) {
 		var got []string
 		for _, u := range uses {
 			name := u.Type[strings.LastIndex(u.Type, "/")+1:]
-			got = append(got, u.Func+" "+strings.Replace(name, tc.pkg[strings.LastIndex(tc.pkg, "/")+1:]+".", "main.", 1))
+			got = append(got, strings.TrimSpace(u.Func+" "+strings.Replace(name, tc.pkg[strings.LastIndex(tc.pkg, "/")+1:]+".", "main.", 1)))
 		}
 		if !reflect.DeepEqual(got, tc.want) || len(warnings) != 0 {
 			t.Errorf("%s: uses = %q, warnings = %q, want %q", tc.pkg, got, warnings, tc.want)

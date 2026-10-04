@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
+	"slices"
 	"time"
 
 	"github.com/imjasonh/playground/kube/internal/clone"
@@ -20,6 +22,11 @@ import (
 // A reconcile that reads a smaller type of Deployment sees each
 // k8s.Deployment in world, with only the fields that its type declares. An
 // object of the type itself hides one of another type with the same name.
+//
+// World can also hold FakeTokens for ReviewToken to accept. RequestToken
+// returns the tokens "fake-token-1", "fake-token-2", and so on, for the
+// service account test in the namespace default, and ReviewToken accepts
+// them for the requested audience.
 //
 //	ctx, rec := kube.Fake(t.Context(), site, &k8s.Deployment{...})
 //	if err := r.Reconcile(ctx, site); err != nil {
@@ -75,11 +82,24 @@ func intentsOf[T any](r *Recorder, kind intentKind) []*T {
 	return out
 }
 
+// FakeToken is a bearer token for ReviewToken to accept in a Fake context.
+// It's valid for Audiences, or, when Audiences is empty, only for the API
+// server, like a token that the API server issues without audiences.
+type FakeToken struct {
+	Token     string
+	User      UserInfo
+	Audiences []string
+}
+
 type fakeWorld struct {
 	byType map[reflect.Type]*memSource
 	// types holds byType's keys in the order that the world added them.
 	types []reflect.Type
 	tr    *tracker
+	// tokens are the tokens that ReviewToken accepts, and requested counts
+	// the calls of RequestToken.
+	tokens    []FakeToken
+	requested int
 }
 
 func (w *fakeWorld) src(t reflect.Type, ti *typeInfo) *memSource {
@@ -135,6 +155,14 @@ func (w *fakeWorld) add(o any) {
 	if o == nil {
 		return
 	}
+	switch t := o.(type) {
+	case FakeToken:
+		w.tokens = append(w.tokens, *clone.Of(&t))
+		return
+	case *FakeToken:
+		w.tokens = append(w.tokens, *clone.Of(t))
+		return
+	}
 	m := metaOfAny(o)
 	w.src(reflect.TypeOf(o).Elem(), nil).objs[m.Key()] = clone.Value(o)
 }
@@ -162,6 +190,53 @@ func (w *fakeWorld) resolve(_ context.Context, ti *typeInfo) (resolved, error) {
 }
 
 func (w *fakeWorld) deps() *tracker { return w.tr }
+
+// fakeAPIAudience is the API server's audience in a Fake context.
+const fakeAPIAudience = "https://kubernetes.default.svc"
+
+func (w *fakeWorld) reviewToken(_ context.Context, token string, audiences []string) (TokenReview, error) {
+	want := audiences
+	if len(want) == 0 {
+		want = []string{fakeAPIAudience}
+	}
+	for _, t := range w.tokens {
+		if t.Token != token {
+			continue
+		}
+		have := t.Audiences
+		if len(have) == 0 {
+			have = []string{fakeAPIAudience}
+		}
+		var both []string
+		for _, a := range want {
+			if slices.Contains(have, a) {
+				both = append(both, a)
+			}
+		}
+		if len(both) == 0 {
+			return TokenReview{Error: fmt.Sprintf("token audiences %q is invalid for the target audiences %q", have, want)}, nil
+		}
+		return TokenReview{Authenticated: true, User: *clone.Of(&t.User), Audiences: both}, nil
+	}
+	return TokenReview{Error: "invalid bearer token"}, nil
+}
+
+func (w *fakeWorld) requestToken(_ context.Context, audience string, lifetime time.Duration) (string, time.Time, error) {
+	if lifetime == 0 {
+		lifetime = time.Hour
+	}
+	w.requested++
+	t := FakeToken{
+		Token: fmt.Sprintf("fake-token-%d", w.requested),
+		User: UserInfo{
+			Username: "system:serviceaccount:default:test",
+			Groups:   []string{"system:serviceaccounts", "system:serviceaccounts:default", "system:authenticated"},
+		},
+		Audiences: []string{audience},
+	}
+	w.tokens = append(w.tokens, t)
+	return t.Token, time.Now().Add(lifetime), nil
+}
 
 // memSource is an in-memory source for tests.
 type memSource struct {

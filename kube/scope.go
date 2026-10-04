@@ -26,6 +26,7 @@ type world interface {
 	fetch(ctx context.Context, ti *typeInfo, k Key) (any, error)
 	resolve(ctx context.Context, ti *typeInfo) (resolved, error)
 	deps() *tracker
+	services
 }
 
 type scopeKey struct{}

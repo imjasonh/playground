@@ -1,6 +1,6 @@
-// Package analysis finds the types that a program passes to a package's
-// generic functions, by type-checking the program's source with export data
-// from the go command.
+// Package analysis finds which of a package's functions a program calls, and
+// the types that it passes to the generic ones, by type-checking the
+// program's source with export data from the go command.
 package analysis
 
 import (
@@ -33,20 +33,21 @@ type Config struct {
 	Pattern string
 	// Package is the import path of the package that declares Funcs.
 	Package string
-	// Funcs are the names of generic functions whose first type argument
-	// to report.
+	// Funcs are the names of the functions to report. For a generic
+	// function, Find reports each first type argument.
 	Funcs []string
 	// Marker is a struct type in Package. Find reports the tag of the field
 	// through which a type argument embeds it.
 	Marker string
 }
 
-// A Use is a call of one of Funcs with a type argument.
+// A Use is a call of one of Funcs, with a type argument if it's generic.
 type Use struct {
 	// Func is the function's name, such as "Get".
 	Func string
 	// Type is the type argument, such as "example.com/app.Widget", and Name
-	// is its name without the package, such as "Widget".
+	// is its name without the package, such as "Widget". Both are empty for
+	// a function that isn't generic.
 	Type, Name string
 	// Tag is the struct tag of the field that embeds Marker.
 	Tag string
@@ -69,8 +70,9 @@ type listedPackage struct {
 // directly or through each other, and returns each call of one of Funcs
 // whose type argument embeds Marker. A call inside a generic function
 // counts once for each type that the function is instantiated with
-// anywhere in those packages. Find also returns warnings about calls whose
-// type arguments it can't tell.
+// anywhere in those packages. For each of Funcs that isn't generic, Find
+// returns the first reference to it, if those packages have one. Find also
+// returns warnings about calls whose type arguments it can't tell.
 func Find(ctx context.Context, cfg Config) ([]Use, []string, error) {
 	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-export", "-json=ImportPath,Dir,GoFiles,Export,Standard,ImportMap,Imports,Error", "--", cfg.Pattern) // #nosec G204 -- the go command with a package pattern.
 	cmd.Dir, cmd.Env = cfg.Dir, cfg.Env
@@ -117,6 +119,7 @@ func Find(ctx context.Context, cfg Config) ([]Use, []string, error) {
 		exports:  exports,
 		edges:    map[node][]node{},
 		concrete: map[node]map[string]typeArg{},
+		calls:    map[string]string{},
 	}
 	for _, p := range pkgs {
 		if reaches[p.ImportPath] && p.ImportPath != cfg.Package {
@@ -149,6 +152,9 @@ type analyzer struct {
 	// concrete holds the types that each type parameter is instantiated
 	// with, by type string.
 	concrete map[node]map[string]typeArg
+	// calls holds where the program first refers to each of Funcs that
+	// isn't generic.
+	calls    map[string]string
 	warnings []string
 }
 
@@ -239,6 +245,24 @@ func (a *analyzer) check(p *listedPackage) error {
 			a.add(to, typeArg{arg, pos})
 		}
 	}
+	first := map[string]token.Pos{}
+	for id, obj := range info.Uses {
+		fn, ok := obj.(*types.Func)
+		if !ok || fn.Pkg() == nil || fn.Pkg().Path() != a.cfg.Package || !slices.Contains(a.cfg.Funcs, fn.Name()) {
+			continue
+		}
+		if sig := fn.Origin().Signature(); sig.Recv() != nil || sig.TypeParams().Len() > 0 {
+			continue
+		}
+		if p, ok := first[fn.Name()]; !ok || id.Pos() < p {
+			first[fn.Name()] = id.Pos()
+		}
+	}
+	for name, p := range first {
+		if _, ok := a.calls[name]; !ok {
+			a.calls[name] = fset.Position(p).String()
+		}
+	}
 	return nil
 }
 
@@ -309,6 +333,9 @@ func (a *analyzer) uses() []Use {
 	}
 	var out []Use
 	for _, f := range a.cfg.Funcs {
+		if pos, ok := a.calls[f]; ok {
+			out = append(out, Use{Func: f, Pos: pos})
+		}
 		args := a.concrete[node{a.cfg.Package + "." + f, 0}]
 		for _, key := range slices.Sorted(maps.Keys(args)) {
 			if u, ok := a.use(f, args[key]); ok {
@@ -344,5 +371,8 @@ func (a *analyzer) use(f string, t typeArg) (Use, bool) {
 
 // String formats a use for messages.
 func (u Use) String() string {
+	if u.Type == "" {
+		return fmt.Sprintf("%s at %s", u.Func, u.Pos)
+	}
 	return fmt.Sprintf("%s[%s] at %s", u.Func, strings.TrimPrefix(u.Type, "*"), u.Pos)
 }

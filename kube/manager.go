@@ -104,6 +104,8 @@ type Manager struct {
 	runCtx  context.Context
 	started atomic.Bool
 	sharder *sharder
+	// self is the user that the program authenticates as, once known.
+	self atomic.Pointer[UserInfo]
 
 	mu          sync.Mutex
 	caches      map[cacheKey]cache
