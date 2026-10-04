@@ -296,6 +296,18 @@ func (c *core) lastError(k Key) error {
 	return c.errs[k]
 }
 
+// forgetErrors forgets the last reconcile error of each key that in matches,
+// including keys whose objects were deleted after the reconcile failed.
+func (c *core) forgetErrors(in func(Key) bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for k := range c.errs {
+		if in(k) {
+			delete(c.errs, k)
+		}
+	}
+}
+
 func (c *core) setLastError(k Key, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -373,11 +385,11 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 	// last held it, so forget what this replica last wrote for them, and
 	// how its last reconciles of them failed.
 	c.sh.onAcquire(func(i int) {
+		c.forgetErrors(func(k Key) bool { return c.sh.shardOf(k) == i })
 		c.primary.store.each("", func(o *T) bool {
 			if k := metaOf[T, P](o).Key(); c.sh.shardOf(k) == i {
 				c.setApplied(k, nil)
 				c.setStatus(k, 0, false)
-				c.setLastError(k, nil)
 				c.q.Add(k, queue.Low)
 			}
 			return true
