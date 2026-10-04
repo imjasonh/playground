@@ -160,9 +160,10 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 		st.UID = prev.Outputs["podUID"]
 		x.job.Checkout.Base = prev.Outputs["base"]
 	}
-	// A Pod's name covers its spec, so a changed flag or policy starts a
-	// new run instead of changing a Pod that can't change.
-	if st.Pod == "" || r.jobPod(x.job, max(st.Attempt, 1)).Name != st.Pod {
+	// A Pod's name covers its job, so a changed policy starts a new run
+	// instead of changing a Pod that can't change. startOrFollow restarts
+	// a run whose Pod's spec changed with a flag.
+	if st.Pod == "" || !sameJob(r.jobPod(x.job, max(st.Attempt, 1)).Name, st.Pod) {
 		*st = JobState{Runs: st.Runs}
 		if why := x.usedAll(); why != "" {
 			return x.running("not starting the agent: %s", why), nil

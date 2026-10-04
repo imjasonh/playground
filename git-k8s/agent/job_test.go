@@ -140,6 +140,39 @@ func TestCountsAJobsPodThatsCreatedAgain(t *testing.T) {
 	}
 }
 
+func TestRestartsAJobsRunWhenAFlagChanges(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	job.MaxRuns = 1
+	st := &JobState{}
+	p := f.startJob(job, st)
+	f.runJob(job, st, p)
+
+	t.Log("Another -agent-image starts the run again in a new Pod, which isn't another run.")
+	f.r.Image = "registry.example.com/agent-runner:new"
+	s, rec := f.runJob(job, st, p)
+	pods := kube.Owned[Pod](rec)
+	if s.Done || len(pods) != 1 || pods[0].Name == p.Name || *st != (JobState{Runs: 1, Pod: pods[0].Name, Attempt: 1}) || s.Message != "started Pod "+pods[0].Name {
+		t.Fatalf("RunJob = %+v with state %+v and %d Pods, want run 1 in a new Pod", s, st, len(pods))
+	}
+	q := pods[0]
+	q.Namespace, q.UID = "default", "uid-"+q.Name
+
+	t.Log("Neither MaxRuns nor empty Tools changes the job.")
+	job.MaxRuns, job.Tools = 2, []string{}
+	s, rec = f.runJob(job, st, q)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || pods[0].Name != q.Name || st.Runs != 1 {
+		t.Fatalf("RunJob = %+v with state %+v, want the same run in the same Pod", s, st)
+	}
+
+	t.Log("Another image in the job is another job, so it starts a new run.")
+	job.Image = "registry.example.com/agent-runner:fix"
+	s, rec = f.runJob(job, st, q)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || pods[0].Name == q.Name || st.Runs != 2 {
+		t.Errorf("RunJob = %+v with state %+v, want run 2 in a new Pod", s, st)
+	}
+}
+
 func TestReportsWhatAFailedJobUsed(t *testing.T) {
 	f := newFixture(t, "")
 	job := f.reviewJob()

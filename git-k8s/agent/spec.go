@@ -133,7 +133,7 @@ printf '%s' "${CURSOR_API_KEY:-}" >"$KEY_FILE"
 `
 
 // jobPod declares the Pod for one attempt at job's run. Its name covers
-// the job's name, the attempt, and the Pod's spec.
+// the job, the attempt, and the Pod's spec.
 func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 	c := job.Checkout
 	yes, no := true, false
@@ -281,10 +281,27 @@ func (r *Runner) jobPod(job *Job, attempt int) *Pod {
 			},
 		}},
 	}
+	// The name's first half covers the job and the attempt, and its second
+	// half covers the spec, so a run can tell a Pod whose spec changed with
+	// the Runner's flags from another job's Pod. A job's MaxRuns doesn't
+	// change its runs, and nil Tools are the same as none.
+	id := *job
+	id.MaxRuns = 0
+	if len(id.Tools) == 0 {
+		id.Tools = nil
+	}
+	idJSON, _ := json.Marshal(id)
 	spec, _ := json.Marshal(p.Spec)
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s", job.Name, attempt, spec))
-	p.Name = r.Name + "-" + hex.EncodeToString(sum[:8])
+	jobSum := sha256.Sum256(fmt.Appendf(nil, "%d\x00%s", attempt, idJSON))
+	specSum := sha256.Sum256(spec)
+	p.Name = r.Name + "-" + hex.EncodeToString(jobSum[:4]) + hex.EncodeToString(specSum[:4])
 	return p
+}
+
+// sameJob reports whether the Pods that jobPod named a and b are for the
+// same job and attempt, whatever their specs.
+func sameJob(a, b string) bool {
+	return len(a) == len(b) && len(a) > 8 && a[:len(a)-8] == b[:len(b)-8]
 }
 
 // parseSize returns the bytes in a size such as 2Gi or 500M. It returns 0

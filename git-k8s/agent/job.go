@@ -85,10 +85,12 @@ type JobStatus struct {
 
 // RunJob starts or follows job's run, and reports how it stands. It
 // declares the run's Pod with kube.Own, so call it on each reconcile until
-// the run is done. A JobState whose Pod was for other commits, another
-// task, or other flags starts a new run. If the run's Pod is deleted
-// before the run finishes, kube creates it again, which runs the agent
-// again, so RunJob counts another run.
+// the run is done. A JobState whose Pod was for another job, such as one
+// with other commits or another task, starts a new run. One whose Pod has
+// another spec, such as after a deploy with other flags, starts the run
+// again in a new Pod, which doesn't count as another run. If the run's Pod
+// is deleted before the run finishes, kube creates it again, which runs
+// the agent again, so RunJob counts another run.
 func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 	s := r.runJob(ctx, job, st)
 	if s.Done {
@@ -113,9 +115,13 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 		return x.fail("can't run the agent: %v", err)
 	}
 	if st.Pod != "" {
-		if p := r.jobPod(job, max(st.Attempt, 1)); p.Name == st.Pod {
+		p := r.jobPod(job, max(st.Attempt, 1))
+		switch {
+		case p.Name == st.Pod:
 			st.Attempt = max(st.Attempt, 1)
 			return x.follow(ctx, p)
+		case sameJob(p.Name, st.Pod):
+			return x.restart(ctx, p)
 		}
 	}
 	*st = JobState{Runs: st.Runs}
@@ -133,6 +139,21 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 		return JobStatus{Message: fmt.Sprintf("waiting to start the agent: %d agent runs started in the last 24 hours, the -max-runs-per-day limit", r.MaxRunsPerDay)}
 	}
 	*st = JobState{Runs: st.Runs + 1, Pod: p.Name, Attempt: 1}
+	x.started = true
+	return x.follow(ctx, p)
+}
+
+// restart starts the run again in p, a Pod for the same job and attempt
+// with another spec, such as after a deploy with other flags. The agent
+// starts over, so the restart takes a place in -max-runs-per-day, but it
+// doesn't count toward the job's runs, so a deploy can't stop a run whose
+// job has none left.
+func (x *run) restart(ctx context.Context, p *Pod) JobStatus {
+	if wait, ok := x.r.day.take(time.Now(), x.r.MaxRunsPerDay); !ok {
+		kube.RequeueAfter(ctx, wait)
+		return x.status("waiting to start the agent again: %d agent runs started in the last 24 hours, the -max-runs-per-day limit", x.r.MaxRunsPerDay)
+	}
+	x.st.Pod, x.st.UID = p.Name, ""
 	x.started = true
 	return x.follow(ctx, p)
 }

@@ -691,6 +691,44 @@ func TestChangedTaskStartsANewRun(t *testing.T) {
 	}
 }
 
+func TestRestartsARunWhenAFlagChanges(t *testing.T) {
+	f := newFixture(t, "")
+	one := int32(1)
+	f.b.Spec.Merge.MaxAgentRuns = &one
+	f.r.MaxRunsPerDay = 2
+	p := f.start()
+	f.reconcile(p)
+
+	t.Log("A deploy with another -model starts the run again in a new Pod, though the branch used all of its runs.")
+	f.r.Model = "composer-3"
+	rec := f.reconcile(p)
+	pods := kube.Owned[Pod](rec)
+	if res := f.state(); len(pods) != 1 || pods[0].Name == p.Name || res.State != gitk8s.Running || res.Message != "started Pod "+pods[0].Name ||
+		res.Outputs["pod"] != pods[0].Name || res.Outputs["runs"] != "1" || res.Outputs["podUID"] != "" {
+		t.Fatalf("result = %+v with %d owned Pods, want run 1 in a new Pod", res, len(pods))
+	}
+	q := pods[0]
+	q.Namespace, q.UID = "default", "uid-"+q.Name
+
+	t.Log("Another restart waits for a place in -max-runs-per-day without a Pod.")
+	f.r.Model = "composer-4"
+	rec = f.reconcile(q)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting to start the agent again: 2 agent runs started in the last 24 hours, the -max-runs-per-day limit" ||
+		res.Outputs["pod"] != q.Name || res.Outputs["runs"] != "1" || len(kube.Owned[Pod](rec)) != 0 {
+		t.Fatalf("result = %+v, want Running without a Pod", res)
+	}
+	if d := rec.RequeueAfter(); d < 23*time.Hour || d > 24*time.Hour {
+		t.Errorf("RequeueAfter = %v, want about a day", d)
+	}
+
+	t.Log("With the flag back, the run finishes in the restarted Pod.")
+	f.r.Model = "composer-3"
+	f.reconcile(finished(q, f.serve(review(Pass), q.UID)))
+	if res := f.state(); res.State != gitk8s.Passed || res.Outputs["runs"] != "1" {
+		t.Errorf("result = %+v, want Passed after 1 run", res)
+	}
+}
+
 func TestPassesBranchesWithoutChanges(t *testing.T) {
 	f := newFixture(t, "")
 	f.b.Spec.Head = f.base

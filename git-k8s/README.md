@@ -297,6 +297,14 @@ when `maxAgentRuns` or `-max-runs-per-day` allows no more. A run that fails
 after the agent starts still reports the `model`, the token counts, and the
 costs in the check's outputs.
 
+A deploy can also run agents again. A Pod's spec can't change, so after a
+deploy that changes the agent Pods' spec, such as one with another
+`-agent-image` or `-model` or with a version of `check-review` that builds
+Pods differently, the check starts each run in progress again in a new
+Pod, and kube deletes the old one. The agent starts over and costs as much
+as in a new run. A restarted run takes a place in `-max-runs-per-day`, or
+waits for one, but it doesn't count toward `maxAgentRuns`.
+
 The check counts a branch's runs in its outputs on the branch's
 `GitBranch`, so a branch that's deleted and then pushed again can start
 over at 0, and so can a branch with a new name. To cap what agents cost in
@@ -325,6 +333,15 @@ kubectl -n NAMESPACE create secret generic cursor-api-key --from-literal=api-key
 ```
 
 In a namespace without the Secret, each run fails before the agent starts.
+
+To change a flag or upgrade `check-review`, run `generate` again. A deploy
+that changes the agent Pods' spec starts every run in progress again, and
+each agent starts over, so deploy when few agent Pods are running. To list
+them, run the following command:
+
+```sh
+kubectl get pods --all-namespaces -l git-k8s.imjasonh.com/agent=review
+```
 
 `check-review` takes these flags, which `agent.Runner.AddFlags` registers:
 
@@ -427,9 +444,12 @@ why. If the run failed after the agent started, `Failed` holds the runner's
 report, with its `Error` and what the agent used. Then stop calling
 `RunJob` for the run, and kube deletes the Pod. A `Job` with other commits,
 another task, other tools, or another image starts a new run, up to the
-job's `MaxRuns`. If the run's Pod is deleted before the run is `Done`, kube
-creates it again and the agent runs again, so `RunJob` counts another run,
-or ends the run when `MaxRuns` or `-max-runs-per-day` allows no more.
+job's `MaxRuns`. A deploy that changes the agent Pods' spec starts the run
+again in a new Pod, which takes a place in `-max-runs-per-day` but doesn't
+count toward `MaxRuns`. If the run's Pod is deleted before the run is
+`Done`, kube creates it again and the agent runs again, so `RunJob` counts
+another run, or ends the run when `MaxRuns` or `-max-runs-per-day` allows
+no more.
 
 Agents get no shell. The tools that an agent can have are `read`, `grep`,
 `glob`, and `ls`, plus `edit` and `delete` when the task edits files, and
