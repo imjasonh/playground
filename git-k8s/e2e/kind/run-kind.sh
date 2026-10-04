@@ -339,6 +339,7 @@ fi
 echo "${out}"
 grep -q 'main is a parent branch, which only the merge controller updates' <<<"${out}"
 [[ "$(mirror_head refs/heads/main)" == "$(remote_head main)" ]]
+g checkout -q main
 echo "The mirror refused check-gofmt's push to main, with a reason that git showed."
 echo "::endgroup::"
 
@@ -410,7 +411,10 @@ both_landed() {
     g cat-file -e FETCH_HEAD:one.txt && g cat-file -e FETCH_HEAD:two.txt
 }
 eventually 180 both_landed
-g log --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: base'
+# git flushes after each commit, so grep -q reading from it in a pipe could
+# exit early and kill git with SIGPIPE.
+g log --format=%B FETCH_HEAD >"${WORKDIR}/log.txt"
+grep -qx 'Git-K8s-Fixer: base' "${WORKDIR}/log.txt"
 g log --graph --oneline FETCH_HEAD
 echo "One branch landed, the base check merged main into the other, and it landed too."
 echo "::endgroup::"
