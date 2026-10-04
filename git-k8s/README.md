@@ -47,7 +47,7 @@ and branches that match no rule aren't tracked. A branch whose rule names a
 `parent` is a proposal to that parent. The parent's rule says what a proposal
 needs before it lands.
 
-The `git-k8s` program runs two controllers, and each check runs as its own
+The `git-k8s` program runs three controllers, and each check runs as its own
 program. Each controller is a `kube.For` reconciler:
 
 - The **repositories** controller lists each repository's branches with
@@ -68,6 +68,9 @@ program. Each controller is a `kube.For` reconciler:
   meantime is never overwritten. It then deletes the branch if the policy
   says to.
 
+The `git-k8s` program's third controller, **check-runs**, copies check
+results to GitHub as check runs. See [Check runs](#check-runs).
+
 The checks and the merge controller read each branch's repository as a
 `gitk8s.Repository`, a `GitRepository` without its status, so the
 repositories controller's status writes don't run them again.
@@ -87,6 +90,171 @@ app-main-9157892a7c     main     610a7734a0b4d1bc1991a669d9feb35fd159219b       
 
 The `Merged` condition's message explains a `WaitingForChecks` state, for
 example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`.
+
+## GitHub repositories
+
+For a repository on github.com, a `GitRepository` can name
+[Octo STS](https://github.com/octo-sts/app) identities instead of a Secret:
+
+```yaml
+spec:
+  url: https://github.com/OWNER/REPO.git
+  octoSTS:
+    gitIdentity: git-k8s              # instead of secretRef
+    checkRunsIdentity: git-k8s-checks
+```
+
+Octo STS exchanges a Kubernetes service account token for a GitHub token
+that works for one repository, expires within an hour, and has the
+permissions that a trust policy in the repository grants. Each identity is
+the name of a trust policy, `.github/chainguard/IDENTITY.sts.yaml`, on the
+repository's default branch. git-k8s uses the public Octo STS service at
+`https://octo-sts.dev`, which issues tokens only for github.com, so a
+repository on GitHub Enterprise Server needs a `secretRef`.
+
+`gitIdentity` replaces `secretRef`, so set only one of the two. The programs
+that fetch or push use tokens for it: `git-k8s`, `check-base`, `check-gofmt`,
+and `check-risk`. `check-gotest`'s test Pods fetch without credentials, so
+with Octo STS, `gotest` works only for a public repository. The `git-k8s`
+program publishes [check runs](#check-runs) with tokens for
+`checkRunsIdentity`, and publishes none without it. The URL must have the
+form `https://github.com/OWNER/REPO`, with or without `.git`.
+
+### Set up Octo STS
+
+1. Install the [Octo STS GitHub App](https://github.com/apps/octo-sts) on the
+   repository's owner, with access to the repository.
+2. Find the cluster's OIDC issuer, which is the `issuer` field in the output
+   of this command:
+
+   ```sh
+   kubectl get --raw /.well-known/openid-configuration
+   ```
+
+   Octo STS downloads the issuer's discovery document and keys to verify
+   tokens, so the issuer must be a public HTTPS URL, as it is on GKE and EKS.
+
+3. On the repository's default branch, add a trust policy for each identity.
+   For `gitIdentity: git-k8s`, add `.github/chainguard/git-k8s.sts.yaml`:
+
+   ```yaml
+   issuer: ISSUER
+   subject_pattern: system:serviceaccount:(git-k8s:git-k8s|check-base:check-base|check-gofmt:check-gofmt|check-risk:check-risk)
+   audience: octo-sts.dev/NAMESPACE
+   permissions:
+     contents: write
+   ```
+
+   For `checkRunsIdentity: git-k8s-checks`, add
+   `.github/chainguard/git-k8s-checks.sts.yaml`:
+
+   ```yaml
+   issuer: ISSUER
+   subject: system:serviceaccount:git-k8s:git-k8s
+   audience: octo-sts.dev/NAMESPACE
+   permissions:
+     checks: write
+   ```
+
+   Replace the following:
+
+   - `ISSUER`: the cluster's issuer
+   - `NAMESPACE`: the `GitRepository`'s namespace
+
+4. Apply the `GitRepository`.
+
+A service account token's subject is `system:serviceaccount:NAMESPACE:NAME`.
+When you install the programs with `generate`, as [Install](#install)
+describes, each one runs as the service account with the program's name, in
+the namespace with the same name. The trust policy in `git-k8s.sts.yaml`
+lists the service account of every program that fetches or pushes. Octo STS
+matches `subject_pattern` against the whole subject.
+
+Each token's audience is `octo-sts.dev/` followed by the `GitRepository`'s
+namespace. The programs use the same service accounts for every
+`GitRepository`, so the audience is the part of a token that names the
+namespace it's for. A trust policy that requires your namespace's audience
+refuses the tokens that git-k8s requests for a `GitRepository` in another
+namespace, even one that names your repository and identities. Without an
+`audience`, a trust policy accepts only `octo-sts.dev`, which git-k8s never
+requests.
+
+`contents: write` lets the programs fetch and push. To land changes to files
+in `.github/workflows`, also grant `workflows: write`, because GitHub refuses
+a push that changes those files without it. `checks: write` lets the
+`git-k8s` program create and update check runs.
+
+The programs keep each GitHub token in memory and get a new one 10 minutes
+before it expires. If an exchange fails, they use the old token until a
+minute before it expires, and ask Octo STS again after 30 seconds. When the
+`git-k8s` program can't get a token, the `GitRepository`'s `Ready` condition
+is `False` with the reason `CredentialsUnavailable`. When a check can't, it
+reports an `Error` result. Both messages include Octo STS's answer, such as
+`unable to find trust policy for "git-k8s"`. Octo STS caches each trust
+policy, and the lack of one, for 5 minutes, so a change to a trust policy can
+take that long to apply.
+
+### Check runs
+
+When a `GitRepository` names a `checkRunsIdentity`, the `git-k8s` program's
+check-runs controller copies each check's result to GitHub as a check run on
+the commit that the result is for. GitHub shows a commit's check runs on the
+commit and on its pull requests. Each check, commit, and `GitRepository` has
+one check run, named `git-k8s/CHECK`, which the controller updates as the
+result changes:
+
+- A `Running` result shows as in progress.
+- `Passed` completes the check run as `success`.
+- `Failed` and `Error` complete it as `failure`.
+- `Fixed` completes it as `neutral`. The check pushed a fix commit, and the
+  check run on that commit decides.
+
+The check run's title is the result's state, its summary is the result's
+message, and its text lists the result's outputs. When a branch moves before
+a check finishes on its old head, the controller completes the old commit's
+check run as `cancelled`.
+
+Check runs only copy results. The controller reads a check run only to see
+whether it already shows the result, so nothing that happens on GitHub, such
+as re-running a check run, changes a result or a merge. The controller
+remembers what it wrote, and writes a check run again only when the result
+changes or the program restarts, so a change that someone else makes to a
+check run can stay until then.
+
+GitHub limits the requests that each installation of a GitHub App can make.
+When GitHub answers that the Octo STS app's installation reached its limit,
+the controller stops publishing for that repository owner until the time
+that GitHub gives, or for a minute. It logs other errors from GitHub and
+tries again later. Neither holds back checks or landings. To show whether
+the check-runs identity works, the repositories controller sets the
+`CheckRunsTokenIssued` condition on the `GitRepository`, which is `False`
+with Octo STS's answer when Octo STS doesn't issue a token. The
+`GitRepository` stays `Ready` either way.
+
+### Security
+
+The programs keep GitHub tokens in memory and pass them to git in its
+environment, so the tokens don't appear in process arguments, Kubernetes
+objects, or logs. The service account tokens that the programs send to Octo
+STS are bound to the programs' Pods. `generate` lets each program that
+fetches or pushes request tokens for its own service account, and for no
+other.
+
+The programs send service account tokens only to Octo STS, and GitHub tokens
+only to GitHub. For tests, the `-fake-github` flag points them at a fake
+GitHub and Octo STS instead. It's a flag and not a `GitRepository` field, so
+only whoever installs a program can choose where its tokens go. The
+end-to-end test's git server runs such a fake, which checks each service
+account token with a TokenReview, because Octo STS can't reach a kind
+cluster's issuer.
+
+A trust policy's audience ties it to one namespace, so anyone who can create
+a `GitRepository` in that namespace can use the trust policy's permissions.
+Grant that only to people who may push to the repository.
+
+GitHub grants `contents: write` for a whole repository, not for branches.
+Every program that fetches with `gitIdentity` can therefore push to any
+branch, including the checks without `mayPush: true`.
 
 ## Checks
 
