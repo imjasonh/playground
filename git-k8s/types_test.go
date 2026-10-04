@@ -53,6 +53,7 @@ func TestURLPattern(t *testing.T) {
 		"https://git-k8s@git.example.com/app.git",
 		"git@github.com:imjasonh/playground.git",
 		"git@[172.18.0.1:2222]:app.git",
+		"git@[::1]:app.git",
 	} {
 		if !pattern.MatchString(u) {
 			t.Errorf("the pattern rejects %q", u)
@@ -100,6 +101,7 @@ func TestURLPattern(t *testing.T) {
 		"git@host.example:",
 		"ssh://gi\nt@host.example/r.git",
 		"gi\nt@host.example:r.git",
+		"git@[host.example:-0]:r.git",
 	} {
 		if pattern.MatchString(u) {
 			t.Errorf("the pattern accepts %q", u)
