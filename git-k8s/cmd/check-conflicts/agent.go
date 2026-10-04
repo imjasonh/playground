@@ -55,7 +55,7 @@ func (t target) job(in *checks.Input, base string) *agent.Job {
 			Head:   in.Spec.Head,
 			Parent: in.Spec.Parent,
 			Base:   base,
-			Merge:  &agent.Ref{Branch: t.branch, Commit: t.commit, Name: t.ref},
+			Merge:  &agent.Ref{Name: t.ref, Commit: t.commit, DisplayName: t.name},
 			Union:  union,
 		},
 		Task:    task,

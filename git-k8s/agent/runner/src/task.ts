@@ -26,9 +26,9 @@ export interface Task {
    * or "" if they have none.
    */
   base: string;
-  /** A branch to merge into head. */
-  mergeBranch?: string;
-  /** The commit of mergeBranch to merge. Then workTree holds the merge's files, with conflict markers. */
+  /** How the prompt names the ref whose commit mergeHead merges into head, such as main. */
+  mergeName?: string;
+  /** A commit to merge into head. Then workTree holds the merge's files, with conflict markers. */
   mergeHead?: string;
   /** The head commit's files, or the merge's. It isn't a git repository. */
   workTree: string;
@@ -66,7 +66,7 @@ const STRING_FIELDS = [
   "terminationLog",
 ] as const;
 
-const OPTIONAL_STRING_FIELDS = ["changesFile", "mergeBranch", "mergeHead", "conflictsFile", "mergeLogFile"] as const;
+const OPTIONAL_STRING_FIELDS = ["changesFile", "mergeName", "mergeHead", "conflictsFile", "mergeLogFile"] as const;
 
 /** Parses and checks a task from its JSON. */
 export function parseTask(json: string): Task {
@@ -111,7 +111,7 @@ export function parseTask(json: string): Task {
     }
   }
   if (task.mergeHead !== undefined) {
-    for (const field of ["mergeBranch", "mergeHead", "base", "conflictsFile", "mergeLogFile"] as const) {
+    for (const field of ["mergeName", "mergeHead", "base", "conflictsFile", "mergeLogFile"] as const) {
       if (!task[field]) {
         throw new Error(`AGENT_TASK.${field} can't be empty in a merge`);
       }

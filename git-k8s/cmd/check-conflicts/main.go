@@ -124,10 +124,9 @@ func retry(ctx context.Context, format string, args ...any) checks.Verdict {
 // target is a commit to merge into a branch.
 type target struct {
 	commit string
-	// branch is the branch whose head is commit. ref, if set, is the ref
-	// that points to commit on the remote, instead of refs/heads/branch.
-	branch, ref string
-	name        string
+	// ref is the full name of a ref on the remote that holds commit, and
+	// name names it in messages and in the agent's prompt.
+	ref, name string
 	// diverged says that commit is the external repository's head, which
 	// the branch takes a merge of even without conflicts, because nothing
 	// else merges it.
@@ -138,13 +137,13 @@ type target struct {
 // repository, or else the conflicts of merging its parent into it.
 func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]string) checks.Verdict {
 	head := in.Spec.Head
-	t := target{commit: in.Spec.ParentHead, branch: in.Spec.Parent, name: in.Spec.Parent}
+	t := target{commit: in.Spec.ParentHead, ref: "refs/heads/" + in.Spec.Parent, name: in.Spec.Parent}
 	if d := divergence(ctx, in.Meta); d != nil {
 		outputs["diverged"] = d.Commit
 		if err := validate(d); err != nil {
 			return checks.Fail("%v", err)
 		}
-		t = target{commit: d.Commit, branch: in.Spec.Branch, ref: d.Ref, name: "the external repository's " + in.Spec.Branch, diverged: true}
+		t = target{commit: d.Commit, ref: d.Ref, name: "the external repository's " + in.Spec.Branch, diverged: true}
 	}
 	if v, ok := follow(ctx, in, t, outputs); ok {
 		return v
@@ -259,10 +258,11 @@ func mergeCommit(ctx context.Context, in *checks.Input, repo *git.Repo, t target
 }
 
 // targetRepo returns the branch's repository with t's commit, which it
-// fetches from t's ref when the branch and its parent don't have it.
+// fetches from t's ref when t isn't the parent's head, which the checks
+// framework fetches.
 func targetRepo(ctx context.Context, in *checks.Input, t target) (*git.Repo, error) {
 	repo, err := in.Repo(ctx)
-	if err != nil || t.ref == "" {
+	if err != nil || !t.diverged {
 		return repo, err
 	}
 	remote, err := in.Remote(ctx)

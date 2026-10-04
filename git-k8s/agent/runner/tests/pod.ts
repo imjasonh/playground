@@ -67,7 +67,7 @@ export function prepareMerge(base: Files, ours: Files, theirs: Files, task: Part
   const conflictsFile = join(root, "input", "conflicts");
   const mergeLogFile = join(root, "input", "merge-log.txt");
   const tree = merged.stdout.subarray(0, merged.stdout.indexOf(0)).toString();
-  const laidOut = layOut(root, repo, baseSha, head, tree, { mergeBranch: "theirs", mergeHead, conflictsFile, mergeLogFile, ...task });
+  const laidOut = layOut(root, repo, baseSha, head, tree, { mergeName: "theirs", mergeHead, conflictsFile, mergeLogFile, ...task });
   writeFileSync(conflictsFile, merged.stdout);
   writeFileSync(mergeLogFile, git(repo, "log", "--format=%h %s", `${baseSha}..${mergeHead}`));
   return laidOut;

@@ -26,7 +26,7 @@ const merge: Task = {
   edit: true,
   tools: ["read", "edit"],
   base: "fedcba9876543210fedcba9876543210fedcba98",
-  mergeBranch: "main",
+  mergeName: "main",
   mergeHead: "1111111111111111111111111111111111111111",
   conflictsFile: "/input/conflicts",
   mergeLogFile: "/input/merge-log.txt",
@@ -58,7 +58,8 @@ test("rejects tasks that aren't valid", () => {
     [JSON.stringify({ ...merge, base: "" }), /base can't be empty in a merge/],
     [JSON.stringify({ ...merge, mergeHead: "" }), /mergeHead can't be empty in a merge/],
     [JSON.stringify({ ...merge, conflictsFile: undefined }), /conflictsFile can't be empty in a merge/],
-    [JSON.stringify({ ...merge, mergeBranch: 7 }), /mergeBranch must be a string/],
+    [JSON.stringify({ ...merge, mergeName: 7 }), /mergeName must be a string/],
+    [JSON.stringify({ ...merge, mergeName: "" }), /mergeName can't be empty in a merge/],
   ];
   for (const [json, want] of cases) {
     assert.throws(() => parseTask(json), want, json);

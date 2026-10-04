@@ -30,7 +30,7 @@ export function buildPrompt(task: Task, diff: string | Buffer, log: string | Buf
         `Branch: ${task.branch}`,
         `Parent branch: ${task.parent}`,
         `Head commit: ${task.head}`,
-        `Merged branch: ${task.mergeBranch}`,
+        `Merged branch: ${task.mergeName}`,
         `Merged commit: ${task.mergeHead}`,
         `Merge base: ${task.base}`,
         "",

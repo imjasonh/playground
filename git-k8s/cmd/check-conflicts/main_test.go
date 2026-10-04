@@ -132,7 +132,7 @@ type podTask struct {
 	Edit         bool     `json:"edit"`
 	Tools        []string `json:"tools"`
 	Base         string   `json:"base"`
-	MergeBranch  string   `json:"mergeBranch"`
+	MergeName    string   `json:"mergeName"`
 	MergeHead    string   `json:"mergeHead"`
 }
 
@@ -377,10 +377,10 @@ func TestStartsAnAgent(t *testing.T) {
 	}
 	task := agentTask(t, pods[0])
 	if !task.Edit || task.Instructions != instructions || !slices.Equal(task.Tools, tools) || task.Base != base ||
-		task.MergeBranch != "main" || task.MergeHead != b.Spec.ParentHead {
+		task.MergeName != "main" || task.MergeHead != b.Spec.ParentHead {
 		t.Errorf("the agent's task = %+v, want a merge of main", task)
 	}
-	for name, want := range map[string]string{"MERGE_BRANCH": "main", "MERGE_HEAD": b.Spec.ParentHead, "MERGE_REF": "", "ATTRIBUTES": "go.sum merge=union\n"} {
+	for name, want := range map[string]string{"MERGE_REF": "refs/heads/main", "MERGE_HEAD": b.Spec.ParentHead, "ATTRIBUTES": "go.sum merge=union\n"} {
 		if got := prepareEnv(pods[0], name); got != want {
 			t.Errorf("%s = %q, want %q", name, got, want)
 		}
@@ -466,7 +466,7 @@ func TestStartsOverWhenTheRunCantGoOn(t *testing.T) {
 	}
 }
 
-func TestStartsOverWhenMainMovesBeforeThePodFetchesIt(t *testing.T) {
+func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		// waits is how many reconciles see the Pod's exit before the spec
@@ -476,7 +476,7 @@ func TestStartsOverWhenMainMovesBeforeThePodFetchesIt(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			withAgent(t)
 			srv := gittest.NewServer(t, "")
-			b, w, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+			b, w, base := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
 			started := b.Spec.ParentHead
 			rec, err := reconcile(t, srv, b, rules)
 			if err != nil {
@@ -484,12 +484,12 @@ func TestStartsOverWhenMainMovesBeforeThePodFetchesIt(t *testing.T) {
 			}
 			p := kube.Owned[agent.Pod](rec)[0]
 			p.Namespace, p.UID = "default", "uid-1"
-			msg := "main no longer points to " + started
+			msg := "refs/heads/main no longer contains " + started
 			p.Status = agent.PodStatus{Phase: "Failed", InitContainerStatuses: []agent.ContainerStatus{
 				{Name: "prepare", State: agent.ContainerState{Terminated: &agent.Terminated{ExitCode: 3, Message: msg}}},
 			}}
-			w.Branch("main", started)
-			moved := commit(w, "main moves", map[string]string{"d.txt": "d\n"})
+			w.Branch("main", base)
+			moved := commit(w, "main rewinds", map[string]string{"a.txt": "one\nrewound\nthree\n"})
 			w.Push("main")
 
 			// The run gives back its place once, however many reconciles
@@ -603,12 +603,12 @@ func TestCommitsTheAgentsResolution(t *testing.T) {
 			mainFiles := map[string]string{"a.txt": "one\nmain\nthree\n", "go.sum": "a v1\nb v1\n"}
 			b, w, base := setup(t, srv, mainFiles, map[string]string{"a.txt": "one\nbranch\nthree\n", "go.sum": "a v1\nc v1\n"})
 			head, merged := b.Spec.Head, b.Spec.ParentHead
-			ref, task, title := &agent.Ref{Branch: "main", Commit: merged}, instructions, "Merge main into c/x"
+			ref, task, title := &agent.Ref{Name: "refs/heads/main", Commit: merged, DisplayName: "main"}, instructions, "Merge main into c/x"
 			var world []any
 			if tc.external {
 				var o *observed
 				merged, o = diverge(w, b.Name, "c/x", base, mainFiles)
-				ref = &agent.Ref{Branch: "c/x", Commit: merged, Name: downstream + "c/x"}
+				ref = &agent.Ref{Name: downstream + "c/x", Commit: merged, DisplayName: "the external repository's c/x"}
 				task, title = divergedInstructions+instructions, "Merge the external repository's c/x into c/x"
 				world = append(world, o)
 			}
@@ -832,7 +832,7 @@ func TestStartsAnAgentForTheExternalHead(t *testing.T) {
 	if res := b.Status.Checks.Result; res.State != gitk8s.Running || len(pods) != 1 || res.Outputs["diverged"] != e || res.Outputs["conflicts"] != "a.txt" {
 		t.Fatalf("result = %+v and %d Pods, want Running with one Pod", res, len(pods))
 	}
-	if task := agentTask(t, pods[0]); task.Instructions != divergedInstructions+instructions || task.MergeBranch != "c/x" || task.MergeHead != e {
+	if task := agentTask(t, pods[0]); task.Instructions != divergedInstructions+instructions || task.MergeName != "the external repository's c/x" || task.MergeHead != e {
 		t.Errorf("the agent's task = %+v, want a merge of the external head", task)
 	}
 	if got := prepareEnv(pods[0], "MERGE_REF"); got != downstream+"c/x" {

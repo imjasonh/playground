@@ -96,7 +96,7 @@ test("marks the paths that a long diff leaves out", () => {
 });
 
 test("explains a merge, its conflicts, and the merged commits", () => {
-  const task = preparePod({}, {}, { head: "def", base: "abc", mergeBranch: "main", mergeHead: "fed", edit: true });
+  const task = preparePod({}, {}, { head: "def", base: "abc", mergeName: "main", mergeHead: "fed", edit: true });
   const prompt = buildPrompt(task, "", "def Add x\n", undefined, { conflicts: ["a.txt", "tab\there"], log: `fed Change main${" ".repeat(50)}\n` });
   assert.match(prompt, /You're merging another branch into one of them\.\n\nBranch: c\/x\nParent branch: main\nHead commit: def\nMerged branch: main\nMerged commit: fed\nMerge base: abc\n\n/);
   assert.match(prompt, /a line "<<<<<<< def", the head commit's lines, a line "\|\|\|\|\|\|\| abc", the merge base's lines, a line "=======", the merged commit's lines, and a line ">>>>>>> fed"\./);

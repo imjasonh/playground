@@ -499,10 +499,12 @@ A merge of the parent that has no conflicts passes, because merging it is
 `check-base`'s job. The check pushes a merge of the external repository's
 head even without conflicts, because nothing else merges it. While an agent
 runs, the check keeps following the run when the parent moves, so a parent
-that moves often doesn't restart it. If the run fails after the parent
-moved, the check runs again on the parent's new head. If the parent moves
-before the Pod fetches it, the agent doesn't run, and the check starts a new
-run on the parent's new head.
+that moves often doesn't restart it. The Pod merges the parent's head that
+the run started with, even if the parent moved past it before the Pod
+fetched the parent. If the run fails after the parent moved, the check runs
+again on the parent's new head. If the parent no longer contains the head
+that the run started with when the Pod fetches it, the agent doesn't run,
+and the check starts a new run on the parent's new head.
 
 The check merges, and doesn't rebase. A rebase rewrites commits that checks
 and people already saw, such as the head that an approval names, and
@@ -590,30 +592,36 @@ again, so `RunJob` counts another run. When `MaxRuns` or
 `-max-runs-per-day` allows no more, `RunJob` ends the run instead, and
 kube doesn't create the Pod again.
 
-To merge a commit that the branch doesn't point to, set `Merge.Name` to the
-full name of a ref that does, such as `refs/git-k8s/downstream/heads/main`.
-`Checkout.Union` lists path patterns in the gitattributes format whose
-conflicts the merge resolves with git's union driver, so the Pod makes the
-same merge as `git.Repo.Merge` with those patterns in `MergeOptions.Union`.
-When a run waits because a branch moved, `JobStatus.Moved` is true, so a
-controller that keeps a run on the commits that it started with, as
-`check-conflicts` does, can tell when to start a new one.
 `agent.UsageOutputs` turns what a run used into outputs like `Run`'s, and
 `agent.MaxFiles` and `agent.MaxFileBytes` are the most files and bytes that
 a result can change, so a controller can skip a run whose result can't fit.
 
-For an agent that resolves a merge, set `Checkout.Merge` to the branch to
-merge into the head, and `Checkout.Base` to their merge base. The `prepare`
+For an agent that resolves a merge, set `Checkout.Merge` to the commit to
+merge into the head, and `Checkout.Base` to their merge base. In
+`Checkout.Merge`, `Name` is the full name of a ref that contains the
+commit, such as `refs/heads/main` or `refs/git-k8s/downstream/heads/main`,
+and `DisplayName` is how the prompt names it, such as `main`.
+`Checkout.Union` lists path patterns in the gitattributes format whose
+conflicts the merge resolves with git's union driver. The `prepare`
 container then writes the files of the merge that `git merge-tree
 --write-tree` makes with `merge.conflictStyle=diff3`, instead of the
-head's. Each conflict in a file holds the head's lines, the merge base's
-lines, and the merged branch's lines between conflict markers. A file that
-one side deleted and the other changed holds the changed version. The
-prompt lists the paths that conflict and the merged branch's commits. With
-`Task.Edit`, the result's `Files` change the merge's files, and the
-controller builds the merge commit from them. If either branch moved before
-the Pod fetched it, the agent doesn't run, and the run waits for a `Job`
-with the new commits, which starts a new run.
+head's, which is the same merge as `git.Repo.Merge` with those patterns in
+`MergeOptions.Union`. Each conflict in a file holds the head's lines, the
+merge base's lines, and the merged commit's lines between conflict markers.
+A file that one side deleted and the other changed holds the changed
+version. The prompt lists the paths that conflict and the commits that the
+merge brings in. With `Task.Edit`, the result's `Files` change the merge's
+files, and the controller builds the merge commit from them.
+
+The branch must still point to the head when the Pod fetches it, because
+the controller pushes what the agent changes onto the head with a lease,
+which fails once the branch moves. The merged ref only has to contain the
+commit, because the merge is of the commit, so the run goes on when the ref
+moves past it. If the branch moved, or the ref no longer contains the
+commit, the agent doesn't run, and the run waits for a `Job` with the new
+commits, which starts a new run. While it waits, `JobStatus.Moved` is true,
+so a controller that keeps a run on the commits that it started with, as
+`check-conflicts` does, can tell when to start a new one.
 
 Agents get no shell. The tools that an agent can have are `read`, `grep`,
 `glob`, and `ls`, plus `edit` and `delete` when the task edits files, and

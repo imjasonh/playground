@@ -45,9 +45,11 @@ type Job struct {
 
 // Checkout is the commits that a job's agent works on.
 type Checkout struct {
-	// Branch points to Head. If the Pod finds it elsewhere, the agent
-	// doesn't run, and the run waits for a Job with the new head without
-	// counting toward the run limits.
+	// Branch points to Head. If the Pod finds it elsewhere, even at a
+	// commit that contains Head, the agent doesn't run, and the run waits
+	// for a Job with the new head without counting toward the run limits.
+	// A controller pushes what the agent changes onto Head with a lease,
+	// which fails once Branch moves.
 	Branch string
 	Head   string
 	// Parent names the branch that Branch lands on.
@@ -56,7 +58,7 @@ type Checkout struct {
 	// Merge's commit, or empty if they share no history. The agent reads
 	// the change from Base to Head.
 	Base string
-	// Merge, if set, is a branch of the same repository to merge into
+	// Merge, if set, is a commit of the same repository to merge into
 	// Head, and Base can't be empty. The agent's files are then the tree
 	// that git merge-tree --write-tree --merge-base=Base writes with
 	// merge.conflictStyle=diff3, instead of Head's, so the files that
@@ -68,14 +70,18 @@ type Checkout struct {
 	Union []string
 }
 
-// Ref is a branch and the commit that it points to.
+// Ref is a commit and a ref of the job's repository that contains it.
 type Ref struct {
-	Branch string
+	// Name is the full name of the ref that the Pod fetches Commit from,
+	// such as refs/heads/main or refs/git-k8s/downstream/heads/main. The
+	// merge is of Commit, so the ref can move past Commit before the Pod
+	// fetches it. If the ref no longer contains Commit, the agent doesn't
+	// run, as when Branch moves.
+	Name   string
 	Commit string
-	// Name, if set, is the full name of the ref that points to Commit,
-	// for a commit that refs/heads/Branch doesn't point to, such as
-	// refs/git-k8s/downstream/heads/main.
-	Name string
+	// DisplayName names the ref in the agent's prompt, such as main. Empty
+	// means Name.
+	DisplayName string
 }
 
 // JobState is what RunJob needs to follow a job's run from one call to the
@@ -112,8 +118,8 @@ type JobStatus struct {
 	// Failed is the runner's report on a run that failed after the agent
 	// started, with the Error and what the agent used, or nil.
 	Failed *Result
-	// Moved is true when the run waits because a branch moved before the
-	// Pod fetched it.
+	// Moved is true when the run waits because the Pod found that Branch
+	// moved, or that Merge's ref no longer contains its commit.
 	Moved bool
 }
 
@@ -235,10 +241,12 @@ func (j *Job) validate() error {
 		return errors.New("the job needs a name, a namespace, a repository URL, and a branch")
 	case !isCommit(c.Head) || c.Base != "" && !isCommit(c.Base):
 		return errors.New("the job's head and merge base must be commit SHAs")
-	case c.Merge != nil && (c.Merge.Branch == "" || !isCommit(c.Merge.Commit) || c.Base == ""):
-		return errors.New("a merge needs a branch, its commit's SHA, and the merge base")
-	case c.Merge != nil && c.Merge.Name != "" && !isRefName(c.Merge.Name):
+	case c.Merge != nil && (!isCommit(c.Merge.Commit) || c.Base == ""):
+		return errors.New("a merge needs its commit's SHA and the merge base")
+	case c.Merge != nil && !isRefName(c.Merge.Name):
 		return fmt.Errorf("the merged ref %.100q isn't a full ref name", c.Merge.Name)
+	case c.Merge != nil && strings.ContainsFunc(c.Merge.DisplayName, unicode.IsControl):
+		return fmt.Errorf("the merged ref's display name %.100q holds a control character", c.Merge.DisplayName)
 	case len(c.Union) > 0 && c.Merge == nil:
 		return errors.New("union paths need a merge")
 	case strings.TrimSpace(j.Task.Instructions) == "":
