@@ -676,34 +676,40 @@ func TestDoesntPushAnUpdateWhoseRaisedVersionsItCantRead(t *testing.T) {
 	const fresh = "example.com/fresh"
 	for _, tc := range []struct {
 		name string
+		// The proxy answers requests for fresh's file with code.
+		file string
 		code int
+		// until is when fresh v1.0.0 is old enough: -min-age after the
+		// controller first read fresh's list.
+		until time.Time
 	}{
-		{name: "the proxy fails", code: http.StatusInternalServerError},
-		{name: "no proxy has the module", code: http.StatusNotFound},
+		{name: "the proxy fails", file: "list", code: http.StatusInternalServerError, until: today.Add(144*time.Hour + errorRetry)},
+		{name: "no proxy has the module", file: "list", code: http.StatusNotFound, until: today.Add(144*time.Hour + errorRetry)},
+		{name: "the proxy fails to serve the version's time", file: "v1.0.0.info", code: http.StatusInternalServerError, until: today.Add(144 * time.Hour)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
 			f.u.interval, f.u.minAge = 100*time.Hour, 72*time.Hour
 			f.proxy.publish(fresh, "v1.0.0", longAgo, "")
-			f.proxy.fail(fresh, "list", tc.code)
+			f.proxy.fail(fresh, tc.file, tc.code)
 			mod := modWith(greet, "v1.1.0", fresh, "v1.0.0")
 			f.checkStays("")
 			f.clock = today.Add(72 * time.Hour)
 			p := f.start()
 			f.finish(p, result(withFiles("v1.1.0", "go.mod", mod, "go.sum", sumAt("v1.1.0"))))
 			if head := f.srv.Heads(t, "app")[greetBranch]; head != "" {
-				t.Fatalf("the controller pushed %s to %s without reading %s's versions", head, greetBranch, fresh)
+				t.Fatalf("the controller pushed %s to %s without reading %s's %s", head, greetBranch, fresh, tc.file)
 			}
 			rec := f.checkStays("")
 			if tc.code != http.StatusNotFound && rec.RequeueAfter() != errorRetry {
 				t.Errorf("RequeueAfter() = %v, want %v", rec.RequeueAfter(), errorRetry)
 			}
 
-			t.Log("Once the proxy lists the module, the update waits from then.")
-			f.proxy.fail(fresh, "list", 0)
+			t.Log("Once the proxy serves the file, the update waits until fresh v1.0.0 is old enough.")
+			f.proxy.fail(fresh, tc.file, 0)
 			f.clock = f.clock.Add(errorRetry)
 			f.checkStays("")
-			until := f.clock.Add(f.u.minAge)
+			until := tc.until
 			f.clock = until.Add(-time.Second)
 			f.checkStays("")
 			f.clock = until
