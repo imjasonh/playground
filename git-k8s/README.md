@@ -213,9 +213,17 @@ creates a new check run with the same name, because GitHub doesn't support
 starting a completed one again. GitHub shows the newest.
 
 The check run's title is the result's state, its summary is the result's
-message, and its text lists the result's outputs. When a branch moves before
-a check finishes on its old head, the controller completes the old commit's
-check run as `cancelled`.
+message, and its text lists the result's outputs.
+
+When a branch moves before a check finishes on its old head, the controller
+completes the old commit's check run as `cancelled` when it publishes the
+check's first result on the new head. The controller remembers its check
+runs only in memory, so if the program restarts, or another replica takes
+over the branch, between those two results, the old commit's check run stays
+in progress. So does the check run of a check that's running when its branch
+is deleted or its `GitRepository` loses its `checkRunsIdentity`. Branch
+protection reads only the check runs on a pull request's head commit, so an
+old commit's check run doesn't block a merge.
 
 Check runs only copy results. The controller reads a check run only to see
 whether it already shows the result, so nothing that happens on GitHub, such

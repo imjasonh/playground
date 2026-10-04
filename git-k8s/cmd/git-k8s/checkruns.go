@@ -156,7 +156,9 @@ func (c *checkRuns) publish(ctx context.Context, gh *githubAPI, b *branchResults
 		return nil
 	}
 	if ok && last.commit != res.Commit && last.shows.Status != "completed" {
-		c.supersede(ctx, gh, b, check, last, res.Commit)
+		if err := c.supersede(ctx, gh, k, last, res.Commit); err != nil {
+			return err
+		}
 	}
 
 	run := checkRun{Name: "git-k8s/" + check, HeadSHA: res.Commit, ExternalID: b.Namespace + "/" + b.Spec.Repository, runState: want}
@@ -201,15 +203,20 @@ func (c *checkRuns) publish(ctx context.Context, gh *githubAPI, b *branchResults
 // supersede completes the check run for a commit that the branch moved
 // away from before the check finished. Check controllers don't finish
 // checks on old commits, so the run would otherwise stay in progress.
-func (c *checkRuns) supersede(ctx context.Context, gh *githubAPI, b *branchResults, check string, last publishedRun, commit string) {
+func (c *checkRuns) supersede(ctx context.Context, gh *githubAPI, k runKey, last publishedRun, commit string) error {
 	last.shows = runState{Status: "completed", Conclusion: "cancelled", Output: runOutput{
 		Title:   "Superseded",
 		Summary: fmt.Sprintf("The branch moved to %s before the check finished.", gitk8s.Short(commit)),
 	}}
-	if err := gh.update(ctx, last.id, last.shows); err != nil {
-		slog.Warn("couldn't cancel a superseded check run", "namespace", b.Namespace, "gitbranch", b.Name, "check", check, "id", last.id, "error", err)
+	switch err := gh.update(ctx, last.id, last.shows); {
+	case notOurs(err):
+		// GitHub won't change this check run, so trying again can't help.
+		slog.Warn("couldn't cancel a superseded check run", "namespace", k.namespace, "gitbranch", k.branch, "check", k.check, "id", last.id, "error", err)
+	case err != nil:
+		return fmt.Errorf("cancelling the check run on %s: %w", gitk8s.Short(last.commit), err)
 	}
-	c.remember(runKey{b.Namespace, b.Name, check}, last)
+	c.remember(k, last)
+	return nil
 }
 
 // runFor returns what the check run for a result shows.

@@ -326,6 +326,48 @@ func TestCheckRunsWaitOutRateLimits(t *testing.T) {
 	}
 }
 
+func TestCancelsSupersededCheckRuns(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	head := w.Commit("add x")
+	next := w.Commit("add y")
+	w.Push("c/x")
+	at := time.Unix(1_000_000, 0)
+	p := &publisher{t: t, gh: gh, repo: gh.Repository("app", sts, rules()...), c: &checkRuns{now: func() time.Time { return at }}}
+	api := "/api/v3/repos/acme/app/"
+	h, n := gitk8s.Short(head), gitk8s.Short(next)
+	running := gitk8s.CheckResult{Commit: head, State: gitk8s.Running}
+	if _, err := p.publish(map[string]gitk8s.CheckResult{"gofmt": running}); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("When GitHub's rate limit stops the controller from cancelling the old commit's check run, it tries again after the limit.")
+	moved := map[string]gitk8s.CheckResult{"gofmt": {Commit: next, State: gitk8s.Running}}
+	gh.Fake.RateLimit(time.Minute)
+	got, err := p.publish(moved)
+	if want := []string{"PATCH " + api + "check-runs/1"}; err != nil || !slices.Equal(got, want) || p.requeue < time.Minute {
+		t.Fatalf("requests = %q, err = %v, requeue = %v; want %q and a requeue after the limit", got, err, p.requeue, want)
+	}
+	at = at.Add(p.requeue)
+	got, err = p.publish(moved)
+	if want := []string{"PATCH " + api + "check-runs/1", "GET " + api + "commits/" + next + "/check-runs", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+	if got, want := runs(gh), []string{
+		"git-k8s/gofmt@" + h + " completed cancelled: The branch moved to " + n + " before the check finished.",
+		"git-k8s/gofmt@" + n + " in_progress : Running",
+	}; !slices.Equal(got, want) {
+		t.Errorf("check runs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+
+	t.Log("When GitHub can't find the old commit's check run, the controller moves on.")
+	p.c.remember(runKey{"default", resultsOf(nil).Name, "gofmt"}, publishedRun{commit: head, id: 99, shows: runFor(running)})
+	got, err = p.publish(moved)
+	if want := []string{"PATCH " + api + "check-runs/99", "GET " + api + "commits/" + next + "/check-runs"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+}
+
 func TestCheckRunErrors(t *testing.T) {
 	gh, w, main := newGitHub(t)
 	w.Branch("c/x", main)
