@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,6 +68,8 @@ type opts struct {
 	auth  *Auth
 	stdin []byte
 	env   []string
+	// stdout takes the command's output instead of result.stdout.
+	stdout io.Writer
 }
 
 type result struct {
@@ -117,6 +120,9 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if o.stdout != nil {
+		cmd.Stdout = o.stdout
+	}
 	err := cmd.Run()
 	res := result{stdout: stdout.Bytes(), stderr: strings.TrimSpace(stderr.String())}
 	var exit *exec.ExitError

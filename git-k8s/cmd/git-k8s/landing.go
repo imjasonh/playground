@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -23,30 +24,24 @@ const (
 	reasonRewritten = "Rewritten"
 )
 
+// maxLandingCommits is the most commits that a squash or rebase landing
+// reads from a branch. A rebase runs two git commands for each commit that
+// it copies.
+const maxLandingCommits = 1000
+
 // rewrite lands a branch whose merge policy squashes or rebases it, and
 // reports the outcome. It does nothing and returns false when the branch's
 // head can land as it is, by fast-forward.
 func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote, b *gitk8s.GitBranch, results map[string]gitk8s.CheckResult) (bool, error) {
 	spec := &b.Spec
-	log, err := local.Log(ctx, spec.ParentHead, spec.Head)
-	if err != nil {
-		return false, err
-	}
-	if len(log) == 0 || log[len(log)-1].SHA != spec.Head {
-		return false, fmt.Errorf("git log of %s doesn't end at its head %s", spec.Branch, gitk8s.Short(spec.Head))
-	}
-	parent, err := local.Commit(ctx, spec.ParentHead)
-	if err != nil {
+	if keep, err := keepsHead(ctx, local, spec); err != nil || keep {
 		return false, err
 	}
 	verb := "squashed"
-	var landed, problem string
-	if spec.Merge.Landing == gitk8s.Squash {
-		landed, problem, err = m.squash(ctx, local, spec, log, parent)
-	} else {
+	if spec.Merge.Landing == gitk8s.Rebase {
 		verb = "rebased"
-		landed, problem, err = m.rebase(ctx, local, spec, log, parent)
 	}
+	landed, problem, err := m.squashOrRebase(ctx, local, spec)
 	switch {
 	case err != nil:
 		return false, err
@@ -94,16 +89,53 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 	return true, nil
 }
 
-// squash returns a commit with the branch head's files on top of the
-// parent's head. It returns the head when the head already is such a
-// commit, or when the branch is this controller's commit on the parent's
-// head followed only by checks' fixes. It returns the parent's head when
-// the branch changes no files. A problem says why the branch can't be
+// keepsHead reports whether the branch's head already is what a squash or
+// rebase makes, without reading the branch's log. land calls rewrite only
+// for a branch that contains the parent's head, so a branch without merges
+// already builds on it, and a branch of one commit on top of it is already
 // squashed.
+func keepsHead(ctx context.Context, local *git.Repo, spec *gitk8s.GitBranchSpec) (bool, error) {
+	if spec.Merge.Landing == gitk8s.Rebase {
+		merges, err := local.HasMerge(ctx, spec.ParentHead, spec.Head)
+		return !merges, err
+	}
+	parents, err := local.Parents(ctx, spec.Head)
+	return slices.Equal(parents, []string{spec.ParentHead}), err
+}
+
+// squashOrRebase reads the branch's commits and squashes or rebases them
+// onto the parent's head. A problem says why it can't.
+func (m *merger) squashOrRebase(ctx context.Context, local *git.Repo, spec *gitk8s.GitBranchSpec) (landed, problem string, err error) {
+	log, err := local.Log(ctx, spec.ParentHead, spec.Head, maxLandingCommits+1)
+	switch {
+	case errors.Is(err, git.ErrLogTooBig):
+		return "", fmt.Sprintf("%s's commits have more than %d MiB of messages, names, and other text", spec.Branch, git.MaxLogBytes>>20), nil
+	case err != nil:
+		return "", "", err
+	case len(log) > maxLandingCommits:
+		return "", fmt.Sprintf("%s has more than %d commits that %s doesn't have", spec.Branch, maxLandingCommits, spec.Parent), nil
+	case len(log) == 0 || log[len(log)-1].SHA != spec.Head:
+		return "", "", fmt.Errorf("git log of %s doesn't end at its head %s", spec.Branch, gitk8s.Short(spec.Head))
+	}
+	parent, err := local.Commit(ctx, spec.ParentHead)
+	if err != nil {
+		return "", "", err
+	}
+	if spec.Merge.Landing == gitk8s.Squash {
+		return m.squash(ctx, local, spec, log, parent)
+	}
+	return m.rebase(ctx, local, spec, log, parent)
+}
+
+// squash returns a commit with the branch head's files on top of the
+// parent's head. It returns the head when the branch is this controller's
+// commit on the parent's head followed only by checks' fixes, and the
+// parent's head when the branch changes no files. A problem says why the
+// branch can't be squashed.
 func (m *merger) squash(ctx context.Context, local *git.Repo, spec *gitk8s.GitBranchSpec, log []git.LogEntry, parent git.Commit) (landed, problem string, err error) {
 	head := log[len(log)-1]
 	switch {
-	case slices.Equal(head.Parents, []string{spec.ParentHead}), m.fixedAfterSquash(spec, log):
+	case m.fixedAfterSquash(spec, log):
 		return spec.Head, "", nil
 	case head.Tree == parent.Tree:
 		return spec.ParentHead, "", nil

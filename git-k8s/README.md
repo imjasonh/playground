@@ -272,6 +272,16 @@ also sets `NeedsRebase` when the commit whose author it keeps has an author
 that git refuses. To land that branch, rebase it yourself and give that
 commit a new author.
 
+Both landings also set `NeedsRebase` for a branch with more than 1,000
+commits that the parent doesn't have, or with more than 8 MiB of names,
+messages, and other text in those commits. The limits bound the work and
+memory that one branch takes, because a rebase runs two git commands for each
+commit that it copies, and the controller keeps every commit's message in
+memory. To land such a branch, squash it yourself into one commit on top of
+the parent's head. With `landing: Rebase`, rebasing it yourself so that it
+has no merge commits also works. The controller fast-forwards such a branch
+without reading its commits, so the limits don't apply.
+
 ### Which results count
 
 Squash and rebase landings make commits that no check saw. A squashed commit

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -92,6 +93,36 @@ func commitRaw(t *testing.T, w *gittest.Work, author, committer string) string {
 	sha := w.Git("hash-object", "-t", "commit", "--literally", "-w", path)
 	w.Git("reset", "--quiet", "--hard", sha)
 	return sha
+}
+
+// commitMany adds n commits that change no files to w's current branch,
+// with one git command.
+func commitMany(t *testing.T, w *gittest.Work, n int) {
+	t.Helper()
+	var stream strings.Builder
+	fmt.Fprintf(&stream, "reset refs/heads/many\nfrom %s\n\n", w.Git("rev-parse", "HEAD"))
+	for i := range n {
+		msg := fmt.Sprintf("commit %d\n", i)
+		fmt.Fprintf(&stream, "commit refs/heads/many\ncommitter Test Author <author@example.com> %s\ndata %d\n%s\n", testTime, len(msg), msg)
+	}
+	cmd := exec.Command("git", "fast-import", "--quiet")
+	cmd.Dir = w.Dir
+	cmd.Stdin = strings.NewReader(stream.String())
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git fast-import: %v\n%s", err, out)
+	}
+	w.Git("reset", "--quiet", "--hard", "many")
+}
+
+// commitBig adds a commit whose message has more than git.MaxLogBytes to
+// w's current branch.
+func commitBig(t *testing.T, w *gittest.Work) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "message")
+	if err := os.WriteFile(path, []byte("Big\n\n"+strings.Repeat("x", git.MaxLogBytes)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.Git("commit", "--quiet", "--allow-empty", "-F", path)
 }
 
 // describeCommit returns a commit's parents, author, committer, and message.
@@ -482,6 +513,76 @@ func TestAuthorsThatGitRefuses(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// A squash or rebase landing reads at most maxLandingCommits of the
+// branch's commits and git.MaxLogBytes of their text, so a branch with more
+// needs a person. A branch that the landing keeps as it is still lands by
+// fast-forward, because the merge controller doesn't read its commits.
+func TestLandingLimits(t *testing.T) {
+	type setup func(*testing.T, *gitk8s.GitBranch, *gittest.Work)
+	many := func(n int) setup {
+		return func(t *testing.T, b *gitk8s.GitBranch, w *gittest.Work) { commitMany(t, w, n) }
+	}
+	big := func(t *testing.T, b *gitk8s.GitBranch, w *gittest.Work) { commitBig(t, w) }
+	bigOnParent := func(t *testing.T, b *gitk8s.GitBranch, w *gittest.Work) {
+		w.Branch("c/x", b.Spec.ParentHead)
+		commitBig(t, w)
+	}
+	merged := func(s setup) setup {
+		return func(t *testing.T, b *gitk8s.GitBranch, w *gittest.Work) {
+			s(t, b, w)
+			moveParent(t, b, w, "m.txt", "m\n")
+			mergeParent(b, w)
+		}
+	}
+	tooMany := "c/x has more than 1000 commits that main doesn't have"
+	tooBig := "c/x's commits have more than 8 MiB of messages, names, and other text"
+	for name, tt := range map[string]struct {
+		landing string
+		setup   setup
+		// problem is the NeedsRebase message's reason, or "" when the
+		// branch lands with a message that starts with verb.
+		problem, verb string
+	}{
+		"squash of 1000 commits":                 {landing: gitk8s.Squash, setup: many(maxLandingCommits - 1), verb: "squashed"},
+		"squash of too many commits":             {landing: gitk8s.Squash, setup: merged(many(maxLandingCommits)), problem: tooMany},
+		"rebase of too many commits":             {landing: gitk8s.Rebase, setup: merged(many(maxLandingCommits)), problem: tooMany},
+		"squash of too much text":                {landing: gitk8s.Squash, setup: merged(big), problem: tooBig},
+		"rebase of too much text":                {landing: gitk8s.Rebase, setup: merged(big), problem: tooBig},
+		"rebase of many commits without merges":  {landing: gitk8s.Rebase, setup: many(maxLandingCommits), verb: "fast-forwarded"},
+		"rebase of a big commit without merges":  {landing: gitk8s.Rebase, setup: big, verb: "fast-forwarded"},
+		"squash of one big commit on the parent": {landing: gitk8s.Squash, setup: bigOnParent, verb: "fast-forwarded"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			b, w := branches(t, srv)
+			tt.setup(t, b, w)
+			refresh(t, b, w)
+			main, head := b.Spec.ParentHead, b.Spec.Head
+			before := srv.Heads(t, "app")
+			if err := landAs(t, srv, b, tt.landing); err != nil {
+				t.Fatal(err)
+			}
+			c := kube.FindCondition(b.Status.Conditions, "Merged")
+			if tt.problem == "" {
+				if c == nil || c.Reason != reasonLanded || !strings.HasPrefix(c.Message, tt.verb+" ") {
+					t.Fatalf("Merged = %+v, want reason %s and a message that starts with %q", c, reasonLanded, tt.verb)
+				}
+				if got, want := w.Git("rev-parse", w.Fetch("main")+"^{tree}"), w.Git("rev-parse", head+"^{tree}"); got != want {
+					t.Errorf("main's tree = %s, want the head's tree %s", got, want)
+				}
+				return
+			}
+			if after := srv.Heads(t, "app"); !maps.Equal(after, before) {
+				t.Errorf("heads = %v, want %v", after, before)
+			}
+			msg := fmt.Sprintf("can't %s c/x onto main at %s, because %s", strings.ToLower(tt.landing), gitk8s.Short(main), tt.problem)
+			if c == nil || c.Status != kube.False || c.Reason != reasonNeedsRebase || c.Message != msg {
+				t.Errorf("Merged = %+v, want reason %s and message %q", c, reasonNeedsRebase, msg)
+			}
+		})
 	}
 }
 

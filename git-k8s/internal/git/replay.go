@@ -51,11 +51,39 @@ func (e *LogEntry) Fixer() bool {
 	return false
 }
 
+// MaxLogBytes is the most output that Log reads from git.
+const MaxLogBytes = 8 << 20
+
+// ErrLogTooBig is the error from Log when git prints more than
+// MaxLogBytes.
+var ErrLogTooBig = fmt.Errorf("git log: more than %d MiB of output", MaxLogBytes>>20)
+
+// HasMerge reports whether head has a merge commit that base doesn't have.
+func (r *Repo) HasMerge(ctx context.Context, base, head string) (bool, error) {
+	out, err := r.text(ctx, "rev-list", "--merges", "--max-count=1", head, "^"+base)
+	return out != "", err
+}
+
+// Parents returns a commit's parents.
+func (r *Repo) Parents(ctx context.Context, sha string) ([]string, error) {
+	out, err := r.text(ctx, "show", "-s", "--format=%P", sha)
+	return strings.Fields(out), err
+}
+
 // Log lists the commits in head but not in base, including merges, with
-// every commit after its parents.
-func (r *Repo) Log(ctx context.Context, base, head string) ([]LogEntry, error) {
-	out, err := r.run(ctx, "log", "-z", "--reverse", "--topo-order", "--date=raw",
-		"--format=%H%x00%T%x00%P%x00%an%x00%ae%x00%ad%x00%cn%x00%ce%x00%ct%x00%B%x00%(trailers:only,unfold)", head, "^"+base)
+// every commit after its parents. It lists at most limit commits, so a
+// caller that asks for one more than it wants can tell when there are too
+// many. It returns ErrLogTooBig when the commits' names, messages, and
+// other fields have more than MaxLogBytes.
+func (r *Repo) Log(ctx context.Context, base, head string, limit int) ([]LogEntry, error) {
+	args := []string{"log", "-z", "--reverse", "--topo-order", "--date=raw", "--max-count=" + strconv.Itoa(limit),
+		"--format=%H%x00%T%x00%P%x00%an%x00%ae%x00%ad%x00%cn%x00%ce%x00%ct%x00%B%x00%(trailers:only,unfold)", head, "^" + base}
+	out := &limitedWriter{n: MaxLogBytes}
+	_, err := r.git.run(ctx, r.Dir, args, opts{stdout: out})
+	if out.full {
+		// git dies when the write fails, so err doesn't say why.
+		return nil, ErrLogTooBig
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +91,7 @@ func (r *Repo) Log(ctx context.Context, base, head string) ([]LogEntry, error) {
 	// a name, message, or trailer at a NUL inside it, so a commit can't add
 	// fields.
 	const n = 11
-	fields := strings.Split(string(out), "\x00")
+	fields := strings.Split(string(out.b), "\x00")
 	if len(fields)%n != 1 {
 		return nil, fmt.Errorf("git log: unexpected output")
 	}
@@ -91,6 +119,24 @@ func (r *Repo) Log(ctx context.Context, base, head string) ([]LogEntry, error) {
 		})
 	}
 	return entries, nil
+}
+
+// limitedWriter keeps up to n bytes, and fails the write that would go
+// over. It has only Write, so that io.Copy can't go around the limit with
+// ReadFrom.
+type limitedWriter struct {
+	b    []byte
+	n    int
+	full bool
+}
+
+func (w *limitedWriter) Write(p []byte) (int, error) {
+	if len(w.b)+len(p) > w.n {
+		w.full = true
+		return 0, ErrLogTooBig
+	}
+	w.b = append(w.b, p...)
+	return len(p), nil
 }
 
 // objectNames reports whether every string is a SHA-1 or SHA-256 object

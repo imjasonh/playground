@@ -1,6 +1,9 @@
 package git_test
 
 import (
+	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -41,7 +44,7 @@ func TestLogAndReplay(t *testing.T) {
 	if err := repo.Fetch(ctx, remote, "main", "c/x"); err != nil {
 		t.Fatal(err)
 	}
-	log, err := repo.Log(ctx, parent, head)
+	log, err := repo.Log(ctx, parent, head, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,8 +75,19 @@ func TestLogAndReplay(t *testing.T) {
 	if !log[2].Fixer() || !slices.Equal(log[2].Trailers, []string{git.FixerTrailer + ": touch"}) || log[2].Tree != w.Git("rev-parse", head+"^{tree}") {
 		t.Errorf("head = %+v, want a fixer commit with the head's tree", log[2])
 	}
-	if none, err := repo.Log(ctx, head, head); err != nil || len(none) != 0 {
+	if none, err := repo.Log(ctx, head, head, 3); err != nil || len(none) != 0 {
 		t.Errorf("Log(head, head) = %v, %v; want nothing", none, err)
+	}
+	for _, tt := range []struct {
+		base, head string
+		want       bool
+	}{{parent, head, true}, {merge, head, false}, {base, x1, false}} {
+		if got, err := repo.HasMerge(ctx, tt.base, tt.head); err != nil || got != tt.want {
+			t.Errorf("HasMerge(%s, %s) = %v, %v; want %v", tt.base, tt.head, got, err, tt.want)
+		}
+	}
+	if parents, err := repo.Parents(ctx, merge); err != nil || !slices.Equal(parents, []string{x1, parent}) {
+		t.Errorf("Parents(merge) = %v, %v; want x1 and the parent", parents, err)
 	}
 
 	tree, conflicts, err := repo.CherryPick(ctx, x1, base, parent)
@@ -109,6 +123,49 @@ func TestLogAndReplay(t *testing.T) {
 	// A change that onto already has applies cleanly and changes nothing.
 	if again, conflicts, err := repo.CherryPick(ctx, x1, base, replayed); err != nil || len(conflicts) > 0 || again != tree {
 		t.Errorf("CherryPick onto a commit with the change = %q, %v, %v; want %q", again, conflicts, err, tree)
+	}
+}
+
+func TestLogLimits(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	base := w.Commit("base")
+	w.Push("main")
+	var commits []string
+	for i := range 3 {
+		commits = append(commits, w.Commit(fmt.Sprintf("commit %d", i)))
+	}
+	message := filepath.Join(t.TempDir(), "message")
+	if err := os.WriteFile(message, []byte("Big\n\n"+strings.Repeat("x", git.MaxLogBytes)+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w.Git("commit", "--quiet", "--allow-empty", "-F", message)
+	big := w.Git("rev-parse", "HEAD")
+	w.Push("c/x")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main", "c/x"); err != nil {
+		t.Fatal(err)
+	}
+	for _, tt := range []struct {
+		limit int
+		want  []string
+	}{{3, commits}, {2, commits[1:]}} {
+		log, err := repo.Log(ctx, base, commits[2], tt.limit)
+		var shas []string
+		for _, e := range log {
+			shas = append(shas, e.SHA)
+		}
+		if err != nil || !slices.Equal(shas, tt.want) {
+			t.Errorf("Log with limit %d = %v, %v; want %v", tt.limit, shas, err, tt.want)
+		}
+	}
+	if log, err := repo.Log(ctx, base, big, 10); !errors.Is(err, git.ErrLogTooBig) {
+		t.Errorf("Log of a commit with a %d-byte message = %d commits, %v; want ErrLogTooBig", git.MaxLogBytes, len(log), err)
 	}
 }
 
