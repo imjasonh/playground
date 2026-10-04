@@ -91,6 +91,7 @@ var (
 	nameRE      = regexp.MustCompile(`^` + githubName + `$`)
 	githubGitRE = regexp.MustCompile(`^/(` + githubName + `)/(` + githubName + `\.git)/(info/refs|git-upload-pack|git-receive-pack)$`)
 	githubAPIRE = regexp.MustCompile(`^/api/v3/repos/(` + githubName + `)/(` + githubName + `)/(?:check-runs(?:/([0-9]+))?|commits/([0-9a-f]{40})/check-runs)$`)
+	gitEnv      = []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_ALLOW_PROTOCOL=http:https:git:ssh:file"}
 )
 
 func (g *GitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -169,8 +170,8 @@ func (g *GitHub) exchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cmd := exec.Command("git", "--git-dir", filepath.Join(g.Root, owner, repo+".git"),
-		"show", "refs/heads/main:.github/chainguard/"+identity+".sts.yaml")
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+		"show", "--end-of-options", "refs/heads/main:.github/chainguard/"+identity+".sts.yaml")
+	cmd.Env = append(os.Environ(), gitEnv...)
 	b, err := cmd.Output()
 	if err != nil {
 		stsError(w, http.StatusNotFound, fmt.Sprintf("unable to find trust policy for %q", identity))
@@ -352,8 +353,8 @@ func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo stri
 		c = new(CheckRun)
 		*c = *old
 	} else {
-		cmd := exec.Command("git", "--git-dir", filepath.Join(g.Root, repo+".git"), "cat-file", "-e", in.HeadSHA+"^{commit}")
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+		cmd := exec.Command("git", "--git-dir", filepath.Join(g.Root, repo+".git"), "cat-file", "-e", "--end-of-options", in.HeadSHA+"^{commit}")
+		cmd.Env = append(os.Environ(), gitEnv...)
 		if in.Name == nil || *in.Name == "" || cmd.Run() != nil {
 			apiError(w, http.StatusUnprocessableEntity, fmt.Sprintf("No commit found for SHA: %s", in.HeadSHA))
 			return
