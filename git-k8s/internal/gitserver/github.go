@@ -107,7 +107,7 @@ var (
 	nameRE      = regexp.MustCompile(`^` + githubName + `$`)
 	githubGitRE = regexp.MustCompile(`^/(` + githubName + `)/(` + githubName + `\.git)/(info/refs|git-upload-pack|git-receive-pack)$`)
 	githubAPIRE = regexp.MustCompile(`^/api/v3/repos/(` + githubName + `)/(` + githubName + `)/(?:check-runs(?:/([0-9]+))?|commits/([0-9a-f]{40})/check-runs)$`)
-	gitEnv      = []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_ALLOW_PROTOCOL=http:https:git:ssh:file"}
+	gitEnv      = []string{"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull, "GIT_ALLOW_PROTOCOL=http:https:git:ssh"}
 )
 
 func (g *GitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
