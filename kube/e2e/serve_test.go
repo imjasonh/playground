@@ -1,19 +1,49 @@
 package e2e_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/e2e"
 	"github.com/imjasonh/playground/kube/internal/image/imagetest"
 )
+
+type idleConfigMaps struct{}
+
+func (idleConfigMaps) Reconcile(context.Context, *ConfigMapMeta) error { return nil }
+
+// TestServeListenFailure runs a manager, without leader election, whose
+// kube.Serve address is in use. Run must return the error instead of
+// stopping as if its context had ended.
+func TestServeListenFailure(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	m := &kube.Manager{Name: "serve-listen-e2e", Kubeconfig: e2e.Env(t).Kubeconfig, Logger: e2e.Logger(t), ServeAddr: ln.Addr().String()}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	err = m.Run(ctx, kube.For[ConfigMapMeta](idleConfigMaps{}, kube.Named("serve-listen")), kube.Serve(http.NotFoundHandler()))
+	if !errors.Is(err, syscall.EADDRINUSE) {
+		t.Errorf("Run = %v, want an error that the address is in use", err)
+	}
+	if ctx.Err() != nil {
+		t.Errorf("Run returned only once its context ended: %v", ctx.Err())
+	}
+}
 
 // TestGenerateProbe installs the probe example, which requests tokens for
 // its own service account, reviews its callers' tokens, and triggers

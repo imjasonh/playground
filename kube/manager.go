@@ -245,11 +245,16 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 			stops[i]()
 		}
 	}()
-	// startFailed reports a failure to start, unless ctx was canceled
-	// meanwhile, which stops the manager cleanly.
+	// startFailed reports a failure to start. If the caller stopped the
+	// manager meanwhile, it stops cleanly. If a server failed, which
+	// canceled ctx and so made this step fail, it reports the server's
+	// error.
 	startFailed := func(err error) error {
-		if ctx.Err() != nil {
+		switch {
+		case parent.Err() != nil:
 			return nil
+		case ctx.Err() != nil:
+			return context.Cause(ctx)
 		}
 		return err
 	}

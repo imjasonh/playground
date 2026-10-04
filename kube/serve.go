@@ -3,6 +3,7 @@ package kube
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"sync/atomic"
@@ -13,8 +14,8 @@ import (
 // that other programs call. Every replica serves, whether or not it holds a
 // lease, from when it starts until it stops. The manager serves plain HTTP
 // at Manager.ServeAddr, ":8081" by default, and /readyz reports ready once
-// it does. The generate command routes port 80 of the program's Service to
-// it.
+// it does. Run returns an error if it can't listen there. The generate
+// command routes port 80 of the program's Service to it.
 //
 // The server doesn't authenticate requests. Check each caller's bearer
 // token with ReviewToken.
@@ -32,12 +33,16 @@ import (
 func Serve(h http.Handler) Controller { return &server{h: h} }
 
 type server struct {
-	h     http.Handler
-	m     *Manager
+	h  http.Handler
+	m  *Manager
+	ln net.Listener
+	// keep stops prepare's closing of ln when the manager stops, and
+	// reports whether ln is still open.
+	keep  func() bool
 	ready atomic.Bool
 }
 
-func (s *server) prepare(_ context.Context, m *Manager) error {
+func (s *server) prepare(ctx context.Context, m *Manager) error {
 	if s.h == nil {
 		return errors.New("kube.Serve: the handler is nil")
 	}
@@ -46,7 +51,17 @@ func (s *server) prepare(_ context.Context, m *Manager) error {
 			return errors.New("kube.Serve: the program serves more than one handler; serve every path from one handler, such as an http.ServeMux")
 		}
 	}
-	s.m = m
+	addr := m.ServeAddr
+	if addr == "" {
+		addr = ":8081"
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("kube.Serve: %w", err)
+	}
+	s.m, s.ln = m, ln
+	// Run doesn't call run if a later step of starting fails.
+	s.keep = context.AfterFunc(ctx, func() { ln.Close() })
 	return nil
 }
 
@@ -57,14 +72,10 @@ func (s *server) controllerName() string                { return "serve" }
 func (s *server) synced() bool                          { return s.ready.Load() }
 
 func (s *server) run(ctx context.Context) error {
-	addr := s.m.ServeAddr
-	if addr == "" {
-		addr = ":8081"
+	if !s.keep() {
+		return nil
 	}
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return err
-	}
+	ln := s.ln
 	srv := &http.Server{
 		Handler:           http.HandlerFunc(s.serveHTTP),
 		ReadHeaderTimeout: 10 * time.Second,
