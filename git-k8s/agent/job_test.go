@@ -466,7 +466,7 @@ func TestPrepareScriptMergesARefWithUnionPaths(t *testing.T) {
 	w := srv.NewWork(t, "app")
 	w.Write("f.txt", "one\ntwo\nthree\n")
 	w.Write("go.sum", "a v1\n")
-	w.Write(".gitattributes", "f.txt merge=ours\n")
+	w.Write(".gitattributes", "f.txt merge=union\n")
 	base := w.Commit("base")
 	w.Write("f.txt", "one\nours\nthree\n")
 	w.Write("go.sum", "a v1\nb v1\n")
@@ -488,7 +488,11 @@ func TestPrepareScriptMergesARefWithUnionPaths(t *testing.T) {
 		},
 		Task: Task{Instructions: "Merge the external head.", Edit: true},
 	}
-	dir, out, err := runPrepare(t, r.jobPod(job, 1).Spec.InitContainers[0], nil)
+	// Git reads the branch's .gitattributes from the head's tree, as some
+	// versions do in a bare repository.
+	prepare := r.jobPod(job, 1).Spec.InitContainers[0]
+	prepare.Env = append(prepare.Env, EnvVar{Name: "GIT_ATTR_SOURCE", Value: head})
+	dir, out, err := runPrepare(t, prepare, nil)
 	if err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
 	}
@@ -504,7 +508,7 @@ func TestPrepareScriptMergesARefWithUnionPaths(t *testing.T) {
 		t.Errorf("go.sum = %q, want the lines of both sides", got)
 	}
 	if got, want := read("/src/f.txt"), fmt.Sprintf("one\n<<<<<<< %s\nours\n||||||| %s\ntwo\n=======\ntheirs\n>>>>>>> %s\nthree\n", head, base, external); got != want {
-		t.Errorf("f.txt =\n%s\nwant the conflict, despite the branch's merge=ours\n%s", got, want)
+		t.Errorf("f.txt =\n%s\nwant the conflict, despite the branch's merge=union\n%s", got, want)
 	}
 
 	t.Log("The Pod's merge is the merge that a controller makes with git.Repo.Merge.")
@@ -526,7 +530,7 @@ func TestPrepareScriptMergesARefWithUnionPaths(t *testing.T) {
 		w.Commit(fmt.Sprintf("external moves %d", i))
 	}
 	w.PushRef(downstream)
-	dir, out, err = runPrepare(t, r.jobPod(job, 1).Spec.InitContainers[0], nil)
+	dir, out, err = runPrepare(t, prepare, nil)
 	if err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
 	}
@@ -539,7 +543,7 @@ func TestPrepareScriptMergesARefWithUnionPaths(t *testing.T) {
 	w.Write("g.txt", "rewound\n")
 	w.Commit("external rewinds")
 	w.PushRef(downstream)
-	_, out, err = runPrepare(t, r.jobPod(job, 1).Spec.InitContainers[0], nil)
+	_, out, err = runPrepare(t, prepare, nil)
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != movedStatus || !strings.Contains(out, downstream+" no longer contains "+external) {
 		t.Errorf("prepare = %v\n%s; want status 3", err, out)

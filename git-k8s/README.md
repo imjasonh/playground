@@ -452,16 +452,16 @@ When a branch diverged and also conflicts with its parent, the check merges
 the external repository's head first, because merging the parent doesn't
 end the divergence.
 
-Git resolves what it can by itself. Files that match `-union`, which is
-`go.sum` by default, merge with git's union driver, which keeps the lines of
-both sides. A union merge can make a file that doesn't work, such as a
-`go.sum` that lacks a line that the merged `go.mod` needs, so we recommend a
-gate that also needs a check that builds the result, such as `gotest`. The
-merge uses only the attributes that `-union` makes, not the branch's
-`.gitattributes` file, so a branch can't make the check pick a side with a
-merge driver such as `merge=ours`. The check doesn't use `git rerere`, which
-replays resolutions that a person recorded in a working tree, or the `ours`
-and `theirs` options of git's merge strategy, which pick a side.
+Git resolves what it can by itself. Files that match `-union`, which is `go.sum`
+by default, merge with git's union driver, which keeps the lines of both sides.
+A union merge can make a file that doesn't work, such as a `go.sum` that lacks a
+line that the merged `go.mod` needs, so we recommend a gate that also needs a
+check that builds the result, such as `gotest`. The merge uses only the
+attributes that `-union` makes, not the `.gitattributes` files of either side,
+so a branch can't make git resolve its own conflicts, such as by marking a file
+`merge=union`. The check doesn't use `git rerere`, which replays resolutions
+that a person recorded in a working tree, or the `ours` and `theirs` options of
+git's merge strategy, which pick a side.
 
 When conflicts remain and the check has an agent image, an agent resolves
 them in a sandboxed Pod that `Runner.RunJob` starts, as described in
@@ -596,22 +596,23 @@ kube doesn't create the Pod again.
 `agent.MaxFiles` and `agent.MaxFileBytes` are the most files and bytes that
 a result can change, so a controller can skip a run whose result can't fit.
 
-For an agent that resolves a merge, set `Checkout.Merge` to the commit to
-merge into the head, and `Checkout.Base` to their merge base. In
-`Checkout.Merge`, `Name` is the full name of a ref that contains the
-commit, such as `refs/heads/main` or `refs/git-k8s/downstream/heads/main`,
-and `DisplayName` is how the prompt names it, such as `main`.
-`Checkout.Union` lists path patterns in the gitattributes format whose
-conflicts the merge resolves with git's union driver. The `prepare`
-container then writes the files of the merge that `git merge-tree
---write-tree` makes with `merge.conflictStyle=diff3`, instead of the
+For an agent that resolves a merge, set `Checkout.Merge` to the commit to merge
+into the head, and `Checkout.Base` to their merge base. In `Checkout.Merge`,
+`Name` is the full name of a ref that contains the commit, such as
+`refs/heads/main` or `refs/git-k8s/downstream/heads/main`, and `DisplayName` is
+how the prompt names it, such as `main`. `Checkout.Union` lists path patterns in
+the gitattributes format whose conflicts the merge resolves with git's union
+driver. The `prepare` container then writes the files of the merge that `git
+merge-tree --write-tree` makes with `merge.conflictStyle=diff3`, instead of the
 head's, which is the same merge as `git.Repo.Merge` with those patterns in
-`MergeOptions.Union`. Each conflict in a file holds the head's lines, the
-merge base's lines, and the merged commit's lines between conflict markers.
-A file that one side deleted and the other changed holds the changed
-version. The prompt lists the paths that conflict and the commits that the
-merge brings in. With `Task.Edit`, the result's `Files` change the merge's
-files, and the controller builds the merge commit from them.
+`MergeOptions.Union`. Like `git.Repo.Merge`, the merge doesn't read the commits'
+`.gitattributes` files, so only `Checkout.Union` changes how files merge. Each
+conflict in a file holds the head's lines, the merge base's lines, and the
+merged commit's lines between conflict markers. A file that one side deleted and
+the other changed holds the changed version. The prompt lists the paths that
+conflict and the commits that the merge brings in. With `Task.Edit`, the
+result's `Files` change the merge's files, and the controller builds the merge
+commit from them.
 
 The branch must still point to the head when the Pod fetches it, because
 the controller pushes what the agent changes onto the head with a lease,

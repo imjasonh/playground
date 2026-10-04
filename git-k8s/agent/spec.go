@@ -112,9 +112,12 @@ const movedStatus = 3
 // changed.
 //
 // The fetches take the last 50 commits, and fetch the rest of the history
-// only when MERGE_HEAD or BASE isn't in them. ATTRIBUTES holds more
-// attributes for the merge, which set merge=union for the paths whose
-// conflicts git resolves by keeping the lines of both sides.
+// only when MERGE_HEAD or BASE isn't in them. The merge reads attributes
+// from the empty tree instead of the commits, as git.Repo.Merge does, so
+// the branch's .gitattributes files can't change it, even with a git that
+// reads them from a tree. ATTRIBUTES holds more attributes for the merge,
+// which set merge=union for the paths whose conflicts git resolves by
+// keeping the lines of both sides.
 const prepareScript = `set -eu
 git init -q "$REPO"
 cd "$REPO"
@@ -149,8 +152,9 @@ printf '* -text -eol -ident -filter -working-tree-encoding\n' >.git/info/attribu
 printf '%s' "${ATTRIBUTES:-}" >>.git/info/attributes
 tree="$HEAD"
 if [ -n "${MERGE_HEAD:-}" ]; then
+  empty="$(git hash-object -t tree --stdin </dev/null)"
   merge_tree() {
-    git -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages --name-only "$@" --merge-base="$BASE" --end-of-options "$HEAD" "$MERGE_HEAD"
+    git --attr-source="$empty" -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages --name-only "$@" --merge-base="$BASE" --end-of-options "$HEAD" "$MERGE_HEAD"
   }
   code=0
   merge_tree >.git/merge || code=$?
