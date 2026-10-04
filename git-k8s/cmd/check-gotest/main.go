@@ -26,6 +26,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
+	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -198,6 +199,7 @@ func testPod(in *checks.Input, name string) *Pod {
 		{Name: "HEAD", Value: in.Spec.Head},
 		{Name: "HOME", Value: "/tmp"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
+		{Name: "GIT_ALLOW_PROTOCOL", Value: git.AllowProtocol},
 	}
 	if ref := in.Repository.Spec.SecretRef; ref != nil {
 		fetchEnv = append(fetchEnv,

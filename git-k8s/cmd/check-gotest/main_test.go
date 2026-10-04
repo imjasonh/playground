@@ -126,8 +126,14 @@ func TestFetchRefusesUnsafeURLs(t *testing.T) {
 		t.Skip("git isn't installed")
 	}
 	marker := filepath.Join(t.TempDir(), "ran")
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git-remote-evil"), []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	for url, want := range map[string]string{
 		"--upload-pack=touch " + marker + "; false": "blocked",
+		"evil::x": "not allowed",
 	} {
 		b, repo := branch()
 		repo.Spec.URL = url

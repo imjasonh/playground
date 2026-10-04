@@ -23,6 +23,10 @@ import (
 // FixerTrailer is the commit trailer that marks commits pushed by checks.
 const FixerTrailer = "Git-K8s-Fixer"
 
+// AllowProtocol is the GIT_ALLOW_PROTOCOL setting that git-k8s runs git
+// with. It allows only the transports that a GitRepository's URL can name.
+const AllowProtocol = "http:https:git:ssh:file"
+
 // Auth is a username and password for HTTP basic authentication.
 type Auth struct {
 	Username string
@@ -98,6 +102,7 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 		"GIT_TERMINAL_PROMPT=0",
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_GLOBAL=" + os.DevNull,
+		"GIT_ALLOW_PROTOCOL=" + AllowProtocol,
 		"LC_ALL=C",
 	}
 	for _, kv := range os.Environ() {

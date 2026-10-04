@@ -82,6 +82,22 @@ func TestOptionURLsDontRunCommands(t *testing.T) {
 	}
 }
 
+func TestOtherTransportsDontRun(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "ran")
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "git-remote-evil"), []byte("#!/bin/sh\ntouch "+marker+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	_, err := (&git.Git{}).LsRemote(t.Context(), git.Remote{URL: "evil::x"})
+	if _, statErr := os.Stat(marker); statErr == nil {
+		t.Fatal("git ran the remote helper")
+	}
+	if err == nil || !strings.Contains(err.Error(), "not allowed") {
+		t.Errorf("err = %v, want git to refuse the transport", err)
+	}
+}
+
 func TestLsRemoteSkipsUnsafeBranches(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")
