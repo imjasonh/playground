@@ -153,9 +153,10 @@ condition says why, with the reason `FetchFailed` or
 When you delete a `GitRepository`, the controller pushes the copy's last
 changes to the external repository and then deletes the copy. While the
 external repository lacks a change, because the sync fails or a branch
-diverged, the `GitRepository` stays, and its `Synced` condition says why. To
-delete it anyway, with the changes that the external repository lacks,
-remove the finalizer `kube.imjasonh.github.io/repositories`.
+diverged, the `GitRepository` stays, and its `Synced` condition says why. It
+also stays while the mirror can't compare a branch's heads. To delete it
+anyway, with the changes that the external repository lacks, remove the
+finalizer `kube.imjasonh.github.io/repositories`.
 
 The mirror syncs branches only. It doesn't fetch or push tags, and it takes
 pushes only to branches.
