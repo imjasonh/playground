@@ -47,6 +47,7 @@ func TestShareable(t *testing.T) {
 		"mod/example.com/dep@v1.0.0/broken/x_amd64.s":    "#include \"unterminated\n",
 		"mod/example.com/dep@v1.0.0/inc/val.h":           "#define VAL $41\n",
 		"mod/cache/download/example.com/odd/x/x_amd64.s": "TEXT ·f(SB),0,$0\n",
+		"src/repo/inc/val.h":                             "#define VAL $666\n",
 	}
 	for name, src := range files {
 		path := filepath.Join(root, name)
