@@ -1234,6 +1234,67 @@ func TestCheckRunsAfterDepartures(t *testing.T) {
 	}
 }
 
+// TestDeparturesLeaveOtherResultsAlone counts the requests after a branch
+// leaves a commit where the check run doesn't show the branch's result,
+// because it shows the result of a branch that's still there or a finished
+// result that the controller kept. The departing branch's reconcile doesn't
+// write the check run, and the reconcile of the branch whose result the
+// check run has to show writes it once.
+func TestDeparturesLeaveOtherResultsAlone(t *testing.T) {
+	t.Run("ResultStillThere", func(t *testing.T) {
+		s := newSharing(t, 2)
+		t.Log("c/x and c/y share a check run, which shows c/y's result. c/y's check finishes, and before the controller publishes the result, c/x leaves the commit.")
+		s.step("c/x", s.result(0, gitk8s.Running, "started Pod x"), s.get(0), post)
+		s.step("c/y", s.result(0, gitk8s.Running, "started Pod y"), patch+"1")
+		s.p.set("c/y", s.result(0, gitk8s.Passed, "passed on c/y"))
+		s.step("c/x", s.result(1, gitk8s.Running, "started Pod x"), s.get(1), post)
+
+		t.Log("c/y's reconcile publishes c/y's result.")
+		s.again("c/y", patch+"1")
+		s.wantRuns(
+			"git-k8s/gotest@"+s.short(0)+" completed success: passed on c/y",
+			"git-k8s/gotest@"+s.short(1)+" in_progress : started Pod x",
+		)
+	})
+
+	t.Run("KeptFinishedResult", func(t *testing.T) {
+		s := newSharing(t, 3)
+		t.Log("c/y and c/z have results at a commit that the controller hasn't published, and c/x leaves the commit. Of the two results, c/y's counts because its name sorts first, and it's in progress, so the check run keeps c/x's finished result.")
+		s.step("c/x", s.result(0, gitk8s.Passed, "passed on c/x"), s.get(0), post)
+		s.p.set("c/y", s.result(0, gitk8s.Running, "started Pod y"))
+		s.p.set("c/z", s.result(0, gitk8s.Failed, "failed on c/z"))
+		s.step("c/x", s.result(1, gitk8s.Running, "started Pod x"), s.get(1), post)
+
+		t.Log("c/y leaves the commit before the controller publishes its result there, and then c/z's reconcile publishes c/z's result.")
+		s.step("c/y", s.result(2, gitk8s.Running, "started Pod y"), s.get(2), post)
+		s.again("c/z", patch+"1")
+		s.wantRuns(
+			"git-k8s/gotest@"+s.short(0)+" completed failure: failed on c/z",
+			"git-k8s/gotest@"+s.short(1)+" in_progress : started Pod x",
+			"git-k8s/gotest@"+s.short(2)+" in_progress : started Pod y",
+		)
+	})
+
+	t.Run("RefusedUpdate", func(t *testing.T) {
+		s := newSharing(t, 3)
+		t.Log("c/y and c/z have finished results at a commit that the controller hasn't published, and c/x leaves the commit. GitHub refuses to make the check run show c/y's result, which counts because c/y's name sorts first, so the check run keeps c/x's result.")
+		s.step("c/x", s.result(0, gitk8s.Passed, "passed on c/x"), s.get(0), post)
+		s.p.set("c/y", s.result(0, gitk8s.Failed, "failed on c/y"))
+		s.p.set("c/z", s.result(0, gitk8s.Passed, "passed on c/z"))
+		s.gh.Fake.Fail(http.StatusForbidden)
+		s.step("c/x", s.result(1, gitk8s.Running, "started Pod x"), patch+"1", s.get(1), post)
+
+		t.Log("c/y leaves the commit before the controller publishes its result there, and then c/z's reconcile publishes c/z's result.")
+		s.step("c/y", s.result(2, gitk8s.Running, "started Pod y"), s.get(2), post)
+		s.again("c/z", patch+"1")
+		s.wantRuns(
+			"git-k8s/gotest@"+s.short(0)+" completed success: passed on c/z",
+			"git-k8s/gotest@"+s.short(1)+" in_progress : started Pod x",
+			"git-k8s/gotest@"+s.short(2)+" in_progress : started Pod y",
+		)
+	})
+}
+
 func TestCheckRunsRetryRefusedCompletions(t *testing.T) {
 	s := newSharing(t, 1)
 	s.step("c/x", s.result(0, gitk8s.Running, ""), s.get(0), post)
