@@ -40,9 +40,12 @@ test("parses the paths that conflict from what git merge-tree -z writes", () => 
     { "a.txt": "ours\n", 'we"ird\tname': "ours\n", "c.txt": null },
     { "a.txt": "theirs\n", 'we"ird\tname': "theirs\n", "c.txt": "changed\n", "b.txt": "b2\n" },
   );
-  assert.deepEqual(parseConflicts(readFileSync(task.conflictsFile ?? "")), ["a.txt", "c.txt", 'we"ird\tname']);
+  const { tree, paths } = parseConflicts(readFileSync(task.conflictsFile ?? ""));
+  assert.deepEqual(paths, ["a.txt", "c.txt", 'we"ird\tname']);
+  const repo = `${task.workTree}/../git`;
+  assert.equal(gitBuffer(repo, "ls-tree", "-z", "--name-only", "--end-of-options", tree).toString(), 'a.txt\0b.txt\0c.txt\0we"ird\tname\0');
   const clean = prepareMerge({ "a.txt": "a\n" }, { "b.txt": "b\n" }, { "c.txt": "c\n" });
-  assert.deepEqual(parseConflicts(readFileSync(clean.conflictsFile ?? "")), []);
+  assert.deepEqual(parseConflicts(readFileSync(clean.conflictsFile ?? "")).paths, []);
 });
 
 test("refuses a list of conflicts that it can't parse or that's too long", () => {
@@ -50,7 +53,7 @@ test("refuses a list of conflicts that it can't parse or that's too long", () =>
   for (const data of ["", `${tree}`, `${tree}\0a.txt`, `${tree}\0\0`, "tree\0a.txt\0", `${tree.toUpperCase()}\0`]) {
     assert.throws(() => parseConflicts(Buffer.from(data)), /isn't git merge-tree --name-only -z output/, JSON.stringify(data));
   }
-  assert.deepEqual(parseConflicts(Buffer.from(`${tree}${"0".repeat(24)}\0a\0`)), ["a"]);
+  assert.deepEqual(parseConflicts(Buffer.from(`${tree}${"0".repeat(24)}\0a\0`)), { tree: `${tree}${"0".repeat(24)}`, paths: ["a"] });
   assert.throws(() => parseConflicts(Buffer.from(`${tree}\0${"a\0".repeat(MAX_PATHS + 1)}`)), /more than 1000 paths conflict/);
   assert.throws(() => parseConflicts(Buffer.from(`${tree}\0${"a".repeat(MAX_PATHS_BYTES)}\0`)), /paths take more than 128 KiB/);
 });

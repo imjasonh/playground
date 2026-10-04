@@ -473,12 +473,13 @@ and holds both sides' changes. The agent can edit files but not delete them, and
 it can't build or run the code. It answers fail when it can't tell how to keep
 both sides' changes.
 
-The check commits the agent's files as a merge whose parents are both
-heads. It fails instead when the agent changed a file that doesn't conflict,
-deleted a file, or gave a file a mode that the file has on neither side, or
-when a file still holds a conflict marker. A file holds one when a line
-starts with one of the merge's marker labels, or when more of its lines
-start like a marker than in its two sides together.
+The check commits the agent's files as a merge whose parents are both heads. It
+fails instead when the merge that the agent's Pod made doesn't have the same
+tree as the check's merge, when the agent changed a file that doesn't conflict,
+deleted a file, or gave a file a mode that the file has on neither side, or when
+a file still holds a conflict marker. A file holds one when a line starts with
+one of the merge's marker labels, or when more of its lines start like a marker
+than in its two sides together.
 
 The check runs an agent only when the policy lets it push, and only within
 `maxAutomatedCommits` and `maxAgentRuns`. It runs none for a merge with more
@@ -616,7 +617,10 @@ and holds the change from the merge base to the merged commit, its paths, and
 its commits, as well as the head's. The two diffs share the prompt's 200,000
 bytes for a diff, and each gets at least half of them. With `Task.Edit`, the
 result's `Files` change the merge's files, and the controller builds the merge
-commit from them.
+commit from them. The result's `MergeTree` names the tree of the Pod's merge. To
+build the commit, make the same merge, such as with `git.Repo.Merge`, and check
+that its tree is `MergeTree`, so that the commit holds the files that the agent
+saw.
 
 The branch must still point to the head when the Pod fetches it, because
 the controller pushes what the agent changes onto the head with a lease,

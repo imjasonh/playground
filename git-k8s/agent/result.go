@@ -40,6 +40,12 @@ type Result struct {
 	DurationMS   int64    `json:"durationMs"`
 	// Files are the files that the agent changed, when its task let it.
 	Files []File `json:"files"`
+	// MergeTree is set for a job with Checkout.Merge. It's the tree of the
+	// merge that git merge-tree wrote in the Pod, which the agent's work
+	// tree started with, and which Files change. A controller that commits
+	// Files makes the same merge, and checks that its tree is MergeTree, so
+	// that the commit holds the files that the agent saw.
+	MergeTree string `json:"mergeTree,omitempty"`
 	// Error says why the run failed after the agent started. Then Verdict
 	// is Fail, Summary, Reasoning, and Files are empty, and Usage and the
 	// costs are what the agent used before it failed.
@@ -119,8 +125,9 @@ func isDigest(s string) bool {
 }
 
 // parseResult checks a result that a Pod served against the digest that its
-// agent container reported, and checks what the agent put in it.
-func parseResult(body []byte, digest string, edit bool) (*Result, error) {
+// agent container reported, and checks what the agent put in it. edit and
+// merge say whether the task edits files and whether the job merges.
+func parseResult(body []byte, digest string, edit, merge bool) (*Result, error) {
 	sum := sha256.Sum256(body)
 	if digest != "sha256:"+hex.EncodeToString(sum[:]) {
 		return nil, errors.New("its digest doesn't match the one that the agent container reported")
@@ -141,6 +148,13 @@ func parseResult(body []byte, digest string, edit bool) (*Result, error) {
 	}
 	if len(res.Files) > 0 && !edit {
 		return nil, errors.New("it changes files, which its task doesn't allow")
+	}
+	switch {
+	// A tree's name has the same form as a commit's.
+	case merge && !isCommit(res.MergeTree):
+		return nil, fmt.Errorf("its merge tree is %.80q, not the name of a tree", res.MergeTree)
+	case !merge && res.MergeTree != "":
+		return nil, errors.New("it names a merge tree, but its job merges nothing")
 	}
 	if err := checkFiles(res.Files); err != nil {
 		return nil, err

@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -62,6 +65,35 @@ func TestChecksFiles(t *testing.T) {
 		if err := checkFiles(tc.files); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("checkFiles = %v, want an error with %q", err, tc.want)
 		}
+	}
+}
+
+func TestNeedsTheMergeTreeOfAMerge(t *testing.T) {
+	tree := strings.Repeat("4b", 20)
+	for _, tc := range []struct {
+		name, tree string
+		merge      bool
+		want       string
+	}{
+		{name: "merge", tree: tree, merge: true},
+		{name: "merge in SHA-256", tree: tree + strings.Repeat("0", 24), merge: true},
+		{name: "review"},
+		{name: "merge without a tree", merge: true, want: `its merge tree is "", not the name of a tree`},
+		{name: "merge with a name that git reads as an option", tree: "--output=x", merge: true, want: `its merge tree is "--output=x"`},
+		{name: "merge with an abbreviated tree", tree: tree[:12], merge: true, want: "not the name of a tree"},
+		{name: "review with a tree", tree: tree, want: "it names a merge tree, but its job merges nothing"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, _ := json.Marshal(Result{Verdict: Pass, MergeTree: tc.tree})
+			sum := sha256.Sum256(body)
+			res, err := parseResult(body, "sha256:"+hex.EncodeToString(sum[:]), false, tc.merge)
+			switch {
+			case tc.want == "" && (err != nil || res.MergeTree != tc.tree):
+				t.Errorf("parseResult = %+v, %v; want the result with merge tree %q", res, err, tc.tree)
+			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+				t.Errorf("parseResult = %v, want an error with %q", err, tc.want)
+			}
+		})
 	}
 }
 

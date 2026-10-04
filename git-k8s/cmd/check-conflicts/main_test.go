@@ -114,16 +114,35 @@ func withJobs(t *testing.T, fn func(job *agent.Job, st *agent.JobState) agent.Jo
 }
 
 // finish finishes each run with res, as RunJob does once it fetches the
-// agent's result. Like RunJob, it reports a run whose JobState is done as
-// done without its result.
-func finish(res *agent.Result) func(*agent.Job, *agent.JobState) agent.JobStatus {
-	return func(_ *agent.Job, st *agent.JobState) agent.JobStatus {
+// agent's result, with the tree of the merge that the agent's Pod makes in
+// w. Like RunJob, it reports a run whose JobState is done as done without
+// its result.
+func finish(t *testing.T, w *gittest.Work, res *agent.Result) func(*agent.Job, *agent.JobState) agent.JobStatus {
+	return func(job *agent.Job, st *agent.JobState) agent.JobStatus {
 		if st.Done {
 			return agent.JobStatus{Done: true, Message: "the run in Pod " + st.Pod + " already finished"}
 		}
 		st.Runs, st.Pod, st.Attempt, st.Done = st.Runs+1, "conflicts-app-c-x-1", 1, true
-		return agent.JobStatus{Done: true, Message: cmp.Or(res.Reasoning, res.Summary), Result: res}
+		res := *res
+		res.MergeTree = mergeTree(t, w, job)
+		return agent.JobStatus{Done: true, Message: cmp.Or(res.Reasoning, res.Summary), Result: &res}
 	}
+}
+
+// mergeTree is the tree of the merge that the agent's Pod makes for job,
+// in w, which holds the job's commits.
+func mergeTree(t *testing.T, w *gittest.Work, job *agent.Job) string {
+	t.Helper()
+	repo, err := (&git.Git{}).Open(t.Context(), w.Dir+"/.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := job.Checkout
+	tree, _, err := repo.Merge(t.Context(), c.Head, c.Merge.Commit, git.MergeOptions{Base: c.Base, Union: c.Union})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tree
 }
 
 // podTask is what a Pod's AGENT_TASK says about the agent's task.
@@ -551,9 +570,11 @@ func TestKeepsTheRunsStateInItsOutputs(t *testing.T) {
 }
 
 func TestFetchesTheResultAgainWhenGitFails(t *testing.T) {
+	srv := gittest.NewServer(t, "pw")
+	b, w, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
 	// Like RunJob, the fake reports a run whose JobState is done as done
 	// without its result.
-	withJobs(t, func(_ *agent.Job, st *agent.JobState) agent.JobStatus {
+	withJobs(t, func(job *agent.Job, st *agent.JobState) agent.JobStatus {
 		switch {
 		case st.Done:
 			return agent.JobStatus{Done: true, Message: "the run in Pod " + st.Pod + " already finished"}
@@ -562,10 +583,10 @@ func TestFetchesTheResultAgainWhenGitFails(t *testing.T) {
 			return agent.JobStatus{Message: "started Pod " + st.Pod}
 		}
 		st.Done = true
-		return agent.JobStatus{Done: true, Message: "Both sides change the second line.", Result: resolution(resolvedA)}
+		res := resolution(resolvedA)
+		res.MergeTree = mergeTree(t, w, job)
+		return agent.JobStatus{Done: true, Message: "Both sides change the second line.", Result: res}
 	})
-	srv := gittest.NewServer(t, "pw")
-	b, w, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
 	if _, err := reconcile(t, srv, b, rules); err != nil {
 		t.Fatal(err)
 	}
@@ -616,10 +637,10 @@ func TestCommitsTheAgentsResolution(t *testing.T) {
 		external bool
 	}{{name: "of main"}, {name: "of the external head", external: true}} {
 		t.Run(tc.name, func(t *testing.T) {
-			jobs := withJobs(t, finish(resolution(resolvedA)))
 			srv := gittest.NewServer(t, "pw")
 			mainFiles := map[string]string{"a.txt": "one\nmain\nthree\n", "go.sum": "a v1\nb v1\n"}
 			b, w, base := setup(t, srv, mainFiles, map[string]string{"a.txt": "one\nbranch\nthree\n", "go.sum": "a v1\nc v1\n"})
+			jobs := withJobs(t, finish(t, w, resolution(resolvedA)))
 			head, merged := b.Spec.Head, b.Spec.ParentHead
 			ref, task, title := &agent.Ref{Name: "refs/heads/main", Commit: merged, DisplayName: "main"}, instructions, "Merge main into c/x"
 			var world []any
@@ -703,9 +724,9 @@ func TestRejectsABadResolution(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			withJobs(t, finish(resolution(tc.files...)))
 			srv := gittest.NewServer(t, "")
-			b, _, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+			b, w, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+			withJobs(t, finish(t, w, resolution(tc.files...)))
 			head := b.Spec.Head
 			if _, err := reconcile(t, srv, b, rules); err != nil {
 				t.Fatal(err)
@@ -721,6 +742,31 @@ func TestRejectsABadResolution(t *testing.T) {
 				t.Errorf("c/x moved to %s", got)
 			}
 		})
+	}
+}
+
+func TestRejectsAResolutionOfAnotherMerge(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+	head := b.Spec.Head
+	other, merged := w.Git("rev-parse", "--end-of-options", head+"^{tree}"), ""
+	withJobs(t, func(job *agent.Job, st *agent.JobState) agent.JobStatus {
+		s := finish(t, w, resolution(resolvedA))(job, st)
+		if s.Result != nil {
+			merged, s.Result.MergeTree = s.Result.MergeTree, other
+		}
+		return s
+	})
+	if _, err := reconcile(t, srv, b, rules); err != nil {
+		t.Fatal(err)
+	}
+	res := b.Status.Checks.Result
+	want := "can't commit the agent's resolution: the agent resolved a merge with the tree " + other + ", but the check's merge has the tree " + merged
+	if res.State != gitk8s.Failed || res.Message != want {
+		t.Errorf("result = %+v, want Failed with %q", res, want)
+	}
+	if got := srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s", got)
 	}
 }
 

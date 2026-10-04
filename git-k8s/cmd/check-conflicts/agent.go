@@ -239,14 +239,17 @@ func jobState(outputs map[string]string) *agent.JobState {
 }
 
 // commitResolution makes the merge of t into the branch's head that the
-// agent's files resolve, after checking that they change only files that
-// conflict and leave no conflict markers. It returns the merge and the
-// files that conflicted.
+// agent's files resolve, after checking that the agent's Pod made the same
+// merge, and that the files change only files that conflict and leave no
+// conflict markers. It returns the merge and the files that conflicted.
 func commitResolution(ctx context.Context, in *checks.Input, repo *git.Repo, t target, base string, res *agent.Result) (string, []string, error) {
 	head := in.Spec.Head
 	tree, conflicts, err := repo.Merge(ctx, head, t.commit, git.MergeOptions{Base: base, Union: union})
 	if err != nil {
 		return "", nil, err
+	}
+	if tree != res.MergeTree {
+		return "", nil, fmt.Errorf("the agent resolved a merge with the tree %s, but the check's merge has the tree %s", res.MergeTree, tree)
 	}
 	byPath := make(map[string]git.Conflict, len(conflicts))
 	for _, c := range conflicts {

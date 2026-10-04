@@ -83,9 +83,11 @@ func TestRunsAJob(t *testing.T) {
 	t.Log("RunJob follows the Pod until it serves the agent's result.")
 	p.Namespace = "default"
 	p.UID = "uid-" + p.Name
-	digest := f.serve(review(Pass, File{Path: "a.txt", Mode: "100644", Content: []byte("merged\n")}), p.UID)
+	tree := strings.Repeat("4b", 20)
+	body, _ := json.Marshal(Result{Verdict: Pass, Reasoning: "Both sides change a.txt.", MergeTree: tree, Files: []File{{Path: "a.txt", Mode: "100644", Content: []byte("merged\n")}}})
+	digest := f.serve(body, p.UID)
 	s, rec = f.runJob(job, st, finished(p, digest))
-	if !s.Done || s.Result == nil || len(s.Result.Files) != 1 || s.Message != "The change adds DO NOT MERGE at a.txt:2." || rec.RequeueAfter() != time.Second {
+	if !s.Done || s.Result == nil || len(s.Result.Files) != 1 || s.Result.MergeTree != tree || s.Message != "Both sides change a.txt." || rec.RequeueAfter() != time.Second {
 		t.Fatalf("RunJob = %+v and RequeueAfter = %v, want the agent's result and a reconcile that deletes the Pod", s, rec.RequeueAfter())
 	}
 

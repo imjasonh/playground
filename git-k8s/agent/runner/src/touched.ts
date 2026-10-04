@@ -39,11 +39,19 @@ export function parseNameStatus(data: Buffer): TouchedPath[] {
   return paths;
 }
 
+/** A merge that git merge-tree wrote. */
+export interface Conflicts {
+  /** The merge's tree, whose files that conflict hold conflict markers. */
+  tree: string;
+  /** The paths that conflict. */
+  paths: string[];
+}
+
 /**
  * Parses git merge-tree --write-tree --name-only -z output: the merge's
  * tree, and then each path that conflicts.
  */
-export function parseConflicts(data: Buffer): string[] {
+export function parseConflicts(data: Buffer): Conflicts {
   if (data.length > MAX_PATHS_BYTES) {
     throw new Error(`the merge's conflicting paths take more than ${MAX_PATHS_BYTES >> 10} KiB, more than an agent can resolve`);
   }
@@ -55,5 +63,5 @@ export function parseConflicts(data: Buffer): string[] {
   if (paths.length > MAX_PATHS) {
     throw new Error(`more than ${MAX_PATHS} paths conflict, more than an agent can resolve`);
   }
-  return paths;
+  return { tree, paths };
 }

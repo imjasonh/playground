@@ -10,7 +10,7 @@ import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
 import type { Task } from "../src/task.js";
 import { MAX_PATHS } from "../src/touched.js";
-import { prepareMerge, preparePod } from "./pod.js";
+import { gitBuffer, prepareMerge, preparePod } from "./pod.js";
 
 const quiet: RunOptions = { log: () => undefined };
 
@@ -140,6 +140,25 @@ test("resolves a merge, and reports the files of the merge that the agent change
     readResult(task).files.map((f) => [f.path, Buffer.from(f.content ?? "", "base64").toString()]),
     [["a.txt", "one\nours and theirs\nthree\n"]],
   );
+});
+
+test("names the tree of the merge in each result of a merge", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const broken: Backend = async (r) => {
+    throw new AgentError("the run broke", { model: r.model, usage: { inputTokens: 1, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 } });
+  };
+  for (const backend of [fakeBackend, broken]) {
+    const task = prepareMerge({ "a.txt": "one\n" }, { "a.txt": "ours\n" }, { "a.txt": "theirs\n" }, { edit: true });
+    const conflict = readFileSync(join(task.workTree, "a.txt"));
+    assert.equal(await runTask(task, { ...quiet, backends: { fake: backend } }), 0);
+    const { mergeTree, error } = readResult(task);
+    assert.equal(error !== undefined, backend === broken);
+    assert.deepEqual(gitBuffer(join(task.workTree, "..", "git"), "cat-file", "blob", "--end-of-options", `${mergeTree}:a.txt`), conflict);
+
+    const review = preparePod({}, { "a.txt": "a\n" });
+    assert.equal(await runTask(review, { ...quiet, backends: { fake: backend } }), 0);
+    assert.equal(readResult(review).mergeTree, undefined);
+  }
 });
 
 test("the fake agent resolves a merge's conflicts by keeping both sides", async () => {
