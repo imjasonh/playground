@@ -280,18 +280,29 @@ ones beside them.
 GitHub limits the requests that each installation of a GitHub App can make,
 and an installation is one owner's. When GitHub answers that an installation
 reached its limit, the controller stops publishing for that repository
-owner, for every app, until the time that GitHub gives, or for a minute. It
-logs other errors from GitHub and tries again later, up to 5 minutes apart.
-It keeps trying even when GitHub's answer can't change. For example, GitHub
-refuses with a `422` status to create a check run on a commit that it
-doesn't have, and the controller tries again until no branch's result is
-for that commit. When GitHub refuses with a `4xx` status to update the
-check run on a commit that a branch left, the controller logs the error and
-doesn't try again, so that the error doesn't delay the check run on the
-branch's new commit. Each reconcile of a repository's branches updates the
-check runs that deleted branches left, so while GitHub fails otherwise to
-update one, every branch's reconcile fails and tries again with its own
-backoff. Rate limits and errors don't hold back checks or landings.
+owner, for every app, until the time that GitHub gives, or for a minute. A
+reconcile also stops at the first request that GitHub doesn't answer, so a
+GitHub that doesn't answer holds up a repository's reconciles for one
+30-second timeout each, not one for each check. GitHub can carry out a
+request without its answer arriving, for example when the connection drops
+or a proxy answers with a `502` status. So when a request to create a check
+run gets no answer or a `5xx` status, the controller looks for the check run
+on GitHub before it writes again. When a request to update a check run gets
+no answer or a `5xx` status, the controller writes the check run again, even
+when the result doesn't change.
+
+The controller logs other errors from GitHub and tries again later, up to 5
+minutes apart. It keeps trying even when GitHub's answer can't change. For
+example, GitHub refuses with a `422` status to create a check run on a
+commit that it doesn't have, and the controller tries again until no
+branch's result is for that commit. When GitHub refuses with a `4xx` status
+to update the check run on a commit that a branch left, the controller logs
+the error and doesn't try again, so that the error doesn't delay the check
+run on the branch's new commit. Each reconcile of a repository's branches
+updates the check runs that deleted branches left, so while GitHub fails
+otherwise to update one, every branch's reconcile fails and tries again
+with its own backoff. Rate limits and errors don't hold back checks or
+landings.
 
 To show whether the check-runs identity works, the repositories controller
 sets the `CheckRunsTokenIssued` condition on the `GitRepository`, which is

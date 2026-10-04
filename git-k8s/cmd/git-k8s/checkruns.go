@@ -687,7 +687,7 @@ func reopening(err error, want runState) bool {
 }
 
 // retryable reports whether trying again can fix err, as for a rate limit,
-// an error on GitHub's side, or a request that didn't reach GitHub.
+// an error on GitHub's side, or a request without an answer.
 func retryable(err error) bool {
 	var e *githubError
 	return err != nil && (!errors.As(err, &e) || e.status >= http.StatusInternalServerError)
