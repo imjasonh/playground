@@ -8,13 +8,13 @@
 //     checks, and the versions that they cover show in go.mod.
 //   - It touches a path that matches a -sensitive glob.
 //   - A go.mod file that it changes requires a module that no go.mod file
-//     at the merge base requires, moves a module to another major version
-//     or to a version that isn't a release, replaces a module with another
-//     module or with a directory outside the repository, stops replacing
-//     one, or changes the go or toolchain line. Modules that a go.mod file
-//     at the merge base declares, and modules that the file replaces with a
-//     directory in the repository, are the repository's own, so requiring
-//     them is fine.
+//     at the merge base requires, moves a module to an earlier version than
+//     the file required, to another major version, or to a version that
+//     isn't a release, replaces a module with another module or with a
+//     directory outside the repository, stops replacing one, or changes the
+//     go or toolchain line. Modules that a go.mod file at the merge base
+//     declares, and modules that the file replaces with a directory in the
+//     repository, are the repository's own, so requiring them is fine.
 //   - It changes a go.work file, whose directives apply to every module in
 //     the workspace.
 //   - It has commits from AI agents, which carry the Git-K8s-Agent trailer.
@@ -234,11 +234,22 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 			add("changes %s, which check-risk can't read: %v", f.path, f.err)
 			continue
 		}
+		old := previous[f.path]
+		was := map[string]string{}
+		if old != nil {
+			for _, r := range old.Require {
+				if semver.Compare(r.Mod.Version, was[r.Mod.Path]) > 0 {
+					was[r.Mod.Path] = r.Mod.Version
+				}
+			}
+		}
 		for _, r := range f.file.Require {
 			p, v := r.Mod.Path, r.Mod.Version
 			versions := required[p]
 			prefix, _, _ := module.SplitPathVersion(p)
 			switch {
+			case semver.Compare(v, was[p]) < 0:
+				add("downgrades %s from %s to %s", p, was[p], v)
 			case local[p] || replacedInRepo(f, p, v) || slices.Contains(versions, v):
 			case len(versions) == 0 && majors[prefix] != "":
 				add("moves %s to %s", majors[prefix], p)
@@ -263,7 +274,6 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 				add("replaces %s with %s, which is outside the repository", r.Old, r.New.Path)
 			}
 		}
-		old := previous[f.path]
 		if old == nil {
 			continue
 		}

@@ -81,11 +81,15 @@ require (
 replace example.com/fork => example.com/forked v1.0.0
 `
 
-const toolsMod = "module example.com/app/tools\n\ngo 1.24\n\nrequire example.com/t v1.0.0\n\nreplace example.com/t => ../t\n"
+const toolsMod = "module example.com/app/tools\n\ngo 1.24\n\nrequire (\n\texample.com/b v0.3.0\n\texample.com/t v1.0.0\n)\n\nreplace example.com/t => ../t\n"
 
 func TestRiskOfModules(t *testing.T) {
 	*maxLines, *sensitive = 10, ""
-	base := map[string]string{"go.mod": goMod, "tools/go.mod": toolsMod}
+	base := map[string]string{
+		"go.mod":       goMod,
+		"tools/go.mod": toolsMod,
+		"dup/go.mod":   "module example.com/app/dup\n\ngo 1.24\n\nrequire (\n\texample.com/d v1.0.0\n\texample.com/d v1.2.0\n\texample.com/d v1.1.0\n)\n",
+	}
 	edit := func(old, new string) map[string]string {
 		return map[string]string{"go.mod": strings.Replace(goMod, old, new, 1)}
 	}
@@ -145,6 +149,14 @@ func TestRiskOfModules(t *testing.T) {
 		{name: "new module", change: edit(")", "\texample.com/c v1.0.0\n)"), level: "high", reason: "adds module example.com/c"},
 		{name: "major version path", change: edit("example.com/a v1.2.3", "example.com/a/v2 v2.0.0"), level: "high", reason: "moves example.com/a to example.com/a/v2"},
 		{name: "v0 to v1", change: edit("b v0.4.0", "b v1.0.0"), level: "high", reason: "moves example.com/b to v1.0.0, a new major version"},
+		{name: "downgrade", change: edit("a v1.2.3", "a v1.2.0"), level: "high", reason: "downgrades example.com/a from v1.2.3 to v1.2.0"},
+		{name: "downgrade to a version that another go.mod file requires", change: edit("b v0.4.0", "b v0.3.0"), level: "high", reason: "downgrades example.com/b from v0.4.0 to v0.3.0"},
+		{name: "upgrade to a version older than another go.mod file's", change: map[string]string{"tools/go.mod": strings.Replace(toolsMod, "b v0.3.0", "b v0.3.1", 1)}, level: "low"},
+		{
+			name:   "downgrade from the highest of several requirements",
+			change: map[string]string{"dup/go.mod": "module example.com/app/dup\n\ngo 1.24\n\nrequire example.com/d v1.1.5\n"},
+			level:  "high", reason: "downgrades example.com/d from v1.2.0 to v1.1.5",
+		},
 		{name: "prerelease", change: edit("a v1.2.3", "a v1.3.0-rc.1"), level: "high", reason: "moves example.com/a to v1.3.0-rc.1, which isn't a release"},
 		{name: "pseudo-version", change: edit("a v1.2.3", "a v1.2.4-0.20260102030405-abcdefabcdef"), level: "high", reason: "which isn't a release"},
 		{name: "replacement", change: edit("replace", "replace example.com/a => example.com/fork/a v1.2.3\nreplace"), level: "high", reason: "replaces example.com/a with example.com/fork/a@v1.2.3"},
