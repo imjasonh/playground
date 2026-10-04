@@ -15,6 +15,7 @@
 //	kube:"immutable"              rejects changes after creation (CEL rule)
 //	kube:"optional" / "required"  overrides the json tag rule
 //	kube:"listType=map,listMapKey=name"
+//	kube:"mapType=atomic"         server-side apply replaces the whole map
 //	kube:"column=Ready"           adds a kubectl get column for the field
 //	pattern:"^[a-z]+$"            regular expression for strings
 //	doc:"..."                     description shown by kubectl explain
@@ -351,6 +352,8 @@ func applyTags(s map[string]any, t reflect.Type, tags fieldTags) error {
 		case "listMapKey":
 			keys, _ := s["x-kubernetes-list-map-keys"].([]string)
 			s["x-kubernetes-list-map-keys"] = append(keys, v)
+		case "mapType":
+			s["x-kubernetes-map-type"] = v
 		case "column", "optional", "required":
 		default:
 			return fmt.Errorf("schema: unknown kube tag option %q on %v", k, t)

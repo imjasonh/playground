@@ -198,6 +198,7 @@ validation and display hints to the generated schema:
 | `kube:"immutable"` | A validation rule that rejects changes after creation |
 | `kube:"optional"`, `kube:"required"` | Overrides the rule based on `json` tags |
 | `kube:"listType=map,listMapKey=name"` | Merges the list by key in server-side apply |
+| `kube:"mapType=atomic"` | Replaces the whole map or struct in server-side apply, so one manager owns it |
 | `kube:"column=Ready"` | A `kubectl get` column |
 | `pattern:"^[a-z]+$"` | Regular expression for a string |
 | `doc:"..."` | Description shown by `kubectl explain` |
