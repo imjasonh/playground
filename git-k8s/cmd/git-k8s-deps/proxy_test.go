@@ -130,6 +130,7 @@ func TestTarget(t *testing.T) {
 		from     []string
 		excluded []string
 		minAge   time.Duration
+		vetted   string
 		want     string
 		wait     time.Duration
 	}{{
@@ -220,6 +221,44 @@ func TestTarget(t *testing.T) {
 		releases: []release{{version: "v1.0.0"}, {version: "v1.1.0", age: time.Minute}},
 		from:     []string{"v1.0.0"},
 		want:     "v1.1.0",
+	}, {
+		name:     "a vetted version that's too young",
+		releases: []release{{version: "v1.0.0"}, {version: "v1.1.0", age: time.Hour}, {version: "v1.2.0", age: day}},
+		from:     []string{"v1.0.0"},
+		minAge:   3 * day,
+		vetted:   "v1.1.0",
+		want:     "v1.1.0",
+		wait:     2 * day,
+	}, {
+		name:     "an old enough version newer than the vetted one",
+		releases: []release{{version: "v1.0.0"}, {version: "v1.1.0", age: time.Hour}, {version: "v1.2.0"}},
+		from:     []string{"v1.0.0"},
+		minAge:   3 * day,
+		vetted:   "v1.1.0",
+		want:     "v1.2.0",
+	}, {
+		name: "a vetted version that's retracted",
+		releases: []release{
+			{version: "v1.0.0"}, {version: "v1.1.0", age: time.Hour},
+			{version: "v1.2.0", age: day, mod: "retract v1.1.0\n"},
+		},
+		from:   []string{"v1.0.0"},
+		minAge: 3 * day,
+		vetted: "v1.1.0",
+		wait:   2 * day,
+	}, {
+		name:     "a vetted version that's excluded",
+		releases: []release{{version: "v1.0.0"}, {version: "v1.1.0", age: time.Hour}},
+		from:     []string{"v1.0.0"},
+		excluded: []string{"v1.1.0"},
+		minAge:   3 * day,
+		vetted:   "v1.1.0",
+	}, {
+		name:     "a vetted version that every file requires",
+		releases: []release{{version: "v1.0.0"}, {version: "v1.1.0", age: time.Hour}},
+		from:     []string{"v1.1.0"},
+		minAge:   3 * day,
+		vetted:   "v1.1.0",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			fp := newFakeProxy(t)
@@ -237,7 +276,7 @@ func TestTarget(t *testing.T) {
 				excluded[v] = true
 			}
 			p := listedLongAgo(t, mod, fp.URL)
-			got, wait, err := p.target(t.Context(), mod, tc.from, excluded, tc.minAge)
+			got, wait, err := p.target(t.Context(), mod, tc.from, excluded, tc.minAge, tc.vetted)
 			if err != nil || got != tc.want || wait != tc.wait {
 				t.Errorf("target() = %q, %v, %v, want %q, %v", got, wait, err, tc.want, tc.wait)
 			}
@@ -257,7 +296,7 @@ func TestTargetCaches(t *testing.T) {
 	p := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return clock })
 	target := func() string {
 		t.Helper()
-		v, _, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, 0)
+		v, _, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, 0, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -298,7 +337,7 @@ func TestTargetWaitsFromWhenAVersionShowsUp(t *testing.T) {
 	p := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return clock })
 	target := func(p *proxy, want string, wantWait time.Duration) {
 		t.Helper()
-		got, wait, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, minAge)
+		got, wait, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, minAge, "")
 		if err != nil || got != want || wait != wantWait {
 			t.Errorf("target() = %q, %v, %v, want %q, %v", got, wait, err, want, wantWait)
 		}
@@ -392,7 +431,7 @@ func TestTargetErrors(t *testing.T) {
 			a, b := newFakeProxy(t), newFakeProxy(t)
 			tc.setup(a, b)
 			p := listedLongAgo(t, mod, a.URL, b.URL)
-			got, _, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, time.Hour)
+			got, _, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, time.Hour, "")
 			switch {
 			case tc.want != "":
 				if err != nil || got != tc.want {

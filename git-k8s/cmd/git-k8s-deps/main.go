@@ -286,8 +286,12 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 	if err != nil {
 		return err
 	}
-	targets, failed := u.discover(ctx, repo.Spec.Branches, parent, requirements(mods), log)
-	writes, deletes, err := u.plan(ctx, local, parentHead, maxCommits(repo.Spec.Branches, parent), targets, failed, existing)
+	owned, err := u.owned(ctx, local, parentHead, existing)
+	if err != nil {
+		return err
+	}
+	targets, failed := u.discover(ctx, repo.Spec.Branches, parent, requirements(mods), owned, log)
+	writes, deletes, err := u.plan(ctx, local, parentHead, maxCommits(repo.Spec.Branches, parent), targets, failed, existing, owned)
 	if err != nil {
 		return err
 	}
@@ -482,8 +486,10 @@ func requirements(mods map[string]*modFile) map[moduleMajor]*requirement {
 }
 
 // discover returns the update that each module needs, and the modules whose
-// versions the controller couldn't read.
-func (u *updater) discover(ctx context.Context, rules []gitk8s.BranchRule, parent string, reqs map[moduleMajor]*requirement, log *slog.Logger) (map[moduleMajor]update, map[moduleMajor]bool) {
+// versions the controller couldn't read. The version of a branch that the
+// controller owns was old enough when the controller pushed it, so it
+// doesn't wait for -min-age again.
+func (u *updater) discover(ctx context.Context, rules []gitk8s.BranchRule, parent string, reqs map[moduleMajor]*requirement, owned map[moduleMajor]ownedBranch, log *slog.Logger) (map[moduleMajor]update, map[moduleMajor]bool) {
 	targets, failed := map[moduleMajor]update{}, map[moduleMajor]bool{}
 	for _, m := range slices.SortedFunc(maps.Keys(reqs), compareModules) {
 		name := m.branch(u.prefix)
@@ -491,7 +497,7 @@ func (u *updater) discover(ctx context.Context, rules []gitk8s.BranchRule, paren
 			continue
 		}
 		r := reqs[m]
-		version, wait, err := u.proxy.target(ctx, m.path, slices.Collect(maps.Values(r.from)), r.excluded, u.minAge)
+		version, wait, err := u.proxy.target(ctx, m.path, slices.Collect(maps.Values(r.from)), r.excluded, u.minAge, owned[m].version)
 		kube.RequeueAfter(ctx, wait)
 		if err != nil {
 			failed[m] = true
@@ -517,10 +523,10 @@ func (u *updater) discover(ctx context.Context, rules []gitk8s.BranchRule, paren
 
 // plan returns the branches to create or replace with updates, and the
 // branches to delete. It leaves alone the branches of modules whose
-// versions it couldn't read, and branches with commits from people.
-// maxCommits is how many automated commits the parent's merge policy
-// allows on a branch.
-func (u *updater) plan(ctx context.Context, repo *git.Repo, parentHead string, maxCommits int, targets map[moduleMajor]update, failed map[moduleMajor]bool, existing map[moduleMajor]string) (writes, deletes []change, err error) {
+// versions it couldn't read, and the branches in existing that the
+// controller doesn't own. maxCommits is how many automated commits the
+// parent's merge policy allows on a branch.
+func (u *updater) plan(ctx context.Context, repo *git.Repo, parentHead string, maxCommits int, targets map[moduleMajor]update, failed map[moduleMajor]bool, existing map[moduleMajor]string, owned map[moduleMajor]ownedBranch) (writes, deletes []change, err error) {
 	all := map[moduleMajor]bool{}
 	for m := range targets {
 		all[m] = true
@@ -541,17 +547,15 @@ func (u *updater) plan(ctx context.Context, repo *git.Repo, parentHead string, m
 			}
 			continue
 		}
-		owned, fixes, err := u.ownership(ctx, repo, parentHead, head)
+		o, mine := owned[m]
 		switch {
-		case err != nil:
-			return nil, nil, err
-		case !owned:
+		case !mine:
 			continue
 		case !wanted:
 			deletes = append(deletes, change{branch: c.branch, old: head})
 			continue
 		}
-		ok, err := current(ctx, repo, parentHead, head, up, fixes < maxCommits && fixes > 0)
+		ok, err := current(ctx, repo, parentHead, head, up, o.fixes < maxCommits && o.fixes > 0)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -562,31 +566,69 @@ func (u *updater) plan(ctx context.Context, repo *git.Repo, parentHead string, m
 	return writes, deletes, nil
 }
 
-// ownership reports whether every commit that a branch has and its parent
-// doesn't is the controller's or a check's fix, and counts the fixes. The
-// controller committed its commits, which end with its trailer, and a check
-// committed each fix, which ends with the fixer trailer. Someone who amends
-// or squashes those commits becomes their committer, so the branch is
-// theirs.
-func (u *updater) ownership(ctx context.Context, repo *git.Repo, parentHead, head string) (owned bool, fixes int, err error) {
+// ownedBranch is a branch that the controller owns. fixes counts the fixes
+// that checks pushed to it, and version is the version of the module that
+// the trailer of its newest update names, or "" if no trailer names one.
+type ownedBranch struct {
+	fixes   int
+	version string
+}
+
+// owned returns the branches in existing that the controller owns.
+func (u *updater) owned(ctx context.Context, repo *git.Repo, parentHead string, existing map[moduleMajor]string) (map[moduleMajor]ownedBranch, error) {
+	out := map[moduleMajor]ownedBranch{}
+	for m, head := range existing {
+		b, ok, err := u.ownership(ctx, repo, parentHead, m, head)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			out[m] = b
+		}
+	}
+	return out, nil
+}
+
+// ownership reports whether every commit that a module's branch has and its
+// parent doesn't is the controller's or a check's fix. The controller
+// committed its commits, which end with its trailer, and a check committed
+// each fix, which ends with the fixer trailer. Someone who amends or
+// squashes those commits becomes their committer, so the branch is theirs.
+func (u *updater) ownership(ctx context.Context, repo *git.Repo, parentHead string, m moduleMajor, head string) (b ownedBranch, owned bool, err error) {
 	commits, err := repo.ListCommits(ctx, parentHead, head, maxOwned+1)
 	if err != nil || len(commits) > maxOwned {
-		return false, 0, err
+		return ownedBranch{}, false, err
 	}
 	mine, checks := u.cfg.Identity.Written().Email, git.Identity{Email: u.checkEmail}.Written().Email
 	for _, c := range commits {
 		switch {
 		case c.Committer.Email == checks && hasTrailer(c, git.FixerTrailer):
-			fixes++
+			b.fixes++
 		case c.Committer.Email != mine || !hasTrailer(c, depsTrailer):
-			return false, 0, nil
+			return ownedBranch{}, false, nil
+		case b.version == "":
+			b.version = updatedTo(c, m)
 		}
 	}
-	return true, fixes, nil
+	return b, true, nil
 }
 
 func hasTrailer(c git.ListedCommit, key string) bool {
 	return slices.ContainsFunc(c.Trailers, func(t string) bool { return strings.HasPrefix(t, key+":") })
+}
+
+// updatedTo returns the version of m that an update commit's trailer names,
+// or "". The version only matters if it's one that target could pick, so
+// updatedTo doesn't check it.
+func updatedTo(c git.ListedCommit, m moduleMajor) string {
+	for _, t := range c.Trailers {
+		value, ok := strings.CutPrefix(t, depsTrailer+":")
+		f := strings.Fields(value)
+		if ok && len(f) == 3 && f[0] == "go" && f[1] == m.path {
+			return f[2]
+		}
+	}
+	return ""
 }
 
 // current reports whether a branch's head already makes an update on the

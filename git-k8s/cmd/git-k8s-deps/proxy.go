@@ -220,9 +220,10 @@ func (p *proxy) retractions(ctx context.Context, path, version string) ([]modfil
 // in from, or "" if there's none. That's the newest release with the same
 // major version as the newest version in from that's newer than the oldest
 // one, isn't in excluded, isn't retracted, and is at least minAge old, both
-// by its time and since it showed up in the module's list. wait is how long
-// until a newer version is old enough.
-func (p *proxy) target(ctx context.Context, path string, from []string, excluded map[string]bool, minAge time.Duration) (version string, wait time.Duration, err error) {
+// by its time and since it showed up in the module's list, unless it's
+// vetted, a version that was old enough before. wait is how long until a
+// newer version is old enough.
+func (p *proxy) target(ctx context.Context, path string, from []string, excluded map[string]bool, minAge time.Duration, vetted string) (version string, wait time.Duration, err error) {
 	if len(from) == 0 {
 		return "", 0, nil
 	}
@@ -252,7 +253,7 @@ func (p *proxy) target(ctx context.Context, path string, from []string, excluded
 		}) {
 			continue
 		}
-		if minAge > 0 {
+		if minAge > 0 && v != vetted {
 			t, err := p.time(ctx, path, v)
 			if err != nil {
 				return "", 0, err

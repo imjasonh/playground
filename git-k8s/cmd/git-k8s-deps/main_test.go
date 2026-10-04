@@ -342,6 +342,19 @@ func (f *fixture) checkStays(head string, world ...any) *kube.Recorder {
 	return rec
 }
 
+// restart replaces the updater with one that has the same flags and
+// nothing in memory, as when the controller restarts or another replica
+// takes over.
+func (f *fixture) restart() {
+	old := f.u
+	f.u = &updater{
+		cfg: old.cfg, checkEmail: old.checkEmail, prefix: old.prefix, goProxy: old.goProxy, goSumDB: old.goSumDB,
+		goImage: old.goImage, gitImage: old.gitImage, resultImage: old.resultImage, runtimeClass: old.runtimeClass,
+		timeout: old.timeout, sourceSize: old.sourceSize, goCacheSize: old.goCacheSize, maxPods: old.maxPods,
+		interval: old.interval, minAge: old.minAge, now: old.now, resultPort: old.resultPort,
+	}
+}
+
 func TestIgnoresBranchesThatArentParents(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -484,6 +497,87 @@ func TestWaitsForTheMinimumAge(t *testing.T) {
 			}
 			f.clock = f.clock.Add(time.Second)
 			f.update("v1.1.0")
+		})
+	}
+}
+
+func TestKeepsItsBranchesAfterARestart(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		// change changes greet's branch after the controller updates greet
+		// to v1.1.0, and returns the branch's new head.
+		change func(f *fixture, head string) string
+		// moved moves main after the restart.
+		moved bool
+	}{{
+		name: "an update",
+	}, {
+		name: "an update with a fix",
+		change: func(f *fixture, head string) string {
+			return f.pushFix("app.go", "package app\n\n// fixed\n", agentFix)
+		},
+	}, {
+		name: "an update on an older one",
+		change: func(f *fixture, head string) string {
+			f.proxy.publish(greet, "v1.2.0", f.clock, "")
+			f.work.Branch("work", head)
+			f.work.Write("go.mod", modAt("v1.2.0"))
+			f.work.Write("go.sum", sumAt("v1.2.0"))
+			f.work.Git("add", "-A")
+			head = f.commitAs(f.u.cfg.Identity, "Update example.com/greet to v1.2.0\n\nGit-K8s-Deps: go example.com/greet v1.2.0\n", head)
+			f.work.Push(greetBranch)
+			return head
+		},
+	}, {
+		name:  "an update behind main",
+		moved: true,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.u.interval, f.u.minAge = 100*time.Hour, 72*time.Hour
+			f.checkStays("")
+			f.clock = f.clock.Add(f.u.minAge)
+			head := f.update("v1.1.0")
+			if tc.change != nil {
+				head = tc.change(f, head)
+			}
+			f.restart()
+			if !tc.moved {
+				f.checkStays(head)
+				return
+			}
+			main := f.moveMain("README.md", "# app\n")
+			if head := f.update("v1.1.0"); f.work.Git("rev-parse", head+"^") != main {
+				t.Errorf("%s = %s, want an update on main at %s", greetBranch, head, main)
+			}
+		})
+	}
+}
+
+func TestDeletesABranchWhoseVersionGoesBad(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(f *fixture)
+	}{{
+		name: "a version too young to update to retracts it",
+		change: func(f *fixture) {
+			f.proxy.publish(greet, "v1.2.0", f.clock, "retract v1.1.0\n")
+			f.clock = f.clock.Add(f.u.interval / 2)
+		},
+	}, {
+		name: "main excludes it",
+		change: func(f *fixture) {
+			f.moveMain("go.mod", modAt("v1.0.0")+"\nexclude example.com/greet v1.1.0\n")
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.u.interval, f.u.minAge = 100*time.Hour, 72*time.Hour
+			f.checkStays("")
+			f.clock = f.clock.Add(f.u.minAge)
+			f.update("v1.1.0")
+			tc.change(f)
+			f.checkStays("")
 		})
 	}
 }
@@ -654,6 +748,26 @@ func TestLeavesPeoplesBranchesAlone(t *testing.T) {
 			f.work.Write("app.go", "package app\n\n// Greet takes a name.\n")
 			f.work.Git("add", "-A")
 			head := f.commitAs(f.u.cfg.Identity, "Make Greet take a name\n", update)
+			f.work.Push(greetBranch)
+			return head
+		},
+	}, {
+		name: "a commit as the controller with a longer trailer",
+		change: func(f *fixture, update string) string {
+			f.work.Branch("work", update)
+			f.work.Write("app.go", "package app\n\n// Greet takes a name.\n")
+			f.work.Git("add", "-A")
+			head := f.commitAs(f.u.cfg.Identity, "Make Greet take a name\n\nGit-K8s-Depsx: go example.com/greet v1.1.0\n", update)
+			f.work.Push(greetBranch)
+			return head
+		},
+	}, {
+		name: "a commit as the controller with a trailer that ends in its trailer's name",
+		change: func(f *fixture, update string) string {
+			f.work.Branch("work", update)
+			f.work.Write("app.go", "package app\n\n// Greet takes a name.\n")
+			f.work.Git("add", "-A")
+			head := f.commitAs(f.u.cfg.Identity, "Make Greet take a name\n\nX-Git-K8s-Deps: go example.com/greet v1.1.0\n", update)
 			f.work.Push(greetBranch)
 			return head
 		},
@@ -1166,6 +1280,25 @@ func TestSafeDir(t *testing.T) {
 	} {
 		if got := safeDir(dir); got != want {
 			t.Errorf("safeDir(%q) = %v, want %v", dir, got, want)
+		}
+	}
+}
+
+func TestUpdatedTo(t *testing.T) {
+	for trailer, want := range map[string]string{
+		"Git-K8s-Deps: go example.com/greet v1.1.0":     "v1.1.0",
+		"Git-K8s-Deps:  go  example.com/greet  v1.2.0 ": "v1.2.0",
+		"Git-K8s-Deps: go example.com/greet/v2 v2.0.0":  "",
+		"Git-K8s-Deps: go example.com/other v1.1.0":     "",
+		"Git-K8s-Deps: npm example.com/greet v1.1.0":    "",
+		"Git-K8s-Deps: go example.com/greet v1.1.0 x":   "",
+		"Git-K8s-Deps: go example.com/greet":            "",
+		"Git-K8s-Depsx: go example.com/greet v1.1.0":    "",
+		"X-Git-K8s-Deps: go example.com/greet v1.1.0":   "",
+	} {
+		c := git.ListedCommit{Trailers: []string{"Git-K8s-Fixer: deps", trailer}}
+		if got := updatedTo(c, moduleMajor{path: greet, major: "v1"}); got != want {
+			t.Errorf("updatedTo(%q) = %q, want %q", trailer, got, want)
 		}
 	}
 }

@@ -601,10 +601,15 @@ version only once it's `-min-age` old, 72 hours by default, both by the time
 that the module proxy reports for it and since the controller first saw it in
 the module's list of versions. A proxy such as `proxy.golang.org` reports the
 time of the version's commit, not when the release came out, and whoever
-makes a commit can set its time. The controller keeps when it first saw each
-version only in memory, so after a restart it waits `-min-age` again before
-it takes any version. When a newer version is younger than that, the
-controller looks again once the version is old enough.
+makes a commit can set its time. When a newer version is younger than that,
+the controller looks again once the version is old enough.
+
+The version of a branch that the controller owns, which the trailer of the
+branch's update names, was old enough when the controller pushed it, so it
+doesn't wait again. The controller keeps when it first saw each other
+version only in memory, so after a restart, each of them waits `-min-age`
+again. A branch whose version the module retracts or a `go.mod` file
+excludes is still deleted.
 
 The controller also skips prereleases, versions that a `go.mod` file
 excludes, and versions that the module retracts. To keep the controller from
