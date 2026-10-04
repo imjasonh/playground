@@ -12,6 +12,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
+	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -53,6 +54,17 @@ type podTask struct {
 	KeyFile        string `json:"keyFile"`
 	ResultFile     string `json:"resultFile"`
 	TerminationLog string `json:"terminationLog"`
+
+	Merge podMerge `json:"merge,omitzero"`
+}
+
+// podMerge is the merge that runner/src/task.ts reads from AGENT_TASK.
+type podMerge struct {
+	Commit        string `json:"commit"`
+	Name          string `json:"name"`
+	ConflictsFile string `json:"conflictsFile"`
+	DiffFile      string `json:"diffFile"`
+	LogFile       string `json:"logFile"`
 }
 
 // prepareScript runs in the prepare container. It fetches the branch at
@@ -65,6 +77,13 @@ type podTask struct {
 // such as the root of an emptyDir volume. The attributes file makes the
 // files match their blobs, so the runner can tell which ones the agent
 // changed.
+//
+// With MERGE, it also fetches MERGE_REF, or exits with status 3 if it still
+// doesn't have MERGE, and writes the files and index of merging MERGE into
+// HEAD from BASE instead of the head's, with the paths that conflict, the
+// change from BASE to MERGE, and MERGE's log. The merge uses the
+// attributes in ATTRIBUTES and none of the branch's own, as git.Repo.Merge
+// does, so that it matches the merge that Run commits.
 const prepareScript = `set -eu
 git init -q "$REPO"
 cd "$REPO"
@@ -76,11 +95,36 @@ if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3
 fi
+if [ -n "${MERGE:-}" ]; then
+  git fetch -q --depth=50 "$URL" "$MERGE_REF"
+  if ! git cat-file -e "$MERGE^{commit}" 2>/dev/null && [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+    git fetch -q --unshallow "$URL" "$MERGE_REF"
+  fi
+  if ! git cat-file -e "$MERGE^{commit}" 2>/dev/null; then
+    echo "$MERGE_REF no longer holds $MERGE" >&2
+    exit 3
+  fi
+fi
 if [ -n "${BASE:-}" ] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
   git fetch -q --unshallow "$URL" "refs/heads/$BRANCH"
 fi
 printf '* -text -eol -ident -filter -working-tree-encoding\n' >.git/info/attributes
-git read-tree "$HEAD"
+tree="$HEAD"
+if [ -n "${MERGE:-}" ]; then
+  printf '%s' "${ATTRIBUTES:-}" >>.git/info/attributes
+  empty="$(git hash-object -t tree /dev/null)"
+  merge() {
+    git --attr-source="$empty" -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages --merge-base="$BASE" "$@" "$HEAD" "$MERGE"
+  }
+  merge --name-only -z >"$INPUT/conflicts" || [ $? -eq 1 ]
+  out="$(merge --name-only)" || [ $? -eq 1 ]
+  nl='
+'
+  tree="${out%%"$nl"*}"
+  git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv "$BASE" "$MERGE" >"$INPUT/merge.diff"
+  git log --format='%h %s' -n 50 "$BASE..$MERGE" >"$INPUT/merge-log.txt"
+fi
+git read-tree "$tree"
 git checkout-index -a -f --prefix="$WORK_TREE/"
 git ls-files -s -z >"$INPUT/files"
 from="${BASE:-$(git hash-object -t tree /dev/null)}"
@@ -106,11 +150,11 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 		ReadOnlyRootFilesystem:   &yes,
 		Capabilities:             &Capabilities{Drop: []string{"ALL"}},
 	}
-	agentTask, _ := json.Marshal(podTask{
+	pt := podTask{
 		Backend:        r.Backend,
 		Model:          r.Model,
 		Instructions:   task.Instructions,
-		Edit:           task.Edit,
+		Edit:           task.edits(),
 		TimeoutSeconds: timeout,
 		Branch:         in.Spec.Branch,
 		Parent:         in.Spec.Parent,
@@ -123,7 +167,17 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 		KeyFile:        keyFile,
 		ResultFile:     resultFile,
 		TerminationLog: "/dev/termination-log",
-	})
+	}
+	if m := task.Merge; m != nil {
+		pt.Merge = podMerge{
+			Commit:        m.Commit,
+			Name:          m.Name,
+			ConflictsFile: inputDir + "/conflicts",
+			DiffFile:      inputDir + "/merge.diff",
+			LogFile:       inputDir + "/merge-log.txt",
+		}
+	}
+	agentTask, _ := json.Marshal(pt)
 	prepareEnv := []EnvVar{
 		{Name: "URL", Value: in.Repository.Spec.URL},
 		{Name: "BRANCH", Value: in.Spec.Branch},
@@ -135,6 +189,14 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 		{Name: "KEY_FILE", Value: keyFile},
 		{Name: "HOME", Value: "/git"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
+	}
+	if m := task.Merge; m != nil {
+		attributes, _ := git.UnionAttributes(m.Union)
+		prepareEnv = append(prepareEnv,
+			EnvVar{Name: "MERGE", Value: m.Commit},
+			EnvVar{Name: "MERGE_REF", Value: m.Ref},
+			EnvVar{Name: "ATTRIBUTES", Value: attributes},
+		)
 	}
 	if ref := in.Repository.Spec.SecretRef; ref != nil {
 		prepareEnv = append(prepareEnv,
@@ -195,7 +257,7 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 				{Name: "HOME", Value: "/tmp"},
 			},
 			VolumeMounts: []VolumeMount{
-				{Name: "src", MountPath: "/src", ReadOnly: !task.Edit},
+				{Name: "src", MountPath: "/src", ReadOnly: !task.edits()},
 				{Name: "input", MountPath: inputDir, ReadOnly: true},
 				{Name: "key", MountPath: "/key"},
 				{Name: "result", MountPath: "/result"},

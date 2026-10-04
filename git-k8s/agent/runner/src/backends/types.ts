@@ -8,6 +8,8 @@ export interface AgentRequest {
   /** The work tree, which the agent works in. */
   cwd: string;
   edit: boolean;
+  /** For a task that merges, the files that conflict, which hold conflict markers. */
+  conflicts?: string[];
   model: string;
   apiKey: string;
   timeoutMs: number;

@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -82,6 +82,70 @@ export function preparePod(base: Files, change: Files, task: Partial<Task> = {})
     keyFile: join(root, "key", "api-key"),
     resultFile: join(root, "result", "result.json"),
     terminationLog: join(root, "termination-log"),
+    ...task,
+  };
+}
+
+/**
+ * Lays out what the agent container sees for a task that merges, the way
+ * the Pod's prepare container does: the files of merging theirs into ours
+ * from base, with conflict markers, the merge's index, the paths that
+ * conflict, both sides' diffs and logs, and the key file.
+ */
+export function prepareMergePod(base: Files, ours: Files, theirs: Files, task: Partial<Task> = {}): Task {
+  const root = mkdtempSync(join(tmpdir(), "agent-runner-"));
+  const repo = join(root, "git");
+  mkdirSync(repo);
+  git(repo, "init", "-q", "-b", "main");
+  const commit = (files: Files, message: string): string => {
+    write(repo, files);
+    git(repo, "add", "-A");
+    git(repo, "commit", "-q", "--allow-empty", "-m", message);
+    return git(repo, "rev-parse", "HEAD").trim();
+  };
+  const baseSha = commit(base, "Base");
+  const merged = commit(theirs, "Theirs");
+  git(repo, "checkout", "-q", "-b", "c/x", baseSha);
+  const head = commit(ours, "Ours");
+  const args = ["-c", "merge.conflictStyle=diff3", "merge-tree", "--write-tree", "--name-only", "-z", "--no-messages", `--merge-base=${baseSha}`, head, merged];
+  const conflicts = spawnSync("git", args, { cwd: repo, env: gitEnv }).stdout;
+
+  for (const dir of ["src", "input", "key", "result"]) {
+    mkdirSync(join(root, dir));
+  }
+  git(repo, "read-tree", conflicts.toString().split("\0")[0]);
+  git(repo, "checkout-index", "-a", "-f", `--prefix=${join(root, "src")}/`);
+  writeFileSync(join(root, "input", "files"), gitBuffer(repo, "ls-files", "-s", "-z"));
+  writeFileSync(join(root, "input", "conflicts"), conflicts);
+  writeFileSync(join(root, "input", "change.diff"), gitBuffer(repo, "diff", "--no-color", baseSha, head));
+  writeFileSync(join(root, "input", "log.txt"), git(repo, "log", "--format=%h %s", `${baseSha}..${head}`));
+  writeFileSync(join(root, "input", "merge.diff"), gitBuffer(repo, "diff", "--no-color", baseSha, merged));
+  writeFileSync(join(root, "input", "merge-log.txt"), git(repo, "log", "--format=%h %s", `${baseSha}..${merged}`));
+  writeFileSync(join(root, "key", "api-key"), "test-key-123\n");
+  return {
+    backend: "fake",
+    model: "composer-2.5",
+    instructions: "Resolve the conflicts.",
+    edit: true,
+    timeoutSeconds: 60,
+    branch: "c/x",
+    parent: "main",
+    head,
+    base: baseSha,
+    workTree: join(root, "src"),
+    diffFile: join(root, "input", "change.diff"),
+    logFile: join(root, "input", "log.txt"),
+    filesFile: join(root, "input", "files"),
+    keyFile: join(root, "key", "api-key"),
+    resultFile: join(root, "result", "result.json"),
+    terminationLog: join(root, "termination-log"),
+    merge: {
+      commit: merged,
+      name: "main",
+      conflictsFile: join(root, "input", "conflicts"),
+      diffFile: join(root, "input", "merge.diff"),
+      logFile: join(root, "input", "merge-log.txt"),
+    },
     ...task,
   };
 }

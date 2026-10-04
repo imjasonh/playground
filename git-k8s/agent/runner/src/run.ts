@@ -5,7 +5,7 @@ import { cursorBackend } from "./backends/cursor.js";
 import { fakeBackend } from "./backends/fake.js";
 import type { Backend } from "./backends/types.js";
 import { changedFiles } from "./changes.js";
-import { buildPrompt } from "./prompt.js";
+import { buildMergePrompt, buildPrompt } from "./prompt.js";
 import type { ChangedFile, Result } from "./result.js";
 import { parseTask, type BackendName, type Task } from "./task.js";
 import { errorMessage, redact, truncate } from "./text.js";
@@ -67,10 +67,23 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
   }
   const diff = await readFile(task.diffFile, "utf8");
   const commits = await readFile(task.logFile, "utf8");
+  let prompt: string;
+  let conflicts: string[] | undefined;
+  if (task.merge) {
+    conflicts = parseConflicts(await readFile(task.merge.conflictsFile));
+    if (conflicts.length === 0) {
+      throw new Error("the merge that the Pod prepared has no conflicts");
+    }
+    const theirs = { diff: await readFile(task.merge.diffFile, "utf8"), log: await readFile(task.merge.logFile, "utf8") };
+    prompt = buildMergePrompt(task, task.merge, conflicts, { diff, log: commits }, theirs);
+  } else {
+    prompt = buildPrompt(task, diff, commits);
+  }
   const started = Date.now();
   const response = await backends[task.backend]({
-    prompt: buildPrompt(task, diff, commits),
+    prompt,
     diff,
+    conflicts,
     cwd: task.workTree,
     edit: task.edit,
     model: task.model,
@@ -105,6 +118,18 @@ export async function run(task: Task, key: string, backends: Record<BackendName,
     result.costCents = response.costCents;
   }
   return result;
+}
+
+/**
+ * Parses git merge-tree --write-tree --name-only -z output: the merge's
+ * tree, and then the paths that conflict, each ending with a NUL.
+ */
+function parseConflicts(data: Buffer): string[] {
+  return data
+    .toString("utf8")
+    .split("\0")
+    .slice(1)
+    .filter((path) => path !== "");
 }
 
 /**

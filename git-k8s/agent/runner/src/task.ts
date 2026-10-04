@@ -31,7 +31,29 @@ export interface Task {
   keyFile: string;
   resultFile: string;
   terminationLog: string;
+  /**
+   * Has the agent resolve the conflicts of merging a commit into the head,
+   * from base. The work tree and the index hold the merge's files, with
+   * conflict markers, instead of the head's.
+   */
+  merge?: Merge;
 }
+
+/** A merge that the agent resolves. */
+export interface Merge {
+  /** The commit that merges into the head. */
+  commit: string;
+  /** What the commit is, such as the parent branch. */
+  name: string;
+  /** The paths that conflict, from git merge-tree --write-tree --name-only -z. */
+  conflictsFile: string;
+  /** The change from base to commit, from git diff. */
+  diffFile: string;
+  /** The commits from base to commit, newest first, one per line. */
+  logFile: string;
+}
+
+const MERGE_FIELDS = ["commit", "name", "conflictsFile", "diffFile", "logFile"] as const;
 
 const STRING_FIELDS = [
   "model",
@@ -83,5 +105,23 @@ export function parseTask(json: string): Task {
       throw new Error(`AGENT_TASK.${field} can't be empty`);
     }
   }
+  if (raw.merge !== undefined) {
+    parseMerge(raw.merge, task);
+  }
   return task;
+}
+
+function parseMerge(value: unknown, task: Task): void {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("AGENT_TASK.merge isn't a JSON object");
+  }
+  const merge = value as Record<string, unknown>;
+  for (const field of MERGE_FIELDS) {
+    if (typeof merge[field] !== "string" || !merge[field]) {
+      throw new Error(`AGENT_TASK.merge.${field} must be a string that isn't empty`);
+    }
+  }
+  if (!task.edit || !task.base) {
+    throw new Error("AGENT_TASK.merge needs edit and a base");
+  }
 }

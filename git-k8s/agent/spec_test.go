@@ -17,6 +17,7 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
+	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/kube"
 )
@@ -86,6 +87,9 @@ func TestStartsALockedDownPod(t *testing.T) {
 	if err := json.Unmarshal([]byte(task), &got); err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(task, `"merge"`) {
+		t.Errorf("AGENT_TASK = %s, want no merge", task)
+	}
 	wantTask := podTask{
 		Backend: "fake", Model: "composer-2.5", Instructions: "Review the change.", TimeoutSeconds: 60,
 		Branch: "c/x", Parent: "main", Head: f.b.Spec.Head, Base: f.base, WorkTree: "/src",
@@ -101,6 +105,32 @@ func TestStartsALockedDownPod(t *testing.T) {
 	p = f.start()
 	if m := p.Spec.InitContainers[1].VolumeMounts[0]; m.Name != "src" || m.ReadOnly {
 		t.Errorf("agent's source mount = %+v, want it writable", m)
+	}
+}
+
+func TestStartsAMergePod(t *testing.T) {
+	f := newMergeFixture(t)
+	f.task.Merge.Union = []string{"go.sum"}
+	main := f.task.Merge.Commit
+	p := f.start()
+	prepare, agent := p.Spec.InitContainers[0], p.Spec.InitContainers[1]
+	env := map[string]string{}
+	for _, e := range prepare.Env {
+		env[e.Name] = e.Value
+	}
+	if env["MERGE"] != main || env["MERGE_REF"] != "refs/heads/main" || env["ATTRIBUTES"] != "go.sum merge=union\n" || env["BASE"] != f.base {
+		t.Errorf("prepare's environment = %v, want the merge from the merge base", env)
+	}
+	if m := agent.VolumeMounts[0]; m.Name != "src" || m.ReadOnly {
+		t.Errorf("agent's source mount = %+v, want it writable", m)
+	}
+	var task podTask
+	if err := json.Unmarshal([]byte(agent.Env[0].Value), &task); err != nil {
+		t.Fatal(err)
+	}
+	want := podMerge{Commit: main, Name: "main", ConflictsFile: "/input/conflicts", DiffFile: "/input/merge.diff", LogFile: "/input/merge-log.txt"}
+	if !task.Edit || task.Base != f.base || task.Merge != want {
+		t.Errorf("AGENT_TASK = %+v, want an edit with the merge %+v", task, want)
 	}
 }
 
@@ -143,6 +173,7 @@ func TestMatchesTheRunner(t *testing.T) {
 		v           any
 	}{
 		{"task.ts", "Task", podTask{}},
+		{"task.ts", "Merge", podMerge{}},
 		{"result.ts", "Result", Result{}},
 		{"result.ts", "Usage", Usage{}},
 		{"result.ts", "ChangedFile", File{}},
@@ -151,6 +182,30 @@ func TestMatchesTheRunner(t *testing.T) {
 			t.Errorf("%T has JSON fields %v, but %s in runner/src/%s has %v", tc.v, got, tc.iface, tc.file, want)
 		}
 	}
+}
+
+// runMerge makes the merge that Run commits, of m into head from base, in a
+// new repository that fetches main and c/x from remote. It returns the
+// merged tree and its a.txt, and expects a.txt to be the only conflict.
+func runMerge(t *testing.T, remote git.Remote, head string, m *Merge, base string) (string, string) {
+	t.Helper()
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, remote, "main", "c/x"); err != nil {
+		t.Fatal(err)
+	}
+	tree, conflicts, err := repo.Merge(ctx, head, m.Commit, git.MergeOptions{Base: base, Union: m.Union})
+	if err != nil || len(conflicts) != 1 || conflicts[0].Path != "a.txt" {
+		t.Fatalf("Merge = %v, %v; want a conflict in a.txt", conflicts, err)
+	}
+	b, err := repo.ReadBlob(ctx, tree+":a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tree, string(b)
 }
 
 func TestPrepareScript(t *testing.T) {
@@ -186,11 +241,11 @@ func TestPrepareScript(t *testing.T) {
 
 	// prepare runs the script with the prepare container's environment,
 	// with its volumes in a temporary directory.
-	prepare := func(t *testing.T, head, base string) (string, string, error) {
+	prepare := func(t *testing.T, task Task, head, base string) (string, string, error) {
 		r := &Runner{Name: "review", Image: "agent", GitImage: "git", Backend: "fake", Model: "m", Secret: "cursor-api-key", Timeout: time.Minute}
 		spec := &gitk8s.GitBranchSpec{Branch: "c/x", Parent: "main", Head: head}
 		in := &checks.Input{Meta: &kube.ObjectMeta{Name: "app-c-x"}, Spec: spec, Repository: &gitk8s.Repository{Spec: repo.Spec}}
-		c := r.pod(in, Task{}, base, 1).Spec.InitContainers[0]
+		c := r.pod(in, task, base, 1).Spec.InitContainers[0]
 		dir := t.TempDir()
 		for _, m := range c.VolumeMounts {
 			if err := os.MkdirAll(dir+m.MountPath, 0o755); err != nil {
@@ -225,7 +280,7 @@ func TestPrepareScript(t *testing.T) {
 		return string(b)
 	}
 
-	dir, out, err := prepare(t, head, base)
+	dir, out, err := prepare(t, Task{}, head, base)
 	if err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
 	}
@@ -252,7 +307,7 @@ func TestPrepareScript(t *testing.T) {
 	}
 
 	t.Log("Without a merge base, the change is every file.")
-	dir, out, err = prepare(t, head, "")
+	dir, out, err = prepare(t, Task{}, head, "")
 	if err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
 	}
@@ -261,9 +316,62 @@ func TestPrepareScript(t *testing.T) {
 	}
 
 	t.Log("A branch that moved fails with status 3.")
-	_, out, err = prepare(t, base, base)
+	_, out, err = prepare(t, Task{}, base, base)
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != 3 || !strings.Contains(out, "c/x no longer points to "+base) {
+		t.Errorf("prepare = %v\n%s; want status 3", err, out)
+	}
+
+	t.Log("A merge writes the merge's files, even when its ref moved more than 50 commits past it.")
+	w.Branch("main", base)
+	w.Write("a.txt", "one\ntwo\nmain\n")
+	w.Write("go.sum", "y v2\n")
+	merge := w.Commit("change main")
+	for i := range 55 {
+		w.Write("later.txt", fmt.Sprintf("%d\n", i))
+		w.Commit(fmt.Sprintf("later %d", i))
+	}
+	w.Push("main")
+	w.Branch("c/x", head)
+	w.Write("go.sum", "z v3\n")
+	head = w.Commit("add go.sum")
+	w.Push("c/x")
+	task := Task{Merge: &Merge{Commit: merge, Ref: "refs/heads/main", Name: "main", Union: []string{"go.sum"}}}
+	dir, out, err = prepare(t, task, head, base)
+	if err != nil {
+		t.Fatalf("prepare: %v\n%s", err, out)
+	}
+	tree, merged := runMerge(t, srv.Remote("app"), head, task.Merge, base)
+	if got, want := read(dir+"/input/conflicts"), tree+"\x00a.txt\x00"; got != want {
+		t.Errorf("conflicts = %q, want %q, from the merge that Run commits", got, want)
+	}
+	if got := read(dir + "/src/a.txt"); got != merged || !strings.Contains(got, "<<<<<<< "+head+"\n") {
+		t.Errorf("a.txt = %q, want the merge's %q", got, merged)
+	}
+	if got := read(dir + "/src/go.sum"); got != "z v3\ny v2\n" {
+		t.Errorf("go.sum = %q, want both sides' lines", got)
+	}
+	if _, err := os.Stat(dir + "/src/later.txt"); !os.IsNotExist(err) {
+		t.Errorf("the work tree has later.txt, from after the merge's commit: %v", err)
+	}
+	if files := read(dir + "/input/files"); strings.Count(files, "\x00") != 4 || !strings.Contains(files, "\tgo.sum\x00") {
+		t.Errorf("files = %q, want the merge's 4 files", files)
+	}
+	if diff := read(dir + "/input/merge.diff"); !strings.Contains(diff, "+main") || !strings.Contains(diff, "+y v2") || strings.Contains(diff, "later.txt") {
+		t.Errorf("merge.diff =\n%s", diff)
+	}
+	if log := strings.Split(strings.TrimSpace(read(dir+"/input/merge-log.txt")), "\n"); len(log) != 1 || !strings.HasSuffix(log[0], " change main") {
+		t.Errorf("merge-log.txt = %q, want main's commit since the merge base", log)
+	}
+	if diff := read(dir + "/input/change.diff"); !strings.Contains(diff, "+z v3") || strings.Contains(diff, "+y v2") {
+		t.Errorf("change.diff =\n%s\nwant the branch's change", diff)
+	}
+
+	t.Log("A merge whose ref no longer holds its commit fails with status 3.")
+	w.Branch("main", base)
+	w.Push("main")
+	_, out, err = prepare(t, task, head, base)
+	if !errors.As(err, &exit) || exit.ExitCode() != 3 || !strings.Contains(out, "refs/heads/main no longer holds "+merge) {
 		t.Errorf("prepare = %v\n%s; want status 3", err, out)
 	}
 }

@@ -3,11 +3,11 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import type { Backend } from "../src/backends/types.js";
+import type { AgentRequest, Backend } from "../src/backends/types.js";
 import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
 import type { Task } from "../src/task.js";
-import { preparePod } from "./pod.js";
+import { prepareMergePod, preparePod } from "./pod.js";
 
 const quiet: RunOptions = { log: () => undefined };
 
@@ -138,6 +138,57 @@ test("replaces a link at the result path instead of following it", async () => {
   assert.equal(readFileSync(outside, "utf8"), "original");
   assert.ok(lstatSync(task.resultFile).isFile());
   assert.equal(readResult(task).verdict, "pass");
+});
+
+test("resolves the conflicts of a merge, and reports the files that it changed", async () => {
+  const task = prepareMergePod(
+    { "a.txt": "one\n", "keep.txt": "keep\n" },
+    { "a.txt": "one\nours\n" },
+    { "a.txt": "one\ntheirs\n", "new.txt": "new\n" },
+  );
+  assert.equal(await runTask(task), 0);
+
+  const result = readResult(task);
+  assert.equal(result.verdict, "pass");
+  assert.equal(result.summary, "resolved the conflicts in 1 file");
+  assert.deepEqual(
+    result.files.map((f) => [f.path, f.mode, Buffer.from(f.content ?? "", "base64").toString()]),
+    [["a.txt", "100644", "one\nours\ntheirs\n"]],
+  );
+});
+
+test("fails a merge that the agent can't resolve, with no files", async () => {
+  const task = prepareMergePod({ "a.txt": "one\n" }, { "a.txt": "one\nours\n" }, { "a.txt": "one\nDO NOT MERGE\n" });
+  assert.equal(await runTask(task), 0);
+
+  const result = readResult(task);
+  assert.equal(result.verdict, "fail");
+  assert.match(result.reasoning, /^The conflicts in a\.txt hold DO NOT MERGE/);
+  assert.deepEqual(result.files, []);
+});
+
+test("gives the backend the merge's prompt and the files that conflict", async () => {
+  let request: AgentRequest | undefined;
+  const capture: Backend = async (r) => {
+    request = r;
+    return { text: '{"verdict": "fail", "summary": "no"}', model: r.model, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 } };
+  };
+  const task = prepareMergePod(
+    { "a.txt": "one\n", "sp ace.txt": "one\n" },
+    { "a.txt": "ours\n", "sp ace.txt": "ours\n" },
+    { "a.txt": "theirs\n", "sp ace.txt": "theirs\n" },
+  );
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: capture } }), 0);
+  assert.deepEqual(request?.conflicts, ["a.txt", "sp ace.txt"]);
+  assert.match(request?.prompt ?? "", /\nThe files that conflict:\n\n- a\.txt\n- sp ace\.txt\n/);
+  assert.match(readFileSync(join(task.workTree, "a.txt"), "utf8"), /^<<<<<<< [0-9a-f]{40}\nours\n\|\|\|\|\|\|\| [0-9a-f]{40}\none\n=======\ntheirs\n>>>>>>> [0-9a-f]{40}\n$/);
+});
+
+test("refuses a merge without conflicts", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const task = prepareMergePod({ "a.txt": "one\n" }, { "a.txt": "one\nours\n" }, { "b.txt": "theirs\n" });
+  assert.equal(await runTask(task), 1);
+  assert.equal(readFileSync(task.terminationLog, "utf8"), "the merge that the Pod prepared has no conflicts");
 });
 
 test("rejects a task that isn't valid", async (t) => {

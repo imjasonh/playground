@@ -7,7 +7,8 @@
 //   - The prepare init container fetches the branch with the repository's
 //     credentials. It writes the head's files, the change from the merge
 //     base, and the commit log to volumes, and copies the Cursor API key
-//     from a Secret to a memory volume.
+//     from a Secret to a memory volume. For a task that merges, it writes
+//     the merge's files, with conflict markers, instead of the head's.
 //   - The agent init container runs the runner in runner/, which reads and
 //     deletes the key, runs the agent on the files, and writes the agent's
 //     result to a volume and the result's SHA-256 digest as its termination
@@ -24,6 +25,7 @@
 package agent
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"errors"
@@ -113,7 +115,31 @@ type Task struct {
 	// Edit lets the agent change files. The files that it changes become a
 	// fix commit.
 	Edit bool
+	// Merge, when set, has the agent resolve the conflicts of merging a
+	// commit into the branch's head. The agent can change only the files
+	// that conflict, and Run makes a merge commit of the result. Run fails
+	// a merge that has no conflicts, or conflicts that the agent can't see
+	// as conflict markers in text files.
+	Merge *Merge
 }
+
+// Merge is a commit for an agent to merge into a branch's head.
+type Merge struct {
+	// Commit is the commit to merge.
+	Commit string
+	// Ref is where Commit is on the remote, such as refs/heads/main. Run
+	// fetches it when the repository that Input.Repo returns doesn't have
+	// Commit.
+	Ref string
+	// Name says what Commit is, in the agent's prompt and in the merge
+	// commit's message, such as main.
+	Name string
+	// Union lists path patterns that git merges with its union driver, as
+	// in git.MergeOptions, so that their conflicts don't reach the agent.
+	Union []string
+}
+
+func (t Task) edits() bool { return t.Edit || t.Merge != nil }
 
 // Run starts or follows the agent's run on the branch's head, and returns
 // the verdict for the check to report: Running until the run finishes, and
@@ -146,6 +172,9 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 	if limit := in.Spec.Merge.MaxRuns(); x.runs >= limit {
 		return x.running("not starting the agent: the branch used all %d agent runs that maxAgentRuns allows", limit), nil
 	}
+	if task.Merge != nil {
+		return x.startMerge(ctx)
+	}
 	base, err := in.MergeBase(ctx)
 	if err != nil {
 		kube.RequeueAfter(ctx, 30*time.Second)
@@ -156,8 +185,15 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 		v.Outputs = x.outputs()
 		return v, nil
 	}
-	x.base, x.attempt = base, 1
-	p := r.pod(in, task, base, 1)
+	x.base = base
+	return x.start(ctx)
+}
+
+// start starts the run's first Pod, unless the Runner's limits say to wait.
+func (x *run) start(ctx context.Context) (checks.Verdict, *Result) {
+	r, in := x.r, x.in
+	x.attempt = 1
+	p := r.pod(in, x.task, x.base, 1)
 	if n := r.unfinishedPods(ctx, in.Meta.Namespace, p.Name); r.MaxPods > 0 && n >= r.MaxPods {
 		// Listing the Pods runs this again when one of them finishes.
 		kube.RequeueAfter(ctx, time.Minute)
@@ -169,6 +205,89 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 	}
 	x.runs++
 	return x.follow(ctx, p)
+}
+
+// startMerge checks that a merge task's merge has conflicts that the agent
+// can resolve, and starts its run.
+func (x *run) startMerge(ctx context.Context) (checks.Verdict, *Result) {
+	m, head := x.task.Merge, x.in.Spec.Head
+	fail := func(format string, args ...any) (checks.Verdict, *Result) {
+		v := checks.Fail(format, args...)
+		v.Outputs = x.outputs()
+		return v, nil
+	}
+	repo, err := x.mergeRepo(ctx)
+	if err != nil {
+		kube.RequeueAfter(ctx, 30*time.Second)
+		return x.running("fetching %s to merge: %v", m.Name, err), nil
+	}
+	bases, err := repo.MergeBases(ctx, head, m.Commit)
+	if err != nil {
+		kube.RequeueAfter(ctx, 30*time.Second)
+		return x.running("finding the merge base with %s: %v", m.Name, err), nil
+	}
+	switch len(bases) {
+	case 0:
+		return fail("the branch shares no history with %s, so git can't merge them", m.Name)
+	case 1:
+	default:
+		return fail("the branch and %s have %d merge bases, so their conflicts have no one base for the agent to compare", m.Name, len(bases))
+	}
+	tree, conflicts, err := repo.Merge(ctx, head, m.Commit, git.MergeOptions{Base: bases[0], Union: m.Union})
+	if err != nil {
+		kube.RequeueAfter(ctx, 30*time.Second)
+		return x.running("merging %s: %v", m.Name, err), nil
+	}
+	if len(conflicts) == 0 {
+		return fail("merging %s has no conflicts for the agent to resolve", m.Name)
+	}
+	if len(conflicts) > maxFiles {
+		return fail("merging %s has conflicts in %d files, more than the agent can change", m.Name, len(conflicts))
+	}
+	size := 0
+	for _, c := range conflicts {
+		if c.Ours == nil || c.Theirs == nil || !textMode(c.Ours.Mode) || !textMode(c.Theirs.Mode) {
+			return fail("merging %s conflicts on %s, which isn't a file on both sides, so the agent can't resolve it", m.Name, c.Path)
+		}
+		b, err := repo.ReadBlob(ctx, tree+":"+c.Path)
+		if err != nil {
+			kube.RequeueAfter(ctx, 30*time.Second)
+			return x.running("reading %s: %v", c.Path, err), nil
+		}
+		if !hasLine(b, "<<<<<<< "+head) {
+			return fail("merging %s conflicts on %s, which git can't mark with conflict markers, such as a binary file", m.Name, c.Path)
+		}
+		size += len(b)
+	}
+	if size > maxFileBytes {
+		return fail("the files that conflict hold more than %d MiB, more than the agent can change", maxFileBytes>>20)
+	}
+	x.base = bases[0]
+	return x.start(ctx)
+}
+
+// mergeRepo returns the branch's repository with the commit that the task
+// merges, which it fetches if the repository doesn't have it.
+func (x *run) mergeRepo(ctx context.Context) (*git.Repo, error) {
+	repo, err := x.in.Repo(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m := x.task.Merge
+	if ok, err := repo.HasCommit(ctx, m.Commit); err != nil || ok {
+		return repo, err
+	}
+	remote, err := x.in.Remote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := repo.FetchRef(ctx, remote, m.Ref); err != nil {
+		return nil, err
+	}
+	if ok, err := repo.HasCommit(ctx, m.Commit); err != nil || !ok {
+		return nil, cmp.Or(err, fmt.Errorf("fetched %s but don't have %s", m.Ref, gitk8s.Short(m.Commit)))
+	}
+	return repo, nil
 }
 
 // unfinishedPods counts the Runner's Pods in all namespaces that haven't
@@ -287,7 +406,7 @@ func (x *run) follow(ctx context.Context, desired *Pod) (checks.Verdict, *Result
 		kube.RequeueAfter(ctx, 5*time.Second)
 		return x.running("fetching the agent's result from Pod %s: %v", x.pod, err), nil
 	}
-	res, err := parseResult(body, digest, x.task.Edit)
+	res, err := parseResult(body, digest, x.task.edits())
 	if err != nil {
 		return x.done(ctx, checks.Fail("the agent's result from Pod %s isn't valid: %v", x.pod, err)), nil
 	}
@@ -300,7 +419,20 @@ func (x *run) verdict(ctx context.Context, res *Result) (checks.Verdict, *Result
 	if res.Verdict == Fail {
 		v.State = gitk8s.Failed
 	}
-	if len(res.Files) > 0 {
+	if x.task.Merge != nil && res.Verdict == Fail {
+		v.Message = "the agent couldn't resolve the conflicts: " + v.Message
+	} else if x.task.Merge != nil {
+		repo, err := x.mergeRepo(ctx)
+		if err != nil {
+			kube.RequeueAfter(ctx, 30*time.Second)
+			return x.running("fetching the branch to commit the agent's resolution: %v", err), nil
+		}
+		fix, paths, err := x.mergeCommit(ctx, repo, res)
+		if err != nil {
+			return x.done(ctx, checks.Fail("can't commit the agent's resolution: %v", err)), res
+		}
+		v.Fix, v.Message = fix, "the agent resolved the conflicts in "+strings.Join(paths, ", ")
+	} else if len(res.Files) > 0 {
 		repo, err := x.in.Repo(ctx)
 		if err != nil {
 			kube.RequeueAfter(ctx, 30*time.Second)
@@ -345,6 +477,117 @@ func (x *run) commit(ctx context.Context, repo *git.Repo, res *Result) (string, 
 	msg := fmt.Sprintf("Apply changes from the %s agent\n\n%s\n\n%s\n\n%s: %s\n", x.r.Name, res.Summary, strings.Join(paths, "\n"), git.FixerTrailer, x.r.Name)
 	return repo.CommitTree(ctx, tree, []string{head}, msg, x.in.Identity, c.Time)
 }
+
+// mergeCommit makes the merge commit that the agent's files resolve, after
+// checking that they change only files that conflict and leave no conflict
+// markers. It returns the commit and the files that conflicted.
+func (x *run) mergeCommit(ctx context.Context, repo *git.Repo, res *Result) (string, []string, error) {
+	m, head := x.task.Merge, x.in.Spec.Head
+	tree, conflicts, err := repo.Merge(ctx, head, m.Commit, git.MergeOptions{Base: x.base, Union: m.Union})
+	if err != nil {
+		return "", nil, err
+	}
+	byPath := make(map[string]git.Conflict, len(conflicts))
+	for _, c := range conflicts {
+		byPath[c.Path] = c
+	}
+	for _, f := range res.Files {
+		c, ok := byPath[f.Path]
+		switch {
+		case !ok:
+			return "", nil, fmt.Errorf("the agent changed %s, which doesn't conflict", f.Path)
+		case f.Deleted:
+			return "", nil, fmt.Errorf("the agent deleted %s", f.Path)
+		case (c.Ours == nil || f.Mode != c.Ours.Mode) && (c.Theirs == nil || f.Mode != c.Theirs.Mode):
+			return "", nil, fmt.Errorf("the agent gave %s the mode %s, which it has on neither side", f.Path, f.Mode)
+		}
+	}
+	resolved, err := ApplyFiles(ctx, repo, tree, res.Files)
+	if err != nil {
+		return "", nil, err
+	}
+	paths := make([]string, len(conflicts))
+	for i, c := range conflicts {
+		paths[i] = c.Path
+		if err := x.checkResolved(ctx, repo, resolved, c); err != nil {
+			return "", nil, err
+		}
+	}
+	hc, err := repo.Commit(ctx, head)
+	if err != nil {
+		return "", nil, err
+	}
+	mc, err := repo.Commit(ctx, m.Commit)
+	if err != nil {
+		return "", nil, err
+	}
+	msg := fmt.Sprintf("Merge %s into %s\n\n%s\n\n%s\n\n%s: %s\n", m.Name, x.in.Spec.Branch, res.Summary, strings.Join(paths, "\n"), git.FixerTrailer, x.r.Name)
+	fix, err := repo.CommitTree(ctx, resolved, []string{head, m.Commit}, msg, x.in.Identity, max(hc.Time, mc.Time))
+	return fix, paths, err
+}
+
+// checkResolved returns an error if a file that conflicted, as it is in
+// tree, holds this merge's conflict markers, or more lines that look like
+// conflict markers than its two sides hold together.
+func (x *run) checkResolved(ctx context.Context, repo *git.Repo, tree string, c git.Conflict) error {
+	if c.Ours == nil || c.Theirs == nil {
+		return fmt.Errorf("%s isn't a file on both sides", c.Path)
+	}
+	got, err := repo.ReadBlob(ctx, tree+":"+c.Path)
+	if err != nil {
+		return err
+	}
+	for _, label := range []string{"<<<<<<< " + x.in.Spec.Head, "||||||| " + x.base, ">>>>>>> " + x.task.Merge.Commit} {
+		if hasLine(got, label) {
+			return fmt.Errorf("conflict markers remain in %s", c.Path)
+		}
+	}
+	var sides [len(markerPrefixes)]int
+	for _, e := range []*git.TreeEntry{c.Ours, c.Theirs} {
+		b, err := repo.ReadBlob(ctx, e.SHA)
+		if err != nil {
+			return err
+		}
+		for i, n := range markerLines(b) {
+			sides[i] += n
+		}
+	}
+	for i, n := range markerLines(got) {
+		if n > sides[i] {
+			return fmt.Errorf("%s has more lines that start with %s than its two sides, so conflict markers remain", c.Path, markerPrefixes[i])
+		}
+	}
+	return nil
+}
+
+// markerPrefixes start the marker lines of a conflict in the diff3 style.
+var markerPrefixes = [...]string{"<<<<<<<", "|||||||", "=======", ">>>>>>>"}
+
+// markerLines counts the lines of b that start like each conflict marker.
+func markerLines(b []byte) [len(markerPrefixes)]int {
+	var n [len(markerPrefixes)]int
+	for line := range bytes.Lines(b) {
+		for i, p := range markerPrefixes {
+			rest, ok := bytes.CutPrefix(line, []byte(p))
+			if ok && (len(rest) == 0 || rest[0] == ' ' || rest[0] == '\n' || rest[0] == '\r') {
+				n[i]++
+			}
+		}
+	}
+	return n
+}
+
+// hasLine reports whether a line of b starts with prefix.
+func hasLine(b []byte, prefix string) bool {
+	for line := range bytes.Lines(b) {
+		if bytes.HasPrefix(line, []byte(prefix)) {
+			return true
+		}
+	}
+	return false
+}
+
+func textMode(mode string) bool { return mode == "100644" || mode == "100755" }
 
 func state(statuses []ContainerStatus, name string) ContainerState {
 	for _, s := range statuses {

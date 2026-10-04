@@ -40,3 +40,19 @@ test("rejects tasks that aren't valid", () => {
     assert.throws(() => parseTask(json), want, json);
   }
 });
+
+test("parses a task that merges", () => {
+  const merge = { ...valid, edit: true, base: "abc", merge: { commit: "def", name: "main", conflictsFile: "/input/conflicts", diffFile: "/input/merge.diff", logFile: "/input/merge-log.txt" } };
+  assert.deepEqual(parseTask(JSON.stringify(merge)), merge);
+
+  const cases: [unknown, RegExp][] = [
+    [{ ...merge, merge: "def" }, /merge isn't a JSON object/],
+    [{ ...merge, merge: { ...merge.merge, name: "" } }, /merge\.name must be a string that isn't empty/],
+    [{ ...merge, merge: { ...merge.merge, conflictsFile: undefined } }, /merge\.conflictsFile must be a string/],
+    [{ ...merge, edit: false }, /merge needs edit and a base/],
+    [{ ...merge, base: "" }, /merge needs edit and a base/],
+  ];
+  for (const [task, want] of cases) {
+    assert.throws(() => parseTask(JSON.stringify(task)), want, JSON.stringify(task));
+  }
+});
