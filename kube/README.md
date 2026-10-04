@@ -169,8 +169,7 @@ change. A reconcile that runs right after a write, such as one that
 write. Changes that other clients make appear when the watch delivers them.
 Other replicas are other clients, so after a [shard](#replicas) moves, the
 first reconciles in it can repeat the previous holder's last writes. For the
-writes that appear only when the watch delivers them, see
-[Limitations](#limitations).
+exceptions, see [Limitations](#limitations).
 
 ## Types
 
@@ -668,6 +667,12 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
   clients' earlier changes take the object out of the selector and back in,
   the cache returns the older version that they put back until the watch
   delivers the framework's write.
+- If the watch doesn't deliver a write by the framework within a minute, the
+  cache returns the older version until it does. The limit is for an API
+  server whose watch doesn't deliver the resource version that a write's
+  response carries. With such a server, caches miss other clients' changes
+  to the written object for that minute, and return the object even after
+  it's deleted.
 
 ## Layout
 

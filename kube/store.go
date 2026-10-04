@@ -3,15 +3,22 @@ package kube
 import (
 	"slices"
 	"sync"
+	"time"
 	"unique"
 )
+
+// maxOwnWriteAge is how long reads return a write before its event. An API
+// server whose watch doesn't deliver the resource version of a write's
+// response would otherwise leave the write in the store until the next list.
+const maxOwnWriteAge = time.Minute
 
 // store holds the latest observed version of every object of one type.
 // Stored objects are never mutated; readers that hand objects to user code
 // copy them first.
 //
 // Reads return what this process's own writes stored in place of the
-// watched object, until the watch delivers the event for the write.
+// watched object, until the watch delivers the event for the write or
+// maxOwnWriteAge passes.
 type store[T any, P Resource[T]] struct {
 	mu   sync.RWMutex
 	objs map[string]map[string]*T // namespace -> name -> object
@@ -33,9 +40,12 @@ type ownWrite[T any] struct {
 	// rv is the write's resource version. It's empty when the object is
 	// gone, because a delete's response doesn't always carry the version of
 	// the deletion, and then only the object's removal resolves the write.
-	rv  string
-	uid string
+	rv      string
+	uid     string
+	expires time.Time
 }
+
+func (w *ownWrite[T]) live(now time.Time) bool { return now.Before(w.expires) }
 
 // flight is a write in progress.
 type flight struct {
@@ -64,7 +74,7 @@ func (s *store[T, P]) get(k Key) *T {
 }
 
 func (s *store[T, P]) getLocked(k Key) *T {
-	if w, ok := s.writes[k]; ok {
+	if w, ok := s.writes[k]; ok && w.live(time.Now()) {
 		return w.obj
 	}
 	return s.objs[k.Namespace][k.Name]
@@ -81,14 +91,15 @@ func (s *store[T, P]) len() int {
 func (s *store[T, P]) each(ns string, fn func(*T) bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	now := time.Now()
 	for k, w := range s.writes {
-		if w.obj != nil && (ns == "" || k.Namespace == ns) && !fn(w.obj) {
+		if w.obj != nil && w.live(now) && (ns == "" || k.Namespace == ns) && !fn(w.obj) {
 			return
 		}
 	}
 	visit := func(ns string, byName map[string]*T) bool {
 		for name, o := range byName {
-			if _, ok := s.writes[Key{Namespace: ns, Name: name}]; ok {
+			if w, ok := s.writes[Key{Namespace: ns, Name: name}]; ok && w.live(now) {
 				continue
 			}
 			if !fn(o) {
@@ -111,9 +122,10 @@ func (s *store[T, P]) each(ns string, fn func(*T) bool) {
 func (s *store[T, P]) byOwner(owner string) []*T {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	now := time.Now()
 	var out []*T
 	for k := range s.owners[owner] {
-		if _, ok := s.writes[k]; ok {
+		if w, ok := s.writes[k]; ok && w.live(now) {
 			continue
 		}
 		if o := s.objs[k.Namespace][k.Name]; o != nil {
@@ -121,7 +133,7 @@ func (s *store[T, P]) byOwner(owner string) []*T {
 		}
 	}
 	for _, w := range s.writes {
-		if w.obj != nil && metaOf[T, P](w.obj).Annotations[s.ownerKey] == owner {
+		if w.obj != nil && w.live(now) && metaOf[T, P](w.obj).Annotations[s.ownerKey] == owner {
 			out = append(out, w.obj)
 		}
 	}
@@ -258,7 +270,7 @@ func (s *store[T, P]) begin(k Key) *flight {
 // latest event. A watch delivers one key's events in order. So if the store
 // held w.rv when the write began, or its watch delivered w.rv since, the
 // store holds this write or a later version. Otherwise the event is still
-// to come, and reads return w until it arrives.
+// to come, and reads return w until it arrives or maxOwnWriteAge passes.
 func (s *store[T, P]) end(f *flight, w *ownWrite[T]) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -280,20 +292,22 @@ func (s *store[T, P]) end(f *flight, w *ownWrite[T]) {
 	if s.writes == nil {
 		s.writes = map[Key]*ownWrite[T]{}
 	}
+	w.expires = time.Now().Add(maxOwnWriteAge)
 	s.writes[f.key] = w
 }
 
 // observe notes a watch event about the object that m describes. removed is
 // set when the event removes the object from the store. The event resolves
 // a write with its resource version, and the removal of an object resolves
-// a write that hides it.
+// a write that hides it. Any event forgets a write that reads no longer
+// return.
 func (s *store[T, P]) observe(m *ObjectMeta, removed bool) {
 	k := m.Key()
 	for _, f := range s.flights[k] {
 		f.seen = append(f.seen, m.ResourceVersion)
 	}
 	w, ok := s.writes[k]
-	if ok && (w.rv != "" && w.rv == m.ResourceVersion || w.obj == nil && removed && w.uid == m.UID) {
+	if ok && (w.rv != "" && w.rv == m.ResourceVersion || w.obj == nil && removed && w.uid == m.UID || !w.live(time.Now())) {
 		delete(s.writes, k)
 	}
 }

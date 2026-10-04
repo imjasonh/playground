@@ -567,8 +567,9 @@ resource version is among them when the write ends, the cache already holds
 the write or a later version. Otherwise the event is still to come, and
 reads return the written object until it arrives. Older events that arrive
 first update the watched object underneath, so reads never return a version
-older than the write, except when the write hides the object from a cache
-with a label selector, as described later.
+older than the write, with two exceptions described later: a write that
+hides the object from a cache with a label selector, and a write whose event
+takes more than a minute.
 
 When the order of a write and the cache's contents is unknown, the cache
 waits for the watch. Two writes by the manager to one object at the same
@@ -585,6 +586,14 @@ delete with a UID precondition that finds no object, which shows that the
 object with that UID is gone. A conflict doesn't, because the API server
 also returns `409 Conflict` for a delete of a namespace that's already being
 deleted.
+
+Reads return a write for at most a minute. An API server whose watch doesn't
+deliver the resource version that a write's response carries would otherwise
+leave the written object in the cache until the next list, which a healthy
+watch with bookmarks might never need. Until then, reads would miss other
+clients' changes to the object, and return it even after it's deleted. With
+the limit, a watch that lags by more than a minute can make a reconcile
+repeat a write.
 
 A delete's response is a `Status` with the object's UID, or the deleted
 object. Either way the object is gone, and the cache hides it until its

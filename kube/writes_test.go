@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/imjasonh/playground/kube/internal/client"
@@ -189,6 +190,25 @@ func TestStoreShowsOwnWrites(t *testing.T) {
 		settled(t, s)
 		s.put(obj("4", "u"))
 		shows(t, s, "4")
+	})
+
+	t.Run("a write whose event doesn't arrive", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			s := newStore()
+			s.put(obj("1", "u"))
+			s.end(s.begin(k), wrote("3"))
+			time.Sleep(maxOwnWriteAge - time.Nanosecond)
+			shows(t, s, "3")
+			time.Sleep(time.Nanosecond)
+			shows(t, s, "1")
+			s.end(s.begin(k), deleted("u"))
+			shows(t, s, "")
+			time.Sleep(maxOwnWriteAge)
+			shows(t, s, "1")
+			s.put(obj("2", "u"))
+			shows(t, s, "2")
+			settled(t, s)
+		})
 	})
 
 	t.Run("a write whose event arrives before its response", func(t *testing.T) {
