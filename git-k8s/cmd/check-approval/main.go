@@ -1,12 +1,16 @@
 // Command check-approval passes branches that a person approved.
 //
-// To approve a branch, annotate its GitBranch with the commit to approve:
+// To approve a branch, annotate its GitBranch with the commit to approve
+// and your username:
 //
-//	kubectl annotate gitbranch NAME git-k8s.imjasonh.com/approve=SHA
+//	kubectl annotate gitbranch NAME git-k8s.imjasonh.com/approve=SHA \
+//	  git-k8s.imjasonh.com/approved-by="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')"
 //
 // The approval check passes while the branch's head is that commit, so a
-// later push needs a new approval. RBAC on GitBranch decides who can
-// approve.
+// later push needs a new approval. A passing result's approver output is
+// the approved-by annotation, for merge gates that care who approved. The
+// git-k8s-approvals admission policy in config/policy.yaml decides who can
+// approve and checks approved-by.
 package main
 
 import (
@@ -42,7 +46,13 @@ func run(_ context.Context, in *checks.Input) (checks.Verdict, error) {
 	approved := in.Meta.Annotations[gitk8s.ApproveAnnotation]
 	switch {
 	case len(approved) >= 7 && strings.HasPrefix(head, approved):
-		return checks.Pass("%s is approved", gitk8s.Short(head)), nil
+		approver := in.Meta.Annotations[gitk8s.ApprovedByAnnotation]
+		if approver == "" {
+			return checks.Pass("%s is approved", gitk8s.Short(head)), nil
+		}
+		v := checks.Pass("%s is approved by %s", gitk8s.Short(head), approver)
+		v.Outputs = map[string]string{"approver": approver}
+		return v, nil
 	case approved != "":
 		return checks.Fail("the approval is for %s, but the branch is at %s", approved, gitk8s.Short(head)), nil
 	}

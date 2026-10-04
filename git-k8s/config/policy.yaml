@@ -115,3 +115,69 @@ metadata:
 spec:
   policyName: git-k8s-branches
   validationActions: [Deny]
+---
+# Only a user with the approve verb on a GitBranch can set, change, or
+# remove its approve annotation, and generate grants that verb to no
+# program. The request that sets or changes approve must set the approved-by
+# annotation to the username that sends it, and the request that removes
+# approve must remove approved-by, so approved-by names whoever approved.
+# approved-by can't change by itself.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: git-k8s-approvals
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["git-k8s.imjasonh.com"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["gitbranches"]
+  variables:
+    - name: annotations
+      expression: 'has(object.metadata.annotations) ? object.metadata.annotations : {}'
+    - name: oldAnnotations
+      expression: 'oldObject != null && has(oldObject.metadata.annotations) ? oldObject.metadata.annotations : {}'
+    - name: approval
+      expression: >-
+        "git-k8s.imjasonh.com/approve" in variables.annotations ?
+        variables.annotations["git-k8s.imjasonh.com/approve"] : ""
+    - name: oldApproval
+      expression: >-
+        "git-k8s.imjasonh.com/approve" in variables.oldAnnotations ?
+        variables.oldAnnotations["git-k8s.imjasonh.com/approve"] : ""
+    - name: approver
+      expression: >-
+        "git-k8s.imjasonh.com/approved-by" in variables.annotations ?
+        variables.annotations["git-k8s.imjasonh.com/approved-by"] : ""
+    - name: oldApprover
+      expression: >-
+        "git-k8s.imjasonh.com/approved-by" in variables.oldAnnotations ?
+        variables.oldAnnotations["git-k8s.imjasonh.com/approved-by"] : ""
+  validations:
+    - expression: >-
+        variables.approval == variables.oldApproval ||
+        authorizer.group("git-k8s.imjasonh.com").resource("gitbranches").namespace(request.namespace).name(request.name).check("approve").allowed()
+      reason: Forbidden
+      messageExpression: >-
+        "changing git-k8s.imjasonh.com/approve requires the approve verb on gitbranches, which " +
+        request.userInfo.username + " doesn't have for " + request.namespace + "/" + request.name
+    - expression: >-
+        variables.approval == variables.oldApproval || variables.approval == "" ||
+        variables.approver == request.userInfo.username
+      messageExpression: >-
+        "set git-k8s.imjasonh.com/approved-by to " + request.userInfo.username +
+        " when you set git-k8s.imjasonh.com/approve"
+    - expression: variables.approval == variables.oldApproval || variables.approval != "" || variables.approver == ""
+      message: remove git-k8s.imjasonh.com/approved-by when you remove git-k8s.imjasonh.com/approve
+    - expression: variables.approval != variables.oldApproval || variables.approver == variables.oldApprover
+      message: git-k8s.imjasonh.com/approved-by can change only when git-k8s.imjasonh.com/approve does
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: git-k8s-approvals
+spec:
+  policyName: git-k8s-approvals
+  validationActions: [Deny]

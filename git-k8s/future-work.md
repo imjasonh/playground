@@ -202,24 +202,23 @@ Pods built. An in-cluster Go module proxy, and a shared build cache through
 Pods downloaded and compiled. A module proxy in the cluster also lets tests
 with dependencies run without giving them the internet through `-goproxy`.
 
-## Record who approved a branch
+## Require an approver who didn't write the change
 
-An approval is the `git-k8s.imjasonh.com/approve` annotation. Nothing
-records who set it, and anyone who can patch a `GitBranch` can approve it.
-
-The proposed fix is a ValidatingAdmissionPolicy rule. When the approve
-annotation changes, a `git-k8s.imjasonh.com/approved-by` annotation must
-equal `request.userInfo.username`, and `approved-by` can't change otherwise.
-`check-approval` then reports the approver in its outputs, so a gate can
-require, for example, that the approver isn't the commit's author.
+`check-approval` reports who approved a branch, but not who wrote it, so a
+gate can't require that someone other than the author approved. Reading
+commits takes the repository's credential, which can push to any branch and
+which `check-approval` doesn't have. With the
+[in-cluster git mirror](#run-an-in-cluster-git-mirror), it could read
+commits without one.
 
 Questions to settle first:
 
-- Whether an approval can take two annotations. A `kubectl` plugin could set
-  both, and a MutatingAdmissionPolicy could set `approved-by` by itself once
-  that API is generally available.
-- Who can approve. A policy parameter, such as a ConfigMap of groups, could
-  limit approvals to the people in them.
+- Whose authorship counts. The head is often a fix commit that a check
+  pushed, so the authors to compare are those of the branch's commits
+  without a `Git-K8s-Fixer` trailer.
+- How to trust an author. A commit's author email is whatever the person who
+  made the commit set, so the check needs verified commit signatures, and a
+  way to map each signer to the Kubernetes username in `approved-by`.
 
 ## Sign commits and respect protected branches
 

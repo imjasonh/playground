@@ -95,7 +95,7 @@ example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`
 | `check-base` | `base` | Passes when the branch contains its parent's head, or the parent already contains the branch. Otherwise it merges the parent in with `git merge-tree`, and fails with the conflicting paths if the merge conflicts. |
 | `check-gofmt` | `gofmt` | Formats every `.go` file outside `vendor` and `testdata` directories with `go/format`, and passes when nothing changes. |
 | `check-risk` | `risk` | Always passes, and sets `outputs.level` to `high` when the change is larger than `-max-lines` or touches a path that matches a `-sensitive` glob, and to `low` otherwise. |
-| `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head. A push after the approval needs a new one. |
+| `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head, and sets `outputs.approver` to the `git-k8s.imjasonh.com/approved-by` annotation. A push after the approval needs a new one. See [Approve a branch](#approve-a-branch). |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
 
 A check with `mayPush: true` pushes its fix commit to the branch, which moves
@@ -105,11 +105,44 @@ branch can have, so two checks that undo each other's fixes stop. The same
 inputs always produce the same fix commit, so two retries of one fix push the
 same commit.
 
-To approve a branch:
+### Approve a branch
+
+An approval is two annotations on the `GitBranch`: `approve`, which names
+the commit, and `approved-by`, which names you. Set both in one request:
 
 ```sh
-kubectl annotate gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA
+kubectl annotate gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SHA \
+  git-k8s.imjasonh.com/approved-by="$(kubectl auth whoami -o jsonpath='{.status.userInfo.username}')"
 ```
+
+The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
+
+- Setting, changing, or removing the `approve` annotation requires the
+  `approve` verb on the `GitBranch`. `generate` grants that verb to no
+  program, so grant it to the people who approve:
+
+  ```sh
+  kubectl create role approver --verb=get,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+  kubectl create rolebinding approver --role=approver --group=GROUP
+  ```
+
+- A request that sets or changes `approve` must set `approved-by` to the
+  username that sends it.
+- A request that removes `approve` must remove `approved-by` too.
+- `approved-by` can't change by itself.
+
+`check-approval` reports `approved-by` as `outputs.approver`, so a merge gate
+can require particular approvers:
+
+```yaml
+when: >-
+  checks.approval.passed &&
+  checks.approval.outputs.approver in ["alice@example.com", "bob@example.com"]
+```
+
+An approval without `approved-by`, such as one from before the policy was
+installed, still passes, but without `outputs.approver`, so a gate that reads
+the approver doesn't pass.
 
 ### Write a check
 
@@ -221,7 +254,7 @@ Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
 after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
 
-`config/policy.yaml` holds two ValidatingAdmissionPolicies. The first lets
+`config/policy.yaml` holds three ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
 stops every other service account, including the core program's, from
 changing `status.checks`. A check must run as the service account
@@ -230,11 +263,12 @@ write results. Server-side apply already keeps the controllers' writes
 apart; the policy stops a buggy or compromised check from writing another
 check's result. The second stops every git-k8s service account from setting
 the approve annotation, which is for people, and stops checks from changing
-`GitBranch` objects at all.
+`GitBranch` objects at all. The third checks who approves, as
+[Approve a branch](#approve-a-branch) describes.
 
 Without the policies, none of that holds, so the repositories controller
 sets a `PoliciesInstalled` condition on each `GitRepository`. It's `False`
-until both policies are installed with bindings that deny.
+until all three policies are installed with bindings that deny.
 
 ## Test
 

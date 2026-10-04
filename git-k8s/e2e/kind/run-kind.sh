@@ -230,7 +230,8 @@ spec:
           - name: approval
         when: >-
           checks.base.passed && checks.gofmt.passed &&
-          (checks.risk.outputs.level == "low" || checks.approval.passed)
+          (checks.risk.outputs.level == "low" ||
+          (checks.approval.passed && checks.approval.outputs.approver == "alice"))
         deleteMergedBranches: true
     - match: c/**
       parent: main
@@ -297,11 +298,56 @@ sleep 6
 [[ "$(remote_head main)" == "${main_before}" ]]
 field '{.status.conditions[?(@.type=="Merged")].message}'
 echo
-k -n "${NS}" annotate gitbranch "$(branch_object c/auth)" "git-k8s.imjasonh.com/approve=${AUTH}"
+echo "c/auth waits for approval with a high risk rating."
+echo "::endgroup::"
+
+echo "::group::Approvals name the approver"
+k -n "${NS}" create role approver --verb=get,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+k -n "${NS}" create rolebinding alice --role=approver --user=alice
+k -n "${NS}" create role editor --verb=get,patch --resource=gitbranches.git-k8s.imjasonh.com
+k -n "${NS}" create rolebinding bob --role=editor --user=bob
+roles_bound() {
+  k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com --as=alice >/dev/null &&
+    k -n "${NS}" auth can-i patch gitbranches.git-k8s.imjasonh.com --as=bob >/dev/null
+}
+eventually 30 roles_bound
+APPROVE=git-k8s.imjasonh.com/approve
+APPROVED_BY=git-k8s.imjasonh.com/approved-by
+annotate() { k -n "${NS}" annotate --overwrite gitbranch "$(branch_object c/auth)" "$@"; }
+# rejected passes if the API server rejects a server-side dry run of a
+# command with a message that contains $1.
+rejected() {
+  local want=$1 status=0
+  shift
+  "$@" --dry-run=server >"${WORKDIR}/rejected.txt" 2>&1 || status=$?
+  cat "${WORKDIR}/rejected.txt"
+  [[ ${status} -ne 0 ]] && grep -qF -- "${want}" "${WORKDIR}/rejected.txt"
+}
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}"
+rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "requires the approve verb on gitbranches, which bob doesn't have" \
+  annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "${APPROVED_BY} can change only when ${APPROVE} does" annotate --as=alice "${APPROVED_BY}=alice"
+# The gate wants alice's approval, so another approver's doesn't land c/auth.
+admin="$(k auth whoami -o jsonpath='{.status.userInfo.username}')"
+annotate "${APPROVE}=${AUTH}" "${APPROVED_BY}=${admin}"
+approved_by() {
+  [[ "$(field '{.status.checks.approval.state}')" == Passed ]] &&
+    [[ "$(field '{.status.checks.approval.outputs.approver}')" == "$1" ]]
+}
+eventually 60 approved_by "${admin}"
+gate_saw_approval() { field '{.status.conditions[?(@.type=="Merged")].message}' | grep -q 'approval Passed'; }
+eventually 60 gate_saw_approval
+[[ "$(field '{.status.state}')" == WaitingForChecks ]]
+[[ "$(remote_head main)" == "${main_before}" ]]
+rejected "remove ${APPROVED_BY} when you remove ${APPROVE}" annotate --as=alice "${APPROVE}-"
+rejected "${APPROVED_BY} can change only when ${APPROVE} does" annotate --as=alice "${APPROVED_BY}-"
+annotate --as=alice "${APPROVE}-" "${APPROVED_BY}-"
+annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=alice"
 auth_landed() { [[ "$(remote_head main)" == "${AUTH}" ]]; }
 eventually 120 auth_landed
 eventually 60 branch_gone c/auth
-echo "c/auth waited with a high risk rating until it was approved, then landed."
+echo "The policy rejected bad approvals, and c/auth landed only once alice approved it."
 echo "::endgroup::"
 
 echo "::group::Two branches from the same commit both land"
@@ -363,10 +409,20 @@ patch_branch() {
     -H "Authorization: Bearer $1" -H 'Content-Type: application/merge-patch+json' \
     --data "$2" "${branch_url}"
 }
-approve='{"metadata":{"annotations":{"git-k8s.imjasonh.com/approve":"0000000"}}}'
-core_token="$(k -n git-k8s create token git-k8s)"
-for bearer in "${token}" "${core_token}"; do
-  code="$(patch_branch "${bearer}" "${approve}")"
+# Even a controller with the approve verb that names itself in approved-by
+# can't approve.
+k create clusterrole git-k8s-e2e-approve --verb=approve --resource=gitbranches.git-k8s.imjasonh.com
+k create clusterrolebinding git-k8s-e2e-approve --clusterrole=git-k8s-e2e-approve \
+  --serviceaccount=check-gofmt:check-gofmt --serviceaccount=git-k8s:git-k8s
+controllers_can_approve() {
+  for sa in check-gofmt git-k8s; do
+    k -n "${NS}" auth can-i approve gitbranches.git-k8s.imjasonh.com --as="system:serviceaccount:${sa}:${sa}" >/dev/null || return 1
+  done
+}
+eventually 30 controllers_can_approve
+for sa in check-gofmt git-k8s; do
+  approve="{\"metadata\":{\"annotations\":{\"${APPROVE}\":\"0000000\",\"${APPROVED_BY}\":\"system:serviceaccount:${sa}:${sa}\"}}}"
+  code="$(patch_branch "$(k -n "${sa}" create token "${sa}")" "${approve}")"
   cat "${WORKDIR}/patch.json"
   echo
   [[ "${code}" == 422 ]]
