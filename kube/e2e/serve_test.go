@@ -310,22 +310,31 @@ func (h *reports) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *reports) Reconcile(ctx context.Context, rep *Report) error {
+// read waits at the gate and then returns the results pending for rep and
+// whether the reconcile fails before it writes them. It waits right before
+// it reads the results so that TestServeHandOffWhileTheCacheLags catches a
+// reconcile that reads the object with Get first.
+func (h *reports) read(ctx context.Context, rep *Report) (results []string, fail bool) {
 	h.gate.wait(ctx)
 	h.mu.Lock()
-	results := slices.Clone(h.pending[kube.Key{Namespace: rep.Namespace, Name: rep.Name}])
+	defer h.mu.Unlock()
+	results = slices.Clone(h.pending[kube.Key{Namespace: rep.Namespace, Name: rep.Name}])
 	if h.reads == nil {
 		h.reads = map[string]int{}
 	}
 	for _, result := range results {
 		h.reads[result]++
 	}
-	fail := rep.Name == h.broken || len(results) > 0 && h.fail > 0
+	fail = rep.Name == h.broken || len(results) > 0 && h.fail > 0
 	if fail && rep.Name != h.broken {
 		h.fail--
 		h.failed++
 	}
-	h.mu.Unlock()
+	return results, fail
+}
+
+func (h *reports) Reconcile(ctx context.Context, rep *Report) error {
+	results, fail := h.read(ctx, rep)
 	if fail {
 		return errors.New("the results store is down")
 	}
@@ -600,8 +609,10 @@ func waitTriggered(t *testing.T, h *reports, result string) {
 // TestServeHandOffWhileTheCacheLags holds back a manager's watch of Reports.
 // A result that arrives during a reconcile triggers another, which starts
 // right after the first one writes the status, with the object from before
-// that write. Meanwhile the handlers see the write and answer. A reconcile
-// that added the results still pending to the object that it received would
+// that write. It stops right before it reads the pending results, and
+// meanwhile the handlers see the write, answer, and drop their results. A
+// reconcile that added the results still pending to the object that it
+// received, or to an object that it read with Get before it stopped, would
 // write back the old list without the results that were confirmed. So the
 // reconcile reads the pending results first, and then the object with Get.
 func TestServeHandOffWhileTheCacheLags(t *testing.T) {
@@ -628,6 +639,8 @@ func TestServeHandOffWhileTheCacheLags(t *testing.T) {
 	watches.hold()
 	close(first)
 	second := h.gate.next(t)
+
+	t.Log("While the next reconcile waits to read the pending results, the handlers see the write and drop a and b.")
 	watches.release()
 	for _, result := range []string{"a", "b"} {
 		if code := p.answer(result); code != http.StatusOK {
