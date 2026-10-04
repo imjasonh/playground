@@ -225,6 +225,9 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		st.UID = pod.UID
 	}
 	s := &pod.Status
+	if s.Phase == "Failed" && s.Reason == "Evicted" {
+		return x.fail("Pod %s was evicted: %s", st.Pod, cmp.Or(strings.TrimSpace(s.Message), "no reason given"))
+	}
 	if t := state(s.InitContainerStatuses, "prepare").Terminated; t != nil && t.ExitCode != 0 {
 		msg := exitMessage(t)
 		switch {

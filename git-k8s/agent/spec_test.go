@@ -41,7 +41,8 @@ func TestStartsALockedDownPod(t *testing.T) {
 	var task, uid, port string
 	for _, c := range slices.Concat(spec.InitContainers, spec.Containers) {
 		sc := c.SecurityContext
-		if *sc.AllowPrivilegeEscalation || !*sc.ReadOnlyRootFilesystem || !slices.Equal(sc.Capabilities.Drop, []string{"ALL"}) || c.Resources.Limits["memory"] == "" {
+		if *sc.AllowPrivilegeEscalation || !*sc.ReadOnlyRootFilesystem || !slices.Equal(sc.Capabilities.Drop, []string{"ALL"}) || c.Resources.Limits["memory"] == "" ||
+			c.Resources.Requests["ephemeral-storage"] == "" || c.Resources.Limits["ephemeral-storage"] == "" {
 			t.Errorf("container %s isn't locked down: %+v, %+v", c.Name, sc, c.Resources)
 		}
 		for _, e := range c.Env {
@@ -86,6 +87,18 @@ func TestStartsALockedDownPod(t *testing.T) {
 	if v := spec.Volumes[slices.IndexFunc(spec.Volumes, func(v Volume) bool { return v.Name == "key" })]; v.EmptyDir.Medium != "Memory" {
 		t.Errorf("key volume = %+v, want it in memory", v)
 	}
+	sizes := map[string]string{}
+	for _, v := range spec.Volumes {
+		sizes[v.Name] = v.EmptyDir.SizeLimit
+	}
+	if want := map[string]string{"git": "2Gi", "src": "2Gi", "input": "2Gi", "key": "1Mi", "result": "64Mi", "tmp": "1Gi"}; !maps.Equal(sizes, want) {
+		t.Errorf("volume sizes = %v, want %v", sizes, want)
+	}
+	for _, c := range spec.InitContainers {
+		if got := c.Resources.Limits["ephemeral-storage"]; got != "7488Mi" {
+			t.Errorf("%s's ephemeral-storage limit = %s, want 7488Mi, which holds every volume and the logs", c.Name, got)
+		}
+	}
 
 	var got podTask
 	if err := json.Unmarshal([]byte(task), &got); err != nil {
@@ -106,6 +119,36 @@ func TestStartsALockedDownPod(t *testing.T) {
 	p = f.start()
 	if m := p.Spec.InitContainers[1].VolumeMounts[0]; m.Name != "src" || m.ReadOnly {
 		t.Errorf("agent's source mount = %+v, want it writable", m)
+	}
+}
+
+func TestSizesTheSourceVolumes(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.SourceSize = "10Gi"
+	p := f.start()
+	for _, v := range p.Spec.Volumes {
+		if want := map[string]string{"git": "10Gi", "src": "10Gi", "input": "10Gi"}[v.Name]; want != "" && v.EmptyDir.SizeLimit != want {
+			t.Errorf("volume %s holds %s, want -source-size", v.Name, v.EmptyDir.SizeLimit)
+		}
+	}
+	if got := p.Spec.InitContainers[0].Resources.Limits["ephemeral-storage"]; got != "32064Mi" {
+		t.Errorf("ephemeral-storage limit = %s, want 32064Mi, which holds three 10Gi volumes and the rest", got)
+	}
+}
+
+func TestSizes(t *testing.T) {
+	for s, want := range map[string]int64{
+		"2Gi": 2 << 30, "500M": 500e6, "1": 1, "1k": 1000, "64Ki": 64 << 10, "3Ti": 3 << 40, "2097151Ti": 2097151 << 40,
+		"": 0, "0": 0, "-1Gi": 0, "+1Gi": 0, "1.5Gi": 0, "2GB": 0, "2gi": 0, "Gi": 0, "1e9": 0, "2Pi": 0, "2097152Ti": 0,
+	} {
+		if got := parseSize(s); got != want {
+			t.Errorf("parseSize(%q) = %d, want %d", s, got, want)
+		}
+	}
+	for n, want := range map[int64]string{1000: "1000", 2048: "2Ki", 1536 << 20: "1536Mi", 1 << 30: "1Gi", 5 << 40: "5Ti", 1 << 50: "1024Ti"} {
+		if got := formatSize(n); got != want {
+			t.Errorf("formatSize(%d) = %q, want %q", n, got, want)
+		}
 	}
 }
 
@@ -335,5 +378,11 @@ func TestPrepareScript(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Errorf("prepare ran the URL's --upload-pack: %v", err)
+	}
+
+	t.Log("A URL can't use another git transport, such as FTP.")
+	repo.Spec.URL = "ftp://127.0.0.1:1/app.git"
+	if _, out, err = prepare(t, head, base); err == nil || !strings.Contains(out, "transport 'ftp' not allowed") {
+		t.Errorf("prepare = %v\n%s; want git to refuse the ftp transport", err, out)
 	}
 }

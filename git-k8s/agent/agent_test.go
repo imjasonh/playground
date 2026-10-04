@@ -408,6 +408,18 @@ func TestReportsPodsThatFail(t *testing.T) {
 		state: gitk8s.Failed,
 		want:  "ran out of time before the agent finished",
 	}, {
+		name: "evicted while preparing the source",
+		status: PodStatus{Phase: "Failed", Reason: "Evicted", Message: `Usage of EmptyDir volume "git" exceeds the limit "2Gi". `,
+			InitContainerStatuses: []ContainerStatus{{Name: "prepare", State: terminated(&Terminated{ExitCode: 137, Reason: "Error"})}, waiting("agent", "PodInitializing", "")}},
+		state: gitk8s.Failed,
+		want:  `was evicted: Usage of EmptyDir volume "git" exceeds the limit "2Gi".`,
+	}, {
+		name: "evicted while running",
+		status: PodStatus{Phase: "Failed", Reason: "Evicted", Message: "Pod ephemeral local storage usage exceeds the total limit of containers 7488Mi. ",
+			InitContainerStatuses: []ContainerStatus{done, {Name: "agent", State: terminated(&Terminated{ExitCode: 137, Reason: "Error"})}}},
+		state: gitk8s.Failed,
+		want:  "was evicted: Pod ephemeral local storage usage exceeds the total limit of containers 7488Mi.",
+	}, {
 		name: "result container stopped",
 		status: PodStatus{Phase: "Running", PodIP: "127.0.0.1",
 			InitContainerStatuses: []ContainerStatus{done, {Name: "agent", State: terminated(&Terminated{Message: "sha256:" + strings.Repeat("a", 64)})}},
@@ -650,6 +662,14 @@ func TestNeedsFlags(t *testing.T) {
 	f.r.Image = ""
 	rec := f.reconcile()
 	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, "set -agent-image") || len(kube.Owned[Pod](rec)) != 0 {
+		t.Errorf("result = %+v, want Running without a Pod", res)
+	}
+
+	t.Log("A -source-size that isn't a size starts no Pod either.")
+	f = newFixture(t, "")
+	f.r.SourceSize = "2GB"
+	rec = f.reconcile()
+	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, `-source-size is "2GB", but it must be a size such as 2Gi`) || len(kube.Owned[Pod](rec)) != 0 {
 		t.Errorf("result = %+v, want Running without a Pod", res)
 	}
 }
