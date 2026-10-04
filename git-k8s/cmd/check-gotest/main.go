@@ -143,7 +143,9 @@ func unfinishedPods(ctx context.Context, ns, name string) int {
 	return n
 }
 
-// podName names the Pod for one attempt at one head of a branch.
+// podName names the Pod for one attempt at one head of a branch. The check
+// Pod policy in config/policy.yaml denies a new Pod unless its name is
+// gotest-ID, where ID has no hyphens.
 func podName(branch, head string, attempt int) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d", branch, head, attempt)))
 	return "gotest-" + hex.EncodeToString(sum[:8])

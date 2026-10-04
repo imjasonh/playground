@@ -289,10 +289,15 @@ func TestCheckPods(t *testing.T) {
 		})
 	}
 	metadataGet := map[string]any{"httpGet": map[string]any{"host": "169.254.169.254", "path": "/", "port": 80}}
+	named := func(name string, p map[string]any) map[string]any {
+		p["metadata"].(map[string]any)["name"] = name
+		return p
+	}
 	const (
 		programs    = "the gotest check can't change Pods in the namespaces of git-k8s programs"
 		others      = "the gotest check can change or delete only its own Pods, which have the label kube.imjasonh.github.io/controller=check-gotest"
 		label       = "the gotest check's Pods need the label kube.imjasonh.github.io/controller=check-gotest"
+		podName     = "the gotest check's new Pods need a name of the form gotest-ID, where ID has no hyphens"
 		optedOut    = "the gotest check can't create or change Pods in namespace repos, which doesn't have the label git-k8s.imjasonh.com/check-pods=true"
 		unenforced  = "the gotest check can't create or change Pods in namespace repos, which doesn't enforce the restricted Pod Security Standard at the latest version"
 		account     = "the gotest check's Pods must run as their namespace's default service account"
@@ -341,7 +346,7 @@ func TestCheckPods(t *testing.T) {
 		r:    request{user: gotest, operation: "DELETE", namespace: "repos", oldObject: own},
 	}, {
 		name: "another check creates its own Pod",
-		r:    request{user: review, operation: "CREATE", namespace: "repos", nsLabels: ready, object: pod("check-review", "")},
+		r:    request{user: review, operation: "CREATE", namespace: "repos", nsLabels: ready, object: named("review-0123456789abcdef", pod("check-review", ""))},
 	}, {
 		name: "creates a Pod in its own namespace",
 		r:    request{user: gotest, operation: "CREATE", namespace: "check-gotest", nsLabels: ready, object: own},
@@ -370,6 +375,28 @@ func TestCheckPods(t *testing.T) {
 		name: "creates a Pod with another check's label",
 		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: pod("check-gofmt", "")},
 		want: label,
+	}, {
+		name: "another check creates a Pod with its own label under the gotest check's Pod name",
+		r:    request{user: review, operation: "CREATE", namespace: "repos", nsLabels: ready, object: pod("check-review", "")},
+		want: "the review check's new Pods need a name of the form review-ID, where ID has no hyphens",
+	}, {
+		name: "creates a Pod under another check's Pod name",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: named("review-0123456789abcdef", pod("check-gotest", ""))},
+		want: podName,
+	}, {
+		name: "creates a Pod under the Pod name of a check whose name starts with its own",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: named("gotest-race-0123456789abcdef", pod("check-gotest", ""))},
+		want: podName,
+	}, {
+		name: "creates a Pod whose name runs its check's name into the ID",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: named("gotest0123456789abcdef", pod("check-gotest", ""))},
+		want: podName,
+	}, {
+		name: "patches its Pod whose name isn't gotest-ID",
+		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: ready, object: named("test-pod", pod("check-gotest", "")), oldObject: named("test-pod", pod("check-gotest", ""))},
+	}, {
+		name: "deletes its Pod whose name isn't gotest-ID",
+		r:    request{user: gotest, operation: "DELETE", namespace: "repos", nsLabels: ready, oldObject: named("test-pod", pod("check-gotest", ""))},
 	}, {
 		name: "creates a Pod in a namespace without the opt-in label",
 		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: labels("git-k8s.imjasonh.com/check-pods", ""), object: own},

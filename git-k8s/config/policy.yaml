@@ -123,8 +123,11 @@ spec:
 # kube sets the label kube.imjasonh.github.io/controller on each object that a
 # controller owns to the controller's name, which is check-NAME for the NAME
 # check. This policy lets a check change or delete only Pods with its own
-# label, and its new Pods must have it. A check creates and changes Pods only
-# in namespaces labeled git-k8s.imjasonh.com/check-pods=true that enforce the
+# label, and its new Pods must have it. Their names must be NAME-ID, where ID
+# has no hyphens, so that a check can't take the name of another check's next
+# Pod and block it. Two checks never share such a name, even when one check's
+# name starts with the other's. A check creates and changes Pods only in
+# namespaces labeled git-k8s.imjasonh.com/check-pods=true that enforce the
 # latest restricted Pod Security Standard, and never in the namespaces of
 # git-k8s programs. The policy itself also enforces the baseline Pod Security
 # Standard, more strictly for capabilities and sysctls, because Pod Security
@@ -206,6 +209,13 @@ spec:
       messageExpression: >-
         "the " + variables.check + " check's Pods need the label " +
         "kube.imjasonh.github.io/controller=" + variables.controller
+    - expression: >-
+        request.operation != "CREATE" ||
+        object.metadata.name.startsWith(variables.check + "-") &&
+        !object.metadata.name.substring(size(variables.check) + 1).contains("-")
+      messageExpression: >-
+        "the " + variables.check + " check's new Pods need a name of the form " +
+        variables.check + "-ID, where ID has no hyphens"
     - expression: >-
         object == null ||
         "git-k8s.imjasonh.com/check-pods" in variables.namespaceLabels &&

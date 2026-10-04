@@ -244,8 +244,10 @@ delete Pods in every namespace, because RBAC can't limit those verbs to the
 Pods that a program created. kube labels each Pod that `check-NAME` declares
 with `kube.imjasonh.github.io/controller=check-NAME`. The policy lets the
 check change or delete only Pods with that label, and its new Pods must have
-it. The check can't write Pods in the `git-k8s` or `check-*` namespaces.
-Elsewhere, it creates and changes Pods only in namespaces that have the label
+it. A new Pod's name must be `NAME-ID`, where `ID` has no hyphens, so that a
+check can't take the name of another check's next Pod and block it. The check
+can't write Pods in the `git-k8s` or `check-*` namespaces. Elsewhere, it
+creates and changes Pods only in namespaces that have the label
 `git-k8s.imjasonh.com/check-pods=true` and enforce the `restricted` Pod
 Security Standard at version `latest`. It can delete its Pods in a namespace
 without those labels, so it can clean up after a namespace drops them. Its

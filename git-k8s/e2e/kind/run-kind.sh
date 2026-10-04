@@ -464,13 +464,14 @@ pod_request() {
     -H "Authorization: Bearer ${gotest_token}" -H "Content-Type: ${type}" \
     --data "${3:-}" "${server}/api/v1/namespaces/$2?dryRun=All"
 }
-# gotest_pod prints a Pod that meets the restricted Pod Security Standard,
-# with the gotest check's label, that runs as service account $1 on node $2,
-# or on the node that the scheduler picks if $2 is empty.
+# gotest_pod prints a Pod named $3, or gotest-e2e if $3 is empty, that meets
+# the restricted Pod Security Standard, with the gotest check's label, that
+# runs as service account $1 on node $2, or on the node that the scheduler
+# picks if $2 is empty.
 gotest_pod() {
   cat <<EOF
 {"apiVersion": "v1", "kind": "Pod",
- "metadata": {"name": "gotest-e2e", "labels": {"kube.imjasonh.github.io/controller": "check-gotest"}},
+ "metadata": {"name": "${3:-gotest-e2e}", "labels": {"kube.imjasonh.github.io/controller": "check-gotest"}},
  "spec": {"serviceAccountName": "$1", "nodeName": "${2:-}", "restartPolicy": "Never", "automountServiceAccountToken": false,
   "securityContext": {"runAsNonRoot": true, "runAsUser": 65532, "seccompProfile": {"type": "RuntimeDefault"}},
   "containers": [{"name": "test", "image": "${GO_IMAGE}", "command": ["go", "version"],
@@ -493,6 +494,9 @@ grep -q "can't create or change Pods in namespace default, which doesn't have th
 code="$(pod_request POST "${NS}/pods" "$(gotest_pod default "${CLUSTER}-control-plane")")"
 [[ "${code}" == 422 ]]
 grep -q "the gotest check can't assign its Pods to a node" "${WORKDIR}/pod.json"
+code="$(pod_request POST "${NS}/pods" "$(gotest_pod default "" review-e2e)")"
+[[ "${code}" == 422 ]]
+grep -q "the gotest check's new Pods need a name of the form gotest-ID, where ID has no hyphens" "${WORKDIR}/pod.json"
 k -n "${NS}" apply -f - <<EOF
 apiVersion: v1
 kind: Pod
@@ -524,7 +528,7 @@ code="$(pod_request DELETE "${NS}/pods/other")"
 [[ "${code}" == 422 ]]
 grep -q "the gotest check can change or delete only its own Pods" "${WORKDIR}/pod.json"
 k -n "${NS}" delete pod other
-echo "check-gotest can't run Pods in a program's namespace, as another service account, in a namespace that doesn't opt in, or on a node that it names, and can't change or delete a Pod that it didn't create."
+echo "check-gotest can't run Pods in a program's namespace, as another service account, in a namespace that doesn't opt in, on a node that it names, or under another check's Pod name, and can't change or delete a Pod that it didn't create."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
