@@ -158,16 +158,16 @@ type GitBranchStatus struct {
 	State              string                 `json:"state,omitempty" kube:"column=State" doc:"Why the branch has or hasn't landed on its parent, the same as the Merged condition's reason."`
 	ObservedGeneration int64                  `json:"observedGeneration,omitempty"`
 	Conditions         []kube.Condition       `json:"conditions,omitempty"`
-	Diverged           *Divergence            `json:"diverged,omitempty" doc:"The external repository's head of the branch, while the branch has changed both in the mirror and in the external repository since they last synced. The core program writes it."`
+	Diverged           *Divergence            `json:"diverged,omitempty" doc:"How the branch diverged between the mirror and the external repository, set only while it's diverged. The core program writes it."`
 }
 
-// Divergence says that a branch changed in both the mirror and the
-// external repository since they last synced.
+// Divergence says how a branch diverged between the mirror and the
+// external repository: each side changed the branch since they last
+// synced, and neither side's head keeps the other side's changes.
 type Divergence struct {
-	// Commit is the external repository's head of the branch.
-	Commit string `json:"commit"`
-	// Ref is the ref in the mirror that holds Commit.
-	Ref string `json:"ref"`
+	Commit string `json:"commit" doc:"External repository's head of the branch, or empty if the external repository deleted the branch."`
+	Ref    string `json:"ref" doc:"Ref in the mirror that holds commit, or empty if commit is."`
+	Base   string `json:"base,omitempty" doc:"Head of the branch where the mirror and the external repository last synced, which the mirror keeps under refs/git-k8s/synced/heads/. Empty if they never synced."`
 }
 
 // Check result states.

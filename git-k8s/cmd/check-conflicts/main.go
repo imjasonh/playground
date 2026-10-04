@@ -10,7 +10,9 @@
 //     repository that the mirror syncs, so the mirror overwrites neither,
 //     and the branch's status.diverged holds the external repository's
 //     head. The conflicts check pushes a merge of that head, which the
-//     mirror then syncs to the external repository.
+//     mirror then syncs to the external repository. When the external
+//     repository deleted the branch, the check fails and leaves the branch
+//     for a person.
 //
 // Git resolves what it can first: paths that match -union, such as go.sum,
 // merge with git's union driver, which keeps the lines of both sides. When
@@ -87,18 +89,20 @@ var check = checks.Check{Name: "conflicts", UsesParent: true, Remote: credential
 
 // stale reports whether the previous result is for another merge than the
 // one that the branch needs now: the branch diverged or stopped diverging,
-// or the agent's run finished merging a head of the parent that has since
-// moved.
+// the external repository's head or the head where the two sides last
+// synced moved, or the agent's run finished merging a head of the parent
+// that has since moved.
 func stale(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpec, previous *gitk8s.CheckResult) bool {
-	diverged := ""
-	if d := divergence(ctx, meta); d != nil {
-		diverged = d.Commit
+	d := divergence(ctx, meta)
+	var diverged, synced string
+	if d != nil {
+		diverged, synced = d.Commit, d.Base
 	}
-	if diverged != previous.Outputs["diverged"] {
+	if diverged != previous.Outputs["diverged"] || synced != previous.Outputs["synced"] {
 		return true
 	}
 	merged := previous.Outputs["merge"]
-	return diverged == "" && merged != "" && merged != spec.ParentHead
+	return d == nil && merged != "" && merged != spec.ParentHead
 }
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
@@ -142,9 +146,12 @@ func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]str
 	head := in.Spec.Head
 	t := target{commit: in.Spec.ParentHead, ref: "refs/heads/" + in.Spec.Parent, name: in.Spec.Parent}
 	if d := divergence(ctx, in.Meta); d != nil {
-		outputs["diverged"] = d.Commit
+		recordDivergence(d, outputs)
 		if err := validate(d); err != nil {
 			return checks.Fail("%v", err)
+		}
+		if d.Commit == "" {
+			return checks.Fail("%s", deletion(in.Spec.Branch, d))
 		}
 		t = target{commit: d.Commit, ref: d.Ref, name: "the external repository's " + in.Spec.Branch, diverged: true}
 	}
@@ -290,18 +297,42 @@ func fetchCommit(ctx context.Context, repo *git.Repo, remote git.Remote, commit,
 	return nil
 }
 
+// recordDivergence records d in outputs, so that stale can tell when it
+// changes.
+func recordDivergence(d *gitk8s.Divergence, outputs map[string]string) {
+	if d.Commit != "" {
+		outputs["diverged"] = d.Commit
+	}
+	if d.Base != "" {
+		outputs["synced"] = d.Base
+	}
+}
+
 // validate returns an error if d can't be a divergence that the core
 // program wrote.
 func validate(d *gitk8s.Divergence) error {
+	deleted := d.Commit == "" && d.Ref == ""
 	switch {
-	case !isCommit(d.Commit):
+	case !deleted && !isCommit(d.Commit):
 		return fmt.Errorf("status.diverged.commit is %q, which isn't a commit ID", d.Commit)
-	case !strings.HasPrefix(d.Ref, "refs/"):
+	case !deleted && !strings.HasPrefix(d.Ref, "refs/"):
 		// The ref reaches git in the agent's Pod, which would read a ref
 		// that starts with a dash as an option.
 		return fmt.Errorf("status.diverged.ref is %q, which isn't a full ref name", d.Ref)
+	case d.Base != "" && !isCommit(d.Base), deleted && d.Base == "":
+		// The mirror pushes a branch that the external repository never
+		// had, so only a branch that the two sides synced can diverge by
+		// a deletion.
+		return fmt.Errorf("status.diverged.base is %q, which isn't a commit ID", d.Base)
 	}
 	return nil
+}
+
+// deletion says why the check can't resolve the divergence d of branch, in
+// which the external repository deleted the branch.
+func deletion(branch string, d *gitk8s.Divergence) string {
+	return fmt.Sprintf("the external repository deleted %s, which changed in git-k8s since they last synced at %s; push %s to the external repository again to keep its changes, or delete it in git-k8s to drop them",
+		branch, gitk8s.Short(d.Base), branch)
 }
 
 // isCommit reports whether s is a full SHA-1 or SHA-256 commit ID.
@@ -369,7 +400,8 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 		return nil
 	}
 	branch, child := b.Spec.Branch, resolvePrefix+b.Spec.Branch
-	res := &gitk8s.CheckResult{Commit: b.Spec.Head, Outputs: map[string]string{"diverged": d.Commit, "branch": child}}
+	res := &gitk8s.CheckResult{Commit: b.Spec.Head, Outputs: map[string]string{"branch": child}}
+	recordDivergence(d, res.Outputs)
 	*result = res
 	report := func(state, format string, args ...any) error {
 		res.State, res.Message = state, shorten(fmt.Sprintf(format, args...))
@@ -381,6 +413,9 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	}
 	if err := validate(d); err != nil {
 		return report(gitk8s.Failed, "%v", err)
+	}
+	if d.Commit == "" {
+		return report(gitk8s.Failed, "%s", deletion(branch, d))
 	}
 	switch cr := gitk8s.FindRule(repo.Spec.Branches, child); {
 	case !policy.MayPush:

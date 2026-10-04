@@ -442,15 +442,17 @@ conflict that keep a branch from landing:
 - Merging the branch's parent into it conflicts, so `check-base` can't keep
   the branch up to date. The check pushes a merge of the parent that
   resolves the conflicts.
-- The branch diverged. It changed both in git-k8s and in the external
-  repository since they last synced, and the core program set
-  `status.diverged` to the external repository's head. The check fetches
-  that head from the ref in `status.diverged.ref`, and pushes a merge of it
-  with a lease on the branch's head. Branches diverge only with the
-  in-cluster mirror that
-  [Future work](future-work.md#run-an-in-cluster-git-mirror) proposes, so
-  the end-to-end test can't make one diverge, and unit tests cover
-  divergence instead.
+- The branch diverged. It changed both in git-k8s and in the external repository
+  since they last synced, and the core program set `status.diverged` to the
+  external repository's head. The check fetches that head from the ref in
+  `status.diverged.ref`, and pushes a merge of it with a lease on the branch's
+  head. If the external repository deleted the branch, the check fails and
+  leaves the branch for a person, who can push the branch to the external
+  repository again to keep its changes, or delete it in git-k8s to drop them.
+  Branches diverge only with the in-cluster mirror that
+  [Future work](future-work.md#run-an-in-cluster-git-mirror) proposes, so the
+  end-to-end test can't make one diverge, and unit tests cover divergence
+  instead.
 
 When a branch diverged and also conflicts with its parent, the check merges
 the external repository's head first, because merging the parent doesn't

@@ -953,6 +953,16 @@ func TestRejectsAnInvalidDivergence(t *testing.T) {
 		d: func(head string) gitk8s.Divergence {
 			return gitk8s.Divergence{Commit: head, Ref: "--upload-pack=touch /tmp/x"}
 		},
+	}, {
+		name: "base",
+		want: `status.diverged.base is "--upload-pack=touch /tmp/x", which isn't a commit ID`,
+		d: func(head string) gitk8s.Divergence {
+			return gitk8s.Divergence{Commit: head, Ref: downstream + "c/x", Base: "--upload-pack=touch /tmp/x"}
+		},
+	}, {
+		name: "deletion without a base",
+		want: `status.diverged.base is "", which isn't a commit ID`,
+		d:    func(string) gitk8s.Divergence { return gitk8s.Divergence{} },
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			withAgent(t)
@@ -974,13 +984,44 @@ func TestRejectsAnInvalidDivergence(t *testing.T) {
 	}
 }
 
+func TestLeavesABranchThatTheExternalRepositoryDeleted(t *testing.T) {
+	withAgent(t)
+	srv := gittest.NewServer(t, "")
+	b, _, base := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+	head := b.Spec.Head
+	o := &observed{Object: kube.Meta(b.Name, nil)}
+	o.Namespace = "default"
+	o.Status.Diverged = &gitk8s.Divergence{Base: base}
+	rec, err := reconcile(t, srv, b, rules, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "the external repository deleted c/x, which changed in git-k8s since they last synced at " + gitk8s.Short(base) +
+		"; push c/x to the external repository again to keep its changes, or delete it in git-k8s to drop them"
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["synced"] != base || res.Outputs["diverged"] != "" {
+		t.Errorf("result = %+v, want Failed with %q and the synced head in the outputs", res, want)
+	}
+	if pods := kube.Owned[agent.Pod](rec); len(pods) != 0 {
+		t.Errorf("started %d agent Pods, want none", len(pods))
+	}
+	if got := srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s", got)
+	}
+}
+
 func TestRunsAgainForAnotherMerge(t *testing.T) {
 	b := &Branch{Object: kube.Meta("app-c-x", nil)}
 	b.Namespace = "default"
 	b.Spec.ParentHead = "p1"
-	o := &observed{Object: kube.Meta(b.Name, nil)}
-	o.Namespace = "default"
-	o.Status.Diverged = &gitk8s.Divergence{Commit: "e1", Ref: downstream + "c/x"}
+	diverged := func(d gitk8s.Divergence) *observed {
+		o := &observed{Object: kube.Meta(b.Name, nil)}
+		o.Namespace = "default"
+		o.Status.Diverged = &d
+		return o
+	}
+	o := diverged(gitk8s.Divergence{Commit: "e1", Ref: downstream + "c/x"})
+	synced := diverged(gitk8s.Divergence{Commit: "e1", Ref: downstream + "c/x", Base: "s1"})
+	deleted := diverged(gitk8s.Divergence{Base: "s1"})
 	for _, tc := range []struct {
 		name    string
 		outputs map[string]string
@@ -994,6 +1035,11 @@ func TestRunsAgainForAnotherMerge(t *testing.T) {
 		{name: "after the branch diverged", outputs: map[string]string{"merge": "p1"}, world: []any{o}, want: true},
 		{name: "after the external head moved", outputs: map[string]string{"diverged": "e0", "merge": "e0"}, world: []any{o}, want: true},
 		{name: "after the divergence cleared", outputs: map[string]string{"diverged": "e1", "merge": "e1"}, want: true},
+		{name: "after resolving a divergence since the sides synced", outputs: map[string]string{"diverged": "e1", "synced": "s1", "merge": "e1"}, world: []any{synced}, want: false},
+		{name: "after the sides synced again", outputs: map[string]string{"diverged": "e1", "synced": "s0", "merge": "e1"}, world: []any{synced}, want: true},
+		{name: "after the external repository deleted the branch", outputs: map[string]string{"merge": "p1"}, world: []any{deleted}, want: true},
+		{name: "after failing on the deletion", outputs: map[string]string{"synced": "s1"}, world: []any{deleted}, want: false},
+		{name: "after the deletion cleared", outputs: map[string]string{"synced": "s1"}, want: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, _ := kube.Fake(t.Context(), b, tc.world...)
@@ -1148,6 +1194,11 @@ func TestLeavesADivergedParent(t *testing.T) {
 		rules: rules,
 		edit:  func(o *observed) { o.Status.Diverged.Ref = "main" },
 		want:  `status.diverged.ref is "main", which isn't a full ref name`,
+	}, {
+		name:  "when the external repository deleted it",
+		rules: rules,
+		edit:  func(o *observed) { *o.Status.Diverged = gitk8s.Divergence{Base: strings.Repeat("a", 40)} },
+		want:  "the external repository deleted main, which changed in git-k8s since they last synced at aaaaaaaaaaaa; push main to the external repository again",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := gittest.NewServer(t, "")
