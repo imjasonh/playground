@@ -1872,10 +1872,16 @@ func TestDeletesABranchThatRaisesARetractedVersion(t *testing.T) {
 		pushed:  modAt("v1.1.0"),
 		again:   func(f *fixture) { f.proxy.publish(greet, "v1.2.0", longAgo, "") },
 		version: "v1.2.0",
+	}, {
+		name:    "a newer version comes out, and the branch raises a version that the module doesn't retract",
+		pushed:  modWith(greet, "v1.1.0", other, "v1.4.0"),
+		again:   func(f *fixture) { f.proxy.publish(greet, "v1.2.0", longAgo, "") },
+		version: "v1.2.0",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t)
 			f.u.interval = 100 * time.Hour
+			f.proxy.publish(other, "v1.4.0", longAgo, "")
 			f.proxy.publish(other, "v1.5.0", longAgo, "")
 			p := f.start()
 			f.finish(p, result(withFiles("v1.1.0", "go.mod", tc.pushed)))
