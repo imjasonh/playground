@@ -158,7 +158,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 	bindings[1].Spec.ValidationActions = []string{"Warn"}
 	if c := reconcile(world...); c.Status != kube.False ||
-		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts can approve branches, and checks can change GitBranch objects; run "+fmt.Sprintf(warns, "git-k8s-branches") {
+		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts can approve branches, and checks can change GitBranch objects; the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
 		t.Errorf("with only git-k8s-branches warning, PoliciesInstalled = %+v", c)
 	}
 	// Another binding that denies enforces git-k8s-branches, but the next start
@@ -187,7 +187,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	narrow.Spec.PolicyName, narrow.Spec.ValidationActions = "git-k8s-branches", []string{"Deny"}
 	narrow.Spec.MatchResources = &matchResources{ObjectSelector: &labelSelector{MatchLabels: map[string]string{"tier": "web"}}}
 	if c := reconcile(append([]any{narrow}, world...)...); c.Status != kube.False || c.Reason != "NotDenying" ||
-		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts can approve branches, and checks can change GitBranch objects; run "+fmt.Sprintf(warns, "git-k8s-branches") {
+		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts can approve branches, and checks can change GitBranch objects; the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
 		t.Errorf("with git-k8s-branches warning while narrow-branches is limited, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = false

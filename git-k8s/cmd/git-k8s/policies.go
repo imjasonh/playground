@@ -85,12 +85,15 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 			}
 		}
 		policy := kube.Get[admissionPolicy](ctx, "", p.name)
+		// While its own binding warns, the core program stops the next time it
+		// starts, even if another binding enforces the policy, because its apply
+		// adds Deny next to the Warn.
+		warn := installs && own != nil && slices.Contains(own.Spec.ValidationActions, "Warn")
+		if warn {
+			warns = append(warns, p.name)
+		}
 		if policy != nil && denies {
-			// Another binding enforces the policy, but the core program still
-			// stops the next time it starts, when its apply adds Deny next to the
-			// Warn in its own binding.
-			if installs && own != nil && slices.Contains(own.Spec.ValidationActions, "Warn") {
-				warns = append(warns, p.name)
+			if warn {
 				patches = append(patches, patchCommand(own))
 			}
 			continue
