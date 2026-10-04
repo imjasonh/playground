@@ -488,3 +488,94 @@ func TestApplyGivesUpStatusAfterRestart(t *testing.T) {
 	grant("widgets", "widgets/status", "polls", "polls/status")
 	e2e.Eventually(t, 30*time.Second, state(nil, false, kube.True, ""))
 }
+
+// failingVoter votes like pollVoter, and labels the ConfigMap named target
+// with the widget's name and vote. The name label shows that a reconcile
+// applied both objects, even one that abstains. For a widget with the
+// annotation fail, it then applies a ConfigMap with an invalid label, so the
+// reconcile fails after the vote and the labels are applied.
+type failingVoter struct{}
+
+func (failingVoter) Reconcile(ctx context.Context, w *Widget) error {
+	if kube.Get[pollVotes](ctx, w.Namespace, "p") == nil || kube.Get[k8s.ConfigMap](ctx, w.Namespace, "target") == nil {
+		return nil
+	}
+	p := &pollVotes{Object: kube.Meta("p", nil)}
+	labels := map[string]string{"voter": w.Name}
+	if w.Spec.Size != 0 {
+		p.Status.Votes = map[string]int{w.Name: w.Spec.Size}
+		labels["vote"] = strconv.Itoa(w.Spec.Size)
+	}
+	kube.Apply(ctx, p)
+	kube.Apply(ctx, &k8s.ConfigMap{Object: kube.Meta("target", labels)})
+	if w.Annotations["fail"] != "" {
+		kube.Apply(ctx, &k8s.ConfigMap{Object: kube.Meta(w.Name+"-bad", map[string]string{"bad": "not valid!"})})
+	}
+	return nil
+}
+
+func TestApplyGivesUpWhatAFailedReconcileApplied(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	poll := client.Path(group+"/v1", "polls", ns, "p")
+	target := client.Path("v1", "configmaps", ns, "target")
+	remove(t, c, client.Path(group+"/v1", "widgets", ns, "w"), poll, target)
+	if err := c.Create(t.Context(), client.Path("v1", "configmaps", ns, ""), map[string]any{
+		"apiVersion": "v1", "kind": "ConfigMap", "metadata": map[string]any{"name": "target"},
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	e2e.Run(t, &kube.Manager{Name: "failing-voter-e2e", Namespace: ns}, kube.For[Poll](&tally{}, kube.Named("failing-tally")), kube.For[Widget](failingVoter{}, kube.Named("failing-voter")))
+	e2e.Eventually(t, 30*time.Second, func() error {
+		return c.Create(t.Context(), client.Path(group+"/v1", "polls", ns, ""), map[string]any{
+			"apiVersion": group + "/v1", "kind": "Poll", "metadata": map[string]any{"name": "p"}, "spec": map[string]any{"question": "Tabs?"},
+		}, nil)
+	})
+	patch := func(body string) {
+		t.Helper()
+		if err := c.Patch(t.Context(), client.Path(group+"/v1", "widgets", ns, "w"), client.MergePatch, nil, []byte(body), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// state checks the poll's votes, target's labels, and the widget's
+	// Synced condition for its current generation.
+	state := func(vote int, synced, message string) func() error {
+		return func() error {
+			var p pollVotes
+			if err := e2e.Get(t.Context(), c, poll, &p); err != nil {
+				return err
+			}
+			var cm k8s.ConfigMap
+			if err := e2e.Get(t.Context(), c, target, &cm); err != nil {
+				return err
+			}
+			votes, label := map[string]int{}, ""
+			if vote != 0 {
+				votes, label = map[string]int{"w": vote}, strconv.Itoa(vote)
+			}
+			if !maps.Equal(p.Status.Votes, votes) || cm.Labels["voter"] != "w" || cm.Labels["vote"] != label {
+				return fmt.Errorf("votes = %v and labels = %v, want votes %v and vote label %q", p.Status.Votes, cm.Labels, votes, label)
+			}
+			w, err := widget(t, c, ns, "w")
+			if err != nil {
+				return err
+			}
+			if s := kube.FindCondition(w.Status.Conditions, "Synced"); s == nil || s.Status != synced || s.ObservedGeneration != w.Generation || !strings.Contains(s.Message, message) {
+				return fmt.Errorf("Synced = %+v at generation %d", s, w.Generation)
+			}
+			return nil
+		}
+	}
+
+	t.Log("A widget of size 0 abstains.")
+	createWidget(t, c, ns, "w", 0)
+	e2e.Eventually(t, 30*time.Second, state(0, kube.True, ""))
+
+	t.Log("A reconcile that votes and labels, then fails, leaves the vote and the label.")
+	patch(`{"metadata":{"annotations":{"fail":"yes"}},"spec":{"size":3}}`)
+	e2e.Eventually(t, 10*time.Second, state(3, kube.False, "w-bad"))
+
+	t.Log("The next reconcile abstains, so it withdraws the vote and removes the label.")
+	patch(`{"metadata":{"annotations":{"fail":null}},"spec":{"size":0}}`)
+	e2e.Eventually(t, 10*time.Second, state(0, kube.True, ""))
+}

@@ -109,9 +109,9 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 	skip := ok && last == h && in.observed != nil && matches(in.observed, body)
 	if empty {
 		// An empty status only gives up status fields that the manager owns.
-		// If the rest of the object needed no apply, the last reconcile
-		// applied it too, and recorded a status only if the manager then
-		// owned status fields.
+		// If the rest of the object needed no apply, the last successful
+		// reconcile applied it too, and recorded a status only if the
+		// manager then owned status fields.
 		skip = !ok
 		if owns != nil {
 			skip = !*owns

@@ -153,10 +153,11 @@ object rather than editing one that `Get` returned.
 
 When a later reconcile stops applying a status field, the controller gives it
 up, and the API server removes it unless another manager also set it. So an
-empty status gives up every status field that earlier reconciles applied,
-even in an earlier run of the program. When there are none, the framework
-sends no status request. If the cluster doesn't serve a status subresource
-for the object, a status that isn't empty fails the reconcile.
+empty status gives up every status field that an earlier reconcile applied,
+even one that failed or that ran in an earlier run of the program. When there
+are none, the framework sends no status request. If the cluster doesn't serve
+a status subresource for the object, a status that isn't empty fails the
+reconcile.
 
 Applying a status needs permission to patch the object's status subresource,
 and `generate` grants it for each type with a status that the program

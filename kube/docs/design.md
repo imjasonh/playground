@@ -484,9 +484,13 @@ carries an annotation with a hash of the rest of the document. If the cached
 object has every field including that annotation, the last apply sent this
 same document, and there's nothing to add or remove. Because the hash lives on
 the object, the skip works after a restart or a leader failover. For `Apply`,
-the framework doesn't annotate objects it doesn't own, and skips only when
-this process applied the same document before. The `kube_apply_total` metric
-counts applies by result, `applied` or `skipped`.
+the framework doesn't annotate objects it doesn't own. Instead, it records in
+memory the documents that the last successful reconcile of each object
+applied, and skips only when the record holds the same document. A reconcile
+whose writes fail may already have applied documents that the record doesn't
+hold, so the framework drops the record, and the next reconcile sends every
+document. The `kube_apply_total` metric counts applies by result, `applied` or
+`skipped`.
 
 For a kind with a status subresource, server-side apply tracks the status
 fields apart from the object's other fields, and a request to the object
@@ -505,12 +509,11 @@ manager owns. So an empty status needs a request only while the manager owns
 status fields. The API server keeps a `managedFields` entry for a manager and
 subresource only while the manager owns fields there. When the framework sends
 the first request, it sends an empty status only if the response has an entry
-for the manager and the status subresource. The framework skips the first
-request only when this process applied the same document before, and it records
-a status that isn't empty along with each document. When it skips the first
-request, it sends an empty status only if it recorded a status with that
-document. A program that never sets a status sends no status requests, and one
-that clears a status sends one, even after a restart.
+for the manager and the status subresource. The framework records a status
+that isn't empty along with each document, so when it skips the first request,
+it sends an empty status only if the record holds a status. A program that
+never sets a status sends no status requests, and one that clears a status
+sends one, even after a restart or a failed reconcile.
 
 An earlier version of a program can leave status fields to give up, even when
 the current one sets only a label on a type with a status, such as
@@ -872,7 +875,8 @@ framework's tests check that:
   nothing. A controller that may not patch a Deployment's status still
   applies a label to it. Restarted without permission to patch a Poll's
   status, a controller fails to withdraw its vote, and withdraws it once it
-  has the permission.
+  has the permission. When a reconcile applies a vote and a label and then
+  fails, the next reconcile that abstains removes both.
 - Panics and permanent errors are reported and retried correctly.
 - Leader election fails over.
 - Three replicas with 32 shards split the work, hand shards over when one
@@ -1029,11 +1033,11 @@ offers:
   run the reconcile again.
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
   stop matching looks deleted, so its finalizer is never removed.
-- After a restart, each object declared with `Apply` is applied once, and so
-  is a status that isn't empty, because the framework doesn't annotate
-  objects it doesn't own. A status that leaves out other managers' fields is
-  also written once, because the record of the last status write is in
-  memory.
+- After a restart, or after a reconcile whose writes fail, each object
+  declared with `Apply` is applied once, and so is a status that isn't empty,
+  because the framework doesn't annotate objects it doesn't own. After a
+  restart, a status that leaves out other managers' fields is also written
+  once, because the record of the last status write is in memory.
 - Fields that `Apply` wrote, including status fields, stay on an object when
   a reconcile stops declaring it, and when the reconciled object is deleted.
   Giving them up would take a durable record of what each reconcile applied.
