@@ -482,11 +482,15 @@ head:
   change the external repository's head already has. The check pushes to the
   side that didn't rewind, so the result can change commits to resolve
   conflicts. If a commit can't be replayed by itself, such as a merge, or a
-  commit whose replay conflicts, the check replays the branch's whole change
-  since `base` as one commit on top of the external repository's head
-  instead. Git and the agent resolve that commit's conflicts as they resolve
-  a merge's, with `base` as the merge base, and the agent's prompt says not
-  to bring back what the rewind removed.
+  commit whose replay conflicts, or if the replays don't have every change
+  that both sides made, the check replays the branch's whole change since
+  `base` as one commit on top of the external repository's head instead.
+  Git and the agent resolve that commit's conflicts as they resolve a
+  merge's, with `base` as the merge base, and the agent's prompt says not to
+  bring back what the rewind removed. If a replay makes the same change as a
+  commit that the external repository removed, the check fails and leaves
+  the divergence for a person, because one commit would only hide the
+  replay.
 - If the branch rewound in git-k8s, the check replays the external
   repository's commits onto the branch's head one at a time. It pushes the
   result to the side that rewound, so the result needs a replay of each
@@ -506,14 +510,20 @@ head:
   change as one commit, and fails when neither replay works.
 
 A head keeps a side's changes when it has none of the commits the side
-removed, a replay of each commit it added, and every change it made since
-`base`: merging the side into the head with `base` as the merge base is
-clean and changes nothing. A head built on a side that rewound to a new
-commit keeps that side's changes even where it resolved conflicts. In that
-case, merging the commit where the side and `base` meet into the head, with
-`base` as the merge base, must be clean and change nothing instead, so that
-the head can't bring back what the side removed. The check passes when one
-side's head already keeps every change that the other side made.
+removed and no replay of one, a replay of each commit it added, and every
+change it made since `base`: merging the side into the head with `base` as
+the merge base is clean and changes nothing. A replay of a removed commit
+counts only if the side made the same change again, as a rebase does. A
+head built on a side that rewound to a new commit keeps that side's changes
+even where it resolved conflicts. In that case, merging either the side or
+the commit where the side and `base` meet into the head, with `base` as the
+merge base, must be clean and change nothing, so that the head brings back
+no change that the side removed. The merges can't see a replay of a removed
+commit whose change other removed commits undid, such as a secret and its
+revert that a force push dropped, so the rule also looks for replays of the
+removed commits. It can't find one inside a larger commit, such as a
+squash. The check passes when one side's head already keeps every change
+that the other side made.
 
 Branches diverge only with the in-cluster mirror that
 [Future work](future-work.md#run-an-in-cluster-git-mirror) proposes, so the
