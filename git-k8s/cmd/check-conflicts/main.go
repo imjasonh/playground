@@ -40,6 +40,7 @@ import (
 	"unicode/utf8"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -102,10 +103,12 @@ func stale(ctx context.Context, meta *kube.ObjectMeta, spec *gitk8s.GitBranchSpe
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	outputs := map[string]string{}
-	if prev := in.Previous; prev != nil && prev.Outputs["runs"] != "" {
-		// The agent counts the branch's runs for maxAgentRuns in this
-		// output, so every result keeps it.
-		outputs["runs"] = prev.Outputs["runs"]
+	if prev := in.Previous; prev != nil {
+		// RunJob counts the branch's runs for maxAgentRuns in the agent's
+		// state, so every result keeps them.
+		if runs := readState(prev.Outputs).Runs; runs != 0 {
+			outputs = stateOutputs(&agent.JobState{Runs: runs})
+		}
 	}
 	v := resolveBranch(ctx, in, outputs)
 	maps.Copy(outputs, v.Outputs)

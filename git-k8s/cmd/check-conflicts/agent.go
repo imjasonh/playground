@@ -75,18 +75,20 @@ func (t target) job(in *checks.Input, base string) *agent.Job {
 // outputs, which the new run counts from.
 func follow(ctx context.Context, in *checks.Input, t target, outputs map[string]string) (checks.Verdict, bool) {
 	prev := in.Previous
-	if prev == nil || prev.State != gitk8s.Running || prev.Commit != in.Spec.Head || prev.Outputs["pod"] == "" ||
-		(prev.Outputs["diverged"] != "") != t.diverged || !isCommit(prev.Outputs["merge"]) || !isCommit(prev.Outputs["base"]) ||
+	if prev == nil || prev.State != gitk8s.Running || prev.Commit != in.Spec.Head {
+		return checks.Verdict{}, false
+	}
+	st := readState(prev.Outputs)
+	if st.Pod == "" || (prev.Outputs["diverged"] != "") != t.diverged || !isCommit(prev.Outputs["merge"]) || !isCommit(prev.Outputs["base"]) ||
 		prev.Outputs["union"] != union.String() {
 		return checks.Verdict{}, false
 	}
 	pinned, base := t, prev.Outputs["base"]
 	pinned.commit = prev.Outputs["merge"]
-	st := jobState(prev.Outputs)
 	s := runJob(ctx, pinned.job(in, base), st)
 	if s.Moved && pinned.commit != t.commit {
 		// RunJob gave back the run whose Pod found the branch moved.
-		outputs["runs"] = strconv.Itoa(st.Runs)
+		maps.Copy(outputs, stateOutputs(&agent.JobState{Runs: st.Runs}))
 		return checks.Verdict{}, false
 	}
 	v := report(ctx, in, pinned, base, st, s)
@@ -117,8 +119,7 @@ func startAgent(ctx context.Context, in *checks.Input, repo *git.Repo, t target,
 	case why != "":
 		return checks.Fail("%s", why)
 	}
-	st := &agent.JobState{}
-	st.Runs, _ = strconv.Atoi(outputs["runs"])
+	st := &agent.JobState{Runs: readState(outputs).Runs}
 	s := runJob(ctx, t.job(in, base), st)
 	if !s.Done && st.Pod == "" {
 		s.Message = fmt.Sprintf("merging %s conflicts in %s; %s", t.name, list, s.Message)
@@ -166,10 +167,8 @@ func report(ctx context.Context, in *checks.Input, t target, base string, st *ag
 	if !s.Done {
 		return running("%s", s.Message)
 	}
-	o := map[string]string{"runs": strconv.Itoa(st.Runs), "merge": t.commit}
-	if st.Pod != "" {
-		o["pod"] = st.Pod
-	}
+	o := stateOutputs(st)
+	o["merge"] = t.commit
 	res := s.Result
 	if res == nil {
 		v := checks.Fail("%s", s.Message)
@@ -177,7 +176,7 @@ func report(ctx context.Context, in *checks.Input, t target, base string, st *ag
 			maps.Copy(o, agent.UsageOutputs(s.Failed))
 		}
 		v.Outputs = o
-		return v
+		return finished(ctx, v)
 	}
 	var v checks.Verdict
 	if res.Verdict == agent.Fail {
@@ -204,38 +203,49 @@ func report(ctx context.Context, in *checks.Input, t target, base string, st *ag
 	maps.Copy(o, agent.UsageOutputs(res))
 	o["summary"] = res.Summary
 	v.Outputs = o
+	return finished(ctx, v)
+}
+
+// finished returns v, the verdict of a run that finished. The next
+// reconcile doesn't follow a final result, so it doesn't declare the run's
+// Pod, and kube deletes it.
+func finished(ctx context.Context, v checks.Verdict) checks.Verdict {
+	kube.RequeueAfter(ctx, time.Second)
 	return v
 }
 
 // runOutputs hold what the next reconcile needs to follow the agent's run
 // that merges t, with base as the merge base.
 func runOutputs(t target, base string, st *agent.JobState) map[string]string {
-	o := map[string]string{"runs": strconv.Itoa(st.Runs), "merge": t.commit}
+	o := stateOutputs(st)
+	o["merge"] = t.commit
 	if st.Pod == "" {
 		return o
 	}
-	o["pod"], o["attempt"], o["base"] = st.Pod, strconv.Itoa(st.Attempt), base
-	if st.UID != "" {
-		o["podUID"] = st.UID
-	}
-	if st.Refunded != "" {
-		o["refunded"] = st.Refunded
-	}
-	if st.Done {
-		o["done"] = "true"
-	}
+	o["base"] = base
 	if len(union) > 0 {
 		o["union"] = union.String()
 	}
 	return o
 }
 
-// jobState reads the state of the agent's run from the outputs that
-// runOutputs wrote.
-func jobState(outputs map[string]string) *agent.JobState {
-	st := &agent.JobState{Pod: outputs["pod"], UID: outputs["podUID"], Refunded: outputs["refunded"], Done: outputs["done"] == "true"}
-	st.Runs, _ = strconv.Atoi(outputs["runs"])
-	st.Attempt, _ = strconv.Atoi(outputs["attempt"])
+// stateOutputs hold the state of the agent's run, which readState reads,
+// and the run's runs and Pod for people to read.
+func stateOutputs(st *agent.JobState) map[string]string {
+	text, _ := st.MarshalText()
+	o := map[string]string{"state": string(text), "runs": strconv.Itoa(st.Runs)}
+	if st.Pod != "" {
+		o["pod"] = st.Pod
+	}
+	return o
+}
+
+// readState reads the state of the agent's run from outputs that
+// stateOutputs wrote. A state that doesn't decode starts over, like a
+// missing one.
+func readState(outputs map[string]string) *agent.JobState {
+	st := &agent.JobState{}
+	_ = st.UnmarshalText([]byte(outputs["state"]))
 	return st
 }
 

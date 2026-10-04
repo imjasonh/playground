@@ -221,7 +221,7 @@ func TestMergesUnionPaths(t *testing.T) {
 	srv := gittest.NewServer(t, "pw")
 	b, w, _ := setup(t, srv, conflictingSum, map[string]string{"go.sum": "a v1\nc v1\n"})
 	head, parent := b.Spec.Head, b.Spec.ParentHead
-	b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: map[string]string{"runs": "3"}}
+	b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: stateOutputs(&agent.JobState{Runs: 3})}
 	if _, err := reconcile(t, srv, b, rules); err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestMergesUnionPaths(t *testing.T) {
 	if res.State != gitk8s.Fixed || fix == "" || !strings.HasPrefix(res.Message, "merging main conflicts in go.sum, which git merged with its union driver; pushed ") {
 		t.Fatalf("result = %+v, want Fixed with a pushed merge", res)
 	}
-	if res.Outputs["conflicts"] != "go.sum" || res.Outputs["merge"] != parent || res.Outputs["runs"] != "3" {
+	if res.Outputs["conflicts"] != "go.sum" || res.Outputs["merge"] != parent || readState(res.Outputs).Runs != 3 {
 		t.Errorf("outputs = %v, want the conflicts, the merged commit, and the earlier runs", res.Outputs)
 	}
 	if got := w.Fetch("c/x"); got != fix {
@@ -340,7 +340,7 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 		name:  "when the branch used all its agent runs",
 		agent: true,
 		edit: func(b *Branch, _ *gittest.Work) {
-			b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: map[string]string{"runs": "10"}}
+			b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: stateOutputs(&agent.JobState{Runs: 10})}
 		},
 		state: gitk8s.Running,
 		want:  "merging main conflicts in a.txt; not starting the agent: the job used all 10 of its runs",
@@ -382,7 +382,7 @@ func TestLeavesTheRunLimitsToRunJob(t *testing.T) {
 	b, _, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
 	three := int32(3)
 	b.Spec.Merge.MaxAgentRuns = &three
-	b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: map[string]string{"runs": "3"}}
+	b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: stateOutputs(&agent.JobState{Runs: 3})}
 	if _, err := reconcile(t, srv, b, rules); err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +391,7 @@ func TestLeavesTheRunLimitsToRunJob(t *testing.T) {
 	}
 	res := b.Status.Checks.Result
 	want := "merging main conflicts in a.txt; not starting the agent: the job used all 3 of its runs"
-	if res.State != gitk8s.Running || res.Message != want || res.Outputs["runs"] != "3" {
+	if res.State != gitk8s.Running || res.Message != want || readState(res.Outputs).Runs != 3 {
 		t.Errorf("result = %+v, want Running with %q and 3 runs", res, want)
 	}
 }
@@ -411,10 +411,8 @@ func TestStartsAnAgent(t *testing.T) {
 	if res.State != gitk8s.Running || len(pods) != 1 {
 		t.Fatalf("result = %+v and %d Pods, want Running with one Pod", res, len(pods))
 	}
-	want := map[string]string{
-		"conflicts": "a.txt,go.sum", "merge": b.Spec.ParentHead, "base": base, "union": "go.sum",
-		"runs": "1", "pod": pods[0].Name, "attempt": "1",
-	}
+	want := stateOutputs(&agent.JobState{Runs: 1, Pod: pods[0].Name, Attempt: 1})
+	maps.Copy(want, map[string]string{"conflicts": "a.txt,go.sum", "merge": b.Spec.ParentHead, "base": base, "union": "go.sum"})
 	if !maps.Equal(res.Outputs, want) {
 		t.Errorf("outputs = %v, want %v", res.Outputs, want)
 	}
@@ -555,7 +553,7 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 				if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || res.Message != "waiting up to a minute for a run on the new commits: "+msg || len(pods) != 1 || pods[0].Name != p.Name {
 					t.Fatalf("result = %+v and Pods %v, want Running with Pod %s", res, pods, p.Name)
 				}
-				if res.Outputs["merge"] != started || res.Outputs["podUID"] != "uid-1" || res.Outputs["refunded"] != "uid-1" || res.Outputs["runs"] != "0" {
+				if st := readState(res.Outputs); res.Outputs["merge"] != started || st.UID != "uid-1" || st.Refunded != "uid-1" || st.Runs != 0 {
 					t.Errorf("outputs = %v, want the run that merges main at %s, given back", res.Outputs, started)
 				}
 			}
@@ -585,7 +583,7 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 				t.Fatal(err)
 			}
 			res := b.Status.Checks.Result
-			if res.State != gitk8s.Running || res.Outputs["merge"] != moved || res.Outputs["runs"] != "1" || res.Outputs["pod"] == p.Name || res.Outputs["refunded"] != "" {
+			if res.State != gitk8s.Running || res.Outputs["merge"] != moved || res.Outputs["runs"] != "1" || res.Outputs["pod"] == p.Name || readState(res.Outputs).Refunded != "" {
 				t.Fatalf("result = %+v, want Running with a new run that merges main at %s and counts once", res, moved)
 			}
 			if !slices.ContainsFunc(kube.Owned[agent.Pod](rec), func(q *agent.Pod) bool { return q.Name == res.Outputs["pod"] }) {
@@ -597,7 +595,7 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 
 func TestKeepsTheRunsStateInItsOutputs(t *testing.T) {
 	st := agent.JobState{Runs: 2, Pod: "conflicts-app-c-x-2", Attempt: 2, UID: "uid-2", Refunded: "uid-1", Done: true}
-	got := jobState(runOutputs(target{commit: strings.Repeat("a", 40)}, strings.Repeat("b", 40), &st))
+	got := readState(runOutputs(target{commit: strings.Repeat("a", 40)}, strings.Repeat("b", 40), &st))
 	if *got != st {
 		t.Errorf("state after the outputs = %+v, want %+v", *got, st)
 	}
@@ -631,23 +629,24 @@ func TestFetchesTheResultAgainWhenGitFails(t *testing.T) {
 	t.Log("The run finishes while git fails.")
 	repo, secret := srv.Repository("app", rules...)
 	secret.Data["password"] = []byte("wrong")
-	ctx, _ := kube.Fake(t.Context(), b, repo, secret)
+	ctx, rec := kube.Fake(t.Context(), b, repo, secret)
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
 	if err := newReconciler(cfg).Reconcile(ctx, b); err != nil {
 		t.Fatal(err)
 	}
 	res := b.Status.Checks.Result
-	if res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "fetching the branch and main to commit the agent's resolution: ") || res.Outputs["done"] != "" {
-		t.Fatalf("result = %+v, want Running with the run not done", res)
+	if res.State != gitk8s.Running || !strings.HasPrefix(res.Message, "fetching the branch and main to commit the agent's resolution: ") || readState(res.Outputs).Done || rec.RequeueAfter() != 30*time.Second {
+		t.Fatalf("result = %+v and RequeueAfter = %v, want Running with the run not done, again in 30 seconds", res, rec.RequeueAfter())
 	}
 
-	t.Log("Then the check fetches the result again and commits it.")
-	if _, err := reconcile(t, srv, b, rules); err != nil {
+	t.Log("Then the check fetches the result again and commits it, and the next reconcile deletes the Pod.")
+	rec, err := reconcile(t, srv, b, rules)
+	if err != nil {
 		t.Fatal(err)
 	}
 	res = b.Status.Checks.Result
-	if res.State != gitk8s.Fixed || res.Outputs["runs"] != "1" {
-		t.Fatalf("result = %+v, want Fixed by the agent's one run", res)
+	if res.State != gitk8s.Fixed || res.Outputs["runs"] != "1" || !readState(res.Outputs).Done || rec.RequeueAfter() != time.Second {
+		t.Fatalf("result = %+v and RequeueAfter = %v, want Fixed by the agent's one run, done, and a reconcile in a second", res, rec.RequeueAfter())
 	}
 	if got := w.Fetch("c/x"); got != res.Outputs["fix"] {
 		t.Errorf("c/x = %s, want the merge %s", got, res.Outputs["fix"])
