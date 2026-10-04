@@ -379,4 +379,10 @@ func TestPrepareScript(t *testing.T) {
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Errorf("prepare ran the URL's --upload-pack: %v", err)
 	}
+
+	t.Log("A URL can't use another git transport, such as FTP.")
+	repo.Spec.URL = "ftp://127.0.0.1:1/app.git"
+	if _, out, err = prepare(t, head, base); err == nil || !strings.Contains(out, "transport 'ftp' not allowed") {
+		t.Errorf("prepare = %v\n%s; want git to refuse the ftp transport", err, out)
+	}
 }
