@@ -288,17 +288,20 @@ tokens:
   including the check's own fixes and `check-base`'s merges of the parent.
   A branch that has used them all reports `Running` until you raise the
   limit.
-- `-max-runs-per-day`, 100 by default, is the most runs that the program
+- `-max-runs-per-day`, 100 by default, is the most runs that each replica
   starts in any 24 hours. The program counts them in memory, so the count
-  starts over when it restarts, and each shard keeps its own count.
+  starts over when it restarts, and a replica that takes over a shard
+  doesn't count the runs that the shard's last replica started.
 - `-max-pods`, 10 by default, is the most agent Pods that run at once
   across all namespaces.
 
 If the branch moves before the agent's Pod fetches it, the agent doesn't
 run, so the run doesn't count toward `maxAgentRuns` or `-max-runs-per-day`,
-and the new head starts a run of its own. If the branch's head is the same
-a minute later, such as when the branch moved back, the check fetches it
-again in a new Pod, which counts as a run.
+and the new head starts a run of its own. The check waits a minute, or
+twice the repository's `pollInterval` if that's longer, for a poll to find
+the new head. If the branch's head is the same after the wait, such as when
+the branch moved back, the check fetches it again in a new Pod, which
+counts as a run.
 
 If an agent Pod is deleted before its run finishes, kube creates it again,
 and the agent runs again. The check counts that as another run. When
@@ -313,7 +316,13 @@ deploy that changes the agent Pods' spec, such as one with another
 Pods differently, the check starts each run in progress again in a new
 Pod, and kube deletes the old one. The agent starts over and costs as much
 as in a new run. A restarted run takes a place in `-max-runs-per-day`, or
-waits for one, but it doesn't count toward `maxAgentRuns`.
+waits for one, but it doesn't count toward `maxAgentRuns`. A rollback
+before the old Pod is gone returns the run to that Pod without taking a
+place. If kube was deleting that Pod, it creates the Pod again once it's
+gone, and the check counts another run, as for any deleted Pod. A run that
+waits because the branch moved has no agent to start over, so a deploy ends
+its wait, and the check fetches the head again at once in a new Pod, which
+counts as a run.
 
 The check counts a branch's runs in its outputs on the branch's
 `GitBranch`, so a branch that's deleted and then pushed again can start
@@ -675,10 +684,14 @@ starts a new run, up to the job's `MaxRuns`. A deploy that changes the
 agent Pods' spec starts an unfinished run again in a new Pod, which takes
 a place in `-max-runs-per-day` but doesn't count toward `MaxRuns`. If the
 Pod finds that the branch moved, the agent doesn't run, and `RunJob` gives
-the run back and waits a minute for a `Job` with the new head. While the
-run waits, the status's `Moved` is true. If a call after that minute has
-the same `Job`, `RunJob` fetches the commits again in a new Pod, which
-counts as a run. A run ends after three Pods fail to fetch the commits or
+the run back and waits a minute for a `Job` with the new head. `Run` waits
+twice the repository's `pollInterval` instead if that's longer. If a call
+after the wait has the same `Job`, or a deploy changes the agent Pods' spec
+during the wait, `RunJob` fetches the commits again in a new Pod, which
+counts as a run. The status's `Moved` is true while the run waits for the new
+head, and then while a limit holds back the new Pod. If `MaxRuns` holds it
+back, `RunJob` doesn't ask for a reconcile, so the run waits for a `Job` that
+allows more runs. A run ends after three Pods fail to fetch the commits or
 find that the branch moved. If the run's Pod is deleted before the run is
 `Done`, kube creates it again and the agent runs again, so `RunJob` counts
 another run. When `MaxRuns` or `-max-runs-per-day` allows no more,
