@@ -98,6 +98,7 @@ example `checks: approval Failed, base Passed, gofmt Passed, risk Passed (high)`
 | `check-approval` | `approval` | Passes when the `git-k8s.imjasonh.com/approve` annotation on the `GitBranch` names the branch's head. A push after the approval needs a new one. |
 | `check-gotest` | `gotest` | Runs `go test ./...` in a Pod that it declares with `kube.Own`, and fails with the end of the test output. See [Sandboxed checks](#sandboxed-checks). |
 | `check-review` | `review` | Has an AI agent review the branch's change against its parent in a sandboxed Pod. It passes or fails with the agent's reasoning as its message, and sets `outputs.summary` and the run's token counts. With `mayPush: true`, the agent can also fix what it finds. See [Agentic checks](#agentic-checks). |
+| `check-conflicts` | `conflicts` | Passes when merging the parent into the branch has no conflicts. When the merge conflicts, or the branch diverged from the external repository, it pushes a merge that git or an AI agent resolved, or fails when neither can. See [Resolve conflicts](#resolve-conflicts). |
 
 A check with `mayPush: true` pushes its fix commit to the branch, which moves
 the head and runs the checks again. Fix commits have a `Git-K8s-Fixer:
@@ -351,7 +352,122 @@ func main() {
 `Run` never returns an error, because a check that returns one loses its
 outputs, which count the branch's runs. It also returns the agent's
 `Result`, with the files that the agent changed, so a check can build
-another kind of commit from them with `agent.ApplyFiles`.
+another kind of commit from them with `agent.ApplyFiles`. A task with
+`Merge` set has the agent resolve the conflicts of merging a commit into the
+head, and `Run` commits the result as a merge, as in
+[Resolve conflicts](#resolve-conflicts).
+
+### Resolve conflicts
+
+`check-conflicts` runs the `conflicts` check, which resolves two kinds of
+conflict that keep a branch from landing:
+
+- Merging the branch's parent into it conflicts, so `check-base` can't keep
+  the branch up to date. The check pushes a merge of the parent that
+  resolves the conflicts.
+- The branch diverged. It changed both in git-k8s and in the external
+  repository since they last synced, and the core program set
+  `status.diverged` to the external repository's head. The check fetches
+  that head from the ref in `status.diverged.ref`, and pushes a merge of it
+  with a lease on the branch's head. Branches diverge only with the
+  in-cluster mirror that
+  [Future work](future-work.md#run-an-in-cluster-git-mirror) proposes, so
+  the end-to-end test can't make one diverge, and unit tests cover
+  divergence instead.
+
+When a branch diverged and also conflicts with its parent, the check merges
+the external repository's head first, because merging the parent doesn't
+end the divergence.
+
+Git resolves what it can by itself. Files that match `-union`, which is
+`go.sum` by default, merge with git's union driver, which keeps the lines of
+both sides. A union merge can make a file that doesn't work, such as a
+`go.sum` that lacks a line that the merged `go.mod` needs, so we recommend a
+gate that also needs a check that builds the result, such as `gotest`. The
+merge uses only the attributes that `-union` makes, not the branch's
+`.gitattributes` file, so a branch can't make the check pick a side with a
+merge driver such as `merge=ours`. The check doesn't use `git rerere`, which
+replays resolutions that a person recorded in a working tree, or the `ours`
+and `theirs` options of git's merge strategy, which pick a side.
+
+When conflicts remain and the check has an agent image, an agent resolves
+them in a sandboxed Pod, as described in [Agentic checks](#agentic-checks).
+The agent reads each conflict in the diff3 style, which shows the merge
+base's lines between the two sides, and reads both sides' commits and diffs
+since the merge base. It can change only the files that conflict, and it
+can't build or run the code. The check commits the agent's files as a merge
+whose parents are both heads, and fails if a file still holds a conflict
+marker. The agent answers fail when it can't tell how to keep both sides'
+changes. The check runs an agent only when the policy lets it push, and
+only within `maxAutomatedCommits` and `maxAgentRuns`. It runs none for a
+merge with more than one merge base, or for a conflict in a file that isn't
+text on both sides, such as a binary file or a file that one side deletes.
+
+Each merge that the check pushes is a new head, so every check runs again on
+it. The merge has a `Git-K8s-Fixer: conflicts` trailer and counts toward
+`maxAutomatedCommits`. When neither git nor the agent resolves the
+conflicts, the check fails with the reason and leaves the branch for a
+person, because a wrong resolution is worse than none.
+
+A merge of the parent that has no conflicts passes, because merging it is
+`check-base`'s job. The check pushes a merge of the external repository's
+head even without conflicts, because nothing else merges it. While an agent
+runs, the check keeps following the run when the parent moves, so a parent
+that moves often doesn't restart it. If the run fails after the parent
+moved, the check runs again on the parent's new head.
+
+The check merges, and doesn't rebase. A rebase rewrites commits that checks
+and people already saw, such as the head that an approval names, and
+`check-base` already brings branches up to date with merges.
+
+A branch without a parent, such as `main`, has no merge gate, so a merge
+pushed to it would skip every check. When such a branch diverges, the check
+pushes the external repository's head to the branch `resolve/BRANCH`
+instead, with an empty commit on top that says why. The empty commit has the
+`Git-K8s-Fixer: conflicts` trailer, so the push follows the same rules as a
+check's fix. `resolve/BRANCH` then lands on `BRANCH` through `BRANCH`'s
+merge gate, like any other branch. `check-base` merges `BRANCH` into it, or
+the conflicts check resolves that merge when it conflicts. The check waits
+while `resolve/BRANCH` holds work that hasn't landed, and passes once
+`BRANCH` contains the external repository's head. To let the check resolve
+a diverged `main`, add the check to `main`'s policy, and give `resolve/main`
+the parent `main` with a rule:
+
+```yaml
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: base
+            mayPush: true
+          - name: conflicts
+            mayPush: true
+          - name: gotest
+    - match: resolve/main
+      parent: main
+    - match: c/**
+      parent: main
+```
+
+Checks push with the repository's credentials, which can push to any
+branch. The mirror lets a check update only a branch that has a parent, so
+with the mirror, the core program must also give the service account
+`check-conflicts` in the namespace `check-conflicts` the branch-name prefix
+`resolve/`, which lets it create `resolve/BRANCH`.
+
+To install `check-conflicts`, build the agent runner's image as for
+`check-review`, and pass its digest with `-agent-image`. Without
+`-agent-image`, the check resolves only what git can, and runs no agent:
+
+```sh
+go run ./cmd/check-conflicts generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
+```
+
+`check-conflicts` takes the same flags as `check-review`, and `-union`, a
+comma-separated list of path patterns in the gitattributes format whose
+conflicts git resolves by keeping the lines of both sides. Its agent Pods
+need the NetworkPolicy that `check-review`'s need, with ingress from the
+namespace `check-conflicts`.
 
 ## Merge gates
 
@@ -440,7 +556,10 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
 The end-to-end test builds the agent runner's image with Docker, and runs
 `check-review` with the `fake` backend, which needs no API key. The fake
 agent fails a change that adds a line with `DO NOT MERGE` in it, and deletes
-those lines when the check can push.
+those lines when the check can push. It runs `check-conflicts` with the
+`fake` backend too. There, the fake agent resolves each conflict by keeping
+the branch's lines and then the other side's, and fails a conflict with
+`DO NOT MERGE` in it.
 
 ## Limitations
 
@@ -451,10 +570,12 @@ those lines when the check can push.
 - Remotes authenticate with HTTP basic auth only.
 - `check-gotest` runs Pods in the `GitBranch`'s namespace and doesn't add a
   NetworkPolicy, so a test can reach anything that the namespace's Pods can.
-- `check-review` reads repository credentials, so `generate` lets it read
-  every Secret, including the Cursor API key, which only its agent Pods use.
-  Like `check-gotest`, it can also create Pods in every namespace. Installing
-  it with `generate -watch-namespace` limits both to one namespace.
+- `check-review` and `check-conflicts` read repository credentials, so
+  `generate` lets them read every Secret, including the Cursor API key,
+  which only their agent Pods use. Like `check-gotest`, they can also create
+  Pods in every namespace, and `check-conflicts` can even without
+  `-agent-image`. Installing them with `generate -watch-namespace` limits
+  their Secrets and Pods to one namespace.
 
 [`future-work.md`](future-work.md) proposes fixes for these, and lists the
 other known gaps.

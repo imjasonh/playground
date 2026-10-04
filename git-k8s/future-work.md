@@ -43,7 +43,9 @@ GitHub, and any other forge, is a downstream copy:
   to GitHub and a check's fix pushed to the mirror, the mirror overwrites
   neither. It keeps the external repository's head under a separate ref,
   reports the branch as diverged, and leaves it to the
-  [conflict resolution controller](#resolve-conflicts-in-a-controller).
+  [conflicts check](README.md#resolve-conflicts). The check resolves a
+  diverged parent on a new branch under the prefix `resolve/`, so it needs
+  that prefix, like a controller that starts branches.
 - The mirror holds the only credentials for external repositories, so no
   other program reads Secrets.
 - Every ref change passes through the mirror, so it tells git-k8s about each
@@ -57,8 +59,8 @@ Questions to settle first:
 - When the mirror acknowledges a push from a check or the merge controller.
   Acknowledging it before syncing it to GitHub keeps git-k8s working through
   a GitHub outage, and acknowledging it after keeps the two from differing.
-  The conflict resolution controller coalesces branches that differ, so
-  acknowledging first fits GitHub's role as a downstream copy.
+  The conflicts check coalesces branches that differ, so acknowledging
+  first fits GitHub's role as a downstream copy.
 - How callers prove who they are. A projected service account token with an
   audience such as `git-k8s`, checked with a TokenReview, maps a caller to
   `check-NAME`. A test Pod runs without a service account token, so its init
@@ -131,44 +133,6 @@ Questions to settle first:
   needs a fake token service.
 - Whether to support GitHub Enterprise Server, which the public service
   doesn't reach.
-
-## Resolve conflicts in a controller
-
-Two kinds of conflict stop a branch, and nothing resolves either one:
-
-- `check-base` merges a branch's parent into it when the branch falls behind.
-  When that merge conflicts, the check fails with the conflicting paths in
-  its `conflicts` output, and the branch waits for a person.
-- With the mirror, a branch can change both in the mirror and in the
-  external repository between syncs. The mirror overwrites neither, so the
-  branch stays diverged.
-
-The decided fix is a separate conflict resolution controller that tries to
-coalesce both kinds. For a merge that conflicts, it pushes a merge of the
-parent that resolves the conflicts. For a diverged branch, it pushes a
-commit to the mirror that contains both heads, and the mirror then
-fast-forwards the external repository to it. Each resolution is a new head,
-so every check runs again on it, and it counts toward the branch's
-`maxAutomatedCommits`.
-
-The controller tries a resolution that git can make by itself first, such as
-one that `git rerere` recorded earlier. Otherwise, an agent can resolve the
-conflict, as described in [Agentic checks](README.md#agentic-checks). A
-local agent in a Pod that has both commits checked out from the mirror edits
-the conflicting files, builds the result, and pushes it. When neither works,
-the branch stays as it is, and the controller reports why.
-
-Questions to settle first:
-
-- How to resolve a diverged parent. A resolution commit on a parent would
-  skip the merge gates, so the controller could push it to a new child
-  branch that lands through the gates like any other. GitHub branch rules
-  that let only the mirror push to parents make this rare.
-- Whether to merge or rebase. A merge keeps both histories, while a rebase
-  rewrites commits that someone already pushed.
-- Where the mirror reports divergence, such as a condition and the external
-  repository's head in the `GitBranch`'s status, which the controller
-  reconciles.
 
 ## Land branches through a merge queue
 
@@ -286,10 +250,11 @@ Other checks and controllers could run agents with the `agent` package that
 each branch head. A cloud agent runs on Cursor's machines instead, against a
 repository that it can clone. The mirror is in the cluster, so a cloud agent
 would work on GitHub, the downstream copy. Its pushes reach git-k8s through
-the mirror's sync, and the conflict resolution controller coalesces any that
-race a change in the mirror. The runner runs agents through a backend, so a
-cloud backend can start a run from an agent Pod and report its verdict
-through the same result transport, without changes to the checks.
+the mirror's sync, and the [conflicts check](README.md#resolve-conflicts)
+coalesces any that race a change in the mirror. The runner runs agents
+through a backend, so a cloud backend can start a run from an agent Pod and
+report its verdict through the same result transport, without changes to the
+checks.
 
 Questions to settle first:
 
