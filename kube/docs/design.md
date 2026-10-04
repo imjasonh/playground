@@ -584,9 +584,12 @@ writes added, and a forced apply of it would remove them. So after a replica
 acquires a shard, it sends each object's status write with the cached
 `resourceVersion` as a precondition, until one succeeds. A write from a cache
 that's behind gets `409 Conflict`, which the framework tells apart from a
-deleted object, and the reconcile is retried. One success is enough. It shows
-that the cache had every earlier write when that reconcile started, and from
-then on this replica is the only one that writes the object's status.
+deleted object, and the reconcile is retried. Such a retry is expected after
+a takeover, so the framework logs it at the info level and counts it in
+`kube_reconcile_total` with `result="stale"` instead of `result="error"`.
+One success is enough. It shows that the cache had every earlier write when
+that reconcile started, and from then on this replica is the only one that
+writes the object's status.
 
 The precondition covers the controller's cache, but a reconcile can read the
 object with `kube.Get` from another cache. That happens with

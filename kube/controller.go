@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
@@ -540,6 +541,10 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 		c.q.Forget(key)
 		result = "permanent_error"
 		log.Warn("reconcile failed; waiting for the object to change", "err", err)
+	case errors.Is(err, errStale):
+		d := c.q.Retry(key, queue.High)
+		result = "stale"
+		log.Info("reconcile worked from an out-of-date object; retrying", "err", err, "retry", d.Round(time.Millisecond))
 	default:
 		d := c.q.Retry(key, queue.High)
 		result = "error"
@@ -582,9 +587,10 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 	}
 	c.m.tracker.retain(ref{c: &c.core, key: key}, s.deps)
 	if serr := c.writeStatus(ctx, cached, obj, err, pre); serr != nil {
-		if err == nil {
+		switch {
+		case err == nil:
 			err = fmt.Errorf("writing status: %w", serr)
-		} else {
+		case !errors.Is(serr, errStale):
 			c.log.Warn("writing status failed", "key", key.String(), "err", serr)
 		}
 	}
@@ -874,7 +880,7 @@ func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T
 	}
 	c.m.tracker.forget(ref{c: &c.core, key: key})
 	if err != nil {
-		if serr := c.writeStatus(ctx, cached, obj, err, pre); serr != nil && !client.IsNotFound(serr) {
+		if serr := c.writeStatus(ctx, cached, obj, err, pre); serr != nil && !client.IsNotFound(serr) && !errors.Is(serr, errStale) {
 			c.log.Warn("writing status failed", "key", key.String(), "err", serr)
 		}
 		return s.requeue, err

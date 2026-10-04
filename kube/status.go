@@ -13,6 +13,10 @@ import (
 	"github.com/imjasonh/playground/kube/internal/subset"
 )
 
+// errStale marks a write refused because a cache didn't have the object's
+// latest version yet. A retry succeeds once the cache catches up.
+var errStale = errors.New("the cached object is out of date")
+
 // precondition is what a status write requires of the stored object.
 type precondition struct {
 	// rv, if set, is the resource version that the write requires.
@@ -88,7 +92,7 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 		return nil
 	}
 	if pre.diverged {
-		return errors.New("the cache that kube.Get reads has another version of the object than the controller's cache")
+		return fmt.Errorf("%w: the cache that kube.Get reads has another version of the object than the controller's cache", errStale)
 	}
 	// The UID keeps status computed for a deleted object from landing on a
 	// new object with the same name.
@@ -109,7 +113,7 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 	err = c.m.client.Apply(ctx, c.res.path(m.Namespace, m.Name, "status"), c.name, true, body, &resp)
 	if err != nil {
 		if pre.rv != "" && client.IsConflict(err) {
-			return fmt.Errorf("the cached object is out of date: %w", err)
+			return fmt.Errorf("%w: %w", errStale, err)
 		}
 		if replaced(err) {
 			return nil

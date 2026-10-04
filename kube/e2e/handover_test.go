@@ -127,6 +127,7 @@ func waitWriteTried(t *testing.T, r *replica, versions *history, result string) 
 // holder's first status write requires the cached resource version, so it
 // fails instead of replacing the results with a list that lacks a result
 // that a client was told was saved, and succeeds once the cache catches up.
+// The replica counts the failed reconcile as stale, not as an error.
 func TestServeHandOverWithAStaleCache(t *testing.T) {
 	c := e2e.Client(t)
 	ns := e2e.Namespace(t, c)
@@ -184,6 +185,12 @@ func TestServeHandOverWithAStaleCache(t *testing.T) {
 		if !slices.Contains(got, result) {
 			t.Errorf("POST %s got 200, but the results are %q", result, got)
 		}
+	}
+	if n := scrape(t, b.m.Addr, `kube_reconcile_total{controller="reports",result="stale"}`); n == 0 {
+		t.Error("the second replica counted no stale reconciles")
+	}
+	if n := scrape(t, b.m.Addr, `kube_reconcile_total{controller="reports",result="error"}`); n != 0 {
+		t.Errorf("the second replica counted %v reconcile errors, want 0", n)
 	}
 }
 
