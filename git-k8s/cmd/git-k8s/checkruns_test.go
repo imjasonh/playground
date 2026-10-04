@@ -1236,7 +1236,7 @@ func TestCheckRunsAgreeAfterRandomChanges(t *testing.T) {
 func checkRunsAgreeAfter(t *testing.T, seed uint64) {
 	s := newSharing(t, 4)
 	r := rand.New(rand.NewPCG(seed, 0))
-	reconcile := func(branch string, cluster map[string]map[string]gitk8s.CheckResult) {
+	reconcileSeeing := func(branch string, cluster map[string]map[string]gitk8s.CheckResult) {
 		t.Helper()
 		if _, err := reconcileIn(t.Context(), s.p.c, "app", branch, cluster, s.p.repo); err != nil {
 			t.Errorf("reconciling %s: %v", branch, err)
@@ -1256,7 +1256,7 @@ func checkRunsAgreeAfter(t *testing.T, seed uint64) {
 				if seen == len(history)-1 {
 					delete(pending, branch)
 				}
-				reconcile(branch, history[seen])
+				reconcileSeeing(branch, history[seen])
 			}
 			continue
 		}
@@ -1276,7 +1276,7 @@ func checkRunsAgreeAfter(t *testing.T, seed uint64) {
 	cluster := history[len(history)-1]
 	for range 2 {
 		for _, branch := range slices.Sorted(maps.Keys(cluster)) {
-			reconcile(branch, cluster)
+			reconcileSeeing(branch, cluster)
 		}
 	}
 
