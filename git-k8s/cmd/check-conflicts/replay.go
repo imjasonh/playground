@@ -208,7 +208,8 @@ func parentRewind(ctx context.Context, repo *git.Repo, branch, head string, d *g
 // already has. When a commit can't be replayed by itself, such as a merge
 // or a commit whose replay conflicts, or when the replays don't have
 // every change that both sides made, resolve replays all of them as one
-// commit, unless the branch rewound too.
+// commit, unless the branch rewound too. It fails when a replay makes the
+// same change as a commit that the external repository removed.
 func replayBranch(ctx context.Context, in *checks.Input, repo *git.Repo, t target, rewound string, outputs map[string]string) checks.Verdict {
 	since := gitk8s.Short(t.synced)
 	added, err := repo.Revs(ctx, in.Spec.Head, t.synced, t.commit)
@@ -226,6 +227,19 @@ func replayBranch(ctx context.Context, in *checks.Input, repo *git.Repo, t targe
 			return retry(ctx, "comparing the replays of the branch's commits: %v", err)
 		case !ok:
 			why = "the replays of the branch's commits onto " + t.name + " don't have every change that both sides made"
+		}
+	}
+	if why == "" && len(replays) > 0 {
+		// The merges can't see a replay of a commit that the external
+		// repository removed when other commits that it removed undid the
+		// commit's change, and the mirror doesn't move the external
+		// repository to a head with such a replay. Replaying the branch as
+		// one commit would only hide the replay.
+		switch ok, err := repo.Keeps(ctx, tip, t.commit, t.synced); {
+		case err != nil:
+			return retry(ctx, "comparing the replays of the branch's commits: %v", err)
+		case !ok:
+			return checks.Fail("%s rewound since it last synced at %s, and the replays of the branch's commits onto it make the same change as a commit that it removed, so the check leaves the divergence for a person", t.name, since)
 		}
 	}
 	switch {

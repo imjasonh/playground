@@ -2008,6 +2008,66 @@ func TestLeavesACopyOfARemovedCommit(t *testing.T) {
 	}
 }
 
+func TestLeavesAReplayOfACommitThatTheRewindRemoved(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		rewound string
+		// branch builds c/x's head from r, which adds a secret, and v,
+		// which removes it, on top of e, the external head, or v, where the
+		// sides synced.
+		branch func(w *gittest.Work, e, r, v string)
+	}{{
+		name:    "when the branch rebased both onto the external head",
+		rewound: "both",
+		branch: func(w *gittest.Work, e, r, v string) {
+			w.Branch("c/x", e)
+			w.Git("cherry-pick", "--end-of-options", r, v)
+		},
+	}, {
+		name:    "when the branch rebased the secret onto the external head",
+		rewound: "both",
+		branch: func(w *gittest.Work, e, r, _ string) {
+			w.Branch("c/x", e)
+			w.Git("cherry-pick", "--end-of-options", r)
+			commit(w, "branch edit", map[string]string{"c.txt": "branch\n"})
+		},
+	}, {
+		name:    "when the branch added the secret again",
+		rewound: "external",
+		branch: func(w *gittest.Work, _, r, v string) {
+			w.Branch("c/x", v)
+			w.Git("cherry-pick", "--end-of-options", r)
+			commit(w, "branch edit", map[string]string{"c.txt": "branch\n"})
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			b, w, base := setup(t, srv, map[string]string{"b.txt": "main\n"}, map[string]string{"s.txt": "secret\n"})
+			r := b.Spec.Head
+			w.Git("rm", "--quiet", "--end-of-options", "s.txt")
+			v := w.Commit("remove the secret")
+			// The external repository drops r and v, which undo each
+			// other, so no merge shows a replay of r.
+			e, o := diverge(w, b.Name, "c/x", base, map[string]string{"d.txt": "external\n"})
+			syncedAt(w, o, "c/x", v)
+			tc.branch(w, e, r, v)
+			b.Spec.Head = w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
+			w.Push("c/x")
+			if _, err := reconcile(t, srv, b, rules, o); err != nil {
+				t.Fatal(err)
+			}
+			want := "the external repository's c/x rewound since it last synced at " + gitk8s.Short(v) +
+				", and the replays of the branch's commits onto it make the same change as a commit that it removed, so the check leaves the divergence for a person"
+			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want || res.Outputs["rewound"] != tc.rewound {
+				t.Errorf("result = %+v, want Failed with %q", res, want)
+			}
+			if got := srv.Heads(t, "app")["c/x"]; got != b.Spec.Head {
+				t.Errorf("c/x moved to %s", got)
+			}
+		})
+	}
+}
+
 func TestLeavesAReplayThatUndoesAReset(t *testing.T) {
 	for _, tc := range []struct {
 		name string
