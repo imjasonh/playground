@@ -16,6 +16,12 @@
 //     in the repository are the repository's own, so requiring them is
 //     fine. A module that a go.mod file declares isn't, unless the file
 //     replaces it, because the go command downloads it.
+//   - A go.mod file replaces a module with a directory whose path goes
+//     through a symbolic link or a submodule, and the change adds the
+//     replacement, or adds or changes the link. The go command follows the
+//     link, which can point outside the repository, and a submodule's files
+//     come from another repository, so that directory isn't in the
+//     repository.
 //   - It changes a go.work file, whose directives apply to every module in
 //     the workspace.
 //   - It has commits from AI agents, which carry the Git-K8s-Agent trailer.
@@ -92,15 +98,12 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		return checks.Verdict{}, err
 	}
 	lines, sums := 0, false
-	var hits, mods, works []string
+	var hits, works []string
 	for _, s := range stats {
 		if name := path.Base(s.Path); name == "go.sum" || name == "go.work.sum" {
 			sums = true
 		} else {
 			lines += max(s.Added, 0) + max(s.Removed, 0)
-		}
-		if gomod.IsModFile(s.Path) {
-			mods = append(mods, s.Path)
 		}
 		if path.Base(s.Path) == "go.work" {
 			works = append(works, s.Path)
@@ -119,13 +122,11 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if len(hits) > 0 {
 		reasons = append(reasons, "touches "+strings.Join(hits, ", "))
 	}
-	if len(mods) > 0 {
-		r, err := moduleReasons(ctx, repo, base, in.Spec.Head, mods)
-		if err != nil {
-			return checks.Verdict{}, err
-		}
-		reasons = append(reasons, r...)
+	r, err := moduleReasons(ctx, repo, base, in.Spec.Head, stats)
+	if err != nil {
+		return checks.Verdict{}, err
 	}
+	reasons = append(reasons, r...)
 	if len(works) > 0 {
 		reasons = append(reasons, "changes "+strings.Join(works, ", "))
 	}
@@ -159,18 +160,14 @@ type modFile struct {
 	err  error
 }
 
-// readModFiles parses the go.mod files in a commit, or only those at paths
-// when paths isn't nil.
-func readModFiles(ctx context.Context, repo *git.Repo, commit string, paths []string) ([]modFile, error) {
+// readModFiles parses the go.mod files in a commit.
+func readModFiles(ctx context.Context, repo *git.Repo, commit string) ([]modFile, error) {
 	entries, err := gomod.Files(ctx, repo, commit)
 	if err != nil {
 		return nil, err
 	}
 	var files []modFile
 	for _, e := range entries {
-		if paths != nil && !slices.Contains(paths, e.Path) {
-			continue
-		}
 		data, err := repo.ReadBlob(ctx, e.SHA)
 		if err != nil {
 			return nil, err
@@ -181,15 +178,52 @@ func readModFiles(ctx context.Context, repo *git.Repo, commit string, paths []st
 	return files, nil
 }
 
-// moduleReasons says what makes the changes to the go.mod files at paths
-// high risk. It compares each file with every go.mod file at base, so a
-// module that another part of the repository required isn't new.
-func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths []string) ([]string, error) {
-	before, err := readModFiles(ctx, repo, base, nil)
+// readLinks maps the path of each symbolic link and submodule in a commit to
+// which of the two it is.
+func readLinks(ctx context.Context, repo *git.Repo, commit string) (map[string]string, error) {
+	entries, err := repo.LsTree(ctx, commit)
 	if err != nil {
 		return nil, err
 	}
-	after, err := readModFiles(ctx, repo, head, paths)
+	links := map[string]string{}
+	for _, e := range entries {
+		switch e.Mode {
+		case "120000":
+			links[e.Path] = "symbolic link"
+		case "160000":
+			links[e.Path] = "submodule"
+		}
+	}
+	return links, nil
+}
+
+// moduleReasons says what makes the changes in stats to go.mod files, and to
+// the symbolic links and submodules that their replacements go through, high
+// risk. It compares each changed go.mod file with every go.mod file at base,
+// so a module that another part of the repository required isn't new.
+func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, stats []git.FileStat) ([]string, error) {
+	links, err := readLinks(ctx, repo, head)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	changedLinks := map[string]bool{}
+	for _, s := range stats {
+		if gomod.IsModFile(s.Path) {
+			paths = append(paths, s.Path)
+		}
+		if links[s.Path] != "" {
+			changedLinks[s.Path] = true
+		}
+	}
+	if len(paths) == 0 && len(changedLinks) == 0 {
+		return nil, nil
+	}
+	before, err := readModFiles(ctx, repo, base)
+	if err != nil {
+		return nil, err
+	}
+	after, err := readModFiles(ctx, repo, head)
 	if err != nil {
 		return nil, err
 	}
@@ -228,6 +262,9 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 		}
 	}
 	for _, f := range after {
+		if !slices.Contains(paths, f.path) {
+			continue
+		}
 		if f.err != nil {
 			add("changes %s, which check-risk can't read: %v", f.path, f.err)
 			continue
@@ -248,7 +285,7 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 			switch {
 			case semver.Compare(v, was[p]) < 0:
 				add("downgrades %s from %s to %s", p, was[p], v)
-			case replacedInRepo(f, p, v) || slices.Contains(versions, v):
+			case replacedInRepo(f, links, p, v) || slices.Contains(versions, v):
 			case len(versions) == 0 && majors[prefix] != "":
 				add("moves %s to %s", majors[prefix], p)
 			case len(versions) == 0:
@@ -287,6 +324,22 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 			add("changes the toolchain line in %s from %s to %s", f.path, cmp.Or(a, "none"), cmp.Or(b, "none"))
 		}
 	}
+	for _, f := range after {
+		if f.file == nil {
+			continue
+		}
+		for _, r := range f.file.Replace {
+			dir, inRepo := replaceDir(f.path, r)
+			link, kind := linkOn(dir, links)
+			switch {
+			case !inRepo || link == "":
+			case !replaced[replacement(f.path, r)]:
+				add("replaces %s with %s, which goes through the %s %s", r.Old, r.New.Path, kind, link)
+			case changedLinks[link]:
+				add("changes the %s %s, which a replacement of %s goes through", kind, link, r.Old)
+			}
+		}
+	}
 	return reasons, nil
 }
 
@@ -322,12 +375,29 @@ func replaceDir(file string, r *modfile.Replace) (dir string, inRepo bool) {
 	return "./" + dir, true
 }
 
+// linkOn returns the symbolic link or submodule in links that dir, a
+// directory in the repository from replaceDir, goes through, and which of
+// the two it is.
+func linkOn(dir string, links map[string]string) (link, kind string) {
+	dir = strings.TrimPrefix(dir, "./")
+	for i := range len(dir) + 1 {
+		if i == len(dir) || dir[i] == '/' {
+			if kind := links[dir[:i]]; kind != "" {
+				return dir[:i], kind
+			}
+		}
+	}
+	return "", ""
+}
+
 // replacedInRepo reports whether f replaces mod at version with a directory
-// in the repository.
-func replacedInRepo(f modFile, mod, version string) bool {
+// in the repository whose path doesn't go through a symbolic link or a
+// submodule in links.
+func replacedInRepo(f modFile, links map[string]string, mod, version string) bool {
 	return slices.ContainsFunc(f.file.Replace, func(r *modfile.Replace) bool {
-		_, inRepo := replaceDir(f.path, r)
-		return inRepo && r.Old.Path == mod && (r.Old.Version == "" || r.Old.Version == version)
+		dir, inRepo := replaceDir(f.path, r)
+		link, _ := linkOn(dir, links)
+		return inRepo && link == "" && r.Old.Path == mod && (r.Old.Version == "" || r.Old.Version == version)
 	})
 }
 

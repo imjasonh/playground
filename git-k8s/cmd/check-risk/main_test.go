@@ -2,6 +2,8 @@ package main
 
 import (
 	"cmp"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +14,43 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
+// symlinkTo and submoduleAt start the contents of files that rate writes as
+// a symbolic link to the rest of the contents, and as a submodule at the
+// commit that the rest names.
+const (
+	symlinkTo   = "\x00symlink "
+	submoduleAt = "\x00submodule "
+)
+
+// write writes content to path in w's working tree.
+func write(t *testing.T, w *gittest.Work, path, content string) {
+	t.Helper()
+	target, link := strings.CutPrefix(content, symlinkTo)
+	commit, sub := strings.CutPrefix(content, submoduleAt)
+	if !link && !sub {
+		w.Write(path, content)
+		return
+	}
+	full := filepath.Join(w.Dir, path)
+	if err := os.RemoveAll(full); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if link {
+		if err := os.Symlink(target, full); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	// git add -A keeps a submodule only while its directory exists.
+	if err := os.Mkdir(full, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	w.Git("update-index", "--add", "--cacheinfo", "160000,"+commit+","+path)
+}
+
 // rate commits base on main, and change on c/x with message, and rates c/x.
 func rate(t *testing.T, base, change map[string]string, message string) *gitk8s.CheckResult {
 	t.Helper()
@@ -19,13 +58,13 @@ func rate(t *testing.T, base, change map[string]string, message string) *gitk8s.
 	w := srv.NewWork(t, "app")
 	w.Write("README.md", "hello\n")
 	for path, content := range base {
-		w.Write(path, content)
+		write(t, w, path, content)
 	}
 	main := w.Commit("main")
 	w.Push("main")
 	w.Branch("c/x", main)
 	for path, content := range change {
-		w.Write(path, content)
+		write(t, w, path, content)
 	}
 	head := w.Commit(message)
 	w.Push("c/x")
@@ -175,6 +214,113 @@ func TestRiskOfModules(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			res := rate(t, base, c.change, cmp.Or(c.message, "change"))
+			if res.State != gitk8s.Passed || res.Outputs["level"] != c.level || !strings.Contains(res.Message, c.reason) {
+				t.Errorf("result = %+v, want level %s and %q", res, c.level, c.reason)
+			}
+		})
+	}
+}
+
+func TestRiskOfLinkedReplacements(t *testing.T) {
+	*maxLines, *sensitive = 10, ""
+	replaceA := func(dir string) string {
+		return strings.Replace(goMod, "replace ", "replace example.com/a => "+dir+"\nreplace ", 1)
+	}
+	const aMod = "module example.com/a\n\ngo 1.24\n"
+	c1, c2 := strings.Repeat("1", 40), strings.Repeat("2", 40)
+	for _, c := range []struct {
+		name         string
+		base, change map[string]string
+		level        string
+		reason       string
+	}{
+		{
+			name:   "symbolic link to a directory outside the repository",
+			base:   map[string]string{"go.mod": goMod},
+			change: map[string]string{"go.mod": replaceA("./a"), "a": symlinkTo + "../../outside/a"},
+			level:  "high", reason: "replaces example.com/a with ./a, which goes through the symbolic link a",
+		},
+		{
+			name:   "symbolic link to an absolute directory",
+			base:   map[string]string{"go.mod": goMod},
+			change: map[string]string{"go.mod": replaceA("./a"), "a": symlinkTo + "/etc"},
+			level:  "high", reason: "replaces example.com/a with ./a, which goes through the symbolic link a",
+		},
+		{
+			name:   "symbolic link at the merge base",
+			base:   map[string]string{"go.mod": goMod, "a": symlinkTo + "/tmp/outside"},
+			change: map[string]string{"go.mod": replaceA("./a")},
+			level:  "high", reason: "replaces example.com/a with ./a, which goes through the symbolic link a",
+		},
+		{
+			name:   "symbolic link in the directory's path",
+			base:   map[string]string{"go.mod": goMod},
+			change: map[string]string{"go.mod": replaceA("./mods/a"), "mods": symlinkTo + "/tmp"},
+			level:  "high", reason: "replaces example.com/a with ./mods/a, which goes through the symbolic link mods",
+		},
+		{
+			name:   "symbolic link in the path from a subdirectory",
+			base:   map[string]string{"go.mod": goMod, "tools/go.mod": toolsMod},
+			change: map[string]string{"tools/go.mod": toolsMod + "replace example.com/u => ../mods/u\n", "mods": symlinkTo + "/tmp"},
+			level:  "high", reason: "replaces example.com/u with ../mods/u, which goes through the symbolic link mods",
+		},
+		{
+			name:   "submodule",
+			base:   map[string]string{"go.mod": goMod},
+			change: map[string]string{"go.mod": replaceA("./third_party/a"), "third_party/a": submoduleAt + c1},
+			level:  "high", reason: "replaces example.com/a with ./third_party/a, which goes through the submodule third_party/a",
+		},
+		{
+			name:   "directory in a submodule",
+			base:   map[string]string{"go.mod": goMod, "third_party": submoduleAt + c1},
+			change: map[string]string{"go.mod": replaceA("./third_party/a")},
+			level:  "high", reason: "replaces example.com/a with ./third_party/a, which goes through the submodule third_party",
+		},
+		{
+			name:   "module that the change requires through a symbolic link",
+			base:   map[string]string{"go.mod": goMod},
+			change: map[string]string{"go.mod": strings.Replace(goMod, ")", "\texample.com/c v0.0.0\n)\n\nreplace example.com/c => ./c\n", 1), "c": symlinkTo + "/tmp/c"},
+			level:  "high", reason: "adds module example.com/c; replaces example.com/c with ./c, which goes through the symbolic link c",
+		},
+		{
+			name:   "directory that the change replaces with a symbolic link",
+			base:   map[string]string{"go.mod": replaceA("./a"), "a/go.mod": aMod},
+			change: map[string]string{"a": symlinkTo + "/tmp/a"},
+			level:  "high", reason: "changes the symbolic link a, which a replacement of example.com/a goes through",
+		},
+		{
+			name:   "parent directory that the change replaces with a symbolic link",
+			base:   map[string]string{"go.mod": replaceA("./third_party/a"), "third_party/a/go.mod": aMod},
+			change: map[string]string{"third_party": symlinkTo + "/tmp"},
+			level:  "high", reason: "changes the symbolic link third_party, which a replacement of example.com/a goes through",
+		},
+		{
+			name:   "symbolic link that the change points elsewhere",
+			base:   map[string]string{"go.mod": replaceA("./a"), "a": symlinkTo + "vendored/a"},
+			change: map[string]string{"a": symlinkTo + "/tmp/a"},
+			level:  "high", reason: "changes the symbolic link a, which a replacement of example.com/a goes through",
+		},
+		{
+			name:   "submodule that the change moves to another commit",
+			base:   map[string]string{"go.mod": replaceA("./third_party/a"), "third_party/a": submoduleAt + c1},
+			change: map[string]string{"third_party/a": submoduleAt + c2},
+			level:  "high", reason: "changes the submodule third_party/a, which a replacement of example.com/a goes through",
+		},
+		{
+			name:   "submodule that the change leaves alone",
+			base:   map[string]string{"go.mod": replaceA("./third_party/a"), "third_party/a": submoduleAt + c1},
+			change: map[string]string{"go.mod": strings.Replace(replaceA("./third_party/a"), "b v0.4.0", "b v0.5.0", 1)},
+			level:  "low",
+		},
+		{
+			name:   "symbolic link that no replacement goes through",
+			base:   map[string]string{"go.mod": replaceA("./ab"), "ab/go.mod": aMod},
+			change: map[string]string{"a": symlinkTo + "/tmp"},
+			level:  "low",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			res := rate(t, c.base, c.change, "change")
 			if res.State != gitk8s.Passed || res.Outputs["level"] != c.level || !strings.Contains(res.Message, c.reason) {
 				t.Errorf("result = %+v, want level %s and %q", res, c.level, c.reason)
 			}

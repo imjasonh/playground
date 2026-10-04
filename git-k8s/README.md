@@ -128,13 +128,18 @@ and rates the change `high` when any of these is true:
   release, such as a pseudo-version, replaces a module with another module
   or with a directory outside the repository, stops replacing one, or
   changes the `go` or `toolchain` line. A directory is outside the
-  repository when its path is absolute or leads out of the repository from
-  the `go.mod` file's directory. A `go.mod` file that the check can't parse
-  also counts. Requiring a module that the file replaces with a directory
-  in the repository is fine, because that code is in the repository.
-  Requiring a module that only a `go.mod` file in the repository declares
-  isn't, because without a replacement, the `go` command downloads the
-  module from the module proxy.
+  repository when its path is absolute, leads out of the repository from
+  the `go.mod` file's directory, or goes through a symbolic link or a
+  submodule, because the `go` command follows the link, which can point
+  anywhere, and a submodule's files come from another repository. A
+  `go.mod` file that the check can't parse also counts. Requiring a module
+  that the file replaces with a directory in the repository is fine,
+  because that code is in the repository. Requiring a module that only a
+  `go.mod` file in the repository declares isn't, because without a
+  replacement, the `go` command downloads the module from the module proxy.
+- It adds or changes a symbolic link or a submodule that the directory of a
+  replacement in any `go.mod` file goes through, even when no `go.mod` file
+  changes.
 - It changes a `go.work` file, whose directives apply to every module in
   the workspace.
 - It has commits from AI agents, which carry a `Git-K8s-Agent: CHECK`
