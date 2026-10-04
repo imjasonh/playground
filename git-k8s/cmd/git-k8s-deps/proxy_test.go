@@ -388,6 +388,43 @@ func TestTargetWaitsFromWhenAVersionShowsUp(t *testing.T) {
 	target(restored, "v1.2.0", 23*time.Hour)
 }
 
+func TestRaisedOldEnoughAt(t *testing.T) {
+	const (
+		mod    = "example.com/other"
+		minAge = 72 * time.Hour
+		// pseudo is a pseudo-version, which no proxy lists.
+		pseudo = "v0.0.0-20251201000000-abcdefabcdef"
+	)
+	fp := newFakeProxy(t)
+	fp.publish(mod, "v1.0.0", longAgo, "")
+	fp.publish(mod, "v1.1.0", today.Add(100*time.Hour), "")
+	fp.set(mod, pseudo+".info", `{"Version":"`+pseudo+`","Time":"2025-12-01T00:00:00Z"}`)
+	clock := today
+	p := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return clock })
+	check := func(version string, want time.Time) {
+		t.Helper()
+		if got, err := p.raisedOldEnoughAt(t.Context(), mod, version, minAge); err != nil || !got.Equal(want) {
+			t.Errorf("raisedOldEnoughAt(%s) = %v, %v, want %v", version, got, err, want)
+		}
+	}
+
+	t.Log("Each version waits from when an update first raises a requirement to it, even with a backdated time, and from its time, which counts right away.")
+	check("v1.0.0", today.Add(minAge))
+	check("v1.1.0", today.Add(100*time.Hour+minAge))
+	check(pseudo, today.Add(minAge))
+
+	t.Log("A pseudo-version keeps its first-seen time, though no list holds it.")
+	clock = today.Add(minAge)
+	check(pseudo, today.Add(minAge))
+	check("v1.0.0", today.Add(minAge))
+
+	t.Log("encode keeps the times of all three.")
+	line := func(v string) string { return fp.URL + " " + mod + " " + v + " " + today.Format(time.RFC3339) + "\n" }
+	if got, want := p.encode(), line(pseudo)+line("v1.0.0")+line("v1.1.0"); got != want {
+		t.Errorf("encode() = %q, want %q", got, want)
+	}
+}
+
 func TestFirstSeenKeepsOnlyCandidates(t *testing.T) {
 	const mod = "example.com/greet"
 	fp := newFakeProxy(t)

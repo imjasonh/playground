@@ -67,8 +67,9 @@ type proxy struct {
 	times    map[module.Version]time.Time
 	retracts map[module.Version][]modfile.VersionInterval
 	// seen holds when this process first saw each version that target
-	// considered in its module's list, and stored holds the times that
-	// load read last, which other processes may have written.
+	// considered or that an update raised a requirement to, and stored
+	// holds the times that load read last, which other processes may have
+	// written.
 	seen, stored map[seenKey]time.Time
 }
 
@@ -128,7 +129,8 @@ func (p *proxy) get(ctx context.Context, path, file string, limit int64) (body [
 
 // versions returns a module's versions other than pseudo-versions, in
 // semver order, from the first proxy that has the module. It forgets when
-// this process first saw the versions that the proxy no longer lists.
+// this process first saw the versions that the proxy no longer lists, other
+// than pseudo-versions, which proxies don't list.
 func (p *proxy) versions(ctx context.Context, path string) (versionList, error) {
 	p.mu.Lock()
 	l, ok := p.lists[path]
@@ -155,7 +157,7 @@ func (p *proxy) versions(ctx context.Context, path string) (versionList, error) 
 	p.mu.Lock()
 	p.lists[path] = l
 	maps.DeleteFunc(p.seen, func(k seenKey, _ time.Time) bool {
-		return k.proxy == from && k.path == path && !slices.Contains(vs, k.version)
+		return k.proxy == from && k.path == path && !slices.Contains(vs, k.version) && !module.IsPseudoVersion(k.version)
 	})
 	p.mu.Unlock()
 	return l, nil
@@ -304,6 +306,23 @@ func (p *proxy) oldEnoughAt(ctx context.Context, path, version string, seen, now
 	return at, nil
 }
 
+// raisedOldEnoughAt returns when a version that an update raises a
+// requirement to is minAge old, both by its time and since it showed up in
+// its module's list, which it records as target does. Proxies don't list
+// pseudo-versions, so a pseudo-version waits from when an update first
+// raised a requirement to it.
+func (p *proxy) raisedOldEnoughAt(ctx context.Context, path, version string, minAge time.Duration) (time.Time, error) {
+	list, err := p.versions(ctx, path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	seen := p.firstSeen(list.proxy, path, []string{version})[version]
+	// Looking at a raised version again takes another update Pod, so this
+	// reads the version's time now, as if the version had already waited
+	// from when it showed up.
+	return p.oldEnoughAt(ctx, path, version, seen, seen.Add(minAge), minAge)
+}
+
 // latest returns the version whose go.mod file holds a module's
 // retractions. Like the go command, that's the newest release, or the
 // newest version if there's no release, leaving out +incompatible versions
@@ -354,12 +373,16 @@ var maxStored = 256 << 10
 // know, a line each, for load to read. It leaves out a version that a
 // fresh list from its proxy doesn't have, and a version that only this
 // process knows when there's no fresh list from its proxy: another process
-// may have left that out for being unlisted. When the lines don't fit in
-// maxStored bytes, encode leaves out the oldest times.
+// may have left that out for being unlisted. It keeps pseudo-versions,
+// which proxies don't list. When the lines don't fit in maxStored bytes,
+// encode leaves out the oldest times.
 func (p *proxy) encode() string {
 	now := p.now()
 	p.mu.Lock()
 	keep := func(k seenKey) bool {
+		if module.IsPseudoVersion(k.version) {
+			return true
+		}
 		if l, ok := p.lists[k.path]; ok && l.proxy == k.proxy && now.Sub(l.at) < p.ttl {
 			return slices.Contains(l.versions, k.version)
 		}

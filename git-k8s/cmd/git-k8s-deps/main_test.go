@@ -1,17 +1,21 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
+	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,6 +50,30 @@ func modAt(version string) string {
 // sumAt returns the app's go.sum file for greet at version.
 func sumAt(version string) string {
 	return "example.com/greet " + version + " h1:" + version + "=\nexample.com/greet " + version + "/go.mod h1:" + version + "=\n"
+}
+
+// modWith returns the app's go.mod file with requirements, given as pairs
+// of module paths and versions.
+func modWith(reqs ...string) string {
+	s := "module example.com/app\n\ngo 1.24\n\nrequire (\n"
+	for i := 0; i < len(reqs); i += 2 {
+		s += "\t" + reqs[i] + " " + reqs[i+1] + "\n"
+	}
+	return s + ")\n"
+}
+
+// captureLogs sends what the controller logs to the returned buffer until
+// the test ends.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	var buf bytes.Buffer
+	old, w, flags := slog.Default(), log.Writer(), log.Flags()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(old)
+		log.SetOutput(w)
+		log.SetFlags(flags)
+	})
+	return &buf
 }
 
 // fixture is a repository on a git server whose main branch requires greet
@@ -500,6 +528,135 @@ func TestWaitsForTheMinimumAge(t *testing.T) {
 			}
 			f.clock = f.clock.Add(time.Second)
 			f.update("v1.1.0")
+		})
+	}
+}
+
+func TestWaitsForTheVersionsThatAnUpdateRaises(t *testing.T) {
+	const (
+		other = "example.com/other"
+		fresh = "example.com/fresh"
+		late  = "example.com/late"
+		// pseudo is a pseudo-version, which no proxy lists.
+		pseudo = "v0.0.0-20251201000000-abcdefabcdef"
+	)
+	for _, tc := range []struct {
+		name string
+		// setup sets up main and the proxy before the controller first
+		// looks, and returns the go.mod file that greet's update writes.
+		setup func(f *fixture) string
+		// later changes the proxy after the controller first looks.
+		later func(f *fixture)
+		// raises is the version that greet's update waits for, and until
+		// is when that version is old enough.
+		raises string
+		until  time.Time
+		// direct means that main requires the module that greet's update
+		// raises, so the controller also updates it once it's old enough.
+		direct bool
+	}{{
+		name: "a direct requirement that came out after the update",
+		setup: func(f *fixture) string {
+			f.proxy.publish(other, "v1.0.0", longAgo, "")
+			f.moveMain("go.mod", modWith(greet, "v1.0.0", other, "v1.0.0"))
+			return modWith(greet, "v1.1.0", other, "v1.5.0")
+		},
+		later:  func(f *fixture) { f.proxy.publish(other, "v1.5.0", f.clock, "") },
+		raises: other + "@v1.5.0",
+		until:  today.Add(144 * time.Hour),
+		direct: true,
+	}, {
+		name: "a direct requirement whose time is later than when the controller saw it",
+		setup: func(f *fixture) string {
+			f.proxy.publish(other, "v1.0.0", longAgo, "")
+			f.proxy.publish(other, "v1.5.0", today.Add(100*time.Hour), "")
+			f.moveMain("go.mod", modWith(greet, "v1.0.0", other, "v1.0.0"))
+			return modWith(greet, "v1.1.0", other, "v1.5.0")
+		},
+		raises: other + "@v1.5.0",
+		until:  today.Add(172 * time.Hour),
+		direct: true,
+	}, {
+		name: "a new module with a backdated time",
+		setup: func(f *fixture) string {
+			f.proxy.publish(fresh, "v1.0.0", longAgo, "")
+			return modWith(greet, "v1.1.0", fresh, "v1.0.0")
+		},
+		raises: fresh + "@v1.0.0",
+		until:  today.Add(144 * time.Hour),
+	}, {
+		name: "a pseudo-version",
+		setup: func(f *fixture) string {
+			f.proxy.set(fresh, "list", "")
+			f.proxy.set(fresh, pseudo+".info", `{"Version":"`+pseudo+`","Time":"2025-12-01T00:00:00Z"}`)
+			return modWith(greet, "v1.1.0", fresh, pseudo)
+		},
+		raises: fresh + "@" + pseudo,
+		until:  today.Add(144 * time.Hour),
+	}, {
+		name: "the later of two versions",
+		setup: func(f *fixture) string {
+			f.proxy.publish(fresh, "v1.0.0", longAgo, "")
+			f.proxy.publish(late, "v1.0.0", today.Add(100*time.Hour), "")
+			return modWith(greet, "v1.1.0", fresh, "v1.0.0", late, "v1.0.0")
+		},
+		raises: late + "@v1.0.0",
+		until:  today.Add(172 * time.Hour),
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.u.interval, f.u.minAge = 100*time.Hour, 72*time.Hour
+			logs := captureLogs(t)
+			mod := tc.setup(f)
+			f.checkStays("")
+			if tc.later != nil {
+				tc.later(f)
+			}
+
+			t.Log("Once greet's v1.1.0 is old enough, the controller updates greet, but doesn't push the update.")
+			f.clock = today.Add(72 * time.Hour)
+			p := f.start()
+			if got, want := env(p.Spec.InitContainers[1], "UPDATES"), greet+" v1.1.0 .\n"; got != want {
+				t.Fatalf("UPDATES = %q, want %q", got, want)
+			}
+			f.finish(p, result(withFiles("v1.1.0", "go.mod", mod, "go.sum", sumAt("v1.1.0"))))
+			if head := f.srv.Heads(t, "app")[greetBranch]; head != "" {
+				t.Fatalf("the controller pushed %s to %s before %s is old enough", head, greetBranch, tc.raises)
+			}
+			if want := "raises=" + tc.raises + " until=" + tc.until.Format("2006-01-02T15:04:05.000Z07:00"); !strings.Contains(logs.String(), want) {
+				t.Errorf("the controller logged %q, want a line with %q", logs, want)
+			}
+
+			t.Log("It starts no Pod for the update until then, even when main moves.")
+			if rec := f.checkStays(""); rec.RequeueAfter() != tc.until.Sub(f.clock) {
+				t.Errorf("RequeueAfter() = %v, want %v", rec.RequeueAfter(), tc.until.Sub(f.clock))
+			}
+			f.clock = today.Add(100 * time.Hour)
+			f.moveMain("README.md", "# app\n")
+			f.checkStays("")
+			f.clock = tc.until.Add(-time.Second)
+			f.checkStays("")
+
+			t.Log("Then it updates greet again, and pushes the update.")
+			f.clock = tc.until
+			p = f.start()
+			updates, want := []updateJSON{withFiles("v1.1.0", "go.mod", mod, "go.sum", sumAt("v1.1.0"))}, greet+" v1.1.0 .\n"
+			if tc.direct {
+				updates = append(updates, updateJSON{Module: other, Version: "v1.5.0", OK: true, Files: []fileJSON{{Path: "go.mod", Content: []byte(modWith(greet, "v1.0.0", other, "v1.5.0"))}}})
+				want += other + " v1.5.0 .\n"
+			}
+			if got := env(p.Spec.InitContainers[1], "UPDATES"); got != want {
+				t.Fatalf("UPDATES = %q, want %q", got, want)
+			}
+			f.finish(p, result(updates...))
+			head := f.srv.Heads(t, "app")[greetBranch]
+			if head == "" {
+				t.Fatalf("the controller didn't push %s once %s is old enough", greetBranch, tc.raises)
+			}
+			f.work.Fetch(greetBranch)
+			if got := f.work.Show(head, "go.mod"); got != strings.TrimSpace(mod) {
+				t.Errorf("go.mod on %s = %q, want %q", greetBranch, got, mod)
+			}
 		})
 	}
 }
@@ -1263,6 +1420,86 @@ ignore (
 				t.Errorf("checkResult() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestRaised(t *testing.T) {
+	file := func(path string, reqs ...string) string {
+		s := "module " + path + "\n\ngo 1.24\n\nrequire (\n"
+		for _, r := range reqs {
+			s += "\t" + r + "\n"
+		}
+		return s + ")\n\nreplace example.com/forked => ./forked\n\nreplace example.com/pinned v1.3.0 => ./pinned\n"
+	}
+	parse := func(path, data string) *modFile {
+		f, err := modfile.Parse(path, []byte(data), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return &modFile{data: []byte(data), file: f}
+	}
+	mods := map[string]*modFile{
+		".":     parse("go.mod", file("example.com/app", "example.com/greet v1.0.0", "example.com/other v1.2.0", "example.com/low v1.0.0 // indirect")),
+		"tools": parse("tools/go.mod", file("example.com/app/tools", "example.com/greet v1.0.0")),
+	}
+	up := update{module: greet, version: "v1.1.0", from: map[string]string{".": "v1.0.0", "tools": "v1.0.0"}}
+	v := func(path, version string) module.Version { return module.Version{Path: path, Version: version} }
+	for _, tc := range []struct {
+		name string
+		// root and tools are the requirements other than greet in the
+		// update's go.mod files.
+		root, tools []string
+		want        []module.Version
+	}{
+		{name: "none", root: []string{"example.com/other v1.2.0", "example.com/low v1.0.0 // indirect"}},
+		{name: "a direct requirement", root: []string{"example.com/other v1.3.0"}, want: []module.Version{v("example.com/other", "v1.3.0")}},
+		{name: "an indirect requirement", root: []string{"example.com/low v1.1.0 // indirect"}, want: []module.Version{v("example.com/low", "v1.1.0")}},
+		{name: "a new module", root: []string{"example.com/fresh v0.1.0 // indirect"}, want: []module.Version{v("example.com/fresh", "v0.1.0")}},
+		{name: "a lower version", root: []string{"example.com/other v1.1.0"}},
+		{name: "a replaced module", root: []string{"example.com/forked v1.9.0"}},
+		{name: "a version that a replace directive names", root: []string{"example.com/pinned v1.3.0"}},
+		{name: "a version that no replace directive names", root: []string{"example.com/pinned v1.4.0"}, want: []module.Version{v("example.com/pinned", "v1.4.0")}},
+		{name: "a module that only another go.mod file requires", tools: []string{"example.com/other v1.2.0"}, want: []module.Version{v("example.com/other", "v1.2.0")}},
+		{name: "a version in two go.mod files", root: []string{"example.com/other v1.3.0"}, tools: []string{"example.com/other v1.3.0"}, want: []module.Version{v("example.com/other", "v1.3.0")}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			files := map[string][]byte{
+				"go.mod":       []byte(file("example.com/app", append([]string{"example.com/greet v1.1.0"}, tc.root...)...)),
+				"go.sum":       []byte("example.com/sum v9.0.0 h1:x=\n"),
+				"tools/go.mod": []byte(file("example.com/app/tools", append([]string{"example.com/greet v1.1.0"}, tc.tools...)...)),
+			}
+			if got := raised(mods, up, files); !slices.Equal(got, tc.want) {
+				t.Errorf("raised() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestStartsANewPodOnceAnUpdateHasWaited checks that an update that waited
+// for the versions that it raises doesn't read the result of its first Pod
+// again, which may have stopped.
+func TestStartsANewPodOnceAnUpdateHasWaited(t *testing.T) {
+	const fresh = "example.com/fresh"
+	f := newFixture(t)
+	f.u.interval, f.u.minAge = 100*time.Hour, 72*time.Hour
+	f.proxy.publish(fresh, "v1.0.0", longAgo, "")
+	mod := modWith(greet, "v1.1.0", fresh, "v1.0.0")
+	f.checkStays("")
+	f.clock = today.Add(72 * time.Hour)
+	first := f.start()
+	f.finish(first, result(withFiles("v1.1.0", "go.mod", mod)))
+
+	t.Log("When the wait is over, the first Pod is still there, and its result container has stopped.")
+	f.clock = today.Add(144 * time.Hour)
+	first.Status.Phase = "Succeeded"
+	first.Status.ContainerStatuses = []agent.ContainerStatus{{Name: "result", State: terminated(&agent.Terminated{Reason: "Completed"})}}
+	p := f.start(first)
+	if p.Name == first.Name || f.failure("v1.1.0") != "" {
+		t.Fatalf("the controller declared Pod %s again and recorded %q, want a new Pod", p.Name, f.failure("v1.1.0"))
+	}
+	f.finish(p, result(withFiles("v1.1.0", "go.mod", mod)))
+	if f.srv.Heads(t, "app")[greetBranch] == "" {
+		t.Errorf("the controller didn't push %s", greetBranch)
 	}
 }
 

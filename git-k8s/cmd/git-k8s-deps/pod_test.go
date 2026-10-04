@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
@@ -139,10 +140,14 @@ func TestScripts(t *testing.T) {
 		}
 	}
 	root := t.TempDir()
-	publish := func(mod, version, code string) {
+	publish := func(mod, version, code string, requires ...string) {
 		t.Helper()
 		dir := t.TempDir()
-		write(t, dir, "go.mod", "module "+mod+"\n\ngo 1.24\n")
+		gomod := "module " + mod + "\n\ngo 1.24\n"
+		for _, r := range requires {
+			gomod += "\nrequire " + r + "\n"
+		}
+		write(t, dir, "go.mod", gomod)
 		write(t, dir, "x.go", code)
 		if err := goproxytest.Publish(root, dir, version, longAgo); err != nil {
 			t.Fatal(err)
@@ -150,6 +155,7 @@ func TestScripts(t *testing.T) {
 	}
 	publish(greet, "v1.0.0", "package greet\n\nfunc Hello() string { return \"hello\" }\n")
 	publish(greet, "v1.1.0", "package greet\n\nfunc Hello() string { return \"hello!\" }\n")
+	publish(greet, "v1.2.0", "package greet\n\nimport _ \"example.com/other\"\n\nfunc Hello() string { return \"hi\" }\n", "example.com/other v1.0.1")
 	publish("example.com/other", "v1.0.0", "package other\n")
 	publish("example.com/other", "v1.0.1", "package other\n\nconst X = 1\n")
 	proxy := httptest.NewServer(http.FileServer(http.Dir(root)))
@@ -246,6 +252,7 @@ func TestScripts(t *testing.T) {
 		{module: greet, version: "v1.1.0", from: map[string]string{".": "v1.0.0", "tools": "v1.0.0"}},
 		{module: "example.com/missing", version: "v1.0.0", from: map[string]string{".": "v0.1.0"}},
 		{module: "example.com/other", version: "v1.0.1", from: map[string]string{".": "v1.0.0"}},
+		{module: greet, version: "v1.2.0", from: map[string]string{".": "v1.0.0", "tools": "v1.0.0"}},
 	}
 	update := append(goEnv, "UPDATES="+updateLines(ups), "REPO="+repo, "RESULT_FILE="+results, "LOG_FILE="+logs, "TERMINATION_LOG="+termination)
 	if out, err := run(src, updateScript, update); err != nil {
@@ -290,6 +297,9 @@ func TestScripts(t *testing.T) {
 	if strings.Contains(string(g.files["go.sum"]), "greet v1.0.0 h1:") {
 		t.Errorf("go mod tidy didn't run in the root module, which was tidy:\n%s", g.files["go.sum"])
 	}
+	if got := raised(mods, ups[0], g.files); len(got) != 0 {
+		t.Errorf("raised() = %v for greet's v1.1.0, which requires nothing", got)
+	}
 
 	if m := out[ups[1].key()]; !strings.Contains(m.err, "example.com/missing") || m.files != nil {
 		t.Errorf("the missing module's outcome = %q, want go's error", m.err)
@@ -301,6 +311,15 @@ func TestScripts(t *testing.T) {
 	}
 	if f, err := modfile.Parse("go.mod", o.files["go.mod"], nil); err != nil || !requires(f, greet, "v1.0.0") || o.files["tools/go.mod"] != nil {
 		t.Errorf("other's update didn't start from the parent's files:\n%s", o.files["go.mod"])
+	}
+
+	t.Log("go raises other's requirement in both go.mod files for greet's v1.2.0, which requires a newer other.")
+	r := out[ups[3].key()]
+	if err := checkResult(mods, ups[3], r.files); r.err != "" || err != nil {
+		t.Fatalf("greet's v1.2.0 outcome = %q, checkResult() = %v", r.err, err)
+	}
+	if got, want := raised(mods, ups[3], r.files), []module.Version{{Path: "example.com/other", Version: "v1.0.1"}}; !slices.Equal(got, want) {
+		t.Errorf("raised() = %v, want %v\n%s\n%s", got, want, r.files["go.mod"], r.files["tools/go.mod"])
 	}
 }
 

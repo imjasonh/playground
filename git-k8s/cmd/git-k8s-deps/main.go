@@ -8,7 +8,8 @@
 // require directly. For each module and major version with a release that's
 // at least -min-age old, it runs go get in a sandboxed Pod and pushes the
 // go.mod and go.sum files that go changed to its own branch, such as
-// deps/go/example.com/greet@v1, as one commit on the parent. When a newer
+// deps/go/example.com/greet@v1, as one commit on the parent, once each
+// version that go raised a requirement to is -min-age old too. When a newer
 // release comes out before the branch lands, the controller replaces the
 // branch's commit with a lease, so each module keeps one branch. It also
 // remakes a branch that falls behind the parent, unless checks pushed fixes
@@ -152,7 +153,7 @@ func (u *updater) addFlags(fs *flag.FlagSet) {
 	fs.StringVar(&u.goCacheSize, "go-cache-size", "4Gi", "most disk space that an update Pod's Go module and build caches can use")
 	fs.IntVar(&u.maxPods, "max-pods", 10, "most update Pods to run at once, in all namespaces; 0 means no limit")
 	fs.DurationVar(&u.interval, "interval", time.Hour, "how often to look for new versions")
-	fs.DurationVar(&u.minAge, "min-age", 72*time.Hour, "how old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller updates to it")
+	fs.DurationVar(&u.minAge, "min-age", 72*time.Hour, "how old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller updates a module to it or pushes an update that raises a requirement to it")
 	fs.StringVar(&u.seenConfigMap, "seen-configmap", "git-k8s-deps-first-seen", "ConfigMap that keeps when the controller first saw versions, so a restart doesn't restart their -min-age: NAME in the controller's namespace, NAMESPACE/NAME, or empty to keep the times only in memory")
 }
 
@@ -257,8 +258,12 @@ type state struct {
 	// head is the parent's head. The outcomes are for updates on it.
 	head     string
 	outcomes map[module.Version]*outcome
-	// attempt goes up when an update fails, so that trying again starts a
-	// new Pod.
+	// waits holds when the versions that each update raises requirements
+	// to will be old enough. The parent moving doesn't make them older, so
+	// waits outlast the head.
+	waits map[module.Version]time.Time
+	// attempt goes up when an update fails or waits, so that trying again
+	// starts a new Pod.
 	attempt int
 }
 
@@ -272,7 +277,7 @@ func (u *updater) stateFor(key kube.Key, head string) *state {
 	}
 	st := u.states[key]
 	if st == nil {
-		st = &state{}
+		st = &state{waits: map[module.Version]time.Time{}}
 		u.states[key] = st
 	}
 	if st.head != head {
@@ -564,9 +569,7 @@ func requirements(mods map[string]*modFile) map[moduleMajor]*requirement {
 	for dir, m := range mods {
 		for _, r := range m.file.Require {
 			p, v := r.Mod.Path, r.Mod.Version
-			if r.Indirect || module.Check(p, v) != nil || slices.ContainsFunc(m.file.Replace, func(rep *modfile.Replace) bool {
-				return rep.Old.Path == p && (rep.Old.Version == "" || rep.Old.Version == v)
-			}) {
+			if r.Indirect || module.Check(p, v) != nil || replaced(m.file, r.Mod) {
 				continue
 			}
 			key := moduleMajor{path: p, major: semver.Major(v)}
@@ -577,6 +580,13 @@ func requirements(mods map[string]*modFile) map[moduleMajor]*requirement {
 		}
 	}
 	return reqs
+}
+
+// replaced reports whether f replaces m.
+func replaced(f *modfile.File, m module.Version) bool {
+	return slices.ContainsFunc(f.Replace, func(r *modfile.Replace) bool {
+		return r.Old.Path == m.Path && (r.Old.Version == "" || r.Old.Version == m.Version)
+	})
 }
 
 // discover returns the update that each module needs, and the modules whose
@@ -780,7 +790,9 @@ func requires(f *modfile.File, mod, version string) bool {
 
 // runPod starts or follows the Pod that makes the updates that writes need
 // and that have no outcome yet, and records the outcomes that it reports. A
-// failed update gets no new Pod until -interval after it failed.
+// failed update gets no new Pod until -interval after it failed, and an
+// update that waits for the versions that it raises gets none until they're
+// old enough.
 func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository, st *state, writes []change, log *slog.Logger) {
 	now := u.clock()
 	wanted := map[module.Version]bool{}
@@ -796,9 +808,18 @@ func (u *updater) runPod(ctx context.Context, b *Branch, repo *gitk8s.Repository
 			kube.RequeueAfter(ctx, retry.Sub(now))
 		}
 	}
+	for k, until := range st.waits {
+		switch {
+		case !now.Before(until):
+			delete(st.waits, k)
+		case wanted[k]:
+			kube.RequeueAfter(ctx, until.Sub(now))
+		}
+	}
 	var pending []update
 	for _, w := range writes {
-		if st.outcomes[w.up.key()] == nil && len(pending) < maxBatch {
+		_, waiting := st.waits[w.up.key()]
+		if st.outcomes[w.up.key()] == nil && !waiting && len(pending) < maxBatch {
 			pending = append(pending, w.up)
 		}
 	}
@@ -842,6 +863,9 @@ func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote,
 		o.err, o.files, o.at = "the update Pod's result isn't valid: "+err.Error(), nil, u.clock()
 		st.attempt++
 		log.Warn("updating a module failed", "module", w.up.module, "version", w.up.version, "error", o.err)
+		return
+	}
+	if u.waitsForRaised(ctx, st, w, raised(mods, w.up, o.files), log) {
 		return
 	}
 	commit, err := u.commit(ctx, local, st.head, w.up, o.files)
@@ -896,6 +920,69 @@ func checkResult(mods map[string]*modFile, up update, files map[string][]byte) e
 		}
 	}
 	return nil
+}
+
+// raised returns the requirements in an update's go.mod files that are
+// newer than what the parent's go.mod file in the same directory requires,
+// or that it doesn't require, other than the update's module and modules
+// that the file replaces. It needs files that checkResult accepted.
+func raised(mods map[string]*modFile, up update, files map[string][]byte) []module.Version {
+	var out []module.Version
+	for _, p := range slices.Sorted(maps.Keys(files)) {
+		old := mods[path.Dir(p)]
+		if path.Base(p) != "go.mod" || old == nil {
+			continue
+		}
+		f, err := modfile.Parse(p, files[p], nil)
+		if err != nil {
+			continue
+		}
+		for _, r := range f.Require {
+			m := r.Mod
+			if m.Path == up.module || replaced(f, m) || slices.Contains(out, m) || slices.ContainsFunc(old.file.Require, func(o *modfile.Require) bool {
+				return o.Mod.Path == m.Path && semver.Compare(o.Mod.Version, m.Version) >= 0
+			}) {
+				continue
+			}
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// waitsForRaised reports whether an update has to wait to push because a
+// version that it raises a requirement to isn't -min-age old yet. Then it
+// forgets the update's outcome and records when each of the versions will
+// be old enough, which is when runPod makes the update again.
+func (u *updater) waitsForRaised(ctx context.Context, st *state, w change, raised []module.Version, log *slog.Logger) bool {
+	if u.minAge == 0 {
+		return false
+	}
+	var until time.Time
+	var last module.Version
+	for _, m := range raised {
+		at, err := u.proxy.raisedOldEnoughAt(ctx, m.Path, m.Version, u.minAge)
+		if err != nil {
+			log.Warn("reading the age of a version that an update raises failed", "branch", w.branch, "module", w.up.module, "version", w.up.version, "raises", m.String(), "error", err)
+			if !errors.Is(err, errNotFound) {
+				kube.RequeueAfter(ctx, errorRetry)
+			}
+			return true
+		}
+		if at.After(until) {
+			until, last = at, m
+		}
+	}
+	now := u.clock()
+	if !until.After(now) {
+		return false
+	}
+	delete(st.outcomes, w.up.key())
+	st.waits[w.up.key()] = until
+	st.attempt++
+	kube.RequeueAfter(ctx, until.Sub(now))
+	log.Info("waiting to push an update until the versions that it raises are old enough", "branch", w.branch, "module", w.up.module, "version", w.up.version, "raises", last.String(), "until", until)
+	return true
 }
 
 // sameDirectives reports whether two lists of directives hold the same

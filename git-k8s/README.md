@@ -623,6 +623,25 @@ time of the version's commit, not when the release came out, and whoever
 makes a commit can set its time. When a newer version is younger than that,
 the controller looks again once the version is old enough.
 
+`go get` can also raise other requirements to newer versions, and add modules
+that a `go.mod` file didn't require. The minimum age covers those versions
+too. Before the controller pushes an update, each version that the update
+raises a requirement to must be `-min-age` old by both measures. The
+controller lists the version's module and records when it first saw the
+version, as it does for the versions that it updates to. Proxies don't list
+pseudo-versions, so a pseudo-version waits from when an update first raises a
+requirement to it. The controller doesn't look for versions of indirect
+requirements or new modules ahead of time, so their versions usually wait
+from then too, and the update takes a second update Pod.
+
+While an update waits, the controller doesn't push it. It logs the version
+that the update waits for and until when, and starts no update Pod for the
+update until then, even when the parent moves. Then it makes the update again
+in a new Pod, and pushes it if every version that it raises is old enough.
+The wait holds back only that version of the module. Once a newer version is
+old enough, the controller makes that update in its own Pod, and it can wait
+too.
+
 The version of a branch that the controller owns, which the trailer of the
 branch's update names, was old enough when the controller pushed it, so it
 doesn't wait again, even after a restart. A branch whose version the module
@@ -635,13 +654,15 @@ doesn't restart their wait. Each line of the ConfigMap's `first-seen` key
 holds a proxy URL, a module path, a version, and when the controller first
 saw the version in that proxy's list. The controller reads the ConfigMap
 before it looks for newer versions, and writes it when the times change. It
-records only versions that it could update to, and drops a version when the
-proxy that listed it stops listing it; if the version comes back, it waits
-again. When the controller can't read the ConfigMap, it logs a warning,
-uses the times in its memory, and doesn't write the ConfigMap. `generate`
-lets the controller read and write ConfigMaps only in its own namespace.
-With `-seen-configmap=`, the controller keeps the times only in memory, so
-after a restart, each of these versions waits `-min-age` again.
+records only versions that it could update to and versions that an update
+raises a requirement to. It drops a version when the proxy that listed it
+stops listing it, and if the version comes back, it waits again. It keeps
+the times of pseudo-versions, which proxies don't list. When the controller
+can't read the ConfigMap, it logs a warning, uses the times in its memory,
+and doesn't write the ConfigMap. `generate` lets the controller read and
+write ConfigMaps only in its own namespace. With `-seen-configmap=`, the
+controller keeps the times only in memory, so after a restart, each of these
+versions waits `-min-age` again.
 
 The controller also skips prereleases, versions that a `go.mod` file
 excludes, and versions that the module retracts. To keep the controller from
@@ -792,7 +813,7 @@ branch-name prefix that ends with `/`. `git-k8s-deps` takes these flags:
 | `-identity-email` | `git-k8s@users.noreply.github.com` | Author and committer email of the controller's updates |
 | `-check-identity-email` | `git-k8s@users.noreply.github.com` | Committer email of the fixes that checks push: the checks' `-identity-email` |
 | `-interval` | `1h` | How often to look for newer versions |
-| `-min-age` | `72h` | How old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller takes it |
+| `-min-age` | `72h` | How old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller takes it or pushes an update that raises a requirement to it |
 | `-seen-configmap` | `git-k8s-deps-first-seen` | ConfigMap that keeps when the controller first saw versions: `NAME` in the controller's namespace, `NAMESPACE/NAME`, or empty to keep the times only in memory |
 | `-goproxy` | `https://proxy.golang.org` | Comma-separated URLs of the module proxies to read modules from; `direct` and `off` aren't allowed |
 | `-gosumdb` | `sum.golang.org` | `GOSUMDB` for `go get`, or `off` |
@@ -808,7 +829,9 @@ Update Pods get no credentials for modules, so the controller can't update a
 private module unless a proxy in `-goproxy` serves it. An update that needs
 a newer Go than the one in `-go-image` fails. The controller remembers
 failed updates only in memory, so after a restart it tries them again right
-away.
+away. It also remembers only in memory which updates wait for the versions
+that they raise, so after a restart it makes each of them again in a new Pod
+right away, and still doesn't push one whose versions aren't old enough.
 
 ## Install
 
