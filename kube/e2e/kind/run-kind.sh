@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the website, podpolicy, and janitor examples in a kind cluster
+# Install the website, janitor, and podpolicy examples in a kind cluster
 # with generate, which pushes their images to a local registry, and check
 # that they work. go test ./e2e/kind runs this when KUBE_KIND_E2E=1, which CI
 # sets when kube changes.
@@ -176,32 +176,8 @@ eventually 120 deployment_gone
 echo "Deleting the Website deletes what it owned."
 echo "::endgroup::"
 
-echo "::group::Install the podpolicy example"
-generate podpolicy | k apply -f -
-k -n podpolicy rollout status deployment/podpolicy --timeout=180s
-k create namespace policy-e2e
-
-# The webhooks are registered by the program when it starts, so wait for
-# the denial rather than an error from calling a webhook that isn't ready.
-denied() {
-  local out
-  if out="$(k -n policy-e2e run denied --image="${CHAINGUARD}/nginx:latest" --restart=Never --dry-run=server -o name 2>&1)"; then
-    echo "allowed: ${out}" >&2
-    return 1
-  fi
-  echo "${out}"
-  [[ "${out}" == *"isn't from an allowed registry"* ]]
-}
-eventually 120 denied
-
-requests="$(k -n policy-e2e run allowed --image=registry.example.com/app:1 --restart=Never --dry-run=server \
-  -o jsonpath='{.spec.containers[0].resources.requests}')"
-echo "defaulted requests: ${requests}"
-[[ "${requests}" == *'"cpu":"100m"'* && "${requests}" == *'"memory":"128Mi"'* ]]
-
-k -n kube-system run exempt --image="${CHAINGUARD}/nginx:latest" --restart=Never --dry-run=server -o name
-echo "::endgroup::"
-
+# podpolicy's webhook denies Pods whose images come from the local registry,
+# so janitor goes first.
 echo "::group::Install the janitor example"
 generate janitor | k apply -f -
 k -n janitor rollout status deployment/janitor --timeout=180s
@@ -242,6 +218,32 @@ eventually 120 names_option
 k patch namespace janitor-stale --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]'
 eventually 120 namespace_gone janitor-stale
 echo "janitor can't remove a finalizer that an earlier version added, and its error names kube.RemovesFinalizer."
+echo "::endgroup::"
+
+echo "::group::Install the podpolicy example"
+generate podpolicy | k apply -f -
+k -n podpolicy rollout status deployment/podpolicy --timeout=180s
+k create namespace policy-e2e
+
+# The webhooks are registered by the program when it starts, so wait for
+# the denial rather than an error from calling a webhook that isn't ready.
+denied() {
+  local out
+  if out="$(k -n policy-e2e run denied --image="${CHAINGUARD}/nginx:latest" --restart=Never --dry-run=server -o name 2>&1)"; then
+    echo "allowed: ${out}" >&2
+    return 1
+  fi
+  echo "${out}"
+  [[ "${out}" == *"isn't from an allowed registry"* ]]
+}
+eventually 120 denied
+
+requests="$(k -n policy-e2e run allowed --image=registry.example.com/app:1 --restart=Never --dry-run=server \
+  -o jsonpath='{.spec.containers[0].resources.requests}')"
+echo "defaulted requests: ${requests}"
+[[ "${requests}" == *'"cpu":"100m"'* && "${requests}" == *'"memory":"128Mi"'* ]]
+
+k -n kube-system run exempt --image="${CHAINGUARD}/nginx:latest" --restart=Never --dry-run=server -o name
 echo "::endgroup::"
 
 echo "kind e2e passed"
