@@ -696,12 +696,37 @@ for patch in "${approve}" '{"metadata":{"labels":{"e2e":"changed"}}}'; do
   grep -q "git-k8s-deps can't change GitBranch objects" "${WORKDIR}/patch.json"
 done
 echo "git-k8s-deps can't approve or change a GitBranch."
+
+deps_sa=system:serviceaccount:git-k8s-deps:git-k8s-deps
+can_i() { k auth can-i "$1" configmaps -n "$2" "--as=${deps_sa}" || true; }
+for verb in get create patch; do
+  [[ "$(can_i "${verb}" git-k8s-deps)" == yes ]]
+  [[ "$(can_i "${verb}" "${NS}")" == no* ]]
+done
+for verb in list delete; do
+  [[ "$(can_i "${verb}" git-k8s-deps)" == no* ]]
+done
+first_seen() { k -n git-k8s-deps get configmap git-k8s-deps-first-seen -o jsonpath='{.data.first-seen}'; }
+seen_line() { grep -F "${CLUSTER_URL}/proxy example.com/greet $1 " <<<"$(first_seen)"; }
+eventually 60 seen_line v1.2.0
+first_seen
+seen_v120="$(seen_line v1.2.0)"
+k -n git-k8s-deps rollout restart deployment/git-k8s-deps
+k -n git-k8s-deps rollout status deployment/git-k8s-deps --timeout=180s
+publish v1.2.1 2100-01-01T00:00:00Z '// Hello says hello to name.
+func Hello(name string) string { return "hello, " + name }'
+eventually 120 seen_line v1.2.1
+first_seen
+[[ "$(seen_line v1.2.0)" == "${seen_v120}" ]]
+echo "git-k8s-deps keeps when it first saw each version in a ConfigMap in its own namespace, the only one where it can read and write ConfigMaps, and kept v1.2.0's time through a restart."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
 snapshot() {
   k -n "${NS}" get gitrepositories,gitbranches \
     -o jsonpath='{range .items[*]}{.kind}/{.metadata.name}={.metadata.resourceVersion} {end}'
+  k -n git-k8s-deps get configmap git-k8s-deps-first-seen \
+    -o jsonpath='{.kind}/{.metadata.name}={.metadata.resourceVersion}'
 }
 idle() {
   local before after

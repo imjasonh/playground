@@ -33,7 +33,9 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -58,6 +60,26 @@ type Branch struct {
 	kube.Object `kube:"apiVersion=git-k8s.imjasonh.com/v1alpha1,kind=GitBranch,plural=gitbranches,scope=Namespaced"`
 	Spec        gitk8s.GitBranchSpec `json:"spec"`
 }
+
+// configMap is the controller's view of a ConfigMap, which it reads and
+// writes only in its own namespace.
+type configMap struct {
+	kube.Object `kube:"apiVersion=v1,kind=ConfigMap,plural=configmaps,local"`
+	Data        map[string]string `json:"data,omitempty"`
+}
+
+// seenData is the key of the first-seen times in the data of the ConfigMap
+// that keeps them.
+const seenData = "first-seen"
+
+// namespaceFile holds the namespace of the controller's Pod.
+var namespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+
+// Patterns of namespaces and of ConfigMap names.
+var (
+	dnsLabel     = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+	dnsSubdomain = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`)
+)
 
 // depsTrailer marks the commits that the controller pushes.
 const depsTrailer = "Git-K8s-Deps"
@@ -92,6 +114,11 @@ type updater struct {
 	maxPods      int
 	interval     time.Duration
 	minAge       time.Duration
+	// seenConfigMap is the -seen-configmap flag, and seenObject is the
+	// ConfigMap that it names, if the controller keeps first-seen times
+	// in one.
+	seenConfigMap string
+	seenObject    kube.Key
 
 	// now is time.Now, except in tests.
 	now func() time.Time
@@ -124,6 +151,7 @@ func (u *updater) addFlags(fs *flag.FlagSet) {
 	fs.IntVar(&u.maxPods, "max-pods", 10, "most update Pods to run at once, in all namespaces; 0 means no limit")
 	fs.DurationVar(&u.interval, "interval", time.Hour, "how often to look for new versions")
 	fs.DurationVar(&u.minAge, "min-age", 72*time.Hour, "how old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller updates to it")
+	fs.StringVar(&u.seenConfigMap, "seen-configmap", "git-k8s-deps-first-seen", "ConfigMap that keeps when the controller first saw versions, so a restart doesn't restart their -min-age: NAME in the controller's namespace, NAMESPACE/NAME, or empty to keep the times only in memory")
 }
 
 // setup checks the flags once.
@@ -153,9 +181,31 @@ func (u *updater) init() error {
 	if err != nil {
 		return err
 	}
+	if u.minAge > 0 && u.seenConfigMap != "" {
+		if u.seenObject, err = parseConfigMap(u.seenConfigMap); err != nil {
+			return err
+		}
+	}
 	u.proxy = newProxy(urls, u.interval/2, u.clock)
 	u.cache = &gitk8s.Cache{Git: &u.cfg.Git, Dir: u.cfg.CacheDir}
 	return nil
+}
+
+// parseConfigMap parses the -seen-configmap flag, NAME in the
+// controller's namespace or NAMESPACE/NAME.
+func parseConfigMap(s string) (kube.Key, error) {
+	ns, name, ok := strings.Cut(s, "/")
+	if !ok {
+		b, err := os.ReadFile(namespaceFile)
+		if err != nil {
+			return kube.Key{}, fmt.Errorf("-seen-configmap names no namespace, and reading the controller's failed: %w; outside a Pod, set -seen-configmap to NAMESPACE/NAME, or to nothing to keep first-seen times only in memory", err)
+		}
+		ns, name = strings.TrimSpace(string(b)), s
+	}
+	if len(ns) > 63 || !dnsLabel.MatchString(ns) || len(name) > 253 || !dnsSubdomain.MatchString(name) {
+		return kube.Key{}, fmt.Errorf("-seen-configmap is %q, but it must be the name of a ConfigMap, NAME or NAMESPACE/NAME", s)
+	}
+	return kube.Key{Namespace: ns, Name: name}, nil
 }
 
 func (u *updater) clock() time.Time {
@@ -290,7 +340,9 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 	if err != nil {
 		return err
 	}
-	targets, failed := u.discover(ctx, repo.Spec.Branches, parent, requirements(mods), owned, log)
+	reqs := requirements(mods)
+	stored, loaded := u.loadSeen(ctx, len(reqs) > 0, log)
+	targets, failed := u.discover(ctx, repo.Spec.Branches, parent, reqs, owned, log)
 	writes, deletes, err := u.plan(ctx, local, parentHead, maxCommits(repo.Spec.Branches, parent), targets, failed, existing, owned)
 	if err != nil {
 		return err
@@ -310,7 +362,43 @@ func (u *updater) Reconcile(ctx context.Context, b *Branch) error {
 		}
 		log.Info("deleted a branch that has no update left to make", "branch", d.branch, "head", gitk8s.Short(d.old))
 	}
+	if loaded {
+		// kube writes objects in the order that they're declared and
+		// stops at an error, so this comes after the update Pod.
+		u.storeSeen(ctx, stored)
+	}
 	return nil
+}
+
+// loadSeen reads the first-seen times from the ConfigMap that keeps them,
+// if the controller keeps them in one and waits for -min-age, and need
+// says that this reconcile looks for versions. It returns the times as the
+// ConfigMap holds them, and whether it read them.
+func (u *updater) loadSeen(ctx context.Context, need bool, log *slog.Logger) (stored string, loaded bool) {
+	if u.minAge == 0 || u.seenObject.Name == "" || !need {
+		return "", false
+	}
+	cm, err := kube.Fetch[configMap](ctx, u.seenObject.Namespace, u.seenObject.Name)
+	if err != nil {
+		log.Warn("reading first-seen times failed, so a restart would restart the wait for the versions that this reconcile sees", "configmap", u.seenObject.String(), "error", err)
+		return "", false
+	}
+	if cm != nil {
+		stored = cm.Data[seenData]
+	}
+	u.proxy.load(stored)
+	return stored, true
+}
+
+// storeSeen writes the first-seen times to the ConfigMap that keeps them,
+// if they're not what it held.
+func (u *updater) storeSeen(ctx context.Context, stored string) {
+	if times := u.proxy.encode(); times != stored {
+		kube.Apply(ctx, &configMap{
+			Object: kube.Object{ObjectMeta: kube.ObjectMeta{Namespace: u.seenObject.Namespace, Name: u.seenObject.Name}},
+			Data:   map[string]string{seenData: times},
+		})
+	}
 }
 
 // isParent reports whether a rule makes branch the parent of branches under

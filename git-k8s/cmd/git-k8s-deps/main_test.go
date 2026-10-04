@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -351,7 +352,7 @@ func (f *fixture) restart() {
 		cfg: old.cfg, checkEmail: old.checkEmail, prefix: old.prefix, goProxy: old.goProxy, goSumDB: old.goSumDB,
 		goImage: old.goImage, gitImage: old.gitImage, resultImage: old.resultImage, runtimeClass: old.runtimeClass,
 		timeout: old.timeout, sourceSize: old.sourceSize, goCacheSize: old.goCacheSize, maxPods: old.maxPods,
-		interval: old.interval, minAge: old.minAge, now: old.now, resultPort: old.resultPort,
+		interval: old.interval, minAge: old.minAge, seenConfigMap: old.seenConfigMap, now: old.now, resultPort: old.resultPort,
 	}
 }
 
@@ -550,6 +551,54 @@ func TestKeepsItsBranchesAfterARestart(t *testing.T) {
 			if head := f.update("v1.1.0"); f.work.Git("rev-parse", head+"^") != main {
 				t.Errorf("%s = %s, want an update on main at %s", greetBranch, head, main)
 			}
+		})
+	}
+}
+
+func TestKeepsFirstSeenTimesAcrossAFailover(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		configMap string
+		// wait is how long the replica that takes over waits for v1.1.0.
+		wait time.Duration
+	}{
+		{name: "in a ConfigMap", configMap: "git-k8s-deps/first-seen", wait: time.Hour},
+		{name: "only in memory", wait: 72 * time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.u.interval, f.u.minAge, f.u.seenConfigMap = 100*time.Hour, 72*time.Hour, tc.configMap
+			stored := kube.Applied[configMap](f.checkStays(""))
+			want := f.proxy.URL + " " + greet + " v1.1.0 " + today.Format(time.RFC3339) + "\n"
+			switch {
+			case tc.configMap == "" && len(stored) != 0:
+				t.Fatalf("the controller wrote %d ConfigMaps, want none", len(stored))
+			case tc.configMap != "" && (len(stored) != 1 || stored[0].Namespace != "git-k8s-deps" || stored[0].Name != "first-seen" || stored[0].Data[seenData] != want):
+				t.Fatalf("written ConfigMaps = %+v, want git-k8s-deps/first-seen with %q", stored, want)
+			}
+			var world []any
+			for _, cm := range stored {
+				world = append(world, cm)
+			}
+
+			t.Log("Until the times change, the controller doesn't write them again.")
+			f.clock = f.clock.Add(time.Hour)
+			if n := len(kube.Applied[configMap](f.checkStays("", world...))); n != 0 {
+				t.Errorf("the controller wrote %d ConfigMaps, want none", n)
+			}
+
+			t.Log("Another replica takes over.")
+			f.clock = f.clock.Add(70 * time.Hour)
+			f.restart()
+			rec := f.checkStays("", world...)
+			if rec.RequeueAfter() != tc.wait {
+				t.Errorf("RequeueAfter() = %v, want %v", rec.RequeueAfter(), tc.wait)
+			}
+			if n := len(kube.Applied[configMap](rec)); n != 0 {
+				t.Errorf("the replica that took over wrote %d ConfigMaps, want none", n)
+			}
+			f.clock = f.clock.Add(tc.wait)
+			f.update("v1.1.0")
 		})
 	}
 }
@@ -1304,6 +1353,11 @@ func TestUpdatedTo(t *testing.T) {
 }
 
 func TestFlags(t *testing.T) {
+	defer func(old string) { namespaceFile = old }(namespaceFile)
+	namespaceFile = filepath.Join(t.TempDir(), "namespace")
+	if err := os.WriteFile(namespaceFile, []byte("git-k8s-deps\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	parse := func(args ...string) *updater {
 		u := &updater{}
 		fs := flag.NewFlagSet("git-k8s-deps", flag.ContinueOnError)
@@ -1318,10 +1372,28 @@ func TestFlags(t *testing.T) {
 		t.Fatalf("setup() with the defaults = %v", err)
 	}
 	if u.prefix != "deps/" || u.interval != time.Hour || u.minAge != 72*time.Hour || u.proxy.urls[0] != "https://proxy.golang.org" || u.proxy.ttl != 30*time.Minute ||
-		u.sourceSize != "2Gi" || u.goCacheSize != "4Gi" || u.checkEmail != u.cfg.Identity.Email || u.checkEmail != "git-k8s@users.noreply.github.com" {
+		u.sourceSize != "2Gi" || u.goCacheSize != "4Gi" || u.checkEmail != u.cfg.Identity.Email || u.checkEmail != "git-k8s@users.noreply.github.com" ||
+		u.seenObject != (kube.Key{Namespace: "git-k8s-deps", Name: "git-k8s-deps-first-seen"}) {
 		t.Errorf("the defaults = %+v", u)
 	}
+	for arg, want := range map[string]kube.Key{
+		"-seen-configmap=times.v1":   {Namespace: "git-k8s-deps", Name: "times.v1"},
+		"-seen-configmap=deps/times": {Namespace: "deps", Name: "times"},
+		"-seen-configmap=":           {},
+		"-min-age=0":                 {},
+	} {
+		u := parse(arg)
+		if err := u.setup(); err != nil || u.seenObject != want {
+			t.Errorf("setup() with %s = %v and the ConfigMap %v, want %v", arg, err, u.seenObject, want)
+		}
+	}
 	for _, args := range [][]string{
+		{"-seen-configmap=Times"},
+		{"-seen-configmap=a/b/c"},
+		{"-seen-configmap=/times"},
+		{"-seen-configmap=deps/"},
+		{"-seen-configmap=times..v1"},
+		{"-seen-configmap=deps.x/times"},
 		{"-identity-email=<>"},
 		{"-check-identity-email="},
 		{"-prefix=deps"},
@@ -1341,6 +1413,15 @@ func TestFlags(t *testing.T) {
 		if err := u.setup(); err == nil {
 			t.Errorf("setup() with %q = nil, want an error", args)
 		}
+	}
+
+	t.Log("Outside a Pod, the ConfigMap needs a namespace, unless the controller doesn't wait.")
+	namespaceFile = filepath.Join(t.TempDir(), "namespace")
+	if err := parse().setup(); err == nil || !strings.Contains(err.Error(), "NAMESPACE/NAME") {
+		t.Errorf("setup() without a namespace file = %v, want an error that suggests NAMESPACE/NAME", err)
+	}
+	if err := parse("-min-age=0").setup(); err != nil {
+		t.Errorf("setup() with -min-age=0 and without a namespace file = %v", err)
 	}
 
 	t.Log("A reconcile reports a bad flag as a permanent error.")

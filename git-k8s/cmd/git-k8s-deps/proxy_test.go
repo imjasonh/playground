@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -87,7 +88,8 @@ func (p *fakeProxy) set(mod, file, body string) {
 	p.files[p.path(mod, file)] = body
 }
 
-// fail makes the proxy answer requests for a module's file with code.
+// fail makes the proxy answer requests for a module's file with code, or
+// as usual if code is 0.
 func (p *fakeProxy) fail(mod, file string, code int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -107,8 +109,10 @@ func (p *fakeProxy) hitsOf(mod, file string) int {
 func listedLongAgo(t *testing.T, mod string, urls ...string) *proxy {
 	clock := longAgo
 	p := newProxy(urls, time.Hour, func() time.Time { return clock })
-	if _, err := p.versions(t.Context(), mod); err != nil {
+	if l, err := p.versions(t.Context(), mod); err != nil {
 		t.Logf("listing %s long ago: %v", mod, err)
+	} else {
+		p.firstSeen(l.proxy, mod, l.versions)
 	}
 	clock = today
 	return p
@@ -368,6 +372,169 @@ func TestTargetWaitsFromWhenAVersionShowsUp(t *testing.T) {
 	target(restarted, "", minAge)
 	if n := fp.hitsOf(mod, "v1.1.0.info"); n != 2 {
 		t.Errorf("v1.1.0.info was read %d times, want once by each proxy", n)
+	}
+
+	t.Log("Unless the restart loads the times that encode returned before it.")
+	restored := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return clock })
+	restored.load(p.encode())
+	target(restored, "v1.2.0", minAge+23*time.Hour)
+}
+
+func TestFirstSeenKeepsOnlyCandidates(t *testing.T) {
+	const mod = "example.com/greet"
+	fp := newFakeProxy(t)
+	for _, v := range []string{"v1.0.0", "v1.1.0", "v1.2.0", "v1.3.0-rc.1", "v2.0.0+incompatible"} {
+		fp.publish(mod, v, longAgo, "")
+	}
+	p := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return today })
+	if _, _, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, 0, ""); err != nil || len(p.seen) != 0 {
+		t.Errorf("without a minimum age, target() = %v and kept %v, want no times", err, p.seen)
+	}
+	if _, _, err := p.target(t.Context(), mod, []string{"v1.0.0"}, map[string]bool{"v1.2.0": true}, time.Hour, ""); err != nil {
+		t.Fatal(err)
+	}
+	if want := map[seenKey]time.Time{{fp.URL, mod, "v1.1.0"}: today}; !maps.EqualFunc(p.seen, want, time.Time.Equal) {
+		t.Errorf("kept %v, want %v", p.seen, want)
+	}
+}
+
+func TestFirstSeenForgetsUnlistedVersions(t *testing.T) {
+	const (
+		mod    = "example.com/greet"
+		minAge = 72 * time.Hour
+	)
+	a, b := newFakeProxy(t), newFakeProxy(t)
+	for _, v := range []string{"v1.0.0", "v1.1.0", "v1.2.0"} {
+		a.publish(mod, v, longAgo, "")
+	}
+	clock := today
+	p := newProxy([]string{a.URL, b.URL}, time.Hour, func() time.Time { return clock })
+	target := func(want string, wantWait time.Duration) {
+		t.Helper()
+		got, wait, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, minAge, "")
+		if err != nil || got != want || wait != wantWait {
+			t.Errorf("target() = %q, %v, %v, want %q, %v", got, wait, err, want, wantWait)
+		}
+	}
+	target("", minAge)
+
+	t.Log("While the second proxy lists the module, the first one's times stay.")
+	a.fail(mod, "list", http.StatusNotFound)
+	b.publish(mod, "v1.0.0", longAgo, "")
+	b.publish(mod, "v1.1.0", longAgo, "")
+	clock = clock.Add(time.Hour)
+	target("", minAge)
+
+	t.Log("When the first proxy stops listing v1.2.0, its time goes.")
+	a.fail(mod, "list", 0)
+	a.set(mod, "list", "v1.0.0\nv1.1.0\n")
+	clock = clock.Add(time.Hour)
+	target("", minAge-2*time.Hour)
+	want := map[seenKey]time.Time{{a.URL, mod, "v1.1.0"}: today, {b.URL, mod, "v1.1.0"}: today.Add(time.Hour)}
+	if !maps.EqualFunc(p.seen, want, time.Time.Equal) {
+		t.Errorf("kept %v, want %v", p.seen, want)
+	}
+
+	t.Log("So when v1.2.0 comes back, it waits again.")
+	a.list(mod, "v1.2.0")
+	clock = today.Add(minAge)
+	target("v1.1.0", minAge)
+}
+
+func TestFirstSeenTakesTheEarliestTime(t *testing.T) {
+	const (
+		a   = "https://a.example.com"
+		mod = "example.com/greet"
+	)
+	p := newProxy([]string{a}, time.Hour, func() time.Time { return today })
+	key := func(v string) seenKey { return seenKey{a, mod, v} }
+	later := longAgo.Add(48 * time.Hour)
+	p.seen = map[seenKey]time.Time{key("v1.1.0"): later, key("v1.2.0"): longAgo}
+	p.stored = map[seenKey]time.Time{key("v1.1.0"): longAgo, key("v1.2.0"): later, key("v1.3.0"): longAgo}
+	got := p.firstSeen(a, mod, []string{"v1.1.0", "v1.2.0", "v1.3.0", "v1.4.0"})
+	want := map[string]time.Time{"v1.1.0": longAgo, "v1.2.0": longAgo, "v1.3.0": longAgo, "v1.4.0": today}
+	if !maps.EqualFunc(got, want, time.Time.Equal) {
+		t.Errorf("firstSeen() = %v, want %v", got, want)
+	}
+	wantSeen := map[seenKey]time.Time{key("v1.1.0"): longAgo, key("v1.2.0"): longAgo, key("v1.3.0"): longAgo, key("v1.4.0"): today}
+	if !maps.EqualFunc(p.seen, wantSeen, time.Time.Equal) {
+		t.Errorf("kept %v, want %v", p.seen, wantSeen)
+	}
+}
+
+func TestEncode(t *testing.T) {
+	defer func(old int) { maxStored = old }(maxStored)
+	const (
+		a     = "https://a.example.com"
+		b     = "https://b.example.com"
+		mod   = "example.com/greet"
+		other = "example.com/other"
+	)
+	day := func(n int) time.Time { return longAgo.AddDate(0, 0, n) }
+	line := func(proxy, path, version string, n int) string {
+		return proxy + " " + path + " " + version + " " + day(n).Format(time.RFC3339) + "\n"
+	}
+	p := newProxy([]string{a, b}, time.Hour, func() time.Time { return today })
+	p.lists[mod] = versionList{versions: []string{"v1.0.0", "v1.1.0", "v1.2.0"}, proxy: a, at: today}
+	p.lists[other] = versionList{versions: []string{"v1.0.0"}, proxy: a, at: today.Add(-time.Hour)}
+	p.stored = map[seenKey]time.Time{
+		{a, mod, "v1.1.0"}:   day(2),
+		{a, mod, "v1.3.0"}:   day(1),
+		{b, mod, "v1.1.0"}:   day(1),
+		{a, other, "v1.1.0"}: day(3),
+	}
+	p.seen = map[seenKey]time.Time{
+		{a, mod, "v1.1.0"}:   day(1),
+		{a, mod, "v1.2.0"}:   day(4),
+		{b, mod, "v1.1.0"}:   day(0),
+		{a, other, "v1.2.0"}: day(5),
+	}
+	got := p.encode()
+	want := line(a, mod, "v1.1.0", 1) + line(a, mod, "v1.2.0", 4) + line(a, other, "v1.1.0", 3) + line(b, mod, "v1.1.0", 0)
+	if got != want {
+		t.Errorf("encode() = %q, want %q: the earliest times, without versions that a fresh list leaves out or that only memory has without one", got, want)
+	}
+	q := newProxy([]string{a, b}, time.Hour, func() time.Time { return today })
+	if q.load(got); q.encode() != got {
+		t.Errorf("after load(%q), encode() = %q", got, q.encode())
+	}
+
+	t.Log("When the lines don't fit, encode leaves out the oldest times.")
+	maxStored = len(want) - 1
+	if got, want := p.encode(), line(a, mod, "v1.1.0", 1)+line(a, mod, "v1.2.0", 4)+line(a, other, "v1.1.0", 3); got != want {
+		t.Errorf("encode() = %q, want %q", got, want)
+	}
+
+	t.Log("Among the same times, it keeps the first by proxy, module, and version.")
+	q.stored = map[seenKey]time.Time{{b, mod, "v1.1.0"}: day(1), {a, other, "v1.1.0"}: day(1), {a, mod, "v1.2.0"}: day(1)}
+	maxStored = 2 * len(line(a, mod, "v1.2.0", 1))
+	if got, want := q.encode(), line(a, mod, "v1.2.0", 1)+line(a, other, "v1.1.0", 1); got != want {
+		t.Errorf("encode() = %q, want %q", got, want)
+	}
+}
+
+func TestLoad(t *testing.T) {
+	const a = "https://a.example.com"
+	p := newProxy([]string{a}, time.Hour, func() time.Time { return today })
+	p.stored = map[seenKey]time.Time{{a, "example.com/old", "v1.0.0"}: longAgo}
+	p.load(strings.Join([]string{
+		a + " example.com/greet v1.1.0 2026-01-03T00:00:00Z",
+		a + " example.com/greet v1.1.0 2026-01-02T00:00:00Z",
+		a + " example.com/greet v1.2.0 2026-01-04T00:00:00.5Z",
+		"https://b.example.com example.com/greet v1.1.0 2026-01-01T00:00:00Z",
+		a + " example.com/greet v1.1.0",
+		a + " example.com/greet v1.1.0 2026-01-01T00:00:00Z more",
+		a + " example.com/greet 1.1.0 2026-01-01T00:00:00Z",
+		a + " greet v1.1.0 2026-01-01T00:00:00Z",
+		a + " example.com/greet v1.3.0 yesterday",
+		"",
+	}, "\n"))
+	want := map[seenKey]time.Time{
+		{a, "example.com/greet", "v1.1.0"}: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
+		{a, "example.com/greet", "v1.2.0"}: time.Date(2026, 1, 4, 0, 0, 0, 5e8, time.UTC),
+	}
+	if !maps.EqualFunc(p.stored, want, time.Time.Equal) {
+		t.Errorf("after load(), the stored times = %v, want %v", p.stored, want)
 	}
 }
 

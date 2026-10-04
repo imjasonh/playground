@@ -606,10 +606,23 @@ the controller looks again once the version is old enough.
 
 The version of a branch that the controller owns, which the trailer of the
 branch's update names, was old enough when the controller pushed it, so it
-doesn't wait again. The controller keeps when it first saw each other
-version only in memory, so after a restart, each of them waits `-min-age`
-again. A branch whose version the module retracts or a `go.mod` file
-excludes is still deleted.
+doesn't wait again, even after a restart. A branch whose version the module
+retracts or a `go.mod` file excludes is still deleted.
+
+For other versions, the controller keeps when it first saw each one in the
+ConfigMap that `-seen-configmap` names, `git-k8s-deps-first-seen` in its own
+namespace by default, so that a restart, or another replica taking over,
+doesn't restart their wait. Each line of the ConfigMap's `first-seen` key
+holds a proxy URL, a module path, a version, and when the controller first
+saw the version in that proxy's list. The controller reads the ConfigMap
+before it looks for newer versions, and writes it when the times change. It
+records only versions that it could update to, and drops a version when the
+proxy that listed it stops listing it; if the version comes back, it waits
+again. When the controller can't read the ConfigMap, it logs a warning,
+uses the times in its memory, and doesn't write the ConfigMap. `generate`
+lets the controller read and write ConfigMaps only in its own namespace.
+With `-seen-configmap=`, the controller keeps the times only in memory, so
+after a restart, each of these versions waits `-min-age` again.
 
 The controller also skips prereleases, versions that a `go.mod` file
 excludes, and versions that the module retracts. To keep the controller from
@@ -753,6 +766,7 @@ branch-name prefix that ends with `/`. `git-k8s-deps` takes these flags:
 | `-check-identity-email` | `git-k8s@users.noreply.github.com` | Committer email of the fixes that checks push: the checks' `-identity-email` |
 | `-interval` | `1h` | How often to look for newer versions |
 | `-min-age` | `72h` | How old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller takes it |
+| `-seen-configmap` | `git-k8s-deps-first-seen` | ConfigMap that keeps when the controller first saw versions: `NAME` in the controller's namespace, `NAMESPACE/NAME`, or empty to keep the times only in memory |
 | `-goproxy` | `https://proxy.golang.org` | Comma-separated URLs of the module proxies to read modules from; `direct` and `off` aren't allowed |
 | `-gosumdb` | `sum.golang.org` | `GOSUMDB` for `go get`, or `off` |
 | `-go-image` | `cgr.dev/chainguard/go:latest` | Image that runs `go get`; it needs `go`, `git`, `sh`, `base64`, `sha256sum`, `tail`, and `cut` |
@@ -843,7 +857,8 @@ it, and deletes those lines when the check can push. When it can edit files,
 it also replaces each line that holds `FAKE AGENT FIX:` with the text after
 it. The git server also serves a Go module proxy. The test publishes module
 versions to it, and checks that `git-k8s-deps` lands a patch release without
-approval, and that the fake agent fixes a release that breaks the tests.
+approval, that the fake agent fixes a release that breaks the tests, and
+that `git-k8s-deps` keeps when it first saw a version through a restart.
 
 ## Limitations
 
@@ -861,6 +876,13 @@ approval, and that the fake agent fixes a release that breaks the tests.
 - Like `check-review`, `git-k8s-deps` reads repository credentials and
   creates Pods, so `generate` lets it read every Secret and create Pods in
   every namespace. Only its own code keeps its pushes under its prefix.
+- `git-k8s-deps` keeps at most 256 KiB of first-seen times in its ConfigMap,
+  and drops the oldest first, so after a restart, a version whose time it
+  dropped waits `-min-age` again. With more than one shard, or for a moment
+  while a Deployment with one replica rolls out, two controllers can write
+  the ConfigMap at once, and the last write wins. Each one writes its times
+  again the next time that it reads the module's versions, so a time is lost
+  only when the controller that saw the version stops first.
 
 [`future-work.md`](future-work.md) proposes fixes for these, and lists the
 other known gaps.
