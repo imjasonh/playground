@@ -648,21 +648,21 @@ doesn't wait again, even after a restart. A branch whose version the module
 retracts or a `go.mod` file excludes is still deleted.
 
 For other versions, the controller keeps when it first saw each one in the
-ConfigMap that `-seen-configmap` names, `git-k8s-deps-first-seen` in its own
-namespace by default, so that a restart, or another replica taking over,
-doesn't restart their wait. Each line of the ConfigMap's `first-seen` key
-holds a proxy URL, a module path, a version, and when the controller first
-saw the version in that proxy's list. The controller reads the ConfigMap
-before it looks for newer versions, and writes it when the times change. It
-records only versions that it could update to and versions that an update
-raises a requirement to. It drops a version when the proxy that listed it
-stops listing it, and if the version comes back, it waits again. It keeps
-the times of pseudo-versions, which proxies don't list. When the controller
-can't read the ConfigMap, it logs a warning, uses the times in its memory,
-and doesn't write the ConfigMap. `generate` lets the controller read and
-write ConfigMaps only in its own namespace. With `-seen-configmap=`, the
-controller keeps the times only in memory, so after a restart, each of these
-versions waits `-min-age` again.
+ConfigMap in its own namespace that `-seen-configmap` names,
+`git-k8s-deps-first-seen` by default, so that a restart, or another replica
+taking over, doesn't restart their wait. Each line of the ConfigMap's
+`first-seen` key holds a proxy URL, a module path, a version, and when the
+controller first saw the version in that proxy's list. The controller reads
+the ConfigMap before it looks for newer versions, and writes it when the
+times change. It records only versions that it could update to and versions
+that an update raises a requirement to. It drops a version when the proxy
+that listed it stops listing it, and if the version comes back, it waits
+again. It keeps the times of pseudo-versions, which proxies don't list. When
+the controller can't read the ConfigMap, it logs a warning, uses the times
+in its memory, and doesn't write the ConfigMap. `generate` lets the
+controller read and write ConfigMaps only in its own namespace. With
+`-seen-configmap=`, the controller keeps the times only in memory, so after
+a restart, each of these versions waits `-min-age` again.
 
 The controller also skips prereleases, versions that a `go.mod` file
 excludes, and versions that the module retracts. To keep the controller from
@@ -814,7 +814,7 @@ branch-name prefix that ends with `/`. `git-k8s-deps` takes these flags:
 | `-check-identity-email` | `git-k8s@users.noreply.github.com` | Committer email of the fixes that checks push: the checks' `-identity-email` |
 | `-interval` | `1h` | How often to look for newer versions |
 | `-min-age` | `72h` | How old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller takes it or pushes an update that raises a requirement to it |
-| `-seen-configmap` | `git-k8s-deps-first-seen` | ConfigMap that keeps when the controller first saw versions: `NAME` in the controller's namespace, `NAMESPACE/NAME`, or empty to keep the times only in memory |
+| `-seen-configmap` | `git-k8s-deps-first-seen` | Name of the ConfigMap in the controller's namespace that keeps when the controller first saw versions, or empty to keep the times only in memory |
 | `-goproxy` | `https://proxy.golang.org` | Comma-separated URLs of the module proxies to read modules from; `direct` and `off` aren't allowed |
 | `-gosumdb` | `sum.golang.org` | `GOSUMDB` for `go get`, or `off` |
 | `-go-image` | `cgr.dev/chainguard/go:latest` | Image that runs `go get`; it needs `go`, `git`, `sh`, `base64`, `sha256sum`, `tail`, and `cut` |

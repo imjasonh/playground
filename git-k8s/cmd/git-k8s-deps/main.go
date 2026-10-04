@@ -154,7 +154,7 @@ func (u *updater) addFlags(fs *flag.FlagSet) {
 	fs.IntVar(&u.maxPods, "max-pods", 10, "most update Pods to run at once, in all namespaces; 0 means no limit")
 	fs.DurationVar(&u.interval, "interval", time.Hour, "how often to look for new versions")
 	fs.DurationVar(&u.minAge, "min-age", 72*time.Hour, "how old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller updates a module to it or pushes an update that raises a requirement to it")
-	fs.StringVar(&u.seenConfigMap, "seen-configmap", "git-k8s-deps-first-seen", "ConfigMap that keeps when the controller first saw versions, so a restart doesn't restart their -min-age: NAME in the controller's namespace, NAMESPACE/NAME, or empty to keep the times only in memory")
+	fs.StringVar(&u.seenConfigMap, "seen-configmap", "git-k8s-deps-first-seen", "name of the ConfigMap in the controller's namespace that keeps when the controller first saw versions, so a restart doesn't restart their -min-age; empty keeps the times only in memory")
 }
 
 // setup checks the flags once.
@@ -194,21 +194,22 @@ func (u *updater) init() error {
 	return nil
 }
 
-// parseConfigMap parses the -seen-configmap flag, NAME in the
-// controller's namespace or NAMESPACE/NAME.
+// parseConfigMap parses the -seen-configmap flag, the name of a ConfigMap
+// in the controller's namespace. The controller's Role lets it write
+// ConfigMaps only there.
 func parseConfigMap(s string) (kube.Key, error) {
-	ns, name, ok := strings.Cut(s, "/")
-	if !ok {
-		b, err := os.ReadFile(namespaceFile)
-		if err != nil {
-			return kube.Key{}, fmt.Errorf("-seen-configmap names no namespace, and reading the controller's failed: %w; outside a Pod, set -seen-configmap to NAMESPACE/NAME, or to nothing to keep first-seen times only in memory", err)
-		}
-		ns, name = strings.TrimSpace(string(b)), s
+	if len(s) > 253 || !dnsSubdomain.MatchString(s) {
+		return kube.Key{}, fmt.Errorf("-seen-configmap is %q, but it must be the name of a ConfigMap in the controller's namespace", s)
 	}
-	if len(ns) > 63 || !dnsLabel.MatchString(ns) || len(name) > 253 || !dnsSubdomain.MatchString(name) {
-		return kube.Key{}, fmt.Errorf("-seen-configmap is %q, but it must be the name of a ConfigMap, NAME or NAMESPACE/NAME", s)
+	b, err := os.ReadFile(namespaceFile)
+	if err != nil {
+		return kube.Key{}, fmt.Errorf("reading the controller's namespace for -seen-configmap failed: %w; outside a Pod, set -seen-configmap= to keep first-seen times only in memory", err)
 	}
-	return kube.Key{Namespace: ns, Name: name}, nil
+	ns := strings.TrimSpace(string(b))
+	if len(ns) > 63 || !dnsLabel.MatchString(ns) {
+		return kube.Key{}, fmt.Errorf("%s holds %q, but it must hold the controller's namespace", namespaceFile, ns)
+	}
+	return kube.Key{Namespace: ns, Name: s}, nil
 }
 
 func (u *updater) clock() time.Time {

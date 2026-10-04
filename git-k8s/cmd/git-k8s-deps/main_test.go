@@ -386,6 +386,17 @@ func (f *fixture) restart() {
 	}
 }
 
+// inNamespace runs the controller in namespace ns, as the namespace file of
+// its Pod says.
+func inNamespace(t *testing.T, ns string) {
+	old := namespaceFile
+	t.Cleanup(func() { namespaceFile = old })
+	namespaceFile = filepath.Join(t.TempDir(), "namespace")
+	if err := os.WriteFile(namespaceFile, []byte(ns+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestIgnoresBranchesThatArentParents(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -721,10 +732,11 @@ func TestKeepsFirstSeenTimesAcrossAFailover(t *testing.T) {
 		// wait is how long the replica that takes over waits for v1.1.0.
 		wait time.Duration
 	}{
-		{name: "in a ConfigMap", configMap: "git-k8s-deps/first-seen", wait: time.Hour},
+		{name: "in a ConfigMap", configMap: "first-seen", wait: time.Hour},
 		{name: "only in memory", wait: 72 * time.Hour},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			inNamespace(t, "git-k8s-deps")
 			f := newFixture(t)
 			f.u.interval, f.u.minAge, f.u.seenConfigMap = 100*time.Hour, 72*time.Hour, tc.configMap
 			stored := kube.Applied[configMap](f.checkStays(""))
@@ -763,8 +775,9 @@ func TestKeepsFirstSeenTimesAcrossAFailover(t *testing.T) {
 }
 
 func TestWritesFirstSeenTimesOnlyAfterReadingThem(t *testing.T) {
+	inNamespace(t, "git-k8s-deps")
 	f := newFixture(t)
-	f.u.interval, f.u.minAge, f.u.seenConfigMap = 100*time.Hour, 72*time.Hour, "git-k8s-deps/first-seen"
+	f.u.interval, f.u.minAge, f.u.seenConfigMap = 100*time.Hour, 72*time.Hour, "first-seen"
 	reads := 0
 	var readErr error
 	f.u.fetchConfigMap = func(ctx context.Context, namespace, name string) (*configMap, error) {
@@ -1629,11 +1642,7 @@ func TestUpdatedTo(t *testing.T) {
 }
 
 func TestFlags(t *testing.T) {
-	defer func(old string) { namespaceFile = old }(namespaceFile)
-	namespaceFile = filepath.Join(t.TempDir(), "namespace")
-	if err := os.WriteFile(namespaceFile, []byte("git-k8s-deps\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	inNamespace(t, "git-k8s-deps")
 	parse := func(args ...string) *updater {
 		u := &updater{}
 		fs := flag.NewFlagSet("git-k8s-deps", flag.ContinueOnError)
@@ -1653,11 +1662,10 @@ func TestFlags(t *testing.T) {
 		t.Errorf("the defaults = %+v", u)
 	}
 	for arg, want := range map[string]kube.Key{
-		"-seen-configmap=times.v1":   {Namespace: "git-k8s-deps", Name: "times.v1"},
-		"-seen-configmap=deps/times": {Namespace: "deps", Name: "times"},
-		"-seen-configmap=":           {},
-		"-min-age=0":                 {},
-		"-seen-configmap=" + strings.Repeat("a", 63) + "/" + strings.Repeat("b", 253): {Namespace: strings.Repeat("a", 63), Name: strings.Repeat("b", 253)},
+		"-seen-configmap=times.v1": {Namespace: "git-k8s-deps", Name: "times.v1"},
+		"-seen-configmap=":         {},
+		"-min-age=0":               {},
+		"-seen-configmap=" + strings.Repeat("b", 253): {Namespace: "git-k8s-deps", Name: strings.Repeat("b", 253)},
 	} {
 		u := parse(arg)
 		if err := u.setup(); err != nil || u.seenObject != want {
@@ -1666,12 +1674,12 @@ func TestFlags(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"-seen-configmap=Times"},
+		{"-seen-configmap=deps/times"},
+		{"-seen-configmap=git-k8s-deps/times"},
 		{"-seen-configmap=a/b/c"},
 		{"-seen-configmap=/times"},
 		{"-seen-configmap=deps/"},
 		{"-seen-configmap=times..v1"},
-		{"-seen-configmap=deps.x/times"},
-		{"-seen-configmap=" + strings.Repeat("a", 64) + "/times"},
 		{"-seen-configmap=" + strings.Repeat("b", 254)},
 		{"-identity-email=<>"},
 		{"-check-identity-email="},
@@ -1694,13 +1702,21 @@ func TestFlags(t *testing.T) {
 		}
 	}
 
-	t.Log("Outside a Pod, the ConfigMap needs a namespace, unless the controller doesn't wait.")
-	namespaceFile = filepath.Join(t.TempDir(), "namespace")
-	if err := parse().setup(); err == nil || !strings.Contains(err.Error(), "NAMESPACE/NAME") {
-		t.Errorf("setup() without a namespace file = %v, want an error that suggests NAMESPACE/NAME", err)
+	t.Log("The ConfigMap is in the namespace that the namespace file names.")
+	inNamespace(t, "Not_A_Namespace")
+	if err := parse().setup(); err == nil || !strings.Contains(err.Error(), "Not_A_Namespace") {
+		t.Errorf("setup() with a bad namespace file = %v, want an error that names what it holds", err)
 	}
-	if err := parse("-min-age=0").setup(); err != nil {
-		t.Errorf("setup() with -min-age=0 and without a namespace file = %v", err)
+
+	t.Log("Outside a Pod, there is no namespace for the ConfigMap, unless the controller doesn't wait.")
+	namespaceFile = filepath.Join(t.TempDir(), "namespace")
+	if err := parse().setup(); err == nil || !strings.Contains(err.Error(), "set -seen-configmap= to keep") {
+		t.Errorf("setup() without a namespace file = %v, want an error that suggests -seen-configmap=", err)
+	}
+	for _, arg := range []string{"-min-age=0", "-seen-configmap="} {
+		if err := parse(arg).setup(); err != nil {
+			t.Errorf("setup() with %s and without a namespace file = %v", arg, err)
+		}
 	}
 
 	t.Log("A reconcile reports a bad flag as a permanent error.")
