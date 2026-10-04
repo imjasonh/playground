@@ -153,10 +153,14 @@ so every check runs again on it, and it counts toward the branch's
 
 The controller tries a resolution that git can make by itself first, such as
 one that `git rerere` recorded earlier. Otherwise, an agent can resolve the
-conflict, as described in [Agentic checks](README.md#agentic-checks). A
-local agent in a Pod that has both commits checked out from the mirror edits
-the conflicting files, builds the result, and pushes it. When neither works,
-the branch stays as it is, and the controller reports why.
+conflict, as described in
+[Run agents from a controller](README.md#run-agents-from-a-controller). The
+agent works in a Pod whose files are the merge of both commits, with
+conflict markers where they conflict, and edits the files that conflict. It
+has no shell, so it can't build or test the result. The controller commits
+the agent's files and pushes them, and the checks verify the result like any
+other head. When neither works, the branch stays as it is, and the
+controller reports why.
 
 Questions to settle first:
 

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
@@ -261,6 +262,42 @@ func TestDoesntPushWhatChangesNothing(t *testing.T) {
 	f.reconcile(finished(p, digest))
 	if res := f.state(); res.State != gitk8s.Passed || res.Outputs["fix"] != "" {
 		t.Errorf("result = %+v, want Passed without a fix", res)
+	}
+}
+
+func TestShortensLongReasoning(t *testing.T) {
+	for _, push := range []bool{true, false} {
+		f := newFixture(t, "s3cret")
+		f.task.Edit = true
+		f.b.Spec.Merge.Checks[0].MayPush = push
+		p := f.start()
+		body, _ := json.Marshal(Result{
+			Verdict: Fail, Reasoning: strings.Repeat("é", 1000), Model: "fake:composer-2.5",
+			Files: []File{{Path: "a.txt", Mode: "100644", Content: []byte("one\n")}},
+		})
+		f.reconcile(finished(p, f.serve(body, p.UID)))
+		res := f.state()
+		suffix := "...; the policy doesn't let this check push the fix"
+		if push {
+			suffix = "...; pushed " + gitk8s.Short(res.Outputs["fix"])
+		}
+		if len(res.Message) > 1024 || !utf8.ValidString(res.Message) || !strings.HasSuffix(res.Message, suffix) {
+			t.Errorf("message = %q (%d bytes), want valid UTF-8 of at most 1,024 bytes that ends with %q", res.Message, len(res.Message), suffix)
+		}
+	}
+}
+
+func TestShorten(t *testing.T) {
+	for _, r := range []string{"a", "é", "€", "😀"} {
+		s := strings.Repeat(r, maxMessage+1)
+		got := shorten(s)
+		kept, ok := strings.CutSuffix(got, "...")
+		if !ok || len(got) > maxMessage || len(got) <= maxMessage-utf8.UTFMax || !utf8.ValidString(got) || !strings.HasPrefix(s, kept) {
+			t.Errorf("shorten(%d × %q) = %q (%d bytes)", maxMessage+1, r, got, len(got))
+		}
+	}
+	if s := strings.Repeat("é", maxMessage/2); shorten(s) != s {
+		t.Errorf("shorten changed a message of %d bytes", len(s))
 	}
 }
 

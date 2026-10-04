@@ -8,6 +8,8 @@ export interface AgentRequest {
   /** The work tree, which the agent works in. */
   cwd: string;
   edit: boolean;
+  /** The agent's tools, if not all that edit allows. */
+  tools?: string[];
   model: string;
   apiKey: string;
   timeoutMs: number;

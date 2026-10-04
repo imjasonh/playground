@@ -21,6 +21,11 @@
 // files that the agent changed, which don't fit in a termination message.
 // Run turns those files into a fix commit, which the checks framework pushes
 // when the check's policy and the branch's maxAutomatedCommits allow.
+//
+// A controller that isn't a check calls Runner.RunJob with a Job, which
+// names the repository, the commits to check out, the task, and the agent's
+// tools, and can have the agent resolve a merge's conflicts. Run builds a
+// Job from the check's branch.
 package agent
 
 import (
@@ -34,6 +39,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
@@ -124,51 +130,60 @@ type Task struct {
 // without outputs, and the outputs count the branch's runs for
 // maxAgentRuns. A check that calls Run needs Check.Remote.
 func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.Verdict, *Result) {
-	x := &run{r: r, in: in, task: task}
+	st := &JobState{}
 	prev := in.Previous
 	if prev != nil {
-		x.runs, _ = strconv.Atoi(prev.Outputs["runs"])
+		st.Runs, _ = strconv.Atoi(prev.Outputs["runs"])
 	}
+	x := &run{r: r, in: in, job: r.checkJob(in, task, ""), st: st}
 	if err := r.validate(); err != nil {
 		return x.running("can't start agents: %v", err), nil
 	}
 	head := in.Spec.Head
 	if prev != nil && prev.State == gitk8s.Running && prev.Commit == head && prev.Outputs["pod"] != "" {
-		x.attempt, _ = strconv.Atoi(prev.Outputs["attempt"])
-		x.attempt = max(x.attempt, 1)
-		x.base = prev.Outputs["base"]
-		// A Pod's name covers its spec, so a changed flag or policy starts
-		// a new run instead of changing a Pod that can't change.
-		if p := r.pod(in, task, x.base, x.attempt); p.Name == prev.Outputs["pod"] {
-			return x.follow(ctx, p)
+		st.Pod = prev.Outputs["pod"]
+		st.Attempt, _ = strconv.Atoi(prev.Outputs["attempt"])
+		x.job.Checkout.Base = prev.Outputs["base"]
+	}
+	// A Pod's name covers its spec, so a changed flag or policy starts a
+	// new run instead of changing a Pod that can't change.
+	if st.Pod == "" || r.jobPod(x.job, max(st.Attempt, 1)).Name != st.Pod {
+		*st = JobState{Runs: st.Runs}
+		if limit := in.Spec.Merge.MaxRuns(); st.Runs >= limit {
+			return x.running("not starting the agent: the branch used all %d agent runs that maxAgentRuns allows", limit), nil
 		}
+		base, err := in.MergeBase(ctx)
+		if err != nil {
+			kube.RequeueAfter(ctx, 30*time.Second)
+			return x.running("finding the merge base: %v", err), nil
+		}
+		if base == head {
+			v := checks.Pass("the branch has no changes against %s", in.Spec.Parent)
+			v.Outputs = x.outputs()
+			return v, nil
+		}
+		x.job.Checkout.Base = base
 	}
-	if limit := in.Spec.Merge.MaxRuns(); x.runs >= limit {
-		return x.running("not starting the agent: the branch used all %d agent runs that maxAgentRuns allows", limit), nil
+	s := r.runJob(ctx, x.job, st)
+	switch {
+	case !s.Done:
+		return x.running("%s", s.Message), nil
+	case s.Result == nil:
+		return x.done(ctx, checks.Fail("%s", s.Message)), nil
 	}
-	base, err := in.MergeBase(ctx)
-	if err != nil {
-		kube.RequeueAfter(ctx, 30*time.Second)
-		return x.running("finding the merge base: %v", err), nil
+	return x.verdict(ctx, s.Result)
+}
+
+// checkJob is the job for a check's run on the branch's change from base.
+func (r *Runner) checkJob(in *checks.Input, task Task, base string) *Job {
+	return &Job{
+		Name:        in.Meta.Name,
+		Namespace:   in.Meta.Namespace,
+		URL:         in.Repository.Spec.URL,
+		Credentials: in.Repository.Spec.SecretRef,
+		Checkout:    Checkout{Branch: in.Spec.Branch, Head: in.Spec.Head, Parent: in.Spec.Parent, Base: base},
+		Task:        task,
 	}
-	if base == head {
-		v := checks.Pass("the branch has no changes against %s", in.Spec.Parent)
-		v.Outputs = x.outputs()
-		return v, nil
-	}
-	x.base, x.attempt = base, 1
-	p := r.pod(in, task, base, 1)
-	if n := r.unfinishedPods(ctx, in.Meta.Namespace, p.Name); r.MaxPods > 0 && n >= r.MaxPods {
-		// Listing the Pods runs this again when one of them finishes.
-		kube.RequeueAfter(ctx, time.Minute)
-		return x.running("waiting to start a Pod: %d agent Pods are running, and -max-pods is %d", n, r.MaxPods), nil
-	}
-	if wait, ok := r.day.take(time.Now(), r.MaxRunsPerDay); !ok {
-		kube.RequeueAfter(ctx, wait)
-		return x.running("waiting to start the agent: %d agent runs started in the last 24 hours, the -max-runs-per-day limit", r.MaxRunsPerDay), nil
-	}
-	x.runs++
-	return x.follow(ctx, p)
 }
 
 // unfinishedPods counts the Runner's Pods in all namespaces that haven't
@@ -187,32 +202,30 @@ func (r *Runner) unfinishedPods(ctx context.Context, ns, name string) int {
 	return n
 }
 
-// run is one reconcile's view of one run.
+// run is one reconcile's view of one run. in is nil for a job that isn't a
+// check's.
 type run struct {
-	r       *Runner
-	in      *checks.Input
-	task    Task
-	runs    int
-	attempt int
-	base    string
-	pod     string
+	r   *Runner
+	in  *checks.Input
+	job *Job
+	st  *JobState
 }
 
 // outputs hold what the next reconcile needs to follow the run.
 func (x *run) outputs() map[string]string {
-	o := map[string]string{"runs": strconv.Itoa(x.runs)}
-	if x.pod != "" {
-		o["pod"] = x.pod
-		o["attempt"] = strconv.Itoa(x.attempt)
-		if x.base != "" {
-			o["base"] = x.base
+	o := map[string]string{"runs": strconv.Itoa(x.st.Runs)}
+	if x.st.Pod != "" {
+		o["pod"] = x.st.Pod
+		o["attempt"] = strconv.Itoa(x.st.Attempt)
+		if base := x.job.Checkout.Base; base != "" {
+			o["base"] = base
 		}
 	}
 	return o
 }
 
 func (x *run) running(format string, args ...any) checks.Verdict {
-	return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Outputs: x.outputs()}
+	return checks.Verdict{State: gitk8s.Running, Message: shorten(fmt.Sprintf(format, args...)), Outputs: x.outputs()}
 }
 
 // done finishes the run with v.
@@ -220,78 +233,29 @@ func (x *run) done(ctx context.Context, v checks.Verdict) checks.Verdict {
 	// The next reconcile finds the result final and declares no Pod, so
 	// kube deletes it.
 	kube.RequeueAfter(ctx, time.Second)
+	v.Message = shorten(v.Message)
 	if v.Outputs == nil {
 		v.Outputs = map[string]string{}
 	}
-	v.Outputs["runs"] = strconv.Itoa(x.runs)
-	v.Outputs["pod"] = x.pod
+	v.Outputs["runs"] = strconv.Itoa(x.st.Runs)
+	v.Outputs["pod"] = x.st.Pod
 	return v
 }
 
-func (x *run) follow(ctx context.Context, desired *Pod) (checks.Verdict, *Result) {
-	x.pod = desired.Name
-	pod := kube.Own(ctx, desired)
-	if pod == nil {
-		return x.running("started Pod %s", x.pod), nil
+// maxMessage leaves room in the checks framework's 1,024-byte messages for
+// what it appends about a fix.
+const maxMessage = 896
+
+// shorten cuts s to at most maxMessage bytes, on a rune boundary.
+func shorten(s string) string {
+	if len(s) <= maxMessage {
+		return s
 	}
-	st := &pod.Status
-	if t := state(st.InitContainerStatuses, "prepare").Terminated; t != nil && t.ExitCode != 0 {
-		msg := exitMessage(t)
-		if x.attempt < prepareAttempts {
-			x.attempt++
-			x.pod = x.r.pod(x.in, x.task, x.base, x.attempt).Name
-			kube.RequeueAfter(ctx, time.Second)
-			return x.running("preparing the source failed, so trying again: %s", msg), nil
-		}
-		return x.done(ctx, checks.Fail("couldn't prepare the source in %d attempts: %s", prepareAttempts, msg)), nil
+	i := maxMessage - len("...")
+	for i > 0 && !utf8.RuneStart(s[i]) {
+		i--
 	}
-	agent := state(st.InitContainerStatuses, "agent")
-	t := agent.Terminated
-	switch {
-	case t != nil && t.ExitCode != 0 && st.Reason == "DeadlineExceeded":
-		return x.done(ctx, checks.Fail("Pod %s ran out of time before the agent finished: %s", x.pod, st.Message)), nil
-	case t != nil && t.ExitCode != 0:
-		return x.done(ctx, checks.Fail("the agent failed in Pod %s: %s", x.pod, exitMessage(t))), nil
-	case t == nil && st.Phase == "Failed":
-		return x.done(ctx, checks.Fail("Pod %s stopped before the agent finished: %s", x.pod, cmp.Or(st.Message, st.Reason, "no reason given"))), nil
-	}
-	if t == nil {
-		if msg, ok := blocked(st); ok {
-			return x.running("Pod %s can't start: %s", x.pod, msg), nil
-		}
-		if agent.Running != nil {
-			return x.running("the agent is running in Pod %s", x.pod), nil
-		}
-		return x.running("Pod %s is %s", x.pod, cmp.Or(st.Phase, "Pending")), nil
-	}
-	digest := strings.TrimSpace(t.Message)
-	if !isDigest(digest) {
-		return x.done(ctx, checks.Fail("the agent in Pod %s finished without reporting its result's digest", x.pod)), nil
-	}
-	server := state(st.ContainerStatuses, "result")
-	if server.Terminated != nil || st.Phase == "Failed" || st.Phase == "Succeeded" {
-		why := cmp.Or(st.Message, st.Reason, "no reason given")
-		if t := server.Terminated; t != nil {
-			why = exitMessage(t)
-		}
-		return x.done(ctx, checks.Fail("Pod %s stopped before the check fetched the agent's result: %s", x.pod, why)), nil
-	}
-	if server.Running == nil || st.PodIP == "" {
-		return x.running("waiting for Pod %s to serve the agent's result", x.pod), nil
-	}
-	body, err := x.r.fetch(ctx, st.PodIP, pod.UID)
-	if errors.Is(err, errTooBig) {
-		return x.done(ctx, checks.Fail("the agent's result from Pod %s isn't valid: %v", x.pod, err)), nil
-	}
-	if err != nil {
-		kube.RequeueAfter(ctx, 5*time.Second)
-		return x.running("fetching the agent's result from Pod %s: %v", x.pod, err), nil
-	}
-	res, err := parseResult(body, digest, x.task.Edit)
-	if err != nil {
-		return x.done(ctx, checks.Fail("the agent's result from Pod %s isn't valid: %v", x.pod, err)), nil
-	}
-	return x.verdict(ctx, res)
+	return s[:i] + "..."
 }
 
 // verdict turns a valid result into the check's verdict.

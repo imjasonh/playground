@@ -392,6 +392,47 @@ outputs, which count the branch's runs. It also returns the agent's
 `Result`, with the files that the agent changed, so a check can build
 another kind of commit from them with `agent.ApplyFiles`.
 
+### Run agents from a controller
+
+A controller that isn't a check, such as one that resolves merge conflicts,
+runs an agent with `Runner.RunJob`. Its `Job` names the repository, the
+Secret with the repository's credentials, the commits to check out, the
+task, the agent's tools, and the runner's image if it isn't
+`-agent-image`. `Run` builds a `Job` from a check's branch, so both start
+the same Pods, within the same `-max-pods` and `-max-runs-per-day` limits.
+
+Call `RunJob` on each reconcile with the same `JobState`, which names the
+run's Pod and counts the runs that it started. Keep the state with the
+object that the job is for, such as in the object's status, so a
+controller that restarts follows the same run. `RunJob` declares the Pod
+with `kube.Own` and returns a `JobStatus`. Until the run is `Done`, the
+status's `Message` says how the run is going. Once it's `Done`, `Result`
+holds the agent's result, or is nil if the run failed, and `Message` says
+why. Then stop calling `RunJob` for the run, and kube deletes the Pod. A
+`Job` with other commits, another task, other tools, or another image
+starts a new run, up to the job's `MaxRuns`.
+
+For an agent that resolves a merge, set `Checkout.Merge` to the branch to
+merge into the head, and `Checkout.Base` to their merge base. The `prepare`
+container then writes the files of the merge that `git merge-tree
+--write-tree` makes with `merge.conflictStyle=diff3`, instead of the
+head's. Each conflict in a file holds the head's lines, the merge base's
+lines, and the merged branch's lines between conflict markers. A file that
+one side deleted and the other changed holds the changed version. The
+prompt lists the paths that conflict and the merged branch's commits. With
+`Task.Edit`, the result's `Files` change the merge's files, and the
+controller builds the merge commit from them. If either branch moved before
+the Pod fetched it, the agent doesn't run, and a `Job` with the new commits
+starts a new run.
+
+Agents get no shell. The tools that an agent can have are `read`, `grep`,
+`glob`, and `ls`, plus `edit` and `delete` when the task edits files, and
+none of them runs a command. A shell would run the branch's code, such as
+its build scripts and tests, in the agent's container, which holds the
+Cursor API key and can reach Cursor's API. An agent that builds or tests
+code needs another sandbox, without the key. So an agent edits files, and
+the checks verify what the controller pushes, like any other head.
+
 ## Merge gates
 
 `when` is a [CEL](https://cel.dev) expression. It has one variable,
