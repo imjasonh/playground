@@ -15,7 +15,7 @@ import (
 func newProbe(namespace, name, url string) *Probe {
 	p := &Probe{Object: kube.Meta(name, nil)}
 	p.Namespace = namespace
-	p.Spec.URL, p.Spec.Audience = url, "api"
+	p.Spec.URL = url
 	return p
 }
 
@@ -36,8 +36,8 @@ func TestReconcileSendsAToken(t *testing.T) {
 	if auth != "Bearer fake-token-1" {
 		t.Errorf("Authorization = %q", auth)
 	}
-	if review, _ := kube.ReviewToken(ctx, "fake-token-1", "api"); !review.Authenticated {
-		t.Errorf("the token isn't for the probe's audience: %+v", review)
+	if review, _ := kube.ReviewToken(ctx, "fake-token-1", "probe"); !review.Authenticated {
+		t.Errorf("the token isn't for the audience probe: %+v", review)
 	}
 	if p.Status.Code != http.StatusOK || p.Status.Message != "ok" || p.Status.CheckedAt.IsZero() {
 		t.Errorf("status = %+v", p.Status)

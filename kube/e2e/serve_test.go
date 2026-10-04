@@ -153,7 +153,7 @@ func TestGenerateProbe(t *testing.T) {
 		return c.Create(t.Context(), client.Path("examples.kube.imjasonh.github.io/v1", "probes", ns, ""), map[string]any{
 			"apiVersion": "examples.kube.imjasonh.github.io/v1", "kind": "Probe",
 			"metadata": map[string]any{"name": "self"},
-			"spec":     map[string]any{"url": "http://" + addrs[0] + "/whoami", "audience": "probe"},
+			"spec":     map[string]any{"url": "http://" + addrs[0] + "/whoami"},
 		}, nil)
 	})
 	var p struct {

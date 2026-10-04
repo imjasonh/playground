@@ -250,7 +250,6 @@ metadata:
   namespace: probe-e2e
 spec:
   url: http://probe.probe.svc/whoami
-  audience: probe
 EOF
 }
 eventually 60 create_probe

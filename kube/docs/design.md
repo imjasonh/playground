@@ -688,9 +688,14 @@ the program's namespace when it refers to `RequestToken`, with the program's own
 service account as the only resource name. RBAC can limit a `create` to one name
 here because the name is in the request's path. A `RequestToken` that took any
 account's name would need the rule for every account in the namespace, which
-would let the program act as any of them. Projected token volumes would need no
-rule, but the Deployment would have to list each audience when `generate` writes
-it, and the probe example reads its audiences from its objects.
+would let the program act as any of them.
+
+A program never requests a token for an audience that a less trusted user
+chooses along with the destination. Whoever chooses both can have the program
+send them a token for any server that trusts the cluster's tokens, including the
+API server, where the token carries the program's permissions. So a Probe in the
+probe example names only a URL, and every check sends a token for the audience
+`probe`, which the program sets.
 
 ### Triggered reconciles
 

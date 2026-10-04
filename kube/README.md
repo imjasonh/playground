@@ -492,6 +492,12 @@ ones, so use the returned expiry. Each call makes a new token, so reuse one
 until shortly before it expires. Call `RequestToken` in a reconcile or in a
 `kube.Serve` handler.
 
+Choose the audience in the program. If an object's author chose both the
+audience and where the program sends the token, they could have the program
+send them a token for the API server, with the program's permissions. The
+probe example sends every check a token for the audience `probe`, and a
+Probe chooses only the URL.
+
 ### Trigger a reconcile
 
 When a handler learns that something outside Kubernetes changed, it can
