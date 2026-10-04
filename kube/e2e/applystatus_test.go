@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -354,4 +355,136 @@ func TestApplyWithoutStatusPermission(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+// pollVoter applies the size of each Widget as the widget's vote in the Poll
+// named p, and abstains for a widget of size 0.
+type pollVoter struct{}
+
+func (pollVoter) Reconcile(ctx context.Context, w *Widget) error {
+	if kube.Get[pollVotes](ctx, w.Namespace, "p") == nil {
+		return nil
+	}
+	p := &pollVotes{Object: kube.Meta("p", nil)}
+	if w.Spec.Size != 0 {
+		p.Status.Votes = map[string]int{w.Name: w.Spec.Size}
+	}
+	kube.Apply(ctx, p)
+	return nil
+}
+
+func TestApplyGivesUpStatusAfterRestart(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	const rbac = "rbac.authorization.k8s.io/v1"
+	role := ns + "-poll-voter"
+	poll := client.Path(group+"/v1", "polls", ns, "p")
+	remove(t, c, client.Path(group+"/v1", "widgets", ns, "w"), poll,
+		client.Path(rbac, "clusterrolebindings", "", role), client.Path(rbac, "clusterroles", "", role))
+	// grant lets the service account poll-voter manage CRDs and the given
+	// resources in the e2e group.
+	grant := func(resources ...string) {
+		t.Helper()
+		if err := c.Apply(t.Context(), client.Path(rbac, "clusterroles", "", role), "e2e", true, map[string]any{
+			"apiVersion": rbac, "kind": "ClusterRole", "metadata": map[string]any{"name": role}, "rules": []any{
+				map[string]any{"apiGroups": []string{"apiextensions.k8s.io"}, "resources": []string{"*"}, "verbs": []string{"*"}},
+				map[string]any{"apiGroups": []string{group}, "resources": resources, "verbs": []string{"*"}},
+			},
+		}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	grant("widgets", "widgets/status", "polls")
+	for _, o := range []struct {
+		path string
+		obj  map[string]any
+	}{
+		{client.Path("v1", "serviceaccounts", ns, ""), map[string]any{"apiVersion": "v1", "kind": "ServiceAccount", "metadata": map[string]any{"name": "poll-voter"}}},
+		{client.Path(rbac, "clusterrolebindings", "", ""), map[string]any{"apiVersion": rbac, "kind": "ClusterRoleBinding", "metadata": map[string]any{"name": role},
+			"roleRef":  map[string]any{"apiGroup": "rbac.authorization.k8s.io", "kind": "ClusterRole", "name": role},
+			"subjects": []any{map[string]any{"kind": "ServiceAccount", "name": "poll-voter", "namespace": ns}},
+		}},
+	} {
+		if err := c.Create(t.Context(), o.path, o.obj, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	kubeconfig := serviceAccountKubeconfig(t, c, ns, "poll-voter")
+
+	type managedFields struct {
+		Manager     string `json:"manager"`
+		Subresource string `json:"subresource"`
+	}
+	type pollState struct {
+		Metadata struct {
+			ManagedFields []managedFields `json:"managedFields"`
+		} `json:"metadata"`
+		Status struct {
+			Votes map[string]int `json:"votes"`
+		} `json:"status"`
+	}
+	manager := "poll-voter/" + ns + "/w"
+	// state checks the poll's votes, whether the voter owns status fields,
+	// and the widget's Synced condition.
+	state := func(votes map[string]int, owns bool, synced, message string) func() error {
+		return func() error {
+			var p pollState
+			if err := e2e.Get(t.Context(), c, poll, &p); err != nil {
+				return err
+			}
+			if !maps.Equal(p.Status.Votes, votes) {
+				return fmt.Errorf("votes = %v, want %v", p.Status.Votes, votes)
+			}
+			if got := slices.ContainsFunc(p.Metadata.ManagedFields, func(e managedFields) bool {
+				return e.Manager == manager && e.Subresource == "status"
+			}); got != owns {
+				return fmt.Errorf("%s owns status fields: %v, want %v", manager, got, owns)
+			}
+			w, err := widget(t, c, ns, "w")
+			if err != nil {
+				return err
+			}
+			if s := kube.FindCondition(w.Status.Conditions, "Synced"); s == nil || s.Status != synced || !strings.Contains(s.Message, message) {
+				return fmt.Errorf("Synced = %+v", s)
+			}
+			return nil
+		}
+	}
+
+	t.Log("A voter with every permission votes.")
+	stop := release(t, &kube.Manager{Name: "poll-voter-e2e", Namespace: ns}, kube.For[Poll](&tally{}, kube.Named("poll-tally")), kube.For[Widget](pollVoter{}, kube.Named("poll-voter")))
+	e2e.Eventually(t, 30*time.Second, func() error {
+		return c.Create(t.Context(), client.Path(group+"/v1", "polls", ns, ""), map[string]any{
+			"apiVersion": group + "/v1", "kind": "Poll", "metadata": map[string]any{"name": "p"}, "spec": map[string]any{"question": "Tabs?"},
+		}, nil)
+	})
+	createWidget(t, c, ns, "w", 3)
+	e2e.Eventually(t, 10*time.Second, state(map[string]int{"w": 3}, true, kube.True, ""))
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("Restarted without permission to patch the status, the voter fails to withdraw its vote.")
+	if err := c.Patch(t.Context(), client.Path(group+"/v1", "widgets", ns, "w"), client.MergePatch, nil, []byte(`{"spec":{"size":0}}`), nil); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := client.LoadKubeconfig([]string{kubeconfig}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sa, err := client.New(cfg, "e2e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The API server's authorizer sees a new binding a moment after it's
+	// created.
+	e2e.Eventually(t, 30*time.Second, func() error {
+		return sa.Get(t.Context(), poll, &map[string]any{})
+	})
+	e2e.Run(t, &kube.Manager{Name: "poll-voter-e2e", Namespace: ns, Kubeconfig: kubeconfig}, kube.For[Widget](pollVoter{}, kube.Named("poll-voter")))
+	e2e.Eventually(t, 10*time.Second, state(map[string]int{"w": 3}, true, kube.False, `cannot patch resource "polls/status"`))
+
+	t.Log("Once allowed to patch the status, the voter withdraws its vote and owns no status fields.")
+	grant("widgets", "widgets/status", "polls", "polls/status")
+	e2e.Eventually(t, 30*time.Second, state(nil, false, kube.True, ""))
 }

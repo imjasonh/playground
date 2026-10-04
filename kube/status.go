@@ -89,9 +89,12 @@ func (c *controller[T, P]) writeStatus(ctx context.Context, cached, obj *T, reco
 }
 
 // applyStatus applies the status of an Apply intent's object to its status
-// subresource, with the field manager that applied the rest of the object,
-// and records the request in applied.
-func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, manager string, applied map[appliedKey]uint64) error {
+// subresource, with the field manager that applied the rest of the object.
+// owns reports whether the response to the apply of the rest of the object
+// showed that the manager owns status fields, and is nil when that apply was
+// skipped. applyStatus records a non-empty status in applied, so a record
+// shows that the manager owns status fields.
+func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, manager string, owns *bool, applied map[appliedKey]uint64) error {
 	if !in.status {
 		return nil
 	}
@@ -103,9 +106,17 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 	ak := appliedKey{ti: in.ti, key: m.Key(), status: true}
 	h := hashOf(body, manager)
 	last, ok := c.lastApplied(key, ak)
-	// After a request with an empty status, the manager owns no status
-	// fields, so another one has nothing to remove, whatever the cache holds.
-	skip := ok && last == h && (empty || in.observed != nil && matches(in.observed, body))
+	skip := ok && last == h && in.observed != nil && matches(in.observed, body)
+	if empty {
+		// An empty status only gives up status fields that the manager owns.
+		// If the rest of the object needed no apply, the last reconcile
+		// applied it too, and recorded a status only if the manager then
+		// owned status fields.
+		skip = !ok
+		if owns != nil {
+			skip = !*owns
+		}
+	}
 	if !skip {
 		served, err := c.m.client.Serves(ctx, in.res.apiVersion, in.res.plural+"/status")
 		if err != nil {
@@ -117,7 +128,9 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 		skip = !served
 	}
 	record := func(result string) {
-		applied[ak] = h
+		if !empty {
+			applied[ak] = h
+		}
 		c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", result)
 	}
 	if skip {
@@ -125,17 +138,9 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 		return nil
 	}
 	if err := c.m.client.Apply(ctx, in.res.path(m.Namespace, m.Name, "status"), manager, true, body, nil); err != nil {
-		switch {
-		// A manager that may not patch the status can't have applied the
-		// status fields that an empty status gives up, unless it lost the
-		// permission after it did.
-		case empty && client.IsForbidden(err):
-			record("skipped")
-			c.log.Debug("skipped forbidden empty status", "key", key.String(), "object", in.ti.String()+" "+m.Key().String(), "err", err)
-			return nil
 		// The kind may have stopped serving a status subresource since its
 		// discovery results were cached.
-		case client.IsNotFound(err):
+		if client.IsNotFound(err) {
 			c.m.client.Forget(in.res.apiVersion)
 		}
 		return fmt.Errorf("applying status of %v %s: %w", in.ti, m.Key(), err)
@@ -143,6 +148,30 @@ func (c *controller[T, P]) applyStatus(ctx context.Context, key Key, in intent, 
 	record("applied")
 	c.log.Debug("applied status", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
 	return nil
+}
+
+// fieldManagers is the part of an object that lists the managers of its
+// fields.
+type fieldManagers struct {
+	Metadata struct {
+		ManagedFields []struct {
+			Manager     string `json:"manager"`
+			Operation   string `json:"operation"`
+			Subresource string `json:"subresource"`
+		} `json:"managedFields"`
+	} `json:"metadata"`
+}
+
+// ownsStatus reports whether manager owns fields that it applied to the
+// status subresource. The API server removes a manager's entry once the
+// manager owns no fields.
+func (f *fieldManagers) ownsStatus(manager string) bool {
+	for _, e := range f.Metadata.ManagedFields {
+		if e.Manager == manager && e.Operation == "Apply" && e.Subresource == "status" {
+			return true
+		}
+	}
+	return false
 }
 
 // statusBody builds the server-side apply document for the status of an

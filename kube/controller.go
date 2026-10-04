@@ -632,19 +632,25 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 				if last, ok := c.lastApplied(key, ak); in.kind == intentOwn || ok && last == h {
 					applied[ak] = h
 					c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "skipped")
-					if err := c.applyStatus(ctx, key, in, manager, applied); err != nil {
+					if err := c.applyStatus(ctx, key, in, manager, nil, applied); err != nil {
 						return err
 					}
 					continue
 				}
 			}
-			if err := c.m.client.Apply(ctx, in.res.path(m.Namespace, m.Name), manager, true, body, nil); err != nil {
+			var resp fieldManagers
+			var out any
+			if in.status {
+				out = &resp
+			}
+			if err := c.m.client.Apply(ctx, in.res.path(m.Namespace, m.Name), manager, true, body, out); err != nil {
 				return fmt.Errorf("applying %v %s: %w", in.ti, m.Key(), err)
 			}
 			applied[ak] = h
 			c.m.metrics.inc("kube_apply_total", "controller", c.name, "result", "applied")
 			c.log.Debug("applied", "key", key.String(), "object", in.ti.String()+" "+m.Key().String())
-			if err := c.applyStatus(ctx, key, in, manager, applied); err != nil {
+			owns := resp.ownsStatus(manager)
+			if err := c.applyStatus(ctx, key, in, manager, &owns, applied); err != nil {
 				return err
 			}
 		case intentDelete:

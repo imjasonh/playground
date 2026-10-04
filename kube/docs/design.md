@@ -494,20 +494,29 @@ It sends the status after the first request succeeds or is skipped, and not
 at all when the first request fails. When the status request fails, the
 reconcile fails and is retried, and the first request's fields stay. A status
 request is skipped by the same rule as the first request, and counts in
-`kube_apply_total` the same way. An empty status goes without a `status`
-field, so the manager gives up every status field that it owns, and the API
-server removes each one that no other manager owns. The manager then owns no
-status fields, so after this process sends an empty status, it skips the next
-one without checking the cache.
+`kube_apply_total` the same way.
 
-The framework sends the status request even when the program sets only a
-label on a type with a status, such as `k8s.Deployment`, so `generate` grants
-`patch` on the status subresource. With hand-written rules that leave that
-out, every such reconcile would fail with `403 Forbidden`, though the program
-never sets a status. So when the API server forbids an empty status, the
-framework treats the request as sent and skips the next one. A manager that
-may not patch the status can't have applied status fields, unless it lost the
-permission after it did. Then those fields stay.
+An empty status goes without a `status` field, so the manager gives up every
+status field that it owns, and the API server removes each one that no other
+manager owns. So an empty status needs a request only while the manager owns
+status fields. The API server keeps a `managedFields` entry for a manager and
+subresource only while the manager owns fields there. When the framework sends
+the first request, it sends an empty status only if the response has an entry
+for the manager and the status subresource. The framework skips the first
+request only when this process applied the same document before, and it records
+a status that isn't empty along with each document. When it skips the first
+request, it sends an empty status only if it recorded a status with that
+document. A program that never sets a status sends no status requests, and one
+that clears a status sends one, even after a restart.
+
+An earlier version of a program can leave status fields to give up, even when
+the current one sets only a label on a type with a status, such as
+`k8s.Deployment`. So `generate` grants `patch` on the status subresource for
+each type with a status that a program applies. With hand-written rules that
+leave that out, the program works until it has status fields to give up.
+Then the reconcile fails with `403 Forbidden`, and the fields stay until the
+controller gets the permission. Skipping a forbidden empty status instead
+would report success while the fields stay.
 
 A request to a subresource that the API server doesn't serve fails with the
 same `404 Not Found` as a request for an object that was deleted, so before it
@@ -525,10 +534,10 @@ list the subresource, so it finds one that a CRD gains. When a status request
 fails with `404`, the framework drops the cached results for the kind's API
 version, so the next status request finds out whether the kind lost the
 subresource. The client doesn't remember a missing subresource, because that
-would hide one that a CRD gains later. So each status that the framework
-checks for such a kind costs a discovery request: once for an empty status,
-which the framework then skips, and once per retry for any other, which
-fails the reconcile.
+would hide one that a CRD gains later. So for such a kind, a status that
+isn't empty costs a discovery request on each retry, and an empty status
+costs one only when the manager owns status fields, as after a CRD drops its
+status subresource.
 
 The framework writes the reconciled object's status with the controller's
 name as the field manager. If `Apply` wrote it too, under the name derived
@@ -858,7 +867,9 @@ framework's tests check that:
   subresource fails the reconcile after the rest of the object is applied. A
   reconcile that applies one object through two types fails and writes
   nothing. A controller that may not patch a Deployment's status still
-  applies a label to it.
+  applies a label to it. Restarted without permission to patch a Poll's
+  status, a controller fails to withdraw its vote, and withdraws it once it
+  has the permission.
 - Panics and permanent errors are reported and retried correctly.
 - Leader election fails over.
 - Three replicas with 32 shards split the work, hand shards over when one
@@ -1015,17 +1026,14 @@ offers:
   run the reconcile again.
 - `kube.WatchSelector` and `Finalize` don't combine. An object whose labels
   stop matching looks deleted, so its finalizer is never removed.
-- After a restart, each object declared with `Apply` is applied once, with
-  its status if its type has one, because the framework doesn't annotate
+- After a restart, each object declared with `Apply` is applied once, and so
+  is a status that isn't empty, because the framework doesn't annotate
   objects it doesn't own. A status that leaves out other managers' fields is
   also written once, because the record of the last status write is in
   memory.
 - Fields that `Apply` wrote, including status fields, stay on an object when
   a reconcile stops declaring it, and when the reconciled object is deleted.
   Giving them up would take a durable record of what each reconcile applied.
-- Status fields that `Apply` wrote stay after the controller loses permission
-  to patch the status subresource, because the framework skips an empty
-  status that the API server forbids.
 - `Apply` can't write the status of a custom resource whose definition keeps
   the status with the other fields, without a status subresource.
 - The CRD checks compare field names, types, and required fields, not

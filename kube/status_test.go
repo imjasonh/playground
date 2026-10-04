@@ -157,6 +157,26 @@ func TestStatusBody(t *testing.T) {
 	}
 }
 
+func TestOwnsStatus(t *testing.T) {
+	for _, tc := range []struct {
+		entry string
+		want  bool
+	}{
+		{`{"manager":"checks/shop/w1","operation":"Apply","subresource":"status"}`, true},
+		{`{"manager":"checks/shop/w1","operation":"Apply"}`, false},
+		{`{"manager":"checks/shop/w1","operation":"Update","subresource":"status"}`, false},
+		{`{"manager":"checks/shop/w2","operation":"Apply","subresource":"status"}`, false},
+	} {
+		var f fieldManagers
+		if err := json.Unmarshal([]byte(`{"metadata":{"managedFields":[`+tc.entry+`]}}`), &f); err != nil {
+			t.Fatal(err)
+		}
+		if got := f.ownsStatus("checks/shop/w1"); got != tc.want {
+			t.Errorf("ownsStatus with %s = %v, want %v", tc.entry, got, tc.want)
+		}
+	}
+}
+
 // statusAPI serves discovery for Deployments, which have a status
 // subresource, and ConfigMaps, which don't, and records patches. With forbid
 // set, it refuses patches, as RBAC does. With dropped set, Deployments have
@@ -246,15 +266,18 @@ func TestApplyStatus(t *testing.T) {
 	parent := Key{Namespace: "shop", Name: "w1"}
 	const manager = "checks/shop/w1"
 	// reconcile applies the status of one Apply intent, the way execute does.
-	reconcile := func(in intent) error {
+	// owns is what the response to the apply of the rest of the object
+	// showed, or nil if execute skipped that apply.
+	reconcile := func(in intent, owns *bool) error {
 		t.Helper()
 		applied := map[appliedKey]uint64{}
-		if err := c.applyStatus(t.Context(), parent, in, manager, applied); err != nil {
+		if err := c.applyStatus(t.Context(), parent, in, manager, owns, applied); err != nil {
 			return err
 		}
 		c.setApplied(parent, applied)
 		return nil
 	}
+	owned, unowned := true, false
 	dti, _ := typeInfoFor[deploymentStatus, *deploymentStatus]()
 	deployments := resolved{apiVersion: "apps/v1", plural: "deployments", namespaced: true}
 	desired := &deploymentStatus{Object: Meta("web", nil)}
@@ -269,8 +292,15 @@ func TestApplyStatus(t *testing.T) {
 			t.Fatalf("sent %d status applies, want %d", got, want)
 		}
 	}
+	applies := func(wantApplied, wantSkipped float64) {
+		t.Helper()
+		counts := m.metrics.counters["kube_apply_total"]
+		if applied, skipped := counts[`controller="checks",result="applied"`], counts[`controller="checks",result="skipped"`]; applied != wantApplied || skipped != wantSkipped {
+			t.Errorf("kube_apply_total: applied = %v, skipped = %v, want %v and %v", applied, skipped, wantApplied, wantSkipped)
+		}
+	}
 
-	if err := reconcile(in); err != nil {
+	if err := reconcile(in, &unowned); err != nil {
 		t.Fatal(err)
 	}
 	sends(1)
@@ -284,89 +314,98 @@ func TestApplyStatus(t *testing.T) {
 
 	t.Log("Once the cache has the status, the same status needs no request.")
 	observed.Status.Conditions = desired.Status.Conditions
-	if err := reconcile(in); err != nil {
+	if err := reconcile(in, nil); err != nil {
 		t.Fatal(err)
 	}
 	sends(1)
 
 	t.Log("A status that someone else changed is applied again.")
 	observed.Status.Conditions = nil
-	if err := reconcile(in); err != nil {
+	if err := reconcile(in, nil); err != nil {
 		t.Fatal(err)
 	}
 	sends(2)
 
-	t.Log("An empty status gives up the manager's status fields, once.")
+	t.Log("After the manager applied a status, an empty status fails while the server forbids it.")
+	api.setForbid(true)
 	desired.Status.Conditions = nil
 	observed.Status.Conditions = checked()
+	if err := reconcile(in, nil); !client.IsForbidden(err) {
+		t.Errorf("err = %v, want a 403", err)
+	}
+	sends(3)
+
+	t.Log("Once the server allows it, the empty status gives up the manager's status fields, once.")
+	api.setForbid(false)
 	for range 2 {
-		if err := reconcile(in); err != nil {
+		if err := reconcile(in, nil); err != nil {
 			t.Fatal(err)
 		}
 	}
-	sends(3)
-	if _, ok := api.sent()[2].body["status"]; ok {
-		t.Errorf("sent %v, want no status", api.sent()[2].body)
-	}
-	applies := func(wantApplied, wantSkipped float64) {
-		t.Helper()
-		counts := m.metrics.counters["kube_apply_total"]
-		if applied, skipped := counts[`controller="checks",result="applied"`], counts[`controller="checks",result="skipped"`]; applied != wantApplied || skipped != wantSkipped {
-			t.Errorf("kube_apply_total: applied = %v, skipped = %v, want %v and %v", applied, skipped, wantApplied, wantSkipped)
-		}
+	sends(4)
+	if _, ok := api.sent()[3].body["status"]; ok {
+		t.Errorf("sent %v, want no status", api.sent()[3].body)
 	}
 	applies(3, 2)
 
-	t.Log("A type whose resource has no status subresource skips an empty status and fails for any other.")
+	t.Log("After a restart, the response to the rest of the object shows whether an empty status has fields to give up.")
+	c.setApplied(parent, nil)
+	before := api.discoveries()
+	if err := reconcile(in, &unowned); err != nil {
+		t.Fatal(err)
+	}
+	sends(4)
+	if got := api.discoveries() - before; got != 0 {
+		t.Errorf("an empty status with no fields to give up made %d discovery requests", got)
+	}
+	api.setForbid(true)
+	if err := reconcile(in, &owned); !client.IsForbidden(err) {
+		t.Errorf("err = %v, want a 403", err)
+	}
+	sends(5)
+	api.setForbid(false)
+	applies(3, 3)
+
+	t.Log("A type whose resource has no status subresource fails for any status but an empty one.")
 	nti, _ := typeInfoFor[noteMap, *noteMap]()
 	configMaps := resolved{apiVersion: "v1", plural: "configmaps", namespaced: true}
 	note := &noteMap{Object: Meta("settings", nil)}
 	note.Namespace = "shop"
 	in = intent{kind: intentApply, ti: nti, res: configMaps, obj: note, status: true}
-	if err := reconcile(in); err != nil {
-		t.Fatal(err)
-	}
-	before := api.discoveries()
-	if err := reconcile(in); err != nil {
-		t.Fatal(err)
-	}
-	if got := api.discoveries() - before; got != 0 {
-		t.Errorf("an empty status that was already skipped made %d discovery requests", got)
-	}
-	applies(3, 4)
-	note.Status.Note = "hello"
-	if err := reconcile(in); err == nil || !strings.Contains(err.Error(), "doesn't serve configmaps/status") {
-		t.Errorf("err = %v, want an error that names the missing subresource", err)
-	}
-	sends(3)
-
-	t.Log("An empty status that the server forbids is skipped, once, and any other status fails.")
-	api.setForbid(true)
-	other := &deploymentStatus{Object: Meta("api", nil)}
-	other.Namespace = "shop"
-	in = intent{kind: intentApply, ti: dti, res: deployments, obj: other, status: true}
-	for range 2 {
-		if err := reconcile(in); err != nil {
+	before = api.discoveries()
+	for _, owns := range []*bool{&unowned, nil} {
+		if err := reconcile(in, owns); err != nil {
 			t.Fatal(err)
 		}
 	}
-	sends(4)
+	if got := api.discoveries() - before; got != 0 {
+		t.Errorf("empty statuses with no fields to give up made %d discovery requests", got)
+	}
+	if err := reconcile(in, &owned); err != nil {
+		t.Fatal(err)
+	}
+	if got := api.discoveries() - before; got != 1 {
+		t.Errorf("an empty status with fields to give up made %d discovery requests, want 1", got)
+	}
 	applies(3, 6)
-	other.Status.Conditions = checked()
-	if err := reconcile(in); !client.IsForbidden(err) {
-		t.Errorf("err = %v, want a 403", err)
+	note.Status.Note = "hello"
+	if err := reconcile(in, &unowned); err == nil || !strings.Contains(err.Error(), "doesn't serve configmaps/status") {
+		t.Errorf("err = %v, want an error that names the missing subresource", err)
 	}
 	sends(5)
 
 	t.Log("After a status request fails with 404, the next one checks discovery again.")
-	api.setForbid(false)
 	api.dropStatus()
+	other := &deploymentStatus{Object: Meta("api", nil)}
+	other.Namespace = "shop"
+	other.Status.Conditions = checked()
+	in = intent{kind: intentApply, ti: dti, res: deployments, obj: other, status: true}
 	before = api.discoveries()
-	if err := reconcile(in); !client.IsNotFound(err) {
+	if err := reconcile(in, &unowned); !client.IsNotFound(err) {
 		t.Errorf("err = %v, want a 404", err)
 	}
 	sends(6)
-	if err := reconcile(in); err == nil || !strings.Contains(err.Error(), "doesn't serve deployments/status") {
+	if err := reconcile(in, nil); err == nil || !strings.Contains(err.Error(), "doesn't serve deployments/status") {
 		t.Errorf("err = %v, want an error that names the missing subresource", err)
 	}
 	sends(6)
@@ -376,7 +415,7 @@ func TestApplyStatus(t *testing.T) {
 
 	t.Log("An intent without a status sends nothing.")
 	in.status = false
-	if err := reconcile(in); err != nil {
+	if err := reconcile(in, nil); err != nil {
 		t.Fatal(err)
 	}
 	sends(6)

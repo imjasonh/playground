@@ -153,19 +153,21 @@ object rather than editing one that `Get` returned.
 
 When a later reconcile stops applying a status field, the controller gives it
 up, and the API server removes it unless another manager also set it. So an
-empty status gives up every status field that earlier reconciles applied. If
-the cluster doesn't serve a status subresource for the object, the framework
-skips an empty status and fails the reconcile for any other.
+empty status gives up every status field that earlier reconciles applied,
+even in an earlier run of the program. When there are none, the framework
+sends no status request. If the cluster doesn't serve a status subresource
+for the object, a status that isn't empty fails the reconcile.
 
-Applying a status, even an empty one, sends a request that needs permission
-to patch the object's status subresource, and `generate` grants it for each
-type with a status that the program applies. In `kube/k8s`, `Deployment`,
-`Job`, `Namespace`, `Node`, `Pod`, and `Service` have a status. To leave
-status alone and need no extra permission, apply a type that declares no
-status, as [`examples/reloader`](examples/reloader/main.go) does. If the API
-server forbids an empty status, the framework skips it, so a program that
-never sets a status works without the permission. But if the controller loses
-the permission after it applied status fields, those fields stay.
+Applying a status needs permission to patch the object's status subresource,
+and `generate` grants it for each type with a status that the program
+applies. In `kube/k8s`, `Deployment`, `Job`, `Namespace`, `Node`, `Pod`, and
+`Service` have a status. To leave status alone and keep `generate` from
+granting the permission, apply a type that declares no status, as
+[`examples/reloader`](examples/reloader/main.go) does. The framework sends
+no request for a status that no version of the program has set, so that
+status needs no permission. Without the permission, a reconcile that gives up
+status fields fails, and the fields stay until the controller can patch the
+status.
 
 A reconcile can pass each object to `Own` or `Apply` only once, whatever type
 it uses, and a second call fails the reconcile. To apply fields and a status
@@ -559,7 +561,8 @@ way, its service account needs these permissions:
 - `patch` on the reconciled type and its `status` subresource, for finalizers
   and status.
 - `patch` on the `status` subresource of every type with a status that it
-  declares with `Apply`, unless it never sets that status.
+  declares with `Apply`, unless no version of the program has set that
+  status.
 - `get`, `create`, and `patch` on `customresourcedefinitions`, and `patch` on
   `customresourcedefinitions/status`, for its own types. To check and migrate
   objects when a type changes, it also needs `list` on its own types in every
