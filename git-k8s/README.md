@@ -232,8 +232,9 @@ paths.
 When the policy lets the check push, the agent can also edit the files.
 The check commits what changed on the head, and pushes it like any other
 fix, with a `Git-K8s-Fixer: review` trailer and within
-`maxAutomatedCommits`. A fix leaves `.cursorignore` files as they are.
-Without `mayPush`, the agent's files are read-only.
+`maxAutomatedCommits`. A fix leaves `.cursorignore` files as they are. If
+a path in the head isn't valid UTF-8, the run fails before the agent
+starts. Without `mayPush`, the agent's files are read-only.
 
 The check's outputs hold the agent's `summary`, the `model`, the run's
 `inputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`,
