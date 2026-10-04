@@ -22,6 +22,8 @@ type LogEntry struct {
 	Tree    string
 	Parents []string
 	// Author has "" for a name, an email, or a date that git can't read.
+	// Some dates that git reads, such as one with a five-digit time zone,
+	// can't go into a new commit unchanged.
 	Author Signature
 	// Committer is the committer's name and email, and Time is the
 	// committer time, in seconds since the Unix epoch, or 0 when git can't

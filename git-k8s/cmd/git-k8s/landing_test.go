@@ -466,10 +466,12 @@ func TestRebaseNeedsRebase(t *testing.T) {
 }
 
 // Tools that write commit objects themselves can make an author that git
-// doesn't let a new commit have. A squash or rebase landing that would copy
+// doesn't let a new commit have, or changes when a new commit takes it,
+// such as a time zone of +9999. A squash or rebase landing that would copy
 // such an author says which commit has it, instead of failing on every
-// reconcile. A committer time that git can't read doesn't stop a landing,
-// because the new commits have the merge controller as their committer.
+// reconcile or landing a different date. A committer time that git can't
+// read doesn't stop a landing, because the new commits have the merge
+// controller as their committer.
 func TestAuthorsThatGitRefuses(t *testing.T) {
 	for name, tt := range map[string]struct {
 		author, committer string
@@ -479,6 +481,18 @@ func TestAuthorsThatGitRefuses(t *testing.T) {
 		"NUL in the author": {author: "Ana\x00Lima <ana@example.com> 1700000000 -0800", problem: "author has no name"},
 		"only punctuation":  {author: ",;: <ana@example.com> 1700000000 -0800", problem: `author has no name that git accepts, only ",;:"`},
 		"no date":           {author: "Ana Lima <ana@example.com>", problem: "author has no date that git can read"},
+		"time zone with five digits": {
+			author:  "Ana Lima <ana@example.com> 1700000000 +12345",
+			problem: "author has no date that git can read",
+		},
+		"time zone with five digits before 1973": {
+			author:  "Ana Lima <ana@example.com> 99999999 +12345",
+			problem: "author has no date that git can read",
+		},
+		"time zone with 99 minutes": {
+			author:  "Ana Lima <ana@example.com> 1700000000 +9999",
+			problem: "author has no date that git can read",
+		},
 		"committer without a date": {
 			author:    "Ana Lima <ana@example.com> 1700000000 -0800",
 			committer: "Test Author <author@example.com>",

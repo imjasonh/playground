@@ -263,14 +263,15 @@ A rebase can't copy every branch. It sets the branch's state to
 - A merge commit in the branch makes changes of its own, so the copies don't
   end up with the files at the branch's head.
 - A commit has no parent, such as the first commit of an unrelated history.
-- A commit to copy has an author that git doesn't let a new commit have,
-  because it has no name that git accepts or no date that git can read.
-  Only tools that write commit objects themselves make such commits.
+- A commit to copy has an author that git doesn't let a new commit have
+  unchanged, because it has no name that git accepts or no date that git can
+  read, such as a date whose time zone is `+9999`. Only tools that write
+  commit objects themselves make such commits.
 
 To land such a branch, rebase it yourself, or set `landing: Squash`. A squash
-also sets `NeedsRebase` when the commit whose author it keeps has an author
-that git refuses. To land that branch, rebase it yourself and give that
-commit a new author.
+also sets `NeedsRebase` when the commit whose author it keeps has such an
+author. To land that branch, rebase it yourself and give that commit a new
+author.
 
 Both landings also set `NeedsRebase` for a branch with more than 1,000
 commits that the parent doesn't have, or with more than 8 MiB of names,
