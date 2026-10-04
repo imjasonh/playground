@@ -94,11 +94,13 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 
 // squash returns a commit with the branch head's files on top of the
 // parent's head. It returns the head when the head already is such a
-// commit, and the parent's head when the branch changes no files.
+// commit, or when the branch is this controller's commit on the parent's
+// head followed only by checks' fixes. It returns the parent's head when
+// the branch changes no files.
 func (m *merger) squash(ctx context.Context, local *git.Repo, spec *gitk8s.GitBranchSpec, log []git.LogEntry, parent git.Commit) (string, error) {
 	head := log[len(log)-1]
 	switch {
-	case slices.Equal(head.Parents, []string{spec.ParentHead}):
+	case slices.Equal(head.Parents, []string{spec.ParentHead}), m.fixedAfterSquash(spec, log):
 		return spec.Head, nil
 	case head.Tree == parent.Tree:
 		return spec.ParentHead, nil
@@ -111,6 +113,17 @@ func (m *merger) squash(ctx context.Context, local *git.Repo, spec *gitk8s.GitBr
 		Committer: m.committer(max(head.Time, parent.Time)),
 		Message:   message,
 	})
+}
+
+// fixedAfterSquash reports whether log starts with a commit that this
+// controller made on the parent's head, such as a squash that it pushed to
+// the branch, and has only checks' fixes after it. Squashing such a branch
+// again would leave out the fixes, so their count would start again, and a
+// check whose fix the squash undoes would push it forever.
+func (m *merger) fixedAfterSquash(spec *gitk8s.GitBranchSpec, log []git.LogEntry) bool {
+	first := log[0]
+	return slices.Equal(first.Parents, []string{spec.ParentHead}) && first.Committer == m.ident &&
+		!slices.ContainsFunc(log[1:], func(c git.LogEntry) bool { return !c.Fixer() })
 }
 
 // squashMessage returns the author and message of a commit that squashes

@@ -22,9 +22,11 @@ type LogEntry struct {
 	Tree    string
 	Parents []string
 	Author  Signature
-	// Time is the committer time, in seconds since the Unix epoch.
-	Time    int64
-	Message string
+	// Committer is the committer's name and email, and Time is the
+	// committer time, in seconds since the Unix epoch.
+	Committer Identity
+	Time      int64
+	Message   string
 	// Trailers are the trailers at the end of the message, as git parses
 	// them, such as "Signed-off-by: Ana Lima <ana@example.com>".
 	Trailers []string
@@ -51,14 +53,14 @@ func (e *LogEntry) Fixer() bool {
 // every commit after its parents.
 func (r *Repo) Log(ctx context.Context, base, head string) ([]LogEntry, error) {
 	out, err := r.run(ctx, "log", "-z", "--reverse", "--topo-order", "--date=raw",
-		"--format=%H%x00%T%x00%P%x00%an%x00%ae%x00%ad%x00%ct%x00%B%x00%(trailers:only,unfold)", head, "^"+base)
+		"--format=%H%x00%T%x00%P%x00%an%x00%ae%x00%ad%x00%cn%x00%ce%x00%ct%x00%B%x00%(trailers:only,unfold)", head, "^"+base)
 	if err != nil {
 		return nil, err
 	}
-	// Each commit is nine fields, each followed by a NUL. git stops
-	// printing a name, message, or trailer at a NUL inside it, so a commit
-	// can't add fields.
-	const n = 9
+	// Each commit is 11 fields, each followed by a NUL. git stops printing
+	// a name, message, or trailer at a NUL inside it, so a commit can't add
+	// fields.
+	const n = 11
 	fields := strings.Split(string(out), "\x00")
 	if len(fields)%n != 1 {
 		return nil, fmt.Errorf("git log: unexpected output")
@@ -66,18 +68,19 @@ func (r *Repo) Log(ctx context.Context, base, head string) ([]LogEntry, error) {
 	var entries []LogEntry
 	for f := fields; len(f) > 1; f = f[n:] {
 		parents := strings.Fields(f[2])
-		t, err := strconv.ParseInt(f[6], 10, 64)
+		t, err := strconv.ParseInt(f[8], 10, 64)
 		if err != nil || !objectNames(append([]string{f[0], f[1]}, parents...)) {
 			return nil, fmt.Errorf("git log: unexpected commit %q", f[0])
 		}
 		entries = append(entries, LogEntry{
-			SHA:      f[0],
-			Tree:     f[1],
-			Parents:  parents,
-			Author:   Signature{Name: f[3], Email: f[4], Date: f[5]},
-			Time:     t,
-			Message:  f[7],
-			Trailers: strings.FieldsFunc(f[8], func(r rune) bool { return r == '\n' }),
+			SHA:       f[0],
+			Tree:      f[1],
+			Parents:   parents,
+			Author:    Signature{Name: f[3], Email: f[4], Date: f[5]},
+			Committer: Identity{Name: f[6], Email: f[7]},
+			Time:      t,
+			Message:   f[9],
+			Trailers:  strings.FieldsFunc(f[10], func(r rune) bool { return r == '\n' }),
 		})
 	}
 	return entries, nil

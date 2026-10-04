@@ -306,6 +306,14 @@ commit, and when the gate passes, the parent fast-forwards to it.
 `check-approval` passes only for the head that the annotation names, so a
 rewritten branch needs a new approval.
 
+A check with `mayPush: true` can push a fix on top of the new commit. While
+the parent doesn't move, a squash landing doesn't squash its own commit and
+the fixes after it again, so they land by fast-forward, with each fix as its
+own commit. Another squash would keep the fixes' files but drop their
+commits, so a check that reads commits could push the same fix forever.
+`maxAutomatedCommits` counts only the fixes after the squashed commit,
+because it doesn't have the trailers of the fixes before it.
+
 Moving a branch that stays, and pushing a rewritten branch, replace the
 branch's commits on the remote, so the remote must allow force pushes to
 proposal branches. Before you push to a branch that the controller moved,

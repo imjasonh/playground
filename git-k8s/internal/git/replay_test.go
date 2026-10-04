@@ -56,6 +56,9 @@ func TestLogAndReplay(t *testing.T) {
 	if want := (git.Signature{Name: "Ana Lima", Email: "ana@example.com", Date: "1700000000 -0800"}); first.Author != want {
 		t.Errorf("author = %+v, want %+v", first.Author, want)
 	}
+	if want := (git.Identity{Name: "Test Author", Email: "author@example.com"}); first.Committer != want || first.Time != 1767323045 {
+		t.Errorf("committer = %+v at %d, want %+v at 1767323045", first.Committer, first.Time, want)
+	}
 	message := "Add b\n\nWith a body.\n\nSigned-off-by: Ana Lima\n <ana@example.com>\n"
 	if first.Message != message || first.Subject() != "Add b" || first.Fixer() {
 		t.Errorf("first commit = %q, subject %q, fixer %v", first.Message, first.Subject(), first.Fixer())

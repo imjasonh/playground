@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -46,9 +47,11 @@ func refresh(t *testing.T, b *gitk8s.GitBranch, w *gittest.Work) {
 // withHistoryCheck adds dco, a check whose passing result doesn't have
 // filesOnly, such as one that reads commit messages, to b's merge policy.
 func withHistoryCheck(b *gitk8s.GitBranch) {
-	p := *b.Spec.Merge
-	p.Checks = append(p.Checks[:len(p.Checks):len(p.Checks)], gitk8s.CheckPolicy{Name: "dco"})
-	b.Spec.Merge = &p
+	dco := gitk8s.CheckPolicy{Name: "dco"}
+	if p := *b.Spec.Merge; !slices.Contains(p.Checks, dco) {
+		p.Checks = append(p.Checks[:len(p.Checks):len(p.Checks)], dco)
+		b.Spec.Merge = &p
+	}
 	b.Status.Checks["dco"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Passed}
 }
 
@@ -429,6 +432,63 @@ func TestHistoryResultsRewriteTheBranch(t *testing.T) {
 	}
 	if b.Status.State != reasonLanded {
 		t.Errorf("state = %q, want %s", b.Status.State, reasonLanded)
+	}
+}
+
+// A check whose result doesn't have filesOnly can push a fix to the commit
+// that a squash landing pushed to the branch. The merge controller squashes
+// again when a person adds a commit, but it lands its own commit and the
+// fixes after it by fast-forward.
+func TestSquashKeepsFixesAfterItsCommit(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w := branches(t, srv)
+	main := b.Spec.ParentHead
+	// squash lands c/x by squash, checks that the merge controller pushed
+	// a squashed commit to c/x instead, and leaves w on that commit.
+	squash := func() {
+		t.Helper()
+		refresh(t, b, w)
+		withHistoryCheck(b)
+		head := b.Spec.Head
+		if err := landAs(t, srv, b, gitk8s.Squash); err != nil {
+			t.Fatal(err)
+		}
+		squashed := w.Fetch("c/x")
+		got := w.Git("rev-parse", squashed+"^", squashed+"^{tree}")
+		if want := main + "\n" + w.Git("rev-parse", head+"^{tree}"); got != want || b.Status.State != reasonRewritten {
+			t.Fatalf("state %q, c/x's parent and tree = %q; want %s and %q", b.Status.State, got, reasonRewritten, want)
+		}
+		w.Branch("c/x", squashed)
+	}
+
+	w.Write("y.txt", "y\n")
+	w.Commit("add y")
+	squash()
+
+	t.Log("dco pushes a fix, and a person adds a commit, so the branch is squashed again.")
+	w.Write("y.txt", "y, fixed\n")
+	w.Commit("Fix y\n\nGit-K8s-Fixer: dco")
+	w.Write("z.txt", "z\n")
+	w.Commit("add z")
+	squash()
+
+	t.Log("dco pushes another fix, and the branch lands by fast-forward.")
+	w.Write("z.txt", "z, fixed\n")
+	w.Commit("Fix z\n\nGit-K8s-Fixer: dco")
+	refresh(t, b, w)
+	withHistoryCheck(b)
+	head := b.Spec.Head
+	if err := landAs(t, srv, b, gitk8s.Squash); err != nil {
+		t.Fatal(err)
+	}
+	heads := srv.Heads(t, "app")
+	if _, ok := heads["c/x"]; heads["main"] != head || ok {
+		t.Errorf("heads = %v, want main at %s and no c/x", heads, head)
+	}
+	c := kube.FindCondition(b.Status.Conditions, "Merged")
+	msg := fmt.Sprintf("fast-forwarded main from %s to %s", gitk8s.Short(main), gitk8s.Short(head))
+	if c == nil || c.Reason != reasonLanded || c.Message != msg {
+		t.Errorf("Merged = %+v, want reason %s and message %q", c, reasonLanded, msg)
 	}
 }
 
