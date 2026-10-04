@@ -148,9 +148,10 @@ func tokenFile(audience string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// tokenExpiry returns when a service account token expires, from its exp
-// claim. It doesn't check the token's signature.
-func tokenExpiry(token string) (time.Time, error) {
+// tokenExpiry returns when a service account token for audience expires,
+// from its exp claim, and fails if its aud claim doesn't hold audience. It
+// doesn't check the token's signature.
+func tokenExpiry(token, audience string) (time.Time, error) {
 	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return time.Time{}, errors.New("not a JSON Web Token")
@@ -160,6 +161,7 @@ func tokenExpiry(token string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("decoding the claims: %w", err)
 	}
 	var claims struct {
+		Aud any   `json:"aud"`
 		Exp int64 `json:"exp"`
 	}
 	if err := json.Unmarshal(b, &claims); err != nil {
@@ -167,6 +169,13 @@ func tokenExpiry(token string) (time.Time, error) {
 	}
 	if claims.Exp == 0 {
 		return time.Time{}, errors.New("no exp claim")
+	}
+	if claims.Aud == nil {
+		return time.Time{}, errors.New("no aud claim")
+	}
+	// RFC 7519 lets aud be one string instead of an array of them.
+	if aud, _ := claims.Aud.([]any); claims.Aud != audience && !slices.Contains(aud, any(audience)) {
+		return time.Time{}, fmt.Errorf("the aud claim is %q", claims.Aud)
 	}
 	return time.Unix(claims.Exp, 0), nil
 }
@@ -210,7 +219,7 @@ func (m *Manager) requestToken(ctx context.Context, audience string) (string, ti
 		switch {
 		case err == nil:
 			token := strings.TrimSpace(string(b))
-			expires, err := tokenExpiry(token)
+			expires, err := tokenExpiry(token, audience)
 			if err != nil {
 				return "", time.Time{}, fmt.Errorf("kube.RequestToken: the token for %q in %s: %w", audience, file, err)
 			}

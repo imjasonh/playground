@@ -237,6 +237,13 @@ func TestRequestTokenFromDir(t *testing.T) {
 	if token, _, err := RequestToken(ctx, "octo-sts.dev"); err != nil || token != renewed {
 		t.Errorf("RequestToken after the kubelet renewed the token = %q, %v, want the new token", token, err)
 	}
+	for audience, aud := range map[string]string{"one": `"one"`, "two": `["other.example","two"]`} {
+		token := unsignedToken(fmt.Sprintf(`{"aud":%s,"exp":%d}`, aud, exp.Unix()))
+		mount(audience, token)
+		if got, _, err := RequestToken(ctx, audience); err != nil || got != token {
+			t.Errorf("RequestToken(%q) with the aud claim %s = %q, %v, want the mounted token", audience, aud, got, err)
+		}
+	}
 	if n := len(a.sent()); n != 0 {
 		t.Errorf("sent %d requests for a mounted token, want none", n)
 	}
@@ -251,15 +258,19 @@ func TestRequestTokenFromDir(t *testing.T) {
 	for _, tc := range []struct {
 		audience, token, want string
 	}{
-		{"expired", unsignedToken(fmt.Sprintf(`{"exp":%d}`, time.Now().Add(-time.Minute).Unix())), "expired at"},
+		{"expired", unsignedToken(fmt.Sprintf(`{"aud":["expired"],"exp":%d}`, time.Now().Add(-time.Minute).Unix())), "expired at"},
 		{"garbage", "garbage", "not a JSON Web Token"},
 		{"empty", "", "not a JSON Web Token"},
 		{"no expiry", unsignedToken(`{"aud":["no expiry"]}`), "no exp claim"},
 		{"bad claims", "a.%%%.c", "decoding the claims"},
+		{"no audience", unsignedToken(fmt.Sprintf(`{"exp":%d}`, exp.Unix())), "no aud claim"},
+		{"another audience", unsignedToken(fmt.Sprintf(`{"aud":["sts.example"],"exp":%d}`, exp.Unix())), `the aud claim is ["sts.example"]`},
+		{"another single audience", unsignedToken(fmt.Sprintf(`{"aud":"sts.example","exp":%d}`, exp.Unix())), `the aud claim is "sts.example"`},
 	} {
 		mount(tc.audience, tc.token)
-		if token, _, err := RequestToken(ctx, tc.audience); err == nil || token != "" || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("RequestToken(%q) = %q, %v, want an error containing %q", tc.audience, token, err, tc.want)
+		file := filepath.Join(m.TokenDir, tokenFile(tc.audience))
+		if token, _, err := RequestToken(ctx, tc.audience); err == nil || token != "" || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), file) {
+			t.Errorf("RequestToken(%q) = %q, %v, want an error that names %s and contains %q", tc.audience, token, err, file, tc.want)
 		}
 	}
 	if n := len(a.sent()) - 2; n != 0 {

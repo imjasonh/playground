@@ -715,9 +715,13 @@ volume's path. Each token's file is named by the SHA-256 hash of its audience,
 because an audience can hold characters that a file name can't, such as `/`.
 The kubelet requests each token bound to the Pod and replaces the file when 80%
 of the token's lifetime has passed, so `RequestToken` reads the file on every
-call and returns the expiry from the token's `exp` claim. The volume asks for
-3600 seconds, because the API server stretches a token of exactly 3607 seconds,
-the lifetime of the default service account token, to a year.
+call and returns the expiry from the token's `exp` claim. It returns an error
+instead if the token's `aud` claim doesn't hold the audience, because a
+hand-edited volume that put a token under another audience's name would
+otherwise have the program send it to the wrong server, which could replay it
+to the server that it's for. The volume asks for 3600 seconds, because the API
+server stretches a token of exactly 3607 seconds, the lifetime of the default
+service account token, to a year.
 
 For an audience without a file, `RequestToken` creates a TokenRequest for the
 program's own service account. The program learns which account that is from a
