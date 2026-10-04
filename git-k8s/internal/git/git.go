@@ -28,10 +28,52 @@ type Auth struct {
 	Password string
 }
 
-// Remote is a remote repository's URL and credentials.
+// SSHKey is a private key for SSH authentication, and the host keys to
+// accept, as lines in OpenSSH's known_hosts format.
+type SSHKey struct {
+	PrivateKey []byte
+	KnownHosts []byte
+}
+
+// Remote is a remote repository's URL and credentials. git uses Auth for
+// HTTP URLs, and SSH for SSH URLs.
 type Remote struct {
 	URL  string
 	Auth *Auth
+	SSH  *SSHKey
+}
+
+// IsSSH reports whether git reaches url over SSH. That's an ssh:// URL, or
+// the scp-like syntax [user@]host:path, which has a colon before any slash.
+func IsSSH(url string) bool {
+	if scheme, _, ok := strings.Cut(url, "://"); ok {
+		return scheme == "ssh" || scheme == "git+ssh" || scheme == "ssh+git"
+	}
+	colon, slash := strings.IndexByte(url, ':'), strings.IndexByte(url, '/')
+	return colon >= 0 && (slash < 0 || colon < slash)
+}
+
+// SSHCommand returns a GIT_SSH_COMMAND that authenticates with the private
+// key in keyFile, and connects only to hosts whose keys knownHostsFile
+// lists. It ignores SSH configuration files and agents, and never prompts.
+func SSHCommand(keyFile, knownHostsFile string) string {
+	return strings.Join([]string{
+		"ssh", "-F", "/dev/null",
+		"-o", "BatchMode=yes",
+		"-o", "IdentitiesOnly=yes",
+		"-o", "IdentityAgent=none",
+		"-o", "StrictHostKeyChecking=yes",
+		"-o", "UpdateHostKeys=no",
+		"-o", "GlobalKnownHostsFile=/dev/null",
+		// ssh splits this option's value at spaces unless it's quoted.
+		"-o", shellQuote(`UserKnownHostsFile="` + knownHostsFile + `"`),
+		"-i", shellQuote(keyFile),
+	}, " ")
+}
+
+// shellQuote quotes s for sh, which git runs GIT_SSH_COMMAND with.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // Identity is the author and committer of commits that controllers make.
@@ -65,6 +107,7 @@ func (e *Error) Error() string {
 
 type opts struct {
 	auth  *Auth
+	ssh   *SSHKey
 	stdin []byte
 	env   []string
 }
@@ -111,6 +154,24 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 		env = append(env, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.extraHeader",
 			"GIT_CONFIG_VALUE_0=Authorization: Basic "+token)
 	}
+	var sshDir string
+	if o.ssh != nil {
+		// ssh reads keys only from files. MkdirTemp makes a directory that
+		// only this user can open.
+		dir, err := os.MkdirTemp("", "git-k8s-ssh-")
+		if err != nil {
+			return result{}, err
+		}
+		defer os.RemoveAll(dir)
+		// ssh's errors name these files, so they're named after a Secret's
+		// keys.
+		key, hosts := filepath.Join(dir, "ssh-privatekey"), filepath.Join(dir, "known_hosts")
+		if err := errors.Join(os.WriteFile(key, o.ssh.PrivateKey, 0o600), os.WriteFile(hosts, o.ssh.KnownHosts, 0o600)); err != nil {
+			return result{}, err
+		}
+		env = append(env, "GIT_SSH_COMMAND="+SSHCommand(key, hosts))
+		sshDir = dir
+	}
 	cmd.Env = append(env, o.env...)
 	if o.stdin != nil {
 		cmd.Stdin = bytes.NewReader(o.stdin)
@@ -119,6 +180,12 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	res := result{stdout: stdout.Bytes(), stderr: strings.TrimSpace(stderr.String())}
+	if sshDir != "" {
+		// Leave out the directory, which differs every time, so that a
+		// status that reports the error doesn't change on every attempt.
+		// ssh also ends its lines with carriage returns.
+		res.stderr = strings.NewReplacer(sshDir+string(filepath.Separator), "", "\r", "").Replace(res.stderr)
+	}
 	var exit *exec.ExitError
 	switch {
 	case err == nil:
@@ -146,7 +213,7 @@ func (g *Git) run(ctx context.Context, dir string, args []string, o opts) ([]byt
 // LsRemote lists a remote's branches as a map from branch name to commit
 // SHA, without fetching any objects.
 func (g *Git) LsRemote(ctx context.Context, r Remote) (map[string]string, error) {
-	out, err := g.run(ctx, "", []string{"ls-remote", r.URL, "refs/heads/*"}, opts{auth: r.Auth})
+	out, err := g.run(ctx, "", []string{"ls-remote", r.URL, "refs/heads/*"}, opts{auth: r.Auth, ssh: r.SSH})
 	if err != nil {
 		return nil, err
 	}
@@ -196,7 +263,7 @@ func (r *Repo) Fetch(ctx context.Context, remote Remote, branches ...string) err
 	for _, b := range branches {
 		args = append(args, "+refs/heads/"+b+":refs/remotes/origin/"+b)
 	}
-	_, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth})
+	_, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth, ssh: remote.SSH})
 	return err
 }
 
@@ -323,7 +390,7 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 	for _, u := range updates {
 		args = append(args, u.New+":"+u.Ref)
 	}
-	res, err := r.git.exec(ctx, r.Dir, args, opts{auth: remote.Auth})
+	res, err := r.git.exec(ctx, r.Dir, args, opts{auth: remote.Auth, ssh: remote.SSH})
 	if err != nil {
 		return err
 	}

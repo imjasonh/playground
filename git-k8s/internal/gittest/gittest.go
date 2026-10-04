@@ -2,6 +2,10 @@
 package gittest
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
+	"net"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -10,6 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
+
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gitserver"
@@ -17,13 +24,19 @@ import (
 	"github.com/imjasonh/playground/kube/k8s"
 )
 
-// Server is a smart HTTP git server for one test.
+// Server is a git server for one test, which serves smart HTTP or SSH.
 type Server struct {
 	// URL is the server's base URL, without credentials.
 	URL string
 	// Username and Password are the credentials it requires, if Password
 	// is set.
 	Username, Password string
+	// SSH, for an SSH server, is the only client key that it accepts, and
+	// its host key.
+	SSH *git.SSHKey
+
+	// sshCommand is a GIT_SSH_COMMAND that uses SSH.
+	sshCommand string
 }
 
 // NewServer starts a git server that requires password, unless password is
@@ -39,11 +52,68 @@ func NewServer(t testing.TB, password string) *Server {
 	return &Server{URL: hs.URL, Username: s.Username, Password: password}
 }
 
+// NewSSHServer starts a git server that serves over SSH, with a new host
+// key, and accepts only a new client key. The test's cleanup stops it.
+func NewSSHServer(t testing.TB) *Server {
+	t.Helper()
+	for _, bin := range []string{"git", "ssh"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			t.Skipf("%s isn't installed", bin)
+		}
+	}
+	host, client := newKey(t), newKey(t)
+	hostSigner, err := ssh.NewSignerFromKey(host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientPublic, err := ssh.NewPublicKey(client.Public())
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKey(client, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	s := &gitserver.SSHServer{Root: t.TempDir(), HostKey: hostSigner, AuthorizedKeys: []ssh.PublicKey{clientPublic}}
+	go s.Serve(l)
+
+	key := &git.SSHKey{
+		PrivateKey: pem.EncodeToMemory(block),
+		KnownHosts: []byte(knownhosts.Line([]string{l.Addr().String()}, hostSigner.PublicKey()) + "\n"),
+	}
+	dir := t.TempDir()
+	keyFile, hostsFile := filepath.Join(dir, "key"), filepath.Join(dir, "known_hosts")
+	for file, data := range map[string][]byte{keyFile: key.PrivateKey, hostsFile: key.KnownHosts} {
+		if err := os.WriteFile(file, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return &Server{URL: "ssh://git@" + l.Addr().String(), SSH: key, sshCommand: git.SSHCommand(keyFile, hostsFile)}
+}
+
+func newKey(t testing.TB) ed25519.PrivateKey {
+	t.Helper()
+	_, key, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key
+}
+
 // Remote returns the URL and credentials of a repository on the server.
 func (s *Server) Remote(repo string) git.Remote {
 	r := git.Remote{URL: s.URL + "/" + repo + ".git"}
 	if s.Password != "" {
 		r.Auth = &git.Auth{Username: s.Username, Password: s.Password}
+	}
+	if s.SSH != nil {
+		key := *s.SSH
+		r.SSH = &key
 	}
 	return r
 }
@@ -60,8 +130,11 @@ func (s *Server) Repository(repo string, rules ...gitk8s.BranchRule) (*gitk8s.Gi
 		Object: kube.Meta(repo+"-creds", nil),
 		Data:   map[string][]byte{"username": []byte(s.Username), "password": []byte(s.Password)},
 	}
+	if s.SSH != nil {
+		secret.Data = map[string][]byte{"ssh-privatekey": s.SSH.PrivateKey, "known_hosts": s.SSH.KnownHosts}
+	}
 	secret.Namespace = "default"
-	if s.Password != "" {
+	if s.Password != "" || s.SSH != nil {
 		r.Spec.SecretRef = &gitk8s.SecretRef{Name: secret.Name}
 	}
 	return r, secret
@@ -82,6 +155,7 @@ type Work struct {
 	t      testing.TB
 	Dir    string
 	remote string
+	env    []string
 }
 
 // NewWork returns an empty working repository whose origin is repo on s.
@@ -95,6 +169,9 @@ func (s *Server) NewWork(t testing.TB, repo string) *Work {
 		u.User = url.UserPassword(s.Username, s.Password)
 	}
 	w := &Work{t: t, Dir: t.TempDir(), remote: u.String()}
+	if s.sshCommand != "" {
+		w.env = []string{"GIT_SSH_COMMAND=" + s.sshCommand}
+	}
 	w.Git("init", "--quiet", "--initial-branch=main")
 	return w
 }
@@ -110,6 +187,7 @@ func (w *Work) Git(args ...string) string {
 		"GIT_COMMITTER_NAME=Test Author", "GIT_COMMITTER_EMAIL=author@example.com",
 		"GIT_AUTHOR_DATE=2026-01-02T03:04:05Z", "GIT_COMMITTER_DATE=2026-01-02T03:04:05Z",
 	)
+	cmd.Env = append(cmd.Env, w.env...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		w.t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)

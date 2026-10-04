@@ -2,6 +2,8 @@ package git_test
 
 import (
 	"errors"
+	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -33,6 +35,142 @@ func TestLsRemoteNeedsCredentials(t *testing.T) {
 	wrong.Auth.Password = "nope"
 	if _, err := g.LsRemote(t.Context(), wrong); err == nil {
 		t.Error("ls-remote with the wrong password succeeded")
+	}
+}
+
+func TestSSH(t *testing.T) {
+	srv := gittest.NewSSHServer(t)
+	w := srv.NewWork(t, "app")
+	main := w.Commit("first")
+	w.Push("main")
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scp := srv.Remote("app")
+	scp.URL = u.User.Username() + "@[" + u.Host + "]:app.git"
+
+	ctx := t.Context()
+	g := &git.Git{}
+	for _, r := range []git.Remote{srv.Remote("app"), scp} {
+		if heads, err := g.LsRemote(ctx, r); err != nil || heads["main"] != main || len(heads) != 1 {
+			t.Errorf("LsRemote(%s) = %v, %v; want main at %s", r.URL, heads, err, main)
+		}
+	}
+	repo, err := g.Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, scp, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Push(ctx, srv.Remote("app"), git.RefUpdate{Ref: "refs/heads/c/x", New: main}); err != nil {
+		t.Fatal(err)
+	}
+	if got := srv.Heads(t, "app")["c/x"]; got != main {
+		t.Errorf("c/x = %q after the push, want %s", got, main)
+	}
+}
+
+func TestSSHChecksKeys(t *testing.T) {
+	srv, other := gittest.NewSSHServer(t), gittest.NewSSHServer(t)
+	w := srv.NewWork(t, "app")
+	w.Commit("first")
+	w.Push("main")
+
+	// Each known_hosts line is a host, a key type, and a key.
+	ours, theirs := strings.Fields(string(srv.SSH.KnownHosts)), strings.Fields(string(other.SSH.KnownHosts))
+	changed, unknown, wrongKey := srv.Remote("app"), srv.Remote("app"), srv.Remote("app")
+	changed.SSH.KnownHosts = []byte(ours[0] + " " + theirs[1] + " " + theirs[2] + "\n")
+	unknown.SSH.KnownHosts = other.SSH.KnownHosts
+	wrongKey.SSH.PrivateKey = other.SSH.PrivateKey
+	for name, tc := range map[string]struct {
+		remote git.Remote
+		want   string
+	}{
+		"a changed host key":  {changed, "REMOTE HOST IDENTIFICATION HAS CHANGED"},
+		"an unknown host":     {unknown, "Host key verification failed"},
+		"an unauthorized key": {wrongKey, "Permission denied (publickey)"},
+	} {
+		_, err := (&git.Git{}).LsRemote(t.Context(), tc.remote)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want one that says %q", name, err, tc.want)
+			continue
+		}
+		if _, again := (&git.Git{}).LsRemote(t.Context(), tc.remote); again == nil || again.Error() != err.Error() {
+			t.Errorf("%s: the error changed from %q to %q", name, err, again)
+		}
+		for _, key := range [][]byte{srv.SSH.PrivateKey, other.SSH.PrivateKey} {
+			for line := range strings.SplitSeq(string(key), "\n") {
+				if len(line) > 16 && !strings.HasPrefix(line, "-") && strings.Contains(err.Error(), line) {
+					t.Errorf("%s: the error includes a private key", name)
+				}
+			}
+		}
+	}
+}
+
+func TestSSHKeyFiles(t *testing.T) {
+	bin, tmp, log := t.TempDir(), t.TempDir(), filepath.Join(t.TempDir(), "ssh.log")
+	// This ssh logs its arguments and the modes of the key's directory and
+	// the files in it, then fails.
+	script := `#!/bin/sh
+echo "$*" >"$FAKE_SSH_LOG"
+while [ $# -gt 0 ]; do
+  if [ "$1" = -i ]; then key=$2; fi
+  shift
+done
+dir=$(dirname "$key")
+ls -ld "$dir" "$key" "$dir/known_hosts" >>"$FAKE_SSH_LOG"
+exit 255
+`
+	if err := os.WriteFile(filepath.Join(bin, "ssh"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("TMPDIR", tmp)
+	t.Setenv("FAKE_SSH_LOG", log)
+
+	key := &git.SSHKey{PrivateKey: []byte("private key\n"), KnownHosts: []byte("known hosts\n")}
+	if _, err := (&git.Git{}).LsRemote(t.Context(), git.Remote{URL: "git@example.com:app.git", SSH: key}); err == nil {
+		t.Fatal("ls-remote succeeded with an ssh that fails")
+	}
+	out, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) != 4 || strings.Contains(lines[0], "private key") {
+		t.Fatalf("ssh log = %q, want the arguments, without the key, and three files", lines)
+	}
+	for i, mode := range []string{"drwx------", "-rw-------", "-rw-------"} {
+		if f := strings.Fields(lines[i+1]); !strings.HasPrefix(f[0], mode) || !strings.HasPrefix(f[len(f)-1], tmp) {
+			t.Errorf("ssh saw %q, want mode %s in %s", lines[i+1], mode, tmp)
+		}
+	}
+	if left, err := os.ReadDir(tmp); err != nil || len(left) != 0 {
+		t.Errorf("%s holds %v, %v after the command; want nothing", tmp, left, err)
+	}
+}
+
+func TestIsSSH(t *testing.T) {
+	for u, want := range map[string]bool{
+		"ssh://git@example.com/app.git":  true,
+		"ssh://example.com:2222/app.git": true,
+		"git+ssh://example.com/app.git":  true,
+		"git@example.com:org/app.git":    true,
+		"example.com:app.git":            true,
+		"git@[example.com:2222]:app.git": true,
+		"https://example.com/app.git":    false,
+		"http://127.0.0.1:8418/app.git":  false,
+		"git://example.com/app.git":      false,
+		"file:///srv/app.git":            false,
+		"/srv/app.git":                   false,
+		"./dir:with-colon/app.git":       false,
+	} {
+		if got := git.IsSSH(u); got != want {
+			t.Errorf("IsSSH(%q) = %v, want %v", u, got, want)
+		}
 	}
 }
 

@@ -1,7 +1,7 @@
 // Package gitserver serves bare git repositories over the smart HTTP
-// protocol, for tests. It runs git upload-pack and git receive-pack, creates
-// a repository the first time something pushes to it, and can require HTTP
-// basic authentication.
+// protocol and over SSH, for tests. It runs git upload-pack and git
+// receive-pack, creates a repository the first time something pushes to it,
+// and can require HTTP basic authentication or an SSH key.
 package gitserver
 
 import (
@@ -53,7 +53,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "dumb HTTP isn't supported", http.StatusForbidden)
 			return
 		}
-		if err := s.ensure(dir, service == "git-receive-pack"); err != nil {
+		if err := ensure(dir, service == "git-receive-pack"); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
@@ -65,7 +65,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		s.run(w, strings.TrimPrefix(service, "git-"), dir, protocol, nil, "--advertise-refs")
 	case r.Method == http.MethodPost:
-		if err := s.ensure(dir, false); err != nil {
+		if err := ensure(dir, false); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
@@ -87,7 +87,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // ensure makes sure dir is a repository, creating it when create is set.
-func (s *Server) ensure(dir string, create bool) error {
+func ensure(dir string, create bool) error {
 	if _, err := os.Stat(filepath.Join(dir, "HEAD")); err == nil {
 		return nil
 	}
