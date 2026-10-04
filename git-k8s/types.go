@@ -61,7 +61,7 @@ type GitRepository struct {
 
 // GitRepositorySpec says where a repository is and which branches to track.
 type GitRepositorySpec struct {
-	URL       string     `json:"url" kube:"minLength=1,column=URL" doc:"URL of the external repository. The mirror passes it to git, so https, http, git, and file URLs work."`
+	URL       string     `json:"url" kube:"minLength=1,column=URL" doc:"URL of the external repository. The mirror reaches it over the network with git, so https, http, and git URLs work, and local paths and file URLs don't."`
 	SecretRef *SecretRef `json:"secretRef,omitempty" doc:"Secret in the same namespace with username and password keys for HTTP basic authentication, such as a kubernetes.io/basic-auth Secret. Without a username, the mirror sends git."`
 	// PollInterval is a Go duration.
 	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often the mirror fetches the external repository's branches, such as 30s or 5m."`
