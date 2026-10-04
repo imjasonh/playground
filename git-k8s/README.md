@@ -202,7 +202,12 @@ the heads where the copy and the external repository last synced under
 The mirror reads at most 1,000 ref updates and shallow commits, in at most
 1 MiB, at the start of a push, and a copy takes a pack of at most 256 MiB.
 The mirror stops reading a request that takes longer than git's 5-minute
-timeout plus 10 seconds.
+timeout plus 10 seconds, and stops writing a response 10 minutes 20 seconds
+after the request starts. A client that sends a pack slowly keeps the copy
+open until the first deadline, and a client that stops reading the response
+keeps it open until the second. While a copy is open, the mirror can't
+delete it, replace it, or switch it to a new URL, and the requests that
+come after such a change wait for it too.
 
 To let a controller start branches, pass the core program
 `-branch-prefix=NAMESPACE/SERVICEACCOUNT=PREFIX` for the controller's

@@ -6,7 +6,9 @@ import (
 	"compress/gzip"
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -504,6 +506,56 @@ func TestServeStopsWaitingForPush(t *testing.T) {
 			t.Fatal("the mirror still waits for the push after 30s")
 		}
 	}
+}
+
+// TestServeStopsWritingToAClientThatDoesntRead fetches a pack too big for
+// the connection's buffers and never reads the response. The mirror stops
+// writing at its write deadline and closes the copy, instead of holding it
+// open until the client disconnects.
+func TestServeStopsWritingToAClientThatDoesntRead(t *testing.T) {
+	f := newFixture(t)
+	big := make([]byte, 32<<20)
+	rand.Read(big)
+	f.work.Git("checkout", "--quiet", "--detach", f.base)
+	f.work.Write("big.bin", string(big))
+	bigCommit := f.work.Commit("big")
+	f.pushExternal("big", bigCommit)
+	f.sync(SyncOptions{Fetch: true})
+	f.m.readTimeout = time.Second
+
+	addr := strings.TrimPrefix(f.srv.URL, "http://")
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	body := pkt("want "+bigCommit+"\n") + "0000" + pkt("done\n")
+	if _, err := fmt.Fprintf(conn, "POST /default/app.git/git-upload-pack HTTP/1.1\r\nHost: %s\r\nAuthorization: Bearer gofmt\r\nContent-Type: application/x-git-upload-pack-request\r\nContent-Length: %d\r\n\r\n%s", addr, len(body), body); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+
+	e := f.m.entry(f.repo)
+	free := func() bool {
+		if !e.mu.TryLock() {
+			return false
+		}
+		e.mu.Unlock()
+		return true
+	}
+	for free() {
+		if time.Since(start) > 10*time.Second {
+			t.Fatal("the mirror didn't open the copy within 10s")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	for !free() {
+		if time.Since(start) > 15*time.Second {
+			t.Fatal("the mirror still holds the copy open 15s after a request that may take 1s, for a client that doesn't read")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Logf("the mirror closed the copy %v after the request", time.Since(start).Round(10*time.Millisecond))
 }
 
 // TestServeRefusesBigPack pushes a bigger pack than the copy takes.

@@ -27,6 +27,13 @@ var pathRE = regexp.MustCompile(`^/([a-z0-9]([-a-z0-9]*[a-z0-9])?)/([a-z0-9]([-a
 // with kube.ReviewToken, gets the Pod that a test Pod's token is bound to
 // with kube.Fetch, and calls kube.Trigger for a GitRepository after a push.
 func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// A request may take this long to arrive, and its response as long
+	// again. Without a write deadline, a client that stops reading blocks
+	// the goroutine that copies git's output even after git stops, and the
+	// handler holds the copy open until the client disconnects.
+	limit := cmp.Or(m.readTimeout, m.Git.MaxDuration())
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Now().Add(2 * limit))
 	match := pathRE.FindStringSubmatch(r.URL.Path)
 	if match == nil {
 		http.NotFound(w, r)
@@ -81,10 +88,9 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body := io.Reader(r.Body)
 	var p *pushRequest
 	if op != "info/refs" {
-		rc := http.NewResponseController(w)
 		// git writes its response while it reads the request.
 		_ = rc.EnableFullDuplex()
-		_ = rc.SetReadDeadline(time.Now().Add(cmp.Or(m.readTimeout, m.Git.MaxDuration())))
+		_ = rc.SetReadDeadline(time.Now().Add(limit))
 		if r.Header.Get("Content-Encoding") == "gzip" {
 			zr, err := gzip.NewReader(r.Body)
 			if err != nil {
@@ -95,10 +101,12 @@ func (m *Mirror) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			body = zr
 		}
 		if service == "receive-pack" {
-			// The mirror judges a push before it opens the copy, so that a
-			// slow client doesn't hold the copy open: while it's open, the
-			// mirror can't replace or delete it, and once that waits,
-			// nothing else can open it.
+			// While a copy is open, the mirror can't replace or delete it,
+			// and once that waits, nothing else can open it. So the mirror
+			// judges a push before it opens the copy, and a client that's
+			// slow to send its updates, or that sends updates the mirror
+			// refuses, doesn't hold the copy. A client that's slow to send
+			// the pack after them holds it until the read deadline.
 			var start bytes.Buffer
 			if p, err = readPush(io.TeeReader(body, &start)); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
