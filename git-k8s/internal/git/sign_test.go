@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -133,8 +134,8 @@ exec %q "$@"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(recorded, []byte("args: -Y sign -n git -f "+tmp)) {
-		t.Errorf("git didn't sign with a key file in TMPDIR:\n%s", recorded)
+	if !bytes.Contains(recorded, []byte("args: -Y sign -n git -f "+filepath.Join(tmp, "git-k8s-signing-"))) {
+		t.Errorf("git didn't sign with a key file in a git-k8s-signing-* directory in TMPDIR:\n%s", recorded)
 	}
 	block, _ := pem.Decode(signer.Key)
 	unwrapped := strings.Join(strings.Fields(string(recorded)), "")
@@ -152,6 +153,32 @@ exec %q "$@"
 	}
 	if err := signer.Verify(repo.Dir, sha); err != nil {
 		t.Error(err)
+	}
+}
+
+func TestRemoveSigningKeys(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	// A process that's killed while git signs leaves a directory like this.
+	left := filepath.Join(tmp, "git-k8s-signing-123")
+	if err := os.Mkdir(left, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(left, "key"), []byte("key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(tmp, "other")
+	if err := os.Mkdir(other, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := git.RemoveSigningKeys(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(left); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("%s is still there (%v)", left, err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Errorf("removed %s, which doesn't hold a signing key: %v", other, err)
 	}
 }
 

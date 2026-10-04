@@ -46,11 +46,15 @@ func (SigningKey) Format(f fmt.State, _ rune) {
 	io.WriteString(f, "SigningKey(redacted)")
 }
 
+// keyDirPrefix begins the name of each directory that write makes in
+// os.TempDir.
+const keyDirPrefix = "git-k8s-signing-"
+
 // write writes the key to a file in a new directory and returns the file's
 // path and a function that deletes the directory. The directory is 0700 and
 // the file 0600: ssh-keygen refuses a key that other users can read.
 func (k *SigningKey) write() (string, func(), error) {
-	dir, err := os.MkdirTemp("", "git-k8s-signing-")
+	dir, err := os.MkdirTemp("", keyDirPrefix)
 	if err != nil {
 		return "", nil, err
 	}
@@ -61,4 +65,19 @@ func (k *SigningKey) write() (string, func(), error) {
 		return "", nil, err
 	}
 	return path, remove, nil
+}
+
+// RemoveSigningKeys removes the keys that CommitTree wrote to os.TempDir
+// but didn't remove because its process stopped, for example when its
+// container was killed. Call it when a program starts, before it signs.
+func RemoveSigningKeys() error {
+	dirs, err := filepath.Glob(filepath.Join(os.TempDir(), keyDirPrefix+"*"))
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, dir := range dirs {
+		errs = append(errs, os.RemoveAll(dir))
+	}
+	return errors.Join(errs...)
 }

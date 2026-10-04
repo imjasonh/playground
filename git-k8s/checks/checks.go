@@ -30,6 +30,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"os"
 	"sync"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -113,6 +114,15 @@ func Main[V any, P interface {
 }](check Check) {
 	cfg := &Config{}
 	cfg.AddFlags(flag.CommandLine)
+	// A container that's killed while it signs a commit leaves the key in
+	// os.TempDir, which generate puts on a volume that outlives the
+	// container. generate itself runs on machines where another process
+	// could be signing.
+	if check.SigningKey != nil && (len(os.Args) < 2 || os.Args[1] != "generate") {
+		if err := git.RemoveSigningKeys(); err != nil {
+			slog.Warn("removing signing keys that an earlier run left", "err", err)
+		}
+	}
 	kube.Main(For[V, P](check, cfg))
 }
 

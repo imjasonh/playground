@@ -247,8 +247,11 @@ Only `check-base` and `check-gofmt` read the signing Secret, through the
 `secretRef` Secret, so `generate` grants them nothing new. For each commit,
 a check writes the key to a file with mode 0600 in a new directory with mode
 0700 under `/tmp`, passes git the file's path, and removes the directory
-when the commit is done. The key never appears in a command's arguments or
-environment, in a log, or in an error.
+when the commit is done. `/tmp` is an `emptyDir` volume on the node's disk
+that outlives the container, so a check that's killed while it signs leaves
+the key there until the check restarts and removes it, or until the Pod is
+deleted. The key never appears in a command's arguments or environment, in
+a log, or in an error.
 
 ### Set up the forge
 
