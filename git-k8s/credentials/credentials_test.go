@@ -97,6 +97,7 @@ func TestRemoteErrors(t *testing.T) {
 		{"blank known hosts", sshURL, map[string][]byte{"ssh-privatekey": key, "known_hosts": []byte(" \n")}, "has no known_hosts key"},
 		{"no final newline", sshURL, withKey(bytes.TrimSuffix(key, []byte("\n"))), "must end with a newline"},
 		{"carriage returns", sshURL, withKey(bytes.ReplaceAll(key, []byte("\n"), []byte("\r\n"))), "no carriage returns"},
+		{"blank line before the key", sshURL, withKey(append([]byte("\n"), key...)), "must start with -----BEGIN"},
 		{"public key", sshURL, withKey(ssh.MarshalAuthorizedKey(public)), "isn't a PEM-encoded private key"},
 		{"PEM public key", sshURL, withKey(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: public.Marshal()})), "isn't a PEM-encoded private key"},
 		{"passphrase", scpURL, withKey(pem.EncodeToMemory(passphrase)), "needs a passphrase"},

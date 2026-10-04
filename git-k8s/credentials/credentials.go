@@ -87,6 +87,11 @@ func checkPrivateKey(key []byte) error {
 	if block == nil || !strings.HasSuffix(block.Type, "PRIVATE KEY") {
 		return errors.New("isn't a PEM-encoded private key")
 	}
+	// pem.Decode skips text before a block, but ssh reads an OpenSSH key
+	// only if the block starts at the first byte.
+	if !bytes.HasPrefix(key, []byte("-----BEGIN ")) {
+		return errors.New("must start with -----BEGIN")
+	}
 	encrypted := block.Type == "ENCRYPTED PRIVATE KEY" || strings.Contains(block.Headers["Proc-Type"], "ENCRYPTED")
 	// An OpenSSH key names its cipher right after a magic string.
 	if rest, ok := bytes.CutPrefix(block.Bytes, []byte("openssh-key-v1\x00")); ok && len(rest) >= 4 {
