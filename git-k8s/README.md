@@ -199,15 +199,18 @@ take that long to apply.
 When a `GitRepository` names a `checkRunsIdentity`, the `git-k8s` program's
 check-runs controller copies each check's result to GitHub as a check run on
 the commit that the result is for. GitHub shows a commit's check runs on the
-commit and on its pull requests. Each check, commit, and `GitRepository` has
-one check run, named `git-k8s/CHECK`, which the controller updates as the
-result changes:
+commit and on its pull requests. Each check run is named `git-k8s/CHECK`,
+after its check, and the controller updates it as the result changes:
 
 - A `Running` result shows as in progress.
 - `Passed` completes the check run as `success`.
 - `Failed` and `Error` complete it as `failure`.
 - `Fixed` completes it as `neutral`. The check pushed a fix commit, and the
   check run on that commit decides.
+
+When a check starts again on a commit where it finished, the controller
+creates a new check run with the same name, because GitHub doesn't support
+starting a completed one again. GitHub shows the newest.
 
 The check run's title is the result's state, its summary is the result's
 message, and its text lists the result's outputs. When a branch moves before

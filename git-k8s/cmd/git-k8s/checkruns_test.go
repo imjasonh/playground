@@ -147,25 +147,29 @@ func TestPublishesCheckRuns(t *testing.T) {
 	t.Log("Results that stay the same cost no requests.")
 	step(checks, nil, runs(gh))
 
-	t.Log("A result that changes updates its check run, even when it starts again.")
+	t.Log("A result that changes updates its check run.")
 	checks["gofmt"] = gitk8s.CheckResult{Commit: head, State: gitk8s.Failed, Message: "x.go isn't formatted"}
 	step(checks, []string{"PATCH " + api + "check-runs/2"}, []string{
 		"git-k8s/base@" + h + " completed success: builds on main",
 		"git-k8s/gofmt@" + h + " completed failure: x.go isn't formatted",
 	})
+
+	t.Log("A check that starts again after it finished gets a new check run.")
 	checks["gofmt"] = gitk8s.CheckResult{Commit: head, State: gitk8s.Running}
-	step(checks, []string{"PATCH " + api + "check-runs/2"}, []string{
+	step(checks, []string{"POST " + api + "check-runs"}, []string{
 		"git-k8s/base@" + h + " completed success: builds on main",
+		"git-k8s/gofmt@" + h + " completed failure: x.go isn't formatted",
 		"git-k8s/gofmt@" + h + " in_progress : Running",
 	})
 
 	t.Log("A fix is neutral, because the check's run on the fix decides.")
 	checks["gofmt"] = gitk8s.CheckResult{Commit: head, State: gitk8s.Fixed, Message: "x.go isn't formatted; pushed " + f, Outputs: map[string]string{"fix": fix}}
-	step(checks, []string{"PATCH " + api + "check-runs/2"}, []string{
+	step(checks, []string{"PATCH " + api + "check-runs/3"}, []string{
 		"git-k8s/base@" + h + " completed success: builds on main",
+		"git-k8s/gofmt@" + h + " completed failure: x.go isn't formatted",
 		"git-k8s/gofmt@" + h + " completed neutral: x.go isn't formatted; pushed " + f,
 	})
-	if r := gh.Fake.CheckRuns("acme/app")[1]; r.Output.Text != "- fix: "+fix {
+	if r := gh.Fake.CheckRuns("acme/app")[2]; r.Output.Text != "- fix: "+fix {
 		t.Errorf("text = %q, want the fix output", r.Output.Text)
 	}
 
@@ -173,12 +177,14 @@ func TestPublishesCheckRuns(t *testing.T) {
 	checks = map[string]gitk8s.CheckResult{"gofmt": {Commit: fix, State: gitk8s.Running}}
 	step(checks, []string{"GET " + api + "commits/" + fix + "/check-runs", "POST " + api + "check-runs"}, []string{
 		"git-k8s/base@" + h + " completed success: builds on main",
+		"git-k8s/gofmt@" + h + " completed failure: x.go isn't formatted",
 		"git-k8s/gofmt@" + h + " completed neutral: x.go isn't formatted; pushed " + f,
 		"git-k8s/gofmt@" + f + " in_progress : Running",
 	})
 	checks = map[string]gitk8s.CheckResult{"gofmt": {Commit: next, State: gitk8s.Error, Message: "fetching c/x: exit status 128"}}
-	step(checks, []string{"PATCH " + api + "check-runs/3", "GET " + api + "commits/" + next + "/check-runs", "POST " + api + "check-runs"}, []string{
+	step(checks, []string{"PATCH " + api + "check-runs/4", "GET " + api + "commits/" + next + "/check-runs", "POST " + api + "check-runs"}, []string{
 		"git-k8s/base@" + h + " completed success: builds on main",
+		"git-k8s/gofmt@" + h + " completed failure: x.go isn't formatted",
 		"git-k8s/gofmt@" + h + " completed neutral: x.go isn't formatted; pushed " + f,
 		"git-k8s/gofmt@" + f + " completed cancelled: The branch moved to " + n + " before the check finished.",
 		"git-k8s/gofmt@" + n + " completed failure: fetching c/x: exit status 128",
@@ -224,6 +230,17 @@ func TestCheckRunsSurviveRestarts(t *testing.T) {
 	}
 	if got, want := runs(gh), []string{"git-k8s/base@" + gitk8s.Short(head) + " completed success: Passed"}; !slices.Equal(got, want) {
 		t.Errorf("check runs = %q, want %q", got, want)
+	}
+
+	t.Log("After a restart, a check that starts again gets a new check run, which the next restart finds.")
+	running := map[string]gitk8s.CheckResult{"base": {Commit: head, ParentCommit: main, State: gitk8s.Running}}
+	got, err = (&publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}).publish(running)
+	if want := []string{get, "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+	got, err = (&publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}).publish(checks)
+	if want := []string{get, "PATCH " + api + "check-runs/2"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
 	}
 }
 

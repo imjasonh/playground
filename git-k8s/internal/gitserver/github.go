@@ -339,7 +339,8 @@ func (g *GitHub) api(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeCheckRun creates a check run, or updates old, with GitHub's
-// validation of the request.
+// validation of the request. GitHub doesn't support starting a completed
+// check run again, so neither does the fake.
 func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo string, old *CheckRun) {
 	var in checkRunRequest
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -370,12 +371,8 @@ func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo stri
 	set(&c.ExternalID, in.ExternalID)
 	set(&c.Status, in.Status)
 	set(&c.Conclusion, in.Conclusion)
-	switch {
-	case in.Conclusion != nil:
+	if in.Conclusion != nil {
 		c.Status = "completed"
-	case c.Status != "completed":
-		// Starting a completed check run again clears its conclusion.
-		c.Conclusion = ""
 	}
 	if in.Output != nil {
 		c.Output = *in.Output
@@ -383,6 +380,8 @@ func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo stri
 	switch {
 	case in.Status != nil && *in.Status == "completed" && in.Conclusion == nil:
 		apiError(w, http.StatusUnprocessableEntity, "conclusion is required when status is completed")
+	case old != nil && old.Status == "completed" && c.Status != "completed":
+		apiError(w, http.StatusUnprocessableEntity, "a completed check run can't start again")
 	case !slices.Contains([]string{"queued", "in_progress", "completed"}, c.Status):
 		apiError(w, http.StatusUnprocessableEntity, fmt.Sprintf("status %q isn't valid", c.Status))
 	case (c.Status == "completed") != (c.Conclusion != ""),

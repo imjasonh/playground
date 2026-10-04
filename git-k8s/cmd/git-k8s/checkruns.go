@@ -38,9 +38,10 @@ type branchResults struct {
 
 // checkRuns copies the check results on each GitBranch to GitHub as check
 // runs on the commits that they're for, for repositories that name an Octo
-// STS identity for check runs. Each check, commit, and GitRepository has one
-// check run, named git-k8s/CHECK, which the controller updates as the result
-// changes. Nothing on GitHub changes a result.
+// STS identity for check runs. A check's check run on a commit is named
+// git-k8s/CHECK. The controller updates it as the result changes, and
+// creates another when a check that finished starts again. Nothing on GitHub
+// changes a result.
 type checkRuns struct {
 	// now is time.Now, except in tests.
 	now func() time.Time
@@ -148,8 +149,9 @@ func (c *checkRuns) publish(ctx context.Context, gh *githubAPI, b *branchResults
 	}
 
 	run := checkRun{Name: "git-k8s/" + check, HeadSHA: res.Commit, ExternalID: b.Namespace + "/" + b.Spec.Repository, runState: want}
+	var old *checkRun
 	if ok && last.commit == res.Commit {
-		run.ID = last.id
+		old = &checkRun{ID: last.id, runState: last.shows}
 	} else {
 		found, err := gh.find(ctx, run)
 		if err != nil {
@@ -159,22 +161,23 @@ func (c *checkRuns) publish(ctx context.Context, gh *githubAPI, b *branchResults
 			c.remember(k, publishedRun{commit: res.Commit, id: found.ID, shows: want})
 			return nil
 		}
-		if found != nil {
-			run.ID = found.ID
-		}
+		old = found
 	}
-	if run.ID != 0 {
-		if err := gh.update(ctx, run.ID, want); err != nil {
+	// GitHub doesn't support starting a completed check run again, so a
+	// check that starts again gets a new check run, which GitHub shows
+	// instead of the old one.
+	if old != nil && (old.Status != "completed" || want.Status == "completed") {
+		if err := gh.update(ctx, old.ID, want); err != nil {
 			return err
 		}
-	} else {
-		id, err := gh.create(ctx, run)
-		if err != nil {
-			return err
-		}
-		run.ID = id
+		c.remember(k, publishedRun{commit: res.Commit, id: old.ID, shows: want})
+		return nil
 	}
-	c.remember(k, publishedRun{commit: res.Commit, id: run.ID, shows: want})
+	id, err := gh.create(ctx, run)
+	if err != nil {
+		return err
+	}
+	c.remember(k, publishedRun{commit: res.Commit, id: id, shows: want})
 	return nil
 }
 
