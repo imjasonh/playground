@@ -96,10 +96,10 @@ var check = checks.Check{Name: "deps", Remote: credentials.Remote, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if !strings.HasPrefix(in.Spec.Branch, string(prefix)) {
-		return checks.Pass("%s isn't a dependency branch", in.Spec.Branch), nil
+		return keepRuns(in, gitk8s.Passed, "%s isn't a dependency branch", in.Spec.Branch), nil
 	}
 	if in.Spec.Merge.Check("gotest") == nil {
-		return checks.Pass("the merge policy doesn't run the gotest check"), nil
+		return keepRuns(in, gitk8s.Passed, "the merge policy doesn't run the gotest check"), nil
 	}
 	var test *gitk8s.CheckResult
 	if r := kube.Get[testResult](ctx, in.Meta.Namespace, in.Meta.Name); r != nil {

@@ -136,9 +136,10 @@ func (f *fixture) commit(ctx context.Context, in *checks.Input, files []agent.Fi
 func TestPassesOtherBranches(t *testing.T) {
 	noAgent(t)
 	f := newFixture(t, "c/x")
+	f.b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123abcd", State: gitk8s.Failed, Outputs: map[string]string{"runs": "2"}}
 	rec := f.reconcile()
-	if res := f.result(); res.State != gitk8s.Passed || res.Message != "c/x isn't a dependency branch" || len(kube.Owned[agent.Pod](rec)) != 0 {
-		t.Errorf("result = %+v, want Passed without a Pod", res)
+	if res := f.result(); res.State != gitk8s.Passed || res.Message != "c/x isn't a dependency branch" || len(res.Outputs) != 1 || res.Outputs["runs"] != "2" || len(kube.Owned[agent.Pod](rec)) != 0 {
+		t.Errorf("result = %+v, want Passed with the count of agent runs and without a Pod", res)
 	}
 }
 
@@ -221,7 +222,7 @@ func TestFollowsTheTests(t *testing.T) {
 			if res.State != tc.state || res.Message != tc.message || len(kube.Owned[agent.Pod](rec)) != 0 {
 				t.Fatalf("result = %+v, want %s with %q and no Pod", res, tc.state, tc.message)
 			}
-			if !tc.noTests && (len(res.Outputs) != 1 || res.Outputs["runs"] != "3") {
+			if len(res.Outputs) != 1 || res.Outputs["runs"] != "3" {
 				t.Errorf("outputs = %v, want only the count of agent runs", res.Outputs)
 			}
 		})
