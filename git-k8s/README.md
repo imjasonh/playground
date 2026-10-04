@@ -220,14 +220,14 @@ to the core program's results endpoint:
    server-side apply, and the core program answers the request after the
    write.
 
-Only the replica of the core program that holds the leader lease runs
-controllers. If another replica gets the request, or the result isn't
-written within 10 seconds, the core program answers
-`503 Service Unavailable`, and the check tries again. If 10 tries fail, the
-check's reconcile fails, and kube retries it, which runs the check again. If
-the branch changed since the check read it, the core program answers
-`409 Conflict`, and the check drops the result, because the change runs the
-check again.
+Only one replica of the core program writes a branch's results. With the two
+replicas that `generate` runs by default, that's the replica that holds the
+leader lease. If another replica gets the request, or the result isn't written
+within 10 seconds, the core program answers `503 Service Unavailable`, and the
+check tries again. If 10 tries fail, the check's reconcile fails, and kube
+retries it, which runs the check again. If the branch changed since the check
+read it, the core program answers `409 Conflict`, and the check drops the
+result, because the change runs the check again.
 
 ### Security model
 
