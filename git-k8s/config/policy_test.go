@@ -447,6 +447,23 @@ func TestCheckPods(t *testing.T) {
 		})},
 		want: host,
 	}, {
+		name: "creates a Pod with a host port on its container's second port",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["containers"].([]any)[0].(map[string]any)["ports"] = []any{map[string]any{"containerPort": 8080}, map[string]any{"containerPort": 8081, "hostPort": 8081}}
+		})},
+		want: host,
+	}, {
+		name: "deletes the Pod of a check whose name starts with its own",
+		r:    request{user: gotest, operation: "DELETE", namespace: "repos", nsLabels: ready, oldObject: pod("check-gotest-race", "")},
+		want: others,
+	}, {
+		name: "creates a Pod with the label of a check whose name starts with its own",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: pod("check-gotest-race", "")},
+		want: label,
+	}, {
+		name: "an account whose name contains check- after a prefix creates a Pod",
+		r:    request{user: "system:serviceaccount:ci:precheck-runner", operation: "CREATE", namespace: "ci", object: pod("", "")},
+	}, {
 		name: "creates a Pod with a host port on an init container",
 		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
 			spec["initContainers"] = []any{map[string]any{"name": "fetch", "image": "cgr.dev/chainguard/git", "ports": []any{map[string]any{"containerPort": 22, "hostPort": 2222}}}}
