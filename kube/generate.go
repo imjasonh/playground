@@ -118,6 +118,9 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	case o.watchNamespace != "" && objectName(o.watchNamespace) != o.watchNamespace:
 		return fmt.Errorf("generate: -watch-namespace %q isn't a namespace name", o.watchNamespace)
 	}
+	if err := parseProgramFlags(o.args); err != nil {
+		return fmt.Errorf("generate: the program's flags after --: %v", err)
+	}
 	o.registry = strings.TrimSuffix(o.registry, "/")
 	for _, s := range strings.Split(*platforms, ",") {
 		p, err := v1.ParsePlatform(strings.TrimSpace(s))
@@ -161,6 +164,17 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	}
 	_, err = stdout.Write(out.Bytes())
 	return err
+}
+
+// parseProgramFlags parses the flags for the program in the Deployment into
+// the program's variables, as Main would, so that controllers' describe
+// methods see them.
+func parseProgramFlags(args []string) error {
+	fs := flag.NewFlagSet("", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	flag.CommandLine.VisitAll(func(f *flag.Flag) { fs.Var(f.Value, f.Name, f.Usage) })
+	(&Manager{}).flags(fs)
+	return fs.Parse(args)
 }
 
 // buildEnv is the environment for building and analyzing the program for
@@ -270,7 +284,10 @@ type installPlan struct {
 	// own namespace, and watched those in the namespace that it watches,
 	// when it watches one.
 	cluster, local, watched grants
-	webhooks                bool
+	// namespaces holds permissions in other namespaces, for the objects
+	// that Install applies there.
+	namespaces map[string]grants
+	webhooks   bool
 	// electLeader is set when replicas must take turns reconciling.
 	electLeader bool
 }
@@ -288,7 +305,7 @@ func (p *installPlan) grantsFor(ti *typeInfo, watching bool) grants {
 // and the program's source shows the types its reconciles and webhooks
 // read and write.
 func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pkg string) (*installPlan, error) {
-	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}}
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, namespaces: map[string]grants{}}
 	cluster := p.cluster
 	watching := o.watchNamespace != ""
 	warned := map[string]bool{}
@@ -300,12 +317,14 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		return p.grantsFor(ti, watching)
 	}
 	var crds []string
+	var installs []installObject
 	for _, c := range controllers {
 		d, err := c.describe()
 		if err != nil {
 			return nil, err
 		}
 		p.webhooks = p.webhooks || d.webhooks
+		installs = append(installs, d.installs...)
 		if !d.reconciles {
 			continue
 		}
@@ -374,6 +393,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 	if p.electLeader {
 		p.local.add("coordination.k8s.io", "leases", "", "get", "list", "create", "update", "delete")
 	}
+	o.grantInstalls(p, installs)
 	if o.watchNamespace == o.namespace {
 		for k, verbs := range p.watched {
 			for v := range verbs {
@@ -383,6 +403,77 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		clear(p.watched)
 	}
 	return p, nil
+}
+
+// grantsIn returns where the permissions for objects in namespace ns go,
+// or for cluster-scoped objects when ns is empty.
+func (o *generateOptions) grantsIn(p *installPlan, ns string) grants {
+	switch ns {
+	case "":
+		return p.cluster
+	case o.namespace:
+		return p.local
+	case o.watchNamespace:
+		return p.watched
+	}
+	if p.namespaces[ns] == nil {
+		p.namespaces[ns] = grants{}
+	}
+	return p.namespaces[ns]
+}
+
+// groupResource returns the API group and resource of a kind in an API
+// version.
+func groupResource(apiVersion, kind string) (string, string) {
+	group, _, ok := strings.Cut(apiVersion, "/")
+	if !ok {
+		group = ""
+	}
+	return resourceName(&typeInfo{group: group, kind: kind})
+}
+
+// grantInstalls grants the permissions to apply the objects that Install
+// applies: create and patch on each object by name. A server-side apply
+// names the object in its URL, so the API server checks create on that
+// name when the object doesn't exist yet.
+func (o *generateOptions) grantInstalls(p *installPlan, objs []installObject) {
+	// params holds the group and resource of each policy's paramKind, by
+	// the policy's kind and name.
+	params := map[string]grantKey{}
+	for _, obj := range objs {
+		group, resource := groupResource(obj.apiVersion, obj.kind)
+		o.grantsIn(p, obj.namespace).add(group, resource, obj.name, "create", "patch")
+		if group != "admissionregistration.k8s.io" {
+			continue
+		}
+		spec, _ := obj.body["spec"].(map[string]any)
+		if kind, ok := spec["paramKind"].(map[string]any); ok && strings.HasSuffix(obj.kind, "AdmissionPolicy") {
+			apiVersion, _ := kind["apiVersion"].(string)
+			k, _ := kind["kind"].(string)
+			pg, pr := groupResource(apiVersion, k)
+			params[obj.kind+"/"+obj.name] = grantKey{group: pg, resource: pr}
+			// The API server lets only someone who can get every object of a
+			// policy's paramKind create the policy. It checks get on the
+			// object named "*" in the namespace "*", a name that ConfigMaps
+			// and custom resources can't have, so this rule passes the check
+			// without letting the program read them.
+			p.cluster.add(pg, pr, "*", "get")
+		}
+		ref, ok := spec["paramRef"].(map[string]any)
+		if !ok || !strings.HasSuffix(obj.kind, "AdmissionPolicyBinding") {
+			continue
+		}
+		policy, _ := spec["policyName"].(string)
+		name, _ := ref["name"].(string)
+		param, ok := params[strings.TrimSuffix(obj.kind, "Binding")+"/"+policy]
+		if !ok || name == "" {
+			o.logf("warning: %s %s binds parameters that generate can't name, so put its policy, with a paramKind, earlier in the manifest and name the parameters in its paramRef, or give the program get permission on them yourself", obj.kind, obj.name)
+			continue
+		}
+		// Binding a policy to parameters needs permission to get them.
+		ns, _ := ref["namespace"].(string)
+		o.grantsIn(p, ns).add(param.group, param.resource, name, "get")
+	}
 }
 
 // manifests returns the objects that install the program.
@@ -421,6 +512,9 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 	}
 	if len(p.watched) > 0 {
 		docs = append(docs, role(object{{"name", o.name}, {"namespace", o.watchNamespace}, {"labels", labels}}, p.watched)...)
+	}
+	for _, ns := range slices.Sorted(maps.Keys(p.namespaces)) {
+		docs = append(docs, role(object{{"name", o.name}, {"namespace", ns}, {"labels", labels}}, p.namespaces[ns])...)
 	}
 	args := []string{"-addr=:8080"}
 	switch {

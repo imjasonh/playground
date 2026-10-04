@@ -6,6 +6,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"flag"
+	"maps"
 	"reflect"
 	"slices"
 	"strings"
@@ -232,6 +234,132 @@ func TestManifestsForOneNamespace(t *testing.T) {
 	}
 }
 
+func TestGrantInstalls(t *testing.T) {
+	objs, err := parseManifest([]byte(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: params
+  namespace: policies
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: settings
+  namespace: app-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: settings
+  namespace: team
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: limits
+spec:
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: limits
+spec:
+  policyName: limits
+  paramRef:
+    name: params
+    namespace: policies
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: elsewhere
+spec:
+  policyName: someone-elses
+  paramRef:
+    name: params
+    namespace: policies
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	o := &generateOptions{program: "app", name: "app", namespace: "app-system", watchNamespace: "team", stderr: &stderr}
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, namespaces: map[string]grants{}}
+	o.grantInstalls(p, objs)
+	for _, tc := range []struct {
+		name string
+		g    grants
+		want string
+	}{
+		{"cluster", p.cluster, `[` +
+			`{"apiGroups":[""],"resources":["configmaps"],"resourceNames":["*"],"verbs":["get"]},` +
+			`{"apiGroups":["admissionregistration.k8s.io"],"resources":["validatingadmissionpolicies","validatingadmissionpolicybindings"],"resourceNames":["limits"],"verbs":["create","patch"]},` +
+			`{"apiGroups":["admissionregistration.k8s.io"],"resources":["validatingadmissionpolicybindings"],"resourceNames":["elsewhere"],"verbs":["create","patch"]}]`},
+		{"local", p.local, `[` +
+			`{"apiGroups":[""],"resources":["configmaps"],"resourceNames":["settings"],"verbs":["create","patch"]}]`},
+		{"watched", p.watched, `[` +
+			`{"apiGroups":[""],"resources":["configmaps"],"resourceNames":["settings"],"verbs":["create","patch"]}]`},
+		{"policies", p.namespaces["policies"], `[` +
+			`{"apiGroups":[""],"resources":["configmaps"],"resourceNames":["params"],"verbs":["create","get","patch"]}]`},
+	} {
+		if b, _ := json.Marshal(tc.g.rules()); string(b) != tc.want {
+			t.Errorf("%s rules =\n%s\nwant\n%s", tc.name, b, tc.want)
+		}
+	}
+	if len(p.namespaces) != 1 {
+		t.Errorf("namespaces = %v, want only policies", slices.Sorted(maps.Keys(p.namespaces)))
+	}
+	if !strings.Contains(stderr.String(), "warning: ValidatingAdmissionPolicyBinding elsewhere binds parameters") {
+		t.Errorf("stderr = %q, want a warning about the binding whose policy isn't in the manifest", stderr.String())
+	}
+}
+
+func TestManifestsForInstalledObjects(t *testing.T) {
+	o := &generateOptions{program: "app", name: "app", namespace: "app-system", replicas: 1, shards: 1}
+	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}, namespaces: map[string]grants{"policies": {}, "other": {}}}
+	p.namespaces["policies"].add("", "configmaps", "params", "get")
+	p.namespaces["other"].add("", "configmaps", "", "create")
+	var roles []string
+	for _, d := range o.manifests("ref", p) {
+		b, _ := json.Marshal(d)
+		var m struct {
+			Kind     string `json:"kind"`
+			Metadata struct {
+				Name      string `json:"name"`
+				Namespace string `json:"namespace"`
+			} `json:"metadata"`
+			Subjects []any `json:"subjects"`
+		}
+		_ = json.Unmarshal(b, &m)
+		if m.Kind != "Role" && m.Kind != "RoleBinding" {
+			continue
+		}
+		roles = append(roles, m.Kind+" "+m.Metadata.Namespace+"/"+m.Metadata.Name)
+		if b, _ := json.Marshal(m.Subjects); m.Kind == "RoleBinding" && string(b) != `[{"kind":"ServiceAccount","name":"app","namespace":"app-system"}]` {
+			t.Errorf("%s subjects = %s", m.Metadata.Namespace, b)
+		}
+	}
+	if want := []string{"Role other/app", "RoleBinding other/app", "Role policies/app", "RoleBinding policies/app"}; !slices.Equal(roles, want) {
+		t.Errorf("roles = %q, want %q", roles, want)
+	}
+}
+
+// installForTest is a program flag for TestParseProgramFlags.
+var installForTest = flag.Bool("kube-test-install", true, "install objects")
+
+func TestParseProgramFlags(t *testing.T) {
+	t.Cleanup(func() { *installForTest = true })
+	if err := parseProgramFlags([]string{"-v", "-namespace=team", "-kube-test-install=false"}); err != nil {
+		t.Fatal(err)
+	}
+	if *installForTest {
+		t.Error("the program's flag isn't set")
+	}
+}
+
 func TestGenerateArguments(t *testing.T) {
 	for _, tc := range []struct {
 		args []string
@@ -244,6 +372,7 @@ func TestGenerateArguments(t *testing.T) {
 		{[]string{"-registry=ghcr.io/you", "-tmp-size=lots"}, "isn't a quantity"},
 		{[]string{"-registry=ghcr.io/you", "-watch-namespace=Team_A"}, "isn't a namespace name"},
 		{[]string{"-registry=ghcr.io/you", "-nope"}, "flag provided but not defined"},
+		{[]string{"-registry=ghcr.io/you", "--", "-v", "-nope"}, "the program's flags after --: flag provided but not defined: -nope"},
 	} {
 		var stderr bytes.Buffer
 		err := generate(t.Context(), tc.args, nil, &bytes.Buffer{}, &stderr)

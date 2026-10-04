@@ -153,15 +153,7 @@ func Main(controllers ...Controller) {
 		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [flags]\n       %s generate -registry=REGISTRY [flags] | kubectl apply -f -\n\nFlags:\n", name, name)
 		flag.PrintDefaults()
 	}
-	flag.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
-	flag.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
-	flag.BoolVar(&m.LeaderElection, "leader-elect", false, "reconcile only while holding a Lease")
-	flag.IntVar(&m.Shards, "shards", 1, "split reconciles across replicas in this many shards, each held through a Lease")
-	flag.StringVar(&m.Addr, "addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
-	flag.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
-	flag.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
-	flag.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
-	verbose := flag.Bool("v", false, "log debug messages")
+	verbose := m.flags(flag.CommandLine)
 	flag.Parse()
 	level := slog.LevelInfo
 	if *verbose {
@@ -175,6 +167,19 @@ func Main(controllers ...Controller) {
 		stop()
 		os.Exit(1)
 	}
+}
+
+// flags defines Main's flags on fs, and returns the value of -v.
+func (m *Manager) flags(fs *flag.FlagSet) *bool {
+	fs.StringVar(&m.Kubeconfig, "kubeconfig", "", "path to a kubeconfig file")
+	fs.StringVar(&m.Namespace, "namespace", "", "watch only this namespace")
+	fs.BoolVar(&m.LeaderElection, "leader-elect", false, "reconcile only while holding a Lease")
+	fs.IntVar(&m.Shards, "shards", 1, "split reconciles across replicas in this many shards, each held through a Lease")
+	fs.StringVar(&m.Addr, "addr", "", "address for /healthz, /readyz, and /metrics, for example :8080")
+	fs.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
+	fs.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
+	fs.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
+	return fs.Bool("v", false, "log debug messages")
 }
 
 func (m *Manager) init() error {
@@ -268,10 +273,12 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		// configurations whose webhooks no longer answer.
 		m.log.Warn("removing stale webhook configurations failed", "err", err)
 	}
-	var reconcilers []Controller
+	var reconcilers, others []Controller
 	for _, c := range controllers {
 		if c.reconciles() {
 			reconcilers = append(reconcilers, c)
+		} else {
+			others = append(others, c)
 		}
 	}
 	if len(reconcilers) > 0 && (m.LeaderElection || m.Shards > 1) {
@@ -295,7 +302,9 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 	var wg sync.WaitGroup
 	stops = append(stops, wg.Wait)
 	if ctx.Err() == nil {
-		for _, c := range reconcilers {
+		// Reconcilers install their CustomResourceDefinitions in setup, and
+		// the objects that Install applies may need them.
+		for _, c := range slices.Concat(reconcilers, others) {
 			if err := c.setup(ctx, m); err != nil {
 				return startFailed(err)
 			}

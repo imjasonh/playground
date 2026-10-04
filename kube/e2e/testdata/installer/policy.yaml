@@ -1,0 +1,43 @@
+# The policy's parameter: data.forbidden is a color that ConfigMaps labeled
+# installer-test can't have.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: installer-colors
+  namespace: installer-params
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: installer-colors
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [configmaps]
+    objectSelector:
+      matchLabels:
+        installer-test: "true"
+  validations:
+    - expression: >-
+        !has(params.data) || !("forbidden" in params.data) || !has(object.data) ||
+        !("color" in object.data) || object.data.color != params.data.forbidden
+      messageExpression: '"the color " + object.data.color + " is forbidden"'
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: installer-colors
+spec:
+  policyName: installer-colors
+  paramRef:
+    name: installer-colors
+    namespace: installer-params
+    parameterNotFoundAction: Deny
+  validationActions: [Deny]
