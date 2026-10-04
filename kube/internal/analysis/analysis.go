@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/importer"
 	"go/parser"
 	"go/token"
@@ -36,6 +37,11 @@ type Config struct {
 	// Funcs are the names of the functions to report. For a generic
 	// function, Find reports each first type argument.
 	Funcs []string
+	// Consts maps some of Funcs that aren't generic to the index of a
+	// string parameter. Find reports each constant that the program passes
+	// there, and the first other reference to the function, such as a call
+	// that passes a variable.
+	Consts map[string]int
 	// Marker is a struct type in Package. Find reports the tag of the field
 	// through which a type argument embeds it.
 	Marker string
@@ -51,6 +57,10 @@ type Use struct {
 	Type, Name string
 	// Tag is the struct tag of the field that embeds Marker.
 	Tag string
+	// Constant is set for a call that passes a constant as the argument
+	// that Consts names, and Value is the constant.
+	Constant bool
+	Value    string
 	// Pos is where the call is.
 	Pos string
 }
@@ -71,8 +81,9 @@ type listedPackage struct {
 // whose type argument embeds Marker. A call inside a generic function
 // counts once for each type that the function is instantiated with
 // anywhere in those packages. For each of Funcs that isn't generic, Find
-// returns the first reference to it, if those packages have one. Find also
-// returns warnings about calls whose type arguments it can't tell.
+// returns the first reference to it, if those packages have one, and the
+// first call with each constant that Consts asks for. Find also returns
+// warnings about calls whose type arguments it can't tell.
 func Find(ctx context.Context, cfg Config) ([]Use, []string, error) {
 	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-export", "-json=ImportPath,Dir,GoFiles,Export,Standard,ImportMap,Imports,Error", "--", cfg.Pattern) // #nosec G204 -- the go command with a package pattern.
 	cmd.Dir, cmd.Env = cfg.Dir, cfg.Env
@@ -120,6 +131,7 @@ func Find(ctx context.Context, cfg Config) ([]Use, []string, error) {
 		edges:    map[node][]node{},
 		concrete: map[node]map[string]typeArg{},
 		calls:    map[string]string{},
+		consts:   map[string]map[string]string{},
 	}
 	for _, p := range pkgs {
 		if reaches[p.ImportPath] && p.ImportPath != cfg.Package {
@@ -153,8 +165,11 @@ type analyzer struct {
 	// with, by type string.
 	concrete map[node]map[string]typeArg
 	// calls holds where the program first refers to each of Funcs that
-	// isn't generic.
+	// isn't generic, other than in the calls that consts holds. consts
+	// holds where the program first passes each constant to one of Consts,
+	// by function and constant.
 	calls    map[string]string
+	consts   map[string]map[string]string
 	warnings []string
 }
 
@@ -180,6 +195,7 @@ func (a *analyzer) check(p *listedPackage) error {
 		}),
 	}
 	info := &types.Info{
+		Types:     map[ast.Expr]types.TypeAndValue{},
 		Instances: map[*ast.Ident]types.Instance{},
 		Uses:      map[*ast.Ident]types.Object{},
 		Defs:      map[*ast.Ident]types.Object{},
@@ -245,13 +261,51 @@ func (a *analyzer) check(p *listedPackage) error {
 			a.add(to, typeArg{arg, pos})
 		}
 	}
+	// constArg holds the constant argument that Consts asks for, by the
+	// called function's identifier, for calls that pass one.
+	constArg := map[*ast.Ident]string{}
+	for _, f := range files {
+		ast.Inspect(f, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			var id *ast.Ident
+			switch fun := ast.Unparen(call.Fun).(type) {
+			case *ast.Ident:
+				id = fun
+			case *ast.SelectorExpr:
+				id = fun.Sel
+			}
+			fn, ok := info.Uses[id].(*types.Func)
+			if !ok || fn.Pkg() == nil || fn.Pkg().Path() != a.cfg.Package {
+				return true
+			}
+			if i, ok := a.cfg.Consts[fn.Name()]; ok && i < len(call.Args) {
+				if v := info.Types[call.Args[i]].Value; v != nil && v.Kind() == constant.String {
+					constArg[id] = constant.StringVal(v)
+				}
+			}
+			return true
+		})
+	}
 	first := map[string]token.Pos{}
+	firstConst := map[string]map[string]token.Pos{}
 	for id, obj := range info.Uses {
 		fn, ok := obj.(*types.Func)
 		if !ok || fn.Pkg() == nil || fn.Pkg().Path() != a.cfg.Package || !slices.Contains(a.cfg.Funcs, fn.Name()) {
 			continue
 		}
 		if sig := fn.Origin().Signature(); sig.Recv() != nil || sig.TypeParams().Len() > 0 {
+			continue
+		}
+		if v, ok := constArg[id]; ok {
+			if firstConst[fn.Name()] == nil {
+				firstConst[fn.Name()] = map[string]token.Pos{}
+			}
+			if p, ok := firstConst[fn.Name()][v]; !ok || id.Pos() < p {
+				firstConst[fn.Name()][v] = id.Pos()
+			}
 			continue
 		}
 		if p, ok := first[fn.Name()]; !ok || id.Pos() < p {
@@ -261,6 +315,16 @@ func (a *analyzer) check(p *listedPackage) error {
 	for name, p := range first {
 		if _, ok := a.calls[name]; !ok {
 			a.calls[name] = fset.Position(p).String()
+		}
+	}
+	for name, values := range firstConst {
+		if a.consts[name] == nil {
+			a.consts[name] = map[string]string{}
+		}
+		for v, p := range values {
+			if _, ok := a.consts[name][v]; !ok {
+				a.consts[name][v] = fset.Position(p).String()
+			}
 		}
 	}
 	return nil
@@ -336,6 +400,9 @@ func (a *analyzer) uses() []Use {
 		if pos, ok := a.calls[f]; ok {
 			out = append(out, Use{Func: f, Pos: pos})
 		}
+		for _, v := range slices.Sorted(maps.Keys(a.consts[f])) {
+			out = append(out, Use{Func: f, Constant: true, Value: v, Pos: a.consts[f][v]})
+		}
 		args := a.concrete[node{a.cfg.Package + "." + f, 0}]
 		for _, key := range slices.Sorted(maps.Keys(args)) {
 			if u, ok := a.use(f, args[key]); ok {
@@ -371,6 +438,9 @@ func (a *analyzer) use(f string, t typeArg) (Use, bool) {
 
 // String formats a use for messages.
 func (u Use) String() string {
+	if u.Constant {
+		return fmt.Sprintf("%s(%q) at %s", u.Func, u.Value, u.Pos)
+	}
 	if u.Type == "" {
 		return fmt.Sprintf("%s at %s", u.Func, u.Pos)
 	}
