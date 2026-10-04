@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"maps"
 	"slices"
 	"strings"
@@ -68,6 +69,22 @@ func TestStartsSandboxedPod(t *testing.T) {
 	}
 	if !hasSecret(spec.InitContainers[0]) || hasSecret(spec.Containers[0]) {
 		t.Error("only the fetch container can see the repository's credentials")
+	}
+}
+
+func TestPodNeverSeesSigningKey(t *testing.T) {
+	b, repo := branch()
+	repo.Spec.SigningKeyRef = &gitk8s.SecretRef{Name: "app-signing"}
+	pods := kube.Owned[Pod](reconcileWith(t, b, repo))
+	if len(pods) != 1 {
+		t.Fatalf("owned Pods = %+v", pods)
+	}
+	spec, err := json.Marshal(pods[0].Spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(spec), "app-signing") {
+		t.Errorf("the test Pod refers to the signing key's Secret: %s", spec)
 	}
 }
 

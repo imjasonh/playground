@@ -15,6 +15,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -33,7 +34,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-var check = checks.Check{Name: "base", UsesParent: true, Remote: credentials.Remote, Run: run}
+var check = checks.Check{Name: "base", UsesParent: true, Remote: credentials.Remote, SigningKey: signing.Key, Run: run}
 
 func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	repo, err := in.Repo(ctx)
@@ -71,7 +72,7 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		return checks.Verdict{}, err
 	}
 	msg := fmt.Sprintf("Merge %s into %s\n\n%s: base\n", in.Spec.Parent, in.Spec.Branch, git.FixerTrailer)
-	fix, err := repo.CommitTree(ctx, tree, []string{head, parentHead}, msg, in.Identity, max(hc.Time, pc.Time))
+	fix, err := in.CommitTree(ctx, tree, []string{head, parentHead}, msg, max(hc.Time, pc.Time))
 	if err != nil {
 		return checks.Verdict{}, err
 	}

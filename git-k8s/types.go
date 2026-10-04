@@ -51,6 +51,9 @@ type GitRepositorySpec struct {
 	// PollInterval is a Go duration.
 	PollInterval string       `json:"pollInterval,omitempty" kube:"default=30s" pattern:"^([0-9]+(ms|s|m|h))+$" doc:"How often to list the remote's branches, such as 30s or 5m."`
 	Branches     []BranchRule `json:"branches,omitempty" doc:"Rules that select branches to track. For each remote branch, the first rule whose match pattern matches applies. Branches that match no rule aren't tracked."`
+	// Only the programs that make commits read the Secret that SigningKeyRef
+	// names, through package signing.
+	SigningKeyRef *SecretRef `json:"signingKeyRef,omitempty" doc:"Secret in the same namespace with an ssh-privatekey key that holds an unencrypted private key in OpenSSH format, such as a kubernetes.io/ssh-auth Secret. Checks sign the commits that they make with it. Without it, those commits aren't signed."`
 }
 
 // SecretRef names a Secret in the same namespace.

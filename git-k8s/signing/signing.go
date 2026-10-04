@@ -1,0 +1,44 @@
+// Package signing reads the key that signs a repository's commits.
+//
+// As with the credentials package, reading the Secret makes kube's generate
+// grant a program get access to Secrets in every namespace. Only the
+// programs that make commits import this package, so the others never read
+// the key.
+package signing
+
+import (
+	"context"
+	"fmt"
+
+	gitk8s "github.com/imjasonh/playground/git-k8s"
+	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/kube"
+	"github.com/imjasonh/playground/kube/k8s"
+)
+
+// Key returns the key that signs a repository's commits, or nil if the
+// repository doesn't name one. It reads the Secret that SigningKeyRef names
+// with kube.Fetch, so it must run in a reconcile, and the Secret isn't
+// cached.
+func Key(ctx context.Context, repo *gitk8s.Repository) (*git.SigningKey, error) {
+	if repo.Spec.SigningKeyRef == nil {
+		return nil, nil
+	}
+	name := repo.Spec.SigningKeyRef.Name
+	s, err := kube.Fetch[k8s.Secret](ctx, repo.Namespace, name)
+	if err != nil {
+		return nil, fmt.Errorf("reading Secret %s: %w", name, err)
+	}
+	if s == nil {
+		return nil, fmt.Errorf("Secret %s doesn't exist", name)
+	}
+	data := s.Data["ssh-privatekey"]
+	if len(data) == 0 {
+		return nil, fmt.Errorf("Secret %s has no ssh-privatekey key", name)
+	}
+	key, err := git.NewSigningKey(data)
+	if err != nil {
+		return nil, fmt.Errorf("Secret %s: %w", name, err)
+	}
+	return key, nil
+}

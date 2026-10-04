@@ -76,11 +76,11 @@ func TestFetchMergePush(t *testing.T) {
 	}
 	id := git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}
 	msg := "Merge main into c/x\n\n" + git.FixerTrailer + ": base\n"
-	merge, err := repo.CommitTree(ctx, tree, []string{head, parent}, msg, id, 1700000000)
+	merge, err := repo.CommitTree(ctx, tree, []string{head, parent}, msg, id, 1700000000, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := repo.CommitTree(ctx, tree, []string{head, parent}, msg, id, 1700000000)
+	again, err := repo.CommitTree(ctx, tree, []string{head, parent}, msg, id, 1700000000, nil)
 	if err != nil || again != merge {
 		t.Errorf("CommitTree isn't deterministic: %s then %s (%v)", merge, again, err)
 	}
@@ -171,7 +171,7 @@ func TestTreeEditing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	commit, err := repo.CommitTree(ctx, tree, []string{head}, "edit", git.Identity{Name: "a", Email: "a@example.com"}, c.Time)
+	commit, err := repo.CommitTree(ctx, tree, []string{head}, "edit", git.Identity{Name: "a", Email: "a@example.com"}, c.Time, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

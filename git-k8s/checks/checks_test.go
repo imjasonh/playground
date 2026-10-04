@@ -10,6 +10,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
+	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -31,7 +32,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 // touch passes branches that have a TOUCHED file, and otherwise proposes a
 // commit that adds one.
 func touch(runs *int) checks.Check {
-	return checks.Check{Name: "touch", Remote: credentials.Remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+	return checks.Check{Name: "touch", Remote: credentials.Remote, SigningKey: signing.Key, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		*runs++
 		repo, err := in.Repo(ctx)
 		if err != nil {
@@ -58,7 +59,7 @@ func touch(runs *int) checks.Check {
 		if err != nil {
 			return checks.Verdict{}, err
 		}
-		fix, err := repo.CommitTree(ctx, tree, []string{in.Spec.Head}, "Touch\n\n"+git.FixerTrailer+": touch\n", in.Identity, c.Time)
+		fix, err := in.CommitTree(ctx, tree, []string{in.Spec.Head}, "Touch\n\n"+git.FixerTrailer+": touch\n", c.Time)
 		if err != nil {
 			return checks.Verdict{}, err
 		}
@@ -75,6 +76,7 @@ type fixture struct {
 	secret *k8s.Secret
 	branch *Branch
 	cfg    *checks.Config
+	world  []any
 }
 
 // newFixture pushes main and a branch c/x that adds a file, and returns a
@@ -109,7 +111,7 @@ func newFixture(t *testing.T, policy gitk8s.CheckPolicy) *fixture {
 
 func (f *fixture) reconcile(t *testing.T, check checks.Check) error {
 	t.Helper()
-	ctx, _ := kube.Fake(t.Context(), f.branch, f.repo, f.secret)
+	ctx, _ := kube.Fake(t.Context(), f.branch, append([]any{f.repo, f.secret}, f.world...)...)
 	return checks.NewReconciler[Branch](check, f.cfg).Reconcile(ctx, f.branch)
 }
 
@@ -161,6 +163,57 @@ func TestPushesFixThenPasses(t *testing.T) {
 	}
 	if runs != before {
 		t.Errorf("the check ran again for a head with a final result")
+	}
+}
+
+func TestSignsFixes(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
+	signer := gittest.NewSigner(t, f.cfg.Identity.Email)
+	f.world = append(f.world, signer.Sign(f.repo))
+	runs := 0
+	if err := f.reconcile(t, touch(&runs)); err != nil {
+		t.Fatal(err)
+	}
+	fix := f.work.Fetch("c/x")
+	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Fixed || res.Outputs["fix"] != fix {
+		t.Fatalf("result = %+v, want Fixed with the pushed fix %s", res, fix)
+	}
+	if err := signer.Verify(f.work.Dir, fix); err != nil {
+		t.Error(err)
+	}
+}
+
+func TestCommitTreeNeedsSigningKey(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
+	head := f.branch.Spec.Head
+	runs := 0
+	check := touch(&runs)
+	check.SigningKey = nil
+	err := f.reconcile(t, check)
+	if err == nil || !strings.Contains(err.Error(), "set Check.SigningKey to signing.Key") {
+		t.Fatalf("err = %v, want one that says to set Check.SigningKey", err)
+	}
+	if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error {
+		t.Errorf("result = %+v, want Error", res)
+	}
+	if got := f.srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s", got)
+	}
+}
+
+func TestMissingSigningKeyIsReported(t *testing.T) {
+	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
+	f.repo.Spec.SigningKeyRef = &gitk8s.SecretRef{Name: "app-signing"}
+	head := f.branch.Spec.Head
+	runs := 0
+	if err := f.reconcile(t, touch(&runs)); err == nil {
+		t.Fatal("reconcile without the signing key's Secret succeeded")
+	}
+	if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error || !strings.Contains(res.Message, "Secret app-signing doesn't exist") {
+		t.Errorf("result = %+v, want Error because the Secret is missing", res)
+	}
+	if got := f.srv.Heads(t, "app")["c/x"]; got != head {
+		t.Errorf("c/x moved to %s without a signature", got)
 	}
 }
 

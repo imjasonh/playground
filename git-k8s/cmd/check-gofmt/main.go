@@ -20,6 +20,7 @@ import (
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
+	"github.com/imjasonh/playground/git-k8s/signing"
 	"github.com/imjasonh/playground/kube"
 )
 
@@ -38,7 +39,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 	return &b.ObjectMeta, &b.Spec, &b.Status.Checks.Result
 }
 
-var check = checks.Check{Name: "gofmt", Remote: credentials.Remote, Run: run}
+var check = checks.Check{Name: "gofmt", Remote: credentials.Remote, SigningKey: signing.Key, Run: run}
 
 // formatted holds the SHAs of blobs that are already formatted. A blob's
 // formatting never changes, so later runs skip reading it.
@@ -100,7 +101,7 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		return checks.Verdict{}, err
 	}
 	msg := fmt.Sprintf("Format Go files with gofmt\n\n%s\n\n%s: gofmt\n", strings.Join(changed, "\n"), git.FixerTrailer)
-	fix, err := repo.CommitTree(ctx, tree, []string{head}, msg, in.Identity, c.Time)
+	fix, err := in.CommitTree(ctx, tree, []string{head}, msg, c.Time)
 	if err != nil {
 		return checks.Verdict{}, err
 	}

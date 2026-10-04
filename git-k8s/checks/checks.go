@@ -59,6 +59,11 @@ type Check struct {
 	// that leaves it nil doesn't link that package, so its program can't
 	// read Secrets.
 	Remote func(context.Context, *gitk8s.Repository) (git.Remote, error)
+	// SigningKey returns the key that signs a repository's commits, or nil
+	// if the repository doesn't name one. A check that calls
+	// Input.CommitTree sets it to signing.Key. A check that leaves it nil
+	// doesn't link that package, so its program never reads signing keys.
+	SigningKey func(context.Context, *gitk8s.Repository) (*git.SigningKey, error)
 	// Run examines the branch.
 	Run func(ctx context.Context, in *Input) (Verdict, error)
 }
@@ -167,7 +172,7 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		return fmt.Errorf("GitRepository %s/%s doesn't exist", meta.Namespace, spec.Repository)
 	}
 	r.once.Do(func() { r.cache = &gitk8s.Cache{Git: &r.cfg.Git, Dir: r.cfg.CacheDir} })
-	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Identity: r.cfg.Identity, Previous: cur, check: &r.check, cache: r.cache}
+	in := &Input{Meta: meta, Spec: spec, Policy: *policy, Repository: repo, Previous: cur, identity: r.cfg.Identity, check: &r.check, cache: r.cache}
 	defer in.release()
 
 	res := &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit}
@@ -240,11 +245,10 @@ type Input struct {
 	Spec       *gitk8s.GitBranchSpec
 	Policy     gitk8s.CheckPolicy
 	Repository *gitk8s.Repository
-	// Identity is the author and committer for fix commits.
-	Identity git.Identity
 	// Previous is the check's last result, which can be for other commits.
 	Previous *gitk8s.CheckResult
 
+	identity  git.Identity
 	check     *Check
 	cache     *gitk8s.Cache
 	remote    *git.Remote
@@ -310,6 +314,24 @@ func (in *Input) MergeBase(ctx context.Context) (string, error) {
 		in.mergeBase = &mb
 	}
 	return *in.mergeBase, nil
+}
+
+// CommitTree makes a commit in Repo's repository, with the controller's
+// identity as its author and committer, and signs it with the key from
+// Check.SigningKey, if the repository names one.
+func (in *Input) CommitTree(ctx context.Context, tree string, parents []string, message string, unix int64) (string, error) {
+	if in.check.SigningKey == nil {
+		return "", fmt.Errorf("the %s check can't make commits: set Check.SigningKey to signing.Key", in.check.Name)
+	}
+	local, err := in.Repo(ctx)
+	if err != nil {
+		return "", err
+	}
+	key, err := in.check.SigningKey(ctx, in.Repository)
+	if err != nil {
+		return "", err
+	}
+	return local.CommitTree(ctx, tree, parents, message, in.identity, unix, key)
 }
 
 func (in *Input) release() {
