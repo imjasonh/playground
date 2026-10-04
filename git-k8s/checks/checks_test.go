@@ -255,7 +255,7 @@ func TestDoesNotPushWithoutPermission(t *testing.T) {
 
 func TestDoesNotReadSigningKeyWithoutPermission(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
-	// Reading the key would fail, because its Secret doesn't exist.
+	// The key's Secret doesn't exist, so reading the key fails.
 	f.repo.Spec.SigningKeyRef = &gitk8s.SecretRef{Name: "app-signing"}
 	runs := 0
 	if err := f.reconcile(t, touch(&runs)); err != nil {
