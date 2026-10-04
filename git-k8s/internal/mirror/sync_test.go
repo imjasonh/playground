@@ -351,6 +351,13 @@ func TestDecideRewrittenCommits(t *testing.T) {
 	c := w.commitFiles(secret, "c", file(map[int]string{10: "foo", 20: "copy", 50: "foo"}))
 	e := w.commitFiles(p, "e", file(map[int]string{10: "foo", 20: "external", 50: "foo"}))
 	resolved := w.commitFiles(e, "c, resolved", file(map[int]string{10: "foo", 20: "copy and external", 50: "foo"}))
+	// merged merges e with next, which changes line 21, and keeps both
+	// changes where git conflicts. mergedApart merges e with a commit that
+	// changes line 22, which git merges cleanly.
+	next := w.commitFiles(p, "line 21", file(map[int]string{10: "foo", 21: "copy", 50: "foo"}))
+	kept := w.commitFiles(e, "lines 20 and 21", file(map[int]string{10: "foo", 20: "external", 21: "copy", 50: "foo"}))
+	merged := w.work.Git("commit-tree", "-p", e, "-p", next, "-m", "merge line 21", "--end-of-options", kept+"^{tree}")
+	mergedApart := w.merge(e, w.commitFiles(p, "line 22", file(map[int]string{10: "foo", 22: "copy", 50: "foo"})))
 	// After dropping secretLine, which changed line 30, the external
 	// repository changes line 30 another way. k, on secretLine, replays
 	// onto that.
@@ -412,6 +419,10 @@ func TestDecideRewrittenCommits(t *testing.T) {
 		{name: "a rewind in the external repository, resolved in the copy with the dropped commit", m: w.replay(secret, resolved), d: e, s: secret, want: diverged},
 		{name: "a rewind in the external repository, resolved there with a conflict", m: c, d: resolved, s: secret, want: diverged},
 		{name: "a rewind in the external repository that rewrote the dropped line, resolved in the copy", m: kOnScrubbed, d: scrubbed, s: secretLine, want: push},
+		// Neither merge is built on e, so merging e into it must be clean.
+		{name: "a rewind in the external repository, merged in the copy with a change to the next line", m: merged, d: e, s: secret, want: diverged},
+		{name: "a rewind in the copy, merged in the external repository with a change to the next line", m: e, d: merged, s: secret, want: diverged},
+		{name: "a rewind in the external repository, merged in the copy with a change two lines away", m: mergedApart, d: e, s: secret, want: push},
 
 		{name: "an empty commit in the copy, and the external repository rewound", m: empty, d: noSq, s: sq, want: diverged},
 		{name: "an empty commit in the copy, replayed in the external repository", m: empty, d: emptyOnNewer, s: sq, want: diverged},
