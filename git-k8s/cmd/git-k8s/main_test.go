@@ -155,9 +155,11 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		t.Errorf("with one policy at an earlier version, PoliciesInstalled = %+v", c)
 	}
 	policies[0].Annotations[policyVersionAnnotation] = later
-	policies[1].Annotations[policyVersionAnnotation] = "v3"
-	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" || !strings.Contains(c.Message, ": git-k8s-branches doesn't have") {
-		t.Errorf("with one policy at a later version and the other at a version that isn't a number, PoliciesInstalled = %+v", c)
+	for _, v := range []string{"v3", "99999999999999999999"} {
+		policies[1].Annotations[policyVersionAnnotation] = v
+		if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" || !strings.Contains(c.Message, ": git-k8s-branches doesn't have") {
+			t.Errorf("with one policy at a later version and the other at %q, which doesn't parse as an int, PoliciesInstalled = %+v", v, c)
+		}
 	}
 	policies[1].Annotations[policyVersionAnnotation] = later
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Newer" || strings.Contains(c.Message, "apply") ||
