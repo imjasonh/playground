@@ -1132,6 +1132,31 @@ func TestStoreUnavailable(t *testing.T) {
 	}
 }
 
+// TestUploadWaitsForSlot checks that an upload that finds every upload slot
+// taken waits for one, instead of failing at once.
+func TestUploadWaitsForSlot(t *testing.T) {
+	rev := fakeReviewer{"writer": {"ns", []string{gocache.WriteAudience("ns", "app")}}}
+	s, srv := newTestServer(t, "", rev, func(st *store) {
+		st.writes = make(chan struct{}, 1)
+		st.writes <- struct{}{}
+		// Fetches hold their slots too, so an upload can't write in one.
+		st.fetches = make(chan struct{}, 1)
+		st.fetches <- struct{}{}
+		st.writeWait = 10 * time.Second
+	})
+	var freed atomic.Bool
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		freed.Store(true)
+		<-s.store.writes
+	}()
+	output := strings.Repeat("o", 200)
+	resp, msg := do(t, http.MethodPut, srv.URL+gocache.Path("ns", "app")+"/"+id("action"), "writer", strings.NewReader(output), map[string]string{gocache.OutputIDHeader: id(output)})
+	if resp.StatusCode != http.StatusCreated || !freed.Load() {
+		t.Errorf("PUT while another upload held the only upload slot for 100ms: %s %q, answered after the slot was freed: %v; want 201 after it was freed", resp.Status, msg, freed.Load())
+	}
+}
+
 // TestModulesWhenStoreUnavailable checks that go-cache serves a module file
 // that its store can't take from the upstream at once, without keeping it.
 func TestModulesWhenStoreUnavailable(t *testing.T) {
