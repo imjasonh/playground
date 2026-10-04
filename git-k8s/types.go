@@ -63,7 +63,8 @@ type SecretRef struct {
 // name of a trust policy file, .github/chainguard/IDENTITY.sts.yaml, on the
 // repository's default branch.
 type OctoSTS struct {
-	GitIdentity string `json:"gitIdentity,omitempty" pattern:"^[A-Za-z0-9][-A-Za-z0-9_.]*$" kube:"maxLength=100" doc:"Identity whose token fetches and pushes, instead of a Secret, so secretRef must be empty. Its trust policy needs contents: write."`
+	GitIdentity       string `json:"gitIdentity,omitempty" pattern:"^[A-Za-z0-9][-A-Za-z0-9_.]*$" kube:"maxLength=100" doc:"Identity whose token fetches and pushes, instead of a Secret, so secretRef must be empty. Its trust policy needs contents: write."`
+	CheckRunsIdentity string `json:"checkRunsIdentity,omitempty" pattern:"^[A-Za-z0-9][-A-Za-z0-9_.]*$" kube:"maxLength=100" doc:"Identity whose token publishes check results as GitHub check runs. Its trust policy needs checks: write. Without it, git-k8s doesn't publish check runs."`
 }
 
 // BranchRule selects branches by name and says what they propose changes

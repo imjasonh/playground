@@ -15,16 +15,18 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
 // GitHub fakes what git-k8s uses of GitHub and Octo STS, for tests: git over
-// HTTP with installation tokens, and Octo STS's token exchange at
-// /sts/exchange. The repository OWNER/REPO is at Root/OWNER/REPO.git and URL
-// path /OWNER/REPO.git. As with Server, a push creates a repository that
-// doesn't exist yet, but only with the administrator's credentials.
+// HTTP with installation tokens, Octo STS's token exchange at
+// /sts/exchange, and the REST API for check runs under /api/v3. The
+// repository OWNER/REPO is at Root/OWNER/REPO.git and URL path
+// /OWNER/REPO.git. As with Server, a push creates a repository that doesn't
+// exist yet, but only with the administrator's credentials.
 //
 // The exchange reads trust policies from the main branch. It reads them as
 // JSON, which is also YAML that Octo STS reads, and supports the fields
@@ -33,7 +35,7 @@ type GitHub struct {
 	// Root holds the repositories.
 	Root string
 	// Username and Password are an administrator's credentials, which can
-	// fetch and push in every repository.
+	// fetch, push, and list check runs in every repository.
 	Username, Password string
 	// Verify checks a bearer token that the exchange receives and returns
 	// its claims.
@@ -41,7 +43,10 @@ type GitHub struct {
 
 	mu        sync.Mutex
 	grants    map[string]grant
+	runs      []*CheckRun
 	exchanges []Exchange
+	requests  []string
+	limited   time.Duration
 }
 
 // Claims are what the exchange checks against a trust policy.
@@ -55,6 +60,25 @@ type Exchange struct {
 	Scope, Identity, Token string
 }
 
+// CheckRun is a check run, as the REST API sends it.
+type CheckRun struct {
+	ID         int64          `json:"id"`
+	Name       string         `json:"name"`
+	HeadSHA    string         `json:"head_sha"`
+	ExternalID string         `json:"external_id"`
+	Status     string         `json:"status"`
+	Conclusion string         `json:"conclusion"`
+	Output     CheckRunOutput `json:"output"`
+	repo       string
+}
+
+// CheckRunOutput is what a check run shows.
+type CheckRunOutput struct {
+	Title   string `json:"title"`
+	Summary string `json:"summary"`
+	Text    string `json:"text,omitempty"`
+}
+
 type grant struct {
 	repo        string
 	permissions map[string]string
@@ -66,12 +90,15 @@ const githubName = `[A-Za-z0-9][-A-Za-z0-9_.]*`
 var (
 	nameRE      = regexp.MustCompile(`^` + githubName + `$`)
 	githubGitRE = regexp.MustCompile(`^/(` + githubName + `)/(` + githubName + `\.git)/(info/refs|git-upload-pack|git-receive-pack)$`)
+	githubAPIRE = regexp.MustCompile(`^/api/v3/repos/(` + githubName + `)/(` + githubName + `)/(?:check-runs(?:/([0-9]+))?|commits/([0-9a-f]{40})/check-runs)$`)
 )
 
 func (g *GitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/sts/exchange":
 		g.exchange(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/"):
+		g.api(w, r)
 	default:
 		g.git(w, r)
 	}
@@ -82,6 +109,35 @@ func (g *GitHub) Exchanges() []Exchange {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return slices.Clone(g.exchanges)
+}
+
+// CheckRuns lists the check runs of repo, OWNER/REPO, oldest first.
+func (g *GitHub) CheckRuns(repo string) []CheckRun {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	var out []CheckRun
+	for _, c := range g.runs {
+		if c.repo == repo {
+			out = append(out, *c)
+		}
+	}
+	return out
+}
+
+// Requests lists the REST API requests that the server received, as
+// "METHOD PATH".
+func (g *GitHub) Requests() []string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return slices.Clone(g.requests)
+}
+
+// RateLimit makes the server answer the next REST API request with
+// GitHub's secondary rate limit error, which says to retry after d.
+func (g *GitHub) RateLimit(d time.Duration) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.limited = d
 }
 
 type trustPolicy struct {
@@ -217,6 +273,152 @@ func (g *GitHub) git(w http.ResponseWriter, r *http.Request) {
 	(&Server{Root: filepath.Join(g.Root, m[1])}).ServeHTTP(w, r)
 }
 
+type checkRunRequest struct {
+	Name       *string         `json:"name"`
+	HeadSHA    string          `json:"head_sha"`
+	ExternalID *string         `json:"external_id"`
+	Status     *string         `json:"status"`
+	Conclusion *string         `json:"conclusion"`
+	Output     *CheckRunOutput `json:"output"`
+}
+
+func (g *GitHub) api(w http.ResponseWriter, r *http.Request) {
+	g.mu.Lock()
+	g.requests = append(g.requests, r.Method+" "+r.URL.Path)
+	limited := g.limited
+	g.limited = 0
+	g.mu.Unlock()
+	if limited > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(limited.Seconds())))
+		apiError(w, http.StatusForbidden, "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.")
+		return
+	}
+	m := githubAPIRE.FindStringSubmatch(r.URL.Path)
+	if m == nil {
+		apiError(w, http.StatusNotFound, "Not Found")
+		return
+	}
+	repo, id, sha := m[1]+"/"+m[2], m[3], m[4]
+	level := "write"
+	if r.Method == http.MethodGet {
+		level = "read"
+	}
+	if !g.admin(r) {
+		auth := r.Header.Get("Authorization")
+		token, ok := strings.CutPrefix(auth, "Bearer ")
+		if !ok {
+			token, _ = strings.CutPrefix(auth, "token ")
+		}
+		if status, msg := g.allowed(token, repo, "checks", level); status != 0 {
+			apiError(w, status, msg)
+			return
+		}
+	}
+	switch {
+	case sha != "" && r.Method == http.MethodGet:
+		g.listCheckRuns(w, r, repo, sha)
+	case sha == "" && id == "" && r.Method == http.MethodPost:
+		g.writeCheckRun(w, r, repo, nil)
+	case id != "" && r.Method == http.MethodPatch:
+		n, _ := strconv.ParseInt(id, 10, 64)
+		var old *CheckRun
+		g.mu.Lock()
+		if i := slices.IndexFunc(g.runs, func(c *CheckRun) bool { return c.ID == n && c.repo == repo }); i >= 0 {
+			old = g.runs[i]
+		}
+		g.mu.Unlock()
+		if old == nil {
+			apiError(w, http.StatusNotFound, "Not Found")
+			return
+		}
+		g.writeCheckRun(w, r, repo, old)
+	default:
+		apiError(w, http.StatusNotFound, "Not Found")
+	}
+}
+
+// writeCheckRun creates a check run, or updates old, with GitHub's
+// validation of the request.
+func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo string, old *CheckRun) {
+	var in checkRunRequest
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		apiError(w, http.StatusBadRequest, "Problems parsing JSON")
+		return
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	c := &CheckRun{Status: "queued", repo: repo}
+	if old != nil {
+		c = new(CheckRun)
+		*c = *old
+	} else {
+		cmd := exec.Command("git", "--git-dir", filepath.Join(g.Root, repo+".git"), "cat-file", "-e", in.HeadSHA+"^{commit}")
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull)
+		if in.Name == nil || *in.Name == "" || cmd.Run() != nil {
+			apiError(w, http.StatusUnprocessableEntity, fmt.Sprintf("No commit found for SHA: %s", in.HeadSHA))
+			return
+		}
+		c.ID, c.HeadSHA = int64(len(g.runs)+1), in.HeadSHA
+	}
+	set := func(field *string, value *string) {
+		if value != nil {
+			*field = *value
+		}
+	}
+	set(&c.Name, in.Name)
+	set(&c.ExternalID, in.ExternalID)
+	set(&c.Status, in.Status)
+	set(&c.Conclusion, in.Conclusion)
+	switch {
+	case in.Conclusion != nil:
+		c.Status = "completed"
+	case c.Status != "completed":
+		// Starting a completed check run again clears its conclusion.
+		c.Conclusion = ""
+	}
+	if in.Output != nil {
+		c.Output = *in.Output
+	}
+	switch {
+	case in.Status != nil && *in.Status == "completed" && in.Conclusion == nil:
+		apiError(w, http.StatusUnprocessableEntity, "conclusion is required when status is completed")
+	case !slices.Contains([]string{"queued", "in_progress", "completed"}, c.Status):
+		apiError(w, http.StatusUnprocessableEntity, fmt.Sprintf("status %q isn't valid", c.Status))
+	case (c.Status == "completed") != (c.Conclusion != ""),
+		c.Conclusion != "" && !slices.Contains([]string{"success", "failure", "neutral", "cancelled", "skipped", "timed_out", "action_required"}, c.Conclusion):
+		apiError(w, http.StatusUnprocessableEntity, fmt.Sprintf("status %q and conclusion %q don't go together", c.Status, c.Conclusion))
+	case in.Output != nil && (c.Output.Title == "" || c.Output.Summary == ""):
+		apiError(w, http.StatusUnprocessableEntity, "output needs a title and a summary")
+	case len(c.Output.Summary) > 65535 || len(c.Output.Text) > 65535:
+		apiError(w, http.StatusUnprocessableEntity, "output.summary and output.text are limited to 65535 characters")
+	case old != nil:
+		*old = *c
+		writeJSON(w, http.StatusOK, c)
+	default:
+		g.runs = append(g.runs, c)
+		writeJSON(w, http.StatusCreated, c)
+	}
+}
+
+func (g *GitHub) listCheckRuns(w http.ResponseWriter, r *http.Request, repo, sha string) {
+	q := r.URL.Query()
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	runs := []*CheckRun{}
+	seen := map[string]bool{}
+	for _, c := range slices.Backward(g.runs) {
+		if c.repo != repo || c.HeadSHA != sha || (q.Has("check_name") && c.Name != q.Get("check_name")) {
+			continue
+		}
+		if q.Get("filter") != "all" && seen[c.Name] {
+			continue
+		}
+		seen[c.Name] = true
+		runs = append(runs, c)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"total_count": len(runs), "check_runs": runs})
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -232,6 +434,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func stsError(w http.ResponseWriter, status int, msg string) {
 	codes := map[int]int{http.StatusBadRequest: 3, http.StatusUnauthorized: 16, http.StatusForbidden: 7, http.StatusNotFound: 5}
 	writeJSON(w, status, map[string]any{"code": codes[status], "message": msg, "details": []any{}})
+}
+
+func apiError(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]string{"message": msg, "documentation_url": "https://docs.github.com/rest"})
 }
 
 func randomHex() string {

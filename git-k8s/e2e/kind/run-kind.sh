@@ -379,7 +379,7 @@ grep -q "the gofmt check can't change GitBranch objects" "${WORKDIR}/patch.json"
 echo "Neither a check nor the core controller can approve a branch, and a check can't change one."
 echo "::endgroup::"
 
-echo "::group::A GitHub repository uses Octo STS tokens"
+echo "::group::A GitHub repository uses Octo STS tokens and gets check runs"
 # The git server fakes GitHub and Octo STS under /github. Its token exchange
 # has the API server review each token, because Octo STS can't reach a kind
 # cluster's issuer.
@@ -401,11 +401,21 @@ cat >"${OCTO}/.github/chainguard/git-k8s.sts.yaml" <<EOF
   "permissions": {"contents": "write"}
 }
 EOF
+cat >"${OCTO}/.github/chainguard/git-k8s-checks.sts.yaml" <<EOF
+{
+  "issuer": "${issuer}",
+  "subject": "system:serviceaccount:git-k8s:git-k8s",
+  "audience": "octo-sts.dev/${NS}",
+  "permissions": {"checks": "write"}
+}
+EOF
 printf 'module example.com/octo\n\ngo 1.24\n' >"${OCTO}/go.mod"
 printf 'package main\n\nfunc main() {}\n' >"${OCTO}/main.go"
 o add -A
 o commit -qm "Initial commit"
 o push -q "${GITHUB_URL}/acme/octo.git" HEAD:main
+# The GitBranch for c/fmt stays after the branch lands, without
+# deleteMergedBranches, so the check runs can be checked afterward.
 octo_repository() {
   k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
@@ -417,6 +427,7 @@ spec:
   url: ${CLUSTER_URL}/github/acme/octo.git
   octoSTS:
     gitIdentity: git-k8s
+    checkRunsIdentity: git-k8s-checks
   pollInterval: 2s
   branches:
     - match: main
@@ -436,7 +447,9 @@ octo_repository "${NS}"
 condition() {
   k -n "$1" get gitrepository octo -o jsonpath="{.status.conditions[?(@.type==\"$2\")].$3}"
 }
-octo_ready() { [[ "$(condition "${NS}" Ready status)" == True ]]; }
+octo_ready() {
+  [[ "$(condition "${NS}" Ready status)" == True && "$(condition "${NS}" CheckRunsTokenIssued status)" == True ]]
+}
 eventually 120 octo_ready
 
 o checkout -q -b c/fmt
@@ -451,7 +464,20 @@ fix_landed() {
   [[ "${main}" != "$(o rev-parse main)" && "${main}" != "${unformatted}" && "${main}" == "$(octo_head c/fmt)" ]]
 }
 eventually 120 fix_landed
-echo "check-gofmt pushed a fix and git-k8s landed it, with Octo STS tokens."
+fix="$(octo_head main)"
+# check_run prints the status and conclusion of check $2's check run on
+# commit $1.
+check_run() {
+  curl -fsS "${GITHUB_URL}/api/v3/repos/acme/octo/commits/$1/check-runs?check_name=git-k8s/$2" |
+    sed -nE 's/.*"status":"([a-z_]+)","conclusion":"([a-z_]*)".*/\1 \2/p'
+}
+check_runs_published() {
+  [[ "$(check_run "${unformatted}" gofmt)" == "completed neutral" &&
+    "$(check_run "${fix}" gofmt)" == "completed success" &&
+    "$(check_run "${fix}" base)" == "completed success" ]]
+}
+eventually 60 check_runs_published
+echo "check-gofmt pushed a fix and git-k8s landed it with Octo STS tokens, and the results became check runs."
 
 k create namespace "${NS}-other"
 octo_repository "${NS}-other"

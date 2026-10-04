@@ -27,7 +27,8 @@ const (
 // administrator's credentials.
 type GitHub struct {
 	*Server
-	// Fake is the server, which records the tokens it issued.
+	// Fake is the server, which records the tokens it issued and the check
+	// runs it holds.
 	Fake *gitserver.GitHub
 }
 

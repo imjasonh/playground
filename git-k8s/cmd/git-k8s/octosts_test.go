@@ -9,13 +9,14 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// newGitHub starts a fake GitHub whose repository acme/app has the trust
-// policy git, which grants contents: write, on main. It returns a working
-// repository at main.
+// newGitHub starts a fake GitHub whose repository acme/app has, on main,
+// the trust policies git, which grants contents: write, and checks, which
+// grants checks: write. It returns a working repository at main.
 func newGitHub(t *testing.T) (*gittest.GitHub, *gittest.Work, string) {
 	gh := gittest.NewGitHub(t)
 	w := gh.NewWork(t, "app")
 	w.Write(".github/chainguard/git.sts.yaml", gittest.TrustPolicy(map[string]string{"contents": "write"}))
+	w.Write(".github/chainguard/checks.sts.yaml", gittest.TrustPolicy(map[string]string{"checks": "write"}))
 	main := w.Commit("main")
 	w.Push("main")
 	return gh, w, main
