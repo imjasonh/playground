@@ -250,14 +250,13 @@ func replayBranch(ctx context.Context, in *checks.Input, repo *git.Repo, t targe
 }
 
 // keepsExternal returns v, or a failure if v's fix replays the branch onto
-// t's commit as one commit but doesn't keep every change that the
-// external repository made since t.synced. A replay that resolves
-// conflicts can change lines that the external repository changed, and
-// when the external repository rewound to an older commit, Repo.Keeps
-// can't tell that whoever made the replay started from that commit. The
-// mirror doesn't move the external repository to such a replay, and the
-// check would leave the divergence at its next run, so it leaves it now
-// instead of pushing the replay over the branch.
+// t's commit as one commit but, as Repo.Keeps says, doesn't keep every
+// change that the external repository made since t.synced. A replay that
+// resolves conflicts can change lines that the external repository
+// changed, or lines that the commits it removed changed. The mirror
+// doesn't move the external repository to a replay that doesn't keep its
+// changes, and the check would leave the divergence at its next run, so
+// it leaves it now instead of pushing the replay over the branch.
 func keepsExternal(ctx context.Context, repo *git.Repo, t target, v checks.Verdict) (checks.Verdict, error) {
 	if !t.replay || v.Fix == "" {
 		return v, nil

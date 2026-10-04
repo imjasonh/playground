@@ -91,6 +91,9 @@ func TestKeeps(t *testing.T) {
 	// A side that rewound to a new commit, which removed the secret.
 	rewound := commit(start, "rewind", map[string]string{"c.txt": "bar\nb\nc\nd\nfoo\n"})
 	resolved := commit(rewound, "change bar", map[string]string{"c.txt": "baz\nb\nc\nd\nfoo\n"})
+	reintroduced := pick(resolved, base)
+	replaced := commit(start, "replace the secret", map[string]string{"r.txt": "placeholder\n"})
+	onReplaced := commit(replaced, "add h", map[string]string{"h.txt": "h\n"})
 	copied := commit(start, "add the secret again", map[string]string{"r.txt": "secret\n"})
 	brought := merge(rewound, copied)
 	other := commit(start, "add u", map[string]string{"u.txt": "u\n"})
@@ -126,6 +129,8 @@ func TestKeeps(t *testing.T) {
 		{"a head that replays a side's removal of a file and adds the file back", readded, dropped, base, false},
 		{"a head that replays a side's removal of a line and adds the line back", union, cut, base, false},
 		{"a head built on a side that rewound, changing the side's change", resolved, rewound, base, true},
+		{"a head built on a side that rewound, changing the side's change and replaying what the side removed", reintroduced, rewound, base, false},
+		{"a head built on a side that rewound and changed what it removed", onReplaced, replaced, base, true},
 		{"a head that merges a side that rewound with a copy of what it removed", brought, rewound, base, false},
 		{"a head that merges a side that rewound with another commit", joined, rewound, base, true},
 		{"a head that replays a side that rewound", replayed, rewound, base, true},

@@ -23,7 +23,10 @@ import (
 //
 // A head built on a side that rewound to a new commit keeps that side's
 // changes even where it resolved conflicts with them, because whoever made
-// head started from the side after it rewound.
+// head started from the side after it rewound. In that case, merging the
+// commit where side and base meet, their only merge base, into head, with
+// base as the merge base, must be clean and change nothing instead, so
+// that head brings back nothing that the side removed.
 //
 // An empty head or side means that the branch doesn't exist on that side,
 // and an empty base means that the sides never agreed. head, side, and
@@ -53,8 +56,11 @@ func (r *Repo) Keeps(ctx context.Context, head, side, base string) (bool, error)
 		if ok, err := k.removedNone(ctx, head, side, base); err != nil || !ok {
 			return false, err
 		}
-		if ok, err := k.builtOn(ctx, head, side, base); err != nil || ok {
-			return ok, err
+		switch built, err := k.builtOn(ctx, head, side, base); {
+		case err != nil:
+			return false, err
+		case built:
+			return k.leavesOut(ctx, head, side, base)
 		}
 	}
 	// The merge runs first because it's cheap: the replays hash the commits
@@ -158,6 +164,27 @@ func (k *keeper) builtOn(ctx context.Context, head, side, base string) (bool, er
 		on[f[0]] = true
 	}
 	return true, nil
+}
+
+// leavesOut reports whether head, which was built on side, has none of the
+// changes that the side removed. Either of two merges, each with base as
+// the merge base, shows it when it's clean and changes nothing, and each
+// can pass where the other conflicts:
+//
+//   - Merging side conflicts where head resolved conflicts with the side's
+//     changes.
+//   - Merging the commit where side and base meet, their only merge base,
+//     conflicts where the side's new commits changed lines that the
+//     removed commits changed.
+func (k *keeper) leavesOut(ctx context.Context, head, side, base string) (bool, error) {
+	if ok, err := k.changes(ctx, head, side, base); err != nil || ok {
+		return ok, err
+	}
+	bases, err := k.mergeBases(ctx, side, base)
+	if err != nil || len(bases) != 1 {
+		return false, err
+	}
+	return k.changes(ctx, head, bases[0], base)
 }
 
 // changes reports whether head has every change from base to side: merging

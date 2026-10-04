@@ -509,9 +509,11 @@ A head keeps a side's changes when it has none of the commits the side
 removed, a replay of each commit it added, and every change it made since
 `base`: merging the side into the head with `base` as the merge base is
 clean and changes nothing. A head built on a side that rewound to a new
-commit keeps that side's changes even where it resolved conflicts. The
-check passes when one side's head already keeps every change that the other
-side made.
+commit keeps that side's changes even where it resolved conflicts. In that
+case, merging the commit where the side and `base` meet into the head, with
+`base` as the merge base, must be clean and change nothing instead, so that
+the head can't bring back what the side removed. The check passes when one
+side's head already keeps every change that the other side made.
 
 Branches diverge only with the in-cluster mirror that
 [Future work](future-work.md#run-an-in-cluster-git-mirror) proposes, so the

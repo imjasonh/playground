@@ -1871,6 +1871,13 @@ func TestLeavesACopyOfARemovedCommit(t *testing.T) {
 			return rebase(w, synced), base
 		},
 	}, {
+		name: "when the branch rebased it onto the external head",
+		sides: func(w *gittest.Work, base, synced string) (string, string) {
+			w.Branch("copy", base)
+			e := commit(w, "external edit", map[string]string{"d.txt": "external\n"})
+			return rebase(w, synced), e
+		},
+	}, {
 		name: "when the branch reworded it",
 		sides: func(w *gittest.Work, base, synced string) (string, string) {
 			w.Branch("copy", synced)
@@ -1990,6 +1997,32 @@ func TestLeavesAReplayThatUndoesAReset(t *testing.T) {
 				t.Errorf("c/x moved to %s", got)
 			}
 		})
+	}
+}
+
+func TestLeavesAReplayThatBringsBackWhatTheRewindRemoved(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w, base := setup(t, srv, map[string]string{"b.txt": "main\n"}, map[string]string{"a.txt": "one\nsecret\nthree\n"})
+	synced := b.Spec.Head
+	b.Spec.Head = commit(w, "branch edit", map[string]string{"a.txt": "one\nsecret, edited\nthree\n"})
+	w.Push("c/x")
+	withJobs(t, finish(t, w, resolution(agent.File{Path: "a.txt", Mode: "100644", Content: []byte("one\nsecret, edited\nthree\n")})))
+	// The external repository drops the commit where the sides synced,
+	// which added the secret, and adds a commit of its own, so the agent's
+	// replay is built on a commit that the rewind made.
+	e, o := diverge(w, b.Name, "c/x", base, map[string]string{"d.txt": "external\n"})
+	syncedAt(w, o, "c/x", synced)
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	want := "replaying commit " + gitk8s.Short(b.Spec.Head) + " of the branch conflicts in a.txt; the agent resolved the conflicts in a.txt" +
+		", but the replay doesn't keep every change that the external repository's c/x at " + gitk8s.Short(e) +
+		" made since they last synced at " + gitk8s.Short(synced) + ", so the check leaves the divergence for a person"
+	if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != want {
+		t.Errorf("result = %+v, want Failed with %q", res, want)
+	}
+	if got := srv.Heads(t, "app")["c/x"]; got != b.Spec.Head {
+		t.Errorf("c/x moved to %s", got)
 	}
 }
 
