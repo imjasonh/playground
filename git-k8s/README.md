@@ -259,9 +259,9 @@ with Octo STS's answer when Octo STS doesn't issue a token. The
 The programs keep GitHub tokens in memory and pass them to git in its
 environment, so the tokens don't appear in process arguments, Kubernetes
 objects, or logs. The service account tokens that the programs send to Octo
-STS are bound to the programs' Pods. `generate` lets each program that
-fetches or pushes request tokens for its own service account, and for no
-other.
+STS are bound to the programs' Pods and last an hour. `generate` lets each
+program that fetches or pushes request tokens for its own service account,
+and for no other.
 
 The programs send service account tokens only to Octo STS, and GitHub tokens
 only to GitHub. For tests, the `-fake-github` flag points them at a fake
@@ -273,7 +273,25 @@ cluster's issuer.
 
 A trust policy's audience ties it to one namespace, so anyone who can create
 a `GitRepository` in that namespace can use the trust policy's permissions.
-Grant that only to people who may push to the repository.
+Grant that only to people who may push to the repository. The audience holds
+only the namespace's name, so a namespace that's deleted and created again
+with the same name gets the trust policies that named the old one.
+
+The rule that lets each program request tokens, `create` on
+`serviceaccounts/token` for its own service account, also lets anyone who
+holds one of the program's service account tokens create more. Someone who
+can run `kubectl exec` in the program's Pod, create Pods in its namespace,
+or read files on its node can get such a token. The tokens that they create
+can have any audience, needn't be bound to the Pod, and can last as long as
+the API server allows. A token with the audience
+`octo-sts.dev/` followed by a namespace gets the permissions of each trust
+policy that requires that audience and names the program, such as
+`contents: write`. Whoever holds a program's token can therefore push to the
+repositories of every namespace whose trust policies name that program. The
+audiences keep namespaces apart from each other, but not from someone who
+can read a program's token. Limit who can use `pods/exec` or create Pods in
+the programs' namespaces, and if you manage the API server, set
+`--service-account-max-token-expiration`.
 
 GitHub grants `contents: write` for a whole repository, not for branches.
 Every program that fetches with `gitIdentity` can therefore push to any
