@@ -142,6 +142,11 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" || !strings.Contains(c.Message, "git-k8s-check-results and git-k8s-branches doesn't have git-k8s.imjasonh.com/policy-version=2") {
 		t.Errorf("with policies from an earlier release, which have no version, PoliciesInstalled = %+v", c)
 	}
+	bindings[0].Spec.ValidationActions = []string{"Warn"}
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Missing" || !strings.Contains(c.Message, ": "+policyNames[0]+" isn't installed") {
+		t.Errorf("with one binding that only warns and the other policy from an earlier release, PoliciesInstalled = %+v", c)
+	}
+	bindings[0].Spec.ValidationActions = []string{"Deny"}
 	for _, p := range policies {
 		p.Annotations = map[string]string{policyVersionAnnotation: policyVersion}
 	}
