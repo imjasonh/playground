@@ -302,6 +302,19 @@ func TestCheckRunsSurviveRestarts(t *testing.T) {
 	if want := []string{"PATCH " + api + "check-runs/3", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
 		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
 	}
+
+	t.Log("When GitHub starts it again instead, the controller keeps it.")
+	gh.Fake.AcceptReopening()
+	if status := asAdmin(t, gh, http.MethodPatch, api+"check-runs/4", `{"conclusion": "cancelled", "output": {"title": "Cancelled", "summary": "cancelled on GitHub"}}`); status != http.StatusOK {
+		t.Fatalf("completing the check run: %d", status)
+	}
+	got, err = p.publish(map[string]gitk8s.CheckResult{"base": {Commit: head, ParentCommit: main, State: gitk8s.Running, Message: "trying once more"}})
+	if want := []string{"PATCH " + api + "check-runs/4"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
+	if got, want := runs(gh)[3], "git-k8s/base@"+gitk8s.Short(head)+" in_progress : trying once more"; got != want {
+		t.Errorf("check run 4 = %s, want %s", got, want)
+	}
 }
 
 // asAdmin sends a REST API request to the fake GitHub with its

@@ -186,9 +186,10 @@ func (g *GitHub) RouteApp(scope, identity string, app int64) {
 }
 
 // AcceptReopening makes the server accept an update that starts a
-// completed check run again. GitHub's documentation doesn't say whether
-// GitHub accepts one, so the server refuses one unless a test calls
-// AcceptReopening, and tests can run both ways.
+// completed check run again, which clears the check run's conclusion.
+// GitHub's documentation doesn't say whether GitHub accepts one, so the
+// server refuses one unless a test calls AcceptReopening, and tests can run
+// both ways.
 func (g *GitHub) AcceptReopening() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -439,8 +440,12 @@ func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo stri
 	set(&c.ExternalID, in.ExternalID)
 	set(&c.Status, in.Status)
 	set(&c.Conclusion, in.Conclusion)
-	if in.Conclusion != nil {
+	switch {
+	case in.Conclusion != nil:
 		c.Status = "completed"
+	case in.Status != nil && *in.Status != "completed":
+		// A check run that's queued or in progress has no conclusion.
+		c.Conclusion = ""
 	}
 	if in.Output != nil {
 		c.Output = *in.Output
