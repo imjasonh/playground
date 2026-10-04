@@ -637,7 +637,11 @@ from then too, and the update takes a second update Pod.
 
 `go get` also raises a requirement to a version that its module retracts,
 with only a warning. The controller doesn't push such an update. It logs
-that the update failed, and makes the update again after `-interval`.
+that the update failed, and makes the update again after `-interval`. When
+the update would replace a branch whose `go.mod` files raise a requirement
+to a retracted version too, for example because the controller pushed the
+branch before the module retracted the version, the controller deletes the
+branch.
 
 While an update waits, the controller doesn't push it. It logs the version
 that the update waits for and until when, and starts no update Pod for the

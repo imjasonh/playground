@@ -1657,6 +1657,64 @@ func TestRefusesAnUpdateThatRaisesARequirementToARetractedVersion(t *testing.T) 
 	}
 }
 
+func TestDeletesABranchThatRaisesARetractedVersion(t *testing.T) {
+	const other = "example.com/other"
+	for _, tc := range []struct {
+		name string
+		// pushed is the go.mod file on greet's branch, which the controller
+		// pushes before other retracts v1.5.0.
+		pushed string
+		// again makes the controller make an update to version again.
+		again   func(f *fixture)
+		version string
+		deleted bool
+	}{{
+		name:    "main moves, and the branch raises the retracted version",
+		pushed:  modWith(greet, "v1.1.0", other, "v1.5.0"),
+		again:   func(f *fixture) { f.moveMain("README.md", "# app\n") },
+		version: "v1.1.0",
+		deleted: true,
+	}, {
+		name:    "a newer version comes out, and the branch raises no retracted version",
+		pushed:  modAt("v1.1.0"),
+		again:   func(f *fixture) { f.proxy.publish(greet, "v1.2.0", longAgo, "") },
+		version: "v1.2.0",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.u.interval = 100 * time.Hour
+			f.proxy.publish(other, "v1.5.0", longAgo, "")
+			p := f.start()
+			f.finish(p, result(withFiles("v1.1.0", "go.mod", tc.pushed)))
+			head := f.srv.Heads(t, "app")[greetBranch]
+			if head == "" {
+				t.Fatalf("the controller didn't push %s", greetBranch)
+			}
+
+			t.Log("other v1.6.0 retracts v1.5.0. Once the lists of versions expire, the update that the controller makes again raises other to v1.5.0.")
+			logs := captureLogs(t)
+			f.proxy.publish(other, "v1.6.0", longAgo, "retract v1.5.0\n")
+			tc.again(f)
+			f.clock = f.clock.Add(f.u.interval / 2)
+			p = f.start()
+			f.finish(p, result(withFiles(tc.version, "go.mod", modWith(greet, tc.version, other, "v1.5.0"))))
+			if got, want := f.failure(tc.version), "the update raises example.com/other to v1.5.0, which the module retracts"; got != want {
+				t.Errorf("the update failed with %q, want %q", got, want)
+			}
+			want := head
+			if tc.deleted {
+				want = ""
+			}
+			if got := f.srv.Heads(t, "app")[greetBranch]; got != want {
+				t.Errorf("%s = %q, want %q", greetBranch, got, want)
+			}
+			if logged := strings.Contains(logs.String(), "deleted a branch that raises a requirement to a version that its module retracts"); logged != tc.deleted {
+				t.Errorf("logs = %q, want the deletion logged: %v", logs, tc.deleted)
+			}
+		})
+	}
+}
+
 func TestWaitsForFreePods(t *testing.T) {
 	f := newFixture(t)
 	f.u.maxPods = 2

@@ -895,6 +895,7 @@ func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote,
 			return
 		}
 		if retracted {
+			u.deleteIfRetracted(ctx, local, remote, mods, w, log)
 			o.err, o.files, o.at = fmt.Sprintf("the update raises %s to %s, which the module retracts", m.Path, m.Version), nil, u.clock()
 			st.attempt++
 			log.Warn("updating a module failed", "module", w.up.module, "version", w.up.version, "error", o.err)
@@ -914,6 +915,42 @@ func (u *updater) write(ctx context.Context, local *git.Repo, remote git.Remote,
 	}
 	if commit != w.old {
 		log.Info("pushed an update", "branch", w.branch, "module", w.up.module, "version", w.up.version, "from", gitk8s.Short(w.old), "to", gitk8s.Short(commit))
+	}
+}
+
+// deleteIfRetracted deletes the branch that an update would replace when
+// the branch's go.mod files raise a requirement to a version that its
+// module retracts, as the controller deletes a branch whose own version the
+// module retracts. The controller pushed such a branch before the module
+// retracted the version.
+func (u *updater) deleteIfRetracted(ctx context.Context, local *git.Repo, remote git.Remote, mods map[string]*modFile, w change, log *slog.Logger) {
+	if w.old == "" {
+		return
+	}
+	old, err := readModules(ctx, local, w.old, slog.New(slog.DiscardHandler))
+	if err != nil {
+		log.Warn("reading a branch's go.mod files failed", "branch", w.branch, "error", err)
+		return
+	}
+	files := map[string][]byte{}
+	for dir, f := range old {
+		files[path.Join(dir, "go.mod")] = f.data
+	}
+	for _, m := range raised(mods, w.up, files) {
+		retracted, err := u.proxy.retracted(ctx, m.Path, m.Version)
+		if err != nil {
+			log.Warn("reading the retractions of a module that a branch raises failed", "branch", w.branch, "raises", m.String(), "error", err)
+			return
+		}
+		if !retracted {
+			continue
+		}
+		if err := u.push(ctx, local, remote, w.branch, "", w.old); err != nil {
+			u.pushFailed(ctx, log, w.branch, err)
+			return
+		}
+		log.Info("deleted a branch that raises a requirement to a version that its module retracts", "branch", w.branch, "head", gitk8s.Short(w.old), "raises", m.String())
+		return
 	}
 }
 
