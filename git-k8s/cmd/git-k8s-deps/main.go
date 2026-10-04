@@ -407,13 +407,14 @@ func (u *updater) loadSeen(ctx context.Context, need bool, log *slog.Logger) (st
 }
 
 // storeSeen writes the first-seen times to the ConfigMap that keeps them,
-// if they're not what it held.
+// if they're not what it held, and warns when it leaves out times that
+// don't fit.
 func (u *updater) storeSeen(ctx context.Context, stored string, log *slog.Logger) {
 	times, dropped := u.proxy.encode()
-	if dropped > 0 {
-		log.Warn("the ConfigMap leaves out the oldest first-seen times, which don't fit, so a restart would restart the wait for their versions", "configmap", u.seenObject.String(), "dropped", dropped)
-	}
 	if times != stored {
+		if dropped > 0 {
+			log.Warn("the ConfigMap leaves out the oldest first-seen times, which don't fit, so a restart would restart the wait for their versions", "configmap", u.seenObject.String(), "dropped", dropped)
+		}
 		apply := kube.Apply[configMap]
 		if u.applyConfigMap != nil {
 			apply = u.applyConfigMap

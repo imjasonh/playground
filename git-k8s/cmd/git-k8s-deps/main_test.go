@@ -1034,11 +1034,11 @@ func TestWarnsWhenFirstSeenTimesDontFit(t *testing.T) {
 		t.Errorf("logs = %q, want a warning that the ConfigMap left out 1 time", logs)
 	}
 
-	t.Log("It warns again while they don't fit, though the ConfigMap already holds the times that do.")
+	t.Log("Until the times change, it neither writes them nor warns again.")
 	logs.Reset()
 	f.clock = f.clock.Add(time.Hour)
-	if n := len(kube.Applied[configMap](f.checkStays("", stored[0]))); n != 0 || !strings.Contains(logs.String(), "dropped=1") {
-		t.Errorf("the controller wrote %d ConfigMaps and logged %q, want none written and a warning", n, logs)
+	if n := len(kube.Applied[configMap](f.checkStays("", stored[0]))); n != 0 || strings.Contains(logs.String(), warning) {
+		t.Errorf("the controller wrote %d ConfigMaps and logged %q, want neither", n, logs)
 	}
 
 	t.Log("Once they fit, it writes them all without a warning.")
