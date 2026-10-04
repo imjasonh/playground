@@ -381,6 +381,14 @@ func RequeueAfter(ctx context.Context, d time.Duration) {
 // next reconcile can see that one failed, for example because an admission
 // policy rejected an apply. The framework writes the status even when a
 // declaration fails, so that reconcile can report the error in the status.
+//
+// Each process keeps the errors in memory, so LastError returns nil in the
+// first reconcile after the process starts or acquires the object's shard.
+// It keeps them by namespace and name, so when an object is deleted and
+// recreated before the process reconciles the deletion, the new object's
+// first reconcile can get the old object's error. An error from the API
+// server can quote the values that it rejected, so if those values are
+// secret, don't copy the error into a status.
 func LastError(ctx context.Context) error {
 	return scopeFrom(ctx, "LastError").lastErr
 }

@@ -109,7 +109,10 @@ writes only status, and retries with exponential backoff from 50 ms to 5
 minutes. If a declaration fails, for example because an admission policy
 rejects an object, the framework writes the status that `Reconcile` set and
 retries in the same way. In the retry, `kube.LastError` returns the error, so
-the reconcile can report it in the status.
+the reconcile can report it in the status. Each process keeps the errors in
+memory, so `kube.LastError` returns `nil` after a restart or a shard move. An
+error from the API server can quote the values that it rejected, so if those
+values are secret, don't copy the error into a status.
 
 | Function | What it does |
 | --- | --- |

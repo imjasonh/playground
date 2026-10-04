@@ -517,7 +517,9 @@ the intents, writes the status that `Reconcile` set, and retries with backoff.
 The controller keeps each object's last error in memory, and `kube.LastError`
 returns it to the next reconcile, which can put it in the status. That matters
 for a status without a `Synced` condition, such as one entry in a status that
-several controllers share.
+several controllers share. The errors are kept by namespace and name, so if an
+object is deleted and recreated before the controller reconciles the deletion,
+the new object's first reconcile can get the old object's error.
 
 ### Finalizers and cleanup
 
