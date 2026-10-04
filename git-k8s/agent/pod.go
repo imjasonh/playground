@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"time"
+
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -115,8 +117,17 @@ type PodStatus struct {
 	Reason                string            `json:"reason,omitempty"`
 	Message               string            `json:"message,omitempty"`
 	PodIP                 string            `json:"podIP,omitempty"`
+	StartTime             time.Time         `json:"startTime,omitzero"`
+	Conditions            []PodCondition    `json:"conditions,omitempty"`
 	InitContainerStatuses []ContainerStatus `json:"initContainerStatuses,omitempty"`
 	ContainerStatuses     []ContainerStatus `json:"containerStatuses,omitempty"`
+}
+
+type PodCondition struct {
+	Type    string `json:"type"`
+	Status  string `json:"status"`
+	Reason  string `json:"reason,omitempty"`
+	Message string `json:"message,omitempty"`
 }
 
 type ContainerStatus struct {
@@ -136,9 +147,10 @@ type Waiting struct {
 }
 
 type Terminated struct {
-	ExitCode int32  `json:"exitCode"`
-	Reason   string `json:"reason,omitempty"`
-	Message  string `json:"message,omitempty"`
+	ExitCode   int32     `json:"exitCode"`
+	Reason     string    `json:"reason,omitempty"`
+	Message    string    `json:"message,omitempty"`
+	FinishedAt time.Time `json:"finishedAt,omitzero"`
 }
 
 // podPhase is what the runner counts unfinished agent Pods by. Declaring

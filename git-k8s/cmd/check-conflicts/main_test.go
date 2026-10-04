@@ -534,9 +534,12 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 			p := kube.Owned[agent.Pod](rec)[0]
 			p.Namespace, p.UID = "default", "uid-1"
 			msg := "refs/heads/main no longer contains " + started
-			p.Status = agent.PodStatus{Phase: "Failed", InitContainerStatuses: []agent.ContainerStatus{
-				{Name: "prepare", State: agent.ContainerState{Terminated: &agent.Terminated{ExitCode: 3, Message: msg}}},
-			}}
+			rewound := func(p *agent.Pod) {
+				p.Status = agent.PodStatus{Phase: "Failed", InitContainerStatuses: []agent.ContainerStatus{
+					{Name: "prepare", State: agent.ContainerState{Terminated: &agent.Terminated{ExitCode: 3, Message: msg, FinishedAt: time.Now()}}},
+				}}
+			}
+			rewound(p)
 			w.Branch("main", base)
 			moved := commit(w, "main rewinds", map[string]string{"a.txt": "one\nrewound\nthree\n"})
 			w.Push("main")
@@ -549,7 +552,7 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 					t.Fatal(err)
 				}
 				res := b.Status.Checks.Result
-				if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+msg || len(pods) != 1 || pods[0].Name != p.Name {
+				if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || res.Message != "waiting up to a minute for a run on the new commits: "+msg || len(pods) != 1 || pods[0].Name != p.Name {
 					t.Fatalf("result = %+v and Pods %v, want Running with Pod %s", res, pods, p.Name)
 				}
 				if res.Outputs["merge"] != started || res.Outputs["podUID"] != "uid-1" || res.Outputs["refunded"] != "uid-1" || res.Outputs["runs"] != "0" {
@@ -557,16 +560,23 @@ func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 				}
 			}
 			if tc.deploy {
+				t.Log("A deploy prepares the source again at once, and that Pod finds main rewound too.")
 				runner.Model = "composer-3"
 				rec, err = reconcile(t, srv, b, rules, p)
 				if err != nil {
 					t.Fatal(err)
 				}
-				res := b.Status.Checks.Result
-				want := "waiting for a run on the new commits: c/x no longer points to " + b.Spec.Head + ", or " + msg
-				if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || res.Message != want || len(pods) != 0 || res.Outputs["refunded"] != "uid-1" || res.Outputs["runs"] != "0" {
-					t.Fatalf("result = %+v and Pods %v, want Running without a Pod", res, pods)
+				res, pods := b.Status.Checks.Result, kube.Owned[agent.Pod](rec)
+				if len(pods) != 1 || pods[0].Name == p.Name {
+					t.Fatalf("result = %+v and Pods %v, want a new Pod", res, pods)
 				}
+				want := "preparing the source again in Pod " + pods[0].Name + ", because the run is still for the same commits after Pod " + p.Name + " found that c/x no longer points to " + b.Spec.Head + ", or " + msg
+				if res.State != gitk8s.Running || res.Message != want || res.Outputs["merge"] != started || res.Outputs["runs"] != "1" {
+					t.Fatalf("result = %+v, want Running with the run that merges main at %s in a new Pod", res, started)
+				}
+				p = pods[0]
+				p.Namespace, p.UID = "default", "uid-2"
+				rewound(p)
 			}
 
 			b.Spec.ParentHead = moved

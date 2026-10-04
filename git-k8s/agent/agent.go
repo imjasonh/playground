@@ -22,10 +22,10 @@
 // Run turns those files into a fix commit, which the checks framework pushes
 // when the check's policy and the branch's maxAutomatedCommits allow.
 //
-// A controller that isn't a check calls Runner.RunJob with a Job, which
-// names the repository, the commits to check out, the task, and the agent's
-// tools, and can have the agent resolve a merge's conflicts. Run builds a
-// Job from the check's branch.
+// A controller, or a check that needs a Job that Run doesn't build, calls
+// Runner.RunJob. A Job names the repository, the commits to check out, the
+// task, and the agent's tools, and can have the agent resolve a merge's
+// conflicts. Run builds one from the check's branch.
 package agent
 
 import (
@@ -54,8 +54,13 @@ const (
 )
 
 // prepareAttempts is how many Pods a run starts when preparing the source
-// fails.
+// fails or finds that the branch moved.
 const prepareAttempts = 3
+
+// movedWait is how long a run whose Pod found that the branch moved waits
+// for a job with the new head, such as a check's next head, before it
+// prepares the source for the same head again.
+const movedWait = time.Minute
 
 // Runner runs agents in Pods for one check. Set Name to the check's name,
 // and the other fields with AddFlags.
@@ -146,21 +151,20 @@ type Task struct {
 // maxAgentRuns. A check that calls Run needs Check.Remote.
 func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.Verdict, *Result) {
 	st := &JobState{}
-	prev := in.Previous
-	if prev != nil {
-		st.Runs, _ = strconv.Atoi(prev.Outputs["runs"])
-	}
 	x := &run{r: r, in: in, job: r.checkJob(in, task, ""), st: st}
+	head := in.Spec.Head
+	if prev := in.Previous; prev != nil {
+		var last JobState
+		// A state that doesn't decode starts over, like a missing one.
+		_ = last.UnmarshalText([]byte(prev.Outputs["state"]))
+		st.Runs = last.Runs
+		if prev.State == gitk8s.Running && prev.Commit == head && last.Pod != "" {
+			*st = last
+			x.job.Checkout.Base = prev.Outputs["base"]
+		}
+	}
 	if err := r.validate(); err != nil {
 		return x.running("can't start agents: %v", err), nil
-	}
-	head := in.Spec.Head
-	if prev != nil && prev.State == gitk8s.Running && prev.Commit == head && prev.Outputs["pod"] != "" {
-		st.Pod = prev.Outputs["pod"]
-		st.Attempt, _ = strconv.Atoi(prev.Outputs["attempt"])
-		st.UID = prev.Outputs["podUID"]
-		st.Refunded = prev.Outputs["refunded"]
-		x.job.Checkout.Base = prev.Outputs["base"]
 	}
 	// A Pod's name covers its job, so a changed policy starts a new run
 	// instead of changing a Pod that can't change. startOrFollow restarts
@@ -235,18 +239,13 @@ type run struct {
 	started bool
 }
 
-// outputs hold what the next reconcile needs to follow the run.
+// outputs hold the run's state and merge base, which the next reconcile
+// follows the run with, and its runs and Pod for people to read.
 func (x *run) outputs() map[string]string {
-	o := map[string]string{"runs": strconv.Itoa(x.st.Runs)}
+	state, _ := x.st.MarshalText()
+	o := map[string]string{"state": string(state), "runs": strconv.Itoa(x.st.Runs)}
 	if x.st.Pod != "" {
 		o["pod"] = x.st.Pod
-		o["attempt"] = strconv.Itoa(x.st.Attempt)
-		if x.st.UID != "" {
-			o["podUID"] = x.st.UID
-		}
-		if x.st.Refunded != "" {
-			o["refunded"] = x.st.Refunded
-		}
 		if base := x.job.Checkout.Base; base != "" {
 			o["base"] = base
 		}
@@ -267,6 +266,8 @@ func (x *run) done(ctx context.Context, v checks.Verdict) checks.Verdict {
 	if v.Outputs == nil {
 		v.Outputs = map[string]string{}
 	}
+	state, _ := x.st.MarshalText()
+	v.Outputs["state"] = string(state)
 	v.Outputs["runs"] = strconv.Itoa(x.st.Runs)
 	v.Outputs["pod"] = x.st.Pod
 	return v
@@ -371,23 +372,33 @@ var starting = []string{"", "PodInitializing", "ContainerCreating"}
 // slot until the Pod's deadline. Only a new Pod fixes InvalidImageName, so
 // a run ends on it at once. The others also come from a registry that's
 // down for a moment or a Secret that's created after the Pod, so a run
-// ends on them once the Pod is stuckAfter old. Other reasons, such as
-// CreateContainerError, often pass by themselves.
+// ends on them once the container has waited stuckAfter from when it could
+// start. Other reasons, such as CreateContainerError, often pass by
+// themselves.
 var stuck = []string{"CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "InvalidImageName"}
 
-// stuckAfter is how old a Pod gets before a run ends on a reason in stuck
-// other than InvalidImageName.
+// stuckAfter is how long a run waits before it ends on a Pod that kube
+// can't schedule, counted from the Pod's creation, or on a container that
+// waits for a reason in stuck other than InvalidImageName, counted from
+// when the container can start.
 const stuckAfter = 5 * time.Minute
 
 // blocked reports why a container can't start, such as a missing Secret or
-// an image that can't be pulled, and the reason that it waits.
-func blocked(st *PodStatus) (msg, reason string) {
+// an image that can't be pulled, the reason that it waits, and when it
+// could start, or the zero time if the Pod's status doesn't say.
+func blocked(st *PodStatus) (msg, reason string, since time.Time) {
+	since = st.StartTime
 	for _, s := range slices.Concat(st.InitContainerStatuses, st.ContainerStatuses) {
 		if w := s.State.Waiting; w != nil && !slices.Contains(starting, w.Reason) {
-			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message)), w.Reason
+			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message)), w.Reason, since
+		}
+		// An agent Pod has one container that isn't an init container, so
+		// each of its containers starts when the one before it finishes.
+		if t := s.State.Terminated; t != nil {
+			since = t.FinishedAt
 		}
 	}
-	return "", ""
+	return "", "", time.Time{}
 }
 
 // window counts the runs that started in the last 24 hours. It's in
@@ -395,6 +406,9 @@ func blocked(st *PodStatus) (msg, reason string) {
 type window struct {
 	mu     sync.Mutex
 	starts []time.Time
+	// given holds when the run of each Pod UID was given back, so it's
+	// given back once even for a JobState that doesn't keep Refunded.
+	given map[string]time.Time
 }
 
 // take records a run that starts at now, unless limit runs started in the
@@ -412,13 +426,28 @@ func (w *window) take(now time.Time, limit int) (time.Duration, bool) {
 	return 0, true
 }
 
-// giveBack forgets the latest run that started.
-func (w *window) giveBack() {
+// giveBack forgets the latest run that started, for the run of the Pod
+// with UID uid, and reports whether it did. It gives back a Pod's run once
+// in 24 hours.
+func (w *window) giveBack(now time.Time, uid string) bool {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	for k, at := range w.given {
+		if !at.After(now.Add(-24 * time.Hour)) {
+			delete(w.given, k)
+		}
+	}
+	if _, ok := w.given[uid]; ok {
+		return false
+	}
+	if w.given == nil {
+		w.given = map[string]time.Time{}
+	}
+	w.given[uid] = now
 	if n := len(w.starts); n > 0 {
 		w.starts = w.starts[:n-1]
 	}
+	return true
 }
 
 // full reports whether limit runs started in the 24 hours before now,

@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"os"
 	"os/exec"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -44,7 +46,7 @@ func TestRunsAJob(t *testing.T) {
 	st := &JobState{}
 	s, rec := f.runJob(job, st)
 	pods := kube.Owned[Pod](rec)
-	if s.Done || len(pods) != 1 || *st != (JobState{Runs: 1, Pod: pods[0].Name, Attempt: 1}) || s.Message != "started Pod "+pods[0].Name {
+	if s.Done || s.Moved || len(pods) != 1 || *st != (JobState{Runs: 1, Pod: pods[0].Name, Attempt: 1}) || s.Message != "started Pod "+pods[0].Name {
 		t.Fatalf("RunJob = %+v with state %+v and %d Pods, want a started Pod", s, st, len(pods))
 	}
 	p := pods[0]
@@ -87,8 +89,8 @@ func TestRunsAJob(t *testing.T) {
 	body, _ := json.Marshal(Result{Verdict: Pass, Reasoning: "Both sides change a.txt.", MergeTree: tree, Files: []File{{Path: "a.txt", Mode: "100644", Content: []byte("merged\n")}}})
 	digest := f.serve(body, p.UID)
 	s, rec = f.runJob(job, st, finished(p, digest))
-	if !s.Done || s.Result == nil || len(s.Result.Files) != 1 || s.Result.MergeTree != tree || s.Message != "Both sides change a.txt." || rec.RequeueAfter() != time.Second {
-		t.Fatalf("RunJob = %+v and RequeueAfter = %v, want the agent's result and a reconcile that deletes the Pod", s, rec.RequeueAfter())
+	if !s.Done || s.Result == nil || len(s.Result.Files) != 1 || s.Result.MergeTree != tree || s.Message != "Both sides change a.txt." || rec.RequeueAfter() != 0 {
+		t.Fatalf("RunJob = %+v and RequeueAfter = %v, want the agent's result, with the requeue left to the caller", s, rec.RequeueAfter())
 	}
 
 	t.Log("A job for another head starts a new run, unless the job used all of its runs.")
@@ -174,18 +176,23 @@ func TestReportsCommitsThatMoved(t *testing.T) {
 			st := &JobState{}
 			p := f.startJob(job, st)
 			p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
-				{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved})},
+				{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved, FinishedAt: time.Now()})},
 			}}
 			s, rec := f.runJob(job, st, p)
-			if s.Done || !s.Moved || s.Message != "waiting for a run on the new commits: "+moved || len(kube.Owned[Pod](rec)) != 1 {
+			if s.Done || !s.Moved || s.Message != "waiting up to a minute for a run on the new commits: "+moved || len(kube.Owned[Pod](rec)) != 1 {
 				t.Fatalf("RunJob = %+v, want a run that waits because the commits moved", s)
 			}
 
-			t.Log("A deploy doesn't start the run again in a new Pod, which would find the commits moved too.")
+			t.Log("A deploy prepares the source again in a new Pod, and says which commits moved.")
 			f.r.Image = "registry.example.com/agent-runner:new"
 			s, rec = f.runJob(job, st, p)
-			if s.Done || !s.Moved || s.Message != "waiting for a run on the new commits: "+waiting || len(kube.Owned[Pod](rec)) != 0 {
-				t.Errorf("RunJob = %+v with %d Pods, want a run that still waits, without a Pod", s, len(kube.Owned[Pod](rec)))
+			pods := kube.Owned[Pod](rec)
+			if len(pods) != 1 || pods[0].Name == p.Name {
+				t.Fatalf("owned Pods = %d, want a new Pod", len(pods))
+			}
+			want := "preparing the source again in Pod " + pods[0].Name + ", because the run is still for the same commits after Pod " + p.Name + " found that " + waiting
+			if s.Done || s.Message != want {
+				t.Errorf("RunJob = %+v, want the message %q", s, want)
 			}
 		})
 	}
@@ -229,14 +236,97 @@ func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	job := f.reviewJob()
 	st := &JobState{Runs: 1}
 	p := f.startJob(job, st)
+	moved := "c/x no longer points to " + job.Checkout.Head
 	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
-		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: "c/x no longer points to " + job.Checkout.Head})},
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved, FinishedAt: time.Now()})},
 	}}
 	for _, uid := range []string{p.UID, p.UID, "uid-again"} {
 		p.UID = uid
-		if s, _ := f.runJob(job, st, p); s.Done || *st != (JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: uid, Refunded: uid}) {
+		if s, _ := f.runJob(job, st, p); s.Done || !s.Moved || *st != (JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: uid, Refunded: uid}) {
 			t.Fatalf("RunJob = %+v with state %+v, want the run of Pod UID %s given back once", s, st, uid)
 		}
+	}
+
+	t.Log("A deploy prepares the source again at once, in a new Pod that counts as a run.")
+	f.r.Image = "registry.example.com/agent-runner:new"
+	s, rec := f.runJob(job, st, p)
+	pods := kube.Owned[Pod](rec)
+	if len(pods) != 1 || pods[0].Name == p.Name {
+		t.Fatalf("owned Pods = %d, want a new Pod", len(pods))
+	}
+	want := "preparing the source again in Pod " + pods[0].Name + ", because the run is still for the same commits after Pod " + p.Name + " found that " + moved
+	if s.Done || s.Moved || s.Message != want || st.Runs != 2 || st.Pod != pods[0].Name || st.Attempt != 2 || st.UID != "" {
+		t.Errorf("RunJob = %+v with state %+v, want attempt 2 as a new run", s, st)
+	}
+}
+
+func TestWaitsToPrepareAJobsSourceAgain(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		limit    func(*fixture, *Job) []*Pod
+		want     string
+		min, max time.Duration
+	}{
+		{"MaxRuns", func(_ *fixture, job *Job) []*Pod {
+			job.MaxRuns = 1
+			return nil
+		}, "not preparing the source again: the job used all 1 of its runs", 0, 0},
+		{"-max-pods", func(f *fixture, _ *Job) []*Pod {
+			f.r.MaxPods = 1
+			other := &Pod{Object: kube.Meta("review-other", map[string]string{agentLabel: "review"})}
+			other.Namespace = "elsewhere"
+			other.Status.Phase = "Running"
+			return []*Pod{other}
+		}, "waiting to start a Pod: 1 agent Pods are running, and -max-pods is 1", time.Minute, time.Minute},
+		{"-max-runs-per-day", func(f *fixture, _ *Job) []*Pod {
+			f.r.MaxRunsPerDay = 1
+			f.r.day.take(time.Now(), f.r.MaxRunsPerDay)
+			return nil
+		}, "waiting to prepare the source again: 1 agent runs started in the last 24 hours, the -max-runs-per-day limit", 23 * time.Hour, 24 * time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			job := f.reviewJob()
+			st := &JobState{Runs: 1}
+			p := f.startJob(job, st)
+			exited := &Terminated{ExitCode: movedStatus, Message: "c/x no longer points to " + job.Checkout.Head, FinishedAt: time.Now()}
+			p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{{Name: "prepare", State: terminated(exited)}}}
+			f.runJob(job, st, p)
+
+			t.Log("A minute later, the job is still for the same head, but a limit allows no new Pod yet.")
+			exited.FinishedAt = time.Now().Add(-movedWait)
+			s, rec := f.runJob(job, st, append([]*Pod{p}, tc.limit(f, job)...)...)
+			want := JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: p.UID, Refunded: p.UID}
+			if pods := kube.Owned[Pod](rec); s.Done || !s.Moved || s.Message != tc.want || *st != want || len(pods) != 1 || pods[0].Name != p.Name {
+				t.Errorf("RunJob = %+v with state %+v and %d owned Pods, want the run to wait in its old Pod", s, st, len(pods))
+			}
+			if d := rec.RequeueAfter(); d < tc.min || d > tc.max {
+				t.Errorf("RequeueAfter = %v, want between %v and %v", d, tc.min, tc.max)
+			}
+		})
+	}
+}
+
+func TestGivesBackARunOnceForAStateWithoutRefunded(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	for range 3 {
+		f.r.day.take(time.Now(), f.r.MaxRunsPerDay)
+	}
+	job := f.reviewJob()
+	job.MaxRuns = 1
+	st := &JobState{}
+	p := f.startJob(job, st)
+	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: "c/x no longer points to " + job.Checkout.Head, FinishedAt: time.Now()})},
+	}}
+	for range 5 {
+		kept := &JobState{Runs: st.Runs, Pod: st.Pod, Attempt: st.Attempt, UID: st.UID}
+		f.runJob(job, kept, p)
+		st = kept
+	}
+	if st.Runs != 0 || len(f.r.day.starts) != 3 {
+		t.Errorf("runs = %d and runs started in the last day = %d, want the run given back once: 0 and 3", st.Runs, len(f.r.day.starts))
 	}
 }
 
@@ -289,6 +379,32 @@ func TestKeepsAFinishedJobDone(t *testing.T) {
 	}
 }
 
+func TestReportsAJobsResultAgainWithoutDone(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	st := &JobState{}
+	p := f.startJob(job, st)
+	f.runJob(job, st, p)
+	p = finished(p, f.serve(review(Pass), p.UID))
+	done := JobState{Runs: 1, Pod: p.Name, Attempt: 1, UID: p.UID, Done: true}
+
+	t.Log("A caller that stores the state without Done, such as when acting on the result failed, gets the result again.")
+	for range 2 {
+		kept := *st
+		kept.Done = false
+		s, rec := f.runJob(job, &kept, p)
+		if !s.Done || s.Result == nil || len(kube.Owned[Pod](rec)) != 1 || rec.RequeueAfter() != 0 || kept != done {
+			t.Fatalf("RunJob = %+v with state %+v and RequeueAfter = %v, want the agent's result again and %+v", s, kept, rec.RequeueAfter(), done)
+		}
+		*st = kept
+	}
+
+	t.Log("Once the caller stores Done, the next call declares no Pod, so kube deletes it.")
+	if s, rec := f.runJob(job, st, p); !s.Done || s.Result != nil || len(kube.Owned[Pod](rec)) != 0 || *st != done {
+		t.Errorf("RunJob = %+v with state %+v, want the run done without its Pod", s, st)
+	}
+}
+
 func TestReportsWhatAFailedJobUsed(t *testing.T) {
 	f := newFixture(t, "")
 	job := f.reviewJob()
@@ -296,9 +412,52 @@ func TestReportsWhatAFailedJobUsed(t *testing.T) {
 	p := f.startJob(job, st)
 	body, _ := json.Marshal(Result{Verdict: Fail, Model: "fake:composer-2.5", Usage: Usage{InputTokens: 9}, Error: "the agent's run ended with status error: rate limited"})
 	s, rec := f.runJob(job, st, finished(p, f.serve(body, p.UID)))
-	if !s.Done || s.Result != nil || s.Failed == nil || s.Failed.Usage.InputTokens != 9 || rec.RequeueAfter() != time.Second ||
+	if !s.Done || s.Result != nil || s.Failed == nil || s.Failed.Usage.InputTokens != 9 || rec.RequeueAfter() != 0 ||
 		s.Message != "the agent failed in Pod "+p.Name+": the agent's run ended with status error: rate limited" {
 		t.Errorf("RunJob = %+v, want a failed run with what the agent used", s)
+	}
+}
+
+func TestEncodesTheWholeJobState(t *testing.T) {
+	var st JobState
+	v := reflect.ValueOf(&st).Elem()
+	for i := range v.NumField() {
+		field, fv := v.Type().Field(i), v.Field(i)
+		switch {
+		case !field.IsExported():
+			t.Fatalf("JobState.%s isn't exported, so MarshalText can't encode it", field.Name)
+		case fv.Kind() == reflect.Int:
+			fv.SetInt(int64(-1 - i))
+		case fv.Kind() == reflect.String:
+			fv.SetString("value of " + field.Name)
+		case fv.Kind() == reflect.Bool:
+			fv.SetBool(true)
+		default:
+			t.Fatalf("give JobState.%s, a %s, a value in this test", field.Name, fv.Kind())
+		}
+	}
+	text, err := st.MarshalText()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got JobState
+	if err := got.UnmarshalText(text); err != nil || got != st {
+		t.Errorf("UnmarshalText(%s) = %+v, %v; want %+v", text, got, err, st)
+	}
+
+	t.Log("Empty text is the zero state, and other text that isn't a state is an error.")
+	if err := got.UnmarshalText(nil); err != nil || got != (JobState{}) {
+		t.Errorf("UnmarshalText(nil) = %+v, %v; want the zero state", got, err)
+	}
+	if err := got.UnmarshalText([]byte("1")); err == nil {
+		t.Error("UnmarshalText(1) succeeded")
+	}
+
+	t.Log("The largest state, with the longest Pod name that a check's name allows, fits in a 1,024-byte output value.")
+	uid := "0b5f4b5e-5c1c-4b8e-9a7e-0123456789ab"
+	big := JobState{Runs: math.MinInt, Pod: strings.Repeat("a", 40) + "-0123456789abcdef", Attempt: math.MaxInt, UID: uid, Refunded: uid, Done: true}
+	if text, _ := big.MarshalText(); len(text) > 1024 {
+		t.Errorf("MarshalText = %d bytes, want at most 1,024", len(text))
 	}
 }
 
