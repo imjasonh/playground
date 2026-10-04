@@ -321,7 +321,7 @@ func (w *eventWriter) body(k eventKey, s *eventSeries) eventBody {
 		EventTime:           s.first.UTC().Format(microTime),
 		Series:              w.seriesOf(s),
 		ReportingController: k.controller,
-		ReportingInstance:   instance[:min(len(instance), 128)],
+		ReportingInstance:   truncate(instance, 128),
 		Action:              k.action,
 		Reason:              k.reason,
 		Regarding:           k.regarding,

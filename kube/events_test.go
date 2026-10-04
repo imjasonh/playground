@@ -507,6 +507,36 @@ func TestEventNames(t *testing.T) {
 	}
 }
 
+func TestControllerNames(t *testing.T) {
+	for name, ok := range map[string]bool{
+		"widgets":               true,
+		"merge.git-k8s":         true,
+		strings.Repeat("a", 50): true,
+		strings.Repeat("a", 51): false,
+		"merge queue":           false,
+		"Widgets":               false,
+		"widgets_v2":            false,
+		"-widgets":              false,
+		"widgets.":              false,
+	} {
+		err := For[widget](nop[widget]{}, Named(name)).(*controller[widget, *widget]).prepare(t.Context(), testManager())
+		switch {
+		case ok && err != nil:
+			t.Errorf("prepare with the name %q: %v", name, err)
+		case !ok && (err == nil || !strings.Contains(err.Error(), "start and end with a letter or digit")):
+			t.Errorf("prepare with the name %q = %v, want an error that states the rule", name, err)
+		}
+	}
+}
+
+func TestEventReportingInstance(t *testing.T) {
+	w := &eventWriter{host: strings.Repeat("é", 100)}
+	got := w.body(eventKey{controller: "widget"}, &eventSeries{}).ReportingInstance
+	if len(got) > 128 || len(got) < 126 || !utf8.ValidString(got) || !strings.HasPrefix(got, "widget-é") {
+		t.Errorf("reportingInstance = %q, %d bytes, want 126 to 128 bytes of UTF-8", got, len(got))
+	}
+}
+
 func TestTruncateNote(t *testing.T) {
 	for note, want := range map[string]string{
 		"pushed":            "pushed",

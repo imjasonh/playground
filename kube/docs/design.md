@@ -592,7 +592,10 @@ the lowercase kind in place of a name that would make it too long. The writer
 keeps the timestamps increasing, so two of its Events can't get the same
 name. The `reportingController` is the controller's name, and the
 `reportingInstance` is the controller's name and the host name, which in a
-cluster is the pod's name.
+cluster is the pod's name. A controller name is at most 50 lowercase letters,
+digits, '-', and '.', so it's always a valid `reportingController`, and the
+writer cuts the `reportingInstance` to 128 bytes, the most that the API server
+accepts.
 
 ### Custom resource definitions
 
