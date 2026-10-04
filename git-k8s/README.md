@@ -587,6 +587,12 @@ two replicas:
 kubectl -n git-k8s delete --ignore-not-found role,rolebinding,poddisruptionbudget git-k8s
 ```
 
+If you set `check-gotest`'s `-goproxy`, set the same value on the core
+program. Otherwise, on a cluster that enforces NetworkPolicies, the test
+Pods' NetworkPolicy keeps them from reaching the proxy. A proxy inside the
+cluster also needs a NetworkPolicy of your own, as
+[Sandboxed checks](#sandboxed-checks) describes.
+
 `config/policy.yaml` holds two ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
 stops every other service account, including the core program's, from
