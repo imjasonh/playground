@@ -1199,16 +1199,20 @@ func TestCheckRunsSurviveFailedReads(t *testing.T) {
 	s.step("c/x", s.result(0, gitk8s.Running, ""), s.get(0), post)
 
 	t.Log("A reconcile that can't read the cluster sends nothing and forgets nothing.")
-	b := resultsOf("app", "c/x", s.result(1, gitk8s.Running, ""))
-	ctx, rec := kube.Fake(t.Context(), b, s.p.repo)
-	kube.List[branchResults](ctx, kube.MatchingSelector("=broken"))
-	if rec.Err() == nil {
-		t.Fatal("the selector didn't fail the reconcile's reads")
-	}
 	before := len(s.gh.Fake.Requests())
-	s.p.c.Reconcile(ctx, b)
+	// Go picks at random between a free lock and an ended context, so a
+	// reconcile that went on to forget would forget only some of the time.
+	for range 20 {
+		b := resultsOf("app", "c/x", s.result(1, gitk8s.Running, ""))
+		ctx, rec := kube.Fake(t.Context(), b, s.p.repo)
+		kube.List[branchResults](ctx, kube.MatchingSelector("=broken"))
+		if rec.Err() == nil {
+			t.Fatal("the selector didn't fail the reconcile's reads")
+		}
+		s.p.c.Reconcile(ctx, b)
+	}
 	if got := s.gh.Fake.Requests()[before:]; len(got) > 0 {
-		t.Errorf("a reconcile that couldn't read sent %q", got)
+		t.Errorf("reconciles that couldn't read sent %q", got)
 	}
 	s.step("c/x", s.result(1, gitk8s.Running, ""), patch+"1", s.get(1), post)
 	s.wantRuns(
