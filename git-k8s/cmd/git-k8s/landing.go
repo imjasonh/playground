@@ -330,11 +330,11 @@ func (m *merger) rebase(ctx context.Context, local *git.Repo, spec *gitk8s.GitBr
 // digits with fewer than 60 minutes, such as "1700000000 -0800".
 var rawDate = regexp.MustCompile(`^[0-9]+ [+-][0-9]{2}[0-5][0-9]$`)
 
-// copyProblem says why a new commit can't take c's author unchanged, or
-// returns "". git refuses a name with only spaces, control characters, and
-// ,:;<>"\', and Log gives a name that git can't read as "". git refuses or
-// changes a date that rawDate doesn't match, such as "", a time zone with
-// five digits, or one with 60 or more minutes.
+// copyProblem says why a new commit can't take c's author, or returns "".
+// git refuses a name with only spaces, control characters, and ,:;<>"\',
+// and Log gives a name that git can't read as "". git refuses or changes a
+// date that rawDate doesn't match, such as "", a time zone with five
+// digits, or one with 60 or more minutes.
 func copyProblem(c git.LogEntry) string {
 	name := c.Author.Name
 	switch {
@@ -343,7 +343,7 @@ func copyProblem(c git.LogEntry) string {
 	case !strings.ContainsFunc(name, func(r rune) bool { return r > ' ' && !strings.ContainsRune(`,:;<>"\'`, r) }):
 		return fmt.Sprintf("%s's author has no name that git accepts, only %q", gitk8s.Short(c.SHA), name)
 	case !rawDate.MatchString(c.Author.Date):
-		return fmt.Sprintf("%s's author has no date that git can read", gitk8s.Short(c.SHA))
+		return fmt.Sprintf("%s's author has no date that git can copy", gitk8s.Short(c.SHA))
 	}
 	return ""
 }

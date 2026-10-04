@@ -231,6 +231,8 @@ func TestWrittenIdentity(t *testing.T) {
 		{Name: "Ana Lima\xff", Email: "\x01ana@example.com"},
 		{Name: "\xc3<\xa9", Email: "\xef\xbf\xbe@example.com"},
 		{Name: "git-k8s", Email: ""},
+		{Name: "\u00a0git-k8s Jr.\r", Email: "\rgit-k8s@example.com\u3000"},
+		{Name: "git\ufdd0k8s\uffff", Email: "\U0001fffe@example.com"},
 	} {
 		raw, err := repo.CommitTree(ctx, c.Tree, []string{base}, "edit", id, c.Time)
 		if err != nil {

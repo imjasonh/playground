@@ -480,18 +480,18 @@ func TestAuthorsThatGitRefuses(t *testing.T) {
 		"no name":           {author: "<ana@example.com> 1700000000 -0800", problem: "author has no name"},
 		"NUL in the author": {author: "Ana\x00Lima <ana@example.com> 1700000000 -0800", problem: "author has no name"},
 		"only punctuation":  {author: ",;: <ana@example.com> 1700000000 -0800", problem: `author has no name that git accepts, only ",;:"`},
-		"no date":           {author: "Ana Lima <ana@example.com>", problem: "author has no date that git can read"},
+		"no date":           {author: "Ana Lima <ana@example.com>", problem: "author has no date that git can copy"},
 		"time zone with five digits": {
 			author:  "Ana Lima <ana@example.com> 1700000000 +12345",
-			problem: "author has no date that git can read",
+			problem: "author has no date that git can copy",
 		},
 		"time zone with five digits before 1973": {
 			author:  "Ana Lima <ana@example.com> 99999999 +12345",
-			problem: "author has no date that git can read",
+			problem: "author has no date that git can copy",
 		},
 		"time zone with 99 minutes": {
 			author:  "Ana Lima <ana@example.com> 1700000000 +9999",
-			problem: "author has no date that git can read",
+			problem: "author has no date that git can copy",
 		},
 		"committer without a date": {
 			author:    "Ana Lima <ana@example.com> 1700000000 -0800",
