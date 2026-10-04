@@ -29,9 +29,15 @@ type Result struct {
 	Reasoning string `json:"reasoning"`
 	Model     string `json:"model"`
 	Usage     Usage  `json:"usage"`
-	// CostCents is what the run cost, when the Cursor SDK reports it.
-	CostCents  *float64 `json:"costCents,omitempty"`
-	DurationMS int64    `json:"durationMs"`
+	// CostCents is the run's model token cost before discounts, the Cursor
+	// SDK's rawCostCents, when the SDK reports it. It's 0 for usage that's
+	// priced by request.
+	CostCents *float64 `json:"costCents,omitempty"`
+	// ChargedCents is what Cursor charged for the run, with discounts and
+	// fees, the Cursor SDK's chargedCents, when the SDK reports it. It's 0
+	// for usage that a plan includes.
+	ChargedCents *float64 `json:"chargedCents,omitempty"`
+	DurationMS   int64    `json:"durationMs"`
 	// Files are the files that the agent changed, when its task let it.
 	Files []File `json:"files"`
 }
@@ -154,7 +160,7 @@ func parseResult(body []byte, digest string, edit bool) (*Result, error) {
 		return nil, fmt.Errorf("its verdict is %.20q, not %s or %s", res.Verdict, Pass, Fail)
 	}
 	u := res.Usage
-	if min(u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens) < 0 || res.CostCents != nil && *res.CostCents < 0 {
+	if min(u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens) < 0 || res.CostCents != nil && *res.CostCents < 0 || res.ChargedCents != nil && *res.ChargedCents < 0 {
 		return nil, errors.New("it reports negative usage")
 	}
 	if len(res.Files) > 0 && !edit {

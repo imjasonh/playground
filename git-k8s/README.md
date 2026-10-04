@@ -223,10 +223,11 @@ containers:
 
 - The `prepare` init container fetches the head with the repository's
   credentials. It writes the head's files to a directory that isn't a git
-  repository, and writes the change from the merge base and the commit log
-  next to it. It also copies the Cursor API key from a Secret to a memory
-  volume. It's the only container that gets the credentials or reads a
-  Secret.
+  repository, without the `.cursorignore` files that Cursor reads to hide
+  files from the agent. Next to it, it writes the change from the merge
+  base, the paths that the change touches, and the commit log. It also
+  copies the Cursor API key from a Secret to a memory volume. It's the only
+  container that gets the credentials or reads a Secret.
 - The `agent` init container runs the runner in `agent/runner`, a small
   Node program. The runner reads the key and deletes its file, then runs the
   agent in the directory of the head's files. The agent is offered only
@@ -249,16 +250,26 @@ result, but can't change it. The check also rejects a result with an
 unknown verdict, an invalid path, a file mode other than a regular file or a
 symbolic link, more than 1,000 files, or more than 8 MiB of file content.
 
+The agent's prompt holds the first 200,000 bytes of the diff and lists
+every path that the change touches, so the agent can read the files that
+the diff leaves out. The check fails a change that touches more than 1,000
+paths.
+
 When the policy lets the check push, the agent can also edit the files.
 The check commits what changed on the head, and pushes it like any other
 fix, with `Git-K8s-Fixer: review` and `Git-K8s-Agent: review` trailers and
 within `maxAutomatedCommits`. The second trailer makes `check-risk` rate the
-branch high. Without `mayPush`, the agent's files are read-only.
+branch high. A fix leaves `.cursorignore` files as they are. If a path in
+the head isn't valid UTF-8, the run fails before the agent starts. Without
+`mayPush`, the agent's files are read-only.
 
 The check's outputs hold the agent's `summary`, the `model`, the run's
 `inputTokens`, `outputTokens`, `cacheReadTokens`, and `cacheWriteTokens`,
-and `costCents` when the SDK reports a cost. `runs` counts the agent runs
-on the branch.
+and two costs in cents when the SDK reports them. `costCents` is the model
+token cost before discounts, the SDK's `rawCostCents`. `chargedCents` is
+what Cursor charged, with discounts and fees, the SDK's `chargedCents`; it's
+0 for usage that a Cursor plan includes. `runs` counts the agent runs on
+the branch.
 
 An agent can answer differently each time, so a result stays until the
 branch's head changes, and the check doesn't run again when only the parent
