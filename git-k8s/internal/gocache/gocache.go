@@ -5,8 +5,9 @@
 // build outputs by action ID. Prog keeps outputs in a local directory, and
 // asks a repository's build cache on the go-cache server for those that the
 // directory doesn't have. It never writes to the server. Upload sends the
-// outputs that the go command built to the server later, so a Pod can
-// upload them from a container that never reads the branch's files.
+// outputs that the go command built while Prog shared them to the server
+// later, so a Pod can upload them from a container that never reads the
+// branch's files. Build decides which outputs a Pod can share.
 package gocache
 
 import (
@@ -96,6 +97,7 @@ type response struct {
 //	a/ACTION    the output ID and size of the output for an action ID
 //	o/OUTPUT    an output, by output ID
 //	p/ACTION    present when the go command built the output for ACTION
+//	            while Share was set
 type Prog struct {
 	// Dir holds the outputs.
 	Dir string
@@ -104,6 +106,9 @@ type Prog struct {
 	Remote string
 	// TokenFile holds the service account token that reads Remote.
 	TokenFile string
+	// Share makes Prog record the outputs that the go command builds, for
+	// Upload to send.
+	Share bool
 	// Client makes the requests to Remote. It defaults to a client with a
 	// timeout.
 	Client *http.Client
@@ -209,8 +214,10 @@ func (p *Prog) put(req *request, body []byte) *response {
 	if err := p.writeIndex(id, output, req.BodySize); err != nil {
 		return &response{Err: err.Error()}
 	}
-	if err := os.WriteFile(filepath.Join(p.Dir, "p", id), nil, 0o644); err != nil {
-		return &response{Err: err.Error()}
+	if p.Share {
+		if err := os.WriteFile(filepath.Join(p.Dir, "p", id), nil, 0o644); err != nil {
+			return &response{Err: err.Error()}
+		}
 	}
 	return &response{DiskPath: filepath.Join(p.Dir, "o", output)}
 }
@@ -339,10 +346,10 @@ func statusError(resp *http.Response) error {
 	return fmt.Errorf("%s %s: %s: %s", resp.Request.Method, resp.Request.URL, resp.Status, bytes.TrimSpace(msg))
 }
 
-// Upload sends the outputs that the go command built in a Prog's dir to
-// remote, a repository's build cache on a go-cache server, with the service
-// account token in tokenFile. It returns how many outputs the server
-// stored, and how many it already had.
+// Upload sends the outputs that the go command built in a Prog's dir while
+// Prog shared them to remote, a repository's build cache on a go-cache
+// server, with the service account token in tokenFile. It returns how many
+// outputs the server stored, and how many it already had.
 func Upload(ctx context.Context, client *http.Client, dir, remote, tokenFile string) (stored, had int, err error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {

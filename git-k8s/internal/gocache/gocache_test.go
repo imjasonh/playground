@@ -25,7 +25,7 @@ import (
 // in TestGoCommand.
 func TestMain(m *testing.M) {
 	if dir := os.Getenv("GOCACHE_TEST_DIR"); dir != "" {
-		p := &Prog{Dir: dir, Remote: os.Getenv("GOCACHE_TEST_REMOTE"), TokenFile: os.Getenv("GOCACHE_TEST_TOKEN"), Log: os.Stderr}
+		p := &Prog{Dir: dir, Remote: os.Getenv("GOCACHE_TEST_REMOTE"), TokenFile: os.Getenv("GOCACHE_TEST_TOKEN"), Share: os.Getenv("GOCACHE_TEST_SHARE") != "", Log: os.Stderr}
 		if err := p.Run(context.Background(), os.Stdin, os.Stdout); err != nil { // pasta:ignore use_t_context — TestMain has no t
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
@@ -208,7 +208,7 @@ func id(s string) string {
 
 func TestProgStoresOutputs(t *testing.T) {
 	dir := t.TempDir()
-	c := startProg(t, &Prog{Dir: dir})
+	c := startProg(t, &Prog{Dir: dir, Share: true})
 	if res := c.get(id("a")); !res.Miss {
 		t.Fatalf("get from an empty cache = %+v, want a miss", res)
 	}
@@ -240,6 +240,16 @@ func TestProgStoresOutputs(t *testing.T) {
 	if res := c.send(request{Command: "close"}, nil); res.Err != "" {
 		t.Errorf("close = %+v", res)
 	}
+
+	t.Log("Without Share, put records nothing for Upload to send.")
+	local := t.TempDir()
+	c = startProg(t, &Prog{Dir: local})
+	if res := c.put(id("local"), []byte("compiled in the test container")); res.Err != "" || res.DiskPath == "" {
+		t.Fatalf("put = %+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(local, "p", id("local"))); err == nil {
+		t.Error("put recorded an output for Upload without Share")
+	}
 }
 
 func TestProgReadsRemote(t *testing.T) {
@@ -248,7 +258,7 @@ func TestProgReadsRemote(t *testing.T) {
 	r.add(id("corrupt"), []byte("original"))
 	r.tamper(id("corrupt"), []byte("tampered"))
 	dir := t.TempDir()
-	c := startProg(t, &Prog{Dir: dir, Remote: srv.URL + Path("ns", "app"), TokenFile: tokenFile})
+	c := startProg(t, &Prog{Dir: dir, Remote: srv.URL + Path("ns", "app"), TokenFile: tokenFile, Share: true})
 
 	res := c.get(id("built"))
 	if res.Miss {
@@ -309,7 +319,7 @@ func TestUpload(t *testing.T) {
 	r.add(id("both"), []byte("same output"))
 	dir := t.TempDir()
 	remoteURL := srv.URL + Path("ns", "app")
-	c := startProg(t, &Prog{Dir: dir, Remote: remoteURL, TokenFile: tokenFile})
+	c := startProg(t, &Prog{Dir: dir, Remote: remoteURL, TokenFile: tokenFile, Share: true})
 	c.get(id("from remote"))
 	for action, body := range map[string]string{"new": "compiled here", "empty": "", "both": "same output"} {
 		if res := c.put(id(action), []byte(body)); res.Err != "" {
@@ -380,7 +390,7 @@ func TestGoCommand(t *testing.T) {
 		cmd.Env = append(os.Environ(),
 			"HOME="+home, "GOENV=off", "GOFLAGS=", "GOPATH="+filepath.Join(home, "go"), "GOCACHE="+filepath.Join(home, "go-build"),
 			"GOTOOLCHAIN=local", "GOPROXY=off", "CGO_ENABLED=0", "GOCACHEPROG="+self,
-			"GOCACHE_TEST_DIR="+dir, "GOCACHE_TEST_REMOTE="+remoteURL, "GOCACHE_TEST_TOKEN="+tokenFile)
+			"GOCACHE_TEST_DIR="+dir, "GOCACHE_TEST_REMOTE="+remoteURL, "GOCACHE_TEST_TOKEN="+tokenFile, "GOCACHE_TEST_SHARE=1")
 		var stderr bytes.Buffer
 		cmd.Stderr = &stderr
 		out, err := cmd.Output()

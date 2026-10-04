@@ -59,14 +59,15 @@ const (
 // build outputs with other test Pods through the repository's build cache.
 //
 // Three init containers run after fetch. cacheprog installs this binary,
-// which is the GOCACHEPROG program. build compiles everything that go test
-// needs with the same toolchain, paths, and environment as the test
-// container, reading the build cache with a token whose audience allows
-// only reading. upload sends what build compiled to go-cache, with a token
-// whose audience allows writing. upload never reads the branch's files, and
-// none of the branch's code has run yet. The test container gets the
-// outputs from the go-cache volume and has neither token, so tests can't
-// change what other Pods read.
+// which is the GOCACHEPROG program. build compiles the packages from GOROOT
+// and the module cache that go test needs, with the same toolchain, paths,
+// and environment as the test container, reading the build cache with a
+// token whose audience allows only reading; see gocache.Build. upload sends
+// what build compiled to go-cache, with a token whose audience allows
+// writing. upload never reads the branch's files, and none of the branch's
+// code has run yet. The test container compiles the module's own packages,
+// gets the rest from the go-cache volume, and has neither token, so tests
+// can't change what other Pods read.
 func addGoCache(p *Pod, in *checks.Input) {
 	if goCache.url == "" {
 		return
@@ -93,14 +94,8 @@ func addGoCache(p *Pod, in *checks.Input) {
 
 	build := *test
 	build.Name = "build"
-	// go list -export compiles what go test would, but neither links nor
-	// runs anything, and -e keeps it going past packages that don't compile.
-	// go test doesn't stamp main packages with the commit, so with
-	// -buildvcs=false, go list compiles them the same way, and a commit
-	// that changes no Go files compiles nothing.
-	build.Command = []string{"go", "list", "-e", "-export", "-deps", "-test", "-buildvcs=false", `-f={{""}}`, "./..."}
+	build.Command = []string{cacheprogPath, "cacheprog", "-build", "-dir=" + outputsDir, "-remote=" + remote, "-token-file=" + tokenFile}
 	build.Env = slices.Clone(test.Env)
-	setEnv(&build, "GOCACHEPROG", fmt.Sprintf("%s cacheprog -dir=%s -remote=%s -token-file=%s", cacheprogPath, outputsDir, remote, tokenFile))
 	build.VolumeMounts = append(slices.Clone(test.VolumeMounts), VolumeMount{Name: "go-cache-read", MountPath: tokenDir, ReadOnly: true})
 
 	helper := func(name string, mounts []VolumeMount, args ...string) Container {
@@ -135,8 +130,8 @@ func setEnv(c *Container, name, value string) {
 }
 
 // goCacheFailure returns the message of an init container that addGoCache
-// added, if one failed. build fails when go list does, such as for a go.mod
-// file that doesn't parse, and then the test container doesn't run.
+// added, if one failed. build fails when the go command does, such as for a
+// go.mod file that doesn't parse, and then the test container doesn't run.
 func goCacheFailure(pod *Pod) (string, bool) {
 	for _, name := range []string{"cacheprog", "build", "upload"} {
 		if msg, failed := terminated(pod.Status.InitContainerStatuses, name); failed {
@@ -148,16 +143,18 @@ func goCacheFailure(pod *Pod) (string, bool) {
 
 // cacheprog is check-gotest's part in a test Pod. By default, it's the
 // GOCACHEPROG program. With -install, it copies this binary to a path for
-// the go command to run, and with -upload, it uploads what the go command
-// built.
+// the go command to run, with -build, it compiles the packages that the
+// Pod can share, and with -upload, it uploads what -build compiled.
 func cacheprog(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("cacheprog", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	install := flags.String("install", "", "copy this binary to `path`, and exit")
-	upload := flags.Bool("upload", false, "upload the outputs that the go command built in -dir to -remote, and exit")
+	build := flags.Bool("build", false, "compile the packages from GOROOT and the module cache that go test needs, sharing their outputs through -dir and -remote, and exit")
+	upload := flags.Bool("upload", false, "upload the outputs that the go command built in -dir while -share was set to -remote, and exit")
 	dir := flags.String("dir", "", "directory that holds the build outputs")
 	remote := flags.String("remote", "", "URL of the repository's build cache on a go-cache server")
 	tokenFile := flags.String("token-file", "", "file that holds the service account token for -remote")
+	share := flags.Bool("share", false, "record the outputs that the go command builds, for -upload")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -167,6 +164,19 @@ func cacheprog(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
+	case *build:
+		exe, err := os.Executable()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		prog := fmt.Sprintf("%s cacheprog -dir=%s -remote=%s -token-file=%s -share", exe, *dir, *remote, *tokenFile)
+		shared, total, err := gocache.Build(context.Background(), prog, stderr)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "go test needs %d packages; %d are from GOROOT or the module cache, so their outputs go through go-cache\n", total, len(shared))
 	case *upload:
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
@@ -177,7 +187,7 @@ func cacheprog(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stdout, err)
 		}
 	default:
-		p := &gocache.Prog{Dir: *dir, Remote: *remote, TokenFile: *tokenFile, Log: stderr}
+		p := &gocache.Prog{Dir: *dir, Remote: *remote, TokenFile: *tokenFile, Share: *share, Log: stderr}
 		if err := p.Run(context.Background(), stdin, stdout); err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1

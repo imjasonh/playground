@@ -222,8 +222,9 @@ go run ./cmd/check-gotest generate -registry=REGISTRY \
 passes `-max-size`, 4Gi by default. The kubelet evicts a Pod whose volume
 passes `-tmp-size`, so leave room above `-max-size` for uploads in
 progress. Each replica would have its own store, so `-replicas=1` runs one.
-A restart empties the store, which costs test Pods only the time to
-download and compile again.
+The volume survives restarts of `go-cache`'s container, but a new Pod, such
+as one that replaces a deleted or evicted Pod, starts with an empty store.
+That costs test Pods only the time to download and compile again.
 
 `generate` can't make what `config/go-cache.yaml` holds. It makes Services
 only for webhooks, so the file adds the Service that test Pods reach
@@ -238,24 +239,26 @@ Pod, after the one that fetches the head:
    the `KUBE_IMAGE` environment variable, and copies the `check-gotest`
    binary to a volume. The binary is the Pod's `GOCACHEPROG`, the program
    that the go command asks for build outputs.
-2. `build` runs `go list -e -export -deps -test -buildvcs=false ./...` in
-   the Go image, with the test container's environment. That compiles
-   every package that `go test` needs, and neither links nor runs
-   anything. Its `GOCACHEPROG` reads outputs from the repository's build
-   cache, with a service account token that can only read it.
+2. `build` runs the `check-gotest` binary from the volume in the Go image,
+   with the test container's environment. It lists the packages that
+   `go test` needs, and compiles the ones from GOROOT and the module cache
+   with `go list -export`, which neither links nor runs anything. Its
+   `GOCACHEPROG` reads outputs from the repository's build cache, with a
+   service account token that can only read it.
 3. `upload` sends what `build` compiled to the build cache, with a token
    that can write to it. It runs `check-gotest`'s image, and doesn't mount
    the branch's files.
 
 The test container downloads modules from `go-cache`, whatever `-goproxy`
 says. Its `GOCACHEPROG` reads the outputs that `build` left in the volume,
-and doesn't connect to `go-cache`. A commit that changes only files that
-the build doesn't read, such as a README, compiles nothing. Each Pod still
-links its test binaries and runs the `go vet` checks that `go test` runs.
-Test results stay in the Pod, so every test runs. If `go list` fails, for
-example because `go.mod` doesn't parse, the check fails with its output.
-If `go-cache` is down, test Pods compile everything themselves, but can't
-download modules.
+and doesn't connect to `go-cache`. The test container compiles the
+packages that `build` didn't, such as the module's own packages, vendored
+packages, and modules that a `replace` directive points at a directory. It
+also links the test binaries and runs the `go vet` checks that `go test`
+runs. Test results stay in the Pod, so every test runs. If the go command
+fails in `build`, for example because `go.mod` doesn't parse, the check
+fails with its output. If `go-cache` is down, test Pods compile everything
+themselves, but can't download modules.
 
 #### Threat model
 
@@ -266,18 +269,26 @@ example, make a failing test on `main` pass. `go-cache` and `check-gotest`
 defend against that as follows:
 
 - Only what the go command compiles goes into the build cache. `build`
-  compiles the branch's code, but doesn't run it. `check-gotest` sets
+  reads the branch's `go.mod`, `go.sum`, and imports, compiles packages
+  from GOROOT and the module cache, and runs nothing. `check-gotest` sets
   `CGO_ENABLED=0` and `GOTOOLCHAIN=local`, so the go command runs no C
   compiler and no toolchain that the branch asks for. `upload` sends only
   what `build` compiled, before any of the branch's code runs.
 - Test code can't write to the build cache. The test container gets no
   token, and its `GOCACHEPROG` doesn't connect to `go-cache`. Nothing
   uploads after the tests start.
-- Action IDs bind outputs to inputs. What `build` uploads for an action ID
-  is what any Pod would compile from the same inputs, so a branch adds
-  entries for its own code, but can't change what another branch's code
-  compiles to. `go-cache` never replaces an entry, and answers an upload of
-  another output for an action ID that it has with `409 Conflict`.
+- Only outputs that no branch can change are shared. An action ID covers
+  the files that the go command lists for a package, but not every file
+  that a build step reads. An assembly file can include a header from
+  another directory, so two branches can compile different outputs for one
+  action ID. `build` shares a package's outputs only when the package is in
+  GOROOT, which the Go image fixes, or in the module cache, where the go
+  command puts a module only after checking it against `go.sum`. The
+  package's assembly must include no file from outside its directory, and
+  every package that it imports must be shared too. The test container
+  compiles the rest itself, so a branch can't change what another branch's
+  Pod compiles. `go-cache` never replaces an entry, and answers an upload
+  of another output for an action ID that it has with `409 Conflict`.
 - Tokens name a repository and an access. Each token is a projected service
   account token whose audience names the namespace, the repository, and
   either reading or writing. It expires after 10 minutes, the shortest
@@ -294,9 +305,12 @@ defend against that as follows:
 The design leaves these risks:
 
 - The defense relies on the go command not running code from the files
-  that it compiles. A compiler bug that let a branch run code in `build`
-  would let it store any output under action IDs that the build cache
-  doesn't have yet.
+  that it reads. A bug that let a branch run code in `build` would let it
+  store any output under action IDs that the build cache doesn't have yet.
+- Sharing relies on action IDs covering every input but the files that
+  assembly includes. If a Go release let another build step read files
+  from outside a package's directory, `build` would have to leave out the
+  packages that do.
 - The module proxy doesn't check tokens. Any Pod that can reach `go-cache`
   can download modules, and make `go-cache` fetch a module from
   `-upstream`. The go command checks each module that it downloads against
@@ -309,7 +323,8 @@ The design leaves these risks:
 - `go-cache` remembers a token's review for a minute, so a token works for
   up to a minute after its Pod is deleted.
 - A namespace can fill the store and push other namespaces' entries out,
-  which slows their builds, but doesn't change their results.
+  which slows their builds. It doesn't change their results, because a Pod
+  that compiles an evicted output again compiles the same output.
 
 ### Restrict test Pods' network
 

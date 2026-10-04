@@ -134,8 +134,8 @@ func TestGoCachePod(t *testing.T) {
 
 	t.Log("Only build reads the build cache on go-cache; the test container's GOCACHEPROG stays local.")
 	remote := "http://go-cache.go-cache/cache/default/app"
-	if got, want := env(build, "GOCACHEPROG"), "/go-cache/check-gotest cacheprog -dir=/go-cache/outputs -remote="+remote+" -token-file=/var/run/secrets/go-cache/token"; got != want {
-		t.Errorf("build's GOCACHEPROG = %q, want %q", got, want)
+	if want := []string{"/go-cache/check-gotest", "cacheprog", "-build", "-dir=/go-cache/outputs", "-remote=" + remote, "-token-file=/var/run/secrets/go-cache/token"}; !slices.Equal(build.Command, want) {
+		t.Errorf("build runs %q, want %q", build.Command, want)
 	}
 	if got, want := env(test, "GOCACHEPROG"), "/go-cache/check-gotest cacheprog -dir=/go-cache/outputs"; got != want {
 		t.Errorf("the test container's GOCACHEPROG = %q, want %q", got, want)
@@ -148,16 +148,8 @@ func TestGoCachePod(t *testing.T) {
 	}
 
 	t.Log("build compiles in the test container's environment, so their action IDs match.")
-	if build.Image != test.Image || build.WorkingDir != test.WorkingDir || len(build.Env) != len(test.Env) {
+	if build.Image != test.Image || build.WorkingDir != test.WorkingDir || !slices.Equal(build.Env, test.Env) {
 		t.Errorf("build = %+v, test = %+v", build, test)
-	}
-	if want := []string{"go", "list", "-e", "-export", "-deps", "-test", "-buildvcs=false", `-f={{""}}`, "./..."}; !slices.Equal(build.Command, want) {
-		t.Errorf("build runs %q, want %q", build.Command, want)
-	}
-	for _, e := range test.Env {
-		if e.Name != "GOCACHEPROG" && env(build, e.Name) != e.Value {
-			t.Errorf("build's %s = %q, want %q", e.Name, env(build, e.Name), e.Value)
-		}
 	}
 	if got := env(test, "GOPROXY"); got != "http://go-cache.go-cache/mod" {
 		t.Errorf("GOPROXY = %q, want go-cache's module proxy", got)
@@ -228,7 +220,12 @@ func TestCacheprogUploads(t *testing.T) {
 	dir := t.TempDir()
 	action := bytes.Repeat([]byte{1}, sha256.Size)
 	var out bytes.Buffer
-	if code := cacheprog([]string{"-dir=" + dir}, strings.NewReader(putRequests(action, []byte("compiled"))), &out, io.Discard); code != 0 {
+	if code := cacheprog([]string{"-dir=" + dir, "-share"}, strings.NewReader(putRequests(action, []byte("compiled"))), &out, io.Discard); code != 0 {
+		t.Fatalf("cacheprog -share = %d; output:\n%s", code, out.String())
+	}
+	t.Log("upload leaves out what the go command built without -share, as in the test container.")
+	local := bytes.Repeat([]byte{2}, sha256.Size)
+	if code := cacheprog([]string{"-dir=" + dir}, strings.NewReader(putRequests(local, []byte("from the branch"))), &out, io.Discard); code != 0 {
 		t.Fatalf("cacheprog = %d; output:\n%s", code, out.String())
 	}
 	tokenFile := filepath.Join(t.TempDir(), "token")

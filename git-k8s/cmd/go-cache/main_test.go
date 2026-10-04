@@ -33,7 +33,7 @@ import (
 // in TestGoCommand.
 func TestMain(m *testing.M) {
 	if dir := os.Getenv("GO_CACHE_TEST_DIR"); dir != "" {
-		p := &gocache.Prog{Dir: dir, Remote: os.Getenv("GO_CACHE_TEST_REMOTE"), TokenFile: os.Getenv("GO_CACHE_TEST_TOKEN"), Log: os.Stderr}
+		p := &gocache.Prog{Dir: dir, Remote: os.Getenv("GO_CACHE_TEST_REMOTE"), TokenFile: os.Getenv("GO_CACHE_TEST_TOKEN"), Share: true, Log: os.Stderr}
 		if err := p.Run(context.Background(), os.Stdin, os.Stdout); err != nil { // pasta:ignore use_t_context — TestMain has no t
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
