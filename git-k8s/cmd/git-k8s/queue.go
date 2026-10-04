@@ -122,6 +122,15 @@ func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queu
 		return nil
 	}
 	pos, n := position(ctx, b)
+	if q == nil && pos != 0 {
+		// The parent reads b through another watch, so it can list b before
+		// b's own cache has the write in which b joined. Only a b that the
+		// API server has queued at its current head keeps its place.
+		live, err := kube.Fetch[queueEntry](ctx, b.Namespace, b.Name)
+		if err == nil && live != nil && live.Status.Queued != nil && live.Status.Queued.Head == spec.Head {
+			q = live.Status.Queued
+		}
+	}
 	switch {
 	case q == nil && pos != 0:
 		// b left, but the parent's queue still lists it, and joining now

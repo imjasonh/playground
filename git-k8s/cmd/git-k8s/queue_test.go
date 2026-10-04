@@ -305,6 +305,34 @@ func TestRejoinsAtTheBack(t *testing.T) {
 	}
 }
 
+func TestKeepsItsPlaceWhileItsCacheLags(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	one, two, _ := behind(t, srv)
+	main := parentOf(one, "c/one", "c/two")
+	start := main.Spec.Head
+	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	t.Log("c/one and c/two join main's queue, and main lists them before their own caches have the writes in which they joined.")
+	for _, tc := range []struct {
+		b    *gitk8s.GitBranch
+		pos  int32
+		want string
+	}{
+		{one, 1, "first in main's queue; waiting for the base check to merge main in"},
+		{two, 2, "2 of 2 in main's queue"},
+	} {
+		// live is the branch as the API server has it.
+		live := *tc.b
+		live.Status.Queued = &gitk8s.Queued{Since: since, Head: tc.b.Spec.Head}
+		msg := mergeIn(t, srv, main, tc.b, &live)
+		if q := tc.b.Status.Queued; q == nil || !q.Since.Equal(since) || q.Position != tc.pos || msg != tc.want {
+			t.Errorf("%s: queued %+v, %q; want its place at %d, %q", tc.b.Spec.Branch, q, msg, tc.pos, tc.want)
+		}
+	}
+	if got := srv.Heads(t, "app")["main"]; got != start {
+		t.Errorf("main moved to %s", got)
+	}
+}
+
 func TestLeavingTheQueue(t *testing.T) {
 	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
