@@ -148,7 +148,7 @@ func (s *sender) tokenFor(ctx context.Context) (string, error) {
 	if s.token != "" && time.Until(s.expires) > 10*time.Minute {
 		return s.token, nil
 	}
-	token, expires, err := kube.RequestToken(ctx, gitk8s.ResultsAudience, time.Hour)
+	token, expires, err := kube.RequestToken(ctx, gitk8s.ResultsAudience)
 	if err != nil {
 		return "", err
 	}
