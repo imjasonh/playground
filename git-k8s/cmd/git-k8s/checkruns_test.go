@@ -1,11 +1,10 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"maps"
 	"net/http"
-	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"slices"
 	"strconv"
@@ -792,18 +791,11 @@ func TestCheckRunsSurviveFailedReads(t *testing.T) {
 // URL. handler passes a request on to the fake by calling next.
 func front(t *testing.T, gh *gittest.GitHub, handler func(w http.ResponseWriter, r *http.Request, next http.Handler)) *gitk8s.GitRepository {
 	t.Helper()
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	base := gittest.Serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		handler(w, r, gh.Fake)
 	}))
-	t.Cleanup(s.Close)
-	f := flag.Lookup("fake-github")
-	old := f.Value.String()
-	if err := f.Value.Set(s.URL); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { f.Value.Set(old) })
 	repo := gh.Repository("app", sts, rules()...)
-	repo.Spec.URL = s.URL + "/acme/app.git"
+	repo.Spec.URL = base + "/acme/app.git"
 	return repo
 }
 
@@ -946,8 +938,12 @@ func TestCheckRunErrors(t *testing.T) {
 	}
 
 	t.Log("An identity without checks: write gets GitHub's error.")
-	_, err := publish(gitk8s.OctoSTS{GitIdentity: "git", CheckRunsIdentity: "git"})
-	if want := "publishing the base check run: GitHub answered GET /api/v3/repos/acme/app/commits/" + head + "/check-runs with 403 Forbidden: Resource not accessible by integration"; err == nil || err.Error() != want {
+	list, err := url.Parse(strings.TrimSuffix(gh.URL, "/acme") + "/api/v3/repos/acme/app/commits/" + head + "/check-runs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = publish(gitk8s.OctoSTS{GitIdentity: "git", CheckRunsIdentity: "git"})
+	if want := "publishing the base check run: GitHub answered GET " + list.Path + " with 403 Forbidden: Resource not accessible by integration"; err == nil || err.Error() != want {
 		t.Errorf("err = %v, want %s", err, want)
 	}
 	_, err = publish(gitk8s.OctoSTS{CheckRunsIdentity: "missing"})

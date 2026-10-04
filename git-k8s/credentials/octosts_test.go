@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -183,14 +182,10 @@ func (s *exchangeServer) requests() []string {
 // serve points the -fake-github flag at s until the test ends, and returns
 // a GitRepository for acme/app on it.
 func serve(t *testing.T, s *exchangeServer) *gitk8s.GitRepository {
-	hs := httptest.NewServer(s)
-	t.Cleanup(hs.Close)
-	old := *fakeGitHub
-	*fakeGitHub = hs.URL
-	t.Cleanup(func() { *fakeGitHub = old })
+	base := gittest.Serve(t, s)
 	repo := &gitk8s.GitRepository{
 		Object: kube.Meta("app", nil),
-		Spec:   gitk8s.GitRepositorySpec{URL: hs.URL + "/acme/app.git", OctoSTS: &gitk8s.OctoSTS{GitIdentity: "git"}},
+		Spec:   gitk8s.GitRepositorySpec{URL: base + "/acme/app.git", OctoSTS: &gitk8s.OctoSTS{GitIdentity: "git"}},
 	}
 	repo.Namespace = "default"
 	return repo

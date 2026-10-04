@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
+	"net/http"
 	"net/http/httptest"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -43,10 +46,6 @@ func NewGitHub(t testing.TB) *GitHub {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git isn't installed")
 	}
-	f := flag.Lookup("fake-github")
-	if f == nil {
-		t.Fatal("no -fake-github flag; the test must link package credentials")
-	}
 	fake := &gitserver.GitHub{
 		Root:     t.TempDir(),
 		Username: "git-k8s",
@@ -58,14 +57,33 @@ func NewGitHub(t testing.TB) *GitHub {
 			return gitserver.Claims{Issuer: Issuer, Subject: Subject, Audiences: []string{Audience}}, nil
 		},
 	}
-	hs := httptest.NewServer(fake)
+	base := Serve(t, fake)
+	return &GitHub{Server: &Server{URL: base + "/acme", Username: fake.Username, Password: fake.Password}, Fake: fake}
+}
+
+// servers counts the servers that Serve started.
+var servers atomic.Int64
+
+// Serve serves h under a path that no other server in the test binary has,
+// points the -fake-github flag at that URL until the test ends, and returns
+// the URL. Package credentials caches GitHub tokens by the URL, and a
+// server can get the port of one that an earlier test closed, so without
+// the path, a test could get a token that only another test's fake accepts.
+func Serve(t testing.TB, h http.Handler) string {
+	t.Helper()
+	f := flag.Lookup("fake-github")
+	if f == nil {
+		t.Fatal("no -fake-github flag; the test must link package credentials")
+	}
+	path := fmt.Sprintf("/github-%d", servers.Add(1))
+	hs := httptest.NewServer(http.StripPrefix(path, h))
 	t.Cleanup(hs.Close)
 	old := f.Value.String()
-	if err := f.Value.Set(hs.URL); err != nil {
+	if err := f.Value.Set(hs.URL + path); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { f.Value.Set(old) })
-	return &GitHub{Server: &Server{URL: hs.URL + "/acme", Username: fake.Username, Password: fake.Password}, Fake: fake}
+	return hs.URL + path
 }
 
 // Repository returns a GitRepository in namespace default for acme/repo,
