@@ -463,7 +463,6 @@ AGENT_IMAGE="${AGENT_IMAGE}@$(crane digest "${AGENT_IMAGE}")"
 CHECKS+=(check-review)
 install check-review -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
 k -n check-review rollout status deployment/check-review --timeout=180s
-k -n "${NS}" create secret generic cursor-api-key --from-literal=api-key=unused
 REVIEWED="${WORKDIR}/reviewed"
 git init -q -b main "${REVIEWED}"
 rv() {

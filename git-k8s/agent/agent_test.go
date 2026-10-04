@@ -365,9 +365,29 @@ func TestReportsPodsThatFail(t *testing.T) {
 		want   string
 	}{{
 		name:   "missing Secret",
-		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "CreateContainerConfigError", `secret "cursor-api-key" not found`)}},
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "CreateContainerConfigError", `secret "app-creds" not found`)}},
+		state:  gitk8s.Failed,
+		want:   `can't start: container prepare is waiting: CreateContainerConfigError: secret "app-creds" not found`,
+	}, {
+		name:   "image that can't be pulled",
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{done, waiting("agent", "ErrImagePull", "not found")}},
+		state:  gitk8s.Failed,
+		want:   "can't start: container agent is waiting: ErrImagePull: not found",
+	}, {
+		name:   "backing off pulling an image",
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "ImagePullBackOff", "Back-off pulling image")}},
+		state:  gitk8s.Failed,
+		want:   "can't start: container prepare is waiting: ImagePullBackOff: Back-off pulling image",
+	}, {
+		name:   "invalid image",
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "InvalidImageName", "")}},
+		state:  gitk8s.Failed,
+		want:   "can't start: container prepare is waiting: InvalidImageName",
+	}, {
+		name:   "container that the runtime couldn't create yet",
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "CreateContainerError", "failed to reserve container name")}},
 		state:  gitk8s.Running,
-		want:   `can't start: container prepare is waiting: CreateContainerConfigError: secret "cursor-api-key" not found`,
+		want:   "can't start: container prepare is waiting: CreateContainerError: failed to reserve container name",
 	}, {
 		name:   "starting",
 		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "PodInitializing", "")}},
@@ -428,7 +448,7 @@ func TestRetriesPreparingTheSource(t *testing.T) {
 	names := map[string]bool{p.Name: true}
 	for attempt := 2; attempt <= prepareAttempts; attempt++ {
 		p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
-			{Name: "prepare", State: terminated(&Terminated{ExitCode: 3, Message: "c/x no longer points to it"})},
+			{Name: "prepare", State: terminated(&Terminated{ExitCode: 128, Message: "fatal: unable to access the repository"})},
 		}}
 		f.reconcile(p)
 		res := f.state()
@@ -442,6 +462,30 @@ func TestRetriesPreparingTheSource(t *testing.T) {
 	f.reconcile(p)
 	if res := f.state(); res.State != gitk8s.Failed || !strings.Contains(res.Message, "couldn't prepare the source in 3 attempts: fatal: couldn't find remote ref") {
 		t.Errorf("result = %+v, want Failed after 3 attempts", res)
+	}
+}
+
+func TestWaitsForTheNewHeadWhenTheBranchMoved(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	moved := "c/x no longer points to " + f.b.Spec.Head
+	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved})},
+	}}
+	rec := f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["pod"] != p.Name || res.Outputs["attempt"] != "1" {
+		t.Fatalf("result = %+v, want Running in the same Pod", res)
+	}
+	if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || rec.RequeueAfter() != 0 {
+		t.Fatalf("owned Pods = %d and RequeueAfter = %v, want the same Pod and no retry", len(pods), rec.RequeueAfter())
+	}
+
+	t.Log("The new head starts a new run.")
+	f.work.Write("a.txt", "one\nmoved\n")
+	f.b.Spec.Head = f.work.Commit("move")
+	f.work.Push("c/x")
+	if q := f.start(); q.Name == p.Name || f.state().Outputs["runs"] != "2" {
+		t.Errorf("outputs = %v, want run 2 in a new Pod", f.state().Outputs)
 	}
 }
 

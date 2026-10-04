@@ -274,9 +274,13 @@ the branch.
 
 An agent can answer differently each time, so a result stays until the
 branch's head changes, and the check doesn't run again when only the parent
-moves. When the agent fails, for example because the API key is wrong or
-the run takes longer than `-timeout`, the check fails with the agent's
-error. The next head runs the agent again.
+moves. When the agent fails, for example because the API key is missing or
+wrong or the run takes longer than `-timeout`, the check fails with the
+agent's error. It also fails when the Pod can't start because a Secret
+doesn't exist or an image can't be pulled, and when fetching the head fails
+in three Pods in a row. The next head runs the agent again. To run it again
+on the same change, such as after a transient error, push an empty commit
+with `git commit --allow-empty`.
 
 Agent runs cost money. Three limits cap them, and they count runs, not
 tokens:
@@ -312,6 +316,8 @@ image="$(docker inspect -f '{{index .RepoDigests 0}}' REGISTRY/agent-runner)"
 go run ./cmd/check-review generate -registry=REGISTRY -base=cgr.dev/chainguard/git:latest -- -agent-image="${image}" | kubectl apply -f -
 kubectl -n NAMESPACE create secret generic cursor-api-key --from-literal=api-key=KEY
 ```
+
+In a namespace without the Secret, each run fails before the agent starts.
 
 `check-review` takes these flags, which `agent.Runner.AddFlags` registers:
 
@@ -422,8 +428,8 @@ one side deleted and the other changed holds the changed version. The
 prompt lists the paths that conflict and the merged branch's commits. With
 `Task.Edit`, the result's `Files` change the merge's files, and the
 controller builds the merge commit from them. If either branch moved before
-the Pod fetched it, the agent doesn't run, and a `Job` with the new commits
-starts a new run.
+the Pod fetched it, the agent doesn't run, and the run waits for a `Job`
+with the new commits, which starts a new run.
 
 Agents get no shell. The tools that an agent can have are `read`, `grep`,
 `glob`, and `ls`, plus `edit` and `delete` when the task edits files, and
