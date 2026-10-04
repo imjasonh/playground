@@ -121,7 +121,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		return kube.FindCondition(repo.Status.Conditions, "PoliciesInstalled")
 	}
 	if c := reconcile(); c == nil || c.Status != kube.False || c.Reason != "Missing" ||
-		c.Message != "git-k8s-check-results and git-k8s-branches aren't fully installed, so checks can write each other's results; apply config/policy.yaml" {
+		c.Message != "git-k8s-check-results and git-k8s-branches aren't fully installed, so checks can write each other's results, git-k8s service accounts can approve branches, and checks can change GitBranch objects; apply config/policy.yaml" {
 		t.Errorf("without the policies, PoliciesInstalled = %+v", c)
 	}
 	r.installPolicies = true
@@ -132,11 +132,11 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 
 	var world []any
 	var bindings []*admissionPolicyBinding
-	for _, name := range policyNames {
-		b := &admissionPolicyBinding{Object: kube.Meta(name, nil)}
-		b.Spec.PolicyName, b.Spec.ValidationActions = name, []string{"Warn"}
+	for _, p := range policies {
+		b := &admissionPolicyBinding{Object: kube.Meta(p.name, nil)}
+		b.Spec.PolicyName, b.Spec.ValidationActions = p.name, []string{"Warn"}
 		bindings = append(bindings, b)
-		world = append(world, &admissionPolicy{Object: kube.Meta(name, nil)}, b)
+		world = append(world, &admissionPolicy{Object: kube.Meta(p.name, nil)}, b)
 	}
 	// A restart would add Deny next to Warn in these bindings' validationActions,
 	// which the API server rejects, so the fix patches them instead.
@@ -156,6 +156,12 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	if c := reconcile(world...); c.Status != kube.True {
 		t.Errorf("with the policies installed, PoliciesInstalled = %+v", c)
 	}
+	bindings[1].Spec.ValidationActions = []string{"Warn"}
+	if c := reconcile(world...); c.Status != kube.False ||
+		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts can approve branches, and checks can change GitBranch objects; run "+fmt.Sprintf(warns, "git-k8s-branches") {
+		t.Errorf("with only git-k8s-branches warning, PoliciesInstalled = %+v", c)
+	}
+	bindings[1].Spec.ValidationActions = []string{"Deny"}
 	for _, b := range bindings {
 		b.Spec.ParamRef = &paramRef{ParameterNotFoundAction: "Allow"}
 	}

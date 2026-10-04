@@ -9,8 +9,15 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-// policyNames are the ValidatingAdmissionPolicies in config/policy.yaml.
-var policyNames = []string{"git-k8s-check-results", "git-k8s-branches"}
+// policies are the ValidatingAdmissionPolicies in config/policy.yaml, each
+// with what goes wrong while no binding enforces it.
+var policies = []struct {
+	name      string
+	exposures []string
+}{
+	{"git-k8s-check-results", []string{"checks can write each other's results"}},
+	{"git-k8s-branches", []string{"git-k8s service accounts can approve branches", "checks can change GitBranch objects"}},
+}
 
 type admissionPolicy struct {
 	kube.Object `kube:"apiVersion=admissionregistration.k8s.io/v1,kind=ValidatingAdmissionPolicy,plural=validatingadmissionpolicies,scope=Cluster"`
@@ -65,30 +72,31 @@ func (s *labelSelector) selects() bool {
 // program installs the policies when it starts.
 func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
-	var missing, weak, patches []string
-	for _, name := range policyNames {
+	var missing, weak, patches, exposures []string
+	for _, p := range policies {
 		var own *admissionPolicyBinding
 		denies := false
 		for _, b := range bindings {
-			if b.Spec.PolicyName == name {
+			if b.Spec.PolicyName == p.name {
 				denies = denies || denyPatch(b) == ""
-				if b.Name == name {
+				if b.Name == p.name {
 					own = b
 				}
 			}
 		}
-		policy := kube.Get[admissionPolicy](ctx, "", name)
+		policy := kube.Get[admissionPolicy](ctx, "", p.name)
 		if policy != nil && denies {
 			continue
 		}
+		exposures = append(exposures, p.exposures...)
 		if own != nil {
 			if patch := denyPatch(own); patch != "" {
-				weak = append(weak, name)
-				patches = append(patches, fmt.Sprintf("kubectl patch validatingadmissionpolicybinding %s --type=merge -p '%s'", name, patch))
+				weak = append(weak, p.name)
+				patches = append(patches, fmt.Sprintf("kubectl patch validatingadmissionpolicybinding %s --type=merge -p '%s'", p.name, patch))
 			}
 		}
 		if policy == nil || own == nil {
-			missing = append(missing, name)
+			missing = append(missing, p.name)
 		}
 	}
 	if len(missing) == 0 && len(weak) == 0 {
@@ -125,8 +133,16 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	}
 	return kube.Condition{
 		Type: "PoliciesInstalled", Status: kube.False, Reason: reason,
-		Message: fmt.Sprintf("%s, so checks can write each other's results; %s", strings.Join(problems, ", and "), strings.Join(fixes, ", then ")),
+		Message: fmt.Sprintf("%s, so %s; %s", strings.Join(problems, ", and "), clauses(exposures), strings.Join(fixes, ", then ")),
 	}
+}
+
+// clauses joins independent clauses as "a", "a, and b", or "a, b, and c".
+func clauses(cs []string) string {
+	if len(cs) < 2 {
+		return strings.Join(cs, "")
+	}
+	return strings.Join(cs[:len(cs)-1], ", ") + ", and " + cs[len(cs)-1]
 }
 
 // denyPatch returns a merge patch that makes a binding deny every request that
