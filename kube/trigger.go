@@ -29,8 +29,9 @@ import (
 // again and may reach another replica.
 //
 // A true result holds even if this replica loses the shard before the
-// reconcile starts. The replica that takes the shard reconciles every
-// object in it.
+// reconcile starts. The replica that takes the shard queues every object in
+// it at low priority, so the triggered object then waits its turn with the
+// rest of the shard.
 func Trigger[T any, P Resource[T]](ctx context.Context, namespace, name string) bool {
 	s := scopeFrom(ctx, "Trigger")
 	ti := typeFor[T, P](s)

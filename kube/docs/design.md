@@ -739,10 +739,12 @@ authenticated endpoint between replicas.
 
 A true result holds even if the replica loses the shard before a worker takes
 the key, because the replica that acquires a shard enqueues every cached key in
-it. That replica doesn't have data that a handler kept in memory, though. So a
-handler that hands data to the reconcile, such as a result that a client posts,
-answers the client once the reconcile has used the data, and answers `503` if
-that doesn't happen in time.
+it. It enqueues them at low priority, like a resync, so the triggered key loses
+its place ahead of the queue and waits with the rest of the shard. That replica
+doesn't have data that a handler kept in memory, though. So a handler that hands
+data to the reconcile, such as a result that a client posts, answers the client
+once the reconcile has used the data, and answers `503` if that doesn't happen
+in time.
 
 ### Versions and conversion
 

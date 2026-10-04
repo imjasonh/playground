@@ -537,7 +537,9 @@ stop, when the object isn't in the controller's cache, and, with
 example, answer `503` and close the connection, so that the client's next
 try can reach another replica through the Service. A true result holds even
 if the replica loses the shard before the reconcile starts, because the
-replica that takes the shard reconciles all of its objects.
+replica that takes the shard reconciles all of its objects. That replica
+queues them at low priority, so the reconcile then waits its turn with the
+rest of the shard.
 
 To hand data from a request to the reconcile, such as a result that a
 client posts, keep the data in memory under the object's key and call
