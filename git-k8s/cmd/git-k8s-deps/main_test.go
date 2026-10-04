@@ -150,6 +150,7 @@ func (f *fixture) start(world ...any) *agent.Pod {
 	p := pods[0]
 	p.Namespace = "default"
 	p.UID = "uid-" + p.Name
+	p.CreationTimestamp = f.clock
 	return p
 }
 
@@ -721,6 +722,8 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 		result []byte
 		// status makes the Pod fail instead of serving result.
 		status func(p *agent.Pod)
+		// age is how old the Pod is when it reports status.
+		age    time.Duration
 		digest string
 		// want is part of why the update failed, if the case checks it.
 		want string
@@ -762,17 +765,23 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 			p.Status = agent.PodStatus{Phase: "Pending", InitContainerStatuses: []agent.ContainerStatus{
 				{Name: "prepare", State: agent.ContainerState{Waiting: &agent.Waiting{Reason: "CreateContainerConfigError", Message: `secret "app-creds" not found`}}},
 			}}
-		}},
+		}, age: stuckAfter, want: `couldn't start in 5 minutes: container prepare is waiting: CreateContainerConfigError: secret "app-creds" not found`},
 		{name: "the go image can't be pulled", status: func(p *agent.Pod) {
 			p.Status = agent.PodStatus{Phase: "Pending", InitContainerStatuses: []agent.ContainerStatus{
 				{Name: "prepare", State: terminated(&agent.Terminated{Reason: "Completed"})},
 				{Name: "update", State: agent.ContainerState{Waiting: &agent.Waiting{Reason: "ImagePullBackOff"}}},
 			}}
-		}},
+		}, age: stuckAfter, want: "couldn't start in 5 minutes: container update is waiting: ImagePullBackOff"},
 		{name: "the result image can't be pulled", status: func(p *agent.Pod) {
 			finished(p, "sha256:"+strings.Repeat("0", 64))
 			p.Status.ContainerStatuses[0].State = agent.ContainerState{Waiting: &agent.Waiting{Reason: "ErrImagePull"}}
-		}},
+		}, age: stuckAfter, want: "couldn't start in 5 minutes: container result is waiting: ErrImagePull"},
+		{name: "the go image's name isn't valid", status: func(p *agent.Pod) {
+			p.Status = agent.PodStatus{Phase: "Pending", InitContainerStatuses: []agent.ContainerStatus{
+				{Name: "prepare", State: terminated(&agent.Terminated{Reason: "Completed"})},
+				{Name: "update", State: agent.ContainerState{Waiting: &agent.Waiting{Reason: "InvalidImageName", Message: `Failed to apply default image tag "go:": couldn't parse image name`}}},
+			}}
+		}, want: `can't start: container update is waiting: InvalidImageName: Failed to apply default image tag "go:": couldn't parse image name`},
 		{name: "go fills the cache volume", status: func(p *agent.Pod) {
 			p.Status = agent.PodStatus{Phase: "Failed", Reason: "Evicted", Message: `Usage of EmptyDir volume "tmp" exceeds the limit "4Gi". `, InitContainerStatuses: []agent.ContainerStatus{
 				{Name: "prepare", State: terminated(&agent.Terminated{Reason: "Completed"})},
@@ -797,6 +806,7 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 			default:
 				finished(p, digest)
 			}
+			f.clock = f.clock.Add(tc.age)
 			if rec := f.checkBranch("", p); rec.RequeueAfter() != time.Second {
 				t.Errorf("RequeueAfter() = %v, want 1s, to stop declaring the Pod", rec.RequeueAfter())
 			}
@@ -815,6 +825,38 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 			f.clock = f.clock.Add(time.Second)
 			if again := f.start(); again.Name == p.Name {
 				t.Errorf("trying again starts Pod %s again, want a new Pod", p.Name)
+			}
+		})
+	}
+}
+
+func TestGivesAStuckPodTime(t *testing.T) {
+	for _, reason := range []string{"CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff"} {
+		t.Run(reason, func(t *testing.T) {
+			f := newFixture(t)
+			p := f.start()
+			p.Status = agent.PodStatus{Phase: "Pending", InitContainerStatuses: []agent.ContainerStatus{
+				{Name: "prepare", State: agent.ContainerState{Waiting: &agent.Waiting{Reason: reason, Message: "not yet"}}},
+			}}
+			f.clock = f.clock.Add(stuckAfter - time.Minute)
+			rec := f.checkBranch("", p)
+			if pods := kube.Owned[agent.Pod](rec); len(pods) != 1 || pods[0].Name != p.Name {
+				t.Errorf("owned Pods = %d, want Pod %s", len(pods), p.Name)
+			}
+			if got := f.failure("v1.1.0"); got != "" {
+				t.Errorf("the update failed before its Pod was %v old: %s", stuckAfter, got)
+			}
+			if d := rec.RequeueAfter(); d != time.Minute {
+				t.Errorf("RequeueAfter() = %v, want 1m, when the Pod is %v old", d, stuckAfter)
+			}
+
+			f.clock = f.clock.Add(time.Minute)
+			if rec := f.checkBranch("", p); rec.RequeueAfter() != time.Second {
+				t.Errorf("RequeueAfter() = %v, want 1s, to stop declaring the Pod", rec.RequeueAfter())
+			}
+			want := "Pod " + p.Name + " couldn't start in 5 minutes: container prepare is waiting: " + reason + ": not yet"
+			if got := f.failure("v1.1.0"); got != want {
+				t.Errorf("the update failed with %q, want %q", got, want)
 			}
 		})
 	}

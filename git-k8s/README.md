@@ -680,8 +680,9 @@ lines, but not one whose other directives `go get` sorted. The `go` command
 checks the `go.sum` checksums when it builds the branch. At most `-max-pods`
 update Pods run at once across all namespaces, and kube deletes each one once
 the controller has its result. When an update fails, the controller logs why
-and tries again after `-interval`. An update also fails right away when its
-Pod can't start because a Secret doesn't exist or an image can't be pulled.
+and tries again after `-interval`. An update also fails when an image's name
+isn't valid, and when a Secret is still missing or an image still can't be
+pulled 5 minutes after kube creates the update Pod.
 
 Each update Pod's volumes have size limits. The repository can use up to
 `-source-size`, 2Gi by default, and the home directory, which holds Go's

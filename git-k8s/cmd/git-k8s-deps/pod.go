@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -65,8 +66,16 @@ const allowProtocol = "http:https:git:ssh"
 
 // stuckReasons are the reasons that a container waits until someone fixes
 // a Secret or an image, which agent runs end on too. An update fails on
-// them instead of holding a -max-pods slot until the Pod's deadline.
+// them instead of holding a -max-pods slot until the Pod's deadline. Only a
+// new Pod fixes InvalidImageName, so an update fails on it at once. The
+// others also come from a registry that's down for a moment or a Secret
+// that's created after the Pod, so an update fails on them once the Pod is
+// stuckAfter old.
 var stuckReasons = []string{"CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "InvalidImageName"}
+
+// stuckAfter is how old an update Pod gets before its updates fail on a
+// reason in stuckReasons other than InvalidImageName.
+const stuckAfter = 5 * time.Minute
 
 // prepareScript runs in the prepare container. It checks out the parent at
 // HEAD, or exits with status 3 if the parent moved. The attributes file
@@ -350,8 +359,17 @@ func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []upda
 	if st.Phase == "Failed" && st.Reason == "Evicted" {
 		return failAll("Pod %s was evicted: %s", pod.Name, cmp.Or(strings.TrimSpace(st.Message), "no reason given"))
 	}
-	if msg := stuck(st); msg != "" {
-		return failAll("Pod %s can't start: %s", pod.Name, msg)
+	if msg, reason := stuck(st); msg != "" {
+		wait := stuckAfter - u.clock().Sub(pod.CreationTimestamp)
+		switch {
+		case reason == "InvalidImageName":
+			return failAll("Pod %s can't start: %s", pod.Name, msg)
+		case wait <= 0:
+			return failAll("Pod %s couldn't start in %d minutes: %s", pod.Name, int(stuckAfter/time.Minute), msg)
+		}
+		// The Pod's status may not change again.
+		kube.RequeueAfter(ctx, wait)
+		return nil
 	}
 	if t := container(st.InitContainerStatuses, "prepare").Terminated; t != nil && t.ExitCode != 0 {
 		return failAll("preparing the source in Pod %s failed: %s", pod.Name, exitMessage(t))
@@ -388,14 +406,14 @@ func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []upda
 }
 
 // stuck returns why a container in the Pod waits for a Secret or an image
-// that it can't get, or "".
-func stuck(st *agent.PodStatus) string {
+// that it can't get, and the reason that it waits, or "" and "".
+func stuck(st *agent.PodStatus) (msg, reason string) {
 	for _, s := range slices.Concat(st.InitContainerStatuses, st.ContainerStatuses) {
 		if w := s.State.Waiting; w != nil && slices.Contains(stuckReasons, w.Reason) {
-			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message))
+			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message)), w.Reason
 		}
 	}
-	return ""
+	return "", ""
 }
 
 func container(statuses []agent.ContainerStatus, name string) agent.ContainerState {
