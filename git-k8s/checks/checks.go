@@ -62,7 +62,7 @@ type Check struct {
 	// SigningKey returns the key that signs a repository's commits, or nil
 	// if the repository doesn't name one. A check that calls
 	// Input.CommitTree sets it to signing.Key. A check that leaves it nil
-	// doesn't link that package, so its program never reads signing keys.
+	// doesn't link that package, so its program doesn't read signing keys.
 	SigningKey func(context.Context, *gitk8s.Repository) (*git.SigningKey, error)
 	// Run examines the branch.
 	Run func(ctx context.Context, in *Input) (Verdict, error)

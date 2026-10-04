@@ -1,9 +1,9 @@
 // Package signing reads the key that signs a repository's commits.
 //
 // As with the credentials package, reading the Secret makes kube's generate
-// grant a program get access to Secrets in every namespace. Only the
-// programs that make commits import this package, so the others never read
-// the key.
+// grant a program get access to every Secret in the namespaces that it
+// watches. Only the programs that make commits import this package, so the
+// others don't read the key.
 package signing
 
 import (

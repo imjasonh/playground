@@ -243,15 +243,26 @@ its keys. A check reports an error instead of signing if `signingKeyRef`
 names the `secretRef` Secret.
 
 Only `check-base` and `check-gofmt` read the signing Secret, through the
-`signing` package, which no other program links. They already read the
-`secretRef` Secret, so `generate` grants them nothing new. For each commit,
-a check writes the key to a file with mode 0600 in a new directory with mode
-0700 under `/tmp`, passes git the file's path, and removes the directory
-when the commit is done. `/tmp` is an `emptyDir` volume on the node's disk
-that outlives the container, so a check that's killed while it signs leaves
-the key there until the check restarts and removes it, or until the Pod is
-deleted. The key never appears in a command's arguments or environment, in
-a log, or in an error.
+`signing` package, which no other program links. They read it only to sign
+a commit that their policy lets them push. Other programs don't read the
+key, but some can:
+
+- `generate` lets each program that reads `secretRef` Secrets get every
+  Secret in the namespaces that it watches, which is every namespace unless
+  you pass `-watch-namespace`. Those programs are the core `git-k8s`
+  program, `check-base`, `check-gofmt`, and `check-risk`, so signing gives
+  `check-base` and `check-gofmt` no new permissions.
+- `check-gotest` doesn't give its test Pods the signing Secret, but it can
+  create Pods in the namespaces that it watches, and a Pod can mount any
+  Secret in its namespace.
+
+For each commit, a check writes the key to a file with mode 0600 in a new
+directory with mode 0700 under `/tmp`, passes git the file's path, and
+removes the directory when the commit is done. `/tmp` is an `emptyDir`
+volume on the node's disk that outlives the container, so a check that's
+killed while it signs leaves the key there until the check restarts and
+removes it, or until the Pod is deleted. The key never appears in a
+command's arguments or environment, in a log, or in an error.
 
 ### Set up the forge
 
