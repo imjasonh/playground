@@ -3,6 +3,7 @@ package e2e_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -11,7 +12,9 @@ import (
 	"time"
 
 	"github.com/imjasonh/playground/kube"
+	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/e2e"
+	"github.com/imjasonh/playground/kube/k8s"
 )
 
 // replica is one of the managers that reconcile Reports and serve the
@@ -262,4 +265,155 @@ func TestLeaderWritesStatusInAWatchedNamespace(t *testing.T) {
 	e2e.Run(t, m, kube.For[Report](h, kube.Named("reports"), kube.WatchNamespace(watched)))
 	createReport(t, c, watched, "first")
 	createReport(t, c, watched, "second")
+}
+
+// finalizedReports gets the framework's finalizer on every Report.
+type finalizedReports struct{}
+
+func (finalizedReports) Reconcile(context.Context, *Report) error { return nil }
+func (finalizedReports) Finalize(context.Context, *Report) error  { return nil }
+
+// childReports owns a ConfigMap in another namespace for each Report labeled
+// child=true. Garbage collection can't delete it with the Report.
+type childReports struct {
+	namespace string
+	// gate, if set, can stop reconciles before they declare the ConfigMap.
+	gate *gate
+}
+
+func (r childReports) Reconcile(ctx context.Context, rep *Report) error {
+	r.gate.wait(ctx)
+	if rep.Labels["child"] == "true" {
+		cm := &k8s.ConfigMap{Object: kube.Meta(rep.Name, nil), Data: map[string]string{"owner": rep.Namespace}}
+		cm.Namespace = r.namespace
+		kube.Own(ctx, cm)
+	}
+	return nil
+}
+
+// TestParentWritesBeforeTheFirstStatusWrite runs controllers with leader
+// election, where each new object's first status write requires the
+// resource version that its reconcile read. Adding or removing the
+// finalizer changes that version before the status write, so the framework
+// must send the version that the finalizer write returned. Otherwise every
+// new object's first status write fails as stale.
+func TestParentWritesBeforeTheFirstStatusWrite(t *testing.T) {
+	const n = 5
+	t.Run("Finalize", func(t *testing.T) {
+		c := e2e.Client(t)
+		ns := e2e.Namespace(t, c)
+		m := startLeader(t, ns, kube.For[Report](finalizedReports{}, kube.Named("finalized")))
+		for i := range n {
+			createReport(t, c, ns, fmt.Sprintf("r%d", i))
+		}
+		noRetries(t, m, "finalized", n)
+	})
+	t.Run("child in another namespace", func(t *testing.T) {
+		c := e2e.Client(t)
+		ns, other := e2e.Namespace(t, c), e2e.Namespace(t, c)
+		m := startLeader(t, ns, kube.For[Report](childReports{namespace: other}, kube.Named("parents")))
+
+		t.Log("Reports with a child get the finalizer and the cleanup annotation first.")
+		for i := range n {
+			createReportWith(t, c, ns, map[string]any{"name": fmt.Sprintf("parent%d", i), "labels": map[string]string{"child": "true"}})
+		}
+		noRetries(t, m, "parents", n)
+		var parent Report
+		if err := e2e.Get(t.Context(), c, client.Path(group+"/v1", "reports", ns, "parent0"), &parent); err != nil {
+			t.Fatal(err)
+		}
+		if len(parent.Finalizers) != 1 {
+			t.Fatalf("finalizers = %q, want the framework's", parent.Finalizers)
+		}
+
+		t.Log("Reports that have the finalizer but no child get it removed first.")
+		for i := range n {
+			createReportWith(t, c, ns, map[string]any{"name": fmt.Sprintf("leftover%d", i), "finalizers": parent.Finalizers})
+		}
+		noRetries(t, m, "parents", 2*n)
+		var leftover Report
+		if err := e2e.Get(t.Context(), c, client.Path(group+"/v1", "reports", ns, "leftover0"), &leftover); err != nil {
+			t.Fatal(err)
+		}
+		if len(leftover.Finalizers) != 0 {
+			t.Errorf("finalizers = %q, want none", leftover.Finalizers)
+		}
+	})
+}
+
+// TestParentWriteFromAnOutOfDateObject stops a leader's first reconcile of
+// a new Report after the framework read the object. Then a status write with
+// the controller's field manager lands, as a previous holder's would. The
+// finalizer write before the reconcile's status write must require the
+// resource version that the framework read. Otherwise the status write
+// carries the version that the finalizer write returned, and removes the
+// result that the other write added.
+func TestParentWriteFromAnOutOfDateObject(t *testing.T) {
+	c := e2e.Client(t)
+	ns, other := e2e.Namespace(t, c), e2e.Namespace(t, c)
+	g := newGate()
+	m := startLeader(t, ns, kube.For[Report](childReports{namespace: other, gate: g}, kube.Named("parents")))
+	g.set(true)
+	e2e.Eventually(t, 30*time.Second, func() error {
+		return c.Create(t.Context(), client.Path(group+"/v1", "reports", ns, ""), map[string]any{
+			"apiVersion": group + "/v1", "kind": "Report",
+			"metadata": map[string]any{"name": "late", "labels": map[string]string{"child": "true"}},
+		}, nil)
+	})
+	resume := g.next(t)
+
+	t.Log("A status write from another replica lands while the reconcile waits.")
+	path := client.Path(group+"/v1", "reports", ns, "late")
+	err := c.Apply(t.Context(), path+"/status", "parents", true, map[string]any{
+		"apiVersion": group + "/v1", "kind": "Report",
+		"metadata": map[string]any{"name": "late", "namespace": ns},
+		"status":   map[string]any{"results": []string{"a"}},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.set(false)
+	close(resume)
+
+	var rep Report
+	e2e.Eventually(t, 30*time.Second, func() error {
+		if err := e2e.Get(t.Context(), c, path, &rep); err != nil {
+			return err
+		}
+		if len(rep.Status.Conditions) == 0 {
+			return errors.New("the controller hasn't written the status")
+		}
+		return nil
+	})
+	if !slices.Contains(rep.Status.Results, "a") {
+		t.Errorf("results = %q, want the result that the other write added", rep.Status.Results)
+	}
+	if n := scrape(t, m.Addr, `kube_reconcile_total{controller="parents",result="stale"}`); n == 0 {
+		t.Error("no reconcile failed as stale")
+	}
+}
+
+// startLeader runs controllers with leader election and waits until the
+// manager leads.
+func startLeader(t *testing.T, ns string, controllers ...kube.Controller) *kube.Manager {
+	t.Helper()
+	m := &kube.Manager{Name: "parent-writes-e2e", Namespace: ns, LeaseNamespace: ns, LeaderElection: true, Addr: freeAddr(t)}
+	e2e.Run(t, m, controllers...)
+	waitHeld(t, func(n []int) bool { return n[0] == 1 }, &replica{m: m})
+	return m
+}
+
+// noRetries checks that at least want reconciles of the controller
+// succeeded and that none was retried.
+func noRetries(t *testing.T, m *kube.Manager, controller string, want int) {
+	t.Helper()
+	sample := `kube_reconcile_total{controller="` + controller + `",result=`
+	if n := scrape(t, m.Addr, sample+`"success"}`); n < float64(want) {
+		t.Errorf("%v reconciles of %s succeeded, want at least %d", n, controller, want)
+	}
+	for _, result := range []string{"stale", "error"} {
+		if n := scrape(t, m.Addr, sample+`"`+result+`"}`); n != 0 {
+			t.Errorf("%v reconciles of %s ended with result=%q, want 0", n, controller, result)
+		}
+	}
 }

@@ -582,11 +582,16 @@ The replica that takes over a shard may not have the previous holder's last
 writes in its cache yet. A status computed from that cache lacks what those
 writes added, and a forced apply of it would remove them. So after a replica
 acquires a shard, it sends each object's status write with the cached
-`resourceVersion` as a precondition, until one succeeds. A write from a cache
-that's behind gets `409 Conflict`, which the framework tells apart from a
-deleted object, and the reconcile is retried. Such a retry is expected after
-a takeover, so the framework logs it at the info level and counts it in
-`kube_reconcile_total` with `result="stale"` instead of `result="error"`.
+`resourceVersion` as a precondition, until one succeeds. That includes
+objects created after the takeover, because the cache can show an object as
+new before it shows the previous holder's writes to it. A reconcile that
+adds or removes the finalizer, or records owned kinds to clean up, writes
+the object before its status. Each such write carries the same
+precondition, and the next write requires the version that it returned. A
+write from a cache that's behind gets `409 Conflict`, which the framework
+tells apart from a deleted object, and the reconcile is retried. Such a
+retry is expected, so the framework logs it at the info level and counts it
+in `kube_reconcile_total` with `result="stale"` instead of `result="error"`.
 One success is enough. It shows that the cache had every earlier write when
 that reconcile started, and from then on this replica is the only one that
 writes the object's status.
@@ -609,8 +614,9 @@ equality ([API concepts](https://kubernetes.io/docs/reference/using-api/api-conc
 so a replica can't tell that its cache passed the version that the previous
 holder last wrote. A new list of the type would show the current state, but it
 would cost a list for each acquired shard and hold back every key in the shard
-until it finished. The precondition costs nothing when the cache is current,
-and delays only the objects whose cache is behind.
+until it finished. The precondition costs a retry only when the object
+changed after the version that the reconcile read, because the cache was
+behind or because something else wrote the object during the reconcile.
 
 Sharding by lease, as Knative does, needs no component that labels objects,
 but every replica caches every object. Labeling objects with their shard, as

@@ -578,10 +578,11 @@ before its cache has the previous holder's last writes. Until one of that
 replica's status writes for the object succeeds, each one requires the
 resource version in the replica's cache, so a write from a cache that's
 behind fails instead of removing data that a client was told was saved.
-Right after a takeover, a reconcile can fail this way. The framework logs
-the failure at the info level, counts it in `kube_reconcile_total` with
-`result="stale"` rather than as an error, and retries the reconcile, which
-succeeds once the caches catch up.
+Right after a takeover, a reconcile can fail this way. So can the first
+reconcile of a new object, if something else writes the object while it
+runs. The framework logs the failure at the info level, counts it in
+`kube_reconcile_total` with `result="stale"` rather than as an error, and
+retries the reconcile, which succeeds once the caches catch up.
 
 In the handler, where `unavailable` answers `503` and closes the connection
 as in the previous example:

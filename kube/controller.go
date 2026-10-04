@@ -572,7 +572,7 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 		return c.finalize(ctx, key, cached, obj, pre)
 	}
 	if c.fin != nil && !slices.Contains(m.Finalizers, c.finalizer) {
-		if err := c.setFinalizer(ctx, obj, true, m.Annotations[c.labels.cleanup]); err != nil {
+		if err := c.setFinalizer(ctx, obj, true, m.Annotations[c.labels.cleanup], &pre.rv); err != nil {
 			return 0, fmt.Errorf("adding finalizer: %w", err)
 		}
 	}
@@ -583,7 +583,7 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 		err = s.err
 	}
 	if err == nil {
-		err = c.execute(ctx, key, obj, s)
+		err = c.execute(ctx, key, obj, s, &pre.rv)
 	}
 	c.m.tracker.retain(ref{c: &c.core, key: key}, s.deps)
 	if serr := c.writeStatus(ctx, cached, obj, err, pre); serr != nil {
@@ -610,8 +610,9 @@ func (c *controller[T, P]) call(ctx context.Context, fn func(context.Context) er
 }
 
 // execute carries out a successful reconcile's intents, then deletes owned
-// objects that the reconcile no longer declared.
-func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *scope) error {
+// objects that the reconcile no longer declared. Writes to parent carry the
+// resource version that rv points to, as setFinalizer describes.
+func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *scope, rv *string) error {
 	pm := metaOf[T, P](parent)
 	var cleanup []string
 	for _, in := range s.intents {
@@ -625,7 +626,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 		have := splitList(pm.Annotations[c.labels.cleanup])
 		want := slices.Sorted(maps.Keys(setOf(append(have, cleanup...))))
 		if !slices.Contains(pm.Finalizers, c.finalizer) || !slices.Equal(have, want) {
-			if err := c.setFinalizer(ctx, parent, true, strings.Join(want, ",")); err != nil {
+			if err := c.setFinalizer(ctx, parent, true, strings.Join(want, ","), rv); err != nil {
 				return fmt.Errorf("adding finalizer before creating objects that garbage collection can't delete: %w", err)
 			}
 		}
@@ -712,7 +713,7 @@ func (c *controller[T, P]) execute(ctx context.Context, key Key, parent *T, s *s
 		if err := c.cleanupOwned(ctx, parent, keep); err != nil {
 			return err
 		}
-		if err := c.setFinalizer(ctx, parent, false, ""); err != nil {
+		if err := c.setFinalizer(ctx, parent, false, "", rv); err != nil {
 			return fmt.Errorf("removing finalizer: %w", err)
 		}
 	}
@@ -817,11 +818,19 @@ func (c *controller[T, P]) body(in intent, parent *T) (map[string]any, error) {
 // Server-side apply creates objects that don't exist. The UID in the body
 // makes the apply fail instead, so a reconcile working from a stale cache
 // can't recreate an object that was just deleted.
-func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present bool, cleanup string) error {
+//
+// If rv points to a resource version, each write requires it and replaces
+// it with the version that the write leaves, so that the reconcile's status
+// write can still carry its precondition.
+func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present bool, cleanup string, rv *string) error {
 	m := metaOf[T, P](obj)
 	meta := map[string]any{"name": m.Name, "uid": m.UID}
 	if m.Namespace != "" {
 		meta["namespace"] = m.Namespace
+	}
+	conditional := rv != nil && *rv != ""
+	if conditional {
+		meta["resourceVersion"] = *rv
 	}
 	if present {
 		meta["finalizers"] = []string{c.finalizer}
@@ -835,10 +844,16 @@ func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present boo
 	}
 	path := c.res.path(m.Namespace, m.Name)
 	if err := c.m.client.Apply(ctx, path, c.name+"-finalizer", true, body, &out); err != nil {
+		if conditional && client.IsConflict(err) {
+			return fmt.Errorf("%w: %w", errStale, err)
+		}
 		if !present && replaced(err) {
 			return nil
 		}
 		return err
+	}
+	if conditional {
+		*rv = out.Metadata.ResourceVersion
 	}
 	if present {
 		m.Finalizers = out.Metadata.Finalizers
@@ -849,12 +864,28 @@ func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present boo
 	// by position, guarded by a test so a concurrent change fails instead of
 	// removing the wrong entry.
 	if i := slices.Index(out.Metadata.Finalizers, c.finalizer); i >= 0 {
-		patch, _ := json.Marshal([]map[string]any{
+		ops := []map[string]any{
 			{"op": "test", "path": fmt.Sprintf("/metadata/finalizers/%d", i), "value": c.finalizer},
 			{"op": "remove", "path": fmt.Sprintf("/metadata/finalizers/%d", i)},
-		})
-		if err := c.m.client.Patch(ctx, path, client.JSONPatch, nil, patch, nil); err != nil && !client.IsNotFound(err) {
+		}
+		if conditional {
+			// A patched resource version that isn't the stored one fails
+			// with a conflict, as the apply does. A failed test would fail
+			// as invalid instead.
+			ops = append(ops, map[string]any{"op": "replace", "path": "/metadata/resourceVersion", "value": *rv})
+		}
+		patch, _ := json.Marshal(ops)
+		if err := c.m.client.Patch(ctx, path, client.JSONPatch, nil, patch, &out); err != nil {
+			switch {
+			case conditional && client.IsConflict(err):
+				return fmt.Errorf("%w: %w", errStale, err)
+			case client.IsNotFound(err):
+				return nil
+			}
 			return err
+		}
+		if conditional {
+			*rv = out.Metadata.ResourceVersion
 		}
 	}
 	return nil
@@ -876,7 +907,9 @@ func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T
 		err = c.cleanupOwned(ctx, obj, nil)
 	}
 	if err == nil {
-		err = c.setFinalizer(ctx, obj, false, "")
+		// A status write follows the removal only if it fails, so the
+		// removal needn't carry the precondition.
+		err = c.setFinalizer(ctx, obj, false, "", nil)
 	}
 	c.m.tracker.forget(ref{c: &c.core, key: key})
 	if err != nil {
