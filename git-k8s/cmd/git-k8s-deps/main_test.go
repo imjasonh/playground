@@ -48,6 +48,8 @@ func sumAt(version string) string {
 // fixture is a repository on a git server whose main branch requires greet
 // v1.0.0, a module proxy that has greet v1.0.0 and v1.1.0, an updater for
 // them, and a server that stands in for the result containers of its Pods.
+// The updater has no -min-age, which would hold back each version from when
+// it first shows up.
 type fixture struct {
 	t     *testing.T
 	srv   *gittest.Server
@@ -100,7 +102,7 @@ func newFixture(t *testing.T) *fixture {
 		checkEmail: checksID.Email,
 		prefix:     "deps/", goProxy: fp.URL, goSumDB: "off",
 		goImage: "registry.example.com/go:test", gitImage: "registry.example.com/git:test", resultImage: "registry.example.com/agent-runner:test",
-		timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi", maxPods: 10, interval: time.Hour, minAge: 72 * time.Hour,
+		timeout: time.Minute, sourceSize: "2Gi", goCacheSize: "4Gi", maxPods: 10, interval: time.Hour,
 		now: func() time.Time { return f.clock }, resultPort: port,
 	}
 	return f
@@ -460,14 +462,29 @@ func TestUpdatesAModule(t *testing.T) {
 }
 
 func TestWaitsForTheMinimumAge(t *testing.T) {
-	f := newFixture(t)
-	f.u.interval = 100 * time.Hour
-	f.proxy.publish(greet, "v1.1.0", today.Add(-24*time.Hour), "")
-	if rec := f.checkStays(""); rec.RequeueAfter() != 48*time.Hour {
-		t.Errorf("RequeueAfter() = %v, want 48h, until v1.1.0 is 72h old", rec.RequeueAfter())
+	for _, tc := range []struct {
+		name string
+		// published is the time that the proxy reports for v1.1.0.
+		published time.Time
+	}{
+		{name: "a day-old version", published: today.Add(-24 * time.Hour)},
+		{name: "a backdated version", published: longAgo},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.u.interval, f.u.minAge = 100*time.Hour, 72*time.Hour
+			f.proxy.publish(greet, "v1.1.0", tc.published, "")
+			if rec := f.checkStays(""); rec.RequeueAfter() != 72*time.Hour {
+				t.Errorf("RequeueAfter() = %v, want 72h, until the controller has seen v1.1.0 for 72h", rec.RequeueAfter())
+			}
+			f.clock = f.clock.Add(72*time.Hour - time.Second)
+			if rec := f.checkStays(""); rec.RequeueAfter() != time.Second {
+				t.Errorf("RequeueAfter() = %v, want 1s", rec.RequeueAfter())
+			}
+			f.clock = f.clock.Add(time.Second)
+			f.update("v1.1.0")
+		})
 	}
-	f.clock = f.clock.Add(48 * time.Hour)
-	f.update("v1.1.0")
 }
 
 func TestReplacesABranchWhenANewerVersionComesOut(t *testing.T) {

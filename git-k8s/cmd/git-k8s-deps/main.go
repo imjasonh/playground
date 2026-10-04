@@ -123,7 +123,7 @@ func (u *updater) addFlags(fs *flag.FlagSet) {
 	fs.StringVar(&u.goCacheSize, "go-cache-size", "4Gi", "most disk space that an update Pod's Go module and build caches can use")
 	fs.IntVar(&u.maxPods, "max-pods", 10, "most update Pods to run at once, in all namespaces; 0 means no limit")
 	fs.DurationVar(&u.interval, "interval", time.Hour, "how often to look for new versions")
-	fs.DurationVar(&u.minAge, "min-age", 72*time.Hour, "how old a version must be, by the time that the module proxy reports for it, before the controller updates to it")
+	fs.DurationVar(&u.minAge, "min-age", 72*time.Hour, "how old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller updates to it")
 }
 
 // setup checks the flags once.

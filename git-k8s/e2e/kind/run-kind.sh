@@ -548,8 +548,9 @@ echo "::endgroup::"
 
 echo "::group::A controller keeps Go modules up to date on branches"
 # The deps repository requires example.com/greet from the git server's
-# module proxy. git-k8s-deps takes a version only once the proxy's time for
-# it is a day old, so the versions that it should take are backdated.
+# module proxy. git-k8s-deps takes a version only once it's 20 seconds old,
+# both since git-k8s-deps first saw it and by the proxy's time for it, so
+# the versions that it should take are backdated.
 (cd "${ROOT}" && go build -o "${WORKDIR}/publish" ./e2e/publish)
 publish() {
   local dir
@@ -630,7 +631,7 @@ EOF
 CHECKS+=(check-deps git-k8s-deps)
 install check-deps -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
 install git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=${GO_IMAGE}" \
-  "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=5s -min-age=24h -timeout=5m
+  "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=5s -min-age=20s -timeout=5m
 k -n check-deps rollout status deployment/check-deps --timeout=180s
 k -n git-k8s-deps rollout status deployment/git-k8s-deps --timeout=180s
 GREET_BRANCH="deps/go/example.com/greet@v1"
@@ -650,10 +651,11 @@ eventually 60 no_deps_pods
 echo "git-k8s-deps pushed v1.0.1 to ${GREET_BRANCH}, which landed without approval because a patch release is low risk."
 
 # v1.1.0 changes Hello, so the update breaks the build until the agent fixes
-# the call. v1.2.0 is too new to take.
+# the call. The proxy's time for v1.2.0 is years ahead, so it's too new to
+# take.
 deps_main="$(remote_head main deps)"
 publish v1.1.0 "${long_ago}" 'func Hello(name string) string { return "hello, " + name }'
-publish v1.2.0 "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '// Hello says hello to name.
+publish v1.2.0 2100-01-01T00:00:00Z '// Hello says hello to name.
 func Hello(name string) string { return "hello, " + name }'
 dep() { k -n "${NS}" get gitbranch "$(branch_object "${GREET_BRANCH}" deps)" -o jsonpath="{.status.checks.$1}"; }
 fixed_and_waiting() {

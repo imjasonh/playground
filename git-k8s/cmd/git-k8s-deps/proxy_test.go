@@ -100,6 +100,20 @@ func (p *fakeProxy) hitsOf(mod, file string) int {
 	return p.hits[p.path(mod, file)]
 }
 
+// listedLongAgo returns a proxy whose clock reads today and that first
+// listed mod's versions long ago, so only the versions' times decide which
+// ones are old enough. An error in listing them shows up again when the
+// test asks for a target.
+func listedLongAgo(t *testing.T, mod string, urls ...string) *proxy {
+	clock := longAgo
+	p := newProxy(urls, time.Hour, func() time.Time { return clock })
+	if _, err := p.versions(t.Context(), mod); err != nil {
+		t.Logf("listing %s long ago: %v", mod, err)
+	}
+	clock = today
+	return p
+}
+
 type release struct {
 	version string
 	age     time.Duration
@@ -222,7 +236,7 @@ func TestTarget(t *testing.T) {
 			for _, v := range tc.excluded {
 				excluded[v] = true
 			}
-			p := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return today })
+			p := listedLongAgo(t, mod, fp.URL)
 			got, wait, err := p.target(t.Context(), mod, tc.from, excluded, tc.minAge)
 			if err != nil || got != tc.want || wait != tc.wait {
 				t.Errorf("target() = %q, %v, %v, want %q, %v", got, wait, err, tc.want, tc.wait)
@@ -243,7 +257,7 @@ func TestTargetCaches(t *testing.T) {
 	p := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return clock })
 	target := func() string {
 		t.Helper()
-		v, _, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, time.Hour)
+		v, _, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -260,7 +274,7 @@ func TestTargetCaches(t *testing.T) {
 		t.Errorf("target() = %q, want v1.1.0 from the cached list", got)
 	}
 
-	t.Log("After it, the list is read again; times and go.mod files stay cached.")
+	t.Log("After it, the list is read again; go.mod files stay cached.")
 	clock = clock.Add(time.Minute)
 	if got := target(); got != "v1.2.0" {
 		t.Errorf("target() = %q, want v1.2.0", got)
@@ -268,10 +282,53 @@ func TestTargetCaches(t *testing.T) {
 	if n := fp.hitsOf(mod, "list"); n != 2 {
 		t.Errorf("the list was read %d times, want 2", n)
 	}
-	for _, f := range []string{"v1.1.0.info", "v1.1.0.mod"} {
-		if n := fp.hitsOf(mod, f); n != 1 {
-			t.Errorf("%s was read %d times, want 1", f, n)
+	if n := fp.hitsOf(mod, "v1.1.0.mod"); n != 1 {
+		t.Errorf("v1.1.0.mod was read %d times, want 1", n)
+	}
+}
+
+func TestTargetWaitsFromWhenAVersionShowsUp(t *testing.T) {
+	const (
+		mod    = "example.com/greet"
+		minAge = 72 * time.Hour
+	)
+	fp := newFakeProxy(t)
+	fp.publish(mod, "v1.0.0", longAgo, "")
+	clock := today
+	p := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return clock })
+	target := func(p *proxy, want string, wantWait time.Duration) {
+		t.Helper()
+		got, wait, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, minAge)
+		if err != nil || got != want || wait != wantWait {
+			t.Errorf("target() = %q, %v, %v, want %q, %v", got, wait, err, want, wantWait)
 		}
+	}
+
+	t.Log("v1.1.0 comes out with a backdated commit, so the proxy reports a time long ago.")
+	fp.publish(mod, "v1.1.0", longAgo, "")
+	target(p, "", minAge)
+	clock = clock.Add(minAge - time.Second)
+	target(p, "", time.Second)
+	clock = clock.Add(time.Second)
+	target(p, "v1.1.0", 0)
+
+	t.Log("Each version waits from when it showed up.")
+	fp.publish(mod, "v1.2.0", longAgo, "")
+	clock = clock.Add(time.Hour)
+	target(p, "v1.1.0", minAge)
+	clock = clock.Add(minAge)
+	target(p, "v1.2.0", 0)
+
+	t.Log("A version whose time is later than when it showed up waits from its time.")
+	fp.publish(mod, "v1.3.0", clock.Add(24*time.Hour), "")
+	clock = clock.Add(time.Hour)
+	target(p, "v1.2.0", minAge+23*time.Hour)
+
+	t.Log("After a restart, every version waits again.")
+	restarted := newProxy([]string{fp.URL}, time.Hour, func() time.Time { return clock })
+	target(restarted, "", minAge)
+	if n := fp.hitsOf(mod, "v1.1.0.info"); n != 2 {
+		t.Errorf("v1.1.0.info was read %d times, want once by each proxy", n)
 	}
 }
 
@@ -334,7 +391,7 @@ func TestTargetErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			a, b := newFakeProxy(t), newFakeProxy(t)
 			tc.setup(a, b)
-			p := newProxy([]string{a.URL, b.URL}, time.Hour, func() time.Time { return today })
+			p := listedLongAgo(t, mod, a.URL, b.URL)
 			got, _, err := p.target(t.Context(), mod, []string{"v1.0.0"}, nil, time.Hour)
 			switch {
 			case tc.want != "":

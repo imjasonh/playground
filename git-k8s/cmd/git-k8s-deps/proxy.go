@@ -64,6 +64,8 @@ type proxy struct {
 	lists    map[string]versionList
 	times    map[module.Version]time.Time
 	retracts map[module.Version][]modfile.VersionInterval
+	// seen holds when each version first showed up in its module's list.
+	seen map[module.Version]time.Time
 }
 
 type versionList struct {
@@ -75,6 +77,7 @@ func newProxy(urls []string, ttl time.Duration, now func() time.Time) *proxy {
 	return &proxy{
 		urls: urls, client: &http.Client{Timeout: 30 * time.Second}, ttl: ttl, now: now,
 		lists: map[string]versionList{}, times: map[module.Version]time.Time{}, retracts: map[module.Version][]modfile.VersionInterval{},
+		seen: map[module.Version]time.Time{},
 	}
 }
 
@@ -136,8 +139,14 @@ func (p *proxy) versions(ctx context.Context, path string) ([]string, error) {
 		}
 	}
 	semver.Sort(vs)
+	now := p.now()
 	p.mu.Lock()
-	p.lists[path] = versionList{versions: vs, at: p.now()}
+	p.lists[path] = versionList{versions: vs, at: now}
+	for _, v := range vs {
+		if key := (module.Version{Path: path, Version: v}); p.seen[key].IsZero() {
+			p.seen[key] = now
+		}
+	}
 	p.mu.Unlock()
 	return vs, nil
 }
@@ -210,8 +219,9 @@ func (p *proxy) retractions(ctx context.Context, path, version string) ([]modfil
 // target returns the version of a module to update to from the versions
 // in from, or "" if there's none. That's the newest release with the same
 // major version as the newest version in from that's newer than the oldest
-// one, isn't in excluded, isn't retracted, and is at least minAge old. wait
-// is how long until a newer version is old enough.
+// one, isn't in excluded, isn't retracted, and is at least minAge old, both
+// by its time and since it showed up in the module's list. wait is how long
+// until a newer version is old enough.
 func (p *proxy) target(ctx context.Context, path string, from []string, excluded map[string]bool, minAge time.Duration) (version string, wait time.Duration, err error) {
 	if len(from) == 0 {
 		return "", 0, nil
@@ -246,6 +256,15 @@ func (p *proxy) target(ctx context.Context, path string, from []string, excluded
 			t, err := p.time(ctx, path, v)
 			if err != nil {
 				return "", 0, err
+			}
+			// A proxy reports the time of the version's commit, which
+			// whoever made the commit picks, so the version also waits
+			// from when it showed up.
+			p.mu.Lock()
+			seen := p.seen[module.Version{Path: path, Version: v}]
+			p.mu.Unlock()
+			if seen.After(t) {
+				t = seen
 			}
 			if d := t.Add(minAge).Sub(now); d > 0 {
 				if wait == 0 || d < wait {

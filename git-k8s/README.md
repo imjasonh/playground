@@ -549,12 +549,14 @@ versions make incompatible changes, and from `v2` on each one has its own
 module path.
 
 Compromised releases are often pulled within days, so the controller takes a
-version only once it's `-min-age` old, 72 hours by default, by the time that
-the module proxy reports for it. When a newer version is younger than that,
-the controller looks again once the version is old enough. A proxy such as
-`proxy.golang.org` reports the time of the version's commit, not when the
-release came out. Whoever makes a commit can set its time, so an attacker can
-get past the delay with a backdated commit.
+version only once it's `-min-age` old, 72 hours by default, both by the time
+that the module proxy reports for it and since the controller first saw it in
+the module's list of versions. A proxy such as `proxy.golang.org` reports the
+time of the version's commit, not when the release came out, and whoever
+makes a commit can set its time. The controller keeps when it first saw each
+version only in memory, so after a restart it waits `-min-age` again before
+it takes any version. When a newer version is younger than that, the
+controller looks again once the version is old enough.
 
 The controller also skips prereleases, versions that a `go.mod` file
 excludes, and versions that the module retracts. To keep the controller from
@@ -693,7 +695,7 @@ flags in the `check-review` table. `git-k8s-deps` takes these flags:
 | `-identity-email` | `git-k8s@users.noreply.github.com` | Author and committer email of the controller's updates |
 | `-check-identity-email` | `git-k8s@users.noreply.github.com` | Committer email of the fixes that checks push: the checks' `-identity-email` |
 | `-interval` | `1h` | How often to look for newer versions |
-| `-min-age` | `72h` | How old a version must be, by the time that the module proxy reports for it, before the controller takes it |
+| `-min-age` | `72h` | How old a version must be, both by the time that the module proxy reports for it and since the controller first saw it, before the controller takes it |
 | `-goproxy` | `https://proxy.golang.org` | Comma-separated URLs of the module proxies to read modules from; `direct` and `off` aren't allowed |
 | `-gosumdb` | `sum.golang.org` | `GOSUMDB` for `go get`, or `off` |
 | `-go-image` | `cgr.dev/chainguard/go:latest` | Image that runs `go get`; it needs `go`, `git`, `sh`, `base64`, `sha256sum`, `tail`, and `cut` |
