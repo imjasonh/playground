@@ -109,3 +109,13 @@ func TestTimeoutStopsWhatGitStarted(t *testing.T) {
 		}
 	}
 }
+
+// An error names git's command, not an option that comes before it, as
+// --attr-source comes before merge-tree in Keeps.
+func TestErrorNamesTheCommandAfterItsOptions(t *testing.T) {
+	g := &Git{Bin: filepath.Join(t.TempDir(), "missing")}
+	_, err := g.run(t.Context(), t.TempDir(), []string{"--attr-source=HEAD", "merge-tree"}, opts{})
+	if err == nil || !strings.HasPrefix(err.Error(), "git merge-tree: ") {
+		t.Errorf("err = %v, want an error that starts with %q", err, "git merge-tree: ")
+	}
+}
