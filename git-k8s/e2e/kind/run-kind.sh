@@ -327,7 +327,7 @@ rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}"
 rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
 rejected "requires the approve verb on gitbranches, which bob doesn't have" \
   annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
-rejected "${APPROVED_BY} can change by itself only when you take over an approval" annotate --as=alice "${APPROVED_BY}=alice"
+rejected "set ${APPROVE} when you set ${APPROVED_BY}" annotate --as=alice "${APPROVED_BY}=alice"
 # The gate wants alice's approval, so another approver's doesn't land c/auth.
 admin="$(k auth whoami -o jsonpath='{.status.userInfo.username}')"
 annotate "${APPROVE}=${AUTH}" "${APPROVED_BY}=${admin}"

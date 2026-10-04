@@ -188,6 +188,8 @@ spec:
         variables.approval != variables.oldApproval || variables.approver == variables.oldApprover ||
         (variables.approval != "" && variables.approver == request.userInfo.username)
       messageExpression: >-
+        variables.approval == "" ?
+        "set git-k8s.imjasonh.com/approve when you set git-k8s.imjasonh.com/approved-by" :
         "git-k8s.imjasonh.com/approved-by can change by itself only when you take over an approval by setting it to " +
         request.userInfo.username
 ---
