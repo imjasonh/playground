@@ -146,6 +146,18 @@ func (c *checkRuns) clock() time.Time {
 func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 	key := b.Namespace + "/" + b.Spec.Repository
 	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
+	publishing := repo != nil && repo.Spec.OctoSTS != nil && repo.Spec.OctoSTS.CheckRunsIdentity != ""
+	var rr *repoRuns
+	var listed []*branchResults
+	if publishing {
+		rr = c.repository(key)
+		rr.mu.Lock()
+		defer rr.mu.Unlock()
+		// What a shared check run shows depends on every branch at its
+		// commit, and listing the branches reconciles this one again when
+		// any of them changes or goes away.
+		listed = kube.List[branchResults](ctx, kube.InNamespace(b.Namespace), kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: b.Spec.Repository}))
+	}
 	if ctx.Err() != nil {
 		// When kube.Get or kube.List can't read, it returns nothing and
 		// the framework tries the reconcile again. The reconcile stops so
@@ -153,24 +165,15 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 		// couldn't read.
 		return ctx.Err()
 	}
-	if repo == nil || repo.Spec.OctoSTS == nil || repo.Spec.OctoSTS.CheckRunsIdentity == "" {
+	if !publishing {
 		c.forget(key)
 		return nil
 	}
-	rr := c.repository(key)
-	rr.mu.Lock()
-	defer rr.mu.Unlock()
-	// What a shared check run shows depends on every branch at its commit,
-	// and listing the branches reconciles this one again when any of them
-	// changes or goes away.
 	branches := map[string]map[string]gitk8s.CheckResult{}
-	for _, o := range kube.List[branchResults](ctx, kube.InNamespace(b.Namespace), kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: b.Spec.Repository})) {
+	for _, o := range listed {
 		if o.Spec.Repository == b.Spec.Repository {
 			branches[o.Name] = o.Status.Checks
 		}
-	}
-	if ctx.Err() != nil {
-		return ctx.Err()
 	}
 	branches[b.Name] = b.Status.Checks
 	if len(b.Status.Checks) == 0 && len(rr.results) == 0 {
