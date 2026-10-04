@@ -832,8 +832,10 @@ A test in `e2e/kind` runs the whole installation in a
 kube-proxy. It pushes to a local registry as kind's
 [guide](https://kind.sigs.k8s.io/docs/user/local-registry/) describes, pipes
 `generate` to `kubectl apply`, and checks that a Website's Service serves,
-that reconciles continue after every controller pod is replaced, and that the
-podpolicy webhooks deny and default pods through their Service.
+that reconciles continue after every controller pod is replaced, that
+imagereport creates its CRD with the rules that `generate` wrote and reports
+the images that pods run, and that the podpolicy webhooks deny and default
+pods through their Service.
 
 ## Measurements
 

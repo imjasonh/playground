@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Install the website and podpolicy examples in a kind cluster with
-# generate, which pushes their images to a local registry, and check that
-# they work. go test ./e2e/kind runs this when KUBE_KIND_E2E=1, which CI
+# Install the website, imagereport, and podpolicy examples in a kind cluster
+# with generate, which pushes their images to a local registry, and check
+# that they work. go test ./e2e/kind runs this when KUBE_KIND_E2E=1, which CI
 # sets when kube changes.
 #
 # KUBE_KIND_CHAINGUARD is where Chainguard's images come from
@@ -26,7 +26,7 @@ k() { kubectl --context "${CONTEXT}" "$@"; }
 diagnose() {
   echo "::group::Cluster state"
   k get nodes,websites,all -A -o wide || true
-  for ns in website podpolicy; do
+  for ns in website imagereport podpolicy; do
     k -n "${ns}" describe pods || true
     k -n "${ns}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${ns}" || true
   done
@@ -174,6 +174,27 @@ k delete website hello
 deployment_gone() { ! k get deployment hello >/dev/null 2>&1; }
 eventually 120 deployment_gone
 echo "Deleting the Website deletes what it owned."
+echo "::endgroup::"
+
+# podpolicy's webhooks deny Pods from this registry, so this goes first.
+echo "::group::Install the imagereport example"
+generate imagereport -replicas=1 | k apply -f -
+k -n imagereport rollout status deployment/imagereport --timeout=180s
+
+# The program owns ImageReports without reconciling them, so it creates their
+# CRD with the rules that generate wrote.
+crd_created() {
+  [[ "$(k get crd imagereports.examples.kube.imjasonh.github.io \
+    -o jsonpath='{.metadata.labels.kube\.imjasonh\.github\.io/managed-by}')" == imagereport ]]
+}
+eventually 60 crd_created
+has_report() {
+  [[ "$(k -n "$1" get imagereport images -o jsonpath='{.images[*].image}' 2>/dev/null)" == *"$2"* ]]
+}
+eventually 60 has_report imagereport "/kube-e2e/imagereport@sha256:"
+eventually 60 has_report kube-system kube-apiserver
+k get imagereports -A
+echo "The program created the ImageReport CRD and reports pods' images."
 echo "::endgroup::"
 
 echo "::group::Install the podpolicy example"

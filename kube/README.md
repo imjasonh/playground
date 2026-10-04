@@ -204,8 +204,9 @@ validation and display hints to the generated schema:
 A controller that reconciles the type installs its CustomResourceDefinition
 when the program starts, and later releases update it, as [Change a
 type](#change-a-type) describes. A program can also read or own a type that
-none of its controllers reconciles, such as a report that it writes for people
-to read. Such a program creates the CRD the first time that it uses the type,
+none of its controllers reconciles, such as the reports that
+[`examples/imagereport`](examples/imagereport/main.go) writes for people to
+read. Such a program creates the CRD the first time that it uses the type,
 if the cluster doesn't have the CRD. It never changes a CRD that exists,
 because only a program that reconciles the type knows all of the type's
 versions.
@@ -593,9 +594,10 @@ go test -race ./...
 Without `KUBEBUILDER_ASSETS`, the end-to-end tests skip. CI downloads the
 binaries and runs them.
 
-One more test installs the website and podpolicy examples with `generate` in a
-[kind](https://kind.sigs.k8s.io/) cluster, and pushes their images to a local
-registry. It needs Docker and `kubectl`, and installs kind if it's missing:
+One more test installs the website, imagereport, and podpolicy examples with
+`generate` in a [kind](https://kind.sigs.k8s.io/) cluster, and pushes their
+images to a local registry. It needs Docker and `kubectl`, and installs kind if
+it's missing:
 
 ```sh
 KUBE_KIND_E2E=1 go test -v -count=1 ./e2e/kind/
@@ -623,6 +625,8 @@ tests and end-to-end tests:
 | [`dnsrecord`](examples/dnsrecord/main.go) | external-dns, Crossplane | External resources, `Finalize`, `Permanent`, drift checks |
 | [`janitor`](examples/janitor/main.go) | hjacobs/kube-janitor | Time-based desired state with `RequeueAfter`, `Delete` |
 | [`podpolicy`](examples/podpolicy/main.go) | Kyverno and OPA Gatekeeper policies | Admission webhooks for Pods with `kube.Webhooks`, a patch that keeps undeclared fields |
+| [`imagereport`](examples/imagereport/main.go) | aquasecurity/trivy-operator | Creating the CRD of a type that it owns but doesn't reconcile, `kube.Owns` |
+
 ## Measurements
 
 On a local `kube-apiserver` with 5,000 Pods of 8.2 KB each, compared with
