@@ -155,19 +155,25 @@ func (c *checkRuns) clock() time.Time {
 func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 	key := b.Namespace + "/" + b.Spec.Repository
 	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
-	publishing := repo != nil && repo.Spec.OctoSTS != nil && repo.Spec.OctoSTS.CheckRunsIdentity != ""
 	var rr *repoRuns
 	var listed []*branchResults
-	if publishing {
+	if publishes(repo) {
 		var err error
 		if rr, err = c.lock(ctx, key); err != nil {
 			return err
 		}
 		defer rr.unlock()
-		// What a shared check run shows depends on every branch at its
-		// commit, and listing the branches reconciles this one again when
-		// any of them changes or goes away.
-		listed = kube.List[branchResults](ctx, kube.InNamespace(b.Namespace), kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: b.Spec.Repository}))
+		// Another reconcile can see the GitRepository change while this
+		// one waits for the lock, and forget the repository first. This
+		// reconcile reads the GitRepository again, which then shows the
+		// change too, so that it doesn't publish after the forget.
+		repo = kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
+		if publishes(repo) {
+			// What a shared check run shows depends on every branch at
+			// its commit, and listing the branches reconciles this one
+			// again when any of them changes or goes away.
+			listed = kube.List[branchResults](ctx, kube.InNamespace(b.Namespace), kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: b.Spec.Repository}))
+		}
 	}
 	if ctx.Err() != nil {
 		// When kube.Get or kube.List can't read, it returns nothing and
@@ -176,7 +182,12 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 		// couldn't read.
 		return ctx.Err()
 	}
-	if !publishing {
+	if !publishes(repo) {
+		if rr != nil {
+			// forget would wait for the lock that this reconcile holds.
+			c.drop(key)
+			return nil
+		}
 		return c.forget(ctx, key)
 	}
 	branches := map[string]map[string]gitk8s.CheckResult{}
@@ -211,6 +222,12 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 		return nil
 	}
 	return err
+}
+
+// publishes reports whether the controller publishes check runs for repo,
+// which it does when repo exists and names a check-runs identity.
+func publishes(repo *gitk8s.Repository) bool {
+	return repo != nil && repo.Spec.OctoSTS != nil && repo.Spec.OctoSTS.CheckRunsIdentity != ""
 }
 
 // runSync makes one repository's check runs show its branches' results,
@@ -607,10 +624,16 @@ func (c *checkRuns) forget(ctx context.Context, key string) error {
 		return err
 	}
 	defer rr.unlock()
+	c.drop(key)
+	return nil
+}
+
+// drop forgets a repository's check runs, by namespace and name, for a
+// reconcile that holds the repository's lock.
+func (c *checkRuns) drop(key string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	delete(c.repos, key)
-	return nil
 }
 
 // learnApp records that the tokens for rr's appKey act for app, the app of

@@ -1979,6 +1979,64 @@ func TestCheckRunsForgetWhileReconcilesWait(t *testing.T) {
 	})
 }
 
+// TestCheckRunsStayForgotten checks a reconcile that read the GitRepository
+// before it stopped naming a check-runs identity, and that gets the
+// repository's lock after another reconcile forgot the repository.
+func TestCheckRunsStayForgotten(t *testing.T) {
+	s := newSharing(t, 1)
+	s.step("c/x", s.result(0, gitk8s.Running, "started Pod x"), s.get(0), post)
+	s.p.set("c/y", s.result(0, gitk8s.Passed, "passed on c/y"))
+	named := s.p.repo
+	unnamed := *named
+	octo := *unnamed.Spec.OctoSTS
+	octo.CheckRunsIdentity = ""
+	unnamed.Spec.OctoSTS = &octo
+	known := func() bool {
+		s.p.c.mu.Lock()
+		defer s.p.c.mu.Unlock()
+		return s.p.c.repos["default/app"] != nil
+	}
+
+	t.Log("The GitRepository stops naming a check-runs identity, and c/x's reconcile forgets acme/app.")
+	s.p.repo = &unnamed
+	s.again("c/x")
+	if known() {
+		t.Fatal("the controller knows acme/app after c/x's reconcile forgot it")
+	}
+
+	t.Log("c/y's reconcile read the GitRepository before the change, and gets the lock only after c/x's reconcile forgot acme/app. It sends nothing, and the controller still knows nothing of acme/app.")
+	x := resultsOf("app", "c/x", s.p.branches["c/x"])
+	y := resultsOf("app", "c/y", s.p.branches["c/y"])
+	before, _ := kube.Fake(t.Context(), y, named, x)
+	after, _ := kube.Fake(t.Context(), y, &unnamed, x)
+	sent := len(s.gh.Fake.Requests())
+	err := s.p.c.Reconcile(&changedWhileWaiting{Context: after, before: before, c: s.p.c}, y)
+	if got := s.gh.Fake.Requests()[sent:]; err != nil || len(got) > 0 || known() {
+		t.Errorf("reconciling c/y: requests = %q, err = %v, known = %v; want no requests, and nothing known of acme/app", got, err, known())
+	}
+	s.wantRuns("git-k8s/gotest@" + s.short(0) + " in_progress : started Pod x")
+}
+
+// changedWhileWaiting is the context of a reconcile of acme/app that reads
+// the cluster of before until it holds the repository's lock, and the
+// cluster of the context that it embeds after that, as if the cluster
+// changed while the reconcile waited for the lock.
+type changedWhileWaiting struct {
+	context.Context
+	before context.Context
+	c      *checkRuns
+}
+
+func (ctx *changedWhileWaiting) Value(key any) any {
+	ctx.c.mu.Lock()
+	rr := ctx.c.repos["default/app"]
+	ctx.c.mu.Unlock()
+	if rr != nil && len(rr.locked) > 0 {
+		return ctx.Context.Value(key)
+	}
+	return ctx.before.Value(key)
+}
+
 func TestCheckRunErrors(t *testing.T) {
 	gh, w, main := newGitHub(t)
 	w.Branch("c/x", main)
