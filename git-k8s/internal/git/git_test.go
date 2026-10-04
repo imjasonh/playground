@@ -3,6 +3,7 @@ package git_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -353,7 +354,7 @@ func TestFetchMergePush(t *testing.T) {
 	}
 }
 
-func TestMergeBasesAndReplays(t *testing.T) {
+func TestMergeBasesReplaysAndKeepsChanges(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")
 	w.Write("a.txt", "1\n2\n3\n4\n5\n6\n7\n8\n")
@@ -368,6 +369,32 @@ func TestMergeBasesAndReplays(t *testing.T) {
 	w.Git("cherry-pick", fix)
 	replay := w.Git("rev-parse", "HEAD")
 	w.Push("replay")
+	// long has the replay under more commits than Replays hashes at once.
+	for i := range 100 {
+		w.Git("commit", "--quiet", "--allow-empty", "-m", fmt.Sprintf("later %d", i))
+	}
+	long := w.Git("rev-parse", "HEAD")
+	w.Push("long")
+	// In b.txt, changing either "foo" to "bar" makes a commit with the
+	// same patch ID.
+	w.Branch("lines", base)
+	w.Write("b.txt", "foo\nx\nx\nx\nfoo\n")
+	foos := w.Commit("foos")
+	w.Write("b.txt", "bar\nx\nx\nx\nfoo\n")
+	line1 := w.Commit("line 1")
+	w.Write("b.txt", "bar\nx\nx\nx\nbar\n")
+	line1Then5 := w.Commit("line 5 too")
+	w.Push("lines")
+	w.Branch("line5", foos)
+	w.Write("b.txt", "foo\nx\nx\nx\nbar\n")
+	line5 := w.Commit("line 5")
+	w.Write("b.txt", "bar\nx\nx\nx\nbar\n")
+	line5Then1 := w.Commit("line 1 too")
+	w.Push("line5")
+	w.Branch("next", foos)
+	w.Write("b.txt", "bar\ny\nx\nx\nfoo\n")
+	line1AndNext := w.Commit("line 1 and the line after it")
+	w.Push("next")
 	w.Branch("other", base)
 	w.Write("a.txt", "1\n2\n3\n4\n5\n6\nSEVEN\n8\n")
 	other := w.Commit("a different fix")
@@ -398,7 +425,7 @@ func TestMergeBasesAndReplays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.Fetch(ctx, srv.Remote("app"), "main", "replay", "other", "merge", "m1", "m2", "orphan"); err != nil {
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main", "replay", "long", "lines", "line5", "next", "other", "merge", "m1", "m2", "orphan"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -428,10 +455,41 @@ func TestMergeBasesAndReplays(t *testing.T) {
 		{"no replay", base, fix, secret, false},
 		{"a commit that changes no file", replay, empty, secret, false},
 		{"a merge commit", replay, merge, secret, false},
+		{"a replay under 100 later commits", long, fix, secret, true},
+		{"the same change on another line", line5, line1, foos, true},
+		{"one commit for two commits with one patch ID", line5, line1Then5, foos, false},
+		{"two commits for two commits with one patch ID", line5Then1, line1Then5, foos, true},
 	} {
 		if got, err := repo.Replays(ctx, tc.head, tc.other, tc.since); err != nil || got != tc.want {
 			t.Errorf("%s: Replays = %v, %v; want %v", tc.name, got, err, tc.want)
 		}
+	}
+
+	for _, tc := range []struct {
+		name              string
+		head, other, base string
+		want              bool
+	}{
+		{"a replay onto a base without a nearby line", replay, fix, secret, true},
+		{"nothing to keep", base, secret, secret, true},
+		{"a removal that head made too", replay, base, secret, true},
+		{"a line that other removed", fix, base, secret, false},
+		{"a different change to the same line", other, fix, secret, false},
+		{"a change that head doesn't have", base, fix, secret, false},
+		{"a commit that changes no file", replay, empty, secret, true},
+		{"a merge commit", replay, merge, secret, true},
+		{"the same change on another line", line5, line1, foos, false},
+		{"the same change on both lines", line5Then1, line1, foos, true},
+		// The change is there, but next to another change, so the merge
+		// conflicts.
+		{"the same change with the next line changed too", line1AndNext, line1, foos, false},
+	} {
+		if got, err := repo.KeepsChanges(ctx, tc.head, tc.other, tc.base); err != nil || got != tc.want {
+			t.Errorf("%s: KeepsChanges = %v, %v; want %v", tc.name, got, err, tc.want)
+		}
+	}
+	if _, err := repo.KeepsChanges(ctx, base, fix, strings.Repeat("0", 40)); err == nil {
+		t.Error("KeepsChanges with a missing base succeeded; want an error")
 	}
 }
 

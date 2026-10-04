@@ -406,12 +406,44 @@ func (r *Repo) MergeBases(ctx context.Context, a, b string) ([]string, error) {
 	return nil, &Error{Command: "merge-base", Code: res.code, Stderr: res.stderr}
 }
 
+// KeepsChanges reports whether head's files have every change from base's
+// files to other's: merging other into head, with base as the merge base,
+// is clean and leaves head's tree as it is. base needn't be an ancestor of
+// either commit, so if other removed lines that base has, head must not
+// have them either. It compares only files, so a reworded commit, or a
+// commit and its revert, changes nothing that it can see.
+//
+// A change that head made right next to one of other's changes, or on
+// the same lines, conflicts, so KeepsChanges can report false for a head
+// that does have the change. It never reports true for one that doesn't.
+func (r *Repo) KeepsChanges(ctx context.Context, head, other, base string) (bool, error) {
+	args := []string{"merge-tree", "--write-tree", "--no-messages", "--merge-base=" + base, "--end-of-options", head, other}
+	res, err := r.git.exec(ctx, r.Dir, args, opts{})
+	switch {
+	case err != nil:
+		return false, err
+	case res.code == 1:
+		return false, nil
+	case res.code != 0:
+		return false, &Error{Command: "merge-tree", Code: res.code, Stderr: res.stderr}
+	}
+	tree, _, _ := strings.Cut(string(res.stdout), "\n")
+	headTree, err := r.text(ctx, "rev-parse", "--verify", "--end-of-options", head+"^{tree}")
+	return err == nil && tree == headTree, err
+}
+
 // Replays reports whether head has a replay of each commit that's in other
 // but not in head or base: a commit in head but not in other that removes
-// and adds the same lines in the same files. Unlike git cherry, it ignores
-// the unchanged lines around each change, so a commit replayed onto a base
-// that changed nearby lines still matches. A merge commit, and a commit
-// that changes no file, have no replay.
+// and adds the same lines in the same files. Each commit in head replays at
+// most one commit. A merge commit, and a commit that changes no file, have
+// no replay.
+//
+// Unlike git cherry, Replays ignores the unchanged lines around each
+// change, so a commit replayed onto a base that changed nearby lines still
+// matches. It also ignores where in a file each change is, and whitespace,
+// so a commit that changes "foo" to "bar" on line 10 replays one that
+// makes the same change on line 50. Use it with KeepsChanges, which
+// compares where the changes are but not the commits that made them.
 func (r *Repo) Replays(ctx context.Context, head, other, base string) (bool, error) {
 	out, err := r.run(ctx, "rev-list", "--parents", "--end-of-options", other, "^"+head, "^"+base)
 	if err != nil {
@@ -425,39 +457,58 @@ func (r *Repo) Replays(ctx context.Context, head, other, base string) (bool, err
 		}
 		commits = append(commits, f[0])
 	}
+	if len(commits) == 0 {
+		return true, nil
+	}
 	need, err := r.patchIDs(ctx, commits)
 	if err != nil {
 		return false, err
+	}
+	missing := map[string]int{}
+	for _, c := range commits {
+		if need[c] == "" {
+			return false, nil
+		}
+		missing[need[c]]++
 	}
 	out, err = r.run(ctx, "rev-list", "--no-merges", "--end-of-options", head, "^"+other)
 	if err != nil {
 		return false, err
 	}
-	have, err := r.patchIDs(ctx, strings.Fields(string(out)))
-	if err != nil {
-		return false, err
-	}
-	replayed := map[string]bool{}
-	for _, id := range have {
-		replayed[id] = true
-	}
-	for _, c := range commits {
-		if id := need[c]; id == "" || !replayed[id] {
-			return false, nil
+	// rev-list lists the newest commits first, and replays are usually the
+	// newest, so hash head's commits in growing batches and stop once each
+	// commit has a replay. head can hold thousands of commits that other
+	// doesn't, such as a main branch that it was rebased onto.
+	have := strings.Fields(string(out))
+	for n := 64; len(have) > 0 && len(missing) > 0; n *= 2 {
+		batch := have[:min(n, len(have))]
+		have = have[len(batch):]
+		ids, err := r.patchIDs(ctx, batch)
+		if err != nil {
+			return false, err
+		}
+		for _, c := range batch {
+			if id := ids[c]; missing[id] > 1 {
+				missing[id]--
+			} else {
+				delete(missing, id)
+			}
 		}
 	}
-	return true, nil
+	return len(missing) == 0, nil
 }
 
 // patchIDs maps each commit to the patch ID of its change from its parent,
 // computed from a diff without context lines, or to "" if the commit
-// changes no file.
+// changes no file. patch-id identifies a binary file's change by the blobs'
+// full names, which --full-index prints, so the diff needn't carry the
+// files' contents.
 func (r *Repo) patchIDs(ctx context.Context, commits []string) (map[string]string, error) {
 	ids := map[string]string{}
 	if len(commits) == 0 {
 		return ids, nil
 	}
-	diffs, err := r.git.run(ctx, r.Dir, []string{"diff-tree", "--stdin", "--root", "-p", "-U0", "--binary"},
+	diffs, err := r.git.run(ctx, r.Dir, []string{"diff-tree", "--stdin", "--root", "-p", "-U0", "--full-index"},
 		opts{stdin: []byte(strings.Join(commits, "\n") + "\n")})
 	if err != nil {
 		return nil, err

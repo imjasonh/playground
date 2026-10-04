@@ -2,6 +2,7 @@ package mirror
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -108,6 +109,52 @@ func (w *world) replay(commit, onto string) string {
 	w.work.Git("checkout", "--quiet", "--detach", onto)
 	w.work.Git("cherry-pick", "--allow-empty", commit)
 	return w.work.Git("rev-parse", "HEAD")
+}
+
+// commitFiles makes a commit whose parent is from, and that writes files,
+// or deletes the ones whose content is "".
+func (w *world) commitFiles(from, message string, files map[string]string) string {
+	w.t.Helper()
+	w.work.Git("checkout", "--quiet", "--detach", from)
+	for path, content := range files {
+		if content == "" {
+			w.work.Git("rm", "--quiet", path)
+		} else {
+			w.work.Write(path, content)
+		}
+	}
+	return w.work.Commit(message)
+}
+
+// reword makes a commit with commit's parent and files and another
+// message.
+func (w *world) reword(commit, message string) string {
+	w.t.Helper()
+	w.work.Git("checkout", "--quiet", "--detach", commit)
+	w.work.Git("commit", "--quiet", "--amend", "--allow-empty", "-m", message)
+	return w.work.Git("rev-parse", "HEAD")
+}
+
+// merge makes a merge commit whose parents are first and second.
+func (w *world) merge(first, second string) string {
+	w.t.Helper()
+	w.work.Git("checkout", "--quiet", "--detach", first)
+	w.work.Git("merge", "--quiet", "--no-ff", "--no-edit", second)
+	return w.work.Git("rev-parse", "HEAD")
+}
+
+// numbered returns n lines, "line 1" to "line n", except that set replaces
+// some of them.
+func numbered(n int, set map[int]string) string {
+	var b strings.Builder
+	for i := 1; i <= n; i++ {
+		line, ok := set[i]
+		if !ok {
+			line = fmt.Sprintf("line %d", i)
+		}
+		b.WriteString(line + "\n")
+	}
+	return b.String()
 }
 
 // pushExternal sets branch to commit in the external repository, or
@@ -240,6 +287,126 @@ func TestDecide(t *testing.T) {
 		{name: "a rewind in the copy, resolved in the external repository", m: a, d: replayed, s: a2, want: take},
 		{name: "a rewind in the copy, resolved in the copy with another change", m: other, d: c, s: a2, want: diverged},
 		{name: "a rewind in the copy, resolved in the external repository with another change", m: a, d: other, s: a2, want: take},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := decide(t.Context(), r, tc.m, tc.d, tc.s)
+			if err != nil || got != tc.want {
+				t.Errorf("decide = %v, %v; want %v", got, err, tc.want)
+			}
+		})
+	}
+}
+
+// TestDecideRewrittenCommits covers heads that rebased, reworded, or
+// replayed commits, so that what the commits changed, not which commits
+// the heads share, decides whether a head keeps a side's changes.
+func TestDecideRewrittenCommits(t *testing.T) {
+	w := newWorld(t)
+	file := func(set map[int]string) map[string]string { return map[string]string{"F": numbered(60, set)} }
+	// F has "foo" on lines 10 and 50, so a commit that changes one of them
+	// to "bar" has the same patch ID as one that changes the other.
+	p := w.commitFiles(w.commit("", "root"), "p", file(map[int]string{10: "foo", 50: "foo"}))
+	s := w.commit(p, "s")
+	line10 := w.commitFiles(s, "line 10", file(map[int]string{10: "bar", 50: "foo"}))
+	both := w.commitFiles(line10, "line 50 too", file(map[int]string{10: "bar", 50: "bar"}))
+	line50NoS := w.commitFiles(p, "line 50 without s", file(map[int]string{10: "foo", 50: "bar"}))
+	line10NoS := w.commitFiles(p, "line 10 without s", file(map[int]string{10: "bar", 50: "foo"}))
+	line50 := w.commitFiles(s, "line 50", file(map[int]string{10: "foo", 50: "bar"}))
+	sOnLine10 := w.replay(s, line10NoS)
+	// line10 then baz changes line 10 twice; onMain replays s and both
+	// changes onto a newer main.
+	baz := w.commitFiles(line10, "baz", file(map[int]string{10: "baz", 50: "foo"}))
+	onMain := w.replay(baz, w.replay(line10, w.replay(s, w.commit(p, "main"))))
+
+	// b is a commit that one side drops, as a person does to remove a
+	// leaked secret.
+	b := w.commit(p, "b")
+	bRebased := w.replay(b, w.commit(p, "newer main"))
+	bReworded := w.reword(b, "b, reworded")
+	bMoved := w.reword(bRebased, "b, rebased and reworded")
+	x := w.commit(b, "x")
+	w.work.Git("checkout", "--quiet", "--detach", x)
+	w.work.Git("revert", "--no-edit", x)
+	reverted := w.work.Git("rev-parse", "HEAD")
+
+	// After dropping secret, the external repository changes line 20,
+	// which c, on secret, changed too. resolved replays c onto e, resolving
+	// the conflict.
+	secret := w.commit(p, "secret")
+	c := w.commitFiles(secret, "c", file(map[int]string{10: "foo", 20: "copy", 50: "foo"}))
+	e := w.commitFiles(p, "e", file(map[int]string{10: "foo", 20: "external", 50: "foo"}))
+	resolved := w.commitFiles(e, "c, resolved", file(map[int]string{10: "foo", 20: "copy and external", 50: "foo"}))
+	// After dropping secretLine, which changed line 30, the external
+	// repository changes line 30 another way. k, on secretLine, replays
+	// onto that.
+	secretLine := w.commitFiles(p, "secret line", file(map[int]string{10: "foo", 30: "secret", 50: "foo"}))
+	scrubbed := w.commitFiles(p, "scrubbed", file(map[int]string{10: "foo", 30: "scrubbed", 50: "foo"}))
+	kOnScrubbed := w.commit(scrubbed, "k")
+
+	bin1, bin2 := "\x00\x01\x02\x03\x04\x05\x00\xff", "\x00\x09\x09\x09\x04\x05\x00\xfe"
+	q := w.commitFiles(p, "q", map[string]string{"A": "a content\n", "X.bin": bin1, "S.sh": "echo hi\n"})
+	sq := w.commit(q, "sq")
+	noSq := w.commit(q, "without sq")
+	w.work.Git("checkout", "--quiet", "--detach", sq)
+	empty := w.work.Commit("empty")
+	emptyOnNewer := w.replay(empty, w.replay(sq, w.commit(q, "newest main")))
+	executable := func(from string) string {
+		w.work.Git("checkout", "--quiet", "--detach", from)
+		if err := os.Chmod(filepath.Join(w.work.Dir, "S.sh"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return w.work.Commit("executable")
+	}
+
+	// x1 and x2 merged both ways are a criss-cross: m1 and m2 have two
+	// merge bases.
+	x1, x2 := w.commit(p, "x1"), w.commit(p, "x2")
+	m1, m2 := w.merge(x1, x2), w.merge(x2, x1)
+
+	r, err := w.m.Git.Open(t.Context(), filepath.Join(w.work.Dir, ".git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name    string
+		m, d, s string
+		want    action
+	}{
+		{name: "the external repository rewound and replayed the copy's change", m: line10, d: line10NoS, s: s, want: take},
+		{name: "the external repository rewound and made the copy's change on another line", m: line10, d: line50NoS, s: s, want: diverged},
+		{name: "the external repository rewound and made one of the copy's two changes", m: both, d: line10NoS, s: s, want: diverged},
+		{name: "the copy rebased onto a main that made the external repository's change on another line", m: sOnLine10, d: line50, s: s, want: diverged},
+		{name: "the copy rebased onto a newer main and replayed two changes to one line", m: onMain, d: baz, s: s, want: push},
+		{name: "the external repository rebased onto a newer main and replayed two changes to one line", m: baz, d: onMain, s: s, want: take},
+
+		{name: "the external repository dropped a commit, and the copy rebased it", m: bRebased, d: p, s: b, want: diverged},
+		{name: "the copy dropped a commit, and the external repository rebased it", m: p, d: bRebased, s: b, want: diverged},
+		{name: "the external repository dropped a commit, and the copy rebased and reworded it", m: bMoved, d: p, s: b, want: diverged},
+		{name: "the external repository dropped a commit, and the copy reworded it", m: bReworded, d: p, s: b, want: diverged},
+		{name: "the copy dropped a commit, and the external repository reworded it", m: p, d: bReworded, s: b, want: diverged},
+		{name: "the external repository added a commit and its revert, and the copy rebased", m: bRebased, d: reverted, s: b, want: diverged},
+		{name: "the copy added a commit and its revert, and the external repository rebased", m: reverted, d: bRebased, s: b, want: diverged},
+
+		{name: "a rewind in the external repository, resolved in the copy with a conflict", m: resolved, d: e, s: secret, want: push},
+		{name: "a rewind in the copy, resolved in the external repository with a conflict", m: e, d: resolved, s: secret, want: take},
+		{name: "a rewind in the external repository, resolved in the copy with the dropped commit", m: w.replay(secret, resolved), d: e, s: secret, want: diverged},
+		{name: "a rewind in the external repository, resolved there with a conflict", m: c, d: resolved, s: secret, want: diverged},
+		{name: "a rewind in the external repository that rewrote the dropped line, resolved in the copy", m: kOnScrubbed, d: scrubbed, s: secretLine, want: push},
+
+		{name: "an empty commit in the copy, and the external repository rewound", m: empty, d: noSq, s: sq, want: diverged},
+		{name: "an empty commit in the copy, replayed in the external repository", m: empty, d: emptyOnNewer, s: sq, want: diverged},
+		{name: "a rename in the copy, replayed in the external repository", m: w.commitFiles(sq, "rename", map[string]string{"A": "", "B": "a content\n"}), d: w.commitFiles(noSq, "rename", map[string]string{"A": "", "B": "a content\n"}), s: sq, want: take},
+		{name: "a binary change in the copy, replayed in the external repository", m: w.commitFiles(sq, "bin", map[string]string{"X.bin": bin2}), d: w.commitFiles(noSq, "bin", map[string]string{"X.bin": bin2}), s: sq, want: take},
+		{name: "a binary change in the copy, and another in the external repository", m: w.commitFiles(sq, "bin", map[string]string{"X.bin": bin2}), d: w.commitFiles(noSq, "bin", map[string]string{"X.bin": bin2 + "x"}), s: sq, want: diverged},
+		{name: "a mode change in the copy, replayed in the external repository", m: executable(sq), d: executable(noSq), s: sq, want: take},
+		{name: "a mode change in the copy, and a content change in the external repository", m: executable(sq), d: w.commitFiles(noSq, "content", map[string]string{"S.sh": "echo bye\n"}), s: sq, want: diverged},
+		{name: "a merge in the copy, and the external repository rewound", m: w.merge(w.commit(sq, "other"), w.commit(sq, "side")), d: noSq, s: sq, want: diverged},
+		{name: "a rewind and a merge in the copy, and a commit in the external repository", m: w.merge(w.commit(q, "base 2"), w.commit(q, "side 2")), d: w.commit(sq, "ext"), s: sq, want: diverged},
+		{name: "a commit in the copy, and the external repository recreated at an unrelated commit", m: w.commit(sq, "add"), d: w.commit("", "unrelated"), s: sq, want: diverged},
+		{name: "a commit in the copy, and the external repository rebuilt the synced commit", m: w.commit(sq, "add"), d: w.reword(sq, "sq, rebuilt"), s: sq, want: diverged},
+
+		{name: "a criss-cross merge in the copy, and the external repository replayed one side", m: m1, d: w.replay(x2, x1), s: m2, want: diverged},
+		{name: "a criss-cross merge in the copy, and the external repository replayed the other side", m: m1, d: w.replay(x1, x2), s: m2, want: diverged},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := decide(t.Context(), r, tc.m, tc.d, tc.s)
@@ -470,6 +637,74 @@ func TestSyncKeepsRewinds(t *testing.T) {
 			wantHeads(t, "after the replay, the copy's synced refs", w.copyRefs(syncedPrefix), want2)
 		})
 	}
+}
+
+// TestSyncResolvesRewindsWithConflicts follows the README's resolution of a
+// rewind when the replay conflicts: after dropping a commit, one side
+// changes a line that the other side's new commit changes too. Replaying
+// that commit onto the rewound head, resolving the conflict, and pushing
+// the result to the side that didn't rewind resolves the divergence.
+func TestSyncResolvesRewindsWithConflicts(t *testing.T) {
+	for _, rewind := range []string{"external repository", "copy"} {
+		t.Run("rewound in the "+rewind, func(t *testing.T) {
+			w := newWorld(t)
+			lines := func(line20 string) map[string]string {
+				return map[string]string{"F": numbered(30, map[int]string{20: line20})}
+			}
+			a := w.commitFiles(w.commit("", "a"), "F", lines("line 20"))
+			dropped := w.commit(a, "dropped")
+			w.pushExternal("feature", dropped)
+			w.sync(SyncOptions{})
+
+			added := w.commitFiles(dropped, "added", lines("added"))
+			rewound := w.commitFiles(a, "rewound", lines("rewound"))
+			m, d := added, rewound
+			if rewind == "copy" {
+				m, d = rewound, added
+			}
+			w.pushCopy("feature", m)
+			w.pushExternal("feature", d)
+			rep := w.sync(SyncOptions{Fetch: true, Push: true})
+			wantHeads(t, "Report.Diverged", rep.Diverged, map[string]string{"feature": d})
+
+			resolved := w.commitFiles(rewound, "added, resolved", lines("added and rewound"))
+			if rewind == "copy" {
+				w.pushExternal("feature", resolved)
+			} else {
+				w.pushCopy("feature", resolved)
+			}
+			rep = w.sync(SyncOptions{Fetch: true, Push: true})
+			if len(rep.Diverged) > 0 || len(rep.Pending) > 0 || rep.Err != nil {
+				t.Errorf("after the resolution, Sync = %+v; want nothing diverged or pending", rep)
+			}
+			want := map[string]string{"feature": resolved}
+			wantHeads(t, "after the resolution, the copy's branches", w.copyRefs("refs/heads/"), want)
+			wantHeads(t, "after the resolution, the external repository's branches", w.externalHeads(), want)
+		})
+	}
+}
+
+// TestSyncKeepsAChangeOnAnotherLine has a person push a change to a
+// dependency update's branch in the external repository while the copy
+// rebases the update onto a main that made the same change on another
+// line. The two changes have the same patch ID, but pushing the rebase
+// would drop the person's change, so the branch diverges.
+func TestSyncKeepsAChangeOnAnotherLine(t *testing.T) {
+	w := newWorld(t)
+	file := func(set map[int]string) map[string]string { return map[string]string{"F": numbered(60, set)} }
+	m0 := w.commitFiles(w.commit("", "root"), "m0", file(map[int]string{10: "foo", 50: "foo"}))
+	update := w.commit(m0, "update")
+	w.pushExternal("main", m0)
+	w.pushExternal("deps/x", update)
+	w.sync(SyncOptions{})
+
+	person := w.commitFiles(update, "person", file(map[int]string{10: "foo", 50: "bar"}))
+	w.pushExternal("deps/x", person)
+	m1 := w.commitFiles(m0, "m1", file(map[int]string{10: "bar", 50: "foo"}))
+	w.pushCopy("deps/x", w.replay(update, m1))
+	rep := w.sync(SyncOptions{Fetch: true, Push: true})
+	wantHeads(t, "Report.Diverged", rep.Diverged, map[string]string{"deps/x": person})
+	wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"deps/x": person, "main": m0})
 }
 
 // TestSyncKeepsDeletions deletes a branch on one side while the other side

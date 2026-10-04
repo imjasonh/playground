@@ -275,15 +275,30 @@ head only if that head keeps every change that the moving side made:
 - The head has none of the commits that the moving side removed.
 - The head has each commit that the moving side added. If the head doesn't
   contain `base`, a replay of the commit also counts. A replay is a commit
-  that removes and adds the same lines in the same files as the original,
-  ignoring the unchanged lines around them. A merge commit, and a commit
-  that changes no file, have no replay.
+  other than a merge that removes and adds the same lines in the same files
+  as the original, as `git patch-id --stable` compares them, which ignores
+  whitespace and where in each file the lines are. Each commit in the head
+  replays at most one commit, and a commit that changes no file has no
+  replay.
+- If the moving side removed commits, or the head doesn't contain the
+  moving side's head, the head's files have the moving side's changes:
+  merging the moving side's head into the head, with `base` as the merge
+  base, has no conflicts and changes no file. If the head contains the
+  moving side's head, merging the newest commit that the moving side's head
+  and `base` both contain also counts.
 
 So a branch diverges if one side rewound and the other side added commits,
 even if the other side's head contains the rewound side's head, because
 moving the rewound side to it brings back the commits that it removed. If
 neither side rewound, only a head that contains both heads keeps both
 sides' changes.
+
+Because a replay can match the same change on another line, the merge is
+what stops a commit from counting as the replay of a different change, and
+stops a rebased or reworded copy of a removed commit from bringing the
+removed change back. git merges conservatively, so changes to the same line
+or to adjacent lines conflict, and a head that keeps every change can still
+diverge.
 
 A diverged branch doesn't land, because landing the copy's head leaves out
 the external repository's changes. To resolve a divergence, push a head
@@ -297,8 +312,10 @@ controller clears `status.diverged`:
   removal. Replay the commits that the other side added since `base` onto
   the rewound side's head, and push the result with a lease. If you push it
   to the side that didn't rewind, it resolves the divergence even if you
-  changed commits to resolve conflicts. If you push it to the side that
-  rewound, each commit that the other side added needs a replay in it.
+  changed commits to resolve conflicts, unless your changes are on lines
+  that the removed commits changed or next to them. If you push it to the
+  side that rewound, each commit that the other side added needs a replay
+  in it. If the branch still diverges, push the result to both sides.
 
 To keep one side's head instead, and drop the other side's changes, push
 that head to the other side.
@@ -345,8 +362,9 @@ its next poll. The merge controller only moves a parent to a commit that
 contains the parent's head, so a parent that rewound in the external
 repository resolves only there, with a replay of each commit that landed in
 the copy since `base`. If a commit can't be replayed unchanged, for example
-because it changes lines that the rewind removed, the parent stays diverged
-until the external repository's head contains the copy's head again.
+because it changes lines that the rewind removed or lines next to them, the
+parent stays diverged until the external repository's head contains the
+copy's head again.
 [Resolve conflicts in a controller](future-work.md#resolve-conflicts-in-a-controller)
 proposes a controller that resolves divergence by itself.
 
@@ -530,7 +548,7 @@ stops an expression that loops over the checks many times.
 Each program installs with kube's `generate` command, which builds an image,
 pushes it, and writes the YAML for its namespace, service account, RBAC
 rules, and Deployment. The programs run `git`, so build them on an image
-that has it:
+that has git 2.40 or later:
 
 ```sh
 for program in git-k8s check-base check-gofmt check-risk check-approval check-gotest; do
