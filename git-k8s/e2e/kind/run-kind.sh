@@ -302,7 +302,7 @@ echo "c/auth waits for approval with a high risk rating."
 echo "::endgroup::"
 
 echo "::group::Approvals name the approver"
-k -n "${NS}" create role approver --verb=get,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+k -n "${NS}" create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
 k -n "${NS}" create rolebinding alice --role=approver --user=alice
 k -n "${NS}" create role editor --verb=get,patch --resource=gitbranches.git-k8s.imjasonh.com
 k -n "${NS}" create rolebinding bob --role=editor --user=bob

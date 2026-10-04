@@ -122,7 +122,7 @@ The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
   verb to no program, so grant it to the people who approve:
 
   ```sh
-  kubectl create role approver --verb=get,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
+  kubectl create role approver --verb=get,list,watch,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
   kubectl create rolebinding approver --role=approver --group=GROUP
   ```
 
