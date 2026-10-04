@@ -1,9 +1,13 @@
 package kube
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -90,9 +94,6 @@ func (a *authAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for _, a := range audiences {
 			want = append(want, a.(string))
 		}
-		if len(want) == 0 {
-			want = []string{"https://kubernetes.default.svc"}
-		}
 		switch spec["token"] {
 		case "valid":
 			if !slices.Contains(want, "git-k8s") {
@@ -135,26 +136,26 @@ func TestReviewToken(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name, token string
-		audiences   []string
-		want        string
+		name, token, audience string
+		want                  string
 	}{
-		{"a token for another audience", "valid", []string{"other"}, "is invalid for the target audiences"},
-		{"a token for another audience, with none asked for", "valid", nil, "is invalid for the target audiences"},
-		{"a token from an authenticator that ignores audiences", "unaware", []string{"git-k8s"}, `the token isn't valid for the audiences ["git-k8s"]`},
-		{"an invalid token", "garbage", []string{"git-k8s"}, "invalid bearer token"},
-		{"no token", "", []string{"git-k8s"}, "no token"},
+		{"a token for another audience", "valid", "other", "is invalid for the target audiences"},
+		{"a token from an authenticator that ignores audiences", "unaware", "git-k8s", `the token isn't valid for the audiences ["git-k8s"]`},
+		{"an invalid token", "garbage", "git-k8s", "invalid bearer token"},
+		{"no token", "", "git-k8s", "no token"},
 	} {
-		r, err := ReviewToken(ctx, tc.token, tc.audiences...)
+		r, err := ReviewToken(ctx, tc.token, tc.audience)
 		if err != nil || r.Authenticated || r.User.Username != "" || !strings.Contains(r.Error, tc.want) {
 			t.Errorf("%s: ReviewToken = %+v, %v, want an error containing %q", tc.name, r, err, tc.want)
 		}
 	}
-	if n := len(a.sent()); n != 5 {
-		t.Errorf("sent %d requests, want 5: none for an empty token", n)
+	for _, audiences := range [][]string{{""}, {"git-k8s", ""}} {
+		if r, err := ReviewToken(ctx, "valid", audiences[0], audiences[1:]...); err == nil || r.Authenticated || !strings.Contains(err.Error(), "an audience is empty") {
+			t.Errorf("ReviewToken(valid, %q) = %+v, %v, want an error", audiences, r, err)
+		}
 	}
-	if r, err := ReviewToken(ctx, "unaware"); err != nil || !r.Authenticated {
-		t.Errorf("ReviewToken(unaware) with no audiences = %+v, %v, want it authenticated", r, err)
+	if n := len(a.sent()); n != 4 {
+		t.Errorf("sent %d requests, want 4: none for an empty token or audience", n)
 	}
 	if _, err := ReviewToken(ctx, "denied", "git-k8s"); err == nil || !strings.Contains(err.Error(), "kube.ReviewToken") || !strings.Contains(err.Error(), "forbidden") {
 		t.Errorf("ReviewToken without permission: err = %v", err)
@@ -169,11 +170,11 @@ func TestRequestToken(t *testing.T) {
 	a, m := newAuthAPI(t, self)
 	ctx, _ := newWebhookScope(t.Context(), m)
 
-	token, expires, err := RequestToken(ctx, "octo-sts.dev", 20*time.Minute)
+	token, expires, err := RequestToken(ctx, "octo-sts.dev")
 	if err != nil || token != "requested" || !expires.Equal(time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)) {
 		t.Fatalf("RequestToken = %q, %v, %v", token, expires, err)
 	}
-	if _, _, err := RequestToken(ctx, "octo-sts.dev", 0); err != nil {
+	if _, _, err := RequestToken(ctx, "octo-sts.dev"); err != nil {
 		t.Fatal(err)
 	}
 	var paths []string
@@ -191,34 +192,80 @@ func TestRequestToken(t *testing.T) {
 	if !slices.Equal(paths, want) {
 		t.Fatalf("requests = %q, want %q: one SelfSubjectReview, then the TokenRequests", paths, want)
 	}
-	if want := `{"apiVersion":"authentication.k8s.io/v1","kind":"TokenRequest","spec":{"audiences":["octo-sts.dev"],"boundObjectRef":{"apiVersion":"v1","kind":"Pod","name":"prog-abc","uid":"uid-2"},"expirationSeconds":1200}}`; bodies[1] != want {
+	if want := `{"apiVersion":"authentication.k8s.io/v1","kind":"TokenRequest","spec":{"audiences":["octo-sts.dev"],"boundObjectRef":{"apiVersion":"v1","kind":"Pod","name":"prog-abc","uid":"uid-2"}}}`; bodies[1] != want {
 		t.Errorf("TokenRequest =\n%s\nwant\n%s", bodies[1], want)
 	}
-	if strings.Contains(bodies[2], "expirationSeconds") {
-		t.Errorf("TokenRequest without a lifetime = %s, want the API server's default", bodies[2])
+
+	if _, _, err := RequestToken(ctx, ""); err == nil || !strings.Contains(err.Error(), "needs an audience") {
+		t.Errorf("RequestToken without an audience: err = %v", err)
+	}
+	if n := len(a.sent()); n != 3 {
+		t.Errorf("sent %d requests, want 3: none without an audience", n)
+	}
+}
+
+// unsignedToken returns a JSON Web Token with claims and a fake signature.
+func unsignedToken(claims string) string {
+	enc := base64.RawURLEncoding.EncodeToString
+	return enc([]byte(`{"alg":"RS256"}`)) + "." + enc([]byte(claims)) + "." + enc([]byte("signature"))
+}
+
+func TestRequestTokenFromDir(t *testing.T) {
+	a, m := newAuthAPI(t, UserInfo{Username: "system:serviceaccount:prog:prog"})
+	m.TokenDir = t.TempDir()
+	ctx, _ := newWebhookScope(t.Context(), m)
+	mount := func(audience, token string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(m.TokenDir, tokenFile(audience)), []byte(token), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exp := time.Now().Add(time.Hour).Truncate(time.Second)
+	mounted := unsignedToken(fmt.Sprintf(`{"aud":["octo-sts.dev"],"exp":%d}`, exp.Unix()))
+	mount("octo-sts.dev", mounted+"\n")
+	token, expires, err := RequestToken(ctx, "octo-sts.dev")
+	if err != nil || token != mounted || !expires.Equal(exp) {
+		t.Errorf("RequestToken(octo-sts.dev) = %q, %v, %v, want the mounted token, which expires at %v", token, expires, err, exp)
+	}
+	renewed := unsignedToken(fmt.Sprintf(`{"aud":["octo-sts.dev"],"exp":%d}`, exp.Add(time.Hour).Unix()))
+	mount("octo-sts.dev", renewed)
+	if token, _, err := RequestToken(ctx, "octo-sts.dev"); err != nil || token != renewed {
+		t.Errorf("RequestToken after the kubelet renewed the token = %q, %v, want the new token", token, err)
+	}
+	if n := len(a.sent()); n != 0 {
+		t.Errorf("sent %d requests for a mounted token, want none", n)
+	}
+
+	if token, _, err := RequestToken(ctx, "other"); err != nil || token != "requested" {
+		t.Errorf("RequestToken(other) = %q, %v, want a token from a TokenRequest", token, err)
+	}
+	if n := len(a.sent()); n != 2 {
+		t.Errorf("sent %d requests for an audience without a mounted token, want 2", n)
 	}
 
 	for _, tc := range []struct {
-		audience string
-		lifetime time.Duration
-		want     string
+		audience, token, want string
 	}{
-		{"", time.Hour, "needs an audience"},
-		{"octo-sts.dev", time.Minute, "minimum of 10 minutes"},
+		{"expired", unsignedToken(fmt.Sprintf(`{"exp":%d}`, time.Now().Add(-time.Minute).Unix())), "expired at"},
+		{"garbage", "garbage", "not a JSON Web Token"},
+		{"empty", "", "not a JSON Web Token"},
+		{"no expiry", unsignedToken(`{"aud":["no expiry"]}`), "no exp claim"},
+		{"bad claims", "a.%%%.c", "decoding the claims"},
 	} {
-		if _, _, err := RequestToken(ctx, tc.audience, tc.lifetime); err == nil || !strings.Contains(err.Error(), tc.want) {
-			t.Errorf("RequestToken(%q, %v): err = %v, want %q", tc.audience, tc.lifetime, err, tc.want)
+		mount(tc.audience, tc.token)
+		if token, _, err := RequestToken(ctx, tc.audience); err == nil || token != "" || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("RequestToken(%q) = %q, %v, want an error containing %q", tc.audience, token, err, tc.want)
 		}
 	}
-	if n := len(a.sent()); n != 3 {
-		t.Errorf("sent %d requests, want 3: none for invalid arguments", n)
+	if n := len(a.sent()) - 2; n != 0 {
+		t.Errorf("sent %d requests for unusable mounted tokens, want none", n)
 	}
 }
 
 func TestRequestTokenWithoutAPod(t *testing.T) {
 	a, m := newAuthAPI(t, UserInfo{Username: "system:serviceaccount:prog:prog"})
 	ctx, _ := newWebhookScope(t.Context(), m)
-	if _, _, err := RequestToken(ctx, "octo-sts.dev", 0); err != nil {
+	if _, _, err := RequestToken(ctx, "octo-sts.dev"); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := json.Marshal(a.sent()[1].body); strings.Contains(string(b), "boundObjectRef") {
@@ -227,7 +274,7 @@ func TestRequestTokenWithoutAPod(t *testing.T) {
 
 	_, m = newAuthAPI(t, UserInfo{Username: "kubernetes-admin"})
 	ctx, _ = newWebhookScope(t.Context(), m)
-	if _, _, err := RequestToken(ctx, "octo-sts.dev", 0); err == nil || !strings.Contains(err.Error(), `runs as "kubernetes-admin", not as a service account`) {
+	if _, _, err := RequestToken(ctx, "octo-sts.dev"); err == nil || !strings.Contains(err.Error(), `runs as "kubernetes-admin", not as a service account`) {
 		t.Errorf("RequestToken as a person: err = %v", err)
 	}
 }
@@ -248,12 +295,12 @@ func TestFakeTokens(t *testing.T) {
 		{"check", []string{"git-k8s"}, []string{"git-k8s"}},
 		{"check", []string{"other", "git-k8s"}, []string{"git-k8s"}},
 		{"check", []string{"other"}, nil},
-		{"check", nil, nil},
-		{"api", nil, []string{"https://kubernetes.default.svc"}},
+		{"check", []string{"https://kubernetes.default.svc"}, nil},
+		{"api", []string{"https://kubernetes.default.svc"}, []string{"https://kubernetes.default.svc"}},
 		{"api", []string{"git-k8s"}, nil},
 		{"unknown", []string{"git-k8s"}, nil},
 	} {
-		r, err := ReviewToken(ctx, tc.token, tc.audiences...)
+		r, err := ReviewToken(ctx, tc.token, tc.audiences[0], tc.audiences[1:]...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -267,7 +314,7 @@ func TestFakeTokens(t *testing.T) {
 		t.Error("changing a review changed the world")
 	}
 
-	token, expires, err := RequestToken(ctx, "octo-sts.dev", 0)
+	token, expires, err := RequestToken(ctx, "octo-sts.dev")
 	if err != nil || token != "fake-token-1" || time.Until(expires) < 59*time.Minute {
 		t.Errorf("RequestToken = %q, %v, %v", token, expires, err)
 	}
@@ -278,7 +325,7 @@ func TestFakeTokens(t *testing.T) {
 	if r, _ := ReviewToken(ctx, token, "git-k8s"); r.Authenticated {
 		t.Errorf("the requested token passed for another audience: %+v", r)
 	}
-	if token, _, _ := RequestToken(ctx, "git-k8s", 0); token != "fake-token-2" {
+	if token, _, _ := RequestToken(ctx, "git-k8s"); token != "fake-token-2" {
 		t.Errorf("the second token = %q", token)
 	}
 }

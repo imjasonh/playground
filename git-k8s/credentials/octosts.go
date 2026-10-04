@@ -176,7 +176,7 @@ func gitHubToken(ctx context.Context, gh github, k tokenKey) (string, error) {
 // returns the GitHub token that it answers with.
 func exchange(ctx context.Context, gh github, k tokenKey) (string, time.Time, error) {
 	start := now()
-	sa, _, err := kube.RequestToken(ctx, k.audience, 10*time.Minute)
+	sa, _, err := kube.RequestToken(ctx, k.audience)
 	if err != nil {
 		return "", time.Time{}, err
 	}

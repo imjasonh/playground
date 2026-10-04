@@ -98,6 +98,11 @@ type Manager struct {
 	// ServeAddr is where the manager serves the handler passed to Serve,
 	// over plain HTTP. It defaults to ":8081".
 	ServeAddr string
+	// TokenDir is a directory of service account tokens for RequestToken,
+	// each in a file named by the hex SHA-256 hash of its audience. The
+	// generate command mounts the program's tokens there from a projected
+	// volume, whose tokens the kubelet renews.
+	TokenDir string
 
 	client  *client.Client
 	log     *slog.Logger
@@ -132,8 +137,8 @@ func Run(ctx context.Context, controllers ...Controller) error {
 // Main is a main function for a controller program. It reads flags,
 // stops on SIGINT or SIGTERM, runs controllers, and exits with status 1 if
 // they fail. Flags: -kubeconfig, -namespace, -leader-elect, -shards, -addr,
-// -webhook-addr, -webhook-service, -webhook-url, -serve-addr, and -v for
-// debug logs.
+// -webhook-addr, -webhook-service, -webhook-url, -serve-addr, -token-dir,
+// and -v for debug logs.
 //
 // Run as "PROGRAM generate -registry=REGISTRY", from the program's module,
 // Main instead builds the program into an image on Chainguard's static
@@ -169,6 +174,7 @@ func Main(controllers ...Controller) {
 	flag.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
 	flag.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
 	flag.StringVar(&m.ServeAddr, "serve-addr", "", "address for the HTTP handler passed to kube.Serve (default :8081)")
+	flag.StringVar(&m.TokenDir, "token-dir", "", "directory of service account tokens for kube.RequestToken, by audience")
 	verbose := flag.Bool("v", false, "log debug messages")
 	flag.Parse()
 	level := slog.LevelInfo
@@ -245,11 +251,16 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 			stops[i]()
 		}
 	}()
-	// startFailed reports a failure to start, unless ctx was canceled
-	// meanwhile, which stops the manager cleanly.
+	// startFailed reports a failure to start. If the caller stopped the
+	// manager meanwhile, it stops cleanly. If a server failed, which
+	// canceled ctx and so made this step fail, it reports the server's
+	// error.
 	startFailed := func(err error) error {
-		if ctx.Err() != nil {
+		switch {
+		case parent.Err() != nil:
 			return nil
+		case ctx.Err() != nil:
+			return context.Cause(ctx)
 		}
 		return err
 	}

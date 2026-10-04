@@ -615,10 +615,22 @@ doesn't fail every request for its type.
 it on every replica, not only on replicas that hold shards. It starts after the
 webhooks serve and before the replica competes for shards, and `/readyz` fails
 until it listens, so the Service sends requests only to replicas that can answer
-them. When the program stops, the server stops accepting connections, cancels
-the contexts of requests in progress, and waits up to 10 seconds for them to
-return. Until the Service's endpoints drop the Pod, connections to it are
-refused, so clients need to retry.
+them.
+
+A Pod that's stopping stays in the Service's endpoints until the endpoints
+controller and kube-proxy notice. If the program stopped listening first, the
+connections that arrive in that time would be refused, and clients such as git
+don't retry. So `generate` gives a program that serves a `preStop` hook whose
+`sleep` action waits 5 seconds before the kubelet sends `SIGTERM`. The kubelet
+runs the sleep itself, so the image needs no shell, and the action is on by
+default in Kubernetes 1.30 and later. When the program stops, the server stops
+accepting connections and waits up to 10 seconds for requests in progress. Their
+contexts don't derive from the manager's, so they're canceled only when that
+time runs out. `Trigger` returns false once the manager's context is done, so a
+request that triggers a reconcile in that time answers `503`. A read whose cache
+hasn't synced waits until the time runs out and fails, because caches stop with
+the manager. The Pod's termination grace period, 30 seconds by default, covers
+the sleep, the wait, and the rest of stopping.
 
 The handler runs in the webhooks' read-only scope. Every replica serves, so a
 handler that wrote objects could race the reconcile on the replica that holds
@@ -652,30 +664,56 @@ server's own audiences, so a server that names its own audience rejects the
 tokens that Pods use to call the API server, and a token issued for the server
 can't call the API server. The TokenReview API tells clients to treat a review
 that's authenticated without audiences as valid only for the API server, so
-`ReviewToken` reports it as unauthenticated when the caller passed audiences.
-`ReviewToken` doesn't cache reviews, so a token stops working as soon as the API
-server rejects it, for example when its Pod is deleted.
+`ReviewToken` reports it as unauthenticated. `ReviewToken` requires an audience.
+A review without one checks the token against the API server's audiences, so the
+server would accept any token that can call the API server, and over plain HTTP,
+anyone who captured one could act as the caller. `ReviewToken` doesn't cache
+reviews, so a token stops working as soon as the API server rejects it, for
+example when its Pod is deleted.
 
-`RequestToken` creates a TokenRequest for the program's own service account. The
-program learns which account that is from a SelfSubjectReview, which every
-authenticated user can create in Kubernetes 1.28 and later, and caches the
-answer. Reading the namespace from the in-cluster token's directory and the
-account's name from the downward API would work only in a Pod, and would need a
-change to the Deployment. Decoding the program's own token would depend on the
-token's format, and the API server's answer doesn't. When the review names a
-Pod, because the program authenticates with its Pod's token, the new token is
-bound to that Pod, so it stops working when the Pod is deleted, like the tokens
-that the kubelet projects.
+`RequestToken` reads a token that the kubelet projects into the program's Pod
+when there's one for the audience. `generate` adds a `serviceAccountToken`
+source to a projected volume for each audience that the program passes to
+`RequestToken` as a constant, and runs the program with `-token-dir` set to the
+volume's path. Each token's file is named by the SHA-256 hash of its audience,
+because an audience can hold characters that a file name can't, such as `/`.
+The kubelet requests each token bound to the Pod and replaces the file when 80%
+of the token's lifetime has passed, so `RequestToken` reads the file on every
+call and returns the expiry from the token's `exp` claim. The volume asks for
+3600 seconds, because the API server stretches a token of exactly 3607 seconds,
+the lifetime of the default service account token, to a year.
+
+For an audience without a file, `RequestToken` creates a TokenRequest for the
+program's own service account. The program learns which account that is from a
+SelfSubjectReview, which every authenticated user can create in Kubernetes 1.28
+and later, and caches the answer. Reading the namespace from the in-cluster
+token's directory and the account's name from the downward API would work only
+in a Pod, and would need a change to the Deployment. Decoding the program's own
+token would depend on the token's format, and the API server's answer doesn't.
+When the review names a Pod, because the program authenticates with its Pod's
+token, the new token is bound to that Pod, so it stops working when the Pod is
+deleted, like the tokens that the kubelet projects.
 
 `generate` grants `create` on `tokenreviews` in the ClusterRole when the program
-refers to `ReviewToken`, and `create` on `serviceaccounts/token` in the Role in
-the program's namespace when it refers to `RequestToken`, with the program's own
-service account as the only resource name. RBAC can limit a `create` to one name
-here because the name is in the request's path. A `RequestToken` that took any
+refers to `ReviewToken`. It grants `create` on `serviceaccounts/token` in the
+Role in the program's namespace only when the program refers to `RequestToken`
+other than in a call with a constant audience, with the program's own service
+account as the only resource name. RBAC can limit a `create` to one name here
+because the name is in the request's path. A `RequestToken` that took any
 account's name would need the rule for every account in the namespace, which
-would let the program act as any of them. Projected token volumes would need no
-rule, but the Deployment would have to list each audience when `generate` writes
-it, and the probe example reads its audiences from its objects.
+would let the program act as any of them. Even for one account, the rule lets
+anyone who holds one of the account's tokens, such as the token in the
+program's Pod, create tokens for any audience. Those tokens needn't be bound to
+the Pod, and they can last as long as the API server allows. A projected token
+needs no rule, is always bound to the Pod, and lasts an hour, so `generate`
+mounts one for every audience that it can see in the source.
+
+A program never requests a token for an audience that a less trusted user
+chooses along with the destination. Whoever chooses both can have the program
+send them a token for any server that trusts the cluster's tokens, including the
+API server, where the token carries the program's permissions. So a Probe in the
+probe example names only a URL, and every check sends a token for the audience
+`probe`, which the program sets.
 
 ### Triggered reconciles
 
@@ -701,10 +739,21 @@ authenticated endpoint between replicas.
 
 A true result holds even if the replica loses the shard before a worker takes
 the key, because the replica that acquires a shard enqueues every cached key in
-it. That replica doesn't have data that a handler kept in memory, though. So a
-handler that hands data to the reconcile, such as a result that a client posts,
-answers the client once the reconcile has used the data, and answers `503` if
-that doesn't happen in time.
+it. It enqueues them at low priority, like a resync, so the triggered key loses
+its place ahead of the queue and waits with the rest of the shard.
+
+That replica doesn't have data that a handler kept in memory, though, such as a
+result that a client posts for the reconcile to write. A reconcile on the
+handler's replica doesn't make the data safe either. The framework carries out
+the reconcile's writes after `Reconcile` returns, and a write can fail. If the
+replica then loses the shard, the retry runs on the next holder, without the
+data. So a handler that answered once the reconcile read its data could confirm
+data that no replica holds. Instead, the handler keeps the data until `kube.Get`
+shows the written change, answers only then, and answers `503` if that doesn't
+happen in time. The client tries again, and its data reaches whichever replica
+holds the shard by then. The reconcile reads the data without removing it, so a
+retry on the same replica still finds it. It adds the data to what the object
+holds, because once the handler answers, later reconciles run without the data.
 
 ### Versions and conversion
 
@@ -846,6 +895,10 @@ new version lists and patches them in every namespace.
 first reference to each, and `generate` adds the rules that
 [Service account tokens](#service-account-tokens) describes. Any reference
 counts, so a program that passes one of them as a value still gets its rule.
+For `RequestToken`, the analysis also reports each constant that a call passes
+as the audience, from the type checker's constant values, and leaves those
+calls out of the first reference. A program whose calls all pass constants
+gets a projected token for each audience and no rule.
 
 [go-containerregistry](https://github.com/google/go-containerregistry), kube's
 only dependency, builds and pushes the image. For each platform, `generate`
@@ -864,10 +917,13 @@ go-containerregistry with it, so the program in the cluster links only kube.
 quotes strings that YAML 1.1 parsers read as other types, such as `on`, `yes`,
 `1:20`, and `.5`. The Deployment runs the program with probes on `/readyz` and
 `/healthz`, as a non-root user with a read-only root file system, and with
-`-leader-elect` or `-shards` when it has more than one replica. An `emptyDir`
-volume at `/tmp` gives `os.TempDir` somewhere to write. With `-tmp-size`, the
-volume has a size limit, and the kubelet evicts a Pod that writes more instead
-of letting it fill the node's disk.
+`-leader-elect` or `-shards` when it has more than one replica. A program that
+serves gets the `preStop` sleep that [HTTP endpoints](#http-endpoints)
+describes. An `emptyDir` volume at `/tmp` gives `os.TempDir` somewhere to
+write. With `-tmp-size`, the volume has a size limit, and the kubelet evicts a
+Pod that writes more instead of letting it fill the node's disk. A program that
+passes `RequestToken` constant audiences gets a read-only projected volume of
+tokens at `/var/run/secrets/tokens`.
 
 ### Testing
 
@@ -883,7 +939,13 @@ Token reviews are the one exception. `ReviewToken` accepts each
 `kube.FakeToken` in the list for the token's audiences, by the API server's
 rules for audiences, and `RequestToken` adds a token for the requested
 audience to the list. `Trigger` records the key for `kube.Triggered` when the
-list holds the object.
+list holds the object, unless the list holds `kube.FakeStandby`, which stands
+for a replica that holds no shard.
+
+`kube.FakeRequest` gives a `kube.Serve` handler the same read-only scope that
+`Serve` gives each request, backed by the list. A handler that calls `Apply`
+fails its unit test as it would fail in a cluster, which it wouldn't with the
+scope of a reconcile.
 
 End-to-end tests start `etcd` and `kube-apiserver` from the controller-tools
 envtest release, with no kubelet or controller manager. The API server calls
@@ -908,9 +970,16 @@ framework's tests check that:
   service account that `generate` installs, so it has only the RBAC rules
   that `generate` wrote.
 - Two replicas of the probe example, with the rules that `generate` writes,
-  both serve, accept tokens for their own audience and refuse others, request
-  a token for their own service account and review it, and queue a trigger
-  on the replica that holds the lease while the other answers `503`.
+  both serve, accept tokens for their own audience and refuse others, send a
+  token for their own service account from a token directory and review it,
+  and queue a trigger on the replica that holds the lease while the other
+  answers `503`. The probe gets no rule to request tokens.
+- `RequestToken` returns the token in the directory for its audience, and
+  requests a token for any other audience as a service account with only the
+  rule that `generate` writes for it.
+- A `kube.Serve` handler that hands posted results to the reconcile answers
+  once `Get` shows them in the status, even when a reconcile fails after
+  reading one, and answers `503` for a result that the reconcile never writes.
 
 A test in `e2e/kind` runs the whole installation in a
 [kind](https://kind.sigs.k8s.io/) cluster, which has a kubelet and
@@ -922,8 +991,10 @@ podpolicy webhooks deny and default pods through their Service.
 It also calls the probe example's API from a Pod with a projected token, and
 checks that each replica names the caller's Pod and refuses tokens for other
 audiences, that a Probe of the program's own `/whoami` succeeds with a token
-bound to the program's Pod, and that a trigger runs a check on the replica
-that holds the lease while the other answers `503`.
+bound to the program's Pod, that the program may not request tokens, and that
+a trigger runs a check on the replica that holds the lease while the other
+answers `503`. Then it replaces every replica while the client calls the API
+through the Service in a loop, and checks that none of those requests fail.
 
 ## Measurements
 
@@ -1048,6 +1119,10 @@ offers:
 - `generate` can't follow the type parameter of a generic type, or a type
   argument that contains a type parameter, to the types that it stands for.
   It warns about those calls instead.
+- `generate` sees a `RequestToken` audience only when the call passes a
+  constant. A helper that takes the audience as a parameter gets the rule to
+  request tokens, though following constants through parameters, as the
+  analysis follows type parameters, would find the audiences.
 - `generate` builds images that hold only the program. ko copies a `kodata`
   directory into the image; kube programs use `embed` instead.
 - One cluster per manager.

@@ -406,14 +406,19 @@ whether or not it holds a lease, and `/readyz` reports ready once it
 serves. As in a webhook, the handler can read with `Get`, `List`, and
 `Fetch` through the request's context, and calling `Own`, `Apply`, or
 `Delete` cancels the context with an error. To change the cluster in
-response to a request, trigger a reconcile and make the change there. When
-the program stops, it cancels the contexts of requests in progress and
-waits up to 10 seconds for them to finish. A program can have one
-`kube.Serve`, so serve every path from one handler, such as an
-`http.ServeMux`.
+response to a request, trigger a reconcile and make the change there. A
+program can have one `kube.Serve`, so serve every path from one handler,
+such as an `http.ServeMux`.
+
+When the program stops, it stops accepting connections, and requests in
+progress have up to 10 seconds to finish before their contexts are
+canceled. `kube.Trigger` returns false during that time.
 
 The `generate` command runs the program with `-serve-addr=:8081` and adds
-port 80 to the program's Service, which routes to the handler. It writes no
+port 80 to the program's Service, which routes to the handler. It also
+gives the container a `preStop` hook that sleeps for 5 seconds, so the
+Service stops sending the Pod connections before the program stops. The
+hook's `sleep` action needs Kubernetes 1.30 or later. `generate` writes no
 NetworkPolicy. If NetworkPolicies in the program's namespace deny traffic by
 default, allow the callers to reach port 8081 of the program's Pods.
 
@@ -448,7 +453,8 @@ token, _ := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 review, err := kube.ReviewToken(r.Context(), token, "probe")
 switch {
 case err != nil:
-	http.Error(w, err.Error(), http.StatusInternalServerError)
+	slog.Error("reviewing a token failed", "err", err)
+	http.Error(w, "can't check the token now", http.StatusInternalServerError)
 case !review.Authenticated:
 	http.Error(w, review.Error, http.StatusUnauthorized)
 default:
@@ -457,12 +463,15 @@ default:
 }
 ```
 
-A token passes only if it's valid for one of the audiences that you pass, so
-a token for another server or for the API server fails. A token that the
-kubelet projects into a Pod also names the Pod in `review.User.Extra`, and
-stops working when the Pod is deleted. An invalid token isn't an error.
-`ReviewToken` returns an error only when it can't ask, for example because
-the program may not create TokenReviews. Each call asks the API server.
+`ReviewToken` needs at least one audience. A token passes only if it's
+valid for one of the audiences that you pass, so a token for another server
+or for the API server fails. A token that the kubelet projects into a Pod
+also names the Pod in `review.User.Extra`, and stops working when the Pod is
+deleted. An invalid token isn't an error. `ReviewToken` returns an error
+only when an audience is empty or when it can't ask, for example because
+the program may not create TokenReviews. Log the error instead of sending
+it to the caller, because it can name the program's service account and the
+permission that it lacks. Each call asks the API server.
 
 ### Request a token for the program
 
@@ -472,16 +481,33 @@ for a server that trusts the cluster's tokens, such as
 `ReviewToken`:
 
 ```go
-token, expires, err := kube.RequestToken(ctx, "octo-sts.dev", time.Hour)
+token, expires, err := kube.RequestToken(ctx, "octo-sts.dev")
 ```
 
-The program asks the API server which service account it runs as, so
-`RequestToken` works in a Pod and with a kubeconfig that holds a service
-account's token. In a Pod, the new token is bound to the Pod. The API
-server issues tokens that last at least 10 minutes and can shorten long
-ones, so use the returned expiry. Each call makes a new token, so reuse one
-until shortly before it expires. Call `RequestToken` in a reconcile or in a
-`kube.Serve` handler.
+Pass the audience as a constant, as a string literal or a `const`. For each
+constant audience, the `generate` command adds a projected token to the
+program's Pod, and `RequestToken` reads it from the directory that
+`-token-dir` names. The token is bound to the Pod, the kubelet renews it, and
+the program needs no permission to request tokens.
+
+For an audience that isn't a constant, `RequestToken` asks the API server
+for a new token, and `generate` lets the program request tokens for its own
+service account. That permission also lets anyone who holds a token for the
+service account, such as the token in the program's Pod, make tokens for any
+audience that outlive the Pod, so prefer constant audiences. The program
+asks the API server which service account it runs as, so this works in a Pod
+and with a kubeconfig that holds a service account's token. In a Pod, the
+new token is bound to the Pod.
+
+A token lasts about an hour, so use the returned expiry. Call `RequestToken`
+each time you need a token, or reuse one until shortly before it expires.
+Call it in a reconcile or in a `kube.Serve` handler.
+
+Choose the audience in the program. If an object's author chose both the
+audience and where the program sends the token, they could have the program
+send them a token for the API server, with the program's permissions. The
+probe example sends every check a token for the audience `probe`, and a
+Probe chooses only the URL.
 
 ### Trigger a reconcile
 
@@ -511,13 +537,59 @@ stop, when the object isn't in the controller's cache, and, with
 example, answer `503` and close the connection, so that the client's next
 try can reach another replica through the Service. A true result holds even
 if the replica loses the shard before the reconcile starts, because the
-replica that takes the shard reconciles all of its objects.
+replica that takes the shard reconciles all of its objects. That replica
+queues them at low priority, so the reconcile then waits its turn with the
+rest of the shard.
 
 To hand data from a request to the reconcile, such as a result that a
-client posts, keep the data in memory under the object's key and call
-`Trigger`. The reconcile runs on this replica unless the replica loses the
-shard first, so answer the client after the reconcile has used the data,
-and answer `503` if that takes too long.
+client posts, keep the data in memory under the object's key, call
+`Trigger`, and have the reconcile write the data to the object, for example
+to its status. The framework carries out a reconcile's writes after
+`Reconcile` returns, and a write can fail. If the shard moves before the
+retry, the retry runs on another replica, which doesn't have the data. So
+the data is safe only once the object holds it:
+
+- The handler keeps the data until `kube.Get` shows the change, and only
+  then answers the client. If the change doesn't show in time, it answers
+  `503` so that the client tries again. Either way, it drops the data when
+  it answers.
+- The reconcile reads the data without removing it, so a retry on the same
+  replica still finds it. It adds the data to what the object already
+  holds, because later reconciles run without it.
+
+In the handler, where `unavailable` answers `503` and closes the connection
+as in the previous example:
+
+```go
+pending.add(key, result)
+defer pending.remove(key, result)
+if !kube.Trigger[Report](r.Context(), ns, name) {
+	unavailable(w)
+	return
+}
+deadline := time.Now().Add(10 * time.Second)
+for {
+	rep := kube.Get[Report](r.Context(), ns, name)
+	if rep != nil && slices.Contains(rep.Status.Results, result) {
+		return
+	}
+	if time.Now().After(deadline) {
+		unavailable(w)
+		return
+	}
+	time.Sleep(100 * time.Millisecond)
+}
+```
+
+In `Reconcile`:
+
+```go
+for _, result := range pending.get(key) {
+	if !slices.Contains(rep.Status.Results, result) {
+		rep.Status.Results = append(rep.Status.Results, result)
+	}
+}
+```
 
 ## Run a controller
 
@@ -535,6 +607,9 @@ and answer `503` if that takes too long.
 - `-webhook-addr`: where to serve webhooks. The default is `:9443`.
 - `-serve-addr`: where to serve the handler passed to `kube.Serve`. The
   default is `:8081`.
+- `-token-dir`: a directory of service account tokens for
+  `kube.RequestToken`, each in a file named by the hex SHA-256 hash of its
+  audience, as `generate` mounts them.
 - `-addr`: serve `/healthz`, `/readyz`, and Prometheus `/metrics`, for
   example on `:8080`.
 - `-v`: log debug messages.
@@ -559,8 +634,8 @@ The command does the following:
    its type, the types that it owns, and its webhooks. The command also
    type-checks the program's packages to find every call to `Get`, `List`,
    `Fetch`, `Own`, `Apply`, and `Delete`, and the type that each call uses,
-   including calls inside generic helpers, and whether the program calls
-   `ReviewToken` or `RequestToken`.
+   including calls inside generic helpers, whether the program calls
+   `ReviewToken`, and the audiences that it passes to `RequestToken`.
 1. Builds the program for each platform with `CGO_ENABLED=0`.
 1. Builds an image for each platform on `cgr.dev/chainguard/static`, with the
    program at `/app/PROGRAM` as the entrypoint, running as user 65532. It
@@ -574,7 +649,9 @@ The command does the following:
    replica, the Deployment runs the program with `-leader-elect`, or with
    `-shards` when you set `-shards`. The container's root file system is
    read-only, with an `emptyDir` volume at `/tmp` for temporary files.
-   `-tmp-size` limits the volume's size.
+   `-tmp-size` limits the volume's size. A projected volume at
+   `/var/run/secrets/tokens` holds a token for each constant audience that
+   the program passes to `RequestToken`.
 
 The images have fixed timestamps, so the same source gives the same digest,
 and running `generate` again without changes leaves the cluster as it was.
@@ -659,7 +736,10 @@ way, its service account needs these permissions:
   `mutatingwebhookconfigurations`, for webhooks.
 - `create` on `tokenreviews`, to check tokens with `ReviewToken`.
 - `create` on `serviceaccounts/token` for its own service account, in its
-  namespace, to request tokens with `RequestToken`.
+  namespace, to request tokens with `RequestToken`. The `generate` command
+  grants it only to a program that passes an audience that isn't a constant.
+  For each constant audience, it mounts a projected token in `-token-dir`
+  instead.
 
 ## Test a controller
 
@@ -691,12 +771,15 @@ directly. With a context from `kube.Fake`, `Validate` and `Default` can read
 objects with `Get` and `List`.
 
 To test a `kube.Serve` handler, pass it a request with a context from
-`kube.Fake`. `ReviewToken` accepts each `kube.FakeToken` that you pass to
-`kube.Fake` for the token's audiences, and `kube.Triggered` returns the keys
-of the objects that `Trigger` queued:
+`kube.FakeRequest`, which gives the handler the scope that a request has in a
+cluster. Pass it the objects that the handler reads and a `kube.FakeToken`
+for each token that `ReviewToken` accepts. `kube.Triggered` returns the keys
+of the objects that `Trigger` queued, and `rec.Err` returns the error from a
+call that a handler can't make, such as `Apply`. With `kube.FakeStandby{}`,
+`Trigger` returns false, as on a replica that doesn't hold the lease:
 
 ```go
-ctx, rec := kube.Fake(t.Context(), probe, kube.FakeToken{
+ctx, rec := kube.FakeRequest(t.Context(), probe, kube.FakeToken{
 	Token:     "ci",
 	User:      kube.UserInfo{Username: "system:serviceaccount:team:ci"},
 	Audiences: []string{"probe"},
@@ -707,7 +790,13 @@ handler.ServeHTTP(httptest.NewRecorder(), req)
 if got := kube.Triggered[Probe](rec); len(got) != 1 {
 	t.Errorf("triggered %v, want the probe", got)
 }
+if err := rec.Err(); err != nil {
+	t.Error(err)
+}
 ```
+
+Use a new context from `kube.FakeRequest` for each request, as each request
+in a cluster has its own.
 
 `RequestToken` returns the tokens `fake-token-1`, `fake-token-2`, and so on,
 which `ReviewToken` accepts for the requested audience.
@@ -786,6 +875,10 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
   generic type, as in a method of `reconciler[T]`, or a type argument that
   contains a type parameter, such as `Item[T]`. For those calls it prints a
   warning, and you add the permissions yourself.
+- `generate` mounts a token only for an audience that the call of
+  `RequestToken` passes as a constant. An audience that reaches the call
+  through a variable or a function's parameter gets the permission to
+  request tokens instead.
 - `generate` needs the program's source and the `go` command, so the copy of
   the program in the image can't run it. The image holds only the program.
   To ship other files, embed them with `embed`.
@@ -825,7 +918,7 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 | `internal/clone/` | Deep copy of any Go value, compiled once per type |
 | `internal/subset/` | Checks whether one JSON document's fields are a subset of another's |
 | `internal/yaml/` | The YAML subset that kubeconfig files use, and the YAML that `generate` writes |
-| `internal/analysis/` | Type-checks a program to find the types that it passes to kube's generic functions, and its calls of `ReviewToken` and `RequestToken`, for `generate`'s RBAC rules |
+| `internal/analysis/` | Type-checks a program to find the types that it passes to kube's generic functions, its calls of `ReviewToken`, and the audiences that it passes to `RequestToken`, for `generate`'s RBAC rules and token volumes |
 | `internal/image/` | Builds and pushes images with go-containerregistry, for `generate` |
 | `internal/envtest/`, `internal/e2e/` | Start `etcd` and `kube-apiserver` for tests |
 | `bench/` | Benchmark against `client-go` and `controller-runtime`, in its own module |

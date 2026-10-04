@@ -8,20 +8,19 @@
 //	  namespace: team
 //	spec:
 //	  url: http://api.team.svc/healthz
-//	  audience: api
 //
 // It shows how programs prove who they are to each other with service
 // account tokens. Each check sends a token for the program's own service
-// account, from RequestToken, with the audience that the URL's server
-// expects. Every replica serves the API, which checks each caller's token
-// with ReviewToken:
+// account, from RequestToken, with the audience "probe", so the URL's server
+// must accept that audience. Every replica serves the API, which checks each
+// caller's token with ReviewToken:
 //
 //   - GET /whoami answers with the caller's username.
 //   - POST /probes/NAMESPACE/NAME checks a URL now, with Trigger. A service
 //     account can run only the probes in its own namespace.
 //
-// A Probe of the program's own /whoami, with the audience "probe", checks
-// that the program can request a token and review it.
+// A Probe of the program's own /whoami checks that the program can request
+// a token and review it.
 package main
 
 import (
@@ -29,6 +28,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -45,9 +45,16 @@ type Probe struct {
 
 // ProbeSpec is what to check.
 type ProbeSpec struct {
-	URL      string `json:"url" kube:"minLength=1" doc:"URL to send a GET request to."`
-	Audience string `json:"audience" kube:"minLength=1" doc:"Audience of the token that the request carries, which the URL's server checks."`
+	URL string `json:"url" kube:"minLength=1" doc:"URL to send a GET request to, with a token for the audience probe."`
 }
+
+// checkAudience is the audience of the tokens that checks send. The program
+// chooses it, not a Probe. Whoever chooses both a check's URL and its
+// audience can have the program send them a token for any server that
+// trusts the cluster's tokens, such as the API server. Because it's a
+// constant, the generate command mounts the token into the program's Pod
+// instead of letting the program request tokens.
+const checkAudience = "probe"
 
 // ProbeStatus is the result of the last check.
 type ProbeStatus struct {
@@ -64,7 +71,7 @@ type reconciler struct {
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, p *Probe) error {
-	token, _, err := kube.RequestToken(ctx, p.Spec.Audience, 10*time.Minute)
+	token, _, err := kube.RequestToken(ctx, checkAudience)
 	if err != nil {
 		p.Status.Code, p.Status.Message = 0, err.Error()
 		return err
@@ -114,7 +121,10 @@ func (a *api) caller(w http.ResponseWriter, r *http.Request) (kube.UserInfo, boo
 	review, err := kube.ReviewToken(r.Context(), token, *a.audience)
 	switch {
 	case err != nil:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// The error can name the program's service account and the
+		// permission that it lacks.
+		slog.ErrorContext(r.Context(), "reviewing a caller's token failed", "err", err)
+		http.Error(w, "can't check the token now", http.StatusInternalServerError)
 	case !review.Authenticated:
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		http.Error(w, review.Error, http.StatusUnauthorized)
