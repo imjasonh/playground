@@ -34,6 +34,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
@@ -212,7 +213,7 @@ func (x *run) outputs() map[string]string {
 }
 
 func (x *run) running(format string, args ...any) checks.Verdict {
-	return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf(format, args...), Outputs: x.outputs()}
+	return checks.Verdict{State: gitk8s.Running, Message: shorten(fmt.Sprintf(format, args...)), Outputs: x.outputs()}
 }
 
 // done finishes the run with v.
@@ -220,12 +221,29 @@ func (x *run) done(ctx context.Context, v checks.Verdict) checks.Verdict {
 	// The next reconcile finds the result final and declares no Pod, so
 	// kube deletes it.
 	kube.RequeueAfter(ctx, time.Second)
+	v.Message = shorten(v.Message)
 	if v.Outputs == nil {
 		v.Outputs = map[string]string{}
 	}
 	v.Outputs["runs"] = strconv.Itoa(x.runs)
 	v.Outputs["pod"] = x.pod
 	return v
+}
+
+// maxMessage leaves room in the checks framework's 1,024-byte messages for
+// what it appends about a fix.
+const maxMessage = 896
+
+// shorten cuts s to at most maxMessage bytes, on a rune boundary.
+func shorten(s string) string {
+	if len(s) <= maxMessage {
+		return s
+	}
+	i := maxMessage - len("...")
+	for i > 0 && !utf8.RuneStart(s[i]) {
+		i--
+	}
+	return s[:i] + "..."
 }
 
 func (x *run) follow(ctx context.Context, desired *Pod) (checks.Verdict, *Result) {
