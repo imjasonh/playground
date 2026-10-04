@@ -1011,31 +1011,6 @@ func TestRefusesToPushOtherBranches(t *testing.T) {
 	}
 }
 
-func TestValidBranch(t *testing.T) {
-	for name, want := range map[string]bool{
-		"deps/go/example.com/greet@v1":   true,
-		"deps/go/gopkg.in/yaml.v3@v3":    true,
-		"deps/go/github.com/A/B_c-d~@v1": false,
-		"":                               false,
-		"@":                              false,
-		"-x":                             false,
-		"deps/":                          false,
-		"deps//go":                       false,
-		"deps/.go":                       false,
-		"deps/go.lock":                   false,
-		"deps/go.":                       false,
-		"deps/go..x":                     false,
-		"deps/go@{1}":                    false,
-		"deps/go x":                      false,
-		"deps/go:x":                      false,
-		"deps/go\x7f":                    false,
-	} {
-		if got := validBranch(name); got != want {
-			t.Errorf("validBranch(%q) = %v, want %v", name, got, want)
-		}
-	}
-}
-
 func TestSafeDir(t *testing.T) {
 	for dir, want := range map[string]bool{
 		".": true, "tools": true, "a/b-c/d_e.f": true,

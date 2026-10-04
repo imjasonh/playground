@@ -134,7 +134,7 @@ func (u *updater) setup() error {
 
 func (u *updater) init() error {
 	switch {
-	case !strings.HasSuffix(u.prefix, "/") || !validBranch(u.prefix+"go"):
+	case !strings.HasSuffix(u.prefix, "/") || !git.ValidBranch(u.prefix+"go"):
 		return fmt.Errorf("-prefix is %q, but it must be a branch-name prefix that ends with /, such as deps/", u.prefix)
 	case u.resultImage == "":
 		return errors.New("set -result-image to the image that agent/runner/Dockerfile builds")
@@ -346,7 +346,7 @@ func (u *updater) branches(rules []gitk8s.BranchRule, parent string, heads map[s
 			continue
 		}
 		m := moduleMajor{path: rest[:i], major: rest[i+1:]}
-		if module.CheckPath(m.path) == nil && m.major != "" && semver.Major(m.major) == m.major && validBranch(name) && u.governs(rules, name, parent) {
+		if module.CheckPath(m.path) == nil && m.major != "" && semver.Major(m.major) == m.major && git.ValidBranch(name) && u.governs(rules, name, parent) {
 			out[m] = head
 		}
 	}
@@ -442,21 +442,6 @@ func safeDir(dir string) bool {
 	return true
 }
 
-// validBranch reports whether git accepts name as a branch name.
-func validBranch(name string) bool {
-	if name == "" || name == "@" || name[0] == '-' || strings.HasSuffix(name, ".") ||
-		strings.Contains(name, "..") || strings.Contains(name, "@{") || strings.ContainsAny(name, " ~^:?*[\\") ||
-		strings.ContainsFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
-		return false
-	}
-	for part := range strings.SplitSeq(name, "/") {
-		if part == "" || part[0] == '.' || strings.HasSuffix(part, ".lock") {
-			return false
-		}
-	}
-	return true
-}
-
 // requirement is a module at one major version that go.mod files require
 // directly. from maps each file's directory to the version that it
 // requires, and excluded holds the versions that any go.mod file excludes.
@@ -502,7 +487,7 @@ func (u *updater) discover(ctx context.Context, rules []gitk8s.BranchRule, paren
 	targets, failed := map[moduleMajor]update{}, map[moduleMajor]bool{}
 	for _, m := range slices.SortedFunc(maps.Keys(reqs), compareModules) {
 		name := m.branch(u.prefix)
-		if !validBranch(name) || !u.governs(rules, name, parent) {
+		if !git.ValidBranch(name) || !u.governs(rules, name, parent) {
 			continue
 		}
 		r := reqs[m]
@@ -824,7 +809,7 @@ func message(up update) string {
 // outside the prefix, because the repository's credentials can push to any
 // branch.
 func (u *updater) push(ctx context.Context, repo *git.Repo, remote git.Remote, branch, commit, old string) error {
-	if !strings.HasPrefix(branch, u.prefix) || !validBranch(branch) {
+	if !strings.HasPrefix(branch, u.prefix) || !git.ValidBranch(branch) {
 		return fmt.Errorf("not pushing %q, which isn't a branch under %s", branch, u.prefix)
 	}
 	return repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + branch, New: commit, Old: old})
