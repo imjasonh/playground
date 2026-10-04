@@ -311,8 +311,9 @@ can't be `git-k8s` or start with `check-`. If it has the label
 `pod-security.kubernetes.io/enforce-version`, the label's value must be
 `latest`. Until the namespace has both labels, the branch's `gotest` result
 stays `Running`, and its message says why kube couldn't create the Pod. kube
-tries again with backoff of at most 5 minutes, so it creates the Pod within 5
-minutes after you label the namespace, without a new push.
+tries again with backoff that grows to 5 minutes, plus up to 10% jitter, so it
+creates the Pod within about 5.5 minutes after you label the namespace,
+without a new push.
 
 If `check-gotest` already runs, label the namespaces of its repositories
 before you apply `config/policy.yaml`. Otherwise the policy denies their test
