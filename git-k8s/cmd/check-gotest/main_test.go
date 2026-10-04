@@ -71,6 +71,37 @@ func TestStartsSandboxedPod(t *testing.T) {
 	}
 }
 
+func TestFetchesOverSSH(t *testing.T) {
+	for _, url := range []string{"ssh://git@git.example.com/app.git", "git@git.example.com:app.git"} {
+		b, repo := branch()
+		repo.Spec.URL = url
+		spec := kube.Owned[Pod](reconcileWith(t, b, repo))[0].Spec
+		i := slices.IndexFunc(spec.Volumes, func(v Volume) bool { return v.Secret != nil })
+		if i < 0 || spec.Volumes[i].Secret.SecretName != "app-creds" || len(spec.Volumes[i].Secret.Items) != 2 {
+			t.Fatalf("%s: volumes = %+v, want one for the Secret's key and known hosts", url, spec.Volumes)
+		}
+		mounts := func(c Container) bool {
+			return slices.ContainsFunc(c.VolumeMounts, func(m VolumeMount) bool { return m.Name == spec.Volumes[i].Name })
+		}
+		fetch, test := spec.InitContainers[0], spec.Containers[0]
+		if !mounts(fetch) || mounts(test) {
+			t.Errorf("%s: only the fetch container can mount the Secret", url)
+		}
+		var command string
+		for _, e := range fetch.Env {
+			if e.ValueFrom != nil {
+				t.Errorf("%s: the fetch container reads %s from the Secret, want nothing over SSH", url, e.Name)
+			}
+			if e.Name == "GIT_SSH_COMMAND" {
+				command = e.Value
+			}
+		}
+		if !strings.Contains(command, "-i '/ssh/ssh-privatekey'") || !strings.Contains(command, "StrictHostKeyChecking=yes") {
+			t.Errorf("%s: GIT_SSH_COMMAND = %q", url, command)
+		}
+	}
+}
+
 func pod(phase string, init, test *Terminated) *Pod {
 	p := &Pod{Object: kube.Meta(podName("app-c-x", head, 1), nil)}
 	p.Namespace = "default"

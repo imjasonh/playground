@@ -20,12 +20,14 @@ import (
 	"flag"
 	"fmt"
 	"maps"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
+	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
 )
@@ -47,7 +49,7 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 
 var (
 	goImage      = flag.String("go-image", "cgr.dev/chainguard/go:latest", "image that runs go test")
-	gitImage     = flag.String("git-image", "cgr.dev/chainguard/git:latest", "image that fetches the source; it needs git and sh")
+	gitImage     = flag.String("git-image", "cgr.dev/chainguard/git:latest", "image that fetches the source; it needs git and sh, and ssh for SSH URLs")
 	runtimeClass = flag.String("runtime-class", "", "RuntimeClass for test Pods, such as gvisor")
 	timeout      = flag.Duration("timeout", 10*time.Minute, "longest a test Pod can run")
 	goProxy      = flag.String("goproxy", "off", "GOPROXY for go test; off keeps tests from downloading modules")
@@ -192,6 +194,8 @@ func testPod(in *checks.Input, name string) *Pod {
 		Capabilities:             &Capabilities{Drop: []string{"ALL"}},
 	}
 	mounts := []VolumeMount{{Name: "src", MountPath: "/src"}, {Name: "tmp", MountPath: "/tmp"}}
+	volumes := []Volume{{Name: "src", EmptyDir: &EmptyDir{}}, {Name: "tmp", EmptyDir: &EmptyDir{}}}
+	fetchMounts := mounts
 	fetchEnv := []EnvVar{
 		{Name: "URL", Value: in.Repository.Spec.URL},
 		{Name: "BRANCH", Value: in.Spec.Branch},
@@ -199,7 +203,20 @@ func testPod(in *checks.Input, name string) *Pod {
 		{Name: "HOME", Value: "/tmp"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
 	}
-	if ref := in.Repository.Spec.SecretRef; ref != nil {
+	switch ref := in.Repository.Spec.SecretRef; {
+	case ref != nil && git.IsSSH(in.Repository.Spec.URL):
+		// An optional volume lets a missing Secret fail the fetch with
+		// ssh's error, instead of leaving the Pod pending.
+		mode := int32(0o440)
+		volumes = append(volumes, Volume{Name: "ssh", Secret: &SecretVolume{
+			SecretName:  ref.Name,
+			Items:       []KeyToPath{{Key: "ssh-privatekey", Path: "ssh-privatekey"}, {Key: "known_hosts", Path: "known_hosts"}},
+			DefaultMode: &mode,
+			Optional:    &yes,
+		}})
+		fetchMounts = slices.Concat(mounts, []VolumeMount{{Name: "ssh", MountPath: "/ssh"}})
+		fetchEnv = append(fetchEnv, EnvVar{Name: "GIT_SSH_COMMAND", Value: git.SSHCommand("/ssh/ssh-privatekey", "/ssh/known_hosts")})
+	case ref != nil:
 		fetchEnv = append(fetchEnv,
 			EnvVar{Name: "GIT_USERNAME", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "username", Optional: &yes}}},
 			EnvVar{Name: "GIT_PASSWORD", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "password"}}},
@@ -218,14 +235,14 @@ func testPod(in *checks.Input, name string) *Pod {
 			FSGroup:        &user,
 			SeccompProfile: &SeccompProfile{Type: "RuntimeDefault"},
 		},
-		Volumes: []Volume{{Name: "src", EmptyDir: &EmptyDir{}}, {Name: "tmp", EmptyDir: &EmptyDir{}}},
+		Volumes: volumes,
 		InitContainers: []Container{{
 			Name:                     "fetch",
 			Image:                    *gitImage,
 			ImagePullPolicy:          "IfNotPresent",
 			Command:                  []string{"sh", "-c", fetchScript},
 			Env:                      fetchEnv,
-			VolumeMounts:             mounts,
+			VolumeMounts:             fetchMounts,
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 		}},

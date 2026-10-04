@@ -38,12 +38,25 @@ type SeccompProfile struct {
 }
 
 type Volume struct {
-	Name     string    `json:"name"`
-	EmptyDir *EmptyDir `json:"emptyDir,omitempty"`
+	Name     string        `json:"name"`
+	EmptyDir *EmptyDir     `json:"emptyDir,omitempty"`
+	Secret   *SecretVolume `json:"secret,omitempty"`
 }
 
 type EmptyDir struct {
 	SizeLimit string `json:"sizeLimit,omitempty"`
+}
+
+type SecretVolume struct {
+	SecretName  string      `json:"secretName"`
+	Items       []KeyToPath `json:"items,omitempty"`
+	DefaultMode *int32      `json:"defaultMode,omitempty"`
+	Optional    *bool       `json:"optional,omitempty"`
+}
+
+type KeyToPath struct {
+	Key  string `json:"key"`
+	Path string `json:"path"`
 }
 
 type Container struct {
