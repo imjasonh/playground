@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -55,11 +56,14 @@ func IsSSH(url string) bool {
 
 // SSHCommand returns a GIT_SSH_COMMAND that authenticates with the private
 // key in keyFile, and connects only to hosts whose keys knownHostsFile
-// lists. It ignores SSH configuration files and agents, and never prompts.
+// lists. It ignores SSH configuration files and agents, never prompts, and
+// gives up on a server that doesn't complete the SSH handshake within 30
+// seconds.
 func SSHCommand(keyFile, knownHostsFile string) string {
 	return strings.Join([]string{
 		"ssh", "-F", "/dev/null",
 		"-o", "BatchMode=yes",
+		"-o", "ConnectTimeout=30",
 		"-o", "IdentitiesOnly=yes",
 		"-o", "IdentityAgent=none",
 		"-o", "StrictHostKeyChecking=yes",
@@ -134,6 +138,13 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 		args = append([]string{"-C", dir}, args...)
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
+	// git starts ssh and remote helpers, which share its stderr. When the
+	// context ends, kill git's whole process group, because Run waits
+	// until every process closes stderr. WaitDelay limits the wait for
+	// processes that leave the group.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	cmd.WaitDelay = 5 * time.Second
 	env := []string{
 		// Never prompt, and ignore system and user configuration so that
 		// results don't depend on the machine.

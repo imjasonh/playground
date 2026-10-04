@@ -1,13 +1,17 @@
 package git_test
 
 import (
+	"context"
 	"errors"
+	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
@@ -150,6 +154,62 @@ exit 255
 	}
 	if left, err := os.ReadDir(tmp); err != nil || len(left) != 0 {
 		t.Errorf("%s holds %v, %v after the command; want nothing", tmp, left, err)
+	}
+}
+
+func TestTimeoutWithSilentServer(t *testing.T) {
+	// This server accepts connections and never answers.
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { l.Close() })
+	conns := make(chan net.Conn, 8)
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			conns <- c
+		}
+	}()
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	ctx, timeout := t.Context(), time.Second
+	key := &git.SSHKey{PrivateKey: []byte("private key\n"), KnownHosts: []byte("known hosts\n")}
+	for _, r := range []git.Remote{
+		{URL: "ssh://git@" + l.Addr().String() + "/app.git", SSH: key},
+		{URL: "http://" + l.Addr().String() + "/app.git"},
+	} {
+		start, done := time.Now(), make(chan error, 1)
+		go func() {
+			_, err := (&git.Git{Timeout: timeout}).LsRemote(ctx, r)
+			done <- err
+		}()
+		select {
+		case err := <-done:
+			if elapsed := time.Since(start); !errors.Is(err, context.DeadlineExceeded) || elapsed > timeout+2*time.Second {
+				t.Errorf("LsRemote(%s) = %v after %v, want a timeout after %v", r.URL, err, elapsed, timeout)
+			}
+		case <-time.After(10 * time.Second):
+			t.Fatalf("LsRemote(%s) is still running after 10s", r.URL)
+		}
+		if left, err := os.ReadDir(tmp); err != nil || len(left) != 0 {
+			t.Errorf("%s holds %v, %v after the command; want nothing", tmp, left, err)
+		}
+		select {
+		case c := <-conns:
+			// The connection ends when no process has it open.
+			c.SetReadDeadline(time.Now().Add(5 * time.Second))
+			if _, err := io.Copy(io.Discard, c); err != nil {
+				t.Errorf("LsRemote(%s) left a process connected: %v", r.URL, err)
+			}
+			c.Close()
+		case <-time.After(5 * time.Second):
+			t.Errorf("LsRemote(%s) never connected", r.URL)
+		}
 	}
 }
 
