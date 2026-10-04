@@ -467,11 +467,13 @@ func (w *window) note(now time.Time, ns string, st *JobState) {
 }
 
 // runs returns the runs that the JobState following the Pod named pod in
-// namespace ns counted when a call last noted it, or 0.
-func (w *window) runs(ns, pod string) int {
+// namespace ns counted when a call last noted it, and whether a call noted
+// it.
+func (w *window) runs(ns, pod string) (int, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return w.counted[ns+"/"+pod].runs
+	c, ok := w.counted[ns+"/"+pod]
+	return c.runs, ok
 }
 
 // take records a run that starts at now, unless limit runs started in the

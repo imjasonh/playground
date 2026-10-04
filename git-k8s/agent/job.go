@@ -185,9 +185,11 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 	// The Pod can still exist, such as when the branch moved back before
 	// kube deleted it, and its run counted when it started. st can be from
 	// before then, such as when a reconcile reads the branch before the
-	// last reconcile's write reaches the cache.
-	if kube.Get[podPhase](ctx, job.Namespace, p.Name) != nil {
-		*st = JobState{Runs: max(st.Runs, r.day.runs(job.Namespace, p.Name)), Pod: p.Name, Attempt: 1}
+	// last reconcile's write reaches the cache. kube creates a Pod before it
+	// writes the state that counts the Pod's run, so a Pod that the program
+	// didn't note, such as after a restart or on a new leader, counts again.
+	if n, ok := r.day.runs(job.Namespace, p.Name); ok && kube.Get[podPhase](ctx, job.Namespace, p.Name) != nil {
+		*st = JobState{Runs: max(st.Runs, n), Pod: p.Name, Attempt: 1}
 		return x.follow(ctx, p)
 	}
 	if n := r.unfinishedPods(ctx, job.Namespace, p.Name); r.MaxPods > 0 && n >= r.MaxPods {

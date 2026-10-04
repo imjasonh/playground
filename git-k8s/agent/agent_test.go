@@ -1041,11 +1041,15 @@ func TestWindow(t *testing.T) {
 	w.note(t0, "other", &JobState{Runs: 3, Pod: "review-a"})
 	w.note(t0.Add(time.Hour), "other", &JobState{Runs: 1, Pod: "review-a"})
 	w.note(t0.Add(time.Hour), "default", &JobState{Runs: 4})
-	if a, b := w.runs("default", "review-a"), w.runs("other", "review-a"); a != 2 || b != 1 || w.runs("default", "review-b") != 0 {
-		t.Errorf("runs = %d and %d, want 2 and 1 for Pods with the same name in two namespaces", a, b)
+	a, _ := w.runs("default", "review-a")
+	b, _ := w.runs("other", "review-a")
+	if _, ok := w.runs("default", "review-b"); a != 2 || b != 1 || ok {
+		t.Errorf("runs = %d and %d, want 2 and 1 for Pods with the same name in two namespaces, and none for a Pod that no call noted", a, b)
 	}
 	w.note(t0.Add(24*time.Hour), "default", &JobState{})
-	if w.runs("default", "review-a") != 0 || w.runs("other", "review-a") != 1 || len(w.counted) != 1 {
+	_, okA := w.runs("default", "review-a")
+	b, okB := w.runs("other", "review-a")
+	if okA || !okB || b != 1 || len(w.counted) != 1 {
 		t.Errorf("note holds %d Pods, want only the one noted in the last day", len(w.counted))
 	}
 }
@@ -1271,4 +1275,38 @@ func TestCountsAGivenBackRunOnceWhenTheBranchMovesBack(t *testing.T) {
 	if st, pods := f.jobState(), kube.Owned[Pod](rec); st.Runs != 1 || st.Attempt != 2 || len(pods) != 2 || st.Pod != pods[1].Name || len(f.r.day.starts) != 1 {
 		t.Errorf("state = %+v with %d owned Pods and %d runs in the last day, want attempt 2 as run 1 in a new Pod", st, len(pods), len(f.r.day.starts))
 	}
+}
+
+func TestCountsAPodAgainAfterARestart(t *testing.T) {
+	t.Run("Pod without its state", func(t *testing.T) {
+		f := newFixture(t, "")
+		f.r.MaxRunsPerDay = 10
+		old := f.state()
+		p := f.start()
+
+		t.Log("kube creates a Pod before it writes the state that counts the Pod's run, so a program that stops in between leaves a Pod that no state counts.")
+		f.b.Status.Checks.Result = old
+		f.r.day = window{}
+		f.reconcile(p)
+		if st := f.jobState(); st.Pod != p.Name || st.Runs != 1 || len(f.r.day.starts) != 1 {
+			t.Errorf("state = %+v with %d runs in the last day, want Pod %s after 1 run", st, len(f.r.day.starts), p.Name)
+		}
+	})
+	t.Run("moved Pod whose run was given back", func(t *testing.T) {
+		f := newFixture(t, "")
+		f.r.MaxRunsPerDay = 10
+		head := f.b.Spec.Head
+		p := f.start()
+		f.reconcile(movedPod(p, head, time.Now()))
+		f.newHead("one\nnext\n")
+		f.start()
+
+		t.Log("After a restart, the branch moves back while the first head's Pod still exists. That Pod's run counts again and is given back again, so the second head's run still counts.")
+		f.r.day = window{}
+		f.b.Spec.Head = head
+		f.reconcile(movedPod(p, head, time.Now().Add(-2*movedWait)))
+		if st := f.jobState(); st.Runs != 2 || st.Attempt != 2 {
+			t.Errorf("state = %+v, want attempt 2 as run 2", st)
+		}
+	})
 }
