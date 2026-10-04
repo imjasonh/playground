@@ -10,23 +10,26 @@ import (
 // made since the two sides last agreed at base. side is that side's head:
 // the side removed the commits in base but not in side, and added the
 // commits in side but not in base. head keeps those changes when it has
-// none of the removed commits, each added commit or a replay of it, and
-// every change that the side made since base: merging side into head, with
-// base as the merge base, is clean and changes nothing.
+// none of the removed commits and no replay of one, each added commit or a
+// replay of it, and every change that the side made since base: merging
+// side into head, with base as the merge base, is clean and changes
+// nothing.
 //
 // A replay is a commit in head but not in side that removes and adds the
 // same lines in the same files, ignoring whitespace and where in each file
 // the lines are. Each commit in head replays at most one commit, and a
-// merge commit, or a commit that changes no file, has no replay. When side
-// and head both contain base, neither rewound, so head must contain side:
-// a replay would rewrite history that didn't rewind.
+// merge commit, or a commit that changes no file, has no replay. head can
+// have a replay of a removed commit if an added commit makes the same
+// change, as after a rebase. When side and head both contain base, neither
+// rewound, so head must contain side: a replay would rewrite history that
+// didn't rewind.
 //
 // A head built on a side that rewound to a new commit keeps that side's
 // changes even where it resolved conflicts with them, because whoever made
-// head started from the side after it rewound. In that case, merging the
-// commit where side and base meet, their only merge base, into head, with
-// base as the merge base, must be clean and change nothing instead, so
-// that head brings back nothing that the side removed.
+// head started from the side after it rewound. In that case, merging
+// either side or the commit where side and base meet, their only merge
+// base, into head, with base as the merge base, must be clean and change
+// nothing, so that head brings back no change that the side removed.
 //
 // An empty head or side means that the branch doesn't exist on that side,
 // and an empty base means that the sides never agreed. head, side, and
@@ -120,9 +123,12 @@ func (k *keeper) mergeBases(ctx context.Context, a, b string) ([]string, error) 
 }
 
 // removedNone reports whether head has none of the commits that the side
-// removed, which are in base but not in side. The commits that head and
-// base share are their merge bases and the merge bases' ancestors, so side
-// must contain each merge base.
+// removed, which are in base but not in side, and no replay of one, unless
+// a commit that the side added makes the same change. The commits that
+// head and base share are their merge bases and the merge bases'
+// ancestors, so side must contain each merge base. The merges can't see a
+// replay of a removed commit whose change other removed commits undid,
+// such as a secret and its revert that a force push purged.
 func (k *keeper) removedNone(ctx context.Context, head, side, base string) (bool, error) {
 	bases, err := k.mergeBases(ctx, head, base)
 	if err != nil {
@@ -133,7 +139,103 @@ func (k *keeper) removedNone(ctx context.Context, head, side, base string) (bool
 			return false, err
 		}
 	}
+	removed, err := k.revs(ctx, base, side, nil)
+	if err != nil || len(removed) == 0 {
+		return err == nil, err
+	}
+	own, err := k.revs(ctx, head, side, nil)
+	if err != nil || len(own) == 0 {
+		return err == nil, err
+	}
+	// Two commits make the same change only if they change the same
+	// files, so Keeps hashes only the commits that change a file that the
+	// shorter list changes.
+	shorter := removed
+	if len(own) < len(removed) {
+		shorter = own
+	}
+	paths, err := k.files(ctx, shorter)
+	if err != nil || len(paths) == 0 {
+		return err == nil, err
+	}
+	var ids [3]map[string]bool
+	for i, r := range [][2]string{{base, side}, {side, base}, {head, side}} {
+		if ids[i], err = k.patches(ctx, r[0], r[1], paths); err != nil {
+			return false, err
+		}
+	}
+	gone, readded, copies := ids[0], ids[1], ids[2]
+	for id := range copies {
+		if gone[id] && !readded[id] {
+			return false, nil
+		}
+	}
 	return true, nil
+}
+
+// revs lists the commits in a but not in b, other than merge commits, that
+// change a file in paths, or any file if paths is nil. It lists a commit
+// on a side of a merge even if the merge's result doesn't have its change.
+func (k *keeper) revs(ctx context.Context, a, b string, paths []string) ([]string, error) {
+	args := []string{"rev-list", "--no-merges", "--full-history", "--end-of-options", a, "^" + b, "--"}
+	if paths == nil {
+		out, err := k.run(ctx, nil, args...)
+		return strings.Fields(string(out)), err
+	}
+	var commits []string
+	seen := map[string]bool{}
+	// Chunks keep the command line short.
+	for chunk := range slices.Chunk(paths, 1000) {
+		spec := slices.Clone(args)
+		for _, p := range chunk {
+			spec = append(spec, ":(literal)"+p)
+		}
+		out, err := k.run(ctx, nil, spec...)
+		if err != nil {
+			return nil, err
+		}
+		for _, c := range strings.Fields(string(out)) {
+			if !seen[c] {
+				seen[c] = true
+				commits = append(commits, c)
+			}
+		}
+	}
+	return commits, nil
+}
+
+// patches returns the patch IDs of the changes of the commits that revs
+// lists, other than commits that change no file.
+func (k *keeper) patches(ctx context.Context, a, b string, paths []string) (map[string]bool, error) {
+	commits, err := k.revs(ctx, a, b, paths)
+	if err != nil || len(commits) == 0 {
+		return nil, err
+	}
+	m, err := k.changeIDs(ctx, commits)
+	ids := map[string]bool{}
+	for _, id := range m {
+		if id != "" {
+			ids[id] = true
+		}
+	}
+	return ids, err
+}
+
+// files returns the paths of the files that commits change.
+func (k *keeper) files(ctx context.Context, commits []string) ([]string, error) {
+	out, err := k.run(ctx, []byte(strings.Join(commits, "\n")+"\n"), "diff-tree", "--stdin", "--root", "-r", "--no-commit-id", "--name-only", "-z")
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	seen := map[string]bool{}
+	for p := range strings.SplitSeq(string(out), "\x00") {
+		if p != "" && !seen[p] {
+			seen[p] = true
+			paths = append(paths, p)
+		}
+	}
+	return paths, nil
 }
 
 // builtOn reports whether side rewound to a new commit, which base doesn't
