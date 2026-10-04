@@ -194,7 +194,7 @@ func TestStore(t *testing.T) {
 	if got := len(s.byOwner("a/parent")); got != 1 {
 		t.Errorf("after replace, byOwner = %d, want 1", got)
 	}
-	if old := s.remove(Key{"a", "one"}); old == nil || len(s.byOwner("a/parent")) != 0 {
+	if old := s.remove(cm("a", "one", "2", nil, "a/parent")); old == nil || len(s.byOwner("a/parent")) != 0 {
 		t.Error("remove didn't unindex")
 	}
 }

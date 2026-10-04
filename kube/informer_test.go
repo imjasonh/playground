@@ -36,6 +36,7 @@ type fakeAPI struct {
 	drop      chan struct{}
 	lists     []url.Values
 	watches   []url.Values
+	write     http.HandlerFunc // serves requests other than GET
 }
 
 func newFakeAPI(t *testing.T, streaming bool) (*fakeAPI, *client.Client) {
@@ -116,6 +117,11 @@ func (f *fakeAPI) calls() (lists, watches []url.Values) {
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f.mu.Lock()
+	if write := f.write; write != nil && r.Method != http.MethodGet {
+		f.mu.Unlock()
+		write(w, r)
+		return
+	}
 	if q.Get("watch") != "1" {
 		f.lists = append(f.lists, q)
 		names := slices.Sorted(maps.Keys(f.objs))

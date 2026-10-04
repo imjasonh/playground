@@ -53,6 +53,7 @@ type cache interface {
 	run(ctx context.Context)
 	onChange(func(old, new *ObjectMeta, initial bool))
 	size() int
+	begin(k Key) func(*written)
 }
 
 func (inf *informer[T, P]) onChange(h func(old, new *ObjectMeta, initial bool)) {
