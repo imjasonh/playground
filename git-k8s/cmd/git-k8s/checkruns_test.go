@@ -1021,6 +1021,74 @@ func TestCheckRunsRetryRefusedCompletions(t *testing.T) {
 	s.wantRuns("git-k8s/gotest@" + s.short(0) + " completed success: Passed")
 }
 
+func TestCheckRunsRetryRefusedCreations(t *testing.T) {
+	s := newSharing(t, 1)
+	missing := strings.Repeat("ab", 20)
+	checks := map[string]gitk8s.CheckResult{
+		"gofmt":  {Commit: s.commits[0], State: gitk8s.Passed},
+		"gotest": {Commit: missing, State: gitk8s.Running},
+	}
+
+	t.Log("When GitHub refuses to create a check run on a commit that it doesn't have, the controller publishes the branch's other check runs, and tries again on every reconcile.")
+	getMissing := "GET /api/v3/repos/acme/app/commits/" + missing + "/check-runs"
+	for i, want := range [][]string{{s.get(0), post, getMissing, post}, {getMissing, post}, {getMissing, post}} {
+		got, err := s.p.publishOn("c/x", checks)
+		if err == nil || !strings.Contains(err.Error(), "422 Unprocessable Entity: No commit found for SHA: "+missing) || !slices.Equal(got, want) {
+			t.Errorf("reconcile %d: requests = %q, err = %v; want %q and GitHub's refusal", i+1, got, err, want)
+		}
+	}
+	s.wantRuns("git-k8s/gofmt@" + s.short(0) + " completed success: Passed")
+
+	t.Log("Once the result is for a commit that GitHub has, the controller stops trying.")
+	s.step("c/x", map[string]gitk8s.CheckResult{"gofmt": checks["gofmt"], "gotest": {Commit: s.commits[0], State: gitk8s.Running}}, s.get(0), post)
+	s.again("c/x")
+}
+
+func TestBranchesRetryCheckRunsThatDeletedBranchesLeft(t *testing.T) {
+	s := newSharing(t, 2)
+	s.step("c/x", s.result(0, gitk8s.Passed, "passed on c/x"), s.get(0), post)
+	s.step("c/y", s.result(0, gitk8s.Passed, "passed on c/y"), patch+"1")
+	s.step("c/z", s.result(1, gitk8s.Running, "started Pod z"), s.get(1), post)
+
+	t.Log("While GitHub fails to update the check run that a deleted branch left, every branch's reconcile tries the update and fails.")
+	s.p.remove("c/z")
+	for _, branch := range []string{"c/x", "c/y", "c/x"} {
+		s.gh.Fake.Fail(http.StatusBadGateway)
+		s.failing(branch, patch+"2")
+	}
+	s.again("c/y", patch+"2")
+	s.again("c/x")
+	s.wantRun(2, "git-k8s/gotest@"+s.short(1)+" completed cancelled: The branch was deleted before the check finished.")
+}
+
+// TestSharedCheckRunsAfterRestarts checks what a check run that two
+// branches share shows after a restart, in either order of the branches'
+// reconciles.
+func TestSharedCheckRunsAfterRestarts(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		order []string
+		shows string
+	}{
+		{"YFirst", []string{"c/y", "c/x"}, "completed success: passed on c/x"},
+		{"XFirst", []string{"c/x", "c/y"}, "completed failure: failed on c/y"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSharing(t, 1)
+			s.step("c/x", s.result(0, gitk8s.Passed, "passed on c/x"), s.get(0), post)
+			s.step("c/y", s.result(0, gitk8s.Failed, "failed on c/y"), patch+"1")
+
+			t.Log("After a restart, the controller doesn't know which result changed last, so the check run shows the result of the branch that it reconciles last.")
+			s.p.c = &checkRuns{}
+			s.again(tc.order[0], s.get(0), patch+"1")
+			s.again(tc.order[1], patch+"1")
+			s.again(tc.order[0])
+			s.again(tc.order[1])
+			s.wantRuns("git-k8s/gotest@" + s.short(0) + " " + tc.shows)
+		})
+	}
+}
+
 // TestCheckRunsAgreeAfterRandomChanges changes the results of five branches
 // over four commits at random and reconciles the branches in random orders.
 // A reconcile can see the cluster up to two changes late, and a branch can

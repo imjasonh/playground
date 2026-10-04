@@ -241,11 +241,14 @@ progress. So does a check run that's in progress when the last of a
 repository's `GitBranch` objects is deleted or the `GitRepository` loses its
 `checkRunsIdentity`. After a restart, the controller finds each branch's
 check run on GitHub again, and writes the branch's result if the check run
-shows something else. Until the controller learns its app, it writes the
-result even to a check run that shows it, because the check run that it
-finds can be another app's. Branch protection reads only the check runs on
-a pull request's head commit, so a check run on a commit that no branch is
-at doesn't block a merge.
+shows something else. It doesn't know which branch's result changed last
+before the restart, so a check run that several branches share shows the
+result of the branch that it reconciles last, until one of their results
+changes. Until the controller learns its app, it writes the result even to
+a check run that shows it, because the check run that it finds can be
+another app's. Branch protection reads only the check runs on a pull
+request's head commit, so a check run on a commit that no branch is at
+doesn't block a merge.
 
 The controller assumes that one replica of the `git-k8s` program reconciles
 at a time, which is how `generate` installs it. With more than one replica,
@@ -278,15 +281,22 @@ GitHub limits the requests that each installation of a GitHub App can make,
 and an installation is one owner's. When GitHub answers that an installation
 reached its limit, the controller stops publishing for that repository
 owner, for every app, until the time that GitHub gives, or for a minute. It
-logs other errors from GitHub and tries again later. When GitHub refuses
-with a `4xx` status to update the check run on a commit that a branch left,
-the controller logs the error and doesn't try again, so that the error
-doesn't delay the check run on the branch's new commit. Rate limits and
-errors don't hold back checks or landings. To show whether the check-runs
-identity works, the repositories controller sets the `CheckRunsTokenIssued`
-condition on the `GitRepository`, which is `False` with Octo STS's answer
-when Octo STS doesn't issue a token. The `GitRepository` stays `Ready`
-either way.
+logs other errors from GitHub and tries again later, up to 5 minutes apart.
+It keeps trying even when GitHub's answer can't change. For example, GitHub
+refuses with a `422` status to create a check run on a commit that it
+doesn't have, and the controller tries again until no branch's result is
+for that commit. When GitHub refuses with a `4xx` status to update the
+check run on a commit that a branch left, the controller logs the error and
+doesn't try again, so that the error doesn't delay the check run on the
+branch's new commit. Each reconcile of a repository's branches updates the
+check runs that deleted branches left, so while GitHub fails otherwise to
+update one, every branch's reconcile fails and tries again with its own
+backoff. Rate limits and errors don't hold back checks or landings.
+
+To show whether the check-runs identity works, the repositories controller
+sets the `CheckRunsTokenIssued` condition on the `GitRepository`, which is
+`False` with Octo STS's answer when Octo STS doesn't issue a token. The
+`GitRepository` stays `Ready` either way.
 
 ### Security
 
