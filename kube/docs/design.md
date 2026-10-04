@@ -890,6 +890,9 @@ framework's tests check that:
 - A controller that moves a status one step per reconcile, through a proxy
   that holds back watch events by 200 ms, reads each step that it wrote, and
   applies and deletes its ConfigMap once each.
+- A controller with `Finalize` that resyncs every millisecond, through the
+  same proxy, adds its finalizer once, and runs `Finalize` and removes the
+  finalizer once each.
 - Panics and permanent errors are reported and retried correctly.
 - Leader election fails over.
 - Three replicas with 32 shards split the work, hand shards over when one
@@ -1008,7 +1011,9 @@ status makes no status writes for votes that leave the total as it was. A
 change to a ConfigMap field that a reconcile's type doesn't declare doesn't
 run the reconcile again. With watch events held back by 200 ms, a controller
 that moves a Widget's status 10 steps up and 10 steps down writes status 20
-times, applies its ConfigMap once, and deletes it once.
+times, applies its ConfigMap once, and deletes it once. A controller that
+resyncs every millisecond behind the same delay applies its finalizer once
+to add it and once to remove it, and runs `Finalize` once.
 
 ### Binary size and dependencies
 

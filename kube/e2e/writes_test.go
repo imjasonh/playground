@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -107,8 +108,9 @@ func runs(reads []int) string {
 }
 
 // laggingKubeconfig writes an administrator's kubeconfig for a proxy to the
-// API server that holds back what watches send by at least lag.
-func laggingKubeconfig(t *testing.T, lag time.Duration) string {
+// API server that holds back what watches send by at least lag. Unless seen
+// is nil, the proxy passes it each request before forwarding the request.
+func laggingKubeconfig(t *testing.T, lag time.Duration, seen func(*http.Request)) string {
 	t.Helper()
 	admin, err := os.ReadFile(e2e.Env(t).Kubeconfig)
 	if err != nil {
@@ -144,7 +146,12 @@ func laggingKubeconfig(t *testing.T, lag time.Duration) string {
 		}
 		return nil
 	}
-	srv := httptest.NewServer(proxy)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if seen != nil {
+			seen(r)
+		}
+		proxy.ServeHTTP(w, r)
+	}))
 	t.Cleanup(srv.Close)
 	path := filepath.Join(t.TempDir(), "kubeconfig")
 	body := fmt.Sprintf(`apiVersion: v1
@@ -190,7 +197,7 @@ func TestReconcileSeesItsOwnWrites(t *testing.T) {
 	addr := freeAddr(t)
 	ns := e2e.Namespace(t, c)
 	r := &stepper{}
-	m := &kube.Manager{Name: "writes-e2e", Kubeconfig: laggingKubeconfig(t, 200*time.Millisecond), Namespace: ns, Addr: addr}
+	m := &kube.Manager{Name: "writes-e2e", Kubeconfig: laggingKubeconfig(t, 200*time.Millisecond, nil), Namespace: ns, Addr: addr}
 	e2e.Run(t, m, kube.For[Widget](r, kube.Named("stepper")))
 	const size = 10
 	settle := func(want int) {
@@ -234,5 +241,74 @@ func TestReconcileSeesItsOwnWrites(t *testing.T) {
 	}
 	if err := e2e.Gone(t.Context(), c, client.Path("v1", "configmaps", ns, "w")); err != nil {
 		t.Error(err)
+	}
+}
+
+// Doodad has no status, so its controller writes only its finalizer. The
+// response to a status write would carry the finalizer too.
+type Doodad struct {
+	kube.Object `kube:"group=e2e.kube.imjasonh.github.io"`
+	Spec        struct {
+		Size int `json:"size"`
+	} `json:"spec"`
+}
+
+// finalizing counts calls to Finalize.
+type finalizing struct{ finalized atomic.Int32 }
+
+func (*finalizing) Reconcile(context.Context, *Doodad) error { return nil }
+
+func (f *finalizing) Finalize(context.Context, *Doodad) error {
+	f.finalized.Add(1)
+	return nil
+}
+
+// The controller resyncs every millisecond through a proxy that holds back
+// watch events, so it reconciles right after each change to its finalizer
+// and before the watch delivers the change.
+func TestFinalizerChangesShowAtOnce(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	var applies atomic.Int32
+	kubeconfig := laggingKubeconfig(t, 200*time.Millisecond, func(r *http.Request) {
+		if r.Method == http.MethodPatch && r.URL.Query().Get("fieldManager") == "finalizing-finalizer" {
+			applies.Add(1)
+		}
+	})
+	r := &finalizing{}
+	m := &kube.Manager{Name: "finalizer-e2e", Kubeconfig: kubeconfig, Namespace: ns}
+	e2e.Run(t, m, kube.For[Doodad](r, kube.Named("finalizing"), kube.Resync(time.Millisecond)))
+	path := client.Path(group+"/v1", "doodads", ns, "d")
+	e2e.Eventually(t, 30*time.Second, func() error {
+		return c.Create(t.Context(), client.Path(group+"/v1", "doodads", ns, ""), map[string]any{
+			"apiVersion": group + "/v1", "kind": "Doodad", "metadata": map[string]any{"name": "d"}, "spec": map[string]any{"size": 1},
+		}, nil)
+	})
+	e2e.Eventually(t, 20*time.Second, func() error {
+		var d Doodad
+		if err := e2e.Get(t.Context(), c, path, &d); err != nil {
+			return err
+		}
+		if !slices.Contains(d.Finalizers, "kube.imjasonh.github.io/finalizing") {
+			return fmt.Errorf("finalizers = %v", d.Finalizers)
+		}
+		return nil
+	})
+	time.Sleep(time.Second)
+	if got := applies.Load(); got != 1 {
+		t.Errorf("the controller applied its finalizer %d times to add it, want once", got)
+	}
+
+	t.Log("Deleting the doodad runs Finalize once, and removes the finalizer once.")
+	if err := c.Delete(t.Context(), path, client.DeleteOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	e2e.Eventually(t, 20*time.Second, func() error { return e2e.Gone(t.Context(), c, path) })
+	time.Sleep(time.Second)
+	if got := r.finalized.Load(); got != 1 {
+		t.Errorf("Finalize ran %d times, want once", got)
+	}
+	if got := applies.Load(); got != 2 {
+		t.Errorf("the controller applied its finalizer %d times, want twice: once to add it and once to remove it", got)
 	}
 }

@@ -351,6 +351,7 @@ func TestStored(t *testing.T) {
 		{"not an object", `[]`, false, ""},
 		{"not JSON", `{`, false, ""},
 		{"update that releases a deleting object", `{"metadata":{"uid":"u","resourceVersion":"2",` + deleting + `,"deletionGracePeriodSeconds":0}}`, false, "gone"},
+		{"update that releases a deleting object with no grace period", `{"metadata":{"uid":"u","resourceVersion":"2",` + deleting + `}}`, false, "gone"},
 		{"update of a deleting object with a finalizer", `{"metadata":{"uid":"u","resourceVersion":"2",` + deleting + `,"finalizers":["f"]}}`, false, "object"},
 		{"update of a terminating pod", `{"metadata":{"uid":"u","resourceVersion":"2",` + deleting + `,"deletionGracePeriodSeconds":30}}`, false, "object"},
 		{"delete that returns a status", `{"kind":"Status","apiVersion":"v1","metadata":{},"status":"Success","details":{"name":"a","kind":"configmaps","uid":"u"}}`, true, "gone"},
