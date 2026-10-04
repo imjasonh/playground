@@ -4,8 +4,8 @@
 // People write GitRepository objects. The repository controller lists each
 // repository's branches and owns one GitBranch object for every branch that
 // the repository's rules select. Check controllers each write their own
-// entry in a GitBranch's status, and the merge controller fast-forwards a
-// branch's parent when the parent's merge policy allows.
+// entry in a GitBranch's status, and the merge controller lands a branch on
+// its parent when the parent's merge policy allows.
 package gitk8s
 
 import (
@@ -62,7 +62,7 @@ type SecretRef struct {
 // to.
 type BranchRule struct {
 	Match  string       `json:"match" kube:"minLength=1" doc:"Glob matched against branch names without refs/heads/. A * matches any characters except /, ? matches one character except /, and a ** path segment matches zero or more segments."`
-	Parent string       `json:"parent,omitempty" doc:"Branch that matching branches propose changes to. Checks run on each matching branch, and the merge controller fast-forwards the parent to it when the parent's merge policy allows."`
+	Parent string       `json:"parent,omitempty" doc:"Branch that matching branches propose changes to. Checks run on each matching branch, and the merge controller lands it on the parent when the parent's merge policy allows."`
 	Merge  *MergePolicy `json:"merge,omitempty" doc:"What a branch needs before it lands on a branch that this rule matches. Without a merge policy, nothing lands on matching branches."`
 }
 
@@ -70,7 +70,7 @@ type BranchRule struct {
 type MergePolicy struct {
 	Checks              []CheckPolicy `json:"checks,omitempty" doc:"Checks that run on every branch proposed to this one."`
 	When                string        `json:"when,omitempty" doc:"CEL expression that must be true to land a branch. The checks variable maps each check name to an object with passed (bool), state (string), and outputs (map of strings). A check with no result for the branch's current commits has state Pending. Without an expression, every listed check must pass."`
-	Landing             string        `json:"landing,omitempty" kube:"enum=FastForward,default=FastForward" doc:"How to land a branch. FastForward moves the parent to the branch's head, so the parent ends up at the commit that the checks saw."`
+	Landing             string        `json:"landing,omitempty" kube:"enum=FastForward|Squash|Rebase,default=FastForward" doc:"How to land a branch, which must contain the parent's head. FastForward moves the parent to the branch's head. Squash makes one commit with the head's files on top of the parent's head, and Rebase copies each of the branch's commits that isn't a merge onto it. A squashed or rebased commit has the files that the checks saw, on the parent head that they saw, so their results count for it, except results with usesHistory."`
 	MaxAutomatedCommits *int32        `json:"maxAutomatedCommits,omitempty" kube:"min=0,max=100,default=5" doc:"Most commits that checks can push to one branch, counted by the Git-K8s-Fixer trailer. The limit stops two checks that disagree from pushing forever."`
 	// DeleteMergedBranches deletes a branch from the remote after it lands.
 	DeleteMergedBranches bool `json:"deleteMergedBranches,omitempty" doc:"Delete a branch from the remote after it lands."`
@@ -97,6 +97,13 @@ func (p *MergePolicy) MaxCommits() int {
 	}
 	return int(*p.MaxAutomatedCommits)
 }
+
+// Landing methods, the values of MergePolicy.Landing.
+const (
+	FastForward = "FastForward"
+	Squash      = "Squash"
+	Rebase      = "Rebase"
+)
 
 // CheckPolicy names a check that runs on branches.
 type CheckPolicy struct {

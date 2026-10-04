@@ -19,6 +19,7 @@ import (
 // reconciles the full GitBranch type, so its manager installs the
 // CustomResourceDefinition.
 type merger struct {
+	ident git.Identity
 	cache *gitk8s.Cache
 }
 
@@ -69,7 +70,7 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
 		return nil
 	}
-	return m.land(ctx, b)
+	return m.land(ctx, b, results)
 }
 
 // evaluate reports whether a merge policy's gate passes.
@@ -118,8 +119,9 @@ func describe(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) st
 	return msg
 }
 
-// land fast-forwards the parent to the branch's head.
-func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch) error {
+// land fast-forwards the parent to the branch's head, or squashes or
+// rebases the branch onto it when the merge policy says to.
+func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch, results map[string]gitk8s.CheckResult) error {
 	spec := &b.Spec
 	local, remote, unlock, err := m.open(ctx, b)
 	if err != nil {
@@ -150,6 +152,12 @@ func (m *merger) land(ctx context.Context, b *gitk8s.GitBranch) error {
 		report(b, reasonNotFastForward, false, "%s doesn't contain %s at %s, so %s can't fast-forward to it",
 			spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), spec.Parent)
 		return nil
+	}
+	switch spec.Merge.Landing {
+	case gitk8s.Squash, gitk8s.Rebase:
+		if done, err := m.rewrite(ctx, local, remote, b, results); err != nil || done {
+			return err
+		}
 	}
 	err = local.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: spec.Head, Old: spec.ParentHead})
 	if err != nil {
