@@ -1022,27 +1022,49 @@ new one. With one writer, the program needs no leader election, and its
 `kube.Serve` handler, which runs outside leader election, can write the same
 files as its reconciles. `fsGroup` makes the volume writable by the non-root
 user, and `fsGroupChangePolicy: OnRootMismatch` keeps the kubelet from walking
-every file on each start.
+every file on each start. `Volume` refuses the directories that the
+installation already uses, including the two where the Pod's tokens are
+mounted and the directories inside and above them, because a volume at the
+service account's directory stops Kubernetes from mounting the token there.
+`generate` refuses `-volume-size` and `-storage-class` for a program without
+a volume, instead of ignoring them.
 
-A one-replica StatefulSet would have stronger guarantees: it waits until the
-old Pod is deleted, even when the Pod's node stops responding, where a
-Deployment starts a replacement at once. For volume types that attach to a
-node, the replacement waits anyway, because a `ReadWriteOnce` volume doesn't
-attach to a second node while the first holds it. A StatefulSet's claim
-templates can't change after it's created, though, so a larger `-volume-size`
-would need a new StatefulSet. And `kubectl apply` doesn't delete objects, so
-turning a program's Deployment into a StatefulSet would leave the old
-Deployment running beside it. `ReadWriteOncePod` would also keep out a
-replacement on the same node, which a deleted Pod's ReplicaSet can start while
-the old Pod stops, but only CSI drivers support it, and kind's default
-StorageClass isn't one. So a program with a volume must tolerate two processes
-for a few seconds, as git does with its lock files.
+`Recreate` waits for the old Pod only during a rollout. A Pod that's deleted
+otherwise, by `kubectl delete pod` or a node drain, gets a replacement from
+its ReplicaSet at once, while the old Pod stops. The old process reconciles
+until it gets `SIGTERM`, which comes after the 5-second `preStop` sleep of a
+program that serves, and which cancels its reconciles. Its requests in
+progress get up to 10 more seconds (`serveGrace`), and the kubelet kills it
+when the Pod's 30-second termination grace period ends. Until then, both
+processes can write the volume if the replacement runs on the same node,
+where Pods can share a `ReadWriteOnce` volume. While both reconcile, a late
+status write from the old process can replace a newer one from the
+replacement, the same exposure as a lost lease in
+[Shards and leader election](#shards-and-leader-election). When the old Pod's
+node stops responding, Kubernetes deletes the Pod after about five minutes
+and starts a replacement without knowing whether the old process stopped. The
+replacement can't use a local volume until the node comes back, or attach a
+volume that's attached to the old node until Kubernetes detaches it, but a
+volume that's mounted over the network, such as NFS, has no such guard. So a
+program with a volume must tolerate two processes at once, as git does with
+its lock files.
+
+A one-replica StatefulSet would be safer: it doesn't start a replacement
+until the old Pod is gone, even when the old Pod's node stops responding, and
+it can mount the same standalone claim. kube doesn't use one because
+`kubectl apply` doesn't delete objects. Turning an installed program's
+Deployment into a StatefulSet would leave the old Deployment running beside
+it, writing the same volume and status, until someone deleted it.
+`ReadWriteOncePod` would keep out a replacement on the same node, but only
+CSI drivers support it, and kind's default StorageClass isn't one.
 
 `kubectl apply` switches an earlier installation's Deployment to `Recreate`,
 because the strategy field's `retainKeys` patch strategy drops the keys that
 the patch leaves out. Server-side apply doesn't: the API server keeps the
 `rollingUpdate` field that it defaulted, which no field manager owns, and
-rejects it alongside `Recreate`.
+rejects it alongside `Recreate`. Neither deletes the PodDisruptionBudget, or
+the Role and RoleBinding for leader election, that the new installation
+leaves out, so the README says to delete them.
 
 ### Testing
 

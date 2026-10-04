@@ -647,21 +647,69 @@ kube.Main(
 `kube.Volume` does nothing while the program runs. The `generate` command
 adds a `ReadWriteOnce` PersistentVolumeClaim to the installation and mounts
 it at the directory. The claim asks for 1 GiB of the cluster's default
-StorageClass unless you set `-volume-size` or `-storage-class`. The kubelet
-makes the volume writable by the program's non-root user with `fsGroup`.
+StorageClass unless you set `-volume-size` or `-storage-class`, which
+`generate` refuses for a program without a volume. The kubelet makes the
+volume writable by the program's non-root user with `fsGroup`. The directory
+can't be one that the installation uses for something else, such as `/tmp`
+or the directories where the Pod's tokens are mounted.
 
 A program with a volume runs one replica, without leader election, so its
 reconciles and its `kube.Serve` handler are the only writers and can share
-what's on disk. `generate` fails if you set `-replicas` above 1 or set
-`-shards`. The Deployment uses the `Recreate` strategy, so a rollout stops the
-old Pod before it starts the new one. While the Pod restarts, nothing
-reconciles or serves, so clients of the handler need to retry.
+what's on disk. `generate` fails if you set `-replicas` or `-shards` above 1.
+The Deployment uses the `Recreate` strategy, so a rollout stops the old Pod
+before it starts the new one. While the Pod restarts, nothing reconciles or
+serves, so clients of the handler need to retry. Nothing answers the
+program's webhooks either. kube registers admission webhooks with
+`failurePolicy: Fail`, so until the new Pod is ready, the API server rejects
+the creates and updates that they cover, and requests that need the
+program's conversion webhook fail.
 
-A Pod that's deleted instead of rolled out can overlap with its replacement
-on one node, where both can mount a `ReadWriteOnce` volume. Keep writes safe
-for two processes at once, for example by writing a new file and renaming it
-over the old one. Deleting the installation, for example with
-`kubectl delete -f`, deletes the claim and the data on it.
+A Pod that's deleted instead of rolled out, for example by
+`kubectl delete pod` or a node drain, is replaced at once, and the old
+process can keep running for up to 30 seconds, the Pod's termination grace
+period. If the replacement runs on the same node, both processes can write
+the volume, because Pods on one node can share a `ReadWriteOnce` volume. Both
+reconcile too, so a late status write from the old process can replace a
+newer one from its replacement, as after a lost Lease (see
+[Trigger a reconcile](#trigger-a-reconcile)). Keep writes safe for two
+processes at once. To keep a file whole through a crash of the node, write a
+new file, sync it, rename it over the old one, and sync the directory.
+
+The volume also constrains the program:
+
+- A `ReadWriteOnce` volume is usually in one zone, and a local volume, such
+  as one of kind's default StorageClass, is on one node. The Pod can run only
+  there, so while that zone or node is unavailable, the Pod stays `Pending`.
+- The claim's StorageClass can't change after the claim is created, and its
+  size can't change until the claim is bound. To grow a bound claim, its
+  StorageClass must have `allowVolumeExpansion: true`. Then apply the
+  installation again with a larger `-volume-size`. A claim can't shrink. For
+  a smaller volume or another StorageClass, you need a new claim: copy the
+  data to it yourself, or let the program start over with an empty volume.
+- Deleting the installation, for example with `kubectl delete -f`, deletes
+  the claim. The volume's reclaim policy, which comes from its StorageClass,
+  decides what happens to the data. `Delete`, the default, deletes the
+  volume and its data. `Retain` keeps the volume for you to reuse or delete.
+
+To add a volume to a program that's already installed, apply the new
+installation with `kubectl apply`, or delete the Deployment first.
+Server-side apply can't switch the Deployment to the `Recreate` strategy,
+because the API server keeps the `rollingUpdate` field that it defaulted.
+`kubectl apply` doesn't delete the objects that the program needed for two
+replicas, so delete them yourself. Delete the Role and RoleBinding only if
+the new installation has no Role in the program's namespace. The program
+keeps that Role, without the rules for leader election, if it also needs
+other rules there, for example for its webhooks.
+
+```sh
+kubectl -n NAMESPACE delete --ignore-not-found poddisruptionbudget NAME
+# Only if the new installation has no Role in NAMESPACE:
+kubectl -n NAMESPACE delete --ignore-not-found role,rolebinding NAME
+```
+
+Replace `NAME` with the program's name in the installation, and `NAMESPACE`
+with the namespace that you installed it in, which is `NAME` unless you set
+`-namespace`.
 
 [`examples/eventlog`](examples/eventlog/main.go) keeps a copy of every Event
 in a volume, and serves the copies.
@@ -719,9 +767,9 @@ The command does the following:
    using the credentials from `docker login` or `podman login`.
 1. Writes YAML that installs the image by digest: a Namespace, a
    ServiceAccount, a ClusterRole and a Role with only the rules that the
-   program needs, their bindings, a Deployment, a PodDisruptionBudget, a
-   Service for webhooks and the `kube.Serve` handler, and a
-   PersistentVolumeClaim for a `kube.Volume`. With more than one replica,
+   program needs, their bindings, a Deployment, a PodDisruptionBudget for
+   more than one replica, a Service for webhooks and the `kube.Serve`
+   handler, and a PersistentVolumeClaim for a `kube.Volume`. With more than one replica,
    the Deployment runs the program with `-leader-elect`, or with `-shards`
    when you set `-shards`. The container's root file system is read-only,
    with an `emptyDir` volume at `/tmp` for temporary files. `-tmp-size`
@@ -992,9 +1040,9 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
   object. It doesn't send the request to that replica.
 - `kube.Serve` serves plain HTTP, without TLS.
 - A program with a `kube.Volume` runs one replica, and is down while it
-  restarts. Server-side apply can't switch the Deployment of an earlier
-  installation without a volume to the `Recreate` strategy, so apply the
-  installation with `kubectl apply` or delete the Deployment first.
+  restarts, webhooks included. Adding a volume to an installed program takes
+  `kubectl apply` rather than server-side apply, and leaves objects for you
+  to delete, as [Keep state on disk](#keep-state-on-disk) describes.
 
 ## Layout
 
