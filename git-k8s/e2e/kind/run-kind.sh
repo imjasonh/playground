@@ -557,7 +557,8 @@ metrics >"${WORKDIR}/metrics-1.txt"
 
 # A Pod that NetworkPolicies treat as a test Pod tries to reach the module
 # proxy itself. kind's network plugin enforces NetworkPolicies, except on
-# hosts that lack the kernel support that it needs.
+# hosts that lack the kernel support that it needs. Like a test Pod, the
+# probe meets the restricted Pod Security Standard.
 k apply -f - <<EOF
 apiVersion: v1
 kind: Pod
@@ -572,10 +573,16 @@ spec:
   securityContext:
     runAsNonRoot: true
     runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
   containers:
     - name: probe
       image: ${GO_IMAGE}
       command: [go, mod, download, -x, example.com/greet@v1.0.0]
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
       env:
         - {name: HOME, value: /tmp}
         - {name: GOFLAGS, value: -modcacherw}
