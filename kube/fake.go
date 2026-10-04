@@ -26,7 +26,8 @@ import (
 // World can also hold FakeTokens for ReviewToken to accept. RequestToken
 // returns the tokens "fake-token-1", "fake-token-2", and so on, for the
 // service account test in the namespace default, and ReviewToken accepts
-// them for the requested audience.
+// them for the requested audience. To test a Serve handler, pass it a
+// request with the context, using http.Request.WithContext.
 //
 //	ctx, rec := kube.Fake(t.Context(), site, &k8s.Deployment{...})
 //	if err := r.Reconcile(ctx, site); err != nil {

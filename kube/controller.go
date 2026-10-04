@@ -55,7 +55,8 @@ type Controller interface {
 	// controller and registers its webhooks.
 	prepare(ctx context.Context, m *Manager) error
 	// setup and run start the reconcile loop, on a replica that holds the
-	// lease.
+	// lease. For a controller that doesn't reconcile, the manager calls run
+	// on every replica, and doesn't call setup.
 	setup(ctx context.Context, m *Manager) error
 	run(ctx context.Context) error
 	reconciles() bool
@@ -77,6 +78,8 @@ type declared struct {
 	// framework migrates stored objects in every namespace.
 	versioned bool
 	owns      []*typeInfo
+	// serves is set when the controller serves HTTP for Serve.
+	serves bool
 }
 
 func (c *controller[T, P]) describe() (declared, error) {

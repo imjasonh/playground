@@ -45,7 +45,7 @@ type Manager struct {
 	// a Lease reconciles. Caches start only after the replica first holds
 	// it, so standby replicas use almost no memory. A replica that loses the
 	// Lease stops reconciling and tries to take it back; it keeps serving
-	// webhooks.
+	// webhooks and the handler passed to Serve.
 	LeaderElection bool
 	// Shards splits the objects that controllers reconcile into this many
 	// groups, each held by one replica at a time through its own Lease, so
@@ -95,6 +95,9 @@ type Manager struct {
 	// webhooks of a manager that runs outside the cluster, for example
 	// "https://192.0.2.10:9443". It takes precedence over WebhookService.
 	WebhookURL string
+	// ServeAddr is where the manager serves the handler passed to Serve,
+	// over plain HTTP. It defaults to ":8081".
+	ServeAddr string
 
 	client  *client.Client
 	log     *slog.Logger
@@ -129,13 +132,15 @@ func Run(ctx context.Context, controllers ...Controller) error {
 // Main is a main function for a controller program. It reads flags,
 // stops on SIGINT or SIGTERM, runs controllers, and exits with status 1 if
 // they fail. Flags: -kubeconfig, -namespace, -leader-elect, -shards, -addr,
-// -webhook-addr, -webhook-service, -webhook-url, and -v for debug logs.
+// -webhook-addr, -webhook-service, -webhook-url, -serve-addr, and -v for
+// debug logs.
 //
 // Run as "PROGRAM generate -registry=REGISTRY", from the program's module,
 // Main instead builds the program into an image on Chainguard's static
 // base image, pushes it to REGISTRY, and writes YAML for kubectl apply that
-// installs it: a namespace, a service account, RBAC rules for the types the
-// program uses, a Deployment, and a Service for its webhooks.
+// installs it: a namespace, a service account, RBAC rules for the types and
+// APIs the program uses, a Deployment, and a Service for its webhooks and
+// its Serve handler.
 func Main(controllers ...Controller) {
 	if len(os.Args) > 1 && os.Args[1] == "generate" {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -163,6 +168,7 @@ func Main(controllers ...Controller) {
 	flag.StringVar(&m.WebhookAddr, "webhook-addr", "", "address for HTTPS webhooks (default :9443)")
 	flag.StringVar(&m.WebhookService, "webhook-service", "", "Service, as name or namespace/name, through which the API server reaches the webhooks")
 	flag.StringVar(&m.WebhookURL, "webhook-url", "", "base https URL through which the API server reaches the webhooks, outside the cluster")
+	flag.StringVar(&m.ServeAddr, "serve-addr", "", "address for the HTTP handler passed to kube.Serve (default :8081)")
 	verbose := flag.Bool("v", false, "log debug messages")
 	flag.Parse()
 	level := slog.LevelInfo
@@ -270,6 +276,17 @@ func (m *Manager) Run(ctx context.Context, controllers ...Controller) error {
 		// configurations whose webhooks no longer answer.
 		m.log.Warn("removing stale webhook configurations failed", "err", err)
 	}
+	var servers sync.WaitGroup
+	stops = append(stops, servers.Wait)
+	for _, c := range controllers {
+		if !c.reconciles() {
+			servers.Go(func() {
+				if err := c.run(ctx); err != nil {
+					cancel(fmt.Errorf("%s: %w", c.controllerName(), err))
+				}
+			})
+		}
+	}
 	var reconcilers []Controller
 	for _, c := range controllers {
 		if c.reconciles() {
@@ -333,8 +350,9 @@ func (m *Manager) waitForCaches() {
 func (m *Manager) serve() (*http.Server, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "ok") })
-	// A standby replica is ready once its webhooks serve: the Service must
-	// send webhook requests to it, though it doesn't reconcile.
+	// A standby replica is ready once its webhooks and Serve handler serve:
+	// the Service must send their requests to it, though it doesn't
+	// reconcile.
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		m.mu.Lock()
 		hooks := m.hooks
@@ -342,6 +360,12 @@ func (m *Manager) serve() (*http.Server, error) {
 		if !hooks.serving() {
 			http.Error(w, "webhooks are not serving", http.StatusServiceUnavailable)
 			return
+		}
+		for _, c := range m.controllers {
+			if !c.reconciles() && !c.synced() {
+				http.Error(w, c.controllerName()+" is not serving", http.StatusServiceUnavailable)
+				return
+			}
 		}
 		if m.started.Load() {
 			for _, c := range m.controllers {

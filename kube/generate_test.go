@@ -180,6 +180,47 @@ func TestManifests(t *testing.T) {
 	}
 }
 
+func TestManifestsServe(t *testing.T) {
+	o := &generateOptions{program: "probe", name: "probe", namespace: "probe", replicas: 1, shards: 1}
+	for _, tc := range []struct {
+		webhooks             bool
+		args, ports, service string
+	}{
+		{
+			false,
+			`"args":["-addr=:8080","-serve-addr=:8081"]`,
+			`"ports":[{"name":"http","containerPort":8080},{"name":"serve","containerPort":8081}]`,
+			`"ports":[{"name":"serve","port":80,"targetPort":"serve"}]`,
+		},
+		{
+			true,
+			`"args":["-addr=:8080","-webhook-addr=:9443","-webhook-service=probe/probe","-serve-addr=:8081"]`,
+			`"ports":[{"name":"http","containerPort":8080},{"name":"webhook","containerPort":9443},{"name":"serve","containerPort":8081}]`,
+			`"ports":[{"name":"webhook","port":443,"targetPort":"webhook"},{"name":"serve","port":80,"targetPort":"serve"}]`,
+		},
+	} {
+		byKind := map[string]string{}
+		var kinds []string
+		for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, webhooks: tc.webhooks, serves: true}) {
+			b, _ := json.Marshal(d)
+			kind := d[1].value.(string)
+			kinds = append(kinds, kind)
+			byKind[kind] = string(b)
+		}
+		if want := []string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Service", "Deployment"}; !slices.Equal(kinds, want) {
+			t.Errorf("webhooks %v: kinds = %v, want %v", tc.webhooks, kinds, want)
+		}
+		for _, s := range []string{tc.args, tc.ports} {
+			if !strings.Contains(byKind["Deployment"], s) {
+				t.Errorf("webhooks %v: the Deployment lacks %s: %s", tc.webhooks, s, byKind["Deployment"])
+			}
+		}
+		if !strings.Contains(byKind["Service"], tc.service) {
+			t.Errorf("webhooks %v: Service = %s, want %s", tc.webhooks, byKind["Service"], tc.service)
+		}
+	}
+}
+
 func TestGrantsFor(t *testing.T) {
 	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}}
 	same := func(a, b grants) bool {

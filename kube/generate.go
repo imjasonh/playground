@@ -273,6 +273,8 @@ type installPlan struct {
 	webhooks                bool
 	// electLeader is set when replicas must take turns reconciling.
 	electLeader bool
+	// serves is set when the program serves HTTP for Serve.
+	serves bool
 }
 
 // grantsFor returns where the permissions for ti's resources go. A program
@@ -306,6 +308,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			return nil, err
 		}
 		p.webhooks = p.webhooks || d.webhooks
+		p.serves = p.serves || d.serves
 		if !d.reconciles {
 			continue
 		}
@@ -443,14 +446,23 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 		args = append(args, "-namespace="+o.watchNamespace)
 	}
 	ports := []any{object{{"name", "http"}, {"containerPort", 8080}}}
+	var servicePorts []any
 	if p.webhooks {
 		args = append(args, "-webhook-addr=:9443", "-webhook-service="+o.namespace+"/"+o.name)
 		ports = append(ports, object{{"name", "webhook"}, {"containerPort", 9443}})
+		servicePorts = append(servicePorts, object{{"name", "webhook"}, {"port", 443}, {"targetPort", "webhook"}})
+	}
+	if p.serves {
+		args = append(args, "-serve-addr=:8081")
+		ports = append(ports, object{{"name", "serve"}, {"containerPort", 8081}})
+		servicePorts = append(servicePorts, object{{"name", "serve"}, {"port", 80}, {"targetPort", "serve"}})
+	}
+	if len(servicePorts) > 0 {
 		docs = append(docs, object{
 			{"apiVersion", "v1"}, {"kind", "Service"}, {"metadata", meta(o.name, true)},
 			{"spec", object{
 				{"selector", labels},
-				{"ports", []any{object{{"name", "webhook"}, {"port", 443}, {"targetPort", "webhook"}}}},
+				{"ports", servicePorts},
 			}},
 		})
 	}
