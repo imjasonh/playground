@@ -157,7 +157,7 @@ func TestFollowsTheTests(t *testing.T) {
 		{name: "passed", testState: gitk8s.Passed, state: gitk8s.Passed, message: "go test passed"},
 		{
 			name: "failed without mayPush", testState: gitk8s.Failed, readOnly: true,
-			state: gitk8s.Failed, message: "go test failed, and the policy doesn't let the deps check push a fix: " + testOutput,
+			state: gitk8s.Failed, message: "go test failed, and the policy doesn't let the deps check push a fix",
 		},
 		{
 			name: "no gotest check", testState: gitk8s.Failed, noTests: true,
@@ -260,11 +260,11 @@ func TestDoesntPushWhatDoesntFixTheTests(t *testing.T) {
 	}, {
 		name: "the agent changes go.mod", verdict: agent.Pass,
 		files:   []agent.File{code, {Path: "go.mod", Mode: "100644", Content: []byte("module example.com/app\n\ngo 1.24\n\nrequire example.com/greet v1.0.0\n")}},
-		message: "the agent changed go.mod, so a person needs to finish the update: " + reasoning,
+		message: "the agent changed a go.mod file, so a person needs to finish the update: " + reasoning,
 	}, {
 		name: "the agent changes a nested go.sum", verdict: agent.Pass,
 		files:   []agent.File{{Path: "tools/go.sum", Deleted: true}},
-		message: "the agent changed tools/go.sum, so a person needs to finish the update: " + reasoning,
+		message: "the agent changed a go.sum file, so a person needs to finish the update: " + reasoning,
 	}, {
 		name: "the agent changes nothing", verdict: agent.Pass,
 		message: "the agent didn't change any files: " + reasoning,

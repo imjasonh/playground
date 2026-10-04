@@ -93,7 +93,7 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	case test.State == gitk8s.Passed:
 		return keepRuns(in, gitk8s.Passed, "go test passed"), nil
 	case !in.Policy.MayPush:
-		return keepRuns(in, gitk8s.Failed, "go test failed, and the policy doesn't let the deps check push a fix: %s", test.Message), nil
+		return keepRuns(in, gitk8s.Failed, "go test failed, and the policy doesn't let the deps check push a fix"), nil
 	}
 	if p := in.Previous; p == nil || p.State != gitk8s.Running || p.Commit != in.Spec.Head || p.Outputs["pod"] == "" {
 		if v, ok := outOfCommits(ctx, in); ok {
@@ -104,10 +104,13 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	if res == nil {
 		return v, nil
 	}
+	// The agent's message fills most of the 1,024 bytes that the checks
+	// framework keeps, so the check names the file without its directory,
+	// which could be any length.
 	modFile := ""
 	for _, f := range res.Files {
 		if name := path.Base(f.Path); name == "go.mod" || name == "go.sum" || name == "go.work" || name == "go.work.sum" {
-			modFile = f.Path
+			modFile = name
 			break
 		}
 	}
@@ -117,7 +120,7 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		v.Message = "the agent couldn't fix the tests: " + v.Message
 	case modFile != "":
 		v.State, v.Fix = gitk8s.Failed, ""
-		v.Message = fmt.Sprintf("the agent changed %s, so a person needs to finish the update: %s", modFile, v.Message)
+		v.Message = fmt.Sprintf("the agent changed a %s file, so a person needs to finish the update: %s", modFile, v.Message)
 	case v.Fix == "" && v.State == gitk8s.Passed:
 		v.State = gitk8s.Failed
 		v.Message = "the agent didn't change any files: " + v.Message
