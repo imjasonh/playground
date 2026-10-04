@@ -130,9 +130,11 @@ and rates the change `high` when any of these is true:
   changes the `go` or `toolchain` line. A directory is outside the
   repository when its path is absolute or leads out of the repository from
   the `go.mod` file's directory. A `go.mod` file that the check can't parse
-  also counts. Requiring a module that a `go.mod` file at the merge base
-  declares, or that the file replaces with a directory in the repository,
-  is fine, because that code is in the repository.
+  also counts. Requiring a module that the file replaces with a directory
+  in the repository is fine, because that code is in the repository.
+  Requiring a module that only a `go.mod` file in the repository declares
+  isn't, because without a replacement, the `go` command downloads the
+  module from the module proxy.
 - It changes a `go.work` file, whose directives apply to every module in
   the workspace.
 - It has commits from AI agents, which carry a `Git-K8s-Agent: CHECK`

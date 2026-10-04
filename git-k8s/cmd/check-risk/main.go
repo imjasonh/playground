@@ -12,9 +12,10 @@
 //     the file required, to another major version, or to a version that
 //     isn't a release, replaces a module with another module or with a
 //     directory outside the repository, stops replacing one, or changes the
-//     go or toolchain line. Modules that a go.mod file at the merge base
-//     declares, and modules that the file replaces with a directory in the
-//     repository, are the repository's own, so requiring them is fine.
+//     go or toolchain line. Modules that the file replaces with a directory
+//     in the repository are the repository's own, so requiring them is
+//     fine. A module that a go.mod file declares isn't, unless the file
+//     replaces it, because the go command downloads it.
 //   - It changes a go.work file, whose directives apply to every module in
 //     the workspace.
 //   - It has commits from AI agents, which carry the Git-K8s-Agent trailer.
@@ -192,9 +193,9 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 	if err != nil {
 		return nil, err
 	}
-	// local holds the module paths that the repository declares, and
-	// replaced the replacements that it makes, before the change.
-	local := map[string]bool{}
+	// required holds the versions of each module that the repository
+	// requires, and replaced the replacements that it makes, before the
+	// change.
 	required := map[string][]string{}
 	replaced := map[string]bool{}
 	previous := map[string]*modfile.File{}
@@ -203,9 +204,6 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 			continue
 		}
 		previous[f.path] = f.file
-		if f.file.Module != nil {
-			local[f.file.Module.Mod.Path] = true
-		}
 		for _, r := range f.file.Require {
 			required[r.Mod.Path] = append(required[r.Mod.Path], r.Mod.Version)
 		}
@@ -250,7 +248,7 @@ func moduleReasons(ctx context.Context, repo *git.Repo, base, head string, paths
 			switch {
 			case semver.Compare(v, was[p]) < 0:
 				add("downgrades %s from %s to %s", p, was[p], v)
-			case local[p] || replacedInRepo(f, p, v) || slices.Contains(versions, v):
+			case replacedInRepo(f, p, v) || slices.Contains(versions, v):
 			case len(versions) == 0 && majors[prefix] != "":
 				add("moves %s to %s", majors[prefix], p)
 			case len(versions) == 0:

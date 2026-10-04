@@ -111,7 +111,8 @@ func TestRiskOfModules(t *testing.T) {
 		{name: "module that another go.mod requires", change: edit(")", "\texample.com/t v1.1.0\n)"), level: "low"},
 		{name: "local replacement", change: edit("replace", "replace example.com/b => ./b\nreplace"), level: "low"},
 		{name: "local replacement in a subdirectory", change: map[string]string{"tools/go.mod": toolsMod + "replace example.com/u => ../u\n"}, level: "low"},
-		{name: "module that a go.mod file at the merge base declares", change: edit(")", "\texample.com/app/tools v0.1.0\n)"), level: "low"},
+		{name: "module that a go.mod file at the merge base declares", change: edit(")", "\texample.com/app/tools v0.1.0\n)"), level: "high", reason: "adds module example.com/app/tools"},
+		{name: "module that a go.mod file at the merge base declares, replaced with its directory", change: edit(")", "\texample.com/app/tools v0.1.0\n)\n\nreplace example.com/app/tools => ./tools\n"), level: "low"},
 		{
 			name:   "new module in a directory in the repository",
 			change: with(edit(")", "\texample.com/app/svc v0.0.0\n)\n\nreplace example.com/app/svc => ./svc\n"), "svc/go.mod", "module example.com/app/svc\n\ngo 1.24\n"),
