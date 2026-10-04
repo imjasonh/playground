@@ -202,6 +202,54 @@ func TestTreeEditing(t *testing.T) {
 	}
 }
 
+func TestWrittenIdentity(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	base := w.Commit("base")
+	w.Push("main")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	c, err := repo.Commit(ctx, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []git.Identity{
+		{Name: "git-k8s", Email: "git-k8s@example.com"},
+		{Name: "Zoë Lima", Email: "zoë@example.com"},
+		{Name: "git-k8s ", Email: "<git-k8s@example.com>"},
+		{Name: `"git-k8s"`, Email: " git-k8s@example.com\n"},
+		{Name: "'git-k8s',", Email: ";git-k8s@example.com:"},
+		{Name: "git\n-k8s", Email: "git-k8s@<example>.com"},
+		{Name: "\tgit, k8s\\", Email: "git-k8s@example.com\x7f"},
+		{Name: "Ana Lima\xff", Email: "\x01ana@example.com"},
+		{Name: "\xc3<\xa9", Email: "\xef\xbf\xbe@example.com"},
+		{Name: "git-k8s", Email: ""},
+	} {
+		raw, err := repo.CommitTree(ctx, c.Tree, []string{base}, "edit", id, c.Time)
+		if err != nil {
+			t.Errorf("CommitTree as %q: %v", id, err)
+			continue
+		}
+		if written, err := repo.CommitTree(ctx, c.Tree, []string{base}, "edit", id.Written(), c.Time); err != nil || written != raw {
+			t.Errorf("CommitTree as %q = %s, %v; want %s, the commit as %q", id.Written(), written, err, raw, id)
+		}
+		log, err := repo.Log(ctx, base, raw, 1)
+		if err != nil || len(log) != 1 {
+			t.Fatalf("Log = %+v, %v", log, err)
+		}
+		if got := log[0].Committer; got != id.Written() {
+			t.Errorf("git writes %q as %q, but Written returns %q", id, got, id.Written())
+		}
+	}
+}
+
 func mustEntry(t *testing.T, repo *git.Repo, commit, path string) string {
 	t.Helper()
 	entries, err := repo.LsTree(t.Context(), commit)

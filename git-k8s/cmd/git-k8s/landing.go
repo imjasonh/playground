@@ -197,7 +197,7 @@ func (m *merger) squash(ctx context.Context, local *git.Repo, spec *gitk8s.GitBr
 // check whose fix the squash undoes would push it forever.
 func (m *merger) fixedAfterSquash(spec *gitk8s.GitBranchSpec, log []git.LogEntry) bool {
 	first := log[0]
-	return slices.Equal(first.Parents, []string{spec.ParentHead}) && first.Committer == m.ident &&
+	return slices.Equal(first.Parents, []string{spec.ParentHead}) && first.Committer == m.ident.Written() &&
 		!slices.ContainsFunc(log[1:], func(c git.LogEntry) bool { return !c.Fixer() })
 }
 
@@ -344,5 +344,6 @@ func copyProblem(c git.LogEntry) string {
 // the commits that it makes come from the commits that it copies, so making
 // them again gives the same SHAs.
 func (m *merger) committer(unix int64) git.Signature {
-	return git.Signature{Name: m.ident.Name, Email: m.ident.Email, Date: fmt.Sprintf("%d +0000", unix)}
+	id := m.ident.Written()
+	return git.Signature{Name: id.Name, Email: id.Email, Date: fmt.Sprintf("%d +0000", unix)}
 }

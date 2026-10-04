@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 // FixerTrailer is the commit trailer that marks commits pushed by checks.
@@ -41,6 +42,31 @@ type Remote struct {
 type Identity struct {
 	Name  string
 	Email string
+}
+
+// Written returns the identity as git writes it in a commit. git drops
+// spaces, ASCII control characters other than DEL, and ,:;<>"\' from the
+// start and the end of the name and the email, and <, >, and newlines from
+// the rest. Then it reads each byte that isn't part of valid UTF-8 as
+// Latin-1, and treats the bytes of noncharacters, such as U+FFFE, the same
+// way.
+func (id Identity) Written() Identity {
+	return Identity{Name: written(id.Name), Email: written(id.Email)}
+}
+
+func written(s string) string {
+	s = strings.TrimFunc(s, func(r rune) bool { return r <= ' ' || strings.ContainsRune(`,:;<>"\'`, r) })
+	s = strings.NewReplacer("\n", "", "<", "", ">", "").Replace(s)
+	var b strings.Builder
+	for len(s) > 0 {
+		r, n := utf8.DecodeRuneInString(s)
+		if r == utf8.RuneError && n == 1 || r&0xfffe == 0xfffe || r >= 0xfdd0 && r <= 0xfdef {
+			r, n = rune(s[0]), 1
+		}
+		b.WriteRune(r)
+		s = s[n:]
+	}
+	return b.String()
 }
 
 // Git runs git commands. The zero value runs "git" from PATH with a
