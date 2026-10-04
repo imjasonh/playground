@@ -668,6 +668,14 @@ func TestWaitsForADeletedPodToGo(t *testing.T) {
 	if res := f.state(); res.State != gitk8s.Running || res.Outputs["runs"] != "2" || f.jobState().UID != p.UID {
 		t.Fatalf("result = %+v, want run 2 in the new Pod", res)
 	}
+
+	t.Log("A Pod that kube created again is another run, even if it's being deleted when the check first sees it.")
+	p.DeletionTimestamp, p.UID = &deleted, "uid-third"
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "Pod "+p.Name+" is being deleted, so kube creates it again once it's gone" ||
+		res.Outputs["runs"] != "3" || f.jobState().UID != p.UID {
+		t.Errorf("result = %+v, want run 3 in the Pod that's being deleted", res)
+	}
 }
 
 func TestSaysWhenKubeCantCreateAPod(t *testing.T) {
