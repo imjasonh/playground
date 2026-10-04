@@ -239,8 +239,10 @@ That costs test Pods only the time to download and compile again.
 `generate` can't make what `config/go-cache.yaml` holds. It makes Services
 only for webhooks, so the file adds the Service that test Pods reach
 `go-cache` through. `generate` grants what a program calls through kube,
-and `go-cache` sends TokenReviews to the API server itself, so the file
-adds a ClusterRole that allows creating TokenReviews and nothing else.
+and `go-cache` sends TokenReviews and gets Pods itself, so the file adds a
+ClusterRole that allows creating TokenReviews and getting Pods, and
+nothing else. `go-cache` can get any Pod by name, but can't list or watch
+Pods.
 
 With `-go-cache`, `check-gotest` adds three init containers to each test
 Pod, after the one that fetches the head:
@@ -313,12 +315,25 @@ defend against that as follows:
   lifetime that Kubernetes allows. `go-cache` checks each request's token
   with a TokenReview for the audience that the request needs, and checks
   that the token's service account is in the namespace in the URL.
+- Only `check-gotest`'s Pods write. The kubelet binds each projected token
+  to its Pod, and a TokenReview names the Pod that a token is bound to.
+  `go-cache` gets that Pod for each write, and accepts the token only if
+  the Pod has the UID that the token names, has the label
+  `kube.imjasonh.github.io/controller=check-gotest`, and hasn't finished.
+  kube puts that label on each Pod that `check-gotest` creates. A token
+  that isn't bound to a Pod can't write. If `check-gotest` runs under
+  another name, set `go-cache`'s `-controller` flag to that name.
 - The namespace is the trust boundary. Anyone who can create Pods in a
-  namespace can get a token for any audience, so they can write the build
-  caches of the namespace's repositories. They can already mount the
-  namespace's Secrets, including the repositories' credentials, so the
-  build cache doesn't let them do more. Namespaces don't share build
-  caches.
+  namespace can create one with `check-gotest`'s label and a token for any
+  audience, so they can write the build caches of the namespace's
+  repositories. They can already mount the namespace's Secrets, including
+  the repositories' credentials, so the build cache doesn't let them do
+  more. Anyone who can create tokens for the namespace's `default` service
+  account, which `check-gotest`'s Pods run as, can bind one to such a Pod
+  while it runs, and write too. `generate` lets a check that runs Pods
+  create them in every namespace, so another such check could set the
+  label too, unless an admission policy keeps each check to Pods with its
+  own label. Namespaces don't share build caches.
 
 The design leaves these risks:
 
@@ -337,13 +352,17 @@ The design leaves these risks:
   out in module paths. If that matters, set `-upstream` to a proxy that
   serves only the modules that you allow.
 - `go-cache` serves plain HTTP. Anyone who can watch the Pod network can
-  read build outputs, and use a token that writes until it expires.
-- `go-cache` remembers a token's review for a minute, so a token works for
-  up to a minute after its Pod is deleted. It denies a token that isn't a
-  JWT for the request's audience without a TokenReview, remembers denials
-  apart from the tokens that it accepts, and sends at most 8 TokenReviews
-  at once. A flood of bad tokens can hold up reviews of new tokens, but
-  not requests with tokens that it accepted in the last minute.
+  read build outputs, and use a token that writes until the token expires
+  or its Pod finishes.
+- `go-cache` remembers a token's review for a minute, so a token that
+  reads works for up to a minute after its Pod is deleted. A token that
+  writes stops working when its Pod finishes, because `go-cache` gets the
+  Pod for each write. `go-cache` denies a token that isn't a JWT for the
+  request's audience without a TokenReview, remembers denials apart from
+  the tokens that it accepts, and sends at most 8 TokenReviews at once. It
+  gets at most 8 Pods at once, in slots of their own. A flood of bad
+  tokens can hold up reviews of new tokens, but not requests with tokens
+  that it accepted in the last minute.
 - A namespace can fill the store and push other namespaces' entries out,
   which slows their builds. Its tokens can name any repository, even one
   that doesn't exist, so it can write as many entries as it likes.

@@ -46,7 +46,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// fakeReviewer accepts the tokens it holds, for their audiences.
+// fakeReviewer accepts the tokens it holds, for their audiences, and lets
+// each of them write.
 type fakeReviewer map[string]fakeToken
 
 type fakeToken struct {
@@ -54,13 +55,15 @@ type fakeToken struct {
 	audiences []string
 }
 
-func (f fakeReviewer) review(_ context.Context, token, audience string) (string, error) {
+func (f fakeReviewer) review(_ context.Context, token, audience string) (identity, error) {
 	t, ok := f[token]
 	if !ok || !slices.Contains(t.audiences, audience) {
-		return "", fmt.Errorf("%w: no", errDenied)
+		return identity{}, fmt.Errorf("%w: no", errDenied)
 	}
-	return t.namespace, nil
+	return identity{namespace: t.namespace}, nil
 }
+
+func (fakeReviewer) checkWriter(context.Context, identity) error { return nil }
 
 // newTestServer starts a go-cache server, after letting each of configure
 // change its store.
@@ -636,27 +639,45 @@ func tokenSubject(token string) string {
 }
 
 // newTokenAPI starts a fake API server that answers TokenReviews with
-// answer, and returns a tokenReviewer that uses it.
-func newTokenAPI(t *testing.T, answer func(w http.ResponseWriter, r *http.Request, tr *tokenReview)) *tokenReviewer {
+// answer, and gets of Pods with getPod, which returns nil for a Pod that
+// doesn't exist. It returns a tokenReviewer that uses the server, and lets
+// check-gotest's Pods write.
+func newTokenAPI(t *testing.T, answer func(w http.ResponseWriter, r *http.Request, tr *tokenReview), getPod func(namespace, name string) (*pod, error)) *tokenReviewer {
 	t.Helper()
-	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/apis/authentication.k8s.io/v1/tokenreviews" || r.Header.Get("Authorization") != "Bearer own-token" {
-			http.Error(w, "unexpected request", http.StatusBadRequest)
-			return
-		}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /apis/authentication.k8s.io/v1/tokenreviews", func(w http.ResponseWriter, r *http.Request) {
 		var tr tokenReview
 		if err := json.NewDecoder(r.Body).Decode(&tr); err != nil || tr.Kind != "TokenReview" {
 			http.Error(w, "bad TokenReview", http.StatusBadRequest)
 			return
 		}
 		answer(w, r, &tr)
+	})
+	if getPod != nil {
+		mux.HandleFunc("GET /api/v1/namespaces/{namespace}/pods/{name}", func(w http.ResponseWriter, r *http.Request) {
+			switch p, err := getPod(r.PathValue("namespace"), r.PathValue("name")); {
+			case err != nil:
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			case p == nil:
+				http.Error(w, "pods not found", http.StatusNotFound)
+			default:
+				json.NewEncoder(w).Encode(p)
+			}
+		})
+	}
+	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, pattern := mux.Handler(r); pattern == "" || r.Header.Get("Authorization") != "Bearer own-token" {
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		mux.ServeHTTP(w, r)
 	}))
 	t.Cleanup(api.Close)
 	tokenFile := filepath.Join(t.TempDir(), "token")
 	if err := os.WriteFile(tokenFile, []byte("own-token\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return newTokenReviewer(api.URL, tokenFile, api.Client())
+	return newTokenReviewer(api.URL, tokenFile, api.Client(), "check-gotest")
 }
 
 func TestTokenReviewer(t *testing.T) {
@@ -682,23 +703,23 @@ func TestTokenReviewer(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(tr)
-	})
-	review := func(token string) (string, error) {
+	}, nil)
+	review := func(token string) (identity, error) {
 		t.Helper()
 		return r.review(t.Context(), token, "aud")
 	}
 
 	for range 2 {
-		if ns, err := review(testToken(t, "good", "aud")); err != nil || ns != "ns" {
-			t.Errorf("review of a good token = %q, %v", ns, err)
+		if id, err := review(testToken(t, "good", "aud")); err != nil || id != (identity{namespace: "ns"}) {
+			t.Errorf("review of a good token = %+v, %v", id, err)
 		}
 	}
 	if n := calls.Load(); n != 1 {
 		t.Errorf("%d reviews of the same token, want 1", n)
 	}
 	for _, sub := range []string{"bad", "audience-unaware", "user", "bad"} {
-		if ns, err := review(testToken(t, sub, []string{"other", "aud"})); !errors.Is(err, errDenied) {
-			t.Errorf("review of %q = %q, %v; want it denied", sub, ns, err)
+		if id, err := review(testToken(t, sub, []string{"other", "aud"})); !errors.Is(err, errDenied) {
+			t.Errorf("review of %q = %+v, %v; want it denied", sub, id, err)
 		}
 	}
 	if n := calls.Load(); n != 4 {
@@ -753,12 +774,12 @@ func TestReviewCache(t *testing.T) {
 	}
 	t0 := time.Now()
 	c := newReviewCache(2, time.Minute)
-	c.add(key("a"), review{namespace: "a"}, t0)
-	c.add(key("b"), review{namespace: "b"}, t0)
+	c.add(key("a"), review{identity: identity{namespace: "a"}}, t0)
+	c.add(key("b"), review{identity: identity{namespace: "b"}}, t0)
 	if r, ok := c.get(key("a"), t0.Add(time.Second)); !ok || r.namespace != "a" {
 		t.Errorf("get(a) = %v, %v", r, ok)
 	}
-	c.add(key("c"), review{namespace: "c"}, t0.Add(2*time.Second))
+	c.add(key("c"), review{identity: identity{namespace: "c"}}, t0.Add(2*time.Second))
 	if has(c, "b", t0.Add(3*time.Second)) || !has(c, "a", t0.Add(3*time.Second)) || !has(c, "c", t0.Add(3*time.Second)) {
 		t.Error("a full cache didn't forget only b, the least recently used review")
 	}
@@ -801,13 +822,13 @@ func TestTokenReviewerLimits(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(tr)
-	})
+	}, nil)
 	releaseAPI := sync.OnceFunc(func() { close(release) })
 	t.Cleanup(releaseAPI)
 	r.asking = make(chan struct{}, 2)
 	r.askWait = 100 * time.Millisecond
 	r.denied = newReviewCache(2, 10*time.Second)
-	review := func(token string) (string, error) {
+	review := func(token string) (identity, error) {
 		return r.review(t.Context(), token, "aud")
 	}
 	waitInFlight := func(n int32) {
@@ -868,6 +889,251 @@ func TestTokenReviewerLimits(t *testing.T) {
 	}
 	if _, err := review(testToken(t, "bad-0", "aud")); !errors.Is(err, errDenied) || calls.Load() != before+1 {
 		t.Errorf("review of the oldest denied token = %v after %d TokenReviews, want a denial after 1, because the denial cache holds 2", err, calls.Load()-before)
+	}
+}
+
+// ownedPod returns a running Pod with uid that check-gotest owns.
+func ownedPod(uid string) *pod {
+	p := &pod{}
+	p.Metadata.UID = uid
+	p.Metadata.Labels = map[string]string{controllerLabel: "check-gotest"}
+	p.Status.Phase = "Running"
+	return p
+}
+
+func TestWritesNeedOwnedPod(t *testing.T) {
+	with := func(p *pod, change func(*pod)) *pod {
+		change(p)
+		return p
+	}
+	var (
+		mu            sync.Mutex
+		reviews, gets int
+		pods          = map[string]*pod{
+			"ns/builder":      ownedPod("uid-builder"),
+			"ns/pending":      with(ownedPod("uid-pending"), func(p *pod) { p.Status.Phase = "Pending" }),
+			"ns/replaced":     ownedPod("uid-new"),
+			"ns/unlabeled":    with(ownedPod("uid-unlabeled"), func(p *pod) { p.Metadata.Labels = nil }),
+			"ns/gofmt":        with(ownedPod("uid-gofmt"), func(p *pod) { p.Metadata.Labels[controllerLabel] = "check-gofmt" }),
+			"other/elsewhere": ownedPod("uid-elsewhere"),
+			"ns/succeeded":    with(ownedPod("uid-succeeded"), func(p *pod) { p.Status.Phase = "Succeeded" }),
+			"ns/failed":       with(ownedPod("uid-failed"), func(p *pod) { p.Status.Phase = "Failed" }),
+			"ns/deleting":     with(ownedPod("uid-deleting"), func(p *pod) { p.Metadata.DeletionTimestamp = "2026-10-04T00:00:00Z" }),
+		}
+	)
+	r := newTokenAPI(t, func(w http.ResponseWriter, _ *http.Request, tr *tokenReview) {
+		mu.Lock()
+		reviews++
+		mu.Unlock()
+		// A token's subject is NAME/UID for the Pod that it's bound to.
+		name, uid, _ := strings.Cut(tokenSubject(tr.Spec.Token), "/")
+		s := &tr.Status
+		s.Authenticated, s.User.Username, s.Audiences = true, "system:serviceaccount:ns:default", tr.Spec.Audiences
+		s.User.Extra = map[string][]string{}
+		if name != "" {
+			s.User.Extra[podNameExtra] = []string{name}
+		}
+		if uid != "" {
+			s.User.Extra[podUIDExtra] = []string{uid}
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(tr)
+	}, func(namespace, name string) (*pod, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		gets++
+		if name == "broken" {
+			return nil, errors.New("etcd is down")
+		}
+		p, ok := pods[namespace+"/"+name]
+		if !ok {
+			return nil, nil
+		}
+		c := *p
+		return &c, nil
+	})
+	counts := func() (int, int) {
+		mu.Lock()
+		defer mu.Unlock()
+		return reviews, gets
+	}
+	_, srv := newTestServer(t, "", r)
+	request := func(method, subject, audience, action string, body io.Reader) (int, string) {
+		t.Helper()
+		resp, msg := do(t, method, srv.URL+gocache.Path("ns", "app")+"/"+id(action), testToken(t, subject, audience), body, map[string]string{gocache.OutputIDHeader: id("compiled")})
+		return resp.StatusCode, strings.TrimSpace(msg)
+	}
+	put := func(subject string) (int, string) {
+		t.Helper()
+		return request(http.MethodPut, subject, gocache.WriteAudience("ns", "app"), "built in "+subject, strings.NewReader("compiled"))
+	}
+
+	for _, tc := range []struct {
+		subject string
+		want    int
+		msg     string
+	}{
+		{"builder/uid-builder", http.StatusCreated, ""},
+		{"pending/uid-pending", http.StatusCreated, ""},
+		{"", http.StatusForbidden, "the token isn't bound to a Pod"},
+		{"builder", http.StatusForbidden, "the token isn't bound to a Pod"},
+		{"replaced/uid-old", http.StatusForbidden, "the token is bound to another Pod named ns/replaced"},
+		{"unlabeled/uid-unlabeled", http.StatusForbidden, "Pod ns/unlabeled isn't check-gotest's"},
+		{"gofmt/uid-gofmt", http.StatusForbidden, "Pod ns/gofmt isn't check-gotest's"},
+		{"elsewhere/uid-elsewhere", http.StatusForbidden, "the token's Pod ns/elsewhere doesn't exist"},
+		{"succeeded/uid-succeeded", http.StatusForbidden, "Pod ns/succeeded has finished"},
+		{"failed/uid-failed", http.StatusForbidden, "Pod ns/failed has finished"},
+		{"deleting/uid-deleting", http.StatusForbidden, "Pod ns/deleting is being deleted"},
+		{"gone/uid-gone", http.StatusForbidden, "the token's Pod ns/gone doesn't exist"},
+		{"broken/uid-broken", http.StatusServiceUnavailable, "couldn't check the token"},
+	} {
+		if code, msg := put(tc.subject); code != tc.want || !strings.Contains(msg, tc.msg) {
+			t.Errorf("PUT with a token bound to %q: %d %q, want %d %q", tc.subject, code, msg, tc.want, tc.msg)
+		}
+	}
+	if _, n := counts(); n != 11 {
+		t.Errorf("%d Pod gets for 11 writes with tokens that name a Pod, want 11", n)
+	}
+
+	t.Log("Writes stop once the Pod finishes, though go-cache remembers the token's review.")
+	mu.Lock()
+	pods["ns/builder"] = with(ownedPod("uid-builder"), func(p *pod) { p.Status.Phase = "Succeeded" })
+	mu.Unlock()
+	reviewsBefore, getsBefore := counts()
+	if code, msg := put("builder/uid-builder"); code != http.StatusForbidden || !strings.Contains(msg, "Pod ns/builder has finished") {
+		t.Errorf("PUT after the Pod finished: %d %q, want 403", code, msg)
+	}
+	if reviews, gets := counts(); reviews != reviewsBefore || gets != getsBefore+1 {
+		t.Errorf("%d TokenReviews and %d Pod gets for a write with a token that go-cache accepted before, want 0 and 1", reviews-reviewsBefore, gets-getsBefore)
+	}
+
+	t.Log("Reads don't need a Pod.")
+	_, getsBefore = counts()
+	for _, tc := range []struct {
+		subject, action string
+		want            int
+	}{
+		{"", "built in builder/uid-builder", http.StatusOK},
+		{"unlabeled/uid-unlabeled", "never built", http.StatusNotFound},
+	} {
+		if code, msg := request(http.MethodGet, tc.subject, gocache.ReadAudience("ns", "app"), tc.action, nil); code != tc.want {
+			t.Errorf("GET with a token bound to %q: %d %q, want %d", tc.subject, code, msg, tc.want)
+		}
+	}
+	if _, gets := counts(); gets != getsBefore {
+		t.Errorf("%d Pod gets for reads, want 0", gets-getsBefore)
+	}
+
+	t.Log("The Pods of the controller that -controller names write.")
+	r.writer = "check-gofmt"
+	if err := r.checkWriter(t.Context(), identity{namespace: "ns", pod: "gofmt", podUID: "uid-gofmt"}); err != nil {
+		t.Errorf("check of check-gofmt's Pod with -controller=check-gofmt = %v, want nil", err)
+	}
+	if err := r.checkWriter(t.Context(), identity{namespace: "ns", pod: "pending", podUID: "uid-pending"}); !errors.Is(err, errDenied) {
+		t.Errorf("check of check-gotest's Pod with -controller=check-gofmt = %v, want a denial", err)
+	}
+}
+
+func TestRunNeedsController(t *testing.T) {
+	err := run(slog.New(slog.DiscardHandler), "127.0.0.1:-1", "https://proxy.golang.org", t.TempDir(), "1Mi", "")
+	if err == nil || err.Error() != "-controller can't be empty" {
+		t.Errorf("run with an empty -controller = %v, want an error about -controller", err)
+	}
+}
+
+func TestPodChecks(t *testing.T) {
+	var (
+		gets, inFlight atomic.Int32
+		mu             sync.Mutex
+		// Pod gets wait until gate closes.
+		gate = make(chan struct{})
+	)
+	r := newTokenAPI(t, nil, func(_, name string) (*pod, error) {
+		gets.Add(1)
+		inFlight.Add(1)
+		defer inFlight.Add(-1)
+		mu.Lock()
+		g := gate
+		mu.Unlock()
+		select {
+		case <-g:
+		case <-time.After(10 * time.Second):
+		}
+		return ownedPod("uid-" + name), nil
+	})
+	open := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		select {
+		case <-gate:
+		default:
+			close(gate)
+		}
+	}
+	t.Cleanup(open)
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		for deadline := time.Now().Add(10 * time.Second); !cond(); time.Sleep(time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("waited 10 seconds for %s", what)
+			}
+		}
+	}
+	r.getting = make(chan struct{}, 1)
+	r.askWait = 100 * time.Millisecond
+	builder := identity{namespace: "ns", pod: "builder", podUID: "uid-builder"}
+
+	t.Log("Checks of one Pod that overlap share one get.")
+	var started atomic.Int32
+	errs := make([]error, 5)
+	var wg sync.WaitGroup
+	for i := range errs {
+		wg.Go(func() {
+			started.Add(1)
+			errs[i] = r.checkWriter(t.Context(), builder)
+		})
+	}
+	waitFor("5 checks and a Pod get", func() bool { return started.Load() == 5 && inFlight.Load() == 1 })
+	time.Sleep(50 * time.Millisecond)
+
+	t.Log("A check of another Pod waits for a free slot, and fails if none frees up.")
+	if err := r.checkWriter(t.Context(), identity{namespace: "ns", pod: "other", podUID: "uid-other"}); err == nil || errors.Is(err, errDenied) {
+		t.Errorf("check while 1 of 1 Pod gets is in progress = %v, want an error that isn't a denial", err)
+	}
+	open()
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("check %d of the Pod: %v", i, err)
+		}
+	}
+	if n := gets.Load(); n != 1 {
+		t.Errorf("%d Pod gets for 5 overlapping checks of one Pod, and one of another that found no free slot, want 1", n)
+	}
+
+	t.Log("Checks that don't overlap get the Pod again, and don't wait for TokenReviews.")
+	r.asking = make(chan struct{}, 1)
+	r.asking <- struct{}{}
+	if err := r.checkWriter(t.Context(), builder); err != nil || gets.Load() != 2 {
+		t.Errorf("check after the others ended, with every TokenReview slot taken = %v after %d Pod gets, want nil after 2", err, gets.Load())
+	}
+
+	t.Log("A check for an earlier Pod with the same name doesn't share the get.")
+	mu.Lock()
+	gate = make(chan struct{})
+	mu.Unlock()
+	r.getting = make(chan struct{}, 2)
+	var current, earlier error
+	wg.Go(func() { current = r.checkWriter(t.Context(), builder) })
+	waitFor("a Pod get", func() bool { return inFlight.Load() == 1 })
+	wg.Go(func() {
+		earlier = r.checkWriter(t.Context(), identity{namespace: "ns", pod: "builder", podUID: "uid-earlier"})
+	})
+	waitFor("a second Pod get", func() bool { return inFlight.Load() == 2 })
+	open()
+	wg.Wait()
+	if current != nil || !errors.Is(earlier, errDenied) {
+		t.Errorf("overlapping checks of Pod ns/builder and an earlier Pod with its name = %v, %v; want nil and a denial", current, earlier)
 	}
 }
 

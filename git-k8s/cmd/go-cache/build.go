@@ -50,7 +50,10 @@ func (s *server) authorize(w http.ResponseWriter, r *http.Request, method string
 		http.Error(w, "go-cache isn't running in a cluster, so it can't check tokens", http.StatusServiceUnavailable)
 		return "", false
 	}
-	tokenNS, err := s.reviewer.review(r.Context(), token, audience(ns, repo))
+	id, err := s.reviewer.review(r.Context(), token, audience(ns, repo))
+	if err == nil && id.namespace == ns && method == "PUT" {
+		err = s.reviewer.checkWriter(r.Context(), id)
+	}
 	switch {
 	case errors.Is(err, errDenied):
 		s.metrics.buildRequest(method, "denied")
@@ -58,12 +61,12 @@ func (s *server) authorize(w http.ResponseWriter, r *http.Request, method string
 		return "", false
 	case err != nil:
 		s.metrics.buildRequest(method, "error")
-		s.log.Error("reviewing a token", "err", err)
+		s.log.Error("checking a token", "err", err)
 		http.Error(w, "couldn't check the token", http.StatusServiceUnavailable)
 		return "", false
-	case tokenNS != ns:
+	case id.namespace != ns:
 		s.metrics.buildRequest(method, "denied")
-		http.Error(w, fmt.Sprintf("the token is from namespace %s, not %s", tokenNS, ns), http.StatusForbidden)
+		http.Error(w, fmt.Sprintf("the token is from namespace %s, not %s", id.namespace, ns), http.StatusForbidden)
 		return "", false
 	}
 	return buildKey(ns, repo, action), true

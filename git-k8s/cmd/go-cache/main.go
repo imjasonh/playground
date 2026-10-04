@@ -12,6 +12,9 @@
 // TokenReview. check-gotest gives the token that reads to the container
 // that compiles a branch, and the token that writes to a container that
 // uploads what the compiler built, before any of the branch's code runs.
+// go-cache accepts a token that writes only if the token is bound to a Pod
+// that check-gotest owns and that hasn't finished. Set -controller if
+// check-gotest runs under another name.
 //
 // go-cache keeps modules and outputs in -dir, and keeps them, with the
 // writes in progress, under -max-size. A write reserves room for its bytes
@@ -24,6 +27,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -100,21 +104,25 @@ func main() {
 	upstream := flag.String("upstream", "https://proxy.golang.org", "module proxy to fetch modules from")
 	dir := flag.String("dir", filepath.Join(os.TempDir(), "go-cache"), "directory to keep modules and build outputs in")
 	maxSize := flag.String("max-size", "4Gi", "most bytes that files in -dir and writes in progress can take, such as 512Mi or 8Gi; keep it below the size of -dir's volume")
+	controller := flag.String("controller", "check-gotest", "kube controller whose Pods may write to the build caches")
 	flag.Parse()
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	if err := run(log, *addr, *upstream, *dir, *maxSize); err != nil {
+	if err := run(log, *addr, *upstream, *dir, *maxSize, *controller); err != nil {
 		log.Error("exiting", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(log *slog.Logger, addr, upstream, dir, maxSize string) error {
+func run(log *slog.Logger, addr, upstream, dir, maxSize, controller string) error {
 	max, err := parseSize(maxSize)
 	if err != nil {
 		return fmt.Errorf("-max-size: %w", err)
 	}
 	if u, err := url.Parse(upstream); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 		return fmt.Errorf("-upstream %q isn't an http or https URL", upstream)
+	}
+	if controller == "" {
+		return errors.New("-controller can't be empty")
 	}
 	m := newMetrics()
 	st, err := openStore(dir, max, m, log)
@@ -128,7 +136,7 @@ func run(log *slog.Logger, addr, upstream, dir, maxSize string) error {
 		metrics:  m,
 		log:      log,
 	}
-	if r, err := inCluster(); err != nil {
+	if r, err := inCluster(controller); err != nil {
 		log.Warn("the build caches are off, because go-cache can't review tokens outside a cluster", "err", err)
 	} else {
 		s.reviewer = r
@@ -144,7 +152,7 @@ func run(log *slog.Logger, addr, upstream, dir, maxSize string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	log.Info("serving", "addr", addr, "upstream", upstream, "dir", dir, "max-size", maxSize)
+	log.Info("serving", "addr", addr, "upstream", upstream, "dir", dir, "max-size", maxSize, "controller", controller)
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
 	select {
