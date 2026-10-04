@@ -41,10 +41,10 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 	// controller a manager of their entries.
 	b.Status.Checks = nil
 	q, err := queue(ctx, b)
+	b.Status.Queue = q
 	if err != nil {
 		return err
 	}
-	b.Status.Queue = q
 	queued := b.Status.Queued
 	b.Status.Queued = nil
 

@@ -49,14 +49,6 @@ func queue(ctx context.Context, b *gitk8s.GitBranch) ([]string, error) {
 	if rule == nil || !queues(rule.Merge) || !slices.ContainsFunc(repo.Spec.Branches, isParent) {
 		return nil, nil
 	}
-	// Only reconciles of b write its queue, one at a time, so each starts
-	// from the queue that the last one wrote. The cache can lag that write,
-	// and rebuilding an older queue could put another branch at the front
-	// while the last front merges the parent in.
-	last, err := kube.Fetch[queueEntry](ctx, b.Namespace, b.Name)
-	if err != nil {
-		return nil, err
-	}
 	entries := kube.List[queueEntry](ctx, kube.InNamespace(b.Namespace),
 		kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: b.Spec.Repository}))
 	waiting := map[string]*gitk8s.Queued{}
@@ -64,6 +56,18 @@ func queue(ctx context.Context, b *gitk8s.GitBranch) ([]string, error) {
 		if e.Spec.Parent == b.Spec.Branch && e.Status.Queued != nil {
 			waiting[e.Spec.Branch] = e.Status.Queued
 		}
+	}
+	// Only reconciles of b write its queue, one at a time, so each starts
+	// from the queue that the last one wrote. The cache can lag that write,
+	// and rebuilding an older queue could put another branch at the front
+	// while the last front merges the parent in.
+	last, err := kube.Fetch[queueEntry](ctx, b.Namespace, b.Name)
+	if err != nil {
+		// kube writes the status of a failed reconcile too, and the cached
+		// queue can be older than the last one. Keep only its branches that
+		// are still queued, so that one that left doesn't get its old place
+		// back when it joins again.
+		return slices.DeleteFunc(b.Status.Queue, func(branch string) bool { return waiting[branch] == nil }), err
 	}
 	var q []string
 	if last != nil {
