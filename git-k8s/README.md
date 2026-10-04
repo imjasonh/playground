@@ -274,11 +274,15 @@ GitHub limits the requests that each installation of a GitHub App can make,
 and an installation is one owner's. When GitHub answers that an installation
 reached its limit, the controller stops publishing for that repository
 owner, for every app, until the time that GitHub gives, or for a minute. It
-logs other errors from GitHub and tries again later. Neither holds back
-checks or landings. To show whether the check-runs identity works, the
-repositories controller sets the `CheckRunsTokenIssued` condition on the
-`GitRepository`, which is `False` with Octo STS's answer when Octo STS
-doesn't issue a token. The `GitRepository` stays `Ready` either way.
+logs other errors from GitHub and tries again later. When GitHub refuses
+with a 4xx status to update the check run on a commit that a branch left,
+the controller logs the error and doesn't try again, so that the error
+doesn't hold up the check run on the branch's new commit. Rate limits and
+errors don't hold back checks or landings. To show whether the check-runs
+identity works, the repositories controller sets the `CheckRunsTokenIssued`
+condition on the `GitRepository`, which is `False` with Octo STS's answer
+when Octo STS doesn't issue a token. The `GitRepository` stays `Ready`
+either way.
 
 ### Security
 
