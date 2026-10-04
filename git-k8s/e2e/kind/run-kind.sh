@@ -663,18 +663,20 @@ writer_token="$(k -n "${NS}" create token default --duration=10m \
   --bound-object-kind=Pod --bound-object-name=cache-writer)"
 cache_ip="$(k -n go-cache get service go-cache -o jsonpath='{.spec.clusterIP}')"
 probe_output="$(printf probe | sha256sum | cut -d ' ' -f 1)"
-# put_probe uploads an output for the action named $1 with the Pod's token,
-# from a node, which reaches go-cache's Service like a test Pod. It writes
-# the response to /tmp/probe.txt on the node, and prints the status.
+# put_probe uploads an output with the Pod's token while the Pod is $1, from
+# a node, which reaches go-cache's Service like a test Pod. It writes the
+# response to /tmp/probe.txt on the node, logs the status and the body, and
+# prints the status.
 put_probe() {
-  local action
+  local action code
   action="$(printf '%s' "$1" | sha256sum | cut -d ' ' -f 1)"
-  docker exec "${CLUSTER}-control-plane" curl -sS -o /tmp/probe.txt -w '%{http_code}' -X PUT \
+  code="$(docker exec "${CLUSTER}-control-plane" curl -sS -o /tmp/probe.txt -w '%{http_code}' -X PUT \
     -H "Authorization: Bearer ${writer_token}" -H "Go-Output-Id: ${probe_output}" \
-    --data-binary probe "http://${cache_ip}/cache/${NS}/tested/${action}"
+    --data-binary probe "http://${cache_ip}/cache/${NS}/tested/${action}")"
+  echo "A write while the Pod is $1: ${code} $(docker exec "${CLUSTER}-control-plane" cat /tmp/probe.txt)" >&2
+  echo "${code}"
 }
 code="$(put_probe unlabeled)"
-docker exec "${CLUSTER}-control-plane" cat /tmp/probe.txt
 [[ "${code}" == 403 ]]
 docker exec "${CLUSTER}-control-plane" grep -q "Pod ${NS}/cache-writer isn't check-gotest's" /tmp/probe.txt
 # Anyone who can create Pods in the namespace can set check-gotest's label.
@@ -683,7 +685,6 @@ code="$(put_probe labeled)"
 [[ "${code}" == 201 ]]
 k -n "${NS}" delete pod cache-writer
 code="$(put_probe deleted)"
-docker exec "${CLUSTER}-control-plane" cat /tmp/probe.txt
 [[ "${code}" == 403 ]]
 echo "go-cache turned away a token from a Pod without check-gotest's label, took it once the Pod had the label, and turned it away once the Pod was gone."
 echo "::endgroup::"
