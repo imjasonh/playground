@@ -274,6 +274,22 @@ g log --oneline FETCH_HEAD
 echo "The gofmt check pushed a fix, main fast-forwarded to it, and c/fmt was deleted."
 echo "::endgroup::"
 
+echo "::group::The fix, the landing, and the deletion are events"
+# has_event succeeds when controller $1 recorded an event with reason $2 and
+# message $3, and prints the message.
+has_event() {
+  k -n "${NS}" get events --field-selector "reportingComponent=$1,reason=$2" \
+    -o jsonpath='{range .items[*]}{.message}{"\n"}{end}' | grep -Fx -- "$3"
+}
+fmt_fix="$(g rev-parse FETCH_HEAD)"
+fmt_from="$(g rev-parse FETCH_HEAD~2)"
+eventually 30 has_event check-gofmt PushedFix "pushed ${fmt_fix:0:12} to c/fmt: 1 of 2 Go files need gofmt: util/add.go"
+eventually 30 has_event merge Landed "fast-forwarded main from ${fmt_from:0:12} to c/fmt at ${fmt_fix:0:12}"
+eventually 30 has_event merge DeletedBranch "deleted c/fmt at ${fmt_fix:0:12} after it landed on main"
+k -n "${NS}" get events --sort-by=.metadata.creationTimestamp
+echo "kubectl get events lists the gofmt check's fix and the merge controller's landing and deletion of c/fmt."
+echo "::endgroup::"
+
 echo "::group::A risky branch waits for approval"
 g checkout -q -B c/auth FETCH_HEAD
 mkdir -p "${WORK}/auth"

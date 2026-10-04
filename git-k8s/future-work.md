@@ -375,9 +375,6 @@ These belong in kube, in their own pull requests:
   that only owns a custom type doesn't know all of the type's versions, so
   it can't safely update the CRD. It could still create a missing CRD and
   never update it.
-- kube has no Events API, so landings and fix pushes show up only in logs and
-  conditions. An event intent that kube carries out after a reconcile, and
-  that groups repeats, would show them in `kubectl describe`.
 - `Apply` drops `status`, so a controller can write another controller's
   status only by reconciling a view of its type, as each check does today.
 - The cache lags a controller's own writes, so a reconcile that runs just
