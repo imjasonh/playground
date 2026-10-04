@@ -166,8 +166,8 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		t.Errorf("with one policy at a later version, PoliciesInstalled = %+v", c)
 	}
 	policies[1].Annotations[policyVersionAnnotation] = later
-	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Newer" || strings.Contains(c.Message, "apply") ||
-		!strings.Contains(c.Message, "upgrade the core program: git-k8s-check-results and git-k8s-branches have a git-k8s.imjasonh.com/policy-version later than 2") {
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Newer" ||
+		c.Message != "upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release: git-k8s-check-results and git-k8s-branches have a git-k8s.imjasonh.com/policy-version later than 2" {
 		t.Errorf("with policies from a later release, PoliciesInstalled = %+v", c)
 	}
 	for _, p := range policies {

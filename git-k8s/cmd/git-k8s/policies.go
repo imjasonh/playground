@@ -68,9 +68,11 @@ func policiesCondition(ctx context.Context) kube.Condition {
 			Message: fmt.Sprintf("apply config/policy.yaml from this release: %s %s=%d", subject(outdated, "doesn't have", "don't have"), policyVersionAnnotation, policyVersion),
 		}
 	case len(newer) > 0:
+		// An upgrade that applies the policies before the core program looks
+		// the same as a rollback of the core program.
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.False, Reason: "Newer",
-			Message: fmt.Sprintf("upgrade the core program: %s a %s later than %d", subject(newer, "has", "have"), policyVersionAnnotation, policyVersion),
+			Message: fmt.Sprintf("upgrade the core program, or, if you rolled it back, apply config/policy.yaml from this release: %s a %s later than %d", subject(newer, "has", "have"), policyVersionAnnotation, policyVersion),
 		}
 	}
 	return kube.Condition{

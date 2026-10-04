@@ -371,7 +371,9 @@ annotation is missing, isn't a number, or is an earlier version, as with the
 policies of an earlier release, the reason is `Outdated`, and the message
 says to apply `config/policy.yaml` from the core program's release. If it's a
 later version, as with the policies of a later release, the reason is
-`Newer`, and the message says to upgrade the core program.
+`Newer`, and the message says to upgrade the core program or, if you rolled
+it back, to apply `config/policy.yaml` from its release. The core program
+can't tell a rollback from an upgrade that applies the policies first.
 
 ### Upgrade from checks that write status
 
