@@ -149,6 +149,13 @@ func (w *Work) Push(branch string) {
 	w.Git("push", "--quiet", "--force", w.remote, "HEAD:refs/heads/"+branch)
 }
 
+// PushRef pushes the current commit to any ref, such as one under
+// refs/git-k8s/, forcing the update.
+func (w *Work) PushRef(ref string) {
+	w.t.Helper()
+	w.Git("push", "--quiet", "--force", w.remote, "HEAD:"+ref)
+}
+
 // Fetch fetches a branch and returns the commit it points to.
 func (w *Work) Fetch(branch string) string {
 	w.t.Helper()
