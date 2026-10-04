@@ -128,9 +128,10 @@ type JobStatus struct {
 // another job, such as one with other commits or another task, starts a
 // new run. One whose Pod has another spec, such as after a deploy with
 // other flags, starts an unfinished run again in a new Pod, which doesn't
-// count as another run. If the run's Pod is deleted before the run
-// finishes, kube creates it again, which runs the agent again, so RunJob
-// counts another run.
+// count as another run. Either way, if that Pod still exists, such as after
+// the branch or a deploy moved back, RunJob follows it instead. If the
+// run's Pod is deleted before the run finishes, kube creates it again,
+// which runs the agent again, so RunJob counts another run.
 func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 	if st.Done && sameJob(r.jobPod(job, max(st.Attempt, 1)).Name, st.Pod) {
 		return JobStatus{Done: true, Message: fmt.Sprintf("the run in Pod %s already finished", st.Pod)}
@@ -172,6 +173,12 @@ func (x *run) startOrFollow(ctx context.Context) JobStatus {
 		return JobStatus{Message: "not starting the agent: " + why}
 	}
 	p := r.jobPod(job, 1)
+	// The Pod can still exist, such as when the branch moved back before
+	// kube deleted it, and its run counted when it started.
+	if kube.Get[podPhase](ctx, job.Namespace, p.Name) != nil {
+		*st = JobState{Runs: st.Runs, Pod: p.Name, Attempt: 1}
+		return x.follow(ctx, p)
+	}
 	if n := r.unfinishedPods(ctx, job.Namespace, p.Name); r.MaxPods > 0 && n >= r.MaxPods {
 		// Listing the Pods runs this again when one of them finishes.
 		kube.RequeueAfter(ctx, time.Minute)
@@ -197,9 +204,14 @@ func (x *run) restart(ctx context.Context, p *Pod) JobStatus {
 		c := x.job.Checkout
 		return x.prepareAgain(ctx, fmt.Sprintf("%s no longer points to %s", c.Branch, c.Head))
 	}
-	if wait, ok := x.r.day.take(time.Now(), x.r.MaxRunsPerDay); !ok {
-		kube.RequeueAfter(ctx, wait)
-		return x.status("waiting to start the agent again: %d agent runs started in the last 24 hours, the -max-runs-per-day limit", x.r.MaxRunsPerDay)
+	// After a rollback, p can still exist, and following it starts no
+	// agent. If it's being deleted, follow counts the Pod that kube creates
+	// again.
+	if kube.Get[podPhase](ctx, x.job.Namespace, p.Name) == nil {
+		if wait, ok := x.r.day.take(time.Now(), x.r.MaxRunsPerDay); !ok {
+			kube.RequeueAfter(ctx, wait)
+			return x.status("waiting to start the agent again: %d agent runs started in the last 24 hours, the -max-runs-per-day limit", x.r.MaxRunsPerDay)
+		}
 	}
 	x.st.Pod, x.st.UID = p.Name, ""
 	x.started = true

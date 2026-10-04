@@ -312,7 +312,10 @@ deploy that changes the agent Pods' spec, such as one with another
 Pods differently, the check starts each run in progress again in a new
 Pod, and kube deletes the old one. The agent starts over and costs as much
 as in a new run. A restarted run takes a place in `-max-runs-per-day`, or
-waits for one, but it doesn't count toward `maxAgentRuns`.
+waits for one, but it doesn't count toward `maxAgentRuns`. A rollback
+before the old Pod is gone returns the run to that Pod without taking a
+place. If kube was deleting that Pod, it creates the Pod again once it's
+gone, and the check counts another run, as for any deleted Pod.
 
 The check counts a branch's runs in its outputs on the branch's
 `GitBranch`, so a branch that's deleted and then pushed again can start

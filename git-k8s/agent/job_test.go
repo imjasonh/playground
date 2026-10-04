@@ -179,6 +179,47 @@ func TestRestartsAJobsRunWhenAFlagChanges(t *testing.T) {
 	}
 }
 
+func TestRollsBackAJobsRunToAPodThatStillExists(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	job := f.reviewJob()
+	st := &JobState{}
+	running := PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
+		{Name: "agent", State: ContainerState{Running: &struct{}{}}},
+	}}
+	p := f.startJob(job, st)
+	p.Status = running
+	f.runJob(job, st, p)
+	model := f.r.Model
+	f.r.Model = "composer-3"
+	_, rec := f.runJob(job, st, p)
+	pods := kube.Owned[Pod](rec)
+	if len(pods) != 1 {
+		t.Fatalf("owned Pods = %d, want the restarted run's Pod", len(pods))
+	}
+	q := pods[0]
+	q.Namespace, q.UID, q.Status = "default", "uid-"+q.Name, running
+	f.runJob(job, st, p, q)
+
+	t.Log("A rollback before the first Pod is gone goes back to that Pod, without a place in -max-runs-per-day.")
+	f.r.Model = model
+	now := time.Now()
+	p.DeletionTimestamp = &now
+	s, rec := f.runJob(job, st, p, q)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || pods[0].Name != p.Name || st.Pod != p.Name || st.Runs != 1 || len(f.r.day.starts) != 2 {
+		t.Fatalf("RunJob = %+v with state %+v, %d owned Pods, and %d runs in the last day, want run 1 in the first Pod and 2 runs in the last day", s, st, len(pods), len(f.r.day.starts))
+	}
+
+	t.Log("kube was deleting that Pod, so it creates the Pod again, which counts as another run.")
+	f.runJob(job, st, q)
+	again := *p
+	again.DeletionTimestamp, again.UID, again.Status = nil, "uid-again", PodStatus{Phase: "Pending"}
+	if s, _ := f.runJob(job, st, &again, q); s.Done || st.Runs != 2 || len(f.r.day.starts) != 3 {
+		t.Errorf("RunJob = %+v with state %+v and %d runs in the last day, want run 2 and 3 runs in the last day", s, st, len(f.r.day.starts))
+	}
+}
+
 func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	f := newFixture(t, "")
 	job := f.reviewJob()
