@@ -258,14 +258,17 @@ spec:
   url: '$1'
 EOF
 }
-if url_repository '--upload-pack=touch /tmp/pwned' | k apply --dry-run=server -f - 2>"${WORKDIR}/apply.err"; then
-  echo "the API server accepted a URL that starts with -" >&2
-  exit 1
-fi
-cat "${WORKDIR}/apply.err"
-grep -q 'spec.url' "${WORKDIR}/apply.err"
+for url in '--upload-pack=touch /tmp/pwned' 'ssh://%2doProxyCommand=touch/app.git' \
+  'ssh://[-oProxyCommand=touch]/app.git' 'ssh://[-oProxyCommand=touch]@example.com/app.git'; do
+  if url_repository "${url}" | k apply --dry-run=server -f - 2>"${WORKDIR}/apply.err"; then
+    echo "the API server accepted ${url}" >&2
+    exit 1
+  fi
+  cat "${WORKDIR}/apply.err"
+  grep -q 'spec.url' "${WORKDIR}/apply.err"
+done
 url_repository "git@[${GATEWAY}:2222]:app.git" | k apply --dry-run=server -f -
-echo "The API server rejected an option as a URL and accepted an scp-like address."
+echo "The API server rejected URLs that git could read as options and accepted an scp-like address."
 echo "::endgroup::"
 
 # remote_head prints a branch's commit in repository $2, or app.
