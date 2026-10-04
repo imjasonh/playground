@@ -13,8 +13,9 @@ import (
 
 // More Merged condition reasons, for squash and rebase landings.
 const (
-	// reasonNeedsRebase means a rebase landing can't copy the branch's
-	// commits onto the parent's head, so a person has to rebase it.
+	// reasonNeedsRebase means a squash or rebase landing can't copy the
+	// branch's commits onto the parent's head, so a person has to rebase
+	// them.
 	reasonNeedsRebase = "NeedsRebase"
 	// reasonRewritten means the merge controller pushed the squashed or
 	// rebased commits to the branch instead of the parent, so that the
@@ -41,7 +42,7 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 	verb := "squashed"
 	var landed, problem string
 	if spec.Merge.Landing == gitk8s.Squash {
-		landed, err = m.squash(ctx, local, spec, log, parent)
+		landed, problem, err = m.squash(ctx, local, spec, log, parent)
 	} else {
 		verb = "rebased"
 		landed, problem, err = m.rebase(ctx, local, spec, log, parent)
@@ -50,7 +51,8 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 	case err != nil:
 		return false, err
 	case problem != "":
-		report(b, reasonNeedsRebase, false, "can't rebase %s onto %s at %s, because %s", spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), problem)
+		report(b, reasonNeedsRebase, false, "can't %s %s onto %s at %s, because %s",
+			strings.ToLower(spec.Merge.Landing), spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), problem)
 		return true, nil
 	case landed == spec.Head:
 		return false, nil
@@ -96,23 +98,28 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 // parent's head. It returns the head when the head already is such a
 // commit, or when the branch is this controller's commit on the parent's
 // head followed only by checks' fixes. It returns the parent's head when
-// the branch changes no files.
-func (m *merger) squash(ctx context.Context, local *git.Repo, spec *gitk8s.GitBranchSpec, log []git.LogEntry, parent git.Commit) (string, error) {
+// the branch changes no files. A problem says why the branch can't be
+// squashed.
+func (m *merger) squash(ctx context.Context, local *git.Repo, spec *gitk8s.GitBranchSpec, log []git.LogEntry, parent git.Commit) (landed, problem string, err error) {
 	head := log[len(log)-1]
 	switch {
 	case slices.Equal(head.Parents, []string{spec.ParentHead}), m.fixedAfterSquash(spec, log):
-		return spec.Head, nil
+		return spec.Head, "", nil
 	case head.Tree == parent.Tree:
-		return spec.ParentHead, nil
+		return spec.ParentHead, "", nil
 	}
-	author, message := squashMessage(log)
-	return local.WriteCommit(ctx, git.NewCommit{
+	from, message := squashMessage(log)
+	if problem := copyProblem(from); problem != "" {
+		return "", problem, nil
+	}
+	landed, err = local.WriteCommit(ctx, git.NewCommit{
 		Tree:      head.Tree,
 		Parents:   []string{spec.ParentHead},
-		Author:    author,
+		Author:    from.Author,
 		Committer: m.committer(max(head.Time, parent.Time)),
 		Message:   message,
 	})
+	return landed, "", err
 }
 
 // fixedAfterSquash reports whether log starts with a commit that this
@@ -126,14 +133,15 @@ func (m *merger) fixedAfterSquash(spec *gitk8s.GitBranchSpec, log []git.LogEntry
 		!slices.ContainsFunc(log[1:], func(c git.LogEntry) bool { return !c.Fixer() })
 }
 
-// squashMessage returns the author and message of a commit that squashes
-// log's commits. When one commit that isn't a merge or a check's fix makes
-// the change, the squashed commit takes its author and message. Otherwise
-// the message lists every commit's subject, keeps the trailers of the
-// commits that aren't fixes, such as Signed-off-by, and credits the other
-// authors with Co-authored-by trailers. The message never has the fixer
-// trailer, so the squashed commit doesn't count as a fix.
-func squashMessage(log []git.LogEntry) (git.Signature, string) {
+// squashMessage returns the commit whose author a commit that squashes
+// log's commits takes, and the squashed commit's message. When one commit
+// that isn't a merge or a check's fix makes the change, the squashed
+// commit takes its author and message. Otherwise the message lists every
+// commit's subject, keeps the trailers of the commits that aren't fixes,
+// such as Signed-off-by, and credits the other authors with
+// Co-authored-by trailers. The message never has the fixer trailer, so the
+// squashed commit doesn't count as a fix.
+func squashMessage(log []git.LogEntry) (from git.LogEntry, message string) {
 	var commits, people []git.LogEntry
 	for _, c := range log {
 		if len(c.Parents) > 1 {
@@ -152,7 +160,7 @@ func squashMessage(log []git.LogEntry) (git.Signature, string) {
 	}
 	first := people[0]
 	if len(people) == 1 {
-		return first.Author, withoutFixerTrailers(first.Message)
+		return first, withoutFixerTrailers(first.Message)
 	}
 	var msg strings.Builder
 	msg.WriteString(first.Subject() + "\n\n")
@@ -179,7 +187,7 @@ func squashMessage(log []git.LogEntry) (git.Signature, string) {
 	if len(trailers) > 0 {
 		msg.WriteString("\n" + strings.Join(trailers, "\n") + "\n")
 	}
-	return first.Author, withoutFixerTrailers(msg.String())
+	return first, withoutFixerTrailers(msg.String())
 }
 
 // withoutFixerTrailers returns msg without the lines that git's trailer
@@ -226,6 +234,9 @@ func (m *merger) rebase(ctx context.Context, local *git.Repo, spec *gitk8s.GitBr
 		if picked == tree {
 			continue
 		}
+		if problem := copyProblem(c); problem != "" {
+			return "", problem, nil
+		}
 		when = max(c.Time, when)
 		onto, err = local.WriteCommit(ctx, git.NewCommit{
 			Tree:      picked,
@@ -243,6 +254,22 @@ func (m *merger) rebase(ctx context.Context, local *git.Repo, spec *gitk8s.GitBr
 		return "", "merge commits in the branch change files, and a rebase leaves merges out", nil
 	}
 	return onto, "", nil
+}
+
+// copyProblem says why a new commit can't take c's author, or returns "".
+// git refuses a name with only spaces, control characters, and ,:;<>"\',
+// and Log gives a name or a date that git can't read as "".
+func copyProblem(c git.LogEntry) string {
+	name := c.Author.Name
+	switch {
+	case name == "":
+		return fmt.Sprintf("%s's author has no name", gitk8s.Short(c.SHA))
+	case !strings.ContainsFunc(name, func(r rune) bool { return r > ' ' && !strings.ContainsRune(`,:;<>"\'`, r) }):
+		return fmt.Sprintf("%s's author has no name that git accepts, only %q", gitk8s.Short(c.SHA), name)
+	case c.Author.Date == "":
+		return fmt.Sprintf("%s's author has no date that git can read", gitk8s.Short(c.SHA))
+	}
+	return ""
 }
 
 // committer returns the merge controller's identity at a time. The times of

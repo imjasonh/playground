@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -75,6 +77,21 @@ func mergeParent(b *gitk8s.GitBranch, w *gittest.Work) {
 func commitAsAna(w *gittest.Work, message string) {
 	w.Git("add", "-A")
 	w.Git("commit", "--quiet", "--author=Ana Lima <ana@example.com>", "--date=1700000000 -0800", "-m", message)
+}
+
+// commitRaw commits the files in w's working tree with author and committer
+// headers that git commit doesn't write, and leaves w on the commit.
+func commitRaw(t *testing.T, w *gittest.Work, author, committer string) string {
+	t.Helper()
+	w.Git("add", "-A")
+	raw := fmt.Sprintf("tree %s\nparent %s\nauthor %s\ncommitter %s\n\nadd y\n", w.Git("write-tree"), w.Git("rev-parse", "HEAD"), author, committer)
+	path := filepath.Join(t.TempDir(), "commit")
+	if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sha := w.Git("hash-object", "-t", "commit", "--literally", "-w", path)
+	w.Git("reset", "--quiet", "--hard", sha)
+	return sha
 }
 
 // describeCommit returns a commit's parents, author, committer, and message.
@@ -189,9 +206,9 @@ func TestSquashMessage(t *testing.T) {
 		message: "Merge feature\n",
 	}} {
 		t.Run(tt.name, func(t *testing.T) {
-			author, message := squashMessage(tt.log)
-			if author != tt.author || message != tt.message {
-				t.Errorf("squashMessage = %+v, %q; want %+v, %q", author, message, tt.author, tt.message)
+			from, message := squashMessage(tt.log)
+			if from.Author != tt.author || message != tt.message {
+				t.Errorf("squashMessage = %+v, %q; want %+v, %q", from.Author, message, tt.author, tt.message)
 			}
 		})
 	}
@@ -408,6 +425,63 @@ func TestRebaseNeedsRebase(t *testing.T) {
 				t.Errorf("after a squash landing, state = %q and main's tree = %s, want %s and %s", b.Status.State, got, reasonLanded, want)
 			}
 		})
+	}
+}
+
+// Tools that write commit objects themselves can make an author that git
+// doesn't let a new commit have. A squash or rebase landing that would copy
+// such an author says which commit has it, instead of failing on every
+// reconcile. A committer time that git can't read doesn't stop a landing,
+// because the new commits have the merge controller as their committer.
+func TestAuthorsThatGitRefuses(t *testing.T) {
+	for name, tt := range map[string]struct {
+		author, committer string
+		problem           string
+	}{
+		"no name":           {author: "<ana@example.com> 1700000000 -0800", problem: "author has no name"},
+		"NUL in the author": {author: "Ana\x00Lima <ana@example.com> 1700000000 -0800", problem: "author has no name"},
+		"only punctuation":  {author: ",;: <ana@example.com> 1700000000 -0800", problem: `author has no name that git accepts, only ",;:"`},
+		"no date":           {author: "Ana Lima <ana@example.com>", problem: "author has no date that git can read"},
+		"committer without a date": {
+			author:    "Ana Lima <ana@example.com> 1700000000 -0800",
+			committer: "Test Author <author@example.com>",
+		},
+	} {
+		for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
+			t.Run(name+"/"+landing, func(t *testing.T) {
+				srv := gittest.NewServer(t, "")
+				b, w := branches(t, srv)
+				w.Branch("c/x", b.Spec.ParentHead)
+				w.Write("y.txt", "y\n")
+				committer := tt.committer
+				if committer == "" {
+					committer = "Test Author <author@example.com> " + testTime
+				}
+				odd := commitRaw(t, w, tt.author, committer)
+				moveParent(t, b, w, "m.txt", "m\n")
+				mergeParent(b, w)
+				refresh(t, b, w)
+				main := b.Spec.ParentHead
+				before := srv.Heads(t, "app")
+				if err := landAs(t, srv, b, landing); err != nil {
+					t.Fatal(err)
+				}
+				c := kube.FindCondition(b.Status.Conditions, "Merged")
+				if tt.problem == "" {
+					if c == nil || c.Reason != reasonLanded {
+						t.Errorf("Merged = %+v, want reason %s", c, reasonLanded)
+					}
+					return
+				}
+				if after := srv.Heads(t, "app"); !maps.Equal(after, before) {
+					t.Errorf("heads = %v, want %v", after, before)
+				}
+				msg := fmt.Sprintf("can't %s c/x onto main at %s, because %s's %s", strings.ToLower(landing), gitk8s.Short(main), gitk8s.Short(odd), tt.problem)
+				if c == nil || c.Status != kube.False || c.Reason != reasonNeedsRebase || c.Message != msg {
+					t.Errorf("Merged = %+v, want reason %s and message %q", c, reasonNeedsRebase, msg)
+				}
+			})
+		}
 	}
 }
 

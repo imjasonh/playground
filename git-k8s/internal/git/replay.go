@@ -21,9 +21,11 @@ type LogEntry struct {
 	SHA     string
 	Tree    string
 	Parents []string
-	Author  Signature
+	// Author has "" for a name, an email, or a date that git can't read.
+	Author Signature
 	// Committer is the committer's name and email, and Time is the
-	// committer time, in seconds since the Unix epoch.
+	// committer time, in seconds since the Unix epoch, or 0 when git can't
+	// read it.
 	Committer Identity
 	Time      int64
 	Message   string
@@ -68,9 +70,14 @@ func (r *Repo) Log(ctx context.Context, base, head string) ([]LogEntry, error) {
 	var entries []LogEntry
 	for f := fields; len(f) > 1; f = f[n:] {
 		parents := strings.Fields(f[2])
-		t, err := strconv.ParseInt(f[8], 10, 64)
-		if err != nil || !objectNames(append([]string{f[0], f[1]}, parents...)) {
+		if !objectNames(append([]string{f[0], f[1]}, parents...)) {
 			return nil, fmt.Errorf("git log: unexpected commit %q", f[0])
+		}
+		// git prints a committer time that it can't read as "", but not
+		// one that's too big for an int64.
+		t, err := strconv.ParseInt(f[8], 10, 64)
+		if err != nil {
+			t = 0
 		}
 		entries = append(entries, LogEntry{
 			SHA:       f[0],
