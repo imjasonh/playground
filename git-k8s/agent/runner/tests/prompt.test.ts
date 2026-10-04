@@ -62,8 +62,9 @@ test("lists the paths that the change touches", () => {
     { status: "R", path: "new name", from: "old" },
     { status: "A", path: "x\nM fake" },
     { status: "D", path: "a -> b" },
+    { status: "A", path: "line\u2028paragraph\u2029end" },
   ]);
-  assert.match(prompt, /or T \(changed type\):\n\nM a\nR old -> new name\nA "x\\nM fake"\nD "a -> b"\n\nThe change from/);
+  assert.match(prompt, /or T \(changed type\):\n\nM a\nR old -> new name\nA "x\\nM fake"\nD "a -> b"\nA "line\\u2028paragraph\\u2029end"\n\nThe change from/);
   assert.doesNotMatch(prompt, /not in the diff/);
   assert.doesNotMatch(buildPrompt(preparePod({}, {}), "", ""), /paths that the change touches/);
   assert.match(buildPrompt(preparePod({}, {}), "", "", []), /changed type\):\n\n\(none\)\n/);
