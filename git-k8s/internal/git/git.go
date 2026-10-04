@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,10 +23,14 @@ import (
 // FixerTrailer is the commit trailer that marks commits pushed by checks.
 const FixerTrailer = "Git-K8s-Fixer"
 
-// Auth is a username and password for HTTP basic authentication.
+// Auth is a username and password for HTTP basic authentication, or a
+// bearer token.
 type Auth struct {
 	Username string
 	Password string
+	// Token, when set, is sent as a bearer token instead of the username
+	// and password.
+	Token string
 }
 
 // Remote is a remote repository's URL and credentials.
@@ -67,6 +72,10 @@ type opts struct {
 	auth  *Auth
 	stdin []byte
 	env   []string
+	// in and out, when set, stream the command's standard input and
+	// output instead of stdin and the result's stdout.
+	in  io.Reader
+	out io.Writer
 }
 
 type result struct {
@@ -107,16 +116,24 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 	if o.auth != nil {
 		// Pass the header in the environment, not argv, so it doesn't show
 		// up in process listings.
-		token := base64.StdEncoding.EncodeToString([]byte(o.auth.Username + ":" + o.auth.Password))
-		env = append(env, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.extraHeader",
-			"GIT_CONFIG_VALUE_0=Authorization: Basic "+token)
+		header := "Authorization: Bearer " + o.auth.Token
+		if o.auth.Token == "" {
+			header = "Authorization: Basic " + base64.StdEncoding.EncodeToString([]byte(o.auth.Username+":"+o.auth.Password))
+		}
+		env = append(env, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.extraHeader", "GIT_CONFIG_VALUE_0="+header)
 	}
 	cmd.Env = append(env, o.env...)
-	if o.stdin != nil {
+	switch {
+	case o.in != nil:
+		cmd.Stdin = o.in
+	case o.stdin != nil:
 		cmd.Stdin = bytes.NewReader(o.stdin)
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if o.out != nil {
+		cmd.Stdout = o.out
+	}
 	err := cmd.Run()
 	res := result{stdout: stdout.Bytes(), stderr: strings.TrimSpace(stderr.String())}
 	var exit *exec.ExitError
@@ -175,10 +192,100 @@ func (g *Git) Open(ctx context.Context, dir string) (*Repo, error) {
 	return r, nil
 }
 
+// Advertise writes the refs of the repository at dir for the info/refs
+// response to a smart HTTP request. Service is upload-pack or receive-pack,
+// and protocol is the request's Git-Protocol header.
+func (g *Git) Advertise(ctx context.Context, service, dir, protocol string, w io.Writer) error {
+	return g.service(ctx, service, dir, protocol, nil, w, "--advertise-refs")
+}
+
+// Serve runs upload-pack or receive-pack on the repository at dir with the
+// body of a smart HTTP request, and writes the response to w.
+func (g *Git) Serve(ctx context.Context, service, dir, protocol string, r io.Reader, w io.Writer) error {
+	return g.service(ctx, service, dir, protocol, r, w)
+}
+
+func (g *Git) service(ctx context.Context, service, dir, protocol string, r io.Reader, w io.Writer, extra ...string) error {
+	if service != "upload-pack" && service != "receive-pack" {
+		return fmt.Errorf("git: no service %q", service)
+	}
+	args := append(append([]string{service, "--stateless-rpc"}, extra...), dir)
+	_, err := g.run(ctx, "", args, opts{in: r, out: w, env: []string{"GIT_PROTOCOL=" + protocol}})
+	return err
+}
+
 // Repo is a local bare repository.
 type Repo struct {
 	git *Git
 	Dir string
+}
+
+// Config returns the value of a key in the repository's configuration, or
+// false if the key isn't set.
+func (r *Repo) Config(ctx context.Context, key string) (string, bool, error) {
+	res, err := r.git.exec(ctx, r.Dir, []string{"config", "--get", key}, opts{})
+	switch {
+	case err != nil:
+		return "", false, err
+	case res.code == 0:
+		return strings.TrimSpace(string(res.stdout)), true, nil
+	case res.code == 1:
+		return "", false, nil
+	}
+	return "", false, &Error{Command: "config", Code: res.code, Stderr: res.stderr}
+}
+
+// SetConfig sets a key in the repository's configuration.
+func (r *Repo) SetConfig(ctx context.Context, key, value string) error {
+	_, err := r.run(ctx, "config", key, value)
+	return err
+}
+
+// Refs lists the refs that match patterns, such as refs/heads, as a map
+// from ref name to commit SHA. A pattern matches a ref with that name and
+// the refs under it.
+func (r *Repo) Refs(ctx context.Context, patterns ...string) (map[string]string, error) {
+	out, err := r.run(ctx, append([]string{"for-each-ref", "--format=%(objectname) %(refname)"}, patterns...)...)
+	if err != nil {
+		return nil, err
+	}
+	refs := map[string]string{}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		if sha, ref, ok := strings.Cut(line, " "); ok {
+			refs[ref] = sha
+		}
+	}
+	return refs, nil
+}
+
+// UpdateRefs changes refs in the repository in one transaction. Each
+// update carries a lease: either every ref points at the commit that its
+// update expects and they all change, or nothing changes and the error
+// wraps ErrRejected.
+func (r *Repo) UpdateRefs(ctx context.Context, updates ...RefUpdate) error {
+	var in strings.Builder
+	for _, u := range updates {
+		switch {
+		case u.New != "" && u.Old != "":
+			fmt.Fprintf(&in, "update %s %s %s\n", u.Ref, u.New, u.Old)
+		case u.New != "":
+			fmt.Fprintf(&in, "create %s %s\n", u.Ref, u.New)
+		case u.Old != "":
+			fmt.Fprintf(&in, "delete %s %s\n", u.Ref, u.Old)
+		default:
+			fmt.Fprintf(&in, "verify %s\n", u.Ref)
+		}
+	}
+	res, err := r.git.exec(ctx, r.Dir, []string{"update-ref", "--stdin"}, opts{stdin: []byte(in.String())})
+	switch {
+	case err != nil:
+		return err
+	case res.code == 0:
+		return nil
+	case strings.Contains(res.stderr, "cannot lock ref"):
+		return fmt.Errorf("%w: %s", ErrRejected, res.stderr)
+	}
+	return &Error{Command: "update-ref", Code: res.code, Stderr: res.stderr}
 }
 
 func (r *Repo) run(ctx context.Context, args ...string) ([]byte, error) {
@@ -196,6 +303,15 @@ func (r *Repo) Fetch(ctx context.Context, remote Remote, branches ...string) err
 	for _, b := range branches {
 		args = append(args, "+refs/heads/"+b+":refs/remotes/origin/"+b)
 	}
+	_, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth})
+	return err
+}
+
+// FetchPrune fetches the refs that refspec maps from the remote, such as
+// +refs/heads/*:refs/copy/*, and deletes the local refs that it maps to
+// that the remote no longer has.
+func (r *Repo) FetchPrune(ctx context.Context, remote Remote, refspec string) error {
+	args := []string{"fetch", "--quiet", "--no-tags", "--prune", "--no-write-fetch-head", remote.URL, refspec}
 	_, err := r.git.run(ctx, r.Dir, args, opts{auth: remote.Auth})
 	return err
 }
@@ -308,8 +424,9 @@ type RefUpdate struct {
 	Old string
 }
 
-// ErrRejected is wrapped by errors from Push when the remote refused an
-// update, usually because a ref no longer pointed at the expected commit.
+// ErrRejected is wrapped by errors from Push and UpdateRefs when an update
+// was refused, usually because a ref no longer pointed at the expected
+// commit.
 var ErrRejected = errors.New("push rejected")
 
 // Push updates refs on the remote atomically. Each update carries a lease,
@@ -340,6 +457,44 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 		return &Error{Command: "push", Code: res.code, Stderr: res.stderr}
 	}
 	return nil
+}
+
+// PushEach pushes updates to the remote, each with its own lease, so that a
+// rejected update doesn't stop the others. It returns why the remote
+// rejected each update that it rejected, by ref. An error means that the
+// push didn't happen.
+func (r *Repo) PushEach(ctx context.Context, remote Remote, updates ...RefUpdate) (map[string]string, error) {
+	if len(updates) == 0 {
+		return nil, nil
+	}
+	args := []string{"push", "--porcelain", remote.URL}
+	for _, u := range updates {
+		args = append(args, "--force-with-lease="+u.Ref+":"+u.Old)
+	}
+	for _, u := range updates {
+		args = append(args, u.New+":"+u.Ref)
+	}
+	res, err := r.git.exec(ctx, r.Dir, args, opts{auth: remote.Auth})
+	if err != nil {
+		return nil, err
+	}
+	rejected := map[string]string{}
+	reported := false
+	for line := range strings.SplitSeq(string(res.stdout), "\n") {
+		// Each ref's line is FLAG, FROM:TO, and a summary, separated by tabs.
+		f := strings.SplitN(line, "\t", 3)
+		if len(f) != 3 || len(f[0]) != 1 {
+			continue
+		}
+		reported = true
+		if f[0] == "!" {
+			rejected[f[1][strings.LastIndex(f[1], ":")+1:]] = f[2]
+		}
+	}
+	if !reported && res.code != 0 {
+		return nil, &Error{Command: "push", Code: res.code, Stderr: res.stderr}
+	}
+	return rejected, nil
 }
 
 // CountFixerCommits counts the commits in head but not in base that carry

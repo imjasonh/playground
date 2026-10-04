@@ -1,7 +1,11 @@
 package git_test
 
 import (
+	"bytes"
 	"errors"
+	"maps"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -10,6 +14,177 @@ import (
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 )
+
+func TestBearerToken(t *testing.T) {
+	headers := make(chan string, 1)
+	hs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case headers <- r.Header.Get("Authorization"):
+		default:
+		}
+		http.Error(w, "no", http.StatusForbidden)
+	}))
+	defer hs.Close()
+	remote := git.Remote{URL: hs.URL + "/app.git", Auth: &git.Auth{Username: "u", Password: "p", Token: "t0ken"}}
+	if _, err := (&git.Git{}).LsRemote(t.Context(), remote); err == nil {
+		t.Fatal("ls-remote succeeded against a server that refuses everything")
+	}
+	if got := <-headers; got != "Bearer t0ken" {
+		t.Errorf("Authorization = %q, want the bearer token instead of basic auth", got)
+	}
+}
+
+func TestRefTransactions(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	one := w.Commit("one")
+	two := w.Commit("two")
+	w.Push("main")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateRefs(ctx,
+		git.RefUpdate{Ref: "refs/heads/a", New: one},
+		git.RefUpdate{Ref: "refs/heads/a/b", New: two},
+	); err == nil {
+		t.Fatal("created refs/heads/a and refs/heads/a/b together")
+	}
+	if err := repo.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/a", New: one}, git.RefUpdate{Ref: "refs/x/b", New: two}); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"refs/heads/a": one, "refs/x/b": two, "refs/remotes/origin/main": two}
+	if refs, err := repo.Refs(ctx); err != nil || !maps.Equal(refs, want) {
+		t.Fatalf("Refs() = %v, %v; want %v", refs, err, want)
+	}
+	if refs, err := repo.Refs(ctx, "refs/heads", "refs/x/b"); err != nil || len(refs) != 2 || refs["refs/x/b"] != two {
+		t.Errorf("Refs(refs/heads, refs/x/b) = %v, %v", refs, err)
+	}
+
+	t.Log("One stale lease leaves every ref as it was.")
+	err = repo.UpdateRefs(ctx,
+		git.RefUpdate{Ref: "refs/heads/a", New: two, Old: one},
+		git.RefUpdate{Ref: "refs/x/b", Old: one},
+	)
+	if !errors.Is(err, git.ErrRejected) {
+		t.Fatalf("err = %v, want ErrRejected", err)
+	}
+	for _, u := range []git.RefUpdate{{Ref: "refs/x/b", New: one}, {Ref: "refs/heads/a"}, {Ref: "refs/heads/missing", Old: one}} {
+		if err := repo.UpdateRefs(ctx, u); !errors.Is(err, git.ErrRejected) {
+			t.Errorf("UpdateRefs(%+v) = %v, want ErrRejected", u, err)
+		}
+	}
+	if err := repo.UpdateRefs(ctx, git.RefUpdate{Ref: "refs/heads/missing"}, git.RefUpdate{Ref: "refs/heads/a", New: two, Old: one}, git.RefUpdate{Ref: "refs/x/b", Old: two}); err != nil {
+		t.Fatal(err)
+	}
+	if refs, _ := repo.Refs(ctx, "refs/heads", "refs/x"); !maps.Equal(refs, map[string]string{"refs/heads/a": two}) {
+		t.Errorf("refs = %v, want only refs/heads/a at %s", refs, two)
+	}
+
+	if v, ok, err := repo.Config(ctx, "gitk8s.uid"); err != nil || ok || v != "" {
+		t.Errorf("Config of an unset key = %q, %v, %v", v, ok, err)
+	}
+	if err := repo.SetConfig(ctx, "gitk8s.uid", "1234"); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok, err := repo.Config(ctx, "gitk8s.uid"); err != nil || !ok || v != "1234" {
+		t.Errorf("Config = %q, %v, %v; want 1234", v, ok, err)
+	}
+}
+
+func TestFetchPruneAndPushEach(t *testing.T) {
+	srv := gittest.NewServer(t, "pw")
+	w := srv.NewWork(t, "app")
+	main := w.Commit("main")
+	w.Push("main")
+	w.Push("old")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := srv.Remote("app")
+	const refspec = "+refs/heads/*:refs/copy/heads/*"
+	if err := repo.FetchPrune(ctx, remote, refspec); err != nil {
+		t.Fatal(err)
+	}
+	if refs, _ := repo.Refs(ctx); !maps.Equal(refs, map[string]string{"refs/copy/heads/main": main, "refs/copy/heads/old": main}) {
+		t.Fatalf("after fetching, refs = %v", refs)
+	}
+	if err := repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/old", Old: main}); err != nil {
+		t.Fatal(err)
+	}
+	w.Write("next.txt", "next\n")
+	next := w.Commit("next")
+	w.Push("main")
+	if err := repo.FetchPrune(ctx, remote, refspec); err != nil {
+		t.Fatal(err)
+	}
+	if refs, _ := repo.Refs(ctx); !maps.Equal(refs, map[string]string{"refs/copy/heads/main": next}) {
+		t.Fatalf("after the remote deleted old, refs = %v", refs)
+	}
+
+	t.Log("A stale lease rejects only its own update.")
+	rejected, err := repo.PushEach(ctx, remote,
+		git.RefUpdate{Ref: "refs/heads/main", New: main, Old: main},
+		git.RefUpdate{Ref: "refs/heads/new", New: next},
+		git.RefUpdate{Ref: "refs/heads/gone", Old: main},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rejected) != 2 || rejected["refs/heads/main"] == "" || rejected["refs/heads/gone"] == "" {
+		t.Errorf("rejected = %v, want main and gone", rejected)
+	}
+	if heads := srv.Heads(t, "app"); !maps.Equal(heads, map[string]string{"main": next, "new": next}) {
+		t.Errorf("heads = %v", heads)
+	}
+	rejected, err = repo.PushEach(ctx, remote, git.RefUpdate{Ref: "refs/heads/new", Old: next}, git.RefUpdate{Ref: "refs/heads/main", New: main, Old: next})
+	if err != nil || len(rejected) != 0 {
+		t.Fatalf("PushEach = %v, %v", rejected, err)
+	}
+	if heads := srv.Heads(t, "app"); !maps.Equal(heads, map[string]string{"main": main}) {
+		t.Errorf("heads = %v, want main moved back and new deleted", heads)
+	}
+
+	bad := remote
+	bad.Auth = &git.Auth{Username: "git-k8s", Password: "wrong"}
+	if _, err := repo.PushEach(ctx, bad, git.RefUpdate{Ref: "refs/heads/main", New: next, Old: main}); err == nil {
+		t.Error("PushEach with the wrong password succeeded")
+	}
+}
+
+func TestServe(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	main := w.Commit("main")
+	w.Push("main")
+	ctx := t.Context()
+	g := &git.Git{}
+	repo, err := g.Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main"); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := g.Advertise(ctx, "upload-pack", repo.Dir, "", &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), main+" refs/remotes/origin/main") {
+		t.Errorf("advertisement = %q, want refs/remotes/origin/main", out.String())
+	}
+	if err := g.Serve(ctx, "http-backend", repo.Dir, "", strings.NewReader(""), &out); err == nil {
+		t.Error("Serve ran a service other than upload-pack and receive-pack")
+	}
+}
 
 func TestLsRemoteNeedsCredentials(t *testing.T) {
 	srv := gittest.NewServer(t, "s3cret")
