@@ -360,7 +360,7 @@ func (r *Repo) CountCommits(ctx context.Context, base, head string, trailers ...
 	for _, t := range trailers {
 		args = append(args, "--grep=^"+t+":")
 	}
-	args = append(args, head)
+	args = append(args, "--end-of-options", head)
 	if base != "" {
 		args = append(args, "^"+base)
 	}

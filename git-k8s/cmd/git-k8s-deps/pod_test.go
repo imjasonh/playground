@@ -18,7 +18,7 @@ import (
 	"github.com/imjasonh/playground/kube"
 )
 
-func TestPodNames(t *testing.T) {
+func TestPod(t *testing.T) {
 	u := &updater{goImage: "go", gitImage: "git", resultImage: "agent-runner", timeout: time.Minute, proxy: newProxy([]string{"https://proxy.example.com"}, time.Hour, time.Now)}
 	b := &Branch{Object: kube.Meta("app-main", nil)}
 	b.Spec.Branch = "main"
@@ -27,6 +27,11 @@ func TestPodNames(t *testing.T) {
 	p := u.pod(b, repo, "0123abcd", 0, ups)
 	if got, want := env(p.Spec.InitContainers[1], "UPDATES"), "example.com/greet v1.1.0 . tools\n"; got != want {
 		t.Errorf("UPDATES = %q, want %q", got, want)
+	}
+	for _, c := range p.Spec.InitContainers {
+		if got := env(c, "GIT_ALLOW_PROTOCOL"); got != allowProtocol {
+			t.Errorf("the %s container's GIT_ALLOW_PROTOCOL = %q, want %q", c.Name, got, allowProtocol)
+		}
 	}
 	if again := u.pod(b, repo, "0123abcd", 0, ups); again.Name != p.Name {
 		t.Errorf("the same Pod has names %s and %s", p.Name, again.Name)
@@ -63,7 +68,7 @@ func TestScripts(t *testing.T) {
 	publish("example.com/other", "v1.0.1", "package other\n\nconst X = 1\n")
 
 	home := t.TempDir()
-	base := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0"}
+	base := []string{"HOME=" + home, "PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_ALLOW_PROTOCOL=" + allowProtocol}
 	goEnv := append(base,
 		"GOPATH="+filepath.Join(home, "go"), "GOCACHE="+filepath.Join(home, "go-build"),
 		"GOTOOLCHAIN=local", "GOWORK=off", "GOPROXY=file://"+filepath.ToSlash(root), "GOSUMDB=off", "CGO_ENABLED=0",
@@ -118,6 +123,18 @@ func TestScripts(t *testing.T) {
 	}
 	if _, err := os.Stat(marker); !os.IsNotExist(err) {
 		t.Errorf("prepare ran the URL's --upload-pack: %v", err)
+	}
+	t.Log("A URL can't name a remote helper.")
+	bin, ran := t.TempDir(), filepath.Join(t.TempDir(), "ran")
+	if err := os.WriteFile(filepath.Join(bin, "git-remote-evil"), []byte("#!/bin/sh\ntouch "+ran+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	helper := append(prepare[:len(prepare):len(prepare)], "URL=evil::x", "HEAD="+head, "REPO="+filepath.Join(src, "helper"), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if out, err := run(src, prepareScript, helper); err == nil || !strings.Contains(out, "not allowed") {
+		t.Errorf("prepare with a remote helper's URL = %v, want git to refuse the transport\n%s", err, out)
+	}
+	if _, err := os.Stat(ran); !os.IsNotExist(err) {
+		t.Errorf("prepare ran the remote helper: %v", err)
 	}
 	if out, err := run(src, prepareScript, append(prepare, "HEAD="+head)); err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)

@@ -141,6 +141,9 @@ func TestCountCommits(t *testing.T) {
 			t.Errorf("CountCommits(%.7s, %v) = %d, %v; want %d", c.base, c.trailers, n, err, c.want)
 		}
 	}
+	if n, err := repo.CountCommits(ctx, "", "--all"); err == nil {
+		t.Errorf("CountCommits of --all = %d, want an error for a revision that doesn't exist", n)
+	}
 }
 
 func TestMergeTreeConflicts(t *testing.T) {

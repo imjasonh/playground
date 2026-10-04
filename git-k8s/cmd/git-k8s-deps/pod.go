@@ -50,6 +50,10 @@ const (
 // well under agent.FetchResult's limit.
 const maxBatch = 10
 
+// allowProtocol is GIT_ALLOW_PROTOCOL for git in update Pods. It keeps a
+// repository URL from naming a remote helper, which git runs as a program.
+const allowProtocol = "http:https:git:ssh:file"
+
 // prepareScript runs in the prepare container. It checks out the parent at
 // HEAD, or exits with status 3 if the parent moved. The attributes file
 // makes the files match their blobs, so the go.mod and go.sum files that
@@ -162,6 +166,7 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 		{Name: "REPO", Value: repoDir},
 		{Name: "HOME", Value: "/tmp"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
+		{Name: "GIT_ALLOW_PROTOCOL", Value: allowProtocol},
 	}
 	if ref := repo.Spec.SecretRef; ref != nil {
 		prepareEnv = append(prepareEnv,
@@ -222,6 +227,7 @@ func (u *updater) pod(b *Branch, repo *gitk8s.Repository, head string, attempt i
 				{Name: "GOSUMDB", Value: u.goSumDB},
 				{Name: "CGO_ENABLED", Value: "0"},
 				{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
+				{Name: "GIT_ALLOW_PROTOCOL", Value: allowProtocol},
 			},
 			VolumeMounts: []agent.VolumeMount{
 				{Name: "src", MountPath: "/src"},
