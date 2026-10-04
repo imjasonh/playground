@@ -173,6 +173,15 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		!strings.HasSuffix(c.Message, "; run "+fmt.Sprintf(warns, "git-k8s-branches")+", then run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again") {
 		t.Errorf("without git-k8s-check-results, and with git-k8s-branches warning while admin-branches denies, PoliciesInstalled = %+v", c)
 	}
+	// A binding limited with matchResources doesn't enforce the policy for every
+	// request, so the message gives the consequences instead.
+	narrow := &admissionPolicyBinding{Object: kube.Meta("narrow-branches", nil)}
+	narrow.Spec.PolicyName, narrow.Spec.ValidationActions = "git-k8s-branches", []string{"Deny"}
+	narrow.Spec.MatchResources = &matchResources{ObjectSelector: &labelSelector{MatchLabels: map[string]string{"tier": "web"}}}
+	if c := reconcile(append([]any{narrow}, world...)...); c.Status != kube.False || c.Reason != "NotDenying" ||
+		c.Message != "the binding git-k8s-branches doesn't deny every request that its policy rejects, so git-k8s service accounts can approve branches, and checks can change GitBranch objects; run "+fmt.Sprintf(warns, "git-k8s-branches") {
+		t.Errorf("with git-k8s-branches warning while narrow-branches is limited, PoliciesInstalled = %+v", c)
+	}
 	r.installPolicies = false
 	if c := reconcile(append([]any{admin}, world...)...); c.Status != kube.True {
 		t.Errorf("with git-k8s-branches warning while admin-branches denies, and policies that the program doesn't install, PoliciesInstalled = %+v", c)
