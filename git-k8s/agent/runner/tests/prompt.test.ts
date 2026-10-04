@@ -35,13 +35,16 @@ test("shortens a long diff", () => {
 
 test("holds both sides of a merge and the files that conflict", () => {
   const task = preparePod({}, {}, { branch: "feature", base: "abc", head: "def", edit: true });
-  const merge: Merge = { commit: "fed", name: "main", conflictsFile: "", diffFile: "", logFile: "" };
+  const merge: Merge = { commit: "fed", name: "the external repository's feature", conflictsFile: "", diffFile: "", logFile: "" };
   const prompt = buildMergePrompt(task, merge, ["a.txt", "b/c.txt"], { diff: "+ours\n", log: "def Ours\n" }, { diff: "+theirs\n", log: "fed Theirs\n" });
-  assert.match(prompt, /\nBranch: feature\nHead commit: def\nMerging: main, at commit fed\nMerge base: abc\n/);
-  assert.match(prompt, /\n<<<<<<< def\nthe branch's lines\n\|\|\|\|\|\|\| abc\nthe merge base's lines\n=======\nmain's lines\n>>>>>>> fed\n/);
+  assert.match(prompt, /\nBranch: feature\nHead commit: def\nMerging: the external repository's feature, at commit fed\nMerge base: abc\n/);
+  assert.match(prompt, /\n<<<<<<< def\nthe lines from the branch\n\|\|\|\|\|\|\| abc\nthe lines from the merge base\n=======\nthe lines from the external repository's feature\n>>>>>>> fed\n/);
   assert.match(prompt, /\nThe files that conflict:\n\n- a\.txt\n- b\/c\.txt\n/);
-  assert.match(prompt, /\nThe branch's commits since the merge base, newest first:\n\ndef Ours\n\nThe change from the merge base to the head commit:\n\n```diff\n\+ours\n\n```\n/);
-  assert.match(prompt, /\nmain's commits since the merge base, newest first:\n\nfed Theirs\n\nThe change from the merge base to main:\n\n```diff\n\+theirs\n\n```\n/);
+  assert.match(prompt, /\nThe commits on the branch since the merge base, newest first:\n\ndef Ours\n\nThe change from the merge base to the head commit:\n\n```diff\n\+ours\n\n```\n/);
+  assert.match(
+    prompt,
+    /\nThe commits on the external repository's feature since the merge base, newest first:\n\nfed Theirs\n\nThe change from the merge base to the external repository's feature:\n\n```diff\n\+theirs\n\n```\n/,
+  );
   assert.match(prompt, /Edit only the files that conflict/);
   assert.ok(prompt.endsWith(`or why you couldn't"}`));
 });
