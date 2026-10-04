@@ -93,11 +93,12 @@ func (p *publisher) publish(checks map[string]gitk8s.CheckResult) ([]string, err
 }
 
 // runs lists acme/app's check runs as "NAME@COMMIT STATUS CONCLUSION:
-// SUMMARY".
+// SUMMARY", without the code block around a result's message.
 func runs(gh *gittest.GitHub) []string {
 	var out []string
 	for _, r := range gh.Fake.CheckRuns("acme/app") {
-		out = append(out, fmt.Sprintf("%s@%s %s %s: %s", r.Name, gitk8s.Short(r.HeadSHA), r.Status, r.Conclusion, r.Output.Summary))
+		summary := strings.TrimSuffix(strings.TrimPrefix(r.Output.Summary, "```\n"), "\n```")
+		out = append(out, fmt.Sprintf("%s@%s %s %s: %s", r.Name, gitk8s.Short(r.HeadSHA), r.Status, r.Conclusion, summary))
 	}
 	return out
 }
@@ -140,8 +141,8 @@ func TestPublishesCheckRuns(t *testing.T) {
 		"git-k8s/base@" + h + " completed success: builds on main",
 		"git-k8s/gofmt@" + h + " in_progress : Running",
 	})
-	if r := gh.Fake.CheckRuns("acme/app")[0]; r.ExternalID != "default/app" || r.Output.Title != "Passed" {
-		t.Errorf("check run = %+v, want external ID default/app and title Passed", r)
+	if r := gh.Fake.CheckRuns("acme/app")[0]; r.ExternalID != "default/app" || r.Output.Title != "Passed" || r.Output.Summary != "```\nbuilds on main\n```" {
+		t.Errorf("check run = %+v, want external ID default/app, title Passed, and the message in a code block", r)
 	}
 
 	t.Log("Results that stay the same cost no requests.")
@@ -169,7 +170,7 @@ func TestPublishesCheckRuns(t *testing.T) {
 		"git-k8s/gofmt@" + h + " completed failure: x.go isn't formatted",
 		"git-k8s/gofmt@" + h + " completed neutral: x.go isn't formatted; pushed " + f,
 	})
-	if r := gh.Fake.CheckRuns("acme/app")[2]; r.Output.Text != "- fix: "+fix {
+	if r := gh.Fake.CheckRuns("acme/app")[2]; r.Output.Text != "```\nfix: "+fix+"\n```" {
 		t.Errorf("text = %q, want the fix output", r.Output.Text)
 	}
 
@@ -421,23 +422,45 @@ func TestRunFor(t *testing.T) {
 		status, conclusion, summary string
 	}{
 		{gitk8s.CheckResult{State: gitk8s.Running}, "in_progress", "", "Running"},
-		{gitk8s.CheckResult{State: gitk8s.Passed, Message: "ok"}, "completed", "success", "ok"},
+		{gitk8s.CheckResult{State: gitk8s.Passed, Message: "ok"}, "completed", "success", "```\nok\n```"},
 		{gitk8s.CheckResult{State: gitk8s.Failed}, "completed", "failure", "Failed"},
-		{gitk8s.CheckResult{State: gitk8s.Error, Message: "boom"}, "completed", "failure", "boom"},
+		{gitk8s.CheckResult{State: gitk8s.Error, Message: "boom"}, "completed", "failure", "```\nboom\n```"},
 		{gitk8s.CheckResult{State: gitk8s.Fixed}, "completed", "neutral", "Fixed"},
 	} {
 		s := runFor(tc.res)
-		if s.Status != tc.status || s.Conclusion != tc.conclusion || s.Output.Title != tc.res.State || s.Output.Summary != tc.summary {
+		if s.Status != tc.status || s.Conclusion != tc.conclusion || s.Output.Title != tc.res.State || s.Output.Summary != tc.summary || s.Output.Text != "" {
 			t.Errorf("runFor(%+v) = %+v", tc.res, s)
 		}
 	}
 	s := runFor(gitk8s.CheckResult{State: gitk8s.Passed, Outputs: map[string]string{"level": "low", "files": "3"}})
-	if s.Output.Text != "- files: 3\n- level: low" {
+	if s.Output.Text != "```\nfiles: 3\nlevel: low\n```" {
 		t.Errorf("text = %q", s.Output.Text)
 	}
-	s = runFor(gitk8s.CheckResult{State: gitk8s.Passed, Outputs: map[string]string{"log": strings.Repeat("é", 40_000)}})
-	if len(s.Output.Text) > 65535 || !utf8.ValidString(s.Output.Text) || !strings.HasSuffix(s.Output.Text, "...") {
-		t.Errorf("long text has %d bytes, valid UTF-8 %v", len(s.Output.Text), utf8.ValidString(s.Output.Text))
+}
+
+func TestCodeBlock(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"x.go isn't formatted", "```\nx.go isn't formatted\n```"},
+		{"run `gofmt -w x.go`", "```\nrun `gofmt -w x.go`\n```"},
+		{"```go\nvar x = 1\n```", "````\n```go\nvar x = 1\n```\n````"},
+		{"[a link](https://example.com) and `````", "``````\n[a link](https://example.com) and `````\n``````"},
+	} {
+		if got := codeBlock(tc.in); got != tc.want {
+			t.Errorf("codeBlock(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+
+	t.Log("A long string is cut to fit, and its fence is still longer than any run of backticks in it.")
+	for _, s := range []string{strings.Repeat("é", 40_000), strings.Repeat("ab``` ", 20_000), strings.Repeat("`", 70_000)} {
+		got := codeBlock(s)
+		fence, _, _ := strings.Cut(got, "\n")
+		body, ok := strings.CutPrefix(got, fence+"\n")
+		body, ok2 := strings.CutSuffix(body, "\n"+fence)
+		cut, ok3 := strings.CutSuffix(body, "...")
+		if len(got) > maxOutput || !utf8.ValidString(got) || len(fence) < 3 || strings.Trim(fence, "`") != "" ||
+			!ok || !ok2 || !ok3 || strings.Contains(body, fence) || !strings.HasPrefix(s, cut) {
+			t.Errorf("codeBlock of %d bytes starting %q: %d bytes, a fence of %d, valid UTF-8 %v", len(s), s[:6], len(got), len(fence), utf8.ValidString(got))
+		}
 	}
 }
 

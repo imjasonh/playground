@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -222,7 +221,10 @@ func (c *checkRuns) supersede(ctx context.Context, gh *githubAPI, k runKey, last
 
 // runFor returns what the check run for a result shows.
 func runFor(res gitk8s.CheckResult) runState {
-	s := runState{Status: "completed", Output: runOutput{Title: res.State, Summary: limit(cmp.Or(res.Message, res.State))}}
+	s := runState{Status: "completed", Output: runOutput{Title: res.State, Summary: res.State}}
+	if res.Message != "" {
+		s.Output.Summary = codeBlock(res.Message)
+	}
 	switch res.State {
 	case gitk8s.Running:
 		s.Status = "in_progress"
@@ -237,20 +239,37 @@ func runFor(res gitk8s.CheckResult) runState {
 	}
 	var outputs []string
 	for _, k := range slices.Sorted(maps.Keys(res.Outputs)) {
-		outputs = append(outputs, fmt.Sprintf("- %s: %s", k, res.Outputs[k]))
+		outputs = append(outputs, fmt.Sprintf("%s: %s", k, res.Outputs[k]))
 	}
-	s.Output.Text = limit(strings.Join(outputs, "\n"))
+	if len(outputs) > 0 {
+		s.Output.Text = codeBlock(strings.Join(outputs, "\n"))
+	}
 	return s
 }
 
-// limit cuts s to the length that GitHub allows in a check run's summary
-// and text.
-func limit(s string) string {
-	const maxLen = 65535
-	if len(s) <= maxLen {
-		return s
+// maxOutput is the length that GitHub allows in a check run's summary and
+// text. GitHub counts characters, so maxOutput bytes always fit.
+const maxOutput = 65535
+
+// codeBlock returns s as a Markdown code block that fits in a check run's
+// summary or text, so that GitHub shows s as it is. The fence is longer than
+// any run of backticks in s, so nothing in s can end the block.
+func codeBlock(s string) string {
+	longest, run := 0, 0
+	for i := range len(s) {
+		run++
+		if s[i] != '`' {
+			run = 0
+		}
+		longest = max(longest, run)
 	}
-	return strings.ToValidUTF8(s[:maxLen-3], "") + "..."
+	fence := strings.Repeat("`", max(longest+1, 3))
+	if room := maxOutput - 2*len(fence) - 2; len(s) > room {
+		// Cutting s can shorten its runs of backticks, and so the fence.
+		n := max(room, len(s)/2)
+		return codeBlock(strings.ToValidUTF8(s[:n-3], "") + "...")
+	}
+	return fence + "\n" + s + "\n" + fence
 }
 
 func (c *checkRuns) last(k runKey) (publishedRun, bool) {

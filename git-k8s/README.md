@@ -212,8 +212,10 @@ When a check starts again on a commit where it finished, the controller
 creates a new check run with the same name, because GitHub doesn't support
 starting a completed one again. GitHub shows the newest.
 
-The check run's title is the result's state, its summary is the result's
-message, and its text lists the result's outputs.
+The check run's title is the result's state. Its summary is the result's
+message, or the state when the result has no message, and its text lists the
+result's outputs. The controller puts the message and the outputs in code
+blocks, so GitHub shows what a check writes as it is, not as Markdown.
 
 When a branch moves before a check finishes on its old head, the controller
 completes the old commit's check run as `cancelled` when it publishes the
