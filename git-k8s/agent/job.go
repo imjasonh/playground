@@ -132,6 +132,13 @@ type JobStatus struct {
 // the branch or a deploy moved back, RunJob follows it instead. If the
 // run's Pod is deleted before the run finishes, kube creates it again,
 // which runs the agent again, so RunJob counts another run.
+//
+// A run whose Pod found that the branch moved waits a minute for a job with
+// the new head, and then until MaxRuns, -max-pods, and -max-runs-per-day
+// allow a new Pod. The status's Moved is true while it waits. A deploy that
+// changes the Pods' spec ends the minute's wait, so the run prepares the
+// source again at once. If MaxRuns holds the new Pod back, RunJob doesn't
+// ask for a reconcile, so the run waits for a job that allows more runs.
 func (r *Runner) RunJob(ctx context.Context, job *Job, st *JobState) JobStatus {
 	if st.Done && sameJob(r.jobPod(job, max(st.Attempt, 1)).Name, st.Pod) {
 		return JobStatus{Done: true, Message: fmt.Sprintf("the run in Pod %s already finished", st.Pod)}
