@@ -32,6 +32,14 @@ import (
 // reconcile starts. The replica that takes the shard queues every object in
 // it at low priority, so the triggered object then waits its turn with the
 // rest of the shard.
+//
+// To hand data from a request to the reconcile, keep the data until Get
+// shows that the reconcile wrote it, and only then answer the request, or
+// answer 503 if that takes too long. Have the reconcile read the data
+// without removing it. The framework carries out a reconcile's writes after
+// Reconcile returns, and a write can fail. If the shard moves before the
+// retry, the retry runs on the next holder of the shard, which doesn't have
+// the data.
 func Trigger[T any, P Resource[T]](ctx context.Context, namespace, name string) bool {
 	s := scopeFrom(ctx, "Trigger")
 	ti := typeFor[T, P](s)

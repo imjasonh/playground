@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -28,6 +29,173 @@ import (
 type idleConfigMaps struct{}
 
 func (idleConfigMaps) Reconcile(context.Context, *ConfigMapMeta) error { return nil }
+
+// Report holds the results that clients post to a kube.Serve handler.
+type Report struct {
+	kube.Object `kube:"group=e2e.kube.imjasonh.github.io"`
+	Status      struct {
+		Results    []string         `json:"results,omitempty"`
+		Conditions []kube.Condition `json:"conditions,omitempty"`
+	} `json:"status,omitzero"`
+}
+
+// reports hands the results that its handler receives to its reconcile,
+// which writes them to the Report's status.
+type reports struct {
+	// wait is how long the handler waits for the status to show a result.
+	wait time.Duration
+	// broken names a Report whose reconciles fail before they write.
+	broken string
+
+	mu      sync.Mutex
+	pending map[kube.Key][]string
+	// fail is how many more reconciles that read a pending result fail
+	// before they write it, and failed counts them.
+	fail, failed int
+}
+
+func (h *reports) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ns, name := r.PathValue("namespace"), r.PathValue("name")
+	b, _ := io.ReadAll(r.Body)
+	result, key := string(b), kube.Key{Namespace: ns, Name: name}
+	h.mu.Lock()
+	h.pending[key] = append(h.pending[key], result)
+	h.mu.Unlock()
+	defer func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if i := slices.Index(h.pending[key], result); i >= 0 {
+			h.pending[key] = slices.Delete(h.pending[key], i, i+1)
+		}
+		if len(h.pending[key]) == 0 {
+			delete(h.pending, key)
+		}
+	}()
+	unavailable := func() {
+		w.Header().Set("Connection", "close")
+		http.Error(w, "try again", http.StatusServiceUnavailable)
+	}
+	if !kube.Trigger[Report](r.Context(), ns, name) {
+		unavailable()
+		return
+	}
+	deadline := time.Now().Add(h.wait)
+	for {
+		if rep := kube.Get[Report](r.Context(), ns, name); rep != nil && slices.Contains(rep.Status.Results, result) {
+			return
+		}
+		if time.Now().After(deadline) {
+			unavailable()
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func (h *reports) Reconcile(_ context.Context, rep *Report) error {
+	h.mu.Lock()
+	results := slices.Clone(h.pending[kube.Key{Namespace: rep.Namespace, Name: rep.Name}])
+	fail := rep.Name == h.broken || len(results) > 0 && h.fail > 0
+	if fail && rep.Name != h.broken {
+		h.fail--
+		h.failed++
+	}
+	h.mu.Unlock()
+	if fail {
+		return errors.New("the results store is down")
+	}
+	for _, result := range results {
+		if !slices.Contains(rep.Status.Results, result) {
+			rep.Status.Results = append(rep.Status.Results, result)
+		}
+	}
+	return nil
+}
+
+// TestServeHandsDataToReconcile posts results to a kube.Serve handler that
+// hands them to the reconcile, which writes them to a Report's status. The
+// handler answers only once Get shows the result in the status, and the
+// reconcile doesn't remove the result that it reads, so a result survives a
+// reconcile that fails after reading it. A result that the reconcile never
+// writes gets a 503, and a later reconcile keeps the results in the status.
+func TestServeHandsDataToReconcile(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	h := &reports{wait: 2 * time.Second, broken: "broken", pending: map[kube.Key][]string{}}
+	mux := http.NewServeMux()
+	mux.Handle("POST /reports/{namespace}/{name}", h)
+	m := &kube.Manager{Name: "reports-e2e", Namespace: ns, ServeAddr: freeAddr(t)}
+	e2e.Run(t, m, kube.For[Report](h, kube.Named("reports")), kube.Serve(mux))
+	for _, name := range []string{"ok", "broken"} {
+		e2e.Eventually(t, 30*time.Second, func() error {
+			return c.Create(t.Context(), client.Path(group+"/v1", "reports", ns, ""), map[string]any{
+				"apiVersion": group + "/v1", "kind": "Report", "metadata": map[string]any{"name": name},
+			}, nil)
+		})
+	}
+	report := func(name string) *Report {
+		t.Helper()
+		var rep Report
+		if err := e2e.Get(t.Context(), c, client.Path(group+"/v1", "reports", ns, name), &rep); err != nil {
+			t.Fatal(err)
+		}
+		return &rep
+	}
+	e2e.Eventually(t, 30*time.Second, func() error {
+		if conds := report("ok").Status.Conditions; len(conds) == 0 {
+			return errors.New("the Report hasn't been reconciled")
+		}
+		return nil
+	})
+	post := func(name, result string) (int, bool) {
+		t.Helper()
+		resp, err := http.Post("http://"+m.ServeAddr+"/reports/"+ns+"/"+name, "text/plain", strings.NewReader(result))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode, resp.Close
+	}
+
+	h.mu.Lock()
+	h.fail = 1
+	h.mu.Unlock()
+	if code, _ := post("ok", "passed"); code != http.StatusOK {
+		t.Fatalf("POST passed = %d, want 200", code)
+	}
+	if got := report("ok").Status.Results; !slices.Equal(got, []string{"passed"}) {
+		t.Errorf("results after a 200 = %q, want the posted result", got)
+	}
+	h.mu.Lock()
+	failed := h.failed
+	h.mu.Unlock()
+	if failed != 1 {
+		t.Errorf("%d reconciles failed after reading the result, want 1, whose retry found the result", failed)
+	}
+
+	start := time.Now()
+	if code, closed := post("broken", "lost"); code != http.StatusServiceUnavailable || !closed {
+		t.Errorf("POST to a Report whose reconcile fails = %d, closed %v; want 503 with Connection: close", code, closed)
+	}
+	if d := time.Since(start); d < h.wait {
+		t.Errorf("the handler answered 503 after %v, before the status could show the result", d)
+	}
+	if got := report("broken").Status.Results; len(got) != 0 {
+		t.Errorf("results of a Report whose reconcile fails = %q", got)
+	}
+
+	if code, _ := post("ok", "again"); code != http.StatusOK {
+		t.Fatalf("POST again = %d, want 200", code)
+	}
+	if got := report("ok").Status.Results; !slices.Equal(got, []string{"passed", "again"}) {
+		t.Errorf("results = %q, want both, though passed was no longer pending", got)
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.pending) != 0 {
+		t.Errorf("pending = %q after the handlers answered", h.pending)
+	}
+}
 
 // TestServeListenFailure runs a manager, without leader election, whose
 // kube.Serve address is in use. Run must return the error instead of

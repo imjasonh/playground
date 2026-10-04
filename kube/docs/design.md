@@ -740,11 +740,20 @@ authenticated endpoint between replicas.
 A true result holds even if the replica loses the shard before a worker takes
 the key, because the replica that acquires a shard enqueues every cached key in
 it. It enqueues them at low priority, like a resync, so the triggered key loses
-its place ahead of the queue and waits with the rest of the shard. That replica
-doesn't have data that a handler kept in memory, though. So a handler that hands
-data to the reconcile, such as a result that a client posts, answers the client
-once the reconcile has used the data, and answers `503` if that doesn't happen
-in time.
+its place ahead of the queue and waits with the rest of the shard.
+
+That replica doesn't have data that a handler kept in memory, though, such as a
+result that a client posts for the reconcile to write. A reconcile on the
+handler's replica doesn't make the data safe either. The framework carries out
+the reconcile's writes after `Reconcile` returns, and a write can fail. If the
+replica then loses the shard, the retry runs on the next holder, without the
+data. So a handler that answered once the reconcile read its data could confirm
+data that no replica holds. Instead, the handler keeps the data until `kube.Get`
+shows the written change, answers only then, and answers `503` if that doesn't
+happen in time. The client tries again, and its data reaches whichever replica
+holds the shard by then. The reconcile reads the data without removing it, so a
+retry on the same replica still finds it. It adds the data to what the object
+holds, because once the handler answers, later reconciles run without the data.
 
 ### Versions and conversion
 
@@ -968,6 +977,9 @@ framework's tests check that:
 - `RequestToken` returns the token in the directory for its audience, and
   requests a token for any other audience as a service account with only the
   rule that `generate` writes for it.
+- A `kube.Serve` handler that hands posted results to the reconcile answers
+  once `Get` shows them in the status, even when a reconcile fails after
+  reading one, and answers `503` for a result that the reconcile never writes.
 
 A test in `e2e/kind` runs the whole installation in a
 [kind](https://kind.sigs.k8s.io/) cluster, which has a kubelet and

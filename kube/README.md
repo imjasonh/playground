@@ -542,10 +542,54 @@ queues them at low priority, so the reconcile then waits its turn with the
 rest of the shard.
 
 To hand data from a request to the reconcile, such as a result that a
-client posts, keep the data in memory under the object's key and call
-`Trigger`. The reconcile runs on this replica unless the replica loses the
-shard first, so answer the client after the reconcile has used the data,
-and answer `503` if that takes too long.
+client posts, keep the data in memory under the object's key, call
+`Trigger`, and have the reconcile write the data to the object, for example
+to its status. The framework carries out a reconcile's writes after
+`Reconcile` returns, and a write can fail. If the shard moves before the
+retry, the retry runs on another replica, which doesn't have the data. So
+the data is safe only once the object holds it:
+
+- The handler keeps the data until `kube.Get` shows the change, and only
+  then answers the client. If the change doesn't show in time, it answers
+  `503` so that the client tries again. Either way, it drops the data when
+  it answers.
+- The reconcile reads the data without removing it, so a retry on the same
+  replica still finds it. It adds the data to what the object already
+  holds, because later reconciles run without it.
+
+In the handler, where `unavailable` answers `503` and closes the connection
+as in the previous example:
+
+```go
+pending.add(key, result)
+defer pending.remove(key, result)
+if !kube.Trigger[Report](r.Context(), ns, name) {
+	unavailable(w)
+	return
+}
+deadline := time.Now().Add(10 * time.Second)
+for {
+	rep := kube.Get[Report](r.Context(), ns, name)
+	if rep != nil && slices.Contains(rep.Status.Results, result) {
+		return
+	}
+	if time.Now().After(deadline) {
+		unavailable(w)
+		return
+	}
+	time.Sleep(100 * time.Millisecond)
+}
+```
+
+In `Reconcile`:
+
+```go
+for _, result := range pending.get(key) {
+	if !slices.Contains(rep.Status.Results, result) {
+		rep.Status.Results = append(rep.Status.Results, result)
+	}
+}
+```
 
 ## Run a controller
 
