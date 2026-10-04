@@ -261,13 +261,6 @@ The mirror authenticates to external repositories with HTTP basic auth, or
 for GitHub with Octo STS. Other forges often use SSH keys, which the mirror
 needs to support too.
 
-## Support more ways to land
-
-Landing fast-forwards the parent to the branch's head, so the parent ends up
-at the commit that the checks tested. Squash and rebase landings, which many
-forges offer, make a commit that no check saw, so they need either another
-round of checks or a rule about which results still count.
-
 ## Add agentic operators
 
 Some checks and controllers are better written as an AI agent than as code:
