@@ -200,8 +200,9 @@ under a sandboxing runtime such as gVisor, and `-go-image`, `-git-image`,
 Only the core program writes `status.checks`. A check sends each new result
 to the core program's results endpoint:
 
-1. The check gets a token for its service account with the audience
-   `git-k8s-results`, and reuses it until 10 minutes before it expires.
+1. The check reads the token that `generate` mounts in its Pod: a token for
+   the check's service account with the audience `git-k8s-results`, which
+   the kubelet renews before it expires.
 2. It sends the result and the token in a `PUT` request to
    `RESULTS_URL/NAMESPACE/GITBRANCH/CHECK`. `RESULTS_URL` is the check's
    `-results-url` flag, `http://git-k8s.git-k8s.svc/results` by default. The
@@ -217,8 +218,8 @@ to the core program's results endpoint:
    commits, a `Pending` result, and a result over its size limits.
 5. The core program holds the result in memory and starts a reconcile of
    the `GitBranch`. The results controller writes the result with
-   server-side apply, and the core program answers the request after the
-   write.
+   server-side apply, and the core program answers the request once its
+   cache shows the result.
 
 Only one replica of the core program writes a branch's results. With the two
 replicas that `generate` runs by default, that's the replica that holds the
@@ -233,16 +234,18 @@ result, because the change runs the check again.
 
 A check can't write another check's result, because it can't write
 `GitBranch` status at all. `generate` grants a program what its packages
-call, so a check's RBAC rules let it create tokens for its own service
-account, and include nothing for `gitbranches/status`. The core program
-writes only the entry of the check that the token's service account runs,
-so one check's token can't write another check's entry.
+call, so a check's RBAC rules include nothing for `gitbranches/status`. They
+don't let a check create tokens either, because the check reads the token
+that `generate` mounts in its Pod. The core program writes only the entry of
+the check that the token's service account runs, so one check's token can't
+write another check's entry.
 
 The tokens have the audience `git-k8s-results`, so a token sent to the core
 program can't call the API server, and a token for the API server can't send
 results. The endpoint uses plain HTTP inside the cluster, so anything that
 can read the traffic between Pods can copy a token and send that check's
-results until the token expires, within an hour.
+results until the token expires, within an hour, or the check's Pod is
+deleted.
 
 The `git-k8s-check-results` admission policy is a backstop. It rejects
 status writes by checks, and changes to `status.checks` by service accounts
@@ -305,6 +308,14 @@ done
 Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
 after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
+
+`generate` also writes a Service for the core program, which routes port 80
+to the results endpoint on port 8081 of each replica, and mounts a token for
+the audience `git-k8s-results` in each check's Pod. The core program's
+container waits 5 seconds before it stops, so that the Service stops sending
+it results first. That wait needs Kubernetes 1.30 or later. If
+NetworkPolicies in the `git-k8s` namespace deny traffic by default, let the
+checks' Pods reach port 8081 of the core program's Pods.
 
 `config/policy.yaml` holds two ValidatingAdmissionPolicies. The first
 rejects every write to `GitBranch` status by a check's service account, and

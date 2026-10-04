@@ -415,6 +415,9 @@ echo
 [[ "${code}" == 403 ]]
 grep -q 'cannot patch resource' "${WORKDIR}/patch.json"
 grep -q 'gitbranches/status' "${WORKDIR}/patch.json"
+# Checks read the token that generate mounts in their Pods, so they may not
+# create tokens.
+[[ "$(k auth can-i create serviceaccounts --subresource=token -n check-gofmt --as=system:serviceaccount:check-gofmt:check-gofmt)" == no ]]
 
 # The results endpoint takes a check's result only with a token for the
 # check's own service account and the endpoint's audience.
