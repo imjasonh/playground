@@ -2,9 +2,12 @@ package kube
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -204,6 +207,63 @@ func TestRetakenShardRequiresTheResourceVersionAgain(t *testing.T) {
 		if meta["resourceVersion"] != "5" {
 			t.Errorf("status write %d required resource version %v, want the cached 5", i+1, meta["resourceVersion"])
 		}
+	}
+}
+
+// TestFinalizerPatchRequiresTheAppliedResourceVersion removes a finalizer
+// that another field manager also lists, while writes to the object require
+// the cached resource version. The apply leaves the finalizer listed and
+// returns a new resource version. The JSON patch that then removes the
+// finalizer must require that version, and a conflict on it means that
+// something wrote the object in between, so it fails as stale.
+func TestFinalizerPatchRequiresTheAppliedResourceVersion(t *testing.T) {
+	m := testManager()
+	w := &widget{}
+	w.Namespace, w.Name, w.UID, w.ResourceVersion = "shop", "w1", "u1", "5"
+	c := triggerable(t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, w)
+	w.Finalizers = []string{"example.dev/other", c.finalizer}
+	patches := make(chan []byte, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Content-Type") {
+		case client.ApplyPatch:
+			_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+				"name": w.Name, "namespace": w.Namespace, "uid": w.UID, "resourceVersion": "6", "finalizers": w.Finalizers,
+			}})
+		case client.JSONPatch:
+			b, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(rw, err.Error(), http.StatusBadRequest)
+				return
+			}
+			patches <- b
+			http.Error(rw, "the object has been modified", http.StatusConflict)
+		default:
+			http.Error(rw, "unexpected request", http.StatusMethodNotAllowed)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.client = cl
+
+	rv := w.ResourceVersion
+	if err := c.setFinalizer(t.Context(), w, false, "", &rv); !errors.Is(err, errStale) {
+		t.Errorf("setFinalizer = %v, want a stale error", err)
+	}
+	var ops []map[string]any
+	select {
+	case b := <-patches:
+		if err := json.Unmarshal(b, &ops); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatal("setFinalizer sent no JSON patch")
+	}
+	want := map[string]any{"op": "replace", "path": "/metadata/resourceVersion", "value": "6"}
+	if !slices.ContainsFunc(ops, func(op map[string]any) bool { return reflect.DeepEqual(op, want) }) {
+		t.Errorf("patch %v doesn't require the resource version that the apply returned", ops)
 	}
 }
 

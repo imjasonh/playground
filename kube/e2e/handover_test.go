@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -23,6 +25,45 @@ type replica struct {
 	h    *reports
 	m    *kube.Manager
 	stop func()
+	log  *logCounts
+}
+
+// logCounts counts records in a replica's log.
+type logCounts struct {
+	// caches counts the Report caches that synced.
+	caches atomic.Int64
+}
+
+// countingHandler passes records to the test log and counts some of them.
+type countingHandler struct {
+	slog.Handler
+	counts *logCounts
+	report bool // whether the records are a Report cache's
+}
+
+func (h countingHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h countingHandler) Handle(ctx context.Context, r slog.Record) error {
+	if h.report && r.Message == "cache synced" {
+		h.counts.caches.Add(1)
+	}
+	if !h.Handler.Enabled(ctx, r.Level) {
+		return nil
+	}
+	return h.Handler.Handle(ctx, r)
+}
+
+func (h countingHandler) WithAttrs(as []slog.Attr) slog.Handler {
+	for _, a := range as {
+		h.report = h.report || a.Key == "type" && a.Value.String() == "Report."+group+"/v1"
+	}
+	h.Handler = h.Handler.WithAttrs(as)
+	return h
+}
+
+func (h countingHandler) WithGroup(name string) slog.Handler {
+	h.Handler = h.Handler.WithGroup(name)
+	return h
 }
 
 func startReplica(t *testing.T, ns, kubeconfig string, shards int, opts ...kube.Option) *replica {
@@ -31,7 +72,9 @@ func startReplica(t *testing.T, ns, kubeconfig string, shards int, opts ...kube.
 	mux := http.NewServeMux()
 	mux.Handle("POST /reports/{namespace}/{name}", h)
 	mux.HandleFunc("GET /reports/{namespace}/{name}", showResults)
-	m := &kube.Manager{Name: "reports-handover-e2e", Kubeconfig: kubeconfig, Namespace: ns, LeaseNamespace: ns, Addr: freeAddr(t), ServeAddr: freeAddr(t), Logger: e2e.Logger(t)}
+	counts := &logCounts{}
+	log := slog.New(countingHandler{Handler: e2e.Logger(t).Handler(), counts: counts})
+	m := &kube.Manager{Name: "reports-handover-e2e", Kubeconfig: kubeconfig, Namespace: ns, LeaseNamespace: ns, Addr: freeAddr(t), ServeAddr: freeAddr(t), Logger: log}
 	if shards > 1 {
 		m.Shards = shards
 	} else {
@@ -56,7 +99,7 @@ func startReplica(t *testing.T, ns, kubeconfig string, shards int, opts ...kube.
 		})
 	}
 	t.Cleanup(stop)
-	return &replica{h: h, m: m, stop: stop}
+	return &replica{h: h, m: m, stop: stop, log: counts}
 }
 
 // showResults answers with the results of a Report as Get shows them.
@@ -148,7 +191,8 @@ func waitWriteTried(t *testing.T, r *replica, versions *history, result string) 
 // holder's first status write requires the cached resource version, so it
 // fails instead of replacing the results with a list that lacks a result
 // that a client was told was saved, and succeeds once the cache catches up.
-// The replica counts the failed reconcile as stale, not as an error.
+// The replica counts the failed reconciles as stale, not as errors, and
+// retries them with backoff while the cache stays behind.
 func TestServeHandOverWithAStaleCache(t *testing.T) {
 	c := e2e.Client(t)
 	ns := e2e.Namespace(t, c)
@@ -197,6 +241,12 @@ func TestServeHandOverWithAStaleCache(t *testing.T) {
 	t.Log("The second replica gets a result before its cache catches up.")
 	p.trigger(b.h, b.m.ServeAddr, ns, name, "b")
 	waitWriteTried(t, b, versions, "b")
+	stale := `kube_reconcile_total{controller="reports",result="stale"}`
+	start := scrape(t, b.m.Addr, stale)
+	time.Sleep(3 * time.Second)
+	if n := scrape(t, b.m.Addr, stale) - start; n > 20 {
+		t.Errorf("%v stale reconciles in 3s while the cache stayed behind, want at most 20", n)
+	}
 	watches.release()
 	if code := p.answer("b"); code != http.StatusOK {
 		t.Fatalf("POST b = %d, want 200", code)
@@ -207,7 +257,7 @@ func TestServeHandOverWithAStaleCache(t *testing.T) {
 			t.Errorf("POST %s got 200, but the results are %q", result, got)
 		}
 	}
-	if n := scrape(t, b.m.Addr, `kube_reconcile_total{controller="reports",result="stale"}`); n == 0 {
+	if n := scrape(t, b.m.Addr, stale); n == 0 {
 		t.Error("the second replica counted no stale reconciles")
 	}
 	if n := scrape(t, b.m.Addr, `kube_reconcile_total{controller="reports",result="error"}`); n != 0 {
@@ -268,9 +318,10 @@ func TestServeTakeOverWithAStaleGetCache(t *testing.T) {
 // TestServeTakeOverAfterAHandlerReadTheType runs two replicas with leader
 // election. A request to the standby reads a Report with Get, which starts
 // the cache that Get reads there before the standby's controller starts.
-// After the standby takes over, its controller reads that cache too. It
-// reconciles the Report that the cache already held, and the first status
-// write of a new Report never waits for a second cache to catch up.
+// After the standby takes over, its controller reads that cache too, without
+// listing Reports again. It reconciles the Report that the cache already
+// held, and the first status write of a new Report never waits for a second
+// cache to catch up.
 func TestServeTakeOverAfterAHandlerReadTheType(t *testing.T) {
 	c := e2e.Client(t)
 	ns := e2e.Namespace(t, c)
@@ -295,6 +346,47 @@ func TestServeTakeOverAfterAHandlerReadTheType(t *testing.T) {
 		createReport(t, c, ns, fmt.Sprintf("r%d", i))
 	}
 	noRetries(t, b.m, "reports", n)
+	if got := b.log.caches.Load(); got != 1 {
+		t.Errorf("the new leader synced %d Report caches, want 1", got)
+	}
+}
+
+// TestServeTakeOverWithAnotherSelectorOrNamespace is like
+// TestServeTakeOverAfterAHandlerReadTheType, but the controllers watch
+// Reports with a label selector, or in a namespace other than the manager's.
+// The cache that Get reads holds other objects than the ones the controller
+// watches, so after the standby takes over, its controller starts a cache of
+// its own and reconciles the Reports that it watches.
+func TestServeTakeOverWithAnotherSelectorOrNamespace(t *testing.T) {
+	for _, name := range []string{"selector", "namespace"} {
+		t.Run(name, func(t *testing.T) {
+			c := e2e.Client(t)
+			ns, other := e2e.Namespace(t, c), e2e.Namespace(t, c)
+			opt, watched := kube.WatchSelector("!ignored"), ns
+			if name == "namespace" {
+				opt, watched = kube.WatchNamespace(other), other
+			}
+			a := startReplica(t, ns, e2e.Env(t).Kubeconfig, 1, opt)
+			waitHeld(t, func(n []int) bool { return n[0] == 1 }, a)
+			b := startReplica(t, ns, e2e.Env(t).Kubeconfig, 1, opt)
+			if err := c.Create(t.Context(), client.Path(group+"/v1", "reports", ns, ""), map[string]any{
+				"apiVersion": group + "/v1", "kind": "Report", "metadata": map[string]any{"name": "read"},
+			}, nil); err != nil {
+				t.Fatal(err)
+			}
+			readReport(t, b.m.ServeAddr, ns, "read")
+			a.stop()
+			waitHeld(t, func(n []int) bool { return n[0] == 1 }, b)
+
+			const n = 5
+			for i := range n {
+				createReport(t, c, watched, fmt.Sprintf("r%d", i))
+			}
+			if got := b.log.caches.Load(); got != 2 {
+				t.Errorf("the new leader synced %d Report caches, want 2", got)
+			}
+		})
+	}
 }
 
 // TestLeaderWritesStatusInAWatchedNamespace runs a leader-elected controller
