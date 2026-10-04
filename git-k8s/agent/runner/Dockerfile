@@ -5,11 +5,11 @@ ARG CHAINGUARD=cgr.dev/chainguard
 FROM ${CHAINGUARD}/node:latest-dev AS build
 WORKDIR /app
 COPY --chown=65532:65532 package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY --chown=65532:65532 tsconfig.json tsconfig.build.json ./
 COPY --chown=65532:65532 src ./src
 COPY --chown=65532:65532 tests ./tests
-RUN npm run typecheck && npm test && npm run build && npm prune --omit=dev --no-audit --no-fund
+RUN npm run typecheck && npm test && npm run build && npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 
 # @cursor/sdk installs a package for the build's platform, so both stages
 # must have the same platform.
