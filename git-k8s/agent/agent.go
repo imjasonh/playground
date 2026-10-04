@@ -57,8 +57,8 @@ const (
 const prepareAttempts = 3
 
 // movedWait is how long a run whose Pod found that the branch moved waits
-// for a job with the new head, such as a check's next head, before it
-// prepares the source for the same head again.
+// for a job with the new head before it prepares the source for the same
+// head again. A check's run can wait longer, as run.headWait says.
 const movedWait = time.Minute
 
 // Runner runs agents in Pods for one check. Set Name to the check's name,
@@ -154,8 +154,12 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 	head := in.Spec.Head
 	if prev := in.Previous; prev != nil {
 		var last JobState
-		// A state that doesn't decode starts over, like a missing one.
-		_ = last.UnmarshalText([]byte(prev.Outputs["state"]))
+		if err := last.UnmarshalText([]byte(prev.Outputs["state"])); err != nil || prev.Outputs["state"] == "" {
+			// The runs output counts the runs too, so maxAgentRuns still
+			// holds when the state is missing or doesn't decode.
+			last.Runs, _ = strconv.Atoi(prev.Outputs["runs"])
+		}
+		last.Runs = max(last.Runs, 0)
 		st.Runs = last.Runs
 		if prev.State == gitk8s.Running && prev.Commit == head && last.Pod != "" {
 			*st = last
@@ -236,6 +240,30 @@ type run struct {
 	job     *Job
 	st      *JobState
 	started bool
+}
+
+// headWait is how long the run waits for a job with the new head after its
+// Pod found that the branch moved. A check's next head comes from a poll of
+// the repository, so a check's run waits for two polls if they take longer
+// than movedWait.
+func (x *run) headWait() time.Duration {
+	if x.in == nil {
+		return movedWait
+	}
+	poll, err := time.ParseDuration(x.in.Repository.Spec.PollInterval)
+	if err != nil {
+		return movedWait
+	}
+	return max(movedWait, 2*poll)
+}
+
+// minutes says how long d is in whole minutes, rounded up, such as
+// "a minute" or "10 minutes".
+func minutes(d time.Duration) string {
+	if n := (d + time.Minute - 1) / time.Minute; n > 1 {
+		return fmt.Sprintf("%d minutes", n)
+	}
+	return "a minute"
 }
 
 // outputs hold the run's state and merge base, which the next reconcile
@@ -407,6 +435,43 @@ type window struct {
 	// given holds when the run of each Pod UID was given back, so it's
 	// given back once even for a JobState that doesn't keep Refunded.
 	given map[string]time.Time
+	// counted holds the runs that each Pod's JobState counted when a call
+	// last followed the Pod, by namespace and name, so a call with a
+	// JobState from before the Pod started counts the Pod's run once.
+	counted map[string]podRuns
+}
+
+// podRuns is the runs that a Pod's JobState counted, and when.
+type podRuns struct {
+	runs int
+	at   time.Time
+}
+
+// note records the runs that st counted at now, if it names a Pod in
+// namespace ns, and forgets the Pods that no call noted in 24 hours.
+func (w *window) note(now time.Time, ns string, st *JobState) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	for k, c := range w.counted {
+		if !c.at.After(now.Add(-24 * time.Hour)) {
+			delete(w.counted, k)
+		}
+	}
+	if st.Pod == "" {
+		return
+	}
+	if w.counted == nil {
+		w.counted = map[string]podRuns{}
+	}
+	w.counted[ns+"/"+st.Pod] = podRuns{st.Runs, now}
+}
+
+// runs returns the runs that the JobState following the Pod named pod in
+// namespace ns counted when a call last noted it, or 0.
+func (w *window) runs(ns, pod string) int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.counted[ns+"/"+pod].runs
 }
 
 // take records a run that starts at now, unless limit runs started in the

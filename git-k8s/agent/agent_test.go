@@ -51,6 +51,8 @@ type fixture struct {
 	cfg    *checks.Config
 	base   string
 	result *Result
+	// poll is the repository's pollInterval, if it isn't gittest's.
+	poll string
 
 	mu   sync.Mutex
 	body []byte
@@ -118,6 +120,9 @@ func (f *fixture) serve(body []byte, uid string) string {
 func (f *fixture) reconcile(pods ...*Pod) *kube.Recorder {
 	f.t.Helper()
 	repo, secret := f.srv.Repository("app")
+	if f.poll != "" {
+		repo.Spec.PollInterval = f.poll
+	}
 	world := []any{repo, secret}
 	for _, p := range pods {
 		world = append(world, p)
@@ -1020,14 +1025,250 @@ func TestWindow(t *testing.T) {
 		t.Error("a limit of 0 means no limit, so take records nothing")
 	}
 
-	t.Log("giveBack forgets a run once for each Pod, and forgets the Pod after a day.")
-	if !w.giveBack(t0.Add(25*time.Hour), "uid-1") || len(w.starts) != n-1 {
-		t.Fatalf("giveBack didn't forget a run: %d runs, want %d", len(w.starts), n-1)
+	t.Log("giveBack forgets the latest run, once for each Pod, and forgets the Pod after a day.")
+	if !w.giveBack(t0.Add(25*time.Hour), "uid-1") || len(w.starts) != n-1 || !w.starts[len(w.starts)-1].Equal(t0.Add(time.Hour)) {
+		t.Fatalf("giveBack didn't forget the latest run: runs started at %v, want %d ending at %v", w.starts, n-1, t0.Add(time.Hour))
 	}
 	if w.giveBack(t0.Add(26*time.Hour), "uid-1") || len(w.starts) != n-1 {
 		t.Errorf("giveBack forgot another run for the same Pod: %d runs, want %d", len(w.starts), n-1)
 	}
 	if !w.giveBack(t0.Add(49*time.Hour), "uid-2") || len(w.given) != 1 {
 		t.Errorf("giveBack holds %d Pods, want only the one from the last day", len(w.given))
+	}
+
+	t.Log("note keeps the runs that each Pod's state last counted, by namespace, and forgets a Pod that no call noted in a day.")
+	w.note(t0, "default", &JobState{Runs: 2, Pod: "review-a"})
+	w.note(t0, "other", &JobState{Runs: 3, Pod: "review-a"})
+	w.note(t0.Add(time.Hour), "other", &JobState{Runs: 1, Pod: "review-a"})
+	w.note(t0.Add(time.Hour), "default", &JobState{Runs: 4})
+	if a, b := w.runs("default", "review-a"), w.runs("other", "review-a"); a != 2 || b != 1 || w.runs("default", "review-b") != 0 {
+		t.Errorf("runs = %d and %d, want 2 and 1 for Pods with the same name in two namespaces", a, b)
+	}
+	w.note(t0.Add(24*time.Hour), "default", &JobState{})
+	if w.runs("default", "review-a") != 0 || w.runs("other", "review-a") != 1 || len(w.counted) != 1 {
+		t.Errorf("note holds %d Pods, want only the one noted in the last day", len(w.counted))
+	}
+}
+
+// movedPod sets p's status to that of a Pod that found, at finished, that
+// the branch no longer points to head.
+func movedPod(p *Pod, head string, finished time.Time) *Pod {
+	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: "c/x no longer points to " + head, FinishedAt: finished})},
+	}}
+	return p
+}
+
+// newHead pushes a commit that sets a.txt to content, and makes it the
+// branch's head.
+func (f *fixture) newHead(content string) {
+	f.work.Write("a.txt", content)
+	f.b.Spec.Head = f.work.Commit("another head")
+	f.work.Push("c/x")
+}
+
+func TestCountsRunsOnceWhenTheBranchMovesBack(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		deleting bool
+	}{{"old Pod", false}, {"old Pod being deleted", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			f.r.MaxRunsPerDay = 10
+			head := f.b.Spec.Head
+			p := f.start()
+			f.reconcile(movedPod(p, head, time.Now()))
+			f.newHead("one\nnext\n")
+			q := f.start()
+			f.reconcile(finished(q, f.serve(review(Fail), q.UID)))
+
+			t.Log("The branch moves back while the first head's Pod still exists, so the check follows that Pod, whose run it gave back.")
+			f.b.Spec.Head = head
+			old := movedPod(p, head, time.Now().Add(-2*movedWait))
+			if !tc.deleting {
+				rec := f.reconcile(old)
+				if pods := kube.Owned[Pod](rec); len(pods) != 2 || f.jobState().Attempt != 2 || f.jobState().Pod != pods[1].Name {
+					t.Fatalf("state = %+v with %d owned Pods, want attempt 2 in a new Pod", f.jobState(), len(pods))
+				}
+			} else {
+				now := time.Now()
+				old.DeletionTimestamp = &now
+				f.reconcile(old)
+				if res := f.state(); res.Message != "Pod "+p.Name+" is being deleted, so kube creates it again once it's gone" || f.jobState().Runs != 1 {
+					t.Fatalf("result = %+v with state %+v, want the old Pod after 1 run", res, f.jobState())
+				}
+				f.reconcile()
+				again := *old
+				again.DeletionTimestamp, again.UID, again.Status = nil, "uid-again", PodStatus{Phase: "Pending"}
+				f.reconcile(&again)
+			}
+			if st := f.jobState(); st.Runs != 2 || len(f.r.day.starts) != 2 {
+				t.Errorf("runs = %d with %d runs in the last day, want 2 and 2: the second head's and the next one on the first head", st.Runs, len(f.r.day.starts))
+			}
+		})
+	}
+}
+
+func TestFollowsTheOldPodWhenTheBranchMovesBack(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	head := f.b.Spec.Head
+	p := f.start()
+	p.Status = PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
+		{Name: "agent", State: ContainerState{Running: &struct{}{}}},
+	}}
+	f.reconcile(p)
+	f.newHead("one\nnext\n")
+	f.reconcile(f.start())
+
+	t.Log("The branch moves back while kube deletes the first head's Pod, whose run already counted.")
+	f.b.Spec.Head = head
+	now := time.Now()
+	p.DeletionTimestamp = &now
+	f.reconcile(p)
+	if st := f.jobState(); st.Pod != p.Name || st.Runs != 2 || len(f.r.day.starts) != 2 {
+		t.Fatalf("state = %+v with %d runs in the last day, want the old Pod after 2 runs", st, len(f.r.day.starts))
+	}
+
+	t.Log("Once the Pod is gone, kube creates it again, and its agent is the third run.")
+	f.reconcile()
+	again := *p
+	again.DeletionTimestamp, again.UID, again.Status = nil, "uid-again", PodStatus{Phase: "Pending"}
+	f.reconcile(&again)
+	if st := f.jobState(); st.Runs != 3 || len(f.r.day.starts) != 3 {
+		t.Errorf("state = %+v with %d runs in the last day, want 3 runs", st, len(f.r.day.starts))
+	}
+}
+
+func TestWaitsForTwoPollsWhenTheBranchMoved(t *testing.T) {
+	for _, tc := range []struct {
+		poll, say string
+		wait      time.Duration
+	}{
+		{"10s", "a minute", time.Minute},
+		{"45s", "2 minutes", 90 * time.Second},
+		{"5m", "10 minutes", 10 * time.Minute},
+	} {
+		t.Run(tc.poll, func(t *testing.T) {
+			f := newFixture(t, "")
+			f.poll = tc.poll
+			head := f.b.Spec.Head
+			p := f.start()
+			rec := f.reconcile(movedPod(p, head, time.Now().Add(-tc.wait/2)))
+			want := "waiting up to " + tc.say + " for a run on the new commits: c/x no longer points to " + head
+			if res := f.state(); res.State != gitk8s.Running || res.Message != want || len(kube.Owned[Pod](rec)) != 1 {
+				t.Fatalf("result = %+v, want Running in the same Pod", res)
+			}
+			if d := rec.RequeueAfter(); d <= tc.wait/2-time.Second || d > tc.wait/2 {
+				t.Errorf("RequeueAfter = %v, want about %v", d, tc.wait/2)
+			}
+
+			t.Log("A branch that moved and moved back between two polls has the same head after the wait, so the check fetches it again.")
+			rec = f.reconcile(movedPod(p, head, time.Now().Add(-tc.wait)))
+			if pods := kube.Owned[Pod](rec); len(pods) != 2 || f.jobState().Attempt != 2 || f.jobState().Pod != pods[1].Name {
+				t.Errorf("state = %+v with %d owned Pods, want attempt 2 in a new Pod", f.jobState(), len(pods))
+			}
+		})
+	}
+}
+
+func TestPreparesTheSourceAgainOnADeployDuringTheWait(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	p := f.start()
+	f.reconcile(movedPod(p, f.b.Spec.Head, time.Now()))
+
+	t.Log("The Pod's agent didn't run, so a deploy ends the wait, and the check prepares the source again in a new Pod, which counts as a run.")
+	f.r.Model = "composer-3"
+	rec := f.reconcile(p)
+	pods := kube.Owned[Pod](rec)
+	if st := f.jobState(); len(pods) != 1 || pods[0].Name == p.Name || st.Pod != pods[0].Name || st.Attempt != 2 || st.Runs != 1 || len(f.r.day.starts) != 1 {
+		t.Errorf("state = %+v with %d owned Pods and %d runs in the last day, want attempt 2 as run 1 in a new Pod", st, len(pods), len(f.r.day.starts))
+	}
+}
+
+func TestLimitsRunsPerBranchWithABrokenState(t *testing.T) {
+	for _, tc := range []struct {
+		name, state string
+		runs, pods  int
+	}{
+		{"negative runs", `{"runs":-5}`, 1, 1},
+		{"state that doesn't decode", `{"runs":9,"pod":"rev`, 9, 0},
+		{"no state", "", 9, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			one := int32(1)
+			f.b.Spec.Merge.MaxAgentRuns = &one
+			p := f.start()
+			f.reconcile(finished(p, f.serve(review(Fail), p.UID)))
+			res := f.state()
+			res.Outputs["state"], res.Outputs["runs"] = tc.state, "9"
+			if tc.state == "" {
+				delete(res.Outputs, "state")
+			}
+			f.newHead("one\nnext\n")
+			rec := f.reconcile()
+			if pods := kube.Owned[Pod](rec); f.state().State != gitk8s.Running || f.jobState().Runs != tc.runs || len(pods) != tc.pods {
+				t.Errorf("result = %+v with %d owned Pods, want Running after %d runs with %d Pods", f.state(), len(pods), tc.runs, tc.pods)
+			}
+		})
+	}
+	t.Run("negative runs in a run in progress", func(t *testing.T) {
+		f := newFixture(t, "")
+		p := f.start()
+		state, _ := JobState{Runs: -5, Pod: p.Name, Attempt: 1}.MarshalText()
+		f.state().Outputs["state"] = string(state)
+		f.reconcile(p)
+		if st := f.jobState(); st.Pod != p.Name || st.Runs != 0 {
+			t.Errorf("state = %+v, want the run in Pod %s after 0 runs", st, p.Name)
+		}
+	})
+}
+
+func TestCountsARunOnceWhenAReconcileReadsAnOldResult(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		runs int
+	}{{"first run", 0}, {"run after another head's", 1}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			f.r.MaxRunsPerDay = 10
+			if tc.runs > 0 {
+				p := f.start()
+				f.reconcile(finished(p, f.serve(review(Fail), p.UID)))
+				f.newHead("one\nnext\n")
+			}
+			old := f.state()
+			p := f.start()
+
+			t.Log("Creating the Pod can run the next reconcile before the result that the last one wrote reaches the cache, so that reconcile follows the Pod, whose run counted once.")
+			f.b.Status.Checks.Result = old
+			f.reconcile(p)
+			if st := f.jobState(); st.Pod != p.Name || st.Runs != tc.runs+1 || len(f.r.day.starts) != tc.runs+1 {
+				t.Errorf("state = %+v with %d runs in the last day, want Pod %s after %d runs", st, len(f.r.day.starts), p.Name, tc.runs+1)
+			}
+		})
+	}
+}
+
+func TestCountsAGivenBackRunOnceWhenTheBranchMovesBack(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	head := f.b.Spec.Head
+	p := f.start()
+	f.reconcile(movedPod(p, head, time.Now()))
+	f.b.Spec.Head = f.base
+	f.reconcile()
+	if res := f.state(); res.State != gitk8s.Passed || f.jobState().Runs != 0 {
+		t.Fatalf("result = %+v, want Passed after 0 runs on a head without changes", res)
+	}
+
+	t.Log("The branch moves back while the first head's Pod still exists, and that Pod's run was given back, so the source is prepared again as run 1.")
+	f.b.Spec.Head = head
+	rec := f.reconcile(movedPod(p, head, time.Now().Add(-2*movedWait)))
+	if st, pods := f.jobState(), kube.Owned[Pod](rec); st.Runs != 1 || st.Attempt != 2 || len(pods) != 2 || st.Pod != pods[1].Name || len(f.r.day.starts) != 1 {
+		t.Errorf("state = %+v with %d owned Pods and %d runs in the last day, want attempt 2 as run 1 in a new Pod", st, len(pods), len(f.r.day.starts))
 	}
 }

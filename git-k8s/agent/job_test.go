@@ -179,6 +179,61 @@ func TestRestartsAJobsRunWhenAFlagChanges(t *testing.T) {
 	}
 }
 
+func TestRollsBackAJobsRunToAPodThatStillExists(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	job := f.reviewJob()
+	st := &JobState{}
+	running := PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
+		{Name: "agent", State: ContainerState{Running: &struct{}{}}},
+	}}
+	p := f.startJob(job, st)
+	p.Status = running
+	f.runJob(job, st, p)
+	model := f.r.Model
+	f.r.Model = "composer-3"
+	_, rec := f.runJob(job, st, p)
+	pods := kube.Owned[Pod](rec)
+	if len(pods) != 1 {
+		t.Fatalf("owned Pods = %d, want the restarted run's Pod", len(pods))
+	}
+	q := pods[0]
+	q.Namespace, q.UID, q.Status = "default", "uid-"+q.Name, running
+	f.runJob(job, st, p, q)
+
+	t.Log("A rollback before the first Pod is gone goes back to that Pod, without a place in -max-runs-per-day.")
+	f.r.Model = model
+	now := time.Now()
+	p.DeletionTimestamp = &now
+	s, rec := f.runJob(job, st, p, q)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || pods[0].Name != p.Name || st.Pod != p.Name || st.Runs != 1 || len(f.r.day.starts) != 2 {
+		t.Fatalf("RunJob = %+v with state %+v, %d owned Pods, and %d runs in the last day, want run 1 in the first Pod and 2 runs in the last day", s, st, len(pods), len(f.r.day.starts))
+	}
+
+	t.Log("kube was deleting that Pod, so it creates the Pod again, which counts as another run.")
+	f.runJob(job, st, q)
+	again := *p
+	again.DeletionTimestamp, again.UID, again.Status = nil, "uid-again", PodStatus{Phase: "Pending"}
+	if s, _ := f.runJob(job, st, &again, q); s.Done || st.Runs != 2 || len(f.r.day.starts) != 3 {
+		t.Errorf("RunJob = %+v with state %+v and %d runs in the last day, want run 2 and 3 runs in the last day", s, st, len(f.r.day.starts))
+	}
+}
+
+func TestCountsAJobsRunOnceWithTheStateFromBeforeItsPod(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	job := f.reviewJob()
+	p := f.startJob(job, &JobState{})
+
+	t.Log("A caller that couldn't store the state that started the Pod passes the state from before it, so RunJob follows the Pod, whose run counted once.")
+	st := &JobState{}
+	s, rec := f.runJob(job, st, p)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || pods[0].Name != p.Name || st.Pod != p.Name || st.Runs != 1 || len(f.r.day.starts) != 1 {
+		t.Errorf("RunJob = %+v with state %+v, %d owned Pods, and %d runs in the last day, want run 1 in Pod %s", s, st, len(pods), len(f.r.day.starts), p.Name)
+	}
+}
+
 func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	f := newFixture(t, "")
 	job := f.reviewJob()
@@ -205,6 +260,46 @@ func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	want := "preparing the source again in Pod " + pods[0].Name + ", because the run is still for the same commits after Pod " + p.Name + " found that " + moved
 	if s.Done || s.Moved || s.Message != want || st.Runs != 2 || st.Pod != pods[0].Name || st.Attempt != 2 || st.UID != "" {
 		t.Errorf("RunJob = %+v with state %+v, want attempt 2 as a new run", s, st)
+	}
+}
+
+func TestRestartsAJobsMovedPodThatsCreatedAgain(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	job := f.reviewJob()
+	st := &JobState{}
+	p := f.startJob(job, st)
+	f.runJob(job, st, movedPod(p, job.Checkout.Head, time.Now()))
+	f.runJob(job, st)
+	again := *p
+	again.UID = "uid-again"
+	again.Status = PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
+		{Name: "agent", State: ContainerState{Running: &struct{}{}}},
+	}}
+	f.runJob(job, st, &again)
+	if st.Runs != 1 || st.UID != again.UID {
+		t.Fatalf("state = %+v, want the Pod that kube created again to count as run 1", st)
+	}
+
+	t.Log("The agent runs in the Pod that kube created again, so a deploy starts the run over like any other, without another attempt or run.")
+	f.r.Image = "registry.example.com/agent-runner:new"
+	s, rec := f.runJob(job, st, &again)
+	pods := kube.Owned[Pod](rec)
+	if s.Done || len(pods) != 1 || pods[0].Name == p.Name || st.Pod != pods[0].Name || st.Attempt != 1 || st.Runs != 1 {
+		t.Errorf("RunJob = %+v with state %+v and %d owned Pods, want run 1 started over in a new Pod", s, st, len(pods))
+	}
+}
+
+func TestWaitsFromAMovedPodsCreationWithoutFinishedAt(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	st := &JobState{}
+	p := f.startJob(job, st)
+	p.CreationTimestamp = time.Now().Add(-movedWait / 2)
+	s, rec := f.runJob(job, st, movedPod(p, job.Checkout.Head, time.Time{}))
+	if d := rec.RequeueAfter(); s.Done || !s.Moved || len(kube.Owned[Pod](rec)) != 1 || d <= movedWait/2-time.Second || d > movedWait/2 {
+		t.Errorf("RunJob = %+v with %d owned Pods and RequeueAfter = %v, want a wait of about %v in the same Pod", s, len(kube.Owned[Pod](rec)), d, movedWait/2)
 	}
 }
 
@@ -399,6 +494,13 @@ func TestEncodesTheWholeJobState(t *testing.T) {
 	}
 	if err := got.UnmarshalText([]byte("1")); err == nil {
 		t.Error("UnmarshalText(1) succeeded")
+	}
+
+	t.Log("Text that decodes only in part leaves the state unchanged.")
+	kept := JobState{Runs: 2, Pod: "review-old"}
+	got = kept
+	if err := got.UnmarshalText([]byte(`{"runs":3,"pod":5}`)); err == nil || got != kept {
+		t.Errorf(`UnmarshalText({"runs":3,"pod":5}) = %+v, %v; want an error and %+v`, got, err, kept)
 	}
 
 	t.Log("The largest state, with the longest Pod name that a check's name allows, fits in a 1,024-byte output value.")
