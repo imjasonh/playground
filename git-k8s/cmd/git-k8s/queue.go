@@ -127,7 +127,11 @@ func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queu
 		// b's own cache has the write in which b joined. Only a b that the
 		// API server has queued at its current head keeps its place.
 		live, err := kube.Fetch[queueEntry](ctx, b.Namespace, b.Name)
-		if err == nil && live != nil && live.Status.Queued != nil && live.Status.Queued.Head == spec.Head {
+		if err != nil {
+			report(b, reasonQueued, false, "rejoining %s's queue at the back", spec.Parent)
+			return fmt.Errorf("reading %s's place in %s's queue: %w", spec.Branch, spec.Parent, err)
+		}
+		if live != nil && live.Status.Queued != nil && live.Status.Queued.Head == spec.Head {
 			q = live.Status.Queued
 		}
 	}
