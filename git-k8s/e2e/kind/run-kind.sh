@@ -456,6 +456,7 @@ echo "::group::An agent reviews branches in sandboxed Pods"
 AGENT_IMAGE="localhost:${PORT}/git-k8s-e2e/agent-runner"
 docker build -q --platform "${PLATFORM}" --build-arg "CHAINGUARD=${CHAINGUARD}" -t "${AGENT_IMAGE}" "${ROOT}/agent/runner"
 docker push -q "${AGENT_IMAGE}"
+docker rmi "${AGENT_IMAGE}" >/dev/null || true
 AGENT_IMAGE="${AGENT_IMAGE}@$(crane digest "${AGENT_IMAGE}")"
 CHECKS+=(check-review)
 install check-review -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
