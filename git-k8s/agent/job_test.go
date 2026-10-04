@@ -234,6 +234,45 @@ func TestCountsAJobsRunOnceWithTheStateFromBeforeItsPod(t *testing.T) {
 	}
 }
 
+func TestLimitsAJobsRunsWithANegativeCount(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	job.MaxRuns = 1
+	st := &JobState{Runs: -5}
+	p := f.startJob(job, st)
+
+	t.Log("RunJob counts a negative number of runs as 0, so a job for another head can't start more runs than MaxRuns allows.")
+	job.Checkout.Head = f.base
+	if s, rec := f.runJob(job, st); len(kube.Owned[Pod](rec)) != 0 || s.Message != "not starting the agent: the job used all 1 of its runs" || *st != (JobState{Runs: 1}) {
+		t.Errorf("RunJob = %+v with state %+v, want no new run after 1 run", s, st)
+	}
+
+	t.Log("A run in progress counts a negative number of runs as 0 too.")
+	job.Checkout.Head = f.b.Spec.Head
+	st = &JobState{Runs: -5, Pod: p.Name, Attempt: 1}
+	if s, _ := f.runJob(job, st, p); s.Done || st.Pod != p.Name || st.Runs != 0 {
+		t.Errorf("RunJob = %+v with state %+v, want the run in Pod %s after 0 runs", s, st, p.Name)
+	}
+}
+
+func TestCountsAJobsRunAgainWhenItsPodIsGone(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	job := f.reviewJob()
+	st := &JobState{}
+	p := f.startJob(job, st)
+	f.runJob(job, st, p)
+	other := *job
+	other.Checkout.Head = f.base
+	f.startJob(&other, st)
+
+	t.Log("The Runner noted the first job's Pod, but kube deleted it, so going back to that job creates the Pod again, which runs the agent again and counts as a run.")
+	s, rec := f.runJob(job, st)
+	if pods := kube.Owned[Pod](rec); s.Done || len(pods) != 1 || pods[0].Name != p.Name || st.Pod != p.Name || st.Runs != 3 || len(f.r.day.starts) != 3 {
+		t.Errorf("RunJob = %+v with state %+v, %d owned Pods, and %d runs in the last day, want run 3 in Pod %s", s, st, len(pods), len(f.r.day.starts), p.Name)
+	}
+}
+
 func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	f := newFixture(t, "")
 	job := f.reviewJob()
