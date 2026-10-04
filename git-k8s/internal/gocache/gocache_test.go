@@ -345,6 +345,32 @@ func TestUpload(t *testing.T) {
 	}
 }
 
+func TestUploadStopsAt503(t *testing.T) {
+	var puts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		puts.Add(1)
+		http.Error(w, "too many writes are in progress", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	os.WriteFile(tokenFile, []byte("x"), 0o600)
+	dir := t.TempDir()
+	c := startProg(t, &Prog{Dir: dir, Share: true})
+	const built = 40
+	for i := range built {
+		if res := c.put(id(strconv.Itoa(i)), []byte(strconv.Itoa(i))); res.Err != "" {
+			t.Fatal(res.Err)
+		}
+	}
+	stored, had, err := Upload(t.Context(), srv.Client(), dir, srv.URL, tokenFile)
+	if n := puts.Load(); n > 8 {
+		t.Errorf("Upload sent %d of %d outputs to a server that answered 503; want at most 8, one for each worker", n, built)
+	}
+	if stored != 0 || had != 0 || err == nil || !strings.Contains(err.Error(), "503 Service Unavailable") || !strings.Contains(err.Error(), "more weren't sent") {
+		t.Errorf("Upload = %d stored, %d had, %v", stored, had, err)
+	}
+}
+
 func TestParseIndex(t *testing.T) {
 	good := id("x") + " 12\n"
 	if out, size, err := parseIndex([]byte(good)); err != nil || out != id("x") || size != 12 {

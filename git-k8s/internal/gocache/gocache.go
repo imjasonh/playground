@@ -349,7 +349,9 @@ func statusError(resp *http.Response) error {
 // Upload sends the outputs that the go command built in a Prog's dir while
 // Prog shared them to remote, a repository's build cache on a go-cache
 // server, with the service account token in tokenFile. It returns how many
-// outputs the server stored, and how many it already had.
+// outputs the server stored, and how many it already had. Upload stops
+// sending outputs once the server answers 503 Service Unavailable, as
+// go-cache does when its store can't take writes.
 func Upload(ctx context.Context, client *http.Client, dir, remote, tokenFile string) (stored, had int, err error) {
 	root, err := os.OpenRoot(dir)
 	if err != nil {
@@ -367,16 +369,25 @@ func Upload(ctx context.Context, client *http.Client, dir, remote, tokenFile str
 		return 0, 0, err
 	}
 	var (
-		mu     sync.Mutex
-		failed int
-		first  error
-		wg     sync.WaitGroup
-		ids    = make(chan string)
+		mu      sync.Mutex
+		failed  int
+		first   error
+		stopped atomic.Bool
+		wg      sync.WaitGroup
+		ids     = make(chan string)
 	)
 	for range 8 {
 		wg.Go(func() {
 			for id := range ids {
-				created, err := upload(ctx, client, root, remote, strings.TrimSpace(string(token)), id)
+				if stopped.Load() {
+					continue
+				}
+				status, err := upload(ctx, client, root, remote, strings.TrimSpace(string(token)), id)
+				if status == http.StatusServiceUnavailable {
+					// The rest would fail too, each after waiting up to 30
+					// seconds for a write slot.
+					stopped.Store(true)
+				}
 				mu.Lock()
 				switch {
 				case err != nil:
@@ -384,7 +395,7 @@ func Upload(ctx context.Context, client *http.Client, dir, remote, tokenFile str
 					if first == nil {
 						first = err
 					}
-				case created:
+				case status == http.StatusCreated:
 					stored++
 				default:
 					had++
@@ -393,35 +404,46 @@ func Upload(ctx context.Context, client *http.Client, dir, remote, tokenFile str
 			}
 		})
 	}
+	total := 0
 	for _, e := range built {
 		if IsID(e.Name()) {
-			ids <- e.Name()
+			total++
+			if !stopped.Load() {
+				ids <- e.Name()
+			}
 		}
 	}
 	close(ids)
 	wg.Wait()
 	if failed > 0 {
-		return stored, had, fmt.Errorf("%d of %d uploads failed, the first with: %w", failed, failed+stored+had, first)
+		sent := failed + stored + had
+		err := fmt.Errorf("%d of %d uploads failed, the first with: %w", failed, sent, first)
+		if sent < total {
+			err = fmt.Errorf("%w; %d more weren't sent", err, total-sent)
+		}
+		return stored, had, err
 	}
 	return stored, had, nil
 }
 
-func upload(ctx context.Context, client *http.Client, root *os.Root, remote, token, id string) (created bool, err error) {
+// upload sends the output for id, and returns the server's status code if
+// it answered.
+func upload(ctx context.Context, client *http.Client, root *os.Root, remote, token, id string) (int, error) {
 	b, err := root.ReadFile("a/" + id)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	output, size, err := parseIndex(b)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	f, err := root.Open("o/" + output)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	defer f.Close()
 	if fi, err := f.Stat(); err != nil || !fi.Mode().IsRegular() || fi.Size() != size {
-		return false, fmt.Errorf("output %s isn't a file of %d bytes", output, size)
+		return 0, fmt.Errorf("output %s isn't a file of %d bytes", output, size)
 	}
 	var body io.Reader = http.NoBody
 	if size > 0 {
@@ -429,7 +451,7 @@ func upload(ctx context.Context, client *http.Client, root *os.Root, remote, tok
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, remote+"/"+id, body)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	req.ContentLength = size
 	req.Header.Set(OutputIDHeader, output)
@@ -444,14 +466,11 @@ func upload(ctx context.Context, client *http.Client, root *os.Root, remote, tok
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	defer resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusCreated:
-		return true, nil
-	case http.StatusOK:
-		return false, nil
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return resp.StatusCode, statusError(resp)
 	}
-	return false, statusError(resp)
+	return resp.StatusCode, nil
 }
