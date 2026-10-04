@@ -4,13 +4,13 @@ import { existsSync, lstatSync, readFileSync, symlinkSync, unlinkSync, writeFile
 import { join } from "node:path";
 import { test } from "node:test";
 import { fakeBackend } from "../src/backends/fake.js";
-import type { AgentRequest, Backend } from "../src/backends/types.js";
+import { AgentError, type AgentRequest, type Backend } from "../src/backends/types.js";
 import { MAX_DIFF, MAX_LOG } from "../src/prompt.js";
 import type { Result } from "../src/result.js";
 import { runFromEnv, type RunOptions } from "../src/run.js";
 import type { Task } from "../src/task.js";
 import { MAX_PATHS } from "../src/touched.js";
-import { prepareMergePod, preparePod } from "./pod.js";
+import { prepareMerge, preparePod } from "./pod.js";
 
 const quiet: RunOptions = { log: () => undefined };
 
@@ -104,6 +104,97 @@ test("reports the files that the agent changed", async () => {
   );
 });
 
+test("resolves a merge, and reports the files of the merge that the agent changed", async () => {
+  const task = prepareMerge(
+    { "a.txt": "one\ntwo\nthree\n", "keep.txt": "keep\n" },
+    { "a.txt": "one\nours\nthree\n" },
+    { "a.txt": "one\ntheirs\nthree\n", "new.txt": "new\n" },
+    { edit: true, tools: ["read", "edit"] },
+  );
+  const conflict = `one\n<<<<<<< ${task.head}\nours\n||||||| ${task.base}\ntwo\n=======\ntheirs\n>>>>>>> ${task.mergeHead}\nthree\n`;
+  assert.equal(readFileSync(join(task.workTree, "a.txt"), "utf8"), conflict);
+  assert.equal(readFileSync(join(task.workTree, "new.txt"), "utf8"), "new\n");
+  let request: AgentRequest | undefined;
+  const resolve: Backend = async (r) => {
+    request = r;
+    writeFileSync(join(r.cwd, "a.txt"), "one\nours and theirs\nthree\n");
+    return {
+      text: '{"verdict": "pass", "summary": "merged"}',
+      model: r.model,
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    };
+  };
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: resolve } }), 0);
+  assert.ok(request);
+  assert.deepEqual(request.tools, ["read", "edit"]);
+  assert.match(request.prompt, /\nThe paths that conflict:\n\na\.txt\n\n/);
+  assert.match(request.prompt, /\nThe merged branch's commits since the merge base, newest first:\n\n[0-9a-f]+ Theirs\n\n/);
+  assert.deepEqual(
+    readResult(task).files.map((f) => [f.path, Buffer.from(f.content ?? "", "base64").toString()]),
+    [["a.txt", "one\nours and theirs\nthree\n"]],
+  );
+});
+
+test("the fake agent resolves a merge's conflicts by keeping both sides", async () => {
+  const task = prepareMerge(
+    { "a.txt": "one\ntwo\n", "b.txt": "b\n", "c.txt": "c\n" },
+    { "a.txt": "one\nours\n", "b.txt": "b ours\n" },
+    { "a.txt": "one\ntheirs\n", "b.txt": "b theirs\n", "c.txt": "c theirs\n" },
+    { edit: true },
+  );
+  let conflicts: string[] | undefined;
+  const capture: Backend = async (r) => {
+    conflicts = r.conflicts;
+    return fakeBackend(r);
+  };
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: capture } }), 0);
+  assert.deepEqual(conflicts, ["a.txt", "b.txt"]);
+
+  const result = readResult(task);
+  assert.equal(result.verdict, "pass");
+  assert.equal(result.summary, "resolved the conflicts in 2 files");
+  assert.deepEqual(
+    result.files.map((f) => [f.path, Buffer.from(f.content ?? "", "base64").toString()]),
+    [
+      ["a.txt", "one\nours\ntheirs\n"],
+      ["b.txt", "b ours\nb theirs\n"],
+    ],
+  );
+});
+
+test("the fake agent fails a merge that it can't resolve, and changes no files", async () => {
+  const task = prepareMerge({ "a.txt": "one\n" }, { "a.txt": "ours\n" }, { "a.txt": "DO NOT MERGE\n" }, { edit: true });
+  assert.equal(await runTask(task), 0);
+
+  const result = readResult(task);
+  assert.equal(result.verdict, "fail");
+  assert.equal(result.reasoning, "The conflicts in a.txt hold DO NOT MERGE or aren't well formed, so the fake agent changed no files.");
+  assert.deepEqual(result.files, []);
+});
+
+test("the fake agent leaves a merge's files alone when it can't edit", async () => {
+  const task = prepareMerge({ "a.txt": "one\n" }, { "a.txt": "ours\n" }, { "a.txt": "theirs\n" });
+  const before = readFileSync(join(task.workTree, "a.txt"), "utf8");
+  assert.equal(await runTask(task), 0);
+  assert.equal(readResult(task).verdict, "pass");
+  assert.equal(readFileSync(join(task.workTree, "a.txt"), "utf8"), before);
+});
+
+test("offers the tools that the task allows", async () => {
+  const tools: (string[] | undefined)[] = [];
+  const capture: Backend = async (r) => {
+    tools.push(r.tools);
+    return fakeBackend(r);
+  };
+  for (const edit of [false, true]) {
+    assert.equal(await runTask(preparePod({}, { "a.txt": "a\n" }, { edit }), { ...quiet, backends: { fake: capture } }), 0);
+  }
+  assert.deepEqual(tools, [
+    ["read", "grep", "glob", "ls"],
+    ["read", "grep", "glob", "ls", "edit", "delete"],
+  ]);
+});
+
 test("won't edit a tree with a path that isn't UTF-8", async (t) => {
   t.mock.method(console, "error", () => undefined);
   const task = preparePod({ "a.txt": "a\n" }, {}, { edit: true });
@@ -144,6 +235,36 @@ test("keeps the API key out of error messages", async (t) => {
   assert.equal(readFileSync(task.terminationLog, "utf8"), "can't use [REDACTED]");
 });
 
+test("reports what a run that failed after the agent started used", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const broken: Backend = async (request) => {
+    throw new AgentError(`the run broke after using ${request.apiKey}`, {
+      model: request.model,
+      usage: { inputTokens: 5, outputTokens: 2, cacheReadTokens: 1, cacheWriteTokens: 0 },
+      costCents: 1.5,
+      chargedCents: 0,
+    });
+  };
+  const task = preparePod({}, { "a.txt": "a\n" }, { edit: true });
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: broken } }), 0);
+
+  const body = readFileSync(task.resultFile);
+  const { durationMs, ...result } = JSON.parse(body.toString()) as Result;
+  assert.ok(durationMs >= 0);
+  assert.deepEqual(result, {
+    verdict: "fail",
+    summary: "",
+    reasoning: "",
+    error: "the run broke after using [REDACTED]",
+    model: "composer-2.5",
+    usage: { inputTokens: 5, outputTokens: 2, cacheReadTokens: 1, cacheWriteTokens: 0 },
+    costCents: 1.5,
+    chargedCents: 0,
+    files: [],
+  });
+  assert.equal(readFileSync(task.terminationLog, "utf8"), `sha256:${createHash("sha256").update(body).digest("hex")}`);
+});
+
 test("keeps the API key out of the answer", async () => {
   const leaky: Backend = async (request) => ({
     text: JSON.stringify({ verdict: "pass", summary: `key ${request.apiKey}`, reasoning: request.apiKey }),
@@ -168,21 +289,29 @@ test("refuses files that hold the API key", async (t) => {
     };
   };
   const task = preparePod({}, { "a.txt": "a\n" }, { edit: true });
-  assert.equal(await runTask(task, { ...quiet, backends: { fake: leaky } }), 1);
-  assert.equal(readFileSync(task.terminationLog, "utf8"), "the agent wrote the Cursor API key to a.txt");
-  assert.equal(existsSync(task.resultFile), false);
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: leaky } }), 0);
+  assert.ok(!readFileSync(task.resultFile, "utf8").includes("test-key-123"));
+  const result = readResult(task);
+  assert.equal(result.verdict, "fail");
+  assert.equal(result.error, "the agent wrote the Cursor API key to a.txt");
+  assert.deepEqual(result.files, []);
+  assert.deepEqual(result.usage, { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 });
 });
 
-test("fails an answer without a verdict", async (t) => {
+test("fails an answer without a verdict, and reports what it used", async (t) => {
   t.mock.method(console, "error", () => undefined);
   const vague: Backend = async (request) => ({
     text: "Looks fine to me.",
     model: request.model,
     usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    costCents: 0.25,
   });
   const task = preparePod({}, { "a.txt": "a\n" });
-  assert.equal(await runTask(task, { ...quiet, backends: { fake: vague } }), 1);
-  assert.match(readFileSync(task.terminationLog, "utf8"), /doesn't end with a JSON verdict: "Looks fine to me\."/);
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: vague } }), 0);
+  const result = readResult(task);
+  assert.equal(result.verdict, "fail");
+  assert.match(result.error ?? "", /^the agent's answer doesn't end with a JSON verdict: "Looks fine to me\."$/);
+  assert.equal(result.costCents, 0.25);
 });
 
 test("replaces a link at the result path instead of following it", async () => {
@@ -194,75 +323,6 @@ test("replaces a link at the result path instead of following it", async () => {
   assert.equal(readFileSync(outside, "utf8"), "original");
   assert.ok(lstatSync(task.resultFile).isFile());
   assert.equal(readResult(task).verdict, "pass");
-});
-
-test("resolves the conflicts of a merge, and reports the files that it changed", async () => {
-  const task = prepareMergePod(
-    { "a.txt": "one\n", "keep.txt": "keep\n" },
-    { "a.txt": "one\nours\n" },
-    { "a.txt": "one\ntheirs\n", "new.txt": "new\n" },
-  );
-  assert.equal(await runTask(task), 0);
-
-  const result = readResult(task);
-  assert.equal(result.verdict, "pass");
-  assert.equal(result.summary, "resolved the conflicts in 1 file");
-  assert.deepEqual(
-    result.files.map((f) => [f.path, f.mode, Buffer.from(f.content ?? "", "base64").toString()]),
-    [["a.txt", "100644", "one\nours\ntheirs\n"]],
-  );
-});
-
-test("fails a merge that the agent can't resolve, with no files", async () => {
-  const task = prepareMergePod({ "a.txt": "one\n" }, { "a.txt": "one\nours\n" }, { "a.txt": "one\nDO NOT MERGE\n" });
-  assert.equal(await runTask(task), 0);
-
-  const result = readResult(task);
-  assert.equal(result.verdict, "fail");
-  assert.match(result.reasoning, /^The conflicts in a\.txt hold DO NOT MERGE/);
-  assert.deepEqual(result.files, []);
-});
-
-test("gives the backend the merge's prompt and the files that conflict", async () => {
-  let request: AgentRequest | undefined;
-  const capture: Backend = async (r) => {
-    request = r;
-    return { text: '{"verdict": "fail", "summary": "no"}', model: r.model, usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 } };
-  };
-  const task = prepareMergePod(
-    { "a.txt": "one\n", "sp ace.txt": "one\n" },
-    { "a.txt": "ours\n", "sp ace.txt": "ours\n" },
-    { "a.txt": "theirs\n", "sp ace.txt": "theirs\n" },
-  );
-  assert.equal(await runTask(task, { ...quiet, backends: { fake: capture } }), 0);
-  assert.deepEqual(request?.conflicts, ["a.txt", "sp ace.txt"]);
-  assert.match(request?.prompt ?? "", /\nThe files that conflict:\n\n- a\.txt\n- sp ace\.txt\n/);
-  assert.match(readFileSync(join(task.workTree, "a.txt"), "utf8"), /^<<<<<<< [0-9a-f]{40}\nours\n\|\|\|\|\|\|\| [0-9a-f]{40}\none\n=======\ntheirs\n>>>>>>> [0-9a-f]{40}\n$/);
-});
-
-test("reads only the start of a merge's long diff and commit log, and lists no paths for it", async () => {
-  const task = prepareMergePod({ "a.txt": "one\n" }, { "a.txt": "one\nours\n" }, { "a.txt": "one\ntheirs\n" });
-  writeFileSync(task.merge?.diffFile ?? "", `diff --git a/a.txt b/a.txt\n${"+x\n".repeat(100_000)}`);
-  writeFileSync(task.merge?.logFile ?? "", `abc1234 ${"x".repeat(100)}\n`.repeat(2 * MAX_LOG));
-  writeFileSync(task.changesFile ?? "", "A\0a.txt\0".repeat(MAX_PATHS + 1));
-  let request: AgentRequest | undefined;
-  const capture: Backend = async (r) => {
-    request = r;
-    return fakeBackend(r);
-  };
-  assert.equal(await runTask(task, { ...quiet, backends: { fake: capture } }), 0);
-  assert.equal(readResult(task).verdict, "pass");
-  assert.ok(request);
-  assert.ok(request.prompt.length < MAX_DIFF / 2 + MAX_LOG / 2 + 5000);
-  assert.match(request.prompt, /longer than 100000 bytes/);
-  assert.doesNotMatch(request.prompt, /paths that the change touches/);
-});
-
-test("refuses a merge without conflicts", async (t) => {
-  t.mock.method(console, "error", () => undefined);
-  const task = prepareMergePod({ "a.txt": "one\n" }, { "a.txt": "one\nours\n" }, { "b.txt": "theirs\n" });
-  assert.equal(await runTask(task), 1);
-  assert.equal(readFileSync(task.terminationLog, "utf8"), "the merge that the Pod prepared has no conflicts");
 });
 
 test("rejects a task that isn't valid", async (t) => {

@@ -1,7 +1,12 @@
 package main
 
 import (
+	"cmp"
+	"context"
 	"encoding/json"
+	"maps"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -94,19 +99,42 @@ func withUnion(t *testing.T, p ...string) {
 	union = p
 }
 
-// mergeTask is what a Pod's AGENT_TASK says about the merge.
-type mergeTask struct {
-	Instructions string `json:"instructions"`
-	Edit         bool   `json:"edit"`
-	Merge        struct {
-		Commit string `json:"commit"`
-		Name   string `json:"name"`
-	} `json:"merge"`
+// withJobs runs the agent's jobs with fn for the rest of the test, and
+// returns the jobs that the check ran.
+func withJobs(t *testing.T, fn func(job *agent.Job, st *agent.JobState) agent.JobStatus) *[]*agent.Job {
+	withAgent(t)
+	r := runJob
+	t.Cleanup(func() { runJob = r })
+	var jobs []*agent.Job
+	runJob = func(_ context.Context, job *agent.Job, st *agent.JobState) agent.JobStatus {
+		jobs = append(jobs, job)
+		return fn(job, st)
+	}
+	return &jobs
 }
 
-func agentTask(t *testing.T, p *agent.Pod) mergeTask {
+// finish finishes each run with res, as RunJob does once it fetches the
+// agent's result.
+func finish(res *agent.Result) func(*agent.Job, *agent.JobState) agent.JobStatus {
+	return func(_ *agent.Job, st *agent.JobState) agent.JobStatus {
+		st.Runs, st.Pod, st.Attempt = st.Runs+1, "conflicts-app-c-x-1", 1
+		return agent.JobStatus{Done: true, Message: cmp.Or(res.Reasoning, res.Summary), Result: res}
+	}
+}
+
+// podTask is what a Pod's AGENT_TASK says about the agent's task.
+type podTask struct {
+	Instructions string   `json:"instructions"`
+	Edit         bool     `json:"edit"`
+	Tools        []string `json:"tools"`
+	Base         string   `json:"base"`
+	MergeBranch  string   `json:"mergeBranch"`
+	MergeHead    string   `json:"mergeHead"`
+}
+
+func agentTask(t *testing.T, p *agent.Pod) podTask {
 	t.Helper()
-	var task mergeTask
+	var task podTask
 	if err := json.Unmarshal([]byte(p.Spec.InitContainers[1].Env[0].Value), &task); err != nil {
 		t.Fatal(err)
 	}
@@ -203,10 +231,20 @@ func TestMergesUnionPaths(t *testing.T) {
 }
 
 func TestLeavesConflictsThatItCantResolve(t *testing.T) {
+	// both commits files on top of main and of c/x.
+	both := func(b *Branch, w *gittest.Work, mainFiles, branchFiles map[string]string) {
+		w.Branch("main", b.Spec.ParentHead)
+		b.Spec.ParentHead = commit(w, "main edit", mainFiles)
+		w.Push("main")
+		w.Branch("c/x", b.Spec.Head)
+		b.Spec.Head = commit(w, "branch edit", branchFiles)
+		w.Push("c/x")
+	}
 	for _, tc := range []struct {
 		name  string
 		agent bool
 		edit  func(b *Branch, w *gittest.Work)
+		state string
 		want  string
 	}{{
 		name: "without an agent image",
@@ -237,6 +275,52 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 			w.Push("c/x")
 		},
 		want: "the branch shares no history with main, so git can't merge them",
+	}, {
+		name:  "when main deleted the file that conflicts",
+		agent: true,
+		edit: func(b *Branch, w *gittest.Work) {
+			w.Branch("main", b.Spec.ParentHead+"~1")
+			w.Git("rm", "--quiet", "a.txt")
+			b.Spec.ParentHead = w.Commit("delete a.txt")
+			w.Push("main")
+		},
+		want: "merging main conflicts on a.txt, which isn't a file on both sides, so the agent can't resolve it",
+	}, {
+		name:  "in a binary file",
+		agent: true,
+		edit: func(b *Branch, w *gittest.Work) {
+			both(b, w, map[string]string{"b.bin": "\x00main\n"}, map[string]string{"b.bin": "\x00branch\n"})
+		},
+		want: "merging main conflicts on b.bin, which git can't mark with conflict markers, such as a binary file",
+	}, {
+		name:  "in a .cursorignore file",
+		agent: true,
+		edit: func(b *Branch, w *gittest.Work) {
+			both(b, w, map[string]string{".cursorignore": "main\n"}, map[string]string{".cursorignore": "branch\n"})
+		},
+		want: "merging main conflicts on .cursorignore, which the agent can't see, because its work tree leaves out .cursorignore files",
+	}, {
+		name:  "when the branch and main have two merge bases",
+		agent: true,
+		edit: func(b *Branch, w *gittest.Work) {
+			head, parent := b.Spec.Head, b.Spec.ParentHead
+			w.Branch("c/x", head)
+			w.Git("merge", "--quiet", "--no-edit", "-s", "ours", parent)
+			b.Spec.Head = w.Git("rev-parse", "HEAD")
+			w.Branch("main", parent)
+			w.Git("merge", "--quiet", "--no-edit", "-s", "ours", head)
+			b.Spec.ParentHead = w.Git("rev-parse", "HEAD")
+			both(b, w, map[string]string{"a.txt": "one\nmain again\nthree\n"}, map[string]string{"a.txt": "one\nbranch again\nthree\n"})
+		},
+		want: "the branch and main have 2 merge bases, so their conflicts have no one base for the agent to compare",
+	}, {
+		name:  "when the branch used all its agent runs",
+		agent: true,
+		edit: func(b *Branch, _ *gittest.Work) {
+			b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: map[string]string{"runs": "10"}}
+		},
+		state: gitk8s.Running,
+		want:  "merging main conflicts in a.txt; not running an agent because the branch used all 10 agent runs that maxAgentRuns allows",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.agent {
@@ -252,8 +336,8 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if res := b.Status.Checks.Result; res.State != gitk8s.Failed || res.Message != tc.want {
-				t.Errorf("result = %+v, want Failed with %q", res, tc.want)
+			if res, want := b.Status.Checks.Result, cmp.Or(tc.state, gitk8s.Failed); res.State != want || res.Message != tc.want {
+				t.Errorf("result = %+v, want %s with %q", res, want, tc.want)
 			}
 			if pods := kube.Owned[agent.Pod](rec); len(pods) != 0 {
 				t.Errorf("started %d agent Pods, want none", len(pods))
@@ -268,7 +352,7 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 func TestStartsAnAgent(t *testing.T) {
 	withAgent(t)
 	srv := gittest.NewServer(t, "")
-	b, _, _ := setup(t, srv,
+	b, _, base := setup(t, srv,
 		map[string]string{"a.txt": "one\nmain\nthree\n", "go.sum": "a v1\nb v1\n"},
 		map[string]string{"a.txt": "one\nbranch\nthree\n", "go.sum": "a v1\nc v1\n"})
 	rec, err := reconcile(t, srv, b, rules)
@@ -280,15 +364,22 @@ func TestStartsAnAgent(t *testing.T) {
 	if res.State != gitk8s.Running || len(pods) != 1 {
 		t.Fatalf("result = %+v and %d Pods, want Running with one Pod", res, len(pods))
 	}
-	if res.Outputs["conflicts"] != "a.txt,go.sum" || res.Outputs["merge"] != b.Spec.ParentHead || res.Outputs["runs"] != "1" || res.Outputs["pod"] != pods[0].Name {
-		t.Errorf("outputs = %v", res.Outputs)
+	want := map[string]string{
+		"conflicts": "a.txt,go.sum", "merge": b.Spec.ParentHead, "base": base, "union": "go.sum",
+		"runs": "1", "pod": pods[0].Name, "attempt": "1",
+	}
+	if !maps.Equal(res.Outputs, want) {
+		t.Errorf("outputs = %v, want %v", res.Outputs, want)
 	}
 	task := agentTask(t, pods[0])
-	if !task.Edit || task.Instructions != instructions || task.Merge.Commit != b.Spec.ParentHead || task.Merge.Name != "main" {
+	if !task.Edit || task.Instructions != instructions || !slices.Equal(task.Tools, tools) || task.Base != base ||
+		task.MergeBranch != "main" || task.MergeHead != b.Spec.ParentHead {
 		t.Errorf("the agent's task = %+v, want a merge of main", task)
 	}
-	if got := prepareEnv(pods[0], "ATTRIBUTES"); got != "go.sum merge=union\n" {
-		t.Errorf("ATTRIBUTES = %q, want go.sum's union merge", got)
+	for name, want := range map[string]string{"MERGE_BRANCH": "main", "MERGE_HEAD": b.Spec.ParentHead, "MERGE_REF": "", "ATTRIBUTES": "go.sum merge=union\n"} {
+		if got := prepareEnv(pods[0], name); got != want {
+			t.Errorf("%s = %q, want %q", name, got, want)
+		}
 	}
 }
 
@@ -368,6 +459,221 @@ func TestStartsOverWhenTheRunCantGoOn(t *testing.T) {
 	}
 	if got := w.Fetch("c/x"); got != res.Outputs["fix"] {
 		t.Errorf("c/x = %s, want the merge %s", got, res.Outputs["fix"])
+	}
+}
+
+func TestStartsOverWhenMainMovesBeforeThePodFetchesIt(t *testing.T) {
+	withAgent(t)
+	srv := gittest.NewServer(t, "")
+	b, w, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+	started := b.Spec.ParentHead
+	rec, err := reconcile(t, srv, b, rules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := kube.Owned[agent.Pod](rec)[0]
+	p.Namespace, p.UID = "default", "uid-1"
+	msg := "main no longer points to " + started
+	p.Status = agent.PodStatus{Phase: "Failed", InitContainerStatuses: []agent.ContainerStatus{
+		{Name: "prepare", State: agent.ContainerState{Terminated: &agent.Terminated{ExitCode: 3, Message: msg}}},
+	}}
+	w.Branch("main", started)
+	moved := commit(w, "main moves", map[string]string{"d.txt": "d\n"})
+	w.Push("main")
+
+	t.Log("Until the spec holds main's new head, the run waits.")
+	rec, err = reconcile(t, srv, b, rules, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := b.Status.Checks.Result
+	if pods := kube.Owned[agent.Pod](rec); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+msg || len(pods) != 1 || pods[0].Name != p.Name {
+		t.Fatalf("result = %+v and Pods %v, want Running with Pod %s", res, pods, p.Name)
+	}
+	if res.Outputs["merge"] != started || res.Outputs["podUID"] != "uid-1" || res.Outputs["runs"] != "1" {
+		t.Errorf("outputs = %v, want the run that merges main at %s", res.Outputs, started)
+	}
+
+	t.Log("Then the check starts a run on main's new head.")
+	b.Spec.ParentHead = moved
+	rec, err = reconcile(t, srv, b, rules, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res = b.Status.Checks.Result
+	if res.State != gitk8s.Running || res.Outputs["merge"] != moved || res.Outputs["runs"] != "2" || res.Outputs["pod"] == p.Name {
+		t.Fatalf("result = %+v, want Running with a second run that merges main at %s", res, moved)
+	}
+	if !slices.ContainsFunc(kube.Owned[agent.Pod](rec), func(q *agent.Pod) bool { return q.Name == res.Outputs["pod"] }) {
+		t.Errorf("the check didn't declare the new run's Pod %s", res.Outputs["pod"])
+	}
+}
+
+// resolution is the result of an agent that resolved a.txt's conflict.
+func resolution(files ...agent.File) *agent.Result {
+	cents := 1.5
+	return &agent.Result{
+		Verdict: agent.Pass, Summary: "kept both lines", Reasoning: "Both sides change the second line.",
+		Model: "fake:composer-2.5", Usage: agent.Usage{InputTokens: 10, OutputTokens: 2}, CostCents: &cents, Files: files,
+	}
+}
+
+var resolvedA = agent.File{Path: "a.txt", Mode: "100644", Content: []byte("one\nbranch\nmain\nthree\n")}
+
+func TestCommitsTheAgentsResolution(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		external bool
+	}{{name: "of main"}, {name: "of the external head", external: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			jobs := withJobs(t, finish(resolution(resolvedA)))
+			srv := gittest.NewServer(t, "pw")
+			mainFiles := map[string]string{"a.txt": "one\nmain\nthree\n", "go.sum": "a v1\nb v1\n"}
+			b, w, base := setup(t, srv, mainFiles, map[string]string{"a.txt": "one\nbranch\nthree\n", "go.sum": "a v1\nc v1\n"})
+			head, merged := b.Spec.Head, b.Spec.ParentHead
+			ref, task, title := &agent.Ref{Branch: "main", Commit: merged}, instructions, "Merge main into c/x"
+			var world []any
+			if tc.external {
+				var o *observed
+				merged, o = diverge(w, b.Name, "c/x", base, mainFiles)
+				ref = &agent.Ref{Branch: "c/x", Commit: merged, Name: downstream + "c/x"}
+				task, title = divergedInstructions+instructions, "Merge the external repository's c/x into c/x"
+				world = append(world, o)
+			}
+			if _, err := reconcile(t, srv, b, rules, world...); err != nil {
+				t.Fatal(err)
+			}
+
+			res := b.Status.Checks.Result
+			fix := res.Outputs["fix"]
+			if res.State != gitk8s.Fixed || fix == "" || res.Message != "the agent resolved the conflicts in a.txt; pushed "+gitk8s.Short(fix) {
+				t.Fatalf("result = %+v, want Fixed with the agent's merge", res)
+			}
+			for k, want := range map[string]string{
+				"merge": merged, "conflicts": "a.txt,go.sum", "runs": "1", "pod": "conflicts-app-c-x-1",
+				"summary": "kept both lines", "model": "fake:composer-2.5", "inputTokens": "10", "outputTokens": "2", "costCents": "1.5",
+			} {
+				if got := res.Outputs[k]; got != want {
+					t.Errorf("outputs[%s] = %q, want %q", k, got, want)
+				}
+			}
+			if got := w.Fetch("c/x"); got != fix {
+				t.Fatalf("c/x = %s, want the merge %s", got, fix)
+			}
+			want := head + " " + merged + "\n" + title + "\n\nkept both lines\n\na.txt\n\n" + git.FixerTrailer + ": conflicts"
+			if got := w.Git("log", "-1", "--format=%P%n%B", fix); got != want {
+				t.Errorf("merge's parents and message =\n%s\nwant\n%s", got, want)
+			}
+			if got := w.Show(fix, "a.txt"); got != "one\nbranch\nmain\nthree" {
+				t.Errorf("a.txt = %q, want the agent's resolution", got)
+			}
+			if got := w.Show(fix, "go.sum"); got != "a v1\nc v1\nb v1" {
+				t.Errorf("go.sum = %q, want git's union merge", got)
+			}
+
+			if len(*jobs) != 1 {
+				t.Fatalf("ran %d jobs, want 1", len(*jobs))
+			}
+			job := (*jobs)[0]
+			repo, _ := srv.Repository("app", rules...)
+			wantCheckout := agent.Checkout{Branch: "c/x", Head: head, Parent: "main", Base: base, Merge: ref, Union: []string{"go.sum"}}
+			if !reflect.DeepEqual(job.Checkout, wantCheckout) {
+				t.Errorf("job's checkout = %+v, want %+v", job.Checkout, wantCheckout)
+			}
+			if job.Name != b.Name || job.Namespace != "default" || job.URL != repo.Spec.URL || !reflect.DeepEqual(job.Credentials, repo.Spec.SecretRef) ||
+				job.Task != (agent.Task{Instructions: task, Edit: true}) || !slices.Equal(job.Tools, tools) || job.MaxRuns != 10 {
+				t.Errorf("job = %+v", job)
+			}
+		})
+	}
+}
+
+func TestRejectsABadResolution(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		files []agent.File
+		want  string
+	}{
+		{name: "without changes", want: "conflict markers remain in a.txt"},
+		{
+			name:  "with a marker line",
+			files: []agent.File{{Path: "a.txt", Mode: "100644", Content: []byte("one\nbranch\n=======\nmain\nthree\n")}},
+			want:  "a.txt has more lines that start with ======= than its two sides, so conflict markers remain",
+		},
+		{
+			name:  "that changes another file",
+			files: []agent.File{resolvedA, {Path: "b.txt", Mode: "100644", Content: []byte("b\n")}},
+			want:  "the agent changed b.txt, which doesn't conflict",
+		},
+		{name: "that deletes the file", files: []agent.File{{Path: "a.txt", Deleted: true}}, want: "the agent deleted a.txt"},
+		{
+			name:  "that changes the file's mode",
+			files: []agent.File{{Path: "a.txt", Mode: "100755", Content: resolvedA.Content}},
+			want:  "the agent gave a.txt the mode 100755, which it has on neither side",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withJobs(t, finish(resolution(tc.files...)))
+			srv := gittest.NewServer(t, "")
+			b, _, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+			head := b.Spec.Head
+			if _, err := reconcile(t, srv, b, rules); err != nil {
+				t.Fatal(err)
+			}
+			res := b.Status.Checks.Result
+			if want := "can't commit the agent's resolution: " + tc.want; res.State != gitk8s.Failed || res.Message != want {
+				t.Errorf("result = %+v, want Failed with %q", res, want)
+			}
+			if res.Outputs["runs"] != "1" || res.Outputs["inputTokens"] != "10" {
+				t.Errorf("outputs = %v, want the run and what it used", res.Outputs)
+			}
+			if got := srv.Heads(t, "app")["c/x"]; got != head {
+				t.Errorf("c/x moved to %s", got)
+			}
+		})
+	}
+}
+
+func TestReportsARunThatDoesntResolve(t *testing.T) {
+	for _, tc := range []struct {
+		name, want string
+		status     agent.JobStatus
+	}{{
+		name: "when the agent fails",
+		want: "the agent couldn't resolve the conflicts: The two sides contradict each other.",
+		status: agent.JobStatus{Done: true, Message: "The two sides contradict each other.", Result: &agent.Result{
+			Verdict: agent.Fail, Summary: "can't resolve a.txt", Reasoning: "The two sides contradict each other.",
+			Model: "fake:composer-2.5", Usage: agent.Usage{InputTokens: 10},
+		}},
+	}, {
+		name: "when the run fails",
+		want: "the agent failed in Pod conflicts-app-c-x-1: out of time",
+		status: agent.JobStatus{Done: true, Message: "the agent failed in Pod conflicts-app-c-x-1: out of time", Failed: &agent.Result{
+			Verdict: agent.Fail, Model: "fake:composer-2.5", Usage: agent.Usage{InputTokens: 10}, Error: "out of time",
+		}},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			withJobs(t, func(_ *agent.Job, st *agent.JobState) agent.JobStatus {
+				st.Runs, st.Pod = st.Runs+1, "conflicts-app-c-x-1"
+				return tc.status
+			})
+			srv := gittest.NewServer(t, "")
+			b, _, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+			head := b.Spec.Head
+			if _, err := reconcile(t, srv, b, rules); err != nil {
+				t.Fatal(err)
+			}
+			res := b.Status.Checks.Result
+			if res.State != gitk8s.Failed || res.Message != tc.want {
+				t.Errorf("result = %+v, want Failed with %q", res, tc.want)
+			}
+			if res.Outputs["runs"] != "1" || res.Outputs["merge"] != b.Spec.ParentHead || res.Outputs["inputTokens"] != "10" || res.Outputs["model"] != "fake:composer-2.5" {
+				t.Errorf("outputs = %v, want the run and what it used", res.Outputs)
+			}
+			if got := srv.Heads(t, "app")["c/x"]; got != head {
+				t.Errorf("c/x moved to %s", got)
+			}
+		})
 	}
 }
 
@@ -454,7 +760,7 @@ func TestStartsAnAgentForTheExternalHead(t *testing.T) {
 	if res := b.Status.Checks.Result; res.State != gitk8s.Running || len(pods) != 1 || res.Outputs["diverged"] != e || res.Outputs["conflicts"] != "a.txt" {
 		t.Fatalf("result = %+v and %d Pods, want Running with one Pod", res, len(pods))
 	}
-	if task := agentTask(t, pods[0]); task.Merge.Commit != e || task.Merge.Name != "the external repository's c/x" {
+	if task := agentTask(t, pods[0]); task.Instructions != divergedInstructions+instructions || task.MergeBranch != "c/x" || task.MergeHead != e {
 		t.Errorf("the agent's task = %+v, want a merge of the external head", task)
 	}
 	if got := prepareEnv(pods[0], "MERGE_REF"); got != downstream+"c/x" {

@@ -36,4 +36,10 @@ export interface Result {
   chargedCents?: number;
   durationMs: number;
   files: ChangedFile[];
+  /**
+   * Why the run failed after the agent started. Then verdict is fail,
+   * summary, reasoning, and files are empty, and usage and the costs are
+   * what the agent used before it failed.
+   */
+  error?: string;
 }

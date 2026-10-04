@@ -63,8 +63,10 @@ async function resolveMerge(request: AgentRequest, conflicts: string[]): Promise
       reasoning: `The conflicts in ${refused.join(", ")} hold ${MARKER} or aren't well formed, so the fake agent changed no files.`,
     });
   }
-  for (const [path, text] of resolved) {
-    await writeFile(join(request.cwd, path), text);
+  if (request.edit) {
+    for (const [path, text] of resolved) {
+      await writeFile(join(request.cwd, path), text);
+    }
   }
   return respond(request, "I resolved the conflicts.", {
     verdict: "pass",

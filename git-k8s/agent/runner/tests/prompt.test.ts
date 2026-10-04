@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildMergePrompt, buildPrompt, firstLines, MAX_DIFF, MAX_LOG } from "../src/prompt.js";
-import type { Merge } from "../src/task.js";
+import { buildPrompt, firstLines, MAX_DIFF, MAX_LOG } from "../src/prompt.js";
 import { preparePod } from "./pod.js";
 
 test("holds the task, the branch, the commits, and the diff", () => {
@@ -95,41 +94,20 @@ test("marks the paths that a long diff leaves out", () => {
   );
 });
 
+test("explains a merge, its conflicts, and the merged commits", () => {
+  const task = preparePod({}, {}, { head: "def", base: "abc", mergeBranch: "main", mergeHead: "fed", edit: true });
+  const prompt = buildPrompt(task, "", "def Add x\n", undefined, { conflicts: ["a.txt", "tab\there"], log: `fed Change main${" ".repeat(50)}\n` });
+  assert.match(prompt, /You're merging another branch into one of them\.\n\nBranch: c\/x\nParent branch: main\nHead commit: def\nMerged branch: main\nMerged commit: fed\nMerge base: abc\n\n/);
+  assert.match(prompt, /a line "<<<<<<< def", the head commit's lines, a line "\|\|\|\|\|\|\| abc", the merge base's lines, a line "=======", the merged commit's lines, and a line ">>>>>>> fed"\./);
+  assert.match(prompt, /\nThe paths that conflict:\n\na\.txt\n"tab\\there"\n\nYour task:\n/);
+  assert.match(prompt, / newest first:\n\ndef Add x\n\nThe merged branch's commits since the merge base, newest first:\n\nfed Change main\n\nThe change from/);
+  assert.match(prompt, /The files that you leave become the merge's files/);
+  assert.doesNotMatch(prompt, /one of those checks|a commit on the branch/);
+  assert.match(buildPrompt(task, "", "", undefined, { conflicts: [], log: "" }), /The paths that conflict:\n\n\(none\)\n/);
+  assert.match(buildPrompt({ ...task, edit: false }, "", "", undefined, { conflicts: [], log: "" }), /Don't change any files\./);
+});
+
 test("shortens a long commit log", () => {
   const prompt = buildPrompt(preparePod({}, {}), "", `abc1234 ${"x".repeat(100)}\n`.repeat(1000));
   assert.ok(prompt.length < MAX_LOG + 5000);
-});
-
-test("holds both sides of a merge and the files that conflict", () => {
-  const task = preparePod({}, {}, { branch: "feature", base: "abc", head: "def", edit: true });
-  const merge: Merge = { commit: "fed", name: "the external repository's feature", conflictsFile: "", diffFile: "", logFile: "" };
-  const prompt = buildMergePrompt(task, merge, ["a.txt", "b/c.txt"], { diff: "+ours\n", log: "def Ours\n" }, { diff: "+theirs\n", log: "fed Theirs\n" });
-  assert.match(prompt, /\nBranch: feature\nHead commit: def\nMerging: the external repository's feature, at commit fed\nMerge base: abc\n/);
-  assert.match(prompt, /\n<<<<<<< def\nthe lines from the branch\n\|\|\|\|\|\|\| abc\nthe lines from the merge base\n=======\nthe lines from the external repository's feature\n>>>>>>> fed\n/);
-  assert.match(prompt, /\nThe files that conflict:\n\n- a\.txt\n- b\/c\.txt\n/);
-  assert.match(prompt, /\nThe commits on the branch since the merge base, newest first:\n\ndef Ours\n\nThe change from the merge base to the head commit:\n\n```diff\n\+ours\n\n```\n/);
-  assert.match(
-    prompt,
-    /\nThe commits on the external repository's feature since the merge base, newest first:\n\nfed Theirs\n\nThe change from the merge base to the external repository's feature:\n\n```diff\n\+theirs\n\n```\n/,
-  );
-  assert.match(prompt, /Edit only the files that conflict/);
-  assert.ok(prompt.endsWith(`or why you couldn't"}`));
-});
-
-test("shortens each side's long diff in a merge", () => {
-  const merge: Merge = { commit: "fed", name: "main", conflictsFile: "", diffFile: "", logFile: "" };
-  const long = { diff: "+x\n".repeat(MAX_DIFF), log: "" };
-  const prompt = buildMergePrompt(preparePod({}, {}), merge, ["a.txt"], long, long);
-  assert.ok(prompt.length < MAX_DIFF + 5000);
-  assert.equal(prompt.split(`The diff is longer than ${MAX_DIFF / 2} bytes`).length, 3);
-});
-
-test("fences, quotes, and trims both sides of a merge like a change", () => {
-  const merge: Merge = { commit: "fed", name: "main", conflictsFile: "", diffFile: "", logFile: "" };
-  const ours = { diff: Buffer.from("+````\n"), log: Buffer.from(`abc1234 Ours${" ".repeat(190)}\n`) };
-  const theirs = { diff: "+```js\n", log: `fed5678 Theirs${" ".repeat(188)}\n` };
-  const prompt = buildMergePrompt(preparePod({}, {}), merge, ["a.txt", "x\n- fake"], ours, theirs);
-  assert.match(prompt, /\nThe files that conflict:\n\n- a\.txt\n- "x\\n- fake"\n\n/);
-  assert.match(prompt, /newest first:\n\nabc1234 Ours\n\n[^]*\n`````diff\n\+````\n\n`````\n/);
-  assert.match(prompt, /newest first:\n\nfed5678 Theirs\n\n[^]*\n````diff\n\+```js\n\n````\n/);
 });

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
@@ -264,6 +266,42 @@ func TestDoesntPushWhatChangesNothing(t *testing.T) {
 	}
 }
 
+func TestShortensLongReasoning(t *testing.T) {
+	for _, push := range []bool{true, false} {
+		f := newFixture(t, "s3cret")
+		f.task.Edit = true
+		f.b.Spec.Merge.Checks[0].MayPush = push
+		p := f.start()
+		body, _ := json.Marshal(Result{
+			Verdict: Fail, Reasoning: strings.Repeat("é", 1000), Model: "fake:composer-2.5",
+			Files: []File{{Path: "a.txt", Mode: "100644", Content: []byte("one\n")}},
+		})
+		f.reconcile(finished(p, f.serve(body, p.UID)))
+		res := f.state()
+		suffix := "...; the policy doesn't let this check push the fix"
+		if push {
+			suffix = "...; pushed " + gitk8s.Short(res.Outputs["fix"])
+		}
+		if len(res.Message) > 1024 || !utf8.ValidString(res.Message) || !strings.HasSuffix(res.Message, suffix) {
+			t.Errorf("message = %q (%d bytes), want valid UTF-8 of at most 1,024 bytes that ends with %q", res.Message, len(res.Message), suffix)
+		}
+	}
+}
+
+func TestShorten(t *testing.T) {
+	for _, r := range []string{"a", "é", "€", "😀"} {
+		s := strings.Repeat(r, maxMessage+1)
+		got := shorten(s)
+		kept, ok := strings.CutSuffix(got, "...")
+		if !ok || len(got) > maxMessage || len(got) <= maxMessage-utf8.UTFMax || !utf8.ValidString(got) || !strings.HasPrefix(s, kept) {
+			t.Errorf("shorten(%d × %q) = %q (%d bytes)", maxMessage+1, r, got, len(got))
+		}
+	}
+	if s := strings.Repeat("é", maxMessage/2); shorten(s) != s {
+		t.Errorf("shorten changed a message of %d bytes", len(s))
+	}
+}
+
 func TestRejectsResultsThatDontCheckOut(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -279,6 +317,7 @@ func TestRejectsResultsThatDontCheckOut(t *testing.T) {
 		{name: "usage", body: []byte(`{"verdict":"pass","usage":{"inputTokens":-1}}`), want: "negative usage"},
 		{name: "charge", body: []byte(`{"verdict":"pass","chargedCents":-1}`), want: "negative usage"},
 		{name: "files", body: review(Pass, File{Path: "a.txt", Mode: "100644"}), want: "it changes files, which its task doesn't allow"},
+		{name: "error with files", edit: true, body: []byte(`{"verdict":"fail","error":"broke","files":[{"path":"a.txt","mode":"100644"}]}`), want: "it reports an error but also changes files"},
 		{name: "git dir", edit: true, body: review(Pass, File{Path: "sub/.GIT/config", Mode: "100644"}), want: "invalid path"},
 		{name: "mode", edit: true, body: review(Pass, File{Path: "sub", Mode: "160000"}), want: `the mode "160000"`},
 	} {
@@ -328,9 +367,29 @@ func TestReportsPodsThatFail(t *testing.T) {
 		want   string
 	}{{
 		name:   "missing Secret",
-		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "CreateContainerConfigError", `secret "cursor-api-key" not found`)}},
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "CreateContainerConfigError", `secret "app-creds" not found`)}},
+		state:  gitk8s.Failed,
+		want:   `can't start: container prepare is waiting: CreateContainerConfigError: secret "app-creds" not found`,
+	}, {
+		name:   "image that can't be pulled",
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{done, waiting("agent", "ErrImagePull", "not found")}},
+		state:  gitk8s.Failed,
+		want:   "can't start: container agent is waiting: ErrImagePull: not found",
+	}, {
+		name:   "backing off pulling an image",
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "ImagePullBackOff", "Back-off pulling image")}},
+		state:  gitk8s.Failed,
+		want:   "can't start: container prepare is waiting: ImagePullBackOff: Back-off pulling image",
+	}, {
+		name:   "invalid image",
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "InvalidImageName", "")}},
+		state:  gitk8s.Failed,
+		want:   "can't start: container prepare is waiting: InvalidImageName",
+	}, {
+		name:   "container that the runtime couldn't create yet",
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "CreateContainerError", "failed to reserve container name")}},
 		state:  gitk8s.Running,
-		want:   `can't start: container prepare is waiting: CreateContainerConfigError: secret "cursor-api-key" not found`,
+		want:   "can't start: container prepare is waiting: CreateContainerError: failed to reserve container name",
 	}, {
 		name:   "starting",
 		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "PodInitializing", "")}},
@@ -348,6 +407,18 @@ func TestReportsPodsThatFail(t *testing.T) {
 			InitContainerStatuses: []ContainerStatus{done, {Name: "agent", State: terminated(&Terminated{ExitCode: 137, Reason: "Error"})}}},
 		state: gitk8s.Failed,
 		want:  "ran out of time before the agent finished",
+	}, {
+		name: "evicted while preparing the source",
+		status: PodStatus{Phase: "Failed", Reason: "Evicted", Message: `Usage of EmptyDir volume "git" exceeds the limit "2Gi". `,
+			InitContainerStatuses: []ContainerStatus{{Name: "prepare", State: terminated(&Terminated{ExitCode: 137, Reason: "Error"})}, waiting("agent", "PodInitializing", "")}},
+		state: gitk8s.Failed,
+		want:  `was evicted: Usage of EmptyDir volume "git" exceeds the limit "2Gi".`,
+	}, {
+		name: "evicted while running",
+		status: PodStatus{Phase: "Failed", Reason: "Evicted", Message: "Pod ephemeral local storage usage exceeds the total limit of containers 7488Mi. ",
+			InitContainerStatuses: []ContainerStatus{done, {Name: "agent", State: terminated(&Terminated{ExitCode: 137, Reason: "Error"})}}},
+		state: gitk8s.Failed,
+		want:  "was evicted: Pod ephemeral local storage usage exceeds the total limit of containers 7488Mi.",
 	}, {
 		name: "result container stopped",
 		status: PodStatus{Phase: "Running", PodIP: "127.0.0.1",
@@ -385,13 +456,87 @@ func TestReportsPodsThatFail(t *testing.T) {
 	})
 }
 
+func TestReportsWhatAFailedRunUsed(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	cost := 0.75
+	body, _ := json.Marshal(Result{
+		Verdict: Fail, Model: "fake:composer-2.5", Usage: Usage{InputTokens: 900, OutputTokens: 10},
+		CostCents: &cost, DurationMS: 7, Error: "the agent didn't finish in 900s\x00",
+	})
+	f.reconcile(finished(p, f.serve(body, p.UID)))
+	res := f.state()
+	if res.State != gitk8s.Failed || res.Message != "the agent failed in Pod "+p.Name+": the agent didn't finish in 900s" || f.result != nil {
+		t.Fatalf("result = %+v and Run returned %+v, want Failed with the error and no result", res, f.result)
+	}
+	want := map[string]string{
+		"model": "fake:composer-2.5", "inputTokens": "900", "outputTokens": "10", "cacheReadTokens": "0", "cacheWriteTokens": "0",
+		"costCents": "0.75", "runs": "1", "pod": p.Name,
+	}
+	if !maps.Equal(res.Outputs, want) {
+		t.Errorf("outputs = %v, want %v", res.Outputs, want)
+	}
+}
+
+func TestCountsAPodThatsCreatedAgain(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	f.reconcile(p)
+	if res := f.state(); res.Outputs["podUID"] != p.UID {
+		t.Fatalf("outputs = %v, want the Pod's UID", res.Outputs)
+	}
+
+	t.Log("kube creates a deleted Pod again, which runs the agent again.")
+	rec := f.reconcile()
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "creating Pod "+p.Name+" again, because it was deleted" || len(kube.Owned[Pod](rec)) != 1 {
+		t.Fatalf("result = %+v, want Running with the Pod declared", res)
+	}
+	p.UID = "uid-again"
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Outputs["runs"] != "2" || res.Outputs["podUID"] != p.UID {
+		t.Fatalf("outputs = %v, want run 2 in the new Pod", res.Outputs)
+	}
+	f.reconcile(finished(p, f.serve(review(Pass), p.UID)))
+	if res := f.state(); res.State != gitk8s.Passed || res.Outputs["runs"] != "2" {
+		t.Errorf("result = %+v, want Passed after 2 runs", res)
+	}
+}
+
+func TestEndsARunWhenItsNewPodPassesALimit(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		maxAgentRuns  int32
+		maxRunsPerDay int
+		want          string
+	}{
+		{"maxAgentRuns", 1, 0, "the branch used all 1 agent runs that maxAgentRuns allows"},
+		{"-max-runs-per-day", 10, 1, "1 agent runs started in the last 24 hours, the -max-runs-per-day limit"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			f.b.Spec.Merge.MaxAgentRuns = &tc.maxAgentRuns
+			f.r.MaxRunsPerDay = tc.maxRunsPerDay
+			p := f.start()
+			f.reconcile(p)
+			p.UID = "uid-again"
+			f.reconcile(p)
+			if res := f.state(); res.State != gitk8s.Failed || res.Message != "Pod "+p.Name+" was deleted and created again, but "+tc.want || res.Outputs["runs"] != "1" {
+				t.Errorf("result = %+v, want Failed after 1 run", res)
+			}
+			if rec := f.reconcile(p); len(kube.Owned[Pod](rec)) != 0 {
+				t.Error("the next reconcile must stop declaring the Pod")
+			}
+		})
+	}
+}
+
 func TestRetriesPreparingTheSource(t *testing.T) {
 	f := newFixture(t, "")
 	p := f.start()
 	names := map[string]bool{p.Name: true}
 	for attempt := 2; attempt <= prepareAttempts; attempt++ {
 		p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
-			{Name: "prepare", State: terminated(&Terminated{ExitCode: 3, Message: "c/x no longer points to it"})},
+			{Name: "prepare", State: terminated(&Terminated{ExitCode: 128, Message: "fatal: unable to access the repository"})},
 		}}
 		f.reconcile(p)
 		res := f.state()
@@ -405,6 +550,30 @@ func TestRetriesPreparingTheSource(t *testing.T) {
 	f.reconcile(p)
 	if res := f.state(); res.State != gitk8s.Failed || !strings.Contains(res.Message, "couldn't prepare the source in 3 attempts: fatal: couldn't find remote ref") {
 		t.Errorf("result = %+v, want Failed after 3 attempts", res)
+	}
+}
+
+func TestWaitsForTheNewHeadWhenTheBranchMoved(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	moved := "c/x no longer points to " + f.b.Spec.Head
+	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{ExitCode: movedStatus, Message: moved})},
+	}}
+	rec := f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "waiting for a run on the new commits: "+moved || res.Outputs["pod"] != p.Name || res.Outputs["attempt"] != "1" {
+		t.Fatalf("result = %+v, want Running in the same Pod", res)
+	}
+	if pods := kube.Owned[Pod](rec); len(pods) != 1 || pods[0].Name != p.Name || rec.RequeueAfter() != 0 {
+		t.Fatalf("owned Pods = %d and RequeueAfter = %v, want the same Pod and no retry", len(pods), rec.RequeueAfter())
+	}
+
+	t.Log("The new head starts a new run.")
+	f.work.Write("a.txt", "one\nmoved\n")
+	f.b.Spec.Head = f.work.Commit("move")
+	f.work.Push("c/x")
+	if q := f.start(); q.Name == p.Name || f.state().Outputs["runs"] != "2" {
+		t.Errorf("outputs = %v, want run 2 in a new Pod", f.state().Outputs)
 	}
 }
 
@@ -495,6 +664,14 @@ func TestNeedsFlags(t *testing.T) {
 	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, "set -agent-image") || len(kube.Owned[Pod](rec)) != 0 {
 		t.Errorf("result = %+v, want Running without a Pod", res)
 	}
+
+	t.Log("A -source-size that isn't a size starts no Pod either.")
+	f = newFixture(t, "")
+	f.r.SourceSize = "2GB"
+	rec = f.reconcile()
+	if res := f.state(); res.State != gitk8s.Running || !strings.Contains(res.Message, `-source-size is "2GB", but it must be a size such as 2Gi`) || len(kube.Owned[Pod](rec)) != 0 {
+		t.Errorf("result = %+v, want Running without a Pod", res)
+	}
 }
 
 func TestWindow(t *testing.T) {
@@ -514,204 +691,4 @@ func TestWindow(t *testing.T) {
 	if _, ok := w.take(t0, 0); !ok {
 		t.Error("a limit of 0 means no limit")
 	}
-}
-
-// newMergeFixture is a fixture whose task merges main into c/x, after both
-// changed the second line of a.txt.
-func newMergeFixture(t *testing.T) *fixture {
-	f := newFixture(t, "s3cret")
-	w := f.work
-	w.Branch("main", f.base)
-	w.Write("a.txt", "one\nTHEIRS\n")
-	main := w.Commit("theirs")
-	w.Push("main")
-	w.Branch("c/x", f.b.Spec.Head)
-	f.b.Spec.ParentHead = main
-	f.task = Task{Instructions: "Resolve the conflicts.", Merge: &Merge{Commit: main, Ref: "refs/heads/main", Name: "main"}}
-	return f
-}
-
-func resolution(verdict string, files ...File) []byte {
-	b, _ := json.Marshal(Result{
-		Verdict: verdict, Summary: "kept both lines", Reasoning: "Both sides add a line, so the merge keeps both.",
-		Model: "fake:composer-2.5", Files: files,
-	})
-	return b
-}
-
-func TestResolvesConflicts(t *testing.T) {
-	f := newMergeFixture(t)
-	head, main := f.b.Spec.Head, f.task.Merge.Commit
-	p := f.start()
-	if res := f.state(); res.Outputs["base"] != f.base || res.Outputs["runs"] != "1" {
-		t.Fatalf("outputs = %v, want run 1 from the merge base", res.Outputs)
-	}
-	digest := f.serve(resolution(Pass, File{Path: "a.txt", Mode: "100644", Content: []byte("one\nDO NOT MERGE\nTHEIRS\n")}), p.UID)
-	f.reconcile(finished(p, digest))
-	res := f.state()
-	fix := res.Outputs["fix"]
-	if res.State != gitk8s.Fixed || fix == "" || !strings.HasPrefix(res.Message, "the agent resolved the conflicts in a.txt; pushed ") {
-		t.Fatalf("result = %+v, want Fixed with a pushed merge", res)
-	}
-	if got := f.work.Fetch("c/x"); got != fix {
-		t.Fatalf("c/x = %s, want the merge %s", got, fix)
-	}
-	want := head + " " + main + "\nMerge main into c/x\n\nkept both lines\n\na.txt\n\n" + git.FixerTrailer + ": review"
-	if got := f.work.Git("log", "-1", "--format=%P%n%B", fix); got != want {
-		t.Errorf("merge's parents and message =\n%s\nwant\n%s", got, want)
-	}
-	if got := f.work.Show(fix, "a.txt"); got != "one\nDO NOT MERGE\nTHEIRS" {
-		t.Errorf("a.txt = %q", got)
-	}
-	if got := f.work.Show(fix, "old.txt"); got != "old" {
-		t.Errorf("old.txt = %q, want the file that didn't conflict", got)
-	}
-}
-
-func TestUnionPathsDontReachTheAgent(t *testing.T) {
-	f := newMergeFixture(t)
-	w := f.work
-	w.Branch("main", f.task.Merge.Commit)
-	w.Write("go.sum", "y v2\n")
-	main := w.Commit("theirs go.sum")
-	w.Push("main")
-	w.Branch("c/x", f.b.Spec.Head)
-	w.Write("go.sum", "z v3\n")
-	f.b.Spec.Head = w.Commit("ours go.sum")
-	w.Push("c/x")
-	f.b.Spec.ParentHead = main
-	f.task.Merge.Commit, f.task.Merge.Union = main, []string{"go.sum"}
-
-	p := f.start()
-	digest := f.serve(resolution(Pass, File{Path: "a.txt", Mode: "100644", Content: []byte("one\nboth\n")}), p.UID)
-	f.reconcile(finished(p, digest))
-	res := f.state()
-	if res.State != gitk8s.Fixed || !strings.HasPrefix(res.Message, "the agent resolved the conflicts in a.txt; pushed ") {
-		t.Fatalf("result = %+v, want Fixed", res)
-	}
-	if got := f.work.Fetch("c/x"); got != res.Outputs["fix"] {
-		t.Fatalf("c/x = %s, want the merge %s", got, res.Outputs["fix"])
-	}
-	if got := f.work.Show(res.Outputs["fix"], "go.sum"); got != "z v3\ny v2" {
-		t.Errorf("go.sum = %q, want both sides' lines", got)
-	}
-}
-
-func TestRefusesMergesThatTheAgentCantResolve(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		// main makes main's side of the merge from the fixture's base, and
-		// returns the commit to merge.
-		main func(f *fixture) string
-		want string
-	}{{
-		name: "no conflicts",
-		main: func(f *fixture) string {
-			f.work.Write("old.txt", "new\n")
-			return f.work.Commit("change old.txt")
-		},
-		want: "merging main has no conflicts for the agent to resolve",
-	}, {
-		name: "deleted on one side",
-		main: func(f *fixture) string {
-			f.work.Git("rm", "--quiet", "a.txt")
-			return f.work.Commit("delete a.txt")
-		},
-		want: "merging main conflicts on a.txt, which isn't a file on both sides",
-	}, {
-		name: "binary",
-		main: func(f *fixture) string {
-			f.work.Branch("c/x", f.b.Spec.Head)
-			f.work.Write("a.txt", "one\ntwo\n")
-			f.work.Write("bin.dat", "\x00ours\n")
-			f.b.Spec.Head = f.work.Commit("ours")
-			f.work.Push("c/x")
-			f.work.Branch("main", f.base)
-			f.work.Write("bin.dat", "\x00theirs\n")
-			return f.work.Commit("theirs")
-		},
-		want: "merging main conflicts on bin.dat, which git can't mark with conflict markers",
-	}, {
-		name: ".cursorignore",
-		main: func(f *fixture) string {
-			f.work.Branch("c/x", f.b.Spec.Head)
-			f.work.Write("dir/.cursorignore", "ours\n")
-			f.b.Spec.Head = f.work.Commit("ours")
-			f.work.Push("c/x")
-			f.work.Branch("main", f.base)
-			f.work.Write("dir/.cursorignore", "theirs\n")
-			return f.work.Commit("theirs")
-		},
-		want: "merging main conflicts on dir/.cursorignore, which the agent can't see",
-	}, {
-		name: "two merge bases",
-		main: func(f *fixture) string {
-			f.work.Write("m.txt", "m\n")
-			m1 := f.work.Commit("m1")
-			f.work.Git("merge", "--quiet", "--no-edit", "--no-ff", f.b.Spec.Head)
-			main := f.work.Git("rev-parse", "HEAD")
-			f.work.Branch("c/x", f.b.Spec.Head)
-			f.work.Git("merge", "--quiet", "--no-edit", "--no-ff", m1)
-			f.b.Spec.Head = f.work.Git("rev-parse", "HEAD")
-			f.work.Push("c/x")
-			return main
-		},
-		want: "the branch and main have 2 merge bases",
-	}, {
-		name: "unrelated",
-		main: func(f *fixture) string {
-			f.work.Git("checkout", "--quiet", "--orphan", "other")
-			f.work.Write("a.txt", "unrelated\n")
-			return f.work.Commit("unrelated")
-		},
-		want: "the branch shares no history with main",
-	}} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newFixture(t, "")
-			f.work.Branch("main", f.base)
-			main := tc.main(f)
-			f.work.Git("checkout", "--quiet", "-B", "main", main)
-			f.work.Push("main")
-			f.b.Spec.ParentHead = main
-			f.task = Task{Instructions: "Resolve the conflicts.", Merge: &Merge{Commit: main, Ref: "refs/heads/main", Name: "main"}}
-			rec := f.reconcile()
-			res := f.state()
-			if res.State != gitk8s.Failed || !strings.Contains(res.Message, tc.want) || res.Outputs["runs"] != "0" || len(kube.Owned[Pod](rec)) != 0 {
-				t.Errorf("result = %+v, want Failed with %q and no run", res, tc.want)
-			}
-		})
-	}
-}
-
-func TestRejectsBadResolutions(t *testing.T) {
-	resolved := File{Path: "a.txt", Mode: "100644", Content: []byte("one\nDO NOT MERGE\nTHEIRS\n")}
-	for _, tc := range []struct {
-		name string
-		body []byte
-		want string
-	}{
-		{name: "no changes", body: resolution(Pass), want: "conflict markers remain in a.txt"},
-		{name: "marker", body: resolution(Pass, File{Path: "a.txt", Mode: "100644", Content: []byte("one\n=======\nTHEIRS\n")}), want: "a.txt has more lines that start with ======= than its two sides"},
-		{name: "other file", body: resolution(Pass, resolved, File{Path: "old.txt", Mode: "100644", Content: []byte("new\n")}), want: "the agent changed old.txt, which doesn't conflict"},
-		{name: "deleted", body: resolution(Pass, File{Path: "a.txt", Deleted: true}), want: "the agent deleted a.txt"},
-		{name: "mode", body: resolution(Pass, File{Path: "a.txt", Mode: "100755", Content: resolved.Content}), want: "the agent gave a.txt the mode 100755, which it has on neither side"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newMergeFixture(t)
-			p := f.start()
-			f.reconcile(finished(p, f.serve(tc.body, p.UID)))
-			if res := f.state(); res.State != gitk8s.Failed || !strings.Contains(res.Message, "can't commit the agent's resolution: "+tc.want) || res.Outputs["fix"] != "" {
-				t.Errorf("result = %+v, want Failed with %q", res, tc.want)
-			}
-		})
-	}
-
-	t.Run("agent fails", func(t *testing.T) {
-		f := newMergeFixture(t)
-		p := f.start()
-		f.reconcile(finished(p, f.serve(resolution(Fail, resolved), p.UID)))
-		if res := f.state(); res.State != gitk8s.Failed || res.Message != "the agent couldn't resolve the conflicts: Both sides add a line, so the merge keeps both." || res.Outputs["fix"] != "" {
-			t.Errorf("result = %+v, want Failed with the agent's reasoning and no fix", res)
-		}
-	})
 }

@@ -1,3 +1,5 @@
+import { checkTools } from "./tools.js";
+
 /** The backends that can run a task. */
 export const BACKENDS = ["cursor", "fake"] as const;
 
@@ -13,49 +15,40 @@ export interface Task {
   instructions: string;
   /** Lets the agent edit files; the runner reports the files it changed. */
   edit: boolean;
+  /** The agent's tools, if not all that edit allows. */
+  tools?: string[];
   timeoutSeconds: number;
   branch: string;
   parent: string;
   head: string;
-  /** The merge base of the branch and its parent, or "" if they have none. */
+  /**
+   * The merge base of the branch and its parent, or of head and mergeHead,
+   * or "" if they have none.
+   */
   base: string;
-  /** The head commit's files. It isn't a git repository. */
+  /** A branch to merge into head. */
+  mergeBranch?: string;
+  /** The commit of mergeBranch to merge. Then workTree holds the merge's files, with conflict markers. */
+  mergeHead?: string;
+  /** The head commit's files, or the merge's. It isn't a git repository. */
   workTree: string;
   /** The change from base to head, from git diff. */
   diffFile: string;
   /** The branch's commits since base, one per line. */
   logFile: string;
-  /** The head commit's index, from git ls-files -s -z. */
+  /** The index of workTree's files, from git ls-files -s -z. */
   filesFile: string;
   /** The paths that the change touches, from git diff --name-status -z. */
   changesFile?: string;
+  /** The merge's tree and the paths that conflict, from git merge-tree --name-only -z. */
+  conflictsFile?: string;
+  /** The merged branch's commits since base, one per line. */
+  mergeLogFile?: string;
   /** Holds the Cursor API key. The runner deletes it before the agent starts. */
   keyFile: string;
   resultFile: string;
   terminationLog: string;
-  /**
-   * Has the agent resolve the conflicts of merging a commit into the head,
-   * from base. The work tree and the index hold the merge's files, with
-   * conflict markers, instead of the head's.
-   */
-  merge?: Merge;
 }
-
-/** A merge that the agent resolves. */
-export interface Merge {
-  /** The commit that merges into the head. */
-  commit: string;
-  /** What the commit is, such as the parent branch. */
-  name: string;
-  /** The paths that conflict, from git merge-tree --write-tree --name-only -z. */
-  conflictsFile: string;
-  /** The change from base to commit, from git diff. */
-  diffFile: string;
-  /** The commits from base to commit, newest first, one per line. */
-  logFile: string;
-}
-
-const MERGE_FIELDS = ["commit", "name", "conflictsFile", "diffFile", "logFile"] as const;
 
 const STRING_FIELDS = [
   "model",
@@ -73,7 +66,7 @@ const STRING_FIELDS = [
   "terminationLog",
 ] as const;
 
-const OPTIONAL_STRING_FIELDS = ["changesFile"] as const;
+const OPTIONAL_STRING_FIELDS = ["changesFile", "mergeBranch", "mergeHead", "conflictsFile", "mergeLogFile"] as const;
 
 /** Parses and checks a task from its JSON. */
 export function parseTask(json: string): Task {
@@ -104,6 +97,9 @@ export function parseTask(json: string): Task {
   if (typeof raw.edit !== "boolean") {
     throw new Error("AGENT_TASK.edit must be a boolean");
   }
+  if (raw.tools !== undefined) {
+    checkTools(raw.tools, raw.edit);
+  }
   const timeout = raw.timeoutSeconds;
   if (typeof timeout !== "number" || !Number.isInteger(timeout) || timeout <= 0) {
     throw new Error("AGENT_TASK.timeoutSeconds must be a positive integer");
@@ -114,23 +110,12 @@ export function parseTask(json: string): Task {
       throw new Error(`AGENT_TASK.${field} can't be empty`);
     }
   }
-  if (raw.merge !== undefined) {
-    parseMerge(raw.merge, task);
-  }
-  return task;
-}
-
-function parseMerge(value: unknown, task: Task): void {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error("AGENT_TASK.merge isn't a JSON object");
-  }
-  const merge = value as Record<string, unknown>;
-  for (const field of MERGE_FIELDS) {
-    if (typeof merge[field] !== "string" || !merge[field]) {
-      throw new Error(`AGENT_TASK.merge.${field} must be a string that isn't empty`);
+  if (task.mergeHead !== undefined) {
+    for (const field of ["mergeBranch", "mergeHead", "base", "conflictsFile", "mergeLogFile"] as const) {
+      if (!task[field]) {
+        throw new Error(`AGENT_TASK.${field} can't be empty in a merge`);
+      }
     }
   }
-  if (!task.edit || !task.base) {
-    throw new Error("AGENT_TASK.merge needs edit and a base");
-  }
+  return task;
 }

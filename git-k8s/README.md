@@ -211,7 +211,8 @@ containers:
   from the key in the runner's memory, the container holds no credentials
   once the key file is gone. The runner writes the agent's verdict, summary,
   reasoning, and token usage to a result file, and the file's SHA-256 digest
-  as the container's termination message.
+  as the container's termination message. A run that fails after the agent
+  starts writes the error and the token usage instead.
 - The `result` container serves the result file over HTTP to requests whose
   bearer token is the Pod's UID.
 
@@ -224,6 +225,13 @@ Anyone who can read the Pod or watch the cluster's network can read a
 result, but can't change it. The check also rejects a result with an
 unknown verdict, an invalid path, a file mode other than a regular file or a
 symbolic link, more than 1,000 files, or more than 8 MiB of file content.
+
+Each agent Pod's volumes have size limits. The repository, the head's
+files, and the agent's input can each use up to `-source-size`, 2Gi by
+default, and the agent's home directory up to 1Gi. The init containers
+request 1Gi of ephemeral storage, and their limits cover all the volumes.
+When a Pod uses more than a limit, the kubelet evicts it, and the check
+fails with the kubelet's reason.
 
 The agent's prompt holds the first 200,000 bytes of the diff and lists
 every path that the change touches, so the agent can read the files that
@@ -247,9 +255,13 @@ the branch.
 
 An agent can answer differently each time, so a result stays until the
 branch's head changes, and the check doesn't run again when only the parent
-moves. When the agent fails, for example because the API key is wrong or
-the run takes longer than `-timeout`, the check fails with the agent's
-error. The next head runs the agent again.
+moves. When the agent fails, for example because the API key is missing or
+wrong or the run takes longer than `-timeout`, the check fails with the
+agent's error. It also fails when the Pod can't start because a Secret
+doesn't exist or an image can't be pulled, and when fetching the head fails
+in three Pods in a row. The next head runs the agent again. To run it again
+on the same change, such as after a transient error, push an empty commit
+with `git commit --allow-empty`.
 
 Agent runs cost money. Three limits cap them, and they count runs, not
 tokens:
@@ -264,6 +276,18 @@ tokens:
   starts over when it restarts, and each shard keeps its own count.
 - `-max-pods`, 10 by default, is the most agent Pods that run at once
   across all namespaces.
+
+If an agent Pod is deleted before its run finishes, kube creates it again,
+and the agent runs again. The check counts that as another run, or fails
+when `maxAgentRuns` or `-max-runs-per-day` allows no more. A run that fails
+after the agent starts still reports the `model`, the token counts, and the
+costs in the check's outputs.
+
+The check counts a branch's runs in its outputs on the branch's
+`GitBranch`, so a branch that's deleted and then pushed again can start
+over at 0, and so can a branch with a new name. To cap what agents cost in
+money, also set a spend limit for the Cursor team or account that owns the
+API key.
 
 The agent reads the branch's code, which can tell it what to do. Its
 verdict goes through the same result path as any check's result, and its
@@ -286,6 +310,8 @@ go run ./cmd/check-review generate -registry=REGISTRY -base=cgr.dev/chainguard/g
 kubectl -n NAMESPACE create secret generic cursor-api-key --from-literal=api-key=KEY
 ```
 
+In a namespace without the Secret, each run fails before the agent starts.
+
 `check-review` takes these flags, which `agent.Runner.AddFlags` registers:
 
 | Flag | Default | Description |
@@ -299,6 +325,7 @@ kubectl -n NAMESPACE create secret generic cursor-api-key --from-literal=api-key
 | `-max-pods` | 10 | Most agent Pods to run at once, in all namespaces; 0 means no limit |
 | `-max-runs-per-day` | 100 | Most agent runs to start in any 24 hours; 0 means no limit |
 | `-runtime-class` | None | RuntimeClass for agent Pods, such as `gvisor` |
+| `-source-size` | `2Gi` | Most disk space that each of an agent Pod's repository, files, and input can use |
 
 Agent Pods need to reach the repository and Cursor's API over HTTPS, and
 the check needs to reach the agent Pods on TCP port 8080. A NetworkPolicy
@@ -363,10 +390,7 @@ func main() {
 `Run` never returns an error, because a check that returns one loses its
 outputs, which count the branch's runs. It also returns the agent's
 `Result`, with the files that the agent changed, so a check can build
-another kind of commit from them with `agent.ApplyFiles`. A task with
-`Merge` set has the agent resolve the conflicts of merging a commit into the
-head, and `Run` commits the result as a merge, as in
-[Resolve conflicts](#resolve-conflicts).
+another kind of commit from them with `agent.ApplyFiles`.
 
 ### Resolve conflicts
 
@@ -402,19 +426,30 @@ replays resolutions that a person recorded in a working tree, or the `ours`
 and `theirs` options of git's merge strategy, which pick a side.
 
 When conflicts remain and the check has an agent image, an agent resolves
-them in a sandboxed Pod, as described in [Agentic checks](#agentic-checks).
-The agent reads each conflict in the diff3 style, which shows the merge
-base's lines between the two sides, and reads both sides' commits and diffs
-since the merge base. It can change only the files that conflict, and it
-can't build or run the code. The check commits the agent's files as a merge
-whose parents are both heads, and fails if a file still holds a conflict
-marker. The agent answers fail when it can't tell how to keep both sides'
-changes. The check runs an agent only when the policy lets it push, and
-only within `maxAutomatedCommits` and `maxAgentRuns`. It runs none for a
-merge with more than one merge base, or for a conflict in a file that isn't
-text on both sides, such as a binary file or a file that one side deletes.
-It also runs none for a conflict in a `.cursorignore` file, because the
-agent's work tree leaves those files out.
+them in a sandboxed Pod that `Runner.RunJob` starts, as described in
+[Run agents from a controller](#run-agents-from-a-controller). The Pod makes
+the same merge as the check, with the same `-union` attributes, so its files
+hold the conflicts that git left, in the diff3 style, which shows the merge
+base's lines between the two sides. The agent's prompt lists both sides'
+commits since the merge base and holds the branch's change. The agent can
+edit files but not delete them, and it can't build or run the code. It
+answers fail when it can't tell how to keep both sides' changes.
+
+The check commits the agent's files as a merge whose parents are both
+heads. It fails instead when the agent changed a file that doesn't conflict,
+deleted a file, or gave a file a mode that the file has on neither side, or
+when a file still holds a conflict marker. A file holds one when a line
+starts with one of the merge's marker labels, or when more of its lines
+start like a marker than in its two sides together.
+
+The check runs an agent only when the policy lets it push, and only within
+`maxAutomatedCommits` and `maxAgentRuns`. It runs none for a merge with more
+than one merge base, for a conflict in a file that one side deleted or that
+isn't a regular file on both sides, or for a conflict that git can't mark,
+such as one in a binary file. It also runs none for a conflict in a
+`.cursorignore` file, because the agent's work tree leaves those files out,
+or for conflicts in more than 1,000 files or in files that hold more than
+8 MiB, the most that a result can change.
 
 Each merge that the check pushes is a new head, so every check runs again on
 it. The merge has a `Git-K8s-Fixer: conflicts` trailer and counts toward
@@ -427,7 +462,9 @@ A merge of the parent that has no conflicts passes, because merging it is
 head even without conflicts, because nothing else merges it. While an agent
 runs, the check keeps following the run when the parent moves, so a parent
 that moves often doesn't restart it. If the run fails after the parent
-moved, the check runs again on the parent's new head.
+moved, the check runs again on the parent's new head. If the parent moves
+before the Pod fetches it, the agent doesn't run, and the check starts a new
+run on the parent's new head.
 
 The check merges, and doesn't rebase. A rebase rewrites commits that checks
 and people already saw, such as the head that an approval names, and
@@ -481,6 +518,63 @@ comma-separated list of path patterns in the gitattributes format whose
 conflicts git resolves by keeping the lines of both sides. Its agent Pods
 need the NetworkPolicy that `check-review`'s need, with ingress from the
 namespace `check-conflicts`.
+
+### Run agents from a controller
+
+A controller that isn't a check, such as one that resolves merge conflicts,
+runs an agent with `Runner.RunJob`. Its `Job` names the repository, the
+Secret with the repository's credentials, the commits to check out, the
+task, the agent's tools, and the runner's image if it isn't
+`-agent-image`. `Run` builds a `Job` from a check's branch, so both start
+the same Pods, within the same `-max-pods` and `-max-runs-per-day` limits.
+
+Call `RunJob` on each reconcile with the same `JobState`, which names the
+run's Pod and counts the runs that it started. Keep the state with the
+object that the job is for, such as in the object's status, so a
+controller that restarts follows the same run. `RunJob` declares the Pod
+with `kube.Own` and returns a `JobStatus`. Until the run is `Done`, the
+status's `Message` says how the run is going. Once it's `Done`, `Result`
+holds the agent's result, or is nil if the run failed, and `Message` says
+why. If the run failed after the agent started, `Failed` holds the runner's
+report, with its `Error` and what the agent used. Then stop calling
+`RunJob` for the run, and kube deletes the Pod. A `Job` with other commits,
+another task, other tools, or another image starts a new run, up to the
+job's `MaxRuns`. If the run's Pod is deleted before the run is `Done`, kube
+creates it again and the agent runs again, so `RunJob` counts another run,
+or ends the run when `MaxRuns` or `-max-runs-per-day` allows no more.
+
+For an agent that resolves a merge, set `Checkout.Merge` to the branch to
+merge into the head, and `Checkout.Base` to their merge base. The `prepare`
+container then writes the files of the merge that `git merge-tree
+--write-tree` makes with `merge.conflictStyle=diff3`, instead of the
+head's. Each conflict in a file holds the head's lines, the merge base's
+lines, and the merged branch's lines between conflict markers. A file that
+one side deleted and the other changed holds the changed version. The
+prompt lists the paths that conflict and the merged branch's commits. With
+`Task.Edit`, the result's `Files` change the merge's files, and the
+controller builds the merge commit from them. If either branch moved before
+the Pod fetched it, the agent doesn't run, and the run waits for a `Job`
+with the new commits, which starts a new run.
+
+To merge a commit that the branch doesn't point to, set `Merge.Name` to the
+full name of a ref that does, such as `refs/git-k8s/downstream/heads/main`.
+`Checkout.Union` lists path patterns in the gitattributes format whose
+conflicts the merge resolves with git's union driver, so the Pod makes the
+same merge as `git.Repo.Merge` with those patterns in `MergeOptions.Union`.
+When a run waits because a branch moved, `JobStatus.Moved` is true, so a
+controller that keeps a run on the commits that it started with, as
+`check-conflicts` does, can tell when to start a new one.
+`agent.UsageOutputs` turns what a run used into outputs like `Run`'s, and
+`agent.MaxFiles` and `agent.MaxFileBytes` are the most files and bytes that
+a result can change, so a controller can skip a run whose result can't fit.
+
+Agents get no shell. The tools that an agent can have are `read`, `grep`,
+`glob`, and `ls`, plus `edit` and `delete` when the task edits files, and
+none of them runs a command. A shell would run the branch's code, such as
+its build scripts and tests, in the agent's container, which holds the
+Cursor API key and can reach Cursor's API. An agent that builds or tests
+code needs another sandbox, without the key. So an agent edits files, and
+the checks verify what the controller pushes, like any other head.
 
 ## Merge gates
 

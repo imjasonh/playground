@@ -40,6 +40,10 @@ type Result struct {
 	DurationMS   int64    `json:"durationMs"`
 	// Files are the files that the agent changed, when its task let it.
 	Files []File `json:"files"`
+	// Error says why the run failed after the agent started. Then Verdict
+	// is Fail, Summary, Reasoning, and Files are empty, and Usage and the
+	// costs are what the agent used before it failed.
+	Error string `json:"error,omitempty"`
 }
 
 // Usage is the tokens that a run used, as the Cursor SDK reports them.
@@ -64,10 +68,11 @@ type File struct {
 // Limits on a result. The runner enforces the same ones.
 const (
 	maxResult    = 16 << 20
-	maxFiles     = 1000
-	maxFileBytes = 8 << 20
+	MaxFiles     = 1000
+	MaxFileBytes = 8 << 20
 	maxSummary   = 200
 	maxReasoning = 4000
+	maxError     = 3500
 	maxModel     = 100
 	maxPath      = 4096
 )
@@ -131,6 +136,9 @@ func parseResult(body []byte, digest string, edit bool) (*Result, error) {
 	if min(u.InputTokens, u.OutputTokens, u.CacheReadTokens, u.CacheWriteTokens) < 0 || res.CostCents != nil && *res.CostCents < 0 || res.ChargedCents != nil && *res.ChargedCents < 0 {
 		return nil, errors.New("it reports negative usage")
 	}
+	if len(res.Files) > 0 && res.Error != "" {
+		return nil, errors.New("it reports an error but also changes files")
+	}
 	if len(res.Files) > 0 && !edit {
 		return nil, errors.New("it changes files, which its task doesn't allow")
 	}
@@ -139,6 +147,7 @@ func parseResult(body []byte, digest string, edit bool) (*Result, error) {
 	}
 	res.Summary = clean(res.Summary, maxSummary, true)
 	res.Reasoning = clean(res.Reasoning, maxReasoning, false)
+	res.Error = clean(res.Error, maxError, false)
 	res.Model = clean(res.Model, maxModel, true)
 	return &res, nil
 }
@@ -169,8 +178,8 @@ func clean(s string, n int, oneLine bool) string {
 
 // checkFiles checks the files in a result, which the agent controls.
 func checkFiles(files []File) error {
-	if len(files) > maxFiles {
-		return fmt.Errorf("it changes %d files, more than %d", len(files), maxFiles)
+	if len(files) > MaxFiles {
+		return fmt.Errorf("it changes %d files, more than %d", len(files), MaxFiles)
 	}
 	seen := make(map[string]bool, len(files))
 	size := 0
@@ -190,8 +199,8 @@ func checkFiles(files []File) error {
 			return fmt.Errorf("it gives %q the mode %.20q, not 100644, 100755, or 120000", f.Path, f.Mode)
 		}
 	}
-	if size > maxFileBytes {
-		return fmt.Errorf("its files hold more than %d MiB", maxFileBytes>>20)
+	if size > MaxFileBytes {
+		return fmt.Errorf("its files hold more than %d MiB", MaxFileBytes>>20)
 	}
 	return nil
 }

@@ -37,9 +37,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
-	"github.com/imjasonh/playground/git-k8s/agent"
 	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -80,12 +80,6 @@ func divergence(ctx context.Context, meta *kube.ObjectMeta) *gitk8s.Divergence {
 	return nil
 }
 
-const instructions = `Resolve each conflict so that the result keeps what both sides meant to change. Read each side's commits and diff, the code around each conflict, and the code that it uses. When both sides change the same lines for different reasons, combine the changes. Never drop one side's change to make a conflict go away.
-
-Answer fail, and leave the files as they are, when you can't tell how to keep both sides' changes, such as when the two sides contradict each other. A wrong resolution is worse than none, because a person resolves the conflicts that you leave. You can't build or run the code here; other checks build and test the merge after you.`
-
-var runner = &agent.Runner{Name: "conflicts"}
-
 var union = patterns{"go.sum"}
 
 var check = checks.Check{Name: "conflicts", UsesParent: true, Remote: credentials.Remote, Stale: stale, Run: run}
@@ -115,7 +109,7 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 	}
 	v := resolveBranch(ctx, in, outputs)
 	maps.Copy(outputs, v.Outputs)
-	v.Outputs = outputs
+	v.Outputs, v.Message = outputs, shorten(v.Message)
 	return v, nil
 }
 
@@ -130,47 +124,34 @@ func retry(ctx context.Context, format string, args ...any) checks.Verdict {
 // target is a commit to merge into a branch.
 type target struct {
 	commit string
-	// ref is where commit is on the remote.
-	ref  string
-	name string
+	// branch is the branch whose head is commit. ref, if set, is the ref
+	// that points to commit on the remote, instead of refs/heads/branch.
+	branch, ref string
+	name        string
 	// diverged says that commit is the external repository's head, which
 	// the branch takes a merge of even without conflicts, because nothing
 	// else merges it.
 	diverged bool
 }
 
-func (t target) task() agent.Task {
-	return agent.Task{Instructions: instructions, Merge: &agent.Merge{Commit: t.commit, Ref: t.ref, Name: t.name, Union: union}}
-}
-
 // resolveBranch resolves a branch's divergence from the external
 // repository, or else the conflicts of merging its parent into it.
 func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]string) checks.Verdict {
 	head := in.Spec.Head
-	t := target{commit: in.Spec.ParentHead, ref: "refs/heads/" + in.Spec.Parent, name: in.Spec.Parent}
-	d := divergence(ctx, in.Meta)
-	if d != nil {
+	t := target{commit: in.Spec.ParentHead, branch: in.Spec.Parent, name: in.Spec.Parent}
+	if d := divergence(ctx, in.Meta); d != nil {
 		outputs["diverged"] = d.Commit
 		if err := validate(d); err != nil {
 			return checks.Fail("%v", err)
 		}
-		t = target{commit: d.Commit, ref: d.Ref, name: "the external repository's " + in.Spec.Branch, diverged: true}
+		t = target{commit: d.Commit, branch: in.Spec.Branch, ref: d.Ref, name: "the external repository's " + in.Spec.Branch, diverged: true}
 	}
 	if v, ok := follow(ctx, in, t); ok {
 		return v
 	}
-	repo, err := in.Repo(ctx)
+	repo, err := targetRepo(ctx, in, t)
 	if err != nil {
-		return retry(ctx, "fetching the branch: %v", err)
-	}
-	if d != nil {
-		remote, err := in.Remote(ctx)
-		if err != nil {
-			return retry(ctx, "fetching %s: %v", d.Ref, err)
-		}
-		if err := fetchCommit(ctx, repo, remote, d.Commit, d.Ref); err != nil {
-			return retry(ctx, "fetching %s: %v", d.Ref, err)
-		}
+		return retry(ctx, "fetching the branch and %s: %v", t.name, err)
 	}
 	switch ok, err := repo.IsAncestor(ctx, t.commit, head); {
 	case err != nil:
@@ -187,33 +168,6 @@ func resolveBranch(ctx context.Context, in *checks.Input, outputs map[string]str
 		return checks.Pass("%s at %s already contains the branch's head", t.name, gitk8s.Short(t.commit))
 	}
 	return resolve(ctx, in, repo, t, outputs)
-}
-
-// follow follows the agent's run that the previous result started on the
-// branch's head to merge the same kind of target, and reports whether it
-// did. It comes before any git work, because kube deletes the run's Pod
-// after a reconcile that doesn't declare it. The run keeps merging the
-// commit that it started with, so that a parent that keeps moving doesn't
-// start a new run each time.
-func follow(ctx context.Context, in *checks.Input, t target) (checks.Verdict, bool) {
-	prev := in.Previous
-	if prev == nil || prev.State != gitk8s.Running || prev.Commit != in.Spec.Head || prev.Outputs["pod"] == "" ||
-		(prev.Outputs["diverged"] != "") != t.diverged || !isCommit(prev.Outputs["merge"]) {
-		return checks.Verdict{}, false
-	}
-	t.commit = prev.Outputs["merge"]
-	v, _ := runner.Run(ctx, in, t.task())
-	if v.Outputs["pod"] == "" {
-		// The run can't go on as it started, such as after -union changed,
-		// so the check starts over.
-		return checks.Verdict{}, false
-	}
-	for _, k := range []string{"diverged", "merge", "conflicts"} {
-		if prev.Outputs[k] != "" {
-			v.Outputs[k] = prev.Outputs[k]
-		}
-	}
-	return v, true
 }
 
 // resolve merges t into the branch's head. It returns a verdict whose fix
@@ -272,31 +226,50 @@ func resolve(ctx context.Context, in *checks.Input, repo *git.Repo, t target, ou
 	if limit := in.Spec.Merge.MaxCommits(); n >= limit {
 		return checks.Fail("merging %s conflicts in %s; not running an agent because the branch already has %d automated commits, the limit", t.name, list, n)
 	}
-	v, _ := runner.Run(ctx, in, t.task())
-	return v
+	return startAgent(ctx, in, repo, t, bases, list, outputs)
 }
 
 // fix returns v with a merge of t into the branch's head, with tree, as its
 // fix.
 func fix(ctx context.Context, in *checks.Input, repo *git.Repo, t target, tree, body string, v checks.Verdict) checks.Verdict {
+	var err error
+	if v.Fix, err = mergeCommit(ctx, in, repo, t, tree, body); err != nil {
+		return retry(ctx, "committing the merge of %s: %v", t.name, err)
+	}
+	return v
+}
+
+// mergeCommit commits tree as a merge of t into the branch's head, with
+// body in the message.
+func mergeCommit(ctx context.Context, in *checks.Input, repo *git.Repo, t target, tree, body string) (string, error) {
 	hc, err := repo.Commit(ctx, in.Spec.Head)
 	if err != nil {
-		return retry(ctx, "reading the branch's head: %v", err)
+		return "", err
 	}
 	tc, err := repo.Commit(ctx, t.commit)
 	if err != nil {
-		return retry(ctx, "reading %s: %v", t.name, err)
+		return "", err
 	}
 	msg := fmt.Sprintf("Merge %s into %s\n\n", t.name, in.Spec.Branch)
 	if body != "" {
 		msg += body + "\n\n"
 	}
 	msg += git.FixerTrailer + ": conflicts\n"
-	v.Fix, err = repo.CommitTree(ctx, tree, []string{in.Spec.Head, t.commit}, msg, in.Identity, max(hc.Time, tc.Time))
-	if err != nil {
-		return retry(ctx, "committing the merge of %s: %v", t.name, err)
+	return repo.CommitTree(ctx, tree, []string{in.Spec.Head, t.commit}, msg, in.Identity, max(hc.Time, tc.Time))
+}
+
+// targetRepo returns the branch's repository with t's commit, which it
+// fetches from t's ref when the branch and its parent don't have it.
+func targetRepo(ctx context.Context, in *checks.Input, t target) (*git.Repo, error) {
+	repo, err := in.Repo(ctx)
+	if err != nil || t.ref == "" {
+		return repo, err
 	}
-	return v
+	remote, err := in.Remote(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return repo, fetchCommit(ctx, repo, remote, t.commit, t.ref)
 }
 
 // fetchCommit fetches ref from remote unless repo already has commit, and
@@ -396,11 +369,11 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	res := &gitk8s.CheckResult{Commit: b.Spec.Head, Outputs: map[string]string{"diverged": d.Commit, "branch": child}}
 	*result = res
 	report := func(state, format string, args ...any) error {
-		res.State, res.Message = state, truncate(fmt.Sprintf(format, args...))
+		res.State, res.Message = state, shorten(fmt.Sprintf(format, args...))
 		return nil
 	}
 	fail := func(err error) error {
-		res.State, res.Message = gitk8s.Error, truncate(err.Error())
+		res.State, res.Message = gitk8s.Error, shorten(err.Error())
 		return err
 	}
 	if err := validate(d); err != nil {
@@ -498,12 +471,20 @@ func (r *reconciler) resolveParent(ctx context.Context, b *Branch) error {
 	return report(gitk8s.Running, "pushed %s to %s, which lands on %s with the external repository's head %s", gitk8s.Short(commit), child, branch, gitk8s.Short(d.Commit))
 }
 
-// truncate keeps a message to the size that the checks framework allows.
-func truncate(s string) string {
-	if len(s) > 1024 {
-		return s[:1021] + "..."
+// maxMessage leaves room in the checks framework's 1,024-byte messages for
+// what it appends about a fix.
+const maxMessage = 896
+
+// shorten cuts s to at most maxMessage bytes, on a rune boundary.
+func shorten(s string) string {
+	if len(s) <= maxMessage {
+		return s
 	}
-	return s
+	i := maxMessage - len("...")
+	for i > 0 && !utf8.RuneStart(s[i]) {
+		i--
+	}
+	return s[:i] + "..."
 }
 
 // patterns is a flag that holds comma-separated path patterns.

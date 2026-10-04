@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AgentOptions, AgentUsage, RunResult, SDKMessage } from "@cursor/sdk";
 import { type CursorSdk, newCursorBackend } from "../src/backends/cursor.js";
-import type { AgentRequest } from "../src/backends/types.js";
+import { AgentError, type AgentRequest, type Spent } from "../src/backends/types.js";
 
 interface Script {
   events?: SDKMessage[];
   result?: Partial<RunResult>;
   /** Keeps the stream open until the run is cancelled. */
   hang?: boolean;
+  /** Ends the stream with this error, after the events. */
+  streamError?: string;
   /** What each read of the agent's usage returns; the last one repeats. */
   usage?: AgentUsage[];
 }
@@ -29,6 +31,9 @@ function fakeSdk(script: Script) {
             return {
               async *stream() {
                 yield* script.events ?? [];
+                if (script.streamError) {
+                  throw new Error(script.streamError);
+                }
                 if (script.hang) {
                   await stopped;
                 }
@@ -90,10 +95,25 @@ const text = (t: string): SDKMessage => ({
 
 const tokens = (n: number) => ({ inputTokens: n, outputTokens: n, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 2 * n });
 
+const counts = (n: number) => ({ inputTokens: n, outputTokens: n, cacheReadTokens: 0, cacheWriteTokens: 0 });
+
+const billed: AgentUsage = { usage: tokens(2), cost: { rawCostCents: 0.5, chargedCents: 0.75 }, runs: [] };
+
+/** Checks that err is an AgentError whose message matches message, with spent. */
+function failedWith(message: RegExp, spent: Spent) {
+  return (err: unknown) => {
+    assert.ok(err instanceof AgentError, `${String(err)} isn't an AgentError`);
+    assert.match(err.message, message);
+    assert.deepEqual(err.spent, spent);
+    return true;
+  };
+}
+
 test("creates the agent with only the tools that the task allows", async () => {
   const { backend, calls } = fakeSdk({ events: [text("ok")] });
   await backend(request());
   await backend(request({ edit: true, cwd: "/work" }));
+  await backend(request({ edit: true, tools: ["read", "edit"] }));
   const want = (tools: string[], cwd: string): AgentOptions => ({
     apiKey: "key-123",
     model: { id: "composer-2.5" },
@@ -101,9 +121,13 @@ test("creates the agent with only the tools that the task allows", async () => {
     tools: tools as AgentOptions["tools"],
     local: { cwd, settingSources: [], sandboxOptions: { enabled: false } },
   });
-  assert.deepEqual(calls.create, [want(["read", "grep", "glob", "ls"], "/src"), want(["read", "grep", "glob", "ls", "edit", "delete"], "/work")]);
-  assert.deepEqual(calls.sent, ["Review the change.", "Review the change."]);
-  assert.equal(calls.disposes, 2);
+  assert.deepEqual(calls.create, [
+    want(["read", "grep", "glob", "ls"], "/src"),
+    want(["read", "grep", "glob", "ls", "edit", "delete"], "/work"),
+    want(["read", "edit"], "/src"),
+  ]);
+  assert.deepEqual(calls.sent, ["Review the change.", "Review the change.", "Review the change."]);
+  assert.equal(calls.disposes, 3);
 });
 
 test("returns the agent's text, its usage, and both costs", async () => {
@@ -155,23 +179,46 @@ test("waits for the cost, then falls back to the run's usage", async () => {
   assert.deepEqual([odd.costCents, odd.chargedCents], [undefined, undefined]);
 });
 
-test("cancels a run that takes too long", async () => {
-  const { backend, calls } = fakeSdk({ hang: true, result: { status: "cancelled" } });
-  await assert.rejects(backend(request({ timeoutMs: 20 })), /the agent didn't finish in 0s/);
+test("cancels a run that takes too long, and reports what it used", async () => {
+  const { backend, calls } = fakeSdk({ hang: true, result: { status: "cancelled" }, usage: [billed] });
+  await assert.rejects(
+    backend(request({ timeoutMs: 20 })),
+    failedWith(/^the agent didn't finish in 0s$/, { model: "composer-2.5", usage: counts(2), costCents: 0.5, chargedCents: 0.75 }),
+  );
   assert.equal(calls.cancels, 1);
   assert.equal(calls.disposes, 1);
 });
 
-test("fails a run that doesn't finish", async () => {
-  for (const [result, want] of [
-    [{ status: "error", error: { message: "rate limited" } }, /ended with status error: rate limited/],
-    [{ status: "cancelled" }, /ended with status cancelled: no message/],
-  ] as const) {
-    const { backend, calls } = fakeSdk({ events: [text('{"verdict": "pass"}')], result });
-    await assert.rejects(backend(request()), want);
+test("fails a run that doesn't finish, and reports what it used", async () => {
+  const cases: [Script, RegExp, Spent][] = [
+    [
+      { result: { status: "error", error: { message: "rate limited" }, usage: tokens(3) } },
+      /^the agent's run ended with status error: rate limited$/,
+      { model: "composer-2.5", usage: counts(3) },
+    ],
+    [
+      { result: { status: "cancelled", usage: tokens(3) }, usage: [billed] },
+      /^the agent's run ended with status cancelled: no message$/,
+      { model: "composer-2.5", usage: counts(2), costCents: 0.5, chargedCents: 0.75 },
+    ],
+    [{ streamError: "connection reset", usage: [billed] }, /^connection reset$/, { model: "composer-2.5", usage: counts(2), costCents: 0.5, chargedCents: 0.75 }],
+  ];
+  for (const [script, message, spent] of cases) {
+    const { backend, calls } = fakeSdk({ events: [text('{"verdict": "pass"}')], ...script });
+    await assert.rejects(backend(request()), failedWith(message, spent));
     assert.equal(calls.disposes, 1);
-    assert.equal(calls.usageReads, 0);
   }
+});
+
+test("passes on the error of a failed run when it can't tell what the run used", async () => {
+  const { backend, calls } = fakeSdk({ streamError: "connection reset" });
+  await assert.rejects(backend(request()), (err: unknown) => {
+    assert.ok(err instanceof Error && !(err instanceof AgentError));
+    assert.equal(err.message, "connection reset");
+    return true;
+  });
+  assert.equal(calls.usageReads, 4);
+  assert.equal(calls.disposes, 1);
 });
 
 test("needs an API key before it loads the SDK", async () => {

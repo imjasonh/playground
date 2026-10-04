@@ -11,7 +11,6 @@ import (
 	"time"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
-	"github.com/imjasonh/playground/git-k8s/checks"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/kube"
 	"github.com/imjasonh/playground/kube/k8s"
@@ -34,7 +33,21 @@ const (
 // to fetch the result.
 const podSlack = 30 * time.Minute
 
+// defaultSourceSize is the SourceSize of a Runner that doesn't set one.
+const defaultSourceSize = "2Gi"
+
+// The sizes of the agent Pod's volumes other than the source's, and the
+// room that the Pod leaves for its containers' logs.
+const (
+	tmpSize    = 1 << 30
+	resultSize = 64 << 20
+	logSize    = 256 << 20
+)
+
 func (r *Runner) resultPort() int { return cmp.Or(r.port, 8080) }
+
+// sourceBytes is the Runner's SourceSize in bytes, or 0 if it isn't a size.
+func (r *Runner) sourceBytes() int64 { return parseSize(cmp.Or(r.SourceSize, defaultSourceSize)) }
 
 // podTask is the task that runner/src/task.ts reads from AGENT_TASK.
 type podTask struct {
@@ -56,37 +69,38 @@ type podTask struct {
 	ResultFile     string `json:"resultFile"`
 	TerminationLog string `json:"terminationLog"`
 
-	Merge podMerge `json:"merge,omitzero"`
+	// Only some jobs set these.
+	Tools         []string `json:"tools,omitempty"`
+	MergeBranch   string   `json:"mergeBranch,omitempty"`
+	MergeHead     string   `json:"mergeHead,omitempty"`
+	ConflictsFile string   `json:"conflictsFile,omitempty"`
+	MergeLogFile  string   `json:"mergeLogFile,omitempty"`
 }
 
-// podMerge is the merge that runner/src/task.ts reads from AGENT_TASK.
-type podMerge struct {
-	Commit        string `json:"commit"`
-	Name          string `json:"name"`
-	ConflictsFile string `json:"conflictsFile"`
-	DiffFile      string `json:"diffFile"`
-	LogFile       string `json:"logFile"`
-}
+// movedStatus is prepareScript's exit status when a branch no longer points
+// to the job's commit.
+const movedStatus = 3
 
 // prepareScript runs in the prepare container. It fetches the branch at
 // HEAD, or exits with status 3 if the branch moved, and writes the head's
 // files, its index, the change from BASE, the paths that the change
-// touches, the commit log, and the API key for the agent container. It
-// leaves .cursorignore files out of the head's files and index, because
-// Cursor reads them to hide files from the agent. The git image has no
-// commands but git and sh, so the script uses only those and the shell's
-// builtins, and git init's templates make .git/info. The repository goes
-// in a directory that git init creates, because git refuses to use one
-// that another user owns, such as the root of an emptyDir volume. The
-// attributes file makes the files match their blobs, so the runner can
-// tell which ones the agent changed.
+// touches, the commit log, and the API key, if the Secret holds one, for
+// the agent container. With MERGE_HEAD, it also fetches MERGE_BRANCH, or
+// exits with status 3 if that moved, and writes the files and index of
+// HEAD's merge with MERGE_HEAD instead of the head's, the paths that
+// conflict, and the merged commits' log. It leaves .cursorignore files out
+// of the files and index, because Cursor reads them to hide files from the
+// agent. The git image has no commands but git and sh, so the script uses
+// only those and the shell's builtins, and git init's templates make
+// .git/info. The repository goes in a directory that git init creates,
+// because git refuses to use one that another user owns, such as the root
+// of an emptyDir volume. The attributes file makes the files match their
+// blobs, so the runner can tell which ones the agent changed.
 //
-// With MERGE, it also fetches MERGE_REF, or exits with status 3 if it still
-// doesn't have MERGE, and writes the files and index of merging MERGE into
-// HEAD from BASE instead of the head's, with the paths that conflict, the
-// change from BASE to MERGE, and MERGE's log. The merge uses the
-// attributes in ATTRIBUTES and none of the branch's own, as git.Repo.Merge
-// does, so that it matches the merge that Run commits.
+// MERGE_REF, if set, is the ref to fetch MERGE_HEAD from instead of
+// MERGE_BRANCH. ATTRIBUTES holds more attributes for the merge, which set
+// merge=union for the paths whose conflicts git resolves by keeping the
+// lines of both sides.
 const prepareScript = `set -eu
 git init -q "$REPO"
 cd "$REPO"
@@ -98,13 +112,10 @@ if [ "$(git rev-parse FETCH_HEAD)" != "$HEAD" ]; then
   echo "$BRANCH no longer points to $HEAD" >&2
   exit 3
 fi
-if [ -n "${MERGE:-}" ]; then
-  git fetch -q --depth=50 --end-of-options "$URL" "$MERGE_REF"
-  if ! git cat-file -e "$MERGE^{commit}" 2>/dev/null && [ "$(git rev-parse --is-shallow-repository)" = true ]; then
-    git fetch -q --unshallow --end-of-options "$URL" "$MERGE_REF"
-  fi
-  if ! git cat-file -e "$MERGE^{commit}" 2>/dev/null; then
-    echo "$MERGE_REF no longer holds $MERGE" >&2
+if [ -n "${MERGE_HEAD:-}" ]; then
+  git fetch -q --depth=50 --end-of-options "$URL" "${MERGE_REF:-refs/heads/$MERGE_BRANCH}"
+  if [ "$(git rev-parse FETCH_HEAD)" != "$MERGE_HEAD" ]; then
+    echo "${MERGE_REF:-$MERGE_BRANCH} no longer points to $MERGE_HEAD" >&2
     exit 3
   fi
 fi
@@ -112,20 +123,18 @@ if [ -n "${BASE:-}" ] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
   git fetch -q --unshallow --end-of-options "$URL" "refs/heads/$BRANCH"
 fi
 printf '* -text -eol -ident -filter -working-tree-encoding\n' >.git/info/attributes
+printf '%s' "${ATTRIBUTES:-}" >>.git/info/attributes
 tree="$HEAD"
-if [ -n "${MERGE:-}" ]; then
-  printf '%s' "${ATTRIBUTES:-}" >>.git/info/attributes
-  empty="$(git hash-object -t tree /dev/null)"
-  merge() {
-    git --attr-source="$empty" -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages --merge-base="$BASE" "$@" "$HEAD" "$MERGE"
+if [ -n "${MERGE_HEAD:-}" ]; then
+  merge_tree() {
+    git -c merge.conflictStyle=diff3 merge-tree --write-tree --no-messages --name-only "$@" --merge-base="$BASE" "$HEAD" "$MERGE_HEAD"
   }
-  merge --name-only -z >"$INPUT/conflicts" || [ $? -eq 1 ]
-  out="$(merge --name-only)" || [ $? -eq 1 ]
-  nl='
-'
-  tree="${out%%"$nl"*}"
-  git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv "$BASE" "$MERGE" >"$INPUT/merge.diff"
-  git log --format='%h %<(200,trunc)%s' -n 50 "$BASE..$MERGE" >"$INPUT/merge-log.txt"
+  code=0
+  merge_tree >.git/merge || code=$?
+  [ "$code" -le 1 ] || exit "$code"
+  read -r tree <.git/merge
+  merge_tree -z >"$INPUT/conflicts" || [ "$?" -eq 1 ]
+  git log --format='%h %<(200,trunc)%s' -n 50 "$BASE..$MERGE_HEAD" >"$INPUT/merge-log.txt"
 fi
 git read-tree "$tree"
 git rm -q --cached --ignore-unmatch -- ':(glob)**/.cursorignore'
@@ -140,12 +149,13 @@ git -c core.quotePath=false diff --no-color --no-ext-diff --no-textconv "$from" 
 git diff --name-status -z "$from" "$HEAD" >"$INPUT/changes"
 git log --format='%h %<(200,trunc)%s' -n 50 "$range" >"$INPUT/log.txt"
 umask 077
-printf '%s' "$CURSOR_API_KEY" >"$KEY_FILE"
+printf '%s' "${CURSOR_API_KEY:-}" >"$KEY_FILE"
 `
 
-// pod declares the Pod for one attempt at a run on base..head. Its name
-// covers the branch, the attempt, and the Pod's spec.
-func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod {
+// jobPod declares the Pod for one attempt at job's run. Its name covers
+// the job's name, the attempt, and the Pod's spec.
+func (r *Runner) jobPod(job *Job, attempt int) *Pod {
+	c := job.Checkout
 	yes, no := true, false
 	user := int64(65532)
 	timeout := max(1, int64(math.Ceil(r.Timeout.Seconds())))
@@ -155,16 +165,16 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 		ReadOnlyRootFilesystem:   &yes,
 		Capabilities:             &Capabilities{Drop: []string{"ALL"}},
 	}
-	pt := podTask{
+	task := podTask{
 		Backend:        r.Backend,
 		Model:          r.Model,
-		Instructions:   task.Instructions,
-		Edit:           task.edits(),
+		Instructions:   job.Task.Instructions,
+		Edit:           job.Task.Edit,
 		TimeoutSeconds: timeout,
-		Branch:         in.Spec.Branch,
-		Parent:         in.Spec.Parent,
-		Head:           in.Spec.Head,
-		Base:           base,
+		Branch:         c.Branch,
+		Parent:         c.Parent,
+		Head:           c.Head,
+		Base:           c.Base,
 		WorkTree:       workTree,
 		DiffFile:       inputDir + "/change.diff",
 		LogFile:        inputDir + "/log.txt",
@@ -173,45 +183,50 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 		KeyFile:        keyFile,
 		ResultFile:     resultFile,
 		TerminationLog: "/dev/termination-log",
+		Tools:          job.Tools,
 	}
-	if m := task.Merge; m != nil {
-		pt.Merge = podMerge{
-			Commit:        m.Commit,
-			Name:          m.Name,
-			ConflictsFile: inputDir + "/conflicts",
-			DiffFile:      inputDir + "/merge.diff",
-			LogFile:       inputDir + "/merge-log.txt",
-		}
-	}
-	agentTask, _ := json.Marshal(pt)
 	prepareEnv := []EnvVar{
-		{Name: "URL", Value: in.Repository.Spec.URL},
-		{Name: "BRANCH", Value: in.Spec.Branch},
-		{Name: "HEAD", Value: in.Spec.Head},
-		{Name: "BASE", Value: base},
+		{Name: "URL", Value: job.URL},
+		{Name: "BRANCH", Value: c.Branch},
+		{Name: "HEAD", Value: c.Head},
+		{Name: "BASE", Value: c.Base},
 		{Name: "REPO", Value: "/git/repo"},
 		{Name: "WORK_TREE", Value: workTree},
 		{Name: "INPUT", Value: inputDir},
 		{Name: "KEY_FILE", Value: keyFile},
 		{Name: "HOME", Value: "/git"},
 		{Name: "GIT_TERMINAL_PROMPT", Value: "0"},
+		{Name: "GIT_ALLOW_PROTOCOL", Value: "http:https:git:ssh:file"},
 	}
-	if m := task.Merge; m != nil {
-		attributes, _ := git.UnionAttributes(m.Union)
-		prepareEnv = append(prepareEnv,
-			EnvVar{Name: "MERGE", Value: m.Commit},
-			EnvVar{Name: "MERGE_REF", Value: m.Ref},
-			EnvVar{Name: "ATTRIBUTES", Value: attributes},
-		)
+	if m := c.Merge; m != nil {
+		task.MergeBranch, task.MergeHead = m.Branch, m.Commit
+		task.ConflictsFile, task.MergeLogFile = inputDir+"/conflicts", inputDir+"/merge-log.txt"
+		prepareEnv = append(prepareEnv, EnvVar{Name: "MERGE_BRANCH", Value: m.Branch}, EnvVar{Name: "MERGE_HEAD", Value: m.Commit})
+		if m.Name != "" {
+			prepareEnv = append(prepareEnv, EnvVar{Name: "MERGE_REF", Value: m.Name})
+		}
+		if attributes, _ := git.UnionAttributes(c.Union); attributes != "" {
+			prepareEnv = append(prepareEnv, EnvVar{Name: "ATTRIBUTES", Value: attributes})
+		}
 	}
-	if ref := in.Repository.Spec.SecretRef; ref != nil {
+	agentTask, _ := json.Marshal(task)
+	if ref := job.Credentials; ref != nil {
 		prepareEnv = append(prepareEnv,
 			EnvVar{Name: "GIT_USERNAME", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "username", Optional: &yes}}},
 			EnvVar{Name: "GIT_PASSWORD", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: ref.Name, Key: "password"}}},
 		)
 	}
-	prepareEnv = append(prepareEnv, EnvVar{Name: "CURSOR_API_KEY", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: r.Secret, Key: "api-key"}}})
+	// Without the Secret, the runner fails a cursor backend's run and says to
+	// check the Secret, instead of the Pod waiting for it until its deadline.
+	// The fake backend needs no key.
+	prepareEnv = append(prepareEnv, EnvVar{Name: "CURSOR_API_KEY", ValueFrom: &EnvVarSource{SecretKeyRef: &SecretKeySelector{Name: r.Secret, Key: "api-key", Optional: &yes}}})
 	port := r.resultPort()
+	image := cmp.Or(job.Image, r.Image)
+	source := cmp.Or(r.SourceSize, defaultSourceSize)
+	// The kubelet evicts a Pod whose volumes and logs use more than the
+	// Pod's ephemeral-storage limit, which is its init containers' limit, so
+	// that limit covers every volume.
+	disk := k8s.Quantity(formatSize(3*r.sourceBytes() + tmpSize + resultSize + logSize))
 
 	p := &Pod{Object: kube.Meta("", map[string]string{"app.kubernetes.io/name": "git-k8s-agent", agentLabel: r.Name})}
 	p.Spec = PodSpec{
@@ -228,12 +243,12 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 			SeccompProfile: &SeccompProfile{Type: "RuntimeDefault"},
 		},
 		Volumes: []Volume{
-			{Name: "git", EmptyDir: &EmptyDir{}},
-			{Name: "src", EmptyDir: &EmptyDir{}},
-			{Name: "input", EmptyDir: &EmptyDir{}},
+			{Name: "git", EmptyDir: &EmptyDir{SizeLimit: source}},
+			{Name: "src", EmptyDir: &EmptyDir{SizeLimit: source}},
+			{Name: "input", EmptyDir: &EmptyDir{SizeLimit: source}},
 			{Name: "key", EmptyDir: &EmptyDir{Medium: "Memory", SizeLimit: "1Mi"}},
-			{Name: "result", EmptyDir: &EmptyDir{SizeLimit: "64Mi"}},
-			{Name: "tmp", EmptyDir: &EmptyDir{}},
+			{Name: "result", EmptyDir: &EmptyDir{SizeLimit: formatSize(resultSize)}},
+			{Name: "tmp", EmptyDir: &EmptyDir{SizeLimit: formatSize(tmpSize)}},
 		},
 		InitContainers: []Container{{
 			Name:            "prepare",
@@ -250,12 +265,12 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "128Mi"},
-				Limits:   map[string]k8s.Quantity{"memory": "1Gi"},
+				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "128Mi", "ephemeral-storage": "1Gi"},
+				Limits:   map[string]k8s.Quantity{"memory": "1Gi", "ephemeral-storage": disk},
 			},
 		}, {
 			Name:            "agent",
-			Image:           r.Image,
+			Image:           image,
 			ImagePullPolicy: "IfNotPresent",
 			Args:            []string{"run"},
 			Env: []EnvVar{
@@ -263,7 +278,7 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 				{Name: "HOME", Value: "/tmp"},
 			},
 			VolumeMounts: []VolumeMount{
-				{Name: "src", MountPath: "/src", ReadOnly: !task.edits()},
+				{Name: "src", MountPath: "/src", ReadOnly: !job.Task.Edit},
 				{Name: "input", MountPath: inputDir, ReadOnly: true},
 				{Name: "key", MountPath: "/key"},
 				{Name: "result", MountPath: "/result"},
@@ -272,13 +287,13 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "256Mi"},
-				Limits:   map[string]k8s.Quantity{"memory": "2Gi"},
+				Requests: map[string]k8s.Quantity{"cpu": "100m", "memory": "256Mi", "ephemeral-storage": "1Gi"},
+				Limits:   map[string]k8s.Quantity{"memory": "2Gi", "ephemeral-storage": disk},
 			},
 		}},
 		Containers: []Container{{
 			Name:            "result",
-			Image:           r.Image,
+			Image:           image,
 			ImagePullPolicy: "IfNotPresent",
 			Args:            []string{"serve"},
 			Env: []EnvVar{
@@ -291,13 +306,42 @@ func (r *Runner) pod(in *checks.Input, task Task, base string, attempt int) *Pod
 			SecurityContext:          restricted,
 			TerminationMessagePolicy: "FallbackToLogsOnError",
 			Resources: &Resources{
-				Requests: map[string]k8s.Quantity{"cpu": "10m", "memory": "32Mi"},
-				Limits:   map[string]k8s.Quantity{"memory": "256Mi"},
+				Requests: map[string]k8s.Quantity{"cpu": "10m", "memory": "32Mi", "ephemeral-storage": "64Mi"},
+				Limits:   map[string]k8s.Quantity{"memory": "256Mi", "ephemeral-storage": "256Mi"},
 			},
 		}},
 	}
 	spec, _ := json.Marshal(p.Spec)
-	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s", in.Meta.Name, attempt, spec))
+	sum := sha256.Sum256(fmt.Appendf(nil, "%s\x00%d\x00%s", job.Name, attempt, spec))
 	p.Name = r.Name + "-" + hex.EncodeToString(sum[:8])
 	return p
+}
+
+// parseSize returns the bytes in a size such as 2Gi or 500M. It returns 0
+// for a size that isn't a positive whole number with a suffix of at most T
+// or Ti, and for one so big that adding up the Pod's volumes could
+// overflow.
+func parseSize(s string) int64 {
+	i := 0
+	for i < len(s) && '0' <= s[i] && s[i] <= '9' {
+		i++
+	}
+	unit := map[string]int64{"": 1, "k": 1e3, "M": 1e6, "G": 1e9, "T": 1e12, "Ki": 1 << 10, "Mi": 1 << 20, "Gi": 1 << 30, "Ti": 1 << 40}[s[i:]]
+	n, err := strconv.ParseInt(s[:i], 10, 64)
+	if unit == 0 || err != nil || n <= 0 || n > math.MaxInt64/4/unit {
+		return 0
+	}
+	return n * unit
+}
+
+// formatSize writes n bytes as a size in the largest binary unit that
+// divides it.
+func formatSize(n int64) string {
+	units := []string{"", "Ki", "Mi", "Gi", "Ti"}
+	i := 0
+	for i < len(units)-1 && n%1024 == 0 {
+		n /= 1024
+		i++
+	}
+	return strconv.FormatInt(n, 10) + units[i]
 }

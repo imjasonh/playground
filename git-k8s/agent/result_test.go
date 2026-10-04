@@ -45,7 +45,7 @@ func TestChecksPaths(t *testing.T) {
 }
 
 func TestChecksFiles(t *testing.T) {
-	many := make([]File, maxFiles+1)
+	many := make([]File, MaxFiles+1)
 	for i := range many {
 		many[i] = File{Path: strconv.Itoa(i), Mode: "100644"}
 	}
@@ -57,7 +57,7 @@ func TestChecksFiles(t *testing.T) {
 		{[]File{{Path: "a", Mode: "100644"}, {Path: "a", Deleted: true}}, `it changes "a" twice`},
 		{[]File{{Path: "a", Deleted: true, Content: []byte("x")}}, "but also gives it content"},
 		{[]File{{Path: "a", Mode: "040000"}}, `the mode "040000"`},
-		{[]File{{Path: "a", Mode: "100644", Content: make([]byte, maxFileBytes+1)}}, "more than 8 MiB"},
+		{[]File{{Path: "a", Mode: "100644", Content: make([]byte, MaxFileBytes+1)}}, "more than 8 MiB"},
 	} {
 		if err := checkFiles(tc.files); err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("checkFiles = %v, want an error with %q", err, tc.want)
