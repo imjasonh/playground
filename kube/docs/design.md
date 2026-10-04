@@ -755,6 +755,21 @@ holds the shard by then. The reconcile reads the data without removing it, so a
 retry on the same replica still finds it. It adds the data to what the object
 holds, because once the handler answers, later reconciles run without the data.
 
+The reconcile reads the object for that with `kube.Get`, after it reads the
+data, and doesn't add the data to the object that `Reconcile` receives. The
+framework reads that object from the cache before it calls `Reconcile`. When a
+trigger arrives during a reconcile, the queue runs the key again as soon as the
+reconcile and its status write finish, usually before the watch delivers the
+write, so the next reconcile receives the object from before it. Meanwhile, the
+handlers see the write in the cache, answer, and drop their data. A reconcile
+that added the data still pending to the object it received would write back
+the older list, and the forced status apply would remove data that clients were
+told was saved. Reading the data first closes that window without waiting for
+the cache. `kube.Get` reads one cache in handlers and reconciles, and that
+cache never goes back to an older version of an object. A handler drops data
+only after `kube.Get` shows it, so data that the reconcile no longer finds
+pending is in the object that its `kube.Get` returns.
+
 ### Versions and conversion
 
 `kube.Version[V]` adds a served version to the CustomResourceDefinition, with
