@@ -238,17 +238,15 @@ key, with that account's email address as their committer.
 
 ## Sign commits with gitsign
 
-[gitsign](https://github.com/sigstore/gitsign) signs keylessly, with a
-short-lived certificate from Sigstore for an OIDC identity such as a service
-account token, so there's no long-lived key to protect. git-k8s doesn't
-support it because:
+Keyless signing with [gitsign](https://github.com/sigstore/gitsign) leaves
+no long-lived key to protect, but git-k8s doesn't support it, for the
+reasons in [Sign commits](README.md#sign-commits). Supporting it needs:
 
-- GitHub doesn't show gitsign signatures as verified, so a ruleset that
-  requires signed commits rejects them.
-- The public Sigstore service accepts tokens only from OIDC issuers that it
-  knows, such as GKE and EKS clusters. A kind cluster's issuer isn't one, so
-  the end-to-end test would need its own Sigstore services.
-- Its signatures differ every time, so a retried fix is a different commit.
+- Verification of Sigstore signatures on GitHub, so that a rule that
+  requires signed commits accepts the commits that gitsign signs.
+- A private Sigstore for the end-to-end test: a Fulcio certificate
+  authority that accepts tokens from the kind cluster's service account
+  issuer, and a Rekor transparency log.
 
 ## Start waiting go test Pods in order
 

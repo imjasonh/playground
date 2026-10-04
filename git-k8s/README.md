@@ -233,9 +233,24 @@ The checks sign with git's SSH signature format, `gpg.format=ssh`. Git runs
 must be unencrypted, in the OpenSSH format that `ssh-keygen` writes. Ed25519
 and RSA signatures come out the same every time, so a check still makes the
 same fix commit from the same inputs; ECDSA signatures don't. Without
-`signingKeyRef`, the checks' commits aren't signed. Keyless signing with
-[gitsign](https://github.com/sigstore/gitsign) isn't supported; see
-[future work](future-work.md#sign-commits-with-gitsign).
+`signingKeyRef`, the checks' commits aren't signed.
+
+git-k8s doesn't support keyless signing with
+[gitsign](https://github.com/sigstore/gitsign), which signs with a
+short-lived certificate from Sigstore for an OIDC identity, such as a
+service account token, instead of a long-lived key, because:
+
+- GitHub doesn't show gitsign signatures as verified, so a rule that
+  requires signed commits rejects them.
+- The public Sigstore service accepts tokens only from OIDC issuers that it
+  knows, such as GKE and EKS clusters. Other clusters, including the kind
+  cluster that the end-to-end test uses, need Sigstore services of their
+  own.
+- Signatures from gitsign differ every time, as ECDSA signatures do, so
+  each retry of a fix makes a different commit.
+
+[Future work](future-work.md#sign-commits-with-gitsign) lists what
+supporting it needs.
 
 The key needs a Secret of its own, because the `secretRef` Secret holds the
 credentials for the remote, and each test Pod's init container gets some of
