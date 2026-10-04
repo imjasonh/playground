@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the website and podpolicy examples in a kind cluster with
+# Install the website, podpolicy, and probe examples in a kind cluster with
 # generate, which pushes their images to a local registry, and check that
 # they work. go test ./e2e/kind runs this when KUBE_KIND_E2E=1, which CI
 # sets when kube changes.
@@ -26,7 +26,8 @@ k() { kubectl --context "${CONTEXT}" "$@"; }
 diagnose() {
   echo "::group::Cluster state"
   k get nodes,websites,all -A -o wide || true
-  for ns in website podpolicy; do
+  k get probes -A -o yaml || true
+  for ns in website podpolicy probe; do
     k -n "${ns}" describe pods || true
     k -n "${ns}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${ns}" || true
   done
@@ -200,6 +201,115 @@ echo "defaulted requests: ${requests}"
 [[ "${requests}" == *'"cpu":"100m"'* && "${requests}" == *'"memory":"128Mi"'* ]]
 
 k -n kube-system run exempt --image="${CHAINGUARD}/nginx:latest" --restart=Never --dry-run=server -o name
+echo "::endgroup::"
+
+echo "::group::Install the probe example"
+generate probe | k apply -f -
+k -n probe rollout status deployment/probe --timeout=180s
+k create namespace probe-e2e
+k -n probe-e2e create serviceaccount ci
+# The client calls the probe API with a projected service account token for
+# the API's audience, like a Pod that another program runs.
+k apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: client
+  namespace: probe-e2e
+spec:
+  serviceAccountName: ci
+  automountServiceAccountToken: false
+  containers:
+  - name: client
+    image: ${CHAINGUARD}/curl:latest-dev
+    command: [sleep, "3600"]
+    volumeMounts:
+    - name: token
+      mountPath: /var/run/secrets/probe
+  volumes:
+  - name: token
+    projected:
+      sources:
+      - serviceAccountToken:
+          audience: probe
+          path: token
+EOF
+k -n probe-e2e wait --for=condition=Ready pod/client --timeout=180s
+
+client_token="$(k -n probe-e2e exec client -- cat /var/run/secrets/probe/token)"
+
+# respond METHOD URL TOKEN sends a request with TOKEN from the client Pod,
+# and prints the response's status code and body.
+respond() {
+  local out
+  out="$(k -n probe-e2e exec client -- curl -sS -w '\n%{http_code}' -X "$1" -H "Authorization: Bearer $3" "$2")"
+  echo "${out##*$'\n'} ${out%$'\n'*}"
+}
+pod_ips() { k -n probe get pods -l app.kubernetes.io/name=probe -o jsonpath='{.items[*].status.podIP}'; }
+whoami_ok() {
+  local out
+  out="$(respond GET "$1" "${client_token}")"
+  echo "$1: ${out}"
+  [[ "${out}" == "200 system:serviceaccount:probe-e2e:ci in Pod client" ]]
+}
+
+eventually 60 whoami_ok http://probe.probe.svc/whoami
+for ip in $(pod_ips); do
+  whoami_ok "http://${ip}:8081/whoami"
+done
+for other in "$(k -n probe-e2e create token ci --audience other)" "$(k -n probe-e2e create token ci)"; do
+  out="$(respond GET http://probe.probe.svc/whoami "${other}")"
+  echo "${out}"
+  [[ "${out}" == "401 "* ]]
+done
+echo "Every replica serves, and accepts only tokens for its audience."
+
+# The replica that holds the lease creates the Probe CRD once it starts.
+create_probe() {
+  k apply -f - <<EOF
+apiVersion: examples.kube.imjasonh.github.io/v1
+kind: Probe
+metadata:
+  name: self
+  namespace: probe-e2e
+spec:
+  url: http://probe.probe.svc/whoami
+  audience: probe
+EOF
+}
+eventually 60 create_probe
+# The program checks a URL again only after 10 minutes, unless something
+# triggers a check, so trigger one if the first check failed.
+probe_ok() {
+  local status
+  status="$(k -n probe-e2e get probe self -o jsonpath='{.status.code} {.status.message}')"
+  echo "status: ${status}"
+  if [[ "${status}" == "200 system:serviceaccount:probe:probe in Pod probe-"* ]]; then
+    return 0
+  fi
+  respond POST http://probe.probe.svc/probes/probe-e2e/self "${client_token}" >/dev/null || true
+  return 1
+}
+eventually 120 probe_ok
+echo "The program's own token, bound to its Pod, passes its review."
+
+checked="$(k -n probe-e2e get probe self -o jsonpath='{.status.checkedAt}')"
+triggered() {
+  local ip out accepted=0 refused=0
+  for ip in $(pod_ips); do
+    out="$(respond POST "http://${ip}:8081/probes/probe-e2e/self" "${client_token}")"
+    echo "${ip}: ${out}"
+    case "${out}" in
+      202*) accepted=$((accepted + 1)) ;;
+      503*) refused=$((refused + 1)) ;;
+    esac
+  done
+  ((accepted == 1 && refused == 1))
+}
+eventually 60 triggered
+checked_again() { [[ "$(k -n probe-e2e get probe self -o jsonpath='{.status.checkedAt}')" != "${checked}" ]]; }
+eventually 60 checked_again
+echo "The replica that holds the lease triggers a check, and the other refuses."
 echo "::endgroup::"
 
 echo "kind e2e passed"
