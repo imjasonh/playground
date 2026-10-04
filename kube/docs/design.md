@@ -510,6 +510,15 @@ waits for its next change, and `Synced` has the reason `PermanentError`. A
 panic in `Reconcile` becomes an error, so one bad object doesn't stop the
 controller.
 
+An intent that fails, for example because an admission policy rejects an
+apply, fails the reconcile in the same way. The framework stops carrying out
+the intents, writes the status that `Reconcile` set, and retries with backoff.
+`Reconcile` returned before the write failed, so it can't report the error.
+The controller keeps each object's last error in memory, and `kube.LastError`
+returns it to the next reconcile, which can put it in the status. That matters
+for a status without a `Synced` condition, such as one entry in a status that
+several controllers share.
+
 ### Finalizers and cleanup
 
 When a reconciler has a `Finalize` method, the framework adds a finalizer to

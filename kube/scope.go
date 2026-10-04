@@ -58,13 +58,14 @@ type scope struct {
 	intents  []intent
 	requeue  time.Duration
 	err      error
+	lastErr  error
 	cancel   context.CancelCauseFunc
 	// webhook scopes can read, but don't track reads or accept intents.
 	webhook bool
 }
 
 func newScope(ctx context.Context, w world, c *core, key Key) (context.Context, *scope) {
-	s := &scope{w: w, c: c, key: key, parentNS: c.res.namespaced, deps: map[dep]struct{}{}}
+	s := &scope{w: w, c: c, key: key, parentNS: c.res.namespaced, deps: map[dep]struct{}{}, lastErr: c.lastError(key)}
 	ctx, s.cancel = context.WithCancelCause(context.WithValue(ctx, scopeKey{}, s))
 	return ctx, s
 }
@@ -372,6 +373,16 @@ func RequeueAfter(ctx context.Context, d time.Duration) {
 	if d > 0 && (s.requeue == 0 || d < s.requeue) {
 		s.requeue = d
 	}
+}
+
+// LastError returns the error that the previous reconcile of the object
+// failed with, or nil if it succeeded or there wasn't one. The framework
+// carries out a reconcile's declarations after Reconcile returns, so only the
+// next reconcile can see that one failed, for example because an admission
+// policy rejected an apply. The framework writes the status even when a
+// declaration fails, so that reconcile can report the error in the status.
+func LastError(ctx context.Context) error {
+	return scopeFrom(ctx, "LastError").lastErr
 }
 
 // Permanent marks err as one that retrying won't fix, such as an invalid

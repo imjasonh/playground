@@ -106,7 +106,10 @@ no watch setup. The stripped binary in its image is 8.4 MiB.
 `Apply`, and `Delete`. The framework carries out the declarations after
 `Reconcile` returns `nil`. If `Reconcile` returns an error, the framework
 writes only status, and retries with exponential backoff from 50 ms to 5
-minutes.
+minutes. If a declaration fails, for example because an admission policy
+rejects an object, the framework writes the status that `Reconcile` set and
+retries in the same way. In the retry, `kube.LastError` returns the error, so
+the reconcile can report it in the status.
 
 | Function | What it does |
 | --- | --- |
@@ -118,6 +121,7 @@ minutes.
 | `kube.Delete(ctx, object)` | Declares that an object must be deleted |
 | `kube.RequeueAfter(ctx, duration)` | Asks for another reconcile after a delay |
 | `kube.Permanent(err)` | Marks an error that retrying won't fix |
+| `kube.LastError(ctx)` | Returns the error that the previous reconcile of the object failed with, or `nil` |
 
 The framework records every `Get` and `List`. When an object that a reconcile
 read changes, or an object starts or stops matching a `List`, the framework
@@ -549,7 +553,8 @@ func TestReconcile(t *testing.T) {
 
 As in a cluster, a read sees the objects of every type of its kind. A
 reconcile that reads your own smaller `Deployment` type sees each
-`k8s.Deployment` that you pass to `kube.Fake`.
+`k8s.Deployment` that you pass to `kube.Fake`. If you also pass an error,
+`kube.LastError` returns it, as if the previous reconcile had failed with it.
 
 To test `Validate`, `Default`, `ConvertTo`, and `ConvertFrom`, call them
 directly. With a context from `kube.Fake`, `Validate` and `Default` can read
