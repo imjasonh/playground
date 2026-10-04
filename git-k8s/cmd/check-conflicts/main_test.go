@@ -1576,6 +1576,41 @@ func TestReplaysTheExternalCommitsOntoARewoundBranch(t *testing.T) {
 	}
 }
 
+func TestReplaysAnExternalCommitThatRepeatsAReplayedChange(t *testing.T) {
+	srv := gittest.NewServer(t, "pw")
+	b, w, base, synced := rewound(t, srv, func(w *gittest.Work, _ *Branch) {})
+	// The external repository adds the same line twice, and c/x, which
+	// drops synced's commit, replays only the first of those commits.
+	e1, o := diverge(w, b.Name, "c/x", synced, map[string]string{"a.txt": "one\ntwo\nthree\nx\n"})
+	e := commit(w, "external edit 2", map[string]string{"a.txt": "one\ntwo\nthree\nx\nx\n"})
+	w.PushRef(downstream + "c/x")
+	o.Status.Diverged.Commit = e
+	syncedAt(w, o, "c/x", synced)
+	w.Branch("c/x", base)
+	w.Git("cherry-pick", "--end-of-options", e1)
+	b.Spec.Head = w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
+	w.Push("c/x")
+	head := b.Spec.Head
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	res := b.Status.Checks.Result
+	fix := res.Outputs["fix"]
+	want := "the branch rewound since it last synced at " + gitk8s.Short(synced) + "; replayed the commits that the external repository's c/x added since then onto it; pushed " + gitk8s.Short(fix)
+	if res.State != gitk8s.Fixed || res.Message != want {
+		t.Fatalf("result = %+v, want Fixed with %q", res, want)
+	}
+	if got := w.Fetch("c/x"); got != fix {
+		t.Fatalf("c/x = %s, want the replay %s", got, fix)
+	}
+	if got := w.Git("rev-parse", "--verify", "--end-of-options", fix+"~1"); got != head {
+		t.Errorf("the replay's parent is %s, want the branch's head %s", got, head)
+	}
+	if got, want := authorAndMessage(w, fix), authorAndMessage(w, e); got != want {
+		t.Errorf("the replay's author and message = %q, want those of %s, %q", got, gitk8s.Short(e), want)
+	}
+}
+
 func TestLeavesARewoundBranchWhoseExternalCommitsDontReplay(t *testing.T) {
 	for _, tc := range []struct {
 		name string

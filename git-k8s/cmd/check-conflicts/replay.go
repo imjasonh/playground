@@ -78,7 +78,8 @@ func removedNone(ctx context.Context, repo *git.Repo, head, side, synced string)
 // in other but not in synced, that head neither has nor has a replay of,
 // oldest first. A replay is a commit in head but not in other that removes
 // and adds the same lines in the same files, ignoring the unchanged lines
-// around them. A merge commit, and a commit that changes no file, have no
+// around them. As in Repo.Keeps, each commit in head replays at most one
+// commit, and a merge commit, and a commit that changes no file, have no
 // replay. It also returns the patch ID of each commit that other added.
 func unreplayed(ctx context.Context, repo *git.Repo, head, other, synced string) ([]git.Rev, map[string]string, error) {
 	added, err := repo.Revs(ctx, other, head, synced)
@@ -102,15 +103,17 @@ func unreplayed(ctx context.Context, repo *git.Repo, head, other, synced string)
 	if err != nil {
 		return nil, nil, err
 	}
-	replayed := map[string]bool{}
+	have := map[string]int{}
 	for _, r := range own {
 		if id := ids[r.Commit]; id != "" && len(r.Parents) <= 1 {
-			replayed[id] = true
+			have[id]++
 		}
 	}
 	var missing []git.Rev
 	for _, r := range added {
-		if id := ids[r.Commit]; id == "" || !replayed[id] {
+		if id := ids[r.Commit]; id != "" && have[id] > 0 {
+			have[id]--
+		} else {
 			missing = append(missing, r)
 		}
 	}
