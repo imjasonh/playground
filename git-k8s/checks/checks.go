@@ -34,6 +34,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"strings"
 	"sync"
@@ -81,8 +82,10 @@ type Verdict struct {
 	Outputs map[string]string
 	// Fix, when set, is a commit on top of the branch's head that fixes
 	// what the check found. The framework pushes it when the check's policy
-	// allows and the branch has automated commits left, and reports Fixed;
-	// otherwise it reports Failed.
+	// allows and the branch has automated commits left, and reports Fixed,
+	// with the commit in the output fix; otherwise it reports Failed. It
+	// reports Error instead, and doesn't push, if the core program wouldn't
+	// accept the Fixed result.
 	Fix string
 }
 
@@ -197,16 +200,23 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		return err
 	}
 	res.State, res.Message, res.Outputs = v.State, truncate(v.Message), truncateOutputs(v.Outputs)
+	reported, why := res, "the core program doesn't accept the check's result: "
+	if v.Fix != "" {
+		// If push doesn't push, it reports Failed with at most the Fixed
+		// result's outputs, so checking the Fixed result covers that one too.
+		reported, why = fixed(res, v), "not pushing the fix because the core program wouldn't accept the Fixed result: "
+	}
+	if err := reported.Validate(); err != nil {
+		// Running the check again returns the same result, so report why in
+		// the result instead of failing the reconcile, which kube retries.
+		*result = &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit, State: gitk8s.Error,
+			Message: truncate(why + err.Error())}
+		return nil
+	}
 	if v.Fix != "" {
 		if err := r.push(ctx, in, v, res); err != nil {
 			return err
 		}
-	}
-	if err := res.Validate(); err != nil {
-		// Running the check again returns the same result, so report why in
-		// the result instead of failing the reconcile, which kube retries.
-		res = &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit, State: gitk8s.Error,
-			Message: truncate("the core program doesn't accept the check's result: " + err.Error())}
 	}
 	*result = res
 	return nil
@@ -250,13 +260,21 @@ func (r *reconciler[V, P]) push(ctx context.Context, in *Input, v Verdict, res *
 		return err
 	}
 	slog.Info("pushed a fix", "check", r.check.Name, "namespace", in.Meta.Namespace, "branch", in.Spec.Branch, "from", gitk8s.Short(in.Spec.Head), "to", gitk8s.Short(v.Fix))
-	res.State = gitk8s.Fixed
-	res.Message = truncate(fmt.Sprintf("%s; pushed %s", v.Message, gitk8s.Short(v.Fix)))
-	if res.Outputs == nil {
-		res.Outputs = map[string]string{}
-	}
-	res.Outputs["fix"] = v.Fix
+	*res = *fixed(res, v)
 	return nil
+}
+
+// fixed returns the result that push reports after it pushes v's fix.
+func fixed(res *gitk8s.CheckResult, v Verdict) *gitk8s.CheckResult {
+	f := *res
+	f.State = gitk8s.Fixed
+	f.Message = truncate(fmt.Sprintf("%s; pushed %s", v.Message, gitk8s.Short(v.Fix)))
+	f.Outputs = maps.Clone(res.Outputs)
+	if f.Outputs == nil {
+		f.Outputs = map[string]string{}
+	}
+	f.Outputs["fix"] = v.Fix
+	return &f
 }
 
 // Input is what a check sees of a branch.

@@ -168,8 +168,10 @@ reads only the `GitBranch`, such as `check-approval`, leaves `Remote` out,
 and its program can't read Secrets.
 
 The core program accepts at most 16 outputs, with names of up to 63 bytes.
-The framework shortens messages and output values to 1,024 bytes, the most
-that the core program accepts.
+A `Fixed` result also has the output `fix`, so a verdict with a `Fix` can
+have at most 15 other outputs, or the framework reports `Error` and doesn't
+push the fix. The framework shortens messages and output values to 1,024
+bytes, the most that the core program accepts.
 
 ### Sandboxed checks
 
