@@ -63,17 +63,18 @@ func newFixture(t *testing.T) *fixture {
 	unsynced.Namespace, unsynced.UID = "default", "uid-unsynced"
 	// The gotest check runs the Pod gotest-1 on feature. On the branch
 	// squatted, another check made the Pod that the gotest check's result
-	// names.
+	// names. On the branch running, the gotest check's Pod has started its
+	// tests.
 	branch := func(name, pod string) *gitk8s.GitBranch {
 		b := &gitk8s.GitBranch{Object: kube.Meta(name, map[string]string{gitk8s.RepositoryLabel: "app"})}
 		b.Namespace = "default"
 		b.Status.Checks = map[string]gitk8s.CheckResult{gitk8s.GoTestCheck: {State: gitk8s.Running, Outputs: map[string]string{"pod": pod}}}
 		return b
 	}
-	pod := func(name, controller string) *k8s.Pod {
+	pod := func(name, controller, phase string) *k8s.Pod {
 		p := &k8s.Pod{Object: kube.Meta(name, map[string]string{gitk8s.ControllerLabel: controller})}
 		p.Namespace, p.UID = "default", "uid-"+name
-		p.Status.Phase = "Running"
+		p.Status.Phase = phase
 		return p
 	}
 	token := func(token, user string, extra map[string][]string) kube.FakeToken {
@@ -90,9 +91,11 @@ func newFixture(t *testing.T) *fixture {
 		repo,
 		unsynced,
 		branch("app-feature", "gotest-1"),
-		pod("gotest-1", gitk8s.GoTestController),
+		pod("gotest-1", gitk8s.GoTestController, "Pending"),
 		branch("app-squatted", "gotest-squatted"),
-		pod("gotest-squatted", "check-other"),
+		pod("gotest-squatted", "check-other", "Pending"),
+		branch("app-running", "gotest-running"),
+		pod("gotest-running", gitk8s.GoTestController, "Running"),
 		token("gofmt", "system:serviceaccount:check-gofmt:check-gofmt", nil),
 		token("approval", "system:serviceaccount:check-approval:check-approval", nil),
 		token("other", "system:serviceaccount:check-other:check-other", nil),
@@ -102,6 +105,7 @@ func newFixture(t *testing.T) *fixture {
 		podToken("team-pod", "team", "gotest-1", "uid-gotest-1"),
 		podToken("earlier-pod", "default", "gotest-1", "uid-earlier"),
 		podToken("squatter", "default", "gotest-squatted", "uid-gotest-squatted"),
+		podToken("running-pod", "default", "gotest-running", "uid-gotest-running"),
 		token("no-uid-pod", "system:serviceaccount:default:default", map[string][]string{podNameExtra: {"gotest-1"}}),
 		token("unbound", "system:serviceaccount:default:default", nil),
 		token("person", "jane@example.com", nil),
@@ -340,7 +344,7 @@ func TestServeTestPods(t *testing.T) {
 	if got := f.work.Git("rev-parse", "FETCH_HEAD"); got != f.feature {
 		t.Errorf("fetched %s; want %s", got, f.feature)
 	}
-	for _, token := range []string{"stray-pod", "team-pod", "earlier-pod", "squatter", "no-uid-pod", "unbound"} {
+	for _, token := range []string{"stray-pod", "team-pod", "earlier-pod", "squatter", "running-pod", "no-uid-pod", "unbound"} {
 		if _, err := f.git(token, "fetch", "--quiet", f.url("app"), "refs/heads/feature"); err == nil || !strings.Contains(err.Error(), "not found") {
 			t.Errorf("fetch with %s = %v; want not found", token, err)
 		}

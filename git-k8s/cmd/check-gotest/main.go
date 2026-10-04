@@ -7,11 +7,12 @@
 // and a read-only root file system. Only the init container sees the token.
 // The mirror lets the token fetch only the branch's repository, and only
 // while the check's running result names the Pod and the Pod that has the
-// token's UID carries kube's controller label for this check. A
-// NetworkPolicy that the core program owns lets the Pods with that label
-// reach only the mirror and the cluster's DNS servers, so this program needs
-// no permission to change NetworkPolicies. The check reports the Pod's
-// result, with the end of the test output when the tests fail.
+// token's UID carries kube's controller label for this check and is
+// Pending, as a Pod is until its init containers finish. A NetworkPolicy
+// that the core program owns lets the Pods with that label reach only the
+// mirror and the cluster's DNS servers, so this program needs no permission
+// to change NetworkPolicies. The check reports the Pod's result, with the
+// end of the test output when the tests fail.
 //
 // kube deletes a Pod when the check stops declaring it, which happens after
 // the check records the Pod's result and when the branch moves to a new

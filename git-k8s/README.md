@@ -176,7 +176,7 @@ do:
 | --- | --- | --- |
 | The check `NAME`, which runs as the service account `check-NAME` in the namespace `check-NAME` | Each repository whose merge policies list the check | Each branch that has a parent whose merge policy gives the check `mayPush: true` |
 | A controller that starts branches, which the core program's `-branch-prefix` flag names | Every repository | The branches under its prefix, except parents |
-| A test Pod of `check-gotest`, with a token that's bound to the Pod | The repository of the branch that the Pod tests, while the `gotest` check's result names the Pod and the Pod runs | Nothing |
+| A test Pod of `check-gotest`, with a token that's bound to the Pod | The repository of the branch that the Pod tests, while the `gotest` check's result names the Pod and the Pod is `Pending` | Nothing |
 
 The merge controller is part of the core program and updates the copy
 directly, so it's the only thing that moves a parent.
@@ -230,13 +230,15 @@ Pod's name before it starts the Pod. Because the name is known before the
 Pod exists, another program that creates Pods in the namespace could create
 a Pod with that name first. So the mirror also checks the Pod itself: it
 reads the name and UID of the token's Pod from the TokenReview, gets that
-Pod, and refuses the request unless the Pod has that UID and kube's label
+Pod, and refuses the request unless the Pod has that UID, has kube's label
 `kube.imjasonh.github.io/controller=check-gotest`, which kube puts on the
-Pods that `check-gotest` declares, and hasn't finished or started to shut
-down. That's why `generate` lets the core program get Pods. Any program that
-can create Pods in the namespace can set the label, so the label means
-`check-gotest` only as long as the other programs that create Pods there
-don't set it.
+Pods that `check-gotest` declares, isn't being deleted, and is `Pending`. A
+Pod is `Pending` while its init containers run, and only the init container
+that fetches the branch has the token, so the token stops working when the
+tests start. That's why `generate` lets the core program get Pods. Any
+program that can create Pods in the namespace can set the label, so the
+label means `check-gotest` only as long as the other programs that create
+Pods there don't set it.
 
 ### Divergence
 
@@ -622,8 +624,8 @@ a change:
   credentials, and the core program's NetworkPolicy lets it reach only the
   mirror and the cluster's DNS servers. `check-gotest` creates the Pod but
   can't change NetworkPolicies. The init container's token can fetch only
-  the branch's repository, only while the Pod runs, and stops working when
-  the Pod is deleted.
+  the branch's repository, only before the test container starts, and stops
+  working when the Pod is deleted.
 - Tokens for the mirror have their own audience, `git-k8s-mirror`, so the
   API server doesn't accept them, and the mirror doesn't accept tokens for
   the API server. The kubelet renews each check's token, which lasts an
@@ -642,7 +644,7 @@ Secret that the core program uses there. Of the service accounts, only
 `check-gotest`'s can write the `gotest` result, but people who can write
 `GitBranch` status in a namespace can write it too. Such a result can name a
 Pod in that namespace for the mirror to let fetch the repository, but the
-mirror accepts only a running Pod with `check-gotest`'s controller label.
+mirror accepts only a `Pending` Pod with `check-gotest`'s controller label.
 Making such a Pod takes the right to create Pods in that namespace, which
 already lets a Pod mount the repository's Secret. Anyone who can create
 tokens for a check's service account can push as that check, and anyone who

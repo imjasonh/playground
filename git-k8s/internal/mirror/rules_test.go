@@ -139,28 +139,32 @@ func TestMayFetchAndPush(t *testing.T) {
 		p.Status.Phase = phase
 		return p
 	}
-	deleting := testPod("gotest-deleting", gitk8s.GoTestController, "Running")
+	deleting := testPod("gotest-deleting", gitk8s.GoTestController, "Pending")
 	deleting.DeletionTimestamp = &time.Time{}
 	ctx, _ := kube.FakeRequest(t.Context(), repo,
 		branch("app-feature", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-1"),
-		testPod("gotest-1", gitk8s.GoTestController, "Running"),
-		branch("app-pending", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-pending"),
-		testPod("gotest-pending", gitk8s.GoTestController, "Pending"),
+		testPod("gotest-1", gitk8s.GoTestController, "Pending"),
 		branch("app-done", "app", gitk8s.GoTestCheck, gitk8s.Passed, "gotest-2"),
-		testPod("gotest-2", gitk8s.GoTestController, "Running"),
+		testPod("gotest-2", gitk8s.GoTestController, "Pending"),
 		branch("other-feature", "other", gitk8s.GoTestCheck, gitk8s.Running, "gotest-3"),
-		testPod("gotest-3", gitk8s.GoTestController, "Running"),
+		testPod("gotest-3", gitk8s.GoTestController, "Pending"),
 		branch("app-squatted", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-squatted"),
-		testPod("gotest-squatted", "check-other", "Running"),
+		testPod("gotest-squatted", "check-other", "Pending"),
 		branch("app-unlabeled", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-unlabeled"),
-		testPod("gotest-unlabeled", "", "Running"),
+		testPod("gotest-unlabeled", "", "Pending"),
 		branch("app-deleting", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-deleting"),
 		deleting,
-		branch("app-finished", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-finished"),
-		testPod("gotest-finished", gitk8s.GoTestController, "Failed"),
+		branch("app-running", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-running"),
+		testPod("gotest-running", gitk8s.GoTestController, "Running"),
+		branch("app-succeeded", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-succeeded"),
+		testPod("gotest-succeeded", gitk8s.GoTestController, "Succeeded"),
+		branch("app-failed", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-failed"),
+		testPod("gotest-failed", gitk8s.GoTestController, "Failed"),
+		branch("app-unknown", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-unknown"),
+		testPod("gotest-unknown", gitk8s.GoTestController, "Unknown"),
 		branch("app-starting", "app", gitk8s.GoTestCheck, gitk8s.Running, "gotest-starting"),
 		branch("app-other-check", "app", "other", gitk8s.Running, "gotest-other-check"),
-		testPod("gotest-other-check", gitk8s.GoTestController, "Running"))
+		testPod("gotest-other-check", gitk8s.GoTestController, "Pending"))
 	pod := func(ns, name string) caller.Caller {
 		return caller.Caller{Namespace: ns, Name: "default", Pod: name, PodUID: "uid-" + name}
 	}
@@ -178,8 +182,7 @@ func TestMayFetchAndPush(t *testing.T) {
 		{name: "a check's name in another namespace", who: impostor},
 		{name: "a controller's name in another namespace", who: depsImpostor},
 		{name: "another service account in a controller's namespace", who: depsNeighbor},
-		{name: "the gotest check's running Pod", who: pod("team", "gotest-1"), mayFetch: true},
-		{name: "the gotest check's Pod before it runs", who: pod("team", "gotest-pending"), mayFetch: true},
+		{name: "the gotest check's Pending Pod", who: pod("team", "gotest-1"), mayFetch: true},
 		{name: "a Pod whose result is final", who: pod("team", "gotest-2")},
 		{name: "a Pod for another repository", who: pod("team", "gotest-3")},
 		{name: "a Pod in another namespace", who: pod("elsewhere", "gotest-1")},
@@ -189,7 +192,10 @@ func TestMayFetchAndPush(t *testing.T) {
 		{name: "a Pod with another check's label", who: pod("team", "gotest-squatted")},
 		{name: "a Pod without the controller label", who: pod("team", "gotest-unlabeled")},
 		{name: "a Pod that's being deleted", who: pod("team", "gotest-deleting")},
-		{name: "a Pod that has finished", who: pod("team", "gotest-finished")},
+		{name: "a Pod whose tests have started", who: pod("team", "gotest-running")},
+		{name: "a Pod that has succeeded", who: pod("team", "gotest-succeeded")},
+		{name: "a Pod that has failed", who: pod("team", "gotest-failed")},
+		{name: "a Pod in an unknown phase", who: pod("team", "gotest-unknown")},
 		{name: "a Pod that doesn't exist yet", who: pod("team", "gotest-starting")},
 		{name: "a Pod that another check's result names", who: pod("team", "gotest-other-check")},
 	} {

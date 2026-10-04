@@ -57,9 +57,9 @@ func (m *Mirror) prefixes(who caller.Caller) []string {
 }
 
 // mayFetch reports whether who may fetch repo: a controller with a branch
-// prefix, a check that one of repo's merge policies lists, or a Pod in
-// repo's namespace that the gotest check runs on one of repo's branches. An
-// error means that the mirror couldn't get the Pod.
+// prefix, a check that one of repo's merge policies lists, or a Pending Pod
+// in repo's namespace that the gotest check runs on one of repo's branches.
+// An error means that the mirror couldn't get the Pod.
 func (m *Mirror) mayFetch(ctx context.Context, who caller.Caller, repo *gitk8s.Repository) (bool, error) {
 	if len(m.prefixes(who)) > 0 {
 		return true, nil
@@ -110,9 +110,11 @@ func runsPod(ctx context.Context, repo *gitk8s.Repository, pod string) bool {
 }
 
 // isTestPod reports whether who's token is bound to a Pod of the gotest
-// check that hasn't finished. The Pod must have the token's UID, so it isn't
+// check that is Pending. The Pod must have the token's UID, so it isn't
 // another Pod with the same name, and kube's controller label on it must
-// name the check's controller.
+// name the check's controller. The check's Pods fetch only from an init
+// container, and a Pod is Pending while its init containers run, so a token
+// stops fetching once its Pod's tests start.
 func isTestPod(ctx context.Context, who caller.Caller) (bool, error) {
 	pod, err := kube.Fetch[k8s.Pod](ctx, who.Namespace, who.Pod)
 	if err != nil {
@@ -128,8 +130,8 @@ func isTestPod(ctx context.Context, who caller.Caller) (bool, error) {
 		reason = fmt.Sprintf("the Pod's %s label isn't %s", gitk8s.ControllerLabel, gitk8s.GoTestController)
 	case pod.Deleting():
 		reason = "the Pod is being deleted"
-	case pod.Status.Phase == "Succeeded" || pod.Status.Phase == "Failed":
-		reason = "the Pod has finished"
+	case pod.Status.Phase != "Pending":
+		reason = fmt.Sprintf("the Pod is %s, not Pending", pod.Status.Phase)
 	default:
 		return true, nil
 	}
