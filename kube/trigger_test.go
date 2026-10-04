@@ -28,8 +28,15 @@ func TestTrigger(t *testing.T) {
 	if !Trigger[policy](ctx, "", "p") {
 		t.Error("Trigger of a cluster-scoped object returned false")
 	}
-	if got, want := Triggered[widget](rec), []Key{{Namespace: "shop", Name: "w2"}}; !slices.Equal(got, want) {
-		t.Errorf("Triggered[widget] = %v, want %v", got, want)
+	if !Trigger[widgetView](ctx, "shop", "w1") {
+		t.Error("Trigger through another type of the kind returned false")
+	}
+	want := []Key{{Namespace: "shop", Name: "w2"}, {Namespace: "shop", Name: "w1"}}
+	if got := Triggered[widget](rec); !slices.Equal(got, want) {
+		t.Errorf("Triggered[widget] = %v, want %v, as a cluster's controller for widgets reconciles both", got, want)
+	}
+	if got := Triggered[widgetView](rec); !slices.Equal(got, want) {
+		t.Errorf("Triggered[widgetView] = %v, want %v", got, want)
 	}
 	if got, want := Triggered[policy](rec), []Key{{Name: "p"}}; !slices.Equal(got, want) {
 		t.Errorf("Triggered[policy] = %v, want %v", got, want)

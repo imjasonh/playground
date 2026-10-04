@@ -3,6 +3,9 @@ package e2e_test
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -10,6 +13,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -24,6 +29,7 @@ import (
 	"github.com/imjasonh/playground/kube/internal/client"
 	"github.com/imjasonh/playground/kube/internal/e2e"
 	"github.com/imjasonh/playground/kube/internal/image/imagetest"
+	"github.com/imjasonh/playground/kube/internal/yaml"
 )
 
 type idleConfigMaps struct{}
@@ -46,12 +52,221 @@ type reports struct {
 	wait time.Duration
 	// broken names a Report whose reconciles fail before they write.
 	broken string
+	// gate, if set, can stop reconciles before they read the pending
+	// results.
+	gate *gate
+	// triggered, if set, receives each result once its handler has
+	// triggered a reconcile.
+	triggered chan string
 
 	mu      sync.Mutex
 	pending map[kube.Key][]string
 	// fail is how many more reconciles that read a pending result fail
 	// before they write it, and failed counts them.
 	fail, failed int
+	// reads counts the reconciles that read each pending result.
+	reads map[string]int
+}
+
+func (h *reports) readCount(result string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.reads[result]
+}
+
+// gate stops reconciles while it's shut, and gives the test a channel for
+// each stopped reconcile that lets it continue.
+type gate struct {
+	mu      sync.Mutex
+	shut    bool
+	stopped chan chan struct{}
+}
+
+func newGate() *gate { return &gate{stopped: make(chan chan struct{})} }
+
+func (g *gate) wait(ctx context.Context) {
+	if g == nil {
+		return
+	}
+	g.mu.Lock()
+	shut := g.shut
+	g.mu.Unlock()
+	if !shut {
+		return
+	}
+	resume := make(chan struct{})
+	select {
+	case g.stopped <- resume:
+	case <-ctx.Done():
+		return
+	}
+	select {
+	case <-resume:
+	case <-ctx.Done():
+	}
+}
+
+func (g *gate) set(shut bool) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.shut = shut
+}
+
+// next waits for a reconcile to stop at the gate and returns the channel
+// that lets it continue when closed.
+func (g *gate) next(t *testing.T) chan struct{} {
+	t.Helper()
+	select {
+	case resume := <-g.stopped:
+		return resume
+	case <-time.After(30 * time.Second):
+		t.Fatal("no reconcile stopped at the gate within 30s")
+		return nil
+	}
+}
+
+// watchHold proxies requests to the API server and can hold back the events
+// of the open watches of one resource, so that a manager's caches fall
+// behind the API server. Watches that start during a hold aren't held.
+type watchHold struct {
+	resource string
+
+	mu   sync.Mutex
+	open map[*heldBody]bool
+	// held is closed when the hold ends, and nil when there's no hold.
+	held chan struct{}
+}
+
+// newWatchHold starts a proxy that sends an administrator's requests to the
+// API server, and returns a kubeconfig file that points to it.
+func newWatchHold(t *testing.T, resource string) (*watchHold, string) {
+	t.Helper()
+	admin, err := os.ReadFile(e2e.Env(t).Kubeconfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kc struct {
+		Clusters []struct {
+			Cluster struct {
+				Server string `json:"server"`
+				CA     string `json:"certificate-authority-data"`
+			} `json:"cluster"`
+		} `json:"clusters"`
+		Users []struct {
+			User struct {
+				Token string `json:"token"`
+			} `json:"user"`
+		} `json:"users"`
+	}
+	if err := yaml.Unmarshal(admin, &kc); err != nil {
+		t.Fatal(err)
+	}
+	target, err := url.Parse(kc.Clusters[0].Cluster.Server)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca, err := base64.StdEncoding.DecodeString(kc.Clusters[0].Cluster.CA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(ca)
+	w := &watchHold{resource: resource, open: map[*heldBody]bool{}}
+	proxy := &httputil.ReverseProxy{
+		Rewrite:   func(r *httputil.ProxyRequest) { r.SetURL(target) },
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}, ForceAttemptHTTP2: true},
+		ModifyResponse: func(resp *http.Response) error {
+			if req := resp.Request; req.URL.Query().Get("watch") != "" && strings.HasSuffix(req.URL.Path, "/"+w.resource) {
+				b := &heldBody{ReadCloser: resp.Body, w: w, ctx: req.Context()}
+				w.mu.Lock()
+				w.open[b] = true
+				w.mu.Unlock()
+				resp.Body = b
+			}
+			return nil
+		},
+	}
+	srv := httptest.NewServer(proxy)
+	t.Cleanup(srv.Close)
+	t.Cleanup(w.release)
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	body := fmt.Sprintf(`apiVersion: v1
+kind: Config
+current-context: proxy
+clusters:
+- name: proxy
+  cluster:
+    server: %s
+contexts:
+- name: proxy
+  context:
+    cluster: proxy
+    user: admin
+users:
+- name: admin
+  user:
+    token: %s
+`, srv.URL, kc.Users[0].User.Token)
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return w, path
+}
+
+// hold holds back the events of the open watches that arrive from now until
+// release.
+func (w *watchHold) hold() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.held == nil {
+		w.held = make(chan struct{})
+	}
+	for b := range w.open {
+		b.held = w.held
+	}
+}
+
+// release delivers the held events, and those that arrive later.
+func (w *watchHold) release() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.held != nil {
+		close(w.held)
+		w.held = nil
+	}
+	for b := range w.open {
+		b.held = nil
+	}
+}
+
+type heldBody struct {
+	io.ReadCloser
+	w   *watchHold
+	ctx context.Context
+	// held is the watchHold's channel while this watch is held, and nil
+	// otherwise. The watchHold's mutex guards it.
+	held chan struct{}
+}
+
+func (b *heldBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	b.w.mu.Lock()
+	held := b.held
+	b.w.mu.Unlock()
+	if held != nil {
+		select {
+		case <-held:
+		case <-b.ctx.Done():
+		}
+	}
+	return n, err
+}
+
+func (b *heldBody) Close() error {
+	b.w.mu.Lock()
+	delete(b.w.open, b)
+	b.w.mu.Unlock()
+	return b.ReadCloser.Close()
 }
 
 func (h *reports) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +294,9 @@ func (h *reports) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		unavailable()
 		return
 	}
+	if h.triggered != nil {
+		h.triggered <- result
+	}
 	deadline := time.Now().Add(h.wait)
 	for {
 		if rep := kube.Get[Report](r.Context(), ns, name); rep != nil && slices.Contains(rep.Status.Results, result) {
@@ -92,9 +310,16 @@ func (h *reports) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *reports) Reconcile(_ context.Context, rep *Report) error {
+func (h *reports) Reconcile(ctx context.Context, rep *Report) error {
+	h.gate.wait(ctx)
 	h.mu.Lock()
 	results := slices.Clone(h.pending[kube.Key{Namespace: rep.Namespace, Name: rep.Name}])
+	if h.reads == nil {
+		h.reads = map[string]int{}
+	}
+	for _, result := range results {
+		h.reads[result]++
+	}
 	fail := rep.Name == h.broken || len(results) > 0 && h.fail > 0
 	if fail && rep.Name != h.broken {
 		h.fail--
@@ -104,6 +329,11 @@ func (h *reports) Reconcile(_ context.Context, rep *Report) error {
 	if fail {
 		return errors.New("the results store is down")
 	}
+	cur := kube.Get[Report](ctx, rep.Namespace, rep.Name)
+	if cur == nil {
+		return nil
+	}
+	rep.Status.Results = cur.Status.Results
 	for _, result := range results {
 		if !slices.Contains(rep.Status.Results, result) {
 			rep.Status.Results = append(rep.Status.Results, result)
@@ -194,6 +424,222 @@ func TestServeHandsDataToReconcile(t *testing.T) {
 	defer h.mu.Unlock()
 	if len(h.pending) != 0 {
 		t.Errorf("pending = %q after the handlers answered", h.pending)
+	}
+}
+
+// createReport creates a Report and waits until a controller has written its
+// status.
+func createReport(t *testing.T, c *client.Client, ns, name string) {
+	t.Helper()
+	e2e.Eventually(t, 30*time.Second, func() error {
+		return c.Create(t.Context(), client.Path(group+"/v1", "reports", ns, ""), map[string]any{
+			"apiVersion": group + "/v1", "kind": "Report", "metadata": map[string]any{"name": name},
+		}, nil)
+	})
+	e2e.Eventually(t, 30*time.Second, func() error {
+		var rep Report
+		if err := e2e.Get(t.Context(), c, client.Path(group+"/v1", "reports", ns, name), &rep); err != nil {
+			return err
+		}
+		if len(rep.Status.Conditions) == 0 {
+			return fmt.Errorf("report %s hasn't been reconciled", name)
+		}
+		return nil
+	})
+}
+
+// posts sends results to a reports handler in the background.
+type posts struct {
+	t     *testing.T
+	codes map[string]chan int
+}
+
+func (p *posts) send(addr, ns, name, result string) {
+	code := make(chan int, 1)
+	p.codes[result] = code
+	go func() {
+		resp, err := http.Post("http://"+addr+"/reports/"+ns+"/"+name, "text/plain", strings.NewReader(result))
+		if err != nil {
+			p.t.Error(err)
+			code <- 0
+			return
+		}
+		resp.Body.Close()
+		code <- resp.StatusCode
+	}()
+}
+
+// answer waits for the response to the post of result.
+func (p *posts) answer(result string) int {
+	p.t.Helper()
+	select {
+	case code := <-p.codes[result]:
+		return code
+	case <-time.After(time.Minute):
+		p.t.Fatalf("no answer to the post of %q within a minute", result)
+		return 0
+	}
+}
+
+// history records each version of a Report's results that the API server
+// stores, through a watch of its own.
+type history struct {
+	t    *testing.T
+	c    *client.Client
+	path string
+
+	mu       sync.Mutex
+	versions []reportVersion
+}
+
+type reportVersion struct {
+	rv      string
+	results []string
+}
+
+func watchHistory(t *testing.T, c *client.Client, ns, name string) *history {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	w, err := c.Watch(ctx, client.Path(group+"/v1", "reports", ns, ""), url.Values{"fieldSelector": {"metadata.name=" + name}}, "")
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	h := &history{t: t, c: c, path: client.Path(group+"/v1", "reports", ns, name)}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			e, err := w.Next()
+			if err != nil {
+				return
+			}
+			var rep Report
+			if e.Type == client.Bookmark || json.Unmarshal(e.Object, &rep) != nil {
+				continue
+			}
+			h.mu.Lock()
+			h.versions = append(h.versions, reportVersion{rep.ResourceVersion, rep.Status.Results})
+			h.mu.Unlock()
+		}
+	}()
+	t.Cleanup(func() {
+		cancel()
+		w.Close()
+		<-done
+	})
+	return h
+}
+
+// holds reports whether any version held result.
+func (h *history) holds(result string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, v := range h.versions {
+		if slices.Contains(v.results, result) {
+			return true
+		}
+	}
+	return false
+}
+
+// check waits until the history reaches the stored version, and fails the
+// test if a version removed a result that an earlier version held. Every
+// handler answers 200 only once the status holds its result, so a result
+// that disappears is one that a client was told was saved.
+func (h *history) check() []string {
+	h.t.Helper()
+	var rep Report
+	if err := e2e.Get(h.t.Context(), h.c, h.path, &rep); err != nil {
+		h.t.Fatal(err)
+	}
+	var versions []reportVersion
+	e2e.Eventually(h.t, 30*time.Second, func() error {
+		h.mu.Lock()
+		versions = slices.Clone(h.versions)
+		h.mu.Unlock()
+		if len(versions) == 0 || versions[len(versions)-1].rv != rep.ResourceVersion {
+			return fmt.Errorf("the watch hasn't delivered resource version %s", rep.ResourceVersion)
+		}
+		return nil
+	})
+	for i, v := range versions {
+		for _, later := range versions[i+1:] {
+			for _, result := range v.results {
+				if !slices.Contains(later.results, result) {
+					h.t.Errorf("resource version %s has results %q, without %q, which version %s held", later.rv, later.results, result, v.rv)
+					return rep.Status.Results
+				}
+			}
+		}
+	}
+	return rep.Status.Results
+}
+
+// waitTriggered waits until the handler for result has triggered a reconcile.
+func waitTriggered(t *testing.T, h *reports, result string) {
+	t.Helper()
+	select {
+	case got := <-h.triggered:
+		if got != result {
+			t.Fatalf("the handler for %q triggered a reconcile, want %q", got, result)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatalf("the handler for %q didn't trigger a reconcile within 30s", result)
+	}
+}
+
+// TestServeHandOffWhileTheCacheLags holds back a manager's watch of Reports.
+// A result that arrives during a reconcile triggers another, which starts
+// right after the first one writes the status, with the object from before
+// that write. Meanwhile the handlers see the write and answer. A reconcile
+// that added the results still pending to the object that it received would
+// write back the old list without the results that were confirmed. So the
+// reconcile reads the pending results first, and then the object with Get.
+func TestServeHandOffWhileTheCacheLags(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	watches, kubeconfig := newWatchHold(t, "reports")
+	h := &reports{wait: time.Minute, gate: newGate(), triggered: make(chan string, 8), pending: map[kube.Key][]string{}}
+	mux := http.NewServeMux()
+	mux.Handle("POST /reports/{namespace}/{name}", h)
+	m := &kube.Manager{Name: "reports-lag-e2e", Kubeconfig: kubeconfig, Namespace: ns, ServeAddr: freeAddr(t)}
+	e2e.Run(t, m, kube.For[Report](h, kube.Named("reports")), kube.Serve(mux))
+	createReport(t, c, ns, "lag")
+	versions := watchHistory(t, c, ns, "lag")
+	p := &posts{t: t, codes: map[string]chan int{}}
+
+	h.gate.set(true)
+	p.send(m.ServeAddr, ns, "lag", "a")
+	waitTriggered(t, h, "a")
+	first := h.gate.next(t)
+	p.send(m.ServeAddr, ns, "lag", "b")
+	waitTriggered(t, h, "b")
+
+	t.Log("The first reconcile writes a and b, and the next one starts before the watch delivers the write.")
+	watches.hold()
+	close(first)
+	second := h.gate.next(t)
+	watches.release()
+	for _, result := range []string{"a", "b"} {
+		if code := p.answer(result); code != http.StatusOK {
+			t.Fatalf("POST %s = %d, want 200", result, code)
+		}
+	}
+
+	t.Log("The second reconcile writes c, which arrived after the handlers dropped a and b.")
+	p.send(m.ServeAddr, ns, "lag", "c")
+	waitTriggered(t, h, "c")
+	h.gate.set(false)
+	close(second)
+	if code := p.answer("c"); code != http.StatusOK {
+		t.Fatalf("POST c = %d, want 200", code)
+	}
+	got := versions.check()
+	for _, result := range []string{"a", "b", "c"} {
+		if !slices.Contains(got, result) {
+			t.Errorf("POST %s got 200, but the results are %q", result, got)
+		}
 	}
 }
 

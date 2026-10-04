@@ -185,6 +185,9 @@ type core struct {
 	// statusApplies holds a hash of the status that this controller last
 	// applied to each object.
 	statusApplies map[Key]uint64
+	// caughtUp holds, for each object, the tenure of its shard in which a
+	// status write that required the cached resource version succeeded.
+	caughtUp map[Key]uint64
 }
 
 type appliedKey struct {
@@ -260,13 +263,15 @@ func (c *core) lastStatus(k Key) (uint64, bool) {
 }
 
 // setStatus records h as the hash of k's status. If ok is false, it forgets
-// k's status, and the status that this controller last applied to k.
+// k's status, the status that this controller last applied to k, and
+// whether k's cache caught up.
 func (c *core) setStatus(k Key, h uint64, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !ok {
 		delete(c.statuses, k)
 		delete(c.statusApplies, k)
+		delete(c.caughtUp, k)
 		return
 	}
 	if c.statuses == nil {
@@ -289,6 +294,24 @@ func (c *core) setStatusApply(k Key, h uint64) {
 		c.statusApplies = map[Key]uint64{}
 	}
 	c.statusApplies[k] = h
+}
+
+// hasCaughtUp reports whether a status write for k that required the cached
+// resource version succeeded during tenure.
+func (c *core) hasCaughtUp(k Key, tenure uint64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	t, ok := c.caughtUp[k]
+	return ok && t == tenure
+}
+
+func (c *core) setCaughtUp(k Key, tenure uint64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.caughtUp == nil {
+		c.caughtUp = map[Key]uint64{}
+	}
+	c.caughtUp[k] = tenure
 }
 
 type controller[T any, P Resource[T]] struct {
@@ -536,11 +559,12 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 	}
 	obj := clone.Of(cached)
 	m := metaOf[T, P](obj)
+	pre := c.precondition(key, cached)
 	if m.Deleting() {
 		if !slices.Contains(m.Finalizers, c.finalizer) {
 			return 0, nil
 		}
-		return c.finalize(ctx, key, cached, obj)
+		return c.finalize(ctx, key, cached, obj, pre)
 	}
 	if c.fin != nil && !slices.Contains(m.Finalizers, c.finalizer) {
 		if err := c.setFinalizer(ctx, obj, true, m.Annotations[c.labels.cleanup]); err != nil {
@@ -557,7 +581,7 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 		err = c.execute(ctx, key, obj, s)
 	}
 	c.m.tracker.retain(ref{c: &c.core, key: key}, s.deps)
-	if serr := c.writeStatus(ctx, cached, obj, err); serr != nil {
+	if serr := c.writeStatus(ctx, cached, obj, err, pre); serr != nil {
 		if err == nil {
 			err = fmt.Errorf("writing status: %w", serr)
 		} else {
@@ -832,7 +856,7 @@ func (c *controller[T, P]) setFinalizer(ctx context.Context, obj *T, present boo
 
 // finalize runs the Finalizer, deletes owned objects that garbage
 // collection can't, and removes the finalizer.
-func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T) (time.Duration, error) {
+func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T, pre precondition) (time.Duration, error) {
 	rctx, s := newScope(ctx, c.m, &c.core, key)
 	defer s.cancel(nil)
 	var err error
@@ -850,7 +874,7 @@ func (c *controller[T, P]) finalize(ctx context.Context, key Key, cached, obj *T
 	}
 	c.m.tracker.forget(ref{c: &c.core, key: key})
 	if err != nil {
-		if serr := c.writeStatus(ctx, cached, obj, err); serr != nil && !client.IsNotFound(serr) {
+		if serr := c.writeStatus(ctx, cached, obj, err, pre); serr != nil && !client.IsNotFound(serr) {
 			c.log.Warn("writing status failed", "key", key.String(), "err", serr)
 		}
 		return s.requeue, err

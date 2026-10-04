@@ -37,11 +37,19 @@ import (
 //
 // To hand data from a request to the reconcile, keep the data until Get
 // shows that the reconcile wrote it, and only then answer the request, or
-// answer 503 if that takes too long. Have the reconcile read the data
-// without removing it. The framework carries out a reconcile's writes after
-// Reconcile returns, and a write can fail. If the shard moves before the
-// retry, the retry runs on the next holder of the shard, which doesn't have
-// the data.
+// answer 503 if that takes too long. The framework carries out a reconcile's
+// writes after Reconcile returns, and a write can fail. If the shard moves
+// before the retry, the retry runs on the next holder of the shard, which
+// doesn't have the data. Once the object holds the data, a next holder whose
+// cache doesn't show it yet can't remove it, because that replica's status
+// writes for the object require the resource version in its cache until one
+// succeeds.
+//
+// Have the reconcile read the data without removing it, then read the
+// object with Get and add the data to that copy, not to the object that
+// Reconcile receives. The framework read that object before Reconcile ran,
+// and in between, a handler can see its data written and drop it, so
+// writing back the older object would remove the data.
 func Trigger[T any, P Resource[T]](ctx context.Context, namespace, name string) bool {
 	s := scopeFrom(ctx, "Trigger")
 	ti := typeFor[T, P](s)

@@ -172,12 +172,17 @@ fix is a second generated type, an apply configuration, for every API type.
 changes from the apiserver. By its nature, this watch stream is eventually
 consistent and provides no guarantee of how far behind the 'live' state of the
 apiserver it is" ([KEP-5647](https://github.com/kubernetes/enhancements/issues/5647)).
-A stale cache causes two kinds of mistakes. A reconcile that runs right after
-its own write can read the old object and act again. And a write based on a
-stale cache can target an object that no longer exists. Server-side apply
-creates objects that don't exist, so applying a finalizer to an object that
-was deleted a moment ago creates it again, and a status write meant for a
-deleted object can land on a new object with the same name.
+A stale cache causes three kinds of mistakes. A reconcile that runs right after
+its own write can read the old object and act again. A write based on a stale
+cache can target an object that no longer exists. Server-side apply creates
+objects that don't exist, so applying a finalizer to an object that was
+deleted a moment ago creates it again, and a status write meant for a deleted
+object can land on a new object with the same name. And a replica that takes
+over an object from another replica, after a failover or when shards move,
+can reconcile it before its cache has the other replica's last writes. A
+forced apply of a status computed from that cache removes what those writes
+added. kube makes such a write fail instead of waiting for the cache, as
+[Shards and leader election](#shards-and-leader-election) explains.
 
 ### Startup and resync storms
 
@@ -573,6 +578,37 @@ already running finish, as with any lease-based election. On shutdown,
 `Manager.Run` stops reconciles first and then releases its shards, so another
 replica takes over in about one retry period.
 
+The replica that takes over a shard may not have the previous holder's last
+writes in its cache yet. A status computed from that cache lacks what those
+writes added, and a forced apply of it would remove them. So after a replica
+acquires a shard, it sends each object's status write with the cached
+`resourceVersion` as a precondition, until one succeeds. A write from a cache
+that's behind gets `409 Conflict`, which the framework tells apart from a
+deleted object, and the reconcile is retried. One success is enough. It shows
+that the cache had every earlier write when that reconcile started, and from
+then on this replica is the only one that writes the object's status.
+
+The precondition covers the controller's cache, but a reconcile can read the
+object with `kube.Get` from another cache. That happens with
+`kube.WatchSelector` or `kube.WatchNamespace`, with a second controller of the
+type, or when a handler or webhook read the type before the controller
+started. So until the first conditional write succeeds, the framework also
+compares the two caches when the reconcile starts. If the cache that
+`kube.Get` reads holds another version of the object, the framework doesn't
+write the status and retries the reconcile. A reconcile that read the object
+with `kube.Get` also runs again when that cache catches up. A cache that
+doesn't hold the object's namespace can't return the object, so the framework
+doesn't compare it.
+
+Waiting for the cache to catch up before queuing the shard's keys would need a
+way to tell that it has. Clients may compare resource versions only for
+equality ([API concepts](https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions)),
+so a replica can't tell that its cache passed the version that the previous
+holder last wrote. A new list of the type would show the current state, but it
+would cost a list for each acquired shard and hold back every key in the shard
+until it finished. The precondition costs nothing when the cache is current,
+and delays only the objects whose cache is behind.
+
 Sharding by lease, as Knative does, needs no component that labels objects,
 but every replica caches every object. Labeling objects with their shard, as
 kubernetes-controller-sharding does, would let each replica watch only its
@@ -679,9 +715,13 @@ volume's path. Each token's file is named by the SHA-256 hash of its audience,
 because an audience can hold characters that a file name can't, such as `/`.
 The kubelet requests each token bound to the Pod and replaces the file when 80%
 of the token's lifetime has passed, so `RequestToken` reads the file on every
-call and returns the expiry from the token's `exp` claim. The volume asks for
-3600 seconds, because the API server stretches a token of exactly 3607 seconds,
-the lifetime of the default service account token, to a year.
+call and returns the expiry from the token's `exp` claim. It returns an error
+instead if the token's `aud` claim doesn't hold the audience, because a
+hand-edited volume that put a token under another audience's name would
+otherwise have the program send it to the wrong server, which could replay it
+to the server that it's for. The volume asks for 3600 seconds, because the API
+server stretches a token of exactly 3607 seconds, the lifetime of the default
+service account token, to a year.
 
 For an audience without a file, `RequestToken` creates a TokenRequest for the
 program's own service account. The program learns which account that is from a
@@ -706,7 +746,10 @@ anyone who holds one of the account's tokens, such as the token in the
 program's Pod, create tokens for any audience. Those tokens needn't be bound to
 the Pod, and they can last as long as the API server allows. A projected token
 needs no rule, is always bound to the Pod, and lasts an hour, so `generate`
-mounts one for every audience that it can see in the source.
+mounts one for every audience that it can see in the source. For the same
+reason, when a TokenRequest is forbidden, `RequestToken`'s error names the token
+file that's missing, or the unset `-token-dir` flag, and says to rerun
+`generate`, instead of leaving a `403` whose obvious fix is to grant that rule.
 
 A program never requests a token for an audience that a less trusted user
 chooses along with the destination. Whoever chooses both can have the program
@@ -754,6 +797,27 @@ happen in time. The client tries again, and its data reaches whichever replica
 holds the shard by then. The reconcile reads the data without removing it, so a
 retry on the same replica still finds it. It adds the data to what the object
 holds, because once the handler answers, later reconciles run without the data.
+
+The reconcile reads the object for that with `kube.Get`, after it reads the
+data, and doesn't add the data to the object that `Reconcile` receives. The
+framework reads that object from the cache before it calls `Reconcile`. When a
+trigger arrives during a reconcile, the queue runs the key again as soon as the
+reconcile and its status write finish, usually before the watch delivers the
+write, so the next reconcile receives the object from before it. Meanwhile, the
+handlers see the write in the cache, answer, and drop their data. A reconcile
+that added the data still pending to the object it received would write back
+the older list, and the forced status apply would remove data that clients were
+told was saved. Reading the data first closes that window without waiting for
+the cache. `kube.Get` reads one cache in handlers and reconciles, and that
+cache never goes back to an older version of an object. A handler drops data
+only after `kube.Get` shows it, so data that the reconcile no longer finds
+pending is in the object that its `kube.Get` returns.
+
+That argument covers one replica. When the shard moves, the next holder's cache
+may not have the data yet, and its reconcile would write the status without it.
+The precondition on that replica's first status write for the object, which
+[Shards and leader election](#shards-and-leader-election) describes, makes the
+write fail until the cache has the data.
 
 ### Versions and conversion
 
@@ -940,12 +1004,16 @@ Token reviews are the one exception. `ReviewToken` accepts each
 rules for audiences, and `RequestToken` adds a token for the requested
 audience to the list. `Trigger` records the key for `kube.Triggered` when the
 list holds the object, unless the list holds `kube.FakeStandby`, which stands
-for a replica that holds no shard.
+for a replica that holds no shard. `kube.Triggered` matches the object's group
+and kind, as a controller does. The fake can't tell whether the program runs a
+controller for that kind, so `Trigger` doesn't check.
 
 `kube.FakeRequest` gives a `kube.Serve` handler the same read-only scope that
 `Serve` gives each request, backed by the list. A handler that calls `Apply`
 fails its unit test as it would fail in a cluster, which it wouldn't with the
-scope of a reconcile.
+scope of a reconcile. Each fake context has its own list, and a reconcile's
+intents don't change any list, so only the end-to-end tests can follow data
+from a handler through a reconcile.
 
 End-to-end tests start `etcd` and `kube-apiserver` from the controller-tools
 envtest release, with no kubelet or controller manager. The API server calls

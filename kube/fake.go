@@ -29,7 +29,9 @@ import (
 // service account test in the namespace default, and ReviewToken accepts
 // them for the requested audience. Trigger queues a reconcile of an object
 // that world holds, which Triggered reports, unless world holds
-// FakeStandby. To test a Serve handler, use FakeRequest instead.
+// FakeStandby. Unlike in a cluster, Trigger doesn't check that a controller
+// in the program reconciles the object's kind. To test a Serve handler, use
+// FakeRequest instead.
 //
 //	ctx, rec := kube.Fake(t.Context(), site, &k8s.Deployment{...})
 //	if err := r.Reconcile(ctx, site); err != nil {
@@ -53,9 +55,11 @@ func Fake[T any, P Resource[T]](ctx context.Context, obj P, world ...any) (conte
 
 // FakeRequest returns a context for one request to a Serve handler in a unit
 // test. In it, Get, List, Fetch, ReviewToken, RequestToken, and Trigger use
-// world, as in a Fake context. As in a cluster, the handler can only read. A
-// call of Own, Apply, Delete, or RequeueAfter cancels the context, and the
-// returned Recorder's Err returns the error.
+// world, as in a Fake context. Nothing that a reconcile in a Fake context
+// declares reaches this world, so test a handler that hands data to a
+// reconcile against a real API server. As in a cluster, the handler can only
+// read. A call of Own, Apply, Delete, or RequeueAfter cancels the context,
+// and the returned Recorder's Err returns the error.
 //
 //	ctx, rec := kube.FakeRequest(t.Context(), probe, kube.FakeToken{...})
 //	req := httptest.NewRequest("POST", "/probes/team/api", nil).WithContext(ctx)
@@ -106,15 +110,19 @@ func intentsOf[T any](r *Recorder, kind intentKind) []*T {
 	return out
 }
 
-// Triggered returns the keys of the objects of type T that Trigger queued a
-// reconcile for, in order.
+// Triggered returns the keys of the objects of T's group and kind that
+// Trigger queued a reconcile for, through any type, in order.
 func Triggered[T any](r *Recorder) []Key {
+	ti, err := parseType(reflect.TypeFor[T]())
+	if err != nil {
+		return nil
+	}
 	w := r.s.w.(*fakeWorld)
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	var out []Key
 	for _, t := range w.triggers {
-		if t.t == reflect.TypeFor[T]() {
+		if t.group == ti.group && t.kind == ti.kind {
 			out = append(out, t.key)
 		}
 	}
@@ -159,8 +167,8 @@ func newFakeWorld(objs []any) *fakeWorld {
 }
 
 type triggered struct {
-	t   reflect.Type
-	key Key
+	group, kind string
+	key         Key
 }
 
 // src returns the source of type t, adding it if needed. The caller holds
@@ -317,7 +325,7 @@ func (w *fakeWorld) trigger(ti *typeInfo, k Key) bool {
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.triggers = append(w.triggers, triggered{t: ti.goType, key: k})
+	w.triggers = append(w.triggers, triggered{group: ti.group, kind: ti.kind, key: k})
 	return true
 }
 

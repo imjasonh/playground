@@ -499,6 +499,11 @@ asks the API server which service account it runs as, so this works in a Pod
 and with a kubeconfig that holds a service account's token. In a Pod, the
 new token is bound to the Pod.
 
+If there's no mounted token and the program may not request one,
+`RequestToken` returns an error that names the missing token file, or says
+that `-token-dir` isn't set. Rerun `generate` and apply its output instead
+of granting the permission by hand.
+
 A token lasts about an hour, so use the returned expiry. Call `RequestToken`
 each time you need a token, or reuse one until shortly before it expires.
 Call it in a reconcile or in a `kube.Serve` handler.
@@ -554,8 +559,29 @@ the data is safe only once the object holds it:
   `503` so that the client tries again. Either way, it drops the data when
   it answers.
 - The reconcile reads the data without removing it, so a retry on the same
-  replica still finds it. It adds the data to what the object already
-  holds, because later reconciles run without it.
+  replica still finds it. Then it reads the object with `kube.Get` and adds
+  the data to what that copy holds, because later reconciles run without
+  the data.
+
+Don't add the data to the object that `Reconcile` receives. The framework
+read that object before `Reconcile` ran, often before the cache had the
+previous reconcile's write. In between, a handler can see that write,
+answer, and drop its data, so writing back the older object would remove
+data that a client was told was saved. Reading the data first avoids that.
+A handler drops data only once `kube.Get` shows it, and `kube.Get` reads
+one cache in handlers and reconciles. That cache never goes back to an
+older version of an object, so data that's no longer pending is in the
+object that `kube.Get` returns afterward.
+
+The data also stays safe when another replica takes over the object's shard
+before its cache has the previous holder's last writes. Until one of that
+replica's status writes for the object succeeds, each one requires the
+resource version in the replica's cache, so a write from a cache that's
+behind fails instead of removing data that a client was told was saved.
+Right after a takeover, the logs can show reconcile errors that say the
+cached object is out of date, or that the cache that `kube.Get` reads has
+another version of the object. The framework retries the reconcile, which
+succeeds once the caches catch up.
 
 In the handler, where `unavailable` answers `503` and closes the connection
 as in the previous example:
@@ -584,7 +610,13 @@ for {
 In `Reconcile`:
 
 ```go
-for _, result := range pending.get(key) {
+results := pending.get(key)
+cur := kube.Get[Report](ctx, rep.Namespace, rep.Name)
+if cur == nil {
+	return nil
+}
+rep.Status.Results = cur.Status.Results
+for _, result := range results {
 	if !slices.Contains(rep.Status.Results, result) {
 		rep.Status.Results = append(rep.Status.Results, result)
 	}
@@ -773,10 +805,11 @@ objects with `Get` and `List`.
 To test a `kube.Serve` handler, pass it a request with a context from
 `kube.FakeRequest`, which gives the handler the scope that a request has in a
 cluster. Pass it the objects that the handler reads and a `kube.FakeToken`
-for each token that `ReviewToken` accepts. `kube.Triggered` returns the keys
-of the objects that `Trigger` queued, and `rec.Err` returns the error from a
-call that a handler can't make, such as `Apply`. With `kube.FakeStandby{}`,
-`Trigger` returns false, as on a replica that doesn't hold the lease:
+for each token that `ReviewToken` accepts. `kube.Triggered[T]` returns the
+keys of the objects of `T`'s kind that `Trigger` queued, and `rec.Err`
+returns the error from a call that a handler can't make, such as `Apply`.
+With `kube.FakeStandby{}`, `Trigger` returns false, as on a replica that
+doesn't hold the lease:
 
 ```go
 ctx, rec := kube.FakeRequest(t.Context(), probe, kube.FakeToken{
@@ -800,6 +833,17 @@ in a cluster has its own.
 
 `RequestToken` returns the tokens `fake-token-1`, `fake-token-2`, and so on,
 which `ReviewToken` accepts for the requested audience.
+
+The fakes differ from a cluster in two ways:
+
+- `Trigger` doesn't check that a controller in the program reconciles the
+  object's kind, so it returns true for any object in the world unless the
+  world holds `kube.FakeStandby{}`.
+- Nothing that a reconcile in a `kube.Fake` context declares reaches the world
+  of a `kube.FakeRequest` context, so a unit test can't follow data from a
+  handler through a reconcile to the handler's next `Get`. Test the hand-off
+  in [Trigger a reconcile](#trigger-a-reconcile) against a real API server, as
+  `TestServeHandsDataToReconcile` in `e2e/serve_test.go` does.
 
 The end-to-end tests run each example against a real `kube-apiserver` and
 `etcd`, without a kubelet or controller manager. To run them, download the
