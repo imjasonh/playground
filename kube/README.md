@@ -574,19 +574,23 @@ older version of an object, so data that's no longer pending is in the
 object that `kube.Get` returns afterward.
 
 The data also stays safe when another replica takes over the object's shard
-before its cache has the previous holder's last writes. Until one of that
-replica's status writes for the object succeeds, each one requires the
-resource version in the replica's cache, so a write from a cache that's
-behind fails instead of removing data that a client was told was saved.
-Right after a takeover, a reconcile can fail this way. So can the first
-reconcile of a new object, if something else writes the object while it
-runs. The framework logs the failure at the info level, counts it in
-`kube_reconcile_total` with `result="stale"` rather than as an error, and
-retries the reconcile, which succeeds once the caches catch up. This covers
-a hand-off, where the previous holder finishes its reconciles before it
-releases the shard, but not a lost Lease. A replica that can't renew its
-Lease lets running reconciles finish, and a late status write from one of
-them can still remove data that a client was told was saved.
+before its cache has the previous holder's last writes. Until a status write
+for the object succeeds on that replica, or a write that adds or removes the
+framework's finalizer does, each of these writes requires the resource
+version in the replica's cache. So a write from a cache that's behind fails
+instead of removing data that a client was told was saved. Right after a
+takeover, a reconcile can fail this way. So can the first reconcile of a new
+object, if something else writes the object while it runs. The framework
+logs the failure at the info level, counts it in `kube_reconcile_total` with
+`result="stale"` rather than as an error, and retries the reconcile, which
+succeeds once the caches catch up. After five failed reconciles of the object
+in a row, the framework logs each further one as a warning. A cache catches
+up sooner, so something else, such as a webhook, may be refusing the write
+with `409 Conflict`. Requiring the cached resource version covers a hand-off,
+where the previous holder finishes its reconciles before it releases the
+shard, but not a lost Lease. A replica that can't renew its Lease lets
+running reconciles finish, and a late status write from one of them can
+still remove data that a client was told was saved.
 
 In the handler, where `unavailable` answers `503` and closes the connection
 as in the previous example:

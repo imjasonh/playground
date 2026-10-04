@@ -187,7 +187,7 @@ type core struct {
 	// applied to each object.
 	statusApplies map[Key]uint64
 	// caughtUp holds, for each object, the tenure of its shard in which a
-	// status write that required the cached resource version succeeded.
+	// write to the object that required the cached resource version succeeded.
 	caughtUp map[Key]uint64
 }
 
@@ -297,8 +297,8 @@ func (c *core) setStatusApply(k Key, h uint64) {
 	c.statusApplies[k] = h
 }
 
-// hasCaughtUp reports whether a status write for k that required the cached
-// resource version succeeded during tenure.
+// hasCaughtUp reports whether a write to k that required the cached resource
+// version succeeded during tenure.
 func (c *core) hasCaughtUp(k Key, tenure uint64) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -496,7 +496,14 @@ func (c *controller[T, P]) onPrimary(old, new *T, initial bool) {
 	}
 	switch {
 	case new == nil:
-		c.enqueue(metaOf[T, P](old).Key(), queue.High)
+		// Reconciling a deleted object forgets what this replica recorded
+		// for it, but this replica doesn't reconcile objects in shards that
+		// it doesn't hold.
+		k := metaOf[T, P](old).Key()
+		c.m.tracker.forget(ref{c: &c.core, key: k})
+		c.setApplied(k, nil)
+		c.setStatus(k, 0, false)
+		c.enqueue(k, queue.High)
 	case old == nil || c.specChanged(old, new) || c.statusChanged(old, new):
 		c.enqueue(metaOf[T, P](new).Key(), p)
 	}
@@ -563,7 +570,14 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 	case errors.Is(err, errStale):
 		d := c.q.Retry(key, queue.High)
 		result = "stale"
-		log.Info("reconcile worked from an out-of-date object; retrying", "err", err, "retry", d.Round(time.Millisecond))
+		// A cache catches up within a few retries. More can mean that
+		// something else, such as a webhook, refuses the writes with 409
+		// Conflict, which no retry fixes.
+		level, failures := slog.LevelInfo, c.q.Failures(key)
+		if failures > 5 {
+			level = slog.LevelWarn
+		}
+		log.Log(ctx, level, "reconcile worked from an out-of-date object; retrying", "err", err, "retry", d.Round(time.Millisecond), "failures", failures)
 	default:
 		d := c.q.Retry(key, queue.High)
 		result = "error"
@@ -584,6 +598,14 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 	obj := clone.Of(cached)
 	m := metaOf[T, P](obj)
 	pre := c.precondition(key, cached)
+	// A write to the object that required the cached resource version and
+	// succeeded shows that the cache had caught up, as a status write would,
+	// and the status may need no write.
+	defer func(orig string) {
+		if pre.rv != orig && !pre.diverged {
+			c.setCaughtUp(key, pre.tenure)
+		}
+	}(pre.rv)
 	if m.Deleting() {
 		if !slices.Contains(m.Finalizers, c.finalizer) {
 			return 0, nil
