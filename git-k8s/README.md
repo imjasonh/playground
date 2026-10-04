@@ -524,9 +524,12 @@ controllers are down, and checks retry. For more about volumes, see
 [Keep state on disk](../kube/README.md#keep-state-on-disk) in kube's README.
 
 Two Pods can still overlap on one node, for example after
-`kubectl delete pod`. Every ref update in a copy takes git's lock on the ref
-and checks the ref's old value, so an update that loses a race to the other
-Pod fails, and a later reconcile tries again. If you lose the volume, you
+`kubectl delete pod`, for up to the old Pod's 30-second termination grace
+period. Every ref update in a copy takes git's lock on the ref and checks
+the ref's old value, so an update that loses a race to the other Pod fails,
+and a later reconcile tries again. Both Pods reconcile while they overlap,
+so a late status write from the old Pod can replace a newer one, as kube's
+lost-Lease limitation describes. If you lose the volume, you
 lose only the changes that the external repositories don't have yet, and
 the core program fetches each repository again. Deleting the installation,
 for example with `kubectl delete -f`, deletes the claim.
@@ -553,7 +556,7 @@ Role, RoleBinding, and PodDisruptionBudget that the core program needed for
 two replicas:
 
 ```sh
-kubectl -n git-k8s delete role,rolebinding,poddisruptionbudget git-k8s
+kubectl -n git-k8s delete --ignore-not-found role,rolebinding,poddisruptionbudget git-k8s
 ```
 
 `config/policy.yaml` holds two ValidatingAdmissionPolicies. The first lets
