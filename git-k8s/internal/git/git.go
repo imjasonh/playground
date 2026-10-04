@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -318,8 +320,35 @@ type RefUpdate struct {
 // update, usually because a ref no longer pointed at the expected commit.
 var ErrRejected = errors.New("push rejected")
 
+// PushError is the error from Push when git or the remote rejects the
+// updates. It wraps ErrRejected.
+type PushError struct {
+	// Rejected maps each rejected ref to git's summary of why, such as
+	// "[rejected] (stale info)" for a lease that doesn't hold, or
+	// "[remote rejected] (deletion prohibited)".
+	Rejected map[string]string
+}
+
+func (e *PushError) Error() string {
+	var refs []string
+	for _, ref := range slices.Sorted(maps.Keys(e.Rejected)) {
+		refs = append(refs, ref+" "+e.Rejected[ref])
+	}
+	return fmt.Sprintf("%v: %s", ErrRejected, strings.Join(refs, "; "))
+}
+
+func (e *PushError) Unwrap() error { return ErrRejected }
+
+// Refused reports whether the remote refused to update ref for a reason of
+// its own, such as a rule against deleting the branch or replacing its
+// commits, and not because another update in an atomic push failed.
+func (e *PushError) Refused(ref string) bool {
+	reason, ok := strings.CutPrefix(e.Rejected[ref], "[remote rejected]")
+	return ok && !strings.Contains(reason, "atomic")
+}
+
 // Push updates refs on the remote atomically. Each update carries a lease,
-// so the push fails with ErrRejected unless every ref still points at the
+// so the push fails with a PushError unless every ref still points at the
 // commit that the update expects.
 func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) error {
 	args := []string{"push", "--porcelain", "--atomic", remote.URL}
@@ -333,14 +362,19 @@ func (r *Repo) Push(ctx context.Context, remote Remote, updates ...RefUpdate) er
 	if err != nil {
 		return err
 	}
-	var rejected []string
+	// A rejected update's line is "!", "source:ref", and git's summary,
+	// separated by tabs. A source is a SHA, empty, or "(delete)", so the
+	// ref starts after the first colon.
+	rejected := map[string]string{}
 	for line := range strings.SplitSeq(string(res.stdout), "\n") {
 		if rest, ok := strings.CutPrefix(line, "!\t"); ok {
-			rejected = append(rejected, rest)
+			update, summary, _ := strings.Cut(rest, "\t")
+			_, ref, _ := strings.Cut(update, ":")
+			rejected[ref] = summary
 		}
 	}
 	if len(rejected) > 0 {
-		return fmt.Errorf("%w: %s", ErrRejected, strings.Join(rejected, "; "))
+		return &PushError{Rejected: rejected}
 	}
 	if res.code != 0 {
 		return &Error{Command: "push", Code: res.code, Stderr: res.stderr}

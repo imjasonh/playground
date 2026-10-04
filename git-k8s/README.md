@@ -332,9 +332,25 @@ commits, so a check that reads commits could push the same fix forever.
 because it doesn't have the trailers of the fixes before it.
 
 Moving a branch that stays, and pushing a rewritten branch, replace the
-branch's commits on the remote, so the remote must allow force pushes to
-proposal branches. Before you push to a branch that the controller moved,
-reset your copy to the remote's.
+branch's commits on the remote. Before you push to a branch that the
+controller moved, reset your copy to the remote's.
+
+A remote can refuse to replace a branch's commits or to delete the branch.
+Git's `receive.denyNonFastForwards` and `receive.denyDeletes` settings do
+that, and so do GitHub rules that block force pushes or deletions. When the
+remote refuses the branch's part of a landing push, the controller pushes
+the parent alone, with the same lease, as a fast-forward landing does. If
+the remote refused to delete the branch, the controller tries to move the
+branch to the parent's new head instead, so that it shows `Merged`. A branch
+that the controller can't change keeps its commits, and the `Merged`
+condition's message says why. It shows `Merged` once a check such as
+`check-base` merges the parent into it.
+
+If the remote refuses to replace the branch's commits with the new commit
+for the checks, the controller sets the branch's state to `NeedsRebase`
+instead of `Rewritten`. To land such a branch, squash or rebase it yourself
+onto the parent's head and push the result to a new branch, or let the
+remote accept force pushes to proposal branches.
 
 ## Install
 

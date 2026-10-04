@@ -93,12 +93,29 @@ func TestFetchMergePush(t *testing.T) {
 	if !errors.Is(err, git.ErrRejected) {
 		t.Fatalf("push with a stale lease: err = %v, want ErrRejected", err)
 	}
+	var rejected *git.PushError
+	if !errors.As(err, &rejected) || rejected.Rejected["refs/heads/c/x"] != "[rejected] (stale info)" || rejected.Refused("refs/heads/c/x") {
+		t.Errorf("push with a stale lease: err = %#v, want a stale lease that the remote didn't refuse", err)
+	}
 	if err := repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/c/x", New: merge, Old: head}); err != nil {
 		t.Fatal(err)
 	}
 	if got := srv.Heads(t, "app")["c/x"]; got != merge {
 		t.Errorf("c/x = %s, want %s", got, merge)
 	}
+
+	// A remote that refuses one update of an atomic push rejects the others
+	// too, but refuses only that one.
+	srv.Config(t, "app", "receive.denyDeletes", "true")
+	err = repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/main", New: merge, Old: parent}, git.RefUpdate{Ref: "refs/heads/c/x", Old: merge})
+	if !errors.As(err, &rejected) || !rejected.Refused("refs/heads/c/x") || rejected.Refused("refs/heads/main") ||
+		rejected.Rejected["refs/heads/c/x"] != "[remote rejected] (deletion prohibited)" {
+		t.Errorf("push that deletes a branch the remote won't delete: err = %v, want the remote to refuse only the deletion", err)
+	}
+	if heads := srv.Heads(t, "app"); heads["main"] != parent || heads["c/x"] != merge {
+		t.Errorf("heads = %v, want them as they were", heads)
+	}
+	srv.Config(t, "app", "receive.denyDeletes", "false")
 
 	// Deleting with a lease.
 	if err := repo.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/c/x", Old: merge}); err != nil {

@@ -586,6 +586,116 @@ func TestLandingLimits(t *testing.T) {
 	}
 }
 
+// A remote can refuse to delete a branch or to replace its commits. The
+// parent then lands alone, as in a fast-forward landing. A branch that the
+// remote won't delete moves to the landed commit if the remote lets it, so
+// the next listing shows it as Merged. A branch that stays where it was
+// shows Merged once check-base merges the parent into it.
+func TestRemoteRefusesTheBranch(t *testing.T) {
+	for name, tt := range map[string]struct {
+		deny  []string
+		keep  bool
+		moved bool
+		why   string
+	}{
+		"deletion": {
+			deny:  []string{"receive.denyDeletes"},
+			moved: true,
+			why:   "delete it: [remote rejected] (deletion prohibited)",
+		},
+		"deletion and force push": {
+			deny: []string{"receive.denyDeletes", "receive.denyNonFastForwards"},
+			why:  "delete it: [remote rejected] (deletion prohibited)",
+		},
+		"force push to a branch that stays": {
+			deny: []string{"receive.denyNonFastForwards"},
+			keep: true,
+			why:  "move it: [remote rejected] (non-fast-forward)",
+		},
+	} {
+		for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
+			t.Run(name+"/"+landing, func(t *testing.T) {
+				srv := gittest.NewServer(t, "")
+				b, w := branches(t, srv)
+				moveParent(t, b, w, "m.txt", "m\n")
+				mergeParent(b, w)
+				refresh(t, b, w)
+				p := *b.Spec.Merge
+				p.DeleteMergedBranches = !tt.keep
+				b.Spec.Merge = &p
+				for _, key := range tt.deny {
+					srv.Config(t, "app", key, "true")
+				}
+				main, head := b.Spec.ParentHead, b.Spec.Head
+				if err := landAs(t, srv, b, landing); err != nil {
+					t.Fatal(err)
+				}
+				heads := srv.Heads(t, "app")
+				landed := heads["main"]
+				if landed == main || landed == head {
+					t.Fatalf("main = %s, want a new commit on %s", landed, main)
+				}
+				branch, left := head, "left c/x at "+gitk8s.Short(head)
+				if tt.moved {
+					branch, left = landed, "moved c/x there"
+				}
+				if heads["c/x"] != branch {
+					t.Errorf("c/x = %s, want %s", heads["c/x"], branch)
+				}
+				verb := map[string]string{gitk8s.Squash: "squashed", gitk8s.Rebase: "rebased"}[landing]
+				msg := fmt.Sprintf("%s c/x onto main, which moved from %s to %s, and %s, because the remote refused to %s",
+					verb, gitk8s.Short(main), gitk8s.Short(landed), left, tt.why)
+				if c := kube.FindCondition(b.Status.Conditions, "Merged"); c == nil || c.Reason != reasonLanded || c.Message != msg {
+					t.Errorf("Merged = %+v, want reason %s and message %q", c, reasonLanded, msg)
+				}
+				if tt.moved {
+					b.Spec.Head, b.Spec.ParentHead = landed, landed
+				} else {
+					b.Spec.ParentHead = w.Fetch("main")
+					mergeParent(b, w)
+					refresh(t, b, w)
+				}
+				if err := landAs(t, srv, b, landing); err != nil {
+					t.Fatal(err)
+				}
+				if b.Status.State != reasonMerged {
+					t.Errorf("after the next listing, state = %q, want %s", b.Status.State, reasonMerged)
+				}
+			})
+		}
+	}
+}
+
+// A remote that refuses to replace the branch's commits stops a squash or
+// rebase landing from pushing its commit to the branch for the checks. The
+// branch needs a person, instead of failing on every reconcile.
+func TestRemoteRefusesTheRewrittenBranch(t *testing.T) {
+	for _, landing := range []string{gitk8s.Squash, gitk8s.Rebase} {
+		t.Run(landing, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			b, w := branches(t, srv)
+			moveParent(t, b, w, "m.txt", "m\n")
+			mergeParent(b, w)
+			refresh(t, b, w)
+			withHistoryCheck(b)
+			srv.Config(t, "app", "receive.denyNonFastForwards", "true")
+			before := srv.Heads(t, "app")
+			if err := landAs(t, srv, b, landing); err != nil {
+				t.Fatal(err)
+			}
+			if after := srv.Heads(t, "app"); !maps.Equal(after, before) {
+				t.Errorf("heads = %v, want %v", after, before)
+			}
+			verb := map[string]string{gitk8s.Squash: "squashed", gitk8s.Rebase: "rebased"}[landing]
+			c := kube.FindCondition(b.Status.Conditions, "Merged")
+			start, end := "can't push the "+verb+" commit ", " to c/x for dco to check, because the remote refused it: [remote rejected] (non-fast-forward)"
+			if c == nil || c.Reason != reasonNeedsRebase || !strings.HasPrefix(c.Message, start) || !strings.HasSuffix(c.Message, end) {
+				t.Errorf("Merged = %+v, want reason %s and a message like %q", c, reasonNeedsRebase, start+"..."+end)
+			}
+		})
+	}
+}
+
 // When a check's result doesn't have filesOnly, a squash landing pushes the
 // squashed commit to the branch for the checks to run on, and lands it by
 // fast-forward once they pass.

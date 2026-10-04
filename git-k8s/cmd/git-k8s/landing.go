@@ -15,8 +15,8 @@ import (
 // More Merged condition reasons, for squash and rebase landings.
 const (
 	// reasonNeedsRebase means a squash or rebase landing can't copy the
-	// branch's commits onto the parent's head, so a person has to rebase
-	// them.
+	// branch's commits onto the parent's head, or can't push the copies to
+	// the branch for the checks, so a person has to rebase them.
 	reasonNeedsRebase = "NeedsRebase"
 	// reasonRewritten means the merge controller pushed the squashed or
 	// rebased commits to the branch instead of the parent, so that the
@@ -63,7 +63,14 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 				rerun = append(rerun, c.Name)
 			}
 		}
-		if err := local.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + spec.Branch, New: landed, Old: spec.Head}); err != nil {
+		ref := "refs/heads/" + spec.Branch
+		if err := local.Push(ctx, remote, git.RefUpdate{Ref: ref, New: landed, Old: spec.Head}); err != nil {
+			var rejected *git.PushError
+			if errors.As(err, &rejected) && rejected.Refused(ref) {
+				report(b, reasonNeedsRebase, false, "can't push the %s commit %s to %s for %s to check, because the remote refused it: %s",
+					verb, gitk8s.Short(landed), spec.Branch, strings.Join(rerun, ", "), rejected.Rejected[ref])
+				return true, nil
+			}
 			return true, fmt.Errorf("pushing %s to %s: %w", gitk8s.Short(landed), spec.Branch, err)
 		}
 		slog.Info("rewrote a branch", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch,
@@ -75,18 +82,47 @@ func (m *merger) rewrite(ctx context.Context, local *git.Repo, remote git.Remote
 
 	// The branch moves or goes in the same push, so a branch that isn't
 	// deleted stays in its parent instead of falling behind it.
+	parent := git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: landed, Old: spec.ParentHead}
 	branch := git.RefUpdate{Ref: "refs/heads/" + spec.Branch, New: landed, Old: spec.Head}
 	if spec.Merge.DeleteMergedBranches {
 		branch.New = ""
 	}
-	err = local.Push(ctx, remote, git.RefUpdate{Ref: "refs/heads/" + spec.Parent, New: landed, Old: spec.ParentHead}, branch)
+	err = local.Push(ctx, remote, parent, branch)
+	var rejected *git.PushError
+	refused := errors.As(err, &rejected) && rejected.Refused(branch.Ref)
+	if refused {
+		// The remote refuses to delete the branch or to replace its
+		// commits, as rules against deletions and force pushes do. A
+		// fast-forward landing pushes the parent alone, so this one can too.
+		err = local.Push(ctx, remote, parent)
+	}
 	if err != nil {
 		return true, fmt.Errorf("landing %s on %s: %w", gitk8s.Short(landed), spec.Parent, err)
 	}
 	slog.Info("landed", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch, "parent", spec.Parent,
-		"landing", spec.Merge.Landing, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(landed), "deletedBranch", branch.New == "")
-	report(b, reasonLanded, true, "%s %s onto %s, which moved from %s to %s", verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed))
+		"landing", spec.Merge.Landing, "from", gitk8s.Short(spec.ParentHead), "to", gitk8s.Short(landed), "deletedBranch", !refused && branch.New == "")
+	msg := fmt.Sprintf("%s %s onto %s, which moved from %s to %s", verb, spec.Branch, spec.Parent, gitk8s.Short(spec.ParentHead), gitk8s.Short(landed))
+	if refused {
+		msg += settle(ctx, local, remote, b, branch, landed, rejected.Rejected[branch.Ref])
+	}
+	report(b, reasonLanded, true, "%s", msg)
 	return true, nil
+}
+
+// settle handles a branch whose update the remote refused after its parent
+// landed alone, and returns the end of the Landed message. A branch that
+// the remote won't delete moves to the landed commit, if the remote allows
+// that, so that it shows Merged.
+func settle(ctx context.Context, local *git.Repo, remote git.Remote, b *gitk8s.GitBranch, branch git.RefUpdate, landed, why string) string {
+	spec := &b.Spec
+	if branch.New != "" {
+		return fmt.Sprintf(", and left %s at %s, because the remote refused to move it: %s", spec.Branch, gitk8s.Short(spec.Head), why)
+	}
+	if err := local.Push(ctx, remote, git.RefUpdate{Ref: branch.Ref, New: landed, Old: spec.Head}); err != nil {
+		slog.Info("not moving a branch that the remote refused to delete", "namespace", b.Namespace, "repository", spec.Repository, "branch", spec.Branch, "error", err)
+		return fmt.Sprintf(", and left %s at %s, because the remote refused to delete it: %s", spec.Branch, gitk8s.Short(spec.Head), why)
+	}
+	return fmt.Sprintf(", and moved %s there, because the remote refused to delete it: %s", spec.Branch, why)
 }
 
 // keepsHead reports whether the branch's head already is what a squash or
