@@ -3,6 +3,7 @@ package checks
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -157,6 +158,36 @@ func TestSendsNothingWhenNotListed(t *testing.T) {
 	}
 	if got := e.requests(); len(got) != 0 || f.runs != 0 {
 		t.Errorf("%d runs sent %+v; the core program removes the result of a check that the policy doesn't list", f.runs, got)
+	}
+}
+
+// The framework replaces a result that the core program doesn't accept
+// with an Error result that says why, so that the branch shows it.
+func TestSendsErrorForInvalidResult(t *testing.T) {
+	outputs := map[string]string{}
+	for i := range gitk8s.MaxOutputs + 1 {
+		outputs[fmt.Sprintf("output-%d", i)] = "v"
+	}
+	for _, tc := range []struct {
+		name    string
+		verdict Verdict
+		msg     string
+	}{
+		{"17 outputs", Verdict{State: gitk8s.Passed, Outputs: outputs}, "the core program doesn't accept the check's result: the result has more than 16 outputs"},
+		{"no state", Verdict{Message: "done"}, `the core program doesn't accept the check's result: state "" isn't`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &endpoint{}
+			f := newSendFixture(t, e)
+			f.verdict = tc.verdict
+			if err := f.runAndSend(f.context(t)); err != nil {
+				t.Fatal(err)
+			}
+			got := e.requests()
+			if len(got) != 1 || got[0].result.State != gitk8s.Error || !strings.HasPrefix(got[0].result.Message, tc.msg) || got[0].result.Validate() != nil {
+				t.Errorf("received %+v, want a valid Error result whose message starts with %q", got, tc.msg)
+			}
+		})
 	}
 }
 

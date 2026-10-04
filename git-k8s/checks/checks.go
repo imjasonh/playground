@@ -70,7 +70,10 @@ type Check struct {
 	Run func(ctx context.Context, in *Input) (Verdict, error)
 }
 
-// Verdict is the outcome of running a check.
+// Verdict is the outcome of running a check. The framework shortens the
+// message and output values to fit the core program's limits, and reports
+// an Error result instead of a verdict that the core program doesn't
+// accept, such as one with more than gitk8s.MaxOutputs outputs.
 type Verdict struct {
 	// State is Passed, Failed, or Running.
 	State   string
@@ -198,6 +201,12 @@ func (r *reconciler[V, P]) Reconcile(ctx context.Context, obj *V) error {
 		if err := r.push(ctx, in, v, res); err != nil {
 			return err
 		}
+	}
+	if err := res.Validate(); err != nil {
+		// Running the check again returns the same result, so report why in
+		// the result instead of failing the reconcile, which kube retries.
+		res = &gitk8s.CheckResult{Commit: spec.Head, ParentCommit: parentCommit, State: gitk8s.Error,
+			Message: truncate("the core program doesn't accept the check's result: " + err.Error())}
 	}
 	*result = res
 	return nil

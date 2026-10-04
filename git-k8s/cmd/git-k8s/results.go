@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -93,7 +92,7 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "decoding the result: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := validate(&res); err != nil {
+	if err := res.Validate(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -243,33 +242,6 @@ func checkFor(user kube.UserInfo) (string, bool) {
 		return "", false
 	}
 	return check, true
-}
-
-// validate checks that a result has a state that a check can send and
-// bounded sizes.
-func validate(r *gitk8s.CheckResult) error {
-	switch r.State {
-	case gitk8s.Running, gitk8s.Passed, gitk8s.Failed, gitk8s.Fixed, gitk8s.Error:
-	default:
-		return fmt.Errorf("state %q isn't Running, Passed, Failed, Fixed, or Error", r.State)
-	}
-	switch {
-	case r.Commit == "":
-		return errors.New("the result has no commit")
-	case len(r.Message) > gitk8s.MaxMessageLength:
-		return fmt.Errorf("the message is longer than %d bytes", gitk8s.MaxMessageLength)
-	case len(r.Outputs) > gitk8s.MaxOutputs:
-		return fmt.Errorf("the result has more than %d outputs", gitk8s.MaxOutputs)
-	}
-	for k, v := range r.Outputs {
-		switch {
-		case k == "" || len(k) > gitk8s.MaxOutputNameLength:
-			return fmt.Errorf("an output name isn't 1 to %d bytes long", gitk8s.MaxOutputNameLength)
-		case len(v) > gitk8s.MaxOutputValueLength:
-			return fmt.Errorf("output %s is longer than %d bytes", k, gitk8s.MaxOutputValueLength)
-		}
-	}
-	return nil
 }
 
 // listed reports whether spec's merge policy lists the check, so that a

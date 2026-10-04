@@ -215,7 +215,9 @@ to the core program's results endpoint:
    isn't `CHECK`, the core program rejects the result.
 4. The core program also rejects a result for a check that the branch's
    merge policy doesn't list, a result that isn't for the branch's current
-   commits, a `Pending` result, and a result over its size limits.
+   commits, a `Pending` result, and a result over its size limits. The
+   `checks` package sends an `Error` result instead of one with a state or
+   size that the core program rejects, with a message that says why.
 5. The core program holds the result in memory and starts a reconcile of
    the `GitBranch`. The results controller writes the result with
    server-side apply, and the core program answers the request once its
