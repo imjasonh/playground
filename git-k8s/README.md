@@ -455,8 +455,6 @@ kubectl apply -f config/policy.yaml
 Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
 after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
-Don't install `git-k8s` with `-shards`, for the reason in
-[Check runs](#check-runs).
 
 `config/policy.yaml` holds two ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
