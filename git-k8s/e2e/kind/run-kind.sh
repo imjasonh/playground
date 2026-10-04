@@ -524,6 +524,7 @@ grew() { echo $(($(metric "$2" "$3") - $(metric "$1" "$3"))); }
 GET_HIT='go_cache_build_requests_total{method="GET",result="hit"}'
 GET_MISS='go_cache_build_requests_total{method="GET",result="miss"}'
 PUT_CREATED='go_cache_build_requests_total{method="PUT",result="created"}'
+PUT_DENIED='go_cache_build_requests_total{method="PUT",result="denied"}'
 MOD_FETCHED='go_cache_module_requests_total{result="fetched"}'
 MOD_HIT='go_cache_module_requests_total{result="hit"}'
 metrics >"${WORKDIR}/metrics-0.txt"
@@ -624,9 +625,67 @@ missed="$(grew "${m1}" "${m2}" "${GET_MISS}")"
 stored_again="$(grew "${m1}" "${m2}" "${PUT_CREATED}")"
 (($(grew "${m1}" "${m2}" "${MOD_HIT}") > 0 && $(grew "${m1}" "${m2}" "${MOD_FETCHED}") == 0))
 ((read_back >= 100 && stored_again < 10))
+# go-cache turned away none of check-gotest's uploads.
+(($(metric "${m2}" "${PUT_DENIED}") == 0))
 echo "c/greet's Pod got example.com/greet through go-cache and stored ${stored} build outputs."
 echo "With the module proxy stopped, c/greet-docs's Pod got the module from go-cache's store, read ${read_back} build outputs, missed ${missed}, and stored ${stored_again}."
 k -n "${NS}" delete networkpolicy test-pods
+echo "::endgroup::"
+
+echo "::group::Only check-gotest's Pods write to the build caches"
+# A Pod that check-gotest doesn't own gets a token that can write tested's
+# build cache. A scheduling gate keeps the Pod Pending, so it never runs.
+k apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cache-writer
+  namespace: ${NS}
+spec:
+  schedulingGates:
+    - name: git-k8s.imjasonh.com/e2e
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: writer
+      image: ${GO_IMAGE}
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: [ALL]
+EOF
+writer_token="$(k -n "${NS}" create token default --duration=10m \
+  --audience="git-k8s.imjasonh.com/go-cache/write/${NS}/tested" \
+  --bound-object-kind=Pod --bound-object-name=cache-writer)"
+cache_ip="$(k -n go-cache get service go-cache -o jsonpath='{.spec.clusterIP}')"
+probe_output="$(printf probe | sha256sum | cut -d ' ' -f 1)"
+# put_probe uploads an output for the action named $1 with the Pod's token,
+# from a node, which reaches go-cache's Service like a test Pod. It writes
+# the response to /tmp/probe.txt on the node, and prints the status.
+put_probe() {
+  local action
+  action="$(printf '%s' "$1" | sha256sum | cut -d ' ' -f 1)"
+  docker exec "${CLUSTER}-control-plane" curl -sS -o /tmp/probe.txt -w '%{http_code}' -X PUT \
+    -H "Authorization: Bearer ${writer_token}" -H "Go-Output-Id: ${probe_output}" \
+    --data-binary probe "http://${cache_ip}/cache/${NS}/tested/${action}"
+}
+code="$(put_probe unlabeled)"
+docker exec "${CLUSTER}-control-plane" cat /tmp/probe.txt
+[[ "${code}" == 403 ]]
+docker exec "${CLUSTER}-control-plane" grep -q "Pod ${NS}/cache-writer isn't check-gotest's" /tmp/probe.txt
+# Anyone who can create Pods in the namespace can set check-gotest's label.
+k -n "${NS}" label pod cache-writer kube.imjasonh.github.io/controller=check-gotest
+code="$(put_probe labeled)"
+[[ "${code}" == 201 ]]
+k -n "${NS}" delete pod cache-writer
+code="$(put_probe deleted)"
+docker exec "${CLUSTER}-control-plane" cat /tmp/probe.txt
+[[ "${code}" == 403 ]]
+echo "go-cache turned away a token from a Pod without check-gotest's label, took it once the Pod had the label, and turned it away once the Pod was gone."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
