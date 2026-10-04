@@ -7,8 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // A command whose context ends gets SIGTERM, on which git removes its lock
@@ -61,5 +65,47 @@ func TestCancelRemovesLocks(t *testing.T) {
 	}
 	if _, err := os.Stat(lock); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("the lock is still there: %v", err)
+	}
+}
+
+// A command that runs past its timeout stops with the commands that it
+// started, as maintenance does with its repack, so none of them outlives
+// the timeout.
+func TestTimeoutStopsWhatGitStarted(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("reads /proc")
+	}
+	dir := t.TempDir()
+	pidFile := filepath.Join(dir, "pid")
+	bin := filepath.Join(dir, "git")
+	script := "#!/bin/sh\nsleep 600 &\necho $! > " + pidFile + "\nwait\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	g := &Git{Bin: bin, Timeout: 500 * time.Millisecond}
+	start := time.Now()
+	if _, err := g.run(t.Context(), "", []string{"maintenance"}, opts{}); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want context.DeadlineExceeded", err)
+	}
+	if d := time.Since(start); d >= stopDelay {
+		t.Errorf("the command took %v, past its timeout and stopDelay", d)
+	}
+	data, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatalf("the fake git didn't start its child: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err != nil || strings.Fields(string(stat))[2] == "Z" {
+			return
+		}
+		if time.Now().After(deadline) {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+			t.Fatalf("the command's child %d still runs: %s", pid, stat)
+		}
 	}
 }

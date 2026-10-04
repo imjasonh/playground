@@ -120,7 +120,17 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 		args = append([]string{"-C", dir}, args...)
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	// git runs in its own process group, and the group gets SIGTERM, so
+	// the commands that git started stop too. Otherwise the repack that
+	// maintenance starts outlives it, holding git's output open until
+	// stopDelay passes and then running beside the next maintenance.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM); !errors.Is(err, syscall.ESRCH) {
+			return err
+		}
+		return os.ErrProcessDone
+	}
 	cmd.WaitDelay = stopDelay
 	env := []string{
 		// Never prompt, and ignore system and user configuration so that

@@ -645,11 +645,13 @@ Git packs a copy's objects in its maintenance. A fetch or a push would
 start maintenance in the background, where git's timeout doesn't apply, so
 the mirror turns that off and runs maintenance itself at the end of each
 sync, when git says the copy needs it, and logs any failure. The sync
-waits for it. Maintenance that runs past the timeout gets `SIGTERM`, but
-the repack that it started keeps running until it finishes or the Pod
-stops. A killed maintenance leaves `objects/maintenance.lock`, which makes
-later maintenance skip the copy without an error, so the mirror removes
-that lock once it's stale, like the others.
+waits for it. Maintenance that runs past the timeout gets `SIGTERM`, and so
+does the repack that it started, and the next sync starts over, so a copy
+whose repack takes longer than the timeout isn't repacked. Maintenance that
+gets `SIGKILL` instead, as when the Pod's grace period runs out, leaves
+`objects/maintenance.lock`, which makes later maintenance skip the copy
+without an error, so the mirror removes that lock once it's stale, like the
+others.
 
 The checks keep local copies of repositories in `/tmp/git-k8s`, on the
 `emptyDir` volume that `generate` mounts at `/tmp`.
