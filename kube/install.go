@@ -21,16 +21,21 @@ import (
 // the program's flags, so manifest can read them, and return nil to install
 // nothing. The generate command calls it with the flags after "--", and
 // grants the program create and patch on each object that it returns, by
-// name.
+// name. For an admission policy with a paramKind and a binding with a
+// paramRef, generate also grants the get permissions that the API server
+// checks when it creates them, or prints a warning when it can't.
 //
 // After the controllers install their CustomResourceDefinitions and before
 // they reconcile, the framework applies the objects in order with
 // server-side apply, and labels them with the program's name. It applies
 // them again each time the program starts, but doesn't watch them. Fields
-// that the manifest doesn't set keep the values that others give them, and
-// an object that a later manifest leaves out stays in the cluster. Give each
-// namespaced object its metadata.namespace, and put each admission policy
-// before its bindings.
+// that the manifest doesn't set keep the values that others give them.
+// Entries that others add to a list that merges by key or value, such as a
+// binding's validationActions, also stay. If the merged object isn't valid,
+// the apply fails and the program exits when it starts. An object that a
+// later manifest leaves out stays in the cluster. Give each namespaced
+// object its metadata.namespace, and put each admission policy before its
+// bindings.
 func Install(manifest func() []byte) Controller {
 	return &installer{manifest: manifest}
 }

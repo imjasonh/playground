@@ -555,9 +555,13 @@ reconcilers' `setup`, which installs their CRDs, so the manifest can hold
 objects of the types that the program defines. With leader election or
 shards, a replica applies the objects when it first holds a shard. It
 server-side applies each object in order and labels it with the program's
-name, as it labels CRDs. It doesn't watch the objects or delete those that a
-later manifest leaves out, so it needs no `list`, `watch`, or `delete`
-permission on them.
+name, as it labels CRDs. The forced apply takes over the fields that the
+manifest sets and keeps the rest, including entries that others add to a list
+that merges by key or value, such as a binding's `validationActions`. If the
+merged object isn't valid, the apply fails, `setup` returns the error, and the
+program exits when it starts. The controller doesn't watch the objects or
+delete those that a later manifest leaves out, so it needs no `list`,
+`watch`, or `delete` permission on them.
 
 `generate` calls the manifest function after it parses the arguments after
 `--` into the program's flags, and grants `create` and `patch` on each object
