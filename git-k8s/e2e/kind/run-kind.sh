@@ -268,7 +268,8 @@ formatted='package util
 func Add(a, b int) int { return a + b }'
 formatted_on_main() { fetch_main && [[ "$(g show FETCH_HEAD:util/add.go 2>/dev/null)" == "${formatted}" ]]; }
 eventually 120 formatted_on_main
-g log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: gofmt'
+# grep -q would exit at the first match and fail the pipeline with SIGPIPE.
+g log -1 --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: gofmt' >/dev/null
 eventually 60 branch_gone c/fmt
 g log --oneline FETCH_HEAD
 echo "The gofmt check pushed a fix, main fast-forwarded to it, and c/fmt was deleted."
@@ -342,7 +343,7 @@ g log --graph --oneline FETCH_HEAD
 [[ "$(g log --format=%s "${MOVED}..FETCH_HEAD" | grep -c '^Merge main into c/')" == 2 ]]
 [[ "$(g rev-parse FETCH_HEAD^2^2)" == "${MOVED}" ]]
 [[ "$(g rev-parse FETCH_HEAD^1 FETCH_HEAD^2^1 | sort)" == "$(printf '%s\n' "${ONE}" "${TWO}" | sort)" ]]
-g log --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: base'
+g log --format=%B FETCH_HEAD | grep -x 'Git-K8s-Fixer: base' >/dev/null
 echo "Both branches waited in main's queue, and each merged main in once, at the front, before it landed."
 echo "::endgroup::"
 
@@ -457,7 +458,7 @@ broken_failed() { [[ -n "$(branch_object c/broken tested)" && "$(gotest c/broken
 eventually 300 broken_failed
 gotest c/broken message
 echo
-gotest c/broken message | grep -q -- '--- FAIL: TestAdd'
+gotest c/broken message | grep -- '--- FAIL: TestAdd' >/dev/null
 [[ "$(remote_head main tested)" == "${tested_main}" ]]
 # kube deletes a test Pod once the check stops declaring it.
 no_test_pods() { [[ -z "$(k -n "${NS}" get pods -l app.kubernetes.io/name=check-gotest -o name)" ]]; }
