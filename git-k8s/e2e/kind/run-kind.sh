@@ -601,10 +601,11 @@ func TestAdd(t *testing.T) {
 }
 GO
 if [[ ${ENFORCED} -eq 1 ]]; then
-  # The test Pod's NetworkPolicy lets it reach only the mirror and DNS, so
-  # this test passes only in a Pod that can't reach the git server or
-  # CoreDNS's metrics port. kindnet doesn't filter a Pod's connections to
-  # its own node, which on a one-node cluster include the API server.
+  # The test Pod's NetworkPolicy lets it reach only the mirror and CoreDNS,
+  # so this test passes only in a Pod that can't reach the git server,
+  # CoreDNS's metrics port, or, if the node can reach the internet, a public
+  # DNS server. kindnet doesn't filter a Pod's connections to its own node,
+  # which on a one-node cluster include the API server.
   cat >"${TESTED}/sandbox_test.go" <<GO
 package tested
 
@@ -618,7 +619,7 @@ func TestSandbox(t *testing.T) {
 	if _, err := net.LookupHost("kube-dns.kube-system.svc.cluster.local"); err != nil {
 		t.Fatalf("looking up CoreDNS: %v", err)
 	}
-	for _, addr := range []string{"${GATEWAY}:${GIT_PORT}", "kube-dns.kube-system.svc.cluster.local:9153"} {
+	for _, addr := range []string{"${GATEWAY}:${GIT_PORT}", "kube-dns.kube-system.svc.cluster.local:9153", "1.1.1.1:53"} {
 		if c, err := net.DialTimeout("tcp", addr, 3*time.Second); err == nil {
 			c.Close()
 			t.Errorf("the test Pod reached %s", addr)
@@ -679,7 +680,7 @@ no_test_policies() { [[ -z "$(k -n "${NS}" get networkpolicies -l app.kubernetes
 eventually 60 no_test_policies
 echo "A branch that breaks a test failed in a sandboxed Pod, and a fixed branch landed."
 if [[ ${ENFORCED} -eq 1 ]]; then
-  echo "The test Pods fetched from the mirror, and could resolve names but couldn't reach the git server or CoreDNS's metrics port."
+  echo "The test Pods fetched from the mirror, and could resolve names but couldn't reach the git server, CoreDNS's metrics port, or a public DNS server."
 else
   echo "The test Pods fetched from the mirror."
 fi

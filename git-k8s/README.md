@@ -107,7 +107,7 @@ Service's port 80 forwards to port 8081 of the core program's Pod, where
 `kube.Serve` listens. If you install the core program under another name or
 in another namespace, set `-mirror` to the mirror's base URL on `check-base`,
 `check-gofmt`, `check-risk`, and `check-gotest`, and set `-mirror-namespace`
-on `check-gotest`.
+and `-mirror-labels` on `check-gotest`.
 
 ### Sync with the external repository
 
@@ -432,9 +432,13 @@ runs the branch's code, such as `go test`, runs it in a Pod instead.
 - The test container runs `go test ./...` as user 65532 with no service
   account token, no privileges, a read-only root file system, and
   `GOPROXY=off`, so tests can't download modules.
-- A NetworkPolicy for each Pod lets it reach only the mirror and DNS, and
-  lets nothing reach it. When `-goproxy` isn't `off`, the policy also lets
-  the Pod reach ports 80 and 443 anywhere.
+- A NetworkPolicy for each Pod lets it reach only the mirror and the
+  cluster's DNS servers, and lets nothing reach it. When `-goproxy` isn't
+  `off`, the policy also lets the Pod reach ports 80 and 443 on IPv4
+  addresses outside the private ranges (`10.0.0.0/8`, `172.16.0.0/12`, and
+  `192.168.0.0/16`), the shared address space (`100.64.0.0/10`), and the
+  link-local range (`169.254.0.0/16`). Those ranges usually hold the
+  cluster's Pods, Services, and nodes, and a cloud's metadata server.
 - If fetching fails, the check starts a new Pod 30 seconds later, and 60
   seconds after a second failure, so its three Pods outlast a restart of the
   core program.
@@ -449,13 +453,20 @@ a new head. Owner references delete them with their `GitBranch`. Set
 and `-go-image`, `-git-image`, `-timeout`, and `-goproxy` to change the
 rest.
 
+The policy selects the cluster's DNS servers as the Pods labeled
+`k8s-app=kube-dns` in the namespace `kube-system`, which is where kubeadm
+and kind run CoreDNS. If your cluster's DNS Pods have other labels or run in
+another namespace, set `-dns-labels` and `-dns-namespace`. If Pods send DNS
+queries to an address that isn't a Pod's, such as NodeLocal DNSCache's
+`169.254.20.10`, set `-dns-cidrs`, for example to `169.254.20.10/32`.
+
 The NetworkPolicy needs a network plugin that enforces NetworkPolicies, such
 as Calico or Cilium. Kubernetes allows a connection that any policy for the
 Pod allows, so another policy that selects test Pods can let them reach
-more. Some plugins, such as kind's kindnet, don't filter a Pod's connections
-to its own node, which can include the API server. Test Pods have no service
-account token, so the API server gives them only what it gives anonymous
-requests.
+more, such as a module proxy inside the cluster. Some plugins, such as
+kind's kindnet, don't filter a Pod's connections to its own node, which can
+include the API server. Test Pods have no service account token, so the API
+server gives them only what it gives anonymous requests.
 
 ## Merge gates
 
@@ -561,9 +572,9 @@ a change:
   gate. It can't read Secrets or reach external repositories, and the
   admission policies keep it to its own result.
 - The test container, which runs the branch's code, has no token and no
-  credentials, and its NetworkPolicy lets it reach only the mirror and DNS.
-  The init container's token can fetch only the branch's repository, and
-  stops working when the Pod is deleted.
+  credentials, and its NetworkPolicy lets it reach only the mirror and the
+  cluster's DNS servers. The init container's token can fetch only the
+  branch's repository, and stops working when the Pod is deleted.
 - Tokens for the mirror have their own audience, `git-k8s-mirror`, so the
   API server doesn't accept them, and the mirror doesn't accept tokens for
   the API server. The kubelet renews each check's token, which lasts an

@@ -149,6 +149,12 @@ type NetworkPolicyRule struct {
 type NetworkPolicyPeer struct {
 	NamespaceSelector *LabelSelector `json:"namespaceSelector,omitempty"`
 	PodSelector       *LabelSelector `json:"podSelector,omitempty"`
+	IPBlock           *IPBlock       `json:"ipBlock,omitempty"`
+}
+
+type IPBlock struct {
+	CIDR   string   `json:"cidr"`
+	Except []string `json:"except,omitempty"`
 }
 
 type NetworkPolicyPort struct {
