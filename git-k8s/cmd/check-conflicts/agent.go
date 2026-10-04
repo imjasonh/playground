@@ -119,10 +119,11 @@ func startAgent(ctx context.Context, in *checks.Input, repo *git.Repo, t target,
 	}
 	st := &agent.JobState{}
 	st.Runs, _ = strconv.Atoi(outputs["runs"])
-	if limit := in.Spec.Merge.MaxRuns(); st.Runs >= limit {
-		return checks.Verdict{State: gitk8s.Running, Message: fmt.Sprintf("merging %s conflicts in %s; not running an agent because the branch used all %d agent runs that maxAgentRuns allows", t.name, list, limit)}
+	s := runJob(ctx, t.job(in, base), st)
+	if !s.Done && st.Pod == "" {
+		s.Message = fmt.Sprintf("merging %s conflicts in %s; %s", t.name, list, s.Message)
 	}
-	return report(ctx, in, t, base, st, runJob(ctx, t.job(in, base), st))
+	return report(ctx, in, t, base, st, s)
 }
 
 // unresolvable says why the agent can't resolve the conflicts of merging t

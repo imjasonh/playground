@@ -343,7 +343,7 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 			b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: map[string]string{"runs": "10"}}
 		},
 		state: gitk8s.Running,
-		want:  "merging main conflicts in a.txt; not running an agent because the branch used all 10 agent runs that maxAgentRuns allows",
+		want:  "merging main conflicts in a.txt; not starting the agent: the job used all 10 of its runs",
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.agent {
@@ -369,6 +369,30 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 				t.Errorf("c/x moved to %s", got)
 			}
 		})
+	}
+}
+
+func TestLeavesTheRunLimitsToRunJob(t *testing.T) {
+	var got agent.JobState
+	jobs := withJobs(t, func(_ *agent.Job, st *agent.JobState) agent.JobStatus {
+		got = *st
+		return agent.JobStatus{Message: "not starting the agent: the job used all 3 of its runs"}
+	})
+	srv := gittest.NewServer(t, "")
+	b, _, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+	three := int32(3)
+	b.Spec.Merge.MaxAgentRuns = &three
+	b.Status.Checks.Result = &gitk8s.CheckResult{Commit: "0123", State: gitk8s.Failed, Outputs: map[string]string{"runs": "3"}}
+	if _, err := reconcile(t, srv, b, rules); err != nil {
+		t.Fatal(err)
+	}
+	if len(*jobs) != 1 || (*jobs)[0].MaxRuns != 3 || got != (agent.JobState{Runs: 3}) {
+		t.Fatalf("ran %d jobs, the last with the state %+v, want one with MaxRuns 3 for a state with 3 runs", len(*jobs), got)
+	}
+	res := b.Status.Checks.Result
+	want := "merging main conflicts in a.txt; not starting the agent: the job used all 3 of its runs"
+	if res.State != gitk8s.Running || res.Message != want || res.Outputs["runs"] != "3" {
+		t.Errorf("result = %+v, want Running with %q and 3 runs", res, want)
 	}
 }
 

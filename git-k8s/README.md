@@ -482,13 +482,14 @@ one of the merge's marker labels, or when more of its lines start like a marker
 than in its two sides together.
 
 The check runs an agent only when the policy lets it push, and only within
-`maxAutomatedCommits` and `maxAgentRuns`. It runs none for a merge with more
-than one merge base, for a conflict in a file that one side deleted or that
-isn't a regular file on both sides, or for a conflict that git can't mark,
-such as one in a binary file. It also runs none for a conflict in a
-`.cursorignore` file, because the agent's work tree leaves those files out,
-or for conflicts in more than 1,000 files or in files that hold more than
-8 MiB, the most that a result can change.
+`maxAutomatedCommits` and `maxAgentRuns`, which `RunJob` enforces as the job's
+`MaxRuns` over all of the branch's runs. It runs none for a merge with more than
+one merge base, for a conflict in a file that one side deleted or that isn't a
+regular file on both sides, or for a conflict that git can't mark, such as one
+in a binary file. It also runs none for a conflict in a `.cursorignore` file,
+because the agent's work tree leaves those files out, or for conflicts in more
+than 1,000 files or in files that hold more than 8 MiB, the most that a result
+can change.
 
 Each merge that the check pushes is a new head, so every check runs again on
 it. The merge has a `Git-K8s-Fixer: conflicts` trailer and counts toward
