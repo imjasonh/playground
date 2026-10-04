@@ -551,23 +551,37 @@ func TestCheckRunsWaitOutRateLimits(t *testing.T) {
 	w.Branch("c/x", main)
 	head := w.Commit("add x")
 	w.Push("c/x")
+	l := gh.NewWork(t, "lib")
+	l.Write(".github/chainguard/checks.sts.yaml", gittest.TrustPolicy(map[string]string{"checks": "write"}))
+	libHead := l.Commit("main")
+	l.Push("main")
 	at := time.Unix(1_000_000, 0)
 	p := &publisher{t: t, gh: gh, repo: gh.Repository("app", sts, rules()...), c: &checkRuns{now: func() time.Time { return at }}}
 	checks := map[string]gitk8s.CheckResult{"base": {Commit: head, ParentCommit: main, State: gitk8s.Passed}}
+	// lib is another of the owner's repositories, whose branches the same
+	// controller reconciles.
+	lib := &publisher{t: t, gh: gh, repo: gh.Repository("lib", sts, rules()...), c: p.c}
+	libChecks := map[string]gitk8s.CheckResult{"gotest": {Commit: libHead, State: gitk8s.Passed}}
 	gh.Fake.RateLimit(90 * time.Second)
 	got, err := p.publish(checks)
 	if err != nil || len(got) != 1 || p.requeue < 90*time.Second || p.requeue > 90*time.Second*5/4 {
 		t.Fatalf("requests = %q, err = %v, requeue = %v; want one request and a requeue in 90s to a quarter longer", got, err, p.requeue)
 	}
 
-	t.Log("Until the limit ends, the owner's branches send no requests.")
+	t.Log("Until the limit ends, the owner's branches send no requests, in any of its repositories.")
 	at = at.Add(30 * time.Second)
 	if got, err := p.publish(checks); err != nil || len(got) != 0 || p.requeue < time.Minute || p.requeue > time.Minute*5/4 {
 		t.Errorf("30s later: requests = %q, err = %v, requeue = %v; want none and a requeue in 1m to a quarter longer", got, err, p.requeue)
 	}
+	if got, err := lib.publish(libChecks); err != nil || len(got) != 0 || lib.requeue < time.Minute || lib.requeue > time.Minute*5/4 {
+		t.Errorf("acme/lib 30s later: requests = %q, err = %v, requeue = %v; want none and a requeue in 1m to a quarter longer", got, err, lib.requeue)
+	}
 	at = at.Add(time.Minute)
 	if got, err := p.publish(checks); err != nil || len(got) != 2 || len(runs(gh)) != 1 {
 		t.Errorf("after the limit: requests = %q, err = %v, check runs %q; want the check run", got, err, runs(gh))
+	}
+	if got, err := lib.publish(libChecks); err != nil || len(got) != 2 || len(gh.Fake.CheckRuns("acme/lib")) != 1 {
+		t.Errorf("acme/lib after the limit: requests = %q, err = %v; want its check run", got, err)
 	}
 }
 
