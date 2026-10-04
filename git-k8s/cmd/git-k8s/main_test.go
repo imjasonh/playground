@@ -153,7 +153,8 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	for _, b := range bindings {
 		b.Spec.ValidationActions = []string{"Deny"}
 	}
-	if c := reconcile(world...); c.Status != kube.True {
+	if c := reconcile(world...); c.Status != kube.True || c.Reason != "Installed" ||
+		c.Message != "the admission policies keep checks to their own results and keep git-k8s service accounts from approving branches" {
 		t.Errorf("with the policies installed, PoliciesInstalled = %+v", c)
 	}
 	bindings[1].Spec.ValidationActions = []string{"Warn"}

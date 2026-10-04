@@ -110,7 +110,7 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 	if len(missing) == 0 && len(weak) == 0 && len(warns) == 0 {
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
-			Message: "the admission policies keep checks to their own results",
+			Message: "the admission policies keep checks to their own results and keep git-k8s service accounts from approving branches",
 		}
 	}
 	var problems, sentences, fixes []string
