@@ -112,21 +112,9 @@ func TestQueuedBranchesLandInTurn(t *testing.T) {
 	one, two, w := behind(t, srv)
 	main := parentOf(one)
 	start := main.Spec.Head
-	// reconcile runs the merge controller on b, and returns the Merged
-	// condition's message.
 	reconcile := func(b *gitk8s.GitBranch) string {
 		t.Helper()
-		results := b.Status.Checks
-		repo, secret := srv.Repository("app", rules()...)
-		ctx, _ := kube.Fake(t.Context(), b, repo, secret, main)
-		if err := (&merger{cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()}}).Reconcile(ctx, b); err != nil {
-			t.Fatal(err)
-		}
-		b.Status.Checks = results
-		if c := kube.FindCondition(b.Status.Conditions, "Merged"); c != nil {
-			return c.Message
-		}
-		return ""
+		return mergeIn(t, srv, main, b)
 	}
 
 	t.Log("Both branches become ready together and join main's queue.")
@@ -184,6 +172,67 @@ func TestQueuedBranchesLandInTurn(t *testing.T) {
 	if msg := reconcile(two); two.Status.Queued.Position != 1 || !two.Status.Queued.Since.Equal(since) ||
 		msg != "first in main's queue; waiting for the base check to merge main in" {
 		t.Errorf("c/two: queued %+v, %q", two.Status.Queued, msg)
+	}
+}
+
+func TestUpToDateBranchesWaitTheirTurn(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	one, two, w := behind(t, srv)
+	main := parentOf(one)
+	start := main.Spec.Head
+	reconcile := func(b *gitk8s.GitBranch) string {
+		t.Helper()
+		return mergeIn(t, srv, main, b)
+	}
+	w.Branch("c/two", start)
+	w.Write("two.txt", "c/two\n")
+	two.Spec.Head = w.Commit("add c/two")
+	w.Push("c/two")
+	two.Status.Checks = map[string]gitk8s.CheckResult{
+		"base":  {Commit: two.Spec.Head, ParentCommit: start, State: gitk8s.Passed},
+		"gofmt": {Commit: two.Spec.Head, State: gitk8s.Passed},
+	}
+
+	t.Log("c/one is behind main, and c/two contains main's head. Both join main's queue, and c/two doesn't land before the queue lists it.")
+	for _, b := range []*gitk8s.GitBranch{one, two} {
+		if msg := reconcile(b); b.Status.State != reasonQueued || msg != "joining main's queue" {
+			t.Fatalf("%s: state %q, %q", b.Spec.Branch, b.Status.State, msg)
+		}
+	}
+	if got := srv.Heads(t, "app")["main"]; got != start {
+		t.Fatalf("main moved to %s", got)
+	}
+	if got, want := queueOf(t, main, one, two), []string{"c/one", "c/two"}; !slices.Equal(got, want) {
+		t.Fatalf("queue = %q, want %q", got, want)
+	}
+
+	t.Log("c/two waits behind c/one, which waits for the base check to merge main in.")
+	if msg := reconcile(two); msg != "2 of 2 in main's queue" || two.Status.Queued == nil || two.Status.Queued.Position != 2 {
+		t.Errorf("c/two: queued %+v, %q", two.Status.Queued, msg)
+	}
+	if msg := reconcile(one); msg != "first in main's queue; waiting for the base check to merge main in" {
+		t.Errorf("c/one: %q", msg)
+	}
+	if got := srv.Heads(t, "app")["main"]; got != start {
+		t.Fatalf("main moved to %s", got)
+	}
+
+	t.Log("c/one's gofmt check fails, so c/one leaves the queue, and c/two lands.")
+	one.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: one.Spec.Head, State: gitk8s.Failed}
+	if msg := reconcile(one); one.Status.State != reasonWaitingForChecks || one.Status.Queued != nil {
+		t.Fatalf("c/one: state %q, queued %+v, %q", one.Status.State, one.Status.Queued, msg)
+	}
+	if got := srv.Heads(t, "app")["main"]; got != start {
+		t.Fatalf("main moved to %s", got)
+	}
+	if got, want := queueOf(t, main, one, two), []string{"c/two"}; !slices.Equal(got, want) {
+		t.Fatalf("queue = %q, want %q", got, want)
+	}
+	if msg := reconcile(two); two.Status.State != reasonLanded {
+		t.Fatalf("c/two: state %q, %q", two.Status.State, msg)
+	}
+	if got := srv.Heads(t, "app")["main"]; got != two.Spec.Head {
+		t.Errorf("main = %s, want %s", got, two.Spec.Head)
 	}
 }
 

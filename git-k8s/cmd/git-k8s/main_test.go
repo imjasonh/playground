@@ -202,6 +202,24 @@ func merge(t *testing.T, srv *gittest.Server, b *gitk8s.GitBranch) error {
 	return (&merger{cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()}}).Reconcile(ctx, b)
 }
 
+// mergeIn reconciles b with parent as its parent's GitBranch, and returns
+// the Merged condition's message. b keeps its check results, which the
+// merge controller leaves out of its status write.
+func mergeIn(t *testing.T, srv *gittest.Server, parent, b *gitk8s.GitBranch) string {
+	t.Helper()
+	results := b.Status.Checks
+	repo, secret := srv.Repository("app", rules()...)
+	ctx, _ := kube.Fake(t.Context(), b, repo, secret, parent)
+	if err := (&merger{cache: &gitk8s.Cache{Git: &git.Git{}, Dir: t.TempDir()}}).Reconcile(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	b.Status.Checks = results
+	if c := kube.FindCondition(b.Status.Conditions, "Merged"); c != nil {
+		return c.Message
+	}
+	return ""
+}
+
 func TestLandsAndDeletesBranch(t *testing.T) {
 	srv := gittest.NewServer(t, "pw")
 	b, _ := branches(t, srv)
