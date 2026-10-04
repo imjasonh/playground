@@ -920,6 +920,20 @@ func TestBranchesShareCheckRuns(t *testing.T) {
 	}
 }
 
+func TestSharedCheckRunsOfTheSameResult(t *testing.T) {
+	s := newSharing(t, 2)
+	s.step("c/y", s.result(0, gitk8s.Passed, ""), s.get(0), post)
+	s.step("c/x", s.result(0, gitk8s.Passed, ""))
+
+	t.Log("When a branch leaves a commit where another branch has the same result, the check run already shows that result, so the controller doesn't update it.")
+	s.step("c/x", s.result(1, gitk8s.Running, ""), s.get(1), post)
+	s.again("c/y")
+	s.wantRuns(
+		"git-k8s/gotest@"+s.short(0)+" completed success: Passed",
+		"git-k8s/gotest@"+s.short(1)+" in_progress : Running",
+	)
+}
+
 func TestCheckRunsOfDepartedBranches(t *testing.T) {
 	s := newSharing(t, 2)
 
