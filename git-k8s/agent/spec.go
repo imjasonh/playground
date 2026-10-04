@@ -22,7 +22,7 @@ const agentLabel = gitk8s.Group + "/agent"
 // Where the agent Pod's volumes hold the source, the agent's input, the API
 // key, and the result.
 const (
-	workTree   = "/src/repo"
+	workTree   = "/src"
 	inputDir   = "/input"
 	keyFile    = "/key/api-key"
 	resultFile = "/result/result.json"
@@ -58,8 +58,10 @@ type podTask struct {
 // prepareScript runs in the prepare container. It fetches the branch at
 // HEAD, or exits with status 3 if the branch moved, and writes the head's
 // files, its index, the change from BASE, the commit log, and the API key
-// for the agent container. The repository goes in a directory that the
-// script creates, because git refuses to use one that another user owns,
+// for the agent container. The git image has no commands but git and sh,
+// so the script uses only those and the shell's builtins, and git init's
+// templates make .git/info. The repository goes in a directory that git
+// init creates, because git refuses to use one that another user owns,
 // such as the root of an emptyDir volume. The attributes file makes the
 // files match their blobs, so the runner can tell which ones the agent
 // changed.
@@ -77,7 +79,6 @@ fi
 if [ -n "${BASE:-}" ] && ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
   git fetch -q --unshallow "$URL" "refs/heads/$BRANCH"
 fi
-mkdir -p .git/info "$WORK_TREE"
 printf '* -text -eol -ident -filter -working-tree-encoding\n' >.git/info/attributes
 git read-tree "$HEAD"
 git checkout-index -a -f --prefix="$WORK_TREE/"

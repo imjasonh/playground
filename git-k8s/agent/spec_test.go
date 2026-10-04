@@ -88,7 +88,7 @@ func TestStartsALockedDownPod(t *testing.T) {
 	}
 	wantTask := podTask{
 		Backend: "fake", Model: "composer-2.5", Instructions: "Review the change.", TimeoutSeconds: 60,
-		Branch: "c/x", Parent: "main", Head: f.b.Spec.Head, Base: f.base, WorkTree: "/src/repo",
+		Branch: "c/x", Parent: "main", Head: f.b.Spec.Head, Base: f.base, WorkTree: "/src",
 		DiffFile: "/input/change.diff", LogFile: "/input/log.txt", FilesFile: "/input/files", KeyFile: "/key/api-key",
 		ResultFile: "/result/result.json", TerminationLog: "/dev/termination-log",
 	}
@@ -154,8 +154,19 @@ func TestMatchesTheRunner(t *testing.T) {
 }
 
 func TestPrepareScript(t *testing.T) {
-	if _, err := exec.LookPath("sh"); err != nil {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
 		t.Skip("sh isn't installed")
+	}
+	// The git image has no other commands, so the script gets a PATH with
+	// only git.
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.Symlink(git, filepath.Join(bin, "git")); err != nil {
+		t.Fatal(err)
 	}
 	srv := gittest.NewServer(t, "s3cret")
 	w := srv.NewWork(t, "app")
@@ -188,8 +199,11 @@ func TestPrepareScript(t *testing.T) {
 		}
 		data := maps.Clone(secret.Data)
 		data["api-key"] = []byte("key-123")
-		cmd := exec.Command(c.Command[0], c.Command[1:]...)
-		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GIT_CONFIG_NOSYSTEM=1"}
+		if c.Command[0] != "sh" {
+			t.Fatalf("prepare runs %q, want sh", c.Command)
+		}
+		cmd := exec.Command(sh, c.Command[1:]...)
+		cmd.Env = []string{"PATH=" + bin, "GIT_CONFIG_NOSYSTEM=1"}
 		for _, e := range c.Env {
 			v := e.Value
 			if e.ValueFrom != nil {
@@ -215,13 +229,13 @@ func TestPrepareScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare: %v\n%s", err, out)
 	}
-	if got := read(dir + "/src/repo/a.txt"); got != "one\ntwo\n59\n" {
+	if got := read(dir + "/src/a.txt"); got != "one\ntwo\n59\n" {
 		t.Errorf("a.txt = %q, want the blob's bytes", got)
 	}
-	if got := read(dir + "/src/repo/dir/b.txt"); got != "b\n" {
+	if got := read(dir + "/src/dir/b.txt"); got != "b\n" {
 		t.Errorf("dir/b.txt = %q", got)
 	}
-	if _, err := os.Stat(dir + "/src/repo/.git"); !os.IsNotExist(err) {
+	if _, err := os.Stat(dir + "/src/.git"); !os.IsNotExist(err) {
 		t.Errorf("the work tree has a .git: %v", err)
 	}
 	if files := read(dir + "/input/files"); strings.Count(files, "\x00") != 3 || !strings.Contains(files, " 0\tdir/b.txt\x00") {

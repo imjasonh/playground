@@ -43,7 +43,7 @@ test("reports changed, added, deleted, and relinked files", async () => {
 
 test("skips submodule directories", async () => {
   const task = preparePod({ "a.txt": "a\n" }, {});
-  const repo = join(task.workTree, "..", "..", "git");
+  const repo = join(task.workTree, "..", "git");
   const head = task.head;
   git(repo, "update-index", "--add", "--cacheinfo", `160000,${head},sub`);
   writeFileSync(task.filesFile, git(repo, "ls-files", "-s", "-z"));

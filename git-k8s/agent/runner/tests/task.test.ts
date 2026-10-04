@@ -12,7 +12,7 @@ const valid: Task = {
   parent: "main",
   head: "0123456789abcdef0123456789abcdef01234567",
   base: "",
-  workTree: "/src/repo",
+  workTree: "/src",
   diffFile: "/input/change.diff",
   logFile: "/input/log.txt",
   filesFile: "/input/files",

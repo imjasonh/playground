@@ -60,7 +60,7 @@ export function preparePod(base: Files, change: Files, task: Partial<Task> = {})
     mkdirSync(join(root, dir));
   }
   git(repo, "read-tree", head);
-  git(repo, "checkout-index", "-a", "-f", `--prefix=${join(root, "src", "repo")}/`);
+  git(repo, "checkout-index", "-a", "-f", `--prefix=${join(root, "src")}/`);
   writeFileSync(join(root, "input", "files"), gitBuffer(repo, "ls-files", "-s", "-z"));
   writeFileSync(join(root, "input", "change.diff"), gitBuffer(repo, "diff", "--no-color", baseSha, head));
   writeFileSync(join(root, "input", "log.txt"), git(repo, "log", "--format=%h %s", `${baseSha}..${head}`));
@@ -75,7 +75,7 @@ export function preparePod(base: Files, change: Files, task: Partial<Task> = {})
     parent: "main",
     head,
     base: baseSha,
-    workTree: join(root, "src", "repo"),
+    workTree: join(root, "src"),
     diffFile: join(root, "input", "change.diff"),
     logFile: join(root, "input", "log.txt"),
     filesFile: join(root, "input", "files"),

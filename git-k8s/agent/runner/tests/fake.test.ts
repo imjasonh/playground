@@ -40,7 +40,7 @@ test("finds the added lines and their numbers", () => {
 
 test("reads the diffs that git writes", () => {
   const task = preparePod({ "a.txt": "1\n2\n3\n4\n5\n6\n7\n8\n9\n" }, { "a.txt": "1\n2\n3\n4\nX\n5\n6\n7\n8\n9\nY\n", "b/c.txt": "Z\n" });
-  const repo = `${task.workTree}/../../git`;
+  const repo = `${task.workTree}/../git`;
   const diff = gitBuffer(repo, "diff", task.base, task.head).toString();
   assert.deepEqual(addedLines(diff), [
     { path: "a.txt", line: 5, text: "X" },
