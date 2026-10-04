@@ -115,6 +115,22 @@ func TestKeeps(t *testing.T) {
 	tokenAgain := pick(rewound, token)
 	leakedAgain := pick(commit(rewound, "add h", map[string]string{"h.txt": "h\n"}), token)
 	undone := commit(side, "change the first bar back", map[string]string{"c.txt": "foo\nb\nc\nd\nfoo\n"})
+	// A side that rewound to a commit that changed what it removed and the
+	// last foo, and a head built on it that changes the last foo again.
+	redacted := commit(start, "redact the secret and change the last foo", map[string]string{"r.txt": "redacted\n", "c.txt": "foo\nb\nc\nd\nqux\n"})
+	onRedacted := commit(redacted, "change qux", map[string]string{"c.txt": "foo\nb\nc\nd\nquux\n"})
+	// The sides last agreed at bumped, which added b; a side that rewound to
+	// a commit that adds d next to where b was; and a head built on it that
+	// adds b back next to its own line.
+	sums := commit(start, "add go.sum", map[string]string{"go.sum": "a v1\n"})
+	bumped := commit(sums, "add b", map[string]string{"go.sum": "a v1\nb v1\n"})
+	addedD := commit(sums, "add d", map[string]string{"go.sum": "a v1\nd v1\n"})
+	addedBack := commit(addedD, "add b and c", map[string]string{"go.sum": "a v1\nb v1\nc v1\nd v1\n"})
+	w.Branch("work", start)
+	w.Git("merge", "--quiet", "--no-ff", "--no-commit", "--end-of-options", rewound)
+	w.Write("c.txt", "baz\nb\nc\nd\nfoo\n")
+	w.Commit("merge the rewind and change bar")
+	mergedInto := keep()
 	w.Git("checkout", "--quiet", "--orphan", "lone")
 	w.Commit("start over")
 	lone := keep()
@@ -140,6 +156,7 @@ func TestKeeps(t *testing.T) {
 		{"a head that rewound and replays the side under 100 commits", later, side, base, true},
 		{"a head that replays each commit of a side that merged", bothReplayed, sideMerge, base, false},
 		{"a head with an empty commit for a side's empty commit", replayedEmpty, sideEmpty, base, false},
+		{"a head built on a side that rewound to drop an empty commit", ahead, side, sideEmpty, true},
 		{"a head that replays a side's two commits that make the same change", twice, x2, base, true},
 		{"a head that replays one of a side's two commits that make the same change", once, x2, base, false},
 		{"a head that replays a side's removal of a file and adds the file back", readded, dropped, base, false},
@@ -151,8 +168,11 @@ func TestKeeps(t *testing.T) {
 		{"a head that merges a side that rewound with a copy of what it removed", brought, rewound, base, false},
 		{"a head that merges a side that rewound with another commit", joined, rewound, base, true},
 		{"a head that merges a side that rewound with a commit that overrides the side's change", overridden, rewound, base, false},
+		{"a head that merges a side that rewound into an older commit, changing the side's change", mergedInto, rewound, base, true},
 		{"a head that replays a side that rewound", replayed, rewound, base, true},
 		{"a head with a commit that a side that rewound removed, though not its change", revived, rewound, base, false},
+		{"a head built on a side that rewound and changed what it removed, changing the side's change", onRedacted, redacted, base, false},
+		{"a head built on a side that rewound, adding back a line that the side removed next to its own", addedBack, addedD, bumped, false},
 		{"a head with a copy of what a side that reset removed", copied, start, base, false},
 		{"a head that contains base, with a side that rebuilt base as another commit with the same change", side, copied, base, false},
 		{"a head with another commit than what a side that reset removed", other, start, base, true},
