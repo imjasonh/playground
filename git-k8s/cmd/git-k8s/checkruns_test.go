@@ -920,7 +920,7 @@ func TestCheckRunsOfDepartedBranches(t *testing.T) {
 func TestCompletedCheckRunsOfDepartedBranches(t *testing.T) {
 	for _, accept := range []bool{false, true} {
 		t.Run("AcceptReopening="+strconv.FormatBool(accept), func(t *testing.T) {
-			s := newSharing(t, 2)
+			s := newSharing(t, 4)
 			if accept {
 				s.gh.Fake.AcceptReopening()
 			}
@@ -942,6 +942,17 @@ func TestCompletedCheckRunsOfDepartedBranches(t *testing.T) {
 				"git-k8s/gotest@"+s.short(1)+" in_progress : started Pod x",
 				"git-k8s/gotest@"+s.short(0)+" completed failure: failed on c/y",
 			)
+
+			t.Log("When the check run keeps a finished result after its branch left, and then the branch that's still running the check is deleted, the next reconcile of any branch makes the check run show the finished result of a branch still at the commit.")
+			s.step("c/u", s.result(2, gitk8s.Failed, "failed on c/u"), s.get(2), post)
+			s.step("c/v", s.result(2, gitk8s.Running, "started Pod v"), post)
+			s.step("c/w", s.result(2, gitk8s.Passed, "passed on c/w"), patch+"5")
+			s.step("c/w", s.result(3, gitk8s.Running, "started Pod w"), s.get(3), post)
+			s.wantRun(5, "git-k8s/gotest@"+s.short(2)+" completed success: passed on c/w")
+			s.p.remove("c/v")
+			s.again("c/w", patch+"5")
+			s.again("c/u")
+			s.wantRun(5, "git-k8s/gotest@"+s.short(2)+" completed failure: failed on c/u")
 		})
 	}
 }
