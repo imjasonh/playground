@@ -19,12 +19,13 @@ import (
 // The server doesn't authenticate requests. Check each caller's bearer
 // token with ReviewToken.
 //
-// A request's context lets h call Get, List, Fetch, ReviewToken, and
-// RequestToken. As in a webhook, h can only read. Calling Own, Apply,
-// Delete, or RequeueAfter cancels the request's context, with the error as
-// its cause. So does a Get or List that can't read, for example because the
-// program may not list a type. When the program stops, the contexts of
-// requests in progress are canceled too.
+// A request's context lets h call Get, List, Fetch, ReviewToken,
+// RequestToken, and Trigger. As in a webhook, h can only read. Calling Own,
+// Apply, Delete, or RequeueAfter cancels the request's context, with the
+// error as its cause. So does a Get or List that can't read, for example
+// because the program may not list a type. To change the cluster in response
+// to a request, call Trigger, and make the change in the reconcile. When the
+// program stops, the contexts of requests in progress are canceled too.
 //
 // A program can have one Serve. To serve several paths, use one handler,
 // such as an http.ServeMux.

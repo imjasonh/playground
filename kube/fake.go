@@ -26,8 +26,9 @@ import (
 // World can also hold FakeTokens for ReviewToken to accept. RequestToken
 // returns the tokens "fake-token-1", "fake-token-2", and so on, for the
 // service account test in the namespace default, and ReviewToken accepts
-// them for the requested audience. To test a Serve handler, pass it a
-// request with the context, using http.Request.WithContext.
+// them for the requested audience. Trigger queues a reconcile of an object
+// that world holds, which Triggered reports. To test a Serve handler, pass
+// it a request with the context, using http.Request.WithContext.
 //
 //	ctx, rec := kube.Fake(t.Context(), site, &k8s.Deployment{...})
 //	if err := r.Reconcile(ctx, site); err != nil {
@@ -83,6 +84,18 @@ func intentsOf[T any](r *Recorder, kind intentKind) []*T {
 	return out
 }
 
+// Triggered returns the keys of the objects of type T that Trigger queued a
+// reconcile for, in order.
+func Triggered[T any](r *Recorder) []Key {
+	var out []Key
+	for _, t := range r.s.w.(*fakeWorld).triggers {
+		if t.t == reflect.TypeFor[T]() {
+			out = append(out, t.key)
+		}
+	}
+	return out
+}
+
 // FakeToken is a bearer token for ReviewToken to accept in a Fake context.
 // It's valid for Audiences, or, when Audiences is empty, only for the API
 // server, like a token that the API server issues without audiences.
@@ -101,6 +114,12 @@ type fakeWorld struct {
 	// the calls of RequestToken.
 	tokens    []FakeToken
 	requested int
+	triggers  []triggered
+}
+
+type triggered struct {
+	t   reflect.Type
+	key Key
 }
 
 func (w *fakeWorld) src(t reflect.Type, ti *typeInfo) *memSource {
@@ -237,6 +256,17 @@ func (w *fakeWorld) requestToken(_ context.Context, audience string, lifetime ti
 	}
 	w.tokens = append(w.tokens, t)
 	return t.Token, time.Now().Add(lifetime), nil
+}
+
+func (w *fakeWorld) trigger(ti *typeInfo, k Key) bool {
+	if res, _ := w.resolve(context.Background(), ti); !res.namespaced {
+		k.Namespace = ""
+	}
+	if w.read(ti).peek(k) == nil {
+		return false
+	}
+	w.triggers = append(w.triggers, triggered{t: ti.goType, key: k})
+	return true
 }
 
 // memSource is an in-memory source for tests.

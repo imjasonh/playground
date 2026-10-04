@@ -58,10 +58,12 @@ func (u UserInfo) ServiceAccount() (namespace, name string, ok bool) {
 	return namespace, name, true
 }
 
-// services are what ReviewToken and RequestToken need from a world.
+// services are what ReviewToken, RequestToken, and Trigger need from a
+// world.
 type services interface {
 	reviewToken(ctx context.Context, token string, audiences []string) (TokenReview, error)
 	requestToken(ctx context.Context, audience string, lifetime time.Duration) (string, time.Time, error)
+	trigger(ti *typeInfo, k Key) bool
 }
 
 // ReviewToken asks the API server whether token, a bearer token that a
