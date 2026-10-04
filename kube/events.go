@@ -221,7 +221,11 @@ func (w *eventWriter) record(ctx context.Context, r eventRecord) {
 		if s.written != s.count && !s.failed {
 			w.write(ctx, r.eventKey, s)
 		}
-		s = nil
+		// A write that stopping cancelled leaves the count unwritten. Keep
+		// the series so the drain writes it, with this event counted too.
+		if s.written == s.count || s.failed || ctx.Err() == nil {
+			s = nil
+		}
 	}
 	if s == nil {
 		ns := r.regarding.Namespace
