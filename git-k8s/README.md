@@ -250,7 +250,9 @@ A branch leaves the queue when one of these happens:
   merge controller trusts the trailer, so a person who adds it to a commit
   keeps the branch's place, but the checks still run on the new head.
 - Its checks finish without its gate passing, such as a test that fails
-  after the merge of the parent.
+  after the merge of the parent. At the front, it leaves sooner, as soon
+  as the `base` check fails or the gate fails with its unfinished checks
+  counted as passing.
 - Someone deletes the branch, which deletes its `GitBranch`.
 - Its parent goes away, or the parent's merge policy goes away or can't be
   evaluated.
@@ -357,7 +359,7 @@ set `GIT_K8S_KIND_CHAINGUARD=docker.io/chainguard`.
   the back, so while other branches keep landing, it can need several
   approvals.
 - A check that doesn't finish at the front of a queue holds up the branches
-  behind it.
+  behind it while the front can still land.
 
 [`future-work.md`](future-work.md) proposes fixes for these, and lists the
 other known gaps.

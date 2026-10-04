@@ -94,9 +94,11 @@ func position(ctx context.Context, b *gitk8s.GitBranch) (int32, int) {
 // passes and the base check passes, which the base check does for a branch
 // that's behind its parent but merges cleanly. b leaves the queue when it
 // lands, when someone other than a check pushes to it, or when its checks
-// finish without passing. A branch that leaves joins again at the back.
-// Only the branch at the front lands, after the base check merges the
-// parent into it if it's behind.
+// finish without passing. At the front, b leaves as soon as it can't pass
+// even if its unfinished checks do, so it doesn't hold up the branches
+// behind it. A branch that leaves joins again at the back. Only the branch
+// at the front lands, after the base check merges the parent into it if
+// it's behind.
 func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queued, checks map[string]gitk8s.GateCheck, pass bool) error {
 	spec := &b.Spec
 	base := checks["base"]
@@ -111,9 +113,6 @@ func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queu
 			q = nil
 		}
 	}
-	if q != nil && !ready && settled(checks) {
-		q = nil
-	}
 	if q == nil && !ready {
 		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
 		return nil
@@ -127,6 +126,9 @@ func (m *merger) queued(ctx context.Context, b *gitk8s.GitBranch, q *gitk8s.Queu
 		return nil
 	case q == nil:
 		q = &gitk8s.Queued{Since: time.Now().UTC().Truncate(time.Second)}
+	case !ready && (settled(checks) || pos == 1 && !canPass(spec.Merge, checks)):
+		report(b, reasonWaitingForChecks, false, "%s", describe(spec.Merge, checks))
+		return nil
 	}
 	q.Head, q.Position = spec.Head, pos
 	b.Status.Queued = q
@@ -168,6 +170,24 @@ func settled(checks map[string]gitk8s.GateCheck) bool {
 		}
 	}
 	return true
+}
+
+// canPass reports whether the base check and the gate can still pass if
+// every check that hasn't passed or failed passes. A gate that fails to
+// evaluate until those checks finish, such as one that reads an output that
+// they haven't set, still can.
+func canPass(policy *gitk8s.MergePolicy, checks map[string]gitk8s.GateCheck) bool {
+	if checks["base"].State == gitk8s.Failed {
+		return false
+	}
+	assumed := maps.Clone(checks)
+	for name, c := range assumed {
+		if c.State != gitk8s.Passed && c.State != gitk8s.Failed {
+			assumed[name] = gitk8s.GateCheck{Passed: true, State: gitk8s.Passed, Outputs: c.Outputs}
+		}
+	}
+	pass, err := evaluate(policy, assumed)
+	return pass || err != nil
 }
 
 // fixedOnly reports whether checks pushed every commit that b gained since

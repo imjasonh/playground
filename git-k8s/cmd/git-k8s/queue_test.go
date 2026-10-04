@@ -387,6 +387,76 @@ func TestLeavingTheQueue(t *testing.T) {
 	}
 }
 
+func TestLeavingTheFront(t *testing.T) {
+	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name string
+		// when is the gate of a merge policy that lists base, gofmt, and
+		// approval. gofmt fails, and approval doesn't finish.
+		when string
+		base string
+		// queue is main's queue.
+		queue []string
+		// stays reports whether c/x keeps its place.
+		stays bool
+	}{{
+		name:  "every check must pass",
+		base:  gitk8s.Passed,
+		queue: []string{"c/x"},
+	}, {
+		name:  "behind the front",
+		base:  gitk8s.Passed,
+		queue: []string{"c/a", "c/x"},
+		stays: true,
+	}, {
+		name:  "the gate can still pass",
+		when:  `checks.base.passed && (checks.gofmt.passed || checks.approval.passed)`,
+		base:  gitk8s.Passed,
+		queue: []string{"c/x"},
+		stays: true,
+	}, {
+		name:  "the gate can't pass",
+		when:  `checks.base.passed && checks.gofmt.passed`,
+		base:  gitk8s.Passed,
+		queue: []string{"c/x"},
+	}, {
+		name:  "the gate reads an output that isn't set yet",
+		when:  `checks.base.passed && (checks.gofmt.passed || checks.approval.outputs.by != "")`,
+		base:  gitk8s.Passed,
+		queue: []string{"c/x"},
+		stays: true,
+	}, {
+		name:  "the base check fails",
+		when:  `checks.approval.passed`,
+		base:  gitk8s.Failed,
+		queue: []string{"c/x"},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := gittest.NewServer(t, "")
+			b, _ := branches(t, srv)
+			p := *policy
+			p.Checks = append(p.Checks[:2:2], gitk8s.CheckPolicy{Name: "approval"})
+			p.When = tc.when
+			b.Spec.Merge = &p
+			b.Status.Checks["base"] = gitk8s.CheckResult{Commit: b.Spec.Head, ParentCommit: b.Spec.ParentHead, State: tc.base}
+			b.Status.Checks["gofmt"] = gitk8s.CheckResult{Commit: b.Spec.Head, State: gitk8s.Failed}
+			pos := int32(slices.Index(tc.queue, "c/x") + 1)
+			b.Status.Queued = &gitk8s.Queued{Since: since, Head: b.Spec.Head, Position: pos}
+			main := b.Spec.ParentHead
+			msg := mergeIn(t, srv, parentOf(b, tc.queue...), b)
+			switch q := b.Status.Queued; {
+			case tc.stays && (b.Status.State != reasonQueued || q == nil || !q.Since.Equal(since) || q.Position != pos):
+				t.Errorf("state = %q, queued %+v, %q; want its place at %d", b.Status.State, q, msg, pos)
+			case !tc.stays && (b.Status.State != reasonWaitingForChecks || q != nil):
+				t.Errorf("state = %q, queued %+v, %q; want %s, out of the queue", b.Status.State, q, msg, reasonWaitingForChecks)
+			}
+			if got := srv.Heads(t, "app")["main"]; got != main {
+				t.Errorf("main moved to %s", got)
+			}
+		})
+	}
+}
+
 func TestLandsWithoutAQueue(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	b, _ := branches(t, srv)

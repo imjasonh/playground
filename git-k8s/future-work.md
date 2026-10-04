@@ -181,7 +181,8 @@ branches behind it:
   landed, so it merges the parent in and needs another approval. While
   branches keep landing, it might never land.
 - A check that never finishes at the front, such as one whose controller
-  isn't running, holds up every branch behind it.
+  isn't running, holds up every branch behind it while the front can still
+  land.
 
 The proposed fixes are an approval that still counts after a clean merge of
 the parent, and a time limit at the front of the queue, after which the
