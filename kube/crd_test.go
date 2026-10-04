@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/imjasonh/playground/kube/internal/client"
 )
@@ -137,9 +138,11 @@ func TestSetSchemaAt(t *testing.T) {
 }
 
 // crdAPI is an API server that answers each request with the next of its
-// scripted replies, and records the requests.
+// scripted replies, after delay, and records the requests. It answers one
+// request at a time.
 type crdAPI struct {
 	mu       sync.Mutex
+	delay    time.Duration
 	replies  []crdReply
 	requests []crdRequest
 }
@@ -172,6 +175,7 @@ func (a *crdAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	time.Sleep(a.delay)
 	a.requests = append(a.requests, crdRequest{r.Method + " " + r.URL.Path, r.URL.Query(), body})
 	if len(a.replies) == 0 {
 		http.Error(w, "unexpected request", http.StatusInternalServerError)
@@ -213,7 +217,7 @@ func newCRDManager(t *testing.T, a *crdAPI) *Manager {
 		t.Fatal(err)
 	}
 	m := testManager()
-	m.Name, m.client, m.ensuredCRDs = "owner", c, map[*typeInfo]bool{}
+	m.Name, m.client, m.crdCalls = "owner", c, map[*typeInfo]*crdCall{}
 	return m
 }
 
@@ -314,5 +318,37 @@ func TestEnsureCRD(t *testing.T) {
 	a.script()
 	if err := m.ensureCRD(t.Context(), gizmos); err != nil || len(a.got()) > 0 {
 		t.Errorf("a second ensureCRD = %v after %d requests, want none", err, len(a.got()))
+	}
+}
+
+// TestEnsureCRDConcurrently makes the first uses of a type at once, as a
+// controller's workers do, and expects one check and creation of its CRD.
+func TestEnsureCRDConcurrently(t *testing.T) {
+	a := &crdAPI{delay: 10 * time.Millisecond}
+	m := newCRDManager(t, a)
+	gizmos, err := typeInfoFor[gizmo]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.script(crdError(http.StatusNotFound, "NotFound"), crdReply{http.StatusCreated, nil}, crdWith(true, map[string]bool{"v2": true}))
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			<-start
+			if err := m.ensureCRD(t.Context(), gizmos); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+	var lines []string
+	for _, r := range a.got() {
+		lines = append(lines, r.line)
+	}
+	get := "GET " + crdPath("gizmos.test.kube.imjasonh.github.io")
+	if want := []string{get, "POST /apis/apiextensions.k8s.io/v1/customresourcedefinitions", get}; !slices.Equal(lines, want) {
+		t.Errorf("requests = %q, want %q", lines, want)
 	}
 }

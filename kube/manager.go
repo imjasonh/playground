@@ -109,7 +109,7 @@ type Manager struct {
 	caches      map[cacheKey]cache
 	cacheDone   []chan struct{}
 	resolved    map[*typeInfo]resolved
-	ensuredCRDs map[*typeInfo]bool
+	crdCalls    map[*typeInfo]*crdCall
 	controllers []Controller
 	hooks       *webhookServer
 }
@@ -204,7 +204,7 @@ func (m *Manager) init() error {
 	m.tracker = newTracker()
 	m.caches = map[cacheKey]cache{}
 	m.resolved = map[*typeInfo]resolved{}
-	m.ensuredCRDs = map[*typeInfo]bool{}
+	m.crdCalls = map[*typeInfo]*crdCall{}
 	m.metrics.gauge("kube_cache_objects", "Objects held in each cache.", func() []sample {
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -422,27 +422,46 @@ func (m *Manager) ensureType(ctx context.Context, crd crdSpec) (resolved, error)
 	return m.resolve(ctx, crd.ti)
 }
 
+// crdCall is one run of ensureCRD for a type. ensureCRD sets err and then
+// closes done.
+type crdCall struct {
+	done chan struct{}
+	err  error
+}
+
 // ensureCRD creates the CustomResourceDefinition of a type that the program
-// defines and owns but doesn't reconcile, if it's missing.
+// defines and owns but doesn't reconcile, if it's missing. Concurrent callers
+// for a type wait for the first one and share its result. ensureCRD doesn't
+// keep a failure, so the next caller tries again.
 func (m *Manager) ensureCRD(ctx context.Context, ti *typeInfo) error {
 	if !ti.custom {
 		return nil
 	}
 	m.mu.Lock()
-	ensured := m.ensuredCRDs[ti]
-	m.mu.Unlock()
-	if ensured {
-		return nil
+	call, ok := m.crdCalls[ti]
+	if !ok {
+		call = &crdCall{done: make(chan struct{})}
+		m.crdCalls[ti] = call
 	}
-	if !m.reconciled(ti) {
-		if err := m.createCRD(ctx, ti); err != nil {
-			return err
+	m.mu.Unlock()
+	if ok {
+		select {
+		case <-call.done:
+			return call.err
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
-	m.mu.Lock()
-	m.ensuredCRDs[ti] = true
-	m.mu.Unlock()
-	return nil
+	if !m.reconciled(ti) {
+		call.err = m.createCRD(ctx, ti)
+	}
+	if call.err != nil {
+		m.mu.Lock()
+		delete(m.crdCalls, ti)
+		m.mu.Unlock()
+	}
+	close(call.done)
+	return call.err
 }
 
 // reconciled reports whether a controller in the program reconciles ti's
