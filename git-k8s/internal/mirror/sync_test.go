@@ -968,6 +968,104 @@ func TestPlanReturnsWhenItsContextEnds(t *testing.T) {
 	}
 }
 
+// scriptedGit makes w's git run through a script in a new directory, and
+// returns the directory. While the directory has a file named fail, the
+// script fails each git merge-base --is-ancestor as git does on an I/O
+// error. While it has a file named hang, each one hangs.
+func scriptedGit(t *testing.T, w *world) string {
+	t.Helper()
+	dir := t.TempDir()
+	script := `#!/bin/sh
+dir=$(dirname "$0")
+for a in "$@"; do
+	if [ "$a" = --is-ancestor ]; then
+		if [ -e "$dir/fail" ]; then
+			echo "fatal: simulated I/O error" >&2
+			exit 128
+		fi
+		if [ -e "$dir/hang" ]; then
+			exec sleep 600
+		fi
+	fi
+done
+exec git "$@"
+`
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	w.m.Git.Bin = filepath.Join(dir, "git")
+	return dir
+}
+
+// TestSyncComparesAgainAfterAFailure fails a comparison as git does on an
+// I/O error, then removes the cause without moving either head. Divergence
+// and a final sync compare the heads again, so neither waits for a head to
+// move or for a restart.
+func TestSyncComparesAgainAfterAFailure(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.sync(SyncOptions{})
+
+	theirs := w.commit(base, "theirs")
+	ours := w.commit(theirs, "ours")
+	w.pushExternal("main", theirs)
+	w.pushCopy("main", ours)
+	fail := filepath.Join(scriptedGit(t, w), "fail")
+	if err := os.WriteFile(fail, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep := w.sync(SyncOptions{Fetch: true})
+	if err := rep.Failed["main"]; err == nil || !strings.Contains(err.Error(), "simulated I/O error") {
+		t.Fatalf("while git fails, Report.Failed = %v; want main, with git's error", rep.Failed)
+	}
+
+	if err := os.Remove(fail); err != nil {
+		t.Fatal(err)
+	}
+	if d, err := w.m.Divergence(t.Context(), w.repo, "main"); err != nil || d != nil {
+		t.Errorf("after the fix, Divergence(main) = %+v, %v; want nil, nil", d, err)
+	}
+	rep = w.sync(SyncOptions{Push: true, Final: true})
+	if len(rep.Failed) > 0 || len(rep.Pending) > 0 || rep.Err != nil {
+		t.Errorf("after the fix, a final Sync = %+v; want main pushed", rep)
+	}
+	wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"main": ours})
+}
+
+// TestSyncReportsAGitCommandThatTakesTooLong makes one git command of a
+// comparison run past git's timeout, which ends long before the
+// comparison's deadline. Sync reports the branch as failed, with how to
+// resolve it, and reports it again while the heads stay the same.
+func TestSyncReportsAGitCommandThatTakesTooLong(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.sync(SyncOptions{})
+
+	ours, theirs := w.commit(base, "ours"), w.commit(base, "theirs")
+	w.pushCopy("main", ours)
+	w.pushExternal("main", theirs)
+	hang := filepath.Join(scriptedGit(t, w), "hang")
+	w.m.Git.Timeout = 3 * time.Second
+	if err := os.WriteFile(hang, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep := w.sync(SyncOptions{Fetch: true, Push: true})
+	err := rep.Failed["main"]
+	if err == nil || !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "push the same commit to the branch in the mirror and in the external repository") {
+		t.Fatalf("Report.Failed = %v; want main, for git's timeout, with how to resolve it", rep.Failed)
+	}
+
+	if err := os.Remove(hang); err != nil {
+		t.Fatal(err)
+	}
+	rep = w.sync(SyncOptions{Fetch: true, Push: true})
+	if got := rep.Failed["main"]; got == nil || got.Error() != err.Error() {
+		t.Errorf("with the same heads, Report.Failed = %v; want main's failure again", rep.Failed)
+	}
+}
+
 // TestSyncKeepsDeletions deletes a branch on one side while the other side
 // changes it. A deletion removes every commit, so the branch diverges.
 func TestSyncKeepsDeletions(t *testing.T) {

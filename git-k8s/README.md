@@ -334,12 +334,15 @@ line also counts as one, and the branch diverges.
 Comparing the heads can take a long time when both sides rewrote the same
 long stretch of history between two syncs. The mirror stops comparing a
 branch's heads after 10 minutes 20 seconds, twice the longest that one git
-command can take, and leaves the branch as it is on each side, with the
-reason `CompareFailed`. It remembers what it decided about each branch,
-including a comparison that failed or took too long, and doesn't compare
-that branch's heads again until either side's head moves or the core
-program restarts. To resolve a branch whose comparison took too long, push
-the same commit to the branch in the mirror and in the external repository.
+command can take, or when one git command runs past git's 5-minute
+timeout, and leaves the branch as it is on each side, with the reason
+`CompareFailed`. It remembers what it decided about each branch, including
+a comparison that took too long, and doesn't compare that branch's heads
+again until either side's head moves or the core program restarts. To
+resolve a branch whose comparison took too long, push the same commit to
+the branch in the mirror and in the external repository. When comparing
+the heads fails for another reason, such as a full disk, the next sync
+compares them again.
 
 A diverged branch doesn't land, because landing the copy's head leaves out
 the external repository's changes. To resolve a divergence, push a head

@@ -230,6 +230,10 @@ func (m *Mirror) compareLimit() time.Duration {
 	return cmp.Or(m.compareTimeout, 2*m.Git.MaxDuration())
 }
 
+// resolveSlow says how to resolve a branch whose heads took too long to
+// compare.
+const resolveSlow = "to resolve it, push the same commit to the branch in the mirror and in the external repository"
+
 // memo remembers the last decision for each of a copy's branches.
 type memo struct {
 	mu   sync.Mutex
@@ -247,10 +251,11 @@ type decision struct {
 // decide returns what to do with branch name, whose heads in r are m, d,
 // and s, as the package's decide says, or failed and why if comparing the
 // heads fails or takes longer than timeout. While the heads stay the same,
-// it returns the branch's last decision again, even failed, so a branch
-// that's slow to compare costs one comparison until a head moves or the
-// process restarts. If ctx ends first, decide returns the error and
-// remembers nothing.
+// it returns the branch's last decision again, even a comparison that took
+// too long, so a branch that's slow to compare costs one comparison until a
+// head moves or the process restarts. It doesn't remember another failure,
+// such as a full disk, which can go away while the heads stay the same. If
+// ctx ends first, decide returns the error and remembers nothing.
 func (mo *memo) decide(ctx context.Context, r *git.Repo, timeout time.Duration, name, m, d, s string) (action, error) {
 	mo.mu.Lock()
 	last, ok := mo.last[name]
@@ -266,9 +271,12 @@ func (mo *memo) decide(ctx context.Context, r *git.Repo, timeout time.Duration, 
 	case ctx.Err() != nil:
 		return failed, err
 	case dctx.Err() != nil:
-		act, err = failed, fmt.Errorf("comparing the heads took longer than %v; to resolve it, push the same commit to the branch in the mirror and in the external repository", timeout)
+		act, err = failed, fmt.Errorf("comparing the heads took longer than %v; %s", timeout, resolveSlow)
+	case errors.Is(err, context.DeadlineExceeded):
+		// One git command ran past git's own timeout.
+		act, err = failed, fmt.Errorf("comparing the heads took too long: %w; %s", err, resolveSlow)
 	default:
-		act = failed
+		return failed, err
 	}
 	mo.mu.Lock()
 	defer mo.mu.Unlock()
