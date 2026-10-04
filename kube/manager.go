@@ -498,17 +498,19 @@ func (m *Manager) cacheFor(key cacheKey, res resolved, ownerKey string, onCreate
 	return c
 }
 
-// adopt registers a controller's primary informer as the shared cache for
-// its type when it watches the same objects that Get and List would.
-func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cache) {
+// adopt returns the cache that a controller with the primary informer inf
+// reads. If inf watches the same objects that Get and List would, that's the
+// shared cache for its type: the one that already exists, or else inf, which
+// adopt registers as that cache.
+func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cache) cache {
 	key := cacheKey{ti: ti, namespace: m.informerConfig(res, m.Namespace, "", "").namespace}
 	if cfg.namespace != key.namespace || cfg.selector != "" {
-		return
+		return inf
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if _, ok := m.caches[key]; ok {
-		return
+	if c, ok := m.caches[key]; ok {
+		return c
 	}
 	id := inf.id()
 	inf.onChange(func(old, new *ObjectMeta, initial bool) {
@@ -517,6 +519,7 @@ func (m *Manager) adopt(ti *typeInfo, res resolved, cfg informerConfig, inf cach
 		}
 	})
 	m.caches[key] = inf
+	return inf
 }
 
 func (m *Manager) source(ctx context.Context, ti *typeInfo) (source, error) {
