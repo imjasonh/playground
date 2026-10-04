@@ -277,6 +277,14 @@ can read the traffic between Pods can copy a token and send that check's
 results until the token expires, within an hour, or the check's Pod is
 deleted.
 
+kube doesn't fence writes, and the results controller writes all of
+`status.checks` at once, so a replica that hasn't noticed that its leader
+lease expired can put back earlier results. Checks other than `approval` run
+again on an earlier result, which is for earlier commits or isn't final. If
+someone removed the approve annotation, though, the replica can put back
+`approval`'s `Passed` result until `check-approval` sends `Failed` again, and
+the merge controller can merge the branch in that window.
+
 ### Write a result by hand
 
 The results endpoint accepts only checks' tokens. People who can patch
