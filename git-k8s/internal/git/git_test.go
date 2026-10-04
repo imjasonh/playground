@@ -35,6 +35,22 @@ func TestBearerToken(t *testing.T) {
 	}
 }
 
+// An error from running git names git's command, not the -C that the
+// command starts with.
+func TestErrorNamesTheCommand(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "HEAD"), []byte("ref: refs/heads/main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r, err := (&git.Git{Bin: filepath.Join(t.TempDir(), "missing")}).Open(t.Context(), dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Maintain(t.Context()); err == nil || !strings.HasPrefix(err.Error(), "git maintenance: ") {
+		t.Errorf("Maintain = %v, want an error that starts with %q", err, "git maintenance: ")
+	}
+}
+
 func TestRefTransactions(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")

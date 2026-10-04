@@ -116,6 +116,7 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 	ctx, cancel := context.WithTimeout(ctx, g.timeout())
 	defer cancel()
 
+	command := args[0]
 	if dir != "" {
 		args = append([]string{"-C", dir}, args...)
 	}
@@ -173,11 +174,11 @@ func (g *Git) exec(ctx context.Context, dir string, args []string, o opts) (resu
 	switch {
 	case err == nil:
 	case ctx.Err() != nil:
-		return res, fmt.Errorf("git %s: %w", args[0], ctx.Err())
+		return res, fmt.Errorf("git %s: %w", command, ctx.Err())
 	case errors.As(err, &exit):
 		res.code = exit.ExitCode()
 	default:
-		return res, fmt.Errorf("git %s: %w", args[0], err)
+		return res, fmt.Errorf("git %s: %w", command, err)
 	}
 	return res, nil
 }
