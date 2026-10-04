@@ -31,9 +31,10 @@ const RepositoryLabel = Group + "/repository"
 // characters.
 const ApproveAnnotation = Group + "/approve"
 
-// ApprovedByAnnotation on a GitBranch is the username of whoever set its
-// ApproveAnnotation. The git-k8s-approvals admission policy in
-// config/policy.yaml makes it match the request that set the approval.
+// ApprovedByAnnotation on a GitBranch is the username of whoever approved
+// the commit in its ApproveAnnotation. The git-k8s-approvals admission
+// policy in config/policy.yaml makes it match the request that set the
+// approval or took it over.
 const ApprovedByAnnotation = Group + "/approved-by"
 
 // FixerTrailer is the commit trailer on every commit that a check pushes.

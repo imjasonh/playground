@@ -327,7 +327,7 @@ rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}"
 rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
 rejected "requires the approve verb on gitbranches, which bob doesn't have" \
   annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
-rejected "${APPROVED_BY} can change only when ${APPROVE} does" annotate --as=alice "${APPROVED_BY}=alice"
+rejected "${APPROVED_BY} can change by itself only when you take over an approval" annotate --as=alice "${APPROVED_BY}=alice"
 # The gate wants alice's approval, so another approver's doesn't land c/auth.
 admin="$(k auth whoami -o jsonpath='{.status.userInfo.username}')"
 annotate "${APPROVE}=${AUTH}" "${APPROVED_BY}=${admin}"
@@ -341,28 +341,42 @@ eventually 60 gate_saw_approval
 [[ "$(field '{.status.state}')" == WaitingForChecks ]]
 [[ "$(remote_head main)" == "${main_before}" ]]
 rejected "remove ${APPROVED_BY} when you remove ${APPROVE}" annotate --as=alice "${APPROVE}-"
-rejected "${APPROVED_BY} can change only when ${APPROVE} does" annotate --as=alice "${APPROVED_BY}-"
+rejected "${APPROVED_BY} can change by itself only when you take over an approval" annotate --as=alice "${APPROVED_BY}-"
 echo "The policy rejected bad approvals, and c/auth waited through ${admin}'s."
 echo "::endgroup::"
 
 echo "::group::A MutatingAdmissionPolicy sets approved-by"
 k apply -f "${ROOT}/config/approved-by.yaml"
-approved_by_annotation() {
-  annotate --as=alice "$@" -o jsonpath='{.metadata.annotations.git-k8s\.imjasonh\.com/approved-by}'
+approved_by_after() {
+  annotate "$@" -o jsonpath='{.metadata.annotations.git-k8s\.imjasonh\.com/approved-by}'
 }
 # Without the mutating policy, removing approve alone is rejected.
-mutating_policy_ready() { approved_by_annotation "${APPROVE}-" --dry-run=server >/dev/null 2>&1; }
+mutating_policy_ready() { approved_by_after "${APPROVE}-" --dry-run=server >/dev/null 2>&1; }
 eventually 60 mutating_policy_ready
-revoked="$(approved_by_annotation "${APPROVE}-")"
+revoked="$(approved_by_after "${APPROVE}-")"
 # The mutating policy keeps an approved-by that the request changes.
 rejected "set ${APPROVED_BY} to alice" annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
-approved="$(approved_by_annotation "${APPROVE}=${AUTH}")"
-echo "approved-by was '${revoked}' after alice removed approve, and '${approved}' after she set it"
-[[ -z "${revoked}" && "${approved}" == alice ]]
+approved="$(approved_by_after "${APPROVE}=${AUTH}")"
+echo "approved-by was '${revoked}' after ${admin} removed approve, and '${approved}' after they set it"
+[[ -z "${revoked}" && "${approved}" == "${admin}" ]]
+echo "${admin} removed and set approve alone, and the policy did the same to approved-by."
+echo "::endgroup::"
+
+echo "::group::Another approver can take over an approval"
+# Admission sees only the object that a request produces, so setting approve
+# to the commit that it already names changes nothing.
+unchanged="$(approved_by_after --as=alice "${APPROVE}=${AUTH}" --dry-run=server)"
+echo "approved-by is '${unchanged}' after alice set approve to the commit that it names"
+[[ "${unchanged}" == "${admin}" ]]
+rejected "requires the approve verb on gitbranches, which bob doesn't have" \
+  annotate --as=bob "${APPROVE}=${AUTH}" "${APPROVED_BY}=bob"
+rejected "take over an approval by setting it to alice" annotate --as=alice "${APPROVED_BY}=bob"
+[[ "$(remote_head main)" == "${main_before}" ]]
+annotate --as=alice "${APPROVE}=${AUTH}" "${APPROVED_BY}=alice"
 auth_landed() { [[ "$(remote_head main)" == "${AUTH}" ]]; }
 eventually 120 auth_landed
 eventually 60 branch_gone c/auth
-echo "alice removed and set approve alone, the policy did the same to approved-by, and c/auth landed."
+echo "bob couldn't take over ${admin}'s approval, and alice could, so the gate passed and c/auth landed."
 echo "::endgroup::"
 
 echo "::group::Two branches from the same commit both land"

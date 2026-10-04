@@ -117,9 +117,9 @@ kubectl annotate --overwrite gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SH
 
 The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
 
-- Setting, changing, or removing the `approve` annotation requires the
-  `approve` verb on the `GitBranch`. `generate` grants that verb to no
-  program, so grant it to the people who approve:
+- Setting, changing, or removing the `approve` or `approved-by` annotation
+  requires the `approve` verb on the `GitBranch`. `generate` grants that
+  verb to no program, so grant it to the people who approve:
 
   ```sh
   kubectl create role approver --verb=get,patch,approve --resource=gitbranches.git-k8s.imjasonh.com
@@ -129,7 +129,9 @@ The `git-k8s-approvals` policy in `config/policy.yaml` enforces these rules:
 - A request that sets or changes `approve` must set `approved-by` to the
   username that sends it.
 - A request that removes `approve` must remove `approved-by` too.
-- `approved-by` can't change by itself.
+- A request that changes only `approved-by` takes over the approval, so
+  `approve` must name a commit, and the request must set `approved-by` to
+  the username that sends it.
 
 On Kubernetes 1.36 or later, `kubectl apply -f config/approved-by.yaml`
 installs a MutatingAdmissionPolicy that sets `approved-by` to your username
@@ -142,6 +144,12 @@ kubectl annotate --overwrite gitbranch GITBRANCH git-k8s.imjasonh.com/approve=SH
 
 The mutating policy leaves `approved-by` alone when the request changes it
 as well, and `git-k8s-approvals` checks every approval either way.
+
+To take over an existing approval of the same commit, set both annotations
+as in the first command. Setting only `approve` leaves that approval and its
+`approved-by` as they are. Admission policies see only the object that a
+request produces, so the mutating policy can't tell that the request set
+`approve` again. `check-approval` reports the new approver after a takeover.
 
 `check-approval` reports `approved-by` as `outputs.approver`, so a merge gate
 can require particular approvers:
