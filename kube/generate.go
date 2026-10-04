@@ -300,6 +300,8 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		return p.grantsFor(ti, watching)
 	}
 	var crds []string
+	var patchIfOwns []func()
+	owns := false
 	for _, c := range controllers {
 		d, err := c.describe()
 		if err != nil {
@@ -318,7 +320,19 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			o.logf("%s has more than one version, so its rules stay in the ClusterRole", d.ti.kind)
 			own = cluster
 		}
-		own.add(group, plural, "", "get", "list", "watch", "patch")
+		own.add(group, plural, "", "get", "list", "watch")
+		owns = owns || len(d.owns) > 0
+		switch {
+		case d.finalizes || d.versioned:
+			own.add(group, plural, "", "patch")
+		case d.ti.scope != "Cluster":
+			// An owned object in another namespace, or a cluster-scoped
+			// one, can't carry an owner reference to a namespaced owner, so
+			// the framework adds a finalizer to the owner. The source
+			// doesn't show which namespace an owned object goes in, so
+			// owning any object counts.
+			patchIfOwns = append(patchIfOwns, func() { own.add(group, plural, "", "patch") })
+		}
 		if d.ti.status != nil {
 			own.add(group, plural+"/status", "", "patch")
 		}
@@ -351,6 +365,11 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		}
 		g, r := resourceName(ti)
 		grantsFor(ti).add(g, r, "", scopeVerbs[u.Func]...)
+	}
+	if owns || slices.ContainsFunc(uses, func(u analysis.Use) bool { return u.Func == "Own" }) {
+		for _, grant := range patchIfOwns {
+			grant()
+		}
 	}
 	for _, crd := range crds {
 		cluster.add("apiextensions.k8s.io", "customresourcedefinitions", "", "create")

@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"reflect"
 	"slices"
 	"strings"
@@ -81,6 +82,10 @@ type validatingReconciler struct{ gizmoReconciler }
 
 func (validatingReconciler) Validate(context.Context, *gizmo, *gizmo) error { return nil }
 
+type finalizingReconciler struct{ gizmoReconciler }
+
+func (finalizingReconciler) Finalize(context.Context, *gizmo) error { return nil }
+
 func TestDescribe(t *testing.T) {
 	type deployment struct {
 		Object `kube:"apiVersion=apps/v1,kind=Deployment"`
@@ -92,6 +97,8 @@ func TestDescribe(t *testing.T) {
 	}{
 		{"reconciler", For[gizmo](gizmoReconciler{}, Owns[deployment]()), declared{reconciles: true, owns: []*typeInfo{{kind: "Deployment"}}}},
 		{"validator", For[gizmo](validatingReconciler{}), declared{reconciles: true, webhooks: true}},
+		{"finalizer", For[gizmo](finalizingReconciler{}), declared{reconciles: true, finalizes: true}},
+		{"finalizer from an earlier version", For[gizmo](gizmoReconciler{}, RemovesFinalizer()), declared{reconciles: true, finalizes: true}},
 		{"conversion", For[conversionHub](nop[conversionHub]{}, Version[conversionSpoke]()), declared{reconciles: true, webhooks: true, versioned: true}},
 		{"no conversion", For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()), declared{reconciles: true, versioned: true}},
 		{"webhooks", Webhooks[configMapMeta](labeler{}), declared{webhooks: true}},
@@ -100,13 +107,57 @@ func TestDescribe(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got.ti == nil || got.reconciles != tc.want.reconciles || got.webhooks != tc.want.webhooks || got.versioned != tc.want.versioned || len(got.owns) != len(tc.want.owns) {
+		if got.ti == nil || got.reconciles != tc.want.reconciles || got.finalizes != tc.want.finalizes || got.webhooks != tc.want.webhooks || got.versioned != tc.want.versioned || len(got.owns) != len(tc.want.owns) {
 			t.Errorf("%s: describe = %+v, want %+v", tc.name, got, tc.want)
 		}
 		for i, o := range got.owns {
 			if o.kind != tc.want.owns[i].kind {
 				t.Errorf("%s: owns %s, want %s", tc.name, o.kind, tc.want.owns[i].kind)
 			}
+		}
+	}
+}
+
+func TestPlanPatch(t *testing.T) {
+	type deployment struct {
+		Object `kube:"apiVersion=apps/v1,kind=Deployment"`
+	}
+	type namespace struct {
+		Object `kube:"apiVersion=v1,kind=Namespace,scope=Cluster"`
+	}
+	const (
+		deletes = "github.com/imjasonh/playground/kube/examples/janitor"
+		owns    = "github.com/imjasonh/playground/kube/examples/website"
+	)
+	for _, tc := range []struct {
+		name  string
+		c     Controller
+		pkg   string
+		patch bool
+	}{
+		{"status only", For[gizmo](gizmoReconciler{}), deletes, false},
+		{"finalizer", For[gizmo](finalizingReconciler{}), deletes, true},
+		{"finalizer from an earlier version", For[gizmo](gizmoReconciler{}, RemovesFinalizer()), deletes, true},
+		{"more than one version", For[gizmo](gizmoReconciler{}, Version[gizmoV1beta1]()), deletes, true},
+		{"declared owned type", For[gizmo](gizmoReconciler{}, Owns[deployment]()), deletes, true},
+		{"program that owns objects", For[gizmo](gizmoReconciler{}), owns, true},
+		{"cluster-scoped type in a program that owns objects", For[namespace](nop[namespace]{}), owns, false},
+	} {
+		o := &generateOptions{program: "test", platforms: []v1.Platform{{OS: "linux", Architecture: "amd64"}}, replicas: 1, shards: 1, stderr: io.Discard}
+		p, err := o.plan(t.Context(), []Controller{tc.c}, tc.pkg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		d, err := tc.c.describe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		g, r := resourceName(d.ti)
+		if got := p.cluster[grantKey{g, r, ""}]["patch"]; got != tc.patch {
+			t.Errorf("%s: patch on %s = %t, want %t", tc.name, r, got, tc.patch)
+		}
+		if d.ti.status != nil && !p.cluster[grantKey{g, r + "/status", ""}]["patch"] {
+			t.Errorf("%s: no patch on %s/status", tc.name, r)
 		}
 	}
 }

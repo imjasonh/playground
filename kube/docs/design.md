@@ -528,6 +528,19 @@ UID, then removes the finalizer. When a reconcile stops declaring such
 objects, the framework deletes any that remain and removes the finalizer, so
 the owner can then be deleted without the controller running.
 
+A controller without a `Finalize` method also removes its finalizer from
+objects, so a finalizer that an earlier version of the program added doesn't
+keep them from being deleted. Adding and removing a finalizer patch the
+object. Permission to patch an object also allows changes to its spec,
+labels, and annotations, so `generate` grants it only to a controller that
+can need it: one with a `Finalize` method, one with the
+`kube.RemovesFinalizer` option, or one whose type is namespaced in a program
+that declares owned objects. The source doesn't show which namespace an owned
+object goes in, so any owned object counts. When the API server forbids the
+removal and the controller has neither `Finalize` nor the option, the error
+names the option, because the likely cause is a finalizer that an earlier
+version of the program added.
+
 ### Custom resource definitions
 
 `internal/schema` generates an OpenAPI v3 schema from a struct, using `json`
@@ -735,6 +748,17 @@ type's `kube` tag. `Get` and `List` need `list` and `watch`, `Fetch` needs
 needs `create` and `patch`, and `Delete` needs `delete`. `controller-gen`
 reads `+kubebuilder:rbac` comment markers, which people write and update by
 hand. These rules change when the calls do.
+
+A controller gets `get`, `list`, and `watch` on its own type, and `patch` on
+the type's `status` subresource if it has one. It gets `patch` on the type
+itself only when the framework writes the object: to add or remove the
+controller's finalizer, as [Finalizers and cleanup](#finalizers-and-cleanup)
+describes, or to migrate the stored objects of a type with more than one
+version. The `describe` method reports whether a controller has a `Finalize`
+method, the `kube.RemovesFinalizer` option, owned types, or more than one
+version, and the analysis reports whether the program calls `Own`. A
+controller that only writes status gets no permission to change the spec,
+labels, or annotations of the objects that it reconciles.
 
 The rules go in a ClusterRole, because a program watches every namespace,
 except those for the program's own Leases and webhook certificate, which go in
