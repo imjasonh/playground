@@ -81,18 +81,24 @@ func (t target) job(in *checks.Input, base string) *agent.Job {
 // did. It comes before any git work, because kube deletes the run's Pod
 // after a reconcile that doesn't declare it. The run keeps merging the
 // commit that it started with, so that a parent that keeps moving doesn't
-// start a new run each time. The check starts over instead when the head
-// where a diverged branch last synced moved, when -union changed, because
-// git might then resolve every conflict, or when the run waits for a
-// commit that t already has. Then it updates the runs in outputs, which
-// the new run counts from.
+// start a new run each time. The check starts over instead when the
+// external repository's head of a diverged branch moved, because a force
+// push can drop the commit that the run merges, when the head where the
+// branch last synced moved, when -union changed, because git might then
+// resolve every conflict, or when the run waits for a commit that t
+// already has. Then it updates the runs in outputs, which the new run
+// counts from.
 func follow(ctx context.Context, in *checks.Input, t target, outputs map[string]string) (checks.Verdict, bool) {
 	prev := in.Previous
 	if prev == nil || prev.State != gitk8s.Running || prev.Commit != in.Spec.Head {
 		return checks.Verdict{}, false
 	}
 	st := readState(prev.Outputs)
-	if st.Pod == "" || (prev.Outputs["diverged"] != "") != t.diverged || prev.Outputs["synced"] != t.synced ||
+	diverged := ""
+	if t.diverged {
+		diverged = t.commit
+	}
+	if st.Pod == "" || prev.Outputs["diverged"] != diverged || prev.Outputs["synced"] != t.synced ||
 		!isCommit(prev.Outputs["merge"]) || !isCommit(prev.Outputs["base"]) || prev.Outputs["union"] != union.String() {
 		return checks.Verdict{}, false
 	}

@@ -550,6 +550,39 @@ func TestStartsOverWhenTheBranchDivergesDuringARun(t *testing.T) {
 	}
 }
 
+func TestStartsOverWhenTheExternalHeadMovesDuringARun(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	b, w, base := setup(t, srv, map[string]string{"b.txt": "main\n"}, map[string]string{"a.txt": "one\nbranch\nthree\n"})
+	e, o := diverge(w, b.Name, "c/x", base, map[string]string{"a.txt": "one\nexternal\nthree\n"})
+	jobs := withJobs(t, func(_ *agent.Job, st *agent.JobState) agent.JobStatus {
+		st.Runs, st.Pod, st.Attempt = st.Runs+1, fmt.Sprintf("conflicts-app-c-x-%d", st.Runs+1), 1
+		return agent.JobStatus{Message: "the agent is working"}
+	})
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	if res := b.Status.Checks.Result; res.State != gitk8s.Running || res.Outputs["merge"] != e {
+		t.Fatalf("result = %+v, want Running for %s", res, gitk8s.Short(e))
+	}
+
+	t.Log("The external repository force-pushes c/x to a head that drops the one that the run merges.")
+	e2, _ := diverge(w, b.Name, "c/x", base, map[string]string{"a.txt": "one\nexternal 2\nthree\n"})
+	o.Status.Diverged.Commit = e2
+	if _, err := reconcile(t, srv, b, rules, o); err != nil {
+		t.Fatal(err)
+	}
+	if len(*jobs) != 2 {
+		t.Fatalf("ran %d jobs, want 2", len(*jobs))
+	}
+	want := &agent.Ref{Name: downstream + "c/x", Commit: e2, DisplayName: "the external repository's c/x"}
+	if got := (*jobs)[1].Checkout.Merge; !reflect.DeepEqual(got, want) {
+		t.Errorf("the second job merges %+v, want %+v", got, want)
+	}
+	if res := b.Status.Checks.Result; res.State != gitk8s.Running || res.Outputs["merge"] != e2 || res.Outputs["diverged"] != e2 || res.Outputs["runs"] != "2" {
+		t.Errorf("result = %+v, want Running for %s, counting both runs", res, gitk8s.Short(e2))
+	}
+}
+
 func TestStartsOverWhenMainRewindsBeforeThePodFetchesIt(t *testing.T) {
 	for _, tc := range []struct {
 		name string
