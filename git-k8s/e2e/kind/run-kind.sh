@@ -7,10 +7,13 @@
 #
 # The git server runs on this machine and requires a password. Pods reach it
 # through the kind network's gateway, so the nodes need no internet access.
+# A module proxy on this machine serves the one module that a tested branch
+# depends on, as go-cache's upstream.
 #
 # GIT_K8S_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
-# GIT_K8S_KIND_KEEP=1 keeps the cluster, registry, and git server afterward.
+# GIT_K8S_KIND_KEEP=1 keeps the cluster, registry, git server, and module
+# proxy afterward.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -29,6 +32,7 @@ PASSWORD="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
 CREATED_CLUSTER=0
 CREATED_REGISTRY=0
 GIT_SERVER_PID=""
+MOD_PROXY_PID=""
 
 k() { kubectl --context "${CONTEXT}" "$@"; }
 
@@ -44,12 +48,14 @@ diagnose() {
   k -n "${NS}" get gitrepositories,gitbranches -o yaml || true
   k -n "${NS}" get pods -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
-  for program in git-k8s "${CHECKS[@]}"; do
+  for program in git-k8s go-cache "${CHECKS[@]}"; do
     k -n "${program}" describe pods || true
     k -n "${program}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
   done
   echo "--- git server log"
   cat "${WORKDIR}/gitserver.log" || true
+  echo "--- module proxy log"
+  cat "${WORKDIR}/modproxy.log" || true
   echo "::endgroup::"
 }
 
@@ -59,12 +65,14 @@ finish() {
     diagnose
   fi
   if [[ "${GIT_K8S_KIND_KEEP:-}" == 1 ]]; then
-    echo "Kept the cluster ${CLUSTER}, the registry ${REGISTRY}, and the git server in ${WORKDIR}"
+    echo "Kept the cluster ${CLUSTER}, the registry ${REGISTRY}, and the git server and module proxy in ${WORKDIR}"
     exit "${status}"
   fi
-  if [[ -n "${GIT_SERVER_PID}" ]]; then
-    kill "${GIT_SERVER_PID}" 2>/dev/null || true
-  fi
+  for pid in "${GIT_SERVER_PID}" "${MOD_PROXY_PID}"; do
+    if [[ -n "${pid}" ]]; then
+      kill "${pid}" 2>/dev/null || true
+    fi
+  done
   if [[ ${CREATED_CLUSTER} -eq 1 ]]; then
     kind delete cluster --name "${CLUSTER}" || true
   fi
@@ -117,7 +125,7 @@ need curl
 install_kind
 docker info >/dev/null
 
-echo "::group::Start a registry, a kind cluster, and a git server"
+echo "::group::Start a registry, a kind cluster, a git server, and a module proxy"
 # As in https://kind.sigs.k8s.io/docs/user/local-registry/: nodes pull
 # localhost:PORT/... from the registry container, which is on kind's
 # network.
@@ -158,6 +166,20 @@ CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
 listening() { (echo >"/dev/tcp/127.0.0.1/${GIT_PORT}") 2>/dev/null; }
 eventually 30 listening
 echo "Pods reach the git server at ${CLUSTER_URL}"
+# example.com/greet isn't on the internet, so test Pods can get it only
+# through go-cache.
+GREET="${WORKDIR}/modules/example.com/greet@v1.0.0"
+mkdir -p "${GREET}"
+printf 'module example.com/greet\n\ngo 1.24\n' >"${GREET}/go.mod"
+printf 'package greet\n\nfunc Hello(name string) string { return "Hello, " + name }\n' >"${GREET}/greet.go"
+(cd "${ROOT}" && go build -o "${WORKDIR}/modproxy" ./e2e/modproxy)
+"${WORKDIR}/modproxy" -addr=0.0.0.0:0 -dir="${WORKDIR}/modules" >"${WORKDIR}/modproxy.log" 2>&1 &
+MOD_PROXY_PID=$!
+mod_port() { sed -nE 's/.* serving .* on .*:([0-9]+)$/\1/p' "${WORKDIR}/modproxy.log"; }
+mod_proxy_listening() { [[ -n "$(mod_port)" ]]; }
+eventually 30 mod_proxy_listening
+MOD_PORT="$(mod_port)"
+echo "go-cache fetches modules from http://${GATEWAY}:${MOD_PORT}"
 echo "::endgroup::"
 
 echo "::group::Install git-k8s and the checks with generate"
@@ -181,16 +203,20 @@ crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
 # git-k8s installs the CustomResourceDefinitions that the checks watch.
 install git-k8s
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
+install go-cache -base="${CHAINGUARD}/static:latest" -tmp-size=1Gi -- \
+  "-upstream=http://${GATEWAY}:${MOD_PORT}" -max-size=512Mi
+k apply -f "${ROOT}/config/go-cache.yaml"
 for program in "${CHECKS[@]}"; do
   case "${program}" in
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
     check-gotest)
-      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m
+      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m \
+        -go-cache=http://go-cache.go-cache
       ;;
     *) install "${program}" ;;
   esac
 done
-for program in "${CHECKS[@]}"; do
+for program in go-cache "${CHECKS[@]}"; do
   k -n "${program}" rollout status "deployment/${program}" --timeout=180s
 done
 k apply -f "${ROOT}/config/policy.yaml"
@@ -447,6 +473,153 @@ fixed_landed() { [[ "$(remote_head main tested)" == "${fixed}" ]]; }
 eventually 300 fixed_landed
 eventually 60 no_test_pods
 echo "A branch that breaks a test failed in a sandboxed Pod, and a fixed branch landed."
+echo "::endgroup::"
+
+echo "::group::Test Pods get modules and build outputs from go-cache"
+# This is the README's NetworkPolicy: test Pods reach DNS, go-cache, and the
+# git server, and nothing else.
+k apply -f - <<EOF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: test-pods
+  namespace: ${NS}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: check-gotest
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: go-cache
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: go-cache
+      ports:
+        - {protocol: TCP, port: 8080}
+    - to:
+        - ipBlock:
+            cidr: ${GATEWAY}/32
+      ports:
+        - {protocol: TCP, port: ${GIT_PORT}}
+EOF
+metrics() { k get --raw /api/v1/namespaces/go-cache/services/go-cache:http/proxy/metrics; }
+# metric prints the value of a sample, such as
+# go_cache_module_requests_total{result="hit"}, from the metrics in file $1.
+metric() { awk -v sample="$2" '$1 == sample { print $2 }' "$1"; }
+# grew prints how much sample $3 grew from metrics file $1 to file $2.
+grew() { echo $(($(metric "$2" "$3") - $(metric "$1" "$3"))); }
+GET_HIT='go_cache_build_requests_total{method="GET",result="hit"}'
+GET_MISS='go_cache_build_requests_total{method="GET",result="miss"}'
+PUT_CREATED='go_cache_build_requests_total{method="PUT",result="created"}'
+MOD_FETCHED='go_cache_module_requests_total{result="fetched"}'
+MOD_HIT='go_cache_module_requests_total{result="hit"}'
+metrics >"${WORKDIR}/metrics-0.txt"
+
+t checkout -q -b c/greet "${fixed}"
+printf '\nrequire example.com/greet v1.0.0\n' >>"${TESTED}/go.mod"
+printf 'package tested\n\nimport "example.com/greet"\n\n// Greeting greets the cluster.\nfunc Greeting() string { return greet.Hello("kind") }\n' \
+  >"${TESTED}/greeting.go"
+cat >"${TESTED}/greeting_test.go" <<'GO'
+package tested
+
+import "testing"
+
+func TestGreeting(t *testing.T) {
+	if got := Greeting(); got != "Hello, kind" {
+		t.Errorf("Greeting() = %q, want %q", got, "Hello, kind")
+	}
+}
+GO
+GOPROXY="http://127.0.0.1:${MOD_PORT}" GOSUMDB=off GOFLAGS=-modcacherw GOMODCACHE="${WORKDIR}/gomodcache" \
+  go -C "${TESTED}" mod tidy
+t add -A
+t commit -qm "Greet the cluster"
+greet="$(t rev-parse HEAD)"
+t push -q "${HOST_URL}/tested.git" HEAD:c/greet
+greet_landed() { [[ "$(remote_head main tested)" == "${greet}" ]]; }
+eventually 300 greet_landed
+eventually 60 no_test_pods
+metrics >"${WORKDIR}/metrics-1.txt"
+(($(grew "${WORKDIR}/metrics-0.txt" "${WORKDIR}/metrics-1.txt" "${MOD_FETCHED}") > 0))
+
+# A Pod that NetworkPolicies treat as a test Pod tries to reach the module
+# proxy itself. kind's network plugin enforces NetworkPolicies, except on
+# hosts that lack the kernel support that it needs.
+k apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: np-probe
+  namespace: ${NS}
+  labels:
+    app.kubernetes.io/name: check-gotest
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 30
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+  containers:
+    - name: probe
+      image: ${GO_IMAGE}
+      command: [go, mod, download, -x, example.com/greet@v1.0.0]
+      env:
+        - {name: HOME, value: /tmp}
+        - {name: GOFLAGS, value: -modcacherw}
+        - {name: GOPROXY, value: "http://${GATEWAY}:${MOD_PORT}"}
+        - {name: GOSUMDB, value: "off"}
+        - {name: GOTOOLCHAIN, value: local}
+EOF
+probe_phase() { k -n "${NS}" get pod np-probe -o jsonpath='{.status.phase}'; }
+probe_done() { [[ "$(probe_phase)" == Succeeded || "$(probe_phase)" == Failed ]]; }
+eventually 120 probe_done
+k -n "${NS}" logs np-probe --tail=5 || true
+if [[ "$(probe_phase)" == Succeeded ]]; then
+  echo "This cluster doesn't enforce NetworkPolicies, so test Pods could have reached the module proxy."
+else
+  echo "The NetworkPolicy kept a test Pod from reaching the module proxy."
+fi
+k -n "${NS}" delete pod np-probe
+
+# go-cache serves the module from its store now.
+kill "${MOD_PROXY_PID}"
+wait "${MOD_PROXY_PID}" 2>/dev/null || true
+MOD_PROXY_PID=""
+t checkout -q -b c/greet-docs
+printf '# tested\n\nGreeting greets the cluster.\n' >"${TESTED}/README.md"
+t add -A
+t commit -qm "Add a README"
+docs="$(t rev-parse HEAD)"
+t push -q "${HOST_URL}/tested.git" HEAD:c/greet-docs
+docs_landed() { [[ "$(remote_head main tested)" == "${docs}" ]]; }
+eventually 300 docs_landed
+eventually 60 no_test_pods
+metrics >"${WORKDIR}/metrics-2.txt"
+m1="${WORKDIR}/metrics-1.txt"
+m2="${WORKDIR}/metrics-2.txt"
+grep '^go_cache_' "${m2}"
+stored="$(grew "${WORKDIR}/metrics-0.txt" "${m1}" "${PUT_CREATED}")"
+read_back="$(grew "${m1}" "${m2}" "${GET_HIT}")"
+missed="$(grew "${m1}" "${m2}" "${GET_MISS}")"
+stored_again="$(grew "${m1}" "${m2}" "${PUT_CREATED}")"
+(($(grew "${m1}" "${m2}" "${MOD_HIT}") > 0 && $(grew "${m1}" "${m2}" "${MOD_FETCHED}") == 0))
+((read_back >= 100 && stored_again < 10))
+echo "c/greet's Pod got example.com/greet through go-cache and stored ${stored} build outputs."
+echo "With the module proxy stopped, c/greet-docs's Pod got the module from go-cache's store, read ${read_back} build outputs, missed ${missed}, and stored ${stored_again}."
+k -n "${NS}" delete networkpolicy test-pods
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
