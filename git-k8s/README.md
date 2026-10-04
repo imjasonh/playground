@@ -413,6 +413,8 @@ changes. The check runs an agent only when the policy lets it push, and
 only within `maxAutomatedCommits` and `maxAgentRuns`. It runs none for a
 merge with more than one merge base, or for a conflict in a file that isn't
 text on both sides, such as a binary file or a file that one side deletes.
+It also runs none for a conflict in a `.cursorignore` file, because the
+agent's work tree leaves those files out.
 
 Each merge that the check pushes is a new head, so every check runs again on
 it. The merge has a `Git-K8s-Fixer: conflicts` trailer and counts toward

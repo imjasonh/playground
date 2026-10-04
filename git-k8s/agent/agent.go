@@ -31,6 +31,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -246,6 +247,9 @@ func (x *run) startMerge(ctx context.Context) (checks.Verdict, *Result) {
 	}
 	size := 0
 	for _, c := range conflicts {
+		if path.Base(c.Path) == ".cursorignore" {
+			return fail("merging %s conflicts on %s, which the agent can't see, because its work tree leaves out .cursorignore files", m.Name, c.Path)
+		}
 		if c.Ours == nil || c.Theirs == nil || !textMode(c.Ours.Mode) || !textMode(c.Theirs.Mode) {
 			return fail("merging %s conflicts on %s, which isn't a file on both sides, so the agent can't resolve it", m.Name, c.Path)
 		}

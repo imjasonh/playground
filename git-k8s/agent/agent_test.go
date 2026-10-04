@@ -632,6 +632,18 @@ func TestRefusesMergesThatTheAgentCantResolve(t *testing.T) {
 		},
 		want: "merging main conflicts on bin.dat, which git can't mark with conflict markers",
 	}, {
+		name: ".cursorignore",
+		main: func(f *fixture) string {
+			f.work.Branch("c/x", f.b.Spec.Head)
+			f.work.Write("dir/.cursorignore", "ours\n")
+			f.b.Spec.Head = f.work.Commit("ours")
+			f.work.Push("c/x")
+			f.work.Branch("main", f.base)
+			f.work.Write("dir/.cursorignore", "theirs\n")
+			return f.work.Commit("theirs")
+		},
+		want: "merging main conflicts on dir/.cursorignore, which the agent can't see",
+	}, {
 		name: "two merge bases",
 		main: func(f *fixture) string {
 			f.work.Write("m.txt", "m\n")
