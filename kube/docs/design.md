@@ -573,14 +573,17 @@ When the order of a write and the cache's contents is unknown, the cache
 waits for the watch. Two writes by the manager to one object at the same
 time don't show early, because the cache can't tell which one the API server
 applied last. A list replaces the cache's contents at start and after
-`410 Gone`. Without an order, the cache can't tell whether a list is older
-or newer than a write, and if it's newer, the watch that follows the list
-never delivers the write's event. So a list drops what earlier writes
-stored, and a write that's in progress during the list doesn't show early.
-A write that fails changes no cache, except a delete with a UID precondition
-that finds no object, which shows that the object with that UID is gone. A
-conflict doesn't, because the API server also returns `409 Conflict` for a
-delete of a namespace that's already being deleted.
+`410 Gone`. It asks for the latest state, so it holds each write that ended
+before the list began, or a later version. The cache drops what those
+writes stored, because the watch that follows the list might never deliver
+their events. A write that overlaps the list doesn't show early, because the
+cache can't tell whether the list holds it. If the list doesn't, it would
+replace the write with an older version, and if it does, the watch never
+delivers the write's event. A write that fails changes no cache, except a
+delete with a UID precondition that finds no object, which shows that the
+object with that UID is gone. A conflict doesn't, because the API server
+also returns `409 Conflict` for a delete of a namespace that's already being
+deleted.
 
 A delete's response is a `Status` with the object's UID, or the deleted
 object. Either way the object is gone, and the cache hides it until its
@@ -1031,9 +1034,9 @@ offers:
   out other managers' fields is also written once, because the record of the
   last status write is in memory.
 - Only the process that wrote reads its writes before the watch delivers
-  them, and a list drops the writes that a cache returned. With ordered
-  resource versions, a list could keep the writes that are newer than it, but
-  extension API servers might not order them.
+  them, and a write that overlaps a list doesn't show early. With ordered
+  resource versions, the cache could show the writes that are newer than the
+  list, but extension API servers might not order them.
 - The CRD checks compare field names, types, and required fields, not
   validation such as enums or bounds, and they need permission to list
   objects in every namespace.

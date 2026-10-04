@@ -235,13 +235,24 @@ func TestStoreShowsOwnWrites(t *testing.T) {
 		s.put(obj("1", "u"))
 		s.end(s.begin(k), wrote("2"))
 		f := s.begin(k)
-		s.replace(map[Key]*widget{k: obj("1", "u")})
-		shows(t, s, "1")
-		s.end(f, wrote("3"))
-		shows(t, s, "1")
+		s.beginList()
+		shows(t, s, "2")
+		s.end(f, wrote("3")) // newer than the list
+		shows(t, s, "2")
+		s.replace(map[Key]*widget{k: obj("2", "u")})
+		shows(t, s, "2")
 		settled(t, s)
-		s.end(s.begin(k), wrote("4"))
+		s.put(obj("3", "u"))
+		shows(t, s, "3")
+
+		s.beginList()
+		g := s.begin(k)
+		s.replace(map[Key]*widget{k: obj("4", "u")})
+		s.end(g, wrote("4")) // the list holds it
 		shows(t, s, "4")
+		settled(t, s)
+		s.end(s.begin(k), wrote("5"))
+		shows(t, s, "5")
 	})
 
 	t.Run("a delete", func(t *testing.T) {

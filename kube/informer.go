@@ -297,6 +297,9 @@ func (inf *informer[T, P]) run(ctx context.Context) {
 	rv, needSync := "", true
 	for ctx.Err() == nil {
 		var err error
+		if needSync {
+			inf.store.beginList()
+		}
 		switch {
 		case needSync && inf.streaming.Load():
 			var synced bool

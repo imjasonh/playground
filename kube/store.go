@@ -22,6 +22,8 @@ type store[T any, P Resource[T]] struct {
 	owners   map[string]map[Key]struct{}
 	writes   map[Key]*ownWrite[T]
 	flights  map[Key][]*flight
+	// listing is set from beginList until replace.
+	listing bool
 }
 
 // ownWrite is what one of this process's writes stored. obj is nil when
@@ -42,8 +44,8 @@ type flight struct {
 	// the write began, and those that its watch delivered since.
 	seen []string
 	// stale is set when the write's place among the object's versions is
-	// unknown: a list replaced the store, or another write by this process
-	// to the same object overlapped it.
+	// unknown: a list overlapped it, or another write by this process to the
+	// same object did.
 	stale bool
 }
 
@@ -179,21 +181,34 @@ func (s *store[T, P]) removeLocked(k Key) (old *T) {
 	return old
 }
 
-// replace makes items the store's contents and returns the differences:
-// objects that were added, changed (by resource version), or removed.
-//
-// A list's resource versions don't order it against this process's writes,
-// so replace forgets what those writes stored, and writes still in progress
-// leave nothing in the store when they end.
-func (s *store[T, P]) replace(items map[Key]*T) []change[T] {
+// beginList records that a list is about to replace the store's contents.
+// The store can't tell whether the list holds a write that overlaps it. If
+// the list doesn't, replace would return reads to an older version, and if
+// it does, the watch that follows the list never delivers the write's event.
+// So writes that overlap the list leave nothing in the store when they end.
+func (s *store[T, P]) beginList() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	clear(s.writes)
+	s.listing = true
 	for _, fs := range s.flights {
 		for _, f := range fs {
 			f.stale = true
 		}
 	}
+}
+
+// replace makes items the store's contents and returns the differences:
+// objects that were added, changed (by resource version), or removed.
+//
+// Lists ask for the latest state, and the list began after beginList, so it
+// holds each write that the store returns, or a later version. replace
+// forgets those writes, because the watch that follows the list might never
+// deliver their events.
+func (s *store[T, P]) replace(items map[Key]*T) []change[T] {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	clear(s.writes)
+	s.listing = false
 	var changes []change[T]
 	for _, byName := range s.objs {
 		for name, old := range byName {
@@ -219,7 +234,7 @@ func (s *store[T, P]) replace(items map[Key]*T) []change[T] {
 func (s *store[T, P]) begin(k Key) *flight {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	f := &flight{key: k}
+	f := &flight{key: k, stale: s.listing}
 	if o := s.objs[k.Namespace][k.Name]; o != nil {
 		f.seen = []string{metaOf[T, P](o).ResourceVersion}
 	}

@@ -658,8 +658,8 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
   removed.
 - In these cases, a write by the framework appears only when the watch
   delivers it, and a reconcile that runs before then reads the older version:
-  - The write ends while the cache lists objects, which it does when it
-    starts and when its watch's resource version expires.
+  - The write overlaps a list of the cache's objects. The cache lists when
+    it starts and when its watch's resource version expires.
   - The framework makes another write to the same object at the same time.
   - The write uses one version of a type, and the cache reads another.
   - The cache's label selector uses `<` or `>`.
