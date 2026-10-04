@@ -1,0 +1,147 @@
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { existsSync, lstatSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
+import type { Backend } from "../src/backends/types.js";
+import type { Result } from "../src/result.js";
+import { runFromEnv, type RunOptions } from "../src/run.js";
+import type { Task } from "../src/task.js";
+import { preparePod } from "./pod.js";
+
+const quiet: RunOptions = { log: () => undefined };
+
+async function runTask(task: Task, options: RunOptions = quiet): Promise<number> {
+  return runFromEnv({ AGENT_TASK: JSON.stringify(task) }, options);
+}
+
+function readResult(task: Task): Result {
+  return JSON.parse(readFileSync(task.resultFile, "utf8")) as Result;
+}
+
+test("fails a change that adds the marker, and reports where", async () => {
+  const task = preparePod({ "a.txt": "one\n" }, { "a.txt": "one\ntwo DO NOT MERGE\n" });
+  assert.equal(await runTask(task), 0);
+
+  const result = readResult(task);
+  assert.equal(result.verdict, "fail");
+  assert.equal(result.summary, "1 added line holds DO NOT MERGE");
+  assert.equal(result.reasoning, "The change adds DO NOT MERGE at a.txt:2.");
+  assert.equal(result.model, "fake:composer-2.5");
+  assert.ok(result.usage.inputTokens > 0 && result.usage.outputTokens > 0);
+  assert.equal(result.costCents, undefined);
+  assert.deepEqual(result.files, []);
+
+  const digest = createHash("sha256").update(readFileSync(task.resultFile)).digest("hex");
+  assert.equal(readFileSync(task.terminationLog, "utf8"), `sha256:${digest}`);
+  assert.equal(existsSync(task.keyFile), false, "the runner deletes the key file");
+});
+
+test("passes a clean change", async () => {
+  const task = preparePod({ "a.txt": "one\n" }, { "b.txt": "fine\n" });
+  assert.equal(await runTask(task), 0);
+  assert.equal(readResult(task).verdict, "pass");
+});
+
+test("reports the files that the agent changed", async () => {
+  const task = preparePod(
+    { "a.txt": "one\n", "keep.txt": "keep\n" },
+    { "a.txt": "one\ntwo DO NOT MERGE\nthree\n", "new.txt": "DO NOT MERGE\n" },
+    { edit: true },
+  );
+  assert.equal(await runTask(task), 0);
+
+  const result = readResult(task);
+  assert.equal(result.verdict, "fail");
+  assert.match(result.reasoning, /a\.txt:2, new\.txt:1\. The fake agent deleted those lines\.$/);
+  assert.deepEqual(
+    result.files.map((f) => [f.path, f.mode, Buffer.from(f.content ?? "", "base64").toString()]),
+    [
+      ["a.txt", "100644", "one\nthree\n"],
+      ["new.txt", "100644", ""],
+    ],
+  );
+});
+
+test("reports no files when the agent changes none", async () => {
+  const task = preparePod({ "a.txt": "one\n" }, { "a.txt": "two\n" }, { edit: true });
+  assert.equal(await runTask(task), 0);
+  assert.deepEqual(readResult(task).files, []);
+});
+
+test("needs an API key for the cursor backend", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const task = preparePod({}, { "a.txt": "a\n" }, { backend: "cursor" });
+  unlinkSync(task.keyFile);
+  assert.equal(await runTask(task), 1);
+  assert.match(readFileSync(task.terminationLog, "utf8"), /holds no Cursor API key/);
+  assert.equal(existsSync(task.resultFile), false);
+});
+
+test("keeps the API key out of error messages", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const leaky: Backend = async (request) => {
+    throw new Error(`can't use ${request.apiKey}`);
+  };
+  const task = preparePod({}, { "a.txt": "a\n" });
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: leaky } }), 1);
+  assert.equal(readFileSync(task.terminationLog, "utf8"), "can't use [REDACTED]");
+});
+
+test("keeps the API key out of the answer", async () => {
+  const leaky: Backend = async (request) => ({
+    text: JSON.stringify({ verdict: "pass", summary: `key ${request.apiKey}`, reasoning: request.apiKey }),
+    model: request.model,
+    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+  });
+  const task = preparePod({}, { "a.txt": "a\n" });
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: leaky } }), 0);
+  const result = readResult(task);
+  assert.equal(result.summary, "key [REDACTED]");
+  assert.equal(result.reasoning, "[REDACTED]");
+});
+
+test("refuses files that hold the API key", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const leaky: Backend = async (request) => {
+    writeFileSync(join(request.cwd, "a.txt"), `key=${request.apiKey}\n`);
+    return {
+      text: '{"verdict": "pass", "summary": "ok"}',
+      model: request.model,
+      usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    };
+  };
+  const task = preparePod({}, { "a.txt": "a\n" }, { edit: true });
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: leaky } }), 1);
+  assert.equal(readFileSync(task.terminationLog, "utf8"), "the agent wrote the Cursor API key to a.txt");
+  assert.equal(existsSync(task.resultFile), false);
+});
+
+test("fails an answer without a verdict", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  const vague: Backend = async (request) => ({
+    text: "Looks fine to me.",
+    model: request.model,
+    usage: { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0, cacheWriteTokens: 0 },
+  });
+  const task = preparePod({}, { "a.txt": "a\n" });
+  assert.equal(await runTask(task, { ...quiet, backends: { fake: vague } }), 1);
+  assert.match(readFileSync(task.terminationLog, "utf8"), /doesn't end with a JSON verdict: "Looks fine to me\."/);
+});
+
+test("replaces a link at the result path instead of following it", async () => {
+  const task = preparePod({}, { "a.txt": "a\n" });
+  const outside = join(task.resultFile, "..", "..", "outside.txt");
+  writeFileSync(outside, "original");
+  symlinkSync(outside, task.resultFile);
+  assert.equal(await runTask(task), 0);
+  assert.equal(readFileSync(outside, "utf8"), "original");
+  assert.ok(lstatSync(task.resultFile).isFile());
+  assert.equal(readResult(task).verdict, "pass");
+});
+
+test("rejects a task that isn't valid", async (t) => {
+  t.mock.method(console, "error", () => undefined);
+  assert.equal(await runFromEnv({}, quiet), 1);
+  assert.equal(await runFromEnv({ AGENT_TASK: "{}" }, quiet), 1);
+});
