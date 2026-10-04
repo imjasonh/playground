@@ -304,17 +304,22 @@ func (s *runSync) publish(ctx context.Context, branch, check string, res gitk8s.
 	}
 	changed := !ok || last.commit != res.Commit || last.shows != want
 	run, known := s.runs[cc]
+	// Until the controller knows its app, the check run that it finds can
+	// be another app's, so the controller updates the check run even when
+	// it shows want, and creates its own if GitHub refuses.
+	trusted := known
 	if !known {
-		found, err := s.gh.find(ctx, checkRun{Name: "git-k8s/" + check, HeadSHA: res.Commit, ExternalID: s.external}, s.c.appFor(s.app))
+		app := s.c.appFor(s.app)
+		found, err := s.gh.find(ctx, checkRun{Name: "git-k8s/" + check, HeadSHA: res.Commit, ExternalID: s.external}, app)
 		if err != nil {
 			return err
 		}
 		if found != nil {
-			run, known = shownRun{id: found.ID, shows: found.runState}, true
+			run, known, trusted = shownRun{id: found.ID, shows: found.runState}, true, app != 0
 		}
 	}
 	switch {
-	case known && run.shows == want:
+	case trusted && run.shows == want:
 		s.runs[cc] = shownRun{id: run.id, shows: want, by: branch}
 	case !changed && s.latest(cc) != branch:
 		// Another branch at the commit changed its result later.

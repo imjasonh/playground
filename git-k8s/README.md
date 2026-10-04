@@ -241,9 +241,11 @@ progress. So does a check run that's in progress when the last of a
 repository's `GitBranch` objects is deleted or the `GitRepository` loses its
 `checkRunsIdentity`. After a restart, the controller finds each branch's
 check run on GitHub again, and writes the branch's result if the check run
-shows something else. Branch protection reads only the check runs on a pull
-request's head commit, so a check run on a commit that no branch is at
-doesn't block a merge.
+shows something else. Until the controller learns its app, it writes the
+result even to a check run that shows it, because the check run that it
+finds can be another app's. Branch protection reads only the check runs on
+a pull request's head commit, so a check run on a commit that no branch is
+at doesn't block a merge.
 
 The controller assumes that one replica of the `git-k8s` program reconciles
 at a time, which is how `generate` installs it. With more than one replica,

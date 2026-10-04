@@ -263,10 +263,10 @@ func TestCheckRunsSurviveRestarts(t *testing.T) {
 	api := "/api/v3/repos/acme/app/"
 	get := "GET " + api + "commits/" + head + "/check-runs"
 
-	t.Log("After a restart, the controller finds the check run instead of creating another.")
+	t.Log("After a restart, the controller finds the check run instead of creating another. Until the controller knows its app, the check run that it finds can be another app's, so the controller updates it even though it shows the result.")
 	got, err := (&publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}).publish(checks)
-	if err != nil || !slices.Equal(got, []string{get}) {
-		t.Errorf("requests = %q, err = %v; want only %s", got, err, get)
+	if want := []string{get, "PATCH " + api + "check-runs/1"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
 	}
 
 	t.Log("When something else changed the check run on GitHub, the controller puts the result back.")
@@ -387,6 +387,29 @@ func TestCheckRunsFromOtherApps(t *testing.T) {
 	}
 }
 
+func TestCheckRunsFromOtherAppsWithTheResult(t *testing.T) {
+	s := newSharing(t, 1)
+	s.step("c/x", s.result(0, gitk8s.Running, ""), s.get(0), post)
+
+	t.Log("While the program is down, c/x's check passes, and another app creates a check run with the same name, external ID, and result.")
+	body := `{"name": "git-k8s/gotest", "head_sha": "` + s.commits[0] + `", "external_id": "default/app", "conclusion": "success", "output": {"title": "Passed", "summary": "Passed"}}`
+	if status := asAdmin(t, s.gh, http.MethodPost, "/api/v3/repos/acme/app/check-runs", body); status != http.StatusCreated {
+		t.Fatalf("creating another app's check run: %d", status)
+	}
+
+	t.Log("After the restart, the controller doesn't take the other app's check run for its own. It creates a check run with the result, which GitHub shows instead of the controller's check run in progress.")
+	s.p.c = &checkRuns{}
+	s.step("c/x", s.result(0, gitk8s.Passed, ""), s.get(0), patch+"2", post)
+	s.wantRuns(
+		"git-k8s/gotest@"+s.short(0)+" in_progress : Running",
+		"git-k8s/gotest@"+s.short(0)+" completed success: Passed",
+		"git-k8s/gotest@"+s.short(0)+" completed success: Passed",
+	)
+	if r := s.gh.Fake.CheckRuns("acme/app")[2]; r.App.ID != gitserver.OctoSTSApp {
+		t.Errorf("check run 3 belongs to app %d, want the controller's app %d", r.App.ID, gitserver.OctoSTSApp)
+	}
+}
+
 // TestCheckRunsOfSeveralApps runs against an Octo STS that issues the
 // tokens of another repository, or of another identity, for another GitHub
 // App, as Octo STS can when it has several.
@@ -475,11 +498,9 @@ func TestLearnsAppFromCancelling(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Log("After a restart, cancelling the check run on a commit that the branch left shows the controller its app.")
+	t.Log("When the controller knows a check run but not its app, cancelling the check run on a commit that the branch left shows the controller its app.")
 	p := &publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}
-	if got, err := p.publish(running(head)); err != nil || len(got) != 1 {
-		t.Fatalf("requests = %q, err = %v; want only the search", got, err)
-	}
+	remember(p.c, "c/x", "gotest", head, 1, runFor(running(head)["gotest"]))
 	if status := asAdmin(t, gh, http.MethodPost, api+"check-runs", `{"name": "git-k8s/gotest", "head_sha": "`+next+`", "external_id": "default/app", "status": "in_progress", "output": {"title": "Running", "summary": "spoofed"}}`); status != http.StatusCreated {
 		t.Fatalf("creating another app's check run: %d", status)
 	}
