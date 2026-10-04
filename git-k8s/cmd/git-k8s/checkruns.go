@@ -73,11 +73,13 @@ type appKey struct{ repo, identity string }
 // repoRuns is what the controller knows of one repository's check runs,
 // which it keeps only in memory. So one replica has to reconcile all of
 // the repository's branches, and the program can't run with -shards. A
-// reconcile holds mu from its first request to GitHub to its last, because
-// the repository's branches share check runs, and a reconcile decides what
-// to send from what the others sent.
+// reconcile holds the lock from its first request to GitHub to its last,
+// because the repository's branches share check runs, and a reconcile
+// decides what to send from what the others sent.
 type repoRuns struct {
-	mu sync.Mutex
+	// locked holds a value while a reconcile holds the lock. Unlike a
+	// mutex, a channel lets a reconcile stop waiting when its context ends.
+	locked chan struct{}
 	// results holds the result that each branch last published for each
 	// check.
 	results map[branchCheck]branchResult
@@ -152,8 +154,10 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 	var listed []*branchResults
 	if publishing {
 		rr = c.repository(key)
-		rr.mu.Lock()
-		defer rr.mu.Unlock()
+		if err := rr.lock(ctx); err != nil {
+			return err
+		}
+		defer rr.unlock()
 		// What a shared check run shows depends on every branch at its
 		// commit, and listing the branches reconciles this one again when
 		// any of them changes or goes away.
@@ -167,8 +171,7 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 		return ctx.Err()
 	}
 	if !publishing {
-		c.forget(key)
-		return nil
+		return c.forget(ctx, key)
 	}
 	branches := map[string]map[string]gitk8s.CheckResult{}
 	for _, o := range listed {
@@ -220,17 +223,17 @@ type runSync struct {
 // sync publishes branch's results, and then settles the check runs of the
 // branches that were deleted or dropped a check, and the check runs that
 // show a result that the controller never published before its branch left
-// the commit. It stops at a rate limit.
+// the commit. It returns early at a rate limit or a request that GitHub
+// didn't answer.
 func (s *runSync) sync(ctx context.Context, branch string) error {
 	var errs []error
 	checks := s.branches[branch]
 	for _, check := range slices.Sorted(maps.Keys(checks)) {
-		err := s.publish(ctx, branch, check, checks[check])
-		if isRateLimited(err) {
-			return err
-		}
-		if err != nil {
+		if err := s.publish(ctx, branch, check, checks[check]); err != nil {
 			errs = append(errs, fmt.Errorf("publishing the %s check run: %w", check, err))
+			if stops(err) {
+				return errors.Join(errs...)
+			}
 		}
 	}
 	departed := slices.SortedFunc(maps.Keys(s.results), func(a, b branchCheck) int {
@@ -240,12 +243,11 @@ func (s *runSync) sync(ctx context.Context, branch string) error {
 		if s.branches[k.branch][k.check].Commit != "" {
 			continue
 		}
-		err := s.settle(ctx, commitCheck{s.results[k].commit, k.check}, s.left(k.branch, k.check))
-		if isRateLimited(err) {
-			return err
-		}
-		if err != nil {
+		if err := s.settle(ctx, commitCheck{s.results[k].commit, k.check}, s.left(k.branch, k.check)); err != nil {
 			errs = append(errs, fmt.Errorf("completing %s's %s check run: %w", k.branch, k.check, err))
+			if stops(err) {
+				return errors.Join(errs...)
+			}
 			continue
 		}
 		delete(s.results, k)
@@ -261,16 +263,24 @@ func (s *runSync) sync(ctx context.Context, branch string) error {
 		if run.by == "" || s.has(run.by, cc) || s.results[branchCheck{run.by, cc.check}].commit == cc.commit {
 			continue
 		}
-		err := s.settle(ctx, cc, s.left(run.by, cc.check))
-		if isRateLimited(err) {
-			return err
-		}
-		if err != nil {
+		if err := s.settle(ctx, cc, s.left(run.by, cc.check)); err != nil {
 			errs = append(errs, fmt.Errorf("completing the %s check run on %s: %w", cc.check, gitk8s.Short(cc.commit), err))
+			if stops(err) {
+				return errors.Join(errs...)
+			}
 		}
 	}
 	s.forgetRuns()
 	return errors.Join(errs...)
+}
+
+// stops reports whether err ends a reconcile early, as a rate limit or a
+// request that GitHub didn't answer does, so that a GitHub that doesn't
+// answer holds the repository's lock for one request's timeout instead of
+// one for each check.
+func stops(err error) bool {
+	var e *githubError
+	return err != nil && !errors.As(err, &e)
 }
 
 // left returns why the check run that showed branch's result for check
@@ -513,24 +523,39 @@ func (c *checkRuns) repository(key string) *repoRuns {
 		c.repos = map[string]*repoRuns{}
 	}
 	if c.repos[key] == nil {
-		c.repos[key] = &repoRuns{results: map[branchCheck]branchResult{}, runs: map[commitCheck]shownRun{}}
+		c.repos[key] = &repoRuns{locked: make(chan struct{}, 1), results: map[branchCheck]branchResult{}, runs: map[commitCheck]shownRun{}}
 	}
 	return c.repos[key]
 }
 
+// lock waits for rr's lock until ctx ends.
+func (rr *repoRuns) lock(ctx context.Context) error {
+	select {
+	case rr.locked <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (rr *repoRuns) unlock() { <-rr.locked }
+
 // forget forgets a repository's check runs, when its GitRepository is gone
 // or names no check-runs identity.
-func (c *checkRuns) forget(key string) {
+func (c *checkRuns) forget(ctx context.Context, key string) error {
 	c.mu.Lock()
 	rr := c.repos[key]
 	c.mu.Unlock()
 	if rr == nil {
-		return
+		return nil
 	}
-	rr.mu.Lock()
-	defer rr.mu.Unlock()
+	if err := rr.lock(ctx); err != nil {
+		return err
+	}
+	defer rr.unlock()
 	clear(rr.results)
 	clear(rr.runs)
+	return nil
 }
 
 // appFor returns the ID of the GitHub App that k's tokens act for, or 0
@@ -592,11 +617,6 @@ type rateLimited struct {
 
 func (e *rateLimited) Error() string {
 	return fmt.Sprintf("GitHub's rate limit asks to wait %v", e.wait)
-}
-
-func isRateLimited(err error) bool {
-	var e *rateLimited
-	return errors.As(err, &e)
 }
 
 // githubError is an answer from GitHub that's neither a success nor a rate

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"net/http"
@@ -138,8 +140,8 @@ func (p *publisher) reconcile(branch string) ([]string, error) {
 // and that check run id shows it.
 func remember(c *checkRuns, branch, check, commit string, id int64, shows runState) {
 	rr := c.repository("default/app")
-	rr.mu.Lock()
-	defer rr.mu.Unlock()
+	rr.locked <- struct{}{}
+	defer rr.unlock()
 	b := gitk8s.BranchObjectName("app", branch)
 	rr.seq++
 	rr.results[branchCheck{b, check}] = branchResult{commit: commit, shows: shows, seq: rr.seq}
@@ -992,6 +994,24 @@ func front(t *testing.T, gh *gittest.GitHub, handler func(w http.ResponseWriter,
 	return repo
 }
 
+// reconcileIn reconciles branch of the GitRepository repo with c under ctx,
+// in a cluster that holds objects and repo's GitBranches with the results
+// in branches, and returns the reconcile's requeue.
+func reconcileIn(ctx context.Context, c *checkRuns, repo, branch string, branches map[string]map[string]gitk8s.CheckResult, objects ...any) (time.Duration, error) {
+	var b *branchResults
+	world := slices.Clone(objects)
+	for name, checks := range branches {
+		if o := resultsOf(repo, name, maps.Clone(checks)); name == branch {
+			b = o
+		} else {
+			world = append(world, o)
+		}
+	}
+	ctx, rec := kube.Fake(ctx, b, world...)
+	err := c.Reconcile(ctx, b)
+	return rec.RequeueAfter(), err
+}
+
 func TestBranchesTakeTurns(t *testing.T) {
 	gh, w, main := newGitHub(t)
 	w.Branch("c/x", main)
@@ -1057,20 +1077,9 @@ func TestBranchesTakeTurns(t *testing.T) {
 		}
 	}
 	c := &checkRuns{}
-	// reconcile reconciles branch in a cluster where acme/app's branches
-	// have the results in cluster.
 	reconcile := func(branch string, cluster map[string]map[string]gitk8s.CheckResult) error {
-		var b *branchResults
-		world := []any{repo}
-		for name, checks := range cluster {
-			if o := resultsOf("app", name, checks); name == branch {
-				b = o
-			} else {
-				world = append(world, o)
-			}
-		}
-		ctx, _ := kube.Fake(t.Context(), b, world...)
-		return c.Reconcile(ctx, b)
+		_, err := reconcileIn(t.Context(), c, "app", branch, cluster, repo)
+		return err
 	}
 	result := func(i int, state, msg string) map[string]gitk8s.CheckResult {
 		return map[string]gitk8s.CheckResult{"gotest": {Commit: commits[i], State: state, Message: msg}}
@@ -1116,6 +1125,166 @@ func TestBranchesTakeTurns(t *testing.T) {
 		"git-k8s/gotest@" + short(2) + " completed failure: failed on c/x",
 	}; !slices.Equal(got, want) {
 		t.Errorf("check runs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestCheckRunsStopWaitingForTheLock(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	head := w.Commit("add x")
+	w.Push("c/x")
+	var hold atomic.Bool
+	hold.Store(true)
+	held, released := make(chan struct{}), make(chan struct{})
+	repo := front(t, gh, func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		if strings.HasPrefix(r.URL.Path, "/api/") && hold.CompareAndSwap(true, false) {
+			close(held)
+			<-released
+		}
+		next.ServeHTTP(w, r)
+	})
+	release := sync.OnceFunc(func() { close(released) })
+	t.Cleanup(release)
+	c := &checkRuns{}
+	cluster := map[string]map[string]gitk8s.CheckResult{
+		"c/x": {"gotest": {Commit: head, State: gitk8s.Running, Message: "started Pod x"}},
+		"c/y": {"gotest": {Commit: head, State: gitk8s.Running, Message: "started Pod y"}},
+	}
+	x := make(chan error, 1)
+	go func() {
+		_, err := reconcileIn(t.Context(), c, "app", "c/x", cluster, repo)
+		x <- err
+	}()
+	<-held
+
+	t.Log("While GitHub holds a request of c/x's reconcile, c/y's reconcile waits for the lock, and stops waiting when its context ends.")
+	ctx, cancel := context.WithCancel(t.Context())
+	y := make(chan error, 1)
+	go func() {
+		_, err := reconcileIn(ctx, c, "app", "c/y", cluster, repo)
+		y <- err
+	}()
+	select {
+	case err := <-y:
+		t.Fatalf("c/y's reconcile returned %v while c/x's held the lock", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	cancel()
+	select {
+	case err := <-y:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("c/y's reconcile returned %v, want its context's error", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Error("c/y's reconcile kept waiting for the lock after its context ended")
+	}
+	release()
+	if err := <-x; err != nil {
+		t.Error(err)
+	}
+}
+
+func TestCheckRunsStopAtUnansweredRequests(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	head := w.Commit("add x")
+	w.Push("c/x")
+	var mu sync.Mutex
+	asked := map[string]bool{}
+	repo := front(t, gh, func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		mu.Lock()
+		asked[r.URL.Query().Get("check_name")] = true
+		mu.Unlock()
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn.Close()
+	})
+	checks := map[string]gitk8s.CheckResult{}
+	for _, check := range []string{"base", "gofmt", "gotest"} {
+		checks[check] = gitk8s.CheckResult{Commit: head, State: gitk8s.Running}
+	}
+
+	t.Log("When GitHub doesn't answer a request, the reconcile, which holds the repository's lock, stops instead of sending the other checks' requests.")
+	if _, err := reconcileIn(t.Context(), &checkRuns{}, "app", "c/x", map[string]map[string]gitk8s.CheckResult{"c/x": checks}, repo); err == nil {
+		t.Error("the reconcile succeeded without answers from GitHub")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got := slices.Sorted(maps.Keys(asked)); !slices.Equal(got, []string{"git-k8s/base"}) {
+		t.Errorf("the reconcile asked GitHub for the check runs named %q, want only git-k8s/base", got)
+	}
+}
+
+func TestCheckRunsPauseWaitingReconciles(t *testing.T) {
+	gh, w, main := newGitHub(t)
+	w.Branch("c/x", main)
+	head := w.Commit("add x")
+	w.Push("c/x")
+	var limit atomic.Bool
+	limit.Store(true)
+	limiting, opened := make(chan struct{}), make(chan struct{})
+	var mu sync.Mutex
+	var sent []string
+	repo := front(t, gh, func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if limit.CompareAndSwap(true, false) {
+			close(limiting)
+			<-opened
+			w.Header().Set("Retry-After", "60")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		mu.Lock()
+		sent = append(sent, r.Method+" "+r.URL.Path)
+		mu.Unlock()
+		next.ServeHTTP(w, r)
+	})
+	open := sync.OnceFunc(func() { close(opened) })
+	t.Cleanup(open)
+	c := &checkRuns{}
+	cluster := map[string]map[string]gitk8s.CheckResult{
+		"c/x": {"gotest": {Commit: head, State: gitk8s.Running, Message: "started Pod x"}},
+		"c/y": {"gotest": {Commit: head, State: gitk8s.Running, Message: "started Pod y"}},
+	}
+	type result struct {
+		requeue time.Duration
+		err     error
+	}
+	x, y := make(chan result, 1), make(chan result, 1)
+	go func() {
+		d, err := reconcileIn(t.Context(), c, "app", "c/x", cluster, repo)
+		x <- result{d, err}
+	}()
+	<-limiting
+
+	t.Log("A reconcile that waits for the lock while the reconcile that holds it reaches GitHub's rate limit sends nothing during the limit.")
+	go func() {
+		d, err := reconcileIn(t.Context(), c, "app", "c/y", cluster, repo)
+		y <- result{d, err}
+	}()
+	// c/y's reconcile has to wait for the lock before c/x's reaches the
+	// rate limit.
+	time.Sleep(200 * time.Millisecond)
+	open()
+	for branch, ch := range map[string]chan result{"c/x": x, "c/y": y} {
+		if r := <-ch; r.err != nil || r.requeue < time.Minute {
+			t.Errorf("%s's reconcile: err = %v, requeue = %v; want a requeue after the limit", branch, r.err, r.requeue)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) > 0 {
+		t.Errorf("the reconciles sent %q during the rate limit", sent)
 	}
 }
 
