@@ -32,6 +32,10 @@ type typeInfo struct {
 	// unserved keeps this version in the CustomResourceDefinition without
 	// serving it, so it can be removed safely in a later release.
 	unserved bool
+	// local types are read and written only in the program's own
+	// namespace, so their rules go in the Role there. Caches watch every
+	// namespace that the program watches, so local types can't have them.
+	local bool
 
 	// status is the index of the top-level status field, or nil.
 	status []int
@@ -151,6 +155,9 @@ func (ti *typeInfo) parseTag(typeName, name, tag string) error {
 		case "unserved":
 			ti.unserved = true
 			continue
+		case "local":
+			ti.local = true
+			continue
 		}
 		k, v, ok := strings.Cut(part, "=")
 		if !ok || v == "" {
@@ -208,6 +215,12 @@ func (ti *typeInfo) parseTag(typeName, name, tag string) error {
 		}
 	default:
 		return fmt.Errorf(`kube: %s: the embedded kube.Object needs a kube struct tag: kube:"group=example.dev" for a type you define, or kube:"apiVersion=apps/v1,kind=Deployment" for one that exists`, typeName)
+	}
+	if ti.local {
+		if ti.scope == "Cluster" {
+			return fmt.Errorf("kube: %s: a local type lives in a namespace, so it can't have scope=Cluster", typeName)
+		}
+		ti.scope = "Namespaced"
 	}
 	if ti.singular == "" {
 		ti.singular = strings.ToLower(ti.kind)

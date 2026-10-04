@@ -276,8 +276,12 @@ type installPlan struct {
 }
 
 // grantsFor returns where the permissions for ti's resources go. A program
-// that watches one namespace needs a namespaced resource only there.
+// needs a local resource only in its own namespace, and a program that
+// watches one namespace needs a namespaced resource only there.
 func (p *installPlan) grantsFor(ti *typeInfo, watching bool) grants {
+	if ti.local {
+		return p.local
+	}
 	if watching && ti.scope == "Namespaced" {
 		return p.watched
 	}

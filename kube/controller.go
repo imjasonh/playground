@@ -101,6 +101,11 @@ func (c *controller[T, P]) describe() (declared, error) {
 		}
 		d.owns = append(d.owns, oti)
 	}
+	for _, t := range append([]*typeInfo{ti}, d.owns...) {
+		if t.local {
+			return declared{}, fmt.Errorf("kube: %v is local, so a controller can't reconcile or own it", t)
+		}
+	}
 	return d, nil
 }
 

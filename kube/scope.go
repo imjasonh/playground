@@ -126,6 +126,10 @@ func (s *scope) sourceFor(ctx context.Context, ti *typeInfo) (source, resolved, 
 	if ti == nil || s.err != nil {
 		return nil, resolved{}, false
 	}
+	if ti.local {
+		s.fail(Permanent(fmt.Errorf("kube: %v is local, so read it with Fetch", ti)))
+		return nil, resolved{}, false
+	}
 	res, err := s.w.resolve(ctx, ti)
 	if err != nil {
 		s.fail(err)
@@ -299,6 +303,10 @@ func Own[T any, P Resource[T]](ctx context.Context, desired P) P {
 		return nil
 	}
 	ti := typeFor[T, P](s)
+	if ti != nil && ti.local {
+		s.fail(Permanent(fmt.Errorf("kube.Own: %v is local, so declare it with Apply", ti)))
+		return nil
+	}
 	m := &desired.object().ObjectMeta
 	res, ok := s.prepare(ctx, "Own", ti, m)
 	if !ok {
