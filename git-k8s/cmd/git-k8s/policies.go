@@ -19,14 +19,43 @@ type admissionPolicy struct {
 type admissionPolicyBinding struct {
 	kube.Object `kube:"apiVersion=admissionregistration.k8s.io/v1,kind=ValidatingAdmissionPolicyBinding,plural=validatingadmissionpolicybindings,scope=Cluster"`
 	Spec        struct {
-		PolicyName        string    `json:"policyName"`
-		ParamRef          *paramRef `json:"paramRef"`
-		ValidationActions []string  `json:"validationActions"`
+		PolicyName        string          `json:"policyName"`
+		ParamRef          *paramRef       `json:"paramRef"`
+		MatchResources    *matchResources `json:"matchResources"`
+		ValidationActions []string        `json:"validationActions"`
 	} `json:"spec"`
 }
 
 type paramRef struct {
 	ParameterNotFoundAction string `json:"parameterNotFoundAction"`
+}
+
+// matchResources holds the parts of a binding's matchResources that can keep
+// it from requests that its policy matches. Only whether each part is set
+// matters, so rules and expressions read as empty structs.
+type matchResources struct {
+	NamespaceSelector    *labelSelector `json:"namespaceSelector"`
+	ObjectSelector       *labelSelector `json:"objectSelector"`
+	ResourceRules        []struct{}     `json:"resourceRules"`
+	ExcludeResourceRules []struct{}     `json:"excludeResourceRules"`
+}
+
+type labelSelector struct {
+	MatchLabels      map[string]string `json:"matchLabels"`
+	MatchExpressions []struct{}        `json:"matchExpressions"`
+}
+
+// limits reports whether m keeps a binding from some of the requests that its
+// policy matches. When someone adds matchResources, the API server fills in
+// matchPolicy and empty selectors, which match every request.
+func (m *matchResources) limits() bool {
+	return m != nil && (m.NamespaceSelector.selects() || m.ObjectSelector.selects() ||
+		len(m.ResourceRules) > 0 || len(m.ExcludeResourceRules) > 0)
+}
+
+// selects reports whether s leaves out some objects.
+func (s *labelSelector) selects() bool {
+	return s != nil && (len(s.MatchLabels) > 0 || len(s.MatchExpressions) > 0)
 }
 
 // policiesCondition reports whether the admission policies that keep checks
@@ -101,7 +130,9 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 }
 
 // denyPatch returns a merge patch that makes a binding deny every request that
-// its policy rejects, or "" if it already does.
+// its policy rejects, or "" if it already does. config/policy.yaml sets no
+// matchResources, so the core program's apply keeps any that someone adds, and
+// the patch removes them.
 func denyPatch(b *admissionPolicyBinding) string {
 	var fields []string
 	if !slices.Contains(b.Spec.ValidationActions, "Deny") {
@@ -109,6 +140,9 @@ func denyPatch(b *admissionPolicyBinding) string {
 	}
 	if b.Spec.ParamRef != nil && b.Spec.ParamRef.ParameterNotFoundAction != "Deny" {
 		fields = append(fields, `"paramRef":{"parameterNotFoundAction":"Deny"}`)
+	}
+	if b.Spec.MatchResources.limits() {
+		fields = append(fields, `"matchResources":null`)
 	}
 	if len(fields) == 0 {
 		return ""

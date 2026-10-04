@@ -254,10 +254,14 @@ standby replica's Pod doesn't install it again. Restart the Deployment:
 kubectl -n git-k8s rollout restart deployment/git-k8s
 ```
 
-If a binding stops denying the requests that its policy rejects,
-`PoliciesInstalled` turns `False`, and its message gives a `kubectl patch`
-command that makes the binding deny them again, without a restart. For a
-binding that someone set to `Warn`, the command is:
+`PoliciesInstalled` also turns `False` when no binding for a policy denies
+every request that the policy rejects. A binding lets some of them through
+when its `validationActions` doesn't hold `Deny`, when its
+`paramRef.parameterNotFoundAction` isn't `Deny`, or when its
+`matchResources` sets a selector or resource rules. The message gives a
+`kubectl patch` command that makes the binding from `config/policy.yaml`
+deny them again, without a restart. For a binding that someone set to
+`Warn`, the command is:
 
 ```sh
 kubectl patch validatingadmissionpolicybinding git-k8s-branches --type=merge \
@@ -273,6 +277,20 @@ takes the lease after it exits too, and nothing lands until you patch or
 delete the binding. To install the binding from `config/policy.yaml` again
 instead of patching it, delete the binding, and then restart the core
 program.
+
+For a binding that someone limited with `matchResources`, the command
+removes `matchResources`. Restarting the core program doesn't remove it,
+because `config/policy.yaml` sets no `matchResources`, and the core
+program's apply changes only the fields that the manifest sets.
+
+The condition doesn't compare the policies, or the bindings' other fields,
+with `config/policy.yaml`, so it doesn't report a policy with
+`failurePolicy: Ignore` or with a `matchConditions` entry that never
+matches. When the core program starts, its apply restores the fields that
+the manifest sets, such as `failurePolicy` and the validations. Applying
+`config/policy.yaml` yourself does too. Neither removes a `matchConditions`
+entry that someone adds under another name, because the API server merges
+that list by name. Remove such an entry with `kubectl edit`.
 
 `generate` grants the core program `create` and `patch` on the two policies,
 their bindings, and the `git-k8s-checks` ConfigMap, by name, and `get` on the

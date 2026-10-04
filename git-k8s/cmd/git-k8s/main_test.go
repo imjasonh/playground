@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -167,6 +168,32 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 	if c := reconcile(world...); c.Status != kube.True {
 		t.Errorf("with bindings that deny requests while their parameters are missing, PoliciesInstalled = %+v", c)
+	}
+
+	// The API server stores matchResources like these. It fills in matchPolicy
+	// and empty selectors when someone adds matchResources.
+	for _, tc := range []struct {
+		matchResources string
+		limits         bool
+	}{
+		{`{"matchPolicy":"Equivalent","namespaceSelector":{},"objectSelector":{}}`, false},
+		{`{"matchPolicy":"Equivalent","namespaceSelector":{"matchExpressions":[{"key":"kubernetes.io/metadata.name","operator":"NotIn","values":["app"]}]},"objectSelector":{}}`, true},
+		{`{"matchPolicy":"Equivalent","namespaceSelector":{},"objectSelector":{"matchLabels":{"tier":"web"}}}`, true},
+		{`{"matchPolicy":"Equivalent","namespaceSelector":{},"objectSelector":{},"resourceRules":[{"apiGroups":["apps"],"apiVersions":["*"],"operations":["UPDATE"],"resources":["deployments"]}]}`, true},
+		{`{"matchPolicy":"Equivalent","namespaceSelector":{},"objectSelector":{},"excludeResourceRules":[{"apiGroups":["git-k8s.imjasonh.com"],"apiVersions":["*"],"operations":["UPDATE"],"resources":["gitbranches/status"]}]}`, true},
+	} {
+		bindings[0].Spec.MatchResources = nil
+		if err := json.Unmarshal([]byte(tc.matchResources), &bindings[0].Spec.MatchResources); err != nil {
+			t.Fatal(err)
+		}
+		c := reconcile(world...)
+		if !tc.limits && c.Status != kube.True {
+			t.Errorf("with matchResources %s, PoliciesInstalled = %+v", tc.matchResources, c)
+		}
+		if tc.limits && (c.Status != kube.False || c.Reason != "NotDenying" ||
+			!strings.HasSuffix(c.Message, `; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"matchResources":null}}'`)) {
+			t.Errorf("with matchResources %s, PoliciesInstalled = %+v", tc.matchResources, c)
+		}
 	}
 }
 
