@@ -568,6 +568,16 @@ one cache in handlers and reconciles. That cache never goes back to an
 older version of an object, so data that's no longer pending is in the
 object that `kube.Get` returns afterward.
 
+The data also stays safe when another replica takes over the object's shard
+before its cache has the previous holder's last writes. Until one of that
+replica's status writes for the object succeeds, each one requires the
+resource version in the replica's cache, so a write from a cache that's
+behind fails instead of removing data that a client was told was saved.
+Right after a takeover, the logs can show reconcile errors that say the
+cached object is out of date, or that the cache that `kube.Get` reads has
+another version of the object. The framework retries the reconcile, which
+succeeds once the caches catch up.
+
 In the handler, where `unavailable` answers `503` and closes the connection
 as in the previous example:
 

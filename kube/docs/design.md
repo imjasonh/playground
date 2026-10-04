@@ -172,12 +172,17 @@ fix is a second generated type, an apply configuration, for every API type.
 changes from the apiserver. By its nature, this watch stream is eventually
 consistent and provides no guarantee of how far behind the 'live' state of the
 apiserver it is" ([KEP-5647](https://github.com/kubernetes/enhancements/issues/5647)).
-A stale cache causes two kinds of mistakes. A reconcile that runs right after
-its own write can read the old object and act again. And a write based on a
-stale cache can target an object that no longer exists. Server-side apply
-creates objects that don't exist, so applying a finalizer to an object that
-was deleted a moment ago creates it again, and a status write meant for a
-deleted object can land on a new object with the same name.
+A stale cache causes three kinds of mistakes. A reconcile that runs right after
+its own write can read the old object and act again. A write based on a stale
+cache can target an object that no longer exists. Server-side apply creates
+objects that don't exist, so applying a finalizer to an object that was
+deleted a moment ago creates it again, and a status write meant for a deleted
+object can land on a new object with the same name. And a replica that takes
+over an object from another replica, after a failover or when shards move,
+can reconcile it before its cache has the other replica's last writes. A
+forced apply of a status computed from that cache removes what those writes
+added. kube makes such a write fail instead of waiting for the cache, as
+[Shards and leader election](#shards-and-leader-election) explains.
 
 ### Startup and resync storms
 
@@ -573,6 +578,37 @@ already running finish, as with any lease-based election. On shutdown,
 `Manager.Run` stops reconciles first and then releases its shards, so another
 replica takes over in about one retry period.
 
+The replica that takes over a shard may not have the previous holder's last
+writes in its cache yet. A status computed from that cache lacks what those
+writes added, and a forced apply of it would remove them. So after a replica
+acquires a shard, it sends each object's status write with the cached
+`resourceVersion` as a precondition, until one succeeds. A write from a cache
+that's behind gets `409 Conflict`, which the framework tells apart from a
+deleted object, and the reconcile is retried. One success is enough. It shows
+that the cache had every earlier write when that reconcile started, and from
+then on this replica is the only one that writes the object's status.
+
+The precondition covers the controller's cache, but a reconcile can read the
+object with `kube.Get` from another cache. That happens with
+`kube.WatchSelector` or `kube.WatchNamespace`, with a second controller of the
+type, or when a handler or webhook read the type before the controller
+started. So until the first conditional write succeeds, the framework also
+compares the two caches when the reconcile starts. If the cache that
+`kube.Get` reads holds another version of the object, the framework doesn't
+write the status and retries the reconcile. A reconcile that read the object
+with `kube.Get` also runs again when that cache catches up. A cache that
+doesn't hold the object's namespace can't return the object, so the framework
+doesn't compare it.
+
+Waiting for the cache to catch up before queuing the shard's keys would need a
+way to tell that it has. Clients may compare resource versions only for
+equality ([API concepts](https://kubernetes.io/docs/reference/using-api/api-concepts/#resource-versions)),
+so a replica can't tell that its cache passed the version that the previous
+holder last wrote. A new list of the type would show the current state, but it
+would cost a list for each acquired shard and hold back every key in the shard
+until it finished. The precondition costs nothing when the cache is current,
+and delays only the objects whose cache is behind.
+
 Sharding by lease, as Knative does, needs no component that labels objects,
 but every replica caches every object. Labeling objects with their shard, as
 kubernetes-controller-sharding does, would let each replica watch only its
@@ -769,6 +805,12 @@ the cache. `kube.Get` reads one cache in handlers and reconciles, and that
 cache never goes back to an older version of an object. A handler drops data
 only after `kube.Get` shows it, so data that the reconcile no longer finds
 pending is in the object that its `kube.Get` returns.
+
+That argument covers one replica. When the shard moves, the next holder's cache
+may not have the data yet, and its reconcile would write the status without it.
+The precondition on that replica's first status write for the object, which
+[Shards and leader election](#shards-and-leader-election) describes, makes the
+write fail until the cache has the data.
 
 ### Versions and conversion
 
