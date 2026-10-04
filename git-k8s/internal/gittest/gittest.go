@@ -2,6 +2,8 @@
 package gittest
 
 import (
+	"context"
+	"fmt"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -46,6 +48,13 @@ func (s *Server) Remote(repo string) git.Remote {
 		r.Auth = &git.Auth{Username: s.Username, Password: s.Password}
 	}
 	return r
+}
+
+// RemoteFor returns the remote of the repository on the server with the
+// GitRepository's name. In tests, set checks.Check.Remote to it in place of
+// the mirror.
+func (s *Server) RemoteFor(_ context.Context, repo *gitk8s.Repository) (git.Remote, error) {
+	return s.Remote(repo.Name), nil
 }
 
 // Repository returns a GitRepository in namespace default for repo on the
@@ -102,19 +111,29 @@ func (s *Server) NewWork(t testing.TB, repo string) *Work {
 // Git runs git in the working repository and returns its trimmed output.
 func (w *Work) Git(args ...string) string {
 	w.t.Helper()
+	out, err := w.TryGit(args...)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	return out
+}
+
+// TryGit runs git in the working repository and returns its trimmed output,
+// and an error that holds the output if git fails.
+func (w *Work) TryGit(args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = w.Dir
 	cmd.Env = append(os.Environ(),
-		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_TERMINAL_PROMPT=0",
 		"GIT_AUTHOR_NAME=Test Author", "GIT_AUTHOR_EMAIL=author@example.com",
 		"GIT_COMMITTER_NAME=Test Author", "GIT_COMMITTER_EMAIL=author@example.com",
 		"GIT_AUTHOR_DATE=2026-01-02T03:04:05Z", "GIT_COMMITTER_DATE=2026-01-02T03:04:05Z",
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		w.t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		return "", fmt.Errorf("git %s: %v\n%s", strings.Join(args, " "), err, out)
 	}
-	return strings.TrimSpace(string(out))
+	return strings.TrimSpace(string(out)), nil
 }
 
 // Write writes a file in the working tree.
@@ -147,6 +166,12 @@ func (w *Work) Branch(name, from string) {
 func (w *Work) Push(branch string) {
 	w.t.Helper()
 	w.Git("push", "--quiet", "--force", w.remote, "HEAD:refs/heads/"+branch)
+}
+
+// Delete deletes a branch from the repository.
+func (w *Work) Delete(branch string) {
+	w.t.Helper()
+	w.Git("push", "--quiet", w.remote, ":refs/heads/"+branch)
 }
 
 // Fetch fetches a branch and returns the commit it points to.

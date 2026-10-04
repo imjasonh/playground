@@ -36,6 +36,20 @@ const ApproveAnnotation = Group + "/approve"
 // many commits with this trailer a branch can have.
 const FixerTrailer = "Git-K8s-Fixer"
 
+// MirrorAudience is the audience of the service account tokens that
+// programs send to the mirror, the git server in the core program.
+const MirrorAudience = "git-k8s-mirror"
+
+// MirrorURL is the mirror's base URL when kube's generate installs the core
+// program, as the Service git-k8s in the namespace git-k8s.
+const MirrorURL = "http://git-k8s.git-k8s.svc"
+
+// MirrorPath returns the path of a GitRepository's copy on the mirror,
+// below the mirror's base URL.
+func MirrorPath(namespace, name string) string {
+	return "/" + namespace + "/" + name + ".git"
+}
+
 // GitRepository is a remote git repository and the rules that select which
 // of its branches to track.
 type GitRepository struct {
