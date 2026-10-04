@@ -7,6 +7,7 @@
 #
 # The git server runs on this machine and requires a password. Pods reach it
 # through the kind network's gateway, so the nodes need no internet access.
+# It also serves a Go module proxy at /proxy/, without a password.
 #
 # GIT_K8S_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
@@ -45,6 +46,7 @@ diagnose() {
   k -n "${NS}" get pods -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=git-k8s-agent || true
+  k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=git-k8s-deps || true
   for program in git-k8s "${CHECKS[@]}"; do
     k -n "${program}" describe pods || true
     k -n "${program}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${program}" || true
@@ -152,7 +154,7 @@ GATEWAY="$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Gateway}} {{
 (cd "${ROOT}" && go build -o "${WORKDIR}/gitserver" ./e2e/gitserver)
 mkdir -p "${WORKDIR}/repos"
 GITSERVER_PASSWORD="${PASSWORD}" "${WORKDIR}/gitserver" -addr="0.0.0.0:${GIT_PORT}" -root="${WORKDIR}/repos" \
-  >"${WORKDIR}/gitserver.log" 2>&1 &
+  -goproxy="${WORKDIR}/proxy" >"${WORKDIR}/gitserver.log" 2>&1 &
 GIT_SERVER_PID=$!
 HOST_URL="http://git-k8s:${PASSWORD}@127.0.0.1:${GIT_PORT}"
 CLUSTER_URL="http://${GATEWAY}:${GIT_PORT}"
@@ -186,7 +188,7 @@ for program in "${CHECKS[@]}"; do
   case "${program}" in
     check-risk) install "${program}" -- '-sensitive=auth/**' ;;
     check-gotest)
-      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m
+      install "${program}" -- "-go-image=${GO_IMAGE}" "-git-image=${GIT_IMAGE}" -timeout=5m "-goproxy=${CLUSTER_URL}/proxy"
       ;;
     *) install "${program}" ;;
   esac
@@ -543,6 +545,156 @@ echo
 review d/marked message | grep -q 'the branch used all 1 agent runs that maxAgentRuns allows'
 no_agent_pods
 echo "The agent's fix landed on main, its review failed a branch that the check can't push to, and that branch's next head waits for an agent run."
+echo "::endgroup::"
+
+echo "::group::A controller keeps Go modules up to date on branches"
+# The deps repository requires example.com/greet from the git server's
+# module proxy. git-k8s-deps takes a version only once the proxy's time for
+# it is a day old, so the versions that it should take are backdated.
+(cd "${ROOT}" && go build -o "${WORKDIR}/publish" ./e2e/publish)
+publish() {
+  local dir
+  dir="$(mktemp -d "${WORKDIR}/greet.XXXXXX")"
+  printf 'module example.com/greet\n\ngo 1.24\n' >"${dir}/go.mod"
+  printf 'package greet\n\n%s\n' "$3" >"${dir}/greet.go"
+  "${WORKDIR}/publish" -root="${WORKDIR}/proxy" -dir="${dir}" -version="$1" -time="$2"
+}
+long_ago=2020-01-01T00:00:00Z
+publish v1.0.0 "${long_ago}" 'func Hello() string { return "hello" }'
+DEPS="${WORKDIR}/deps"
+git init -q -b main "${DEPS}"
+dg() {
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${DEPS}" \
+    -c user.name=e2e -c user.email=e2e@example.com "$@"
+}
+printf 'module example.com/deps\n\ngo 1.24\n\nrequire example.com/greet v1.0.0\n' >"${DEPS}/go.mod"
+# The fake agent replaces a line that holds FAKE AGENT FIX with the text
+# after it, which calls Hello as v1.1.0 declares it.
+cat >"${DEPS}/greeting.go" <<'GO'
+package deps
+
+import "example.com/greet"
+
+// Greeting greets the world.
+func Greeting() string {
+	return greet.Hello() + ", world" // FAKE AGENT FIX: return greet.Hello("world")
+}
+GO
+cat >"${DEPS}/greeting_test.go" <<'GO'
+package deps
+
+import "testing"
+
+func TestGreeting(t *testing.T) {
+	if got := Greeting(); got != "hello, world" {
+		t.Errorf("Greeting() = %q, want %q", got, "hello, world")
+	}
+}
+GO
+# The go command on PATH can be older than the module's go line, so use the
+# toolchain that git-k8s's go.mod selects.
+go_cmd="$(cd "${ROOT}" && go env GOROOT)/bin/go"
+(cd "${DEPS}" && GOPROXY="http://127.0.0.1:${GIT_PORT}/proxy" GOSUMDB=off GOFLAGS=-modcacherw \
+  GOMODCACHE="${WORKDIR}/modcache" "${go_cmd}" mod tidy)
+dg add -A
+dg commit -qm "Greet the world"
+dg push -q "${HOST_URL}/deps.git" HEAD:main
+k apply -f - <<EOF
+apiVersion: git-k8s.imjasonh.com/v1alpha1
+kind: GitRepository
+metadata:
+  name: deps
+  namespace: ${NS}
+spec:
+  url: ${CLUSTER_URL}/deps.git
+  secretRef:
+    name: app-creds
+  pollInterval: 2s
+  branches:
+    - match: main
+      merge:
+        checks:
+          - name: base
+            mayPush: true
+          - name: gotest
+          - name: deps
+            mayPush: true
+          - name: risk
+          - name: approval
+        when: >-
+          checks.base.passed && checks.gotest.passed && checks.deps.passed &&
+          (checks.risk.outputs.level == "low" || checks.approval.passed)
+        deleteMergedBranches: true
+    - match: deps/**
+      parent: main
+EOF
+CHECKS+=(check-deps git-k8s-deps)
+install check-deps -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
+install git-k8s-deps -- "-goproxy=${CLUSTER_URL}/proxy" -gosumdb=off "-go-image=${GO_IMAGE}" \
+  "-git-image=${GIT_IMAGE}" "-result-image=${AGENT_IMAGE}" -interval=5s -min-age=24h -timeout=5m
+k -n check-deps rollout status deployment/check-deps --timeout=180s
+k -n git-k8s-deps rollout status deployment/git-k8s-deps --timeout=180s
+GREET_BRANCH="deps/go/example.com/greet@v1"
+deps_main_requires() {
+  dg fetch -q "${HOST_URL}/deps.git" main && dg show FETCH_HEAD:go.mod | grep -qx "require example.com/greet $1"
+}
+greet_branch_gone() { [[ -z "$(remote_head "${GREET_BRANCH}" deps)" && -z "$(branch_object "${GREET_BRANCH}" deps)" ]]; }
+no_deps_pods() { [[ -z "$(k -n "${NS}" get pods -l app.kubernetes.io/name=git-k8s-deps -o name)" ]]; }
+
+publish v1.0.1 "${long_ago}" '// Hello says hello.
+func Hello() string { return "hello" }'
+eventually 300 deps_main_requires v1.0.1
+dg log -1 --format=%B FETCH_HEAD
+dg log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Deps: go example.com/greet v1.0.1'
+eventually 60 greet_branch_gone
+eventually 60 no_deps_pods
+echo "git-k8s-deps pushed v1.0.1 to ${GREET_BRANCH}, which landed without approval because a patch release is low risk."
+
+# v1.1.0 changes Hello, so the update breaks the build until the agent fixes
+# the call. v1.2.0 is too new to take.
+deps_main="$(remote_head main deps)"
+publish v1.1.0 "${long_ago}" 'func Hello(name string) string { return "hello, " + name }'
+publish v1.2.0 "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '// Hello says hello to name.
+func Hello(name string) string { return "hello, " + name }'
+dep() { k -n "${NS}" get gitbranch "$(branch_object "${GREET_BRANCH}" deps)" -o jsonpath="{.status.checks.$1}"; }
+fixed_and_waiting() {
+  [[ -n "$(branch_object "${GREET_BRANCH}" deps)" ]] &&
+    dg fetch -q "${HOST_URL}/deps.git" "refs/heads/${GREET_BRANCH}" &&
+    dg log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Agent: deps' &&
+    [[ "$(dep gotest.commit)" == "$(dg rev-parse FETCH_HEAD)" && "$(dep gotest.state)" == Passed ]] &&
+    [[ "$(dep deps.commit)" == "$(dg rev-parse FETCH_HEAD)" && "$(dep deps.state)" == Passed ]] &&
+    [[ "$(dep risk.outputs.level)" == high && "$(dep approval.state)" == Failed ]]
+}
+eventually 600 fixed_and_waiting
+fixed="$(dg rev-parse FETCH_HEAD)"
+dg log -2 --format=%B FETCH_HEAD
+dg log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: deps'
+dg log -1 --format=%B FETCH_HEAD^ | grep -qx 'Git-K8s-Deps: go example.com/greet v1.1.0'
+dg show FETCH_HEAD:greeting.go | grep -q 'return greet.Hello("world")$'
+sleep 6
+[[ "$(remote_head main deps)" == "${deps_main}" ]]
+k -n "${NS}" annotate gitbranch "$(branch_object "${GREET_BRANCH}" deps)" "git-k8s.imjasonh.com/approve=${fixed}"
+deps_landed() { [[ "$(remote_head main deps)" == "${fixed}" ]]; }
+eventually 120 deps_landed
+eventually 60 greet_branch_gone
+eventually 60 no_deps_pods
+eventually 60 no_agent_pods
+sleep 12
+[[ -z "$(remote_head "${GREET_BRANCH}" deps)" ]]
+deps_main_requires v1.1.0
+echo "v1.1.0 broke the build, the fake agent fixed it, and the fix landed once approved. v1.2.0 is too new, so no branch takes it."
+
+deps_token="$(k -n git-k8s-deps create token git-k8s-deps)"
+code="$(patch_branch "${deps_token}" '{}')"
+[[ "${code}" == 200 ]]
+for patch in "${approve}" '{"metadata":{"labels":{"e2e":"changed"}}}'; do
+  code="$(patch_branch "${deps_token}" "${patch}")"
+  cat "${WORKDIR}/patch.json"
+  echo
+  [[ "${code}" == 422 ]]
+  grep -q "git-k8s-deps can't change GitBranch objects" "${WORKDIR}/patch.json"
+done
+echo "git-k8s-deps can't approve or change a GitBranch."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"

@@ -18,14 +18,22 @@ func main() {
 	addr := flag.String("addr", ":8418", "address to serve on")
 	root := flag.String("root", "", "directory that holds the repositories")
 	username := flag.String("username", "git-k8s", "username that requests must send")
+	goProxy := flag.String("goproxy", "", "directory to serve as a Go module proxy at /proxy/, without authentication")
 	flag.Parse()
 	password := os.Getenv("GITSERVER_PASSWORD")
 	if *root == "" || password == "" {
 		log.Fatal("set -root and GITSERVER_PASSWORD")
 	}
+	var h http.Handler = &gitserver.Server{Root: *root, Username: *username, Password: password}
+	if *goProxy != "" {
+		mux := http.NewServeMux()
+		mux.Handle("/proxy/", http.StripPrefix("/proxy", http.FileServer(http.Dir(*goProxy))))
+		mux.Handle("/", h)
+		h = mux
+	}
 	srv := &http.Server{
 		Addr:              *addr,
-		Handler:           &gitserver.Server{Root: *root, Username: *username, Password: password},
+		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	log.Printf("serving %s on %s", *root, *addr)

@@ -78,5 +78,11 @@ func Publish(root, dir, version string, t time.Time) error {
 	if !slices.Contains(listed, version) {
 		listed = append(listed, version)
 	}
-	return os.WriteFile(filepath.Join(versions, "list"), []byte(strings.Join(listed, "\n")+"\n"), 0o644)
+	// A proxy can serve root while a test publishes, so the list must never
+	// be read half written.
+	tmp := filepath.Join(versions, "list.tmp")
+	if err := os.WriteFile(tmp, []byte(strings.Join(listed, "\n")+"\n"), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(versions, "list"))
 }
