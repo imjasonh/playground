@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -122,21 +124,57 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	}
 
 	var world []any
+	var policies []*admissionPolicy
 	var bindings []*admissionPolicyBinding
 	for _, name := range policyNames {
+		p := &admissionPolicy{Object: kube.Meta(name, nil)}
 		b := &admissionPolicyBinding{Object: kube.Meta(name, nil)}
 		b.Spec.PolicyName, b.Spec.ValidationActions = name, []string{"Warn"}
-		bindings = append(bindings, b)
-		world = append(world, &admissionPolicy{Object: kube.Meta(name, nil)}, b)
+		policies, bindings = append(policies, p), append(bindings, b)
+		world = append(world, p, b)
 	}
-	if c := reconcile(world...); c.Status != kube.False {
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Missing" {
 		t.Errorf("with bindings that only warn, PoliciesInstalled = %+v", c)
 	}
 	for _, b := range bindings {
 		b.Spec.ValidationActions = []string{"Deny"}
 	}
+	if c := reconcile(world...); c.Status != kube.False || c.Reason != "Outdated" || !strings.Contains(c.Message, "git-k8s-check-results and git-k8s-branches doesn't have git-k8s.imjasonh.com/policy-version=2") {
+		t.Errorf("with policies from an earlier release, which have no version, PoliciesInstalled = %+v", c)
+	}
+	for _, p := range policies {
+		p.Annotations = map[string]string{policyVersionAnnotation: policyVersion}
+	}
 	if c := reconcile(world...); c.Status != kube.True {
 		t.Errorf("with the policies installed, PoliciesInstalled = %+v", c)
+	}
+}
+
+// Each policy in config/policy.yaml has the version that policiesCondition
+// expects, or PoliciesInstalled stays False.
+func TestPolicyFileVersion(t *testing.T) {
+	data, err := os.ReadFile("../../config/policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kind := regexp.MustCompile(`(?m)^kind: ValidatingAdmissionPolicy$`)
+	name := regexp.MustCompile(`(?m)^  name: (\S+)$`)
+	version := regexp.MustCompile(`(?m)^    ` + regexp.QuoteMeta(policyVersionAnnotation) + `: "(.*)"$`)
+	versions := map[string]string{}
+	for _, doc := range strings.Split(string(data), "\n---\n") {
+		if !kind.MatchString(doc) {
+			continue
+		}
+		n, v := name.FindStringSubmatch(doc), version.FindStringSubmatch(doc)
+		if n == nil || v == nil {
+			t.Fatalf("found a policy without a name or a version:\n%s", doc)
+		}
+		versions[n[1]] = v[1]
+	}
+	for _, n := range policyNames {
+		if versions[n] != policyVersion {
+			t.Errorf("config/policy.yaml has %s at version %q, want %q", n, versions[n], policyVersion)
+		}
 	}
 }
 

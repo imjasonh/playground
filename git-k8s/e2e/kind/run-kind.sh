@@ -315,6 +315,15 @@ policies_installed() {
   [[ "$(k -n "${NS}" get gitrepository app -o jsonpath='{.status.conditions[?(@.type=="PoliciesInstalled")].status}')" == True ]]
 }
 eventually 60 policies_installed
+# A policy from another release makes the condition False until the
+# policies from this release are applied again.
+k annotate validatingadmissionpolicy git-k8s-check-results git-k8s.imjasonh.com/policy-version=1 --overwrite
+policies_outdated() {
+  [[ "$(k -n "${NS}" get gitrepository app -o jsonpath='{.status.conditions[?(@.type=="PoliciesInstalled")].reason}')" == Outdated ]]
+}
+eventually 60 policies_outdated
+k apply -f "${ROOT}/config/policy.yaml"
+eventually 60 policies_installed
 k -n "${NS}" get gitrepositories,gitbranches
 echo "::endgroup::"
 

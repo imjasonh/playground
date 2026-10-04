@@ -347,7 +347,10 @@ The policies identify the core program and the checks by the service
 accounts that `generate` installs them with: `git-k8s` in the namespace
 `git-k8s`, and `check-NAME` in the namespace `check-NAME`. The repositories
 controller sets a `PoliciesInstalled` condition on each `GitRepository`.
-It's `False` until both policies are installed with bindings that deny.
+It's `False` until both policies are installed with bindings that deny. It's
+also `False`, with the reason `Outdated`, while a policy's
+`git-k8s.imjasonh.com/policy-version` annotation isn't the version that the
+core program expects, as with the policies of an earlier release.
 
 ### Upgrade from checks that write status
 
@@ -366,9 +369,11 @@ commands in [Install](#install) follow:
 
 After step 2, a status write from an old check replaces all of
 `status.checks` with that check's entry, so make sure that the policy from
-step 1 is installed first. The results controller takes over a branch's
-results the first time it writes them, and server-side apply then removes
-the old checks from the branch's managed fields.
+step 1 is installed first. While the earlier policy is installed, the core
+program reports `PoliciesInstalled` as `False` with the reason `Outdated`.
+The results controller takes over a branch's results the first time it
+writes them, and server-side apply then removes the old checks from the
+branch's managed fields.
 
 ## Test
 
