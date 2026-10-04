@@ -219,7 +219,8 @@ to the core program's results endpoint:
    commits, a `Pending` result, and a result over its size limits. The
    `checks` package sends an `Error` result instead of one with a state or
    size that the core program rejects, with a message that says why. The
-   core program drops fields that it doesn't know, as the API server does.
+   core program drops fields that it doesn't know, as the API server does
+   by default.
 5. The core program holds the result in memory and starts a reconcile of
    the `GitBranch`. The results controller writes the result with
    server-side apply, and the core program answers the request once its
