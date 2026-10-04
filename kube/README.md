@@ -11,7 +11,8 @@ status back.
 
 The same program can validate and default objects with admission webhooks,
 serve older versions of its types, run an HTTP API that checks its callers'
-service account tokens, and split its work across replicas. The
+service account tokens, keep state on a persistent volume, and split its work
+across replicas. The
 framework makes and renews the webhook certificates, puts every version in the
 CustomResourceDefinition, and holds the Leases that divide the work. Caches
 read built-in types as protobuf without generated code.
@@ -519,6 +520,43 @@ client posts, keep the data in memory under the object's key and call
 shard first, so answer the client after the reconcile has used the data,
 and answer `503` if that takes too long.
 
+## Keep state on disk
+
+A program that keeps state on disk across restarts, such as copies of
+repositories, declares a persistent volume with `kube.Volume`. Give the
+program a flag for the directory, so it can run outside a cluster too:
+
+```go
+dir := flag.String("dir", "/var/lib/eventlog", "directory to keep copies of Events in")
+kube.Main(
+	kube.For[Event](&eventLog{dir: dir}),
+	kube.Serve(api.handler()),
+	kube.Volume("/var/lib/eventlog"),
+)
+```
+
+`kube.Volume` does nothing while the program runs. The `generate` command
+adds a `ReadWriteOnce` PersistentVolumeClaim to the installation and mounts
+it at the directory. The claim asks for 1 GiB of the cluster's default
+StorageClass unless you set `-volume-size` or `-storage-class`. The kubelet
+makes the volume writable by the program's non-root user with `fsGroup`.
+
+A program with a volume runs one replica, without leader election, so its
+reconciles and its `kube.Serve` handler are the only writers and can share
+what's on disk. `generate` fails if you set `-replicas` above 1 or set
+`-shards`. The Deployment uses the `Recreate` strategy, so a rollout stops the
+old Pod before it starts the new one. While the Pod restarts, nothing
+reconciles or serves, so clients of the handler need to retry.
+
+A Pod that's deleted instead of rolled out can overlap with its replacement
+on one node, where both can mount a `ReadWriteOnce` volume. Keep writes safe
+for two processes at once, for example by writing a new file and renaming it
+over the old one. Deleting the installation, for example with
+`kubectl delete -f`, deletes the claim and the data on it.
+
+[`examples/eventlog`](examples/eventlog/main.go) keeps a copy of every Event
+in a volume, and serves the copies.
+
 ## Run a controller
 
 `kube.Main` runs controllers with these flags:
@@ -569,12 +607,13 @@ The command does the following:
    using the credentials from `docker login` or `podman login`.
 1. Writes YAML that installs the image by digest: a Namespace, a
    ServiceAccount, a ClusterRole and a Role with only the rules that the
-   program needs, their bindings, a Deployment, a PodDisruptionBudget, and a
-   Service for webhooks and the `kube.Serve` handler. With more than one
-   replica, the Deployment runs the program with `-leader-elect`, or with
-   `-shards` when you set `-shards`. The container's root file system is
-   read-only, with an `emptyDir` volume at `/tmp` for temporary files.
-   `-tmp-size` limits the volume's size.
+   program needs, their bindings, a Deployment, a PodDisruptionBudget, a
+   Service for webhooks and the `kube.Serve` handler, and a
+   PersistentVolumeClaim for a `kube.Volume`. With more than one replica,
+   the Deployment runs the program with `-leader-elect`, or with `-shards`
+   when you set `-shards`. The container's root file system is read-only,
+   with an `emptyDir` volume at `/tmp` for temporary files. `-tmp-size`
+   limits the volume's size.
 
 The images have fixed timestamps, so the same source gives the same digest,
 and running `generate` again without changes leaves the cluster as it was.
@@ -596,10 +635,12 @@ program migrates its stored objects in every namespace, and for a type whose
 | `-base` | `cgr.dev/chainguard/static:latest` | Base image |
 | `-platform` | `linux/amd64,linux/arm64` | Platforms to build for |
 | `-namespace` | The program's name | Namespace to install in |
-| `-replicas` | 2 | Pods to run |
+| `-replicas` | 2, or 1 with a `kube.Volume` | Pods to run |
 | `-shards` | 1 | Shards to split reconciles across |
 | `-tag` | `latest` | Tag for the image, in addition to its digest |
 | `-tmp-size` | No limit | Size limit of the `emptyDir` volume at `/tmp`, such as `1Gi` |
+| `-volume-size` | `1Gi` | Size of the claim for a `kube.Volume` |
+| `-storage-class` | The cluster's default | StorageClass of the claim for a `kube.Volume` |
 | `-watch-namespace` | Every namespace | Namespace for the program to watch; the rules for namespaced resources go in a Role there |
 
 Flags after `--` go to the program in the Deployment:
@@ -724,7 +765,7 @@ go test -race ./...
 Without `KUBEBUILDER_ASSETS`, the end-to-end tests skip. CI downloads the
 binaries and runs them.
 
-One more test installs the website, podpolicy, and probe examples with
+One more test installs the website, probe, eventlog, and podpolicy examples with
 `generate` in a [kind](https://kind.sigs.k8s.io/) cluster, and pushes their
 images to a local registry. It needs Docker and `kubectl`, and installs kind
 if it's missing:
@@ -756,6 +797,7 @@ tests and end-to-end tests:
 | [`janitor`](examples/janitor/main.go) | hjacobs/kube-janitor | Time-based desired state with `RequeueAfter`, `Delete` |
 | [`podpolicy`](examples/podpolicy/main.go) | Kyverno and OPA Gatekeeper policies | Admission webhooks for Pods with `kube.Webhooks`, a patch that keeps undeclared fields |
 | [`probe`](examples/probe/main.go) | Prometheus Blackbox Exporter | An HTTP API on every replica with `kube.Serve`, `ReviewToken`, `RequestToken`, and `Trigger` |
+| [`eventlog`](examples/eventlog/main.go) | resmoio/kubernetes-event-exporter | State on disk with `kube.Volume`, one replica that writes it, a `kube.Serve` handler that reads it |
 
 ## Measurements
 
@@ -807,6 +849,10 @@ KUBEBUILDER_ASSETS="$(bash ../fetch-envtest.sh)" go run . -pods 5000
 - `kube.Trigger` queues a reconcile only on the replica that reconciles the
   object. It doesn't send the request to that replica.
 - `kube.Serve` serves plain HTTP, without TLS.
+- A program with a `kube.Volume` runs one replica, and is down while it
+  restarts. Server-side apply can't switch the Deployment of an earlier
+  installation without a volume to the `Recreate` strategy, so apply the
+  installation with `kubectl apply` or delete the Deployment first.
 
 ## Layout
 

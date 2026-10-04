@@ -80,6 +80,9 @@ type declared struct {
 	owns      []*typeInfo
 	// serves is set when the controller serves HTTP for Serve.
 	serves bool
+	// volume is the directory of the persistent volume that Volume
+	// declares.
+	volume string
 }
 
 func (c *controller[T, P]) describe() (declared, error) {

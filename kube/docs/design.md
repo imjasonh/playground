@@ -869,6 +869,36 @@ volume at `/tmp` gives `os.TempDir` somewhere to write. With `-tmp-size`, the
 volume has a size limit, and the kubelet evicts a Pod that writes more instead
 of letting it fill the node's disk.
 
+`kube.Volume` is a `Controller` that does nothing at run time. Its `describe`
+method reports a directory, and `generate` writes a `ReadWriteOnce`
+PersistentVolumeClaim, mounts it there, and runs one replica with the
+`Recreate` strategy, so that a rollout stops the old Pod before it starts the
+new one. With one writer, the program needs no leader election, and its
+`kube.Serve` handler, which runs outside leader election, can write the same
+files as its reconciles. `fsGroup` makes the volume writable by the non-root
+user, and `fsGroupChangePolicy: OnRootMismatch` keeps the kubelet from walking
+every file on each start.
+
+A one-replica StatefulSet would have stronger guarantees: it waits until the
+old Pod is deleted, even when the Pod's node stops responding, where a
+Deployment starts a replacement at once. For volume types that attach to a
+node, the replacement waits anyway, because a `ReadWriteOnce` volume doesn't
+attach to a second node while the first holds it. A StatefulSet's claim
+templates can't change after it's created, though, so a larger `-volume-size`
+would need a new StatefulSet. And `kubectl apply` doesn't delete objects, so
+turning a program's Deployment into a StatefulSet would leave the old
+Deployment running beside it. `ReadWriteOncePod` would also keep out a
+replacement on the same node, which a deleted Pod's ReplicaSet can start while
+the old Pod stops, but only CSI drivers support it, and kind's default
+StorageClass isn't one. So a program with a volume must tolerate two processes
+for a few seconds, as git does with its lock files.
+
+`kubectl apply` switches an earlier installation's Deployment to `Recreate`,
+because the strategy field's `retainKeys` patch strategy drops the keys that
+the patch leaves out. Server-side apply doesn't: the API server keeps the
+`rollingUpdate` field that it defaulted, which no field manager owns, and
+rejects it alongside `Recreate`.
+
 ### Testing
 
 `kube.Fake` gives `Reconcile` a scope backed by a list of objects instead of
@@ -911,6 +941,9 @@ framework's tests check that:
   both serve, accept tokens for their own audience and refuse others, request
   a token for their own service account and review it, and queue a trigger
   on the replica that holds the lease while the other answers `503`.
+- `generate` gives the eventlog example a claim and one replica with the
+  `Recreate` strategy, and refuses `-replicas=2`, and the program keeps
+  serving the copy of an Event after the Event is deleted.
 
 A test in `e2e/kind` runs the whole installation in a
 [kind](https://kind.sigs.k8s.io/) cluster, which has a kubelet and
@@ -923,7 +956,10 @@ It also calls the probe example's API from a Pod with a projected token, and
 checks that each replica names the caller's Pod and refuses tokens for other
 audiences, that a Probe of the program's own `/whoami` succeeds with a token
 bound to the program's Pod, and that a trigger runs a check on the replica
-that holds the lease while the other answers `503`.
+that holds the lease while the other answers `503`. And it checks that the
+eventlog example's claim binds, and that after a rollout replaces the
+program's Pod, the new Pod serves the copy of an Event that was deleted
+before the rollout.
 
 ## Measurements
 

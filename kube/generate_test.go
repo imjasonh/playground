@@ -221,6 +221,79 @@ func TestManifestsServe(t *testing.T) {
 	}
 }
 
+func TestManifestsVolume(t *testing.T) {
+	o := &generateOptions{program: "eventlog", name: "eventlog", namespace: "eventlog", replicas: 1, shards: 1, volumeSize: "5Gi", storageClass: "fast"}
+	byKind := map[string]string{}
+	var kinds []string
+	for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, serves: true, volume: "/var/lib/eventlog"}) {
+		b, _ := json.Marshal(d)
+		kind := d[1].value.(string)
+		kinds = append(kinds, kind)
+		byKind[kind] = string(b)
+	}
+	if want := []string{"Namespace", "ServiceAccount", "ClusterRole", "ClusterRoleBinding", "Service", "PersistentVolumeClaim", "Deployment"}; !slices.Equal(kinds, want) {
+		t.Errorf("kinds = %v, want %v", kinds, want)
+	}
+	claim := `{"apiVersion":"v1","kind":"PersistentVolumeClaim","metadata":{"name":"eventlog","namespace":"eventlog","labels":{"app.kubernetes.io/name":"eventlog"}},` +
+		`"spec":{"accessModes":["ReadWriteOnce"],"storageClassName":"fast","resources":{"requests":{"storage":"5Gi"}}}}`
+	if byKind["PersistentVolumeClaim"] != claim {
+		t.Errorf("PersistentVolumeClaim =\n%s\nwant\n%s", byKind["PersistentVolumeClaim"], claim)
+	}
+	for _, s := range []string{
+		`"spec":{"replicas":1,"strategy":{"type":"Recreate"},"selector"`,
+		`"securityContext":{"runAsNonRoot":true,"seccompProfile":{"type":"RuntimeDefault"},"fsGroup":65532,"fsGroupChangePolicy":"OnRootMismatch"}`,
+		`"volumeMounts":[{"name":"tmp","mountPath":"/tmp"},{"name":"data","mountPath":"/var/lib/eventlog"}]`,
+		`"volumes":[{"name":"tmp","emptyDir":{}},{"name":"data","persistentVolumeClaim":{"claimName":"eventlog"}}]`,
+		`"args":["-addr=:8080","-serve-addr=:8081"]`,
+	} {
+		if !strings.Contains(byKind["Deployment"], s) {
+			t.Errorf("the Deployment lacks %s: %s", s, byKind["Deployment"])
+		}
+	}
+
+	o.storageClass = ""
+	for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}, volume: "/var/lib/eventlog"}) {
+		if b, _ := json.Marshal(d); d[1].value == "PersistentVolumeClaim" && strings.Contains(string(b), "storageClassName") {
+			t.Errorf("without -storage-class, the claim names a StorageClass: %s", b)
+		}
+	}
+	for _, d := range o.manifests("ref", &installPlan{cluster: grants{}, local: grants{}}) {
+		if b, _ := json.Marshal(d); d[1].value == "PersistentVolumeClaim" || strings.Contains(string(b), "Recreate") || strings.Contains(string(b), "fsGroup") {
+			t.Errorf("without a volume: %s", b)
+		}
+	}
+}
+
+func TestOneWriter(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		volume       string
+		replicas     int
+		replicasSet  bool
+		shards       int
+		wantReplicas int
+		wantErr      bool
+	}{
+		{"no volume", "", 2, false, 1, 2, false},
+		{"no volume, shards", "", 3, true, 8, 3, false},
+		{"a volume", "/var/lib/app", 2, false, 1, 1, false},
+		{"a volume and -replicas=1", "/var/lib/app", 1, true, 1, 1, false},
+		{"a volume and -replicas=3", "/var/lib/app", 3, true, 1, 0, true},
+		{"a volume and -shards=4", "/var/lib/app", 2, false, 4, 0, true},
+	} {
+		o := &generateOptions{replicas: tc.replicas, replicasSet: tc.replicasSet, shards: tc.shards}
+		err := o.oneWriter(tc.volume)
+		switch {
+		case tc.wantErr && (err == nil || !strings.Contains(err.Error(), "which one replica writes")):
+			t.Errorf("%s: err = %v, want one about the volume", tc.name, err)
+		case !tc.wantErr && err != nil:
+			t.Errorf("%s: %v", tc.name, err)
+		case !tc.wantErr && o.replicas != tc.wantReplicas:
+			t.Errorf("%s: replicas = %d, want %d", tc.name, o.replicas, tc.wantReplicas)
+		}
+	}
+}
+
 func TestGrantsFor(t *testing.T) {
 	p := &installPlan{cluster: grants{}, local: grants{}, watched: grants{}}
 	same := func(a, b grants) bool {
@@ -283,6 +356,7 @@ func TestGenerateArguments(t *testing.T) {
 		{[]string{"-registry=ghcr.io/you", "-platform=linux"}, "isn't os/architecture"},
 		{[]string{"-registry=ghcr.io/you", "-replicas=0"}, "at least 1"},
 		{[]string{"-registry=ghcr.io/you", "-tmp-size=lots"}, "isn't a quantity"},
+		{[]string{"-registry=ghcr.io/you", "-volume-size=lots"}, "-volume-size \"lots\" isn't a quantity"},
 		{[]string{"-registry=ghcr.io/you", "-watch-namespace=Team_A"}, "isn't a namespace name"},
 		{[]string{"-registry=ghcr.io/you", "-nope"}, "flag provided but not defined"},
 	} {

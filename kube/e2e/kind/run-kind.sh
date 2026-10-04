@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Install the website, podpolicy, and probe examples in a kind cluster with
-# generate, which pushes their images to a local registry, and check that
-# they work. go test ./e2e/kind runs this when KUBE_KIND_E2E=1, which CI
-# sets when kube changes.
+# Install the website, probe, eventlog, and podpolicy examples in a kind
+# cluster with generate, which pushes their images to a local registry, and
+# check that they work. go test ./e2e/kind runs this when KUBE_KIND_E2E=1,
+# which CI sets when kube changes.
 #
 # KUBE_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
@@ -27,7 +27,8 @@ diagnose() {
   echo "::group::Cluster state"
   k get nodes,websites,all -A -o wide || true
   k get probes -A -o yaml || true
-  for ns in website podpolicy probe; do
+  k get pvc -A || true
+  for ns in website podpolicy probe eventlog; do
     k -n "${ns}" describe pods || true
     k -n "${ns}" logs --all-containers --prefix --tail=200 -l "app.kubernetes.io/name=${ns}" || true
   done
@@ -286,6 +287,71 @@ eventually 60 triggered
 checked_again() { [[ "$(k -n probe-e2e get probe self -o jsonpath='{.status.checkedAt}')" != "${checked}" ]]; }
 eventually 60 checked_again
 echo "The replica that holds the lease triggers a check, and the other refuses."
+echo "::endgroup::"
+
+echo "::group::Install the eventlog example"
+generate eventlog | k apply -f -
+k -n eventlog rollout status deployment/eventlog --timeout=180s
+[[ "$(k -n eventlog get pvc eventlog -o jsonpath='{.status.phase}')" == Bound ]]
+[[ "$(k -n eventlog get deployment eventlog -o jsonpath='{.spec.replicas} {.spec.strategy.type}')" == "1 Recreate" ]]
+k create namespace eventlog-e2e
+k -n eventlog-e2e create serviceaccount reader
+k apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: reader
+  namespace: eventlog-e2e
+spec:
+  serviceAccountName: reader
+  automountServiceAccountToken: false
+  containers:
+  - name: reader
+    image: ${CHAINGUARD}/curl:latest-dev
+    command: [sleep, "3600"]
+    volumeMounts:
+    - name: token
+      mountPath: /var/run/secrets/eventlog
+  volumes:
+  - name: token
+    projected:
+      sources:
+      - serviceAccountToken:
+          audience: eventlog
+          path: token
+---
+apiVersion: v1
+kind: Event
+metadata:
+  name: hello
+  namespace: eventlog-e2e
+involvedObject:
+  kind: Pod
+  name: reader
+  namespace: eventlog-e2e
+reason: Hello
+message: written by the kind test
+type: Normal
+EOF
+k -n eventlog-e2e wait --for=condition=Ready pod/reader --timeout=180s
+
+kept_hello() {
+  local out
+  out="$(k -n eventlog-e2e exec reader -- sh -c \
+    'curl -fsS -H "Authorization: Bearer $(cat /var/run/secrets/eventlog/token)" http://eventlog.eventlog.svc/events/eventlog-e2e')" || return 1
+  echo "events: ${out}"
+  [[ "${out}" == *'"name":"hello"'*'"reason":"Hello"'* ]]
+}
+eventually 60 kept_hello
+k -n eventlog-e2e delete event hello
+first="$(k -n eventlog get pods -l app.kubernetes.io/name=eventlog -o jsonpath='{.items[0].metadata.name}')"
+k -n eventlog rollout restart deployment/eventlog
+k -n eventlog rollout status deployment/eventlog --timeout=180s
+pods="$(k -n eventlog get pods -l app.kubernetes.io/name=eventlog -o jsonpath='{.items[*].metadata.name}')"
+echo "pods after the restart: ${pods}"
+[[ "${pods}" != *"${first}"* ]]
+eventually 60 kept_hello
+echo "A new Pod mounts the same volume and serves the copy of a deleted Event."
 echo "::endgroup::"
 
 echo "::group::Install the podpolicy example"

@@ -56,10 +56,16 @@ type generateOptions struct {
 	platforms     []v1.Platform
 	namespace     string
 	replicas      int
-	shards        int
-	tag           string
+	// replicasSet is set when the command line sets -replicas.
+	replicasSet bool
+	shards      int
+	tag         string
 	// tmpSize is the size limit of the volume at /tmp, or empty for none.
 	tmpSize string
+	// volumeSize is the size of the persistent volume that Volume declares,
+	// and storageClass is its StorageClass, or empty for the cluster's
+	// default.
+	volumeSize, storageClass string
 	// watchNamespace is the one namespace that the program watches, or
 	// empty for every namespace.
 	watchNamespace string
@@ -88,10 +94,12 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	fs.StringVar(&o.base, "base", defaultBase, "base image")
 	platforms := fs.String("platform", "linux/amd64,linux/arm64", "comma-separated platforms to build the image for")
 	fs.StringVar(&o.namespace, "namespace", o.name, "namespace to install the program in")
-	fs.IntVar(&o.replicas, "replicas", 2, "pods to run; more than one turns on leader election")
+	fs.IntVar(&o.replicas, "replicas", 2, "pods to run; more than one turns on leader election; a program with a kube.Volume runs one")
 	fs.IntVar(&o.shards, "shards", 1, "split reconciles across replicas in this many shards")
 	fs.StringVar(&o.tag, "tag", "latest", "tag for the image, in addition to its digest")
 	fs.StringVar(&o.tmpSize, "tmp-size", "", "size limit of the emptyDir volume at /tmp, such as 1Gi; empty means no limit")
+	fs.StringVar(&o.volumeSize, "volume-size", "1Gi", "size of the persistent volume of a program with a kube.Volume")
+	fs.StringVar(&o.storageClass, "storage-class", "", "StorageClass of the persistent volume of a program with a kube.Volume; empty means the cluster's default")
 	fs.StringVar(&o.watchNamespace, "watch-namespace", "", "namespace for the program to watch instead of every namespace; the rules for namespaced resources go in a Role there")
 	fs.Usage = func() {
 		fmt.Fprintf(stderr, "Usage: %s generate -registry=REGISTRY [flags] [-- PROGRAM_FLAGS] | kubectl apply -f -\n\n", o.program)
@@ -105,6 +113,7 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
+	fs.Visit(func(f *flag.Flag) { o.replicasSet = o.replicasSet || f.Name == "replicas" })
 	switch {
 	case fs.NArg() > 0:
 		return fmt.Errorf("generate: unexpected argument %q; put the program's own flags after --", fs.Arg(0))
@@ -115,6 +124,8 @@ func generate(ctx context.Context, args []string, controllers []Controller, stdo
 		return errors.New("generate: -replicas and -shards must be at least 1")
 	case o.tmpSize != "" && !quantity.MatchString(o.tmpSize):
 		return fmt.Errorf("generate: -tmp-size %q isn't a quantity, such as 512Mi or 2Gi", o.tmpSize)
+	case !quantity.MatchString(o.volumeSize):
+		return fmt.Errorf("generate: -volume-size %q isn't a quantity, such as 512Mi or 2Gi", o.volumeSize)
 	case o.watchNamespace != "" && objectName(o.watchNamespace) != o.watchNamespace:
 		return fmt.Errorf("generate: -watch-namespace %q isn't a namespace name", o.watchNamespace)
 	}
@@ -275,6 +286,9 @@ type installPlan struct {
 	electLeader bool
 	// serves is set when the program serves HTTP for Serve.
 	serves bool
+	// volume is where the persistent volume that Volume declares is
+	// mounted, or empty for none.
+	volume string
 }
 
 // grantsFor returns where the permissions for ti's resources go. A program
@@ -302,6 +316,7 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		return p.grantsFor(ti, watching)
 	}
 	var crds []string
+	var reconciles bool
 	for _, c := range controllers {
 		d, err := c.describe()
 		if err != nil {
@@ -309,10 +324,16 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		}
 		p.webhooks = p.webhooks || d.webhooks
 		p.serves = p.serves || d.serves
+		if d.volume != "" {
+			if p.volume != "" {
+				return nil, errors.New("generate: the program declares more than one kube.Volume")
+			}
+			p.volume = d.volume
+		}
 		if !d.reconciles {
 			continue
 		}
-		p.electLeader = o.replicas > 1 || o.shards > 1
+		reconciles = true
 		group, plural := resourceName(d.ti)
 		own := grantsFor(d.ti)
 		if watching && d.versioned {
@@ -335,6 +356,10 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 			grantsFor(oti).add(g, r, "", "list", "watch", "delete")
 		}
 	}
+	if err := o.oneWriter(p.volume); err != nil {
+		return nil, err
+	}
+	p.electLeader = reconciles && (o.replicas > 1 || o.shards > 1)
 	funcs := append(slices.Sorted(maps.Keys(scopeVerbs)), "RequestToken", "ReviewToken")
 	o.logf("finding the types that %s reads and writes", pkg)
 	uses, warnings, err := analysis.Find(ctx, analysis.Config{
@@ -396,6 +421,19 @@ func (o *generateOptions) plan(ctx context.Context, controllers []Controller, pk
 		clear(p.watched)
 	}
 	return p, nil
+}
+
+// oneWriter runs a program with a volume at dir as one replica, the only
+// writer of the volume. It fails if the command line asks for more.
+func (o *generateOptions) oneWriter(dir string) error {
+	if dir == "" {
+		return nil
+	}
+	if (o.replicasSet && o.replicas > 1) || o.shards > 1 {
+		return fmt.Errorf("generate: the program keeps state in a volume at %s, which one replica writes; leave out -replicas and -shards", dir)
+	}
+	o.replicas = 1
+	return nil
 }
 
 // manifests returns the objects that install the program.
@@ -483,29 +521,48 @@ func (o *generateOptions) manifests(ref string, p *installPlan) []object {
 			{"readOnlyRootFilesystem", true},
 			{"capabilities", object{{"drop", []string{"ALL"}}}},
 		}},
-		// The root file system is read-only, so give os.TempDir somewhere to
-		// write.
-		{"volumeMounts", []any{object{{"name", "tmp"}, {"mountPath", "/tmp"}}}},
 	}
 	tmp := object{}
 	if o.tmpSize != "" {
 		tmp = object{{"sizeLimit", o.tmpSize}}
 	}
+	// The root file system is read-only, so give os.TempDir somewhere to
+	// write.
+	mounts := []any{object{{"name", "tmp"}, {"mountPath", "/tmp"}}}
+	volumes := []any{object{{"name", "tmp"}, {"emptyDir", tmp}}}
+	deployment := object{{"replicas", o.replicas}}
+	podSecurity := object{{"runAsNonRoot", true}, {"seccompProfile", object{{"type", "RuntimeDefault"}}}}
+	if p.volume != "" {
+		claim := object{{"accessModes", []string{"ReadWriteOnce"}}}
+		if o.storageClass != "" {
+			claim = append(claim, field{"storageClassName", o.storageClass})
+		}
+		claim = append(claim, field{"resources", object{{"requests", object{{"storage", o.volumeSize}}}}})
+		docs = append(docs, object{{"apiVersion", "v1"}, {"kind", "PersistentVolumeClaim"}, {"metadata", meta(o.name, true)}, {"spec", claim}})
+		mounts = append(mounts, object{{"name", "data"}, {"mountPath", p.volume}})
+		volumes = append(volumes, object{{"name", "data"}, {"persistentVolumeClaim", object{{"claimName", o.name}}}})
+		deployment = append(deployment, field{"strategy", object{{"type", "Recreate"}}})
+		// The kubelet gives the volume to group 65532 and adds the group to
+		// the program's, so the non-root program can write volume types
+		// that support ownership. OnRootMismatch skips walking every file
+		// when the volume's root already belongs to the group.
+		podSecurity = append(podSecurity, field{"fsGroup", 65532}, field{"fsGroupChangePolicy", "OnRootMismatch"})
+	}
+	container = append(container, field{"volumeMounts", mounts})
 	docs = append(docs, object{
 		{"apiVersion", "apps/v1"}, {"kind", "Deployment"}, {"metadata", meta(o.name, true)},
-		{"spec", object{
-			{"replicas", o.replicas},
-			{"selector", object{{"matchLabels", labels}}},
-			{"template", object{
+		{"spec", append(deployment,
+			field{"selector", object{{"matchLabels", labels}}},
+			field{"template", object{
 				{"metadata", object{{"labels", labels}}},
 				{"spec", object{
 					{"serviceAccountName", o.name},
-					{"securityContext", object{{"runAsNonRoot", true}, {"seccompProfile", object{{"type", "RuntimeDefault"}}}}},
+					{"securityContext", podSecurity},
 					{"containers", []any{container}},
-					{"volumes", []any{object{{"name", "tmp"}, {"emptyDir", tmp}}}},
+					{"volumes", volumes},
 				}},
 			}},
-		}},
+		)},
 	})
 	if o.replicas > 1 {
 		docs = append(docs, object{
