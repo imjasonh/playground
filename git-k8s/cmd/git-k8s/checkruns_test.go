@@ -1749,6 +1749,12 @@ func TestCheckRunErrors(t *testing.T) {
 		t.Errorf("err = %v, want the exchange's error", err)
 	}
 
+	t.Log("Until the controller knows of a repository's check runs, a branch without results needs no token, so the exchange's error doesn't fail its reconcile.")
+	p := &publisher{t: t, gh: gh, repo: gh.Repository("app", gitk8s.OctoSTS{CheckRunsIdentity: "missing"}, rules()...), c: &checkRuns{}}
+	if got, err := p.publish(map[string]gitk8s.CheckResult{}); err != nil || len(got) != 0 {
+		t.Errorf("requests = %q, err = %v; want nothing", got, err)
+	}
+
 	t.Log("Without a check-runs identity, the controller does nothing.")
 	before := len(gh.Fake.Exchanges())
 	if got, err := publish(gitk8s.OctoSTS{GitIdentity: "git"}); err != nil || len(got) != 0 || len(gh.Fake.Exchanges()) != before {
