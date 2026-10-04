@@ -2,9 +2,12 @@ package kube
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -204,6 +207,102 @@ func TestRetakenShardRequiresTheResourceVersionAgain(t *testing.T) {
 		if meta["resourceVersion"] != "5" {
 			t.Errorf("status write %d required resource version %v, want the cached 5", i+1, meta["resourceVersion"])
 		}
+	}
+}
+
+// TestFinalizerPatchRequiresTheAppliedResourceVersion removes a finalizer
+// that another field manager also lists, while writes to the object require
+// the cached resource version. The apply leaves the finalizer listed and
+// returns a new resource version. The JSON patch that then removes the
+// finalizer must require that version, and a conflict on it means that
+// something wrote the object in between, so it fails as stale.
+func TestFinalizerPatchRequiresTheAppliedResourceVersion(t *testing.T) {
+	m := testManager()
+	w := &widget{}
+	w.Namespace, w.Name, w.UID, w.ResourceVersion = "shop", "w1", "u1", "5"
+	c := triggerable(t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true}, w)
+	w.Finalizers = []string{"example.dev/other", c.finalizer}
+	patches := make(chan []byte, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("Content-Type") {
+		case client.ApplyPatch:
+			_ = json.NewEncoder(rw).Encode(map[string]any{"metadata": map[string]any{
+				"name": w.Name, "namespace": w.Namespace, "uid": w.UID, "resourceVersion": "6", "finalizers": w.Finalizers,
+			}})
+		case client.JSONPatch:
+			b, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(rw, err.Error(), http.StatusBadRequest)
+				return
+			}
+			patches <- b
+			http.Error(rw, "the object has been modified", http.StatusConflict)
+		default:
+			http.Error(rw, "unexpected request", http.StatusMethodNotAllowed)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	cl, err := client.New(&client.Config{Host: srv.URL}, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.client = cl
+
+	rv := w.ResourceVersion
+	if err := c.setFinalizer(t.Context(), w, false, "", &rv); !errors.Is(err, errStale) {
+		t.Errorf("setFinalizer = %v, want a stale error", err)
+	}
+	var ops []map[string]any
+	select {
+	case b := <-patches:
+		if err := json.Unmarshal(b, &ops); err != nil {
+			t.Fatal(err)
+		}
+	default:
+		t.Fatal("setFinalizer sent no JSON patch")
+	}
+	want := map[string]any{"op": "replace", "path": "/metadata/resourceVersion", "value": "6"}
+	if !slices.ContainsFunc(ops, func(op map[string]any) bool { return reflect.DeepEqual(op, want) }) {
+		t.Errorf("patch %v doesn't require the resource version that the apply returned", ops)
+	}
+}
+
+// TestDeleteForgetsAnObjectInAShardThatIsntHeld deletes an object in a shard
+// that this replica doesn't hold, so the replica doesn't reconcile it. The
+// replica must still forget what it recorded for the object, or it keeps
+// that state for as long as it runs.
+func TestDeleteForgetsAnObjectInAShardThatIsntHeld(t *testing.T) {
+	m := testManager()
+	m.tracker = newTracker()
+	w := &widget{}
+	w.Namespace, w.Name = "shop", "w1"
+	c := triggerable[widget](t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true})
+	c.sh = &sharder{n: 1, shards: []*shard{{}}}
+	k, ak := w.Key(), appliedKey{ti: c.ti, key: w.Key()}
+	c.setApplied(k, map[appliedKey]uint64{ak: 1})
+	c.setStatus(k, 1, true)
+	c.setStatusApply(k, 1)
+	c.setCaughtUp(k, 0)
+	m.tracker.add(ref{c: &c.core, key: k}, dep{src: 1, ns: "shop", name: "config"}, nil)
+
+	c.onPrimary(w, nil, false)
+	if high, low := c.q.Len(); high+low != 0 {
+		t.Errorf("queue = %d high, %d low; want no reconcile", high, low)
+	}
+	if _, ok := c.lastApplied(k, ak); ok {
+		t.Error("the replica remembers what it applied for the deleted object")
+	}
+	if _, ok := c.lastStatus(k); ok {
+		t.Error("the replica remembers the deleted object's status")
+	}
+	if _, ok := c.lastStatusApply(k); ok {
+		t.Error("the replica remembers the status that it applied to the deleted object")
+	}
+	if c.hasCaughtUp(k, 0) {
+		t.Error("the replica remembers that its cache caught up with the deleted object")
+	}
+	if n := m.tracker.size(); n != 0 {
+		t.Errorf("the replica tracks %d dependencies of the deleted object, want 0", n)
 	}
 }
 
