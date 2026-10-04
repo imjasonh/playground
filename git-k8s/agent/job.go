@@ -88,6 +88,7 @@ func (s JobState) MarshalText() ([]byte, error) { return json.Marshal(jobState(s
 
 // UnmarshalText decodes a state that MarshalText encoded, or the zero
 // state from empty text, such as an output that a check hasn't written.
+// Text that doesn't decode leaves s unchanged.
 func (s *JobState) UnmarshalText(text []byte) error {
 	v := jobState{}
 	if len(text) > 0 {

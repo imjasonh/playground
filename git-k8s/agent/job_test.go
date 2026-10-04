@@ -249,6 +249,46 @@ func TestGivesBackAJobsRunOncePerPodWhenTheBranchMoved(t *testing.T) {
 	}
 }
 
+func TestRestartsAJobsMovedPodThatsCreatedAgain(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	job := f.reviewJob()
+	st := &JobState{}
+	p := f.startJob(job, st)
+	f.runJob(job, st, movedPod(p, job.Checkout.Head, time.Now()))
+	f.runJob(job, st)
+	again := *p
+	again.UID = "uid-again"
+	again.Status = PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
+		{Name: "agent", State: ContainerState{Running: &struct{}{}}},
+	}}
+	f.runJob(job, st, &again)
+	if st.Runs != 1 || st.UID != again.UID {
+		t.Fatalf("state = %+v, want the Pod that kube created again to count as run 1", st)
+	}
+
+	t.Log("The agent runs in the Pod that kube created again, so a deploy starts the run over like any other, without another attempt or run.")
+	f.r.Image = "registry.example.com/agent-runner:new"
+	s, rec := f.runJob(job, st, &again)
+	pods := kube.Owned[Pod](rec)
+	if s.Done || len(pods) != 1 || pods[0].Name == p.Name || st.Pod != pods[0].Name || st.Attempt != 1 || st.Runs != 1 {
+		t.Errorf("RunJob = %+v with state %+v and %d owned Pods, want run 1 started over in a new Pod", s, st, len(pods))
+	}
+}
+
+func TestWaitsFromAMovedPodsCreationWithoutFinishedAt(t *testing.T) {
+	f := newFixture(t, "")
+	job := f.reviewJob()
+	st := &JobState{}
+	p := f.startJob(job, st)
+	p.CreationTimestamp = time.Now().Add(-movedWait / 2)
+	s, rec := f.runJob(job, st, movedPod(p, job.Checkout.Head, time.Time{}))
+	if d := rec.RequeueAfter(); s.Done || !s.Moved || len(kube.Owned[Pod](rec)) != 1 || d <= movedWait/2-time.Second || d > movedWait/2 {
+		t.Errorf("RunJob = %+v with %d owned Pods and RequeueAfter = %v, want a wait of about %v in the same Pod", s, len(kube.Owned[Pod](rec)), d, movedWait/2)
+	}
+}
+
 func TestWaitsToPrepareAJobsSourceAgain(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
@@ -440,6 +480,13 @@ func TestEncodesTheWholeJobState(t *testing.T) {
 	}
 	if err := got.UnmarshalText([]byte("1")); err == nil {
 		t.Error("UnmarshalText(1) succeeded")
+	}
+
+	t.Log("Text that decodes only in part leaves the state unchanged.")
+	kept := JobState{Runs: 2, Pod: "review-old"}
+	got = kept
+	if err := got.UnmarshalText([]byte(`{"runs":3,"pod":5}`)); err == nil || got != kept {
+		t.Errorf(`UnmarshalText({"runs":3,"pod":5}) = %+v, %v; want an error and %+v`, got, err, kept)
 	}
 
 	t.Log("The largest state, with the longest Pod name that a check's name allows, fits in a 1,024-byte output value.")

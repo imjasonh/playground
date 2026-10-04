@@ -1025,9 +1025,9 @@ func TestWindow(t *testing.T) {
 		t.Error("a limit of 0 means no limit, so take records nothing")
 	}
 
-	t.Log("giveBack forgets a run once for each Pod, and forgets the Pod after a day.")
-	if !w.giveBack(t0.Add(25*time.Hour), "uid-1") || len(w.starts) != n-1 {
-		t.Fatalf("giveBack didn't forget a run: %d runs, want %d", len(w.starts), n-1)
+	t.Log("giveBack forgets the latest run, once for each Pod, and forgets the Pod after a day.")
+	if !w.giveBack(t0.Add(25*time.Hour), "uid-1") || len(w.starts) != n-1 || !w.starts[len(w.starts)-1].Equal(t0.Add(time.Hour)) {
+		t.Fatalf("giveBack didn't forget the latest run: runs started at %v, want %d ending at %v", w.starts, n-1, t0.Add(time.Hour))
 	}
 	if w.giveBack(t0.Add(26*time.Hour), "uid-1") || len(w.starts) != n-1 {
 		t.Errorf("giveBack forgot another run for the same Pod: %d runs, want %d", len(w.starts), n-1)
@@ -1157,5 +1157,20 @@ func TestWaitsForTwoPollsWhenTheBranchMoved(t *testing.T) {
 				t.Errorf("state = %+v with %d owned Pods, want attempt 2 in a new Pod", f.jobState(), len(pods))
 			}
 		})
+	}
+}
+
+func TestPreparesTheSourceAgainOnADeployDuringTheWait(t *testing.T) {
+	f := newFixture(t, "")
+	f.r.MaxRunsPerDay = 10
+	p := f.start()
+	f.reconcile(movedPod(p, f.b.Spec.Head, time.Now()))
+
+	t.Log("The Pod's agent didn't run, so a deploy ends the wait, and the check prepares the source again in a new Pod, which counts as a run.")
+	f.r.Model = "composer-3"
+	rec := f.reconcile(p)
+	pods := kube.Owned[Pod](rec)
+	if st := f.jobState(); len(pods) != 1 || pods[0].Name == p.Name || st.Pod != pods[0].Name || st.Attempt != 2 || st.Runs != 1 || len(f.r.day.starts) != 1 {
+		t.Errorf("state = %+v with %d owned Pods and %d runs in the last day, want attempt 2 as run 1 in a new Pod", st, len(pods), len(f.r.day.starts))
 	}
 }
