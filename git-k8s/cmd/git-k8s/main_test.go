@@ -380,6 +380,7 @@ func TestInvalidPolicyIsPermanent(t *testing.T) {
 func TestRecordsDivergence(t *testing.T) {
 	f := newFixture(t)
 	b := f.branches()
+	synced := b.Spec.Head
 	w := f.work
 	w.Write("fix.txt", "fix\n")
 	fix := w.Commit("a check's fix")
@@ -412,7 +413,7 @@ func TestRecordsDivergence(t *testing.T) {
 	if _, err := f.merge(b); err != nil {
 		t.Fatal(err)
 	}
-	want := &gitk8s.Divergence{Commit: person, Ref: "refs/git-k8s/downstream/heads/c/x"}
+	want := &gitk8s.Divergence{Commit: person, Ref: "refs/git-k8s/downstream/heads/c/x", Base: synced}
 	if d := b.Status.Diverged; d == nil || *d != *want || b.Status.State != reasonDiverged {
 		t.Errorf("diverged = %+v, state = %q; want %+v and %s", d, b.Status.State, want, reasonDiverged)
 	}
@@ -443,6 +444,39 @@ func TestRecordsDivergence(t *testing.T) {
 	}
 	if b.Status.Diverged != nil || b.Status.State != reasonLanded {
 		t.Errorf("diverged = %+v, state = %q; want nil and %s", b.Status.Diverged, b.Status.State, reasonLanded)
+	}
+}
+
+// A branch that changes in the mirror while a person deletes it in the
+// external repository diverges too, and the GitBranch says so.
+func TestRecordsDeletionAsDivergence(t *testing.T) {
+	f := newFixture(t)
+	b := f.branches()
+	synced := b.Spec.Head
+	f.work.Write("fix.txt", "fix\n")
+	b.Spec.Head = f.work.Commit("a check's fix")
+	f.pushToMirror("c/x")
+	f.work.Delete("c/x")
+
+	rec := f.fetch(b)
+	if c := f.condition("ExternalSynced"); c.Reason != "Diverged" || !strings.HasPrefix(c.Message, "c/x changed both") {
+		t.Errorf("ExternalSynced = %+v", c)
+	}
+	if got, want := kube.Triggered[gitk8s.GitBranch](rec), []kube.Key{{Namespace: "default", Name: b.Name}}; !slices.Equal(got, want) {
+		t.Errorf("triggered GitBranches %v, want %v", got, want)
+	}
+	if _, ok := f.srv.Heads(t, "app")["c/x"]; ok {
+		t.Error("the mirror pushed c/x back to the external repository, which deleted it")
+	}
+	pass(b)
+	if _, err := f.merge(b); err != nil {
+		t.Fatal(err)
+	}
+	if d := b.Status.Diverged; d == nil || *d != (gitk8s.Divergence{Base: synced}) || b.Status.State != reasonDiverged {
+		t.Errorf("diverged = %+v, state = %q; want only the base %s, and %s", d, b.Status.State, synced, reasonDiverged)
+	}
+	if c := kube.FindCondition(b.Status.Conditions, "Merged"); c == nil || !strings.Contains(c.Message, "external repository, which deleted it") {
+		t.Errorf("Merged = %+v, want a message that says the external repository deleted c/x", c)
 	}
 }
 

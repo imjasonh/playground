@@ -370,6 +370,93 @@ func (r *Repo) MergeBase(ctx context.Context, a, b string) (string, error) {
 	return "", &Error{Command: "merge-base", Code: res.code, Stderr: res.stderr}
 }
 
+// MergeBases returns every best common ancestor of two commits: the common
+// ancestors that aren't ancestors of another common ancestor. It returns
+// none if the commits have no common ancestor.
+func (r *Repo) MergeBases(ctx context.Context, a, b string) ([]string, error) {
+	res, err := r.git.exec(ctx, r.Dir, []string{"merge-base", "--all", "--end-of-options", a, b}, opts{})
+	switch {
+	case err != nil:
+		return nil, err
+	case res.code == 0:
+		return strings.Fields(string(res.stdout)), nil
+	case res.code == 1:
+		return nil, nil
+	}
+	return nil, &Error{Command: "merge-base", Code: res.code, Stderr: res.stderr}
+}
+
+// Replays reports whether head has a replay of each commit that's in other
+// but not in head or base: a commit in head but not in other that removes
+// and adds the same lines in the same files. Unlike git cherry, it ignores
+// the unchanged lines around each change, so a commit replayed onto a base
+// that changed nearby lines still matches. A merge commit, and a commit
+// that changes no file, have no replay.
+func (r *Repo) Replays(ctx context.Context, head, other, base string) (bool, error) {
+	out, err := r.run(ctx, "rev-list", "--parents", "--end-of-options", other, "^"+head, "^"+base)
+	if err != nil {
+		return false, err
+	}
+	var commits []string
+	for line := range strings.Lines(string(out)) {
+		f := strings.Fields(line)
+		if len(f) > 2 {
+			return false, nil
+		}
+		commits = append(commits, f[0])
+	}
+	need, err := r.patchIDs(ctx, commits)
+	if err != nil {
+		return false, err
+	}
+	out, err = r.run(ctx, "rev-list", "--no-merges", "--end-of-options", head, "^"+other)
+	if err != nil {
+		return false, err
+	}
+	have, err := r.patchIDs(ctx, strings.Fields(string(out)))
+	if err != nil {
+		return false, err
+	}
+	replayed := map[string]bool{}
+	for _, id := range have {
+		replayed[id] = true
+	}
+	for _, c := range commits {
+		if id := need[c]; id == "" || !replayed[id] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// patchIDs maps each commit to the patch ID of its change from its parent,
+// computed from a diff without context lines, or to "" if the commit
+// changes no file.
+func (r *Repo) patchIDs(ctx context.Context, commits []string) (map[string]string, error) {
+	ids := map[string]string{}
+	if len(commits) == 0 {
+		return ids, nil
+	}
+	diffs, err := r.git.run(ctx, r.Dir, []string{"diff-tree", "--stdin", "--root", "-p", "-U0", "--binary"},
+		opts{stdin: []byte(strings.Join(commits, "\n") + "\n")})
+	if err != nil {
+		return nil, err
+	}
+	out, err := r.git.run(ctx, r.Dir, []string{"patch-id", "--stable"}, opts{stdin: diffs})
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range commits {
+		ids[c] = ""
+	}
+	for line := range strings.Lines(string(out)) {
+		if id, commit, ok := strings.Cut(strings.TrimSpace(line), " "); ok {
+			ids[commit] = id
+		}
+	}
+	return ids, nil
+}
+
 // MergeTree merges two commits without a worktree. It returns the merged
 // tree, or the paths that conflict.
 func (r *Repo) MergeTree(ctx context.Context, ours, theirs string) (tree string, conflicts []string, err error) {

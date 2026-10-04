@@ -4,9 +4,10 @@
 // The copy is the repository's source of truth. Checks and controllers fetch
 // from it and push to it, and Sync pushes their changes to the external
 // repository and takes the changes that people push there. A branch that
-// changed on both sides since they last agreed stays as it is on each side,
-// and the external repository's head is kept in the copy under
-// refs/git-k8s/downstream/heads/.
+// changed on both sides since they last agreed, where neither side's head
+// keeps the other side's changes, stays as it is on each side. The copy
+// keeps the external repository's head under refs/git-k8s/downstream/heads/
+// and the head where they last agreed under refs/git-k8s/synced/heads/.
 package mirror
 
 import (
@@ -200,11 +201,9 @@ func (m *Mirror) create(ctx context.Context, e *entry, repo *gitk8s.Repository) 
 	// The UID goes last: a copy without one is incomplete, and the next
 	// load replaces it.
 	for _, kv := range [][2]string{
-		// Pushes can't see or change the mirror's own refs.
+		// Pushes can't see or change the mirror's own refs. Fetches see
+		// them, to resolve a divergence.
 		{"receive.hideRefs", "refs/git-k8s"},
-		// Fetches see the external repository's heads, for resolving
-		// divergence, but not the mirror's bookkeeping.
-		{"uploadpack.hideRefs", "refs/git-k8s/synced"},
 		{"receive.fsckObjects", "true"},
 		{"gitk8s.url", repo.Spec.URL},
 		{"gitk8s.uid", repo.UID},

@@ -78,15 +78,27 @@ func (w *world) sync(o SyncOptions) *Report {
 }
 
 // commit makes a commit whose parent is from, or that has no parent if
-// from is "".
+// from is "". The commit adds the file MESSAGE.txt, so commits with
+// different messages make different changes.
 func (w *world) commit(from, message string) string {
 	w.t.Helper()
 	if from == "" {
 		w.work.Git("checkout", "--quiet", "--orphan", "orphan-"+message)
+		w.work.Git("rm", "-r", "--quiet", "--force", "--ignore-unmatch", ".")
 	} else {
 		w.work.Git("checkout", "--quiet", "--detach", from)
 	}
+	w.work.Write(message+".txt", message+"\n")
 	return w.work.Commit(message)
+}
+
+// replay replays commit onto onto, as git cherry-pick does, and returns the
+// replay.
+func (w *world) replay(commit, onto string) string {
+	w.t.Helper()
+	w.work.Git("checkout", "--quiet", "--detach", onto)
+	w.work.Git("cherry-pick", "--allow-empty", commit)
+	return w.work.Git("rev-parse", "HEAD")
 }
 
 // pushExternal sets branch to commit in the external repository, or
@@ -140,6 +152,14 @@ func TestDecide(t *testing.T) {
 	a := w.commit(base, "a")
 	a2 := w.commit(a, "a2")
 	b := w.commit(base, "b")
+	// c adds a commit on a2. replayed is c replayed onto a, which drops
+	// a2, and same is c replayed onto a2 under another message.
+	c := w.commit(a2, "c")
+	replayed := w.replay(c, a)
+	w.work.Git("checkout", "--quiet", "--detach", a2)
+	w.work.Git("cherry-pick", "-x", c)
+	same := w.work.Git("rev-parse", "HEAD")
+	other := w.commit(a, "other")
 	r, err := w.m.Git.Open(t.Context(), filepath.Join(w.work.Dir, ".git"))
 	if err != nil {
 		t.Fatal(err)
@@ -154,16 +174,31 @@ func TestDecide(t *testing.T) {
 		{name: "changed in the copy", m: a, d: base, s: base, want: push},
 		{name: "created in the copy", m: a, want: push},
 		{name: "deleted in the copy", d: base, s: base, want: push},
+		{name: "rewound in the copy", m: a, d: a2, s: a2, want: push},
 		{name: "changed in the external repository", m: base, d: a, s: base, want: take},
 		{name: "created in the external repository", d: a, want: take},
 		{name: "deleted in the external repository", m: base, s: base, want: take},
-		{name: "deleted in the copy and changed in the external repository", d: a, s: base, want: take},
-		{name: "changed in the copy and deleted in the external repository", m: a, s: base, want: push},
+		{name: "rewound in the external repository", m: a2, d: a, s: a2, want: take},
 		{name: "changed on both sides, the copy ahead", m: a2, d: a, s: base, want: push},
 		{name: "changed on both sides, the external repository ahead", m: a, d: a2, s: base, want: take},
 		{name: "changed on both sides", m: a, d: b, s: base, want: diverged},
+		{name: "changed on both sides, with the same change", m: c, d: same, s: a2, want: diverged},
 		{name: "created on both sides", m: a, d: b, want: diverged},
 		{name: "created on both sides, the copy ahead", m: a2, d: a, want: push},
+		{name: "deleted in the copy and changed in the external repository", d: a, s: base, want: diverged},
+		{name: "changed in the copy and deleted in the external repository", m: a, s: base, want: diverged},
+		{name: "deleted in the copy and rewound in the external repository", d: a, s: a2, want: push},
+		{name: "rewound in the copy and deleted in the external repository", m: a, s: a2, want: take},
+		{name: "rewound in the external repository and changed in the copy", m: c, d: a, s: a2, want: diverged},
+		{name: "rewound in the copy and changed in the external repository", m: a, d: c, s: a2, want: diverged},
+		{name: "rewound on both sides, the copy further", m: base, d: a, s: a2, want: push},
+		{name: "rewound on both sides, the external repository further", m: a, d: base, s: a2, want: take},
+		{name: "an external rewind, resolved in the copy", m: replayed, d: a, s: a2, want: push},
+		{name: "an external rewind, resolved in the external repository", m: c, d: replayed, s: a2, want: take},
+		{name: "a rewind in the copy, resolved in the copy", m: replayed, d: c, s: a2, want: push},
+		{name: "a rewind in the copy, resolved in the external repository", m: a, d: replayed, s: a2, want: take},
+		{name: "a rewind in the copy, resolved in the copy with another change", m: other, d: c, s: a2, want: diverged},
+		{name: "a rewind in the copy, resolved in the external repository with another change", m: a, d: other, s: a2, want: take},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := decide(t.Context(), r, tc.m, tc.d, tc.s)
@@ -297,7 +332,7 @@ func TestSyncRecordsDivergence(t *testing.T) {
 			wantHeads(t, "the copy's branches", w.copyRefs("refs/heads/"), map[string]string{"feature": ours, "main": ours})
 			wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"feature": ours, "main": theirs})
 
-			want := &gitk8s.Divergence{Commit: theirs, Ref: "refs/git-k8s/downstream/heads/main"}
+			want := &gitk8s.Divergence{Commit: theirs, Ref: "refs/git-k8s/downstream/heads/main", Base: base}
 			for _, m := range []*Mirror{w.m, {Git: &git.Git{}, Dir: w.m.Dir}} {
 				d, err := m.Divergence(t.Context(), w.repo, "main")
 				if err != nil || d == nil || *d != *want {
@@ -308,11 +343,11 @@ func TestSyncRecordsDivergence(t *testing.T) {
 				t.Errorf("Divergence(feature) = %+v, %v; want nil", d, err)
 			}
 
-			// Fetches see the external head, but not the mirror's other
-			// refs.
+			// Fetches see the external head and where the sides last
+			// agreed.
 			refs := w.work.Git("ls-remote", w.copyDir())
-			if !strings.Contains(refs, theirs+"\trefs/git-k8s/downstream/heads/main") || strings.Contains(refs, "synced") {
-				t.Errorf("the copy advertises\n%s\nwant downstream refs and no synced refs", refs)
+			if !strings.Contains(refs, theirs+"\trefs/git-k8s/downstream/heads/main") || !strings.Contains(refs, base+"\trefs/git-k8s/synced/heads/main") {
+				t.Errorf("the copy advertises\n%s\nwant downstream and synced refs", refs)
 			}
 
 			// A resolver fetches the external head from the copy and
@@ -337,6 +372,96 @@ func TestSyncRecordsDivergence(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSyncKeepsRewinds has one side rewind feature to drop a commit, as a
+// person does to remove a leaked secret, while the other side adds a commit
+// on top of the dropped one. Moving either head to the other side would
+// undo a change, even though one head contains the other, so the branch
+// diverges until a replay of the added commit onto the rewound head
+// resolves it, from either side.
+func TestSyncKeepsRewinds(t *testing.T) {
+	for _, tc := range []struct {
+		name               string
+		rewind, resolution string
+	}{
+		{name: "rewound in the external repository, resolved in the copy", rewind: "external", resolution: "copy"},
+		{name: "rewound in the external repository, resolved there", rewind: "external", resolution: "external"},
+		{name: "rewound in the copy, resolved there", rewind: "copy", resolution: "copy"},
+		{name: "rewound in the copy, resolved in the external repository", rewind: "copy", resolution: "external"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := newWorld(t)
+			a := w.commit("", "a")
+			dropped := w.commit(a, "dropped")
+			w.pushExternal("feature", dropped)
+			w.sync(SyncOptions{})
+
+			added := w.commit(dropped, "added")
+			m, d := added, a
+			if tc.rewind == "copy" {
+				m, d = a, added
+			}
+			w.pushCopy("feature", m)
+			w.pushExternal("feature", d)
+			rep := w.sync(SyncOptions{Fetch: true, Push: true})
+			wantHeads(t, "Report.Diverged", rep.Diverged, map[string]string{"feature": d})
+			wantHeads(t, "the copy's branches", w.copyRefs("refs/heads/"), map[string]string{"feature": m})
+			wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"feature": d})
+			want := &gitk8s.Divergence{Commit: d, Ref: "refs/git-k8s/downstream/heads/feature", Base: dropped}
+			if got, err := w.m.Divergence(t.Context(), w.repo, "feature"); err != nil || got == nil || *got != *want {
+				t.Errorf("Divergence(feature) = %+v, %v; want %+v", got, err, want)
+			}
+
+			resolved := w.replay(added, a)
+			if tc.resolution == "copy" {
+				w.pushCopy("feature", resolved)
+			} else {
+				w.pushExternal("feature", resolved)
+			}
+			rep = w.sync(SyncOptions{Fetch: true, Push: true})
+			if len(rep.Diverged) > 0 || len(rep.Pending) > 0 || rep.Err != nil {
+				t.Errorf("after the replay, Sync = %+v; want nothing diverged or pending", rep)
+			}
+			want2 := map[string]string{"feature": resolved}
+			wantHeads(t, "after the replay, the copy's branches", w.copyRefs("refs/heads/"), want2)
+			wantHeads(t, "after the replay, the external repository's branches", w.externalHeads(), want2)
+			wantHeads(t, "after the replay, the copy's synced refs", w.copyRefs(syncedPrefix), want2)
+		})
+	}
+}
+
+// TestSyncKeepsDeletions deletes a branch on one side while the other side
+// changes it. A deletion removes every commit, so the branch diverges.
+func TestSyncKeepsDeletions(t *testing.T) {
+	w := newWorld(t)
+	base := w.commit("", "base")
+	w.pushExternal("main", base)
+	w.pushExternal("ours", base)
+	w.pushExternal("theirs", base)
+	w.sync(SyncOptions{})
+
+	next := w.commit(base, "next")
+	w.pushCopy("ours", next)
+	w.pushExternal("ours", "")
+	w.pushCopy("theirs", "")
+	w.pushExternal("theirs", next)
+	rep := w.sync(SyncOptions{Fetch: true, Push: true})
+	wantHeads(t, "Report.Diverged", rep.Diverged, map[string]string{"ours": "", "theirs": next})
+	wantHeads(t, "Report.Heads", rep.Heads, map[string]string{"main": base, "ours": next})
+	wantHeads(t, "the external repository's branches", w.externalHeads(), map[string]string{"main": base, "theirs": next})
+	if d, err := w.m.Divergence(t.Context(), w.repo, "ours"); err != nil || d == nil || *d != (gitk8s.Divergence{Base: base}) {
+		t.Errorf("Divergence(ours) = %+v, %v; want only the base %s", d, err, base)
+	}
+
+	// Each side that kept the branch deletes it too.
+	w.pushCopy("ours", "")
+	w.pushExternal("theirs", "")
+	rep = w.sync(SyncOptions{Fetch: true, Push: true})
+	if len(rep.Diverged) > 0 || len(rep.Pending) > 0 || rep.Err != nil {
+		t.Errorf("after the deletions, Sync = %+v; want nothing diverged or pending", rep)
+	}
+	wantHeads(t, "the copy's synced refs", w.copyRefs(syncedPrefix), map[string]string{"main": base})
 }
 
 func TestSyncFetchesAgainWhenExternalRepositoryMoves(t *testing.T) {

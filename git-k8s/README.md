@@ -127,9 +127,9 @@ fetches its branches once each `pollInterval`, 30 seconds by default. Only
 the mirror contacts external repositories, and every other reconcile reads
 the copy, which is cheap. A branch that changed only in the external
 repository moves to the same commit in the copy. Deleting a branch on one
-side deletes it on the other, unless the other side changed it since they
-last agreed. Then the branch comes back on the side that deleted it, so that
-no commits are lost.
+side deletes it on the other, unless the other side added commits to the
+branch since they last synced. Then the branch diverges, and neither side
+changes. See [Divergence](#divergence).
 
 The `ExternalSynced` condition on each `GitRepository` says whether the
 external repository has every change in the copy:
@@ -192,8 +192,10 @@ A check can't create or delete branches. git updates a branch only if it
 still points to the commit that the push expects, so a push never
 overwrites a change that the pusher hasn't seen. Pushes can't see or change
 the mirror's own refs under `refs/git-k8s/`, and git checks every object in
-a push with `receive.fsckObjects`. Fetches can see the external repository's
-heads under `refs/git-k8s/downstream/heads/`, to resolve a divergence.
+a push with `receive.fsckObjects`. To resolve a divergence, fetches can see
+the external repository's heads under `refs/git-k8s/downstream/heads/`, and
+the heads where the copy and the external repository last synced under
+`refs/git-k8s/synced/heads/`.
 
 To let a controller start branches, pass the core program
 `-branch-prefix=NAMESPACE/SERVICEACCOUNT=PREFIX` for the controller's
@@ -217,12 +219,15 @@ before it starts the Pod.
 
 ### Divergence
 
-A branch diverges when it changes both in the copy and in the external
-repository between syncs, for example when a check pushes a fix to the
-mirror while a person pushes to GitHub. The mirror overwrites neither side.
-It keeps the external repository's head at
-`refs/git-k8s/downstream/heads/BRANCH` in the copy, and the merge controller
-records it in the `GitBranch`'s status:
+A branch diverges when the copy and the external repository both changed it
+since they last synced, and neither side's head keeps the other side's
+changes. For example, a check pushes a fix to the mirror while a person
+pushes to GitHub, or a person force-pushes to GitHub to remove a commit
+while a check pushes a fix on top of that commit to the mirror. The mirror
+overwrites neither side. It keeps the external repository's head at
+`refs/git-k8s/downstream/heads/BRANCH` in the copy, and the head where the
+two sides last synced at `refs/git-k8s/synced/heads/BRANCH`. The merge
+controller records both in the `GitBranch`'s status:
 
 ```yaml
 status:
@@ -230,29 +235,96 @@ status:
   diverged:
     commit: 3f1d0c2b9a8e7d6c5b4a39281706f5e4d3c2b1a0
     ref: refs/git-k8s/downstream/heads/c/auth
+    base: 8c2e4a6f0b1d3c5e7a9f2b4d6c8e0a1f3b5d7c9e
 ```
 
+If the external repository deleted the branch, `commit` and `ref` are empty.
+If the copy deleted it, the branch has no `GitBranch`, and only the
+`ExternalSynced` condition lists it.
+
+The mirror compares each side's head with the head where they last synced,
+`base`. A side added the commits that its head has and `base` doesn't, and
+removed the commits that `base` has and its head doesn't. A side that
+removed commits rewound, for example with a force push, and deleting a
+branch removes every commit. The mirror moves one side to the other side's
+head only if that head keeps every change that the moving side made:
+
+- The head has none of the commits that the moving side removed.
+- The head has each commit that the moving side added. If the head doesn't
+  contain `base`, a replay of the commit also counts. A replay is a commit
+  that removes and adds the same lines in the same files as the original,
+  ignoring the unchanged lines around them. A merge commit, and a commit
+  that changes no file, have no replay.
+
+So a branch diverges if one side rewound and the other side added commits,
+even if the other side's head contains the rewound side's head, because
+moving the rewound side to it brings back the commits that it removed. If
+neither side rewound, only a head that contains both heads keeps both
+sides' changes.
+
 A diverged branch doesn't land, because landing the copy's head leaves out
-the external repository's. To resolve a divergence, push a commit that
-contains both heads, such as a merge of the downstream ref, to the branch in
-the mirror with a lease on the copy's head. The mirror then fast-forwards
-the external repository to that commit, and the merge controller clears
-`status.diverged`. A parent takes no pushes, so branches still land on a
-diverged parent, and the commit that resolves it lands from a child branch
-like any other change.
+the external repository's changes. To resolve a divergence, push a head
+that keeps both sides' changes to the branch on either side, with a lease on
+that side's head. The mirror then moves the other side to it, and the merge
+controller clears `status.diverged`:
+
+- If neither side rewound, push a commit that contains both heads, such as
+  a merge of the downstream ref.
+- If one side rewound, a commit that contains both heads can't express the
+  removal. Replay the commits that the other side added since `base` onto
+  the rewound side's head, and push the result with a lease. If you push it
+  to the side that didn't rewind, it resolves the divergence even if you
+  changed commits to resolve conflicts. If you push it to the side that
+  rewound, each commit that the other side added needs a replay in it.
+
+To keep one side's head instead, and drop the other side's changes, push
+that head to the other side.
+
+For example, if a person force-pushed `c/auth` in the external repository
+while a check pushed to it in the mirror, replay the check's commits onto
+the external repository's head, and push the result to the mirror:
+
+```sh
+git fetch MIRROR refs/heads/c/auth refs/git-k8s/downstream/heads/c/auth refs/git-k8s/synced/heads/c/auth
+git switch --detach COPY_HEAD
+git rebase --onto COMMIT BASE
+git push --force-with-lease=refs/heads/c/auth:COPY_HEAD MIRROR HEAD:refs/heads/c/auth
+```
+
+Replace the following:
+
+- `MIRROR`: the copy's URL, such as `http://git-k8s.git-k8s.svc/team/app.git`
+- `COPY_HEAD`: the copy's head, which is the `GitBranch`'s `spec.head`
+- `COMMIT`: `status.diverged.commit`
+- `BASE`: `status.diverged.base`
+
+If the copy rewound instead, replay the external repository's commits onto
+the copy's head with `git rebase --onto COPY_HEAD BASE COMMIT`, and push the
+result to the external repository with a lease on `COMMIT`. To resolve a
+branch that the copy deleted, delete it in the external repository too,
+after you push the commits that you want to keep to a new branch there.
 
 People have no identity of their own on the mirror. To fetch or push by
 hand, use a token for a service account that can, such as the service
-account of the check that pushed the change. This command makes one for
-anyone whom Kubernetes RBAC lets create tokens for that service account:
+account of the check that pushed the change, and pass it to git with
+`-c http.extraHeader="Authorization: Bearer TOKEN"`. This command makes one
+for anyone whom Kubernetes RBAC lets create tokens for that service account:
 
 ```sh
 kubectl -n NAMESPACE create token SERVICEACCOUNT --audience=git-k8s-mirror
 ```
 
-A new child branch that resolves a diverged parent can also go to the
-external repository, and the mirror takes it at its next poll. [Resolve
-conflicts in a controller](future-work.md#resolve-conflicts-in-a-controller)
+A parent takes no pushes, so branches still land on a diverged parent, and
+a commit that contains both heads resolves it when it lands from a child
+branch like any other change. A new child branch that resolves a diverged
+parent can also go to the external repository, and the mirror takes it at
+its next poll. The merge controller only moves a parent to a commit that
+contains the parent's head, so a parent that rewound in the external
+repository resolves only there, with a replay of each commit that landed in
+the copy since `base`. If a commit can't be replayed unchanged, for example
+because it changes lines that the rewind removed, the parent stays diverged
+until the external repository's head contains the copy's head again.
+[Resolve conflicts in a controller](future-work.md#resolve-conflicts-in-a-controller)
 proposes a controller that resolves divergence by itself.
 
 ### Credentials

@@ -55,11 +55,15 @@ func (m *merger) Reconcile(ctx context.Context, b *gitk8s.GitBranch) error {
 		return nil
 	case diverged != nil:
 		// Landing the mirror's head would leave out the external
-		// repository's. Branches still land on a diverged parent, since
-		// the commit that resolves the parent lands on it from a child
-		// branch.
-		report(b, reasonDiverged, false, "%s changed both in the mirror and in the external repository, which has it at %s; waiting for a commit that contains both heads",
-			spec.Branch, gitk8s.Short(diverged.Commit))
+		// repository's changes. Branches still land on a diverged parent,
+		// since the commit that resolves the parent can land on it from a
+		// child branch.
+		external := "has it at " + gitk8s.Short(diverged.Commit)
+		if diverged.Commit == "" {
+			external = "deleted it"
+		}
+		report(b, reasonDiverged, false, "%s changed both in the mirror and in the external repository, which %s; waiting for a commit that keeps both sides' changes",
+			spec.Branch, external)
 		return nil
 	case spec.Merge == nil:
 		report(b, reasonNoMergePolicy, false, "no branches rule that matches %s has a merge policy", spec.Parent)

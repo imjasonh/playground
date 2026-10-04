@@ -183,7 +183,7 @@ func syncedCondition(p poll, rep *mirror.Report) kube.Condition {
 	case len(rep.Diverged) > 0:
 		c.Reason = "Diverged"
 		c.Message = strings.Join(slices.Sorted(maps.Keys(rep.Diverged)), ", ") +
-			" changed both in the mirror and in the external repository; the mirror keeps the external repository's heads under refs/git-k8s/downstream/heads/"
+			" changed both in the mirror and in the external repository, and neither side's head keeps the other side's changes; the mirror keeps the external repository's heads under refs/git-k8s/downstream/heads/"
 	case len(rep.Pending) > 0:
 		c.Reason = "Pending"
 		c.Message = "the external repository doesn't have the mirror's changes to " + strings.Join(rep.Pending, ", ") + " yet"
@@ -204,8 +204,9 @@ func noticeDivergence(ctx context.Context, repo *gitk8s.GitRepository, diverged 
 	branches := kube.List[gitk8s.GitBranch](ctx, kube.InNamespace(repo.Namespace),
 		kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: repo.Name}))
 	for _, b := range branches {
-		want, have := diverged[b.Spec.Branch], b.Status.Diverged
-		if (have == nil) != (want == "") || (have != nil && have.Commit != want) {
+		want, ok := diverged[b.Spec.Branch]
+		have := b.Status.Diverged
+		if (have != nil) != ok || (have != nil && have.Commit != want) {
 			kube.Trigger[gitk8s.GitBranch](ctx, b.Namespace, b.Name)
 		}
 	}

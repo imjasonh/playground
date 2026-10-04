@@ -38,9 +38,9 @@ type Report struct {
 	// Pending lists, sorted, the branches whose changes in the copy the
 	// external repository doesn't have yet.
 	Pending []string
-	// Diverged maps each branch that changed both in the copy and in the
-	// external repository since they last agreed to the external
-	// repository's head.
+	// Diverged maps each branch that diverged, as Mirror.Divergence says,
+	// to the external repository's head, or to "" if the external
+	// repository deleted the branch.
 	Diverged map[string]string
 	// Err says why Sync couldn't fetch from or push to the external
 	// repository.
@@ -133,9 +133,10 @@ func (m *Mirror) Sync(ctx context.Context, repo *gitk8s.Repository, o SyncOption
 	return rep, nil
 }
 
-// Divergence returns the external repository's head of branch if the
-// branch changed both in repo's copy and in the external repository since
-// they last agreed, or nil if it didn't.
+// Divergence returns how branch diverged between repo's copy and the
+// external repository, or nil if it didn't. A branch diverges when each
+// side changed it since they last agreed, and neither side's head keeps
+// the other side's changes.
 func (m *Mirror) Divergence(ctx context.Context, repo *gitk8s.Repository, branch string) (*gitk8s.Divergence, error) {
 	r, err := m.Open(ctx, repo)
 	if err != nil {
@@ -146,12 +147,16 @@ func (m *Mirror) Divergence(ctx context.Context, repo *gitk8s.Repository, branch
 	if err != nil {
 		return nil, err
 	}
-	head, down := refs[headsPrefix+branch], refs[downstreamPrefix+branch]
-	act, err := decide(ctx, r.Repo, head, down, refs[syncedPrefix+branch])
+	head, down, synced := refs[headsPrefix+branch], refs[downstreamPrefix+branch], refs[syncedPrefix+branch]
+	act, err := decide(ctx, r.Repo, head, down, synced)
 	if err != nil || act != diverged {
 		return nil, err
 	}
-	return &gitk8s.Divergence{Commit: down, Ref: downstreamPrefix + branch}, nil
+	d := &gitk8s.Divergence{Commit: down, Base: synced}
+	if down != "" {
+		d.Ref = downstreamPrefix + branch
+	}
+	return d, nil
 }
 
 func remoteOrError(f func() (git.Remote, error)) func() (git.Remote, error) {
@@ -182,23 +187,60 @@ func decide(ctx context.Context, r *git.Repo, m, d, s string) (action, error) {
 		return inSync, nil
 	case d == s:
 		return push, nil
-	case m == s || m == "":
-		// A branch deleted in the copy and changed in the external
-		// repository comes back, so that no commits are lost.
+	case m == s:
 		return take, nil
-	case d == "":
-		return push, nil
 	}
-	// Both changed. If one side's head contains the other's, moving the
-	// other side forward loses nothing; that's how a commit that resolves
-	// a divergence syncs.
-	if ok, err := r.IsAncestor(ctx, d, m); err != nil || ok {
+	if ok, err := keeps(ctx, r, m, d, s); err != nil || ok {
 		return push, err
 	}
-	if ok, err := r.IsAncestor(ctx, m, d); err != nil || ok {
+	if ok, err := keeps(ctx, r, d, m, s); err != nil || ok {
 		return take, err
 	}
 	return diverged, nil
+}
+
+// keeps reports whether moving one side of a branch from other to head
+// keeps every change that side made since the sides agreed at s: head has
+// none of the commits that the side removed, which are in s but not in
+// other, and has each commit that the side added, which are in other but
+// not in s. If head doesn't contain s, a replay of an added commit counts.
+// head, other, and s differ, and "" means that the branch doesn't exist,
+// or never agreed.
+func keeps(ctx context.Context, r *git.Repo, head, other, s string) (bool, error) {
+	switch {
+	case s == "":
+		return r.IsAncestor(ctx, other, head)
+	case head == "":
+		return r.IsAncestor(ctx, other, s)
+	case other == "":
+		bases, err := r.MergeBases(ctx, head, s)
+		return len(bases) == 0, err
+	}
+	if forward, err := r.IsAncestor(ctx, s, other); err != nil {
+		return false, err
+	} else if !forward {
+		// The commits that head and s share are their merge bases and the
+		// merge bases' ancestors, so head has none of the commits that
+		// other removed if other contains each merge base.
+		bases, err := r.MergeBases(ctx, head, s)
+		if err != nil {
+			return false, err
+		}
+		for _, b := range bases {
+			if ok, err := r.IsAncestor(ctx, b, other); err != nil || !ok {
+				return false, err
+			}
+		}
+	}
+	if ok, err := r.IsAncestor(ctx, other, head); err != nil || ok {
+		return ok, err
+	}
+	// When both sides only added commits, replays would rewrite the
+	// history of a side that didn't rewind.
+	if ok, err := r.IsAncestor(ctx, s, head); err != nil || ok {
+		return false, err
+	}
+	return r.Replays(ctx, head, other, s)
 }
 
 type syncer struct {

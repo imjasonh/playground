@@ -339,6 +339,88 @@ func TestFetchMergePush(t *testing.T) {
 	}
 }
 
+func TestMergeBasesAndReplays(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	w.Write("a.txt", "1\n2\n3\n4\n5\n6\n7\n8\n")
+	base := w.Commit("base")
+	w.Write("a.txt", "1\n2\n3\n4\nsecret\n5\n6\n7\n8\n")
+	secret := w.Commit("secret")
+	w.Write("a.txt", "1\n2\n3\n4\nsecret\n5\n6\nseven\n8\n")
+	fix := w.Commit("fix")
+	empty := w.Commit("empty")
+	w.Push("main")
+	w.Branch("replay", base)
+	w.Git("cherry-pick", fix)
+	replay := w.Git("rev-parse", "HEAD")
+	w.Push("replay")
+	w.Branch("other", base)
+	w.Write("a.txt", "1\n2\n3\n4\n5\n6\nSEVEN\n8\n")
+	other := w.Commit("a different fix")
+	w.Push("other")
+	w.Branch("merge", secret)
+	w.Git("merge", "--quiet", "--no-ff", "-m", "merge", replay)
+	merge := w.Git("rev-parse", "HEAD")
+	w.Push("merge")
+	w.Branch("x1", base)
+	w.Write("x1.txt", "x1\n")
+	x1 := w.Commit("x1")
+	w.Branch("x2", base)
+	w.Write("x2.txt", "x2\n")
+	x2 := w.Commit("x2")
+	w.Git("merge", "--quiet", "--no-ff", "-m", "m2", x1)
+	m2 := w.Git("rev-parse", "HEAD")
+	w.Push("m2")
+	w.Branch("m1", x1)
+	w.Git("merge", "--quiet", "--no-ff", "-m", "m1", x2)
+	m1 := w.Git("rev-parse", "HEAD")
+	w.Push("m1")
+	w.Git("checkout", "--quiet", "--orphan", "orphan")
+	orphan := w.Commit("unrelated")
+	w.Push("orphan")
+
+	ctx := t.Context()
+	repo, err := (&git.Git{}).Open(ctx, filepath.Join(t.TempDir(), "app.git"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.Fetch(ctx, srv.Remote("app"), "main", "replay", "other", "merge", "m1", "m2", "orphan"); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		a, b string
+		want []string
+	}{
+		{replay, fix, []string{base}},
+		{m1, m2, slices.Sorted(slices.Values([]string{x1, x2}))},
+		{orphan, base, nil},
+	} {
+		got, err := repo.MergeBases(ctx, tc.a, tc.b)
+		slices.Sort(got)
+		if err != nil || !slices.Equal(got, tc.want) {
+			t.Errorf("MergeBases(%.7s, %.7s) = %v, %v; want %v", tc.a, tc.b, got, err, tc.want)
+		}
+	}
+
+	for _, tc := range []struct {
+		name               string
+		head, other, since string
+		want               bool
+	}{
+		{"a replay onto a base without a nearby line", replay, fix, secret, true},
+		{"nothing to replay", base, secret, secret, true},
+		{"a different change", other, fix, secret, false},
+		{"no replay", base, fix, secret, false},
+		{"a commit that changes no file", replay, empty, secret, false},
+		{"a merge commit", replay, merge, secret, false},
+	} {
+		if got, err := repo.Replays(ctx, tc.head, tc.other, tc.since); err != nil || got != tc.want {
+			t.Errorf("%s: Replays = %v, %v; want %v", tc.name, got, err, tc.want)
+		}
+	}
+}
+
 func TestMergeTreeConflicts(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")
