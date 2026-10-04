@@ -185,6 +185,11 @@ delete the Pods with their `GitBranch`. Set `-runtime-class` to run the Pods
 under a sandboxing runtime such as gVisor, and `-go-image`, `-git-image`,
 `-timeout`, and `-goproxy` to change the rest.
 
+Both of a test Pod's containers meet the `restricted`
+[Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/).
+An admission policy keeps `check-gotest` to its own Pods, in namespaces that
+enforce the `baseline` or `restricted` standard. See [Install](#install).
+
 ## Merge gates
 
 `when` is a [CEL](https://cel.dev) expression. It has one variable,
@@ -221,7 +226,7 @@ Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
 after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
 
-`config/policy.yaml` holds two ValidatingAdmissionPolicies. The first lets
+`config/policy.yaml` holds three ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and
 stops every other service account, including the core program's, from
 changing `status.checks`. A check must run as the service account
@@ -232,9 +237,36 @@ check's result. The second stops every git-k8s service account from setting
 the approve annotation, which is for people, and stops checks from changing
 `GitBranch` objects at all.
 
+The third keeps each check to its own Pods. `generate` lets a check that
+declares Pods with `kube.Own`, such as `check-gotest`, create, patch, and
+delete Pods in every namespace, because RBAC can't limit those verbs to the
+Pods that a program created. kube labels each Pod that `check-NAME` declares
+with `kube.imjasonh.github.io/controller=check-NAME`. The policy lets the
+check change or delete only Pods with that label, and its new Pods must have
+it. The check's Pods can't run in the `git-k8s` or `check-*` namespaces, or as
+any service account but their namespace's `default`. They run only in
+namespaces that enforce the `baseline` or `restricted` Pod Security Standard,
+which forbids the privileged and `hostPath` Pods that could read other
+programs' tokens on a node. The policy doesn't limit which Secrets the Pods
+mount, so a compromised check can still read the Secrets in the namespaces
+where it can run Pods.
+
 Without the policies, none of that holds, so the repositories controller
 sets a `PoliciesInstalled` condition on each `GitRepository`. It's `False`
-until both policies are installed with bindings that deny.
+until all three policies are installed with bindings that deny.
+
+Each namespace that holds a `GitRepository` whose merge policy lists `gotest`
+must enforce the `baseline` or `restricted` Pod Security Standard, or the
+third policy denies the test Pods. The test Pods meet `restricted`, so
+enforce it with this command:
+
+```sh
+kubectl label namespace NAMESPACE pod-security.kubernetes.io/enforce=restricted
+```
+
+Replace `NAMESPACE` with the namespace of the `GitRepository`. While a
+namespace doesn't enforce either standard, `check-gotest` logs each denial
+and tries again, and the branch's `gotest` result stays `Running`.
 
 ## Test
 

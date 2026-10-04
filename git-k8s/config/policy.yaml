@@ -115,3 +115,96 @@ metadata:
 spec:
   policyName: git-k8s-branches
   validationActions: [Deny]
+---
+# generate lets a check that declares Pods with kube.Own, such as
+# check-gotest, create, patch, and delete Pods in every namespace, because
+# RBAC can't limit those verbs to the Pods that a program created, and a
+# repository's namespace isn't known when generate writes the program's RBAC.
+# kube sets the label kube.imjasonh.github.io/controller on each object that a
+# controller owns to the controller's name, which is check-NAME for the NAME
+# check. This policy lets a check change or delete only Pods with its own
+# label, and its new Pods must have it. A check's Pods also can't run in the
+# namespaces of git-k8s programs or as any service account but their
+# namespace's default. They run only in namespaces where Pod Security
+# admission enforces the baseline or restricted standard, which forbids the
+# privileged and hostPath Pods that could read other programs' tokens on a
+# node.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: git-k8s-check-pods
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["pods", "pods/ephemeralcontainers", "pods/resize", "pods/status"]
+  # Every Pod write in the cluster matches, so this condition skips service
+  # accounts outside the check-* namespaces where generate installs checks.
+  # Like variables.check, it relies on generate's convention, but it reads the
+  # account's namespace, not its name. If checks run under other accounts,
+  # widen it to every service account, like the other policies' condition.
+  matchConditions:
+    - name: check-namespaces
+      expression: request.userInfo.username.startsWith("system:serviceaccount:check-")
+  variables:
+    - name: user
+      expression: request.userInfo.username.split(":")
+    - name: check
+      expression: >-
+        size(variables.user) == 4 && variables.user[2] == variables.user[3] &&
+        variables.user[3].startsWith("check-") ? variables.user[3].substring(6) : ""
+    - name: controller
+      expression: '"check-" + variables.check'
+    - name: owner
+      expression: >-
+        object != null && has(object.metadata.labels) &&
+        "kube.imjasonh.github.io/controller" in object.metadata.labels ?
+        object.metadata.labels["kube.imjasonh.github.io/controller"] : ""
+    - name: oldOwner
+      expression: >-
+        oldObject != null && has(oldObject.metadata.labels) &&
+        "kube.imjasonh.github.io/controller" in oldObject.metadata.labels ?
+        oldObject.metadata.labels["kube.imjasonh.github.io/controller"] : ""
+  validations:
+    - expression: >-
+        variables.check == "" ||
+        request.namespace != "git-k8s" && !request.namespace.startsWith("check-")
+      messageExpression: >-
+        "the " + variables.check + " check can't change Pods in the namespaces of git-k8s programs"
+    - expression: variables.check == "" || oldObject == null || variables.oldOwner == variables.controller
+      messageExpression: >-
+        "the " + variables.check + " check can change or delete only its own Pods, which have the label " +
+        "kube.imjasonh.github.io/controller=" + variables.controller
+    - expression: variables.check == "" || object == null || variables.owner == variables.controller
+      messageExpression: >-
+        "the " + variables.check + " check's Pods need the label " +
+        "kube.imjasonh.github.io/controller=" + variables.controller
+    - expression: >-
+        variables.check == "" || object == null ||
+        (!has(object.spec.serviceAccountName) || object.spec.serviceAccountName in ["", "default"]) &&
+        (!has(object.spec.serviceAccount) || object.spec.serviceAccount in ["", "default"])
+      messageExpression: >-
+        "the " + variables.check + " check's Pods must run as their namespace's default service account"
+    - expression: >-
+        variables.check == "" || object == null ||
+        has(namespaceObject.metadata.labels) &&
+        "pod-security.kubernetes.io/enforce" in namespaceObject.metadata.labels &&
+        namespaceObject.metadata.labels["pod-security.kubernetes.io/enforce"] in ["baseline", "restricted"]
+      messageExpression: >-
+        "the " + variables.check + " check can't run Pods in namespace " + request.namespace +
+        ", which doesn't enforce the baseline or restricted Pod Security Standard"
+---
+# The API server looks up a binding's params before it evaluates
+# matchConditions. If this binding names params with
+# parameterNotFoundAction: Deny, every Pod write in the cluster fails while
+# they're missing.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: git-k8s-check-pods
+spec:
+  policyName: git-k8s-check-pods
+  validationActions: [Deny]
