@@ -281,16 +281,26 @@ func TestCheckPods(t *testing.T) {
 	ephemeral := gotestPod(func(spec map[string]any) {
 		spec["ephemeralContainers"] = []any{map[string]any{"name": "debug", "image": "busybox", "securityContext": map[string]any{"privileged": true}}}
 	})
+	// withFields returns check-gotest's Pod whose test container also has
+	// fields.
+	withFields := func(fields map[string]any) map[string]any {
+		return gotestPod(func(spec map[string]any) {
+			maps.Copy(spec["containers"].([]any)[0].(map[string]any), fields)
+		})
+	}
+	metadataGet := map[string]any{"httpGet": map[string]any{"host": "169.254.169.254", "path": "/", "port": 80}}
 	const (
-		programs   = "the gotest check can't change Pods in the namespaces of git-k8s programs"
-		others     = "the gotest check can change or delete only its own Pods, which have the label kube.imjasonh.github.io/controller=check-gotest"
-		label      = "the gotest check's Pods need the label kube.imjasonh.github.io/controller=check-gotest"
-		optedOut   = "the gotest check can't create or change Pods in namespace repos, which doesn't have the label git-k8s.imjasonh.com/check-pods=true"
-		unenforced = "the gotest check can't create or change Pods in namespace repos, which doesn't enforce the restricted Pod Security Standard at the latest version"
-		account    = "the gotest check's Pods must run as their namespace's default service account"
-		node       = "the gotest check can't assign its Pods to a node"
-		host       = "the gotest check's Pods can't use the node's network, PID, or IPC namespace, hostPath volumes, or host ports"
-		privilege  = "the gotest check's containers can't be privileged, add capabilities, unmask /proc, use the Unconfined seccomp profile, or run as host processes"
+		programs    = "the gotest check can't change Pods in the namespaces of git-k8s programs"
+		others      = "the gotest check can change or delete only its own Pods, which have the label kube.imjasonh.github.io/controller=check-gotest"
+		label       = "the gotest check's Pods need the label kube.imjasonh.github.io/controller=check-gotest"
+		optedOut    = "the gotest check can't create or change Pods in namespace repos, which doesn't have the label git-k8s.imjasonh.com/check-pods=true"
+		unenforced  = "the gotest check can't create or change Pods in namespace repos, which doesn't enforce the restricted Pod Security Standard at the latest version"
+		account     = "the gotest check's Pods must run as their namespace's default service account"
+		node        = "the gotest check can't assign its Pods to a node"
+		host        = "the gotest check's Pods can't use the node's network, PID, or IPC namespace, hostPath volumes, or host ports"
+		privilege   = "the gotest check's containers can't be privileged, add capabilities, unmask /proc, use the Unconfined seccomp profile, or run as host processes"
+		confinement = "the gotest check's containers can't turn off AppArmor or SELinux confinement, or set sysctls"
+		probeHost   = "the gotest check's probes and lifecycle handlers can't set a host"
 	)
 	notCheck := func(user string) string { return user + " isn't a check's service account, so it can't write Pods" }
 	for _, tt := range []struct {
@@ -490,6 +500,99 @@ func TestCheckPods(t *testing.T) {
 			spec["securityContext"] = map[string]any{"windowsOptions": map[string]any{"hostProcess": true}}
 		})},
 		want: privilege,
+	}, {
+		name: "creates its Pod with the container_t SELinux type, an MCS level, and the RuntimeDefault AppArmor profile",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["securityContext"] = map[string]any{"seLinuxOptions": map[string]any{"type": "container_t", "level": "s0:c123,c456"}, "appArmorProfile": map[string]any{"type": "RuntimeDefault"}}
+			spec["containers"].([]any)[0].(map[string]any)["securityContext"] = map[string]any{"seLinuxOptions": map[string]any{"level": "s0:c1,c2"}, "appArmorProfile": map[string]any{"type": "Localhost", "localhostProfile": "k8s-default"}}
+		})},
+	}, {
+		name: "creates a Pod whose container runs as the spc_t SELinux type",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContext(map[string]any{"seLinuxOptions": map[string]any{"type": "spc_t"}})},
+		want: confinement,
+	}, {
+		name: "creates a Pod that runs as the spc_t SELinux type",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["securityContext"] = map[string]any{"seLinuxOptions": map[string]any{"type": "spc_t"}}
+		})},
+		want: confinement,
+	}, {
+		name: "creates a Pod whose init container sets an SELinux role",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: initContainer(map[string]any{"seLinuxOptions": map[string]any{"role": "system_r"}})},
+		want: confinement,
+	}, {
+		name: "creates a Pod whose container sets an SELinux user",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContext(map[string]any{"seLinuxOptions": map[string]any{"user": "system_u"}})},
+		want: confinement,
+	}, {
+		name: "creates a Pod that sets an SELinux user",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["securityContext"] = map[string]any{"seLinuxOptions": map[string]any{"user": "system_u"}}
+		})},
+		want: confinement,
+	}, {
+		name: "creates a Pod that sets an SELinux role",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["securityContext"] = map[string]any{"seLinuxOptions": map[string]any{"role": "system_r"}}
+		})},
+		want: confinement,
+	}, {
+		name: "creates a Pod with an AppArmor-unconfined container",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withContext(map[string]any{"appArmorProfile": map[string]any{"type": "Unconfined"}})},
+		want: confinement,
+	}, {
+		name: "creates an AppArmor-unconfined Pod",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["securityContext"] = map[string]any{"appArmorProfile": map[string]any{"type": "Unconfined"}}
+		})},
+		want: confinement,
+	}, {
+		name: "creates a Pod that sets a sysctl",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["securityContext"] = map[string]any{"sysctls": []any{map[string]any{"name": "kernel.msgmax", "value": "65536"}}}
+		})},
+		want: confinement,
+	}, {
+		name: "adds an ephemeral container that runs as the spc_t SELinux type to its Pod",
+		r: request{user: gotest, operation: "UPDATE", subresource: "ephemeralcontainers", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["ephemeralContainers"] = []any{map[string]any{"name": "debug", "image": "busybox", "securityContext": map[string]any{"seLinuxOptions": map[string]any{"type": "spc_t"}}}}
+		}), oldObject: own},
+		want: confinement,
+	}, {
+		name: "creates its Pod with probes and lifecycle handlers that don't set a host",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withFields(map[string]any{
+			"livenessProbe":  map[string]any{"httpGet": map[string]any{"path": "/healthz", "port": 8080}},
+			"readinessProbe": map[string]any{"tcpSocket": map[string]any{"host": "", "port": 8080}},
+			"lifecycle":      map[string]any{"preStop": map[string]any{"exec": map[string]any{"command": []any{"true"}}}},
+		})},
+	}, {
+		name: "creates a Pod whose liveness probe sets a host",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withFields(map[string]any{"livenessProbe": metadataGet})},
+		want: probeHost,
+	}, {
+		name: "creates a Pod whose readiness probe connects to another host's TCP port",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withFields(map[string]any{
+			"readinessProbe": map[string]any{"tcpSocket": map[string]any{"host": "10.0.0.1", "port": 10250}},
+		})},
+		want: probeHost,
+	}, {
+		name: "creates a Pod whose startup probe sets a host",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withFields(map[string]any{"startupProbe": metadataGet})},
+		want: probeHost,
+	}, {
+		name: "creates a Pod whose postStart handler sets a host",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withFields(map[string]any{"lifecycle": map[string]any{"postStart": metadataGet}})},
+		want: probeHost,
+	}, {
+		name: "creates a Pod whose preStop handler sets a host",
+		r:    request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: withFields(map[string]any{"lifecycle": map[string]any{"preStop": metadataGet}})},
+		want: probeHost,
+	}, {
+		name: "creates a Pod whose sidecar's liveness probe sets a host",
+		r: request{user: gotest, operation: "CREATE", namespace: "repos", nsLabels: ready, object: gotestPod(func(spec map[string]any) {
+			spec["initContainers"] = []any{map[string]any{"name": "proxy", "image": "cgr.dev/chainguard/go", "restartPolicy": "Always", "livenessProbe": metadataGet}}
+		})},
+		want: probeHost,
 	}, {
 		name: "patches another check's Pod",
 		r:    request{user: gotest, operation: "UPDATE", namespace: "repos", nsLabels: ready, object: pod("check-review", ""), oldObject: pod("check-review", "")},

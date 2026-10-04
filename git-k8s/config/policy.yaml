@@ -126,9 +126,9 @@ spec:
 # label, and its new Pods must have it. A check creates and changes Pods only
 # in namespaces labeled git-k8s.imjasonh.com/check-pods=true that enforce the
 # latest restricted Pod Security Standard, and never in the namespaces of
-# git-k8s programs. The policy itself also denies the Pod fields that break a
-# container's isolation from its node, because Pod Security admission skips
-# the Pods that its exemptions cover.
+# git-k8s programs. The policy itself also enforces the baseline Pod Security
+# Standard, more strictly for capabilities and sysctls, because Pod Security
+# admission skips the Pods that its exemptions cover.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -183,6 +183,15 @@ spec:
         variables.containers.map(c, has(c.securityContext), c.securityContext) +
         (object != null && has(object.spec.ephemeralContainers) ?
         object.spec.ephemeralContainers.map(c, has(c.securityContext), c.securityContext) : [])
+    - name: seLinuxTypes
+      expression: '["container_t", "container_init_t", "container_kvm_t", "container_engine_t"]'
+    - name: handlers
+      expression: >-
+        variables.containers.map(c, has(c.livenessProbe), c.livenessProbe) +
+        variables.containers.map(c, has(c.readinessProbe), c.readinessProbe) +
+        variables.containers.map(c, has(c.startupProbe), c.startupProbe) +
+        variables.containers.map(c, has(c.lifecycle) && has(c.lifecycle.postStart), c.lifecycle.postStart) +
+        variables.containers.map(c, has(c.lifecycle) && has(c.lifecycle.preStop), c.lifecycle.preStop)
   validations:
     - expression: variables.check != ""
       messageExpression: request.userInfo.username + " isn't a check's service account, so it can't write Pods"
@@ -248,6 +257,30 @@ spec:
       messageExpression: >-
         "the " + variables.check + " check's containers can't be privileged, add capabilities, unmask /proc, " +
         "use the Unconfined seccomp profile, or run as host processes"
+    - expression: >-
+        object == null ||
+        (!has(object.spec.securityContext) ||
+        (!has(object.spec.securityContext.appArmorProfile) ||
+        object.spec.securityContext.appArmorProfile.type != "Unconfined") &&
+        (!has(object.spec.securityContext.seLinuxOptions) ||
+        (!has(object.spec.securityContext.seLinuxOptions.type) ||
+        object.spec.securityContext.seLinuxOptions.type in variables.seLinuxTypes) &&
+        !has(object.spec.securityContext.seLinuxOptions.user) &&
+        !has(object.spec.securityContext.seLinuxOptions.role)) &&
+        !has(object.spec.securityContext.sysctls)) &&
+        variables.securityContexts.all(s,
+        (!has(s.appArmorProfile) || s.appArmorProfile.type != "Unconfined") &&
+        (!has(s.seLinuxOptions) ||
+        (!has(s.seLinuxOptions.type) || s.seLinuxOptions.type in variables.seLinuxTypes) &&
+        !has(s.seLinuxOptions.user) && !has(s.seLinuxOptions.role)))
+      messageExpression: >-
+        "the " + variables.check + " check's containers can't turn off AppArmor or SELinux confinement, " +
+        "or set sysctls"
+    - expression: >-
+        variables.handlers.all(h,
+        (!has(h.httpGet) || !has(h.httpGet.host) || h.httpGet.host == "") &&
+        (!has(h.tcpSocket) || !has(h.tcpSocket.host) || h.tcpSocket.host == ""))
+      messageExpression: '"the " + variables.check + " check''s probes and lifecycle handlers can''t set a host"'
 ---
 # The API server looks up a binding's params before it evaluates
 # matchConditions. If this binding names params with

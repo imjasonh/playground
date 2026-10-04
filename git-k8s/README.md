@@ -252,14 +252,19 @@ without those labels, so it can clean up after a namespace drops them. Its
 Pods must run as their namespace's `default` service account, and a new Pod
 can't set `spec.nodeName`.
 
-The policy itself denies the Pod fields that break a container's isolation
-from its node, in containers, init containers, and ephemeral containers:
+The policy itself enforces the `baseline` Pod Security Standard, more strictly
+for capabilities and sysctls. It denies these fields in containers, init
+containers, and ephemeral containers:
 
 - The node's network, PID, and IPC namespaces
 - `hostPath` volumes and host ports
 - Privileged containers and added capabilities
 - An unmasked `/proc`, the `Unconfined` seccomp profile, and Windows host
   processes
+- The `Unconfined` AppArmor profile, SELinux users and roles, SELinux types
+  other than the container types that `baseline` allows, and sysctls
+- Probes and lifecycle handlers that set `host`, which make the kubelet
+  connect from the node to another address
 
 Pod Security admission enforces the rest of `restricted`, such as running as
 a non-root user. An exemption in the cluster's Pod Security admission
