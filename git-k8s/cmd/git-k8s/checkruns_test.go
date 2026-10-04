@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -1003,6 +1004,125 @@ func TestCheckRunsAfterDepartures(t *testing.T) {
 				"git-k8s/gotest@"+s.short(2)+" in_progress : started Pod w",
 			)
 		})
+	}
+}
+
+func TestCheckRunsRetryRefusedCompletions(t *testing.T) {
+	s := newSharing(t, 1)
+	s.step("c/x", s.result(0, gitk8s.Running, ""), s.get(0), post)
+
+	t.Log("When GitHub refuses to complete a check run, the controller tries again instead of creating another, which would leave the first in progress.")
+	s.gh.Fake.Fail(http.StatusUnprocessableEntity)
+	s.p.set("c/x", s.result(0, gitk8s.Passed, ""))
+	if got, err := s.p.reconcile("c/x"); err == nil || !strings.Contains(err.Error(), "422 Unprocessable Entity") || !slices.Equal(got, []string{patch + "1"}) {
+		t.Errorf("requests = %q, err = %v; want %q and GitHub's error", got, err, []string{patch + "1"})
+	}
+	s.again("c/x", patch+"1")
+	s.wantRuns("git-k8s/gotest@" + s.short(0) + " completed success: Passed")
+}
+
+// TestCheckRunsAgreeAfterRandomChanges changes the results of five branches
+// over four commits at random and reconciles the branches in random orders.
+// A reconcile can see the cluster up to two changes late, and a branch can
+// change again before its reconcile, as the work queue coalesces the
+// changes to one object.
+func TestCheckRunsAgreeAfterRandomChanges(t *testing.T) {
+	// Seeds 42 and 129 make the order of the other branches' reconciles
+	// after a departure matter, and 44 and 210 leave a check run showing a
+	// result that the controller never published.
+	for _, seed := range []uint64{0, 1, 2, 3, 42, 44, 129, 210} {
+		t.Run(strconv.FormatUint(seed, 10), func(t *testing.T) {
+			checkRunsAgreeAfter(t, seed)
+		})
+	}
+}
+
+// checkRunsAgreeAfter makes the random changes and reconciles of
+// TestCheckRunsAgreeAfterRandomChanges with seed, and then reconciles every
+// branch twice with the final cluster. Then every check run but the newest
+// on a commit has to be completed, and the newest has to show the result
+// that changed last, in the order that the controller saw the changes, of
+// the branches at the commit, or be completed when no branch is there.
+func checkRunsAgreeAfter(t *testing.T, seed uint64) {
+	s := newSharing(t, 4)
+	r := rand.New(rand.NewPCG(seed, 0))
+	reconcile := func(branch string, cluster map[string]map[string]gitk8s.CheckResult) {
+		t.Helper()
+		if _, err := reconcileIn(t.Context(), s.p.c, "app", branch, cluster, s.p.repo); err != nil {
+			t.Errorf("reconciling %s: %v", branch, err)
+		}
+	}
+	states := []string{gitk8s.Running, gitk8s.Passed, gitk8s.Failed}
+	// history holds the cluster after each change.
+	history := []map[string]map[string]gitk8s.CheckResult{{}}
+	// pending holds the branches that a change enqueued and that haven't
+	// reconciled with the cluster after the change.
+	pending := map[string]bool{}
+	for range 150 {
+		if names := slices.Sorted(maps.Keys(pending)); len(names) > 0 && r.IntN(2) == 0 {
+			branch := names[r.IntN(len(names))]
+			seen := len(history) - 1 - r.IntN(min(3, len(history)))
+			if _, ok := history[seen][branch]; ok {
+				if seen == len(history)-1 {
+					delete(pending, branch)
+				}
+				reconcile(branch, history[seen])
+			}
+			continue
+		}
+		cluster := maps.Clone(history[len(history)-1])
+		branch := fmt.Sprintf("c/%d", r.IntN(5))
+		if r.IntN(6) == 0 {
+			delete(cluster, branch)
+			delete(pending, branch)
+		} else {
+			cluster[branch] = s.result(r.IntN(4), states[r.IntN(3)], strconv.Itoa(r.IntN(2)))
+		}
+		history = append(history, cluster)
+		for name := range cluster {
+			pending[name] = true
+		}
+	}
+	cluster := history[len(history)-1]
+	for range 2 {
+		for _, branch := range slices.Sorted(maps.Keys(cluster)) {
+			reconcile(branch, cluster)
+		}
+	}
+
+	all := s.gh.Fake.CheckRuns("acme/app")
+	newest := map[string]gitserver.CheckRun{}
+	for _, run := range all {
+		if n, ok := newest[run.HeadSHA]; !ok || run.ID > n.ID {
+			newest[run.HeadSHA] = run
+		}
+	}
+	for _, run := range all {
+		if n := newest[run.HeadSHA]; run.ID != n.ID && run.Status != "completed" {
+			t.Errorf("check run %d on %s is %s, but check run %d is newer", run.ID, gitk8s.Short(run.HeadSHA), run.Status, n.ID)
+		}
+	}
+	results := s.p.c.repos["default/app"].results
+	for commit, run := range newest {
+		latest, seq := "", int64(-1)
+		var at []string
+		for _, name := range slices.Sorted(maps.Keys(cluster)) {
+			res := cluster[name]["gotest"]
+			if res.Commit != commit {
+				continue
+			}
+			at = append(at, fmt.Sprintf("%s=%s/%s", name, res.State, res.Message))
+			if n := results[branchCheck{gitk8s.BranchObjectName("app", name), "gotest"}].seq; n > seq {
+				latest, seq = name, n
+			}
+		}
+		shows := runState{Status: run.Status, Conclusion: run.Conclusion, Output: runOutput(run.Output)}
+		switch {
+		case latest == "" && run.Status != "completed":
+			t.Errorf("check run %d on %s, where no branch is, is %s", run.ID, gitk8s.Short(commit), run.Status)
+		case latest != "" && shows != runFor(cluster[latest]["gotest"]):
+			t.Errorf("check run %d on %s shows %s %s %q, want the result of %s, which changed last of %q", run.ID, gitk8s.Short(commit), run.Status, run.Conclusion, run.Output.Summary, latest, at)
+		}
 	}
 }
 
