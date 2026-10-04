@@ -167,9 +167,9 @@ an earlier version of the program added, such as
 time that it reconciles each object. Removing a finalizer takes permission to
 patch the reconciled type, which `generate` grants only to controllers that
 need it. Until no object has the finalizer, pass `kube.RemovesFinalizer()` to
-`kube.For`. Without the option, the program that `generate` installs can't
-remove the finalizer, so a deleted object stays, and the reconcile fails with
-an error that names the option.
+`kube.For`. Without the option, the program might not have that permission.
+Then a deleted object stays, and the reconcile fails with an error that names
+the option.
 
 ## Types
 
@@ -526,10 +526,12 @@ way, its service account needs these permissions:
   don't exist yet.
 - `patch` on the reconciled type's `status` subresource, for status.
 - `patch` on the reconciled type, for its finalizer and for migrations, when
-  the reconciler has a `Finalize` method, the controller has
-  `kube.RemovesFinalizer()`, the type has more than one version, or the
-  program declares owned objects with `Own` or `kube.Owns` and the type's
-  `kube` tag doesn't say `scope=Cluster`.
+  any of the following is true:
+  - The reconciler has a `Finalize` method.
+  - The controller has `kube.RemovesFinalizer()`.
+  - The type has more than one version.
+  - The program declares owned objects with `Own` or `kube.Owns`, and the
+    type's `kube` tag doesn't say `scope=Cluster`.
 - `get`, `create`, and `patch` on `customresourcedefinitions`, and `patch` on
   `customresourcedefinitions/status`, for its own types. To check and migrate
   objects when a type changes, it also needs `list` on its own types in every
