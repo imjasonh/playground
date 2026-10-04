@@ -1174,3 +1174,42 @@ func TestPreparesTheSourceAgainOnADeployDuringTheWait(t *testing.T) {
 		t.Errorf("state = %+v with %d owned Pods and %d runs in the last day, want attempt 2 as run 1 in a new Pod", st, len(pods), len(f.r.day.starts))
 	}
 }
+
+func TestLimitsRunsPerBranchWithABrokenState(t *testing.T) {
+	for _, tc := range []struct {
+		name, state string
+		runs, pods  int
+	}{
+		{"negative runs", `{"runs":-5}`, 1, 1},
+		{"state that doesn't decode", `{"runs":9,"pod":"rev`, 9, 0},
+		{"no state", "", 9, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, "")
+			one := int32(1)
+			f.b.Spec.Merge.MaxAgentRuns = &one
+			p := f.start()
+			f.reconcile(finished(p, f.serve(review(Fail), p.UID)))
+			res := f.state()
+			res.Outputs["state"], res.Outputs["runs"] = tc.state, "9"
+			if tc.state == "" {
+				delete(res.Outputs, "state")
+			}
+			f.newHead("one\nnext\n")
+			rec := f.reconcile()
+			if pods := kube.Owned[Pod](rec); f.state().State != gitk8s.Running || f.jobState().Runs != tc.runs || len(pods) != tc.pods {
+				t.Errorf("result = %+v with %d owned Pods, want Running after %d runs with %d Pods", f.state(), len(pods), tc.runs, tc.pods)
+			}
+		})
+	}
+	t.Run("negative runs in a run in progress", func(t *testing.T) {
+		f := newFixture(t, "")
+		p := f.start()
+		state, _ := JobState{Runs: -5, Pod: p.Name, Attempt: 1}.MarshalText()
+		f.state().Outputs["state"] = string(state)
+		f.reconcile(p)
+		if st := f.jobState(); st.Pod != p.Name || st.Runs != 0 {
+			t.Errorf("state = %+v, want the run in Pod %s after 0 runs", st, p.Name)
+		}
+	})
+}

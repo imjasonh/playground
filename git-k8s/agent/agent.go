@@ -154,8 +154,12 @@ func (r *Runner) Run(ctx context.Context, in *checks.Input, task Task) (checks.V
 	head := in.Spec.Head
 	if prev := in.Previous; prev != nil {
 		var last JobState
-		// A state that doesn't decode starts over, like a missing one.
-		_ = last.UnmarshalText([]byte(prev.Outputs["state"]))
+		if err := last.UnmarshalText([]byte(prev.Outputs["state"])); err != nil || prev.Outputs["state"] == "" {
+			// The runs output counts the runs too, so maxAgentRuns still
+			// holds when the state is missing or doesn't decode.
+			last.Runs, _ = strconv.Atoi(prev.Outputs["runs"])
+		}
+		last.Runs = max(last.Runs, 0)
 		st.Runs = last.Runs
 		if prev.State == gitk8s.Running && prev.Commit == head && last.Pod != "" {
 			*st = last
