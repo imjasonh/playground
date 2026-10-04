@@ -563,6 +563,11 @@ and can edit files. The check pushes what the agent changed as a fix with
 `Git-K8s-Fixer: deps` and `Git-K8s-Agent: deps` trailers, and `check-gotest`
 tests the new head.
 
+The agent runs in this check instead of in `git-k8s-deps`, so its fix takes
+the same path as other checks' fixes: the policy must let the check push, the
+fix counts toward `maxAutomatedCommits`, and the push has a lease on the
+commit whose tests failed.
+
 The check fails, and the branch waits for a person, when the policy doesn't
 let it push, when the branch has no automated commits left, and when the
 agent can't fix the tests, changes a `go.mod` or `go.sum` file, or changes no
