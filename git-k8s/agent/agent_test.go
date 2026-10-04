@@ -502,6 +502,34 @@ func TestCountsAPodThatsCreatedAgain(t *testing.T) {
 	}
 }
 
+func TestWaitsForADeletedPodToGo(t *testing.T) {
+	f := newFixture(t, "")
+	p := f.start()
+	f.reconcile(p)
+
+	t.Log("Deleting a Pod stops its agent, which doesn't fail the run.")
+	deleted := time.Now()
+	p.DeletionTimestamp = &deleted
+	p.Status = PodStatus{Phase: "Failed", InitContainerStatuses: []ContainerStatus{
+		{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})},
+		{Name: "agent", State: terminated(&Terminated{ExitCode: 143, Reason: "Error"})},
+	}}
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Message != "Pod "+p.Name+" is being deleted, so kube creates it again once it's gone" || res.Outputs["runs"] != "1" {
+		t.Fatalf("result = %+v, want Running after 1 run", res)
+	}
+
+	t.Log("Once the Pod is gone, kube creates it again, and the agent runs again.")
+	if rec := f.reconcile(); len(kube.Owned[Pod](rec)) != 1 {
+		t.Fatal("the check must declare the Pod again")
+	}
+	p.DeletionTimestamp, p.Status, p.UID = nil, PodStatus{}, "uid-again"
+	f.reconcile(p)
+	if res := f.state(); res.State != gitk8s.Running || res.Outputs["runs"] != "2" || res.Outputs["podUID"] != p.UID {
+		t.Fatalf("result = %+v, want run 2 in the new Pod", res)
+	}
+}
+
 func TestEndsARunWhenItsNewPodPassesALimit(t *testing.T) {
 	for _, tc := range []struct {
 		name          string

@@ -209,6 +209,11 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 		}
 		st.UID = pod.UID
 	}
+	if pod.Deleting() {
+		// Deleting a Pod stops its containers, so their exit codes say
+		// nothing about the agent.
+		return x.status("Pod %s is being deleted, so kube creates it again once it's gone", st.Pod)
+	}
 	s := &pod.Status
 	if s.Phase == "Failed" && s.Reason == "Evicted" {
 		return x.fail("Pod %s was evicted: %s", st.Pod, cmp.Or(strings.TrimSpace(s.Message), "no reason given"))
