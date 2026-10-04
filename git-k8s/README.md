@@ -287,9 +287,10 @@ tokens:
   including the check's own fixes and `check-base`'s merges of the parent.
   A branch that has used them all reports `Running` until you raise the
   limit.
-- `-max-runs-per-day`, 100 by default, is the most runs that the program
+- `-max-runs-per-day`, 100 by default, is the most runs that each replica
   starts in any 24 hours. The program counts them in memory, so the count
-  starts over when it restarts, and each shard keeps its own count.
+  starts over when it restarts, and a replica that takes over a shard
+  doesn't count the runs that the shard's last replica started.
 - `-max-pods`, 10 by default, is the most agent Pods that run at once
   across all namespaces.
 
