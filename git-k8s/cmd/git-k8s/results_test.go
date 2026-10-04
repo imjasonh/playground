@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -34,7 +35,7 @@ func checkToken(check string) kube.FakeToken {
 }
 
 // sendResult sends body, a result or raw JSON, to the results endpoint
-// with token, in a context from kube.Fake.
+// with token, in a request context from kube.FakeRequest.
 func sendResult(ctx context.Context, rs *results, path, token string, body any) *httptest.ResponseRecorder {
 	raw, ok := body.(string)
 	if !ok {
@@ -64,13 +65,13 @@ func TestResultsEndpointRejects(t *testing.T) {
 	gofmtUser := checkToken("gofmt").User
 	main := &resultsBranch{Object: kube.Meta("app-main", nil)}
 	main.Namespace, main.Spec = "default", gitk8s.GitBranchSpec{Repository: "app", Branch: "main", Head: "p1"}
-	ctx, rec := kube.Fake(t.Context(), b,
-		main, checkToken("base"), checkToken("gofmt"), checkToken("risk"),
+	world := []any{
+		b, main, checkToken("base"), checkToken("gofmt"), checkToken("risk"),
 		kube.FakeToken{Token: "api", User: gofmtUser},
 		kube.FakeToken{Token: "ci", User: kube.UserInfo{Username: "system:serviceaccount:default:ci"}, Audiences: []string{gitk8s.ResultsAudience}},
 		kube.FakeToken{Token: "elsewhere", User: kube.UserInfo{Username: "system:serviceaccount:default:check-gofmt"}, Audiences: []string{gitk8s.ResultsAudience}},
 		kube.FakeToken{Token: "admin", User: kube.UserInfo{Username: "kubernetes-admin"}, Audiences: []string{gitk8s.ResultsAudience}},
-	)
+	}
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
 	fresh := &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed}
 	const gofmt = "/results/default/app-c-x/gofmt?generation=3"
@@ -99,6 +100,7 @@ func TestResultsEndpointRejects(t *testing.T) {
 		{"a result that's already written", "/results/default/app-c-x/base?generation=3", "base", &base, http.StatusNoContent, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			ctx, rec := kube.FakeRequest(t.Context(), world...)
 			w := sendResult(ctx, rs, tc.path, tc.token, tc.body)
 			if w.Code != tc.code || !strings.Contains(w.Body.String(), tc.msg) {
 				t.Errorf("got %d %q, want %d %q", w.Code, w.Body, tc.code, tc.msg)
@@ -106,10 +108,13 @@ func TestResultsEndpointRejects(t *testing.T) {
 			if tc.code == http.StatusUnauthorized && w.Header().Get("WWW-Authenticate") != "Bearer" {
 				t.Errorf("WWW-Authenticate = %q, want Bearer", w.Header().Get("WWW-Authenticate"))
 			}
+			if got := kube.Triggered[resultsBranch](rec); len(got) != 0 {
+				t.Errorf("triggered %v without a new result to write", got)
+			}
+			if err := rec.Err(); err != nil {
+				t.Error(err)
+			}
 		})
-	}
-	if got := kube.Triggered[resultsBranch](rec); len(got) != 0 {
-		t.Errorf("triggered %v without a new result to write", got)
 	}
 	if len(rs.held) != 0 {
 		t.Errorf("holds %v after the requests ended", rs.held)
@@ -117,7 +122,7 @@ func TestResultsEndpointRejects(t *testing.T) {
 }
 
 func TestResultsEndpointTimesOut(t *testing.T) {
-	ctx, rec := kube.Fake(t.Context(), listedBranch(), checkToken("gofmt"))
+	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"))
 	rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond}
 	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
 	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "wasn't written in time") {
@@ -132,12 +137,51 @@ func TestResultsEndpointTimesOut(t *testing.T) {
 	if len(rs.held) != 0 {
 		t.Errorf("holds %v after answering", rs.held)
 	}
+	if err := rec.Err(); err != nil {
+		t.Error(err)
+	}
+}
+
+// A replica that doesn't reconcile the branch, such as one that doesn't
+// hold the branch's shard, answers 503 at once and closes the connection,
+// so that the check's next try can reach the replica that does.
+func TestResultsEndpointOnStandby(t *testing.T) {
+	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"), kube.FakeStandby{})
+	rs := &results{timeout: time.Minute, poll: time.Millisecond}
+	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
+	if w.Code != http.StatusServiceUnavailable || !strings.Contains(w.Body.String(), "this replica doesn't write the branch's results") {
+		t.Errorf("got %d %q, want 503 from a replica that doesn't write the branch's results", w.Code, w.Body)
+	}
+	if w.Header().Get("Connection") != "close" {
+		t.Error("a 503 must close the connection, so that the next try can reach another replica")
+	}
+	if len(rs.held) != 0 {
+		t.Errorf("holds %v after answering", rs.held)
+	}
+	if err := rec.Err(); err != nil {
+		t.Error(err)
+	}
+}
+
+// A Get that can't read returns nil and cancels the request's context. The
+// branch may exist, so the endpoint answers 503 rather than 404. The fake
+// can't fail a read, so the test cancels the context and leaves the branch
+// out of the world.
+func TestResultsEndpointCantRead(t *testing.T) {
+	ctx, cancel := context.WithCancelCause(t.Context())
+	cancel(errors.New("reading GitBranches: forbidden"))
+	ctx, _ = kube.FakeRequest(ctx, checkToken("gofmt"))
+	rs := &results{timeout: time.Minute, poll: time.Millisecond}
+	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=3", "gofmt", &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Passed})
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Connection") != "close" {
+		t.Errorf("got %d %q, want 503 and a closed connection", w.Code, w.Body)
+	}
 }
 
 // A check that read a newer spec than this replica's cache has waits for
 // the cache, so that its result isn't checked against an older spec.
 func TestResultsEndpointWaitsForGeneration(t *testing.T) {
-	ctx, rec := kube.Fake(t.Context(), listedBranch(), checkToken("gofmt"))
+	ctx, rec := kube.FakeRequest(t.Context(), listedBranch(), checkToken("gofmt"))
 	rs := &results{timeout: 20 * time.Millisecond, poll: time.Millisecond}
 	w := sendResult(ctx, rs, "/results/default/app-c-x/gofmt?generation=4", "gofmt", &gitk8s.CheckResult{Commit: "h2", State: gitk8s.Passed})
 	if w.Code != http.StatusServiceUnavailable {
@@ -146,16 +190,21 @@ func TestResultsEndpointWaitsForGeneration(t *testing.T) {
 	if got := kube.Triggered[resultsBranch](rec); len(got) != 0 {
 		t.Errorf("triggered %v before the cache had the spec that the check read", got)
 	}
+	if err := rec.Err(); err != nil {
+		t.Error(err)
+	}
 }
 
 // A request holds its result and triggers a reconcile of the branch, which
-// writes the result. A request whose result the cache shows answers 204.
+// writes the result. The reconcile leaves the result held, so that a retry
+// after a failed write still writes it, and the request stops holding it
+// when it gives up. A request whose result the cache shows answers 204.
 func TestResultsHandOff(t *testing.T) {
 	res := &gitk8s.CheckResult{Commit: "h1", State: gitk8s.Failed, Message: "x.go isn't formatted"}
 	const path = "/results/default/app-c-x/gofmt?generation=3"
 	rs := &results{timeout: time.Minute, poll: time.Millisecond}
-	ctx, rec := kube.Fake(t.Context(), listedBranch(), checkToken("gofmt"))
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(t.Context())
+	ctx, rec := kube.FakeRequest(ctx, listedBranch(), checkToken("gofmt"))
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -169,15 +218,18 @@ func TestResultsHandOff(t *testing.T) {
 		}
 	}
 
-	b := listedBranch()
 	base := gitk8s.CheckResult{Commit: "h1", ParentCommit: "p1", State: gitk8s.Passed}
-	b.Status.Checks = map[string]gitk8s.CheckResult{"base": base}
-	rctx, _ := kube.Fake(t.Context(), b)
-	if err := rs.Reconcile(rctx, b); err != nil {
-		t.Fatal(err)
-	}
-	if !entry(b, "gofmt").Equal(res) || !entry(b, "base").Equal(&base) {
-		t.Errorf("status.checks = %+v, want the held gofmt result and the base result", b.Status.Checks)
+	var b *resultsBranch
+	for _, attempt := range []string{"the reconcile", "a retry after the write failed"} {
+		b = listedBranch()
+		b.Status.Checks = map[string]gitk8s.CheckResult{"base": base}
+		rctx, _ := kube.Fake(t.Context(), b)
+		if err := rs.Reconcile(rctx, b); err != nil {
+			t.Fatal(err)
+		}
+		if !entry(b, "gofmt").Equal(res) || !entry(b, "base").Equal(&base) {
+			t.Errorf("after %s, status.checks = %+v, want the held gofmt result and the base result", attempt, b.Status.Checks)
+		}
 	}
 
 	cancel()
@@ -188,13 +240,19 @@ func TestResultsHandOff(t *testing.T) {
 	if len(rs.held) != 0 {
 		t.Errorf("holds %v after the request ended", rs.held)
 	}
+	if err := rec.Err(); err != nil {
+		t.Error(err)
+	}
 
-	ctx, rec = kube.Fake(t.Context(), b, checkToken("gofmt"))
+	ctx, rec = kube.FakeRequest(t.Context(), b, checkToken("gofmt"))
 	if w := sendResult(ctx, rs, path, "gofmt", res); w.Code != http.StatusNoContent {
 		t.Errorf("with the result written, got %d %q, want 204", w.Code, w.Body)
 	}
 	if got := kube.Triggered[resultsBranch](rec); len(got) != 0 {
 		t.Errorf("triggered %v for a result that's already written", got)
+	}
+	if len(rs.held) != 0 {
+		t.Errorf("holds %v for a result that's already written", rs.held)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"net/http"
 	"strconv"
@@ -37,7 +38,9 @@ type resultsBranch struct {
 //
 // A handler can't write, so it holds each result for the controller,
 // triggers a reconcile of the branch, and answers once the cache shows the
-// result written.
+// result written. The controller leaves the results held, so that a retry
+// of a failed write still has them, and each request stops holding its
+// result when it answers.
 type results struct {
 	// timeout is how long a request waits for its result to be written.
 	timeout time.Duration
@@ -62,7 +65,10 @@ func (rs *results) put(w http.ResponseWriter, r *http.Request) {
 	review, err := kube.ReviewToken(r.Context(), token, gitk8s.ResultsAudience)
 	switch {
 	case err != nil:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// The error can name the core program's service account and the
+		// permission that it lacks.
+		slog.ErrorContext(r.Context(), "reviewing a check's token failed", "err", err)
+		http.Error(w, "can't check the token now", http.StatusInternalServerError)
 		return
 	case !review.Authenticated:
 		w.Header().Set("WWW-Authenticate", "Bearer")
@@ -117,7 +123,12 @@ func (rs *results) write(w http.ResponseWriter, r *http.Request, k kube.Key, che
 	}()
 	for {
 		b := kube.Get[resultsBranch](ctx, k.Namespace, k.Name)
-		if b == nil {
+		switch {
+		case b == nil && ctx.Err() != nil:
+			// A Get that can't read cancels the request's context.
+			unavailable(w, "can't read the branch now")
+			return
+		case b == nil:
 			http.Error(w, fmt.Sprintf("GitBranch %s doesn't exist", k), http.StatusNotFound)
 			return
 		}
