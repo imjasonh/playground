@@ -379,7 +379,7 @@ func TestPrepareScriptMerges(t *testing.T) {
 	w.Push("main")
 	w.Branch("c/x", base)
 	w.Write("f.txt", "one\nours\nthree\n")
-	w.Git("rm", "-q", "k.txt")
+	w.Git("rm", "-q", "--end-of-options", "k.txt")
 	head := w.Commit("ours")
 	w.Push("c/x")
 	w.Branch("main", base)

@@ -106,6 +106,7 @@ func (w *Work) Git(args ...string) string {
 	cmd.Dir = w.Dir
 	cmd.Env = append(os.Environ(),
 		"GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL="+os.DevNull,
+		"GIT_ALLOW_PROTOCOL=http:https:git:ssh",
 		"GIT_AUTHOR_NAME=Test Author", "GIT_AUTHOR_EMAIL=author@example.com",
 		"GIT_COMMITTER_NAME=Test Author", "GIT_COMMITTER_EMAIL=author@example.com",
 		"GIT_AUTHOR_DATE=2026-01-02T03:04:05Z", "GIT_COMMITTER_DATE=2026-01-02T03:04:05Z",
@@ -153,7 +154,7 @@ func (w *Work) Push(branch string) {
 // refs/git-k8s/, forcing the update.
 func (w *Work) PushRef(ref string) {
 	w.t.Helper()
-	w.Git("push", "--quiet", "--force", w.remote, "HEAD:"+ref)
+	w.Git("push", "--quiet", "--force", "--end-of-options", w.remote, "HEAD:"+ref)
 }
 
 // Fetch fetches a branch and returns the commit it points to.

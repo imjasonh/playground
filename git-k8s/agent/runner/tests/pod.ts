@@ -8,6 +8,7 @@ const gitEnv = {
   ...process.env,
   GIT_CONFIG_GLOBAL: "/dev/null",
   GIT_CONFIG_NOSYSTEM: "1",
+  GIT_ALLOW_PROTOCOL: "http:https:git:ssh",
   GIT_AUTHOR_NAME: "test",
   GIT_AUTHOR_EMAIL: "test@example.com",
   GIT_COMMITTER_NAME: "test",
@@ -58,7 +59,7 @@ export function preparePod(base: Files, change: Files, task: Partial<Task> = {})
 export function prepareMerge(base: Files, ours: Files, theirs: Files, task: Partial<Task> = {}): Task {
   const { root, repo, baseSha } = newRepo(base);
   const head = commit(repo, ours, "Ours");
-  git(repo, "checkout", "-q", "-b", "theirs", baseSha);
+  git(repo, "switch", "-q", "-c", "theirs", "--end-of-options", baseSha);
   const mergeHead = commit(repo, theirs, "Theirs");
   const args = ["-c", "merge.conflictStyle=diff3", "merge-tree", "--write-tree", "--no-messages", "--name-only", "-z"];
   const merged = spawnSync("git", [...args, `--merge-base=${baseSha}`, "--end-of-options", head, mergeHead], { cwd: repo, env: gitEnv });
@@ -91,7 +92,7 @@ function commit(repo: string, files: Files, message: string): string {
   write(repo, files);
   git(repo, "add", "-A");
   git(repo, "commit", "-q", "--allow-empty", "-m", message);
-  return git(repo, "rev-parse", "HEAD").trim();
+  return git(repo, "rev-parse", "--verify", "--end-of-options", "HEAD").trim();
 }
 
 /** Checks out tree, and writes the change from baseSha to head, as preparePod describes. */

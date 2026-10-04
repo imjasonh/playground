@@ -557,16 +557,17 @@ CHECKS+=(check-conflicts)
 install check-conflicts -- "-agent-image=${AGENT_IMAGE}" "-git-image=${GIT_IMAGE}" -backend=fake -timeout=5m
 k -n check-conflicts rollout status deployment/check-conflicts --timeout=180s
 CONFLICTED="${WORKDIR}/conflicted"
-git init -q -b main "${CONFLICTED}"
+mkdir "${CONFLICTED}"
 cf() {
-  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${CONFLICTED}" \
-    -c user.name=e2e -c user.email=e2e@example.com "$@"
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_ALLOW_PROTOCOL=http:https:git:ssh \
+    git -C "${CONFLICTED}" -c user.name=e2e -c user.email=e2e@example.com "$@"
 }
+cf init -q -b main
 printf 'example.com/a v1.0.0 h1:a=\n' >"${CONFLICTED}/go.sum"
 printf 'Notes\n' >"${CONFLICTED}/notes.txt"
 cf add -A
 cf commit -qm "Add go.sum and notes"
-cf push -q "${HOST_URL}/conflicted.git" HEAD:main
+cf push -q --end-of-options "${HOST_URL}/conflicted.git" HEAD:main
 k apply -f - <<EOF
 apiVersion: git-k8s.imjasonh.com/v1alpha1
 kind: GitRepository
@@ -595,28 +596,32 @@ result() { k -n "${NS}" get gitbranch "$(branch_object "$1" conflicted)" -o json
 # and to $3 and then $5 on main. It pushes main first, so that the branch
 # conflicts with main when git-k8s first sees it.
 race_main() {
-  cf checkout -q -b "$1" main
+  cf switch -q -c "$1" --end-of-options main
   printf '%b%s\n' "$3" "$4" >"${CONFLICTED}/$2"
   cf commit -qam "Change $2 on $1"
-  cf checkout -q main
+  cf switch -q --end-of-options main
   printf '%b%s\n' "$3" "$5" >"${CONFLICTED}/$2"
   cf commit -qam "Change $2 on main"
-  cf push -q "${HOST_URL}/conflicted.git" main:main
-  cf push -q "${HOST_URL}/conflicted.git" "$1:$1"
+  cf push -q --end-of-options "${HOST_URL}/conflicted.git" main:main
+  cf push -q --end-of-options "${HOST_URL}/conflicted.git" "$1:$1"
 }
 # landed_with reports whether the branch $1 landed and is gone, and main's
 # file $2 holds $3.
 landed_with() {
   [[ -z "$(remote_head "$1" conflicted)" && -z "$(branch_object "$1" conflicted)" ]] &&
-    cf fetch -q "${HOST_URL}/conflicted.git" main &&
-    [[ "$(cf show FETCH_HEAD:"$2")" == "$3" ]]
+    cf fetch -q --end-of-options "${HOST_URL}/conflicted.git" main &&
+    [[ "$(cf show --end-of-options FETCH_HEAD:"$2")" == "$3" ]]
 }
 # merged_main checks that main's head, in FETCH_HEAD, is the conflicts
-# check's merge of the main that race_main pushed into the branch $1.
+# check's merge of the main that race_main pushed into the branch $1. It
+# saves the message instead of piping it to grep, because grep -q can exit
+# before git log finishes writing, and pipefail then fails on git's SIGPIPE.
 merged_main() {
-  cf log -1 --format=%B FETCH_HEAD
-  cf log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: conflicts'
-  [[ "$(cf rev-parse FETCH_HEAD^1 FETCH_HEAD^2)" == "$(cf rev-parse "$1" main)" ]]
+  local message
+  message="$(cf log -1 --format=%B --end-of-options FETCH_HEAD)"
+  echo "${message}"
+  grep -qx 'Git-K8s-Fixer: conflicts' <<<"${message}"
+  [[ "$(cf log -1 --format=%P --end-of-options FETCH_HEAD)" == "$(cf rev-parse --verify --end-of-options "$1") $(cf rev-parse --verify --end-of-options main)" ]]
 }
 
 race_main c/sum go.sum 'example.com/a v1.0.0 h1:a=\n' 'example.com/b v1.0.0 h1:b=' 'example.com/c v1.0.0 h1:c='
@@ -624,17 +629,17 @@ eventually 300 landed_with c/sum go.sum "$(printf 'example.com/a v1.0.0 h1:a=\ne
 merged_main c/sum
 echo "Git merged the go.sum conflict with its union driver, and c/sum landed."
 
-cf checkout -q -B main FETCH_HEAD
+cf switch -q -C main --end-of-options FETCH_HEAD
 race_main c/text notes.txt 'Notes\n' 'The branch adds this line.' 'Main adds this line.'
 eventually 300 landed_with c/text notes.txt "$(printf 'Notes\nThe branch adds this line.\nMain adds this line.')"
 merged_main c/text
 eventually 60 no_agent_pods
 echo "The agent resolved the notes.txt conflict, and c/text landed."
 
-cf checkout -q -B main FETCH_HEAD
+cf switch -q -C main --end-of-options FETCH_HEAD
 race_main c/refused notes.txt 'Notes\nThe branch adds this line.\nMain adds this line.\n' 'DO NOT MERGE' 'Main adds another line.'
-refused="$(cf rev-parse c/refused)"
-moved="$(cf rev-parse main)"
+refused="$(cf rev-parse --verify --end-of-options c/refused)"
+moved="$(cf rev-parse --verify --end-of-options main)"
 refused_failed() {
   [[ -n "$(branch_object c/refused conflicted)" && "$(result c/refused conflicts state)" == Failed &&
     "$(result c/refused base outputs.conflicts)" == notes.txt ]]

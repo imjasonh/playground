@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/imjasonh/playground/git-k8s/internal/git"
@@ -27,7 +28,7 @@ func TestMergeListsConflicts(t *testing.T) {
 	w.Branch("c/x", base)
 	w.Write("notes.txt", "a\nOURS\nc\n")
 	w.Write("go.sum", "x v1\nz v3\n")
-	w.Git("rm", "--quiet", "gone.txt")
+	w.Git("rm", "--quiet", "--end-of-options", "gone.txt")
 	ours := w.Commit("ours")
 	w.Push("c/x")
 
@@ -116,15 +117,15 @@ func TestMergeBases(t *testing.T) {
 	w.Branch("b", root)
 	w.Write("b.txt", "b\n")
 	b := w.Commit("b")
-	w.Git("merge", "--quiet", "--no-edit", a)
-	ba := w.Git("rev-parse", "HEAD")
+	w.Git("merge", "--quiet", "--no-edit", "--end-of-options", a)
+	ba := w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
 	w.Branch("a", a)
-	w.Git("merge", "--quiet", "--no-edit", b)
-	ab := w.Git("rev-parse", "HEAD")
+	w.Git("merge", "--quiet", "--no-edit", "--end-of-options", b)
+	ab := w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
 	w.Git("checkout", "--quiet", "--orphan", "unrelated")
 	unrelated := w.Commit("unrelated")
 	for _, c := range []string{ba, ab, unrelated} {
-		w.Git("checkout", "--quiet", c)
+		w.Git("switch", "--quiet", "--detach", "--end-of-options", c)
 		w.Push("x/" + c)
 	}
 
@@ -187,8 +188,71 @@ func TestFetchRef(t *testing.T) {
 		}
 	}
 	for _, url := range []string{w.Dir, "file://" + w.Dir} {
-		if got, err := repo.FetchRef(ctx, git.Remote{URL: url}, "refs/heads/main"); err == nil {
-			t.Errorf("FetchRef from %s = %s; want an error, because it fetches only over the network", url, got)
+		if got, err := repo.FetchRef(ctx, git.Remote{URL: url}, "refs/heads/main"); err == nil || !strings.Contains(err.Error(), "not allowed") {
+			t.Errorf("FetchRef from %s = %s, %v; want git to refuse the transport, because it fetches only over the network", url, got, err)
+		}
+	}
+}
+
+func TestMergeCommandsAllowOnlyRemoteTransports(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	w.Write("go.sum", "x v1\n")
+	base := w.Commit("base")
+	w.Write("go.sum", "x v1\ny v2\n")
+	theirs := w.Commit("theirs")
+	w.Push("main")
+	w.Branch("c/x", base)
+	w.Write("go.sum", "x v1\nz v3\n")
+	ours := w.Commit("ours")
+	w.Push("c/x")
+
+	ctx := t.Context()
+	dir := filepath.Join(t.TempDir(), "app.git")
+	if _, err := (&git.Git{}).Open(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	// The wrapper logs each command's GIT_ALLOW_PROTOCOL and arguments.
+	log, bin := filepath.Join(t.TempDir(), "log"), filepath.Join(t.TempDir(), "git")
+	script := "#!/bin/sh\nprintf '%s\\t%s\\n' \"$GIT_ALLOW_PROTOCOL\" \"$*\" >>'" + log + "'\nexec git \"$@\"\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := (&git.Git{Bin: bin}).Open(ctx, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range []string{"refs/heads/main", "refs/heads/c/x"} {
+		if _, err := repo.FetchRef(ctx, srv.Remote("app"), ref); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := repo.MergeBases(ctx, ours, theirs); err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range []git.MergeOptions{{}, {Base: base, Union: []string{"go.sum"}}} {
+		if _, _, err := repo.Merge(ctx, ours, theirs, o); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	b, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSuffix(string(b), "\n"), "\n")
+	if len(lines) != 11 {
+		t.Errorf("git ran %d times, want 3 times for each FetchRef, once for MergeBases, and twice for each Merge:\n%s", len(lines), b)
+	}
+	for _, line := range lines {
+		protocols, args, _ := strings.Cut(line, "\t")
+		if protocols != "http:https:git:ssh" {
+			t.Errorf("git %s ran with GIT_ALLOW_PROTOCOL=%q, want http:https:git:ssh", args, protocols)
+		}
+		// check-ref-format takes no --end-of-options, and hash-object
+		// names no ref or commit.
+		if !strings.Contains(args, " check-ref-format ") && !strings.Contains(args, " hash-object ") && !strings.Contains(args, " --end-of-options ") {
+			t.Errorf("git %s names a ref or a commit without --end-of-options before it", args)
 		}
 	}
 }

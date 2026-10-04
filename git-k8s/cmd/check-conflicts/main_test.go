@@ -237,7 +237,7 @@ func TestMergesUnionPaths(t *testing.T) {
 		t.Fatalf("c/x = %s, want the merge %s", got, fix)
 	}
 	want := head + " " + parent + "\nMerge main into c/x\n\nGit merged these files with its union driver, which keeps the lines of both sides:\n\ngo.sum\n\n" + git.FixerTrailer + ": conflicts"
-	if got := w.Git("log", "-1", "--format=%P%n%B", fix); got != want {
+	if got := w.Git("log", "-1", "--format=%P%n%B", "--end-of-options", fix); got != want {
 		t.Errorf("merge's parents and message =\n%s\nwant\n%s", got, want)
 	}
 	if got := w.Show(fix, "go.sum"); got != "a v1\nc v1\nb v1" {
@@ -285,7 +285,7 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 			w.Write("b.txt", "fixed\n")
 			w.Git("add", "-A")
 			w.Git("commit", "--quiet", "-m", "Fix\n\n"+git.FixerTrailer+": gofmt")
-			b.Spec.Head = w.Git("rev-parse", "HEAD")
+			b.Spec.Head = w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
 			w.Push("c/x")
 		},
 		want: "merging main conflicts in a.txt; not running an agent because the branch already has 1 automated commits, the limit",
@@ -303,7 +303,7 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 		agent: true,
 		edit: func(b *Branch, w *gittest.Work) {
 			w.Branch("main", b.Spec.ParentHead+"~1")
-			w.Git("rm", "--quiet", "a.txt")
+			w.Git("rm", "--quiet", "--end-of-options", "a.txt")
 			b.Spec.ParentHead = w.Commit("delete a.txt")
 			w.Push("main")
 		},
@@ -328,11 +328,11 @@ func TestLeavesConflictsThatItCantResolve(t *testing.T) {
 		edit: func(b *Branch, w *gittest.Work) {
 			head, parent := b.Spec.Head, b.Spec.ParentHead
 			w.Branch("c/x", head)
-			w.Git("merge", "--quiet", "--no-edit", "-s", "ours", parent)
-			b.Spec.Head = w.Git("rev-parse", "HEAD")
+			w.Git("merge", "--quiet", "--no-edit", "-s", "ours", "--end-of-options", parent)
+			b.Spec.Head = w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
 			w.Branch("main", parent)
-			w.Git("merge", "--quiet", "--no-edit", "-s", "ours", head)
-			b.Spec.ParentHead = w.Git("rev-parse", "HEAD")
+			w.Git("merge", "--quiet", "--no-edit", "-s", "ours", "--end-of-options", head)
+			b.Spec.ParentHead = w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
 			both(b, w, map[string]string{"a.txt": "one\nmain again\nthree\n"}, map[string]string{"a.txt": "one\nbranch again\nthree\n"})
 		},
 		want: "the branch and main have 2 merge bases, so their conflicts have no one base for the agent to compare",
@@ -696,7 +696,7 @@ func TestCommitsTheAgentsResolution(t *testing.T) {
 				t.Fatalf("c/x = %s, want the merge %s", got, fix)
 			}
 			want := head + " " + merged + "\n" + title + "\n\nkept both lines\n\na.txt\n\n" + git.FixerTrailer + ": conflicts"
-			if got := w.Git("log", "-1", "--format=%P%n%B", fix); got != want {
+			if got := w.Git("log", "-1", "--format=%P%n%B", "--end-of-options", fix); got != want {
 				t.Errorf("merge's parents and message =\n%s\nwant\n%s", got, want)
 			}
 			if got := w.Show(fix, "a.txt"); got != "one\nbranch\nmain\nthree" {
@@ -773,7 +773,7 @@ func TestRejectsAResolutionOfAnotherMerge(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	b, w, _ := setup(t, srv, conflictingA, map[string]string{"a.txt": "one\nbranch\nthree\n"})
 	head := b.Spec.Head
-	other, merged := w.Git("rev-parse", "--end-of-options", head+"^{tree}"), ""
+	other, merged := w.Git("rev-parse", "--verify", "--end-of-options", head+"^{tree}"), ""
 	withJobs(t, func(job *agent.Job, st *agent.JobState) agent.JobStatus {
 		s := finish(t, w, resolution(resolvedA))(job, st)
 		if s.Result != nil {
@@ -872,7 +872,7 @@ func TestMergesTheExternalHead(t *testing.T) {
 			if got := w.Fetch("c/x"); got != fix {
 				t.Fatalf("c/x = %s, want the merge %s", got, fix)
 			}
-			msg := w.Git("log", "-1", "--format=%P%n%B", fix)
+			msg := w.Git("log", "-1", "--format=%P%n%B", "--end-of-options", fix)
 			if !strings.HasPrefix(msg, head+" "+e+"\nMerge the external repository's c/x into c/x\n\n") || !strings.HasSuffix(msg, "\n"+git.FixerTrailer+": conflicts") {
 				t.Errorf("merge's parents and message =\n%s", msg)
 			}
@@ -1031,10 +1031,10 @@ func TestPushesABranchThatResolvesADivergedParent(t *testing.T) {
 		t.Errorf("main moved to %s; only resolve/main may change", got)
 	}
 	w.Fetch("resolve/main")
-	if got := w.Git("log", "-1", "--format=%P %T", pushed); got != e+" "+w.Git("rev-parse", e+"^{tree}") {
+	if got := w.Git("log", "-1", "--format=%P %T", "--end-of-options", pushed); got != e+" "+w.Git("rev-parse", "--verify", "--end-of-options", e+"^{tree}") {
 		t.Errorf("resolve/main's parent and tree = %s, want the external head's", got)
 	}
-	if msg := w.Git("log", "-1", "--format=%B", pushed); !strings.HasPrefix(msg, "Resolve the divergence of main from the external repository\n") || !strings.Contains(msg, e) || !strings.HasSuffix(msg, git.FixerTrailer+": conflicts") {
+	if msg := w.Git("log", "-1", "--format=%B", "--end-of-options", pushed); !strings.HasPrefix(msg, "Resolve the divergence of main from the external repository\n") || !strings.Contains(msg, e) || !strings.HasSuffix(msg, git.FixerTrailer+": conflicts") {
 		t.Errorf("resolve/main's message = %q", msg)
 	}
 
@@ -1053,8 +1053,8 @@ func TestPushesABranchThatResolvesADivergedParent(t *testing.T) {
 
 	// resolve/main lands with main merged in.
 	w.Branch("main", pushed)
-	w.Git("merge", "--quiet", "--no-edit", "-s", "ours", head)
-	b.Spec.Head = w.Git("rev-parse", "HEAD")
+	w.Git("merge", "--quiet", "--no-edit", "-s", "ours", "--end-of-options", head)
+	b.Spec.Head = w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
 	w.Push("main")
 	if _, err := reconcile(t, srv, b, rules, o, child); err != nil {
 		t.Fatal(err)
@@ -1069,7 +1069,7 @@ func TestReusesALandedResolveBranch(t *testing.T) {
 	b, w, e, o := parent(t, srv, map[string]string{"a.txt": "main\n"}, map[string]string{"a.txt": "external\n"})
 	w.Branch("old", b.Spec.Head+"~1")
 	w.Push("resolve/main")
-	old := w.Git("rev-parse", "HEAD")
+	old := w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
 	if _, err := reconcile(t, srv, b, rules, o); err != nil {
 		t.Fatal(err)
 	}
@@ -1078,7 +1078,7 @@ func TestReusesALandedResolveBranch(t *testing.T) {
 		t.Fatalf("result = %+v and resolve/main at %s, want a push over the landed branch", res, pushed)
 	}
 	w.Fetch("resolve/main")
-	if got := w.Git("log", "-1", "--format=%P", pushed); got != e {
+	if got := w.Git("log", "-1", "--format=%P", "--end-of-options", pushed); got != e {
 		t.Errorf("resolve/main's parent = %s, want the external head %s", got, e)
 	}
 }
@@ -1089,7 +1089,7 @@ func TestWaitsForAnUnlandedResolveBranch(t *testing.T) {
 	w.Branch("other", b.Spec.Head)
 	commit(w, "other work", map[string]string{"b.txt": "other\n"})
 	w.Push("resolve/main")
-	other := w.Git("rev-parse", "HEAD")
+	other := w.Git("rev-parse", "--verify", "--end-of-options", "HEAD")
 	if _, err := reconcile(t, srv, b, rules, o); err != nil {
 		t.Fatal(err)
 	}
