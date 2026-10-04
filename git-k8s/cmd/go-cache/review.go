@@ -202,8 +202,12 @@ func inCluster(writer string) (*tokenReviewer, error) {
 		return nil, errors.New("no certificates in " + serviceAccountDir + "/ca.crt")
 	}
 	return newTokenReviewer("https://"+net.JoinHostPort(host, port), serviceAccountDir+"/token", &http.Client{
-		Timeout:   10 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}},
+		Timeout: 10 * time.Second,
+		// A Transport with its own TLS config uses only HTTP/1.1 unless
+		// ForceAttemptHTTP2 is set. Over HTTP/1.1 it keeps 2 idle
+		// connections, so concurrent writes' Pod gets would keep opening
+		// new ones.
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}, ForceAttemptHTTP2: true},
 	}, writer), nil
 }
 
