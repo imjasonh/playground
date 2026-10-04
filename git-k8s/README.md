@@ -214,8 +214,9 @@ the URL:
   `git`.
 - An SSH URL, such as `ssh://git@git.example.com/app.git` or the scp-like
   `git@git.example.com:app.git`, needs an `ssh-privatekey` key, as in a
-  `kubernetes.io/ssh-auth` Secret, and a `known_hosts` key. Include a user
-  name, usually `git`, as these examples do. Without one, ssh logs in as the
+  `kubernetes.io/ssh-auth` Secret, and a `known_hosts` key. The scp-like
+  form needs a user name, usually `git`. An `ssh://` URL can leave it out,
+  as in `ssh://git.example.com/~/app.git`, and ssh then logs in as the
   program's own user. An SSH URL without a `secretRef` is an error.
 
 `known_hosts` holds the server's host keys, in the format of OpenSSH's
