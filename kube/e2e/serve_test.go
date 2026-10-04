@@ -431,9 +431,17 @@ func TestServeHandsDataToReconcile(t *testing.T) {
 // status.
 func createReport(t *testing.T, c *client.Client, ns, name string) {
 	t.Helper()
+	createReportWith(t, c, ns, map[string]any{"name": name})
+}
+
+// createReportWith creates a Report with the given metadata, which must
+// include its name, and waits until a controller has written its status.
+func createReportWith(t *testing.T, c *client.Client, ns string, meta map[string]any) {
+	t.Helper()
+	name := meta["name"].(string)
 	e2e.Eventually(t, 30*time.Second, func() error {
 		return c.Create(t.Context(), client.Path(group+"/v1", "reports", ns, ""), map[string]any{
-			"apiVersion": group + "/v1", "kind": "Report", "metadata": map[string]any{"name": name},
+			"apiVersion": group + "/v1", "kind": "Report", "metadata": meta,
 		}, nil)
 	})
 	e2e.Eventually(t, 30*time.Second, func() error {

@@ -380,8 +380,11 @@ once per type with reflection, instead of generated `DeepCopy` methods.
 A manager keeps one informer for each type, namespace, and label selector that
 its controllers use, and controllers that read the same type with the same
 filters share it. An informer starts the first time a reconcile reads its
-type. On a replica with leader election or shards, informers start only after
-the replica first holds a shard, so standby replicas hold no caches.
+type. On a replica with leader election or shards, controllers start their
+informers only after the replica first holds a shard, so a standby holds only
+the caches that its webhooks and HTTP handlers read. When the replica takes
+over, a controller shares such a cache instead of starting a second informer
+for the same objects.
 
 The informer first tries a streaming list, which is a watch with
 `sendInitialEvents=true`, `resourceVersionMatch=NotOlderThan`, and
@@ -582,23 +585,30 @@ The replica that takes over a shard may not have the previous holder's last
 writes in its cache yet. A status computed from that cache lacks what those
 writes added, and a forced apply of it would remove them. So after a replica
 acquires a shard, it sends each object's status write with the cached
-`resourceVersion` as a precondition, until one succeeds. A write from a cache
-that's behind gets `409 Conflict`, which the framework tells apart from a
-deleted object, and the reconcile is retried. One success is enough. It shows
-that the cache had every earlier write when that reconcile started, and from
-then on this replica is the only one that writes the object's status.
+`resourceVersion` as a precondition, until one succeeds. That includes
+objects created after the takeover, because the cache can show an object as
+new before it shows the previous holder's writes to it. A reconcile that
+adds or removes the finalizer, or records owned kinds to clean up, writes
+the object before its status. Each such write carries the same
+precondition, and the next write requires the version that it returned. A
+write from a cache that's behind gets `409 Conflict`, which the framework
+tells apart from a deleted object, and the reconcile is retried. Such a
+retry is expected, so the framework logs it at the info level and counts it
+in `kube_reconcile_total` with `result="stale"` instead of `result="error"`.
+One success is enough. It shows that the cache had every earlier write when
+that reconcile started, and from then on this replica is the only one that
+writes the object's status.
 
-The precondition covers the controller's cache, but a reconcile can read the
-object with `kube.Get` from another cache. That happens with
-`kube.WatchSelector` or `kube.WatchNamespace`, with a second controller of the
-type, or when a handler or webhook read the type before the controller
-started. So until the first conditional write succeeds, the framework also
-compares the two caches when the reconcile starts. If the cache that
-`kube.Get` reads holds another version of the object, the framework doesn't
-write the status and retries the reconcile. A reconcile that read the object
-with `kube.Get` also runs again when that cache catches up. A cache that
-doesn't hold the object's namespace can't return the object, so the framework
-doesn't compare it.
+The precondition covers the controller's cache. A reconcile can also read the
+object with `kube.Get`, which reads the same cache unless the controller
+watches with `kube.WatchSelector`, or with `kube.WatchNamespace` and a
+namespace other than the manager's. Such a controller has a cache of its own.
+So until the first conditional write succeeds, the framework also compares the
+two caches when the reconcile starts. If the cache that `kube.Get` reads holds
+another version of the object, the framework doesn't write the status and
+retries the reconcile. A reconcile that read the object with `kube.Get` also
+runs again when that cache catches up. A cache that doesn't hold the object's
+namespace can't return the object, so the framework doesn't compare it.
 
 Waiting for the cache to catch up before queuing the shard's keys would need a
 way to tell that it has. Clients may compare resource versions only for
@@ -606,8 +616,9 @@ equality ([API concepts](https://kubernetes.io/docs/reference/using-api/api-conc
 so a replica can't tell that its cache passed the version that the previous
 holder last wrote. A new list of the type would show the current state, but it
 would cost a list for each acquired shard and hold back every key in the shard
-until it finished. The precondition costs nothing when the cache is current,
-and delays only the objects whose cache is behind.
+until it finished. The precondition costs a retry only when the object
+changed after the version that the reconcile read, because the cache was
+behind or because something else wrote the object during the reconcile.
 
 Sharding by lease, as Knative does, needs no component that labels objects,
 but every replica caches every object. Labeling objects with their shard, as
