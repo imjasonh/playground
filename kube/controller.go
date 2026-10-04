@@ -563,7 +563,14 @@ func (c *controller[T, P]) process(ctx context.Context, key Key) {
 	case errors.Is(err, errStale):
 		d := c.q.Retry(key, queue.High)
 		result = "stale"
-		log.Info("reconcile worked from an out-of-date object; retrying", "err", err, "retry", d.Round(time.Millisecond))
+		// A cache catches up within a few retries. More can mean that
+		// something else, such as a webhook, refuses the writes with 409
+		// Conflict, which no retry fixes.
+		level, failures := slog.LevelInfo, c.q.Failures(key)
+		if failures > 5 {
+			level = slog.LevelWarn
+		}
+		log.Log(ctx, level, "reconcile worked from an out-of-date object; retrying", "err", err, "retry", d.Round(time.Millisecond), "failures", failures)
 	default:
 		d := c.q.Retry(key, queue.High)
 		result = "error"

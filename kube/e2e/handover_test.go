@@ -32,6 +32,9 @@ type replica struct {
 type logCounts struct {
 	// caches counts the Report caches that synced.
 	caches atomic.Int64
+	// staleInfos and staleWarnings count the stale reconciles logged at each
+	// level.
+	staleInfos, staleWarnings atomic.Int64
 }
 
 // countingHandler passes records to the test log and counts some of them.
@@ -46,6 +49,14 @@ func (h countingHandler) Enabled(context.Context, slog.Level) bool { return true
 func (h countingHandler) Handle(ctx context.Context, r slog.Record) error {
 	if h.report && r.Message == "cache synced" {
 		h.counts.caches.Add(1)
+	}
+	if r.Message == "reconcile worked from an out-of-date object; retrying" {
+		switch r.Level {
+		case slog.LevelInfo:
+			h.counts.staleInfos.Add(1)
+		case slog.LevelWarn:
+			h.counts.staleWarnings.Add(1)
+		}
 	}
 	if !h.Handler.Enabled(ctx, r.Level) {
 		return nil
@@ -192,7 +203,8 @@ func waitWriteTried(t *testing.T, r *replica, versions *history, result string) 
 // fails instead of replacing the results with a list that lacks a result
 // that a client was told was saved, and succeeds once the cache catches up.
 // The replica counts the failed reconciles as stale, not as errors, and
-// retries them with backoff while the cache stays behind.
+// retries them with backoff while the cache stays behind. It logs them at the
+// info level, and warns once they keep failing.
 func TestServeHandOverWithAStaleCache(t *testing.T) {
 	c := e2e.Client(t)
 	ns := e2e.Namespace(t, c)
@@ -246,6 +258,15 @@ func TestServeHandOverWithAStaleCache(t *testing.T) {
 	time.Sleep(3 * time.Second)
 	if n := scrape(t, b.m.Addr, stale) - start; n > 20 {
 		t.Errorf("%v stale reconciles in 3s while the cache stayed behind, want at most 20", n)
+	}
+	e2e.Eventually(t, 30*time.Second, func() error {
+		if b.log.staleWarnings.Load() == 0 {
+			return errors.New("the second replica hasn't warned about a stale reconcile")
+		}
+		return nil
+	})
+	if n := b.log.staleInfos.Load(); n < 5 {
+		t.Errorf("the second replica warned after %d stale reconciles at the info level, want at least 5", n)
 	}
 	watches.release()
 	if code := p.answer("b"); code != http.StatusOK {
