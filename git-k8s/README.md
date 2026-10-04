@@ -640,12 +640,12 @@ one parent's head, and has three containers:
 The controller accepts only the `go.mod` and `go.sum` files next to the
 `go.mod` files that it asked to update. It rejects a `go.mod` file that
 changes anything other than its requirements and its `go` and `toolchain`
-lines. The `go` command checks the `go.sum` checksums when it builds the
-branch. At most `-max-pods` update Pods run at once across all namespaces,
-and kube deletes each one once the controller has its result. When an update
-fails, the controller logs why and tries again after `-interval`. An update
-also fails right away when its Pod can't start because a Secret doesn't exist
-or an image can't be pulled.
+lines, but not one whose other directives `go get` sorted. The `go` command
+checks the `go.sum` checksums when it builds the branch. At most `-max-pods`
+update Pods run at once across all namespaces, and kube deletes each one once
+the controller has its result. When an update fails, the controller logs why
+and tries again after `-interval`. An update also fails right away when its
+Pod can't start because a Secret doesn't exist or an image can't be pulled.
 
 Each update Pod's volumes have size limits. The repository can use up to
 `-source-size`, 2Gi by default, and the home directory, which holds Go's

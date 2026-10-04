@@ -760,23 +760,35 @@ func checkResult(mods map[string]*modFile, up update, files map[string][]byte) e
 			return fmt.Errorf("%s changes the module path", p)
 		case !requires(f, up.module, up.version):
 			return fmt.Errorf("%s doesn't require %s %s", p, up.module, up.version)
-		case !slices.EqualFunc(o.Replace, f.Replace, func(a, b *modfile.Replace) bool { return a.Old == b.Old && a.New == b.New }):
+		case !sameDirectives(o.Replace, f.Replace, func(r *modfile.Replace) [2]module.Version { return [2]module.Version{r.Old, r.New} }):
 			return fmt.Errorf("%s changes replace directives", p)
-		case !slices.EqualFunc(o.Exclude, f.Exclude, func(a, b *modfile.Exclude) bool { return a.Mod == b.Mod }):
+		case !sameDirectives(o.Exclude, f.Exclude, func(e *modfile.Exclude) module.Version { return e.Mod }):
 			return fmt.Errorf("%s changes exclude directives", p)
-		case !slices.EqualFunc(o.Retract, f.Retract, func(a, b *modfile.Retract) bool {
-			return a.VersionInterval == b.VersionInterval && a.Rationale == b.Rationale
-		}):
+		case !sameDirectives(o.Retract, f.Retract, func(r *modfile.Retract) [3]string { return [3]string{r.Low, r.High, r.Rationale} }):
 			return fmt.Errorf("%s changes retract directives", p)
-		case !slices.EqualFunc(o.Tool, f.Tool, func(a, b *modfile.Tool) bool { return a.Path == b.Path }):
+		case !sameDirectives(o.Tool, f.Tool, func(t *modfile.Tool) string { return t.Path }):
 			return fmt.Errorf("%s changes tool directives", p)
-		case !slices.EqualFunc(o.Godebug, f.Godebug, func(a, b *modfile.Godebug) bool { return a.Key == b.Key && a.Value == b.Value }):
+		case !sameDirectives(o.Godebug, f.Godebug, func(g *modfile.Godebug) [2]string { return [2]string{g.Key, g.Value} }):
 			return fmt.Errorf("%s changes godebug directives", p)
-		case !slices.EqualFunc(o.Ignore, f.Ignore, func(a, b *modfile.Ignore) bool { return a.Path == b.Path }):
+		case !sameDirectives(o.Ignore, f.Ignore, func(i *modfile.Ignore) string { return i.Path }):
 			return fmt.Errorf("%s changes ignore directives", p)
 		}
 	}
 	return nil
+}
+
+// sameDirectives reports whether two lists of directives hold the same
+// directives in any order. go get sorts each block of directives and drops
+// repeated ones.
+func sameDirectives[T any, K comparable](a, b []T, key func(T) K) bool {
+	set := func(s []T) map[K]bool {
+		m := map[K]bool{}
+		for _, d := range s {
+			m[key(d)] = true
+		}
+		return m
+	}
+	return maps.Equal(set(a), set(b))
 }
 
 // commit makes the commit on the parent's head that writes an update's

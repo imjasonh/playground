@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -797,6 +798,119 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 			f.clock = f.clock.Add(time.Second)
 			if again := f.start(); again.Name == p.Name {
 				t.Errorf("trying again starts Pod %s again, want a new Pod", p.Name)
+			}
+		})
+	}
+}
+
+func TestCheckResult(t *testing.T) {
+	const parent = `module example.com/app
+
+go 1.24
+
+require example.com/greet v1.0.0
+
+replace (
+	example.com/z => ./z
+	example.com/b v1.0.0 => example.com/fork v1.0.1
+)
+
+exclude (
+	example.com/greet v0.9.0
+	example.com/greet v0.8.0
+	example.com/greet v0.9.0
+)
+
+retract (
+	[v0.2.0, v0.3.0]
+	v1.0.1 // Published by mistake.
+)
+
+tool (
+	example.com/z/cmd/z
+	example.com/b/cmd/b
+)
+
+godebug (
+	panicnil=1
+	asynctimerchan=1
+)
+
+ignore (
+	./web
+	./dist
+)
+`
+	// updated is parent as go get example.com/greet@v1.1.0 writes it, with
+	// each block sorted and the repeated exclude directive dropped.
+	const updated = `module example.com/app
+
+go 1.24
+
+require example.com/greet v1.1.0
+
+replace (
+	example.com/b v1.0.0 => example.com/fork v1.0.1
+	example.com/z => ./z
+)
+
+exclude (
+	example.com/greet v0.8.0
+	example.com/greet v0.9.0
+)
+
+retract (
+	v1.0.1 // Published by mistake.
+	[v0.2.0, v0.3.0]
+)
+
+tool (
+	example.com/b/cmd/b
+	example.com/z/cmd/z
+)
+
+godebug (
+	asynctimerchan=1
+	panicnil=1
+)
+
+ignore (
+	./dist
+	./web
+)
+`
+	f, err := modfile.Parse("go.mod", []byte(parent), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mods := map[string]*modFile{".": {data: []byte(parent), file: f}}
+	up := update{module: greet, version: "v1.1.0", from: map[string]string{".": "v1.0.0"}}
+	for _, tc := range []struct {
+		name, old, new string
+		// want is the error, or empty when checkResult accepts the file.
+		want string
+	}{
+		{name: "sorted blocks"},
+		{name: "module path", old: "module example.com/app", new: "module example.com/other", want: "go.mod changes the module path"},
+		{name: "requirement", old: "greet v1.1.0", new: "greet v1.0.0", want: "go.mod doesn't require example.com/greet v1.1.0"},
+		{name: "replace", old: "example.com/z => ./z", new: "example.com/z => ../z", want: "go.mod changes replace directives"},
+		{name: "dropped replace", old: "\texample.com/z => ./z\n", want: "go.mod changes replace directives"},
+		{name: "exclude", old: "greet v0.8.0", new: "greet v0.7.0", want: "go.mod changes exclude directives"},
+		{name: "retract", old: "[v0.2.0, v0.3.0]", new: "[v0.2.0, v0.4.0]", want: "go.mod changes retract directives"},
+		{name: "retract rationale", old: "// Published by mistake.", new: "// Fine.", want: "go.mod changes retract directives"},
+		{name: "tool", old: "example.com/z/cmd/z", new: "example.com/z/cmd/zz", want: "go.mod changes tool directives"},
+		{name: "added tool", old: "\texample.com/z/cmd/z\n", new: "\texample.com/z/cmd/z\n\texample.com/y/cmd/y\n", want: "go.mod changes tool directives"},
+		{name: "godebug", old: "panicnil=1", new: "panicnil=0", want: "go.mod changes godebug directives"},
+		{name: "ignore", old: "./dist", new: "./build", want: "go.mod changes ignore directives"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			files := map[string][]byte{"go.mod": []byte(strings.Replace(updated, tc.old, tc.new, 1))}
+			got := ""
+			if err := checkResult(mods, up, files); err != nil {
+				got = err.Error()
+			}
+			if got != tc.want {
+				t.Errorf("checkResult() = %q, want %q", got, tc.want)
 			}
 		})
 	}

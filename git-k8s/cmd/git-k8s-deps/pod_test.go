@@ -137,7 +137,8 @@ func TestScripts(t *testing.T) {
 	w := srv.NewWork(t, "app")
 	w.Write("go.mod", "module example.com/app\n\ngo 1.24\n\nrequire (\n\texample.com/greet v1.0.0\n\texample.com/other v1.0.0\n)\n")
 	w.Write("app.go", "package app\n\nimport (\n\t\"example.com/greet\"\n\t_ \"example.com/other\"\n)\n\nvar Greeting = greet.Hello()\n")
-	w.Write("tools/go.mod", "module example.com/app/tools\n\ngo 1.24\n\nrequire example.com/greet v1.0.0\n")
+	w.Write("tools/go.mod", "module example.com/app/tools\n\ngo 1.24\n\nrequire example.com/greet v1.0.0\n\n"+
+		"replace (\n\texample.com/z => ./z\n\texample.com/b => ./b\n)\n\nexclude (\n\texample.com/greet v0.9.0\n\texample.com/greet v0.8.0\n)\n")
 	w.Write("tools/tools.go", "package tools\n\nimport _ \"example.com/greet\"\n")
 	if out, err := run(w.Dir, "go mod tidy", goEnv); err != nil {
 		t.Fatalf("go mod tidy: %v\n%s", err, out)
@@ -234,6 +235,9 @@ func TestScripts(t *testing.T) {
 	}
 	if err := checkResult(mods, ups[0], g.files); err != nil {
 		t.Errorf("checkResult() = %v", err)
+	}
+	if !strings.Contains(string(g.files["tools/go.mod"]), "\texample.com/b => ./b\n\texample.com/z => ./z\n") {
+		t.Errorf("go get didn't sort tools/go.mod's replace block:\n%s", g.files["tools/go.mod"])
 	}
 	for path, want := range map[string][]string{
 		"go.sum":       {"example.com/greet v1.1.0 h1:", "example.com/greet v1.1.0/go.mod h1:", "example.com/other v1.0.0 h1:"},
