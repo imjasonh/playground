@@ -521,10 +521,12 @@ merge base, must be clean and change nothing, so that the head brings back
 no change that the side removed. The merges can't see a replay of a removed
 commit whose change other removed commits undid, such as a secret and its
 revert that a force push dropped, so the rule also looks for replays of the
-removed commits. It can't find one inside a larger commit, such as a
-squash. No merge checks these replays, so a commit that makes a removed
-commit's change on another line also counts as one. The check passes when
-one side's head already keeps every change that the other side made.
+removed commits. The search ignores `.gitattributes` files, so that an
+attribute such as `-diff` can't hide a replay. It can't find one inside a
+larger commit, such as a squash. No merge checks these replays, so a commit
+that makes a removed commit's change on another line also counts as one.
+The check passes when one side's head already keeps every change that the
+other side made.
 
 Branches diverge only with the in-cluster mirror that
 [Future work](future-work.md#run-an-in-cluster-git-mirror) proposes, so the
