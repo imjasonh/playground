@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"cmp"
+	"container/list"
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // reviewer checks service account tokens.
@@ -32,20 +36,107 @@ var errDenied = errors.New("token denied")
 
 // tokenReviewer asks the API server about tokens with TokenReviews, and
 // remembers the answers for a while, so a build that reads hundreds of
-// outputs makes one review.
+// outputs makes one review. It denies a token that isn't a JWT for the
+// audience without asking. It remembers denials apart from the tokens that
+// it accepts, so bad tokens can't push good ones out, and it sends at most
+// maxReviews TokenReviews at once.
 type tokenReviewer struct {
 	url       string
 	tokenFile string
 	client    *http.Client
 
-	mu    sync.Mutex
-	cache map[[sha256.Size]byte]review
+	allowed, denied *reviewCache
+	// reviews holds the reviews in progress, by key.
+	reviews singleflight.Group
+	// asking holds a value for each TokenReview in progress, up to its
+	// capacity.
+	asking chan struct{}
+	// askWait is how long a review waits for others to finish.
+	askWait time.Duration
 }
+
+const (
+	// maxReviews is how many TokenReviews a tokenReviewer sends at once.
+	maxReviews = 8
+	// maxTokenSize is the size of the largest token that go-cache reviews.
+	// Service account tokens take about a kilobyte.
+	maxTokenSize = 16 << 10
+)
 
 type review struct {
 	namespace string
 	err       error
 	expires   time.Time
+}
+
+// reviewCache remembers reviews for ttl. When it holds size reviews, it
+// forgets the expired ones, or if none have expired, the least recently
+// used one.
+type reviewCache struct {
+	size int
+	ttl  time.Duration
+
+	mu      sync.Mutex
+	entries map[[sha256.Size]byte]*list.Element
+	// lru holds a *cachedReview for each entry, the most recently used
+	// first.
+	lru list.List
+}
+
+type cachedReview struct {
+	key [sha256.Size]byte
+	review
+}
+
+func newReviewCache(size int, ttl time.Duration) *reviewCache {
+	return &reviewCache{size: size, ttl: ttl, entries: map[[sha256.Size]byte]*list.Element{}}
+}
+
+// get returns the review for key, if c has one that hasn't expired by now.
+func (c *reviewCache) get(key [sha256.Size]byte, now time.Time) (review, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.entries[key]
+	if !ok {
+		return review{}, false
+	}
+	r := e.Value.(*cachedReview)
+	if !now.Before(r.expires) {
+		c.remove(e)
+		return review{}, false
+	}
+	c.lru.MoveToFront(e)
+	return r.review, true
+}
+
+// add remembers r for key, until ttl after now.
+func (c *reviewCache) add(key [sha256.Size]byte, r review, now time.Time) {
+	r.expires = now.Add(c.ttl)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if e, ok := c.entries[key]; ok {
+		e.Value.(*cachedReview).review = r
+		c.lru.MoveToFront(e)
+		return
+	}
+	if c.lru.Len() >= c.size {
+		for e := c.lru.Front(); e != nil; {
+			next := e.Next()
+			if !now.Before(e.Value.(*cachedReview).expires) {
+				c.remove(e)
+			}
+			e = next
+		}
+	}
+	for c.lru.Len() >= c.size {
+		c.remove(c.lru.Back())
+	}
+	c.entries[key] = c.lru.PushFront(&cachedReview{key, r})
+}
+
+func (c *reviewCache) remove(e *list.Element) {
+	delete(c.entries, e.Value.(*cachedReview).key)
+	c.lru.Remove(e)
 }
 
 const serviceAccountDir = "/var/run/secrets/kubernetes.io/serviceaccount"
@@ -75,33 +166,103 @@ func newTokenReviewer(server, tokenFile string, client *http.Client) *tokenRevie
 		url:       server + "/apis/authentication.k8s.io/v1/tokenreviews",
 		tokenFile: tokenFile,
 		client:    client,
-		cache:     map[[sha256.Size]byte]review{},
+		allowed:   newReviewCache(4096, time.Minute),
+		denied:    newReviewCache(1024, 10*time.Second),
+		asking:    make(chan struct{}, maxReviews),
+		askWait:   10 * time.Second,
 	}
 }
 
 func (t *tokenReviewer) review(ctx context.Context, token, audience string) (string, error) {
+	if !forAudience(token, audience) {
+		return "", fmt.Errorf("%w: the token isn't a JWT for %s", errDenied, audience)
+	}
 	key := sha256.Sum256([]byte(audience + "\x00" + token))
-	t.mu.Lock()
-	r, ok := t.cache[key]
-	t.mu.Unlock()
-	if ok && time.Now().Before(r.expires) {
+	if r, ok := t.remembered(key); ok {
 		return r.namespace, r.err
 	}
-	ns, err := t.ask(ctx, token, audience)
-	ttl := time.Minute
-	switch {
-	case errors.Is(err, errDenied):
-		ttl = 10 * time.Second
-	case err != nil:
+	// Reviews of one token share one TokenReview, which goes on if the
+	// request that started it ends.
+	v, err, _ := t.reviews.Do(string(key[:]), func() (any, error) {
+		if r, ok := t.remembered(key); ok {
+			return r, nil
+		}
+		ns, err := t.askSoon(context.WithoutCancel(ctx), token, audience)
+		r := review{namespace: ns, err: err}
+		switch {
+		case errors.Is(err, errDenied):
+			t.denied.add(key, r, time.Now())
+		case err != nil:
+			return nil, err
+		default:
+			t.allowed.add(key, r, time.Now())
+		}
+		return r, nil
+	})
+	if err != nil {
 		return "", err
 	}
-	t.mu.Lock()
-	if len(t.cache) >= 4096 {
-		clear(t.cache)
+	r := v.(review)
+	return r.namespace, r.err
+}
+
+func (t *tokenReviewer) remembered(key [sha256.Size]byte) (review, bool) {
+	now := time.Now()
+	if r, ok := t.allowed.get(key, now); ok {
+		return r, true
 	}
-	t.cache[key] = review{namespace: ns, err: err, expires: time.Now().Add(ttl)}
-	t.mu.Unlock()
-	return ns, err
+	return t.denied.get(key, now)
+}
+
+// askSoon asks the API server about token once fewer than maxReviews
+// TokenReviews are in progress, and fails if that takes longer than
+// askWait.
+func (t *tokenReviewer) askSoon(ctx context.Context, token, audience string) (string, error) {
+	wait := time.NewTimer(t.askWait)
+	defer wait.Stop()
+	select {
+	case t.asking <- struct{}{}:
+	case <-wait.C:
+		return "", errors.New("too many token reviews are in progress")
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	defer func() { <-t.asking }()
+	return t.ask(ctx, token, audience)
+}
+
+// forAudience reports whether token is a JWT whose aud claim includes
+// audience. It doesn't check the token's signature, so only the API server
+// can accept a token, but it spares the API server tokens that it would
+// deny.
+func forAudience(token, audience string) bool {
+	if len(token) > maxTokenSize {
+		return false
+	}
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 || parts[0] == "" || parts[2] == "" {
+		return false
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return false
+	}
+	var claims struct {
+		Aud json.RawMessage `json:"aud"`
+	}
+	if json.Unmarshal(payload, &claims) != nil {
+		return false
+	}
+	// aud is a string or a list of strings.
+	var auds []string
+	if json.Unmarshal(claims.Aud, &auds) != nil {
+		var aud string
+		if json.Unmarshal(claims.Aud, &aud) != nil {
+			return false
+		}
+		auds = []string{aud}
+	}
+	return slices.Contains(auds, audience)
 }
 
 // tokenReview holds the fields of a TokenReview that go-cache uses.

@@ -327,7 +327,11 @@ The design leaves these risks:
 - `go-cache` serves plain HTTP. Anyone who can watch the Pod network can
   read build outputs, and use a token that writes until it expires.
 - `go-cache` remembers a token's review for a minute, so a token works for
-  up to a minute after its Pod is deleted.
+  up to a minute after its Pod is deleted. It denies a token that isn't a
+  JWT for the request's audience without a TokenReview, remembers denials
+  apart from the tokens that it accepts, and sends at most 8 TokenReviews
+  at once. A flood of bad tokens can hold up reviews of new tokens, but
+  not requests with tokens that it accepted in the last minute.
 - A namespace can fill the store and push other namespaces' entries out,
   which slows their builds. Its tokens can name any repository, even one
   that doesn't exist, so it can write as many entries as it likes.

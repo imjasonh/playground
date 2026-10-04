@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -603,10 +604,42 @@ func TestGoCommand(t *testing.T) {
 	}
 }
 
-func TestTokenReviewer(t *testing.T) {
-	var calls atomic.Int32
+// testToken returns a token shaped like a service account token, with a
+// subject, and aud, which can be a string or a list of strings.
+func testToken(t *testing.T, subject string, aud any) string {
+	t.Helper()
+	enc := func(v any) string {
+		b, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return base64.RawURLEncoding.EncodeToString(b)
+	}
+	return enc(map[string]string{"alg": "RS256"}) + "." + enc(map[string]any{"aud": aud, "sub": subject}) + ".c2lnbmF0dXJl"
+}
+
+// tokenSubject returns the subject of a token from testToken.
+func tokenSubject(token string) string {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	b, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Sub string `json:"sub"`
+	}
+	json.Unmarshal(b, &claims)
+	return claims.Sub
+}
+
+// newTokenAPI starts a fake API server that answers TokenReviews with
+// answer, and returns a tokenReviewer that uses it.
+func newTokenAPI(t *testing.T, answer func(w http.ResponseWriter, r *http.Request, tr *tokenReview)) *tokenReviewer {
+	t.Helper()
 	api := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
 		if r.Method != http.MethodPost || r.URL.Path != "/apis/authentication.k8s.io/v1/tokenreviews" || r.Header.Get("Authorization") != "Bearer own-token" {
 			http.Error(w, "unexpected request", http.StatusBadRequest)
 			return
@@ -616,8 +649,22 @@ func TestTokenReviewer(t *testing.T) {
 			http.Error(w, "bad TokenReview", http.StatusBadRequest)
 			return
 		}
+		answer(w, r, &tr)
+	}))
+	t.Cleanup(api.Close)
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("own-token\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return newTokenReviewer(api.URL, tokenFile, api.Client())
+}
+
+func TestTokenReviewer(t *testing.T) {
+	var calls atomic.Int32
+	r := newTokenAPI(t, func(w http.ResponseWriter, _ *http.Request, tr *tokenReview) {
+		calls.Add(1)
 		s := &tr.Status
-		switch tr.Spec.Token {
+		switch tokenSubject(tr.Spec.Token) {
 		case "good":
 			s.Authenticated, s.User.Username = true, "system:serviceaccount:ns:default"
 			if slices.Contains(tr.Spec.Audiences, "aud") {
@@ -635,44 +682,192 @@ func TestTokenReviewer(t *testing.T) {
 		}
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(tr)
-	}))
-	t.Cleanup(api.Close)
-	tokenFile := filepath.Join(t.TempDir(), "token")
-	if err := os.WriteFile(tokenFile, []byte("own-token\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	r := newTokenReviewer(api.URL, tokenFile, api.Client())
+	})
 	review := func(token string) (string, error) {
 		t.Helper()
 		return r.review(t.Context(), token, "aud")
 	}
 
 	for range 2 {
-		if ns, err := review("good"); err != nil || ns != "ns" {
+		if ns, err := review(testToken(t, "good", "aud")); err != nil || ns != "ns" {
 			t.Errorf("review of a good token = %q, %v", ns, err)
 		}
 	}
 	if n := calls.Load(); n != 1 {
 		t.Errorf("%d reviews of the same token, want 1", n)
 	}
-	for _, token := range []string{"bad", "audience-unaware", "user", "bad"} {
-		if ns, err := review(token); !errors.Is(err, errDenied) {
-			t.Errorf("review of %q = %q, %v; want it denied", token, ns, err)
+	for _, sub := range []string{"bad", "audience-unaware", "user", "bad"} {
+		if ns, err := review(testToken(t, sub, []string{"other", "aud"})); !errors.Is(err, errDenied) {
+			t.Errorf("review of %q = %q, %v; want it denied", sub, ns, err)
 		}
 	}
 	if n := calls.Load(); n != 4 {
 		t.Errorf("%d reviews, want 4, because denials are remembered too", n)
 	}
 	for range 2 {
-		if _, err := review("broken"); err == nil || errors.Is(err, errDenied) {
+		if _, err := review(testToken(t, "broken", "aud")); err == nil || errors.Is(err, errDenied) {
 			t.Errorf("review when the API server fails = %v, want an error that isn't a denial", err)
 		}
 	}
 	if n := calls.Load(); n != 6 {
 		t.Errorf("%d reviews, want 6, because failures aren't remembered", n)
 	}
-	if _, err := r.review(t.Context(), "good", "another audience"); err == nil {
-		t.Error("a review for one audience let the token through for another")
+	if _, err := r.review(t.Context(), testToken(t, "good", []string{"aud", "another audience"}), "another audience"); !errors.Is(err, errDenied) {
+		t.Errorf("review for an audience that the API server didn't confirm = %v, want it denied", err)
+	}
+	if n := calls.Load(); n != 7 {
+		t.Errorf("%d reviews, want 7", n)
+	}
+
+	t.Log("Tokens that aren't JWTs for the audience are denied without a TokenReview.")
+	header, payload := strings.Split(testToken(t, "good", "aud"), ".")[0], strings.Split(testToken(t, "good", "aud"), ".")[1]
+	for name, token := range map[string]string{
+		"not a JWT":            "good",
+		"two parts":            header + "." + payload,
+		"four parts":           header + "." + payload + ".sig.more",
+		"no header":            "." + payload + ".sig",
+		"no signature":         header + "." + payload + ".",
+		"payload isn't base64": header + ".!!!.sig",
+		"payload isn't JSON":   header + "." + base64.RawURLEncoding.EncodeToString([]byte("aud")) + ".sig",
+		"no aud":               header + "." + base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"good"}`)) + ".sig",
+		"aud isn't a string":   header + "." + base64.RawURLEncoding.EncodeToString([]byte(`{"aud":7}`)) + ".sig",
+		"another audience":     testToken(t, "good", "another audience"),
+		"other audiences":      testToken(t, "good", []string{"x", "y"}),
+		"null aud":             testToken(t, "good", nil),
+		"larger than 16 KiB":   testToken(t, strings.Repeat("x", maxTokenSize), "aud"),
+	} {
+		if _, err := review(token); !errors.Is(err, errDenied) {
+			t.Errorf("review of a token with %s = %v, want it denied", name, err)
+		}
+	}
+	if n := calls.Load(); n != 7 {
+		t.Errorf("%d reviews, want still 7", n)
+	}
+}
+
+func TestReviewCache(t *testing.T) {
+	key := func(s string) [sha256.Size]byte { return sha256.Sum256([]byte(s)) }
+	has := func(c *reviewCache, k string, now time.Time) bool {
+		_, ok := c.get(key(k), now)
+		return ok
+	}
+	t0 := time.Now()
+	c := newReviewCache(2, time.Minute)
+	c.add(key("a"), review{namespace: "a"}, t0)
+	c.add(key("b"), review{namespace: "b"}, t0)
+	if r, ok := c.get(key("a"), t0.Add(time.Second)); !ok || r.namespace != "a" {
+		t.Errorf("get(a) = %v, %v", r, ok)
+	}
+	c.add(key("c"), review{namespace: "c"}, t0.Add(2*time.Second))
+	if has(c, "b", t0.Add(3*time.Second)) || !has(c, "a", t0.Add(3*time.Second)) || !has(c, "c", t0.Add(3*time.Second)) {
+		t.Error("a full cache didn't forget only b, the least recently used review")
+	}
+	if has(c, "a", t0.Add(time.Minute)) {
+		t.Error("the cache returned a review a minute old")
+	}
+
+	t.Log("A full cache forgets expired reviews before the least recently used one.")
+	c = newReviewCache(2, time.Minute)
+	c.add(key("old"), review{}, t0)
+	c.add(key("young"), review{}, t0.Add(30*time.Second))
+	has(c, "old", t0.Add(59*time.Second))
+	c.add(key("new"), review{}, t0.Add(61*time.Second))
+	now := t0.Add(62 * time.Second)
+	if has(c, "old", now) || !has(c, "young", now) || !has(c, "new", now) {
+		t.Error("a full cache didn't forget only old, which had expired")
+	}
+}
+
+func TestTokenReviewerLimits(t *testing.T) {
+	var calls, inFlight atomic.Int32
+	release := make(chan struct{})
+	r := newTokenAPI(t, func(w http.ResponseWriter, req *http.Request, tr *tokenReview) {
+		calls.Add(1)
+		inFlight.Add(1)
+		defer inFlight.Add(-1)
+		s := &tr.Status
+		switch sub := tokenSubject(tr.Spec.Token); {
+		case strings.HasPrefix(sub, "slow"):
+			select {
+			case <-release:
+			case <-req.Context().Done():
+				return
+			}
+			fallthrough
+		case strings.HasPrefix(sub, "good"):
+			s.Authenticated, s.User.Username, s.Audiences = true, "system:serviceaccount:ns:"+sub, tr.Spec.Audiences
+		default:
+			s.Error = "invalid bearer token"
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(tr)
+	})
+	releaseAPI := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseAPI)
+	r.asking = make(chan struct{}, 2)
+	r.askWait = 100 * time.Millisecond
+	r.denied = newReviewCache(2, 10*time.Second)
+	review := func(token string) (string, error) {
+		return r.review(t.Context(), token, "aud")
+	}
+	waitInFlight := func(n int32) {
+		t.Helper()
+		for deadline := time.Now().Add(time.Minute); inFlight.Load() < n; time.Sleep(time.Millisecond) {
+			if time.Now().After(deadline) {
+				t.Fatalf("%d TokenReviews in progress, want %d", inFlight.Load(), n)
+			}
+		}
+	}
+
+	t.Log("Reviews of one token share one TokenReview.")
+	slow, slow2, good := testToken(t, "slow", "aud"), testToken(t, "slow-2", "aud"), testToken(t, "good", "aud")
+	errs := make([]error, 6)
+	var wg sync.WaitGroup
+	wg.Go(func() { _, errs[0] = review(slow) })
+	waitInFlight(1)
+	for i := range 5 {
+		wg.Go(func() { _, errs[i+1] = review(slow) })
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	t.Log("A review waits for a free slot, and fails if none frees up.")
+	var err2 error
+	wg.Go(func() { _, err2 = review(slow2) })
+	waitInFlight(2)
+	if _, err := review(good); err == nil || errors.Is(err, errDenied) {
+		t.Errorf("review while 2 of 2 TokenReviews are in progress = %v, want an error that isn't a denial", err)
+	}
+	releaseAPI()
+	wg.Wait()
+	for i, err := range append(errs, err2) {
+		if err != nil {
+			t.Errorf("review %d of a slow token: %v", i, err)
+		}
+	}
+	if n := calls.Load(); n != 2 {
+		t.Errorf("%d TokenReviews for 6 reviews of one token and 1 of another, want 2", n)
+	}
+	if _, err := review(good); err != nil {
+		t.Errorf("review once slots were free: %v", err)
+	}
+
+	t.Log("Denials don't push accepted tokens out.")
+	for i := range 5 {
+		if _, err := review(testToken(t, fmt.Sprint("bad-", i), "aud")); !errors.Is(err, errDenied) {
+			t.Errorf("review of bad token %d = %v, want it denied", i, err)
+		}
+	}
+	before := calls.Load()
+	for _, token := range []string{slow, slow2, good, testToken(t, "bad-4", "aud")} {
+		if _, err := review(token); err != nil && !errors.Is(err, errDenied) {
+			t.Errorf("review of %q: %v", tokenSubject(token), err)
+		}
+	}
+	if n := calls.Load() - before; n != 0 {
+		t.Errorf("%d TokenReviews for 3 accepted tokens and the latest denied one, want 0", n)
+	}
+	if _, err := review(testToken(t, "bad-0", "aud")); !errors.Is(err, errDenied) || calls.Load() != before+1 {
+		t.Errorf("review of the oldest denied token = %v after %d TokenReviews, want a denial after 1, because the denial cache holds 2", err, calls.Load()-before)
 	}
 }
 
