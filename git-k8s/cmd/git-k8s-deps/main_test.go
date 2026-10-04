@@ -1949,7 +1949,7 @@ replace example.com/replaced => ./replaced
 exclude example.com/other v1.1.0
 `
 	f.work.Write("go.mod", rootMod)
-	f.work.Write("tools/go.mod", "module example.com/app/tools\n\ngo 1.24\n\nrequire example.com/greet v1.0.0\n")
+	f.work.Write("tools/go.mod", "module example.com/app/tools\n\ngo 1.17\n\nrequire example.com/greet v1.0.0\n")
 	f.work.Write("old/go.mod", "module example.com/app/old\n\ngo 1.24\n\nrequire example.com/greet v1.1.0\n")
 	for _, dir := range []string{"vendored", "testdata/x", "bad dir", "-x", "broken", "nomodule"} {
 		f.work.Write(dir+"/go.mod", "module example.com/app/x\n\nrequire example.com/greet v1.0.0\n")
@@ -1985,7 +1985,7 @@ exclude example.com/other v1.1.0
 	}
 
 	t.Log("The branch updates the three files in one commit; old/go.mod already requires v1.1.0, and go get adds a go line to nogo/go.mod.")
-	toolsMod := "module example.com/app/tools\n\ngo 1.24\n\nrequire example.com/greet v1.1.0\n"
+	toolsMod := "module example.com/app/tools\n\ngo 1.17\n\nrequire example.com/greet v1.1.0\n"
 	nogoMod := "module example.com/app/nogo\n\ngo 1.26.0\n\nrequire example.com/greet v1.1.0\n"
 	f.finish(p, result(
 		withFiles("v1.1.0", "go.mod", strings.Replace(rootMod, "greet v1.0.0", "greet v1.1.0", 1), "nogo/go.mod", nogoMod, "tools/go.mod", toolsMod),
