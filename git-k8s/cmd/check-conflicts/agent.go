@@ -338,9 +338,6 @@ type rejected struct{ error }
 // labels, or more lines that look like conflict markers than its two sides
 // hold together.
 func checkResolved(ctx context.Context, repo *git.Repo, tree string, c git.Conflict, labels ...string) error {
-	if c.Ours == nil || c.Theirs == nil {
-		return rejected{fmt.Errorf("%s isn't a file on both sides", c.Path)}
-	}
 	got, err := repo.ReadBlob(ctx, tree+":"+c.Path)
 	if err != nil {
 		return err
