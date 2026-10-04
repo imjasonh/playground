@@ -57,8 +57,8 @@ const (
 const prepareAttempts = 3
 
 // movedWait is how long a run whose Pod found that the branch moved waits
-// for a job with the new head, such as a check's next head, before it
-// prepares the source for the same head again.
+// for a job with the new head before it prepares the source for the same
+// head again. A check's run can wait longer, as run.headWait says.
 const movedWait = time.Minute
 
 // Runner runs agents in Pods for one check. Set Name to the check's name,
@@ -236,6 +236,30 @@ type run struct {
 	job     *Job
 	st      *JobState
 	started bool
+}
+
+// headWait is how long the run waits for a job with the new head after its
+// Pod found that the branch moved. A check's next head comes from a poll of
+// the repository, so a check's run waits for two polls if they take longer
+// than movedWait.
+func (x *run) headWait() time.Duration {
+	if x.in == nil {
+		return movedWait
+	}
+	poll, err := time.ParseDuration(x.in.Repository.Spec.PollInterval)
+	if err != nil {
+		return movedWait
+	}
+	return max(movedWait, 2*poll)
+}
+
+// minutes says how long d is in whole minutes, rounded up, such as
+// "a minute" or "10 minutes".
+func minutes(d time.Duration) string {
+	if n := (d + time.Minute - 1) / time.Minute; n > 1 {
+		return fmt.Sprintf("%d minutes", n)
+	}
+	return "a minute"
 }
 
 // outputs hold the run's state and merge base, which the next reconcile

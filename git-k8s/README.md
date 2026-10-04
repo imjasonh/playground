@@ -295,9 +295,11 @@ tokens:
 
 If the branch moves before the agent's Pod fetches it, the agent doesn't
 run, so the run doesn't count toward `maxAgentRuns` or `-max-runs-per-day`,
-and the new head starts a run of its own. If the branch's head is the same
-a minute later, such as when the branch moved back, the check fetches it
-again in a new Pod, which counts as a run.
+and the new head starts a run of its own. The check waits a minute, or
+twice the repository's `pollInterval` if that's longer, for a poll to find
+the new head. If the branch's head is the same after the wait, such as when
+the branch moved back, the check fetches it again in a new Pod, which
+counts as a run.
 
 If an agent Pod is deleted before its run finishes, kube creates it again,
 and the agent runs again. The check counts that as another run. When
@@ -470,10 +472,11 @@ starts a new run, up to the job's `MaxRuns`. A deploy that changes the
 agent Pods' spec starts an unfinished run again in a new Pod, which takes
 a place in `-max-runs-per-day` but doesn't count toward `MaxRuns`. If the
 Pod finds that the branch moved, the agent doesn't run, and `RunJob` gives
-the run back and waits a minute for a `Job` with the new head. While the
-run waits, the status's `Moved` is true. If a call after that minute has
-the same `Job`, `RunJob` fetches the commits again in a new Pod, which
-counts as a run. A run ends after three Pods fail to fetch the commits or
+the run back and waits a minute for a `Job` with the new head. `Run` waits
+twice the repository's `pollInterval` instead if that's longer. While the
+run waits, the status's `Moved` is true. If a call after the wait has the
+same `Job`, `RunJob` fetches the commits again in a new Pod, which counts
+as a run. A run ends after three Pods fail to fetch the commits or
 find that the branch moved. If the run's Pod is deleted before the run is
 `Done`, kube creates it again and the agent runs again, so `RunJob` counts
 another run. When `MaxRuns` or `-max-runs-per-day` allows no more,

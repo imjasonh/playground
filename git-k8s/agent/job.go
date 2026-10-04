@@ -362,9 +362,10 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 			if since.IsZero() {
 				since = pod.CreationTimestamp
 			}
-			if wait := movedWait - time.Since(since); wait > 0 {
+			total := x.headWait()
+			if wait := total - time.Since(since); wait > 0 {
 				kube.RequeueAfter(ctx, wait)
-				return x.moved("waiting up to a minute for a run on the new commits: %s", msg)
+				return x.moved("waiting up to %s for a run on the new commits: %s", minutes(total), msg)
 			}
 			return x.prepareAgain(ctx, msg)
 		case st.Attempt < prepareAttempts:

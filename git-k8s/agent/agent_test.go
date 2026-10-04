@@ -51,6 +51,8 @@ type fixture struct {
 	cfg    *checks.Config
 	base   string
 	result *Result
+	// poll is the repository's pollInterval, if it isn't gittest's.
+	poll string
 
 	mu   sync.Mutex
 	body []byte
@@ -118,6 +120,9 @@ func (f *fixture) serve(body []byte, uid string) string {
 func (f *fixture) reconcile(pods ...*Pod) *kube.Recorder {
 	f.t.Helper()
 	repo, secret := f.srv.Repository("app")
+	if f.poll != "" {
+		repo.Spec.PollInterval = f.poll
+	}
 	world := []any{repo, secret}
 	for _, p := range pods {
 		world = append(world, p)
@@ -1120,5 +1125,37 @@ func TestFollowsTheOldPodWhenTheBranchMovesBack(t *testing.T) {
 	f.reconcile(&again)
 	if st := f.jobState(); st.Runs != 3 || len(f.r.day.starts) != 3 {
 		t.Errorf("state = %+v with %d runs in the last day, want 3 runs", st, len(f.r.day.starts))
+	}
+}
+
+func TestWaitsForTwoPollsWhenTheBranchMoved(t *testing.T) {
+	for _, tc := range []struct {
+		poll, say string
+		wait      time.Duration
+	}{
+		{"10s", "a minute", time.Minute},
+		{"45s", "2 minutes", 90 * time.Second},
+		{"5m", "10 minutes", 10 * time.Minute},
+	} {
+		t.Run(tc.poll, func(t *testing.T) {
+			f := newFixture(t, "")
+			f.poll = tc.poll
+			head := f.b.Spec.Head
+			p := f.start()
+			rec := f.reconcile(movedPod(p, head, time.Now().Add(-tc.wait/2)))
+			want := "waiting up to " + tc.say + " for a run on the new commits: c/x no longer points to " + head
+			if res := f.state(); res.State != gitk8s.Running || res.Message != want || len(kube.Owned[Pod](rec)) != 1 {
+				t.Fatalf("result = %+v, want Running in the same Pod", res)
+			}
+			if d := rec.RequeueAfter(); d <= tc.wait/2-time.Second || d > tc.wait/2 {
+				t.Errorf("RequeueAfter = %v, want about %v", d, tc.wait/2)
+			}
+
+			t.Log("A branch that moved and moved back between two polls has the same head after the wait, so the check fetches it again.")
+			rec = f.reconcile(movedPod(p, head, time.Now().Add(-tc.wait)))
+			if pods := kube.Owned[Pod](rec); len(pods) != 2 || f.jobState().Attempt != 2 || f.jobState().Pod != pods[1].Name {
+				t.Errorf("state = %+v with %d owned Pods, want attempt 2 in a new Pod", f.jobState(), len(pods))
+			}
+		})
 	}
 }
