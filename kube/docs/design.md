@@ -608,7 +608,11 @@ two caches when the reconcile starts. If the cache that `kube.Get` reads holds
 another version of the object, the framework doesn't write the status and
 retries the reconcile. A reconcile that read the object with `kube.Get` also
 runs again when that cache catches up. A cache that doesn't hold the object's
-namespace can't return the object, so the framework doesn't compare it.
+namespace can't return the object, so the framework doesn't compare it. The
+framework finds the cache that `kube.Get` reads by the controller's Go type. A
+reconcile that reads the object as another Go type of the same kind reads
+another cache, which the framework doesn't compare, so the precondition
+doesn't cover that read.
 
 Waiting for the cache to catch up before queuing the shard's keys would need a
 way to tell that it has. Clients may compare resource versions only for
