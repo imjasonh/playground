@@ -14,27 +14,27 @@ import (
 	"github.com/imjasonh/playground/kube/k8s"
 )
 
-// labeler reconciles each Widget into a ConfigMap whose label value is as
+// lastErrors reconciles each Widget into a ConfigMap whose label value is as
 // long as the widget's size, so the API server rejects the ConfigMap when the
 // size is over 63, and records what kube.LastError returns in each
 // reconcile.
-type labeler struct {
+type lastErrors struct {
 	mu   sync.Mutex
-	seen map[string][]lastError
+	seen map[string][]attempt
 }
 
-type lastError struct {
+type attempt struct {
 	size int
 	err  error
 }
 
-func (l *labeler) Reconcile(ctx context.Context, w *Widget) error {
+func (l *lastErrors) Reconcile(ctx context.Context, w *Widget) error {
 	l.mu.Lock()
 	if l.seen == nil {
-		l.seen = map[string][]lastError{}
+		l.seen = map[string][]attempt{}
 	}
 	key := w.Namespace + "/" + w.Name
-	l.seen[key] = append(l.seen[key], lastError{w.Spec.Size, kube.LastError(ctx)})
+	l.seen[key] = append(l.seen[key], attempt{w.Spec.Size, kube.LastError(ctx)})
 	l.mu.Unlock()
 	kube.Own(ctx, &k8s.ConfigMap{Object: kube.Meta(w.Name, map[string]string{"size": strings.Repeat("x", w.Spec.Size)})})
 	return nil
@@ -42,7 +42,7 @@ func (l *labeler) Reconcile(ctx context.Context, w *Widget) error {
 
 // first returns the first reconcile of key at size, or false if there was
 // none.
-func (l *labeler) first(key string, size int) (lastError, bool) {
+func (l *lastErrors) first(key string, size int) (attempt, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for _, s := range l.seen[key] {
@@ -50,12 +50,12 @@ func (l *labeler) first(key string, size int) (lastError, bool) {
 			return s, true
 		}
 	}
-	return lastError{}, false
+	return attempt{}, false
 }
 
 func TestRetrySeesLastError(t *testing.T) {
 	c := e2e.Client(t)
-	l := &labeler{}
+	l := &lastErrors{}
 	e2e.Run(t, &kube.Manager{Name: "lasterror-e2e", DisableStreamingLists: true}, kube.For[Widget](l, kube.Named("lasterror")))
 	ns := e2e.Namespace(t, c)
 	key := ns + "/w"
