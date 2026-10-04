@@ -362,23 +362,45 @@ func TestReportsPodsThatFail(t *testing.T) {
 	done := ContainerStatus{Name: "prepare", State: terminated(&Terminated{Reason: "Completed"})}
 	for _, tc := range []struct {
 		name   string
+		age    time.Duration
 		status PodStatus
 		state  string
 		want   string
 	}{{
 		name:   "missing Secret",
+		age:    stuckAfter,
 		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "CreateContainerConfigError", `secret "app-creds" not found`)}},
 		state:  gitk8s.Failed,
+		want:   `couldn't start in 5 minutes: container prepare is waiting: CreateContainerConfigError: secret "app-creds" not found`,
+	}, {
+		name:   "missing Secret in a new Pod",
+		age:    stuckAfter - time.Minute,
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "CreateContainerConfigError", `secret "app-creds" not found`)}},
+		state:  gitk8s.Running,
 		want:   `can't start: container prepare is waiting: CreateContainerConfigError: secret "app-creds" not found`,
 	}, {
 		name:   "image that can't be pulled",
+		age:    stuckAfter,
 		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{done, waiting("agent", "ErrImagePull", "not found")}},
 		state:  gitk8s.Failed,
+		want:   "couldn't start in 5 minutes: container agent is waiting: ErrImagePull: not found",
+	}, {
+		name:   "image that can't be pulled in a new Pod",
+		age:    stuckAfter - time.Minute,
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{done, waiting("agent", "ErrImagePull", "not found")}},
+		state:  gitk8s.Running,
 		want:   "can't start: container agent is waiting: ErrImagePull: not found",
 	}, {
 		name:   "backing off pulling an image",
+		age:    stuckAfter,
 		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "ImagePullBackOff", "Back-off pulling image")}},
 		state:  gitk8s.Failed,
+		want:   "couldn't start in 5 minutes: container prepare is waiting: ImagePullBackOff: Back-off pulling image",
+	}, {
+		name:   "backing off pulling an image in a new Pod",
+		age:    stuckAfter - time.Minute,
+		status: PodStatus{Phase: "Pending", InitContainerStatuses: []ContainerStatus{waiting("prepare", "ImagePullBackOff", "Back-off pulling image")}},
+		state:  gitk8s.Running,
 		want:   "can't start: container prepare is waiting: ImagePullBackOff: Back-off pulling image",
 	}, {
 		name:   "invalid image",
@@ -437,10 +459,14 @@ func TestReportsPodsThatFail(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newFixture(t, "")
 			p := f.start()
+			p.CreationTimestamp = time.Now().Add(-tc.age)
 			p.Status = tc.status
-			f.reconcile(p)
+			rec := f.reconcile(p)
 			if res := f.state(); res.State != tc.state || !strings.Contains(res.Message, tc.want) || res.Outputs["runs"] != "1" {
 				t.Errorf("result = %+v, want %s with %q", res, tc.state, tc.want)
+			}
+			if d := rec.RequeueAfter(); tc.age == stuckAfter-time.Minute && (d <= 0 || d > time.Minute) {
+				t.Errorf("RequeueAfter = %v, want a reconcile when the Pod is %v old", d, stuckAfter)
 			}
 		})
 	}

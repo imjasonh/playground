@@ -244,9 +244,15 @@ func (x *run) follow(ctx context.Context, desired *Pod) JobStatus {
 	}
 	if t == nil {
 		msg, reason := blocked(s)
+		wait := stuckAfter - time.Since(pod.CreationTimestamp)
 		switch {
-		case slices.Contains(stuck, reason):
+		case reason == "InvalidImageName":
 			return x.fail("Pod %s can't start: %s", st.Pod, msg)
+		case slices.Contains(stuck, reason) && wait <= 0:
+			return x.fail("Pod %s couldn't start in %d minutes: %s", st.Pod, int(stuckAfter/time.Minute), msg)
+		case slices.Contains(stuck, reason):
+			kube.RequeueAfter(ctx, wait)
+			return x.status("Pod %s can't start: %s", st.Pod, msg)
 		case reason != "":
 			return x.status("Pod %s can't start: %s", st.Pod, msg)
 		}

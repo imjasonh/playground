@@ -350,9 +350,16 @@ var starting = []string{"", "PodInitializing", "ContainerCreating"}
 
 // stuck are the reasons that a container waits until someone fixes a
 // Secret or an image. A run ends on them instead of holding a -max-pods
-// slot until the Pod's deadline. Other reasons, such as
+// slot until the Pod's deadline. Only a new Pod fixes InvalidImageName, so
+// a run ends on it at once. The others also come from a registry that's
+// down for a moment or a Secret that's created after the Pod, so a run
+// ends on them once the Pod is stuckAfter old. Other reasons, such as
 // CreateContainerError, often pass by themselves.
 var stuck = []string{"CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "InvalidImageName"}
+
+// stuckAfter is how old a Pod gets before a run ends on a reason in stuck
+// other than InvalidImageName.
+const stuckAfter = 5 * time.Minute
 
 // blocked reports why a container can't start, such as a missing Secret or
 // an image that can't be pulled, and the reason that it waits.
