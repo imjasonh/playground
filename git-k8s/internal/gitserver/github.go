@@ -51,6 +51,8 @@ type GitHub struct {
 	exchanges []Exchange
 	requests  []string
 	limited   time.Duration
+	failing   int
+	reopen    bool
 }
 
 // Claims are what the exchange checks against a trust policy.
@@ -155,6 +157,23 @@ func (g *GitHub) RateLimit(d time.Duration) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.limited = d
+}
+
+// Fail makes the server answer the next REST API request with status.
+func (g *GitHub) Fail(status int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.failing = status
+}
+
+// AcceptReopening makes the server accept an update that starts a
+// completed check run again. GitHub's documentation doesn't say whether
+// GitHub accepts one, so the server refuses one unless a test calls
+// AcceptReopening, and tests can run both ways.
+func (g *GitHub) AcceptReopening() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.reopen = true
 }
 
 type trustPolicy struct {
@@ -302,12 +321,16 @@ type checkRunRequest struct {
 func (g *GitHub) api(w http.ResponseWriter, r *http.Request) {
 	g.mu.Lock()
 	g.requests = append(g.requests, r.Method+" "+r.URL.Path)
-	limited := g.limited
-	g.limited = 0
+	limited, failing := g.limited, g.failing
+	g.limited, g.failing = 0, 0
 	g.mu.Unlock()
 	if limited > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(int(limited.Seconds())))
 		apiError(w, http.StatusForbidden, "You have exceeded a secondary rate limit. Please wait a few minutes before you try again.")
+		return
+	}
+	if failing != 0 {
+		apiError(w, failing, http.StatusText(failing))
 		return
 	}
 	m := githubAPIRE.FindStringSubmatch(r.URL.Path)
@@ -362,8 +385,8 @@ func (g *GitHub) api(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeCheckRun creates a check run for app, or updates old, with GitHub's
-// validation of the request. GitHub doesn't support starting a completed
-// check run again, so neither does the fake.
+// validation of the request. Unless a test called AcceptReopening, it
+// refuses an update that starts a completed check run again.
 func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo string, app int64, old *CheckRun) {
 	var in checkRunRequest
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -403,7 +426,7 @@ func (g *GitHub) writeCheckRun(w http.ResponseWriter, r *http.Request, repo stri
 	switch {
 	case in.Status != nil && *in.Status == "completed" && in.Conclusion == nil:
 		apiError(w, http.StatusUnprocessableEntity, "conclusion is required when status is completed")
-	case old != nil && old.Status == "completed" && c.Status != "completed":
+	case old != nil && old.Status == "completed" && c.Status != "completed" && !g.reopen:
 		apiError(w, http.StatusUnprocessableEntity, "a completed check run can't start again")
 	case !slices.Contains([]string{"queued", "in_progress", "completed"}, c.Status):
 		apiError(w, http.StatusUnprocessableEntity, fmt.Sprintf("status %q isn't valid", c.Status))

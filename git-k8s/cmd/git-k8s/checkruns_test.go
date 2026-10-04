@@ -1,9 +1,9 @@
 package main
 
 import (
-	"cmp"
 	"flag"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -72,31 +72,78 @@ func resultsOf(branch string, checks map[string]gitk8s.CheckResult) *branchResul
 	return b
 }
 
-// publisher runs a check-runs controller on a branch of a repository and
+// publisher runs a check-runs controller on the branches of acme/app and
 // returns the REST API requests that each reconcile sent.
 type publisher struct {
 	t    *testing.T
 	gh   *gittest.GitHub
 	repo *gitk8s.GitRepository
 	c    *checkRuns
-	// branch is the branch, or c/x if it's empty.
-	branch string
+	// branches holds the results of each branch in the cluster.
+	branches map[string]map[string]gitk8s.CheckResult
 	// requeue is the last reconcile's requeue.
 	requeue time.Duration
 }
 
+// publish sets the results of c/x and reconciles it.
 func (p *publisher) publish(checks map[string]gitk8s.CheckResult) ([]string, error) {
 	p.t.Helper()
+	return p.publishOn("c/x", checks)
+}
+
+// publishOn sets the results of branch and reconciles it.
+func (p *publisher) publishOn(branch string, checks map[string]gitk8s.CheckResult) ([]string, error) {
+	p.t.Helper()
+	p.set(branch, checks)
+	return p.reconcile(branch)
+}
+
+// set sets the results of branch in the cluster, without a reconcile.
+func (p *publisher) set(branch string, checks map[string]gitk8s.CheckResult) {
+	if p.branches == nil {
+		p.branches = map[string]map[string]gitk8s.CheckResult{}
+	}
+	p.branches[branch] = checks
+}
+
+// remove deletes branch from the cluster.
+func (p *publisher) remove(branch string) {
+	delete(p.branches, branch)
+}
+
+// reconcile reconciles branch, which is in the cluster.
+func (p *publisher) reconcile(branch string) ([]string, error) {
+	p.t.Helper()
 	before := len(p.gh.Fake.Requests())
-	b := resultsOf(cmp.Or(p.branch, "c/x"), checks)
-	want := b.Status
-	ctx, rec := kube.Fake(p.t.Context(), b, p.repo)
+	var b *branchResults
+	world := []any{p.repo}
+	for name, checks := range p.branches {
+		if o := resultsOf(name, maps.Clone(checks)); name == branch {
+			b = o
+		} else {
+			world = append(world, o)
+		}
+	}
+	want := maps.Clone(b.Status.Checks)
+	ctx, rec := kube.Fake(p.t.Context(), b, world...)
 	err := p.c.Reconcile(ctx, b)
-	if !reflect.DeepEqual(b.Status, want) {
+	if !reflect.DeepEqual(b.Status.Checks, want) {
 		p.t.Errorf("the check-runs controller changed the GitBranch's status to %+v", b.Status)
 	}
 	p.requeue = rec.RequeueAfter()
 	return p.gh.Fake.Requests()[before:], err
+}
+
+// remember makes c remember that branch's result for check is for commit,
+// and that check run id shows it.
+func remember(c *checkRuns, branch, check, commit string, id int64, shows runState) {
+	rr := c.repository("default/app")
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	b := gitk8s.BranchObjectName("app", branch)
+	rr.seq++
+	rr.results[branchCheck{b, check}] = branchResult{commit: commit, shows: shows, seq: rr.seq}
+	rr.runs[commitCheck{commit, check}] = shownRun{id: id, shows: shows, by: b}
 }
 
 // runs lists acme/app's check runs as "NAME@COMMIT STATUS CONCLUSION:
@@ -240,6 +287,20 @@ func TestCheckRunsSurviveRestarts(t *testing.T) {
 	if want := []string{get, "PATCH " + api + "check-runs/2"}; err != nil || !slices.Equal(got, want) {
 		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
 	}
+
+	t.Log("When something else completes a check run that the controller saw in progress, and GitHub refuses to start it again, the controller creates another.")
+	p := &publisher{t: t, gh: gh, repo: repo, c: &checkRuns{}}
+	got, err = p.publish(running)
+	if want := []string{get, "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
+		t.Fatalf("requests = %q, err = %v; want %q", got, err, want)
+	}
+	if status := asAdmin(t, gh, http.MethodPatch, api+"check-runs/3", `{"conclusion": "cancelled", "output": {"title": "Cancelled", "summary": "cancelled on GitHub"}}`); status != http.StatusOK {
+		t.Fatalf("completing the check run: %d", status)
+	}
+	got, err = p.publish(map[string]gitk8s.CheckResult{"base": {Commit: head, ParentCommit: main, State: gitk8s.Running, Message: "trying again"}})
+	if want := []string{"PATCH " + api + "check-runs/3", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
+		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+	}
 }
 
 // asAdmin sends a REST API request to the fake GitHub with its
@@ -302,7 +363,7 @@ func TestCheckRunsFromOtherApps(t *testing.T) {
 	}
 
 	t.Log("When GitHub can't find the check run that the controller remembers, the controller creates another.")
-	p.c.remember(runKey{"default", "app", gitk8s.BranchObjectName("app", "c/x"), "gofmt"}, publishedRun{commit: next, id: 99, shows: runFor(gitk8s.CheckResult{State: gitk8s.Running})})
+	remember(p.c, "c/x", "gofmt", next, 99, runFor(gitk8s.CheckResult{State: gitk8s.Running}))
 	got, err = p.publish(map[string]gitk8s.CheckResult{"gofmt": {Commit: next, State: gitk8s.Passed}})
 	if want := []string{"PATCH " + api + "check-runs/99", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
 		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
@@ -348,133 +409,237 @@ func TestSpread(t *testing.T) {
 	}
 }
 
-func TestCancelsSupersededCheckRuns(t *testing.T) {
+// sharing publishes the results of the check gotest on branches of
+// acme/app, whose commits each add a file, and checks what each reconcile
+// sends to GitHub.
+type sharing struct {
+	t       *testing.T
+	gh      *gittest.GitHub
+	p       *publisher
+	commits []string
+}
+
+func newSharing(t *testing.T, commits int) *sharing {
 	gh, w, main := newGitHub(t)
 	w.Branch("c/x", main)
-	head := w.Commit("add x")
-	next := w.Commit("add y")
+	s := &sharing{t: t, gh: gh}
+	for i := range commits {
+		f := fmt.Sprintf("f%d.go", i)
+		w.Write(f, "package x\n")
+		s.commits = append(s.commits, w.Commit("add "+f))
+	}
 	w.Push("c/x")
-	at := time.Unix(1_000_000, 0)
-	p := &publisher{t: t, gh: gh, repo: gh.Repository("app", sts, rules()...), c: &checkRuns{now: func() time.Time { return at }}}
-	api := "/api/v3/repos/acme/app/"
-	h, n := gitk8s.Short(head), gitk8s.Short(next)
-	running := gitk8s.CheckResult{Commit: head, State: gitk8s.Running}
-	if _, err := p.publish(map[string]gitk8s.CheckResult{"gofmt": running}); err != nil {
-		t.Fatal(err)
-	}
+	s.p = &publisher{t: t, gh: gh, repo: gh.Repository("app", sts, rules()...), c: &checkRuns{}}
+	return s
+}
 
-	t.Log("When GitHub's rate limit stops the controller from cancelling the old commit's check run, it tries again after the limit.")
-	moved := map[string]gitk8s.CheckResult{"gofmt": {Commit: next, State: gitk8s.Running}}
-	gh.Fake.RateLimit(time.Minute)
-	got, err := p.publish(moved)
-	if want := []string{"PATCH " + api + "check-runs/1"}; err != nil || !slices.Equal(got, want) || p.requeue < time.Minute {
-		t.Fatalf("requests = %q, err = %v, requeue = %v; want %q and a requeue after the limit", got, err, p.requeue, want)
-	}
-	at = at.Add(p.requeue)
-	got, err = p.publish(moved)
-	if want := []string{"PATCH " + api + "check-runs/1", "GET " + api + "commits/" + next + "/check-runs", "POST " + api + "check-runs"}; err != nil || !slices.Equal(got, want) {
-		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
-	}
-	if got, want := runs(gh), []string{
-		"git-k8s/gofmt@" + h + " completed cancelled: The branch moved to " + n + " before the check finished.",
-		"git-k8s/gofmt@" + n + " in_progress : Running",
-	}; !slices.Equal(got, want) {
-		t.Errorf("check runs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
-	}
+// The REST API requests that create and update acme/app's check runs. An
+// update's path ends with the check run's ID.
+const (
+	post  = "POST /api/v3/repos/acme/app/check-runs"
+	patch = "PATCH /api/v3/repos/acme/app/check-runs/"
+)
 
-	t.Log("When GitHub can't find the old commit's check run, the controller moves on.")
-	p.c.remember(runKey{"default", "app", gitk8s.BranchObjectName("app", "c/x"), "gofmt"}, publishedRun{commit: head, id: 99, shows: runFor(running)})
-	got, err = p.publish(moved)
-	if want := []string{"PATCH " + api + "check-runs/99", "GET " + api + "commits/" + next + "/check-runs"}; err != nil || !slices.Equal(got, want) {
-		t.Errorf("requests = %q, err = %v; want %q", got, err, want)
+// get returns the REST API request that lists the check runs on commit i.
+func (s *sharing) get(i int) string {
+	return "GET /api/v3/repos/acme/app/commits/" + s.commits[i] + "/check-runs"
+}
+
+func (s *sharing) short(i int) string { return gitk8s.Short(s.commits[i]) }
+
+// result returns results with gotest's result on commit i.
+func (s *sharing) result(i int, state, msg string) map[string]gitk8s.CheckResult {
+	return map[string]gitk8s.CheckResult{"gotest": {Commit: s.commits[i], State: state, Message: msg}}
+}
+
+// step sets the results of branch, reconciles it, and checks that the
+// reconcile sent want.
+func (s *sharing) step(branch string, checks map[string]gitk8s.CheckResult, want ...string) {
+	s.t.Helper()
+	s.p.set(branch, checks)
+	s.again(branch, want...)
+}
+
+// again reconciles branch and checks that the reconcile sent want.
+func (s *sharing) again(branch string, want ...string) {
+	s.t.Helper()
+	got, err := s.p.reconcile(branch)
+	if err != nil || !slices.Equal(got, want) {
+		s.t.Errorf("reconciling %s: requests = %q, err = %v; want %q", branch, got, err, want)
 	}
 }
 
+// failing reconciles branch and checks that the reconcile sent want and
+// failed with GitHub's 502 error.
+func (s *sharing) failing(branch string, want ...string) {
+	s.t.Helper()
+	got, err := s.p.reconcile(branch)
+	if err == nil || !strings.Contains(err.Error(), "502 Bad Gateway") || !slices.Equal(got, want) {
+		s.t.Errorf("reconciling %s: requests = %q, err = %v; want %q and GitHub's error", branch, got, err, want)
+	}
+}
+
+func (s *sharing) wantRuns(want ...string) {
+	s.t.Helper()
+	if got := runs(s.gh); !slices.Equal(got, want) {
+		s.t.Errorf("check runs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestCancelsSupersededCheckRuns(t *testing.T) {
+	s := newSharing(t, 4)
+	at := time.Unix(1_000_000, 0)
+	s.p.c.now = func() time.Time { return at }
+	s.step("c/x", s.result(0, gitk8s.Running, ""), s.get(0), post)
+
+	t.Log("When GitHub's rate limit stops the controller from cancelling the old commit's check run, it tries again after the limit.")
+	s.gh.Fake.RateLimit(time.Minute)
+	s.step("c/x", s.result(1, gitk8s.Running, ""), patch+"1")
+	if s.p.requeue < time.Minute {
+		t.Fatalf("requeue = %v, want one after the limit", s.p.requeue)
+	}
+	at = at.Add(s.p.requeue)
+	s.again("c/x", patch+"1", s.get(1), post)
+	s.wantRuns(
+		"git-k8s/gotest@"+s.short(0)+" completed cancelled: The branch moved to "+s.short(1)+" before the check finished.",
+		"git-k8s/gotest@"+s.short(1)+" in_progress : Running",
+	)
+
+	t.Log("When GitHub fails, the controller tries again.")
+	s.gh.Fake.Fail(http.StatusBadGateway)
+	s.p.set("c/x", s.result(2, gitk8s.Running, ""))
+	s.failing("c/x", patch+"2")
+	s.again("c/x", patch+"2", s.get(2), post)
+
+	t.Log("When GitHub refuses, the controller leaves the old commit's check run and publishes the new head's result.")
+	s.gh.Fake.Fail(http.StatusUnprocessableEntity)
+	s.step("c/x", s.result(3, gitk8s.Running, ""), patch+"3", s.get(3), post)
+	s.wantRuns(
+		"git-k8s/gotest@"+s.short(0)+" completed cancelled: The branch moved to "+s.short(1)+" before the check finished.",
+		"git-k8s/gotest@"+s.short(1)+" completed cancelled: The branch moved to "+s.short(2)+" before the check finished.",
+		"git-k8s/gotest@"+s.short(2)+" in_progress : Running",
+		"git-k8s/gotest@"+s.short(3)+" in_progress : Running",
+	)
+}
+
+// TestBranchesShareCheckRuns runs against a fake GitHub that refuses to
+// start a completed check run again and against one that accepts, because
+// GitHub's documentation doesn't say which GitHub does.
 func TestBranchesShareCheckRuns(t *testing.T) {
-	gh, w, main := newGitHub(t)
-	w.Branch("c/x", main)
-	var commits []string
-	for _, f := range []string{"a", "b", "c", "d", "e"} {
-		w.Write(f+".go", "package x\n")
-		commits = append(commits, w.Commit("add "+f))
-	}
-	w.Push("c/x")
-	repo := gh.Repository("app", sts, rules()...)
-	c := &checkRuns{}
-	x := &publisher{t: t, gh: gh, repo: repo, c: c}
-	y := &publisher{t: t, gh: gh, repo: repo, c: c, branch: "c/y"}
-	api := "/api/v3/repos/acme/app/"
-	get := func(i int) string { return "GET " + api + "commits/" + commits[i] + "/check-runs" }
-	post, patch := "POST "+api+"check-runs", "PATCH "+api+"check-runs/"
-	short := func(i int) string { return gitk8s.Short(commits[i]) }
-	step := func(p *publisher, res gitk8s.CheckResult, want ...string) {
-		t.Helper()
-		got, err := p.publish(map[string]gitk8s.CheckResult{"gotest": res})
-		if err != nil || !slices.Equal(got, want) {
-			t.Errorf("%s: requests = %q, err = %v; want %q", res.Message, got, err, want)
-		}
-	}
-	result := func(i int, state, msg string) gitk8s.CheckResult {
-		return gitk8s.CheckResult{Commit: commits[i], State: state, Message: msg}
-	}
-	wantRuns := func(want ...string) {
-		t.Helper()
-		if got := runs(gh); !slices.Equal(got, want) {
-			t.Errorf("check runs:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
-		}
-	}
+	for _, accept := range []bool{false, true} {
+		t.Run("AcceptReopening="+strconv.FormatBool(accept), func(t *testing.T) {
+			s := newSharing(t, 5)
+			if accept {
+				s.gh.Fake.AcceptReopening()
+			}
 
-	t.Log("A check that starts on a commit where another branch's check finished gets a new check run.")
-	step(x, result(0, gitk8s.Passed, "passed on c/x"), get(0), post)
-	step(y, result(0, gitk8s.Running, "started Pod y"), get(0), post)
+			t.Log("A check that starts on a commit where another branch's check finished gets a new check run.")
+			s.step("c/x", s.result(0, gitk8s.Passed, "passed on c/x"), s.get(0), post)
+			s.step("c/y", s.result(0, gitk8s.Running, "started Pod y"), post)
+			t.Log("The other branch's result changed earlier, so its next reconcile leaves the check run.")
+			s.again("c/x")
 
-	t.Log("When that branch moves before its check finishes, the check run shows the other branch's result again.")
-	step(y, result(1, gitk8s.Running, "started Pod y"), patch+"2", get(1), post)
-	wantRuns(
-		"git-k8s/gotest@"+short(0)+" completed success: passed on c/x",
-		"git-k8s/gotest@"+short(0)+" completed success: passed on c/x",
-		"git-k8s/gotest@"+short(1)+" in_progress : started Pod y",
+			t.Log("When that branch moves before its check finishes, the check run shows the other branch's result again.")
+			s.step("c/y", s.result(1, gitk8s.Running, "started Pod y"), patch+"2", s.get(1), post)
+			s.wantRuns(
+				"git-k8s/gotest@"+s.short(0)+" completed success: passed on c/x",
+				"git-k8s/gotest@"+s.short(0)+" completed success: passed on c/x",
+				"git-k8s/gotest@"+s.short(1)+" in_progress : started Pod y",
+			)
+			t.Log("And the other branch writes to the check run that GitHub shows.")
+			s.step("c/x", s.result(0, gitk8s.Failed, "failed on c/x"), patch+"2")
+			s.wantRuns(
+				"git-k8s/gotest@"+s.short(0)+" completed success: passed on c/x",
+				"git-k8s/gotest@"+s.short(0)+" completed failure: failed on c/x",
+				"git-k8s/gotest@"+s.short(1)+" in_progress : started Pod y",
+			)
+
+			t.Log("When another branch completes a check run while this branch's check runs, this branch's next result gets a new check run.")
+			s.step("c/x", s.result(1, gitk8s.Running, "started Pod x"), patch+"3")
+			s.step("c/y", s.result(1, gitk8s.Passed, "passed on c/y"), patch+"3")
+			s.again("c/x")
+			s.step("c/x", s.result(1, gitk8s.Running, "trying again"), post)
+
+			t.Log("When the last branch at a commit leaves it before its check finishes, the check run is cancelled.")
+			s.step("c/y", s.result(2, gitk8s.Running, "started Pod y"), s.get(2), post)
+			s.step("c/x", s.result(2, gitk8s.Running, "started Pod x"), patch+"4", patch+"5")
+
+			t.Log("When another branch at the commit is still running the check, the check run shows that branch's result.")
+			s.step("c/x", s.result(3, gitk8s.Running, "started Pod x"), patch+"5", s.get(3), post)
+			s.wantRuns(
+				"git-k8s/gotest@"+s.short(0)+" completed success: passed on c/x",
+				"git-k8s/gotest@"+s.short(0)+" completed failure: failed on c/x",
+				"git-k8s/gotest@"+s.short(1)+" completed success: passed on c/y",
+				"git-k8s/gotest@"+s.short(1)+" completed cancelled: The branch moved to "+s.short(2)+" before the check finished.",
+				"git-k8s/gotest@"+s.short(2)+" in_progress : started Pod y",
+				"git-k8s/gotest@"+s.short(3)+" in_progress : started Pod x",
+			)
+			s.step("c/y", s.result(2, gitk8s.Passed, "passed on c/y"), patch+"5")
+			if got := runs(s.gh)[4]; got != "git-k8s/gotest@"+s.short(2)+" completed success: passed on c/y" {
+				t.Errorf("check run 5 = %s, want c/y's result", got)
+			}
+
+			t.Log("A result that the controller hasn't published yet counts too, and its branch's reconcile then sends nothing.")
+			s.p.set("c/y", s.result(3, gitk8s.Running, "started Pod y"))
+			s.step("c/x", s.result(4, gitk8s.Running, "started Pod x"), patch+"6", s.get(4), post)
+			if got := runs(s.gh)[5]; got != "git-k8s/gotest@"+s.short(3)+" in_progress : started Pod y" {
+				t.Errorf("check run 6 = %s, want c/y's result", got)
+			}
+			s.again("c/y")
+		})
+	}
+}
+
+func TestCheckRunsOfDepartedBranches(t *testing.T) {
+	s := newSharing(t, 2)
+
+	t.Log("When a branch is deleted before its check finishes, the check run shows the result of another branch at the commit.")
+	s.step("c/x", s.result(0, gitk8s.Passed, "passed on c/x"), s.get(0), post)
+	s.step("c/y", s.result(0, gitk8s.Running, "started Pod y"), post)
+	s.p.remove("c/y")
+	s.again("c/x", patch+"2")
+
+	t.Log("Without another branch at the commit, the check run is cancelled, and when GitHub fails, the controller tries again.")
+	s.step("c/z", s.result(1, gitk8s.Running, "started Pod z"), s.get(1), post)
+	s.p.remove("c/z")
+	s.gh.Fake.Fail(http.StatusBadGateway)
+	s.failing("c/x", patch+"3")
+	s.again("c/x", patch+"3")
+
+	t.Log("So is the check run of a check that a branch dropped.")
+	passed := s.result(0, gitk8s.Passed, "passed on c/x")
+	s.step("c/x", map[string]gitk8s.CheckResult{"gotest": passed["gotest"], "gofmt": {Commit: s.commits[0], State: gitk8s.Running}}, s.get(0), post)
+	s.step("c/x", passed, patch+"4")
+	s.wantRuns(
+		"git-k8s/gotest@"+s.short(0)+" completed success: passed on c/x",
+		"git-k8s/gotest@"+s.short(0)+" completed success: passed on c/x",
+		"git-k8s/gotest@"+s.short(1)+" completed cancelled: The branch was deleted before the check finished.",
+		"git-k8s/gofmt@"+s.short(0)+" completed cancelled: The branch dropped the check before it finished.",
 	)
-	t.Log("And the other branch writes to the check run that GitHub shows.")
-	step(x, result(0, gitk8s.Failed, "failed on c/x"), patch+"2")
-	wantRuns(
-		"git-k8s/gotest@"+short(0)+" completed success: passed on c/x",
-		"git-k8s/gotest@"+short(0)+" completed failure: failed on c/x",
-		"git-k8s/gotest@"+short(1)+" in_progress : started Pod y",
-	)
+	s.again("c/x")
+}
 
-	t.Log("When another branch completes a check run while this branch's check runs, this branch's next result gets a new check run.")
-	step(x, result(1, gitk8s.Running, "started Pod x"), get(1), patch+"3")
-	step(y, result(1, gitk8s.Passed, "passed on c/y"), patch+"3")
-	step(x, result(1, gitk8s.Running, "trying again"), patch+"3", post)
+func TestCheckRunsSurviveFailedReads(t *testing.T) {
+	s := newSharing(t, 2)
+	s.step("c/x", s.result(0, gitk8s.Running, ""), s.get(0), post)
 
-	t.Log("The last branch to leave a commit before its check finishes cancels the check run.")
-	step(y, result(2, gitk8s.Running, "started Pod y"), get(2), post)
-	step(x, result(2, gitk8s.Running, "started Pod x"), patch+"4", get(2), patch+"5")
-
-	t.Log("When the other branch's check hasn't finished, the check run is cancelled until that branch's next result.")
-	step(x, result(3, gitk8s.Running, "started Pod x"), patch+"5", get(3), post)
-	wantRuns(
-		"git-k8s/gotest@"+short(0)+" completed success: passed on c/x",
-		"git-k8s/gotest@"+short(0)+" completed failure: failed on c/x",
-		"git-k8s/gotest@"+short(1)+" completed success: passed on c/y",
-		"git-k8s/gotest@"+short(1)+" completed cancelled: The branch moved to "+short(2)+" before the check finished.",
-		"git-k8s/gotest@"+short(2)+" completed cancelled: The branch moved to "+short(3)+" before the check finished.",
-		"git-k8s/gotest@"+short(3)+" in_progress : started Pod x",
-	)
-	step(y, result(2, gitk8s.Passed, "passed on c/y"), patch+"5")
-	if got := runs(gh)[4]; got != "git-k8s/gotest@"+short(2)+" completed success: passed on c/y" {
-		t.Errorf("check run 5 = %s, want c/y's result", got)
+	t.Log("A reconcile that can't read the cluster sends nothing and forgets nothing.")
+	b := resultsOf("c/x", s.result(1, gitk8s.Running, ""))
+	ctx, rec := kube.Fake(t.Context(), b, s.p.repo)
+	kube.List[branchResults](ctx, kube.MatchingSelector("=broken"))
+	if rec.Err() == nil {
+		t.Fatal("the selector didn't fail the reconcile's reads")
 	}
-
-	t.Log("Another branch's cancellation, left when it moved away and hasn't published on its new head yet, isn't a result.")
-	c.remember(runKey{"default", "app", gitk8s.BranchObjectName("app", "c/y"), "gotest"}, publishedRun{commit: commits[3], id: 6, shows: runState{
-		Status: "completed", Conclusion: "cancelled", Output: runOutput{Title: "Superseded", Summary: "The branch moved elsewhere before the check finished."},
-	}})
-	step(x, result(4, gitk8s.Running, "started Pod x"), patch+"6", get(4), post)
-	if got := runs(gh)[5]; got != "git-k8s/gotest@"+short(3)+" completed cancelled: The branch moved to "+short(4)+" before the check finished." {
-		t.Errorf("check run 6 = %s, want c/x's cancellation", got)
+	before := len(s.gh.Fake.Requests())
+	s.p.c.Reconcile(ctx, b)
+	if got := s.gh.Fake.Requests()[before:]; len(got) > 0 {
+		t.Errorf("a reconcile that couldn't read sent %q", got)
 	}
+	s.step("c/x", s.result(1, gitk8s.Running, ""), patch+"1", s.get(1), post)
+	s.wantRuns(
+		"git-k8s/gotest@"+s.short(0)+" completed cancelled: The branch moved to "+s.short(1)+" before the check finished.",
+		"git-k8s/gotest@"+s.short(1)+" in_progress : Running",
+	)
 }
 
 // front puts handler in front of the fake GitHub and points the programs at

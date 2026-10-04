@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -40,9 +41,10 @@ type branchResults struct {
 // checkRuns copies the check results on each GitBranch to GitHub as check
 // runs on the commits that they're for, for repositories that name an Octo
 // STS identity for check runs. A check's check run on a commit is named
-// git-k8s/CHECK, and branches at the same commit share it. The controller
-// updates it as the result changes, and creates another when a check that
-// finished starts again. Nothing on GitHub changes a result.
+// git-k8s/CHECK, and branches at the same commit share it, so it shows the
+// result that changed last. The controller updates it as the result
+// changes, and creates another when a check that finished starts again.
+// Nothing on GitHub changes a result.
 type checkRuns struct {
 	// now is time.Now, except in tests.
 	now func() time.Time
@@ -55,36 +57,51 @@ type checkRuns struct {
 	app atomic.Int64
 
 	mu sync.Mutex
-	// locks holds a lock for each repository, by namespace and name. A
-	// reconcile holds its repository's lock from its first request to
-	// GitHub to its last, because the repository's branches share check
-	// runs, and a reconcile decides what to send from what the others
-	// sent.
-	locks map[string]*sync.Mutex
-	// runs holds, for each check on each branch, the check run that the
-	// branch's results go to and what the controller last wrote or found
-	// there for the branch, so that a result that stays the same costs no
-	// requests.
-	runs map[runKey]publishedRun
+	// repos holds what the controller knows of each repository's check
+	// runs, by namespace and name.
+	repos map[string]*repoRuns
 	// paused holds when each repository owner's rate limit ends. GitHub
 	// limits each installation of a GitHub App, and an installation is one
 	// owner's.
 	paused map[string]time.Time
 }
 
-type runKey struct{ namespace, repository, branch, check string }
-
-// shares reports whether branches k and o, when they're at the same commit,
-// share a check run.
-func (k runKey) shares(o runKey) bool {
-	return k.namespace == o.namespace && k.repository == o.repository && k.check == o.check
+// repoRuns is what the controller knows of one repository's check runs,
+// which it keeps only in memory. A reconcile holds mu from its first
+// request to GitHub to its last, because the repository's branches share
+// check runs, and a reconcile decides what to send from what the others
+// sent.
+type repoRuns struct {
+	mu sync.Mutex
+	// results holds the result that each branch last published for each
+	// check.
+	results map[branchCheck]branchResult
+	// runs holds the check run that GitHub shows for each check on each
+	// commit, and what the controller last wrote or found there, so that a
+	// result that stays the same costs no requests.
+	runs map[commitCheck]shownRun
+	// seq counts the changes to results.
+	seq int64
 }
 
-type publishedRun struct {
+type branchCheck struct{ branch, check string }
+
+type commitCheck struct{ commit, check string }
+
+type branchResult struct {
 	commit string
-	id     int64
 	shows  runState
-	at     time.Time
+	// seq is the repository's seq when the result last changed, so a
+	// result with a higher seq changed later.
+	seq int64
+}
+
+type shownRun struct {
+	id    int64
+	shows runState
+	// by is the branch whose result the check run shows, or "" when it
+	// shows a cancellation.
+	by string
 }
 
 // runState is what a check run shows.
@@ -112,10 +129,6 @@ type checkRun struct {
 	runState
 }
 
-// forgetAfter is how long the controller remembers a check run that it
-// hasn't written or found since.
-const forgetAfter = 24 * time.Hour
-
 var githubClient = &http.Client{Timeout: 30 * time.Second}
 
 func (c *checkRuns) clock() time.Time {
@@ -126,13 +139,38 @@ func (c *checkRuns) clock() time.Time {
 }
 
 func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
+	key := b.Namespace + "/" + b.Spec.Repository
 	repo := kube.Get[gitk8s.Repository](ctx, b.Namespace, b.Spec.Repository)
-	if repo == nil || repo.Spec.OctoSTS == nil || repo.Spec.OctoSTS.CheckRunsIdentity == "" || len(b.Status.Checks) == 0 {
+	if ctx.Err() != nil {
+		// When kube.Get or kube.List can't read, it returns nothing and
+		// the framework tries the reconcile again. The reconcile stops so
+		// that it doesn't forget the check runs of objects that it
+		// couldn't read.
+		return ctx.Err()
+	}
+	if repo == nil || repo.Spec.OctoSTS == nil || repo.Spec.OctoSTS.CheckRunsIdentity == "" {
+		c.forget(key)
 		return nil
 	}
-	lock := c.lock(b.Namespace + "/" + b.Spec.Repository)
-	lock.Lock()
-	defer lock.Unlock()
+	rr := c.repository(key)
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	// What a shared check run shows depends on every branch at its commit,
+	// and listing the branches reconciles this one again when any of them
+	// changes or goes away.
+	branches := map[string]map[string]gitk8s.CheckResult{}
+	for _, o := range kube.List[branchResults](ctx, kube.InNamespace(b.Namespace), kube.MatchingLabels(map[string]string{gitk8s.RepositoryLabel: b.Spec.Repository})) {
+		if o.Spec.Repository == b.Spec.Repository {
+			branches[o.Name] = o.Status.Checks
+		}
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	branches[b.Name] = b.Status.Checks
+	if len(b.Status.Checks) == 0 && len(rr.results) == 0 {
+		return nil
+	}
 	apiURL, token, err := credentials.GitHubAPI(ctx, repo, repo.Spec.OctoSTS.CheckRunsIdentity)
 	if err != nil {
 		return err
@@ -142,120 +180,221 @@ func (c *checkRuns) Reconcile(ctx context.Context, b *branchResults) error {
 		kube.RequeueAfter(ctx, spread(wait))
 		return nil
 	}
-	gh := &githubAPI{repo: apiURL, token: token, now: c.clock}
+	s := &runSync{repoRuns: rr, c: c, gh: &githubAPI{repo: apiURL, token: token, now: c.clock}, external: key, branches: branches}
+	err = s.sync(ctx, b.Name)
+	var limited *rateLimited
+	if errors.As(err, &limited) {
+		slog.Info("pausing check runs for GitHub's rate limit", "owner", path.Base(owner), "for", limited.wait)
+		c.pause(owner, limited.wait)
+		kube.RequeueAfter(ctx, spread(limited.wait))
+		return nil
+	}
+	return err
+}
+
+// runSync makes one repository's check runs show its branches' results,
+// while the reconcile holds the repository's lock.
+type runSync struct {
+	*repoRuns
+	c  *checkRuns
+	gh *githubAPI
+	// external is the check runs' external ID, the repository's namespace
+	// and name.
+	external string
+	// branches holds the check results of each of the repository's
+	// GitBranches, by name.
+	branches map[string]map[string]gitk8s.CheckResult
+}
+
+// sync publishes branch's results, and then settles the check runs of the
+// branches that were deleted or dropped a check. It stops at a rate limit.
+func (s *runSync) sync(ctx context.Context, branch string) error {
 	var errs []error
-	for _, name := range slices.Sorted(maps.Keys(b.Status.Checks)) {
-		err := c.publish(ctx, gh, b, name, b.Status.Checks[name])
-		var limited *rateLimited
-		if errors.As(err, &limited) {
-			slog.Info("pausing check runs for GitHub's rate limit", "owner", path.Base(owner), "for", limited.wait)
-			c.pause(owner, limited.wait)
-			kube.RequeueAfter(ctx, spread(limited.wait))
-			return nil
+	checks := s.branches[branch]
+	for _, check := range slices.Sorted(maps.Keys(checks)) {
+		err := s.publish(ctx, branch, check, checks[check])
+		if isRateLimited(err) {
+			return err
 		}
 		if err != nil {
-			errs = append(errs, fmt.Errorf("publishing the %s check run: %w", name, err))
+			errs = append(errs, fmt.Errorf("publishing the %s check run: %w", check, err))
 		}
 	}
+	departed := slices.SortedFunc(maps.Keys(s.results), func(a, b branchCheck) int {
+		return cmp.Or(cmp.Compare(a.branch, b.branch), cmp.Compare(a.check, b.check))
+	})
+	for _, k := range departed {
+		why := "The branch was deleted before the check finished."
+		if checks, ok := s.branches[k.branch]; ok {
+			if checks[k.check].Commit != "" {
+				continue
+			}
+			why = "The branch dropped the check before it finished."
+		}
+		err := s.settle(ctx, commitCheck{s.results[k].commit, k.check}, why)
+		if isRateLimited(err) {
+			return err
+		}
+		if err != nil {
+			errs = append(errs, fmt.Errorf("completing %s's %s check run: %w", k.branch, k.check, err))
+			continue
+		}
+		delete(s.results, k)
+	}
+	s.forgetRuns()
 	return errors.Join(errs...)
 }
 
-// publish makes the check run for one check's result on a branch show it.
-func (c *checkRuns) publish(ctx context.Context, gh *githubAPI, b *branchResults, check string, res gitk8s.CheckResult) error {
+// publish makes the check run for one check's result on a branch show it,
+// unless the result stayed the same and the check run shows a later result
+// of another branch at the commit.
+func (s *runSync) publish(ctx context.Context, branch, check string, res gitk8s.CheckResult) error {
 	if res.Commit == "" {
 		return nil
 	}
-	k := runKey{b.Namespace, b.Spec.Repository, b.Name, check}
-	want := runFor(res)
-	last, ok := c.last(k)
-	if ok && last.commit == res.Commit && last.shows == want {
-		return nil
-	}
-	if ok && last.commit != res.Commit && last.shows.Status != "completed" {
-		if err := c.supersede(ctx, gh, k, last, res.Commit); err != nil {
+	k, cc, want := branchCheck{branch, check}, commitCheck{res.Commit, check}, runFor(res)
+	last, ok := s.results[k]
+	if ok && last.commit != res.Commit {
+		if err := s.settle(ctx, commitCheck{last.commit, check}, fmt.Sprintf("The branch moved to %s before the check finished.", gitk8s.Short(res.Commit))); err != nil {
 			return err
 		}
 	}
-
-	run := checkRun{Name: "git-k8s/" + check, HeadSHA: res.Commit, ExternalID: b.Namespace + "/" + b.Spec.Repository, runState: want}
-	var old *checkRun
-	if ok && last.commit == res.Commit {
-		old = &checkRun{ID: last.id, runState: last.shows}
-	} else {
-		found, err := gh.find(ctx, run, c.app.Load())
+	changed := !ok || last.commit != res.Commit || last.shows != want
+	run, known := s.runs[cc]
+	if !known {
+		found, err := s.gh.find(ctx, checkRun{Name: "git-k8s/" + check, HeadSHA: res.Commit, ExternalID: s.external}, s.c.app.Load())
 		if err != nil {
 			return err
 		}
-		if found != nil && found.runState == want {
-			c.remember(k, publishedRun{commit: res.Commit, id: found.ID, shows: want})
-			return nil
+		if found != nil {
+			run, known = shownRun{id: found.ID, shows: found.runState}, true
 		}
-		old = found
 	}
-	// GitHub doesn't support starting a completed check run again, so a
-	// check that starts again gets a new check run, which GitHub shows
-	// instead of the old one.
-	if old != nil && (old.Status != "completed" || want.Status == "completed") {
-		err := gh.update(ctx, old.ID, want)
+	switch {
+	case known && run.shows == want:
+		s.runs[cc] = shownRun{id: run.id, shows: want, by: branch}
+	case !changed && run.by != branch && s.has(run.by, cc):
+		// Another branch at the commit changed its result later.
+	default:
+		if err := s.write(ctx, cc, run, known, want, branch); err != nil {
+			return err
+		}
+	}
+	if changed {
+		s.seq++
+		s.results[k] = branchResult{commit: res.Commit, shows: want, seq: s.seq}
+	}
+	return nil
+}
+
+// write makes the check run on cc's commit show want, which is branch's
+// result. It updates run, if the controller knows it, or creates a check
+// run.
+func (s *runSync) write(ctx context.Context, cc commitCheck, run shownRun, known bool, want runState, branch string) error {
+	// A check that starts again after it finished gets a new check run,
+	// which GitHub shows instead of the old one, so the old one keeps its
+	// result.
+	if known && (run.shows.Status != "completed" || want.Status == "completed") {
+		err := s.gh.update(ctx, run.id, want)
 		if err == nil {
-			c.remember(k, publishedRun{commit: res.Commit, id: old.ID, shows: want})
+			s.runs[cc] = shownRun{id: run.id, shows: want, by: branch}
 			return nil
 		}
 		// Until the controller knows its app, it can find another app's
-		// check run, which only that app can update. And another branch at
-		// the same commit can complete the check run after this branch last
-		// wrote it.
+		// check run, which only that app can update. And something else,
+		// such as another replica, can complete a check run that the
+		// controller last saw in progress, and GitHub's documentation
+		// doesn't say whether GitHub starts it again.
 		if !notOurs(err) && !reopening(err, want) {
 			return err
 		}
 	}
-	created, err := gh.create(ctx, run)
+	created, err := s.gh.create(ctx, checkRun{Name: "git-k8s/" + cc.check, HeadSHA: cc.commit, ExternalID: s.external, runState: want})
 	if err != nil {
 		return err
 	}
-	c.app.Store(created.App.ID)
-	c.remember(k, publishedRun{commit: res.Commit, id: created.ID, shows: want})
+	s.c.app.Store(created.App.ID)
+	s.runs[cc] = shownRun{id: created.ID, shows: want, by: branch}
 	return nil
 }
 
-// supersede completes the check run for a commit that the branch moved
-// away from before the check finished. Check controllers don't finish
-// checks on old commits, so the run would otherwise stay in progress. When
-// another branch at that commit has a result for the check, the check run
-// shows that result again instead of being cancelled.
-func (c *checkRuns) supersede(ctx context.Context, gh *githubAPI, k runKey, last publishedRun, commit string) error {
-	last.shows = runState{Status: "completed", Conclusion: "cancelled", Output: runOutput{
-		Title:   "Superseded",
-		Summary: fmt.Sprintf("The branch moved to %s before the check finished.", gitk8s.Short(commit)),
-	}}
-	if result, ok := c.finished(k, last.commit); ok {
-		last.shows = result
+// settle updates the check run on cc's commit after a branch left the
+// commit or the check. Check controllers don't finish a check on a commit
+// that the branch left, so the check run would otherwise stay in progress.
+// It shows the result that changed last of the branches still at the
+// commit, or is cancelled, with why as its summary, when none of them has
+// a result for the check. settle returns the errors that trying again can
+// fix, and logs the others.
+func (s *runSync) settle(ctx context.Context, cc commitCheck, why string) error {
+	run, ok := s.runs[cc]
+	if !ok || s.has(run.by, cc) {
+		return nil
 	}
-	switch err := gh.update(ctx, last.id, last.shows); {
-	case notOurs(err):
-		// GitHub won't change this check run, so trying again can't help.
-		slog.Warn("couldn't complete a superseded check run", "namespace", k.namespace, "gitbranch", k.branch, "check", k.check, "id", last.id, "error", err)
-	case err != nil:
-		return fmt.Errorf("completing the check run on %s: %w", gitk8s.Short(last.commit), err)
+	by := s.latest(cc)
+	want := runState{Status: "completed", Conclusion: "cancelled", Output: runOutput{Title: "Cancelled", Summary: why}}
+	if by != "" {
+		want = runFor(s.branches[by][cc.check])
 	}
-	c.remember(k, last)
-	return nil
-}
-
-// finished returns the latest finished result for k's check that another
-// branch at commit has.
-func (c *checkRuns) finished(k runKey, commit string) (runState, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	var latest publishedRun
-	for o, r := range c.runs {
-		// A cancelled check run is from a branch that moved away, not a result.
-		done := r.shows.Status == "completed" && r.shows.Conclusion != "cancelled"
-		if o != k && k.shares(o) && r.commit == commit && done && r.at.After(latest.at) {
-			latest = r
+	switch {
+	case run.shows == want:
+	case run.shows.Status == "completed" && (by == "" || want.Status != "completed"):
+		// A finished check's result still holds for the commit. A check run
+		// doesn't start again, so for a result in progress, the other
+		// branch's next reconcile creates one.
+		return nil
+	default:
+		err := s.gh.update(ctx, run.id, want)
+		if retryable(err) {
+			return fmt.Errorf("updating the check run on %s: %w", gitk8s.Short(cc.commit), err)
+		}
+		if err != nil {
+			slog.Warn("couldn't update a check run that a branch left", "repository", s.external, "check", cc.check, "commit", cc.commit, "id", run.id, "error", err)
+			return nil
 		}
 	}
-	return latest.shows, !latest.at.IsZero()
+	s.runs[cc] = shownRun{id: run.id, shows: want, by: by}
+	return nil
+}
+
+// latest returns the branch at cc's commit whose result for cc's check
+// changed last, or "" when no branch at the commit has a result for the
+// check. A result that the controller hasn't published yet counts as the
+// oldest.
+func (s *runSync) latest(cc commitCheck) string {
+	branch, seq := "", int64(-1)
+	for _, name := range slices.Sorted(maps.Keys(s.branches)) {
+		if !s.has(name, cc) {
+			continue
+		}
+		var n int64
+		if r, ok := s.results[branchCheck{name, cc.check}]; ok && r.commit == cc.commit {
+			n = r.seq
+		}
+		if n > seq {
+			branch, seq = name, n
+		}
+	}
+	return branch
+}
+
+// has reports whether branch's result for cc's check is for cc's commit.
+func (s *runSync) has(branch string, cc commitCheck) bool {
+	return s.branches[branch][cc.check].Commit == cc.commit
+}
+
+// forgetRuns forgets the check runs on commits that no branch's result is
+// for. If one is again, the controller finds its check run on GitHub.
+func (s *runSync) forgetRuns() {
+	keep := map[commitCheck]bool{}
+	for k, r := range s.results {
+		keep[commitCheck{r.commit, k.check}] = true
+	}
+	for _, checks := range s.branches {
+		for check, res := range checks {
+			keep[commitCheck{res.Commit, check}] = true
+		}
+	}
+	maps.DeleteFunc(s.runs, func(cc commitCheck, _ shownRun) bool { return !keep[cc] })
 }
 
 // runFor returns what the check run for a result shows.
@@ -311,45 +450,33 @@ func codeBlock(s string) string {
 	return fence + "\n" + s + "\n" + fence
 }
 
-func (c *checkRuns) last(k runKey) (publishedRun, bool) {
+// repository returns what the controller knows of a repository's check
+// runs, by namespace and name.
+func (c *checkRuns) repository(key string) *repoRuns {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	r, ok := c.runs[k]
-	return r, ok
+	if c.repos == nil {
+		c.repos = map[string]*repoRuns{}
+	}
+	if c.repos[key] == nil {
+		c.repos[key] = &repoRuns{results: map[branchCheck]branchResult{}, runs: map[commitCheck]shownRun{}}
+	}
+	return c.repos[key]
 }
 
-func (c *checkRuns) remember(k runKey, r publishedRun) {
+// forget forgets a repository's check runs, when its GitRepository is gone
+// or names no check-runs identity.
+func (c *checkRuns) forget(key string) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	now := c.clock()
-	for key, old := range c.runs {
-		switch {
-		case now.Sub(old.at) >= forgetAfter:
-			delete(c.runs, key)
-		case k.shares(key) && old.commit == r.commit && old.id < r.id:
-			// GitHub shows the newest check run with a name, so the other
-			// branches at the commit write to it too.
-			old.id = r.id
-			c.runs[key] = old
-		}
+	rr := c.repos[key]
+	c.mu.Unlock()
+	if rr == nil {
+		return
 	}
-	if c.runs == nil {
-		c.runs = map[runKey]publishedRun{}
-	}
-	r.at = now
-	c.runs[k] = r
-}
-
-func (c *checkRuns) lock(repo string) *sync.Mutex {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.locks == nil {
-		c.locks = map[string]*sync.Mutex{}
-	}
-	if c.locks[repo] == nil {
-		c.locks[repo] = new(sync.Mutex)
-	}
-	return c.locks[repo]
+	rr.mu.Lock()
+	defer rr.mu.Unlock()
+	clear(rr.results)
+	clear(rr.runs)
 }
 
 func (c *checkRuns) pausedFor(owner string) time.Duration {
@@ -391,6 +518,11 @@ func (e *rateLimited) Error() string {
 	return fmt.Sprintf("GitHub's rate limit asks to wait %v", e.wait)
 }
 
+func isRateLimited(err error) bool {
+	var e *rateLimited
+	return errors.As(err, &e)
+}
+
 // githubError is an answer from GitHub that's neither a success nor a rate
 // limit.
 type githubError struct {
@@ -413,6 +545,13 @@ func notOurs(err error) bool {
 func reopening(err error, want runState) bool {
 	var e *githubError
 	return want.Status != "completed" && errors.As(err, &e) && e.status == http.StatusUnprocessableEntity
+}
+
+// retryable reports whether trying again can fix err, as for a rate limit,
+// an error on GitHub's side, or a request that didn't reach GitHub.
+func retryable(err error) bool {
+	var e *githubError
+	return err != nil && (!errors.As(err, &e) || e.status >= http.StatusInternalServerError)
 }
 
 // find returns the newest check run that has run's name, commit, and

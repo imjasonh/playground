@@ -209,30 +209,38 @@ after its check, and the controller updates it as the result changes:
   check run on that commit decides.
 
 When a check starts again on a commit where it finished, the controller
-creates a new check run with the same name, because GitHub doesn't support
-starting a completed one again. GitHub shows the newest.
+creates a new check run with the same name instead of starting the
+completed one again, which GitHub's documentation doesn't describe. GitHub
+shows the newest, and the old one keeps its result.
 
 A check run belongs to a commit, not to a branch. When two branches of a
-`GitRepository` are at the same commit, the controller writes both branches'
-results for a check to the same check run, so it shows the result that the
-controller wrote last, for either branch.
+`GitRepository` are at the same commit, they share the check run for each
+check, and it shows the result that changed last, for either branch.
 
 The check run's title is the result's state. Its summary is the result's
 message, or the state when the result has no message, and its text lists the
 result's outputs. The controller puts the message and the outputs in code
 blocks, so GitHub shows what a check writes as it is, not as Markdown.
 
-When a branch moves before a check finishes on its old head, the controller
-completes the old commit's check run as `cancelled` when it publishes the
-check's first result on the new head. If another branch at the old commit
-has a result for the check, the check run shows that result again instead.
-If the other branch's check is still running, its next result replaces the
-cancellation. The controller remembers its check runs only in memory, so if
-the program restarts, or another replica takes over the branch, between
-those two results, the old commit's check run stays in progress. So does the
-check run of a check that's running when its branch is deleted or its
-`GitRepository` loses its `checkRunsIdentity`. Branch protection reads only
-the check runs on a pull request's head commit, so an old commit's check run
+Check controllers don't finish a check on a commit that its branch left. So
+when a branch moves, is deleted, or no longer has a result for a check
+before the check finishes, the controller updates the check run on the
+commit that the branch left. If another branch at that commit has a result
+for the check, the check run shows it, or the one that changed last if
+several do. Otherwise, the controller completes the check run as
+`cancelled`. A check run that a check completed keeps its result. Every
+change to one of a repository's branches reconciles all of them, so this
+happens right away, unless the deleted branch was the repository's last.
+
+The controller keeps what it wrote only in memory. If the program restarts,
+or another replica takes over, after a branch leaves a commit and before the
+controller reconciles the change, the check run on that commit stays in
+progress. So does a check run that's in progress when the last of a
+repository's `GitBranch` objects is deleted or the `GitRepository` loses its
+`checkRunsIdentity`. After a restart, the controller finds each branch's
+check run on GitHub again, and writes the branch's result if the check run
+shows something else. Branch protection reads only the check runs on a pull
+request's head commit, so a check run on a commit that no branch is at
 doesn't block a merge.
 
 Check runs only copy results. The controller reads a check run only to see
@@ -240,9 +248,9 @@ whether it already shows the result, so nothing that happens on GitHub, such
 as re-running a check run, changes a result or a merge. GitHub lets only the
 app that created a check run update it, so the controller creates its own
 beside a check run with the same name from another app. The controller
-remembers what it wrote, and writes a check run again only when the result
-changes or the program restarts, so a change that someone else makes to a
-check run can stay until then.
+remembers what it wrote, and writes a check run again only when a result
+changes, a branch leaves the check run's commit, or the program restarts, so
+a change that someone else makes to a check run can stay until then.
 
 GitHub limits the requests that each installation of a GitHub App can make.
 When GitHub answers that the Octo STS app's installation reached its limit,
