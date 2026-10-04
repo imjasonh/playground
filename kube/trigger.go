@@ -18,10 +18,12 @@ import (
 // false, and does nothing, if this replica doesn't reconcile the object:
 //
 //   - No controller in the program reconciles T.
+//   - The controllers haven't started, or the program is stopping.
 //   - The object isn't in the controller's cache, because it doesn't exist,
 //     the controller doesn't watch it, or the cache hasn't loaded yet.
-//   - Leader election is on, and another replica holds the object's shard,
-//     or this replica is releasing it or has never held a shard.
+//   - Leader election or sharding is on, and another replica holds the
+//     object's shard, or this replica is releasing it or has never held a
+//     shard.
 //
 // Trigger doesn't pass the request to the replica that reconciles the
 // object. When Trigger returns false, an HTTP handler can answer 503 Service
