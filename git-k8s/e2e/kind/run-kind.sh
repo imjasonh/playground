@@ -7,6 +7,10 @@
 #
 # The git server runs on this machine and requires a password. Pods reach it
 # through the kind network's gateway, so the nodes need no internet access.
+# It plays the external repository: only the mirror in the core program
+# reaches it, and the checks and test Pods fetch and push through the
+# mirror. The script reaches the mirror through kubectl port-forward, with
+# service account tokens for the mirror's audience.
 #
 # GIT_K8S_KIND_CHAINGUARD is where Chainguard's images come from
 # (cgr.dev/chainguard; docker.io/chainguard is a mirror).
@@ -29,6 +33,7 @@ PASSWORD="$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')"
 CREATED_CLUSTER=0
 CREATED_REGISTRY=0
 GIT_SERVER_PID=""
+PORT_FORWARD_PID=""
 
 k() { kubectl --context "${CONTEXT}" "$@"; }
 
@@ -42,7 +47,7 @@ diagnose() {
   echo "::group::Cluster state"
   k get nodes -o wide || true
   k -n "${NS}" get gitrepositories,gitbranches -o yaml || true
-  k -n "${NS}" get pods -o wide || true
+  k -n "${NS}" get pods,networkpolicies -o wide || true
   k -n "${NS}" logs --all-containers --prefix --tail=50 -l app.kubernetes.io/name=check-gotest || true
   for program in git-k8s "${CHECKS[@]}"; do
     k -n "${program}" describe pods || true
@@ -50,6 +55,8 @@ diagnose() {
   done
   echo "--- git server log"
   cat "${WORKDIR}/gitserver.log" || true
+  echo "--- port-forward log"
+  cat "${WORKDIR}/port-forward.log" || true
   echo "::endgroup::"
 }
 
@@ -57,6 +64,9 @@ finish() {
   local status=$?
   if [[ ${status} -ne 0 ]]; then
     diagnose
+  fi
+  if [[ -n "${PORT_FORWARD_PID}" ]]; then
+    kill "${PORT_FORWARD_PID}" 2>/dev/null || true
   fi
   if [[ "${GIT_K8S_KIND_KEEP:-}" == 1 ]]; then
     echo "Kept the cluster ${CLUSTER}, the registry ${REGISTRY}, and the git server in ${WORKDIR}"
@@ -178,8 +188,9 @@ GIT_IMAGE="localhost:${PORT}/chainguard/git:latest"
 crane() { go run github.com/google/go-containerregistry/cmd/crane@v0.22.1 "$@"; }
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/go:latest" "${GO_IMAGE}"
 crane copy --platform "${PLATFORM}" "${CHAINGUARD}/git:latest" "${GIT_IMAGE}"
-# git-k8s installs the CustomResourceDefinitions that the checks watch.
-install git-k8s
+# git-k8s installs the CustomResourceDefinitions that the checks watch. The
+# service account e2e-deps stands in for a controller that starts branches.
+install git-k8s -- "-branch-prefix=${NS}/e2e-deps=deps/"
 k -n git-k8s rollout status deployment/git-k8s --timeout=180s
 for program in "${CHECKS[@]}"; do
   case "${program}" in
@@ -234,6 +245,7 @@ spec:
         deleteMergedBranches: true
     - match: c/**
       parent: main
+    - match: deps/**
 EOF
 repository_ready() {
   [[ "$(k -n "${NS}" get gitrepository app -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')" == True ]]
@@ -246,8 +258,45 @@ eventually 60 policies_installed
 k -n "${NS}" get gitrepositories,gitbranches
 echo "::endgroup::"
 
-# remote_head prints a branch's commit in repository $2, or app.
+# forward_mirror port-forwards a local port to the core program's Service,
+# which serves the mirror, and sets MIRROR to the base URL of NS's copies.
+# A port-forward goes to one Pod, so it needs restarting with the Pod.
+forward_mirror() {
+  if [[ -n "${PORT_FORWARD_PID}" ]]; then
+    kill "${PORT_FORWARD_PID}" 2>/dev/null || true
+    wait "${PORT_FORWARD_PID}" 2>/dev/null || true
+  fi
+  k -n git-k8s port-forward service/git-k8s :80 >"${WORKDIR}/port-forward.log" 2>&1 &
+  PORT_FORWARD_PID=$!
+  forwarding() { grep -qE '^Forwarding from 127[.]0[.]0[.]1:[0-9]+' "${WORKDIR}/port-forward.log"; }
+  eventually 30 forwarding
+  MIRROR="http://127.0.0.1:$(grep -oE '127[.]0[.]0[.]1:[0-9]+' "${WORKDIR}/port-forward.log" | head -n 1 | cut -d: -f2)/${NS}"
+}
+# mirror_token prints a token for the mirror for service account $2 in
+# namespace $1.
+mirror_token() { k -n "$1" create token "$2" --audience=git-k8s-mirror; }
+# mg runs git in the working repository with token $1 for the mirror.
+mg() {
+  local token=$1
+  shift
+  g -c "http.extraHeader=Authorization: Bearer ${token}" "$@"
+}
+forward_mirror
+k -n "${NS}" create serviceaccount e2e-deps
+DEPS_TOKEN="$(mirror_token "${NS}" e2e-deps)"
+GOFMT_TOKEN="$(mirror_token check-gofmt check-gofmt)"
+
+# remote_head prints a branch's commit in repository $2, or app, in the
+# external repository.
 remote_head() { git ls-remote "${HOST_URL}/${2:-app}.git" "refs/heads/$1" | cut -f1; }
+# mirror_head prints a ref's commit in the mirror's copy of app.
+mirror_head() { mg "${DEPS_TOKEN}" ls-remote "${MIRROR}/app.git" "$1" | cut -f1; }
+# synced_condition prints a field of app's ExternalSynced condition, which
+# says whether the external repository has every change in the mirror.
+synced_condition() {
+  k -n "${NS}" get gitrepository app -o jsonpath="{.status.conditions[?(@.type==\"ExternalSynced\")].$1}"
+}
+in_sync() { [[ "$(synced_condition reason)" == InSync ]]; }
 # branch_object prints the GitBranch for a branch of repository $2, or app.
 branch_object() {
   k -n "${NS}" get gitbranches -l "git-k8s.imjasonh.com/repository=${2:-app}" \
@@ -255,6 +304,43 @@ branch_object() {
 }
 fetch_main() { g fetch -q "${HOST_URL}/app.git" main; }
 branch_gone() { [[ -z "$(remote_head "$1")" && -z "$(branch_object "$1")" ]]; }
+
+echo "::group::Only git-k8s's programs reach the mirror"
+info_refs() {
+  curl -sS -o "${WORKDIR}/mirror.txt" -w '%{http_code}' "$@" "${MIRROR}/app.git/info/refs?service=git-upload-pack"
+}
+[[ "$(info_refs)" == 401 ]]
+[[ "$(info_refs -H "Authorization: Bearer $(k -n check-gofmt create token check-gofmt)")" == 401 ]]
+cat "${WORKDIR}/mirror.txt"
+k -n "${NS}" create serviceaccount stranger
+[[ "$(info_refs -H "Authorization: Bearer $(mirror_token "${NS}" stranger)")" == 404 ]]
+cat "${WORKDIR}/mirror.txt"
+[[ "$(info_refs -H "Authorization: Bearer ${GOFMT_TOKEN}")" == 200 ]]
+[[ -n "$(mirror_head refs/heads/main)" && "$(mirror_head refs/heads/main)" == "$(remote_head main)" ]]
+for program in check-base check-gofmt check-risk check-approval check-gotest; do
+  if k auth can-i get secrets -n "${NS}" --as="system:serviceaccount:${program}:${program}"; then
+    echo "${program} can read Secrets" >&2
+    exit 1
+  fi
+done
+echo "Without a token, or with one for the API server, the mirror answers 401, and to a service account that isn't a check or a controller, 404. No check can read Secrets."
+echo "::endgroup::"
+
+echo "::group::A check can't push to a parent through the mirror"
+fetch_main
+g checkout -q -B to-main FETCH_HEAD
+echo main >"${WORK}/main.txt"
+g add -A
+g commit -qm "Push to main from a check"
+if out="$(mg "${GOFMT_TOKEN}" push "${MIRROR}/app.git" HEAD:main 2>&1)"; then
+  echo "the mirror took a check's push to main: ${out}" >&2
+  exit 1
+fi
+echo "${out}"
+grep -q 'main is a parent branch, which only the merge controller updates' <<<"${out}"
+[[ "$(mirror_head refs/heads/main)" == "$(remote_head main)" ]]
+echo "The mirror refused check-gofmt's push to main, with a reason that git showed."
+echo "::endgroup::"
 
 echo "::group::A branch with unformatted Go lands formatted"
 g checkout -q -b c/fmt
@@ -271,7 +357,11 @@ eventually 120 formatted_on_main
 g log -1 --format=%B FETCH_HEAD | grep -qx 'Git-K8s-Fixer: gofmt'
 eventually 60 branch_gone c/fmt
 g log --oneline FETCH_HEAD
-echo "The gofmt check pushed a fix, main fast-forwarded to it, and c/fmt was deleted."
+k -n git-k8s logs deployment/git-k8s >"${WORKDIR}/core.log"
+grep -q 'served a push.*caller=check-gofmt/check-gofmt' "${WORKDIR}/core.log"
+eventually 60 in_sync
+[[ "$(mirror_head refs/heads/main)" == "$(remote_head main)" ]]
+echo "The gofmt check pushed a fix to the mirror, main fast-forwarded to it in the mirror, the mirror synced main to the git server, and c/fmt was deleted."
 echo "::endgroup::"
 
 echo "::group::A risky branch waits for approval"
@@ -378,6 +468,67 @@ grep -q "the gofmt check can't change GitBranch objects" "${WORKDIR}/patch.json"
 echo "Neither a check nor the core controller can approve a branch, and a check can't change one."
 echo "::endgroup::"
 
+echo "::group::A branch that changes on both sides diverges until a commit has both heads"
+fetch_main
+g checkout -q -B deps/x FETCH_HEAD
+echo base >"${WORK}/deps.txt"
+g add -A
+g commit -qm "Start deps/x"
+DEPS_BASE="$(g rev-parse HEAD)"
+g push -q "${HOST_URL}/app.git" HEAD:deps/x
+in_mirror() { [[ "$(mirror_head "$1")" == "$2" ]]; }
+eventually 60 in_mirror refs/heads/deps/x "${DEPS_BASE}"
+eventually 60 in_sync
+echo "A push to the git server reached the mirror."
+
+# A wrong password keeps the mirror from reaching the git server while both
+# sides change.
+k -n "${NS}" patch secret app-creds --type=merge -p '{"stringData":{"password":"wrong"}}'
+sync_failed() { [[ "$(synced_condition reason)" == SyncFailed ]]; }
+eventually 90 sync_failed
+synced_condition message
+echo
+g checkout -q -B in-mirror "${DEPS_BASE}"
+echo mirror >"${WORK}/deps.txt"
+g commit -qam "Change deps/x in the mirror"
+IN_MIRROR="$(g rev-parse HEAD)"
+mg "${DEPS_TOKEN}" push -q "${MIRROR}/app.git" HEAD:deps/x
+g checkout -q -B in-external "${DEPS_BASE}"
+echo external >"${WORK}/deps.txt"
+g commit -qam "Change deps/x in the git server"
+IN_EXTERNAL="$(g rev-parse HEAD)"
+g push -q "${HOST_URL}/app.git" HEAD:deps/x
+k -n "${NS}" patch secret app-creds --type=merge -p "{\"stringData\":{\"password\":\"${PASSWORD}\"}}"
+
+diverged() { k -n "${NS}" get gitbranch "$(branch_object deps/x)" -o jsonpath="{.status.diverged.$1}"; }
+DOWNSTREAM=refs/git-k8s/downstream/heads/deps/x
+recorded() {
+  [[ "$(diverged commit)" == "${IN_EXTERNAL}" && "$(diverged ref)" == "${DOWNSTREAM}" &&
+    "$(synced_condition reason)" == Diverged ]]
+}
+eventually 120 recorded
+synced_condition message
+echo
+[[ "$(mirror_head refs/heads/deps/x)" == "${IN_MIRROR}" && "$(remote_head deps/x)" == "${IN_EXTERNAL}" ]]
+[[ "$(mirror_head "${DOWNSTREAM}")" == "${IN_EXTERNAL}" ]]
+echo "Neither side was overwritten, and the mirror keeps the git server's head at ${DOWNSTREAM}."
+
+k -n git-k8s rollout restart deployment/git-k8s
+k -n git-k8s rollout status deployment/git-k8s --timeout=180s
+forward_mirror
+eventually 60 recorded
+[[ "$(mirror_head refs/heads/deps/x)" == "${IN_MIRROR}" && "$(mirror_head "${DOWNSTREAM}")" == "${IN_EXTERNAL}" ]]
+echo "After the core program restarted, its volume still held both heads, and the divergence stayed recorded."
+
+g checkout -q -B resolved "${IN_MIRROR}"
+g merge -q --no-edit -s ours "${IN_EXTERNAL}"
+RESOLVED="$(g rev-parse HEAD)"
+mg "${DEPS_TOKEN}" push -q --force-with-lease="refs/heads/deps/x:${IN_MIRROR}" "${MIRROR}/app.git" HEAD:deps/x
+resolved() { [[ "$(remote_head deps/x)" == "${RESOLVED}" && -z "$(diverged commit)" ]] && in_sync; }
+eventually 120 resolved
+echo "A commit with both heads cleared the divergence, and the mirror fast-forwarded the git server to it."
+echo "::endgroup::"
+
 echo "::group::Tests run in a sandboxed Pod"
 TESTED="${WORKDIR}/tested"
 git init -q -b main "${TESTED}"
@@ -395,6 +546,30 @@ import "testing"
 func TestAdd(t *testing.T) {
 	if got := Add(2, 3); got != 5 {
 		t.Errorf("Add(2, 3) = %d, want 5", got)
+	}
+}
+GO
+# The test Pod's NetworkPolicy lets it reach only the mirror and DNS, so
+# this test passes only in a Pod that can't reach the git server or the API
+# server.
+cat >"${TESTED}/sandbox_test.go" <<GO
+package tested
+
+import (
+	"net"
+	"testing"
+	"time"
+)
+
+func TestSandbox(t *testing.T) {
+	if _, err := net.LookupHost("kubernetes.default.svc.cluster.local"); err != nil {
+		t.Fatalf("looking up the API server: %v", err)
+	}
+	for _, addr := range []string{"${GATEWAY}:${GIT_PORT}", "kubernetes.default.svc.cluster.local:443"} {
+		if c, err := net.DialTimeout("tcp", addr, 3*time.Second); err == nil {
+			c.Close()
+			t.Errorf("the test Pod reached %s", addr)
+		}
 	}
 }
 GO
@@ -446,7 +621,10 @@ t push -q "${HOST_URL}/tested.git" HEAD:c/fixed
 fixed_landed() { [[ "$(remote_head main tested)" == "${fixed}" ]]; }
 eventually 300 fixed_landed
 eventually 60 no_test_pods
+no_test_policies() { [[ -z "$(k -n "${NS}" get networkpolicies -l app.kubernetes.io/name=check-gotest -o name)" ]]; }
+eventually 60 no_test_policies
 echo "A branch that breaks a test failed in a sandboxed Pod, and a fixed branch landed."
+echo "The test Pods fetched from the mirror, and could resolve names but couldn't reach the git server or the API server."
 echo "::endgroup::"
 
 echo "::group::Nothing writes while nothing changes"
