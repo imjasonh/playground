@@ -267,6 +267,45 @@ func TestFinalizerPatchRequiresTheAppliedResourceVersion(t *testing.T) {
 	}
 }
 
+// TestDeleteForgetsAnObjectInAShardThatIsntHeld deletes an object in a shard
+// that this replica doesn't hold, so the replica doesn't reconcile it. The
+// replica must still forget what it recorded for the object, or it keeps
+// that state for as long as it runs.
+func TestDeleteForgetsAnObjectInAShardThatIsntHeld(t *testing.T) {
+	m := testManager()
+	m.tracker = newTracker()
+	w := &widget{}
+	w.Namespace, w.Name = "shop", "w1"
+	c := triggerable[widget](t, m, resolved{apiVersion: "example.dev/v1", plural: "widgets", namespaced: true})
+	c.sh = &sharder{n: 1, shards: []*shard{{}}}
+	k, ak := w.Key(), appliedKey{ti: c.ti, key: w.Key()}
+	c.setApplied(k, map[appliedKey]uint64{ak: 1})
+	c.setStatus(k, 1, true)
+	c.setStatusApply(k, 1)
+	c.setCaughtUp(k, 0)
+	m.tracker.add(ref{c: &c.core, key: k}, dep{src: 1, ns: "shop", name: "config"}, nil)
+
+	c.onPrimary(w, nil, false)
+	if high, low := c.q.Len(); high+low != 0 {
+		t.Errorf("queue = %d high, %d low; want no reconcile", high, low)
+	}
+	if _, ok := c.lastApplied(k, ak); ok {
+		t.Error("the replica remembers what it applied for the deleted object")
+	}
+	if _, ok := c.lastStatus(k); ok {
+		t.Error("the replica remembers the deleted object's status")
+	}
+	if _, ok := c.lastStatusApply(k); ok {
+		t.Error("the replica remembers the status that it applied to the deleted object")
+	}
+	if c.hasCaughtUp(k, 0) {
+		t.Error("the replica remembers that its cache caught up with the deleted object")
+	}
+	if n := m.tracker.size(); n != 0 {
+		t.Errorf("the replica tracks %d dependencies of the deleted object, want 0", n)
+	}
+}
+
 func TestNilSharderOwnsEverything(t *testing.T) {
 	var s *sharder
 	if !s.owns(Key{Name: "x"}) {

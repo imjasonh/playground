@@ -496,7 +496,14 @@ func (c *controller[T, P]) onPrimary(old, new *T, initial bool) {
 	}
 	switch {
 	case new == nil:
-		c.enqueue(metaOf[T, P](old).Key(), queue.High)
+		// Reconciling a deleted object forgets what this replica recorded
+		// for it, but this replica doesn't reconcile objects in shards that
+		// it doesn't hold.
+		k := metaOf[T, P](old).Key()
+		c.m.tracker.forget(ref{c: &c.core, key: k})
+		c.setApplied(k, nil)
+		c.setStatus(k, 0, false)
+		c.enqueue(k, queue.High)
 	case old == nil || c.specChanged(old, new) || c.statusChanged(old, new):
 		c.enqueue(metaOf[T, P](new).Key(), p)
 	}
