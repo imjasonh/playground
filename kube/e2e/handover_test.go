@@ -25,7 +25,7 @@ type replica struct {
 	stop func()
 }
 
-func startReplica(t *testing.T, ns, kubeconfig string, shards int) *replica {
+func startReplica(t *testing.T, ns, kubeconfig string, shards int, opts ...kube.Option) *replica {
 	t.Helper()
 	h := &reports{wait: time.Minute, triggered: make(chan string, 64), pending: map[kube.Key][]string{}}
 	mux := http.NewServeMux()
@@ -39,7 +39,8 @@ func startReplica(t *testing.T, ns, kubeconfig string, shards int) *replica {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { done <- m.Run(ctx, kube.For[Report](h, kube.Named("reports")), kube.Serve(mux)) }()
+	opts = append([]kube.Option{kube.Named("reports")}, opts...)
+	go func() { done <- m.Run(ctx, kube.For[Report](h, opts...), kube.Serve(mux)) }()
 	var once sync.Once
 	stop := func() {
 		once.Do(func() {
@@ -66,6 +67,23 @@ func showResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_ = json.NewEncoder(w).Encode(rep.Status.Results)
+}
+
+// readReport asks a replica's handler for a Report until it answers with
+// the Report, which starts the cache that Get reads there.
+func readReport(t *testing.T, addr, ns, name string) {
+	t.Helper()
+	e2e.Eventually(t, 30*time.Second, func() error {
+		resp, err := http.Get("http://" + addr + "/reports/" + ns + "/" + name)
+		if err != nil {
+			return err
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("GET = %d", resp.StatusCode)
+		}
+		return nil
+	})
 }
 
 // waitHeld waits until ok accepts the number of shards that each replica
@@ -198,8 +216,9 @@ func TestServeHandOverWithAStaleCache(t *testing.T) {
 }
 
 // TestServeTakeOverWithAStaleGetCache runs two replicas with leader
-// election. A request to the standby starts the cache that Get reads there,
-// and that cache then falls behind. The standby takes over with a new
+// election, whose controllers watch Reports with a label selector and so
+// don't read the cache that Get reads. A request to the standby starts that
+// cache, and that cache then falls behind. The standby takes over with a new
 // controller cache that is current, but its reconcile reads the stale cache
 // with Get. The framework doesn't write the status until both caches have
 // the same version, so the write keeps the result that the first leader
@@ -208,23 +227,14 @@ func TestServeTakeOverWithAStaleGetCache(t *testing.T) {
 	c := e2e.Client(t)
 	ns := e2e.Namespace(t, c)
 	watches, kubeconfig := newWatchHold(t, "reports")
-	a := startReplica(t, ns, e2e.Env(t).Kubeconfig, 1)
+	everyReport := kube.WatchSelector("!ignored")
+	a := startReplica(t, ns, e2e.Env(t).Kubeconfig, 1, everyReport)
 	waitHeld(t, func(n []int) bool { return n[0] == 1 }, a)
-	b := startReplica(t, ns, kubeconfig, 1)
+	b := startReplica(t, ns, kubeconfig, 1, everyReport)
 	createReport(t, c, ns, "lead")
 
 	t.Log("A request to the standby starts the cache that Get reads there.")
-	e2e.Eventually(t, 30*time.Second, func() error {
-		resp, err := http.Get("http://" + b.m.ServeAddr + "/reports/" + ns + "/lead")
-		if err != nil {
-			return err
-		}
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("GET = %d", resp.StatusCode)
-		}
-		return nil
-	})
+	readReport(t, b.m.ServeAddr, ns, "lead")
 	versions := watchHistory(t, c, ns, "lead")
 
 	t.Log("The leader saves a result that the standby's cache doesn't see, and stops.")
@@ -250,6 +260,41 @@ func TestServeTakeOverWithAStaleGetCache(t *testing.T) {
 			t.Errorf("POST %s got 200, but the results are %q", result, got)
 		}
 	}
+	if n := scrape(t, b.m.Addr, `kube_reconcile_total{controller="reports",result="stale"}`); n == 0 {
+		t.Error("the new leader counted no stale reconciles")
+	}
+}
+
+// TestServeTakeOverAfterAHandlerReadTheType runs two replicas with leader
+// election. A request to the standby reads a Report with Get, which starts
+// the cache that Get reads there before the standby's controller starts.
+// After the standby takes over, its controller reads that cache too. It
+// reconciles the Report that the cache already held, and the first status
+// write of a new Report never waits for a second cache to catch up.
+func TestServeTakeOverAfterAHandlerReadTheType(t *testing.T) {
+	c := e2e.Client(t)
+	ns := e2e.Namespace(t, c)
+	a := startReplica(t, ns, e2e.Env(t).Kubeconfig, 1)
+	waitHeld(t, func(n []int) bool { return n[0] == 1 }, a)
+	b := startReplica(t, ns, e2e.Env(t).Kubeconfig, 1)
+	createReport(t, c, ns, "lead")
+	readReport(t, b.m.ServeAddr, ns, "lead")
+	a.stop()
+	waitHeld(t, func(n []int) bool { return n[0] == 1 }, b)
+	e2e.Eventually(t, 30*time.Second, func() error {
+		n, err := tryScrape(b.m.Addr, `kube_reconcile_total{controller="reports",result="success"}`)
+		if err == nil && n == 0 {
+			err = errors.New("the new leader hasn't reconciled the Report that its cache held")
+		}
+		return err
+	})
+
+	t.Log("Create Reports after the takeover, with no watch held back.")
+	const n = 20
+	for i := range n {
+		createReport(t, c, ns, fmt.Sprintf("r%d", i))
+	}
+	noRetries(t, b.m, "reports", n)
 }
 
 // TestLeaderWritesStatusInAWatchedNamespace runs a leader-elected controller

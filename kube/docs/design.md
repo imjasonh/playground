@@ -380,8 +380,11 @@ once per type with reflection, instead of generated `DeepCopy` methods.
 A manager keeps one informer for each type, namespace, and label selector that
 its controllers use, and controllers that read the same type with the same
 filters share it. An informer starts the first time a reconcile reads its
-type. On a replica with leader election or shards, informers start only after
-the replica first holds a shard, so standby replicas hold no caches.
+type. On a replica with leader election or shards, controllers start their
+informers only after the replica first holds a shard, so a standby holds only
+the caches that its webhooks and HTTP handlers read. When the replica takes
+over, a controller shares such a cache instead of starting a second informer
+for the same objects.
 
 The informer first tries a streaming list, which is a watch with
 `sendInitialEvents=true`, `resourceVersionMatch=NotOlderThan`, and
@@ -596,17 +599,16 @@ One success is enough. It shows that the cache had every earlier write when
 that reconcile started, and from then on this replica is the only one that
 writes the object's status.
 
-The precondition covers the controller's cache, but a reconcile can read the
-object with `kube.Get` from another cache. That happens with
-`kube.WatchSelector` or `kube.WatchNamespace`, with a second controller of the
-type, or when a handler or webhook read the type before the controller
-started. So until the first conditional write succeeds, the framework also
-compares the two caches when the reconcile starts. If the cache that
-`kube.Get` reads holds another version of the object, the framework doesn't
-write the status and retries the reconcile. A reconcile that read the object
-with `kube.Get` also runs again when that cache catches up. A cache that
-doesn't hold the object's namespace can't return the object, so the framework
-doesn't compare it.
+The precondition covers the controller's cache. A reconcile can also read the
+object with `kube.Get`, which reads the same cache unless the controller
+watches with `kube.WatchSelector`, or with `kube.WatchNamespace` and a
+namespace other than the manager's. Such a controller has a cache of its own.
+So until the first conditional write succeeds, the framework also compares the
+two caches when the reconcile starts. If the cache that `kube.Get` reads holds
+another version of the object, the framework doesn't write the status and
+retries the reconcile. A reconcile that read the object with `kube.Get` also
+runs again when that cache catches up. A cache that doesn't hold the object's
+namespace can't return the object, so the framework doesn't compare it.
 
 Waiting for the cache to catch up before queuing the shard's keys would need a
 way to tell that it has. Clients may compare resource versions only for

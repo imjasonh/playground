@@ -322,6 +322,9 @@ type controller[T any, P Resource[T]] struct {
 	opts    options
 	m       *Manager
 	primary *informer[T, P]
+	// borrowed is set when primary is a cache that something else started
+	// and runs, such as the cache that Get reads.
+	borrowed bool
 	// versions are the type's other served versions. conversion is set
 	// when any of them converts itself, through a webhook.
 	versions   []servedVersion
@@ -371,10 +374,16 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 		ns = c.opts.namespace
 	}
 	c.q = queue.New[Key](queue.Options{})
+	c.sh = m.sharder
 	cfg := m.informerConfig(c.res, ns, c.opts.selector, "")
 	c.primary = newInformer[T, P](m.newID(), ti, c.res, m.client, cfg, m.log, m.metrics)
-	c.primary.addHandler(c.onPrimary)
-	c.sh = m.sharder
+	// A handler or webhook that read the type before the controller
+	// started, or another controller of the type, may have started a cache
+	// of the same objects. Two caches of them see each write at different
+	// times, so the controller reads that one.
+	if shared, ok := m.adopt(ti, c.res, cfg, c.primary).(*informer[T, P]); ok && shared != c.primary {
+		c.primary, c.borrowed = shared, true
+	}
 	// Another replica may have reconciled a shard's keys since this one
 	// last held it, so forget what this replica last wrote for them.
 	c.sh.onAcquire(func(i int) {
@@ -387,7 +396,15 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 			return true
 		})
 	})
-	m.adopt(ti, c.res, cfg, c.primary)
+	c.primary.addHandler(c.onPrimary)
+	if c.borrowed {
+		// A cache that has synced doesn't notify a new handler of the
+		// objects it already holds.
+		c.primary.store.each("", func(o *T) bool {
+			c.enqueue(metaOf[T, P](o).Key(), queue.Low)
+			return true
+		})
+	}
 	for _, own := range c.opts.owns {
 		oti, err := own()
 		if err != nil {
@@ -409,12 +426,14 @@ func (c *controller[T, P]) setup(ctx context.Context, m *Manager) error {
 }
 
 func (c *controller[T, P]) run(ctx context.Context) error {
-	informed := make(chan struct{})
-	go func() {
-		defer close(informed)
-		c.primary.run(ctx)
-	}()
-	defer func() { <-informed }()
+	if !c.borrowed {
+		informed := make(chan struct{})
+		go func() {
+			defer close(informed)
+			c.primary.run(ctx)
+		}()
+		defer func() { <-informed }()
+	}
 	select {
 	case <-c.primary.synced:
 	case <-ctx.Done():
