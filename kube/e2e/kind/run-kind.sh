@@ -177,32 +177,8 @@ eventually 120 deployment_gone
 echo "Deleting the Website deletes what it owned."
 echo "::endgroup::"
 
-echo "::group::Install the podpolicy example"
-generate podpolicy | k apply -f -
-k -n podpolicy rollout status deployment/podpolicy --timeout=180s
-k create namespace policy-e2e
-
-# The webhooks are registered by the program when it starts, so wait for
-# the denial rather than an error from calling a webhook that isn't ready.
-denied() {
-  local out
-  if out="$(k -n policy-e2e run denied --image="${CHAINGUARD}/nginx:latest" --restart=Never --dry-run=server -o name 2>&1)"; then
-    echo "allowed: ${out}" >&2
-    return 1
-  fi
-  echo "${out}"
-  [[ "${out}" == *"isn't from an allowed registry"* ]]
-}
-eventually 120 denied
-
-requests="$(k -n policy-e2e run allowed --image=registry.example.com/app:1 --restart=Never --dry-run=server \
-  -o jsonpath='{.spec.containers[0].resources.requests}')"
-echo "defaulted requests: ${requests}"
-[[ "${requests}" == *'"cpu":"100m"'* && "${requests}" == *'"memory":"128Mi"'* ]]
-
-k -n kube-system run exempt --image="${CHAINGUARD}/nginx:latest" --restart=Never --dry-run=server -o name
-echo "::endgroup::"
-
+# This runs before the podpolicy example, whose webhooks deny the images
+# that these Pods use.
 echo "::group::Install the probe example"
 generate probe | k apply -f -
 k -n probe rollout status deployment/probe --timeout=180s
@@ -310,6 +286,32 @@ eventually 60 triggered
 checked_again() { [[ "$(k -n probe-e2e get probe self -o jsonpath='{.status.checkedAt}')" != "${checked}" ]]; }
 eventually 60 checked_again
 echo "The replica that holds the lease triggers a check, and the other refuses."
+echo "::endgroup::"
+
+echo "::group::Install the podpolicy example"
+generate podpolicy | k apply -f -
+k -n podpolicy rollout status deployment/podpolicy --timeout=180s
+k create namespace policy-e2e
+
+# The webhooks are registered by the program when it starts, so wait for
+# the denial rather than an error from calling a webhook that isn't ready.
+denied() {
+  local out
+  if out="$(k -n policy-e2e run denied --image="${CHAINGUARD}/nginx:latest" --restart=Never --dry-run=server -o name 2>&1)"; then
+    echo "allowed: ${out}" >&2
+    return 1
+  fi
+  echo "${out}"
+  [[ "${out}" == *"isn't from an allowed registry"* ]]
+}
+eventually 120 denied
+
+requests="$(k -n policy-e2e run allowed --image=registry.example.com/app:1 --restart=Never --dry-run=server \
+  -o jsonpath='{.spec.containers[0].resources.requests}')"
+echo "defaulted requests: ${requests}"
+[[ "${requests}" == *'"cpu":"100m"'* && "${requests}" == *'"memory":"128Mi"'* ]]
+
+k -n kube-system run exempt --image="${CHAINGUARD}/nginx:latest" --restart=Never --dry-run=server -o name
 echo "::endgroup::"
 
 echo "kind e2e passed"
