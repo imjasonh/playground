@@ -297,8 +297,8 @@ func (c *core) setStatusApply(k Key, h uint64) {
 	c.statusApplies[k] = h
 }
 
-// hasCaughtUp reports whether a status write for k that required the cached
-// resource version succeeded during tenure.
+// hasCaughtUp reports whether a write to k that required the cached resource
+// version succeeded during tenure.
 func (c *core) hasCaughtUp(k Key, tenure uint64) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -584,6 +584,14 @@ func (c *controller[T, P]) reconcileKey(ctx context.Context, key Key) (time.Dura
 	obj := clone.Of(cached)
 	m := metaOf[T, P](obj)
 	pre := c.precondition(key, cached)
+	// A write to the object that required the cached resource version and
+	// succeeded shows that the cache had caught up, as a status write would,
+	// and the status may need no write.
+	defer func(orig string) {
+		if pre.rv != orig && !pre.diverged {
+			c.setCaughtUp(key, pre.tenure)
+		}
+	}(pre.rv)
 	if m.Deleting() {
 		if !slices.Contains(m.Finalizers, c.finalizer) {
 			return 0, nil

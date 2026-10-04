@@ -601,13 +601,14 @@ write from a cache that's behind gets `409 Conflict`, which the framework
 tells apart from a deleted object, and the reconcile is retried. Such a
 retry is expected, so the framework logs it at the info level and counts it
 in `kube_reconcile_total` with `result="stale"` instead of `result="error"`.
-One success is enough. It shows that the cache had every earlier write when
-that reconcile started. After a hand-off, this replica is then the only one
-that writes the object's status, because the previous holder finished its
-reconciles before it released the shard. That isn't so after a lease loss.
-The previous holder's running reconciles finish, and a late status write from
-one of them replaces a newer status, because both replicas apply it with the
-same field manager.
+One success is enough, whether of the status write or of a write before it,
+since the status may need no write. It shows that the cache had every earlier
+write when that reconcile started. After a hand-off, this replica is then the
+only one that writes the object's status, because the previous holder
+finished its reconciles before it released the shard. That isn't so after a
+lease loss. The previous holder's running reconciles finish, and a late
+status write from one of them replaces a newer status, because both replicas
+apply it with the same field manager.
 
 The precondition covers the controller's cache. A reconcile can also read the
 object with `kube.Get`, which reads the same cache unless the controller
@@ -615,8 +616,9 @@ watches with `kube.WatchSelector`, or with `kube.WatchNamespace` and a
 namespace other than the manager's. Such a controller has a cache of its own.
 So until the first conditional write succeeds, the framework also compares the
 two caches when the reconcile starts. If the cache that `kube.Get` reads holds
-another version of the object, the framework doesn't write the status and
-retries the reconcile. A reconcile that read the object with `kube.Get` also
+another version of the object, the framework doesn't write the status,
+doesn't count the reconcile's other writes as the success, and retries the
+reconcile. A reconcile that read the object with `kube.Get` also
 runs again when that cache catches up. A cache that doesn't hold the object's
 namespace can't return the object, so the framework doesn't compare it. The
 framework finds the cache that `kube.Get` reads by the controller's Go type. A

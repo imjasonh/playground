@@ -530,6 +530,74 @@ func TestParentWriteFromAnOutOfDateObject(t *testing.T) {
 	}
 }
 
+// TestNewLeaderRemovesAFinalizerThatAnotherManagerLists starts a leader after
+// the previous one stopped, with a Report whose status is current and whose
+// finalizer the new leader must remove. Another field manager also lists the
+// finalizer, so the removal takes an apply and then a JSON patch. The new
+// leader's cache doesn't see either write before its next reconcile of the
+// Report. The status needs no write, so the removal, which required the
+// cached resource version, must show that the cache had caught up. Otherwise
+// the next reconcile requires the version that it read, and fails as stale.
+func TestNewLeaderRemovesAFinalizerThatAnotherManagerLists(t *testing.T) {
+	c := e2e.Client(t)
+	ns, other := e2e.Namespace(t, c), e2e.Namespace(t, c)
+	path := client.Path(group+"/v1", "reports", ns, "parent")
+	// The subtest's cleanup stops the first leader.
+	if !t.Run("first leader", func(t *testing.T) {
+		startLeader(t, ns, kube.For[Report](childReports{namespace: other}, kube.Named("parents")))
+		createReportWith(t, c, ns, map[string]any{"name": "parent", "labels": map[string]string{"child": "true"}})
+	}) {
+		return
+	}
+
+	t.Log("Another field manager lists the finalizer, and the Report loses its child.")
+	var rep Report
+	if err := e2e.Get(t.Context(), c, path, &rep); err != nil {
+		t.Fatal(err)
+	}
+	err := c.Apply(t.Context(), path, "e2e", true, map[string]any{
+		"apiVersion": group + "/v1", "kind": "Report",
+		"metadata": map[string]any{"name": "parent", "namespace": ns, "finalizers": rep.Finalizers},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Patch(t.Context(), path, client.MergePatch, nil, []byte(`{"metadata":{"labels":{"child":null}}}`), nil); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("The next leader removes the finalizer while its cache stays behind.")
+	watches, kubeconfig := newWatchHold(t, "reports")
+	g := newGate()
+	g.set(true)
+	m := &kube.Manager{Name: "parent-writes-e2e", Kubeconfig: kubeconfig, Namespace: ns, LeaseNamespace: ns, LeaderElection: true, Addr: freeAddr(t)}
+	// The resync queues the next reconcile.
+	e2e.Run(t, m, kube.For[Report](childReports{namespace: other, gate: g}, kube.Named("parents"), kube.Resync(time.Second)))
+	waitHeld(t, func(n []int) bool { return n[0] == 1 }, &replica{m: m})
+	resume := g.next(t)
+	watches.hold()
+	g.set(false)
+	close(resume)
+	sample := `kube_reconcile_total{controller="parents",result=`
+	e2e.Eventually(t, 30*time.Second, func() error {
+		if n := scrape(t, m.Addr, sample+`"success"}`) + scrape(t, m.Addr, sample+`"stale"}`); n < 2 {
+			return fmt.Errorf("%v reconciles ended, want 2", n)
+		}
+		return nil
+	})
+	watches.release()
+	e2e.Eventually(t, 30*time.Second, func() error {
+		if err := e2e.Get(t.Context(), c, path, &rep); err != nil {
+			return err
+		}
+		if len(rep.Finalizers) != 0 {
+			return fmt.Errorf("finalizers = %q, want none", rep.Finalizers)
+		}
+		return nil
+	})
+	noRetries(t, m, "parents", 2)
+}
+
 // startLeader runs controllers with leader election and waits until the
 // manager leads.
 func startLeader(t *testing.T, ns string, controllers ...kube.Controller) *kube.Manager {
