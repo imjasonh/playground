@@ -345,7 +345,7 @@ g commit -qm "Add util.Sub"
 g push -q "${HOST_URL}/app.git" HEAD:c/squash
 squash_landed() { branch_gone c/squash && fetch_main && g cat-file -e FETCH_HEAD:util/sub.go; }
 eventually 180 squash_landed
-g log --format='%h %s (%an, committed by %cn)' "${squash_base}^..FETCH_HEAD"
+g log --first-parent --format='%h %s (%an, committed by %cn)' "${squash_base}^..FETCH_HEAD"
 [[ "$(g rev-list --count "${squash_base}..FETCH_HEAD")" == 1 ]]
 [[ "$(g rev-parse FETCH_HEAD^)" == "${squash_base}" ]]
 [[ "$(g log -1 --format='%an %cn' FETCH_HEAD)" == "e2e git-k8s" ]]
