@@ -243,6 +243,15 @@ shows something else. Branch protection reads only the check runs on a pull
 request's head commit, so a check run on a commit that no branch is at
 doesn't block a merge.
 
+The controller assumes that one replica of the `git-k8s` program reconciles
+at a time, which is how `generate` installs it. With more than one replica,
+`generate` runs the program with `-leader-elect`, so the replicas take
+turns. Don't run `git-k8s` with `-shards`. Shards can split one repository's
+branches across replicas, and each replica keeps its own record of the check
+runs that the branches share. Then a check run can keep showing a result
+that another branch's result replaced, or stay in progress after a branch
+leaves its commit.
+
 Check runs only copy results. The controller reads a check run only to see
 whether it already shows the result, so nothing that happens on GitHub, such
 as re-running a check run, changes a result or a merge. GitHub lets only the
@@ -446,6 +455,8 @@ kubectl apply -f config/policy.yaml
 Replace `REGISTRY` with a registry and repository prefix that your cluster
 can pull from, such as `ghcr.io/you`. To pass flags to a program, add them
 after `--`, as in `go run ./cmd/check-risk generate -registry=REGISTRY -- -sensitive='auth/**'`.
+Don't install `git-k8s` with `-shards`, for the reason in
+[Check runs](#check-runs).
 
 `config/policy.yaml` holds two ValidatingAdmissionPolicies. The first lets
 the service account of `check-NAME` change only `status.checks.NAME`, and

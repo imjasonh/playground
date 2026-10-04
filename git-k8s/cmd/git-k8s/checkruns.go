@@ -71,10 +71,11 @@ type checkRuns struct {
 type appKey struct{ repo, identity string }
 
 // repoRuns is what the controller knows of one repository's check runs,
-// which it keeps only in memory. A reconcile holds mu from its first
-// request to GitHub to its last, because the repository's branches share
-// check runs, and a reconcile decides what to send from what the others
-// sent.
+// which it keeps only in memory. So one replica has to reconcile all of
+// the repository's branches, and the program can't run with -shards. A
+// reconcile holds mu from its first request to GitHub to its last, because
+// the repository's branches share check runs, and a reconcile decides what
+// to send from what the others sent.
 type repoRuns struct {
 	mu sync.Mutex
 	// results holds the result that each branch last published for each
