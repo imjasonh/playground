@@ -552,7 +552,7 @@ files use.
 
 Install's controller doesn't reconcile. Its `setup` runs after the
 reconcilers' `setup`, which installs their CRDs, so the manifest can hold
-objects of the types that the program defines. With leader election or
+objects of the types that the program reconciles. With leader election or
 shards, a replica applies the objects when it first holds a shard. It
 server-side applies each object in order and labels it with the program's
 name, as it labels CRDs. The forced apply takes over the fields that the
