@@ -1,8 +1,11 @@
 package kube
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -183,9 +187,13 @@ func (a *crdAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	reply := a.replies[0]
 	a.replies = a.replies[1:]
+	reply.write(w)
+}
+
+func (r crdReply) write(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(reply.code)
-	_ = json.NewEncoder(w).Encode(reply.body)
+	w.WriteHeader(r.code)
+	_ = json.NewEncoder(w).Encode(r.body)
 }
 
 func crdError(code int, reason string) crdReply {
@@ -207,10 +215,10 @@ func crdWith(established bool, served map[string]bool) crdReply {
 	return crdReply{http.StatusOK, crd}
 }
 
-// newCRDManager returns a Manager named owner whose API server is a.
-func newCRDManager(t *testing.T, a *crdAPI) *Manager {
+// newCRDManager returns a Manager named owner whose API server is api.
+func newCRDManager(t *testing.T, api http.Handler) *Manager {
 	t.Helper()
-	srv := httptest.NewServer(a)
+	srv := httptest.NewServer(api)
 	t.Cleanup(srv.Close)
 	c, err := client.New(&client.Config{Host: srv.URL}, "test")
 	if err != nil {
@@ -386,3 +394,81 @@ func TestEnsureCRDConcurrently(t *testing.T) {
 		t.Errorf("requests = %q, want %q", lines, want)
 	}
 }
+
+// TestEnsureCRDAfterCanceledCreate ends the context of the first use of a type
+// while it waits for the CRD that it created, and expects a use that waits for
+// it with a live context to succeed.
+func TestEnsureCRDAfterCanceledCreate(t *testing.T) {
+	gizmos, err := typeInfoFor[gizmo]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int64
+	var established atomic.Bool
+	m := newCRDManager(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		switch requests.Add(1) {
+		case 1:
+			crdError(http.StatusNotFound, "NotFound").write(w)
+		case 2:
+			crdReply{http.StatusCreated, nil}.write(w)
+		default:
+			crdWith(established.Load(), map[string]bool{"v2": true}).write(w)
+		}
+	}))
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	first := make(chan error, 1)
+	go func() { first <- m.ensureCRD(ctx, gizmos) }()
+	for requests.Load() < 3 {
+		select {
+		case err := <-first:
+			t.Fatalf("the first use = %v before its context ended", err)
+		case <-time.After(time.Millisecond):
+		}
+	}
+	second := make(chan error, 1)
+	go func() { second <- m.ensureCRD(t.Context(), gizmos) }()
+	time.Sleep(100 * time.Millisecond)
+	cancel()
+	if err := <-first; !errors.Is(err, context.Canceled) {
+		t.Errorf("the first use = %v, want %v", err, context.Canceled)
+	}
+	established.Store(true)
+	if err := <-second; err != nil {
+		t.Errorf("the second use = %v after the first use's context ended", err)
+	}
+}
+
+// TestEnsureCRDAfterPanic makes creating a type's CRD panic, and expects the
+// next use of the type to try again instead of waiting for the call that
+// panicked.
+func TestEnsureCRDAfterPanic(t *testing.T) {
+	a := &crdAPI{}
+	m := newCRDManager(t, a)
+	gizmos, err := typeInfoFor[gizmo]()
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.log = slog.New(panicHandler{})
+	a.script(crdError(http.StatusNotFound, "NotFound"), crdReply{http.StatusCreated, nil})
+	func() {
+		defer func() { _ = recover() }()
+		_ = m.ensureCRD(t.Context(), gizmos)
+		t.Error("ensureCRD didn't panic")
+	}()
+	m.log = slog.Default()
+	a.script(crdWith(true, map[string]bool{"v2": true}))
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := m.ensureCRD(ctx, gizmos); err != nil {
+		t.Errorf("after a panic, ensureCRD = %v", err)
+	}
+}
+
+// panicHandler is a slog.Handler that panics when it handles a record.
+type panicHandler struct{}
+
+func (panicHandler) Enabled(context.Context, slog.Level) bool  { return true }
+func (panicHandler) Handle(context.Context, slog.Record) error { panic("logging") }
+func (h panicHandler) WithAttrs([]slog.Attr) slog.Handler      { return h }
+func (h panicHandler) WithGroup(string) slog.Handler           { return h }

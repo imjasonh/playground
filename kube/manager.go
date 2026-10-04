@@ -422,45 +422,66 @@ func (m *Manager) ensureType(ctx context.Context, crd crdSpec) (resolved, error)
 	return m.resolve(ctx, crd.ti)
 }
 
-// crdCall is one run of ensureCRD for a type. ensureCRD sets err and then
-// closes done.
+// crdCall is one run of ensureCRD for a type. The caller that runs it sets
+// err and ctxErr, and then closes done.
 type crdCall struct {
-	done chan struct{}
-	err  error
+	done   chan struct{}
+	err    error
+	ctxErr error // the error of the caller's context, if the call failed
 }
 
 // ensureCRD creates the CustomResourceDefinition of a type that the program
 // defines and owns but doesn't reconcile, if it's missing. Concurrent callers
-// for a type wait for the first one and share its result. ensureCRD doesn't
-// keep a failure, so the next caller tries again.
+// for a type wait for the first one and share its result. If the first one
+// fails after its context ends, a waiter whose context is live takes its
+// place. ensureCRD doesn't keep a failure, so the next caller tries again.
 func (m *Manager) ensureCRD(ctx context.Context, ti *typeInfo) error {
 	if !ti.custom {
 		return nil
 	}
-	m.mu.Lock()
-	call, ok := m.crdCalls[ti]
-	if !ok {
-		call = &crdCall{done: make(chan struct{})}
-		m.crdCalls[ti] = call
-	}
-	m.mu.Unlock()
-	if ok {
+	for {
+		m.mu.Lock()
+		call, ok := m.crdCalls[ti]
+		if !ok {
+			call = &crdCall{done: make(chan struct{})}
+			m.crdCalls[ti] = call
+		}
+		m.mu.Unlock()
+		if !ok {
+			return m.runCRDCall(ctx, ti, call)
+		}
 		select {
 		case <-call.done:
-			return call.err
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+		if call.ctxErr == nil || ctx.Err() != nil {
+			return call.err
+		}
 	}
+}
+
+// runCRDCall runs call, the entry for ti in m.crdCalls. If the call fails or
+// panics, runCRDCall removes the entry before it closes call.done, so that
+// the waiters that try again start one new call.
+func (m *Manager) runCRDCall(ctx context.Context, ti *typeInfo, call *crdCall) error {
+	finished := false
+	defer func() {
+		if !finished {
+			call.err = fmt.Errorf("creating CustomResourceDefinition %s panicked", crdSpec{ti: ti}.name())
+		}
+		if call.err != nil {
+			call.ctxErr = ctx.Err()
+			m.mu.Lock()
+			delete(m.crdCalls, ti)
+			m.mu.Unlock()
+		}
+		close(call.done)
+	}()
 	if !m.reconciled(ti) {
 		call.err = m.createCRD(ctx, ti)
 	}
-	if call.err != nil {
-		m.mu.Lock()
-		delete(m.crdCalls, ti)
-		m.mu.Unlock()
-	}
-	close(call.done)
+	finished = true
 	return call.err
 }
 
