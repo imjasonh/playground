@@ -74,6 +74,13 @@ func TestKeeps(t *testing.T) {
 		w.Git("commit", "--quiet", "--allow-empty", "-m", "later "+strconv.Itoa(i))
 	}
 	later := keep()
+	// replays hashes head's commits in batches of 64, 128, and so on, so the
+	// replay in edge is the first commit of the second batch.
+	w.Branch("work", replayed)
+	for i := range 64 {
+		w.Git("commit", "--quiet", "--allow-empty", "-m", "edge "+strconv.Itoa(i))
+	}
+	edge := keep()
 	m := commit(base, "add m", map[string]string{"m.txt": "m\n"})
 	sideMerge := merge(side, m)
 	bothReplayed := pick(start, side, m)
@@ -83,6 +90,15 @@ func TestKeeps(t *testing.T) {
 	x2 := commit(x1, "add another x", map[string]string{"a.txt": "1\n2\n3\n4\n5\n6\n7\n8\n9\nx\nx\n"})
 	twice := pick(start, x1, x2)
 	once := commit(pick(start, x1), "add another x and h", map[string]string{"a.txt": "1\n2\n3\n4\n5\n6\n7\n8\n9\nx\nx\n", "h.txt": "h\n"})
+	// The replay in onceEdge is the last commit of replays' first batch, and
+	// the empty commit under it starts the second.
+	w.Branch("work", start)
+	w.Git("commit", "--quiet", "--allow-empty", "-m", "fill")
+	w.Git("cherry-pick", "--end-of-options", x1)
+	for i := range 62 {
+		w.Git("commit", "--quiet", "--allow-empty", "-m", "fill "+strconv.Itoa(i))
+	}
+	onceEdge := commit(keep(), "add another x and h", map[string]string{"a.txt": "1\n2\n3\n4\n5\n6\n7\n8\n9\nx\nx\n", "h.txt": "h\n"})
 	dropped := commit(base, "remove d", map[string]string{"d.txt": ""})
 	readded := commit(pick(start, dropped), "add d again", map[string]string{"d.txt": "new d\n"})
 	cut := commit(base, "remove 2", map[string]string{"a.txt": "1\n3\n4\n5\n6\n7\n8\n9\n"})
@@ -154,11 +170,13 @@ func TestKeeps(t *testing.T) {
 		{"a head that rewound and makes the change on another line", elsewhere, side, base, false},
 		{"a head that rewound and makes the change in a commit that also adds a file", squashed, side, base, false},
 		{"a head that rewound and replays the side under 100 commits", later, side, base, true},
+		{"a head that rewound and replays the side under 64 commits", edge, side, base, true},
 		{"a head that replays each commit of a side that merged", bothReplayed, sideMerge, base, false},
 		{"a head with an empty commit for a side's empty commit", replayedEmpty, sideEmpty, base, false},
 		{"a head built on a side that rewound to drop an empty commit", ahead, side, sideEmpty, true},
 		{"a head that replays a side's two commits that make the same change", twice, x2, base, true},
 		{"a head that replays one of a side's two commits that make the same change", once, x2, base, false},
+		{"a head that replays one of a side's two commits that make the same change under 63 commits", onceEdge, x2, base, false},
 		{"a head that replays a side's removal of a file and adds the file back", readded, dropped, base, false},
 		{"a head that replays a side's removal of a line and adds the line back", union, cut, base, false},
 		{"a head built on a side that rewound, changing the side's change", resolved, rewound, base, true},
