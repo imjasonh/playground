@@ -7,11 +7,9 @@ import (
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
 	"github.com/imjasonh/playground/git-k8s/checks"
-	"github.com/imjasonh/playground/git-k8s/credentials"
 	"github.com/imjasonh/playground/git-k8s/internal/git"
 	"github.com/imjasonh/playground/git-k8s/internal/gittest"
 	"github.com/imjasonh/playground/kube"
-	"github.com/imjasonh/playground/kube/k8s"
 )
 
 type Branch struct {
@@ -29,9 +27,10 @@ func (b *Branch) Parts() (*kube.ObjectMeta, *gitk8s.GitBranchSpec, **gitk8s.Chec
 }
 
 // touch passes branches that have a TOUCHED file, and otherwise proposes a
-// commit that adds one.
-func touch(runs *int) checks.Check {
-	return checks.Check{Name: "touch", Remote: credentials.Remote, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
+// commit that adds one. It reaches the fixture's server in place of the
+// mirror.
+func (f *fixture) touch(runs *int) checks.Check {
+	return checks.Check{Name: "touch", Remote: f.srv.RemoteFor, Run: func(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 		*runs++
 		repo, err := in.Repo(ctx)
 		if err != nil {
@@ -72,7 +71,6 @@ type fixture struct {
 	srv    *gittest.Server
 	work   *gittest.Work
 	repo   *gitk8s.GitRepository
-	secret *k8s.Secret
 	branch *Branch
 	cfg    *checks.Config
 }
@@ -92,11 +90,9 @@ func newFixture(t *testing.T, policy gitk8s.CheckPolicy) *fixture {
 
 	repo := &gitk8s.GitRepository{
 		Object: kube.Meta("app", nil),
-		Spec:   gitk8s.GitRepositorySpec{URL: srv.Remote("app").URL, SecretRef: &gitk8s.SecretRef{Name: "creds"}},
+		Spec:   gitk8s.GitRepositorySpec{URL: srv.Remote("app").URL},
 	}
 	repo.Namespace = "default"
-	secret := &k8s.Secret{Object: kube.Meta("creds", nil), Data: map[string][]byte{"username": []byte(srv.Username), "password": []byte(srv.Password)}}
-	secret.Namespace = "default"
 	b := &Branch{Object: kube.Meta(gitk8s.BranchObjectName("app", "c/x"), nil)}
 	b.Namespace = "default"
 	b.Spec = gitk8s.GitBranchSpec{
@@ -104,22 +100,22 @@ func newFixture(t *testing.T, policy gitk8s.CheckPolicy) *fixture {
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{policy}},
 	}
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
-	return &fixture{srv: srv, work: w, repo: repo, secret: secret, branch: b, cfg: cfg}
+	return &fixture{srv: srv, work: w, repo: repo, branch: b, cfg: cfg}
 }
 
 func (f *fixture) reconcile(t *testing.T, check checks.Check) error {
 	t.Helper()
-	ctx, _ := kube.Fake(t.Context(), f.branch, f.repo, f.secret)
+	ctx, _ := kube.Fake(t.Context(), f.branch, f.repo)
 	return checks.NewReconciler[Branch](check, f.cfg).Reconcile(ctx, f.branch)
 }
 
 func TestRepoNeedsRemote(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
 	runs := 0
-	check := touch(&runs)
+	check := f.touch(&runs)
 	check.Remote = nil
 	err := f.reconcile(t, check)
-	if err == nil || !strings.Contains(err.Error(), "set Check.Remote to credentials.Remote") {
+	if err == nil || !strings.Contains(err.Error(), "set Check.Remote to mirror.Remote") {
 		t.Fatalf("err = %v, want one that says to set Check.Remote", err)
 	}
 	if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error {
@@ -130,7 +126,7 @@ func TestRepoNeedsRemote(t *testing.T) {
 func TestPushesFixThenPasses(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch", MayPush: true})
 	runs := 0
-	if err := f.reconcile(t, touch(&runs)); err != nil {
+	if err := f.reconcile(t, f.touch(&runs)); err != nil {
 		t.Fatal(err)
 	}
 	res := f.branch.Status.Checks.Result
@@ -147,7 +143,7 @@ func TestPushesFixThenPasses(t *testing.T) {
 
 	// The repository controller lists the new head, and the check passes.
 	f.branch.Spec.Head = fix
-	if err := f.reconcile(t, touch(&runs)); err != nil {
+	if err := f.reconcile(t, f.touch(&runs)); err != nil {
 		t.Fatal(err)
 	}
 	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Passed || res.Commit != fix || res.ParentCommit != "" {
@@ -156,7 +152,7 @@ func TestPushesFixThenPasses(t *testing.T) {
 
 	// A final result for the same head doesn't run the check again.
 	before := runs
-	if err := f.reconcile(t, touch(&runs)); err != nil {
+	if err := f.reconcile(t, f.touch(&runs)); err != nil {
 		t.Fatal(err)
 	}
 	if runs != before {
@@ -168,7 +164,7 @@ func TestRemovesResultWhenNotListed(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "other"})
 	f.branch.Status.Checks.Result = &gitk8s.CheckResult{Commit: "old", State: gitk8s.Passed}
 	runs := 0
-	if err := f.reconcile(t, touch(&runs)); err != nil {
+	if err := f.reconcile(t, f.touch(&runs)); err != nil {
 		t.Fatal(err)
 	}
 	if f.branch.Status.Checks.Result != nil || runs != 0 {
@@ -180,7 +176,7 @@ func TestDoesNotPushWithoutPermission(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
 	head := f.branch.Spec.Head
 	runs := 0
-	if err := f.reconcile(t, touch(&runs)); err != nil {
+	if err := f.reconcile(t, f.touch(&runs)); err != nil {
 		t.Fatal(err)
 	}
 	res := f.branch.Status.Checks.Result
@@ -198,7 +194,7 @@ func TestStopsAtAutomatedCommitLimit(t *testing.T) {
 	f.branch.Spec.Merge.MaxAutomatedCommits = &zero
 	head := f.branch.Spec.Head
 	runs := 0
-	if err := f.reconcile(t, touch(&runs)); err != nil {
+	if err := f.reconcile(t, f.touch(&runs)); err != nil {
 		t.Fatal(err)
 	}
 	if res := f.branch.Status.Checks.Result; res.State != gitk8s.Failed || !strings.Contains(res.Message, "the limit") {
@@ -216,7 +212,7 @@ func TestStaleHeadIsRetried(t *testing.T) {
 	f.work.Commit("add y")
 	f.work.Push("c/x")
 	runs := 0
-	err := f.reconcile(t, touch(&runs))
+	err := f.reconcile(t, f.touch(&runs))
 	if err == nil || !strings.Contains(err.Error(), "push rejected") {
 		t.Fatalf("err = %v, want a rejected push", err)
 	}
@@ -227,9 +223,14 @@ func TestStaleHeadIsRetried(t *testing.T) {
 
 func TestRunErrorIsReported(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
-	f.secret.Data["password"] = []byte("wrong")
 	runs := 0
-	if err := f.reconcile(t, touch(&runs)); err == nil {
+	check := f.touch(&runs)
+	check.Remote = func(context.Context, *gitk8s.Repository) (git.Remote, error) {
+		r := f.srv.Remote("app")
+		r.Auth.Password = "wrong"
+		return r, nil
+	}
+	if err := f.reconcile(t, check); err == nil {
 		t.Fatal("reconcile with the wrong password succeeded")
 	}
 	if res := f.branch.Status.Checks.Result; res == nil || res.State != gitk8s.Error {
@@ -241,7 +242,7 @@ func TestWaitsForHeads(t *testing.T) {
 	f := newFixture(t, gitk8s.CheckPolicy{Name: "touch"})
 	f.branch.Spec.ParentHead = ""
 	runs := 0
-	if err := f.reconcile(t, touch(&runs)); err != nil || runs != 0 {
+	if err := f.reconcile(t, f.touch(&runs)); err != nil || runs != 0 {
 		t.Errorf("reconcile = %v after %d runs, want no runs while the parent is missing", err, runs)
 	}
 }

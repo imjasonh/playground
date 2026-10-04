@@ -1,9 +1,11 @@
-// Package credentials reads the URL and credentials of a repository.
+// Package credentials reads the URL and credentials of an external
+// repository, for the mirror.
 //
 // Reading the Secret makes kube's generate grant a program get access to
 // Secrets in every namespace, because generate grants what a program's
-// packages call. Only the programs that fetch from or push to a repository
-// import this package, so the others never get that access.
+// packages call. The mirror is the only part of git-k8s that reaches
+// external repositories, so only the core program imports this package, and
+// checks never get that access.
 package credentials
 
 import (

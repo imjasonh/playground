@@ -35,10 +35,12 @@ func setup(t *testing.T, srv *gittest.Server, mainEdit, branchEdit string) (*Bra
 
 func reconcile(t *testing.T, srv *gittest.Server, b *Branch) error {
 	t.Helper()
-	repo, secret := srv.Repository("app")
-	ctx, _ := kube.Fake(t.Context(), b, repo, secret)
+	repo, _ := srv.Repository("app")
+	ctx, _ := kube.Fake(t.Context(), b, repo)
+	c := check
+	c.Remote = srv.RemoteFor
 	cfg := &checks.Config{CacheDir: t.TempDir(), Identity: git.Identity{Name: "git-k8s", Email: "git-k8s@example.com"}}
-	return checks.NewReconciler[Branch](check, cfg).Reconcile(ctx, b)
+	return checks.NewReconciler[Branch](c, cfg).Reconcile(ctx, b)
 }
 
 func TestMergesParentIn(t *testing.T) {

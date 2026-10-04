@@ -30,9 +30,11 @@ func rate(t *testing.T, files map[string]string) *gitk8s.CheckResult {
 		Repository: "app", Branch: "c/x", Head: head, Parent: "main", ParentHead: main,
 		Merge: &gitk8s.MergePolicy{Checks: []gitk8s.CheckPolicy{{Name: "risk"}}},
 	}
-	repo, secret := srv.Repository("app")
-	ctx, _ := kube.Fake(t.Context(), b, repo, secret)
-	if err := checks.NewReconciler[Branch](check, &checks.Config{CacheDir: t.TempDir()}).Reconcile(ctx, b); err != nil {
+	repo, _ := srv.Repository("app")
+	ctx, _ := kube.Fake(t.Context(), b, repo)
+	c := check
+	c.Remote = srv.RemoteFor
+	if err := checks.NewReconciler[Branch](c, &checks.Config{CacheDir: t.TempDir()}).Reconcile(ctx, b); err != nil {
 		t.Fatal(err)
 	}
 	return b.Status.Checks.Result

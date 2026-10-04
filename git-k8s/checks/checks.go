@@ -55,9 +55,10 @@ type Check struct {
 	// heads change. Use it for checks that read only the GitBranch object.
 	Always bool
 	// Remote returns a repository's URL and credentials. A check that calls
-	// Input.Repo or returns a Fix sets it to credentials.Remote. A check
-	// that leaves it nil doesn't link that package, so its program can't
-	// read Secrets.
+	// Input.Repo or returns a Fix sets it to mirror.Remote, which reaches
+	// the repository's copy on the mirror. A check that leaves it nil
+	// doesn't link that package, so its program gets no token for the
+	// mirror.
 	Remote func(context.Context, *gitk8s.Repository) (git.Remote, error)
 	// Run examines the branch.
 	Run func(ctx context.Context, in *Input) (Verdict, error)
@@ -257,7 +258,7 @@ type Input struct {
 func (in *Input) Remote(ctx context.Context) (git.Remote, error) {
 	if in.remote == nil {
 		if in.check.Remote == nil {
-			return git.Remote{}, fmt.Errorf("the %s check can't reach the repository: set Check.Remote to credentials.Remote", in.check.Name)
+			return git.Remote{}, fmt.Errorf("the %s check can't reach the repository: set Check.Remote to mirror.Remote", in.check.Name)
 		}
 		r, err := in.check.Remote(ctx, in.Repository)
 		if err != nil {

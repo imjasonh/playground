@@ -150,16 +150,18 @@ func run(ctx context.Context, in *checks.Input) (checks.Verdict, error) {
 }
 
 func main() {
-	checks.Main[Branch](checks.Check{Name: "readme", Remote: credentials.Remote, Run: run})
+	checks.Main[Branch](checks.Check{Name: "readme", Remote: mirror.Remote, Run: run})
 }
 ```
 
 `in.Repo` fetches the branch and its parent into the program's local
 repository. A verdict with a `Fix` commit asks the framework to push it.
-Both need `Remote: credentials.Remote`, which reads the repository's
-Secret. `generate` grants a program what its packages call, so a check that
-reads only the `GitBranch`, such as `check-approval`, leaves `Remote` out,
-and its program can't read Secrets.
+Both need `Remote: mirror.Remote`, from the `git-k8s/mirror` package, which
+reaches the repository's copy on the mirror with a token for the mirror.
+`generate` mounts that token in the Pods of each program that imports the
+package, so a check that reads only the `GitBranch`, such as
+`check-approval`, leaves `Remote` out, and its program gets no token. No
+check reads Secrets.
 
 ### Sandboxed checks
 
