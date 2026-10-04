@@ -482,8 +482,8 @@ echo "check-gofmt pushed a fix and git-k8s landed it with Octo STS tokens, and t
 k create namespace "${NS}-other"
 octo_repository "${NS}-other"
 refused() {
-  [[ "$(condition "${NS}-other" Ready reason)" == CredentialsUnavailable ]] &&
-    condition "${NS}-other" Ready message | grep -q "audience \"octo-sts.dev/${NS}\" did not match"
+  [[ "$(condition "${NS}-other" Ready reason)" == CredentialsUnavailable &&
+    "$(condition "${NS}-other" Ready message)" == *"audience \"octo-sts.dev/${NS}\" did not match"* ]]
 }
 eventually 60 refused
 condition "${NS}-other" Ready message
