@@ -165,7 +165,7 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 	// still adds Deny next to Warn in the binding from config/policy.yaml.
 	admin := &admissionPolicyBinding{Object: kube.Meta("admin-branches", nil)}
 	admin.Spec.PolicyName, admin.Spec.ValidationActions = "git-k8s-branches", []string{"Deny"}
-	if c := reconcile(append([]any{admin}, world...)...); c.Status != kube.False || c.Reason != "NotDenying" ||
+	if c := reconcile(append([]any{admin}, world...)...); c.Status != kube.False || c.Reason != "BindingWarns" ||
 		c.Message != "the binding git-k8s-branches warns, so the core program stops the next time it starts; run "+fmt.Sprintf(warns, "git-k8s-branches") {
 		t.Errorf("with git-k8s-branches warning while admin-branches denies, PoliciesInstalled = %+v", c)
 	}
@@ -173,6 +173,14 @@ func TestReportsAdmissionPolicies(t *testing.T) {
 		!strings.HasSuffix(c.Message, "; run "+fmt.Sprintf(warns, "git-k8s-branches")+", then run kubectl -n git-k8s rollout restart deployment/git-k8s to install config/policy.yaml again") {
 		t.Errorf("without git-k8s-check-results, and with git-k8s-branches warning while admin-branches denies, PoliciesInstalled = %+v", c)
 	}
+	// The reason for a binding that lets requests through takes precedence over
+	// the reason for a warning that another binding hides.
+	bindings[0].Spec.MatchResources = &matchResources{ObjectSelector: &labelSelector{MatchLabels: map[string]string{"tier": "web"}}}
+	if c := reconcile(append([]any{admin}, world...)...); c.Status != kube.False || c.Reason != "NotDenying" ||
+		c.Message != `the binding git-k8s-check-results doesn't deny every request that its policy rejects, so checks can write each other's results; the binding git-k8s-branches warns, so the core program stops the next time it starts; run kubectl patch validatingadmissionpolicybinding git-k8s-check-results --type=merge -p '{"spec":{"matchResources":null}}' and `+fmt.Sprintf(warns, "git-k8s-branches") {
+		t.Errorf("with git-k8s-check-results limited, and git-k8s-branches warning while admin-branches denies, PoliciesInstalled = %+v", c)
+	}
+	bindings[0].Spec.MatchResources = nil
 	// A binding limited with matchResources doesn't enforce the policy for every
 	// request, so the message gives the consequences instead.
 	narrow := &admissionPolicyBinding{Object: kube.Meta("narrow-branches", nil)}

@@ -111,8 +111,9 @@ func policiesCondition(ctx context.Context, installs bool) kube.Condition {
 		}
 	}
 	var problems, sentences, fixes []string
-	reason := "NotDenying"
+	reason := "BindingWarns"
 	if len(weak) > 0 {
+		reason = "NotDenying"
 		problem := "the binding %s doesn't deny every request that its policy rejects"
 		if len(weak) > 1 {
 			problem = "the bindings %s don't deny every request that their policies reject"
