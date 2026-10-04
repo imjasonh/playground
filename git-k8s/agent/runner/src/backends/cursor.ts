@@ -2,9 +2,8 @@ import type { Usage } from "../result.js";
 import type { AgentResponse, Backend } from "./types.js";
 
 /**
- * The tools that a review may use. The agent gets no shell, MCP servers,
- * subagents, or web access, so it can't run the code it reads or send data
- * anywhere but Cursor's API.
+ * The only tools that the agent is offered. Cursor's backend enforces the
+ * list, and none of these tools runs commands.
  */
 const READ_TOOLS = ["read", "grep", "glob", "ls"];
 const EDIT_TOOLS = [...READ_TOOLS, "edit", "delete"];

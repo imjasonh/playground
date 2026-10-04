@@ -14,6 +14,9 @@ DEP_PATHSPECS=(
   ':(glob)*/vendor/**'
   ':(glob)*/Cargo.toml'
   ':(glob)*/Cargo.lock'
+  # Nested npm packages that update-js-dependencies.sh updates.
+  'git-k8s/agent/runner/package.json'
+  'git-k8s/agent/runner/package-lock.json'
 )
 
 _git_identity() {

@@ -217,6 +217,11 @@ func TestTreeEditing(t *testing.T) {
 	if err != nil || len(stats) != 1 || stats[0] != (git.FileStat{Path: "pkg/x.go", Added: 1, Removed: 1}) {
 		t.Errorf("Numstat = %+v, %v", stats, err)
 	}
+	for _, path := range []string{".g\u200cit/hooks/post-checkout", "GIT~1/hooks/post-checkout"} {
+		if _, err := repo.ReplaceFiles(ctx, c.Tree, []git.TreeEntry{{Mode: "100644", SHA: blob, Path: path}}); err == nil {
+			t.Errorf("ReplaceFiles(%q) succeeded; want an error for a path that macOS or Windows reads as .git", path)
+		}
+	}
 }
 
 func mustEntry(t *testing.T, repo *git.Repo, commit, path string) string {
