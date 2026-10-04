@@ -255,6 +255,14 @@ Pod, after the one that fetches the head:
    that can write to it. It runs `check-gotest`'s image, and doesn't mount
    the branch's files.
 
+Test Pods run in the `GitBranch`'s namespace as its `default` service
+account and don't set `imagePullSecrets`, so each namespace that has a
+`GitRepository` must be able to pull `check-gotest`'s image. If pulling
+from `REGISTRY` needs credentials that the nodes don't have, add an image
+pull secret to the `default` service account in each of those namespaces.
+Without the secret, test Pods wait in `Init:ImagePullBackOff` until
+`-timeout` ends them, and the check fails.
+
 The test container downloads modules from `go-cache`, whatever `-goproxy`
 says. Its `GOCACHEPROG` reads the outputs that `build` left in the volume,
 and doesn't connect to `go-cache`. The test container compiles the
