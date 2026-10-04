@@ -40,6 +40,46 @@ func readAttributesFrom(t *testing.T, repo *git.Repo, tree string) {
 	}
 }
 
+// wrap opens repo's directory with a git that runs script before it runs
+// git with the same arguments.
+func wrap(t *testing.T, repo *git.Repo, script string) *git.Repo {
+	t.Helper()
+	bin := filepath.Join(t.TempDir(), "git")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"+script+"\nexec git \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	wrapped, err := (&git.Git{Bin: bin}).Open(t.Context(), repo.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wrapped
+}
+
+// logged opens repo's directory with a git that logs each command. The
+// function that it returns checks that each command ran with
+// GIT_ALLOW_PROTOCOL=http:https:git:ssh, and returns their arguments.
+func logged(t *testing.T, repo *git.Repo) (*git.Repo, func() []string) {
+	t.Helper()
+	log := filepath.Join(t.TempDir(), "log")
+	logging := wrap(t, repo, `printf '%s\t%s\n' "$GIT_ALLOW_PROTOCOL" "$*" >>'`+log+`'`)
+	return logging, func() []string {
+		t.Helper()
+		b, err := os.ReadFile(log)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var commands []string
+		for _, line := range strings.Split(strings.TrimSuffix(string(b), "\n"), "\n") {
+			protocols, args, _ := strings.Cut(line, "\t")
+			if protocols != "http:https:git:ssh" {
+				t.Errorf("git %s ran with GIT_ALLOW_PROTOCOL=%q, want http:https:git:ssh", args, protocols)
+			}
+			commands = append(commands, args)
+		}
+		return commands
+	}
+}
+
 func TestRevsAndPatchIDs(t *testing.T) {
 	srv := gittest.NewServer(t, "")
 	w := srv.NewWork(t, "app")
@@ -118,6 +158,37 @@ func TestRevsAndPatchIDs(t *testing.T) {
 			t.Errorf("patch IDs of the same change at other lines = %q and %q, %v; want the same ID", ids[change], ids[again], err)
 		}
 	})
+}
+
+func TestPatchIDsReportsDiffTreeFailures(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	w.Write("a.txt", "a\n")
+	change := w.Commit("add a.txt")
+	w.Push("main")
+	// The wrapper fails each diff-tree, as git does when a commit's tree is
+	// missing.
+	repo := wrap(t, fetched(t, srv, "main"), `case " $* " in *" diff-tree "*) echo "fatal: unable to read tree" >&2; exit 128 ;; esac`)
+
+	if ids, err := repo.PatchIDs(t.Context(), []string{change}); err == nil || err.Error() != "git diff-tree: exit status 128: fatal: unable to read tree" {
+		t.Errorf("PatchIDs when diff-tree fails = %v, %v; want diff-tree's exit status", ids, err)
+	}
+}
+
+func TestPatchIDsAllowOnlyRemoteTransports(t *testing.T) {
+	srv := gittest.NewServer(t, "")
+	w := srv.NewWork(t, "app")
+	w.Write("a.txt", "a\n")
+	change := w.Commit("add a.txt")
+	w.Push("main")
+	repo, commands := logged(t, fetched(t, srv, "main"))
+
+	if _, err := repo.PatchIDs(t.Context(), []string{change}); err != nil {
+		t.Fatal(err)
+	}
+	if got := commands(); len(got) != 3 {
+		t.Errorf("PatchIDs ran git %q; want hash-object, diff-tree, and patch-id", got)
+	}
 }
 
 func TestReplay(t *testing.T) {
