@@ -106,7 +106,11 @@ type branchResult struct {
 }
 
 type shownRun struct {
-	id    int64
+	// id is the check run's ID, or 0 when GitHub didn't answer a request
+	// to create it, so the controller has to find it first.
+	id int64
+	// shows is what the check run shows, or nothing when GitHub didn't
+	// answer a request to update it.
 	shows runState
 	// by is the branch whose result the check run shows, so that the check
 	// run is settled when that branch leaves the commit, or "" when nothing
@@ -316,6 +320,7 @@ func (s *runSync) publish(ctx context.Context, branch, check string, res gitk8s.
 	}
 	changed := !ok || last.commit != res.Commit || last.shows != want
 	run, known := s.runs[cc]
+	known = known && run.id != 0
 	// Until the controller knows its app, the check run that it finds can
 	// be another app's, so the controller updates the check run even when
 	// it shows want, and creates its own if GitHub refuses.
@@ -367,11 +372,21 @@ func (s *runSync) write(ctx context.Context, cc commitCheck, run shownRun, known
 		// last saw in progress, and GitHub's documentation doesn't say
 		// whether GitHub starts it again.
 		if !notOurs(err) && !reopening(err, want) {
+			if retryable(err) {
+				// GitHub can update a check run without the answer arriving.
+				s.runs[cc] = shownRun{id: run.id, by: branch}
+			}
 			return err
 		}
 	}
 	created, err := s.gh.create(ctx, checkRun{Name: "git-k8s/" + cc.check, HeadSHA: cc.commit, ExternalID: s.external, runState: want})
 	if err != nil {
+		if retryable(err) {
+			// GitHub can create a check run without the answer arriving, and
+			// then it shows that check run instead of the one that the
+			// controller knows.
+			s.runs[cc] = shownRun{by: branch}
+		}
 		return err
 	}
 	s.learnApp(created.App.ID)
@@ -391,6 +406,20 @@ func (s *runSync) settle(ctx context.Context, cc commitCheck, why string) error 
 	if !ok || s.has(run.by, cc) {
 		return nil
 	}
+	if run.id == 0 {
+		found, err := s.gh.find(ctx, checkRun{Name: "git-k8s/" + cc.check, HeadSHA: cc.commit, ExternalID: s.external}, s.app)
+		if retryable(err) {
+			return fmt.Errorf("finding the check run on %s: %w", gitk8s.Short(cc.commit), err)
+		}
+		if err != nil || found == nil {
+			if err != nil {
+				slog.Warn("couldn't find a check run that a branch left", "repository", s.external, "check", cc.check, "commit", cc.commit, "error", err)
+			}
+			delete(s.runs, cc)
+			return nil
+		}
+		run = shownRun{id: found.ID, shows: found.runState, by: run.by}
+	}
 	by := s.latest(cc)
 	want := runState{Status: "completed", Conclusion: "cancelled", Output: runOutput{Title: "Cancelled", Summary: why}}
 	if by != "" {
@@ -406,6 +435,7 @@ func (s *runSync) settle(ctx context.Context, cc commitCheck, why string) error 
 	default:
 		updated, err := s.gh.update(ctx, run.id, want)
 		if retryable(err) {
+			s.runs[cc] = shownRun{id: run.id, by: run.by}
 			return fmt.Errorf("updating the check run on %s: %w", gitk8s.Short(cc.commit), err)
 		}
 		if err != nil {
