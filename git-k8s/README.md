@@ -355,9 +355,13 @@ accounts that `generate` installs them with: `git-k8s` in the namespace
 `git-k8s`, and `check-NAME` in the namespace `check-NAME`. The repositories
 controller sets a `PoliciesInstalled` condition on each `GitRepository`.
 It's `False` until both policies are installed with bindings that deny. It's
-also `False`, with the reason `Outdated`, while a policy's
-`git-k8s.imjasonh.com/policy-version` annotation isn't the version that the
-core program expects, as with the policies of an earlier release.
+also `False` while a policy's `git-k8s.imjasonh.com/policy-version`
+annotation isn't the version that the core program expects. If the
+annotation is missing, isn't a number, or is an earlier version, as with the
+policies of an earlier release, the reason is `Outdated`, and the message
+says to apply `config/policy.yaml` from the core program's release. If it's a
+later version, as with the policies of a later release, the reason is
+`Newer`, and the message says to upgrade the core program.
 
 ### Upgrade from checks that write status
 

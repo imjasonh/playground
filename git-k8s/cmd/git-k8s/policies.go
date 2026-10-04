@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	gitk8s "github.com/imjasonh/playground/git-k8s"
@@ -14,11 +15,11 @@ import (
 var policyNames = []string{"git-k8s-check-results", "git-k8s-branches"}
 
 // Each policy in config/policy.yaml has policyVersionAnnotation set to
-// policyVersion. Change both when the core program needs a change to the
+// policyVersion. Raise both when the core program needs a change to the
 // policies, so that it reports the earlier policies as outdated.
 const (
 	policyVersionAnnotation = gitk8s.Group + "/policy-version"
-	policyVersion           = "2"
+	policyVersion           = 2
 )
 
 type admissionPolicy struct {
@@ -38,33 +39,51 @@ type admissionPolicyBinding struct {
 // Reading them through the cache runs the reconcile again when they change.
 func policiesCondition(ctx context.Context) kube.Condition {
 	bindings := kube.List[admissionPolicyBinding](ctx)
-	var missing, outdated []string
+	var missing, outdated, newer []string
 	for _, name := range policyNames {
 		denies := func(b *admissionPolicyBinding) bool {
 			return b.Spec.PolicyName == name && slices.Contains(b.Spec.ValidationActions, "Deny")
 		}
 		p := kube.Get[admissionPolicy](ctx, "", name)
-		switch {
-		case p == nil || !slices.ContainsFunc(bindings, denies):
+		if p == nil || !slices.ContainsFunc(bindings, denies) {
 			missing = append(missing, name)
-		case p.Annotations[policyVersionAnnotation] != policyVersion:
+			continue
+		}
+		switch v, err := strconv.Atoi(p.Annotations[policyVersionAnnotation]); {
+		case err != nil || v < policyVersion:
 			outdated = append(outdated, name)
+		case v > policyVersion:
+			newer = append(newer, name)
 		}
 	}
 	switch {
 	case len(missing) > 0:
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.False, Reason: "Missing",
-			Message: fmt.Sprintf("apply config/policy.yaml: %s isn't installed with a binding that denies", strings.Join(missing, " and ")),
+			Message: "apply config/policy.yaml: " + subject(missing, "isn't installed with a binding that denies", "aren't installed with bindings that deny"),
 		}
 	case len(outdated) > 0:
 		return kube.Condition{
 			Type: "PoliciesInstalled", Status: kube.False, Reason: "Outdated",
-			Message: fmt.Sprintf("apply config/policy.yaml from this release: %s doesn't have %s=%s", strings.Join(outdated, " and "), policyVersionAnnotation, policyVersion),
+			Message: fmt.Sprintf("apply config/policy.yaml from this release: %s %s=%d", subject(outdated, "doesn't have", "don't have"), policyVersionAnnotation, policyVersion),
+		}
+	case len(newer) > 0:
+		return kube.Condition{
+			Type: "PoliciesInstalled", Status: kube.False, Reason: "Newer",
+			Message: fmt.Sprintf("upgrade the core program: %s a %s later than %d", subject(newer, "has", "have"), policyVersionAnnotation, policyVersion),
 		}
 	}
 	return kube.Condition{
 		Type: "PoliciesInstalled", Status: kube.True, Reason: "Installed",
 		Message: "the admission policies let no service account but the core program's write check results, and stop git-k8s controllers from approving branches",
 	}
+}
+
+// subject joins names into the subject of a message, followed by the verb
+// one for a single name or many for more.
+func subject(names []string, one, many string) string {
+	if len(names) > 1 {
+		one = many
+	}
+	return strings.Join(names, " and ") + " " + one
 }

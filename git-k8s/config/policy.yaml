@@ -15,7 +15,7 @@ metadata:
   name: git-k8s-check-results
   annotations:
     # The core program reports PoliciesInstalled False unless each policy
-    # has its policyVersion, in cmd/git-k8s/policies.go. Change both when
+    # has its policyVersion, in cmd/git-k8s/policies.go. Raise both when
     # the core program needs a change to the policies.
     git-k8s.imjasonh.com/policy-version: "2"
 spec:
