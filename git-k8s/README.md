@@ -216,6 +216,11 @@ The controller reaches the mirror with `mirror.Remote`, as a check does, and
 a branches rule such as `match: deps/**` with `parent: main` tracks its
 branches.
 
+The mirror knows a controller only by the namespace and name of its service
+account. Anyone who can create Pods or tokens in that namespace can act as
+the controller, which can fetch every repository, so only cluster
+administrators should control the namespace.
+
 A test Pod's token is bound to the Pod, so it stops working when the Pod is
 deleted, and it expires after 10 minutes. The mirror lets the Pod fetch only
 while a `Running` result of a check on one of the repository's branches
@@ -598,7 +603,9 @@ Secret that the core program uses there. Anyone who can write `GitBranch`
 status in a namespace can name a Pod there that the mirror lets fetch the
 repository. Only a Pod in that namespace can use it, and such a Pod can
 already mount the repository's Secret. Anyone who can create tokens for a
-check's service account can push as that check.
+check's service account can push as that check, and anyone who can create
+tokens for a controller's service account can do what its `-branch-prefix`
+allows.
 
 The mirror serves plain HTTP inside the cluster, so anything that can read
 Pod traffic can read tokens and repositories, and a token that leaks works
