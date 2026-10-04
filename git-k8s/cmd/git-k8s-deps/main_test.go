@@ -360,14 +360,18 @@ func TestUpdatesAModule(t *testing.T) {
 		t.Fatalf("the controller pushed %s before the Pod finished", greetBranch)
 	}
 
-	t.Log("While go runs, the controller follows the Pod.")
+	t.Log("While a container waits for a reason that often passes, and while go runs, the controller follows the Pod.")
 	p.Namespace, p.UID = "default", "uid-"+p.Name
-	p.Status = agent.PodStatus{Phase: "Pending", InitContainerStatuses: []agent.ContainerStatus{
+	for _, status := range []agent.PodStatus{{Phase: "Pending", InitContainerStatuses: []agent.ContainerStatus{
+		{Name: "prepare", State: agent.ContainerState{Waiting: &agent.Waiting{Reason: "CreateContainerError", Message: "context deadline exceeded"}}},
+	}}, {Phase: "Pending", InitContainerStatuses: []agent.ContainerStatus{
 		{Name: "prepare", State: terminated(&agent.Terminated{Reason: "Completed"})},
 		{Name: "update", State: agent.ContainerState{Running: &struct{}{}}},
-	}}
-	if pods := kube.Owned[agent.Pod](f.reconcile(p)); len(pods) != 1 || pods[0].Name != p.Name {
-		t.Fatalf("owned Pods = %d, want Pod %s", len(pods), p.Name)
+	}}} {
+		p.Status = status
+		if pods := kube.Owned[agent.Pod](f.reconcile(p)); len(pods) != 1 || pods[0].Name != p.Name {
+			t.Fatalf("owned Pods = %d, want Pod %s", len(pods), p.Name)
+		}
 	}
 
 	t.Log("Until the result container serves the result, the controller tries again.")
@@ -593,6 +597,21 @@ func TestDoesntPushWhatAPodGetsWrong(t *testing.T) {
 		{name: "the result container stops", status: func(p *agent.Pod) {
 			finished(p, "sha256:"+strings.Repeat("0", 64))
 			p.Status.ContainerStatuses[0].State = terminated(&agent.Terminated{ExitCode: 1})
+		}},
+		{name: "the repository's Secret doesn't exist", status: func(p *agent.Pod) {
+			p.Status = agent.PodStatus{Phase: "Pending", InitContainerStatuses: []agent.ContainerStatus{
+				{Name: "prepare", State: agent.ContainerState{Waiting: &agent.Waiting{Reason: "CreateContainerConfigError", Message: `secret "app-creds" not found`}}},
+			}}
+		}},
+		{name: "the go image can't be pulled", status: func(p *agent.Pod) {
+			p.Status = agent.PodStatus{Phase: "Pending", InitContainerStatuses: []agent.ContainerStatus{
+				{Name: "prepare", State: terminated(&agent.Terminated{Reason: "Completed"})},
+				{Name: "update", State: agent.ContainerState{Waiting: &agent.Waiting{Reason: "ImagePullBackOff"}}},
+			}}
+		}},
+		{name: "the result image can't be pulled", status: func(p *agent.Pod) {
+			finished(p, "sha256:"+strings.Repeat("0", 64))
+			p.Status.ContainerStatuses[0].State = agent.ContainerState{Waiting: &agent.Waiting{Reason: "ErrImagePull"}}
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -54,6 +54,11 @@ const maxBatch = 10
 // repository URL from naming a remote helper, which git runs as a program.
 const allowProtocol = "http:https:git:ssh:file"
 
+// stuckReasons are the reasons that a container waits until someone fixes
+// a Secret or an image, which agent runs end on too. An update fails on
+// them instead of holding a -max-pods slot until the Pod's deadline.
+var stuckReasons = []string{"CreateContainerConfigError", "ErrImagePull", "ImagePullBackOff", "InvalidImageName"}
+
 // prepareScript runs in the prepare container. It checks out the parent at
 // HEAD, or exits with status 3 if the parent moved. The attributes file
 // makes the files match their blobs, so the go.mod and go.sum files that
@@ -300,6 +305,9 @@ func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []upda
 		return out
 	}
 	st := &pod.Status
+	if msg := stuck(st); msg != "" {
+		return failAll("Pod %s can't start: %s", pod.Name, msg)
+	}
 	if t := container(st.InitContainerStatuses, "prepare").Terminated; t != nil && t.ExitCode != 0 {
 		return failAll("preparing the source in Pod %s failed: %s", pod.Name, exitMessage(t))
 	}
@@ -332,6 +340,17 @@ func (u *updater) follow(ctx context.Context, desired *agent.Pod, updates []upda
 		return failAll("the result from Pod %s isn't valid: %v", pod.Name, err)
 	}
 	return out
+}
+
+// stuck returns why a container in the Pod waits for a Secret or an image
+// that it can't get, or "".
+func stuck(st *agent.PodStatus) string {
+	for _, s := range slices.Concat(st.InitContainerStatuses, st.ContainerStatuses) {
+		if w := s.State.Waiting; w != nil && slices.Contains(stuckReasons, w.Reason) {
+			return fmt.Sprintf("container %s is waiting: %s", s.Name, strings.TrimSpace(w.Reason+": "+w.Message))
+		}
+	}
+	return ""
 }
 
 func container(statuses []agent.ContainerStatus, name string) agent.ContainerState {

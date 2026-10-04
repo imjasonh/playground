@@ -606,7 +606,9 @@ changes anything other than its requirements and its `go` and `toolchain`
 lines. The `go` command checks the `go.sum` checksums when it builds the
 branch. At most `-max-pods` update Pods run at once across all namespaces,
 and kube deletes each one once the controller has its result. When an update
-fails, the controller logs why and tries again after `-interval`.
+fails, the controller logs why and tries again after `-interval`. An update
+also fails right away when its Pod can't start because a Secret doesn't exist
+or an image can't be pulled.
 
 Update Pods need to reach the repository, the module proxies, and the
 checksum database in `-gosumdb`, and the controller needs to reach them on
