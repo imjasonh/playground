@@ -261,9 +261,9 @@ program's, even when a role grants them status access. See
 [Install](#install).
 
 Neither stops a check that creates Pods from running a Pod as another
-service account. `check-gotest` runs tests in Pods, so `generate` grants it
-permission to create, patch, and delete Pods in every namespace. Until the
-`git-k8s-check-pods` admission policy is installed, it can run a Pod as
+service account, and no admission policy in this release does.
+`check-gotest` runs tests in Pods, so `generate` grants it permission to
+create, patch, and delete Pods in every namespace. It can run a Pod as
 another check's service account and mount a `git-k8s-results` token that the
 core program accepts as that check's. It can also run a Pod as the core
 program's service account, which writes every check's result. Anyone else
